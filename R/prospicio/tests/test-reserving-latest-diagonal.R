@@ -50,16 +50,26 @@ stopifnot(identical(unname(chain_ladder(three, ldf = annual, ldf_kind = "cdf")@u
                     c(900, 750, 300)))
 near(bornhuetter_ferguson(three, apriori = 0.7, ldf = annual, ldf_kind = "cdf")@ultimate[3],
      500, 1e-12)
-# An apriori per origin (#634), named in any order or in origin order (oldest
-# first, whatever the order of the rows).
+# An apriori per origin (#634), named in any order, or unnamed (oldest first)
+# on rows given oldest first. Unnamed on rows in another order is an error,
+# since the exposure is read by row.
 shuffled <- latest_valuation(data.frame(year = c(2024, 2022, 2023), paid = c(150, 600 * 1.5, 600),
                                         premium = 1000),
                              "year", "paid", valuation = dec_2024, exposure = "premium")
-for (apriori in list(c("2024" = 0.8, "2022" = 0.6, "2023" = 0.7), c(0.6, 0.7, 0.8))) {
-  bf <- bornhuetter_ferguson(shuffled, apriori = apriori, ldf = annual, ldf_kind = "cdf")
-  stopifnot(identical(unname(bf@apriori), c(0.6, 0.7, 0.8)))
-  near(unname(bf@ultimate), c(900, 600 + 0.2 * 0.7 * 1000, 150 + 0.5 * 0.8 * 1000), 1e-12)
-}
+by_origin_ultimate <- c(900, 600 + 0.2 * 0.7 * 1000, 150 + 0.5 * 0.8 * 1000)
+bf <- bornhuetter_ferguson(shuffled, apriori = c("2024" = 0.8, "2022" = 0.6, "2023" = 0.7),
+                           ldf = annual, ldf_kind = "cdf")
+stopifnot(identical(unname(bf@apriori), c(0.6, 0.7, 0.8)))
+near(unname(bf@ultimate), by_origin_ultimate, 1e-12)
+expect_error_like(bornhuetter_ferguson(shuffled, apriori = c(0.6, 0.7, 0.8), ldf = annual,
+                                       ldf_kind = "cdf"),
+                  "key the apriori by origin")
+ordered <- latest_valuation(data.frame(year = 2022:2024, paid = c(600 * 1.5, 600, 150),
+                                       premium = 1000),
+                            "year", "paid", valuation = dec_2024, exposure = "premium")
+bf <- bornhuetter_ferguson(ordered, apriori = c(0.6, 0.7, 0.8), ldf = annual, ldf_kind = "cdf")
+stopifnot(identical(unname(bf@apriori), c(0.6, 0.7, 0.8)))
+near(unname(bf@ultimate), by_origin_ultimate, 1e-12)
 expect_error_like(bornhuetter_ferguson(shuffled, apriori = c("2021" = 0.5, "2022" = 0.6,
                                                              "2023" = 0.7, "2024" = 0.8),
                                        ldf = annual, ldf_kind = "cdf"),

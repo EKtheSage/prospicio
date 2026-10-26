@@ -95,7 +95,9 @@ pub enum Apriori {
     /// One loss ratio for every origin.
     All(f64),
     /// One loss ratio per origin, oldest first, over the triangle's (or
-    /// the diagonals') origins.
+    /// the diagonals') origins. On latest diagonals the rows must be given
+    /// oldest first, each origin once, or the fit is an error, since their
+    /// exposure is read in the order of the rows.
     InOrder(Vec<f64>),
     /// One loss ratio per origin period.
     ByOrigin(Vec<(Period, f64)>),

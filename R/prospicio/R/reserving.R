@@ -1407,7 +1407,9 @@ expected_loss_properties <- function(el, cl) {
 #'   origin as fits name them (`c("2020" = 0.6, "2021" = 0.65)`, or
 #'   `"2021Q3"` for quarters). Every origin fitted needs a value, and a name
 #'   that is not an origin of the triangle is an error; over segments each
-#'   segment takes its own origins' values.
+#'   segment takes its own origins' values. On a latest valuation an unnamed
+#'   vector needs the rows oldest first, each origin once, and is otherwise
+#'   an error, since the exposure is read by row: name it by origin.
 #' @param n_iters Number of Bornhuetter-Ferguson steps; a non-negative whole
 #'   number.
 #' @param ldf,ldf_kind,ldf_weight,ldf_origin A selected development pattern, as in

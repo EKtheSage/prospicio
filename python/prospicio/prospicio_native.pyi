@@ -3022,7 +3022,9 @@ class Benktander:
         fitted needs one; a value for an origin the triangle does not have
         is an error. Over segments each segment takes its own origins'
         values. A pandas Series is read in order and its index is not
-        read: to key by origin, pass a dict.
+        read: to key by origin, pass a dict. On a latest diagonal a sequence
+        needs the rows oldest first, each origin once, and is otherwise an
+        error, since the exposure is read by row.
     n_iters : int, default 1
         Number of Bornhuetter–Ferguson steps.
     average : {"volume", "simple", "regression", "geometric"}, default "volume"
@@ -3757,7 +3759,9 @@ class BornhuetterFerguson:
         loss ratio. Every origin fitted needs one; a value for an origin the
         triangle does not have is an error. Over segments each segment takes
         its own origins' values. A pandas Series is read in order and its
-        index is not read: to key by origin, pass a dict.
+        index is not read: to key by origin, pass a dict. On a latest
+        diagonal a sequence needs the rows oldest first, each origin once,
+        and is otherwise an error, since the exposure is read by row.
     average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
@@ -11196,7 +11200,9 @@ class ExpectedLoss:
         fitted needs one; a value for an origin the triangle does not have
         is an error. Over segments each segment takes its own origins'
         values. A pandas Series is read in order and its index is not
-        read: to key by origin, pass a dict.
+        read: to key by origin, pass a dict. On a latest diagonal a sequence
+        needs the rows oldest first, each origin once, and is otherwise an
+        error, since the exposure is read by row.
     average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"

@@ -745,7 +745,9 @@ fn unconverted(fit: &mut ChainLadderFit) {
 impl ExpectedLoss {
     /// The expected loss method on a latest diagonal with its exposure; see
     /// [`ChainLadder::fit_diagonal`]. A keyed [`Apriori`](crate::Apriori)
-    /// is matched to the diagonal's origins, oldest first.
+    /// is matched to the diagonal's origins; values in order
+    /// ([`Apriori::InOrder`](crate::Apriori::InOrder)) need the rows given
+    /// oldest first, and otherwise are an error (decision 20, item 4).
     pub fn fit_diagonal(&self, diagonal: &LatestDiagonal) -> Result<ExpectedLossFit> {
         self.as_benktander().fit_diagonal(diagonal)
     }
@@ -763,8 +765,39 @@ impl Benktander {
     /// Benktander on a latest diagonal with its exposure; see
     /// [`ChainLadder::fit_diagonal`].
     pub fn fit_diagonal(&self, diagonal: &LatestDiagonal) -> Result<ExpectedLossFit> {
-        self.on_origins(&diagonal_origins([diagonal]))?
-            .fit_diagonal_keyed(diagonal)
+        self.on_diagonals([diagonal])?.fit_diagonal_keyed(diagonal)
+    }
+
+    /// The method with its apriori keyed against the origins of
+    /// `diagonals` together. Values in order are read oldest first, which
+    /// is the order of the rows only when the rows, segment after segment,
+    /// are the origins oldest first without repeats; any other order is an
+    /// error, since the exposure is read in the order of the rows and a
+    /// column of values next to it would go to the wrong origins.
+    fn on_diagonals<'a>(
+        &self,
+        diagonals: impl IntoIterator<Item = &'a LatestDiagonal> + Clone,
+    ) -> Result<Self> {
+        let origins = diagonal_origins(diagonals.clone());
+        if matches!(self.apriori, crate::Apriori::InOrder(_)) {
+            let rows: Vec<Period> = diagonals
+                .into_iter()
+                .flat_map(|d| {
+                    d.origins
+                        .iter()
+                        .map(|&m| Period::containing(m, d.origin_grain))
+                })
+                .collect();
+            if rows != origins {
+                return Err(Error::Apriori(
+                    "values in order are read oldest first over the origins, but the rows are \
+                     not the origins oldest first (or an origin has several rows): key the \
+                     apriori by origin"
+                        .into(),
+                ));
+            }
+        }
+        self.on_origins(&origins)
     }
 
     /// [`fit_diagonal`](Self::fit_diagonal) with the apriori already keyed
@@ -1378,12 +1411,15 @@ impl Benktander {
     /// [`fit_diagonal`](Self::fit_diagonal) on every segment; see
     /// [`ChainLadder::fit_diagonal_segments`]. A keyed
     /// [`Apriori`](crate::Apriori) is matched to the origins of every
-    /// segment together, oldest first, and each segment takes its own.
+    /// segment together, and each segment takes its own; values in order
+    /// need the rows, segment after segment, to be those origins oldest
+    /// first, and otherwise are an error (see
+    /// [`fit_diagonal`](Self::fit_diagonal)).
     pub fn fit_diagonal_segments(
         &self,
         diagonals: &LatestDiagonals,
     ) -> Result<SegmentFits<ExpectedLossFit>> {
-        let m = self.on_origins(&diagonal_origins(diagonals.diagonals()))?;
+        let m = self.on_diagonals(diagonals.diagonals())?;
         diagonals.fit_each(|d| m.fit_diagonal_keyed(d))
     }
 
@@ -1395,7 +1431,7 @@ impl Benktander {
         diagonals: &LatestDiagonals,
         development: &SegmentFits<ChainLadder>,
     ) -> Result<SegmentFits<ExpectedLossFit>> {
-        let m = self.on_origins(&diagonal_origins(diagonals.diagonals()))?;
+        let m = self.on_diagonals(diagonals.diagonals())?;
         diagonals.fit_each_from(&self.chain_ladder, development, |cl, d| {
             Self {
                 chain_ladder: cl.clone(),
@@ -1561,10 +1597,34 @@ mod tests {
         for (got, want) in fit.ultimate.iter().zip(want) {
             assert!((got - want).abs() < 1e-9, "{got} vs {want}");
         }
-        let in_order = bf(crate::Apriori::InOrder(vec![0.5, 0.6, 0.7]))
-            .fit_diagonal(&rows)
+        // Values in order would be read oldest first while the exposure
+        // is read by row, so on rows newest first they are an error...
+        let in_order = |v: Vec<f64>| bf(crate::Apriori::InOrder(v));
+        let wrong_order = |result: Result<ExpectedLossFit>| matches!(result, Err(Error::Apriori(m)) if m.contains("key the apriori by origin"));
+        assert!(wrong_order(
+            in_order(vec![0.5, 0.6, 0.7]).fit_diagonal(&rows)
+        ));
+        // ...and on rows oldest first they are the keyed fit.
+        let oldest_first = LatestDiagonal::new(
+            Grain::Year,
+            &[2022, 2023, 2024].map(Month::january),
+            &[36, 24, 12],
+            &[100.0, 100.0, 100.0],
+        )
+        .unwrap()
+        .with_exposure(&[400.0, 300.0, 200.0])
+        .unwrap();
+        let ordered = in_order(vec![0.5, 0.6, 0.7])
+            .fit_diagonal(&oldest_first)
             .unwrap();
-        assert_eq!(in_order.ultimate, fit.ultimate);
+        assert_eq!(ordered.ultimate, fit.ultimate);
+        assert_eq!(
+            ordered.ultimate,
+            bf(keyed.clone())
+                .fit_diagonal(&oldest_first)
+                .unwrap()
+                .ultimate
+        );
 
         // Over segments, each takes its own origins: b has 2024 alone.
         let set = LatestDiagonals::new(
@@ -1580,7 +1640,7 @@ mod tests {
         .unwrap()
         .with_exposure(&[200.0, 300.0, 400.0, 100.0])
         .unwrap();
-        let fits = bf(keyed).fit_diagonal_segments(&set).unwrap();
+        let fits = bf(keyed.clone()).fit_diagonal_segments(&set).unwrap();
         let b = fits.get(&Label::from("b")).unwrap();
         assert_eq!(b.apriori, [0.7]);
         assert!((b.ultimate[0] - (50.0 + 0.5 * 0.7 * 100.0)).abs() < 1e-9);
@@ -1595,10 +1655,21 @@ mod tests {
             apriori,
             ..Default::default()
         };
-        let from = plain(crate::Apriori::InOrder(vec![0.5, 0.6, 0.7]))
+        let from = plain(keyed.clone())
             .fit_diagonal_segments_from(&set, &source)
             .unwrap();
         assert_eq!(from.get(&Label::from("b")).unwrap().apriori, [0.7]);
+        // Values in order over segments whose rows repeat an origin (2024
+        // in a and b) are an error in both segment paths.
+        assert!(matches!(
+            in_order(vec![0.5, 0.6, 0.7]).fit_diagonal_segments(&set),
+            Err(Error::Apriori(m)) if m.contains("key the apriori by origin")
+        ));
+        assert!(matches!(
+            plain(crate::Apriori::InOrder(vec![0.5, 0.6, 0.7]))
+                .fit_diagonal_segments_from(&set, &source),
+            Err(Error::Apriori(m)) if m.contains("key the apriori by origin")
+        ));
         // An origin of no diagonal is an error, in every path.
         let extra = crate::Apriori::from_labels([
             ("2021", 0.5),

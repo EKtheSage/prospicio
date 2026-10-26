@@ -720,17 +720,25 @@ def test_constructor_errors():
 
 
 def test_apriori_by_origin_follows_the_origins_not_the_rows():
-    # #634: rows newest first; the fit's origins run oldest first, and a
-    # sequence follows them, not the rows.
+    # #634: rows not oldest first; the fit's origins run oldest first, and a
+    # dict follows them, not the rows.
     d = LatestDiagonal([2024, 2022, 2023], [12, 36, 24], [150.0, 900.0, 600.0],
                        exposure=[1000.0] * 3)
     cdf = {12: 2.0, 24: 1.25, 36: 1.0}
     want = [900.0, 600.0 + 0.2 * 0.7 * 1000.0, 150.0 + 0.5 * 0.8 * 1000.0]
-    for apriori in ({"2024": 0.8, "2022": 0.6, "2023": 0.7}, {2022: 0.6, 2023: 0.7, 2024: 0.8},
-                    [0.6, 0.7, 0.8]):
+    for apriori in ({"2024": 0.8, "2022": 0.6, "2023": 0.7}, {2022: 0.6, 2023: 0.7, 2024: 0.8}):
         bf = BornhuetterFerguson(apriori=apriori, ldf=cdf, ldf_kind="cdf").fit_diagonal(d)
         assert bf.apriori == [0.6, 0.7, 0.8]
         close(bf.ultimate, want)
+    # A sequence is read oldest first but the exposure by row, so on these
+    # rows it is an error; on rows oldest first it is the dict's fit.
+    with pytest.raises(ValueError, match="key the apriori by origin"):
+        BornhuetterFerguson(apriori=[0.6, 0.7, 0.8], ldf=cdf, ldf_kind="cdf").fit_diagonal(d)
+    ordered = LatestDiagonal([2022, 2023, 2024], [36, 24, 12], [900.0, 600.0, 150.0],
+                             exposure=[1000.0] * 3)
+    bf = BornhuetterFerguson(apriori=[0.6, 0.7, 0.8], ldf=cdf, ldf_kind="cdf").fit_diagonal(ordered)
+    assert bf.apriori == [0.6, 0.7, 0.8]
+    close(bf.ultimate, want)
     with pytest.raises(ValueError, match="2021 is not among the origins fitted"):
         BornhuetterFerguson(apriori={2021: 0.5, 2022: 0.6, 2023: 0.7, 2024: 0.8}, ldf=cdf,
                             ldf_kind="cdf").fit_diagonal(d)

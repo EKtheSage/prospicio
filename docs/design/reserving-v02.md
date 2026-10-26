@@ -3553,7 +3553,9 @@ in Rust, Python and R. Items 1 to 3 restate the issue's proposal; items 4
 to 8 are choices made in building it, proposed for the user's acceptance.
 The Excel functions keep one number (`.into()` at their six call sites,
 behaviour unchanged); a per-origin a priori on a sheet is #635 for the
-Excel lane.
+Excel lane. The guides that still give the one-number workaround
+(`apriori=1.0` with the prior in the exposure column) are #642 for the
+Guides lane.
 
 The expected loss, Bornhuetter-Ferguson and Benktander methods took one
 `apriori: f64` for every origin, so a book whose plan loss ratio differs by
@@ -3577,11 +3579,12 @@ loss ratio per origin is that origin of the fit at its loss ratio for every
 origin, to the bit.
 
 1. **Keyed by origin, not by position.** A fit's origins are not the rows
-   given: `fit_diagonal` sorts a diagonal's origins and spans every period
-   from the earliest to the latest (`latest_diagonal.rs`), and a triangle's
-   segment is trimmed to the origins its column observes. A vector by
-   position would not line up with the user's rows, so a key is an origin
-   period and the values in order are read as one.
+   given: `fit_diagonal` takes a diagonal's rows in any order and fits its
+   origins oldest first (`latest_diagonal.rs`; a diagonal that skips an
+   origin is `Error::EmptyOrigin` in any case), and a triangle's segment is
+   trimmed to the origins its column observes. A vector by position would
+   not line up with the user's rows, so a key is an origin period and the
+   values in order are read as one.
 2. **`From<f64>`.** Existing calls write `apriori: 0.7.into()`. Struct
    literals that set `apriori` to a number no longer compile: a breaking
    change for Rust callers, marked so in the changelog. `Apriori::default()`
@@ -3601,7 +3604,18 @@ origin, to the bit.
    of no segment) is still an error. A key for an origin of the triangle
    that the loss column does not observe passes this check and is ignored.
    The alternative, an exact match per segment, would make a per-origin a
-   priori unusable on a triangle with keys.
+   priori unusable on a triangle with keys. On latest diagonals, values in
+   order (`Apriori::InOrder`, a Python sequence, an unnamed R vector) are
+   accepted only when the rows, segment after segment, are the origins
+   oldest first, each once; any other order is `Error::Apriori`, telling
+   the user to key by origin. A diagonal's exposure, latest values and ages
+   are read in the order of its rows, so a column of a priori values passed
+   next to them from a data frame would otherwise go to the wrong origins
+   without an error whenever the rows are not oldest first. Reading values
+   in order by row on diagonals was the alternative: it would give
+   `InOrder` one meaning on a triangle and another on a diagonal, and over
+   segments it would need one value per row, so one origin could take two
+   values.
 5. **Keys match by period, grain included** (proposed): `Period::year(2021)`
    names no quarterly origin, and the labels are the ones fits report
    (`"2021"`, `"2021H1"`, `"2021Q3"`, `"2021-07"`, exactly as `Period`
@@ -3632,10 +3646,13 @@ fitted alone at its own loss ratio for `n_iters` 0, 1, 2 and 5 on RAA;
 keyed, in order and by label in reverse order agree exactly; segments that
 start in different years take their own origins; a diagonal given newest
 first lines up by origin through `fit_diagonal`, `fit_diagonal_segments`
-and `fit_diagonal_segments_from`; the one-year view's claims development
+and `fit_diagonal_segments_from`, where values in order are an error, and
+values in order on rows oldest first equal the keyed fit; the one-year view's claims development
 result matches the closed form `(f - 1) (a[o] E / cdf - latest)` on an
 exact triangle, and keyed and in-order views draw the same; every error and
 label form. Python (`test_reserving.py`, `test_reserving_latest_diagonal.py`)
 and R (`test-reserving.R`, `test-reserving-latest-diagonal.R`) repeat the
-identities on `clrd_wkcomp` and the shuffled diagonal through each binding,
-with the one-year view and the errors.
+identities on `clrd_wkcomp` and the shuffled diagonal through each binding
+(a dict or named vector on the shuffled rows, a sequence or unnamed vector
+on the rows oldest first, and the error for a sequence on the shuffled
+rows), with the one-year view and the errors.
