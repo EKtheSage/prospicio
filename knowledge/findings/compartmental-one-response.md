@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: Compartmental fitted to paid alone or incurred alone matches its own Stan references; paid alone moves the reserve 2% and incurred alone 26% on company 337
-description: Compartmental with Fitted::PaidOnly or Fitted::IncurredOnly and ordered rates matches model 1 with one response reconstructed in Stan on company 337 at every reference-row comparison of a 20-seed sweep per setting (model 1's tolerances, elpd_loo at 2.5). Paid alone gives a total reserve of 176,448 (sd 9,822) against Stan's 176,357 (9,577), 1.8% above paid and outstanding; incurred alone gives 219,051 (10,076) against Stan's 219,074 (10,017), 26% above, because the paid rate k_p is then set by its prior. Under one response the least-squares data start is degenerate, so the fit starts at the prior centre.
+description: Compartmental with Fitted::PaidOnly or Fitted::IncurredOnly and ordered rates matches model 1 with one response reconstructed in Stan on company 337 at every reference-row comparison of a 20-seed sweep per setting (model 1's tolerances, elpd_loo at 2.5). Paid alone gives a total reserve of 176,448 (sd 9,822) against Stan's 176,357 (9,577), 1.8% above paid and outstanding; incurred alone gives 219,051 (10,076) against Stan's 219,074 (10,017), 26% above, because the paid rate k_p is then set by its prior. A diffuse prior (CompartmentalPriors::diffuse) fits paid alone (181,540) but leaves incurred alone unidentified (-51,000, sd 152,000). Under one response the least-squares data start is degenerate, so the fit starts at the prior centre.
 tags: [bayes, reserving, compartmental, stan, incurred, paid, clrd, validation]
 status: draft
 generated: { by: claude-code/local-session, at: 2026-10-22T22:00:00-07:00 }
@@ -109,15 +109,72 @@ sources:
   reserve's sd under incurred alone is parameter uncertainty only, since
   the future paid has no noise.
 
+* The diffuse preset (the user's decision of 2026-10-22: a diffuse prior as
+  the default for one-response fits, a narrow one as an option for a user
+  with information that is not in the data; narrowed on 2026-10-23 to paid
+  alone, since incurred alone refuses a `k_p` sd above 0.5),
+  `CompartmentalPriors::diffuse()`:
+  the paper's medians with a log-scale sd of 1 on `k_er`, `k_p`, `RLR` and
+  `RRF` (the paper's are 0.1 to 0.2), the rest as the paper's. Ordered rates,
+  the defaults, seeds 0 to 4 (mean over seeds, with the range of the total
+  reserve):[^test]
+
+  | | Paper's preset, seed 0 | Diffuse, seeds 0 to 4 |
+  |---|---|---|
+  | paid alone, total reserve | 176,448 (9,822) | 181,540 (12,400), 181,425 to 181,690 |
+  | paid alone, `k_p` | 0.456 | 0.483 (sd of log 0.052) |
+  | paid alone, `k_er` | 1.494 | 1.32 |
+  | paid alone, max R-hat, divergences | 1.006, 1 | 1.004 to 1.009, 0 |
+  | incurred alone, total reserve | 219,051 (10,076) | -51,000 (152,000), -61,098 to -43,217 |
+  | incurred alone, `k_p` | 0.930 | 0.14 to 0.15 (sd of log 0.59 to 0.65) |
+  | incurred alone, `k_er` | 2.848 | 4.1 to 4.3 |
+  | incurred alone, max R-hat, divergences | 1.002, 0 | 1.005 to 1.011, 0 or 1 (3 of 5 seeds one divergent transition or an R-hat of 1.010 on `RRF`) |
+
+  The prior predictive check puts paid at the last age as a share of the
+  1988 premium at 0.06, 0.53 and 5.5 (5th, 50th, 95th percentiles) under the
+  diffuse preset and 0.39, 0.56 and 0.81 under the paper's, the same median
+  under both rate orders.
+* Paid alone is little moved by the diffuse prior (+2.9% on the paper's
+  preset, +4.7% on paid and outstanding, a wider sd of 12,400 against
+  9,800): the paid cells pin `k_p` and `RLR x RRF`, and the diffuse priors
+  only free the split. Incurred alone is not identified by the data: the
+  incurred cells constrain the reported side (`k_er`, `RLR`) but the paid
+  run-off is `RLR RRF PD(t)` with `k_p` from the prior, so the diffuse prior
+  lets `k_p` fall to 0.14, the expected paid at the last age falls below
+  the latest paid of the old origins and the reserve is negative on average
+  with an sd of 150,000. Narrowing the four priors moves the reserve
+  smoothly with the prior: log-scale sd 0.3, 203,000 (sd 19,000, `k_p`
+  0.64); 0.5, 163,000 (51,500, `k_p` 0.41); 0.7, 87,700 (101,000, `k_p`
+  0.26); 1.0, -51,000 (152,000, `k_p` 0.14); the paper's 0.1 on `k_p`
+  (0.1 to 0.2 on the rest), 219,000 (10,000, `k_p` 0.93). The reserve of
+  incurred alone is a function of the prior on `k_p`, and no width of it
+  leaves the reserve to the data.[^test]
+* The warning. Under `Fitted::IncurredOnly` the fit warns when the
+  posterior sd of `log k_p` is more than 0.5 of its prior's. The shares
+  measured: 0.99 under the paper's preset, 0.91 to 0.94 at an sd of 0.3,
+  0.82 to 0.84 at 0.5, 0.73 to 0.75 at 0.7, 0.59 to 0.65 under the diffuse
+  preset, against 0.05 for paid alone under the diffuse preset, 0.38 for
+  paid alone and 0.36 for paid and outstanding under the paper's.[^test]
+
 # Implications
 
 * Paid alone is a usable fit for a book without case reserves, with the
-  priors on `RLR` and `RRF` carrying their split.
+  priors on `RLR` and `RRF` carrying their split, under the paper's preset
+  or the diffuse one (181,540 against 176,448).
 * Incurred alone does not estimate the paid run-off. Its reserve is the
   incurred-implied ultimate less the paid, with the payment speed from the
   prior on `k_p`, and on company 337 that prior is far from the data.
-  Fit it with a prior on `k_p` the user believes, or prefer a fit with
-  paid.
+  A diffuse prior does not help: it leaves the reserve unidentified
+  (negative on average, an sd of 150,000). Fit it with a prior on `k_p` the
+  user believes, which the fit flags with a warning, or prefer a fit with
+  paid. `CompartmentalPriors::diffuse()` is the starting point for paid
+  alone only: by the user's decision of 2026-10-23 incurred alone refuses a
+  `k_p` prior with a log-scale sd above 0.5
+  (`MAX_INCURRED_ONLY_KP_SD`), so the diffuse preset is an error there and
+  the user gives a prior they believe, for example from the book's paid
+  history or a paid-and-incurred fit of a similar book. The rows above for
+  incurred alone at an sd of 0.7 and under the diffuse preset were measured
+  before that decision and are no longer reachable.
 * The Stan references are the only check of either variant besides unit
   tests (the log density against the model written out to 1e-12, the
   gradient against central differences and the generic dual pass, the

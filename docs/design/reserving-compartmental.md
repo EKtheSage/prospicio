@@ -1693,6 +1693,90 @@ on `claude/compartmental-paid-incurred`.
     threshold (two had one divergent transition each, one an R-hat of
     1.013 on `tau_RRF`), and all 20 incurred-only fits. The results are in
     `knowledge/findings/compartmental-one-response.md`.
+  * *The diffuse preset (decided by the user on 2026-10-22).* On company
+    337 incurred alone gave a 26% higher reserve than paid and outstanding
+    because, with no paid cell, `k_p` comes from its prior and the paper's
+    is `LogNormal(median 1, sd 0.1)`. The user: "have a diffuse prior where
+    we don't influence the fit much as a default and have the option for
+    users to implement a narrow prior if they have info not in the data."
+    Built: `CompartmentalPriors::diffuse()` (Python
+    `CompartmentalPriors.diffuse()`, R `compartmental_diffuse_priors()`),
+    the paper's medians (`k_er` 3, `k_p` 1, `RLR` 0.7, `RRF` 0.8) with a
+    log-scale sd of 1 on each of the four (the paper's are 0.1 to 0.2),
+    and model 1's origin effect sds and `log sigma` priors. The prior
+    predictive check (`the_diffuse_preset`) shows paid at the last age as a
+    share of premium at 0.06, 0.53 and 5.5 (5th, 50th, 95th percentiles),
+    against the paper's 0.39, 0.56 and 0.81: the same median, the plausible
+    range and well beyond it. Priors stay a required argument (open
+    decision 2); `diffuse()` is the documented choice for a fit to one
+    response alone, and a narrower prior (the paper's, or a struct update
+    of this one) is the option of a user who holds information about the
+    rates that is not in the data. The docs of `Fitted::PaidOnly`,
+    `Fitted::IncurredOnly`, the presets, and the Python and R help say so
+    (since 2026-10-23 `diffuse()` is the starting point for paid alone
+    only; incurred alone refuses it, see "A payment-rate prior the user
+    believes" below).
+  * *What company 337 shows.* The diffuse prior works for paid alone: `k_p`
+    is pinned by the paid (the posterior sd of its log is 5% of the
+    prior's), the fit converges at the defaults (5 seeds: max R-hat at most
+    1.009, no divergences) and the total reserve is 181,500 (sd 12,400),
+    2.9% above the paper's preset on paid alone and 4.7% above paid and
+    outstanding. It does not work for incurred alone: the incurred does
+    not identify `k_p`, the posterior sd of its log is 60% of the prior's,
+    and the total reserve is -51,000 (sd 152,000), negative on average,
+    because the paid run-off is whatever the wide prior and the ridge
+    between `k_p`, `RRF` and `RLR` allow. Between the two, the reserve falls
+    as the prior widens: 203,000 at a log-scale sd of 0.3 on the four
+    priors, 163,000 at 0.5, 88,000 at 0.7 and -51,000 at 1. So there is no
+    prior on `k_p` that leaves incurred alone's reserve to the data; every
+    value is the prior's choice. The numbers are in
+    `knowledge/findings/compartmental-one-response.md`.
+  * *The warning.* Under `Fitted::IncurredOnly` the fit adds a warning to
+    its diagnostics (so Python raises its warning and R its) when the
+    posterior sd of `log k_p` is more than half the prior's: "the posterior
+    sd of log k_p is N% of its prior's: the incurred does not identify the
+    payment rate ...". It follows from the mechanism that already exists
+    (`diagnostics.warnings`, as the rate-swap warning), needs no new
+    setting, and is silent when the data pin `k_p`: the share is 0.99 under
+    the paper's preset, 0.6 under the diffuse one and 0.7 to 0.9 between,
+    against 0.05 to 0.4 when paid is fitted (not checked there). The
+    threshold of 0.5 sits below every incurred-alone fit measured. A user
+    who sets a narrow prior on purpose still gets the warning, as the
+    reserve is then their prior's; the warning says what the number
+    depends on rather than that it is wrong. The check is on the prior's
+    width, not its centre, so it cannot tell a good prior from a bad one.
+  * *A payment-rate prior the user believes (decided by the user on
+    2026-10-23).* Incurred alone with the diffuse default gives a reserve
+    that is not usable, which the user's rule ("the data set the fit")
+    cannot repair, since the data do not set `k_p`. The options were (a)
+    keep the preset and the warning, (b) refuse a `k_p` prior wider than
+    some sd, (c) carry the prior's role in the fit's type. The user chose
+    (b): "Require a payment-rate prior. Incurred-only refuses a k_p prior
+    wider than a set width, and the user must give one they believe.
+    Diffuse stays the starting point for paid alone. The warning stays."
+    Built: `Compartmental::validate` returns `Error::Bayes` under
+    `Fitted::IncurredOnly` when the log-scale sd of the `k_p` prior exceeds
+    `MAX_INCURRED_ONLY_KP_SD`, 0.5 (the bound itself is accepted: 0.5 and
+    the paper's 0.1 pass, 1.0 and 0.51 do not). `PositivePrior` has one
+    variant, `LogNormal { median, sd }`, whose `sd` is the log-scale sd
+    (`median e^(sd o)`, `o ~ N(0, 1)`), so the rule reads `sd` directly; a
+    new variant would have to define its log-scale sd for the rule. The
+    check is in `validate`, which `fit`, `fit_segments`, `one_year`,
+    `one_year_segments` and the diagonal backtest each call before any data
+    are read, so all of them refuse; `prior_predictive` does not apply it,
+    so the user can still see what a refused set implies. The message says
+    that incurred alone does not identify the payment rate, so the reserve
+    follows this prior, and that the user must give a `k_p` prior they
+    believe (from the book's paid history or a paid-and-incurred fit of a
+    similar book) or fit paid as well. Only `k_p` is checked: the other
+    three priors may stay wide (the reserve moved with `k_p`'s, which is
+    where the paid run-off comes from). The bound 0.5 is the widest width
+    measured whose reserve is still informative (163,000, sd 51,500, `k_p`
+    0.41, against 203,000 at 0.3 and 87,700 at 0.7); it is a rule, not a
+    result, and the warning stays for any accepted prior. `diffuse()` stays
+    the documented starting point for `Fitted::PaidOnly`, and the docs of
+    `Fitted::IncurredOnly`, `Fitted::PaidOnly`, `diffuse()`, the priors'
+    struct, and the Python and R help say so.
 * **Unequal grain (PR I).** Built as decision 13.
 
 A check of what the priors imply for the reserve, in particular the incurred-only `k_p` prior, is noted but not planned in `reserving-bayes.md`, "Prior predictive checks (a note, not planned)".

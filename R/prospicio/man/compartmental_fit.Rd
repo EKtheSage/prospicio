@@ -140,7 +140,7 @@ and the incurred is outstanding plus paid where both are observed. The fit's
 \code{fitted = "paid_only"} and \code{fitted = "incurred_only"} fit one response
 alone and need \code{rate_order = "ordered"} (an error under \code{"free"}): from
 one response the means do not change under the rate swap below, and from
-paid alone only \code{RLR x RRF} is identified, so the priors carry the split
+paid alone only \verb{RLR x RRF} is identified, so the priors carry the split
 of \code{RLR} and \code{RRF}. The model then has one sigma, \code{sigma_pd} or
 \code{sigma_os}. Under \code{"paid_only"} the second column is not read
 (\code{outstanding} and \code{incurred} may both be left out) and the fit's
@@ -150,6 +150,14 @@ latest paid only: the reserve is the expected paid at the last age less
 the latest paid, and the future paid cells are expected values, without
 noise, since no paid cell is fitted. Of the one-year views and the
 backtest candidates only Python and Rust take these settings.
+\code{\link[=compartmental_diffuse_priors]{compartmental_diffuse_priors()}} is the starting point for \code{"paid_only"}.
+Under \code{"incurred_only"} the incurred does not identify the payment rate
+\code{k_p}, so its prior sets the paid run-off and the reserve at every width
+(on company 337 the paper's narrow prior put the reserve 26\% above the fit
+to paid and outstanding): the fit refuses a \code{k_p} prior with a log-scale sd
+above 0.5, so the diffuse preset is an error there, and you give a \code{k_p}
+prior you believe, for example from the book's paid history or from a
+paid-and-incurred fit of a similar book.
 
 \code{compartmental_model_2()} is \code{compartmental()} with model 2's
 likelihood, scale and paid response, and a longer, finer sampler: four

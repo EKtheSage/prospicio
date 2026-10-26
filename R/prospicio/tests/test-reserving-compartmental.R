@@ -57,6 +57,20 @@ stopifnot(
   identical(gm$log_sigma[[2]], list(family = "student_t", nu = 1, location = 0, scale = 1000)),
   gm$lkj_eta == 1
 )
+# The diffuse preset: the paper's medians with a log-scale sd of 1 on the
+# rates and ratios, the rest as the paper's.
+dp <- compartmental_diffuse_priors()
+stopifnot(
+  inherits(dp, "compartmental_priors"),
+  identical(dp$k_er, c(median = 3, sd = 1)),
+  identical(dp$k_p, c(median = 1, sd = 1)),
+  identical(dp$rlr, c(median = 0.7, sd = 1)),
+  identical(dp$rrf, c(median = 0.8, sd = 1)),
+  identical(dp$rrf_effect_sd, gm$rrf_effect_sd),
+  identical(dp$log_sigma, gm$log_sigma),
+  gm$lkj_eta == dp$lkj_eta
+)
+
 q <- compartmental_priors(k_er = c(2, 0.3), k_p = gm$k_p, rlr = gm$rlr, rrf = gm$rrf,
                           rlr_effect_sd = gm$rlr_effect_sd,
                           rrf_effect_sd = list(family = "normal", scale = 0.2), lkj_eta = 2,
@@ -91,6 +105,11 @@ for (setting in list(list(fitted = "paid_only"), list(fitted = "incurred_only"))
                                                   incurred = "incurred"), setting)),
                     "needs rate_order Ordered")
 }
+# Incurred alone refuses a k_p prior wider than 0.5 (the diffuse preset's is 1).
+expect_error_like(compartmental(tri, "paid", "premium", compartmental_diffuse_priors(),
+                                incurred = "incurred", fitted = "incurred_only",
+                                rate_order = "ordered"),
+                  "at most 0.5")
 expect_error_like(compartmental(tri, "paid", "premium", gm), "give exactly one of outstanding")
 expect_error_like(compartmental(tri, "paid", "premium", gm, outstanding = "incurred",
                                 incurred = "incurred"),

@@ -60,7 +60,7 @@ value); the fit's origins are this column's.}
 \item{incurred}{Name of a column of incurred amounts: outstanding is
 incurred less paid, cell by cell (the papers' outstanding on company
 337 is incurred with bulk and IBNR less paid). Give exactly one of
-\code{outstanding} and \code{incurred}.}
+\code{outstanding} and \code{incurred}, or neither under \code{fitted = "paid_only"}.}
 
 \item{likelihood}{\code{"normal"} (model 1) or \code{"lognormal"} (model 2).}
 

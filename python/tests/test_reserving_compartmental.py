@@ -91,6 +91,15 @@ def test_the_preset_and_replace():
     assert built == p
 
 
+def test_the_diffuse_preset():
+    d = CompartmentalPriors.diffuse()
+    assert (d.k_er, d.k_p, d.rlr, d.rrf) == ((3.0, 1.0), (1.0, 1.0), (0.7, 1.0), (0.8, 1.0))
+    # Everything but the four rate and ratio priors is the paper's.
+    assert d == GM.replace(k_er=(3.0, 1.0), k_p=(1.0, 1.0), rlr=(0.7, 1.0), rrf=(0.8, 1.0))
+    assert d.replace(k_p=(1.0, 0.1)).k_p == GM.k_p
+    assert Compartmental(d, rate_order="ordered", fitted="incurred_only").priors == d
+
+
 def test_bad_priors():
     with pytest.raises(TypeError):
         CompartmentalPriors(k_er=(3.0, 0.1))  # every prior is required
@@ -139,6 +148,23 @@ def test_one_response_needs_ordered_rates(tri, fitted):
         m.fit(tri, "paid", "premium", incurred="incurred")
 
 
+def test_incurred_only_needs_a_payment_rate_prior_you_believe(tri):
+    # Incurred alone does not identify k_p, so a k_p prior with a log-scale sd
+    # above 0.5 is refused (the diffuse preset's is 1), before any data are
+    # read (decision 12, the user's decision of 2026-10-23).
+    d = CompartmentalPriors.diffuse()
+    m = Compartmental(d, fitted="incurred_only", rate_order="ordered", chains=2, tune=50, draws=50)
+    with pytest.raises(ValueError, match="at most 0.5"):
+        m.fit(tri, "paid", "premium", incurred="incurred")
+    with pytest.raises(ValueError, match="does not identify the payment rate"):
+        m.fit(tri, "paid", "premium", incurred="incurred")
+    # The prior check still runs on the refused set.
+    assert m.prior_predictive(tri, "premium", n_sims=50) is not None
+    # Paid alone takes the diffuse preset.
+    Compartmental(d, fitted="paid_only", rate_order="ordered").prior_predictive(
+        tri, "premium", n_sims=50)
+
+
 def test_paid_only(tri):
     # Paid alone: the second column is not read, the fit has one sigma and
     # no outstanding cells.
@@ -169,9 +195,11 @@ def test_incurred_only(tri):
     # future paid cells are expected values.
     short = dict(chains=2, tune=200, draws=200, n_sims=200, seed=3)
     m = Compartmental(GM, fitted="incurred_only", rate_order="ordered", **short)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         a = m.fit(tri, "paid", "premium", incurred="incurred")
+    # The paper's tight prior on k_p sets the paid run-off, and the fit says so.
+    assert any("does not identify the payment rate" in str(w.message) for w in caught)
     assert a.outstanding is not None and len(a.outstanding.components()) == 55
     names = a.parameter_names
     assert names[:5] == ["k_er", "k_p", "RLR", "RRF", "sigma_os"]
