@@ -591,7 +591,7 @@ impl SelectedPattern {
     /// accident-year pattern is `Grain::Year`, an accident-month one
     /// `Grain::Month`), as the pattern of an underwriting period whose
     /// policies are written and earned as `basis` says (`reserving-v02.md`,
-    /// decision 20). With `e(t)` the share of the underwriting period's
+    /// decision 21). With `e(t)` the share of the underwriting period's
     /// exposure in its `t`-th accident month
     /// ([`UnderwritingBasis::exposure`]) and `p` an accident month's
     /// percent developed,
@@ -770,7 +770,7 @@ fn percent_at(points: &[(Lag, f64)], age: i64) -> f64 {
 
 /// How an underwriting period's policies are written and earned, for
 /// [`SelectedPattern::to_underwriting_basis`] (`reserving-v02.md`,
-/// decision 20): `writing[j]` is the share of the period's policies
+/// decision 21): `writing[j]` is the share of the period's policies
 /// written in its `j`-th month (`j = 0` the first), each policy written at
 /// an even rate through its month and earning evenly over `policy_months`
 /// months. The shares need not sum to 1; they are scaled to. The default

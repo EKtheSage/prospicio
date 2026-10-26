@@ -1,5 +1,5 @@
 //! An accident-period development pattern on an underwriting basis
-//! (decision 20 of `docs/design/reserving-v02.md`, issue #633). No
+//! (decision 21 of `docs/design/reserving-v02.md`, issue #633). No
 //! reference implementation converts a reserving pattern from accident to
 //! underwriting periods, so the checks are by hand, against the pricing
 //! crate's monthly cash-flow patterns, and on a simulated book.

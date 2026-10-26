@@ -1,7 +1,7 @@
 suppressMessages(library(prospicio))
 
 # An accident-period development pattern on an underwriting basis
-# (docs/design/reserving-v02.md, decision 20, issue #633):
+# (docs/design/reserving-v02.md, decision 21, issue #633):
 # underwriting_basis() and ldf_underwriting on the methods that take ldf.
 # The Rust core is checked in validation/tests/reserving_uy_pattern.rs;
 # these tests reproduce its hand-computed parallelogram through the

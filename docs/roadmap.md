@@ -468,7 +468,7 @@ what it is aiming for by v1.0.
     the chainladder-python parity rows. The Excel functions are the next
     PR.
   - An accident-period pattern on an underwriting basis
-    (`reserving-v02.md`, decision 20; branch `claude/uy-pattern`, issue
+    (`reserving-v02.md`, decision 21; branch `claude/uy-pattern`, issue
     #633, in Rust, Python and R): `SelectedPattern::to_underwriting_basis`
     convolves an accident-month or accident-year pattern with an
     underwriting year's exposure over accident months, from a writing

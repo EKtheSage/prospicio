@@ -9,7 +9,7 @@ verified: { by: process:ci, at: 2026-10-26T18:00:00Z }
 sources:
   - id: note
     resource: ../docs/design/reserving-v02.md
-    title: Design note, reserving v0.2, decision 20, an accident-period pattern on an underwriting basis
+    title: Design note, reserving v0.2, decision 21, an accident-period pattern on an underwriting basis
   - id: test
     resource: ../validation/tests/reserving_uy_pattern.rs
     title: Validation test of the underwriting-basis conversion, run in every cargo test
@@ -77,5 +77,5 @@ accident-year pattern is close from about 36 months. No reference
 implementation converts a reserving pattern between accident and
 underwriting periods (chainladder-python 0.10.1 has no such argument).
 
-[^note]: `docs/design/reserving-v02.md`, decision 20.
+[^note]: `docs/design/reserving-v02.md`, decision 21.
 [^test]: `validation/tests/reserving_uy_pattern.rs`.
