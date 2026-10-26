@@ -87,7 +87,9 @@ origins or, for a latest valuation, its origins), or a vector named by
 origin as fits name them (\code{c("2020" = 0.6, "2021" = 0.65)}, or
 \code{"2021Q3"} for quarters). Every origin fitted needs a value, and a name
 that is not an origin of the triangle is an error; over segments each
-segment takes its own origins' values.}
+segment takes its own origins' values. On a latest valuation an unnamed
+vector needs the rows oldest first, each origin once, and is otherwise
+an error, since the exposure is read by row: name it by origin.}
 
 \item{average, sigma_interpolation, tail}{The development pattern, as in
 \code{\link[=chain_ladder]{chain_ladder()}}.}
