@@ -1,0 +1,127 @@
+"""An accident-period development pattern on an underwriting basis
+(``docs/design/reserving-v02.md``, decision 20, issue #633):
+``UnderwritingBasis`` and ``ldf_underwriting`` on the methods that take
+``ldf``. The Rust core is checked in
+``validation/tests/reserving_uy_pattern.rs``; these tests reproduce its
+hand-computed parallelogram through the binding."""
+
+import pytest
+
+from prospicio.reserving import (
+    Benktander,
+    BornhuetterFerguson,
+    CapeCod,
+    ChainLadder,
+    ExpectedLoss,
+    LatestDiagonal,
+    Mack,
+    MackBootstrap,
+    OdpBootstrap,
+    Triangle,
+    UnderwritingBasis,
+)
+
+# An accident month reports t/60 of its ultimate at t months.
+LINEAR = {t: t / 60.0 for t in range(1, 61)}
+
+
+def parallelogram(a):
+    """The parallelogram's share developed at age ``a`` of a linear pattern,
+    by hand: the exposure (2t + 1)/288 to 11 months and (47 - 2t)/288 from
+    12 to 23."""
+    if a <= 12:
+        return a * (a + 1) * (2 * a + 1) / (1728.0 * 60.0)
+    if 23 <= a <= 60:
+        return (a - 11.5) / 60.0
+    if a >= 83:
+        return 1.0
+    raise ValueError(a)
+
+
+def test_the_default_basis_is_the_parallelogram():
+    b = UnderwritingBasis()
+    assert b.policy_months == 12
+    assert b.writing == pytest.approx([1 / 12] * 12, rel=1e-15)
+    e = b.exposure()
+    assert len(e) == 24
+    for t, x in enumerate(e):
+        want = (2 * t + 1) / 288 if t <= 11 else (47 - 2 * t) / 288
+        assert x == pytest.approx(want, rel=1e-14)
+    assert repr(UnderwritingBasis([1.0, 2.0], 6)) == (
+        "UnderwritingBasis(writing=[1.0, 2.0], policy_months=6)"
+    )
+
+
+def test_an_accident_month_pattern_converts_to_the_parallelogram():
+    d = LatestDiagonal([2017, 2018, 2019], [83, 36, 12], [100.0, 100.0, 100.0])
+    cl = ChainLadder(
+        ldf=LINEAR,
+        ldf_kind="percent_developed",
+        ldf_origin="M",
+        ldf_underwriting=UnderwritingBasis(),
+    )
+    assert cl.ldf_origin == "M"
+    assert cl.ldf_underwriting.policy_months == 12
+    assert "ldf_underwriting=UnderwritingBasis(" in repr(cl)
+    assert cl.ldf == LINEAR
+    fit = cl.fit_diagonal(d)
+    for u, a in zip(fit.ultimate, [83, 36, 12]):
+        assert u == pytest.approx(100.0 / parallelogram(a), rel=1e-13)
+
+
+def test_an_accident_year_pattern_needs_no_ldf_origin():
+    # The accident-year average of the linear pattern at every month: the
+    # accident-year route gives the parallelogram too.
+    def year(a):
+        return sum(min(max(a - q, 0), 60) for q in range(12)) / (12 * 60.0)
+
+    ay = {a: year(a) for a in range(1, 72)}
+    d = LatestDiagonal([2017, 2018, 2019], [83, 36, 12], [100.0, 100.0, 100.0])
+    fit = ChainLadder(
+        ldf=ay, ldf_kind="percent_developed", ldf_underwriting=UnderwritingBasis()
+    ).fit_diagonal(d)
+    for u, a in zip(fit.ultimate, [83, 36, 12]):
+        assert u == pytest.approx(100.0 / parallelogram(a), rel=1e-13)
+    # On a triangle: the selected factor from 12 to 24 months.
+    tri = Triangle.from_long([2018, 2018, 2019], [12, 24, 12], {"paid": [10.0, 30.0, 12.0]})
+    fit = ChainLadder(
+        ldf=ay, ldf_kind="percent_developed", ldf_underwriting=UnderwritingBasis()
+    ).fit(tri, "paid")
+    p24 = sum(
+        e * min(max(24 - t, 0), 60) / 60.0
+        for t, e in enumerate(UnderwritingBasis().exposure())
+    )
+    assert fit.selected_ldf[0] == pytest.approx(p24 / parallelogram(12), rel=1e-12)
+
+
+def test_the_basis_and_its_errors():
+    with pytest.raises(ValueError, match="at least one month"):
+        UnderwritingBasis(policy_months=0)
+    with pytest.raises(ValueError, match="not negative"):
+        UnderwritingBasis([1.0, -1.0])
+    with pytest.raises(ValueError, match="positive sum"):
+        UnderwritingBasis([0.0, 0.0])
+    with pytest.raises(ValueError, match="no months"):
+        UnderwritingBasis([])
+    # Seasonal writing and six-month policies on an accident-year pattern.
+    d = LatestDiagonal([2019], [12], [100.0])
+    seasonal = UnderwritingBasis([1.0, 2.0] * 6, 6)
+    with pytest.raises(ValueError, match="give an accident-month pattern"):
+        ChainLadder(
+            ldf={12: 0.5, 24: 1.0}, ldf_kind="percent_developed", ldf_underwriting=seasonal
+        ).fit_diagonal(d)
+    # Even writing and six-month policies convert.
+    ChainLadder(
+        ldf={12: 0.5, 24: 1.0},
+        ldf_kind="percent_developed",
+        ldf_underwriting=UnderwritingBasis(policy_months=6),
+    ).fit_diagonal(d)
+    with pytest.raises(ValueError, match="ldf_underwriting is given without ldf"):
+        ChainLadder(ldf_underwriting=UnderwritingBasis())
+    for method in (Mack, ExpectedLoss, BornhuetterFerguson, Benktander, CapeCod,
+                   OdpBootstrap, MackBootstrap):
+        m = method(ldf={12: 1.5}, ldf_kind="ldf", ldf_underwriting=UnderwritingBasis())
+        assert m.ldf_underwriting.policy_months == 12
+        assert method(ldf={12: 1.5}, ldf_kind="ldf").ldf_underwriting is None
+        with pytest.raises(ValueError, match="ldf_underwriting is given without ldf"):
+            method(ldf_underwriting=UnderwritingBasis())

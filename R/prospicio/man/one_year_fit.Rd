@@ -32,6 +32,7 @@ odp_one_year(
   ldf_kind = NULL,
   ldf_weight = 1,
   ldf_origin = NULL,
+  ldf_underwriting = NULL,
   bootstrap_ldf = TRUE,
   n_periods = NULL,
   drop_high = 0,
@@ -66,6 +67,7 @@ mack_one_year(
   ldf_kind = NULL,
   ldf_weight = 1,
   ldf_origin = NULL,
+  ldf_underwriting = NULL,
   bootstrap_ldf = TRUE,
   n_periods = NULL,
   drop_high = 0,
@@ -123,7 +125,7 @@ variance); or \code{"none"}.}
 \item{dependence, spearman}{How the segments depend on each other, as in
 \code{\link[=odp_bootstrap]{odp_bootstrap()}}.}
 
-\item{ldf, ldf_kind, ldf_weight, ldf_origin}{A selected development pattern of
+\item{ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting}{A selected development pattern of
 \code{method}, as in \code{\link[=chain_ladder]{chain_ladder()}}.}
 
 \item{bootstrap_ldf}{Whether the bootstrap takes \code{method}'s selected

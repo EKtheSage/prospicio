@@ -300,6 +300,8 @@ aggregate_layer_statistics_rust <- function(annual, share, limit, attachment) .C
 
 occurrence_layer_statistics_rust <- function(frequency, severity, share, limit, attachment) .Call(wrap__occurrence_layer_statistics_rust, frequency, severity, share, limit, attachment)
 
+underwriting_exposure_rust <- function(writing, policy_months) .Call(wrap__underwriting_exposure_rust, writing, policy_months)
+
 statistics_rust <- function(draws, percentiles, tvar_levels, sd_multiples, quantile, tvar) .Call(wrap__statistics_rust, draws, percentiles, tvar_levels, sd_multiples, quantile, tvar)
 
 bootstrap_se_rust <- function(columns, k, fixed, percentiles, tvar_levels, sd_multiples, quantile, tvar, replicates, seed) .Call(wrap__bootstrap_se_rust, columns, k, fixed, percentiles, tvar_levels, sd_multiples, quantile, tvar, replicates, seed)
