@@ -1,0 +1,89 @@
+# The table of contents of both docs sites: the sections, in order, and the
+# pages of each section, in reading order. `cargo xtask python` and
+# `cargo xtask r` read it (xtask/src/main.rs); it is the only place that
+# orders the pages, so a new guide or notebook is added here.
+#
+# Schema (a small subset of YAML, one item per line):
+#
+#   - section: <title>          starts a section
+#     description: <one line>   shown on the R site's article index
+#     pages:
+#       - guide: <name>         docs/guides/<name>.md, R twin <name>.qmd if present
+#       - notebook: <name>      examples/<name>.ipynb, R twin <name>.qmd if present
+#
+# `cargo xtask python`/`r` fail if a guide (other than README.md) or a
+# notebook is missing here, or if an entry names a file that does not exist.
+
+- section: Start here
+  description: Where to begin, how to choose a method, and a map of every source text to its guides.
+  pages:
+    - guide: a-first-course
+    - guide: choosing-a-method
+    - guide: prospicio-for-aggregate-users
+    - guide: reading-list
+    - notebook: reading_path
+
+- section: Basics
+  description: Aggregate distributions, risk measures and what a reinsurance price is.
+  pages:
+    - guide: aggregate-distributions
+    - guide: pir-risk-measures
+    - guide: reinsurance-price
+
+- section: Fitting distributions
+  description: Claim size and claim count distributions, and fitting them to data.
+  pages:
+    - guide: severity-and-frequency
+    - guide: distributions-for-actuaries-claim-size
+    - guide: distributions-for-actuaries-counts-aggregates
+
+- section: Reserving
+  description: Reserving methods, the texts that describe them, and the one-year view.
+  pages:
+    - guide: reserving-methods
+    - guide: reserving-friedland
+    - guide: reserving-taylor-mcguire
+    - guide: reserving-meyers
+    - guide: reserving-compartmental
+    - guide: reserving-excess-layers
+    - notebook: one_year_view
+
+- section: Pricing
+  description: Ratemaking, experience and exposure rating, risk loads, GLM rating and priced reinsurance contracts.
+  pages:
+    - guide: ratemaking-werner-modlin
+    - guide: ratemaking-werner-modlin-indications
+    - guide: experience-and-exposure-rating
+    - guide: risk-loads-and-distortions
+    - guide: glm-ratemaking-goldburd
+    - guide: glm-ratemaking-goldburd-validation
+    - guide: glm-to-comprehensive-pricing-chalk
+    - guide: glm-to-comprehensive-pricing-chalk-2
+    - notebook: reinsurance_pricing
+    - notebook: submission_evaluation
+
+- section: Property catastrophe reinsurance
+  description: A track on one synthetic book, read in order, from loss tables to the portfolio.
+  pages:
+    - guide: cat-0-overview
+    - guide: cat-1-loss-tables
+    - guide: cat-2-risk-metrics
+    - guide: cat-3-contract-terms
+    - guide: cat-4-programs
+    - guide: cat-5-beyond-loss
+    - guide: cat-6-pricing
+    - guide: cat-7-portfolio
+
+- section: Capital modelling and allocation
+  description: Portfolio pricing, the allocation of price and capital, and CAS Monograph 15.
+  pages:
+    - guide: pir-portfolio-pricing
+    - guide: pir-price-allocation
+    - guide: pir-price-allocation-practice
+    - guide: pricing-insurance-risk-case-studies
+    - guide: capital-modeling-monograph-15
+    - guide: capital-modeling-monograph-15-theory
+    - guide: capital-modeling-monograph-15-applications
+    - guide: capital-modeling-monograph-15-practice
+    - guide: capital-modeling-monograph-15-iman-conover
+    - notebook: ils_deal_analysis
