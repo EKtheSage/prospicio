@@ -1229,9 +1229,10 @@ class BayesBfFit:
     def to_frame(self, /) -> Any:
         """
         One row per origin: ``origin``, the chain ladder's ``latest``,
-        ``ultimate`` and ``reserve``, the ``exposure`` and
-        ``prior_ultimate``, and the ``mean`` and ``std_dev`` of the
-        posterior predictive reserve. Needs pandas.
+        ``ultimate`` and ``reserve``, the ``exposure``, ``prior_ultimate``
+        and ``ulr`` (the chain ladder's ultimate over the exposure, a loss
+        ratio only when the exposure is premium), and the ``mean`` and
+        ``std_dev`` of the posterior predictive reserve. Needs pandas.
         
         Returns
         -------
@@ -1240,8 +1241,9 @@ class BayesBfFit:
     def totals_frame(self, /) -> Any:
         """
         One row: the chain ladder's totals, the total ``exposure`` and
-        ``prior_ultimate``, the ``scale``, and the ``mean`` and ``std_dev``
-        of the posterior predictive total reserve. Needs pandas.
+        ``prior_ultimate``, the ``scale``, the total ``ulr``, and the
+        ``mean`` and ``std_dev`` of the posterior predictive total reserve.
+        Needs pandas.
         
         Returns
         -------
@@ -1646,9 +1648,10 @@ class BayesBfNormalisedFit:
     def to_frame(self, /) -> Any:
         """
         One row per origin: ``origin``, the chain ladder's ``latest``,
-        ``ultimate`` and ``reserve``, the ``exposure`` and
-        ``prior_ultimate``, and the ``mean`` and ``std_dev`` of the
-        posterior predictive reserve. Needs pandas.
+        ``ultimate`` and ``reserve``, the ``exposure``, ``prior_ultimate``
+        and ``ulr`` (the chain ladder's ultimate over the exposure, a loss
+        ratio only when the exposure is premium), and the ``mean`` and
+        ``std_dev`` of the posterior predictive reserve. Needs pandas.
         
         Returns
         -------
@@ -1657,8 +1660,9 @@ class BayesBfNormalisedFit:
     def totals_frame(self, /) -> Any:
         """
         One row: the chain ladder's totals, the total ``exposure`` and
-        ``prior_ultimate``, the ``scale``, and the ``mean`` and ``std_dev``
-        of the posterior predictive total reserve. Needs pandas.
+        ``prior_ultimate``, the ``scale``, the total ``ulr``, and the
+        ``mean`` and ``std_dev`` of the posterior predictive total reserve.
+        Needs pandas.
         
         Returns
         -------
@@ -2760,7 +2764,8 @@ class BayesOneYearFit:
         """
         One row per origin: ``origin``, ``latest``, ``opening_ultimate``,
         ``opening_reserve``, the model's own columns (``BayesBf``'s
-        ``exposure`` and ``prior_ultimate``), and the ``cdr_mean`` and
+        ``exposure`` and ``prior_ultimate`` and its ``opening_ulr``, the
+        opening ultimate over the exposure), and the ``cdr_mean`` and
         ``cdr_std_dev`` of the claims development result. Needs pandas.
         
         Returns
@@ -2945,7 +2950,8 @@ class BayesOneYearFits:
         """
         One row per segment and origin: the key columns, ``origin``,
         ``latest``, ``opening_ultimate``, ``opening_reserve``, the model's
-        own columns (Meyers' ``premium``), and the ``cdr_mean`` and
+        own columns (Meyers' ``premium`` and ``opening_ulr``, the opening
+        ultimate over the premium), and the ``cdr_mean`` and
         ``cdr_std_dev`` of the claims development result. Needs pandas.
         
         Returns
@@ -4617,8 +4623,9 @@ class CapeCodFit:
     def to_frame(self, /) -> Any:
         """
         One row per segment and origin: the key columns, ``origin``,
-        ``latest``, ``ultimate``, ``reserve``, ``exposure``, ``apriori`` and
-        ``trended_apriori``. Needs pandas.
+        ``latest``, ``ultimate``, ``reserve``, ``exposure``, ``apriori``,
+        ``trended_apriori`` and ``ulr``, the ultimate over the exposure (a
+        loss ratio only when the exposure is premium). Needs pandas.
         
         Returns
         -------
@@ -4637,7 +4644,8 @@ class CapeCodFit:
     def totals_frame(self, /) -> Any:
         """
         One row per segment: the key columns and the segment's total
-        ``latest``, ``ultimate``, ``reserve`` and ``exposure``. Needs pandas.
+        ``latest``, ``ultimate``, ``reserve``, ``exposure`` and ``ulr``, the
+        total ultimate over the total exposure. Needs pandas.
         
         Returns
         -------
@@ -5940,8 +5948,10 @@ class ClarkFit:
         """
         One row per segment and origin: the key columns, ``origin``,
         ``latest``, ``ultimate``, ``reserve``, (Cape Cod) ``exposure``,
-        ``expected_ultimate``, ``process_risk``, ``parameter_risk`` and
-        ``standard_error``. Needs pandas.
+        ``expected_ultimate``, ``process_risk``, ``parameter_risk``,
+        ``standard_error`` and (Cape Cod) ``ulr``, the ultimate over the
+        exposure (a loss ratio only when the exposure is premium; the
+        fitted ``elr`` is a total). Needs pandas.
         
         Returns
         -------
@@ -11413,8 +11423,9 @@ class ExpectedLossFit:
     def to_frame(self, /) -> Any:
         """
         One row per segment and origin: the key columns, ``origin``,
-        ``latest``, ``ultimate``, ``reserve``, ``exposure`` and ``apriori``.
-        Needs pandas.
+        ``latest``, ``ultimate``, ``reserve``, ``exposure``, ``apriori`` and
+        ``ulr``, the ultimate over the exposure (a loss ratio only when the
+        exposure is premium). Needs pandas.
         
         Returns
         -------
@@ -11433,7 +11444,8 @@ class ExpectedLossFit:
     def totals_frame(self, /) -> Any:
         """
         One row per segment: the key columns and the segment's total
-        ``latest``, ``ultimate``, ``reserve`` and ``exposure``. Needs pandas.
+        ``latest``, ``ultimate``, ``reserve``, ``exposure`` and ``ulr``, the
+        total ultimate over the total exposure. Needs pandas.
         
         Returns
         -------
@@ -18698,7 +18710,8 @@ class MeyersFit:
     def to_frame(self, /) -> Any:
         """
         One row per origin: ``origin``, the chain ladder's ``latest``,
-        ``ultimate`` and ``reserve``, the ``premium``, the ``mean`` and
+        ``ultimate`` and ``reserve``, the ``premium``, ``ulr`` (the chain
+        ladder's ultimate over the premium), the ``mean`` and
         ``std_dev`` of the posterior predictive reserve, and the
         ``ultimate_mean`` and ``ultimate_std_dev`` of the posterior
         predictive ultimate. Needs pandas.
@@ -18709,10 +18722,10 @@ class MeyersFit:
         """
     def totals_frame(self, /) -> Any:
         """
-        One row: the chain ladder's totals, the total ``premium``, the
-        ``mean`` and ``std_dev`` of the posterior predictive total reserve,
-        and the ``ultimate_mean`` and ``ultimate_std_dev`` of the total
-        ultimate. Needs pandas.
+        One row: the chain ladder's totals, the total ``premium`` and
+        ``ulr``, the ``mean`` and ``std_dev`` of the posterior predictive
+        total reserve, and the ``ultimate_mean`` and ``ultimate_std_dev``
+        of the total ultimate. Needs pandas.
         
         Returns
         -------
@@ -18865,8 +18878,9 @@ class MeyersFits:
         """
         One row per segment and origin: the key columns, ``origin``, the
         chain ladder's ``latest``, ``ultimate`` and ``reserve``, the
-        ``premium``, the ``mean`` and ``std_dev`` of the posterior
-        predictive reserve, and the ``ultimate_mean`` and
+        ``premium``, ``ulr`` (the chain ladder's ultimate over the premium),
+        the ``mean`` and ``std_dev`` of the posterior predictive reserve,
+        and the ``ultimate_mean`` and
         ``ultimate_std_dev`` of the posterior predictive ultimate. Needs
         pandas.
         
@@ -18877,9 +18891,10 @@ class MeyersFits:
     def totals_frame(self, /) -> Any:
         """
         One row per segment: the key columns, the chain ladder's totals,
-        the total ``premium``, the ``mean`` and ``std_dev`` of the segment's
-        posterior predictive total reserve, and the ``ultimate_mean`` and
-        ``ultimate_std_dev`` of its total ultimate. Needs pandas.
+        the total ``premium`` and ``ulr``, the ``mean`` and ``std_dev`` of
+        the segment's posterior predictive total reserve, and the
+        ``ultimate_mean`` and ``ultimate_std_dev`` of its total ultimate.
+        Needs pandas.
         
         Returns
         -------
