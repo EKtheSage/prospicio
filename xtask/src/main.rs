@@ -144,8 +144,21 @@ fn python(opts: Options) -> Result {
 /// python/great-docs.yml points here.
 const USER_GUIDE: &str = "target/user-guide";
 
+/// The sidebar sections of the Python site's user guide other than "Guides":
+/// a guide whose name starts with the prefix goes under the title. A track's
+/// pages are ordered by name, so its overview comes first.
+const GUIDE_SECTIONS: &[(&str, &str)] = &[("cat-", "Property catastrophe reinsurance")];
+
+/// The sidebar section of the guide `name` (a file stem in docs/guides).
+fn guide_section(name: &str) -> &'static str {
+    GUIDE_SECTIONS
+        .iter()
+        .find(|(prefix, _)| name.starts_with(prefix))
+        .map_or("Guides", |(_, section)| section)
+}
+
 /// Stages the Python site's user guide: each guide in docs/guides under
-/// "Guides", then each notebook in examples/, executed and exported to
+/// "Guides" or its track's section (`GUIDE_SECTIONS`), then each notebook in examples/, executed and exported to
 /// Markdown with its outputs and charts, under "Worked examples". The
 /// notebooks are committed without outputs (.gitattributes), so this is where
 /// their results are published. A numeric prefix orders the pages, and
@@ -169,7 +182,10 @@ fn stage_user_guide(uv: &dyn Fn() -> Command) -> Result {
         for s in &stems {
             text = text.replace(&format!("](../../examples/{s}.ipynb"), &format!("]({s}.md"));
         }
-        write(&stage.join(format!("1-{name}.md")), &page(&text, "Guides"))?;
+        write(
+            &stage.join(format!("1-{name}.md")),
+            &page(&text, guide_section(&name)),
+        )?;
     }
     for (notebook, s) in notebooks.iter().zip(&stems) {
         // nbconvert runs the kernel in the notebook's directory, as Jupyter does.
@@ -806,7 +822,16 @@ fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::uncovered;
+    use super::{guide_section, uncovered};
+
+    #[test]
+    fn a_track_guide_goes_under_its_section() {
+        let cat = "Property catastrophe reinsurance";
+        assert_eq!(guide_section("cat-0-overview"), cat);
+        assert_eq!(guide_section("cat-7-portfolio"), cat);
+        assert_eq!(guide_section("capital-modeling-monograph-15"), "Guides");
+        assert_eq!(guide_section("reinsurance-price"), "Guides");
+    }
 
     #[test]
     fn a_staged_article_no_group_lists_is_uncovered() {

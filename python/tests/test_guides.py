@@ -138,3 +138,28 @@ def test_chalk_portfolio_files_match_generator(tmp_path):
             assert len(fa) == len(fb) and all(
                 x == y or ("." in x and float(x) == pytest.approx(float(y), rel=1e-12)) for x, y in zip(fa, fb)
             ), (name, a, b)
+
+
+def test_cat_book_files_match_generator(tmp_path):
+    # The property-catastrophe guides (docs/guides/cat-*) read the committed files in examples/data/, which
+    # examples/data/make_cat_book.py writes from a fixed seed. Its beta draws go through libm, whose last digit
+    # may differ between platforms, and the losses are written to four decimals, so a loss may differ by one
+    # unit in its last place; every other field, and the number of rows, must be equal.
+    import importlib.util
+
+    data = GUIDES.parents[1] / "examples" / "data"
+    spec = importlib.util.spec_from_file_location("make_cat_book", data / "make_cat_book.py")
+    generator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generator)
+    generator.main(tmp_path)
+    for name in ["cat_book_yelt.csv", "cat_book_elt_alder.csv", "cat_book_cedents.csv", "cat_book_contracts.csv"]:
+        made = (tmp_path / name).read_text(encoding="utf-8").splitlines()
+        committed = (data / name).read_text(encoding="utf-8").splitlines()
+        assert len(made) == len(committed), name
+        for a, b in zip(made, committed):
+            if a == b:
+                continue
+            fa, fb = a.split(","), b.split(",")
+            assert len(fa) == len(fb) and all(
+                x == y or ("." in x and float(x) == pytest.approx(float(y), abs=1.5e-4)) for x, y in zip(fa, fb)
+            ), (name, a, b)

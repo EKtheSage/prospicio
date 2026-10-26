@@ -1393,6 +1393,16 @@ impl Tower {
         self.year_by_event(&[], losses, si, times, None, None, None)
     }
 
+    /// [`year`](Self::year) with each layer's scale key: the ceded loss, or
+    /// for a layer with
+    /// [`scales_before_annual_terms`](Layer::scales_before_annual_terms) its
+    /// share of the year's recoveries before the annual terms.
+    pub(crate) fn year_keyed(&self, losses: &[f64]) -> (Vec<(f64, f64)>, Vec<f64>) {
+        let mut keys = Vec::with_capacity(self.layers.len());
+        let year = self.year_by_event(&[], losses, None, None, None, None, Some(&mut keys));
+        (year, keys)
+    }
+
     /// [`year`](Self::year) with an aggregate part `aggregate` beside the
     /// events, and with `by_event` each layer's ceded loss by entry (one
     /// vector per layer, in tower order, the aggregate part's entries
@@ -2082,22 +2092,7 @@ impl Columns {
             brokerage: tower.indices(|l| l.brokerage.is_some()),
             deductions: tower.indices(|l| !l.deductions.is_empty()),
             keyed: tower.indices(|l| l.scales_before_annual_terms),
-            deals: tower
-                .deals
-                .iter()
-                .map(|d| {
-                    d.sections
-                        .iter()
-                        .map(|name| {
-                            tower
-                                .layers
-                                .iter()
-                                .position(|l| &l.name == name)
-                                .expect("a deal's sections are layers of its tower")
-                        })
-                        .collect()
-                })
-                .collect(),
+            deals: tower.deal_sections(),
         }
     }
 

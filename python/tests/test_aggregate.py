@@ -1463,6 +1463,18 @@ def test_deal_scale_reads_sections_together():
     assert r.marginal(["tax"]).draws[0] == pytest.approx(0.015)
     back = Tower.from_json(tower.to_json())
     assert back.to_json() == tower.to_json()
+    # On an annual loss grid ([deal-grid]): 40 or 160, equally likely.
+    probs = [0.0] * 17
+    probs[4] = probs[16] = 0.5
+    g = tower.on_annual_grid(Grid(10.0, probs))
+    both = tower.apply_annual([40.0, 160.0])
+    mean = lambda *k: sum(both.marginal(list(k)).draws) / 2
+    assert g.expected_deal_ceding_commission["deal"] == pytest.approx(mean("ceding_commission", "deal"), abs=1e-12)
+    assert g.expected_deal_brokerage["deal"] == pytest.approx(2.0, abs=1e-12)
+    # A compound grid cannot: the stop losses' annual terms make the sum of
+    # dependent annual totals.
+    with pytest.raises(ValueError, match="annual terms"):
+        tower.on_grid(Poisson(2.0), Grid(10.0, [0.0, 0.5, 0.5]), 64)
     with pytest.raises(ValueError):
         Tower([a, b]).with_deal_scale("deal", ["A"], brokerage=0.01)
     with pytest.raises(ValueError):
@@ -1558,3 +1570,38 @@ def test_interlocking_cuts_each_years_limit_by_its_share():
     assert by_year(tower, "ceded") == pytest.approx([5.0, 50.0])
     assert by_year(on, "ceded") == pytest.approx([5.0, 37.5])
     assert by_year(on, "reinstatement_premium") == pytest.approx([1.0, 7.5])
+
+
+def test_a_timeline_spreads_the_aggregate_part_by_its_pattern():
+    from prospicio.aggregate import EventSet, Exposure, Timeline
+    from prospicio.distributions import PredictiveDistribution
+
+    def year(amount):
+        part = PredictiveDistribution([], [()], [[amount], [2.0 * amount]])
+        return EventSet.from_years([[], []], times=[[], []]).with_aggregate_part(part)
+
+    years = [year(120.0), year(60.0)]
+    timeline = Timeline.from_years(years)
+    assert timeline.has_aggregate_part and timeline.aggregate_pattern == [1.0] * 12
+    assert not timeline.events.has_aggregate_part
+    back = timeline.years("losses_occurring", Exposure.uniform(2, 12))
+    assert [[y.aggregate_part(s) for s in (0, 1)] for y in back] == [[[120.0], [240.0]], [[60.0], [120.0]]]
+
+    # Risks attaching: each month's amount follows that month's shares.
+    shares = [[1.0] * 12 + [0.25] * 12, [0.0] * 12 + [0.75] * 12]
+    attaching = timeline.years("risks_attaching", Exposure(shares))
+    assert [y.aggregate_part(0)[0] for y in attaching] == pytest.approx([135.0, 45.0])
+    assert [y.aggregate_part(1)[0] for y in attaching] == pytest.approx([270.0, 90.0])
+
+    december = Timeline.from_years(years, aggregate_pattern=[0.0] * 11 + [1.0])
+    assert december.aggregate_pattern == [0.0] * 11 + [1.0]
+    late = [[1.0] * 11 + [0.0] + [0.0] * 12, [0.0] * 11 + [1.0] + [1.0] * 12]
+    assert [y.aggregate_part(0)[0] for y in december.years("risks_attaching", Exposure(late))] == pytest.approx(
+        [0.0, 180.0]
+    )
+    for pattern in ([1.0] * 11, [-1.0] + [1.0] * 11, [0.0] * 12, [float("nan")] * 12):
+        with pytest.raises(ValueError):
+            Timeline.from_years(years, aggregate_pattern=pattern)
+    term = Timeline(year(240.0), 24, aggregate_pattern=[1.0] * 12)
+    split = term.years("losses_occurring", Exposure.uniform(2, 12))
+    assert [y.aggregate_part(0)[0] for y in split] == pytest.approx([120.0, 120.0])

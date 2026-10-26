@@ -582,9 +582,10 @@ impl ReinsuranceTower {
     /// Gross, ceded and net annual distributions on the grid, by FFT:
     /// `list(gross, ceded, net, expected_reinstatement_premium,
     /// expected_premium, expected_ceding_commission,
-    /// expected_profit_commission, on_points)`, with `stage_ceded` one
+    /// expected_profit_commission, expected_deal_ceding_commission,
+    /// expected_deal_brokerage, deal_names, on_points)`, with `stage_ceded` one
     /// grid (or NULL) per stage,
-    /// with `net` NULL when it is not one compound total.
+    /// with `net` and `total_ceded` NULL when they are not one compound total.
     fn on_grid(&self, frequency: Robj, severity: Robj, points: f64) -> Result<List> {
         let n = AnyCount::from_robj(&frequency)?;
         let sev = <&Grid>::try_from(&severity)
@@ -601,6 +602,10 @@ impl ReinsuranceTower {
             .map(|(g, report)| Grid::with_report(g, compound_list(report)).into())
             .collect();
         let net: Robj = match r.net {
+            Some(g) => Grid::wrap(g).into(),
+            None => ().into(),
+        };
+        let total_ceded: Robj = match r.total_ceded {
             Some(g) => Grid::wrap(g).into(),
             None => ().into(),
         };
@@ -623,10 +628,19 @@ impl ReinsuranceTower {
             stage_ceded = stage_ceded,
             stage_sizes = stage_sizes,
             net = net,
+            total_ceded = total_ceded,
             expected_reinstatement_premium = r.expected_reinstatement_premium,
             expected_premium = r.expected_premium,
             expected_ceding_commission = r.expected_ceding_commission,
             expected_profit_commission = r.expected_profit_commission,
+            expected_deal_ceding_commission = r.expected_deal_ceding_commission,
+            expected_deal_brokerage = r.expected_deal_brokerage,
+            deal_names = self
+                .inner
+                .deals
+                .iter()
+                .map(|d| d.name.clone())
+                .collect::<Vec<_>>(),
             on_points = r.on_points
         ))
     }
@@ -634,7 +648,8 @@ impl ReinsuranceTower {
     /// The tower on an annual loss grid, each year's total as one loss:
     /// `list(gross, ceded, net, expected_reinstatement_premium,
     /// expected_premium, expected_ceding_commission,
-    /// expected_profit_commission, on_points)`.
+    /// expected_profit_commission, expected_deal_ceding_commission,
+    /// expected_deal_brokerage, deal_names, on_points)`.
     fn on_annual_grid(&self, annual: Robj) -> Result<List> {
         let annual = <&Grid>::try_from(&annual)
             .map_err(|_| Error::Other("annual must be a grid_distribution".into()))?;
@@ -648,6 +663,14 @@ impl ReinsuranceTower {
             expected_premium = r.expected_premium,
             expected_ceding_commission = r.expected_ceding_commission,
             expected_profit_commission = r.expected_profit_commission,
+            expected_deal_ceding_commission = r.expected_deal_ceding_commission,
+            expected_deal_brokerage = r.expected_deal_brokerage,
+            deal_names = self
+                .inner
+                .deals
+                .iter()
+                .map(|d| d.name.clone())
+                .collect::<Vec<_>>(),
             on_points = r.on_points
         ))
     }
@@ -712,22 +735,20 @@ impl ReinsuranceTower {
         }
     }
 
-    /// The term on the timeline of `events` over `months`, with the
-    /// exposure's shares row-major over `n_years` rows.
+    /// The term on `timeline`, with the exposure's shares row-major over
+    /// `n_years` rows.
     fn apply_timeline(
         &self,
-        events: Robj,
-        months: f64,
+        timeline: Robj,
         shares: &[f64],
         n_years: f64,
     ) -> Result<PredictiveDistribution> {
-        let events = <&EventSet>::try_from(&events)
-            .map_err(|_| Error::Other("events must be an event_set".into()))?;
-        let timeline = crate::aggregate::timeline(&events.inner, months)?;
+        let timeline = <&crate::aggregate::Timeline>::try_from(&timeline)
+            .map_err(|_| Error::Other("timeline must be a timeline".into()))?;
         let exposure = crate::aggregate::exposure(shares, n_years)?;
         let inner = self
             .inner
-            .apply_timeline(&timeline, &exposure)
+            .apply_timeline(&timeline.inner, &exposure)
             .map_err(to_r)?;
         Ok(PredictiveDistribution { inner })
     }

@@ -482,6 +482,38 @@ def test_quote_reproduces_the_reinsurance_price_guide():
         Quote.technical(p, expenses=0.5, brokerage=0.5)
 
 
+def test_quote_premium_side_and_taxes():
+    """Reinstatement premium, a flat commission and both taxes (item 11)."""
+    from prospicio.distributions import Sampled
+    from prospicio.pricing import Quote, price
+    from prospicio.risk import Distortion
+
+    p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.1)
+    plain = Quote.technical(p, expenses=0.03, brokerage=0.10, limit=10.0)
+    same = Quote.technical(p, expenses=0.03, brokerage=0.10, limit=10.0, reinstatement_rate=0.0)
+    assert plain.to_dict() == same.to_dict()
+    q = Quote.technical(
+        p, expenses=0.03, brokerage=0.10, limit=10.0, premium_tax=0.02, income_tax=0.21,
+        reinstatement_rate=0.4, commission=0.05,
+    )
+    parts = q.expected_loss + q.margin + q.expenses + q.brokerage + q.premium_tax + q.commission
+    assert parts == pytest.approx(q.premium_in_all, abs=1e-12)
+    assert q.reinstatement_premium == pytest.approx(0.4 * q.premium, abs=1e-15)
+    assert q.return_on_capital == pytest.approx(0.1, abs=1e-12)
+    assert q.pre_tax_return_on_capital > 0.1
+    assert q.income_tax == pytest.approx(0.21 * q.margin, abs=1e-15)
+    assert q.rate_on_line == pytest.approx(q.premium / 10.0, abs=1e-15)
+    assert q.loss_ratio == pytest.approx(q.expected_loss / q.premium_in_all, abs=1e-15)
+    back = q.at(q.premium, commission=0.01)
+    assert back.risk_premium == pytest.approx(q.risk_premium - 0.01, abs=1e-12)
+    no_rp_brokerage = Quote.technical(
+        p, brokerage=0.10, reinstatement_rate=0.4, brokerage_on_reinstatements=False
+    )
+    assert no_rp_brokerage.premium < Quote.technical(p, brokerage=0.10, reinstatement_rate=0.4).premium
+    with pytest.raises(ValueError):
+        Quote.technical(p, income_tax=1.0)
+
+
 # Clark, Basics of Reinsurance Pricing (CAS study note), per-risk experience
 # rating: (accident date, untrended loss, printed trend factor).
 _CLARK_LOSSES = [
@@ -817,6 +849,8 @@ def test_cashflow_terms_hand_case():
     assert out.flows[1] == pytest.approx([50.0, -50.0, -50.0], abs=1e-9)
     assert out.funded == pytest.approx([40.0, 100.0], abs=1e-9)
     assert out.month_offsets == [0.0, 1.0, 2.0]
+    # A reserve rule alone pays the investor first (#608).
+    assert out.paid_first == [True, True]
     # The flows discounted monthly at an annual rate, as `npv` with months.
     want = P.npv(out.flows, out.month_offsets, 0.05, unit="months")
     assert out.npv(0.05) == pytest.approx(want, rel=1e-12)
@@ -825,6 +859,23 @@ def test_cashflow_terms_hand_case():
     assert tr["investor"] == pytest.approx(out.flows[1], abs=1e-9)
     assert tr["funding_investor"] == pytest.approx([0.0, 50.0, 50.0], abs=1e-9)
     assert abs(tr["conservation_error"]) < 1e-9
+
+
+def test_cashflow_deducted_commission():
+    """Each simulation's commission off the premium paid in (#609)."""
+    ramp = lambda m: [min((t + 1) / m, 1.0) for t in range(40)]
+    req = P.CollateralRequirement({"unearned-premium": 0.3, "outstanding": 1.25})
+    u, c = [0.5, 0.8], [0.2, 0.3]
+    on = P.CashflowTerms(100.0, 30, ramp(12), ramp(24), ramp(36), req, deduct_commission=True)
+    out = on.run(u, c)
+    for j in range(2):
+        flat = P.CashflowTerms(
+            100.0, 30, ramp(12), ramp(24), ramp(36), req, collected_rate=1 - c[j]
+        )
+        assert out.flows[j] == pytest.approx(flat.run([u[j]], [c[j]]).flows[0], abs=1e-9)
+    assert out.paid_first == [False, False]
+    off = P.CashflowTerms(100.0, 30, ramp(12), ramp(24), ramp(36), req)
+    assert off.run(u, c).flows[0] != pytest.approx(out.flows[0], abs=1.0)
 
 
 def test_cashflow_terms_every_rule():
@@ -1006,3 +1057,105 @@ def test_deal_book_cashflows_and_calendar():
     # written over twelve months from July 2027: half in each year
     assert cal.marginal(keys[0]).draws[0] == pytest.approx(50.0)
     assert sum(cal.marginal(k).draws[0] for k in keys) == pytest.approx(100.0)
+
+
+def test_deal_run_from_tower_takes_the_reinstatement_premium():
+    """Each year's premium is the deposit plus the tower's reinstatement premium (#595)."""
+    from prospicio.aggregate import EventSet
+    from prospicio.reinsurance import Layer, Tower
+
+    cat = Layer("cat", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0, 0.5])
+    qs = Layer.quota_share("qs", 0.5).with_premium_rate(1.0, 40.0)
+    tower = Tower([cat, qs])
+    result = tower.apply(EventSet.from_years([[5.0], [15.0], [22.0, 12.0], [40.0, 40.0, 40.0]]))
+    run = P.DealRun.from_tower("cat", tower, result, "cat")
+    rip = result.aggregate(["kind", "layer"]).marginal(["reinstatement_premium", "cat"]).draws
+    assert run.premium == pytest.approx([2.0 + r for r in rip], rel=1e-15)
+    assert run.premium == pytest.approx([2.0, 3.0, 4.2, 5.0], rel=1e-15)
+    deposit = P.DealRun.from_tower("cat", tower, result, "cat", reinstatement_premium=False)
+    assert deposit.premium == [2.0] * 4
+    assert deposit.loss == run.loss
+    assert P.DealRun.from_tower("qs", tower, result, "qs").premium == [20.0] * 4
+    book = P.DealBook([run])
+    margin = book.amounts().marginal(["margin", "cat"]).draws
+    assert margin == pytest.approx([2.0, -2.0, -7.8, -25.0], rel=1e-14)
+
+
+def test_tower_quote_layers_and_total():
+    """A tower quoted layer by layer and as one (item 11, PR B)."""
+    from prospicio.distributions import Grid, Poisson
+    from prospicio.pricing import TowerQuote
+    from prospicio.reinsurance import Layer, Tower
+    from prospicio.risk import Distortion
+
+    sev = Grid(1.0, [0.0, 0.3, 0.3, 0.2, 0.1, 0.1])
+    second = Layer("2x2", 2.0, 2.0, premium=1.0).with_ceding_commission(0.1)
+    tower = Tower([Layer("1x1", 1.0, 1.0), second])
+    grids = tower.on_grid(Poisson(2.0), sev, 256)
+    assert grids.total_ceded is not None
+    q = TowerQuote.technical(
+        tower, grids, Distortion.tvar(0.99), cost_of_capital=0.12, brokerage=0.1
+    )
+    a, b = q.layers
+    assert abs(q.total.expected_loss - a.expected_loss - b.expected_loss) < 1e-9
+    assert abs(q.diversification - (a.premium + b.premium - q.total.premium)) < 1e-12
+    assert q.diversification > 0
+    for x in (a, b, q.total):
+        assert abs(x.return_on_capital - 0.12) < 1e-9
+    w = b.premium / (a.premium + b.premium)
+    assert abs(q.total.commission - 0.1 * w * q.total.premium) < 1e-12
+
+    paid = Tower([
+        Layer("1x1", 1.0, 1.0, premium=1.0, reinstatement_rates=[1.0]),
+        Layer("2x2", 2.0, 2.0, premium=1.0, reinstatement_rates=[1.0]),
+    ])
+    paid_grids = paid.on_grid(Poisson(2.0), sev, 256)
+    assert paid_grids.total_ceded is None
+    with pytest.raises(ValueError, match="not one compound total"):
+        TowerQuote.technical(paid, paid_grids, Distortion.tvar(0.99), cost_of_capital=0.12)
+
+
+def test_monthly_patterns_from_a_payment_pattern():
+    """Monthly patterns from a pattern by development age (#601)."""
+    p = P.PaymentPattern.from_development([1.0, 2.0, 3.0, 5.0], [5.0, 2.0, 1.25, 1.0])
+    for how in ("step", "linear", "log-linear"):
+        m = p.to_monthly(72, how)
+        for k, f in [(1, 0.2), (2, 0.5), (3, 0.8), (5, 1.0)]:
+            assert m[12 * k - 1] == pytest.approx(f, abs=1e-12)
+        assert all(b >= a - 1e-15 for a, b in zip(m, m[1:]))
+    with pytest.raises(ValueError):
+        p.to_monthly(12, "cubic")
+    written = [min((t + 1) / 12, 1.0) for t in range(72)]
+    w, e, paid = P.monthly_patterns(written, p)
+    assert e[0] == pytest.approx(1 / 144, abs=1e-15)
+    assert e[22] == pytest.approx(1.0, abs=1e-15)
+    terms = P.CashflowTerms(
+        100.0, 60, w, e, paid, P.CollateralRequirement({"outstanding": 1.0})
+    )
+    assert len(terms.run([0.7])) == 1
+
+
+def test_reinstatement_premium_in_its_own_price():
+    from prospicio.distributions import Sampled
+    from prospicio.pricing import price, price_with_reinstatements
+    from prospicio.risk import Distortion
+
+    x = [0.0, 1.0, 0.0, 3.0, 8.0, 0.5, 12.0, 0.0]
+    assets = Distortion.tvar(0.8)
+    plain = price(Sampled(x), assets, cost_of_capital=0.15)
+    c = price_with_reinstatements(x, [0.4] * 8, assets, cost_of_capital=0.15)
+    assert c.upfront == pytest.approx(plain.premium / 1.4, rel=1e-10)
+    g = [min(v / 10, 1.0) for v in x]
+    mean_g = sum(g) / 8
+    sundt = price_with_reinstatements(
+        x, g, assets, distortion=Distortion.proportional_hazard(1.0)
+    )
+    assert sundt.upfront == pytest.approx(sum(x) / 8 / (1 + mean_g), rel=1e-10)
+    r = price_with_reinstatements(x, g, assets, cost_of_capital=0.15)
+    assert r.upfront < plain.premium
+    assert r.return_on_capital == pytest.approx(0.15, rel=1e-9)
+    assert r.expected_premium == pytest.approx(r.upfront * (1 + mean_g))
+    assert r.net.premium == r.upfront
+    assert 0 < r.iterations < 200
+    with pytest.raises(ValueError):
+        price_with_reinstatements(x, [0.1] * 3, assets, cost_of_capital=0.15)

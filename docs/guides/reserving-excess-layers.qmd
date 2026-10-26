@@ -1,0 +1,811 @@
+---
+title: "Excess-layer loss development: layer factors from the ground-up triangle"
+subtitle: "R version, with the prospicio R package"
+format:
+  html:
+    toc: true
+    code-tools: true
+    embed-resources: true
+execute:
+  warning: false
+  output: false
+---
+
+A reinsurer writing an excess layer, or a primary insurer reserving a high
+deductible or an excess policy, has to develop losses that sit above an
+attachment. Those losses develop much more slowly than the ground-up losses
+they are cut from, and the layer's own triangle is sparse: most early cells are
+zero, and the first non-zero link ratios are enormous. The chain ladder on such
+a triangle is unstable or fails outright. The usual fix in the literature is to
+derive the layer's development from the dense ground-up triangle and a claim
+size distribution, then blend it with whatever the layer's own data say.
+
+prospicio builds that (issue #192, design note
+`docs/design/reserving-excess.md`): `excess_pattern()` derives a layer
+pattern under a scale shift (`scale_shift()`) or Pinto and Gogol's Pareto shape
+drift (`pareto_shape()`), `excess_credibility_weights()` blends it with the
+layer's own factors, and `layer_share()`, `layer_exposure()`,
+`layer_share_prior()` and `bayes_bf_layer()` give the Bornhuetter-Ferguson
+prior of a layer. This guide shows each piece on the
+literature's printed examples (Bloom and Patrik, Pinto and Gogol, Bear), then
+on a simulated book with a sparse layer, the source's value printed next to
+prospicio's wherever a source prints one.
+
+The papers are their authors'; what follows explains them in new words and
+recomputes their numbers. Section 2's example is from Bloom and Patrik, *A
+Methodology for Avoiding the Pitfalls of Excess Loss Development* (CAS
+E-Forum, Fall 2013), pages 4 to 8; section 3's are from Pinto and Gogol, *An
+Analysis of Excess Loss Development* (PCAS 74, 1987) and Bear's discussion of
+it (PCAS 79, 1992). What each source prints is summarised in
+`knowledge/references/excess-development-literature.md`. For the choice
+between reserving methods in general, read
+[`reserving-methods.md`](reserving-methods.md); this guide does not repeat it.
+
+**How the numbers here are checked.** Every R chunk below that is followed by
+a text block runs in CI (`R/prospicio/tests/test-guides.R`) and must print
+exactly that text.
+This is the R twin of the Python guide
+[`reserving-excess-layers.md`](reserving-excess-layers.md): the same sections,
+data and numbers. The R package calls the same Rust code as the Python one,
+and the simulated books below are drawn by the same small generator, so every
+figure below equals the Python guide's.
+
+## 1. Why a layer develops slowly
+
+Suppose every claim grows by the same factor between two ages, as case
+reserves are raised. Claims below the attachment contribute nothing to the
+layer at the earlier age, and some of them cross it later, so the layer gains
+both from the growth of claims already in it and from claims entering it. The
+design note's illustration (its own calculation, not a source's) makes this
+concrete: a lognormal severity with log-sd 1.5 whose mean is 65,000 at ultimate,
+every claim 1.3 times its earlier value, counts fixed. The ground-up factor is
+1.3; the layer factors are larger the higher the layer.
+
+```{r}
+ultimate <- lognormal(log(65000) - 1.5^2 / 2, 1.5)  # mean 65,000
+two_ages <- triangle(data.frame(year = 2020, age = c(12, 24), incurred = c(1, 1.3)),
+                     "year", "age", "incurred")
+note <- c("1m xs 0" = 1.275, "750k xs 250k" = 1.545, "2m xs 1m" = 1.761, "7m xs 3m" = 1.982)
+layers <- list(excess_layer(0, 1e6), excess_layer(250e3, 750e3), excess_layer(1e6, 2e6),
+               excess_layer(3e6, 7e6))
+for (i in seq_along(layers)) {
+  p <- excess_pattern(two_ages, "incurred", layers[[i]], scale_shift(ultimate))
+  cat(sprintf("%-13s layer factor %.4f   design note %.3f\n", names(note)[i], p@layer_ldf[1],
+              note[[i]]))
+}
+```
+
+```text
+1m xs 0       layer factor 1.2754   design note 1.275
+750k xs 250k  layer factor 1.5449   design note 1.545
+2m xs 1m      layer factor 1.7612   design note 1.761
+7m xs 3m      layer factor 1.9819   design note 1.982
+```
+
+A ground-up factor of 1.3 puts a factor near 2 on a high layer. The layer's
+own triangle cannot show that until late, because at the early ages it holds
+almost nothing to develop. The rest of this guide is about getting the layer's
+factors from somewhere sturdier.
+
+## 2. Bloom and Patrik's example: the pitfall and the cure
+
+Bloom and Patrik's example is small enough to follow by hand. Year One has
+four claims reported at 100, 375, 250 and 500 at 12 months. Ground-up losses
+develop by 3.60 from 12 to 24 months and by 1.25 from 24 to 36, the end of
+development, with claim counts fixed, so every claim reaches 4.5 times its
+12-month value. Years Two and Three have the same claims with 5% inflation a
+year. The layer is everything excess of a deductible of 350.
+
+Because every claim is scaled by the same factor, this is exactly a **scale
+shift**: the claims at age `j` are the ultimate claims divided by a shift
+`c_j`, with `c_j` the ground-up factor to ultimate (4.5 at 12 months, 1.25 at
+24, 1 at 36). We build the triangle of the paper's three years, valued at the
+end of Year Three, with the ground-up, excess and limited columns:
+
+```{r}
+claims <- c(100, 375, 250, 500)        # Year One at 12 months
+to_ultimate <- c(4.5, 1.25, 1)         # at 12, 24 and 36 months
+price <- c(1, 1.05, 1.05^2)            # 5% inflation a year
+deductible <- 350
+
+rows <- NULL
+for (year in 1:3) {
+  for (k in 1:3) {
+    if (year + k <= 4) {  # the cells known at the end of Year Three
+      sizes <- claims * price[year] * 4.5 / to_ultimate[k]
+      rows <- rbind(rows, data.frame(year = year, age = 12 * k, ground_up = sum(sizes),
+                                     excess = sum(pmax(sizes - deductible, 0)),
+                                     limited = sum(pmin(sizes, deductible))))
+    }
+  }
+}
+bp <- triangle(rows, "year", "age", c("ground_up", "excess", "limited"))
+printed <- c(175, 3010, 4113, 219, 3231, 265)
+cat(sprintf("Year %d at %d months: excess of 350 %8.2f   paper %s\n", rows$year, rows$age,
+            rows$excess, formatC(printed, format = "d", big.mark = ",")), sep = "")
+```
+
+```text
+Year 1 at 12 months: excess of 350   175.00   paper 175
+Year 1 at 24 months: excess of 350  3010.00   paper 3,010
+Year 1 at 36 months: excess of 350  4112.50   paper 4,113
+Year 2 at 12 months: excess of 350   218.75   paper 219
+Year 2 at 24 months: excess of 350  3230.50   paper 3,231
+Year 3 at 12 months: excess of 350   264.69   paper 265
+```
+
+The paper's excess triangle, to the dollar. The trap is to develop it on its
+own. The 12 to 24 month factor comes from Years One and Two, and inflation has
+pushed more of Year Two's claims over the deductible early, so a factor
+estimated on older years overstates a newer year's development:
+
+```{r}
+own <- chain_ladder(bp, "excess")
+truth <- sum(pmax(claims * price[3] * 4.5 - deductible, 0))
+comma <- function(x, digits = 0, width = 1) {
+  formatC(x, format = "f", digits = digits, big.mark = ",", width = width)
+}
+cat(sprintf("own factors %.4f %.4f\n", own@ldf[1], own@ldf[2]))
+cat(sprintf("Year Three ultimate %s   paper 5,732\n", comma(own@ultimate[3], 1)))
+cat(sprintf("true ultimate       %s   paper 4,678\n", comma(truth, 1)))
+cat(sprintf("overstatement       %.1f%%     paper 22.5%%\n", 100 * (own@ultimate[3] / truth - 1)))
+```
+
+```text
+own factors 15.8489 1.3663
+Year Three ultimate 5,731.5   paper 5,732
+true ultimate       4,677.5   paper 4,678
+overstatement       22.5%     paper 22.5%
+```
+
+The cure is to leave the pattern alone and trend the severity: cut the layer
+from each year's own claim sizes, at that year's price level. With the
+ultimate claims of each year (450, 1,687.5, 1,125 and 2,250 for Year One,
+times the year's price level) as the severity, `excess_pattern()`
+solves the shifts from the ground-up triangle and returns the layer's factors.
+The ultimate severity here is a `grid_distribution()` with four equal point masses (a step of
+112.5 hits all four claims exactly), so the layer expectations are exact:
+
+```{r}
+ultimate_claims <- function(price) {
+  probs <- numeric(21)
+  probs[c(4, 15, 10, 20) + 1] <- 0.25  # 450, 1,687.5, 1,125 and 2,250 at Year One's prices
+  grid_distribution(112.5 * price, probs)
+}
+
+paper <- list(c(17.20, 1.37, 23.50), c(14.77, 1.36, 20.06), c(13.08, 1.35, 17.67))
+patterns <- list()
+for (year in 1:3) {
+  one_year <- triangle(
+    data.frame(year = year, age = c(12, 24, 36),
+               ground_up = sum(claims) * price[year] * 4.5 / to_ultimate),
+    "year", "age", "ground_up")
+  p <- excess_pattern(one_year, "ground_up", excess_layer(deductible),
+                      scale_shift(ultimate_claims(price[year])))
+  patterns[[year]] <- p
+  cat(sprintf("Year %d: 12-24 %.4f  24-36 %.4f  12-ult %.4f   paper %.2f %.2f %.2f\n", year,
+              p@layer_ldf[1], p@layer_ldf[2], p@layer_cdf[1], paper[[year]][1], paper[[year]][2],
+              paper[[year]][3]))
+}
+cat("shifts", sprintf("%g", patterns[[1]]@shifts), "  ground-up factors",
+    sprintf("%g", patterns[[1]]@ground_up_ldf), "\n")
+```
+
+```text
+Year 1: 12-24 17.2000  24-36 1.3663  12-ult 23.5000   paper 17.20 1.37 23.50
+Year 2: 12-24 14.7680  24-36 1.3583  12-ult 20.0600   paper 14.77 1.36 20.06
+Year 3: 12-24 13.0797  24-36 1.3511  12-ult 17.6719   paper 13.08 1.35 17.67
+shifts 4.5 1.25 1   ground-up factors 3.6 1.25
+```
+
+Every printed factor, to the paper's two decimals; the unrounded values are
+exact (Year One's 17.2 is 3,010 / 175). `@shifts` holds the `c_j` the
+pattern was derived with, one per age, the last for the tail (none here, so
+1). They are the ground-up factors to ultimate: with no claim count column,
+the counts are taken as complete, and with a `counts` column the count
+development is divided out first.
+
+The pattern enters any development method through the existing `ldf`,
+`ldf_kind` and `ldf_weight` arguments: `excess_selected(p)` gives them as a
+list for `do.call()`, and `p@tail` is the layer's tail. One pattern serves
+every origin, so it is right for the origins at the severity's price level
+(decision 5 of the note: trend the severity to the origins' level before the
+layer is cut). With Year Three's pattern on the whole triangle, Year Three's
+ultimate is exact and Year Two's is a little low, since its claims are at the
+previous year's prices:
+
+```{r}
+p3 <- patterns[[3]]
+fit <- do.call(chain_ladder, c(list(bp, "excess", tail = p3@tail), excess_selected(p3)))
+for (year in 1:3) {
+  true <- sum(pmax(claims * price[year] * 4.5 - deductible, 0))
+  ult <- fit@ultimate[year]
+  cat(sprintf("Year %d: ultimate %8.1f   true %8.1f   error %+.2f%%\n", year, ult, true,
+              100 * (ult / true - 1)))
+}
+```
+
+```text
+Year 1: ultimate   4112.5   true   4112.5   error +0.00%
+Year 2: ultimate   4364.7   true   4388.1   error -0.53%
+Year 3: ultimate   4677.5   true   4677.5   error +0.00%
+```
+
+Origins written at different price levels, or under different retentions,
+are best split into groups that share a layer and a price level, each fitted
+with its own pattern.
+
+**The excess loss factor route.** Bloom and Patrik's section 4 gets the same
+answer without a severity curve: the limited-to-350 triangle is dense and
+develops reliably, and an excess loss factor (ELF, the share of ultimate
+ground-up loss above 350) converts limited and unlimited factors into an
+excess factor, `excess CDF = ELF / (1 / CDF_unlimited - (1 - ELF) / CDF_limited)`
+(Pinto and Gogol's layer identity, restated). On Year Three, with the limited
+factor from the triangle's own chain ladder:
+
+```{r}
+limited <- chain_ladder(bp, "limited")
+cdf_limited <- limited@ldf[1] * limited@ldf[2]
+limited_ult <- rows$limited[6] * cdf_limited   # Year Three at 12 months
+ground_up_ult <- rows$ground_up[6] * 4.5
+elf <- 1 - limited_ult / ground_up_ult
+cat(sprintf("limited 12-24 %.4f (paper 1.32)  ELF %.4f (paper .764)\n", limited@ldf[1], elf))
+cat(sprintf("excess CDF %.4f   paper 17.54\n", elf / (1 / 4.5 - (1 - elf) / cdf_limited)))
+cat(sprintf("from the paper's rounded inputs %.4f\n", 0.764 / (1 / 4.5 - (1 - 0.764) / 1.32)))
+cat(sprintf("the scale shift's exact factor  %.4f\n", p3@layer_cdf[1]))
+```
+
+```text
+limited 12-24 1.3223 (paper 1.32)  ELF 0.7637 (paper .764)
+excess CDF 17.5364   paper 17.54
+from the paper's rounded inputs 17.5898
+the scale shift's exact factor  17.6719
+```
+
+The paper's 17.54 comes from its unrounded inputs; its rounded ones give 17.59.
+Its 17.54 is 0.77% below the exact 17.67, the error the paper prints, because
+the limited factor, like the excess one above, is estimated on older years.
+
+## 3. Shape drift: Pinto and Gogol, and Bear
+
+A scale shift moves every claim by the same factor. Pinto and Gogol found in
+ISO data that the tail of the size distribution also gets heavier as claims
+mature: a single-parameter Pareto fitted above a threshold `k` has a shape
+`q` that falls with maturity. Their factor for the losses excess of `c k` is
+the development of the losses excess of `k` times `c^(q_i - q_j)` (with the
+counts above `k` as the base, times a ratio of `(q - 1)` terms as well).
+`pareto_shape()` takes the threshold, a shape at every age (named by age) and
+at ultimate, and the base the column holds: `base = "counts"` or an
+`excess_layer()` whose losses the column is. The column then holds the base development, not the ground-up
+losses.
+
+```{r}
+shape_factor <- function(base_development, threshold, shapes, layer, base) {
+  tri <- triangle(data.frame(year = 2020, age = c(12, 24), base = c(1, base_development)),
+                  "year", "age", "base")
+  model <- pareto_shape(threshold, c("12" = shapes[1], "24" = shapes[2]), shapes[2], base = base)
+  excess_pattern(tri, "base", layer, model)@layer_ldf[1]
+}
+
+# Pinto and Gogol p. 247: losses excess of 25,000 develop by 2.5, q from 1.75 to 1.25.
+pg <- shape_factor(2.5, 25000, c(1.75, 1.25), excess_layer(100000), excess_layer(25000))
+cat(sprintf("Pinto and Gogol p. 247, excess of 100,000: %.4f   paper 2.5 (4)^0.5 = 5.0\n", pg))
+# The same from the counts above 25,000: they develop by 2.5 (0.25 / 0.75).
+pgc <- shape_factor(2.5 * 0.25 / 0.75, 25000, c(1.75, 1.25), excess_layer(100000), "counts")
+cat(sprintf("the same from the counts above 25,000:     %.4f\n", pgc))
+# Bear p. 138: the layer 100,000 to 300,000 develops by 3.5, q from 1.25 to 1.10.
+bear <- shape_factor(3.5, 100000, c(1.25, 1.10), excess_layer(200000, 400000),
+                     excess_layer(100000, 200000))
+cat(sprintf("Bear p. 138, layer 200,000 to 600,000:     %.4f   paper 3.88\n", bear))
+```
+
+```text
+Pinto and Gogol p. 247, excess of 100,000: 5.0000   paper 2.5 (4)^0.5 = 5.0
+the same from the counts above 25,000:     5.0000
+Bear p. 138, layer 200,000 to 600,000:     3.8835   paper 3.88
+```
+
+Pinto and Gogol's Appendix B works the shape drift from 27 months to ultimate
+above 10,000 (`q` from 1.6 to 1.3) and prints, for several retentions and
+layers, the losses as a multiple of the losses excess of 10,000 at both ages,
+to three decimals. Their ratio is the layer's factor relative to the base
+development `a`. Here the second age stands for ultimate:
+
+```{r}
+appendix_b <- data.frame(  # in thousands; NA is unlimited; the amounts as printed
+  from = c(100, 300, 500, 1000, 100, 300, 500), to = c(NA, NA, NA, NA, 300, 500, 1000),
+  at27 = c(0.251, 0.130, 0.096, 0.063, 0.121, 0.034, 0.033),
+  ult = c(0.501, 0.360, 0.309, 0.251, 0.141, 0.051, 0.058))
+for (i in seq_len(nrow(appendix_b))) {
+  r <- appendix_b[i, ]
+  layer <- if (is.na(r$to)) excess_layer(r$from * 1e3) else excess_layer(r$from * 1e3, (r$to - r$from) * 1e3)
+  f <- shape_factor(1, 10000, c(1.6, 1.3), layer, excess_layer(10000))
+  name <- if (is.na(r$to)) {
+    sprintf("excess of %sk", formatC(r$from, format = "d", big.mark = ","))
+  } else {
+    sprintf("%sk to %sk", formatC(r$from, format = "d", big.mark = ","),
+            formatC(r$to, format = "d", big.mark = ","))
+  }
+  cat(sprintf("%-16s %.4f a   paper %.3f / %.3f = %.3f a\n", name, f, r$ult, r$at27, r$ult / r$at27))
+}
+```
+
+```text
+excess of 100k   1.9953 a   paper 0.501 / 0.251 = 1.996 a
+excess of 300k   2.7742 a   paper 0.360 / 0.130 = 2.769 a
+excess of 500k   3.2336 a   paper 0.309 / 0.096 = 3.219 a
+excess of 1,000k 3.9811 a   paper 0.251 / 0.063 = 3.984 a
+100k to 300k     1.1606 a   paper 0.141 / 0.121 = 1.165 a
+300k to 500k     1.4932 a   paper 0.051 / 0.034 = 1.500 a
+500k to 1,000k   1.7843 a   paper 0.058 / 0.033 = 1.758 a
+```
+
+The excess of 100,000 is exactly `10^0.3 = 1.99526` times `a`; the paper's
+1.996 is the ratio of its rounded amounts. Every other row agrees within the
+rounding of the printed amounts, which is wide for the small ones (0.033 could
+be anything from 0.0325 to 0.0335).
+
+Shape drift needs a shape at every age, which needs claim-level data or
+layered losses by maturity; a scale shift needs only the ground-up triangle.
+The two disagree on high layers whenever the tail does thicken: the Reserving
+lane's simulation study (`knowledge/findings/excess-simulation-study.md`, 500
+books per arm) found that when claims' shapes drift, the scale shift
+understates the sparse layer's ultimate by about 26% and the thin layer's by
+14%, while `pareto_shape()` with the true shapes is unbiased.
+
+## 4. A sparse layer on a simulated book
+
+The examples above have one claim history each. A real layer triangle has
+many origins, most of them with no claim in the layer for years. To see the
+methods side by side we simulate a book whose truth is known: ten accident
+years, 2015 to 2024, of 120 claims each, valued at the end of 2024 at 12 to
+120 months. Each claim's ultimate size is lognormal (mean about 30,000, log-sd
+1.8), and at each age it is reported at its ultimate divided by a shift that
+falls from 3.0 at 12 months to 1.01 at 120 months, the last 1% being the tail.
+The book follows the scale shift by construction, so it shows the mechanics,
+not a test of the model; the simulation study above is the test.
+
+The uniform draws come from a tiny linear congruential generator written out
+here, so that the Python guide draws the same claims, and a seed
+picks the book. Two layers are
+tracked: a high one, 750,000 xs 250,000, and a working one, 400,000 xs
+100,000, each with the count of claims in it.
+
+```{r}
+sev <- lognormal(8.7, 1.8)
+years <- 2015:2024
+ages <- 12 * (1:10)
+shift <- c(3.0, 1.8, 1.4, 1.2, 1.1, 1.05, 1.03, 1.02, 1.015, 1.01)  # ultimate / reported
+n_claims <- 120
+premium <- 5500000
+ground_up_tail <- 1.01
+book_layers <- list(high = excess_layer(250000, 750000), working = excess_layer(100000, 400000))
+
+in_layer <- function(x, layer) pmin(pmax(x - layer@attachment, 0), layer@limit)
+
+simulate <- function(seed) {
+  # One book: its triangle and each layer's true ultimate by origin.
+  state <- seed
+  claims <- list()
+  for (y in years) {
+    u <- numeric(n_claims)
+    for (i in seq_len(n_claims)) {  # Park and Miller's minimal standard generator
+      state <- (state * 16807) %% 2147483647
+      u[i] <- state / 2147483647
+    }
+    claims[[as.character(y)]] <- quantile(sev, u)
+  }
+  cells <- list()
+  for (y in years) {
+    for (j in seq_along(ages)) {
+      if ((y - 2015) + (j - 1) <= 9) {  # the cells known at the end of 2024
+        reported <- claims[[as.character(y)]] / shift[j]
+        cell <- list(origin = y, age = ages[j], incurred = sum(reported), premium = premium)
+        for (name in names(book_layers)) {
+          cell[[name]] <- sum(in_layer(reported, book_layers[[name]]))
+          cell[[paste0(name, "_n")]] <- sum(reported > book_layers[[name]]@attachment)
+        }
+        cells[[length(cells) + 1]] <- cell
+      }
+    }
+  }
+  long <- do.call(rbind, lapply(cells, as.data.frame))
+  book <- triangle(long, "origin", "age", setdiff(names(long), c("origin", "age")))
+  truth <- lapply(book_layers, function(layer) {
+    vapply(years, function(y) sum(in_layer(claims[[as.character(y)]], layer)), numeric(1))
+  })
+  list(book = book, truth = truth)
+}
+
+sim <- simulate(20241231)
+book <- sim$book
+truth <- sim$truth
+
+latest <- function(column) latest_diagonal(book)[1, column, ]
+cat("origin  ground-up  high layer  claims  true high ult\n")
+cat(sprintf("%d  %s %s  %6.0f  %s\n", years, comma(latest("incurred"), 0, 10),
+            comma(latest("high"), 0, 10), latest("high_n"), comma(truth$high, 0, 12)), sep = "")
+cat(sprintf("total   %s %s  %6.0f  %s\n", comma(sum(latest("incurred")), 0, 10),
+            comma(sum(latest("high")), 0, 10), sum(latest("high_n")), comma(sum(truth$high), 0, 12)))
+```
+
+```text
+origin  ground-up  high layer  claims  true high ult
+2015   2,297,915          0       0             0
+2016   3,338,009    534,042       3       553,303
+2017   2,509,633    255,071       2       270,172
+2018   2,473,626    210,437       1       224,250
+2019   3,066,471    565,998       2       619,298
+2020   2,652,024    173,574       1       215,931
+2021   2,499,806    101,581       1       206,309
+2022   3,187,793    614,715       4     1,260,601
+2023   2,103,713     17,007       1       494,749
+2024     965,657          0       0       161,796
+total   25,094,646  2,472,425      15     4,006,410
+```
+
+The high layer has between none and four claims a year, and 2015 never had
+one. Its own chain ladder fails: at the oldest link the only origin, 2015, is
+zero, so there is no factor to estimate. The working layer's own chain ladder
+runs, but its factors rest on a handful of claims:
+
+```{r}
+msg <- tryCatch({
+  chain_ladder(book, "high", tail = ground_up_tail)
+  "ran"
+}, error = conditionMessage)
+cat("high layer, own chain ladder:", msg, "\n")
+own_working <- chain_ladder(book, "working", tail = ground_up_tail)
+cat("working layer, own factors", sprintf("%.3f", own_working@ldf), "\n")
+```
+
+```text
+high layer, own chain ladder: factor from development index 8: earlier values sum to zero
+working layer, own factors 3.055 1.521 1.321 1.159 1.079 1.036 1.018 1.009 1.016
+```
+
+The derived patterns need only the ground-up column and the ultimate
+severity, here the true one (in practice a severity fitted to trended
+ultimate claims; section 7). The ground-up tail of 1.01 gives each layer
+its own, larger tail:
+
+```{r}
+derived <- lapply(book_layers, function(layer) {
+  excess_pattern(book, "incurred", layer, scale_shift(sev), tail = ground_up_tail)
+})
+p <- derived$high
+cat("shifts           ", sprintf("%.3f", p@shifts), "\n")
+cat("ground-up factors", sprintf("%.3f", p@ground_up_ldf), sprintf("tail %.2f", p@ground_up_tail), "\n")
+for (name in names(derived)) {
+  q <- derived[[name]]
+  cat(sprintf("%-7s factors  ", name), sprintf("%.3f", q@layer_ldf), sprintf("tail %.4f", q@tail), "\n")
+}
+cat("to ultimate at 12 months: ground-up", sprintf("%.2f,", shift[1]),
+    paste(sprintf("%s %.2f", names(derived), sapply(derived, function(q) q@layer_cdf[1])),
+          collapse = ", "), "\n")
+```
+
+```text
+shifts            3.000 1.800 1.400 1.200 1.100 1.050 1.030 1.020 1.015 1.010
+ground-up factors 1.667 1.286 1.167 1.091 1.048 1.019 1.010 1.005 1.005 tail 1.01
+high    factors   2.446 1.513 1.278 1.145 1.074 1.030 1.015 1.008 1.008 tail 1.0153
+working factors   2.180 1.431 1.236 1.124 1.064 1.026 1.013 1.006 1.006 tail 1.0131
+to ultimate at 12 months: ground-up 3.00, high 6.27, working 4.91
+```
+
+The shifts are the book's own (the ground-up factors to ultimate, tail
+included), recovered from the triangle. At 12 months the high layer has more
+than twice as far to go as the ground-up losses.
+
+On the high layer the derived pattern makes every method run. Here are the
+chain ladder, Mack, and the Bornhuetter-Ferguson with a layer exposure, each
+taking the pattern through `excess_selected(p)` and `tail = p@tail`. The BF prior
+is the ground-up expected loss ratio applied to the premium times the layer
+share, `layer_share(sev, book_layers$high)`, the share of the mean severity that falls in
+the layer (section 6 says more):
+
+```{r}
+elr <- n_claims * mean(sev) / premium
+share <- layer_share(sev, book_layers$high)
+layered <- layer_exposure(book, "premium", share, "high_premium")
+cl <- do.call(chain_ladder, c(list(book, "high", tail = p@tail), excess_selected(p)))
+mk <- do.call(mack, c(list(book, "high", tail = p@tail), excess_selected(p)))
+bf <- do.call(bornhuetter_ferguson, c(list(layered, "high", "high_premium", apriori = elr,
+                                           tail = p@tail), excess_selected(p)))
+cat(sprintf("ground-up ELR %.4f, layer share %.4f, expected layer ultimate a year %s\n", elr, share,
+            comma(elr * share * premium)))
+cat("origin  chain ladder        BF      true\n")
+cat(sprintf("%d  %s %s %s\n", years, comma(cl@ultimate, 0, 12), comma(bf@ultimate, 0, 9),
+            comma(truth$high, 0, 9)), sep = "")
+cat(sprintf("total %s %s %s\n", comma(sum(cl@ultimate), 0, 14), comma(sum(bf@ultimate), 0, 9),
+            comma(sum(truth$high), 0, 9)))
+cat(sprintf("Mack reserve %s, standard error %s\n", comma(mk@total_reserve),
+            comma(mk@total_standard_error)))
+```
+
+```text
+ground-up ELR 0.6618, layer share 0.1603, expected layer ultimate a year 583,548
+origin  chain ladder        BF      true
+2015             0     8,785         0
+2016       546,307   547,143   553,303
+2017       262,895   272,438   270,172
+2018       220,153   236,191   224,250
+2019       609,855   607,963   619,298
+2020       200,936   253,038   215,931
+2021       134,694   245,040   206,309
+2022     1,041,936   853,985 1,260,601
+2023        43,614   373,000   494,749
+2024             0   490,530   161,796
+total      3,060,390 3,888,113 4,006,410
+Mack reserve 587,966, standard error 210,007
+```
+
+Even with the right pattern, the chain ladder cannot see what has not been
+reported: 2024's layer is still empty at 12 months, so its chain ladder
+ultimate is zero, and 2023's single small claim is multiplied up to 43,614
+against a true 494,749. The BF
+puts the expected layer loss on the unreported part instead, which is why it
+is the usual method for an immature layer. Here it lands closer to the truth
+in total, while 2016 to 2019, whose layer losses are nearly all reported,
+come out much the same under both. This is one simulated book; section 5
+compares the methods over a hundred. Mack's standard error
+is large next to its reserve, as it should be: the derived pattern carries no
+parameter error (it is selected), and the process error of a few claims is
+big.
+
+## 5. Blending with the layer's own development
+
+When a layer has some data of its own, the derived pattern can be blended
+with the layer's own factors, `f = w f_derived + (1 - w) f_own`, with `w` the
+weight on the derived pattern at each age. `excess_credibility_weights()` sets
+`w = 1 - n / (n + k)`, with `n` the layer's claims at the earlier age (with a
+`counts` column) or else its origins with a positive earlier value, and `k`
+a credibility constant. `k` has no default (decision 19 of the design note);
+the simulation study's candidate is `k = 20`, which is what we use. The
+credibility is also capped so that removing any one origin moves the blended
+factor by at most `max_influence` of it (0.1 here), so a single huge link
+ratio cannot dominate, and where the layer's own factor cannot be estimated
+the weight is exactly 1:
+
+```{r}
+for (name in c("high", "working")) {
+  w <- excess_credibility_weights(derived[[name]], book, name, k = 20, max_influence = 0.1,
+                                  counts = paste0(name, "_n"))
+  cat(sprintf("%-7s weight on derived", name), sprintf("%.3f", w), "\n")
+}
+```
+
+```text
+high    weight on derived 0.909 0.741 0.714 0.714 0.714 0.769 0.800 0.870 1.000
+working weight on derived 0.556 0.455 0.426 0.426 0.444 0.476 0.513 0.606 0.741
+```
+
+The high layer's few claims leave most of the weight on the derived pattern,
+and the oldest age gets exactly 1, since 2015's zero leaves no own factor
+there. The working layer has more claims and so more credibility. The
+weights go straight into `excess_selected()`:
+`do.call(chain_ladder, c(list(book, "high", tail = p@tail), excess_selected(p, w)))`.
+
+One book cannot rank methods: its few large claims decide the outcome. So we
+simulate a hundred books (seeds 1 to 100, the same model) and compare, for
+each layer, the error of the total ultimate under the layer's own chain
+ladder, the derived pattern, the blend with `k = 20` and the BF with the
+derived pattern, as the mean error and the root mean square error, both
+relative to the mean true ultimate:
+
+```{r}
+runs <- list()
+for (seed in 1:100) {
+  s <- simulate(seed)
+  for (name in names(book_layers)) {
+    layer <- book_layers[[name]]
+    q <- excess_pattern(s$book, "incurred", layer, scale_shift(sev), tail = ground_up_tail)
+    w <- excess_credibility_weights(q, s$book, name, k = 20, max_influence = 0.1,
+                                    counts = paste0(name, "_n"))
+    lb <- layer_exposure(s$book, "premium", layer_share(sev, layer), "layer_premium")
+    methods <- list(
+      "own chain ladder" = function() chain_ladder(s$book, name, tail = ground_up_tail),
+      "derived pattern" = function() {
+        do.call(chain_ladder, c(list(s$book, name, tail = q@tail), excess_selected(q)))
+      },
+      "blend, k = 20" = function() {
+        do.call(chain_ladder, c(list(s$book, name, tail = q@tail), excess_selected(q, w)))
+      },
+      "BF, derived" = function() {
+        do.call(bornhuetter_ferguson, c(list(lb, name, "layer_premium", apriori = elr,
+                                             tail = q@tail), excess_selected(q)))
+      })
+    for (label in names(methods)) {
+      error <- tryCatch(sum(methods[[label]]()@ultimate) - sum(s$truth[[name]]),
+                        error = function(e) NA)  # the own factors cannot be estimated
+      key <- paste(name, label, sep = "|")
+      runs[[key]] <- rbind(runs[[key]], c(error = error, truth = sum(s$truth[[name]])))
+    }
+  }
+}
+
+cat("layer    method             runs  mean error   RMSE\n")
+for (key in names(runs)) {
+  v <- runs[[key]]
+  ok <- v[!is.na(v[, "error"]), "error"]
+  mean_truth <- mean(v[, "truth"])
+  rmse <- sqrt(sum(ok^2) / length(ok))
+  parts <- strsplit(key, "|", fixed = TRUE)[[1]]
+  cat(sprintf("%-8s %-17s %5d %+9.1f%% %6.1f%%\n", parts[1], parts[2], length(ok),
+              100 * mean(ok) / mean_truth, 100 * rmse / mean_truth))
+}
+```
+
+```text
+layer    method             runs  mean error   RMSE
+high     own chain ladder     93     +19.2%   95.1%
+high     derived pattern     100      -3.9%   15.5%
+high     blend, k = 20       100      -1.9%   19.4%
+high     BF, derived         100      +0.5%    9.5%
+working  own chain ladder    100      -0.3%   13.1%
+working  derived pattern     100      -2.0%    8.1%
+working  blend, k = 20       100      -1.2%    9.9%
+working  BF, derived         100      -0.6%    4.4%
+```
+
+The own chain ladder fails on seven of the hundred high-layer books, and where
+it runs it overstates by a fifth with an RMSE near the whole ultimate: the
+early link ratios of a few claims are huge. The derived pattern cuts the RMSE
+to a fraction of that on both layers; it runs a little low on average because
+an origin with nothing yet in the layer stays at zero. The BF with the
+layer-share prior is best on both, since it does not multiply the immature
+years' luck; but it is flattered here, being given the true loss ratio and the
+true severity, which a real prior only approximates. The blend sits between
+the derived pattern and the own factors. Here the model holds exactly, so the
+derived pattern needs no help from the data; the reason to blend anyway is
+that the severity assumption may be wrong. In the Reserving lane's study,
+under shape drift a blend near `k = 20` beat both the derived pattern and the
+own factors on its thin layer, and without the `max_influence` cap a small `k`
+was ruinous on its sparse layer.
+
+## 6. A Bornhuetter-Ferguson prior from the layer share
+
+The a-priori layer ultimate of origin `i` is its exposure times a ground-up
+expected loss ratio times the layer share `s`, the expected share of ground-up
+loss that lands in the layer. For a severity, `s = (LEV(b) - LEV(a)) / mean`
+on the ultimate basis, which is `layer_share()`; for an exposure curve,
+`exposure_layer_share(curve, limit, attachment, mpl)`. `layer_exposure()` writes a copy of the triangle with the
+exposure column times the share (one share, or one per origin), which any of
+the expected-loss methods takes as its exposure. Section 4 used it with the
+BF; Cape Cod estimates the layer's loss ratio from the layer's own used-up
+exposure instead, through the same derived pattern:
+
+```{r}
+cc <- do.call(cape_cod, c(list(layered, "high", "high_premium", tail = p@tail), excess_selected(p)))
+cat(sprintf("loss ratio to the layer premium: a priori %.4f (the ground-up ELR), Cape Cod %.4f\n",
+            elr, cc@apriori[1]))
+cat(sprintf("total ultimate: BF %s, Cape Cod %s, true %s\n", comma(sum(bf@ultimate)),
+            comma(sum(cc@ultimate)), comma(sum(truth$high))))
+true_ratio <- sum(truth$high) / (length(years) * premium * share)
+cat(sprintf("this book's true loss ratio to the layer premium %.4f\n", true_ratio))
+```
+
+```text
+loss ratio to the layer premium: a priori 0.6618 (the ground-up ELR), Cape Cod 0.3702
+total ultimate: BF 3,888,113, Cape Cod 3,264,359, true 4,006,410
+this book's true loss ratio to the layer premium 0.4544
+```
+
+This book is light (its layer losses are about two thirds of what the prior
+expects), and the Cape Cod follows its own experience down, here past the
+true ratio, while the BF keeps the prior's weight on the immature years.
+
+The share is an estimate, and its error is worth carrying into the reserve's
+distribution. `layer_share_prior()` with `bayes_bf_layer()` does that through
+the normalised Bayesian BF (`bayes_bf_normalised()`): the layer's expected ultimate gets a gamma prior with
+mean `ELR x share x exposure` and a coefficient of variation combining the
+two uncertainties as for a product of independent variables,
+`cv^2 = (1 + cv_elr^2)(1 + cv_share^2) - 1`. Its development pattern is
+estimated from the layer's own triangle, under the model's vague prior, so
+the derived excess pattern does not enter (decision 22 of the design note),
+and the model needs every age's own factor to exist. The high layer's
+triangle has none at its oldest age, so this part of the guide uses the
+working layer:
+
+```{r}
+working_share <- layer_share(sev, book_layers$working)
+prior <- layer_share_prior(elr, working_share, apriori_cv = 0.1, share_cv = 0.3)
+cat(sprintf("working layer share %.4f; prior cv %.4f = sqrt(1.01 x 1.09 - 1) = %.4f\n",
+            working_share, prior@cv, sqrt(1.01 * 1.09 - 1)))
+fit <- bayes_bf_layer(book, "working", "premium", prior, seed = 1, n_sims = 2000)
+cat(sprintf("prior ultimate a year %s = %.4f x %.4f x %s\n", comma(fit@prior_ultimate[1]), elr,
+            working_share, comma(premium)))
+```
+
+```text
+working layer share 0.2590; prior cv 0.3176 = sqrt(1.01 x 1.09 - 1) = 0.3176
+prior ultimate a year 942,605 = 0.6618 x 0.2590 x 5,500,000
+```
+
+The posterior is a Monte Carlo result, and the last digits of a NUTS run
+differ between platforms (see [`reserving-meyers.qmd`](reserving-meyers.qmd)), so
+this guide prints only the prior, which is exact, and leaves the posterior to
+your own run: `fit@reserves` is the predictive distribution of the reserve.
+
+What the share's cv does to that distribution depends on how the share's error
+is modelled. The error is one and the same for every origin, since the layer
+has one share, and `layer_share_prior()` models it so by default
+(`share_dependence = "common"`, issue #518): one gamma multiplier on every
+origin's prior, with mean 1 and cv `share_cv`, sampled with the other
+parameters, so that all the origins together update the share. The first form,
+`share_dependence = "per_origin"`, draws an independent share error at each
+origin. Each origin's prior is the same under both; the total's is not.
+`layer_prior_total()` gives the prior of the layer's total expected ultimate in
+closed form:
+
+```{r}
+exposure_values <- rep(premium, length(years))
+for (dependence in c("common", "per_origin")) {
+  p <- layer_share_prior(elr, working_share, apriori_cv = 0.1, share_cv = 0.3,
+                         share_dependence = dependence)
+  total <- layer_prior_total(p, exposure_values)
+  cat(sprintf("%-10s  prior total mean %s  sd %s\n", dependence, comma(total[["mean"]]),
+              comma(total[["sd"]])))
+}
+```
+
+```text
+common      prior total mean 9,426,049  sd 2,844,887
+per_origin  prior total mean 9,426,049  sd 946,837
+```
+
+Independent errors understate the total's prior sd threefold here. The
+posterior goes the other way: once the ten origins identify the share, each
+origin is held to its prior with the loss ratio's own cv, so the common share
+gives the narrower fitted interval. On the Reserving lane's validation layer
+(a quarter of GenIns's paid triangle; each figure the mean of the fits'
+total reserve sd over seeds 1 to 20 for the common share and over 10 seeds
+for independent errors, in `knowledge/findings/excess-bayes-prior.md`) the
+total reserve's posterior sd under the common share was about 497,000 at a
+share cv of 0.3 and rose only about 2% as the cv went to 1.5, while under
+independent errors it rose from 514,000 to 730,000 (about 42%). A single
+fit's sd moves by about 1.5% from seed to seed, so compare such runs over
+several seeds. Where the data cannot identify the share (few origins, or all
+of them immature) the common model's total stays the wider.
+
+## 7. What prospicio does not cover
+
+- **A paid basis.** `excess_pattern()` derives incurred (reported) patterns
+  only. Pinto and Gogol and Bear get paid layer factors
+  from incurred ones and ratios of paid-to-reported ratios; prospicio has no
+  helper for that.
+- **One pattern for all origins.** A severity trended differently by origin, or
+  a retention that changes by year, needs a pattern per origin, which no
+  development method takes. Group the origins that share a layer and a price
+  level and fit each group with its own pattern (section 2 shows the error of
+  one pattern across price levels).
+- **Fitting the severity.** The scale shift takes the ultimate severity at the
+  origins' price level as given; fitting it (from trended ultimate claims,
+  say, with the package's severity fitting functions) is the caller's step,
+  and so is the shape at each maturity for `pareto_shape()`.
+- **The ground-up average.** The ground-up factors are the volume-weighted
+  ones, with no exclusions or other averages (decision 15 of the design note).
+- **The derived pattern in the Bayesian BF.** `layer_share_prior()` estimates the
+  layer's pattern from its own triangle, so it does not use the derived
+  pattern and cannot fit a layer whose own factor is missing at some age
+  (section 6). The share's cv is an input; no helper derives it from a
+  severity's parameter uncertainty (decision 24).
+- **Bühlmann-Straub credibility** of the layer's link ratios, and a default `k`.
+  The weights are `1 - n / (n + k)` with a required `k`.
+- **Claim-level development** (Boor, Gillam and Couret's excess loss factors):
+  prospicio's per-claim IBNER is on the pricing side (see the Python guide
+  [`experience-and-exposure-rating.md`](experience-and-exposure-rating.md)).
+- **Sahasrabuddhe's and Siewert's examples** are not reproduced here: the first
+  needs its example's trend indices, the second's Weibull parameters are
+  rounded and both its scale and shape move.
+
+## See also
+
+- [`reserving-methods.md`](reserving-methods.md): which reserving method to
+  use when.
+- [`choosing-a-method.md`](choosing-a-method.md): the library's methods by
+  question.
+- `docs/design/reserving-excess.md`: the method, the API and the validation
+  targets as designed, with the simulation study's results.
+- `R/prospicio/tests/test-reserving-excess.R` and
+  `R/prospicio/tests/test-reserving-bayes-excess-prior.R`: the bindings' tests.

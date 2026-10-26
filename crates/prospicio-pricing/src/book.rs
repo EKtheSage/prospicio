@@ -119,20 +119,72 @@ impl DealRun {
     }
 
     /// A layer's or deal's run from a result of `tower`
-    /// ([`Tower::deal_columns`]): its premium, ceded loss, commissions,
-    /// brokerage and deductions, under the name `name`.
+    /// ([`Tower::deal_columns`]): its premium with the year's reinstatement
+    /// premium, ceded loss, commissions, brokerage and deductions, under
+    /// the name `name`. Each year's premium is the deposit (or swing-rated)
+    /// premium plus what the year's losses reinstate, pro rata as to amount
+    /// and, where the layer says so, as to time (#595). A layer without paid
+    /// reinstatements keeps its deposit premium.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{EventSet, Layer, Tower};
+    /// use prospicio_pricing::book::DealRun;
+    ///
+    /// // 10 xs 10, premium 2, one reinstatement at 100%: a year with a
+    /// // layer loss of 5 pays 2 × 5 / 10 = 1 more.
+    /// let layer = Layer::xol("cat", 10.0, 10.0).unwrap()
+    ///     .paid_reinstatements(2.0, vec![1.0]).unwrap();
+    /// let tower = Tower::new(vec![layer]).unwrap();
+    /// let result = tower.apply(&EventSet::from_years(vec![vec![5.0], vec![15.0]], 1).unwrap()).unwrap();
+    /// let run = DealRun::from_tower("cat", &tower, &result, "cat").unwrap();
+    /// assert_eq!(run.premium(), [2.0, 3.0]);
+    /// let deposit = DealRun::from_tower_with("cat", &tower, &result, "cat", false).unwrap();
+    /// assert_eq!(deposit.premium(), [2.0, 2.0]);
+    /// ```
     pub fn from_tower(
         name: &str,
         tower: &Tower,
         result: &PredictiveDistribution,
         layer: &str,
     ) -> Result<Self> {
-        Self::from_columns(name, tower.deal_columns(result, layer)?)
+        Self::from_tower_with(name, tower, result, layer, true)
     }
 
-    /// A run from the columns [`Tower::deal_columns`] gives.
+    /// [`from_tower`](Self::from_tower), with the reinstatement premium in
+    /// the premium or, with `reinstatement_premium` false, left out, so that
+    /// each year's premium is the deposit as [`Tower::deal_ratios`] reads
+    /// it.
+    pub fn from_tower_with(
+        name: &str,
+        tower: &Tower,
+        result: &PredictiveDistribution,
+        layer: &str,
+        reinstatement_premium: bool,
+    ) -> Result<Self> {
+        let mut columns = tower.deal_columns(result, layer)?;
+        if !reinstatement_premium {
+            columns.reinstatement_premium.fill(0.0);
+        }
+        Self::from_columns(name, columns)
+    }
+
+    /// A run from the columns [`Tower::deal_columns`] gives, its premium
+    /// the columns' premium plus their reinstatement premium.
     pub fn from_columns(name: &str, columns: DealColumns) -> Result<Self> {
-        let mut run = Self::new(name, columns.premium, columns.loss)?;
+        if columns.reinstatement_premium.len() != columns.premium.len() {
+            return Err(Error::Data(format!(
+                "{name:?} has {} premiums and {} reinstatement premiums",
+                columns.premium.len(),
+                columns.reinstatement_premium.len()
+            )));
+        }
+        let premium = columns
+            .premium
+            .iter()
+            .zip(&columns.reinstatement_premium)
+            .map(|(p, r)| p + r)
+            .collect();
+        let mut run = Self::new(name, premium, columns.loss)?;
         for d in columns.deductions {
             run = run.deduction(&d.name, d.values, d.outside_nmbf)?;
         }
@@ -248,6 +300,16 @@ impl DealRun {
     /// The number of simulations.
     pub fn n_sims(&self) -> usize {
         self.premium.len()
+    }
+
+    /// The premium in each simulation.
+    pub fn premium(&self) -> &[f64] {
+        &self.premium
+    }
+
+    /// The loss in each simulation.
+    pub fn loss(&self) -> &[f64] {
+        &self.loss
     }
 
     /// The inception month.
@@ -933,6 +995,71 @@ mod tests {
             for (x, y) in r.draws().iter().zip(a.draws()) {
                 assert!(close(x * 100.0, *y, 1e-14), "{item}: {x} {y}");
             }
+        }
+    }
+
+    #[test]
+    fn a_run_from_a_tower_takes_the_reinstatement_premium() {
+        use prospicio_aggregate::EventSet;
+        // 10 xs 10 at premium 2, the first reinstatement at 100% and the
+        // second at 50%, beside a quota share with no reinstatements.
+        let cat = Layer::xol("cat", 10.0, 10.0)
+            .unwrap()
+            .paid_reinstatements(2.0, vec![1.0, 0.5])
+            .unwrap();
+        let qs = Layer::quota_share("qs", 0.5)
+            .unwrap()
+            .premium_rate(1.0, 40.0)
+            .unwrap();
+        let years = vec![
+            vec![5.0],
+            vec![15.0],
+            vec![22.0, 12.0],
+            vec![40.0, 40.0, 40.0],
+        ];
+        let events = EventSet::from_years(years, 1).unwrap();
+        let tower = Tower::new(vec![cat.clone(), qs]).unwrap();
+        let result = tower.apply(&events).unwrap();
+        let run = DealRun::from_tower("cat", &tower, &result, "cat").unwrap();
+        let rip = result
+            .aggregate(&["kind", "layer"])
+            .unwrap()
+            .marginal(&vec![
+                KeyValue::from("reinstatement_premium"),
+                KeyValue::from("cat"),
+            ])
+            .unwrap();
+        // Each year's premium is the deposit plus the tower's own
+        // reinstatement premium, so the mean is the expected one.
+        for (j, (p, r)) in run.premium().iter().zip(rip.draws()).enumerate() {
+            assert!(close(*p, 2.0 + r, 1e-15), "{j}: {p} {r}");
+        }
+        let by_layer: Vec<f64> = [&[5.0][..], &[15.0], &[22.0, 12.0], &[40.0, 40.0, 40.0]]
+            .iter()
+            .map(|x| 2.0 + cat.reinstatement_premium(x))
+            .collect();
+        assert_eq!(run.premium(), by_layer);
+        assert_eq!(run.premium(), [2.0, 3.0, 4.2, 5.0]);
+        let deposit = DealRun::from_tower_with("cat", &tower, &result, "cat", false).unwrap();
+        assert_eq!(deposit.premium(), [2.0; 4]);
+        assert_eq!(deposit.loss(), run.loss());
+        // A layer without paid reinstatements is unchanged.
+        let qs = DealRun::from_tower("qs", &tower, &result, "qs").unwrap();
+        assert_eq!(qs.premium(), [20.0; 4]);
+        assert_eq!(
+            qs,
+            DealRun::from_tower_with("qs", &tower, &result, "qs", false).unwrap()
+        );
+        // The book's margin counts it.
+        let book = DealBook::new(vec![run]).unwrap();
+        let margin = book
+            .amounts()
+            .unwrap()
+            .marginal(&vec![KeyValue::from("margin"), KeyValue::from("cat")])
+            .unwrap();
+        let ceded = [0.0, 5.0, 12.0, 30.0];
+        for ((m, p), c) in margin.draws().iter().zip([2.0, 3.0, 4.2, 5.0]).zip(ceded) {
+            assert!(close(*m, p - c, 1e-15), "{m} {p} {c}");
         }
     }
 

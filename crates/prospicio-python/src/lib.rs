@@ -96,15 +96,15 @@ mod prospicio_native {
     #[pymodule_export]
     use super::models::{
         PyBayesGlm, PyBayesGlmFit, PyBayesGlmm, PyBayesGlmmFit, PyBayesStacking, PyCoding,
-        PyCvPath, PyDesign, PyDoubleGlm, PyDoubleGlmFit, PyElasticNet, PyElasticNetFit, PyElpd,
-        PyGam, PyGamFit, PyGlm, PyGlmFit, PyGlmm, PyGlmmFit, PyHierarchicalStacking, PyMarsFit,
-        PyNegativeBinomialFit, PyNegativeBinomialGlm, PyRelaxedCv, PyStackingFit, PyTargetEncoding,
-        PyTerms, PyTweedieFit, PyTweedieGlm, actual_vs_expected, confusion_matrix, crps, deviance,
-        double_lift, elpd_loo, elpd_waic, f_test, gini, group_k_fold, k_fold, ks_uniform, lift,
-        likelihood_ratio_test, log_score, loo_pit, loss_ratio_chart, lppd, mars, mcmc_diagnostics,
-        normalized_gini, permutation, pinball_loss, pit, pit_from_draws, pit_histogram, ppc_check,
-        pseudo_bma_weights, quantile_residuals, roc, simulate_from_means, stacking_weights,
-        target_encode, time_ordered, tweedie_profile, vif,
+        PyCvPath, PyDesign, PyDoubleGlm, PyDoubleGlmFit, PyDraws, PyElasticNet, PyElasticNetFit,
+        PyElpd, PyGam, PyGamFit, PyGlm, PyGlmFit, PyGlmm, PyGlmmFit, PyHierarchicalStacking,
+        PyMarsFit, PyNegativeBinomialFit, PyNegativeBinomialGlm, PyRelaxedCv, PyStackingFit,
+        PyTargetEncoding, PyTerms, PyTweedieFit, PyTweedieGlm, actual_vs_expected,
+        confusion_matrix, crps, deviance, double_lift, elpd_loo, elpd_waic, f_test, gini,
+        group_k_fold, k_fold, ks_uniform, lift, likelihood_ratio_test, log_score, loo_pit,
+        loss_ratio_chart, lppd, mars, mcmc_diagnostics, normalized_gini, permutation, pinball_loss,
+        pit, pit_from_draws, pit_histogram, ppc_check, pseudo_bma_weights, quantile_residuals, roc,
+        simulate_from_means, stacking_weights, target_encode, time_ordered, tweedie_profile, vif,
     };
     #[pymodule_export]
     use super::natural::{
@@ -131,8 +131,8 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::payout::{
-        PyIrrResult, PyPaymentPattern, PyPayoutPrice, irr, leverage, moic, npv, price_over_payout,
-        tiered_fee,
+        PyIrrResult, PyPaymentPattern, PyPayoutPrice, irr, leverage, moic, monthly_patterns, npv,
+        price_over_payout, tiered_fee,
     };
     #[pymodule_export]
     use super::pnl::{
@@ -141,11 +141,11 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::pricing::{
-        PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice, PyQuote, PyRiskProfile,
-        PyTabulatedCurve, PyTowerModel, alpha_between_frequencies,
+        PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice, PyQuote, PyReinstatementPrice,
+        PyRiskProfile, PyTabulatedCurve, PyTowerModel, PyTowerQuote, alpha_between_frequencies,
         alpha_between_frequency_and_layer, alpha_between_layers, censored_las, fit_pml_curve,
         fit_references, ilf, layer_cv, loss_elimination_ratio, match_tower, pareto_extrapolation,
-        price, price_portfolio, severity_exposure_curve,
+        price, price_portfolio, price_with_reinstatements, severity_exposure_curve,
     };
     #[pymodule_export]
     use super::ratemaking::{
@@ -167,10 +167,10 @@ mod prospicio_native {
         PyChainLadderFit, PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit, PyClarkLdf,
         PyCompartmental, PyCompartmentalCandidate, PyCompartmentalFit, PyCompartmentalFits,
         PyCompartmentalOneYearFit, PyCompartmentalOneYearFits, PyCompartmentalPriors,
-        PyExpectedLoss, PyExpectedLossFit, PyGlmCandidate, PyLayerSharePrior, PyMack,
-        PyMackBootstrap, PyMackBootstrapFit, PyMackFit, PyMeyers, PyMeyersFit, PyMeyersFits,
-        PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant, PyTailCurve,
-        PyTailLogLinear, PyTriangle, diagonal_backtest,
+        PyExpectedLoss, PyExpectedLossFit, PyGlmCandidate, PyLatestDiagonal, PyLayerSharePrior,
+        PyMack, PyMackBootstrap, PyMackBootstrapFit, PyMackFit, PyMeyers, PyMeyersFit,
+        PyMeyersFits, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant,
+        PyTailCurve, PyTailLogLinear, PyTriangle, diagonal_backtest,
     };
     #[pymodule_export]
     use super::risk::{

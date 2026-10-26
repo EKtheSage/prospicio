@@ -1,1 +1,0 @@
-* **Creation**: [R on CI's Windows runner starts with no CRAN mirror](/environment/ci-windows-r-mirror.md), from the weekly CI failures (branch claude/weekly-ci-cran-mirror): the r (windows-latest) job failed on 2026-10-12 and 2026-10-19 because install.packages() had no repos; the install steps now set the cloud mirror when CRAN is unset.

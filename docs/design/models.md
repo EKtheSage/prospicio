@@ -274,9 +274,8 @@ models and compares them.
 - **Sampling: nutpie** (decided 2026-10-04). Native models (Bayesian GLM,
   Bayesian chain ladder, credibility) will sample with nutpie's Rust core
   `nuts-rs`, so R gets NUTS too. The nutpie Python package itself is not
-  used. Only our own NUTS draws reach the diagnostics and ELPD today; taking
-  external draws (nutpie or Stan traces, arviz `InferenceData`) is a
-  longer-term idea (`reserving-bayes.md`, open decision 11), not built.
+  used. Draws sampled elsewhere reach the same diagnostics and ELPD (see
+  "External draws" below; `reserving-bayes.md`, open decision 11).
 - **Bayesian GLM** (`prospicio_bayes::glm`): `BayesGlm` samples a GLM's
   posterior with `nuts-rs` 0.19 (MIT): normal priors on the coefficients
   (`intercept_sd`, `prior_sd`), and for the Gaussian, gamma and inverse
@@ -306,8 +305,30 @@ models and compares them.
   a half-line support, exact replay, and the gamma-Poisson posterior
   predictive against the exact negative binomial. No Python or R
   binding: a density written in Python or R would call back into the
-  interpreter at every gradient. Passing external traces to the
-  diagnostics is not built yet (see above).
+  interpreter at every gradient.
+- **External draws** (#395, built 2026-10-23): draws sampled by Stan,
+  nutpie, PyMC or anything else go into `PosteriorDraws` through
+  `PosteriorDraws::from_chains` (named columns, one row-major block per
+  chain, divergences per chain), so the summary, R-hat, ESS and PSIS-LOO
+  are the ones our own NUTS draws get. `log_likelihood(prefix)` takes the
+  columns named `prefix` or `prefix[...]`, `relative_efficiency` gives
+  loo's `r_eff` (`ess_mean` of `exp(log_lik)` over the draws) and `loo`
+  uses it, where `loo::loo.array` would default to 1.
+  `prospicio_bayes::stan_csv::read` reads CmdStan's CSV files, one per
+  chain: it checks headers and lengths agree, drops saved warmup, keeps
+  the sampler columns (`..__`, but not `lp__`) as a second
+  `PosteriorDraws`, counts `divergent__` and renames `theta.1.2` to
+  posterior's `theta[1,2]`. There is no common draws type beyond
+  `PosteriorDraws`: the bindings convert to it. Python `Draws`
+  (`read_stan_csv`, `draws_from_arrays` with names as posterior gives
+  them, row-major, `draws_from_inference_data` duck-typed on arviz's
+  `posterior`, `log_likelihood` and `sample_stats.diverging`, so arviz is
+  not a dependency); R `read_stan_csv()`, `mcmc_draws()` (a cmdstanr or
+  rstan fit, a posterior draws object, or an iteration x chain x variable
+  array), `draws_summary()` and `draws_loo()`. Parity
+  (`validation/scripts/stan_csv_fixture.sh`, `r_stan_csv.R`): a real
+  CmdStan 2.36.0 run of the eight schools against posterior 1.7.0 and loo
+  2.10.1, 184 values at 1e-10 relative.
 - **Posterior predictive checks** (`prospicio_bayes::ppc`, decided
   2026-10-16): replicated data, one dataset per posterior draw (`S × n`,
   row-major like the log-likelihood), against the observed. `check` (and

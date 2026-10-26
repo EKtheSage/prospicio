@@ -1,6 +1,6 @@
 Package: prospicio
 Title: Actuarial Modeling on a Rust Core
-Version: 0.0.4
+Version: 0.0.5
 Authors@R: person("Ethan", "Kang", role = c("aut", "cre"), email = "ethan.yskang@gmail.com")
 Description: R front end to the prospicio-* Rust crates. Wrappers only: every
     algorithm lives in Rust and is shared with the Python package.
@@ -9,7 +9,7 @@ Encoding: UTF-8
 SystemRequirements: Cargo (Rust's package manager), rustc >= 1.92 (Burn, for the neural networks)
 Depends: R (>= 4.2.0)
 Imports: S7, stats, utils
-Suggests: arrow, ggplot2, lightgbm, MASS, xgboost
+Suggests: arrow, ggplot2, lightgbm, MASS, posterior, xgboost
 Config/rextendr/version: 0.9.0
 Config/build/bootstrap: TRUE
 Roxygen: list(markdown = TRUE)

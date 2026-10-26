@@ -1,14 +1,17 @@
-"""The worked notebooks in examples/ run, with fewer simulations.
+"""The worked notebooks in examples/ run, and what their prose says holds.
 
-Each notebook's code cells run in order in one namespace, without Jupyter;
-cells tagged ``plot`` are skipped, so CI needs no plotting library.
+Each notebook's code cells run in order in one namespace, without Jupyter. Chart cells (tag ``plot``) run
+too, under matplotlib's Agg backend, so a broken chart fails here and not only in the docs site's build.
+The numbers and claims a notebook's markdown states are checked against what its cells compute (#269).
 """
 
 import csv
 import json
 import math
 import os
+import re
 import subprocess
+import warnings
 from pathlib import Path
 
 import pytest
@@ -16,32 +19,172 @@ import pytest
 EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
 
 
-def run_notebook(path):
-    cells = json.loads(path.read_text(encoding="utf-8"))["cells"]
+def cells_of(path):
+    return json.loads(path.read_text(encoding="utf-8"))["cells"]
+
+
+def run_notebook(path, after_cell=None):
+    """Run every code cell of a notebook in one namespace and return it.
+
+    Chart cells draw with the Agg backend and must leave at least one figure; the figures are closed after
+    each. ``after_cell(ns)``, if given, runs after each code cell.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg", force=True)
+    import matplotlib.pyplot as plt
+
     ns = {}
-    for cell in cells:
-        if cell["cell_type"] != "code" or "plot" in cell["metadata"].get("tags", []):
-            continue
-        exec(compile("".join(cell["source"]), f"{path.name}", "exec"), ns)
+    with warnings.catch_warnings():
+        # plt.show() on a non-interactive backend warns that it cannot show anything.
+        warnings.filterwarnings("ignore", message=".*non-interactive.*", category=UserWarning)
+        for cell in cells_of(path):
+            if cell["cell_type"] != "code":
+                continue
+            exec(compile("".join(cell["source"]), f"{path.name}", "exec"), ns)
+            if "plot" in cell["metadata"].get("tags", []):
+                assert plt.get_fignums(), f"{path.name}: a plot cell drew no figure"
+                plt.close("all")
+            if after_cell is not None:
+                after_cell(ns)
     return ns
 
 
+def prose(path):
+    """A notebook's markdown cells, joined."""
+    return "\n".join("".join(c["source"]) for c in cells_of(path) if c["cell_type"] == "markdown")
+
+
+def sci(x, digits=1):
+    """A number as the prose writes it in scientific notation: 1.5e-6, 6e-10."""
+    mantissa, exponent = f"{abs(x):.{digits}e}".split("e")
+    return f"{mantissa}e{int(exponent)}"
+
+
+def assert_says(text, *quotes):
+    # Each quote is a passage of the prose with the computed values put in at the prose's own precision,
+    # so a value that drifts, or prose edited away from the value, fails here.
+    for quote in quotes:
+        assert quote in text, f"the notebook no longer says: {quote!r}"
+
+
+@pytest.mark.parametrize("name, lookup", [
+    ("one_year_view.ipynb", "DATA = next("),
+    ("reinsurance_pricing.ipynb", "REFERENCE = next("),
+    ("submission_evaluation.ipynb", "DATA = next("),
+    ("ils_deal_analysis.ipynb", "DATA = next("),
+])
+def test_data_folder_missing_is_a_clear_error(name, lookup, monkeypatch, tmp_path):
+    # A reader who copies a notebook out of the repository gets an error that says what is missing and
+    # where to run it, not a bare StopIteration.
+    monkeypatch.chdir(tmp_path)
+    ns = {}
+    with pytest.raises(FileNotFoundError, match="inside a clone of the repository"):
+        for cell in cells_of(EXAMPLES / name):
+            if cell["cell_type"] == "code":
+                source = "".join(cell["source"])
+                exec(compile(source, name, "exec"), ns)
+                assert lookup not in source, f"{name}: the lookup cell ran without an error"
+
+
 def test_one_year_view(monkeypatch, capsys):
-    monkeypatch.setitem(os.environ, "PROSPICIO_EXAMPLE_SIMS", "4000")
+    # At the published count of simulations (20,000, a few seconds) and the notebook's seeds, so the claims
+    # are checked on the numbers the docs site shows. Every inequality below also holds, with margins, at
+    # 4,000 simulations, so none rests on simulation noise.
+    monkeypatch.delenv("PROSPICIO_EXAMPLE_SIMS", raising=False)
     monkeypatch.chdir(EXAMPLES)
     ns = run_notebook(EXAMPLES / "one_year_view.ipynb")
     assert "reinsurance cuts the company's TVaR" in capsys.readouterr().out
+    assert ns["N_SIMS"] == 20000
+    text = prose(EXAMPLES / "one_year_view.ipynb")
+
+    # Reserve risk is the one-year view (#266): the loss is minus the claims development result of the
+    # re-reserving bootstrap, one draw per simulation, and it is narrower than the run-off view.
+    reserve, run_off, cdr = ns["reserve"], ns["run_off"], ns["cdr"]
+    assert ns["one_year"].model == "odp"
+    assert len(reserve.draws) == len(cdr.draws) == ns["N_SIMS"]
+    assert reserve.draws == [-x for x in cdr.draws]
+    assert abs(reserve.mean()) < 0.1 * math.sqrt(reserve.variance())
+    assert math.sqrt(reserve.variance()) < 0.9 * math.sqrt(run_off.variance())
+    assert reserve.quantile(0.995) < run_off.quantile(0.995) - run_off.mean()
+
     # Simulation agrees with exposure rating; the allocation adds up.
+    assert_says(text, "The simulated cessions agree with exposure rating")
     surplus = ns["surplus_loss"].mean()
     assert surplus == pytest.approx(ns["profile"].expected_surplus_loss(2e6, 4.0), rel=0.05)
+    assert ns["xl_loss"].mean() == pytest.approx(ns["xl_cost"], rel=0.05)
     for a in ns["allocations"].values():
         assert sum(a.allocated) == pytest.approx(a.total, rel=1e-9)
     assert ns["saved"] > 0
 
+    # "More lines cut the net tail."
+    assert_says(text, "More lines cut the net tail")
+    Tower, Layer = ns["Tower"], ns["Layer"]
+    tails = [Tower.inuring([[Layer.surplus("surplus", ns["retention"], more)], [ns["xl"]]])
+             .apply(ns["events"]).marginal(("net", "retained")).quantile(0.995) for more in [4.0, 8.0, 12.0]]
+    assert tails == sorted(tails, reverse=True) and tails[0] > 1.5 * tails[-1], tails
+
+    # The XL carries the premium the notebook prices (#268): deposit plus expected reinstatements is the
+    # risk-loaded premium, in one step, and the reinstatements are the measured rate times the deposit.
+    assert_says(text, "This is exact in one step, with no iteration")
+    xl, xl_price, reinstated = ns["xl"], ns["xl_price"], ns["reinstated"]
+    assert xl.premium + reinstated.mean() == pytest.approx(xl_price.premium, rel=1e-9)
+    assert reinstated.mean() == pytest.approx(ns["reinstatement_rate"] * xl.premium, rel=1e-9)
+    assert xl.premium > ns["xl_cost"] / 0.7
+
+    # The net view pays for the cover (#267): surplus premium less commission, the XL's deposit and each
+    # year's reinstatement premium, so its mean exceeds the gross mean by premiums less recoveries.
+    assert_says(text, "the original business runs at a 60% loss ratio, and the treaty pays a 35% ceding commission")
+    assert (ns["original_loss_ratio"], ns["ceding_commission"]) == (0.60, 0.35)
+    commission = ns["commission"]
+    assert ns["surplus"].premium == pytest.approx(ns["profile"].expected_surplus_loss(2e6, 4.0) / 0.6, rel=1e-12)
+    assert commission.mean() == pytest.approx(0.35 * ns["surplus"].premium, rel=1e-9)
+    paid = ns["surplus"].premium - commission.mean() + xl.premium + reinstated.mean()
+    cost = ns["reinsurance_cost"]
+    assert cost == pytest.approx(paid - ns["recovered"], rel=1e-6)
+    assert ns["net_of_cost"].mean() == pytest.approx(ns["net"].mean() + paid, rel=1e-9)
+    assert cost > 0
+
+    # "Reading the result". The allocations are by line: reserve, motor, property.
+    gross, net = ns["allocations"]["gross"], ns["allocations"]["net"]
+    assert [k[0] for k in ns["companies"]["gross"].components()] == ["reserve", "motor", "property"]
+    (g_reserve, g_motor, g_property), (n_reserve, n_motor, n_property) = gross.allocated, net.allocated
+    assert_says(text, "Motor dominates the tail, gross and net")
+    assert g_motor > max(g_reserve, g_property) and n_motor > 0.5 * net.total
+    assert_says(text, "The reserve's one-year risk is small beside it.")
+    assert g_reserve < 0.1 * gross.total and n_reserve < 0.15 * net.total
+    assert_says(text, "Reinsurance cuts property's CoTVaR by about half, even after its cost. "
+                      "The company's TVaR falls by less than that")
+    assert 0.4 < n_property / g_property < 0.6
+    assert ns["saved"] == pytest.approx(gross.total - net.total, rel=1e-12)
+    assert ns["saved"] < g_property - n_property
+    assert_says(text, "Reserve and motor take *more* of the net TVaR than of the gross.")
+    assert n_reserve / net.total > g_reserve / gross.total and n_motor / net.total > g_motor / gross.total
+    assert n_reserve > g_reserve and n_motor > g_motor
+    # The cost against the TVaR it saves, and what leaving the cost out would show.
+    assert_says(text, "its expected cost is about 6% of the TVaR it removes, below the 10% cost of capital")
+    assert round(100 * cost / ns["saved"]) == 6
+    assert_says(text, "Leaving the cost out would overstate the saving by about what the cedant pays")
+    overstated = gross.total - ns["retained_only"] - ns["saved"]
+    assert overstated == pytest.approx(paid, rel=0.15)
+
 
 def test_reinsurance_pricing(monkeypatch, capsys):
     monkeypatch.chdir(EXAMPLES)
-    ns = run_notebook(EXAMPLES / "reinsurance_pricing.ipynb")
+    # Every distribution compare_distribution sees, to measure the quantiles' distance from a tie below.
+    compared = []
+
+    def record_grids(ns):
+        compare = ns.get("compare_distribution")
+        if compare is not None and not getattr(compare, "recording", False):
+            def recording(section, name, example, prefix, grid, bs, share=False, **kw):
+                compared.append((f"{section}: {name}", grid, share))
+                return compare(section, name, example, prefix, grid, bs, share=share, **kw)
+
+            recording.recording = True
+            ns["compare_distribution"] = recording
+
+    ns = run_notebook(EXAMPLES / "reinsurance_pricing.ipynb", after_cell=record_grids)
     assert "comparisons are inside their tolerance" in capsys.readouterr().out
     # Every comparison with aggregate's numbers is inside its stated tolerance.
     comparisons = ns["COMPARISONS"]
@@ -64,6 +207,167 @@ def test_reinsurance_pricing(monkeypatch, capsys):
         ref["risk_pricing_gross", "unlimited_price_ask_ph"], rel=1e-6)
     # The exact closed forms the grid means approach.
     assert ns["severity"].lev(5000.0) * 10 == pytest.approx(ref["tower_gross", "gross_mean_exact"], rel=1e-12)
+
+    # The numbers the prose quotes. Nothing in this notebook is simulated: every number is a deterministic
+    # FFT on the same grid as aggregate's, so each is checked to the digits the prose prints it with, and a
+    # change in the library that moves one fails here instead of leaving the prose stale. The tolerances in
+    # the notebook were set after a first run; checking the worst difference observed in each class against
+    # the prose (below) means a drift towards a tolerance shows up here, not only when it crosses it.
+    text = prose(EXAMPLES / "reinsurance_pricing.ipynb")
+    agg = ns["AGG"]
+    diff = {(r["section"], r["name"]): r["diff"] for r in comparisons}
+    severity, sev_grid, bs1 = ns["severity"], ns["sev_grid"], ns["BS1"]
+    gross = ns["gross"]
+    exact = 10 * severity.lev(5000.0)
+    gap = 1.0 - gross.mean() / exact
+    step = ns["size"].step
+
+    # Section 1.
+    reaches = 1.0 - sev_grid.cdf(0.0)
+    conditional = sev_grid.layer(250.0, 0.0) / reaches
+    assert_says(
+        text,
+        f"The mean on the grid ({gross.mean():.2f}) is {gap:.3%} below the exact mean ({exact:.2f})",
+        f"pick {step:g} where `aggregate`, which sees the 5,000 limit, picks {agg['tower_gross', 'bs']:g}",
+        f"the lognormal puts {severity.cdf(bs1 / 2):.1%} of claims below {bs1 / 2:g}, half a bucket",
+        f"The {conditional:.1f} in the last column is therefore the mean over the {reaches:.1%} of claims that "
+        f"survive rounding; over all claims the exact mean claim in the layer is {severity.layer(250.0, 0.0):.1f}",
+        f"`aggregate` reports the same {agg['tower_gross', 'layer_250x0_pr_attach_grid']:.1%} and "
+        f"{agg['tower_gross', 'layer_250x0_cond_sev_mean']:.1f}",
+        "`Tower.on_grid` says `on_points` is `False`",
+    )
+    assert ns["tower_grids"].on_points is False
+
+    # Section 2: ceded and net add up in the mean, not in the standard deviation.
+    ceded, net = ns["program_ceded"], ns["net"]
+    sd_gross, sd_ceded, sd_net = (math.sqrt(g.variance()) for g in (gross, ceded, net))
+    assert ceded.mean() + net.mean() == pytest.approx(gross.mean(), rel=1e-9)
+    assert sd_ceded + sd_net > sd_gross
+    share_q90 = diff["2 program", "80% of 1000 xs 1000 q0.9"]
+    assert share_q90 == pytest.approx(0.2)  # "a fifth of a bucket"
+    assert_says(
+        text,
+        f"({gross.mean():.2f} = {ceded.mean():.2f} + {net.mean():.2f})",
+        f"{sd_ceded:.1f} + {sd_net:.1f} = {sd_ceded + sd_net:,.1f} is more than the gross {sd_gross:,.1f}",
+        f"The standard deviation differs by {sci(diff['2 program', '80% of 1000 xs 1000 sd'])}, the skewness by "
+        f"{sci(diff['2 program', '80% of 1000 xs 1000 skew'])}, and the 90% quantile by {share_q90 * bs1:.1f}, "
+        "a fifth of a bucket",
+    )
+
+    # Section 3: the same recovery under both schedules; the totals at the designed deposit and at 65%.
+    section3 = [v for (s, name), v in diff.items() if s == "3 limit and reinstatements"
+                and (name.endswith("expected reinstatement premium") or name.endswith("recovery"))]
+    assert len(section3) == 4 and max(section3) <= 1e-8  # "agree to 1e-8 or better"
+    (k_a, recovery), (k_b, recovery_b) = ns["per_deposit"]["A"], ns["per_deposit"]["B"]
+    assert recovery == recovery_b == pytest.approx(ns["limited"].mean(), rel=1e-12)
+    deposit, target = ns["DEPOSIT"], ns["TARGET_LR"]
+    total_a, total_b = deposit * (1 + k_a), deposit * (1 + k_b)
+    deposit_a, deposit_b = (recovery / target / (1 + k) for k in (k_a, k_b))
+    assert deposit_a < deposit_b  # "A needs the smaller deposit"
+    assert deposit_a * (1 + k_a) == pytest.approx(deposit_b * (1 + k_b), rel=1e-12)
+    assert_says(
+        text,
+        f"The recovery under schedule A or B is the same {recovery:.2f}",
+        f"schedule A collects {total_a:,.2f} against an expected recovery of {recovery:.2f} "
+        f"(a {recovery / total_a:.0%} loss ratio) and B collects {total_b:,.2f} ({recovery / total_b:.0%})",
+        f"Priced to the same {target:.0%} loss ratio, both collect {deposit_a * (1 + k_a):,.2f} in expectation",
+        f"keeps the {sci(ns['report3'].tail_mass, 0)} of probability beyond the grid's top",
+        f"shifts the result by {sci(diff['3 limit and reinstatements', 'loss above the limit'], 0)} relative",
+    )
+
+    # Section 4.
+    gross4, absorbed = ns["gross4"].mean(), ns["absorbed"]
+    assert_says(
+        text,
+        f"(an expected loss ratio of {gross.mean() / 1000:.0%})",
+        f"`Grid.lev(360)`: {absorbed:.2f}, a loss elimination ratio of {absorbed / gross4:.1%} of the "
+        f"{gross4:.0f} expected loss. The other {ns['after_aad'].mean() / gross4:.1%}",
+        f"entry ratio of 360 / {gross4:.0f} = {360 / gross4:.1f}",
+    )
+
+    # Section 5: Jensen's gap for the profit commission and the sliding scale.
+    premium_b, premium_c, lr_probs = ns["PREMIUM5B"], ns["PREMIUM5C"], ns["lr_probs"]
+    scale, middle = ns["scale"], ns["middle"]
+    below = sum(q * (scale(x) - middle(x)) for x, q in lr_probs if x < 0.35)
+    above = sum(q * (scale(x) - middle(x)) for x, q in lr_probs if x > 0.55)
+    assert above > -below > 0  # the years above 55% add more than the years below 35% take off
+    assert_says(
+        text,
+        f"so its average ({ns['commission'] / premium_b:.2%} of premium) is above its value at the expected loss "
+        f"ratio ({ns['pc_layer'].profit_commission_for(ns['pc_grids'].ceded[0].mean()) / premium_b:.2%})",
+        f"Its average ({ns['slide_commission'] / premium_c:.1%}) is above its value at the expected loss ratio "
+        f"({ns['at_expected']:.1%})",
+        f"the {sum(q for x, q in lr_probs if x < 0.35):.1%} of years below 35% take off",
+        f"a commission of {agg['variable_slide', 'slide_commission_rate_mean_docs_code']:.1%}, not "
+        f"{ns['slide_commission'] / premium_c:.1%}",
+    )
+
+    # Section 6: aggregate's Newton iteration stops at a premium error, which shows at the 1e-9 level.
+    def g_rows(view, family, points=(0.05, 0.5)):
+        return max(diff[f"6 {view} view", f"{family}: g({s}) at aggregate's parameter"] for s in points)
+
+    assert_says(
+        text,
+        f"({sci(agg['risk_pricing_gross', 'error_tvar'])} for the gross view's TVaR)",
+        f"The TVaR parameter differs by {sci(diff['6 gross view', 'tvar: parameter p'])} on the gross view and "
+        f"{sci(diff['6 ceded view', 'tvar: parameter p'])} on the ceded view, and its `g` rows by "
+        f"{sci(g_rows('gross', 'tvar'))} and {sci(g_rows('ceded', 'tvar'))}",
+        f"its parameter differs by {sci(diff['6 ceded view', 'ph: parameter rho'])} and its `g(0.05)` by "
+        f"{sci(g_rows('ceded', 'ph', (0.05,)))}",
+    )
+
+    # Where and why the numbers differ, and the worst difference in each tolerance class.
+    independent = [r for r in comparisons if not r["check"]]
+
+    def worst(cls):
+        return max((r for r in independent if r["cls"] == cls), key=lambda r: r["diff"])
+
+    assert worst("mean")["diff"] < 1e-7 and worst("sd")["diff"] < 1e-7  # "far inside" 1e-6
+    assert worst("quantile")["diff"] == 0
+    assert worst("share quantile")["diff"] == 0.5  # "at most half a bucket"
+    assert worst("share sd")["name"] == "50% of 1500 xs 1000 sd"
+    assert worst("skew")["name"] == "50% of 1500 xs 1000 skew"
+    share_skews = [r["diff"] for r in independent if r["cls"] == "skew" and "%" in r["name"]]
+    # The quantiles of the shared grid: how far the cdf is from a tie at each one compared.
+    tie = min(min(grid.cdf(grid.quantile(p)) - p, p - grid.cdf(grid.quantile(p) - grid.step))
+              for _, grid, share in compared if not share for p in (0.5, 0.9, 0.99, 0.999))
+    assert len(compared) >= 25 and tie > 0
+    # The 250 xs 250 layer's skewness as the notebook computes it, without and with the top of the grid.
+    central = ns["central"]
+    assert central == agg["tower_gross", "layer_250x250_ceded_skew_central"]
+    assert abs(ns["below"] / central - 1) < 1e-13  # "brings it under 1e-13"
+    # On the whole grid the difference is the noise itself, which differs by platform: 1.5e-6 on Windows and
+    # 1.8e-6 on Ubuntu, observed on 2026-10-22. The prose says "about 2e-6"; the band is wide on both sides
+    # (down to 5e-7, a third of the smallest seen) so another platform's noise does not fail it.
+    assert 5e-7 < abs(ns["whole"] / central - 1) < 2.5e-6
+    quoted = ns["quoted"]  # aggregate's quoted skew against its density's, largest difference first
+    for (example, quantity), _ in quoted[:4]:
+        # "the density's rounding deficit (`1 - sum(p)`, of order 1e-15 to 1e-14)"
+        assert 1e-16 < agg[example, quantity.replace("_skew", "_density_deficit")] < 1e-13, (example, quantity)
+    assert_says(
+        text,
+        f"at none of those compared is the cdf within {sci(tie)} of a tie",
+        f"recommend a step of {step:g}, where `aggregate`, which sees the policy limit, uses "
+        f"{agg['tower_gross', 'bs']:g}",
+        f"the cdf is at least {sci(tie)} away from the probability",
+        f"{gross.mean():.2f} against an exact {exact:.2f} in section 1, {gap:.3%} low, and "
+        f"{ns['tower_grids'].ceded[0].mean():.2f} against {10 * severity.layer(250.0, 0.0):.2f} for the layer 250 xs 0",
+        f"the standard deviation differs by {sci(diff['2 program', '80% of 1000 xs 1000 sd'])} for the 80% share "
+        f"and {sci(worst('share sd')['diff'])} for the 50% stop-loss share, the skewness by up to "
+        f"{sci(max(share_skews))}, and a quantile by at most half a bucket",
+        f"({sci(worst('tail')['diff'])} observed)",
+        f"({ns['POINTS'] * bs1:,.0f} for a bucket of {bs1:g})",
+        "the layer 250 xs 250 differs by about 2e-6",
+        f"differs again, by up to {sci(quoted[0][1])}",
+        f"The worst difference observed, {sci(worst('skew')['diff'])}, is the 50% stop-loss share",
+    )
+
+    # A quantile matches "the same grid point" with a tolerance of 0 buckets: the two packages' grid points
+    # i * bs are equal floats only because every bucket size is a power of two, so i * bs is exact in both.
+    # A bucket that is not (0.1, say) would need a tolerance of a few ulps instead.
+    buckets = {v for (_, quantity), v in agg.items() if quantity == "bs"}
+    buckets |= {ns[name] for name in ("BS1", "BS3", "BS4", "BS5", "BS5B", "BS5C")}
+    assert all(math.frexp(b)[0] == 0.5 for b in buckets), sorted(buckets)
 
 
 def test_submission_evaluation(monkeypatch, capsys):
@@ -210,3 +514,143 @@ def test_notebooks_are_committed_without_outputs():
         assert all(c["outputs"] == [] for c in code), f"{path.name} is committed with outputs"
         assert all(c["execution_count"] is None for c in code), f"{path.name} has execution counts"
         assert "version" not in nb["metadata"].get("language_info", {}), path.name
+
+
+# The R twins (#271). The weekly and manual CI runs render examples/one_year_view.qmd and
+# examples/reinsurance_pricing.qmd with Quarto to GitHub markdown (`--to gfm`) in one folder, point
+# PROSPICIO_R_TWINS at it and run these tests with the same PROSPICIO_EXAMPLE_SIMS. The notebooks run here,
+# at that count, so what the R documents print is compared with what the notebooks print now: no stored
+# reference values to keep current. Elsewhere, including the pull requests' python job, these tests skip.
+R_TWINS = os.environ.get("PROSPICIO_R_TWINS")
+needs_r_twins = pytest.mark.skipif(not R_TWINS, reason="PROSPICIO_R_TWINS is not set (the weekly CI run sets it)")
+
+
+def r_outputs(name):
+    """The lines an R document's chunks printed, from its GitHub markdown render, whitespace collapsed.
+
+    Quarto writes a chunk's output as a block indented by four spaces right after the chunk's closing
+    fence, so prose (whose list items are indented too) is never taken for output.
+    """
+    lines = (Path(R_TWINS) / name).read_text(encoding="utf-8").splitlines()
+    out, in_code, in_output, closed = [], False, False, False
+    for line in lines:
+        if line.startswith("```"):
+            in_code, in_output = not in_code, False
+            closed = not in_code
+            continue
+        if in_code:
+            continue
+        if not line.strip():
+            in_output = in_output or closed
+            continue
+        if in_output and line.startswith("    "):
+            out.append(re.sub(r"\s+", " ", line.strip()))
+        else:
+            in_output = closed = False
+    return out
+
+
+def printed(capsys):
+    return [re.sub(r"\s+", " ", line.strip()) for line in capsys.readouterr().out.splitlines() if line.strip()]
+
+
+@needs_r_twins
+def test_one_year_view_r_twin_prints_the_notebooks_numbers(monkeypatch, capsys):
+    monkeypatch.chdir(EXAMPLES)
+    run_notebook(EXAMPLES / "one_year_view.ipynb")
+    py = printed(capsys)
+    r = r_outputs("one_year_view.md")
+    # data.frame rows carry R's row number; the notebook's table has none.
+    r = [re.sub(r"^\d+ (?=(reserve|motor|property|total|diversif\.) )", "", line) for line in r]
+    # Every line that states a result, in both languages: the reserve, motor and property lines, the XL's
+    # price, what the reinsurance costs, the allocation table and the TVaR saved.
+    keys = [
+        r"opening reserve ", r"one-year: adverse development ", r"run-off: ", r"mean claim ", r"claims \d",
+        r"mean loss ", r"gross mean ", r"surplus cedes ", r"per-risk XL ", r"reinstatement premium ",
+        r"net mean ", r"\d+ lines: net 99\.5% ", r"risk-loaded premium ", r"deposit ", r"\(exposure-rated cost ",
+        r"surplus premium ", r"XL deposit ", r"paid ", r"reserve ", r"motor ", r"property ", r"total ",
+        r"diversif\. ", r"reinsurance cuts ", r"it costs ", r"\(leaving its cost out",
+    ]
+    for key in keys:
+        in_py = [line for line in py if re.match(key, line)]
+        in_r = [line for line in r if re.match(key, line)]
+        assert in_py, f"the notebook printed no line matching {key!r}"
+        assert in_r == in_py, f"{key!r}: the R twin printed {in_r}, the notebook {in_py}"
+
+
+@needs_r_twins
+def test_reinsurance_pricing_r_twin_passes_every_comparison(monkeypatch, capsys):
+    monkeypatch.chdir(EXAMPLES)
+    ns = run_notebook(EXAMPLES / "reinsurance_pricing.ipynb")
+    capsys.readouterr()
+    summary = re.compile(r"(\d+) of (\d+) comparisons are inside their tolerance: (\d+) independent comparisons "
+                         r"and (\d+) consistency checks that hold by construction(.*)$")
+    r = [summary.match(line) for line in r_outputs("reinsurance_pricing.md")]
+    r = [m for m in r if m]
+    assert len(r) == 1, "the R twin printed no summary line, or more than one"
+    passed, total, independent, checks, outside = r[0].groups()
+    # Every comparison passes in R, and the total is the sum of its parts.
+    assert int(passed) == int(total) > 300 and outside == "", r[0].group(0)
+    assert int(total) == int(independent) + int(checks), r[0].group(0)
+    # R makes the notebook's comparisons, the calibrated distortion parameters (`d@parameter`) included.
+    comparisons = ns["COMPARISONS"]
+    assert (int(independent), int(checks)) == (sum(not c["check"] for c in comparisons),
+                                               sum(c["check"] for c in comparisons)), r[0].group(0)
+
+
+def test_ils_deal_analysis(monkeypatch, capsys):
+    monkeypatch.setitem(os.environ, "PROSPICIO_EXAMPLE_SIMS", "2000")
+    monkeypatch.chdir(EXAMPLES)
+    ns = run_notebook(EXAMPLES / "ils_deal_analysis.ipynb")
+    out = capsys.readouterr().out
+    assert "inputs used below" in out
+    n = ns["N_SIMS"]
+
+    # The industry prior is a positive level and cv, and the 2026 draws have the mean and cv the cell targets.
+    assert 0.2 < ns["M_PRIOR"] < 0.9 and 0.0 < ns["CV_PRIOR"] < 0.5
+    assert len(ns["LR"]) == n
+    assert sum(ns["LR"]) / n == pytest.approx(ns["MU_2026"], rel=0.03)
+    assert ns["sd"](ns["LR"]) / ns["mean"](ns["LR"]) == pytest.approx(ns["CV_2026"], rel=0.10)
+
+    # The fit: every year has a positive ultimate, and the pattern is a distribution over the ages.
+    assert all(m > 0 for m in ns["post_mean"].values())
+    assert sum(ns["fit"].pattern) == pytest.approx(1.0, abs=1e-9)
+    assert ns["fit"].diagnostics["max_rhat"] < 1.05
+
+    # The structure: the deal's loss ratio is the book's, both structures cede the same loss, the flat one
+    # pays its stated commission and the sliding one pays more when the loss ratio is low.
+    flat, sliding = ns["deals"]["A_flat"], ns["deals"]["B_sliding"]
+    assert flat["loss"] == pytest.approx(sliding["loss"], rel=1e-9)
+    assert ns["mean"](flat["loss"]) == pytest.approx(ns["mean"](ns["LR"]), rel=1e-6)
+    assert ns["mean"](flat["commission"]) == pytest.approx(0.32 + ns["BROKERAGE"], abs=1e-9)
+    order = sorted(range(n), key=lambda i: flat["loss"][i])
+    commission = [sliding["commission"][i] for i in order]
+    assert all(a >= b - 1e-12 for a, b in zip(commission, commission[1:]))
+    assert commission[0] > commission[-1]
+
+    # The cash flows: money is conserved in the engine, the fund posts capital in every simulation, and
+    # the return is positive at these terms and falls when the loss ratio rises.
+    trace = ns["make_terms"](0.345).trace(flat["loss"][0])
+    assert abs(trace["conservation_error"]) < 1e-6
+    for deal in (flat, sliding):
+        assert all(f > 0 for f in deal["funded"])
+        assert len(deal["rate"]) == n and len(deal["moic"]) == n
+        assert sum(r != r for r in deal["rate"]) <= 0.01 * n  # NaN: no root found
+        assert ns["mean"](deal["moic"]) > 1.0
+    by_loss = sorted(range(n), key=lambda i: flat["loss"][i])
+    low = [flat["moic"][i] for i in by_loss[: n // 10]]
+    high = [flat["moic"][i] for i in by_loss[-n // 10:]]
+    assert ns["mean"](low) > ns["mean"](high)
+    # The book's MOIC is one plus the summed flows over the capital posted (the engine's own definition).
+    i = by_loss[n // 2]
+    posted = flat["funded"][i] + flat["opening"][i]
+    assert flat["moic"][i] == pytest.approx(1 + sum(flat["flows"][i]) / posted, rel=1e-9)
+
+    # Monitoring: a percentile, and the one-year view's spread is positive.
+    assert 0.0 <= ns["percentile"] <= 1.0
+    assert ns["sd"](ns["cdr"].draws) > 0
+
+    # The prose names the eight gaps with their issues.
+    text = prose(EXAMPLES / "ils_deal_analysis.ipynb")
+    for gap, issue in zip(range(1, 9), range(598, 606)):
+        assert re.search(rf"\| G{gap} \|.*\| #{issue} \|", text), gap

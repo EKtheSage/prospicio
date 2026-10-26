@@ -2052,6 +2052,127 @@ fn elpd_loo_rust(log_lik: &[f64], n: f64, r_eff: &[f64]) -> Result<List> {
     ))
 }
 
+/// Draws from an R array laid out as `posterior`'s `draws_array`:
+/// iteration × chain × variable, column-major.
+fn draws_from_array(
+    values: &[f64],
+    n_iter: f64,
+    n_chain: f64,
+    names: Vec<String>,
+    divergences: &[f64],
+) -> Result<prospicio_bayes::nuts::PosteriorDraws> {
+    let n = whole(n_iter, "n_iter")? as usize;
+    let m = whole(n_chain, "n_chain")? as usize;
+    let p = names.len();
+    if n * m * p != values.len() {
+        return Err(Error::Other(format!(
+            "{} values are not {n} iterations by {m} chains by {p} variables",
+            values.len()
+        )));
+    }
+    let blocks = (0..m)
+        .map(|c| {
+            (0..n)
+                .flat_map(|d| (0..p).map(move |v| values[d + n * (c + m * v)]))
+                .collect()
+        })
+        .collect();
+    let div = divergences
+        .iter()
+        .map(|&d| whole(d, "divergences").map(|d| d as usize))
+        .collect::<Result<Vec<usize>>>()?;
+    prospicio_bayes::nuts::PosteriorDraws::from_chains(names, blocks, div).map_err(to_r)
+}
+
+/// Draws as `posterior`'s iteration × chain × variable array, column-major.
+fn draws_to_array(d: &prospicio_bayes::nuts::PosteriorDraws) -> Vec<f64> {
+    let (n, m, p) = (d.draws_per_chain(), d.chains(), d.dim());
+    let mut out = vec![0.0; n * m * p];
+    for c in 0..m {
+        for i in 0..n {
+            let row = d.draw(c * n + i);
+            for v in 0..p {
+                out[i + n * (c + m * v)] = row[v];
+            }
+        }
+    }
+    out
+}
+
+/// The posterior summary of draws held as an R array.
+#[extendr]
+fn draws_summary_rust(
+    values: &[f64],
+    n_iter: f64,
+    n_chain: f64,
+    names: Vec<String>,
+) -> Result<List> {
+    let d = draws_from_array(values, n_iter, n_chain, names, &[])?;
+    let s = d.summary().map_err(to_r)?;
+    let col = |f: fn(&prospicio_bayes::nuts::ParamSummary) -> f64| -> Vec<f64> {
+        s.iter().map(f).collect()
+    };
+    Ok(list!(
+        variable = s.iter().map(|r| r.name.clone()).collect::<Vec<String>>(),
+        mean = col(|r| r.mean),
+        sd = col(|r| r.sd),
+        q05 = col(|r| r.q05),
+        q50 = col(|r| r.q50),
+        q95 = col(|r| r.q95),
+        rhat = col(|r| r.rhat),
+        ess_bulk = col(|r| r.ess_bulk),
+        ess_tail = col(|r| r.ess_tail)
+    ))
+}
+
+/// PSIS-LOO of draws held as an R array, from the variables `prefix[...]`,
+/// with `r_eff` from the chains.
+#[extendr]
+fn draws_loo_rust(
+    values: &[f64],
+    n_iter: f64,
+    n_chain: f64,
+    names: Vec<String>,
+    prefix: &str,
+) -> Result<List> {
+    let d = draws_from_array(values, n_iter, n_chain, names, &[])?;
+    let (ll, n) = d.log_likelihood(prefix).map_err(to_r)?;
+    let r_eff = d.relative_efficiency(&ll, n).map_err(to_r)?;
+    let l = prospicio_bayes::elpd::loo(&ll, n, Some(&r_eff)).map_err(to_r)?;
+    Ok(list!(
+        estimates = vec![l.estimate.elpd, l.estimate.se, l.estimate.p, l.estimate.ic],
+        pointwise = l.estimate.pointwise,
+        pareto_k = l.pareto_k,
+        k_threshold = l.k_threshold,
+        r_eff = r_eff
+    ))
+}
+
+/// CmdStan CSV files read into R arrays laid out as `draws_array`.
+#[extendr]
+fn read_stan_csv_rust(paths: Vec<String>) -> Result<List> {
+    let fit = prospicio_bayes::stan_csv::read(&paths).map_err(to_r)?;
+    let d = &fit.draws;
+    let (sampler_values, sampler_names) = match &fit.sampler {
+        Some(s) => (draws_to_array(s), s.names().to_vec()),
+        None => (vec![], vec![]),
+    };
+    Ok(list!(
+        values = draws_to_array(d),
+        names = d.names().to_vec(),
+        n_iter = d.draws_per_chain() as f64,
+        n_chain = d.chains() as f64,
+        divergences = d
+            .divergences()
+            .iter()
+            .map(|&v| v as f64)
+            .collect::<Vec<f64>>(),
+        sampler_values = sampler_values,
+        sampler_names = sampler_names,
+        warmup_dropped = fit.warmup_dropped as f64
+    ))
+}
+
 #[extendr]
 fn elpd_waic_rust(log_lik: &[f64], n: f64) -> Result<List> {
     let n = whole(n, "n")? as usize;
@@ -2547,6 +2668,9 @@ extendr_module! {
     fn mcmc_diagnostics_rust;
     fn elpd_loo_rust;
     fn elpd_waic_rust;
+    fn draws_summary_rust;
+    fn draws_loo_rust;
+    fn read_stan_csv_rust;
     fn glmm_fit_design;
     impl GlmmModel;
     fn bayes_glmm_fit_design;

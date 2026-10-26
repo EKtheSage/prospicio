@@ -98,6 +98,26 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo publish --workspace --dry-run
 
+  # The public API of every publishable crate against its last version on
+  # crates.io (#573). A 0.0.x version may break anything under Cargo's
+  # rules, so the check is run as for a minor release, which reports every
+  # break: a removed item, a changed signature, a new required trait item.
+  # Until 1.0 it reports and does not block (each break it lists needs a
+  # changelog fragment marked breaking, docs/release.md); from 1.0 it
+  # drops continue-on-error and the publish jobs need it.
+  semver:
+    needs: version
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks
+      - run: cargo semver-checks check-release --workspace --release-type minor
+
   pypi:
     if: github.ref_type == 'tag'
     needs: [wheels, sdist, crates]

@@ -614,7 +614,8 @@ compounds with each year between the data and the treaty period.
 The severity must also match the policies' basis. Claims-made policies and occurrence policies report the same
 losses in different years, and a per-claim limit caps each claimant while a per-occurrence limit caps the sum
 over all claimants in one event, so the severity behind a per-occurrence limit is the occurrence's total. A
-long-tail excess layer also develops for many years after its accident year (#192 in section 8).
+long-tail excess layer also develops for many years after its accident year; [`reserving-excess-layers.md`](reserving-excess-layers.md)
+derives its factors from the ground-up triangle and a severity.
 
 **Use it when** a casualty or professional liability program has policy limits and premiums by limit and
 little or no large-loss history, or when a layer cuts through a limit (5 xs 5 over policies of 5 and 10 sees only
@@ -876,9 +877,10 @@ development of known claims, trend and the completeness cut, `PreparedLosses.bur
 year with count IBNR and an `IndexClause`, `PreparedLosses.as_if` for the history under past program structures,
 and `DevelopmentPattern` for the patterns. The gaps left are filed for the lanes that own the code:
 
-- **#192, excess-layer loss development**: excess development factors from a ground-up triangle and a severity
-  curve, credibility blending of a layer's own development with benchmark patterns, and a Bornhuetter–Ferguson
-  prior from the Pareto layer share. Until then, development of layer losses is unstable with many zero cells.
+- **Excess-layer loss development** is no longer a gap (#192): excess development factors from a ground-up
+  triangle and a severity, credibility blending with the layer's own development and a Bornhuetter-Ferguson
+  prior from the layer share are in `prospicio.reserving`, shown in
+  [`reserving-excess-layers.md`](reserving-excess-layers.md).
 
 One smaller gap: no benchmark alphas or curves by line ship with the library (section 7). The calibrations of
 section 3 fit `c` to one number, a mean destruction rate or a layer share; fitting it to several layers'

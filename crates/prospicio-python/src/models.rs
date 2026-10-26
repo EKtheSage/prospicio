@@ -3069,28 +3069,248 @@ pub(crate) fn lppd(log_lik: Vec<Vec<f64>>) -> PyResult<f64> {
 #[pyfunction]
 pub(crate) fn mcmc_diagnostics(chains: Vec<Vec<f64>>) -> PyResult<HashMap<String, f64>> {
     let refs: Vec<&[f64]> = chains.iter().map(Vec::as_slice).collect();
+    diagnostics_of(&refs)
+}
+
+fn diagnostics_of(refs: &[&[f64]]) -> PyResult<HashMap<String, f64>> {
     Ok(HashMap::from([
         (
             "rhat".to_string(),
-            prospicio_bayes::rhat(&refs).map_err(to_py)?,
+            prospicio_bayes::rhat(refs).map_err(to_py)?,
         ),
         (
             "ess_bulk".to_string(),
-            prospicio_bayes::ess_bulk(&refs).map_err(to_py)?,
+            prospicio_bayes::ess_bulk(refs).map_err(to_py)?,
         ),
         (
             "ess_tail".to_string(),
-            prospicio_bayes::ess_tail(&refs).map_err(to_py)?,
+            prospicio_bayes::ess_tail(refs).map_err(to_py)?,
         ),
         (
             "ess_mean".to_string(),
-            prospicio_bayes::ess_mean(&refs).map_err(to_py)?,
+            prospicio_bayes::ess_mean(refs).map_err(to_py)?,
         ),
         (
             "mcse_mean".to_string(),
-            prospicio_bayes::mcse_mean(&refs).map_err(to_py)?,
+            prospicio_bayes::mcse_mean(refs).map_err(to_py)?,
         ),
     ]))
+}
+
+/// Posterior draws from any sampler (Stan, PyMC, nutpie or another), so
+/// that the summary, R-hat, ESS and PSIS-LOO run on them as on our own
+/// fits.
+///
+/// Build one with ``read_stan_csv`` (CmdStan output),
+/// ``draws_from_arrays`` (a dict of arrays shaped ``(chain, draw, ...)``)
+/// or ``draws_from_inference_data`` (an arviz ``InferenceData``, as PyMC
+/// and nutpie return), or directly from named variables and chains.
+///
+/// Parameters
+/// ----------
+/// names : list of str
+///     Distinct variable names; a container's elements are separate names
+///     such as ``theta[1]``.
+/// chains : list of list of list of float
+///     One list per chain, each a list of draws, each draw one value per
+///     name. Every chain has the same number of draws.
+/// divergences : list of int, optional
+///     Divergent transitions in each chain, if the sampler reports them.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import Draws
+/// >>> d = Draws(["mu"], [[[float((i * 37) % 101)] for i in range(400)],
+/// ...                    [[float((i * 53 + 7) % 101)] for i in range(400)]])
+/// >>> d.diagnostics("mu")["rhat"] < 1.01
+/// True
+#[pyclass(name = "Draws", module = "prospicio.models", frozen)]
+pub(crate) struct PyDraws {
+    inner: prospicio_bayes::nuts::PosteriorDraws,
+    sampler: Option<prospicio_bayes::nuts::PosteriorDraws>,
+    warmup_dropped: usize,
+}
+
+impl PyDraws {
+    fn column(&self, name: &str) -> PyResult<Vec<Vec<f64>>> {
+        let j = self
+            .inner
+            .index(name)
+            .ok_or_else(|| PyValueError::new_err(format!("no variable named {name:?}")))?;
+        Ok(self.inner.parameter(j))
+    }
+}
+
+#[pymethods]
+impl PyDraws {
+    #[new]
+    #[pyo3(signature = (names, chains, divergences = None))]
+    fn new(
+        names: Vec<String>,
+        chains: Vec<Vec<Vec<f64>>>,
+        divergences: Option<Vec<usize>>,
+    ) -> PyResult<Self> {
+        let dim = names.len();
+        if chains.iter().flatten().any(|d| d.len() != dim) {
+            return Err(PyValueError::new_err(format!(
+                "every draw needs one value per name ({dim})"
+            )));
+        }
+        let blocks = chains.into_iter().map(|c| c.concat()).collect();
+        let inner = prospicio_bayes::nuts::PosteriorDraws::from_chains(
+            names,
+            blocks,
+            divergences.unwrap_or_default(),
+        )
+        .map_err(to_py)?;
+        Ok(Self {
+            inner,
+            sampler: None,
+            warmup_dropped: 0,
+        })
+    }
+
+    /// Reads CmdStan CSV output, one file per chain: comments skipped,
+    /// saved warmup draws dropped, ``theta.1.2`` named ``theta[1,2]``,
+    /// ``lp__`` kept as a variable, the sampler's other ``__`` columns in
+    /// ``sampler`` and the ``divergent__`` draws counted per chain.
+    ///
+    /// Parameters
+    /// ----------
+    /// paths : list of str or path
+    ///
+    /// Returns
+    /// -------
+    /// Draws
+    #[staticmethod]
+    fn read_stan_csv(paths: Vec<std::path::PathBuf>) -> PyResult<Self> {
+        let fit = prospicio_bayes::stan_csv::read(&paths).map_err(to_py)?;
+        Ok(Self {
+            inner: fit.draws,
+            sampler: fit.sampler,
+            warmup_dropped: fit.warmup_dropped,
+        })
+    }
+
+    /// Variable names.
+    #[getter]
+    fn names(&self) -> Vec<String> {
+        self.inner.names().to_vec()
+    }
+
+    /// Number of chains.
+    #[getter]
+    fn n_chains(&self) -> usize {
+        self.inner.chains()
+    }
+
+    /// Draws in each chain.
+    #[getter]
+    fn draws_per_chain(&self) -> usize {
+        self.inner.draws_per_chain()
+    }
+
+    /// Divergent transitions in each chain (zeros when none were given).
+    #[getter]
+    fn divergences(&self) -> Vec<usize> {
+        self.inner.divergences().to_vec()
+    }
+
+    /// Warmup draws dropped from each chain by ``read_stan_csv``.
+    #[getter]
+    fn warmup_dropped(&self) -> usize {
+        self.warmup_dropped
+    }
+
+    /// The sampler's columns from ``read_stan_csv`` (``accept_stat__``,
+    /// ``treedepth__``, ``divergent__``, ``energy__`` and the others) as
+    /// draws in the same chains; ``None`` otherwise.
+    #[getter]
+    fn sampler(&self) -> Option<Self> {
+        self.sampler.clone().map(|s| Self {
+            inner: s,
+            sampler: None,
+            warmup_dropped: self.warmup_dropped,
+        })
+    }
+
+    /// One variable's draws, one list per chain.
+    ///
+    /// Returns
+    /// -------
+    /// list of list of float
+    fn chains(&self, name: &str) -> PyResult<Vec<Vec<f64>>> {
+        self.column(name)
+    }
+
+    /// One variable's diagnostics, as ``mcmc_diagnostics`` gives them.
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     ``rhat``, ``ess_bulk``, ``ess_tail``, ``ess_mean``, ``mcse_mean``.
+    fn diagnostics(&self, name: &str) -> PyResult<HashMap<String, f64>> {
+        let chains = self.column(name)?;
+        let refs: Vec<&[f64]> = chains.iter().map(Vec::as_slice).collect();
+        diagnostics_of(&refs)
+    }
+
+    /// Posterior summary: one dict per variable with ``name``, ``mean``,
+    /// ``sd``, ``q05``, ``q50``, ``q95``, ``rhat``, ``ess_bulk`` and
+    /// ``ess_tail``, as R's ``posterior::summarise_draws``.
+    ///
+    /// Returns
+    /// -------
+    /// list of dict
+    fn summary<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, pyo3::types::PyDict>>> {
+        summary_dicts(py, self.inner.summary().map_err(to_py)?)
+    }
+
+    /// The pointwise log-likelihood held as the variables ``prefix`` or
+    /// ``prefix[...]``, one row per draw (chain by chain), for
+    /// ``elpd_loo`` or ``elpd_waic``.
+    ///
+    /// Returns
+    /// -------
+    /// list of list of float
+    #[pyo3(signature = (prefix = "log_lik"))]
+    fn log_likelihood(&self, prefix: &str) -> PyResult<Vec<Vec<f64>>> {
+        let (ll, n) = self.inner.log_likelihood(prefix).map_err(to_py)?;
+        Ok(ll.chunks(n).map(<[f64]>::to_vec).collect())
+    }
+
+    /// Each observation's relative efficiency from the chains, as R's
+    /// ``loo::relative_eff(exp(log_lik), chain_id)``.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (prefix = "log_lik"))]
+    fn relative_efficiency(&self, prefix: &str) -> PyResult<Vec<f64>> {
+        let (ll, n) = self.inner.log_likelihood(prefix).map_err(to_py)?;
+        self.inner.relative_efficiency(&ll, n).map_err(to_py)
+    }
+
+    /// PSIS-LOO from the pointwise log-likelihood ``prefix[...]``, with
+    /// ``r_eff`` from the chains, as R's
+    /// ``loo(log_lik, r_eff = relative_eff(exp(log_lik), chain_id))``.
+    ///
+    /// Returns
+    /// -------
+    /// Elpd
+    #[pyo3(signature = (prefix = "log_lik"))]
+    fn loo(&self, prefix: &str) -> PyResult<PyElpd> {
+        Ok(PyElpd::from_loo(self.inner.loo(prefix).map_err(to_py)?))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Draws({} variables, {} chains of {} draws)",
+            self.inner.dim(),
+            self.inner.chains(),
+            self.inner.draws_per_chain()
+        )
+    }
 }
 
 /// Stacking weights from pointwise held-out log predictive densities

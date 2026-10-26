@@ -21,7 +21,7 @@
 
 use prospicio_core::{Error, Result};
 use prospicio_prob::{
-    ComponentKey, Distortion, Distribution, Empirical, Grid, PredictiveDistribution,
+    ComponentKey, Distortion, Distribution, Empirical, Grid, PredictiveDistribution, Sampled,
 };
 
 /// How the premium is set from the losses and the assets.
@@ -129,6 +129,129 @@ pub fn price_grid(losses: &Grid, rule: &PremiumRule, assets: &Distortion) -> Res
     let p = priced(losses.mean(), |d| losses.distortion(d), rule, assets);
     check_funded(p.premium, p.assets)?;
     Ok(p)
+}
+
+/// The upfront premium of a cover with paid reinstatements from
+/// [`price_with_reinstatements`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ReinstatementPrice {
+    /// The upfront (deposit) premium `P`.
+    pub upfront: f64,
+    /// The expected reinstatement premium `P E[g]`.
+    pub expected_reinstatement_premium: f64,
+    /// The price of the reinsurer's net outcome `X − P g` at the solution:
+    /// its expected value, premium (`P`) and assets.
+    pub net: Price,
+    /// The expected ceded loss `E[X]`.
+    pub expected_loss: f64,
+    /// The bisection steps taken.
+    pub iterations: usize,
+}
+
+impl ReinstatementPrice {
+    /// The expected premium in all, `P (1 + E[g])`.
+    pub fn expected_premium(&self) -> f64 {
+        self.upfront + self.expected_reinstatement_premium
+    }
+
+    /// The margin on all the premium, `P (1 + E[g]) − E[X]`, which is the
+    /// net outcome's margin `P − E[X − P g]`.
+    pub fn margin(&self) -> f64 {
+        self.net.margin()
+    }
+
+    /// The capital, the net outcome's assets less the upfront premium.
+    pub fn capital(&self) -> f64 {
+        self.net.capital()
+    }
+
+    /// The return on capital.
+    pub fn return_on_capital(&self) -> f64 {
+        self.net.return_on_capital()
+    }
+}
+
+/// The upfront premium of a cover whose reinstatement premium counts in
+/// its own price (#587): with `losses[j]` the year's ceded loss and `g[j]`
+/// its reinstatement premium per unit of upfront premium in simulation `j`
+/// (for example a tower's reinstatement premium at a unit deposit), the
+/// reinsurer's net outcome is `X − P g`, so its assets and price depend on
+/// `P`, and the upfront premium solves `P = price(X − P g)` under `rule`
+/// and `assets`, as [`price`] prices a loss.
+///
+/// The gap `price(X − P g) − P` falls as `P` rises (`g ≥ 0`), from
+/// `price(X)` at 0 to at most 0 at `price(X)`, so the root is unique and
+/// is found by bisection to a relative `1e-12`. With `g = 0` this is
+/// [`price`]; with a constant `g` the price is `price(X) / (1 + g)`; and
+/// under the identity distortion (`proportional_hazard(1)`) it is Sundt's
+/// pure premium `E[X] / (1 + E[g])`.
+///
+/// ```
+/// use prospicio_prob::{Distortion, Sampled};
+/// use prospicio_pricing::risk_load::{price, price_with_reinstatements, PremiumRule};
+///
+/// let x = [0.0, 0.0, 2.0, 6.0];
+/// let rule = PremiumRule::cost_of_capital(0.25).unwrap();
+/// let assets = Distortion::tvar(0.5).unwrap();
+/// // One reinstatement at 100% on a limit of 6: g = min(X, 6) / 6.
+/// let g: Vec<f64> = x.iter().map(|l| l / 6.0).collect();
+/// let r = price_with_reinstatements(&x, &g, &rule, &assets).unwrap();
+/// let plain = price(&Sampled::new(x.to_vec()).unwrap(), &rule, &assets).unwrap();
+/// assert!(r.upfront < plain.premium);
+/// // At the solution the net outcome is priced at the upfront premium.
+/// assert!((r.return_on_capital() - 0.25).abs() < 1e-9);
+/// ```
+pub fn price_with_reinstatements(
+    losses: &[f64],
+    g: &[f64],
+    rule: &PremiumRule,
+    assets: &Distortion,
+) -> Result<ReinstatementPrice> {
+    if losses.len() != g.len() || losses.is_empty() {
+        return Err(Error::Data(format!(
+            "{} losses and {} reinstatement rates; one each a simulation",
+            losses.len(),
+            g.len()
+        )));
+    }
+    if let Some(&bad) = g.iter().find(|x| !(x.is_finite() && **x >= 0.0)) {
+        return Err(Error::InvalidParameter {
+            name: "g",
+            value: bad,
+            reason: "reinstatement premium per unit of upfront premium must be finite and non-negative",
+        });
+    }
+    let net = |p: f64| -> Result<Price> {
+        let y: Vec<f64> = losses.iter().zip(g).map(|(x, g)| x - p * g).collect();
+        Ok(price_unchecked(&Sampled::new(y)?, rule, assets))
+    };
+    let expected_loss = losses.iter().sum::<f64>() / losses.len() as f64;
+    let mean_g = g.iter().sum::<f64>() / g.len() as f64;
+    let (mut lo, mut hi) = (0.0_f64, net(0.0)?.premium);
+    let mut iterations = 0;
+    if hi > 0.0 && mean_g > 0.0 {
+        let tol = 1e-12 * hi;
+        while hi - lo > tol && iterations < 200 {
+            let mid = 0.5 * (lo + hi);
+            if net(mid)?.premium > mid {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+            iterations += 1;
+        }
+    }
+    let upfront = if mean_g > 0.0 { 0.5 * (lo + hi) } else { hi };
+    let mut at = net(upfront)?;
+    check_funded(at.premium, at.assets)?;
+    at.premium = upfront;
+    Ok(ReinstatementPrice {
+        upfront,
+        expected_reinstatement_premium: upfront * mean_g,
+        net: at,
+        expected_loss,
+        iterations,
+    })
 }
 
 /// Prices of a portfolio's components and of the portfolio as a whole.
@@ -377,5 +500,38 @@ mod tests {
         assert_eq!(p.total.assets, 6.0);
         assert_eq!(p.standalone[1].assets, 1.5);
         assert_eq!(p.components[1], vec![KeyValue::from("b")]);
+    }
+
+    #[test]
+    fn reinstatements_in_the_price_reduce_to_the_known_cases() {
+        let x = [0.0, 1.0, 0.0, 3.0, 8.0, 0.5, 12.0, 0.0];
+        let rule = PremiumRule::cost_of_capital(0.15).unwrap();
+        let assets = Distortion::tvar(0.8).unwrap();
+        let plain = price(&Sampled::new(x.to_vec()).unwrap(), &rule, &assets).unwrap();
+        // g = 0 is the plain price.
+        let zero = price_with_reinstatements(&x, &[0.0; 8], &rule, &assets).unwrap();
+        assert!((zero.upfront - plain.premium).abs() < 1e-12);
+        // A constant g divides the price by 1 + g.
+        let c = price_with_reinstatements(&x, &[0.4; 8], &rule, &assets).unwrap();
+        assert!((c.upfront - plain.premium / 1.4).abs() < 1e-10 * plain.premium);
+        // Sundt's pure premium under the identity distortion.
+        let g: Vec<f64> = x.iter().map(|l| (l / 10.0_f64).min(1.0)).collect();
+        let mean_g = g.iter().sum::<f64>() / 8.0;
+        let identity = PremiumRule::Distortion(Distortion::proportional_hazard(1.0).unwrap());
+        let sundt = price_with_reinstatements(&x, &g, &identity, &assets).unwrap();
+        let el = x.iter().sum::<f64>() / 8.0;
+        assert!((sundt.upfront - el / (1.0 + mean_g)).abs() < 1e-10);
+        // A g that rises with the loss: the fixed point, below the plain
+        // price, with the net outcome priced at it.
+        let r = price_with_reinstatements(&x, &g, &rule, &assets).unwrap();
+        assert!(r.upfront < plain.premium);
+        assert!((r.return_on_capital() - 0.15).abs() < 1e-9);
+        let y: Vec<f64> = x.iter().zip(&g).map(|(x, g)| x - r.upfront * g).collect();
+        let again = price(&Sampled::new(y).unwrap(), &rule, &assets).unwrap();
+        assert!((again.premium - r.upfront).abs() < 1e-9 * r.upfront);
+        assert!((r.expected_premium() - r.upfront * (1.0 + mean_g)).abs() < 1e-12);
+        assert!((r.margin() - (r.expected_premium() - el)).abs() < 1e-9);
+        assert!(price_with_reinstatements(&x, &[0.1; 3], &rule, &assets).is_err());
+        assert!(price_with_reinstatements(&x, &[-0.1; 8], &rule, &assets).is_err());
     }
 }

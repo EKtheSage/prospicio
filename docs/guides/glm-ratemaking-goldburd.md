@@ -250,32 +250,31 @@ be the offset and the GLM would fit age around them.
 estimates it (prospicio: `dispersion="pearson"`), which leaves the
 coefficients alone and scales the standard errors by `sqrt(phi)`. The negative
 binomial instead adds a parameter `k` with variance `mu (1 + k mu)`;
-prospicio's `"negative_binomial"` takes `theta = 1/k` as an input and does not
-estimate it, so the code profiles the log-likelihood over a grid by hand. The
-`nb` column was drawn with `theta = 2`:
+prospicio's `"negative_binomial"` family takes `theta = 1/k` as an input, and
+`NegativeBinomialGlm` estimates it with the coefficients by maximum likelihood
+(as R's `MASS::glm.nb`). The `nb` column was drawn with `theta = 2`:
 
 ```python
+from prospicio.models import NegativeBinomialGlm
+
 c = coding("age")
 odp = Glm("poisson", "log", dispersion="pearson").fit(c.design(data, offset=log_e), data["claims"])
 print(f"overdispersed Poisson: phi {odp.dispersion:.3f}, same coefficients:",
       max(abs(a - b) for a, b in zip(odp.coefficients, counts.coefficients)) < 1e-12,
       f", age se {counts.std_errors[1]:.5f} -> {odp.std_errors[1]:.5f}")
-profile = {}
-for theta in [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0]:
-    nb = Glm("negative_binomial", "log", theta=theta).fit(c.design(data, offset=log_e), data["nb"])
-    profile[theta] = nb.log_likelihood
-best = max(profile, key=profile.get)
-print("negative binomial log-likelihood by theta:", {t: round(v, 1) for t, v in profile.items()})
-print("best theta on the grid:", best, "(drawn with 2)")
+nb = NegativeBinomialGlm().fit(c.design(data, offset=log_e), data["nb"])
+print(f"negative binomial: theta {nb.theta:.2f} (se {nb.se_theta:.2f}, drawn with 2),"
+      f" log-likelihood {nb.log_likelihood:.1f}")
 ```
 
 ```text
 overdispersed Poisson: phi 0.944, same coefficients: True , age se 0.00452 -> 0.00439
-negative binomial log-likelihood by theta: {0.5: -932.4, 1.0: -902.6, 1.5: -899.9, 2.0: -902.3, 2.5: -905.9, 3.0: -909.4, 4.0: -915.7}
-best theta on the grid: 1.5 (drawn with 2)
+negative binomial: theta 1.40 (se 0.21, drawn with 2), log-likelihood -899.8
 ```
 
-The Poisson data here are not overdispersed (`phi` is just under 1). Because
+The Poisson data here are not overdispersed (`phi` is just under 1). The
+estimated `theta`, 1.40, falls below the 2 the column was drawn with, which is
+the sampling variation of one portfolio of 600 policies. Because
 `theta` is part of the negative binomial's variance, a count model with an
 offset and a frequency model with a weight estimate it differently, which is
 footnote 5's caveat.
@@ -284,31 +283,21 @@ footnote 5's caveat.
 Gaussian (`V = mu^3`) suits more skewed data. Section 6.3.1 decides between
 them with deviance residuals: if the family is right they look roughly normal,
 and a right-skewed histogram says the data are more skewed than the family
-assumes. prospicio's `GlmFit` does not return residuals, but `deviance` with
-one row gives each row's unit deviance, so they are a line of code. The `ig`
-column was drawn from an inverse Gaussian:
+assumes. `GlmFit.diagnostics(design, y)` returns them, with the Pearson and
+working residuals, the leverages and Cook's distances. The `ig` column was
+drawn from an inverse Gaussian:
 
 ```python
-from prospicio.models import deviance
-
-
-def deviance_residuals(family, y, mu, weights=None, **kw):
-    """sign(y - mu) * sqrt(unit deviance), one row at a time."""
-    w = weights or [1.0] * len(y)
-    return [math.copysign(math.sqrt(max(deviance(family, [a], [m], weights=[wi], **kw), 0.0)), a - m)
-            for a, m, wi in zip(y, mu, w)]
-
-
 def skewness(xs):
     m = sum(xs) / len(xs)
     s2 = sum((x - m) ** 2 for x in xs) / len(xs)
     return sum((x - m) ** 3 for x in xs) / len(xs) / s2 ** 1.5
 
 
-c = coding("age")
+sev_design = coding("age").design(data)
 for family in ["gamma", "inverse_gaussian"]:
-    fit = Glm(family, "log").fit(c.design(data), data["ig"])
-    r = deviance_residuals(family, data["ig"], fit.fitted)
+    fit = Glm(family, "log").fit(sev_design, data["ig"])
+    r = fit.diagnostics(sev_design, data["ig"])["deviance"]
     print(f"{family:16s} AIC {fit.aic:8.1f}, skewness of deviance residuals {skewness(r):+.2f}")
 ```
 
@@ -357,37 +346,23 @@ mean 400.0 (eq. 7: 400.0), power 1.3333 (eq. 8: 1.3333), dispersion 203.581 (eq.
 ```
 
 To pick `p` the monograph suggests estimating it, comparing candidates by
-log-likelihood or cross-validation, or taking a customary 1.6 to 1.7. The Rust
-crate has a profile-likelihood search (`prospicio_glm::tweedie`) that the
-bindings do not expose, so the profile is done by hand: for each `p`, maximize
-the GLM's exact Tweedie log-likelihood over `phi`. With the dispersion fixed
-(`dispersion=phi`) the coefficients do not change and `log_likelihood` is the
-Dunn and Smyth series density summed over the rows, each with dispersion
-`phi / w` for exposure weight `w`:
+log-likelihood or cross-validation, or taking a customary 1.6 to 1.7.
+prospicio's `tweedie_profile` does the first: for each `p` it maximizes the
+GLM's exact Tweedie log-likelihood over `phi`, the Dunn and Smyth series
+density summed over the rows, each with dispersion `phi / w` for exposure
+weight `w`. `TweedieGlm` estimates `p` itself, with a 95% profile-likelihood
+interval:
 
 ```python
-def tweedie_loglik(design, y, power, phi):
-    """Exact Tweedie log-likelihood of the GLM refitted with its dispersion fixed at phi."""
-    return Glm("tweedie", "log", power=power, dispersion=phi).fit(design, y).log_likelihood
-
-
-def best_phi(design, y, power, lo=math.log(1.0), hi=math.log(1e4)):
-    """Golden-section search for the maximum-likelihood dispersion, on the log scale."""
-    g = (math.sqrt(5) - 1) / 2
-    for _ in range(40):
-        a, b = hi - g * (hi - lo), lo + g * (hi - lo)
-        if tweedie_loglik(design, y, power, math.exp(a)) > tweedie_loglik(design, y, power, math.exp(b)):
-            hi = b
-        else:
-            lo = a
-    phi = math.exp((lo + hi) / 2)
-    return phi, tweedie_loglik(design, y, power, phi)
-
+from prospicio.models import TweedieGlm, tweedie_profile
 
 pp = coding("age").design(data, weights=data["exposure"])
-for power in [1.2, 1.3, 1.4, 1.5, 1.6, 1.7]:
-    phi, ll = best_phi(pp, data["pure"], power)
+profile = tweedie_profile(pp, data["pure"], [1.2, 1.3, 1.4, 1.5, 1.6, 1.7])
+for power, ll, phi in zip(profile["powers"], profile["log_likelihood"], profile["dispersion"]):
     print(f"p {power}: log-likelihood {ll:9.1f} at phi {phi:7.1f}")
+tw_fit = TweedieGlm().fit(pp, data["pure"])
+lo, hi = tw_fit.interval
+print(f"estimated p {tw_fit.power:.3f} (95% interval {lo:.3f} to {hi:.3f}), phi {tw_fit.dispersion:.1f}")
 ```
 
 ```text
@@ -397,9 +372,11 @@ p 1.4: log-likelihood   -1421.0 at phi   137.0
 p 1.5: log-likelihood   -1433.4 at phi    89.9
 p 1.6: log-likelihood   -1452.3 at phi    61.1
 p 1.7: log-likelihood   -1479.2 at phi    44.2
+estimated p 1.314 (95% interval 1.264 to 1.371), phi 200.1
 ```
 
-The profile peaks near the true 4/3. The monograph's advice (section 5.1.1)
+The profile peaks near the true 4/3, which lies inside the estimate's
+interval. The monograph's advice (section 5.1.1)
 still applies: where the data allow it, separate frequency and severity models
 show which effects drive which component, and the Tweedie's constant `phi`
 assumes frequency and severity move together. In this portfolio region moves
@@ -416,9 +393,12 @@ all levels of a factor, the monograph uses the F-test on nested models
 parameters times the larger model's dispersion, referred to an F distribution
 with that many numerator and `n - p` denominator degrees of freedom. Its
 example adds a five-level territory (4 parameters) to a 6-parameter model on
-972 rows. prospicio has no F distribution, but the F distribution function is
-a regularized incomplete beta, `P(F <= f) = I(d1 f / (d1 f + d2); d1/2, d2/2)`,
-which prospicio's `Beta` provides:
+972 rows. For two fitted models prospicio's `f_test` does the whole test (as
+R's `anova(small, big, test = "F")`), but the monograph prints only the
+deviances, so its statistic is referred to the F distribution directly. The F
+distribution function is a regularized incomplete beta,
+`P(F <= f) = I(d1 f / (d1 f + d2); d1/2, d2/2)`, which prospicio's `Beta`
+provides:
 
 ```python
 from prospicio.distributions import Beta
@@ -437,22 +417,23 @@ F = 2.412  (monograph 2.412); percentile on F(4, 962): 95.2%  (monograph 95.2%)
 ```
 
 The same test on our portfolio asks whether region belongs in the claim
-frequency model, using the overdispersed Poisson so that `phi` is estimated.
-Section 6.2.2 adds the penalized measures AIC (`-2 loglik + 2p`, on `GlmFit`)
-and BIC (`-2 loglik + p ln n`, by hand):
+frequency model, using the overdispersed Poisson so that `phi` is estimated,
+with `f_test`. Section 6.2.2 adds the penalized measures AIC (`-2 loglik + 2p`)
+and BIC (`-2 loglik + p ln n`), both on `GlmFit`:
 
 ```python
+from prospicio.models import f_test
+
 quasi = Glm("poisson", "log", dispersion="pearson")
 age_only = Terms().intercept().numeric("age").fit(data)
 small = quasi.fit(age_only.design(data, offset=log_e), data["claims"])
 big = quasi.fit(coding("age").design(data, offset=log_e), data["claims"])
-added = len(big.coefficients) - len(small.coefficients)
-F = (small.deviance - big.deviance) / (added * big.dispersion)
-print(f"region: F = {F:.3f} on ({added}, {big.df_resid:.0f}), percentile {f_cdf(F, added, big.df_resid):.1%}")
+test = f_test(small, big)
+print(f"region: F = {test['statistic']:.3f} on ({test['df']:.0f}, {test['df_resid']:.0f}),"
+      f" percentile {1 - test['p_value']:.1%}")
 for name, model in [("age", age_only), ("age + region", coding("age"))]:
     fit = poisson.fit(model.design(data, offset=log_e), data["claims"])
-    k = len(fit.coefficients)
-    print(f"{name:13s} deviance {fit.deviance:6.1f}, AIC {fit.aic:6.1f}, BIC {-2 * fit.log_likelihood + k * math.log(n):6.1f}")
+    print(f"{name:13s} deviance {fit.deviance:6.1f}, AIC {fit.aic:6.1f}, BIC {fit.bic:6.1f}")
 ```
 
 ```text
@@ -467,20 +448,21 @@ prefer the smaller model, BIC more strongly. This is the monograph's caution
 that a high p-value is absence of evidence, not evidence of absence; the
 choice to keep a rating variable rests on business knowledge too.
 
-## 6. What prospicio does not do (yet)
+## 6. Where each step lives in prospicio
 
-The monograph's workflow runs end to end in this guide and its second part,
-but several steps were done by hand. These are the gaps, with the issues filed for the Models lane:
+The monograph's workflow runs end to end in this guide and its second part.
+The steps they use, and those they mention without running, map to
+prospicio as follows:
 
-| Monograph step | In prospicio | Issue |
-|---|---|---|
-| Interactions, polynomials, hinge functions, bins and natural cubic splines as model terms (5.4, 5.6) | `Terms` has numeric columns and factors only; the columns are built by hand (the R binding takes a formula, so `poly`, `splines::ns` and `a:b` work there) | #350 |
-| Residuals (deviance, Pearson, working, randomized quantile), hat values, Cook's distance (6.3, 6.4) | not on `GlmFit`; per-row `deviance` and the working residual by hand | #334 |
-| F-test of nested models, BIC, VIF (2.9, 6.2) | by hand; no F distribution (the beta function stands in) | #351 |
-| Negative binomial `k` estimated with the model (2.7.2) | `theta` is an input; profiled by hand | #352 |
-| Tweedie power by profile likelihood (2.7.3) | in Rust (`prospicio_glm::tweedie`), not in Python or R | #352 |
-| Double lift chart, loss ratio chart, ROC curve and AUROC (7.2, 7.3) | `lift` and `gini` only | #351 |
-| GLMMs, double GLMs (dispersion modelling), MARS (10.1, 10.2, 10.4) | none; a one-way random effect has a Bayesian counterpart in `prospicio.credibility`, and the double GLM's iterative scheme of section 10.2 can be run with `Glm` weights | #353 |
+| Monograph step | In prospicio |
+|---|---|
+| Interactions, polynomials, hinge functions, bins and natural cubic splines as model terms (5.4, 5.6) | `Terms.interaction`, `poly`, `hinges`, `bins` and `natural_spline` (the R binding takes a formula, so `poly`, `splines::ns` and `a:b` work there) |
+| Residuals (deviance, Pearson, working, randomized quantile), hat values, Cook's distance (6.3, 6.4) | `GlmFit.diagnostics` and `GlmFit.quantile_residuals` |
+| F-test of nested models, BIC, VIF (2.9, 6.2) | `f_test`, `likelihood_ratio_test`, `GlmFit.bic` and `vif` |
+| Negative binomial `k` estimated with the model (2.7.2) | `NegativeBinomialGlm` |
+| Tweedie power by profile likelihood (2.7.3) | `TweedieGlm` and `tweedie_profile` |
+| Double lift chart, loss ratio chart, ROC curve and AUROC (7.2, 7.3) | `double_lift`, `loss_ratio_chart`, `roc`, `confusion_matrix` and `normalized_gini` |
+| GLMMs, double GLMs (dispersion modelling), MARS (10.1, 10.2, 10.4) | `Glmm` (and `BayesGlmm`), `DoubleGlm` and `mars` |
 
 Beyond the monograph's list, prospicio has GAMs with P-spline, cyclic,
 monotone and tensor smooths, elastic nets for every family, sandwich standard

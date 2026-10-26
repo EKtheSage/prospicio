@@ -16,13 +16,15 @@ method to pick in general, read [`reserving-methods.md`](reserving-methods.md);
 this guide does not repeat it.
 
 Two parts of prospicio carry the work. `prospicio.reserving` has the chain
-ladder, Mack and the ODP bootstrap on a `Triangle`. `prospicio.models` has the
-GLM (`Glm`, `Design`), which fits the monograph's models cell by cell, with any
-design you write down. The Rust crate also has the cross-classified ODP as a
-ready-made model (`OdpGlm`, with `OdpGlm.cells` for a custom design, an analytic
-prediction error and residual diagnostics; section 10), but here the design is
-built by hand, to show what the model is. That turns out to be useful: every model
-in the monograph's chapter 7 is the same call with another design.
+ladder, Mack, the ODP bootstrap and the ODP GLM (`OdpGlm`) on a `Triangle`.
+`OdpGlm` fits the monograph's models to the triangle's incremental cells and
+gives their analytic prediction error, simulated reserves and residual
+diagnostics. By default it fits the cross-classified model; `OdpGlm.cells` lists
+the triangle's cells, so any other design can be written on them and passed to
+`fit(..., design=)`. Every model in the monograph's chapter 7 is the same call
+with another design. `prospicio.models` has the general GLM (`Glm`, `Design`):
+`Design` holds those columns, and `Glm` fits the one model that is not on the
+cells, the ODP Mack model of section 2.
 
 ## 1. The data and the chain ladder
 
@@ -37,7 +39,7 @@ import math
 import numpy as np
 
 from prospicio.models import Design, Glm
-from prospicio.reserving import ChainLadder, Mack, OdpBootstrap, Triangle
+from prospicio.reserving import ChainLadder, Mack, OdpBootstrap, OdpGlm, Triangle
 
 INCREMENTS = [  # Table 1-1, accident years 1988 to 1997, development years 1 to 10
     [41821, 34729, 20147, 15965, 11285, 5924, 4775, 3742, 3435, 2958],
@@ -87,36 +89,35 @@ and one indicator column per accident year and per development year. One
 column effect has to be dropped to make the design full rank; the monograph sets
 `ln b[1] = 0`, so its accident-year terms carry the level.
 
+`OdpGlm().fit(tri, "paid")` fits this model as it stands, coded with an
+intercept and origin and development factors measured from the first of each.
+To print the monograph's coding, one `ln a[k]` per accident year and no
+intercept, write that design on the cells and pass it to `fit`. `OdpGlm.cells`
+gives the triangle's 100 cells, the 55 observed and the 45 to forecast, in the
+order a design's rows must follow, with each cell's accident and development
+year as a 0-based index:
+
 ```python
-cells = [(k, j) for k in range(K) for j in range(K - k)]  # the 55 observed cells
-future = [(k, j) for k in range(K) for j in range(K - k, K)]  # the 45 to forecast
-y = [float(INCREMENTS[k][j]) for k, j in cells]
+cells = OdpGlm.cells(tri, "paid")
+k = np.array(cells["origin_index"]) + 1  # accident year, 1 to 10
+j = np.array(cells["development_index"]) + 1  # development year, 1 to 10
 
 
-def design(columns, names, at):
-    """A Design with one column per function of (accident year k, development year j), 1-based."""
-    return Design([[f(k + 1, j + 1) for k, j in at] for f in columns], names)
+def fit(columns, names):
+    """The ODP GLM of the triangle, one design column per array (or constant) over the cells."""
+    x = [np.broadcast_to(np.asarray(c, float), k.shape).tolist() for c in columns]
+    return OdpGlm().fit(tri, "paid", design=Design(x, names))
 
 
-def row(a):
-    return lambda k, j: 1.0 if k == a else 0.0
+cc = fit([k == a for a in range(1, K + 1)] + [j == b for b in range(2, K + 1)],
+         [f"ln a{a}" for a in range(1, K + 1)] + [f"ln b{b}" for b in range(2, K + 1)])
 
-
-def col(b):
-    return lambda k, j: 1.0 if j == b else 0.0
-
-
-CROSS = [row(a) for a in range(1, K + 1)] + [col(b) for b in range(2, K + 1)]
-CROSS_NAMES = [f"ln a{a}" for a in range(1, K + 1)] + [f"ln b{b}" for b in range(2, K + 1)]
-odp = Glm("poisson", "log", dispersion="pearson")
-cc = odp.fit(design(CROSS, CROSS_NAMES, cells), y)
-
-est, se = cc.coefficients, cc.std_errors
+est, se = cc.glm.coefficients, cc.glm.std_errors
 print(" j or k   ln a    s.e.    ln b    s.e.")
 print(f"{1:6d} {est[0]:7.3f} {se[0]:7.4f}   0.000")
 for i in range(1, K):
     print(f"{i + 1:6d} {est[i]:7.3f} {se[i]:7.4f} {est[K + i - 1]:7.3f} {se[K + i - 1]:7.4f}")
-print(f"phi {cc.dispersion:.1f} on {cc.df_resid:.0f} degrees of freedom")
+print(f"phi {cc.dispersion:.1f} on {cc.glm.df_resid:.0f} degrees of freedom")
 ```
 
 ```text
@@ -137,9 +138,11 @@ phi 114.5 on 36 degrees of freedom
 This is Table 5-1 (and the first two columns of Table 3-5) digit for digit:
 `ln a` from 10.657 to 10.691, `ln b` from -0.205 to -2.664, and standard errors
 from 0.0316 and 0.0228 up to 0.0510 and 0.1993. The scale parameter is the
-monograph's 114.5 (section 5.4.2). `dispersion="pearson"` is what makes the
-Poisson over-dispersed: `phi` is Pearson's chi-square over the 55 - 19 = 36
+monograph's 114.5 (section 5.4.2). `OdpGlm` makes the Poisson over-dispersed
+with Pearson's dispersion: `phi` is Pearson's chi-square over the 55 - 19 = 36
 residual degrees of freedom, as SAS's GENMOD reports with its `PSCALE` option.
+`cc.glm` is the underlying GLM fit, with the coefficients in the design's
+order.
 
 The monograph rescales the effects so the `b[j]` add up to 1 (Table 3-3). Then
 `b[j]` is the share of the ultimate paid in development year `j`, and `a[k]` is
@@ -150,11 +153,8 @@ a = np.exp(est[:K])
 b = np.exp([0.0, *est[K:]])
 print("a (ultimates)", [round(x) for x in a * b.sum()])
 print("b (pattern)  ", " ".join(f"{x:.3f}" for x in b / b.sum()))
-fitted_future = np.array(cc.predict(design(CROSS, CROSS_NAMES, future)))
-origin_of = np.array([k for k, _ in future])
-by_year = [fitted_future[origin_of == k].sum() for k in range(1, K)]
-print("GLM reserves ", [round(r) for r in by_year], round(fitted_future.sum()))
-print("largest gap to the chain ladder below 1e-6:", max(abs(g - c) for g, c in zip(by_year, cl.reserve[1:])) < 1e-6)
+print("GLM reserves ", [round(r) for r in cc.reserves[1:]], round(cc.total_reserve))
+print("largest gap to the chain ladder below 1e-6:", max(abs(g - c) for g, c in zip(cc.reserves[1:], cl.reserve[1:])) < 1e-6)
 ```
 
 ```text
@@ -167,8 +167,8 @@ largest gap to the chain ladder below 1e-6: True
 The ultimates are Table 3-3's `a` column (144,781, 166,301, ..., 149,836, with
 Table 3-5's last column off by one unit in four places, from the monograph's
 own rounding) and the pattern is its `b` column (0.293, 0.239, 0.139, ...,
-0.020). The forecasts of the 45 future cells, summed by accident year, are the
-chain ladder's reserves to rounding noise: the GLM and the chain ladder are
+0.020). The forecasts of the 45 future cells, summed by accident year (the
+fit's `reserves`), are the chain ladder's reserves to rounding noise: the GLM and the chain ladder are
 the same estimator here. That is the equivalence the monograph's chapter 3
 proves: maximum likelihood under the ODP equates the fitted and the actual
 total of every row and every column, and those marginal sums are what the
@@ -178,7 +178,9 @@ The other model of chapter 3, the *ODP Mack* model, works on the age-to-age
 factors instead. Each observed factor minus one, `f[k, j] - 1`, is ODP with mean
 `f[j] - 1` and a weight equal to the cumulative paid `X[k, j]` it starts from.
 That is also a GLM, with one column per development year, a log link and
-prior weights:
+prior weights. Its cells are the age-to-age links, not the triangle's
+increments, so it is fitted with the general `Glm`, where
+`dispersion="pearson"` makes the Poisson over-dispersed:
 
 ```python
 links = [(k, j) for k in range(K - 1) for j in range(K - 1 - k)]
@@ -189,7 +191,7 @@ mack_design = Design(
     [f"f{d + 1}" for d in range(K - 1)],
     weights=weight,
 )
-odp_mack = odp.fit(mack_design, growth)
+odp_mack = Glm("poisson", "log", dispersion="pearson").fit(mack_design, growth)
 print("f - 1", " ".join(f"{math.exp(c):.3f}" for c in odp_mack.coefficients))
 ```
 
@@ -212,34 +214,21 @@ from the estimated coefficients: to first order (the delta method), a reserve
 `R = sum of exp(x' beta)` moves by `g' (beta_hat - beta)` with gradient
 `g = sum of mu * x` over its cells, so its variance is `g' Sigma g`, with `Sigma`
 the coefficients' covariance that the GLM reports. The monograph's (5-11) to
-(5-13) are this calculation in matrix form.
+(5-13) are this calculation in matrix form, and `OdpGlmFit.prediction_error()`
+does it for each accident year and the total, whatever the design.
 
 ```python
-fut_design = design(CROSS, CROSS_NAMES, future)
-X = np.array([fut_design.column(i) for i in range(len(CROSS))]).T
-Sigma = np.array(cc.covariance)
-phi = cc.dispersion
-
-
-def msep(mu, X, Sigma, phi, mask):
-    """Process plus parameter MSEP of the sum of the future cells in mask."""
-    g = (X[mask] * mu[mask, None]).sum(axis=0)
-    return phi * mu[mask].sum() + g @ Sigma @ g
-
-
+pe = cc.prediction_error()  # a row per accident year, then "Total"
 TABLE_5_4 = {  # forecast, RMSEP, CVP %
-    1989: (3398, 924, 27.2), 1990: (8155, 1363, 16.7), 1991: (14579, 1775, 12.2),
-    1992: (22645, 2169, 9.6), 1993: (31865, 2523, 7.9), 1994: (45753, 3036, 6.6),
-    1995: (60093, 3577, 6.0), 1996: (80983, 4538, 5.6), 1997: (105874, 6786, 6.4),
+    "1989": (3398, 924, 27.2), "1990": (8155, 1363, 16.7), "1991": (14579, 1775, 12.2),
+    "1992": (22645, 2169, 9.6), "1993": (31865, 2523, 7.9), "1994": (45753, 3036, 6.6),
+    "1995": (60093, 3577, 6.0), "1996": (80983, 4538, 5.6), "1997": (105874, 6786, 6.4),
     "Total": (373346, 14076, 3.8),
 }
 print("year    forecast  RMSEP   CVP |  book: forecast  RMSEP   CVP")
-for k, key in [*zip(range(1, K), YEARS[1:]), (None, "Total")]:
-    mask = origin_of == k if k else np.ones(len(future), bool)
-    r = fitted_future[mask].sum()
-    rmsep = math.sqrt(msep(fitted_future, X, Sigma, phi, mask))
+for key, r, rmsep, cv in zip(pe["origin"][1:], pe["reserve"][1:], pe["rmsep"][1:], pe["cv"][1:]):
     f, e, c = TABLE_5_4[key]
-    print(f"{key!s:6s} {r:9,.0f} {rmsep:6,.0f} {100 * rmsep / r:5.1f} |  {f:12,} {e:6,} {c:5.1f}")
+    print(f"{key:6s} {r:9,.0f} {rmsep:6,.0f} {100 * cv:5.1f} |  {f:12,} {e:6,} {c:5.1f}")
 ```
 
 ```text
@@ -260,11 +249,9 @@ Every number in Table 5-4 matches. The total's RMSEP, 14,076, is a CV of 3.8%.
 Split it and the parameter error dominates:
 
 ```python
-everything = np.ones(len(future), bool)
-g_total = (X * fitted_future[:, None]).sum(axis=0)
-print(f"process   {math.sqrt(phi * fitted_future.sum()):7,.0f}")
-print(f"parameter {math.sqrt(g_total @ Sigma @ g_total):7,.0f}")
-by_year_msep = [msep(fitted_future, X, Sigma, phi, origin_of == k) for k in range(1, K)]
+print(f"process   {pe['process_se'][-1]:7,.0f}")
+print(f"parameter {pe['parameter_se'][-1]:7,.0f}")
+by_year_msep = [e**2 for e in pe["rmsep"][1:-1]]
 print(f"total if the years were independent {math.sqrt(sum(by_year_msep)):7,.0f}  (book 10,275)")
 ```
 
@@ -283,17 +270,18 @@ parameters, and an error in a `b[j]` moves every year's forecast the same way.
 
 Section 5.4.2 checks the delta method with a parametric bootstrap: draw the
 coefficients from their estimated normal distribution, forecast the future cells
-with them, add process error, and repeat 10,000 times. `GlmFit.predict_distribution`
+with them, add process error, and repeat 10,000 times. `OdpGlmFit.predict_distribution`
 does exactly that, with process error `phi * Poisson(mu / phi)` on each cell
-(the monograph does not say which process distribution it used). The seed fixes
-the draws.
+(the monograph does not say which process distribution it used), and
+`aggregate(["origin"])` sums its cells by accident year. `"normal"` asks for the
+plain normal draws of the coefficients, as the monograph makes them. The seed
+fixes the draws.
 
 ```python
-def by_year_draws(fit, cols, names, seed, n_sims=10_000):
+def by_year_draws(fit, seed, n_sims=10_000):
     """Simulated reserves: one row per accident year 1989 to 1997, one column per draw."""
-    draws = fit.predict_distribution(design(cols, names, future), n_sims, seed, "normal")
-    cells_by_draw = np.array(draws.draw_matrix()).T
-    return np.array([cells_by_draw[origin_of == k].sum(axis=0) for k in range(1, K)])
+    draws = fit.predict_distribution(n_sims, seed, "normal").aggregate(["origin"])
+    return np.array(draws.draw_matrix()).T
 
 
 def show(sims, book):
@@ -310,7 +298,7 @@ TABLE_5_5 = {
     1995: (60273, 3608, 6.0), 1996: (81249, 4589, 5.6), 1997: (106204, 6831, 6.4),
     "Total": (374992, 14286, 3.8),
 }
-show(by_year_draws(cc, CROSS, CROSS_NAMES, seed=1), TABLE_5_5)
+show(by_year_draws(cc, seed=1), TABLE_5_5)
 ```
 
 ```text
@@ -338,13 +326,11 @@ Notice that both sets of means are *above* the chain ladder's forecasts
 from a normal and taking `exp(x' beta)` gives cells whose mean is
 `mu * exp(v / 2)`, with `v = x' Sigma x` the variance of the linear
 predictor: the lognormal bias. The expected value of the simulation can be
-computed exactly:
+computed exactly; `predictive_means()` gives it cell by cell:
 
 ```python
-v = np.einsum("ij,jk,ik->i", X, Sigma, X)
-biased = fitted_future * np.exp(v / 2)
-print(f"chain ladder {fitted_future.sum():9,.0f}")
-print(f"E[simulated] {biased.sum():9,.0f}   (book's bootstrap mean 374,992)")
+print(f"chain ladder {cc.total_reserve:9,.0f}")
+print(f"E[simulated] {sum(cc.predictive_means()):9,.0f}   (book's bootstrap mean 374,992)")
 ```
 
 ```text
@@ -394,43 +380,36 @@ prediction errors; this triangle shows how far apart they can be.
 
 Chapter 6 checks the fit with residuals. The standardized deviance residual of a
 cell divides its deviance residual by `sqrt(phi * (1 - h))`, where `h` is the
-cell's leverage, the diagonal of the GLM's hat matrix. `GlmFit` does not return
-residuals or leverages (section 10), so they are computed here from the fit's
-means and the design: for a Poisson GLM with a log link the IRLS weight of a
-cell is its mean.
+cell's leverage, the diagonal of the GLM's hat matrix. `OdpGlmFit.residuals()`
+returns them for every observed cell, with the deviance and Pearson residuals,
+the leverages and the actual-to-fitted ratio, and `residual_summary` groups the
+standardized deviance residuals by development year, accident year or calendar
+year:
 
 ```python
-def standardized_deviance(fit, cols, names):
-    Xo = np.array([design(cols, names, cells).column(i) for i in range(len(cols))]).T
-    mu, yy = np.array(fit.fitted), np.array(y)
-    wx = Xo * np.sqrt(mu)[:, None]
-    h = np.einsum("ij,jk,ik->i", wx, np.linalg.inv(wx.T @ wx), wx)
-    d = 2 * (yy * np.log(yy / mu) - (yy - mu))
-    with np.errstate(divide="ignore", invalid="ignore"):
-        r = np.sign(yy - mu) * np.sqrt(d / (fit.dispersion * (1 - h)))
-    return np.where(h > 1 - 1e-9, np.nan, r)  # a corner cell fits exactly
-
-
-res = standardized_deviance(cc, CROSS, CROSS_NAMES)
-dev = np.array([j for _, j in cells])
-cal = np.array([k + j for k, j in cells])
+dev = cc.residual_summary("development")
+cal = cc.residual_summary("calendar")
 print("by development year 1 to 8, spread (sd) of the residuals")
-print(" ".join(f"{np.nanstd(res[dev == j]):.2f}" for j in range(8)))
+print(" ".join(f"{s:.2f}" for s in dev["sd"][:8]))
 print("by calendar year 1988 to 1997, mean residual")
-print(" ".join(f"{np.nanmean(res[cal == c]):+.2f}" for c in range(K)))
+print(" ".join(f"{m:+.2f}" for m in cal["mean"]))
 ```
 
 ```text
 by development year 1 to 8, spread (sd) of the residuals
-1.34 1.59 0.88 0.62 0.83 0.77 0.65 0.40
+1.42 1.68 0.94 0.67 0.91 0.86 0.75 0.49
 by calendar year 1988 to 1997, mean residual
 -0.38 -0.13 -0.40 +0.56 +0.42 -0.43 +0.23 -0.27 -0.26 +0.32
 ```
 
-Two cells, 1988's last year and 1997's first, have leverage one: each is the
-only observation of its own parameter, so its fitted value equals the actual and
-its residual is undefined (development years 9 and 10 have too few cells left
-to measure a spread). Among the rest, development years 1 and 2 scatter
+The spreads are sample standard deviations, with divisor `n - 1`; an earlier
+version of this guide computed the residuals by hand and divided by `n`, which
+printed each spread 6% to 18% lower (1.34 for development year 1, 0.40 for
+year 8). The residuals themselves, and so the calendar-year means, are
+unchanged. Two cells, 1988's last year and 1997's first, have leverage one:
+each is the only observation of its own parameter, so its fitted value equals
+the actual and its residual is undefined (development year 10 is left with no
+residual and year 9 with two, too few to measure a spread). Among the rest, development years 1 and 2 scatter
 more than the later ones, the pattern the monograph reads off Figure 6-19, and
 the calendar-year means swing from negative to positive, the pattern of its
 Figure 6-20. Because the model has a parameter for every row and column, the
@@ -440,11 +419,10 @@ actual to fitted can:
 
 ```python
 def heat_map(fit):
-    ratio = np.array(y) / np.array(fit.fitted)
-    start = 0
-    for k in range(K):
-        print(YEARS[k], " ".join(f"{round(100 * r):4d}" for r in ratio[start:start + K - k]))
-        start += K - k
+    """The actual-to-fitted ratio of every observed cell, in percent, a row per accident year."""
+    r = fit.residuals()
+    for year in map(str, YEARS):
+        print(year, " ".join(f"{round(100 * x):4d}" for o, x in zip(r["origin"], r["actual_to_fitted"]) if o == year))
 
 
 heat_map(cc)
@@ -474,13 +452,11 @@ row and column that a cross-classified model cannot express. Chapter 7 adds it.
 Chapter 7 starts from Figure 7-1: the ten `ln a[k]` of section 2 trace a
 parabola in `k`. Replacing them with `a1 * k + a2 * k**2` (the monograph's model
 7-2, with all ten `ln b[j]` now free) leaves 12 parameters instead of 19. In
-prospicio that is the same `Glm` with another design:
+prospicio that is the same `fit` with other columns:
 
 ```python
-QUAD = [lambda k, j: k, lambda k, j: k * k] + [col(b) for b in range(1, K + 1)]
-QUAD_NAMES = ["a1", "a2"] + [f"ln b{b}" for b in range(1, K + 1)]
-quad = odp.fit(design(QUAD, QUAD_NAMES, cells), y)
-c = quad.coefficients
+quad = fit([k, k * k] + [j == b for b in range(1, K + 1)], ["a1", "a2"] + [f"ln b{b}" for b in range(1, K + 1)])
+c = quad.glm.coefficients
 level = c[2]  # ln b1 carries the level, as the monograph's quadratic does
 print(f"accident year effect {level:.3f} + {c[0]:.4f} k {c[1]:.4f} k^2  (book 10.471 + 0.2001 k - 0.0179 k^2)")
 book_7_1 = [-0.206, -0.750, -1.015, -1.452, -1.830, -2.142, -2.353, -2.514, -2.661]
@@ -503,23 +479,16 @@ development year 3, and a term for development year 4 (model 7-14, ten
 parameters).
 
 ```python
-def early(k):
-    return 1.0 if k <= 6 else 0.0
-
-
-SMOOTH = [lambda k, j: 1.0, lambda k, j: k, lambda k, j: k * k,
-          lambda k, j: j - 1, lambda k, j: max(0.0, j - 7.5), col(2)]
-SMOOTH_NAMES = ["a0", "a1", "a2", "b1", "b2", "c"]
-INTERACT = SMOOTH + [col(4), lambda k, j: (j == 1) * early(k),
-                     lambda k, j: (j == 2) * early(k), lambda k, j: (j == 3) * k]
-INTERACT_NAMES = ["a0", "a1", "a2", "b1", "b2", "c1", "c2", "d1", "d2", "d3"]
-smooth = odp.fit(design(SMOOTH, SMOOTH_NAMES, cells), y)
-interact = odp.fit(design(INTERACT, INTERACT_NAMES, cells), y)
+early = k <= 6  # accident years 1 to 6
+SMOOTH = [1.0, k, k * k, j - 1, np.maximum(0.0, j - 7.5), j == 2]
+smooth = fit(SMOOTH, ["a0", "a1", "a2", "b1", "b2", "c"])
+interact = fit(SMOOTH + [j == 4, (j == 1) & early, (j == 2) & early, (j == 3) * k],
+               ["a0", "a1", "a2", "b1", "b2", "c1", "c2", "d1", "d2", "d3"])
 book_7_3 = [10.469, 0.200, -0.018, -0.358, 0.236, 0.155]
 book_7_5 = [10.4900, 0.2066, -0.0183, -0.3685, 0.2720, 0.0375, 0.0528, -0.0671, 0.1273, -0.0113]
-print("model 7-10  ", " ".join(f"{x:7.4f}" for x in smooth.coefficients))
+print("model 7-10  ", " ".join(f"{x:7.4f}" for x in smooth.glm.coefficients))
 print("Table 7-3   ", " ".join(f"{x:7.3f}" for x in book_7_3))
-print("model 7-14  ", " ".join(f"{x:7.4f}" for x in interact.coefficients))
+print("model 7-14  ", " ".join(f"{x:7.4f}" for x in interact.glm.coefficients))
 print("Table 7-5   ", " ".join(f"{x:7.4f}" for x in book_7_5))
 print(f"phi: 7-2 {quad.dispersion:.1f}, 7-10 {smooth.dispersion:.1f}, 7-14 {interact.dispersion:.1f}")
 ```
@@ -563,22 +532,18 @@ heat_map(smooth)
 
 The monograph's Tables 7-2, 7-4 and 7-6 give the parametric bootstrap of each
 model, run as in section 4. The delta method of section 3 applies unchanged to
-any design, so it is printed too: it costs nothing and has no simulation noise.
+any design, so it is printed too (`prediction_error()`'s total row): it costs
+nothing and has no simulation noise.
 
 ```python
 BOOK = {  # total forecast and RMSEP of the parametric bootstrap
     "7-2 quadratic": (373641, 13086), "7-10 smooth": (373403, 13248), "7-14 interactions": (371559, 10907),
 }
 print("model              delta: forecast  RMSEP | bootstrap: mean  RMSEP |  book: mean  RMSEP")
-for (name, book), fit, cols, names in zip(
-    BOOK.items(), [quad, smooth, interact], [QUAD, SMOOTH, INTERACT], [QUAD_NAMES, SMOOTH_NAMES, INTERACT_NAMES]
-):
-    fd = design(cols, names, future)
-    Xm = np.array([fd.column(i) for i in range(len(cols))]).T
-    mu = np.array(fit.predict(fd))
-    rmsep = math.sqrt(msep(mu, Xm, np.array(fit.covariance), fit.dispersion, everything))
-    total = by_year_draws(fit, cols, names, seed=1).sum(axis=0)
-    print(f"{name:18s} {mu.sum():15,.0f} {rmsep:6,.0f} | {total.mean():15,.0f} {total.std(ddof=1):6,.0f} |"
+for (name, book), model in zip(BOOK.items(), [quad, smooth, interact]):
+    rmsep = model.prediction_error()["rmsep"][-1]
+    total = by_year_draws(model, seed=1).sum(axis=0)
+    print(f"{name:18s} {model.total_reserve:15,.0f} {rmsep:6,.0f} | {total.mean():15,.0f} {total.std(ddof=1):6,.0f} |"
           f" {book[0]:10,} {book[1]:6,}")
 ```
 
@@ -598,7 +563,7 @@ about 11,000, a CV near 3%, because they absorb the shift in the payment
 pattern that the chain ladder had been treating as noise.
 
 ```python
-interact_by_year = by_year_draws(interact, INTERACT, INTERACT_NAMES, seed=1)
+interact_by_year = by_year_draws(interact, seed=1)
 TABLE_7_6 = {
     1989: (3630, 569, 15.7), 1990: (8557, 935, 10.9), 1991: (14563, 1203, 8.3),
     1992: (22193, 1418, 6.4), 1993: (32505, 1677, 5.2), 1994: (45771, 2018, 4.4),
@@ -638,15 +603,16 @@ rather than a change of scale. GCV (its section 4.4) is
 actual and fitted.
 
 ```python
-yy, n = np.array(y), len(y)
+yy = np.array(cc.residuals()["actual"])  # the 55 observed increments
+n = len(yy)
 phi_fixed = interact.dispersion
 TABLE_7_7 = {  # AIC, BIC, GCV
     "chain ladder": (-509392, -509354, 6685428), "7-2 quadratic": (-509400, -509376, 5075351),
     "7-10 smooth": (-509397, -509385, 4311874), "7-14 interactions": (-509441, -509421, 1733202),
 }
 print("model                  AIC        BIC       GCV |  book:  AIC        BIC       GCV")
-for (name, book), fit in zip(TABLE_7_7.items(), [cc, quad, smooth, interact]):
-    mu, p = np.array(fit.fitted), len(fit.coefficients)
+for (name, book), model in zip(TABLE_7_7.items(), [cc, quad, smooth, interact]):
+    mu, p = np.array(model.glm.fitted), len(model.glm.coefficients)
     loglik = np.sum(yy * np.log(mu) - mu) / phi_fixed
     gcv = n * np.sum((yy - mu) ** 2) / (n - p) ** 2
     print(f"{name:18s} {-2 * loglik + 2 * p:10,.0f} {-2 * loglik + p * math.log(n):10,.0f} {gcv:9,.0f} |"
@@ -668,8 +634,9 @@ printed values, so every criterion ranks the models as the monograph does,
 with the interaction model best. The level is fragile: the log-likelihood is
 about 254,700 in these units, so a relative difference of `2e-6` in `phi`, or
 in fitted values from software with a looser convergence test, moves the AIC by
-one. The criteria use `GlmFit.fitted` and `GlmFit.coefficients`; the fit's own
-`aic` is the ordinary Poisson AIC and answers a different question.
+one. The criteria are computed by hand from each fit's GLM (`fit.glm.fitted`
+and `fit.glm.coefficients`) because the monograph's definition is its own; the
+GLM's `aic` is the ordinary Poisson AIC and answers a different question.
 
 ## 9. A gamma cross-classified model
 
@@ -677,14 +644,14 @@ The monograph's chapter 2 sets the ODP inside the Tweedie family and notes
 (section 6.5) that a gamma error, variance proportional to the mean squared,
 is the alternative to try when the spread of the residuals grows with the
 fitted value. It prints no gamma results for this triangle, but the fit is one
-argument away:
+argument away, `family="gamma"` (or `family="tweedie"` with a `power` between
+1 and 2), here on the default cross-classified design:
 
 ```python
-gamma = Glm("gamma", "log").fit(design(CROSS, CROSS_NAMES, cells), y)
-gamma_future = np.array(gamma.predict(fut_design))
+gamma = OdpGlm(family="gamma").fit(tri, "paid")
 print(f"gamma phi {gamma.dispersion:.4f}")
-print("gamma reserves", [round(gamma_future[origin_of == k].sum()) for k in range(1, K)])
-print(f"gamma total {gamma_future.sum():,.0f}  (chain ladder {fitted_future.sum():,.0f})")
+print("gamma reserves", [round(r) for r in gamma.reserves[1:]])
+print(f"gamma total {gamma.total_reserve:,.0f}  (chain ladder {cc.total_reserve:,.0f})")
 ```
 
 ```text
@@ -697,7 +664,7 @@ The gamma fit weights every cell's relative error alike, so it no longer
 preserves the row and column totals, and its forecasts are no longer the chain
 ladder's, though on this stable triangle they are close. The delta method of
 section 3 carries over with process variance `phi * mu**2` instead of
-`phi * mu`.
+`phi * mu`, and `gamma.prediction_error()` uses it.
 
 ## 10. What matched, and what prospicio cannot do yet
 
@@ -717,22 +684,24 @@ to five figures. Three of Table 3-5's renormalised ultimates are one unit off
 Table 3-3; that is the monograph's own rounding.
 
 **Not reproduced**: the plots (P-P plot, scatter and spread plots) are not
-drawn here; their inputs, the standardized residuals, are computed in section 5.
+drawn here; their inputs, the standardized residuals of `residuals()`, are
+summarised in section 5.
 
-**Gaps closed since this guide was written.** The steps below are done by hand
-in numpy above, and the library now does them:
-
-- *Reserving lane* (#333): `OdpGlm` is in the Python and R bindings. `OdpGlm.cells`
-  and `fit(..., design=)` take a custom design (parameter reduction, calendar-year
-  terms and interactions: models 7-2, 7-10 and 7-14 reproduce Tables 7-1, 7-3
-  and 7-5); `prediction_error()` gives the delta-method MSEP by origin and in
-  total (Table 5-4); `residuals()` and `residual_summary()` give the standardized
-  residuals by development, accident or calendar period (Figure 6-22's heat
-  map); and `OdpGlm(family=, power=)` fits a gamma or Tweedie error too.
-- *Models lane* (#334): `GlmFit.diagnostics` gives residuals, hat values and
-  Cook's distances, `prediction_se` and `sum_prediction_error` the standard error
-  of a prediction and of a sum of predictions, and `gcv` the GCV.
-
-The hand-built `design`, `msep`, `standardized_deviance` and `heat_map` above are
-kept because they show how each number arises; to reproduce them in your own work,
-use the functions above.
+**Gaps closed since this guide was first written.** Earlier versions built the
+design matrices, the delta-method MSEP, the standardized residuals and the heat
+map by hand in numpy. The library now does all of them, and the guide uses it:
+`OdpGlm` fits the cross-classified model and, through `OdpGlm.cells` and
+`fit(..., design=)`, any design on the cells (models 7-2, 7-10 and 7-14,
+Tables 7-1, 7-3 and 7-5); `prediction_error()` gives the delta-method MSEP by
+accident year and in total (Table 5-4); `predict_distribution` and
+`predictive_means()` the parametric bootstrap and its lognormal bias;
+`residuals()` and `residual_summary()` the standardized residuals and the heat
+maps (Figures 6-22 and 7-5); and `OdpGlm(family=, power=)` a gamma or Tweedie
+error. What is still written out here is only what is the monograph's own: the
+columns of each design (as arrays over the cells), the ODP Mack model of
+section 2 (a `Glm` on the age-to-age factors, which are not the triangle's
+cells) and the information criteria of Table 7-7, whose log-likelihood the
+monograph defines with a fixed `phi`. For a GLM fitted with `Glm`,
+`GlmFit.diagnostics` gives residuals, hat values and Cook's distances, and
+`prediction_se` and `sum_prediction_error` the standard error of a prediction
+and of a sum of predictions.

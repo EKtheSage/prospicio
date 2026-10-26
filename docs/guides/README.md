@@ -13,6 +13,9 @@ their results show there (the repository keeps the notebooks without outputs).
 `cargo xtask python` builds that User Guide from this folder: every `.md` file
 here but this README becomes a page, its first `#` heading the page's title,
 and a link to a notebook in `examples/` points to the notebook's page.
+Pages go under "Guides" in the sidebar, except a track's, which get a section
+of their own (`GUIDE_SECTIONS` in `xtask/src/main.rs`: the `cat-` guides under
+"Property catastrophe reinsurance", in the order of their names).
 The R twins (the `.qmd` files) are pages too, under "Articles" on the R site:
 `cargo xtask r` stages each one as a pkgdown article, grouped as in the
 [reading list](reading-list.md).
@@ -31,15 +34,25 @@ pytest tests/test_guides.py
 
 Looking for the guide that follows a particular text (a CAS monograph, a book)? See [`reading-list.md`](reading-list.md), which maps each source to its guides, its knowledge file and the open issues.
 
-Want to run something before you read? [`examples/reading_path.ipynb`](../../examples/reading_path.ipynb) carries one small book through seven stations (severity and counts, the aggregate distribution, layer pricing, the indication, reserving, risk loads and allocation, and the Bayesian and GLM guides) and names the guides to read at each. Its R twin is [`examples/reading_path.qmd`](../../examples/reading_path.qmd).
+Start here, in this order:
 
-Start here: [`choosing-a-method.md`](choosing-a-method.md). It maps each
-situation (a rate indication, a per-risk or casualty layer, a catastrophe cover,
-a quota share, a stop loss, a reserve, capital) to the method and the calls,
-and sends you to the guide that goes deeper.
+1. [`a-first-course.md`](a-first-course.md), a first course for a student or
+   new analyst: the ideas from a loss distribution to allocation, two worked
+   decisions and a ten-step checklist.
+2. [`examples/reading_path.ipynb`](../../examples/reading_path.ipynb), the same
+   ideas on a realistic book: it carries one small book through seven stations
+   (severity and counts, the aggregate distribution, layer pricing, the
+   indication, reserving, risk loads and allocation, and the Bayesian and GLM
+   guides) and names the guides to read at each. Its R twin is
+   [`examples/reading_path.qmd`](../../examples/reading_path.qmd).
+3. [`choosing-a-method.md`](choosing-a-method.md), which maps each situation (a
+   rate indication, a per-risk or casualty layer, a catastrophe cover, a quota
+   share, a stop loss, a reserve, capital) to the method and the calls, and
+   sends you to the guide that goes deeper.
 
 | Guide | What it answers |
 |---|---|
+| [`a-first-course.md`](a-first-course.md) | A first course, from premium and losses to a priced book: a loss as a distribution, the aggregate loss by FFT, why a price exceeds the mean, distortions, diversification and the allocation methods; then two decisions on small books (whether to write a new unit, which treaty a cedant should buy) and a ten-step checklist with a template for your own data |
 | [`choosing-a-method.md`](choosing-a-method.md) | Which prospicio tool for which job: a decision table over the situations an actuary meets, the calls, the traps and where the library stops |
 
 **Pricing**
@@ -66,6 +79,21 @@ and sends you to the guide that goes deeper.
 | [`glm-ratemaking-goldburd.md`](glm-ratemaking-goldburd.md) | CAS Monograph 5 (Goldburd, Khare, Tevet and Guller), part 1: the GLM as a multiplicative rating plan, base levels, offsets and weights, Poisson, negative binomial, gamma, inverse Gaussian and Tweedie, the F-test, AIC and BIC, with the monograph's printed arithmetic beside prospicio's and the list of what prospicio does not support |
 | [`glm-ratemaking-goldburd-validation.md`](glm-ratemaking-goldburd-validation.md) | CAS Monograph 5, part 2: partial residuals, bins, polynomials, hinges and GAM splines, interactions, deviance and binned working residuals, holdout lift, double lift and loss ratio charts, the Gini index and ROC, stability and the elastic net |
 
+**Property catastrophe reinsurance**
+
+Read in order; each page builds on the one before it.
+
+| Guide | What it answers |
+|---|---|
+| [`cat-0-overview.md`](cat-0-overview.md) | A property-catastrophe track on one synthetic book: Larkspur Re, a fictional reinsurer, renews five contracts for three cedents; the story, the four data files, the pages in order and the notation they share. |
+| [`cat-1-loss-tables.md`](cat-1-loss-tables.md) | What the cat model hands over: year event loss tables, year loss tables and event loss tables, secondary uncertainty, reading a YELT into prospicio with its checks, event times, and an ELT reconciled with the simulated years. |
+| [`cat-2-risk-metrics.md`](cat-2-risk-metrics.md) | How bad a cedent's year can get: VaR and TVaR on simulated years and the quantile conventions behind them (Hyndman and Fan), a window TVaR, occurrence and aggregate exceedance curves, return-period losses, and how often a layer is attached or used up. |
+| [`cat-3-contract-terms.md`](cat-3-contract-terms.md) | Cat contracts in code: the hours clause, occurrence layers with paid reinstatements, a capped quota share, an aggregate cover and the losses it sees, the contract year, and surplus and per-risk covers beside a cat program. |
+| [`cat-4-programs.md`](cat-4-programs.md) | Stacked covers and who keeps what: layers in a program, a signed line against the whole layer, a quota share inuring to a cat cover, what an aggregate cover can reach, a split by peril, and a retro on the reinsurer's own deals. |
+| [`cat-5-beyond-loss.md`](cat-5-beyond-loss.md) | The money around the loss: reinstatement premium and the season, ceding and profit commissions, sliding scales and brokerage, a no-claims bonus approximated, and the reinsurer's deal ledger. |
+| [`cat-6-pricing.md`](cat-6-pricing.md) | A price for one cat layer: cost of capital and distortion prices, the technical quote with expenses and brokerage, the reinstatement premium inside the price by a root-find, sensitivities, and whether the market price is adequate. |
+| [`cat-7-portfolio.md`](cat-7-portfolio.md) | The reinsurer's whole book: five deals on shared simulated years, the book's tail, Euler capital allocation and diversification, the book priced on its capital, marginal prices of a new deal, and a return on allocated capital. |
+
 **Distributions**
 
 | Guide | What it answers |
@@ -85,6 +113,7 @@ and sends you to the guide that goes deeper.
 | [`reserving-compartmental.md`](reserving-compartmental.md) | Gesmann and Morris' hierarchical compartmental models 1 and 2 on company 337: paid and outstanding as two compartments with reporting and payment rates, the prior predictive check, both fits with the paper's printed posteriors beside prospicio's, the fitted development and test diagonal, the reserve against the outcome, why their elpd_loo values do not compare, and the one-year view |
 | [`reserving-friedland.md`](reserving-friedland.md) | Friedland's *Estimating Unpaid Claims Using Basic Techniques* (CAS) reproduced on its own data: age-to-age averages and selected factors, the development, expected claims, Bornhuetter-Ferguson, Benktander and Cape Cod techniques on U.S. Industry Auto and XYZ Insurer, and the book's reasonableness checks, with its printed ultimates and IBNR beside prospicio's and the rounding conventions that explain every difference |
 | [`reserving-taylor-mcguire.md`](reserving-taylor-mcguire.md) | CAS Monograph 3 (Taylor and McGuire) reproduced: the chain ladder as an over-dispersed Poisson GLM, its prediction error by the delta method and the parametric bootstrap, residual diagnostics and heat maps, and the reduced models with accident-year and development-year curves and interactions, with the monograph's printed numbers beside prospicio's |
+| [`reserving-excess-layers.md`](reserving-excess-layers.md) | Excess-layer loss development: why a layer develops slowly and its own triangle is sparse, layer factors from the ground-up triangle and a severity (scale shift, Pareto shape drift) with Bloom and Patrik's, Pinto and Gogol's and Bear's printed factors beside prospicio's, the derived pattern in the chain ladder, Mack, BF and Cape Cod, credibility blending with the layer's own development, and a BF prior from the layer share, Bayesian with `LayerSharePrior` |
 
 ## R versions
 
@@ -94,6 +123,7 @@ twins in [`examples/`](../../examples/README.md):
 
 | R twin | Python guide |
 |---|---|
+| [`a-first-course.qmd`](a-first-course.qmd) | `a-first-course.md` |
 | [`prospicio-for-aggregate-users.qmd`](prospicio-for-aggregate-users.qmd) | `prospicio-for-aggregate-users.md` |
 | [`capital-modeling-monograph-15.qmd`](capital-modeling-monograph-15.qmd) | `capital-modeling-monograph-15.md` |
 | [`capital-modeling-monograph-15-theory.qmd`](capital-modeling-monograph-15-theory.qmd) | `capital-modeling-monograph-15-theory.md` |
@@ -117,6 +147,15 @@ twins in [`examples/`](../../examples/README.md):
 | [`pir-portfolio-pricing.qmd`](pir-portfolio-pricing.qmd) | `pir-portfolio-pricing.md` |
 | [`pir-risk-measures.qmd`](pir-risk-measures.qmd) | `pir-risk-measures.md` |
 | [`reserving-compartmental.qmd`](reserving-compartmental.qmd) | `reserving-compartmental.md` |
+| [`reserving-excess-layers.qmd`](reserving-excess-layers.qmd) | `reserving-excess-layers.md` |
+| [`cat-0-overview.qmd`](cat-0-overview.qmd) | `cat-0-overview.md` |
+| [`cat-1-loss-tables.qmd`](cat-1-loss-tables.qmd) | `cat-1-loss-tables.md` |
+| [`cat-2-risk-metrics.qmd`](cat-2-risk-metrics.qmd) | `cat-2-risk-metrics.md` |
+| [`cat-3-contract-terms.qmd`](cat-3-contract-terms.qmd) | `cat-3-contract-terms.md` |
+| [`cat-4-programs.qmd`](cat-4-programs.qmd) | `cat-4-programs.md` |
+| [`cat-5-beyond-loss.qmd`](cat-5-beyond-loss.qmd) | `cat-5-beyond-loss.md` |
+| [`cat-6-pricing.qmd`](cat-6-pricing.qmd) | `cat-6-pricing.md` |
+| [`cat-7-portfolio.qmd`](cat-7-portfolio.qmd) | `cat-7-portfolio.md` |
 
 Each R chunk is followed by the text it prints, and
 `R/prospicio/tests/test-guides.R` (run by CI's R job with the other R tests) runs

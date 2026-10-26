@@ -100,8 +100,6 @@ ylt_file_hash_rust <- function(path) .Call(wrap__ylt_file_hash_rust, path)
 
 year_correlation_for_ratio_rust <- function(n_years, ratio) .Call(wrap__year_correlation_for_ratio_rust, n_years, ratio)
 
-timeline_from_years_rust <- function(years) .Call(wrap__timeline_from_years_rust, years)
-
 exposure_uniform_rust <- function(n_years, policy_months) .Call(wrap__exposure_uniform_rust, n_years, policy_months)
 
 credibility_standards <- function(p, k, cv) .Call(wrap__credibility_standards, p, k, cv)
@@ -182,6 +180,12 @@ elpd_loo_rust <- function(log_lik, n, r_eff) .Call(wrap__elpd_loo_rust, log_lik,
 
 elpd_waic_rust <- function(log_lik, n) .Call(wrap__elpd_waic_rust, log_lik, n)
 
+draws_summary_rust <- function(values, n_iter, n_chain, names) .Call(wrap__draws_summary_rust, values, n_iter, n_chain, names)
+
+draws_loo_rust <- function(values, n_iter, n_chain, names, prefix) .Call(wrap__draws_loo_rust, values, n_iter, n_chain, names, prefix)
+
+read_stan_csv_rust <- function(paths) .Call(wrap__read_stan_csv_rust, paths)
+
 dglm_fit_design <- function(x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method) .Call(wrap__dglm_fit_design, x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method)
 
 glmm_fit_design <- function(x, names, y, offset, weights, family_name, power, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values, nodes) .Call(wrap__glmm_fit_design, x, names, y, offset, weights, family_name, power, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values, nodes)
@@ -208,6 +212,10 @@ pricing_pattern_values <- function(times, shares, rate, t) .Call(wrap__pricing_p
 
 pricing_pattern_unpaid <- function(times, shares, age) .Call(wrap__pricing_pattern_unpaid, times, shares, age)
 
+pricing_pattern_monthly <- function(times, shares, months, interpolation) .Call(wrap__pricing_pattern_monthly, times, shares, months, interpolation)
+
+pricing_patterns_from_annual <- function(written, times, shares, policy_months, interpolation) .Call(wrap__pricing_patterns_from_annual, written, times, shares, policy_months, interpolation)
+
 pricing_price_over_payout <- function(expected_loss, premium, assets, times, shares, rate, coc) .Call(wrap__pricing_price_over_payout, expected_loss, premium, assets, times, shares, rate, coc)
 
 pricing_npv <- function(flows, times, rate, unit) .Call(wrap__pricing_npv, flows, times, rate, unit)
@@ -226,9 +234,13 @@ pricing_pattern_at <- function(ages, factors, x) .Call(wrap__pricing_pattern_at,
 
 pricing_count_development <- function(ages, factors, years, valuation) .Call(wrap__pricing_count_development, ages, factors, years, valuation)
 
-pricing_quote <- function(expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, premium) .Call(wrap__pricing_quote, expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, premium)
+pricing_quote <- function(expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, premium_tax, income_tax, reinstatement_rate, ceding_commission, brokerage_on_reinstatements, premium, commission) .Call(wrap__pricing_quote, expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, premium_tax, income_tax, reinstatement_rate, ceding_commission, brokerage_on_reinstatements, premium, commission)
+
+pricing_tower_quote <- function(tower, ceded, expected_reinstatement_premium, total_ceded, assets, rate, pricing, expenses, brokerage, fixed, premium_tax, income_tax, brokerage_on_reinstatements) .Call(wrap__pricing_tower_quote, tower, ceded, expected_reinstatement_premium, total_ceded, assets, rate, pricing, expenses, brokerage, fixed, premium_tax, income_tax, brokerage_on_reinstatements)
 
 pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_price, losses, assets, rate, pricing)
+
+pricing_price_with_reinstatements <- function(losses, g, assets, rate, pricing) .Call(wrap__pricing_price_with_reinstatements, losses, g, assets, rate, pricing)
 
 pricing_price_portfolio <- function(pd, assets, rate, pricing) .Call(wrap__pricing_price_portfolio, pd, assets, rate, pricing)
 
@@ -368,10 +380,6 @@ EventSet$permute <- function(index) .Call(wrap__EventSet__permute, self, index)
 
 EventSet$term_years <- function(n_years) .Call(wrap__EventSet__term_years, self, n_years)
 
-EventSet$timeline_check <- function(months) .Call(wrap__EventSet__timeline_check, self, months)
-
-EventSet$timeline_years <- function(months, basis, shares, n_years, sources) .Call(wrap__EventSet__timeline_years, self, months, basis, shares, n_years, sources)
-
 EventSet$correlated_years <- function(n_years, correlation, kind, draws, seed) .Call(wrap__EventSet__correlated_years, self, n_years, correlation, kind, draws, seed)
 
 EventSet$calibrate_year_correlation <- function(n_years, ratio, kind, draws, seed) .Call(wrap__EventSet__calibrate_year_correlation, self, n_years, ratio, kind, draws, seed)
@@ -409,6 +417,28 @@ EventSet$maxima <- function() .Call(wrap__EventSet__maxima, self)
 
 #' @export
 `[[.EventSet` <- `$.EventSet`
+
+Timeline <- new.env(parent = emptyenv())
+
+Timeline$new <- function(events, months, pattern) .Call(wrap__Timeline__new, events, months, pattern)
+
+Timeline$from_years <- function(years, pattern) .Call(wrap__Timeline__from_years, years, pattern)
+
+Timeline$events <- function() .Call(wrap__Timeline__events, self)
+
+Timeline$months <- function() .Call(wrap__Timeline__months, self)
+
+Timeline$aggregate_pattern <- function() .Call(wrap__Timeline__aggregate_pattern, self)
+
+Timeline$has_aggregate_part <- function() .Call(wrap__Timeline__has_aggregate_part, self)
+
+Timeline$years <- function(basis, shares, n_years, sources) .Call(wrap__Timeline__years, self, basis, shares, n_years, sources)
+
+#' @export
+`$.Timeline` <- function (self, name) { func <- Timeline[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.Timeline` <- `$.Timeline`
 
 HierarchicalCredibilityR <- new.env(parent = emptyenv())
 
@@ -580,7 +610,7 @@ ReinsuranceTower$interlocking <- function() .Call(wrap__ReinsuranceTower__interl
 
 ReinsuranceTower$cover_basis <- function() .Call(wrap__ReinsuranceTower__cover_basis, self)
 
-ReinsuranceTower$apply_timeline <- function(events, months, shares, n_years) .Call(wrap__ReinsuranceTower__apply_timeline, self, events, months, shares, n_years)
+ReinsuranceTower$apply_timeline <- function(timeline, shares, n_years) .Call(wrap__ReinsuranceTower__apply_timeline, self, timeline, shares, n_years)
 
 ReinsuranceTower$apply_term <- function(years) .Call(wrap__ReinsuranceTower__apply_term, self, years)
 
@@ -2329,6 +2359,56 @@ Triangle$clark_cape_cod <- function(column, exposure, curve, max_age) .Call(wrap
 #' @export
 `[[.Triangle` <- `$.Triangle`
 
+LatestDiagonals <- new.env(parent = emptyenv())
+
+LatestDiagonals$from_long <- function(key_names, keys, origin_year, origin_month, ages, by_valuation, valuation_year, valuation_month, latest, exposure, origin_grain, past_pattern_end) .Call(wrap__LatestDiagonals__from_long, key_names, keys, origin_year, origin_month, ages, by_valuation, valuation_year, valuation_month, latest, exposure, origin_grain, past_pattern_end)
+
+LatestDiagonals$from_triangle <- function(triangle, column, exposure, past_pattern_end) .Call(wrap__LatestDiagonals__from_triangle, triangle, column, exposure, past_pattern_end)
+
+LatestDiagonals$with_exposure <- function(exposure) .Call(wrap__LatestDiagonals__with_exposure, self, exposure)
+
+LatestDiagonals$with_past_pattern_end <- function(rule) .Call(wrap__LatestDiagonals__with_past_pattern_end, self, rule)
+
+LatestDiagonals$n_segments <- function() .Call(wrap__LatestDiagonals__n_segments, self)
+
+LatestDiagonals$keys <- function() .Call(wrap__LatestDiagonals__keys, self)
+
+LatestDiagonals$index <- function() .Call(wrap__LatestDiagonals__index, self)
+
+LatestDiagonals$row_keys <- function() .Call(wrap__LatestDiagonals__row_keys, self)
+
+LatestDiagonals$row_segments <- function() .Call(wrap__LatestDiagonals__row_segments, self)
+
+LatestDiagonals$origin_grain <- function() .Call(wrap__LatestDiagonals__origin_grain, self)
+
+LatestDiagonals$origins <- function() .Call(wrap__LatestDiagonals__origins, self)
+
+LatestDiagonals$ages <- function() .Call(wrap__LatestDiagonals__ages, self)
+
+LatestDiagonals$latest <- function() .Call(wrap__LatestDiagonals__latest, self)
+
+LatestDiagonals$exposure <- function() .Call(wrap__LatestDiagonals__exposure, self)
+
+LatestDiagonals$past_pattern_end <- function() .Call(wrap__LatestDiagonals__past_pattern_end, self)
+
+LatestDiagonals$segment <- function(keys, values) .Call(wrap__LatestDiagonals__segment, self, keys, values)
+
+LatestDiagonals$chain_ladder <- function(average, sigma_interpolation, excl, tail, ldf, development, segment_map) .Call(wrap__LatestDiagonals__chain_ladder, self, average, sigma_interpolation, excl, tail, ldf, development, segment_map)
+
+LatestDiagonals$expected_loss <- function(apriori, average, sigma_interpolation, excl, tail, ldf, development, segment_map) .Call(wrap__LatestDiagonals__expected_loss, self, apriori, average, sigma_interpolation, excl, tail, ldf, development, segment_map)
+
+LatestDiagonals$bornhuetter_ferguson <- function(apriori, average, sigma_interpolation, excl, tail, ldf, development, segment_map) .Call(wrap__LatestDiagonals__bornhuetter_ferguson, self, apriori, average, sigma_interpolation, excl, tail, ldf, development, segment_map)
+
+LatestDiagonals$benktander <- function(apriori, n_iters, average, sigma_interpolation, excl, tail, ldf, development, segment_map) .Call(wrap__LatestDiagonals__benktander, self, apriori, n_iters, average, sigma_interpolation, excl, tail, ldf, development, segment_map)
+
+LatestDiagonals$cape_cod <- function(trend, decay, average, sigma_interpolation, excl, tail, ldf, development, segment_map) .Call(wrap__LatestDiagonals__cape_cod, self, trend, decay, average, sigma_interpolation, excl, tail, ldf, development, segment_map)
+
+#' @export
+`$.LatestDiagonals` <- function (self, name) { func <- LatestDiagonals[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.LatestDiagonals` <- `$.LatestDiagonals`
+
 ReservingTail <- new.env(parent = emptyenv())
 
 ReservingTail$constant <- function(factor, decay, attachment_age) .Call(wrap__ReservingTail__constant, factor, decay, attachment_age)
@@ -2417,6 +2497,8 @@ ChainLadderFit$totals_table <- function() .Call(wrap__ChainLadderFit__totals_tab
 ChainLadderFit$development_table <- function() .Call(wrap__ChainLadderFit__development_table, self)
 
 ChainLadderFit$segment <- function(keys, values) .Call(wrap__ChainLadderFit__segment, self, keys, values)
+
+ChainLadderFit$to_chain_ladder <- function() .Call(wrap__ChainLadderFit__to_chain_ladder, self)
 
 #' @export
 `$.ChainLadderFit` <- function (self, name) { func <- ChainLadderFit[[name]]; environment(func) <- environment(); func }
@@ -3400,7 +3482,7 @@ BookDeal <- new.env(parent = emptyenv())
 
 BookDeal$new <- function(name, premium, loss, names, deductions, outside, inception) .Call(wrap__BookDeal__new, name, premium, loss, names, deductions, outside, inception)
 
-BookDeal$from_tower <- function(name, tower, result, layer, inception) .Call(wrap__BookDeal__from_tower, name, tower, result, layer, inception)
+BookDeal$from_tower <- function(name, tower, result, layer, inception, reinstatement_premium) .Call(wrap__BookDeal__from_tower, name, tower, result, layer, inception, reinstatement_premium)
 
 BookDeal$with_inception <- function(inception) .Call(wrap__BookDeal__with_inception, self, inception)
 
@@ -3413,6 +3495,10 @@ BookDeal$name <- function() .Call(wrap__BookDeal__name, self)
 BookDeal$n_sims <- function() .Call(wrap__BookDeal__n_sims, self)
 
 BookDeal$inception <- function() .Call(wrap__BookDeal__inception, self)
+
+BookDeal$premium <- function() .Call(wrap__BookDeal__premium, self)
+
+BookDeal$loss <- function() .Call(wrap__BookDeal__loss, self)
 
 #' @export
 `$.BookDeal` <- function (self, name) { func <- BookDeal[[name]]; environment(func) <- environment(); func }
@@ -3452,7 +3538,7 @@ Book$calendar <- function(start_year) .Call(wrap__Book__calendar, self, start_ye
 
 Cashflow <- new.env(parent = emptyenv())
 
-Cashflow$new <- function(premium, commutation_month, written, earned, paid, bases, loads, floor, limit, commutation_bases, commutation_loads, commutation_floor, commutation_limit, collected_rate, lag, adjustment_month, adjustment_rate, adjustment_less_commission, adjustment_base, funding_kind, funding_values, funding_rule, premium_offset, reference, funding_source, release_kind, release_values, annual_yield, interest_basis, opening_fixed, opening_share, expense_rate, buffer_months, buffer_paid, buffer_expenses, equity_kind, equity_values, fee_breakpoints, fee_slopes, fee_basis) .Call(wrap__Cashflow__new, premium, commutation_month, written, earned, paid, bases, loads, floor, limit, commutation_bases, commutation_loads, commutation_floor, commutation_limit, collected_rate, lag, adjustment_month, adjustment_rate, adjustment_less_commission, adjustment_base, funding_kind, funding_values, funding_rule, premium_offset, reference, funding_source, release_kind, release_values, annual_yield, interest_basis, opening_fixed, opening_share, expense_rate, buffer_months, buffer_paid, buffer_expenses, equity_kind, equity_values, fee_breakpoints, fee_slopes, fee_basis)
+Cashflow$new <- function(premium, commutation_month, written, earned, paid, bases, loads, floor, limit, commutation_bases, commutation_loads, commutation_floor, commutation_limit, collected_rate, deduct_commission, lag, adjustment_month, adjustment_rate, adjustment_less_commission, adjustment_base, funding_kind, funding_values, funding_rule, premium_offset, reference, funding_source, release_kind, release_values, annual_yield, interest_basis, opening_fixed, opening_share, expense_rate, buffer_months, buffer_paid, buffer_expenses, equity_kind, equity_values, fee_breakpoints, fee_slopes, fee_basis) .Call(wrap__Cashflow__new, premium, commutation_month, written, earned, paid, bases, loads, floor, limit, commutation_bases, commutation_loads, commutation_floor, commutation_limit, collected_rate, deduct_commission, lag, adjustment_month, adjustment_rate, adjustment_less_commission, adjustment_base, funding_kind, funding_values, funding_rule, premium_offset, reference, funding_source, release_kind, release_values, annual_yield, interest_basis, opening_fixed, opening_share, expense_rate, buffer_months, buffer_paid, buffer_expenses, equity_kind, equity_values, fee_breakpoints, fee_slopes, fee_basis)
 
 Cashflow$run <- function(u, commission, requirement) .Call(wrap__Cashflow__run, self, u, commission, requirement)
 
