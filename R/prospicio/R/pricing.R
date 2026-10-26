@@ -1331,8 +1331,9 @@ calibrate_classical <- function(x, principle, premium, q = 2) {
 #' keeps what is left after the loads and commissions as its risk premium,
 #' and the margin and return on capital follow with the same expected loss
 #' and assets. A sliding-scale or profit commission is read back there as
-#' an amount, from the layer's tower grid at that deposit; for a
-#' swing-rated layer pass its expected premium as the deposit.
+#' an amount, from the layer's tower grid at that deposit, and
+#' [layer_quote()] solves for the deposit under them; for a swing-rated
+#' layer pass its expected premium as the deposit.
 #'
 #' @param price A risk-loaded price, from [risk_loaded_price()].
 #' @param expenses Internal expenses, a fraction of the premium.
@@ -1401,15 +1402,71 @@ quote_with <- function(l, premium, commission) {
   c(q, list(loads = l))
 }
 
+#' A layer's quote with its deposit solved for
+#'
+#' A sliding-scale ceding commission and a profit commission depend on the
+#' deposit through the loss ratio, so `layer_quote()` solves for the
+#' deposit at which what the loads and the expected commissions leave is
+#' the price's risk premium:
+#' `D ((1 + kappa)(1 - e - tau) - b (1 + kappa) - c) - f - C(D) = R`, with
+#' `C(D)` the expected sliding-scale and profit commission at `D` over the
+#' layer's ceded grid. The reinstatement rate, a flat commission and the
+#' limit at the placed share are read off the layer; a layer with neither
+#' term gets [technical_quote()] of those terms. A steep scale can meet the
+#' risk premium at more than one deposit: the lowest is returned. A
+#' swing-rated layer has no deposit to solve for (its premium follows its
+#' loss): quote it with [implied_quote()] at its expected premium.
+#'
+#' @param price The risk-loaded price of `ceded`, from [risk_loaded_price()].
+#' @param layer The [xol_layer], with its terms.
+#' @param ceded The layer's ceded grid, as [tower_on_grid()] gives it.
+#' @param expected_reinstatement_premium The grid's expected reinstatement
+#'   premium at the layer's own premium; it scales with the deposit.
+#' @inheritParams technical_quote
+#' @returns A quote as [technical_quote()]'s, at the solved deposit, with
+#'   the expected sliding-scale and profit commission in `commission`. Pass
+#'   [implied_quote()] that commission at another deposit read off the
+#'   grid.
+#' @export
+#' @examples
+#' ceded <- grid_distribution(20, c(0.05, 0.15, 0.3, 0.3, 0.15, 0.05))
+#' qs <- with_sliding_scale(with_premium_rate(quota_share("QS", 0.5), 1, 200),
+#'                          c(0.35, 0.20), c(0.5, 0.7))
+#' p <- risk_loaded_price(ceded, distortion("tvar", 0.99), cost_of_capital = 0.1)
+#' q <- layer_quote(p, qs, ceded, expenses = 0.02)
+#' c(q$premium, q$commission, q$return_on_capital)
+layer_quote <- function(price, layer, ceded, expected_reinstatement_premium = 0, expenses = 0,
+                        brokerage = 0, fixed = 0, premium_tax = 0, income_tax = 0,
+                        brokerage_on_reinstatements = TRUE) {
+  q <- rust_result(pricing_layer_quote(
+    as.double(price$expected_loss), as.double(price$premium), as.double(price$assets),
+    layer@ptr, ceded@ptr, as.double(expected_reinstatement_premium), as.double(expenses),
+    as.double(brokerage), as.double(fixed), as.double(premium_tax), as.double(income_tax),
+    isTRUE(brokerage_on_reinstatements)
+  ))
+  limit <- if (is.nan(q$rate_on_line)) NaN else q$premium / q$rate_on_line
+  loads <- list(price = list(expected_loss = q$expected_loss, premium = q$risk_premium,
+                             assets = q$assets),
+                expenses = as.double(expenses), brokerage = as.double(brokerage),
+                fixed = as.double(fixed), limit = limit,
+                premium_tax = as.double(premium_tax), income_tax = as.double(income_tax),
+                reinstatement_rate = q$reinstatement_rate, commission = q$commission_rate,
+                brokerage_on_reinstatements = isTRUE(brokerage_on_reinstatements))
+  c(q, list(loads = loads))
+}
+
 #' A tower quoted layer by layer and as one
 #'
 #' Each layer of [tower_on_grid()]'s result priced on its own ceded grid by
 #' [risk_loaded_price()] and quoted by [technical_quote()], with its
 #' reinstatement rate (the grid's expected reinstatement premium over the
 #' layer's deposit premium), its flat ceding commission and its limit at the
-#' placed share; and the total cession quoted the same way, its
-#' reinstatement and commission rates the layers' weighted by their
-#' technical deposits, without a limit. The diversification is the layers'
+#' placed share. A layer with a sliding-scale or profit commission has its
+#' deposit solved for, as [layer_quote()] solves it; a swing-rated layer is
+#' quoted without its swing (read it back with [implied_quote()]). The total
+#' cession is quoted the same way, its reinstatement and flat commission
+#' rates the layers' weighted by their technical deposits, without a limit;
+#' the layers' sliding-scale and profit commissions are not carried to it. The diversification is the layers'
 #' deposits less the total's: what writing them together saves. Nothing is
 #' allocated to the layers.
 #'

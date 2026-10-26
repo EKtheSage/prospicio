@@ -12,61 +12,60 @@ execute:
 ---
 
 This track follows one reinsurer through one renewal of property catastrophe
-business. It starts from a vendor model's loss tables and ends with a priced and
-capitalised portfolio. Each page takes one step, explains the idea in words,
-gives the formula when there is one, and then runs it in prospicio on the same
+business. It starts from the loss tables of a vendor model and ends with a
+priced portfolio and its capital. Each page takes one step. It explains the
+idea, gives the formula if there is one, and runs it in prospicio on the same
 small book.
 
-This is the R twin of the Python guide [`cat-0-overview.md`](cat-0-overview.md):
-the same sections, the same files and the same numbers. Each R chunk is followed
-by the text it prints, and `R/prospicio/tests/test-guides.R` requires each one
-to print exactly that text, the same text as the Python guide's.
+This is the R twin of the Python guide
+[`cat-0-overview.md`](cat-0-overview.md). It has the same sections, files and
+numbers. Under each R chunk is the text that it prints.
+`R/prospicio/tests/test-guides.R` requires each chunk to print exactly that
+text, which is also the text of the Python guide.
 
 ## Who it is for
 
-The track is for an analyst who knows what a layer and a reinstatement are, and
-who now has to work with simulated catastrophe losses: a year event loss table
-from a cat model, a handful of treaties, and a request for a price. If the words
-layer, rate on line or cost of capital are new, read
-[a first course](a-first-course.qmd) first, then
+The track is for an analyst who knows what a layer and a reinstatement are. The
+analyst now works with simulated catastrophe losses: a year event loss table
+from a cat model, some treaties and a request for a price. If the terms layer,
+rate on line or cost of capital are new to you, read
+[a first course](a-first-course.qmd) first. Then read
 [what a reinsurance price is](reinsurance-price.md).
 
-The pages work on simulated years (trials). Where prospicio has an exact method
-on a grid, a page links to [aggregate distributions](aggregate-distributions.md)
-instead of repeating it. That guide also covers event sets in general.
+The pages work on simulated years (trials). For an exact method on a grid, a
+page links to [aggregate distributions](aggregate-distributions.md) and does
+not repeat the method. That guide also covers event sets in general.
 
 ## The pages
 
-Each page takes the next step of Larkspur's renewal and builds on the one
-before it, but each also runs on its own.
+Each page takes the next step of the renewal at Larkspur and uses the page
+before it. Each page also runs on its own.
 
-1. [What the cat model hands over](cat-1-loss-tables.qmd): year event loss
-   tables, year loss tables and event loss tables, secondary uncertainty,
-   reading a YELT into prospicio, event times, and checking a simulation
-   against the ELT.
+1. [What the cat model hands over](cat-1-loss-tables.qmd): the three loss
+   tables (YELT, YLT and ELT), secondary uncertainty, how to read a YELT,
+   event times, and a check of a simulation against the ELT.
 2. [How bad can Alder's year get?](cat-2-risk-metrics.qmd): VaR and TVaR on
-   simulated years and the conventions behind them, exceedance curves and
-   return periods, and how often a layer is touched or used up.
+   simulated years, exceedance curves, return periods, and how often a loss
+   reaches a layer or exhausts it.
 3. [Writing Larkspur's contracts in code](cat-3-contract-terms.qmd): the
    hours clause, occurrence layers with reinstatements, the capped quota
    share, the aggregate cover and its perils, and the contract year.
 4. [Stacked covers, and who keeps what](cat-4-programs.qmd): several layers
-   together, a signed line against the whole layer, a quota share inuring to
-   a cat cover, what a cover cannot reach, and a retro on Larkspur's own
-   deals.
+   together, a signed line against the whole layer, a quota share that
+   inures to a cat cover, losses out of reach of a cover, and a retro.
 5. [The money around the loss](cat-5-beyond-loss.qmd): reinstatement
    premium and the season, commissions, sliding scales and brokerage, and the
    deal ledger.
 6. [A price for Alder's first layer](cat-6-pricing.qmd): cost of capital and
-   distortion prices, the technical quote, reinstatement premium inside the
+   distortion prices, the technical quote, reinstatement premium in the
    price, sensitivities and the market check.
-7. [Larkspur's whole book](cat-7-portfolio.qmd): the five deals rolled up,
-   the book's tail, capital allocation, diversification and the marginal
-   price of a new deal.
+7. [Larkspur's whole book](cat-7-portfolio.qmd): the five deals together,
+   the tail of the book, capital allocation, diversification and the
+   marginal price of a new deal.
 
-Each page assumes the words of page 1 (year, event, piece, occurrence) and
-the hours clause of page 3, section 2; pages 6 and 7 assume page 5's
-reinstatement premium.
+Each page uses the terms of page 1 (year, event, piece, occurrence) and the
+hours clause of page 3, section 2. Pages 6 and 7 also use the reinstatement
+premium of page 5.
 
 ## Notation
 
@@ -98,34 +97,37 @@ regions: the coast, the plains and the range.
 
 Four perils hit Varland:
 
-- **windstorm** (`WS`), late in the year, from about day 213 to day 305;
-- **earthquake** (`EQ`), at any time;
-- **flood** (`FL`), in spring, from about day 60 to day 180;
+- **windstorm** (`WS`), late in the year, from about day 213 to day 305.
+- **earthquake** (`EQ`), at any time.
+- **flood** (`FL`), in spring, from about day 60 to day 180.
 - **convective storm** (`CS`), hail and tornado, from about day 100 to day 220.
 
-Money is in millions of Varland crowns, a synthetic currency. Every name and
-every number in the book is made up.
+Money is in millions of Varland crowns, a synthetic currency. All names and
+numbers in the book are fictional.
 
-A few market words recur. A cedent's **subject premium** is the premium of
-the business the reinsurance protects, and its **cat premium** the part of it
-charged for catastrophe risk. A reinsurer's **signed line** is the share of a
-layer it takes; other reinsurers take the rest. The **rate on line** (RoL) is
-an excess layer's premium over its limit. A **deal** is one contract as
-Larkspur has written it: its line's premium, losses and other flows, year by
-year.
+Some market terms occur on many pages. The **subject premium** of a cedent is
+the premium of the business that the reinsurance protects. Its **cat premium**
+is the part of the subject premium for catastrophe risk. The **signed line** of
+a reinsurer is the share of a layer that it takes. Other reinsurers take the
+remainder.
 
-A windstorm on the coast hits all three cedents at once, so their losses move
-together. A convective storm outbreak often reaches the loss table as two or
-three pieces a day or two apart. Whether those pieces count as one loss or
-several is the job of the hours clause (page 3), and it changes what each treaty
-pays.
+The **rate on line** (RoL) is the premium of an excess layer divided by its
+limit. A **deal** is one contract as Larkspur wrote it: the premium, losses and
+other flows of its line, year by year.
+
+A windstorm on the coast hits all three cedents at the same time, so their
+losses move together. A convective storm outbreak often comes into the loss
+table as two or three pieces, one or two days apart. The hours clause (page 3)
+decides if these pieces count as one loss or as several. This decision changes
+what each treaty pays.
 
 ## The files
 
-The book lives in four CSV files in `examples/data/`. The script
-`examples/data/make_cat_book.py` writes them from a fixed seed, so a run always
-gives the same bytes, and a test checks that the committed files match it. The
-Python and R pages read the same files, so their numbers agree.
+The book is in four CSV files in `examples/data/`. The script
+`examples/data/make_cat_book.py` writes them from a fixed seed, so each run
+gives the same bytes. A test checks that the committed files match the output
+of the script. The Python and R pages read the same files, so their numbers
+agree.
 
 | File | One row per |
 |---|---|
@@ -134,24 +136,24 @@ Python and R pages read the same files, so their numbers agree.
 | `cat_book_cedents.csv` | cedent: home region, subject premium, catastrophe premium |
 | `cat_book_contracts.csv` | contract Larkspur Re writes this year, with all its terms |
 
-The year event loss table (YELT) holds 2,000 simulated years. Each row has the
-year, the event's place in the year (`slot`), the event, its day and hour, its
-peril and region, the cedent and the loss. A year with no loss to any cedent has
-no rows. The event loss table (ELT) gives each event's annual rate and Alder's
-mean loss with its spread, which is how a cat model hands over its results
-before any years are simulated. Page 1 explains both tables and checks that they
+The year event loss table (YELT) holds 2,000 simulated years. Each row has
+these fields: year, `slot` (the place of the event in the year), event, day,
+hour, peril, region, cedent and loss. A year with no loss to any cedent has no
+rows. The event loss table (ELT) gives the annual rate of each event and the
+mean loss to Alder with its spread. A cat model gives its results in this form
+before it simulates years. Page 1 explains the two tables and checks that they
 agree.
 
-The pages read every contract term from `cat_book_contracts.csv`; none is typed
-into the code. To try a different case, change the script and run it again.
+The pages read every contract term from `cat_book_contracts.csv`. The code
+types no term. To try a different case, change the script and run it again.
 
 ### The cedents and the contracts
 
-This chunk prints the two small tables with nothing but base R's `read.csv()`.
-The tests run the guides from the repository root and Quarto renders them from
-`docs/guides/`, so a small helper looks for `examples/data/` upwards from the
-working directory. Every column is read as text, as the Python guide's `csv`
-module reads it, and an empty term counts as 0.
+This chunk prints the two small tables with only `read.csv()` from base R. The
+tests run the guides from the repository root, and Quarto renders them from
+`docs/guides/`. So a small helper looks for `examples/data/` in the working
+directory and in its parent directories. The chunk reads each column as text,
+as the `csv` module of the Python guide does. An empty term counts as 0.
 
 ```{r}
 # The data files, found from the repository root (CI) or from docs/guides (Quarto).
@@ -213,18 +215,22 @@ bracken_agg  aggregate_xl   CS+FL  agg 30 xs 40                 25%  RoL 0.06 on
 corran_qs    quota_share    all    event 150, annual 300        10%  ceding commission 25%, 72 h
 ```
 
-The amounts are on a 100% basis. `share` is Larkspur Re's signed line on an
-excess of loss contract, and the cession on the quota share. So Larkspur Re
-takes 30% of Alder's first layer, which pays the part of each occurrence between
-30 and 70. Bracken's aggregate cover applies to convective storm and flood only
-and pays the part of the year's total loss from those perils between 40 and 70.
-The quota share cedes 10% of Corran's losses, at most 150 for one event and 300
-in the year, and pays Corran a 25% ceding commission on the ceded premium.
+The amounts are on a 100% basis. On an excess of loss contract, `share` is the
+signed line of Larkspur Re. On the quota share, `share` is the cession. So
+Larkspur Re takes 30% of the first layer of Alder, which pays the part of each
+occurrence between 30 and 70. The aggregate cover of Bracken applies only to
+convective storm and flood. It pays the part of the annual total loss from
+these perils between 40 and 70.
+
+The quota share cedes 10% of the losses of Corran, with a maximum of 150 for
+one event and 300 for the year. It pays Corran a 25% ceding commission on the
+ceded premium.
 
 ### The year event loss table at a glance
 
-A second look, again with base R only: how many rows the YELT has, how many
-simulated years have any loss, and how the rows split by peril and cedent.
+The next chunk also uses only base R. It counts the rows of the YELT and the
+simulated years with a loss. Then it splits the mean annual loss by peril and
+cedent.
 
 ```{r}
 yelt <- utils::read.csv(find_data("cat_book_yelt.csv"))
@@ -261,19 +267,20 @@ CS        1.349    3.165    1.106    5.620
 all      16.778   15.376   13.049   45.204
 ```
 
-The mean annual loss over all years is the average annual loss (AAL,
-[page 1](cat-1-loss-tables.qmd) defines it). Windstorm is the largest peril for every cedent, even Corran in the
-range, because a coastal storm is the biggest event in the catalog. The home
-region shows in the next peril: flood and convective storm for Bracken on the
-plains, earthquake for Corran in the range. In 180 of the 2,000 years nothing
-hits any cedent; the first such year is year 1, so the file starts at year 2.
-A year with no row is still a year of the simulation, a quiet one, so every
-average on these pages divides by the 2,000 simulated years.
+The mean annual loss over all years is the average annual loss (AAL, defined on
+[page 1](cat-1-loss-tables.qmd)). Windstorm is the largest peril for every
+cedent, also for Corran in the range. The cause is that a coastal storm is the
+largest event in the catalog. The home region shows in the second peril: flood
+and convective storm for Bracken on the plains, and earthquake for Corran in
+the range.
 
-Where prospicio does not yet do something a page needs, the page says so
-plainly, shows a workaround when there is one, and names the gap, with its
-issue number, under "What is missing". Each page has an R twin (the same
-file name with `.qmd`) with the same sections and numbers.
+In 180 of the 2,000 years, no event hits a cedent. Year 1 is one of these
+years, so the file starts at year 2. A year with no row is still a year of the
+simulation. So every average on these pages divides by the 2,000 simulated
+years.
+
+Each page has an R twin (the same file name with `.qmd`) with the same sections
+and numbers.
 
 ## Further reading
 

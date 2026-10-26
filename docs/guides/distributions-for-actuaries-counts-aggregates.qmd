@@ -12,12 +12,12 @@ execute:
 ---
 
 This is the R twin of the Python guide
-[`distributions-for-actuaries-counts-aggregates.md`](distributions-for-actuaries-counts-aggregates.md),
-which recomputes the worked examples and problem answers of chapters 3 and 4
-and the aggregate limits of section 6.4 of CAS Monograph 2, *Distributions for
-Actuaries* by David Bahnemann (2015). Same sections, same examples, same
-numbers: the R package runs the same Rust code. Read the Python guide for the
-discussion of each result. The companion R guide,
+[`distributions-for-actuaries-counts-aggregates.md`](distributions-for-actuaries-counts-aggregates.md).
+It recomputes the worked examples and problem answers of chapters 3 and 4 and
+the aggregate limits of section 6.4 of CAS Monograph 2, *Distributions for
+Actuaries* by David Bahnemann (2015). The sections, examples and numbers are the
+same, because the R package runs the same Rust code. Read the Python guide for
+the discussion of each result. The companion R guide,
 [`distributions-for-actuaries-claim-size.qmd`](distributions-for-actuaries-claim-size.qmd),
 covers chapters 2, 5 and 6. `R/prospicio/tests/test-guides.R` requires each
 chunk to print exactly the text under it.
@@ -211,9 +211,9 @@ P3.29  three lines                       book       0.1000   prospicio       0.1
 
 ## 5. Aggregate claims and their moments
 
-`compound_distribution()` defaults to Panjer's recursion; ask for the FFT as
-the Python guide does. R indexes from 1, so the probability of a total of `k`
-steps is `probs[k + 1]`.
+`compound_distribution()` uses Panjer's recursion by default. Pass
+`method = "fft"` for the FFT, as the Python guide does. R indexes from 1, so the
+probability of a total of `k` steps is `probs[k + 1]`.
 
 ```{r}
 #| label: aggregate
@@ -401,7 +401,7 @@ Ex 4.13  lognormal (4.956; 2.3), 1.5 claims a year: E[S] = 3,000 (book 3,000)
 ## 9. Aggregate limits
 
 Ex 6.6's lognormal has μ = 7.6, not the printed 7.000 (see the Python guide).
-The shifted gamma's stop-loss is a gamma's, from the `parameters` (shape,
+The stop-loss of the shifted gamma is a gamma's. It uses the `parameters` (shape,
 scale and shift) of `moment_approximation()`.
 
 ```{r}
@@ -494,26 +494,14 @@ P6.12  premium, 1M per claim, v = 25%    book       40,447   prospicio       40,
 P6.12  credit for a 1M aggregate limit: book 844, exact 269
 ```
 
-## 10. What agreed, what did not, and what the R package does not do
+## 10. What agreed and what did not
 
-The agreements and the disagreements, with their causes, are the Python
-guide's section 10, with the same numbers. What the R package lacks for these
-chapters, beyond what the Python package lacks there (normal power and
-Wilson–Hilferty approximations, Heckman–Meyers inversion, count thinning, a
-contagion accessor, count fitting beyond the method of moments):
+The agreements and the disagreements, with their causes, are the same as in
+section 10 of the Python guide, with the same numbers.
 
-- **A moment approximation from moments**: `moment_approximation()` takes a
-  count and a severity, not a result of `compound_moments()` (Python's
-  `CompoundMoments.approximate`), so it recomputes the moments on each call.
-- **The event set's annual totals as a sample**: `total()` of
-  `simulate_events()` is a predictive distribution, and a second `total()`
-  gives the `sampled` whose `cdf()` reads off F(3,000) (Python's
-  `.totals().total()`).
-- **`compound_distribution()` defaults to Panjer's recursion**, where Python
-  has separate `panjer` and `fft`; pass `method = "fft"` for the FFT.
+Where to go next:
 
-Where to go next: the Python guides
-[severity and frequency](severity-and-frequency.md),
-[aggregate distributions](aggregate-distributions.md) and
-[experience and exposure rating](experience-and-exposure-rating.md), and the
-companion R guide on claim size, layers, limits and deductibles.
+- [Severity and frequency](severity-and-frequency.md)
+- [Aggregate distributions](aggregate-distributions.md)
+- [Experience and exposure rating](experience-and-exposure-rating.md)
+- The companion R guide on claim size, layers, limits and deductibles

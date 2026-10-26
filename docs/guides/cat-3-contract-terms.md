@@ -1,23 +1,24 @@
 # Property catastrophe 3: writing Larkspur's contracts in code
 
-A catastrophe treaty is a function. It takes a year of the cedent's event
-losses and returns what the reinsurer pays. The terms of the contract decide
-the shape of that function: how pieces of one storm are added up, where each
-loss attaches, how much limit a year has, which losses it sees and how the
-recovery is shared. This page turns each of Larkspur Re's five contracts into
-code, cedent by cedent, from `examples/data/cat_book_contracts.csv`, checks the
-terms on small years you can follow by hand, and then runs them on the 2,000
+A catastrophe treaty is a function. It takes a year of event losses of the
+cedent and returns what the reinsurer pays. The contract terms set the shape of
+that function. They set how the pieces of one storm add up, where each loss
+attaches and how much limit a year has. They also set which losses the treaty
+sees and how the parties share the recovery.
+
+This page changes each of the five contracts of Larkspur Re into code, cedent
+by cedent, from `examples/data/cat_book_contracts.csv`. It checks the terms on
+small years that you can follow by hand. Then it runs them on the 2,000
 simulated years of the book. The story, the files and the notation are on
-[the overview](cat-0-overview.md); the loss tables are introduced on
-[page 1](cat-1-loss-tables.md).
+[the overview](cat-0-overview.md). [Page 1](cat-1-loss-tables.md) introduces
+the loss tables.
 
 ## 1. The book and its contracts
 
-The year event loss table (YELT) holds one row per cedent per event piece,
-with a day and an hour. `read_ylt` does not read a time column yet
-(#594), so this page builds each cedent's event set by hand: one list of
-losses per year, the time of each loss as a fraction of the year, and the
-peril as a label.
+The year event loss table (YELT) holds one row per cedent per event piece, with
+a day and an hour. This page builds the event set of each cedent by hand
+(#594). Each set has one list of losses per year, the time of each loss as a
+fraction of the year, and the peril as a label.
 
 ```python
 import csv
@@ -68,11 +69,11 @@ bracken_agg  aggregate_xl   perils CS+FL  share 0.25  hours -
 corran_qs    quota_share    perils all    share 0.1   hours 72
 ```
 
-Each row of the file becomes one `Layer`. The amounts in the file are on a
-100% basis and `share` is Larkspur's signed line, so the layer's `share`
-scales every recovery and the premium is the rate on line times the limit
-times the share. The function below is the only place the terms are read;
-nothing later on the page types a number from the table.
+Each row of the file becomes one `Layer`. The amounts in the file are on a 100%
+basis, and `share` is the signed line of Larkspur. So the `share` of the layer
+scales every recovery, and the premium is the rate on line times the limit
+times the share. Only the function below reads the terms. No later code on the
+page types a number from the table.
 
 ```python
 def num(x):
@@ -109,26 +110,28 @@ bracken_agg     inf xs    0  annual limit     30  premium 0.450
 corran_qs       150 xs    0  annual limit    300  premium 3.000
 ```
 
-An occurrence layer with one paid reinstatement has an annual limit of twice
-its occurrence limit; the aggregate cover has no occurrence limit at all.
+An occurrence layer with one paid reinstatement has an annual limit of two
+times its occurrence limit. The aggregate cover has no occurrence limit.
 
 ## 2. What counts as one loss: the hours clause
 
-A storm can reach the loss table in pieces: a windstorm that crosses the coast
-over two days, or a run of hail cells. The hours clause says how many hours of
-losses make one **occurrence**. For a layer this matters a lot: two pieces of
-25 under 40 xs 30 recover nothing apart and 20 together.
+A storm can come into the loss table in pieces: a windstorm that crosses the
+coast over two days, or a series of hail cells. The hours clause sets how many
+hours of losses make one **occurrence**. This is important for a layer. Under
+40 xs 30, two pieces of 25 recover nothing as separate losses and 20 as one
+loss.
 
 **The rule on this track.** `EventSet.grouped(hours)` starts a window at the
-first piece of a year, adds every piece that falls within that many hours of
-it into one occurrence, and starts the next window at the next piece. All
-perils are grouped together, with the single `hours` value the contracts file
-gives each contract. Both are simplifications. A real clause usually lets the
-cedent choose where each window starts, to its advantage, so a window fixed
-at the first piece can understate recoveries. Many clauses also define an
-occurrence per peril, with a longer window for flood (often 168 hours) than
-for windstorm. The block below checks how much the per-peril reading changes
-on this book.
+first piece of a year. It adds to one occurrence each piece in that number of
+hours from the first piece. Then it starts the next window at the next piece.
+The rule groups all perils together, with the single `hours` value that the
+contracts file gives each contract. These two rules are simplifications.
+
+A real clause usually lets the cedent choose where each window starts, to its
+advantage. So a window fixed at the first piece can understate recoveries. Many
+clauses also define an occurrence per peril, with a longer window for flood
+(often 168 hours) than for windstorm. The block below checks how much the
+per-peril rule changes the result on this book.
 
 ```python
 alder = cedent_events("alder")
@@ -150,11 +153,16 @@ labels before ['peril']  after []
 alder_cat_1 expected loss, pieces 0.7778, 72 hours 0.8230
 ```
 
-Grouping lifts the expected loss by about 6%. It also drops the labels: an
-occurrence made of pieces of two perils has no single peril. To group peril
-by peril, group each peril on its own, label it again, and merge the perils
-back into one set, which keeps the labels and puts each year's occurrences
-in time order. Page 4 reuses this helper to split a program by peril.
+Grouping increases the expected loss by about 6%. It also removes the labels,
+because an occurrence made of pieces of two perils has no single peril. To
+group peril by peril, do these steps:
+
+1. Group each peril separately.
+2. Label each peril again.
+3. Merge the perils into one set.
+
+The merged set keeps the labels and puts the occurrences of each year in time
+order. Page 4 uses this helper again to split a program by peril.
 
 ```python
 def grouped_by_peril(cedent, hours):
@@ -175,22 +183,22 @@ occurrences, grouped peril by peril 4275  labels ['peril']
 alder_cat_1 expected loss 0.8229
 ```
 
-A few more occurrences survive, because pieces of different perils that fall
-within 72 hours no longer join, and the expected loss barely moves on this
-book. So the track keeps the single all-perils clause for pricing, and uses
-the per-peril grouping only where it needs the peril labels.
+There are a few more occurrences, because pieces of different perils in the
+same 72 hours do not join now. On this book, the expected loss changes very
+little. So the track uses the single all-perils clause for pricing. It uses the
+per-peril grouping only where it needs the peril labels.
 
 ## 3. Alder's layers: occurrence excess of loss with reinstatements
 
 Each occurrence of size `x` recovers `min(max(x - a, 0), l)` from a layer
-`l xs a`. Over a year the recoveries add up until the annual limit is used,
-which is `l` times one plus the number of reinstatements. The reinsurer's
-part is its share of that. Paid reinstatements cost the cedent extra premium;
-page 5 prices them.
+`l xs a`. In a year, the recoveries add up until they use all of the annual
+limit. The annual limit is `l` times one plus the number of reinstatements. The
+part of the reinsurer is its share of that sum. Paid reinstatements cost the
+cedent more premium, and page 5 prices them.
 
 `ceded_by_event` shows the order. Take `alder_cat_1` (40 xs 30, 30%, one
-reinstatement, so 80 of annual limit) and a year of four occurrences: one
-below the attachment, one through the top of the layer, and two in the
+reinstatement, so 80 of annual limit) and a year of four occurrences. One is
+below the attachment, one goes through the top of the layer, and two are in the
 middle.
 
 ```python
@@ -213,20 +221,20 @@ print(f"year: {cat_1.ceded(year):.2f}")
 year: 24.00
 ```
 
-The 95 would recover 40 on its own, but only 6 of the year's limit is left.
-The losses must be in time order, since the limit runs out on the last
-occurrences. The book's years already are: the file lists each year's pieces
-by `slot`, which is chronological.
+Alone, the 95 recovers 40, but only 6 of the annual limit remains. The losses
+must be in time order, because the last occurrences get only the remainder of
+the limit. The years of the book are in time order: the file lists the pieces
+of each year by `slot`, which is chronological.
 
 ## 4. Corran's quota share: an event limit and an annual limit
 
-A plain quota share cedes a fixed share of every loss. Cat quota shares
-usually cap it: an event limit on each occurrence and an annual limit on the
-year. `corran_qs` cedes 10% with an event limit of 150 and an annual limit of
-300, both on a 100% basis. As a layer, that is 150 xs 0 at a 10% share with an
-annual limit of 300. In a year of 200 and 120 the first event is capped at 150,
-so the cover pays 10% of 270. `Layer.quota_share` has no limits and pays 10%
-of 320.
+A plain quota share cedes a fixed share of every loss. A cat quota share
+usually has two caps: an event limit on each occurrence and an annual limit on
+the year. `corran_qs` cedes 10% with an event limit of 150 and an annual limit
+of 300, both on a 100% basis. As a layer, this is 150 xs 0 at a 10% share with
+an annual limit of 300. In a year of 200 and 120, the event limit caps the
+first event at 150, so the cover pays 10% of 270. `Layer.quota_share` has no
+limits and pays 10% of 320.
 
 ```python
 qs = LAYERS["corran_qs"]
@@ -241,17 +249,17 @@ print(Layer.quota_share("uncapped", 0.1).ceded([200.0, 120.0]))
 
 ## 5. Bracken's aggregate cover, and the losses it sees
 
-The **subject losses** of a contract are the cedent's losses it applies to:
-its perils, grouped by its hours clause, before the contract's own terms.
-`bracken_agg` covers only convective storm and flood. The cleanest way to
-scope a contract to some perils is to leave the other perils out of the
-subject losses before the contract sees them. Here that happens in the data,
-with `cedent_events("bracken", "CS+FL")`.
+The **subject losses** of a contract are the losses of the cedent that it
+applies to. They are the losses of its perils, grouped by its hours clause,
+before the terms of the contract. `bracken_agg` covers only convective storm
+and flood. To limit a contract to some perils, remove the other perils from the
+subject losses before the contract sees them. Here the data does this, with
+`cedent_events("bracken", "CS+FL")` (#584).
 
-The library also splits results by label, but the split comes after ceding.
-Take a year with an earthquake of 25 and then a windstorm of 30 under 20 xs 10
-with an annual limit of 20. The earthquake recovers 15 and leaves 5 of limit
-for the windstorm. A windstorm-only treaty would have paid the windstorm 20.
+The library can also split results by label, but the split comes after the
+cession. Take a year with an earthquake of 25 and then a windstorm of 30, under
+20 xs 10 with an annual limit of 20. The earthquake recovers 15 and leaves 5 of
+limit for the windstorm. A treaty for windstorm only pays 20 for the windstorm.
 
 ```python
 year = EventSet.from_years([[25.0, 30.0]], times=[[0.1, 0.2]]).with_labels({"peril": ["EQ", "WS"]})
@@ -269,17 +277,15 @@ WS share of the all-perils recovery 5.0
 WS under a windstorm-only treaty 20.0
 ```
 
-So a label split answers "how much of this treaty's recovery came from
-windstorm", not "what would a windstorm treaty pay". There is no call that
-filters an `EventSet` by label or scopes a layer to some labels
-(#584).
+So a label split tells how much of the recovery of this treaty came from
+windstorm. It does not tell what a windstorm treaty pays.
 
-An aggregate cover looks at the year's total: `share * min(max(S - AD, 0), AL)`
-with `S` the sum of the covered losses, `AD` the aggregate deductible and `AL`
-the aggregate limit. In prospicio it is a layer with an infinite occurrence
-limit, no attachment, and the annual terms. `bracken_agg` is 30 xs 40 in the
-aggregate at 25%. A year of 10, 20 and 25 totals 55, so the cover pays a
-quarter of 15.
+An aggregate cover uses the annual total: `share * min(max(S - AD, 0), AL)`.
+Here `S` is the sum of the covered losses, `AD` the aggregate deductible and
+`AL` the aggregate limit. In prospicio, it is a layer with an infinite
+occurrence limit, no attachment and the annual terms. `bracken_agg` is 30 xs 40
+in the aggregate at 25%. A year of 10, 20 and 25 has a total of 55, so the
+cover pays a quarter of 15.
 
 ```python
 agg = LAYERS["bracken_agg"]
@@ -296,13 +302,14 @@ event order [0.0, 0.0, 3.75]
 pro rata    [0.6818, 1.3636, 1.7045]
 ```
 
-The annual figure is the same either way. The split by event differs: in
-event order the deductible eats the first losses and the third event carries
-all of the recovery, while `allocation="pro_rata"` scales every event by the
-same factor. The split matters only when something downstream reads events,
-such as a later inuring stage (page 4).
+The annual value is the same with the two methods, but the split by event is
+different. In event order, the deductible takes the first losses, and the third
+event gets all of the recovery. `allocation="pro_rata"` scales every event by
+the same factor. The split is important only when a later step reads events,
+for example a later inuring stage (page 4).
 
-On the book, the cover sees Bracken's convective storm and flood losses only.
+On the book, the cover sees only the convective storm and flood losses of
+Bracken.
 
 ```python
 bracken_csfl = cedent_events("bracken", "CS+FL")
@@ -323,20 +330,20 @@ of the 65 years past the deductible, 52 have one loss above 40
 bracken_agg expected loss 0.1621, premium 0.4500
 ```
 
-The cover attaches in about one year in thirty. An aggregate cover is often
-sold to protect a cedent's earnings against a run of medium-sized events, but
-this one has no cap on what one event can contribute, so on this book it is
-mostly triggered by a single large flood or storm outbreak: in 52 of the 65
-years past the deductible, one loss alone is above it. A cedent that wants
-frequency protection adds an each-and-every-loss cap, which limits each
-event's contribution to the aggregate.
+The cover attaches in about one year in thirty. Cedents often buy an aggregate
+cover to protect their earnings against a series of medium events. But this
+cover has no cap on the contribution of one event. So on this book, a single
+large flood or storm outbreak is the usual trigger. In 52 of the 65 years past
+the deductible, one loss alone is above the deductible. For frequency
+protection, a cedent adds an each-and-every-loss cap, which limits the
+contribution of each event to the aggregate.
 
 ## 6. All five contracts on the book
 
-With the subject losses chosen by perils and grouped by each contract's
-hours clause, every contract runs the same way. The loss ratio here is the
-expected ceded loss over the upfront premium, before reinstatement premium
-and commissions.
+When the subject losses have the perils of the contract and the grouping of its
+hours clause, every contract runs the same way. Here, the loss ratio is the
+expected ceded loss divided by the upfront premium, before reinstatement
+premium and commissions.
 
 ```python
 def subject(c):
@@ -359,13 +366,19 @@ corran_qs    expected loss  1.2025  premium  3.000  loss ratio 0.401
 
 ## 7. The contract year
 
-A treaty covers losses occurring in a period, or losses on policies written in
-a period (risks attaching). prospicio models that with a `Timeline` of
-accident months, an `Exposure` that says how much of each month each
-underwriting year carries, and a tower with a cover basis. Under losses
-occurring, contract years start at month 0 of the timeline. A small example
-shows a trap: an 18-month timeline with one underwriting year keeps an event
-in month 3 and drops one in month 16 without a word.
+A treaty covers the losses that occur in a period (losses occurring), or the
+losses on policies written in a period (risks attaching). prospicio models this
+with:
+
+- a `Timeline` of accident months,
+- an `Exposure` that gives how much of each month each underwriting year
+  carries,
+- a tower with a cover basis.
+
+Under losses occurring, contract years start at month 0 of the timeline. A
+small example shows a trap. An 18-month timeline with one underwriting year
+keeps an event in month 3, and it removes an event in month 16 without a
+warning.
 
 ```python
 events = EventSet.from_years([[100.0, 80.0]], times=[[3.0 / 18, 16.2 / 18]])
@@ -380,44 +393,17 @@ print("gross seen", res.marginal(["gross", "ground_up", 1]).mean())
 gross seen 100.0
 ```
 
-The second event, 80 in month 16, is in no contract year and so in no
-result. There is no way to say that a contract runs from, say, 1 July to
-30 June of dated events, or to be warned when an event falls outside every
-contract year (#586). Here the simulated years are already contract
-years, so the page needs none of this.
+The second event, 80 in month 16, is in no contract year, so no result includes
+it. prospicio gives no warning for an event outside every contract year (#586).
+On this page, the simulated years are already contract years.
 
 ## 8. Surplus and per-risk covers
 
-A surplus treaty cedes each risk in proportion to how far its sum insured
-exceeds a retention, and a per-risk excess of loss attaches on each risk
-rather than each event. Both need losses by risk, which a catastrophe event
-table does not have. `Layer.surplus` and risk profiles are covered in
-[`reinsurance-price.md`](reinsurance-price.md). What the library lacks for a
-cat program is a per-risk layer with an event limit (a cap on the sum of
-per-risk recoveries from one event) and a per-risk layer inuring to a cat
-layer, so the cat layer sees each event net of the per-risk recoveries
-(#585).
-
-## What is missing
-
-Several common cat terms have no direct form in the library:
-
-- a franchise deductible, which pays the whole loss once it passes the
-  deductible;
-- an nth-event cover, which pays only the second (or third) occurrence of a
-  year;
-- a top-and-drop layer, which sits on top of a program and drops down when
-  the lower layers are exhausted;
-- index or parametric triggers and industry loss warranties, which pay on an
-  industry figure or a physical measure rather than the cedent's loss.
-
-Each can be built by hand from `ceded_by_event` or from the event losses, but
-none is a `Layer` setting (#591; parametric and index triggers for
-cat bonds are also part of #570). A no-claims bonus, which page 5
-approximates with a sliding scale, is #592. The earlier sections name
-the other gaps: a time column for `read_ylt` (#594), filtering by label
-(#584), the contract year (#586) and per-risk covers in a
-cat program (#585).
+A surplus treaty cedes each risk in proportion to the amount by which its sum
+insured is more than a retention. A per-risk excess of loss attaches on each
+risk, not on each event. Both need losses by risk, and a catastrophe event
+table does not have them. [`reinsurance-price.md`](reinsurance-price.md) shows
+`Layer.surplus` and risk profiles.
 
 ## In R
 

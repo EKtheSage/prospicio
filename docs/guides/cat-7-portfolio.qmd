@@ -11,51 +11,54 @@ execute:
   output: false
 ---
 
-The earlier pages of this track price one contract at a time. A reinsurer does
-not hold one contract. Larkspur Re holds five, on three cedents, and the same
-windstorm can hit all of them in the same year. This page adds the five
-contracts into one book, measures the book's tail, splits the book's capital
-back to the contracts, and asks which contracts earn their keep.
+The earlier pages of this track price one contract at a time. A reinsurer
+holds more than one contract. Larkspur Re holds five, on three cedents, and the
+same windstorm can hit all of them in the same year. This page adds the five
+contracts into one book and measures the tail of the book. It splits the
+capital of the book back to the contracts, and it shows which contracts pay for
+their capital.
 
 This is the R twin of the Python guide
-[`cat-7-portfolio.md`](cat-7-portfolio.md): the same sections, the same files
-and the same numbers. Each R chunk is followed by the text it prints, and
-`R/prospicio/tests/test-guides.R` requires each one to print exactly that text.
+[`cat-7-portfolio.md`](cat-7-portfolio.md), with the same sections, files and
+numbers. The text under each R chunk is what the chunk prints.
+`R/prospicio/tests/test-guides.R` checks that each chunk prints exactly that
+text.
 
 The story, the files and the notation are on
-[the overview](cat-0-overview.qmd). Nothing here is typed in by hand: every
+[the overview](cat-0-overview.qmd). The page types no number by hand: every
 attachment, limit and share comes from `cat_book_contracts.csv`.
 
 ## 1. The idea
 
 Each row of the year event loss table belongs to one simulated year, and every
-contract sees the same 2,000 years. So the book's loss in a year is the sum of
-the five contracts' losses in that year. No copula and no reordering are
-needed for the dependence that the events carry: one event in the catalog
-lands on several cedents at once. That is the only dependence in this book,
-though. The script that wrote it draws each cedent's loss from an event
-independently, so the correlated part of secondary uncertainty (page 1) is
-not correlated across cedents here. A real model that shares it would give
-the book a heavier tail than this page shows.
+contract sees the same 2,000 years. Thus the loss of the book in a year is the
+sum of the losses of the five contracts in that year. The dependence that the
+events carry needs no copula and no reordering: one event in the catalog lands
+on several cedents at once.
+
+That is the only dependence in this book. The script that wrote the book draws
+the loss of each cedent from an event independently. Thus the correlated part
+of secondary uncertainty (page 1) is not correlated across cedents here. A real
+model that shares it would give the book a heavier tail than this page shows.
 
 Three questions follow from that sum.
 
-- **How bad is the book's bad year?** A tail measure of the summed loss, here
-  TVaR at 99%: the mean of the worst 1% of years.
-- **Who is responsible for it?** A split of the book's TVaR back to the
+- **How bad is the bad year of the book?** A tail measure of the summed loss,
+  here TVaR at 99%: the mean of the worst 1% of years.
+- **Which contracts cause it?** A split of the TVaR of the book back to the
   contracts. The Euler split gives each contract its mean loss in the years
-  that make the book's tail; [price allocation](pir-price-allocation.qmd)
-  compares it with the other ways to split.
+  that make the tail of the book. [Price allocation](pir-price-allocation.qmd) compares it
+  with the other ways to split.
 - **Does each contract pay for the capital it uses?** A price or a return on
-  that allocated capital, set against the premium the contract actually
+  that allocated capital, against the premium that the contract actually
   charges.
 
 ## 2. The book
 
-The chunk below repeats the reader helpers of the earlier pages (each guide
-runs on its own), builds each contract's tower on its own subject loss, and
-wraps each result in a `deal_run_from_tower()`. A `deal_book()` lines the runs
-up year by year.
+The chunk below repeats the reader helpers of the earlier pages, because each
+guide runs on its own. It builds the tower of each contract on its own subject
+loss and wraps each result in a `deal_run_from_tower()`. A `deal_book()` aligns
+the runs by year.
 
 ```{r}
 library(prospicio)
@@ -140,12 +143,12 @@ cat("items:", paste(unique(amounts@keys$item), collapse = ", "), "\n")
 items: premium, loss, ceding_commission, total_deductions, nmbf, margin
 ```
 
-`book_summary()` gives the mean of every item by deal and for the book, with
-its ratio to the mean premium. The premium is each year's deposit plus the
-reinstatement premium that year's losses pay (section 3). The margin is
-premium less loss less the deductions (only `corran_qs` has one, its ceding
-commission). Larkspur's own expenses are not in the data, so the margin is
-before them.
+`book_summary()` gives the mean of every item by deal and for the book, with its
+ratio to the mean premium. The premium is the deposit of each year plus the
+reinstatement premium that the losses of that year pay (section 3). The margin
+is the premium less the loss less the deductions. Only `corran_qs` has a
+deduction, its ceding commission. The data has no expenses of Larkspur, so the
+margin is before them.
 
 ```{r}
 s <- book_summary(book)
@@ -171,13 +174,13 @@ total           8.237   3.289   0.750   4.198  0.399
 
 ## 3. Reinstatement premium in the book
 
-`deal_run_from_tower()` adds each year's reinstatement premium to the layer's
-deposit premium. The tower computes that premium for the two Alder layers and
-`bracken_cat`, pro rata as to amount, so `alder_cat_1`'s premium is 1.8 in a
-quiet year and more in a year that reaches the layer.
-`reinstatement_premium = FALSE` keeps the deposit alone, for comparison.
-Losses do not change, so the capital below does not change either. Only the
-premium and the margin do.
+`deal_run_from_tower()` adds the reinstatement premium of each year to the deposit
+premium of the layer. The tower computes that premium for the two Alder layers
+and `bracken_cat`, pro rata as to amount. Thus the premium of `alder_cat_1` is
+1.8 in a quiet year and more in a year that reaches the layer.
+`reinstatement_premium = FALSE` keeps the deposit alone, for comparison. The losses do not
+change, so the capital below does not change. Only the premium and the margin
+change.
 
 ```{r}
 premium <- marginal(amounts, c("premium", "alder_cat_1"))@draws
@@ -205,15 +208,15 @@ corran_qs    reinstatement premium 0.0000
 
 `book_distribution(book, "loss", ...)` gives three views of each deal at once.
 
-- `total`: the book's own statistics.
-- `contribution`: the deal's mean loss in the years that make the book's
-  statistic. For TVaR this is the Euler split, and the contributions add up to
-  the book's TVaR.
-- `marginal`: the book's statistic less the same statistic of the book
+- `total`: the statistics of the book.
+- `contribution`: the mean loss of the deal in the years that make the
+  statistic of the book. For TVaR this is the Euler split, and the
+  contributions add up to the TVaR of the book.
+- `marginal`: the statistic of the book less the same statistic of the book
   without that deal. It answers "what would we save by not writing this?".
 
-The stand-alone TVaR of each deal comes from `capital_allocation()` below.
-Here it is the first column, for comparison.
+`capital_allocation()` below gives the stand-alone TVaR of each deal. The table shows it
+in the first column, for comparison.
 
 ```{r}
 dist <- book_distribution(book, "loss", 99, tvar_levels = 99)
@@ -243,21 +246,21 @@ sum of contributions 55.096
 
 Read the table one row at a time.
 
-- `alder_cat_2` is the high Alder layer. On its own its TVaR is the largest of
-  the five, and it keeps most of that in the book, because the years that
-  exhaust it are the big coastal windstorms that drive the whole book.
+- `alder_cat_2` is the high Alder layer. Alone, its TVaR is the largest of the
+  five. It keeps most of that TVaR in the book, because the years that exhaust
+  it are the big coastal windstorms that drive the whole book.
 - `bracken_agg` looks risky alone: in its worst 1% of years it pays its whole
-  share of the aggregate limit. Those are mostly years of one large flood or
-  storm outbreak on the plains (page 3, section 5), not the book's worst
-  years, so it adds little to the book's tail.
-- Contributions add up to the book's TVaR. Marginals do not: removing one deal
-  changes which years are the worst, so the marginals add up to less.
+  share of the aggregate limit. These are mostly years of one large flood or
+  storm outbreak on the plains (page 3, section 5). They are not the worst
+  years of the book, so the cover adds little to the tail of the book.
+- Contributions add up to the TVaR of the book. Marginals do not. When you
+  remove one deal, the worst years change, so the marginals add up to less.
 
 ## 5. A trap: the total row
 
 `book_amounts()` holds every item for each deal *and* a `"total"` deal. A
-selection on the item alone keeps that total, and `capital_allocation()` then
-adds it to the deals as if it were a sixth contract. The book's TVaR doubles.
+selection on the item alone keeps that total. `capital_allocation()` then adds it to the
+deals as a sixth contract, and the TVaR of the book doubles.
 
 ```{r}
 wrong <- capital_allocation(select_components(amounts, "item", "loss"), distortion("tvar", 0.99))
@@ -276,9 +279,9 @@ Select the deals by name, `select_components(..., "deal", deals)`, every time.
 
 ## 6. Capital and diversification
 
-`capital_allocation(loss, distortion("tvar", 0.99))` allocates the book's TVaR
-by Euler, so the allocated amounts are the contributions above.
-Diversification is the sum of the stand-alone TVaRs less the book's TVaR:
+`capital_allocation(loss, distortion("tvar", 0.99))` allocates the TVaR of the book by
+Euler, so the allocated amounts are the contributions above. Diversification is
+the sum of the stand-alone TVaRs less the TVaR of the book:
 
 ```
 diversification = sum over deals i of TVaR(X_i) - TVaR(X_1 + ... + X_5)
@@ -309,13 +312,13 @@ sum alone 72.840, book 55.096, benefit 17.744
 
 ## 7. The book priced on its capital
 
-`price_portfolio()` prices the book as page 6, section 2 prices one contract,
-`P = (EL + r A) / (1 + r)`, with the assets `A` now the book's TVaR. It then
-splits that premium to the deals by the same Euler weights
-([portfolio pricing](pir-portfolio-pricing.qmd) has the theory), and prices
-each deal alone as well. The premium to compare with is what Larkspur keeps:
-the premium charged, plus the expected reinstatement premium of section 3,
-less the deductions (Corran's ceding commission).
+`price_portfolio()` prices the book as page 6, section 2 prices one contract:
+`P = (EL + r A) / (1 + r)`, with the assets `A` now the TVaR of the book. It
+then splits that premium to the deals by the same Euler weights
+([portfolio pricing](pir-portfolio-pricing.qmd) has the theory). It also prices each deal
+alone. Compare these prices with what Larkspur keeps. That is the premium
+charged, plus the expected reinstatement premium of section 3, less the
+deductions (the ceding commission of Corran).
 
 ```{r}
 pp <- price_portfolio(loss, distortion("tvar", 0.99), cost_of_capital = 0.10)
@@ -344,29 +347,30 @@ book            8.000   7.487    7.998
 premium saved by diversification 1.613
 ```
 
-Stand-alone, `alder_cat_1` needs the 2.007 of page 6. In the book it needs
-less. The book charges 8.000, which looks like the 7.998 that a 10% return on
-TVaR capital asks for, but it keeps less: 7.487 after the reinstatement
-premium comes in and Corran's ceding commission goes out. So the book as a
-whole falls short of the target, which section 9 confirms as a 9.0% return.
-Both Alder layers keep less than their share, `alder_cat_2` about half of it.
-The two Bracken contracts keep more than theirs. Corran's quota share charges
-3.000 but keeps 2.250, a little under its 2.295.
+Alone, `alder_cat_1` needs the 2.007 of page 6. In the book it needs less. The
+book charges 8.000, near the 7.998 that a 10% return on TVaR capital needs. But
+it keeps less: 7.487, after the reinstatement premium comes in and the ceding
+commission of Corran goes out. Thus the whole book is below the target, and
+section 9 shows a 9.0% return.
+
+Both Alder layers keep less than their share, and `alder_cat_2` keeps about
+half of it. The two Bracken contracts keep more than their share. The quota
+share of Corran charges 3.000 but keeps 2.250, a little under its 2.295.
 
 ## 8. The marginal price of a new contract
 
-The allocated price shares the book's price among deals already written. A
-new contract is a different question: what must it charge so that the book's
-return does not fall? Take the extra assets `dA` it needs (its marginal TVaR,
-the book with it less the book without it) and its expected loss `EL`. With
-the same convention as above:
+The allocated price shares the price of the book among the deals already
+written. A new contract asks a different question: what must it charge so that
+the return of the book does not fall? Take the extra assets `dA` that it needs
+and its expected loss `EL`. `dA` is its marginal TVaR, the book with it less
+the book without it. With the same convention as above:
 
 ```
 P = EL + r * (dA - P),   so   P = (EL + r * dA) / (1 + r)
 ```
 
-Below, each deal is treated in turn as the last one written. The library has
-no call for this, so it is done by hand from `marginal` (#588).
+Below, each deal in turn is the last one written. The chunk computes the price
+from `marginal` (#588).
 
 ```{r}
 r <- 0.10
@@ -389,19 +393,19 @@ corran_qs     1.202  12.609       2.239    3.000
 ```
 
 The marginal price is lower than the allocated price for every deal, because
-each deal's marginal TVaR is at most its Euler contribution: TVaR is
-subadditive, so adding a deal to a book raises the book's TVaR by no more than
-the deal's share of the new book's tail. Price the next contract on its
-marginal and the book's TVaR return holds. Price every contract on its
-marginal and the book falls short.
+the marginal TVaR of each deal is at most its Euler contribution. TVaR is
+subadditive, so a new deal raises the TVaR of the book by no more than the
+deal's share of the new book's tail. Price the next contract on its marginal,
+and the TVaR return of the book holds. Price every contract on its marginal,
+and the book falls short.
 
 ## 9. A return on allocated capital
 
-A risk-adjusted return on capital (RAROC) sets each deal's margin against the
-capital allocated to it. Here capital is allocated assets less the deal's premium, as above, and the
-margin includes the reinstatement premium of section 3. There is
-no expense line, so this is a return before Larkspur's own costs. The library
-has no output for this (#589).
+A risk-adjusted return on capital (RAROC) sets the margin of each deal against
+the capital allocated to it. Here the capital is the allocated assets less the
+premium of the deal, as above. The margin includes the reinstatement premium of
+section 3. The data has no expense line, so this is a return before the costs
+of Larkspur.
 
 ```{r}
 cat(sprintf("%-12s%8s%9s%8s\n", "deal", "margin", "capital", "return"))
@@ -429,27 +433,26 @@ corran_qs      1.048   10.216   10.3%
 book           4.198   46.859    9.0%
 ```
 
-Against a 10% target, `alder_cat_2` is the weak contract: it uses more than a
-third of the book's capital and returns a few percent on it. `bracken_agg` has
-no return to show. Its premium is larger than the assets allocated to it, so
-in this book it needs no shareholder capital at all, and a ratio over a
-negative capital means nothing.
+Against a 10% target, `alder_cat_2` is the weak contract. It uses more than a
+third of the capital of the book and returns a few percent on it. `bracken_agg`
+has no return to show. Its premium is larger than the assets allocated to it,
+so in this book it needs no shareholder capital. A ratio over a negative
+capital has no meaning.
 
 ## 10. Reproducibility
 
-The book's VaR above is the default inverted-cdf quantile; page 2, section 2
-compares it with the other conventions, and the `k`-th largest year has no
-switch yet (#582).
+The VaR of the book above is the default inverted-cdf quantile. Page 2,
+section 2 compares it with the other conventions.
 
 Every number on this page follows from four committed files and one seed.
 
-- `examples/data/make_cat_book.py` writes the files with a fixed seed, and a
-  test checks that the committed files are what it writes.
+- `examples/data/make_cat_book.py` writes the files with a fixed seed. A test
+  checks that the committed files are what the script writes.
 - No step on this page draws a random number: the book adds the same 2,000
   years for every contract.
-- `read_ylt()` stamps the event set with a hash of the file it read, so a
-  result can be traced to its input. The rebuild by `cedent_events()` drops
-  that hash, so record it from `read_ylt()` once.
+- `read_ylt()` stamps the event set with a hash of the file that it read, so you
+  can trace a result to its input. The rebuild by `cedent_events()` drops that hash,
+  so record it from `read_ylt()` once.
 
 ```{r}
 ylt <- read_ylt(find_data("cat_book_yelt.csv"), year = "year", loss = "loss", slot = "slot",
@@ -461,17 +464,8 @@ cat(strsplit(ylt@input_hash, ":", fixed = TRUE)[[1]][1], ylt@n_sims, "\n")
 blake3 2000
 ```
 
-The hash itself is not printed here: it depends on the file's bytes, and a
-checkout that turns line endings into CRLF gives a different one.
-
-## What is missing
-
-- the marginal price of a new contract in one call (#588)
-- a deal's and the book's return on allocated or marginal capital
-  (#589)
-- in R only, a deal book's names, number of years and items, as Python's
-  `DealBook.names`, `n_sims` and `items`; this page reads them from the
-  contracts table and `book_amounts()` (#596)
+The page does not print the hash itself. The hash depends on the bytes of the
+file, and a checkout that changes line endings to CRLF gives a different hash.
 
 ## In Python
 

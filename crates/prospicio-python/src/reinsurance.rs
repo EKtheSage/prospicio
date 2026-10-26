@@ -91,7 +91,7 @@ use crate::to_py;
 /// [8.0, 8.0, 4.0]
 #[pyclass(name = "Layer", module = "prospicio.reinsurance", frozen)]
 pub(crate) struct PyLayer {
-    inner: Layer,
+    pub(crate) inner: Layer,
 }
 
 #[pymethods]

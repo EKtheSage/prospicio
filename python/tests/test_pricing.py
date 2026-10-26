@@ -1115,6 +1115,48 @@ def test_tower_quote_layers_and_total():
         TowerQuote.technical(paid, paid_grids, Distortion.tvar(0.99), cost_of_capital=0.12)
 
 
+
+def test_layer_quote_solves_the_deposit_under_a_sliding_scale():
+    """A deposit solved under a sliding scale and a profit commission (item 11)."""
+    from prospicio.distributions import Grid
+    from prospicio.pricing import Quote, price
+    from prospicio.reinsurance import Layer
+    from prospicio.risk import Distortion
+
+    probs = [0.05, 0.15, 0.3, 0.3, 0.15, 0.05]
+    ceded = Grid(20.0, probs)
+    p = price(ceded, Distortion.tvar(0.99), cost_of_capital=0.1)
+
+    def scale(lr):  # 35% at a 50% loss ratio, 20% at 70%, linear between
+        return 0.35 if lr <= 0.5 else 0.20 if lr >= 0.7 else 0.35 - 0.75 * (lr - 0.5)
+
+    qs = Layer.quota_share("QS", 0.5).with_premium_rate(1.0, 200.0)
+    sliding = qs.with_sliding_scale([(0.35, 0.50), (0.20, 0.70)])
+    q = Quote.technical_for_layer(p, sliding, ceded, expenses=0.02, income_tax=0.21)
+    d = q.premium
+    cc = sum(w * d * scale(20.0 * i / d) for i, w in enumerate(probs))
+    assert q.commission == pytest.approx(cc, rel=1e-12)
+    assert q.return_on_capital == pytest.approx(0.1, abs=1e-9)
+    # The commission costs premium: the deposit is above the flat quote's.
+    assert d > Quote.technical(p, expenses=0.02, income_tax=0.21).premium
+
+    profit = qs.with_profit_commission(0.2, 0.1)
+    q = Quote.technical_for_layer(p, profit, ceded, expenses=0.02)
+    pc = sum(w * 0.2 * max(0.9 * q.premium - 20.0 * i, 0.0) for i, w in enumerate(probs))
+    assert q.commission == pytest.approx(pc, rel=1e-12)
+    assert q.return_on_capital == pytest.approx(0.1, abs=1e-9)
+
+    # Neither term: the flat technical quote.
+    flat = Quote.technical_for_layer(p, qs.with_ceding_commission(0.25), ceded, expenses=0.02)
+    assert flat.premium == pytest.approx(
+        Quote.technical(p, expenses=0.02, commission=0.25).premium, rel=1e-15
+    )
+
+    swing = Layer("10x0", 10.0, 0.0).with_swing_rating(5.0, 1.1)
+    with pytest.raises(ValueError, match="swing"):
+        Quote.technical_for_layer(p, swing, ceded)
+
+
 def test_monthly_patterns_from_a_payment_pattern():
     """Monthly patterns from a pattern by development age (#601)."""
     p = P.PaymentPattern.from_development([1.0, 2.0, 3.0, 5.0], [5.0, 2.0, 1.25, 1.0])

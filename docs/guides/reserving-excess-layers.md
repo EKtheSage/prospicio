@@ -1,48 +1,51 @@
 # Excess-layer loss development: layer factors from the ground-up triangle
 
-A reinsurer writing an excess layer, or a primary insurer reserving a high
-deductible or an excess policy, has to develop losses that sit above an
-attachment. Those losses develop much more slowly than the ground-up losses
-they are cut from, and the layer's own triangle is sparse: most early cells are
-zero, and the first non-zero link ratios are enormous. The chain ladder on such
-a triangle is unstable or fails outright. The usual fix in the literature is to
-derive the layer's development from the dense ground-up triangle and a claim
-size distribution, then blend it with whatever the layer's own data say.
+A reinsurer that writes an excess layer must develop the losses above an
+attachment. A primary insurer that reserves a high deductible or an excess
+policy must do the same. These losses develop much more slowly than the
+ground-up losses that they come from. The layer's own triangle is sparse: most
+early cells are zero, and the first non-zero link ratios are very large. On
+such a triangle, the chain ladder is unstable or fails.
 
-prospicio builds that in `prospicio.reserving` (issue #192, design note
-`docs/design/reserving-excess.md`): `ExcessPattern.from_ground_up` derives a
-layer pattern under a scale shift or Pinto and Gogol's Pareto shape drift,
-`credibility_weights` blends it with the layer's own factors, and
-`layer_share`, `layer_exposure` and `LayerSharePrior` give the
-Bornhuetter-Ferguson prior of a layer. This guide shows each piece on the
-literature's printed examples (Bloom and Patrik, Pinto and Gogol, Bear), then
-on a simulated book with a sparse layer, the source's value printed next to
-prospicio's wherever a source prints one.
+The usual method in the literature derives the layer's development from the
+dense ground-up triangle and a claim size distribution. It then blends the
+result with the layer's own data. `prospicio.reserving` has the parts of this
+method (#192, design note `docs/design/reserving-excess.md`):
 
-The papers are their authors'; what follows explains them in new words and
-recomputes their numbers. Section 2's example is from Bloom and Patrik, *A
-Methodology for Avoiding the Pitfalls of Excess Loss Development* (CAS
-E-Forum, Fall 2013), pages 4 to 8; section 3's are from Pinto and Gogol, *An
-Analysis of Excess Loss Development* (PCAS 74, 1987) and Bear's discussion of
-it (PCAS 79, 1992). What each source prints is summarised in
-`knowledge/references/excess-development-literature.md`. For the choice
-between reserving methods in general, read
-[`reserving-methods.md`](reserving-methods.md); this guide does not repeat it.
+* `ExcessPattern.from_ground_up` derives a layer pattern under a scale shift
+  or under Pinto and Gogol's Pareto shape drift.
+* `credibility_weights` blends the pattern with the layer's own factors.
+* `layer_share`, `layer_exposure` and `LayerSharePrior` give the
+  Bornhuetter-Ferguson prior of a layer.
 
-**How the numbers here are checked.** Every Python block below that is
-followed by a text block runs in CI (`python/tests/test_guides.py`) and must
-print exactly that text. The whole guide runs in about a second.
+This guide shows each part on the printed examples of the literature (Bloom
+and Patrik, Pinto and Gogol, Bear). It then uses a simulated book with a
+sparse layer. Where a source prints a value, the guide prints it next to
+prospicio's value.
+
+The papers are their authors'. This guide explains them and calculates their
+numbers again. Section 2 uses Bloom and Patrik, *A Methodology for Avoiding
+the Pitfalls of Excess Loss Development* (CAS E-Forum, Fall 2013), pages 4 to
+8. Section 3 uses Pinto and Gogol, *An Analysis of Excess
+Loss Development* (PCAS 74, 1987), and Bear's discussion of it (PCAS 79,
+1992). `knowledge/references/excess-development-literature.md` summarises
+what each source prints. For a general choice of reserving method, read
+[`reserving-methods.md`](reserving-methods.md).
+
+**How the numbers here are checked.** CI (`python/tests/test_guides.py`)
+runs each Python block that has a text block after it, and the block must
+print exactly that text. The full guide runs in about a second.
 
 ## 1. Why a layer develops slowly
 
-Suppose every claim grows by the same factor between two ages, as case
-reserves are raised. Claims below the attachment contribute nothing to the
-layer at the earlier age, and some of them cross it later, so the layer gains
-both from the growth of claims already in it and from claims entering it. The
-design note's illustration (its own calculation, not a source's) makes this
-concrete: a lognormal severity with log-sd 1.5 whose mean is 65,000 at ultimate,
-every claim 1.3 times its earlier value, counts fixed. The ground-up factor is
-1.3; the layer factors are larger the higher the layer.
+Suppose that every claim grows by the same factor between two ages, as the
+case reserves increase. Claims below the attachment give nothing to the layer
+at the earlier age, and some of them go above it later. Thus the layer grows
+from two sources: the growth of the claims already in it, and the claims that
+enter it. The design note shows this with its own calculation (not from a
+source). It uses a lognormal severity with log-sd 1.5 and mean 65,000 at
+ultimate, every claim 1.3 times its earlier value, and fixed counts. The
+ground-up factor is 1.3, and the higher the layer, the larger the layer factor.
 
 ```python
 import math
@@ -66,24 +69,24 @@ for name, layer in zip(note, [ExcessLayer(0.0, 1e6), ExcessLayer(250e3, 750e3),
 7m xs 3m      layer factor 1.9819   design note 1.982
 ```
 
-A ground-up factor of 1.3 puts a factor near 2 on a high layer. The layer's
-own triangle cannot show that until late, because at the early ages it holds
-almost nothing to develop. The rest of this guide is about getting the layer's
-factors from somewhere sturdier.
+A ground-up factor of 1.3 gives a factor near 2 on a high layer. The layer's
+own triangle shows this only late, because at the early ages it holds almost
+nothing to develop. The rest of this guide gets the layer's factors from more
+stable data.
 
 ## 2. Bloom and Patrik's example: the pitfall and the cure
 
-Bloom and Patrik's example is small enough to follow by hand. Year One has
-four claims reported at 100, 375, 250 and 500 at 12 months. Ground-up losses
-develop by 3.60 from 12 to 24 months and by 1.25 from 24 to 36, the end of
-development, with claim counts fixed, so every claim reaches 4.5 times its
-12-month value. Years Two and Three have the same claims with 5% inflation a
-year. The layer is everything excess of a deductible of 350.
+Bloom and Patrik's example is small enough to calculate by hand. Year One has
+four claims, reported at 100, 375, 250 and 500 at 12 months. Ground-up losses
+develop by 3.60 from 12 to 24 months and by 1.25 from 24 to 36 months, the
+end of development. Claim counts are fixed, so every claim reaches 4.5 times
+its 12-month value. Years Two and Three have the same claims with 5% inflation
+a year. The layer is all the loss above a deductible of 350.
 
-Because every claim is scaled by the same factor, this is exactly a **scale
-shift**: the claims at age `j` are the ultimate claims divided by a shift
-`c_j`, with `c_j` the ground-up factor to ultimate (4.5 at 12 months, 1.25 at
-24, 1 at 36). We build the triangle of the paper's three years, valued at the
+Every claim has the same factor, so this is exactly a **scale shift**. The
+claims at age `j` are the ultimate claims divided by a shift `c_j`. Here
+`c_j` is the ground-up factor to ultimate (4.5 at 12 months, 1.25 at 24 and 1
+at 36). The block below builds the triangle of the paper's three years at the
 end of Year Three, with the ground-up, excess and limited columns:
 
 ```python
@@ -119,10 +122,10 @@ Year 2 at 24 months: excess of 350  3230.50   paper 3,231
 Year 3 at 12 months: excess of 350   264.69   paper 265
 ```
 
-The paper's excess triangle, to the dollar. The trap is to develop it on its
-own. The 12 to 24 month factor comes from Years One and Two, and inflation has
-pushed more of Year Two's claims over the deductible early, so a factor
-estimated on older years overstates a newer year's development:
+This is the paper's excess triangle, to the dollar. The trap is to develop it
+alone. The 12 to 24 month factor comes from Years One and Two. Inflation moved
+more of the claims of Year Two above the deductible early. Thus a factor
+estimated on older years overstates the development of a newer year:
 
 ```python
 own = ChainLadder().fit(bp, "excess")
@@ -140,13 +143,13 @@ true ultimate       4,677.5   paper 4,678
 overstatement       22.5%     paper 22.5%
 ```
 
-The cure is to leave the pattern alone and trend the severity: cut the layer
-from each year's own claim sizes, at that year's price level. With the
-ultimate claims of each year (450, 1,687.5, 1,125 and 2,250 for Year One,
-times the year's price level) as the severity, `ExcessPattern.from_ground_up`
-solves the shifts from the ground-up triangle and returns the layer's factors.
-The ultimate severity here is a `Grid` with four equal point masses (a step of
-112.5 hits all four claims exactly), so the layer expectations are exact:
+The cure is to trend the severity, not the pattern. Cut the layer from the
+claim sizes of each year, at the price level of that year. The severity is the
+ultimate claims of each year: 450, 1,687.5, 1,125 and 2,250 for Year One,
+times the price level of the year. With this severity, `ExcessPattern.from_ground_up` solves the
+shifts from the ground-up triangle and returns the layer's factors. Here the
+ultimate severity is a `Grid` with four equal point masses. A step of 112.5
+hits all four claims exactly, so the layer expectations are exact:
 
 ```python
 from prospicio.distributions import Grid
@@ -180,21 +183,22 @@ Year 3: 12-24 13.0797  24-36 1.3511  12-ult 17.6719   paper 13.08 1.35 17.67
 shifts 4.5 1.25 1   ground-up factors 3.6 1.25
 ```
 
-Every printed factor, to the paper's two decimals; the unrounded values are
-exact (Year One's 17.2 is 3,010 / 175). `shifts` holds the `c_j` the
-pattern was derived with, one per age, the last for the tail (none here, so
-1). They are the ground-up factors to ultimate: with no claim count column,
-the counts are taken as complete, and with a `counts=` column the count
-development is divided out first.
+Every printed factor agrees to the paper's two decimals. The unrounded values
+are exact (the 17.2 of Year One is 3,010 / 175). `shifts` holds the `c_j`
+from which the pattern is derived: one for each age, and the last for the tail
+(1 here, as there is no tail). They are the ground-up factors to ultimate.
+With no claim count column, the counts are taken as complete. With a
+`counts=` column, the count development is divided out first.
 
-The pattern enters any development method through the existing `ldf`,
-`ldf_kind` and `ldf_weight` arguments: `p.selected()` gives them as a
-dictionary to splat, and `p.tail` is the layer's tail. One pattern serves
-every origin, so it is right for the origins at the severity's price level
-(decision 5 of the note: trend the severity to the origins' level before the
-layer is cut). With Year Three's pattern on the whole triangle, Year Three's
-ultimate is exact and Year Two's is a little low, since its claims are at the
-previous year's prices:
+The pattern goes into any development method through the `ldf`, `ldf_kind`
+and `ldf_weight` arguments. `p.selected()` gives them as a dictionary to unpack with `**`, and
+`p.tail` is the layer's tail. One pattern serves every origin, but it is
+accurate only for the origins at the price level of the severity. Thus trend the
+severity to the price level of the origins before you cut the layer.
+
+With the pattern of Year Three on the full triangle, the ultimate of Year
+Three is exact. The ultimate of Year Two is a little low, because its claims
+are at the prices of the previous year:
 
 ```python
 p3 = patterns[3]
@@ -210,17 +214,18 @@ Year 2: ultimate   4364.7   true   4388.1   error -0.53%
 Year 3: ultimate   4677.5   true   4677.5   error +0.00%
 ```
 
-Origins written at different price levels, or under different retentions,
-are best split into groups that share a layer and a price level, each fitted
-with its own pattern.
+Put origins at different price levels, or under different retentions, into
+groups that share a layer and a price level. Fit each group with its own
+pattern.
 
-**The excess loss factor route.** Bloom and Patrik's section 4 gets the same
-answer without a severity curve: the limited-to-350 triangle is dense and
-develops reliably, and an excess loss factor (ELF, the share of ultimate
-ground-up loss above 350) converts limited and unlimited factors into an
-excess factor, `excess CDF = ELF / (1 / CDF_unlimited - (1 - ELF) / CDF_limited)`
-(Pinto and Gogol's layer identity, restated). On Year Three, with the limited
-factor from the triangle's own chain ladder:
+**The excess loss factor route.** Section 4 of Bloom and Patrik gets the same
+answer without a severity curve. The triangle limited to 350 is dense and
+develops reliably. An excess loss factor (ELF) is the share of ultimate
+ground-up loss above 350. It converts limited and unlimited factors into an
+excess factor, `excess CDF = ELF / (1 / CDF_unlimited - (1 - ELF) / CDF_limited)`.
+This formula is Pinto and Gogol's layer identity in a different form. The
+block below applies it to Year Three, with the limited factor from the chain
+ladder of the triangle:
 
 ```python
 limited = ChainLadder().fit(bp, "limited")
@@ -241,22 +246,24 @@ from the paper's rounded inputs 17.5898
 the scale shift's exact factor  17.6719
 ```
 
-The paper's 17.54 comes from its unrounded inputs; its rounded ones give 17.59.
-Its 17.54 is 0.77% below the exact 17.67, the error the paper prints, because
-the limited factor, like the excess one above, is estimated on older years.
+The paper's 17.54 comes from its unrounded inputs. Its rounded inputs give
+17.59. The paper's 17.54 is 0.77% below the exact 17.67, which is the error
+that the paper prints. The cause is that the limited factor, like the excess
+factor above, is estimated on older years.
 
 ## 3. Shape drift: Pinto and Gogol, and Bear
 
 A scale shift moves every claim by the same factor. Pinto and Gogol found in
-ISO data that the tail of the size distribution also gets heavier as claims
-mature: a single-parameter Pareto fitted above a threshold `k` has a shape
-`q` that falls with maturity. Their factor for the losses excess of `c k` is
-the development of the losses excess of `k` times `c^(q_i - q_j)` (with the
-counts above `k` as the base, times a ratio of `(q - 1)` terms as well).
-`ParetoShape` takes the threshold, a shape at every age and at ultimate, and
-the base the column holds: `base="counts"` or an `ExcessLayer` whose losses
-the column is. The column then holds the base development, not the ground-up
-losses.
+ISO data that the tail of the size distribution also becomes heavier as
+claims mature. A single-parameter Pareto fitted above a threshold `k` has a
+shape `q` that decreases with maturity. Their factor for the losses excess of
+`c k` is the development of the losses excess of `k` times `c^(q_i - q_j)`.
+With the counts above `k` as the base, it also has a ratio of `(q - 1)` terms.
+
+`ParetoShape` takes the threshold, a shape at every age and at ultimate,
+and the base that the column holds. The base is `base="counts"` or an
+`ExcessLayer` whose losses the column holds. The column then holds the base
+development, not the ground-up losses.
 
 ```python
 from prospicio.reserving import ParetoShape
@@ -284,11 +291,11 @@ the same from the counts above 25,000:     5.0000
 Bear p. 138, layer 200,000 to 600,000:     3.8835   paper 3.88
 ```
 
-Pinto and Gogol's Appendix B works the shape drift from 27 months to ultimate
-above 10,000 (`q` from 1.6 to 1.3) and prints, for several retentions and
-layers, the losses as a multiple of the losses excess of 10,000 at both ages,
-to three decimals. Their ratio is the layer's factor relative to the base
-development `a`. Here the second age stands for ultimate:
+Pinto and Gogol's Appendix B calculates the shape drift from 27 months to
+ultimate above 10,000 (`q` from 1.6 to 1.3). For several retentions and
+layers, it prints the losses as a multiple of the losses excess of 10,000 at
+the two ages, to three decimals. Their ratio is the layer's factor relative to
+the base development `a`. Here the second age is ultimate:
 
 ```python
 appendix_b = {  # (from, to) in thousands: (at 27 months, at ultimate), as printed
@@ -313,36 +320,39 @@ excess of 1,000k 3.9811 a   paper 0.251 / 0.063 = 3.984 a
 500k to 1,000k   1.7843 a   paper 0.058 / 0.033 = 1.758 a
 ```
 
-The excess of 100,000 is exactly `10^0.3 = 1.99526` times `a`; the paper's
-1.996 is the ratio of its rounded amounts. Every other row agrees within the
-rounding of the printed amounts, which is wide for the small ones (0.033 could
-be anything from 0.0325 to 0.0335).
+The factor for the losses excess of 100,000 is exactly `10^0.3 = 1.99526`
+times `a`. The paper's 1.996 is the ratio of its rounded amounts. Every other
+row agrees within the rounding of the printed amounts. This rounding is wide
+for the small amounts: 0.033 can be any value from 0.0325 to 0.0335.
 
-Shape drift needs a shape at every age, which needs claim-level data or
-layered losses by maturity; a scale shift needs only the ground-up triangle.
-The two disagree on high layers whenever the tail does thicken: the Reserving
-lane's simulation study (`knowledge/findings/excess-simulation-study.md`, 500
-books per arm) found that when claims' shapes drift, the scale shift
-understates the sparse layer's ultimate by about 26% and the thin layer's by
-14%, while `ParetoShape` with the true shapes is unbiased.
+Shape drift needs a shape at every age, and thus claim-level data or layered
+losses by maturity. A scale shift needs only the ground-up triangle. When the
+tail becomes heavier, the two methods give different results on high layers.
+
+A simulation study (`knowledge/findings/excess-simulation-study.md`, 500 books
+per arm) measured this. When the shapes of claims drift, the scale shift
+understates the ultimate of the sparse layer by about 26%. It understates the
+thin layer by 14%. `ParetoShape` with the true shapes is unbiased.
 
 ## 4. A sparse layer on a simulated book
 
-The examples above have one claim history each. A real layer triangle has
-many origins, most of them with no claim in the layer for years. To see the
-methods side by side we simulate a book whose truth is known: ten accident
-years, 2015 to 2024, of 120 claims each, valued at the end of 2024 at 12 to
-120 months. Each claim's ultimate size is lognormal (mean about 30,000, log-sd
-1.8), and at each age it is reported at its ultimate divided by a shift that
-falls from 3.0 at 12 months to 1.01 at 120 months, the last 1% being the tail.
-The book follows the scale shift by construction, so it shows the mechanics,
-not a test of the model; the simulation study above is the test.
+Each example above has one claim history. A real layer triangle has many
+origins, and most of them have no claim in the layer for years. To compare the
+methods, we simulate a book with a known truth.
 
-The uniform draws come from a tiny linear congruential generator written out
-here, so that the R twin of this guide draws the same claims, and a seed
-picks the book. Two layers are
-tracked: a high one, 750,000 xs 250,000, and a working one, 400,000 xs
-100,000, each with the count of claims in it.
+The book has ten accident years, 2015 to 2024, of 120 claims each, valued at
+the end of 2024 at 12 to 120 months. The ultimate size of each claim is
+lognormal (mean about 30,000, log-sd 1.8). At each age, the reported value of
+a claim is its ultimate divided by a shift. The shift decreases from 3.0 at 12
+months to 1.01 at 120 months, and the last 1% is the tail.
+
+The book follows the scale shift by construction. Thus it shows the mechanics,
+but it does not test the model. The simulation study above is the test.
+
+The uniform draws come from a small linear congruential generator that the
+block writes out. Thus the R twin of this guide draws the same claims. A seed selects the
+book. The block tracks two layers: a high layer, 750,000 xs 250,000, and a
+working layer, 400,000 xs 100,000. It also counts the claims in each layer.
 
 ```python
 SEV = Lognormal(8.7, 1.8)
@@ -407,10 +417,10 @@ origin  ground-up  high layer  claims  true high ult
 total   25,094,646  2,472,425      15     4,006,410
 ```
 
-The high layer has between none and four claims a year, and 2015 never had
-one. Its own chain ladder fails: at the oldest link the only origin, 2015, is
-zero, so there is no factor to estimate. The working layer's own chain ladder
-runs, but its factors rest on a handful of claims:
+The high layer has zero to four claims a year, and 2015 never had a claim in
+it. The own chain ladder of the high layer fails. At the oldest link, the only
+origin, 2015, is zero, so there is no factor to estimate. The own chain ladder
+of the working layer runs, but its factors come from a few claims:
 
 ```python
 try:
@@ -426,10 +436,11 @@ high layer, own chain ladder: factor from development index 8: earlier values su
 working layer, own factors 3.055 1.521 1.321 1.159 1.079 1.036 1.018 1.009 1.016
 ```
 
-The derived patterns need only the ground-up column and the ultimate
-severity, here the true one (in practice a severity fitted to trended
-ultimate claims; section 7). The ground-up tail of 1.01 gives each layer
-its own, larger tail:
+The derived patterns need only the ground-up column and the ultimate severity.
+They are incurred (reported) patterns, and the ground-up factors are
+volume-weighted averages. Here the severity is the true one. In practice, fit
+the severity to trended ultimate claims, for example with the fitting functions of `prospicio.distributions`. The
+ground-up tail of 1.01 gives each layer its own, larger tail:
 
 ```python
 derived = {}
@@ -454,16 +465,16 @@ working factors   2.180 1.431 1.236 1.124 1.064 1.026 1.013 1.006 1.006 tail 1.0
 to ultimate at 12 months: ground-up 3.00, high 6.27, working 4.91
 ```
 
-The shifts are the book's own (the ground-up factors to ultimate, tail
-included), recovered from the triangle. At 12 months the high layer has more
-than twice as far to go as the ground-up losses.
+The shifts are the book's own shifts (the ground-up factors to ultimate, tail
+included), recovered from the triangle. At 12 months, the high layer has more
+than twice as far to develop as the ground-up losses.
 
-On the high layer the derived pattern makes every method run. Here are the
-chain ladder, Mack, and the Bornhuetter-Ferguson with a layer exposure, each
-taking the pattern through `**p.selected()` and `tail=p.tail`. The BF prior
-is the ground-up expected loss ratio applied to the premium times the layer
-share, `layer_share(SEV, HIGH)`, the share of the mean severity that falls in
-the layer (section 6 says more):
+With the derived pattern, every method runs on the high layer. The block below
+fits the chain ladder, Mack, and the Bornhuetter-Ferguson with a layer
+exposure. Each method takes the pattern through `**p.selected()` and `tail=p.tail`. The
+BF prior is the ground-up expected loss ratio applied to the premium times the
+layer share. The layer share, `layer_share(SEV, HIGH)`, is the share of the mean
+severity in the layer (section 6 gives more detail):
 
 ```python
 from prospicio.reserving import BornhuetterFerguson, Mack, layer_exposure, layer_share
@@ -501,32 +512,35 @@ total      3,060,390 3,888,113 4,006,410
 Mack reserve 587,966, standard error 210,007
 ```
 
-Even with the right pattern, the chain ladder cannot see what has not been
-reported: 2024's layer is still empty at 12 months, so its chain ladder
-ultimate is zero, and 2023's single small claim is multiplied up to 43,614
-against a true 494,749. The BF
-puts the expected layer loss on the unreported part instead, which is why it
-is the usual method for an immature layer. Here it lands closer to the truth
-in total, while 2016 to 2019, whose layer losses are nearly all reported,
-come out much the same under both. This is one simulated book; section 5
-compares the methods over a hundred. Mack's standard error
-is large next to its reserve, as it should be: the derived pattern carries no
-parameter error (it is selected), and the process error of a few claims is
-big.
+Even with the correct pattern, the chain ladder does not see unreported
+losses. The layer of 2024 is still empty at 12 months, so its chain ladder
+ultimate is zero. The chain ladder develops the single small claim of 2023 to
+43,614, against a true 494,749.
+
+The BF puts the expected layer loss on the unreported part. For this reason,
+it is the usual method for an immature layer. Here the BF total is nearer to
+the truth. The years 2016 to 2019, whose layer losses are nearly all reported,
+have almost the same results under both methods. This is one simulated book.
+Section 5 compares the methods over a hundred books.
+
+Mack's standard error is large relative to its reserve, as expected. The
+derived pattern has no parameter error (it is selected), and the process error
+of a few claims is large.
 
 ## 5. Blending with the layer's own development
 
-When a layer has some data of its own, the derived pattern can be blended
-with the layer's own factors, `f = w f_derived + (1 - w) f_own`, with `w` the
-weight on the derived pattern at each age. `credibility_weights` sets
-`w = 1 - n / (n + k)`, with `n` the layer's claims at the earlier age (with a
-`counts=` column) or else its origins with a positive earlier value, and `k`
-a credibility constant. `k` has no default (decision 19 of the design note);
-the simulation study's candidate is `k = 20`, which is what we use. The
-credibility is also capped so that removing any one origin moves the blended
-factor by at most `max_influence` of it (0.1 here), so a single huge link
-ratio cannot dominate, and where the layer's own factor cannot be estimated
-the weight is exactly 1:
+When a layer has some data of its own, you can blend the derived pattern with
+the layer's own factors. The blend is `f = w f_derived + (1 - w) f_own`, where
+`w` is the weight on the derived pattern at each age. `credibility_weights` sets
+`w = 1 - n / (n + k)`. Here `n` is the number of layer claims at the earlier
+age (with a `counts=` column), or else the number of origins with a positive
+earlier value. `k` is a credibility constant, and it is a required argument.
+
+The simulation study's candidate is `k = 20`, which this guide uses. A cap also
+limits the credibility. If you remove any one origin, the blended factor moves
+by at most `max_influence` of it (0.1 here). Thus one very large link ratio
+cannot dominate. Where the layer's own factor cannot be estimated, the weight
+is exactly 1:
 
 ```python
 for name in ("high", "working"):
@@ -539,16 +553,21 @@ high    weight on derived 0.909 0.741 0.714 0.714 0.714 0.769 0.800 0.870 1.000
 working weight on derived 0.556 0.455 0.426 0.426 0.444 0.476 0.513 0.606 0.741
 ```
 
-The high layer's few claims leave most of the weight on the derived pattern,
-and the oldest age gets exactly 1, since 2015's zero leaves no own factor
-there. The working layer has more claims and so more credibility. The
-weights go straight into `selected`, `ChainLadder(tail=p.tail, **p.selected(w))`.
+The few claims of the high layer leave most of the weight on the derived
+pattern. The oldest age gets exactly 1, because the zero of 2015 gives no own
+factor there. The working layer has more claims and thus more credibility. The
+weights go directly into `selected`: `ChainLadder(tail=p.tail, **p.selected(w))`.
 
-One book cannot rank methods: its few large claims decide the outcome. So we
-simulate a hundred books (seeds 1 to 100, the same model) and compare, for
-each layer, the error of the total ultimate under the layer's own chain
-ladder, the derived pattern, the blend with `k = 20` and the BF with the
-derived pattern, as the mean error and the root mean square error, both
+One book cannot rank the methods, because its few large claims decide the
+result. Thus we simulate a hundred books (seeds 1 to 100, the same model). For
+each layer, we compare the error of the total ultimate under four methods:
+
+* the layer's own chain ladder
+* the derived pattern
+* the blend with `k = 20`
+* the BF with the derived pattern.
+
+The measures are the mean error and the root mean square error (RMSE), both
 relative to the mean true ultimate:
 
 ```python
@@ -594,33 +613,38 @@ working  blend, k = 20       100      -1.2%    9.9%
 working  BF, derived         100      -0.6%    4.4%
 ```
 
-The own chain ladder fails on seven of the hundred high-layer books, and where
-it runs it overstates by a fifth with an RMSE near the whole ultimate: the
-early link ratios of a few claims are huge. The derived pattern cuts the RMSE
-to a fraction of that on both layers; it runs a little low on average because
-an origin with nothing yet in the layer stays at zero. The BF with the
-layer-share prior is best on both, since it does not multiply the immature
-years' luck; but it is flattered here, being given the true loss ratio and the
-true severity, which a real prior only approximates. The blend sits between
-the derived pattern and the own factors. Here the model holds exactly, so the
-derived pattern needs no help from the data; the reason to blend anyway is
-that the severity assumption may be wrong. In the Reserving lane's study,
-under shape drift a blend near `k = 20` beat both the derived pattern and the
-own factors on its thin layer, and without the `max_influence` cap a small `k`
-was ruinous on its sparse layer.
+The own chain ladder fails on seven of the hundred high-layer books. Where it
+runs, it overstates by a fifth, with an RMSE near the full ultimate. The
+cause is that the early link ratios of a few claims are very large. The derived pattern
+decreases the RMSE to a fraction of that on both layers. It is a little low on
+average, because an origin with no loss yet in the layer stays at zero.
+
+The BF with the layer-share prior is the best on both layers, because it does
+not multiply the chance results of the immature years. But this test favours
+it: it uses the true loss ratio and the true severity, and a real prior only
+approximates them. The blend is between the derived pattern and the own
+factors.
+
+Here the model holds exactly, so the derived pattern needs no help from the
+data. The reason to blend is that the severity assumption may be wrong. In the
+simulation study, under shape drift, a blend near `k = 20` was better than
+both the derived pattern and the own factors on the thin layer. Without the
+`max_influence` cap, a small `k` gave very large errors on the sparse layer.
 
 ## 6. A Bornhuetter-Ferguson prior from the layer share
 
 The a-priori layer ultimate of origin `i` is its exposure times a ground-up
-expected loss ratio times the layer share `s`, the expected share of ground-up
-loss that lands in the layer. For a severity, `s = (LEV(b) - LEV(a)) / mean`
-on the ultimate basis, which is `layer_share`; for an exposure curve, the
-curve's own `layer_share(limit, attachment, mpl)` (`Mbbefd` and
-`TabulatedCurve`). `layer_exposure` writes a copy of the triangle with the
-exposure column times the share (one share, or one per origin), which any of
-the expected-loss methods takes as its exposure. Section 4 used it with the
-BF; Cape Cod estimates the layer's loss ratio from the layer's own used-up
-exposure instead, through the same derived pattern:
+expected loss ratio times the layer share `s`. The layer share is the expected
+share of ground-up loss in the layer. For a severity,
+`s = (LEV(b) - LEV(a)) / mean` on the ultimate basis, which is `layer_share`. For an exposure curve, use
+the curve's own `layer_share(limit, attachment, mpl)` (`Mbbefd` and
+`TabulatedCurve`). `layer_exposure` writes a copy of the triangle with the exposure column
+times the share (one share, or one share for each origin). Each expected-loss
+method accepts this copy as its exposure.
+
+Section 4 used this copy with the BF. Cape Cod instead estimates the layer's
+loss ratio from the layer's own used-up exposure, through the same derived
+pattern:
 
 ```python
 from prospicio.reserving import CapeCod
@@ -640,21 +664,22 @@ total ultimate: BF 3,888,113, Cape Cod 3,264,359, true 4,006,410
 this book's true loss ratio to the layer premium 0.4544
 ```
 
-This book is light (its layer losses are about two thirds of what the prior
-expects), and the Cape Cod follows its own experience down, here past the
-true ratio, while the BF keeps the prior's weight on the immature years.
+This book is light: its layer losses are about two thirds of what the prior
+expects. The Cape Cod follows the book's own experience down, and here it goes
+below the true ratio. The BF keeps the weight of the prior on the immature
+years.
 
-The share is an estimate, and its error is worth carrying into the reserve's
-distribution. `LayerSharePrior` does that through the normalised Bayesian BF
-(`BayesBfNormalised`): the layer's expected ultimate gets a gamma prior with
-mean `ELR x share x exposure` and a coefficient of variation combining the
-two uncertainties as for a product of independent variables,
-`cv^2 = (1 + cv_elr^2)(1 + cv_share^2) - 1`. Its development pattern is
-estimated from the layer's own triangle, under the model's vague prior, so
-the derived excess pattern does not enter (decision 22 of the design note),
-and the model needs every age's own factor to exist. The high layer's
-triangle has none at its oldest age, so this part of the guide uses the
-working layer:
+The share is an estimate, and its error is worth including in the distribution
+of the reserve. `LayerSharePrior` does this through the normalised Bayesian BF
+(`BayesBfNormalised`). The layer's expected ultimate gets a gamma prior with mean
+`ELR x share x exposure`. Its coefficient of variation combines the two
+uncertainties as for a product of independent variables:
+`cv^2 = (1 + cv_elr^2)(1 + cv_share^2) - 1`.
+
+The model estimates its development pattern from the layer's own triangle,
+under its vague prior. Thus the derived excess pattern does not enter, and the
+model needs an own factor at every age. The high layer's triangle has no own
+factor at its oldest age, so this part of the guide uses the working layer:
 
 ```python
 from prospicio.reserving import BayesBfNormalised, LayerSharePrior
@@ -674,20 +699,22 @@ prior ultimate a year 942,605 = 0.6618 x 0.2590 x 5,500,000
 ```
 
 The posterior is a Monte Carlo result, and the last digits of a NUTS run
-differ between platforms (see [`reserving-meyers.md`](reserving-meyers.md)), so
-this guide prints only the prior, which is exact, and leaves the posterior to
-your own run: `fit.reserves` is the predictive distribution of the reserve.
+differ between platforms (see [`reserving-meyers.md`](reserving-meyers.md)). Thus this guide prints
+only the prior, which is exact. In your own run, `fit.reserves` is the predictive
+distribution of the reserve.
 
-What the share's cv does to that distribution depends on how the share's error
-is modelled. The error is one and the same for every origin, since the layer
-has one share, and `LayerSharePrior` models it so by default
-(`share_dependence="common"`, issue #518): one gamma multiplier on every
-origin's prior, with mean 1 and cv `share_cv`, sampled with the other
-parameters, so that all the origins together update the share. The first form,
-`share_dependence="per_origin"`, draws an independent share error at each
-origin. Each origin's prior is the same under both; the total's is not.
-`prior_total` gives the prior of the layer's total expected ultimate in closed
-form:
+The effect of the share's cv on that distribution depends on the model of the
+share's error. The layer has one share, so the error is the same for every
+origin. By default, `LayerSharePrior` models it in this way
+(`share_dependence="common"`, #518).
+One gamma multiplier, with mean 1 and cv `share_cv`, applies to the prior of
+every origin. The sampler draws it with the other parameters, so all the
+origins together update the share.
+
+The other form, `share_dependence="per_origin"`, draws an independent share error at each origin.
+The prior of each origin is the same under both forms, but the prior of the
+total is not. `prior_total` gives the prior of the layer's total expected ultimate in
+closed form:
 
 ```python
 exposure = [PREMIUM] * len(YEARS)
@@ -703,50 +730,22 @@ common      prior total mean 9,426,049  sd 2,844,887
 per_origin  prior total mean 9,426,049  sd 946,837
 ```
 
-Independent errors understate the total's prior sd threefold here. The
-posterior goes the other way: once the ten origins identify the share, each
-origin is held to its prior with the loss ratio's own cv, so the common share
-gives the narrower fitted interval. On the Reserving lane's validation layer
-(a quarter of GenIns's paid triangle; each figure the mean of the fits'
-total reserve sd over seeds 1 to 20 for the common share and over 10 seeds
-for independent errors, in `knowledge/findings/excess-bayes-prior.md`) the
-total reserve's posterior sd under the common share was about 497,000 at a
-share cv of 0.3 and rose only about 2% as the cv went to 1.5, while under
-independent errors it rose from 514,000 to 730,000 (about 42%). A single
-fit's sd moves by about 1.5% from seed to seed, so compare such runs over
-several seeds. Where the data cannot identify the share (few origins, or all
-of them immature) the common model's total stays the wider.
+Here, independent errors understate the prior sd of the total by a factor of
+three. The posterior moves in the other direction. When the ten origins
+identify the share, each origin stays near its prior with the loss ratio's
+own cv. Thus the common share gives the narrower fitted interval.
 
-## 7. What prospicio does not cover
+A validation layer (a quarter of GenIns's paid triangle, in
+`knowledge/findings/excess-bayes-prior.md`) shows the size of the effect. Each
+figure is the mean of the total reserve sd over seeds 1 to 20 for the common
+share. For independent errors, it is the mean over 10 seeds. Under the common share, the
+posterior sd of the total reserve was about 497,000 at a share cv of 0.3. It
+increased only about 2% as the cv went to 1.5. Under independent errors, it
+increased from 514,000 to 730,000 (about 42%).
 
-- **A paid basis.** `from_ground_up` derives incurred (reported) patterns only;
-  `basis="paid"` is an error. Pinto and Gogol and Bear get paid layer factors
-  from incurred ones and ratios of paid-to-reported ratios; prospicio has no
-  helper for that.
-- **One pattern for all origins.** A severity trended differently by origin, or
-  a retention that changes by year, needs a pattern per origin, which no
-  development method takes. Group the origins that share a layer and a price
-  level and fit each group with its own pattern (section 2 shows the error of
-  one pattern across price levels).
-- **Fitting the severity.** The scale shift takes the ultimate severity at the
-  origins' price level as given; fitting it (from trended ultimate claims,
-  say, with `prospicio.distributions`' fitting routines) is the caller's step,
-  and so is the shape at each maturity for `ParetoShape`.
-- **The ground-up average.** The ground-up factors are the volume-weighted
-  ones, with no exclusions or other averages (decision 15 of the design note).
-- **The derived pattern in the Bayesian BF.** `LayerSharePrior` estimates the
-  layer's pattern from its own triangle, so it does not use the derived
-  pattern and cannot fit a layer whose own factor is missing at some age
-  (section 6). The share's cv is an input; no helper derives it from a
-  severity's parameter uncertainty (decision 24).
-- **Bühlmann-Straub credibility** of the layer's link ratios, and a default `k`.
-  The weights are `1 - n / (n + k)` with a required `k`.
-- **Claim-level development** (Boor, Gillam and Couret's excess loss factors):
-  prospicio's per-claim IBNER is on the pricing side (`DevelopmentPattern`, see
-  [`experience-and-exposure-rating.md`](experience-and-exposure-rating.md)).
-- **Sahasrabuddhe's and Siewert's examples** are not reproduced here: the first
-  needs its example's trend indices, the second's Weibull parameters are
-  rounded and both its scale and shape move.
+The sd of one fit moves by about 1.5% from seed to seed, so compare such runs
+over several seeds. Where the data cannot identify the share (few origins, or
+all origins immature), the total of the common model stays wider.
 
 ## See also
 
@@ -754,6 +753,8 @@ of them immature) the common model's total stays the wider.
   use when.
 - [`choosing-a-method.md`](choosing-a-method.md): the library's methods by
   question.
+- [`experience-and-exposure-rating.md`](experience-and-exposure-rating.md): claim-level development (IBNER)
+  with `DevelopmentPattern`.
 - `docs/design/reserving-excess.md`: the method, the API and the validation
   targets as designed, with the simulation study's results.
 - `python/tests/test_reserving_excess.py` and
