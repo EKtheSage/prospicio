@@ -9,7 +9,9 @@ paragraph: the Rust core and its Python and R bindings); PR F (the
 one-year view, decision 11) built, with the defaults the user decided on
 2026-10-16; PR E (segments and the backtest, decision 8) built, with the
 user's decisions of 2026-10-19, and its one-year view over segments
-(`Compartmental::one_year_segments`, decision 8) built after it; PR D not yet · Lane:
+(`Compartmental::one_year_segments`, decision 8) built after it; PRs G
+and H (paid and incurred, and one response alone, decision 12) built;
+PR D not yet · Lane:
 Reserving, with the Models lane for `prospicio-bayes` · Depends on:
 `reserving-bayes.md` (decisions 2, 5, 10, 11, 13 and 15, and open decision
 9, which asked for this note), `models.md` (`prospicio-bayes`, NUTS,
@@ -66,7 +68,7 @@ in `reserving-v02.md` decision 7 and `reserving-bayes.md` open decision 10.
 | E | `claude/bayes-compartmental-segments` | `Compartmental::fit_segments` with `SegmentDependence`, and `CompartmentalCandidate` for the diagonal backtest with a held-out outstanding table (decision 8); Python and R `fit_segments`. **Built** | PR B, and the Meyers segments branch merged |
 | F | `claude/bayes-one-year-compartmental` | the one-year view of models 1 and 2 through `YearModel` (decision 11; `reserving-bayes.md` decision 20), a refit budget for every model's view; Python and R bindings | the Meyers one-year PR (#280) |
 | G | `claude/compartmental-paid-incurred` | `Fitted::PaidAndIncurred`: incurred replaces outstanding as the second response (decision 12); its own Stan reference; Rust, Python and R. **Built** | `main` |
-| H | planned | `Fitted::PaidOnly` and `Fitted::IncurredOnly`, which require `RateOrder::Ordered` (decision 12) | PR G |
+| H | `claude/compartmental-one-response` | `Fitted::PaidOnly` and `Fitted::IncurredOnly`, which require `RateOrder::Ordered` (decision 12); their own Stan references; Rust, Python and R. **Built** | PR G |
 | I | planned | unequal origin and development grain (decision 12) | PR G |
 | later | | multistage exposure on the RK4 solver; market cycles; AR(1) residuals (open decision 8) | PR D |
 
@@ -169,7 +171,7 @@ value has its Stan reference (normal, amounts and cumulative paid in
 `compartmental_gm2.stan`); the mixed combinations have no reference of
 their own and are checked by a unit test against the model written out in
 `f64` with the paper's closed form, for both presets' hierarchies (1e-12).
-`Fitted` takes paid and outstanding, and since PR G paid and incurred (decision 12). The hierarchy is not a
+`Fitted` takes paid and outstanding, since PR G paid and incurred, and since PR H paid alone or incurred alone with ordered rates (decision 12). The hierarchy is not a
 setting of its own but follows from the priors (decision 6):
 `CompartmentalPriors::gesmann_morris_2()` is model 2's, and
 `Compartmental::model_2(priors)` sets model 2's likelihood, scale, paid
@@ -690,7 +692,10 @@ divergence, every R-hat below 1.01), and a second test does the same from
   (`b_ker` -1.28, `b_kp` -9.03) and `log σ` 8.46 and 8.69: without origin
   effects paid fits worse. The prior centre is the fallback and a setting
   (`CompartmentalStart::PriorCentre`); from either start the default fit
-  at seed 0 converges with no warning (validation tests).
+  at seed 0 converges with no warning (validation tests). Under one
+  response (PR H, decision 12) the least squares is not identified, so the
+  data start is kept only when its log posterior is above the prior
+  centre's.
 * **Defaults**: 4 chains of 1,000 warm-up and **2,000** kept draws (not
   1,000), `target_accept` 0.99, `max_depth` 10. With 1,000 kept draws 9 of
   30 seeds failed a threshold (R-hat just above 1.01 or ESS below 400 on
@@ -1562,7 +1567,7 @@ open decision 15; what is particular to this model:
   no view; the conformance suite's "no year" check samples such a square
   directly in the unit tests.
 
-### 12. Paid and incurred (PR G)
+### 12. Paid and incurred, and one response alone (PRs G and H)
 
 Decided by the user on 2026-10-22: "`Fitted::PaidAndIncurred`: incurred
 replaces outstanding as the second response." Built in Rust, Python and R
@@ -1610,12 +1615,168 @@ on `claude/compartmental-paid-incurred`.
   Unit tests check the log density against a hand computation, the
   gradient against central differences and against the generic dual pass,
   and the incurred cells against the two ways of building them.
-* **Decided, not built (later PRs).** `Fitted::PaidOnly` and
-  `Fitted::IncurredOnly` require `RateOrder::Ordered`, because from one
-  response only `RLR x RRF` is identified (decision 2); the fit refuses
-  `RateOrder::Free` for them (PR H). Unequal origin and development grain is
-  in scope and comes in a later PR (PR I). Until they land both still return
-  the not-yet-built error.
+* **One response alone (PR H).** Decided by the user on 2026-10-22:
+  `Fitted::PaidOnly` and `Fitted::IncurredOnly` require
+  `RateOrder::Ordered`, and without it the fit returns an `Error::Bayes`
+  that says why. Built in Rust, Python and R on
+  `claude/compartmental-one-response`, stacked on PR G. The choices:
+  * *Why ordered rates.* From one response the means are unchanged by the
+    rate swap `(k_er, k_p, RLR, RRF) -> (k_p, k_er, RLR k_er / k_p, RRF
+    k_p / k_er)`, and from paid alone only `RLR x RRF` is identified
+    (decision 2), so under free rates the posterior has two modes the data
+    cannot tell apart. `validate` refuses `RateOrder::Free` for both
+    settings before any data is read, so every entry point that fits
+    (`fit`, `fit_segments`, `one_year`, the backtest) refuses it. Under ordered rates no draw has the
+    swap, so the rate-swap warning never fires (`rate_swaps` is 0).
+  * *One sigma.* The parameter vector drops the sigma of the response not
+    fitted: `log_sigma_pd` (named `sigma_pd`) under `PaidOnly`,
+    `log_sigma_os` (`sigma_os`, the incurred's) under `IncurredOnly`. Its
+    prior is the same slot of `CompartmentalPriors::log_sigma`; the other
+    slot is not read. Model 1 on company 337 has 26 parameters (27 with
+    both responses).
+  * *The second column under `PaidOnly`.* `fit`'s Rust signature is
+    unchanged, and its `outstanding` argument is not read (any value will
+    do; the input hash and the provenance skip it, the provenance records
+    `"not read"`). Python and R accept neither `outstanding` nor `incurred`
+    under `"paid_only"` (and still accept one). The fit has no second
+    response, so `CompartmentalFit::outstanding` and
+    `CompartmentalFits::outstanding` are now `Option<PredictiveDistribution>`
+    (a breaking change of the Rust field type), `None` under `PaidOnly`
+    (Python `None`, R `NULL`), and `outstanding_table` returns an error.
+  * *`IncurredOnly`.* The incurred is given as under `PaidAndIncurred`
+    (`Outstanding::FromIncurred` or an outstanding column plus paid). The
+    mean of an incurred cell is `RLR_i w_i (OS(t) + RRF_i PD(t))`. The paid
+    column supplies only each origin's latest paid. The reserve is the
+    expected paid at the square's last age less the latest paid, and each
+    future paid cell is its expected value without noise: no paid cell is
+    fitted, so there is no paid sigma to draw it with, and inventing one
+    from the incurred sigma has no basis. The reserve's sd is then
+    parameter uncertainty only. The future incurred cells (in
+    `outstanding`) are drawn with the incurred sigma.
+  * *The start.* The least squares of the population curve behind
+    `CompartmentalStart::Data` (decision 5) is not identified from one
+    response and runs off along the free direction: on company 337 paid
+    alone it ends at `RLR` 5e-136 and `RRF` 1e134 (log posterior -6.0
+    million), incurred alone at `RRF` 1e-13 and `k_p` 0.03 (-44,700),
+    against -456 and -452 at the prior centre. NUTS with the default
+    warm-up walks back from there, but a short warm-up stays stuck (chains
+    with `k_er` up to 340,000). So under one response the data start is
+    kept only when its log posterior is at least the prior centre's, and
+    otherwise the pilot run starts at the prior centre; with two responses
+    the start is unchanged, bit for bit.
+  * *Consumers.* `loo()` has the one response's cells (45 on company 337):
+    `n_outstanding` and `elpd_outstanding` are 0 under `PaidOnly`, and
+    `elpd_paid` is 0 under `IncurredOnly`. The one-year view's year has the
+    cells of the fitted response only (under `IncurredOnly` the paid in the
+    year is 0 and the closing reserve runs from the latest paid), and the
+    conformance suite passes on both settings
+    (`the_one_year_view_of_paid_alone_conforms`,
+    `the_one_year_view_of_incurred_alone_conforms`). In the diagonal
+    backtest `PaidOnly` scores the paid table and refuses the second
+    table, and `IncurredOnly` scores the second table and refuses the paid
+    one (the held-out paid would be scored against a noiseless forecast).
+    The prior predictive check still draws the mean outstanding and paid
+    paths. R's one-year views and backtest candidates keep fitting paid and
+    outstanding, as under PR G; Python and Rust take every setting there.
+  * *Validation.* `scripts/stan/compartmental_gm1_paid_only.stan` and
+    `compartmental_gm1_incurred_only.stan`, model 1 with ordered rates and
+    one response, run by `scripts/reserving_compartmental_one_response_stan.py`
+    on company 337 into `reference/reserving_compartmental_one_response_stan.csv`
+    (276 rows), read by `validation/tests/reserving_compartmental_one_response.rs`.
+    Tolerances are model 1's (decision 7) except `elpd_loo`, which takes
+    2.5 instead of 1.5, measured on a sweep of 20 seeds per setting: the
+    incurred-only `elpd_loo`, whose largest Pareto k is above 1, was up to
+    2.1 from Stan's. With it all 5,520 comparisons of the 40 fits pass.
+    At the defaults 17 of the 20 paid-only fits passed every diagnostic
+    threshold (two had one divergent transition each, one an R-hat of
+    1.013 on `tau_RRF`), and all 20 incurred-only fits. The results are in
+    `knowledge/findings/compartmental-one-response.md`.
+  * *The diffuse preset (decided by the user on 2026-10-22).* On company
+    337 incurred alone gave a 26% higher reserve than paid and outstanding
+    because, with no paid cell, `k_p` comes from its prior and the paper's
+    is `LogNormal(median 1, sd 0.1)`. The user: "have a diffuse prior where
+    we don't influence the fit much as a default and have the option for
+    users to implement a narrow prior if they have info not in the data."
+    Built: `CompartmentalPriors::diffuse()` (Python
+    `CompartmentalPriors.diffuse()`, R `compartmental_diffuse_priors()`),
+    the paper's medians (`k_er` 3, `k_p` 1, `RLR` 0.7, `RRF` 0.8) with a
+    log-scale sd of 1 on each of the four (the paper's are 0.1 to 0.2),
+    and model 1's origin effect sds and `log sigma` priors. The prior
+    predictive check (`the_diffuse_preset`) shows paid at the last age as a
+    share of premium at 0.06, 0.53 and 5.5 (5th, 50th, 95th percentiles),
+    against the paper's 0.39, 0.56 and 0.81: the same median, the plausible
+    range and well beyond it. Priors stay a required argument (open
+    decision 2); `diffuse()` is the documented choice for a fit to one
+    response alone, and a narrower prior (the paper's, or a struct update
+    of this one) is the option of a user who holds information about the
+    rates that is not in the data. The docs of `Fitted::PaidOnly`,
+    `Fitted::IncurredOnly`, the presets, and the Python and R help say so
+    (since 2026-10-23 `diffuse()` is the starting point for paid alone
+    only; incurred alone refuses it, see "A payment-rate prior the user
+    believes" below).
+  * *What company 337 shows.* The diffuse prior works for paid alone: `k_p`
+    is pinned by the paid (the posterior sd of its log is 5% of the
+    prior's), the fit converges at the defaults (5 seeds: max R-hat at most
+    1.009, no divergences) and the total reserve is 181,500 (sd 12,400),
+    2.9% above the paper's preset on paid alone and 4.7% above paid and
+    outstanding. It does not work for incurred alone: the incurred does
+    not identify `k_p`, the posterior sd of its log is 60% of the prior's,
+    and the total reserve is -51,000 (sd 152,000), negative on average,
+    because the paid run-off is whatever the wide prior and the ridge
+    between `k_p`, `RRF` and `RLR` allow. Between the two, the reserve falls
+    as the prior widens: 203,000 at a log-scale sd of 0.3 on the four
+    priors, 163,000 at 0.5, 88,000 at 0.7 and -51,000 at 1. So there is no
+    prior on `k_p` that leaves incurred alone's reserve to the data; every
+    value is the prior's choice. The numbers are in
+    `knowledge/findings/compartmental-one-response.md`.
+  * *The warning.* Under `Fitted::IncurredOnly` the fit adds a warning to
+    its diagnostics (so Python raises its warning and R its) when the
+    posterior sd of `log k_p` is more than half the prior's: "the posterior
+    sd of log k_p is N% of its prior's: the incurred does not identify the
+    payment rate ...". It follows from the mechanism that already exists
+    (`diagnostics.warnings`, as the rate-swap warning), needs no new
+    setting, and is silent when the data pin `k_p`: the share is 0.99 under
+    the paper's preset, 0.6 under the diffuse one and 0.7 to 0.9 between,
+    against 0.05 to 0.4 when paid is fitted (not checked there). The
+    threshold of 0.5 sits below every incurred-alone fit measured. A user
+    who sets a narrow prior on purpose still gets the warning, as the
+    reserve is then their prior's; the warning says what the number
+    depends on rather than that it is wrong. The check is on the prior's
+    width, not its centre, so it cannot tell a good prior from a bad one.
+  * *A payment-rate prior the user believes (decided by the user on
+    2026-10-23).* Incurred alone with the diffuse default gives a reserve
+    that is not usable, which the user's rule ("the data set the fit")
+    cannot repair, since the data do not set `k_p`. The options were (a)
+    keep the preset and the warning, (b) refuse a `k_p` prior wider than
+    some sd, (c) carry the prior's role in the fit's type. The user chose
+    (b): "Require a payment-rate prior. Incurred-only refuses a k_p prior
+    wider than a set width, and the user must give one they believe.
+    Diffuse stays the starting point for paid alone. The warning stays."
+    Built: `Compartmental::validate` returns `Error::Bayes` under
+    `Fitted::IncurredOnly` when the log-scale sd of the `k_p` prior exceeds
+    `MAX_INCURRED_ONLY_KP_SD`, 0.5 (the bound itself is accepted: 0.5 and
+    the paper's 0.1 pass, 1.0 and 0.51 do not). `PositivePrior` has one
+    variant, `LogNormal { median, sd }`, whose `sd` is the log-scale sd
+    (`median e^(sd o)`, `o ~ N(0, 1)`), so the rule reads `sd` directly; a
+    new variant would have to define its log-scale sd for the rule. The
+    check is in `validate`, which `fit`, `fit_segments`, `one_year`,
+    `one_year_segments` and the diagonal backtest each call before any data
+    are read, so all of them refuse; `prior_predictive` does not apply it,
+    so the user can still see what a refused set implies. The message says
+    that incurred alone does not identify the payment rate, so the reserve
+    follows this prior, and that the user must give a `k_p` prior they
+    believe (from the book's paid history or a paid-and-incurred fit of a
+    similar book) or fit paid as well. Only `k_p` is checked: the other
+    three priors may stay wide (the reserve moved with `k_p`'s, which is
+    where the paid run-off comes from). The bound 0.5 is the widest width
+    measured whose reserve is still informative (163,000, sd 51,500, `k_p`
+    0.41, against 203,000 at 0.3 and 87,700 at 0.7); it is a rule, not a
+    result, and the warning stays for any accepted prior. `diffuse()` stays
+    the documented starting point for `Fitted::PaidOnly`, and the docs of
+    `Fitted::IncurredOnly`, `Fitted::PaidOnly`, `diffuse()`, the priors'
+    struct, and the Python and R help say so.
+* **Unequal grain (PR I).** Unequal origin and development grain is in
+  scope and comes in a later PR; until then it returns an error.
 
 ## Risks
 

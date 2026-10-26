@@ -12,7 +12,7 @@ use prospicio_core::StreamRng;
 use prospicio_prob::{InputHasher, KeyValue};
 
 use super::{
-    Compartmental, CompartmentalLikelihood, Data, Future, KER, KP, Model, Outstanding,
+    Compartmental, CompartmentalLikelihood, Data, Fitted, Future, KER, KP, Model, Outstanding,
     PaidResponse, RLR, RRF, lognormal, one_os,
 };
 use crate::backtest::{
@@ -289,7 +289,10 @@ impl CompartmentalCandidate {
                 .or_default()
                 .push((cells.development_of(r), r));
         }
-        let log_normal = self.model.likelihood == CompartmentalLikelihood::LogNormal;
+        // Under incurred alone the paid is not fitted, so the likelihood
+        // rejects none of its rows.
+        let log_normal = self.model.likelihood == CompartmentalLikelihood::LogNormal
+            && self.model.fitted != Fitted::IncurredOnly;
         let incremental = self.model.paid_response == PaidResponse::Incremental;
         let response = cells.response();
         let mut kept = Vec::with_capacity(train.len());
@@ -381,7 +384,7 @@ impl CompartmentalCandidate {
             })
             .map(|(&(i, k), &v)| (i, k, v))
             .collect();
-        if data.outstanding.is_empty() {
+        if data.second && data.outstanding.is_empty() {
             return Err(Error::Bayes(
                 "no training cell has an outstanding the likelihood accepts".into(),
             ));
@@ -639,6 +642,13 @@ impl CompartmentalCandidate {
         interval: f64,
     ) -> Result<Backtest> {
         check_settings(n_sims, interval)?;
+        if self.model.fitted == Fitted::PaidOnly {
+            return Err(Error::Bayes(
+                "a candidate fitted to paid alone (Fitted::PaidOnly) fits no outstanding or \
+                 incurred cell, so it has no second table to score"
+                    .into(),
+            ));
+        }
         let ScoredSplits {
             splits,
             mut excluded,
@@ -743,6 +753,14 @@ impl TriangleModel for CompartmentalCandidate {
         n_sims: usize,
         seed: u64,
     ) -> Result<CellForecast> {
+        if self.model.fitted == Fitted::IncurredOnly {
+            return Err(Error::Bayes(
+                "a candidate fitted to incurred alone (Fitted::IncurredOnly) fits no paid \
+                 cell, so its paid increments have no observation noise and no density to \
+                 score; score its held-out incurred with outstanding_backtest"
+                    .into(),
+            ));
+        }
         let fit = self.train_fit(cells, train, seed)?;
         self.paid_forecast(&fit, cells, test, n_sims, seed)
     }
@@ -845,7 +863,7 @@ impl Model {
         } else {
             (latest + y, scale * pd)
         };
-        Some(self.response_log_density(value, mean, nat[5], i))
+        Some(self.response_log_density(value, mean, self.sigmas(nat)[1], i))
     }
 
     /// The log density of an outstanding amount `y` at cell `(i, k)`,
@@ -857,7 +875,7 @@ impl Model {
         } else {
             self.premium[i] * th[RLR] * os
         };
-        Some(self.response_log_density(y, mean, nat[4], i))
+        Some(self.response_log_density(y, mean, self.sigmas(nat)[0], i))
     }
 }
 
@@ -998,6 +1016,74 @@ mod tests {
         assert!(m.outstanding_log_density(&nat, 9, 0, 100.0).is_none());
         assert!(m.paid_log_density(&nat, 9, 0, 0.0, 100.0).is_none());
         assert!(m.paid_log_density(&nat, 3, 6, PAID[3][5], 100.0).is_some());
+    }
+
+    /// With one response the table of the response not fitted is an error
+    /// that says why, before any sampling: under paid alone the second
+    /// table, under incurred alone the paid one. The densities of the
+    /// fitted response use its one sigma.
+    #[test]
+    fn one_response_skips_the_table_it_does_not_fit() {
+        use crate::bayes::RateOrder;
+        let tri = triangle(true);
+        let cells = TriangleFrame::new(&tri, "paid", None).unwrap();
+        let one = |fitted: Fitted| {
+            candidate(
+                Compartmental {
+                    fitted,
+                    rate_order: RateOrder::Ordered,
+                    ..quick(1)
+                },
+                &tri,
+            )
+        };
+        let e = one(Fitted::PaidOnly)
+            .outstanding_backtest(&cells, 2, 100, 1, 0.9)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            e.contains("paid alone") && e.contains("second table"),
+            "{e}"
+        );
+        let incurred_only = one(Fitted::IncurredOnly);
+        let e = diagonal_backtest(&cells, &[&incurred_only], 2, 100, 1, 0.9)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            e.contains("incurred alone") && e.contains("outstanding_backtest"),
+            "{e}"
+        );
+        for fitted in [Fitted::PaidOnly, Fitted::IncurredOnly] {
+            let m = super::super::tests::model_one(
+                fitted,
+                CompartmentalPriors::gesmann_morris(),
+                true,
+                Response::MODEL_1,
+            );
+            let nat = m.natural(&points(&m)[0]);
+            let sigma = nat[4];
+            let (i, k) = (3, 6);
+            let y = 1000.0;
+            let (value, mean) = if fitted == Fitted::PaidOnly {
+                let (th, (_, pd), _) = m.closed_cell(&nat, i, k).unwrap();
+                (PAID[3][5] + y, PREMIUM[i] * th[RLR] * th[RRF] * pd)
+            } else {
+                let (th, (os, pd), _) = m.closed_cell(&nat, i, k).unwrap();
+                (y, PREMIUM[i] * th[RLR] * (os + th[RRF] * pd))
+            };
+            let z = (value - mean) / sigma;
+            let want = -sigma.ln() - HALF_LN_TAU - 0.5 * z * z;
+            let got = if fitted == Fitted::PaidOnly {
+                m.paid_log_density(&nat, i, k, PAID[3][5], y)
+            } else {
+                m.outstanding_log_density(&nat, i, k, y)
+            }
+            .unwrap();
+            assert!(
+                (got - want).abs() <= 1e-12 * want.abs(),
+                "{fitted:?}: {got} vs {want}"
+            );
+        }
     }
 
     fn rebuilt_triangle(change: impl Fn(usize, usize, f64) -> f64) -> Triangle {

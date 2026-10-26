@@ -65,7 +65,7 @@ value); the fit's origins are this column's.}
 \item{incurred}{Name of a column of incurred amounts: outstanding is
 incurred less paid, cell by cell (the papers' outstanding on company
 337 is incurred with bulk and IBNR less paid). Give exactly one of
-\code{outstanding} and \code{incurred}.}
+\code{outstanding} and \code{incurred}, or neither under \code{fitted = "paid_only"}.}
 
 \item{likelihood}{\code{"normal"} (model 1) or \code{"lognormal"} (model 2).}
 
@@ -75,14 +75,15 @@ amounts over the origin's premium (model 2).}
 \item{paid_response}{\code{"cumulative"} (model 1) or \code{"incremental"} (model
 2).}
 
-\item{fitted}{\code{"paid_and_outstanding"} or \code{"paid_and_incurred"} (incurred
-replaces outstanding as the second response, as above); \code{"paid_only"} and
-\code{"incurred_only"} are not yet built.}
+\item{fitted}{\code{"paid_and_outstanding"}, \code{"paid_and_incurred"} (incurred
+replaces outstanding as the second response, as above), \code{"paid_only"} or
+\code{"incurred_only"} (one response alone, with \code{rate_order = "ordered"}).}
 
 \item{rate_order}{\code{"free"} or \code{"ordered"}, as above.}
 
 \item{start}{Where the pilot run starts: \code{"data"}, a least-squares fit
-of the population curve (the prior centre if that fit fails), or
+of the population curve (the prior centre if that fit fails, and under
+one response if its log posterior is below the prior centre's), or
 \code{"prior_centre"}.}
 
 \item{chains, tune, draws}{NUTS chains, warm-up draws per chain and kept
@@ -134,8 +135,29 @@ outstanding as the second response: the mean of an incurred cell is \verb{RLR_i 
 under \code{paid_response = "incremental"}, and \code{log_sigma_os} is the incurred sigma.
 Give the incurred column as \code{incurred}, or an outstanding column as \code{outstanding}
 and the incurred is outstanding plus paid where both are observed. The fit's
-\code{outstanding} then holds the future incurred cells. \code{"paid_only"} and
-\code{"incurred_only"} are not yet built.
+\code{outstanding} then holds the future incurred cells.
+
+\code{fitted = "paid_only"} and \code{fitted = "incurred_only"} fit one response
+alone and need \code{rate_order = "ordered"} (an error under \code{"free"}): from
+one response the means do not change under the rate swap below, and from
+paid alone only \verb{RLR x RRF} is identified, so the priors carry the split
+of \code{RLR} and \code{RRF}. The model then has one sigma, \code{sigma_pd} or
+\code{sigma_os}. Under \code{"paid_only"} the second column is not read
+(\code{outstanding} and \code{incurred} may both be left out) and the fit's
+\code{outstanding} is \code{NULL}. Under \code{"incurred_only"} the incurred is given as
+for \code{"paid_and_incurred"} and the paid column supplies each origin's
+latest paid only: the reserve is the expected paid at the last age less
+the latest paid, and the future paid cells are expected values, without
+noise, since no paid cell is fitted. Of the one-year views and the
+backtest candidates only Python and Rust take these settings.
+\code{\link[=compartmental_diffuse_priors]{compartmental_diffuse_priors()}} is the starting point for \code{"paid_only"}.
+Under \code{"incurred_only"} the incurred does not identify the payment rate
+\code{k_p}, so its prior sets the paid run-off and the reserve at every width
+(on company 337 the paper's narrow prior put the reserve 26\% above the fit
+to paid and outstanding): the fit refuses a \code{k_p} prior with a log-scale sd
+above 0.5, so the diffuse preset is an error there, and you give a \code{k_p}
+prior you believe, for example from the book's paid history or from a
+paid-and-incurred fit of a similar book.
 
 \code{compartmental_model_2()} is \code{compartmental()} with model 2's
 likelihood, scale and paid response, and a longer, finer sampler: four
@@ -199,10 +221,12 @@ first, with the full log density of each response, normal or log-normal
 (with its \verb{-log y} term), as brms' \code{log_lik}, on the response's scale
 (compare it only with fits of the same responses), plus \code{n_outstanding}, \code{elpd_outstanding} and \code{elpd_paid}.
 
-Errors: if \code{fitted} is \code{"paid_only"} or \code{"incurred_only"}, not yet built; if a response is not positive
+Errors: if \code{fitted} is \code{"paid_only"} or \code{"incurred_only"} and
+\code{rate_order} is not \code{"ordered"}; if a response is not positive
 under the log-normal, or a paid cell has no paid at the age before
 under incremental paid; if not exactly one of
-\code{outstanding} and \code{incurred} is given; if a column is missing, the
+\code{outstanding} and \code{incurred} is given (at most one under \code{"paid_only"});
+if a column is missing, the
 triangle has several segments, a premium is missing or not positive, or
 the origin and development grains differ; if a prior or sampler setting
 is invalid; or if there are no more observed cells than parameters.

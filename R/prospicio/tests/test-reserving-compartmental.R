@@ -57,6 +57,20 @@ stopifnot(
   identical(gm$log_sigma[[2]], list(family = "student_t", nu = 1, location = 0, scale = 1000)),
   gm$lkj_eta == 1
 )
+# The diffuse preset: the paper's medians with a log-scale sd of 1 on the
+# rates and ratios, the rest as the paper's.
+dp <- compartmental_diffuse_priors()
+stopifnot(
+  inherits(dp, "compartmental_priors"),
+  identical(dp$k_er, c(median = 3, sd = 1)),
+  identical(dp$k_p, c(median = 1, sd = 1)),
+  identical(dp$rlr, c(median = 0.7, sd = 1)),
+  identical(dp$rrf, c(median = 0.8, sd = 1)),
+  identical(dp$rrf_effect_sd, gm$rrf_effect_sd),
+  identical(dp$log_sigma, gm$log_sigma),
+  gm$lkj_eta == dp$lkj_eta
+)
+
 q <- compartmental_priors(k_er = c(2, 0.3), k_p = gm$k_p, rlr = gm$rlr, rrf = gm$rrf,
                           rlr_effect_sd = gm$rlr_effect_sd,
                           rrf_effect_sd = list(family = "normal", scale = 0.2), lkj_eta = 2,
@@ -85,12 +99,17 @@ expect_error_like(compartmental(tri, "paid", "premium", incurred = "incurred"),
 expect_error_like(compartmental(tri, "paid", "premium", list(), incurred = "incurred"),
                   "priors must be a compartmental_priors list")
 
-# The other settings are named but not yet built.
+# One response alone needs ordered rates.
 for (setting in list(list(fitted = "paid_only"), list(fitted = "incurred_only"))) {
   expect_error_like(do.call(compartmental, c(list(tri, "paid", "premium", gm,
                                                   incurred = "incurred"), setting)),
-                    "not yet built")
+                    "needs rate_order Ordered")
 }
+# Incurred alone refuses a k_p prior wider than 0.5 (the diffuse preset's is 1).
+expect_error_like(compartmental(tri, "paid", "premium", compartmental_diffuse_priors(),
+                                incurred = "incurred", fitted = "incurred_only",
+                                rate_order = "ordered"),
+                  "at most 0.5")
 expect_error_like(compartmental(tri, "paid", "premium", gm), "give exactly one of outstanding")
 expect_error_like(compartmental(tri, "paid", "premium", gm, outstanding = "incurred",
                                 incurred = "incurred"),
@@ -275,6 +294,22 @@ inc <- suppressWarnings(compartmental(tri, "paid", "premium", gm, incurred = "in
                                       draws = 100, n_sims = 200, seed = 5))
 stopifnot(all(is.finite(draw_matrix(inc@reserves)[1, ])), nrow(inc@outstanding@keys) == 55,
           provenance(inc@reserves)$model == "compartmental")
+
+# Paid alone reads no second column and has no outstanding cells; incurred
+# alone has one sigma and the future incurred cells.
+paid_alone <- suppressWarnings(compartmental(tri, "paid", "premium", gm, fitted = "paid_only",
+                                             rate_order = "ordered", chains = 2, tune = 200,
+                                             draws = 200, n_sims = 200, seed = 3))
+stopifnot(is.null(paid_alone@outstanding), all(is.finite(draw_matrix(paid_alone@reserves)[1, ])),
+          "sigma_pd" %in% colnames(paid_alone@draws),
+          !("sigma_os" %in% colnames(paid_alone@draws)))
+expect_error_like(paid_alone@outstanding_table, "no outstanding cells")
+incurred_alone <- suppressWarnings(compartmental(tri, "paid", "premium", gm, incurred = "incurred",
+                                                 fitted = "incurred_only",
+                                                 rate_order = "ordered", chains = 2, tune = 200,
+                                                 draws = 200, n_sims = 200, seed = 3))
+stopifnot(nrow(incurred_alone@outstanding@keys) == 55,
+          !("sigma_pd" %in% colnames(incurred_alone@draws)))
 
 # Every combination of likelihood, scale and paid response is built.
 for (setting in list(list(scale = "loss_ratio"), list(paid_response = "incremental"),

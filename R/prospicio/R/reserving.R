@@ -4947,6 +4947,20 @@ S7::method(print, cape_cod_fit) <- function(x, ...) print_expected_loss(x, "cape
 #' `rrf`; and `normal(log 0.2, 0.2)` on each `log sigma` (the text gives a
 #' median of 0.1). Use it with [compartmental_model_2()].
 #'
+#' `compartmental_diffuse_priors()` is the starting point for a fit to paid
+#' alone (`fitted = "paid_only"`): the paper's medians for model 1 with a
+#' log-scale sd of 1 on `k_er`, `k_p`, `rlr` and `rrf`, 5 to 10 times the
+#' paper's, and its effect sds and `log sigma` priors, so the data and not the
+#' prior set the rates. It is refused for a fit to incurred alone
+#' (`fitted = "incurred_only"`): no paid cell is fitted there, so the incurred
+#' does not identify the payment rate `k_p` and its prior sets the paid
+#' run-off and the reserve at every width (on company 337 -51,000 with an sd
+#' of about 150,000 at a log-scale sd of 1, 203,000 at 0.3), and a `k_p` prior
+#' with a log-scale sd above 0.5 is an error. For incurred alone give a `k_p`
+#' prior you believe, for example one from the book's paid history or from a
+#' paid-and-incurred fit of a similar book; the paper's narrow prior put the
+#' reserve on company 337 26% above the fit to paid and outstanding.
+#'
 #' Each positive parameter `theta` (`k_er`, `k_p`, `rlr`, `rrf`) is
 #' `median * exp(sd * o)` with `o ~ N(0, 1)`: a log-normal prior with that
 #' median and log-scale sd. The effects live on that `o` scale.
@@ -5090,6 +5104,17 @@ gesmann_morris_2_priors <- function() {
                                  rrf = half(0.5)))
 }
 
+#' @rdname compartmental_priors
+#' @export
+compartmental_diffuse_priors <- function() {
+  p <- gesmann_morris_priors()
+  p$k_er <- c(median = 3, sd = 1)
+  p$k_p <- c(median = 1, sd = 1)
+  p$rlr <- c(median = 0.7, sd = 1)
+  p$rrf <- c(median = 0.8, sd = 1)
+  p
+}
+
 # The priors as the Rust side reads them: 31 numbers and 10 family names.
 compartmental_prior_values <- function(priors, call) {
   if (!inherits(priors, "compartmental_priors")) {
@@ -5150,8 +5175,29 @@ compartmental_prior_values <- function(priors, call) {
 #' under `paid_response = "incremental"`, and `log_sigma_os` is the incurred sigma.
 #' Give the incurred column as `incurred`, or an outstanding column as `outstanding`
 #' and the incurred is outstanding plus paid where both are observed. The fit's
-#' `outstanding` then holds the future incurred cells. `"paid_only"` and
-#' `"incurred_only"` are not yet built.
+#' `outstanding` then holds the future incurred cells.
+#'
+#' `fitted = "paid_only"` and `fitted = "incurred_only"` fit one response
+#' alone and need `rate_order = "ordered"` (an error under `"free"`): from
+#' one response the means do not change under the rate swap below, and from
+#' paid alone only `RLR x RRF` is identified, so the priors carry the split
+#' of `RLR` and `RRF`. The model then has one sigma, `sigma_pd` or
+#' `sigma_os`. Under `"paid_only"` the second column is not read
+#' (`outstanding` and `incurred` may both be left out) and the fit's
+#' `outstanding` is `NULL`. Under `"incurred_only"` the incurred is given as
+#' for `"paid_and_incurred"` and the paid column supplies each origin's
+#' latest paid only: the reserve is the expected paid at the last age less
+#' the latest paid, and the future paid cells are expected values, without
+#' noise, since no paid cell is fitted. Of the one-year views and the
+#' backtest candidates only Python and Rust take these settings.
+#' [compartmental_diffuse_priors()] is the starting point for `"paid_only"`.
+#' Under `"incurred_only"` the incurred does not identify the payment rate
+#' `k_p`, so its prior sets the paid run-off and the reserve at every width
+#' (on company 337 the paper's narrow prior put the reserve 26% above the fit
+#' to paid and outstanding): the fit refuses a `k_p` prior with a log-scale sd
+#' above 0.5, so the diffuse preset is an error there, and you give a `k_p`
+#' prior you believe, for example from the book's paid history or from a
+#' paid-and-incurred fit of a similar book.
 #'
 #' `compartmental_model_2()` is `compartmental()` with model 2's
 #' likelihood, scale and paid response, and a longer, finer sampler: four
@@ -5215,10 +5261,12 @@ compartmental_prior_values <- function(priors, call) {
 #' (with its `-log y` term), as brms' `log_lik`, on the response's scale
 #' (compare it only with fits of the same responses), plus `n_outstanding`, `elpd_outstanding` and `elpd_paid`.
 #'
-#' Errors: if `fitted` is `"paid_only"` or `"incurred_only"`, not yet built; if a response is not positive
+#' Errors: if `fitted` is `"paid_only"` or `"incurred_only"` and
+#' `rate_order` is not `"ordered"`; if a response is not positive
 #' under the log-normal, or a paid cell has no paid at the age before
 #' under incremental paid; if not exactly one of
-#' `outstanding` and `incurred` is given; if a column is missing, the
+#' `outstanding` and `incurred` is given (at most one under `"paid_only"`);
+#' if a column is missing, the
 #' triangle has several segments, a premium is missing or not positive, or
 #' the origin and development grains differ; if a prior or sampler setting
 #' is invalid; or if there are no more observed cells than parameters.
@@ -5232,18 +5280,19 @@ compartmental_prior_values <- function(priors, call) {
 #' @param incurred Name of a column of incurred amounts: outstanding is
 #'   incurred less paid, cell by cell (the papers' outstanding on company
 #'   337 is incurred with bulk and IBNR less paid). Give exactly one of
-#'   `outstanding` and `incurred`.
+#'   `outstanding` and `incurred`, or neither under `fitted = "paid_only"`.
 #' @param likelihood `"normal"` (model 1) or `"lognormal"` (model 2).
 #' @param scale The response scale: `"amount"` (model 1) or `"loss_ratio"`,
 #'   amounts over the origin's premium (model 2).
 #' @param paid_response `"cumulative"` (model 1) or `"incremental"` (model
 #'   2).
-#' @param fitted `"paid_and_outstanding"` or `"paid_and_incurred"` (incurred
-#'   replaces outstanding as the second response, as above); `"paid_only"` and
-#'   `"incurred_only"` are not yet built.
+#' @param fitted `"paid_and_outstanding"`, `"paid_and_incurred"` (incurred
+#'   replaces outstanding as the second response, as above), `"paid_only"` or
+#'   `"incurred_only"` (one response alone, with `rate_order = "ordered"`).
 #' @param rate_order `"free"` or `"ordered"`, as above.
 #' @param start Where the pilot run starts: `"data"`, a least-squares fit
-#'   of the population curve (the prior centre if that fit fails), or
+#'   of the population curve (the prior centre if that fit fails, and under
+#'   one response if its log posterior is below the prior centre's), or
 #'   `"prior_centre"`.
 #' @param chains,tune,draws NUTS chains, warm-up draws per chain and kept
 #'   draws per chain.
@@ -5301,7 +5350,7 @@ compartmental_fit <- S7::new_class(
     }),
     reserves = predictive_distribution,
     paid = predictive_distribution,
-    outstanding = predictive_distribution,
+    outstanding = NULL | predictive_distribution,
     ultimate_loss_ratio = S7::new_property(S7::class_double, getter = function(self) {
       self@ptr$ultimate_loss_ratio()
     }),
@@ -5332,9 +5381,15 @@ compartmental_fit <- S7::new_class(
     S7::new_object(S7::S7_object(), ptr = ptr,
                    reserves = predictive_distribution(ptr = ptr$reserves()),
                    paid = predictive_distribution(ptr = ptr$paid()),
-                   outstanding = predictive_distribution(ptr = ptr$outstanding()))
+                   outstanding = compartmental_outstanding_cells(ptr))
   }
 )
+
+# A fit's future outstanding cells, or NULL for a fit of paid alone.
+compartmental_outstanding_cells <- function(ptr) {
+  cells <- ptr$outstanding()
+  if (is.null(cells)) NULL else predictive_distribution(ptr = cells)
+}
 
 # The settings and run of compartmental() and compartmental_prior_predictive().
 compartmental_run <- function(chains, tune, draws, n_sims, seed, target_accept, max_depth) {
@@ -5355,9 +5410,11 @@ compartmental <- function(triangle, paid, premium, priors, outstanding = NULL, i
                           chains = 4, tune = 1000, draws = 2000, n_sims = 10000, seed = 0,
                           target_accept = 0.99, max_depth = 10) {
   call <- sys.call()
-  inputs <- compartmental_inputs(triangle, paid, premium, priors, outstanding, incurred, call)
+  fitted <- match.arg(fitted)
+  inputs <- compartmental_inputs(triangle, paid, premium, priors, outstanding, incurred, call,
+                                 fitted)
   settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
-                match.arg(fitted), match.arg(rate_order), match.arg(start))
+                fitted, match.arg(rate_order), match.arg(start))
   ptr <- rust_result(triangle@ptr$compartmental(
     paid, inputs$os, inputs$from, premium, inputs$p$values, inputs$p$families,
     settings, compartmental_run(chains, tune, draws, n_sims, seed, target_accept, max_depth)),
@@ -5373,7 +5430,9 @@ compartmental <- function(triangle, paid, premium, priors, outstanding = NULL, i
 
 # The checked inputs shared by compartmental() and compartmental_candidate():
 # the priors' wire form, the outstanding or incurred column, and which it is.
-compartmental_inputs <- function(triangle, paid, premium, priors, outstanding, incurred, call) {
+# Under fitted = "paid_only" the column is not read, so neither may be given.
+compartmental_inputs <- function(triangle, paid, premium, priors, outstanding, incurred, call,
+                                 fitted = "paid_and_outstanding") {
   check_triangle(triangle)
   for (arg in c("paid", "premium")) {
     value <- get(arg)
@@ -5387,16 +5446,27 @@ compartmental_inputs <- function(triangle, paid, premium, priors, outstanding, i
          call. = FALSE)
   }
   p <- compartmental_prior_values(priors, call)
+  os <- compartmental_second_column(outstanding, incurred, fitted)
+  list(p = p, os = os, from = if (is.null(incurred)) "column" else "incurred")
+}
+
+# The outstanding or incurred column: exactly one of them, or at most one
+# under fitted = "paid_only", which does not read it ("" when neither).
+compartmental_second_column <- function(outstanding, incurred, fitted) {
+  if (fitted == "paid_only" && is.null(outstanding) && is.null(incurred)) {
+    return("")
+  }
   if (is.null(outstanding) == is.null(incurred)) {
     stop(paste0("give exactly one of outstanding (a column of outstanding amounts) and ",
-                "incurred (a column of incurred amounts)"), call. = FALSE)
+                "incurred (a column of incurred amounts); under fitted = \"paid_only\" ",
+                "neither is needed"), call. = FALSE)
   }
   os <- if (is.null(incurred)) outstanding else incurred
   if (!is.character(os) || length(os) != 1 || is.na(os)) {
     stop(sprintf("%s must be the name of a column",
                  if (is.null(incurred)) "outstanding" else "incurred"), call. = FALSE)
   }
-  list(p = p, os = os, from = if (is.null(incurred)) "column" else "incurred")
+  os
 }
 
 #' @rdname compartmental_fit
@@ -5503,7 +5573,7 @@ compartmental_fits <- S7::new_class(
     }),
     reserves = predictive_distribution,
     paid = predictive_distribution,
-    outstanding = predictive_distribution,
+    outstanding = NULL | predictive_distribution,
     rate_swaps = S7::new_property(S7::class_integer, getter = function(self) {
       as.integer(self@ptr$rate_swaps())
     }),
@@ -5533,7 +5603,7 @@ compartmental_fits <- S7::new_class(
     S7::new_object(S7::S7_object(), ptr = ptr,
                    reserves = predictive_distribution(ptr = ptr$reserves()),
                    paid = predictive_distribution(ptr = ptr$paid()),
-                   outstanding = predictive_distribution(ptr = ptr$outstanding()))
+                   outstanding = compartmental_outstanding_cells(ptr))
   }
 )
 
@@ -5566,17 +5636,10 @@ compartmental_segments <- function(triangle, paid, premium, priors, outstanding 
          call. = FALSE)
   }
   p <- compartmental_prior_values(priors, call)
-  if (is.null(outstanding) == is.null(incurred)) {
-    stop(paste0("give exactly one of outstanding (a column of outstanding amounts) and ",
-                "incurred (a column of incurred amounts)"), call. = FALSE)
-  }
-  os <- if (is.null(incurred)) outstanding else incurred
-  if (!is.character(os) || length(os) != 1 || is.na(os)) {
-    stop(sprintf("%s must be the name of a column",
-                 if (is.null(incurred)) "outstanding" else "incurred"), call. = FALSE)
-  }
+  fitted <- match.arg(fitted)
+  os <- compartmental_second_column(outstanding, incurred, fitted)
   settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
-                match.arg(fitted), match.arg(rate_order), match.arg(start))
+                fitted, match.arg(rate_order), match.arg(start))
   dependence <- match.arg(dependence)
   ptr <- rust_result(triangle@ptr$compartmental_segments(
     paid, os, if (is.null(incurred)) "column" else "incurred", premium, p$values, p$families,
