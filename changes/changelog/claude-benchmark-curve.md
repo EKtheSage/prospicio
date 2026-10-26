@@ -9,4 +9,4 @@
   age, and `pattern(ages)`, a `SelectedPattern` for the chain ladder, Mack
   and the expected-loss methods whose level at the oldest age is the
   curve's tail. Matches `scipy.optimize.least_squares` (Python
-  `BenchmarkCurve`, R `benchmark_curve()`, `benchmark_selected()`; #637).
+  `BenchmarkCurve`, R `benchmark_curve()`, `benchmark_selected()`; #637, #640).
