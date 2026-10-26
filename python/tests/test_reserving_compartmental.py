@@ -32,6 +32,9 @@ GM = CompartmentalPriors.gesmann_morris()
 # The default chains (4 x 2,000 draws) take about 5 seconds in a release
 # build and pass every diagnostic on company 337 at seed 0.
 QUICK = dict(n_sims=2000)
+# The total reserve's posterior mean in Stan on the simulated quarterly
+# triangle (validation/reference/reserving_compartmental_grain_stan.csv).
+GRAIN_STAN_TOTAL = 74_873
 
 
 def premium_1997():
@@ -647,3 +650,41 @@ def test_light_refit(tri):
         with pytest.raises(ValueError, match="light_refit"):
             short.one_year(tri, "paid", "premium", incurred="incurred", n_sims=2,
                            light_refit=bad)
+
+
+def test_unequal_grain():
+    # Decision 13: annual origins with quarterly development, the triangle
+    # validation/tests/reserving_compartmental_grain.rs fits (simulated from
+    # model 1 with known parameters). The square runs ten years, 40
+    # quarterly ages, so each origin's reserve is its paid at 120 months
+    # less its latest paid. The one-year view on quarterly development is
+    # checked in Rust (the conformance suite).
+    path = VALIDATION / "data" / "compartmental_sim_quarterly.csv"
+    with open(path, newline="") as f:
+        rows = list(csv.DictReader(line for line in f if not line.startswith("#")))
+    assert len(rows) == 220
+    q = Triangle.from_long(
+        origin=[int(r["origin"]) for r in rows],
+        development=[int(r["development"]) for r in rows],
+        values={c: [float(r[c]) for r in rows] for c in ("paid", "outstanding", "premium")},
+        origin_grain="Y",
+        development_grain="Q",
+    )
+    assert (q.origin_grain, q.development_grain) == ("Y", "Q")
+    model = Compartmental(GM, **QUICK)
+    fit = model.fit(q, "paid", "premium", outstanding="outstanding")
+    assert fit.origins == [str(y) for y in range(2011, 2021)]
+    assert fit.population_origins == []
+    ages = sorted({age for _, age in fit.paid.components()})
+    assert ages[0] == 15 and ages[-1] == 120 and ages[1] - ages[0] == 3
+    assert len(fit.paid.components()) == sum(4 * k for k in range(1, 10))
+    k = fit.paid.components().index(("2015", 120))
+    j = fit.reserves.components().index(("2015",))
+    first = fit.paid.draw_matrix()[0][k] - fit.latest_paid[4]
+    assert fit.reserves.draw_matrix()[0][j] == pytest.approx(first, rel=1e-12)
+    # Seed 0 at the defaults; Stan's posterior mean of the total is in
+    # validation/reference/reserving_compartmental_grain_stan.csv.
+    assert fit.reserves.mean() == pytest.approx(GRAIN_STAN_TOTAL, rel=0.02)
+    paths = model.prior_predictive(q, "premium", n_sims=100)
+    assert len(paths["paid"].components()) == 10 * 40
+    assert paths["paid"].components()[39] == ("2011", 120)

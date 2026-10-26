@@ -5211,8 +5211,14 @@ compartmental_prior_values <- function(priors, call) {
 #' triangle has one) draws its effects from the population in each
 #' simulation, and so does a development age with no observed cell. The
 #' reserve is the paid at the square's last age less the
-#' latest paid; the square has as many ages as the premium column has
-#' origins, and the origin and development grains must be equal. One `seed`
+#' latest paid; the square runs for as many origin periods as the premium
+#' column has origins, in development periods (40 quarterly ages for ten
+#' annual origins). The development grain may be finer than the origin
+#' grain (the triangle's own grains), and each cell's development time is
+#' its age in years on every grain, so the rates are per year and an
+#' incremental paid cell is the increment over one development period.
+#' The coming year of `compartmental_one_year()` is the next twelve months of calendar
+#' time, up to four quarterly cells per origin. One `seed`
 #' replays a fit exactly: the chains and the simulations each take a seed
 #' derived from it.
 #'
@@ -5267,8 +5273,8 @@ compartmental_prior_values <- function(priors, call) {
 #' under incremental paid; if not exactly one of
 #' `outstanding` and `incurred` is given (at most one under `"paid_only"`);
 #' if a column is missing, the
-#' triangle has several segments, a premium is missing or not positive, or
-#' the origin and development grains differ; if a prior or sampler setting
+#' triangle has several segments, or a premium is missing or not positive;
+#' if a prior or sampler setting
 #' is invalid; or if there are no more observed cells than parameters.
 #'
 #' @param triangle A cumulative [triangle] with one segment.
@@ -5678,8 +5684,8 @@ compartmental_segments <- function(triangle, paid, premium, priors, outstanding 
 #' drawn from their priors restricted to `k_er > k_p`. The seed is derived from `seed`, as the fit's
 #' simulations' is.
 #'
-#' Errors: if a prior setting is invalid, `n_sims` is 0, the premium column
-#' is missing or not positive, or the origin and development grains differ.
+#' Errors: if a prior setting is invalid, `n_sims` is 0, or the premium column
+#' is missing or not positive.
 #'
 #' @inheritParams compartmental_fit
 #' @param n_sims Number of paths; positive.
