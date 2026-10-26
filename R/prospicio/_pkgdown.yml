@@ -172,6 +172,7 @@ reference:
       - price_stand_alone
       - technical_quote
       - tower_quote
+      - layer_quote
       - payment_pattern
       - payment_pattern_monthly
       - price_over_payout

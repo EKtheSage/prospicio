@@ -81,8 +81,9 @@ which for a cost-of-capital price at \code{cost_of_capital} is the price at
 keeps what is left after the loads and commissions as its risk premium,
 and the margin and return on capital follow with the same expected loss
 and assets. A sliding-scale or profit commission is read back there as
-an amount, from the layer's tower grid at that deposit; for a
-swing-rated layer pass its expected premium as the deposit.
+an amount, from the layer's tower grid at that deposit, and
+\code{\link[=layer_quote]{layer_quote()}} solves for the deposit under them; for a swing-rated
+layer pass its expected premium as the deposit.
 }
 \examples{
 p <- risk_loaded_price(sampled(c(0, 0, 2, 6)), distortion("tvar", 0.5),

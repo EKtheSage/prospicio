@@ -15,7 +15,7 @@ use crate::{to_r, whole};
 /// A per-occurrence excess-of-loss layer.
 #[extendr]
 pub(crate) struct XolLayer {
-    inner: Layer,
+    pub(crate) inner: Layer,
 }
 
 #[extendr]
