@@ -76,3 +76,18 @@ expect_error_like(mack(small, ldf_underwriting = underwriting_basis()),
 expect_error_like(chain_ladder(small, ldf = c("12" = 1.5), ldf_kind = "ldf",
                                ldf_underwriting = list(writing = 1, policy_months = 12)),
                   "underwriting_basis()")
+
+# 5. The writing fits in the triangle's origin period: on underwriting
+# quarters the default's year of writing is an error, three months convert.
+quarters <- triangle(data.frame(origin = as.Date(c("2023-01-01", "2023-01-01", "2023-04-01")),
+                                age = c(3, 6, 3), paid = c(10, 30, 12)),
+                     "origin", "age", "paid", origin_grain = "Q", development_grain = "Q")
+expect_error_like(chain_ladder(quarters, ldf = linear, ldf_kind = "percent_developed",
+                               ldf_origin = "M", ldf_underwriting = underwriting_basis()),
+                  "longer than the triangle's origin period")
+qb <- underwriting_basis(c(1, 1, 1))
+stopifnot(length(qb$exposure) == 15)
+fit <- chain_ladder(quarters, ldf = linear, ldf_kind = "percent_developed", ldf_origin = "M",
+                    ldf_underwriting = qb)
+share <- function(a) sum(qb$exposure * pmin(pmax(a - (seq_along(qb$exposure) - 1), 0), 60) / 60)
+near(fit@selected_ldf[1], share(6) / share(3), 1e-12)

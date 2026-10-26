@@ -647,10 +647,14 @@ development_args <- function(average, sigma_interpolation, n_periods = NULL, dro
 #' The default, even writing over 12 months and 12-month policies, is the
 #' parallelogram: the exposure is triangular over 24 months.
 #'
-#' @param writing `NULL` (the default, even writing over 12 months), or the
-#'   share of the period's policies written in each month from its start,
-#'   each written at an even rate through its month: finite, not negative,
-#'   with a positive sum, scaled to sum to 1.
+#' @param writing `NULL` (the default, even writing over 12 months, an
+#'   underwriting year's), or the share of the period's policies written in
+#'   each month from its start, each written at an even rate through its
+#'   month: finite, not negative, with a positive sum, scaled to sum to 1.
+#'   The writing, its trailing zeros dropped, must be no longer than the
+#'   triangle's origin period, within which its policies are written: on
+#'   underwriting quarters give three months (`c(1, 1, 1)` for even
+#'   writing); longer writing is an error at fit time.
 #' @param policy_months Each policy's term in months, a whole number of at
 #'   least 1; it earns evenly over the term.
 #' @return An `underwriting_basis`: a list of `writing`, `policy_months` and
@@ -1157,7 +1161,10 @@ S7::method(print, tail_log_linear) <- tail_print
 #'   the policy term less the accident period (12 months for an
 #'   accident-year pattern under the default, 23 for an accident-month
 #'   one), and a constant tail from `ldf`'s own tail is the safer choice
-#'   there.
+#'   there. The writing must be no longer than the target's origin period
+#'   (the default's 12 months suit underwriting years only; on underwriting
+#'   quarters give `underwriting_basis(c(1, 1, 1))`), or the fit is an
+#'   error.
 #' @param development For a [latest_valuation] only: a [chain_ladder_fit] (or a
 #'   fit with `@chain_ladder`) whose development projects each segment, as
 #'   [to_chain_ladder()] freezes it. The method then takes no `ldf`, no

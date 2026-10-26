@@ -138,7 +138,8 @@ fn exclusions(excl: &Robj) -> Result<(Option<usize>, usize, usize)> {
 /// `underwriting` (`NULL`, or a list of `writing` and `policy_months`: the
 /// underwriting basis the pattern is converted to from accident periods of
 /// `origin`, or of `target` without it, by
-/// `SelectedPattern::to_underwriting_basis`).
+/// `SelectedPattern::to_underwriting_basis`, its writing no longer than a
+/// period of `target`, `UnderwritingBasis::check_within`).
 fn selected_pattern(pattern: &Robj, target: Grain) -> Result<Option<SelectedPattern>> {
     if pattern.is_null() {
         return Ok(None);
@@ -202,9 +203,12 @@ fn selected_pattern(pattern: &Robj, target: Grain) -> Result<Option<SelectedPatt
     let selected = SelectedPattern::new(kind, pairs(&ages, &values, "ldf")?).with_weight(weight);
     let origin = origin.map(|g| grain(&g, "ldf_origin")).transpose()?;
     Ok(Some(match (underwriting, origin) {
-        (Some(basis), from) => selected
-            .to_underwriting_basis(from.unwrap_or(target), &basis)
-            .map_err(to_r)?,
+        (Some(basis), from) => {
+            basis.check_within(target).map_err(to_r)?;
+            selected
+                .to_underwriting_basis(from.unwrap_or(target), &basis)
+                .map_err(to_r)?
+        }
         (None, Some(g)) => selected.averaged_over_origins(g, target).map_err(to_r)?,
         (None, None) => selected,
     }))

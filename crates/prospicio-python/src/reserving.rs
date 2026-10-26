@@ -1890,6 +1890,8 @@ fn ldf_basis_arg(
 /// A selected pattern converted as `basis` says, for origins of `origin`:
 /// to an underwriting basis from accident periods of ``ldf_origin`` (the
 /// target's grain without it, `SelectedPattern::to_underwriting_basis`),
+/// its writing no longer than a period of `origin`
+/// (`UnderwritingBasis::check_within`),
 /// or averaged from origin periods of ``ldf_origin`` over the periods of
 /// `origin` (`SelectedPattern::averaged_over_origins`); unchanged with
 /// neither.
@@ -1905,10 +1907,13 @@ fn averaged(
                 underwriting: Some(u),
                 origin: from,
             },
-        ) => Ok(Some(
-            p.to_underwriting_basis(from.unwrap_or(origin), u)
-                .map_err(err)?,
-        )),
+        ) => {
+            u.check_within(origin).map_err(err)?;
+            Ok(Some(
+                p.to_underwriting_basis(from.unwrap_or(origin), u)
+                    .map_err(err)?,
+            ))
+        }
         (
             Some(p),
             LdfBasis {
@@ -1958,7 +1963,11 @@ fn underwriting_repr(u: &UnderwritingBasis) -> String {
 ///     The share of the period's policies written in each month from its
 ///     start, each written at an even rate through its month: finite, not
 ///     negative, with a positive sum, and scaled to sum to 1. Not given,
-///     even writing over 12 months.
+///     even writing over 12 months, an underwriting year's. The writing,
+///     its trailing zeros dropped, must be no longer than the triangle's
+///     origin period, within which its policies are written: on
+///     underwriting quarters give three months (``[1, 1, 1]`` for even
+///     writing); longer writing is an error at fit time.
 /// policy_months : int, default 12
 ///     Each policy's term in months; it earns evenly over the term.
 ///
@@ -2749,7 +2758,11 @@ fn diagonal_development(
 ///     ``ldf`` by the writing months plus the policy term less the accident
 ///     period (12 months for an accident-year pattern under the default,
 ///     23 for an accident-month one), and a constant tail from ``ldf``'s
-///     own tail is the safer choice there. Requires ``ldf``.
+///     own tail is the safer choice there. The writing must be no longer
+///     than the triangle's origin period (the default's 12 months suit
+///     underwriting years only; on underwriting quarters give
+///     ``UnderwritingBasis([1, 1, 1])``), or the fit is an error. Requires
+///     ``ldf``.
 ///
 /// A selected factor carries no parameter error, and a blended one
 /// ``(1 - w)`` times the estimate's, in ``Mack`` and the bootstraps; the

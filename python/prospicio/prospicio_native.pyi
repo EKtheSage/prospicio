@@ -5215,7 +5215,11 @@ class ChainLadder:
         ``ldf`` by the writing months plus the policy term less the accident
         period (12 months for an accident-year pattern under the default,
         23 for an accident-month one), and a constant tail from ``ldf``'s
-        own tail is the safer choice there. Requires ``ldf``.
+        own tail is the safer choice there. The writing must be no longer
+        than the triangle's origin period (the default's 12 months suit
+        underwriting years only; on underwriting quarters give
+        ``UnderwritingBasis([1, 1, 1])``), or the fit is an error. Requires
+        ``ldf``.
     
     A selected factor carries no parameter error, and a blended one
     ``(1 - w)`` times the estimate's, in ``Mack`` and the bootstraps; the
@@ -28025,7 +28029,11 @@ class UnderwritingBasis:
         The share of the period's policies written in each month from its
         start, each written at an even rate through its month: finite, not
         negative, with a positive sum, and scaled to sum to 1. Not given,
-        even writing over 12 months.
+        even writing over 12 months, an underwriting year's. The writing,
+        its trailing zeros dropped, must be no longer than the triangle's
+        origin period, within which its policies are written: on
+        underwriting quarters give three months (``[1, 1, 1]`` for even
+        writing); longer writing is an error at fit time.
     policy_months : int, default 12
         Each policy's term in months; it earns evenly over the term.
     

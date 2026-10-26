@@ -245,6 +245,38 @@ fn the_conversion_keeps_its_kind_weight_and_errors() {
     }
 }
 
+#[test]
+fn the_writing_fits_in_the_triangles_origin_period() {
+    // A period's policies are written within it: the default's year of
+    // writing fits underwriting years, and shorter periods do not hold it.
+    let year = UnderwritingBasis::default();
+    year.check_within(Grain::Year).unwrap();
+    for grain in [Grain::Semester, Grain::Quarter, Grain::Month] {
+        let e = year.check_within(grain).unwrap_err();
+        assert!(reason(e).contains("longer than the triangle's origin period"));
+    }
+    UnderwritingBasis::even(3, 12)
+        .check_within(Grain::Quarter)
+        .unwrap();
+    UnderwritingBasis::new(vec![1.0], 12)
+        .check_within(Grain::Month)
+        .unwrap();
+    // Trailing zeros are dropped before the count; leading zeros count.
+    UnderwritingBasis::new(vec![1.0, 1.0, 1.0, 0.0, 0.0], 12)
+        .check_within(Grain::Quarter)
+        .unwrap();
+    assert!(
+        UnderwritingBasis::new(vec![0.0, 0.0, 1.0, 1.0], 12)
+            .check_within(Grain::Quarter)
+            .is_err()
+    );
+    // The basis's own errors come first.
+    let e = UnderwritingBasis::new(vec![], 12)
+        .check_within(Grain::Year)
+        .unwrap_err();
+    assert!(reason(e).contains("no months"));
+}
+
 // B. Against the pricing crate's monthly patterns.
 
 #[test]

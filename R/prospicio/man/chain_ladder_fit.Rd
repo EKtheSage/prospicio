@@ -104,7 +104,10 @@ matters. The result runs past \code{ldf}'s end by the writing months plus
 the policy term less the accident period (12 months for an
 accident-year pattern under the default, 23 for an accident-month
 one), and a constant tail from \code{ldf}'s own tail is the safer choice
-there.}
+there. The writing must be no longer than the target's origin period
+(the default's 12 months suit underwriting years only; on underwriting
+quarters give \code{underwriting_basis(c(1, 1, 1))}), or the fit is an
+error.}
 
 \item{n_periods, drop_high, drop_low}{Which link ratios the factor at each
 age averages. \code{n_periods} keeps the latest \code{n_periods} calendar

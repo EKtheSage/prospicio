@@ -3654,9 +3654,18 @@ and the bindings add one argument.
    policy_months }` takes shares by month from the period's start, finite
    and not negative with a positive sum, and scales them to sum to 1;
    trailing zeros are dropped and leading zeros kept (a period that starts
-   writing late). Any number of months is allowed: the period is the
-   target's origin period, which the conversion does not see, so a
-   quarterly underwriting period needs `writing` of three months, and the
+   writing late). The period is the target's origin period, which
+   `to_underwriting_basis` does not see, so the conversion itself takes
+   any number of months, and `UnderwritingBasis::check_within(grain)`
+   checks the writing, its trailing zeros dropped, against a period of the
+   target's grain. The Python and R bindings know the target's grain at
+   fit time and call it, so there writing longer than the origin period is
+   an error (a period's policies are written within it). The default stays
+   a fixed year of writing rather than writing even over the target's
+   period, since the basis is built before the triangle is seen: on
+   underwriting quarters the default is an error that names the fix
+   (Python `UnderwritingBasis([1, 1, 1])`, R
+   `underwriting_basis(c(1, 1, 1))`) instead of a wrong pattern, and the
    docs say that the default is a year's. A policy term of 0 and a result
    longer than 2,400 months are errors.
 8. **API placement and names** (proposed). Rust:

@@ -5,6 +5,8 @@
 ``validation/tests/reserving_uy_pattern.rs``; these tests reproduce its
 hand-computed parallelogram through the binding."""
 
+from datetime import date
+
 import pytest
 
 from prospicio.reserving import (
@@ -125,3 +127,36 @@ def test_the_basis_and_its_errors():
         assert method(ldf={12: 1.5}, ldf_kind="ldf").ldf_underwriting is None
         with pytest.raises(ValueError, match="ldf_underwriting is given without ldf"):
             method(ldf_underwriting=UnderwritingBasis())
+
+
+def test_the_writing_fits_in_the_triangles_origin_period():
+    # Underwriting quarters: the default's year of writing is an error, and
+    # three months of writing convert.
+    tri = Triangle.from_long(
+        [date(2023, 1, 1), date(2023, 1, 1), date(2023, 4, 1)],
+        [3, 6, 3],
+        {"paid": [10.0, 30.0, 12.0]},
+        origin_grain="Q",
+        development_grain="Q",
+    )
+    with pytest.raises(ValueError, match="longer than the triangle's origin period"):
+        ChainLadder(
+            ldf=LINEAR,
+            ldf_kind="percent_developed",
+            ldf_origin="M",
+            ldf_underwriting=UnderwritingBasis(),
+        ).fit(tri, "paid")
+    quarter = UnderwritingBasis([1.0, 1.0, 1.0])
+    fit = ChainLadder(
+        ldf=LINEAR, ldf_kind="percent_developed", ldf_origin="M", ldf_underwriting=quarter
+    ).fit(tri, "paid")
+
+    # Even writing over a quarter and 12-month policies, by hand: the
+    # exposure of 15 accident months, each on the linear pattern.
+    def share(a):
+        return sum(
+            e * min(max(a - t, 0), 60) / 60.0 for t, e in enumerate(quarter.exposure())
+        )
+
+    assert len(quarter.exposure()) == 15
+    assert fit.selected_ldf[0] == pytest.approx(share(6) / share(3), rel=1e-12)

@@ -830,6 +830,35 @@ impl UnderwritingBasis {
         Ok(convolve(&w, &earning(self.policy_months)))
     }
 
+    /// Checks that the writing fits in an underwriting period of `origin`
+    /// grain, the triangle's: its months, trailing zeros dropped, are at
+    /// most the period's, since a period's policies are written within it.
+    /// [`SelectedPattern::to_underwriting_basis`] does not see the target's
+    /// grain, so a caller that knows it checks here: the default's 12
+    /// months of writing on underwriting quarters would treat each quarter
+    /// as written over a year.
+    ///
+    /// Errors ([`Error::Pattern`]): writing longer than the period, and the
+    /// basis's errors ([`exposure`](Self::exposure)).
+    ///
+    /// ```
+    /// use prospicio_reserving::{Grain, UnderwritingBasis};
+    ///
+    /// assert!(UnderwritingBasis::default().check_within(Grain::Year).is_ok());
+    /// assert!(UnderwritingBasis::default().check_within(Grain::Quarter).is_err());
+    /// let quarter = UnderwritingBasis::even(3, 12);
+    /// assert!(quarter.check_within(Grain::Quarter).is_ok());
+    /// ```
+    pub fn check_within(&self, origin: Grain) -> Result<()> {
+        if self.shares()?.len() > origin.months() as usize {
+            return Err(Error::Pattern {
+                age: None,
+                reason: "the writing is longer than the triangle's origin period, within which                          its policies are written: give writing of at most its months (three                          for underwriting quarters)",
+            });
+        }
+        Ok(())
+    }
+
     /// The writing shares checked and scaled to sum to 1, trailing zeros
     /// dropped.
     fn shares(&self) -> Result<Vec<f64>> {

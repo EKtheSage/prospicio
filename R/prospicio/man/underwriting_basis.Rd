@@ -7,10 +7,14 @@
 underwriting_basis(writing = NULL, policy_months = 12)
 }
 \arguments{
-\item{writing}{\code{NULL} (the default, even writing over 12 months), or the
-share of the period's policies written in each month from its start,
-each written at an even rate through its month: finite, not negative,
-with a positive sum, scaled to sum to 1.}
+\item{writing}{\code{NULL} (the default, even writing over 12 months, an
+underwriting year's), or the share of the period's policies written in
+each month from its start, each written at an even rate through its
+month: finite, not negative, with a positive sum, scaled to sum to 1.
+The writing, its trailing zeros dropped, must be no longer than the
+triangle's origin period, within which its policies are written: on
+underwriting quarters give three months (\code{c(1, 1, 1)} for even
+writing); longer writing is an error at fit time.}
 
 \item{policy_months}{Each policy's term in months, a whole number of at
 least 1; it earns evenly over the term.}
