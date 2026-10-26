@@ -4523,6 +4523,186 @@ growth <- function(fit, age) {
   rust_result(fit@ptr$growth(as.double(age)))
 }
 
+#' A growth curve fitted to a benchmark pattern
+#'
+#' Fits Clark's log-logistic or Weibull growth curve `G` to a benchmark
+#' pattern by weighted least squares on the percents developed (issue #637;
+#' design note `docs/design/reserving-v02.md`, decision 20). The fit gives
+#' the pattern at any age, a smooth pattern between the benchmark's ages and
+#' a tail past its last. The parameters match `scipy.optimize.least_squares`
+#' (`validation/tests/reserving_benchmark_curve.rs`).
+#'
+#' The fitted percent developed at age `a` is `G(c(a)) / G(c(max_age))`
+#' (`G(c(max_age)) = 1` for `max_age = Inf`), as [clark_ldf()] develops a
+#' latest value. Benchmark ages are development ages in months from the
+#' start of the origin period, as a triangle's; `c(a)` is the age itself, or
+#' with `origin_width` set Clark's age from the average date of loss,
+#' `a - w / 2` at or past the width `w` and `a / 2` before it.
+#'
+#' * `benchmark_curve()` fits the curve. The properties of a
+#'   `benchmark_curve_fit` are `curve`, `omega`, `theta`, `max_age`,
+#'   `origin_width` (`NULL` without the shift), and by benchmark age, in
+#'   increasing order, `ages`, `observed` (the percents developed),
+#'   `weights`, `fitted` and `residuals` (`observed - fitted`), and
+#'   `sum_of_squares`, the weighted sum of squared residuals.
+#' * `benchmark_percent_developed()` and `benchmark_cdf()` give the fitted
+#'   percent developed and factor to ultimate at any development ages.
+#' * `benchmark_selected()` gives the fitted pattern at whole development
+#'   ages as the `ldf`, `ldf_kind` and `ldf_weight` arguments of
+#'   [chain_ladder()], [mack()] and the expected-loss methods:
+#'   `do.call(chain_ladder, c(list(triangle), benchmark_selected(fit, ages)))`.
+#'   Give the method no `tail`: with ages ending at the triangle's oldest,
+#'   the pattern's level there is the tail, `benchmark_cdf(fit, oldest)`.
+#'
+#' These are Python's `BenchmarkCurve` and `BenchmarkCurveFit`.
+#'
+#' @param pattern The benchmark: a named numeric vector (names are ages in
+#'   months, any positive numbers) of percents developed or factors to
+#'   ultimate, each finite and positive; at least two ages.
+#' @param kind `"percent_developed"` or `"cdf"` (factors to ultimate).
+#'   Age-to-age factors give no level to fit.
+#' @param curve The growth curve: `"loglogistic"`,
+#'   `G(x) = x^omega / (x^omega + theta^omega)`, or `"weibull"`,
+#'   `G(x) = 1 - exp(-(x / theta)^omega)`.
+#' @param weights `NULL` for weight 1 at every age, or a named numeric
+#'   vector (names are ages of `pattern`; an age not named gets 1) of
+#'   weights, finite and not negative, on the squared residuals.
+#' @param max_age Age in months at which development stops, so the pattern
+#'   is 100% there, at least the benchmark's last age; `Inf` (or `NULL`)
+#'   develops to infinity. A benchmark that reaches 100% needs it.
+#' @param origin_width `NULL` to measure the curve's ages from the start of
+#'   the origin period, or the origin period's length in months (12 for
+#'   accident years) to measure them from its middle, as [clark_ldf()].
+#' @param fit A `benchmark_curve_fit`.
+#' @param age,ages Development ages in months; `benchmark_selected()`'s are
+#'   whole, positive and each given once.
+#' @param ptr A `BenchmarkCurveFit` pointer; used internally.
+#' @returns `benchmark_curve()`: a `benchmark_curve_fit`.
+#'   `benchmark_percent_developed()` and `benchmark_cdf()`: a numeric
+#'   vector, one value per age. `benchmark_selected()`: a list of `ldf`,
+#'   `ldf_kind` and `ldf_weight`.
+#' @seealso [clark_ldf()], [chain_ladder()].
+#' @export
+#' @examples
+#' bench <- c("12" = 0.30, "24" = 0.62, "36" = 0.80, "48" = 0.89, "60" = 0.94)
+#' fit <- benchmark_curve(bench)
+#' c(omega = fit@omega, theta = fit@theta)
+#' fit@residuals
+#' benchmark_percent_developed(fit, c(18, 30, 120))
+#'
+#' long <- data.frame(year = rep(2020:2022, 3:1), age = c(12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 110, 170, 120))
+#' tri <- triangle(long, "year", "age", "paid")
+#' cl <- do.call(chain_ladder, c(list(tri), benchmark_selected(fit, c(12, 24, 36))))
+#' cl@ultimate
+benchmark_curve_fit <- S7::new_class(
+  "benchmark_curve_fit",
+  package = "prospicio",
+  properties = local({
+    by_age <- function(f) {
+      S7::new_property(S7::class_double, getter = function(self) {
+        ages <- self@ptr$ages()
+        stats::setNames(f(self@ptr), format(ages, trim = TRUE, scientific = FALSE))
+      })
+    }
+    list(
+      ptr = S7::new_S3_class("BenchmarkCurveFit"),
+      curve = S7::new_property(S7::class_character, getter = function(self) self@ptr$curve()),
+      omega = S7::new_property(S7::class_double, getter = function(self) self@ptr$omega()),
+      theta = S7::new_property(S7::class_double, getter = function(self) self@ptr$theta()),
+      max_age = S7::new_property(S7::class_double, getter = function(self) self@ptr$max_age()),
+      origin_width = S7::new_property(getter = function(self) {
+        w <- self@ptr$origin_width()
+        if (is.nan(w)) NULL else w
+      }),
+      ages = S7::new_property(S7::class_double, getter = function(self) self@ptr$ages()),
+      observed = by_age(function(p) p$observed()),
+      weights = by_age(function(p) p$weights()),
+      fitted = by_age(function(p) p$fitted()),
+      residuals = by_age(function(p) p$residuals()),
+      sum_of_squares = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$sum_of_squares()
+      })
+    )
+  }),
+  constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
+)
+
+S7::method(print, benchmark_curve_fit) <- function(x, ...) {
+  cat(sprintf("benchmark_curve_fit (%s): omega = %s, theta = %s\n", x@curve,
+              format(x@omega, digits = 7), format(x@theta, digits = 7)))
+  print(rbind(observed = x@observed, fitted = x@fitted), digits = 7)
+  invisible(x)
+}
+
+#' @rdname benchmark_curve_fit
+#' @export
+benchmark_curve <- function(pattern, kind = c("percent_developed", "cdf"),
+                            curve = c("loglogistic", "weibull"), weights = NULL, max_age = Inf,
+                            origin_width = NULL) {
+  kind <- match.arg(kind)
+  curve <- match.arg(curve)
+  if (!is.numeric(pattern) || is.null(names(pattern))) {
+    stop("pattern must be a named numeric vector, the names ages in months", call. = FALSE)
+  }
+  ages <- suppressWarnings(as.numeric(names(pattern)))
+  if (anyNA(ages)) stop("pattern: every name must be an age in months", call. = FALSE)
+  w <- NULL
+  if (!is.null(weights)) {
+    if (!is.numeric(weights) || is.null(names(weights))) {
+      stop("weights must be NULL or a named numeric vector, the names ages in months",
+           call. = FALSE)
+    }
+    w_ages <- suppressWarnings(as.numeric(names(weights)))
+    unknown <- w_ages[is.na(w_ages) | !w_ages %in% ages]
+    if (length(unknown)) {
+      stop(sprintf("weights: age %s is not an age of the pattern", names(weights)[
+        is.na(w_ages) | !w_ages %in% ages][1]), call. = FALSE)
+    }
+    w <- rep(1, length(ages))
+    w[match(w_ages, ages)] <- as.double(weights)
+  }
+  if (!is.null(origin_width) &&
+        (!is.numeric(origin_width) || length(origin_width) != 1 || is.na(origin_width))) {
+    stop("origin_width must be NULL or a single number", call. = FALSE)
+  }
+  ptr <- rust_result(benchmark_curve_rust(ages, as.double(unname(pattern)), kind, curve, w,
+                                          clark_max_age(max_age),
+                                          if (is.null(origin_width)) NULL else
+                                            as.double(origin_width)))
+  benchmark_curve_fit(ptr = ptr)
+}
+
+check_benchmark <- function(fit, age) {
+  if (!S7::S7_inherits(fit, benchmark_curve_fit)) {
+    stop("fit must be a benchmark_curve_fit", call. = FALSE)
+  }
+  if (!is.numeric(age)) stop("age must be numeric", call. = FALSE)
+}
+
+#' @rdname benchmark_curve_fit
+#' @export
+benchmark_percent_developed <- function(fit, age) {
+  check_benchmark(fit, age)
+  fit@ptr$percent_developed(as.double(age))
+}
+
+#' @rdname benchmark_curve_fit
+#' @export
+benchmark_cdf <- function(fit, age) {
+  check_benchmark(fit, age)
+  fit@ptr$cdf(as.double(age))
+}
+
+#' @rdname benchmark_curve_fit
+#' @export
+benchmark_selected <- function(fit, ages) {
+  check_benchmark(fit, ages)
+  values <- rust_result(fit@ptr$pattern(as.double(ages)))
+  list(ldf = stats::setNames(values, format(ages, trim = TRUE, scientific = FALSE)),
+       ldf_kind = "percent_developed", ldf_weight = 1)
+}
+
 check_fit <- function(fit) {
   classes <- list(chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, odp_bootstrap_fit,
                   mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, bayes_bf_fit,
