@@ -3621,5 +3621,7 @@ or more ages (which decision 18 reads past the oldest age since #614).
    one origin at 48 months), and the one value through `LatestDiagonal`.
    `validation/tests/reserving_pattern_basis.rs`: the errors of items 2
    to 4 on RAA, the one value at 120 months equal to a constant tail of
-   1.05, and item 6. The same cases in `python/tests/test_reserving_patterns.py`
+   1.05, item 5 (the ODP bootstrap with the one value draws as with a
+   constant tail of 1.05, and both bootstraps' one-year views take it as
+   the method's implied tail) and item 6. The same cases in `python/tests/test_reserving_patterns.py`
    and `R/prospicio/tests/test-reserving-patterns.R`.

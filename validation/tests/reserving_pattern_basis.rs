@@ -1530,6 +1530,46 @@ fn the_lifetime_views_keep_the_folded_tail_in_every_simulation() {
 }
 
 #[test]
+fn the_bootstraps_take_a_one_value_pattern_as_its_tail() {
+    // Decision 20: `{120: 1.05}` on RAA, the oldest age, is the implied
+    // tail 1.05, a constant the ODP bootstrap draws as a given one, and
+    // the one-year views take it from the method as any implied tail.
+    let raa = triangle("raa");
+    let one = || SelectedPattern::new(PatternKind::AgeToUltimate, vec![(120, 1.05)]);
+    let odp = |pattern: Option<SelectedPattern>, tail: Tail| OdpBootstrap {
+        pattern,
+        tail,
+        n_sims: 200,
+        seed: 11,
+        ..Default::default()
+    };
+    let by_value = odp(Some(one()), Tail::default())
+        .fit(&raa, "values")
+        .unwrap();
+    let by_tail = odp(None, Tail::from(1.05)).fit(&raa, "values").unwrap();
+    assert_eq!(by_value.chain_ladder.pattern_tail, Some(1.05));
+    assert_all(
+        by_value.reserves.draw_matrix(),
+        by_tail.reserves.draw_matrix(),
+        1e-13,
+        "ODP, one value against its tail",
+    );
+    let method = OneYearMethod::ChainLadder(chain_ladder(one(), Tail::default()));
+    let year = odp(None, Tail::default())
+        .one_year(&raa, "values", &method)
+        .unwrap();
+    assert_eq!(year.bootstrap.chain_ladder.pattern_tail, Some(1.05));
+    let year = MackBootstrap {
+        n_sims: 50,
+        seed: 4,
+        ..Default::default()
+    }
+    .one_year(&raa, "values", &method)
+    .unwrap();
+    assert_eq!(year.bootstrap.mack.chain_ladder.pattern_tail, Some(1.05));
+}
+
+#[test]
 fn the_one_year_views_carry_the_folded_tail() {
     let raa = triangle("raa");
     let method = |tail: Tail| OneYearMethod::ChainLadder(chain_ladder(past_raa(), tail));

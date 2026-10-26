@@ -123,10 +123,10 @@ impl Default for PatternWeight {
 ///   the tail's).
 /// * A cumulative pattern ([`PatternKind::AgeToUltimate`] or
 ///   [`PatternKind::PercentDeveloped`]) selects the factors between its
-///   first and last ages, `CDF(a_k) / CDF(a_k+1)`. A
-///   development age it skips is interpolated: between two given ages `b <
-///   c`, `ln CDF` is linear in the age, so the link from `a_k` to `a_k+1`
-///   is `(CDF(b) / CDF(c))^((a_k+1 - a_k) / (c - b))` (percents developed
+///   first and last ages, `CDF(a_k) / CDF(a_k+1)`. A development age it
+///   skips is interpolated: between two given ages `b < c`, `ln CDF` is
+///   linear in the age, so the link from `a_k` to `a_k+1` is
+///   `(CDF(b) / CDF(c))^((a_k+1 - a_k) / (c - b))` (percents developed
 ///   are converted to CDFs first). Ages before the first and after the
 ///   last given age stay estimated.
 /// * A cumulative pattern's level at its last age selects no factor. With
