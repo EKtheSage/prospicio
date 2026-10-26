@@ -11,7 +11,9 @@
 //! with Mack's process), Mack's bootstrap of the lifetime view
 //! ([`MackBootstrap::fit`]), and Clark's growth curves
 //! ([`ClarkLdf`], [`ClarkCapeCod`]), and selected development patterns
-//! ([`SelectedPattern`], decision 12) (`docs/design/reserving-v02.md`).
+//! ([`SelectedPattern`], decision 12), and a growth curve fitted to a
+//! benchmark pattern ([`BenchmarkCurve`], decision 20)
+//! (`docs/design/reserving-v02.md`).
 //! Results are checked against R ChainLadder and chainladder-python in
 //! `validation/tests/reserving*.rs`.
 //!
@@ -44,6 +46,7 @@
 pub mod backtest;
 #[cfg(feature = "bayes")]
 pub mod bayes;
+pub mod benchmark_curve;
 pub mod bootstrap;
 pub mod chain_ladder;
 pub mod clark;
@@ -74,6 +77,7 @@ pub use bayes::{
     BayesBf, BayesBfFit, BayesBfNormalised, BayesBfNormalisedFit, BayesOdp, BayesOdpFit,
     LayerSharePrior, Meyers, MeyersFit, MeyersModel, ShareDependence,
 };
+pub use benchmark_curve::{BenchmarkCurve, BenchmarkCurveFit};
 pub use bootstrap::{
     OdpBootstrap, OdpBootstrapFit, OdpBootstrapFits, OdpBootstrapSegment, ProcessDistribution,
 };
