@@ -76,7 +76,7 @@ pub enum Error {
     /// An a-priori loss ratio by origin does not line up with the origins
     /// fitted: an origin without one, one for an origin the triangle or
     /// diagonal does not have, an origin given twice or the wrong number of
-    /// values in origin order (`reserving-v02.md` decision 20).
+    /// values in origin order (`reserving-v02.md` decision 22).
     Apriori(String),
     /// A method setting is out of its range; `expected` describes the range.
     InvalidSetting {

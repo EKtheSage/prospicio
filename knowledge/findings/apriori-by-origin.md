@@ -18,7 +18,7 @@ sources:
     title: The unit test of the one-year view's closed form with one loss ratio per origin
   - id: design
     resource: ../docs/design/reserving-v02.md
-    title: The design note, decision 20 (an a-priori loss ratio per origin)
+    title: The design note, decision 22 (an a-priori loss ratio per origin)
 ---
 
 # What was found

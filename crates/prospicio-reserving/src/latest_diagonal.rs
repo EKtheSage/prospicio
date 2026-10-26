@@ -747,7 +747,7 @@ impl ExpectedLoss {
     /// [`ChainLadder::fit_diagonal`]. A keyed [`Apriori`](crate::Apriori)
     /// is matched to the diagonal's origins; values in order
     /// ([`Apriori::InOrder`](crate::Apriori::InOrder)) need the rows given
-    /// oldest first, and otherwise are an error (decision 20, item 4).
+    /// oldest first, and otherwise are an error (decision 22, item 4).
     pub fn fit_diagonal(&self, diagonal: &LatestDiagonal) -> Result<ExpectedLossFit> {
         self.as_benktander().fit_diagonal(diagonal)
     }

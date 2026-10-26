@@ -31,7 +31,7 @@ use crate::triangle::{Segment, Triangle};
 
 /// The a-priori loss ratio of the expected loss, Bornhuetter-Ferguson and
 /// Benktander methods: one for every origin, or one per origin
-/// (`reserving-v02.md` decision 20). A number converts to one for every
+/// (`reserving-v02.md` decision 22). A number converts to one for every
 /// origin, so `apriori: 0.7.into()` is the single loss ratio.
 ///
 /// One per origin is keyed by origin period ([`Apriori::by_origin`], or
