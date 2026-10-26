@@ -47,6 +47,12 @@ sources:
 * **An untruncated curve stays below 100%.** A benchmark that reaches 1 at
   a finite age cannot be fitted there without `max_age`; with it the
   pattern is exactly 1 at `max_age`.
+* **A benchmark that does not increase runs off to an edge.** On flat
+  percents (0.5 at 12, 24 and 36 months) the least-squares search drives
+  omega to about 1e-17, and on decreasing ones (0.5, 0.4, 0.3) theta
+  overflows to `f64::MAX` with omega near 6e-4; both converge to a flat
+  line near the mean. `fit` therefore returns an error when omega leaves
+  [1e-6, 1e6] or `|ln theta|` passes 700.
 
 # Where it is used
 

@@ -3619,7 +3619,13 @@ Each item is proposed, for the user's acceptance:
    weights finite and not negative, one per value, at least two ages with
    positive weight, `max_age` at least the last age. Percents above 1 are
    accepted (the curve then fits them as best it can below 1), as a
-   `SelectedPattern` accepts them.
+   `SelectedPattern` accepts them. The fit is checked too: a fit that runs
+   off to the edge of the parameters, omega below 1e-6 or above 1e6 or
+   `|ln theta|` above 700 (below the overflow of `exp` at about 709.8), is
+   an error. A flat or decreasing benchmark does this: the search drives
+   omega to 0 or theta past `f64::MAX`, and the result is a flat line, not
+   a growth curve. The check is on the fit, not on monotone input, so a
+   noisy benchmark with a small dip still fits.
 6. **The start** is the weighted straight line of `logit p` (log-logistic)
    or `ln(-ln(1 - p))` (Weibull) on the log curve age, over the percents in
    (0, 1); it is exact for an exact untruncated curve. Clark's (R's) start

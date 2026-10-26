@@ -124,6 +124,9 @@ def test_errors():
         BenchmarkCurve(max_age=60.0).fit(BENCH)
     with pytest.raises(TypeError, match="dict"):
         BenchmarkCurve().fit(PERCENT)
+    for flat_or_decreasing in ({12: 0.5, 24: 0.5, 36: 0.5}, {12: 0.5, 24: 0.4, 36: 0.3}):
+        with pytest.raises(ValueError, match="edge of the parameters"):
+            BenchmarkCurve().fit(flat_or_decreasing)
     fit = BenchmarkCurve().fit(BENCH)
     with pytest.raises(ValueError, match="given twice"):
         fit.selected([12, 12])

@@ -10,3 +10,5 @@
   and the expected-loss methods whose level at the oldest age is the
   curve's tail. Matches `scipy.optimize.least_squares` (Python
   `BenchmarkCurve`, R `benchmark_curve()`, `benchmark_selected()`; #637, #640).
+  A flat or decreasing benchmark, which sends the fit to the edge of the
+  parameters, is an error.

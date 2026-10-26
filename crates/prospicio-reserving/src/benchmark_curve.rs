@@ -118,6 +118,15 @@ pub struct BenchmarkCurveFit {
     pub sum_of_squares: f64,
 }
 
+/// The smallest and largest omega a fit may give: outside them the curve is
+/// flat or a step, an edge the search runs off to on a benchmark that does
+/// not increase.
+const MIN_OMEGA: f64 = 1e-6;
+const MAX_OMEGA: f64 = 1e6;
+/// The largest `|ln theta|` a fit may give, below the overflow of `exp`
+/// (about 709.8).
+const MAX_LN_THETA: f64 = 700.0;
+
 /// The linearized percent developed: `logit p` for the log-logistic,
 /// `ln(-ln(1 - p))` for the Weibull, each `omega ln x - omega ln theta`.
 fn linearized(curve: GrowthCurve, p: f64) -> f64 {
@@ -134,7 +143,9 @@ impl BenchmarkCurve {
     /// error, since they give no level to fit. `weights`, one per value in
     /// the same order, finite and not negative, weight the squared
     /// residuals; `None` weights every age 1. At least two distinct ages
-    /// with positive weight are needed.
+    /// with positive weight are needed. A fit that runs off to the edge of
+    /// the parameters (omega below 1e-6 or above 1e6, `|ln theta|` above
+    /// 700), as a flat or decreasing benchmark makes it, is an error.
     pub fn fit(
         &self,
         kind: PatternKind,
@@ -239,6 +250,18 @@ impl BenchmarkCurve {
         let min = nelder_mead(objective, &x0, &options);
         if !min.converged || !min.value.is_finite() {
             return bad("the least-squares search did not converge".into());
+        }
+        // A benchmark the curve cannot follow (flat or decreasing percents)
+        // sends the search off to an edge: omega to 0 or theta past the
+        // range of `exp`. Such a fit is not a growth curve, so it is an error.
+        let (ln_omega, ln_theta) = (min.x[0], min.x[1]);
+        if !(MIN_OMEGA.ln()..=MAX_OMEGA.ln()).contains(&ln_omega)
+            || !(-MAX_LN_THETA..=MAX_LN_THETA).contains(&ln_theta)
+        {
+            return bad(format!(
+                "the fit ran off to the edge of the parameters (omega {:e}, ln theta {ln_theta:.1}):                  the benchmark's percents developed do not increase with age",
+                ln_omega.exp()
+            ));
         }
         let mut fit = shape(min.x[0].exp(), min.x[1].exp());
         fit.fitted = ages.iter().map(|&a| fit.percent_developed(a)).collect();
@@ -505,6 +528,24 @@ mod tests {
             s.fit(PatternKind::PercentDeveloped, &ok, Some(&[1.0, 0.0]))
                 .is_err()
         );
+        let decreasing = [(12.0, 0.5), (24.0, 0.4), (36.0, 0.3)];
+        let flat = [(12.0, 0.5), (24.0, 0.5), (36.0, 0.5)];
+        for curve in [GrowthCurve::LogLogistic, GrowthCurve::Weibull] {
+            let c = BenchmarkCurve { curve, ..s };
+            for values in [&decreasing, &flat] {
+                for kind in [PatternKind::PercentDeveloped, PatternKind::AgeToUltimate] {
+                    let v: Vec<(f64, f64)> = values
+                        .iter()
+                        .map(|&(a, p)| match kind {
+                            PatternKind::AgeToUltimate => (a, 1.0 / p),
+                            _ => (a, p),
+                        })
+                        .collect();
+                    let err = c.fit(kind, &v, None).unwrap_err();
+                    assert!(matches!(err, Error::BenchmarkCurve(_)), "{err}");
+                }
+            }
+        }
         let short = BenchmarkCurve {
             max_age: Some(18.0),
             ..s
