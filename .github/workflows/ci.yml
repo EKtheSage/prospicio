@@ -65,6 +65,9 @@ jobs:
       # debug tests from about 7 minutes to about 1.
       - run: cargo clippy --all-targets --features prospicio-validation/slow-bayes -- -D warnings
       - run: cargo test
+      # Rustdoc with warnings denied, as the docs job runs it (cargo xtask rust),
+      # but on every PR: a crate-only PR does not trigger the docs job.
+      - run: cargo xtask rust
       # The crates in the WASM scope (docs/architecture.md, "Open
       # decisions") build for the browser.
       - run: cargo check --target wasm32-unknown-unknown -p prospicio-core -p prospicio-math -p prospicio-prob -p prospicio-aggregate -p prospicio-pricing -p prospicio-reserving -p prospicio

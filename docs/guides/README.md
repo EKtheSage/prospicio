@@ -13,12 +13,20 @@ their results show there (the repository keeps the notebooks without outputs).
 `cargo xtask python` builds that User Guide from this folder: every `.md` file
 here but this README becomes a page, its first `#` heading the page's title,
 and a link to a notebook in `examples/` points to the notebook's page.
-Pages go under "Guides" in the sidebar, except a track's, which get a section
-of their own (`GUIDE_SECTIONS` in `xtask/src/main.rs`: the `cat-` guides under
-"Property catastrophe reinsurance", in the order of their names).
-The R twins (the `.qmd` files) are pages too, under "Articles" on the R site:
-`cargo xtask r` stages each one as a pkgdown article, grouped as in the
-[reading list](reading-list.md).
+The table of contents of both sites is [`toc.yml`](toc.yml) in this folder:
+its sections (Start here, Basics, Fitting distributions, Reserving, Pricing,
+Property catastrophe reinsurance, Capital modelling and allocation), in order,
+each with its pages in reading order. A page is a guide here or a notebook in
+`examples/`, so the notebooks sit in the section of their subject, not in a
+section of their own. The Python site's sidebar shows the sections and pages
+in that order (`cargo xtask python` numbers the staged files). The R twins
+(the `.qmd` files) are pages too, under "Articles" on the R site:
+`cargo xtask r` stages each one as a pkgdown article and writes the articles
+index from `toc.yml`, with the pages that have an R twin. A new guide or
+notebook needs an entry in `toc.yml`; both builds fail with a list of the
+files that are missing from it or that it names but are not there.
+The [reading list](reading-list.md) groups the source texts in the same
+sections.
 
 Every guide's code is tested. `python/tests/test_guides.py` runs each guide's
 ```` ```python ```` blocks in order in one namespace, and when a block is
@@ -160,15 +168,13 @@ twins in [`examples/`](../../examples/README.md):
 Each R chunk is followed by the text it prints, and
 `R/prospicio/tests/test-guides.R` (run by CI's R job with the other R tests) runs
 every `.qmd` here and requires each chunk to print exactly that text. The `.qmd`
-files are the R site's articles (`R/prospicio/_pkgdown.yml`, "articles"):
+files are the R site's articles (`R/prospicio/_pkgdown.yml` holds the rest of the site's configuration):
 `cargo xtask r` copies each into `R/prospicio/vignettes/articles` (gitignored)
 as R Markdown before pkgdown builds the site, with links to a Python guide
 pointing to its page on the Python site and links to a sibling `.qmd` to its
 article. The site does not run a guide's chunks; it shows each with the text
-block that the harness checks. The articles index lists the guides by name in
-reading order, and takes in a new guide whose name starts like an existing
-family's (`reserving-`, `pir-`, ...); a guide with a new prefix is shown
-under "More articles" until it is given a line there. With the R package installed, render one
+block that the harness checks. The articles index is generated from [`toc.yml`](toc.yml), so it lists the
+guides and notebooks in the same sections and order as the Python site. With the R package installed, render one
 with `quarto render docs/guides/prospicio-for-aggregate-users.qmd`, or check them
 all from the repository root with `Rscript R/prospicio/tests/test-guides.R`.
 Two blocks in `reserving-meyers` (the heavy Bayesian fits) are plain code fences
