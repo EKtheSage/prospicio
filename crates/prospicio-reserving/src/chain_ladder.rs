@@ -150,6 +150,30 @@ impl ChainLadder {
     /// estimate past the oldest age to blend with, and keying one to the
     /// fold would need an age that no link of the triangle starts.
     pub(crate) fn pattern_tail_of(&self, resolved: &Resolved, ages: &[Lag]) -> Result<Option<f64>> {
+        if resolved.is_tail_only() {
+            // One value at the oldest age is the tail (decision 20): with a
+            // tail of its own, or blended, it would select nothing.
+            let age = ages.last().copied();
+            if !self.tail.is_none() {
+                return Err(Error::Pattern {
+                    age,
+                    reason: "a cumulative pattern with one value is the tail, and a tail is \
+                             given: give no tail, or two or more ages",
+                });
+            }
+            if !self
+                .development
+                .pattern
+                .as_ref()
+                .is_some_and(fully_selected)
+            {
+                return Err(Error::Pattern {
+                    age,
+                    reason: "a cumulative pattern with one value is the tail, taken at full \
+                             weight: give it weight 1",
+                });
+            }
+        }
         let Some(beyond) = &resolved.beyond else {
             return Ok(if self.tail.is_none() {
                 resolved.implied_tail(ages)
@@ -162,11 +186,7 @@ impl ChainLadder {
             .pattern
             .as_ref()
             .expect("a resolved pattern");
-        let fully = match &pattern.weight {
-            PatternWeight::All(w) => *w == 1.0,
-            PatternWeight::ByAge(by_age) => by_age.iter().all(|&(_, w)| w == 1.0),
-        };
-        if !fully {
+        if !fully_selected(pattern) {
             return Err(Error::Pattern {
                 age: ages.last().copied(),
                 reason: "a pattern that runs past the oldest age folds into the tail at full \
@@ -415,6 +435,14 @@ impl ChainLadderFit {
             values.push(values[values.len() - 1] * f);
         }
         values
+    }
+}
+
+/// Whether every weight of `pattern` is 1.
+fn fully_selected(pattern: &SelectedPattern) -> bool {
+    match &pattern.weight {
+        PatternWeight::All(w) => *w == 1.0,
+        PatternWeight::ByAge(by_age) => by_age.iter().all(|&(_, w)| w == 1.0),
     }
 }
 

@@ -179,7 +179,11 @@ for (case in list(
   near(sel_fit@pattern_rescale, case[[3]][2] / sel_fit@cdf[2])
 }
 expect_error_like(chain_ladder(tri, "paid", ldf = c("12" = 1.5), ldf_kind = "cdf"),
-                  "two or more ages")
+                  "one value is the tail from its age")
+expect_error_like(chain_ladder(tri, "paid", ldf = c("60" = 1.05), ldf_kind = "cdf", tail = 1.05),
+                  "a tail is given")
+expect_error_like(chain_ladder(tri, "paid", ldf = c("60" = 1.05), ldf_kind = "cdf",
+                               ldf_weight = 0.5), "taken at full weight")
 expect_error_like(chain_ladder(tri, "paid", ldf = sel, ldf_kind = "ldf", ldf_weight = 1.5),
                   "between 0 and 1")
 expect_error_like(chain_ladder(tri, "paid", ldf = sel[1], ldf_kind = "ldf",
@@ -235,3 +239,42 @@ gap <- chain_ladder(tri, "paid", ldf = c("12" = 0.5, "60" = 0.98), ldf_kind = "p
 near(gap@selected_ldf, rep((0.98 / 0.5)^0.25, 4))
 
 cat("test-reserving-patterns.R: ok\n")
+
+# Issue #632: a diagonal-only triangle and one origin at one age, through
+# the methods on a triangle with a selected pattern to ultimate at weight 1.
+cdf_632 <- c("12" = 3, "24" = 1.8, "36" = 1.35, "48" = 1.12, "60" = 1)
+five_methods_by_hand <- function(tri, ldf, paid, cdf) {
+  reported <- 1 / cdf
+  near(chain_ladder(tri, "paid", ldf = ldf, ldf_kind = "cdf", ldf_weight = 1)@ultimate,
+       paid * cdf)
+  bf <- paid + 0.7 * 1500 * (1 - reported)
+  near(bornhuetter_ferguson(tri, "paid", "premium", apriori = 0.7, ldf = ldf, ldf_kind = "cdf",
+                            ldf_weight = 1)@ultimate, bf)
+  near(expected_loss(tri, "paid", "premium", apriori = 0.7, ldf = ldf, ldf_kind = "cdf",
+                     ldf_weight = 1)@ultimate, rep(0.7 * 1500, length(paid)))
+  near(benktander(tri, "paid", "premium", apriori = 0.7, n_iters = 2, ldf = ldf,
+                  ldf_kind = "cdf", ldf_weight = 1)@ultimate, paid + bf * (1 - reported))
+  elr <- sum(paid) / sum(1500 * reported)
+  near(cape_cod(tri, "paid", "premium", ldf = ldf, ldf_kind = "cdf", ldf_weight = 1)@ultimate,
+       paid + elr * 1500 * (1 - reported))
+}
+paid_632 <- c(1000, 800, 600, 400, 200)
+diag_632 <- triangle(data.frame(year = 2020:2024, age = c(60, 48, 36, 24, 12), paid = paid_632,
+                                premium = 1500), "year", "age", c("paid", "premium"))
+five_methods_by_hand(diag_632, cdf_632, paid_632, c(1, 1.12, 1.35, 1.8, 3))
+near(chain_ladder(diag_632, "paid", ldf = cdf_632, ldf_kind = "cdf", ldf_weight = 1)@ultimate,
+     c(1000, 896, 810, 720, 600))
+one_632 <- triangle(data.frame(year = 2024, age = 12, paid = 200, premium = 1500), "year", "age",
+                    c("paid", "premium"))
+five_methods_by_hand(one_632, cdf_632, 200, 3)
+# One value to ultimate at the only age is the tail from it.
+five_methods_by_hand(one_632, c("12" = 3), 200, 3)
+one_fit <- chain_ladder(one_632, "paid", ldf = c("12" = 3), ldf_kind = "cdf", ldf_weight = 1)
+near(one_fit@ultimate, 600)
+near(one_fit@pattern_tail, 3)
+near(one_fit@pattern_rescale, 1)
+near(chain_ladder(one_632, "paid", ldf = c("12" = 1 / 3),
+                  ldf_kind = "percent_developed")@ultimate, 600)
+older_632 <- triangle(data.frame(year = 2021, age = 48, paid = 800, premium = 1500), "year",
+                      "age", c("paid", "premium"))
+five_methods_by_hand(older_632, cdf_632, 800, 1.12)

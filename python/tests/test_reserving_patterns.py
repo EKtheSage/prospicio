@@ -282,7 +282,9 @@ def test_argument_errors(kwargs, error, match):
         ({"ldf": {12: 0.0}, "ldf_kind": "ldf"}, "finite and positive"),
         ({"ldf": {12: -0.5, 24: 1.2}, "ldf_kind": "percent_developed"}, "finite and positive"),
         ({"ldf": {12: 0.0, 24: 1.2}, "ldf_kind": "cdf"}, "finite and positive"),
-        ({"ldf": {12: 1.5}, "ldf_kind": "cdf"}, "two or more ages"),
+        ({"ldf": {12: 1.5}, "ldf_kind": "cdf"}, "one value is the tail from its age"),
+        ({"ldf": {60: 1.05}, "ldf_kind": "cdf", "tail": 1.05}, "a tail is given"),
+        ({"ldf": {60: 1.05}, "ldf_kind": "cdf", "ldf_weight": 0.5}, "taken at full weight"),
         ({"ldf": {12: 1.5}, "ldf_kind": "ldf", "ldf_weight": 1.5}, "between 0 and 1"),
         ({"ldf": {12: 1.5}, "ldf_kind": "ldf", "ldf_weight": {24: 0.5}}, "no selected factor"),
         (
@@ -414,3 +416,57 @@ def test_cumulative_patterns_need_only_be_positive(tri, ldf, kind, cdf):
     # level at age 24 is rescaled to the factors in use from there on.
     assert fit.pattern_tail is None
     assert fit.pattern_rescale == pytest.approx(cdf[1] / fit.cdf[1], rel=1e-12)
+
+
+# Issue #632: a diagonal-only triangle and one origin at one age, through
+# ``fit(triangle, ...)`` with a selected pattern to ultimate at weight 1.
+CDF_632 = {12: 3.0, 24: 1.8, 36: 1.35, 48: 1.12, 60: 1.0}
+
+
+def five_methods_by_hand(tri, ldf, paid, cdf):
+    """The chain ladder, BF and the expected loss method at an ELR of 0.7,
+    Benktander's two iterations and Cape Cod, against the hand formulas
+    with each origin's factor to ultimate ``cdf`` and 1,500 of premium."""
+    args = {"ldf": ldf, "ldf_kind": "cdf", "ldf_weight": 1.0}
+    reported = [1 / c for c in cdf]
+    close(ChainLadder(**args).fit(tri, "paid").ultimate, [l * c for l, c in zip(paid, cdf)])
+    bf = [l + 0.7 * 1500 * (1 - p) for l, p in zip(paid, reported)]
+    fit = BornhuetterFerguson(apriori=0.7, **args).fit(tri, "paid", "premium")
+    close(fit.ultimate, bf)
+    fit = ExpectedLoss(apriori=0.7, **args).fit(tri, "paid", "premium")
+    close(fit.ultimate, [0.7 * 1500] * len(paid))
+    fit = Benktander(apriori=0.7, n_iters=2, **args).fit(tri, "paid", "premium")
+    close(fit.ultimate, [l + b * (1 - p) for l, b, p in zip(paid, bf, reported)])
+    elr = sum(paid) / sum(1500 * p for p in reported)
+    fit = CapeCod(**args).fit(tri, "paid", "premium")
+    close(fit.ultimate, [l + elr * 1500 * (1 - p) for l, p in zip(paid, reported)])
+
+
+def test_issue_632_a_diagonal_only_triangle():
+    paid = [1000.0, 800.0, 600.0, 400.0, 200.0]
+    tri = Triangle.from_long(
+        [2020, 2021, 2022, 2023, 2024], [60, 48, 36, 24, 12],
+        {"paid": paid, "premium": [1500.0] * 5},
+    )
+    five_methods_by_hand(tri, CDF_632, paid, [1.0, 1.12, 1.35, 1.8, 3.0])
+    fit = ChainLadder(ldf=CDF_632, ldf_kind="cdf", ldf_weight=1.0).fit(tri, "paid")
+    close(fit.ultimate, [1000.0, 896.0, 810.0, 720.0, 600.0])
+    fit = BornhuetterFerguson(apriori=0.7, ldf=CDF_632, ldf_kind="cdf", ldf_weight=1.0).fit(
+        tri, "paid", "premium"
+    )
+    close(fit.ultimate[:2] + fit.ultimate[4:], [1000.0, 912.5, 900.0])
+
+
+def test_issue_632_one_origin_at_one_age():
+    tri = Triangle.from_long([2024], [12], {"paid": [200.0], "premium": [1500.0]})
+    five_methods_by_hand(tri, CDF_632, [200.0], [3.0])
+    # One value to ultimate at the only age is the tail from it.
+    five_methods_by_hand(tri, {12: 3.0}, [200.0], [3.0])
+    fit = ChainLadder(ldf={12: 3.0}, ldf_kind="cdf", ldf_weight=1.0).fit(tri, "paid")
+    close(fit.ultimate, [600.0])
+    assert fit.pattern_tail == pytest.approx(3.0)
+    assert fit.pattern_rescale == pytest.approx(1.0)
+    fit = ChainLadder(ldf={12: 1 / 3}, ldf_kind="percent_developed").fit(tri, "paid")
+    close(fit.ultimate, [600.0])
+    older = Triangle.from_long([2021], [48], {"paid": [800.0], "premium": [1500.0]})
+    five_methods_by_hand(older, CDF_632, [800.0], [1.12])
