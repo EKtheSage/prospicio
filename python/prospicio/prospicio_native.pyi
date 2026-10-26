@@ -5988,8 +5988,8 @@ class ClarkFit:
         One row per segment: the key columns, the segment's total
         ``latest``, ``ultimate`` and ``reserve``, the ``process_risk``,
         ``parameter_risk`` and ``standard_error`` of its total reserve, and
-        its ``omega``, ``theta``, ``scale`` and (Cape Cod) ``elr``. Needs
-        pandas.
+        its ``omega``, ``theta``, ``scale`` and (Cape Cod) ``elr`` and
+        ``ulr``, the total ultimate over the total exposure. Needs pandas.
         
         Returns
         -------

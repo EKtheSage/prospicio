@@ -57,8 +57,9 @@ exposure (the expected-loss methods, Clark's Cape Cod, \code{\link[=bayes_bf]{ba
 exposure is the premium) ends its own columns with \code{ulr}, the table's
 \code{ultimate} over the exposure (for the Bayesian fits the chain ladder's
 ultimate), a loss ratio only when the exposure is premium; the Bayesian
-one-year views name it \code{opening_ulr}, and \code{totals_frame()} has the total
-ultimate over the total exposure.
+one-year views have \code{opening_ulr} instead, the opening ultimate (the
+latest value plus the posterior mean opening reserve) over the exposure,
+and \code{totals_frame()} has the total ultimate over the total exposure.
 \code{totals_frame()} has one row per segment with the same quantities for
 the segment's total (for the expected-loss methods the total \code{exposure},
 for the ODP bootstrap, its one-year view, \code{\link[=bayes_odp]{bayes_odp()}},

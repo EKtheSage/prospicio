@@ -4578,8 +4578,9 @@ check_fit <- function(fit) {
 #' exposure is the premium) ends its own columns with `ulr`, the table's
 #' `ultimate` over the exposure (for the Bayesian fits the chain ladder's
 #' ultimate), a loss ratio only when the exposure is premium; the Bayesian
-#' one-year views name it `opening_ulr`, and `totals_frame()` has the total
-#' ultimate over the total exposure.
+#' one-year views have `opening_ulr` instead, the opening ultimate (the
+#' latest value plus the posterior mean opening reserve) over the exposure,
+#' and `totals_frame()` has the total ultimate over the total exposure.
 #' `totals_frame()` has one row per segment with the same quantities for
 #' the segment's total (for the expected-loss methods the total `exposure`,
 #' for the ODP bootstrap, its one-year view, [bayes_odp()],
