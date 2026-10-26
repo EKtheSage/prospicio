@@ -12821,8 +12821,14 @@ const STARTS: [(&str, CompartmentalStart); 2] = [
 /// triangle has one) draws its effects from the population in each
 /// simulation, and so does a development age with no observed cell. The
 /// reserve is the paid at the square's last age less the latest paid; the
-/// square has as many ages as the premium column has origins, and the
-/// origin and development grains must be equal. One ``seed`` replays a fit
+/// square runs for as many origin periods as the premium column has
+/// origins, in development periods (40 quarterly ages for ten annual
+/// origins). The development grain may be finer than the origin grain
+/// (the triangle's own grains), and each cell's development time is its
+/// age in years on every grain, so the rates are per year and an
+/// incremental paid cell is the increment over one development period.
+/// The coming year of ``one_year`` is the next twelve months of calendar
+/// time, up to four quarterly cells per origin. One ``seed`` replays a fit
 /// exactly: the chains and the simulations each take a seed derived from
 /// it.
 ///
@@ -13183,10 +13189,9 @@ impl PyCompartmental {
     ///     ``rate_order`` is not ``"ordered"``; if not exactly one of
     ///     ``outstanding`` and ``incurred`` is given (at most one under
     ///     ``"paid_only"``); if a column is
-    ///     missing, the triangle has several segments, a premium is missing
-    ///     or not positive, or the origin and development grains differ; if
-    ///     a prior or sampler setting is invalid; or if there are no more
-    ///     observed cells than parameters.
+    ///     missing, the triangle has several segments, or a premium is
+    ///     missing or not positive; if a prior or sampler setting is
+    ///     invalid; or if there are no more observed cells than parameters.
     #[pyo3(signature = (triangle, paid, premium, *, outstanding = None, incurred = None))]
     fn fit(
         &self,
@@ -13602,8 +13607,8 @@ impl PyCompartmental {
     /// Raises
     /// ------
     /// ValueError
-    ///     If a prior setting is invalid, ``n_sims`` is 0, the premium
-    ///     column is missing or not positive, or the grains differ.
+    ///     If a prior setting is invalid, ``n_sims`` is 0, or the premium
+    ///     column is missing or not positive.
     #[pyo3(signature = (triangle, premium, n_sims = 1000))]
     fn prior_predictive<'py>(
         &self,
