@@ -5684,7 +5684,7 @@ fn real_age_values(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<Vec<(f64, f64
 }
 
 /// A growth curve fitted to a benchmark pattern (issue #637; design note
-/// ``reserving-v02.md``, decision 20): Clark's log-logistic or Weibull
+/// ``reserving-v02.md``, decision 23): Clark's log-logistic or Weibull
 /// curve ``G`` by weighted least squares on the percents developed, which
 /// gives the pattern at any age, a smooth pattern between the benchmark's
 /// ages and a tail past its last.

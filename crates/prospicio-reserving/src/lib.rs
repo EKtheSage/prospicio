@@ -12,7 +12,7 @@
 //! ([`MackBootstrap::fit`]), and Clark's growth curves
 //! ([`ClarkLdf`], [`ClarkCapeCod`]), and selected development patterns
 //! ([`SelectedPattern`], decision 12), and a growth curve fitted to a
-//! benchmark pattern ([`BenchmarkCurve`], decision 20)
+//! benchmark pattern ([`BenchmarkCurve`], decision 23)
 //! (`docs/design/reserving-v02.md`).
 //! Results are checked against R ChainLadder and chainladder-python in
 //! `validation/tests/reserving*.rs`.

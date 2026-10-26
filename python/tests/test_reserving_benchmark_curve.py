@@ -1,5 +1,5 @@
 """A growth curve fitted to a benchmark pattern (``BenchmarkCurve``,
-``docs/design/reserving-v02.md``, decision 20). The Rust core is checked
+``docs/design/reserving-v02.md``, decision 23). The Rust core is checked
 against scipy's ``least_squares`` in
 ``validation/tests/reserving_benchmark_curve.rs``; these tests check the
 bindings' arguments, the same reference values and the pattern in the chain

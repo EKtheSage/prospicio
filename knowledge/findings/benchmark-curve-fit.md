@@ -18,7 +18,7 @@ sources:
     title: The scipy generator of the reference values
   - id: note
     resource: ../docs/design/reserving-v02.md
-    title: Design note, decision 20
+    title: Design note, decision 23
 ---
 
 # What was found

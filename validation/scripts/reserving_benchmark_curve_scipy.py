@@ -1,7 +1,7 @@
 """Print the reference values of validation/tests/reserving_benchmark_curve.rs.
 
 A growth curve fitted to a benchmark pattern by weighted least squares on the
-percents developed (docs/design/reserving-v02.md, decision 20), with
+percents developed (docs/design/reserving-v02.md, decision 23), with
 scipy.optimize.least_squares. Run from the repository root:
 
     uv run --no-project --with scipy==1.18.1 --with numpy==2.5.4 python validation/scripts/reserving_benchmark_curve_scipy.py

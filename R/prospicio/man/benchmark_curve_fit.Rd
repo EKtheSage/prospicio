@@ -65,7 +65,7 @@ vector, one value per age. \code{benchmark_selected()}: a list of \code{ldf},
 \description{
 Fits Clark's log-logistic or Weibull growth curve \code{G} to a benchmark
 pattern by weighted least squares on the percents developed (issue #637;
-design note \code{docs/design/reserving-v02.md}, decision 20). The fit gives
+design note \code{docs/design/reserving-v02.md}, decision 23). The fit gives
 the pattern at any age, a smooth pattern between the benchmark's ages and
 a tail past its last. The parameters match \code{scipy.optimize.least_squares}
 (\code{validation/tests/reserving_benchmark_curve.rs}).

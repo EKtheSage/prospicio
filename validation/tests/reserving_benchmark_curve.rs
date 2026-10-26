@@ -1,5 +1,5 @@
 //! Benchmark-curve parity: `BenchmarkCurve` against
-//! `scipy.optimize.least_squares` (`reserving-v02.md`, decision 20).
+//! `scipy.optimize.least_squares` (`reserving-v02.md`, decision 23).
 //!
 //! The reference values come from `scripts/reserving_benchmark_curve_scipy.py`
 //! (scipy 1.18.1, numpy 2.5.4; MINPACK's Levenberg-Marquardt, `method="lm"`,

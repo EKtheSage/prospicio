@@ -1,5 +1,5 @@
 //! A growth curve fitted to a benchmark pattern (`docs/design/reserving-v02.md`,
-//! decision 20; issue #637).
+//! decision 23; issue #637).
 //!
 //! A benchmark pattern comes at a few ages (12, 24, ..., 120 months, say),
 //! as percents developed or factors to ultimate. [`BenchmarkCurve`] fits
