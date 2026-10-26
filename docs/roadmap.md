@@ -467,6 +467,16 @@ what it is aiming for by v1.0.
     `ldf_origin` in both, reproducing the Rust validation's numbers and
     the chainladder-python parity rows. The Excel functions are the next
     PR.
+  - An accident-period pattern on an underwriting basis
+    (`reserving-v02.md`, decision 20; branch `claude/uy-pattern`, issue
+    #633, in Rust, Python and R): `SelectedPattern::to_underwriting_basis`
+    convolves an accident-month or accident-year pattern with an
+    underwriting year's exposure over accident months, from a writing
+    pattern and a policy term (`UnderwritingBasis`, by default the
+    parallelogram), and Python's and R's `ldf_underwriting` apply it beside
+    `ldf_origin`; checked by hand, against the pricing crate's
+    `MonthlyPatterns::from_annual` and on a simulated book's accident-year
+    and underwriting-year triangles.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental
