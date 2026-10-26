@@ -222,26 +222,16 @@ year's losses, and it arrives in the years with losses, so it also lowers the
 tail of the net outcome `X_t - P g_t`. The assets then depend on `P`, and the
 upfront premium solves `P = price(X - P g)`, one equation in one unknown.
 Sundt (1991) and Mata (2000) study premiums with reinstatements in this
-spirit. prospicio has no call for it (#587), so the chunk below
-finds the root by bisection: the price of the net outcome falls as `P`
-rises, so `price(X - P g) - P` changes sign once between 0 and the price
-without reinstatement premium.
+spirit. `price_with_reinstatements` solves it (#587): the price of the
+net outcome falls as `P` rises, so `price(X - P g) - P` changes sign once
+between 0 and the price without reinstatement premium, and the call finds
+that root by bisection.
 
 ```{r}
 g <- rip@draws / lay@premium  # reinstatement premium per unit of upfront premium
-gap <- function(P) {
-  risk_loaded_price(sampled(loss@draws - P * g), distortion("tvar", 0.99), cost_of_capital = 0.10)$premium - P
-}
-lo <- 0
-hi <- p$premium
-while (hi - lo > 1e-10) {
-  mid <- (lo + hi) / 2
-  if (gap(mid) > 0) lo <- mid else hi <- mid
-}
-P <- (lo + hi) / 2
-p_net <- risk_loaded_price(sampled(loss@draws - P * g), distortion("tvar", 0.99), cost_of_capital = 0.10)
-cat(sprintf("upfront premium %.4f, assets of the net outcome %.4f\n", P, p_net$assets))
-cat(sprintf("quoted with 5%% expenses and 10%% brokerage %.4f\n", P / (1 - 0.05 - 0.10)))
+ri <- price_with_reinstatements(loss@draws, g, distortion("tvar", 0.99), cost_of_capital = 0.10)
+cat(sprintf("upfront premium %.4f, assets of the net outcome %.4f\n", ri$upfront, ri$net$assets))
+cat(sprintf("quoted with 5%% expenses and 10%% brokerage %.4f\n", ri$upfront / (1 - 0.05 - 0.10)))
 ```
 
 ```text
@@ -345,8 +335,6 @@ return and the target side by side for a deal (#589).
 
 ## What is missing
 
-- an upfront premium that counts the reinstatement premium in the price, in
-  one call (#587)
 - a report of a deal's price adequacy and return on capital (#589)
 
 ## In Python
