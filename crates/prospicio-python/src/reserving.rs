@@ -4235,13 +4235,14 @@ fn apriori_repr(apriori: &Apriori) -> String {
 /// Parameters
 /// ----------
 /// apriori : float, sequence or dict, default 1.0
-///     Expected loss ratio: the ultimate per unit of exposure, positive: one for every origin, one per origin in origin
-///     order (oldest first, over the triangle's origins or, for a latest
-///     diagonal, its origins), or a dict from origin (its label as fits
-///     report it, ``"2021"`` or ``"2021Q3"``, or an integer year) to its
-///     loss ratio. Every origin fitted needs one; a value for an origin
-///     the triangle does not have is an error. Over segments each segment
-///     takes its own origins' values.
+///     Expected loss ratio: the ultimate per unit of exposure, positive:
+///     one for every origin, one per origin in origin order (oldest first,
+///     over the triangle's origins or, for a latest diagonal, its origins),
+///     or a dict from origin (its label as fits report it, ``"2021"`` or
+///     ``"2021Q3"``, or an integer year) to its loss ratio. Every origin
+///     fitted needs one; a value for an origin the triangle does not have
+///     is an error. Over segments each segment takes its own origins'
+///     values.
 /// average : {"volume", "simple", "regression", "geometric"}, default "volume"
 ///     How link ratios are averaged, as in ``ChainLadder``.
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
@@ -4309,8 +4310,8 @@ impl PyExpectedLoss {
         })
     }
 
-    /// Expected loss ratio: a float, a list in origin order or a dict by origin label,
-    /// as given.
+    /// Expected loss ratio: a float, a list in origin order or a dict by origin
+    /// label, as given.
     #[getter]
     fn apriori<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         apriori_object(py, &self.inner.apriori)
@@ -4485,13 +4486,14 @@ impl PyExpectedLoss {
 /// Parameters
 /// ----------
 /// apriori : float, sequence or dict, default 1.0
-///     Expected loss ratio: the expected ultimate per unit of exposure, positive: one for every origin, one per origin in origin
-///     order (oldest first, over the triangle's origins or, for a latest
+///     Expected loss ratio: the expected ultimate per unit of exposure,
+///     positive: one for every origin, one per origin in origin order
+///     (oldest first, over the triangle's origins or, for a latest
 ///     diagonal, its origins), or a dict from origin (its label as fits
 ///     report it, ``"2021"`` or ``"2021Q3"``, or an integer year) to its
-///     loss ratio. Every origin fitted needs one; a value for an origin
-///     the triangle does not have is an error. Over segments each segment
-///     takes its own origins' values.
+///     loss ratio. Every origin fitted needs one; a value for an origin the
+///     triangle does not have is an error. Over segments each segment takes
+///     its own origins' values.
 /// average : {"volume", "simple", "regression", "geometric"}, default "volume"
 ///     How link ratios are averaged, as in ``ChainLadder``.
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
@@ -4559,8 +4561,8 @@ impl PyBornhuetterFerguson {
         })
     }
 
-    /// Expected loss ratio: a float, a list in origin order or a dict by origin label,
-    /// as given.
+    /// Expected loss ratio: a float, a list in origin order or a dict by origin
+    /// label, as given.
     #[getter]
     fn apriori<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         apriori_object(py, &self.inner.apriori)
@@ -4734,13 +4736,14 @@ impl PyBornhuetterFerguson {
 /// Parameters
 /// ----------
 /// apriori : float, sequence or dict, default 1.0
-///     Expected loss ratio of the starting ultimate, positive: one for every origin, one per origin in origin
-///     order (oldest first, over the triangle's origins or, for a latest
-///     diagonal, its origins), or a dict from origin (its label as fits
-///     report it, ``"2021"`` or ``"2021Q3"``, or an integer year) to its
-///     loss ratio. Every origin fitted needs one; a value for an origin
-///     the triangle does not have is an error. Over segments each segment
-///     takes its own origins' values.
+///     Expected loss ratio of the starting ultimate, positive: one for
+///     every origin, one per origin in origin order (oldest first, over the
+///     triangle's origins or, for a latest diagonal, its origins), or a
+///     dict from origin (its label as fits report it, ``"2021"`` or
+///     ``"2021Q3"``, or an integer year) to its loss ratio. Every origin
+///     fitted needs one; a value for an origin the triangle does not have
+///     is an error. Over segments each segment takes its own origins'
+///     values.
 /// n_iters : int, default 1
 ///     Number of Bornhuetter–Ferguson steps.
 /// average : {"volume", "simple", "regression", "geometric"}, default "volume"
@@ -4812,8 +4815,8 @@ impl PyBenktander {
         })
     }
 
-    /// Expected loss ratio of the starting ultimate: a float, a list in origin order or a dict by origin label,
-    /// as given.
+    /// Expected loss ratio of the starting ultimate: a float, a list in origin
+    /// order or a dict by origin label, as given.
     #[getter]
     fn apriori<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         apriori_object(py, &self.inner.apriori)
