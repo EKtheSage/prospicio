@@ -3021,7 +3021,8 @@ class Benktander:
         ``"2021Q3"``, or an integer year) to its loss ratio. Every origin
         fitted needs one; a value for an origin the triangle does not have
         is an error. Over segments each segment takes its own origins'
-        values.
+        values. A pandas Series is read in order and its index is not
+        read: to key by origin, pass a dict.
     n_iters : int, default 1
         Number of Bornhuetter–Ferguson steps.
     average : {"volume", "simple", "regression", "geometric"}, default "volume"
@@ -3755,7 +3756,8 @@ class BornhuetterFerguson:
         report it, ``"2021"`` or ``"2021Q3"``, or an integer year) to its
         loss ratio. Every origin fitted needs one; a value for an origin the
         triangle does not have is an error. Over segments each segment takes
-        its own origins' values.
+        its own origins' values. A pandas Series is read in order and its
+        index is not read: to key by origin, pass a dict.
     average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
@@ -11193,7 +11195,8 @@ class ExpectedLoss:
         ``"2021Q3"``, or an integer year) to its loss ratio. Every origin
         fitted needs one; a value for an origin the triangle does not have
         is an error. Over segments each segment takes its own origins'
-        values.
+        values. A pandas Series is read in order and its index is not
+        read: to key by origin, pass a dict.
     average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
