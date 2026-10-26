@@ -140,7 +140,7 @@ and the incurred is outstanding plus paid where both are observed. The fit's
 \code{fitted = "paid_only"} and \code{fitted = "incurred_only"} fit one response
 alone and need \code{rate_order = "ordered"} (an error under \code{"free"}): from
 one response the means do not change under the rate swap below, and from
-paid alone only \code{RLR x RRF} is identified, so the priors carry the split
+paid alone only \verb{RLR x RRF} is identified, so the priors carry the split
 of \code{RLR} and \code{RRF}. The model then has one sigma, \code{sigma_pd} or
 \code{sigma_os}. Under \code{"paid_only"} the second column is not read
 (\code{outstanding} and \code{incurred} may both be left out) and the fit's
