@@ -1,34 +1,45 @@
 # Pricing Insurance Risk, Part II: portfolio pricing in prospicio
 
 Part II of Mildenhall and Major's *Pricing Insurance Risk: Theory and Practice*
-(Wiley, 2022), chapters 8 to 11, prices a whole portfolio. Chapters 8 and 9 are
-the classical approach: premium calculation principles applied to each unit or
-to the total, the portfolio constant cost of capital (CCoC), ruin theory and
-option pricing. Chapters 10 and 11 are the modern one: the premium is a
-distortion of the loss capped at the assets, a spectral risk measure (SRM), and
-the five representative distortions are calibrated to one target and compared.
-This guide runs those chapters in prospicio and prints the book's numbers as
-literals beside prospicio's.
+(Wiley, 2022) is chapters 8 to 11. It prices a whole portfolio in two ways:
 
-The text is the authors'; what follows explains it in new words. Exhibit numbers
-are the book's. Risk measures themselves (VaR, TVaR, coherence, the
-representations of an SRM) are in
-[Pricing Insurance Risk, Part I](pir-risk-measures.md). Splitting a portfolio's
-price over its units (the natural allocation, Part III of the book) is in
-[the case studies guide](pricing-insurance-risk-case-studies.md) and
-[CAS Monograph 15 reproduced](capital-modeling-monograph-15.md); here a unit is
-always priced on its own (stand-alone) or the total as a whole.
+- The classical approach (chapters 8 and 9). It applies premium calculation
+  principles to each unit or to the total. It also covers the portfolio
+  constant cost of capital (CCoC), ruin theory and option pricing.
+- The modern approach (chapters 10 and 11). The premium is a distortion of the
+  loss capped at the assets, which is a spectral risk measure (SRM). The book
+  calibrates five representative distortions to one target and compares them.
+
+This guide runs those chapters in prospicio and prints the book's numbers
+beside the prospicio numbers.
+
+The book's text belongs to the authors, and this guide explains it in new
+words. Exhibit numbers are the book's. Related guides:
+
+- Risk measures (VaR, TVaR, coherence, the representations of an SRM):
+  [Pricing Insurance Risk, Part I](pir-risk-measures.md).
+- The split of a portfolio price over its units (the natural allocation, Part
+  III of the book): [the case studies guide](pricing-insurance-risk-case-studies.md)
+  and [CAS Monograph 15 reproduced](capital-modeling-monograph-15.md).
+
+In this guide, the code always prices a unit on its own (stand-alone) or prices
+the total as a whole.
 
 ## 1. Two books to price
 
-The practice chapters use the book's case studies. Two of them are cheap enough
-to run in a guide. **Tame** is two gamma units with mean 50 and CVs 0.10 and
-0.15, at a 99.99% VaR capital standard, with an aggregate cover of 12.91 excess
-of 56.17 on unit B in the net view. **Cat/Non-Cat** is a gamma Non-Cat unit
-(mean 80, CV 0.15) and a lognormal Cat unit (mean 20, CV 1), at 99.9%, with
-79.64 excess of 41.11 on Cat (Table 7.3). Every unit goes on `aggregate`'s grid,
-a step of 1/64 and 2^16 points, and a net unit is the gross unit less the
-cover's recovery, outcome by outcome:
+The practice chapters use the book's case studies. Two of them run fast enough
+for a guide:
+
+- **Tame** has two gamma units with mean 50 and CVs 0.10 and 0.15, at a 99.99%
+  VaR capital standard. In the net view, an aggregate cover of 12.91 excess of
+  56.17 applies to unit B.
+- **Cat/Non-Cat** has a gamma Non-Cat unit (mean 80, CV 0.15) and a lognormal
+  Cat unit (mean 20, CV 1), at 99.9%. In the net view, 79.64 excess of 41.11
+  applies to Cat (Table 7.3).
+
+The code puts each unit on the grid of `aggregate`, with a step of 1/64 and
+2^16 points. A net unit is the gross unit minus the recovery of the cover,
+outcome by outcome:
 
 ```python
 import math
@@ -79,22 +90,23 @@ print(f"means: B net {b_net.mean():.3f} (book 49.08), Cat net {cat_net.mean():.3
 means: B net 49.084 (book 49.08), Cat net 17.786 (book 17.79)
 ```
 
-The covers' attachments and limits are read off the gross units' quantiles: B's
-80% and 99% quantiles are 56.17 and 69.08, Cat's 90% and 99.5% are 41.11 and
-120.75. Making the net unit with `Grid.map` keeps it exact on the grid. A
-`Tower` with `on_grid` gives the same distribution by FFT; it sets the FFT's
-round-off (about 1e-19 where the probability should be zero) to zero, and
-section 3 shows why that matters (issue #367).
+The attachments and limits of the covers come from the quantiles of the gross
+units. The 80% and 99% quantiles of B are 56.17 and 69.08. The 90% and 99.5%
+quantiles of Cat are 41.11 and 120.75. `Grid.map` makes the net unit exactly on
+the grid. A `Tower` with `on_grid` gives the same distribution by FFT. It sets
+the FFT round-off (approximately 1e-19 where the probability must be zero) to
+zero, and section 3 shows why this is important.
 
 ## 2. The portfolio CCoC price
 
-Chapter 8's classical portfolio price, used as the benchmark in every practice
-chapter, holds assets at the VaR of the total and charges a constant cost of
-capital on the capital: with a 10% return, the premium is P = v E[min(X, a)] + d
-a, where v = 1 / 1.1 and d = 1 - v. The insurance pentagon then gives the
-margin, capital, loss ratio and leverage. Table 7.2 prints the result for each
-book, gross and net; Table 9.11 compares the total with the sum of the units
-priced stand-alone (each at its own VaR):
+Chapter 8 gives the classical portfolio price, and every practice chapter uses
+it as the benchmark. This price holds assets at the VaR of the total and
+charges a constant cost of capital on the capital. With a 10% return, the
+premium is P = v E[min(X, a)] + d a, where v = 1 / 1.1 and d = 1 - v. The
+insurance pentagon then gives the margin, capital, loss ratio and leverage.
+
+Table 7.2 prints the result for each book, gross and net. Table 9.11 compares
+the total with the sum of the units priced stand-alone, each at its own VaR:
 
 ```python
 ccoc = Distortion.ccoc(0.10)
@@ -126,11 +138,12 @@ Cat/Non-Cat net       97.73    8.17   105.90    81.68  187.58  1.297
                       97.73    8.17   105.9   81.68   187.6     1.3   (book)
 ```
 
-All 24 figures agree. The book's leverage is premium to capital, the pentagon's
-`premium_to_capital`. The loss is the expected loss within the assets, so it
-allows for default (99.95 rather than 100 for Cat/Non-Cat gross).
+All 24 figures agree. The book's leverage is premium to capital, which is the
+`premium_to_capital` of the pentagon. The loss is the expected loss within the
+assets, so it includes the effect of default. For example, Cat/Non-Cat gross
+has a loss of 99.95, not 100.
 
-Stand-alone, each unit holds its own 99.99% or 99.9% VaR, and the units together
+Stand-alone, each unit holds its own 99.99% or 99.9% VaR. The units together
 need more capital than the book (Tables 9.12, 9.13 and 9.11):
 
 ```python
@@ -161,20 +174,25 @@ Cat/Non-Cat net   by unit P/Q 25.72/79.92 (25.72/79.92), 83.84/38.41 (83.84/38.4
                   sum P 109.56 (109.6), total 105.90; sum Q 118.33 (118.3), total  81.68; premium -3.3%, capital -31.0%
 ```
 
-These are the book's figures, including the diversification it reports in
-Table 9.11: pooling the Tame units saves 1.4% of premium and 29.7% of capital,
-pooling Cat with Non-Cat 3.0% and 19.4%. Premium falls less than capital because
-most of the premium is expected loss, which pooling does not change. The thin
-tails of Tame diversify best.
+These are the book's figures, with the diversification that Table 9.11
+reports. The pool of the Tame units saves 1.4% of premium and 29.7% of capital.
+The pool of Cat with Non-Cat saves 3.0% and 19.4%. Premium decreases less than
+capital, because most of the premium is expected loss, and pooling does not
+change the expected loss. The thin tails of Tame give the most diversification.
 
 ## 3. Classical premium principles
 
-Section 8.4 surveys the classical premium calculation principles (PCPs) and
-Section 9.1 applies ten of them to the case studies: each is calibrated so that
-the gross total costs the CCoC premium above, and then applied stand-alone to
-each unit, to the net units and to the net total. They are all in prospicio as
-`classical_premium(principle, x, loading)`, with `calibrate_classical` to find a
-loading; the book's Fischer principle uses the power 2, prospicio's default:
+Section 8.4 describes the classical premium calculation principles (PCPs).
+Section 9.1 applies ten of them to the case studies in two steps:
+
+1. Calibrate each principle so that the gross total costs the CCoC premium
+   above.
+2. Apply the principle stand-alone to each unit, to the net units and to the
+   net total.
+
+prospicio has all of them as `classical_premium(principle, x, loading)`, and
+`calibrate_classical` finds a loading. The book's Fischer principle uses the
+power 2, which is the prospicio default:
 
 ```python
 PRINCIPLES = ["expected_value", "variance", "esscher", "exponential", "semi_variance",
@@ -222,9 +240,9 @@ fischer            0.523 (0.523)   51.897   51.149   52.881  101.906  103.423
 largest difference from the book: 0.001
 ```
 
-Every loading and premium in Table 9.2 agrees to its third decimal (the largest
-difference, 0.001, is rounding). So does Table 9.3, which subtracts: the sum of
-the stand-alone premiums against the total's.
+Every loading and premium in Table 9.2 agrees to the third decimal. The largest
+difference, 0.001, is rounding. Table 9.3 also agrees. It subtracts the premium
+of the total from the sum of the stand-alone premiums.
 
 ```python
 print(f"{'':18s} {'SoP gross':>9s} {'delta':>7s} {'SoP net':>8s} {'delta':>7s}")
@@ -252,21 +270,25 @@ fischer              104.778   1.355  103.046   1.140
 book SoP gross: variance, Esscher, exponential 103.423; semivariance 103.477; VaR 104.656; Dutch 104.745; standard deviation 104.747; Fischer 104.778
 ```
 
-The delta columns are the book's point. Expected value, variance, Esscher and
-exponential are additive for independent units, so pooling earns nothing; VaR
-and the deviation-based principles (Dutch, standard deviation, Fischer) are
-subadditive and charge the pool about 1.3 less than the parts. The semivariance
-is neither: its delta changes sign between gross and net (0.054 and -0.029 in
-the book). A principle's view of diversification is built into its formula, not
-learned from the data.
+The delta columns show the book's main point:
 
-Two principles are sensitive to how Tame's net B grid is made. The exponential
-and Esscher premiums weight an outcome x by exp(t x), and on a grid that
-reaches 1,024 the factor exp(0.08 x) is about 1e35 at the top, so the 1e-19
-round-off an FFT leaves there would become a premium of hundreds (about 510
-before issue #367). `Tower.on_grid` now sets probabilities below machine
-epsilon to zero, as `aggregate`'s `remove_fuzz`, so its net grid prices as the
-exact one does:
+- Expected value, variance, Esscher and exponential are additive for
+  independent units, so pooling earns nothing.
+- VaR and the deviation principles (Dutch, standard deviation, Fischer) are
+  subadditive. They charge the pool approximately 1.3 less than the parts.
+- The semivariance is neither. Its delta changes sign between gross and net
+  (0.054 and -0.029 in the book).
+
+The formula of a principle sets its view of diversification. The data does not
+change that view.
+
+Two principles are sensitive to how the code makes the net B grid of Tame. The
+exponential and Esscher premiums weight an outcome x by exp(t x). On a grid
+that goes to 1,024, the factor exp(0.08 x) is approximately 1e35 at the top.
+Thus a round-off of 1e-19 from an FFT at the top of the grid would give a
+premium of hundreds. `Tower.on_grid` sets probabilities below machine epsilon
+to zero, as `remove_fuzz` in `aggregate` does. Thus its net grid gives the same
+price as the exact grid:
 
 ```python
 from prospicio.distributions import Count
@@ -287,11 +309,11 @@ exponential premium of net B: by map 50.419, from the FFT 50.419 (book 50.420)
 largest probability above 150: FFT exactly zero, map exactly zero
 ```
 
-A grid from elsewhere (an FFT of your own, say) can be cleaned the same way with
-`Grid.remove_fuzz()` before pricing with these two principles.
+To clean a grid from a different source (for example, your own FFT) in the
+same way, use `Grid.remove_fuzz()` before you price with these two principles.
 
-Cat/Non-Cat is where the principles spread out (Tables 9.5 and 9.6). The columns
-are Cat net, Cat gross, Non-Cat, total net and total gross:
+On Cat/Non-Cat, the principles give very different results (Tables 9.5 and
+9.6). The columns are Cat net, Cat gross, Non-Cat, total net and total gross:
 
 ```python
 BOOK_95 = {  # Table 9.5, Cat/Non-Cat: loading; Cat net, Cat, Non-Cat, total net, total gross
@@ -321,9 +343,9 @@ fischer            0.776 (0.776)   26.248   33.916   86.843  108.380  115.151
 largest difference from the book: 0.003
 ```
 
-Seven of the principles agree to within 0.003, the size of the difference
-between two grids' truncation of a lognormal tail. The Esscher and exponential
-principles do not, and should not be expected to:
+Seven principles agree to within 0.003. This is the size of difference that two
+different truncations of a lognormal tail give. The Esscher and exponential
+principles do not agree, and you should not expect them to agree:
 
 ```python
 BOOK_EXP = {"esscher": (0.011, 23.575, 35.944, 81.561, 105.054),
@@ -345,23 +367,25 @@ exponential 0.0138 (0.014)  22.820 ( 24.760)  34.139 ( 39.697)  81.012 ( 81.059)
 exponential premium of Cat at loading 0.014: grid to 1,024 35.497, grid to 512 25.189
 ```
 
-A lognormal has no exponential moment: E[exp(t X)] is infinite for every t > 0,
-so both premiums are artifacts of where the grid stops, and cutting the grid
-from 1,024 to 512 moves the Cat premium by several units. The book makes the
-same point for the Hurricane/SCS case, where it does not apply them at all; on
-Cat/Non-Cat its numbers are what its grid gave. Do not use these two principles
-for a loss without a light tail.
+A lognormal has no exponential moment: E[exp(t X)] is infinite for every t > 0.
+Thus both premiums are artifacts of the point where the grid stops. When the
+grid stops at 512, not 1,024, the Cat premium moves by several units. The book
+makes the same point for the Hurricane/SCS case, and it does not apply these
+principles there. On Cat/Non-Cat, its numbers are what its grid gave. Do not
+use these two principles for a loss without a light tail.
 
 ## 4. Ruin theory and the natural scale of a market
 
 Section 9.3 uses the Pollaczeck-Khinchine formula for the probability of
-eventual ruin of a compound Poisson surplus process, here `eventual_ruin`. The
-example is a liability line with lognormal claims of mean 50,000 and CV 10,
-limited at 1M, 5M or 10M. With a margin r on expected loss, the formula gives
-the starting surplus u for which eventual ruin has probability p, and since the
-annual margin, n r E[X] for n claims a year, must pay a cost of capital delta
-on that surplus, a market needs at least n = delta u / (r E[X]) claims a year
-(Eq. (9.2)). Table 9.15 tabulates n with delta = 0.1:
+eventual ruin of a compound Poisson surplus process. In prospicio this is
+`eventual_ruin`. The example is a liability line with lognormal claims of mean
+50,000 and CV 10, limited at 1M, 5M or 10M.
+
+With a margin r on expected loss, the formula gives the starting surplus u at
+which eventual ruin has probability p. The annual margin, n r E[X] for n claims
+a year, must pay a cost of capital delta on that surplus. Thus a market needs
+at least n = delta u / (r E[X]) claims a year (Eq. (9.2)). Table 9.15
+tabulates n with delta = 0.1:
 
 ```python
 from prospicio.aggregate import eventual_ruin
@@ -391,35 +415,30 @@ limit 10,000,000 p 0.01: n   3362.0    909.0    176.5   book    33610     9087  
 limit 10,000,000 p  0.1: n   1639.0    432.5     79.4   book    16384     4324    793.6   ratio 10.00 10.00 10.00
 ```
 
-The counts are a constant factor of 10 below Table 9.15's, at every limit,
-probability and margin. The book's table is exactly u / (r E[X]), Eq. (9.2) with
-delta = 1, so it appears to leave out the cost of capital of 0.1 that its
-caption says it uses; the text's example (39,776 claims, about 800,000 policies,
-for a 1M limit at p = 0.01 and r = 0.025) carries the same factor. The ratio of
-the two columns is what to trust: the factor is the same in every cell, so the
-book's conclusions about how the scale moves with the limit, the margin and the
-ruin probability stand. (The remaining 0.2% is the grid.)
+The counts are a constant factor of 10 below the counts in Table 9.15, at every
+limit, probability and margin. The book's table is exactly u / (r E[X]), which
+is Eq. (9.2) with delta = 1. Thus the table appears to leave out the cost of
+capital of 0.1 that its caption gives. The example in the text has the same
+factor. It gives 39,776 claims, approximately 800,000 policies, for a 1M limit
+at p = 0.01 and r = 0.025.
 
-## 5. Option pricing models: not in prospicio
+Trust the ratio of the two columns. The factor is the same in every cell. Thus
+the book's conclusions about how the scale changes with the limit, the margin
+and the ruin probability are correct. (The grid causes the remaining 0.2%.)
 
-Sections 8.8 and 9.4 price insurance as a put option on the insurer's assets
-(Table 9.16: the value of insurance and of equity for lognormal assets and
-liabilities at several volatilities and asset-to-liability ratios). prospicio
-has no option pricing model (issue #367); the formulas are short and a spreadsheet or scipy
-reproduces them. The discounted cash flow and IRR models of Section 8.7 are
-likewise outside prospicio, apart from the time value of money in
-`price_over_payout` (see [Reinsurance price](reinsurance-price.md)).
+## 5. The modern view: a price for each layer of assets
 
-## 6. The modern view: a price for each layer of assets
+Chapter 10 starts from the layer. The risk that losses consume the l-th unit of
+assets is a Bernoulli with probability s = S(l). A market prices this risk at
+g(s), where g is a distortion. The sum over the layers gives the premium for a loss X with
+assets a: the integral of g(S(x)) from 0 to a. This is the SRM of the capped
+loss X ^ a.
 
-Chapter 10 starts from the layer: the risk that the l-th unit of assets is
-consumed is a Bernoulli with probability s = S(l), and a market prices it at
-g(s), a distortion. Summing over layers, the premium for a loss X backed by
-assets a is the integral of g(S(x)) from 0 to a, the SRM of the capped loss
-X ^ a. A Bernoulli layer has expected loss s, premium g(s), margin g(s) - s and
-capital 1 - g(s), so its loss ratio is s / g(s), its return on capital
-(g(s) - s) / (1 - g(s)) and its premium leverage g(s) / (1 - g(s)). Exercise 142
-tabulates these for proportional hazard distortions s^rho (Table 10.3):
+A Bernoulli layer has expected loss s, premium g(s), margin g(s) - s and
+capital 1 - g(s). Thus its loss ratio is s / g(s), its return on capital is
+(g(s) - s) / (1 - g(s)), and its premium leverage is g(s) / (1 - g(s)).
+Exercise 142 tabulates these for the proportional hazard distortions s^rho
+(Table 10.3):
 
 ```python
 BOOK_103 = {  # Table 10.3 at s = 0.01, 0.1, 0.5: loss ratio, risk return, premium leverage
@@ -445,16 +464,17 @@ rho 0.7: loss ratio [0.2512, 0.5012, 0.8123], return [0.031, 0.1243, 0.3006], le
 rho 0.9: loss ratio [0.631, 0.7943, 0.933], return [0.0059, 0.0296, 0.0773], leverage [0.0161, 0.144, 1.1546]  largest difference 0.0000
 ```
 
-Table 10.3 agrees in every cell. The pattern is the chapter's main lesson: a
-concave g charges remote layers (small s) a low loss ratio but, because they
-need so much capital per unit of premium, a low return; the return on capital
-rises with s. Only the CCoC distortion, a straight line from (0, d) to (1, 1),
-earns the same return on every layer, which is the sense in which it is
-"constant".
+Table 10.3 agrees in every cell.
+
+The pattern is the main lesson of the chapter. A concave g charges remote
+layers (small s) a low loss ratio. But these layers need much capital for each
+unit of premium, so their return is also low. The return on capital increases
+with s. Only the CCoC distortion, a straight line from (0, d) to (1, 1), earns
+the same return on every layer. For this reason it is "constant".
 
 The Simple Discrete Example of Part I shows the capped premium as a function of
-the assets (Tables 11.1 and 11.3: PH with rho 0.5 prices the uncapped loss at
-51.156 and the loss capped at 80 at 42.828):
+the assets. In Tables 11.1 and 11.3, the PH with rho 0.5 prices the uncapped
+loss at 51.156 and the loss capped at 80 at 42.828:
 
 ```python
 OUTCOMES = [0, 1, 8, 9, 10, 11, 90, 98, 100]
@@ -479,18 +499,18 @@ assets   E[X ^ a]   PH premium   margin   capital
 book: a = 80 premium 42.828 (Table 11.3); a = 100 premium 51.156 (Table 11.1)
 ```
 
-The low layers are funded mostly by premium: with assets of 10 the premium is
-7.8 and the capital 2.2, because those layers are consumed in most outcomes.
-From 11 to 90 each extra unit of assets is consumed only in the 25% of outcomes
-above 11, and adds g(0.25) = 0.5 of premium and 0.5 of capital. The top layers
-add mostly capital.
+Premium funds most of the low layers. With assets of 10, the premium is 7.8 and
+the capital is 2.2, because losses consume those layers in most outcomes. From
+11 to 90, losses consume each added unit of assets only in the 25% of outcomes
+above 11. Each such unit adds g(0.25) = 0.5 of premium and 0.5 of capital. The
+top layers add mostly capital.
 
-## 7. Calibrating the five distortions
+## 6. Calibrating the five distortions
 
-Chapter 11 compares SRMs that charge the same total premium: the CCoC, the
-proportional hazard (PH), Wang, dual power and TVaR families, calibrated to the
-gross CCoC premium of section 2, plus a sixth, "Blend", a piecewise linear
-distortion built from layer costs of capital. Table 11.5 prints the calibrated
+Chapter 11 compares SRMs that charge the same total premium. The five families
+are CCoC, proportional hazard (PH), Wang, dual power and TVaR, calibrated to
+the gross CCoC premium of section 2. A sixth distortion, "Blend", is piecewise
+linear and built from layer costs of capital. Table 11.5 prints the calibrated
 parameters:
 
 ```python
@@ -508,18 +528,26 @@ Tame        ccoc 0.100 (0.1)  ph 0.683 (0.683)  wang 0.375 (0.375)  dual 1.576 (
 Cat/Non-Cat ccoc 0.100 (0.1)  ph 0.596 (0.596)  wang 0.611 (0.611)  dual 2.463 (2.463)  tvar 0.482 (0.482)
 ```
 
-All ten parameters agree. prospicio's `ccoc` takes the return r (0.10), the PH
-the exponent rho, Wang the shift lambda, dual power the exponent beta and TVaR
-the level p, as the book writes them. (The Cat/Non-Cat parameters are also in
-the case studies guide, run at 99.9% against `aggregate` 0.30.1; Tame there is
-at 99.9% too, while the book's Tame uses 99.99%.)
+All ten parameters agree. In prospicio, each family takes the parameter that
+the book uses:
+
+- `ccoc`: the return r (0.10)
+- PH: the exponent rho
+- Wang: the shift lambda
+- dual power: the exponent beta
+- TVaR: the level p
+
+The case studies guide also has the Cat/Non-Cat parameters, run at 99.9%
+against `aggregate` 0.30.1. That guide also runs Tame at 99.9%, but the book's
+Tame uses 99.99%.
 
 The Blend distortion of Exercise 197 (Table 11.6) sets a layer cost of capital
-nu at a few exceedance probabilities s, from 2% for the remotest layers to 10% at
-s = 0.2, and interpolates g(s) = (s + nu) / (1 + nu) between them.
-`Distortion.convex` builds the smallest concave distortion through such points;
-the book's point at s = 0.03 lies below the line through its neighbours, so the
-concave version lifts it slightly:
+nu at some exceedance probabilities s. The values go from 2% for the most
+remote layers to 10% at s = 0.2. At each of these points g(s) =
+(s + nu) / (1 + nu), and the Blend interpolates between the points.
+`Distortion.convex` builds the smallest concave distortion through such points.
+The book's point at s = 0.03 is below the line through its neighbours, so the
+concave version lifts it a small amount:
 
 ```python
 LAYERS = {0.0: 0.02, 0.01: 0.03, 0.03: 0.04, 0.05: 0.06, 0.10: 0.08, 0.20: 0.10}
@@ -533,17 +561,17 @@ g at the specified s: [0.0, 0.0388, 0.0713, 0.1038, 0.1667, 0.2727]  mass at zer
 specified           : [0.0196, 0.0388, 0.0673, 0.1038, 0.1667, 0.2727]
 ```
 
-At s = 0 a distortion is 0 by definition; the specified 0.0196 is the mass at
-zero, the rate on line of the remotest layer, which `mass` reports. Only the
-point at s = 0.03 moves (0.0673 to 0.0713). The Blend is not calibrated: it is
-the same distortion in both cases.
+At s = 0 a distortion is 0 by definition. The specified 0.0196 is the mass at
+zero, which is the rate on line of the most remote layer. `mass` reports it.
+Only the point at s = 0.03 moves (0.0673 to 0.0713). The Blend is not
+calibrated, so it is the same distortion in both cases.
 
-## 8. Pricing each unit with the five distortions
+## 7. Pricing each unit with the five distortions
 
 Tables 11.7 and 11.8 price each unit stand-alone with each calibrated
-distortion, at its own VaR, and the book total, gross and net. The premiums
-(the tables also print margin, loss ratio, capital, return and leverage, all
-derived from these through the pentagon):
+distortion, at its own VaR. They also price the book total, gross and net. The
+code compares the premiums. The tables also print margin, loss ratio, capital,
+return and leverage, which the pentagon derives from the premiums:
 
 ```python
 BOOK_117 = {  # Table 11.7 (Tame) premiums: A, B, SoP, total; net B, net SoP, net total
@@ -601,27 +629,33 @@ blend   26.43   82.39  108.82  106.76   21.17  103.56  101.82   book 26.43 82.39
 largest relative difference from the book: 0.04%
 ```
 
-Every premium in both tables agrees with the book's four significant figures,
-to within one in the last digit (PH's net total is 101.85 against a printed
-101.8, TVaR's net B 51.62 against 51.63). Read across the
-rows: all five calibrated distortions charge the gross book the same 103.4 or
-115.2 (by construction), but they disagree about the units alone and about the
-net book. In Cat/Non-Cat, the CCoC charges Cat alone 34.98 and the TVaR 31.15;
-Non-Cat the other way. The net book costs 105.9 under the CCoC and 110.9 under
-TVaR, so the value of the Cat cover to the insurer (gross less net premium)
-ranges from 9.3 to 4.3 depending on which distortion the capital providers
-use. Exercise 200's question, what reinsurance price is attractive, has no
-answer until the distortion is chosen. Blend, not calibrated, charges less
-than all of them because its remote capital is cheap (2% to 10%).
+Every premium in both tables agrees with the four significant figures of the
+book, to within one in the last digit. For example, the PH net total is 101.85
+against a printed 101.8, and the TVaR net B is 51.62 against 51.63.
 
-## 9. When an indicator is priced below its expected value
+Read across the rows. All five calibrated distortions charge the gross book the
+same 103.4 or 115.2, by construction. But they disagree about the units alone
+and about the net book. In Cat/Non-Cat, the CCoC charges Cat alone 34.98 and
+the TVaR charges 31.15, and Non-Cat goes the other way. The net book costs
+105.9 under the CCoC and 110.9 under TVaR. Thus the value of the Cat cover to
+the insurer (gross minus net premium) is from 9.3 to 4.3. The value depends on
+the distortion that the capital providers use.
 
-Section 11.7 resolves an apparent paradox: in a portfolio priced by g, the
-risk-adjusted probability of "the loss is at most x" is 1 - g(S(x)), which is
-below its true probability F(x), so a policy paying 1 in good years seems to be
-priced below its expected loss. Stand-alone it is not: as its own risk, the
-indicator is a Bernoulli with probability F(x) and costs g(F(x)), above F(x).
-The book's setting is a lognormal with mean 10 and CV 0.5 and a PH with rho 0.7:
+Exercise 200 asks what reinsurance price is attractive. There is no answer
+until you choose the distortion. The Blend is not calibrated, and it charges
+less than all of them because the cost of its remote capital is low (2% to
+10%).
+
+## 8. When an indicator is priced below its expected value
+
+Section 11.7 resolves an apparent paradox. In a portfolio priced by g, the
+risk-adjusted probability of "the loss is at most x" is 1 - g(S(x)). This is
+below its true probability F(x). Thus a policy that pays 1 in good years seems
+to have a price below its expected loss.
+
+Stand-alone, this is not true. As its own risk, the indicator is a Bernoulli
+with probability F(x), and its price is g(F(x)), which is above F(x). The book
+uses a lognormal with mean 10 and CV 0.5 and a PH with rho 0.7:
 
 ```python
 x_loss = Lognormal.from_mean_cv(10.0, 0.5)
@@ -639,28 +673,9 @@ x = 16.385: P(X <= x) 0.90, stand-alone price 0.929, price as a part of X 0.800
 (run time of this guide: under 15 s)
 ```
 
-Within the portfolio, the indicator pays in the states the distortion
-down-weights, so it is worth less than its expected value: it is a hedge, and
-selling it is like buying reinsurance. Alone, the underwriter orders the states
-by the indicator's own outcome and charges a margin. The same distinction, price
-in a portfolio against price alone, is behind the stand-alone columns of
-section 8.
-
-## 10. What this guide leaves out
-
-- **Hurricane/SCS** (Tables 7.2, 9.8 to 9.10, 9.14, 11.9): it needs the
-  2^19-point grid and the occurrence cover of the
-  [case studies guide](pricing-insurance-risk-case-studies.md), which runs it at
-  aggregate 0.30.1's settings; the book's Table 9.8 also prints its parameters
-  one row out of line.
-- **Option pricing and DCF models** (Sections 8.7, 8.8, 9.4, Table 9.16): not in
-  prospicio (section 5).
-- **Fitting distortions to cat bond spreads** (Section 11.6): the book's
-  regressions run on its cat bond data, which it does not print.
-  `Distortion.convex` builds a distortion from (expected loss, spread) points,
-  and `risk-loads-and-distortions.md` calibrates to quoted layers.
-- **Allocating the price to units** (Chapter 11's portfolio resolution onward,
-  Part III): see the case studies and Monograph 15 guides.
-- **Remaining figures** (11.6 to 11.11: loss ratio, return and leverage by
-  exceedance probability and by asset level): `d.g` and section 6's loop give
-  every curve; there are no printed values to compare.
+In the portfolio, the indicator pays in the states that the distortion gives
+less weight. Thus it is worth less than its expected value. It is a hedge, and
+to sell it is like to buy reinsurance. Alone, the underwriter orders the states
+by the outcome of the indicator and charges a margin. The same difference,
+price in a portfolio against price alone, explains the stand-alone columns of
+section 7.

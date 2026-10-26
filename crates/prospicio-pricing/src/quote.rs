@@ -26,10 +26,12 @@
 //! `R = D [(1 + κ)(1 − e − τ) − b (1 + κ) − c] − f`
 //!
 //! (`b κ` dropped without brokerage on reinstatement premium), so the
-//! technical deposit is `(R + f)` over the bracket. A swing-rated premium,
-//! a sliding-scale commission and a profit commission depend on the
-//! year's loss and so on the premium: they are read back at a quoted
-//! premium ([`Quote::at_with_commission`]), not solved for.
+//! technical deposit is `(R + f)` over the bracket. A sliding-scale
+//! commission and a profit commission depend on the year's loss and so on
+//! the premium: [`Quote::technical_for_layer`] solves for the deposit under
+//! them, and [`Quote::at_with_commission`] reads them back at a quoted one.
+//! A swing-rated premium follows the loss and has no deposit to solve for:
+//! it is read back at its expected premium.
 //!
 //! Tax comes in two forms. A premium tax `τ` is a fraction of the premium,
 //! grossed up as brokerage is. An income tax `t` is charged on the margin,
@@ -314,6 +316,156 @@ impl Quote {
         .funded(premium)
     }
 
+    /// The technical deposit of a layer whose commissions follow its loss
+    /// ratio: a sliding-scale ceding commission or a profit commission,
+    /// which depend on the deposit through the loss ratio, so the deposit
+    /// is solved for rather than read off in closed form. With `C(D)` the
+    /// expected sliding-scale and profit commission at a deposit `D`
+    /// ([`Layer::expected_loss_sensitive_commissions`] over the layer's
+    /// ceded grid), the deposit keeps the price's risk premium `R` (raised
+    /// for an income tax as in [`technical_with`](Self::technical_with)):
+    ///
+    /// `D [(1 + κ)(1 − e − τ) − b (1 + κ) − c] − f − C(D) = R`.
+    ///
+    /// `κ` and a flat commission `c` are read off the layer as
+    /// [`PremiumTerms::from_layer`] reads them, with brokerage on
+    /// reinstatement premium if `brokerage_on_reinstatements`, and the
+    /// limit for the rate on line is the layer's at the placed share. A
+    /// layer with neither term is [`technical_with`](Self::technical_with)
+    /// of those terms. `price` is the price of `ceded`.
+    ///
+    /// The commission per unit of deposit lies between the scale's lowest
+    /// and highest rates, plus up to `share × (1 − allowance)` for a profit
+    /// commission, so the root lies between `(R + f)` over the bracket less
+    /// the lowest rate and `(R + f)` over the bracket less the highest
+    /// rates. The kept amount need not rise with the deposit: within a
+    /// scale's band it is `D (k − α) + β E[X]` for a band `α − β LR`, which
+    /// falls as `D` rises when the band's intercept `α` exceeds what the
+    /// loads leave, `k`, so a steep scale can meet the risk premium at more
+    /// than one deposit. The solve returns the lowest: it scans the
+    /// interval at 64 points for the first sign change and bisects it to a
+    /// relative `1e-12`. Fails when the highest rates leave no premium (no
+    /// deposit is sure to meet the risk premium), for a swing-rated layer
+    /// (its premium follows its loss, so it has no deposit to solve for;
+    /// `docs/design/pareto.md`) and for a scale read before annual terms.
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    /// use prospicio_pricing::quote::{Loads, Quote};
+    /// use prospicio_pricing::risk_load::{price_grid, PremiumRule};
+    /// use prospicio_prob::{Distortion, Grid};
+    ///
+    /// // A quota share's ceded loss: 0 to 100 in steps of 20.
+    /// let ceded = Grid::new(20.0, vec![0.05, 0.15, 0.3, 0.3, 0.15, 0.05]).unwrap();
+    /// let qs = Layer::quota_share("QS", 0.5).unwrap()
+    ///     .premium_rate(1.0, 200.0).unwrap()
+    ///     .sliding_scale(vec![(0.35, 0.50), (0.20, 0.70)]).unwrap();
+    /// let p = price_grid(&ceded, &PremiumRule::cost_of_capital(0.1).unwrap(),
+    ///                    &Distortion::tvar(0.99).unwrap()).unwrap();
+    /// let loads = Loads::new(0.02, 0.0, 0.0).unwrap();
+    /// let q = Quote::technical_for_layer(&p, loads, &qs, &ceded, 0.0, true).unwrap();
+    /// // At the solved deposit the commission is the scale's, and the return
+    /// // is the 10% the price asks for.
+    /// let (cc, _) = qs.expected_loss_sensitive_commissions(q.premium, &ceded).unwrap();
+    /// assert!((q.other_commission - cc).abs() < 1e-12);
+    /// assert!((q.return_on_capital() - 0.1).abs() < 1e-9);
+    /// ```
+    pub fn technical_for_layer(
+        price: &Price,
+        loads: Loads,
+        layer: &Layer,
+        ceded: &Grid,
+        expected_reinstatement_premium: f64,
+        brokerage_on_reinstatements: bool,
+    ) -> Result<Self> {
+        if layer.swing.is_some() {
+            return Err(Error::InvalidParameter {
+                name: "swing",
+                value: f64::NAN,
+                reason: "a swing-rated layer's premium follows its loss, so it has no deposit \
+                         to solve for; quote it at its expected premium with `at`",
+            });
+        }
+        let mut terms = PremiumTerms::from_layer(layer, expected_reinstatement_premium)?;
+        if !brokerage_on_reinstatements {
+            terms = terms.without_brokerage_on_reinstatements();
+        }
+        let limit = layer.limit.is_finite().then_some(layer.limit * layer.share);
+        let base = Self::technical_with(price, loads, terms, limit)?;
+        let (low, high) = match &layer.commission {
+            Some(Commission::SlidingScale(anchors)) => anchors
+                .iter()
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &(c, _)| {
+                    (lo.min(c), hi.max(c))
+                }),
+            _ => (0.0, 0.0),
+        };
+        let profit = layer
+            .profit_commission
+            .map_or(0.0, |pc| pc.share * (1.0 - pc.allowance).max(0.0));
+        let sliding = matches!(layer.commission, Some(Commission::SlidingScale(_)));
+        if !sliding && layer.profit_commission.is_none() {
+            return Ok(base);
+        }
+        let keep = keep_per_deposit(&loads, &terms)?;
+        let target = base.risk_premium + loads.fixed;
+        if keep - high - profit <= 0.0 {
+            return Err(Error::InvalidParameter {
+                name: "commission",
+                value: high + profit,
+                reason: "the highest sliding-scale and profit commission rates leave no \
+                         premium after the loads: no deposit is sure to meet the risk premium",
+            });
+        }
+        if target <= 0.0 {
+            return Err(Error::InvalidParameter {
+                name: "premium",
+                value: target,
+                reason: "the risk premium and fixed expense must be positive",
+            });
+        }
+        let commission = |d: f64| -> Result<f64> {
+            let (cc, pc) = layer.expected_loss_sensitive_commissions(d, ceded)?;
+            Ok(cc + pc)
+        };
+        let gap = |d: f64| -> Result<f64> { Ok(d * keep - commission(d)? - target) };
+        let (d_low, d_high) = (target / (keep - low), target / (keep - high - profit));
+        let deposit = if gap(d_low)? >= 0.0 {
+            d_low
+        } else {
+            // The first sign change on a scan of the bracket, then bisection.
+            const SCAN: usize = 64;
+            let step = (d_high - d_low) / SCAN as f64;
+            let mut lo = d_low;
+            let mut hi = d_high;
+            for k in 1..=SCAN {
+                let d = if k == SCAN {
+                    d_high
+                } else {
+                    d_low + k as f64 * step
+                };
+                if gap(d)? >= 0.0 {
+                    hi = d;
+                    break;
+                }
+                lo = d;
+            }
+            for _ in 0..200 {
+                if hi - lo <= 1e-12 * hi {
+                    break;
+                }
+                let mid = 0.5 * (lo + hi);
+                if gap(mid)? >= 0.0 {
+                    hi = mid;
+                } else {
+                    lo = mid;
+                }
+            }
+            0.5 * (lo + hi)
+        };
+        base.at_with_commission(deposit, commission(deposit)?)
+    }
+
     /// The same cover at a quoted deposit: the expected loss, assets, loads
     /// and premium side kept, the risk premium what the quote leaves after
     /// them. Fails when that risk premium reaches the assets, leaving no
@@ -485,11 +637,14 @@ impl TowerQuote {
     /// layer is priced on `grids.ceded`, with the reinstatement rate and
     /// flat ceding commission its grid and terms give
     /// ([`PremiumTerms::from_layer`]) and its limit at the placed share for
-    /// the rate on line. The total is priced on `grids.total_ceded`, with
-    /// the layers' reinstatement rates and commissions weighted by their
-    /// technical deposits and no limit. Sliding-scale and profit
-    /// commissions are read back layer by layer with
-    /// [`Quote::at_with_commission`].
+    /// the rate on line. A layer with a sliding-scale or profit commission
+    /// has its deposit solved with those commissions
+    /// ([`Quote::technical_for_layer`]); a swing-rated layer is quoted on its
+    /// flat terms, to be read back at its expected premium. The total is
+    /// priced on `grids.total_ceded`, with the layers' reinstatement rates
+    /// and flat commissions weighted by their technical deposits and no
+    /// limit: the layers' sliding-scale and profit commissions, which read
+    /// each layer's own loss ratio, are not carried to the total.
     ///
     /// Fails when the total cession is not one compound total
     /// (`grids.total_ceded` is `None`): several layers with annual terms
@@ -583,6 +738,16 @@ impl TowerQuote {
             .zip(expected_reinstatement_premium)
             .map(|((layer, grid), &rp)| {
                 let price = price_grid(grid, rule, assets)?;
+                if layer.swing.is_none() {
+                    return Quote::technical_for_layer(
+                        &price,
+                        loads,
+                        layer,
+                        grid,
+                        rp,
+                        brokerage_on_reinstatements,
+                    );
+                }
                 let terms = with_brokerage(PremiumTerms::from_layer(layer, rp)?);
                 let limit = layer.limit.is_finite().then_some(layer.limit * layer.share);
                 Quote::technical_with(&price, loads, terms, limit)
@@ -921,5 +1086,142 @@ mod tests {
         .unwrap();
         let g = inuring.on_grid(&freq, &sev, 256).unwrap();
         assert!(TowerQuote::technical(&inuring, &g, &rule, &assets, loads, true).is_err());
+    }
+
+    /// A quota share's ceded loss, 0 to 100 in steps of 10.
+    fn qs_ceded() -> Grid {
+        Grid::new(
+            10.0,
+            vec![
+                0.02, 0.04, 0.08, 0.14, 0.2, 0.2, 0.14, 0.09, 0.05, 0.03, 0.01,
+            ],
+        )
+        .unwrap()
+    }
+
+    fn qs_price(ceded: &Grid) -> Price {
+        price_grid(
+            ceded,
+            &PremiumRule::cost_of_capital(0.1).unwrap(),
+            &Distortion::tvar(0.99).unwrap(),
+        )
+        .unwrap()
+    }
+
+    fn qs(premium: f64) -> Layer {
+        Layer::quota_share("QS", 0.5)
+            .unwrap()
+            .premium_rate(1.0, 2.0 * premium)
+            .unwrap()
+    }
+
+    #[test]
+    fn a_sliding_scale_at_one_rate_is_a_flat_commission() {
+        let ceded = qs_ceded();
+        let p = qs_price(&ceded);
+        let loads = Loads::new(0.03, 0.05, 0.5).unwrap();
+        let slide = qs(100.0)
+            .sliding_scale(vec![(0.3, 0.5), (0.3, 0.7)])
+            .unwrap();
+        let q = Quote::technical_for_layer(&p, loads, &slide, &ceded, 0.0, true).unwrap();
+        let flat =
+            Quote::technical_with(&p, loads, PremiumTerms::new(0.0, 0.3).unwrap(), None).unwrap();
+        assert!((q.premium - flat.premium).abs() < 1e-10 * flat.premium);
+        assert!((q.other_commission - 0.3 * q.premium).abs() < 1e-10);
+        // A layer with neither term is the flat quote exactly.
+        let plain = qs(100.0).ceding_commission(0.3).unwrap();
+        let q = Quote::technical_for_layer(&p, loads, &plain, &ceded, 0.0, true).unwrap();
+        assert_eq!(q, flat);
+    }
+
+    #[test]
+    fn the_solved_deposit_earns_the_price_and_pays_its_own_commissions() {
+        let ceded = qs_ceded();
+        let p = qs_price(&ceded);
+        let loads = Loads::new(0.02, 0.05, 0.0)
+            .unwrap()
+            .with_income_tax(0.21)
+            .unwrap();
+        for layer in [
+            qs(100.0)
+                .sliding_scale(vec![(0.35, 0.4), (0.25, 0.6), (0.2, 0.8)])
+                .unwrap(),
+            qs(100.0).profit_commission(0.25, 0.1).unwrap(),
+            qs(100.0)
+                .ceding_commission(0.2)
+                .unwrap()
+                .profit_commission(0.2, 0.3)
+                .unwrap(),
+        ] {
+            let q = Quote::technical_for_layer(&p, loads, &layer, &ceded, 0.0, true).unwrap();
+            // The commission is recomputed at the solved deposit, not read at
+            // the layer's own premium.
+            let (cc, pc) = layer
+                .expected_loss_sensitive_commissions(q.premium, &ceded)
+                .unwrap();
+            assert!((q.other_commission - cc - pc).abs() < 1e-12);
+            assert!((q.return_on_capital() - p.return_on_capital()).abs() < 1e-9);
+            let again = q.at_with_commission(q.premium, cc + pc).unwrap();
+            assert!((again.return_on_capital() - p.return_on_capital()).abs() < 1e-9);
+            // The commissions make the deposit dearer than the flat terms.
+            let flat = Quote::technical_with(
+                &p,
+                loads,
+                PremiumTerms::from_layer(&layer, 0.0).unwrap(),
+                None,
+            )
+            .unwrap();
+            assert!(q.premium > flat.premium);
+        }
+    }
+
+    #[test]
+    fn a_steep_scale_gives_the_lowest_deposit_that_meets_the_price() {
+        let ceded = qs_ceded();
+        let p = qs_price(&ceded);
+        let loads = Loads::new(0.02, 0.0, 0.0).unwrap();
+        // From 90% to nothing over ten points of loss ratio.
+        let layer = qs(100.0)
+            .sliding_scale(vec![(0.9, 0.5), (0.0, 0.6)])
+            .unwrap();
+        let q = Quote::technical_for_layer(&p, loads, &layer, &ceded, 0.0, true).unwrap();
+        let keep = 1.0 - 0.02;
+        let gap = |d: f64| {
+            let (cc, _) = layer
+                .expected_loss_sensitive_commissions(d, &ceded)
+                .unwrap();
+            d * keep - cc - p.premium
+        };
+        assert!(gap(q.premium).abs() < 1e-9);
+        // No lower deposit from the bracket's foot meets the risk premium.
+        let foot = p.premium / keep;
+        for k in 0..2000 {
+            let d = foot + (q.premium - foot) * k as f64 / 2000.0;
+            assert!(gap(d) < 1e-9, "a lower deposit {d} meets the price");
+        }
+        // The kept amount falls with the deposit somewhere on the scale.
+        let falls = (0..400).any(|k| {
+            let d = foot * (1.0 + k as f64 / 100.0);
+            gap(d * 1.01) < gap(d)
+        });
+        assert!(falls);
+    }
+
+    #[test]
+    fn the_solve_refuses_what_it_cannot_quote() {
+        let ceded = qs_ceded();
+        let p = qs_price(&ceded);
+        // A profit commission that can take all the premium the loads leave.
+        let greedy = qs(100.0).profit_commission(1.0, 0.0).unwrap();
+        let loads = Loads::new(0.05, 0.0, 0.0).unwrap();
+        assert!(Quote::technical_for_layer(&p, loads, &greedy, &ceded, 0.0, true).is_err());
+        // A swing-rated layer has no deposit to solve for.
+        let swing = qs(100.0)
+            .swing_rated(
+                prospicio_aggregate::LossSensitivePremium::new(50.0, 1.1, None, None).unwrap(),
+            )
+            .unwrap();
+        let err = Quote::technical_for_layer(&p, loads, &swing, &ceded, 0.0, true).unwrap_err();
+        assert!(err.to_string().contains("swing"));
     }
 }

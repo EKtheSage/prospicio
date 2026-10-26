@@ -1176,6 +1176,50 @@ fn pricing_quote(
     Ok(quote_list(&q))
 }
 
+/// The technical quote of a layer whose commissions follow its loss ratio,
+/// its deposit solved for (`Quote::technical_for_layer`), as a list as
+/// `pricing_quote`'s.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn pricing_layer_quote(
+    expected_loss: f64,
+    risk_premium: f64,
+    assets: f64,
+    layer: Robj,
+    ceded: Robj,
+    expected_reinstatement_premium: f64,
+    expenses: f64,
+    brokerage: f64,
+    fixed: f64,
+    premium_tax: f64,
+    income_tax: f64,
+    brokerage_on_reinstatements: bool,
+) -> Result<List> {
+    let layer = <&crate::reinsurance::XolLayer>::try_from(&layer)
+        .map_err(|_| Error::Other("layer must be an xol_layer".into()))?;
+    let ceded = <&Grid>::try_from(&ceded)
+        .map_err(|_| Error::Other("ceded must be a grid_distribution".into()))?;
+    let price = Price {
+        expected_loss,
+        premium: risk_premium,
+        assets,
+    };
+    let loads = Loads::new(expenses, brokerage, fixed)
+        .and_then(|l| l.with_premium_tax(premium_tax))
+        .and_then(|l| l.with_income_tax(income_tax))
+        .map_err(to_r)?;
+    let q = Quote::technical_for_layer(
+        &price,
+        loads,
+        &layer.inner,
+        &ceded.inner,
+        expected_reinstatement_premium,
+        brokerage_on_reinstatements,
+    )
+    .map_err(to_r)?;
+    Ok(quote_list(&q))
+}
+
 /// A quote's amounts as an R list, with its terms' rates.
 fn quote_list(q: &Quote) -> List {
     let na = |x: Option<f64>| x.unwrap_or(f64::NAN);
@@ -1837,6 +1881,7 @@ extendr_module! {
     fn pricing_count_development;
     fn pricing_quote;
     fn pricing_tower_quote;
+    fn pricing_layer_quote;
     fn pricing_bounds_rust;
     fn distortion_envelope_rust;
     impl NaturalPortfolio;

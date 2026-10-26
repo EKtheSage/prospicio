@@ -11,45 +11,53 @@ execute:
   output: false
 ---
 
-This is the second half of the Werner and Modlin series. The first,
-[`ratemaking-werner-modlin.qmd`](ratemaking-werner-modlin.qmd), takes the steps
-of *Basic Ratemaking* (5th edition, CAS, 2016) one at a time: the
-parallelogram method, premium and loss trend, loss development, expenses and
-the permissible loss ratio, and credibility. This one runs the book's three
-worked overall indications end to end in prospicio, Appendix A (auto property
-damage, loss ratio method), Appendix B (homeowners, pure premium method) and
-Appendix C (medical malpractice, loss ratio method with a net trend), then
-covers chapter 11's increased limits and deductibles and lists what prospicio
-does not do.
+This guide is the second part of the Werner and Modlin series. The first part,
+[`ratemaking-werner-modlin.qmd`](ratemaking-werner-modlin.qmd), shows the
+steps of *Basic Ratemaking* (5th edition, CAS, 2016) one at a time. These
+steps are the parallelogram method, premium and loss trend, loss development,
+expenses and the permissible loss ratio, and credibility.
+
+This guide runs the book's three worked overall indications end to end in
+prospicio:
+
+- Appendix A: auto property damage, by the loss ratio method.
+- Appendix B: homeowners, by the pure premium method.
+- Appendix C: medical malpractice, by the loss ratio method with a net trend.
+
+Then it reproduces chapter 11's increased limits and deductibles.
 
 This is the R twin of the Python guide
-[`ratemaking-werner-modlin-indications.md`](ratemaking-werner-modlin-indications.md): the same sections, examples and
-numbers. The R package calls the same Rust code as the Python one, so every
-number printed agrees with the Python guide's. Each R chunk is followed by
-the text it prints, and `R/prospicio/tests/test-guides.R` runs the chunks in
-order and requires each one to print exactly that text. `half_up()` and
-`comma()` in the first chunk are the book's half-up rounding and thousands
-separators.
+[`ratemaking-werner-modlin-indications.md`](ratemaking-werner-modlin-indications.md).
+It has the same sections, examples and numbers. The R package calls the same
+Rust code as the Python package, so each printed number agrees with the Python
+guide. The text that each R chunk prints follows the chunk.
+`R/prospicio/tests/test-guides.R` runs the chunks in order and requires each
+chunk to print exactly that text. `half_up()` and `comma()` in the first chunk
+are the book's half-up rounding and thousands separators.
 
-
-As before, the book's exhibits are the authors' and the text here is new; each
-printed number is shown next to prospicio's, money is in dollars, and where
-the book rounds a cell before the next step the code applies the same
-rounding by hand (`half_up`) and says so. The rounding rules are collected in
-`knowledge/references/werner-modlin-ratemaking.md`, and the library's parity
-suite is `validation/tests/pricing.rs`.
+The book's exhibits are the authors', and the text here is new. Each block
+prints the book's numbers next to prospicio's, and money is in dollars. Where
+the book rounds a cell before the next step, the code applies the same
+rounding by hand (`half_up`) and says so.
+`knowledge/references/werner-modlin-ratemaking.md` lists the rounding rules,
+and `validation/tests/pricing.rs` is the parity suite of the library.
 
 ## 1. The factors, recomputed
 
-The indications use the factors the first guide derives. This block recomputes
-them in one place, rounded to four places as the exhibits print them: Appendix
-A's on-level factors (from the book's printed cumulative rate level indices),
-its two-step premium trend, its development factors (the straight average of
-link ratios excluding the highest and lowest, `chain_ladder(average =
-"simple", drop_high = 1, drop_low = 1)`, with the selection rounded to four
-places before it is chained to ultimate, as section 4 of the first guide
-explains) and its two-step loss trend; and Appendix C's on-level factors and
-net trend (8.9% over trend lengths the book rounds to two places).
+The indications use the factors that the first guide derives. This block
+recomputes them in one place and rounds them to four places, as the exhibits
+print them. For Appendix A, it recomputes four sets of factors:
+
+- the on-level factors, from the book's printed cumulative rate level indices
+- the two-step premium trend
+- the development factors: the straight average of link ratios without the
+  highest and lowest, `chain_ladder(average = "simple", drop_high = 1,
+  drop_low = 1)`. The code rounds the selection to four places before it
+  chains it to ultimate, as section 4 of the first guide explains.
+- the two-step loss trend
+
+For Appendix C, it recomputes the on-level factors and the net trend (8.9%
+over trend lengths that the book rounds to two places).
 
 ```{r}
 library(prospicio)
@@ -131,17 +139,19 @@ C on-level       1.2029 1.2058 1.2724 1.3018 1.2391  same as the book
 C net trend      1.7902 1.6439 1.5095 1.3862 1.2729  same as the book
 ```
 
-Each row is the column of the indication exhibit it feeds, digit for digit.
+Each row agrees digit for digit with the column of the indication exhibit that
+it feeds.
 
 ## 2. Appendix A: auto property damage by the loss ratio method
 
-Appendix A's indication (LR Indication exhibit) puts the pieces together for
-five calendar-accident years of private passenger auto property damage:
-earned premium brought to the current rate level and trended, reported
-losses and paid ALAE developed, trended and loaded for ULAE, and the ratio of
-the totals. `loss_ratio_experience()` takes each factor as a vector with one
-value per year (or one number for all years). The factors are section 1's; the
-ULAE factor of 1.143 comes from the appendix's ULAE Ratio exhibit:
+Appendix A's indication (LR Indication exhibit) combines the factors for five
+calendar-accident years of private passenger auto property damage. It brings
+earned premium to the current rate level and trends it. It develops and trends
+the reported losses and paid ALAE and loads them for ULAE. The indicated loss
+ratio is the ratio of the totals. `loss_ratio_experience()` takes each factor
+as a vector with one value for each year, or as one number for all years. The
+factors come from section 1. The ULAE factor of 1.143 comes from the
+appendix's ULAE Ratio exhibit:
 
 ```{r}
 a <- loss_ratio_experience(
@@ -179,13 +189,17 @@ total premium 7,883,253.19, sum of rounded rows 7,883,252 (book 7,883,252)
 total losses 4,876,718 (book 4,876,718)  loss and LAE ratio 61.86% (book 61.9%)
 ```
 
-Every row agrees to the dollar. The book's total premium is the sum of its
+Each row agrees to the dollar. The book's total premium is the sum of its
 rounded rows, a dollar below the exact total.
 
-The Expense exhibit splits five selected expense ratios by their fixed shares
-(general 6.3% and other acquisition 8.5%, each 75% fixed; licenses and fees
-0.2%, all fixed; commission and brokerage 11.2% and taxes 2.1%, all
-variable). The book rounds each part to a tenth before adding. The indicated
+The Expense exhibit divides five selected expense ratios into fixed and
+variable parts by their fixed shares:
+
+- general 6.3% and other acquisition 8.5%, each 75% fixed
+- licenses and fees 0.2%, all fixed
+- commission and brokerage 11.2% and taxes 2.1%, all variable
+
+The book rounds each part to a tenth before it adds the parts. The indicated
 change follows from the selected 61.9% loss and LAE ratio:
 
 ```{r}
@@ -210,13 +224,14 @@ variable permissible loss ratio 78.0% (book 78.0%)
 indicated change -6.15% (book -6.2%); from the unrounded loss ratio -6.20%
 ```
 
-The book computes the change from the selected, rounded 61.9%; from the
-exact 61.86% it would be -6.20%, the same printed figure.
+The book calculates the change from the selected, rounded 61.9%. From the
+exact 61.86%, the change is -6.20%, which prints as the same figure.
 
-The Credibility exhibit counts 3,612 claims against the 1,082 standard, so the
-indication is fully credible. It still computes the complement, trended
-present rates: last time's 13.2% indication with 5.0% taken, and a net trend
-of the 0.5% loss trend over the 2.0% premium trend for one year:
+The Credibility exhibit counts 3,612 claims against the standard of 1,082, so
+the indication is fully credible. The exhibit still calculates the complement,
+trended present rates. Last time the indication was 13.2% and the insurer took
+5.0%. The net trend is the 0.5% loss trend over the 2.0% premium trend, for
+one year:
 
 ```{r}
 za <- limited_fluctuation_credibility(3612, 1082)
@@ -232,15 +247,19 @@ Z 1.000 (book 100.0%)  complement 6.22% (book 6.2%)  credibility-weighted -6.2% 
 
 ## 3. Appendix B: homeowners by the pure premium method
 
-Appendix B prices homeowners per exposure. Non-catastrophe losses are
-developed, trended and loaded for ULAE over earned exposures
-(`pure_premium_experience()`); catastrophes enter separately, as a non-modelled
-load (from a long history of catastrophe losses to amount of insurance) and a
-hurricane model's modelled load; the net cost of reinsurance and fixed
-expenses are amounts per exposure; and the rate is the fundamental equation
-with variable expense and profit. The development and trend factors are the
-exhibit's (its development triangle and trend fits are not reproduced
-here):
+Appendix B prices homeowners per exposure in four parts:
+
+1. `pure_premium_experience()` develops and trends the non-catastrophe losses,
+   loads them for ULAE and divides them by earned exposures.
+2. Catastrophes enter separately, as a non-modelled load and a modelled load.
+   The non-modelled load comes from a long history of catastrophe losses to
+   amount of insurance. The modelled load comes from a hurricane model.
+3. The net cost of reinsurance and the fixed expenses are amounts per
+   exposure.
+4. The rate is the fundamental insurance equation with variable expense and
+   profit.
+
+The development and trend factors are the exhibit's printed values:
 
 ```{r}
 b <- pure_premium_experience(
@@ -270,12 +289,12 @@ cat(sprintf("total %s (book 30,343,206)  pure premium %.2f (book 469.88)\n",
 total 30,343,206 (book 30,343,206)  pure premium 469.88 (book 469.88)
 ```
 
-The credibility is 683 claims against 1,082; the book rounds it to 79.5%
-before weighting with the regional pure premium of $585.75. The reinsurance
-cost is the projected net cost of $214,575 over the latest exposures grown 1%
-a year for two years, rounded to whole exposures; the fixed expense of $72.79
-per exposure is trended 3.4% a year for two years with the factor rounded to
-four places:
+The credibility is 683 claims against 1,082. The book rounds it to 79.5%
+before it weights with the regional pure premium of $585.75. The reinsurance
+cost is the projected net cost of $214,575 divided by the projected exposures.
+These are the latest exposures grown 1% a year for two years, rounded to whole
+exposures. The code trends the fixed expense of $72.79 per exposure at 3.4% a
+year for two years and rounds the factor to four places:
 
 ```{r}
 zb <- limited_fluctuation_credibility(683, 1082)
@@ -301,18 +320,20 @@ total pure premium 597.31 (book 597.31)  variable permissible 81.2% (book 81.2%)
 indicated rate 850.76 (book 850.76)
 ```
 
-The $29.11 non-modelled catastrophe load is taken as printed: the
+The code takes the $29.11 non-modelled catastrophe load as printed. The
 appendix's Non-Modeled Cat exhibit rounds its ratios to three places at each
 step, and the unrounded chain gives $29.28. The $74.57 modelled load comes
-from a hurricane model outside the book.
+from a hurricane model, not from the book's data, so the code also takes it as
+printed.
 
 ## 4. Appendix C: medical malpractice with a net trend
 
-Appendix C works on a small, long-tailed book of occurrence policies:
-ultimate losses and ALAE (developed in the appendix by several methods, taken
-here as the selected ultimates), premium at current rate level and
-one net trend of 8.9% applied to losses with no separate premium trend.
-ULAE sits with the expenses, so the losses carry no LAE factor:
+Appendix C uses a small, long-tailed book of occurrence policies. The inputs
+are ultimate losses and ALAE, premium at current rate level and one net trend
+of 8.9%. The appendix develops the losses by several methods, and the code
+takes the selected ultimates. The net trend applies to losses, with no
+separate premium trend. ULAE is part of the expenses, so the losses have no
+LAE factor:
 
 ```{r}
 cc <- loss_ratio_experience(
@@ -343,13 +364,13 @@ cat(sprintf("totals %s (book 95,726,878) and %s (book 103,860,568): %.2f%% (book
 totals 95,726,878 (book 95,726,878) and 103,860,568 (book 103,860,568): 108.50% (book 108.5%)
 ```
 
-All expenses are variable here (general 6.4%, other acquisition 2.6%, taxes,
-licenses and fees 2.1%, commission and brokerage 21.2%, and ULAE 2.4%), and
-the underwriting profit provision is -5% because the investment income
-expected in this long-tailed line covers the target return. The credibility standard is stricter than
-Appendix A's (within 7.5% with 95% probability, 683 claims) and the
-complement is the countrywide indication of +18.5%; the book rounds the
-indication and the credibility to a tenth of a percent before weighting:
+All expenses are variable here: general 6.4%, other acquisition 2.6%, taxes,
+licenses and fees 2.1%, commission and brokerage 21.2%, and ULAE 2.4%. The
+underwriting profit provision is -5%, because the investment income expected
+in this long-tailed line covers the target return. The credibility standard is
+stricter than Appendix A's: within 7.5% with 95% probability, 683 claims. The
+complement is the countrywide indication of +18.5%. The book rounds the
+indication and the credibility to a tenth of a percent before it weights them:
 
 ```{r}
 variable <- premium_based_expenses(c(0.064, 0.026, 0.021, 0.212, 0.024), 0)[["variable"]]
@@ -372,28 +393,26 @@ credibility-weighted 41.56% (book 41.6%); unrounded 41.57%
 ```
 
 The selected loss and ALAE ratio of 108.5% is the rounded total above. The
-book's exhibits treat 2010 to 2014 as the experience period; its earned
-premium table also lists 2008 with the same figure as 2014 (18,265,093),
-probably a copy, which does not enter the indication.
-
-Appendix D (workers compensation) is a fourth worked indication; its
-benefit-level and wage adjustments are chains of factors a caller multiplies
-with `trend_factor()`, and it is not reproduced here.
+book's exhibits use 2010 to 2014 as the experience period. Its earned premium
+table also lists 2008 with the same figure as 2014 (18,265,093). This is
+probably a copy error, and it does not enter the indication.
 
 ## 5. Increased limits and deductibles
 
-Chapter 11 prices limits and deductibles from a size-of-loss table: the
-increased limit factor is the limited average severity at the limit over that
-at the basic limit, and a deductible's loss elimination ratio is the share of
-losses below it. For a fitted or assumed severity, `ilf()` and
-`loss_elimination_ratio()` compute both exactly (see
+Chapter 11 prices limits and deductibles from a size-of-loss table. The
+increased limit factor (ILF) is the limited average severity (LAS) at the
+limit divided by the LAS at the basic limit. The loss elimination ratio (LER)
+of a deductible is the share of losses below the deductible. For a fitted or
+assumed severity, `ilf()` and `loss_elimination_ratio()` calculate both
+exactly (see
 [`distributions-for-actuaries-claim-size.md`](distributions-for-actuaries-claim-size.md)).
-The book's tables, though, give only claim counts and loss totals per size
-band. `size_of_loss()` reads such a table as a severity, with each band's
-claims at the band's average, so its limited expected value is exact at every
-band edge, and `ilf()`, `loss_elimination_ratio()` and the layer functions
-take it like any other severity. `censored_las()` does the censored method of
-Table 11.6, one table per policy limit:
+
+The book's tables give only claim counts and loss totals for each size band.
+`size_of_loss()` reads such a table as a severity. It puts the claims of each
+band at the band's average, so its limited expected value is exact at each
+band edge. `ilf()`, `loss_elimination_ratio()` and the layer functions take it
+as any other severity. `censored_las()` applies the censored method of Table
+11.6, with one table for each policy limit:
 
 ```{r}
 # Table 11.3: 5,000 uncensored claims, (count, losses) by band up to 100K, 250K, 500K, 1M.
@@ -433,45 +452,15 @@ LER(250) 0.135 (book 0.135)
 ```
 
 The censored method builds each layer only from policies whose limit is at
-least the top of the layer, and scales it by the share of those policies'
-claims that reach the layer. It gives a lower LAS(250K) than the uncensored
-table, as the book's numbers show.
-
-## 6. What prospicio does not cover
-
-The overall indication is covered end to end. These parts of the book are
-not, and some are filed as issues for the lane that owns the code:
-
-- **Exposure and premium aggregation from policies** (chapters 4 and 5:
-  written, earned, unearned and in-force amounts, the 24ths rule, the
-  extension of exposures through a rating algorithm) and premium
-  development. prospicio starts from aggregated figures.
-- **Traditional risk classification** (chapter 9: univariate pure premium
-  and loss ratio relativities, adjusted for distributional bias; Appendix E),
-  **multivariate classification and GLMs** (chapter 10 and Appendix F),
-  **territorial ratemaking** and rate level indications by territory or
-  class, and the other special classifications of chapter 11 (insurance to
-  value and coinsurance, workers compensation size of risk and premium
-  discounts). prospicio has a GLM library (`glm_fit()` and the models functions), but the
-  classification workflow of these chapters is the subject of Goldburd, Khare
-  and Tevet's CAS Monograph 5, *Generalized Linear Models for Insurance
-  Rating*, which a later guide in this series will follow.
-- **Implementation** (chapter 14: rate capping, base rate offsetting,
-  dislocation analysis), **commercial lines rating mechanisms** (chapter 15:
-  experience and schedule rating, large deductibles, retrospective rating;
-  reinsurance-style experience rating is in
-  [`experience-and-exposure-rating.md`](experience-and-exposure-rating.md)),
-  and **claims-made ratemaking** (chapter 16).
-- **Catastrophe loads from amount of insurance years** and **workers
-  compensation benefit chains** (Appendices B and D) are arithmetic with
-  `trend_factor`; the hurricane model behind Appendix B's modelled load is
-  outside the book.
+least the top of the layer. It scales the layer by the share of those
+policies' claims that reach the layer. As the book's numbers show, the method
+gives a lower LAS(250K) than the uncensored table.
 
 ## Where the book's printed numbers differ from exact arithmetic
 
-Every difference between a printed figure and prospicio's exact value comes
-from the book rounding a cell before the next step; once that rounding is
-applied, as in the code above, each printed figure is reproduced:
+Each difference between a printed figure and prospicio's exact value comes
+from the book's rounding of a cell before the next step. When the code applies
+that rounding, as above, it reproduces each printed figure:
 
 | Where | Book | Exact | Cause |
 |---|---|---|---|
@@ -490,8 +479,10 @@ applied, as in the code above, each printed figure is reproduced:
 | Appendix C, credibility-weighted change | 41.6% | 41.57% | indication and Z rounded first (same printed tenth) |
 | Table 11.6, censored LAS(250K) | 121,621 | 121,620.5 | layers rounded to the dollar before adding |
 
-Separately, three slips in the book itself, none of which changes an
-indication: Appendix A's Premium Trend-3 footnote
-gives the trend period as 6/30/2017 to 6/30/2017 (it is from 6/30/2015);
-Table 7.5 uses 2015 earned premium of 545,250,000 where Table 7.4 has
-530,000,000; and Appendix C lists the same earned premium for 2008 and 2014.
+The book also has three slips. None of them changes an indication:
+
+- Appendix A's Premium Trend-3 footnote gives the trend period as 6/30/2017 to
+  6/30/2017. The period starts at 6/30/2015.
+- Table 7.5 uses 2015 earned premium of 545,250,000, where Table 7.4 has
+  530,000,000.
+- Appendix C lists the same earned premium for 2008 and 2014.

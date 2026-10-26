@@ -10,11 +10,13 @@ execute:
   warning: false
 ---
 
-The [guides](../docs/guides/reading-list.md) explain prospicio one topic at a time, most of them by reproducing a published text. This document is a map to them, in R: it is the R twin of [`reading_path.ipynb`](reading_path.ipynb), with the same data, seeds and models, and every number it prints agrees with the notebook's. It carries one small synthetic book through the stations an actuary passes on the way from claims data to capital, runs a few lines of prospicio at each, and then names the guides to read next and the question each one answers.
+The [guides](../docs/guides/reading-list.md) explain prospicio one topic at a time. Most of them reproduce a published text. This document is a map to the guides, in R. It is the R twin of [`reading_path.ipynb`](reading_path.ipynb), with the same data, seeds and models. Every number that it prints agrees with the notebook.
+
+It takes one small synthetic book through the stations of an actuary, from claims data to capital. At each station it runs a few lines of prospicio. It then names the guides to read next and the question that each guide answers.
 
 The book has two lines, with money in millions of a synthetic currency:
 
-* **Property**: seven years of ground-up claims, drawn from a known claim count and severity so the fits can be checked against the truth. It carries the severity, the claim count, the annual aggregate, a per-risk excess of loss layer and the rate indication.
+* **Property**: seven years of ground-up claims. A known claim count and severity give the claims, so you can check the fits against the truth. This line carries the severity, the claim count, the annual aggregate, a per-risk excess of loss layer and the rate indication.
 * **Casualty**: a seven by seven paid triangle, for the reserve and its uncertainty.
 
 The stations:
@@ -27,7 +29,7 @@ The stations:
 6. Risk loads, distortions and capital allocation
 7. Where to go next: Bayesian models and GLMs
 
-Every chunk is seeded and the whole document runs in a few seconds. To run it, install the R package (`remotes::install_github`, see `R/prospicio/bootstrap.R`), then render it from anywhere in the repository with `quarto render examples/reading_path.qmd`; it reads no data files. The links to the guides go to the Python guides; most have an R twin of the same name, a `.qmd` beside them.
+Every chunk has a seed, and the whole document runs in a few seconds. To run it, install the R package (`remotes::install_github`, see `R/prospicio/bootstrap.R`). Then render it from anywhere in the repository with `quarto render examples/reading_path.qmd`. The document reads no data files. The links go to the Python guides. Most guides have an R twin of the same name, a `.qmd` beside them.
 
 ```{r}
 #| label: setup
@@ -38,7 +40,7 @@ pct <- function(x, digits = 1) sprintf(paste0("%.", digits, "f%%"), 100 * x)
 
 ## The book
 
-The property claims come from a negative binomial count with mean 400 and variance 600 a year and a lognormal severity with mean 0.02 and CV 3. In practice these are unknown; here they are known so each station can say how far its estimate lands from the truth.
+The property claims come from a negative binomial count and a lognormal severity. The count has mean 400 and variance 600 a year. The severity has mean 0.02 and CV 3. In practice these are unknown. Here they are known, so each station can show how far its estimate is from the truth.
 
 ```{r}
 #| label: book
@@ -58,7 +60,7 @@ for (k in seq_along(YEARS)) {
 
 ## 1. Severity and claim count
 
-A maximum likelihood lognormal fitted to all the claims, and a claim count chosen by its dispersion: `claim_count` returns a Poisson when the variance equals the mean and a negative binomial when it is larger.
+The code fits a maximum likelihood lognormal to all the claims. It chooses a claim count by its dispersion. `claim_count` returns a Poisson when the variance equals the mean, and a negative binomial when the variance is larger.
 
 ```{r}
 #| label: fit
@@ -74,17 +76,17 @@ cat(sprintf("claim count: mean %.1f, dispersion %.2f -> %s (truth 400.0, dispers
             yearly_mean, yearly_var / yearly_mean, count_family))
 ```
 
-Seven years are enough for the severity, not for the count: its dispersion rests on seven numbers.
+Seven years are enough for the severity, but not for the count: its dispersion rests on seven numbers.
 
 **Read next.**
 
-* [Severity and frequency](../docs/guides/severity-and-frequency.md): which severity family and which count family, and how to fit them, with censoring, truncation, splices and mixtures.
+* [Severity and frequency](../docs/guides/severity-and-frequency.md): which severity family and which count family to use, and how to fit them, with censoring, truncation, splices and mixtures.
 * [Distributions for actuaries: claim size](../docs/guides/distributions-for-actuaries-claim-size.md): limited expected values, fits to grouped, censored and truncated data, excess layers, the leveraging effect of inflation and increased limit factors (Bahnemann, CAS Monograph 2).
 * [Distributions for actuaries: counts and aggregates](../docs/guides/distributions-for-actuaries-counts-aggregates.md): Poisson, mixed Poisson and negative binomial counts, and what contagion does to a count (Bahnemann, chapters 3 and 4).
 
 ## 2. The annual aggregate distribution
 
-The year's total loss combines the count and the severity. The severity goes on a grid of step 0.01, censored at a policy limit of 2, and the FFT gives the annual distribution on that grid. The compound moments and a simulation are two checks.
+The total loss of the year combines the count and the severity. The severity goes on a grid of step 0.01, censored at a policy limit of 2. The FFT gives the annual distribution on that grid. The compound moments and a simulation are two checks.
 
 ```{r}
 #| label: aggregate
@@ -102,16 +104,16 @@ cat(sprintf("moments:    mean %.3f, sd %.3f, skew %.3f\n",
 cat(sprintf("simulation: mean %.3f, 99%% %.2f (4,000 years)\n", mean(simulated), quantile(simulated, 0.99)))
 ```
 
-The three agree on the mean, and the simulation's 99% is within its sampling error of the FFT's.
+The three agree on the mean. The 99% of the simulation is within its sampling error of the FFT value.
 
 **Read next.**
 
 * [Aggregate distributions](../docs/guides/aggregate-distributions.md): FFT, Panjer, simulation or moments, how to size the grid, and when each is exact, fast or unsafe.
-* [prospicio for aggregate users](../docs/guides/prospicio-for-aggregate-users.md): the same machinery as Mildenhall's `aggregate` package, side by side, for a reader coming from it.
+* [prospicio for aggregate users](../docs/guides/prospicio-for-aggregate-users.md): the same methods as Mildenhall's `aggregate` package, side by side, for a reader who knows that package.
 
 ## 3. A reinsurance layer
 
-A per-risk excess of loss layer of 1.5 xs 0.5 on the property line. Exposure rating prices it from the fitted severity curve (the expected count times the severity's layer average); experience rating from the claims that reached it (the burning cost). Only a handful of claims pierce 0.5, so the experience gets little credibility and the blend sits near the exposure figure.
+The layer is a per-risk excess of loss layer of 1.5 xs 0.5 on the property line. Exposure rating prices it from the fitted severity curve (the expected count times the layer average of the severity). Experience rating prices it from the claims that reached it (the burning cost). Only a few claims pierce 0.5. So the experience gets little credibility, and the blend is near the exposure figure.
 
 ```{r}
 #| label: layer
@@ -132,7 +134,7 @@ cat(sprintf("experience (burning cost) %.4f from %d claims, credibility %.3f\n",
 cat(sprintf("selected expected layer loss %.4f\n", selected))
 ```
 
-The price backs the layer with capital at its 99% TVaR and asks for a 10% return on that capital. The pentagon (loss, margin, premium, capital, assets) completes itself from three of its quantities:
+The price backs the layer with capital at its 99% TVaR and asks for a 10% return on that capital. The pentagon (loss, margin, premium, capital, assets) gets all five quantities from three of them:
 
 ```{r}
 #| label: pentagon
@@ -143,13 +145,19 @@ cat(sprintf("layer: loss %.4f, margin %.4f, premium %.4f (%s rate on line), capi
 
 **Read next.**
 
-* [What a reinsurance price is](../docs/guides/reinsurance-price.md): the technical premium of an excess of loss layer and a quota share, reinstatements, a contract alone and in a book, and what the model leaves out.
-* [Experience and exposure rating](../docs/guides/experience-and-exposure-rating.md): preparing losses as-if (development, trend, index clauses), the burning cost, exposure curves and risk profiles, and how to blend the two by credibility (after Clark).
-* [Choosing a method](../docs/guides/choosing-a-method.md): which tool for which cover, and where the library stops.
+* [What a reinsurance price is](../docs/guides/reinsurance-price.md): the technical premium of an excess of loss layer and a quota share, reinstatements, and a contract alone and in a book.
+* [Experience and exposure rating](../docs/guides/experience-and-exposure-rating.md): how to prepare losses as-if (development, trend, index clauses), the burning cost, exposure curves and risk profiles, and how to blend the two by credibility (after Clark).
+* [Choosing a method](../docs/guides/choosing-a-method.md): which tool for which cover.
 
 ## 4. A ratemaking indication
 
-The loss ratio method on the property line: earned premium brought to the current rate level, losses trended two years at 4% a year to the period the new rates will cover and loaded 8% for LAE. Property claims are short tailed, so the claims are taken as fully developed. The indicated change compares the projected loss and LAE ratio with the permissible one (20% variable expense, 5% profit, 8% fixed expense). With nearly 3,000 claims the experience is fully credible under the classical 1,082-claim standard.
+The code applies the loss ratio method to the property line:
+
+1. It brings earned premium to the current rate level.
+2. It trends losses two years at 4% a year to the period that the new rates cover.
+3. It loads losses 8% for LAE.
+
+Property claims are short tailed, so the code takes the claims as fully developed. The indicated change compares the projected loss and LAE ratio with the permissible ratio (20% variable expense, 5% profit, 8% fixed expense). With nearly 3,000 claims, the experience is fully credible under the classical standard of 1,082 claims.
 
 ```{r}
 #| label: indication
@@ -176,11 +184,11 @@ cat(sprintf("indicated change %s%s, credibility %.2f (%s claims)\n", if (change 
 **Read next.**
 
 * [Ratemaking with Werner and Modlin](../docs/guides/ratemaking-werner-modlin.md): each step of the overall indication (premium at the current rate level by the parallelogram method, trend, development, expenses and the permissible loss ratio, credibility and its complements).
-* [Werner and Modlin's indications](../docs/guides/ratemaking-werner-modlin-indications.md): the book's three worked indications end to end, and increased limits and deductibles.
+* [Werner and Modlin's indications](../docs/guides/ratemaking-werner-modlin-indications.md): the three worked indications of the book end to end, and increased limits and deductibles.
 
 ## 5. Reserving
 
-The casualty line's paid triangle. The chain ladder gives the ultimate by accident year; Mack's formula gives the reserve's standard error without a distributional assumption; the ODP bootstrap gives a distribution of the reserve.
+The casualty line has a paid triangle. The chain ladder gives the ultimate by accident year. Mack's formula gives the standard error of the reserve without a distributional assumption. The ODP bootstrap gives a distribution of the reserve.
 
 ```{r}
 #| label: triangle
@@ -216,18 +224,18 @@ cat(sprintf("ODP bootstrap: mean %.2fm, sd %.2fm, 99.5%% %.2fm (2,000 simulation
             mean(boot), sqrt(variance(boot)), quantile(boot, 0.995)))
 ```
 
-Mack and the bootstrap tell a similar story: a reserve of about 15 with a CV near 13%.
+Mack and the bootstrap give a similar result: a reserve of about 15 with a CV near 13%.
 
 **Read next.**
 
-* [Reserving methods](../docs/guides/reserving-methods.md): which method when (chain ladder, Bornhuetter-Ferguson, Cape Cod, Mack, the bootstraps, tails and the one-year view), with the reserve's uncertainty as a distribution.
-* [Reserving with Friedland's techniques](../docs/guides/reserving-friedland.md): development, expected claims, Bornhuetter-Ferguson, Benktander and Cape Cod on the CAS text's own data.
+* [Reserving methods](../docs/guides/reserving-methods.md): which method to use when (chain ladder, Bornhuetter-Ferguson, Cape Cod, Mack, the bootstraps, tails and the one-year view), with the uncertainty of the reserve as a distribution.
+* [Reserving with Friedland's techniques](../docs/guides/reserving-friedland.md): development, expected claims, Bornhuetter-Ferguson, Benktander and Cape Cod on the data of the CAS text itself.
 * [Taylor and McGuire's ODP GLM](../docs/guides/reserving-taylor-mcguire.md): the chain ladder as an over-dispersed Poisson GLM, its prediction error and the bootstrap, and the reduced models (CAS Monograph 3).
-* [Excess-layer loss development](../docs/guides/reserving-excess-layers.md): layer factors derived from the dense ground-up triangle and a claim size distribution, blended with the layer's own data by credibility, and the layer share as a Bayesian Bornhuetter-Ferguson prior.
+* [Excess-layer loss development](../docs/guides/reserving-excess-layers.md): layer factors derived from the dense ground-up triangle and a claim size distribution, blended with the data of the layer itself by credibility, and the layer share as a Bayesian Bornhuetter-Ferguson prior.
 
 ## 6. Risk loads, distortions and capital allocation
 
-The two lines go into one book: the property line's annual loss from station 2 and the casualty reserve risk from station 5 (a gamma with Mack's mean and CV), as independent units on the same grid. The book is backed by assets at its 99% VaR, less than the two VaRs added. Each of five distortion families is calibrated to a 10% return on the book's capital, so all five charge the same total margin; the natural allocation then splits that margin between the lines.
+The two lines go into one book as independent units on the same grid. The property unit is the annual loss from station 2. The casualty unit is the reserve risk from station 5, a gamma with the mean and CV from Mack. Assets at the 99% VaR of the book back it, and these assets are less than the sum of the two VaRs. The code calibrates each of five distortion families to a 10% return on the capital of the book. So all five charge the same total margin, and the natural allocation splits that margin between the lines.
 
 ```{r}
 #| label: capital
@@ -246,7 +254,7 @@ for (family in FAMILIES) {
 }
 ```
 
-Here the five distortions split the margin almost the same way, because neither line has a catastrophe tail. They part company when one unit is much more skewed than the other, as the case studies show.
+Here the five distortions split the margin almost the same way, because neither line has a catastrophe tail. They differ when one unit is much more skewed than the other, as the case studies show.
 
 **Read next.**
 
@@ -261,7 +269,7 @@ Here the five distortions split the margin almost the same way, because neither 
 
 The stations above use closed forms, grids and quick simulations. Two families of guides go further, with fits that take longer than this notebook should:
 
-* **Bayesian reserving.** [Meyers' models](../docs/guides/reserving-meyers.md) (CAS Monograph 8) go from Mack and the ODP bootstrap to the Bayesian CRC, CSR and CAY models and validate them by the outcome's percentile; [compartmental reserving](../docs/guides/reserving-compartmental.md) (Gesmann and Morris) models paid and outstanding together, with reporting and payment rates.
-* **GLMs for rating.** [GLMs for insurance rating](../docs/guides/glm-ratemaking-goldburd.md) and [their validation](../docs/guides/glm-ratemaking-goldburd-validation.md) (CAS Monograph 5) build a multiplicative rating plan and test it; [From GLMs to comprehensive pricing](../docs/guides/glm-to-comprehensive-pricing-chalk.md) and [its second part](../docs/guides/glm-to-comprehensive-pricing-chalk-2.md) (CAS Monograph 16) add penalized GLMs, GAMs, offsets and lessons from boosting models.
+* **Bayesian reserving.** [Meyers' models](../docs/guides/reserving-meyers.md) (CAS Monograph 8) go from Mack and the ODP bootstrap to the Bayesian CRC, CSR and CAY models. They test the models by the percentile of the outcome. [Compartmental reserving](../docs/guides/reserving-compartmental.md) (Gesmann and Morris) models paid and outstanding together, with reporting and payment rates.
+* **GLMs for rating.** [GLMs for insurance rating](../docs/guides/glm-ratemaking-goldburd.md) and [their validation](../docs/guides/glm-ratemaking-goldburd-validation.md) (CAS Monograph 5) build a multiplicative rating plan and test it. [From GLMs to comprehensive pricing](../docs/guides/glm-to-comprehensive-pricing-chalk.md) and [its second part](../docs/guides/glm-to-comprehensive-pricing-chalk-2.md) (CAS Monograph 16) add penalized GLMs, GAMs, offsets and lessons from boosting models.
 
-The [reading list](../docs/guides/reading-list.md) maps each source text to its guides; the other notebooks here and their R twins are worked analyses that use these pieces together.
+The [reading list](../docs/guides/reading-list.md) maps each source text to its guides. The other notebooks here and their R twins are worked analyses that use these pieces together.

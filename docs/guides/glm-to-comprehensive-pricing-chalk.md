@@ -1,54 +1,66 @@
 # Beyond the GLM: CAS Monograph 16 with prospicio
 
-CAS Monograph 16, *From GLMs to Comprehensive Insurance Pricing: Techniques and
-Challenges* (Alan Chalk, David Deacon, Montserrat Guillen and Max Martinelli,
-2025), starts where the GLM monograph of Goldburd and others stops. It takes a
-GLM as known and asks what a pricing team does next: how to measure a model on
-data it has not seen, how penalized regression picks features and shrinks them,
-how step and hinge functions let a GLM bend, what to do with a factor that has
-thousands of levels, how to handle highly correlated features, how to fit a
-model in two stages with offsets, and how to learn from a gradient boosting
-model that beats the GLM. The GLM itself (families, links, offsets, the
-rating plan from coefficients) is the subject of the Goldburd guide; this one
-covers the step beyond it.
+CAS Monograph 16 is *From GLMs to Comprehensive Insurance Pricing: Techniques
+and Challenges* (Alan Chalk, David Deacon, Montserrat Guillen and Max
+Martinelli, 2025). It starts where the GLM monograph of Goldburd and others
+stops. It takes the GLM as known and asks what a pricing team does next:
 
-This guide explains each chapter in new words and runs its methods in prospicio.
-The text is the authors'; what follows is an explanation with the numbers
-recomputed. Read the monograph for the reasoning and this guide for the
+- how to measure a model on data that it has not seen,
+- how penalized regression selects features and shrinks them,
+- how step and hinge functions let a GLM bend,
+- what to do with a factor that has thousands of levels,
+- how to handle highly correlated features,
+- how to fit a model in two stages with offsets,
+- how to learn from a gradient boosting model that is better than the GLM.
+
+The Goldburd guide covers the GLM itself (families, links, offsets, the rating
+plan from coefficients). This guide covers the next step.
+
+This guide explains each chapter in new words and runs its methods in
+prospicio. Read the monograph for the reasoning and this guide for the
 mechanics. Table and section numbers are the monograph's.
 
-**What can be reproduced.** The monograph's case studies run on data a reader of
-this repository does not have offline: the FAA aircraft registry joined to NTSB
-accident records (published as an R package on GitHub, 2 million rows, of which
-the authors used a 25% sample), UK road accident counts summarized with census
-fields by the authors, and a simulated auto portfolio whose rows are not
-published. The fitted coefficients, pseudo-R2 values and plots of those case
-studies therefore cannot be recomputed, and this guide does not invent data to
-match them. What it does reproduce, in full, is every worked example whose
-inputs the monograph prints: the pseudo-R2 of Table 3.1, the closed forms of
-section 4.7, the encodings of Tables 6.1 and 6.5, the offset example of chapter
-8 (whose cell counts and true relativities Tables 8.2 and 8.3 print), the
-permutation example of Tables 9.1 to 9.4 and the arithmetic built on printed
-coefficients. Each prints the monograph's value next to prospicio's.
+**What this guide reproduces.** The case studies of the monograph use three
+data sets that are not available offline:
+
+- the FAA aircraft registry joined to NTSB accident records (an R package on
+  GitHub with 2 million rows, and the authors used a 25% sample),
+- UK road accident counts that the authors summarized with census fields,
+- a simulated auto portfolio whose rows are not published.
+
+Thus this guide does not recompute the coefficients, pseudo-R2 values or plots
+of the case studies, and it does not invent data to match them. It reproduces
+every worked example whose inputs the monograph prints:
+
+- the pseudo-R2 of Table 3.1,
+- the closed forms of section 4.7,
+- the encodings of Tables 6.1 and 6.5,
+- the offset example of chapter 8 (Tables 8.2 and 8.3 print its cell counts
+  and true relativities),
+- the permutation example of Tables 9.1 to 9.4,
+- the arithmetic on printed coefficients.
+
+Each example prints the monograph's value next to prospicio's.
 
 To show the methods on data, the guide simulates a motor portfolio with a known
-ground truth, as the monograph's section 2.3 does: 20,000 policies with driver
-age, vehicle age, region, power, a 300-level make, a noise feature and an
-interaction between young drivers and powerful cars. It is built with a fixed
-seed in the first block of section 1.2, so every number below is reproducible.
-Models are compared by ranking and by pseudo-R2 rounded to three decimals,
-since gradient boosting libraries move the later digits between versions.
+ground truth, as section 2.3 of the monograph does. The portfolio has 20,000
+policies with driver age, vehicle age, region, power, a 300-level make, a noise
+feature and a young-driver, high-power interaction. The first block of section
+1.2 builds it with a fixed seed, so every number below is reproducible. The
+guide compares models by ranking and by pseudo-R2 rounded to three decimals,
+because gradient boosting libraries change the later digits between versions.
 
 ## 1. Measuring performance (chapter 3)
 
 ### 1.1 Pseudo-R2
 
 The monograph measures every model by one number that does not grow with the
-size of the data: the share of the possible improvement in log-likelihood that
-the model achieves, from the null model (the mean for everyone) to the saturated
-model (each record predicted at its own outcome). Since deviance is twice the
-gap to the saturated model, this is `1 - D_model / D_null`, the deviance
-explained. Table 3.1 has four records, two claims and predictions 0.2 to 0.8:
+size of the data. The number is the share of the possible improvement in
+log-likelihood that the model achieves. The scale runs from the null model (the
+mean for everyone) to the saturated model (each record predicted at its own
+outcome). Deviance is twice the gap to the saturated model, so this share is
+`1 - D_model / D_null`, the deviance explained. Table 3.1 has four records, two
+claims and predictions 0.2 to 0.8:
 
 ```python
 import math
@@ -83,15 +95,15 @@ pseudo-R2 from log-likelihoods 0.471
 pseudo-R2 from deviances       0.471 (printed 47%)
 ```
 
-Both routes give the printed 47%. `deviance` takes prior weights too, which is
-section 3.7.2's exposure-weighted version: each record's deviance is multiplied
-by its exposure in both the model and the null deviance.
+Both routes give the printed 47%. `deviance` also takes prior weights, for the
+exposure-weighted version of section 3.7.2. It multiplies the deviance of each
+record by its exposure, in the model deviance and in the null deviance.
 
-Two more numbers in the chapter are arithmetic on printed values. Table 3.6's
-corporation with a five-year-old aircraft has linear predictor -2.447 + 0.410 +
-5 x (-0.086) = -2.467 and frequency exp(-2.467) = 0.085; and in section 3.7.4 the
-null model trained on folds 2 to 7 is rebased to fold 1's mean by
-0.004593 / 0.004579:
+Two more numbers in the chapter are arithmetic on printed values. In Table 3.6,
+a corporation with a five-year-old aircraft has linear predictor -2.447 + 0.410
++ 5 x (-0.086) = -2.467 and frequency exp(-2.467) = 0.085. In section 3.7.4,
+the factor 0.004593 / 0.004579 rebases the null model trained on folds 2 to 7
+to the mean of fold 1:
 
 ```python
 print(f"linear predictor {-2.447 + 0.410 + 5 * -0.086:.3f}, frequency {math.exp(-2.467):.3f} (printed -2.467, 0.085)")
@@ -105,20 +117,25 @@ rebasing factor 1.0031 (printed 1.0031)
 
 ### 1.2 A portfolio with a known truth, and folds from the policy number
 
-The simulated portfolio below plays the part of the monograph's case studies.
-The true log frequency has a steep young-driver effect, a rise after 60, a
-vehicle-age effect that falls until age 6 and is flat after, region and power
-effects, a make effect drawn for each of 300 makes whose sizes fall off like a
-Zipf law, and an extra load for young drivers of high-power cars. `noise` has no
-effect, and `exper` (years since the driving test) is driver age less 17 less a
-small random amount, so it is highly correlated with age and has no effect of
-its own.
+The simulated portfolio below takes the place of the monograph's case studies.
+The true log frequency has these parts:
 
-Section 3.7.3 recommends deriving folds from the policy number rather than from a
-random draw, so they can be rebuilt by anyone at any time and every record of
-one policy lands in one fold. Here the policy number is the row number, the fold
-is its last digit, folds 7 to 9 (30%) are the test data, and folds 0 to 6 are
-the seven cross-validation folds, as in the monograph.
+- a steep young-driver effect and a rise after age 60,
+- a vehicle-age effect that falls until age 6 and is flat after,
+- region and power effects,
+- a make effect for each of 300 makes, with make sizes that fall like a Zipf
+  law,
+- an extra load for young drivers of high-power cars.
+
+`noise` has no effect. `exper` (years since the driving test) is driver age
+less 17 less a small random amount. It is highly correlated with age and has no
+effect of its own.
+
+Section 3.7.3 recommends folds from the policy number, not from a random draw.
+Then anyone can rebuild the folds at any time, and all records of one policy go
+into one fold. Here the policy number is the row number and the fold is its
+last digit. Folds 7 to 9 (30%) are the test data, and folds 0 to 6 are the
+seven cross-validation folds, as in the monograph.
 
 ```python
 import numpy as np
@@ -160,12 +177,12 @@ frequency 0.2439; makes with under 20 policies: 166
 correlation of age and exper 0.997
 ```
 
-The helper below is the monograph's measure for a frequency model with exposure:
-`y` are claim counts, `mu` expected counts, and the null model is the data's own
-mean frequency times each record's exposure. `cv_score` trains on six of the
-seven folds, scores the seventh, and averages; it takes any function that fits
-on one design and predicts on another, so a GLM, a GAM and a gradient boosting
-model are scored the same way.
+The helper below is the monograph's measure for a frequency model with
+exposure. `y` are claim counts and `mu` are expected counts. The null model is
+the mean frequency of the data times the exposure of each record. `cv_score`
+trains on six of the seven folds, scores the seventh, and calculates the
+average. It takes any function that fits on one design and predicts on another.
+Thus it scores a GLM, a GAM and a gradient boosting model the same way.
 
 ```python
 from prospicio.models import Design
@@ -207,21 +224,23 @@ print(f"pseudo-R2 of the true frequencies on the test data {pseudo_r2(claims[~tr
 pseudo-R2 of the true frequencies on the test data 0.089
 ```
 
-That is section 3.7.1's lesson: a perfect model explains only a few percent of
-the deviance of individual claim counts, because most of each count is chance.
-The monograph's perfect model scored 0.051 on its own simulation. The level says
-little; comparisons between models on the same data say everything.
+This is the lesson of section 3.7.1. A perfect model explains only a few
+percent of the deviance of individual claim counts, because most of each count
+is chance. The perfect model of the monograph scored 0.051 on its own
+simulation. The level alone tells little. Comparisons between models on the
+same data tell what is important.
 
 ### 1.3 Null, baseline and benchmark models
 
-The null model predicts the training mean. Its validation pseudo-R2 should be
-zero but comes out slightly negative, because the training mean is not the
-validation fold's mean (Table 3.3); rebasing the prediction to the fold's own
-mean (section 3.7.4) brings it to exactly zero. The baseline is a plain Poisson
-GLM with age and vehicle age as straight lines and region and power as factors
-(section 3.5), and the benchmark is a gradient boosting model through
-`prospicio.boosting.Booster` (section 3.6), here LightGBM with the make given
-as a plain number, so the trees can split on it.
+The null model predicts the training mean. In theory its validation pseudo-R2
+is zero. In practice it is slightly negative, because the training mean is not
+the mean of the validation fold (Table 3.3). Rebasing the prediction to the
+mean of the fold (section 3.7.4) makes it exactly zero.
+
+The baseline is a plain Poisson GLM with age and vehicle age as straight lines
+and region and power as factors (section 3.5). The benchmark is a gradient
+boosting model through `prospicio.boosting.Booster` (section 3.6). Here it is
+LightGBM with the make as a plain number, so the trees can split on it.
 
 ```python
 from prospicio.boosting import Booster
@@ -261,19 +280,19 @@ baseline GLM  cv        0.021
 benchmark GBM cv        0.045
 ```
 
-The order is the monograph's: null at zero, a GLM above it, the boosting model
-well above the GLM. The rest of the monograph is about closing that gap with
-models a pricing team can explain.
+The order is the monograph's: null at zero, a GLM above it, and the boosting
+model well above the GLM. The rest of the monograph shows how to close that gap
+with models that a pricing team can explain.
 
 ## 2. Penalized regression (chapter 4)
 
 ### 2.1 Why fewer parameters can predict better
 
-Section 4.1's rare car: ten insurers each see one of ten cars for a year, and one
-car has a claim. An unpenalized GLM at each insurer predicts 100% or 0%. On
-average across the ten insurers that is right (10%), but each insurer's
-prediction is far from it: the spread of the ten predictions is the model's
-variance.
+In the rare-car example of section 4.1, ten insurers each see one of ten cars
+for a year, and one car has a claim. An unpenalized GLM at each insurer
+predicts 100% or 0%. On average across the ten insurers, the prediction is
+correct (10%). But each prediction is far from it, and the spread of the ten
+predictions is the variance of the model.
 
 ```python
 preds = np.array([1.0] + [0.0] * 9)
@@ -284,25 +303,28 @@ print(f"mean {preds.mean():.2f}, variance {preds.var():.2f}, sd {preds.std():.2f
 mean 0.10, variance 0.09, sd 0.30 (printed 0.09, 0.30)
 ```
 
-A model that ignores this car's own experience and predicts the 5% average for
-every make is biased but has no variance, and here every insurer is closer to
-the truth with it. Penalized regression trades bias for variance continuously:
-it maximizes the log-likelihood less a penalty on the coefficients, the sum of
-their squares for ridge, of their absolute values for the lasso, and a mix of
-the two (weight `alpha` on the lasso part) for the elastic net. prospicio's
-`ElasticNet` minimizes glmnet's objective: the mean deviance over two plus
-`lam` times the penalty, with an unpenalized intercept and the columns
-standardized before the penalty is applied. Its `lam` and `alpha` are the
-monograph's lambda and alpha (section 4.6.3).
+A model that ignores the experience of this car and predicts the 5% average for
+every make has bias but no variance. Here, every insurer is closer to the truth
+with it. Penalized regression trades bias for variance continuously. It
+maximizes the log-likelihood less a penalty on the coefficients:
+
+- ridge: the sum of their squares,
+- lasso: the sum of their absolute values,
+- elastic net: a mix of the two, with weight `alpha` on the lasso part.
+
+prospicio's `ElasticNet` minimizes the glmnet objective: the mean deviance over
+two, plus `lam` times the penalty. The intercept has no penalty, and the
+columns are standardized before the penalty applies. Its `lam` and `alpha` are
+the lambda and alpha of the monograph (section 4.6.3).
 
 ### 2.2 Ridge in closed form, and why features are standardized
 
 For one feature, a normal response and no intercept, section 4.7.1 shows that
-ridge divides the mean of `x * y` by the mean of `x**2` plus `lam`, so it pulls
-the least squares estimate towards zero. Section 4.7.2's example has mean
-`x * y` of 10 and mean `x**2` of 5, length in metres, and `lam` = 5. In
-centimetres the first mean is 100 times bigger and the second 10,000 times, so
-the same `lam` barely shrinks at all:
+ridge divides the mean of `x * y` by the mean of `x**2` plus `lam`. Thus it
+pulls the least squares estimate towards zero. The example of section 4.7.2 has
+a mean `x * y` of 10, a mean `x**2` of 5, length in metres, and `lam` = 5. In
+centimetres, the first mean is 100 times larger and the second is 10,000 times
+larger. Thus the same `lam` shrinks almost nothing:
 
 ```python
 for unit, xy, xx, scale in [("metres", 10.0, 5.0, 1.0), ("centimetres", 1_000.0, 50_000.0, 100.0)]:
@@ -316,13 +338,14 @@ centimetres  least squares 0.0200, ridge 0.019998, frequency at 1 m 1.9998
 ```
 
 The monograph prints the centimetre estimate as 0.019 and the frequency as 1.9.
-The exact values are 0.019998 and 1.9998, which round to 0.020 and 2.0; the
-printed digits are truncated, and the point stands either way: the units, not
-the data, decided how much the penalty bit. Standardizing every feature to unit
-standard deviation before applying the penalty removes the dependence, and
-`ElasticNet` does so by default and reports coefficients on the original scale.
-Fitting the same ridge to a length in metres and in centimetres gives
-coefficients that differ by exactly the factor of 100:
+The exact values are 0.019998 and 1.9998, which round to 0.020 and 2.0. The
+printed digits are truncated. The point is the same: the units, not the data,
+set the effect of the penalty.
+
+Standardizing each feature to unit standard deviation before the penalty
+removes this dependence. `ElasticNet` does this by default and gives
+coefficients on the original scale. The same ridge on a length in metres and in
+centimetres gives coefficients that differ by exactly the factor of 100:
 
 ```python
 from prospicio.models import ElasticNet
@@ -341,10 +364,11 @@ metres 1.343762, centimetres x 100 1.343762
 
 ### 2.3 The lasso sets coefficients to exactly zero
 
-Section 4.7.3 shows that for one standardized feature the lasso estimate is the
-least squares estimate moved towards zero by `lam`, and exactly zero once `lam`
-exceeds it (soft-thresholding). With prospicio's objective the same holds, the
-least squares estimate being the mean of `x * y`:
+Section 4.7.3 gives the lasso estimate for one standardized feature. It is the
+least squares estimate moved towards zero by `lam`. It is exactly zero when
+`lam` is larger than the least squares estimate (soft-thresholding). The same is
+true with the prospicio objective, where the least squares estimate is the mean
+of `x * y`:
 
 ```python
 x_std = rng.normal(size=500)
@@ -367,12 +391,13 @@ lam 0.4: lasso 0.0000, soft threshold 0.0000
 
 ### 2.4 Paths and choosing the penalty by cross-validation
 
-Tables 4.1 and 4.2 fit accident frequency on the log of aircraft age alone and
-show the coefficient shrink as the penalty grows: smoothly towards zero for
-ridge, and to exactly zero for the lasso. The same on the portfolio, with log
-driver age. For a Poisson model the records can be added up within each value
-of the features without changing the fit (section 8.3 notes the same), so the
-age-only models below run on 63 ages times 10 folds rather than 20,000 policies:
+Tables 4.1 and 4.2 fit accident frequency on the log of aircraft age alone.
+They show how the coefficient shrinks as the penalty increases: smoothly
+towards zero for ridge, and to exactly zero for the lasso. The block below does
+the same on the portfolio, with log driver age. For a Poisson model, the sum of
+the records at each set of feature values gives the same fit (section 8.3 also
+says this). Thus the age-only models below use 63 ages times 10 folds, not
+20,000 policies:
 
 ```python
 key = age * 10 + fold
@@ -397,13 +422,17 @@ ridge log-age coefficient: ['-0.023', '-0.067', '-0.153', '-0.275', '-0.354', '-
 lasso log-age coefficient: ['0.000', '-0.292', '-0.373', '-0.401', '-0.409', '-0.413']
 ```
 
-The last value of each row is the unpenalized GLM. To choose `lam`, section 4.3
-fits the whole path on six folds, scores it on the seventh, and averages over
-the seven choices of validation fold. `ElasticNet.cross_validate` does exactly
-this from `(train, test)` splits; here the splits are the policy-number folds.
-It reports the `lam` with the best mean validation deviance and, for the
-one-standard-error rule of section 4.6.5, the largest `lam` within one standard
-error of it:
+The last value of each row is the unpenalized GLM. Section 4.3 chooses `lam` as
+follows:
+
+1. Fit the full path on six folds.
+2. Score it on the seventh fold.
+3. Calculate the average over the seven choices of validation fold.
+
+`ElasticNet.cross_validate` does these steps from `(train, test)` splits, here
+the policy-number folds. It gives the `lam` with the best mean validation
+deviance. For the one-standard-error rule of section 4.6.5, it also gives the
+largest `lam` within one standard error of that value:
 
 ```python
 def cell_splits(cell_rows, cell_folds):
@@ -425,19 +454,21 @@ lam_min at position 29 of 30, lam_1se at position 3
 
 ### 2.5 The relaxed lasso
 
-The lasso both selects features and shrinks the survivors. Section 4.5's relaxed
-lasso separates the two: keep the features the lasso selected, then refit them
-with less or no penalty (hard thresholding). In prospicio the second stage is a
-`Glm` on the selected columns, used in section 3.2 below.
+The lasso selects features and also shrinks them. The relaxed lasso of section
+4.5 separates the two steps. It keeps the features that the lasso selected and
+fits them again with less penalty or no penalty (hard thresholding). In
+prospicio, the second step is a `Glm` on the selected columns. Section 3.2
+below uses it.
 
 ## 3. Nonlinear effects (chapter 5)
 
 ### 3.1 Step and hinge functions, from the printed coefficients
 
-A step function is 1 at or above a threshold and 0 below; a hinge is zero below
-its knot and rises one per unit above it, `max(0, x - knot)`. Given a step at
-age 30, section 5.2's GLM is `log frequency = -5.2815 - 1.4689 x step_30`; given
-steps at 5, 15 and 30 it prints four frequencies. Recomputing them from the
+A step function is 1 at or above a threshold and 0 below it. A hinge is zero
+below its knot and increases by one per unit above it: `max(0, x - knot)`. With
+a step at age 30, the GLM of section 5.2 is
+`log frequency = -5.2815 - 1.4689 x step_30`. With steps at 5, 15 and 30, the
+monograph prints four frequencies. The block calculates them again from the
 printed coefficients:
 
 ```python
@@ -455,14 +486,16 @@ three steps: ['0.00799', '0.00402', '0.00227', '0.00122'] printed [0.00783, 0.00
 printed / recomputed: ['0.980', '0.981', '0.978', '0.979']
 ```
 
-The single step matches to the relativity (0.2302) and to within one unit of
-the last printed digit of the frequency (0.00508 against 0.00509: the printed
-coefficient is rounded to four decimals). The three-step frequencies do not: every printed value
-is about 2% below the one the printed coefficients give, by nearly the same
-factor in all four bands. A common factor points at the intercept rather than the
-slopes: an intercept near -4.85 instead of -4.8292 would give the printed
-frequencies, and the ratios between bands agree with the printed slopes either
-way. Without the data we cannot say which printed number is off.
+The relativity of the single step matches. Its base frequency differs in the
+last digit: exp(-5.2815) is 0.005082, which rounds to 0.00508, not to the
+printed 0.00509. An intercept of -5.2809 or more gives the printed value.
+
+The three-step frequencies do not match. Each printed value is about 2% below
+the value from the printed coefficients, by almost the same factor in all four
+bands. A common factor points at the intercept, not at the slopes. An intercept
+near -4.85, not -4.8292, gives the printed frequencies. The ratios between bands
+agree with the printed slopes in both cases. Without the data, we cannot say
+which printed number is wrong.
 
 Table 5.7 codes an ordinal feature (pilot quality, five levels) as five
 cumulative steps and multiplies the exponentiated coefficients:
@@ -477,15 +510,16 @@ cumulative relativities: ['1.000', '1.674', '1.674', '2.067', '2.540']
 ```
 
 The printed cumulative row is 1, 1.673, 1.673, 2.06, 2.539, and Table 5.8 gives
-the fourth as 2.07; the exact product is 2.067, so Table 5.7 truncates where
+the fourth value as 2.07. The exact product is 2.067, so Table 5.7 truncates and
 Table 5.8 rounds.
 
 ### 3.2 Many steps or hinges, and the lasso picks
 
-Rather than choosing knots by eye, section 5.2 gives the lasso one step function
-at every age and lets cross-validation decide how many survive; section 5.6 uses
-25 equally spaced steps or hinges per feature. On the portfolio's ages
-(aggregated as above), with a step every three years from 20 to 77:
+Section 5.2 does not select knots by eye. It gives the lasso one step function
+at each age and lets cross-validation decide how many steps stay. Section 5.6
+uses 25 equally spaced steps or hinges for each feature. The block below uses
+the ages of the portfolio (aggregated as above), with a step every three years
+from 20 to 77:
 
 ```python
 knots = list(range(20, 80, 3))
@@ -507,12 +541,15 @@ print("kept:", kept)
 kept: [20, 23, 26, 29, 32, 62, 65, 77]
 ```
 
-To see how close the result gets to the truth, compare frequencies by age with
-the true ones (the exposure-weighted average of the true frequencies of the
-policies at each age) for three fits: the lasso at `lam_min`, the relaxed lasso
-(the kept steps refitted by an unpenalized `Glm`, section 4.5), and a P-spline
-GAM (`Gam`, the smoothing model the monograph itself uses for its spatial
-second stage in chapter 8):
+The next block compares three fits with the truth by age. The true frequency at
+an age is the exposure-weighted average of the true frequencies of the policies
+at that age. The three fits are:
+
+- the lasso at `lam_min`,
+- the relaxed lasso: the kept steps fitted again by an unpenalized `Glm`
+  (section 4.5),
+- a P-spline GAM (`Gam`), the smoothing model that the monograph uses for its
+  spatial second stage in chapter 8.
 
 ```python
 from prospicio.models import Gam
@@ -547,30 +584,24 @@ age 80: truth 0.256  lasso 0.239  relaxed 0.253  GAM 0.249
 GAM effective degrees of freedom 5.7
 ```
 
-All three find the young-driver slope and the rise after 60 without being told
-where they are. The lasso's shrinkage pulls the extremes towards the middle, the
-effect section 5.2 sees above aircraft age 20, and the relaxed refit partly undoes it.
-The monograph prefers steps and hinges because the result is a short rating
-table; a GAM gives a smooth curve that is tabulated afterwards. Section 5.8.1's
-link to the fused lasso is a change of coordinates: a step at each level is the
-same model as a dummy at each level, each step's coefficient being the
-difference between neighbouring dummies, so a lasso penalty on steps is a
-penalty on the jumps between neighbours.
+All three fits find the young-driver slope and the rise after 60 with no
+information about where they are. The lasso shrinkage pulls the extremes
+towards the middle, the effect that section 5.2 sees above aircraft age 20. The
+relaxed fit removes part of this effect. The monograph prefers steps and hinges
+because the result is a short rating table. A GAM gives a smooth curve, which
+you tabulate afterwards.
 
-Hinges work the same way in principle, but `ElasticNet` is slow on them: the
-columns of neighbouring hinges are almost identical, and coordinate descent
-creeps. Twenty hinges on these 441 cells took over 40 seconds where twenty steps
-took a quarter of a second, so this guide offers the lasso steps only (see the
-list of gaps at the end). MARS (section 5.5), which places hinges greedily, is
-not in prospicio.
+Section 5.8.1 links steps to the fused lasso by a change of coordinates. A step
+at each level is the same model as a dummy at each level. The coefficient of
+each step is the difference between neighbouring dummies. Thus a lasso penalty
+on steps is a penalty on the jumps between neighbours.
 
 ### 3.3 Monotone effects
 
-Section 5.7.2 forces an ordinal effect to be monotone by constraining step
-coefficients to be non-negative. `ElasticNet` has no bounds on coefficients,
-but a GAM can impose the shape directly: `"mpd"` is a monotone decreasing
-P-spline (scam's). On vehicle age, whose true effect falls until 6 and is flat
-after:
+Section 5.7.2 makes an ordinal effect monotone with non-negative step
+coefficients. A GAM can also set the shape directly: `"mpd"` is a monotone
+decreasing P-spline (from scam). The block fits it to vehicle age, whose true
+effect falls until age 6 and is flat after:
 
 ```python
 veh_cells, veh_cell = np.unique(veh_age * 10 + fold, return_inverse=True)
@@ -590,23 +621,26 @@ fitted relativity to age 0: ['1.00', '0.89', '0.80', '0.75', '0.70', '0.64', '0.
 true relativity:            ['1.00', '0.85', '0.73', '0.62', '0.62', '0.62', '0.62']
 ```
 
-The monotone fit bends more gently than the true hinge and keeps falling a
-little after age 6 where the truth is flat, but it can never turn back up. As
-the monograph warns, a constraint hides a reversal if the data has one: use it
-where the shape is known (claim history, deductibles), not to tidy a factor.
+The monotone fit bends more gradually than the true hinge. It continues to fall
+a little after age 6, where the truth is flat, but it cannot turn back up. The
+monograph gives a warning: a constraint hides a reversal if the data has one.
+Use a constraint where the shape is known (claim history, deductibles), not to
+make a factor look tidy.
 
 ## 4. High cardinality categorical variables (chapter 6)
 
 ### 4.1 Target encoding, and keeping it out of its own fold
 
-A factor with thousands of levels (aircraft make, city, zip code) cannot go into
-a GLM as dummies without memory trouble and wild estimates for the thin levels.
-Chapter 6's main tool is target encoding: replace each level by one number, its
-actual-to-expected ratio shrunk towards 1 by a credibility factor
-`z = n / (n + K)`, where `n` is the level's exposure, then use the log of that
-number as a feature. Encoding a level from its own records leaks the target into
-the feature (section 6.3), so a record in fold `k` is encoded only from the
-other folds. Table 6.1 has one make with six aircraft in three folds:
+A factor with thousands of levels (aircraft make, city, zip code) causes
+problems as dummies in a GLM. It uses much memory and gives unstable estimates
+for the thin levels. The main tool of chapter 6 is target encoding. It replaces
+each level by one number: its actual-to-expected ratio, shrunk towards 1 by a
+credibility factor `z = n / (n + K)`, where `n` is the exposure of the level.
+The log of that number is then a feature.
+
+Encoding a level from its own records leaks the target into the feature
+(section 6.3). Thus a record in fold `k` gets its encoding only from the other
+folds. Table 6.1 has one make with six aircraft in three folds:
 
 ```python
 te_fold = np.array([1, 1, 2, 2, 3, 3])
@@ -627,11 +661,12 @@ printed: 0.75, 0.50, 0.25
 
 ### 4.2 The credibility constant, and the printed encodings
 
-Section 6.6 estimates `K` as the ratio of the within-make variance (one
-aircraft-year's accident count, Bernoulli at the mean rate 0.004584) to the
-between-make variance (estimated from mean residuals of large makes as
-7.038492e-6), and Table 6.5 lists encoded makes at the `K` = 1,024 finally
-used. Recomputing from the printed inputs:
+Section 6.6 estimates `K` as a ratio of two variances. The numerator is the
+within-make variance: the accident count of one aircraft-year, Bernoulli at the
+mean rate 0.004584. The denominator is the between-make variance, which the
+monograph estimates from mean residuals of large makes as 7.038492e-6. Table
+6.5 lists encoded makes at `K` = 1,024, the value that the monograph uses at the
+end. The block calculates these values again from the printed inputs:
 
 ```python
 p = 0.004584
@@ -655,22 +690,24 @@ MARLIN JOHN E         z 0.0125 (printed 0.0122)  encoding 3.327, from the printe
 STUMP GREAT LAKES     z 0.0116 (printed 0.0116)  encoding 3.580, from the printed z 3.584 (printed 3.579)
 ```
 
-DJI and Textron match. For the two one-claim makes the exposure column shows a
-whole number of aircraft-years, and the printed credibility of Marlin (0.0122)
-implies about 12.65 aircraft-years, not 13: the column is rounded, and from the
-printed `z` the encoding is 3.264. Stump Great Lakes recomputes to 3.580
-against 3.579 (3.584 from its rounded printed `z`), the gap a rounding of its
-exposure too. The worked sentence for
-Stump in section 6.7.1 multiplies `z` by 222.22 where Table 6.5 has an AvE
-ratio of 223.75; 223.75 is the value that reproduces the printed 3.58, so the
-222.22 is a slip in the text. (The table's caption also describes the AvE ratio
-upside down, as predicted over actual; its values are actual over expected.)
+DJI and Textron match. For the two one-claim makes, the exposure column shows a
+whole number of aircraft-years. The printed credibility of Marlin (0.0122)
+implies about 12.65 aircraft-years, not 13. Thus the column is rounded, and the
+encoding from the printed `z` is 3.264. Stump Great Lakes gives 3.580 against
+3.579 (3.584 from its rounded printed `z`), and the difference also comes from
+a rounded exposure.
 
-Two smaller checks from the same chapter: the Bell helicopter example of section
-6.7.2, encoded against the overall mean (16 per thousand against 4) and against
-the GLM's own prediction for helicopters (16 against 20), and the logistic
-blending of the software in section 6.7.6 at a level with no data, which should
-give no credibility but does not:
+In section 6.7.1, the worked sentence for Stump multiplies `z` by 222.22, but
+Table 6.5 has an AvE ratio of 223.75. The value 223.75 gives the printed 3.58,
+so 222.22 is an error in the text. The caption of the table also describes the
+AvE ratio upside down, as predicted over actual. Its values are actual over
+expected.
+
+Two smaller checks come from the same chapter. The first is the Bell helicopter
+example of section 6.7.2. It encodes against the overall mean (16 per thousand
+against 4) and against the GLM prediction for helicopters (16 against 20). The
+second is the logistic blending of the software in section 6.7.6, at a level
+with no data. That level should get no credibility, but it gets some:
 
 ```python
 print(f"Bell: {16 / 4:.2f} against the mean, {16 / 20:.2f} against the GLM (printed 4 and 0.80)")
@@ -685,19 +722,19 @@ logistic credibility at n = 0, inflection 500, smoothing 100: 0.007
 logistic credibility at n = 0, inflection 500, smoothing 500: 0.269
 ```
 
-The second value is the "about 25%" of section 6.7.6, credibility for a level
-with no data at all.
+The second value is the "about 25%" of section 6.7.6: credibility for a level
+with no data.
 
 ### 4.3 Ridge regression on dummies is credibility
 
-Section 6.8.1 shows why target encoding is natural: ridge regression on the
-dummies of a single factor, normal response, response centred and no intercept,
-gives each level the coefficient `n_k (mean_k - mean) / (n_k + lambda)`, a
-credibility-weighted deviation from the overall mean. In prospicio's
-parameterization (mean squared error over two, plus `lam` over two times the sum
-of squares) the monograph's `lambda` is `lam` times the number of records. A
-design with no all-ones column has no intercept, so `ElasticNet` fits exactly
-that model:
+Section 6.8.1 shows why target encoding is natural. Take ridge regression on
+the dummies of one factor, with a normal response, the response centred and no
+intercept. It gives each level the coefficient
+`n_k (mean_k - mean) / (n_k + lambda)`, a credibility-weighted deviation from
+the overall mean. prospicio minimizes the mean squared error over two, plus
+`lam` over two times the sum of squares. With this objective, the `lambda` of
+the monograph is `lam` times the number of records. A design with no all-ones
+column has no intercept, so `ElasticNet` fits exactly that model:
 
 ```python
 sizes = [1, 5, 50, 400]
@@ -722,19 +759,19 @@ level 2 ( 50 records): ridge +0.2407, z x deviation +0.2407  (z = 0.523)
 level 3 (400 records): ridge -0.0511, z x deviation -0.0511  (z = 0.898)
 ```
 
-The penalty plays Buhlmann's `K`, with one difference the monograph stresses:
-credibility theory estimates `K` from variance components, while the penalized
-regression chooses it by cross-validation.
+The penalty does the work of the Buhlmann `K`, with one difference that the
+monograph stresses. Credibility theory estimates `K` from variance components,
+but penalized regression chooses it by cross-validation.
 
 ### 4.4 Target encoding the portfolio's 300 makes
 
-On the portfolio, makes follow section 6.7.2: the expected count of each policy
-is a first GLM's prediction without make (cross-fitted, so no record is
-predicted by a model that saw it), and each make's encoding is its shrunk
-actual-to-expected ratio. The log encoding then enters a second-stage GLM with
-the first GLM's prediction as offset, as the monograph does in section 6.9. For
-each `K` in a grid, the seven-fold cross-validation repeats the whole recipe
-inside each fold:
+On the portfolio, the make encoding follows section 6.7.2. The expected count
+of each policy is the prediction of a first GLM without make. This GLM is
+cross-fitted, so no model predicts a record that it saw in training. The
+encoding of each make is its shrunk actual-to-expected ratio. The log encoding
+then goes into a second-stage GLM with the first-GLM prediction as offset, as in
+section 6.9. For each `K` in a grid, the seven-fold cross-validation repeats the
+full procedure inside each fold:
 
 ```python
 expected = np.zeros(n)
@@ -790,19 +827,19 @@ for K in [16, 64, 256, 1024, 4096]:
   4096         0.035         4.98
 ```
 
-The baseline GLM scored 0.021 without make; the encoded make roughly doubles
-that, and as in the monograph's Figure 6.1 the score is flat over a wide range
-of `K`, here best near 64. The coefficient rises with `K`, as in Figure 6.2: a
-heavily shrunk encoding needs a coefficient above 1 to restore the spread, and a
-coefficient near 1 means the credibility was about right. Here the best score
-and a coefficient near 1 fall at the same `K`, which section 6.6 says to expect
-when the encoding is done correctly; the rest of the guide uses `K` = 64.
+The baseline GLM scored 0.021 without make, and the encoded make approximately
+doubles that. As in Figure 6.1 of the monograph, the score is flat over a wide
+range of `K`, with the best value near 64. The coefficient increases with `K`,
+as in Figure 6.2. A heavily shrunk encoding needs a coefficient above 1 to
+restore the spread, and a coefficient near 1 means that the credibility was
+approximately correct.
 
-A generalized linear mixed model (section 6.5) would treat make as a random
-effect and shrink it the same way. prospicio's GLMs have no random effects; its
-nearest tools are Bayesian hierarchical credibility for a single ratio per group
-(`prospicio.credibility`) and `BayesGlm` with normal priors (the Bayesian view
-of ridge in section 6.8.2), neither a Poisson GLMM.
+Here the best score and a coefficient near 1 occur at the same `K`. Section 6.6
+expects this when the encoding is correct. The rest of the guide uses `K` = 64.
+
+A generalized linear mixed model (section 6.5) treats make as a random effect
+and shrinks it the same way. Section 6.8.2 gives the Bayesian view of ridge,
+which is `BayesGlm` with normal priors.
 
 ## 5. The printed numbers of chapters 3 to 6 and prospicio's
 
@@ -813,13 +850,13 @@ of ridge in section 6.8.2), neither a Poisson GLMM.
 | Section 3.7.4 rebasing | 1.0031 | 1.0031 | matches |
 | Section 4.1 variance | 0.09, 0.30 | 0.09, 0.30 | matches |
 | Section 4.7.2 ridge in cm | 0.019, 1.9 | 0.019998, 1.9998 | printed digits truncated |
-| Section 5.2 one step | 0.00509, 0.2302 | 0.00508, 0.2302 | within the rounding of the printed coefficient |
-| Section 5.2 three steps | 0.00783 to 0.00119 | 0.00799 to 0.00122 | all about 2% higher; points at the printed intercept |
+| Section 5.2 one step | 0.00509, 0.2302 | 0.00508, 0.2302 | relativity matches, the frequency is 0.005082 |
+| Section 5.2 three steps | 0.00783 to 0.00119 | 0.00799 to 0.00122 | all about 2% higher, which points at the printed intercept |
 | Table 5.7 cumulative | 2.06 | 2.067 | Table 5.8 prints 2.07 |
 | Section 6.6 K | 648, 0.61 | 648, 0.61 | matches |
-| Table 6.5 encodings | 0.079, 0.363, 3.266, 3.579 | 0.079, 0.363, 3.264, 3.580 | Marlin from its printed `z`; exposures printed rounded; 222.22 in the text is 223.75 |
+| Table 6.5 encodings | 0.079, 0.363, 3.266, 3.579 | 0.079, 0.363, 3.264, 3.580 | Marlin from its printed `z`, exposures printed rounded, 222.22 in the text is 223.75 |
 
-Chapters 7 to 10 (highly correlated variables, two-stage models, learning from
-the boosting model, and the challenges of chapter 10), with the list of what
-prospicio does not cover, are in the second part of this guide,
-[`glm-to-comprehensive-pricing-chalk-2.md`](glm-to-comprehensive-pricing-chalk-2.md).
+The second part of this guide,
+[`glm-to-comprehensive-pricing-chalk-2.md`](glm-to-comprehensive-pricing-chalk-2.md),
+covers chapters 7 to 10. These are highly correlated variables, two-stage
+models, learning from the boosting model, and the challenges of chapter 10.

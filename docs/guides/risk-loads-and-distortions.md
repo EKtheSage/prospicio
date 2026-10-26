@@ -1,52 +1,62 @@
 # Risk loads and distortions: when to use which
 
-Use this guide when you have a loss distribution for a cover (an excess of loss
-layer, a quota share, a whole book) and must turn it into a price with a load for
-risk. A primary pricing actuary loads a premium by a percentage of the expected
-loss. A reinsurer loads for the tail: the same expected loss deserves different
-prices depending on how often and how badly the cover goes wrong. The guide
-takes the choices in the order you meet them: a simple load, a premium
-principle, a **distortion** (a reweighting of probabilities that prices a loss by
-its tail), the capital standard behind it, calibration to a target or to market
-quotes, and pricing and splitting a portfolio. It says which to use when, and
-which parts are modelling choices that no calculation can settle.
+Use this guide when you have the loss distribution of a cover and must turn it
+into a price with a load for risk. The cover can be an excess of loss layer, a
+quota share or a whole book. A primary pricing actuary loads a premium by a
+percentage of the expected loss. A reinsurer loads for the tail. Two covers with
+the same expected loss get different prices when they differ in how often and
+how badly they go wrong.
 
-It assumes you have the distribution of the cover's annual loss (see
-[the aggregate guide](aggregate-distributions.md)) and know what a layer is (see
-[the price guide](reinsurance-price.md)). Experience and exposure rating (see
-[that guide](experience-and-exposure-rating.md)) give the expected loss and the
-distribution; this guide adds the load for risk on top of them.
+The guide takes the choices in the order you meet them:
+
+1. A simple load or a premium principle.
+2. A **distortion**, a reweighting of probabilities that prices a loss by its
+   tail.
+3. The capital standard behind the price.
+4. Calibration to a target or to market quotes.
+5. The price of a portfolio, and its split among the parts.
+
+For each choice, the guide says when to use it. It also marks the modelling
+choices that no calculation can settle.
+
+The guide assumes that you have the distribution of the annual loss of the cover
+(see [the aggregate guide](aggregate-distributions.md)). It also assumes that
+you know what a layer is (see [the price guide](reinsurance-price.md)).
+Experience and exposure rating give the expected loss and the distribution (see
+[that guide](experience-and-exposure-rating.md)). This guide adds the load for
+risk on top of them.
 
 ## Which method for which situation
 
 | Situation | Method | prospicio call | Why |
 |---|---|---|---|
-| A first number for a screen, nothing else known | A load on expected loss | `classical_premium("expected_value", x, t)` | Cheap, but blind to the tail. Fine only to compare covers of one shape |
-| A stable, roughly symmetric result (a large quota share) where the load should follow volatility | Standard deviation or variance principle | `classical_premium("standard_deviation", x, t)`, `calibrate_classical` | Price rises with spread. Needs a finite variance, and layer prices do not add up (section 3) |
-| "We need 10% on capital" | Constant cost of capital (CCoC) | `price(x, Distortion.tvar(p), cost_of_capital=r)`, `Pentagon.solve(..., assets=a)` or `price_portfolio(..., cost_of_capital=r)` for capital on a TVaR or EPD standard; `Distortion.ccoc(r)` for capital equal to the maximum loss | Every unit of capital earns the same return, the easiest rule to explain. Say which capital the 10% is on (section 4) |
+| A first number for a screen, nothing else known | A load on expected loss | `classical_premium("expected_value", x, t)` | Cheap, but blind to the tail. Use it only to compare covers of one shape |
+| A stable, roughly symmetric result (a large quota share) where the load must follow volatility | Standard deviation or variance principle | `classical_premium("standard_deviation", x, t)`, `calibrate_classical` | Price rises with spread. Needs a finite variance, and layer prices do not add up (section 3) |
+| "We need 10% on capital" | Constant cost of capital (CCoC) | `price(x, Distortion.tvar(p), cost_of_capital=r)`, `Pentagon.solve(..., assets=a)` or `price_portfolio(..., cost_of_capital=r)` for capital on a TVaR or EPD standard. `Distortion.ccoc(r)` for capital equal to the maximum loss | Every unit of capital earns the same return, the easiest rule to explain. Say which capital the 10% is on (section 4) |
 | One quote or target, price the rest of a program consistently | One-parameter distortion (proportional hazard, Wang) calibrated to it | `calibrate("ph", x, premium)`, then `d.measure(y)` or `TowerGrids.price(d)` | Prices add up across layers, one number to defend |
 | Remote layers (catastrophe) with a minimum rate on line | A distortion with a floor: LEP, capped linear, linear yield, CCoC | `calibrate("lep", x, premium, r0=0.03)` | A family without a floor prices a 1-in-1,000 layer at a fraction of a percent |
 | Quotes on several layers | Fit two parameters, or take the concave hull of the quotes | `calibrate(..., r0=...)` with a search on `r0`, `Distortion.convex(points)` | One parameter cannot match both ends of a program |
 | The capital standard is a tail measure | TVaR, or assets for a target expected policyholder deficit | `Distortion.tvar(p)`, `Portfolio.assets_for_epd(e)` | VaR ignores how bad the tail is beyond its level |
 | A contract goes into a book | Price the portfolio, then allocate | `price_portfolio(pd, assets, cost_of_capital=r)`, `Portfolio.price(d, p=0.99)` | Capital depends on what else is in the book (section 7) |
-| Split a book's capital among its parts | Euler, which for a distortion is the natural (co-measure) allocation; marginal, Shapley, Bodoff | `capital(pd, d)`, `allocate(pd, d)`, `Portfolio.price(..., allocation=)`, `Portfolio.bodoff` | They answer different questions (section 7) |
+| Split the capital of a book among its parts | Euler (for a distortion, the natural or co-measure allocation), marginal, Shapley, Bodoff | `capital(pd, d)`, `allocate(pd, d)`, `Portfolio.price(..., allocation=)`, `Portfolio.bodoff` | They answer different questions (section 7) |
 | Heavy tail, variance infinite or unreliable | A distortion, never a variance-based, Esscher or exponential principle | `calibrate("ph", ...)` | A distortion needs only the weighted mean of the tail |
 
 ## 1. Words you need first
 
-- **Risk premium**: expected loss plus the margin for bearing risk, before
-  expenses and brokerage. This guide prices the risk premium.
-- **Capital**, **assets**: capital is the reinsurer's own money held behind the
-  contract; assets are premium plus capital. The **capital standard** sets the
-  assets, for example "99% TVaR of the annual loss". **Return on capital** is
-  margin divided by capital.
+- **Risk premium**: expected loss plus the margin for risk, before expenses and
+  brokerage. This guide prices the risk premium.
+- **Capital**, **assets**: capital is the money that the reinsurer holds behind
+  the contract. Assets are premium plus capital. The **capital standard** sets
+  the assets, for example "99% TVaR of the annual loss". **Return on capital**
+  is margin divided by capital.
 - **VaR** at level p is the p quantile of the loss. **TVaR** at level p is the
   average of the worst 1 - p of outcomes.
-- **Distortion** g: turns a survival probability s (the chance the loss exceeds
-  a size) into a weight. The price of a loss is the integral of g(s(x)) over x.
-  If g(s) = s the price is the expected loss; a concave g above the diagonal
-  weights the tail more than its probability. Read g(s) as the **rate on line**
-  (premium over limit) of a thin layer reached with probability s.
+- **Distortion** g: turns a survival probability s (the probability that the
+  loss exceeds a size) into a weight. The price of a loss is the integral of
+  g(s(x)) over x. If g(s) = s, the price is the expected loss. A concave g above
+  the diagonal gives the tail more weight than its probability. Read g(s) as the
+  **rate on line** (premium over limit) of a thin layer that a loss reaches with
+  probability s.
 - **Pentagon**: loss, margin, premium, capital, assets, linked by
   premium = loss + margin and assets = premium + capital. Any three that are
   independent fix the other two.
@@ -54,10 +64,11 @@ distribution; this guide adds the load for risk on top of them.
 ## 2. The running example
 
 The book is the one in [the price guide](reinsurance-price.md), on a coarser
-grid: a Poisson count of 4 large losses a year, each with a Pareto tail (alpha
-1.8) capped at a policy limit of 20. We price three layers, each with one free
-reinstatement, so each pays at most twice its limit in a year. A distortion
-prices the layer's **annual** loss, because that is what the reinsurer carries.
+grid. Each year has a Poisson count of 4 large losses. Each loss has a Pareto
+tail (alpha 1.8) and a cap at a policy limit of 20. We price three layers. Each
+layer has one free reinstatement, so it pays at most twice its limit in a year.
+A distortion prices the **annual** loss of the layer, because the reinsurer
+carries the annual loss.
 
 ```python
 import math
@@ -92,15 +103,15 @@ for layer, (name, g) in zip(LAYERS, annual.items()):
  10x10     6.1%     0.337   1.64    10.00     10.49    20
 ```
 
-The 10x10 layer pays in about one year in sixteen, has the smallest expected
-loss and the largest standard deviation. For the 2x3 layer the 99% TVaR equals
+The 10x10 layer pays in about one year in sixteen. It has the smallest expected
+loss and the largest standard deviation. For the 2x3 layer, the 99% TVaR equals
 the maximum, because that layer is full in more than 1% of years.
-`TAIL.measure(g)` is a method: a `Distortion` measures a `Grid`, a `Sampled`
+`TAIL.measure(g)` is a method. A `Distortion` measures a `Grid`, a `Sampled`
 (simulated draws) or a `PredictiveDistribution` (its total).
 
 Every method below does the same job. The reinsurer wants a 10% return on 99%
-TVaR capital for the 5x5 layer. That fixes a risk premium for this layer, and the
-question is what each method then charges the other two.
+TVaR capital for the 5x5 layer. That return fixes a risk premium for this layer.
+The question is what each method then charges the other two layers.
 
 ```python
 mid = annual["5x5"]
@@ -118,24 +129,33 @@ the same pentagon from three of its sides: True
 ```
 
 `price(losses, assets, cost_of_capital=r)` takes the capital standard as a
-distortion (here the 99% TVaR) and charges the premium (E[X] + r a) / (1 + r),
-so that the margin is r times the capital. It is the pentagon solved from the
-loss, the assets and the return: `Pentagon.solve` takes any three independent
-quantities by keyword, which section 5 needs when the assets are a VaR or an
-EPD target rather than a distortion. On both, the results are properties
+distortion (here the 99% TVaR). It charges the premium (E[X] + r a) / (1 + r),
+so the margin is r times the capital. This is the pentagon solved from the
+loss, the assets and the return. `Pentagon.solve` takes any three independent
+quantities by keyword. Section 5 uses it when the assets are a VaR or an EPD
+target and not a distortion. On both, the results are properties
 (`target.premium`, not `target.premium()`).
 
 ## 3. A simple load, or a premium principle
 
-A premium principle is a formula for a premium from the loss distribution and
-one loading t. `classical_premium(principle, x, loading)` offers `expected_value`
-(1 + t) E[X]; `standard_deviation` E[X] + t sd(X); `variance` E[X] + t Var(X);
-`semi_variance` (the same with the squared excess over the mean);
-`dutch` and `fischer` (the mean excess over the mean, and its power mean, with
-power `q`); `exponential` log E[exp(t X)] / t; `esscher` E[X exp(t X)] / E[exp(t X)];
-and `var`, the lower t quantile. `calibrate_classical(principle, x, premium)`
-finds the loading that gives a target premium. Calibrate each to the 5x5 premium
-and read what it charges all three layers, as a multiple of expected loss:
+A premium principle is a formula that gives a premium from the loss
+distribution and one loading t. `classical_premium(principle, x, loading)` has
+these principles:
+
+- `expected_value`: (1 + t) E[X].
+- `standard_deviation`: E[X] + t sd(X).
+- `variance`: E[X] + t Var(X).
+- `semi_variance`: the same with the squared excess over the mean.
+- `dutch` and `fischer`: the mean excess over the mean, and its power mean with
+  power `q`.
+- `exponential`: log E[exp(t X)] / t.
+- `esscher`: E[X exp(t X)] / E[exp(t X)].
+- `var`: the lower t quantile.
+
+`calibrate_classical(principle, x, premium)` finds the loading that gives a
+target premium. The code calibrates each principle to the 5x5 premium. It then
+shows what each principle charges all three layers, as a multiple of expected
+loss:
 
 ```python
 def bisect(f, lo, hi, want, steps=60):
@@ -168,11 +188,9 @@ for principle, t in loadings.items():
          exponential    0.333    1.31    2.12    5.66
 ```
 
-The exponential loading comes from the small `bisect` helper above;
-`calibrate_classical("exponential", ...)` now gives the same loading. Before
-issue #214 it returned about 1e-31 for this layer, because the premium lost its
-loading to cancellation at a tiny loading. Whatever the principle, check a
-calibrated loading by pricing with it again:
+The code finds the exponential loading with the small `bisect` helper above.
+`calibrate_classical("exponential", ...)` gives the same loading. For any
+principle, price again with the calibrated loading to check it:
 
 ```python
 for principle in ("exponential", "standard_deviation"):
@@ -186,20 +204,20 @@ for principle in ("exponential", "standard_deviation"):
   standard_deviation: loading 0.43, gives the target premium: True
 ```
 
-The expected value principle charges every layer 2.12 times its
-expected loss: it cannot tell a working layer from a top layer. The
-variance-based principles charge the working layer less and the top layer more,
-because the top layer is more volatile for its mean. Esscher and exponential go
-furthest: they weight outcomes by exp(t x), so the top layer pays more than
-three times as much per unit of expected loss as the working layer.
+The expected value principle charges every layer 2.12 times its expected loss.
+It cannot tell a working layer from a top layer. The variance-based principles
+charge the working layer less and the top layer more, because the top layer is
+more volatile for its mean. Esscher and exponential go furthest. They weight
+outcomes by exp(t x). Per unit of expected loss, the top layer then pays more
+than three times as much as the working layer.
 
-**Use a principle when** you need a quick, transparent load, every cover you
-compare has about the same shape, and the loss is stable enough that its
+**Use a principle when** you need a quick, transparent load and every cover you
+compare has about the same shape. The loss must also be stable enough that its
 variance describes its risk (a large quota share, a stop loss on a diversified
-book). It is also a sanity check on a richer model.
+book). A principle is also a check on a richer model.
 
 **Do not use one when the tail is heavy.** The uncapped severity here has an
-infinite variance, so every variance-based principle depends on where you cap
+infinite variance. So every variance-based principle depends on where you cap
 the loss:
 
 ```python
@@ -211,15 +229,15 @@ print(f"uncapped Pareto variance {Pareto(1.0, 1.8).variance()}, "
 uncapped Pareto variance inf, severity capped at 20: standard deviation 2.16
 ```
 
-Esscher and exponential are worse off: they need E[exp(t X)], which is infinite
-for a Pareto tail at any positive t, so they exist only for a capped loss and
-their price is set by the cap.
+Esscher and exponential have a larger problem. They need E[exp(t X)], which is
+infinite for a Pareto tail at any positive t. So they exist only for a capped
+loss, and the cap sets their price.
 
-**Do not use one to price a program layer by layer.** A layer price is only
-meaningful if the prices of the pieces of one loss (layers, or a retention and
-the excess above it) add up to the price of the whole. Split
-the year's total large loss at 10 into the part below and the part above, and
-price the whole and the two parts under the same rule:
+**Do not use one to price a program layer by layer.** A layer price has meaning
+only if the prices of the pieces of one loss add up to the price of the whole.
+The pieces can be layers, or a retention and the excess above it. The code
+splits the total large loss of the year at 10 into the part below and the part
+above. It then prices the whole and the two parts under the same rule:
 
 ```python
 gross, _ = fft(frequency, severity, POINTS)            # the year's total of all large losses
@@ -243,38 +261,43 @@ for name, rule in rules.items():
  proportional hazard   11.241     11.241
 ```
 
-The two parts move together (a bad year is bad in both), so a sound price of the
-whole equals the sum. A distortion gives that: the proportional hazard prices of
-the two parts add up to the whole to the last digit. The expected value principle
-does too, because it loads the mean only. Standard deviation and variance do not,
-so a reinsurer using them could be offered one risk in pieces and get a different
-total. This holds for pieces of the same loss, which move together. For different
-risks (two lines of a book) a distortion price of the sum is at most the sum of
-the prices, and the shortfall is the diversification benefit of section 7. A loading's meaning also changes with the principle (0.43 of a standard
-deviation and 0.185 on an Esscher exponent are not comparable), so state the
-principle with the loading and recalibrate when the cover changes.
+The two parts move together (a bad year is bad in both), so a sound price of
+the whole equals the sum of the parts. A distortion gives that result. The
+proportional hazard prices of the two parts add up to the whole to the last
+digit. The expected value principle also adds up, because it loads only the
+mean. Standard deviation and variance do not add up. A reinsurer that uses them
+can get one risk offered in pieces at a different total.
+
+This holds for pieces of the same loss, which move together. For different
+risks (two lines of a book), a distortion price of the sum is at most the sum of
+the prices. The shortfall is the diversification benefit of section 7.
+
+The meaning of a loading also changes with the principle. A loading of 0.43 on a
+standard deviation and 0.185 on an Esscher exponent are not comparable. State
+the principle with the loading, and calibrate again when the cover changes.
 
 ## 4. Distortions
 
-A distortion g is a concave function with g(0) = 0 and g(1) = 1. Because it is
-concave, the price is at least the expected loss; because the same g weights
-every size, the price of a layer plus the price of the rest is the price of the
-whole (the test above). Each `Distortion` constructor is a family, and
-`calibrate(name, x, premium)` returns the member whose price of `x` is `premium`:
+A distortion g is a concave function with g(0) = 0 and g(1) = 1. Because g is
+concave, the price is at least the expected loss. The same g weights every size.
+So the price of a layer plus the price of the rest is the price of the whole
+(the test above). Each `Distortion` constructor is a family.
+`calibrate(name, x, premium)` returns the member whose price of `x` is
+`premium`:
 
 | Family | Constructor | `calibrate` name | Shape of the load |
 |---|---|---|---|
-| Constant cost of capital | `ccoc(r)` | `"ccoc"` | Flat return on capital; jumps at zero, so every layer pays a floor |
-| Proportional hazard | `proportional_hazard(rho)` | `"ph"` | g(s) = s to the power rho; weight grows as rho falls |
+| Constant cost of capital | `ccoc(r)` | `"ccoc"` | Flat return on capital. It jumps at zero, so every layer pays a floor |
+| Proportional hazard | `proportional_hazard(rho)` | `"ph"` | g(s) = s to the power rho. The weight grows as rho falls |
 | Wang | `wang(lam)` | `"wang"` | Normal shift: less weight far out than PH |
 | Dual power | `dual_power(beta)` | `"dual"` | Weights the middle up, little extra far out |
 | TVaR | `tvar(p)` | `"tvar"` | A multiple of the average of the worst 1 - p of outcomes |
-| Exponential | `exponential(k)` | `"exp"` | Risk aversion rising exponentially (not the classical `exponential` principle) |
+| Exponential | `exponential(k)` | `"exp"` | Risk aversion that rises exponentially (not the classical `exponential` principle) |
 | With a floor `r0` | `capped_linear(r0, slope)`, `capped_log_linear(r0, b)`, `lep(r0, r)`, `linear_yield(r0, r)` | `"clin"`, `"cll"`, `"lep"`, `"ly"` | A minimum rate on line |
 | Your own shape | `beta`, `mixture`, `minimum`, `bitvar`, `weighted_tvar`, `convex(points)` | none | Build it |
 
-Calibrate the main families to the 5x5 target and read g(s) as the rate on line
-of a thin layer reached once in 1/s years:
+The code calibrates the main families to the 5x5 target. Read g(s) as the rate
+on line of a thin layer that a loss reaches once in 1/s years:
 
 ```python
 import re
@@ -305,21 +328,23 @@ for name, d in fitted.items():
             exponential(2.088)     74.0%     21.5%      4.7%      2.4%      0.2%     0.0%
 ```
 
-All six agree the 5x5 layer is worth 1.24, because that is what they were
-calibrated to. At one in ten, near the 5x5 layer (reached in 19.5% of years), they
-are within a few points of each other, CCoC aside. Away from it they part in both
-directions: at one in two the rate on line runs from 53.5% to 100.0%, at one in a
-hundred from 2.1% to 7.9%, and at one in a thousand from 0.2% to 7.0%. The last column, `d.mass` (a property, not a
-method), is the **floor**: the rate on line of the remotest layer there is. CCoC
-has one because it charges every layer for its maximum loss as capital; the
-others fall to zero.
+All six price the 5x5 layer at 1.24, because the code calibrates them to that
+price. At one in ten, near the 5x5 layer (reached in 19.5% of years), they are
+within a few points of each other, CCoC aside. Away from it, they move apart in
+both directions. At one in two, the rate on line runs from 53.5% to 100.0%. At
+one in a hundred, it runs from 2.1% to 7.9%, and at one in a thousand from 0.2%
+to 7.0%.
 
-Now price all three layers with each distortion, as a multiple of expected loss,
-and show the return that price earns on each layer's own 99% TVaR capital.
-`price(x, assets, distortion=d)` gives the premium `d.measure(x)` and the return
-it earns on the capital standard you choose, here `TAIL`.
-(`tower_grids.price(d)` prices every layer of a tower in one call and agrees with
-`d.measure(g)`; the code checks it.)
+The last column, `d.mass` (a property, not a method), is the **floor**: the rate
+on line of the most remote layer. CCoC has a floor because it charges every
+layer for its maximum loss as capital. The floor of the other families is zero.
+
+Now the code prices all three layers with each distortion, as a multiple of
+expected loss. It also shows the return that each price earns on the 99% TVaR
+capital of the layer. `price(x, assets, distortion=d)` gives the premium
+`d.measure(x)` and the return that it earns on the capital standard you choose,
+here `TAIL`. `tower_grids.price(d)` prices every layer of a tower in one call
+and agrees with `d.measure(g)`. The code checks this.
 
 ```python
 for name, d in fitted.items():
@@ -344,51 +369,53 @@ for name, d in fitted.items():
 
 **How each distortion weights the tail, and what that does to layer multiples.**
 
-- **TVaR** charges every layer 2.12 times its expected loss, the same as the
-  expected value principle. TVaR at level p is g(s) = s / (1 - p) while s is
-  below 1 - p. The fitted level is 0.527, and every layer has a chance of any loss
-  below 47.3% (section 2), so only the straight part of g is used. Here `tvar(p)`
-  is a pricing shape, not a capital level like the 99% of section 2: a cover hit
-  with probability below 1 - p pays 1 / (1 - p) times its expected loss. It is the
-  expected value principle in disguise for such covers, with no extra charge for a
-  remote tail, so it is a poor choice for pricing remote layers.
+- **TVaR** charges every layer 2.12 times its expected loss. Here `tvar(p)` is a
+  pricing shape, not a capital level like the 99% of section 2. TVaR at level p
+  is g(s) = s / (1 - p) while s is below 1 - p. The fitted level is 0.527, and
+  the probability of a loss is below 47.3% for every layer (section 2). For a
+  cover hit with probability below 1 - p, only the straight part of g applies.
+  Such a cover pays 1 / (1 - p) times its expected loss. For it, TVaR is the
+  expected value principle with no extra charge for a remote tail, so TVaR is a
+  poor choice for remote layers.
 - **Dual power**, **exponential** and **Wang** weight the middle outcomes up and
-  the remote ones less. For dual power the multiple climbs only from 1.90 to 2.23
-  across the layers, and the return on each layer's own capital falls from 22.8%
-  to 4.3%: they undercharge remote layers relative to a constant return.
-- **Proportional hazard** sits between: a multiple from 1.61 to 2.99, and returns
-  from 14.5% to 7.1%.
-- **CCoC** charges the top layer 5.05 times its expected loss, and its return on
-  99% TVaR capital rises from 7.5% on the working layer to 15.5% on the top,
-  because it prices capital at the full maximum, which is far above the TVaR of a
+  the remote ones down. For dual power, the multiple climbs only from 1.90 to
+  2.23 across the layers. The return on the own capital of each layer falls from
+  22.8% to 4.3%. These families undercharge remote layers relative to a constant
+  return.
+- **Proportional hazard** sits between: a multiple from 1.61 to 2.99, and
+  returns from 14.5% to 7.1%.
+- **CCoC** charges the top layer 5.05 times its expected loss. Its return on 99%
+  TVaR capital rises from 7.5% on the working layer to 15.5% on the top layer.
+  CCoC prices capital at the full maximum, which is far above the TVaR of a
   remote layer. It treats the remote tail as the most expensive part.
 
-This is the main practical result. The families agree only close to the layer
-they were calibrated to. Below it, on the working 2x3 layer, the multiple runs
-from 1.34 to 2.12 and the return from 7.5% to 30.0%; above it, on the 10x10, from
-2.12 to 5.05. So calibrate to a layer like the one you price, and for any layer
-far from your calibration point the family decides the price and needs a reason:
-a market it matches (section 6) or a view of what remote capital costs.
+The main practical result: the families agree only close to the layer that they
+are calibrated to. Below it, on the working 2x3 layer, the multiple runs from
+1.34 to 2.12 and the return from 7.5% to 30.0%. Above it, on the 10x10 layer,
+the multiple runs from 2.12 to 5.05. So calibrate to a layer like the one you
+price. For a layer far from your calibration point, the family sets the price.
+The family then needs a reason: a market that it matches (section 6) or a view
+of what remote capital costs.
 
 **Use a distortion when** you need prices for several layers, or for a book and
-its parts, that are consistent with each other, or must defend one price of risk
-across a program. **Do not** when there is one cover and one quote and nothing to
-be consistent with: a load on expected loss gives the same answer with less
-machinery. **Pitfalls:**
+its parts, that agree with each other. Also use one when you must defend one
+price of risk across a program. **Do not use one** when there is one cover, one
+quote and nothing to agree with. A load on expected loss then gives the same
+answer with less work. **Pitfalls:**
 
-- `calibrate` with no `assets` takes the distribution's maximum as the capital
-  for CCoC. Here that is the full annual limit, so the fitted `ccoc` is a return
-  on full-limit capital. The same premium is a 10% return on 99% TVaR capital.
-  State which capital a CCoC rate refers to.
-- A premium must lie strictly between the (capped) mean and the maximum, but
-  that is not enough for every family. A floor `r0` sets a smallest premium the
-  family can reach, so a large floor fails for a modest target, and LEP cannot
-  reach a premium near the maximum even with no floor. Outside its range
-  `calibrate` raises `ValueError` with the message "no <family> distortion
-  gives (or reaches) the premium" (example below).
-- Do not carry a parameter across books. A hazard parameter of 0.686 for this
-  layer (0.690 for the book of section 7) is the price of risk for that cover and
-  capital standard, not a property of the market.
+- `calibrate` with no `assets` takes the maximum of the distribution as the
+  capital for CCoC. Here that is the full annual limit, so the fitted `ccoc` is
+  a return on full-limit capital. The same premium is a 10% return on 99% TVaR
+  capital. State which capital a CCoC rate refers to.
+- A premium must lie strictly between the (capped) mean and the maximum. That
+  condition is not sufficient for every family. A floor `r0` sets the smallest
+  premium that the family can reach, so a large floor fails for a modest target.
+  LEP cannot reach a premium near the maximum, even with no floor. Outside its
+  range, `calibrate` raises `ValueError` with the message "no <family>
+  distortion gives (or reaches) the premium" (example below).
+- Do not carry a parameter across books. The hazard parameter is 0.686 for this
+  layer and 0.690 for the book of section 7. Each is the price of risk for one
+  cover and one capital standard, not a property of the market.
 
 ```python
 for r0, premium in [(0.0, target.premium), (0.10, target.premium), (0.0, 5.0)]:
@@ -406,22 +433,26 @@ lep, r0 0.00, premium 5.00: ValueError, invalid data: no lep distortion reaches 
 ```
 
 **Other shapes.** The constructors without a `calibrate` name take their
-parameters from you. `beta(a, b)` is a flexible two-parameter shape, a candidate
-when two quotes are to be matched and LEP's floor is not wanted; `mixture(ds,
-weights)` blends distortions, for example a CCoC floor with a smooth family;
-`minimum(ds)` takes the lower of several. Set their parameters with a search such
-as the one in section 6, and price with `d.measure(x)` as for any distortion.
+parameters from you. `beta(a, b)` is a flexible two-parameter shape. It is a
+candidate to match two quotes when you do not want the floor of LEP.
+`mixture(ds, weights)` blends distortions, for example a CCoC floor with a
+smooth family. `minimum(ds)` takes the lowest of several distortions. Set their
+parameters with a search such as the one in section 6, and price with
+`d.measure(x)` as for any distortion.
 
 ## 5. The capital standard
 
 A reinsurer cannot pay more than it holds, so the price depends on how much it
-must hold. The usual standards are the **VaR(p)** of the annual loss (it ignores
-how large the loss is beyond that quantile); the **TVaR(p)** (it sees the whole
-tail and is coherent, so a diversified book never needs more than the sum of its
-parts); a target **expected policyholder deficit (EPD)** ratio (the expected loss
-the assets would not cover, as a fraction of the expected loss, with the assets
-the smallest that meet the target); and the **full limit**, which CCoC assumes
-without `assets`.
+must hold. The usual standards are:
+
+- The **VaR(p)** of the annual loss. It ignores how large the loss is beyond
+  that quantile.
+- The **TVaR(p)**. It sees the whole tail and is coherent, so a diversified book
+  never needs more than the sum of its parts.
+- A target **expected policyholder deficit (EPD)** ratio. This ratio is the
+  expected loss that the assets do not cover, as a fraction of the expected
+  loss. The assets are the smallest that meet the target.
+- The **full limit**, which CCoC assumes without `assets`.
 
 ```python
 pf = Portfolio.from_independent(["5x5"], [mid])
@@ -444,19 +475,22 @@ for name, assets in standards:
         full limit   10.00      0.00%                1.442
 ```
 
-Same layer, same 10% return, and the risk premium runs from 1.042 to 1.442 with
-the capital standard alone. A 99% VaR sets the assets at 5.60 and leaves 3.71% of
-the expected loss unpaid in the bad years. The 99% TVaR asks for 7.78 and leaves
-1.18%. Moving from VaR to TVaR at the same level raises the premium by about a
-fifth. `Portfolio.assets(p)` is a VaR; for a TVaR use
-`Distortion.tvar(p).measure(x)`; `Portfolio.epd(a)` returns the total EPD ratio
-and the ratio by unit; `assets_for_epd(e)` inverts it.
+For the same layer and the same 10% return, the risk premium runs from 1.042 to
+1.442 with the capital standard alone. A 99% VaR sets the assets at 5.60. It
+leaves 3.71% of the expected loss unpaid in the bad years. The 99% TVaR asks for
+7.78 and leaves 1.18%. A move from VaR to TVaR at the same level raises the
+premium by about a fifth.
 
-**The choice is a modelling choice.** There is no correct level. Regulatory
+`Portfolio.assets(p)` is a VaR. For a TVaR, use `Distortion.tvar(p).measure(x)`.
+`Portfolio.epd(a)` returns the total EPD ratio and the ratio by unit, and
+`assets_for_epd(e)` inverts it.
+
+**The choice is a modelling choice.** No level is the right one. Regulatory
 regimes use both VaR and TVaR standards, at different levels. Pick the standard
-the reinsurer is held to, and keep it fixed when you compare prices. Prefer TVaR
-for a layer with a lump of outcomes at its limit, as here: a VaR changes
-abruptly when the probability of a full-limit loss crosses 1 - p, a TVaR does not.
+that the reinsurer is held to, and keep it fixed when you compare prices. Prefer
+TVaR for a layer with a lump of outcomes at its limit, as here. A VaR changes
+abruptly when the probability of a full-limit loss crosses 1 - p, but a TVaR
+does not.
 
 ## 6. Calibrating to a target return, to a price, or to several layers
 
@@ -481,22 +515,31 @@ for how, kw in targets.items():
         loss ratio: proportional_hazard(0.676)     premium 1.225, return 9.9%, loss ratio 47.3%
 ```
 
-The three fits differ slightly from each other and from the 0.686 found above,
-because `Portfolio` prices the loss capped at the assets (the reinsurer cannot pay
-more than it holds), so its expected loss is a little below the layer's. The free
-function `calibrate(family, x, premium, assets=None)` takes only a premium.
-**Calibrate to a target return** to set a technical price. **Calibrate to a market
-price** to read the price of risk the market pays, price other layers with it, or
-see whether your own return is above or below it. **Calibrate to a loss ratio**
-when the target is stated that way, as for a quota share.
+The three fits differ slightly from each other and from the 0.686 above.
+`Portfolio` prices the loss capped at the assets (the reinsurer cannot pay more
+than it holds). So its expected loss is a little below the expected loss of the
+layer. The free function `calibrate(family, x, premium, assets=None)` takes only
+a premium.
+
+Each target has its use:
+
+- **Calibrate to a target return** to set a technical price.
+- **Calibrate to a market price** to read the price of risk that the market
+  pays. Then price other layers with it, or see whether your own return is above
+  or below it.
+- **Calibrate to a loss ratio** when the target has that form, as for a quota
+  share.
 
 ### More than one layer
 
-One parameter matches one price. Suppose the market also quotes 1.30 as the risk
-premium of the 10x10 (an illustrative number). A proportional hazard fitted to
-the 5x5 gives a much lower price for it. A family with a floor has a second
-parameter: fix the floor `r0`, let `calibrate` set the other parameter to hit the
-5x5, and search on `r0` until the 10x10 is right as well:
+One parameter matches one price. Suppose that the market also quotes 1.30 as the
+risk premium of the 10x10 (an illustrative number). A proportional hazard fitted
+to the 5x5 gives a much lower price for the 10x10. A family with a floor has a
+second parameter. To match both quotes:
+
+1. Fix the floor `r0`.
+2. Let `calibrate` set the other parameter to hit the 5x5.
+3. Search on `r0` until the price of the 10x10 matches its quote.
 
 ```python
 top = annual["10x10"]
@@ -518,16 +561,17 @@ for d in (one_parameter, two_parameter):
 ```
 
 The two-parameter fit hits both quotes, with a floor (`d.mass`) of 2.89% rate on
-line; for LEP the floor is close to `r0` (0.0297) but not equal to it. It also
-predicts the working layer at 1.045; if the market quotes that layer too, the
-gap tests the family. prospicio has no fit to more quotes than a family has
-parameters. For that, minimise the squared differences between
-`calibrate(...).measure(layer)` and the quotes over the free parameter yourself
-(for example with `scipy.optimize.least_squares` on `r0`); the residuals then say
-whether the family fits the market.
+line. For LEP the floor is close to `r0` (0.0297) but not equal to it. The fit
+also predicts the working layer at 1.045. If the market quotes that layer too,
+the difference tests the family.
+
+You can also fit more quotes than the family has parameters. Minimise the
+squared differences between `calibrate(...).measure(layer)` and the quotes over
+the free parameter. For example, use `scipy.optimize.least_squares` on `r0`. The
+residuals then show whether the family fits the market.
 
 When the quotes are for thin layers (as for catastrophe bonds), the concave hull
-of the quotes is a distortion in itself. Give `Distortion.convex` pairs
+of the quotes is a distortion itself. Give `Distortion.convex` pairs
 `(chance of being reached, rate on line)`:
 
 ```python
@@ -543,20 +587,23 @@ g at 1 in 500: 1.25%, g at 1 in 5000: 0.12%, floor 0.0%
 {'2x3': 1.094, '5x5': 1.297, '10x10': 1.034}
 ```
 
-Between quotes the hull is a straight line, and below the last it runs to the
-origin, so it has no floor unless you add a quote at zero. It uses the quotes and
-nothing else: no family assumption, but no information outside the quotes, and a
-quote that lies inside the hull is silently dropped.
+Between quotes the hull is a straight line. Below the last quote it runs to the
+origin, so it has no floor unless you add a quote at zero. The hull uses the
+quotes and nothing else. It needs no family assumption, but it has no
+information outside the quotes. It drops a quote that lies inside the hull, with
+no warning.
 
 ## 7. Stand-alone price, price in a portfolio, and allocation
 
-A contract priced alone ignores the rest of the reinsurer's book. If its bad
-years rarely coincide with the book's, adding it barely raises the book's tail and
-it needs less capital than it would alone. The portfolio price is then lower, and
-the difference is the **diversification benefit**. Build a small book of three
-lines joined by a Gaussian copula (a way to give distributions a chosen
-correlation; see [the severity and frequency guide](severity-and-frequency.md)) in
-a `PredictiveDistribution` of 20,000 simulated years, one column per line:
+A contract priced alone ignores the rest of the book of the reinsurer. If its
+bad years rarely coincide with those of the book, it adds little to the tail of
+the book. It then needs less capital than alone. The portfolio price is then
+lower, and the difference is the **diversification benefit**. The code builds a
+small book of three lines, joined by a Gaussian copula (see
+[the severity and frequency guide](severity-and-frequency.md)).
+
+A copula gives distributions a chosen correlation. The book is a
+`PredictiveDistribution` of 20,000 simulated years, one column per line:
 
 ```python
 LINES = ["property", "casualty", "cat"]
@@ -584,34 +631,37 @@ for method in ["euler", "covariance", "proportional", "marginal", "shapley"]:
 ```
 
 `capital(pd, distortion, method)` allocates the distortion measure of the total
-(here the 99% TVaR) to the lines. Despite the function's name, in the words of
-section 1 these amounts are **assets** (premium plus capital), because the capital
-standard sets the assets. The stand-alone amounts sum to far more than the book
-needs; the difference is the diversification. The five methods split the
-total differently because they answer different questions:
+(here the 99% TVaR) to the lines. The function has the name `capital`, but in
+the words of section 1 these amounts are **assets** (premium plus capital). The
+reason is that the capital standard sets the assets. The stand-alone amounts sum
+to far more than the book needs, and the difference is the diversification
+benefit. The five methods split the total differently because they answer
+different questions:
 
 | Method | Answers | Adds up? |
 |---|---|---|
-| `euler` (default; also `allocate(pd, d)`) | What does each line contribute in the book's bad years? For TVaR, each line's average loss in the worst 1% of the book's years | Yes |
+| `euler` (the default, also `allocate(pd, d)`) | What does each line contribute in the bad years of the book? For TVaR, the average loss of each line in the worst 1% of the years of the book | Yes |
 | `covariance` | Who moves with the total, over the whole distribution and not only the tail | Yes |
-| `proportional` | Stand-alone measures scaled to the total; ignores dependence | Yes |
-| `marginal` | What would the book save without the line (Merton and Perold)? | No: it falls short, and the shortfall belongs to no one |
+| `proportional` | Stand-alone measures scaled to the total. It ignores dependence | Yes |
+| `marginal` | What would the book save without the line (Merton and Perold)? | No: it falls short, and the shortfall belongs to no line |
 | `shapley` | Average marginal contribution over every order of joining (at most 12 lines) | Yes |
 
-**Euler is the usual choice.** Of these methods it is the only one that is the
-gradient of the risk measure, so it is consistent with small changes to the
-portfolio: it tells you whether growing a line makes the book's assets grow faster
-or slower than the line's own stand-alone assets. For a distortion it is also the
-natural (co-measure) allocation that `price_portfolio` and `Portfolio.price` use
-below. Here the cat line gets 59.75 against 64.23 alone and the casualty line
-33.85 against 49.81:
-casualty diversifies, cat drives the book's tail. Use `marginal` for the one-off
-question "what is this contract worth to the book", not to split the book.
+**Euler is the usual choice.** Of these methods, only Euler is the gradient of
+the risk measure, so it is consistent with small changes to the portfolio. It
+tells you whether growth in a line makes the assets of the book grow faster or
+slower than the stand-alone assets of the line. For a distortion, Euler is also
+the natural (co-measure) allocation that `price_portfolio` and `Portfolio.price`
+use below. Here the cat line gets 59.75 against 64.23 alone, and the casualty
+line gets 33.85 against 49.81. Casualty diversifies, and cat drives the tail of
+the book.
 
-To price the lines and not only split the capital, `price_portfolio` applies a
-cost of capital to the assets and allocates both by co-measure (the natural
-allocation, the same split as `euler` above), so component prices sum to the
-portfolio price:
+Use `marginal` for the one-off question "what is this contract worth to the
+book", not to split the book.
+
+To price the lines and not only split the capital, use `price_portfolio`. It
+applies a cost of capital to the assets and allocates both by co-measure (the
+natural allocation, the same split as `euler` above). So the component prices
+sum to the portfolio price:
 
 ```python
 priced = price_portfolio(book, TAIL, cost_of_capital=RETURN)
@@ -632,24 +682,28 @@ print(f"premium saved by writing the lines together: {priced.diversification():.
 premium saved by writing the lines together: 2.54
 ```
 
-The premium and capital in the book add up to the Euler assets above: for
-property 21.30 + 12.88 = 34.18, for the book 66.09 + 61.70 = 127.79. Each line
-earns 10% on the capital allocated to it, so the cat line, which needs
-the most capital, carries the most margin: a premium of 14.45 for an expected loss
-of 9.92, against 30.34 for 29.99 for casualty. Capital falls from 87.05 stand-alone
-to 61.70 in the book, but the premium falls only from 68.63 to 66.09, about a
-tenth of the capital saved. `priced.diversification()` is a method returning the
-premium saved. The components must add up to the portfolio (segments or covers),
-never gross, ceded and net side by side.
+The premium and capital in the book add up to the Euler assets above. For
+property, 21.30 + 12.88 = 34.18, and for the book, 66.09 + 61.70 = 127.79. Each
+line earns 10% on the capital allocated to it. So the cat line, which needs the
+most capital, carries the most margin. Its premium is 14.45 for an expected loss
+of 9.92, against 30.34 for 29.99 for casualty.
+
+Capital falls from 87.05 stand-alone to 61.70 in the book. But the premium falls
+only from 68.63 to 66.09, about a tenth of the capital saved.
+`priced.diversification()` is a method that returns the premium saved. The
+components must add up to the portfolio (segments or covers). Never use gross,
+ceded and net side by side as components.
 
 `price_portfolio` uses a constant cost of capital. To price a book with a
-distortion calibrated to a return or a quote, use `Portfolio`, which keeps for
-each total the average loss of each unit given that total. `Portfolio.price`
-prices the loss capped at the assets (here the same 99% TVaR as above) and splits loss,
-margin, premium, capital and assets among the units. How the part above the
-assets is shared has two forms: `allocation="linear"` uses each unit's expected
-share of the total loss, `"lifted"` its distorted share. Bodoff's percentile
-layer method, `port.bodoff(p=0.99)`, is a third split of the assets:
+distortion calibrated to a return or a quote, use `Portfolio`. For each total,
+it keeps the average loss of each unit given that total. `Portfolio.price`
+prices the loss capped at the assets (here the same 99% TVaR as above). It
+splits loss, margin, premium, capital and assets among the units.
+
+The part above the assets has two splits. `allocation="linear"` uses the
+expected share of each unit in the total loss. `"lifted"` uses its distorted
+share. Bodoff's percentile layer method, `port.bodoff(p=0.99)`, is a third split
+of the assets:
 
 ```python
 port = Portfolio.from_predictive(book)
@@ -677,88 +731,93 @@ proportional_hazard(0.690) assets 127.79
      total        66.02    66.02       10.0%    10.0%      127.79   127.79   127.79
 ```
 
-On the same assets the book's premium is 66.02 with the calibrated distortion,
-against 66.09 with a constant cost of capital in `price_portfolio`, but the split
-by line differs: the distortion charges the cat line 13.43, not 14.45. The book
-earns exactly 10% under both allocations, and the premium by line is almost the
-same, but returns and assets by line are not: under the lifted allocation the
-casualty line earns 5.7% and the cat line 12.2%, under the linear 9.6% and 9.3%.
-Bodoff gives the cat line the least of the assets, 34.79, and casualty the most,
-52.90.
-None is the right one: they answer who owns each slice of the asset stack in the
-bad years, and the answer is a convention. Choose one, state it, and do not
-compare returns by line across conventions. `port.price(...)` returns a
-`NaturalPrice`; `.to_dict()` gives its table as columns for `pandas.DataFrame`.
+On the same assets, the premium of the book is 66.02 with the calibrated
+distortion. It is 66.09 with a constant cost of capital in `price_portfolio`.
+The split by line differs: the distortion charges the cat line 13.43, not 14.45.
+The book earns exactly 10% under both allocations, and the premium by line is
+almost the same. But the returns and assets by line are different. Under the
+lifted allocation the casualty line earns 5.7% and the cat line 12.2%, and under
+the linear allocation 9.6% and 9.3%.
 
-**Use** `price_portfolio` for a technical price of a contract inside a book at the
-return the reinsurer asks; `Portfolio.price` for a book priced with a distortion
-calibrated to a quote; `capital` (Euler) to split capital among lines without
-setting a price. **Pitfalls:** the diversification benefit depends on the
-dependence model, and a Gaussian copula has no tail dependence, so it can
-understate how often lines have their worst years together (test with a t or
-Archimedean copula). And an in-book price is a price for this reinsurer's book,
-not one a cedant can use to compare reinsurers.
+Bodoff gives the cat line the smallest part of the assets, 34.79, and casualty
+the largest, 52.90. No split is the right one. Each split says who owns each
+slice of the asset stack in the bad years, and that answer is a convention.
+Choose one convention, state it, and do not compare returns by line across
+conventions. `port.price(...)` returns a `NaturalPrice`, and `.to_dict()` gives
+its table as columns for `pandas.DataFrame`.
+
+**Use** `price_portfolio` for a technical price of a contract inside a book at
+the return that the reinsurer asks. Use `Portfolio.price` for a book priced with
+a distortion calibrated to a quote. Use `capital` (Euler) to split capital among
+lines without a price.
+
+**Pitfalls:** the diversification benefit depends on the dependence model. A
+Gaussian copula has no tail dependence, so it can understate how often lines
+have their worst years together. Test with a t or Archimedean copula. Also, an
+in-book price is a price for the book of this reinsurer. A cedant cannot use it
+to compare reinsurers.
 
 ## 8. Which family for which market
 
-What follows is practice and judgment, not theorem. Check each point against your
-own quotes.
+The table below is practice and judgment, not theorem. Check each point against
+your own quotes.
 
 | Market | What matters | Reasonable starting point | Why |
 |---|---|---|---|
-| Working layers, casualty: frequent losses | Most of the price is in the body | A smooth family (PH or Wang) or CCoC on a TVaR standard, calibrated to a layer of similar attachment to the one you price | The families agree only near the layer they were calibrated to (section 4); the family matters for any layer far from it |
+| Working layers, casualty: frequent losses | Most of the price is in the body | A smooth family (PH or Wang) or CCoC on a TVaR standard, calibrated to a layer of similar attachment to the one you price | The families agree only near the layer they are calibrated to (section 4). The family matters for any layer far from it |
 | Top casualty layers, long tail | Parameter and reserve uncertainty dominates | PH or Wang calibrated to the quotes you have, with a loss model whose tail reflects the uncertainty | The family matters from one in fifty out, but model uncertainty is larger |
 | Property per risk | A mix of both ends | PH or Wang calibrated to two layers | One parameter will miss one end |
-| Catastrophe: remote layers | Rate on line has a floor; prices are quoted more than modelled | A family with a floor (LEP, capped linear, CCoC) or `Distortion.convex` of the quotes | PH, Wang and dual power fall toward zero, but markets rarely quote below a minimum rate on line |
-| Quota share, stop loss, whole-book total | A share of a roughly symmetric total | Standard deviation, or CCoC on a TVaR standard | Layer-by-layer consistency matters less; volatility describes the risk |
+| Catastrophe: remote layers | Rate on line has a floor. Prices come from quotes more than from models | A family with a floor (LEP, capped linear, CCoC) or `Distortion.convex` of the quotes | PH, Wang and dual power fall toward zero, but markets rarely quote below a minimum rate on line |
+| Quota share, stop loss, whole-book total | A share of a roughly symmetric total | Standard deviation, or CCoC on a TVaR standard | Layer-by-layer consistency matters less. Volatility describes the risk |
 
 ### What is a modelling choice
 
-These cannot be derived from the data. Decide them on purpose, write them down and
-test how much each moves the price.
+These choices do not come from the data. Make them on purpose, write them down,
+and test how much each one moves the price.
 
 - The **capital standard** (VaR or TVaR, its level, or an EPD target). Section 5
-  moved one layer's premium from 1.042 to 1.442 with this alone.
+  moved the premium of one layer from 1.042 to 1.442 with this choice alone.
 - The **return on capital**, and whether it is the same for every layer.
-- The **distortion family**. It sets the price of every layer you have no quote for,
-  and matters most for remote layers.
+- The **distortion family**. It sets the price of every layer that you have no
+  quote for, and it matters most for remote layers.
 - The **dependence** between the contract and the book, and between lines.
 - The **allocation method**, which changes the return by line, not the total.
-- Pricing **stand-alone** or **in the book**: the stand-alone price is the
-  reference, the in-book price is what this reinsurer can accept.
-- **Time value**: the risk premium here is on undiscounted loss, with the
+- Pricing **stand-alone** or **in the book**. The stand-alone price is the
+  reference. The in-book price is what this reinsurer can accept.
+- **Time value**. The risk premium here is on undiscounted loss, with the
   capital held for one year. `PaymentPattern` and
-  `price_over_payout(price, pattern, rate=..., cost_of_capital=...)` (or
-  `distortion=...`, the rule the price was made with) restate it over the
-  payout. There the cost of capital is a spread over the discount rate, because
-  discounting the losses is the investment income, and the capital runs off with
-  the share of the loss still outstanding.
-- **Model and parameter uncertainty**: a load for not knowing the distribution
-  is a different thing from a load for its spread. Build it into the loss model
-  (a heavier tail, a mixed parameter) or load it separately, and say which.
+  `price_over_payout(price, pattern, rate=..., cost_of_capital=...)` restate it
+  over the payout. In place of `cost_of_capital`, you can give
+  `distortion=...`, the rule that made the price. There the cost of capital is a
+  spread over the discount rate, because the discount on the losses is the
+  investment income. The capital runs off with the share of the loss that is
+  still outstanding.
+- **Model and parameter uncertainty**. A load for not knowing the distribution
+  is different from a load for its spread. Build it into the loss model (a
+  heavier tail, a mixed parameter) or load it separately, and say which.
 
-What is not a choice: a distortion's price is at least the expected loss, the
-prices of pieces of one loss add up to the whole, and the units' premium and
-capital from `price_portfolio`, `Portfolio.price` and `capital` (except
+These are not choices. A distortion price is at least the expected loss. The
+prices of the pieces of one loss add up to the whole. The premium and capital of
+the units from `price_portfolio`, `Portfolio.price` and `capital` (except
 `marginal`) add up to the total.
 
 ## 9. Pitfalls in one place
 
 - **Properties and methods.** On a `Distortion`, `mass`, `family` and
-  `parameters` are properties, while `g(s)`, `g_inv`, `g_dual`, `measure(x)` and
+  `parameters` are properties. `g(s)`, `g_inv`, `g_dual`, `measure(x)` and
   `weights(n)` are methods. On a `Pentagon`, `loss`, `margin`, `premium`,
-  `capital`, `assets`, `loss_ratio` and `return_on_capital` are properties; a
-  `Price` has the same, with the loss named `expected_loss`. On an `Allocation`
-  and a `PortfolioPrice`, `allocated`, `standalone` and `total` are properties,
-  while `diversification_benefit()` and `diversification()` are methods. On a
-  `Portfolio`, `totals`, `probs` and `units` are properties, while `assets(p)`,
-  `epd(a)` and `bodoff(...)` are methods.
+  `capital`, `assets`, `loss_ratio` and `return_on_capital` are properties. A
+  `Price` has the same properties, with the loss named `expected_loss`. On an
+  `Allocation` and a `PortfolioPrice`, `allocated`, `standalone` and `total` are
+  properties, and `diversification_benefit()` and `diversification()` are
+  methods. On a `Portfolio`, `totals`, `probs` and `units` are properties, and
+  `assets(p)`, `epd(a)` and `bodoff(...)` are methods.
 - **Price the annual loss of the cover**, after reinstatements and the annual
-  limit, not a single loss. Pricing per occurrence and summing double counts the
-  load.
-- **Risk premium, not technical premium.** Expenses and brokerage are grossed up
-  afterwards with `Quote.technical(price, expenses=, brokerage=, limit=)` (see
-  [the price guide](reinsurance-price.md)).
+  limit, not a single loss. If you price each occurrence and add the prices, you
+  count the load twice.
+- **Risk premium, not technical premium.** After the risk premium,
+  `Quote.technical(price, expenses=, brokerage=, limit=)` adds expenses and
+  brokerage (see [the price guide](reinsurance-price.md)).
 - **Few draws, noisy tail.** A 99% TVaR from 20,000 draws rests on 200 of them.
   Use a grid and `fft` where you can, or more draws and a fixed seed.
 
@@ -778,5 +837,5 @@ capital from `price_portfolio`, `Portfolio.price` and `capital` (except
   the technical premium these methods feed.
 
 Reference: Mildenhall and Major, *Pricing Insurance Risk* (Wiley, 2022), for
-distortions, calibration and the natural allocation; the design note
+distortions, calibration and the natural allocation. See also the design note
 `docs/design/risk.md`.
