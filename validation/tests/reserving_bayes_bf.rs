@@ -238,7 +238,7 @@ fn england_verrall_wuthrich_2012() {
     // takes the chain ladder's pattern and gives 7,356,578, far from the
     // strong-prior limit: the row priors reshape the Bayesian pattern.
     let bf = BornhuetterFerguson {
-        apriori: 1.0,
+        apriori: 1.0.into(),
         ..Default::default()
     }
     .fit(&tri, "paid", "prior")

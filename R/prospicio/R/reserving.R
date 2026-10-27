@@ -636,20 +636,72 @@ development_args <- function(average, sigma_interpolation, n_periods = NULL, dro
                    drop_low = exclusion_count(drop_low, args[3])))
 }
 
+#' How an underwriting period's policies are written and earned
+#'
+#' The basis to which `ldf_underwriting` converts an accident-period
+#' development pattern in [chain_ladder()] and the other methods that take
+#' `ldf`. An underwriting period's exposure in its `t`-th accident month,
+#' `e(t)`, is the writing convolved with a policy's earning by month, and
+#' its share developed at age `a` from its start is `sum_t e(t) p(a - t)`,
+#' `p` an accident month's (Rust's `SelectedPattern::to_underwriting_basis`).
+#' The default, even writing over 12 months and 12-month policies, is the
+#' parallelogram: the exposure is triangular over 24 months.
+#'
+#' @param writing `NULL` (the default, even writing over 12 months, an
+#'   underwriting year's), or the share of the period's policies written in
+#'   each month from its start, each written at an even rate through its
+#'   month: finite, not negative, with a positive sum, scaled to sum to 1.
+#'   The writing, its trailing zeros dropped, must be no longer than the
+#'   triangle's origin period, within which its policies are written: on
+#'   underwriting quarters give three months (`c(1, 1, 1)` for even
+#'   writing); longer writing is an error at fit time.
+#' @param policy_months Each policy's term in months, a whole number of at
+#'   least 1; it earns evenly over the term.
+#' @return An `underwriting_basis`: a list of `writing`, `policy_months` and
+#'   `exposure`, the share of the period's exposure in each accident month
+#'   from its start, summing to 1.
+#' @examples
+#' b <- underwriting_basis()
+#' length(b$exposure)
+#' b$exposure[1] * 288
+#' @export
+underwriting_basis <- function(writing = NULL, policy_months = 12) {
+  if (is.null(writing)) writing <- rep(1 / 12, 12)
+  if (!is.numeric(writing)) stop("writing must be numeric", call. = FALSE)
+  if (!is.numeric(policy_months) || length(policy_months) != 1 || is.na(policy_months)) {
+    stop("policy_months must be a single number", call. = FALSE)
+  }
+  exposure <- rust_result(underwriting_exposure_rust(as.double(writing),
+                                                     as.double(policy_months)))
+  structure(list(writing = as.double(writing), policy_months = as.double(policy_months),
+                 exposure = exposure),
+            class = "underwriting_basis")
+}
+
+#' @export
+print.underwriting_basis <- function(x, ...) {
+  cat(sprintf("<underwriting_basis> %d months of writing, %g-month policies
+",
+              length(x$writing), x$policy_months))
+  invisible(x)
+}
+
 # A selected pattern as the binding takes it: NULL without `ldf`, or a list
 # of `kind`, `ages`, `values`, `weight_ages` (NULL for one weight) and
-# `weights`, and `origin` (`ldf_origin`: NULL, or the grain of the origin
-# periods the pattern was measured on). `ldf` is a named numeric vector (names are ages in months) or
+# `weights`, `origin` (`ldf_origin`: NULL, or the grain of the origin
+# periods the pattern was measured on) and `underwriting`
+# (`ldf_underwriting`: NULL, or an `underwriting_basis()`). `ldf` is a named numeric vector (names are ages in months) or
 # a data.frame with columns `age` and `value`; `ldf_weight` a number or a
 # named numeric vector. The kind is required: age-to-age factors and factors
 # to ultimate cannot be told apart.
-ldf_pattern <- function(ldf, ldf_kind, ldf_weight, ldf_origin = NULL) {
+ldf_pattern <- function(ldf, ldf_kind, ldf_weight, ldf_origin = NULL, ldf_underwriting = NULL) {
   default_weight <- is.numeric(ldf_weight) && length(ldf_weight) == 1 &&
     is.null(names(ldf_weight)) && isTRUE(ldf_weight == 1)
   if (is.null(ldf)) {
     if (!is.null(ldf_kind)) stop("ldf_kind is given without ldf", call. = FALSE)
     if (!default_weight) stop("ldf_weight is given without ldf", call. = FALSE)
     if (!is.null(ldf_origin)) stop("ldf_origin is given without ldf", call. = FALSE)
+    if (!is.null(ldf_underwriting)) stop("ldf_underwriting is given without ldf", call. = FALSE)
     return(NULL)
   }
   kinds <- c("ldf", "cdf", "percent_developed")
@@ -674,8 +726,13 @@ ldf_pattern <- function(ldf, ldf_kind, ldf_weight, ldf_origin = NULL) {
                                is.na(ldf_origin))) {
     stop('ldf_origin must be NULL or one of "M", "Q", "S" and "Y"', call. = FALSE)
   }
+  if (!is.null(ldf_underwriting) && !inherits(ldf_underwriting, "underwriting_basis")) {
+    stop("ldf_underwriting must be NULL or an underwriting_basis()", call. = FALSE)
+  }
+  underwriting <- if (is.null(ldf_underwriting)) NULL else
+    list(writing = ldf_underwriting$writing, policy_months = ldf_underwriting$policy_months)
   c(list(kind = ldf_kind, ages = values$ages, values = values$values), weight,
-    list(origin = ldf_origin))
+    list(origin = ldf_origin, underwriting = underwriting))
 }
 
 # Ages and values of a named numeric vector (names are ages in months) or a
@@ -977,9 +1034,12 @@ S7::method(print, tail_log_linear) <- tail_print
 #' triangle at the ages it gives; the other ages stay estimated, so a
 #' benchmark for the immature ages only is a partial pattern. Its values
 #' are age-to-age factors (any ages but the oldest: development past it is
-#' the tail's), or factors to ultimate or percents developed at two or more
-#' ages, which select the factors between the first and the last (`cdf[a] /
-#' cdf[next age]`). A development age they skip is interpolated: between
+#' the tail's), or factors to ultimate or percents developed, which select
+#' the factors between the first age and the last (`cdf[a] / cdf[next
+#' age]`); one factor to ultimate (or percent developed) is the tail from
+#' its age, so it is given at the oldest age, with no `tail` and
+#' `ldf_weight` 1, and on a triangle observed at one age it is the whole
+#' projection. A development age they skip is interpolated: between
 #' two given ages `b < c`, `log(cdf)` is linear in the age, so the factor
 #' from `a` to the next age `a'` is `(cdf[b] / cdf[c])^((a' - a) / (c - b))`
 #' (percents developed are converted to factors to ultimate first).
@@ -1083,7 +1143,31 @@ S7::method(print, tail_log_linear) <- tail_print
 #'   monthly pattern is the safer choice there. Equal to the target's
 #'   grain, it changes nothing. It needs one `ldf_weight` for every
 #'   factor, not one by age, and the averaged pattern cannot be weighted by
-#'   age from R.
+#'   age from R. With `ldf_underwriting` it is the grain of the accident
+#'   periods `ldf` is converted from instead.
+#' @param ldf_underwriting `NULL` (the default), or an [underwriting_basis()]
+#'   to which `ldf`, an accident-period pattern, is converted for the
+#'   target's underwriting periods: an underwriting year's share developed
+#'   at age `a` from its start is `sum_t e(t) p(a - t)`, with `e` its
+#'   exposure by accident month and `p` an accident month's
+#'   (`SelectedPattern::to_underwriting_basis`). `ldf` is on accident
+#'   periods of `ldf_origin`, or of the target's origin grain without it:
+#'   an accident-year pattern on underwriting-year origins needs no
+#'   `ldf_origin`. An accident-month pattern (`ldf_origin = "M"`) converts
+#'   under any writing and term; a pattern of longer accident periods needs
+#'   a policy term that is a whole multiple of them or writing even within
+#'   each of them, and is read between its ages by the rule above, so an
+#'   annual accident-year pattern is approximate in the first two years
+#'   (31% too much developed at 12 months on a simulated parallelogram);
+#'   give it at every month, or an accident-month pattern, where it
+#'   matters. The result runs past `ldf`'s end by the writing months plus
+#'   the policy term less the accident period (12 months for an
+#'   accident-year pattern under the default, 23 for an accident-month
+#'   one), and a constant tail from `ldf`'s own tail is the safer choice
+#'   there. The writing must be no longer than the target's origin period
+#'   (the default's 12 months suit underwriting years only; on underwriting
+#'   quarters give `underwriting_basis(c(1, 1, 1))`), or the fit is an
+#'   error.
 #' @param development For a [latest_valuation] only: a [chain_ladder_fit] (or a
 #'   fit with `@chain_ladder`) whose development projects each segment, as
 #'   [to_chain_ladder()] freezes it. The method then takes no `ldf`, no
@@ -1154,10 +1238,10 @@ chain_ladder_fit <- S7::new_class(
 #' @export
 chain_ladder <- function(triangle, column = NULL, average = "volume",
                          sigma_interpolation = "log-linear", tail = 1, ldf = NULL,
-                         ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL, n_periods = NULL,
+                         ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL, ldf_underwriting = NULL, n_periods = NULL,
                          drop_high = 0, drop_low = 0, development = NULL, segment_map = NULL) {
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
-  pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
+  pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting)
   if (is_latest_valuation(triangle)) {
     return(chain_ladder_fit(ptr = latest_valuation_fit(triangle, "chain_ladder", list(), args, tail,
                                                        pattern, development, segment_map,
@@ -1269,13 +1353,13 @@ mack_fit <- S7::new_class(
 #' @export
 mack <- function(triangle, column = NULL, average = "volume", sigma_interpolation = "log-linear",
                  tail = 1, tail_sigma = NULL, tail_std_err = NULL, ldf = NULL, ldf_kind = NULL,
-                 ldf_weight = 1, ldf_origin = NULL, n_periods = NULL, drop_high = 0, drop_low = 0) {
+                 ldf_weight = 1, ldf_origin = NULL, ldf_underwriting = NULL, n_periods = NULL, drop_high = 0, drop_low = 0) {
   column <- fit_column(triangle, column)
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
   ptr <- rust_result(triangle@ptr$mack(
     column, args$average, args$sigma, args$excl, tail_ptr(tail),
     optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
-    ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
+    ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting)
   ))
   mack_fit(ptr = ptr)
 }
@@ -1286,6 +1370,21 @@ single_number <- function(value, arg) {
     stop(sprintf("%s must be a single number", arg), call. = FALSE)
   }
   as.double(value)
+}
+
+# The `apriori` of an expected-loss method as Rust takes it: one number for
+# every origin, an unnamed vector of one per origin in origin order, or a
+# vector named by origin label ("2021", "2021Q3"), as a double vector that
+# keeps its names.
+apriori_arg <- function(apriori) {
+  if (!is.numeric(apriori) || length(apriori) == 0 || anyNA(apriori)) {
+    stop("apriori must be a number or a numeric vector, one per origin", call. = FALSE)
+  }
+  labels <- names(apriori)
+  if (!is.null(labels) && (anyNA(labels) || any(labels == ""))) {
+    stop("apriori must be named by origin for every value, or not at all", call. = FALSE)
+  }
+  stats::setNames(as.double(apriori), labels)
 }
 
 # The loss and exposure columns of an expected-loss method.
@@ -1387,10 +1486,18 @@ expected_loss_properties <- function(el, cl) {
 #' @param development,segment_map For a latest valuation only: the development
 #'   of another fit, segment by segment, as in [chain_ladder()].
 #' @param apriori Expected loss ratio: the expected ultimate per unit of
-#'   exposure; positive.
+#'   exposure; positive. One number for every origin, an unnamed vector of
+#'   one per origin in origin order (oldest first, over the triangle's
+#'   origins or, for a latest valuation, its origins), or a vector named by
+#'   origin as fits name them (`c("2020" = 0.6, "2021" = 0.65)`, or
+#'   `"2021Q3"` for quarters). Every origin fitted needs a value, and a name
+#'   that is not an origin of the triangle is an error; over segments each
+#'   segment takes its own origins' values. On a latest valuation an unnamed
+#'   vector needs the rows oldest first, each origin once, and is otherwise
+#'   an error, since the exposure is read by row: name it by origin.
 #' @param n_iters Number of Bornhuetter-Ferguson steps; a non-negative whole
 #'   number.
-#' @param ldf,ldf_kind,ldf_weight,ldf_origin A selected development pattern, as in
+#' @param ldf,ldf_kind,ldf_weight,ldf_origin,ldf_underwriting A selected development pattern, as in
 #'   [chain_ladder()]: the development pattern's factors at the ages it
 #'   gives, so `cdf` and the share developed `1 / cdf` follow it.
 #' @param average,sigma_interpolation,tail The development pattern, as in
@@ -1431,21 +1538,21 @@ expected_loss_fit <- S7::new_class(
 #' @export
 expected_loss <- function(triangle, column = NULL, exposure = NULL, apriori = 1,
                           average = "volume", sigma_interpolation = "log-linear", tail = 1,
-                          ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL,
+                          ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL, ldf_underwriting = NULL,
                           n_periods = NULL, drop_high = 0, drop_low = 0, development = NULL,
                           segment_map = NULL) {
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
-  pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
+  pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting)
   if (is_latest_valuation(triangle)) {
     return(expected_loss_fit(ptr = latest_valuation_fit(
-      triangle, "expected_loss", list(single_number(apriori, "apriori")), args, tail, pattern,
+      triangle, "expected_loss", list(apriori_arg(apriori)), args, tail, pattern,
       development, segment_map, !is.null(column) || !is.null(exposure)
     )))
   }
   no_development(development, segment_map)
   cols <- exposure_columns(triangle, column, exposure)
   ptr <- rust_result(triangle@ptr$expected_loss(
-    cols[1], cols[2], single_number(apriori, "apriori"), args$average, args$sigma, args$excl,
+    cols[1], cols[2], apriori_arg(apriori), args$average, args$sigma, args$excl,
     tail_ptr(tail), pattern
   ))
   expected_loss_fit(ptr = ptr)
@@ -1456,20 +1563,20 @@ expected_loss <- function(triangle, column = NULL, exposure = NULL, apriori = 1,
 bornhuetter_ferguson <- function(triangle, column = NULL, exposure = NULL, apriori = 1,
                                  average = "volume", sigma_interpolation = "log-linear",
                                  tail = 1, ldf = NULL, ldf_kind = NULL, ldf_weight = 1,
-                                 ldf_origin = NULL, n_periods = NULL, drop_high = 0,
+                                 ldf_origin = NULL, ldf_underwriting = NULL, n_periods = NULL, drop_high = 0,
                                  drop_low = 0, development = NULL, segment_map = NULL) {
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
-  pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
+  pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting)
   if (is_latest_valuation(triangle)) {
     return(expected_loss_fit(ptr = latest_valuation_fit(
-      triangle, "bornhuetter_ferguson", list(single_number(apriori, "apriori")), args, tail,
+      triangle, "bornhuetter_ferguson", list(apriori_arg(apriori)), args, tail,
       pattern, development, segment_map, !is.null(column) || !is.null(exposure)
     )))
   }
   no_development(development, segment_map)
   cols <- exposure_columns(triangle, column, exposure)
   ptr <- rust_result(triangle@ptr$bornhuetter_ferguson(
-    cols[1], cols[2], single_number(apriori, "apriori"), args$average, args$sigma, args$excl,
+    cols[1], cols[2], apriori_arg(apriori), args$average, args$sigma, args$excl,
     tail_ptr(tail), pattern
   ))
   expected_loss_fit(ptr = ptr)
@@ -1479,22 +1586,22 @@ bornhuetter_ferguson <- function(triangle, column = NULL, exposure = NULL, aprio
 #' @export
 benktander <- function(triangle, column = NULL, exposure = NULL, apriori = 1, n_iters = 1,
                        average = "volume", sigma_interpolation = "log-linear", tail = 1,
-                       ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL,
+                       ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL, ldf_underwriting = NULL,
                        n_periods = NULL, drop_high = 0, drop_low = 0, development = NULL,
                        segment_map = NULL) {
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
-  pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
+  pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting)
   if (is_latest_valuation(triangle)) {
     return(expected_loss_fit(ptr = latest_valuation_fit(
       triangle, "benktander",
-      list(single_number(apriori, "apriori"), single_number(n_iters, "n_iters")), args, tail,
+      list(apriori_arg(apriori), single_number(n_iters, "n_iters")), args, tail,
       pattern, development, segment_map, !is.null(column) || !is.null(exposure)
     )))
   }
   no_development(development, segment_map)
   cols <- exposure_columns(triangle, column, exposure)
   ptr <- rust_result(triangle@ptr$benktander(
-    cols[1], cols[2], single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
+    cols[1], cols[2], apriori_arg(apriori), single_number(n_iters, "n_iters"),
     args$average, args$sigma, args$excl, tail_ptr(tail), pattern
   ))
   expected_loss_fit(ptr = ptr)
@@ -1575,11 +1682,11 @@ cape_cod_fit <- S7::new_class(
 #' @export
 cape_cod <- function(triangle, column = NULL, exposure = NULL, trend = 0, decay = 1,
                      average = "volume", sigma_interpolation = "log-linear", tail = 1,
-                     ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL,
+                     ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL, ldf_underwriting = NULL,
                      n_periods = NULL, drop_high = 0, drop_low = 0, development = NULL,
                      segment_map = NULL) {
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
-  pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
+  pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting)
   if (is_latest_valuation(triangle)) {
     return(cape_cod_fit(ptr = latest_valuation_fit(
       triangle, "cape_cod",
@@ -2073,7 +2180,7 @@ S7::method(print, claims_development_result) <- function(x, ...) {
 #'   diagonal and one row and column per segment in index order. It is
 #'   converted to the normal scores' correlation `2 sin(pi rho / 6)`, which
 #'   must be positive definite.
-#' @param ldf,ldf_kind,ldf_weight,ldf_origin A selected development pattern, as in
+#' @param ldf,ldf_kind,ldf_weight,ldf_origin,ldf_underwriting A selected development pattern, as in
 #'   [chain_ladder()]. The residuals and the scale come from the triangle's
 #'   own volume-weighted factors; each simulation then uses
 #'   `w * selected + (1 - w) * pseudo` at the selected ages, so a fully
@@ -2160,7 +2267,7 @@ origin_matrix <- function(fit, flat) {
 odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                           process = c("gamma", "none"), tail = 1, tail_std_err = NULL,
                           dependence = c("independent", "synchronized", "rank_correlation"),
-                          spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL,
+                          spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL, ldf_underwriting = NULL,
                           n_periods = NULL, drop_high = 0, drop_low = 0) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
@@ -2171,7 +2278,7 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                                                 tail_ptr(tail),
                                                 optional_number(tail_std_err, "tail_std_err"),
                                                 dependence, spearman_arg(spearman),
-                                                ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin), excl))
+                                                ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting), excl))
   odp_bootstrap_fit(ptr = ptr)
 }
 
@@ -3912,7 +4019,7 @@ bayes_bf_normalised_one_year <- function(triangle, column, exposure, apriori = 1
 #'   and an error with an estimated tail.
 #' @param dependence,spearman How the segments depend on each other, as in
 #'   [odp_bootstrap()].
-#' @param ldf,ldf_kind,ldf_weight,ldf_origin A selected development pattern, as in
+#' @param ldf,ldf_kind,ldf_weight,ldf_origin,ldf_underwriting A selected development pattern, as in
 #'   [chain_ladder()]. Mack's sigmas and residuals come from the triangle's
 #'   own estimate; each simulation then uses `w * selected + (1 - w) *
 #'   pseudo` at the selected ages, so a fully selected factor has no
@@ -3980,7 +4087,7 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                            centre_residuals = TRUE, tail = 1, tail_sigma = NULL,
                            tail_std_err = NULL,
                            dependence = c("independent", "synchronized", "rank_correlation"),
-                           spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL,
+                           spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL, ldf_underwriting = NULL,
                            n_periods = NULL, drop_high = 0, drop_low = 0) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
@@ -3990,7 +4097,7 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
     column, single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
     model$average, model$sigma, model$excl, isTRUE(centre_residuals), tail_ptr(tail),
     optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
-    dependence, spearman_arg(spearman), ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
+    dependence, spearman_arg(spearman), ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting)
   ))
   mack_bootstrap_fit(ptr = ptr)
 }
@@ -4134,7 +4241,7 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' @param trend,decay As in [cape_cod()].
 #' @param average,sigma_interpolation,tail The chain ladder or development
 #'   pattern of `method`, as in [chain_ladder()].
-#' @param ldf,ldf_kind,ldf_weight,ldf_origin A selected development pattern of
+#' @param ldf,ldf_kind,ldf_weight,ldf_origin,ldf_underwriting A selected development pattern of
 #'   `method`, as in [chain_ladder()].
 #' @param bootstrap_ldf Whether the bootstrap takes `method`'s selected
 #'   pattern too (the default), so that its simulations blend the pseudo
@@ -4254,7 +4361,7 @@ odp_one_year <- function(triangle, column = NULL,
                          bootstrap_tail = FALSE, tail_std_err = NULL,
                          n_sims = 10000, seed = 0, process = c("gamma", "none"),
                          dependence = c("independent", "synchronized", "rank_correlation"),
-                         spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL,
+                         spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL, ldf_underwriting = NULL,
                          bootstrap_ldf = TRUE, n_periods = NULL, drop_high = 0, drop_low = 0) {
   column <- fit_column(triangle, column)
   method <- match.arg(method)
@@ -4266,12 +4373,12 @@ odp_one_year <- function(triangle, column = NULL,
   check_bootstrap_tail_settings(bootstrap_tail, list(tail_std_err = tail_std_err))
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
   ptr <- rust_result(triangle@ptr$odp_one_year(
-    column, method, exposure, single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
+    column, method, exposure, apriori_arg(apriori), single_number(n_iters, "n_iters"),
     single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma, args$excl,
     tail_ptr(tail), isTRUE(bootstrap_tail),
     optional_number(tail_std_err, "tail_std_err"), single_number(n_sims, "n_sims"),
     single_number(seed, "seed"), process, dependence, spearman_arg(spearman),
-    ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin), isTRUE(bootstrap_ldf)
+    ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting), isTRUE(bootstrap_ldf)
   ))
   one_year_fit(ptr = ptr)
 }
@@ -4290,7 +4397,7 @@ mack_one_year <- function(triangle, column = NULL,
                           mack_average = "volume", mack_sigma_interpolation = "log-linear",
                           centre_residuals = TRUE,
                           dependence = c("independent", "synchronized", "rank_correlation"),
-                          spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL,
+                          spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL, ldf_underwriting = NULL,
                           bootstrap_ldf = TRUE, n_periods = NULL, drop_high = 0, drop_low = 0,
                           mack_n_periods = NULL, mack_drop_high = 0, mack_drop_low = 0) {
   column <- fit_column(triangle, column)
@@ -4307,13 +4414,13 @@ mack_one_year <- function(triangle, column = NULL,
                             mack_drop_low,
                             c("mack_n_periods", "mack_drop_high", "mack_drop_low"))
   ptr <- rust_result(triangle@ptr$mack_one_year(
-    column, method, exposure, single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
+    column, method, exposure, apriori_arg(apriori), single_number(n_iters, "n_iters"),
     single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma, args$excl,
     tail_ptr(tail), isTRUE(bootstrap_tail),
     optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
     single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
     model$average, model$sigma, model$excl, isTRUE(centre_residuals), dependence, spearman_arg(spearman),
-    ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin), isTRUE(bootstrap_ldf)
+    ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting), isTRUE(bootstrap_ldf)
   ))
   one_year_fit(ptr = ptr)
 }

@@ -322,13 +322,16 @@ fn the_conversion_keeps_its_kind_weight_and_errors() {
         reason(percent(vec![(3, 0.5), (6, -1.0)]).averaged_over_origins(Grain::Month, Grain::Year)),
         (Some(6), "a percent developed must be finite and positive")
     );
-    assert_eq!(
-        reason(percent(vec![(3, 0.5)]).averaged_over_origins(Grain::Month, Grain::Year)),
-        (
-            Some(3),
-            "a cumulative pattern needs two or more ages: one value selects no factor"
-        )
-    );
+    // One cumulative value (decision 20) is linear from 0 up to its age and
+    // held past it: at 3 months (1/2 + 1/3 + 1/6) / 12 of a year's months
+    // are developed, and from 14 months every month holds the value.
+    let one = percent(vec![(3, 0.5)])
+        .averaged_over_origins(Grain::Month, Grain::Year)
+        .unwrap();
+    assert_eq!(one.kind, PatternKind::PercentDeveloped);
+    assert_eq!(one.values.first().map(|v| v.0), Some(3));
+    assert_rel(one.values[0].1, 1.0 / 12.0, 1e-15, "one value at 3 months");
+    assert_eq!(one.values.last(), Some(&(14, 0.5)));
     // The result's last age, the end plus eleven months, does not fit in
     // a Lag.
     assert_eq!(
@@ -911,13 +914,62 @@ fn the_plain_paths_pattern_errors() {
         error(PatternKind::AgeToAge, vec![(18, 1.5)], all.clone()),
         (Some(18), "not a development age of the triangle")
     );
+    // One cumulative value (decision 20) is the tail from its age: off the
+    // triangle's ages it selects nothing, and on them only at the oldest
+    // age, with no tail and at full weight.
     assert_eq!(
         error(PatternKind::AgeToUltimate, vec![(18, 1.5)], all.clone()),
+        (Some(18), "the pattern selects no factor of the triangle")
+    );
+    let one_value = "a cumulative pattern with one value is the tail from its age: give it at \
+                     the oldest age, or give two or more ages";
+    assert_eq!(
+        error(PatternKind::AgeToUltimate, vec![(12, 1.5)], all.clone()),
+        (Some(12), one_value)
+    );
+    assert_eq!(
+        error(PatternKind::PercentDeveloped, vec![(108, 0.9)], all.clone()),
+        (Some(108), one_value)
+    );
+    assert_eq!(
+        error(
+            PatternKind::AgeToUltimate,
+            vec![(120, 1.05)],
+            PatternWeight::All(0.5)
+        ),
         (
-            Some(18),
-            "a cumulative pattern needs two or more ages: one value selects no factor"
+            Some(120),
+            "a cumulative pattern with one value is the tail, taken at full weight: give it \
+             weight 1"
         )
     );
+    let one = SelectedPattern::new(PatternKind::AgeToUltimate, vec![(120, 1.05)]);
+    match chain_ladder(one.clone(), Tail::from(1.05)).fit(&raa, "values") {
+        Err(Error::Pattern { age, reason }) => assert_eq!(
+            (age, reason),
+            (
+                Some(120),
+                "a cumulative pattern with one value is the tail, and a tail is given: give no \
+                 tail, or two or more ages"
+            )
+        ),
+        other => panic!("{other:?} is not a pattern error"),
+    }
+    // At the oldest age with no tail it is that constant tail, with no
+    // parameter error.
+    let fit = chain_ladder(one, Tail::default())
+        .fit(&raa, "values")
+        .unwrap();
+    let tailed = ChainLadder {
+        tail: Tail::from(1.05),
+        ..Default::default()
+    }
+    .fit(&raa, "values")
+    .unwrap();
+    assert_eq!(fit.pattern_tail, Some(1.05));
+    assert_eq!(fit.pattern_rescale, Some(1.0));
+    assert_eq!(fit.tail.std_err, 0.0);
+    assert_all(&fit.ultimate, &tailed.ultimate, 1e-15, "the tail of 1.05");
     assert_eq!(
         error(
             PatternKind::AgeToUltimate,
@@ -1288,7 +1340,7 @@ fn the_expected_loss_methods_take_the_spread() {
     assert_rel(cdf[0], 1.025_379_872_150_005_4, 1e-14, "132");
     let elr = 0.7;
     let bf = BornhuetterFerguson {
-        apriori: elr,
+        apriori: elr.into(),
         chain_ladder: chain_ladder.clone(),
     }
     .fit_diagonal(&d)
@@ -1304,7 +1356,7 @@ fn the_expected_loss_methods_take_the_spread() {
         "Bornhuetter-Ferguson at 132",
     );
     let bk = Benktander {
-        apriori: elr,
+        apriori: elr.into(),
         n_iters: 2,
         chain_ladder: chain_ladder.clone(),
     }
@@ -1475,6 +1527,56 @@ fn the_lifetime_views_keep_the_folded_tail_in_every_simulation() {
     assert_all(&folded, &cut, 1e-12, "ODP, the constant's standard error");
     let fixed = draws(odp(past_raa(), Tail::from(1.05), None).map(|f| f.reserves));
     assert_ne!(folded, fixed, "the standard error is drawn");
+}
+
+#[test]
+fn the_bootstraps_take_a_one_value_pattern_as_its_tail() {
+    // Decision 20: `{120: 1.05}` on RAA, the oldest age, is the implied
+    // tail 1.05, a constant the ODP bootstrap draws as a given one, and
+    // the one-year views take it from the method as any implied tail.
+    let raa = triangle("raa");
+    let one = || SelectedPattern::new(PatternKind::AgeToUltimate, vec![(120, 1.05)]);
+    let odp = |pattern: Option<SelectedPattern>, tail: Tail| OdpBootstrap {
+        pattern,
+        tail,
+        n_sims: 200,
+        seed: 11,
+        ..Default::default()
+    };
+    let by_value = odp(Some(one()), Tail::default())
+        .fit(&raa, "values")
+        .unwrap();
+    let by_tail = odp(None, Tail::from(1.05)).fit(&raa, "values").unwrap();
+    assert_eq!(by_value.chain_ladder.pattern_tail, Some(1.05));
+    assert_all(
+        by_value.reserves.draw_matrix(),
+        by_tail.reserves.draw_matrix(),
+        1e-13,
+        "ODP, one value against its tail",
+    );
+    let method = OneYearMethod::ChainLadder(chain_ladder(one(), Tail::default()));
+    let year = odp(None, Tail::default())
+        .one_year(&raa, "values", &method)
+        .unwrap();
+    assert_eq!(year.bootstrap.chain_ladder.pattern_tail, Some(1.05));
+    let year = MackBootstrap {
+        n_sims: 50,
+        seed: 4,
+        ..Default::default()
+    }
+    .one_year(&raa, "values", &method)
+    .unwrap();
+    assert_eq!(year.bootstrap.mack.chain_ladder.pattern_tail, Some(1.05));
+    // With a tail of its own the method's pattern and tail conflict
+    // (decision 20 item 3), and the bootstrap, which reads the method's
+    // pattern without its level, names that conflict (item 5).
+    let tailed = OneYearMethod::ChainLadder(chain_ladder(one(), Tail::from(1.05)));
+    match odp(None, Tail::default()).one_year(&raa, "values", &tailed) {
+        Err(Error::Bootstrap(reason)) => {
+            assert!(reason.contains("give the method no tail"), "{reason}")
+        }
+        other => panic!("{:?} is not a bootstrap error", other.err()),
+    }
 }
 
 #[test]

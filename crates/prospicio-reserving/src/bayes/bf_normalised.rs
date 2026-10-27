@@ -1382,7 +1382,7 @@ mod tests {
         let rows: Vec<&[f64]> = GENINS.to_vec();
         let at_cl = with_premium(2001, &rows, &cl.ultimate);
         let classical = BornhuetterFerguson {
-            apriori: 1.0,
+            apriori: 1.0.into(),
             ..Default::default()
         }
         .fit(&at_cl, "values", "premium")
@@ -1515,7 +1515,7 @@ mod tests {
         let rows: Vec<&[f64]> = GENINS.to_vec();
         let at_cl = with_premium(2001, &rows, &cl.ultimate);
         let classical = BornhuetterFerguson {
-            apriori: 1.0,
+            apriori: 1.0.into(),
             ..Default::default()
         }
         .fit(&at_cl, "values", "premium")

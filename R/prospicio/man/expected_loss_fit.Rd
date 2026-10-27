@@ -21,6 +21,7 @@ expected_loss(
   ldf_kind = NULL,
   ldf_weight = 1,
   ldf_origin = NULL,
+  ldf_underwriting = NULL,
   n_periods = NULL,
   drop_high = 0,
   drop_low = 0,
@@ -40,6 +41,7 @@ bornhuetter_ferguson(
   ldf_kind = NULL,
   ldf_weight = 1,
   ldf_origin = NULL,
+  ldf_underwriting = NULL,
   n_periods = NULL,
   drop_high = 0,
   drop_low = 0,
@@ -60,6 +62,7 @@ benktander(
   ldf_kind = NULL,
   ldf_weight = 1,
   ldf_origin = NULL,
+  ldf_underwriting = NULL,
   n_periods = NULL,
   drop_high = 0,
   drop_low = 0,
@@ -81,12 +84,20 @@ latest valuation.}
 observed value is its exposure. Not given for a latest valuation.}
 
 \item{apriori}{Expected loss ratio: the expected ultimate per unit of
-exposure; positive.}
+exposure; positive. One number for every origin, an unnamed vector of
+one per origin in origin order (oldest first, over the triangle's
+origins or, for a latest valuation, its origins), or a vector named by
+origin as fits name them (\code{c("2020" = 0.6, "2021" = 0.65)}, or
+\code{"2021Q3"} for quarters). Every origin fitted needs a value, and a name
+that is not an origin of the triangle is an error; over segments each
+segment takes its own origins' values. On a latest valuation an unnamed
+vector needs the rows oldest first, each origin once, and is otherwise
+an error, since the exposure is read by row: name it by origin.}
 
 \item{average, sigma_interpolation, tail}{The development pattern, as in
 \code{\link[=chain_ladder]{chain_ladder()}}.}
 
-\item{ldf, ldf_kind, ldf_weight, ldf_origin}{A selected development pattern, as in
+\item{ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting}{A selected development pattern, as in
 \code{\link[=chain_ladder]{chain_ladder()}}: the development pattern's factors at the ages it
 gives, so \code{cdf} and the share developed \code{1 / cdf} follow it.}
 

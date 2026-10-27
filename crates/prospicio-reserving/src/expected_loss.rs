@@ -22,12 +22,220 @@
 //! * Cape Cod: Bornhuetter–Ferguson with an apriori estimated from the
 //!   triangle itself.
 
-use prospicio_core::Month;
+use prospicio_core::{Grain, Month, Period};
 
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
 use crate::error::{Error, Result};
 use crate::segments::{ReserveFit, SegmentFits, fit_each_with_exposure};
 use crate::triangle::{Segment, Triangle};
+
+/// The a-priori loss ratio of the expected loss, Bornhuetter-Ferguson and
+/// Benktander methods: one for every origin, or one per origin
+/// (`reserving-v02.md` decision 22). A number converts to one for every
+/// origin, so `apriori: 0.7.into()` is the single loss ratio.
+///
+/// One per origin is keyed by origin period ([`Apriori::by_origin`], or
+/// [`Apriori::from_labels`] with the labels the fits report, `"2021"`,
+/// `"2021H1"`, `"2021Q3"` or `"2021-07"`), or given oldest first
+/// ([`Apriori::InOrder`]) over the triangle's origins, a latest diagonal's
+/// origins, or the origins of every segment of a set of diagonals taken
+/// together. Keys are matched by period, origin grain included: `2021`
+/// names no quarterly origin. Every value is finite and positive.
+///
+/// Every origin fitted needs a value. A key for an origin the triangle (or
+/// the diagonals) does not have, an origin given twice, or a number of
+/// values in order other than the number of origins, is an error
+/// ([`Error::Apriori`]). Over segments, each segment takes the values of
+/// its own origins, so a segment that starts later ignores the earlier
+/// ones. The value is keyed by origin rather than by position because a
+/// fit's origins are not the rows given: a latest diagonal sorts them and
+/// spans every period from the earliest to the latest, and a triangle's
+/// segment is trimmed to the origins it observes.
+///
+/// ```
+/// use prospicio_reserving::{
+///     Apriori, BornhuetterFerguson, DevelopmentColumn, Grain, Long, Month, Period, Triangle,
+/// };
+///
+/// let origin = [2020, 2020, 2021].map(Month::january);
+/// let tri = Triangle::from_long(&Long {
+///     keys: &[],
+///     origin: &origin,
+///     development: DevelopmentColumn::Age(&[12, 24, 12]),
+///     values: &[
+///         ("paid", &[100.0, 150.0, 200.0]),
+///         ("premium", &[250.0, 250.0, 400.0]),
+///     ],
+///     origin_grain: Grain::Year,
+///     development_grain: Grain::Year,
+///     cumulative: true,
+/// })?;
+/// // 2021 is a third developed (cdf 1.5): 200 + (1/3) * 0.6 * 400.
+/// let apriori = Apriori::by_origin([(Period::year(2020), 0.5), (Period::year(2021), 0.6)]);
+/// let bf = BornhuetterFerguson { apriori, ..Default::default() };
+/// let fit = bf.fit(&tri, "paid", "premium")?;
+/// assert_eq!(fit.apriori, [0.5, 0.6]);
+/// assert!((fit.ultimate[1] - (200.0 + 80.0)).abs() < 1e-12);
+/// // The same by label, or oldest first.
+/// let labelled = Apriori::from_labels([("2021", 0.6), ("2020", 0.5)])?;
+/// let in_order = Apriori::InOrder(vec![0.5, 0.6]);
+/// for apriori in [labelled, in_order] {
+///     let other = BornhuetterFerguson { apriori, ..Default::default() };
+///     assert_eq!(other.fit(&tri, "paid", "premium")?.ultimate, fit.ultimate);
+/// }
+/// // A missing origin is an error.
+/// let short = Apriori::by_origin([(Period::year(2020), 0.5)]);
+/// assert!(BornhuetterFerguson { apriori: short, ..Default::default() }
+///     .fit(&tri, "paid", "premium")
+///     .is_err());
+/// # Ok::<(), prospicio_reserving::Error>(())
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub enum Apriori {
+    /// One loss ratio for every origin.
+    All(f64),
+    /// One loss ratio per origin, oldest first, over the triangle's (or
+    /// the diagonals') origins. On latest diagonals the rows must be given
+    /// oldest first, each origin once, or the fit is an error, since their
+    /// exposure is read in the order of the rows.
+    InOrder(Vec<f64>),
+    /// One loss ratio per origin period.
+    ByOrigin(Vec<(Period, f64)>),
+}
+
+impl Default for Apriori {
+    fn default() -> Self {
+        Self::All(1.0)
+    }
+}
+
+impl From<f64> for Apriori {
+    fn from(apriori: f64) -> Self {
+        Self::All(apriori)
+    }
+}
+
+impl Apriori {
+    /// One loss ratio per origin period.
+    pub fn by_origin(values: impl IntoIterator<Item = (Period, f64)>) -> Self {
+        Self::ByOrigin(values.into_iter().collect())
+    }
+
+    /// One loss ratio per origin, each keyed by its label as the fits
+    /// report it: `"2021"` for a year, `"2021H1"` for a semester, `"2021Q3"`
+    /// for a quarter and `"2021-07"` for a month. An unreadable label is an
+    /// [`Error::Apriori`].
+    pub fn from_labels<S: AsRef<str>>(values: impl IntoIterator<Item = (S, f64)>) -> Result<Self> {
+        values
+            .into_iter()
+            .map(|(label, v)| Ok((origin_from_label(label.as_ref())?, v)))
+            .collect::<Result<_>>()
+            .map(Self::ByOrigin)
+    }
+
+    /// This apriori keyed by origin against `origins` (the triangle's or
+    /// the diagonals', oldest first): values in order take their origins,
+    /// and every key must name one of `origins`, once.
+    pub(crate) fn keyed(&self, origins: &[Period]) -> Result<Self> {
+        match self {
+            Self::All(a) => {
+                check_apriori(*a)?;
+                Ok(self.clone())
+            }
+            Self::InOrder(values) => {
+                if values.len() != origins.len() {
+                    return Err(Error::Apriori(format!(
+                        "{} values in origin order for {} origins",
+                        values.len(),
+                        origins.len()
+                    )));
+                }
+                Self::by_origin(origins.iter().copied().zip(values.iter().copied())).keyed(origins)
+            }
+            Self::ByOrigin(values) => {
+                if values.is_empty() {
+                    return Err(Error::Apriori("no origin is given a value".into()));
+                }
+                for (k, &(origin, v)) in values.iter().enumerate() {
+                    check_apriori(v)?;
+                    if values[..k].iter().any(|(o, _)| *o == origin) {
+                        return Err(Error::Apriori(format!("origin {origin} is given twice")));
+                    }
+                    if !origins.contains(&origin) {
+                        let span = match origins {
+                            [first, .., last] => format!(" ({first} to {last})"),
+                            [only] => format!(" ({only})"),
+                            [] => String::new(),
+                        };
+                        return Err(Error::Apriori(format!(
+                            "{origin} is not among the origins fitted{span}"
+                        )));
+                    }
+                }
+                Ok(self.clone())
+            }
+        }
+    }
+
+    /// The loss ratio of each of `origins`, a segment's: every one needs a
+    /// value, and the values of other origins are ignored.
+    pub(crate) fn values(&self, origins: &[Period]) -> Result<Vec<f64>> {
+        match self {
+            Self::All(a) => {
+                check_apriori(*a)?;
+                Ok(vec![*a; origins.len()])
+            }
+            Self::InOrder(_) => self.keyed(origins)?.values(origins),
+            Self::ByOrigin(values) => origins
+                .iter()
+                .map(|origin| {
+                    let (_, v) = values
+                        .iter()
+                        .find(|(o, _)| o == origin)
+                        .ok_or_else(|| Error::Apriori(format!("origin {origin} has no value")))?;
+                    check_apriori(*v)?;
+                    Ok(*v)
+                })
+                .collect(),
+        }
+    }
+}
+
+/// The origin period of `label`, as [`Period`] displays one.
+fn origin_from_label(label: &str) -> Result<Period> {
+    let unreadable = || {
+        Error::Apriori(format!(
+            "origin label {label:?} is not a year (\"2021\"), semester (\"2021H1\"), quarter \
+             (\"2021Q3\") or month (\"2021-07\")"
+        ))
+    };
+    let label = label.trim();
+    let number = |s: &str| s.parse::<i32>().map_err(|_| unreadable());
+    // The first month of the `n`th of `per_year` periods of `year`.
+    let start = |year: &str, n: &str, per_year: i32| {
+        let n = number(n)?;
+        if !(1..=per_year).contains(&n) {
+            return Err(unreadable());
+        }
+        let month = (n - 1) * (12 / per_year) + 1;
+        Month::new(number(year)?, month as u8).map_err(|_| unreadable())
+    };
+    let period = if let Some((year, month)) = label.split_once('-') {
+        Period::containing(start(year, month, 12)?, Grain::Month)
+    } else if let Some((year, n)) = label.split_once('Q') {
+        Period::containing(start(year, n, 4)?, Grain::Quarter)
+    } else if let Some((year, n)) = label.split_once('H') {
+        Period::containing(start(year, n, 2)?, Grain::Semester)
+    } else {
+        Period::year(number(label)?)
+    };
+    // `2021-7` or `02021` read as numbers but are not labels.
+    if period.to_string() == label {
+        Ok(period)
+    } else {
+        Err(unreadable())
+    }
+}
 
 /// The expected loss ratio method: each origin's ultimate is `apriori`
 /// times its exposure, whatever has been observed.
@@ -51,15 +259,16 @@ use crate::triangle::{Segment, Triangle};
 ///     development_grain: Grain::Year,
 ///     cumulative: true,
 /// })?;
-/// let fit = ExpectedLoss { apriori: 0.5, ..Default::default() }.fit(&tri, "paid", "premium")?;
+/// let fit = ExpectedLoss { apriori: 0.5.into(), ..Default::default() }.fit(&tri, "paid", "premium")?;
 /// assert_eq!(fit.ultimate, vec![125.0, 200.0]);
 /// assert_eq!(fit.reserves(), vec![-25.0, 0.0]);
 /// # Ok::<(), prospicio_reserving::Error>(())
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ExpectedLoss {
-    /// Expected loss ratio: the ultimate per unit of exposure.
-    pub apriori: f64,
+    /// Expected loss ratio: the ultimate per unit of exposure, one for
+    /// every origin or one per origin.
+    pub apriori: Apriori,
     /// The development pattern; it does not affect this method's ultimate.
     pub chain_ladder: ChainLadder,
 }
@@ -84,16 +293,17 @@ pub struct ExpectedLoss {
 ///     cumulative: true,
 /// })?;
 /// // The 2021 origin is a third developed (cdf 1.5): 200 + (1/3) * 0.5 * 400.
-/// let bf = BornhuetterFerguson { apriori: 0.5, ..Default::default() };
+/// let bf = BornhuetterFerguson { apriori: 0.5.into(), ..Default::default() };
 /// let fit = bf.fit(&tri, "paid", "premium")?;
 /// assert_eq!(fit.ultimate[0], 150.0);
 /// assert!((fit.ultimate[1] - (200.0 + 200.0 / 3.0)).abs() < 1e-12);
 /// # Ok::<(), prospicio_reserving::Error>(())
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct BornhuetterFerguson {
-    /// Expected loss ratio: the expected ultimate per unit of exposure.
-    pub apriori: f64,
+    /// Expected loss ratio: the expected ultimate per unit of exposure, one
+    /// for every origin or one per origin.
+    pub apriori: Apriori,
     /// How the development pattern is estimated.
     pub chain_ladder: ChainLadder,
 }
@@ -126,15 +336,16 @@ pub struct BornhuetterFerguson {
 ///     cumulative: true,
 /// })?;
 /// // Many iterations give the chain ladder's 200 * 1.5.
-/// let fit = Benktander { apriori: 0.5, n_iters: 200, ..Default::default() }
+/// let fit = Benktander { apriori: 0.5.into(), n_iters: 200, ..Default::default() }
 ///     .fit(&tri, "paid", "premium")?;
 /// assert!((fit.ultimate[1] - 300.0).abs() < 1e-9);
 /// # Ok::<(), prospicio_reserving::Error>(())
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Benktander {
-    /// Expected loss ratio of the starting ultimate.
-    pub apriori: f64,
+    /// Expected loss ratio of the starting ultimate, one for every origin
+    /// or one per origin.
+    pub apriori: Apriori,
     /// Number of Bornhuetter–Ferguson steps.
     pub n_iters: usize,
     /// How the development pattern is estimated.
@@ -187,28 +398,10 @@ pub struct CapeCod {
     pub chain_ladder: ChainLadder,
 }
 
-impl Default for ExpectedLoss {
-    fn default() -> Self {
-        Self {
-            apriori: 1.0,
-            chain_ladder: ChainLadder::default(),
-        }
-    }
-}
-
-impl Default for BornhuetterFerguson {
-    fn default() -> Self {
-        Self {
-            apriori: 1.0,
-            chain_ladder: ChainLadder::default(),
-        }
-    }
-}
-
 impl Default for Benktander {
     fn default() -> Self {
         Self {
-            apriori: 1.0,
+            apriori: Apriori::default(),
             n_iters: 1,
             chain_ladder: ChainLadder::default(),
         }
@@ -404,7 +597,7 @@ impl ExpectedLoss {
 
     pub(crate) fn as_benktander(&self) -> Benktander {
         Benktander {
-            apriori: self.apriori,
+            apriori: self.apriori.clone(),
             n_iters: 0,
             chain_ladder: self.chain_ladder.clone(),
         }
@@ -438,7 +631,7 @@ impl BornhuetterFerguson {
 
     pub(crate) fn as_benktander(&self) -> Benktander {
         Benktander {
-            apriori: self.apriori,
+            apriori: self.apriori.clone(),
             n_iters: 1,
             chain_ladder: self.chain_ladder.clone(),
         }
@@ -455,7 +648,11 @@ impl Benktander {
         exposure: &str,
     ) -> Result<ExpectedLossFit> {
         let segment = triangle.segment(column)?;
-        self.fit_segment(&segment, &triangle.segment(exposure)?, exposure)
+        self.on_origins(&triangle.origins())?.fit_segment(
+            &segment,
+            &triangle.segment(exposure)?,
+            exposure,
+        )
     }
 
     /// Fits `column` in every segment of `triangle`, each with its own
@@ -467,21 +664,35 @@ impl Benktander {
         column: &str,
         exposure: &str,
     ) -> Result<SegmentFits<ExpectedLossFit>> {
+        let m = self.on_origins(&triangle.origins())?;
         fit_each_with_exposure(triangle, column, exposure, |s, e| {
-            self.fit_segment(s, e, exposure)
+            m.fit_segment(s, e, exposure)
         })
     }
 
+    /// The method with its apriori keyed against `origins`, the triangle's
+    /// or the diagonals' (see [`Apriori`]).
+    pub(crate) fn on_origins(&self, origins: &[Period]) -> Result<Self> {
+        Ok(Self {
+            apriori: self.apriori.keyed(origins)?,
+            ..self.clone()
+        })
+    }
+
+    /// The fit of one segment; a keyed apriori must have a value for each
+    /// of its origins, and the values of other origins are ignored.
     pub(crate) fn fit_segment(
         &self,
         segment: &Segment,
         exposure: &Segment,
         column: &str,
     ) -> Result<ExpectedLossFit> {
-        check_apriori(self.apriori)?;
+        if let Apriori::All(a) = self.apriori {
+            check_apriori(a)?;
+        }
         let (chain_ladder, exposure) = prepare(&self.chain_ladder, segment, exposure, column)?;
-        let apriori = vec![self.apriori; exposure.len()];
-        let expected: Vec<f64> = exposure.iter().map(|e| e * self.apriori).collect();
+        let apriori = self.apriori.values(&chain_ladder.origins)?;
+        let expected: Vec<f64> = exposure.iter().zip(&apriori).map(|(e, a)| e * a).collect();
         let ultimate = benktander(&chain_ladder, &expected, self.n_iters);
         Ok(ExpectedLossFit {
             chain_ladder,
@@ -691,7 +902,7 @@ mod tests {
         // ldf 1.5, so 1982 has 1 - 1/1.5 = 1/3 still to develop.
         let tri = with_premium(&[&[100.0, 150.0], &[200.0]], &[250.0, 400.0]);
         let el = ExpectedLoss {
-            apriori: 0.5,
+            apriori: 0.5.into(),
             ..Default::default()
         }
         .fit(&tri, "paid", "premium")
@@ -699,7 +910,7 @@ mod tests {
         assert_eq!(el.ultimate, [125.0, 200.0]);
         assert_eq!(el.exposure, [250.0, 400.0]);
         let bf = BornhuetterFerguson {
-            apriori: 0.5,
+            apriori: 0.5.into(),
             ..Default::default()
         }
         .fit(&tri, "paid", "premium")
@@ -707,7 +918,7 @@ mod tests {
         close(bf.ultimate[1], 200.0 + 200.0 / 3.0, 1e-12);
         // Benktander, two steps: 200 + (1/3)(200 + (1/3) 200).
         let bk = Benktander {
-            apriori: 0.5,
+            apriori: 0.5.into(),
             n_iters: 2,
             ..Default::default()
         }
@@ -723,7 +934,7 @@ mod tests {
         // exactly the chain ladder's expected development.
         let (tri, cl) = raa_at_loss_ratio(0.6);
         let bf = BornhuetterFerguson {
-            apriori: 0.6,
+            apriori: 0.6.into(),
             ..Default::default()
         }
         .fit(&tri, "paid", "premium")
@@ -752,7 +963,7 @@ mod tests {
         let tri = with_premium(&RAA, &[20_000.0; 10]);
         let fit = |n_iters| {
             Benktander {
-                apriori: 0.8,
+                apriori: 0.8.into(),
                 n_iters,
                 ..Default::default()
             }
@@ -760,12 +971,12 @@ mod tests {
             .unwrap()
         };
         let el = ExpectedLoss {
-            apriori: 0.8,
+            apriori: 0.8.into(),
             ..Default::default()
         };
         assert_eq!(fit(0), el.fit(&tri, "paid", "premium").unwrap());
         let bf = BornhuetterFerguson {
-            apriori: 0.8,
+            apriori: 0.8.into(),
             ..Default::default()
         };
         assert_eq!(fit(1), bf.fit(&tri, "paid", "premium").unwrap());
@@ -798,7 +1009,7 @@ mod tests {
         let p = 1.0 - 1.0 / 0.7;
         let fit = |n_iters| {
             Benktander {
-                apriori: 0.5,
+                apriori: 0.5.into(),
                 n_iters,
                 ..Default::default()
             }
@@ -824,7 +1035,7 @@ mod tests {
         let tri = with_premium(&[&[100.0, 40.0], &[100.0]], &[100.0, 100.0]);
         let fit = |n_iters| {
             Benktander {
-                apriori: 0.5,
+                apriori: 0.5.into(),
                 n_iters,
                 ..Default::default()
             }
@@ -929,7 +1140,7 @@ mod tests {
         };
         let cl = simple.fit(&tri, "paid").unwrap();
         let bf = BornhuetterFerguson {
-            apriori: 0.7,
+            apriori: 0.7.into(),
             chain_ladder: simple,
         }
         .fit(&tri, "paid", "premium")
@@ -958,7 +1169,7 @@ mod tests {
             })
             .unwrap();
             ExpectedLoss {
-                apriori: 0.5,
+                apriori: 0.5.into(),
                 ..Default::default()
             }
             .fit(&tri, "paid", "premium")
@@ -1000,12 +1211,12 @@ mod tests {
         let tri = with_premium(&[&[100.0, 150.0], &[200.0]], &[250.0, 400.0]);
         let bad = |r: Result<ExpectedLossFit>| matches!(r, Err(Error::InvalidSetting { .. }));
         assert!(bad(BornhuetterFerguson {
-            apriori: 0.0,
+            apriori: 0.0.into(),
             ..Default::default()
         }
         .fit(&tri, "paid", "premium")));
         assert!(bad(ExpectedLoss {
-            apriori: f64::NAN,
+            apriori: (f64::NAN).into(),
             ..Default::default()
         }
         .fit(&tri, "paid", "premium")));
@@ -1040,7 +1251,7 @@ mod tests {
         })
         .unwrap();
         let bf = BornhuetterFerguson {
-            apriori: 0.5,
+            apriori: 0.5.into(),
             ..Default::default()
         };
         let fits = bf.fit_segments(&tri, "paid", "premium").unwrap();
@@ -1096,6 +1307,223 @@ mod tests {
                 .unwrap_err()
                 .to_string(),
             "segment Home: origin 2021 has no observed, finite, positive exposure in column premium"
+        );
+    }
+
+    /// RAA's origin periods, 1981 to 1990.
+    fn raa_origins() -> Vec<Period> {
+        (1981..=1990).map(Period::year).collect()
+    }
+
+    /// One loss ratio per RAA origin, from 0.5 rising by 0.05.
+    fn raa_aprioris() -> Vec<f64> {
+        (0..10).map(|k| 0.5 + 0.05 * k as f64).collect()
+    }
+
+    #[test]
+    fn an_apriori_by_origin_is_each_origin_at_its_own() {
+        // Each origin of a fit with one loss ratio per origin is that
+        // origin of the fit with its loss ratio for every origin.
+        let (tri, _) = raa_at_loss_ratio(0.7);
+        let aprioris = raa_aprioris();
+        let keyed = Apriori::by_origin(raa_origins().into_iter().zip(aprioris.clone()));
+        for n_iters in [0, 1, 2, 5] {
+            let method = |apriori: Apriori| Benktander {
+                apriori,
+                n_iters,
+                ..Default::default()
+            };
+            let fit = method(keyed.clone()).fit(&tri, "paid", "premium").unwrap();
+            assert_eq!(fit.apriori, aprioris);
+            for (o, &a) in aprioris.iter().enumerate() {
+                let one = method(a.into()).fit(&tri, "paid", "premium").unwrap();
+                assert_eq!(
+                    fit.ultimate[o], one.ultimate[o],
+                    "n_iters {n_iters}, origin {o}"
+                );
+            }
+        }
+        // The other methods are Benktander's steps 0 and 1.
+        let steps = |n_iters| {
+            Benktander {
+                apriori: keyed.clone(),
+                n_iters,
+                ..Default::default()
+            }
+            .fit(&tri, "paid", "premium")
+            .unwrap()
+        };
+        let bf = BornhuetterFerguson {
+            apriori: keyed.clone(),
+            ..Default::default()
+        }
+        .fit(&tri, "paid", "premium")
+        .unwrap();
+        let el = ExpectedLoss {
+            apriori: keyed.clone(),
+            ..Default::default()
+        }
+        .fit(&tri, "paid", "premium")
+        .unwrap();
+        assert_eq!(bf, steps(1));
+        assert_eq!(el, steps(0));
+        // The same in order, by label in any order, and one value for all.
+        let in_order = Apriori::InOrder(aprioris.clone());
+        let labels: Vec<(String, f64)> = (1981..=1990)
+            .rev()
+            .zip(aprioris.iter().rev())
+            .map(|(y, &a)| (y.to_string(), a))
+            .collect();
+        let labelled = Apriori::from_labels(labels).unwrap();
+        let fit = |apriori: Apriori| {
+            BornhuetterFerguson {
+                apriori,
+                ..Default::default()
+            }
+            .fit(&tri, "paid", "premium")
+            .unwrap()
+        };
+        assert_eq!(fit(in_order), bf);
+        assert_eq!(fit(labelled), bf);
+        assert_eq!(fit(Apriori::InOrder(vec![0.6; 10])), fit(0.6.into()));
+    }
+
+    #[test]
+    fn an_apriori_that_does_not_line_up_is_an_error() {
+        let (tri, _) = raa_at_loss_ratio(0.7);
+        let fit = |apriori: Apriori| {
+            BornhuetterFerguson {
+                apriori,
+                ..Default::default()
+            }
+            .fit(&tri, "paid", "premium")
+        };
+        let message = |apriori| fit(apriori).unwrap_err().to_string();
+        let mut keys: Vec<(Period, f64)> = raa_origins().into_iter().map(|p| (p, 0.6)).collect();
+        assert_eq!(
+            message(Apriori::by_origin(keys[1..].to_vec())),
+            "apriori: origin 1981 has no value"
+        );
+        keys.push((Period::year(1991), 0.6));
+        assert_eq!(
+            message(Apriori::ByOrigin(keys.clone())),
+            "apriori: 1991 is not among the origins fitted (1981 to 1990)"
+        );
+        keys.pop();
+        keys.push((Period::year(1985), 0.7));
+        assert_eq!(
+            message(Apriori::ByOrigin(keys.clone())),
+            "apriori: origin 1985 is given twice"
+        );
+        assert_eq!(
+            message(Apriori::InOrder(vec![0.6; 9])),
+            "apriori: 9 values in origin order for 10 origins"
+        );
+        assert_eq!(
+            message(Apriori::ByOrigin(vec![])),
+            "apriori: no origin is given a value"
+        );
+        // A key at another grain names no origin.
+        let mut by_quarter: Vec<(Period, f64)> =
+            raa_origins().into_iter().map(|p| (p, 0.6)).collect();
+        by_quarter[0].0 = Period::containing(Month::january(1981), Grain::Quarter);
+        assert_eq!(
+            message(Apriori::ByOrigin(by_quarter)),
+            "apriori: 1981Q1 is not among the origins fitted (1981 to 1990)"
+        );
+        for bad in [0.0, -0.5, f64::NAN, f64::INFINITY] {
+            let mut values = raa_aprioris();
+            values[3] = bad;
+            assert!(matches!(
+                fit(Apriori::InOrder(values)),
+                Err(Error::InvalidSetting {
+                    name: "apriori",
+                    ..
+                })
+            ));
+        }
+    }
+
+    #[test]
+    fn origin_labels_read_as_fits_report_them() {
+        let month = |y, m| Month::new(y, m).unwrap();
+        for (label, period) in [
+            ("2021", Period::year(2021)),
+            (
+                "2021H2",
+                Period::containing(month(2021, 7), Grain::Semester),
+            ),
+            ("2021Q3", Period::containing(month(2021, 7), Grain::Quarter)),
+            ("2021-07", Period::containing(month(2021, 7), Grain::Month)),
+            (
+                " 2021Q1 ",
+                Period::containing(month(2021, 1), Grain::Quarter),
+            ),
+        ] {
+            assert_eq!(origin_from_label(label).unwrap(), period, "{label}");
+            assert_eq!(origin_from_label(&period.to_string()).unwrap(), period);
+        }
+        for label in [
+            "", "x", "2021Q5", "2021Q0", "2021H3", "2021-13", "2021-7", "02021", "2021q3",
+        ] {
+            assert!(
+                matches!(origin_from_label(label), Err(Error::Apriori(_))),
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn segments_take_the_aprioris_of_their_own_origins() {
+        // Home starts a year after Auto, so it ignores the 2020 value.
+        let origin = [2020, 2020, 2021, 2021, 2021, 2022].map(Month::january);
+        let tri = Triangle::from_long(&Long {
+            keys: &[("lob", &["Auto", "Auto", "Auto", "Home", "Home", "Home"])],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&[12, 24, 12, 12, 24, 12]),
+            values: &[
+                ("paid", &[100.0, 150.0, 200.0, 10.0, 20.0, 30.0]),
+                ("premium", &[250.0, 250.0, 400.0, 500.0, 500.0, 800.0]),
+            ],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        let bf = |apriori| BornhuetterFerguson {
+            apriori,
+            ..Default::default()
+        };
+        let keyed = Apriori::from_labels([("2020", 0.5), ("2021", 0.6), ("2022", 0.7)]).unwrap();
+        let fits = bf(keyed).fit_segments(&tri, "paid", "premium").unwrap();
+        let auto = fits.get(&Label::new(["Auto"])).unwrap();
+        let home = fits.get(&Label::new(["Home"])).unwrap();
+        assert_eq!(auto.apriori, [0.5, 0.6]);
+        assert_eq!(home.apriori, [0.6, 0.7]);
+        // Home's ldf is 2: 30 + (1/2) * 0.7 * 800.
+        assert_eq!(home.ultimate, [20.0, 310.0]);
+        // In order over the triangle's origins, 2020 to 2022.
+        let in_order = bf(Apriori::InOrder(vec![0.5, 0.6, 0.7]))
+            .fit_segments(&tri, "paid", "premium")
+            .unwrap();
+        let home_in_order = in_order.get(&Label::new(["Home"])).unwrap();
+        assert_eq!(
+            (&home_in_order.apriori, &home_in_order.ultimate),
+            (&home.apriori, &home.ultimate)
+        );
+        // An origin of no segment is an error; one of Auto alone is not.
+        let extra = Apriori::from_labels([("2020", 0.5), ("2022", 0.7), ("2023", 1.0)]).unwrap();
+        assert!(matches!(
+            bf(extra).fit_segments(&tri, "paid", "premium"),
+            Err(Error::Apriori(_))
+        ));
+        let short = Apriori::from_labels([("2021", 0.6), ("2022", 0.7)]).unwrap();
+        assert_eq!(
+            bf(short)
+                .fit_segments(&tri, "paid", "premium")
+                .unwrap_err()
+                .to_string(),
+            "segment Auto: apriori: origin 2020 has no value"
         );
     }
 }

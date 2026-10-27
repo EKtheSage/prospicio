@@ -870,7 +870,7 @@ fn pattern(average_arg: &Grid, tail_arg: &Grid) -> Result<ChainLadder> {
 pub fn expected_loss(args: &[Grid]) -> Result<Grid> {
     let tri = exposed_triangle(&args[0], &args[1])?;
     let fit = ExpectedLoss {
-        apriori: number(&args[2], "apriori")?,
+        apriori: number(&args[2], "apriori")?.into(),
         chain_ladder: pattern(&args[3], &args[4])?,
     }
     .fit(&tri, COLUMN, EXPOSURE)
@@ -885,7 +885,7 @@ pub fn expected_loss(args: &[Grid]) -> Result<Grid> {
 pub fn bornhuetter_ferguson(args: &[Grid]) -> Result<Grid> {
     let tri = exposed_triangle(&args[0], &args[1])?;
     let fit = BornhuetterFerguson {
-        apriori: number(&args[2], "apriori")?,
+        apriori: number(&args[2], "apriori")?.into(),
         chain_ladder: pattern(&args[3], &args[4])?,
     }
     .fit(&tri, COLUMN, EXPOSURE)
@@ -900,7 +900,7 @@ pub fn bornhuetter_ferguson(args: &[Grid]) -> Result<Grid> {
 pub fn benktander(args: &[Grid]) -> Result<Grid> {
     let tri = exposed_triangle(&args[0], &args[1])?;
     let fit = Benktander {
-        apriori: number(&args[2], "apriori")?,
+        apriori: number(&args[2], "apriori")?.into(),
         n_iters: count(&args[3], "iterations", 1, 10_000)?,
         chain_ladder: pattern(&args[4], &args[5])?,
     }

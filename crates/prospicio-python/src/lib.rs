@@ -170,7 +170,7 @@ mod prospicio_native {
         PyExpectedLoss, PyExpectedLossFit, PyGlmCandidate, PyLatestDiagonal, PyLayerSharePrior,
         PyMack, PyMackBootstrap, PyMackBootstrapFit, PyMackFit, PyMeyers, PyMeyersFit,
         PyMeyersFits, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant,
-        PyTailCurve, PyTailLogLinear, PyTriangle, diagonal_backtest,
+        PyTailCurve, PyTailLogLinear, PyTriangle, PyUnderwritingBasis, diagonal_backtest,
     };
     #[pymodule_export]
     use super::risk::{
