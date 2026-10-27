@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R, proposed for the user's acceptance; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -3550,6 +3550,8 @@ constructors.
 
 ### 20. A cumulative pattern with one value
 
+**Accepted** by the user on 2026-10-27: every item as built, the readings marked proposed below included.
+
 Status: **Built** (2026-10-26), issue #632, branch
 `claude/one-value-pattern`, in Rust, Python and R. The user decided on
 2026-10-26 that a cumulative pattern with one value is valid and selects
@@ -3654,6 +3656,8 @@ or more ages (which decision 18 reads past the oldest age since #614).
    and `R/prospicio/tests/test-reserving-patterns.R`.
 
 ### 21. An accident-period pattern on an underwriting basis
+
+**Accepted** by the user on 2026-10-27: items 1 to 8 as built (writing through the month, coarser patterns converted only in the exact cases). Item 3's miss of an annual accident-year pattern in the first two years is #646.
 
 Status: **Built** (2026-10-26), issue #633, branch `claude/uy-pattern`, in
 Rust, Python and R. It answers the user's decision of 2026-10-26: an
@@ -3847,6 +3851,8 @@ pricing crate and on the simulated book.
 
 ### 22. An a-priori loss ratio per origin
 
+**Accepted** by the user on 2026-10-27: items 4 to 8 as built. Item 7's pandas Series read in order is #644 (read by its index).
+
 Status: **Built** (2026-10-26), issue #634, branch `claude/apriori-by-origin`,
 in Rust, Python and R. Items 1 to 3 restate the issue's proposal; items 4
 to 8 are choices made in building it, proposed for the user's acceptance.
@@ -3972,6 +3978,8 @@ rows), with the one-year view and the errors.
 
 ### 23. A growth curve fitted to a benchmark pattern
 
+**Accepted** by the user on 2026-10-27: items 1 to 8 as built; item 8's decays stay later work, not planned.
+
 Issue #637, branch `claude/benchmark-curve`. A benchmark pattern comes at a
 few ages (12, 24, ..., 120 months, say); a pipeline needs its values at
 other ages, a smooth pattern and a tail. Clark's methods (decision 5) fit a
@@ -4068,6 +4076,8 @@ Each item is proposed, for the user's acceptance:
    reference beyond the one scipy run is not planned.
 
 ### 24. A `ulr` column in the long tables of the methods with an exposure
+
+**Accepted** by the user on 2026-10-27: items 4 to 6 as built. Item 4's chain-ladder `ulr` in the Bayesian tables gets a posterior `ulr_mean` beside it in #645.
 
 Issue #636 asked for each origin's ultimate over its exposure in the
 expected-loss fits' frames, so that a pipeline need not divide two columns
