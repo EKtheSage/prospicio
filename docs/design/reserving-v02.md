@@ -3849,8 +3849,8 @@ pricing crate and on the simulated book.
 
 Status: **Built** (2026-10-26), issue #634, branch `claude/apriori-by-origin`,
 in Rust, Python and R. Items 1 to 3 restate the issue's proposal; items 4
-to 8 are choices made in building it, accepted by the user on 2026-10-27
-(item 7 with the follow-up #644).
+to 8 are choices made in building it, proposed for the user's acceptance;
+item 7 was accepted on 2026-10-27 with the follow-up #644.
 The Excel functions keep one number (`.into()` at their six call sites,
 behaviour unchanged); a per-origin a priori on a sheet is #635 for the
 Excel lane. The guides that still give the one-number workaround
