@@ -87,6 +87,10 @@ totals <- totals_frame(fit)
 stopifnot(
   identical(names(frame)[1:4], c("origin", "latest", "ultimate", "reserve")),
   all(c("premium", "mean", "std_dev", "ultimate_mean", "ultimate_std_dev") %in% names(frame)),
+  # The posterior mean ultimate over the premium, last, per origin and in total.
+  identical(names(frame)[length(frame)], "ulr_mean"),
+  identical(frame$ulr_mean, frame$ultimate_mean / frame$premium),
+  identical(totals$ulr_mean, totals$ultimate_mean / totals$premium),
   nrow(frame) == 10, nrow(totals) == 1,
   nrow(development_frame(fit)) == 10,
   S7::S7_inherits(segment(fit), meyers_fit)

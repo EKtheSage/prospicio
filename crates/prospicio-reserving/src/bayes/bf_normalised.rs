@@ -10,7 +10,7 @@ use prospicio_models::Family;
 use prospicio_prob::{InputHasher, PredictiveDistribution, Provenance};
 use rayon::prelude::*;
 
-use super::bf::{PlugIn, input_hasher};
+use super::bf::{PlugIn, input_hasher, push_posterior_ultimate};
 use super::laplace::{Posterior, Whitened, mode};
 use super::one_year::{self, BayesOneYear, BayesOneYearFit, OdpCells, OdpYear};
 use super::{Diagnostics, Stream, derive_seed, one_year_seed};
@@ -647,21 +647,26 @@ impl BayesBfNormalisedFit {
 
     /// One row per origin: the chain ladder's `latest`, `ultimate` and
     /// `reserve`, the `exposure`, `prior_ultimate` and `ulr` (the chain
-    /// ladder's ultimate over the exposure), and the `mean` and `std_dev`
-    /// of the posterior predictive reserve.
+    /// ladder's ultimate over the exposure), the `mean` and `std_dev` of
+    /// the posterior predictive reserve, and `ultimate_mean` (`latest` plus
+    /// `mean`, the posterior mean ultimate) and `ulr_mean` (`ultimate_mean`
+    /// over the exposure).
     pub fn to_long(&self) -> FitTable {
         let mut table = self.plug_in().to_long();
         push_moments(&mut table, "", &component_sums(&self.reserves));
+        push_posterior_ultimate(&mut table);
         table
     }
 
     /// One row: the chain ladder's totals, the total `exposure` and
-    /// `prior_ultimate`, the `scale`, the total `ulr`, and the `mean` and
-    /// `std_dev` of the posterior predictive total reserve.
+    /// `prior_ultimate`, the `scale`, the total `ulr`, the `mean` and
+    /// `std_dev` of the posterior predictive total reserve, and the total
+    /// `ultimate_mean` and `ulr_mean` (over the total exposure).
     pub fn totals(&self) -> FitTable {
         let fits = self.plug_in();
         let mut table = fits.totals();
         push_moments(&mut table, "", &segment_sums(&fits, &self.reserves));
+        push_posterior_ultimate(&mut table);
         table
     }
 
@@ -1767,9 +1772,44 @@ mod tests {
         assert_eq!(long.n_rows(), 10);
         assert_eq!(long.column("prior_ultimate").unwrap(), fit.prior_ultimate);
         assert!(long.column("mean").is_some() && long.column("std_dev").is_some());
+        // The posterior mean ultimate, latest plus the mean reserve, and it
+        // over the exposure, per origin and in total.
+        let latest = long.column("latest").unwrap();
+        let mean = long.column("mean").unwrap();
+        let ultimate_mean: Vec<f64> = latest.iter().zip(mean).map(|(l, m)| l + m).collect();
+        assert_eq!(long.column("ultimate_mean").unwrap(), ultimate_mean);
+        let ulr_mean: Vec<f64> = (ultimate_mean.iter())
+            .zip(&fit.exposure)
+            .map(|(u, e)| u / e)
+            .collect();
+        assert_eq!(long.column("ulr_mean").unwrap(), ulr_mean);
+        // Independently of the table: the triangle's latest diagonal plus
+        // each origin's posterior mean reserve, and in total the sum of the
+        // latest values plus the mean of the total reserve.
+        let close = |a: f64, b: f64| (a - b).abs() <= 1e-9 * b.abs().max(1.0);
+        let diagonal: Vec<f64> = GENINS.iter().map(|row| *row.last().unwrap()).collect();
+        for (k, (d, u)) in diagonal
+            .iter()
+            .zip(long.column("ultimate_mean").unwrap())
+            .enumerate()
+        {
+            let origin = vec![Period::year(2001 + k as i32).into()];
+            let reserve = fit.reserves.marginal(&origin).unwrap().mean();
+            assert!(close(*u, d + reserve), "origin {k}: {u} vs {}", d + reserve);
+        }
+        assert!(long.column("ultimate_std_dev").is_none());
+        assert_eq!(long.values.last().unwrap().0, "ulr_mean");
         let totals = fit.totals();
         assert_eq!(totals.column("scale").unwrap(), [fit.scale]);
         assert_eq!(totals.column("exposure").unwrap(), [118e6]);
+        let total_mean = totals.column("latest").unwrap()[0] + totals.column("mean").unwrap()[0];
+        assert_eq!(totals.column("ultimate_mean").unwrap(), [total_mean]);
+        assert_eq!(totals.column("ulr_mean").unwrap(), [total_mean / 118e6]);
+        let independent = diagonal.iter().sum::<f64>() + fit.reserves.total().mean();
+        assert!(
+            close(total_mean, independent),
+            "{total_mean} vs {independent}"
+        );
         assert_eq!(fit.development_table().n_rows(), 10);
         assert_eq!(fit.summary().unwrap().len(), 19);
         let provenance = fit.reserves.provenance();

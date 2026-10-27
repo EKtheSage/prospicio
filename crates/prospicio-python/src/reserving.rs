@@ -10776,8 +10776,10 @@ impl PyBayesBfFit {
     /// One row per origin: ``origin``, the chain ladder's ``latest``,
     /// ``ultimate`` and ``reserve``, the ``exposure``, ``prior_ultimate``
     /// and ``ulr`` (the chain ladder's ultimate over the exposure, a loss
-    /// ratio only when the exposure is premium), and the ``mean`` and
-    /// ``std_dev`` of the posterior predictive reserve. Needs pandas.
+    /// ratio only when the exposure is premium), the ``mean`` and
+    /// ``std_dev`` of the posterior predictive reserve, ``ultimate_mean``
+    /// (``latest`` plus ``mean``, the posterior mean ultimate) and
+    /// ``ulr_mean`` (``ultimate_mean`` over the exposure). Needs pandas.
     ///
     /// Returns
     /// -------
@@ -10787,8 +10789,9 @@ impl PyBayesBfFit {
     }
 
     /// One row: the chain ladder's totals, the total ``exposure`` and
-    /// ``prior_ultimate``, the ``scale``, the total ``ulr``, and the
-    /// ``mean`` and ``std_dev`` of the posterior predictive total reserve.
+    /// ``prior_ultimate``, the ``scale``, the total ``ulr``, the ``mean``
+    /// and ``std_dev`` of the posterior predictive total reserve, and the
+    /// total ``ultimate_mean`` and ``ulr_mean`` (over the total exposure).
     /// Needs pandas.
     ///
     /// Returns
@@ -11407,8 +11410,10 @@ impl PyBayesBfNormalisedFit {
     /// One row per origin: ``origin``, the chain ladder's ``latest``,
     /// ``ultimate`` and ``reserve``, the ``exposure``, ``prior_ultimate``
     /// and ``ulr`` (the chain ladder's ultimate over the exposure, a loss
-    /// ratio only when the exposure is premium), and the ``mean`` and
-    /// ``std_dev`` of the posterior predictive reserve. Needs pandas.
+    /// ratio only when the exposure is premium), the ``mean`` and
+    /// ``std_dev`` of the posterior predictive reserve, ``ultimate_mean``
+    /// (``latest`` plus ``mean``, the posterior mean ultimate) and
+    /// ``ulr_mean`` (``ultimate_mean`` over the exposure). Needs pandas.
     ///
     /// Returns
     /// -------
@@ -11418,8 +11423,9 @@ impl PyBayesBfNormalisedFit {
     }
 
     /// One row: the chain ladder's totals, the total ``exposure`` and
-    /// ``prior_ultimate``, the ``scale``, the total ``ulr``, and the
-    /// ``mean`` and ``std_dev`` of the posterior predictive total reserve.
+    /// ``prior_ultimate``, the ``scale``, the total ``ulr``, the ``mean``
+    /// and ``std_dev`` of the posterior predictive total reserve, and the
+    /// total ``ultimate_mean`` and ``ulr_mean`` (over the total exposure).
     /// Needs pandas.
     ///
     /// Returns
@@ -12660,9 +12666,10 @@ impl PyMeyersFit {
     /// One row per origin: ``origin``, the chain ladder's ``latest``,
     /// ``ultimate`` and ``reserve``, the ``premium``, ``ulr`` (the chain
     /// ladder's ultimate over the premium), the ``mean`` and
-    /// ``std_dev`` of the posterior predictive reserve, and the
+    /// ``std_dev`` of the posterior predictive reserve, the
     /// ``ultimate_mean`` and ``ultimate_std_dev`` of the posterior
-    /// predictive ultimate. Needs pandas.
+    /// predictive ultimate, and ``ulr_mean``, the ``ultimate_mean`` over
+    /// the premium. Needs pandas.
     ///
     /// Returns
     /// -------
@@ -12673,8 +12680,9 @@ impl PyMeyersFit {
 
     /// One row: the chain ladder's totals, the total ``premium`` and
     /// ``ulr``, the ``mean`` and ``std_dev`` of the posterior predictive
-    /// total reserve, and the ``ultimate_mean`` and ``ultimate_std_dev``
-    /// of the total ultimate. Needs pandas.
+    /// total reserve, the ``ultimate_mean`` and ``ultimate_std_dev`` of the
+    /// total ultimate, and ``ulr_mean``, the total ``ultimate_mean`` over
+    /// the total premium. Needs pandas.
     ///
     /// Returns
     /// -------
@@ -12880,9 +12888,9 @@ impl PyMeyersFits {
     /// chain ladder's ``latest``, ``ultimate`` and ``reserve``, the
     /// ``premium``, ``ulr`` (the chain ladder's ultimate over the premium),
     /// the ``mean`` and ``std_dev`` of the posterior predictive reserve,
-    /// and the ``ultimate_mean`` and
-    /// ``ultimate_std_dev`` of the posterior predictive ultimate. Needs
-    /// pandas.
+    /// the ``ultimate_mean`` and ``ultimate_std_dev`` of the posterior
+    /// predictive ultimate, and ``ulr_mean``, the ``ultimate_mean`` over the
+    /// premium. Needs pandas.
     ///
     /// Returns
     /// -------
@@ -12894,7 +12902,8 @@ impl PyMeyersFits {
     /// One row per segment: the key columns, the chain ladder's totals,
     /// the total ``premium`` and ``ulr``, the ``mean`` and ``std_dev`` of
     /// the segment's posterior predictive total reserve, and the
-    /// ``ultimate_mean`` and ``ultimate_std_dev`` of its total ultimate.
+    /// ``ultimate_mean`` and ``ultimate_std_dev`` of its total ultimate,
+    /// and ``ulr_mean``, the total ``ultimate_mean`` over the total premium.
     /// Needs pandas.
     ///
     /// Returns
