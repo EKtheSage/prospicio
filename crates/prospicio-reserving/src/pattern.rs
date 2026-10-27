@@ -122,11 +122,11 @@ impl Default for PatternWeight {
 ///   that age to the next; any ages but the oldest (development past it is
 ///   the tail's).
 /// * A cumulative pattern ([`PatternKind::AgeToUltimate`] or
-///   [`PatternKind::PercentDeveloped`]) gives two or more ages and selects
-///   the factors between its first and last, `CDF(a_k) / CDF(a_k+1)`. A
-///   development age it skips is interpolated: between two given ages `b <
-///   c`, `ln CDF` is linear in the age, so the link from `a_k` to `a_k+1`
-///   is `(CDF(b) / CDF(c))^((a_k+1 - a_k) / (c - b))` (percents developed
+///   [`PatternKind::PercentDeveloped`]) selects the factors between its
+///   first and last ages, `CDF(a_k) / CDF(a_k+1)`. A development age it
+///   skips is interpolated: between two given ages `b < c`, `ln CDF` is
+///   linear in the age, so the link from `a_k` to `a_k+1` is
+///   `(CDF(b) / CDF(c))^((a_k+1 - a_k) / (c - b))` (percents developed
 ///   are converted to CDFs first). Ages before the first and after the
 ///   last given age stay estimated.
 /// * A cumulative pattern's level at its last age selects no factor. With
@@ -141,6 +141,16 @@ impl Default for PatternWeight {
 ///   ([`ChainLadderFit::pattern_rescale`](crate::ChainLadderFit::pattern_rescale)):
 ///   with a tail, percent developed at the oldest age times the tail is
 ///   100%.
+/// * A cumulative pattern with one value is the factor to ultimate from
+///   its age, the tail from there (`reserving-v02.md`, decision 20). It
+///   selects no link, so it is given at the oldest age, fully selected and
+///   with no [`Tail`], and is the tail as above; on a triangle observed at
+///   one age (one origin, or every origin at one age) it is the whole
+///   projection. At another age, with a tail or with a weight below 1 it
+///   would select nothing, and it is an error. A longer pattern that ends
+///   at the oldest age and selects no link (on a triangle observed at one
+///   age, a pattern from 12 to 60 months on an origin observed at 60 months)
+///   is its level there, read the same way.
 ///
 /// Factors the pattern does not select are estimated, as without one, and
 /// the triangle must still estimate every factor (the estimate is reported
@@ -312,10 +322,14 @@ impl SelectedPattern {
                     }
                     cdf.push(if percent { 1.0 / v } else { v });
                 }
-                if values.len() < 2 {
+                // One value is the factor to ultimate from its age, the
+                // tail from there (decision 20): it fixes no link, so only
+                // at the oldest age is there a tail for it to be.
+                if values.len() == 1 && positions[0] != n_links {
                     return err(
                         Some(values[0].0),
-                        "a cumulative pattern needs two or more ages: one value selects no factor",
+                        "a cumulative pattern with one value is the tail from its age: give it \
+                         at the oldest age, or give two or more ages",
                     );
                 }
                 // Between two given ages `b < c`, ln CDF is linear in the
@@ -398,7 +412,11 @@ impl SelectedPattern {
             oldest: at(oldest),
             level: at(end),
         });
-        if beyond.is_none() && selected.iter().all(Option::is_none) {
+        // A cumulative pattern that ends at the oldest age and selects no
+        // link there is its level, the tail, as one value at that age is
+        // (decision 20 item 1): a triangle observed at one age has no link.
+        let tail_only = level.is_some_and(|(j, _)| j + 1 == ages.len());
+        if beyond.is_none() && !tail_only && selected.iter().all(Option::is_none) {
             return Err(Error::Pattern {
                 age: Some(first),
                 reason: "the pattern selects no factor of the triangle",
@@ -510,7 +528,8 @@ impl SelectedPattern {
     /// [`with_weight`](Self::with_weight)); a single age-to-age factor,
     /// which has no span; a result longer than 2,400 months; and any error
     /// the pattern has on its own ages (no values, an age given twice, a
-    /// value that is not finite and positive, one cumulative value).
+    /// value that is not finite and positive). A single cumulative value is
+    /// held past its age, as any pattern's end is (decision 20).
     ///
     /// ```
     /// use prospicio_reserving::{Grain, PatternKind, SelectedPattern};
@@ -555,33 +574,10 @@ impl SelectedPattern {
                  for every factor",
             );
         }
-        if self.values.is_empty() {
-            return err(None, "the pattern has no values");
-        }
-        let mut values = self.values.clone();
-        values.sort_by_key(|&(age, _)| age);
-        check_unique(&values)?;
-        if self.kind == PatternKind::AgeToAge && values.len() == 1 {
-            return err(
-                Some(values[0].0),
-                "a single age-to-age factor has no span to average: give two or more, or \
-                 factors to ultimate",
-            );
-        }
-        check_values(&values, self.kind)?;
-        // Percents developed on the pattern's own ages, the given value
-        // itself where one is given.
-        let points: Vec<(Lag, f64)> = match self.kind {
-            PatternKind::PercentDeveloped => values,
-            PatternKind::AgeToUltimate => values.iter().map(|&(a, c)| (a, 1.0 / c)).collect(),
-            PatternKind::AgeToAge => {
-                let end = span_end(self.kind, &values, 0)?;
-                own_cdf(self.kind, &values, end)
-                    .into_iter()
-                    .map(|(a, c)| (a, 1.0 / c))
-                    .collect()
-            }
-        };
+        let points = self.own_percents(
+            "a single age-to-age factor has no span to average: give two or more, or factors \
+             to ultimate",
+        )?;
         let (first, end) = (points[0], points[points.len() - 1]);
         let last = (n - 1)
             .checked_mul(s)
@@ -596,17 +592,7 @@ impl SelectedPattern {
                 "the averaged pattern needs more than 2,400 monthly ages",
             );
         }
-        let p = |age: i64| -> f64 {
-            if age <= 0 {
-                0.0
-            } else if age < i64::from(first.0) {
-                first.1 * age as f64 / f64::from(first.0)
-            } else if age > i64::from(end.0) {
-                end.1
-            } else {
-                log_linear_at(&points, age as Lag)
-            }
-        };
+        let p = |age: i64| percent_at(&points, age);
         let averaged = (first.0..=last)
             .map(|a| {
                 let sum: f64 = (0..n).map(|q| p(i64::from(a) - i64::from(q * s))).sum();
@@ -619,6 +605,366 @@ impl SelectedPattern {
             weight: self.weight.clone(),
         })
     }
+
+    /// This pattern, measured on accident periods of `pattern_origin` (an
+    /// accident-year pattern is `Grain::Year`, an accident-month one
+    /// `Grain::Month`), as the pattern of an underwriting period whose
+    /// policies are written and earned as `basis` says (`reserving-v02.md`,
+    /// decision 21). With `e(t)` the share of the underwriting period's
+    /// exposure in its `t`-th accident month
+    /// ([`UnderwritingBasis::exposure`]) and `p` an accident month's
+    /// percent developed,
+    ///
+    /// ```text
+    /// P_UY(a) = sum_t e(t) p(a - t)
+    /// ```
+    ///
+    /// on percents developed, never on CDFs or `ln CDF`, with the age `a`
+    /// measured from the start of the underwriting period as
+    /// `at_valuation` measures it: an underwriting year at the end of its
+    /// twelfth month is at age 12, and an accident month at the end of its
+    /// own month at age 1. An accident-month pattern is `p` itself, read at
+    /// any age by decision 18's rule
+    /// ([`averaged_over_origins`](Self::averaged_over_origins)). A pattern
+    /// of accident periods of `s > 1` months is decision 18's average of
+    /// `s` accident months with the exposure even through the period,
+    /// `P_s(a) = (1/s) sum_q p(a - q)`, so the conversion is `P_UY(a) =
+    /// sum_j v(j) P_s(a - j)`, with `v` the weights that give `e` when each
+    /// is spread evenly over `s` months. Such a `v` exists, with no
+    /// deconvolution, when the policy term is a whole multiple of `s`
+    /// months or the writing is even within each period of `s` months from
+    /// the start of the underwriting period; otherwise the conversion is an
+    /// error, and an accident-month pattern is needed. `P_s` between its
+    /// given ages is read by decision 18's rule: exact for an accident-year
+    /// pattern given at every month, an approximation of the even-exposure
+    /// average between annual ages.
+    ///
+    /// The result is a [`PatternKind::PercentDeveloped`] pattern at every
+    /// month from this pattern's first age to its end `E` plus the span of
+    /// `v`: `n + policy_months - 1` months for an accident-month pattern
+    /// and `n` months of writing (23 for the default, the parallelogram),
+    /// `n + policy_months - s` for a pattern of `s` months (12 for an
+    /// accident-year pattern under the default). There every accident month
+    /// of the period is past `E` and the share is this pattern's level (1
+    /// for age-to-age factors). Between `E` and the result's end the share
+    /// holds this pattern's level for the accident months past `E`, so
+    /// development that a tail gives there is deferred, as in decision 18;
+    /// an estimated tail on the result is fitted on its monthly factors, and
+    /// a constant tail taken from this pattern's own tail is the safer
+    /// choice.
+    ///
+    /// A weight `All(w)` carries over. Errors ([`Error::Pattern`]): a
+    /// `ByAge` weight (weight the result with
+    /// [`with_weight`](Self::with_weight)); a single age-to-age factor; the
+    /// basis's errors ([`UnderwritingBasis::exposure`]); a pattern of
+    /// accident periods longer than a month with a policy term that is not
+    /// a whole multiple of them and writing that is not even within them; a
+    /// result longer than 2,400 months; and any error the pattern has on
+    /// its own ages.
+    ///
+    /// ```
+    /// use prospicio_reserving::{Grain, PatternKind, SelectedPattern, UnderwritingBasis};
+    ///
+    /// // An accident month reports t/60 of its ultimate at t months.
+    /// let month = SelectedPattern::new(
+    ///     PatternKind::PercentDeveloped,
+    ///     (1..=60).map(|t| (t, f64::from(t) / 60.0)).collect(),
+    /// );
+    /// // Even writing over the year and 12-month policies: the
+    /// // parallelogram, whose exposure is triangular over 24 months.
+    /// let uy = month
+    ///     .to_underwriting_basis(Grain::Month, &UnderwritingBasis::default())
+    ///     .unwrap();
+    /// let at = |age| uy.values.iter().find(|v| v.0 == age).unwrap().1;
+    /// // The mean accident month ends 12 months into the year: 11.5 months
+    /// // older than an accident month at age 1 less its half month.
+    /// assert!((at(36) - (36.0 - 11.5) / 60.0).abs() < 1e-15);
+    /// // Fully developed 23 months after the pattern's end.
+    /// assert_eq!(uy.values.last(), Some(&(83, 1.0)));
+    /// ```
+    pub fn to_underwriting_basis(
+        &self,
+        pattern_origin: Grain,
+        basis: &UnderwritingBasis,
+    ) -> Result<SelectedPattern> {
+        let err = |age: Option<Lag>, reason: &'static str| Err(Error::Pattern { age, reason });
+        if let PatternWeight::ByAge(_) = self.weight {
+            return err(
+                None,
+                "weights by age do not carry over to another origin basis: give one weight \
+                 for every factor",
+            );
+        }
+        let v = basis.weights_over(pattern_origin.months())?;
+        let points = self.own_percents(
+            "a single age-to-age factor has no span to convert: give two or more, or factors \
+             to ultimate",
+        )?;
+        let (first, end) = (points[0], points[points.len() - 1]);
+        let last = Lag::try_from(v.len() - 1)
+            .ok()
+            .and_then(|extra| end.0.checked_add(extra))
+            .ok_or(Error::Pattern {
+                age: Some(end.0),
+                reason: "the age is too large",
+            })?;
+        if last - first.0 >= MAX_GRID {
+            return err(
+                None,
+                "the underwriting pattern needs more than 2,400 monthly ages",
+            );
+        }
+        // At the last age every accident month is past the end: the level
+        // itself, not a sum that rounds near it.
+        let values = (first.0..=last)
+            .map(|a| {
+                if a == last {
+                    return (a, end.1);
+                }
+                let share: f64 = v
+                    .iter()
+                    .enumerate()
+                    .map(|(j, &vj)| vj * percent_at(&points, i64::from(a) - j as i64))
+                    .sum();
+                (a, share)
+            })
+            .collect();
+        Ok(SelectedPattern {
+            kind: PatternKind::PercentDeveloped,
+            values,
+            weight: self.weight.clone(),
+        })
+    }
+
+    /// The pattern's percents developed on its own ages, sorted, the given
+    /// value itself where one is given, after the checks every conversion
+    /// makes; `single` is the error for a single age-to-age factor.
+    fn own_percents(&self, single: &'static str) -> Result<Vec<(Lag, f64)>> {
+        if self.values.is_empty() {
+            return Err(Error::Pattern {
+                age: None,
+                reason: "the pattern has no values",
+            });
+        }
+        let mut values = self.values.clone();
+        values.sort_by_key(|&(age, _)| age);
+        check_unique(&values)?;
+        if self.kind == PatternKind::AgeToAge && values.len() == 1 {
+            return Err(Error::Pattern {
+                age: Some(values[0].0),
+                reason: single,
+            });
+        }
+        check_values(&values, self.kind)?;
+        Ok(match self.kind {
+            PatternKind::PercentDeveloped => values,
+            PatternKind::AgeToUltimate => values.iter().map(|&(a, c)| (a, 1.0 / c)).collect(),
+            PatternKind::AgeToAge => {
+                let end = span_end(self.kind, &values, 0)?;
+                own_cdf(self.kind, &values, end)
+                    .into_iter()
+                    .map(|(a, c)| (a, 1.0 / c))
+                    .collect()
+            }
+        })
+    }
+}
+
+/// A percent developed given at the sorted `points`, read at any `age`
+/// (decision 18 item 2): 0 at an age of 0 or less, linear from 0 at age 0
+/// to the first point, `ln CDF` linear between points, and held at the last
+/// point's value past it.
+fn percent_at(points: &[(Lag, f64)], age: i64) -> f64 {
+    let (first, end) = (points[0], points[points.len() - 1]);
+    if age <= 0 {
+        0.0
+    } else if age < i64::from(first.0) {
+        first.1 * age as f64 / f64::from(first.0)
+    } else if age > i64::from(end.0) {
+        end.1
+    } else {
+        log_linear_at(points, age as Lag)
+    }
+}
+
+/// How an underwriting period's policies are written and earned, for
+/// [`SelectedPattern::to_underwriting_basis`] (`reserving-v02.md`,
+/// decision 21): `writing[j]` is the share of the period's policies
+/// written in its `j`-th month (`j = 0` the first), each policy written at
+/// an even rate through its month and earning evenly over `policy_months`
+/// months. The shares need not sum to 1; they are scaled to. The default
+/// writes evenly over 12 months with 12-month policies, the parallelogram.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnderwritingBasis {
+    /// The share written in each month from the start of the period, in
+    /// order: finite and not negative, with a positive sum.
+    pub writing: Vec<f64>,
+    /// The policy term in months, at least 1.
+    pub policy_months: u32,
+}
+
+impl Default for UnderwritingBasis {
+    fn default() -> Self {
+        Self::even(12, 12)
+    }
+}
+
+impl UnderwritingBasis {
+    /// Policies written by month as `writing` says, each of `policy_months`
+    /// months.
+    pub fn new(writing: Vec<f64>, policy_months: u32) -> Self {
+        Self {
+            writing,
+            policy_months,
+        }
+    }
+
+    /// `n` months of even writing, each policy of `policy_months` months.
+    pub fn even(n: usize, policy_months: u32) -> Self {
+        Self::new(vec![1.0 / n as f64; n], policy_months)
+    }
+
+    /// The share `e(t)` of the period's exposure in its `t`-th accident
+    /// month, `t = 0` to `n + policy_months - 1` for `n` months of writing
+    /// (its trailing zeros dropped): the writing convolved with a policy's
+    /// earning by month, `1/(2m)` in the month it is written, `1/m` in each
+    /// of the next `m - 1` and `1/(2m)` in the month after those, for a
+    /// term of `m` months written at an even rate through its month. The
+    /// shares sum to 1. The default is the parallelogram, `(2t + 1)/288`
+    /// for `t` up to 11 and `(47 - 2t)/288` from 12 to 23.
+    ///
+    /// Errors ([`Error::Pattern`]): a policy term of 0; no writing, a share
+    /// that is not finite or is negative, or shares that sum to 0.
+    ///
+    /// ```
+    /// use prospicio_reserving::UnderwritingBasis;
+    ///
+    /// let e = UnderwritingBasis::default().exposure().unwrap();
+    /// assert_eq!(e.len(), 24);
+    /// assert!((e[0] - 1.0 / 288.0).abs() < 1e-16);
+    /// assert!((e[12] - 23.0 / 288.0).abs() < 1e-16);
+    /// ```
+    pub fn exposure(&self) -> Result<Vec<f64>> {
+        let w = self.shares()?;
+        Ok(convolve(&w, &earning(self.policy_months)))
+    }
+
+    /// Checks that the writing fits in an underwriting period of `origin`
+    /// grain, the triangle's: its months, trailing zeros dropped, are at
+    /// most the period's, since a period's policies are written within it.
+    /// [`SelectedPattern::to_underwriting_basis`] does not see the target's
+    /// grain, so a caller that knows it checks here: the default's 12
+    /// months of writing on underwriting quarters would treat each quarter
+    /// as written over a year.
+    ///
+    /// Errors ([`Error::Pattern`]): writing longer than the period, and the
+    /// basis's errors ([`exposure`](Self::exposure)).
+    ///
+    /// ```
+    /// use prospicio_reserving::{Grain, UnderwritingBasis};
+    ///
+    /// assert!(UnderwritingBasis::default().check_within(Grain::Year).is_ok());
+    /// assert!(UnderwritingBasis::default().check_within(Grain::Quarter).is_err());
+    /// let quarter = UnderwritingBasis::even(3, 12);
+    /// assert!(quarter.check_within(Grain::Quarter).is_ok());
+    /// ```
+    pub fn check_within(&self, origin: Grain) -> Result<()> {
+        if self.shares()?.len() > origin.months() as usize {
+            return Err(Error::Pattern {
+                age: None,
+                reason: "the writing is longer than the triangle's origin period, within which                          its policies are written: give writing of at most its months (three                          for underwriting quarters)",
+            });
+        }
+        Ok(())
+    }
+
+    /// The writing shares checked and scaled to sum to 1, trailing zeros
+    /// dropped.
+    fn shares(&self) -> Result<Vec<f64>> {
+        let err = |reason: &'static str| Err(Error::Pattern { age: None, reason });
+        if self.policy_months == 0 {
+            return err("the policy term must be at least one month");
+        }
+        if self.writing.is_empty() {
+            return err("the writing pattern has no months");
+        }
+        if self.writing.iter().any(|&w| !(w.is_finite() && w >= 0.0)) {
+            return err("a writing share must be finite and not negative");
+        }
+        let total: f64 = self.writing.iter().sum();
+        if total <= 0.0 {
+            return err("the writing shares must have a positive sum");
+        }
+        let n = self
+            .writing
+            .iter()
+            .rposition(|&w| w > 0.0)
+            .map_or(0, |i| i + 1);
+        Ok(self.writing[..n].iter().map(|w| w / total).collect())
+    }
+
+    /// The weights `v` on a pattern of accident periods of `s` months, so
+    /// that `v` with each weight spread evenly over `s` months is the
+    /// exposure: for `s = 1`, the exposure itself.
+    fn weights_over(&self, s: u32) -> Result<Vec<f64>> {
+        let w = self.shares()?;
+        let m = self.policy_months;
+        if m % s == 0 {
+            // A term of r periods of s months earns as the half months at
+            // its ends (`[1/2, 1/2]`) spread evenly over r periods, each
+            // spread evenly over its s months.
+            let (r, s) = ((m / s) as usize, s as usize);
+            let mut comb = vec![0.0; (r - 1) * s + 1];
+            for i in 0..r {
+                comb[i * s] = 1.0 / r as f64;
+            }
+            return Ok(convolve(&convolve(&w, &[0.5, 0.5]), &comb));
+        }
+        // Writing even within each period of s months is u spread evenly
+        // over s months, u the period's share at its first month.
+        let s = s as usize;
+        let blocks = w.len().div_ceil(s);
+        let largest = w.iter().fold(0.0f64, |a, &b| a.max(b));
+        let mut u = vec![0.0; (blocks - 1) * s + 1];
+        for b in 0..blocks {
+            let block: Vec<f64> = (0..s)
+                .map(|q| w.get(b * s + q).copied().unwrap_or(0.0))
+                .collect();
+            let mean = block.iter().sum::<f64>() / s as f64;
+            if block.iter().any(|&x| (x - mean).abs() > 1e-12 * largest) {
+                return Err(Error::Pattern {
+                    age: None,
+                    reason: "a pattern of accident periods longer than a month converts to an \
+                             underwriting basis only with a policy term that is a whole multiple \
+                             of them or writing even within each of them: give an accident-month \
+                             pattern",
+                });
+            }
+            u[b * s] = mean * s as f64;
+        }
+        Ok(convolve(&u, &earning(m)))
+    }
+}
+
+/// A policy's earning by month for a term of `m` months, written at an even
+/// rate through its month: `1/(2m)`, `m - 1` months of `1/m`, `1/(2m)`.
+fn earning(m: u32) -> Vec<f64> {
+    let m = m as usize;
+    let mut k = vec![1.0 / m as f64; m + 1];
+    k[0] = 0.5 / m as f64;
+    k[m] = 0.5 / m as f64;
+    k
+}
+
+/// The discrete convolution of `a` and `b`, both not empty.
+fn convolve(a: &[f64], b: &[f64]) -> Vec<f64> {
+    let mut out = vec![0.0; a.len() + b.len() - 1];
+    for (i, &x) in a.iter().enumerate() {
+        for (j, &y) in b.iter().enumerate() {
+            out[i + j] += x * y;
+        }
+    }
+    out
 }
 
 /// Each age of the sorted `values` given once.
@@ -632,27 +978,21 @@ fn check_unique(values: &[(Lag, f64)]) -> Result<()> {
     }
 }
 
-/// Each value of a pattern of `kind` finite and positive, and a cumulative
-/// pattern with two or more ages, with decision 12's texts.
+/// Each value of a pattern of `kind` finite and positive, with decision
+/// 12's texts. A cumulative pattern may have one value (decision 20).
 fn check_values(values: &[(Lag, f64)], kind: PatternKind) -> Result<()> {
     let reason = match kind {
         PatternKind::AgeToAge => "an age-to-age factor must be finite and positive",
         PatternKind::AgeToUltimate => "a factor to ultimate must be finite and positive",
         PatternKind::PercentDeveloped => "a percent developed must be finite and positive",
     };
-    if let Some(&(age, _)) = values.iter().find(|&&(_, v)| !(v.is_finite() && v > 0.0)) {
-        return Err(Error::Pattern {
+    match values.iter().find(|&&(_, v)| !(v.is_finite() && v > 0.0)) {
+        Some(&(age, _)) => Err(Error::Pattern {
             age: Some(age),
             reason,
-        });
+        }),
+        None => Ok(()),
     }
-    if kind != PatternKind::AgeToAge && values.len() < 2 {
-        return Err(Error::Pattern {
-            age: Some(values[0].0),
-            reason: "a cumulative pattern needs two or more ages: one value selects no factor",
-        });
-    }
-    Ok(())
 }
 
 /// The end of an age-to-age pattern's span (decision 16 item 3): each
@@ -930,6 +1270,14 @@ impl Resolved {
             .filter(|&(last, _)| last + 1 == ages.len())
             .map(|(_, cdf)| cdf)
     }
+
+    /// Whether the pattern is only a level, the tail: a cumulative pattern
+    /// with one value at the oldest age, or a longer one that ends there
+    /// and selects no link (decision 20 item 1). Any other pattern
+    /// that resolves selects a link or runs past the oldest age.
+    pub(crate) fn is_tail_only(&self) -> bool {
+        self.level.is_some() && self.beyond.is_none() && self.selected.iter().all(Option::is_none)
+    }
 }
 
 impl SelectedPattern {
@@ -948,6 +1296,15 @@ impl SelectedPattern {
             return Err(Error::Bootstrap(
                 "a pattern that runs past the oldest age carries the re-reserving method's tail \
                  into it: give the bootstrap the method's tail",
+            ));
+        }
+        if resolved.is_tail_only() {
+            // Only a method with a tail of its own is read without its
+            // level, and then its pattern and tail conflict (decision 20
+            // items 3 and 5).
+            return Err(Error::Bootstrap(
+                "the re-reserving method's pattern is only its level, its tail, and the method \
+                 has a tail of its own: give the method no tail, or two or more ages",
             ));
         }
         let links: Vec<(Lag, f64, f64)> = resolved
@@ -1567,7 +1924,7 @@ mod fits {
             vec![(12, 0.4), (24, 0.8), (36, 1.0)],
         );
         let bf = BornhuetterFerguson {
-            apriori: 0.75,
+            apriori: 0.75.into(),
             chain_ladder: chain_ladder(p, Tail::default()),
         }
         .fit(&t, "paid", "premium")

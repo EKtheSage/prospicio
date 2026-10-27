@@ -1221,9 +1221,14 @@ def test_expected_loss_every_segment_at_once():
         assert list(frame["ultimate"]) == fit.ultimate
         assert list(frame["reserve"]) == fit.reserve
         assert list(frame["apriori"]) == fit.apriori
+        # The ulr is the ultimate over the exposure, a loss ratio on premium.
+        assert list(frame["ulr"]) == [u / e for u, e in zip(fit.ultimate, fit.exposure)]
         totals = fit.totals_frame()
         assert totals["reserve"].iloc[0] == pytest.approx(alone.total_reserve, rel=1e-12)
         assert totals["exposure"].iloc[0] == sum(alone.exposure)
+        assert totals["ulr"].iloc[0] == pytest.approx(
+            alone.total_ultimate / sum(alone.exposure), rel=1e-12
+        )
         assert len(fit.development_frame()) == 20
         with pytest.raises(ValueError, match="2 segments; use development_frame"):
             fit.ldf
@@ -1231,6 +1236,7 @@ def test_expected_loss_every_segment_at_once():
     cc = CapeCod().fit(both, "paid", "premium")
     assert list(cc.to_frame().columns) == [
         "lob", "origin", "latest", "ultimate", "reserve", "exposure", "apriori", "trended_apriori",
+        "ulr",
     ]
     # The chain ladder's ultimate is not the method's.
     assert cc.chain_ladder.ultimate != cc.ultimate
@@ -1262,6 +1268,64 @@ def test_expected_loss_errors():
         Benktander(n_iters=-1)
     with pytest.raises(ValueError):
         ExpectedLoss(average="median")
+
+
+def test_expected_loss_apriori_by_origin():
+    # One loss ratio per origin (#634): each origin at its own, keyed by
+    # label or year, or in origin order.
+    tri = premium_dataset("clrd_wkcomp")
+    years = list(range(1988, 1998))
+    aprioris = [0.6 + 0.02 * k for k in range(10)]
+    keyed = BornhuetterFerguson(apriori=dict(zip(map(str, years), aprioris)))
+    fit = keyed.fit(tri, "paid", "premium")
+    assert fit.apriori == aprioris
+    for k in [0, 4, 9]:
+        alone = BornhuetterFerguson(apriori=aprioris[k]).fit(tri, "paid", "premium")
+        assert fit.ultimate[k] == alone.ultimate[k]
+    for apriori in [aprioris, tuple(aprioris), dict(zip(reversed(years), reversed(aprioris)))]:
+        assert BornhuetterFerguson(apriori=apriori).fit(tri, "paid", "premium").ultimate == fit.ultimate
+    numpy = pytest.importorskip("numpy")
+    assert BornhuetterFerguson(apriori=numpy.array(aprioris)).fit(
+        tri, "paid", "premium"
+    ).ultimate == fit.ultimate
+    # The other methods take it too: Benktander's steps 0 and 1.
+    el = ExpectedLoss(apriori=aprioris).fit(tri, "paid", "premium")
+    assert el.ultimate == pytest.approx([a * e for a, e in zip(aprioris, el.exposure)], rel=1e-15)
+    assert Benktander(apriori=aprioris, n_iters=1).fit(tri, "paid", "premium").ultimate == fit.ultimate
+    # The getter and repr give it back as given, a dict by label.
+    by_year = BornhuetterFerguson(apriori={1988: 0.6, 1989: 0.65})
+    assert by_year.apriori == {"1988": 0.6, "1989": 0.65}
+    assert repr(by_year).startswith("BornhuetterFerguson(apriori={'1988': 0.6, '1989': 0.65}, ")
+    assert ExpectedLoss(apriori=[0.5, 0.6]).apriori == [0.5, 0.6]
+    assert ExpectedLoss().apriori == 1.0
+    assert Benktander(apriori=0.7).apriori == 0.7
+    # The one-year view re-reserves with each origin's own.
+    boot = OdpBootstrap(n_sims=200, seed=4)
+    view = boot.one_year(tri, "paid", keyed, exposure="premium")
+    assert view.opening_ultimate == fit.ultimate
+    in_order = boot.one_year(tri, "paid", BornhuetterFerguson(apriori=aprioris), exposure="premium")
+    assert in_order.cdr.draw_matrix() == view.cdr.draw_matrix()
+    # Mismatches are errors.
+    with pytest.raises(ValueError, match="origin 1988 has no value"):
+        BornhuetterFerguson(apriori=dict(zip(map(str, years[1:]), aprioris[1:]))).fit(
+            tri, "paid", "premium"
+        )
+    with pytest.raises(ValueError, match="1998 is not among the origins fitted"):
+        BornhuetterFerguson(apriori={**dict(zip(years, aprioris)), 1998: 0.7}).fit(
+            tri, "paid", "premium"
+        )
+    with pytest.raises(ValueError, match="9 values in origin order for 10 origins"):
+        BornhuetterFerguson(apriori=aprioris[1:]).fit(tri, "paid", "premium")
+    with pytest.raises(ValueError, match="9 values in origin order for 10 origins"):
+        boot.one_year(tri, "paid", ExpectedLoss(apriori=aprioris[1:]), exposure="premium")
+    with pytest.raises(ValueError, match='origin label "1988Q5"'):
+        ExpectedLoss(apriori={"1988Q5": 0.7})
+    with pytest.raises(TypeError, match="apriori must be a number"):
+        ExpectedLoss(apriori="0.7")
+    with pytest.raises(TypeError, match="apriori must be a number"):
+        ExpectedLoss(apriori=True)
+    with pytest.raises(TypeError, match="keys must be origin labels"):
+        ExpectedLoss(apriori={1988.0: 0.7})
 
 
 # Clark's growth curves: parity with R ChainLadder 0.2.21 and
@@ -1411,9 +1475,11 @@ def test_clark_every_segment_at_once():
     cc = ClarkCapeCod().fit(both, "paid", "premium")
     assert list(cc.to_frame().columns) == [
         "lob", "origin", "latest", "ultimate", "reserve", "exposure", "expected_ultimate",
-        "process_risk", "parameter_risk", "standard_error",
+        "process_risk", "parameter_risk", "standard_error", "ulr",
     ]
-    assert "elr" in cc.totals_frame().columns
+    assert {"elr", "ulr"} <= set(cc.totals_frame().columns)
+    # The LDF form has no exposure, so no ulr.
+    assert "ulr" not in ClarkLdf(max_age=240).fit(both, "paid").to_frame().columns
 
 
 def test_clark_errors(triangles):

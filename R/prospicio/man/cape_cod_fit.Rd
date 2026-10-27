@@ -20,6 +20,7 @@ cape_cod(
   ldf_kind = NULL,
   ldf_weight = 1,
   ldf_origin = NULL,
+  ldf_underwriting = NULL,
   n_periods = NULL,
   drop_high = 0,
   drop_low = 0,
@@ -48,7 +49,7 @@ apriori, between 0 and 1.}
 \item{average, sigma_interpolation, tail}{The development pattern, as in
 \code{\link[=chain_ladder]{chain_ladder()}}.}
 
-\item{ldf, ldf_kind, ldf_weight, ldf_origin}{A selected development pattern, as in
+\item{ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting}{A selected development pattern, as in
 \code{\link[=chain_ladder]{chain_ladder()}}: the development pattern's factors at the ages it
 gives, so \code{cdf} and the share developed \code{1 / cdf} follow it.}
 
@@ -88,7 +89,7 @@ Bornhuetter-Ferguson fit itself as \code{expected_loss}; plus per origin
 \code{trended_apriori} is at the valuation date's price level, so a treaty year
 that incepts later needs more trend beyond it (one more year for the next
 year).
-\code{as.data.frame()} adds a \code{trended_apriori} column.
+\code{as.data.frame()} adds a \code{trended_apriori} column before the \code{ulr}.
 
 Errors: as \code{\link[=bornhuetter_ferguson]{bornhuetter_ferguson()}}, or a \code{trend} that is not finite and
 above -1, or a \code{decay} outside 0 to 1.

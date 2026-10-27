@@ -328,7 +328,6 @@ impl CompartmentalCandidate {
     fn locate(&self, cells: &TriangleFrame, data: &Data, r: usize) -> Result<(usize, usize)> {
         let period = cells.origins()[cells.origin_of(r)];
         let age = cells.ages()[cells.development_of(r)];
-        let months = data.grain.months();
         let i = data
             .origins
             .iter()
@@ -339,13 +338,7 @@ impl CompartmentalCandidate {
                     self.premium
                 ))
             })?;
-        if age == 0 || age % months != 0 {
-            return Err(Error::Bayes(format!(
-                "development age {age} months is not a whole number of {} periods",
-                data.grain
-            )));
-        }
-        Ok((i, (age / months - 1) as usize))
+        Ok((i, data.grain.age_index(age)?))
     }
 
     /// The data of a fit on the `train` rows (their rebuilt paid and the
@@ -389,14 +382,7 @@ impl CompartmentalCandidate {
                 "no training cell has an outstanding the likelihood accepts".into(),
             ));
         }
-        data.n_ages = data.origins.len().max(
-            data.paid
-                .iter()
-                .chain(&data.outstanding)
-                .map(|c| c.1 + 1)
-                .max()
-                .unwrap_or(0),
-        );
+        data.n_ages = data.square_ages();
         data.set_latest();
         Ok((data, full_outstanding))
     }
@@ -1245,6 +1231,46 @@ mod tests {
         // A gap in an origin is an error.
         let gap: Vec<usize> = split.train.iter().copied().filter(|&r| r != 1).collect();
         assert!(c.prepare(&cells, &gap).is_err());
+    }
+
+    /// On annual origins with quarterly development the diagonals are
+    /// calendar quarters (the frame's development grain): the latest holds
+    /// each origin's latest quarter, and the training data keep the square
+    /// of 20 quarterly ages (decision 13).
+    #[test]
+    fn the_held_out_quarter_is_withheld() {
+        let tri = super::super::tests::quarterly_triangle(false);
+        let cells = TriangleFrame::new(&tri, "paid", None).unwrap();
+        let split = cells.diagonal_splits(1).unwrap().remove(0);
+        assert_eq!(split.test.len(), 5);
+        let c = candidate(quick(1), &tri);
+        let (data, full) = c.prepare(&cells, &split.train).unwrap();
+        assert_eq!((data.paid.len(), data.outstanding.len()), (55, 55));
+        assert_eq!(full.len(), 60);
+        assert_eq!(data.n_ages, 20);
+        for &r in &split.test {
+            let cell = c.locate(&cells, &data, r).unwrap();
+            assert!(!data.paid.iter().any(|&(i, k, _)| (i, k) == cell));
+        }
+    }
+
+    /// The diagonal backtest on quarterly development scores the held-out
+    /// quarter's paid increments and outstanding: four rows, since 1988's
+    /// held-out cell is at 60 months, an age no training row has (the
+    /// generic backtest's rule, as for 1988 at 120 months on annual data).
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_backtest_on_unequal_grain() {
+        let tri = super::super::tests::quarterly_triangle(false);
+        let cells = TriangleFrame::new(&tri, "paid", None).unwrap();
+        let c = candidate(quick(5), &tri);
+        let paid = diagonal_backtest(&cells, &[&c.clone()], 1, 300, 5, 0.9).unwrap();
+        assert_eq!((paid.scored_rows()[0].len(), paid.excluded()[0]), (4, 1));
+        let os = c.outstanding_backtest(&cells, 1, 300, 5, 0.9).unwrap();
+        assert_eq!(os.scored_rows()[0].len(), 4);
     }
 
     /// Fitting on every observed row and forecasting the rest of the frame

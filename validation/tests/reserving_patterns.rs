@@ -109,17 +109,17 @@ fn fit(dataset: &str, method: &str, values: &[(Lag, f64)], percent: bool) -> Fit
     let tri = triangle_columns(dataset, &["paid", "premium"]);
     let fit = match method.split(';').next().unwrap() {
         "expected_loss" => ExpectedLoss {
-            apriori: param("apriori"),
+            apriori: param("apriori").into(),
             chain_ladder,
         }
         .fit(&tri, "paid", "premium"),
         "bornhuetter_ferguson" => BornhuetterFerguson {
-            apriori: param("apriori"),
+            apriori: param("apriori").into(),
             chain_ladder,
         }
         .fit(&tri, "paid", "premium"),
         "benktander" => Benktander {
-            apriori: param("apriori"),
+            apriori: param("apriori").into(),
             n_iters: param("n_iters") as usize,
             chain_ladder,
         }

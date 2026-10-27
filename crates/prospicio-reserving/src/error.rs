@@ -73,6 +73,11 @@ pub enum Error {
     /// An origin has no observed, finite, positive value in the exposure
     /// column.
     InvalidExposure { column: String, origin: String },
+    /// An a-priori loss ratio by origin does not line up with the origins
+    /// fitted: an origin without one, one for an origin the triangle or
+    /// diagonal does not have, an origin given twice or the wrong number of
+    /// values in origin order (`reserving-v02.md` decision 22).
+    Apriori(String),
     /// A method setting is out of its range; `expected` describes the range.
     InvalidSetting {
         name: &'static str,
@@ -221,6 +226,7 @@ impl fmt::Display for Error {
             ),
             Self::OdpGlm(why) => write!(f, "ODP GLM: {why}"),
             Self::Bayes(why) => write!(f, "Bayesian reserving: {why}"),
+            Self::Apriori(why) => write!(f, "apriori: {why}"),
             Self::Excess(why) => write!(f, "excess layer: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
             Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),

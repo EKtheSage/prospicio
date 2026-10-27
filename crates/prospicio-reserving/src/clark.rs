@@ -414,6 +414,10 @@ impl ReserveFit for ClarkFit {
         &self.ultimate
     }
 
+    fn exposure(&self) -> Option<&[f64]> {
+        self.exposure.as_deref()
+    }
+
     fn origin_columns(&self) -> Vec<(&'static str, Vec<f64>)> {
         let mut columns = Vec::new();
         if let Some(exposure) = &self.exposure {
@@ -1114,5 +1118,32 @@ mod tests {
         assert_eq!(totals.column("omega").unwrap().len(), 2);
         let long = fits.to_long();
         assert_eq!(long.column("standard_error").unwrap().len(), 20);
+        // The LDF form has no exposure, so no ulr.
+        assert!(long.column("ulr").is_none());
+        assert!(totals.column("ulr").is_none());
+    }
+
+    #[test]
+    fn cape_cod_tables_carry_the_ultimate_over_the_exposure() {
+        let fits = ClarkCapeCod {
+            curve: GrowthCurve::LogLogistic,
+            max_age: Some(240.0),
+        }
+        .fit_segments(&genins_premium(), "paid", "premium")
+        .unwrap();
+        let fit = &fits.fits[0];
+        let exposure = fit.exposure.as_ref().unwrap();
+        let ulr: Vec<f64> = fit
+            .ultimate
+            .iter()
+            .zip(exposure)
+            .map(|(u, e)| u / e)
+            .collect();
+        assert_eq!(fits.to_long().column("ulr").unwrap(), ulr);
+        let total = fit.ultimate.iter().sum::<f64>() / exposure.iter().sum::<f64>();
+        let totals = fits.totals();
+        assert_eq!(totals.column("ulr").unwrap(), [total]);
+        // Not the fitted expected loss ratio.
+        assert!(totals.column("elr").unwrap()[0] != total);
     }
 }

@@ -278,7 +278,7 @@ fn the_expected_loss_methods_carry_the_development() {
     let cl = ChainLadder::default();
 
     let bf = BornhuetterFerguson {
-        apriori: 0.6,
+        apriori: 0.6.into(),
         chain_ladder: cl.clone(),
     };
     let source = bf.fit(&tri, "paid", "premium").unwrap();
@@ -296,7 +296,7 @@ fn the_expected_loss_methods_carry_the_development() {
     }
 
     let bk = Benktander {
-        apriori: 0.6,
+        apriori: 0.6.into(),
         n_iters: 3,
         chain_ladder: cl.clone(),
     };
@@ -655,7 +655,7 @@ fn parity(arm: Arm, route: Route) {
                 let (fit, apriori) = match base.split(';').next().unwrap() {
                     "bornhuetter_ferguson" => (
                         BornhuetterFerguson {
-                            apriori: param("apriori"),
+                            apriori: param("apriori").into(),
                             chain_ladder: frozen,
                         }
                         .fit_diagonal(&d)
@@ -664,7 +664,7 @@ fn parity(arm: Arm, route: Route) {
                     ),
                     "benktander" => (
                         Benktander {
-                            apriori: param("apriori"),
+                            apriori: param("apriori").into(),
                             n_iters: param("n_iters") as usize,
                             chain_ladder: frozen,
                         }
@@ -1071,7 +1071,7 @@ fn the_expected_loss_methods_need_the_exposure() {
     let source = ChainLadder::default().fit(&tri, "paid").unwrap();
     let d = LatestDiagonal::from_triangle(&tri, "paid", None).unwrap();
     let e = BornhuetterFerguson {
-        apriori: 0.6,
+        apriori: 0.6.into(),
         chain_ladder: source.to_chain_ladder(),
     }
     .fit_diagonal(&d)

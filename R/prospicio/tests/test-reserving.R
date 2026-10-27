@@ -830,7 +830,8 @@ stopifnot(cc@method == "cape_cod", cc@curve == "weibull", cc@exposure[[1]] == 1e
           cc@elr > 0)
 near(cc@expected_ultimate, cc@elr * cc@exposure)
 stopifnot(identical(names(as.data.frame(cc))[5:6], c("exposure", "expected_ultimate")),
-          "elr" %in% names(totals_frame(cc)))
+          all(c("elr", "ulr") %in% names(totals_frame(cc))),
+          identical(as.data.frame(cc)$ulr, unname(cc@ultimate / cc@exposure)))
 weibull <- clark_ldf(raa, curve = "weibull", max_age = 240)
 stopifnot(weibull@max_age == 240, identical(clark_ldf(raa, max_age = NULL)@reserve, clark@reserve))
 invisible(utils::capture.output(print(clark), print(cc), print(weibull)))
@@ -956,10 +957,12 @@ expect_error_like(expected_loss(wk, "paid", "premium", tail = "a"), "tail must b
 stopifnot(!identical(cape_cod(wk, "paid", "premium", decay = 0.5)@ultimate,
                      cape_cod(wk, "paid", "premium")@ultimate))
 el_df <- as.data.frame(bf)
-stopifnot(identical(names(el_df), c("origin", "latest", "ultimate", "reserve", "exposure", "apriori")),
+stopifnot(identical(names(el_df), c("origin", "latest", "ultimate", "reserve", "exposure", "apriori",
+                                   "ulr")),
           identical(el_df$ultimate, unname(bf@ultimate)),
+          identical(el_df$ulr, unname(bf@ultimate / bf@exposure)),
           identical(names(as.data.frame(cc)), c("origin", "latest", "ultimate", "reserve", "exposure",
-                                               "apriori", "trended_apriori")),
+                                               "apriori", "trended_apriori", "ulr")),
           identical(totals_frame(bf)$exposure, sum(bf@exposure)),
           identical(development_frame(bf), development_frame(wk_cl)))
 invisible(utils::capture.output(print(bf), print(cc)))
@@ -997,7 +1000,42 @@ expect_error_like(expected_loss(wk, "paid", "exposure"), "no column named exposu
 expect_error_like(expected_loss(wk, "paid"), "exposure")
 expect_error_like(expected_loss(wk, "paid", 2), "exposure must be the name of a column")
 expect_error_like(bornhuetter_ferguson(wk, "paid", "premium", apriori = 0), "apriori = 0 is invalid")
-expect_error_like(bornhuetter_ferguson(wk, "paid", "premium", apriori = NA), "apriori must be a single number")
+expect_error_like(bornhuetter_ferguson(wk, "paid", "premium", apriori = NA),
+                  "apriori must be a number or a numeric vector")
+
+# An apriori per origin (#634): each origin at its own loss ratio, named by
+# origin in any order or in origin order, in the one-year view too.
+by_year <- stats::setNames(0.6 + 0.02 * (0:9), 1988:1997)
+keyed <- bornhuetter_ferguson(wk, "paid", "premium", apriori = by_year)
+stopifnot(identical(unname(keyed@apriori), unname(by_year)),
+          identical(bornhuetter_ferguson(wk, "paid", "premium", apriori = unname(by_year))@ultimate,
+                    keyed@ultimate),
+          identical(benktander(wk, "paid", "premium", apriori = rev(by_year))@ultimate,
+                    keyed@ultimate))
+for (year in c("1988", "1993", "1997")) {
+  alone <- bornhuetter_ferguson(wk, "paid", "premium", apriori = by_year[[year]])
+  stopifnot(identical(keyed@ultimate[[year]], alone@ultimate[[year]]))
+}
+el_keyed <- expected_loss(wk, "paid", "premium", apriori = by_year)
+near(unname(el_keyed@ultimate), unname(by_year * el_keyed@exposure), 1e-15)
+keyed_view <- odp_one_year(wk, "paid", "bornhuetter_ferguson", exposure = "premium",
+                           apriori = by_year, n_sims = 200, seed = 4)
+in_order_view <- odp_one_year(wk, "paid", "bornhuetter_ferguson", exposure = "premium",
+                              apriori = unname(by_year), n_sims = 200, seed = 4)
+stopifnot(identical(keyed_view@opening_ultimate, keyed@ultimate),
+          identical(draw_matrix(keyed_view@cdr), draw_matrix(in_order_view@cdr)))
+expect_error_like(bornhuetter_ferguson(wk, "paid", "premium", apriori = by_year[-1]),
+                  "origin 1988 has no value")
+expect_error_like(bornhuetter_ferguson(wk, "paid", "premium", apriori = c(by_year, "1998" = 0.7)),
+                  "1998 is not among the origins fitted")
+expect_error_like(bornhuetter_ferguson(wk, "paid", "premium", apriori = unname(by_year)[-1]),
+                  "9 values in origin order for 10 origins")
+expect_error_like(mack_one_year(wk, "paid", "expected_loss", exposure = "premium",
+                                apriori = unname(by_year)[-1], n_sims = 20),
+                  "9 values in origin order for 10 origins")
+expect_error_like(expected_loss(wk, "paid", "premium", apriori = c(a = 0.7)), "origin label \"a\"")
+expect_error_like(expected_loss(wk, "paid", "premium", apriori = c(0.7, b = 0.7)),
+                  "named by origin for every value")
 expect_error_like(cape_cod(wk, "paid", "premium", decay = 2), "decay = 2 is invalid")
 expect_error_like(cape_cod(wk, "paid", "premium", trend = -1), "trend = -1 is invalid")
 expect_error_like(benktander(wk, "paid", "premium", n_iters = -1), "n_iters must be a non-negative whole number")

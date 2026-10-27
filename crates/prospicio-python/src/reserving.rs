@@ -10,7 +10,7 @@
 
 use prospicio_core::{Grain, Lag, Month, Period};
 use prospicio_reserving::{
-    Average, BenchmarkCurve, BenchmarkCurveFit, Benktander, BornhuetterFerguson, CapeCod,
+    Apriori, Average, BenchmarkCurve, BenchmarkCurveFit, Benktander, BornhuetterFerguson, CapeCod,
     CapeCodFit, ChainLadder, ChainLadderFit, ClaimsDevelopmentResult, ClarkCapeCod, ClarkFit,
     ClarkLdf, CurveShape, Development, DevelopmentColumn, DiagonalAge, ExpectedLoss,
     ExpectedLossFit, FitTable, GrowthCurve, Label, LatestDiagonals, Long, LongDiagonal, Mack,
@@ -18,12 +18,12 @@ use prospicio_reserving::{
     OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod, OneYearPattern,
     PastPatternEnd, PatternKind, PatternWeight, ProcessDistribution, ReserveFit, SegmentDependence,
     SegmentFits, SegmentMap, SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailConstant,
-    TailCurve, Triangle, view,
+    TailCurve, Triangle, UnderwritingBasis, view,
 };
 use pyo3::exceptions::{PyImportError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{
-    PyBool, PyBytes, PyDate, PyDelta, PyDict, PyFloat, PyInt, PyModule, PyString, PyTuple,
+    PyBool, PyBytes, PyDate, PyDelta, PyDict, PyFloat, PyInt, PyList, PyModule, PyString, PyTuple,
 };
 
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
@@ -1838,63 +1838,193 @@ fn grain_name(g: Grain) -> &'static str {
     }
 }
 
-/// The ``ldf_origin`` argument: ``None``, or the origin grain the selected
-/// pattern was measured on, which needs ``ldf``.
-fn ldf_origin_arg(
-    ldf_origin: Option<&str>,
-    ldf: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Option<Grain>> {
-    let Some(name) = ldf_origin else {
-        return Ok(None);
-    };
-    if ldf.is_none_or(|l| l.is_none()) {
-        return Err(PyValueError::new_err("ldf_origin is given without ldf"));
-    }
-    match name {
-        "M" => Ok(Some(Grain::Month)),
-        "Q" => Ok(Some(Grain::Quarter)),
-        "S" => Ok(Some(Grain::Semester)),
-        "Y" => Ok(Some(Grain::Year)),
-        _ => Err(PyValueError::new_err(format!(
-            "ldf_origin must be \"M\", \"Q\", \"S\" or \"Y\", got {name:?}"
-        ))),
-    }
+/// How a method converts its selected pattern at fit time: ``ldf_origin``,
+/// the origin grain it was measured on, and ``ldf_underwriting``, the
+/// underwriting basis it is converted to.
+#[derive(Debug, Clone, Default)]
+struct LdfBasis {
+    origin: Option<Grain>,
+    underwriting: Option<UnderwritingBasis>,
 }
 
-/// A selected pattern measured on origin periods of `ldf_origin`, averaged
-/// over the periods of `origin` (`SelectedPattern::averaged_over_origins`);
-/// unchanged without ``ldf_origin``.
+/// The ``ldf_origin`` and ``ldf_underwriting`` arguments: each ``None``,
+/// or, with ``ldf``, the origin grain the selected pattern was measured on
+/// and the underwriting basis it is converted to.
+fn ldf_basis_arg(
+    ldf_origin: Option<&str>,
+    ldf_underwriting: Option<&PyUnderwritingBasis>,
+    ldf: Option<&Bound<'_, PyAny>>,
+) -> PyResult<LdfBasis> {
+    let no_ldf = ldf.is_none_or(|l| l.is_none());
+    if no_ldf && ldf_underwriting.is_some() {
+        return Err(PyValueError::new_err(
+            "ldf_underwriting is given without ldf",
+        ));
+    }
+    let underwriting = ldf_underwriting.map(|b| b.inner.clone());
+    let Some(name) = ldf_origin else {
+        return Ok(LdfBasis {
+            origin: None,
+            underwriting,
+        });
+    };
+    if no_ldf {
+        return Err(PyValueError::new_err("ldf_origin is given without ldf"));
+    }
+    let origin = match name {
+        "M" => Grain::Month,
+        "Q" => Grain::Quarter,
+        "S" => Grain::Semester,
+        "Y" => Grain::Year,
+        _ => {
+            return Err(PyValueError::new_err(format!(
+                "ldf_origin must be \"M\", \"Q\", \"S\" or \"Y\", got {name:?}"
+            )));
+        }
+    };
+    Ok(LdfBasis {
+        origin: Some(origin),
+        underwriting,
+    })
+}
+
+/// A selected pattern converted as `basis` says, for origins of `origin`:
+/// to an underwriting basis from accident periods of ``ldf_origin`` (the
+/// target's grain without it, `SelectedPattern::to_underwriting_basis`),
+/// its writing no longer than a period of `origin`
+/// (`UnderwritingBasis::check_within`),
+/// or averaged from origin periods of ``ldf_origin`` over the periods of
+/// `origin` (`SelectedPattern::averaged_over_origins`); unchanged with
+/// neither.
 fn averaged(
     pattern: &Option<SelectedPattern>,
-    ldf_origin: Option<Grain>,
+    basis: &LdfBasis,
     origin: Grain,
 ) -> PyResult<Option<SelectedPattern>> {
-    match (pattern, ldf_origin) {
-        (Some(p), Some(g)) => Ok(Some(p.averaged_over_origins(g, origin).map_err(err)?)),
+    match (pattern, basis) {
+        (
+            Some(p),
+            LdfBasis {
+                underwriting: Some(u),
+                origin: from,
+            },
+        ) => {
+            u.check_within(origin).map_err(err)?;
+            Ok(Some(
+                p.to_underwriting_basis(from.unwrap_or(origin), u)
+                    .map_err(err)?,
+            ))
+        }
+        (
+            Some(p),
+            LdfBasis {
+                origin: Some(g), ..
+            },
+        ) => Ok(Some(p.averaged_over_origins(*g, origin).map_err(err)?)),
         _ => Ok(pattern.clone()),
     }
 }
 
-/// A chain ladder with its pattern averaged as ``ldf_origin`` says.
-fn chain_ladder_on(
-    cl: &ChainLadder,
-    ldf_origin: Option<Grain>,
-    origin: Grain,
-) -> PyResult<ChainLadder> {
+/// A chain ladder with its pattern converted as `basis` says.
+fn chain_ladder_on(cl: &ChainLadder, basis: &LdfBasis, origin: Grain) -> PyResult<ChainLadder> {
     let mut cl = cl.clone();
-    cl.development.pattern = averaged(&cl.development.pattern, ldf_origin, origin)?;
+    cl.development.pattern = averaged(&cl.development.pattern, basis, origin)?;
     Ok(cl)
 }
 
-/// A method's ``repr`` with ``ldf_origin`` before its closing parenthesis,
-/// when it is set.
-fn with_ldf_origin(repr: String, ldf_origin: Option<Grain>) -> String {
-    match ldf_origin {
-        Some(g) => match repr.strip_suffix(')') {
-            Some(head) => format!("{head}, ldf_origin={:?})", grain_name(g)),
-            None => repr,
-        },
-        None => repr,
+/// A method's ``repr`` with ``ldf_origin`` and ``ldf_underwriting`` before
+/// its closing parenthesis, when they are set.
+fn with_ldf_basis(repr: String, basis: &LdfBasis) -> String {
+    let mut extra = String::new();
+    if let Some(g) = basis.origin {
+        extra.push_str(&format!(", ldf_origin={:?}", grain_name(g)));
+    }
+    if let Some(u) = &basis.underwriting {
+        extra.push_str(&format!(", ldf_underwriting={}", underwriting_repr(u)));
+    }
+    match repr.strip_suffix(')') {
+        Some(head) if !extra.is_empty() => format!("{head}{extra})"),
+        _ => repr,
+    }
+}
+
+fn underwriting_repr(u: &UnderwritingBasis) -> String {
+    format!(
+        "UnderwritingBasis(writing={:?}, policy_months={})",
+        u.writing, u.policy_months
+    )
+}
+
+/// How an underwriting period's policies are written and earned, to convert
+/// an accident-period development pattern to the underwriting period's.
+///
+/// Parameters
+/// ----------
+/// writing : sequence of float, optional
+///     The share of the period's policies written in each month from its
+///     start, each written at an even rate through its month: finite, not
+///     negative, with a positive sum, and scaled to sum to 1. Not given,
+///     even writing over 12 months, an underwriting year's. The writing,
+///     its trailing zeros dropped, must be no longer than the triangle's
+///     origin period, within which its policies are written: on
+///     underwriting quarters give three months (``[1, 1, 1]`` for even
+///     writing); longer writing is an error at fit time.
+/// policy_months : int, default 12
+///     Each policy's term in months; it earns evenly over the term.
+///
+/// The underwriting period's exposure in its ``t``-th accident month is the
+/// writing convolved with a policy's earning by month (``exposure``), and
+/// the period's percent developed at age ``a`` from its start is
+/// ``P(a) = sum_t e(t) p(a - t)``, ``p`` an accident month's (Rust's
+/// ``SelectedPattern::to_underwriting_basis``). Pass it as
+/// ``ldf_underwriting`` to a method that takes ``ldf``. The default, even
+/// writing over a year and 12-month policies, is the parallelogram: the
+/// exposure is triangular over 24 months.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reserving import UnderwritingBasis
+/// >>> e = UnderwritingBasis().exposure()
+/// >>> len(e), round(e[0] * 288, 12), round(e[12] * 288, 12)
+/// (24, 1.0, 23.0)
+#[pyclass(name = "UnderwritingBasis", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyUnderwritingBasis {
+    inner: UnderwritingBasis,
+}
+
+#[pymethods]
+impl PyUnderwritingBasis {
+    #[new]
+    #[pyo3(signature = (writing = None, policy_months = 12))]
+    fn new(writing: Option<Vec<f64>>, policy_months: u32) -> PyResult<Self> {
+        let inner = match writing {
+            Some(w) => UnderwritingBasis::new(w, policy_months),
+            None => UnderwritingBasis::even(12, policy_months),
+        };
+        inner.exposure().map_err(err)?;
+        Ok(Self { inner })
+    }
+
+    /// The writing shares by month, as given.
+    #[getter]
+    fn writing(&self) -> Vec<f64> {
+        self.inner.writing.clone()
+    }
+
+    /// The policy term in months.
+    #[getter]
+    fn policy_months(&self) -> u32 {
+        self.inner.policy_months
+    }
+
+    /// The share of the period's exposure in each accident month from its
+    /// start, summing to 1.
+    fn exposure(&self) -> PyResult<Vec<f64>> {
+        self.inner.exposure().map_err(err)
+    }
+
+    fn __repr__(&self) -> String {
+        underwriting_repr(&self.inner)
     }
 }
 
@@ -2551,9 +2681,12 @@ fn diagonal_development(
 ///     estimated from the triangle at the ages it gives; the other ages
 ///     stay estimated, so a benchmark for the immature ages only is a
 ///     partial pattern. As ``ldf_kind`` says, the values are age-to-age
-///     factors, or factors to ultimate or percents developed at two or more
-///     ages, which select the factors between the first and the last
-///     (``cdf[a] / cdf[next age]``). When every age given is a development
+///     factors, or factors to ultimate or percents developed, which select
+///     the factors between the first age and the last (``cdf[a] / cdf[next
+///     age]``); one factor to ultimate (or percent developed) is the tail
+///     from its age, so it is given at the oldest age, with no ``tail`` and
+///     ``ldf_weight`` 1, and on a triangle observed at one age it is the
+///     whole projection. When every age given is a development
 ///     age of the triangle, an age-to-age factor links its age to the
 ///     triangle's next age (any age but the oldest: development past it is
 ///     the tail's), and a development age the cumulative values skip is
@@ -2606,7 +2739,34 @@ fn diagonal_development(
 ///     age (``ldf_weight`` a dict, applied before the averaging; the
 ///     averaged pattern cannot be weighted by age here) and a single
 ///     age-to-age factor are errors; the triangle's own grain leaves the
-///     pattern as given. Requires ``ldf``.
+///     pattern as given. Requires ``ldf``. With ``ldf_underwriting`` it is
+///     the grain of the accident periods ``ldf`` is converted from instead.
+/// ldf_underwriting : UnderwritingBasis, optional
+///     Converts ``ldf``, an accident-period pattern, to the pattern of the
+///     triangle's underwriting periods at fit time: an underwriting year's
+///     share developed at age ``a`` from its start is ``sum_t e(t) p(a -
+///     t)``, with ``e`` its exposure by accident month (the writing
+///     convolved with even earning over the policy term,
+///     ``UnderwritingBasis.exposure``) and ``p`` an accident month's (Rust's
+///     ``SelectedPattern::to_underwriting_basis``). ``ldf`` is on accident
+///     periods of ``ldf_origin``, or of the triangle's origin grain without
+///     it: an accident-year pattern on underwriting-year origins needs no
+///     ``ldf_origin``. An accident-month pattern (``ldf_origin="M"``)
+///     converts under any writing and term; a pattern of longer accident
+///     periods needs a policy term that is a whole multiple of them or
+///     writing even within each of them, and is read between its ages by
+///     the rule above, so an annual accident-year pattern is approximate in
+///     the first two years (31% too much developed at 12 months on a
+///     simulated parallelogram); give it at every month, or an
+///     accident-month pattern, where it matters. The result is longer than
+///     ``ldf`` by the writing months plus the policy term less the accident
+///     period (12 months for an accident-year pattern under the default,
+///     23 for an accident-month one), and a constant tail from ``ldf``'s
+///     own tail is the safer choice there. The writing must be no longer
+///     than the triangle's origin period (the default's 12 months suit
+///     underwriting years only; on underwriting quarters give
+///     ``UnderwritingBasis([1, 1, 1])``), or the fit is an error. Requires
+///     ``ldf``.
 ///
 /// A selected factor carries no parameter error, and a blended one
 /// ``(1 - w)`` times the estimate's, in ``Mack`` and the bootstraps; the
@@ -2646,7 +2806,7 @@ fn diagonal_development(
 #[pyclass(name = "ChainLadder", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyChainLadder {
     inner: ChainLadder,
-    ldf_origin: Option<Grain>,
+    ldf_basis: LdfBasis,
 }
 
 #[pymethods]
@@ -2663,6 +2823,7 @@ impl PyChainLadder {
         drop_high = 0,
         drop_low = 0,
         ldf_origin = None,
+        ldf_underwriting = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -2676,11 +2837,12 @@ impl PyChainLadder {
         drop_high: usize,
         drop_low: usize,
         ldf_origin: Option<&str>,
+        ldf_underwriting: Option<PyRef<'_, PyUnderwritingBasis>>,
     ) -> PyResult<Self> {
-        let ldf_origin = ldf_origin_arg(ldf_origin, ldf)?;
+        let ldf_basis = ldf_basis_arg(ldf_origin, ldf_underwriting.as_deref(), ldf)?;
         let pattern = selected_pattern(ldf, ldf_kind, ldf_weight)?;
         Ok(Self {
-            ldf_origin,
+            ldf_basis,
             inner: ChainLadder {
                 development: development(
                     average,
@@ -2748,7 +2910,17 @@ impl PyChainLadder {
     /// origins' periods at fit time; ``None`` reads it at the origin's age.
     #[getter]
     fn ldf_origin(&self) -> Option<&'static str> {
-        self.ldf_origin.map(grain_name)
+        self.ldf_basis.origin.map(grain_name)
+    }
+
+    /// The underwriting basis ``ldf`` is converted to at fit time
+    /// (``UnderwritingBasis``), or ``None``.
+    #[getter]
+    fn ldf_underwriting(&self) -> Option<PyUnderwritingBasis> {
+        self.ldf_basis
+            .underwriting
+            .clone()
+            .map(|inner| PyUnderwritingBasis { inner })
     }
 
     /// The weight on the selected factors: a number, a dict by age, or
@@ -2865,15 +3037,16 @@ impl PyChainLadder {
     }
 
     fn __repr__(&self) -> String {
-        with_ldf_origin(self.base_repr(), self.ldf_origin)
+        with_ldf_basis(self.base_repr(), &self.ldf_basis)
     }
 }
 
 impl PyChainLadder {
-    /// The method with its pattern averaged as ``ldf_origin`` says, for
+    /// The method with its pattern converted as ``ldf_origin`` and
+    /// ``ldf_underwriting`` say, for
     /// origins of `origin`.
     fn resolved(&self, origin: Grain) -> PyResult<ChainLadder> {
-        chain_ladder_on(&self.inner, self.ldf_origin, origin)
+        chain_ladder_on(&self.inner, &self.ldf_basis, origin)
     }
 
     fn base_repr(&self) -> String {
@@ -3083,7 +3256,7 @@ impl PyChainLadderFit {
         let f = single(&self.inner, "to_chain_ladder", "")?;
         Ok(PyChainLadder {
             inner: f.to_chain_ladder(),
-            ldf_origin: None,
+            ldf_basis: LdfBasis::default(),
         })
     }
 
@@ -3373,7 +3546,7 @@ impl PyChainLadderFit {
 /// tail_std_err : float, optional
 ///     The tail factor's standard error (R's ``tail.se``); extrapolated if
 ///     not given. Unused when the tail factor is 1.
-/// ldf, ldf_kind, ldf_weight, ldf_origin : optional
+/// ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting : optional
 ///     A selected development pattern, as in ``ChainLadder``. A selected
 ///     factor is taken as known: it has no parameter error, and a blended
 ///     one ``(1 - w)`` times the estimate's standard error, so the
@@ -3401,7 +3574,7 @@ impl PyChainLadderFit {
 #[pyclass(name = "Mack", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyMack {
     inner: Mack,
-    ldf_origin: Option<Grain>,
+    ldf_basis: LdfBasis,
 }
 
 #[pymethods]
@@ -3420,6 +3593,7 @@ impl PyMack {
         drop_high = 0,
         drop_low = 0,
         ldf_origin = None,
+        ldf_underwriting = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -3435,11 +3609,12 @@ impl PyMack {
         drop_high: usize,
         drop_low: usize,
         ldf_origin: Option<&str>,
+        ldf_underwriting: Option<PyRef<'_, PyUnderwritingBasis>>,
     ) -> PyResult<Self> {
-        let ldf_origin = ldf_origin_arg(ldf_origin, ldf)?;
+        let ldf_basis = ldf_basis_arg(ldf_origin, ldf_underwriting.as_deref(), ldf)?;
         let pattern = selected_pattern(ldf, ldf_kind, ldf_weight)?;
         Ok(Self {
-            ldf_origin,
+            ldf_basis,
             inner: Mack {
                 development: development(
                     average,
@@ -3522,7 +3697,17 @@ impl PyMack {
     /// origins' periods at fit time; ``None`` reads it at the origin's age.
     #[getter]
     fn ldf_origin(&self) -> Option<&'static str> {
-        self.ldf_origin.map(grain_name)
+        self.ldf_basis.origin.map(grain_name)
+    }
+
+    /// The underwriting basis ``ldf`` is converted to at fit time
+    /// (``UnderwritingBasis``), or ``None``.
+    #[getter]
+    fn ldf_underwriting(&self) -> Option<PyUnderwritingBasis> {
+        self.ldf_basis
+            .underwriting
+            .clone()
+            .map(|inner| PyUnderwritingBasis { inner })
     }
 
     /// The weight on the selected factors: a number, a dict by age, or
@@ -3564,16 +3749,17 @@ impl PyMack {
     }
 
     fn __repr__(&self) -> String {
-        with_ldf_origin(self.base_repr(), self.ldf_origin)
+        with_ldf_basis(self.base_repr(), &self.ldf_basis)
     }
 }
 
 impl PyMack {
-    /// The method with its pattern averaged as ``ldf_origin`` says, for
+    /// The method with its pattern converted as ``ldf_origin`` and
+    /// ``ldf_underwriting`` say, for
     /// origins of `origin`.
     fn resolved(&self, origin: Grain) -> PyResult<Mack> {
         let mut m = self.inner.clone();
-        m.development.pattern = averaged(&m.development.pattern, self.ldf_origin, origin)?;
+        m.development.pattern = averaged(&m.development.pattern, &self.ldf_basis, origin)?;
         Ok(m)
     }
 
@@ -4143,6 +4329,90 @@ fn pattern_repr(cl: &ChainLadder) -> String {
     )
 }
 
+/// An ``apriori`` argument: a number for every origin, a sequence of one
+/// per origin in origin order (oldest first, over the triangle's or the
+/// diagonals' origins), or a dict from origin (a label as fits report
+/// origins, ``"2021"`` or ``"2021Q3"``, or an integer year) to its loss
+/// ratio. ``None`` is 1.
+fn apriori_arg(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Apriori> {
+    let Some(obj) = obj.filter(|o| !o.is_none()) else {
+        return Ok(Apriori::default());
+    };
+    let type_error = || {
+        PyTypeError::new_err(format!(
+            "apriori must be a number, a sequence of numbers in origin order or a dict from \
+             origin to number, got {}",
+            py_repr(obj)
+        ))
+    };
+    if obj.is_instance_of::<PyBool>() {
+        return Err(type_error());
+    }
+    if let Ok(dict) = obj.cast::<PyDict>() {
+        let pairs = dict
+            .iter()
+            .map(|(k, v)| {
+                let label = if k.is_instance_of::<PyString>() {
+                    k.extract::<String>()?
+                } else if !k.is_instance_of::<PyBool>()
+                    && (k.is_instance_of::<PyInt>() || k.hasattr("__index__")?)
+                {
+                    k.extract::<i32>()?.to_string()
+                } else {
+                    return Err(PyTypeError::new_err(format!(
+                        "apriori's keys must be origin labels such as \"2021\" or \"2021Q3\", or \
+                         integer years, got {}",
+                        py_repr(&k)
+                    )));
+                };
+                let value = v.extract::<f64>().map_err(|_| {
+                    PyTypeError::new_err(format!(
+                        "apriori's value for {label} must be a number, got {}",
+                        py_repr(&v)
+                    ))
+                })?;
+                Ok((label, value))
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        return Apriori::from_labels(pairs).map_err(err);
+    }
+    if let Ok(value) = obj.extract::<f64>() {
+        return Ok(Apriori::All(value));
+    }
+    plain(obj)?
+        .extract::<Vec<f64>>()
+        .map(Apriori::InOrder)
+        .map_err(|_| type_error())
+}
+
+/// A method's ``apriori`` as Python sees it: a float, a list in origin
+/// order or a dict by origin label.
+fn apriori_object<'py>(py: Python<'py>, apriori: &Apriori) -> PyResult<Bound<'py, PyAny>> {
+    Ok(match apriori {
+        Apriori::All(a) => PyFloat::new(py, *a).into_any(),
+        Apriori::InOrder(values) => PyList::new(py, values)?.into_any(),
+        Apriori::ByOrigin(pairs) => {
+            let d = PyDict::new(py);
+            for (origin, v) in pairs {
+                d.set_item(origin.to_string(), v)?;
+            }
+            d.into_any()
+        }
+    })
+}
+
+/// ``apriori`` in a method's repr.
+fn apriori_repr(apriori: &Apriori) -> String {
+    match apriori {
+        Apriori::All(a) => format!("{a:?}"),
+        Apriori::InOrder(values) => format!("{values:?}"),
+        Apriori::ByOrigin(pairs) => {
+            let items: Vec<String> = pairs.iter().map(|(o, v)| format!("'{o}': {v:?}")).collect();
+            format!("{{{}}}", items.join(", "))
+        }
+    }
+}
+
 /// The expected loss ratio method: each origin's ultimate is ``apriori``
 /// times its exposure, whatever has been observed. The chain ladder is
 /// still fitted for the development pattern the fit reports.
@@ -4152,8 +4422,18 @@ fn pattern_repr(cl: &ChainLadder) -> String {
 ///
 /// Parameters
 /// ----------
-/// apriori : float, default 1.0
-///     Expected loss ratio: the ultimate per unit of exposure; positive.
+/// apriori : float, sequence or dict, default 1.0
+///     Expected loss ratio: the ultimate per unit of exposure, positive:
+///     one for every origin, one per origin in origin order (oldest first,
+///     over the triangle's origins or, for a latest diagonal, its origins),
+///     or a dict from origin (its label as fits report it, ``"2021"`` or
+///     ``"2021Q3"``, or an integer year) to its loss ratio. Every origin
+///     fitted needs one; a value for an origin the triangle does not have
+///     is an error. Over segments each segment takes its own origins'
+///     values. A pandas Series is read in order and its index is not
+///     read: to key by origin, pass a dict. On a latest diagonal a sequence
+///     needs the rows oldest first, each origin once, and is otherwise an
+///     error, since the exposure is read by row.
 /// average : {"volume", "simple", "regression", "geometric"}, default "volume"
 ///     How link ratios are averaged, as in ``ChainLadder``.
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
@@ -4162,7 +4442,7 @@ fn pattern_repr(cl: &ChainLadder) -> String {
 ///     the highest and lowest link ratios at each age.
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     As ``ChainLadder``; no tail by default.
-/// ldf, ldf_kind, ldf_weight, ldf_origin : optional
+/// ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting : optional
 ///     A selected development pattern, as in ``ChainLadder``: the
 ///     development pattern's factors at the ages it gives, so ``cdf`` and
 ///     the share developed ``1 / cdf`` follow it.
@@ -4180,16 +4460,16 @@ fn pattern_repr(cl: &ChainLadder) -> String {
 #[pyclass(name = "ExpectedLoss", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyExpectedLoss {
     inner: ExpectedLoss,
-    ldf_origin: Option<Grain>,
+    ldf_basis: LdfBasis,
 }
 
 #[pymethods]
 impl PyExpectedLoss {
     #[new]
-    #[pyo3(signature = (apriori = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None))]
+    #[pyo3(signature = (apriori = None, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None, ldf_underwriting = None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
-        apriori: f64,
+        apriori: Option<&Bound<'_, PyAny>>,
         average: &str,
         sigma_interpolation: &str,
         tail: Option<&Bound<'_, PyAny>>,
@@ -4200,12 +4480,13 @@ impl PyExpectedLoss {
         drop_high: usize,
         drop_low: usize,
         ldf_origin: Option<&str>,
+        ldf_underwriting: Option<PyRef<'_, PyUnderwritingBasis>>,
     ) -> PyResult<Self> {
-        let ldf_origin = ldf_origin_arg(ldf_origin, ldf)?;
+        let ldf_basis = ldf_basis_arg(ldf_origin, ldf_underwriting.as_deref(), ldf)?;
         Ok(Self {
-            ldf_origin,
+            ldf_basis,
             inner: ExpectedLoss {
-                apriori,
+                apriori: apriori_arg(apriori)?,
                 chain_ladder: pattern(
                     average,
                     sigma_interpolation,
@@ -4221,10 +4502,11 @@ impl PyExpectedLoss {
         })
     }
 
-    /// Expected loss ratio.
+    /// Expected loss ratio: a float, a list in origin order or a dict by origin
+    /// label, as given.
     #[getter]
-    fn apriori(&self) -> f64 {
-        self.inner.apriori
+    fn apriori<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        apriori_object(py, &self.inner.apriori)
     }
 
     /// How link ratios are averaged.
@@ -4280,7 +4562,17 @@ impl PyExpectedLoss {
     /// origins' periods at fit time; ``None`` reads it at the origin's age.
     #[getter]
     fn ldf_origin(&self) -> Option<&'static str> {
-        self.ldf_origin.map(grain_name)
+        self.ldf_basis.origin.map(grain_name)
+    }
+
+    /// The underwriting basis ``ldf`` is converted to at fit time
+    /// (``UnderwritingBasis``), or ``None``.
+    #[getter]
+    fn ldf_underwriting(&self) -> Option<PyUnderwritingBasis> {
+        self.ldf_basis
+            .underwriting
+            .clone()
+            .map(|inner| PyUnderwritingBasis { inner })
     }
 
     /// The weight on the selected factors: a number, a dict by age, or
@@ -4364,23 +4656,24 @@ impl PyExpectedLoss {
     }
 
     fn __repr__(&self) -> String {
-        with_ldf_origin(self.base_repr(), self.ldf_origin)
+        with_ldf_basis(self.base_repr(), &self.ldf_basis)
     }
 }
 
 impl PyExpectedLoss {
-    /// The method with its pattern averaged as ``ldf_origin`` says, for
+    /// The method with its pattern converted as ``ldf_origin`` and
+    /// ``ldf_underwriting`` say, for
     /// origins of `origin`.
     fn resolved(&self, origin: Grain) -> PyResult<ExpectedLoss> {
         let mut m = self.inner.clone();
-        m.chain_ladder = chain_ladder_on(&m.chain_ladder, self.ldf_origin, origin)?;
+        m.chain_ladder = chain_ladder_on(&m.chain_ladder, &self.ldf_basis, origin)?;
         Ok(m)
     }
 
     fn base_repr(&self) -> String {
         format!(
-            "ExpectedLoss(apriori={:?}, {})",
-            self.inner.apriori,
+            "ExpectedLoss(apriori={}, {})",
+            apriori_repr(&self.inner.apriori),
             pattern_repr(&self.inner.chain_ladder)
         )
     }
@@ -4395,9 +4688,18 @@ impl PyExpectedLoss {
 ///
 /// Parameters
 /// ----------
-/// apriori : float, default 1.0
-///     Expected loss ratio: the expected ultimate per unit of exposure;
-///     positive.
+/// apriori : float, sequence or dict, default 1.0
+///     Expected loss ratio: the expected ultimate per unit of exposure,
+///     positive: one for every origin, one per origin in origin order
+///     (oldest first, over the triangle's origins or, for a latest
+///     diagonal, its origins), or a dict from origin (its label as fits
+///     report it, ``"2021"`` or ``"2021Q3"``, or an integer year) to its
+///     loss ratio. Every origin fitted needs one; a value for an origin the
+///     triangle does not have is an error. Over segments each segment takes
+///     its own origins' values. A pandas Series is read in order and its
+///     index is not read: to key by origin, pass a dict. On a latest
+///     diagonal a sequence needs the rows oldest first, each origin once,
+///     and is otherwise an error, since the exposure is read by row.
 /// average : {"volume", "simple", "regression", "geometric"}, default "volume"
 ///     How link ratios are averaged, as in ``ChainLadder``.
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
@@ -4406,7 +4708,7 @@ impl PyExpectedLoss {
 ///     the highest and lowest link ratios at each age.
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     As ``ChainLadder``; no tail by default.
-/// ldf, ldf_kind, ldf_weight, ldf_origin : optional
+/// ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting : optional
 ///     A selected development pattern, as in ``ChainLadder``: the
 ///     development pattern's factors at the ages it gives, so ``cdf`` and
 ///     the share developed ``1 / cdf`` follow it.
@@ -4424,16 +4726,16 @@ impl PyExpectedLoss {
 #[pyclass(name = "BornhuetterFerguson", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyBornhuetterFerguson {
     inner: BornhuetterFerguson,
-    ldf_origin: Option<Grain>,
+    ldf_basis: LdfBasis,
 }
 
 #[pymethods]
 impl PyBornhuetterFerguson {
     #[new]
-    #[pyo3(signature = (apriori = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None))]
+    #[pyo3(signature = (apriori = None, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None, ldf_underwriting = None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
-        apriori: f64,
+        apriori: Option<&Bound<'_, PyAny>>,
         average: &str,
         sigma_interpolation: &str,
         tail: Option<&Bound<'_, PyAny>>,
@@ -4444,12 +4746,13 @@ impl PyBornhuetterFerguson {
         drop_high: usize,
         drop_low: usize,
         ldf_origin: Option<&str>,
+        ldf_underwriting: Option<PyRef<'_, PyUnderwritingBasis>>,
     ) -> PyResult<Self> {
-        let ldf_origin = ldf_origin_arg(ldf_origin, ldf)?;
+        let ldf_basis = ldf_basis_arg(ldf_origin, ldf_underwriting.as_deref(), ldf)?;
         Ok(Self {
-            ldf_origin,
+            ldf_basis,
             inner: BornhuetterFerguson {
-                apriori,
+                apriori: apriori_arg(apriori)?,
                 chain_ladder: pattern(
                     average,
                     sigma_interpolation,
@@ -4465,10 +4768,11 @@ impl PyBornhuetterFerguson {
         })
     }
 
-    /// Expected loss ratio.
+    /// Expected loss ratio: a float, a list in origin order or a dict by origin
+    /// label, as given.
     #[getter]
-    fn apriori(&self) -> f64 {
-        self.inner.apriori
+    fn apriori<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        apriori_object(py, &self.inner.apriori)
     }
 
     /// How link ratios are averaged.
@@ -4524,7 +4828,17 @@ impl PyBornhuetterFerguson {
     /// origins' periods at fit time; ``None`` reads it at the origin's age.
     #[getter]
     fn ldf_origin(&self) -> Option<&'static str> {
-        self.ldf_origin.map(grain_name)
+        self.ldf_basis.origin.map(grain_name)
+    }
+
+    /// The underwriting basis ``ldf`` is converted to at fit time
+    /// (``UnderwritingBasis``), or ``None``.
+    #[getter]
+    fn ldf_underwriting(&self) -> Option<PyUnderwritingBasis> {
+        self.ldf_basis
+            .underwriting
+            .clone()
+            .map(|inner| PyUnderwritingBasis { inner })
     }
 
     /// The weight on the selected factors: a number, a dict by age, or
@@ -4606,23 +4920,24 @@ impl PyBornhuetterFerguson {
     }
 
     fn __repr__(&self) -> String {
-        with_ldf_origin(self.base_repr(), self.ldf_origin)
+        with_ldf_basis(self.base_repr(), &self.ldf_basis)
     }
 }
 
 impl PyBornhuetterFerguson {
-    /// The method with its pattern averaged as ``ldf_origin`` says, for
+    /// The method with its pattern converted as ``ldf_origin`` and
+    /// ``ldf_underwriting`` say, for
     /// origins of `origin`.
     fn resolved(&self, origin: Grain) -> PyResult<BornhuetterFerguson> {
         let mut m = self.inner.clone();
-        m.chain_ladder = chain_ladder_on(&m.chain_ladder, self.ldf_origin, origin)?;
+        m.chain_ladder = chain_ladder_on(&m.chain_ladder, &self.ldf_basis, origin)?;
         Ok(m)
     }
 
     fn base_repr(&self) -> String {
         format!(
-            "BornhuetterFerguson(apriori={:?}, {})",
-            self.inner.apriori,
+            "BornhuetterFerguson(apriori={}, {})",
+            apriori_repr(&self.inner.apriori),
             pattern_repr(&self.inner.chain_ladder)
         )
     }
@@ -4638,8 +4953,18 @@ impl PyBornhuetterFerguson {
 ///
 /// Parameters
 /// ----------
-/// apriori : float, default 1.0
-///     Expected loss ratio of the starting ultimate; positive.
+/// apriori : float, sequence or dict, default 1.0
+///     Expected loss ratio of the starting ultimate, positive: one for
+///     every origin, one per origin in origin order (oldest first, over the
+///     triangle's origins or, for a latest diagonal, its origins), or a
+///     dict from origin (its label as fits report it, ``"2021"`` or
+///     ``"2021Q3"``, or an integer year) to its loss ratio. Every origin
+///     fitted needs one; a value for an origin the triangle does not have
+///     is an error. Over segments each segment takes its own origins'
+///     values. A pandas Series is read in order and its index is not
+///     read: to key by origin, pass a dict. On a latest diagonal a sequence
+///     needs the rows oldest first, each origin once, and is otherwise an
+///     error, since the exposure is read by row.
 /// n_iters : int, default 1
 ///     Number of Bornhuetter–Ferguson steps.
 /// average : {"volume", "simple", "regression", "geometric"}, default "volume"
@@ -4650,7 +4975,7 @@ impl PyBornhuetterFerguson {
 ///     the highest and lowest link ratios at each age.
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     As ``ChainLadder``; no tail by default.
-/// ldf, ldf_kind, ldf_weight, ldf_origin : optional
+/// ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting : optional
 ///     A selected development pattern, as in ``ChainLadder``: the
 ///     development pattern's factors at the ages it gives, so ``cdf`` and
 ///     the share developed ``1 / cdf`` follow it.
@@ -4668,16 +4993,16 @@ impl PyBornhuetterFerguson {
 #[pyclass(name = "Benktander", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyBenktander {
     inner: Benktander,
-    ldf_origin: Option<Grain>,
+    ldf_basis: LdfBasis,
 }
 
 #[pymethods]
 impl PyBenktander {
     #[new]
-    #[pyo3(signature = (apriori = 1.0, n_iters = 1, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None))]
+    #[pyo3(signature = (apriori = None, n_iters = 1, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None, ldf_underwriting = None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
-        apriori: f64,
+        apriori: Option<&Bound<'_, PyAny>>,
         n_iters: usize,
         average: &str,
         sigma_interpolation: &str,
@@ -4689,12 +5014,13 @@ impl PyBenktander {
         drop_high: usize,
         drop_low: usize,
         ldf_origin: Option<&str>,
+        ldf_underwriting: Option<PyRef<'_, PyUnderwritingBasis>>,
     ) -> PyResult<Self> {
-        let ldf_origin = ldf_origin_arg(ldf_origin, ldf)?;
+        let ldf_basis = ldf_basis_arg(ldf_origin, ldf_underwriting.as_deref(), ldf)?;
         Ok(Self {
-            ldf_origin,
+            ldf_basis,
             inner: Benktander {
-                apriori,
+                apriori: apriori_arg(apriori)?,
                 n_iters,
                 chain_ladder: pattern(
                     average,
@@ -4711,10 +5037,11 @@ impl PyBenktander {
         })
     }
 
-    /// Expected loss ratio of the starting ultimate.
+    /// Expected loss ratio of the starting ultimate: a float, a list in origin
+    /// order or a dict by origin label, as given.
     #[getter]
-    fn apriori(&self) -> f64 {
-        self.inner.apriori
+    fn apriori<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        apriori_object(py, &self.inner.apriori)
     }
 
     /// Number of Bornhuetter–Ferguson steps.
@@ -4776,7 +5103,17 @@ impl PyBenktander {
     /// origins' periods at fit time; ``None`` reads it at the origin's age.
     #[getter]
     fn ldf_origin(&self) -> Option<&'static str> {
-        self.ldf_origin.map(grain_name)
+        self.ldf_basis.origin.map(grain_name)
+    }
+
+    /// The underwriting basis ``ldf`` is converted to at fit time
+    /// (``UnderwritingBasis``), or ``None``.
+    #[getter]
+    fn ldf_underwriting(&self) -> Option<PyUnderwritingBasis> {
+        self.ldf_basis
+            .underwriting
+            .clone()
+            .map(|inner| PyUnderwritingBasis { inner })
     }
 
     /// The weight on the selected factors: a number, a dict by age, or
@@ -4858,23 +5195,24 @@ impl PyBenktander {
     }
 
     fn __repr__(&self) -> String {
-        with_ldf_origin(self.base_repr(), self.ldf_origin)
+        with_ldf_basis(self.base_repr(), &self.ldf_basis)
     }
 }
 
 impl PyBenktander {
-    /// The method with its pattern averaged as ``ldf_origin`` says, for
+    /// The method with its pattern converted as ``ldf_origin`` and
+    /// ``ldf_underwriting`` say, for
     /// origins of `origin`.
     fn resolved(&self, origin: Grain) -> PyResult<Benktander> {
         let mut m = self.inner.clone();
-        m.chain_ladder = chain_ladder_on(&m.chain_ladder, self.ldf_origin, origin)?;
+        m.chain_ladder = chain_ladder_on(&m.chain_ladder, &self.ldf_basis, origin)?;
         Ok(m)
     }
 
     fn base_repr(&self) -> String {
         format!(
-            "Benktander(apriori={:?}, n_iters={}, {})",
-            self.inner.apriori,
+            "Benktander(apriori={}, n_iters={}, {})",
+            apriori_repr(&self.inner.apriori),
             self.inner.n_iters,
             pattern_repr(&self.inner.chain_ladder)
         )
@@ -4908,7 +5246,7 @@ impl PyBenktander {
 ///     the highest and lowest link ratios at each age.
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     As ``ChainLadder``; no tail by default.
-/// ldf, ldf_kind, ldf_weight, ldf_origin : optional
+/// ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting : optional
 ///     A selected development pattern, as in ``ChainLadder``: the
 ///     development pattern's factors at the ages it gives, so ``cdf`` and
 ///     the share developed ``1 / cdf`` follow it.
@@ -4926,13 +5264,13 @@ impl PyBenktander {
 #[pyclass(name = "CapeCod", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyCapeCod {
     inner: CapeCod,
-    ldf_origin: Option<Grain>,
+    ldf_basis: LdfBasis,
 }
 
 #[pymethods]
 impl PyCapeCod {
     #[new]
-    #[pyo3(signature = (trend = 0.0, decay = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None))]
+    #[pyo3(signature = (trend = 0.0, decay = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None, ldf_underwriting = None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         trend: f64,
@@ -4947,10 +5285,11 @@ impl PyCapeCod {
         drop_high: usize,
         drop_low: usize,
         ldf_origin: Option<&str>,
+        ldf_underwriting: Option<PyRef<'_, PyUnderwritingBasis>>,
     ) -> PyResult<Self> {
-        let ldf_origin = ldf_origin_arg(ldf_origin, ldf)?;
+        let ldf_basis = ldf_basis_arg(ldf_origin, ldf_underwriting.as_deref(), ldf)?;
         Ok(Self {
-            ldf_origin,
+            ldf_basis,
             inner: CapeCod {
                 trend,
                 decay,
@@ -5034,7 +5373,17 @@ impl PyCapeCod {
     /// origins' periods at fit time; ``None`` reads it at the origin's age.
     #[getter]
     fn ldf_origin(&self) -> Option<&'static str> {
-        self.ldf_origin.map(grain_name)
+        self.ldf_basis.origin.map(grain_name)
+    }
+
+    /// The underwriting basis ``ldf`` is converted to at fit time
+    /// (``UnderwritingBasis``), or ``None``.
+    #[getter]
+    fn ldf_underwriting(&self) -> Option<PyUnderwritingBasis> {
+        self.ldf_basis
+            .underwriting
+            .clone()
+            .map(|inner| PyUnderwritingBasis { inner })
     }
 
     /// The weight on the selected factors: a number, a dict by age, or
@@ -5119,16 +5468,17 @@ impl PyCapeCod {
     }
 
     fn __repr__(&self) -> String {
-        with_ldf_origin(self.base_repr(), self.ldf_origin)
+        with_ldf_basis(self.base_repr(), &self.ldf_basis)
     }
 }
 
 impl PyCapeCod {
-    /// The method with its pattern averaged as ``ldf_origin`` says, for
+    /// The method with its pattern converted as ``ldf_origin`` and
+    /// ``ldf_underwriting`` say, for
     /// origins of `origin`.
     fn resolved(&self, origin: Grain) -> PyResult<CapeCod> {
         let mut m = self.inner.clone();
-        m.chain_ladder = chain_ladder_on(&m.chain_ladder, self.ldf_origin, origin)?;
+        m.chain_ladder = chain_ladder_on(&m.chain_ladder, &self.ldf_basis, origin)?;
         Ok(m)
     }
 
@@ -5270,8 +5620,9 @@ impl PyExpectedLossFit {
     }
 
     /// One row per segment and origin: the key columns, ``origin``,
-    /// ``latest``, ``ultimate``, ``reserve``, ``exposure`` and ``apriori``.
-    /// Needs pandas.
+    /// ``latest``, ``ultimate``, ``reserve``, ``exposure``, ``apriori`` and
+    /// ``ulr``, the ultimate over the exposure (a loss ratio only when the
+    /// exposure is premium). Needs pandas.
     ///
     /// Returns
     /// -------
@@ -5281,7 +5632,8 @@ impl PyExpectedLossFit {
     }
 
     /// One row per segment: the key columns and the segment's total
-    /// ``latest``, ``ultimate``, ``reserve`` and ``exposure``. Needs pandas.
+    /// ``latest``, ``ultimate``, ``reserve``, ``exposure`` and ``ulr``, the
+    /// total ultimate over the total exposure. Needs pandas.
     ///
     /// Returns
     /// -------
@@ -5463,8 +5815,9 @@ impl PyCapeCodFit {
     }
 
     /// One row per segment and origin: the key columns, ``origin``,
-    /// ``latest``, ``ultimate``, ``reserve``, ``exposure``, ``apriori`` and
-    /// ``trended_apriori``. Needs pandas.
+    /// ``latest``, ``ultimate``, ``reserve``, ``exposure``, ``apriori``,
+    /// ``trended_apriori`` and ``ulr``, the ultimate over the exposure (a
+    /// loss ratio only when the exposure is premium). Needs pandas.
     ///
     /// Returns
     /// -------
@@ -5474,7 +5827,8 @@ impl PyCapeCodFit {
     }
 
     /// One row per segment: the key columns and the segment's total
-    /// ``latest``, ``ultimate``, ``reserve`` and ``exposure``. Needs pandas.
+    /// ``latest``, ``ultimate``, ``reserve``, ``exposure`` and ``ulr``, the
+    /// total ultimate over the total exposure. Needs pandas.
     ///
     /// Returns
     /// -------
@@ -6327,8 +6681,10 @@ impl PyClarkFit {
 
     /// One row per segment and origin: the key columns, ``origin``,
     /// ``latest``, ``ultimate``, ``reserve``, (Cape Cod) ``exposure``,
-    /// ``expected_ultimate``, ``process_risk``, ``parameter_risk`` and
-    /// ``standard_error``. Needs pandas.
+    /// ``expected_ultimate``, ``process_risk``, ``parameter_risk``,
+    /// ``standard_error`` and (Cape Cod) ``ulr``, the ultimate over the
+    /// exposure (a loss ratio only when the exposure is premium; the
+    /// fitted ``elr`` is a total). Needs pandas.
     ///
     /// Returns
     /// -------
@@ -6340,8 +6696,8 @@ impl PyClarkFit {
     /// One row per segment: the key columns, the segment's total
     /// ``latest``, ``ultimate`` and ``reserve``, the ``process_risk``,
     /// ``parameter_risk`` and ``standard_error`` of its total reserve, and
-    /// its ``omega``, ``theta``, ``scale`` and (Cape Cod) ``elr``. Needs
-    /// pandas.
+    /// its ``omega``, ``theta``, ``scale`` and (Cape Cod) ``elr`` and
+    /// ``ulr``, the total ultimate over the total exposure. Needs pandas.
     ///
     /// Returns
     /// -------
@@ -6443,7 +6799,7 @@ impl PyClarkFit {
 ///     order, symmetric with a unit diagonal. It is converted to the normal
 ///     scores' correlation ``2 sin(pi rho / 6)``, which must be positive
 ///     definite.
-/// ldf, ldf_kind, ldf_weight, ldf_origin : optional
+/// ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting : optional
 ///     A selected development pattern, as in ``ChainLadder``. The residuals
 ///     and the scale come from the triangle's own volume-weighted factors;
 ///     each simulation then uses ``w * selected + (1 - w) * pseudo`` at
@@ -6508,7 +6864,7 @@ impl PyClarkFit {
 #[pyclass(name = "OdpBootstrap", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyOdpBootstrap {
     inner: OdpBootstrap,
-    ldf_origin: Option<Grain>,
+    ldf_basis: LdfBasis,
 }
 
 #[pymethods]
@@ -6529,6 +6885,7 @@ impl PyOdpBootstrap {
         drop_high = 0,
         drop_low = 0,
         ldf_origin = None,
+        ldf_underwriting = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -6546,13 +6903,14 @@ impl PyOdpBootstrap {
         drop_high: usize,
         drop_low: usize,
         ldf_origin: Option<&str>,
+        ldf_underwriting: Option<PyRef<'_, PyUnderwritingBasis>>,
     ) -> PyResult<Self> {
-        let ldf_origin = ldf_origin_arg(ldf_origin, ldf)?;
+        let ldf_basis = ldf_basis_arg(ldf_origin, ldf_underwriting.as_deref(), ldf)?;
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
         }
         Ok(Self {
-            ldf_origin,
+            ldf_basis,
             inner: OdpBootstrap {
                 n_sims,
                 seed,
@@ -6618,7 +6976,17 @@ impl PyOdpBootstrap {
     /// origins' periods at fit time; ``None`` reads it at the origin's age.
     #[getter]
     fn ldf_origin(&self) -> Option<&'static str> {
-        self.ldf_origin.map(grain_name)
+        self.ldf_basis.origin.map(grain_name)
+    }
+
+    /// The underwriting basis ``ldf`` is converted to at fit time
+    /// (``UnderwritingBasis``), or ``None``.
+    #[getter]
+    fn ldf_underwriting(&self) -> Option<PyUnderwritingBasis> {
+        self.ldf_basis
+            .underwriting
+            .clone()
+            .map(|inner| PyUnderwritingBasis { inner })
     }
 
     /// The weight on the selected factors: a number, a dict by age, or
@@ -6820,16 +7188,17 @@ impl PyOdpBootstrap {
     }
 
     fn __repr__(&self) -> String {
-        with_ldf_origin(self.base_repr(), self.ldf_origin)
+        with_ldf_basis(self.base_repr(), &self.ldf_basis)
     }
 }
 
 impl PyOdpBootstrap {
-    /// The method with its pattern averaged as ``ldf_origin`` says, for
+    /// The method with its pattern converted as ``ldf_origin`` and
+    /// ``ldf_underwriting`` say, for
     /// origins of `origin`.
     fn resolved(&self, origin: Grain) -> PyResult<OdpBootstrap> {
         let mut m = self.inner.clone();
-        m.pattern = averaged(&m.pattern, self.ldf_origin, origin)?;
+        m.pattern = averaged(&m.pattern, &self.ldf_basis, origin)?;
         Ok(m)
     }
 
@@ -7177,7 +7546,7 @@ fn one_year_method(
 ///     order, symmetric with a unit diagonal. It is converted to the normal
 ///     scores' correlation ``2 sin(pi rho / 6)``, which must be positive
 ///     definite.
-/// ldf, ldf_kind, ldf_weight, ldf_origin : optional
+/// ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting : optional
 ///     A selected development pattern, as in ``ChainLadder``. Mack's sigmas
 ///     and residuals come from the triangle's own estimate; each simulation
 ///     then uses ``w * selected + (1 - w) * pseudo`` at the selected ages,
@@ -7221,7 +7590,7 @@ fn one_year_method(
 #[pyclass(name = "MackBootstrap", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyMackBootstrap {
     inner: MackBootstrap,
-    ldf_origin: Option<Grain>,
+    ldf_basis: LdfBasis,
 }
 
 fn mack_process(name: &str) -> PyResult<MackProcess> {
@@ -7270,6 +7639,7 @@ impl PyMackBootstrap {
         drop_high = 0,
         drop_low = 0,
         ldf_origin = None,
+        ldf_underwriting = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -7291,13 +7661,14 @@ impl PyMackBootstrap {
         drop_high: usize,
         drop_low: usize,
         ldf_origin: Option<&str>,
+        ldf_underwriting: Option<PyRef<'_, PyUnderwritingBasis>>,
     ) -> PyResult<Self> {
-        let ldf_origin = ldf_origin_arg(ldf_origin, ldf)?;
+        let ldf_basis = ldf_basis_arg(ldf_origin, ldf_underwriting.as_deref(), ldf)?;
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
         }
         Ok(Self {
-            ldf_origin,
+            ldf_basis,
             inner: MackBootstrap {
                 n_sims,
                 seed,
@@ -7412,7 +7783,17 @@ impl PyMackBootstrap {
     /// origins' periods at fit time; ``None`` reads it at the origin's age.
     #[getter]
     fn ldf_origin(&self) -> Option<&'static str> {
-        self.ldf_origin.map(grain_name)
+        self.ldf_basis.origin.map(grain_name)
+    }
+
+    /// The underwriting basis ``ldf`` is converted to at fit time
+    /// (``UnderwritingBasis``), or ``None``.
+    #[getter]
+    fn ldf_underwriting(&self) -> Option<PyUnderwritingBasis> {
+        self.ldf_basis
+            .underwriting
+            .clone()
+            .map(|inner| PyUnderwritingBasis { inner })
     }
 
     /// The weight on the selected factors: a number, a dict by age, or
@@ -7567,16 +7948,17 @@ impl PyMackBootstrap {
     }
 
     fn __repr__(&self) -> String {
-        with_ldf_origin(self.base_repr(), self.ldf_origin)
+        with_ldf_basis(self.base_repr(), &self.ldf_basis)
     }
 }
 
 impl PyMackBootstrap {
-    /// The method with its pattern averaged as ``ldf_origin`` says, for
+    /// The method with its pattern converted as ``ldf_origin`` and
+    /// ``ldf_underwriting`` say, for
     /// origins of `origin`.
     fn resolved(&self, origin: Grain) -> PyResult<MackBootstrap> {
         let mut m = self.inner.clone();
-        m.development.pattern = averaged(&m.development.pattern, self.ldf_origin, origin)?;
+        m.development.pattern = averaged(&m.development.pattern, &self.ldf_basis, origin)?;
         Ok(m)
     }
 
@@ -9390,7 +9772,8 @@ impl PyBayesOneYearFit {
 
     /// One row per origin: ``origin``, ``latest``, ``opening_ultimate``,
     /// ``opening_reserve``, the model's own columns (``BayesBf``'s
-    /// ``exposure`` and ``prior_ultimate``), and the ``cdr_mean`` and
+    /// ``exposure`` and ``prior_ultimate`` and its ``opening_ulr``, the
+    /// opening ultimate over the exposure), and the ``cdr_mean`` and
     /// ``cdr_std_dev`` of the claims development result. Needs pandas.
     ///
     /// Returns
@@ -9705,7 +10088,8 @@ impl PyBayesOneYearFits {
 
     /// One row per segment and origin: the key columns, ``origin``,
     /// ``latest``, ``opening_ultimate``, ``opening_reserve``, the model's
-    /// own columns (Meyers' ``premium``), and the ``cdr_mean`` and
+    /// own columns (Meyers' ``premium`` and ``opening_ulr``, the opening
+    /// ultimate over the premium), and the ``cdr_mean`` and
     /// ``cdr_std_dev`` of the claims development result. Needs pandas.
     ///
     /// Returns
@@ -10340,9 +10724,10 @@ impl PyBayesBfFit {
     }
 
     /// One row per origin: ``origin``, the chain ladder's ``latest``,
-    /// ``ultimate`` and ``reserve``, the ``exposure`` and
-    /// ``prior_ultimate``, and the ``mean`` and ``std_dev`` of the
-    /// posterior predictive reserve. Needs pandas.
+    /// ``ultimate`` and ``reserve``, the ``exposure``, ``prior_ultimate``
+    /// and ``ulr`` (the chain ladder's ultimate over the exposure, a loss
+    /// ratio only when the exposure is premium), and the ``mean`` and
+    /// ``std_dev`` of the posterior predictive reserve. Needs pandas.
     ///
     /// Returns
     /// -------
@@ -10352,8 +10737,9 @@ impl PyBayesBfFit {
     }
 
     /// One row: the chain ladder's totals, the total ``exposure`` and
-    /// ``prior_ultimate``, the ``scale``, and the ``mean`` and ``std_dev``
-    /// of the posterior predictive total reserve. Needs pandas.
+    /// ``prior_ultimate``, the ``scale``, the total ``ulr``, and the
+    /// ``mean`` and ``std_dev`` of the posterior predictive total reserve.
+    /// Needs pandas.
     ///
     /// Returns
     /// -------
@@ -10969,9 +11355,10 @@ impl PyBayesBfNormalisedFit {
     }
 
     /// One row per origin: ``origin``, the chain ladder's ``latest``,
-    /// ``ultimate`` and ``reserve``, the ``exposure`` and
-    /// ``prior_ultimate``, and the ``mean`` and ``std_dev`` of the
-    /// posterior predictive reserve. Needs pandas.
+    /// ``ultimate`` and ``reserve``, the ``exposure``, ``prior_ultimate``
+    /// and ``ulr`` (the chain ladder's ultimate over the exposure, a loss
+    /// ratio only when the exposure is premium), and the ``mean`` and
+    /// ``std_dev`` of the posterior predictive reserve. Needs pandas.
     ///
     /// Returns
     /// -------
@@ -10981,8 +11368,9 @@ impl PyBayesBfNormalisedFit {
     }
 
     /// One row: the chain ladder's totals, the total ``exposure`` and
-    /// ``prior_ultimate``, the ``scale``, and the ``mean`` and ``std_dev``
-    /// of the posterior predictive total reserve. Needs pandas.
+    /// ``prior_ultimate``, the ``scale``, the total ``ulr``, and the
+    /// ``mean`` and ``std_dev`` of the posterior predictive total reserve.
+    /// Needs pandas.
     ///
     /// Returns
     /// -------
@@ -12220,7 +12608,8 @@ impl PyMeyersFit {
     }
 
     /// One row per origin: ``origin``, the chain ladder's ``latest``,
-    /// ``ultimate`` and ``reserve``, the ``premium``, the ``mean`` and
+    /// ``ultimate`` and ``reserve``, the ``premium``, ``ulr`` (the chain
+    /// ladder's ultimate over the premium), the ``mean`` and
     /// ``std_dev`` of the posterior predictive reserve, and the
     /// ``ultimate_mean`` and ``ultimate_std_dev`` of the posterior
     /// predictive ultimate. Needs pandas.
@@ -12232,10 +12621,10 @@ impl PyMeyersFit {
         table_frame(py, self.inner.to_long())
     }
 
-    /// One row: the chain ladder's totals, the total ``premium``, the
-    /// ``mean`` and ``std_dev`` of the posterior predictive total reserve,
-    /// and the ``ultimate_mean`` and ``ultimate_std_dev`` of the total
-    /// ultimate. Needs pandas.
+    /// One row: the chain ladder's totals, the total ``premium`` and
+    /// ``ulr``, the ``mean`` and ``std_dev`` of the posterior predictive
+    /// total reserve, and the ``ultimate_mean`` and ``ultimate_std_dev``
+    /// of the total ultimate. Needs pandas.
     ///
     /// Returns
     /// -------
@@ -12439,8 +12828,9 @@ impl PyMeyersFits {
 
     /// One row per segment and origin: the key columns, ``origin``, the
     /// chain ladder's ``latest``, ``ultimate`` and ``reserve``, the
-    /// ``premium``, the ``mean`` and ``std_dev`` of the posterior
-    /// predictive reserve, and the ``ultimate_mean`` and
+    /// ``premium``, ``ulr`` (the chain ladder's ultimate over the premium),
+    /// the ``mean`` and ``std_dev`` of the posterior predictive reserve,
+    /// and the ``ultimate_mean`` and
     /// ``ultimate_std_dev`` of the posterior predictive ultimate. Needs
     /// pandas.
     ///
@@ -12452,9 +12842,10 @@ impl PyMeyersFits {
     }
 
     /// One row per segment: the key columns, the chain ladder's totals,
-    /// the total ``premium``, the ``mean`` and ``std_dev`` of the segment's
-    /// posterior predictive total reserve, and the ``ultimate_mean`` and
-    /// ``ultimate_std_dev`` of its total ultimate. Needs pandas.
+    /// the total ``premium`` and ``ulr``, the ``mean`` and ``std_dev`` of
+    /// the segment's posterior predictive total reserve, and the
+    /// ``ultimate_mean`` and ``ultimate_std_dev`` of its total ultimate.
+    /// Needs pandas.
     ///
     /// Returns
     /// -------
@@ -13162,8 +13553,14 @@ const STARTS: [(&str, CompartmentalStart); 2] = [
 /// triangle has one) draws its effects from the population in each
 /// simulation, and so does a development age with no observed cell. The
 /// reserve is the paid at the square's last age less the latest paid; the
-/// square has as many ages as the premium column has origins, and the
-/// origin and development grains must be equal. One ``seed`` replays a fit
+/// square runs for as many origin periods as the premium column has
+/// origins, in development periods (40 quarterly ages for ten annual
+/// origins). The development grain may be finer than the origin grain
+/// (the triangle's own grains), and each cell's development time is its
+/// age in years on every grain, so the rates are per year and an
+/// incremental paid cell is the increment over one development period.
+/// The coming year of ``one_year`` is the next twelve months of calendar
+/// time, up to four quarterly cells per origin. One ``seed`` replays a fit
 /// exactly: the chains and the simulations each take a seed derived from
 /// it.
 ///
@@ -13524,10 +13921,9 @@ impl PyCompartmental {
     ///     ``rate_order`` is not ``"ordered"``; if not exactly one of
     ///     ``outstanding`` and ``incurred`` is given (at most one under
     ///     ``"paid_only"``); if a column is
-    ///     missing, the triangle has several segments, a premium is missing
-    ///     or not positive, or the origin and development grains differ; if
-    ///     a prior or sampler setting is invalid; or if there are no more
-    ///     observed cells than parameters.
+    ///     missing, the triangle has several segments, or a premium is
+    ///     missing or not positive; if a prior or sampler setting is
+    ///     invalid; or if there are no more observed cells than parameters.
     #[pyo3(signature = (triangle, paid, premium, *, outstanding = None, incurred = None))]
     fn fit(
         &self,
@@ -13943,8 +14339,8 @@ impl PyCompartmental {
     /// Raises
     /// ------
     /// ValueError
-    ///     If a prior setting is invalid, ``n_sims`` is 0, the premium
-    ///     column is missing or not positive, or the grains differ.
+    ///     If a prior setting is invalid, ``n_sims`` is 0, or the premium
+    ///     column is missing or not positive.
     #[pyo3(signature = (triangle, premium, n_sims = 1000))]
     fn prior_predictive<'py>(
         &self,

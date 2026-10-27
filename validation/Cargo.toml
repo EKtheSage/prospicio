@@ -88,6 +88,10 @@ name = "reserving_compartmental_one_response"
 required-features = ["slow-bayes"]
 
 [[test]]
+name = "reserving_compartmental_grain"
+required-features = ["slow-bayes"]
+
+[[test]]
 name = "reserving_compartmental_gm2"
 required-features = ["slow-bayes"]
 

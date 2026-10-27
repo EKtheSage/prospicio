@@ -646,8 +646,9 @@ impl BayesBfNormalisedFit {
     }
 
     /// One row per origin: the chain ladder's `latest`, `ultimate` and
-    /// `reserve`, the `exposure` and `prior_ultimate`, and the `mean` and
-    /// `std_dev` of the posterior predictive reserve.
+    /// `reserve`, the `exposure`, `prior_ultimate` and `ulr` (the chain
+    /// ladder's ultimate over the exposure), and the `mean` and `std_dev`
+    /// of the posterior predictive reserve.
     pub fn to_long(&self) -> FitTable {
         let mut table = self.plug_in().to_long();
         push_moments(&mut table, "", &component_sums(&self.reserves));
@@ -655,8 +656,8 @@ impl BayesBfNormalisedFit {
     }
 
     /// One row: the chain ladder's totals, the total `exposure` and
-    /// `prior_ultimate`, the `scale`, and the `mean` and `std_dev` of the
-    /// posterior predictive total reserve.
+    /// `prior_ultimate`, the `scale`, the total `ulr`, and the `mean` and
+    /// `std_dev` of the posterior predictive total reserve.
     pub fn totals(&self) -> FitTable {
         let fits = self.plug_in();
         let mut table = fits.totals();
@@ -687,6 +688,10 @@ impl BayesBfNormalisedFit {
 impl ReserveFit for BayesBfNormalisedFit {
     fn chain_ladder(&self) -> &ChainLadderFit {
         &self.chain_ladder
+    }
+
+    fn exposure(&self) -> Option<&[f64]> {
+        Some(&self.exposure)
     }
 
     fn origin_columns(&self) -> Vec<(&'static str, Vec<f64>)> {
@@ -1377,7 +1382,7 @@ mod tests {
         let rows: Vec<&[f64]> = GENINS.to_vec();
         let at_cl = with_premium(2001, &rows, &cl.ultimate);
         let classical = BornhuetterFerguson {
-            apriori: 1.0,
+            apriori: 1.0.into(),
             ..Default::default()
         }
         .fit(&at_cl, "values", "premium")
@@ -1510,7 +1515,7 @@ mod tests {
         let rows: Vec<&[f64]> = GENINS.to_vec();
         let at_cl = with_premium(2001, &rows, &cl.ultimate);
         let classical = BornhuetterFerguson {
-            apriori: 1.0,
+            apriori: 1.0.into(),
             ..Default::default()
         }
         .fit(&at_cl, "values", "premium")

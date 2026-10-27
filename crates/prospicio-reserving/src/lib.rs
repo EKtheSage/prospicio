@@ -89,7 +89,7 @@ pub use diagnostics::Diagnostics;
 pub use error::{Error, Result};
 pub use excess::{Basis, ExcessPattern, Layer, SeverityByMaturity, layer_exposure, layer_share};
 pub use expected_loss::{
-    Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ExpectedLoss, ExpectedLossFit,
+    Apriori, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ExpectedLoss, ExpectedLossFit,
 };
 pub use frame::TriangleFrame;
 pub use latest_diagonal::{
@@ -105,7 +105,7 @@ pub use odp_glm::{
 };
 pub use one_year::ClaimsDevelopmentResult;
 pub use one_year_bootstrap::{OneYearFit, OneYearFits, OneYearMethod, OneYearSegment};
-pub use pattern::{OneYearPattern, PatternKind, PatternWeight, SelectedPattern};
+pub use pattern::{OneYearPattern, PatternKind, PatternWeight, SelectedPattern, UnderwritingBasis};
 pub use prospicio_core::{Grain, Lag, Month, Period};
 pub use segments::{FitTable, ReserveFit, SegmentFits};
 pub use tail::{CurveShape, Tail, TailBondy, TailConstant, TailCurve, TailFit};

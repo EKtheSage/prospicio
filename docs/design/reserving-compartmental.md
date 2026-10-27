@@ -11,7 +11,8 @@ one-year view, decision 11) built, with the defaults the user decided on
 user's decisions of 2026-10-19, and its one-year view over segments
 (`Compartmental::one_year_segments`, decision 8) built after it; PRs G
 and H (paid and incurred, and one response alone, decision 12) built;
-PR D not yet · Lane:
+PR I (unequal origin and development grain, decision 13) built; PR D not
+yet · Lane:
 Reserving, with the Models lane for `prospicio-bayes` · Depends on:
 `reserving-bayes.md` (decisions 2, 5, 10, 11, 13 and 15, and open decision
 9, which asked for this note), `models.md` (`prospicio-bayes`, NUTS,
@@ -69,7 +70,7 @@ in `reserving-v02.md` decision 7 and `reserving-bayes.md` open decision 10.
 | F | `claude/bayes-one-year-compartmental` | the one-year view of models 1 and 2 through `YearModel` (decision 11; `reserving-bayes.md` decision 20), a refit budget for every model's view; Python and R bindings | the Meyers one-year PR (#280) |
 | G | `claude/compartmental-paid-incurred` | `Fitted::PaidAndIncurred`: incurred replaces outstanding as the second response (decision 12); its own Stan reference; Rust, Python and R. **Built** | `main` |
 | H | `claude/compartmental-one-response` | `Fitted::PaidOnly` and `Fitted::IncurredOnly`, which require `RateOrder::Ordered` (decision 12); their own Stan references; Rust, Python and R. **Built** | PR G |
-| I | planned | unequal origin and development grain (decision 12) | PR G |
+| I | `claude/compartmental-grain` | unequal origin and development grain: the development grain finer than the origin grain, time in years, the square in development periods (decision 13); its own Stan reference on a simulated triangle; Rust, Python and R. **Built** | PR H |
 | later | | multistage exposure on the RK4 solver; market cycles; AR(1) residuals (open decision 8) | PR D |
 
 PRs B to E touch the same binding files as the other Bayesian models
@@ -708,8 +709,9 @@ divergence, every R-hat below 1.01), and a second test does the same from
   outstanding, normal about its mean with its type's σ and independent
   given the draw; the reserve is each origin's paid at the last age less
   its latest paid, 0 for an origin observed there. The square has
-  `max(number of origins, observed ages)` ages; the origin and development
-  grains must be equal (otherwise `Error::Bayes`, not yet built).
+  `max(number of origins, observed ages)` ages on equal grains, and as
+  many origin periods as there are origins, in development periods, when
+  the development grain is finer (decision 13).
 * **Runtime** on company 337 (rustc 1.98.1, Windows, Intel Core Ultra 9
   285H, 4 chains in parallel): about 5.5 s a default fit in release
   (median over the 200 seeds), including the pilot run and 10,000
@@ -1775,8 +1777,105 @@ on `claude/compartmental-paid-incurred`.
     the documented starting point for `Fitted::PaidOnly`, and the docs of
     `Fitted::IncurredOnly`, `Fitted::PaidOnly`, `diffuse()`, the priors'
     struct, and the Python and R help say so.
-* **Unequal grain (PR I).** Unequal origin and development grain is in
-  scope and comes in a later PR; until then it returns an error.
+* **Unequal grain (PR I).** Built as decision 13.
+
+A check of what the priors imply for the reserve, in particular the incurred-only `k_p` prior, is noted but not planned in `reserving-bayes.md`, "Prior predictive checks (a note, not planned)".
+
+### 13. Unequal origin and development grain (PR I)
+
+Decided by the user on 2026-10-22: unequal grain is in scope. The
+user confirmed time in years the same day, "for now": how to fit
+quarterly or monthly data well (rate priors that suit sub-annual
+development, grouping development effects by year, seasonality, and
+a calibration check on sub-annual books) is open, the lane's Next
+item `[compartmental-subannual]`. Built in
+Rust, Python and R on `claude/compartmental-grain`, stacked on PR H. The
+choices:
+
+* **Which grains.** The origin grain must be a whole multiple of the
+  development grain: annual origins with semiannual, quarterly or monthly
+  development, semiannual origins with quarterly development, quarterly
+  origins with monthly development, or equal grains. Otherwise the fit
+  returns an `Error::Bayes` that names both grains. A `Triangle` already
+  requires that its development grain divide its origin grain, so the
+  check guards the model's own invariant and no triangle a user can build
+  reaches it.
+* **Time is in years on every grain.** Each cell's development time `t`
+  in the closed form is its age in months over 12, as it was before this
+  PR on every grain, equal or not. On annual origins this is the age in
+  origin periods. The user's brief asked for origin periods, "so
+  equal-grain fits stay bit for bit unchanged"; the two differ only for
+  sub-annual origins, where origin periods would change every fit on an
+  equal quarterly or monthly triangle (`t` of 1, 2, ... quarters where it
+  is 0.25, 0.5, ... years today) and would make the rates per quarter, so
+  that the paper's preset (rates per year, fitted to annual data) no
+  longer means what it says. Years keep both: every existing fit is bit
+  for bit unchanged (checked on company 337 annually and relabelled as
+  quarterly origins and development, models 1 and 2), the rates are per
+  year whatever the grains, and the same book fitted on annual or on
+  quarterly development has comparable rates. The Stan programs already
+  take `t` per cell as data, so the reference needs no new program.
+* **The square.** The square runs for as many origin periods as the
+  premium column has origins, in development periods (decision 5's
+  horizon, "future paid to the last age of the square"): `n_origins x
+  origin months / development months` ages, or the latest observed age if
+  later. Ten annual origins with quarterly development have 40 ages, to
+  120 months, the same horizon as the annual square. Each origin's
+  reserve is its paid at that age less its latest paid.
+* **Incremental paid** is the increment over one development period: a
+  paid cell's increment is measured from the paid of the development
+  period before, with the closed form at both times (`t` and `t` less a
+  quarter on quarterly development).
+* **Model 2's development effects** have one level per development age
+  with an observed cell, as on annual data: 40 levels on a ten-year
+  quarterly square, against 10 on the annual one, each shrunk by the same
+  population sd. A grouping of the ages by development year (four
+  quarterly ages sharing one effect) would keep the level count of the
+  annual model, but it needs a second index per cell and a choice of the
+  grouping, and with one level per age the rule is the same on every
+  grain; it is not built.
+* **The one-year view.** The year is the cells valued in the twelve
+  months of calendar time after the valuation, as the generic engine
+  defines it for every model (`YearCells`, `reserving-bayes.md` decision
+  16: "one per open origin with an annual grain, up to four with a
+  quarterly one"), so with quarterly development it holds up to four paid
+  and four outstanding cells per origin, chained as increments under
+  incremental paid. `CompartmentalYear` already found the year by
+  valuation date, so it needed no change; the conformance suite passes on
+  a quarterly triangle for models 1 and 2
+  (`the_one_year_view_on_unequal_grain_conforms`; the light refit's own
+  score check failed for model 2 on a near-noiseless version of that
+  triangle, with 2% noise, and passes with 8%).
+* **Segments and the backtest** use the same data path, so both work:
+  `fit_segments` fits each segment on its own square, and the diagonal
+  backtest holds out calendar periods at the development grain (a
+  quarter, `TriangleFrame`), each split's training data keeping the
+  square of the whole triangle. A held-out cell at an age no training row
+  has (the oldest origin's latest quarter) is excluded from scoring by
+  the generic backtest's rule, as on annual data.
+* **The prior predictive check** draws the same square (origins by
+  development ages).
+* **Bindings.** Python and R take the grains from the triangle, so no
+  argument changed; the help says what the square and the time are.
+* **Validation.** No public dataset has unequal grain, so
+  `scripts/compartmental_grain_simulate.py` simulates one from model 1
+  with known parameters (accident years 2011 to 2020, quarterly
+  development, 220 outstanding and 220 paid cells,
+  `data/compartmental_sim_quarterly.csv`), and
+  `scripts/reserving_compartmental_grain_stan.py` runs
+  `scripts/stan/compartmental_gm1.stan` unchanged on it into
+  `reference/reserving_compartmental_grain_stan.csv`, read by
+  `validation/tests/reserving_compartmental_grain.rs` at model 1's
+  tolerances (decision 7). All 2,620 reference-row comparisons of a 20-seed sweep pass, the largest at 0.51 of its tolerance (a parameter mean), and the total reserve is 74,834 (sd 1,900) at seed 0 against Stan's 74,873 (1,895); every seed passed every diagnostic threshold (max R-hat at most 1.0064, no divergent transition). The Stan program draws a reserve for 2011, observed at the square's last age, where decision 5 gives it 0, so the generator sets Stan's to 0 too. The default fit recovers the truth:
+  each of the 31 true parameters (the population's, the sigmas, and each
+  origin's `RLR` and `RRF`) lies within the central 95% of its posterior,
+  and the total reserve's 74,834 is 0.23 sd above the truth's expected
+  74,389. A default fit takes about 32 s in release (440 cells, against
+  5.5 s on company 337's 90). Unit tests check the ages and times, the
+  square, the refused grains, incremental paid, the gradient against
+  central differences, the prior check, a fit, segments, the backtest and
+  the one-year conformance on a quarterly triangle. The results are in
+  `knowledge/findings/compartmental-grain.md`.
 
 ## Risks
 

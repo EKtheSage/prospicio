@@ -17,6 +17,7 @@ chain_ladder(
   ldf_kind = NULL,
   ldf_weight = 1,
   ldf_origin = NULL,
+  ldf_underwriting = NULL,
   n_periods = NULL,
   drop_high = 0,
   drop_low = 0,
@@ -81,7 +82,32 @@ end, with development deferred past it; a constant tail from the
 monthly pattern is the safer choice there. Equal to the target's
 grain, it changes nothing. It needs one \code{ldf_weight} for every
 factor, not one by age, and the averaged pattern cannot be weighted by
-age from R.}
+age from R. With \code{ldf_underwriting} it is the grain of the accident
+periods \code{ldf} is converted from instead.}
+
+\item{ldf_underwriting}{\code{NULL} (the default), or an \code{\link[=underwriting_basis]{underwriting_basis()}}
+to which \code{ldf}, an accident-period pattern, is converted for the
+target's underwriting periods: an underwriting year's share developed
+at age \code{a} from its start is \verb{sum_t e(t) p(a - t)}, with \code{e} its
+exposure by accident month and \code{p} an accident month's
+(\code{SelectedPattern::to_underwriting_basis}). \code{ldf} is on accident
+periods of \code{ldf_origin}, or of the target's origin grain without it:
+an accident-year pattern on underwriting-year origins needs no
+\code{ldf_origin}. An accident-month pattern (\code{ldf_origin = "M"}) converts
+under any writing and term; a pattern of longer accident periods needs
+a policy term that is a whole multiple of them or writing even within
+each of them, and is read between its ages by the rule above, so an
+annual accident-year pattern is approximate in the first two years
+(31\% too much developed at 12 months on a simulated parallelogram);
+give it at every month, or an accident-month pattern, where it
+matters. The result runs past \code{ldf}'s end by the writing months plus
+the policy term less the accident period (12 months for an
+accident-year pattern under the default, 23 for an accident-month
+one), and a constant tail from \code{ldf}'s own tail is the safer choice
+there. The writing must be no longer than the target's origin period
+(the default's 12 months suit underwriting years only; on underwriting
+quarters give \code{underwriting_basis(c(1, 1, 1))}), or the fit is an
+error.}
 
 \item{n_periods, drop_high, drop_low}{Which link ratios the factor at each
 age averages. \code{n_periods} keeps the latest \code{n_periods} calendar
@@ -141,8 +167,11 @@ A selected development pattern (\code{ldf}, with \code{ldf_kind} and
 triangle at the ages it gives; the other ages stay estimated, so a
 benchmark for the immature ages only is a partial pattern. Its values
 are age-to-age factors (any ages but the oldest: development past it is
-the tail's), or factors to ultimate or percents developed at two or more
-ages, which select the factors between the first and the last (\verb{cdf[a] / cdf[next age]}). A development age they skip is interpolated: between
+the tail's), or factors to ultimate or percents developed, which select
+the factors between the first age and the last (\verb{cdf[a] / cdf[next age]}); one factor to ultimate (or percent developed) is the tail from
+its age, so it is given at the oldest age, with no \code{tail} and
+\code{ldf_weight} 1, and on a triangle observed at one age it is the whole
+projection. A development age they skip is interpolated: between
 two given ages \code{b < c}, \code{log(cdf)} is linear in the age, so the factor
 from \code{a} to the next age \verb{a'} is \verb{(cdf[b] / cdf[c])^((a' - a) / (c - b))}
 (percents developed are converted to factors to ultimate first).

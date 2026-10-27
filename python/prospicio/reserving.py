@@ -69,6 +69,7 @@ from .prospicio_native import (
     TailCurve,
     TailLogLinear,
     Triangle,
+    UnderwritingBasis,
     diagonal_backtest,
     layer_at_shift,
     layer_exposure,
@@ -77,6 +78,7 @@ from .prospicio_native import (
 
 __all__ = [
     "Triangle",
+    "UnderwritingBasis",
     "ChainLadder",
     "ChainLadderFit",
     "Mack",

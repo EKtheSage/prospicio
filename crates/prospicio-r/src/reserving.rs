@@ -11,7 +11,7 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_reserving::{
-    Average, BenchmarkCurve, BenchmarkCurveFit as BenchmarkCurveInner, Benktander,
+    Apriori, Average, BenchmarkCurve, BenchmarkCurveFit as BenchmarkCurveInner, Benktander,
     BornhuetterFerguson, CapeCod, CapeCodFit as CapeCodInner, ChainLadder,
     ChainLadderFit as ChainLadderInner, ClaimsDevelopmentResult as ClaimsDevelopmentInner,
     ClarkCapeCod, ClarkFit as ClarkInner, ClarkLdf, CurveShape, Development, DevelopmentColumn,
@@ -21,7 +21,7 @@ use prospicio_reserving::{
     OdpBootstrap, OdpBootstrapFits, OneYearFits, OneYearMethod, OneYearPattern, PastPatternEnd,
     PatternKind, PatternWeight, Period, ProcessDistribution, ReserveFit, SegmentDependence,
     SegmentFits, SegmentMap, SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailConstant,
-    TailCurve, Triangle as TriangleInner,
+    TailCurve, Triangle as TriangleInner, UnderwritingBasis,
 };
 
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
@@ -133,9 +133,14 @@ fn exclusions(excl: &Robj) -> Result<(Option<usize>, usize, usize)> {
 /// A selected pattern as `ldf_pattern()` in R encodes it: `NULL`, or a
 /// list of `kind` ("ldf", "cdf" or "percent_developed"), `ages` and
 /// `values`, and `weights` with `weight_ages` (`NULL` for one weight on
-/// every selected factor), and `origin` (`NULL`, or the grain of the
-/// origin periods the pattern was measured on, averaged over the periods
-/// of `target` by `SelectedPattern::averaged_over_origins`).
+/// every selected factor), `origin` (`NULL`, or the grain of the origin
+/// periods the pattern was measured on, averaged over the periods of
+/// `target` by `SelectedPattern::averaged_over_origins`), and
+/// `underwriting` (`NULL`, or a list of `writing` and `policy_months`: the
+/// underwriting basis the pattern is converted to from accident periods of
+/// `origin`, or of `target` without it, by
+/// `SelectedPattern::to_underwriting_basis`, its writing no longer than a
+/// period of `target`, `UnderwritingBasis::check_within`).
 fn selected_pattern(pattern: &Robj, target: Grain) -> Result<Option<SelectedPattern>> {
     if pattern.is_null() {
         return Ok(None);
@@ -146,6 +151,7 @@ fn selected_pattern(pattern: &Robj, target: Grain) -> Result<Option<SelectedPatt
     let (mut ages, mut values) = (Vec::new(), Vec::new());
     let (mut weight_ages, mut weights) = (None, vec![1.0]);
     let mut origin = None;
+    let mut underwriting = None;
     for (name, value) in list.iter() {
         match name {
             "kind" => kind = value.as_str().map(str::to_owned),
@@ -157,6 +163,7 @@ fn selected_pattern(pattern: &Robj, target: Grain) -> Result<Option<SelectedPatt
                         .to_owned(),
                 )
             }
+            "underwriting" if !value.is_null() => underwriting = Some(underwriting_basis(&value)?),
             "ages" => ages = value.as_real_vector().unwrap_or_default(),
             "values" => values = value.as_real_vector().unwrap_or_default(),
             "weight_ages" => weight_ages = value.as_real_vector(),
@@ -195,12 +202,56 @@ fn selected_pattern(pattern: &Robj, target: Grain) -> Result<Option<SelectedPatt
         Some(weight_ages) => PatternWeight::ByAge(pairs(&weight_ages, &weights, "ldf_weight")?),
     };
     let selected = SelectedPattern::new(kind, pairs(&ages, &values, "ldf")?).with_weight(weight);
-    Ok(Some(match origin {
-        None => selected,
-        Some(g) => selected
-            .averaged_over_origins(grain(&g, "ldf_origin")?, target)
-            .map_err(to_r)?,
+    let origin = origin.map(|g| grain(&g, "ldf_origin")).transpose()?;
+    Ok(Some(match (underwriting, origin) {
+        (Some(basis), from) => {
+            basis.check_within(target).map_err(to_r)?;
+            selected
+                .to_underwriting_basis(from.unwrap_or(target), &basis)
+                .map_err(to_r)?
+        }
+        (None, Some(g)) => selected.averaged_over_origins(g, target).map_err(to_r)?,
+        (None, None) => selected,
     }))
+}
+
+/// An underwriting basis as `underwriting_basis()` in R encodes it: a list
+/// of `writing` (monthly shares) and `policy_months`.
+fn underwriting_basis(value: &Robj) -> Result<UnderwritingBasis> {
+    let bad = || Error::Other("ldf_underwriting must be an underwriting_basis()".into());
+    let list = List::try_from(value).map_err(|_| bad())?;
+    let (mut writing, mut policy_months) = (None, None);
+    for (name, value) in list.iter() {
+        match name {
+            "writing" => writing = value.as_real_vector(),
+            "policy_months" => policy_months = value.as_real(),
+            _ => {}
+        }
+    }
+    match (writing, policy_months) {
+        (Some(writing), Some(months)) => basis_of(writing, months),
+        _ => Err(bad()),
+    }
+}
+
+/// An underwriting basis of `writing` by month and policies of `months`
+/// months, a whole number.
+fn basis_of(writing: Vec<f64>, months: f64) -> Result<UnderwritingBasis> {
+    if !(months >= 1.0 && months.fract() == 0.0 && months <= f64::from(u32::MAX)) {
+        return Err(Error::Other(
+            "policy_months must be a whole number of months, at least 1".into(),
+        ));
+    }
+    Ok(UnderwritingBasis::new(writing, months as u32))
+}
+
+/// The share of an underwriting period's exposure in each accident month
+/// from its start (`UnderwritingBasis::exposure`), which also checks the
+/// basis.
+/// @noRd
+#[extendr]
+fn underwriting_exposure_rust(writing: Vec<f64>, policy_months: f64) -> Result<Vec<f64>> {
+    basis_of(writing, policy_months)?.exposure().map_err(to_r)
 }
 
 /// The chain ladder that gives a method its development pattern, with the
@@ -225,12 +276,30 @@ fn pattern(
     })
 }
 
+/// An `apriori` argument from R: one number for every origin, an unnamed
+/// vector of one per origin in origin order (oldest first), or a vector
+/// named by origin label (`"2021"`, `"2021Q3"`), as `apriori_arg()` in
+/// `reserving.R` passes it.
+fn apriori_arg(apriori: &Robj) -> Result<Apriori> {
+    let values = apriori
+        .as_real_vector()
+        .ok_or_else(|| Error::Other("apriori must be a number or a numeric vector".into()))?;
+    match apriori.names() {
+        Some(names) => {
+            let names: Vec<String> = names.map(str::to_string).collect();
+            Apriori::from_labels(names.iter().zip(values)).map_err(to_r)
+        }
+        None if values.len() == 1 => Ok(Apriori::All(values[0])),
+        None => Ok(Apriori::InOrder(values)),
+    }
+}
+
 /// The method of `odp_one_year()` and `mack_one_year()`, by name, with
 /// the settings it reads and `chain_ladder` its development pattern.
 fn one_year_method(
     method: &str,
     exposure: Nullable<String>,
-    apriori: f64,
+    apriori: Robj,
     n_iters: f64,
     trend: f64,
     decay: f64,
@@ -258,14 +327,14 @@ fn one_year_method(
         }
         "expected_loss" => OneYearMethod::ExpectedLoss(
             ExpectedLoss {
-                apriori,
+                apriori: apriori_arg(&apriori)?,
                 chain_ladder,
             },
             needs(exposure)?,
         ),
         "bornhuetter_ferguson" => OneYearMethod::BornhuetterFerguson(
             BornhuetterFerguson {
-                apriori,
+                apriori: apriori_arg(&apriori)?,
                 chain_ladder,
             },
             needs(exposure)?,
@@ -275,7 +344,7 @@ fn one_year_method(
                 .map_err(|_| Error::Other(format!("n_iters {n_iters} is too large")))?;
             OneYearMethod::Benktander(
                 Benktander {
-                    apriori,
+                    apriori: apriori_arg(&apriori)?,
                     n_iters,
                     chain_ladder,
                 },
@@ -882,7 +951,7 @@ impl Triangle {
         &self,
         column: &str,
         exposure: &str,
-        apriori: f64,
+        apriori: Robj,
         average: &str,
         sigma_interpolation: &str,
         excl: Robj,
@@ -890,7 +959,7 @@ impl Triangle {
         ldf: Robj,
     ) -> Result<ExpectedLossFit> {
         let inner = ExpectedLoss {
-            apriori,
+            apriori: apriori_arg(&apriori)?,
             chain_ladder: pattern(
                 average,
                 sigma_interpolation,
@@ -910,7 +979,7 @@ impl Triangle {
         &self,
         column: &str,
         exposure: &str,
-        apriori: f64,
+        apriori: Robj,
         average: &str,
         sigma_interpolation: &str,
         excl: Robj,
@@ -918,7 +987,7 @@ impl Triangle {
         ldf: Robj,
     ) -> Result<ExpectedLossFit> {
         let inner = BornhuetterFerguson {
-            apriori,
+            apriori: apriori_arg(&apriori)?,
             chain_ladder: pattern(
                 average,
                 sigma_interpolation,
@@ -938,7 +1007,7 @@ impl Triangle {
         &self,
         column: &str,
         exposure: &str,
-        apriori: f64,
+        apriori: Robj,
         n_iters: f64,
         average: &str,
         sigma_interpolation: &str,
@@ -949,7 +1018,7 @@ impl Triangle {
         let n_iters = usize::try_from(whole(n_iters, "n_iters")?)
             .map_err(|_| Error::Other(format!("n_iters {n_iters} is too large")))?;
         let inner = Benktander {
-            apriori,
+            apriori: apriori_arg(&apriori)?,
             n_iters,
             chain_ladder: pattern(
                 average,
@@ -1846,7 +1915,7 @@ impl Triangle {
         column: &str,
         method: &str,
         exposure: Nullable<String>,
-        apriori: f64,
+        apriori: Robj,
         n_iters: f64,
         trend: f64,
         decay: f64,
@@ -1913,7 +1982,7 @@ impl Triangle {
         column: &str,
         method: &str,
         exposure: Nullable<String>,
-        apriori: f64,
+        apriori: Robj,
         n_iters: f64,
         trend: f64,
         decay: f64,
@@ -5532,7 +5601,7 @@ impl LatestDiagonals {
     #[allow(clippy::too_many_arguments)]
     fn expected_loss(
         &self,
-        apriori: f64,
+        apriori: Robj,
         average: &str,
         sigma_interpolation: &str,
         excl: Robj,
@@ -5542,7 +5611,7 @@ impl LatestDiagonals {
         segment_map: Robj,
     ) -> Result<ExpectedLossFit> {
         let m = ExpectedLoss {
-            apriori,
+            apriori: apriori_arg(&apriori)?,
             chain_ladder: pattern(
                 average,
                 sigma_interpolation,
@@ -5563,7 +5632,7 @@ impl LatestDiagonals {
     #[allow(clippy::too_many_arguments)]
     fn bornhuetter_ferguson(
         &self,
-        apriori: f64,
+        apriori: Robj,
         average: &str,
         sigma_interpolation: &str,
         excl: Robj,
@@ -5573,7 +5642,7 @@ impl LatestDiagonals {
         segment_map: Robj,
     ) -> Result<ExpectedLossFit> {
         let m = BornhuetterFerguson {
-            apriori,
+            apriori: apriori_arg(&apriori)?,
             chain_ladder: pattern(
                 average,
                 sigma_interpolation,
@@ -5594,7 +5663,7 @@ impl LatestDiagonals {
     #[allow(clippy::too_many_arguments)]
     fn benktander(
         &self,
-        apriori: f64,
+        apriori: Robj,
         n_iters: f64,
         average: &str,
         sigma_interpolation: &str,
@@ -5607,7 +5676,7 @@ impl LatestDiagonals {
         let n_iters = usize::try_from(whole(n_iters, "n_iters")?)
             .map_err(|_| Error::Other(format!("n_iters {n_iters} is too large")))?;
         let m = Benktander {
-            apriori,
+            apriori: apriori_arg(&apriori)?,
             n_iters,
             chain_ladder: pattern(
                 average,
@@ -5841,6 +5910,7 @@ impl BenchmarkCurveFit {
 extendr_module! {
     mod reserving;
     fn benchmark_curve_rust;
+    fn underwriting_exposure_rust;
     impl Triangle;
     impl LatestDiagonals;
     impl ReservingTail;

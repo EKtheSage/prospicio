@@ -120,7 +120,8 @@ segment.
 Failed MCMC diagnostics of the fit raise one \code{\link[=warning]{warning()}} listing them,
 and refits that failed theirs raise another. The result is a
 \link{bayes_one_year_fit} whose \code{fit} is the \link{bayes_bf_normalised_fit}; its
-\code{as.data.frame()} adds each origin's \code{exposure} and \code{prior_ultimate}.
+\code{as.data.frame()} adds each origin's \code{exposure}, \code{prior_ultimate} and
+\code{opening_ulr} (the opening ultimate over the exposure).
 
 Errors: as \code{\link[=bayes_bf_normalised]{bayes_bf_normalised()}}; a \code{k_threshold} that is \code{NaN}.
 
