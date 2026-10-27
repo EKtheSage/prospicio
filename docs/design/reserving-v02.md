@@ -3981,8 +3981,8 @@ itself. Built on branch `claude/ulr-column`.
    only when the exposure is premium (with exposure in car years it is a
    pure premium). A NaN or zero exposure gives NaN or an infinite `ulr`,
    with no special case.
-4. **The Bayesian tables' `ulr` is the chain ladder's** (proposed, for the
-   user's acceptance). Their `ultimate` column is the plug-in chain
+4. **The Bayesian tables' `ulr` is the chain ladder's** (accepted by the
+   user on 2026-10-27). Their `ultimate` column is the plug-in chain
    ladder's, so their `ulr` is too; the posterior mean ultimate over the
    exposure is `(latest + mean) / exposure` (Meyers: `ultimate_mean /
    premium`). A posterior `ulr_mean` was left out to keep the PR small; it
@@ -4009,13 +4009,13 @@ itself. Built on branch `claude/ulr-column`.
    `bayes/bf.rs`, `bayes/bf_normalised.rs` and `bayes/meyers.rs` (alone and
    over segments) and the Python and R tests that list exact columns check
    the values.
-5. **The one-year views name it `opening_ulr`** (proposed, for the user's
-   acceptance). A Bayesian one-year view's table has the opening ultimate,
+5. **The one-year views name it `opening_ulr`** (accepted by the user on
+   2026-10-27). A Bayesian one-year view's table has the opening ultimate,
    which `opening_names` renames from `ultimate`; the ratio follows it as
    `opening_ulr`, the opening ultimate over the exposure. The bootstrap
    one-year views of the expected-loss methods keep no exposure in their
    tables, so they have no column.
-6. **Name** (proposed, for the user's acceptance): `ulr` as in the issue,
+6. **Name** (accepted by the user on 2026-10-27): `ulr` as in the issue,
    next to the Clark Cape Cod total's fitted `elr` (the expected loss
    ratio of the prior, not of the ultimate) and Compartmental's
    `ultimate_loss_ratio`. The alternative is to call every one

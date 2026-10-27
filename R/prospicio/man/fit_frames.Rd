@@ -46,7 +46,7 @@ method's own), plus for Mack \code{process_risk}, \code{parameter_risk} and
 \code{ultimate_mean}, \code{latest} plus \code{mean}, \code{\link[=meyers]{meyers()}} and
 \code{\link[=meyers_segments]{meyers_segments()}} add the \code{premium} and the
 \code{ultimate_mean} and \code{ultimate_std_dev} of the predictive ultimate, and
-all five end with \code{ulr_mean}, the \code{ultimate_mean} over the exposure), and
+all four end with \code{ulr_mean}, the \code{ultimate_mean} over the exposure), and
 for Clark (Cape Cod)
 \code{exposure}, \code{expected_ultimate} and the three standard errors; for
 \code{\link[=compartmental]{compartmental()}} the \code{premium}, \code{latest_paid}, the \code{mean} and \code{std_dev}

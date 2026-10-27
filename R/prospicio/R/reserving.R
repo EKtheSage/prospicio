@@ -4681,7 +4681,7 @@ check_fit <- function(fit) {
 #' `ultimate_mean`, `latest` plus `mean`, [meyers()] and
 #' [meyers_segments()] add the `premium` and the
 #' `ultimate_mean` and `ultimate_std_dev` of the predictive ultimate, and
-#' all five end with `ulr_mean`, the `ultimate_mean` over the exposure), and
+#' all four end with `ulr_mean`, the `ultimate_mean` over the exposure), and
 #' for Clark (Cape Cod)
 #' `exposure`, `expected_ultimate` and the three standard errors; for
 #' [compartmental()] the `premium`, `latest_paid`, the `mean` and `std_dev`

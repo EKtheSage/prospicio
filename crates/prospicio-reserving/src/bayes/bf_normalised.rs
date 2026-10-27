@@ -1783,6 +1783,20 @@ mod tests {
             .map(|(u, e)| u / e)
             .collect();
         assert_eq!(long.column("ulr_mean").unwrap(), ulr_mean);
+        // Independently of the table: the triangle's latest diagonal plus
+        // each origin's posterior mean reserve, and in total the sum of the
+        // latest values plus the mean of the total reserve.
+        let close = |a: f64, b: f64| (a - b).abs() <= 1e-9 * b.abs().max(1.0);
+        let diagonal: Vec<f64> = GENINS.iter().map(|row| *row.last().unwrap()).collect();
+        for (k, (d, u)) in diagonal
+            .iter()
+            .zip(long.column("ultimate_mean").unwrap())
+            .enumerate()
+        {
+            let origin = vec![Period::year(2001 + k as i32).into()];
+            let reserve = fit.reserves.marginal(&origin).unwrap().mean();
+            assert!(close(*u, d + reserve), "origin {k}: {u} vs {}", d + reserve);
+        }
         assert!(long.column("ultimate_std_dev").is_none());
         assert_eq!(long.values.last().unwrap().0, "ulr_mean");
         let totals = fit.totals();
@@ -1791,6 +1805,11 @@ mod tests {
         let total_mean = totals.column("latest").unwrap()[0] + totals.column("mean").unwrap()[0];
         assert_eq!(totals.column("ultimate_mean").unwrap(), [total_mean]);
         assert_eq!(totals.column("ulr_mean").unwrap(), [total_mean / 118e6]);
+        let independent = diagonal.iter().sum::<f64>() + fit.reserves.total().mean();
+        assert!(
+            close(total_mean, independent),
+            "{total_mean} vs {independent}"
+        );
         assert_eq!(fit.development_table().n_rows(), 10);
         assert_eq!(fit.summary().unwrap().len(), 19);
         let provenance = fit.reserves.provenance();
