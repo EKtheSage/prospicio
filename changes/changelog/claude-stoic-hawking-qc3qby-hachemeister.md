@@ -6,4 +6,4 @@
   at the origin or with the intercept at the barycentre (`actuar::cm`'s
   `regformula` and `adj.intercept`), with `predict` at a design row.
   Python `prospicio.credibility.hachemeister`, R `hachemeister()` with
-  `predict()` (#561).
+  `predict()` (#561, #654).
