@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -1745,7 +1745,8 @@ pub struct Development {
      with age. The two cumulative kinds carry the same information and get
      the same checks;
    * a cumulative pattern with fewer than two ages (a gap is interpolated,
-     item 2);
+     item 2); superseded by decision 20, which takes one value as the tail
+     from its age;
    * a weight that is not finite or is outside `[0, 1]`; a `ByAge` weight
      at an age with no selected link (for a cumulative pattern, its last
      age);
@@ -2228,7 +2229,8 @@ Decided by the user on 2026-10-15, after review of the built PR:
    and is an error with a pattern of the bootstrap's own; the mismatch
    error stays.
 3. **Gaps are interpolated** (item 2): `ln CDF` linear in development age
-   between the given ages; a single given age is still an error; ages
+   between the given ages; a single given age is still an error (until
+   decision 20); ages
    before the first and after the last given age stay estimated.
 4. **The ODP bootstrap keeps the origins' level error** with every factor
    selected (item 8): documented in the Rust, Python and R docs.
@@ -3544,6 +3546,111 @@ constructors.
     diagonal (`LatestDiagonal.from_triangle`, R `as_latest_valuation()`)
     and fit that with `development=`. The plain triangle path keeps
     decision 17 item 11 open.
+
+### 20. A cumulative pattern with one value
+
+Status: **Built** (2026-10-26), issue #632, branch
+`claude/one-value-pattern`, in Rust, Python and R. The user decided on
+2026-10-26 that a cumulative pattern with one value is valid and selects
+the factor from its age to ultimate, as the tail from that age. Items 2
+to 6, and item 1's reading of a longer pattern that ends at the oldest
+age, are how this PR reads that decision against the other settings, and
+are proposed for the user's acceptance.
+
+A downstream pipeline fits small books: a diagonal-only triangle, and a
+single origin observed at one age. Decision 12 item 4 refused a factor
+to ultimate (or a percent developed) at one age, "one value selects no
+factor", so a book observed at one age could take a pattern only as two
+or more ages (which decision 18 reads past the oldest age since #614).
+
+1. **The rule.** `AgeToUltimate` or `PercentDeveloped` with one value
+   `CDF(a)` (`1 / p(a)`) at a development age `a` of the triangle is the
+   factor to ultimate from `a`. It fixes no link, so by item 5 of
+   decision 12 it is the tail when `a` is the oldest age and no tail is
+   given: `pattern_tail = CDF(a)`, a constant with no parameter error,
+   `pattern_rescale = 1`. On a triangle observed at one age (one origin,
+   or every origin at one age, a latest diagonal included) the oldest age
+   is the only age, so the value is the whole projection: the issue's
+   `{12: 3.0}` on an origin at 12 months with 200 paid gives 600. On a
+   full triangle it is the same fit as a constant tail of `CDF(a)`. A
+   longer cumulative pattern that ends at the oldest age and selects no
+   link of the triangle is read the same way (proposed), as its level there: on a
+   triangle observed at one age the pattern's ages before it fix no link,
+   so the issue's full pattern from 12 to 60 months on an origin at 60
+   months gives the latest value (a factor of 1), and the pattern from 12
+   to 48 months on an origin at 48 months with 800 paid gives 896, as
+   `{48: 1.12}` does. Decision 18 had refused these as "the pattern
+   selects no factor of the triangle", while a pattern that runs past the
+   only age already folded into the tail. The same reading applies on a
+   longer triangle when the pattern's earlier ages all fall inside its
+   last link (`{30: x, 36: y}` on ages 12, 24, 36): the link from 24 to
+   36 is not fully covered, so it stays estimated as decision 18 leaves
+   any such link, and `y` is the tail.
+2. **At another age it is an error** (proposed): "a cumulative pattern
+   with one value is the tail from its age: give it at the oldest age, or
+   give two or more ages". Read by decision 12's rules it would select
+   nothing and only report `pattern_rescale`, which contradicts the
+   user's decision. The literal alternative, a constant tail attached at
+   `a` that replaces the estimated factors from `a` on, is not built: it
+   needs a tail attached before the oldest age carried through
+   `pattern_tail`, Mack and the bootstraps, and spreads the factor over
+   the older ages by a decay the user did not give. Off the triangle's
+   ages (`{18: 1.5}` on an annual triangle) it is decision 18's existing
+   error, "the pattern selects no factor of the triangle".
+3. **With a tail it is an error** (proposed): "a cumulative pattern with
+   one value is the tail, and a tail is given: give no tail, or two or
+   more ages". Decision 12 rescales a longer pattern's level to a given
+   tail, which with one value would leave the pattern inert. On a latest
+   diagonal, `PastPatternEnd::Tail` (which needs a tail) and
+   `PastPatternEnd::NoDevelopment` (a factor of 1 past the value's age)
+   are such tails, and give the same error whether or not an origin is
+   older than the value's age: decision 18 would rescale the one level to
+   the tail spread past the pattern's end, so nothing of the value would
+   be left (`{12: 3.0}` and `{12: 9.0}` on origins at 24 and 12 months
+   would give the same ultimates).
+4. **A weight below 1 is an error** (proposed): "a cumulative pattern
+   with one value is the tail, taken at full weight: give it weight 1".
+   No estimate past the oldest age is there to blend with, as for a
+   pattern that runs past the oldest age (decision 18). A weight by age
+   at the value's age keeps decision 12's error, "a weight is given at an
+   age with no selected factor".
+5. **Bootstraps.** A bootstrap with no pattern of its own reads the
+   method's pattern without its level when the method has a tail
+   (`OneYearPattern::Method`). A one-value pattern there is only its
+   level, so this happens only when the method's pattern and tail already
+   conflict by item 3, and the bootstrap's error names that conflict:
+   "the re-reserving method's pattern is only its level, its tail, and
+   the method has a tail of its own: give the method no tail, or two or
+   more ages". Where the method has no tail the one value is the
+   method's implied tail and the bootstrap's, as any implied tail is.
+   Comparing a bootstrap's pattern with the method's
+   (`same_selection`) ignores levels, as before; the tails are compared
+   on their own, so two one-value patterns with different values still
+   differ there.
+6. **`averaged_over_origins`.** One value is averaged by the rules as
+   stated: linear from 0 at age 0 to the value at its age, held at the
+   value past it, so an accident-month `{3: 0.5}` gives the accident year
+   `1/12` at 3 months and `0.5` from 14 months. The result has many ages
+   and is read as any pattern is.
+7. **Checks.** `validation/tests/reserving_latest_diagonal.rs`: both
+   cases of the issue through the plain triangle path at weight 1, by
+   hand for the chain ladder, Bornhuetter-Ferguson, the expected loss
+   method, Benktander's two iterations and Cape Cod (a diagonal-only
+   triangle with the full pattern, one origin at 12 months with the full
+   pattern, with `{12: 3.0}` and with `{12: 1/3}` percent developed, and
+   one origin at 48 months), a pattern that ends at the only age (the
+   full pattern on an origin at 60 months, the pattern to 48 months on an
+   origin at 48 months, `{6: 4.0, 12: 3.0}` on an origin at 12 months),
+   the one value through `LatestDiagonal`, and item 3's error on a
+   diagonal with an origin older than the value, under
+   `PastPatternEnd::Tail` and `NoDevelopment`.
+   `validation/tests/reserving_pattern_basis.rs`: the errors of items 2
+   to 4 on RAA, the one value at 120 months equal to a constant tail of
+   1.05, item 5 (the ODP bootstrap with the one value draws as with a
+   constant tail of 1.05, and both bootstraps' one-year views take it as
+   the method's implied tail, and the bootstrap's error when the method
+   has a tail too) and item 6. The same cases in `python/tests/test_reserving_patterns.py`
+   and `R/prospicio/tests/test-reserving-patterns.R`.
 
 ### 21. An accident-period pattern on an underwriting basis
 

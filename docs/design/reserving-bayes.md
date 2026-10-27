@@ -3173,6 +3173,41 @@ total's *prior* interval by a factor of about 3 (the covariance) but its
 *posterior* interval on GenIns's layer is narrower than the independent
 prior's, because the origins pool their information about `s`.
 
+## Later, not planned
+
+### Prior predictive checks (a note, not planned)
+
+Noted 2026-10-23, at the user's question "if I set this prior, what does my
+range of outcome look like". Nothing here is built or queued. A prior on rates
+and ratios is hard to judge on its own scale; what an actuary can judge is the
+reserve, the ultimate or the ultimate loss ratio it implies, per origin and in
+total, beside the observed triangle. Today only part of that exists:
+
+* `Compartmental::prior_predictive` (Rust, Python
+  `Compartmental.prior_predictive`, R `compartmental_prior_predictive`) returns
+  only the mean paid and outstanding paths per cell of the square under the
+  priors, without observation noise. It gives no reserve, ultimate or loss
+  ratio. It ignores the `Fitted` mode, so it cannot show what a `k_p` prior
+  implies for an incurred-alone reserve. R's wrapper is fixed to paid and
+  outstanding, the normal likelihood and the amount scale.
+* `BayesOdp` and `Meyers` have no prior predictive. `BayesBf` and
+  `BayesBfNormalised` expose only `prior_ultimate` (a prior mean), and
+  `LayerSharePrior::prior_total` gives a closed-form mean and sd only.
+* The Python and R packages have no plotting (matplotlib and ggplot2 appear
+  only in the examples).
+
+Potential uses, if the work is queued:
+
+* Reserves, ultimates and ultimate loss ratios under the prior, per origin and
+  in total with percentiles, following the fit mode (including the latent paid
+  run-off of incurred alone, which the `k_p` bound of 0.5 in
+  `reserving-compartmental.md` decision 12 is about).
+* A summary table and a plot in Python and R that overlay the prior range on
+  the observed triangle.
+* The same for the other Bayesian models.
+* Choosing and checking priors such as `CompartmentalPriors::diffuse()` and
+  the incurred-only `k_p` prior.
+
 ## Open decisions for the user
 
 Each has a recommendation. Decided 2026-10-12 by the user: 1 (a), 2 (a),

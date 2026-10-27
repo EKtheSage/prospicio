@@ -122,11 +122,11 @@ impl Default for PatternWeight {
 ///   that age to the next; any ages but the oldest (development past it is
 ///   the tail's).
 /// * A cumulative pattern ([`PatternKind::AgeToUltimate`] or
-///   [`PatternKind::PercentDeveloped`]) gives two or more ages and selects
-///   the factors between its first and last, `CDF(a_k) / CDF(a_k+1)`. A
-///   development age it skips is interpolated: between two given ages `b <
-///   c`, `ln CDF` is linear in the age, so the link from `a_k` to `a_k+1`
-///   is `(CDF(b) / CDF(c))^((a_k+1 - a_k) / (c - b))` (percents developed
+///   [`PatternKind::PercentDeveloped`]) selects the factors between its
+///   first and last ages, `CDF(a_k) / CDF(a_k+1)`. A development age it
+///   skips is interpolated: between two given ages `b < c`, `ln CDF` is
+///   linear in the age, so the link from `a_k` to `a_k+1` is
+///   `(CDF(b) / CDF(c))^((a_k+1 - a_k) / (c - b))` (percents developed
 ///   are converted to CDFs first). Ages before the first and after the
 ///   last given age stay estimated.
 /// * A cumulative pattern's level at its last age selects no factor. With
@@ -141,6 +141,16 @@ impl Default for PatternWeight {
 ///   ([`ChainLadderFit::pattern_rescale`](crate::ChainLadderFit::pattern_rescale)):
 ///   with a tail, percent developed at the oldest age times the tail is
 ///   100%.
+/// * A cumulative pattern with one value is the factor to ultimate from
+///   its age, the tail from there (`reserving-v02.md`, decision 20). It
+///   selects no link, so it is given at the oldest age, fully selected and
+///   with no [`Tail`], and is the tail as above; on a triangle observed at
+///   one age (one origin, or every origin at one age) it is the whole
+///   projection. At another age, with a tail or with a weight below 1 it
+///   would select nothing, and it is an error. A longer pattern that ends
+///   at the oldest age and selects no link (on a triangle observed at one
+///   age, a pattern from 12 to 60 months on an origin observed at 60 months)
+///   is its level there, read the same way.
 ///
 /// Factors the pattern does not select are estimated, as without one, and
 /// the triangle must still estimate every factor (the estimate is reported
@@ -312,10 +322,14 @@ impl SelectedPattern {
                     }
                     cdf.push(if percent { 1.0 / v } else { v });
                 }
-                if values.len() < 2 {
+                // One value is the factor to ultimate from its age, the
+                // tail from there (decision 20): it fixes no link, so only
+                // at the oldest age is there a tail for it to be.
+                if values.len() == 1 && positions[0] != n_links {
                     return err(
                         Some(values[0].0),
-                        "a cumulative pattern needs two or more ages: one value selects no factor",
+                        "a cumulative pattern with one value is the tail from its age: give it \
+                         at the oldest age, or give two or more ages",
                     );
                 }
                 // Between two given ages `b < c`, ln CDF is linear in the
@@ -398,7 +412,11 @@ impl SelectedPattern {
             oldest: at(oldest),
             level: at(end),
         });
-        if beyond.is_none() && selected.iter().all(Option::is_none) {
+        // A cumulative pattern that ends at the oldest age and selects no
+        // link there is its level, the tail, as one value at that age is
+        // (decision 20 item 1): a triangle observed at one age has no link.
+        let tail_only = level.is_some_and(|(j, _)| j + 1 == ages.len());
+        if beyond.is_none() && !tail_only && selected.iter().all(Option::is_none) {
             return Err(Error::Pattern {
                 age: Some(first),
                 reason: "the pattern selects no factor of the triangle",
@@ -510,7 +528,8 @@ impl SelectedPattern {
     /// [`with_weight`](Self::with_weight)); a single age-to-age factor,
     /// which has no span; a result longer than 2,400 months; and any error
     /// the pattern has on its own ages (no values, an age given twice, a
-    /// value that is not finite and positive, one cumulative value).
+    /// value that is not finite and positive). A single cumulative value is
+    /// held past its age, as any pattern's end is (decision 20).
     ///
     /// ```
     /// use prospicio_reserving::{Grain, PatternKind, SelectedPattern};
@@ -959,27 +978,21 @@ fn check_unique(values: &[(Lag, f64)]) -> Result<()> {
     }
 }
 
-/// Each value of a pattern of `kind` finite and positive, and a cumulative
-/// pattern with two or more ages, with decision 12's texts.
+/// Each value of a pattern of `kind` finite and positive, with decision
+/// 12's texts. A cumulative pattern may have one value (decision 20).
 fn check_values(values: &[(Lag, f64)], kind: PatternKind) -> Result<()> {
     let reason = match kind {
         PatternKind::AgeToAge => "an age-to-age factor must be finite and positive",
         PatternKind::AgeToUltimate => "a factor to ultimate must be finite and positive",
         PatternKind::PercentDeveloped => "a percent developed must be finite and positive",
     };
-    if let Some(&(age, _)) = values.iter().find(|&&(_, v)| !(v.is_finite() && v > 0.0)) {
-        return Err(Error::Pattern {
+    match values.iter().find(|&&(_, v)| !(v.is_finite() && v > 0.0)) {
+        Some(&(age, _)) => Err(Error::Pattern {
             age: Some(age),
             reason,
-        });
+        }),
+        None => Ok(()),
     }
-    if kind != PatternKind::AgeToAge && values.len() < 2 {
-        return Err(Error::Pattern {
-            age: Some(values[0].0),
-            reason: "a cumulative pattern needs two or more ages: one value selects no factor",
-        });
-    }
-    Ok(())
 }
 
 /// The end of an age-to-age pattern's span (decision 16 item 3): each
@@ -1257,6 +1270,14 @@ impl Resolved {
             .filter(|&(last, _)| last + 1 == ages.len())
             .map(|(_, cdf)| cdf)
     }
+
+    /// Whether the pattern is only a level, the tail: a cumulative pattern
+    /// with one value at the oldest age, or a longer one that ends there
+    /// and selects no link (decision 20 item 1). Any other pattern
+    /// that resolves selects a link or runs past the oldest age.
+    pub(crate) fn is_tail_only(&self) -> bool {
+        self.level.is_some() && self.beyond.is_none() && self.selected.iter().all(Option::is_none)
+    }
 }
 
 impl SelectedPattern {
@@ -1275,6 +1296,15 @@ impl SelectedPattern {
             return Err(Error::Bootstrap(
                 "a pattern that runs past the oldest age carries the re-reserving method's tail \
                  into it: give the bootstrap the method's tail",
+            ));
+        }
+        if resolved.is_tail_only() {
+            // Only a method with a tail of its own is read without its
+            // level, and then its pattern and tail conflict (decision 20
+            // items 3 and 5).
+            return Err(Error::Bootstrap(
+                "the re-reserving method's pattern is only its level, its tail, and the method \
+                 has a tail of its own: give the method no tail, or two or more ages",
             ));
         }
         let links: Vec<(Lag, f64, f64)> = resolved

@@ -167,8 +167,11 @@ A selected development pattern (\code{ldf}, with \code{ldf_kind} and
 triangle at the ages it gives; the other ages stay estimated, so a
 benchmark for the immature ages only is a partial pattern. Its values
 are age-to-age factors (any ages but the oldest: development past it is
-the tail's), or factors to ultimate or percents developed at two or more
-ages, which select the factors between the first and the last (\verb{cdf[a] / cdf[next age]}). A development age they skip is interpolated: between
+the tail's), or factors to ultimate or percents developed, which select
+the factors between the first age and the last (\verb{cdf[a] / cdf[next age]}); one factor to ultimate (or percent developed) is the tail from
+its age, so it is given at the oldest age, with no \code{tail} and
+\code{ldf_weight} 1, and on a triangle observed at one age it is the whole
+projection. A development age they skip is interpolated: between
 two given ages \code{b < c}, \code{log(cdf)} is linear in the age, so the factor
 from \code{a} to the next age \verb{a'} is \verb{(cdf[b] / cdf[c])^((a' - a) / (c - b))}
 (percents developed are converted to factors to ultimate first).
