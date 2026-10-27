@@ -4231,9 +4231,11 @@ reads the pattern between its ages as if an accident year developed
    0.087, 0.091 against 0.122; medical malpractice paid 0.0111, 0.0105,
    0.0102 against 0.0207; other liability paid 0.0300, 0.0305, 0.0301
    against 0.0459; Friedland's XYZ paid selection 0.0157, 0.0160, 0.0155
-   against 0.0230. The exact candidates agree within 4% to 12% of each
-   other at 12 months and within 0.5% from 36; the baseline is 20% to
-   100% above the band at 12 months and 4% to 13% below it at 24. Every
+   against 0.0230. The exact candidates agree within 2% to 12% of each
+   other at 12 months and within 1% from 36; the baseline is 19% to 86%
+   above the band's top at 12 months, 5% to 13% below its bottom at 24,
+   1% to 4% below at 36, 0.3% to 2% below at 48 and about 1% below at
+   60. Every
    exact candidate keeps the expanded pattern monotone and within `[0,
    level]` on every monotone input. On Friedland's XYZ reported selection
    (factors of 0.993 and 0.999 at 108 and 120 months) `wbl+exact` and

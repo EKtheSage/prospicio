@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: An annual accident-year pattern read at monthly ages as a Weibull corrected to its own yearly averages converts to an underwriting year within 0.2% where decision 18's reading is 31% off
-description: An accident year's share at age a is the average of its months, P(a) = (1/12) sum p(a - q), so a reading between annual ages is a choice of p; the Weibull fitted through that average and moved to the nearest monotone monthly pattern whose averages are the given values reproduces them exactly and converts a simulated book's underwriting-year shares within 0.2% at 12 to 60 months (decision 18's ln-linear reading 1.3116 and 0.9155 at 12 and 24), at worst 1.5% off on a slow loglogistic truth; on CLRD and Friedland patterns the exact monotone readings agree within 4% to 12% at 12 months and the current reading sits 20% to 100% above them.
+description: An accident year's share at age a is the average of its months, P(a) = (1/12) sum p(a - q), so a reading between annual ages is a choice of p; the Weibull fitted through that average and moved to the nearest monotone monthly pattern whose averages are the given values reproduces them exactly and converts a simulated book's underwriting-year shares within 0.2% at 12 to 60 months (decision 18's ln-linear reading 1.3116 and 0.9155 at 12 and 24), at worst 1.5% off on a slow loglogistic truth; on CLRD and Friedland patterns the exact monotone readings agree within 2% to 12% at 12 months and the current reading sits 19% to 86% above them.
 tags: [reserving, development, pattern, underwriting-year, growth-curve]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-27T18:00:00Z }
@@ -72,8 +72,9 @@ underwriting-year share with the book's own.[^script]
   0.087 to 0.094 on workers compensation (0.122), 0.0102 to 0.0111 on
   medical malpractice (0.0207), 0.0300 to 0.0305 on other liability
   (0.0459) and 0.0155 to 0.0160 on Friedland's XYZ paid selection
-  (0.0230): a band of 4% to 12% between them, and the current reading 20%
-  to 100% above it, 4% to 13% below it at 24 months, within 0.5% from 36.
+  (0.0230): a band of 2% to 12% between them, and the current reading 19%
+  to 86% above its top, 5% to 13% below its bottom at 24 months, 1% to 4%
+  below at 36, 0.3% to 2% below at 48 and about 1% below at 60.
   On Friedland's XYZ reported selection, whose factors at 108 and 120
   months are below 1, the corrected curves reproduce the given values
   with the development downward in those spans; the uncorrected Weibull
