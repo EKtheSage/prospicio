@@ -16,13 +16,20 @@
 //!   accident-year and an underwriting-year triangle: the conversion of the
 //!   accident-year (or accident-month) chain ladder pattern is the
 //!   underwriting-year chain ladder pattern, and projects each
-//!   underwriting year to its ultimate.
+//!   underwriting year to its ultimate; on the triangles valued annually,
+//!   the misses of decision 18's reading (`AnnualReading::LnLinear`) and of
+//!   the default Weibull reading (decision 25), pinned.
+//! * D. The default reading against the design study's scipy prototype
+//!   (`validation/scripts/ay_monthly_reading.py`, `wbl+exact` and
+//!   `llog+exact`) on the book and the CAS loss reserve database's private
+//!   passenger auto paid pattern.
 
 use prospicio_pricing::cashflow::MonthlyPatterns;
 use prospicio_pricing::payout::{Interpolation, PaymentPattern};
 use prospicio_reserving::{
-    ChainLadder, ChainLadderFit, Development, DevelopmentColumn, Error, Grain, Lag, Long, Month,
-    PatternKind, PatternWeight, SelectedPattern, Tail, Triangle, UnderwritingBasis,
+    AnnualReading, ChainLadder, ChainLadderFit, Development, DevelopmentColumn, Error, Grain,
+    GrowthCurve, Lag, Long, Month, PatternKind, PatternWeight, SelectedPattern, Tail, Triangle,
+    UnderwritingBasis,
 };
 
 fn assert_close(found: f64, expected: f64, tol: f64, what: &str) {
@@ -170,21 +177,34 @@ fn the_conversion_keeps_its_kind_weight_and_errors() {
         .map(|k| (12 * k, f64::from(k + 1) / f64::from(k)))
         .collect();
     let pd: Vec<(Lag, f64)> = (1..=5).map(|k| (12 * k, f64::from(k) / 5.0)).collect();
+    // Under decision 18's reading to rounding; under the curve's, the
+    // inputs' last bits move its least-squares search a little.
+    for (reading, tol) in [
+        (AnnualReading::LnLinear, 1e-14),
+        (AnnualReading::default(), 1e-10),
+    ] {
+        let basis = basis.clone().with_reading(reading);
+        let want = percent(pd.clone())
+            .to_underwriting_basis(Grain::Year, &basis)
+            .unwrap();
+        for (kind, values) in [
+            (PatternKind::AgeToUltimate, cdf.clone()),
+            (PatternKind::AgeToAge, ata.clone()),
+        ] {
+            let got = SelectedPattern::new(kind, values)
+                .to_underwriting_basis(Grain::Year, &basis)
+                .unwrap();
+            assert_eq!(got.values.len(), want.values.len());
+            for (g, w) in got.values.iter().zip(&want.values) {
+                assert_close(g.1, w.1, tol, "kind");
+            }
+        }
+    }
     let want = percent(pd)
         .to_underwriting_basis(Grain::Year, &basis)
         .unwrap();
-    for (kind, values) in [
-        (PatternKind::AgeToUltimate, cdf),
-        (PatternKind::AgeToAge, ata),
-    ] {
-        let got = SelectedPattern::new(kind, values)
-            .to_underwriting_basis(Grain::Year, &basis)
-            .unwrap();
-        assert_eq!(got.values.len(), want.values.len());
-        for (g, w) in got.values.iter().zip(&want.values) {
-            assert_close(g.1, w.1, 1e-14, "kind");
-        }
-    }
+    // The curve's reading starts at 1 month.
+    assert_eq!(want.values[0].0, 1);
     // The end: 60 months of an accident-year pattern and 12 more.
     assert_eq!(want.values.last(), Some(&(72, 1.0)));
     // A level below 1 is kept at the end.
@@ -499,17 +519,17 @@ fn a_simulated_books_accident_month_pattern_converts_under_seasonal_writing() {
     }
 }
 
-#[test]
-fn an_annual_accident_year_pattern_converts_approximately() {
-    // Between annual ages the accident-year pattern is read ln-linearly,
-    // which is not the even-exposure average of its months: the miss on
-    // the underwriting year's factors to ultimate, pinned.
-    let policies = book(&|_| 1.0, 12);
+/// The misses of the underwriting year's factors to ultimate when the
+/// book's accident-year triangle valued annually is converted under
+/// `basis`: `cdf * p - 1` at each of its ages.
+fn annual_misses(basis: &UnderwritingBasis) -> Vec<(Lag, f64)> {
+    let shares = basis.writing.clone();
+    let policies = book(&|j| shares[j], basis.policy_months);
     let (ay, uy) = triangles(&policies, Grain::Year);
     let ay_fit = ChainLadder::default().fit(&ay, "values").unwrap();
     let uy_fit = ChainLadder::default().fit(&uy, "values").unwrap();
     let converted = pattern_of(&ay_fit)
-        .to_underwriting_basis(Grain::Year, &UnderwritingBasis::default())
+        .to_underwriting_basis(Grain::Year, basis)
         .unwrap();
     let mut misses = Vec::new();
     for (&a, &c) in uy_fit.development.development.iter().zip(&uy_fit.cdf) {
@@ -520,6 +540,15 @@ fn an_annual_accident_year_pattern_converts_approximately() {
         };
         misses.push((a, c * p - 1.0));
     }
+    misses
+}
+
+#[test]
+fn an_annual_accident_year_pattern_converts_approximately_under_decision_18() {
+    // Between annual ages the accident-year pattern read ln-linearly is not
+    // the even-exposure average of its months: the miss on the underwriting
+    // year's factors to ultimate, pinned.
+    let misses = annual_misses(&UnderwritingBasis::default().with_reading(AnnualReading::LnLinear));
     // The converted share over the book's own: 31% too high at 12 months,
     // where the accident-year pattern is read linearly from 0 (decision 18
     // item 2), 8% too low at 24, within 0.1% from 60 months, and exact
@@ -542,4 +571,184 @@ fn an_annual_accident_year_pattern_converts_approximately() {
             .filter(|m| m.0 >= 84)
             .all(|m| m.1.abs() < 1e-14)
     );
+}
+
+#[test]
+fn an_annual_accident_year_pattern_converts_closely_under_the_default_reading() {
+    // The Weibull fitted through the yearly averages and corrected to
+    // reproduce them (decision 25): within 0.2% of the book's own
+    // underwriting year at every age.
+    assert_eq!(
+        UnderwritingBasis::default().reading(),
+        AnnualReading::Curve(GrowthCurve::Weibull)
+    );
+    let misses = annual_misses(&UnderwritingBasis::default());
+    // The miss of the converted share at each age, pinned: 0.11% low at
+    // 12 months, within 0.04% from 24 and exact once every accident year
+    // is past its end.
+    let pinned = [
+        (12, -0.001_072_193_817),
+        (24, 0.000_373_870_029),
+        (36, -0.000_095_800_352),
+        (48, 0.000_016_862_671),
+        (60, 0.000_015_564_668),
+        (72, -0.000_015_215_385),
+    ];
+    for (a, miss) in pinned {
+        let found = misses.iter().find(|m| m.0 == a).unwrap().1;
+        assert!((found - miss).abs() < 1e-8, "age {a}: {found}");
+    }
+    // The study's ratios to four digits.
+    for (a, ratio) in [
+        (12, 0.9989),
+        (24, 1.0004),
+        (36, 0.9999),
+        (48, 1.0),
+        (60, 1.0),
+    ] {
+        let found = misses.iter().find(|m| m.0 == a).unwrap().1;
+        assert!((1.0 + found - ratio).abs() < 1e-4, "age {a}: {found}");
+    }
+    assert!(misses.iter().all(|m| m.1.abs() < 2e-3));
+    // Seasonal writing (three times the rate in the last quarter) and
+    // six-month policies: the study's ratios at 12 months, where decision
+    // 18's reading is 1.40 and 1.17.
+    let seasonal = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 3.0, 3.0, 3.0];
+    for (basis, curve, ln_linear) in [
+        (UnderwritingBasis::new(seasonal.to_vec(), 12), 0.9986, 1.40),
+        (UnderwritingBasis::even(12, 6), 0.9994, 1.17),
+    ] {
+        let old = annual_misses(&basis.clone().with_reading(AnnualReading::LnLinear));
+        let new = annual_misses(&basis);
+        assert!(
+            (1.0 + old[0].1 - ln_linear).abs() < 5e-3,
+            "{basis:?}: {}",
+            old[0].1
+        );
+        assert!(
+            (1.0 + new[0].1 - curve).abs() < 1e-4,
+            "{basis:?}: {}",
+            new[0].1
+        );
+        assert!(new.iter().all(|m| m.1.abs() < 2e-3), "{basis:?}");
+    }
+    assert!(
+        misses
+            .iter()
+            .filter(|m| m.0 >= 84)
+            .all(|m| m.1.abs() < 1e-14)
+    );
+}
+
+// D. Against the design study's scipy prototype.
+
+/// The book's accident-year pattern at 12 to 120 months: the twelve-month
+/// averages of `1 - 0.9^t`, held from 60.
+fn book_annual() -> SelectedPattern {
+    percent(
+        (1..=10)
+            .map(|k| {
+                let a = 12 * k;
+                let sum: f64 = (0..12).map(|q| report(i64::from(a - q))).sum();
+                (a, sum / 12.0)
+            })
+            .collect(),
+    )
+}
+
+/// CLRD private passenger auto paid, the volume-weighted chain ladder of
+/// every company summed, as percents developed at 12 to 120 months
+/// (`industry_patterns()` of the study's script, from
+/// `validation/data/clrd_lines.csv`).
+fn ppauto() -> SelectedPattern {
+    percent(vec![
+        (12, 0.390_734_934_936_675_6),
+        (24, 0.705_876_740_467_845_8),
+        (36, 0.846_998_041_767_789_9),
+        (48, 0.922_266_658_057_296_9),
+        (60, 0.961_798_515_109_469_7),
+        (72, 0.981_468_825_098_16),
+        (84, 0.991_327_739_424_762_4),
+        (96, 0.996_416_276_351_787_9),
+        (108, 0.999_127_161_268_376_8),
+        (120, 1.0),
+    ])
+}
+
+#[test]
+fn the_default_reading_matches_the_scipy_prototype() {
+    // The converted underwriting-year share at 12 to 72 months under the
+    // default parallelogram, from the study's `expand_curve_exact` then
+    // `convert` (scipy Nelder-Mead from a grid of starts for the curve,
+    // SLSQP at `ftol = 1e-14` for the projection).
+    let cases = [
+        (
+            "book",
+            book_annual(),
+            GrowthCurve::Weibull,
+            [
+                0.175_868_694_912,
+                0.694_533_317_249,
+                0.913_566_348_240,
+                0.975_629_755_857,
+                0.993_127_934_330,
+                0.997_723_201_987,
+            ],
+        ),
+        (
+            "book",
+            book_annual(),
+            GrowthCurve::LogLogistic,
+            [
+                0.163_876_635_990,
+                0.710_262_202_810,
+                0.908_728_555_544,
+                0.976_997_156_960,
+                0.992_801_254_096,
+                0.997_783_447_176,
+            ],
+        ),
+        (
+            "ppauto",
+            ppauto(),
+            GrowthCurve::Weibull,
+            [
+                0.153_188_741_398,
+                0.574_839_269_322,
+                0.783_759_840_977,
+                0.888_517_415_103,
+                0.944_202_929_534,
+                0.972_787_000_939,
+            ],
+        ),
+        (
+            "ppauto",
+            ppauto(),
+            GrowthCurve::LogLogistic,
+            [
+                0.146_128_465_060,
+                0.584_185_829_055,
+                0.780_856_690_628,
+                0.889_287_085_058,
+                0.944_003_057_713,
+                0.972_842_852_533,
+            ],
+        ),
+    ];
+    // The two agree within 1.1e-9 (the loglogistic on the book; the
+    // Weibull within 5e-10): both curve searches stop near 1e-12 of their
+    // tolerance, not at the same point, and SLSQP's projection is exact
+    // to about 1e-14.
+    for (name, pattern, curve, scipy) in cases {
+        let basis = UnderwritingBasis::default().with_reading(AnnualReading::Curve(curve));
+        let uy = pattern.to_underwriting_basis(Grain::Year, &basis).unwrap();
+        for (k, want) in scipy.into_iter().enumerate() {
+            let a = 12 * (k as Lag + 1);
+            let found = at(&uy, a);
+            assert!(
+                (found - want).abs() < 1e-8,
+                "{name} {curve:?} at {a}: {found} against {want}"
+            );
+        }
+    }
 }
