@@ -477,4 +477,16 @@ stopifnot(startsWith(printed[1], "<latest_valuation> 2 origins"),
           !exists("bordereau", envir = asNamespace("prospicio"), inherits = FALSE))
 expect_error_like(with_exposure(genins, 1), "x must be a latest valuation")
 
+# Issue #632: one value is the tail from its age, so a tail past it, or no
+# development past it, is an error whether or not an origin is older.
+for (rule in c("tail", "no_development")) {
+  d <- latest_valuation(data.frame(year = 2023:2024, age = c(24, 12), paid = c(400, 200)),
+                        "year", "paid", age = "age", past_pattern_end = rule)
+  tail <- if (rule == "tail") 1.5 else 1
+  expect_error_like(chain_ladder(d, ldf = c("12" = 3), ldf_kind = "cdf", tail = tail),
+                    "a tail is given")
+  expect_error_like(chain_ladder(d, ldf = c("12" = 1 / 3), ldf_kind = "percent_developed",
+                                 tail = tail), "a tail is given")
+}
+
 cat("test-reserving-latest-diagonal.R: ok\n")

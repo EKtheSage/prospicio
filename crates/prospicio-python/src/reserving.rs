@@ -2549,9 +2549,12 @@ fn diagonal_development(
 ///     estimated from the triangle at the ages it gives; the other ages
 ///     stay estimated, so a benchmark for the immature ages only is a
 ///     partial pattern. As ``ldf_kind`` says, the values are age-to-age
-///     factors, or factors to ultimate or percents developed at two or more
-///     ages, which select the factors between the first and the last
-///     (``cdf[a] / cdf[next age]``). When every age given is a development
+///     factors, or factors to ultimate or percents developed, which select
+///     the factors between the first age and the last (``cdf[a] / cdf[next
+///     age]``); one factor to ultimate (or percent developed) is the tail
+///     from its age, so it is given at the oldest age, with no ``tail`` and
+///     ``ldf_weight`` 1, and on a triangle observed at one age it is the
+///     whole projection. When every age given is a development
 ///     age of the triangle, an age-to-age factor links its age to the
 ///     triangle's next age (any age but the oldest: development past it is
 ///     the tail's), and a development age the cumulative values skip is
