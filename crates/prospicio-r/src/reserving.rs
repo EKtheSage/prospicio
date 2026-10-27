@@ -1,6 +1,6 @@
 //! Reserving lane: wrappers over `prospicio_reserving` (the Triangle, chain
 //! ladder, Mack with its one-year view, tails, the expected-loss methods,
-//! Clark's growth curves, and the ODP and Mack bootstraps with their simulated one-year
+//! Clark's growth curves and a growth curve fitted to a benchmark pattern, and the ODP and Mack bootstraps with their simulated one-year
 //! view, `docs/design/triangle.md`, `docs/design/reserving-v02.md`) for the
 //! R `reserving.R` API.
 //!
@@ -11,12 +11,12 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_reserving::{
-    Apriori, Average, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit as CapeCodInner,
-    ChainLadder, ChainLadderFit as ChainLadderInner,
-    ClaimsDevelopmentResult as ClaimsDevelopmentInner, ClarkCapeCod, ClarkFit as ClarkInner,
-    ClarkLdf, CurveShape, Development, DevelopmentColumn, DiagonalAge, ExpectedLoss,
-    ExpectedLossFit as ExpectedLossInner, FitTable, Grain, GrowthCurve, Label, Lag,
-    LatestDiagonals as LatestDiagonalsInner, Long, LongDiagonal, Mack, MackBootstrap,
+    Apriori, Average, BenchmarkCurve, BenchmarkCurveFit as BenchmarkCurveInner, Benktander,
+    BornhuetterFerguson, CapeCod, CapeCodFit as CapeCodInner, ChainLadder,
+    ChainLadderFit as ChainLadderInner, ClaimsDevelopmentResult as ClaimsDevelopmentInner,
+    ClarkCapeCod, ClarkFit as ClarkInner, ClarkLdf, CurveShape, Development, DevelopmentColumn,
+    DiagonalAge, ExpectedLoss, ExpectedLossFit as ExpectedLossInner, FitTable, Grain, GrowthCurve,
+    Label, Lag, LatestDiagonals as LatestDiagonalsInner, Long, LongDiagonal, Mack, MackBootstrap,
     MackBootstrapFits, MackBootstrapSegment, MackFit as MackInner, MackProcess, Month,
     OdpBootstrap, OdpBootstrapFits, OneYearFits, OneYearMethod, OneYearPattern, PastPatternEnd,
     PatternKind, PatternWeight, Period, ProcessDistribution, ReserveFit, SegmentDependence,
@@ -5790,8 +5790,126 @@ impl LatestDiagonals {
     }
 }
 
+/// A growth curve fitted to a benchmark pattern (`benchmark_curve()`).
+#[extendr]
+pub(crate) struct BenchmarkCurveFit {
+    inner: BenchmarkCurveInner,
+}
+
+/// The fit of `benchmark_curve()`: `values` at `ages` as `kind`
+/// ("percent_developed" or "cdf"), `weights` one per value or `NULL` for
+/// all 1, `max_age` `Inf` for none and `origin_width` `NULL` for no shift.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn benchmark_curve_rust(
+    ages: Vec<f64>,
+    values: Vec<f64>,
+    kind: &str,
+    curve: &str,
+    weights: Nullable<Vec<f64>>,
+    max_age: f64,
+    origin_width: Nullable<f64>,
+) -> Result<BenchmarkCurveFit> {
+    let kind = match kind {
+        "percent_developed" => PatternKind::PercentDeveloped,
+        "cdf" => PatternKind::AgeToUltimate,
+        _ => {
+            return Err(Error::Other(format!(
+                "kind must be \"percent_developed\" or \"cdf\", got \"{kind}\""
+            )));
+        }
+    };
+    if ages.len() != values.len() {
+        return Err(Error::Other("pattern needs one age for each value".into()));
+    }
+    let pairs: Vec<(f64, f64)> = ages.into_iter().zip(values).collect();
+    let weights = match weights {
+        Nullable::NotNull(w) => Some(w),
+        Nullable::Null => None,
+    };
+    let settings = BenchmarkCurve {
+        curve: growth_curve(curve)?,
+        max_age: clark_max_age(max_age),
+        origin_width: optional(origin_width),
+    };
+    let inner = settings
+        .fit(kind, &pairs, weights.as_deref())
+        .map_err(to_r)?;
+    Ok(BenchmarkCurveFit { inner })
+}
+
+#[extendr]
+impl BenchmarkCurveFit {
+    fn curve(&self) -> &'static str {
+        growth_curve_name(self.inner.curve)
+    }
+
+    fn omega(&self) -> f64 {
+        self.inner.omega
+    }
+
+    fn theta(&self) -> f64 {
+        self.inner.theta
+    }
+
+    /// `Inf` when development runs to infinity.
+    fn max_age(&self) -> f64 {
+        self.inner.max_age.unwrap_or(f64::INFINITY)
+    }
+
+    /// NaN without the average-date shift.
+    fn origin_width(&self) -> f64 {
+        self.inner.origin_width.unwrap_or(f64::NAN)
+    }
+
+    fn ages(&self) -> Vec<f64> {
+        self.inner.ages.clone()
+    }
+
+    fn observed(&self) -> Vec<f64> {
+        self.inner.observed.clone()
+    }
+
+    fn weights(&self) -> Vec<f64> {
+        self.inner.weights.clone()
+    }
+
+    fn fitted(&self) -> Vec<f64> {
+        self.inner.fitted.clone()
+    }
+
+    fn residuals(&self) -> Vec<f64> {
+        self.inner.residuals.clone()
+    }
+
+    fn sum_of_squares(&self) -> f64 {
+        self.inner.sum_of_squares
+    }
+
+    /// The fitted percent developed at each development age in months.
+    fn percent_developed(&self, age: &[f64]) -> Vec<f64> {
+        age.iter()
+            .map(|&a| self.inner.percent_developed(a))
+            .collect()
+    }
+
+    /// The fitted factor to ultimate at each development age in months.
+    fn cdf(&self, age: &[f64]) -> Vec<f64> {
+        age.iter().map(|&a| self.inner.cdf(a)).collect()
+    }
+
+    /// The fitted pattern's percents developed at whole development ages,
+    /// checked as `BenchmarkCurveFit::pattern` checks them.
+    fn pattern(&self, ages: &[f64]) -> Result<Vec<f64>> {
+        let lags = ages.iter().map(|&a| age(a)).collect::<Result<Vec<Lag>>>()?;
+        let pattern = self.inner.pattern(&lags).map_err(to_r)?;
+        Ok(pattern.values.iter().map(|&(_, p)| p).collect())
+    }
+}
+
 extendr_module! {
     mod reserving;
+    fn benchmark_curve_rust;
     fn underwriting_exposure_rust;
     impl Triangle;
     impl LatestDiagonals;
@@ -5818,6 +5936,7 @@ extendr_module! {
     impl MackBootstrapFit;
     impl OneYearFit;
     impl ClarkFit;
+    impl BenchmarkCurveFit;
 }
 
 /// Which factors a one-year bootstrap simulates: with `bootstrap_ldf` the

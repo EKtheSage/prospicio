@@ -49,11 +49,18 @@ sources:
   value in every simulated year: on a triangle with no noise the claims
   development result is the closed form `(f - 1) (a[o] E / cdf - latest)`
   per origin, and a keyed and an in-order a priori draw the same.
+* In Python a pandas Series is keyed by its index, as a dict (#644): a
+  column taken from the user's frame, `df.set_index("origin")["elr"]`,
+  lines up with the origins in any row order. A default `RangeIndex` carries
+  no origin and is an error, so a column in row order cannot slip through
+  by position; `Series.to_dict()` would keep only the last of a repeated
+  origin, so the binding reads `items()` and a repeat stays an error.
 
 # Where it is checked
 
 The Rust unit tests above (run by CI's `cargo test`), and the same
 identities through Python (`python/tests/test_reserving.py`,
-`python/tests/test_reserving_latest_diagonal.py`) and R
+`python/tests/test_reserving_latest_diagonal.py`, with the pandas Series
+by its index on the shuffled diagonal) and R
 (`R/prospicio/tests/test-reserving.R`,
 `R/prospicio/tests/test-reserving-latest-diagonal.R`).

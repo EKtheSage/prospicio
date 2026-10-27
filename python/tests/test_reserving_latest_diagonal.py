@@ -744,6 +744,26 @@ def test_apriori_by_origin_follows_the_origins_not_the_rows():
                             ldf_kind="cdf").fit_diagonal(d)
 
 
+def test_apriori_pandas_series_on_shuffled_rows():
+    # #644: the a priori as a column of the diagonal's own frame, indexed by
+    # origin, lines up on rows not oldest first; a default RangeIndex is an
+    # error, since it would be read by position.
+    pd = pytest.importorskip("pandas")
+    frame = pd.DataFrame({"origin": [2024, 2022, 2023], "age": [12, 36, 24],
+                          "latest": [150.0, 900.0, 600.0], "exposure": [1000.0] * 3,
+                          "elr": [0.8, 0.6, 0.7]})
+    d = LatestDiagonal(frame["origin"], frame["age"], frame["latest"],
+                       exposure=frame["exposure"])
+    cdf = {12: 2.0, 24: 1.25, 36: 1.0}
+    want = [900.0, 600.0 + 0.2 * 0.7 * 1000.0, 150.0 + 0.5 * 0.8 * 1000.0]
+    bf = BornhuetterFerguson(apriori=frame.set_index("origin")["elr"], ldf=cdf,
+                             ldf_kind="cdf").fit_diagonal(d)
+    assert bf.apriori == [0.6, 0.7, 0.8]
+    close(bf.ultimate, want)
+    with pytest.raises(ValueError, match="default RangeIndex"):
+        BornhuetterFerguson(apriori=frame["elr"], ldf=cdf, ldf_kind="cdf")
+
+
 def test_issue_632_one_value_with_a_tail_past_its_end():
     # One value is the tail from its age: a tail past it, or no development
     # past it, would rescale it away, whether or not an origin is older.
