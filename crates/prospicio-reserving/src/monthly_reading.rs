@@ -24,7 +24,15 @@
 //!    whose averages are the given values exactly (`A d = b`), not
 //!    negative except within a span whose given value is below the one
 //!    before it (downward development, as an incurred pattern with factors
-//!    below 1 has it), with `sum d <= L`. The quadratic programme is solved
+//!    below 1 has it). Nothing caps `p` at the level: the given value at
+//!    the last age is the average of the last `s` months, so a pattern
+//!    still developing there has `p(E)` above it, and a cap would flatten
+//!    the last window (and leave no solution at ages finer than `s`). On a
+//!    monotone input the expanded `P_s`, a moving average of a monotone
+//!    `p` whose last window averages to the level, stays at or below it. A given
+//!    value below the one before it by no more than `1e-12` of the largest
+//!    given value is rounding, not downward development, and the averages
+//!    are reproduced to that tolerance. The quadratic programme is solved
 //!    exactly by Goldfarb and Idnani's dual active-set method with the
 //!    identity as its Hessian, each step a small solve of the equality rows
 //!    restricted to the free months, and the result is checked against
@@ -34,7 +42,6 @@
 //! average of `p` at the other months.
 
 use prospicio_core::Lag;
-use prospicio_math::linalg::{cholesky, cholesky_solve, solve};
 use prospicio_math::optimize::{NelderMead, nelder_mead};
 
 use crate::benchmark_curve::{MAX_LN_THETA, MAX_OMEGA, MIN_OMEGA, linearized};
@@ -131,7 +138,8 @@ pub(crate) fn read_monthly(points: &[(Lag, f64)], s: u32, curve: GrowthCurve) ->
     if points.len() < 2 {
         return fail(
             "a single value gives no shape to read between ages: give two or more, or read it \
-             with AnnualReading::LnLinear",
+             with the ln-linear reading (AnnualReading::LnLinear; reading=\"ln-linear\" in \
+             Python and R)",
         );
     }
     let n = points[points.len() - 1].0 as usize;
@@ -144,7 +152,7 @@ pub(crate) fn read_monthly(points: &[(Lag, f64)], s: u32, curve: GrowthCurve) ->
         c.push(x - prev);
         prev = x;
     }
-    let d = project(points, s, &c, level)?;
+    let d = project(points, s, &c)?;
     let mut p = Vec::with_capacity(n);
     let mut sum = 0.0;
     for &x in &d {
@@ -231,116 +239,113 @@ fn fit_curve(points: &[(Lag, f64)], s: u32, curve: GrowthCurve) -> Result<(f64, 
         return fail(
             "the growth curve through the averages ran off to the edge of its parameters: the \
              pattern's percents developed do not increase with age; read it with \
-             AnnualReading::LnLinear",
+             the ln-linear reading (AnnualReading::LnLinear; reading=\"ln-linear\" in Python \
+             and R)",
         );
     }
     Ok((ln_omega.exp(), ln_theta.exp()))
 }
 
 /// The increments `d` on months 1 to `E` nearest `c` in least squares with
-/// the averages at the given ages equal to the given values, `d >= 0`
-/// except within a span whose given value is below the one before it, and
-/// `sum d <= level`, by Goldfarb and Idnani's dual method (Hessian the
-/// identity), checked at the end.
-fn project(points: &[(Lag, f64)], s: u32, c: &[f64], level: f64) -> Result<Vec<f64>> {
+/// the averages at the given ages equal to the given values and `d >= 0`
+/// except within a span whose given value is below the one before it by
+/// more than the projection's tolerance, by Goldfarb and Idnani's dual
+/// method (Hessian the identity), checked at the end.
+fn project(points: &[(Lag, f64)], s: u32, c: &[f64]) -> Result<Vec<f64>> {
     let n = c.len();
     let rows: Vec<Vec<f64>> = points.iter().map(|&(a, _)| average_row(a, s, n)).collect();
     let b: Vec<f64> = points.iter().map(|p| p.1).collect();
+    let tol = tolerance(points);
     // Months that may develop downward: those of a span whose given value
-    // is below the one before it.
+    // is below the one before it by more than rounding.
     let mut bounded = vec![true; n];
     let (mut prev_age, mut prev_value) = (0usize, 0.0);
     for &(a, v) in points {
-        if v < prev_value {
+        if v < prev_value - tol {
             bounded[prev_age..a as usize].fill(false);
         }
         (prev_age, prev_value) = (a as usize, v);
     }
+    // Months the given values themselves hold at 0: where two given values
+    // in a row are equal (to rounding), `P_s(a') - P_s(a)` is the sum of
+    // the increments of months `a - s + 2` to `a'`, each not negative, so
+    // every one is 0 (from the first month when the first value is 0).
+    // Held from the start and never released, they leave no equality row
+    // dependent on a bound held at 0 by rounding.
+    let mut zero = vec![false; n];
+    let (mut prev_age, mut prev_value) = (0i64, 0.0);
+    for &(a, v) in points {
+        let a = i64::from(a);
+        let lo = (prev_age - i64::from(s) + 2).max(1) as usize;
+        if (v - prev_value).abs() <= tol && bounded[lo - 1..a as usize].iter().all(|&x| x) {
+            zero[lo - 1..a as usize].fill(true);
+        }
+        (prev_age, prev_value) = (a, v);
+    }
     let mut qp = Projection {
         rows: &rows,
-        fixed: vec![false; n],
-        cap: false,
+        fixed: zero.clone(),
     };
-    // The equality rows first: `x = c + A' u`, `A A' u = b - A c`.
+    // The equality rows first.
     let k = rows.len();
-    let gram = gram(&rows, &qp.fixed, false);
-    let rhs: Vec<f64> = rows.iter().zip(&b).map(|(r, &bi)| bi - dot(r, c)).collect();
-    let Some(u) = solve_gram(gram, rhs, k) else {
-        return fail("the reading's averaging rows are dependent");
-    };
-    let mut x = c.to_vec();
-    for (r, &ui) in rows.iter().zip(&u) {
-        for (xj, &rj) in x.iter_mut().zip(r) {
-            *xj += ui * rj;
-        }
-    }
-    let mut u_eq = u;
+    let mut x = primal(&rows, &b, c, &qp.fixed);
     let mut u_bound = vec![0.0; n];
-    let mut u_cap = 0.0;
-    let tol = 1e-14;
+    // Bounds violated by no more than the tolerance whose normals depend
+    // on the active set: accepted as met, not added.
+    let mut waived = vec![false; n];
     let mut steps = 0usize;
     let max_steps = 50 * (n + k + 1);
     loop {
-        // The most violated inactive inequality: a bound or the cap.
-        let mut worst: Option<(Constraint, f64)> = None;
+        // The most violated inactive bound, by more than a tenth of the
+        // tolerance the result is checked to.
+        let mut worst: Option<usize> = None;
         for j in 0..n {
-            if bounded[j] && !qp.fixed[j] && x[j] < -tol && worst.is_none_or(|w| x[j] < w.1) {
-                worst = Some((Constraint::Bound(j), x[j]));
+            if bounded[j]
+                && !qp.fixed[j]
+                && !waived[j]
+                && x[j] < -0.1 * tol
+                && worst.is_none_or(|w| x[j] < x[w])
+            {
+                worst = Some(j);
             }
         }
-        let cap_slack = level - x.iter().sum::<f64>();
-        if !qp.cap && cap_slack < -tol && worst.is_none_or(|w| cap_slack < w.1) {
-            worst = Some((Constraint::Cap, cap_slack));
-        }
-        let Some((add, _)) = worst else { break };
-        let normal: Vec<f64> = match add {
-            Constraint::Bound(j) => {
-                let mut e = vec![0.0; n];
-                e[j] = 1.0;
-                e
-            }
-            Constraint::Cap => vec![-1.0; n],
-        };
-        let slack = |x: &[f64]| match add {
-            Constraint::Bound(j) => x[j],
-            Constraint::Cap => level - x.iter().sum::<f64>(),
-        };
+        let Some(add) = worst else { break };
         let mut u_add = 0.0;
         loop {
             steps += 1;
             if steps > max_steps {
                 return fail("the reading's projection did not converge");
             }
-            let Some(step) = qp.direction(&normal) else {
-                return fail("the reading's active constraints are dependent");
-            };
+            let step = qp.direction(add);
             let zz = dot(&step.z, &step.z);
-            let t1 = if zz > 1e-20 * dot(&normal, &normal) {
-                -slack(&x) / zz
+            // A bound whose normal lies (to rounding) in the span of the
+            // active constraints cannot be reached by a primal step.
+            let t1 = if zz > 1e-12 {
+                -x[add] / zz
             } else {
                 f64::INFINITY
             };
-            // The largest dual step that keeps every active inequality's
+            // Such a bound violated only by rounding is met as it stands:
+            // dual steps on it would only drop and re-add held bounds.
+            if t1.is_infinite() && x[add] >= -tol {
+                waived[add] = true;
+                break;
+            }
+            // The largest dual step that keeps every held bound's
             // multiplier not negative.
             let mut t2 = f64::INFINITY;
             let mut drop = None;
             for (j, (&uj, &rj)) in u_bound.iter().zip(&step.r_bound).enumerate() {
-                if qp.fixed[j] && rj > 1e-15 && uj / rj < t2 {
-                    (t2, drop) = (uj / rj, Some(Constraint::Bound(j)));
-                }
-            }
-            if qp.cap && step.r_cap > 1e-15 {
-                let t = u_cap / step.r_cap;
-                if t < t2 {
-                    (t2, drop) = (t, Some(Constraint::Cap));
+                if qp.fixed[j] && !zero[j] && rj > 1e-12 && uj / rj < t2 {
+                    (t2, drop) = (uj / rj, Some(j));
                 }
             }
             let t = t1.min(t2);
             if !t.is_finite() {
                 return fail(
                     "no monotone accident-month pattern has the given averages: check that the \
-                     pattern's percents developed do not decrease, or read it with \
-                     AnnualReading::LnLinear",
+                     pattern's percents developed do not decrease, or read it with the ln-linear \
+                     reading (AnnualReading::LnLinear; reading=\"ln-linear\" in Python and R)",
                 );
             }
             if t1.is_finite() {
@@ -348,142 +353,120 @@ fn project(points: &[(Lag, f64)], s: u32, c: &[f64], level: f64) -> Result<Vec<f
                     *xj += t * zj;
                 }
             }
-            for (ui, ri) in u_eq.iter_mut().zip(&step.r_eq) {
-                *ui -= t * ri;
-            }
             for ((uj, &rj), &held) in u_bound.iter_mut().zip(&step.r_bound).zip(&qp.fixed) {
                 if held {
                     *uj -= t * rj;
                 }
             }
-            if qp.cap {
-                u_cap -= t * step.r_cap;
-            }
             u_add += t;
             if t1 <= t2 {
-                match add {
-                    Constraint::Bound(j) => {
-                        qp.fixed[j] = true;
-                        x[j] = 0.0;
-                        u_bound[j] = u_add;
-                    }
-                    Constraint::Cap => {
-                        qp.cap = true;
-                        u_cap = u_add;
-                    }
-                }
+                qp.fixed[add] = true;
+                u_bound[add] = u_add;
+                // The point of the new active set solved afresh, so that
+                // the steps' rounding does not build up; a waived bound is
+                // looked at again from it.
+                x = primal(&rows, &b, c, &qp.fixed);
+                waived.fill(false);
                 break;
             }
-            match drop {
-                Some(Constraint::Bound(j)) => {
-                    qp.fixed[j] = false;
-                    u_bound[j] = 0.0;
-                }
-                Some(Constraint::Cap) => {
-                    qp.cap = false;
-                    u_cap = 0.0;
-                }
-                None => unreachable!("a finite partial step names the constraint it drops"),
-            }
+            let j = drop.expect("a finite partial step names the bound it drops");
+            qp.fixed[j] = false;
+            u_bound[j] = 0.0;
         }
     }
     // Every constraint checked on the result.
     let exact = rows
         .iter()
         .zip(&b)
-        .all(|(r, &bi)| (dot(r, &x) - bi).abs() <= 1e-12);
-    let signs = x.iter().zip(&bounded).all(|(&xj, &bj)| !bj || xj >= -1e-12);
-    let capped = x.iter().sum::<f64>() <= level + 1e-12;
-    if !(exact && signs && capped) {
+        .all(|(r, &bi)| (dot(r, &x) - bi).abs() <= tol);
+    let signs = x.iter().zip(&bounded).all(|(&xj, &bj)| !bj || xj >= -tol);
+    if !(exact && signs) {
         return fail("the reading's projection did not reach the given averages");
     }
     Ok(x)
 }
 
-/// An inequality of the projection: a month's increment not negative, or
-/// the increments summing to at most the level.
-#[derive(Debug, Clone, Copy)]
-enum Constraint {
-    Bound(usize),
-    Cap,
+/// The increments nearest `c` with the `fixed` months at 0 and the
+/// averages the given values: `x = c + R' u` on the free months, `R` the
+/// equality rows restricted to them and `R R' u = b - R c`.
+fn primal(rows: &[Vec<f64>], b: &[f64], c: &[f64], fixed: &[bool]) -> Vec<f64> {
+    let g = gram(rows, fixed);
+    let mut x: Vec<f64> = c
+        .iter()
+        .zip(fixed)
+        .map(|(&cj, &held)| if held { 0.0 } else { cj })
+        .collect();
+    // The solve, then one pass of refinement on its residuals.
+    for _ in 0..2 {
+        let rhs: Vec<f64> = rows.iter().zip(b).map(|(r, &bi)| bi - dot(r, &x)).collect();
+        let u = solve_semidefinite(&g, &rhs, rows.len());
+        for (j, xj) in x.iter_mut().enumerate() {
+            if !fixed[j] {
+                *xj += rows.iter().zip(&u).map(|(r, ui)| r[j] * ui).sum::<f64>();
+            }
+        }
+    }
+    x
 }
 
-/// The active set of the projection: the equality rows, the months whose
-/// increment is held at 0 and whether the cap is active.
+/// The rounding the projection allows: `1e-12` of the largest given value,
+/// or of 1 when they are all smaller.
+fn tolerance(points: &[(Lag, f64)]) -> f64 {
+    1e-12 * points.iter().fold(1.0f64, |m, p| m.max(p.1.abs()))
+}
+
+/// The active set of the projection: the equality rows and the months
+/// whose increment is held at 0.
 struct Projection<'a> {
     rows: &'a [Vec<f64>],
     fixed: Vec<bool>,
-    cap: bool,
 }
 
 /// The primal step `z` (the normal's part in the null space of the active
-/// constraints) and the dual steps `r` of a constraint to add.
+/// constraints) and the held bounds' dual steps `r` of a bound to add.
 struct Step {
     z: Vec<f64>,
-    r_eq: Vec<f64>,
     r_bound: Vec<f64>,
-    r_cap: f64,
 }
 
 impl Projection<'_> {
-    /// Splits `normal` into `N r + z`, `N` the active constraints' normals
-    /// (the equality rows, the cap's `-1` and a unit vector per held
-    /// month), with `z` orthogonal to them. `None` when they are
-    /// dependent.
-    fn direction(&self, normal: &[f64]) -> Option<Step> {
-        let n = normal.len();
-        let k = self.rows.len() + usize::from(self.cap);
-        let row = |i: usize, j: usize| {
-            if i < self.rows.len() {
-                self.rows[i][j]
-            } else {
-                -1.0
-            }
-        };
-        let g = gram(self.rows, &self.fixed, self.cap);
-        let rhs: Vec<f64> = (0..k)
-            .map(|i| {
-                (0..n)
-                    .filter(|&j| !self.fixed[j])
-                    .map(|j| row(i, j) * normal[j])
-                    .sum()
-            })
-            .collect();
-        let w = solve_gram(g, rhs, k)?;
-        // `R' w` at every month.
-        let back: Vec<f64> = (0..n)
-            .map(|j| (0..k).map(|i| row(i, j) * w[i]).sum())
-            .collect();
+    /// Splits the unit normal of month `add` into `N r + z`, `N` the active
+    /// constraints' normals (the equality rows and a unit vector per held
+    /// month), with `z` orthogonal to them. An equality row that depends,
+    /// to rounding, on the others on the free months is left out of the
+    /// split.
+    fn direction(&self, add: usize) -> Step {
+        let n = self.fixed.len();
+        let k = self.rows.len();
+        let g = gram(self.rows, &self.fixed);
+        // The month added is free, so each row's part of the normal on the
+        // free months is its weight on that month.
+        let rhs: Vec<f64> = self.rows.iter().map(|r| r[add]).collect();
+        let w = solve_semidefinite(&g, &rhs, k);
         let mut z = vec![0.0; n];
         let mut r_bound = vec![0.0; n];
         for j in 0..n {
+            let back: f64 = self.rows.iter().zip(&w).map(|(r, wi)| r[j] * wi).sum();
+            let normal = if j == add { 1.0 } else { 0.0 };
             if self.fixed[j] {
-                r_bound[j] = normal[j] - back[j];
+                r_bound[j] = normal - back;
             } else {
-                z[j] = normal[j] - back[j];
+                z[j] = normal - back;
             }
         }
-        let r_cap = if self.cap { w[k - 1] } else { 0.0 };
-        let r_eq = w[..self.rows.len()].to_vec();
-        Some(Step {
-            z,
-            r_eq,
-            r_bound,
-            r_cap,
-        })
+        Step { z, r_bound }
     }
 }
 
-/// The Gram matrix of the equality rows (and the cap's `-1` row when
-/// `cap`) restricted to the months not `fixed`, row-major.
-fn gram(rows: &[Vec<f64>], fixed: &[bool], cap: bool) -> Vec<f64> {
-    let k = rows.len() + usize::from(cap);
+/// The Gram matrix of the equality rows restricted to the months not
+/// `fixed`, row-major.
+fn gram(rows: &[Vec<f64>], fixed: &[bool]) -> Vec<f64> {
+    let k = rows.len();
     let free: Vec<usize> = (0..fixed.len()).filter(|&j| !fixed[j]).collect();
-    let row = |i: usize, j: usize| if i < rows.len() { rows[i][j] } else { -1.0 };
     let mut g = vec![0.0; k * k];
     for i in 0..k {
         for l in 0..=i {
-            let v: f64 = free.iter().map(|&j| row(i, j) * row(l, j)).sum();
+            let v: f64 = free.iter().map(|&j| rows[i][j] * rows[l][j]).sum();
             g[i * k + l] = v;
             g[l * k + i] = v;
         }
@@ -491,13 +474,42 @@ fn gram(rows: &[Vec<f64>], fixed: &[bool], cap: bool) -> Vec<f64> {
     g
 }
 
-/// Solves the Gram system by Cholesky, or by elimination when Cholesky
-/// fails on rounding. `None` when it is singular.
-fn solve_gram(g: Vec<f64>, rhs: Vec<f64>, k: usize) -> Option<Vec<f64>> {
-    match cholesky(&g, k) {
-        Some(l) => Some(cholesky_solve(&l, &rhs)),
-        None => solve(g, rhs, k),
+/// Solves `G w = rhs` for a positive semidefinite Gram matrix `G` by a
+/// Cholesky factorization that skips each row whose pivot is at most
+/// `1e-10` of its diagonal (a row that depends, to rounding, on the rows
+/// before it), with `w` 0 there. When `rhs` is in the range of `G`, as it
+/// is in the projection, the skipped rows' equations hold too.
+fn solve_semidefinite(g: &[f64], rhs: &[f64], k: usize) -> Vec<f64> {
+    let mut l = vec![0.0f64; k * k];
+    let mut kept = vec![false; k];
+    for j in 0..k {
+        let d = g[j * k + j] - (0..j).map(|m| l[j * k + m].powi(2)).sum::<f64>();
+        if d.is_nan() || d <= 1e-10 * g[j * k + j] {
+            continue;
+        }
+        kept[j] = true;
+        let ljj = d.sqrt();
+        l[j * k + j] = ljj;
+        for i in j + 1..k {
+            let v = g[i * k + j] - (0..j).map(|m| l[i * k + m] * l[j * k + m]).sum::<f64>();
+            l[i * k + j] = v / ljj;
+        }
     }
+    let mut y = vec![0.0; k];
+    for j in 0..k {
+        if kept[j] {
+            let v = rhs[j] - (0..j).map(|m| l[j * k + m] * y[m]).sum::<f64>();
+            y[j] = v / l[j * k + j];
+        }
+    }
+    let mut w = vec![0.0; k];
+    for j in (0..k).rev() {
+        if kept[j] {
+            let v = y[j] - (j + 1..k).map(|m| l[m * k + j] * w[m]).sum::<f64>();
+            w[j] = v / l[j * k + j];
+        }
+    }
+    w
 }
 
 fn dot(a: &[f64], b: &[f64]) -> f64 {
@@ -537,11 +549,14 @@ mod tests {
             assert!((average_at(p, s, a) - v).abs() < 1e-12, "age {a}");
         }
         let level = points[points.len() - 1].1;
-        assert!(p[p.len() - 1] <= level + 1e-12);
         if !downward {
-            assert!(p.iter().all(|&x| x <= level + 1e-12));
-            assert!(p.windows(2).all(|w| w[1] >= w[0] - 1e-14));
-            assert!(p[0] >= -1e-14);
+            // `p` monotone, and its averages at every month (the expanded
+            // pattern) monotone and within the level.
+            assert!(p.windows(2).all(|w| w[1] >= w[0] - 1e-12));
+            assert!(p[0] >= -1e-12);
+            let expanded: Vec<f64> = (1..=p.len() as Lag).map(|a| average_at(p, s, a)).collect();
+            assert!(expanded.windows(2).all(|w| w[1] >= w[0] - 1e-12));
+            assert!(expanded.iter().all(|&x| x <= level + 1e-12));
         }
     }
 
@@ -656,8 +671,97 @@ mod tests {
         let two = [(12, 0.4), (24, 0.9)];
         let Reading { monthly: p, .. } = read_monthly(&two, 12, GrowthCurve::Weibull).unwrap();
         check(&two, 12, &p, false);
-        // The level reached by month 13, as P(24) = 0.9 demands.
-        assert!((p[12] - 0.9).abs() < 1e-12);
+        // Months 13 to 24 average to the level.
+        assert!((p[12..24].iter().sum::<f64>() / 12.0 - 0.9).abs() < 1e-12);
+    }
+
+    /// `1 - rate^t` by accident month, held from `flat`.
+    fn geometric(rate: f64, flat: i64) -> impl Fn(i64) -> f64 {
+        move |t| {
+            if t <= 0 {
+                0.0
+            } else {
+                1.0 - rate.powi(t.min(flat) as i32)
+            }
+        }
+    }
+
+    #[test]
+    fn accident_years_at_ages_finer_than_a_year() {
+        // Quarterly and semiannual ages of accident years: flat over the
+        // last months but not over the whole last year of ages (the
+        // dependent rows a held span leaves), and still developing at the
+        // last age, where a cap at the level had no solution.
+        for (rate, flat, end, step) in [
+            (0.95, 60, 120, 3),
+            (0.97, 96, 120, 3),
+            (0.97, 120, 240, 6),
+            (0.97, 120, 240, 3),
+            (0.9, i64::MAX, 120, 3),
+            (0.97, i64::MAX, 120, 3),
+            (0.97, i64::MAX, 120, 12),
+        ] {
+            let truth = geometric(rate, flat);
+            let ages: Vec<Lag> = (1..=end / step).map(|k| step * k).collect();
+            let points = averages(&truth, 12, &ages);
+            for curve in [GrowthCurve::Weibull, GrowthCurve::LogLogistic] {
+                let Reading { monthly: p, .. } = read_monthly(&points, 12, curve)
+                    .unwrap_or_else(|e| panic!("{rate} {flat} {end} {step} {curve:?}: {e}"));
+                check(&points, 12, &p, false);
+            }
+        }
+    }
+
+    #[test]
+    fn a_decrease_of_rounding_is_not_downward_development() {
+        // The 96-month value of a flat tail lowered by one ulp: the
+        // increments stay bounded and the pattern monotone.
+        let mut points = annual(book, 120);
+        points[7].1 = points[7].1 - points[7].1 * f64::EPSILON;
+        assert!(points[7].1 < points[6].1);
+        let Reading { monthly: p, .. } = read_monthly(&points, 12, GrowthCurve::Weibull).unwrap();
+        check(&points, 12, &p, false);
+    }
+
+    #[test]
+    fn a_sweep_of_monotone_patterns_at_finer_ages() {
+        // Monotone accident-month patterns from sparse increments, read at
+        // ages spaced below the accident period: every one has a solution.
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 11) as f64 / (1u64 << 53) as f64
+        };
+        for trial in 0..60 {
+            let (s, step, end) = match trial % 3 {
+                0 => (12, 3, 120),
+                1 => (12, 6, 96),
+                _ => (6, 3, 60),
+            };
+            let mut d = vec![0.0; end as usize];
+            for x in d.iter_mut() {
+                if next() < 0.3 {
+                    *x = next();
+                }
+            }
+            let total: f64 = d.iter().sum::<f64>() / (0.9 + 0.1 * next());
+            let mut p = Vec::with_capacity(d.len());
+            let mut sum = 0.0;
+            for x in &d {
+                sum += x / total;
+                p.push(sum);
+            }
+            let truth = |t: i64| if t <= 0 { 0.0 } else { p[t as usize - 1] };
+            let ages: Vec<Lag> = (1..=end / step).map(|k| step * k).collect();
+            let points = averages(truth, s, &ages);
+            for curve in [GrowthCurve::Weibull, GrowthCurve::LogLogistic] {
+                let Reading { monthly: q, .. } = read_monthly(&points, s, curve)
+                    .unwrap_or_else(|e| panic!("trial {trial} {curve:?}: {e}"));
+                check(&points, s, &q, false);
+            }
+        }
     }
 
     #[test]
@@ -717,7 +821,7 @@ mod tests {
         let e = one
             .to_underwriting_basis(Grain::Year, &UnderwritingBasis::default())
             .unwrap_err();
-        assert!(e.to_string().contains("AnnualReading::LnLinear"), "{e}");
+        assert!(e.to_string().contains("reading=\"ln-linear\""), "{e}");
         let old = UnderwritingBasis::default().with_reading(AnnualReading::LnLinear);
         assert!(one.to_underwriting_basis(Grain::Year, &old).is_ok());
         // Flat: every month reports in full at once.

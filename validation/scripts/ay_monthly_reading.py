@@ -232,8 +232,9 @@ def second_differences(n):
     return D2
 
 
-def solve_qp(points, s, G, g, name):
-    """min d'G d + g'd, d >= 0, sum d <= level, A d = b, by SLSQP."""
+def solve_qp(points, s, G, g, name, cap=True):
+    """min d'G d + g'd, d >= 0, A d = b, by SLSQP, with sum d <= level when
+    `cap`."""
     E = points[-1][0]
     level = points[-1][1]
     C, A, b = constraint_matrix(points, s)
@@ -245,10 +246,9 @@ def solve_qp(points, s, G, g, name):
     def jac(d):
         return H @ d + g
 
-    cons = [
-        {"type": "eq", "fun": lambda d: A @ d - b, "jac": lambda d: A},
-        {"type": "ineq", "fun": lambda d: level - d.sum(), "jac": lambda d: -np.ones(E)},
-    ]
+    cons = [{"type": "eq", "fun": lambda d: A @ d - b, "jac": lambda d: A}]
+    if cap:
+        cons.append({"type": "ineq", "fun": lambda d: level - d.sum(), "jac": lambda d: -np.ones(E)})
     base = np.array([v for _, v in expand_baseline(points, s)])
     d0 = np.clip(np.diff(np.concatenate([[0.0], base])), 0, None)
     # increments are free (may be negative) only within a span whose given
@@ -312,14 +312,16 @@ def expand_logqp(points, s):
 def expand_curve_exact(points, s, curve):
     """The curve fitted through the averages, then the nearest monotone
     `p` (least squared change of the increments) whose averages are the
-    given values exactly."""
+    given values exactly. No cap at the level, as built (decision 25): the
+    last given value is the average of the last `s` months, so a pattern
+    still developing there has `p(E)` above it."""
     E = points[-1][0]
     omega, theta, _ = expand_curve(points, s, curve)[1]
     level = points[-1][1]
     t = np.arange(1, E + 1, dtype=float)
     g = level * growth(curve, t, omega, theta) / growth(curve, E, omega, theta)
     d_curve = np.diff(np.concatenate([[0.0], g]))
-    return solve_qp(points, s, np.eye(E), -2 * d_curve, f"{curve}+exact")
+    return solve_qp(points, s, np.eye(E), -2 * d_curve, f"{curve}+exact", cap=False)
 
 
 def growth(curve, t, omega, theta):

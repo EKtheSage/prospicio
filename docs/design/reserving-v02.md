@@ -4254,9 +4254,12 @@ reads the pattern between its ages as if an accident year developed
    cases are kept to the bit. An accident-year pattern at quarterly ages
    and an accident-quarter pattern (`s = 3`) at quarterly ages, where the
    baseline is already within 1.3%, are exact under `wbl+exact` and
-   within 0.1% under `monoqp` and `llog+exact`. With three given ages
-   only (12, 24, 36) `wbl+exact` is 0.978, 1.008 and 0.999 against the
-   baseline's 1.312, 0.916 and 0.982. A level below 1 (every share 0.95
+   within 0.1% under `monoqp` and `llog+exact` (SLSQP stops short on the
+   accident-year pattern at quarterly ages, so those figures are not an
+   exact optimum; see "As built"). With three given ages
+   only (12, 24, 36) `wbl+exact` was 0.978, 1.008 and 0.999 against the
+   baseline's 1.312, 0.916 and 0.982 with the cap at the level, and is
+   0.976, 1.010 and 0.994 as built without it. A level below 1 (every share 0.95
    of the book's) changes nothing in the ratios. `wbl+scale`, the closed
    form, is exact where the cap does not bind and 6% high at 12 months on
    the slow loglogistic. Cost in the prototype (scipy, SLSQP): 0.1 to 0.3
@@ -4364,20 +4367,57 @@ and `R/prospicio/tests/test-reserving-uy-pattern.R`):
   that steepens toward a step). Decision 23's edge check is kept as an
   error. A flat pattern does not reach the edge: the curve reports
   everything in the first month and the projection reproduces it.
+- **No cap at the level** (a departure from items 1, 2 and 8, made after
+  review on 2026-10-27, for the user to confirm). The study capped the
+  increments at the level, `sum d <= L`. The given value at the last age
+  `E` is the average of `p` over the last `s` months, so with `p` not
+  decreasing the cap forces `p` to equal the level over the whole last
+  window. At annual ages that flattens the last year of any pattern still
+  developing at `E`; at ages finer than `s` (quarterly ages of accident
+  years) the overlapping windows then fix each quarter's block from the
+  next one back, and a pattern still developing at its last age, even by
+  3e-6 (`1 - 0.9^t` read quarterly to 120 months), has no solution at
+  all, so the default refused common inputs with an error that blamed
+  decreasing percents. Without the cap `p(E)` may exceed the level (the
+  development past `E` that a tail carries), and the expanded `P_s`, a
+  moving average of a monotone `p` whose last window averages to the
+  level, still stays within `[0, level]` on a monotone input, so item 1's
+  conditions on the expanded pattern hold. Where the given values already
+  hold `p` flat over the last window (two equal values in a row, as the
+  book's from 72 months), the cap was redundant and nothing moves: the
+  book's pinned misses are unchanged. CLRD private passenger auto paid
+  moves by at most 1.3e-6 at 12 to 72 months (the prototype run again
+  without the cap, below), and the three-ages case of item 5 from 0.978,
+  1.008, 0.999 to 0.976, 1.010, 0.994. `validation/scripts/ay_monthly_reading.py`
+  drops the cap for `llog+exact` and `wbl+exact` (`monoqp` keeps it, as
+  studied); every other table of items 3 and 4 is unchanged to its
+  printed digits.
 - **The projection.** Goldfarb and Idnani's dual active-set method with the
   identity as its Hessian: the equality rows (one per given age,
   `min(s, a - u + 1) / s` on the increment of month `u`) first, then the
-  most violated bound or the cap added one at a time, with constraints
-  dropped when a multiplier would turn negative. Held months are taken out
-  of the solve, so each step solves the Gram system of the equality rows
-  (and the cap) on the free months by `cholesky` (`solve` as a fallback).
-  The result is checked on exit (averages to 1e-12, bounds and cap), and a
-  failure is an error, never a near solution. The expanded pattern is the
-  given value itself at each given age.
+  most violated bound added one at a time, with bounds dropped when a
+  multiplier would turn negative. Held months are taken out of the solve,
+  so each step solves the Gram system of the equality rows on the free
+  months by a Cholesky factorization that skips a row whose pivot is at
+  most 1e-10 of its diagonal (a row dependent, to rounding, on the
+  others), and after each bound is added the point is solved afresh with
+  one pass of refinement. One tolerance, `1e-12` of the largest given
+  value (or of 1), governs rounding: a given value below the one before it
+  by no more than it is not downward development; two given values in a
+  row equal within it hold the increments of months `a - s + 2` to `a'` at
+  0 from the start (each is not negative and they sum to `s (P_s(a') -
+  P_s(a))`), so held spans leave no dependent rows; a bound violated by no
+  more than it whose normal depends on the active set is met as it stands.
+  The result is checked on exit (averages and bounds to the same
+  tolerance), and a failure is an error, never a near solution. The
+  expanded pattern is the given value itself at each given age.
 - **Errors** (`Error::Pattern`): a single given value ("gives no shape to
-  read between ages", naming `AnnualReading::LnLinear`, under which it
-  still converts), the curve's edge, no monotone accident-month pattern
-  with the given averages, and a projection that does not converge.
+  read between ages", naming the ln-linear reading, under which it still
+  converts), the curve's edge, no monotone accident-month pattern with the
+  given averages, and a projection that does not converge. Each one that
+  points to the ln-linear reading names it as `AnnualReading::LnLinear`
+  and as `reading="ln-linear"` for Python and R, since the bindings pass
+  the message through.
 - **Numbers.** On the book of decision 21's checks, valued annually, the
   default's misses on the underwriting year's factors to ultimate are
   -0.00107, 0.00037, -0.00010, 0.00002, 0.00002 and -0.00002 at 12 to 72
@@ -4386,13 +4426,23 @@ and `R/prospicio/tests/test-reserving-uy-pattern.R`):
   Seasonal writing and six-month policies give 0.9986 and 0.9994 at 12
   months (decision 18's 1.40 and 1.17). The converted shares at 12 to 72
   months agree with the scipy prototype's `wbl+exact` and `llog+exact`
-  within 1.1e-9 on the book and CLRD private passenger auto paid (both
-  searches stop near their tolerance, at slightly different points); the
-  prototype's only SLSQP failures in the study are on the accident-year
-  pattern at quarterly ages (`wbl+exact` hit its iteration limit and
-  `llog+exact` reported incompatible constraints), so its four-digit
-  figures there are not an exact optimum. Factors to ultimate and
-  age-to-age factors convert as their percents to 1e-10 under the curve
-  (the inputs' last bits move the search) and to 1e-14 under `LnLinear`.
-  The nine unit tests, quarterly ages with 40 equality rows among them,
-  run in about 0.1 s together in an optimized debug build.
+  (without the cap) within 1.1e-9 on the book and CLRD private passenger
+  auto paid (both searches stop near their tolerance, at slightly
+  different points). SLSQP still stops short on the accident-year pattern
+  at quarterly ages (an iteration limit or "incompatible constraints"), so
+  the prototype's four-digit figures there are not an exact optimum; the
+  Rust projection solves those cases (unit tests below). Factors to
+  ultimate and age-to-age factors convert as their percents to 1e-10
+  under the curve (the inputs' last bits move the search) and to 1e-14
+  under `LnLinear`.
+- **Unit tests** (twelve, about 0.3 s together in an optimized debug
+  build): besides the ones above, accident years at quarterly and
+  semiannual ages, flat over their last months but not over the whole
+  last year of ages, and still developing at the last age (`1 - 0.9^t`
+  and `1 - 0.97^t` to 120 months, to 240 months held from 120); a flat
+  tail lowered by one ulp, read as monotone; and a seeded sweep of 60
+  monotone accident-month patterns built from sparse increments, read at
+  ages spaced below their accident period (`s = 12` at 3 and 6 months,
+  `s = 6` at 3), each under both curves. The sweep at 3,000 patterns
+  (6,000 readings, about 70 s in release) found no failure; before these
+  fixes about 1,100 of 2,940 such readings failed (review of PR #650).

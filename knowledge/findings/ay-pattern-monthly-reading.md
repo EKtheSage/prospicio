@@ -66,8 +66,9 @@ underwriting-year share with the book's own.[^script]
 * **Every exact candidate keeps decision 21's exact cases.** A pattern
   given at every month comes back unchanged (ratios 1 to 3e-16); at
   quarterly ages, where the current reading is within 1.3%, the corrected
-  Weibull is exact; with three given ages it is 0.978, 1.008, 0.999
-  against 1.312, 0.916, 0.982; a level below 1 changes nothing. The
+  Weibull is exact; with three given ages it is 0.976, 1.010, 0.994
+  (0.978, 1.008, 0.999 with the study's cap at the level, dropped as
+  built) against 1.312, 0.916, 0.982; a level below 1 changes nothing. The
   current reading's error depends on the basis: 1.40 at 12 months under
   seasonal writing and 1.17 under six-month policies, where the corrected
   Weibull is 0.9986 and 0.9994.[^script]
@@ -111,12 +112,29 @@ method on the KKT system, no SLSQP.[^module]
   accident-month pattern convert to the bit under every reading; the
   given values are reproduced to 1e-12, monotone, with downward
   development kept in Friedland's XYZ reported spans.[^test][^module]
+* **No cap at the level.** The study capped the monthly increments at the
+  level. The last given value is the average of the last `s` months, so
+  with `p` monotone the cap forces `p` flat over that whole window: it
+  flattens the last year of a pattern still developing at its end, and at
+  ages finer than the accident period (quarterly ages of accident years)
+  it leaves no solution at all for such a pattern, even `1 - 0.9^t`
+  developed to within 3e-6 at 120 months. As built the cap is dropped:
+  `p(E)` may exceed the level, the expanded pattern still stays within
+  `[0, level]` on a monotone input, the book's numbers do not move (its
+  given values already hold `p` flat at the end), CLRD private passenger
+  auto paid moves by at most 1.3e-6 at 12 to 72 months and the three-ages
+  case as above. Found in review of PR #650, decision 25's "As
+  built".[^note][^module]
 * **The prototype is not exact everywhere.** Its only SLSQP failures in
-  the study are on the accident-year pattern at quarterly ages
-  (`wbl+exact` stops on its iteration limit, `llog+exact` reports
-  incompatible constraints), so its figures there are not an exact
-  optimum; the exact solver reads that case within 1% of the book from
-  six months.[^module]
+  the study are on the accident-year pattern at quarterly ages (an
+  iteration limit or incompatible constraints, with or without the cap),
+  so its figures there are not an exact optimum. The exact solver reads
+  that case within 1% of the book from six months, and reads every one
+  of 6,000 seeded monotone patterns at ages finer than their accident
+  period with no failure; before the review's fixes (rounding tolerances
+  scaled to the values, rows dependent to rounding skipped, held spans
+  found from equal given values) about 1,100 of 2,940 such readings
+  failed.[^module]
 
 The rest of the numbers (the synthetic truths other than the book, the
 industry bands) are the script's on 2026-10-27 with numpy 2.5.3 and scipy
