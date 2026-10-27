@@ -4333,7 +4333,9 @@ fn pattern_repr(cl: &ChainLadder) -> String {
 /// per origin in origin order (oldest first, over the triangle's or the
 /// diagonals' origins), or a dict from origin (a label as fits report
 /// origins, ``"2021"`` or ``"2021Q3"``, or an integer year) to its loss
-/// ratio. ``None`` is 1.
+/// ratio. A pandas Series is read by its index, as a dict; one with a
+/// default ``RangeIndex`` is an error, since its order cannot be checked.
+/// ``None`` is 1.
 fn apriori_arg(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Apriori> {
     let Some(obj) = obj.filter(|o| !o.is_none()) else {
         return Ok(Apriori::default());
@@ -4349,32 +4351,28 @@ fn apriori_arg(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Apriori> {
         return Err(type_error());
     }
     if let Ok(dict) = obj.cast::<PyDict>() {
-        let pairs = dict
-            .iter()
-            .map(|(k, v)| {
-                let label = if k.is_instance_of::<PyString>() {
-                    k.extract::<String>()?
-                } else if !k.is_instance_of::<PyBool>()
-                    && (k.is_instance_of::<PyInt>() || k.hasattr("__index__")?)
-                {
-                    k.extract::<i32>()?.to_string()
-                } else {
-                    return Err(PyTypeError::new_err(format!(
-                        "apriori's keys must be origin labels such as \"2021\" or \"2021Q3\", or \
-                         integer years, got {}",
-                        py_repr(&k)
-                    )));
-                };
-                let value = v.extract::<f64>().map_err(|_| {
-                    PyTypeError::new_err(format!(
-                        "apriori's value for {label} must be a number, got {}",
-                        py_repr(&v)
-                    ))
-                })?;
-                Ok((label, value))
-            })
-            .collect::<PyResult<Vec<_>>>()?;
-        return Apriori::from_labels(pairs).map_err(err);
+        return apriori_by_origin(dict.iter().map(Ok));
+    }
+    if is_pandas_series(obj)? {
+        // A default index, 0 to n - 1 by 1; `range(1988, 1998)` is years.
+        let index = obj.getattr("index")?;
+        if index.get_type().name()?.extract::<String>()? == "RangeIndex"
+            && index.getattr("start")?.extract::<i64>()? == 0
+            && index.getattr("step")?.extract::<i64>()? == 1
+        {
+            return Err(PyValueError::new_err(
+                "apriori is a pandas Series with a default RangeIndex, so the origin of each \
+                 value cannot be checked: index it by origin label or integer year (as \
+                 df.set_index(\"origin\")[\"elr\"]), or pass .tolist() for values in origin \
+                 order",
+            ));
+        }
+        // `items()`, not `to_dict()`, so an origin given twice stays an error.
+        return apriori_by_origin(
+            obj.call_method0("items")?
+                .try_iter()?
+                .map(|item| item?.extract::<(Bound<'_, PyAny>, Bound<'_, PyAny>)>()),
+        );
     }
     if let Ok(value) = obj.extract::<f64>() {
         return Ok(Apriori::All(value));
@@ -4383,6 +4381,51 @@ fn apriori_arg(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Apriori> {
         .extract::<Vec<f64>>()
         .map(Apriori::InOrder)
         .map_err(|_| type_error())
+}
+
+/// Whether `obj` is a pandas Series, found without importing pandas: its
+/// type comes from a `pandas` module and is named `Series`.
+fn is_pandas_series(obj: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let ty = obj.get_type();
+    let module = ty
+        .getattr("__module__")?
+        .extract::<String>()
+        .unwrap_or_default();
+    Ok((module == "pandas" || module.starts_with("pandas."))
+        && ty.name()?.extract::<String>()? == "Series")
+}
+
+/// An ``apriori`` keyed by origin from `(key, value)` pairs: a key is an
+/// origin label or an integer year.
+fn apriori_by_origin<'py>(
+    items: impl Iterator<Item = PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)>>,
+) -> PyResult<Apriori> {
+    let pairs = items
+        .map(|item| {
+            let (k, v) = item?;
+            let label = if k.is_instance_of::<PyString>() {
+                k.extract::<String>()?
+            } else if !k.is_instance_of::<PyBool>()
+                && (k.is_instance_of::<PyInt>() || k.hasattr("__index__")?)
+            {
+                k.extract::<i32>()?.to_string()
+            } else {
+                return Err(PyTypeError::new_err(format!(
+                    "apriori's keys must be origin labels such as \"2021\" or \"2021Q3\", or \
+                     integer years, got {}",
+                    py_repr(&k)
+                )));
+            };
+            let value = v.extract::<f64>().map_err(|_| {
+                PyTypeError::new_err(format!(
+                    "apriori's value for {label} must be a number, got {}",
+                    py_repr(&v)
+                ))
+            })?;
+            Ok((label, value))
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    Apriori::from_labels(pairs).map_err(err)
 }
 
 /// A method's ``apriori`` as Python sees it: a float, a list in origin
@@ -4430,10 +4473,12 @@ fn apriori_repr(apriori: &Apriori) -> String {
 ///     ``"2021Q3"``, or an integer year) to its loss ratio. Every origin
 ///     fitted needs one; a value for an origin the triangle does not have
 ///     is an error. Over segments each segment takes its own origins'
-///     values. A pandas Series is read in order and its index is not
-///     read: to key by origin, pass a dict. On a latest diagonal a sequence
-///     needs the rows oldest first, each origin once, and is otherwise an
-///     error, since the exposure is read by row.
+///     values. A pandas Series is read by its index, as a dict, so
+///     ``df.set_index("origin")["elr"]`` works in any row order; one with
+///     a default ``RangeIndex`` is an error, since its order cannot be
+///     checked. A Polars Series or numpy array is a sequence. On a latest
+///     diagonal a sequence needs the rows oldest first, each origin once,
+///     and is otherwise an error, since the exposure is read by row.
 /// average : {"volume", "simple", "regression", "geometric"}, default "volume"
 ///     How link ratios are averaged, as in ``ChainLadder``.
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
@@ -4696,10 +4741,13 @@ impl PyExpectedLoss {
 ///     report it, ``"2021"`` or ``"2021Q3"``, or an integer year) to its
 ///     loss ratio. Every origin fitted needs one; a value for an origin the
 ///     triangle does not have is an error. Over segments each segment takes
-///     its own origins' values. A pandas Series is read in order and its
-///     index is not read: to key by origin, pass a dict. On a latest
-///     diagonal a sequence needs the rows oldest first, each origin once,
-///     and is otherwise an error, since the exposure is read by row.
+///     its own origins' values. A pandas Series is read by its index, as
+///     a dict, so ``df.set_index("origin")["elr"]`` works in any row
+///     order; one with a default ``RangeIndex`` is an error, since its
+///     order cannot be checked. A Polars Series or numpy array is a
+///     sequence. On a latest diagonal a sequence needs the rows oldest
+///     first, each origin once, and is otherwise an error, since the
+///     exposure is read by row.
 /// average : {"volume", "simple", "regression", "geometric"}, default "volume"
 ///     How link ratios are averaged, as in ``ChainLadder``.
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
@@ -4961,10 +5009,12 @@ impl PyBornhuetterFerguson {
 ///     ``"2021Q3"``, or an integer year) to its loss ratio. Every origin
 ///     fitted needs one; a value for an origin the triangle does not have
 ///     is an error. Over segments each segment takes its own origins'
-///     values. A pandas Series is read in order and its index is not
-///     read: to key by origin, pass a dict. On a latest diagonal a sequence
-///     needs the rows oldest first, each origin once, and is otherwise an
-///     error, since the exposure is read by row.
+///     values. A pandas Series is read by its index, as a dict, so
+///     ``df.set_index("origin")["elr"]`` works in any row order; one with
+///     a default ``RangeIndex`` is an error, since its order cannot be
+///     checked. A Polars Series or numpy array is a sequence. On a latest
+///     diagonal a sequence needs the rows oldest first, each origin once,
+///     and is otherwise an error, since the exposure is read by row.
 /// n_iters : int, default 1
 ///     Number of Bornhuetter–Ferguson steps.
 /// average : {"volume", "simple", "regression", "geometric"}, default "volume"

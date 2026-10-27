@@ -3936,6 +3936,20 @@ origin, to the bit.
    vector named by origin label; a vector with only some names is an error.
    The Python default is now `None`, read as 1, since a sequence cannot be
    a signature default.
+   *Amended 2026-10-27* (issue #644, branch `claude/apriori-series`; the
+   user accepted this item on 2026-10-27 with this follow-up): a pandas
+   Series is read by its index, as a dict keyed by origin label or integer
+   year (the same keys a dict takes), so `df.set_index("origin")["elr"]`
+   lines up in any row order; it was read in order, so a Series of the
+   right length in the wrong order put its values on the wrong origins
+   without an error. A Series with a default `RangeIndex` (0 to n - 1;
+   one over `range(1988, 1998)` is years) is an error that asks for origin
+   keys or `.tolist()`, since its order cannot be checked;
+   an origin twice in the index is an error, as in a dict (the pairs are
+   read by `items()`, not `to_dict()`, which would keep the last). pandas
+   is recognised by its type's module and name, not imported. Polars Series
+   and numpy arrays have no index and stay sequences in origin order. R is
+   unchanged: a named vector already keys by name.
 8. **CapeCod is left out** (the issue's proposal): it estimates its loss
    ratio from the triangle, so a per-origin input does not apply to it.
 
