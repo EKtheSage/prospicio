@@ -15,7 +15,7 @@ sources:
     title: The actuar 3.3.7 reference, and why its origin rows are checked at 1e-6
   - id: note
     resource: ../docs/design/credibility.md
-    title: Design note, decisions 5 to 8 (#561)
+    title: Design note, decisions 9 to 12 (#561)
 ---
 
 # Hachemeister's origin iteration on his own data

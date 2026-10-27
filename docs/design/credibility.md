@@ -58,7 +58,10 @@ the premium (v0.7, below).
 4. **One namespace in the bindings**, `credibility`, as `architecture.md`
    plans; the Rust code lives in `prospicio-pricing` until a Bayesian side
    justifies `prospicio-credibility`.
-5. **Hachemeister follows `actuar`'s `hache`** (#561), both of its forms.
+
+Regression credibility (#561), numbered after the Bayesian section's:
+
+9. **Hachemeister follows `actuar`'s `hache`** (#561), both of its forms.
    At the origin (`adjust_intercept = false`, `hache.origin`) the
    credibility matrices are full and the between covariance is
    Hachemeister's iterative pseudo-estimator
@@ -75,18 +78,18 @@ the premium (v0.7, below).
    diagonal is Bühlmann–Straub's `a` by the chosen estimator on the
    coefficient's weights `Σ_t w_it x_tk²`, with decision 2's rule when
    `a <= 0`.
-6. **`s²` is the mean of the risks' residual variances**
+10. **`s²` is the mean of the risks' residual variances**
    `Σ_t w_it r_it² / (n_i - p)`, as `actuar` (0 for a risk with exactly
    `p` cells), not a pooled one; with an intercept alone and every cell
    observed it equals Bühlmann–Straub's `s²`, so the adjusted fit on `~1`
    is Bühlmann–Straub's to `1e-10`.
-7. **Coefficients in the design's basis, matrices in the basis fitted.**
+11. **Coefficients in the design's basis, matrices in the basis fitted.**
    The collective and each risk's coefficients are mapped back by `R⁻¹`
    (`actuar`'s `transition`), so `predict` works on design rows as given;
    `Z_i` and `A` stay in the orthogonal basis where they are diagonal. The
    Gram–Schmidt `R` has a positive diagonal; a sign flip of a column of
    `Q` would leave the coefficients and the diagonals unchanged.
-8. **Refused, not guessed:** a risk whose observed cells of positive
+12. **Refused, not guessed:** a risk whose observed cells of positive
    weight do not identify the `p` coefficients (`actuar`'s `lm.wfit`
    would drop a column), linearly dependent design columns, a design whose
    first column is not constant or a period with no weight when the
