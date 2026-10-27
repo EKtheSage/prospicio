@@ -1,6 +1,6 @@
 # Design note: credibility
 
-Status: **Decided; implemented** (limited fluctuation, Bühlmann–Straub, v0.6; Bayesian hierarchical credibility, v0.7) · Depends on: `prospicio-bayes` for the Bayesian side · Lanes: Aggregate (classical), Models (Bayesian)
+Status: **Decided; implemented** (limited fluctuation, Bühlmann–Straub, v0.6; Bayesian hierarchical credibility, v0.7; Hachemeister's regression model, #561) · Depends on: `prospicio-bayes` for the Bayesian side · Lanes: Aggregate (classical), Models (Bayesian)
 
 ## Goal
 
@@ -23,9 +23,19 @@ the premium (v0.7, below).
   missing cells as NaN in both. The fit holds the collective mean, the
   between variance `a`, the within variance `s²`, `k = s²/a`, and per
   group the weighted mean, total weight, credibility factor and premium.
+- `prospicio_pricing::credibility::Hachemeister::new(estimator,
+  adjust_intercept).fit(ratios, weights, design)` (#561): Hachemeister's
+  regression model, each risk's weighted least squares line (or any
+  design shared by the risks) shrunk towards the collective by a
+  credibility matrix `Z_i = A (A + s² W_i)⁻¹`; the fit holds the
+  collective, each risk's credibility and own coefficients in the design's
+  basis, the credibility matrices and between covariance in the basis
+  fitted, `s²`, the transition `R` when adjusted, and `predict(x)`.
 - Python `prospicio.credibility` (`LimitedFluctuation`,
-  `buhlmann_straub`, `BuhlmannStraubFit`); R `credibility_standard()`,
-  `limited_fluctuation_credibility()`, `buhlmann_straub()`.
+  `buhlmann_straub`, `BuhlmannStraubFit`, `hachemeister`,
+  `HachemeisterFit`); R `credibility_standard()`,
+  `limited_fluctuation_credibility()`, `buhlmann_straub()`,
+  `hachemeister()` with `predict()`.
 
 ## Decisions
 
@@ -48,6 +58,42 @@ the premium (v0.7, below).
 4. **One namespace in the bindings**, `credibility`, as `architecture.md`
    plans; the Rust code lives in `prospicio-pricing` until a Bayesian side
    justifies `prospicio-credibility`.
+5. **Hachemeister follows `actuar`'s `hache`** (#561), both of its forms.
+   At the origin (`adjust_intercept = false`, `hache.origin`) the
+   credibility matrices are full and the between covariance is
+   Hachemeister's iterative pseudo-estimator
+   `A = Σ Z_i (b_i - β̂)(b_i - β̂)ᵀ / (I - 1)`, symmetrised, started from
+   `Z_i = I` and run until the collective's largest relative change is
+   below `tol`, with one more update of `A` and the `Z_i` at the end. There
+   is no unbiased estimator of a full `A`, so the origin iterates whatever
+   the `StructureEstimator` (taking its `tol` and `max_iter` when
+   iterative, `√ε` and 100 otherwise), as `actuar::cm` does under its
+   default `"Buhlmann-Gisler"`. With `adjust_intercept = true`
+   (`hache.barycenter`) the design is orthogonalised under the collective
+   weights `w_t = Σ_i w_it / Σ w` by Gram–Schmidt, which puts the intercept
+   at the periods' barycentre and makes `A` and the `Z_i` diagonal; each
+   diagonal is Bühlmann–Straub's `a` by the chosen estimator on the
+   coefficient's weights `Σ_t w_it x_tk²`, with decision 2's rule when
+   `a <= 0`.
+6. **`s²` is the mean of the risks' residual variances**
+   `Σ_t w_it r_it² / (n_i - p)`, as `actuar` (0 for a risk with exactly
+   `p` cells), not a pooled one; with an intercept alone and every cell
+   observed it equals Bühlmann–Straub's `s²`, so the adjusted fit on `~1`
+   is Bühlmann–Straub's to `1e-10`.
+7. **Coefficients in the design's basis, matrices in the basis fitted.**
+   The collective and each risk's coefficients are mapped back by `R⁻¹`
+   (`actuar`'s `transition`), so `predict` works on design rows as given;
+   `Z_i` and `A` stay in the orthogonal basis where they are diagonal. The
+   Gram–Schmidt `R` has a positive diagonal; a sign flip of a column of
+   `Q` would leave the coefficients and the diagonals unchanged.
+8. **Refused, not guessed:** a risk whose observed cells of positive
+   weight do not identify the `p` coefficients (`actuar`'s `lm.wfit`
+   would drop a column), linearly dependent design columns, a design whose
+   first column is not constant or a period with no weight when the
+   intercept is adjusted, fewer than two risks with weight, and a
+   singular `A + s² W_i` or `Σ Z_i` (two risks cannot identify a `2 × 2`
+   `A` at the origin; `actuar` fails there too). A risk with no weight
+   takes the collective.
 
 ## Validation
 
@@ -60,6 +106,21 @@ and premium, at `1e-12` (`1e-10` on the between variance, `1e-11` on the
 factors). Nine limited fluctuation standards match R's `qnorm` at `1e-13`.
 The R tests also compare the premiums with `actuar::cm` live when it is
 installed.
+
+Hachemeister's model is checked on the same data with the design
+`[1, t]`, `t = 1, ..., 12`, against `actuar::cm(~state, regformula = ~time)`
+(`validation/scripts/r_credibility_regression.R`,
+`validation/reference/credibility_regression_actuar.csv`, 144 values): the
+adjusted fit with each estimator (collectives, coefficients, the
+credibility and between diagonals and `s²` at `1e-9`, `s²` at `1e-12`,
+each state's premium at `t = 13` at `1e-10`), and the origin fit with all
+cells and with four missing. On these data the origin's between
+covariance has a correlation of 0.9998 and the iteration has no stable
+fixed point: it stops at `√ε` after 47 updates, and run on it wanders by
+about `1e-5` (`knowledge/findings/hachemeister-origin-iteration.md`), so
+round-off decides its last steps and the origin rows are checked at
+`1e-6`. Python and R check the premiums against the same values, and R
+against `actuar` live when it is installed.
 
 ## Bayesian hierarchical credibility (decided 2026-10-16)
 

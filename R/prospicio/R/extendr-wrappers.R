@@ -106,6 +106,8 @@ credibility_standards <- function(p, k, cv) .Call(wrap__credibility_standards, p
 
 buhlmann_straub_rust <- function(ratios, weights, nrow, ncol, estimator, tol, max_iter) .Call(wrap__buhlmann_straub_rust, ratios, weights, nrow, ncol, estimator, tol, max_iter)
 
+hachemeister_rust <- function(ratios, weights, nrow, ncol, design, p, estimator, adjust_intercept, tol, max_iter) .Call(wrap__hachemeister_rust, ratios, weights, nrow, ncol, design, p, estimator, adjust_intercept, tol, max_iter)
+
 hierarchical_credibility_rust <- function(ratios, weights, nrow, ncol, levels, collective_mean, within_kind, within_scale, between_kinds, between_scales, chains, tune, draws, seed) .Call(wrap__hierarchical_credibility_rust, ratios, weights, nrow, ncol, levels, collective_mean, within_kind, within_scale, between_kinds, between_scales, chains, tune, draws, seed)
 
 credibility_premiums_rust <- function(ratios, weights, nrow, ncol, levels, within_variance, between_variances, collective_mean) .Call(wrap__credibility_premiums_rust, ratios, weights, nrow, ncol, levels, within_variance, between_variances, collective_mean)
