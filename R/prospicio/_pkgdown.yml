@@ -81,6 +81,8 @@ reference:
       - total
       - draw_matrix
       - provenance
+      - multivariate_normal
+      - predictive_from_gaussian
   - title: Aggregate loss
     contents:
       - compound_distribution
