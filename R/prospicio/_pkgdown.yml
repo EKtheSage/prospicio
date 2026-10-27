@@ -209,6 +209,9 @@ reference:
       - credibility_standard
       - buhlmann_straub
       - hierarchical_credibility
+      - bonus_malus
+      - bonus_malus_transition
+      - bonus_malus_portfolio
   - title: Ratemaking
     contents:
       - year_fraction

@@ -3748,6 +3748,225 @@ class BivariateReport:
         """
 
 @final
+class BonusMalus:
+    """
+    A bonus-malus or no-claim-discount scale as a Markov chain.
+    
+    A policyholder sits on one of the levels ``0 .. levels - 1``, 0 the
+    best, and moves each year by the number of claims. Under Poisson claims
+    with mean ``lam`` the levels are a Markov chain; over a mixed Poisson
+    portfolio (a priori classes with frequencies ``lambdas`` and a residual
+    heterogeneity ``Theta`` of mean 1, gamma or inverse Gaussian with
+    coefficient of variation ``cv``) the scale has a stationary distribution
+    of levels and Norberg's optimal relativities, ``E[Theta | level]``,
+    which balance to 1 over it.
+    
+    Build one with ``BonusMalus.rule`` or ``BonusMalus.table``.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import BonusMalus
+    >>> # -1/+top on six levels: any claim sends the driver to level 5.
+    >>> scale = BonusMalus.rule(6, 5, down=1, up_per_claim=5)
+    >>> r = scale.optimal_relativities(0.1, cv=1.0)
+    >>> round(r[0], 6), round(r[5], 6)
+    (0.666667, 1.909091)
+    >>> pi = scale.stationary(0.1, cv=1.0)
+    >>> round(sum(p * x for p, x in zip(pi, r)), 12)
+    1.0
+    """
+    def __repr__(self, /) -> str: ...
+    def distribution_after(self, /, lam: float, years: int) -> list[float]:
+        """
+        The distribution of the levels after ``years`` years from the start
+        level, at frequency ``lam``.
+        
+        Parameters
+        ----------
+        lam : float
+        years : int
+        
+        Returns
+        -------
+        list of float
+        """
+    def efficiency(self, /, lam: float, relativities: Sequence[float]) -> float:
+        """
+        Loimaranta's efficiency ``d ln r(lam) / d ln lam`` of the scale with
+        ``relativities``, exact.
+        
+        Parameters
+        ----------
+        lam : float
+        relativities : list of float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def levels(self, /) -> int:
+        """
+        Number of levels.
+        """
+    def mean_relativity(self, /, lam: float, relativities: Sequence[float]) -> float:
+        """
+        The stationary mean relativity ``sum_l pi_l(lam) r_l``.
+        
+        Parameters
+        ----------
+        lam : float
+        relativities : list of float
+            One per level.
+        
+        Returns
+        -------
+        float
+        """
+    def next_level(self, /, level: int, claims: int) -> int:
+        """
+        The level after ``claims`` claims from ``level``.
+        
+        Parameters
+        ----------
+        level : int
+        claims : int
+        
+        Returns
+        -------
+        int
+        """
+    def optimal_relativities(self, /, lambdas: Any, cv: float, mixing: str = "gamma", weights: Sequence[float] |None = None) -> list[float]:
+        """
+        Norberg's optimal relativities under quadratic loss,
+        ``E[Theta | level]`` over the stationary portfolio; a level it never
+        reaches gets NaN.
+        
+        Parameters
+        ----------
+        lambdas : float or list of float
+        cv : float
+        mixing : {"gamma", "inverse_gaussian"}, default "gamma"
+        weights : list of float, optional
+        
+        Returns
+        -------
+        list of float
+        """
+    @staticmethod
+    def rule(levels: int, start: int, *, down: int = 1, up_per_claim: int) -> BonusMalus:
+        """
+        A scale of ``levels`` levels, newcomers on ``start``, moving down
+        ``down`` levels after a claim-free year and up ``up_per_claim``
+        levels for each claim, capped at both ends. The -1/+top scale is
+        ``down=1, up_per_claim=levels - 1``.
+        
+        Parameters
+        ----------
+        levels : int
+            At least 2.
+        start : int
+        down : int, default 1
+        up_per_claim : int
+            At least 1.
+        
+        Returns
+        -------
+        BonusMalus
+        """
+    @property
+    def start(self, /) -> int:
+        """
+        The level a newcomer starts on.
+        """
+    def stationary(self, /, lambdas: Any, cv: float, mixing: str = "gamma", weights: Sequence[float] |None = None) -> list[float]:
+        """
+        The stationary distribution of the levels over a mixed Poisson
+        portfolio.
+        
+        Parameters
+        ----------
+        lambdas : float or list of float
+            The a priori classes' frequencies.
+        cv : float
+            The coefficient of variation of ``Theta``.
+        mixing : {"gamma", "inverse_gaussian"}, default "gamma"
+        weights : list of float, optional
+            The classes' weights; equal by default.
+        
+        Returns
+        -------
+        list of float
+        """
+    def stationary_at(self, /, lam: float) -> list[float]:
+        """
+        The stationary distribution of the levels at frequency ``lam``.
+        
+        Parameters
+        ----------
+        lam : float
+        
+        Returns
+        -------
+        list of float
+        
+        Raises
+        ------
+        ValueError
+            If it is not unique (unreachable or absorbing levels).
+        """
+    @staticmethod
+    def table(start: int, table: Sequence[Sequence[int]]) -> BonusMalus:
+        """
+        A scale from its table: ``table[l][k]`` is the level after ``k``
+        claims from level ``l``, one row per level, every row the same
+        length; the last column is for that many claims or more.
+        
+        Parameters
+        ----------
+        start : int
+        table : list of list of int
+        
+        Returns
+        -------
+        BonusMalus
+        """
+    def transition_matrix(self, /, lam: float) -> list[list[float]]:
+        """
+        The one-year transition matrix under Poisson claims with mean
+        ``lam``: row ``l``, column ``j`` is the probability of moving from
+        level ``l`` to ``j``.
+        
+        Parameters
+        ----------
+        lam : float
+        
+        Returns
+        -------
+        list of list of float
+        """
+    @property
+    def transitions(self, /) -> list[list[int]]:
+        """
+        The table of next levels by level and claim count.
+        """
+    def years_to_stationarity(self, /, lam: float, tolerance: float = 0.01) -> int |None:
+        """
+        The years from the start level until the distribution of the levels
+        is within ``tolerance`` of the stationary one in total variation.
+        
+        Parameters
+        ----------
+        lam : float
+        tolerance : float, default 0.01
+        
+        Returns
+        -------
+        int or None
+            None past 100,000 years.
+        """
+
+@final
 class Book:
     """
     A seller's book, ``aggregate``'s ``pnl`` and ``xpnl`` builders: a gross
