@@ -209,6 +209,7 @@ reference:
       - credibility_standard
       - buhlmann_straub
       - hierarchical_credibility
+      - hachemeister
   - title: Ratemaking
     contents:
       - year_fraction
