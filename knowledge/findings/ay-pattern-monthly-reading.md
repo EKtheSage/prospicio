@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: An annual accident-year pattern read at monthly ages as a Weibull corrected to its own yearly averages converts to an underwriting year within 0.2% where decision 18's reading is 31% off
-description: An accident year's share at age a is the average of its months, P(a) = (1/12) sum p(a - q), so a reading between annual ages is a choice of p; the Weibull fitted through that average and moved to the nearest monotone monthly pattern whose averages are the given values reproduces them exactly and converts a simulated book's underwriting-year shares within 0.2% at 12 to 60 months (decision 18's ln-linear reading 1.3116 and 0.9155 at 12 and 24), at worst 1.5% off on a slow loglogistic truth; on CLRD and Friedland patterns the exact monotone readings agree within 2% to 12% at 12 months and the current reading sits 19% to 86% above them.
+description: An accident year's share at age a is the average of its months, P(a) = (1/12) sum p(a - q), so a reading between annual ages is a choice of p; the Weibull fitted through that average and moved to the nearest monotone monthly pattern whose averages are the given values reproduces them exactly and converts a simulated book's underwriting-year shares within 0.2% at 12 to 60 months (decision 18's ln-linear reading 1.3116 and 0.9155 at 12 and 24), at worst 1.5% off on a slow loglogistic truth; on CLRD and Friedland patterns the exact monotone readings agree within 2% to 12% at 12 months and decision 18's reading sits 19% to 86% above them. Since 2026-10-27 it is the default reading of to_underwriting_basis (AnnualReading::Curve(GrowthCurve::Weibull)), and the book's ratios and the agreement with the scipy prototype within 1.1e-9 are checked in CI.
 tags: [reserving, development, pattern, underwriting-year, growth-curve]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-27T18:00:00Z }
@@ -12,6 +12,12 @@ sources:
   - id: script
     resource: ../validation/scripts/ay_monthly_reading.py
     title: The study's script, every candidate against the simulated book, four synthetic truths, the CLRD lines and Friedland's selections, run by hand with the Python venv
+  - id: module
+    resource: ../crates/prospicio-reserving/src/monthly_reading.rs
+    title: prospicio_reserving::monthly_reading, AnnualReading, the curve fit through the averages and the projection, with its unit tests
+  - id: test
+    resource: ../validation/tests/reserving_uy_pattern.rs
+    title: The underwriting-year conversion's validation, the simulated book under both readings and the comparison with the scipy prototype, run by CI
 ---
 
 # What was found
@@ -86,11 +92,40 @@ underwriting-year share with the book's own.[^script]
   increments was tried and gave no evidence: SLSQP did not converge in 15
   of 17 runs.[^script]
 
-Nothing in CI runs the study; the numbers are the script's on 2026-10-27
-with numpy 2.5.3 and scipy 1.18.1. No reference implementation reads an
+# As built
+
+The user accepted the Weibull reading as the default on 2026-10-27
+(decision 25, replace): `UnderwritingBasis::with_reading` takes
+`AnnualReading::Curve(GrowthCurve::Weibull)` (the default),
+`Curve(GrowthCurve::LogLogistic)` or `LnLinear`, decision 18's rule. The
+projection is solved exactly by Goldfarb and Idnani's dual active-set
+method on the KKT system, no SLSQP.[^module]
+
+* **Checked in CI.** On the simulated book valued annually the default's
+  ratios are 0.9989, 1.0004, 0.9999, 1.0000, 1.0000 at 12 to 60 months and
+  exact from 84, decision 18's 1.3116 and 0.9155 pinned under `LnLinear`;
+  seasonal writing and six-month policies give 0.9986 and 0.9994 at 12
+  months. The converted shares at 12 to 72 months match the scipy
+  prototype's `wbl+exact` and `llog+exact` within 1.1e-9 on the book and
+  CLRD private passenger auto paid. A pattern at every month and an
+  accident-month pattern convert to the bit under every reading; the
+  given values are reproduced to 1e-12, monotone, with downward
+  development kept in Friedland's XYZ reported spans.[^test][^module]
+* **The prototype is not exact everywhere.** Its only SLSQP failures in
+  the study are on the accident-year pattern at quarterly ages
+  (`wbl+exact` stops on its iteration limit, `llog+exact` reports
+  incompatible constraints), so its figures there are not an exact
+  optimum; the exact solver reads that case within 1% of the book from
+  six months.[^module]
+
+The rest of the numbers (the synthetic truths other than the book, the
+industry bands) are the script's on 2026-10-27 with numpy 2.5.3 and scipy
+1.18.1, and nothing in CI runs the study. No reference implementation reads an
 annual pattern at monthly ages through the averaging relation
 (chainladder-python 0.10.1's `DevelopmentConstant` keeps the triangle's
 grain, decision 18 item 10).
 
 [^note]: Design note, reserving v0.2, decision 25, reading an annual accident-year pattern at monthly ages before the underwriting-year conversion
 [^script]: The study's script, every candidate against the simulated book, four synthetic truths, the CLRD lines and Friedland's selections, run by hand with the Python venv
+[^module]: prospicio_reserving::monthly_reading, AnnualReading, the curve fit through the averages and the projection, with its unit tests
+[^test]: The underwriting-year conversion's validation, the simulated book under both readings and the comparison with the scipy prototype, run by CI

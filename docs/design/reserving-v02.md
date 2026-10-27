@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -3657,7 +3657,7 @@ or more ages (which decision 18 reads past the oldest age since #614).
 
 ### 21. An accident-period pattern on an underwriting basis
 
-**Accepted** by the user on 2026-10-27: items 1 to 8 as built (writing through the month, coarser patterns converted only in the exact cases). Item 3's miss of an annual accident-year pattern in the first two years is #646.
+**Accepted** by the user on 2026-10-27: items 1 to 8 as built (writing through the month, coarser patterns converted only in the exact cases). Item 3's miss of an annual accident-year pattern in the first two years is #646, fixed by decision 25 (accepted 2026-10-27, built on branch `claude/ay-monthly-reading`): the reading between annual ages is now the Weibull through the averages, and item 3's rule is `AnnualReading::LnLinear`.
 
 Status: **Built** (2026-10-26), issue #633, branch `claude/uy-pattern`, in
 Rust, Python and R. It answers the user's decision of 2026-10-26: an
@@ -3717,9 +3717,12 @@ and the bindings add one argument.
    cases (seasonal writing of annual policies, even writing of six-month
    policies) are covered.
 3. **An annual accident-year pattern is approximate in the first two
-   years** (a finding, recorded with item 2). `P_s` between its given ages
-   is read by decision 18's rule: linear from 0 below the first age and
-   `ln CDF` linear between ages. For an accident-year pattern given at
+   years** (a finding, recorded with item 2; superseded by decision 25,
+   which keeps this rule as `AnnualReading::LnLinear` and reads between
+   annual ages by default with the Weibull through the averages, 0.9989,
+   1.0004 and 0.9999 at 12, 24 and 36 months on the book below). As built
+   here, `P_s` between its given ages was read by decision 18's rule:
+   linear from 0 below the first age and `ln CDF` linear between ages. For an accident-year pattern given at
    every month (the chain ladder of a triangle with monthly development)
    the conversion is exact; given at 12, 24, ... months it is not, since
    an accident year at six months has much less than half of its twelve
@@ -3731,7 +3734,9 @@ and the bindings add one argument.
    accident-month pattern, or one given at every month, where the first
    years matter. A better rule below the first age would change decision
    18's rule and is not proposed here; decision 25 (issue #646) studies
-   one and proposes it.
+   one, and the user accepted it on 2026-10-27 as the default inside
+   `to_underwriting_basis` only, so these misses now hold under
+   `AnnualReading::LnLinear`.
 4. **Ages from the underwriting period's start** (proposed). The age `a`
    is measured as `at_valuation` measures it: an underwriting year at the
    end of its twelfth month is at age 12, and an accident month at the end
@@ -4129,10 +4134,12 @@ itself. Built on branch `claude/ulr-column`.
 
 ### 25. Reading an annual accident-year pattern at monthly ages before the underwriting-year conversion
 
-Status: **Proposed** for the user's acceptance (2026-10-27), issue #646,
-branch `claude/ay-monthly-reading`, a design study with no public API yet
-(`validation/scripts/ay_monthly_reading.py`; the finding is
-`knowledge/findings/ay-pattern-monthly-reading.md`). It answers decision 21
+**Accepted** by the user on 2026-10-27: replace, as item 7 proposes, with
+the Weibull the default (`wbl+exact`, item 6) and decision 18's rule kept
+by name. Status: **Built** (2026-10-27), issue #646, branch
+`claude/ay-monthly-reading`, in Rust, Python and R ("As built" below);
+the design study is `validation/scripts/ay_monthly_reading.py` and the
+finding `knowledge/findings/ay-pattern-monthly-reading.md`. It answers decision 21
 item 3: an annual accident-year pattern given at 12, 24, ... months
 converts to an underwriting basis with the converted share 1.3116 times
 the book's own at 12 months and 0.9155 at 24, because decision 18 item 2
@@ -4324,3 +4331,68 @@ reads the pattern between its ages as if an accident year developed
    and the seasonal and six-month cases; (f) Python `reading=` with its
    getter and `repr`, R `reading =`, their tests and help. About 700 to
    900 lines in all, no new dependency.
+
+**As built** (2026-10-27, `crates/prospicio-reserving/src/monthly_reading.rs`,
+checked in its unit tests and `validation/tests/reserving_uy_pattern.rs`;
+Python `UnderwritingBasis(..., reading=)` and R `underwriting_basis(...,
+reading = )` with their tests in `python/tests/test_reserving_uy_pattern.py`
+and `R/prospicio/tests/test-reserving-uy-pattern.R`):
+
+- **API.** `AnnualReading { Curve(GrowthCurve), LnLinear }`, `Default`
+  `Curve(GrowthCurve::Weibull)`, re-exported from `lib.rs`;
+  `UnderwritingBasis::with_reading` and `reading()` on a private field, so
+  `UnderwritingBasis { writing, policy_months }` literals no longer
+  compile (breaking; `new`, `even` and `Default` keep their signatures).
+  Python takes `reading="weibull" | "loglogistic" | "ln-linear"`, with a
+  getter and the reading in the `repr`; R `reading = c("weibull",
+  "loglogistic", "ln-linear")`, kept in the list (a list without it reads
+  as the Weibull).
+- **The gate.** The reading applies when `pattern_origin` is longer than a
+  month and the given ages are not every month from 1 to the end (a
+  pattern given at every month from a later age is read too, since below
+  its first age decision 18's line from 0 is the same misreading). The
+  result then starts at 1 month, not at the input's first age; the
+  2,400-month check counts from there and runs before the reading.
+  Accident-month patterns and patterns at every month from 1 convert to
+  the bit under every reading (unit test).
+- **The curve fit.** `nelder_mead` (tolerance 1e-12) on `(ln omega, ln
+  theta)` from decision 23's linearized start, each given value read at the
+  middle of its window (`a - (s - 1) / 2`), and the prototype's grid of
+  nine starts (omega 0.8, 1.5, 3 by theta 6, 18, 36 months); the best
+  value is kept even when a search stops on its iteration limit, since the
+  curve is only the projection's prior (two given ages can ask for a curve
+  that steepens toward a step). Decision 23's edge check is kept as an
+  error. A flat pattern does not reach the edge: the curve reports
+  everything in the first month and the projection reproduces it.
+- **The projection.** Goldfarb and Idnani's dual active-set method with the
+  identity as its Hessian: the equality rows (one per given age,
+  `min(s, a - u + 1) / s` on the increment of month `u`) first, then the
+  most violated bound or the cap added one at a time, with constraints
+  dropped when a multiplier would turn negative. Held months are taken out
+  of the solve, so each step solves the Gram system of the equality rows
+  (and the cap) on the free months by `cholesky` (`solve` as a fallback).
+  The result is checked on exit (averages to 1e-12, bounds and cap), and a
+  failure is an error, never a near solution. The expanded pattern is the
+  given value itself at each given age.
+- **Errors** (`Error::Pattern`): a single given value ("gives no shape to
+  read between ages", naming `AnnualReading::LnLinear`, under which it
+  still converts), the curve's edge, no monotone accident-month pattern
+  with the given averages, and a projection that does not converge.
+- **Numbers.** On the book of decision 21's checks, valued annually, the
+  default's misses on the underwriting year's factors to ultimate are
+  -0.00107, 0.00037, -0.00010, 0.00002, 0.00002 and -0.00002 at 12 to 72
+  months (ratios 0.9989, 1.0004, 0.9999, 1.0000, 1.0000, the study's) and
+  exact from 84; decision 18's are pinned unchanged under `LnLinear`.
+  Seasonal writing and six-month policies give 0.9986 and 0.9994 at 12
+  months (decision 18's 1.40 and 1.17). The converted shares at 12 to 72
+  months agree with the scipy prototype's `wbl+exact` and `llog+exact`
+  within 1.1e-9 on the book and CLRD private passenger auto paid (both
+  searches stop near their tolerance, at slightly different points); the
+  prototype's only SLSQP failures in the study are on the accident-year
+  pattern at quarterly ages (`wbl+exact` hit its iteration limit and
+  `llog+exact` reported incompatible constraints), so its four-digit
+  figures there are not an exact optimum. Factors to ultimate and
+  age-to-age factors convert as their percents to 1e-10 under the curve
+  (the inputs' last bits move the search) and to 1e-14 under `LnLinear`.
+  The nine unit tests, quarterly ages with 40 equality rows among them,
+  run in about 0.1 s together in an optimized debug build.
