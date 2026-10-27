@@ -263,15 +263,15 @@ fn the_expected_loss_methods_fit_each_segment_as_alone() {
     let diagonals = LatestDiagonals::from_triangle(&tri, "paid", Some("premium")).unwrap();
     let chain_ladder = wkcomp_pattern();
     let el = ExpectedLoss {
-        apriori: 0.6,
+        apriori: 0.6.into(),
         chain_ladder: chain_ladder.clone(),
     };
     let bf = BornhuetterFerguson {
-        apriori: 0.6,
+        apriori: 0.6.into(),
         chain_ladder: chain_ladder.clone(),
     };
     let bk = Benktander {
-        apriori: 0.6,
+        apriori: 0.6.into(),
         n_iters: 3,
         chain_ladder: chain_ladder.clone(),
     };
@@ -299,8 +299,8 @@ fn the_expected_loss_methods_fit_each_segment_as_alone() {
     let developments = diagonals
         .developments(&source, &SegmentMap::ByLabel)
         .unwrap();
-    let unset = |apriori| BornhuetterFerguson {
-        apriori,
+    let unset = |apriori: f64| BornhuetterFerguson {
+        apriori: apriori.into(),
         chain_ladder: ChainLadder::default(),
     };
     let from = unset(0.6)
@@ -308,7 +308,7 @@ fn the_expected_loss_methods_fit_each_segment_as_alone() {
         .unwrap();
     for (k, (_, d)) in diagonals.iter().enumerate() {
         let own = BornhuetterFerguson {
-            apriori: 0.6,
+            apriori: 0.6.into(),
             chain_ladder: source.fits[k].to_chain_ladder(),
         };
         assert_bits!(from.fits[k], own.fit_diagonal(d).unwrap());
@@ -329,14 +329,14 @@ fn the_expected_loss_methods_fit_each_segment_as_alone() {
         assert_bits!(from.fits[k], own.fit_diagonal(d).unwrap());
     }
     let from = ExpectedLoss {
-        apriori: 0.6,
+        apriori: 0.6.into(),
         chain_ladder: ChainLadder::default(),
     }
     .fit_diagonal_segments_from(&diagonals, &developments)
     .unwrap();
     assert_eq!(from.len(), 2);
     let from = Benktander {
-        apriori: 0.6,
+        apriori: 0.6.into(),
         n_iters: 3,
         chain_ladder: ChainLadder::default(),
     }
@@ -418,7 +418,7 @@ fn a_long_table_with_keys_and_valuations_is_the_triangle_diagonal() {
     assert_eq!(long.labels(), from_triangle.labels());
     let pattern = wkcomp_pattern();
     let bf = BornhuetterFerguson {
-        apriori: 0.6,
+        apriori: 0.6.into(),
         chain_ladder: pattern,
     };
     assert_bits!(

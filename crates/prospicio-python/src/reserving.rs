@@ -9,11 +9,11 @@
 
 use prospicio_core::{Grain, Lag, Month, Period};
 use prospicio_reserving::{
-    Average, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder, ChainLadderFit,
-    ClaimsDevelopmentResult, ClarkCapeCod, ClarkFit, ClarkLdf, CurveShape, Development,
-    DevelopmentColumn, DiagonalAge, ExpectedLoss, ExpectedLossFit, FitTable, GrowthCurve, Label,
-    LatestDiagonals, Long, LongDiagonal, Mack, MackBootstrap, MackBootstrapFits,
-    MackBootstrapSegment, MackFit, MackProcess, OdpBootstrap, OdpBootstrapFits,
+    Apriori, Average, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder,
+    ChainLadderFit, ClaimsDevelopmentResult, ClarkCapeCod, ClarkFit, ClarkLdf, CurveShape,
+    Development, DevelopmentColumn, DiagonalAge, ExpectedLoss, ExpectedLossFit, FitTable,
+    GrowthCurve, Label, LatestDiagonals, Long, LongDiagonal, Mack, MackBootstrap,
+    MackBootstrapFits, MackBootstrapSegment, MackFit, MackProcess, OdpBootstrap, OdpBootstrapFits,
     OdpBootstrapSegment, OneYearFits, OneYearMethod, OneYearPattern, PastPatternEnd, PatternKind,
     PatternWeight, ProcessDistribution, ReserveFit, SegmentDependence, SegmentFits, SegmentMap,
     SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve, Triangle,
@@ -22,7 +22,7 @@ use prospicio_reserving::{
 use pyo3::exceptions::{PyImportError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{
-    PyBool, PyBytes, PyDate, PyDelta, PyDict, PyFloat, PyInt, PyModule, PyString, PyTuple,
+    PyBool, PyBytes, PyDate, PyDelta, PyDict, PyFloat, PyInt, PyList, PyModule, PyString, PyTuple,
 };
 
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
@@ -4328,6 +4328,90 @@ fn pattern_repr(cl: &ChainLadder) -> String {
     )
 }
 
+/// An ``apriori`` argument: a number for every origin, a sequence of one
+/// per origin in origin order (oldest first, over the triangle's or the
+/// diagonals' origins), or a dict from origin (a label as fits report
+/// origins, ``"2021"`` or ``"2021Q3"``, or an integer year) to its loss
+/// ratio. ``None`` is 1.
+fn apriori_arg(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Apriori> {
+    let Some(obj) = obj.filter(|o| !o.is_none()) else {
+        return Ok(Apriori::default());
+    };
+    let type_error = || {
+        PyTypeError::new_err(format!(
+            "apriori must be a number, a sequence of numbers in origin order or a dict from \
+             origin to number, got {}",
+            py_repr(obj)
+        ))
+    };
+    if obj.is_instance_of::<PyBool>() {
+        return Err(type_error());
+    }
+    if let Ok(dict) = obj.cast::<PyDict>() {
+        let pairs = dict
+            .iter()
+            .map(|(k, v)| {
+                let label = if k.is_instance_of::<PyString>() {
+                    k.extract::<String>()?
+                } else if !k.is_instance_of::<PyBool>()
+                    && (k.is_instance_of::<PyInt>() || k.hasattr("__index__")?)
+                {
+                    k.extract::<i32>()?.to_string()
+                } else {
+                    return Err(PyTypeError::new_err(format!(
+                        "apriori's keys must be origin labels such as \"2021\" or \"2021Q3\", or \
+                         integer years, got {}",
+                        py_repr(&k)
+                    )));
+                };
+                let value = v.extract::<f64>().map_err(|_| {
+                    PyTypeError::new_err(format!(
+                        "apriori's value for {label} must be a number, got {}",
+                        py_repr(&v)
+                    ))
+                })?;
+                Ok((label, value))
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        return Apriori::from_labels(pairs).map_err(err);
+    }
+    if let Ok(value) = obj.extract::<f64>() {
+        return Ok(Apriori::All(value));
+    }
+    plain(obj)?
+        .extract::<Vec<f64>>()
+        .map(Apriori::InOrder)
+        .map_err(|_| type_error())
+}
+
+/// A method's ``apriori`` as Python sees it: a float, a list in origin
+/// order or a dict by origin label.
+fn apriori_object<'py>(py: Python<'py>, apriori: &Apriori) -> PyResult<Bound<'py, PyAny>> {
+    Ok(match apriori {
+        Apriori::All(a) => PyFloat::new(py, *a).into_any(),
+        Apriori::InOrder(values) => PyList::new(py, values)?.into_any(),
+        Apriori::ByOrigin(pairs) => {
+            let d = PyDict::new(py);
+            for (origin, v) in pairs {
+                d.set_item(origin.to_string(), v)?;
+            }
+            d.into_any()
+        }
+    })
+}
+
+/// ``apriori`` in a method's repr.
+fn apriori_repr(apriori: &Apriori) -> String {
+    match apriori {
+        Apriori::All(a) => format!("{a:?}"),
+        Apriori::InOrder(values) => format!("{values:?}"),
+        Apriori::ByOrigin(pairs) => {
+            let items: Vec<String> = pairs.iter().map(|(o, v)| format!("'{o}': {v:?}")).collect();
+            format!("{{{}}}", items.join(", "))
+        }
+    }
+}
+
 /// The expected loss ratio method: each origin's ultimate is ``apriori``
 /// times its exposure, whatever has been observed. The chain ladder is
 /// still fitted for the development pattern the fit reports.
@@ -4337,8 +4421,18 @@ fn pattern_repr(cl: &ChainLadder) -> String {
 ///
 /// Parameters
 /// ----------
-/// apriori : float, default 1.0
-///     Expected loss ratio: the ultimate per unit of exposure; positive.
+/// apriori : float, sequence or dict, default 1.0
+///     Expected loss ratio: the ultimate per unit of exposure, positive:
+///     one for every origin, one per origin in origin order (oldest first,
+///     over the triangle's origins or, for a latest diagonal, its origins),
+///     or a dict from origin (its label as fits report it, ``"2021"`` or
+///     ``"2021Q3"``, or an integer year) to its loss ratio. Every origin
+///     fitted needs one; a value for an origin the triangle does not have
+///     is an error. Over segments each segment takes its own origins'
+///     values. A pandas Series is read in order and its index is not
+///     read: to key by origin, pass a dict. On a latest diagonal a sequence
+///     needs the rows oldest first, each origin once, and is otherwise an
+///     error, since the exposure is read by row.
 /// average : {"volume", "simple", "regression", "geometric"}, default "volume"
 ///     How link ratios are averaged, as in ``ChainLadder``.
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
@@ -4371,10 +4465,10 @@ pub(crate) struct PyExpectedLoss {
 #[pymethods]
 impl PyExpectedLoss {
     #[new]
-    #[pyo3(signature = (apriori = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None, ldf_underwriting = None))]
+    #[pyo3(signature = (apriori = None, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None, ldf_underwriting = None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
-        apriori: f64,
+        apriori: Option<&Bound<'_, PyAny>>,
         average: &str,
         sigma_interpolation: &str,
         tail: Option<&Bound<'_, PyAny>>,
@@ -4391,7 +4485,7 @@ impl PyExpectedLoss {
         Ok(Self {
             ldf_basis,
             inner: ExpectedLoss {
-                apriori,
+                apriori: apriori_arg(apriori)?,
                 chain_ladder: pattern(
                     average,
                     sigma_interpolation,
@@ -4407,10 +4501,11 @@ impl PyExpectedLoss {
         })
     }
 
-    /// Expected loss ratio.
+    /// Expected loss ratio: a float, a list in origin order or a dict by origin
+    /// label, as given.
     #[getter]
-    fn apriori(&self) -> f64 {
-        self.inner.apriori
+    fn apriori<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        apriori_object(py, &self.inner.apriori)
     }
 
     /// How link ratios are averaged.
@@ -4576,8 +4671,8 @@ impl PyExpectedLoss {
 
     fn base_repr(&self) -> String {
         format!(
-            "ExpectedLoss(apriori={:?}, {})",
-            self.inner.apriori,
+            "ExpectedLoss(apriori={}, {})",
+            apriori_repr(&self.inner.apriori),
             pattern_repr(&self.inner.chain_ladder)
         )
     }
@@ -4592,9 +4687,18 @@ impl PyExpectedLoss {
 ///
 /// Parameters
 /// ----------
-/// apriori : float, default 1.0
-///     Expected loss ratio: the expected ultimate per unit of exposure;
-///     positive.
+/// apriori : float, sequence or dict, default 1.0
+///     Expected loss ratio: the expected ultimate per unit of exposure,
+///     positive: one for every origin, one per origin in origin order
+///     (oldest first, over the triangle's origins or, for a latest
+///     diagonal, its origins), or a dict from origin (its label as fits
+///     report it, ``"2021"`` or ``"2021Q3"``, or an integer year) to its
+///     loss ratio. Every origin fitted needs one; a value for an origin the
+///     triangle does not have is an error. Over segments each segment takes
+///     its own origins' values. A pandas Series is read in order and its
+///     index is not read: to key by origin, pass a dict. On a latest
+///     diagonal a sequence needs the rows oldest first, each origin once,
+///     and is otherwise an error, since the exposure is read by row.
 /// average : {"volume", "simple", "regression", "geometric"}, default "volume"
 ///     How link ratios are averaged, as in ``ChainLadder``.
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
@@ -4627,10 +4731,10 @@ pub(crate) struct PyBornhuetterFerguson {
 #[pymethods]
 impl PyBornhuetterFerguson {
     #[new]
-    #[pyo3(signature = (apriori = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None, ldf_underwriting = None))]
+    #[pyo3(signature = (apriori = None, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None, ldf_underwriting = None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
-        apriori: f64,
+        apriori: Option<&Bound<'_, PyAny>>,
         average: &str,
         sigma_interpolation: &str,
         tail: Option<&Bound<'_, PyAny>>,
@@ -4647,7 +4751,7 @@ impl PyBornhuetterFerguson {
         Ok(Self {
             ldf_basis,
             inner: BornhuetterFerguson {
-                apriori,
+                apriori: apriori_arg(apriori)?,
                 chain_ladder: pattern(
                     average,
                     sigma_interpolation,
@@ -4663,10 +4767,11 @@ impl PyBornhuetterFerguson {
         })
     }
 
-    /// Expected loss ratio.
+    /// Expected loss ratio: a float, a list in origin order or a dict by origin
+    /// label, as given.
     #[getter]
-    fn apriori(&self) -> f64 {
-        self.inner.apriori
+    fn apriori<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        apriori_object(py, &self.inner.apriori)
     }
 
     /// How link ratios are averaged.
@@ -4830,8 +4935,8 @@ impl PyBornhuetterFerguson {
 
     fn base_repr(&self) -> String {
         format!(
-            "BornhuetterFerguson(apriori={:?}, {})",
-            self.inner.apriori,
+            "BornhuetterFerguson(apriori={}, {})",
+            apriori_repr(&self.inner.apriori),
             pattern_repr(&self.inner.chain_ladder)
         )
     }
@@ -4847,8 +4952,18 @@ impl PyBornhuetterFerguson {
 ///
 /// Parameters
 /// ----------
-/// apriori : float, default 1.0
-///     Expected loss ratio of the starting ultimate; positive.
+/// apriori : float, sequence or dict, default 1.0
+///     Expected loss ratio of the starting ultimate, positive: one for
+///     every origin, one per origin in origin order (oldest first, over the
+///     triangle's origins or, for a latest diagonal, its origins), or a
+///     dict from origin (its label as fits report it, ``"2021"`` or
+///     ``"2021Q3"``, or an integer year) to its loss ratio. Every origin
+///     fitted needs one; a value for an origin the triangle does not have
+///     is an error. Over segments each segment takes its own origins'
+///     values. A pandas Series is read in order and its index is not
+///     read: to key by origin, pass a dict. On a latest diagonal a sequence
+///     needs the rows oldest first, each origin once, and is otherwise an
+///     error, since the exposure is read by row.
 /// n_iters : int, default 1
 ///     Number of Bornhuetter–Ferguson steps.
 /// average : {"volume", "simple", "regression", "geometric"}, default "volume"
@@ -4883,10 +4998,10 @@ pub(crate) struct PyBenktander {
 #[pymethods]
 impl PyBenktander {
     #[new]
-    #[pyo3(signature = (apriori = 1.0, n_iters = 1, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None, ldf_underwriting = None))]
+    #[pyo3(signature = (apriori = None, n_iters = 1, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None, ldf_underwriting = None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
-        apriori: f64,
+        apriori: Option<&Bound<'_, PyAny>>,
         n_iters: usize,
         average: &str,
         sigma_interpolation: &str,
@@ -4904,7 +5019,7 @@ impl PyBenktander {
         Ok(Self {
             ldf_basis,
             inner: Benktander {
-                apriori,
+                apriori: apriori_arg(apriori)?,
                 n_iters,
                 chain_ladder: pattern(
                     average,
@@ -4921,10 +5036,11 @@ impl PyBenktander {
         })
     }
 
-    /// Expected loss ratio of the starting ultimate.
+    /// Expected loss ratio of the starting ultimate: a float, a list in origin
+    /// order or a dict by origin label, as given.
     #[getter]
-    fn apriori(&self) -> f64 {
-        self.inner.apriori
+    fn apriori<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        apriori_object(py, &self.inner.apriori)
     }
 
     /// Number of Bornhuetter–Ferguson steps.
@@ -5094,8 +5210,8 @@ impl PyBenktander {
 
     fn base_repr(&self) -> String {
         format!(
-            "Benktander(apriori={:?}, n_iters={}, {})",
-            self.inner.apriori,
+            "Benktander(apriori={}, n_iters={}, {})",
+            apriori_repr(&self.inner.apriori),
             self.inner.n_iters,
             pattern_repr(&self.inner.chain_ladder)
         )

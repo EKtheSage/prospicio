@@ -61,7 +61,7 @@ fn matches_chainladder_python_development() {
             let tri = triangle_columns(dataset, &["paid", "premium"]);
             return match method.split(';').next().unwrap() {
                 "bornhuetter_ferguson" => BornhuetterFerguson {
-                    apriori: case.param("method", "apriori"),
+                    apriori: case.param("method", "apriori").into(),
                     chain_ladder,
                 }
                 .fit(&tri, "paid", "premium")

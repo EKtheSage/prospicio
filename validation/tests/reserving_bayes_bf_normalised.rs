@@ -164,7 +164,7 @@ fn a_tight_prior_is_the_bornhuetter_ferguson_limit() {
     // ultimates, apriori 1).
     let at_cl = with_premium(&tri, 2001, |w| cl.ultimate[w]);
     let classical = BornhuetterFerguson {
-        apriori: 1.0,
+        apriori: 1.0.into(),
         ..Default::default()
     }
     .fit(&at_cl, "paid", "premium")
@@ -196,7 +196,7 @@ fn a_tight_prior_is_the_bornhuetter_ferguson_limit() {
         let f = fit(&tri, &model);
         let got = f.reserves.total().mean();
         let classical = BornhuetterFerguson {
-            apriori,
+            apriori: apriori.into(),
             ..Default::default()
         }
         .fit(&tri, "paid", "premium")

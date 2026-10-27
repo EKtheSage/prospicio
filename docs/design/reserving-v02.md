@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -95,8 +95,9 @@ pub struct Benktander { pub apriori: f64, pub n_iters: usize, pub chain_ladder: 
 pub struct CapeCod { pub trend: f64, pub decay: f64, pub chain_ladder: ChainLadder }
 ```
 
-With `q = 1 / cdf` the share developed at the origin's latest age and
-`U0 = apriori * exposure`:
+The `apriori` of the first three is one loss ratio or one per origin since
+decision 22 (`Apriori`). With `q = 1 / cdf` the share developed at the
+origin's latest age and `U0 = apriori * exposure`:
 
 * expected loss: `ultimate = U0`;
 * BF: `ultimate = latest + (1 - q) * U0`;
@@ -3843,3 +3844,114 @@ No reference implementation converts a reserving pattern from accident to
 underwriting periods (chainladder-python 0.10.1 has no such argument, as
 decision 18 item 10 found), so these checks are by hand, against the
 pricing crate and on the simulated book.
+
+### 22. An a-priori loss ratio per origin
+
+Status: **Built** (2026-10-26), issue #634, branch `claude/apriori-by-origin`,
+in Rust, Python and R. Items 1 to 3 restate the issue's proposal; items 4
+to 8 are choices made in building it, proposed for the user's acceptance.
+The Excel functions keep one number (`.into()` at their six call sites,
+behaviour unchanged); a per-origin a priori on a sheet is #635 for the
+Excel lane. The guides that still give the one-number workaround
+(`apriori=1.0` with the prior in the exposure column) are #642 for the
+Guides lane.
+
+The expected loss, Bornhuetter-Ferguson and Benktander methods took one
+`apriori: f64` for every origin, so a book whose plan loss ratio differs by
+year (rate changes, a plan by underwriting year) needed one fit per origin
+or a rescaled exposure. `apriori` is now an `Apriori`:
+
+```rust
+pub enum Apriori {
+    All(f64),                       // one for every origin
+    InOrder(Vec<f64>),              // one per origin, oldest first
+    ByOrigin(Vec<(Period, f64)>),   // one per origin period
+}
+impl From<f64> for Apriori { ... }  // `apriori: 0.7.into()`
+Apriori::by_origin(pairs)           // from (Period, f64)
+Apriori::from_labels(pairs)?        // from ("2021", 0.7), ("2021Q3", 0.7), ...
+```
+
+Each origin's expected ultimate is its own `apriori[o] * exposure[o]`; the
+methods' arithmetic is otherwise unchanged, so each origin of a fit with one
+loss ratio per origin is that origin of the fit at its loss ratio for every
+origin, to the bit.
+
+1. **Keyed by origin, not by position.** A fit's origins are not the rows
+   given: `fit_diagonal` takes a diagonal's rows in any order and fits its
+   origins oldest first (`latest_diagonal.rs`; a diagonal that skips an
+   origin is `Error::EmptyOrigin` in any case), and a triangle's segment is
+   trimmed to the origins its column observes. A vector by position would
+   not line up with the user's rows, so a key is an origin period and the
+   values in order are read as one.
+2. **`From<f64>`.** Existing calls write `apriori: 0.7.into()`. Struct
+   literals that set `apriori` to a number no longer compile: a breaking
+   change for Rust callers, marked so in the changelog. `Apriori::default()`
+   is 1, as before.
+3. **Mismatches are errors** (`Error::Apriori`): an origin fitted without a
+   value, a key that names no origin, an origin given twice, an empty map,
+   and a number of values in order other than the number of origins. A
+   value that is not finite and positive is `Error::InvalidSetting`, as
+   before.
+4. **What "the origins" are** (proposed). Keys and values in order are
+   matched once, at the entry point, against the triangle's origins
+   (`Triangle::origins`, every origin of every segment), a latest
+   diagonal's origins, or the origins of every segment of a
+   `LatestDiagonals` together, sorted and without repeats. Each segment
+   then takes the values of its own origins and ignores the others, so one
+   map serves lines that start in different years, while a typo (an origin
+   of no segment) is still an error. A key for an origin of the triangle
+   that the loss column does not observe passes this check and is ignored.
+   The alternative, an exact match per segment, would make a per-origin a
+   priori unusable on a triangle with keys. On latest diagonals, values in
+   order (`Apriori::InOrder`, a Python sequence, an unnamed R vector) are
+   accepted only when the rows, segment after segment, are the origins
+   oldest first, each once; any other order is `Error::Apriori`, telling
+   the user to key by origin. A diagonal's exposure, latest values and ages
+   are read in the order of its rows, so a column of a priori values passed
+   next to them from a data frame would otherwise go to the wrong origins
+   without an error whenever the rows are not oldest first. Reading values
+   in order by row on diagonals was the alternative: it would give
+   `InOrder` one meaning on a triangle and another on a diagonal, and over
+   segments it would need one value per row, so one origin could take two
+   values.
+5. **Keys match by period, grain included** (proposed): `Period::year(2021)`
+   names no quarterly origin, and the labels are the ones fits report
+   (`"2021"`, `"2021H1"`, `"2021Q3"`, `"2021-07"`, exactly as `Period`
+   displays them). Matching a month to the origin that contains it was the
+   alternative; it would let `2021` silently name `2021Q1`.
+6. **Through every path.** `fit` and `fit_segments`, `fit_diagonal`,
+   `fit_diagonal_segments` and `fit_diagonal_segments_from`, and the
+   one-year re-reserving method (`OneYearMethod`) of both bootstraps, which
+   keys the a priori against the triangle's origins once before the
+   simulations and re-reserves each simulated year with each origin's own
+   value. `ExpectedLoss` and `BornhuetterFerguson` go through `Benktander`
+   on every path, so the three share one implementation.
+7. **Bindings** (proposed). Python's `apriori` takes a float, a sequence in
+   origin order (a list, tuple or numpy array) or a dict keyed by origin
+   label or integer year; dates as keys are not read, since the origin
+   grain is not known when the method is built. The `apriori` property and
+   the repr give it back as given (a float, a list, or a dict by label).
+   R's `apriori` takes a number, an unnamed vector in origin order or a
+   vector named by origin label; a vector with only some names is an error.
+   The Python default is now `None`, read as 1, since a sequence cannot be
+   a signature default.
+8. **CapeCod is left out** (the issue's proposal): it estimates its loss
+   ratio from the triangle, so a per-origin input does not apply to it.
+
+**Checks.** Rust unit tests (`expected_loss.rs`, `latest_diagonal.rs`,
+`one_year_bootstrap.rs`): each origin of a keyed fit equals that origin
+fitted alone at its own loss ratio for `n_iters` 0, 1, 2 and 5 on RAA;
+keyed, in order and by label in reverse order agree exactly; segments that
+start in different years take their own origins; a diagonal given newest
+first lines up by origin through `fit_diagonal`, `fit_diagonal_segments`
+and `fit_diagonal_segments_from`, where values in order are an error, and
+values in order on rows oldest first equal the keyed fit; the one-year view's claims development
+result matches the closed form `(f - 1) (a[o] E / cdf - latest)` on an
+exact triangle, and keyed and in-order views draw the same; every error and
+label form. Python (`test_reserving.py`, `test_reserving_latest_diagonal.py`)
+and R (`test-reserving.R`, `test-reserving-latest-diagonal.R`) repeat the
+identities on `clrd_wkcomp` and the shuffled diagonal through each binding
+(a dict or named vector on the shuffled rows, a sequence or unnamed vector
+on the rows oldest first, and the error for a sequence on the shuffled
+rows), with the one-year view and the errors.

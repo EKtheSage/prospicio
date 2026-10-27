@@ -1372,6 +1372,21 @@ single_number <- function(value, arg) {
   as.double(value)
 }
 
+# The `apriori` of an expected-loss method as Rust takes it: one number for
+# every origin, an unnamed vector of one per origin in origin order, or a
+# vector named by origin label ("2021", "2021Q3"), as a double vector that
+# keeps its names.
+apriori_arg <- function(apriori) {
+  if (!is.numeric(apriori) || length(apriori) == 0 || anyNA(apriori)) {
+    stop("apriori must be a number or a numeric vector, one per origin", call. = FALSE)
+  }
+  labels <- names(apriori)
+  if (!is.null(labels) && (anyNA(labels) || any(labels == ""))) {
+    stop("apriori must be named by origin for every value, or not at all", call. = FALSE)
+  }
+  stats::setNames(as.double(apriori), labels)
+}
+
 # The loss and exposure columns of an expected-loss method.
 exposure_columns <- function(triangle, column, exposure) {
   check_triangle(triangle)
@@ -1470,7 +1485,15 @@ expected_loss_properties <- function(el, cl) {
 #' @param development,segment_map For a latest valuation only: the development
 #'   of another fit, segment by segment, as in [chain_ladder()].
 #' @param apriori Expected loss ratio: the expected ultimate per unit of
-#'   exposure; positive.
+#'   exposure; positive. One number for every origin, an unnamed vector of
+#'   one per origin in origin order (oldest first, over the triangle's
+#'   origins or, for a latest valuation, its origins), or a vector named by
+#'   origin as fits name them (`c("2020" = 0.6, "2021" = 0.65)`, or
+#'   `"2021Q3"` for quarters). Every origin fitted needs a value, and a name
+#'   that is not an origin of the triangle is an error; over segments each
+#'   segment takes its own origins' values. On a latest valuation an unnamed
+#'   vector needs the rows oldest first, each origin once, and is otherwise
+#'   an error, since the exposure is read by row: name it by origin.
 #' @param n_iters Number of Bornhuetter-Ferguson steps; a non-negative whole
 #'   number.
 #' @param ldf,ldf_kind,ldf_weight,ldf_origin,ldf_underwriting A selected development pattern, as in
@@ -1521,14 +1544,14 @@ expected_loss <- function(triangle, column = NULL, exposure = NULL, apriori = 1,
   pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting)
   if (is_latest_valuation(triangle)) {
     return(expected_loss_fit(ptr = latest_valuation_fit(
-      triangle, "expected_loss", list(single_number(apriori, "apriori")), args, tail, pattern,
+      triangle, "expected_loss", list(apriori_arg(apriori)), args, tail, pattern,
       development, segment_map, !is.null(column) || !is.null(exposure)
     )))
   }
   no_development(development, segment_map)
   cols <- exposure_columns(triangle, column, exposure)
   ptr <- rust_result(triangle@ptr$expected_loss(
-    cols[1], cols[2], single_number(apriori, "apriori"), args$average, args$sigma, args$excl,
+    cols[1], cols[2], apriori_arg(apriori), args$average, args$sigma, args$excl,
     tail_ptr(tail), pattern
   ))
   expected_loss_fit(ptr = ptr)
@@ -1545,14 +1568,14 @@ bornhuetter_ferguson <- function(triangle, column = NULL, exposure = NULL, aprio
   pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting)
   if (is_latest_valuation(triangle)) {
     return(expected_loss_fit(ptr = latest_valuation_fit(
-      triangle, "bornhuetter_ferguson", list(single_number(apriori, "apriori")), args, tail,
+      triangle, "bornhuetter_ferguson", list(apriori_arg(apriori)), args, tail,
       pattern, development, segment_map, !is.null(column) || !is.null(exposure)
     )))
   }
   no_development(development, segment_map)
   cols <- exposure_columns(triangle, column, exposure)
   ptr <- rust_result(triangle@ptr$bornhuetter_ferguson(
-    cols[1], cols[2], single_number(apriori, "apriori"), args$average, args$sigma, args$excl,
+    cols[1], cols[2], apriori_arg(apriori), args$average, args$sigma, args$excl,
     tail_ptr(tail), pattern
   ))
   expected_loss_fit(ptr = ptr)
@@ -1570,14 +1593,14 @@ benktander <- function(triangle, column = NULL, exposure = NULL, apriori = 1, n_
   if (is_latest_valuation(triangle)) {
     return(expected_loss_fit(ptr = latest_valuation_fit(
       triangle, "benktander",
-      list(single_number(apriori, "apriori"), single_number(n_iters, "n_iters")), args, tail,
+      list(apriori_arg(apriori), single_number(n_iters, "n_iters")), args, tail,
       pattern, development, segment_map, !is.null(column) || !is.null(exposure)
     )))
   }
   no_development(development, segment_map)
   cols <- exposure_columns(triangle, column, exposure)
   ptr <- rust_result(triangle@ptr$benktander(
-    cols[1], cols[2], single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
+    cols[1], cols[2], apriori_arg(apriori), single_number(n_iters, "n_iters"),
     args$average, args$sigma, args$excl, tail_ptr(tail), pattern
   ))
   expected_loss_fit(ptr = ptr)
@@ -4343,7 +4366,7 @@ odp_one_year <- function(triangle, column = NULL,
   check_bootstrap_tail_settings(bootstrap_tail, list(tail_std_err = tail_std_err))
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
   ptr <- rust_result(triangle@ptr$odp_one_year(
-    column, method, exposure, single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
+    column, method, exposure, apriori_arg(apriori), single_number(n_iters, "n_iters"),
     single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma, args$excl,
     tail_ptr(tail), isTRUE(bootstrap_tail),
     optional_number(tail_std_err, "tail_std_err"), single_number(n_sims, "n_sims"),
@@ -4384,7 +4407,7 @@ mack_one_year <- function(triangle, column = NULL,
                             mack_drop_low,
                             c("mack_n_periods", "mack_drop_high", "mack_drop_low"))
   ptr <- rust_result(triangle@ptr$mack_one_year(
-    column, method, exposure, single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
+    column, method, exposure, apriori_arg(apriori), single_number(n_iters, "n_iters"),
     single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma, args$excl,
     tail_ptr(tail), isTRUE(bootstrap_tail),
     optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),

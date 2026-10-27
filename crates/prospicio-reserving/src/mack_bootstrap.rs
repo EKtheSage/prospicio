@@ -1417,7 +1417,7 @@ mod tests {
         let fit = b.one_year(&tri, "paid", &tailed).unwrap();
         assert!(column(&fit.cdr, 0).iter().any(|&x| x != 0.0));
         let bf = BornhuetterFerguson {
-            apriori: 0.8,
+            apriori: 0.8.into(),
             ..Default::default()
         };
         let method = OneYearMethod::BornhuetterFerguson(bf.clone(), "premium".into());
