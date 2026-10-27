@@ -8,4 +8,4 @@
   `totals_frame()`. Meyers' is its `ultimate_mean` over the premium; the
   two Bayesian BFs also gain `ultimate_mean`, the latest value plus the
   posterior mean reserve. `ulr` stays the chain ladder's ultimate over the
-  exposure, and the one-year views keep `opening_ulr` (#645, PR_NUMBER).
+  exposure, and the one-year views keep `opening_ulr` (#645, #648).
