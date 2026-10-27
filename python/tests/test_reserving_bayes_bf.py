@@ -104,7 +104,13 @@ def test_summary_and_frames(fit):
     long = fit.to_frame()
     assert list(long.columns) == [
         "origin", "latest", "ultimate", "reserve", "exposure", "prior_ultimate", "ulr",
-        "mean", "std_dev",
+        "mean", "std_dev", "ultimate_mean", "ulr_mean",
+    ]
+    # The posterior mean ultimate, latest plus the mean reserve, over the
+    # exposure.
+    assert list(long["ultimate_mean"]) == [l + m for l, m in zip(long["latest"], long["mean"])]
+    assert list(long["ulr_mean"]) == [
+        u / e for u, e in zip(long["ultimate_mean"], long["exposure"])
     ]
     # The chain ladder's ultimate, as in the table, over the exposure.
     assert list(long["ulr"]) == [u / e for u, e in zip(long["ultimate"], long["exposure"])]
@@ -115,6 +121,8 @@ def test_summary_and_frames(fit):
     assert len(totals) == 1
     assert {"exposure", "prior_ultimate", "scale"} <= set(totals.columns)
     assert totals.loc[0, "mean"] == pytest.approx(fit.reserves.mean(), rel=1e-9)
+    assert totals.loc[0, "ultimate_mean"] == totals.loc[0, "latest"] + totals.loc[0, "mean"]
+    assert totals.loc[0, "ulr_mean"] == totals.loc[0, "ultimate_mean"] / totals.loc[0, "exposure"]
     assert len(fit.development_frame()) == 10
 
 

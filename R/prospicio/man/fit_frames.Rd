@@ -42,9 +42,11 @@ method's own), plus for Mack \code{process_risk}, \code{parameter_risk} and
 \code{std_dev} of the bootstrapped reserve (for \code{\link[=bayes_odp]{bayes_odp()}},
 \code{\link[=bayes_odp_segments]{bayes_odp_segments()}}, \code{\link[=bayes_bf]{bayes_bf()}}, \code{\link[=bayes_bf_normalised]{bayes_bf_normalised()}}, \code{\link[=meyers]{meyers()}} and
 \code{\link[=meyers_segments]{meyers_segments()}} of the posterior predictive reserve; \code{\link[=bayes_bf]{bayes_bf()}} and
-\code{\link[=bayes_bf_normalised]{bayes_bf_normalised()}} add the \code{exposure} and \code{prior_ultimate}, \code{\link[=meyers]{meyers()}} and
+\code{\link[=bayes_bf_normalised]{bayes_bf_normalised()}} add the \code{exposure} and \code{prior_ultimate} and the
+\code{ultimate_mean}, \code{latest} plus \code{mean}, \code{\link[=meyers]{meyers()}} and
 \code{\link[=meyers_segments]{meyers_segments()}} add the \code{premium} and the
-\code{ultimate_mean} and \code{ultimate_std_dev} of the predictive ultimate), and
+\code{ultimate_mean} and \code{ultimate_std_dev} of the predictive ultimate, and
+all five end with \code{ulr_mean}, the \code{ultimate_mean} over the exposure), and
 for Clark (Cape Cod)
 \code{exposure}, \code{expected_ultimate} and the three standard errors; for
 \code{\link[=compartmental]{compartmental()}} the \code{premium}, \code{latest_paid}, the \code{mean} and \code{std_dev}

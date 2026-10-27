@@ -129,6 +129,11 @@ def test_summary_frames_and_loo(crc):
     assert list(long.columns)[:4] == ["origin", "latest", "ultimate", "reserve"]
     for col in ("premium", "mean", "std_dev", "ultimate_mean", "ultimate_std_dev"):
         assert col in long.columns
+    # The posterior mean ultimate over the premium, last.
+    assert list(long.columns)[-1] == "ulr_mean"
+    assert list(long["ulr_mean"]) == [
+        u / p for u, p in zip(long["ultimate_mean"], long["premium"])
+    ]
     assert len(long) == 10
     assert long["mean"].sum() == pytest.approx(crc.reserves.mean(), rel=1e-9)
     assert long["ultimate_mean"].sum() == pytest.approx(crc.ultimates.mean(), rel=1e-9)
@@ -136,6 +141,7 @@ def test_summary_frames_and_loo(crc):
     assert len(totals) == 1
     assert totals.loc[0, "premium"] == pytest.approx(sum(crc.premium))
     assert totals.loc[0, "ultimate_mean"] == pytest.approx(crc.ultimates.mean(), rel=1e-9)
+    assert totals.loc[0, "ulr_mean"] == totals.loc[0, "ultimate_mean"] / totals.loc[0, "premium"]
     assert len(crc.development_frame()) == 10
 
     loo = crc.loo()

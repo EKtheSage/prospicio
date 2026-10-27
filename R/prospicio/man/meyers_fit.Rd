@@ -135,8 +135,9 @@ compare it only between CRC, CSR and CAY fits of the same column (Meyers
 2019, Tables 6.4, 7.3 and 8.3). \code{as.data.frame()}, \code{\link[=totals_frame]{totals_frame()}}, \code{\link[=development_frame]{development_frame()}} and
 \code{\link[=segment]{segment()}} work as for \code{\link[=bayes_odp]{bayes_odp()}}, with the \code{premium}, the \code{ulr}
 (the chain ladder's ultimate over the premium), the \code{mean} and
-\code{std_dev} of the posterior predictive reserve and the \code{ultimate_mean} and
-\code{ultimate_std_dev} of the posterior predictive ultimate.
+\code{std_dev} of the posterior predictive reserve, the \code{ultimate_mean} and
+\code{ultimate_std_dev} of the posterior predictive ultimate and \code{ulr_mean},
+the \code{ultimate_mean} over the premium.
 
 Errors: if a column is missing, the triangle has several segments or an
 origin has a gap; if a premium is missing or not positive; if a prior

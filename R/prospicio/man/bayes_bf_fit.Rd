@@ -117,7 +117,10 @@ PSIS-LOO of the observed increments, comparable with \code{\link[=bayes_odp]{bay
 the same column. \code{as.data.frame()}, \code{\link[=totals_frame]{totals_frame()}},
 \code{\link[=development_frame]{development_frame()}} and \code{\link[=segment]{segment()}} work as for \code{\link[=bayes_odp]{bayes_odp()}}, with the
 \code{exposure}, \code{prior_ultimate} and \code{ulr} (the chain ladder's ultimate over
-the exposure, a loss ratio only when the exposure is premium).
+the exposure, a loss ratio only when the exposure is premium), and after
+the \code{mean} and \code{std_dev} the \code{ultimate_mean} (\code{latest} plus \code{mean}, the
+posterior mean ultimate) and \code{ulr_mean} (\code{ultimate_mean} over the
+exposure).
 
 Errors: as \code{\link[=bayes_odp]{bayes_odp()}}; if an origin has no observed, finite, positive
 exposure; if \code{apriori} is not positive and finite, \code{cv} is not positive

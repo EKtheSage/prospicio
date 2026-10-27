@@ -14,8 +14,8 @@ use super::laplace::{Posterior, Whitened, mode};
 use super::one_year::{self, BayesOneYear, BayesOneYearFit, OdpCells, OdpYear};
 use super::{Diagnostics, Stream, derive_seed, one_year_seed};
 use crate::bootstrap::{
-    ProcessDistribution, component_sums, hash_segment, prepare, process_draw, push_moments,
-    segment_sums,
+    ProcessDistribution, component_sums, hash_segment, prepare, process_draw, push_combined,
+    push_moments, segment_sums,
 };
 use crate::chain_ladder::ChainLadderFit;
 use crate::error::{Error, Result};
@@ -571,21 +571,26 @@ impl BayesBfFit {
 
     /// One row per origin: the chain ladder's `latest`, `ultimate` and
     /// `reserve`, the `exposure`, `prior_ultimate` and `ulr` (the chain
-    /// ladder's ultimate over the exposure), and the `mean` and `std_dev`
-    /// of the posterior predictive reserve.
+    /// ladder's ultimate over the exposure), the `mean` and `std_dev` of
+    /// the posterior predictive reserve, and `ultimate_mean` (`latest` plus
+    /// `mean`, the posterior mean ultimate) and `ulr_mean` (`ultimate_mean`
+    /// over the exposure).
     pub fn to_long(&self) -> FitTable {
         let mut table = self.plug_in().to_long();
         push_moments(&mut table, "", &component_sums(&self.reserves));
+        push_posterior_ultimate(&mut table);
         table
     }
 
     /// One row: the chain ladder's totals, the total `exposure` and
-    /// `prior_ultimate`, the `scale`, the total `ulr`, and the `mean` and
-    /// `std_dev` of the posterior predictive total reserve.
+    /// `prior_ultimate`, the `scale`, the total `ulr`, the `mean` and
+    /// `std_dev` of the posterior predictive total reserve, and the total
+    /// `ultimate_mean` and `ulr_mean` (over the total exposure).
     pub fn totals(&self) -> FitTable {
         let fits = self.plug_in();
         let mut table = fits.totals();
         push_moments(&mut table, "", &segment_sums(&fits, &self.reserves));
+        push_posterior_ultimate(&mut table);
         table
     }
 
@@ -625,6 +630,16 @@ impl ReserveFit for BayesBfFit {
     fn total_columns(&self) -> Vec<(&'static str, f64)> {
         total_columns(self.scale, &self.exposure, &self.prior_ultimate)
     }
+}
+
+/// Appends `ultimate_mean`, the row's `latest` plus its posterior mean
+/// reserve `mean`, and `ulr_mean`, that over the row's `exposure`, to a
+/// Bayesian Bornhuetter-Ferguson table. The latest value is fixed, so the
+/// ultimate's standard deviation is the reserve's `std_dev` and gets no
+/// column of its own.
+pub(super) fn push_posterior_ultimate(table: &mut FitTable) {
+    push_combined(table, "ultimate_mean", "latest", "mean", |l, m| l + m);
+    push_combined(table, "ulr_mean", "ultimate_mean", "exposure", |u, e| u / e);
 }
 
 pub(super) fn origin_columns(exposure: &[f64], prior: &[f64]) -> Vec<(&'static str, Vec<f64>)> {
@@ -1430,6 +1445,19 @@ mod tests {
             .map(|(u, e)| u / e)
             .collect();
         assert_eq!(long.column("ulr").unwrap(), ulr);
+        // The posterior mean ultimate, latest plus the mean reserve, and it
+        // over the exposure, per origin and in total.
+        let latest = long.column("latest").unwrap();
+        let mean = long.column("mean").unwrap();
+        let ultimate_mean: Vec<f64> = latest.iter().zip(mean).map(|(l, m)| l + m).collect();
+        assert_eq!(long.column("ultimate_mean").unwrap(), ultimate_mean);
+        let ulr_mean: Vec<f64> = (ultimate_mean.iter())
+            .zip(&fit.exposure)
+            .map(|(u, e)| u / e)
+            .collect();
+        assert_eq!(long.column("ulr_mean").unwrap(), ulr_mean);
+        assert!(long.column("ultimate_std_dev").is_none());
+        assert_eq!(long.values.last().unwrap().0, "ulr_mean");
         let totals = fit.totals();
         assert_eq!(totals.column("scale").unwrap(), [fit.scale]);
         assert_eq!(totals.column("exposure").unwrap(), [118e6]);
@@ -1437,6 +1465,9 @@ mod tests {
             totals.column("ulr").unwrap(),
             [totals.column("ultimate").unwrap()[0] / 118e6]
         );
+        let total_mean = totals.column("latest").unwrap()[0] + totals.column("mean").unwrap()[0];
+        assert_eq!(totals.column("ultimate_mean").unwrap(), [total_mean]);
+        assert_eq!(totals.column("ulr_mean").unwrap(), [total_mean / 118e6]);
         assert_eq!(fit.development_table().n_rows(), 10);
         assert_eq!(fit.summary().unwrap().len(), 20);
         let provenance = fit.reserves.provenance();
@@ -1570,8 +1601,10 @@ mod tests {
         assert_eq!(long.n_rows(), 10);
         assert_eq!(long.column("prior_ultimate").unwrap(), fit.prior_ultimate);
         assert!(long.column("opening_reserve").is_some());
-        // The ulr is the opening ultimate's, under its name.
+        // The ulr is the opening ultimate's, under its name, and the
+        // lifetime table's posterior columns are not carried.
         assert!(long.column("ulr").is_none());
+        assert!(long.column("ulr_mean").is_none() && long.column("ultimate_mean").is_none());
         let ulr: Vec<f64> = (view.opening_ultimate.iter())
             .zip(&fit.exposure)
             .map(|(u, e)| u / e)

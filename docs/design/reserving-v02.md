@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -3988,6 +3988,27 @@ itself. Built on branch `claude/ulr-column`.
    premium`). A posterior `ulr_mean` was left out to keep the PR small; it
    would be one line for Meyers, which already has `ultimate_mean`, and
    needs an ultimate column first for the two Bayesian BFs.
+
+   *2026-10-27: accepted by the user with this follow-up (#645), built on
+   branch `claude/ulr-mean` in Rust, Python and R.* `ulr` stays the row's
+   `ultimate` over its exposure (item 1), so in these tables the chain
+   ladder's. After the posterior moments the tables now carry `ulr_mean`,
+   the posterior mean ultimate over the exposure, per origin and in total
+   (the total `ultimate_mean` over the total exposure): for Meyers' CRC,
+   CSR and CAY, alone and over segments, `ultimate_mean / premium`, after
+   `ultimate_std_dev`; for `BayesBf` and `BayesBfNormalised` (fitted alone
+   only; neither has a segment fit) a new `ultimate_mean`, `latest + mean`,
+   then `ulr_mean = ultimate_mean / exposure`. Both are read off the
+   table's own columns by one helper next to `push_moments`, so each
+   equals the ratio of its own row exactly, as `ulr` does, with no special
+   case for a NaN or zero exposure. The two Bayesian BFs get no
+   `ultimate_std_dev`: the latest value is fixed, so it would repeat the
+   reserve's `std_dev`. The new columns come last, so no existing column
+   moves. The one-year views are unchanged: they keep `opening_ulr` (item
+   5) and carry neither `ultimate_mean` nor `ulr_mean`. Unit tests in
+   `bayes/bf.rs`, `bayes/bf_normalised.rs` and `bayes/meyers.rs` (alone and
+   over segments) and the Python and R tests that list exact columns check
+   the values.
 5. **The one-year views name it `opening_ulr`** (proposed, for the user's
    acceptance). A Bayesian one-year view's table has the opening ultimate,
    which `opening_names` renames from `ultimate`; the ratio follows it as
