@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R, proposed for the user's acceptance; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -3955,6 +3955,103 @@ identities on `clrd_wkcomp` and the shuffled diagonal through each binding
 (a dict or named vector on the shuffled rows, a sequence or unnamed vector
 on the rows oldest first, and the error for a sequence on the shuffled
 rows), with the one-year view and the errors.
+
+### 23. A growth curve fitted to a benchmark pattern
+
+Issue #637, branch `claude/benchmark-curve`. A benchmark pattern comes at a
+few ages (12, 24, ..., 120 months, say); a pipeline needs its values at
+other ages, a smooth pattern and a tail. Clark's methods (decision 5) fit a
+growth curve to a triangle only. This adds the fit of the same curves to a
+given pattern.
+
+```rust
+pub struct BenchmarkCurve { pub curve: GrowthCurve, pub max_age: Option<f64>, pub origin_width: Option<f64> }
+impl BenchmarkCurve {
+    pub fn fit(&self, kind: PatternKind, values: &[(f64, f64)], weights: Option<&[f64]>) -> Result<BenchmarkCurveFit>;
+}
+impl BenchmarkCurveFit {
+    pub fn percent_developed(&self, age: f64) -> f64;
+    pub fn cdf(&self, age: f64) -> f64;
+    pub fn curve_age(&self, age: f64) -> f64;
+    pub fn pattern(&self, ages: &[Lag]) -> Result<SelectedPattern>;
+}
+```
+
+As built (`crates/prospicio-reserving/src/benchmark_curve.rs`, parity in
+`validation/tests/reserving_benchmark_curve.rs`; the finding is
+`knowledge/findings/benchmark-curve-fit.md`). Python `BenchmarkCurve(curve,
+max_age, origin_width).fit(pattern, kind, weights)` returns a
+`BenchmarkCurveFit` with `selected(ages)`, the `ldf`, `ldf_kind` and
+`ldf_weight` arguments; R `benchmark_curve(pattern, kind, curve, weights,
+max_age, origin_width)` returns a `benchmark_curve_fit`, with
+`benchmark_percent_developed()`, `benchmark_cdf()` and
+`benchmark_selected()`.
+
+Each item is proposed, for the user's acceptance:
+
+1. **Least squares on the percents developed** (as the issue asks), not on
+   their logits, the factors to ultimate or the age-to-age factors: the
+   objective is `sum w_i (p_i - p(a_i))^2`, minimized with `nelder_mead` on
+   `(ln omega, ln theta)` to a tolerance of 1e-12. The percent scale weights
+   the early ages, where most of the pattern moves, as much as the late
+   ones; a weight by age shifts that. The alternatives were least squares on
+   `logit p` (which the start uses, and which overweights the ages near 0%
+   and 100%) or on the factors to ultimate (which overweights the early
+   ages).
+2. **The fitted percent developed is Clark's**: `p(a) = G(c(a)) /
+   G(c(m))`, `m` the `max_age` at which development stops (`G(c(m)) = 1`
+   without one) and 1 at `m` and after. So `latest / p(a)` is Clark's LDF
+   ultimate, `latest * G(c(m)) / G(c(a))`, and a curve fitted to Clark's
+   own percents gives his ultimates back in the chain ladder (checked to
+   1e-7). A benchmark that reaches 100% at a finite age needs `max_age`,
+   since an untruncated curve is below 1 at every finite age.
+3. **The age convention**: benchmark ages are development ages in months
+   from the start of the origin period, as a triangle's (any positive
+   number, not only whole months). With `origin_width` set the curve is
+   evaluated at Clark's ages from the average date of loss (decision 5:
+   `a - w / 2` at or past the width `w`, `a / 2` before it), so a pattern
+   read off a Clark fit is fitted on Clark's ages. The default is no shift,
+   since a benchmark's ages are usually its own; the alternative was the
+   shift by default, as Clark's methods have it.
+4. **The tail is the pattern's level**, not a `Tail` of its own:
+   `pattern(ages)` gives the fitted percents developed at the ages asked for
+   as a fully selected `PatternKind::PercentDeveloped` pattern. Passed to the
+   chain ladder or an expected-loss method with no tail and ending at the
+   triangle's oldest age, its level there is the tail (decision 12),
+   `cdf(oldest) = 1 / p(oldest)`, the curve's development past the oldest
+   age, a constant with no parameter error, as Clark's own tail is part of
+   his curve. Ages past the oldest fold into the same tail (decision 18).
+   The pattern is fully selected; to blend it, set the weight on the
+   `SelectedPattern` (or `ldf_weight` in the bindings) on ages that end at
+   the oldest.
+5. **Input checks**: percents developed or factors to ultimate
+   (`PatternKind::AgeToAge` is an error: age-to-age factors give no level
+   to fit), each finite and positive, ages finite, positive and each once,
+   weights finite and not negative, one per value, at least two ages with
+   positive weight, `max_age` at least the last age. Percents above 1 are
+   accepted (the curve then fits them as best it can below 1), as a
+   `SelectedPattern` accepts them. The fit is checked too: a fit that runs
+   off to the edge of the parameters, omega below 1e-6 or above 1e6 or
+   `|ln theta|` above 700 (below the overflow of `exp` at about 709.8), is
+   an error. A flat or decreasing benchmark does this: the search drives
+   omega to 0 or theta past `f64::MAX`, and the result is a flat line, not
+   a growth curve. The check is on the fit, not on monotone input, so a
+   noisy benchmark with a small dip still fits.
+6. **The start** is the weighted straight line of `logit p` (log-logistic)
+   or `ln(-ln(1 - p))` (Weibull) on the log curve age, over the percents in
+   (0, 1); it is exact for an exact untruncated curve. Clark's (R's) start
+   is the fallback when that line has fewer than two points or does not
+   increase.
+7. **No standard errors**: the fit reports the residuals and the weighted
+   sum of squares only. A benchmark is not data with a sampling model, so a
+   least-squares covariance would describe the curve's misfit, not the
+   benchmark's uncertainty.
+8. **Later work**: the exponential and inverse power decays on `f - 1`
+   (`TailCurve`'s shapes) fitted to a benchmark's percents developed. They
+   do not fall out of the growth-curve fit: their percents are infinite
+   products of the age-to-age factors, and `TailCurve` already fits them to
+   a pattern's own ages for a tail (decision 18). An R `nls` or scipy
+   reference beyond the one scipy run is not planned.
 
 ### 24. A `ulr` column in the long tables of the methods with an exposure
 

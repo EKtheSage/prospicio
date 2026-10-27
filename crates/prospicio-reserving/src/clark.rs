@@ -131,7 +131,7 @@ impl GrowthCurve {
     /// R's starting point from the curve ages of the observed cells: the
     /// log-logistic starts at `omega = 2`, `theta` their median; the Weibull
     /// at `omega = 1.5` and the `theta` that develops 95% by the oldest.
-    fn start(self, ages: &[f64]) -> [f64; 2] {
+    pub(crate) fn start(self, ages: &[f64]) -> [f64; 2] {
         let mut sorted = ages.to_vec();
         sorted.sort_by(f64::total_cmp);
         match self {
@@ -396,7 +396,7 @@ impl ClarkFit {
 
 /// R's `adol = TRUE` age: measured from the middle of an origin period of
 /// `width` months.
-fn shift(age: f64, width: f64) -> f64 {
+pub(crate) fn shift(age: f64, width: f64) -> f64 {
     let offset = width / 2.0;
     if age < width {
         age * (1.0 - offset / width)

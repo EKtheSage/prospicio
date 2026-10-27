@@ -3007,6 +3007,208 @@ class BayesStacking:
         """
 
 @final
+class BenchmarkCurve:
+    """
+    A growth curve fitted to a benchmark pattern (issue #637; design note
+    ``reserving-v02.md``, decision 23): Clark's log-logistic or Weibull
+    curve ``G`` by weighted least squares on the percents developed, which
+    gives the pattern at any age, a smooth pattern between the benchmark's
+    ages and a tail past its last.
+    
+    The fitted percent developed at age ``a`` is ``G(c(a)) / G(c(max_age))``
+    (``G(c(max_age)) = 1`` without ``max_age``), as Clark's LDF method
+    develops a latest value; ``c(a)`` is the age itself, or with
+    ``origin_width`` set Clark's age from the average date of loss, ``a -
+    w / 2`` at or past the width ``w`` and ``a / 2`` before it. Benchmark
+    ages are development ages from the start of the origin period, as a
+    triangle's.
+    
+    Parameters
+    ----------
+    curve : {"loglogistic", "weibull"}, default "loglogistic"
+        The growth curve ``G``: ``x**omega / (x**omega + theta**omega)`` or
+        ``1 - exp(-(x / theta)**omega)``.
+    max_age : float, optional
+        Age in months at which development stops, so the pattern is 100%
+        there; at least the benchmark's last age. ``None`` develops to
+        infinity. A benchmark that reaches 100% needs it.
+    origin_width : float, optional
+        Measure the curve's ages from the middle of an origin period of
+        this many months (12 for accident years), as ``ClarkLdf`` does.
+        ``None`` measures them from the origin period's start.
+    
+    Raises
+    ------
+    ValueError
+        If ``curve`` is unknown.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import BenchmarkCurve, ChainLadder, Triangle
+    >>> bench = {12: 0.30, 24: 0.62, 36: 0.80, 48: 0.89, 60: 0.94}
+    >>> fit = BenchmarkCurve().fit(bench)
+    >>> all(abs(r) < 0.02 for r in fit.residuals)
+    True
+    >>> fit.percent_developed(30) > fit.percent_developed(24)
+    True
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2020, 2021, 2021, 2022], [12, 24, 36, 12, 24, 12],
+    ...     {"paid": [100.0, 150.0, 165.0, 110.0, 170.0, 120.0]},
+    ... )
+    >>> cl = ChainLadder(**fit.selected([12, 24, 36])).fit(tri, "paid")
+    >>> abs(cl.pattern_tail - fit.cdf(36)) < 1e-12
+    True
+    """
+    def __new__(cls, /, curve: str = "loglogistic", max_age: float |None = None, origin_width: float |None = None) -> BenchmarkCurve: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def curve(self, /) -> str:
+        """
+        The growth curve.
+        """
+    def fit(self, /, pattern: Any, kind: str = "percent_developed", weights: Any |None = None) -> BenchmarkCurveFit:
+        """
+        Fits the curve to a benchmark pattern.
+        
+        Parameters
+        ----------
+        pattern : dict
+            From development age in months (any positive number) to the
+            benchmark's value there, finite and positive; at least two ages.
+        kind : {"percent_developed", "cdf"}, default "percent_developed"
+            Whether the values are percents developed or factors to ultimate.
+            Age-to-age factors (``"ldf"``) give no level to fit and are an
+            error.
+        weights : dict, optional
+            From age in months to the weight, finite and not negative, of
+            that age's squared residual; an age not listed gets 1. ``None``
+            weights every age 1.
+        
+        Returns
+        -------
+        BenchmarkCurveFit
+        
+        Raises
+        ------
+        ValueError
+            If a value, age or weight is out of range, an age is given
+            twice, a weight names an age the pattern does not give,
+            ``max_age`` is before the last age, or the search does not
+            converge.
+        """
+    @property
+    def max_age(self, /) -> float |None:
+        """
+        Age in months at which development stops; ``None`` for infinity.
+        """
+    @property
+    def origin_width(self, /) -> float |None:
+        """
+        The origin width of Clark's average-date shift; ``None`` for none.
+        """
+
+@final
+class BenchmarkCurveFit:
+    """
+    A growth curve fitted to a benchmark pattern by ``BenchmarkCurve.fit``.
+    
+    ``selected(ages)`` gives the fitted pattern at a triangle's ages as the
+    ``ldf``, ``ldf_kind`` and ``ldf_weight`` arguments of ``ChainLadder``,
+    ``Mack`` and the expected-loss methods. With no ``tail`` on the method
+    and ages ending at the triangle's oldest, the pattern's level there is
+    the tail: ``cdf(oldest)``, the curve's development past the oldest age.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def ages(self, /) -> list[float]:
+        """
+        The benchmark's ages in months, in increasing order.
+        """
+    def cdf(self, /, age: float) -> float:
+        """
+        The fitted factor from a development age in months to ultimate,
+        ``1 / percent_developed(age)``.
+        """
+    @property
+    def curve(self, /) -> str:
+        """
+        The growth curve.
+        """
+    def curve_age(self, /, age: float) -> float:
+        """
+        The curve age of a development age in months.
+        """
+    @property
+    def fitted(self, /) -> list[float]:
+        """
+        The fitted percents developed at ``ages``.
+        """
+    @property
+    def max_age(self, /) -> float |None:
+        """
+        Age in months at which development stops; ``None`` for infinity.
+        """
+    @property
+    def observed(self, /) -> list[float]:
+        """
+        The benchmark's percents developed at ``ages``.
+        """
+    @property
+    def omega(self, /) -> float:
+        """
+        Fitted shape of the curve.
+        """
+    @property
+    def origin_width(self, /) -> float |None:
+        """
+        The origin width of Clark's average-date shift; ``None`` for none.
+        """
+    def percent_developed(self, /, age: float) -> float:
+        """
+        The fitted percent developed at a development age in months: 1 at
+        ``max_age`` and after.
+        """
+    @property
+    def residuals(self, /) -> list[float]:
+        """
+        ``observed - fitted`` at ``ages``, unweighted.
+        """
+    def selected(self, /, ages: Sequence[int]) -> dict:
+        """
+        The fitted pattern at development ``ages`` as the arguments of the
+        chain ladder, Mack and the expected-loss methods.
+        
+        Parameters
+        ----------
+        ages : list of int
+            Development ages in months, usually the triangle's; each once
+            and positive.
+        
+        Returns
+        -------
+        dict
+            ``ldf`` (the percents developed by age), ``ldf_kind``
+            (``"percent_developed"``) and ``ldf_weight`` (1.0), to be passed
+            as keyword arguments. Give the method no ``tail``: the pattern's
+            level at the oldest age is the curve's tail.
+        """
+    @property
+    def sum_of_squares(self, /) -> float:
+        """
+        The weighted sum of squared residuals, the minimized objective.
+        """
+    @property
+    def theta(self, /) -> float:
+        """
+        Fitted scale of the curve, in months of curve age.
+        """
+    @property
+    def weights(self, /) -> list[float]:
+        """
+        The weight of each age in the least squares.
+        """
+
+@final
 class Benktander:
     """
     The Benktander (iterated Bornhuetter–Ferguson) method: starting from

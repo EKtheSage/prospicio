@@ -352,6 +352,7 @@ reference:
       - bayes_bf_normalised_one_year
       - meyers_one_year
       - clark_fit
+      - benchmark_curve_fit
       - fit_frames
 # Articles: the R twins of the guides (docs/guides/*.qmd) and of the
 # notebooks (examples/*.qmd), staged into vignettes/articles by

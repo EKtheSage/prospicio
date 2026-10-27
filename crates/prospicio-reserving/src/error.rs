@@ -113,6 +113,9 @@ pub enum Error {
     Excess(String),
     /// Clark's growth-curve model cannot be fitted to this triangle.
     Clark(String),
+    /// A growth curve cannot be fitted to this benchmark pattern
+    /// ([`BenchmarkCurve`](crate::BenchmarkCurve)).
+    BenchmarkCurve(String),
     /// The claims development result (Merz–Wüthrich) does not apply to
     /// this fit.
     ClaimsDevelopment(&'static str),
@@ -226,6 +229,7 @@ impl fmt::Display for Error {
             Self::Apriori(why) => write!(f, "apriori: {why}"),
             Self::Excess(why) => write!(f, "excess layer: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
+            Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
             Self::OneYear {
                 failed,
