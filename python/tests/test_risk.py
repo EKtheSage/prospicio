@@ -418,6 +418,28 @@ def test_statistics_match_numpy_linear_and_the_integral_tvar():
         s.var(0.5, method="nearest")
 
 
+def test_the_kth_largest_year_and_the_whole_years_tvar():
+    from prospicio.risk import statistics
+
+    # 2,000 years: at 99% the 20th worst year and the mean of the 20 worst.
+    x = [float((i * 7919) % 1013) for i in range(2000)]
+    d = sorted(x, reverse=True)
+    s = Sampled(x)
+    assert s.var(0.99, method="kth_largest") == d[19]
+    assert s.var(0.99) == d[20]
+    assert s.tvar(0.99, method="whole_years") == pytest.approx(sum(d[:20]) / 20)
+    assert s.tvar(0.99, method="whole_years") == pytest.approx(s.tvar(0.99))
+    # 0.987 leaves 26 whole years, where the exact TVaR takes a part of the 27th.
+    assert s.tvar(0.987, method="whole_years") == pytest.approx(sum(d[:26]) / 26)
+    st = statistics(x, [99.0], tvar_levels=[98.7], quantile="kth_largest", tvar="whole_years")
+    assert st["Percentile 99"] == d[19]
+    assert st["TVaR 98.7"] == pytest.approx(sum(d[:26]) / 26)
+    with pytest.raises(ValueError, match="kth_largest"):
+        s.var(0.5, method="kth")
+    with pytest.raises(ValueError, match="whole_years"):
+        s.tvar(0.5, method="whole")
+
+
 def test_co_statistics_follow_the_reference_selection():
     import math
     import random

@@ -24912,8 +24912,10 @@ class Sampled:
         p : float
         method : str
             ``"exact"`` (the default: the empirical distribution, mass ``1/n``
-            per draw) or ``"linear"`` (the mean of the linear quantile
-            function over ``[p, 1]``).
+            per draw), ``"linear"`` (the mean of the linear quantile
+            function over ``[p, 1]``) or ``"whole_years"`` (the mean of the
+            ``k`` largest draws, ``k = max(1, floor((1 - p) n))``, equal to
+            ``"exact"`` when ``(1 - p) n`` is whole).
         
         Returns
         -------
@@ -24923,6 +24925,15 @@ class Sampled:
         ------
         ValueError
             If ``p`` is outside ``[0, 1]`` or ``method`` is unknown.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Sampled
+        >>> years = Sampled([float(x) for x in range(1, 11)])
+        >>> years.var(0.75), years.var(0.75, method="kth_largest")
+        (8.0, 9.0)
+        >>> years.tvar(0.75, method="whole_years")
+        9.5
         """
     def var(self, /, p: float, method: str = "inverted_cdf") -> float:
         """
@@ -24932,8 +24943,11 @@ class Sampled:
         ----------
         p : float
         method : str
-            ``"inverted_cdf"`` (the default, R ``type = 1``) or ``"linear"``
-            (numpy's default, R ``type = 7``).
+            ``"inverted_cdf"`` (the default, R ``type = 1``), ``"linear"``
+            (numpy's default, R ``type = 7``) or ``"kth_largest"`` (the
+            ``k``-th largest draw, ``k = max(1, floor((1 - p) n))``: with years
+            as draws, the ``k``-th worst year, one draw above
+            ``"inverted_cdf"`` unless both are the largest).
         
         Returns
         -------
@@ -31913,7 +31927,8 @@ def risk_ratios(dist: Any, *, threshold: float = 0.0, sortino: str = "downside_d
     tvar_levels : list of float, optional
         In percent; by default 99.
     tvar : str
-        ``"exact"`` (the default) or ``"linear"``, as for ``statistics``.
+        ``"exact"`` (the default), ``"linear"`` or ``"whole_years"``, as for
+        ``statistics``.
     
     Returns
     -------
@@ -32283,12 +32298,14 @@ def statistics(dist: Any, percentiles: Sequence[float], *, tvar_levels: Sequence
     sd_multiples : list of float, optional
         By default 1, 2 and 3.
     quantile : str
-        ``"inverted_cdf"`` (the default, ``Sampled.var``'s) or ``"linear"``
-        (numpy's default, R ``type = 7``).
+        ``"inverted_cdf"`` (the default, ``Sampled.var``'s), ``"linear"``
+        (numpy's default, R ``type = 7``) or ``"kth_largest"`` (the ``k``-th
+        largest draw, ``k = max(1, floor((1 - p) n))``).
     tvar : str
-        ``"exact"`` (the default, ``Sampled.tvar``'s, mass ``1/n`` per draw)
-        or ``"linear"`` (the mean of the linear quantile function over
-        ``[p, 1]``).
+        ``"exact"`` (the default, ``Sampled.tvar``'s, mass ``1/n`` per draw),
+        ``"linear"`` (the mean of the linear quantile function over
+        ``[p, 1]``) or ``"whole_years"`` (the mean of the ``k`` largest
+        draws).
     
     Returns
     -------
