@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -3550,8 +3550,6 @@ constructors.
 
 ### 20. A cumulative pattern with one value
 
-**Accepted** by the user on 2026-10-27: every item as built, the readings marked proposed below included.
-
 Status: **Built** (2026-10-26), issue #632, branch
 `claude/one-value-pattern`, in Rust, Python and R. The user decided on
 2026-10-26 that a cumulative pattern with one value is valid and selects
@@ -3857,8 +3855,6 @@ pricing crate and on the simulated book.
 
 ### 22. An a-priori loss ratio per origin
 
-**Accepted** by the user on 2026-10-27: items 4 to 8 as built. Item 7's pandas Series read in order is #644 (read by its index).
-
 Status: **Built** (2026-10-26), issue #634, branch `claude/apriori-by-origin`,
 in Rust, Python and R. Items 1 to 3 restate the issue's proposal; items 4
 to 8 are choices made in building it, proposed for the user's acceptance.
@@ -3984,8 +3980,6 @@ rows), with the one-year view and the errors.
 
 ### 23. A growth curve fitted to a benchmark pattern
 
-**Accepted** by the user on 2026-10-27: items 1 to 8 as built; item 8's decays stay later work, not planned.
-
 Issue #637, branch `claude/benchmark-curve`. A benchmark pattern comes at a
 few ages (12, 24, ..., 120 months, say); a pipeline needs its values at
 other ages, a smooth pattern and a tail. Clark's methods (decision 5) fit a
@@ -4083,8 +4077,6 @@ Each item is proposed, for the user's acceptance:
 
 ### 24. A `ulr` column in the long tables of the methods with an exposure
 
-**Accepted** by the user on 2026-10-27: items 4 to 6 as built. Item 4's chain-ladder `ulr` in the Bayesian tables gets a posterior `ulr_mean` beside it in #645.
-
 Issue #636 asked for each origin's ultimate over its exposure in the
 expected-loss fits' frames, so that a pipeline need not divide two columns
 itself. Built on branch `claude/ulr-column`.
@@ -4108,20 +4100,41 @@ itself. Built on branch `claude/ulr-column`.
    only when the exposure is premium (with exposure in car years it is a
    pure premium). A NaN or zero exposure gives NaN or an infinite `ulr`,
    with no special case.
-4. **The Bayesian tables' `ulr` is the chain ladder's** (proposed, for the
-   user's acceptance). Their `ultimate` column is the plug-in chain
+4. **The Bayesian tables' `ulr` is the chain ladder's** (accepted by the
+   user on 2026-10-27). Their `ultimate` column is the plug-in chain
    ladder's, so their `ulr` is too; the posterior mean ultimate over the
    exposure is `(latest + mean) / exposure` (Meyers: `ultimate_mean /
    premium`). A posterior `ulr_mean` was left out to keep the PR small; it
    would be one line for Meyers, which already has `ultimate_mean`, and
    needs an ultimate column first for the two Bayesian BFs.
-5. **The one-year views name it `opening_ulr`** (proposed, for the user's
-   acceptance). A Bayesian one-year view's table has the opening ultimate,
+
+   *2026-10-27: accepted by the user with this follow-up (#645), built on
+   branch `claude/ulr-mean` in Rust, Python and R.* `ulr` stays the row's
+   `ultimate` over its exposure (item 1), so in these tables the chain
+   ladder's. After the posterior moments the tables now carry `ulr_mean`,
+   the posterior mean ultimate over the exposure, per origin and in total
+   (the total `ultimate_mean` over the total exposure): for Meyers' CRC,
+   CSR and CAY, alone and over segments, `ultimate_mean / premium`, after
+   `ultimate_std_dev`; for `BayesBf` and `BayesBfNormalised` (fitted alone
+   only; neither has a segment fit) a new `ultimate_mean`, `latest + mean`,
+   then `ulr_mean = ultimate_mean / exposure`. Both are read off the
+   table's own columns by one helper next to `push_moments`, so each
+   equals the ratio of its own row exactly, as `ulr` does, with no special
+   case for a NaN or zero exposure. The two Bayesian BFs get no
+   `ultimate_std_dev`: the latest value is fixed, so it would repeat the
+   reserve's `std_dev`. The new columns come last, so no existing column
+   moves. The one-year views are unchanged: they keep `opening_ulr` (item
+   5) and carry neither `ultimate_mean` nor `ulr_mean`. Unit tests in
+   `bayes/bf.rs`, `bayes/bf_normalised.rs` and `bayes/meyers.rs` (alone and
+   over segments) and the Python and R tests that list exact columns check
+   the values.
+5. **The one-year views name it `opening_ulr`** (accepted by the user on
+   2026-10-27). A Bayesian one-year view's table has the opening ultimate,
    which `opening_names` renames from `ultimate`; the ratio follows it as
    `opening_ulr`, the opening ultimate over the exposure. The bootstrap
    one-year views of the expected-loss methods keep no exposure in their
    tables, so they have no column.
-6. **Name** (proposed, for the user's acceptance): `ulr` as in the issue,
+6. **Name** (accepted by the user on 2026-10-27): `ulr` as in the issue,
    next to the Clark Cape Cod total's fitted `elr` (the expected loss
    ratio of the prior, not of the ultimate) and Compartmental's
    `ultimate_loss_ratio`. The alternative is to call every one

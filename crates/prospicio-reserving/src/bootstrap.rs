@@ -443,6 +443,29 @@ pub(crate) fn push_moments(table: &mut FitTable, prefix: &str, draws: &[Sampled]
     ));
 }
 
+/// Appends a column `name` to `table`, row by row `f` of its columns `a`
+/// and `b` (for example `ulr_mean`, `ultimate_mean` over the row's own
+/// exposure), so the new column is consistent with its own row.
+pub(crate) fn push_combined(
+    table: &mut FitTable,
+    name: &str,
+    a: &str,
+    b: &str,
+    f: impl Fn(f64, f64) -> f64,
+) {
+    let column = |c: &str| {
+        table
+            .column(c)
+            .unwrap_or_else(|| panic!("the table has a `{c}` column"))
+    };
+    let values = column(a)
+        .iter()
+        .zip(column(b))
+        .map(|(&x, &y)| f(x, y))
+        .collect();
+    table.values.push((name.to_string(), values));
+}
+
 /// The key of each origin of a segment labelled `label`: the label's parts,
 /// then the origin, as the components of a joint distribution over segments.
 pub(crate) fn origin_keys(label: &Label, origins: &[Period]) -> Vec<Vec<KeyValue>> {

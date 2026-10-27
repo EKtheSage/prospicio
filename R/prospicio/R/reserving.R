@@ -3029,8 +3029,9 @@ bayes_odp_one_year_segments <- function(triangle, column = NULL, intercept_sd = 
 #' 2019, Tables 6.4, 7.3 and 8.3). `as.data.frame()`, [totals_frame()], [development_frame()] and
 #' [segment()] work as for [bayes_odp()], with the `premium`, the `ulr`
 #' (the chain ladder's ultimate over the premium), the `mean` and
-#' `std_dev` of the posterior predictive reserve and the `ultimate_mean` and
-#' `ultimate_std_dev` of the posterior predictive ultimate.
+#' `std_dev` of the posterior predictive reserve, the `ultimate_mean` and
+#' `ultimate_std_dev` of the posterior predictive ultimate and `ulr_mean`,
+#' the `ultimate_mean` over the premium.
 #'
 #' Errors: if a column is missing, the triangle has several segments or an
 #' origin has a gap; if a premium is missing or not positive; if a prior
@@ -3519,7 +3520,10 @@ meyers_args <- function(triangle, column, premium, logelr_mean, logelr_sd, origi
 #' the same column. `as.data.frame()`, [totals_frame()],
 #' [development_frame()] and [segment()] work as for [bayes_odp()], with the
 #' `exposure`, `prior_ultimate` and `ulr` (the chain ladder's ultimate over
-#' the exposure, a loss ratio only when the exposure is premium).
+#' the exposure, a loss ratio only when the exposure is premium), and after
+#' the `mean` and `std_dev` the `ultimate_mean` (`latest` plus `mean`, the
+#' posterior mean ultimate) and `ulr_mean` (`ultimate_mean` over the
+#' exposure).
 #'
 #' Errors: as [bayes_odp()]; if an origin has no observed, finite, positive
 #' exposure; if `apriori` is not positive and finite, `cv` is not positive
@@ -3766,7 +3770,10 @@ bayes_bf_one_year <- function(triangle, column, exposure, apriori = 1, cv = 0.1,
 #' the same column. `as.data.frame()`, [totals_frame()],
 #' [development_frame()] and [segment()] work as for [bayes_odp()], with the
 #' `exposure`, `prior_ultimate` and `ulr` (the chain ladder's ultimate over
-#' the exposure, a loss ratio only when the exposure is premium).
+#' the exposure, a loss ratio only when the exposure is premium), and after
+#' the `mean` and `std_dev` the `ultimate_mean` (`latest` plus `mean`, the
+#' posterior mean ultimate) and `ulr_mean` (`ultimate_mean` over the
+#' exposure).
 #'
 #' Errors: as [bayes_odp()]; if an origin has no observed, finite, positive
 #' exposure; if `apriori` is not positive and finite, `cv` is not positive
@@ -4874,9 +4881,11 @@ check_fit <- function(fit) {
 #' `std_dev` of the bootstrapped reserve (for [bayes_odp()],
 #' [bayes_odp_segments()], [bayes_bf()], [bayes_bf_normalised()], [meyers()] and
 #' [meyers_segments()] of the posterior predictive reserve; [bayes_bf()] and
-#' [bayes_bf_normalised()] add the `exposure` and `prior_ultimate`, [meyers()] and
+#' [bayes_bf_normalised()] add the `exposure` and `prior_ultimate` and the
+#' `ultimate_mean`, `latest` plus `mean`, [meyers()] and
 #' [meyers_segments()] add the `premium` and the
-#' `ultimate_mean` and `ultimate_std_dev` of the predictive ultimate), and
+#' `ultimate_mean` and `ultimate_std_dev` of the predictive ultimate, and
+#' all four end with `ulr_mean`, the `ultimate_mean` over the exposure), and
 #' for Clark (Cape Cod)
 #' `exposure`, `expected_ultimate` and the three standard errors; for
 #' [compartmental()] the `premium`, `latest_paid`, the `mean` and `std_dev`

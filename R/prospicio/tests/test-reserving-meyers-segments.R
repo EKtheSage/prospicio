@@ -88,8 +88,10 @@ for (pd in list(r, u)) {
 
 long <- as.data.frame(fits)
 stopifnot(identical(names(long), c("lob", "origin", "latest", "ultimate", "reserve", "premium",
-                                   "ulr", "mean", "std_dev", "ultimate_mean", "ultimate_std_dev")),
+                                   "ulr", "mean", "std_dev", "ultimate_mean", "ultimate_std_dev",
+                                   "ulr_mean")),
           identical(long$ulr, long$ultimate / long$premium),
+          identical(long$ulr_mean, long$ultimate_mean / long$premium),
           nrow(long) == 20)
 near(sum(long$mean), mean(r), 1e-9 * mean(r))
 near(sum(long$ultimate_mean), mean(u), 1e-9 * mean(u))
@@ -98,7 +100,8 @@ latest <- matrix(long$latest, nrow = n_sims, ncol = 20, byrow = TRUE)
 near(draw_matrix(u) - draw_matrix(r), latest, 1e-9 * max(latest))
 totals <- totals_frame(fits)
 stopifnot(identical(totals$lob, c("comauto", "wkcomp")),
-          all(c("premium", "ultimate_mean") %in% names(totals)))
+          all(c("premium", "ultimate_mean") %in% names(totals)),
+          identical(totals$ulr_mean, totals$ultimate_mean / totals$premium))
 near(sum(totals$premium), sum(fits@premium), 1e-6)
 stopifnot(nrow(development_frame(fits)) == 20)
 

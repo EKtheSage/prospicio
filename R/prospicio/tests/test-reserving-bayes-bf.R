@@ -86,8 +86,15 @@ long <- as.data.frame(fit)
 totals <- totals_frame(fit)
 stopifnot(
   identical(names(long), c("origin", "latest", "ultimate", "reserve", "exposure",
-                           "prior_ultimate", "ulr", "mean", "std_dev")),
+                           "prior_ultimate", "ulr", "mean", "std_dev",
+                           "ultimate_mean", "ulr_mean")),
   identical(long$ulr, long$ultimate / long$exposure),
+  # The posterior mean ultimate, latest plus the mean reserve, over the
+  # exposure, per origin and in total.
+  identical(long$ultimate_mean, long$latest + long$mean),
+  identical(long$ulr_mean, long$ultimate_mean / long$exposure),
+  identical(totals$ultimate_mean, totals$latest + totals$mean),
+  identical(totals$ulr_mean, totals$ultimate_mean / totals$exposure),
   nrow(long) == 10, nrow(totals) == 1,
   all(c("exposure", "prior_ultimate", "scale") %in% names(totals)),
   nrow(development_frame(fit)) == 10,

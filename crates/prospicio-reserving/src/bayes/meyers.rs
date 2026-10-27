@@ -24,7 +24,8 @@ use super::one_year::{
 use super::{Diagnostics, Stream, derive_seed, one_year_seed, pilot_seed};
 use crate::backtest::{CellForecast, TriangleModel};
 use crate::bootstrap::{
-    component_sums, hash_segment, origin_keys, pick_segment, push_moments, segment_sums,
+    component_sums, hash_segment, origin_keys, pick_segment, push_combined, push_moments,
+    segment_sums,
 };
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
 use crate::dependence::SegmentDependence;
@@ -391,23 +392,32 @@ pub struct MeyersFits {
     pub reserves: PredictiveDistribution,
 }
 
+/// Appends `ulr_mean`, the row's posterior mean ultimate `ultimate_mean`
+/// over its `premium`, to a Meyers table.
+fn push_ulr_mean(table: &mut FitTable) {
+    push_combined(table, "ulr_mean", "ultimate_mean", "premium", |u, p| u / p);
+}
+
 impl MeyersFits {
     /// One row per segment × origin: the chain ladder's `latest`,
     /// `ultimate` and `reserve`, the `premium`, `ulr` (the chain ladder's
     /// ultimate over the premium), the `mean` and `std_dev` of the
-    /// posterior predictive reserve, and the `ultimate_mean` and
-    /// `ultimate_std_dev` of the predictive ultimate.
+    /// posterior predictive reserve, the `ultimate_mean` and
+    /// `ultimate_std_dev` of the predictive ultimate, and `ulr_mean`, the
+    /// `ultimate_mean` over the premium.
     pub fn to_long(&self) -> FitTable {
         let mut table = self.segments.to_long();
         push_moments(&mut table, "", &component_sums(&self.reserves));
         push_moments(&mut table, "ultimate_", &component_sums(&self.ultimates));
+        push_ulr_mean(&mut table);
         table
     }
 
     /// One row per segment: the chain ladder's totals, the total
     /// `premium` and `ulr`, the `mean` and `std_dev` of the segment's total
-    /// reserve and the `ultimate_mean` and `ultimate_std_dev` of its total
-    /// ultimate.
+    /// reserve, the `ultimate_mean` and `ultimate_std_dev` of its total
+    /// ultimate, and `ulr_mean`, the total `ultimate_mean` over the total
+    /// premium.
     pub fn totals(&self) -> FitTable {
         let mut table = self.segments.totals();
         push_moments(
@@ -420,6 +430,7 @@ impl MeyersFits {
             "ultimate_",
             &segment_sums(&self.segments, &self.ultimates),
         );
+        push_ulr_mean(&mut table);
         table
     }
 
@@ -1524,18 +1535,21 @@ impl MeyersFit {
     /// One row per origin: the chain ladder's `latest`, `ultimate` and
     /// `reserve`, the `premium`, `ulr` (the chain ladder's ultimate over
     /// the premium), the `mean` and `std_dev` of the posterior predictive
-    /// reserve, and the `ultimate_mean` and `ultimate_std_dev` of the
-    /// predictive ultimate.
+    /// reserve, the `ultimate_mean` and `ultimate_std_dev` of the
+    /// predictive ultimate, and `ulr_mean`, the `ultimate_mean` over the
+    /// premium.
     pub fn to_long(&self) -> FitTable {
         let mut table = self.plug_in().to_long();
         push_moments(&mut table, "", &component_sums(&self.reserves));
         push_moments(&mut table, "ultimate_", &component_sums(&self.ultimates));
+        push_ulr_mean(&mut table);
         table
     }
 
     /// One row: the chain ladder's totals, the total `premium` and `ulr`,
     /// the `mean` and `std_dev` of the posterior predictive total reserve,
-    /// and the `ultimate_mean` and `ultimate_std_dev` of the total ultimate.
+    /// the `ultimate_mean` and `ultimate_std_dev` of the total ultimate,
+    /// and `ulr_mean`, the total `ultimate_mean` over the total premium.
     pub fn totals(&self) -> FitTable {
         let fits = self.plug_in();
         let mut table = fits.totals();
@@ -1545,6 +1559,7 @@ impl MeyersFit {
             "ultimate_",
             &segment_sums(&fits, &self.ultimates),
         );
+        push_ulr_mean(&mut table);
         table
     }
 
@@ -2776,7 +2791,19 @@ pub(crate) mod tests {
         ] {
             assert!(long.column(column).is_some(), "{column}");
         }
+        // The posterior mean ultimate over the premium, per origin and in
+        // total.
+        let ulr_mean: Vec<f64> = (long.column("ultimate_mean").unwrap().iter())
+            .zip(&PREMIUM)
+            .map(|(u, p)| u / p)
+            .collect();
+        assert_eq!(long.column("ulr_mean").unwrap(), ulr_mean);
+        assert_eq!(long.values.last().unwrap().0, "ulr_mean");
         let totals = fit.totals();
+        assert_eq!(
+            totals.column("ulr_mean").unwrap(),
+            [totals.column("ultimate_mean").unwrap()[0] / PREMIUM.iter().sum::<f64>()]
+        );
         assert_eq!(
             totals.column("premium").unwrap(),
             [PREMIUM.iter().sum::<f64>()]
@@ -3137,10 +3164,20 @@ pub(crate) mod tests {
         for column in ["premium", "mean", "ultimate_mean", "ultimate_std_dev"] {
             assert!(long.column(column).is_some(), "{column}");
         }
+        let ulr_mean: Vec<f64> = (long.column("ultimate_mean").unwrap().iter())
+            .zip(PREMIUM.iter().chain(&PREMIUM))
+            .map(|(u, p)| u / p)
+            .collect();
+        assert_eq!(long.column("ulr_mean").unwrap(), ulr_mean);
         let t = fits.totals();
         assert_eq!(t.n_rows(), 2);
         let premium: f64 = PREMIUM.iter().sum();
         assert_eq!(t.column("premium").unwrap(), [premium, premium]);
+        let ultimate_mean = t.column("ultimate_mean").unwrap();
+        assert_eq!(
+            t.column("ulr_mean").unwrap(),
+            [ultimate_mean[0] / premium, ultimate_mean[1] / premium]
+        );
         let mean_b = totals[1].iter().sum::<f64>() / 2e3;
         assert!((t.column("mean").unwrap()[1] / mean_b - 1.0).abs() < 1e-9);
         assert_eq!(fits.development_table().n_rows(), 20);
