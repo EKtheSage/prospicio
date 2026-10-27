@@ -20,6 +20,7 @@ mod discrete;
 mod distributions;
 mod excess;
 mod models;
+mod multivariate;
 #[cfg(feature = "nn")]
 mod nn;
 mod normal;
@@ -68,6 +69,7 @@ extendr_module! {
     use distributions;
     use excess;
     use models;
+    use multivariate;
     use nn;
     use normal;
     use odp_glm;

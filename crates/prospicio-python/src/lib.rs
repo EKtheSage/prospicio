@@ -25,6 +25,7 @@ mod excess;
 mod experience;
 mod grouped_fit;
 mod models;
+mod multivariate;
 mod natural;
 #[cfg(feature = "nn")]
 mod nn;
@@ -106,6 +107,8 @@ mod prospicio_native {
         pit, pit_from_draws, pit_histogram, ppc_check, pseudo_bma_weights, quantile_residuals, roc,
         simulate_from_means, stacking_weights, target_encode, time_ordered, tweedie_profile, vif,
     };
+    #[pymodule_export]
+    use super::multivariate::{PyMultivariateLognormal, PyMultivariateNormal};
     #[pymodule_export]
     use super::natural::{
         PyNaturalPrice, PyPentagon, PyPortfolio, PyPricingBounds, PyStandAlone,
