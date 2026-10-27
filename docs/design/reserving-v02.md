@@ -3550,6 +3550,8 @@ constructors.
 
 ### 20. A cumulative pattern with one value
 
+**Accepted** by the user on 2026-10-27: every item as built, the readings marked proposed below included.
+
 Status: **Built** (2026-10-26), issue #632, branch
 `claude/one-value-pattern`, in Rust, Python and R. The user decided on
 2026-10-26 that a cumulative pattern with one value is valid and selects
@@ -3654,6 +3656,8 @@ or more ages (which decision 18 reads past the oldest age since #614).
    and `R/prospicio/tests/test-reserving-patterns.R`.
 
 ### 21. An accident-period pattern on an underwriting basis
+
+**Accepted** by the user on 2026-10-27: items 1 to 8 as built (writing through the month, coarser patterns converted only in the exact cases). Item 3's miss of an annual accident-year pattern in the first two years is #646.
 
 Status: **Built** (2026-10-26), issue #633, branch `claude/uy-pattern`, in
 Rust, Python and R. It answers the user's decision of 2026-10-26: an
@@ -3847,6 +3851,8 @@ pricing crate and on the simulated book.
 
 ### 22. An a-priori loss ratio per origin
 
+**Accepted** by the user on 2026-10-27: items 4 to 8 as built. Item 7's pandas Series read in order is #644 (read by its index).
+
 Status: **Built** (2026-10-26), issue #634, branch `claude/apriori-by-origin`,
 in Rust, Python and R. Items 1 to 3 restate the issue's proposal; items 4
 to 8 are choices made in building it, proposed for the user's acceptance.
@@ -3958,6 +3964,8 @@ rows), with the one-year view and the errors.
 
 ### 23. A growth curve fitted to a benchmark pattern
 
+**Accepted** by the user on 2026-10-27: items 1 to 8 as built; item 8's decays stay later work, not planned.
+
 Issue #637, branch `claude/benchmark-curve`. A benchmark pattern comes at a
 few ages (12, 24, ..., 120 months, say); a pipeline needs its values at
 other ages, a smooth pattern and a tail. Clark's methods (decision 5) fit a
@@ -4054,6 +4062,8 @@ Each item is proposed, for the user's acceptance:
    reference beyond the one scipy run is not planned.
 
 ### 24. A `ulr` column in the long tables of the methods with an exposure
+
+**Accepted** by the user on 2026-10-27: items 4 to 6 as built. Item 4's chain-ladder `ulr` in the Bayesian tables gets a posterior `ulr_mean` beside it in #645.
 
 Issue #636 asked for each origin's ultimate over its exposure in the
 expected-loss fits' frames, so that a pipeline need not divide two columns
