@@ -3229,10 +3229,12 @@ class Benktander:
         ``"2021Q3"``, or an integer year) to its loss ratio. Every origin
         fitted needs one; a value for an origin the triangle does not have
         is an error. Over segments each segment takes its own origins'
-        values. A pandas Series is read in order and its index is not
-        read: to key by origin, pass a dict. On a latest diagonal a sequence
-        needs the rows oldest first, each origin once, and is otherwise an
-        error, since the exposure is read by row.
+        values. A pandas Series is read by its index, as a dict, so
+        ``df.set_index("origin")["elr"]`` works in any row order; one with
+        a default ``RangeIndex`` is an error, since its order cannot be
+        checked. A Polars Series or numpy array is a sequence. On a latest
+        diagonal a sequence needs the rows oldest first, each origin once,
+        and is otherwise an error, since the exposure is read by row.
     n_iters : int, default 1
         Number of Bornhuetter–Ferguson steps.
     average : {"volume", "simple", "regression", "geometric"}, default "volume"
@@ -3972,10 +3974,13 @@ class BornhuetterFerguson:
         report it, ``"2021"`` or ``"2021Q3"``, or an integer year) to its
         loss ratio. Every origin fitted needs one; a value for an origin the
         triangle does not have is an error. Over segments each segment takes
-        its own origins' values. A pandas Series is read in order and its
-        index is not read: to key by origin, pass a dict. On a latest
-        diagonal a sequence needs the rows oldest first, each origin once,
-        and is otherwise an error, since the exposure is read by row.
+        its own origins' values. A pandas Series is read by its index, as
+        a dict, so ``df.set_index("origin")["elr"]`` works in any row
+        order; one with a default ``RangeIndex`` is an error, since its
+        order cannot be checked. A Polars Series or numpy array is a
+        sequence. On a latest diagonal a sequence needs the rows oldest
+        first, each origin once, and is otherwise an error, since the
+        exposure is read by row.
     average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
@@ -11470,10 +11475,12 @@ class ExpectedLoss:
         ``"2021Q3"``, or an integer year) to its loss ratio. Every origin
         fitted needs one; a value for an origin the triangle does not have
         is an error. Over segments each segment takes its own origins'
-        values. A pandas Series is read in order and its index is not
-        read: to key by origin, pass a dict. On a latest diagonal a sequence
-        needs the rows oldest first, each origin once, and is otherwise an
-        error, since the exposure is read by row.
+        values. A pandas Series is read by its index, as a dict, so
+        ``df.set_index("origin")["elr"]`` works in any row order; one with
+        a default ``RangeIndex`` is an error, since its order cannot be
+        checked. A Polars Series or numpy array is a sequence. On a latest
+        diagonal a sequence needs the rows oldest first, each origin once,
+        and is otherwise an error, since the exposure is read by row.
     average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
