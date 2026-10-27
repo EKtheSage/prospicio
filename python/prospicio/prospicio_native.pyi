@@ -5446,11 +5446,14 @@ class ChainLadder:
         ``ldf_origin``. An accident-month pattern (``ldf_origin="M"``)
         converts under any writing and term; a pattern of longer accident
         periods needs a policy term that is a whole multiple of them or
-        writing even within each of them, and is read between its ages by
-        the rule above, so an annual accident-year pattern is approximate in
-        the first two years (31% too much developed at 12 months on a
-        simulated parallelogram); give it at every month, or an
-        accident-month pattern, where it matters. The result is longer than
+        writing even within each of them. Given at every month from 1 it is
+        exact; at other ages (annual ones, say) it is read between them as
+        ``UnderwritingBasis.reading`` says: by default the Weibull fitted
+        through the period averages and corrected to the nearest monotone
+        accident-month pattern whose averages are the given values exactly,
+        within 0.2% of a simulated parallelogram book at every age, or by
+        the rule above with ``reading="ln-linear"`` (31% too much developed
+        at 12 months on that book). The result is longer than
         ``ldf`` by the writing months plus the policy term less the accident
         period (12 months for an accident-year pattern under the default,
         23 for an accident-month one), and a constant tail from ``ldf``'s
@@ -28300,6 +28303,22 @@ class UnderwritingBasis:
         writing); longer writing is an error at fit time.
     policy_months : int, default 12
         Each policy's term in months; it earns evenly over the term.
+    reading : {"weibull", "loglogistic", "ln-linear"}, default "weibull"
+        How a pattern of accident periods longer than a month (an
+        accident-year pattern) is read between its ages when they are not
+        every month from 1: ``"weibull"`` or ``"loglogistic"`` fit that
+        growth curve through the period averages (an accident year at age
+        ``a`` reports the average of its twelve months) and correct it to
+        the nearest monotone accident-month pattern whose averages are the
+        given values exactly, so the given values are reproduced; increments
+        may fall only within a span where the given pattern itself develops
+        downward. ``"ln-linear"`` is the rule before this reading (linear
+        from 0 below the first age, ``ln CDF`` linear between ages), kept to
+        reproduce earlier results: on a simulated parallelogram book it puts
+        an underwriting year 31% too far developed at 12 months, where the
+        Weibull is within 0.2% at every age. An accident-month pattern, and
+        one given at every month, convert the same under every reading. A
+        curve needs two or more given values.
     
     The underwriting period's exposure in its ``t``-th accident month is the
     writing convolved with a policy's earning by month (``exposure``), and
@@ -28317,7 +28336,7 @@ class UnderwritingBasis:
     >>> len(e), round(e[0] * 288, 12), round(e[12] * 288, 12)
     (24, 1.0, 23.0)
     """
-    def __new__(cls, /, writing: Sequence[float] |None = None, policy_months: int = 12) -> UnderwritingBasis: ...
+    def __new__(cls, /, writing: Sequence[float] |None = None, policy_months: int = 12, reading: str = "weibull") -> UnderwritingBasis: ...
     def __repr__(self, /) -> str: ...
     def exposure(self, /) -> list[float]:
         """
@@ -28328,6 +28347,12 @@ class UnderwritingBasis:
     def policy_months(self, /) -> int:
         """
         The policy term in months.
+        """
+    @property
+    def reading(self, /) -> str:
+        """
+        How a pattern of longer accident periods is read between its ages:
+        ``"weibull"``, ``"loglogistic"`` or ``"ln-linear"``.
         """
     @property
     def writing(self, /) -> list[float]:
