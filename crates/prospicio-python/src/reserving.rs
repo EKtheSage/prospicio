@@ -4341,7 +4341,8 @@ fn apriori_arg(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Apriori> {
     };
     let type_error = || {
         PyTypeError::new_err(format!(
-            "apriori must be a number, a sequence of numbers in origin order or a dict from              origin to number, got {}",
+            "apriori must be a number, a sequence of numbers in origin order or a dict from \
+             origin to number, got {}",
             py_repr(obj)
         ))
     };
@@ -4359,7 +4360,10 @@ fn apriori_arg(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Apriori> {
             && index.getattr("step")?.extract::<i64>()? == 1
         {
             return Err(PyValueError::new_err(
-                "apriori is a pandas Series with a default RangeIndex, so the origin of each                  value cannot be checked: index it by origin label or integer year (as                  df.set_index(\"origin\")[\"elr\"]), or pass .tolist() for values in origin                  order",
+                "apriori is a pandas Series with a default RangeIndex, so the origin of each \
+                 value cannot be checked: index it by origin label or integer year (as \
+                 df.set_index(\"origin\")[\"elr\"]), or pass .tolist() for values in origin \
+                 order",
             ));
         }
         // `items()`, not `to_dict()`, so an origin given twice stays an error.
@@ -4406,7 +4410,8 @@ fn apriori_by_origin<'py>(
                 k.extract::<i32>()?.to_string()
             } else {
                 return Err(PyTypeError::new_err(format!(
-                    "apriori's keys must be origin labels such as \"2021\" or \"2021Q3\", or                      integer years, got {}",
+                    "apriori's keys must be origin labels such as \"2021\" or \"2021Q3\", or \
+                     integer years, got {}",
                     py_repr(&k)
                 )));
             };
