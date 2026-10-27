@@ -839,6 +839,67 @@ fn eventual_ruin_matches_aggregate() {
     });
 }
 
+/// Finite-horizon ruin in discrete time against a Monte Carlo of the same
+/// surplus process (`aggregate` has none): Poisson(2) claims a period of a
+/// gamma severity with mean 1 and cv 0.5, premium 2.4, the surplus checked
+/// at each period's end. The severity is rounded to a step of 0.0025, which
+/// moves ψ far less than the simulation's standard error.
+#[test]
+fn finite_horizon_ruin_matches_monte_carlo() {
+    use prospicio_aggregate::ruin::finite_horizon;
+    use prospicio_core::StreamRng;
+    use prospicio_prob::{Distribution, Gamma};
+
+    let gamma = Gamma::from_mean_cv(1.0, 0.5).unwrap();
+    let (sev, _) = Grid::rounding(&gamma, 0.0025, 1 << 12).unwrap();
+    let count = Poisson::new(2.0).unwrap();
+    let (premium, periods) = (2.4, 10);
+    let ruin = finite_horizon(&sev, &count, premium, periods, 2400).unwrap();
+    assert!(ruin.report().aliasing_error < 1e-12);
+
+    let surpluses = [0.0, 1.0, 2.0, 4.0];
+    let horizons = [1, 5, 10];
+    let paths = 200_000;
+    let mut ruined = vec![[0usize; 3]; surpluses.len()];
+    let mut rng = StreamRng::new(20261027, 562);
+    let cdf: Vec<f64> = (0..40)
+        .scan(0.0, |c, k| {
+            *c += count.pmf(k);
+            Some(*c)
+        })
+        .collect();
+    for _ in 0..paths {
+        let mut loss = 0.0;
+        let mut worst = [f64::INFINITY; 4];
+        for t in 1..=periods {
+            let v = rng.next_open01();
+            let n = cdf.partition_point(|&c| c < v);
+            loss += gamma.sample(&mut rng, n).iter().sum::<f64>();
+            for (w, u) in worst.iter_mut().zip(surpluses) {
+                *w = w.min(u + premium * t as f64 - loss);
+            }
+            if let Some(h) = horizons.iter().position(|&h| h == t) {
+                for (i, w) in worst.iter().enumerate() {
+                    if *w < 0.0 {
+                        ruined[i][h] += 1;
+                    }
+                }
+            }
+        }
+    }
+    for (i, u) in surpluses.iter().enumerate() {
+        for (h, &t) in horizons.iter().enumerate() {
+            let mc = ruined[i][h] as f64 / paths as f64;
+            let se = (mc * (1.0 - mc) / paths as f64).sqrt();
+            let got = ruin.psi_at(*u, t).unwrap();
+            assert!(
+                (got - mc).abs() < 3.0 * se.max(1e-5),
+                "u = {u}, t = {t}: {got} vs {mc} +/- {se}"
+            );
+        }
+    }
+}
+
 #[test]
 fn layer_loss_picks_match_aggregate() {
     use prospicio_aggregate::picks::layer_loss_picks;

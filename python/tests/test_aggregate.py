@@ -629,6 +629,34 @@ def test_eventual_ruin():
         eventual_ruin(sev, rho=0.0)
 
 
+def test_finite_horizon_ruin():
+    from prospicio.aggregate import finite_horizon_ruin
+    from prospicio.distributions import Binomial, Gamma, Grid
+
+    # A random walk: +1 with probability 0.6, -1 with 0.4. Ruin within 2000
+    # periods is the eventual (0.4 / 0.6) ** (u + 1).
+    sev = Grid(1.0, [0.0, 0.0, 1.0])
+    walk = finite_horizon_ruin(sev, 1.0, 2000, Binomial(1, 0.4), points=64)
+    for u in range(5):
+        assert walk.psi_at(float(u), 2000) == pytest.approx((2 / 3) ** (u + 1), abs=1e-12)
+    assert walk.psi_at(0.0, 3) == pytest.approx(0.496, abs=1e-12)
+    assert walk.u[:3] == [0.0, 1.0, 2.0]
+    # Poisson claims split into sub-periods grow with the horizon towards,
+    # and stay below, the exponential's eventual exp(-u / 3) / 1.5.
+    exp, _ = Grid.rounding(Gamma(1.0, 1.0), 0.05, 2**12)
+    ruin = finite_horizon_ruin(exp, 1.5, 60, rate=1.0, sub_periods=30)
+    eventual = math.exp(-1 / 3) / 1.5
+    assert ruin.psi_at(1.0, 1) < ruin.psi_at(1.0, 20) < ruin.psi_at(1.0, 60)
+    assert eventual - 0.03 < ruin.psi_at(1.0, 60) < eventual
+    assert ruin.capital(0.01, 60) is not None
+    with pytest.raises(ValueError):
+        finite_horizon_ruin(sev, 1.0, 3)
+    with pytest.raises(ValueError):
+        finite_horizon_ruin(sev, 1.0, 3, Binomial(1, 0.4), rate=1.0)
+    with pytest.raises(ValueError):
+        walk.psi(2001)
+
+
 
 def test_wiener_hopf():
     from prospicio.aggregate import wiener_hopf

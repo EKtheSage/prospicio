@@ -300,6 +300,68 @@ eventual_ruin <- function(severity, rho = NULL, loss_ratio = NULL, p = numeric()
   )
 }
 
+#' Ruin within a finite horizon
+#'
+#' The probability `psi(u, t)` that the surplus, starting at `u`, earning
+#' `premium` a period and paying each period's aggregate loss at its end,
+#' is negative at the end of some period up to `t`. It is found by the
+#' recursion `psi_t(u) = P(S > u + c) + E[psi_{t-1}(u + c - S); S <= u + c]`
+#' on the severity's grid, the convolution by FFT, so it holds for any
+#' claim count a period. [eventual_ruin()] is the limit for Poisson claims
+#' checked continuously; give a Poisson `rate` with `sub_periods` to check
+#' `sub_periods` times a period instead (each step Poisson with
+#' `rate / sub_periods`), which approaches it from below as the steps
+#' shrink.
+#'
+#' The premium a step, `premium / sub_periods`, must be a whole number of
+#' grid steps.
+#'
+#' @param severity A [grid_distribution].
+#' @param premium The premium a period.
+#' @param periods The horizon in periods.
+#' @param frequency The claim count a period. Or give `rate`.
+#' @param rate A Poisson rate a period.
+#' @param sub_periods Steps a period, with `rate`.
+#' @param points Grid points for `psi`; the severity's by default. Beyond
+#'   the grid `psi` is cut off, so raise it until `psi` at the last point
+#'   is small.
+#' @param p Ruin probabilities at which to find the capital.
+#' @returns A list: `u`, the grid; `psi`, a matrix with one row per `u` and
+#'   one column per period; `capital` and `capital_interpolated`, matrices
+#'   with one row per `p` and one column per period (the smallest grid
+#'   point with `psi(u, t) < p`, or linear between grid points; `NA` where
+#'   the grid does not reach it); `step` and `aliasing_error`.
+#' @seealso [eventual_ruin()]
+#' @export
+#' @examples
+#' # A claim of 2 with probability 0.4 a period, premium 1: a random walk.
+#' walk <- finite_horizon_ruin(grid_distribution(1, c(0, 0, 1)), 1, 3,
+#'   frequency = bernoulli_count(0.4), points = 16)
+#' walk$psi[1, ] # 0.4, 0.4 + 0.6 * 0.4^2 by the third period
+#' sev <- discretize(gamma_from_mean_cv(1, 1), step = 0.05, points = 2^12, method = "rounding")
+#' ruin <- finite_horizon_ruin(sev, 1.5, 10, rate = 1, sub_periods = 10, p = 0.05)
+#' ruin$capital
+finite_horizon_ruin <- function(severity, premium, periods, frequency = NULL, rate = NULL,
+                                sub_periods = 1, points = NULL, p = numeric()) {
+  if (is.null(frequency) == is.null(rate)) stop("give exactly one of frequency and rate")
+  if (!is.null(frequency) && sub_periods != 1) {
+    stop("sub_periods needs a Poisson rate: give rate, not frequency")
+  }
+  r <- rust_result(finite_horizon_ruin_rust(
+    severity@ptr, as.double(premium), as.double(periods),
+    if (is.null(frequency)) NULL else frequency@ptr,
+    as.double(if (is.null(rate)) 0 else rate), as.double(sub_periods),
+    as.double(if (is.null(points)) 0 else points), as.double(p)
+  ))
+  n <- length(r$u)
+  list(
+    u = r$u, psi = matrix(r$psi, nrow = n, ncol = periods),
+    capital = matrix(r$capital, nrow = length(p), ncol = periods),
+    capital_interpolated = matrix(r$capital_interpolated, nrow = length(p), ncol = periods),
+    step = r$step, aliasing_error = r$aliasing_error
+  )
+}
+
 #' Eventual ruin for renewal claims by Wiener-Hopf
 #'
 #' The probability `psi(u)` of eventual ruin from initial surplus `u` when
