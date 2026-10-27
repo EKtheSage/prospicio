@@ -129,9 +129,10 @@ def test_fields_and_frames(fits):
 
     long = fits.to_frame()
     assert list(long.columns) == [
-        "lob", "origin", "latest", "ultimate", "reserve", "premium", "mean", "std_dev",
+        "lob", "origin", "latest", "ultimate", "reserve", "premium", "ulr", "mean", "std_dev",
         "ultimate_mean", "ultimate_std_dev",
     ]
+    assert list(long["ulr"]) == [u / p for u, p in zip(long["ultimate"], long["premium"])]
     assert len(long) == 20
     assert long["mean"].sum() == pytest.approx(r.mean(), rel=1e-9)
     assert long["ultimate_mean"].sum() == pytest.approx(u.mean(), rel=1e-9)

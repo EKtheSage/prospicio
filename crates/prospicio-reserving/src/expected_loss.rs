@@ -812,6 +812,10 @@ impl ReserveFit for ExpectedLossFit {
         &self.ultimate
     }
 
+    fn exposure(&self) -> Option<&[f64]> {
+        Some(&self.exposure)
+    }
+
     fn origin_columns(&self) -> Vec<(&'static str, Vec<f64>)> {
         vec![
             ("exposure", self.exposure.clone()),
@@ -831,6 +835,10 @@ impl ReserveFit for CapeCodFit {
 
     fn ultimate(&self) -> &[f64] {
         &self.expected_loss.ultimate
+    }
+
+    fn exposure(&self) -> Option<&[f64]> {
+        self.expected_loss.exposure()
     }
 
     fn origin_columns(&self) -> Vec<(&'static str, Vec<f64>)> {
@@ -1255,14 +1263,31 @@ mod tests {
         assert_eq!(long.column("ultimate").unwrap()[3], 230.0);
         assert_eq!(long.column("reserve").unwrap()[3], 200.0);
         assert_eq!(long.column("apriori").unwrap(), [0.5; 4]);
+        // The ulr is the ultimate over the exposure, origin by origin and
+        // in total.
+        assert_eq!(long.values.last().unwrap().0, "ulr");
+        assert_eq!(
+            long.column("ulr").unwrap()[2..],
+            [20.0 / 500.0, 230.0 / 800.0]
+        );
         let totals = fits.totals();
         assert_eq!(totals.column("reserve").unwrap()[1], 200.0);
         assert_eq!(totals.column("exposure").unwrap(), [650.0, 1300.0]);
+        assert_eq!(totals.column("ulr").unwrap()[1], 250.0 / 1300.0);
         close(fits.total_reserve(), 200.0 / 3.0 + 200.0, 1e-12);
         let cc = CapeCod::default()
             .fit_segments(&tri, "paid", "premium")
             .unwrap();
-        assert!(cc.to_long().column("trended_apriori").is_some());
+        let cc_long = cc.to_long();
+        assert!(cc_long.column("trended_apriori").is_some());
+        let cc_home = cc.get(&Label::new(["Home"])).unwrap();
+        assert_eq!(
+            cc_long.column("ulr").unwrap()[2..],
+            [
+                cc_home.expected_loss.ultimate[0] / 500.0,
+                cc_home.expected_loss.ultimate[1] / 800.0
+            ]
+        );
         // A failing segment is named.
         let missing = Triangle::from_long(&Long {
             keys: &[("lob", &["Auto", "Auto", "Auto", "Home", "Home", "Home"])],

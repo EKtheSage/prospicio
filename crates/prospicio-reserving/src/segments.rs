@@ -231,6 +231,17 @@ pub trait ReserveFit {
         &self.chain_ladder().ultimate
     }
 
+    /// The exposure per origin when the method has one (the expected-loss
+    /// methods' exposure, Clark's Cape Cod exposure, the Bayesian
+    /// Bornhuetter-Ferguson exposure, Meyers' premium). The long tables
+    /// then end the method's own columns with `ulr`, the table's
+    /// `ultimate` over this exposure (NaN or infinite where the exposure
+    /// is NaN or zero), which is a loss ratio only when the exposure is
+    /// premium.
+    fn exposure(&self) -> Option<&[f64]> {
+        None
+    }
+
     /// Value columns per origin after `latest`, `ultimate` and `reserve`.
     fn origin_columns(&self) -> Vec<(&'static str, Vec<f64>)> {
         Vec::new()
@@ -305,8 +316,10 @@ fn push_columns(
 }
 
 impl<T: ReserveFit> SegmentFits<T> {
-    /// One row per segment × origin: `latest`, `ultimate`, `reserve` and
-    /// the method's own per-origin columns (for Mack the standard errors).
+    /// One row per segment × origin: `latest`, `ultimate`, `reserve`,
+    /// the method's own per-origin columns (for Mack the standard errors)
+    /// and, for a method with an exposure, `ulr`, the ultimate over the
+    /// exposure ([`ReserveFit::exposure`]).
     pub fn to_long(&self) -> FitTable {
         let n_origins = |s: usize| self.fits[s].chain_ladder().origins.len();
         let mut values = Vec::new();
@@ -319,6 +332,10 @@ impl<T: ReserveFit> SegmentFits<T> {
                     ("reserve", reserves(f)),
                 ];
                 columns.extend(f.origin_columns());
+                if let Some(exposure) = f.exposure() {
+                    let ulr = f.ultimate().iter().zip(exposure).map(|(u, e)| u / e);
+                    columns.push(("ulr", ulr.collect()));
+                }
                 columns
             }),
         );
@@ -338,7 +355,8 @@ impl<T: ReserveFit> SegmentFits<T> {
     /// One row per segment: total `latest`, `ultimate`, `reserve` and the
     /// method's own totals (for Mack the standard errors of the total; for
     /// the chain ladder and Mack the segment's `tail`, `tail_sigma` and
-    /// `tail_std_err`).
+    /// `tail_std_err`; for a method with an exposure the total `ulr`, the
+    /// total ultimate over the total exposure).
     ///
     /// With a selected pattern, also its `pattern_rescale` and
     /// `pattern_tail` (NaN where there is none; see
@@ -356,6 +374,10 @@ impl<T: ReserveFit> SegmentFits<T> {
                     ("reserve", vec![total_reserve(f)]),
                 ];
                 columns.extend(f.total_columns().into_iter().map(|(n, v)| (n, vec![v])));
+                if let Some(exposure) = f.exposure() {
+                    let ulr = total_ultimate(f) / exposure.iter().sum::<f64>();
+                    columns.push(("ulr", vec![ulr]));
+                }
                 if patterned {
                     let cl = f.chain_ladder();
                     let rescale = cl.pattern_rescale.unwrap_or(f64::NAN);

@@ -88,7 +88,8 @@ for (pd in list(r, u)) {
 
 long <- as.data.frame(fits)
 stopifnot(identical(names(long), c("lob", "origin", "latest", "ultimate", "reserve", "premium",
-                                   "mean", "std_dev", "ultimate_mean", "ultimate_std_dev")),
+                                   "ulr", "mean", "std_dev", "ultimate_mean", "ultimate_std_dev")),
+          identical(long$ulr, long$ultimate / long$premium),
           nrow(long) == 20)
 near(sum(long$mean), mean(r), 1e-9 * mean(r))
 near(sum(long$ultimate_mean), mean(u), 1e-9 * mean(u))

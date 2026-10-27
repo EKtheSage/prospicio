@@ -894,6 +894,7 @@ impl<F: ReserveFit> BayesOneYearFit<F> {
             fits: vec![Opened {
                 chain_ladder: self.fit.chain_ladder().clone(),
                 opening_ultimate: self.opening_ultimate.clone(),
+                exposure: self.fit.exposure().map(<[f64]>::to_vec),
                 origins: self.fit.origin_columns(),
                 totals: self.fit.total_columns(),
             }],
@@ -920,6 +921,7 @@ pub(crate) fn flagged_share(pareto_k: &[f64], threshold: f64) -> f64 {
 struct Opened {
     chain_ladder: ChainLadderFit,
     opening_ultimate: Vec<f64>,
+    exposure: Option<Vec<f64>>,
     origins: Vec<(&'static str, Vec<f64>)>,
     totals: Vec<(&'static str, f64)>,
 }
@@ -931,6 +933,10 @@ impl ReserveFit for Opened {
 
     fn ultimate(&self) -> &[f64] {
         &self.opening_ultimate
+    }
+
+    fn exposure(&self) -> Option<&[f64]> {
+        self.exposure.as_deref()
     }
 
     fn origin_columns(&self) -> Vec<(&'static str, Vec<f64>)> {
@@ -983,6 +989,10 @@ impl<S: ReserveFit> ReserveFit for BayesOneYearSegment<S> {
 
     fn ultimate(&self) -> &[f64] {
         &self.opening_ultimate
+    }
+
+    fn exposure(&self) -> Option<&[f64]> {
+        self.fit.exposure()
     }
 
     fn origin_columns(&self) -> Vec<(&'static str, Vec<f64>)> {

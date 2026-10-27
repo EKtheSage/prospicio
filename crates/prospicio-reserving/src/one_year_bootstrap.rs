@@ -433,11 +433,11 @@ impl<B: ReserveFit + Clone> OneYearFits<B> {
     }
 }
 
-/// Renames a table's `ultimate` and `reserve` to `opening_ultimate` and
-/// `opening_reserve`.
+/// Renames a table's `ultimate`, `reserve` and `ulr` to
+/// `opening_ultimate`, `opening_reserve` and `opening_ulr`.
 pub(crate) fn opening_names(mut table: FitTable) -> FitTable {
     for (name, _) in &mut table.values {
-        if name == "ultimate" || name == "reserve" {
+        if name == "ultimate" || name == "reserve" || name == "ulr" {
             *name = format!("opening_{name}");
         }
     }

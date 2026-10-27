@@ -311,6 +311,10 @@ impl ReserveFit for MeyersSegment {
         &self.chain_ladder
     }
 
+    fn exposure(&self) -> Option<&[f64]> {
+        Some(&self.premium)
+    }
+
     fn origin_columns(&self) -> Vec<(&'static str, Vec<f64>)> {
         vec![("premium", self.premium.clone())]
     }
@@ -389,8 +393,9 @@ pub struct MeyersFits {
 
 impl MeyersFits {
     /// One row per segment × origin: the chain ladder's `latest`,
-    /// `ultimate` and `reserve`, the `premium`, the `mean` and `std_dev` of
-    /// the posterior predictive reserve, and the `ultimate_mean` and
+    /// `ultimate` and `reserve`, the `premium`, `ulr` (the chain ladder's
+    /// ultimate over the premium), the `mean` and `std_dev` of the
+    /// posterior predictive reserve, and the `ultimate_mean` and
     /// `ultimate_std_dev` of the predictive ultimate.
     pub fn to_long(&self) -> FitTable {
         let mut table = self.segments.to_long();
@@ -400,8 +405,8 @@ impl MeyersFits {
     }
 
     /// One row per segment: the chain ladder's totals, the total
-    /// `premium`, the `mean` and `std_dev` of the segment's total reserve
-    /// and the `ultimate_mean` and `ultimate_std_dev` of its total
+    /// `premium` and `ulr`, the `mean` and `std_dev` of the segment's total
+    /// reserve and the `ultimate_mean` and `ultimate_std_dev` of its total
     /// ultimate.
     pub fn totals(&self) -> FitTable {
         let mut table = self.segments.totals();
@@ -1517,9 +1522,10 @@ impl MeyersFit {
     }
 
     /// One row per origin: the chain ladder's `latest`, `ultimate` and
-    /// `reserve`, the `premium`, the `mean` and `std_dev` of the posterior
-    /// predictive reserve, and the `ultimate_mean` and `ultimate_std_dev`
-    /// of the predictive ultimate.
+    /// `reserve`, the `premium`, `ulr` (the chain ladder's ultimate over
+    /// the premium), the `mean` and `std_dev` of the posterior predictive
+    /// reserve, and the `ultimate_mean` and `ultimate_std_dev` of the
+    /// predictive ultimate.
     pub fn to_long(&self) -> FitTable {
         let mut table = self.plug_in().to_long();
         push_moments(&mut table, "", &component_sums(&self.reserves));
@@ -1527,9 +1533,9 @@ impl MeyersFit {
         table
     }
 
-    /// One row: the chain ladder's totals, the total `premium`, the `mean`
-    /// and `std_dev` of the posterior predictive total reserve, and the
-    /// `ultimate_mean` and `ultimate_std_dev` of the total ultimate.
+    /// One row: the chain ladder's totals, the total `premium` and `ulr`,
+    /// the `mean` and `std_dev` of the posterior predictive total reserve,
+    /// and the `ultimate_mean` and `ultimate_std_dev` of the total ultimate.
     pub fn totals(&self) -> FitTable {
         let fits = self.plug_in();
         let mut table = fits.totals();
@@ -1565,6 +1571,10 @@ impl ReserveFit for MeyersFit {
         &self.chain_ladder
     }
 
+    fn exposure(&self) -> Option<&[f64]> {
+        Some(&self.premium)
+    }
+
     fn origin_columns(&self) -> Vec<(&'static str, Vec<f64>)> {
         vec![("premium", self.premium.clone())]
     }
@@ -1584,6 +1594,10 @@ struct PlugIn {
 impl ReserveFit for PlugIn {
     fn chain_ladder(&self) -> &ChainLadderFit {
         &self.chain_ladder
+    }
+
+    fn exposure(&self) -> Option<&[f64]> {
+        Some(&self.premium)
     }
 
     fn origin_columns(&self) -> Vec<(&'static str, Vec<f64>)> {
@@ -2748,6 +2762,11 @@ pub(crate) mod tests {
         assert_eq!(fit.premium, PREMIUM);
         let long = fit.to_long();
         assert_eq!(long.n_rows(), 10);
+        let ulr: Vec<f64> = (long.column("ultimate").unwrap().iter())
+            .zip(&PREMIUM)
+            .map(|(u, p)| u / p)
+            .collect();
+        assert_eq!(long.column("ulr").unwrap(), ulr);
         for column in [
             "premium",
             "mean",

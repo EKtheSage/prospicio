@@ -153,8 +153,9 @@ development pattern, which need a single-segment fit; \code{chain_ladder}
 (the \link{chain_ladder_fit} of the pattern), \code{keys}, \code{index}, \code{origins},
 \code{development}, \code{total_ultimate} and \code{total_reserve} (summed over
 segments). \code{as.data.frame()} gives one row per segment and origin with
-\code{exposure} and \code{apriori} after the reserve, \code{\link[=totals_frame]{totals_frame()}} one per
-segment with the total \code{exposure}.
+\code{exposure}, \code{apriori} and \code{ulr} (the ultimate over the exposure, a loss
+ratio only when the exposure is premium) after the reserve,
+\code{\link[=totals_frame]{totals_frame()}} one per segment with the total \code{exposure} and \code{ulr}.
 
 Errors: an unknown column, an origin without an observed, finite,
 positive exposure (naming the origin and, with keys, the segment), an

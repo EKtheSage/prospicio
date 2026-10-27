@@ -90,7 +90,8 @@ long <- as.data.frame(fit)
 totals <- totals_frame(fit)
 stopifnot(
   identical(names(long), c("origin", "latest", "ultimate", "reserve", "exposure",
-                           "prior_ultimate", "mean", "std_dev")),
+                           "prior_ultimate", "ulr", "mean", "std_dev")),
+  identical(long$ulr, long$ultimate / long$exposure),
   nrow(long) == 10, nrow(totals) == 1,
   all(c("exposure", "prior_ultimate", "scale") %in% names(totals)),
   nrow(development_frame(fit)) == 10,

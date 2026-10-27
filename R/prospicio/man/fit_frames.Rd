@@ -51,7 +51,15 @@ for Clark (Cape Cod)
 of the posterior predictive reserve and the \code{ultimate_loss_ratio}. The
 one-year view (and \code{\link[=bayes_odp_one_year]{bayes_odp_one_year()}}'s) names them
 \code{opening_ultimate} and \code{opening_reserve} and adds the \code{cdr_mean} and
-\code{cdr_std_dev} of the claims development result.
+\code{cdr_std_dev} of the claims development result. A method with an
+exposure (the expected-loss methods, Clark's Cape Cod, \code{\link[=bayes_bf]{bayes_bf()}},
+\code{\link[=bayes_bf_normalised]{bayes_bf_normalised()}}, \code{\link[=meyers]{meyers()}} and \code{\link[=meyers_segments]{meyers_segments()}}, whose
+exposure is the premium) ends its own columns with \code{ulr}, the table's
+\code{ultimate} over the exposure (for the Bayesian fits the chain ladder's
+ultimate), a loss ratio only when the exposure is premium; the Bayesian
+one-year views have \code{opening_ulr} instead, the opening ultimate (the
+latest value plus the posterior mean opening reserve) over the exposure,
+and \code{totals_frame()} has the total ultimate over the total exposure.
 \code{totals_frame()} has one row per segment with the same quantities for
 the segment's total (for the expected-loss methods the total \code{exposure},
 for the ODP bootstrap, its one-year view, \code{\link[=bayes_odp]{bayes_odp()}},

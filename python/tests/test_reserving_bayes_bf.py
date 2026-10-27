@@ -103,9 +103,11 @@ def test_summary_and_frames(fit):
 
     long = fit.to_frame()
     assert list(long.columns) == [
-        "origin", "latest", "ultimate", "reserve", "exposure", "prior_ultimate", "mean",
-        "std_dev",
+        "origin", "latest", "ultimate", "reserve", "exposure", "prior_ultimate", "ulr",
+        "mean", "std_dev",
     ]
+    # The chain ladder's ultimate, as in the table, over the exposure.
+    assert list(long["ulr"]) == [u / e for u, e in zip(long["ultimate"], long["exposure"])]
     assert len(long) == 10
     assert list(long["prior_ultimate"]) == fit.prior_ultimate
     assert long["mean"].sum() == pytest.approx(fit.reserves.mean(), rel=1e-9)

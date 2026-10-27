@@ -1464,8 +1464,9 @@ expected_loss_properties <- function(el, cl) {
 #' (the [chain_ladder_fit] of the pattern), `keys`, `index`, `origins`,
 #' `development`, `total_ultimate` and `total_reserve` (summed over
 #' segments). `as.data.frame()` gives one row per segment and origin with
-#' `exposure` and `apriori` after the reserve, [totals_frame()] one per
-#' segment with the total `exposure`.
+#' `exposure`, `apriori` and `ulr` (the ultimate over the exposure, a loss
+#' ratio only when the exposure is premium) after the reserve,
+#' [totals_frame()] one per segment with the total `exposure` and `ulr`.
 #'
 #' Errors: an unknown column, an origin without an observed, finite,
 #' positive exposure (naming the origin and, with keys, the segment), an
@@ -1633,7 +1634,7 @@ benktander <- function(triangle, column = NULL, exposure = NULL, apriori = 1, n_
 #' `trended_apriori` is at the valuation date's price level, so a treaty year
 #' that incepts later needs more trend beyond it (one more year for the next
 #' year).
-#' `as.data.frame()` adds a `trended_apriori` column.
+#' `as.data.frame()` adds a `trended_apriori` column before the `ulr`.
 #'
 #' Errors: as [bornhuetter_ferguson()], or a `trend` that is not finite and
 #' above -1, or a `decay` outside 0 to 1.
@@ -3002,7 +3003,8 @@ bayes_odp_one_year_segments <- function(triangle, column = NULL, intercept_sd = 
 #' conditional on the previous origin's cell, as in Meyers' code), so
 #' compare it only between CRC, CSR and CAY fits of the same column (Meyers
 #' 2019, Tables 6.4, 7.3 and 8.3). `as.data.frame()`, [totals_frame()], [development_frame()] and
-#' [segment()] work as for [bayes_odp()], with the `premium`, the `mean` and
+#' [segment()] work as for [bayes_odp()], with the `premium`, the `ulr`
+#' (the chain ladder's ultimate over the premium), the `mean` and
 #' `std_dev` of the posterior predictive reserve and the `ultimate_mean` and
 #' `ultimate_std_dev` of the posterior predictive ultimate.
 #'
@@ -3320,7 +3322,8 @@ meyers_segments <- function(triangle, column, premium, model = c("crc", "csr", "
 #' and refits that failed theirs raise another (each prefixed with its
 #' segment's label over segments). The result is a [bayes_one_year_fit]
 #' whose `fit` is the [meyers_fit] (its `as.data.frame()` adds each
-#' origin's `premium`), or a [bayes_one_year_fits] with `premium`.
+#' origin's `premium` and `opening_ulr`, the opening ultimate over the
+#' premium), or a [bayes_one_year_fits] with `premium`.
 #'
 #' Errors: as [meyers()] (or [meyers_segments()]); a `k_threshold` that is
 #' `NaN`; a `one_year_sims` of 0.
@@ -3491,7 +3494,8 @@ meyers_args <- function(triangle, column, premium, logelr_mean, logelr_sd, origi
 #' PSIS-LOO of the observed increments, comparable with [bayes_odp()]'s on
 #' the same column. `as.data.frame()`, [totals_frame()],
 #' [development_frame()] and [segment()] work as for [bayes_odp()], with the
-#' `exposure` and `prior_ultimate`.
+#' `exposure`, `prior_ultimate` and `ulr` (the chain ladder's ultimate over
+#' the exposure, a loss ratio only when the exposure is premium).
 #'
 #' Errors: as [bayes_odp()]; if an origin has no observed, finite, positive
 #' exposure; if `apriori` is not positive and finite, `cv` is not positive
@@ -3628,7 +3632,8 @@ bayes_bf <- function(triangle, column, exposure, apriori = 1, cv = 0.1, developm
 #' Failed MCMC diagnostics of the fit raise one [warning()] listing them,
 #' and refits that failed theirs raise another. The result is a
 #' [bayes_one_year_fit] whose `fit` is the [bayes_bf_fit]; its
-#' `as.data.frame()` adds each origin's `exposure` and `prior_ultimate`.
+#' `as.data.frame()` adds each origin's `exposure`, `prior_ultimate` and
+#' `opening_ulr` (the opening ultimate over the exposure).
 #'
 #' Errors: as [bayes_bf()]; a `k_threshold` that is `NaN`.
 #'
@@ -3736,7 +3741,8 @@ bayes_bf_one_year <- function(triangle, column, exposure, apriori = 1, cv = 0.1,
 #' PSIS-LOO of the observed increments, comparable with [bayes_odp()]'s on
 #' the same column. `as.data.frame()`, [totals_frame()],
 #' [development_frame()] and [segment()] work as for [bayes_odp()], with the
-#' `exposure` and `prior_ultimate`.
+#' `exposure`, `prior_ultimate` and `ulr` (the chain ladder's ultimate over
+#' the exposure, a loss ratio only when the exposure is premium).
 #'
 #' Errors: as [bayes_odp()]; if an origin has no observed, finite, positive
 #' exposure; if `apriori` is not positive and finite, `cv` is not positive
@@ -3876,7 +3882,8 @@ bayes_bf_normalised <- function(triangle, column, exposure, apriori = 1, cv = 0.
 #' Failed MCMC diagnostics of the fit raise one [warning()] listing them,
 #' and refits that failed theirs raise another. The result is a
 #' [bayes_one_year_fit] whose `fit` is the [bayes_bf_normalised_fit]; its
-#' `as.data.frame()` adds each origin's `exposure` and `prior_ultimate`.
+#' `as.data.frame()` adds each origin's `exposure`, `prior_ultimate` and
+#' `opening_ulr` (the opening ultimate over the exposure).
 #'
 #' Errors: as [bayes_bf_normalised()]; a `k_threshold` that is `NaN`.
 #'
@@ -4672,7 +4679,15 @@ check_fit <- function(fit) {
 #' of the posterior predictive reserve and the `ultimate_loss_ratio`. The
 #' one-year view (and [bayes_odp_one_year()]'s) names them
 #' `opening_ultimate` and `opening_reserve` and adds the `cdr_mean` and
-#' `cdr_std_dev` of the claims development result.
+#' `cdr_std_dev` of the claims development result. A method with an
+#' exposure (the expected-loss methods, Clark's Cape Cod, [bayes_bf()],
+#' [bayes_bf_normalised()], [meyers()] and [meyers_segments()], whose
+#' exposure is the premium) ends its own columns with `ulr`, the table's
+#' `ultimate` over the exposure (for the Bayesian fits the chain ladder's
+#' ultimate), a loss ratio only when the exposure is premium; the Bayesian
+#' one-year views have `opening_ulr` instead, the opening ultimate (the
+#' latest value plus the posterior mean opening reserve) over the exposure,
+#' and `totals_frame()` has the total ultimate over the total exposure.
 #' `totals_frame()` has one row per segment with the same quantities for
 #' the segment's total (for the expected-loss methods the total `exposure`,
 #' for the ODP bootstrap, its one-year view, [bayes_odp()],
