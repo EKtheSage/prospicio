@@ -6,7 +6,7 @@
 
 ## Next
 
-- #646 read an annual accident-year pattern at monthly ages before the underwriting-year conversion (decision 21 item 3), a design study with a choice for the user
+- #646 read an annual accident-year pattern at monthly ages before the underwriting-year conversion (decision 21 item 3): the design study is `reserving-v02.md` decision 25 (proposed: the Weibull fitted through the yearly averages and corrected to reproduce them, replacing decision 18's reading in `to_underwriting_basis` with that reading kept as an option), waiting for the user's choice, then the build in Rust, Python and R
 - [compartmental-subannual] fitting `Compartmental` well to quarterly or monthly data (rate priors for sub-annual development, development effects grouped by year, seasonality, a calibration check on sub-annual books; `reserving-compartmental.md` decision 13, the user's note of 2026-10-22)
 
 ## Done
