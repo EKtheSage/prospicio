@@ -1322,6 +1322,40 @@ def test_expected_loss_apriori_by_origin():
         ExpectedLoss(apriori={1988.0: 0.7})
 
 
+def test_apriori_pandas_series_by_index():
+    # #644: a pandas Series is read by its index, as a dict, in any row order.
+    pd = pytest.importorskip("pandas")
+    tri = premium_dataset("clrd_wkcomp")
+    years = list(range(1988, 1998))
+    aprioris = [0.6 + 0.02 * k for k in range(10)]
+    want = BornhuetterFerguson(apriori=aprioris).fit(tri, "paid", "premium").ultimate
+    frame = pd.DataFrame({"origin": years, "elr": aprioris}).iloc[::-1]
+    for series in (
+        frame.set_index("origin")["elr"],
+        frame.assign(origin=frame["origin"].astype(str)).set_index("origin")["elr"],
+        pd.Series(aprioris, index=years).sample(frac=1.0, random_state=3),
+    ):
+        method = BornhuetterFerguson(apriori=series)
+        assert method.apriori == dict(zip(map(str, series.index), series.tolist()))
+        assert method.fit(tri, "paid", "premium").ultimate == want
+    # A default RangeIndex says nothing about the origins: an error.
+    with pytest.raises(ValueError, match="default RangeIndex"):
+        BornhuetterFerguson(apriori=pd.Series(aprioris))
+    with pytest.raises(ValueError, match="default RangeIndex"):
+        ExpectedLoss(apriori=frame.reset_index(drop=True)["elr"])
+    # An origin given twice in the index is an error, not the last value.
+    twice = pd.Series([0.6, 0.7], index=[1988, 1988])
+    with pytest.raises(ValueError, match="1988"):
+        BornhuetterFerguson(apriori=twice).fit(tri, "paid", "premium")
+    with pytest.raises(TypeError, match="keys must be origin labels"):
+        ExpectedLoss(apriori=pd.Series([0.7], index=[1988.0]))
+    # A Polars Series has no index and is read in origin order, as a list.
+    pl = pytest.importorskip("polars")
+    assert BornhuetterFerguson(apriori=pl.Series(aprioris)).fit(
+        tri, "paid", "premium"
+    ).ultimate == want
+
+
 # Clark's growth curves: parity with R ChainLadder 0.2.21 and
 # chainladder-python 0.10.1 (validation/reference/reserving_clark_*.csv; see
 # validation/tests/reserving_clark.rs for the tolerances).
