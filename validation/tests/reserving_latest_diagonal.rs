@@ -37,7 +37,7 @@ use std::collections::HashMap;
 use prospicio_reserving::{
     Benktander, BornhuetterFerguson, CapeCod, ChainLadder, Development, DevelopmentColumn, Error,
     ExpectedLoss, Grain, Lag, LatestDiagonal, Long, Mack, MackBootstrap, Month, OdpBootstrap,
-    PatternKind, PatternWeight, Period, SelectedPattern, Tail, Triangle,
+    PastPatternEnd, PatternKind, PatternWeight, Period, SelectedPattern, Tail, Triangle,
 };
 use prospicio_validation::{Case, check, reference, triangle, triangle_columns};
 
@@ -1126,4 +1126,208 @@ fn an_origin_at_the_end_of_the_factors_takes_the_tail_alone() {
         &[900.0 * 1.05, 600.0 * 1.25 * 1.05, 150.0 * 2.0 * 1.05],
         "the tail alone at the factors' end",
     );
+}
+
+/// Issue #632's triangles: `paid` at each origin's own age, 1,500 of
+/// premium each.
+fn issue_632(origins: &[i32], ages: &[Lag], paid: &[f64]) -> Triangle {
+    let origin: Vec<Month> = origins.iter().map(|&y| Month::january(y)).collect();
+    let premium = vec![1500.0; paid.len()];
+    Triangle::from_long(&Long {
+        keys: &[],
+        origin: &origin,
+        development: DevelopmentColumn::Age(ages),
+        values: &[("paid", paid), ("premium", &premium)],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Year,
+        cumulative: true,
+    })
+    .unwrap()
+}
+
+/// The issue's pattern to ultimate, from 12 to 60 months.
+const ISSUE_632_CDF: [(Lag, f64); 5] = [(12, 3.0), (24, 1.8), (36, 1.35), (48, 1.12), (60, 1.0)];
+
+/// The chain ladder, Bornhuetter-Ferguson and the expected loss method at
+/// an ELR of 0.7, Benktander's two iterations and Cape Cod on `tri` with
+/// `pattern` at weight 1, against the hand formulas with each origin's
+/// factor to ultimate `cdf`.
+fn the_five_methods_by_hand(tri: &Triangle, pattern: SelectedPattern, paid: &[f64], cdf: &[f64]) {
+    let chain_ladder = selected(pattern.with_weight(PatternWeight::All(1.0)));
+    let (elr, premium) = (0.7, 1500.0);
+    let reported: Vec<f64> = cdf.iter().map(|c| 1.0 / c).collect();
+    let cl = chain_ladder.fit(tri, "paid").unwrap();
+    let expected: Vec<f64> = paid.iter().zip(cdf).map(|(l, c)| l * c).collect();
+    assert_close(&cl.ultimate, &expected, "chain ladder");
+    let bf_by_hand: Vec<f64> = paid
+        .iter()
+        .zip(&reported)
+        .map(|(l, p)| l + elr * premium * (1.0 - p))
+        .collect();
+    let bf = BornhuetterFerguson {
+        apriori: elr.into(),
+        chain_ladder: chain_ladder.clone(),
+    }
+    .fit(tri, "paid", "premium")
+    .unwrap();
+    assert_close(&bf.ultimate, &bf_by_hand, "Bornhuetter-Ferguson");
+    let el = ExpectedLoss {
+        apriori: elr.into(),
+        chain_ladder: chain_ladder.clone(),
+    }
+    .fit(tri, "paid", "premium")
+    .unwrap();
+    assert_close(
+        &el.ultimate,
+        &vec![elr * premium; paid.len()],
+        "expected loss",
+    );
+    let bk = Benktander {
+        apriori: elr.into(),
+        n_iters: 2,
+        chain_ladder: chain_ladder.clone(),
+    }
+    .fit(tri, "paid", "premium")
+    .unwrap();
+    let expected: Vec<f64> = paid
+        .iter()
+        .zip(&reported)
+        .zip(&bf_by_hand)
+        .map(|((l, p), bf)| l + bf * (1.0 - p))
+        .collect();
+    assert_close(&bk.ultimate, &expected, "Benktander");
+    let cc = CapeCod {
+        trend: 0.0,
+        decay: 1.0,
+        chain_ladder,
+    }
+    .fit(tri, "paid", "premium")
+    .unwrap();
+    let cc_elr = paid.iter().sum::<f64>() / reported.iter().map(|p| premium * p).sum::<f64>();
+    let expected: Vec<f64> = paid
+        .iter()
+        .zip(&reported)
+        .map(|(l, p)| l + cc_elr * premium * (1.0 - p))
+        .collect();
+    assert_close(&cc.expected_loss.ultimate, &expected, "Cape Cod");
+}
+
+#[test]
+fn issue_632_a_diagonal_only_triangle_fits_with_a_selected_cdf() {
+    // Five accident years, one cell each, at 60, 48, 36, 24 and 12 months.
+    let paid = [1000.0, 800.0, 600.0, 400.0, 200.0];
+    let tri = issue_632(
+        &[2020, 2021, 2022, 2023, 2024],
+        &[60, 48, 36, 24, 12],
+        &paid,
+    );
+    let cdf = SelectedPattern::new(PatternKind::AgeToUltimate, ISSUE_632_CDF.to_vec());
+    the_five_methods_by_hand(&tri, cdf.clone(), &paid, &[1.0, 1.12, 1.35, 1.8, 3.0]);
+    let cl = selected(cdf.clone()).fit(&tri, "paid").unwrap();
+    assert_close(
+        &cl.ultimate,
+        &[1000.0, 896.0, 810.0, 720.0, 600.0],
+        "the ultimates",
+    );
+    let bf = BornhuetterFerguson {
+        apriori: 0.7.into(),
+        chain_ladder: selected(cdf),
+    }
+    .fit(&tri, "paid", "premium")
+    .unwrap();
+    assert_close(&bf.ultimate[..2], &[1000.0, 912.5], "the BF ultimates");
+    assert!((bf.ultimate[4] - 900.0).abs() < 1e-9);
+}
+
+#[test]
+fn issue_632_one_origin_at_one_age_fits_with_a_full_or_a_one_value_cdf() {
+    let tri = issue_632(&[2024], &[12], &[200.0]);
+    let full = SelectedPattern::new(PatternKind::AgeToUltimate, ISSUE_632_CDF.to_vec());
+    the_five_methods_by_hand(&tri, full.clone(), &[200.0], &[3.0]);
+    // One value to ultimate at the only age is the tail from it (decision
+    // 20), as a factor to ultimate or a percent developed.
+    let one = SelectedPattern::new(PatternKind::AgeToUltimate, vec![(12, 3.0)]);
+    the_five_methods_by_hand(&tri, one.clone(), &[200.0], &[3.0]);
+    let third = SelectedPattern::new(PatternKind::PercentDeveloped, vec![(12, 1.0 / 3.0)]);
+    the_five_methods_by_hand(&tri, third, &[200.0], &[3.0]);
+    let fit = selected(one).fit(&tri, "paid").unwrap();
+    assert!((fit.ultimate[0] - 600.0).abs() < 1e-9);
+    assert_eq!(fit.pattern_tail, Some(3.0));
+    assert_eq!(fit.pattern_rescale, Some(1.0));
+    // So does the latest diagonal type, the same fit.
+    let d = LatestDiagonal::new(Grain::Year, &[Month::january(2024)], &[12], &[200.0]).unwrap();
+    let one = SelectedPattern::new(PatternKind::AgeToUltimate, vec![(12, 3.0)]);
+    assert_eq!(
+        selected(one.clone()).fit_diagonal(&d).unwrap().ultimate,
+        fit.ultimate
+    );
+    // No development past the value's age is a tail of 1 there, which
+    // would leave the value inert.
+    let none = d.with_past_pattern_end(PastPatternEnd::NoDevelopment);
+    match selected(one).fit_diagonal(&none) {
+        Err(Error::Pattern { reason, .. }) => {
+            assert!(reason.contains("a tail is given"), "{reason}")
+        }
+        other => panic!("{other:?} is not a pattern error"),
+    }
+    // One origin at 48 months takes the full pattern from 48 months on.
+    let older = issue_632(&[2021], &[48], &[800.0]);
+    the_five_methods_by_hand(&older, full, &[800.0], &[1.12]);
+}
+
+#[test]
+fn issue_632_a_pattern_that_ends_at_the_only_age_is_its_level() {
+    // A pattern that ends at an origin's only age selects no link and is
+    // its level there, the tail, as one value at that age is (decision 20
+    // item 1).
+    let full = SelectedPattern::new(PatternKind::AgeToUltimate, ISSUE_632_CDF.to_vec());
+    let at_60 = issue_632(&[2020], &[60], &[1000.0]);
+    the_five_methods_by_hand(&at_60, full, &[1000.0], &[1.0]);
+    let to_48 = SelectedPattern::new(PatternKind::AgeToUltimate, ISSUE_632_CDF[..4].to_vec());
+    let at_48 = issue_632(&[2021], &[48], &[800.0]);
+    the_five_methods_by_hand(&at_48, to_48.clone(), &[800.0], &[1.12]);
+    let fit = selected(to_48).fit(&at_48, "paid").unwrap();
+    assert!((fit.ultimate[0] - 896.0).abs() < 1e-9);
+    assert_eq!(fit.pattern_tail, Some(1.12));
+    let from_6 = SelectedPattern::new(PatternKind::AgeToUltimate, vec![(6, 4.0), (12, 3.0)]);
+    let at_12 = issue_632(&[2024], &[12], &[200.0]);
+    the_five_methods_by_hand(&at_12, from_6, &[200.0], &[3.0]);
+}
+
+#[test]
+fn issue_632_one_value_with_a_tail_past_its_end_is_an_error() {
+    // Decision 20 item 3: an origin older than the value's age, with a
+    // tail or no development past the end, would rescale the one value
+    // away, so it is the same error as with every origin at its age.
+    let d = LatestDiagonal::new(
+        Grain::Year,
+        &[Month::january(2023), Month::january(2024)],
+        &[24, 12],
+        &[400.0, 200.0],
+    )
+    .unwrap();
+    for kind in [PatternKind::AgeToUltimate, PatternKind::PercentDeveloped] {
+        let value = if kind == PatternKind::AgeToUltimate {
+            3.0
+        } else {
+            1.0 / 3.0
+        };
+        let one = SelectedPattern::new(kind, vec![(12, value)]);
+        for (rule, tail) in [
+            (PastPatternEnd::Tail, Tail::from(1.5)),
+            (PastPatternEnd::NoDevelopment, Tail::default()),
+        ] {
+            let cl = ChainLadder {
+                tail,
+                ..selected(one.clone())
+            };
+            match cl.fit_diagonal(&d.clone().with_past_pattern_end(rule)) {
+                Err(Error::Pattern { age, reason }) => {
+                    assert_eq!(age, Some(12));
+                    assert!(reason.contains("a tail is given"), "{reason}");
+                }
+                other => panic!("{rule:?}: {other:?} is not a pattern error"),
+            }
+        }
+    }
 }

@@ -3035,7 +3035,7 @@ class Benktander:
         the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
-    ldf, ldf_kind, ldf_weight, ldf_origin : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting : optional
         A selected development pattern, as in ``ChainLadder``: the
         development pattern's factors at the ages it gives, so ``cdf`` and
         the share developed ``1 / cdf`` follow it.
@@ -3051,7 +3051,7 @@ class Benktander:
     >>> [round(u, 2) for u in fit.ultimate]
     [150.0, 288.89]
     """
-    def __new__(cls, /, apriori: Any |None = None, n_iters: int = 1, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> Benktander: ...
+    def __new__(cls, /, apriori: Any |None = None, n_iters: int = 1, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None, ldf_underwriting: UnderwritingBasis |None = None) -> Benktander: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> Any:
@@ -3132,6 +3132,12 @@ class Benktander:
         """
         The origin grain ``ldf`` was measured on, averaged over the fitted
         origins' periods at fit time; ``None`` reads it at the origin's age.
+        """
+    @property
+    def ldf_underwriting(self, /) -> UnderwritingBasis |None:
+        """
+        The underwriting basis ``ldf`` is converted to at fit time
+        (``UnderwritingBasis``), or ``None``.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -3770,7 +3776,7 @@ class BornhuetterFerguson:
         the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
-    ldf, ldf_kind, ldf_weight, ldf_origin : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting : optional
         A selected development pattern, as in ``ChainLadder``: the
         development pattern's factors at the ages it gives, so ``cdf`` and
         the share developed ``1 / cdf`` follow it.
@@ -3786,7 +3792,7 @@ class BornhuetterFerguson:
     >>> [round(u, 2) for u in fit.ultimate]
     [150.0, 266.67]
     """
-    def __new__(cls, /, apriori: Any |None = None, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> BornhuetterFerguson: ...
+    def __new__(cls, /, apriori: Any |None = None, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None, ldf_underwriting: UnderwritingBasis |None = None) -> BornhuetterFerguson: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> Any:
@@ -3867,6 +3873,12 @@ class BornhuetterFerguson:
         """
         The origin grain ``ldf`` was measured on, averaged over the fitted
         origins' periods at fit time; ``None`` reads it at the origin's age.
+        """
+    @property
+    def ldf_underwriting(self, /) -> UnderwritingBasis |None:
+        """
+        The underwriting basis ``ldf`` is converted to at fit time
+        (``UnderwritingBasis``), or ``None``.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -4404,7 +4416,7 @@ class CapeCod:
         the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
-    ldf, ldf_kind, ldf_weight, ldf_origin : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting : optional
         A selected development pattern, as in ``ChainLadder``: the
         development pattern's factors at the ages it gives, so ``cdf`` and
         the share developed ``1 / cdf`` follow it.
@@ -4420,7 +4432,7 @@ class CapeCod:
     >>> [round(a, 4) for a in fit.apriori], [round(u, 2) for u in fit.ultimate]
     ([0.6774, 0.6774], [150.0, 290.32])
     """
-    def __new__(cls, /, trend: float = 0.0, decay: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> CapeCod: ...
+    def __new__(cls, /, trend: float = 0.0, decay: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None, ldf_underwriting: UnderwritingBasis |None = None) -> CapeCod: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -4503,6 +4515,12 @@ class CapeCod:
         """
         The origin grain ``ldf`` was measured on, averaged over the fitted
         origins' periods at fit time; ``None`` reads it at the origin's age.
+        """
+    @property
+    def ldf_underwriting(self, /) -> UnderwritingBasis |None:
+        """
+        The underwriting basis ``ldf`` is converted to at fit time
+        (``UnderwritingBasis``), or ``None``.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -5140,9 +5158,12 @@ class ChainLadder:
         estimated from the triangle at the ages it gives; the other ages
         stay estimated, so a benchmark for the immature ages only is a
         partial pattern. As ``ldf_kind`` says, the values are age-to-age
-        factors, or factors to ultimate or percents developed at two or more
-        ages, which select the factors between the first and the last
-        (``cdf[a] / cdf[next age]``). When every age given is a development
+        factors, or factors to ultimate or percents developed, which select
+        the factors between the first age and the last (``cdf[a] / cdf[next
+        age]``); one factor to ultimate (or percent developed) is the tail
+        from its age, so it is given at the oldest age, with no ``tail`` and
+        ``ldf_weight`` 1, and on a triangle observed at one age it is the
+        whole projection. When every age given is a development
         age of the triangle, an age-to-age factor links its age to the
         triangle's next age (any age but the oldest: development past it is
         the tail's), and a development age the cumulative values skip is
@@ -5195,7 +5216,34 @@ class ChainLadder:
         age (``ldf_weight`` a dict, applied before the averaging; the
         averaged pattern cannot be weighted by age here) and a single
         age-to-age factor are errors; the triangle's own grain leaves the
-        pattern as given. Requires ``ldf``.
+        pattern as given. Requires ``ldf``. With ``ldf_underwriting`` it is
+        the grain of the accident periods ``ldf`` is converted from instead.
+    ldf_underwriting : UnderwritingBasis, optional
+        Converts ``ldf``, an accident-period pattern, to the pattern of the
+        triangle's underwriting periods at fit time: an underwriting year's
+        share developed at age ``a`` from its start is ``sum_t e(t) p(a -
+        t)``, with ``e`` its exposure by accident month (the writing
+        convolved with even earning over the policy term,
+        ``UnderwritingBasis.exposure``) and ``p`` an accident month's (Rust's
+        ``SelectedPattern::to_underwriting_basis``). ``ldf`` is on accident
+        periods of ``ldf_origin``, or of the triangle's origin grain without
+        it: an accident-year pattern on underwriting-year origins needs no
+        ``ldf_origin``. An accident-month pattern (``ldf_origin="M"``)
+        converts under any writing and term; a pattern of longer accident
+        periods needs a policy term that is a whole multiple of them or
+        writing even within each of them, and is read between its ages by
+        the rule above, so an annual accident-year pattern is approximate in
+        the first two years (31% too much developed at 12 months on a
+        simulated parallelogram); give it at every month, or an
+        accident-month pattern, where it matters. The result is longer than
+        ``ldf`` by the writing months plus the policy term less the accident
+        period (12 months for an accident-year pattern under the default,
+        23 for an accident-month one), and a constant tail from ``ldf``'s
+        own tail is the safer choice there. The writing must be no longer
+        than the triangle's origin period (the default's 12 months suit
+        underwriting years only; on underwriting quarters give
+        ``UnderwritingBasis([1, 1, 1])``), or the fit is an error. Requires
+        ``ldf``.
     
     A selected factor carries no parameter error, and a blended one
     ``(1 - w)`` times the estimate's, in ``Mack`` and the bootstraps; the
@@ -5233,7 +5281,7 @@ class ChainLadder:
     >>> round(fit.pattern_tail, 4), round(fit.ultimate[2], 2)
     (1.0526, 240.0)
     """
-    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> ChainLadder: ...
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None, ldf_underwriting: UnderwritingBasis |None = None) -> ChainLadder: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -5346,6 +5394,12 @@ class ChainLadder:
         """
         The origin grain ``ldf`` was measured on, averaged over the fitted
         origins' periods at fit time; ``None`` reads it at the origin's age.
+        """
+    @property
+    def ldf_underwriting(self, /) -> UnderwritingBasis |None:
+        """
+        The underwriting basis ``ldf`` is converted to at fit time
+        (``UnderwritingBasis``), or ``None``.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -6447,8 +6501,14 @@ class Compartmental:
     triangle has one) draws its effects from the population in each
     simulation, and so does a development age with no observed cell. The
     reserve is the paid at the square's last age less the latest paid; the
-    square has as many ages as the premium column has origins, and the
-    origin and development grains must be equal. One ``seed`` replays a fit
+    square runs for as many origin periods as the premium column has
+    origins, in development periods (40 quarterly ages for ten annual
+    origins). The development grain may be finer than the origin grain
+    (the triangle's own grains), and each cell's development time is its
+    age in years on every grain, so the rates are per year and an
+    incremental paid cell is the increment over one development period.
+    The coming year of ``one_year`` is the next twelve months of calendar
+    time, up to four quarterly cells per origin. One ``seed`` replays a fit
     exactly: the chains and the simulations each take a seed derived from
     it.
     
@@ -6624,10 +6684,9 @@ class Compartmental:
             ``rate_order`` is not ``"ordered"``; if not exactly one of
             ``outstanding`` and ``incurred`` is given (at most one under
             ``"paid_only"``); if a column is
-            missing, the triangle has several segments, a premium is missing
-            or not positive, or the origin and development grains differ; if
-            a prior or sampler setting is invalid; or if there are no more
-            observed cells than parameters.
+            missing, the triangle has several segments, or a premium is
+            missing or not positive; if a prior or sampler setting is
+            invalid; or if there are no more observed cells than parameters.
         """
     def fit_segments(self, /, triangle: Triangle, paid: str, premium: str, *, outstanding: str |None = None, incurred: str |None = None) -> CompartmentalFits:
         """
@@ -6964,8 +7023,8 @@ class Compartmental:
         Raises
         ------
         ValueError
-            If a prior setting is invalid, ``n_sims`` is 0, the premium
-            column is missing or not positive, or the grains differ.
+            If a prior setting is invalid, ``n_sims`` is 0, or the premium
+            column is missing or not positive.
         """
     @property
     def priors(self, /) -> CompartmentalPriors:
@@ -11211,7 +11270,7 @@ class ExpectedLoss:
         the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
-    ldf, ldf_kind, ldf_weight, ldf_origin : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting : optional
         A selected development pattern, as in ``ChainLadder``: the
         development pattern's factors at the ages it gives, so ``cdf`` and
         the share developed ``1 / cdf`` follow it.
@@ -11227,7 +11286,7 @@ class ExpectedLoss:
     >>> fit.ultimate, fit.reserve
     ([125.0, 200.0], [-25.0, 0.0])
     """
-    def __new__(cls, /, apriori: Any |None = None, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> ExpectedLoss: ...
+    def __new__(cls, /, apriori: Any |None = None, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None, ldf_underwriting: UnderwritingBasis |None = None) -> ExpectedLoss: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> Any:
@@ -11310,6 +11369,12 @@ class ExpectedLoss:
         """
         The origin grain ``ldf`` was measured on, averaged over the fitted
         origins' periods at fit time; ``None`` reads it at the origin's age.
+        """
+    @property
+    def ldf_underwriting(self, /) -> UnderwritingBasis |None:
+        """
+        The underwriting basis ``ldf`` is converted to at fit time
+        (``UnderwritingBasis``), or ``None``.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -17076,7 +17141,7 @@ class Mack:
     tail_std_err : float, optional
         The tail factor's standard error (R's ``tail.se``); extrapolated if
         not given. Unused when the tail factor is 1.
-    ldf, ldf_kind, ldf_weight, ldf_origin : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting : optional
         A selected development pattern, as in ``ChainLadder``. A selected
         factor is taken as known: it has no parameter error, and a blended
         one ``(1 - w)`` times the estimate's standard error, so the
@@ -17102,7 +17167,7 @@ class Mack:
     >>> fit.total_standard_error > 0 and fit.standard_error[0] == 0
     True
     """
-    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> Mack: ...
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None, ldf_underwriting: UnderwritingBasis |None = None) -> Mack: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -17157,6 +17222,12 @@ class Mack:
         """
         The origin grain ``ldf`` was measured on, averaged over the fitted
         origins' periods at fit time; ``None`` reads it at the origin's age.
+        """
+    @property
+    def ldf_underwriting(self, /) -> UnderwritingBasis |None:
+        """
+        The underwriting basis ``ldf`` is converted to at fit time
+        (``UnderwritingBasis``), or ``None``.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -17287,7 +17358,7 @@ class MackBootstrap:
         order, symmetric with a unit diagonal. It is converted to the normal
         scores' correlation ``2 sin(pi rho / 6)``, which must be positive
         definite.
-    ldf, ldf_kind, ldf_weight, ldf_origin : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting : optional
         A selected development pattern, as in ``ChainLadder``. Mack's sigmas
         and residuals come from the triangle's own estimate; each simulation
         then uses ``w * selected + (1 - w) * pseudo`` at the selected ages,
@@ -17329,7 +17400,7 @@ class MackBootstrap:
     >>> fit.cdr.variance() ** 0.5 < Mack().fit(tri, "values").total_standard_error
     True
     """
-    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = True, tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> MackBootstrap: ...
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = True, tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None, ldf_underwriting: UnderwritingBasis |None = None) -> MackBootstrap: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -17428,6 +17499,12 @@ class MackBootstrap:
         """
         The origin grain ``ldf`` was measured on, averaged over the fitted
         origins' periods at fit time; ``None`` reads it at the origin's age.
+        """
+    @property
+    def ldf_underwriting(self, /) -> UnderwritingBasis |None:
+        """
+        The underwriting basis ``ldf`` is converted to at fit time
+        (``UnderwritingBasis``), or ``None``.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -19709,7 +19786,7 @@ class OdpBootstrap:
         order, symmetric with a unit diagonal. It is converted to the normal
         scores' correlation ``2 sin(pi rho / 6)``, which must be positive
         definite.
-    ldf, ldf_kind, ldf_weight, ldf_origin : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting : optional
         A selected development pattern, as in ``ChainLadder``. The residuals
         and the scale come from the triangle's own volume-weighted factors;
         each simulation then uses ``w * selected + (1 - w) * pseudo`` at
@@ -19772,7 +19849,7 @@ class OdpBootstrap:
     >>> fit.reserves.mean() > 0
     True
     """
-    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", tail: Any |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> OdpBootstrap: ...
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", tail: Any |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None, ldf_underwriting: UnderwritingBasis |None = None) -> OdpBootstrap: ...
     def __repr__(self, /) -> str: ...
     @property
     def dependence(self, /) -> str:
@@ -19835,6 +19912,12 @@ class OdpBootstrap:
         """
         The origin grain ``ldf`` was measured on, averaged over the fitted
         origins' periods at fit time; ``None`` reads it at the origin's age.
+        """
+    @property
+    def ldf_underwriting(self, /) -> UnderwritingBasis |None:
+        """
+        The underwriting basis ``ldf`` is converted to at fit time
+        (``UnderwritingBasis``), or ``None``.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -27972,6 +28055,60 @@ class TweedieGlm:
         Returns
         -------
         TweedieFit
+        """
+
+@final
+class UnderwritingBasis:
+    """
+    How an underwriting period's policies are written and earned, to convert
+    an accident-period development pattern to the underwriting period's.
+    
+    Parameters
+    ----------
+    writing : sequence of float, optional
+        The share of the period's policies written in each month from its
+        start, each written at an even rate through its month: finite, not
+        negative, with a positive sum, and scaled to sum to 1. Not given,
+        even writing over 12 months, an underwriting year's. The writing,
+        its trailing zeros dropped, must be no longer than the triangle's
+        origin period, within which its policies are written: on
+        underwriting quarters give three months (``[1, 1, 1]`` for even
+        writing); longer writing is an error at fit time.
+    policy_months : int, default 12
+        Each policy's term in months; it earns evenly over the term.
+    
+    The underwriting period's exposure in its ``t``-th accident month is the
+    writing convolved with a policy's earning by month (``exposure``), and
+    the period's percent developed at age ``a`` from its start is
+    ``P(a) = sum_t e(t) p(a - t)``, ``p`` an accident month's (Rust's
+    ``SelectedPattern::to_underwriting_basis``). Pass it as
+    ``ldf_underwriting`` to a method that takes ``ldf``. The default, even
+    writing over a year and 12-month policies, is the parallelogram: the
+    exposure is triangular over 24 months.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import UnderwritingBasis
+    >>> e = UnderwritingBasis().exposure()
+    >>> len(e), round(e[0] * 288, 12), round(e[12] * 288, 12)
+    (24, 1.0, 23.0)
+    """
+    def __new__(cls, /, writing: Sequence[float] |None = None, policy_months: int = 12) -> UnderwritingBasis: ...
+    def __repr__(self, /) -> str: ...
+    def exposure(self, /) -> list[float]:
+        """
+        The share of the period's exposure in each accident month from its
+        start, summing to 1.
+        """
+    @property
+    def policy_months(self, /) -> int:
+        """
+        The policy term in months.
+        """
+    @property
+    def writing(self, /) -> list[float]:
+        """
+        The writing shares by month, as given.
         """
 
 @final

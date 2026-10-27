@@ -742,3 +742,13 @@ def test_apriori_by_origin_follows_the_origins_not_the_rows():
     with pytest.raises(ValueError, match="2021 is not among the origins fitted"):
         BornhuetterFerguson(apriori={2021: 0.5, 2022: 0.6, 2023: 0.7, 2024: 0.8}, ldf=cdf,
                             ldf_kind="cdf").fit_diagonal(d)
+
+
+def test_issue_632_one_value_with_a_tail_past_its_end():
+    # One value is the tail from its age: a tail past it, or no development
+    # past it, would rescale it away, whether or not an origin is older.
+    for rule, tail in [("tail", 1.5), ("no_development", None)]:
+        d = LatestDiagonal([2023, 2024], [24, 12], [400.0, 200.0], past_pattern_end=rule)
+        for ldf, kind in [({12: 3.0}, "cdf"), ({12: 1 / 3}, "percent_developed")]:
+            with pytest.raises(ValueError, match="a tail is given"):
+                ChainLadder(ldf=ldf, ldf_kind=kind, tail=tail).fit_diagonal(d)

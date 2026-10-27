@@ -37,7 +37,7 @@ when from experience, and which pricing method fits which scenario.
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
 | v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Done: P-splines, tensor product, cyclic and monotone smooths with GCV, UBRE or REML (#263), ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium |
-| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust, Python and R, with each fit's sampler diagnostics), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R) and its twin with a normalised pattern and the prior on the ultimate (`BayesBfNormalised`, Rust, Python and R), Bayesian hierarchical credibility (Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R, also fitted to paid and incurred, or to paid or incurred alone) over segments (Rust, Python and R) and in the diagonal backtest with a held-out outstanding table (Rust, Python and R), the one-year view of `BayesOdp`, `BayesBf`, `BayesBfNormalised`, `Meyers` and `Compartmental` by PSIS reweighting with moment matching by default (reweighting only for `Compartmental` model 2) and a refit budget, one generic engine with a conformance suite that every Bayesian model with a one-year view passes (`BayesOdp`, `BayesBf`, `BayesBfNormalised`, `Meyers`, `Compartmental`; Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) |
+| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust, Python and R, with each fit's sampler diagnostics), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R) and its twin with a normalised pattern and the prior on the ultimate (`BayesBfNormalised`, Rust, Python and R), Bayesian hierarchical credibility (Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R, also fitted to paid and incurred, or to paid or incurred alone, and on development finer than the origins) over segments (Rust, Python and R) and in the diagonal backtest with a held-out outstanding table (Rust, Python and R), the one-year view of `BayesOdp`, `BayesBf`, `BayesBfNormalised`, `Meyers` and `Compartmental` by PSIS reweighting with moment matching by default (reweighting only for `Compartmental` model 2) and a refit budget, one generic engine with a conformance suite that every Bayesian model with a one-year view passes (`BayesOdp`, `BayesBf`, `BayesBfNormalised`, `Meyers`, `Compartmental`; Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R), ONNX import (`prospicio_nn::onnx`, Rust). Still to do: WASM |
 | ◆ Gate | API review and deprecation pass | — |
@@ -301,7 +301,7 @@ what it is aiming for by v1.0.
     or from outstanding plus paid, at parity with the same model in Stan on
     company 337; with the one-year view, segments and the backtest; in
     Python (`fitted="paid_and_incurred"`) and R (`fitted =
-    "paid_and_incurred"`). Unequal grain is the next PR.
+    "paid_and_incurred"`).
   - One response alone for `Compartmental` (`reserving-compartmental.md`
     PR H, decision 12, the user's decision of 2026-10-22): paid alone or
     incurred alone, with ordered rates required (from one response only
@@ -310,6 +310,15 @@ what it is aiming for by v1.0.
     the same models in Stan on company 337; with the one-year view,
     segments and the backtest; in Python (`fitted="paid_only"`,
     `"incurred_only"`) and R (`fitted = "paid_only"`, `"incurred_only"`).
+  - Unequal origin and development grain for `Compartmental`
+    (`reserving-compartmental.md` PR I, decision 13, the user's decision
+    of 2026-10-22): a development grain finer than the origin grain
+    (annual origins with quarterly or monthly development, quarterly
+    origins with monthly development), each cell's time in years, the
+    square to as many origin periods as there are origins, the one-year
+    view over the next twelve months of calendar time; at parity with the
+    same model in Stan on a triangle simulated with known parameters,
+    whose posterior holds them; in Rust, Python and R.
   - The one-year view of `BayesOdp` by Pareto smoothed importance
     sampling (`reserving-bayes.md` PR 8, decision 16): each simulated
     year reweights the posterior draws, and a simulation whose Pareto
@@ -467,6 +476,16 @@ what it is aiming for by v1.0.
     `ldf_origin` in both, reproducing the Rust validation's numbers and
     the chainladder-python parity rows. The Excel functions are the next
     PR.
+  - An accident-period pattern on an underwriting basis
+    (`reserving-v02.md`, decision 21; branch `claude/uy-pattern`, issue
+    #633, in Rust, Python and R): `SelectedPattern::to_underwriting_basis`
+    convolves an accident-month or accident-year pattern with an
+    underwriting year's exposure over accident months, from a writing
+    pattern and a policy term (`UnderwritingBasis`, by default the
+    parallelogram), and Python's and R's `ldf_underwriting` apply it beside
+    `ldf_origin`; checked by hand, against the pricing crate's
+    `MonthlyPatterns::from_annual` and on a simulated book's accident-year
+    and underwriting-year triangles.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental

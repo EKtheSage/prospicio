@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -1746,7 +1746,8 @@ pub struct Development {
      with age. The two cumulative kinds carry the same information and get
      the same checks;
    * a cumulative pattern with fewer than two ages (a gap is interpolated,
-     item 2);
+     item 2); superseded by decision 20, which takes one value as the tail
+     from its age;
    * a weight that is not finite or is outside `[0, 1]`; a `ByAge` weight
      at an age with no selected link (for a cumulative pattern, its last
      age);
@@ -2229,7 +2230,8 @@ Decided by the user on 2026-10-15, after review of the built PR:
    and is an error with a pattern of the bootstrap's own; the mismatch
    error stays.
 3. **Gaps are interpolated** (item 2): `ln CDF` linear in development age
-   between the given ages; a single given age is still an error; ages
+   between the given ages; a single given age is still an error (until
+   decision 20); ages
    before the first and after the last given age stay estimated.
 4. **The ODP bootstrap keeps the origins' level error** with every factor
    selected (item 8): documented in the Rust, Python and R docs.
@@ -3545,6 +3547,303 @@ constructors.
     diagonal (`LatestDiagonal.from_triangle`, R `as_latest_valuation()`)
     and fit that with `development=`. The plain triangle path keeps
     decision 17 item 11 open.
+
+### 20. A cumulative pattern with one value
+
+Status: **Built** (2026-10-26), issue #632, branch
+`claude/one-value-pattern`, in Rust, Python and R. The user decided on
+2026-10-26 that a cumulative pattern with one value is valid and selects
+the factor from its age to ultimate, as the tail from that age. Items 2
+to 6, and item 1's reading of a longer pattern that ends at the oldest
+age, are how this PR reads that decision against the other settings, and
+are proposed for the user's acceptance.
+
+A downstream pipeline fits small books: a diagonal-only triangle, and a
+single origin observed at one age. Decision 12 item 4 refused a factor
+to ultimate (or a percent developed) at one age, "one value selects no
+factor", so a book observed at one age could take a pattern only as two
+or more ages (which decision 18 reads past the oldest age since #614).
+
+1. **The rule.** `AgeToUltimate` or `PercentDeveloped` with one value
+   `CDF(a)` (`1 / p(a)`) at a development age `a` of the triangle is the
+   factor to ultimate from `a`. It fixes no link, so by item 5 of
+   decision 12 it is the tail when `a` is the oldest age and no tail is
+   given: `pattern_tail = CDF(a)`, a constant with no parameter error,
+   `pattern_rescale = 1`. On a triangle observed at one age (one origin,
+   or every origin at one age, a latest diagonal included) the oldest age
+   is the only age, so the value is the whole projection: the issue's
+   `{12: 3.0}` on an origin at 12 months with 200 paid gives 600. On a
+   full triangle it is the same fit as a constant tail of `CDF(a)`. A
+   longer cumulative pattern that ends at the oldest age and selects no
+   link of the triangle is read the same way (proposed), as its level there: on a
+   triangle observed at one age the pattern's ages before it fix no link,
+   so the issue's full pattern from 12 to 60 months on an origin at 60
+   months gives the latest value (a factor of 1), and the pattern from 12
+   to 48 months on an origin at 48 months with 800 paid gives 896, as
+   `{48: 1.12}` does. Decision 18 had refused these as "the pattern
+   selects no factor of the triangle", while a pattern that runs past the
+   only age already folded into the tail. The same reading applies on a
+   longer triangle when the pattern's earlier ages all fall inside its
+   last link (`{30: x, 36: y}` on ages 12, 24, 36): the link from 24 to
+   36 is not fully covered, so it stays estimated as decision 18 leaves
+   any such link, and `y` is the tail.
+2. **At another age it is an error** (proposed): "a cumulative pattern
+   with one value is the tail from its age: give it at the oldest age, or
+   give two or more ages". Read by decision 12's rules it would select
+   nothing and only report `pattern_rescale`, which contradicts the
+   user's decision. The literal alternative, a constant tail attached at
+   `a` that replaces the estimated factors from `a` on, is not built: it
+   needs a tail attached before the oldest age carried through
+   `pattern_tail`, Mack and the bootstraps, and spreads the factor over
+   the older ages by a decay the user did not give. Off the triangle's
+   ages (`{18: 1.5}` on an annual triangle) it is decision 18's existing
+   error, "the pattern selects no factor of the triangle".
+3. **With a tail it is an error** (proposed): "a cumulative pattern with
+   one value is the tail, and a tail is given: give no tail, or two or
+   more ages". Decision 12 rescales a longer pattern's level to a given
+   tail, which with one value would leave the pattern inert. On a latest
+   diagonal, `PastPatternEnd::Tail` (which needs a tail) and
+   `PastPatternEnd::NoDevelopment` (a factor of 1 past the value's age)
+   are such tails, and give the same error whether or not an origin is
+   older than the value's age: decision 18 would rescale the one level to
+   the tail spread past the pattern's end, so nothing of the value would
+   be left (`{12: 3.0}` and `{12: 9.0}` on origins at 24 and 12 months
+   would give the same ultimates).
+4. **A weight below 1 is an error** (proposed): "a cumulative pattern
+   with one value is the tail, taken at full weight: give it weight 1".
+   No estimate past the oldest age is there to blend with, as for a
+   pattern that runs past the oldest age (decision 18). A weight by age
+   at the value's age keeps decision 12's error, "a weight is given at an
+   age with no selected factor".
+5. **Bootstraps.** A bootstrap with no pattern of its own reads the
+   method's pattern without its level when the method has a tail
+   (`OneYearPattern::Method`). A one-value pattern there is only its
+   level, so this happens only when the method's pattern and tail already
+   conflict by item 3, and the bootstrap's error names that conflict:
+   "the re-reserving method's pattern is only its level, its tail, and
+   the method has a tail of its own: give the method no tail, or two or
+   more ages". Where the method has no tail the one value is the
+   method's implied tail and the bootstrap's, as any implied tail is.
+   Comparing a bootstrap's pattern with the method's
+   (`same_selection`) ignores levels, as before; the tails are compared
+   on their own, so two one-value patterns with different values still
+   differ there.
+6. **`averaged_over_origins`.** One value is averaged by the rules as
+   stated: linear from 0 at age 0 to the value at its age, held at the
+   value past it, so an accident-month `{3: 0.5}` gives the accident year
+   `1/12` at 3 months and `0.5` from 14 months. The result has many ages
+   and is read as any pattern is.
+7. **Checks.** `validation/tests/reserving_latest_diagonal.rs`: both
+   cases of the issue through the plain triangle path at weight 1, by
+   hand for the chain ladder, Bornhuetter-Ferguson, the expected loss
+   method, Benktander's two iterations and Cape Cod (a diagonal-only
+   triangle with the full pattern, one origin at 12 months with the full
+   pattern, with `{12: 3.0}` and with `{12: 1/3}` percent developed, and
+   one origin at 48 months), a pattern that ends at the only age (the
+   full pattern on an origin at 60 months, the pattern to 48 months on an
+   origin at 48 months, `{6: 4.0, 12: 3.0}` on an origin at 12 months),
+   the one value through `LatestDiagonal`, and item 3's error on a
+   diagonal with an origin older than the value, under
+   `PastPatternEnd::Tail` and `NoDevelopment`.
+   `validation/tests/reserving_pattern_basis.rs`: the errors of items 2
+   to 4 on RAA, the one value at 120 months equal to a constant tail of
+   1.05, item 5 (the ODP bootstrap with the one value draws as with a
+   constant tail of 1.05, and both bootstraps' one-year views take it as
+   the method's implied tail, and the bootstrap's error when the method
+   has a tail too) and item 6. The same cases in `python/tests/test_reserving_patterns.py`
+   and `R/prospicio/tests/test-reserving-patterns.R`.
+
+### 21. An accident-period pattern on an underwriting basis
+
+Status: **Built** (2026-10-26), issue #633, branch `claude/uy-pattern`, in
+Rust, Python and R. It answers the user's decision of 2026-10-26: an
+underwriting year's pattern is the accident pattern convolved with the
+year's exposure over accident months,
+
+```text
+P_UY(a) = sum_t e(t) p_AY(a - t)
+```
+
+on percents developed, with `e` the writing pattern (monthly shares over
+the underwriting year) convolved with even earning over the policy term,
+and by default even writing over 12 months and 12-month policies (the
+parallelogram, a triangular density over 24 months). The open points the
+issue listed are items 1 to 8 below; each is a proposal for the user's
+acceptance, built as written. Decision 18's `averaged_over_origins` is
+unchanged to the bit (its checks moved to a shared helper, with the same
+texts), and nothing breaks: `UnderwritingBasis` and the method are new,
+and the bindings add one argument.
+
+1. **Writing through the month** (proposed). A policy written in month `j`
+   is written at an even rate through the month and earns evenly over `m`
+   months, so its earning by accident month is `1/(2m)` in month `j`, `1/m`
+   in each of the next `m - 1` and `1/(2m)` in month `j + m`;
+   `UnderwritingBasis::exposure` is the writing convolved with that kernel,
+   `n + m` months for `n` months of writing. The default gives `e(t) = (2t
+   + 1)/288` for `t` up to 11 and `(47 - 2t)/288` from 12 to 23: the
+   triangular density of the issue, integrated month by month, with its
+   mean 11.5 months after the start (12 months in continuous time, less
+   the half month an accident month's own age already counts). The
+   alternative is writing at the start of each month, as
+   `prospicio_pricing::cashflow::MonthlyPatterns::from_annual` writes it:
+   a density over 23 months with mean 11 and `(a - 11)/T` where this
+   build gives `(a - 11.5)/T` on a linear pattern. Under that convention
+   an underwriting year written evenly through December would be counted
+   as written at December's start.
+2. **The input basis: by month directly, by a longer period without
+   deconvolution** (proposed). `pattern_origin` names the accident
+   periods the pattern was measured on, as in decision 18. An
+   accident-month pattern (`Grain::Month`) is `p` itself, read at any age
+   by decision 18 item 2's rule, under any writing and term. A pattern of
+   accident periods of `s > 1` months is taken as decision 18's
+   even-exposure average of `s` accident months, `P_s = (1/s) sum_q p(a -
+   q)`, and converted as `P_UY(a) = sum_j v(j) P_s(a - j)`, where `v` is
+   the weights that give `e` when each is spread evenly over `s` months.
+   `v` exists in two cases, both exact: a policy term of `r` whole periods
+   of `s` months (`v` the writing spread half and half over two months,
+   then over `r` steps of `s` months, each `1/r`), or writing even within
+   each period of `s` months from the start (`v` the periods' shares,
+   convolved with a policy's earning). Otherwise the conversion is an
+   error that asks for an accident-month pattern. Recovering monthly
+   shares from an accident-year pattern (a deconvolution,
+   `p(a) - p(a - 12) = 12 (P_Y(a) - P_Y(a - 1))`) is the alternative; it is
+   ill-posed, needs the accident-year pattern at every month, and its
+   negative weights can produce shares that are not increasing, so it is
+   not built. The default (even writing, 12-month policies) and the common
+   cases (seasonal writing of annual policies, even writing of six-month
+   policies) are covered.
+3. **An annual accident-year pattern is approximate in the first two
+   years** (a finding, recorded with item 2). `P_s` between its given ages
+   is read by decision 18's rule: linear from 0 below the first age and
+   `ln CDF` linear between ages. For an accident-year pattern given at
+   every month (the chain ladder of a triangle with monthly development)
+   the conversion is exact; given at 12, 24, ... months it is not, since
+   an accident year at six months has much less than half of its twelve
+   months' share. On a simulated book written evenly every month with
+   annual policies, reported along `1 - 0.9^t`, the converted share over
+   the book's own underwriting-year share is 1.3116 at 12 months, 0.9155 at
+   24, 0.9866 at 36, 0.9967 at 48, 0.9991 at 60 and 0.9996 at 72, and
+   exact from 84. The docs say so next to `ldf_underwriting` and advise an
+   accident-month pattern, or one given at every month, where the first
+   years matter. A better rule below the first age would change decision
+   18's rule and is not proposed here.
+4. **Ages from the underwriting period's start** (proposed). The age `a`
+   is measured as `at_valuation` measures it: an underwriting year at the
+   end of its twelfth month is at age 12, and an accident month at the end
+   of its own month at age 1, so the accident month `t` months after the
+   start is at age `a - t`. The result is a `PercentDeveloped` pattern at
+   every month from the input's first age, as decision 18's average
+   starts, so it goes into `Development::pattern` like any other and
+   reaches both routes, Mack, both bootstraps and the one-year views.
+5. **The longer pattern and its tail** (proposed, as decision 18 item 3).
+   The result ends where every accident month of the period is past the
+   input's end `E`: at `E + n + m - 1` for an accident-month pattern and
+   `n` months of writing (`E + 23` under the default) and at `E + n + m -
+   s` for a pattern of `s` months (`E + 12` for an accident-year pattern
+   under the default). There it is the input's level exactly (1 for
+   age-to-age factors), not a sum that rounds near it. Between `E` and the
+   end, the accident months past `E` hold the level, so development a tail
+   gives there is deferred to the result's end and the ultimate is
+   slightly overstated, as in decision 18 item 3. A tail on the method
+   applies after the result's end, decision 18 item 5 folds a result that
+   runs past the triangle's oldest age with no new code, and the
+   rescale reports `P(end) / T`. An estimated tail on the result is fitted
+   on its monthly factors, so a constant tail taken from the input's own
+   tail is the safer choice, and the docs say so.
+6. **Weights and blends** (proposed, as decision 18 item 1). `All(w)`
+   carries over to the result, so `ldf_weight` as a number blends the
+   converted factors with the triangle's; a `ByAge` weight is an error
+   with decision 19 item 11's text ("give one weight for every factor"),
+   since the input's ages are not the result's. Kinds are converted as in
+   decision 18: factors to ultimate and percents developed as given, an
+   age-to-age pattern first to factors to ultimate, 1 at the end of its
+   span; a single age-to-age factor has no span and is an error.
+7. **The writing shares** (proposed). `UnderwritingBasis { writing,
+   policy_months }` takes shares by month from the period's start, finite
+   and not negative with a positive sum, and scales them to sum to 1;
+   trailing zeros are dropped and leading zeros kept (a period that starts
+   writing late). The period is the target's origin period, which
+   `to_underwriting_basis` does not see, so the conversion itself takes
+   any number of months, and `UnderwritingBasis::check_within(grain)`
+   checks the writing, its trailing zeros dropped, against a period of the
+   target's grain. The Python and R bindings know the target's grain at
+   fit time and call it, so there writing longer than the origin period is
+   an error (a period's policies are written within it). The default stays
+   a fixed year of writing rather than writing even over the target's
+   period, since the basis is built before the triangle is seen: on
+   underwriting quarters the default is an error that names the fix
+   (Python `UnderwritingBasis([1, 1, 1])`, R
+   `underwriting_basis(c(1, 1, 1))`) instead of a wrong pattern, and the
+   docs say that the default is a year's. A policy term of 0 and a result
+   longer than 2,400 months are errors.
+8. **API placement and names** (proposed). Rust:
+   `SelectedPattern::to_underwriting_basis(pattern_origin, &UnderwritingBasis)`
+   next to `averaged_over_origins`, and `UnderwritingBasis::{new, even,
+   exposure}` with `Default` the parallelogram, re-exported from
+   `lib.rs`. Python: a class `UnderwritingBasis(writing=None,
+   policy_months=12)` with `writing`, `policy_months` and `exposure()`,
+   and `ldf_underwriting=` beside `ldf_origin` on the eight methods that
+   take `ldf` (`ChainLadder`, `Mack`, `ExpectedLoss`,
+   `BornhuetterFerguson`, `Benktander`, `CapeCod`, `OdpBootstrap`,
+   `MackBootstrap`), stored on the method with a getter and in its
+   `repr`, and applied at fit time as `ldf_origin` is (decision 19 item 7).
+   R: `underwriting_basis(writing = NULL, policy_months = 12)`, a list of
+   class `underwriting_basis` with its `exposure`, and `ldf_underwriting =
+   NULL` beside `ldf_origin` on every function that takes `ldf`. With
+   `ldf_underwriting`, `ldf_origin` names the accident periods of `ldf`,
+   and without it they are the target's origin grain, so an accident-year
+   pattern on underwriting-year origins needs no `ldf_origin`; the
+   conversion takes the place of `averaged_over_origins`, never both. The
+   alternatives were three arguments (`ldf_basis`, `ldf_writing`,
+   `ldf_policy_months`) on every method, or a module function that
+   returns the converted pattern to pass as `ldf`. The pricing crate's
+   `MonthlyPatterns::from_annual` and the aggregate crate's
+   `timeline::Exposure::uniform` are other lanes' and are not reused: the
+   convolution is a few lines, and the validation crate checks the two
+   against each other.
+
+**Checks** (`validation/tests/reserving_uy_pattern.rs`, the doctests, and
+the Python and R tests `python/tests/test_reserving_uy_pattern.py` and
+`R/prospicio/tests/test-reserving-uy-pattern.R`):
+
+- the parallelogram by hand: the exposure `(2t + 1)/288` and `(47 -
+  2t)/288` to 1e-15; a linear accident-month pattern `t/60` converted to
+  `a(a + 1)(2a + 1)/(1728 * 60)` up to 12 months and `(a - 11.5)/60` from
+  23 to 60, ending at 83 months at exactly 1;
+- the accident-year route equal to the accident-month route to 1e-14
+  when the accident-year pattern is the monthly one averaged at every
+  month, under the default, seasonal writing of 24-month policies, even
+  writing of 6-month policies and 24 months of even writing of 7-month
+  policies, and an accident-quarter pattern under quarterly writing even
+  within each quarter; the error for seasonal writing of 6-month policies
+  on an accident-year pattern and for writing uneven within a quarter;
+- kinds, the level kept, `All(w)` carried, the `ByAge`, single-factor,
+  basis and 2,400-month errors, and shares scaled with trailing zeros
+  dropped;
+- `MonthlyPatterns::from_annual` (pricing crate, `cashflow.rs`): with the
+  accident-month pattern `p(k) = paid_by((k - 1/2)/12)` and the written
+  increments spread half and half over two months (item 1's writing
+  through the month on the engine's grid of month starts), the converted
+  share at age `a` is the engine's paid share at the end of month `a - 1`
+  to 1e-13, under the default, seasonal writing of 12- and 7-month
+  policies and three months of 1-month policies;
+- a simulated book: three policies a month, written through each month
+  from January 2000 to December 2019, each earning evenly over its term,
+  losses at a rate of 1 per unit of exposure, each accident month
+  reported along `1 - 0.9^t` to 60 months, summed to an accident-year and
+  an underwriting-year triangle (origins 2010 to 2019, valued monthly to
+  December 2019). With even writing and 12- and 6-month policies, the
+  conversion of the accident-year triangle's chain ladder pattern is the
+  underwriting-year triangle's chain ladder pattern to 1e-12 at every
+  month, and projects each underwriting year to its ultimate to 1e-12;
+  with seasonal writing and 12-, 6- and 18-month policies, the conversion
+  of the accident-month pattern is the underwriting-year triangle's; and
+  on the triangles valued annually the misses of item 3, pinned.
+
+No reference implementation converts a reserving pattern from accident to
+underwriting periods (chainladder-python 0.10.1 has no such argument, as
+decision 18 item 10 found), so these checks are by hand, against the
+pricing crate and on the simulated book.
 
 ### 22. An a-priori loss ratio per origin
 
