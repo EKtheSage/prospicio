@@ -3849,7 +3849,8 @@ pricing crate and on the simulated book.
 
 Status: **Built** (2026-10-26), issue #634, branch `claude/apriori-by-origin`,
 in Rust, Python and R. Items 1 to 3 restate the issue's proposal; items 4
-to 8 are choices made in building it, proposed for the user's acceptance.
+to 8 are choices made in building it, accepted by the user on 2026-10-27
+(item 7 with the follow-up #644).
 The Excel functions keep one number (`.into()` at their six call sites,
 behaviour unchanged); a per-origin a priori on a sheet is #635 for the
 Excel lane. The guides that still give the one-number workaround
@@ -3942,8 +3943,9 @@ origin, to the bit.
    year (the same keys a dict takes), so `df.set_index("origin")["elr"]`
    lines up in any row order; it was read in order, so a Series of the
    right length in the wrong order put its values on the wrong origins
-   without an error. A Series with a default `RangeIndex` is an error that
-   asks for origin keys or `.tolist()`, since its order cannot be checked;
+   without an error. A Series with a default `RangeIndex` (0 to n - 1;
+   one over `range(1988, 1998)` is years) is an error that asks for origin
+   keys or `.tolist()`, since its order cannot be checked;
    an origin twice in the index is an error, as in a dict (the pairs are
    read by `items()`, not `to_dict()`, which would keep the last). pandas
    is recognised by its type's module and name, not imported. Polars Series

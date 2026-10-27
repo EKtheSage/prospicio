@@ -1334,6 +1334,7 @@ def test_apriori_pandas_series_by_index():
         frame.set_index("origin")["elr"],
         frame.assign(origin=frame["origin"].astype(str)).set_index("origin")["elr"],
         pd.Series(aprioris, index=years).sample(frac=1.0, random_state=3),
+        pd.Series(aprioris, index=range(1988, 1998)),
     ):
         method = BornhuetterFerguson(apriori=series)
         assert method.apriori == dict(zip(map(str, series.index), series.tolist()))
@@ -1345,7 +1346,7 @@ def test_apriori_pandas_series_by_index():
         ExpectedLoss(apriori=frame.reset_index(drop=True)["elr"])
     # An origin given twice in the index is an error, not the last value.
     twice = pd.Series([0.6, 0.7], index=[1988, 1988])
-    with pytest.raises(ValueError, match="1988"):
+    with pytest.raises(ValueError, match="origin 1988 is given twice"):
         BornhuetterFerguson(apriori=twice).fit(tri, "paid", "premium")
     with pytest.raises(TypeError, match="keys must be origin labels"):
         ExpectedLoss(apriori=pd.Series([0.7], index=[1988.0]))

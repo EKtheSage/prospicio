@@ -4352,8 +4352,12 @@ fn apriori_arg(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Apriori> {
         return apriori_by_origin(dict.iter().map(Ok));
     }
     if is_pandas_series(obj)? {
+        // A default index, 0 to n - 1 by 1; `range(1988, 1998)` is years.
         let index = obj.getattr("index")?;
-        if index.get_type().name()?.extract::<String>()? == "RangeIndex" {
+        if index.get_type().name()?.extract::<String>()? == "RangeIndex"
+            && index.getattr("start")?.extract::<i64>()? == 0
+            && index.getattr("step")?.extract::<i64>()? == 1
+        {
             return Err(PyValueError::new_err(
                 "apriori is a pandas Series with a default RangeIndex, so the origin of each                  value cannot be checked: index it by origin label or integer year (as                  df.set_index(\"origin\")[\"elr\"]), or pass .tolist() for values in origin                  order",
             ));
