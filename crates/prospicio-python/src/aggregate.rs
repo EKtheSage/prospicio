@@ -936,6 +936,12 @@ impl PyEventSet {
     ///     Finite and non-negative.
     /// slots : list of int, optional
     ///     Each row's event slot, which orders a year's rows.
+    /// times : list of float, optional
+    ///     Each row's time of loss, the fraction of its year elapsed, in
+    ///     ``[0, 1]``. Rows are then ordered by time within a year, the
+    ///     slot (or the given order) breaking ties, and the events carry
+    ///     the times (``has_times``), for an hours clause (``grouped``) and
+    ///     reinstatements pro rata as to time.
     /// labels : dict of str to list of str, optional
     ///     Each row's labels, a list per dimension (``{"peril": [...],
     ///     "class": [...]}``).
@@ -972,14 +978,16 @@ impl PyEventSet {
     /// ([7.0, 5.0], [7.0, 5.0])
     #[staticmethod]
     #[pyo3(signature = (
-        years, losses, *, slots = None, labels = None, n_years = None, n_sims = None,
-        expand = "tile", seed = 0, unique_by = None, expected = None, source_hash = None
+        years, losses, *, slots = None, times = None, labels = None, n_years = None,
+        n_sims = None, expand = "tile", seed = 0, unique_by = None, expected = None,
+        source_hash = None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn from_ylt(
         years: Vec<usize>,
         losses: Vec<f64>,
         slots: Option<Vec<u64>>,
+        times: Option<Vec<f64>>,
         labels: Option<&Bound<'_, PyDict>>,
         n_years: Option<usize>,
         n_sims: Option<usize>,
@@ -1003,6 +1011,9 @@ impl PyEventSet {
         let has_slots = slots.is_some();
         if let Some(slots) = slots {
             ylt = ylt.with_slots(slots).map_err(to_py)?;
+        }
+        if let Some(times) = times {
+            ylt = ylt.with_times(times).map_err(to_py)?;
         }
         let labels = labels
             .map(labels_from_dict)
@@ -1271,13 +1282,26 @@ impl PyEventSet {
     /// occurrence, whose loss is their sum and whose time is the window's
     /// start; the next loss after the window opens the next one. A year is
     /// 8,760 hours. Windows open at each first loss in turn, not where they
-    /// would recover most. Needs times; sums insured and labels are not
-    /// carried (group each peril's set before merging them).
+    /// would recover most. Needs times; sums insured are not carried.
     ///
     /// Parameters
     /// ----------
     /// window_hours : float
     ///     Such as 72 for a windstorm, 168 for a flood.
+    /// labels : {"drop", "agree", "largest"}, default "drop"
+    ///     What the occurrences carry of the losses' labels: none
+    ///     (``"drop"``), their losses' labels, which must agree within an
+    ///     occurrence (``"agree"``, an error otherwise), or the labels of
+    ///     the largest loss in the occurrence, the earliest of equal ones
+    ///     (``"largest"``). An aggregate part keeps its labels unless they
+    ///     are dropped.
+    /// by : str, optional
+    ///     A label dimension, ``"peril"`` say: the clause applies within
+    ///     each of its values, so losses of two perils are never one
+    ///     occurrence, and the occurrences keep the labels (``labels``
+    ///     then decides the other dimensions, ``"drop"`` read as
+    ///     ``"agree"``). Occurrences are listed by the time each window
+    ///     opens.
     ///
     /// Returns
     /// -------
@@ -1290,9 +1314,29 @@ impl PyEventSet {
     /// >>> e = EventSet.from_years([[10.0, 20.0, 5.0]], times=[[0.5, 0.5 + 30 * h, 0.5 + 80 * h]])
     /// >>> e.grouped(72.0).events(0)
     /// [30.0, 5.0]
-    fn grouped(&self, window_hours: f64) -> PyResult<Self> {
+    /// >>> p = EventSet.from_years([[10.0, 20.0, 5.0]], times=[[0.5, 0.5 + 30 * h, 0.5 + 40 * h]])
+    /// >>> g = p.with_labels({"peril": ["wind", "flood", "wind"]}).grouped(72.0, by="peril")
+    /// >>> g.events(0), g.labels(0)
+    /// ([15.0, 20.0], {'peril': ['wind', 'flood']})
+    #[pyo3(signature = (window_hours, *, labels = "drop", by = None))]
+    fn grouped(&self, window_hours: f64, labels: &str, by: Option<&str>) -> PyResult<Self> {
+        use prospicio_aggregate::GroupLabels;
+        let rule = match (labels, by) {
+            ("drop", None) => GroupLabels::Drop,
+            ("drop" | "agree", _) => GroupLabels::Agree,
+            ("largest", _) => GroupLabels::Largest,
+            (other, _) => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "labels must be \"drop\", \"agree\" or \"largest\", not {other:?}"
+                )));
+            }
+        };
+        let inner = match by {
+            Some(dim) => self.inner.grouped_by(dim, window_hours, rule),
+            None => self.inner.grouped_with(window_hours, rule),
+        };
         Ok(Self {
-            inner: self.inner.grouped(window_hours).map_err(to_py)?,
+            inner: inner.map_err(to_py)?,
         })
     }
 

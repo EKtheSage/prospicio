@@ -452,7 +452,8 @@ impl EventSet {
     }
 
     /// A year loss table's columns, checked and expanded: `years` from 1,
-    /// `slots` NULL or one per row, labels as in `from_long`, `n_years` and
+    /// `slots` NULL or one per row, `times` NULL or one per row (fractions
+    /// of the year), labels as in `from_long`, `n_years` and
     /// `n_sims` NULL for their defaults, `expand` "tile" or "resample",
     /// `unique_by` NULL for every label dimension, the values allowed in
     /// `expected_dims[d]` in `expected_values[[d]]`, `source_hash` NULL or a
@@ -462,6 +463,7 @@ impl EventSet {
         years: &[f64],
         losses: &[f64],
         slots: Robj,
+        times: Nullable<Vec<f64>>,
         label_dims: Vec<String>,
         label_values: List,
         n_years: Nullable<f64>,
@@ -503,6 +505,9 @@ impl EventSet {
                 .map(|s| whole(s, "slots"))
                 .collect::<Result<Vec<_>>>()?;
             ylt = ylt.with_slots(slots).map_err(to_r)?;
+        }
+        if let Nullable::NotNull(times) = times {
+            ylt = ylt.with_times(times).map_err(to_r)?;
         }
         let dims = label_dims.clone();
         if !label_dims.is_empty() {
@@ -727,9 +732,31 @@ impl EventSet {
         ))
     }
 
-    fn grouped(&self, window_hours: f64) -> Result<Self> {
+    /// The hours clause, labels `"drop"`, `"agree"` or `"largest"`, within
+    /// each value of label dimension `by` when given (`"drop"` then read as
+    /// `"agree"`).
+    fn grouped(&self, window_hours: f64, labels: &str, by: Nullable<String>) -> Result<Self> {
+        use prospicio_aggregate::GroupLabels;
+        let by = match by {
+            Nullable::NotNull(d) => Some(d),
+            Nullable::Null => None,
+        };
+        let rule = match (labels, &by) {
+            ("drop", None) => GroupLabels::Drop,
+            ("drop" | "agree", _) => GroupLabels::Agree,
+            ("largest", _) => GroupLabels::Largest,
+            (other, _) => {
+                return Err(Error::Other(format!(
+                    "labels must be \"drop\", \"agree\" or \"largest\", not {other:?}"
+                )));
+            }
+        };
+        let inner = match by {
+            Some(dim) => self.inner.grouped_by(&dim, window_hours, rule),
+            None => self.inner.grouped_with(window_hours, rule),
+        };
         Ok(Self {
-            inner: self.inner.grouped(window_hours).map_err(to_r)?,
+            inner: inner.map_err(to_r)?,
         })
     }
 

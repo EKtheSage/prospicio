@@ -169,7 +169,9 @@ an `EventSet` keeps whatever dependence its events carry (#491).
   result and an unlabelled set's result is unchanged. `merge` keeps either
   set's labels (this set's dimensions, then the other's new ones, `""` for
   a missing value); `grouped` drops them, as it drops sums insured, since
-  an occurrence may span labels; a term's years (`apply_term`) ignore them.
+  an occurrence may span labels, and `grouped_with` and `grouped_by` keep
+  them (`cat-inputs.md` decision 14, #594); a term's years (`apply_term`)
+  ignore them.
 - **A reorder hands back its permutation** (#483, first part). A class's
   annual total reordered with others by `reorder_groups` or
   `reorder_groups_by_copula` must keep its events; the `_indexed` variants
@@ -207,7 +209,8 @@ an `EventSet` keeps whatever dependence its events carry (#491).
   - `permute`, `slice`, `term_years` and `apply_term` carry the part with
     its years; `merge` keeps either set's and adds columns with the same
     labels; `grouped` keeps it summed over its labels, since it drops the
-    events' labels; `with_labels` after the part is an error, so labels
+    events' labels (`grouped_with` and `grouped_by`, which keep them, keep
+    its columns); `with_labels` after the part is an error, so labels
     are never rebuilt without it.
 - **Quota share and stop-loss are layers.** A quota share with cession
   `c` is unlimited cover from 0 with `share = c`; a stop-loss `l` xs `r`

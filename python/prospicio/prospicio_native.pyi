@@ -10867,7 +10867,7 @@ class EventSet:
         ([2, 0, 1], [50.0])
         """
     @staticmethod
-    def from_ylt(years: Sequence[int], losses: Sequence[float], *, slots: Sequence[int] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None) -> EventSet:
+    def from_ylt(years: Sequence[int], losses: Sequence[float], *, slots: Sequence[int] |None = None, times: Sequence[float] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None) -> EventSet:
         """
         Years of losses from a year loss table's columns, checked and
         expanded to a run's simulations.
@@ -10886,6 +10886,12 @@ class EventSet:
             Finite and non-negative.
         slots : list of int, optional
             Each row's event slot, which orders a year's rows.
+        times : list of float, optional
+            Each row's time of loss, the fraction of its year elapsed, in
+            ``[0, 1]``. Rows are then ordered by time within a year, the
+            slot (or the given order) breaking ties, and the events carry
+            the times (``has_times``), for an hours clause (``grouped``) and
+            reinstatements pro rata as to time.
         labels : dict of str to list of str, optional
             Each row's labels, a list per dimension (``{"peril": [...],
             "class": [...]}``).
@@ -10921,7 +10927,7 @@ class EventSet:
         >>> e.events(1), e.events(3)
         ([7.0, 5.0], [7.0, 5.0])
         """
-    def grouped(self, /, window_hours: float) -> EventSet:
+    def grouped(self, /, window_hours: float, *, labels: str = "drop", by: str |None = None) -> EventSet:
         """
         Each year's losses grouped into occurrences by an hours clause.
         
@@ -10929,13 +10935,26 @@ class EventSet:
         occurrence, whose loss is their sum and whose time is the window's
         start; the next loss after the window opens the next one. A year is
         8,760 hours. Windows open at each first loss in turn, not where they
-        would recover most. Needs times; sums insured and labels are not
-        carried (group each peril's set before merging them).
+        would recover most. Needs times; sums insured are not carried.
         
         Parameters
         ----------
         window_hours : float
             Such as 72 for a windstorm, 168 for a flood.
+        labels : {"drop", "agree", "largest"}, default "drop"
+            What the occurrences carry of the losses' labels: none
+            (``"drop"``), their losses' labels, which must agree within an
+            occurrence (``"agree"``, an error otherwise), or the labels of
+            the largest loss in the occurrence, the earliest of equal ones
+            (``"largest"``). An aggregate part keeps its labels unless they
+            are dropped.
+        by : str, optional
+            A label dimension, ``"peril"`` say: the clause applies within
+            each of its values, so losses of two perils are never one
+            occurrence, and the occurrences keep the labels (``labels``
+            then decides the other dimensions, ``"drop"`` read as
+            ``"agree"``). Occurrences are listed by the time each window
+            opens.
         
         Returns
         -------
@@ -10948,6 +10967,10 @@ class EventSet:
         >>> e = EventSet.from_years([[10.0, 20.0, 5.0]], times=[[0.5, 0.5 + 30 * h, 0.5 + 80 * h]])
         >>> e.grouped(72.0).events(0)
         [30.0, 5.0]
+        >>> p = EventSet.from_years([[10.0, 20.0, 5.0]], times=[[0.5, 0.5 + 30 * h, 0.5 + 40 * h]])
+        >>> g = p.with_labels({"peril": ["wind", "flood", "wind"]}).grouped(72.0, by="peril")
+        >>> g.events(0), g.labels(0)
+        ([15.0, 20.0], {'peril': ['wind', 'flood']})
         """
     @property
     def has_aggregate_part(self, /) -> bool:
