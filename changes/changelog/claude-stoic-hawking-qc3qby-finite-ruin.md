@@ -6,4 +6,4 @@
   grid; `finite_horizon_poisson` checks Poisson claims in sub-periods,
   which approaches continuous time from below. Python
   `prospicio.aggregate.finite_horizon_ruin`, R `finite_horizon_ruin()`
-  (#562).
+  (#562, #655).
