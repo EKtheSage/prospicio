@@ -10,4 +10,4 @@
   `grouped_by` with `GroupLabels` in Rust, `EventSet.grouped(labels=,
   by=)` in Python and `hours_clause(labels, by)` in R, where `by="peril"`
   keeps each peril's windows apart; `grouped` alone still drops the labels
-  (#594).
+  (#594, #651).
