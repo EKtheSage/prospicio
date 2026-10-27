@@ -20,7 +20,7 @@ use prospicio_reserving::{
     OdpBootstrap, OdpBootstrapFits, OneYearFits, OneYearMethod, OneYearPattern, PastPatternEnd,
     PatternKind, PatternWeight, Period, ProcessDistribution, ReserveFit, SegmentDependence,
     SegmentFits, SegmentMap, SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailConstant,
-    TailCurve, Triangle as TriangleInner,
+    TailCurve, Triangle as TriangleInner, UnderwritingBasis,
 };
 
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
@@ -132,9 +132,14 @@ fn exclusions(excl: &Robj) -> Result<(Option<usize>, usize, usize)> {
 /// A selected pattern as `ldf_pattern()` in R encodes it: `NULL`, or a
 /// list of `kind` ("ldf", "cdf" or "percent_developed"), `ages` and
 /// `values`, and `weights` with `weight_ages` (`NULL` for one weight on
-/// every selected factor), and `origin` (`NULL`, or the grain of the
-/// origin periods the pattern was measured on, averaged over the periods
-/// of `target` by `SelectedPattern::averaged_over_origins`).
+/// every selected factor), `origin` (`NULL`, or the grain of the origin
+/// periods the pattern was measured on, averaged over the periods of
+/// `target` by `SelectedPattern::averaged_over_origins`), and
+/// `underwriting` (`NULL`, or a list of `writing` and `policy_months`: the
+/// underwriting basis the pattern is converted to from accident periods of
+/// `origin`, or of `target` without it, by
+/// `SelectedPattern::to_underwriting_basis`, its writing no longer than a
+/// period of `target`, `UnderwritingBasis::check_within`).
 fn selected_pattern(pattern: &Robj, target: Grain) -> Result<Option<SelectedPattern>> {
     if pattern.is_null() {
         return Ok(None);
@@ -145,6 +150,7 @@ fn selected_pattern(pattern: &Robj, target: Grain) -> Result<Option<SelectedPatt
     let (mut ages, mut values) = (Vec::new(), Vec::new());
     let (mut weight_ages, mut weights) = (None, vec![1.0]);
     let mut origin = None;
+    let mut underwriting = None;
     for (name, value) in list.iter() {
         match name {
             "kind" => kind = value.as_str().map(str::to_owned),
@@ -156,6 +162,7 @@ fn selected_pattern(pattern: &Robj, target: Grain) -> Result<Option<SelectedPatt
                         .to_owned(),
                 )
             }
+            "underwriting" if !value.is_null() => underwriting = Some(underwriting_basis(&value)?),
             "ages" => ages = value.as_real_vector().unwrap_or_default(),
             "values" => values = value.as_real_vector().unwrap_or_default(),
             "weight_ages" => weight_ages = value.as_real_vector(),
@@ -194,12 +201,56 @@ fn selected_pattern(pattern: &Robj, target: Grain) -> Result<Option<SelectedPatt
         Some(weight_ages) => PatternWeight::ByAge(pairs(&weight_ages, &weights, "ldf_weight")?),
     };
     let selected = SelectedPattern::new(kind, pairs(&ages, &values, "ldf")?).with_weight(weight);
-    Ok(Some(match origin {
-        None => selected,
-        Some(g) => selected
-            .averaged_over_origins(grain(&g, "ldf_origin")?, target)
-            .map_err(to_r)?,
+    let origin = origin.map(|g| grain(&g, "ldf_origin")).transpose()?;
+    Ok(Some(match (underwriting, origin) {
+        (Some(basis), from) => {
+            basis.check_within(target).map_err(to_r)?;
+            selected
+                .to_underwriting_basis(from.unwrap_or(target), &basis)
+                .map_err(to_r)?
+        }
+        (None, Some(g)) => selected.averaged_over_origins(g, target).map_err(to_r)?,
+        (None, None) => selected,
     }))
+}
+
+/// An underwriting basis as `underwriting_basis()` in R encodes it: a list
+/// of `writing` (monthly shares) and `policy_months`.
+fn underwriting_basis(value: &Robj) -> Result<UnderwritingBasis> {
+    let bad = || Error::Other("ldf_underwriting must be an underwriting_basis()".into());
+    let list = List::try_from(value).map_err(|_| bad())?;
+    let (mut writing, mut policy_months) = (None, None);
+    for (name, value) in list.iter() {
+        match name {
+            "writing" => writing = value.as_real_vector(),
+            "policy_months" => policy_months = value.as_real(),
+            _ => {}
+        }
+    }
+    match (writing, policy_months) {
+        (Some(writing), Some(months)) => basis_of(writing, months),
+        _ => Err(bad()),
+    }
+}
+
+/// An underwriting basis of `writing` by month and policies of `months`
+/// months, a whole number.
+fn basis_of(writing: Vec<f64>, months: f64) -> Result<UnderwritingBasis> {
+    if !(months >= 1.0 && months.fract() == 0.0 && months <= f64::from(u32::MAX)) {
+        return Err(Error::Other(
+            "policy_months must be a whole number of months, at least 1".into(),
+        ));
+    }
+    Ok(UnderwritingBasis::new(writing, months as u32))
+}
+
+/// The share of an underwriting period's exposure in each accident month
+/// from its start (`UnderwritingBasis::exposure`), which also checks the
+/// basis.
+/// @noRd
+#[extendr]
+fn underwriting_exposure_rust(writing: Vec<f64>, policy_months: f64) -> Result<Vec<f64>> {
+    basis_of(writing, policy_months)?.exposure().map_err(to_r)
 }
 
 /// The chain ladder that gives a method its development pattern, with the
@@ -5722,6 +5773,7 @@ impl LatestDiagonals {
 
 extendr_module! {
     mod reserving;
+    fn underwriting_exposure_rust;
     impl Triangle;
     impl LatestDiagonals;
     impl ReservingTail;

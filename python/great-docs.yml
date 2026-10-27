@@ -307,6 +307,7 @@ reference:
       - reserving.TailCurve
       - reserving.TailBondy
       - reserving.TailLogLinear
+      - reserving.UnderwritingBasis
       - reserving.Mack
       - reserving.MackFit
       - reserving.ClaimsDevelopmentResult

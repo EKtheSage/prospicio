@@ -323,6 +323,7 @@ reference:
       - tail_curve
       - tail_bondy
       - tail_log_linear
+      - underwriting_basis
       - expected_loss_fit
       - cape_cod_fit
       - latest_valuation
