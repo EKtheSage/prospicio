@@ -7,4 +7,4 @@
   Poisson portfolio (a priori classes and a gamma or inverse Gaussian
   heterogeneity) the stationary distribution of the levels and Norberg's
   optimal relativities. Python `prospicio.pricing.BonusMalus`, R
-  `bonus_malus()` and `bonus_malus_portfolio()` (#563).
+  `bonus_malus()` and `bonus_malus_portfolio()` (#563, #656).
