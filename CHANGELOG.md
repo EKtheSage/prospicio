@@ -15,6 +15,10 @@ under "Unreleased" until then.
   so an exhaustive `match` on it needs an arm for it (#544, #571).
 - Rust: `prospicio_reserving::Error` has the variant `Diagonal`, so an
   exhaustive `match` on it needs an arm for it (#544, #606).
+- Rust: `prospicio_reserving::Error` has the variant `BenchmarkCurve`, so
+  an exhaustive `match` on it needs an arm for it (#637, #640).
+- Rust: `prospicio_reserving::Error` has the variant `AgeBeforeFirst`, so
+  an exhaustive `match` on it needs an arm for it (#667, #672).
 - Rust: the `apriori` field of `ExpectedLoss`, `BornhuetterFerguson` and `Benktander` is an `Apriori`, not an `f64`: write `apriori: 0.7.into()`. `Error` has a new variant, `Error::Apriori` (#641).
 - Default change: an annual accident-year pattern converted to an underwriting basis
   (`SelectedPattern::to_underwriting_basis`, Python and R `ldf_underwriting`) is now read
@@ -39,6 +43,9 @@ under "Unreleased" until then.
   `std_dev`, `ultimate_mean` and so on) move one place. Code that reads
   these tables' columns by position or compares their exact names sees
   one more column (#636, #643).
+- Rust: `prospicio_prob::statistics::QuantileMethod` has the variant
+  `KthLargest` and `TvarMethod` the variant `WholeYears`, so an exhaustive
+  `match` on either needs an arm for it (#582, #652).
 - Rust: `Trace` has two new public fields, `funding_reference` and `opening_balance`, so a `Trace` struct literal must add them; `cashflow_trace()`'s `accounts` in R and `CashflowTerms.trace`'s dict in Python have a `funding_reference` column (#668).
 - Rust: `PremiumFlow` gains the public field `deduct_commission`; code
   that builds one in full adds it (`false` keeps the old behaviour) (#618).
