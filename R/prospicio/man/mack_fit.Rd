@@ -102,11 +102,14 @@ an accident-year pattern on underwriting-year origins needs no
 \code{ldf_origin}. An accident-month pattern (\code{ldf_origin = "M"}) converts
 under any writing and term; a pattern of longer accident periods needs
 a policy term that is a whole multiple of them or writing even within
-each of them, and is read between its ages by the rule above, so an
-annual accident-year pattern is approximate in the first two years
-(31\% too much developed at 12 months on a simulated parallelogram);
-give it at every month, or an accident-month pattern, where it
-matters. The result runs past \code{ldf}'s end by the writing months plus
+each of them. Given at every month from 1 it is exact; at other ages
+(annual ones, say) it is read between them as the basis's \code{reading}
+says: by default the Weibull fitted through the period averages and
+corrected to the nearest monotone accident-month pattern whose averages
+are the given values exactly, within 0.2\% of a simulated parallelogram
+book at every age, or by the rule above with \code{reading = "ln-linear"}
+(31\% too much developed at 12 months on that book). The result runs
+past \code{ldf}'s end by the writing months plus
 the policy term less the accident period (12 months for an
 accident-year pattern under the default, 23 for an accident-month
 one), and a constant tail from \code{ldf}'s own tail is the safer choice
