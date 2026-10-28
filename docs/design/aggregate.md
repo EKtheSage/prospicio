@@ -1420,6 +1420,32 @@ terms see only windstorm losses.
    `with_scope()` with the layer's `scope` property and
    `filter_events()`.
 
+### Ceded losses by event for a retro
+
+An occurrence retro covers a reinsurer's own cessions, summed across its
+deals, event by event (#590). A tower result gives each layer's annual
+totals and a split by label, not each event's ceded loss in time order.
+
+1. `Tower::ceded_events(&events, &[layer names])` gives an `EventSet` of
+   each event's ceded loss to the named layers, summed over them. Each
+   layer's split by event is the one the labelled results use
+   (`Layer::ceded_by_event` after the layer's annual terms under its
+   limit allocation, at its share, behind earlier inuring stages, within
+   its scope), so the set's losses add to the layers' ceded total in
+   every year.
+2. The events keep their times and labels. Events that cede nothing are
+   left out, so the set's counts are attaching events. Sums insured are
+   dropped (they describe the original losses), and so are the samplers.
+   When a named layer sees the aggregate part, its ceded part becomes the
+   set's aggregate part.
+3. Several deals' sets join with `EventSet::merge`, which keeps each
+   deal's cession of an event as its own occurrence. An occurrence retro
+   on the event across deals groups the merged set with an hours clause
+   (`EventSet::grouped`), which needs times. The difference can be large
+   (`knowledge/findings/ceded-events-retro.md`).
+4. Bindings: Python `Tower.ceded_events(events, layers)` (a name or a
+   list); R `ceded_events(tower, events, layers)`.
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force

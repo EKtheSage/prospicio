@@ -26496,6 +26496,42 @@ class Tower:
         -------
         list of float
         """
+    def ceded_events(self, /, events: EventSet, layers: Any) -> EventSet:
+        """
+        Each event's ceded loss to the named layers, summed over them, as an
+        event set: the input to an occurrence retro on a reinsurer's own
+        cessions.
+        
+        Each layer's split by event is the one ``apply``'s labels use
+        (``Layer.ceded_by_event``: after the layer's annual terms, at its
+        share, behind any earlier inuring stage), so in every year the
+        set's losses add to the layers' ceded total. The events keep their
+        times and labels; events that cede nothing are left out, sums
+        insured are dropped, and a named layer that sees the aggregate part
+        passes its ceded part on as the set's aggregate part. Join several
+        deals' sets with ``EventSet.merge``, and group one event's cessions
+        into one occurrence with ``EventSet.grouped``.
+        
+        Parameters
+        ----------
+        events : EventSet
+        layers : str or list of str
+            Layer names of this tower.
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> e = EventSet.from_years([[20.0, 8.0, 15.0], [4.0]])
+        >>> t = Tower([Layer("10x5", 10.0, 5.0, aggregate_limit=15.0)])
+        >>> c = t.ceded_events(e, "10x5")
+        >>> c.events(0), c.events(1)
+        ([10.0, 3.0, 2.0], [])
+        """
     @property
     def cover_basis(self, /) -> str |None:
         """

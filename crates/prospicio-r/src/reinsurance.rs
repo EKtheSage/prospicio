@@ -717,6 +717,18 @@ impl ReinsuranceTower {
         Ok(PredictiveDistribution { inner })
     }
 
+    /// Each event's ceded loss to the named layers, as an event set.
+    fn ceded_events(&self, events: Robj, layers: Vec<String>) -> Result<EventSet> {
+        let events = <&EventSet>::try_from(&events)
+            .map_err(|_| Error::Other("events must be an event_set".into()))?;
+        let names: Vec<&str> = layers.iter().map(String::as_str).collect();
+        let inner = self
+            .inner
+            .ceded_events(&events.inner, &names)
+            .map_err(to_r)?;
+        Ok(EventSet { inner })
+    }
+
     /// The tower with its cover basis.
     fn with_cover_basis(&self, basis: &str) -> Result<Self> {
         let basis = crate::aggregate::cover_basis(basis)?;

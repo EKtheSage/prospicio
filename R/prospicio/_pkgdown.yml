@@ -146,6 +146,7 @@ reference:
       - with_cover_basis
       - with_interlocking
       - with_scope
+      - ceded_events
       - deal_ratios
       - with_deal_scale
       - tower_on_grid
