@@ -1,6 +1,6 @@
 """Mack's calendar-year effect and development-factor correlation tests
 (Mack 1994, appendices H and G; ``docs/design/reserving-v02.md``, decision
-26). The Rust core is checked against R ChainLadder and chainladder-python in
+27). The Rust core is checked against R ChainLadder and chainladder-python in
 ``validation/tests/reserving_assumptions.rs``; these tests check the
 bindings' arguments, results, repr and errors against the same R
 reference through Python."""

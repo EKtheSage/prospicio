@@ -23,6 +23,11 @@ use prospicio_reserving::{
     SegmentFits, SegmentMap, SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailConstant,
     TailCurve, Triangle as TriangleInner, UnderwritingBasis,
 };
+use prospicio_reserving::{
+    CalendarYearTest as CalendarYearInner,
+    DevelopmentCorrelationTest as DevelopmentCorrelationInner, calendar_year_effect,
+    development_correlation,
+};
 
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
 use prospicio_reserving::bayes::{
@@ -929,6 +934,22 @@ impl Triangle {
         .fit_segments(&self.inner, column)
         .map_err(to_r)?;
         Ok(ChainLadderFit { inner })
+    }
+
+    /// Mack's calendar-year effect test on every observed link ratio of
+    /// `column`, at confidence level `ci`.
+    fn calendar_year_effect(&self, column: &str, ci: f64) -> Result<CalendarYearTest> {
+        Ok(CalendarYearTest {
+            inner: calendar_year_effect(&self.inner, column, ci).map_err(to_r)?,
+        })
+    }
+
+    /// Mack's development-factor correlation test on every observed link
+    /// ratio of `column`, at confidence level `ci`.
+    fn development_correlation(&self, column: &str, ci: f64) -> Result<DevelopmentCorrelationTest> {
+        Ok(DevelopmentCorrelationTest {
+            inner: development_correlation(&self.inner, column, ci).map_err(to_r)?,
+        })
     }
 
     /// `tail` is a `ReservingTail`; `tail_sigma` and `tail_std_err` are
@@ -2583,6 +2604,24 @@ impl MackFit {
         let fit = single(&self.inner, "claims_development_result", "")?;
         Ok(ClaimsDevelopmentResult {
             inner: fit.claims_development_result().map_err(to_r)?,
+        })
+    }
+
+    /// Mack's calendar-year effect test on the link ratios a
+    /// single-segment fit averaged.
+    fn calendar_year_effect(&self, ci: f64) -> Result<CalendarYearTest> {
+        let fit = single(&self.inner, "calendar_year_effect", "")?;
+        Ok(CalendarYearTest {
+            inner: fit.calendar_year_effect(ci).map_err(to_r)?,
+        })
+    }
+
+    /// Mack's development-factor correlation test on the link ratios a
+    /// single-segment fit averaged.
+    fn development_correlation(&self, ci: f64) -> Result<DevelopmentCorrelationTest> {
+        let fit = single(&self.inner, "development_correlation", "")?;
+        Ok(DevelopmentCorrelationTest {
+            inner: fit.development_correlation(ci).map_err(to_r)?,
         })
     }
 }
@@ -5937,6 +5976,8 @@ extendr_module! {
     impl ExpectedLossFit;
     impl CapeCodFit;
     impl ClaimsDevelopmentResult;
+    impl CalendarYearTest;
+    impl DevelopmentCorrelationTest;
     impl OdpBootstrapFit;
     impl BayesOdpFit;
     impl BayesOdpFits;
@@ -5955,6 +5996,110 @@ extendr_module! {
     impl OneYearFit;
     impl ClarkFit;
     impl BenchmarkCurveFit;
+}
+
+/// Mack's calendar-year effect test (`docs/design/reserving-v02.md`,
+/// decision 27). `table` is one list entry per column of R ChainLadder's
+/// `test_table`, one value per calendar diagonal.
+#[extendr]
+pub(crate) struct CalendarYearTest {
+    inner: CalendarYearInner,
+}
+
+#[extendr]
+impl CalendarYearTest {
+    fn z(&self) -> f64 {
+        self.inner.z
+    }
+
+    fn expected(&self) -> f64 {
+        self.inner.expected
+    }
+
+    fn variance(&self) -> f64 {
+        self.inner.variance
+    }
+
+    fn ci(&self) -> f64 {
+        self.inner.ci
+    }
+
+    fn lower(&self) -> f64 {
+        self.inner.lower
+    }
+
+    fn upper(&self) -> f64 {
+        self.inner.upper
+    }
+
+    fn passes(&self) -> bool {
+        self.inner.passes()
+    }
+
+    fn table(&self) -> List {
+        let d = &self.inner.diagonals;
+        let int = |f: fn(&prospicio_reserving::CalendarDiagonal) -> usize| -> Vec<i32> {
+            d.iter().map(|d| f(d) as i32).collect()
+        };
+        list!(
+            valuation = d
+                .iter()
+                .map(|d| d.valuation.to_string())
+                .collect::<Vec<_>>(),
+            small = int(|d| d.small),
+            large = int(|d| d.large),
+            z = int(|d| d.z),
+            n = int(|d| d.n),
+            m = int(|d| d.m),
+            expected = d.iter().map(|d| d.expected).collect::<Vec<_>>(),
+            variance = d.iter().map(|d| d.variance).collect::<Vec<_>>()
+        )
+    }
+}
+
+/// Mack's test for correlation between adjacent development factors.
+/// `table` is one list entry per column, one value per pair of adjacent
+/// link columns.
+#[extendr]
+pub(crate) struct DevelopmentCorrelationTest {
+    inner: DevelopmentCorrelationInner,
+}
+
+#[extendr]
+impl DevelopmentCorrelationTest {
+    fn t(&self) -> f64 {
+        self.inner.t
+    }
+
+    fn variance(&self) -> f64 {
+        self.inner.variance
+    }
+
+    fn ci(&self) -> f64 {
+        self.inner.ci
+    }
+
+    fn lower(&self) -> f64 {
+        self.inner.lower
+    }
+
+    fn upper(&self) -> f64 {
+        self.inner.upper
+    }
+
+    fn passes(&self) -> bool {
+        self.inner.passes()
+    }
+
+    fn table(&self) -> List {
+        let p = &self.inner.pairs;
+        list!(
+            age = p.iter().map(|p| p.age as i32).collect::<Vec<_>>(),
+            n = p.iter().map(|p| p.n as i32).collect::<Vec<_>>(),
+            t = p.iter().map(|p| p.t).collect::<Vec<_>>(),
+            weight = p.iter().map(|p| p.weight).collect::<Vec<_>>()
+        )
+    }
 }
 
 /// Which factors a one-year bootstrap simulates: with `bootstrap_ldf` the

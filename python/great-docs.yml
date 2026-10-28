@@ -298,7 +298,7 @@ reference:
       - pricing.credibility_weighted
       - pricing.trended_present_rates
   - title: Reserving
-    desc: Loss triangles, the chain ladder with tail factors, Mack's model with its one-year view, the expected-loss methods, the ODP bootstrap and Clark's growth curves.
+    desc: Loss triangles, the chain ladder with tail factors, Mack's model with its one-year view and its assumption tests, the expected-loss methods, the ODP bootstrap and Clark's growth curves.
     contents:
       - reserving.Triangle
       - reserving.ChainLadder
@@ -311,6 +311,10 @@ reference:
       - reserving.Mack
       - reserving.MackFit
       - reserving.ClaimsDevelopmentResult
+      - reserving.calendar_year_effect
+      - reserving.CalendarYearTest
+      - reserving.development_correlation
+      - reserving.DevelopmentCorrelationTest
       - reserving.ExpectedLoss
       - reserving.BornhuetterFerguson
       - reserving.Benktander

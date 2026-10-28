@@ -4187,7 +4187,7 @@ impl PyMackFit {
     /// its column's, without those ``n_periods``, ``drop_high`` and
     /// ``drop_low`` exclude. A selected pattern (``ldf``) changes no link
     /// ratio and so not the test (``docs/design/reserving-v02.md``,
-    /// decision 26).
+    /// decision 27).
     ///
     /// Parameters
     /// ----------

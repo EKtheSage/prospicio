@@ -8,7 +8,7 @@
 //! [`development_correlation`]) or on the link ratios a Mack fit averaged
 //! ([`MackFit::calendar_year_effect`], [`MackFit::development_correlation`]),
 //! which leaves out those `n_periods`, `drop_high` and `drop_low` exclude
-//! (`docs/design/reserving-v02.md`, decision 26).
+//! (`docs/design/reserving-v02.md`, decision 27).
 //!
 //! ```
 //! use prospicio_reserving::{Triangle, calendar_year_effect, development_correlation};
@@ -266,7 +266,7 @@ pub fn development_correlation(
 impl MackFit {
     /// Mack's calendar-year effect test on the link ratios this fit
     /// averaged: those of its column, without the ones `n_periods`,
-    /// `drop_high` and `drop_low` exclude (decision 26). A selected pattern
+    /// `drop_high` and `drop_low` exclude (decision 27). A selected pattern
     /// changes no link ratio and so not the test. See
     /// [`calendar_year_effect`].
     pub fn calendar_year_effect(&self, ci: f64) -> Result<CalendarYearTest> {
