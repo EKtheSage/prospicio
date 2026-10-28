@@ -137,7 +137,9 @@ fn irr_list(r: &[Irr]) -> List {
         rate = r.iter().map(|x| x.rate).collect::<Vec<_>>(),
         found = r.iter().map(|x| x.found).collect::<Vec<_>>(),
         npv = r.iter().map(|x| x.npv).collect::<Vec<_>>(),
-        sign_changes = r.iter().map(|x| x.sign_changes as i32).collect::<Vec<_>>()
+        sign_changes = r.iter().map(|x| x.sign_changes as i32).collect::<Vec<_>>(),
+        root_above = r.iter().map(|x| x.root_above).collect::<Vec<_>>(),
+        root_below = r.iter().map(|x| x.root_below).collect::<Vec<_>>()
     )
 }
 
@@ -297,6 +299,7 @@ impl Book {
         points: f64,
         bisections: f64,
         newton_steps: f64,
+        extend: bool,
     ) -> Result<List> {
         let options = IrrOptions {
             lower,
@@ -304,6 +307,7 @@ impl Book {
             points: whole(points, "points")? as usize,
             bisections: whole(bisections, "bisections")? as usize,
             newton_steps: whole(newton_steps, "newton_steps")? as usize,
+            extend,
         };
         let out = self.inner.cashflows(rate, &options).map_err(to_r)?;
         let by_deal = List::from_values(out.irr_by_deal.iter().map(|r| irr_list(r)));

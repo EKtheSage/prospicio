@@ -1615,6 +1615,7 @@ fn pricing_irr(
     points: i32,
     bisections: i32,
     newton_steps: i32,
+    extend: bool,
 ) -> Result<List> {
     let count = |name: &str, n: i32| {
         usize::try_from(n).map_err(|_| Error::Other(format!("{name} must be non-negative")))
@@ -1626,13 +1627,16 @@ fn pricing_irr(
         points: count("points", points)?,
         bisections: count("bisections", bisections)?,
         newton_steps: count("newton_steps", newton_steps)?,
+        extend,
     };
     let r = returns::irr_rows(flows, &times, &options).map_err(to_r)?;
     Ok(list!(
         rate = r.iter().map(|x| x.rate).collect::<Vec<_>>(),
         found = r.iter().map(|x| x.found).collect::<Vec<_>>(),
         npv = r.iter().map(|x| x.npv).collect::<Vec<_>>(),
-        sign_changes = r.iter().map(|x| x.sign_changes as i32).collect::<Vec<_>>()
+        sign_changes = r.iter().map(|x| x.sign_changes as i32).collect::<Vec<_>>(),
+        root_above = r.iter().map(|x| x.root_above).collect::<Vec<_>>(),
+        root_below = r.iter().map(|x| x.root_below).collect::<Vec<_>>()
     ))
 }
 

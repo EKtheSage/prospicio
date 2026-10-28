@@ -57,8 +57,10 @@
 #' @param tail `"upper"`, or `"lower"` to read low values as the risk, as
 #'   for a margin.
 #' @param rate The annual rate the NPV discounts at, to month 0.
-#' @param lower,upper,points,bisections,newton_steps The IRR's search, as
-#'   [irr()].
+#' @param lower,upper,points,bisections,newton_steps,extend The IRR's
+#'   search, as [irr()]: from -95% to 100% a year by default, a simulation
+#'   whose return is above the range flagged by `root_above` and found with
+#'   `extend = TRUE` (or a larger `upper`).
 #' @param start_year The calendar year of book month 0.
 #' @returns `deal_run()` and `deal_run_from_tower()` a `deal_run`;
 #'   `deal_book()`, `book_select()` and `book_shift()` a `deal_book`;
@@ -248,13 +250,14 @@ book_marginal_price <- function(book, assets, cost_of_capital = NULL, distortion
 #' @rdname deal_run
 #' @export
 book_cashflows <- function(book, rate = 0, lower = -0.95, upper = 1, points = 400L,
-                           bisections = 8L, newton_steps = 3L) {
+                           bisections = 8L, newton_steps = 3L, extend = FALSE) {
   check_book(book)
   r <- rust_result(book$ptr$cashflows(as.double(rate), as.double(lower), as.double(upper),
                                       as.double(points), as.double(bisections),
-                                      as.double(newton_steps)))
+                                      as.double(newton_steps), isTRUE(extend)))
   irr_frame <- function(x) {
-    data.frame(rate = x$rate, found = x$found, npv = x$npv, sign_changes = x$sign_changes)
+    data.frame(rate = x$rate, found = x$found, npv = x$npv, sign_changes = x$sign_changes,
+               root_above = x$root_above, root_below = x$root_below)
   }
   list(months = seq_len(r$months) - 1,
        flows = matrix(r$flows, ncol = r$months, byrow = TRUE),

@@ -6,7 +6,6 @@ use std::collections::HashMap;
 
 use prospicio_pricing::book::{DealBook, DealRun, Tail};
 use prospicio_pricing::cashflow::MonthlyPatterns;
-use prospicio_pricing::returns::IrrOptions;
 use prospicio_prob::statistics::{Statistics, StatisticsGrid};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -14,7 +13,7 @@ use pyo3::types::PyDict;
 
 use crate::cashflow::{PyCashflowTerms, PyCashflows};
 use crate::distributions::PyPredictiveDistribution;
-use crate::payout::PyIrrResult;
+use crate::payout::{PyIrrResult, irr_options};
 use crate::pricing::premium_rule;
 use crate::reinsurance::PyTower;
 use crate::risk::{PyDistortion, quantile_method, tvar_method};
@@ -507,8 +506,13 @@ impl PyDealBook {
     /// The investors' flows on the book's calendar, each deal's moved to
     /// its inception and summed in each simulation, with the book's IRR,
     /// NPV at ``rate`` and MOIC on the summed flows. Every deal needs
-    /// flows (``DealRun.with_cashflows`` or ``with_flows``).
-    #[pyo3(signature = (rate = 0.0, *, lower = None, upper = None, points = 400, bisections = 8, newton_steps = 3))]
+    /// flows (``DealRun.with_cashflows`` or ``with_flows``). The IRR is
+    /// searched as ``irr`` searches, from -95% to 100% a year by default: a
+    /// simulation whose return is above the range has ``found`` false and
+    /// ``root_above`` true in ``irr``, and ``extend=True`` (or a larger
+    /// ``upper``) finds it, so leaving those simulations out does not bias
+    /// the IRR statistics downwards.
+    #[pyo3(signature = (rate = 0.0, *, lower = None, upper = None, points = 400, bisections = 8, newton_steps = 3, extend = false))]
     #[allow(clippy::too_many_arguments)]
     fn cashflows(
         &self,
@@ -519,15 +523,9 @@ impl PyDealBook {
         points: usize,
         bisections: usize,
         newton_steps: usize,
+        extend: bool,
     ) -> PyResult<PyBookCashflows> {
-        let d = IrrOptions::default();
-        let options = IrrOptions {
-            lower: lower.unwrap_or(d.lower),
-            upper: upper.unwrap_or(d.upper),
-            points,
-            bisections,
-            newton_steps,
-        };
+        let options = irr_options(lower, upper, points, bisections, newton_steps, extend);
         let book = &self.inner;
         let inner = py
             .detach(|| book.cashflows(rate, &options))

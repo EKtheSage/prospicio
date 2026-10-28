@@ -18,7 +18,8 @@ irr(
   upper = 1,
   points = 400L,
   bisections = 8L,
-  newton_steps = 3L
+  newton_steps = 3L,
+  extend = FALSE
 )
 
 moic(released, funded, opening)
@@ -44,6 +45,10 @@ applied to premium.}
 \item{points, bisections, newton_steps}{The grid's size and the refinement
 steps.}
 
+\item{extend}{When no root is in the range but one lies beyond it, search
+for it (above \code{upper} by doubling \code{1 + rate}, below \code{lower} by halving
+it).}
+
 \item{released}{Equity released over the term.}
 
 \item{funded}{Capital funded during the term.}
@@ -60,8 +65,8 @@ steps.}
 }
 \value{
 \code{npv()}, \code{moic()}, \code{leverage()} and \code{tiered_fee()} a numeric
-vector; \code{irr()} a data frame with \code{rate}, \code{found}, \code{npv} (at the rate)
-and \code{sign_changes}, one row a simulation.
+vector; \code{irr()} a data frame with \code{rate}, \code{found}, \code{npv} (at the rate),
+\code{sign_changes}, \code{root_above} and \code{root_below}, one row a simulation.
 }
 \description{
 \code{npv()} discounts each simulation's flows at an annual rate,
@@ -69,9 +74,13 @@ and \code{sign_changes}, one row a simulation.
 worth 0: their value on a grid of \code{points} rates from \code{lower} to \code{upper},
 the sign change (or exact zero) whose bracket's midpoint is nearest 0,
 \code{bisections} halvings of that bracket and \code{newton_steps} Newton steps
-clipped to it. A simulation with no root in the range (flows of one
-sign, say) has \code{found} \code{FALSE} and \code{NaN}; one with several has
-\code{sign_changes} above 1. The defaults are a reference simulation model's.
+clipped to it. A simulation with no root in the range has \code{found}
+\code{FALSE} and \code{NaN}, with \code{root_above} (or \code{root_below}) \code{TRUE} when a root
+lies outside the range, a return above 100\% a year under the defaults,
+and \code{FALSE} for flows with no root at all, such as flows of one sign;
+\code{extend = TRUE} searches beyond the range for it. One with several roots
+has \code{sign_changes} above 1. The defaults are a reference simulation
+model's, with no search beyond the range.
 }
 \details{
 \code{moic()} is the multiple on invested capital,
@@ -84,6 +93,9 @@ tier unbounded and nothing below the first breakpoint.
 \examples{
 flows <- rbind(c(-100, 0, 121), c(-100, 230, -132), c(10, 5, 1))
 irr(flows, c(0, 1, 2))
+# A return of 300\%, above the default range: flagged, and found on request.
+irr(c(-100, 400), c(0, 1))
+irr(c(-100, 400), c(0, 1), extend = TRUE)$rate
 npv(flows, c(0, 1, 2), 0.1)
 irr(c(-100, 0, 0, 103), c(0, 31, 59, 90), unit = "days")$rate
 moic(30, 40, 60)

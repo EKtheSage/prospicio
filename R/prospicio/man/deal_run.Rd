@@ -71,7 +71,8 @@ book_cashflows(
   upper = 1,
   points = 400L,
   bisections = 8L,
-  newton_steps = 3L
+  newton_steps = 3L,
+  extend = FALSE
 )
 
 book_calendar(book, start_year)
@@ -134,8 +135,10 @@ for a margin.}
 
 \item{rate}{The annual rate the NPV discounts at, to month 0.}
 
-\item{lower, upper, points, bisections, newton_steps}{The IRR's search, as
-\code{\link[=irr]{irr()}}.}
+\item{lower, upper, points, bisections, newton_steps, extend}{The IRR's
+search, as \code{\link[=irr]{irr()}}: from -95\% to 100\% a year by default, a simulation
+whose return is above the range flagged by \code{root_above} and found with
+\code{extend = TRUE} (or a larger \code{upper}).}
 
 \item{start_year}{The calendar year of book month 0.}
 }

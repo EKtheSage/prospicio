@@ -793,6 +793,21 @@ def test_return_metrics_on_cash_flows():
         tiered_fee([1.0], [1.0, 1.0], [0.1, 0.2])
 
 
+def test_irr_root_outside_the_range():
+    """A root above the searched range is flagged and found on request (#670)."""
+    r = P.irr([[-100.0, 400.0], [10.0, 5.0], [-100.0, 1.5]], [0.0, 1.0])
+    assert r.found == [False, False, False]
+    assert r.root_above == [True, False, False]
+    assert r.root_below == [False, False, True]
+    x = P.irr([[-100.0, 400.0], [10.0, 5.0], [-100.0, 1.5]], [0.0, 1.0], extend=True)
+    assert x.found == [True, False, True]
+    assert x.rate[0] == pytest.approx(3.0, rel=1e-12)
+    assert x.rate[2] == pytest.approx(-0.985, rel=1e-12)
+    # A root in the range is unchanged by extend.
+    inside = [[-100.0, 0.0, 121.0]]
+    assert P.irr(inside, [0.0, 1.0, 2.0], extend=True).rate == P.irr(inside, [0.0, 1.0, 2.0]).rate
+
+
 def _ramp(m, n=60):
     return [min((t + 1) / m, 1.0) for t in range(n)]
 
