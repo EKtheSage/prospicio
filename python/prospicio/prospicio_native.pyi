@@ -1185,6 +1185,25 @@ class BayesBfFit:
             If an observed increment is negative (the density does not
             exist there).
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def origins(self, /) -> list[str]:
         """
@@ -1251,6 +1270,35 @@ class BayesBfFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest value plus its reserve in that
+        simulation.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key (``(2021,)``) or the origin alone; an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the ultimate by origin: ``reserves`` with
+        each origin's latest value added in every simulation, the same
+        dimensions, components and rows, so ``join``, ``select`` and
+        ``reorder_groups`` keep each simulation's origins together.
         """
 
 @final
@@ -1603,6 +1651,25 @@ class BayesBfNormalisedFit:
             If an observed increment is negative (the density does not
             exist there).
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def origins(self, /) -> list[str]:
         """
@@ -1673,6 +1740,35 @@ class BayesBfNormalisedFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest value plus its reserve in that
+        simulation.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key (``(2021,)``) or the origin alone; an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the ultimate by origin: ``reserves`` with
+        each origin's latest value added in every simulation, the same
+        dimensions, components and rows, so ``join``, ``select`` and
+        ``reorder_groups`` keep each simulation's origins together.
         """
 
 @final
@@ -2439,6 +2535,25 @@ class BayesOdpFit:
             If an observed increment is negative (the density does not
             exist there).
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def origins(self, /) -> list[str]:
         """
@@ -2491,6 +2606,35 @@ class BayesOdpFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest value plus its reserve in that
+        simulation.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key (``(2021,)``) or the origin alone; an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the ultimate by origin: ``reserves`` with
+        each origin's latest value added in every simulation, the same
+        dimensions, components and rows, so ``join``, ``select`` and
+        ``reorder_groups`` keep each simulation's origins together.
         """
 
 @final
@@ -2583,6 +2727,25 @@ class BayesOdpFits:
             If the fit has several segments, or an observed increment is
             negative.
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def origins(self, /) -> list[str]:
         """
@@ -2645,6 +2808,35 @@ class BayesOdpFits:
         Returns
         -------
         pandas.DataFrame
+        """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest value plus its reserve in that
+        simulation.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the ultimate by segment and origin: ``reserves`` with
+        each origin's latest value added in every simulation, the same
+        dimensions, components and rows, so ``join``, ``select`` and
+        ``reorder_groups`` keep each simulation's origins together.
         """
 
 @final
@@ -7701,6 +7893,25 @@ class CompartmentalFit:
         -------
         dict
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def origins(self, /) -> list[str]:
         """
@@ -7812,11 +8023,40 @@ class CompartmentalFit:
         -------
         pandas.DataFrame
         """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest paid plus its reserve in that
+        simulation: the paid at the square's last age, on the paid basis.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key (``(2021,)``) or the origin alone; an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def ultimate_loss_ratio(self, /) -> list[float]:
         """
         Each origin's posterior mean ultimate loss ratio ``RLR_i RRF_i``,
         without process error past the square.
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the ultimate by origin: ``reserves`` with
+        each origin's latest paid added in every simulation, the same
+        dimensions, components and rows, so ``join``, ``select`` and
+        ``reorder_groups`` keep each simulation's origins together.
         """
 
 @final
@@ -7893,6 +8133,25 @@ class CompartmentalFits:
         ------
         ValueError
             If the fit has several segments.
+        """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
         """
     @property
     def origins(self, /) -> list[str]:
@@ -7999,6 +8258,35 @@ class CompartmentalFits:
         Returns
         -------
         pandas.DataFrame
+        """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest paid plus its reserve in that
+        simulation: the paid at the square's last age, on the paid basis.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the ultimate by segment and origin: ``reserves`` with
+        each origin's latest paid added in every simulation, the same
+        dimensions, components and rows, so ``join``, ``select`` and
+        ``reorder_groups`` keep each simulation's origins together.
         """
 
 @final
@@ -18417,6 +18705,25 @@ class MackBootstrapFit:
         """
         Names of the triangle's key columns; empty without keys.
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def mack(self, /) -> MackFit:
         """
@@ -18477,6 +18784,35 @@ class MackBootstrapFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest value plus its reserve in that
+        simulation.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the ultimate by segment and origin: ``reserves`` with
+        each origin's latest value added in every simulation, the same
+        dimensions, components and rows, so ``join``, ``select`` and
+        ``reorder_groups`` keep each simulation's origins together.
         """
 
 @final
@@ -19525,6 +19861,25 @@ class MeyersFit:
         -------
         Elpd
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def model(self, /) -> str:
         """
@@ -19588,6 +19943,27 @@ class MeyersFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest value plus its reserve in that
+        simulation, which is the simulated value at the oldest age itself (``ultimates``).
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key (``(2021,)``) or the origin alone; an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
         """
     @property
     def ultimates(self, /) -> PredictiveDistribution:
@@ -19686,6 +20062,25 @@ class MeyersFits:
         ValueError
             If the fit has several segments.
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def model(self, /) -> str:
         """
@@ -19758,6 +20153,27 @@ class MeyersFits:
         Returns
         -------
         pandas.DataFrame
+        """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest value plus its reserve in that
+        simulation, which is the simulated value at the oldest age itself (``ultimates``).
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
         """
     @property
     def ultimates(self, /) -> PredictiveDistribution:
@@ -21103,6 +21519,25 @@ class OdpBootstrapFit:
         """
         Names of the triangle's key columns; empty without keys.
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def origins(self, /) -> list[str]:
         """
@@ -21159,6 +21594,35 @@ class OdpBootstrapFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest value plus its reserve in that
+        simulation.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the ultimate by segment and origin: ``reserves`` with
+        each origin's latest value added in every simulation, the same
+        dimensions, components and rows, so ``join``, ``select`` and
+        ``reorder_groups`` keep each simulation's origins together.
         """
 
 @final
