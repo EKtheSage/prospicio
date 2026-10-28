@@ -3652,6 +3652,8 @@ Book$summary <- function() .Call(wrap__Book__summary, self)
 
 Book$distribution <- function(item, percentiles, tvar_levels, sd_multiples, quantile, tvar, tail) .Call(wrap__Book__distribution, self, item, percentiles, tvar_levels, sd_multiples, quantile, tvar, tail)
 
+Book$marginal_price <- function(names, assets, rate, pricing) .Call(wrap__Book__marginal_price, self, names, assets, rate, pricing)
+
 Book$cashflows <- function(rate, lower, upper, points, bisections, newton_steps) .Call(wrap__Book__cashflows, self, rate, lower, upper, points, bisections, newton_steps)
 
 Book$calendar <- function(start_year) .Call(wrap__Book__calendar, self, start_year)

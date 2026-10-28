@@ -660,7 +660,7 @@ fn pricing_severity_exposure_curve(severity: Robj, mpl: f64, x: &[f64]) -> Resul
     Ok(x.iter().map(|&v| curve.g(v)).collect())
 }
 
-fn distortion_arg(d: &Robj, name: &str) -> Result<prospicio_prob::Distortion> {
+pub(crate) fn distortion_arg(d: &Robj, name: &str) -> Result<prospicio_prob::Distortion> {
     <&RiskDistortion>::try_from(d)
         .map(|d| d.inner.clone())
         .map_err(|_| Error::Other(format!("{name} must be a distortion")))
@@ -668,7 +668,7 @@ fn distortion_arg(d: &Robj, name: &str) -> Result<prospicio_prob::Distortion> {
 
 /// The premium rule: a cost of capital `rate`, or (`rate` NA) the
 /// pricing distortion `pricing`.
-fn premium_rule(rate: Option<f64>, pricing: &Robj) -> Result<PremiumRule> {
+pub(crate) fn premium_rule(rate: Option<f64>, pricing: &Robj) -> Result<PremiumRule> {
     match (rate, pricing.is_null()) {
         (Some(r), true) => PremiumRule::cost_of_capital(r).map_err(to_r),
         (None, false) => Ok(PremiumRule::Distortion(distortion_arg(
