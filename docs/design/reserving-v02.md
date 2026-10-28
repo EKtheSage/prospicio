@@ -4381,7 +4381,7 @@ and `R/prospicio/tests/test-reserving-uy-pattern.R`):
   error. A flat pattern does not reach the edge: the curve reports
   everything in the first month and the projection reproduces it.
 - **No cap at the level** (a departure from items 1, 2 and 8, made after
-  review on 2026-10-27, for the user to confirm). The study capped the
+  review on 2026-10-27, confirmed by the user on 2026-10-27). The study capped the
   increments at the level, `sum d <= L`. The given value at the last age
   `E` is the average of `p` over the last `s` months, so with `p` not
   decreasing the cap forces `p` to equal the level over the whole last
