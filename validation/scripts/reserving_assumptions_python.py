@@ -7,7 +7,8 @@ DevelopmentCorrelation. Run from the repository root:
     uv run --no-project --with chainladder==0.10.1 python validation/scripts/reserving_assumptions_python.py
 
 Only the statistics chainladder-python computes as R ChainLadder does are
-kept (knowledge/references/chainladder-python-correlation.md):
+kept (knowledge/references/chainladder-python-correlation.md; the departures
+are in chainladder-python-correlation-traps.md):
 
 * ValuationCorrelation(total=True): z, z_expectation and z_variance. Its
   range and z_critical are not targets: the range is centred on the sum of

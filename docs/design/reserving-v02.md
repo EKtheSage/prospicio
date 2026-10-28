@@ -4563,7 +4563,8 @@ reviewers ask for beside a Mack exhibit: a test for calendar-year effects
    it, so it is false on every triangle (also on ABC, where R's test
    rejects). Its `total=False` test is Mack's 1997 per-diagonal binomial
    test, not built here. See
-   `knowledge/references/chainladder-python-correlation.md`.
+   `knowledge/references/chainladder-python-correlation.md` and
+   `chainladder-python-correlation-traps.md`.
 9. **Checks.** `validation/tests/reserving_assumptions.rs`: every row of
    `reserving_assumptions_r.csv` (R ChainLadder 0.2.21's `cyEffTest` at
    0.95 and 0.9 and `dfCorTest` at 0.5 and 0.75, with its `T_k`, on RAA,
