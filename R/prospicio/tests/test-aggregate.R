@@ -913,3 +913,26 @@ on <- with_interlocking(tw)
 stopifnot(identical(on@interlocking, TRUE), identical(with_interlocking(on, FALSE)@interlocking, FALSE))
 ceded <- draw_matrix(select_components(apply_tower_timeline(on, tl, shares), "kind", "ceded"))
 stopifnot(all(abs(ceded[1, ] - c(5, 37.5)) < 1e-12))
+
+# A layer scoped to one peril (#584): its annual limit is its own.
+ev <- with_labels(
+  events_from_years(list(c(20, 15), c(8, 30, 12))),
+  list(peril = c("quake", "wind", "wind", "flood", "wind"))
+)
+xl <- xol_layer("10x5", 10, 5, aggregate_limit = 15)
+stopifnot(is.null(xl@scope))
+ws <- with_scope(xl, "peril", "wind")
+stopifnot(identical(ws@scope, list(label = "peril", values = "wind")))
+key <- list("ceded", "10x5", "wind")
+# Wind has the whole limit (10, then 3 and 7); unscoped, quake and flood
+# use it first and wind gets 5 a year.
+stopifnot(mean(marginal(apply_tower(reinsurance_tower(list(ws)), ev), key)) == 10)
+stopifnot(mean(marginal(apply_tower(reinsurance_tower(list(xl)), ev), key)) == 5)
+w <- filter_events(ev, "peril", "wind")
+stopifnot(w@n_sims == 2, identical(events(w, 1), 15), identical(events(w, 2), c(8, 12)))
+stopifnot(mean(marginal(apply_tower(reinsurance_tower(list(xl)), w), key)) == 10)
+tw <- reinsurance_tower(list(ws))
+stopifnot(identical(tower_to_json(tower_from_json(tower_to_json(tw))), tower_to_json(tw)))
+stopifnot(grepl("\"scope\"", tower_to_json(tw)))
+stopifnot(inherits(try(apply_tower(tw, events_from_years(list(15))), silent = TRUE), "try-error"))
+stopifnot(inherits(try(filter_events(ev, "class", "a"), silent = TRUE), "try-error"))

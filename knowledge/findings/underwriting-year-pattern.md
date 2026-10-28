@@ -67,13 +67,20 @@ All in the validation test,[^test] run in every `cargo test`:
   converted share over the book's own is 1.3116 at 12 months, 0.9155 at
   24, 0.9866 at 36, 0.9967 at 48, 0.9991 at 60, 0.9996 at 72 and exact from
   84. An accident year at six months has much less than half of its full
-  year's share, which the linear rule overstates.
+  year's share, which the linear rule overstates. Since decision 25
+  (2026-10-27) this is the conversion under `AnnualReading::LnLinear`
+  only; the default reading, the Weibull through the yearly averages
+  corrected to reproduce them, gives 0.9989, 1.0004 and 0.9999 at 12, 24
+  and 36 months (`ay-pattern-monthly-reading.md`).
 
 # Consequences
 
-Give an accident-month pattern, or an accident-year pattern at every
-month, where the underwriting year's first two years matter; an annual
-accident-year pattern is close from about 36 months. No reference
+Under decision 18's reading (`AnnualReading::LnLinear`), give an
+accident-month pattern, or an accident-year pattern at every month, where
+the underwriting year's first two years matter; an annual accident-year
+pattern is close from about 36 months. Under the default reading since
+decision 25 an annual accident-year pattern converts the book within 0.2%
+at every age. No reference
 implementation converts a reserving pattern between accident and
 underwriting periods (chainladder-python 0.10.1 has no such argument).
 

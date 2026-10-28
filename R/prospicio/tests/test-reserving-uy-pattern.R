@@ -91,3 +91,31 @@ fit <- chain_ladder(quarters, ldf = linear, ldf_kind = "percent_developed", ldf_
                     ldf_underwriting = qb)
 share <- function(a) sum(qb$exposure * pmin(pmax(a - (seq_along(qb$exposure) - 1), 0), 60) / 60)
 near(fit@selected_ldf[1], share(6) / share(3), 1e-12)
+
+# 6. An annual accident-year pattern read at monthly ages (decision 25,
+# issue #646): the Rust validation's book, each accident month reporting
+# 1 - 0.9^t (held from 60), averaged over its accident year.
+stopifnot(identical(underwriting_basis()$reading, "weibull"),
+          identical(underwriting_basis(reading = "ln-linear")$reading, "ln-linear"))
+expect_error_like(underwriting_basis(reading = "pchip"), "should be one of")
+book_year <- function(a) sum(1 - 0.9^pmin(a - 0:11, 60)) / 12
+annual <- stats::setNames(vapply(seq(12, 120, 12), book_year, numeric(1)), seq(12, 120, 12))
+e <- underwriting_basis()$exposure
+uy12 <- sum(e * ifelse(12 - (0:23) > 0, 1 - 0.9^(12 - (0:23)), 0))
+ratio <- function(reading) {
+  fit <- chain_ladder(one, ldf = annual, ldf_kind = "percent_developed",
+                      ldf_underwriting = underwriting_basis(reading = reading))
+  100 / fit@ultimate / uy12
+}
+# The design study's ratios at 12 months: the Weibull 0.9989, the
+# loglogistic 0.9308, decision 18's rule 1.3116.
+stopifnot(abs(ratio("weibull") - 0.998928) < 1e-5,
+          abs(ratio("loglogistic") - 0.930813) < 1e-5,
+          abs(ratio("ln-linear") - 1.311567) < 1e-5)
+# A pattern at every month converts the same under every reading.
+near(chain_ladder(book, ldf = ay, ldf_kind = "percent_developed",
+                  ldf_underwriting = underwriting_basis(reading = "ln-linear"))@ultimate,
+     100 / parallelogram(c(83, 36, 12)), 1e-13)
+expect_error_like(chain_ladder(one, ldf = c("12" = 0.5), ldf_kind = "percent_developed",
+                               ldf_underwriting = underwriting_basis()),
+                  "single value")
