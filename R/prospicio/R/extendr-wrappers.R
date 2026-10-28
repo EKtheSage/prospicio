@@ -2037,6 +2037,40 @@ Binomial$sample <- function(n, seed, stream) .Call(wrap__Binomial__sample, self,
 #' @export
 `[[.Binomial` <- `$.Binomial`
 
+BonusMalusR <- new.env(parent = emptyenv())
+
+BonusMalusR$rule <- function(levels, start, down, up_per_claim) .Call(wrap__BonusMalusR__rule, levels, start, down, up_per_claim)
+
+BonusMalusR$table <- function(start, table, cols) .Call(wrap__BonusMalusR__table, start, table, cols)
+
+BonusMalusR$levels <- function() .Call(wrap__BonusMalusR__levels, self)
+
+BonusMalusR$start <- function() .Call(wrap__BonusMalusR__start, self)
+
+BonusMalusR$transitions <- function() .Call(wrap__BonusMalusR__transitions, self)
+
+BonusMalusR$cols <- function() .Call(wrap__BonusMalusR__cols, self)
+
+BonusMalusR$transition_matrix <- function(lambda) .Call(wrap__BonusMalusR__transition_matrix, self, lambda)
+
+BonusMalusR$stationary_at <- function(lambda) .Call(wrap__BonusMalusR__stationary_at, self, lambda)
+
+BonusMalusR$distribution_after <- function(lambda, years) .Call(wrap__BonusMalusR__distribution_after, self, lambda, years)
+
+BonusMalusR$years_to_stationarity <- function(lambda, tolerance) .Call(wrap__BonusMalusR__years_to_stationarity, self, lambda, tolerance)
+
+BonusMalusR$mean_relativity <- function(lambda, relativities) .Call(wrap__BonusMalusR__mean_relativity, self, lambda, relativities)
+
+BonusMalusR$efficiency <- function(lambda, relativities) .Call(wrap__BonusMalusR__efficiency, self, lambda, relativities)
+
+BonusMalusR$portfolio <- function(lambdas, weights, cv, mixing) .Call(wrap__BonusMalusR__portfolio, self, lambdas, weights, cv, mixing)
+
+#' @export
+`$.BonusMalusR` <- function (self, name) { func <- BonusMalusR[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BonusMalusR` <- `$.BonusMalusR`
+
 ClaimCount <- new.env(parent = emptyenv())
 
 ClaimCount$zero_modified <- function(base, p0) .Call(wrap__ClaimCount__zero_modified, base, p0)

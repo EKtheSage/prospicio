@@ -2206,3 +2206,58 @@ fn size_of_loss_tables_give_werner_and_modlin_chapter_11() {
     let ler = loss_elimination_ratio(&h, 250.0).unwrap();
     assert_eq!((ler * 1000.0).round() / 1000.0, 0.135);
 }
+
+#[test]
+fn bonus_malus_matches_scipy() {
+    use prospicio_pricing::bonus_malus::{BonusMalus, BonusRule, Portfolio};
+    use prospicio_prob::count_families::Mixing;
+
+    let cases = reference("bonus_malus_scipy.csv");
+    let list = |c: &prospicio_validation::Case, name: &str| -> Vec<f64> {
+        let params = c.get("params");
+        let v = params
+            .split(';')
+            .find_map(|kv| kv.strip_prefix(&format!("{name}=")))
+            .unwrap();
+        v.split('|').map(|x| x.parse().unwrap()).collect()
+    };
+    let mut fits = std::collections::HashMap::new();
+    check(&cases, |c| {
+        let n = |name| c.param("params", name) as usize;
+        let scale = BonusMalus::rule(
+            n("levels"),
+            n("start"),
+            BonusRule {
+                down: n("down"),
+                up_per_claim: n("up"),
+            },
+        )
+        .ok()?;
+        let cv = c.param("params", "cv");
+        let mixing = if c.get("params").contains("mixing=gamma") {
+            Mixing::Gamma { cv }
+        } else {
+            Mixing::InverseGaussian { cv }
+        };
+        let lambdas = list(c, "lambdas");
+        let portfolio = Portfolio::classes(list(c, "weights"), lambdas.clone(), mixing).ok()?;
+        let (pi, r) = fits
+            .entry(c.get("distribution").to_string())
+            .or_insert_with(|| {
+                (
+                    scale.stationary(&portfolio).unwrap(),
+                    scale.optimal_relativities(&portfolio).unwrap(),
+                )
+            })
+            .clone();
+        let arg = c.number("arg")?;
+        match c.get("quantity") {
+            "stationary" => Some(pi[arg as usize]),
+            "relativity" => Some(r[arg as usize]),
+            "stationary_at" => Some(scale.stationary_at(c.number("arg2")?).ok()?[arg as usize]),
+            "efficiency" => scale.efficiency(arg, &r).ok(),
+            "years" => Some(scale.years_to_stationarity(c.number("arg2")?, arg).ok()?? as f64),
+            _ => None,
+        }
+    });
+}

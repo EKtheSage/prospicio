@@ -14,6 +14,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 mod aggregate;
+mod bonus_malus;
 mod book;
 mod cashflow;
 mod casualty;
@@ -55,6 +56,8 @@ mod prospicio_native {
         recommend_grid, recommend_portfolio_grid, round_bucket, simulate_events, wiener_hopf,
         year_correlation_for_ratio, ylt_hash,
     };
+    #[pymodule_export]
+    use super::bonus_malus::PyBonusMalus;
     #[pymodule_export]
     use super::book::{PyBookCashflows, PyDealBook, PyDealRun};
     #[pymodule_export]
