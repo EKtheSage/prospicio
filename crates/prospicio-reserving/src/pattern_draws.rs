@@ -124,7 +124,7 @@ pub enum Monotone {
     /// Each share held at the largest before it, capped at 1: the money is
     /// paid when first reached and none is returned. A share that is not
     /// positive (or not finite) takes the next positive share after it, so
-    /// nothing is paid until then.
+    /// the simulation pays that share from its first age.
     RunningMax,
 }
 
@@ -325,7 +325,7 @@ impl SegmentPatterns {
             return Err(Error::PatternDraws(format!(
                 "the share is not positive in {} of {} simulations (the first, simulation \
                  {first}, {} at {} months, from a negative factor), which no paid pattern can \
-                 be: pass Monotone::RunningMax to pay nothing until the next positive share",
+                 be: pass Monotone::RunningMax to give it the next positive share",
                 bad.len(),
                 self.draws.len() / n,
                 row[k],

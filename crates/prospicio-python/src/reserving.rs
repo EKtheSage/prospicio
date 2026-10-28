@@ -2267,7 +2267,7 @@ impl PyDevelopmentPatterns {
     ///     ``"refuse"`` raises an error naming how many simulations and the
     ///     first; ``"running_max"`` holds each share at the largest before
     ///     it, capped at 1, and gives a share that is not positive the next
-    ///     positive share, so nothing is paid until then.
+    ///     positive share, which the simulation then pays from its first age.
     ///
     /// Returns
     /// -------

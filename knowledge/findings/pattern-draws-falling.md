@@ -45,7 +45,8 @@ it draws a negative first factor in 6 of 5,000 simulations at seed 600 and
 8 at seed 1, which makes the share at 12 months negative (-12 and -20 in
 the first such simulations). The default refuses that too, and
 `RunningMax` gives a share that is not positive the next positive share,
-so nothing is paid until then.
+which that simulation then pays from its first age: on RAA the share
+at 24 months, about 0.4, is paid by 12 months.
 
 `BayesOdp`, `BayesBf` and `BayesBfNormalised` build their patterns from
 positive increments (`exp` of the column effects or the log shares), so

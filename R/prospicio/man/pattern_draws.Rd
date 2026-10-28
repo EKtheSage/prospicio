@@ -67,7 +67,7 @@ Mack's bootstrap can draw) makes it negative; the cash-flow engine refuses
 both: \code{monotone = "refuse"} (the default) is an error naming how many
 simulations and the first, \code{"running_max"} holds each share at the
 largest before it, capped at 1, and gives a share that is not positive the
-next positive share, so nothing is paid until then.
+next positive share, which the simulation then pays from its first age.
 
 No fit knows whether its triangle is paid: a pattern from an incurred
 triangle is an incurred pattern, and the engine reads it as paid.

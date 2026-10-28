@@ -169,8 +169,8 @@ def test_patterns_drive_the_cash_flow_engine(odp):
 def test_a_share_that_is_not_positive_is_refused_or_lifted(raa):
     # Mack's bootstrap draws its factors from normal distributions; on RAA a
     # few of 5,000 simulations draw a negative first factor, so the share at
-    # 12 months is negative. The default refuses it; running_max pays
-    # nothing until the next positive share.
+    # 12 months is negative. The default refuses it; running_max gives it
+    # the next positive share.
     p = MackBootstrap(n_sims=5_000, seed=600).fit(raa, "paid").patterns
     rows = p.pattern_draws()
     assert any(r[0] <= 0.0 for r in rows)

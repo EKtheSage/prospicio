@@ -4748,7 +4748,8 @@ decision 26 gives.
    normal distributions, and on RAA about 0.15% of its simulations draw a
    negative first factor, so the share at the first age is negative: the
    default refuses that too, and `RunningMax` gives such a share the next
-   positive share, paying nothing until then. On RAA a share falls in 54%
+   positive share, which that simulation then pays from its first age
+   (its factors mean nothing there). On RAA a share falls in 54%
    of the ODP bootstrap's simulations and 22% of Mack's
    (`knowledge/findings/pattern-draws-falling.md`). The default leaves the
    choice to the caller rather than altering a fit's draws without a
