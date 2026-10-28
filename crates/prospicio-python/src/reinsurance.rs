@@ -336,6 +336,56 @@ impl PyLayer {
         }
     }
 
+    /// The losses the layer covers, ``(label, values)``, or None for
+    /// every loss.
+    #[getter]
+    fn scope(&self) -> Option<(String, Vec<String>)> {
+        self.inner
+            .scope
+            .as_ref()
+            .map(|s| (s.label.clone(), s.values.clone()))
+    }
+
+    /// The same layer covering only the losses whose label ``label``
+    /// takes one of ``values``: a windstorm treaty on a multi-peril event
+    /// set is scoped to ``("peril", ["windstorm"])``.
+    ///
+    /// The layer's occurrence and annual terms see only those losses, so
+    /// another peril's events neither use its annual limit nor count
+    /// toward its deductible; the losses it does not cover pass to the
+    /// next inuring stage whole. That differs from reading one label's
+    /// share of an unscoped layer, whose annual terms every peril uses
+    /// up. A tower with a scoped layer needs labelled events
+    /// (``Tower.apply``, ``apply_term``, ``apply_timeline``) and refuses
+    /// the grids and annual losses.
+    ///
+    /// Parameters
+    /// ----------
+    /// label : str
+    ///     A label dimension of the events.
+    /// values : list of str
+    ///     At least one; at least one must occur.
+    ///
+    /// Returns
+    /// -------
+    /// Layer
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> from prospicio.reinsurance import Layer, Tower
+    /// >>> e = EventSet.from_years([[20.0, 15.0]]).with_labels({"peril": ["quake", "wind"]})
+    /// >>> xl = Layer("10x5", 10.0, 5.0, aggregate_limit=15.0)
+    /// >>> wind = Tower([xl.with_scope("peril", ["wind"])]).apply(e)
+    /// >>> wind.marginal(("ceded", "10x5", "wind")).mean()
+    /// 10.0
+    /// >>> Tower([xl]).apply(e).marginal(("ceded", "10x5", "wind")).mean()
+    /// 5.0
+    fn with_scope(&self, label: &str, values: Vec<String>) -> PyResult<Self> {
+        let values: Vec<&str> = values.iter().map(String::as_str).collect();
+        self.map(|l| l.scope(label, &values))
+    }
+
     /// The same layer with a loss corridor.
     ///
     /// Of the annual layer loss at 100% after the annual deductible, the

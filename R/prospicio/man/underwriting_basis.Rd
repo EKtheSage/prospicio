@@ -4,7 +4,11 @@
 \alias{underwriting_basis}
 \title{How an underwriting period's policies are written and earned}
 \usage{
-underwriting_basis(writing = NULL, policy_months = 12)
+underwriting_basis(
+  writing = NULL,
+  policy_months = 12,
+  reading = c("weibull", "loglogistic", "ln-linear")
+)
 }
 \arguments{
 \item{writing}{\code{NULL} (the default, even writing over 12 months, an
@@ -18,11 +22,27 @@ writing); longer writing is an error at fit time.}
 
 \item{policy_months}{Each policy's term in months, a whole number of at
 least 1; it earns evenly over the term.}
+
+\item{reading}{How a pattern of accident periods longer than a month (an
+accident-year pattern) is read between its ages when they are not every
+month from 1 (\code{docs/design/reserving-v02.md}, decision 25): \code{"weibull"}
+(the default) or \code{"loglogistic"} fit that growth curve through the
+period averages (an accident year at age \code{a} reports the average of its
+twelve months) and correct it to the nearest monotone accident-month
+pattern whose averages are the given values exactly; increments may
+fall only within a span where the given pattern itself develops
+downward. \code{"ln-linear"} is the rule before this reading (linear from 0
+below the first age, \verb{ln CDF} linear between ages), kept to reproduce
+earlier results: on a simulated parallelogram book it puts an
+underwriting year 31\% too far developed at 12 months, where the Weibull
+is within 0.2\% at every age. An accident-month pattern, and one given at
+every month, convert the same under every reading. A curve needs two or
+more given values.}
 }
 \value{
-An \code{underwriting_basis}: a list of \code{writing}, \code{policy_months} and
-\code{exposure}, the share of the period's exposure in each accident month
-from its start, summing to 1.
+An \code{underwriting_basis}: a list of \code{writing}, \code{policy_months},
+\code{reading} and \code{exposure}, the share of the period's exposure in each
+accident month from its start, summing to 1.
 }
 \description{
 The basis to which \code{ldf_underwriting} converts an accident-period
@@ -38,4 +58,6 @@ parallelogram: the exposure is triangular over 24 months.
 b <- underwriting_basis()
 length(b$exposure)
 b$exposure[1] * 288
+b$reading
+underwriting_basis(reading = "ln-linear")$reading
 }

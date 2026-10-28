@@ -11,8 +11,8 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_reserving::{
-    Apriori, Average, BenchmarkCurve, BenchmarkCurveFit as BenchmarkCurveInner, Benktander,
-    BornhuetterFerguson, CapeCod, CapeCodFit as CapeCodInner, ChainLadder,
+    AnnualReading, Apriori, Average, BenchmarkCurve, BenchmarkCurveFit as BenchmarkCurveInner,
+    Benktander, BornhuetterFerguson, CapeCod, CapeCodFit as CapeCodInner, ChainLadder,
     ChainLadderFit as ChainLadderInner, ClaimsDevelopmentResult as ClaimsDevelopmentInner,
     ClarkCapeCod, ClarkFit as ClarkInner, ClarkLdf, CurveShape, Development, DevelopmentColumn,
     DiagonalAge, ExpectedLoss, ExpectedLossFit as ExpectedLossInner, FitTable, Grain, GrowthCurve,
@@ -136,7 +136,8 @@ fn exclusions(excl: &Robj) -> Result<(Option<usize>, usize, usize)> {
 /// every selected factor), `origin` (`NULL`, or the grain of the origin
 /// periods the pattern was measured on, averaged over the periods of
 /// `target` by `SelectedPattern::averaged_over_origins`), and
-/// `underwriting` (`NULL`, or a list of `writing` and `policy_months`: the
+/// `underwriting` (`NULL`, or a list of `writing`, `policy_months` and
+/// `reading` (`"weibull"` when missing): the
 /// underwriting basis the pattern is converted to from accident periods of
 /// `origin`, or of `target` without it, by
 /// `SelectedPattern::to_underwriting_basis`, its writing no longer than a
@@ -216,21 +217,38 @@ fn selected_pattern(pattern: &Robj, target: Grain) -> Result<Option<SelectedPatt
 }
 
 /// An underwriting basis as `underwriting_basis()` in R encodes it: a list
-/// of `writing` (monthly shares) and `policy_months`.
+/// of `writing` (monthly shares), `policy_months` and `reading` (the
+/// default Weibull when missing).
 fn underwriting_basis(value: &Robj) -> Result<UnderwritingBasis> {
     let bad = || Error::Other("ldf_underwriting must be an underwriting_basis()".into());
     let list = List::try_from(value).map_err(|_| bad())?;
-    let (mut writing, mut policy_months) = (None, None);
+    let (mut writing, mut policy_months, mut reading) = (None, None, AnnualReading::default());
     for (name, value) in list.iter() {
         match name {
             "writing" => writing = value.as_real_vector(),
             "policy_months" => policy_months = value.as_real(),
+            "reading" if !value.is_null() => {
+                reading = annual_reading(value.as_str().ok_or_else(bad)?)?;
+            }
             _ => {}
         }
     }
     match (writing, policy_months) {
-        (Some(writing), Some(months)) => basis_of(writing, months),
+        (Some(writing), Some(months)) => Ok(basis_of(writing, months)?.with_reading(reading)),
         _ => Err(bad()),
+    }
+}
+
+/// The reading named `"weibull"`, `"loglogistic"` or `"ln-linear"`
+/// (`reserving-v02.md`, decision 25).
+fn annual_reading(name: &str) -> Result<AnnualReading> {
+    match name {
+        "weibull" => Ok(AnnualReading::Curve(GrowthCurve::Weibull)),
+        "loglogistic" => Ok(AnnualReading::Curve(GrowthCurve::LogLogistic)),
+        "ln-linear" => Ok(AnnualReading::LnLinear),
+        _ => Err(Error::Other(format!(
+            "reading must be \"weibull\", \"loglogistic\" or \"ln-linear\", got {name:?}"
+        ))),
     }
 }
 

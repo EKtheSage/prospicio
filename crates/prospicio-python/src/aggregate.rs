@@ -1265,6 +1265,41 @@ impl PyEventSet {
         })
     }
 
+    /// The losses whose label ``label`` takes one of ``values``, every
+    /// year kept (a year with none of them is empty), with their sums
+    /// insured, times and labels, and the aggregate part's columns with
+    /// one of the values: what a layer scoped to those values
+    /// (``Layer.with_scope``) sees.
+    ///
+    /// Parameters
+    /// ----------
+    /// label : str
+    /// values : list of str
+    ///
+    /// Returns
+    /// -------
+    /// EventSet
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     Without labels, without the dimension, or with no values.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> e = EventSet.from_years([[20.0, 15.0], [8.0]]).with_labels(
+    /// ...     {"peril": ["quake", "wind", "quake"]})
+    /// >>> w = e.filter("peril", ["wind"])
+    /// >>> w.n_sims, w.events(0), w.events(1)
+    /// (2, [15.0], [])
+    fn filter(&self, label: &str, values: Vec<String>) -> PyResult<Self> {
+        let values: Vec<&str> = values.iter().map(String::as_str).collect();
+        Ok(Self {
+            inner: self.inner.filter(label, &values).map_err(to_py)?,
+        })
+    }
+
     /// Each year's losses grouped into occurrences by an hours clause.
     ///
     /// Losses within ``window_hours`` of the first loss of a window are one

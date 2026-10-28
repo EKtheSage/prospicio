@@ -384,6 +384,8 @@ EventSet$aggregate_part_labels <- function() .Call(wrap__EventSet__aggregate_par
 
 EventSet$merge <- function(other) .Call(wrap__EventSet__merge, self, other)
 
+EventSet$filter <- function(label, values) .Call(wrap__EventSet__filter, self, label, values)
+
 EventSet$permute <- function(index) .Call(wrap__EventSet__permute, self, index)
 
 EventSet$term_years <- function(n_years) .Call(wrap__EventSet__term_years, self, n_years)
@@ -541,6 +543,10 @@ XolLayer$profit_commission <- function() .Call(wrap__XolLayer__profit_commission
 XolLayer$swing_rating <- function() .Call(wrap__XolLayer__swing_rating, self)
 
 XolLayer$premium_for <- function(ceded) .Call(wrap__XolLayer__premium_for, self, ceded)
+
+XolLayer$scope <- function() .Call(wrap__XolLayer__scope, self)
+
+XolLayer$with_scope <- function(label, values) .Call(wrap__XolLayer__with_scope, self, label, values)
 
 XolLayer$ceding_commission_for <- function(ceded) .Call(wrap__XolLayer__ceding_commission_for, self, ceded)
 
