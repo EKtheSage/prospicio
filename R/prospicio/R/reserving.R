@@ -657,15 +657,34 @@ development_args <- function(average, sigma_interpolation, n_periods = NULL, dro
 #'   writing); longer writing is an error at fit time.
 #' @param policy_months Each policy's term in months, a whole number of at
 #'   least 1; it earns evenly over the term.
-#' @return An `underwriting_basis`: a list of `writing`, `policy_months` and
-#'   `exposure`, the share of the period's exposure in each accident month
-#'   from its start, summing to 1.
+#' @param reading How a pattern of accident periods longer than a month (an
+#'   accident-year pattern) is read between its ages when they are not every
+#'   month from 1 (`docs/design/reserving-v02.md`, decision 25): `"weibull"`
+#'   (the default) or `"loglogistic"` fit that growth curve through the
+#'   period averages (an accident year at age `a` reports the average of its
+#'   twelve months) and correct it to the nearest monotone accident-month
+#'   pattern whose averages are the given values exactly; increments may
+#'   fall only within a span where the given pattern itself develops
+#'   downward. `"ln-linear"` is the rule before this reading (linear from 0
+#'   below the first age, `ln CDF` linear between ages), kept to reproduce
+#'   earlier results: on a simulated parallelogram book it puts an
+#'   underwriting year 31% too far developed at 12 months, where the Weibull
+#'   is within 0.2% at every age. An accident-month pattern, and one given at
+#'   every month, convert the same under every reading. A curve needs two or
+#'   more given values.
+#' @return An `underwriting_basis`: a list of `writing`, `policy_months`,
+#'   `reading` and `exposure`, the share of the period's exposure in each
+#'   accident month from its start, summing to 1.
 #' @examples
 #' b <- underwriting_basis()
 #' length(b$exposure)
 #' b$exposure[1] * 288
+#' b$reading
+#' underwriting_basis(reading = "ln-linear")$reading
 #' @export
-underwriting_basis <- function(writing = NULL, policy_months = 12) {
+underwriting_basis <- function(writing = NULL, policy_months = 12,
+                               reading = c("weibull", "loglogistic", "ln-linear")) {
+  reading <- match.arg(reading)
   if (is.null(writing)) writing <- rep(1 / 12, 12)
   if (!is.numeric(writing)) stop("writing must be numeric", call. = FALSE)
   if (!is.numeric(policy_months) || length(policy_months) != 1 || is.na(policy_months)) {
@@ -674,15 +693,16 @@ underwriting_basis <- function(writing = NULL, policy_months = 12) {
   exposure <- rust_result(underwriting_exposure_rust(as.double(writing),
                                                      as.double(policy_months)))
   structure(list(writing = as.double(writing), policy_months = as.double(policy_months),
-                 exposure = exposure),
+                 reading = reading, exposure = exposure),
             class = "underwriting_basis")
 }
 
 #' @export
 print.underwriting_basis <- function(x, ...) {
-  cat(sprintf("<underwriting_basis> %d months of writing, %g-month policies
+  cat(sprintf("<underwriting_basis> %d months of writing, %g-month policies, %s reading
 ",
-              length(x$writing), x$policy_months))
+              length(x$writing), x$policy_months,
+              if (is.null(x$reading)) "weibull" else x$reading))
   invisible(x)
 }
 
@@ -730,7 +750,8 @@ ldf_pattern <- function(ldf, ldf_kind, ldf_weight, ldf_origin = NULL, ldf_underw
     stop("ldf_underwriting must be NULL or an underwriting_basis()", call. = FALSE)
   }
   underwriting <- if (is.null(ldf_underwriting)) NULL else
-    list(writing = ldf_underwriting$writing, policy_months = ldf_underwriting$policy_months)
+    list(writing = ldf_underwriting$writing, policy_months = ldf_underwriting$policy_months,
+         reading = ldf_underwriting$reading)
   c(list(kind = ldf_kind, ages = values$ages, values = values$values), weight,
     list(origin = ldf_origin, underwriting = underwriting))
 }
@@ -1156,11 +1177,14 @@ S7::method(print, tail_log_linear) <- tail_print
 #'   `ldf_origin`. An accident-month pattern (`ldf_origin = "M"`) converts
 #'   under any writing and term; a pattern of longer accident periods needs
 #'   a policy term that is a whole multiple of them or writing even within
-#'   each of them, and is read between its ages by the rule above, so an
-#'   annual accident-year pattern is approximate in the first two years
-#'   (31% too much developed at 12 months on a simulated parallelogram);
-#'   give it at every month, or an accident-month pattern, where it
-#'   matters. The result runs past `ldf`'s end by the writing months plus
+#'   each of them. Given at every month from 1 it is exact; at other ages
+#'   (annual ones, say) it is read between them as the basis's `reading`
+#'   says: by default the Weibull fitted through the period averages and
+#'   corrected to the nearest monotone accident-month pattern whose averages
+#'   are the given values exactly, within 0.2% of a simulated parallelogram
+#'   book at every age, or by the rule above with `reading = "ln-linear"`
+#'   (31% too much developed at 12 months on that book). The result runs
+#'   past `ldf`'s end by the writing months plus
 #'   the policy term less the accident period (12 months for an
 #'   accident-year pattern under the default, 23 for an accident-month
 #'   one), and a constant tail from `ldf`'s own tail is the safer choice
