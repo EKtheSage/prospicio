@@ -4854,6 +4854,77 @@ class Burr:
         """
 
 @final
+class CalendarYearTest:
+    """
+    Mack's test for calendar-year effects (Mack 1994, appendix H; R
+    ChainLadder's ``cyEffTest``), from ``calendar_year_effect`` or
+    ``MackFit.calendar_year_effect``.
+    
+    At each age the link ratios are split at their median into small and
+    large ones (one equal to the median is in neither); each calendar
+    diagonal counts its small ones ``S_j`` and large ones ``L_j``, and
+    ``z``, the sum of ``min(S_j, L_j)``, is compared with the normal
+    interval ``expected ± q sqrt(variance)``, ``q`` the standard normal's
+    ``(1 + ci) / 2`` quantile. A diagonal where small (or large) factors
+    prevail lowers ``z``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def ci(self, /) -> float:
+        """
+        The interval's confidence level.
+        """
+    @property
+    def diagonals(self, /) -> list[dict]:
+        """
+        Every calendar diagonal with at least two link ratios, oldest
+        first, as a list of dicts with ``valuation`` (the year and month of
+        its later cells, as ``"1983-12"``), ``small``, ``large``, ``z``,
+        ``n`` (``small + large``), ``m`` (``(n - 1) // 2``), ``expected``
+        and ``variance``: R's ``test_table``.
+        """
+    @property
+    def expected(self, /) -> float:
+        """
+        ``E[Z]`` under no calendar-year effect.
+        """
+    @property
+    def lower(self, /) -> float:
+        """
+        The interval's lower end.
+        """
+    @property
+    def passes(self, /) -> bool:
+        """
+        Whether ``z`` lies within the interval (ends included): no
+        calendar-year effect is detected. R prints the opposite as
+        "Calendar Year Effect: TRUE".
+        """
+    def to_frame(self, /) -> Any:
+        """
+        ``diagonals`` as a table, one row per diagonal. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def upper(self, /) -> float:
+        """
+        The interval's upper end.
+        """
+    @property
+    def variance(self, /) -> float:
+        """
+        ``Var[Z]`` under no calendar-year effect.
+        """
+    @property
+    def z(self, /) -> float:
+        """
+        ``Z``, the sum of each diagonal's ``min(S_j, L_j)``.
+        """
+
+@final
 class Cann:
     """
     A Combined Actuarial Neural Network (Wüthrich and Merz): the design's
@@ -9799,6 +9870,71 @@ class Design:
     def weights(self, /) -> list[float]:
         """
         Prior weight per row.
+        """
+
+@final
+class DevelopmentCorrelationTest:
+    """
+    Mack's test for correlation between adjacent development factors
+    (Mack 1994, appendix G; R ChainLadder's ``dfCorTest``), from
+    ``development_correlation`` or ``MackFit.development_correlation``.
+    
+    ``t`` is the weighted mean of the Spearman rank correlations of each
+    pair of adjacent link-ratio columns over the origins they share
+    (weight ``n - 1``), with variance ``1 / sum(weights)``, Mack's
+    ``1 / ((I - 2)(I - 3) / 2)`` on a full triangle, compared with
+    ``± q sqrt(variance)``, ``q`` the standard normal's ``(1 + ci) / 2``
+    quantile.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def ci(self, /) -> float:
+        """
+        The interval's confidence level.
+        """
+    @property
+    def lower(self, /) -> float:
+        """
+        The interval's lower end, ``-upper``.
+        """
+    @property
+    def pairs(self, /) -> list[dict]:
+        """
+        Every pair of adjacent link columns with two origins in common,
+        youngest first, as a list of dicts with ``age`` (the age in months
+        at the start of the first link), ``n`` (the origins in common),
+        ``t`` (Spearman's correlation with average ranks for ties; NaN if a
+        column's ranks are all tied) and ``weight`` (``n - 1``, or 0 where
+        ``t`` is NaN).
+        """
+    @property
+    def passes(self, /) -> bool:
+        """
+        Whether ``t`` lies within the interval (ends included): no
+        correlation between adjacent development factors is detected.
+        """
+    @property
+    def t(self, /) -> float:
+        """
+        ``T``, the weighted mean of the pairs' Spearman correlations.
+        """
+    def to_frame(self, /) -> Any:
+        """
+        ``pairs`` as a table, one row per pair. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def upper(self, /) -> float:
+        """
+        The interval's upper end.
+        """
+    @property
+    def variance(self, /) -> float:
+        """
+        ``Var[T]``; ``E[T]`` is 0.
         """
 
 @final
@@ -18870,6 +19006,31 @@ class MackFit:
         """
         The factors before the tail, as ``ChainLadderFit.blended_ldf``.
         """
+    def calendar_year_effect(self, /, ci: float = ...) -> CalendarYearTest:
+        """
+        Mack's calendar-year effect test (Mack 1994, appendix H; R
+        ChainLadder's ``cyEffTest``) on the link ratios this fit averaged:
+        its column's, without those ``n_periods``, ``drop_high`` and
+        ``drop_low`` exclude. A selected pattern (``ldf``) changes no link
+        ratio and so not the test (``docs/design/reserving-v02.md``,
+        decision 27).
+        
+        Parameters
+        ----------
+        ci : float, default 0.95
+            The interval's confidence level, Mack's and R's 95%.
+        
+        Returns
+        -------
+        CalendarYearTest
+        
+        Raises
+        ------
+        ValueError
+            If the fit has several segments (use ``segment(...)``),
+            ``ci`` is not strictly between 0 and 1, or no calendar diagonal
+            has two link ratios.
+        """
     @property
     def cdf(self, /) -> list[float]:
         """
@@ -18933,6 +19094,28 @@ class MackFit:
     def development(self, /) -> list[int]:
         """
         Development ages in months.
+        """
+    def development_correlation(self, /, ci: float = ...) -> DevelopmentCorrelationTest:
+        """
+        Mack's test for correlation between adjacent development factors
+        (Mack 1994, appendix G; R ChainLadder's ``dfCorTest``) on the link
+        ratios this fit averaged, as ``calendar_year_effect`` reads them.
+        
+        Parameters
+        ----------
+        ci : float, default 0.5
+            The interval's confidence level, Mack's and R's 50%.
+        
+        Returns
+        -------
+        DevelopmentCorrelationTest
+        
+        Raises
+        ------
+        ValueError
+            If the fit has several segments (use ``segment(...)``),
+            ``ci`` is not strictly between 0 and 1, or no pair of adjacent
+            link columns has two origins in common and untied ranks.
         """
     def development_frame(self, /) -> Any:
         """
@@ -30385,6 +30568,45 @@ def buhlmann_straub(ratios: Sequence[Sequence[float]], weights: Sequence[Sequenc
     4.0
     """
 
+def calendar_year_effect(triangle: Triangle, column: str, ci: float = ...) -> CalendarYearTest:
+    """
+    Mack's calendar-year effect test (Mack 1994, appendix H; R
+    ChainLadder's ``cyEffTest``) on every observed link ratio of one
+    column of a single-segment triangle. ``MackFit.calendar_year_effect``
+    tests only the link ratios a fit averaged.
+    
+    Parameters
+    ----------
+    triangle : Triangle
+    column : str
+    ci : float, default 0.95
+        The interval's confidence level, Mack's and R's 95%.
+    
+    Returns
+    -------
+    CalendarYearTest
+    
+    Raises
+    ------
+    ValueError
+        If the triangle has several segments or lacks the column, ``ci`` is
+        not strictly between 0 and 1, or no calendar diagonal has two link
+        ratios (fewer than three ages).
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import Triangle, calendar_year_effect
+    >>> paid = [[100.0, 160.0, 180.0, 186.0, 188.0], [110.0, 170.0, 195.0, 200.0],
+    ...         [120.0, 200.0, 220.0], [130.0, 205.0], [140.0]]
+    >>> rows = [(2020 + w, 12 * (d + 1), v) for w, r in enumerate(paid)
+    ...         for d, v in enumerate(r)]
+    >>> origin, age, values = map(list, zip(*rows))
+    >>> tri = Triangle.from_long(origin, age, {"paid": values})
+    >>> cy = calendar_year_effect(tri, "paid")
+    >>> cy.lower <= cy.expected <= cy.upper
+    True
+    """
+
 def calibrate(family: str, dist: Any, premium: float, assets: float |None = None, r0: float = 0.0) -> Distortion:
     """
     The member of a distortion family whose price of ``dist`` is ``premium``.
@@ -30818,6 +31040,47 @@ def derive_premium(technical: float, expenses: Sequence[Expense]) -> float:
     >>> from prospicio.aggregate import Expense, derive_premium
     >>> round(derive_premium(5.0, [Expense("premium", 0.1), Expense("fixed", 1.0)]), 12)
     6.666666666667
+    """
+
+def development_correlation(triangle: Triangle, column: str, ci: float = ...) -> DevelopmentCorrelationTest:
+    """
+    Mack's test for correlation between adjacent development factors
+    (Mack 1994, appendix G; R ChainLadder's ``dfCorTest``) on every
+    observed link ratio of one column of a single-segment triangle.
+    ``MackFit.development_correlation`` tests only the link ratios a fit
+    averaged.
+    
+    Parameters
+    ----------
+    triangle : Triangle
+    column : str
+    ci : float, default 0.5
+        The interval's confidence level, Mack's and R's 50%.
+    
+    Returns
+    -------
+    DevelopmentCorrelationTest
+    
+    Raises
+    ------
+    ValueError
+        If the triangle has several segments or lacks the column, ``ci`` is
+        not strictly between 0 and 1, or no pair of adjacent link columns
+        has two origins in common and untied ranks (fewer than four ages on
+        a square triangle).
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import Triangle, development_correlation
+    >>> paid = [[100.0, 160.0, 180.0, 186.0, 188.0], [110.0, 170.0, 195.0, 200.0],
+    ...         [120.0, 200.0, 220.0], [130.0, 205.0], [140.0]]
+    >>> rows = [(2020 + w, 12 * (d + 1), v) for w, r in enumerate(paid)
+    ...         for d, v in enumerate(r)]
+    >>> origin, age, values = map(list, zip(*rows))
+    >>> tri = Triangle.from_long(origin, age, {"paid": values})
+    >>> dc = development_correlation(tri, "paid")
+    >>> [p["age"] for p in dc.pairs]
+    [12, 24]
     """
 
 def deviance(family: str, y: Sequence[float], mu: Sequence[float], weights: Sequence[float] |None = None, theta: float |None = None, power: float |None = None) -> float:

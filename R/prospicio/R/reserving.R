@@ -2127,6 +2127,205 @@ S7::method(print, claims_development_result) <- function(x, ...) {
   invisible(x)
 }
 
+#' Mack's calendar-year effect test
+#'
+#' Mack's (1994, appendix H) test for calendar-year effects, as R
+#' ChainLadder's `cyEffTest()`: at each age the link ratios are split at
+#' their median into small and large ones (one equal to the median is in
+#' neither); each calendar diagonal counts its small ones `S_j` and large
+#' ones `L_j`, and `Z = sum(min(S_j, L_j))` is compared with the normal
+#' interval `E[Z] +- q sqrt(Var[Z])`, `q = qnorm((1 + ci) / 2)`. A diagonal
+#' where small (or large) factors prevail lowers `Z`.
+#'
+#' On a [triangle] the test reads every observed link ratio of `column`.
+#' On a single-segment [mack_fit] it reads the link ratios the fit
+#' averaged: its column's, without those `n_periods`, `drop_high` and
+#' `drop_low` exclude; a selected pattern (`ldf`) changes no link ratio
+#' and so not the test (`docs/design/reserving-v02.md`, decision 27).
+#'
+#' Properties: `z`, `expected`, `variance`, `ci`, `range` (lower and
+#' upper), `passes` (`TRUE` when `z` lies within the range, ends included:
+#' no calendar-year effect is detected; R's print says the opposite,
+#' "Calendar Year Effect: FALSE") and `test_table`, one row per calendar
+#' diagonal with at least two link ratios, oldest first: `valuation` (the
+#' year and month of its later cells), `S_j`, `L_j`, `Z_j`, `n`, `m`,
+#' `E_Zj` and `Var_Zj`, as R's `test_table` (R's `j` is the diagonal's
+#' number). `summary()` gives R's list of `Table`, `Totals` and `Range`.
+#'
+#' @param x A [triangle] or a single-segment [mack_fit].
+#' @param column The column to test, for a triangle with several columns.
+#'   Not used for a fit.
+#' @param ci The interval's confidence level, strictly between 0 and 1;
+#'   Mack's and R's 95% by default.
+#' @param ptr A `CalendarYearTest` pointer; used internally.
+#' @returns A `calendar_year_test` object.
+#' @seealso [development_correlation()] for the other assumption test.
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2016:2021, 6:1),
+#'                    age = sequence(6:1) * 12,
+#'                    paid = c(100, 160, 180, 186, 188, 189, 110, 170, 195, 200, 202,
+#'                             120, 200, 220, 224, 130, 205, 225, 140, 215, 150))
+#' tri <- triangle(long, "year", "age", "paid")
+#' cy <- calendar_year_effect(tri)
+#' cy
+#' cy@passes
+#' summary(cy)
+#' # The same test on the link ratios a Mack fit averaged.
+#' calendar_year_effect(mack(tri))@z
+calendar_year_test <- S7::new_class(
+  "calendar_year_test",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("CalendarYearTest"),
+    z = S7::new_property(S7::class_double, getter = function(self) self@ptr$z()),
+    expected = S7::new_property(S7::class_double, getter = function(self) self@ptr$expected()),
+    variance = S7::new_property(S7::class_double, getter = function(self) self@ptr$variance()),
+    ci = S7::new_property(S7::class_double, getter = function(self) self@ptr$ci()),
+    range = S7::new_property(S7::class_double, getter = function(self) {
+      c(lower = self@ptr$lower(), upper = self@ptr$upper())
+    }),
+    passes = S7::new_property(S7::class_logical, getter = function(self) self@ptr$passes()),
+    test_table = S7::new_property(S7::class_data.frame, getter = function(self) {
+      t <- self@ptr$table()
+      data.frame(valuation = t$valuation, S_j = t$small, L_j = t$large, Z_j = t$z, n = t$n,
+                 m = t$m, E_Zj = t$expected, Var_Zj = t$variance, stringsAsFactors = FALSE)
+    })
+  ),
+  constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
+)
+
+#' @rdname calendar_year_test
+#' @export
+calendar_year_effect <- function(x, column = NULL, ci = 0.95) {
+  ci <- single_number(ci, "ci")
+  if (!S7::S7_inherits(x, mack_fit) && !S7::S7_inherits(x, triangle)) {
+    stop("x must be a triangle or a mack_fit", call. = FALSE)
+  }
+  ptr <- if (S7::S7_inherits(x, mack_fit)) {
+    rust_result(x@ptr$calendar_year_effect(ci))
+  } else {
+    rust_result(x@ptr$calendar_year_effect(fit_column(x, column), ci))
+  }
+  calendar_year_test(ptr = ptr)
+}
+
+S7::method(print, calendar_year_test) <- function(x, ...) {
+  r <- x@range
+  cat("<calendar_year_test> Mack's calendar-year effect test\n")
+  cat(sprintf("Z = %s, E[Z] = %s, Var[Z] = %s\n", format(x@z), format(x@expected, digits = 10),
+              format(x@variance, digits = 10)))
+  cat(sprintf("%s%%-range = (%s; %s)\n", format(100 * x@ci), format(r[[1]], digits = 10),
+              format(r[[2]], digits = 10)))
+  cat(sprintf("Calendar year effect: %s\n", if (x@passes) "not detected" else "detected"))
+  invisible(x)
+}
+
+S7::method(summary, calendar_year_test) <- function(object, ...) {
+  r <- object@range
+  list(
+    Table = object@test_table,
+    Totals = data.frame(Totals = c(object@z, object@expected, object@variance),
+                        row.names = c("Z", "E[Z]", "Var[Z]")),
+    Range = data.frame(Value = unname(r), row.names = c("Lower", "Upper"))
+  )
+}
+
+#' Mack's development-factor correlation test
+#'
+#' Mack's (1994, appendix G) test for correlation between adjacent
+#' development factors, as R ChainLadder's `dfCorTest()`: `T` is the
+#' weighted mean of Spearman's rank correlations `T_k` of each pair of
+#' adjacent link-ratio columns over the origins they share (ties take
+#' average ranks), with weight `n - 1` (Mack's `I - k - 1`) and variance
+#' `1 / sum(weights)`, Mack's `1 / ((I - 2)(I - 3) / 2)` on a full
+#' triangle, compared with `+- q sqrt(Var[T])`, `q = qnorm((1 + ci) / 2)`.
+#'
+#' On a [triangle] the test reads every observed link ratio of `column`;
+#' on a single-segment [mack_fit] the link ratios the fit averaged, as
+#' [calendar_year_effect()] does.
+#'
+#' Properties: `t` (R's `T_stat`), `variance`, `ci`, `range` (lower and
+#' upper), `passes` (`TRUE` when `t` lies within the range, ends included:
+#' no correlation is detected) and `pairs`, one row per pair of adjacent
+#' link columns with two origins in common: `age` (the age at the start of
+#' the first link, in months), `n` (the origins in common), `T_k` (`NaN`
+#' if a column's ranks are all tied) and `weight` (`n - 1`, or 0 where
+#' `T_k` is `NaN`). `summary()` gives R's list of `Results` and `Range`,
+#' with `Table`, the pairs.
+#'
+#' @inheritParams calendar_year_test
+#' @param ci The interval's confidence level, strictly between 0 and 1;
+#'   Mack's and R's 50% by default.
+#' @param ptr A `DevelopmentCorrelationTest` pointer; used internally.
+#' @returns A `development_correlation_test` object.
+#' @seealso [calendar_year_effect()] for the other assumption test.
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2016:2021, 6:1),
+#'                    age = sequence(6:1) * 12,
+#'                    paid = c(100, 160, 180, 186, 188, 189, 110, 170, 195, 200, 202,
+#'                             120, 200, 220, 224, 130, 205, 225, 140, 215, 150))
+#' tri <- triangle(long, "year", "age", "paid")
+#' dc <- development_correlation(tri)
+#' dc
+#' dc@pairs
+#' summary(dc)
+development_correlation_test <- S7::new_class(
+  "development_correlation_test",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("DevelopmentCorrelationTest"),
+    t = S7::new_property(S7::class_double, getter = function(self) self@ptr$t()),
+    variance = S7::new_property(S7::class_double, getter = function(self) self@ptr$variance()),
+    ci = S7::new_property(S7::class_double, getter = function(self) self@ptr$ci()),
+    range = S7::new_property(S7::class_double, getter = function(self) {
+      c(lower = self@ptr$lower(), upper = self@ptr$upper())
+    }),
+    passes = S7::new_property(S7::class_logical, getter = function(self) self@ptr$passes()),
+    pairs = S7::new_property(S7::class_data.frame, getter = function(self) {
+      t <- self@ptr$table()
+      data.frame(age = t$age, n = t$n, T_k = t$t, weight = t$weight)
+    })
+  ),
+  constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
+)
+
+#' @rdname development_correlation_test
+#' @export
+development_correlation <- function(x, column = NULL, ci = 0.5) {
+  ci <- single_number(ci, "ci")
+  if (!S7::S7_inherits(x, mack_fit) && !S7::S7_inherits(x, triangle)) {
+    stop("x must be a triangle or a mack_fit", call. = FALSE)
+  }
+  ptr <- if (S7::S7_inherits(x, mack_fit)) {
+    rust_result(x@ptr$development_correlation(ci))
+  } else {
+    rust_result(x@ptr$development_correlation(fit_column(x, column), ci))
+  }
+  development_correlation_test(ptr = ptr)
+}
+
+S7::method(print, development_correlation_test) <- function(x, ...) {
+  r <- x@range
+  cat("<development_correlation_test> Mack's development-factor correlation test\n")
+  cat(sprintf("T = %s, Var[T] = %s\n", format(x@t, digits = 10), format(x@variance, digits = 10)))
+  cat(sprintf("%s%%-range = (%s; %s)\n", format(100 * x@ci), format(r[[1]], digits = 10),
+              format(r[[2]], digits = 10)))
+  cat(sprintf("Development factor correlation: %s\n", if (x@passes) "not detected" else "detected"))
+  invisible(x)
+}
+
+S7::method(summary, development_correlation_test) <- function(object, ...) {
+  r <- object@range
+  list(
+    Results = data.frame(Value = c(object@t, 0, object@variance),
+                         row.names = c("T", "E[T]", "Var[T]")),
+    Range = data.frame(Value = unname(r), row.names = c("Lower", "Upper")),
+    Table = object@pairs
+  )
+}
+
 #' ODP bootstrap
 #'
 #' Over-dispersed Poisson bootstrap of the chain ladder (England and Verrall

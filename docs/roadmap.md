@@ -494,6 +494,13 @@ what it is aiming for by v1.0.
     the user's decision of 2026-10-27 (`AnnualReading`; decision 18's rule
     kept as `LnLinear`); the simulated book converts within 0.2% at every
     age, against 31% off at 12 months before.
+  - Mack's tests of the chain ladder's assumptions (`reserving-v02.md`,
+    decision 27; branch `claude/mack-assumption-tests`, issue #551, in
+    Rust, Python and R): the calendar-year effect test and the
+    development-factor correlation test of Mack (1994), on a triangle or
+    on the link ratios a Mack fit averaged; R ChainLadder's `cyEffTest`
+    and `dfCorTest` to 1e-12 on RAA, GenIns and ABC, and Mack's printed
+    values on RAA.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental

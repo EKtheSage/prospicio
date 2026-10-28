@@ -331,6 +331,8 @@ reference:
       - layer_share_prior
       - residual_summary
       - claims_development_result
+      - calendar_year_test
+      - development_correlation_test
       - tail_constant
       - tail_curve
       - tail_bondy

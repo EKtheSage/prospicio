@@ -2387,6 +2387,10 @@ Triangle$to_text <- function(max_rows, max_cols) .Call(wrap__Triangle__to_text, 
 
 Triangle$chain_ladder <- function(column, average, sigma_interpolation, excl, tail, ldf) .Call(wrap__Triangle__chain_ladder, self, column, average, sigma_interpolation, excl, tail, ldf)
 
+Triangle$calendar_year_effect <- function(column, ci) .Call(wrap__Triangle__calendar_year_effect, self, column, ci)
+
+Triangle$development_correlation <- function(column, ci) .Call(wrap__Triangle__development_correlation, self, column, ci)
+
 Triangle$mack <- function(column, average, sigma_interpolation, excl, tail, tail_sigma, tail_std_err, ldf) .Call(wrap__Triangle__mack, self, column, average, sigma_interpolation, excl, tail, tail_sigma, tail_std_err, ldf)
 
 Triangle$expected_loss <- function(column, exposure, apriori, average, sigma_interpolation, excl, tail, ldf) .Call(wrap__Triangle__expected_loss, self, column, exposure, apriori, average, sigma_interpolation, excl, tail, ldf)
@@ -2628,6 +2632,10 @@ MackFit$segment <- function(keys, values) .Call(wrap__MackFit__segment, self, ke
 
 MackFit$claims_development_result <- function() .Call(wrap__MackFit__claims_development_result, self)
 
+MackFit$calendar_year_effect <- function(ci) .Call(wrap__MackFit__calendar_year_effect, self, ci)
+
+MackFit$development_correlation <- function(ci) .Call(wrap__MackFit__development_correlation, self, ci)
+
 #' @export
 `$.MackFit` <- function (self, name) { func <- MackFit[[name]]; environment(func) <- environment(); func }
 
@@ -2705,6 +2713,52 @@ ClaimsDevelopmentResult$total_run_off_standard_error <- function() .Call(wrap__C
 
 #' @export
 `[[.ClaimsDevelopmentResult` <- `$.ClaimsDevelopmentResult`
+
+CalendarYearTest <- new.env(parent = emptyenv())
+
+CalendarYearTest$z <- function() .Call(wrap__CalendarYearTest__z, self)
+
+CalendarYearTest$expected <- function() .Call(wrap__CalendarYearTest__expected, self)
+
+CalendarYearTest$variance <- function() .Call(wrap__CalendarYearTest__variance, self)
+
+CalendarYearTest$ci <- function() .Call(wrap__CalendarYearTest__ci, self)
+
+CalendarYearTest$lower <- function() .Call(wrap__CalendarYearTest__lower, self)
+
+CalendarYearTest$upper <- function() .Call(wrap__CalendarYearTest__upper, self)
+
+CalendarYearTest$passes <- function() .Call(wrap__CalendarYearTest__passes, self)
+
+CalendarYearTest$table <- function() .Call(wrap__CalendarYearTest__table, self)
+
+#' @export
+`$.CalendarYearTest` <- function (self, name) { func <- CalendarYearTest[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.CalendarYearTest` <- `$.CalendarYearTest`
+
+DevelopmentCorrelationTest <- new.env(parent = emptyenv())
+
+DevelopmentCorrelationTest$t <- function() .Call(wrap__DevelopmentCorrelationTest__t, self)
+
+DevelopmentCorrelationTest$variance <- function() .Call(wrap__DevelopmentCorrelationTest__variance, self)
+
+DevelopmentCorrelationTest$ci <- function() .Call(wrap__DevelopmentCorrelationTest__ci, self)
+
+DevelopmentCorrelationTest$lower <- function() .Call(wrap__DevelopmentCorrelationTest__lower, self)
+
+DevelopmentCorrelationTest$upper <- function() .Call(wrap__DevelopmentCorrelationTest__upper, self)
+
+DevelopmentCorrelationTest$passes <- function() .Call(wrap__DevelopmentCorrelationTest__passes, self)
+
+DevelopmentCorrelationTest$table <- function() .Call(wrap__DevelopmentCorrelationTest__table, self)
+
+#' @export
+`$.DevelopmentCorrelationTest` <- function (self, name) { func <- DevelopmentCorrelationTest[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.DevelopmentCorrelationTest` <- `$.DevelopmentCorrelationTest`
 
 OdpBootstrapFit <- new.env(parent = emptyenv())
 
