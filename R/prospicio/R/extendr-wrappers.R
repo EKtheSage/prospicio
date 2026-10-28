@@ -3814,6 +3814,8 @@ Book$calendar <- function(start_year) .Call(wrap__Book__calendar, self, start_ye
 #' @export
 `[[.Book` <- `$.Book`
 
+cashflow_condition_on_paid <- function(u, premium, paid, share_paid, conditioning) .Call(wrap__cashflow_condition_on_paid, u, premium, paid, share_paid, conditioning)
+
 Cashflow <- new.env(parent = emptyenv())
 
 Cashflow$new <- function(premium, commutation_month, written, earned, paid, bases, loads, floor, limit, commutation_bases, commutation_loads, commutation_floor, commutation_limit, collected_rate, deduct_commission, lag, adjustment_month, adjustment_rate, adjustment_less_commission, adjustment_base, funding_kind, funding_values, funding_rule, premium_offset, reference, funding_source, release_kind, release_values, annual_yield, interest_basis, opening_fixed, opening_share, expense_rate, buffer_months, buffer_paid, buffer_expenses, equity_kind, equity_values, fee_breakpoints, fee_slopes, fee_basis) .Call(wrap__Cashflow__new, premium, commutation_month, written, earned, paid, bases, loads, floor, limit, commutation_bases, commutation_loads, commutation_floor, commutation_limit, collected_rate, deduct_commission, lag, adjustment_month, adjustment_rate, adjustment_less_commission, adjustment_base, funding_kind, funding_values, funding_rule, premium_offset, reference, funding_source, release_kind, release_values, annual_yield, interest_basis, opening_fixed, opening_share, expense_rate, buffer_months, buffer_paid, buffer_expenses, equity_kind, equity_values, fee_breakpoints, fee_slopes, fee_basis)
@@ -3821,6 +3823,16 @@ Cashflow$new <- function(premium, commutation_month, written, earned, paid, base
 Cashflow$run <- function(u, commission, requirement, paid, n_patterns, index) .Call(wrap__Cashflow__run, self, u, commission, requirement, paid, n_patterns, index)
 
 Cashflow$trace <- function(u, commission, paid) .Call(wrap__Cashflow__trace, self, u, commission, paid)
+
+Cashflow$actual_state <- function(u, month, commission, paid) .Call(wrap__Cashflow__actual_state, self, u, month, commission, paid)
+
+Cashflow$valuation <- function(month, amounts, flows, has_flows, reference) .Call(wrap__Cashflow__valuation, self, month, amounts, flows, has_flows, reference)
+
+Cashflow$forward <- function(month, amounts, flows, has_flows, reference, u, commission, conditioning) .Call(wrap__Cashflow__forward, self, month, amounts, flows, has_flows, reference, u, commission, conditioning)
+
+Cashflow$valuation_trace <- function(month, amounts, flows, has_flows, reference, u, commission, conditioning) .Call(wrap__Cashflow__valuation_trace, self, month, amounts, flows, has_flows, reference, u, commission, conditioning)
+
+Cashflow$deal_ave <- function(actual, u, paid, n_patterns, index, levels) .Call(wrap__Cashflow__deal_ave, self, actual, u, paid, n_patterns, index, levels)
 
 Cashflow$buffer_months <- function() .Call(wrap__Cashflow__buffer_months, self)
 

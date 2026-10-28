@@ -13,7 +13,8 @@ poisson_tail), the time value of money (PaymentPattern,
 price_over_payout, PayoutPrice) and return metrics on simulated cash flows
 (npv, irr, IrrResult, moic, leverage, tiered_fee), and a collateralised
 deal's monthly cash flows (CashflowTerms, CollateralRequirement,
-PremiumAdjustment, Cashflows), and a book of deals on one shared simulation
+PremiumAdjustment, Cashflows) and the deal valued after binding
+(Valuation, Forward, condition_on_paid, deal_ave), and a book of deals on one shared simulation
 (DealRun, DealBook, BookCashflows), and bonus-malus scales as Markov
 chains (BonusMalus)."""
 
@@ -32,6 +33,7 @@ from .prospicio_native import (
     DealRun,
     DevelopmentPattern,
     ElfTable,
+    Forward,
     IlfTable,
     IndexClause,
     IrrResult,
@@ -58,6 +60,7 @@ from .prospicio_native import (
     RateLevel,
     RiskProfile,
     StandAlone,
+    Valuation,
     TabulatedCurve,
     TowerModel,
     TowerQuote,
@@ -67,7 +70,9 @@ from .prospicio_native import (
     alpha_between_layers,
     calibrate_classical,
     classical_premium,
+    condition_on_paid,
     credibility_weighted,
+    deal_ave,
     distortion_envelope,
     fit_pml_curve,
     fit_references,
@@ -168,6 +173,10 @@ __all__ = [
     "CollateralRequirement",
     "PremiumAdjustment",
     "Cashflows",
+    "Valuation",
+    "Forward",
+    "condition_on_paid",
+    "deal_ave",
     "DealRun",
     "DealBook",
     "BookCashflows",
