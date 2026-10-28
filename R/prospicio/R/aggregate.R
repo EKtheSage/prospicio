@@ -754,6 +754,8 @@ event_sums_insured <- function(x, sim) rust_result(x@ptr$sums_insured(as.double(
 #'
 #' @param ptr Internal.
 #' @returns An `event_set` object with read-only properties `n_sims`, `seed`,
+#'   `has_times` (whether the losses carry times of loss, see
+#'   [event_times()]),
 #'   `input_hash` (a hash of the years' source, see [read_ylt()], or `NULL`),
 #'   `label_dims` and `label_combinations` (see [with_labels()]),
 #'   `has_aggregate_part` and `aggregate_part_labels` (see
@@ -767,6 +769,7 @@ event_set <- S7::new_class(
     ptr = S7::new_S3_class("EventSet"),
     n_sims = S7::new_property(S7::class_double, getter = function(self) self@ptr$n_sims()),
     seed = S7::new_property(S7::class_double, getter = function(self) self@ptr$seed()),
+    has_times = S7::new_property(S7::class_logical, getter = function(self) self@ptr$has_times()),
     input_hash = S7::new_property(S7::class_any, getter = function(self) self@ptr$input_hash()),
     label_dims = S7::new_property(S7::class_character, getter = function(self) self@ptr$label_dims()),
     label_combinations = S7::new_property(S7::class_any, getter = function(self) {
