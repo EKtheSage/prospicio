@@ -1982,6 +1982,14 @@ impl Tower {
     /// scales point by point is right only for one section.
     /// [`Commission::rate`] evaluates a scale on any loss ratio.
     ///
+    /// Simulation `i` of the result is `losses[i]`: every component's draws
+    /// keep the order of `losses`, so the ceded, net and terms of index `i`
+    /// belong with whatever else was computed for simulation `i` (another
+    /// line's losses, the cash flows of the same year). A reserving fit's
+    /// `total_ultimate_draws` or `loss_ratio_draws` times the premium
+    /// (`prospicio_reserving::UltimateDraws`) are in its simulation order;
+    /// the losses must be finite and not negative.
+    ///
     /// ```
     /// use prospicio_aggregate::{Layer, Tower};
     /// use prospicio_prob::{Empirical, KeyValue};

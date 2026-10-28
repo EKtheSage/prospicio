@@ -138,3 +138,7 @@ required-features = ["slow-bayes"]
 [[test]]
 name = "reserving_calibration_meyers"
 required-features = ["slow-bayes"]
+
+[[test]]
+name = "reserving_bayes_loss_ratio_draws"
+required-features = ["slow-bayes"]

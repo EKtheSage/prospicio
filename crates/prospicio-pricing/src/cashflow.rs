@@ -879,6 +879,12 @@ impl CashflowTerms {
     /// Each simulation's cash flows, from its ultimate loss ratio `u[j]`
     /// and commission rate `commission[j]`. The commission reduces the
     /// premium paid in only under [`PremiumFlow::deduct_commission`].
+    ///
+    /// Row `j` of the result is simulation `j` of `u` and `commission`,
+    /// which must come from the same simulation `j` as everything else in
+    /// the deal: a reserving fit's `loss_ratio_draws`
+    /// (`prospicio_reserving::UltimateDraws`) and a tower's terms on the
+    /// same draws keep that order.
     pub fn run(&self, u: &[f64], commission: &[f64]) -> Result<Cashflows> {
         self.check()?;
         check_sims(u, commission)?;

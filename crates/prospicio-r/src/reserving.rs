@@ -47,11 +47,50 @@ use prospicio_reserving::{
     Backtest, GlmCandidate, NamedModel, TriangleFrame, TriangleModel, diagonal_backtest,
 };
 
-use crate::distributions::PredictiveDistribution;
+use crate::distributions::{PredictiveDistribution, key_from_list};
 use crate::whole;
+use prospicio_prob::ComponentKey;
+use prospicio_reserving::UltimateDraws;
 
 fn to_r(e: prospicio_reserving::Error) -> Error {
     Error::Other(e.to_string())
+}
+
+/// The key an R list or vector names, or `None` for NULL.
+fn origin_key(origin: Nullable<List>) -> Result<Option<ComponentKey>> {
+    match origin {
+        Nullable::NotNull(key) => Ok(Some(key_from_list(key)?)),
+        Nullable::Null => Ok(None),
+    }
+}
+
+/// [`UltimateDraws::ultimates`] for R.
+fn ultimates_of(fit: &impl UltimateDraws) -> Result<PredictiveDistribution> {
+    Ok(PredictiveDistribution {
+        inner: fit.ultimates().map_err(to_r)?,
+    })
+}
+
+/// One origin's ultimate draws, or the total's with no origin.
+fn ultimate_draws_of(fit: &impl UltimateDraws, origin: Nullable<List>) -> Result<Vec<f64>> {
+    match origin_key(origin)? {
+        None => fit.total_ultimate_draws(),
+        Some(key) => fit.ultimate_draws(&key),
+    }
+    .map_err(to_r)
+}
+
+/// One origin's loss ratio draws, or the total's with no origin.
+fn loss_ratio_draws_of(
+    fit: &impl UltimateDraws,
+    origin: Nullable<List>,
+    premium: f64,
+) -> Result<Vec<f64>> {
+    match origin_key(origin)? {
+        None => fit.total_loss_ratio_draws(premium),
+        Some(key) => fit.loss_ratio_draws(&key, premium),
+    }
+    .map_err(to_r)
 }
 
 fn grain(name: &str, arg: &str) -> Result<Grain> {
@@ -2765,6 +2804,23 @@ impl OdpBootstrapFit {
         }
     }
 
+    /// The joint ultimates: the reserves with each origin's latest value
+    /// added in every simulation (`UltimateDraws::ultimates`).
+    fn ultimates(&self) -> Result<PredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     fn long_table(&self) -> List {
         fit_table(self.inner.to_long())
     }
@@ -2817,6 +2873,23 @@ impl MackBootstrapFit {
         PredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// The joint ultimates: the reserves with each origin's latest value
+    /// added in every simulation (`UltimateDraws::ultimates`).
+    fn ultimates(&self) -> Result<PredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     fn long_table(&self) -> List {
@@ -3118,6 +3191,23 @@ impl BayesOdpFit {
         PredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// The joint ultimates: the reserves with each origin's latest value
+    /// added in every simulation (`UltimateDraws::ultimates`).
+    fn ultimates(&self) -> Result<PredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// `list(max_rhat, min_ess_bulk, min_ess_tail, divergences, warnings)`.
@@ -3880,6 +3970,23 @@ impl BayesOdpFits {
         }
     }
 
+    /// The joint ultimates: the reserves with each origin's latest value
+    /// added in every simulation (`UltimateDraws::ultimates`).
+    fn ultimates(&self) -> Result<PredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     /// One row per segment: `list(table, warnings)`, as
     /// `segment_diagnostics`.
     fn diagnostics_table(&self) -> List {
@@ -3977,6 +4084,17 @@ impl MeyersFit {
         PredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// `list(max_rhat, min_ess_bulk, min_ess_tail, divergences, warnings)`.
@@ -4110,6 +4228,23 @@ impl BayesBfNormalisedFit {
         }
     }
 
+    /// The joint ultimates: the reserves with each origin's latest value
+    /// added in every simulation (`UltimateDraws::ultimates`).
+    fn ultimates(&self) -> Result<PredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     /// `list(max_rhat, min_ess_bulk, min_ess_tail, divergences, warnings)`.
     fn diagnostics(&self) -> List {
         let d = &self.inner.diagnostics;
@@ -4228,6 +4363,23 @@ impl BayesBfFit {
         PredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// The joint ultimates: the reserves with each origin's latest value
+    /// added in every simulation (`UltimateDraws::ultimates`).
+    fn ultimates(&self) -> Result<PredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// `list(max_rhat, min_ess_bulk, min_ess_tail, divergences, warnings)`.
@@ -4360,6 +4512,17 @@ impl MeyersFits {
         PredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// One row per segment: `list(table, warnings)`, as
@@ -5085,6 +5248,23 @@ impl CompartmentalFits {
         }
     }
 
+    /// The joint ultimates: the reserves with each origin's latest value
+    /// added in every simulation (`UltimateDraws::ultimates`).
+    fn ultimates(&self) -> Result<PredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     fn paid(&self) -> PredictiveDistribution {
         PredictiveDistribution {
             inner: self.inner.paid.clone(),
@@ -5211,6 +5391,23 @@ impl CompartmentalFit {
         PredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// The joint ultimates: the reserves with each origin's latest value
+    /// added in every simulation (`UltimateDraws::ultimates`).
+    fn ultimates(&self) -> Result<PredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     fn paid(&self) -> PredictiveDistribution {
