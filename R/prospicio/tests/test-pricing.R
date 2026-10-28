@@ -424,6 +424,14 @@ stopifnot(all(abs(moic(c(30, 0), 40, 60) - c(1.3, 1)) < 1e-15))
 stopifnot(all(abs(tiered_fee(c(-5, 10, 20, 50), c(0, 10, 30), c(0.05, 0.1, 0.25)) -
                   c(0, 0.5, 1.5, 7.5)) < 1e-14))
 stopifnot(inherits(try(irr(flows, c(0, 1)), silent = TRUE), "try-error"))
+# A root outside the searched range is flagged and found on request (#670).
+out <- irr(rbind(c(-100, 400), c(10, 5), c(-100, 1.5)), c(0, 1))
+stopifnot(identical(out$found, c(FALSE, FALSE, FALSE)),
+          identical(out$root_above, c(TRUE, FALSE, FALSE)),
+          identical(out$root_below, c(FALSE, FALSE, TRUE)))
+out <- irr(rbind(c(-100, 400), c(10, 5), c(-100, 1.5)), c(0, 1), extend = TRUE)
+stopifnot(identical(out$found, c(TRUE, FALSE, TRUE)), abs(out$rate[1] - 3) < 1e-12,
+          abs(out$rate[3] + 0.985) < 1e-12)
 stopifnot(inherits(try(npv(1, 0, 0.1, unit = "weeks"), silent = TRUE), "try-error"))
 stopifnot(inherits(try(moic(1, 0, 0), silent = TRUE), "try-error"))
 stopifnot(inherits(try(tiered_fee(1, c(1, 1), c(0.1, 0.2)), silent = TRUE), "try-error"))

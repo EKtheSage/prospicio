@@ -181,7 +181,8 @@ frame).
 10. **A missing root is a flag, not an error.** Flows of one sign, or with
     their root outside the range, give `found = false` and NaN; flows with
     several roots give the one nearest 0 and `sign_changes` above 1, so a
-    caller can see both cases.
+    caller can see both cases. Since decision 35, `root_above` and
+    `root_below` tell a root outside the range from no root at all.
 11. **MOIC and leverage divide by the capital funded plus the opening
     capital**, which must be positive: `1 + released / C` and
     `rate × premium / C`. The leverage rate has no default.
@@ -410,6 +411,27 @@ frame).
     `condition_on_paid()` and `deal_ave()`. A valuation with a paid
     pattern by simulation is not built.
 
+35. **A root outside the IRR's range is flagged, and found on request**
+    (#670, proposed by the Aggregate lane for the user's acceptance). Under
+    the reference model's range, −95% to 100% a year (decision 9), a
+    collateralised deal's best years return more than 100% and were
+    reported as having no root, like flows with none, so leaving them out
+    biased the IRR statistics down (`knowledge/findings/deal-report-tables.md`).
+    `Irr::root_above` and `root_below` say whether a root lies outside the
+    range: the value at the range's end and its limit beyond it differ in
+    sign, the limit as the rate grows being the sign of the earliest
+    nonzero flow (summed by time) and as it falls to −100% that of the
+    latest. `IrrOptions::extend` (off by default, so the reference model's
+    results are unchanged) searches for that root when the grid sees none:
+    above `upper` at `(1 + upper) 2^k − 1` and below `lower` at
+    `−1 + (1 + lower) / 2^k` for `k` up to 60, the first bracket on each
+    side and of the two the one nearer 0, refined as in the range;
+    `sign_changes` then counts it. Breaking for struct literals of `Irr`
+    and `IrrOptions`. In Python `IrrResult.root_above` and `root_below` and
+    `extend=` on `irr`, `Cashflows.irr`, `Forward.forward_irr` and
+    `since_inception_irr` and `DealBook.cashflows`; in R `root_above` and
+    `root_below` columns and `extend =` on `irr()` and `book_cashflows()`.
+
 ## Conventions left as settings (cash-flow engine)
 
 The user accepted these on 2026-10-22 as built: each stays a setting with
@@ -440,7 +462,9 @@ planned.
 - Return metrics (#480): an IRR in closed form (−100 now, 121 in two
   years, 10%); two roots, 10% and 20%, where the one nearest 0 is kept and
   a search from 15% finds the other; flows of one sign and a root outside
-  the range flagged; an exact zero on the grid; the rows call against one
+  the range flagged, the second told from the first by `root_above` or
+  `root_below` and found under `extend` (300% above, −98.5% below, about
+  6,000% a year on monthly flows, an in-range root unchanged); an exact zero on the grid; the rows call against one
   row at a time; monthly against actual/365 in closed form; a three-tier
   fee by hand (unit tests in `returns.rs`, and the same cases in Python
   and R).

@@ -5719,7 +5719,7 @@ class Cashflows:
         """
         The capital each simulation's investor paid into the trust.
         """
-    def irr(self, /, *, lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3) -> IrrResult:
+    def irr(self, /, *, lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3, extend: bool = False) -> IrrResult:
         """
         Each simulation's annual internal rate of return, as ``irr``.
         """
@@ -9750,12 +9750,17 @@ class DealBook:
         patterns, and the investors' flows when every deal has them; book
         month ``m`` falls in ``start_year + m // 12``.
         """
-    def cashflows(self, /, rate: float = 0.0, *, lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3) -> BookCashflows:
+    def cashflows(self, /, rate: float = 0.0, *, lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3, extend: bool = False) -> BookCashflows:
         """
         The investors' flows on the book's calendar, each deal's moved to
         its inception and summed in each simulation, with the book's IRR,
         NPV at ``rate`` and MOIC on the summed flows. Every deal needs
-        flows (``DealRun.with_cashflows`` or ``with_flows``).
+        flows (``DealRun.with_cashflows`` or ``with_flows``). The IRR is
+        searched as ``irr`` searches, from -95% to 100% a year by default: a
+        simulation whose return is above the range has ``found`` false and
+        ``root_above`` true in ``irr``, and ``extend=True`` (or a larger
+        ``upper``) finds it, so leaving those simulations out does not bias
+        the IRR statistics downwards.
         """
     def distribution(self, /, item: str, percentiles: Sequence[float], *, tvar_levels: Sequence[float] |None = None, sd_multiples: Sequence[float] |None = None, quantile: str = "inverted_cdf", tvar: str = "exact", tail: str = "upper") -> dict:
         """
@@ -12936,7 +12941,7 @@ class Forward:
         The flows in months from the valuation month, with totals since
         inception (``funded``, ``released``, ``fee``).
         """
-    def forward_irr(self, /, *, lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3) -> IrrResult:
+    def forward_irr(self, /, *, lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3, extend: bool = False) -> IrrResult:
         """
         Each kept simulation's internal rate of return from the valuation
         month, as ``Cashflows.irr``.
@@ -12970,7 +12975,7 @@ class Forward:
         """
         The net asset value at the valuation.
         """
-    def since_inception_irr(self, /, *, lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3) -> IrrResult:
+    def since_inception_irr(self, /, *, lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3, extend: bool = False) -> IrrResult:
         """
         Each kept simulation's internal rate of return since inception.
         """
@@ -15749,6 +15754,18 @@ class IrrResult:
     def rate(self, /) -> list[float]:
         """
         Each simulation's annual rate, NaN where no root was found.
+        """
+    @property
+    def root_above(self, /) -> list[bool]:
+        """
+        Whether a root lies above each search's range (a return above
+        ``upper``): with ``found`` false, the simulation's IRR is above the
+        range, not missing. ``extend=True`` finds it.
+        """
+    @property
+    def root_below(self, /) -> list[bool]:
+        """
+        Whether a root lies below each search's range.
         """
     @property
     def sign_changes(self, /) -> list[int]:
@@ -32661,7 +32678,7 @@ def iman_conover(pd: PredictiveDistribution, correlation: Sequence[Sequence[floa
     True
     """
 
-def irr(flows: Sequence[Sequence[float]], times: Sequence[float], *, unit: str = "years", lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3) -> IrrResult:
+def irr(flows: Sequence[Sequence[float]], times: Sequence[float], *, unit: str = "years", lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3, extend: bool = False) -> IrrResult:
     """
     The internal rate of return of each simulation's cash flows, an annual
     rate discounting by ``(1 + r)^-t``.
@@ -32670,9 +32687,13 @@ def irr(flows: Sequence[Sequence[float]], times: Sequence[float], *, unit: str =
     ``lower`` to ``upper``; of its sign changes (and exact zeros) the one
     whose bracket's midpoint is nearest 0 is halved ``bisections`` times and
     refined by ``newton_steps`` Newton steps clipped to the bracket. A
-    simulation with no root in the range (flows of one sign, say) has
-    ``found`` false and NaN; one with several has ``sign_changes`` above 1.
-    The defaults are a reference simulation model's.
+    simulation with no root in the range has ``found`` false and NaN, with
+    ``root_above`` (or ``root_below``) true when a root lies outside the
+    range, a return above 100% a year under the defaults, and false for
+    flows with no root at all, such as flows of one sign; ``extend=True``
+    searches beyond the range for it. One with several roots has
+    ``sign_changes`` above 1. The defaults are a reference simulation
+    model's, with no search beyond the range.
     
     Parameters
     ----------
@@ -32688,6 +32709,10 @@ def irr(flows: Sequence[Sequence[float]], times: Sequence[float], *, unit: str =
     points : int, default 400
     bisections : int, default 8
     newton_steps : int, default 3
+    extend : bool, default False
+        When no root is in the range but one lies beyond it, search for it
+        (above ``upper`` by doubling ``1 + rate``, below ``lower`` by
+        halving it).
     
     Returns
     -------
@@ -32699,6 +32724,12 @@ def irr(flows: Sequence[Sequence[float]], times: Sequence[float], *, unit: str =
     >>> r = irr([[-100.0, 230.0, -132.0], [10.0, 5.0, 1.0]], [0.0, 1.0, 2.0])
     >>> [round(x, 12) for x in r.rate[:1]], r.found, r.sign_changes
     ([0.1], [True, False], [2, 0])
+    >>> # A return of 300%, above the default range.
+    >>> r = irr([[-100.0, 400.0]], [0.0, 1.0])
+    >>> r.found, r.root_above
+    ([False], [True])
+    >>> [round(x, 12) for x in irr([[-100.0, 400.0]], [0.0, 1.0], extend=True).rate]
+    [3.0]
     """
 
 def k_fold(n: int, k: int, seed: int) -> list[tuple[list[int], list[int]]]:

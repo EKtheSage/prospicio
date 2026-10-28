@@ -37,6 +37,10 @@ templates in `examples/templates/` (#605).
 * `examples/ils_deal_analysis.ipynb` calls `cashflows()` with the default
   range and reports a "no root" count beside its IRR percentiles, so its
   IRR statistics leave out the deal's best years in the same way.
+* Since #670 an IRR result says when a root lies outside the range
+  (`root_above`, `root_below`), so such a simulation is told from flows
+  with no root at all, and `extend=True` (R `extend = TRUE`) searches past
+  the range to find it; the default search is unchanged.
 * Quarto renders a document's `params` with `-P name:value`. With the knitr
   engine they are `params$name`; with the Jupyter engine they replace the
   cell tagged `parameters`, and Quarto needs `papermill` in the Python

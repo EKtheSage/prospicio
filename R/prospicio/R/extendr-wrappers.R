@@ -226,7 +226,7 @@ pricing_price_over_payout <- function(expected_loss, premium, assets, times, sha
 
 pricing_npv <- function(flows, times, rate, unit) .Call(wrap__pricing_npv, flows, times, rate, unit)
 
-pricing_irr <- function(flows, times, unit, lower, upper, points, bisections, newton_steps) .Call(wrap__pricing_irr, flows, times, unit, lower, upper, points, bisections, newton_steps)
+pricing_irr <- function(flows, times, unit, lower, upper, points, bisections, newton_steps, extend) .Call(wrap__pricing_irr, flows, times, unit, lower, upper, points, bisections, newton_steps, extend)
 
 pricing_moic <- function(released, funded, opening) .Call(wrap__pricing_moic, released, funded, opening)
 
@@ -3810,7 +3810,7 @@ Book$distribution <- function(item, percentiles, tvar_levels, sd_multiples, quan
 
 Book$marginal_price <- function(names, assets, rate, pricing) .Call(wrap__Book__marginal_price, self, names, assets, rate, pricing)
 
-Book$cashflows <- function(rate, lower, upper, points, bisections, newton_steps) .Call(wrap__Book__cashflows, self, rate, lower, upper, points, bisections, newton_steps)
+Book$cashflows <- function(rate, lower, upper, points, bisections, newton_steps, extend) .Call(wrap__Book__cashflows, self, rate, lower, upper, points, bisections, newton_steps, extend)
 
 Book$calendar <- function(start_year) .Call(wrap__Book__calendar, self, start_year)
 
