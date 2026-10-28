@@ -55,7 +55,7 @@ use prospicio_reserving::{
 use crate::distributions::{PredictiveDistribution, key_from_list};
 use crate::whole;
 use prospicio_prob::ComponentKey;
-use prospicio_reserving::UltimateDraws;
+use prospicio_reserving::{DevelopmentPatterns, Monotone, MonthlyBasis, UltimateDraws};
 
 fn to_r(e: prospicio_reserving::Error) -> Error {
     Error::Other(e.to_string())
@@ -96,6 +96,80 @@ fn loss_ratio_draws_of(
         Some(key) => fit.loss_ratio_draws(&key, premium),
     }
     .map_err(to_r)
+}
+
+/// The pattern draws' segment label as the binding takes it.
+fn label_refs(segment: &[String]) -> Vec<&str> {
+    segment.iter().map(String::as_str).collect()
+}
+
+/// The ages of a segment's pattern draws in months.
+fn pattern_ages_of(patterns: &DevelopmentPatterns, segment: &[String]) -> Result<Vec<f64>> {
+    let seg = patterns.segment(&label_refs(segment)).map_err(to_r)?;
+    Ok(seg.ages().iter().map(|&a| f64::from(a)).collect())
+}
+
+/// [`DevelopmentPatterns::pattern_draws`] flattened row-major.
+fn pattern_draws_of(patterns: &DevelopmentPatterns, segment: &[String]) -> Result<Vec<f64>> {
+    let rows = patterns.pattern_draws(&label_refs(segment)).map_err(to_r)?;
+    Ok(rows.into_iter().flatten().collect())
+}
+
+/// The monthly basis R names: NULL or `"origin"` for the origin's own
+/// basis with the default reading, `"origin_ln_linear"`, or an
+/// `underwriting_basis()`.
+fn monthly_basis(value: &Robj) -> Result<MonthlyBasis> {
+    let bad = |what: &str| {
+        Error::Other(format!(
+            "basis must be NULL, \"origin\", \"origin_ln_linear\" or an underwriting_basis(){what}"
+        ))
+    };
+    if value.is_null() {
+        return Ok(MonthlyBasis::default());
+    }
+    if let Some(name) = value.as_str() {
+        return match name {
+            "origin" => Ok(MonthlyBasis::default()),
+            "origin_ln_linear" => Ok(MonthlyBasis::Origin(AnnualReading::LnLinear)),
+            _ => Err(bad(&format!(", got {name:?}"))),
+        };
+    }
+    underwriting_basis(value)
+        .map(MonthlyBasis::Underwriting)
+        .map_err(|_| bad(""))
+}
+
+/// [`DevelopmentPatterns::monthly`] flattened row-major.
+fn monthly_pattern_draws_of(
+    patterns: &DevelopmentPatterns,
+    segment: &[String],
+    months: f64,
+    basis: &Robj,
+    monotone: &str,
+) -> Result<Vec<f64>> {
+    if !(months >= 1.0 && months.fract() == 0.0 && months <= f64::from(u32::MAX)) {
+        return Err(Error::Other(
+            "months must be a whole number, at least 1".into(),
+        ));
+    }
+    let monotone = match monotone {
+        "refuse" => Monotone::Refuse,
+        "running_max" => Monotone::RunningMax,
+        _ => {
+            return Err(Error::Other(format!(
+                "monotone must be \"refuse\" or \"running_max\", got {monotone:?}"
+            )));
+        }
+    };
+    let rows = patterns
+        .monthly(
+            &label_refs(segment),
+            &monthly_basis(basis)?,
+            months as usize,
+            monotone,
+        )
+        .map_err(to_r)?;
+    Ok(rows.into_iter().flatten().collect())
 }
 
 fn grain(name: &str, arg: &str) -> Result<Grain> {
@@ -2866,6 +2940,31 @@ impl OdpBootstrapFit {
         loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
+    /// The development ages of a segment's pattern draws, in months
+    /// (`DevelopmentPatterns::segment`); `segment` is empty for a fit of
+    /// one segment.
+    fn pattern_ages(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_ages_of(&self.inner.patterns, &segment)
+    }
+
+    /// The pattern draws of a segment, row-major: simulation `i`'s
+    /// cumulative share at each age in row `i`.
+    fn pattern_draws(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_draws_of(&self.inner.patterns, &segment)
+    }
+
+    /// The monthly patterns for the cash-flow engine, row-major: simulation
+    /// `i`'s share at the end of each of `months` months in row `i`.
+    fn monthly_pattern_draws(
+        &self,
+        segment: Vec<String>,
+        months: f64,
+        basis: Robj,
+        monotone: &str,
+    ) -> Result<Vec<f64>> {
+        monthly_pattern_draws_of(&self.inner.patterns, &segment, months, &basis, monotone)
+    }
+
     fn long_table(&self) -> List {
         fit_table(self.inner.to_long())
     }
@@ -2935,6 +3034,31 @@ impl MackBootstrapFit {
     /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
     fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
         loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
+    /// The development ages of a segment's pattern draws, in months
+    /// (`DevelopmentPatterns::segment`); `segment` is empty for a fit of
+    /// one segment.
+    fn pattern_ages(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_ages_of(&self.inner.patterns, &segment)
+    }
+
+    /// The pattern draws of a segment, row-major: simulation `i`'s
+    /// cumulative share at each age in row `i`.
+    fn pattern_draws(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_draws_of(&self.inner.patterns, &segment)
+    }
+
+    /// The monthly patterns for the cash-flow engine, row-major: simulation
+    /// `i`'s share at the end of each of `months` months in row `i`.
+    fn monthly_pattern_draws(
+        &self,
+        segment: Vec<String>,
+        months: f64,
+        basis: Robj,
+        monotone: &str,
+    ) -> Result<Vec<f64>> {
+        monthly_pattern_draws_of(&self.inner.patterns, &segment, months, &basis, monotone)
     }
 
     fn long_table(&self) -> List {
@@ -3253,6 +3377,31 @@ impl BayesOdpFit {
     /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
     fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
         loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
+    /// The development ages of a segment's pattern draws, in months
+    /// (`DevelopmentPatterns::segment`); `segment` is empty for a fit of
+    /// one segment.
+    fn pattern_ages(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_ages_of(&self.inner.patterns, &segment)
+    }
+
+    /// The pattern draws of a segment, row-major: simulation `i`'s
+    /// cumulative share at each age in row `i`.
+    fn pattern_draws(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_draws_of(&self.inner.patterns, &segment)
+    }
+
+    /// The monthly patterns for the cash-flow engine, row-major: simulation
+    /// `i`'s share at the end of each of `months` months in row `i`.
+    fn monthly_pattern_draws(
+        &self,
+        segment: Vec<String>,
+        months: f64,
+        basis: Robj,
+        monotone: &str,
+    ) -> Result<Vec<f64>> {
+        monthly_pattern_draws_of(&self.inner.patterns, &segment, months, &basis, monotone)
     }
 
     /// `list(max_rhat, min_ess_bulk, min_ess_tail, divergences, warnings)`.
@@ -4032,6 +4181,31 @@ impl BayesOdpFits {
         loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
+    /// The development ages of a segment's pattern draws, in months
+    /// (`DevelopmentPatterns::segment`); `segment` is empty for a fit of
+    /// one segment.
+    fn pattern_ages(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_ages_of(&self.inner.patterns, &segment)
+    }
+
+    /// The pattern draws of a segment, row-major: simulation `i`'s
+    /// cumulative share at each age in row `i`.
+    fn pattern_draws(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_draws_of(&self.inner.patterns, &segment)
+    }
+
+    /// The monthly patterns for the cash-flow engine, row-major: simulation
+    /// `i`'s share at the end of each of `months` months in row `i`.
+    fn monthly_pattern_draws(
+        &self,
+        segment: Vec<String>,
+        months: f64,
+        basis: Robj,
+        monotone: &str,
+    ) -> Result<Vec<f64>> {
+        monthly_pattern_draws_of(&self.inner.patterns, &segment, months, &basis, monotone)
+    }
+
     /// One row per segment: `list(table, warnings)`, as
     /// `segment_diagnostics`.
     fn diagnostics_table(&self) -> List {
@@ -4290,6 +4464,31 @@ impl BayesBfNormalisedFit {
         loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
+    /// The development ages of a segment's pattern draws, in months
+    /// (`DevelopmentPatterns::segment`); `segment` is empty for a fit of
+    /// one segment.
+    fn pattern_ages(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_ages_of(&self.inner.patterns, &segment)
+    }
+
+    /// The pattern draws of a segment, row-major: simulation `i`'s
+    /// cumulative share at each age in row `i`.
+    fn pattern_draws(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_draws_of(&self.inner.patterns, &segment)
+    }
+
+    /// The monthly patterns for the cash-flow engine, row-major: simulation
+    /// `i`'s share at the end of each of `months` months in row `i`.
+    fn monthly_pattern_draws(
+        &self,
+        segment: Vec<String>,
+        months: f64,
+        basis: Robj,
+        monotone: &str,
+    ) -> Result<Vec<f64>> {
+        monthly_pattern_draws_of(&self.inner.patterns, &segment, months, &basis, monotone)
+    }
+
     /// `list(max_rhat, min_ess_bulk, min_ess_tail, divergences, warnings)`.
     fn diagnostics(&self) -> List {
         let d = &self.inner.diagnostics;
@@ -4425,6 +4624,31 @@ impl BayesBfFit {
     /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
     fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
         loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
+    /// The development ages of a segment's pattern draws, in months
+    /// (`DevelopmentPatterns::segment`); `segment` is empty for a fit of
+    /// one segment.
+    fn pattern_ages(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_ages_of(&self.inner.patterns, &segment)
+    }
+
+    /// The pattern draws of a segment, row-major: simulation `i`'s
+    /// cumulative share at each age in row `i`.
+    fn pattern_draws(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_draws_of(&self.inner.patterns, &segment)
+    }
+
+    /// The monthly patterns for the cash-flow engine, row-major: simulation
+    /// `i`'s share at the end of each of `months` months in row `i`.
+    fn monthly_pattern_draws(
+        &self,
+        segment: Vec<String>,
+        months: f64,
+        basis: Robj,
+        monotone: &str,
+    ) -> Result<Vec<f64>> {
+        monthly_pattern_draws_of(&self.inner.patterns, &segment, months, &basis, monotone)
     }
 
     /// `list(max_rhat, min_ess_bulk, min_ess_tail, divergences, warnings)`.

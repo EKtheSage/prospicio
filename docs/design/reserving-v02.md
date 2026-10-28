@@ -4690,3 +4690,90 @@ reviewers ask for beside a Mack exhibit: a test for calendar-year effects
    `(12.22, 20.38)`, `T = 0.544`). Unit tests reproduce Mack's printed
    values (item 2), his `n = 5` moments (`E = 50/32`, `Var = 95/256`), the
    exclusions of item 6 and the errors.
+
+### 28. A development pattern per simulation, for the cash-flow engine
+
+Status: **Built** (2026-10-28), issue #600 (its Reserving part), branch
+`claude/reserving-pattern-draws`, in Rust, Python and R; items 2, 4, 5 and
+6 were proposed and built as recommended, and the user accepted them as
+built on 2026-10-28. The cash-flow engine takes a
+paid pattern per simulation (`PatternDraws`, `time-value.md` decision 33);
+this decision gives those patterns from a reserving fit, row `i` the same
+simulation as row `i` of the fit's `reserves` and of every vector
+decision 26 gives.
+
+1. **What a simulation's pattern is.** The cumulative share of the
+   ultimate that an origin with nothing yet observed would have reached at
+   each development age, under the development the simulation drew: the
+   bootstraps' pseudo factors (selected, blended and with the tail drawn
+   as the reserves use them), `BayesOdp`'s column effects `b_d`,
+   `BayesBf`'s `beta_d` and `BayesBfNormalised`'s shares `p_d` of the
+   posterior draw the simulation took. It is the parameter uncertainty in
+   the pattern, the same in every origin of the segment, and not an
+   origin's simulated cells divided by its ultimate: those carry process
+   error that differs by origin, and an old origin has only the end of its
+   curve left. A deal on a new year pays by the first.
+2. **The tail** (accepted 2026-10-28). A fit with a tail reaches 1 one development
+   period after the oldest age (12 months on an annual triangle), the age
+   at which the one-year view with a bootstrap tail (decision 11) closes
+   an origin; the share at the oldest age is `1 / tail`. The Bayesian
+   models have no tail, so their pattern reaches 1 at the oldest age.
+3. **Alignment.** The pattern is computed inside the same simulation as
+   the reserves, from what that simulation already drew, so no random
+   number is drawn for it and the reserves are bit for bit what they were
+   (a test pins them). Over segments, each segment's patterns move with its
+   reserves under a rank correlation: the reorder is
+   `reorder_groups_indexed` (equal to `reorder_groups` on the reserves),
+   and its index carries the patterns.
+4. **Monthly from inception** (accepted 2026-10-28). `DevelopmentPatterns::monthly`
+   gives, per simulation, `months` values for the engine's `paid`: the
+   share at the end of month `t + 1`. On the origin's own basis
+   (`MonthlyBasis::Origin`, the default), a pattern of accident periods
+   longer than a month is read at every month as decision 25 reads it
+   before converting (the Weibull curve by default, `ln`-linear on
+   request); on an underwriting basis (`MonthlyBasis::Underwriting`), it
+   is converted as `to_underwriting_basis` converts it (decision 21), at
+   every month from 1 under either reading (`to_underwriting_basis`
+   itself starts at the pattern's first age under the `ln`-linear
+   reading, and the months before it would pay nothing). The reading costs
+   about 9 ms a simulation with the Weibull (30 microseconds `ln`-linear),
+   so 10,000 simulations take about a minute and a half on one thread. The
+   terms' `written` and `earned` must describe the same basis; the engine
+   cannot check it.
+5. **A falling pattern** (accepted 2026-10-28). A pseudo factor below 1 makes a
+   simulation's share fall at that age, which the engine refuses.
+   `Monotone::Refuse` (the default) refuses it, naming the number of such
+   simulations and the first; `Monotone::RunningMax` holds each share at
+   the largest before it, capped at 1, so the money is paid when first
+   reached and none is returned. Mack's bootstrap draws its factors from
+   normal distributions, and on RAA about 0.15% of its simulations draw a
+   negative first factor, so the share at the first age is negative: the
+   default refuses that too, and `RunningMax` gives such a share the next
+   positive share, which that simulation then pays from its first age
+   (its factors mean nothing there). On RAA a share falls in 54%
+   of the ODP bootstrap's simulations and 22% of Mack's
+   (`knowledge/findings/pattern-draws-falling.md`). The default leaves the
+   choice to the caller rather than altering a fit's draws without a
+   word.
+6. **The horizon** (accepted 2026-10-28). The patterns end at exactly 1, so the
+   terms' `paid` must end at 1 for the engine to take them; `months`
+   shorter than the age at which the converted pattern reaches 1 is an
+   error, not a truncation, and longer is padded with 1.
+7. **Which fits.** `OdpBootstrapFit(s)`, `MackBootstrapFit(s)`,
+   `BayesOdpFit(s)`, `BayesBfFit` and `BayesBfNormalisedFit` (so
+   `LayerSharePrior::fit` too), each with a `patterns` field. Meyers'
+   models simulate only the value at the oldest age, log-normal cell by
+   cell, and Compartmental's pattern is the ODE's for the drawn rates;
+   both are later items. No fit knows whether its column is paid: a
+   pattern from an incurred triangle is an incurred pattern, and the
+   engine would read it as paid.
+8. **Bindings.** Python: `fit.patterns` (`DevelopmentPatterns`) with
+   `n_sims`, `segments`, `ages(segment=None)`, `mean(segment=None)`,
+   `pattern_draws(segment=None)` (a list per simulation) and
+   `monthly(months, segment=None, basis=None, monotone="refuse")`, whose
+   result goes to `CashflowTerms.run(..., paid_patterns=)`; `basis` is
+   `"origin"`, `"origin_ln_linear"` or an `UnderwritingBasis`. A fit of
+   one segment, including one picked from several, needs no label. R:
+   `pattern_draws(fit, segment = NULL)` and `monthly_pattern_draws(fit,
+   months, segment = NULL, basis = NULL, monotone = "refuse")`, a matrix
+   with one row per simulation for `cashflow_run(..., paid_patterns = )`.

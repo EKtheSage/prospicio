@@ -539,7 +539,11 @@ what it is aiming for by v1.0.
   The ultimates and loss ratios per simulation of every fit with reserve
   draws, in one simulation order for towers, deal books and the cash-flow
   engine (`UltimateDraws`, `reserving-v02.md` decision 26, #602; Rust,
-  Python and R): done.
+  Python and R): done. A development pattern per simulation, monthly from
+  inception, for the cash-flow engine's paid patterns (`DevelopmentPatterns`,
+  decision 28, #600; the bootstraps and `BayesOdp`, `BayesBf` and
+  `BayesBfNormalised`, in Rust, Python and R): done; Meyers' models and
+  `Compartmental` next.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
 

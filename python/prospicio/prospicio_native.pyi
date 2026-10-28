@@ -1216,6 +1216,19 @@ class BayesBfFit:
         ``beta[m]``.
         """
     @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        Each simulation's development pattern, to pair with the
+        simulation's loss ratio in the cash-flow engine.
+        
+        Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+        ``ultimates`` and ``ultimate_draws``.
+        
+        Returns
+        -------
+        DevelopmentPatterns
+        """
+    @property
     def prior_ultimate(self, /) -> list[float]:
         """
         The prior mean of each origin's row parameter ``mu[w]``,
@@ -1697,6 +1710,19 @@ class BayesBfNormalisedFit:
         """
         The posterior mean of each age's share ``p[d]`` of the ultimate, in
         development order; the shares sum to 1.
+        """
+    @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        Each simulation's development pattern, to pair with the
+        simulation's loss ratio in the cash-flow engine.
+        
+        Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+        ``ultimates`` and ``ultimate_draws``.
+        
+        Returns
+        -------
+        DevelopmentPatterns
         """
     @property
     def prior_ultimate(self, /) -> list[float]:
@@ -2576,6 +2602,19 @@ class BayesOdpFit:
         Parameter names: ``c``, ``a[2]`` to ``a[n]``, ``b[2]`` to ``b[m]``.
         """
     @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        Each simulation's development pattern, to pair with the
+        simulation's loss ratio in the cash-flow engine.
+        
+        Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+        ``ultimates`` and ``ultimate_draws``.
+        
+        Returns
+        -------
+        DevelopmentPatterns
+        """
+    @property
     def reserves(self, /) -> PredictiveDistribution:
         """
         Joint posterior predictive distribution of the reserve (the sum of
@@ -2767,6 +2806,19 @@ class BayesOdpFits:
         """
         Parameter names of a single-segment fit, as
         ``BayesOdpFit.parameter_names``.
+        """
+    @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        Each simulation's development pattern, to pair with the
+        simulation's loss ratio in the cash-flow engine.
+        
+        Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+        ``ultimates`` and ``ultimate_draws``.
+        
+        Returns
+        -------
+        DevelopmentPatterns
         """
     @property
     def reserves(self, /) -> PredictiveDistribution:
@@ -10089,6 +10141,104 @@ class DevelopmentPattern:
         Returns
         -------
         DevelopmentPattern
+        """
+
+@final
+class DevelopmentPatterns:
+    """
+    Each simulation's development pattern of a stochastic reserving fit
+    (``fit.patterns``), to pair with the simulation's loss ratio in the
+    cash-flow engine.
+    
+    A fit that draws its development per simulation (the bootstraps'
+    pseudo factors, the Bayesian models' posterior draws) has a pattern
+    for each simulation: row ``i`` is simulation ``i`` of the fit's
+    ``reserves`` and of ``ultimate_draws``. A segment is named by its label
+    parts, a tuple of strings; a fit of one segment needs no label.
+    
+    Examples
+    --------
+    >>> # patterns = fit.patterns
+    >>> # paid = patterns.monthly(120, monotone="running_max")
+    >>> # terms.run(u, paid_patterns=paid)
+    """
+    def __repr__(self, /) -> str: ...
+    def ages(self, /, segment: Any |None = None) -> list[int]:
+        """
+        The development ages in months: the triangle's, and with a tail one
+        development period past the oldest, where the share is 1.
+        
+        Parameters
+        ----------
+        segment : None, str or tuple of str
+            The segment's label parts; ``None`` for a fit of one segment.
+        """
+    def mean(self, /, segment: Any |None = None) -> list[float]:
+        """
+        The mean share at each age over the simulations.
+        
+        Parameters
+        ----------
+        segment : None, str or tuple of str
+            As in ``ages``.
+        """
+    def monthly(self, /, months: int, segment: Any |None = None, basis: Any |None = None, monotone: str = "refuse") -> list[list[float]]:
+        """
+        Each simulation's pattern by month, for the cash-flow engine's
+        ``paid_patterns``.
+        
+        Parameters
+        ----------
+        months : int
+            The number of months in each row; it must reach the month at
+            which the converted pattern reaches 1.
+        segment : None, str or tuple of str
+            As in ``ages``.
+        basis : None, "origin", "origin_ln_linear" or UnderwritingBasis
+            The basis the pattern is put on. ``None`` and ``"origin"``: the
+            origin's own basis, a month from inception per month of age, a
+            pattern of longer origin periods read between its ages by the
+            Weibull growth curve; ``"origin_ln_linear"`` reads it as
+            ``ln CDF`` linear between ages. An ``UnderwritingBasis``: the
+            pattern of a year of policies written and earned as it says.
+        monotone : {"refuse", "running_max"}, default "refuse"
+            What to do with a simulation whose share falls from one age to
+            the next (a pseudo factor below 1) or is not positive (a
+            negative factor, which Mack's bootstrap can draw):
+            ``"refuse"`` raises an error naming how many simulations and the
+            first; ``"running_max"`` holds each share at the largest before
+            it, capped at 1, and gives a share that is not positive the next
+            positive share, which the simulation then pays from its first age.
+        
+        Returns
+        -------
+        list of list of float
+            One row of ``months`` values per simulation.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        The number of simulations, the fit's.
+        """
+    def pattern_draws(self, /, segment: Any |None = None) -> list[list[float]]:
+        """
+        The cumulative share of the ultimate at each age, one list per
+        simulation.
+        
+        Parameters
+        ----------
+        segment : None, str or tuple of str
+            As in ``ages``.
+        
+        Returns
+        -------
+        list of list of float
+        """
+    @property
+    def segments(self, /) -> list[tuple]:
+        """
+        The label of each segment, a tuple of strings (empty for a fit of
+        one segment).
         """
 
 @final
@@ -19050,6 +19200,19 @@ class MackBootstrapFit:
         Origin period of each per-origin value and reserve component.
         """
     @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        Each simulation's development pattern, to pair with the
+        simulation's loss ratio in the cash-flow engine.
+        
+        Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+        ``ultimates`` and ``ultimate_draws``.
+        
+        Returns
+        -------
+        DevelopmentPatterns
+        """
+    @property
     def reserves(self, /) -> PredictiveDistribution:
         """
         Joint distribution of the reserve (each origin's last simulated
@@ -21901,6 +22064,19 @@ class OdpBootstrapFit:
     def origins(self, /) -> list[str]:
         """
         Origin period of each per-origin value and reserve component.
+        """
+    @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        Each simulation's development pattern, to pair with the
+        simulation's loss ratio in the cash-flow engine.
+        
+        Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+        ``ultimates`` and ``ultimate_draws``.
+        
+        Returns
+        -------
+        DevelopmentPatterns
         """
     @property
     def reserves(self, /) -> PredictiveDistribution:

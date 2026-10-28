@@ -35,10 +35,12 @@ use std::ops::Range;
 
 use prospicio_core::StreamRng;
 use prospicio_math::linalg::cholesky;
+use prospicio_prob::portfolio::CorrelationKind;
 use prospicio_prob::{KeyValue, PredictiveDistribution};
 
 use crate::bootstrap::components_of;
 use crate::error::{Error, Result};
+use crate::pattern_draws::DevelopmentPatterns;
 use crate::segments::{ReserveFit, SegmentFits};
 use crate::triangle::Segment;
 
@@ -145,6 +147,30 @@ impl SegmentDependence {
             Self::RankCorrelation { spearman } => {
                 let ranges: Vec<_> = (0..fits.len()).map(|s| components_of(fits, s)).collect();
                 rank_correlate(draws, &ranges, spearman, seed)
+            }
+            Self::Independent | Self::Synchronized => Ok(draws),
+        }
+    }
+
+    /// As [`reorder`](Self::reorder), with each segment's development
+    /// patterns moved with its reserves (`reserving-v02.md` decision 28):
+    /// the reserves are `reorder`'s, and row `i` of a segment's patterns is
+    /// the simulation its reserves in row `i` came from.
+    pub(crate) fn reorder_with<T: ReserveFit>(
+        &self,
+        draws: PredictiveDistribution,
+        fits: &SegmentFits<T>,
+        seed: u64,
+        patterns: &mut DevelopmentPatterns,
+    ) -> Result<PredictiveDistribution> {
+        match self {
+            Self::RankCorrelation { spearman } => {
+                let ranges: Vec<_> = (0..fits.len()).map(|s| components_of(fits, s)).collect();
+                let (draws, source) = rank_correlate_indexed(draws, &ranges, spearman, seed)?;
+                for (s, source) in source.iter().enumerate() {
+                    patterns.permute(s, source);
+                }
+                Ok(draws)
             }
             Self::Independent | Self::Synchronized => Ok(draws),
         }
@@ -326,6 +352,17 @@ fn rank_correlate(
     spearman: &[f64],
     seed: u64,
 ) -> Result<PredictiveDistribution> {
+    Ok(rank_correlate_indexed(draws, ranges, spearman, seed)?.0)
+}
+
+/// [`rank_correlate`], and where each row came from: `source[s][i]` is the
+/// simulation of the input whose segment `s` row `i` of the result holds.
+fn rank_correlate_indexed(
+    draws: PredictiveDistribution,
+    ranges: &[Range<usize>],
+    spearman: &[f64],
+    seed: u64,
+) -> Result<(PredictiveDistribution, Vec<Vec<usize>>)> {
     let normal = normal_scores(spearman, ranges.len())?;
     // One group per segment, whatever the triangle's keys.
     let keys = ranges
@@ -346,7 +383,13 @@ fn rank_correlate(
     // seeds Iman–Conover, the rest shuffle the rows.
     let n_sims = draws.n_sims();
     let mut rng = StreamRng::new(seed, n_sims as u64);
-    let reordered = grouped.reorder_groups("segment", &normal, rng.next_u64())?;
+    // `reorder_groups` is this with its index dropped.
+    let (reordered, index) = grouped.reorder_groups_indexed(
+        "segment",
+        &normal,
+        CorrelationKind::Pearson,
+        rng.next_u64(),
+    )?;
     let order = shuffled_order(n_sims, &mut rng);
     let n = draws.n_components();
     let paired = reordered.draw_matrix();
@@ -354,16 +397,21 @@ fn rank_correlate(
         .iter()
         .flat_map(|&r| paired[r * n..(r + 1) * n].iter().copied())
         .collect();
+    let source = index
+        .iter()
+        .map(|index| order.iter().map(|&r| index[r]).collect())
+        .collect();
     let provenance = reordered
         .provenance()
         .clone()
         .param("rank_correlation", format!("{spearman:?}"));
-    Ok(PredictiveDistribution::from_draws(
+    let draws = PredictiveDistribution::from_draws(
         draws.dims().to_vec(),
         draws.components().to_vec(),
         rows,
         provenance,
-    )?)
+    )?;
+    Ok((draws, source))
 }
 
 /// Iman–Conover leaves the first segment's rows sorted by its total, so row

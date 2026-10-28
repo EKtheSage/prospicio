@@ -142,3 +142,7 @@ required-features = ["slow-bayes"]
 [[test]]
 name = "reserving_bayes_loss_ratio_draws"
 required-features = ["slow-bayes"]
+
+[[test]]
+name = "reserving_bayes_pattern_draws"
+required-features = ["slow-bayes"]

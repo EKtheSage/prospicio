@@ -701,6 +701,49 @@ impl SelectedPattern {
         pattern_origin: Grain,
         basis: &UnderwritingBasis,
     ) -> Result<SelectedPattern> {
+        let v = basis.weights_over(pattern_origin.months())?;
+        self.convert(pattern_origin, &v, basis.reading, false)
+    }
+
+    /// The pattern on its own origin basis at every month from 1 to its
+    /// last age (`reserving-v02.md` decision 28 item 4): a pattern of
+    /// accident periods longer than a month read between its ages by
+    /// `reading` as [`to_underwriting_basis`](Self::to_underwriting_basis)
+    /// reads it, and decision 18 item 2 (linear from 0 to the first age,
+    /// `ln CDF` linear between ages) for an accident-month pattern or under
+    /// [`AnnualReading::LnLinear`]. Errors as `to_underwriting_basis`.
+    pub(crate) fn monthly_on_own_basis(
+        &self,
+        pattern_origin: Grain,
+        reading: AnnualReading,
+    ) -> Result<SelectedPattern> {
+        self.convert(pattern_origin, &[1.0], reading, true)
+    }
+
+    /// [`to_underwriting_basis`](Self::to_underwriting_basis) at every
+    /// month from 1, under any reading (`reserving-v02.md` decision 28 item
+    /// 4): an underwriting year has paid something before the pattern's
+    /// first age.
+    pub(crate) fn monthly_on_underwriting_basis(
+        &self,
+        pattern_origin: Grain,
+        basis: &UnderwritingBasis,
+    ) -> Result<SelectedPattern> {
+        let v = basis.weights_over(pattern_origin.months())?;
+        self.convert(pattern_origin, &v, basis.reading, true)
+    }
+
+    /// [`to_underwriting_basis`](Self::to_underwriting_basis) on the
+    /// weights `v` (`[1]` for the pattern's own basis), from age 1 when
+    /// `from_one` or a curve reading expands the pattern, else from its
+    /// first age.
+    fn convert(
+        &self,
+        pattern_origin: Grain,
+        v: &[f64],
+        reading: AnnualReading,
+        from_one: bool,
+    ) -> Result<SelectedPattern> {
         let err = |age: Option<Lag>, reason: &'static str| Err(Error::Pattern { age, reason });
         if let PatternWeight::ByAge(_) = self.weight {
             return err(
@@ -709,19 +752,22 @@ impl SelectedPattern {
                  for every factor",
             );
         }
-        let v = basis.weights_over(pattern_origin.months())?;
         let points = self.own_percents(
             "a single age-to-age factor has no span to convert: give two or more, or factors \
              to ultimate",
         )?;
         let s = pattern_origin.months();
-        let reading = match basis.reading {
+        let reading = match reading {
             AnnualReading::Curve(curve) if s > 1 && !every_month(&points) => Some(curve),
             _ => None,
         };
         // A reading expands the pattern to every month from 1.
         let (first, end) = (
-            if reading.is_some() { 1 } else { points[0].0 },
+            if reading.is_some() || from_one {
+                1
+            } else {
+                points[0].0
+            },
             points[points.len() - 1],
         );
         let last = Lag::try_from(v.len() - 1)

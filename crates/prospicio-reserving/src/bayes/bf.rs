@@ -20,6 +20,7 @@ use crate::bootstrap::{
 use crate::chain_ladder::ChainLadderFit;
 use crate::error::{Error, Result};
 use crate::expected_loss::origin_exposure;
+use crate::pattern_draws::{DevelopmentPatterns, predictive_with_patterns};
 use crate::segments::{FitTable, ReserveFit, SegmentFits};
 use crate::tail::Tail;
 use crate::triangle::{Label, Segment, Triangle};
@@ -183,6 +184,10 @@ pub struct BayesBfFit {
     /// future incremental values) by origin: dimension `origin`, one
     /// component per origin, as [`BayesOdpFit::reserves`](super::BayesOdpFit::reserves).
     pub reserves: PredictiveDistribution,
+    /// The development pattern of the posterior draw each simulation took
+    /// (the shares `exp(beta_d)` over their sum), row `i` simulation `i` of
+    /// `reserves` (`reserving-v02.md` decision 28).
+    pub patterns: DevelopmentPatterns,
     /// The model, for the pointwise log likelihood of [`loo`](Self::loo).
     model: Model,
 }
@@ -311,19 +316,23 @@ impl BayesBf {
         let latest = &chain_ladder.latest_position;
         let (no, nd) = (segment.n_origins, segment.n_dev);
         let (process, phi) = (self.process, model.phi);
-        let reserves = posterior.predictive(
-            vec!["origin".into()],
-            segment.origins.iter().map(|&o| vec![o.into()]).collect(),
+        let (reserves, patterns) = predictive_with_patterns(
+            &posterior,
+            segment,
             self.n_sims,
             derive_seed(self.seed, Stream::Predictive),
             self.provenance(column, exposure, &model, hasher),
-            |theta, rng: &mut StreamRng, row| {
+            |theta, rng: &mut StreamRng, row, increments| {
                 for (w, reserve) in row.iter_mut().enumerate() {
                     *reserve = (latest[w] + 1..nd)
                         .map(|d| {
                             process_draw(process, phi, natural_eta(no, theta, w, d).exp(), rng)
                         })
                         .sum();
+                }
+                // Every origin's increments are in proportion to exp(beta_d).
+                for (d, x) in increments.iter_mut().enumerate() {
+                    *x = natural_eta(no, theta, 0, d).exp();
                 }
             },
         )?;
@@ -335,6 +344,7 @@ impl BayesBf {
             posterior,
             diagnostics,
             reserves,
+            patterns,
             model,
         })
     }

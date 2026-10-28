@@ -373,6 +373,8 @@ reference:
       - benchmark_curve_fit
       - fit_frames
       - ultimate_draws
+      - pattern_draws
+      - monthly_pattern_draws
 # Articles: the R twins of the guides (docs/guides/*.qmd) and of the
 # notebooks (examples/*.qmd), staged into vignettes/articles by
 # `cargo xtask r` (gitignored). The `articles:` index is not written here:
