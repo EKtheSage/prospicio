@@ -71,19 +71,10 @@ carry the GitHub milestone of that version; an issue without one waits for a
 later release. The label `P4` marks an issue the user does not plan for any
 upcoming release.
 
-**0.0.6** (the user's decision of 2026-10-23): the work in flight and small
-fixes. Already on `main` since v0.0.5: #533, #540, #541 (breaking), #542,
-#543, #571.
-
-| Lane | In flight | Small fixes |
-|---|---|---|
-| Reserving | #606 (#544, PR 2), #538 (Compartmental PR H), #539 (PR I, if ready) | #551, #602, #610 |
-| Aggregate | quote extras (premium side and tax, then the whole tower) | #587, #595, #601, #608, #609 |
-| Guides | #597, #607 | #605 |
-| Shared | | #573, #574 |
-
-Everything else waits for 0.0.7 or later, including the M-sized P1s #545,
-#546, #552 and #572. #553 (IFRS 17) is `P4`.
+**0.0.6** was released on 2026-10-28 with the scope the user set on
+2026-10-23 (the work in flight and small fixes). The next release's scope
+is the user's to set. The M-sized P1s #545, #546, #552 and #572 wait for
+0.0.7 or later. #553 (IFRS 17) is `P4`.
 
 ## Each release
 
