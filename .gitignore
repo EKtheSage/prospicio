@@ -33,6 +33,8 @@ examples/*.html
 examples/*_files/
 examples/templates/*.html
 examples/templates/*_files/
+examples/templates/.quarto/
+examples/templates/*.quarto_ipynb
 
 # Source texts kept locally (copyrighted PDFs and Word files; never commit)
 knowledge/references/*.pdf
