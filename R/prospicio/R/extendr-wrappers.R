@@ -2630,6 +2630,12 @@ OdpBootstrapFit$scale <- function() .Call(wrap__OdpBootstrapFit__scale, self)
 
 OdpBootstrapFit$reserves <- function() .Call(wrap__OdpBootstrapFit__reserves, self)
 
+OdpBootstrapFit$ultimates <- function() .Call(wrap__OdpBootstrapFit__ultimates, self)
+
+OdpBootstrapFit$ultimate_draws <- function(origin) .Call(wrap__OdpBootstrapFit__ultimate_draws, self, origin)
+
+OdpBootstrapFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__OdpBootstrapFit__loss_ratio_draws, self, origin, premium)
+
 OdpBootstrapFit$long_table <- function() .Call(wrap__OdpBootstrapFit__long_table, self)
 
 OdpBootstrapFit$totals_table <- function() .Call(wrap__OdpBootstrapFit__totals_table, self)
@@ -2651,6 +2657,12 @@ BayesOdpFit$chain_ladder <- function() .Call(wrap__BayesOdpFit__chain_ladder, se
 BayesOdpFit$scale <- function() .Call(wrap__BayesOdpFit__scale, self)
 
 BayesOdpFit$reserves <- function() .Call(wrap__BayesOdpFit__reserves, self)
+
+BayesOdpFit$ultimates <- function() .Call(wrap__BayesOdpFit__ultimates, self)
+
+BayesOdpFit$ultimate_draws <- function(origin) .Call(wrap__BayesOdpFit__ultimate_draws, self, origin)
+
+BayesOdpFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__BayesOdpFit__loss_ratio_draws, self, origin, premium)
 
 BayesOdpFit$diagnostics <- function() .Call(wrap__BayesOdpFit__diagnostics, self)
 
@@ -2685,6 +2697,12 @@ BayesOdpFits$chain_ladder <- function() .Call(wrap__BayesOdpFits__chain_ladder, 
 BayesOdpFits$scale <- function() .Call(wrap__BayesOdpFits__scale, self)
 
 BayesOdpFits$reserves <- function() .Call(wrap__BayesOdpFits__reserves, self)
+
+BayesOdpFits$ultimates <- function() .Call(wrap__BayesOdpFits__ultimates, self)
+
+BayesOdpFits$ultimate_draws <- function(origin) .Call(wrap__BayesOdpFits__ultimate_draws, self, origin)
+
+BayesOdpFits$loss_ratio_draws <- function(origin, premium) .Call(wrap__BayesOdpFits__loss_ratio_draws, self, origin, premium)
 
 BayesOdpFits$diagnostics_table <- function() .Call(wrap__BayesOdpFits__diagnostics_table, self)
 
@@ -2818,6 +2836,10 @@ MeyersFit$ultimates <- function() .Call(wrap__MeyersFit__ultimates, self)
 
 MeyersFit$reserves <- function() .Call(wrap__MeyersFit__reserves, self)
 
+MeyersFit$ultimate_draws <- function(origin) .Call(wrap__MeyersFit__ultimate_draws, self, origin)
+
+MeyersFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__MeyersFit__loss_ratio_draws, self, origin, premium)
+
 MeyersFit$diagnostics <- function() .Call(wrap__MeyersFit__diagnostics, self)
 
 MeyersFit$parameter_names <- function() .Call(wrap__MeyersFit__parameter_names, self)
@@ -2856,6 +2878,10 @@ MeyersFits$ultimates <- function() .Call(wrap__MeyersFits__ultimates, self)
 
 MeyersFits$reserves <- function() .Call(wrap__MeyersFits__reserves, self)
 
+MeyersFits$ultimate_draws <- function(origin) .Call(wrap__MeyersFits__ultimate_draws, self, origin)
+
+MeyersFits$loss_ratio_draws <- function(origin, premium) .Call(wrap__MeyersFits__loss_ratio_draws, self, origin, premium)
+
 MeyersFits$diagnostics_table <- function() .Call(wrap__MeyersFits__diagnostics_table, self)
 
 MeyersFits$parameter_names <- function() .Call(wrap__MeyersFits__parameter_names, self)
@@ -2893,6 +2919,12 @@ CompartmentalFits$premium <- function() .Call(wrap__CompartmentalFits__premium, 
 CompartmentalFits$latest_paid <- function() .Call(wrap__CompartmentalFits__latest_paid, self)
 
 CompartmentalFits$reserves <- function() .Call(wrap__CompartmentalFits__reserves, self)
+
+CompartmentalFits$ultimates <- function() .Call(wrap__CompartmentalFits__ultimates, self)
+
+CompartmentalFits$ultimate_draws <- function(origin) .Call(wrap__CompartmentalFits__ultimate_draws, self, origin)
+
+CompartmentalFits$loss_ratio_draws <- function(origin, premium) .Call(wrap__CompartmentalFits__loss_ratio_draws, self, origin, premium)
 
 CompartmentalFits$paid <- function() .Call(wrap__CompartmentalFits__paid, self)
 
@@ -2939,6 +2971,12 @@ CompartmentalFit$latest_paid <- function() .Call(wrap__CompartmentalFit__latest_
 CompartmentalFit$population_origins <- function() .Call(wrap__CompartmentalFit__population_origins, self)
 
 CompartmentalFit$reserves <- function() .Call(wrap__CompartmentalFit__reserves, self)
+
+CompartmentalFit$ultimates <- function() .Call(wrap__CompartmentalFit__ultimates, self)
+
+CompartmentalFit$ultimate_draws <- function(origin) .Call(wrap__CompartmentalFit__ultimate_draws, self, origin)
+
+CompartmentalFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__CompartmentalFit__loss_ratio_draws, self, origin, premium)
 
 CompartmentalFit$paid <- function() .Call(wrap__CompartmentalFit__paid, self)
 
@@ -3106,6 +3144,12 @@ BayesBfFit$prior_ultimate <- function() .Call(wrap__BayesBfFit__prior_ultimate, 
 
 BayesBfFit$reserves <- function() .Call(wrap__BayesBfFit__reserves, self)
 
+BayesBfFit$ultimates <- function() .Call(wrap__BayesBfFit__ultimates, self)
+
+BayesBfFit$ultimate_draws <- function(origin) .Call(wrap__BayesBfFit__ultimate_draws, self, origin)
+
+BayesBfFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__BayesBfFit__loss_ratio_draws, self, origin, premium)
+
 BayesBfFit$diagnostics <- function() .Call(wrap__BayesBfFit__diagnostics, self)
 
 BayesBfFit$parameter_names <- function() .Call(wrap__BayesBfFit__parameter_names, self)
@@ -3148,6 +3192,12 @@ BayesBfNormalisedFit$expected_ultimate <- function() .Call(wrap__BayesBfNormalis
 
 BayesBfNormalisedFit$reserves <- function() .Call(wrap__BayesBfNormalisedFit__reserves, self)
 
+BayesBfNormalisedFit$ultimates <- function() .Call(wrap__BayesBfNormalisedFit__ultimates, self)
+
+BayesBfNormalisedFit$ultimate_draws <- function(origin) .Call(wrap__BayesBfNormalisedFit__ultimate_draws, self, origin)
+
+BayesBfNormalisedFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__BayesBfNormalisedFit__loss_ratio_draws, self, origin, premium)
+
 BayesBfNormalisedFit$diagnostics <- function() .Call(wrap__BayesBfNormalisedFit__diagnostics, self)
 
 BayesBfNormalisedFit$parameter_names <- function() .Call(wrap__BayesBfNormalisedFit__parameter_names, self)
@@ -3183,6 +3233,12 @@ MackBootstrapFit$mack <- function() .Call(wrap__MackBootstrapFit__mack, self)
 MackBootstrapFit$residuals <- function() .Call(wrap__MackBootstrapFit__residuals, self)
 
 MackBootstrapFit$reserves <- function() .Call(wrap__MackBootstrapFit__reserves, self)
+
+MackBootstrapFit$ultimates <- function() .Call(wrap__MackBootstrapFit__ultimates, self)
+
+MackBootstrapFit$ultimate_draws <- function(origin) .Call(wrap__MackBootstrapFit__ultimate_draws, self, origin)
+
+MackBootstrapFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__MackBootstrapFit__loss_ratio_draws, self, origin, premium)
 
 MackBootstrapFit$long_table <- function() .Call(wrap__MackBootstrapFit__long_table, self)
 

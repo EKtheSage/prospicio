@@ -82,6 +82,25 @@ pub type ComponentKey = Vec<KeyValue>;
 /// over all components. Use [`marginal`](Self::marginal) for one
 /// component, or [`aggregate`](Self::aggregate) to sum over dimensions.
 ///
+/// # Simulation order
+///
+/// Row `i` is one simulation for every component: a column read with
+/// [`marginal`](Self::marginal) or [`row`](Self::row) keeps the
+/// simulation order, so index `i` of one component's draws and index `i`
+/// of another's (or of the total's) are the same scenario. A distribution
+/// built by [`simulate`](Self::simulate) draws simulation `i` from its own
+/// stream, `StreamRng::new(seed, i)`, so the same inputs and seed give the
+/// same rows in the same order whatever the number of threads. The
+/// operations that keep rows whole ([`aggregate`](Self::aggregate),
+/// [`select`](Self::select), `join`, `scale_to_totals`) keep every row's
+/// components in the same simulation. `reorder_groups` and
+/// `reorder_groups_by_copula` move each group's rows whole, so a group's
+/// components stay paired, but row `i` of one group then meets another
+/// simulation of another group; `reorder_groups_indexed` returns where
+/// each row came from. A reserving fit's ultimates and loss ratios per
+/// simulation, for a tower, a deal book or the cash-flow engine, keep this
+/// order (`prospicio_reserving::UltimateDraws`).
+///
 /// # Example
 ///
 /// ```

@@ -390,6 +390,14 @@ pub struct BookCashflows {
 }
 
 /// Several deals on one shared simulation.
+///
+/// Simulation `j` of every deal must be the same scenario: the book adds
+/// the deals' flows index by index, so their dependence is the one their
+/// inputs had at the same index. Build each deal's premium and losses from
+/// one simulation in one order, for example a tower applied with
+/// `Tower::apply_annual` to a reserving fit's `loss_ratio_draws` times the
+/// premium (`prospicio_reserving::UltimateDraws`), and do not sort or
+/// resample one deal's inputs alone.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DealBook {
     deals: Vec<DealRun>,

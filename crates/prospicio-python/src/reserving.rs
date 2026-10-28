@@ -44,12 +44,60 @@ use prospicio_reserving::{
 use prospicio_glm::Glm;
 use prospicio_models::{Column, Terms};
 
-use crate::distributions::PyPredictiveDistribution;
+use crate::distributions::{KeyArg, PyPredictiveDistribution, key_from_py};
 use crate::models::{PyElpd, PyGlm, PyTerms};
 use crate::to_py;
+use prospicio_prob::ComponentKey;
+use prospicio_reserving::UltimateDraws;
 
 fn err(e: prospicio_reserving::Error) -> PyErr {
     PyValueError::new_err(e.to_string())
+}
+
+/// An origin as Python names it: a key tuple, one label (a string or an
+/// integer), or ``None`` for the total.
+#[derive(FromPyObject)]
+pub(crate) enum OriginArg {
+    One(KeyArg),
+    Key(Vec<KeyArg>),
+}
+
+impl OriginArg {
+    fn key(self) -> ComponentKey {
+        match self {
+            OriginArg::One(v) => key_from_py(vec![v]),
+            OriginArg::Key(k) => key_from_py(k),
+        }
+    }
+}
+
+/// [`UltimateDraws::ultimates`] for Python.
+fn ultimates_of(fit: &impl UltimateDraws) -> PyResult<PyPredictiveDistribution> {
+    Ok(PyPredictiveDistribution {
+        inner: fit.ultimates().map_err(err)?,
+    })
+}
+
+/// One origin's ultimate draws, or the total's with no origin.
+fn ultimate_draws_of(fit: &impl UltimateDraws, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+    match origin {
+        None => fit.total_ultimate_draws(),
+        Some(o) => fit.ultimate_draws(&o.key()),
+    }
+    .map_err(err)
+}
+
+/// One origin's loss ratio draws, or the total's with no origin.
+fn loss_ratio_draws_of(
+    fit: &impl UltimateDraws,
+    origin: Option<OriginArg>,
+    premium: f64,
+) -> PyResult<Vec<f64>> {
+    match origin {
+        None => fit.total_loss_ratio_draws(premium),
+        Some(o) => fit.loss_ratio_draws(&o.key(), premium),
+    }
+    .map_err(err)
 }
 
 fn grain(name: &str) -> PyResult<Grain> {
@@ -7423,6 +7471,58 @@ impl PyOdpBootstrapFit {
         }
     }
 
+    /// Joint distribution of the ultimate by segment and origin: ``reserves`` with
+    /// each origin's latest value added in every simulation, the same
+    /// dimensions, components and rows, so ``join``, ``select`` and
+    /// ``reorder_groups`` keep each simulation's origins together.
+    #[getter]
+    fn ultimates(&self) -> PyResult<PyPredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest value plus its reserve in that
+    /// simulation.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     /// One row per segment and origin: the key columns, ``origin``, the
     /// chain ladder's ``latest``, ``ultimate`` and ``reserve``, and the
     /// ``mean`` and ``std_dev`` of the bootstrapped reserve. Needs pandas.
@@ -8175,6 +8275,58 @@ impl PyMackBootstrapFit {
         PyPredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// Joint distribution of the ultimate by segment and origin: ``reserves`` with
+    /// each origin's latest value added in every simulation, the same
+    /// dimensions, components and rows, so ``join``, ``select`` and
+    /// ``reorder_groups`` keep each simulation's origins together.
+    #[getter]
+    fn ultimates(&self) -> PyResult<PyPredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest value plus its reserve in that
+    /// simulation.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// One row per segment and origin: the key columns, ``origin``, the
@@ -9094,6 +9246,58 @@ impl PyBayesOdpFit {
         }
     }
 
+    /// Joint distribution of the ultimate by origin: ``reserves`` with
+    /// each origin's latest value added in every simulation, the same
+    /// dimensions, components and rows, so ``join``, ``select`` and
+    /// ``reorder_groups`` keep each simulation's origins together.
+    #[getter]
+    fn ultimates(&self) -> PyResult<PyPredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest value plus its reserve in that
+    /// simulation.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key (``(2021,)``) or the origin alone; an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     /// MCMC diagnostics: a dict with ``max_rhat``, ``min_ess_bulk``,
     /// ``min_ess_tail``, ``divergences`` and ``warnings`` (one message per
     /// failed threshold; empty when every threshold holds).
@@ -9415,6 +9619,58 @@ impl PyBayesOdpFits {
         PyPredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// Joint distribution of the ultimate by segment and origin: ``reserves`` with
+    /// each origin's latest value added in every simulation, the same
+    /// dimensions, components and rows, so ``join``, ``select`` and
+    /// ``reorder_groups`` keep each simulation's origins together.
+    #[getter]
+    fn ultimates(&self) -> PyResult<PyPredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest value plus its reserve in that
+    /// simulation.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// MCMC diagnostics of a single-segment fit, as
@@ -10734,6 +10990,58 @@ impl PyBayesBfFit {
         }
     }
 
+    /// Joint distribution of the ultimate by origin: ``reserves`` with
+    /// each origin's latest value added in every simulation, the same
+    /// dimensions, components and rows, so ``join``, ``select`` and
+    /// ``reorder_groups`` keep each simulation's origins together.
+    #[getter]
+    fn ultimates(&self) -> PyResult<PyPredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest value plus its reserve in that
+    /// simulation.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key (``(2021,)``) or the origin alone; an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     /// MCMC diagnostics: a dict with ``max_rhat``, ``min_ess_bulk``,
     /// ``min_ess_tail``, ``divergences`` and ``warnings`` (one message per
     /// failed threshold; empty when every threshold holds).
@@ -11366,6 +11674,58 @@ impl PyBayesBfNormalisedFit {
         PyPredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// Joint distribution of the ultimate by origin: ``reserves`` with
+    /// each origin's latest value added in every simulation, the same
+    /// dimensions, components and rows, so ``join``, ``select`` and
+    /// ``reorder_groups`` keep each simulation's origins together.
+    #[getter]
+    fn ultimates(&self) -> PyResult<PyPredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest value plus its reserve in that
+    /// simulation.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key (``(2021,)``) or the origin alone; an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// MCMC diagnostics: a dict with ``max_rhat``, ``min_ess_bulk``,
@@ -12626,6 +12986,49 @@ impl PyMeyersFit {
         }
     }
 
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest value plus its reserve in that
+    /// simulation, which is the simulated value at the oldest age itself (``ultimates``).
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key (``(2021,)``) or the origin alone; an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     /// MCMC diagnostics: a dict with ``max_rhat``, ``min_ess_bulk``,
     /// ``min_ess_tail``, ``divergences`` and ``warnings`` (one message per
     /// failed threshold; empty when every threshold holds).
@@ -12859,6 +13262,49 @@ impl PyMeyersFits {
         PyPredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest value plus its reserve in that
+    /// simulation, which is the simulated value at the oldest age itself (``ultimates``).
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// MCMC diagnostics of a single-segment fit, as
@@ -14923,6 +15369,58 @@ impl PyCompartmentalFit {
         }
     }
 
+    /// Joint distribution of the ultimate by origin: ``reserves`` with
+    /// each origin's latest paid added in every simulation, the same
+    /// dimensions, components and rows, so ``join``, ``select`` and
+    /// ``reorder_groups`` keep each simulation's origins together.
+    #[getter]
+    fn ultimates(&self) -> PyResult<PyPredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest paid plus its reserve in that
+    /// simulation: the paid at the square's last age, on the paid basis.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key (``(2021,)``) or the origin alone; an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     /// Posterior predictive cumulative paid of each future cell of the
     /// square: dimensions ``"origin"`` and ``"age"`` (months).
     #[getter]
@@ -15197,6 +15695,58 @@ impl PyCompartmentalFits {
         PyPredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// Joint distribution of the ultimate by segment and origin: ``reserves`` with
+    /// each origin's latest paid added in every simulation, the same
+    /// dimensions, components and rows, so ``join``, ``select`` and
+    /// ``reorder_groups`` keep each simulation's origins together.
+    #[getter]
+    fn ultimates(&self) -> PyResult<PyPredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest paid plus its reserve in that
+    /// simulation: the paid at the square's last age, on the paid basis.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// Posterior predictive cumulative paid of each future cell of every

@@ -529,6 +529,10 @@ what it is aiming for by v1.0.
   uncertainty (PR 4: `LayerSharePrior` over the normalised Bayesian BF, in
   Rust, Python and R; done, which finishes the plan; PR 5, #518: one share
   error common to all origins as a parameter of the model, the default; done).
+  The ultimates and loss ratios per simulation of every fit with reserve
+  draws, in one simulation order for towers, deal books and the cash-flow
+  engine (`UltimateDraws`, `reserving-v02.md` decision 26, #602; Rust,
+  Python and R): done.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
 

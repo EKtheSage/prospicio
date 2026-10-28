@@ -7093,3 +7093,83 @@ S7::method(print, backtest) <- function(x, ...) {
   }
   invisible(x)
 }
+
+# The fits with reserves per simulation (`UltimateDraws` in Rust, #602).
+check_draws_fit <- function(fit) {
+  classes <- list(odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits,
+                  bayes_bf_fit, bayes_bf_normalised_fit, meyers_fit, meyers_fits,
+                  compartmental_fit, compartmental_fits)
+  if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
+    stop("fit must be an odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, ",
+         "bayes_bf_fit, bayes_bf_normalised_fit, meyers_fit, meyers_fits, compartmental_fit or ",
+         "compartmental_fits", call. = FALSE)
+  }
+}
+
+origin_arg <- function(origin) if (is.null(origin)) NULL else as.list(origin)
+
+#' Ultimates and loss ratios per simulation
+#'
+#' Each simulation's ultimate, or its ultimate over a premium, from a fit
+#' with reserves per simulation, for a tower ([apply_tower()] on a numeric
+#' vector), a deal book or the cash-flow engine ([cashflow_run()]). Element
+#' `i` is simulation `i` for every origin and every call, the same as row
+#' `i` of the fit's `reserves` (and of `draw_matrix()` of
+#' `ultimate_distribution()`), and the same again when the fit is run with
+#' the same seed, so vectors built from one fit keep their dependence.
+#'
+#' The ultimate is the origin's latest value of the fitted column plus its
+#' reserve in that simulation, on the column's basis (paid or incurred).
+#' Meyers' models simulate the ultimate itself (`fit@ultimates`), and their
+#' draws are those. A compartmental model's ultimate is the latest paid
+#' plus its reserve: the paid at the square's last age, on the paid basis.
+#'
+#' `ultimate_distribution()` is the joint distribution of the ultimates,
+#' with the dimensions, components and rows of `fit@reserves`, so
+#' [join_predictive()] and [reorder_groups()] keep each simulation's origins together.
+#'
+#' @param fit An [odp_bootstrap_fit], [mack_bootstrap_fit], [bayes_odp_fit],
+#'   [bayes_odp_fits], [bayes_bf_fit], [bayes_bf_normalised_fit],
+#'   [meyers_fit], [meyers_fits], [compartmental_fit] or
+#'   [compartmental_fits].
+#' @param origin The component key: the origin's label (`"2021"`, `2021`,
+#'   `"2021Q3"`) for a fit of one segment, the segment's key values then the
+#'   origin (`list("Auto", 2021)`) over segments. `NULL` (the default) gives
+#'   the total over every component, summed simulation by simulation.
+#' @param premium The subject premium of the origin (of every origin for the
+#'   total), finite and positive.
+#' @returns A numeric vector, one value per simulation; for
+#'   `ultimate_distribution()` a [predictive_distribution].
+#' @name ultimate_draws
+#' @examples
+#' long <- data.frame(year = c(2020, 2020, 2020, 2021, 2021, 2022),
+#'                    age = c(12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 110, 170, 120))
+#' fit <- odp_bootstrap(triangle(long, "year", "age", "paid"), n_sims = 1000, seed = 1)
+#' u <- ultimate_draws(fit, 2022)
+#' all.equal(u, 120 + marginal(fit@reserves, 2022)@draws)
+#' q <- loss_ratio_draws(fit, 2022, premium = 200)
+#' mean(q)
+#' total <- ultimate_draws(fit)
+NULL
+
+#' @rdname ultimate_draws
+#' @export
+ultimate_draws <- function(fit, origin = NULL) {
+  check_draws_fit(fit)
+  rust_result(fit@ptr$ultimate_draws(origin_arg(origin)), call = sys.call())
+}
+
+#' @rdname ultimate_draws
+#' @export
+loss_ratio_draws <- function(fit, origin = NULL, premium) {
+  check_draws_fit(fit)
+  rust_result(fit@ptr$loss_ratio_draws(origin_arg(origin), as.double(premium)), call = sys.call())
+}
+
+#' @rdname ultimate_draws
+#' @export
+ultimate_distribution <- function(fit) {
+  check_draws_fit(fit)
+  predictive_distribution(ptr = rust_result(fit@ptr$ultimates(), call = sys.call()))
+}
