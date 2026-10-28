@@ -42,7 +42,7 @@ observed would have reached at each development age, under the
 development each simulation drew: the bootstraps' pseudo factors
 (selected, blended and with the tail drawn as the reserves use them), or
 the Bayesian models' column effects of the posterior draw the simulation
-took (\verb{docs/design/reserving-v02.md}, decision 28). Row \code{i} is simulation
+took (\code{docs/design/reserving-v02.md}, decision 28). Row \code{i} is simulation
 \code{i} of \code{fit@reserves}, so it keeps the dependence with \code{\link[=ultimate_draws]{ultimate_draws()}}
 and every other vector built from the fit.
 }
