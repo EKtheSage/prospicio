@@ -3582,9 +3582,9 @@ Cashflow <- new.env(parent = emptyenv())
 
 Cashflow$new <- function(premium, commutation_month, written, earned, paid, bases, loads, floor, limit, commutation_bases, commutation_loads, commutation_floor, commutation_limit, collected_rate, deduct_commission, lag, adjustment_month, adjustment_rate, adjustment_less_commission, adjustment_base, funding_kind, funding_values, funding_rule, premium_offset, reference, funding_source, release_kind, release_values, annual_yield, interest_basis, opening_fixed, opening_share, expense_rate, buffer_months, buffer_paid, buffer_expenses, equity_kind, equity_values, fee_breakpoints, fee_slopes, fee_basis) .Call(wrap__Cashflow__new, premium, commutation_month, written, earned, paid, bases, loads, floor, limit, commutation_bases, commutation_loads, commutation_floor, commutation_limit, collected_rate, deduct_commission, lag, adjustment_month, adjustment_rate, adjustment_less_commission, adjustment_base, funding_kind, funding_values, funding_rule, premium_offset, reference, funding_source, release_kind, release_values, annual_yield, interest_basis, opening_fixed, opening_share, expense_rate, buffer_months, buffer_paid, buffer_expenses, equity_kind, equity_values, fee_breakpoints, fee_slopes, fee_basis)
 
-Cashflow$run <- function(u, commission, requirement) .Call(wrap__Cashflow__run, self, u, commission, requirement)
+Cashflow$run <- function(u, commission, requirement, paid, n_patterns, index) .Call(wrap__Cashflow__run, self, u, commission, requirement, paid, n_patterns, index)
 
-Cashflow$trace <- function(u, commission) .Call(wrap__Cashflow__trace, self, u, commission)
+Cashflow$trace <- function(u, commission, paid) .Call(wrap__Cashflow__trace, self, u, commission, paid)
 
 Cashflow$buffer_months <- function() .Call(wrap__Cashflow__buffer_months, self)
 

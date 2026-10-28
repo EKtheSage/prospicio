@@ -489,6 +489,37 @@ given <- cashflow_run(short0, c(0.7, 1.4), 0.2, months_requirement = rows)
 stopifnot(all(abs(given$flows - cashflow_run(short0, c(0.7, 1.4), 0.2)$flows) < 1e-9))
 stopifnot(inherits(try(cashflow_run(short0, c(0.7, 1.4), 0.2, months_requirement = rows[, 1:3]),
                        silent = TRUE), "try-error"))
+# Each simulation paid by its own pattern (#600).
+fast <- ramp(24)
+slow <- ramp(56)
+cc <- rep(0.2, 4)
+same <- cashflow_run(short, u, cc, paid_patterns = ramp(48), pattern_index = rep(1, 4))
+stopifnot(identical(same$flows, cashflow_run(short, u, cc)$flows))
+index <- c(1, 2, 2, 1)
+mixed <- cashflow_run(short, u, cc, paid_patterns = rbind(fast, slow), pattern_index = index)
+for (k in 1:2) {
+  sims <- which(index == k)
+  one <- cashflow_terms(100, 30, ramp(12), ramp(36), list(fast, slow)[[k]],
+                        cashflow_requirement(c("unearned-premium" = 0.3, reserve = 1.2),
+                                             limit = c(1.2, 1.5)),
+                        commutation_requirement = cashflow_requirement(c("unearned-premium" = 0.3,
+                                                                         outstanding = 1)),
+                        collected_rate = 0.7, lag = 2,
+                        adjustments = list(cashflow_adjustment(18, 0.1, less_commission = TRUE)),
+                        funding_dates = "quarterly", funding_rule = "shortfall",
+                        premium_offset = 0.7, reference = "running-max", annual_yield = 0.04,
+                        opening_fixed = 5, opening_share = 0.1, expense_rate = 0.02,
+                        buffer_months = 12, buffer_paid = TRUE, buffer_expenses = TRUE,
+                        fee = list(c(0, 0.1), c(0.1, 0.2)), fee_basis = "profit-over-capital")
+  stopifnot(identical(mixed$flows[sims, , drop = FALSE], cashflow_run(one, u[sims], 0.2)$flows))
+}
+per <- cashflow_run(short, u, cc, paid_patterns = rbind(fast, slow, slow, fast))
+stopifnot(identical(per$flows, mixed$flows))
+tr <- cashflow_trace(short, 1.3, 0.2, paid_pattern = slow)
+stopifnot(abs(tr$conservation_error) < 1e-9, identical(tr$accounts$investor, mixed$flows[3, ]))
+stopifnot(inherits(try(cashflow_run(short, 0.5, paid_patterns = rbind(fast, slow)), silent = TRUE),
+                   "try-error"),
+          inherits(try(cashflow_run(short, 0.5, pattern_index = 1), silent = TRUE), "try-error"))
 req <- cashflow_requirement(c(reserve = 1))
 fails <- function(...) inherits(try(cashflow_terms(100, 3, rep(1, 3), thirds, thirds, req, ...),
                                     silent = TRUE), "try-error")
