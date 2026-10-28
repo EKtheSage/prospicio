@@ -15946,6 +15946,42 @@ class Layer:
         The swing rating at 100% as ``(basic, lcm, minimum, maximum)``, or
         ``None``.
         """
+    def trial_statistics(self, /, events: EventSet) -> dict[str, float]:
+        """
+        How often the layer is attached and used up in simulated years.
+        
+        Counted on ``events``' years as the first stage of a tower sees them
+        (the gross events, and the aggregate part for a layer without
+        occurrence terms). ``p_attach`` is the share of years with an
+        occurrence above the attachment, ``p_exhaust_occurrence`` with one at
+        or above attachment plus limit, and ``p_exhaust_annual`` in which the
+        annual limit (the aggregate limit, or the limit times one plus the
+        reinstatements) is used up; each has its binomial standard error
+        (``*_se``), to set beside an event loss table's per-occurrence
+        ``occurrence_layer_statistics``. ``occurrences_mean`` (with
+        ``occurrences_se``) is the mean number of occurrences a year that reach
+        the layer, ``ceded_mean`` the mean ceded loss and
+        ``ceded_given_attach`` its mean over the attached years (NaN when
+        none is).
+        
+        Parameters
+        ----------
+        events : EventSet
+        
+        Returns
+        -------
+        dict of str to float
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.reinsurance import Layer
+        >>> layer = Layer("10x10", 10.0, 10.0, reinstatements=1)
+        >>> years = EventSet.from_years([[5.0], [12.0], [25.0], [25.0, 30.0]])
+        >>> s = layer.trial_statistics(years)
+        >>> s["p_attach"], s["p_exhaust_occurrence"], s["p_exhaust_annual"]
+        (0.75, 0.5, 0.25)
+        """
     def with_brokerage(self, /, rate: float) -> Layer:
         """
         The same layer with a flat brokerage: ``rate`` of the year's

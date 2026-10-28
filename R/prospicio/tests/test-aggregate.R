@@ -70,6 +70,13 @@ stopifnot(inherits(try(inuring_tower(list(list(), list(xol_layer("A", 1, 0)))), 
 # Per-event allocation and reinstatement premiums.
 l <- xol_layer("L", 10, 5, share = 0.5, aggregate_deductible = 4, aggregate_limit = 15)
 stopifnot(identical(ceded_by_event(l, c(8, 20, 12)), c(0, 4.5, 3)))
+# Attachment and exhaustion on simulated years (#581).
+tl <- xol_layer("L", 10, 10, share = 0.5, aggregate_deductible = 3, aggregate_limit = 15)
+ts <- layer_trial_statistics(tl, events_from_years(list(numeric(), 12, 20, c(20, 15, 30), c(9, 10))))
+stopifnot(ts$n_years == 5, ts$p_attach == 0.6, ts$p_exhaust_occurrence == 0.4,
+          ts$p_exhaust_annual == 0.2, ts$occurrences_mean == 1,
+          abs(ts$ceded_given_attach - 0.5 * 22 / 3) < 1e-12,
+          abs(ts$occurrences_se - sqrt(1.5 / 5)) < 1e-12)
 paid <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5))
 stopifnot(paid@aggregate_limit == 30, identical(paid@reinstatement_rates, c(1, 0.5)))
 stopifnot(reinstatement_premium(paid, c(15, 25)) == 2.5)

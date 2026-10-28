@@ -1719,3 +1719,26 @@ def test_a_scoped_layer_covers_only_its_perils():
         xl.with_scope("peril", [])
     with pytest.raises(ValueError):
         e.filter("class", ["a"])
+
+
+def test_layer_trial_statistics():
+    """Attachment and exhaustion counted on simulated years (#581)."""
+    from prospicio.aggregate import EventSet
+    from prospicio.reinsurance import Layer
+
+    layer = Layer(
+        "L", 10.0, 10.0, share=0.5, aggregate_deductible=3.0, aggregate_limit=15.0
+    )
+    years = EventSet.from_years([[], [12.0], [20.0], [20.0, 15.0, 30.0], [9.0, 10.0]])
+    s = layer.trial_statistics(years)
+    assert s["n_years"] == 5
+    assert (s["p_attach"], s["p_exhaust_occurrence"], s["p_exhaust_annual"]) == (
+        0.6,
+        0.4,
+        0.2,
+    )
+    assert s["occurrences_mean"] == 1.0
+    assert s["ceded_mean"] == pytest.approx(0.5 * 22.0 / 5.0)
+    assert s["ceded_given_attach"] == pytest.approx(0.5 * 22.0 / 3.0)
+    assert s["p_attach_se"] == pytest.approx((0.6 * 0.4 / 5.0) ** 0.5)
+    assert s["occurrences_se"] == pytest.approx((1.5 / 5.0) ** 0.5)

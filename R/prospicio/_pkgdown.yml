@@ -139,6 +139,7 @@ reference:
       - surplus_treaty
       - ceded
       - ceded_by_event
+      - layer_trial_statistics
       - reinstatement_premium
       - reinsurance_tower
       - inuring_tower
