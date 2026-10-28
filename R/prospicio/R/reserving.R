@@ -3950,10 +3950,19 @@ bayes_bf_one_year <- function(triangle, column, exposure, apriori = 1, cv = 0.1,
 #'
 #' Every development column's observed increments must sum to more than
 #' zero, and every origin's to more than `-phi / cv^2`; negative cells are
-#' allowed. One `seed` replays a fit exactly, whatever the number of
-#' threads. Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS
-#' below 100 per chain, any divergent transition) do not fail the fit:
-#' `bayes_bf_normalised()` raises one [warning()] listing them, and they stay in the
+#' allowed. The error names the age or origin, its number of observed
+#' cells, their sum and the remedies. A column that sums to zero or less
+#' has no log-linear mean, since every mean is an ultimate times a positive
+#' share; [chain_ladder()] accepts the same triangle, and [bayes_odp()] and
+#' [bayes_bf()] refuse it too. To drop a sparse late age, rebuild the
+#' triangle without its rows (`df <- as.data.frame(tri)`, then
+#' [triangle()] on `df[df$development != 120, ]`) and carry the movement
+#' left out as a tail outside the model. For an origin, a finite `cv` below
+#' the bound the error prints makes its posterior proper. One `seed`
+#' replays a fit exactly, whatever the number of threads. Failed MCMC
+#' diagnostics (R-hat above 1.01, bulk or tail ESS below 100 per chain, any
+#' divergent transition) do not fail the fit: `bayes_bf_normalised()`
+#' raises one [warning()] listing them, and they stay in the
 #' fit's `diagnostics`.
 #'
 #' Properties of the fit: as [bayes_odp_fit]'s (`chain_ladder`, `origins`,

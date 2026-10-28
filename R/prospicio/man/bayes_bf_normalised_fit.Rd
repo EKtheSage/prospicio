@@ -105,10 +105,19 @@ where the classical method keeps the chain ladder's pattern.
 
 Every development column's observed increments must sum to more than
 zero, and every origin's to more than \code{-phi / cv^2}; negative cells are
-allowed. One \code{seed} replays a fit exactly, whatever the number of
-threads. Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS
-below 100 per chain, any divergent transition) do not fail the fit:
-\code{bayes_bf_normalised()} raises one \code{\link[=warning]{warning()}} listing them, and they stay in the
+allowed. The error names the age or origin, its number of observed
+cells, their sum and the remedies. A column that sums to zero or less
+has no log-linear mean, since every mean is an ultimate times a positive
+share; \code{\link[=chain_ladder]{chain_ladder()}} accepts the same triangle, and \code{\link[=bayes_odp]{bayes_odp()}} and
+\code{\link[=bayes_bf]{bayes_bf()}} refuse it too. To drop a sparse late age, rebuild the
+triangle without its rows (\code{df <- as.data.frame(tri)}, then
+\code{\link[=triangle]{triangle()}} on \code{df[df$development != 120, ]}) and carry the movement
+left out as a tail outside the model. For an origin, a finite \code{cv} below
+the bound the error prints makes its posterior proper. One \code{seed}
+replays a fit exactly, whatever the number of threads. Failed MCMC
+diagnostics (R-hat above 1.01, bulk or tail ESS below 100 per chain, any
+divergent transition) do not fail the fit: \code{bayes_bf_normalised()}
+raises one \code{\link[=warning]{warning()}} listing them, and they stay in the
 fit's \code{diagnostics}.
 
 Properties of the fit: as \link{bayes_odp_fit}'s (\code{chain_ladder}, \code{origins},

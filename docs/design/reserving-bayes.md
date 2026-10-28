@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built; PR 9 (one generic one-year view, `BayesBf`'s) built; PR 13 (`BayesBfNormalised`) built; PR 14 (the light refit of the compartmental one-year view, decision 24, #394) built, its default open decision 17; PR 15 (the common share multiplier of `BayesBfNormalised`, decision 25, #518) built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS, with the Python and R bindings (`BayesOdp.one_year` and `one_year_segments`, `bayes_odp_one_year()` and `bayes_odp_one_year_segments()`; decision 13). PR 9 is built on `claude/bayes-one-year-generic`, stacked on the Models-lane PR #273 that made `prospicio_bayes::elpd::psis` public (decision 17, open decisions 12 to 14 decided by the user on 2026-10-15): one interface every Bayesian model's one-year view implements, the view written once over it, a conformance suite run on every implementor, `BayesOdp` moved onto it bit for bit, `BayesBf::one_year` with its Python and R bindings (`BayesBf.one_year`, `bayes_bf_one_year()`; decision 13), and moment matching before refitting (decision 18, the opt-in `MomentMatchThenRefit`, in Rust, Python and R). PR 10 is built on `claude/bayes-one-year-meyers`, stacked on PR 9 and the CI slow-tests PR #279 (decision 19, the user's decisions of 2026-10-15 on open decisions 12 and 14): moment matching is the default fallback of the one-year view, and `Meyers` (CRC, CSR and CAY) has the one-year view through `YearModel`, with `one_year_segments`, in Rust, Python and R. PR 11 is built on `claude/bayes-one-year-compartmental`, stacked on PR 10 (decision 20): `Compartmental` (models 1 and 2) has the one-year view through `YearModel`, and every model's view takes a refit budget (`max_refits`), in Rust, Python and R; the user decided open decision 15 on 2026-10-16: model 1's view moment-matches by default, model 2's reweights only with a warning that it is approximate, both run at most 2,000 one-year simulations by default, and pull requests run model 1 of the compartmental one-year validation only. `Compartmental::one_year_segments` is built on `claude/compartmental-one-year-segments` (`reserving-compartmental.md` decision 8, "Built (one-year view over segments)"), in Rust, Python and R. PR 13 is built on `claude/bayes-bf-normalised` (decision 23, #410, the user's decision of 2026-10-21): `BayesBfNormalised`, the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate, beside `BayesBf` (unchanged at EVW parity), with its one-year view through `YearModel` (a fifth implementor, in the conformance suite's pull-request smoke run) and the Python and R bindings (`BayesBfNormalised`, `bayes_bf_normalised()`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built; PR 9 (one generic one-year view, `BayesBf`'s) built; PR 13 (`BayesBfNormalised`) built; PR 14 (the light refit of the compartmental one-year view, decision 24, #394) built, its default open decision 17; PR 15 (the common share multiplier of `BayesBfNormalised`, decision 25, #518) built; decision 26 (`BayesBfNormalised`'s error for a column or origin that sums to zero or less, #610) built, its open decision 18 (a `Triangle` method that drops ages) proposed** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS, with the Python and R bindings (`BayesOdp.one_year` and `one_year_segments`, `bayes_odp_one_year()` and `bayes_odp_one_year_segments()`; decision 13). PR 9 is built on `claude/bayes-one-year-generic`, stacked on the Models-lane PR #273 that made `prospicio_bayes::elpd::psis` public (decision 17, open decisions 12 to 14 decided by the user on 2026-10-15): one interface every Bayesian model's one-year view implements, the view written once over it, a conformance suite run on every implementor, `BayesOdp` moved onto it bit for bit, `BayesBf::one_year` with its Python and R bindings (`BayesBf.one_year`, `bayes_bf_one_year()`; decision 13), and moment matching before refitting (decision 18, the opt-in `MomentMatchThenRefit`, in Rust, Python and R). PR 10 is built on `claude/bayes-one-year-meyers`, stacked on PR 9 and the CI slow-tests PR #279 (decision 19, the user's decisions of 2026-10-15 on open decisions 12 and 14): moment matching is the default fallback of the one-year view, and `Meyers` (CRC, CSR and CAY) has the one-year view through `YearModel`, with `one_year_segments`, in Rust, Python and R. PR 11 is built on `claude/bayes-one-year-compartmental`, stacked on PR 10 (decision 20): `Compartmental` (models 1 and 2) has the one-year view through `YearModel`, and every model's view takes a refit budget (`max_refits`), in Rust, Python and R; the user decided open decision 15 on 2026-10-16: model 1's view moment-matches by default, model 2's reweights only with a warning that it is approximate, both run at most 2,000 one-year simulations by default, and pull requests run model 1 of the compartmental one-year validation only. `Compartmental::one_year_segments` is built on `claude/compartmental-one-year-segments` (`reserving-compartmental.md` decision 8, "Built (one-year view over segments)"), in Rust, Python and R. PR 13 is built on `claude/bayes-bf-normalised` (decision 23, #410, the user's decision of 2026-10-21): `BayesBfNormalised`, the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate, beside `BayesBf` (unchanged at EVW parity), with its one-year view through `YearModel` (a fifth implementor, in the conformance suite's pull-request smoke run) and the Python and R bindings (`BayesBfNormalised`, `bayes_bf_normalised()`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -3173,6 +3173,100 @@ total's *prior* interval by a factor of about 3 (the covariance) but its
 *posterior* interval on GenIns's layer is narrower than the independent
 prior's, because the origins pool their information about `s`.
 
+### 26. A column or origin that sums to zero or less (issue #610)
+
+Built in Rust on `claude/bf-normalised-column-error` (2026-10-28), with the
+message reaching Python and R unchanged. `BayesBfNormalised` refuses a
+triangle in which one development column's observed increments sum to zero
+or less, or one origin's sum to `-phi / cv^2` or less (`Error::Bayes`). The
+ILS deal notebook of draft PR #607 met the first: its oldest age, 120
+months, has one cell, 3,000 below the cell at 108 months. The old message
+named the age and the sum and said nothing else.
+
+**The message.** For a column it names the age, its number of observed
+cells, their sum, that no log-linear mean exists and why (every mean is an
+ultimate times a positive share), that the chain ladder accepts the
+triangle with its factor into that age, and a remedy that depends on
+where the age is. At the last age: rebuild the triangle from its long table
+without the rows at that age, or fold the age into the previous one, and
+carry the movement left out as a tail outside the model. At the first age
+there is no earlier age to fold into: rebuild without its rows (in an
+incremental triangle, first add each origin's value there to its value at
+the next age), so that development starts at the next age; the message
+names the origins observed only at the first age, which this removes, and
+says to estimate their reserves outside the model. For a cumulative
+triangle this is the fold of the first age into the second for every origin
+that has a second age, since those origins' later values already contain
+it. At a middle age no rebuild works today: `Triangle::from_long` fills
+every age from the first to the last, so without the rows at that age the
+column comes back with no cells and the chain ladder refuses the triangle
+(no origin is observed at both ages), and a fold leaves the same gap. The
+message says so, says that the chain ladder and Mack accept the triangle,
+and points to open decision 18. (The first version gave every age but the
+first the last age's remedy; a review of PR #665 found it wrong at a middle
+age, where a tail does not apply and the rebuild does not run.) For an origin
+it names the origin, its number of cells and their sum, the bound, that the
+chain ladder accepts the triangle, and the remedies: a finite `cv` below
+`sqrt(-phi / sum)`, the bound the message prints (the posterior of the
+ultimate is a gamma of shape `1 / cv^2 + S_w / phi`, proper when that is
+positive), or the triangle rebuilt without the origin's rows. The words
+come from the library, not the binding, so Python's `ValueError` and R's
+error carry the same text; the type docs in all three languages show how to
+rebuild a triangle without an age (Rust `Triangle::to_long` and
+`from_long`, Python `to_frame` and `from_frame`, R `as.data.frame()` and
+`triangle()`).
+
+**Why the column has no mode.** The means `U_w p_d` are the positive
+products `exp(a_w + b_d)` with free `b_d`; the softmax only reparametrises
+them. The over-dispersed Poisson log likelihood's score in `b_d` is
+`(S_d - sum_w exp(a_w + b_d)) / phi`, negative everywhere when the column's
+sum `S_d` is not positive, so the likelihood rises as the share falls to 0
+and has no finite maximum. The strong-prior start (decision 23) would take
+the log of the share `S_d / (M_d + lambda)`, which is negative. The rule is
+a design choice rather than a matter of propriety: the vague normal prior
+on `beta_d` (`development_sd`, finite by the model's settings) still makes
+the posterior proper, with its mode near `beta_d = development_sd^2 S_d /
+phi`, a share of about 0 that the prior alone sets. A fit there would say
+that the age adds nothing, while the data say it takes something away. The
+same rule holds for `BayesOdp` (its log-linear mean, `odp.rs`) and
+`BayesBf` (EVW's row parameters times an unnormalised pattern), which
+refuse the same column; only the normalised model's message changes here.
+
+**What supporting it would take.** The model would need a term at the late
+ages whose sign is free. Three ways, none built: (a) the oldest ages as a
+tail factor on each origin's ultimate with a normal (or log-normal centred
+below 1) prior, outside the ODP likelihood; (b) a separate likelihood for
+those ages whose mean can be negative, a normal with its own scale, since
+the ODP's variance `phi * mean` needs a positive mean; (c) an additive
+column effect `c_d` on the mean, `U_w p_d + c_d`, which breaks the ODP
+variance in the same way. Each changes the model's density and so the
+one-year view's conformance suite (decision 17), and each needs a prior
+that the user chooses for the late movement. Dropping the age and applying
+the chain ladder's factor into it as a tail outside the model approximates
+(a) with the tail fixed at that factor, so it is the remedy the message
+names.
+
+**Dropping an age.** No `Triangle` method drops ages today (`select` keeps
+segments, `select_columns` measures, `group_by` sums segments and `grain`
+coarsens every age), so the remedy is to rebuild the triangle from its
+long table. Open decision 18 asks whether to add one.
+
+**Checks.** `a_falling_late_column_names_its_age_and_the_remedy` (a late
+column of one cell that sums to -5: the message's parts, `BayesOdp` and
+`BayesBf` refusing it too, the first age's message naming the origin it
+removes and its remedy applied, which keeps the three origins with a second
+age and prepares, and the triangle rebuilt without the late age preparing
+at a finite start), `a_falling_middle_column_has_no_rebuild_remedy` (a
+middle column that sums to -15: no tail and no fold in the message, the
+chain ladder and Mack accepting the triangle, and the rebuild without the
+age keeping it empty, which the chain ladder refuses),
+`a_triangle_without_its_falling_age_fits` (its NUTS fit, under
+`slow-tests`) and the origin case in `errors` (the printed cv bound, and a
+cv below it preparing); Python
+`test_a_falling_late_column_names_its_age_and_the_remedy` and the R tests
+check the same message and fit the rebuilt triangle. The model's density
+is unchanged, so the conformance suite and the parity tests are unaffected.
+
 ## Later, not planned
 
 ### Prior predictive checks (a note, not planned)
@@ -3416,3 +3510,30 @@ are settled.
     change of CI's `the_default_view_of_model_2_reweights`, which would
     then run the light refits, so about 30 minutes in the weekly run
     (built so that the weekly run's default-view test uses 20 simulations).
+
+18. **A `Triangle` method that drops ages.** Raised 2026-10-28 by decision
+    26 (#610). A sparse late age that falls (one cell below the previous
+    one) stops `BayesOdp`, `BayesBf` and `BayesBfNormalised`, and today the
+    user leaves it out by rebuilding the triangle from its long table. (a)
+    Keep that: the type docs and the error say how, in each language.
+    It works only at the first and the last age: a middle age that falls
+    (#665's review) comes back from `Triangle::from_long` with no cells,
+    which the chain ladder refuses, so such a triangle has no remedy in
+    this model today. (b)
+    A `Triangle` method, `Triangle::max_age(age)` (keep the ages up to
+    `age`) or `Triangle::drop_ages(&[age])`, in Rust, Python and R, that
+    every model can use; chainladder-python slices the development axis
+    the same way (`tri[tri.development <= 108]`). (c) A `max_age` or
+    `drop_ages` setting on each Bayesian model, which keeps the triangle
+    whole but repeats the option on three models and their bindings. A
+    dropped age is left out, not moved into a tail, under (b) and (c)
+    alike, so the reserve misses the movement there unless the user adds
+    a tail. Neither `max_age` nor dropping from the long table helps a
+    middle age; that needs a merge of two ages into one (`merge_ages`, the
+    later age's value booked at the earlier one and the later ages moved
+    down one step), which mislabels every later age, so it is not
+    recommended either. *Recommended: (b), `max_age`*: one method serves every model
+    and the backtests, it is the operation users reach for after a
+    message that names the age, and a model setting would hide the
+    change to the data inside a fit. Not built: the item asks only for the
+    message and the docs.
