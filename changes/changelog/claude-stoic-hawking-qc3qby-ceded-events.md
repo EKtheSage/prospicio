@@ -5,4 +5,4 @@
   ceded loss to the named layers after their annual terms, with its time
   and labels, adding to the layers' ceded totals in every year; several
   deals' sets join with `EventSet::merge`. Python `Tower.ceded_events`, R
-  `ceded_events()`.
+  `ceded_events()` (#590, #661).
