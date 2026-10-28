@@ -2607,7 +2607,10 @@ mod tests {
         let err = layer.try_ceded(&[12.0, -3.0]).unwrap_err();
         assert!(err.to_string().contains("loss 2"), "{err}");
         assert!(layer.try_ceded(&[f64::INFINITY]).is_err());
-        assert_eq!(layer.try_ceded_by_event(&[12.0, 20.0]), Ok(layer.ceded_by_event(&[12.0, 20.0])));
+        assert_eq!(
+            layer.try_ceded_by_event(&[12.0, 20.0]),
+            Ok(layer.ceded_by_event(&[12.0, 20.0]))
+        );
         assert!(layer.try_ceded_by_event(&[-1.0]).is_err());
         let tower = Tower::new(vec![layer]).unwrap();
         assert_eq!(tower.try_ceded(&[12.0]), Ok(vec![7.0]));
