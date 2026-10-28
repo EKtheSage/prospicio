@@ -26,6 +26,14 @@
 //! [`CashflowTerms::trace`] gives every account line of one simulation, to
 //! check a deal month by month.
 //!
+//! After binding, [`CashflowTerms::valuation`] takes the deal's actual
+//! accounts at a month ([`ActualState`]) and [`Valuation::run`] simulates
+//! the rest of the term from them, each simulation's ultimate conditioned
+//! on the loss paid to date ([`condition_on_paid`]), with the return from
+//! the valuation month and since inception ([`Forward`]); [`deal_ave`]
+//! compares the paid to date with what the priced simulations expected
+//! (#603, `time-value.md` decision 34).
+//!
 //! Over the term, money is conserved: what the investor gets back net of
 //! what it put in, plus the fee, the claims paid, the expenses and the
 //! commutation payment, equals the premium and adjustments paid into the
@@ -34,7 +42,9 @@
 use prospicio_core::{Error, Result};
 
 use crate::payout::{Interpolation, PaymentPattern};
-use crate::returns::{Irr, IrrOptions, TieredFee, TimeUnit, irr_rows, npv_rows};
+use prospicio_prob::statistics::QuantileMethod;
+
+use crate::returns::{Irr, IrrOptions, TieredFee, TimeUnit, irr_rows, moic, npv_rows};
 
 /// Monthly cumulative shares of the premium written and earned and of the
 /// ultimate loss paid, each at the end of month `t = 0, 1, ...` from
@@ -892,7 +902,8 @@ impl CashflowTerms {
         let mut out = Cashflows::empty(t_n, u.len());
         let req = |_: usize, m: &Month| self.requirement.at(m);
         for (&u, &c) in u.iter().zip(commission) {
-            out.push(self.simulate(u, c, &self.patterns.paid, &req, None));
+            let path = PaidPath::new(u, self.premium, &self.patterns.paid);
+            out.push(self.simulate(&path, c, &req, None, None));
         }
         Ok(out)
     }
@@ -920,7 +931,8 @@ impl CashflowTerms {
         let mut out = Cashflows::empty(self.commutation_month, u.len());
         let req = |_: usize, m: &Month| self.requirement.at(m);
         for (j, (&u, &c)) in u.iter().zip(commission).enumerate() {
-            out.push(self.simulate(u, c, paid.pattern(j), &req, None));
+            let path = PaidPath::new(u, self.premium, paid.pattern(j));
+            out.push(self.simulate(&path, c, &req, None, None));
         }
         Ok(out)
     }
@@ -952,7 +964,8 @@ impl CashflowTerms {
         for (j, (&u, &c)) in u.iter().zip(commission).enumerate() {
             let row = &requirement[j * width..(j + 1) * width];
             let req = |t: usize, _: &Month| row[t];
-            out.push(self.simulate(u, c, &self.patterns.paid, &req, None));
+            let path = PaidPath::new(u, self.premium, &self.patterns.paid);
+            out.push(self.simulate(&path, c, &req, None, None));
         }
         Ok(out)
     }
@@ -963,7 +976,8 @@ impl CashflowTerms {
         check_sims(&[u], &[commission])?;
         let mut trace = Trace::new(self.commutation_month);
         let req = |_: usize, m: &Month| self.requirement.at(m);
-        self.simulate(u, commission, &self.patterns.paid, &req, Some(&mut trace));
+        let path = PaidPath::new(u, self.premium, &self.patterns.paid);
+        self.simulate(&path, commission, &req, None, Some(&mut trace));
         Ok(trace)
     }
 
@@ -975,65 +989,73 @@ impl CashflowTerms {
         PatternDraws::new(vec![paid.to_vec()])?.check_against(&self.patterns, 1)?;
         let mut trace = Trace::new(self.commutation_month);
         let req = |_: usize, m: &Month| self.requirement.at(m);
-        self.simulate(u, commission, paid, &req, Some(&mut trace));
+        let path = PaidPath::new(u, self.premium, paid);
+        self.simulate(&path, commission, &req, None, Some(&mut trace));
         Ok(trace)
     }
 
-    fn month(&self, t: usize, u: f64, paid: &[f64]) -> Month {
+    fn month(&self, t: usize, path: &PaidPath) -> Month {
         let p = &self.patterns;
         Month {
             premium: self.premium,
-            u,
+            u: path.u,
             written: self.premium * p.written[t],
             earned: self.premium * p.earned[t],
-            paid: u * self.premium * paid[t],
+            paid: path.cum(t),
         }
     }
 
+    /// One simulation from inception, or from a valuation month when
+    /// `start` holds the accounts at its start.
     fn simulate(
         &self,
-        u: f64,
+        path: &PaidPath,
         c: f64,
-        paid_pattern: &[f64],
         req: &dyn Fn(usize, &Month) -> f64,
+        start: Option<&Start>,
         mut trace: Option<&mut Trace>,
     ) -> Sim {
         let t_n = self.commutation_month;
+        let v = start.map_or(0, |s| s.month);
         let pr = self.premium;
         let pat = &self.patterns;
         let last = pat.len() - 1;
         let at = |v: &[f64], t: isize| if t < 0 { 0.0 } else { v[t as usize] };
         let written_inc = |t: isize| pr * (at(&pat.written, t) - at(&pat.written, t - 1));
-        let paid_inc =
-            |t: usize| u * pr * (at(paid_pattern, t as isize) - at(paid_pattern, t as isize - 1));
+        let paid_inc = |t: usize| path.inc(t);
         let lag = self.premium_flow.lag as isize;
         let monthly_rate = self.interest.annual_yield / 12.0;
         let expense = |s: f64| self.operating.expense_rate / 12.0 * s;
         let buffer_months = self.operating.buffer.months;
         // The regular requirement over the term and the buffer's months.
         let requirement: Vec<f64> = (0..t_n + buffer_months)
-            .map(|t| req(t, &self.month(t, u, paid_pattern)))
+            .map(|t| req(t, &self.month(t, path)))
             .collect();
-        let commutation = self
-            .commutation_requirement
-            .at(&self.month(t_n - 1, u, paid_pattern));
+        let commutation = self.commutation_requirement.at(&self.month(t_n - 1, path));
 
         let opening = self.operating.opening_fixed + self.operating.opening_share * pr;
-        let mut collateral = 0.0;
-        let mut operating = opening;
-        let mut reference = 0.0_f64;
+        let mut collateral = start.map_or(0.0, |s| s.collateral);
+        let mut operating = start.map_or(opening, |s| s.operating);
+        let mut reference = start.map_or(0.0, |s| s.reference);
         let mut sim = Sim {
-            flows: vec![0.0; t_n],
-            funded: 0.0,
+            flows: vec![0.0; t_n - v],
+            funded: start.map_or(0.0, |s| s.funded),
             opening,
-            released: 0.0,
+            released: start.map_or(0.0, |s| s.released),
             distributed: 0.0,
             fee: 0.0,
             commutation,
         };
-        sim.flows[0] = -opening;
+        if start.is_none() {
+            sim.flows[0] = -opening;
+        }
+        let arrears = start.map_or(0.0, |s| s.arrears);
+        if let Some(tr) = trace.as_deref_mut() {
+            tr.opening_balance = start.map_or(0.0, |s| s.collateral + s.operating);
+        }
 
-        for t in 0..t_n {
+        for t in v..t_n {
+            let i = t - v;
             let final_month = t + 1 == t_n;
             let s = if final_month {
                 commutation
@@ -1047,7 +1069,10 @@ impl CashflowTerms {
             } else {
                 flow.collected_rate
             };
-            let premium_in = collected * written_inc(t as isize - lag);
+            let mut premium_in = collected * written_inc(t as isize - lag);
+            if t == v {
+                premium_in += arrears;
+            }
             let adjustment: f64 = self
                 .premium_flow
                 .adjustments
@@ -1137,7 +1162,7 @@ impl CashflowTerms {
             operating -= equity;
             sim.funded += from_investor;
             sim.released += equity;
-            sim.flows[t] += equity - from_investor;
+            sim.flows[i] += equity - from_investor;
 
             let (fee, distributed) = if final_month {
                 let profit = sim.released + operating - sim.funded - opening;
@@ -1160,22 +1185,23 @@ impl CashflowTerms {
             };
             sim.fee += fee;
             sim.distributed += distributed;
-            sim.flows[t] += distributed;
+            sim.flows[i] += distributed;
 
             if let Some(tr) = trace.as_deref_mut() {
-                tr.requirement[t] = s;
-                tr.premium[t] = premium_in;
-                tr.adjustment[t] = adjustment;
-                tr.paid[t] = paid;
-                tr.funding_investor[t] = from_investor;
-                tr.funding_operating[t] = from_operating;
-                tr.interest[t] = interest;
-                tr.collateral_release[t] = release;
-                tr.collateral_balance[t] = collateral;
-                tr.expenses[t] = expenses;
-                tr.equity_release[t] = equity + distributed;
-                tr.operating_balance[t] = operating;
-                tr.investor[t] = sim.flows[t];
+                tr.requirement[i] = s;
+                tr.premium[i] = premium_in;
+                tr.adjustment[i] = adjustment;
+                tr.paid[i] = paid;
+                tr.funding_investor[i] = from_investor;
+                tr.funding_operating[i] = from_operating;
+                tr.interest[i] = interest;
+                tr.collateral_release[i] = release;
+                tr.collateral_balance[i] = collateral;
+                tr.expenses[i] = expenses;
+                tr.equity_release[i] = equity + distributed;
+                tr.operating_balance[i] = operating;
+                tr.investor[i] = sim.flows[i];
+                tr.funding_reference[i] = reference;
                 tr.commutation_paid += commutation_paid;
                 tr.fee += fee;
             }
@@ -1198,6 +1224,65 @@ fn check_sims(u: &[f64], commission: &[f64]) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+/// A simulation's cumulative paid loss: `u P S(t)` from inception, or,
+/// after a valuation at month `v`, the actual paid `A` to its start and
+/// `A + scale × (S(t) − S(v − 1))` after it.
+struct PaidPath<'a> {
+    /// The ultimate loss ratio the requirement reads.
+    u: f64,
+    premium: f64,
+    pattern: &'a [f64],
+    /// The valuation month, the actual paid and the scale.
+    from: Option<(usize, f64, f64)>,
+}
+
+impl<'a> PaidPath<'a> {
+    fn new(u: f64, premium: f64, pattern: &'a [f64]) -> Self {
+        PaidPath {
+            u,
+            premium,
+            pattern,
+            from: None,
+        }
+    }
+
+    fn at(&self, t: isize) -> f64 {
+        if t < 0 { 0.0 } else { self.pattern[t as usize] }
+    }
+
+    /// The loss paid by the end of month `t`.
+    fn cum(&self, t: usize) -> f64 {
+        match self.from {
+            None => self.u * self.premium * self.pattern[t],
+            Some((v, a, _)) if t < v => a,
+            Some((v, a, scale)) => a + scale * (self.pattern[t] - self.pattern[v - 1]),
+        }
+    }
+
+    /// The loss paid in month `t`.
+    fn inc(&self, t: usize) -> f64 {
+        let step = self.at(t as isize) - self.at(t as isize - 1);
+        match self.from {
+            None => self.u * self.premium * step,
+            Some((v, _, _)) if t < v => 0.0,
+            Some((_, _, scale)) => scale * step,
+        }
+    }
+}
+
+/// The accounts at the start of a valuation month.
+struct Start {
+    month: usize,
+    collateral: f64,
+    operating: f64,
+    funded: f64,
+    released: f64,
+    reference: f64,
+    /// Premium the schedule collected before the month less what the trust
+    /// received, collected in the month.
+    arrears: f64,
 }
 
 struct Sim {
@@ -1368,6 +1453,13 @@ pub struct Trace {
     pub operating_balance: Vec<f64>,
     /// The investor's net flow.
     pub investor: Vec<f64>,
+    /// The obligation a [`FundingRule::ObligationIncrease`] compares with
+    /// after each month (0 under [`FundingRule::Shortfall`]), what
+    /// [`ActualState::funding_reference`] carries into a valuation.
+    pub funding_reference: Vec<f64>,
+    /// The trust and operating balances the trace starts from: 0 from
+    /// inception, the actual balances from a valuation month.
+    pub opening_balance: f64,
     /// The commutation requirement paid to the cedant.
     pub commutation_paid: f64,
     /// The performance fee.
@@ -1391,23 +1483,690 @@ impl Trace {
             equity_release: z(),
             operating_balance: z(),
             investor: z(),
+            funding_reference: z(),
+            opening_balance: 0.0,
             commutation_paid: 0.0,
             fee: 0.0,
         }
     }
 
-    /// The premium, adjustments and interest paid into the trust less what
-    /// left the deal: the investor's net flows, the fee, the claims, the
-    /// expenses and the commutation payment. Zero up to rounding.
+    /// The premium, adjustments and interest paid into the trust, and the
+    /// balances held at the start, less what left the deal: the investor's
+    /// net flows, the fee, the claims, the expenses and the commutation
+    /// payment. Zero up to rounding.
     pub fn conservation_error(&self) -> f64 {
         let sum = |v: &[f64]| v.iter().sum::<f64>();
-        sum(&self.premium) + sum(&self.adjustment) + sum(&self.interest)
+        sum(&self.premium) + sum(&self.adjustment) + sum(&self.interest) + self.opening_balance
             - sum(&self.investor)
             - self.fee
             - sum(&self.paid)
             - sum(&self.expenses)
             - self.commutation_paid
     }
+}
+
+/// How a valuation conditions each simulation's ultimate loss on the loss
+/// actually paid to date `A`, with `S` the share of the paid pattern
+/// reached by then (#603, `time-value.md` decision 34, item M1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Conditioning {
+    /// Every simulation is kept, and its ultimate is the actual paid plus
+    /// its own unpaid, `A + u_j P (1 − S)`, as the Bornhuetter-Ferguson
+    /// method takes it: future payments do not depend on past ones. The
+    /// forward distribution narrows as the deal runs off.
+    #[default]
+    BornhuetterFerguson,
+    /// Only the simulations whose ultimate `u_j P` is at least `A` are
+    /// kept, unchanged; what each has still to pay, `u_j P − A`, follows
+    /// the rest of the pattern. Late in a deal it can drop most
+    /// simulations.
+    Truncation,
+}
+
+/// The simulations kept by [`condition_on_paid`] and their ultimate loss
+/// ratios.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Conditioned {
+    /// The simulations kept, by their index in the input, in order.
+    pub kept: Vec<usize>,
+    /// Each kept simulation's ultimate loss ratio given the paid to date,
+    /// `U_j / P`.
+    pub ultimate: Vec<f64>,
+}
+
+/// Each simulation's ultimate loss ratio `u[j]` conditioned on the loss
+/// `paid` to date when the pattern has reached `share_paid`, as `how`
+/// says: under [`Conditioning::BornhuetterFerguson`] every simulation, at
+/// `paid / premium + u_j (1 − share_paid)`; under
+/// [`Conditioning::Truncation`] those with `u_j premium ≥ paid`, at `u_j`.
+///
+/// ```
+/// use prospicio_pricing::cashflow::{Conditioning, condition_on_paid};
+///
+/// // 30 paid of a premium of 100 when the pattern is 40% paid.
+/// let bf = condition_on_paid(&[0.5, 0.8], 100.0, 30.0, 0.4, Conditioning::BornhuetterFerguson)
+///     .unwrap();
+/// assert_eq!(bf.kept, [0, 1]);
+/// assert!((bf.ultimate[0] - 0.6).abs() < 1e-15 && (bf.ultimate[1] - 0.78).abs() < 1e-15);
+/// let cut = condition_on_paid(&[0.2, 0.8], 100.0, 30.0, 0.4, Conditioning::Truncation).unwrap();
+/// assert_eq!((cut.kept, cut.ultimate), (vec![1], vec![0.8]));
+/// ```
+pub fn condition_on_paid(
+    u: &[f64],
+    premium: f64,
+    paid: f64,
+    share_paid: f64,
+    how: Conditioning,
+) -> Result<Conditioned> {
+    if !(premium.is_finite() && premium > 0.0) {
+        return Err(Error::InvalidParameter {
+            name: "premium",
+            value: premium,
+            reason: "must be finite and positive",
+        });
+    }
+    if !paid.is_finite() || !share_paid.is_finite() || u.iter().any(|x| !x.is_finite()) {
+        return Err(Error::Data(
+            "the loss ratios, the paid to date and the share paid must be finite".into(),
+        ));
+    }
+    let (kept, ultimate): (Vec<usize>, Vec<f64>) = match how {
+        Conditioning::BornhuetterFerguson => u
+            .iter()
+            .enumerate()
+            .map(|(j, &u)| (j, paid / premium + u * (1.0 - share_paid)))
+            .unzip(),
+        Conditioning::Truncation => u
+            .iter()
+            .enumerate()
+            .filter(|&(_, &u)| u * premium >= paid)
+            .map(|(j, &u)| (j, u))
+            .unzip(),
+    };
+    if kept.is_empty() {
+        return Err(Error::Data(format!(
+            "no simulation's ultimate loss reaches the {paid} paid to date, so truncation keeps \
+             none"
+        )));
+    }
+    Ok(Conditioned { kept, ultimate })
+}
+
+/// A bound deal's actual accounts at a valuation (#603, `time-value.md`
+/// decision 34, item M2): each amount to the end of month `month − 1`, so
+/// the forward run starts at month `month`.
+///
+/// A valuation month after an adjustment month is refused, and the fee
+/// crystallises only at commutation, so every amount the engine carries
+/// from month to month is here.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ActualState {
+    /// The valuation month `v`, the first month the forward run simulates.
+    pub month: usize,
+    /// The premium paid into the trust to date. What the deal's schedule
+    /// would have collected by then and the trust has not received (or
+    /// received beyond it) is collected (or paid back) in month `v`.
+    pub premium_collected: f64,
+    /// The losses paid from the trust to date, `A`.
+    pub paid: f64,
+    /// The trust's balance.
+    pub collateral: f64,
+    /// The capital the investor has paid into the trust, without the
+    /// opening capital.
+    pub funded: f64,
+    /// The equity released to the investor.
+    pub released: f64,
+    /// The operating account's balance.
+    pub operating: f64,
+    /// The investor's actual flows in months `0..v` (the opening capital
+    /// in month 0), for the return since inception; without them only the
+    /// forward return is given.
+    pub flows: Option<Vec<f64>>,
+    /// Under [`FundingRule::ObligationIncrease`], the obligation its next
+    /// call is measured from ([`Trace::funding_reference`]); required
+    /// under that rule after month 0.
+    pub funding_reference: Option<f64>,
+}
+
+impl ActualState {
+    /// The state of a simulated deal at the start of month `month`, from
+    /// its [`trace`](CashflowTerms::trace) from inception: to value one
+    /// path of a simulation as if it had happened.
+    pub fn from_trace(trace: &Trace, month: usize) -> Result<Self> {
+        if trace.opening_balance != 0.0 {
+            return Err(Error::Data(
+                "the trace starts from a valuation; an actual state needs one from inception"
+                    .into(),
+            ));
+        }
+        let n = trace.investor.len();
+        if month >= n {
+            return Err(Error::Data(format!(
+                "a valuation at month {month} of a trace of {n} months leaves nothing to run"
+            )));
+        }
+        if month == 0 {
+            return Ok(ActualState {
+                flows: Some(Vec::new()),
+                ..ActualState::default()
+            });
+        }
+        let sum = |v: &[f64]| v[..month].iter().sum::<f64>();
+        Ok(ActualState {
+            month,
+            premium_collected: sum(&trace.premium),
+            paid: sum(&trace.paid),
+            collateral: trace.collateral_balance[month - 1],
+            funded: sum(&trace.funding_investor),
+            released: sum(&trace.equity_release),
+            operating: trace.operating_balance[month - 1],
+            flows: Some(trace.investor[..month].to_vec()),
+            funding_reference: Some(trace.funding_reference[month - 1]),
+        })
+    }
+
+    fn is_empty(&self) -> bool {
+        [
+            self.premium_collected,
+            self.paid,
+            self.collateral,
+            self.funded,
+            self.released,
+            self.operating,
+        ]
+        .iter()
+        .all(|&x| x == 0.0)
+            && self.flows.as_ref().is_none_or(|f| f.is_empty())
+            && self.funding_reference.is_none_or(|r| r == 0.0)
+    }
+}
+
+/// A deal's terms with its actual state at a valuation month, from
+/// [`CashflowTerms::valuation`] (#603).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Valuation {
+    terms: CashflowTerms,
+    state: ActualState,
+}
+
+impl CashflowTerms {
+    /// The deal valued at `state.month` from its actual accounts (#603,
+    /// `time-value.md` decision 34): [`Valuation::run`] simulates the
+    /// months from there to commutation, each simulation conditioned on
+    /// the actual paid to date. Valuation is at a month end, the engine's
+    /// step (item M6).
+    ///
+    /// Fails when nothing is left to run (`month` at or past the
+    /// commutation month), at month 0 unless the state is empty, after an
+    /// adjustment month, under [`FundingRule::ObligationIncrease`] after
+    /// month 0 without a funding reference, or when the actual flows are
+    /// not one a month to the valuation month.
+    pub fn valuation(&self, state: ActualState) -> Result<Valuation> {
+        self.check()?;
+        let v = state.month;
+        if v >= self.commutation_month {
+            return Err(Error::Data(format!(
+                "the deal commutes in month {}; a valuation at month {v} leaves nothing to run",
+                self.commutation_month - 1
+            )));
+        }
+        let amounts = [
+            state.premium_collected,
+            state.paid,
+            state.collateral,
+            state.funded,
+            state.released,
+            state.operating,
+            state.funding_reference.unwrap_or(0.0),
+        ];
+        if amounts.iter().any(|x| !x.is_finite())
+            || state.flows.iter().flatten().any(|x| !x.is_finite())
+        {
+            return Err(Error::Data("the actual state must be finite".into()));
+        }
+        if v == 0 && !state.is_empty() {
+            return Err(Error::Data(
+                "a valuation at month 0 is inception: the actual state must be empty".into(),
+            ));
+        }
+        if let Some(f) = &state.flows {
+            if f.len() != v {
+                return Err(Error::Data(format!(
+                    "{} actual flows for a valuation at month {v}; one a month in 0..{v}",
+                    f.len()
+                )));
+            }
+        }
+        if let Some(a) = self.premium_flow.adjustments.iter().find(|a| a.month < v) {
+            return Err(Error::Data(format!(
+                "a premium adjustment was made in month {}, before the valuation month {v}; a \
+                 valuation after an adjustment is not supported",
+                a.month
+            )));
+        }
+        if v > 0
+            && matches!(self.funding.rule, FundingRule::ObligationIncrease { .. })
+            && state.funding_reference.is_none()
+        {
+            return Err(Error::Data(
+                "under the obligation-increase funding rule a valuation needs the funding \
+                 reference, the obligation the next call is measured from"
+                    .into(),
+            ));
+        }
+        Ok(Valuation {
+            terms: self.clone(),
+            state,
+        })
+    }
+}
+
+impl Valuation {
+    /// The deal's terms.
+    pub fn terms(&self) -> &CashflowTerms {
+        &self.terms
+    }
+
+    /// The actual state.
+    pub fn state(&self) -> &ActualState {
+        &self.state
+    }
+
+    /// The valuation month `v`.
+    pub fn month(&self) -> usize {
+        self.state.month
+    }
+
+    /// The share of the paid pattern reached by the end of month `v − 1`,
+    /// `S` (0 at month 0).
+    pub fn share_paid(&self) -> f64 {
+        match self.state.month {
+            0 => 0.0,
+            v => self.terms.patterns.paid[v - 1],
+        }
+    }
+
+    /// The investor's net asset value at the valuation: the trust's and
+    /// the operating account's balances, which the forward return takes
+    /// as the investment at the valuation month (item M3).
+    pub fn nav(&self) -> f64 {
+        self.state.collateral + self.state.operating
+    }
+
+    /// Each simulation's cash flows from the valuation month to
+    /// commutation, its ultimate loss ratio `u[j]` conditioned on the
+    /// actual paid as `how` says ([`condition_on_paid`]) and its loss still
+    /// to pay following the rest of the terms' paid pattern. The trust and
+    /// operating account open at the actual balances, the premium already
+    /// collected is not collected again, and the fee reads the totals since
+    /// inception.
+    ///
+    /// At month 0 with an empty state the flows are [`CashflowTerms::run`]'s
+    /// exactly.
+    pub fn run(&self, u: &[f64], commission: &[f64], how: Conditioning) -> Result<Forward> {
+        check_sims(u, commission)?;
+        let terms = &self.terms;
+        let s = &self.state;
+        let v = s.month;
+        let pr = terms.premium;
+        let share = self.share_paid();
+        let cond = condition_on_paid(u, pr, s.paid, share, how)?;
+        let req = |_: usize, m: &Month| terms.requirement.at(m);
+        let mut out = Cashflows::empty(terms.commutation_month - v, cond.kept.len());
+        for (&j, &ult) in cond.kept.iter().zip(&cond.ultimate) {
+            out.push(self.simulate_one(u[j], ult, commission[j], how, &req, None));
+        }
+        Ok(Forward {
+            month: v,
+            kept: cond.kept,
+            ultimate: cond.ultimate,
+            flows: out,
+            nav: self.nav(),
+            funded_before: s.funded,
+            actual: s.flows.clone(),
+        })
+    }
+
+    /// Every account line of one simulation from the valuation month,
+    /// conditioned as [`run`](Self::run) conditions it: one value a month
+    /// in months `v..T`, with [`Trace::opening_balance`] the actual
+    /// balances. Fails when truncation drops the simulation.
+    pub fn trace(&self, u: f64, commission: f64, how: Conditioning) -> Result<Trace> {
+        check_sims(&[u], &[commission])?;
+        let terms = &self.terms;
+        let cond = condition_on_paid(&[u], terms.premium, self.state.paid, self.share_paid(), how)?;
+        let req = |_: usize, m: &Month| terms.requirement.at(m);
+        let mut trace = Trace::new(terms.commutation_month - self.state.month);
+        self.simulate_one(u, cond.ultimate[0], commission, how, &req, Some(&mut trace));
+        Ok(trace)
+    }
+
+    fn simulate_one(
+        &self,
+        u: f64,
+        ultimate: f64,
+        c: f64,
+        how: Conditioning,
+        req: &dyn Fn(usize, &Month) -> f64,
+        trace: Option<&mut Trace>,
+    ) -> Sim {
+        let terms = &self.terms;
+        let s = &self.state;
+        let v = s.month;
+        let pr = terms.premium;
+        let pattern = &terms.patterns.paid;
+        if v == 0 {
+            return terms.simulate(&PaidPath::new(ultimate, pr, pattern), c, req, None, trace);
+        }
+        let rest = 1.0 - self.share_paid();
+        let scale = match how {
+            Conditioning::BornhuetterFerguson => u * pr,
+            Conditioning::Truncation if rest > 0.0 => (u * pr - s.paid) / rest,
+            Conditioning::Truncation => 0.0,
+        };
+        let path = PaidPath {
+            u: ultimate,
+            premium: pr,
+            pattern,
+            from: Some((v, s.paid, scale)),
+        };
+        // The premium the schedule collected in months 0..v.
+        let flow = &terms.premium_flow;
+        let collected = if flow.deduct_commission {
+            flow.collected_rate - c
+        } else {
+            flow.collected_rate
+        };
+        let written = |t: isize| {
+            if t < 0 {
+                0.0
+            } else {
+                terms.patterns.written[t as usize]
+            }
+        };
+        let scheduled = collected * pr * written(v as isize - 1 - flow.lag as isize);
+        let start = Start {
+            month: v,
+            collateral: s.collateral,
+            operating: s.operating,
+            funded: s.funded,
+            released: s.released,
+            reference: s.funding_reference.unwrap_or(0.0),
+            arrears: scheduled - s.premium_collected,
+        };
+        terms.simulate(&path, c, req, Some(&start), trace)
+    }
+}
+
+/// The forward cash flows of a [`Valuation`], one row a simulation kept,
+/// with the returns from the valuation month and since inception (item
+/// M3).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Forward {
+    month: usize,
+    kept: Vec<usize>,
+    ultimate: Vec<f64>,
+    flows: Cashflows,
+    nav: f64,
+    funded_before: f64,
+    actual: Option<Vec<f64>>,
+}
+
+impl Forward {
+    /// The valuation month `v`.
+    pub fn month(&self) -> usize {
+        self.month
+    }
+
+    /// The simulations kept, by their index in the loss ratios given.
+    pub fn kept(&self) -> &[usize] {
+        &self.kept
+    }
+
+    /// Each kept simulation's ultimate loss ratio given the paid to date.
+    pub fn ultimate(&self) -> &[f64] {
+        &self.ultimate
+    }
+
+    /// The investor's flows in months `v..T`, one kept simulation a row
+    /// (offset 0 is month `v`), with the totals since inception: the
+    /// capital funded, the equity released, the fee and the commutation
+    /// payment.
+    pub fn flows(&self) -> &Cashflows {
+        &self.flows
+    }
+
+    /// The net asset value taken as the investment at the valuation month.
+    pub fn nav(&self) -> f64 {
+        self.nav
+    }
+
+    /// The forward flows with the net asset value paid in at their first
+    /// month, as [`CashflowTerms::run`] puts the opening capital in month
+    /// 0: one row a kept simulation, months `v..T`. At month 0 they are the
+    /// run's flows.
+    pub fn forward_rows(&self) -> Vec<f64> {
+        let m = self.flows.months;
+        let mut rows = self.flows.flows.clone();
+        if self.month > 0 {
+            for row in rows.chunks_mut(m) {
+                row[0] -= self.nav;
+            }
+        }
+        rows
+    }
+
+    /// The actual flows in months `0..v` followed by each kept simulation's
+    /// forward flows: one row a kept simulation, months `0..T`. Fails
+    /// without the actual flows ([`ActualState::flows`]).
+    pub fn since_inception_rows(&self) -> Result<Vec<f64>> {
+        let Some(actual) = &self.actual else {
+            return Err(Error::Data(
+                "the return since inception needs the actual flows to date".into(),
+            ));
+        };
+        let m = self.flows.months;
+        Ok(self
+            .flows
+            .flows
+            .chunks(m)
+            .flat_map(|row| actual.iter().chain(row).copied())
+            .collect())
+    }
+
+    /// Each kept simulation's net present value from the valuation month at
+    /// the annual `rate`.
+    pub fn forward_npv(&self, rate: f64) -> Result<Vec<f64>> {
+        npv_rows(&self.forward_rows(), &years(self.flows.months), rate)
+    }
+
+    /// Each kept simulation's internal rate of return from the valuation
+    /// month.
+    pub fn forward_irr(&self, options: &IrrOptions) -> Result<Vec<Irr>> {
+        irr_rows(&self.forward_rows(), &years(self.flows.months), options)
+    }
+
+    /// Each kept simulation's multiple on the capital from the valuation
+    /// month, `1 + net / (NAV + funded after it)`, the net the sum of its
+    /// forward row.
+    pub fn forward_moic(&self) -> Result<Vec<f64>> {
+        let m = self.flows.months;
+        self.forward_rows()
+            .chunks(m)
+            .enumerate()
+            .map(|(j, row)| {
+                let funded = self.flows.funded[j] - self.funded_before;
+                let base = if self.month == 0 {
+                    self.flows.opening[j]
+                } else {
+                    self.nav
+                };
+                moic(row.iter().sum(), funded, base)
+            })
+            .collect()
+    }
+
+    /// Each kept simulation's net present value since inception at the
+    /// annual `rate`.
+    pub fn since_inception_npv(&self, rate: f64) -> Result<Vec<f64>> {
+        let months = self.month + self.flows.months;
+        npv_rows(&self.since_inception_rows()?, &years(months), rate)
+    }
+
+    /// Each kept simulation's internal rate of return since inception.
+    pub fn since_inception_irr(&self, options: &IrrOptions) -> Result<Vec<Irr>> {
+        let months = self.month + self.flows.months;
+        irr_rows(&self.since_inception_rows()?, &years(months), options)
+    }
+
+    /// Each kept simulation's multiple on invested capital since inception,
+    /// `1 + net / (funded + opening)`.
+    pub fn since_inception_moic(&self) -> Result<Vec<f64>> {
+        let months = self.month + self.flows.months;
+        self.since_inception_rows()?
+            .chunks(months)
+            .enumerate()
+            .map(|(j, row)| {
+                moic(
+                    row.iter().sum(),
+                    self.flows.funded[j],
+                    self.flows.opening[j],
+                )
+            })
+            .collect()
+    }
+}
+
+fn years(months: usize) -> Vec<f64> {
+    let offsets: Vec<f64> = (0..months).map(|t| t as f64).collect();
+    TimeUnit::Months.years(&offsets)
+}
+
+/// Actual against expected paid loss by month for a bound deal, from
+/// [`deal_ave`] (#603, items M4 and M5; the columns named as
+/// `prospicio_models::monitor` names them).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AvEReport {
+    /// The months `0..n`, one per actual value.
+    pub month: Vec<usize>,
+    /// The actual cumulative paid by the end of each month.
+    pub actual: Vec<f64>,
+    /// The mean over the simulations of the expected cumulative paid,
+    /// `u_j P S_j(t)`.
+    pub expected: Vec<f64>,
+    /// `actual / expected`.
+    pub ratio: Vec<f64>,
+    /// The actual's percentile among the simulations' expected paid: the
+    /// share at or below it, ties counted half.
+    pub percentile: Vec<f64>,
+    /// The percentile levels of [`quantiles`](Self::quantiles).
+    pub levels: Vec<f64>,
+    /// The expected paid at each level (numpy's linear quantile), one row a
+    /// month, one column a level.
+    pub quantiles: Vec<f64>,
+}
+
+/// The actual cumulative paid loss `actual[t]` at the end of each month
+/// `t = 0, 1, ...` against what the priced simulations expected: each
+/// simulation's `u_j P S_j(t)`, with `S_j` the terms' paid pattern or, when
+/// `paid` is given, the simulation's own (#600). The expected paid comes
+/// from the priced simulations, not conditioned ones (item M4).
+///
+/// A reported loss works the same way: give the reported pattern as `paid`
+/// (one pattern for every simulation, [`PatternDraws::indexed`]) and the
+/// actual reported loss.
+///
+/// ```
+/// use prospicio_pricing::cashflow::{
+///     Base, CashflowTerms, MonthlyPatterns, Requirement, Term, deal_ave,
+/// };
+///
+/// let p = MonthlyPatterns::new(vec![1.0; 4], vec![1.0; 4], vec![0.25, 0.5, 0.75, 1.0]).unwrap();
+/// let req = Requirement::new(vec![Term::new(Base::Outstanding, 1.0)]);
+/// let terms = CashflowTerms::new(100.0, 4, p, req).unwrap();
+/// // Simulated loss ratios 0.4, 0.6 and 0.8; 15 paid by month 0, 45 by month 1.
+/// let r = deal_ave(&[15.0, 45.0], &terms, &[0.4, 0.6, 0.8], None, &[0.5]).unwrap();
+/// assert_eq!(r.expected, [15.0, 30.0]);
+/// // At month 0 the actual ties the middle simulation, at month 1 it is
+/// // above all three.
+/// assert_eq!(r.percentile, [0.5, 1.0]);
+/// assert_eq!((r.ratio[1], r.quantiles[1]), (1.5, 30.0));
+/// ```
+pub fn deal_ave(
+    actual: &[f64],
+    terms: &CashflowTerms,
+    u: &[f64],
+    paid: Option<&PatternDraws>,
+    levels: &[f64],
+) -> Result<AvEReport> {
+    terms.check()?;
+    let n = u.len();
+    if n == 0 || u.iter().any(|x| !x.is_finite()) {
+        return Err(Error::Data(
+            "deal_ave needs at least one finite loss ratio".into(),
+        ));
+    }
+    if actual.iter().any(|x| !x.is_finite()) {
+        return Err(Error::Data("the actual paid must be finite".into()));
+    }
+    if let Some(&bad) = levels.iter().find(|&&p| !(0.0..=1.0).contains(&p)) {
+        return Err(Error::InvalidParameter {
+            name: "levels",
+            value: bad,
+            reason: "percentile levels must be in [0, 1]",
+        });
+    }
+    let width = match paid {
+        Some(d) => {
+            if d.len() != n {
+                return Err(Error::Data(format!(
+                    "{} paid patterns for {n} simulations",
+                    d.len()
+                )));
+            }
+            d.patterns()[0].len()
+        }
+        None => terms.patterns.len(),
+    };
+    if actual.len() > width {
+        return Err(Error::Data(format!(
+            "{} months of actual paid and patterns of {width} months",
+            actual.len()
+        )));
+    }
+    let pattern = |j: usize| match paid {
+        Some(d) => d.pattern(j),
+        None => terms.patterns.paid.as_slice(),
+    };
+    let pr = terms.premium;
+    let mut report = AvEReport {
+        month: (0..actual.len()).collect(),
+        actual: actual.to_vec(),
+        expected: Vec::with_capacity(actual.len()),
+        ratio: Vec::with_capacity(actual.len()),
+        percentile: Vec::with_capacity(actual.len()),
+        levels: levels.to_vec(),
+        quantiles: Vec::with_capacity(actual.len() * levels.len()),
+    };
+    let mut e = vec![0.0; n];
+    for (t, &a) in actual.iter().enumerate() {
+        for (j, x) in e.iter_mut().enumerate() {
+            *x = u[j] * pr * pattern(j)[t];
+        }
+        let mean = e.iter().sum::<f64>() / n as f64;
+        let below = e.iter().filter(|&&x| x < a).count() as f64;
+        let ties = e.iter().filter(|&&x| x == a).count() as f64;
+        report.expected.push(mean);
+        report.ratio.push(a / mean);
+        report.percentile.push((below + 0.5 * ties) / n as f64);
+        e.sort_by(f64::total_cmp);
+        for &p in levels {
+            report
+                .quantiles
+                .push(QuantileMethod::Linear.quantile(&e, p)?);
+        }
+    }
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -1614,6 +2373,379 @@ mod tests {
         }
     }
 
+    fn lognormal(seed: u64, stream: u64, n: usize, mu: f64, sigma: f64) -> Vec<f64> {
+        let mut rng = prospicio_core::StreamRng::new(seed, stream);
+        (0..n)
+            .map(|_| (mu + sigma * prospicio_math::special::norm_quantile(rng.next_open01())).exp())
+            .collect()
+    }
+
+    fn close(a: &[f64], b: &[f64], tol: f64) -> bool {
+        a.len() == b.len() && a.iter().zip(b).all(|(x, y)| (x - y).abs() <= tol)
+    }
+
+    #[test]
+    fn a_valuation_at_month_0_is_the_run() {
+        let us = [0.0, 0.4, 0.8, 1.3, 2.0];
+        let cs = [0.0, 0.25, 0.1, 0.0, 0.3];
+        for terms in variants() {
+            let run = terms.run(&us, &cs).unwrap();
+            let val = terms.valuation(ActualState::default()).unwrap();
+            assert_eq!(val.nav(), 0.0);
+            for how in [Conditioning::BornhuetterFerguson, Conditioning::Truncation] {
+                let f = val.run(&us, &cs, how).unwrap();
+                assert_eq!(f.kept(), [0, 1, 2, 3, 4]);
+                assert_eq!(f.flows(), &run);
+                assert_eq!(f.forward_rows(), run.flows());
+                let empty = ActualState {
+                    flows: Some(vec![]),
+                    ..ActualState::default()
+                };
+                let f = terms.valuation(empty).unwrap().run(&us, &cs, how).unwrap();
+                assert_eq!(f.since_inception_rows().unwrap(), run.flows());
+                assert_eq!(f.forward_npv(0.08).unwrap(), run.npv(0.08).unwrap());
+                assert_eq!(f.forward_moic().unwrap(), f.since_inception_moic().unwrap());
+            }
+        }
+    }
+
+    #[test]
+    fn valuing_a_path_at_its_own_loss_ratio_gives_its_flows() {
+        // Under either conditioning a simulation at the path's own loss
+        // ratio pays what the path pays, so the forward run is the rest of
+        // the path and the since-inception flows are the whole path.
+        for (i, terms) in variants().iter().enumerate() {
+            for &u in &[0.0, 0.4, 0.9, 1.3, 2.0] {
+                let c = 0.2;
+                let path = terms.trace(u, c).unwrap();
+                for v in [1, 6, 12, 18] {
+                    let state = ActualState::from_trace(&path, v).unwrap();
+                    let val = terms.valuation(state).unwrap();
+                    for how in [Conditioning::BornhuetterFerguson, Conditioning::Truncation] {
+                        let f = val.run(&[u], &[c], how).unwrap();
+                        assert!(
+                            close(f.flows().flows(), &path.investor[v..], 1e-9),
+                            "variant {i}, u {u}, month {v}, {how:?}"
+                        );
+                        assert!(close(
+                            &f.since_inception_rows().unwrap(),
+                            &path.investor,
+                            1e-9
+                        ));
+                        assert!((f.flows().fee()[0] - path.fee).abs() < 1e-9);
+                        let tr = val.trace(u, c, how).unwrap();
+                        assert!(
+                            tr.conservation_error().abs() < 1e-9,
+                            "variant {i}, month {v}"
+                        );
+                        assert!(close(
+                            &tr.collateral_balance,
+                            &path.collateral_balance[v..],
+                            1e-9
+                        ));
+                        assert!(tr.operating_balance.last().unwrap().abs() < 1e-9);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn money_is_conserved_from_a_valuation_for_any_simulation() {
+        for terms in variants() {
+            let path = terms.trace(0.9, 0.2).unwrap();
+            let val = terms
+                .valuation(ActualState::from_trace(&path, 12).unwrap())
+                .unwrap();
+            for &u in &[0.0, 0.5, 1.1, 2.0] {
+                for how in [Conditioning::BornhuetterFerguson, Conditioning::Truncation] {
+                    let Ok(tr) = val.trace(u, 0.1, how) else {
+                        // Truncation drops a simulation below the paid.
+                        assert_eq!(how, Conditioning::Truncation);
+                        assert!(u * 100.0 < path.paid[..12].iter().sum::<f64>());
+                        continue;
+                    };
+                    assert!(tr.conservation_error().abs() < 1e-9);
+                    assert!(tr.collateral_balance.last().unwrap().abs() < 1e-9);
+                    assert!(tr.operating_balance.last().unwrap().abs() < 1e-9);
+                    // The losses paid from the valuation are the conditioned
+                    // ultimate's rest along the pattern.
+                    let a: f64 = path.paid[..12].iter().sum();
+                    let s = terms.patterns.paid[11];
+                    let e = terms.patterns.paid[29];
+                    let want = match how {
+                        Conditioning::BornhuetterFerguson => u * 100.0 * (e - s),
+                        Conditioning::Truncation => (u * 100.0 - a) * (e - s) / (1.0 - s),
+                    };
+                    assert!((tr.paid.iter().sum::<f64>() - want).abs() < 1e-9);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn premium_short_of_the_schedule_is_collected_at_valuation() {
+        let terms = full();
+        let path = terms.trace(0.9, 0.2).unwrap();
+        let mut state = ActualState::from_trace(&path, 6).unwrap();
+        let val = terms.valuation(state.clone()).unwrap();
+        let on_time = val
+            .trace(0.9, 0.2, Conditioning::BornhuetterFerguson)
+            .unwrap();
+        state.premium_collected -= 5.0;
+        state.collateral -= 5.0;
+        let late = terms
+            .valuation(state)
+            .unwrap()
+            .trace(0.9, 0.2, Conditioning::BornhuetterFerguson)
+            .unwrap();
+        assert!((late.premium[0] - on_time.premium[0] - 5.0).abs() < 1e-12);
+        assert!((late.premium[1] - on_time.premium[1]).abs() < 1e-12);
+        assert!(late.conservation_error().abs() < 1e-9);
+    }
+
+    #[test]
+    fn truncation_drops_what_has_paid_less_than_the_actual() {
+        let mut terms = full();
+        terms.premium_flow.adjustments.clear();
+        let path = terms.trace(1.0, 0.2).unwrap();
+        let state = ActualState::from_trace(&path, 24).unwrap();
+        let a = state.paid;
+        let val = terms.valuation(state).unwrap();
+        let us = [0.3, 0.45, 0.55, 1.0, 1.5];
+        let f = val.run(&us, &[0.2; 5], Conditioning::Truncation).unwrap();
+        let kept: Vec<usize> = (0..5).filter(|&j| us[j] * 100.0 >= a).collect();
+        assert_eq!(f.kept(), kept.as_slice());
+        assert_eq!(f.flows().len(), kept.len());
+        let bf = val
+            .run(&us, &[0.2; 5], Conditioning::BornhuetterFerguson)
+            .unwrap();
+        assert_eq!(bf.kept().len(), 5);
+        // Every BF ultimate is at least the paid to date.
+        assert!(bf.ultimate().iter().all(|&x| x * 100.0 >= a - 1e-12));
+        assert!(val.run(&[0.1], &[0.2], Conditioning::Truncation).is_err());
+    }
+
+    #[test]
+    fn the_forward_return_starts_from_the_net_asset_value() {
+        let mut terms = full();
+        terms.funding.rule = FundingRule::Shortfall;
+        let path = terms.trace(0.7, 0.2).unwrap();
+        let state = ActualState::from_trace(&path, 12).unwrap();
+        let nav = state.collateral + state.operating;
+        let val = terms.valuation(state).unwrap();
+        let f = val
+            .run(
+                &[0.5, 0.7, 1.2],
+                &[0.2; 3],
+                Conditioning::BornhuetterFerguson,
+            )
+            .unwrap();
+        assert_eq!(f.nav(), nav);
+        let m = f.flows().months();
+        assert_eq!(m, 18);
+        let rows = f.forward_rows();
+        for j in 0..3 {
+            let raw = &f.flows().flows()[j * m..(j + 1) * m];
+            assert_eq!(rows[j * m], raw[0] - nav);
+            assert_eq!(&rows[j * m + 1..(j + 1) * m], &raw[1..]);
+        }
+        // A better loss ratio is worth more, from now and since inception.
+        let fwd = f.forward_npv(0.05).unwrap();
+        let all = f.since_inception_npv(0.05).unwrap();
+        assert!(fwd[0] > fwd[1] && fwd[1] > fwd[2], "{fwd:?}");
+        assert!(all[0] > all[1] && all[1] > all[2], "{all:?}");
+        let moic = f.since_inception_moic().unwrap();
+        assert!(moic[0] > moic[2]);
+        let irr = f.forward_irr(&IrrOptions::default()).unwrap();
+        for r in irr.iter().filter(|r| r.found) {
+            assert!(r.npv.abs() < 1e-6);
+        }
+        assert_eq!(
+            f.since_inception_irr(&IrrOptions::default()).unwrap().len(),
+            3
+        );
+    }
+
+    #[test]
+    fn refuses_valuations_it_cannot_run() {
+        let terms = full();
+        let path = terms.trace(0.9, 0.2).unwrap();
+        // At or past commutation.
+        assert!(ActualState::from_trace(&path, 30).is_err());
+        let mut late = ActualState::from_trace(&path, 12).unwrap();
+        late.month = 30;
+        assert!(terms.valuation(late).is_err());
+        // After the adjustment at month 18.
+        let after = ActualState::from_trace(&path, 19).unwrap();
+        assert!(terms.valuation(after).is_err());
+        assert!(
+            terms
+                .valuation(ActualState::from_trace(&path, 18).unwrap())
+                .is_ok()
+        );
+        // Month 0 with something in it.
+        let busy = ActualState {
+            paid: 1.0,
+            ..ActualState::default()
+        };
+        assert!(terms.valuation(busy).is_err());
+        // The obligation rule needs its reference.
+        let mut no_ref = ActualState::from_trace(&path, 6).unwrap();
+        no_ref.funding_reference = None;
+        assert!(terms.valuation(no_ref.clone()).is_err());
+        let mut shortfall = terms.clone();
+        shortfall.funding.rule = FundingRule::Shortfall;
+        assert!(shortfall.valuation(no_ref.clone()).is_ok());
+        // Actual flows one a month to the valuation.
+        let mut flows = ActualState::from_trace(&path, 6).unwrap();
+        flows.flows = Some(vec![0.0; 5]);
+        assert!(terms.valuation(flows).is_err());
+        let mut nan = ActualState::from_trace(&path, 6).unwrap();
+        nan.collateral = f64::NAN;
+        assert!(terms.valuation(nan).is_err());
+        // The return since inception needs the actual flows.
+        let mut blind = ActualState::from_trace(&path, 6).unwrap();
+        blind.flows = None;
+        let f = terms
+            .valuation(blind)
+            .unwrap()
+            .run(&[0.9], &[0.2], Conditioning::BornhuetterFerguson)
+            .unwrap();
+        assert!(f.since_inception_rows().is_err());
+        assert!(f.forward_npv(0.05).is_ok());
+        // A trace from a valuation is not a path from inception.
+        let val = terms
+            .valuation(ActualState::from_trace(&path, 6).unwrap())
+            .unwrap();
+        let tr = val
+            .trace(0.9, 0.2, Conditioning::BornhuetterFerguson)
+            .unwrap();
+        assert!(ActualState::from_trace(&tr, 3).is_err());
+        assert!(
+            condition_on_paid(&[0.5], 0.0, 1.0, 0.5, Conditioning::BornhuetterFerguson).is_err()
+        );
+    }
+
+    /// The Kolmogorov-Smirnov distance of values in [0, 1] from the
+    /// uniform.
+    fn ks_uniform(mut x: Vec<f64>) -> f64 {
+        x.sort_by(f64::total_cmp);
+        let n = x.len() as f64;
+        x.iter()
+            .enumerate()
+            .map(|(i, &v)| (v - i as f64 / n).abs().max(((i + 1) as f64 / n - v).abs()))
+            .fold(0.0, f64::max)
+    }
+
+    #[test]
+    fn the_actual_percentile_is_uniform_over_paths() {
+        // Paths drawn from the priced distribution: the actual's percentile
+        // among the priced simulations is uniform at every month, and the
+        // realised return's percentile among the conditioned forward
+        // returns is uniform too, so the forward distribution brackets the
+        // realised return as often as it says.
+        let mut terms = full();
+        terms.funding.rule = FundingRule::Shortfall;
+        terms.premium_flow.adjustments.clear();
+        let sims = lognormal(7, 0, 2_000, -0.3, 0.35);
+        let paths = lognormal(7, 1, 300, -0.3, 0.35);
+        let crit = 1.63 / (paths.len() as f64).sqrt(); // 1% critical value
+        let mut ave = Vec::new();
+        let mut realised = Vec::new();
+        let c = vec![0.2; sims.len()];
+        for &u in &paths {
+            let path = terms.trace(u, 0.2).unwrap();
+            let actual: Vec<f64> = path
+                .paid
+                .iter()
+                .scan(0.0, |s, x| {
+                    *s += x;
+                    Some(*s)
+                })
+                .collect();
+            let r = deal_ave(&actual[..12], &terms, &sims, None, &[]).unwrap();
+            ave.push(r.percentile[11]);
+            let val = terms
+                .valuation(ActualState::from_trace(&path, 12).unwrap())
+                .unwrap();
+            let f = val
+                .run(&sims, &c, Conditioning::BornhuetterFerguson)
+                .unwrap();
+            let npv = f.since_inception_npv(0.05).unwrap();
+            let own: f64 = path
+                .investor
+                .iter()
+                .enumerate()
+                .map(|(t, x)| x / 1.05_f64.powf(t as f64 / 12.0))
+                .sum();
+            let below = npv.iter().filter(|&&x| x < own).count() as f64;
+            realised.push(below / npv.len() as f64);
+        }
+        let d_ave = ks_uniform(ave);
+        let d_npv = ks_uniform(realised);
+        assert!(d_ave < crit, "{d_ave} against {crit}");
+        assert!(d_npv < crit, "{d_npv} against {crit}");
+    }
+
+    #[test]
+    fn deal_ave_reads_each_simulations_pattern() {
+        let terms = full();
+        let (fast, slow) = fast_and_slow();
+        let us = [0.5, 1.0];
+        let draws = PatternDraws::new(vec![fast.clone(), slow.clone()]).unwrap();
+        let actual = [3.0, 6.0, 9.0];
+        let r = deal_ave(&actual, &terms, &us, Some(&draws), &[0.0, 1.0]).unwrap();
+        for t in 0..3 {
+            let e = [0.5 * 100.0 * fast[t], 100.0 * slow[t]];
+            assert!((r.expected[t] - 0.5 * (e[0] + e[1])).abs() < 1e-12);
+            assert_eq!(r.quantiles[2 * t], e[0].min(e[1]));
+            assert_eq!(r.quantiles[2 * t + 1], e[0].max(e[1]));
+        }
+        assert!(deal_ave(&actual, &terms, &[0.5], Some(&draws), &[]).is_err());
+        assert!(deal_ave(&actual, &terms, &us, None, &[1.5]).is_err());
+        assert!(deal_ave(&[0.0; 61], &terms, &us, None, &[]).is_err());
+    }
+
+    #[test]
+    fn the_forward_distribution_narrows_as_the_deal_runs_off() {
+        // The finding in knowledge/findings/deal-valuation-conditioning.md:
+        // under Bornhuetter-Ferguson conditioning the sd of the since-
+        // inception NPV falls with the share paid; truncation keeps its
+        // simulations whole and drops more as the deal runs off.
+        let mut terms = full();
+        terms.funding.rule = FundingRule::Shortfall;
+        terms.premium_flow.adjustments.clear();
+        let sims = lognormal(11, 0, 4_000, -0.3, 0.35);
+        let c = vec![0.2; sims.len()];
+        let path = terms.trace(0.9, 0.2).unwrap();
+        let sd = |x: &[f64]| {
+            let m = x.iter().sum::<f64>() / x.len() as f64;
+            (x.iter().map(|v| (v - m).powi(2)).sum::<f64>() / (x.len() - 1) as f64).sqrt()
+        };
+        let mut bf_sd = Vec::new();
+        let mut kept = Vec::new();
+        for v in [0, 6, 12, 18, 24, 29] {
+            let state = ActualState::from_trace(&path, v).unwrap();
+            let val = terms.valuation(state).unwrap();
+            let f = val
+                .run(&sims, &c, Conditioning::BornhuetterFerguson)
+                .unwrap();
+            bf_sd.push(sd(&f.since_inception_npv(0.05).unwrap()));
+            let t = val.run(&sims, &c, Conditioning::Truncation).unwrap();
+            kept.push(t.kept().len() as f64 / sims.len() as f64);
+        }
+        assert!(bf_sd.windows(2).all(|w| w[1] < w[0]), "{bf_sd:?}");
+        assert!(kept.windows(2).all(|w| w[1] <= w[0]), "{kept:?}");
+        // Close to the unpaid share 1 - S(v - 1) of a 48-month pattern:
+        // 1, 0.875, 0.75, 0.625, 0.5, 0.396.
+        let ratio: Vec<f64> = bf_sd.iter().map(|s| s / bf_sd[0]).collect();
+        let want = [1.0, 0.8798, 0.7520, 0.6177, 0.4879, 0.3807];
+        assert!(close(&ratio, &want, 1e-4), "{ratio:?}");
+        let want = [1.0, 1.0, 0.9995, 0.9855, 0.92025, 0.802];
+        assert!(close(&kept, &want, 1e-12), "{kept:?}");
+    }
+
     #[test]
     fn refuses_patterns_that_do_not_fit() {
         let terms = full();
@@ -1778,7 +2910,7 @@ mod tests {
             .map(|t| {
                 terms
                     .requirement
-                    .at(&terms.month(t, 0.9, &terms.patterns.paid))
+                    .at(&terms.month(t, &PaidPath::new(0.9, 100.0, &terms.patterns.paid)))
             })
             .collect();
         let out = terms.run_with_requirement(&[0.9], &[0.2], &given).unwrap();

@@ -63,7 +63,8 @@ mod prospicio_native {
     use super::book::{PyBookCashflows, PyDealBook, PyDealRun};
     #[pymodule_export]
     use super::cashflow::{
-        PyCashflowTerms, PyCashflows, PyCollateralRequirement, PyPremiumAdjustment,
+        PyCashflowTerms, PyCashflows, PyCollateralRequirement, PyForward, PyPremiumAdjustment,
+        PyValuation, condition_on_paid, deal_ave,
     };
     #[pymodule_export]
     use super::casualty::{

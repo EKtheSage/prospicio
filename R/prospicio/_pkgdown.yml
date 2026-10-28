@@ -187,6 +187,9 @@ reference:
       - cashflow_terms
       - cashflow_requirement
       - cashflow_adjustment
+      - cashflow_valuation
+      - condition_on_paid
+      - deal_ave
       - deal_run
       - book_marginal_price
       - trend_large_losses
