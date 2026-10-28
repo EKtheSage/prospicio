@@ -1,7 +1,7 @@
 ### Breaking changes
 
 - Rust: `Layer` gains the public field `scope`; code that builds one in
-  full adds it (`None` covers every loss as before).
+  full adds it (`None` covers every loss as before) (#584, #660).
 
 ### Aggregate and reinsurance
 
@@ -14,4 +14,4 @@
   scoped layer needs labelled events; the grids, annual losses and the
   P&L ledger refuse it. Tower JSON format version 7. Python
   `Layer.with_scope`, `EventSet.filter`; R `with_scope()`,
-  `filter_events()`.
+  `filter_events()` (#584, #660).
