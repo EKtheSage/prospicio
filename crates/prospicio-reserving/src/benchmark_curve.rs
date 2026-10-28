@@ -121,15 +121,15 @@ pub struct BenchmarkCurveFit {
 /// The smallest and largest omega a fit may give: outside them the curve is
 /// flat or a step, an edge the search runs off to on a benchmark that does
 /// not increase.
-const MIN_OMEGA: f64 = 1e-6;
-const MAX_OMEGA: f64 = 1e6;
+pub(crate) const MIN_OMEGA: f64 = 1e-6;
+pub(crate) const MAX_OMEGA: f64 = 1e6;
 /// The largest `|ln theta|` a fit may give, below the overflow of `exp`
 /// (about 709.8).
-const MAX_LN_THETA: f64 = 700.0;
+pub(crate) const MAX_LN_THETA: f64 = 700.0;
 
 /// The linearized percent developed: `logit p` for the log-logistic,
 /// `ln(-ln(1 - p))` for the Weibull, each `omega ln x - omega ln theta`.
-fn linearized(curve: GrowthCurve, p: f64) -> f64 {
+pub(crate) fn linearized(curve: GrowthCurve, p: f64) -> f64 {
     match curve {
         GrowthCurve::LogLogistic => (p / (1.0 - p)).ln(),
         GrowthCurve::Weibull => (-(-p).ln_1p()).ln(),

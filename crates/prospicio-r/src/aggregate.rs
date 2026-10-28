@@ -641,6 +641,15 @@ impl EventSet {
         })
     }
 
+    /// The losses whose label `label` takes one of `values`, every year
+    /// kept.
+    fn filter(&self, label: &str, values: Vec<String>) -> Result<Self> {
+        let values: Vec<&str> = values.iter().map(String::as_str).collect();
+        Ok(Self {
+            inner: self.inner.filter(label, &values).map_err(to_r)?,
+        })
+    }
+
     /// The years in another order: year `i` of the result is year
     /// `index[i]` (1-based) of this set.
     fn permute(&self, index: &[f64]) -> Result<Self> {
