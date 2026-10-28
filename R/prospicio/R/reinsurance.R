@@ -1045,6 +1045,34 @@ with_scope <- function(layer, label, values) {
   xol_layer(ptr = rust_result(layer@ptr$with_scope(as.character(label), as.character(values))))
 }
 
+#' A tower's ceded losses by event
+#'
+#' Each event's ceded loss to the named layers, summed over them, as an
+#' [event_set]: the input to an occurrence retro on a reinsurer's own
+#' cessions. Each layer's split by event is the one [apply_tower()]'s labels
+#' use (after the layer's annual terms, at its share, behind any earlier
+#' inuring stage), so in every year the set's losses add to the layers'
+#' ceded total. The events keep their times and labels; events that cede
+#' nothing are left out, sums insured are dropped, and a named layer that
+#' sees the aggregate part passes its ceded part on as the set's aggregate
+#' part. Join several deals' sets with [merge_event_sets()], and group one
+#' event's cessions into one occurrence with [hours_clause()].
+#'
+#' @param tower A [reinsurance_tower].
+#' @param events An [event_set].
+#' @param layers Names of the tower's layers.
+#' @returns An [event_set] with as many years.
+#' @export
+#' @examples
+#' ev <- events_from_years(list(c(20, 8, 15), 4))
+#' tw <- reinsurance_tower(list(xol_layer("10x5", 10, 5, aggregate_limit = 15)))
+#' ce <- ceded_events(tw, ev, "10x5")
+#' events(ce, 1)
+#' events(ce, 2)
+ceded_events <- function(tower, events, layers) {
+  event_set(ptr = rust_result(tower@ptr$ceded_events(events@ptr, as.character(layers))))
+}
+
 #' @rdname with_cover_basis
 #' @export
 apply_tower_timeline <- function(tower, timeline, exposure) {

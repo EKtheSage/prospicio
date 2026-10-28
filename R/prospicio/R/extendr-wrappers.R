@@ -620,6 +620,8 @@ ReinsuranceTower$apply_annual <- function(losses) .Call(wrap__ReinsuranceTower__
 
 ReinsuranceTower$apply <- function(events) .Call(wrap__ReinsuranceTower__apply, self, events)
 
+ReinsuranceTower$ceded_events <- function(events, layers) .Call(wrap__ReinsuranceTower__ceded_events, self, events, layers)
+
 ReinsuranceTower$with_cover_basis <- function(basis) .Call(wrap__ReinsuranceTower__with_cover_basis, self, basis)
 
 ReinsuranceTower$with_interlocking <- function(on) .Call(wrap__ReinsuranceTower__with_interlocking, self, on)
