@@ -1967,9 +1967,13 @@ cash_flow_rows <- function(flows, times) {
 #' worth 0: their value on a grid of `points` rates from `lower` to `upper`,
 #' the sign change (or exact zero) whose bracket's midpoint is nearest 0,
 #' `bisections` halvings of that bracket and `newton_steps` Newton steps
-#' clipped to it. A simulation with no root in the range (flows of one
-#' sign, say) has `found` `FALSE` and `NaN`; one with several has
-#' `sign_changes` above 1. The defaults are a reference simulation model's.
+#' clipped to it. A simulation with no root in the range has `found`
+#' `FALSE` and `NaN`, with `root_above` (or `root_below`) `TRUE` when a root
+#' lies outside the range, a return above 100% a year under the defaults,
+#' and `FALSE` for flows with no root at all, such as flows of one sign;
+#' `extend = TRUE` searches beyond the range for it. One with several roots
+#' has `sign_changes` above 1. The defaults are a reference simulation
+#' model's, with no search beyond the range.
 #'
 #' `moic()` is the multiple on invested capital,
 #' `1 + released / (funded + opening)`, and `leverage()` the leverage of
@@ -1988,13 +1992,19 @@ cash_flow_rows <- function(flows, times) {
 #' @param lower,upper The range of rates searched.
 #' @param points,bisections,newton_steps The grid's size and the refinement
 #'   steps.
+#' @param extend When no root is in the range but one lies beyond it, search
+#'   for it (above `upper` by doubling `1 + rate`, below `lower` by halving
+#'   it).
 #' @returns `npv()`, `moic()`, `leverage()` and `tiered_fee()` a numeric
-#'   vector; `irr()` a data frame with `rate`, `found`, `npv` (at the rate)
-#'   and `sign_changes`, one row a simulation.
+#'   vector; `irr()` a data frame with `rate`, `found`, `npv` (at the rate),
+#'   `sign_changes`, `root_above` and `root_below`, one row a simulation.
 #' @export
 #' @examples
 #' flows <- rbind(c(-100, 0, 121), c(-100, 230, -132), c(10, 5, 1))
 #' irr(flows, c(0, 1, 2))
+#' # A return of 300%, above the default range: flagged, and found on request.
+#' irr(c(-100, 400), c(0, 1))
+#' irr(c(-100, 400), c(0, 1), extend = TRUE)$rate
 #' npv(flows, c(0, 1, 2), 0.1)
 #' irr(c(-100, 0, 0, 103), c(0, 31, 59, 90), unit = "days")$rate
 #' moic(30, 40, 60)
@@ -2008,11 +2018,13 @@ npv <- function(flows, times, rate, unit = "years") {
 #' @rdname npv
 #' @export
 irr <- function(flows, times, unit = "years", lower = -0.95, upper = 1, points = 400L,
-                bisections = 8L, newton_steps = 3L) {
+                bisections = 8L, newton_steps = 3L, extend = FALSE) {
   r <- rust_result(pricing_irr(cash_flow_rows(flows, times), as.double(times), unit,
                                as.double(lower), as.double(upper), as.integer(points),
-                               as.integer(bisections), as.integer(newton_steps)))
-  data.frame(rate = r$rate, found = r$found, npv = r$npv, sign_changes = r$sign_changes)
+                               as.integer(bisections), as.integer(newton_steps),
+                               isTRUE(extend)))
+  data.frame(rate = r$rate, found = r$found, npv = r$npv, sign_changes = r$sign_changes,
+             root_above = r$root_above, root_below = r$root_below)
 }
 
 #' @rdname npv

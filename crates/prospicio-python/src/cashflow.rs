@@ -8,12 +8,12 @@ use prospicio_pricing::cashflow::{
     MonthlyPatterns, ObligationReference, Operating, PatternDraws, PerformanceFee, PremiumFlow,
     Requirement, Term, Timing, Trace, Valuation, condition_on_paid as condition, deal_ave as ave,
 };
-use prospicio_pricing::returns::{IrrOptions, TieredFee};
+use prospicio_pricing::returns::TieredFee;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use crate::payout::PyIrrResult;
+use crate::payout::{PyIrrResult, irr_options};
 use crate::to_py;
 
 fn base(name: &str) -> PyResult<Base> {
@@ -813,23 +813,6 @@ fn conditioning(name: &str) -> PyResult<Conditioning> {
     }
 }
 
-fn irr_options(
-    lower: Option<f64>,
-    upper: Option<f64>,
-    points: usize,
-    bisections: usize,
-    newton_steps: usize,
-) -> IrrOptions {
-    let d = IrrOptions::default();
-    IrrOptions {
-        lower: lower.unwrap_or(d.lower),
-        upper: upper.unwrap_or(d.upper),
-        points,
-        bisections,
-        newton_steps,
-    }
-}
-
 fn rows(flat: Vec<f64>, width: usize) -> Vec<Vec<f64>> {
     flat.chunks(width.max(1)).map(<[f64]>::to_vec).collect()
 }
@@ -1012,7 +995,8 @@ impl PyForward {
 
     /// Each kept simulation's internal rate of return from the valuation
     /// month, as ``Cashflows.irr``.
-    #[pyo3(signature = (*, lower = None, upper = None, points = 400, bisections = 8, newton_steps = 3))]
+    #[pyo3(signature = (*, lower = None, upper = None, points = 400, bisections = 8, newton_steps = 3, extend = false))]
+    #[allow(clippy::too_many_arguments)]
     fn forward_irr(
         &self,
         py: Python<'_>,
@@ -1021,14 +1005,16 @@ impl PyForward {
         points: usize,
         bisections: usize,
         newton_steps: usize,
+        extend: bool,
     ) -> PyResult<PyIrrResult> {
-        let o = irr_options(lower, upper, points, bisections, newton_steps);
+        let o = irr_options(lower, upper, points, bisections, newton_steps, extend);
         let inner = py.detach(|| self.inner.forward_irr(&o)).map_err(to_py)?;
         Ok(PyIrrResult { inner })
     }
 
     /// Each kept simulation's internal rate of return since inception.
-    #[pyo3(signature = (*, lower = None, upper = None, points = 400, bisections = 8, newton_steps = 3))]
+    #[pyo3(signature = (*, lower = None, upper = None, points = 400, bisections = 8, newton_steps = 3, extend = false))]
+    #[allow(clippy::too_many_arguments)]
     fn since_inception_irr(
         &self,
         py: Python<'_>,
@@ -1037,8 +1023,9 @@ impl PyForward {
         points: usize,
         bisections: usize,
         newton_steps: usize,
+        extend: bool,
     ) -> PyResult<PyIrrResult> {
-        let o = irr_options(lower, upper, points, bisections, newton_steps);
+        let o = irr_options(lower, upper, points, bisections, newton_steps, extend);
         let inner = py
             .detach(|| self.inner.since_inception_irr(&o))
             .map_err(to_py)?;
@@ -1276,7 +1263,8 @@ impl PyCashflows {
     }
 
     /// Each simulation's annual internal rate of return, as ``irr``.
-    #[pyo3(signature = (*, lower = None, upper = None, points = 400, bisections = 8, newton_steps = 3))]
+    #[pyo3(signature = (*, lower = None, upper = None, points = 400, bisections = 8, newton_steps = 3, extend = false))]
+    #[allow(clippy::too_many_arguments)]
     fn irr(
         &self,
         py: Python<'_>,
@@ -1285,8 +1273,9 @@ impl PyCashflows {
         points: usize,
         bisections: usize,
         newton_steps: usize,
+        extend: bool,
     ) -> PyResult<PyIrrResult> {
-        let options = irr_options(lower, upper, points, bisections, newton_steps);
+        let options = irr_options(lower, upper, points, bisections, newton_steps, extend);
         let inner = py.detach(|| self.inner.irr(&options)).map_err(to_py)?;
         Ok(PyIrrResult { inner })
     }

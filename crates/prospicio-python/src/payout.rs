@@ -409,6 +409,27 @@ fn flow_matrix(flows: Vec<Vec<f64>>, times: usize) -> PyResult<Vec<f64>> {
     Ok(flows.concat())
 }
 
+/// The search options of every ``irr`` keyword set: the defaults where a
+/// bound is not given.
+pub(crate) fn irr_options(
+    lower: Option<f64>,
+    upper: Option<f64>,
+    points: usize,
+    bisections: usize,
+    newton_steps: usize,
+    extend: bool,
+) -> IrrOptions {
+    let d = IrrOptions::default();
+    IrrOptions {
+        lower: lower.unwrap_or(d.lower),
+        upper: upper.unwrap_or(d.upper),
+        points,
+        bisections,
+        newton_steps,
+        extend,
+    }
+}
+
 /// The internal rates of return of simulated cash flows, from ``irr``.
 #[pyclass(name = "IrrResult", module = "prospicio.pricing", frozen)]
 pub(crate) struct PyIrrResult {
@@ -440,6 +461,20 @@ impl PyIrrResult {
     #[getter]
     fn sign_changes(&self) -> Vec<usize> {
         self.inner.iter().map(|r| r.sign_changes).collect()
+    }
+
+    /// Whether a root lies above each search's range (a return above
+    /// ``upper``): with ``found`` false, the simulation's IRR is above the
+    /// range, not missing. ``extend=True`` finds it.
+    #[getter]
+    fn root_above(&self) -> Vec<bool> {
+        self.inner.iter().map(|r| r.root_above).collect()
+    }
+
+    /// Whether a root lies below each search's range.
+    #[getter]
+    fn root_below(&self) -> Vec<bool> {
+        self.inner.iter().map(|r| r.root_below).collect()
     }
 
     fn __len__(&self) -> usize {
@@ -498,9 +533,13 @@ pub(crate) fn npv(
 /// ``lower`` to ``upper``; of its sign changes (and exact zeros) the one
 /// whose bracket's midpoint is nearest 0 is halved ``bisections`` times and
 /// refined by ``newton_steps`` Newton steps clipped to the bracket. A
-/// simulation with no root in the range (flows of one sign, say) has
-/// ``found`` false and NaN; one with several has ``sign_changes`` above 1.
-/// The defaults are a reference simulation model's.
+/// simulation with no root in the range has ``found`` false and NaN, with
+/// ``root_above`` (or ``root_below``) true when a root lies outside the
+/// range, a return above 100% a year under the defaults, and false for
+/// flows with no root at all, such as flows of one sign; ``extend=True``
+/// searches beyond the range for it. One with several roots has
+/// ``sign_changes`` above 1. The defaults are a reference simulation
+/// model's, with no search beyond the range.
 ///
 /// Parameters
 /// ----------
@@ -516,6 +555,10 @@ pub(crate) fn npv(
 /// points : int, default 400
 /// bisections : int, default 8
 /// newton_steps : int, default 3
+/// extend : bool, default False
+///     When no root is in the range but one lies beyond it, search for it
+///     (above ``upper`` by doubling ``1 + rate``, below ``lower`` by
+///     halving it).
 ///
 /// Returns
 /// -------
@@ -527,8 +570,14 @@ pub(crate) fn npv(
 /// >>> r = irr([[-100.0, 230.0, -132.0], [10.0, 5.0, 1.0]], [0.0, 1.0, 2.0])
 /// >>> [round(x, 12) for x in r.rate[:1]], r.found, r.sign_changes
 /// ([0.1], [True, False], [2, 0])
+/// >>> # A return of 300%, above the default range.
+/// >>> r = irr([[-100.0, 400.0]], [0.0, 1.0])
+/// >>> r.found, r.root_above
+/// ([False], [True])
+/// >>> [round(x, 12) for x in irr([[-100.0, 400.0]], [0.0, 1.0], extend=True).rate]
+/// [3.0]
 #[pyfunction]
-#[pyo3(signature = (flows, times, *, unit = "years", lower = None, upper = None, points = 400, bisections = 8, newton_steps = 3))]
+#[pyo3(signature = (flows, times, *, unit = "years", lower = None, upper = None, points = 400, bisections = 8, newton_steps = 3, extend = false))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn irr(
     py: Python<'_>,
@@ -540,17 +589,11 @@ pub(crate) fn irr(
     points: usize,
     bisections: usize,
     newton_steps: usize,
+    extend: bool,
 ) -> PyResult<PyIrrResult> {
     let times = time_unit(unit)?.years(&times);
     let flows = flow_matrix(flows, times.len())?;
-    let d = IrrOptions::default();
-    let options = IrrOptions {
-        lower: lower.unwrap_or(d.lower),
-        upper: upper.unwrap_or(d.upper),
-        points,
-        bisections,
-        newton_steps,
-    };
+    let options = irr_options(lower, upper, points, bisections, newton_steps, extend);
     let inner = py
         .detach(|| returns::irr_rows(&flows, &times, &options))
         .map_err(to_py)?;

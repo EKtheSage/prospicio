@@ -1,0 +1,1 @@
+* **Update**: [A deal's best simulations fall outside the default IRR search](/findings/deal-report-tables.md): an IRR result now flags a root above or below the searched range (`root_above`, `root_below`) and `extend` finds it (#670, branch claude/cool-shannon-fqpoy8).
