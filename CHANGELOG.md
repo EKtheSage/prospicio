@@ -7,6 +7,440 @@ under "Unreleased" until then.
 
 ## Unreleased
 
+### Reserving
+
+- An a-priori loss ratio per origin on `ExpectedLoss`, `BornhuetterFerguson` and `Benktander` (`Apriori`, `reserving-v02.md` decision 22): one number for every origin, one per origin oldest first (`Apriori::InOrder`), or one per origin period (`Apriori::by_origin`, `Apriori::from_labels` with labels such as `"2021"` or `"2021Q3"`). It is keyed by origin, since a latest diagonal's fit sorts its origins and a triangle segment is trimmed to the origins it observes; an origin without a value, a value for an origin the triangle does not have, an origin given twice or the wrong number of values in order is an error (`Error::Apriori`), and so are values in order on latest diagonals whose rows are not oldest first, since the exposure is read by row. It reaches segment fits (each segment takes its own origins' values), `fit_diagonal` and its segment versions, and the one-year re-reserving method of both bootstraps. Python `apriori` takes a float, a sequence in origin order or a dict keyed by origin label or year, and the property gives it back as given; R `apriori` takes a number, a vector in origin order or a vector named by origin. `CapeCod` is unchanged (#634, #641).
+- **Breaking:** the `apriori` field of `ExpectedLoss`, `BornhuetterFerguson` and `Benktander` is an `Apriori`, not an `f64`: write `apriori: 0.7.into()`. `Error` has a new variant, `Error::Apriori` (#641).
+- Python's `apriori` reads a pandas Series by its index, as a dict keyed by origin label or integer year, so `df.set_index("origin")["elr"]` lines up with the origins in any row order; a Series with a default `RangeIndex` is an error asking for origin keys, since its order cannot be checked. Polars Series and numpy arrays stay values in origin order (#644, #647).
+- **Breaking:** an annual accident-year pattern converted to an underwriting basis
+  (`SelectedPattern::to_underwriting_basis`, Python and R `ldf_underwriting`) is now read
+  between its ages as the Weibull fitted through the yearly averages and corrected to the
+  nearest monotone accident-month pattern whose averages are the given values exactly
+  (`reserving-v02.md` decision 25). On a simulated parallelogram book the converted share is
+  within 0.2% of the truth at every age, where the previous reading was 31% too far developed at
+  12 months and 8% short at 24. Converted patterns from accident periods longer than a month
+  given at ages that are not every month from 1 change, and now start at 1 month; accident-month
+  patterns and patterns given at every month are unchanged. The previous reading stays
+  available: Rust `UnderwritingBasis::default().with_reading(AnnualReading::LnLinear)`, Python
+  `UnderwritingBasis(reading="ln-linear")`, R `underwriting_basis(reading = "ln-linear")`, with
+  `"loglogistic"` as a third choice. Accident-year patterns given at quarterly or semiannual
+  ages read the same way, including patterns still developing at their last age. A single
+  given value is now an error under the curve readings (#646, #650).
+- **Breaking:** `UnderwritingBasis` has a private field for the reading, so struct literals
+  `UnderwritingBasis { writing, policy_months }` no longer compile: use `UnderwritingBasis::new`
+  or `UnderwritingBasis::even` (#650).
+- `BenchmarkCurve` fits Clark's log-logistic or Weibull growth curve to a
+  benchmark pattern (percents developed or factors to ultimate, with
+  optional weights by age) by weighted least squares on the percents
+  developed, with Clark's `max_age` and an optional average-date shift
+  (`origin_width`). `BenchmarkCurveFit` gives the parameters, the fitted
+  values and residuals, the percent developed and factor to ultimate at any
+  age, and `pattern(ages)`, a `SelectedPattern` for the chain ladder, Mack
+  and the expected-loss methods whose level at the oldest age is the
+  curve's tail. Matches `scipy.optimize.least_squares` (Python
+  `BenchmarkCurve`, R `benchmark_curve()`, `benchmark_selected()`; #637, #640).
+  A flat or decreasing benchmark, which sends the fit to the edge of the
+  parameters, is an error.
+- `BayesBfNormalised`'s error for a development column whose observed increments sum to zero or less now names the age, its number of observed cells and their sum, says that the chain ladder accepts the triangle (with its factor into that age) and gives the remedy for where the age is: at the last age, rebuild the triangle from its long table without its rows, or fold it into the previous age, and carry the movement left out as a tail; at the first age, rebuild without its rows, which removes the origins observed only there (named in the message); at a middle age, no rebuild works today (the age comes back empty), which the message says. The error for an origin that sums too low names its cells and prints the `cv` below which its posterior is proper. The type docs in Rust, Python and R explain why such a column has no finite mode and how to drop an age (`reserving-bayes.md` decision 26, #610, #665).
+- `Compartmental` fits a triangle whose development grain is finer than its origin grain, such as annual origins with quarterly or monthly development (`reserving-compartmental.md` decision 13), where it returned an error before. Each cell's development time is its age in years on every grain, so the rates are per year and every equal-grain fit is unchanged bit for bit. The square runs for as many origin periods as there are origins, in development periods (40 quarterly ages for ten annual origins), an incremental paid cell is the increment over one development period, model 2 has one development effect per development age, and the one-year view takes the cells valued in the next twelve months, up to four quarters per origin. `fit_segments`, the diagonal backtest (calendar quarters) and the prior predictive check work on the same square. Python and R take the grains from the triangle. Checked against the same model in Stan on a quarterly triangle simulated with known parameters, which the posterior recovers.
+- `Compartmental` fits one response alone with `fitted = Fitted::PaidOnly` or `Fitted::IncurredOnly` (Python `fitted="paid_only"`, `"incurred_only"`, R `fitted = "paid_only"`, `"incurred_only"`; `reserving-compartmental.md` decision 12). Both need `rate_order = RateOrder::Ordered`, since from one response the rate swap leaves the means unchanged and from paid alone only `RLR x RRF` is identified; under free rates the fit returns an error that says so. The model has one sigma. Paid alone does not read the second column (Python and R accept neither `outstanding` nor `incurred`) and has no outstanding cells. Incurred alone takes the incurred as paid and incurred does, uses the paid column for each origin's latest paid only, and forecasts the future paid without noise. Both have the one-year view, `fit_segments` and the diagonal backtest (the fitted response's table), and their own Stan references on company 337. Under one response the least-squares data start is not identified, so the fit keeps it only when its log posterior is at least the prior centre's.
+- **Breaking:** `CompartmentalFit::outstanding` and `CompartmentalFits::outstanding` are now `Option<PredictiveDistribution>`, `None` for a fit of paid alone (Python `None`, R `NULL`).
+- `CompartmentalPriors::diffuse()` (Python `CompartmentalPriors.diffuse()`, R `compartmental_diffuse_priors()`): the paper's medians with a log-scale sd of 1 on `k_er`, `k_p`, `RLR` and `RRF`, the documented starting point for a fit to paid alone, with a narrower prior the option of a user who holds information about the rates that is not in the data (the user's decision of 2026-10-22; priors stay a required argument). On company 337 it fits paid alone well (total reserve 181,540 against 176,448 under the paper's preset), but the incurred alone does not identify the payment rate `k_p`, so its reserve is the prior's (-51,000 with an sd of 152,000 under the diffuse preset, 219,051 under the paper's). `Fitted::IncurredOnly` therefore adds a warning to the fit's diagnostics when the posterior sd of `log k_p` is more than half its prior's, and refuses a `k_p` prior with a log-scale sd above 0.5 (`MAX_INCURRED_ONLY_KP_SD`) with an error, so the diffuse preset is refused there and the user must give a `k_p` prior they believe (the user's decision of 2026-10-23; the check runs in `fit`, `fit_segments`, the one-year views and the backtest before any data are read, and not in `prior_predictive`).
+- `SelectedPattern::averaged_over_origins` turns a pattern measured on one
+  origin basis (accident months) into the pattern of a coarser one
+  (accident years or quarters), with the exposure even through the period,
+  for both the triangle methods and a latest diagonal (#544, #614). Rust only
+  for now.
+- On a triangle, a selected pattern may now give ages the triangle does not
+  have: a monthly pattern on an annual triangle selects its annual factors,
+  a misaligned pattern is read between its ages, and a pattern that runs
+  past the oldest age folds what it gives there, with the tail, into a
+  constant tail (`ChainLadderFit::pattern_tail`, keeping a constant tail's
+  decay), so a development fitted on an older book projects a younger one
+  on the plain triangle path too; such a pattern must be fully selected
+  (#544, #614). Rust only for now.
+- On a latest diagonal, an origin older than the pattern's end is developed
+  as `LatestDiagonal::with_past_pattern_end` says: an error by default
+  (whose message names the settings), a factor of 1
+  (`PastPatternEnd::NoDevelopment`), or an a-priori or estimated tail spread
+  from the pattern's end at one step per origin period
+  (`PastPatternEnd::Tail`) (#544, #614). Rust only for now.
+- Latest diagonals over segments: `LatestDiagonals` holds a latest diagonal
+  per segment, from a long table (ages, one valuation or a valuation per
+  row) or any triangle, and `fit_diagonal_segments` and
+  `fit_diagonal_segments_from` on the chain ladder, `ExpectedLoss`,
+  `BornhuetterFerguson`, `Benktander` and `CapeCod` fit each segment, with
+  each segment's development taken from a source fit by label, by a map
+  (`SegmentMap::Pairs`) or from a source of one segment for every segment
+  (#544, #622).
+- Python: `LatestDiagonal` (from arrays, `at_valuation`, `from_frame` or
+  `from_triangle`, with `with_exposure` and `past_pattern_end`),
+  `fit_diagonal(diagonal, development=None, segment_map=None)` on the five
+  methods, `ChainLadderFit.to_chain_ladder()`, and `ldf_origin` on every
+  method that takes `ldf` for a pattern measured on another origin basis
+  (#544, #622).
+- R: `latest_valuation()` and `as_latest_valuation()`, each origin's
+  latest valuation in one or several segments, taken by `chain_ladder()`,
+  `expected_loss()`, `bornhuetter_ferguson()`, `benktander()` and
+  `cape_cod()` with `development` and `segment_map`; `with_exposure()`,
+  `with_past_pattern_end()`, `segment()` on a latest valuation,
+  `to_chain_ladder()` and `ldf_origin`. The expected-loss functions'
+  `column` and `exposure` now default to `NULL` (still required for a
+  triangle) (#544, #622).
+- The `ldf` help in Python and R no longer says every age must be a
+  development age of the triangle, and warns that one off-grid age changes
+  how a sparse age-to-age pattern's other factors are read (#544, #622).
+- `SelectedPattern::averaged_over_origins` with a weight by age (and
+  `ldf_origin` with an `ldf_weight` by age in Python and R) is still an
+  error, now ending "give one weight for every factor" rather than naming
+  `with_weight` (#544, #622).
+- A latest diagonal only (one value per origin at its own age, as a
+  cedant's data summarised by origin gives it) is projected by the chain ladder, the expected loss
+  method, Bornhuetter-Ferguson, Benktander and Cape Cod when the pattern is
+  fully selected: a fully selected age with no link ratio is no longer an
+  error. Mack, Mack's bootstrap and the ODP bootstrap reject such a
+  triangle with `Error::LatestDiagonalOnly`, which names the method (#544, #571).
+- `LatestDiagonal` holds one latest value per origin at its own
+  age (or from a valuation date) with an optional exposure, and
+  `fit_diagonal` on `ChainLadder`, `ExpectedLoss`, `BornhuetterFerguson`,
+  `Benktander` and `CapeCod` projects it with a fully selected pattern
+  from elsewhere. Ages between the pattern's are read log-linearly, so
+  monthly or half-year ages work with an annual pattern; ages outside the
+  pattern are an error. Rust only for now (#544, #606).
+- `ChainLadderFit::to_chain_ladder` freezes a fitted development (its
+  factors in use and its tail factor) as a chain ladder, and
+  `LatestDiagonal::from_triangle` takes a triangle's latest diagonal with
+  an optional exposure column, so a development fitted on one book
+  projects another book or a latest diagonal on its own through
+  `fit_diagonal`, by the
+  chain ladder and the expected-loss methods, as chainladder-python's
+  `fit(source).predict(target)` does. Rust only for now (#544, #612).
+- Ultimates and loss ratios per simulation from every fit with reserve draws, for towers, deal books and the cash-flow engine (`UltimateDraws`, `reserving-v02.md` decision 26): `ultimates()` (the reserves with each origin's latest value added, the same components and rows), `ultimate_draws(origin)`, `loss_ratio_draws(origin, premium)`, `total_ultimate_draws()` and `total_loss_ratio_draws(premium)` on `OdpBootstrapFit(s)`, `MackBootstrapFit(s)`, `BayesOdpFit(s)`, `BayesBfFit`, `BayesBfNormalisedFit`, `MeyersFit(s)` and `CompartmentalFit(s)`. Index `i` is the same simulation for every origin, every call and every fit with the same seed. Meyers' ultimates are its own simulated draws; a compartmental model's are on the paid basis. An origin is named by its component key (the segment's key values first over segments). Python `fit.ultimates`, `fit.ultimate_draws(origin=None)` and `fit.loss_ratio_draws(origin, premium)`; R `ultimate_draws(fit, origin = NULL)`, `loss_ratio_draws(fit, origin = NULL, premium)` and `ultimate_distribution(fit)`; `None` or `NULL` gives the total (#602).
+- Mack's calendar-year effect test and development-factor correlation test (Mack 1994,
+  appendices H and G; R ChainLadder's `cyEffTest` and `dfCorTest`): `calendar_year_effect` and
+  `development_correlation` on a triangle's link ratios, and as `MackFit` methods on the link
+  ratios the fit averaged, in Rust, Python (`prospicio.reserving.calendar_year_effect`,
+  `development_correlation`, `MackFit.calendar_year_effect()`, `.development_correlation()`)
+  and R (`calendar_year_effect()`, `development_correlation()`, with `print` and `summary`)
+  (#664).
+- A selected pattern of factors to ultimate or percents developed may have one value: it is the
+  factor from its age to ultimate, the tail there, so a triangle observed at one age (one origin at
+  one age, or a latest diagonal at one age) fits with `ldf={12: 3.0}, ldf_kind="cdf"` in the chain
+  ladder and the expected-loss methods, in Rust, Python and R. Given at another age, with a tail or
+  with `ldf_weight` below 1 it is an error naming why, on a latest diagonal also under
+  `past_pattern_end="tail"` or `"no_development"`. A longer pattern that ends at a one-age
+  triangle's only age is its level there in the same way, where it was an error (#632, #638).
+- `Triangle::max_age(age)` keeps the development ages up to `age` months in
+  every segment, measure and origin, as chainladder-python's
+  `tri[tri.development <= age]`: any age at or past the first keeps the ages
+  up to it, one past the last returns the triangle unchanged, and one before
+  the first is an error (`Error::AgeBeforeFirst`). In Python
+  (`Triangle.max_age`) and R (`max_age()`). The errors of
+  `BayesBfNormalised`, `BayesOdp` and `BayesBf` for a falling last age now
+  name it as the remedy, and on a triangle of several segments add that it
+  cuts every segment (`reserving-bayes.md` decision 18, #667).
+- A `ulr` column, the ultimate over the exposure (a loss ratio only when
+  the exposure is premium), in the long tables of the expected-loss
+  methods, Clark's Cape Cod form, `BayesBf`, `BayesBfNormalised` and
+  Meyers' CRC, CSR and CAY (on premium), per origin and in total: Rust
+  `to_long` and `totals`, Python `to_frame` and `totals_frame`, R
+  `as.data.frame()` and `totals_frame()`. The Bayesian tables' `ulr` is the
+  chain ladder's ultimate over the exposure, as their `ultimate` column is.
+  Their one-year views have `opening_ulr` instead: the opening ultimate
+  (the latest value plus the posterior mean opening reserve) over the
+  exposure, which differs from the lifetime fit's `ulr` for the same
+  origin. `ReserveFit` gains a default `exposure()` method (#636, #643).
+- A `ulr_mean` column, the posterior mean ultimate over the exposure (a
+  loss ratio only when the exposure is premium), per origin and in total,
+  at the end of the long tables of `BayesBf`, `BayesBfNormalised` and
+  Meyers' CRC, CSR and CAY, alone and over segments: Rust `to_long` and
+  `totals`, Python `to_frame` and `totals_frame`, R `as.data.frame()` and
+  `totals_frame()`. Meyers' is its `ultimate_mean` over the premium; the
+  two Bayesian BFs also gain `ultimate_mean`, the latest value plus the
+  posterior mean reserve. `ulr` stays the chain ladder's ultimate over the
+  exposure, and the one-year views keep `opening_ulr` (#645, #648).
+- An accident-period development pattern converts to an underwriting-year
+  basis from a writing pattern and a policy term:
+  `SelectedPattern::to_underwriting_basis` and `UnderwritingBasis` in Rust,
+  `UnderwritingBasis` and `ldf_underwriting=` beside `ldf_origin` on every
+  method that takes `ldf` in Python, and `underwriting_basis()` with
+  `ldf_underwriting` in R. The underwriting year's share developed is the
+  accident pattern convolved with its exposure over accident months; the
+  default is even writing over 12 months and 12-month policies, the
+  parallelogram. In Python and R the writing must be no longer than the
+  triangle's origin period (`UnderwritingBasis::check_within` in Rust),
+  so underwriting quarters need three months of writing (#633, #639).
+
+### Pricing
+
+- A bound deal valued from its actual accounts (`time-value.md` decision 34): `CashflowTerms::valuation` takes an `ActualState` at a month (premium collected, losses paid, the trust's and operating account's balances, capital funded, equity released, optionally the investor's flows to date and the funding reference) and `Valuation::run` simulates the rest of the term from it, each simulation's ultimate conditioned on the paid to date by `condition_on_paid` (`Conditioning::BornhuetterFerguson`, the default, keeps every simulation at the actual paid plus its own unpaid; `Truncation` keeps those whose ultimate reaches the paid). `Forward` gives the flows with the return from the valuation month (the net asset value as the investment) and since inception (the actual flows first): rows, NPV, IRR and MOIC of each. `deal_ave` gives the actual against expected paid by month, the actual's percentile among the priced simulations and quantiles, with a paid pattern by simulation when given. A valuation at month 0 is `run`. `ActualState::from_trace` takes one simulated path's state, and `Trace` reports the funding reference and the opening balance. Python `CashflowTerms.valuation`, `CashflowTerms.actual_state`, `Valuation`, `Forward`, `condition_on_paid`, `deal_ave`; R `cashflow_valuation()`, `cashflow_actual_state()`, `cashflow_forward()`, `cashflow_valuation_trace()`, `condition_on_paid()`, `deal_ave()` (#603, #668).
+- **Breaking:** `Trace` has two new public fields, `funding_reference` and `opening_balance`, so a `Trace` struct literal must add them; `cashflow_trace()`'s `accounts` in R and `CashflowTerms.trace`'s dict in Python have a `funding_reference` column (#668).
+- Bonus-malus and no-claim-discount scales as Markov chains:
+  `bonus_malus::BonusMalus` from a rule or a table of next levels, with
+  the transition matrix, the stationary distribution, the years to reach
+  it and Loimaranta's efficiency at a claim frequency, and over a mixed
+  Poisson portfolio (a priori classes and a gamma or inverse Gaussian
+  heterogeneity) the stationary distribution of the levels and Norberg's
+  optimal relativities. Python `prospicio.pricing.BonusMalus`, R
+  `bonus_malus()` and `bonus_malus_portfolio()` (#563, #656).
+- The cash-flow engine takes each simulation's commission rate off the
+  premium paid into the trust under `deduct_commission` (off by default),
+  so a sliding-scale deal runs in one call (#609). Python
+  `CashflowTerms(..., deduct_commission=True)`, R
+  `cashflow_terms(..., deduct_commission = TRUE)`.
+- `Cashflows::paid_first` flags simulations whose investor is paid before
+  putting money in, as a requirement on the reserve alone does; their IRR
+  is usually meaningless (#608). Python `Cashflows.paid_first`, R
+  `cashflow_run()$paid_first`; the reserve base's docs say a
+  collateralised fund usually wants the outstanding loss.
+- A layer's technical deposit solved under loss-sensitive commissions:
+  `Quote::technical_for_layer` finds the deposit at which the loads and the
+  expected sliding-scale and profit commission, read off the layer's ceded
+  grid at that deposit (`Layer::expected_loss_sensitive_commissions`), leave
+  the price's risk premium. A steep scale with several such deposits gives
+  the lowest. A swing-rated layer is refused, since it has no deposit to
+  solve for. Python `Quote.technical_for_layer`; R `layer_quote()`.
+- A deal book counts the reinstatement premium: `DealRun::from_tower` adds
+  each year's reinstatement premium from the tower, pro rata as to amount
+  and, where the layer says so, as to time, to the deposit or swing-rated
+  premium, so the book's premium, margin and returns include it. Python
+  `DealRun.premium` and `DealRun.loss` read a run back (#595).
+- Hachemeister's regression credibility: `credibility::Hachemeister` fits
+  each risk's weighted least squares line, or any design shared by the
+  risks, and shrinks it towards the collective by a credibility matrix,
+  at the origin or with the intercept at the barycentre (`actuar::cm`'s
+  `regformula` and `adj.intercept`), with `predict` at a design row.
+  Python `prospicio.credibility.hachemeister`, R `hachemeister()` with
+  `predict()` (#561, #654).
+- The marginal price of a deal on a book (`DealBook::marginal_price` and `marginal_prices`, `time-value.md` decision 32): the book's loss priced with the deal and without it, by a cost of capital or a pricing distortion on a capital standard as `price_portfolio` prices a portfolio, and the differences, so `P = (EL + r dA) / (1 + r)` without building the book twice; under a subadditive standard at most the deal's Euler price, and the only deal's stand-alone price. Python `DealBook.marginal_price`, R `book_marginal_price()` (#588, #657).
+- Monthly patterns for the cash-flow engine from a payment pattern by
+  development age (#601): `PaymentPattern::paid_by` and `to_monthly` read
+  it at each month end, as a step, linearly or log-linearly between its
+  times, and `MonthlyPatterns::from_annual` builds the written, earned and
+  paid patterns from a written pattern and a policy term, losses paid from
+  the accident month. Python `PaymentPattern.paid_by`, `to_monthly` and
+  `monthly_patterns`; R `payment_pattern_monthly()` and
+  `cashflow_patterns_from_annual()`.
+- The cash-flow engine pays each simulation by its own paid pattern (`CashflowTerms::run_with_patterns` with `PatternDraws`, one pattern a simulation or a few shared by an index, and `trace_with_pattern`; `time-value.md` decision 33), so the timing of payments, and the collateral held and released with it, can vary by simulation; each pattern ends at the terms' paid share and identical patterns equal to the terms' reproduce `run` exactly. Python `CashflowTerms.run(..., paid_patterns=, pattern_index=)` and `trace(..., paid_pattern=)`, R `cashflow_run(..., paid_patterns =, pattern_index =)` and `cashflow_trace(..., paid_pattern =)`. The patterns from a reserving fit's draws are the Reserving lane's part of #600 (#600, #658).
+- The quote's premium side and taxes: an expected reinstatement premium
+  per unit of deposit (read off a tower grid with
+  `PremiumTerms::from_layer`), brokerage on it or not, and a flat ceding
+  commission, solved for in `Quote::technical_with`; sliding-scale and
+  profit commissions and a swing's expected premium read back at a quoted
+  deposit with `Quote::at_with_commission`. A premium tax is grossed up as
+  brokerage is; an income tax on the margin keeps the price's return on
+  capital after tax (`pre_tax_return_on_capital` beside it). New amounts
+  `reinstatement_premium`, `premium_in_all`, `premium_tax`, `commission`
+  and `income_tax`. Python `Quote.technical(..., premium_tax=,
+  income_tax=, reinstatement_rate=, commission=,
+  brokerage_on_reinstatements=)` and `Quote.at(premium, commission=)`; R
+  `technical_quote()` with the same arguments and `implied_quote(quote,
+  premium, commission)`.
+- A whole tower quoted at once: `TowerQuote::technical` quotes each layer
+  standalone from its ceded grid and the total cession as one cover, the
+  diversification being the layers' deposits less the total's. The total
+  comes from the new `TowerGrids::total_ceded` (the whole tower's cession
+  as one compound, `None` for several layers with annual terms or an
+  aggregate cover after per-occurrence stages, when the quote is refused).
+  Python `TowerQuote.technical` and `TowerGrids.total_ceded`; R
+  `tower_quote()` and `tower_on_grid()$total_ceded`. Quotes in R now also
+  carry `reinstatement_rate` and `commission_rate`.
+- The upfront premium of a cover whose reinstatement premium counts in
+  its own price (#587): `risk_load::price_with_reinstatements` solves
+  `P = price(X − P g)`, with `g` each simulation's reinstatement premium
+  per unit of upfront premium, under a cost of capital or a distortion.
+  It returns the upfront premium with the expected reinstatement premium,
+  the net outcome's assets and the bisection steps taken. Python
+  `price_with_reinstatements` (`ReinstatementPrice`), R
+  `price_with_reinstatements()`.
+
+### Breaking changes
+
+- Rust: `prospicio_reserving::Error` has the variant `LatestDiagonalOnly`,
+  so an exhaustive `match` on it needs an arm for it (#544, #571).
+- Rust: `prospicio_reserving::Error` has the variant `Diagonal`, so an
+  exhaustive `match` on it needs an arm for it (#544, #606).
+- Rust: `PremiumFlow` gains the public field `deduct_commission`; code
+  that builds one in full adds it (`false` keeps the old behaviour).
+- `TowerQuote::technical` (Python `TowerQuote.technical`, R `tower_quote()`)
+  now solves each layer's deposit under its sliding-scale or profit
+  commission. A layer with either term gets a higher technical deposit than
+  before, when those commissions were left out; the total cession still
+  carries only the flat commissions. A layer whose scale is read before
+  annual terms (`scales_before_annual_terms`) is now refused there, where
+  its scale was left out before.
+- Rust: `TowerGrids` and `AnnualGrids` gain the public fields
+  `expected_deal_ceding_commission` and `expected_deal_brokerage`; code
+  that builds either in full adds them (empty `Vec`s for a tower without
+  deals) (#541).
+- `DealRun::from_tower` (Python `DealRun.from_tower`, R
+  `deal_run_from_tower()`) now adds each year's reinstatement premium to the
+  deposit premium; pass `reinstatement_premium=False` (Rust
+  `from_tower_with(..., false)`) for the old premium. Rust: `DealColumns`
+  gains the public field `reinstatement_premium`, which `from_columns` adds
+  to the premium; code that builds one in full adds it (#595).
+- Rust: `Layer` gains the public field `scope`; code that builds one in
+  full adds it (`None` covers every loss as before) (#584, #660).
+- Rust: `Loads` gains the public fields `premium_tax` and `income_tax`, and
+  `Quote` gains `terms` and `other_commission`; code that builds either in
+  full adds them (`0.0`, `PremiumTerms::none()`).
+- `Quote`'s `return_on_capital` is after income tax; it is unchanged
+  without one.
+- Rust: `TowerGrids` gains the public field `total_ceded`; code that
+  builds one in full adds it.
+- The new `ulr` column below sits after each table's own columns in the
+  Bayesian and Meyers frames, so the columns after it (`mean`,
+  `std_dev`, `ultimate_mean` and so on) move one place. Code that reads
+  these tables' columns by position or compares their exact names sees
+  one more column (#636, #643).
+
+### Guides
+
+- Both docs sites now have a subject-based table of contents, written once in
+  `docs/guides/toc.yml`: Start here, Basics, Fitting distributions, Reserving,
+  Pricing, Property catastrophe reinsurance, and Capital modelling and
+  allocation, with the pages of each in reading order. The notebooks sit in the
+  section of their subject instead of a "Worked examples" section, and the
+  reading list groups the source texts the same way. The build fails if a guide
+  or notebook is missing from the file (#621).
+- The guides and example notebooks now say what prospicio does and how to use
+  it. Passages and sections on what the library does not do are removed (the
+  gaps stay in their issues), and the explanatory prose is rewritten in
+  ASD-STE100 Simplified Technical English. Code and printed output are
+  unchanged. `docs/guides/README.md` records the rule under "Writing style" (#625).
+- `cat-6-pricing` and its R twin price the reinstatement premium inside the
+  layer's price with `price_with_reinstatements` in place of a hand-written
+  bisection, with the same upfront premium of 1.7421.
+- `docs/guides/submission-schema.md`, the submission's files column by column (type, unit, meaning,
+  which calls read them), a `check_submission` function with the checks the examples rely on, and the
+  tidy tables a deal analysis writes for an investor report (`deal.csv`, `structures.csv`,
+  `metrics.csv`, `actual_vs_expected.csv`), made from the sample submission for a quota share in two
+  structures. A test fails when a file's header and the guide disagree (#605, #669).
+- A property-catastrophe reinsurance track, `docs/guides/cat-0-overview.md`
+  to `cat-7-portfolio.md`, each with an R twin: one synthetic book (a
+  fictional reinsurer, three cedents, a YELT, an ELT and five contracts in
+  `examples/data/cat_book_*.csv`, written by `make_cat_book.py`) carried
+  from loss tables and risk metrics through contract terms, programs,
+  reinstatement premium and commissions to the price of one layer and the
+  whole book's capital; the gaps it found are #581 to #596 (#597).
+- The Taylor and McGuire, Chalk (part 2) and Goldburd guides, with their R
+  twins, call `OdpGlm` (`prediction_error`, `residuals`, custom designs), the
+  GLM diagnostics and quantile residuals, and the model-agnostic explanation
+  helpers in their code, with every printed number checked (#542).
+- New guide `docs/guides/reserving-excess-layers.md` with its R twin:
+  excess-layer development from the ground-up triangle and a severity, with
+  Bloom and Patrik's, Pinto and Gogol's and Bear's printed factors beside
+  prospicio's, credibility blending, and the layer-share Bayesian BF prior
+  with the share error common to all origins (#530).
+- The Friedland and Werner-Modlin guides use the built development averages
+  (`n_periods`, `drop_high`, `drop_low`, the geometric average, `n_links`,
+  CDFs below 1 with `ldf_kind="cdf"`), and the compartmental guide names its
+  built segment, one-year segment and backtest functions (#530).
+- `docs/guides/a-first-course.md` and its R twin `a-first-course.qmd`, the start-here page for a
+  student or new analyst: the ideas on a hand-sized book, two worked decisions (writing a new unit
+  into two different books; excess of loss layers against a quota share for one cedant) and a
+  ten-step checklist with a template for your own premium and loss files. CI checks every printed
+  number (#533).
+
+### Excel
+
+- A latest diagonal (a bordereau) projected with a selected pattern:
+  `PRO.DIAG.CL`, `PRO.DIAG.EL`, `PRO.DIAG.BF`, `PRO.DIAG.BENKTANDER` and
+  `PRO.DIAG.CAPECOD` take origins as years or Excel dates, their ages or
+  a valuation date, the latest values and a pattern as values and ages,
+  with the origin grain (`"year"`, `"semiannual"`, `"quarter"` or
+  `"month"`), a tail, `past_end` for origins older than the
+  pattern's end and `pattern_origin` for a pattern of accident months;
+  `PRO.PATTERN.AVERAGE` shows a pattern averaged to a coarser origin
+  basis (#544, #620).
+
+### Examples
+
+- `examples/ils_deal_analysis.ipynb` and its R twin `ils_deal_analysis.qmd`, an end-to-end deal analysis for a collateralised reinsurance (ILS) investor: a submission's triangle, a diagonal backtest, an industry prior, the Bayesian Bornhuetter-Ferguson, the structure with a flat and a sliding-scale commission, collateral and monthly cash flows, the investor's IRR and MOIC distributions, the structures compared, and monitoring against the one-year view. The steps the library does not yet cover are named, with their issues (#598 to #605).
+- `examples/templates/deal_report.qmd` (R) and `deal_report_py.qmd` (Python), a Quarto report
+  template for an investor or committee: the structures, the loss ratio, ceded and net, the
+  investor's IRR and MOIC with the probability of loss, the structures side by side and actual
+  against expected. Parameters in the header and no data inside; CI renders both on
+  `examples/data/deal_report/` (#605, #669).
+
+### Distributions and probability
+
+- The docs of `PredictiveDistribution`, `Tower::apply_annual`, `DealBook` and `CashflowTerms::run` state the simulation order they keep, so vectors per simulation from one fit stay paired through a tower, a deal book and the cash flows (#602).
+- The catastrophe pricer's VaR and TVaR on simulated years: the `k`-th largest year and the mean of the `k` worst whole years, `k = max(1, floor((1 - p) n))` (`QuantileMethod::KthLargest`, `TvarMethod::WholeYears`, `risk::var_kth_largest_sorted`, `risk::tvar_whole_years_sorted`). They are methods of `Sampled`'s VaR and TVaR, of `StatisticsGrid` and of its bootstrap standard errors; Python `method="kth_largest"`, `"whole_years"` on `Sampled.var` and `.tvar` and `quantile=`, `tvar=` on `statistics`, R the same names on `VaR()`, `TVaR()` and `statistics()`. The `k`-th largest is one draw above the default inverted cdf (unless both are the largest), and the whole years' TVaR equals the exact one when `(1 - p) n` is whole (#582, #652).
+- Multivariate normal and lognormal joints from a mean vector and a covariance matrix (`prospicio_prob::multivariate`): `MultivariateNormal::new`, `MultivariateLognormal::from_moments` (the mean and covariance matched exactly) and `from_log_scale`, with exact marginals, the normal's exact total and the lognormal's exact total mean and variance. `PredictiveDistribution::from_gaussian` draws either on the library's seeded streams, recording the model, its dimension, the seed and a hash of the mean and covariance. A covariance that is not symmetric and positive definite is refused, and so is one no lognormal has. Python `prospicio.risk.MultivariateNormal`, `MultivariateLognormal` and `PredictiveDistribution.from_gaussian`; R `multivariate_normal()`, `multivariate_lognormal()` and `predictive_from_gaussian()` (#564, #653).
+
+### Aggregate and reinsurance
+
+- A tower's ceded losses by event as an event set, for an occurrence retro
+  on a reinsurer's own cessions (`Tower::ceded_events`): each event's
+  ceded loss to the named layers after their annual terms, with its time
+  and labels, adding to the layers' ceded totals in every year; several
+  deals' sets join with `EventSet::merge`. Python `Tower.ceded_events`, R
+  `ceded_events()` (#590, #661).
+- A deal's scales on the grid and in the cedant's P&L ledger: the grid
+  methods and the ledger no longer refuse a tower with a `DealScale`.
+  `Tower::on_annual_grid` gives each deal's expected sliding-scale
+  commission and brokerage, read on its sections' loss ratio together as
+  `apply_annual` reads it; `Tower::on_grid` does when no section has
+  annual terms and names the section otherwise. The cedant's ledger books
+  each deal's commission with the cover that buys its last section; the
+  stitched peel, which is guaranteed cost, refuses it. Python
+  `TowerGrids.expected_deal_ceding_commission` and
+  `expected_deal_brokerage` (by deal name), R `tower_on_grid()` and
+  `tower_on_annual_grid()`'s `expected_deal_ceding_commission` and
+  `expected_deal_brokerage` (#541).
+- Ruin within a finite horizon: `finite_horizon` gives `psi(u, t)`, the
+  chance that the surplus is negative at the end of some period up to
+  `t`, for any claim count a period, by a convolution recursion on the
+  grid; `finite_horizon_poisson` checks Poisson claims in sub-periods,
+  which approaches continuous time from below. Python
+  `prospicio.aggregate.finite_horizon_ruin`, R `finite_horizon_ruin()`
+  (#562, #655).
+- How often a layer is attached and used up on simulated years (`Layer::trial_statistics`, `TrialStatistics`, `aggregate.md` "Layer statistics and prices by view"): the share of years with an occurrence in the layer, with one that uses a whole limit and in which the annual limit is used up, each with its binomial standard error, the mean number of occurrences reaching the layer and the mean ceded loss a year and given attachment, counted as the first stage of a tower sees the years. Python `Layer.trial_statistics`, R `layer_trial_statistics()` (#581, #659).
+- Layers scoped to a peril or class on a multi-peril event set
+  (`Layer::scope(label, values)`): the layer's occurrence and annual terms
+  see only the losses with those label values, so another peril's events
+  neither use its annual limit nor count toward its deductible, and the
+  losses it does not cover reach later inuring stages whole.
+  `EventSet::filter` gives the set such a layer sees. A tower with a
+  scoped layer needs labelled events; the grids, annual losses and the
+  P&L ledger refuse it. Tower JSON format version 7. Python
+  `Layer.with_scope`, `EventSet.filter`; R `with_scope()`,
+  `filter_events()` (#584, #660).
+- A year loss table's time of loss: `YearLossTable::with_times` in Rust,
+  `read_ylt(..., time=)` or `day=` and `hour=` columns and
+  `EventSet.from_ylt(times=)` in Python, `read_ylt(time, day, hour)` and
+  `event_set_from_ylt(times)` in R. A year's rows are ordered by time, then
+  slot, and the events carry the times, so the hours clause and
+  reinstatements pro rata as to time run on a file read with it. The hours
+  clause keeps labels on request: `EventSet::grouped_with` and
+  `grouped_by` with `GroupLabels` in Rust, `EventSet.grouped(labels=,
+  by=)` in Python and `hours_clause(labels, by)` in R, where `by="peril"`
+  keeps each peril's windows apart; `grouped` alone still drops the labels
+  (#594, #651).
+- An aggregate (attritional) part on a timeline: `Timeline` keeps it by
+  accident period (each accident year of `Timeline::from_years`, the whole
+  term of `Timeline::new`, which no longer refuses it) and
+  `Timeline::with_aggregate_pattern` spreads it over the period's months by
+  twelve monthly weights, uniform by default; each month's amount falls to
+  the contract years as an event in that month would, so each year's quota
+  share or stop loss sees its part. Python `aggregate_pattern=` on
+  `Timeline` and `Timeline.from_years`, R `aggregate_pattern =` on
+  `timeline()` and `timeline_from_years()` (#540).
+
+### Models
+
+- MCMC draws from outside prospicio in its Bayes diagnostics and PSIS-LOO
+  (#395, #543): `PosteriorDraws::from_chains`, `log_likelihood`,
+  `relative_efficiency` and `loo`, and `prospicio_bayes::stan_csv::read`
+  for CmdStan's CSV files (warmup dropped, sampler columns kept apart,
+  divergences counted). Python `Draws`, `read_stan_csv`,
+  `draws_from_arrays` and `draws_from_inference_data` (arviz, nutpie and
+  PyMC), R `read_stan_csv()`, `mcmc_draws()` (a cmdstanr or rstan fit, a
+  posterior draws object or an array), `draws_summary()` and
+  `draws_loo()`. R-hat, ESS and LOO match posterior 1.7.0 and loo 2.10.1
+  on a CmdStan run.
+
 ## 0.0.5 (2026-10-23)
 
 ### Breaking changes

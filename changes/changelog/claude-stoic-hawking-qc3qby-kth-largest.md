@@ -1,3 +1,0 @@
-### Distributions and probability
-
-- The catastrophe pricer's VaR and TVaR on simulated years: the `k`-th largest year and the mean of the `k` worst whole years, `k = max(1, floor((1 - p) n))` (`QuantileMethod::KthLargest`, `TvarMethod::WholeYears`, `risk::var_kth_largest_sorted`, `risk::tvar_whole_years_sorted`). They are methods of `Sampled`'s VaR and TVaR, of `StatisticsGrid` and of its bootstrap standard errors; Python `method="kth_largest"`, `"whole_years"` on `Sampled.var` and `.tvar` and `quantile=`, `tvar=` on `statistics`, R the same names on `VaR()`, `TVaR()` and `statistics()`. The `k`-th largest is one draw above the default inverted cdf (unless both are the largest), and the whole years' TVaR equals the exact one when `(1 - p) n` is whole (#582, #652).

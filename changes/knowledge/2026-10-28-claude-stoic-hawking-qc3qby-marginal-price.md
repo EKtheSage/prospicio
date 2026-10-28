@@ -1,1 +1,0 @@
-* **Creation**: the marginal price of a deal on a book is at most its Euler price under TVaR (#588, branch claude/stoic-hawking-qc3qby-marginal-price): `knowledge/findings/marginal-price-on-a-book.md`; on a simulated three-deal book the marginal premiums sum to 6.39 against the book's 7.00, each 7% to 12% below its Euler price.

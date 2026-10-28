@@ -1,6 +1,6 @@
 Package: prospicio
 Title: Actuarial Modeling on a Rust Core
-Version: 0.0.5
+Version: 0.0.6
 Authors@R: person("Ethan", "Kang", role = c("aut", "cre"), email = "ethan.yskang@gmail.com")
 Description: R front end to the prospicio-* Rust crates. Wrappers only: every
     algorithm lives in Rust and is shared with the Python package.

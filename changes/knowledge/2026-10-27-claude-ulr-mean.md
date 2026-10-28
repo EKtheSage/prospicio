@@ -1,1 +1,0 @@
-* **Note**: a posterior `ulr_mean` in the Bayesian BF and Meyers long tables (#645, branch claude/ulr-mean): the posterior mean ultimate over the exposure, Meyers' `ultimate_mean / premium` and for the two Bayesian BFs a new `ultimate_mean` (`latest + mean`) over the exposure. No new fact about a dataset, reference implementation or number; nothing else new learned.
