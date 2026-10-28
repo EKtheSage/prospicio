@@ -452,7 +452,8 @@ impl EventSet {
     }
 
     /// A year loss table's columns, checked and expanded: `years` from 1,
-    /// `slots` NULL or one per row, labels as in `from_long`, `n_years` and
+    /// `slots` NULL or one per row, `times` NULL or one per row (fractions
+    /// of the year), labels as in `from_long`, `n_years` and
     /// `n_sims` NULL for their defaults, `expand` "tile" or "resample",
     /// `unique_by` NULL for every label dimension, the values allowed in
     /// `expected_dims[d]` in `expected_values[[d]]`, `source_hash` NULL or a
@@ -462,6 +463,7 @@ impl EventSet {
         years: &[f64],
         losses: &[f64],
         slots: Robj,
+        times: Nullable<Vec<f64>>,
         label_dims: Vec<String>,
         label_values: List,
         n_years: Nullable<f64>,
@@ -503,6 +505,9 @@ impl EventSet {
                 .map(|s| whole(s, "slots"))
                 .collect::<Result<Vec<_>>>()?;
             ylt = ylt.with_slots(slots).map_err(to_r)?;
+        }
+        if let Nullable::NotNull(times) = times {
+            ylt = ylt.with_times(times).map_err(to_r)?;
         }
         let dims = label_dims.clone();
         if !label_dims.is_empty() {
@@ -641,6 +646,15 @@ impl EventSet {
         })
     }
 
+    /// The losses whose label `label` takes one of `values`, every year
+    /// kept.
+    fn filter(&self, label: &str, values: Vec<String>) -> Result<Self> {
+        let values: Vec<&str> = values.iter().map(String::as_str).collect();
+        Ok(Self {
+            inner: self.inner.filter(label, &values).map_err(to_r)?,
+        })
+    }
+
     /// The years in another order: year `i` of the result is year
     /// `index[i]` (1-based) of this set.
     fn permute(&self, index: &[f64]) -> Result<Self> {
@@ -727,9 +741,31 @@ impl EventSet {
         ))
     }
 
-    fn grouped(&self, window_hours: f64) -> Result<Self> {
+    /// The hours clause, labels `"drop"`, `"agree"` or `"largest"`, within
+    /// each value of label dimension `by` when given (`"drop"` then read as
+    /// `"agree"`).
+    fn grouped(&self, window_hours: f64, labels: &str, by: Nullable<String>) -> Result<Self> {
+        use prospicio_aggregate::GroupLabels;
+        let by = match by {
+            Nullable::NotNull(d) => Some(d),
+            Nullable::Null => None,
+        };
+        let rule = match (labels, &by) {
+            ("drop", None) => GroupLabels::Drop,
+            ("drop" | "agree", _) => GroupLabels::Agree,
+            ("largest", _) => GroupLabels::Largest,
+            (other, _) => {
+                return Err(Error::Other(format!(
+                    "labels must be \"drop\", \"agree\" or \"largest\", not {other:?}"
+                )));
+            }
+        };
+        let inner = match by {
+            Some(dim) => self.inner.grouped_by(&dim, window_hours, rule),
+            None => self.inner.grouped_with(window_hours, rule),
+        };
         Ok(Self {
-            inner: self.inner.grouped(window_hours).map_err(to_r)?,
+            inner: inner.map_err(to_r)?,
         })
     }
 
@@ -986,6 +1022,66 @@ fn eventual_ruin_rust(
             .collect::<Vec<f64>>(),
         lundberg_exponent = na(ruin.lundberg_exponent()),
         severity_mean = ruin.severity_mean(),
+        aliasing_error = ruin.report().aliasing_error
+    ))
+}
+
+/// Finite-horizon ruin for R's `finite_horizon_ruin()`: a `count`
+/// (`frequency`) or a Poisson `rate` split into `sub_periods`; `points` 0
+/// for the severity's. `psi` column-major, one column per period;
+/// `capital` and `capital_interpolated` likewise, one row per `p`.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn finite_horizon_ruin_rust(
+    severity: Robj,
+    premium: f64,
+    periods: f64,
+    frequency: Robj,
+    rate: f64,
+    sub_periods: f64,
+    points: f64,
+    p: &[f64],
+) -> Result<List> {
+    let sev = <&Grid>::try_from(&severity)
+        .map_err(|_| Error::Other("the severity must be a grid_distribution".into()))?;
+    let periods = whole(periods, "periods")? as usize;
+    let sub_periods = whole(sub_periods, "sub_periods")? as usize;
+    let points = match whole(points, "points")? as usize {
+        0 => sev.inner.len(),
+        n => n,
+    };
+    let ruin = if frequency.is_null() {
+        prospicio_aggregate::finite_horizon_poisson(
+            &sev.inner,
+            rate,
+            premium,
+            periods,
+            sub_periods,
+            points,
+        )
+    } else {
+        let n = AnyCount::from_robj(&frequency)?;
+        prospicio_aggregate::finite_horizon(&sev.inner, n.as_counting(), premium, periods, points)
+    }
+    .map_err(to_r)?;
+    let h = ruin.step();
+    let na = |v: Option<f64>| v.unwrap_or(f64::NAN);
+    let mut psi = Vec::with_capacity(points * periods);
+    let mut cap = Vec::with_capacity(p.len() * periods);
+    let mut cap_i = Vec::with_capacity(p.len() * periods);
+    for t in 1..=periods {
+        psi.extend_from_slice(ruin.psi(t).map_err(to_r)?);
+        for &q in p {
+            cap.push(na(ruin.capital(q, t).map_err(to_r)?));
+            cap_i.push(na(ruin.capital_interpolated(q, t).map_err(to_r)?));
+        }
+    }
+    Ok(list!(
+        u = (0..points).map(|j| j as f64 * h).collect::<Vec<f64>>(),
+        psi = psi,
+        capital = cap,
+        capital_interpolated = cap_i,
+        step = h,
         aliasing_error = ruin.report().aliasing_error
     ))
 }
@@ -1249,6 +1345,7 @@ extendr_module! {
     fn copula_severity_rust;
     fn layer_loss_picks_rust;
     fn eventual_ruin_rust;
+    fn finite_horizon_ruin_rust;
     fn wiener_hopf_rust;
     fn fft_bivariate_rust;
     fn clash_rust;

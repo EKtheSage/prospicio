@@ -263,10 +263,12 @@ S7::method(allocate, predictive_distribution) <- function(x, distortion, ...) {
 #' @param percentiles Percentiles, in percent, in `[0, 100]`.
 #' @param tvar_levels TVaR levels in percent.
 #' @param sd_multiples Multiples of the standard deviation.
-#' @param quantile `"inverted_cdf"` (the default, [VaR()]'s, R `type = 1`)
-#'   or `"linear"` (`quantile(type = 7)`, numpy's default).
-#' @param tvar `"exact"` (the default, [TVaR()]'s, mass `1/n` per draw) or
-#'   `"linear"` (the mean of the linear quantile function over `[p, 1]`).
+#' @param quantile `"inverted_cdf"` (the default, [VaR()]'s, R `type = 1`),
+#'   `"linear"` (`quantile(type = 7)`, numpy's default) or `"kth_largest"`
+#'   (the `k`-th largest draw, `k = max(1, floor((1 - p) n))`).
+#' @param tvar `"exact"` (the default, [TVaR()]'s, mass `1/n` per draw),
+#'   `"linear"` (the mean of the linear quantile function over `[p, 1]`) or
+#'   `"whole_years"` (the mean of the `k` largest draws).
 #' @returns For draws or a [sampled], a named numeric vector. For a
 #'   [predictive_distribution], its `keys` data frame with one column per
 #'   statistic.
@@ -436,7 +438,8 @@ co_statistics <- function(items, driver, percentiles,
 #'   mean(pmax(t - x, 0))`) or `"count"` (`sum(x > t) / sum(x < t)`; values
 #'   equal to `t` count in neither).
 #' @param tvar_levels TVaR levels in percent.
-#' @param tvar `"exact"` (the default) or `"linear"`, as for [statistics()].
+#' @param tvar `"exact"` (the default), `"linear"` or `"whole_years"`, as for
+#'   [statistics()].
 #' @returns For draws or a [sampled], a named numeric vector. For a
 #'   [predictive_distribution], its `keys` data frame with one column per
 #'   ratio.

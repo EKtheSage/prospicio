@@ -2,7 +2,7 @@
 events, the occurrence exceedance (OEP) curve, compound moments to third
 order with the approximations fitted to them, eventual ruin by the
 Pollaczeck–Khinchine formula and, for renewal claims, by Wiener–Hopf
-(wiener_hopf), a severity reshaped to layer loss picks, and a catastrophe model's
+(wiener_hopf), ruin within a finite horizon (finite_horizon_ruin), a severity reshaped to layer loss picks, and a catastrophe model's
 event loss table with secondary uncertainty (EventLossTable), and two lines hit by
 the same events: their joint loss by a 2-D FFT (fft_bivariate, JointGrid) and the
 clash model (Clash), a vendor's year loss table read and expanded to a run's
@@ -25,6 +25,7 @@ from .prospicio_native import (
     EventSet,
     Expense,
     Exposure,
+    FiniteRuin,
     GridAudit,
     GridSize,
     Group,
@@ -44,6 +45,7 @@ from .prospicio_native import (
     fft,
     fft_auto,
     fft_bivariate,
+    finite_horizon_ruin,
     layer_loss_picks,
     occurrence_exceedance,
     occurrence_pml,
@@ -91,6 +93,8 @@ __all__ = [
     "Approximation",
     "eventual_ruin",
     "Ruin",
+    "finite_horizon_ruin",
+    "FiniteRuin",
     "wiener_hopf",
     "RenewalRuin",
     "layer_loss_picks",
@@ -135,6 +139,9 @@ def read_ylt(
     year="year",
     loss="value",
     slot="slot",
+    time=None,
+    day=None,
+    hour=None,
     labels=None,
     n_years=None,
     n_sims=None,
@@ -150,7 +157,8 @@ def read_ylt(
     The file has one row per non-zero event loss. Its rows are checked
     (losses finite and non-negative, years from 1, no repeated year and
     slot within the ``unique_by`` labels, labels among the ``expected``
-    values), ordered by year then slot (the file's order breaking ties),
+    values, times within the year), ordered by year, then time of loss
+    when given, then slot (the file's order breaking ties),
     and expanded as ``EventSet.from_ylt`` describes. The file's bytes are
     hashed (``ylt_hash``) into the events' ``input_hash``, which results
     keep in their provenance. Rows sharing a slot, one event hitting
@@ -164,6 +172,16 @@ def read_ylt(
     slot : str or None, default "slot"
         The column of each row's event slot, or ``None`` to keep the file's
         order within a year and skip the check for repeats.
+    time : str, optional
+        The column of each row's time of loss, the fraction of its year
+        elapsed, in ``[0, 1]``. The events then carry times (``has_times``),
+        for an hours clause (``EventSet.grouped``) and reinstatements pro
+        rata as to time.
+    day, hour : str, optional
+        Instead of ``time``: the columns of each row's day of the year, from
+        1 to 365, and hour of the day, from 0 to 24 (the start of the day
+        without ``hour``); the time is ``((day - 1) * 24 + hour) / 8760``,
+        on the 8,760-hour year of the hours clause.
     labels : list of str, optional
         Columns kept as labels, ``["peril", "class"]`` say, by which
         ``Tower.apply`` splits its results.
@@ -199,6 +217,10 @@ def read_ylt(
     ([7.0, 5.0], {'peril': ['wind', 'wind']})
     >>> e.input_hash.startswith("blake3:")
     True
+    >>> _ = open(path, "w").write("year,day,hour,value\\n1,200,6,5\\n1,199,12,1\\n")
+    >>> t = read_ylt(path, slot=None, day="day", hour="hour")
+    >>> t.events(0), t.has_times
+    ([1.0, 5.0], True)
     """
     import io
     from pathlib import Path
@@ -206,7 +228,12 @@ def read_ylt(
     path = Path(path)
     data = path.read_bytes()
     labels = list(labels or [])
-    columns = [year, loss] + ([slot] if slot is not None else []) + labels
+    if time is not None and (day is not None or hour is not None):
+        raise ValueError("give the time column, or the day and hour columns, not both")
+    if hour is not None and day is None:
+        raise ValueError("an hour column needs a day column")
+    timed = [c for c in (time, day, hour) if c is not None]
+    columns = [year, loss] + ([slot] if slot is not None else []) + timed + labels
     if file_format is None:
         file_format = "parquet" if path.suffix.lower() in (".parquet", ".pq") else "csv"
     if file_format == "parquet":
@@ -222,6 +249,7 @@ def read_ylt(
         years = [int(y) for y in cols[year]]
         slots = [int(s) for s in cols[slot]] if slot is not None else None
         losses = [float(x) for x in cols[loss]]
+        timed_values = {c: [float(v) for v in cols[c]] for c in timed}
         label_values = {d: [str(v) for v in cols[d]] for d in labels}
     elif file_format == "csv":
         import csv
@@ -231,20 +259,36 @@ def read_ylt(
         if missing:
             raise ValueError(f"{path}: no column {missing[0]!r}")
         years, slots, losses = [], [] if slot is not None else None, []
+        timed_values = {c: [] for c in timed}
         label_values = {d: [] for d in labels}
         for row, r in enumerate(reader, start=1):
             years.append(_whole(r[year], year, row))
             if slot is not None:
                 slots.append(_whole(r[slot], slot, row))
             losses.append(float(r[loss]))
+            for c in timed:
+                timed_values[c].append(float(r[c]))
             for d in labels:
                 label_values[d].append(r[d])
     else:
         raise ValueError(f'file_format must be "csv" or "parquet", not {file_format!r}')
+    times = None
+    if time is not None:
+        times = timed_values[time]
+    elif day is not None:
+        times = []
+        hours = timed_values[hour] if hour is not None else [0.0] * len(years)
+        for row, (d, h) in enumerate(zip(timed_values[day], hours), start=1):
+            if not (d == int(d) and 1 <= d <= 365):
+                raise ValueError(f"row {row}: the day {d} is not a whole day from 1 to 365")
+            if not (0 <= h <= 24):
+                raise ValueError(f"row {row}: the hour {h} is not from 0 to 24")
+            times.append(((d - 1) * 24 + h) / 8760)
     return EventSet.from_ylt(
         years,
         losses,
         slots=slots,
+        times=times,
         labels=label_values or None,
         n_years=n_years,
         n_sims=n_sims,

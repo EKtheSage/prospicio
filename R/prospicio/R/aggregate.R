@@ -300,6 +300,68 @@ eventual_ruin <- function(severity, rho = NULL, loss_ratio = NULL, p = numeric()
   )
 }
 
+#' Ruin within a finite horizon
+#'
+#' The probability `psi(u, t)` that the surplus, starting at `u`, earning
+#' `premium` a period and paying each period's aggregate loss at its end,
+#' is negative at the end of some period up to `t`. It is found by the
+#' recursion `psi_t(u) = P(S > u + c) + E[psi_{t-1}(u + c - S); S <= u + c]`
+#' on the severity's grid, the convolution by FFT, so it holds for any
+#' claim count a period. [eventual_ruin()] is the limit for Poisson claims
+#' checked continuously; give a Poisson `rate` with `sub_periods` to check
+#' `sub_periods` times a period instead (each step Poisson with
+#' `rate / sub_periods`), which approaches it from below as the steps
+#' shrink.
+#'
+#' The premium a step, `premium / sub_periods`, must be a whole number of
+#' grid steps.
+#'
+#' @param severity A [grid_distribution].
+#' @param premium The premium a period.
+#' @param periods The horizon in periods.
+#' @param frequency The claim count a period. Or give `rate`.
+#' @param rate A Poisson rate a period.
+#' @param sub_periods Steps a period, with `rate`.
+#' @param points Grid points for `psi`; the severity's by default. Beyond
+#'   the grid `psi` is cut off, so raise it until `psi` at the last point
+#'   is small.
+#' @param p Ruin probabilities at which to find the capital.
+#' @returns A list: `u`, the grid; `psi`, a matrix with one row per `u` and
+#'   one column per period; `capital` and `capital_interpolated`, matrices
+#'   with one row per `p` and one column per period (the smallest grid
+#'   point with `psi(u, t) < p`, or linear between grid points; `NA` where
+#'   the grid does not reach it); `step` and `aliasing_error`.
+#' @seealso [eventual_ruin()]
+#' @export
+#' @examples
+#' # A claim of 2 with probability 0.4 a period, premium 1: a random walk.
+#' walk <- finite_horizon_ruin(grid_distribution(1, c(0, 0, 1)), 1, 3,
+#'   frequency = bernoulli_count(0.4), points = 16)
+#' walk$psi[1, ] # 0.4, 0.4 + 0.6 * 0.4^2 by the third period
+#' sev <- discretize(gamma_from_mean_cv(1, 1), step = 0.05, points = 2^12, method = "rounding")
+#' ruin <- finite_horizon_ruin(sev, 1.5, 10, rate = 1, sub_periods = 10, p = 0.05)
+#' ruin$capital
+finite_horizon_ruin <- function(severity, premium, periods, frequency = NULL, rate = NULL,
+                                sub_periods = 1, points = NULL, p = numeric()) {
+  if (is.null(frequency) == is.null(rate)) stop("give exactly one of frequency and rate")
+  if (!is.null(frequency) && sub_periods != 1) {
+    stop("sub_periods needs a Poisson rate: give rate, not frequency")
+  }
+  r <- rust_result(finite_horizon_ruin_rust(
+    severity@ptr, as.double(premium), as.double(periods),
+    if (is.null(frequency)) NULL else frequency@ptr,
+    as.double(if (is.null(rate)) 0 else rate), as.double(sub_periods),
+    as.double(if (is.null(points)) 0 else points), as.double(p)
+  ))
+  n <- length(r$u)
+  list(
+    u = r$u, psi = matrix(r$psi, nrow = n, ncol = periods),
+    capital = matrix(r$capital, nrow = length(p), ncol = periods),
+    capital_interpolated = matrix(r$capital_interpolated, nrow = length(p), ncol = periods),
+    step = r$step, aliasing_error = r$aliasing_error
+  )
+}
+
 #' Eventual ruin for renewal claims by Wiener-Hopf
 #'
 #' The probability `psi(u)` of eventual ruin from initial surplus `u` when
@@ -999,8 +1061,9 @@ event_set_from_long <- function(years, losses, n_years, seed = 0, labels = NULL)
 #'
 #' The rows are checked: losses finite and non-negative, years from 1, no two
 #' rows with the same year, slot and values in the `unique_by` labels, labels
-#' among the `expected` values. They are ordered by year, then slot, the
-#' file's order breaking ties. Each row is one loss: rows sharing a slot, one
+#' among the `expected` values, times within the year. They are ordered by
+#' year, then time of loss when given, then slot, the file's order breaking
+#' ties. Each row is one loss: rows sharing a slot, one
 #' event hitting several classes, stay separate losses, so an occurrence
 #' layer sees each of them. `read_ylt()` hashes the file's bytes into the
 #' events' `input_hash`, which results keep in their [provenance()].
@@ -1009,6 +1072,14 @@ event_set_from_long <- function(years, losses, n_years, seed = 0, labels = NULL)
 #' @param year,loss The columns of each row's year, from 1, and its loss.
 #' @param slot The column of each row's event slot, or `NULL` to keep the
 #'   file's order within a year and skip the check for repeats.
+#' @param time The column of each row's time of loss, the fraction of its
+#'   year elapsed, in `[0, 1]`; `NULL` for none. The events then carry times
+#'   ([event_times()]), for [hours_clause()] and reinstatements pro rata as
+#'   to time.
+#' @param day,hour Instead of `time`: the columns of each row's day of the
+#'   year, from 1 to 365, and hour of the day, from 0 to 24 (`NULL` for the
+#'   start of the day); the time is `((day - 1) * 24 + hour) / 8760`, on the
+#'   8,760-hour year of the hours clause.
 #' @param labels Columns kept as labels, `c("peril", "class")` say, by which
 #'   [apply_tower()] splits its results.
 #' @param n_years The table's years, at least its largest year; `NULL` for
@@ -1028,6 +1099,7 @@ event_set_from_long <- function(years, losses, n_years, seed = 0, labels = NULL)
 #'   ends in `.parquet` or `.pq`, CSV otherwise.
 #' @param years,losses,slots Each row's year (from 1), loss and slot
 #'   (`NULL` for none).
+#' @param times `NULL`, or each row's time of loss, a fraction of the year.
 #' @param source_hash `NULL`, or a hash of the source kept as the events'
 #'   `input_hash`.
 #' @returns An [event_set].
@@ -1039,14 +1111,23 @@ event_set_from_long <- function(years, losses, n_years, seed = 0, labels = NULL)
 #' events(ev, 2)
 #' event_labels(ev, 2)
 #' ev@input_hash
-read_ylt <- function(path, year = "year", loss = "value", slot = "slot", labels = NULL,
-                     n_years = NULL, n_sims = NULL, expand = "tile", seed = 0,
-                     unique_by = NULL, expected = NULL, format = NULL) {
+#' writeLines(c("year,day,hour,value", "1,200,6,5", "1,199,12,1"), path)
+#' timed <- read_ylt(path, slot = NULL, day = "day", hour = "hour")
+#' events(timed, 1)
+#' event_times(timed, 1)
+read_ylt <- function(path, year = "year", loss = "value", slot = "slot", time = NULL,
+                     day = NULL, hour = NULL, labels = NULL, n_years = NULL, n_sims = NULL,
+                     expand = "tile", seed = 0, unique_by = NULL, expected = NULL,
+                     format = NULL) {
   path <- normalizePath(path, mustWork = TRUE)
   if (is.null(format)) {
     format <- if (grepl("\\.(parquet|pq)$", tolower(path))) "parquet" else "csv"
   }
-  columns <- c(year, loss, slot, labels)
+  if (!is.null(time) && (!is.null(day) || !is.null(hour))) {
+    stop("give the time column, or the day and hour columns, not both", call. = FALSE)
+  }
+  if (!is.null(hour) && is.null(day)) stop("an hour column needs a day column", call. = FALSE)
+  columns <- c(year, loss, slot, time, day, hour, labels)
   df <- switch(format,
     csv = utils::read.csv(path, colClasses = "character", check.names = FALSE,
                           fileEncoding = "UTF-8-BOM"),
@@ -1060,9 +1141,26 @@ read_ylt <- function(path, year = "year", loss = "value", slot = "slot", labels 
   )
   missing <- setdiff(columns, names(df))
   if (length(missing)) stop(sprintf("%s: no column '%s'", path, missing[1]), call. = FALSE)
+  times <- if (!is.null(time)) {
+    as.numeric(df[[time]])
+  } else if (!is.null(day)) {
+    d <- as.numeric(df[[day]])
+    h <- if (is.null(hour)) rep(0, length(d)) else as.numeric(df[[hour]])
+    bad <- which(!(d == round(d) & d >= 1 & d <= 365))
+    if (length(bad)) {
+      stop(sprintf("row %d: the day %s is not a whole day from 1 to 365", bad[1], d[bad[1]]),
+           call. = FALSE)
+    }
+    bad <- which(!(h >= 0 & h <= 24))
+    if (length(bad)) {
+      stop(sprintf("row %d: the hour %s is not from 0 to 24", bad[1], h[bad[1]]), call. = FALSE)
+    }
+    ((d - 1) * 24 + h) / 8760
+  }
   event_set_from_ylt(
     as.numeric(df[[year]]), as.numeric(df[[loss]]),
     slots = if (is.null(slot)) NULL else as.numeric(df[[slot]]),
+    times = times,
     labels = if (length(labels)) lapply(df[labels], as.character) else NULL,
     n_years = n_years, n_sims = n_sims, expand = expand, seed = seed,
     unique_by = unique_by, expected = expected,
@@ -1074,13 +1172,13 @@ read_ylt <- function(path, year = "year", loss = "value", slot = "slot", labels 
 #' @export
 event_set_from_ylt <- function(years, losses, slots = NULL, labels = NULL, n_years = NULL,
                                n_sims = NULL, expand = "tile", seed = 0, unique_by = NULL,
-                               expected = NULL, source_hash = NULL) {
+                               expected = NULL, source_hash = NULL, times = NULL) {
   l <- label_columns(labels)
   e <- label_columns(expected)
   null_or <- function(x) if (is.null(x)) NULL else as.double(x)
   event_set(ptr = rust_result(EventSet$from_ylt(
     as.double(years), as.double(losses),
-    if (is.null(slots)) NULL else as.double(slots),
+    if (is.null(slots)) NULL else as.double(slots), null_or(times),
     l$dims, l$values, null_or(n_years), null_or(n_sims), expand, as.double(seed),
     if (is.null(unique_by)) NULL else as.character(unique_by),
     e$dims, e$values, source_hash
@@ -1290,19 +1388,58 @@ permute_events <- function(x, index) {
   event_set(ptr = rust_result(x@ptr$permute(as.double(index))))
 }
 
+#' The losses with some label values
+#'
+#' The losses whose label `label` takes one of `values`, every year kept (a
+#' year with none of them is empty), with their sums insured, times and
+#' labels, and the aggregate part's columns with one of the values: what a
+#' layer scoped to those values ([with_scope()]) sees.
+#'
+#' @param x An [event_set] with labels.
+#' @param label A label dimension.
+#' @param values The values to keep.
+#' @returns An [event_set] with as many years.
+#' @seealso [with_scope()]
+#' @export
+#' @examples
+#' ev <- with_labels(events_from_years(list(c(20, 15), 8)), list(peril = c("quake", "wind", "quake")))
+#' w <- filter_events(ev, "peril", "wind")
+#' events(w, 1)
+#' events(w, 2)
+filter_events <- function(x, label, values) {
+  event_set(ptr = rust_result(x@ptr$filter(as.character(label), as.character(values))))
+}
+
 #' Hours clause
 #'
 #' Each year's losses grouped into occurrences: losses within `window_hours`
 #' of the first loss of a window are one occurrence, whose loss is their sum
 #' and whose time is the window's start; the next loss after the window opens
 #' the next one. A year is 8,760 hours. Windows open at each first loss in
-#' turn, not where they would recover most. Needs times; sums insured and
-#' labels are not carried (group each peril's set before merging them).
+#' turn, not where they would recover most. Needs times; sums insured are not
+#' carried.
 #'
 #' @param x An [event_set] with times.
 #' @param window_hours Such as 72 for a windstorm, 168 for a flood.
+#' @param labels What the occurrences carry of the losses' labels: none
+#'   (`"drop"`), their losses' labels, which must agree within an occurrence
+#'   (`"agree"`, an error otherwise), or the labels of the largest loss in the
+#'   occurrence, the earliest of equal ones (`"largest"`). An aggregate part
+#'   keeps its labels unless they are dropped.
+#' @param by `NULL`, or a label dimension, `"peril"` say: the clause applies
+#'   within each of its values, so losses of two perils are never one
+#'   occurrence, and the occurrences keep the labels (`labels` then decides
+#'   the other dimensions, `"drop"` read as `"agree"`). Occurrences are listed
+#'   by the time each window opens.
 #' @returns An [event_set] of occurrences.
 #' @export
-hours_clause <- function(x, window_hours) {
-  event_set(ptr = rust_result(x@ptr$grouped(as.double(window_hours))))
+#' @examples
+#' h <- 1 / 8760
+#' ev <- events_from_years(list(c(10, 20, 5)), times = list(c(0.5, 0.5 + 30 * h, 0.5 + 40 * h)))
+#' ev <- with_labels(ev, list(peril = c("wind", "flood", "wind")))
+#' g <- hours_clause(ev, 72, by = "peril")
+#' events(g, 1)
+#' event_labels(g, 1)
+hours_clause <- function(x, window_hours, labels = "drop", by = NULL) {
+  event_set(ptr = rust_result(x@ptr$grouped(as.double(window_hours), labels, by)))
 }

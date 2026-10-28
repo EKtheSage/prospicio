@@ -92,11 +92,13 @@ reference:
       - event_loss_table
       - merge_event_sets
       - permute_events
+      - filter_events
       - with_aggregate_part
       - hours_clause
       - occurrence_pml
       - compound_moments
       - eventual_ruin
+      - finite_horizon_ruin
       - wiener_hopf
       - pnl_ledger
       - pnl_book
@@ -144,6 +146,7 @@ reference:
       - apply_tower_term
       - with_cover_basis
       - with_interlocking
+      - with_scope
       - deal_ratios
       - with_deal_scale
       - tower_on_grid

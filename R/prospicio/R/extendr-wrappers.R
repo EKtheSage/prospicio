@@ -80,6 +80,8 @@ approximation_eval_rust <- function(moments, kind, values, quantile) .Call(wrap_
 
 eventual_ruin_rust <- function(severity, rho, points, part, value, p) .Call(wrap__eventual_ruin_rust, severity, rho, points, part, value, p)
 
+finite_horizon_ruin_rust <- function(severity, premium, periods, frequency, rate, sub_periods, points, p) .Call(wrap__finite_horizon_ruin_rust, severity, premium, periods, frequency, rate, sub_periods, points, p)
+
 wiener_hopf_rust <- function(severity, wait, rho, points, p) .Call(wrap__wiener_hopf_rust, severity, wait, rho, points, p)
 
 copula_severity_rust <- function(a, b, copula, trigger_a, trigger_b) .Call(wrap__copula_severity_rust, a, b, copula, trigger_a, trigger_b)
@@ -362,7 +364,7 @@ EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__Ev
 
 EventSet$from_long <- function(years, losses, n_years, seed, label_dims, label_values) .Call(wrap__EventSet__from_long, years, losses, n_years, seed, label_dims, label_values)
 
-EventSet$from_ylt <- function(years, losses, slots, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash) .Call(wrap__EventSet__from_ylt, years, losses, slots, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash)
+EventSet$from_ylt <- function(years, losses, slots, times, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash) .Call(wrap__EventSet__from_ylt, years, losses, slots, times, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash)
 
 EventSet$with_labels <- function(dims, values) .Call(wrap__EventSet__with_labels, self, dims, values)
 
@@ -382,6 +384,8 @@ EventSet$aggregate_part_labels <- function() .Call(wrap__EventSet__aggregate_par
 
 EventSet$merge <- function(other) .Call(wrap__EventSet__merge, self, other)
 
+EventSet$filter <- function(label, values) .Call(wrap__EventSet__filter, self, label, values)
+
 EventSet$permute <- function(index) .Call(wrap__EventSet__permute, self, index)
 
 EventSet$term_years <- function(n_years) .Call(wrap__EventSet__term_years, self, n_years)
@@ -390,7 +394,7 @@ EventSet$correlated_years <- function(n_years, correlation, kind, draws, seed) .
 
 EventSet$calibrate_year_correlation <- function(n_years, ratio, kind, draws, seed) .Call(wrap__EventSet__calibrate_year_correlation, self, n_years, ratio, kind, draws, seed)
 
-EventSet$grouped <- function(window_hours) .Call(wrap__EventSet__grouped, self, window_hours)
+EventSet$grouped <- function(window_hours, labels, by) .Call(wrap__EventSet__grouped, self, window_hours, labels, by)
 
 EventSet$with_uniform_times <- function() .Call(wrap__EventSet__with_uniform_times, self)
 
@@ -539,6 +543,10 @@ XolLayer$profit_commission <- function() .Call(wrap__XolLayer__profit_commission
 XolLayer$swing_rating <- function() .Call(wrap__XolLayer__swing_rating, self)
 
 XolLayer$premium_for <- function(ceded) .Call(wrap__XolLayer__premium_for, self, ceded)
+
+XolLayer$scope <- function() .Call(wrap__XolLayer__scope, self)
+
+XolLayer$with_scope <- function(label, values) .Call(wrap__XolLayer__with_scope, self, label, values)
 
 XolLayer$ceding_commission_for <- function(ceded) .Call(wrap__XolLayer__ceding_commission_for, self, ceded)
 
