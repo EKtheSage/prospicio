@@ -60,6 +60,7 @@ pub mod frame;
 pub mod latest_diagonal;
 pub mod mack;
 pub mod mack_bootstrap;
+pub mod monthly_reading;
 pub mod odp_glm;
 pub mod one_year;
 pub mod one_year_bootstrap;
@@ -99,6 +100,7 @@ pub use mack::{Mack, MackFit};
 pub use mack_bootstrap::{
     MackBootstrap, MackBootstrapFit, MackBootstrapFits, MackBootstrapSegment, MackProcess,
 };
+pub use monthly_reading::AnnualReading;
 pub use odp_glm::{
     OdpGlm, OdpGlmFit, OdpPredictionError, OdpResiduals, ResidualGroup, ResidualSummary,
     SumPredictionError,

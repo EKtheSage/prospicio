@@ -486,6 +486,14 @@ what it is aiming for by v1.0.
     `ldf_origin`; checked by hand, against the pricing crate's
     `MonthlyPatterns::from_annual` and on a simulated book's accident-year
     and underwriting-year triangles.
+  - An annual accident-year pattern read at monthly ages before that
+    conversion (`reserving-v02.md`, decision 25; branch
+    `claude/ay-monthly-reading`, issue #646, in Rust, Python and R): the
+    Weibull fitted through the yearly averages and corrected to the nearest
+    monotone accident-month pattern that reproduces them, the default since
+    the user's decision of 2026-10-27 (`AnnualReading`; decision 18's rule
+    kept as `LnLinear`); the simulated book converts within 0.2% at every
+    age, against 31% off at 12 months before.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental
