@@ -1352,6 +1352,28 @@ permute_events <- function(x, index) {
   event_set(ptr = rust_result(x@ptr$permute(as.double(index))))
 }
 
+#' The losses with some label values
+#'
+#' The losses whose label `label` takes one of `values`, every year kept (a
+#' year with none of them is empty), with their sums insured, times and
+#' labels, and the aggregate part's columns with one of the values: what a
+#' layer scoped to those values ([with_scope()]) sees.
+#'
+#' @param x An [event_set] with labels.
+#' @param label A label dimension.
+#' @param values The values to keep.
+#' @returns An [event_set] with as many years.
+#' @seealso [with_scope()]
+#' @export
+#' @examples
+#' ev <- with_labels(events_from_years(list(c(20, 15), 8)), list(peril = c("quake", "wind", "quake")))
+#' w <- filter_events(ev, "peril", "wind")
+#' events(w, 1)
+#' events(w, 2)
+filter_events <- function(x, label, values) {
+  event_set(ptr = rust_result(x@ptr$filter(as.character(label), as.character(values))))
+}
+
 #' Hours clause
 #'
 #' Each year's losses grouped into occurrences: losses within `window_hours`

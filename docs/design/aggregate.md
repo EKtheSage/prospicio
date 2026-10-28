@@ -1417,6 +1417,52 @@ the repo).
       `interlocking` property in Python, `with_interlocking()` and the
       tower's `interlocking` property in R.
 
+### Layers scoped to labels
+
+A multi-peril event set (a YLT with a `peril` label, or a merge of a
+windstorm and an earthquake set) often sits under a programme whose
+treaties each cover one peril or class (#584). Labels already split an
+unscoped layer's results by peril, but that split is a share of a layer
+that every peril uses up: the earthquake events take part of the annual
+limit and count toward the deductible. A windstorm treaty's own annual
+terms see only windstorm losses.
+
+1. `Layer::scope(label, values)` restricts the layer to the losses whose
+   label `label` takes one of `values` (`Scope { label, values }`, a
+   public field; `None` covers every loss). Masking happens per layer in
+   the tower's per-event step: losses out of scope are zeroed for that
+   layer only, with the year's lengths kept, so sums insured, times and
+   the labels stay aligned, the layer's occurrence terms, annual terms,
+   reinstatements and commission see only its losses, and the losses it
+   does not cover pass to the next inuring stage whole. An aggregate
+   (attritional) part's columns are masked the same way for a layer that
+   sees it.
+2. The labelled paths take scopes: `Tower::apply` on labelled events,
+   `apply_term` and `apply_timeline` (through `apply_term`). A scope is an
+   error on events without labels, without the dimension, or with none of
+   the values (a misspelt peril would otherwise cede nothing silently).
+   Paths that have no events to label refuse a tower with a scoped layer,
+   naming the path: `apply` on unlabelled events, `apply_aggregate`,
+   `apply_annual`, `on_grid`, `on_annual_grid` and the P&L ledger's
+   builders.
+3. `EventSet::filter(label, values)` keeps the losses with those values,
+   every year kept (a year without them is empty), with their sums
+   insured, times and labels, and the aggregate part's columns with one of
+   the values. It is the set a scoped layer sees: a scoped layer on the
+   whole set cedes what the same layer unscoped cedes on the filtered set,
+   checked component by component, in one year and over a term with a
+   profit commission carried forward.
+4. JSON: a scoped layer has `"scope": {"label": ..., "values": [...]}`,
+   format version 7; a layer without the key covers every loss.
+5. Checks by construction: a scope over every value equals no scope bit
+   for bit; the filtered-set identity above; a two-stage tower whose
+   inuring stop loss sees the out-of-scope losses whole; and a scope is
+   not a label split (`knowledge/findings/peril-scoped-layers.md`).
+6. Bindings: Python `Layer.with_scope(label, values)` with the `scope`
+   property (`(label, values)` or None) and `EventSet.filter`; R
+   `with_scope()` with the layer's `scope` property and
+   `filter_events()`.
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force

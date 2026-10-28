@@ -10,15 +10,15 @@
 
 use prospicio_core::{Grain, Lag, Month, Period};
 use prospicio_reserving::{
-    Apriori, Average, BenchmarkCurve, BenchmarkCurveFit, Benktander, BornhuetterFerguson, CapeCod,
-    CapeCodFit, ChainLadder, ChainLadderFit, ClaimsDevelopmentResult, ClarkCapeCod, ClarkFit,
-    ClarkLdf, CurveShape, Development, DevelopmentColumn, DiagonalAge, ExpectedLoss,
-    ExpectedLossFit, FitTable, GrowthCurve, Label, LatestDiagonals, Long, LongDiagonal, Mack,
-    MackBootstrap, MackBootstrapFits, MackBootstrapSegment, MackFit, MackProcess, OdpBootstrap,
-    OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod, OneYearPattern,
-    PastPatternEnd, PatternKind, PatternWeight, ProcessDistribution, ReserveFit, SegmentDependence,
-    SegmentFits, SegmentMap, SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailConstant,
-    TailCurve, Triangle, UnderwritingBasis, view,
+    AnnualReading, Apriori, Average, BenchmarkCurve, BenchmarkCurveFit, Benktander,
+    BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder, ChainLadderFit, ClaimsDevelopmentResult,
+    ClarkCapeCod, ClarkFit, ClarkLdf, CurveShape, Development, DevelopmentColumn, DiagonalAge,
+    ExpectedLoss, ExpectedLossFit, FitTable, GrowthCurve, Label, LatestDiagonals, Long,
+    LongDiagonal, Mack, MackBootstrap, MackBootstrapFits, MackBootstrapSegment, MackFit,
+    MackProcess, OdpBootstrap, OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod,
+    OneYearPattern, PastPatternEnd, PatternKind, PatternWeight, ProcessDistribution, ReserveFit,
+    SegmentDependence, SegmentFits, SegmentMap, SelectedPattern, SigmaInterpolation, Tail,
+    TailBondy, TailConstant, TailCurve, Triangle, UnderwritingBasis, view,
 };
 use pyo3::exceptions::{PyImportError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -1950,9 +1950,31 @@ fn with_ldf_basis(repr: String, basis: &LdfBasis) -> String {
 
 fn underwriting_repr(u: &UnderwritingBasis) -> String {
     format!(
-        "UnderwritingBasis(writing={:?}, policy_months={})",
-        u.writing, u.policy_months
+        "UnderwritingBasis(writing={:?}, policy_months={}, reading={:?})",
+        u.writing,
+        u.policy_months,
+        reading_name(u.reading())
     )
+}
+
+/// The reading named `"weibull"`, `"loglogistic"` or `"ln-linear"`.
+fn annual_reading(name: &str) -> PyResult<AnnualReading> {
+    match name {
+        "weibull" => Ok(AnnualReading::Curve(GrowthCurve::Weibull)),
+        "loglogistic" => Ok(AnnualReading::Curve(GrowthCurve::LogLogistic)),
+        "ln-linear" => Ok(AnnualReading::LnLinear),
+        _ => Err(PyValueError::new_err(format!(
+            "reading must be \"weibull\", \"loglogistic\" or \"ln-linear\", got {name:?}"
+        ))),
+    }
+}
+
+fn reading_name(reading: AnnualReading) -> &'static str {
+    match reading {
+        AnnualReading::Curve(GrowthCurve::Weibull) => "weibull",
+        AnnualReading::Curve(GrowthCurve::LogLogistic) => "loglogistic",
+        AnnualReading::LnLinear => "ln-linear",
+    }
 }
 
 /// How an underwriting period's policies are written and earned, to convert
@@ -1971,6 +1993,22 @@ fn underwriting_repr(u: &UnderwritingBasis) -> String {
 ///     writing); longer writing is an error at fit time.
 /// policy_months : int, default 12
 ///     Each policy's term in months; it earns evenly over the term.
+/// reading : {"weibull", "loglogistic", "ln-linear"}, default "weibull"
+///     How a pattern of accident periods longer than a month (an
+///     accident-year pattern) is read between its ages when they are not
+///     every month from 1: ``"weibull"`` or ``"loglogistic"`` fit that
+///     growth curve through the period averages (an accident year at age
+///     ``a`` reports the average of its twelve months) and correct it to
+///     the nearest monotone accident-month pattern whose averages are the
+///     given values exactly, so the given values are reproduced; increments
+///     may fall only within a span where the given pattern itself develops
+///     downward. ``"ln-linear"`` is the rule before this reading (linear
+///     from 0 below the first age, ``ln CDF`` linear between ages), kept to
+///     reproduce earlier results: on a simulated parallelogram book it puts
+///     an underwriting year 31% too far developed at 12 months, where the
+///     Weibull is within 0.2% at every age. An accident-month pattern, and
+///     one given at every month, convert the same under every reading. A
+///     curve needs two or more given values.
 ///
 /// The underwriting period's exposure in its ``t``-th accident month is the
 /// writing convolved with a policy's earning by month (``exposure``), and
@@ -1995,14 +2033,22 @@ pub(crate) struct PyUnderwritingBasis {
 #[pymethods]
 impl PyUnderwritingBasis {
     #[new]
-    #[pyo3(signature = (writing = None, policy_months = 12))]
-    fn new(writing: Option<Vec<f64>>, policy_months: u32) -> PyResult<Self> {
+    #[pyo3(signature = (writing = None, policy_months = 12, reading = "weibull"))]
+    fn new(writing: Option<Vec<f64>>, policy_months: u32, reading: &str) -> PyResult<Self> {
         let inner = match writing {
             Some(w) => UnderwritingBasis::new(w, policy_months),
             None => UnderwritingBasis::even(12, policy_months),
-        };
+        }
+        .with_reading(annual_reading(reading)?);
         inner.exposure().map_err(err)?;
         Ok(Self { inner })
+    }
+
+    /// How a pattern of longer accident periods is read between its ages:
+    /// ``"weibull"``, ``"loglogistic"`` or ``"ln-linear"``.
+    #[getter]
+    fn reading(&self) -> &'static str {
+        reading_name(self.inner.reading())
     }
 
     /// The writing shares by month, as given.
@@ -2754,11 +2800,14 @@ fn diagonal_development(
 ///     ``ldf_origin``. An accident-month pattern (``ldf_origin="M"``)
 ///     converts under any writing and term; a pattern of longer accident
 ///     periods needs a policy term that is a whole multiple of them or
-///     writing even within each of them, and is read between its ages by
-///     the rule above, so an annual accident-year pattern is approximate in
-///     the first two years (31% too much developed at 12 months on a
-///     simulated parallelogram); give it at every month, or an
-///     accident-month pattern, where it matters. The result is longer than
+///     writing even within each of them. Given at every month from 1 it is
+///     exact; at other ages (annual ones, say) it is read between them as
+///     ``UnderwritingBasis.reading`` says: by default the Weibull fitted
+///     through the period averages and corrected to the nearest monotone
+///     accident-month pattern whose averages are the given values exactly,
+///     within 0.2% of a simulated parallelogram book at every age, or by
+///     the rule above with ``reading="ln-linear"`` (31% too much developed
+///     at 12 months on that book). The result is longer than
 ///     ``ldf`` by the writing months plus the policy term less the accident
 ///     period (12 months for an accident-year pattern under the default,
 ///     23 for an accident-month one), and a constant tail from ``ldf``'s

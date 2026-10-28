@@ -289,6 +289,7 @@ impl Tower {
                 l.name
             )));
         }
+        self.refuse_scope("a compound distribution")?;
         for &(start, end) in &stages[..stages.len() - 1] {
             if let Some(l) = self.layers[start..end]
                 .iter()
@@ -546,6 +547,7 @@ impl Tower {
                 l.name
             )));
         }
+        self.refuse_scope("an annual loss")?;
         let h = annual.step();
         let m = self.layers.len();
         // Each layer's (ceded, reinstatement premium) and scale key at every
