@@ -496,6 +496,8 @@ XolLayer$ceded <- function(losses) .Call(wrap__XolLayer__ceded, self, losses)
 
 XolLayer$ceded_by_event <- function(losses) .Call(wrap__XolLayer__ceded_by_event, self, losses)
 
+XolLayer$trial_statistics <- function(events) .Call(wrap__XolLayer__trial_statistics, self, events)
+
 XolLayer$pro_rata_time <- function() .Call(wrap__XolLayer__pro_rata_time, self)
 
 XolLayer$allocation <- function() .Call(wrap__XolLayer__allocation, self)

@@ -160,6 +160,26 @@ impl XolLayer {
         self.inner.ceded_by_event(losses)
     }
 
+    /// Attachment and exhaustion over an event set's years (#581).
+    fn trial_statistics(&self, events: Robj) -> Result<List> {
+        let events = <&EventSet>::try_from(&events)
+            .map_err(|_| Error::Other("events must be an event_set".into()))?;
+        let s = self.inner.trial_statistics(&events.inner).map_err(to_r)?;
+        Ok(list!(
+            n_years = s.n_years as f64,
+            p_attach = s.p_attach,
+            p_attach_se = s.p_attach_se,
+            p_exhaust_occurrence = s.p_exhaust_occurrence,
+            p_exhaust_occurrence_se = s.p_exhaust_occurrence_se,
+            p_exhaust_annual = s.p_exhaust_annual,
+            p_exhaust_annual_se = s.p_exhaust_annual_se,
+            occurrences_mean = s.occurrences_mean,
+            occurrences_se = s.occurrences_se,
+            ceded_mean = s.ceded_mean,
+            ceded_given_attach = s.ceded_given_attach
+        ))
+    }
+
     fn pro_rata_time(&self) -> bool {
         self.inner.pro_rata_time
     }

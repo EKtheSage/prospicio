@@ -696,6 +696,36 @@ S7::method(ceded_by_event, xol_layer) <- function(layer, losses, ...) {
   layer@ptr$ceded_by_event(as.double(losses))
 }
 
+#' How often a layer is attached and used up in simulated years
+#'
+#' Counts `events`' years as the first stage of a tower sees them: the gross
+#' events, and the aggregate part for a layer without occurrence terms
+#' (a quota share or a stop loss), which counts toward the annual terms but
+#' is no occurrence. `p_attach` is the share of years with an occurrence
+#' above the attachment, `p_exhaust_occurrence` with one at or above
+#' attachment plus limit, and `p_exhaust_annual` in which the annual limit
+#' (the aggregate limit, or the limit times one plus the reinstatements) is
+#' used up. Each has its binomial standard error (`*_se`), to set beside an
+#' event loss table's per-occurrence [occurrence_layer_statistics()].
+#'
+#' @param layer An [xol_layer].
+#' @param events An [event_set].
+#' @returns A named list: `n_years`, the three probabilities and their
+#'   standard errors, `occurrences_mean` and `occurrences_se` (occurrences
+#'   a year that reach the layer), `ceded_mean` and `ceded_given_attach`
+#'   (the mean ceded loss over the attached years, `NaN` when none is).
+#' @export
+#' @examples
+#' layer <- xol_layer("10x10", 10, 10, reinstatements = 1)
+#' years <- events_from_years(list(5, 12, 25, c(25, 30)))
+#' s <- layer_trial_statistics(layer, years)
+#' c(s$p_attach, s$p_exhaust_occurrence, s$p_exhaust_annual)
+layer_trial_statistics <- function(layer, events) {
+  if (!S7::S7_inherits(layer, xol_layer)) stop("layer must be an xol_layer()", call. = FALSE)
+  if (!S7::S7_inherits(events, event_set)) stop("events must be an event_set", call. = FALSE)
+  rust_result(layer@ptr$trial_statistics(events@ptr))
+}
+
 #' Reinstatement premium for one year
 #'
 #' With layer loss `L` at 100% after annual terms,

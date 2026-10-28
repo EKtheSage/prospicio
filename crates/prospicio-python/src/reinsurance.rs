@@ -811,6 +811,59 @@ impl PyLayer {
         self.inner.ceded_by_event(&losses)
     }
 
+    /// How often the layer is attached and used up in simulated years.
+    ///
+    /// Counted on ``events``' years as the first stage of a tower sees them
+    /// (the gross events, and the aggregate part for a layer without
+    /// occurrence terms). ``p_attach`` is the share of years with an
+    /// occurrence above the attachment, ``p_exhaust_occurrence`` with one at
+    /// or above attachment plus limit, and ``p_exhaust_annual`` in which the
+    /// annual limit (the aggregate limit, or the limit times one plus the
+    /// reinstatements) is used up; each has its binomial standard error
+    /// (``*_se``), to set beside an event loss table's per-occurrence
+    /// ``occurrence_layer_statistics``. ``occurrences_mean`` (with
+    /// ``occurrences_se``) is the mean number of occurrences a year that reach
+    /// the layer, ``ceded_mean`` the mean ceded loss and
+    /// ``ceded_given_attach`` its mean over the attached years (NaN when
+    /// none is).
+    ///
+    /// Parameters
+    /// ----------
+    /// events : EventSet
+    ///
+    /// Returns
+    /// -------
+    /// dict of str to float
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> from prospicio.reinsurance import Layer
+    /// >>> layer = Layer("10x10", 10.0, 10.0, reinstatements=1)
+    /// >>> years = EventSet.from_years([[5.0], [12.0], [25.0], [25.0, 30.0]])
+    /// >>> s = layer.trial_statistics(years)
+    /// >>> s["p_attach"], s["p_exhaust_occurrence"], s["p_exhaust_annual"]
+    /// (0.75, 0.5, 0.25)
+    fn trial_statistics(
+        &self,
+        events: PyRef<'_, PyEventSet>,
+    ) -> PyResult<HashMap<&'static str, f64>> {
+        let s = self.inner.trial_statistics(&events.inner).map_err(to_py)?;
+        Ok(HashMap::from([
+            ("n_years", s.n_years as f64),
+            ("p_attach", s.p_attach),
+            ("p_attach_se", s.p_attach_se),
+            ("p_exhaust_occurrence", s.p_exhaust_occurrence),
+            ("p_exhaust_occurrence_se", s.p_exhaust_occurrence_se),
+            ("p_exhaust_annual", s.p_exhaust_annual),
+            ("p_exhaust_annual_se", s.p_exhaust_annual_se),
+            ("occurrences_mean", s.occurrences_mean),
+            ("occurrences_se", s.occurrences_se),
+            ("ceded_mean", s.ceded_mean),
+            ("ceded_given_attach", s.ceded_given_attach),
+        ]))
+    }
+
     /// Reinstatement premium for one year's losses.
     ///
     /// With layer loss ``L`` at 100% after annual terms, ``premium *

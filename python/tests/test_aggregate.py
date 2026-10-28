@@ -1605,3 +1605,26 @@ def test_a_timeline_spreads_the_aggregate_part_by_its_pattern():
     term = Timeline(year(240.0), 24, aggregate_pattern=[1.0] * 12)
     split = term.years("losses_occurring", Exposure.uniform(2, 12))
     assert [y.aggregate_part(0)[0] for y in split] == pytest.approx([120.0, 120.0])
+
+
+def test_layer_trial_statistics():
+    """Attachment and exhaustion counted on simulated years (#581)."""
+    from prospicio.aggregate import EventSet
+    from prospicio.reinsurance import Layer
+
+    layer = Layer(
+        "L", 10.0, 10.0, share=0.5, aggregate_deductible=3.0, aggregate_limit=15.0
+    )
+    years = EventSet.from_years([[], [12.0], [20.0], [20.0, 15.0, 30.0], [9.0, 10.0]])
+    s = layer.trial_statistics(years)
+    assert s["n_years"] == 5
+    assert (s["p_attach"], s["p_exhaust_occurrence"], s["p_exhaust_annual"]) == (
+        0.6,
+        0.4,
+        0.2,
+    )
+    assert s["occurrences_mean"] == 1.0
+    assert s["ceded_mean"] == pytest.approx(0.5 * 22.0 / 5.0)
+    assert s["ceded_given_attach"] == pytest.approx(0.5 * 22.0 / 3.0)
+    assert s["p_attach_se"] == pytest.approx((0.6 * 0.4 / 5.0) ** 0.5)
+    assert s["occurrences_se"] == pytest.approx((1.5 / 5.0) ** 0.5)
