@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: The log-linear Bayesian reserving models refuse a development column that sums to zero or less, which the chain ladder accepts
-description: BayesOdp, BayesBf and BayesBfNormalised all refuse a triangle whose development column's observed increments sum to zero or less (one late cell below the previous one is enough), because every mean is a positive product and the likelihood then has no finite maximum; the chain ladder takes the same triangle with a factor below 1. Rebuilding the triangle from its long table without the age is the remedy; no Triangle method drops ages.
+description: BayesOdp, BayesBf and BayesBfNormalised all refuse a triangle whose development column's observed increments sum to zero or less (one late cell below the previous one is enough), because every mean is a positive product and the likelihood then has no finite maximum; the chain ladder takes the same triangle with a factor below 1. Rebuilding the triangle from its long table without the age is the remedy at the first or the last age only (at the first it also removes the origins observed only there); at a middle age the rebuilt triangle keeps the age with no cells and the chain ladder refuses it; no Triangle method drops ages.
 tags: [bayes, reserving, bornhuetter-ferguson, odp, negative-development, errors]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-28T12:00:00Z }
@@ -44,3 +44,13 @@ sources:
   `as.data.frame()` and `triangle()`); the rebuilt triangle keeps the
   other origins' latest values and fits. A `Triangle` method is open
   decision 18.[^design]
+* That rebuild works only at the first and the last age.
+  `Triangle::from_long` fills every age from the first observed one to
+  the last, so on a four-origin triangle whose middle age, 36 months, sums
+  to -15, the triangle without the rows at 36 months still has ages 12,
+  24, 36 and 48, with 36 empty, and the chain ladder refuses it (no origin
+  observed at both 24 and 36 months), while it accepted the original
+  triangle with a factor of 0.9531. At the first age the rebuild starts
+  development at the next age and removes every origin observed only at
+  the first (one of four on the test triangle), whose reserve then has to
+  be estimated outside the model; the error names those origins.[^normalised]

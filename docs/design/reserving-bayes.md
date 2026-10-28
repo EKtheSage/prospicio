@@ -3186,11 +3186,25 @@ named the age and the sum and said nothing else.
 **The message.** For a column it names the age, its number of observed
 cells, their sum, that no log-linear mean exists and why (every mean is an
 ultimate times a positive share), that the chain ladder accepts the
-triangle with its factor into that age, and the remedies: rebuild the
-triangle from its long table without the rows at that age, or fold the age
-into the previous one, and carry the movement left out as a tail outside
-the model. At the first age there is no earlier age to fold into, so the
-remedy is to drop it and start development at the next age. For an origin
+triangle with its factor into that age, and a remedy that depends on
+where the age is. At the last age: rebuild the triangle from its long table
+without the rows at that age, or fold the age into the previous one, and
+carry the movement left out as a tail outside the model. At the first age
+there is no earlier age to fold into: rebuild without its rows (in an
+incremental triangle, first add each origin's value there to its value at
+the next age), so that development starts at the next age; the message
+names the origins observed only at the first age, which this removes, and
+says to estimate their reserves outside the model. For a cumulative
+triangle this is the fold of the first age into the second for every origin
+that has a second age, since those origins' later values already contain
+it. At a middle age no rebuild works today: `Triangle::from_long` fills
+every age from the first to the last, so without the rows at that age the
+column comes back with no cells and the chain ladder refuses the triangle
+(no origin is observed at both ages), and a fold leaves the same gap. The
+message says so, says that the chain ladder and Mack accept the triangle,
+and points to open decision 18. (The first version gave every age but the
+first the last age's remedy; a review of PR #665 found it wrong at a middle
+age, where a tail does not apply and the rebuild does not run.) For an origin
 it names the origin, its number of cells and their sum, the bound, that the
 chain ladder accepts the triangle, and the remedies: a finite `cv` below
 `sqrt(-phi / sum)`, the bound the message prints (the posterior of the
@@ -3239,8 +3253,13 @@ long table. Open decision 18 asks whether to add one.
 
 **Checks.** `a_falling_late_column_names_its_age_and_the_remedy` (a late
 column of one cell that sums to -5: the message's parts, `BayesOdp` and
-`BayesBf` refusing it too, the first age's remedy, and the triangle rebuilt
-without the age preparing at a finite start),
+`BayesBf` refusing it too, the first age's message naming the origin it
+removes and its remedy applied, which keeps the three origins with a second
+age and prepares, and the triangle rebuilt without the late age preparing
+at a finite start), `a_falling_middle_column_has_no_rebuild_remedy` (a
+middle column that sums to -15: no tail and no fold in the message, the
+chain ladder and Mack accepting the triangle, and the rebuild without the
+age keeping it empty, which the chain ladder refuses),
 `a_triangle_without_its_falling_age_fits` (its NUTS fit, under
 `slow-tests`) and the origin case in `errors` (the printed cv bound, and a
 cv below it preparing); Python
@@ -3496,7 +3515,11 @@ are settled.
     26 (#610). A sparse late age that falls (one cell below the previous
     one) stops `BayesOdp`, `BayesBf` and `BayesBfNormalised`, and today the
     user leaves it out by rebuilding the triangle from its long table. (a)
-    Keep that: the type docs and the error say how, in each language. (b)
+    Keep that: the type docs and the error say how, in each language.
+    It works only at the first and the last age: a middle age that falls
+    (#665's review) comes back from `Triangle::from_long` with no cells,
+    which the chain ladder refuses, so such a triangle has no remedy in
+    this model today. (b)
     A `Triangle` method, `Triangle::max_age(age)` (keep the ages up to
     `age`) or `Triangle::drop_ages(&[age])`, in Rust, Python and R, that
     every model can use; chainladder-python slices the development axis
@@ -3505,7 +3528,11 @@ are settled.
     whole but repeats the option on three models and their bindings. A
     dropped age is left out, not moved into a tail, under (b) and (c)
     alike, so the reserve misses the movement there unless the user adds
-    a tail. *Recommended: (b), `max_age`*: one method serves every model
+    a tail. Neither `max_age` nor dropping from the long table helps a
+    middle age; that needs a merge of two ages into one (`merge_ages`, the
+    later age's value booked at the earlier one and the later ages moved
+    down one step), which mislabels every later age, so it is not
+    recommended either. *Recommended: (b), `max_age`*: one method serves every model
     and the backtests, it is the operation users reach for after a
     message that names the age, and a model setting would hide the
     change to the data inside a fit. Not built: the item asks only for the

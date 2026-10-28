@@ -499,7 +499,15 @@ impl BayesBfNormalised {
                 let factor = d
                     .checked_sub(1)
                     .and_then(|k| fit.chain_ladder.development.ldf.get(k).copied());
-                return Err(column_error(&segment.ages, d, n, sum, factor));
+                let last_here: Vec<String> = fit
+                    .chain_ladder
+                    .latest_position
+                    .iter()
+                    .zip(&segment.origins)
+                    .filter(|&(&last, _)| last == d)
+                    .map(|(_, origin)| origin.to_string())
+                    .collect();
+                return Err(column_error(&segment.ages, d, n, sum, factor, &last_here));
             }
         }
         // Start at the strong-prior mode: the ultimates at their prior
@@ -854,10 +862,22 @@ fn origin_error(origin: &crate::Period, n: usize, sum: f64, shape: f64, phi: f64
 
 /// The error for the development column at position `d` of `ages` whose `n`
 /// observed increments sum to `sum`, with the chain ladder's factor into
-/// that age (`None` at the first age): the mean `U_w p_d` is positive, so
-/// the likelihood increases as the share falls to 0 and has no
-/// finite maximum (design note `reserving-bayes.md`, decision 26).
-fn column_error(ages: &[crate::Lag], d: usize, n: usize, sum: f64, factor: Option<f64>) -> Error {
+/// that age (`None` at the first age) and the origins last observed there:
+/// the mean `U_w p_d` is positive, so the likelihood increases as the share
+/// falls to 0 and has no finite maximum (design note `reserving-bayes.md`,
+/// decision 26). The remedy depends on where the age is: dropping the last
+/// age leaves its movement out of the model (a tail), dropping the first
+/// removes the origins observed only there, and a middle age cannot be
+/// dropped, since `Triangle::from_long` fills every age from the first to
+/// the last and the chain ladder then refuses the empty column.
+fn column_error(
+    ages: &[crate::Lag],
+    d: usize,
+    n: usize,
+    sum: f64,
+    factor: Option<f64>,
+    last_here: &[String],
+) -> Error {
     let age = ages[d];
     let cause = format!(
         "development age {age} months: the observed increments ({}) sum to {sum}, so no \
@@ -865,24 +885,50 @@ fn column_error(ages: &[crate::Lag], d: usize, n: usize, sum: f64, factor: Optio
          share, which cannot fit a column that sums to zero or less",
         n_cells(n)
     );
+    let origins = match last_here {
+        [] => String::new(),
+        [one] => format!("origin {one}"),
+        many => format!("origins {}", many.join(", ")),
+    };
+    let accepts = |previous: crate::Lag| {
+        let factor = factor
+            .filter(|f| f.is_finite())
+            .map(|f| format!(" (its factor from {previous} to {age} months is {f:.4})"))
+            .unwrap_or_default();
+        format!("The chain ladder accepts this triangle{factor}")
+    };
     let remedy = match (d.checked_sub(1).map(|k| ages[k]), ages.get(d + 1)) {
-        (Some(previous), _) => {
-            let factor = factor
-                .filter(|f| f.is_finite())
-                .map(|f| format!(" (its factor from {previous} to {age} months is {f:.4})"))
-                .unwrap_or_default();
+        (Some(previous), None) => format!(
+            "{}. Rebuild the triangle from its long table without the rows at {age} months, \
+             or fold that age into {previous} months (book each origin's value at {age} months \
+             at {previous} months), and carry the movement left out as a tail outside this model",
+            accepts(previous)
+        ),
+        (Some(previous), Some(_)) => format!(
+            "{}, and so does Mack's model. This model cannot take it: no rebuild of the triangle \
+             removes an age between the first and the last today, since the development ages \
+             run without a gap from the first to the last, so without the rows at {age} months \
+             the column comes back with no cells and the chain ladder refuses it too (design \
+             note reserving-bayes.md, open decision 18)",
+            accepts(previous)
+        ),
+        (None, Some(next)) => {
+            let removed = if last_here.is_empty() {
+                String::new()
+            } else {
+                let its = if last_here.len() == 1 { "its" } else { "their" };
+                format!(
+                    ". This also removes {origins}, observed only at {age} months: estimate \
+                     {its} reserve outside this model, for example with the chain ladder"
+                )
+            };
             format!(
-                "The chain ladder accepts this triangle{factor}. Rebuild the triangle from its \
-                 long table without the rows at {age} months, or fold that age into {previous} \
-                 months (book each origin's value at {age} months at {previous} months), and \
-                 carry the movement left out as a tail outside this model"
+                "The chain ladder accepts this triangle. The first age has no earlier one to fold \
+                 into: rebuild the triangle from its long table without the rows at {age} months \
+                 (in an incremental triangle, first add each origin's value there to its value at \
+                 {next} months), so that development starts at {next} months{removed}"
             )
         }
-        (None, Some(next)) => format!(
-            "The chain ladder accepts this triangle. The first age has no earlier one to fold \
-             into: rebuild the triangle from its long table without the rows at {age} months, \
-             so that development starts at {next} months"
-        ),
         (None, None) => "The chain ladder accepts this triangle".to_string(),
     };
     Error::Bayes(format!("{cause}. {remedy}"))
@@ -1183,7 +1229,7 @@ mod tests {
     use crate::bayes::laplace::tests::assert_gradient;
     use crate::bayes::{BayesBf, BayesOdp};
     use crate::triangle::tests::{GENINS, annual};
-    use crate::{BornhuetterFerguson, ChainLadder, Lag};
+    use crate::{BornhuetterFerguson, ChainLadder, Lag, Mack};
     use crate::{DevelopmentColumn, Grain, Long};
     use prospicio_bayes::nuts::LogDensity;
     use prospicio_core::{Month, Period};
@@ -1924,16 +1970,32 @@ mod tests {
         // The first age has nothing to fold into.
         let first = with_premium(
             2020,
-            &[&[-10.0, 50.0, 60.0], &[-20.0, 40.0], &[5.0]],
-            &[200.0; 3],
+            &[
+                &[-10.0, 50.0, 60.0, 70.0],
+                &[-20.0, 40.0, 55.0],
+                &[5.0, 30.0],
+                &[8.0],
+            ],
+            &[200.0; 4],
         );
         let e = quick(0).fit(&first, "values", "premium").unwrap_err();
-        assert!(
-            matches!(&e, Error::Bayes(m) if m.starts_with("development age 12 months")
-                && m.contains("(3 cells) sum to -25")
-                && m.contains("development starts at 24 months")),
-            "{e}"
-        );
+        let Error::Bayes(m) = &e else { panic!("{e}") };
+        for part in [
+            "development age 12 months: the observed increments (4 cells) sum to -17,",
+            "development starts at 24 months. This also removes origin 2023, observed only at \
+             12 months: estimate its reserve outside this model",
+        ] {
+            assert!(m.contains(part), "{part:?} not in {m}");
+        }
+        assert!(!m.contains("tail"), "{m}");
+        // Its remedy keeps the origins with a second age and drops 2023.
+        let started = without_age(&first, 12);
+        assert_eq!(started.development(), &[24, 36, 48]);
+        let (fit, model, start) = prepared(&started, &quick(0));
+        assert_eq!(fit.latest, vec![70.0, 55.0, 30.0]);
+        assert_eq!(model.n_origins, 3);
+        assert_eq!(model.n_dev, 3);
+        assert!(start.iter().all(|t| t.is_finite()));
 
         // The remedy: the triangle without the rows at 48 months.
         let dropped = without_age(&falling, 48);
@@ -1942,6 +2004,47 @@ mod tests {
         assert_eq!(fit.latest, vec![160.0, 180.0, 175.0, 130.0]);
         assert_eq!(model.n_dev, 3);
         assert!(start.iter().all(|t| t.is_finite()));
+    }
+
+    /// A middle age whose column falls: the message names no tail and no
+    /// rebuild, since the triangle without that age's rows keeps the age
+    /// with no cells and the chain ladder refuses it (open decision 18).
+    #[test]
+    fn a_falling_middle_column_has_no_rebuild_remedy() {
+        let falling = with_premium(
+            2020,
+            &[
+                &[100.0, 150.0, 140.0, 170.0],
+                &[110.0, 170.0, 165.0],
+                &[120.0, 175.0],
+                &[130.0],
+            ],
+            &[200.0; 4],
+        );
+        assert!(ChainLadder::default().fit(&falling, "values").is_ok());
+        assert!(Mack::default().fit(&falling, "values").is_ok());
+        let e = quick(0).fit(&falling, "values", "premium").unwrap_err();
+        let Error::Bayes(m) = &e else { panic!("{e}") };
+        for part in [
+            "development age 36 months: the observed increments (2 cells) sum to -15,",
+            "The chain ladder accepts this triangle (its factor from 24 to 36 months is \
+             0.9531), and so does Mack's model",
+            "no rebuild of the triangle removes an age between the first and the last today",
+            "open decision 18",
+        ] {
+            assert!(m.contains(part), "{part:?} not in {m}");
+        }
+        for wrong in ["tail", "fold"] {
+            assert!(!m.contains(wrong), "{wrong:?} in {m}");
+        }
+        // Why: without the rows at 36 months the age comes back empty and
+        // the chain ladder has no factor from 24 to 36 months.
+        let dropped = without_age(&falling, 36);
+        assert_eq!(dropped.development(), &[12, 24, 36, 48]);
+        assert!(matches!(
+            ChainLadder::default().fit(&dropped, "values"),
+            Err(Error::Factor { age: 1, .. })
+        ));
     }
 
     #[test]
