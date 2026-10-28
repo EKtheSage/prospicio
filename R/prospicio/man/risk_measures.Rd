@@ -17,8 +17,9 @@ other parametric families).}
 
 \item{p}{Probabilities in \verb{[0, 1]} (\verb{[0, 1)} for a severity's \code{TVaR()}).}
 
-\item{...}{For a \link{sampled}, \code{method}: \code{"inverted_cdf"} or \code{"linear"} for
-\code{VaR()}, \code{"exact"} or \code{"linear"} for \code{TVaR()}. Otherwise unused.}
+\item{...}{For a \link{sampled}, \code{method}: \code{"inverted_cdf"}, \code{"linear"} or
+\code{"kth_largest"} for \code{VaR()}, \code{"exact"}, \code{"linear"} or \code{"whole_years"}
+for \code{TVaR()}. Otherwise unused.}
 }
 \value{
 Numeric vector the length of \code{p}.
@@ -34,7 +35,13 @@ quantile, as \code{quantile()}, and a severity's \code{TVaR()} is
 For a \link{sampled}, \code{method = "linear"} picks the other convention: \code{VaR()}
 is then \code{quantile(x, p, type = 7)} (numpy's default) and \code{TVaR()} the
 mean of that quantile function over \verb{[p, 1]}; the defaults are
-\code{"inverted_cdf"} and \code{"exact"}.
+\code{"inverted_cdf"} and \code{"exact"}. \code{method = "kth_largest"} makes \code{VaR()} the
+\code{k}-th largest draw and \code{method = "whole_years"} makes \code{TVaR()} the mean of
+the \code{k} largest, \verb{k = max(1, floor((1 - p) n))}: with years as draws, the
+\code{k}-th worst year and the mean of the \code{k} worst whole years, the
+convention of many catastrophe pricing teams. The \code{k}-th largest is one
+draw above \code{"inverted_cdf"} (unless both are the largest), and the whole
+years' TVaR equals \code{"exact"} when \verb{(1 - p) n} is whole.
 }
 \examples{
 s <- sampled(c(1, 2, 3, 4))
