@@ -965,6 +965,9 @@ impl PyEventSet {
     ///     "EQ"]}``).
     /// source_hash : str, optional
     ///     A hash of the source, recorded as results' input hash.
+    /// losses_negative : bool, default False
+    ///     The losses are stored as negative numbers, money going out: each
+    ///     must be at most 0 and is read with its sign flipped.
     ///
     /// Returns
     /// -------
@@ -980,7 +983,7 @@ impl PyEventSet {
     #[pyo3(signature = (
         years, losses, *, slots = None, times = None, labels = None, n_years = None,
         n_sims = None, expand = "tile", seed = 0, unique_by = None, expected = None,
-        source_hash = None
+        source_hash = None, losses_negative = false
     ))]
     #[allow(clippy::too_many_arguments)]
     fn from_ylt(
@@ -996,6 +999,7 @@ impl PyEventSet {
         unique_by: Option<Vec<String>>,
         expected: Option<&Bound<'_, PyDict>>,
         source_hash: Option<String>,
+        losses_negative: bool,
     ) -> PyResult<Self> {
         use prospicio_aggregate::ylt::{Expansion, YearLossTable};
         let expansion = match expand {
@@ -1007,7 +1011,12 @@ impl PyEventSet {
                 )));
             }
         };
-        let mut ylt = YearLossTable::new(&years, &losses).map_err(to_py)?;
+        let mut ylt = if losses_negative {
+            YearLossTable::from_negative_losses(&years, &losses)
+        } else {
+            YearLossTable::new(&years, &losses)
+        }
+        .map_err(to_py)?;
         let has_slots = slots.is_some();
         if let Some(slots) = slots {
             ylt = ylt.with_slots(slots).map_err(to_py)?;

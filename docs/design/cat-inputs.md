@@ -154,6 +154,23 @@ Bindings: Python `prospicio.aggregate.EventLossTable`,
     the user: switching it would change the result of every call on a
     labelled set.
 
+15. **Losses stored as negative numbers are read with a flag, and a
+    negative loss in a layer is an error** (#593, proposed by the
+    Aggregate lane for the user's acceptance). Some vendor and cedent files
+    write losses as money going out. `read_ylt(..., losses_negative=True)`
+    (R `losses_negative = TRUE`, Rust `YearLossTable::from_negative_losses`)
+    reads them with the sign flipped and refuses a positive value, which
+    such a file does not hold; without the flag a negative loss stays an
+    error, naming its row. A negative loss given to a layer directly lay
+    below its attachment and ceded nothing without a word: `Layer::try_ceded`,
+    `try_ceded_by_event` and `Tower::try_ceded` refuse a negative or
+    non-finite loss, and the Python and R `ceded`, `ceded_by_event` and the
+    tower's `ceded` use them. The Rust `ceded` functions keep their `f64`
+    results, since every path that builds an event set already checks its
+    losses, with docs that point to the checked ones. There is no event
+    loss table reader to give the flag: an `EventLossTable` is built from
+    columns whose means and rates it already checks.
+
 ## Validation
 
 - Each row's beta has the row's mean and standard deviation (unit test).
@@ -183,6 +200,11 @@ Bindings: Python `prospicio.aggregate.EventLossTable`,
   perils' windows apart and equals the plain clause on one peril (unit
   tests in `ylt.rs` and `monte_carlo.rs`; the same file read and grouped
   in Python and R, and day and hour columns).
+- A file of negative losses read with the flag equals its sign-flipped
+  copy; a positive value in it, or a negative loss without the flag, is
+  refused naming the row; a negative or non-finite loss given to a layer,
+  its events or a tower is an error in the checked calls and the bindings
+  (unit tests in `ylt.rs` and `reinsurance.rs`; Python and R tests).
 
 ## Next
 

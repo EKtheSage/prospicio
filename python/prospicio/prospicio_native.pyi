@@ -11814,7 +11814,7 @@ class EventSet:
         ([2, 0, 1], [50.0])
         """
     @staticmethod
-    def from_ylt(years: Sequence[int], losses: Sequence[float], *, slots: Sequence[int] |None = None, times: Sequence[float] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None) -> EventSet:
+    def from_ylt(years: Sequence[int], losses: Sequence[float], *, slots: Sequence[int] |None = None, times: Sequence[float] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None, losses_negative: bool = False) -> EventSet:
         """
         Years of losses from a year loss table's columns, checked and
         expanded to a run's simulations.
@@ -11862,6 +11862,9 @@ class EventSet:
             "EQ"]}``).
         source_hash : str, optional
             A hash of the source, recorded as results' input hash.
+        losses_negative : bool, default False
+            The losses are stored as negative numbers, money going out: each
+            must be at most 0 and is read with its sign flipped.
         
         Returns
         -------
@@ -16355,6 +16358,13 @@ class Layer:
         Returns
         -------
         float
+        
+        Raises
+        ------
+        ValueError
+            If a loss is negative or not finite, usually losses stored with
+            the sign of money paid out (``read_ylt(..., losses_negative=True)``
+            reads such a file).
         """
     def ceded_by_event(self, /, losses: Sequence[float]) -> list[float]:
         """
