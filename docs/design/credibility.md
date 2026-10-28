@@ -204,3 +204,88 @@ nesting is checked.
 Classical estimators of the hierarchy's structure parameters (actuar's
 Bühlmann–Gisler and Ohlsson for more than one level) are not built: the
 Bayesian fit estimates them, and `credibility_premiums` takes any.
+
+## Bonus-malus scales (issue #563)
+
+A posteriori ratemaking by a scale: `prospicio_pricing::bonus_malus`.
+A policyholder sits on one of the levels `0..s`, 0 the best, and the level
+next year is a function of this year's level and claim count. Under
+Poisson claims with mean `λ` the levels are a Markov chain; over a mixed
+Poisson portfolio, `λ_k Θ` with `E[Θ] = 1`, a mixture of such chains
+(Lemaire, *Bonus-Malus Systems in Automobile Insurance*, 1995; Denuit,
+Maréchal, Pitrebois and Walhin, *Actuarial Modelling of Claim Counts*,
+2007, chapters 4 and 5).
+
+### What exists
+
+- `BonusMalus::rule(levels, start, BonusRule { down, up_per_claim })` and
+  `BonusMalus::table(start, table)`; `transition_matrix(λ)`,
+  `stationary_at(λ)`, `distribution_after(λ, years)`,
+  `years_to_stationarity(λ, tolerance)`, `mean_relativity(λ, r)` and
+  `efficiency(λ, r)` (Loimaranta) at one frequency; `stationary(&portfolio)`
+  and `optimal_relativities(&portfolio)` (Norberg) over a `Portfolio` of a
+  priori classes and a gamma or inverse Gaussian `Θ`.
+- Python `prospicio.pricing.BonusMalus` (`rule`, `table` and the same
+  methods, the portfolio as `lambdas, cv, mixing, weights`); R
+  `bonus_malus()`, `bonus_malus_transition()`, `bonus_malus_stationary()`,
+  `bonus_malus_after()`, `bonus_malus_years()`,
+  `bonus_malus_efficiency()`, `bonus_malus_mean_relativity()` and
+  `bonus_malus_portfolio()`, levels numbered from 0.
+
+### Decisions
+
+13. **A rule or a table, Markov only.** A rule moves down `down` levels
+    after a claim-free year and up `up_per_claim` for each claim, capped
+    at both ends, so `-1/+top` is `up_per_claim = levels - 1`. A table
+    gives the next level by level and claim count, its last column for
+    that many claims or more, so `P(N >= K)` falls on it. Rules that
+    remember more than the level (the old Belgian scale's "four claim-free
+    years above level 14") need extra levels to be Markov and are the
+    user's to encode in a table.
+14. **Stationary by a linear solve,** `π (P - I) = 0` with one equation
+    replaced by `Σ π = 1`, by Gaussian elimination; a singular system
+    (absorbing or unreachable levels) is an error, not a guess. Years to
+    stationarity count from the start level until the total variation
+    distance `½ Σ |p_n - π|` is below the tolerance.
+15. **Norberg's relativities minimise `E[(Θ - r_L)²]`**, the a priori
+    premium `λ_k` charged as a factor, so `r_l = Σ_k w_k ∫ θ π_l(λ_k θ) dF
+    / Σ_k w_k ∫ π_l(λ_k θ) dF = E[Θ | L = l]`, which balance to
+    `Σ π_l r_l = 1`. The other convention, minimising `E[(λ_k Θ - λ_k
+    r_L)²]`, weights each class by `λ_k²` and does not balance in this
+    sense; it is not built. Quadratic loss only: the exponential loss
+    (needing `E[e^{cΘ}]` finite) is an open decision for a later PR.
+16. **`Θ` from the counts' mixing,** `Mixing::Gamma { cv }` (shape and
+    rate `1/cv²`, a negative binomial portfolio) or
+    `Mixing::InverseGaussian { cv }` (mean 1, shape `1/cv²`), as
+    `MixedPoisson` reads them; the others are refused. The integrals are
+    Gauss–Legendre panels on `ln θ` between the quantiles `1e-15` and
+    `1 - 1e-15`, doubled from 32 until no integral moves by `1e-13` of
+    the largest; on `ln θ` the gamma's pole at 0 for `cv > 1` is smooth.
+17. **Loimaranta's efficiency is exact:** `η(λ) = λ r'(λ) / r(λ)` with
+    `π'` from `π' (P - I) = -π P'`, `Σ π' = 0`, and `P'` from `p_k' =
+    p_{k-1} - p_k`.
+
+### Validation
+
+No printed table of Lemaire's or Denuit et al.'s was available when this
+was built (neither book is in `knowledge/references/`, and the session's
+network did not reach the publishers), so nothing is at parity with a
+published source yet. The checks are:
+
+- closed forms: on two levels under a gamma `Θ`, `π_0 = (a/(a+λ))^a` and
+  `r_0 = a/(a+λ)`; on `-1/+top`, `π_0 = (a/(a+sλ))^a` and
+  `r_0 = a/(a+sλ)`, both to `1e-12`; the quadrature's `∫dF`, `∫θ dF` and
+  `∫θ² dF` for gamma `cv` 0.3, 1 and 2 and an inverse Gaussian;
+- the stationary distribution against the chain run for 2,000 years, the
+  efficiency against a central difference, financial balance to `1e-12`;
+- an independent implementation in SciPy
+  (`validation/scripts/bonus_malus_reference.py`: QUADPACK on `ln θ`,
+  least squares, a finite-difference efficiency) on three scales, 99
+  values in `validation/reference/bonus_malus_scipy.csv`, checked by
+  `bonus_malus_matches_scipy` in `validation/tests/pricing.rs`: the
+  stationary distributions agree to 1e-15, the relativities to 2e-12,
+  the efficiencies to 6e-10 (the reference's difference error), the years
+  exactly.
+
+Lemaire's and Denuit et al.'s printed stationary distributions and
+relativities should be added to the reference when a copy is to hand.

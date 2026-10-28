@@ -81,6 +81,8 @@ reference:
       - total
       - draw_matrix
       - provenance
+      - multivariate_normal
+      - predictive_from_gaussian
   - title: Aggregate loss
     contents:
       - compound_distribution
@@ -98,6 +100,7 @@ reference:
       - occurrence_pml
       - compound_moments
       - eventual_ruin
+      - finite_horizon_ruin
       - wiener_hopf
       - pnl_ledger
       - pnl_book
@@ -212,6 +215,9 @@ reference:
       - buhlmann_straub
       - hierarchical_credibility
       - hachemeister
+      - bonus_malus
+      - bonus_malus_transition
+      - bonus_malus_portfolio
   - title: Ratemaking
     contents:
       - year_fraction

@@ -80,6 +80,8 @@ approximation_eval_rust <- function(moments, kind, values, quantile) .Call(wrap_
 
 eventual_ruin_rust <- function(severity, rho, points, part, value, p) .Call(wrap__eventual_ruin_rust, severity, rho, points, part, value, p)
 
+finite_horizon_ruin_rust <- function(severity, premium, periods, frequency, rate, sub_periods, points, p) .Call(wrap__finite_horizon_ruin_rust, severity, premium, periods, frequency, rate, sub_periods, points, p)
+
 wiener_hopf_rust <- function(severity, wait, rho, points, p) .Call(wrap__wiener_hopf_rust, severity, wait, rho, points, p)
 
 copula_severity_rust <- function(a, b, copula, trigger_a, trigger_b) .Call(wrap__copula_severity_rust, a, b, copula, trigger_a, trigger_b)
@@ -364,7 +366,7 @@ EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__Ev
 
 EventSet$from_long <- function(years, losses, n_years, seed, label_dims, label_values) .Call(wrap__EventSet__from_long, years, losses, n_years, seed, label_dims, label_values)
 
-EventSet$from_ylt <- function(years, losses, slots, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash) .Call(wrap__EventSet__from_ylt, years, losses, slots, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash)
+EventSet$from_ylt <- function(years, losses, slots, times, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash) .Call(wrap__EventSet__from_ylt, years, losses, slots, times, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash)
 
 EventSet$with_labels <- function(dims, values) .Call(wrap__EventSet__with_labels, self, dims, values)
 
@@ -394,7 +396,7 @@ EventSet$correlated_years <- function(n_years, correlation, kind, draws, seed) .
 
 EventSet$calibrate_year_correlation <- function(n_years, ratio, kind, draws, seed) .Call(wrap__EventSet__calibrate_year_correlation, self, n_years, ratio, kind, draws, seed)
 
-EventSet$grouped <- function(window_hours) .Call(wrap__EventSet__grouped, self, window_hours)
+EventSet$grouped <- function(window_hours, labels, by) .Call(wrap__EventSet__grouped, self, window_hours, labels, by)
 
 EventSet$with_uniform_times <- function() .Call(wrap__EventSet__with_uniform_times, self)
 
@@ -1285,6 +1287,46 @@ DglmModel$predict_dispersion <- function(z, names, offset) .Call(wrap__DglmModel
 #' @export
 `[[.DglmModel` <- `$.DglmModel`
 
+GaussianJointR <- new.env(parent = emptyenv())
+
+GaussianJointR$normal <- function(mean, cov) .Call(wrap__GaussianJointR__normal, mean, cov)
+
+GaussianJointR$lognormal_moments <- function(mean, cov) .Call(wrap__GaussianJointR__lognormal_moments, mean, cov)
+
+GaussianJointR$lognormal_log_scale <- function(mu, log_cov) .Call(wrap__GaussianJointR__lognormal_log_scale, mu, log_cov)
+
+GaussianJointR$kind <- function() .Call(wrap__GaussianJointR__kind, self)
+
+GaussianJointR$dim <- function() .Call(wrap__GaussianJointR__dim, self)
+
+GaussianJointR$mean <- function() .Call(wrap__GaussianJointR__mean, self)
+
+GaussianJointR$cov <- function() .Call(wrap__GaussianJointR__cov, self)
+
+GaussianJointR$correlation <- function() .Call(wrap__GaussianJointR__correlation, self)
+
+GaussianJointR$mu <- function() .Call(wrap__GaussianJointR__mu, self)
+
+GaussianJointR$log_cov <- function() .Call(wrap__GaussianJointR__log_cov, self)
+
+GaussianJointR$marginal_normal <- function(j) .Call(wrap__GaussianJointR__marginal_normal, self, j)
+
+GaussianJointR$marginal_lognormal <- function(j) .Call(wrap__GaussianJointR__marginal_lognormal, self, j)
+
+GaussianJointR$total_normal <- function() .Call(wrap__GaussianJointR__total_normal, self)
+
+GaussianJointR$total_mean <- function() .Call(wrap__GaussianJointR__total_mean, self)
+
+GaussianJointR$total_variance <- function() .Call(wrap__GaussianJointR__total_variance, self)
+
+GaussianJointR$simulate <- function(n_sims, seed, dims, keys) .Call(wrap__GaussianJointR__simulate, self, n_sims, seed, dims, keys)
+
+#' @export
+`$.GaussianJointR` <- function (self, name) { func <- GaussianJointR[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.GaussianJointR` <- `$.GaussianJointR`
+
 Pareto <- new.env(parent = emptyenv())
 
 Pareto$new <- function(t, alpha, truncation_at) .Call(wrap__Pareto__new, t, alpha, truncation_at)
@@ -2036,6 +2078,40 @@ Binomial$sample <- function(n, seed, stream) .Call(wrap__Binomial__sample, self,
 
 #' @export
 `[[.Binomial` <- `$.Binomial`
+
+BonusMalusR <- new.env(parent = emptyenv())
+
+BonusMalusR$rule <- function(levels, start, down, up_per_claim) .Call(wrap__BonusMalusR__rule, levels, start, down, up_per_claim)
+
+BonusMalusR$table <- function(start, table, cols) .Call(wrap__BonusMalusR__table, start, table, cols)
+
+BonusMalusR$levels <- function() .Call(wrap__BonusMalusR__levels, self)
+
+BonusMalusR$start <- function() .Call(wrap__BonusMalusR__start, self)
+
+BonusMalusR$transitions <- function() .Call(wrap__BonusMalusR__transitions, self)
+
+BonusMalusR$cols <- function() .Call(wrap__BonusMalusR__cols, self)
+
+BonusMalusR$transition_matrix <- function(lambda) .Call(wrap__BonusMalusR__transition_matrix, self, lambda)
+
+BonusMalusR$stationary_at <- function(lambda) .Call(wrap__BonusMalusR__stationary_at, self, lambda)
+
+BonusMalusR$distribution_after <- function(lambda, years) .Call(wrap__BonusMalusR__distribution_after, self, lambda, years)
+
+BonusMalusR$years_to_stationarity <- function(lambda, tolerance) .Call(wrap__BonusMalusR__years_to_stationarity, self, lambda, tolerance)
+
+BonusMalusR$mean_relativity <- function(lambda, relativities) .Call(wrap__BonusMalusR__mean_relativity, self, lambda, relativities)
+
+BonusMalusR$efficiency <- function(lambda, relativities) .Call(wrap__BonusMalusR__efficiency, self, lambda, relativities)
+
+BonusMalusR$portfolio <- function(lambdas, weights, cv, mixing) .Call(wrap__BonusMalusR__portfolio, self, lambdas, weights, cv, mixing)
+
+#' @export
+`$.BonusMalusR` <- function (self, name) { func <- BonusMalusR[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BonusMalusR` <- `$.BonusMalusR`
 
 ClaimCount <- new.env(parent = emptyenv())
 
