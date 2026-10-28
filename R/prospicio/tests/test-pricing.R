@@ -520,6 +520,64 @@ stopifnot(abs(tr$conservation_error) < 1e-9, identical(tr$accounts$investor, mix
 stopifnot(inherits(try(cashflow_run(short, 0.5, paid_patterns = rbind(fast, slow)), silent = TRUE),
                    "try-error"),
           inherits(try(cashflow_run(short, 0.5, pattern_index = 1), silent = TRUE), "try-error"))
+# A bound deal valued from its actual accounts (#603).
+refused <- function(expr) inherits(try(expr, silent = TRUE), "try-error")
+f <- full()
+uu <- c(0, 0.4, 0.9, 1.3)
+zero <- cashflow_valuation(f, 0, flows = double())
+for (how in c("bornhuetter-ferguson", "truncation")) {
+  fw <- cashflow_forward(zero, uu, c(0, 0.25, 0.1, 0.3), how)
+  stopifnot(identical(fw$forward_rows, cashflow_run(f, uu, c(0, 0.25, 0.1, 0.3))$flows),
+            identical(fw$since_inception_rows, fw$forward_rows))
+}
+for (x in c(0.4, 0.9, 1.3)) {
+  path <- cashflow_trace(f, x, 0.2)$accounts$investor
+  for (v in c(1, 12, 18)) {
+    val <- do.call(cashflow_valuation, c(list(f, v), cashflow_actual_state(f, x, v, 0.2)))
+    stopifnot(abs(val$share_paid - v / 48) < 1e-15)
+    fw <- cashflow_forward(val, x, 0.2)
+    stopifnot(fw$kept == 1, all(fw$months == v:29),
+              all(abs(fw$since_inception_rows[1, ] - path) < 1e-9))
+    vt <- cashflow_valuation_trace(val, x, 0.2)
+    stopifnot(vt$accounts$month[1] == v, abs(vt$conservation_error) < 1e-9,
+              abs(vt$opening_balance - val$nav) < 1e-12)
+  }
+}
+state <- cashflow_actual_state(f, 0.9, 12, 0.2)
+val <- do.call(cashflow_valuation, c(list(f, 12), state))
+fw <- cashflow_forward(val, c(0.5, 0.9, 1.4), 0.2)
+stopifnot(fw$nav == state$collateral + state$operating,
+          fw$forward_rows[1, 1] == fw$flows[1, 1] - fw$nav, all(fw$forward_offsets == 0:17),
+          all(diff(npv(fw$forward_rows, fw$forward_offsets, 0.05, unit = "months")) < 0),
+          all(diff(npv(fw$since_inception_rows, fw$since_inception_offsets, 0.05,
+                       unit = "months")) < 0),
+          length(fw$forward_moic) == 3, length(fw$since_inception_moic) == 3)
+cut <- cashflow_forward(val, c(0.05, 0.9), conditioning = "truncation")
+stopifnot(identical(cut$kept, 2), 0.05 * 100 < state$paid)
+bf <- condition_on_paid(c(0.05, 0.9), 100, state$paid, val$share_paid)
+stopifnot(identical(bf$kept, c(1, 2)),
+          abs(bf$ultimate[1] - (state$paid / 100 + 0.05 * (1 - 12 / 48))) < 1e-15)
+stopifnot(identical(condition_on_paid(c(0.2, 0.8), 100, 30, 0.4, "truncation"),
+                    list(kept = 2, ultimate = 0.8)))
+stopifnot(refused(do.call(cashflow_valuation, c(list(f, 19), cashflow_actual_state(f, 0.9, 19, 0.2)))),
+          refused(cashflow_valuation(f, 30, paid = 1)),
+          refused(do.call(cashflow_valuation, c(list(f, 12), modifyList(state,
+                                                                      list(funding_reference = NULL))))),
+          refused(cashflow_valuation(f, 0, paid = 1)),
+          refused(cashflow_forward(val, 0.5, conditioning = "chain-ladder")))
+blind <- do.call(cashflow_valuation, c(list(f, 12), modifyList(state, list(flows = NULL))))
+stopifnot(is.null(cashflow_forward(blind, 0.5)$since_inception_rows))
+# Actual against expected paid by month (#603).
+quarters <- cashflow_terms(100, 4, rep(1, 4), rep(1, 4), c(0.25, 0.5, 0.75, 1),
+                           cashflow_requirement(c(outstanding = 1)))
+ave <- deal_ave(c(15, 45), quarters, c(0.4, 0.6, 0.8), levels = c(0, 0.5, 1))
+stopifnot(identical(ave$month, 0:1), identical(ave$expected, c(15, 30)),
+          identical(ave$percentile, c(0.5, 1)), ave$ratio[2] == 1.5,
+          identical(ave$q50, c(15, 30)), identical(ave$q100, c(20, 40)))
+ave <- deal_ave(20, quarters, c(0.4, 0.4),
+                paid_patterns = rbind(c(0.5, 1, 1, 1), c(0.25, 0.5, 0.75, 1)))
+stopifnot(ave$expected == 15, ave$percentile == 0.75)
+stopifnot(refused(deal_ave(1, quarters, 0.5, levels = 1.5)))
 req <- cashflow_requirement(c(reserve = 1))
 fails <- function(...) inherits(try(cashflow_terms(100, 3, rep(1, 3), thirds, thirds, req, ...),
                                     silent = TRUE), "try-error")

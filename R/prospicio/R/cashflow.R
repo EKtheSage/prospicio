@@ -1,5 +1,6 @@
 # A collateralised deal's monthly cash flows (Aggregate lane), over
-# prospicio_pricing::cashflow (docs/design/time-value.md, decisions 13 to 20).
+# prospicio_pricing::cashflow (docs/design/time-value.md, decisions 13 to 20),
+# and the deal valued after binding (decision 34).
 
 #' A collateral requirement
 #'
@@ -302,9 +303,252 @@ cashflow_trace <- function(terms, u, commission = 0, paid_pattern = NULL) {
   if (!inherits(terms, "cashflow_terms")) stop("terms must be a cashflow_terms()")
   paid <- if (is.null(paid_pattern)) double() else as.double(paid_pattern)
   r <- rust_result(terms$ptr$trace(as.double(u), as.double(commission), paid))
-  scalars <- c("commutation_paid", "fee", "conservation_error")
+  scalars <- c("opening_balance", "commutation_paid", "fee", "conservation_error")
   accounts <- as.data.frame(r[setdiff(names(r), scalars)])
   list(accounts = cbind(month = seq_len(nrow(accounts)) - 1, accounts),
        commutation_paid = r$commutation_paid, fee = r$fee,
        conservation_error = r$conservation_error)
+}
+
+#' A bound deal valued from its actual accounts
+#'
+#' After binding, `cashflow_valuation()` takes a deal's actual accounts at
+#' the end of month `month - 1` and `cashflow_forward()` simulates the
+#' months from `month` to commutation from them (#603): the trust and the
+#' operating account open at the actual balances, the premium already
+#' collected is not collected again, and each simulation's ultimate loss
+#' ratio is conditioned on the actual paid `A` ([condition_on_paid()]), its
+#' loss still to pay following the rest of the paid pattern. Valuation is
+#' at a month end, the engine's step.
+#'
+#' The forward return takes the net asset value (`nav`, the trust's and
+#' operating account's balances) as the investment at the valuation month:
+#' `forward_rows` are the forward flows with `nav` paid in at their first
+#' month. The return since inception puts the investor's actual flows to
+#' date (`flows`) before each simulation's forward flows:
+#' `since_inception_rows`. Read either with [npv()] and [irr()] on
+#' `forward_offsets` or `since_inception_offsets` with `unit = "months"`.
+#'
+#' A valuation after a premium adjustment month is refused. Under
+#' `funding_rule = "obligation-increase"` a valuation after month 0 needs
+#' `funding_reference`, the obligation the next call is measured from (the
+#' trace's `funding_reference` column). At month 0 the state must be empty,
+#' and the forward flows are [cashflow_run()]'s.
+#'
+#' `cashflow_actual_state()` gives the state of one simulated path, to
+#' value it as if it had happened.
+#'
+#' @param terms A [cashflow_terms()].
+#' @param month The valuation month `v`: the state is at the end of month
+#'   `v - 1` and the forward run starts at month `v`.
+#' @param premium_collected The premium paid into the trust to date. What
+#'   the deal's schedule would have collected by then and the trust has not
+#'   received (or received beyond it) is collected (or paid back) in month
+#'   `v`.
+#' @param paid The losses paid from the trust to date.
+#' @param collateral,operating The trust's and the operating account's
+#'   balances.
+#' @param funded The capital the investor has paid into the trust, without
+#'   the opening capital.
+#' @param released The equity released to the investor.
+#' @param flows `NULL`, or the investor's actual flows in months `0` to
+#'   `v - 1`, for the return since inception.
+#' @param funding_reference `NULL`, or the obligation reference under the
+#'   obligation-increase funding rule.
+#' @returns `cashflow_valuation()` a `cashflow_valuation` with `share_paid`
+#'   (the paid pattern reached before month `v`) and `nav`;
+#'   `cashflow_actual_state()` a list of the arguments above, for
+#'   `do.call(cashflow_valuation, c(list(terms, month), state))`;
+#'   `cashflow_forward()` a list of `kept` (the simulations kept, from 1),
+#'   `ultimate` (their conditioned loss ratios), `nav`, `flows` (a matrix,
+#'   a row a kept simulation, months `months`), `forward_rows` and
+#'   `forward_offsets`, `since_inception_rows` and
+#'   `since_inception_offsets` (`NULL` without `flows`), `forward_moic`
+#'   (`1 + net / (nav + funded after the valuation)`),
+#'   `since_inception_moic`, and the totals since inception `funded`,
+#'   `released`, `distributed`, `fee` and `commutation`;
+#'   `cashflow_valuation_trace()` the accounts as [cashflow_trace()], with
+#'   `opening_balance` the actual balances.
+#' @seealso [cashflow_terms()], [condition_on_paid()], [deal_ave()].
+#' @export
+#' @examples
+#' ramp <- function(m) pmin((1:48) / m, 1)
+#' terms <- cashflow_terms(100, 36, ramp(12), ramp(24), ramp(36),
+#'                         cashflow_requirement(c(outstanding = 1)))
+#' # A path at a loss ratio of 0.8, valued after 12 months.
+#' state <- cashflow_actual_state(terms, 0.8, 12)
+#' val <- do.call(cashflow_valuation, c(list(terms, 12), state))
+#' f <- cashflow_forward(val, c(0.5, 0.8, 1.2))
+#' all.equal(f$since_inception_rows[2, ], cashflow_run(terms, 0.8)$flows[1, ])
+#' npv(f$forward_rows, f$forward_offsets, 0.05, unit = "months")
+cashflow_valuation <- function(terms, month, premium_collected = 0, paid = 0, collateral = 0,
+                               funded = 0, released = 0, operating = 0, flows = NULL,
+                               funding_reference = NULL) {
+  if (!inherits(terms, "cashflow_terms")) stop("terms must be a cashflow_terms()")
+  state <- list(month = as.double(month),
+                amounts = as.double(c(premium_collected, paid, collateral, funded, released,
+                                      operating)),
+                flows = if (is.null(flows)) double() else as.double(flows),
+                has_flows = !is.null(flows),
+                reference = if (is.null(funding_reference)) double() else
+                  as.double(funding_reference))
+  r <- rust_result(terms$ptr$valuation(state$month, state$amounts, state$flows,
+                                       state$has_flows, state$reference))
+  structure(list(terms = terms, state = state, share_paid = r$share_paid, nav = r$nav),
+            class = "cashflow_valuation")
+}
+
+#' @export
+print.cashflow_valuation <- function(x, ...) {
+  cat(sprintf("<cashflow_valuation> month %d, share paid %s, nav %s\n",
+              as.integer(x$state$month), format(x$share_paid), format(x$nav)))
+  invisible(x)
+}
+
+#' @rdname cashflow_valuation
+#' @param u Ultimate loss ratios, one a simulation (`cashflow_actual_state()`,
+#'   `cashflow_valuation_trace()`: one).
+#' @param commission Commission rates, recycled to `u`.
+#' @param paid_pattern `NULL` for the terms' paid pattern, or the path's own,
+#'   as [cashflow_trace()]'s.
+#' @export
+cashflow_actual_state <- function(terms, u, month, commission = 0, paid_pattern = NULL) {
+  if (!inherits(terms, "cashflow_terms")) stop("terms must be a cashflow_terms()")
+  paid <- if (is.null(paid_pattern)) double() else as.double(paid_pattern)
+  r <- rust_result(terms$ptr$actual_state(as.double(u), as.double(month),
+                                          as.double(commission), paid))
+  if (month == 0) r$funding_reference <- NULL
+  r
+}
+
+#' @rdname cashflow_valuation
+#' @param valuation A `cashflow_valuation`.
+#' @param conditioning How each simulation's ultimate is conditioned on the
+#'   paid to date: `"bornhuetter-ferguson"` or `"truncation"`, as
+#'   [condition_on_paid()].
+#' @export
+cashflow_forward <- function(valuation, u, commission = 0,
+                             conditioning = c("bornhuetter-ferguson", "truncation")) {
+  if (!inherits(valuation, "cashflow_valuation")) {
+    stop("valuation must be a cashflow_valuation()")
+  }
+  s <- valuation$state
+  u <- as.double(u)
+  commission <- rep_len(as.double(commission), length(u))
+  r <- rust_result(valuation$terms$ptr$forward(s$month, s$amounts, s$flows, s$has_flows,
+                                               s$reference, u, commission,
+                                               match.arg(conditioning)))
+  n <- length(r$kept)
+  m <- r$months
+  v <- as.integer(s$month)
+  r$kept <- r$kept + 1
+  r$flows <- matrix(r$flows, nrow = n, ncol = m, byrow = TRUE)
+  r$months <- v + seq_len(m) - 1
+  r$forward_rows <- matrix(r$forward_rows, nrow = n, ncol = m, byrow = TRUE)
+  r$forward_offsets <- seq_len(m) - 1
+  if (!is.null(r$since_inception_rows)) {
+    r$since_inception_rows <- matrix(r$since_inception_rows, nrow = n, ncol = v + m,
+                                     byrow = TRUE)
+    r$since_inception_offsets <- seq_len(v + m) - 1
+  }
+  r
+}
+
+#' @rdname cashflow_valuation
+#' @export
+cashflow_valuation_trace <- function(valuation, u, commission = 0,
+                                     conditioning = c("bornhuetter-ferguson", "truncation")) {
+  if (!inherits(valuation, "cashflow_valuation")) {
+    stop("valuation must be a cashflow_valuation()")
+  }
+  s <- valuation$state
+  r <- rust_result(valuation$terms$ptr$valuation_trace(
+    s$month, s$amounts, s$flows, s$has_flows, s$reference, as.double(u),
+    as.double(commission), match.arg(conditioning)))
+  scalars <- c("opening_balance", "commutation_paid", "fee", "conservation_error")
+  accounts <- as.data.frame(r[setdiff(names(r), scalars)])
+  list(accounts = cbind(month = as.integer(s$month) + seq_len(nrow(accounts)) - 1, accounts),
+       opening_balance = r$opening_balance, commutation_paid = r$commutation_paid, fee = r$fee,
+       conservation_error = r$conservation_error)
+}
+
+#' Simulated loss ratios conditioned on the loss paid to date
+#'
+#' Each simulation's ultimate loss ratio `u` conditioned on the loss `paid`
+#' to date when the paid pattern has reached `share_paid` (#603).
+#' `"bornhuetter-ferguson"` keeps every simulation, its ultimate the actual
+#' paid plus its own unpaid, `paid / premium + u (1 - share_paid)`: future
+#' payments do not depend on past ones, and the forward distribution
+#' narrows as the deal runs off. `"truncation"` keeps the simulations with
+#' `u * premium >= paid`, unchanged; late in a deal it can drop most of
+#' them.
+#'
+#' @param u Ultimate loss ratios, one a simulation.
+#' @param premium The premium.
+#' @param paid The loss paid to date.
+#' @param share_paid The share of the paid pattern reached.
+#' @param conditioning `"bornhuetter-ferguson"` or `"truncation"`.
+#' @returns A list of `kept` (the simulations kept, from 1) and `ultimate`
+#'   (their loss ratios given the paid).
+#' @seealso [cashflow_valuation()].
+#' @export
+#' @examples
+#' condition_on_paid(c(0.5, 0.8), 100, 30, 0.4)
+#' condition_on_paid(c(0.2, 0.8), 100, 30, 0.4, "truncation")
+condition_on_paid <- function(u, premium, paid, share_paid,
+                              conditioning = c("bornhuetter-ferguson", "truncation")) {
+  r <- rust_result(cashflow_condition_on_paid(as.double(u), as.double(premium), as.double(paid),
+                                              as.double(share_paid), match.arg(conditioning)))
+  r$kept <- r$kept + 1
+  r
+}
+
+#' Actual against expected paid loss of a bound deal
+#'
+#' The actual cumulative paid `actual[t]` at the end of each month
+#' `t = 0, 1, ...` against what the priced simulations expected (#603):
+#' each simulation's `u P S(t)`, with `S` the terms' paid pattern or the
+#' simulation's own from `paid_patterns`. The expected paid comes from the
+#' priced simulations, not conditioned ones. A reported loss works the same
+#' way with the reported pattern as `paid_patterns`.
+#'
+#' @param actual The actual cumulative paid by the end of each month from
+#'   month 0.
+#' @param terms A [cashflow_terms()].
+#' @param u The priced ultimate loss ratios, one a simulation.
+#' @param paid_patterns,pattern_index `NULL`, or paid patterns as
+#'   [cashflow_run()]'s.
+#' @param levels The percentile levels of the `q` columns.
+#' @returns A data frame, a row a month: `month`, `actual`, `expected` (the
+#'   mean over the simulations), `ratio` (`actual / expected`),
+#'   `percentile` (the actual's percentile among the simulations' expected
+#'   paid, ties counted half) and a column `q<100 level>` for each level
+#'   (numpy's linear quantile).
+#' @seealso [cashflow_valuation()].
+#' @export
+#' @examples
+#' terms <- cashflow_terms(100, 4, rep(1, 4), rep(1, 4), c(0.25, 0.5, 0.75, 1),
+#'                         cashflow_requirement(c(outstanding = 1)))
+#' deal_ave(c(15, 45), terms, c(0.4, 0.6, 0.8))
+deal_ave <- function(actual, terms, u, paid_patterns = NULL, pattern_index = NULL,
+                     levels = c(0.05, 0.5, 0.95)) {
+  if (!inherits(terms, "cashflow_terms")) stop("terms must be a cashflow_terms()")
+  paid <- double()
+  n_patterns <- 0
+  if (!is.null(paid_patterns)) {
+    if (is.null(dim(paid_patterns))) paid_patterns <- matrix(paid_patterns, nrow = 1)
+    paid <- as.double(t(paid_patterns))
+    n_patterns <- nrow(paid_patterns)
+  } else if (!is.null(pattern_index)) {
+    stop("pattern_index needs paid_patterns", call. = FALSE)
+  }
+  index <- if (is.null(pattern_index)) double() else as.double(pattern_index) - 1
+  levels <- as.double(levels)
+  r <- rust_result(terms$ptr$deal_ave(as.double(actual), as.double(u), paid, n_patterns, index,
+                                      levels))
+  out <- data.frame(month = as.integer(r$month), actual = r$actual, expected = r$expected,
+                    ratio = r$ratio, percentile = r$percentile)
+  q <- matrix(r$quantiles, nrow = nrow(out), ncol = length(levels), byrow = TRUE)
+  for (k in seq_along(levels)) out[[sprintf("q%g", 100 * levels[k])]] <- q[, k]
+  out
 }
