@@ -181,6 +181,7 @@ reference:
       - cashflow_requirement
       - cashflow_adjustment
       - deal_run
+      - book_marginal_price
       - trend_large_losses
       - burning_cost
       - development_pattern

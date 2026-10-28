@@ -9055,6 +9055,29 @@ class DealBook:
         The items of ``amounts``: ``premium``, ``loss``, each deduction,
         ``total_deductions``, ``nmbf`` and ``margin``.
         """
+    def marginal_price(self, /, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None, deals: Sequence[str] |None = None) -> dict:
+        """
+        The marginal price of each deal written last: the book's loss
+        priced with the deal and without it, on the assets of the capital
+        standard ``assets`` and by exactly one of ``cost_of_capital`` and
+        ``distortion`` as ``price_portfolio`` prices a portfolio, and the
+        differences. Under a cost of capital ``r`` the premium is
+        ``(EL + r dA) / (1 + r)``. Under a subadditive standard it is at
+        most the deal's allocated premium from ``price_portfolio``.
+        
+        Returns a dict of columns, one row a deal (those in ``deals``, all
+        by default): ``deal``, ``expected_loss``, ``assets`` (``dA``),
+        ``premium``, ``margin``, and the book's ``book_premium``,
+        ``book_assets``, ``premium_without`` and ``assets_without``.
+        
+        >>> from prospicio.pricing import DealBook, DealRun
+        >>> from prospicio.risk import Distortion
+        >>> a = DealRun("a", [10.0] * 4, [1.0, 2.0, 3.0, 9.0])
+        >>> b = DealRun("b", [10.0] * 4, [4.0, 1.0, 2.0, 3.0])
+        >>> m = DealBook([a, b]).marginal_price(Distortion.tvar(0.5), cost_of_capital=0.1)
+        >>> m["assets"], round(m["premium"][1], 6)
+        ([5.0, 2.5], 2.5)
+        """
     @property
     def n_sims(self, /) -> int:
         """

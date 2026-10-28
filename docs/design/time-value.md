@@ -108,7 +108,8 @@ they are built.
   `cashflows(rate, options)` (the summed flows on the book's calendar and
   the book's IRR, NPV and MOIC on them, with each deal's mean flows and
   own IRR); `calendar(start_year)` (written and earned premium, paid loss
-  and investor flows by calendar year).
+  and investor flows by calendar year); and `marginal_price(name, rule, assets)`
+  with `marginal_prices`, each deal's price written last (decision 32).
 
 In Python (`prospicio.pricing`): `DealRun(name, premium, loss,
 deductions=, inception=)` (a deduction NMBF leaves out given as
@@ -120,13 +121,15 @@ returning a new run; `DealBook` with `select`, `shifted`, `amounts()` and
 columns, `distribution(item, percentiles, ..., tail=)` as a dict of the
 total and each deal's contribution and marginal cells, and `cashflows(rate)`
 as a `BookCashflows` (the book's `irr` an `IrrResult`, `irr_by_deal` and
-`mean_by_deal` by name). In R: `deal_run()` (deductions a named list,
+`mean_by_deal` by name), and `marginal_price(assets, cost_of_capital=,
+distortion=, deals=)` as columns. In R: `deal_run()` (deductions a named list,
 `outside_nmbf` their names NMBF leaves out, flows from a `cashflow_run()`
 with its `terms` or a matrix) and `deal_run_from_tower(...,
 reinstatement_premium = TRUE)`, `deal_book()`,
 `book_select()`, `book_shift()`, `book_amounts()`, `book_summary()` (a
 data frame), `book_distribution()` (matrices with a column a deal),
-`book_cashflows()` and `book_calendar()`.
+`book_cashflows()`, `book_calendar()` and `book_marginal_price()` (a data
+frame).
 
 ## Decisions
 
@@ -303,6 +306,18 @@ data frame), `book_distribution()` (matrices with a column a deal),
     `reinstatement_premium`), and `from_columns` adds them. It is added to
     the premium rather than kept as a leg of its own, so the book's items
     and ratios do not change shape.
+32. **A deal's marginal price is the book priced with it less without
+    it** (#588): `DealBook::marginal_price(name, rule, assets)` prices the
+    book's loss with the deal and without it, by the `PremiumRule` and the
+    capital standard `assets` that `price_portfolio` takes, and the deal's
+    expected loss, assets `dA` and premium are the differences. Under a
+    cost of capital `r` that is `P = (EL + r dA) / (1 + r)`, the formula
+    the guide built by hand; under a pricing distortion it is
+    `rho_g(book) - rho_g(book without)`. Only the loss is priced, as in
+    `price_portfolio`; the premium, deductions and flows do not enter.
+    Under a subadditive standard the marginal premium is at most the
+    Euler (co-measure) premium, so pricing every deal on its marginal
+    leaves the book short; `marginal_prices` gives every deal in turn.
 
 ## Conventions left as settings (cash-flow engine)
 

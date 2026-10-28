@@ -1031,6 +1031,33 @@ def test_deal_book_distribution_adds_up():
         P.DealBook([a, b]).distribution("loss", [90.0], tail="middle")
 
 
+def test_deal_book_marginal_price():
+    a, b = _book_pair()
+    book = P.DealBook([a, b])
+    tvar = ar.risk.Distortion.tvar(0.5)
+    m = book.marginal_price(tvar, cost_of_capital=0.1)
+    assert m["deal"] == ["a", "b"]
+    # book TVaR 50 = 390; a alone 120, b alone 270
+    assert m["assets"] == pytest.approx([390.0 - 270.0, 390.0 - 120.0])
+    assert m["expected_loss"] == pytest.approx([75.0, 195.0])
+    for el, da, p in zip(m["expected_loss"], m["assets"], m["premium"]):
+        assert p == pytest.approx((el + 0.1 * da) / 1.1)
+    # at most the Euler price, here equal because the tail is the same
+    loss = book.amounts().select("item", ["loss"]).select("deal", ["a", "b"])
+    euler = P.price_portfolio(loss, tvar, cost_of_capital=0.1)
+    for p, e in zip(m["premium"], euler.allocated):
+        assert p <= e.premium + 1e-9
+    # the only deal has its stand-alone price
+    one = P.DealBook([b]).marginal_price(tvar, distortion=ar.risk.Distortion.tvar(0.25))
+    alone = P.price(ar.distributions.Sampled(b.loss), tvar, distortion=ar.risk.Distortion.tvar(0.25))
+    assert one["premium"][0] == pytest.approx(alone.premium)
+    assert book.marginal_price(tvar, cost_of_capital=0.1, deals=["b"])["deal"] == ["b"]
+    with pytest.raises(ValueError):
+        book.marginal_price(tvar, cost_of_capital=0.1, deals=["z"])
+    with pytest.raises(ValueError):
+        book.marginal_price(tvar)
+
+
 def test_deal_book_cashflows_and_calendar():
     a, b = _book_pair()
     a = a.with_flows([[-10.0, 0.0, 10.1]] * 4, [0.0] * 4, [10.0] * 4)
