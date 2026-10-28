@@ -4544,7 +4544,8 @@ the vectors per simulation that `Tower::apply_annual`, `DealRun` and
    times the simulations on another seed) to that error, but not the
    chain ladder's: on RAA the ODP bootstrap's mean total ultimate is
    about 0.77% (1,650, 3.2% of the reserve) above the chain ladder's,
-   a bias that adds up over the origins. The issue's `expected_ultimate()`
+   a bias that adds up over the origins (measured by hand; the test
+   bounds the gap below 2%). The issue's `expected_ultimate()`
    exists only on `BayesBfNormalisedFit`, where it is the posterior mean
    of the prior's `U_w` without the process error and the cells already
    paid, so it is not the target; the Bayesian checks compare with the
@@ -4559,7 +4560,9 @@ the vectors per simulation that `Tower::apply_annual`, `DealRun` and
    `ulr_mean`) and the same-seed draws for `BayesOdp` (alone and over
    segments), both Bayesian BFs, Meyers' CRC (alone and over segments)
    and compartmental model 1 (alone and over segments, its ultimate the
-   last future paid cell). Python and R tests repeat the bootstrap checks
+   last future paid cell; over segments the second segment is the first
+   with every value doubled, so a swap of the segments' latest values
+   shows). Python and R tests repeat the bootstrap checks
    and the tower.
 9. **Later.** The how-to in `docs/guides/` that runs the chain end to end
    (fit, loss ratios, tower, deal book, cash flows) belongs to the Guides
