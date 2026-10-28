@@ -1342,6 +1342,59 @@ def test_read_ylt_from_parquet(tmp_path):
     assert e.labels(0) == {"peril": ["quake", "wind"]}
 
 
+def test_read_ylt_with_times_feeds_an_hours_clause_by_peril(tmp_path):
+    from prospicio.aggregate import EventSet, read_ylt
+
+    h = 1 / 8760
+    # Year 1: wind at 0.5 and 30 hours later, a flood 10 hours in; given out
+    # of order, with slots that would order them otherwise.
+    path = tmp_path / "timed.csv"
+    path.write_text(
+        "year,slot,peril,time,value\n"
+        f"1,1,wind,{0.5 + 30 * h!r},20\n"
+        f"1,2,flood,{0.5 + 10 * h!r},7\n"
+        "1,3,wind,0.5,10\n"
+        "2,1,wind,0.25,3\n"
+    )
+    e = read_ylt(path, time="time", labels=["peril"])
+    assert e.has_times
+    by_hand = EventSet.from_years(
+        [[10.0, 7.0, 20.0], [3.0]], times=[[0.5, 0.5 + 10 * h, 0.5 + 30 * h], [0.25]]
+    ).with_labels({"peril": ["wind", "flood", "wind", "wind"]})
+    for i in range(2):
+        assert e.events(i) == by_hand.events(i)
+        assert e.times(i) == by_hand.times(i)
+        assert e.labels(i) == by_hand.labels(i)
+    g = e.grouped(72.0, by="peril")
+    assert g.events(0) == [30.0, 7.0]
+    assert g.labels(0) == {"peril": ["wind", "flood"]}
+    # Without by, the wind and flood fall in one window.
+    assert e.grouped(72.0).events(0) == [37.0] and not e.grouped(72.0).has_labels
+    with pytest.raises(ValueError, match="labelled"):
+        e.grouped(72.0, labels="agree")
+    assert e.grouped(72.0, labels="largest").labels(0) == {"peril": ["wind"]}
+    with pytest.raises(ValueError, match="labels must be"):
+        e.grouped(72.0, labels="first")
+
+    # Day and hour columns: day 1 hour 0 is the start of the year.
+    days = tmp_path / "days.csv"
+    days.write_text("year,day,hour,value\n1,200,6,5\n1,1,0,1\n")
+    d = read_ylt(days, slot=None, day="day", hour="hour")
+    assert d.events(0) == [1.0, 5.0]
+    assert d.times(0) == [0.0, (199 * 24 + 6) / 8760]
+    assert read_ylt(days, slot=None, day="day").times(0) == [0.0, 199 * 24 / 8760]
+    with pytest.raises(ValueError, match="not both"):
+        read_ylt(days, slot=None, time="day", day="day")
+    with pytest.raises(ValueError, match="needs a day"):
+        read_ylt(days, slot=None, hour="hour")
+    days.write_text("year,day,value\n1,366,5\n")
+    with pytest.raises(ValueError, match="day 366"):
+        read_ylt(days, slot=None, day="day")
+    path.write_text("year,time,value\n1,1.5,5\n")
+    with pytest.raises(ValueError, match="fraction of the year"):
+        read_ylt(path, slot=None, time="time")
+
+
 def test_reorder_index_keeps_a_class_s_events_with_its_totals_on_tied_draws():
     from prospicio.aggregate import EventSet
     from prospicio.distributions import PredictiveDistribution

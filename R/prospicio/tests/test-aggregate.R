@@ -740,6 +740,30 @@ rev2 <- event_set_from_ylt(c(1, 1, 2, 1), c(10, 4, 30, 2), slots = c(5, 5, 1, 2)
 stopifnot(identical(lapply(1:7, function(i) events(rev, i)), lapply(1:7, function(i) events(rev2, i))))
 stopifnot(is.null(rev2@input_hash))
 
+# #594: a time column orders the rows and feeds an hours clause by peril.
+h <- 1 / 8760
+timed_path <- tempfile(fileext = ".csv")
+writeLines(c("year,slot,peril,time,value",
+             sprintf("1,1,wind,%.17g,20", 0.5 + 30 * h),
+             sprintf("1,2,flood,%.17g,7", 0.5 + 10 * h),
+             "1,3,wind,0.5,10", "2,1,wind,0.25,3"), timed_path)
+tev <- read_ylt(timed_path, time = "time", labels = "peril")
+stopifnot(identical(events(tev, 1), c(10, 7, 20)),
+          isTRUE(all.equal(event_times(tev, 1), c(0.5, 0.5 + 10 * h, 0.5 + 30 * h), tolerance = 0)))
+g <- hours_clause(tev, 72, by = "peril")
+stopifnot(identical(events(g, 1), c(30, 7)), identical(event_labels(g, 1)$peril, c("wind", "flood")))
+stopifnot(identical(events(hours_clause(tev, 72), 1), 37), is.null(event_labels(hours_clause(tev, 72), 1)))
+e <- tryCatch(hours_clause(tev, 72, labels = "agree"), error = identity)
+stopifnot(grepl("labelled", conditionMessage(e)))
+stopifnot(identical(event_labels(hours_clause(tev, 72, labels = "largest"), 1)$peril, "wind"))
+days_path <- tempfile(fileext = ".csv")
+writeLines(c("year,day,hour,value", "1,200,6,5", "1,1,0,1"), days_path)
+dev <- read_ylt(days_path, slot = NULL, day = "day", hour = "hour")
+stopifnot(identical(events(dev, 1), c(1, 5)),
+          identical(event_times(dev, 1), c(0, (199 * 24 + 6) / 8760)))
+e <- tryCatch(read_ylt(days_path, slot = NULL, time = "day", day = "day"), error = identity)
+stopifnot(grepl("not both", conditionMessage(e)))
+
 # #483: a reorder's index keeps a class's events with its totals, ties and all.
 n <- 600
 yrs <- lapply(0:(n - 1), function(i) if (i %% 3 == 0) numeric(0) else c(10 * (i %% 4), i %% 2))
