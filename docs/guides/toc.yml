@@ -61,6 +61,7 @@
     - guide: glm-to-comprehensive-pricing-chalk-2
     - notebook: reinsurance_pricing
     - notebook: submission_evaluation
+    - guide: submission-schema
 
 - section: Property catastrophe reinsurance
   description: A track on one synthetic book, read in order, from loss tables to the portfolio.

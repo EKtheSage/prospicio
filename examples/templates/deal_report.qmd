@@ -1,0 +1,158 @@
+---
+title: "Deal report"
+format:
+  html:
+    toc: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+params:
+  tables: "../data/deal_report"
+  money_unit: 1000000
+  money_label: "m"
+---
+
+```{r}
+#| label: setup
+# The deal report template, R version. It holds no data: every number comes
+# from the tidy tables in params$tables, whose columns are set out in
+# docs/guides/submission-schema.md ("The report's tables"). Render with
+#   quarto render deal_report.qmd -P tables:<folder>
+# A missing table or column stops the render with its name.
+need <- list(
+  deal.csv = c("item", "value"),
+  structures.csv = c("structure", "item", "value"),
+  metrics.csv = c("structure", "section", "item", "statistic", "value")
+)
+optional <- list(actual_vs_expected.csv = c("period", "actual", "expected", "ratio", "std_dev", "z"))
+
+read_table <- function(name, columns) {
+  path <- file.path(params$tables, name)
+  if (!file.exists(path)) stop("the report needs ", path)
+  x <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+  missing <- setdiff(columns, names(x))
+  if (length(missing)) stop(name, " has no column ", paste(missing, collapse = ", "))
+  x
+}
+tables <- Map(read_table, names(need), need)
+ave_path <- file.path(params$tables, names(optional))
+ave <- if (file.exists(ave_path)) read_table(names(optional), optional[[1]]) else NULL
+
+deal <- setNames(tables$deal.csv$value, tables$deal.csv$item)
+structures <- tables$structures.csv
+metrics <- tables$metrics.csv
+names_of <- unique(structures$structure)
+
+money <- function(x) sprintf("%s%s", formatC(x / params$money_unit, format = "f", digits = 1, big.mark = ","), params$money_label)
+percent <- function(x) sprintf("%.1f%%", 100 * x)
+plain <- function(x) formatC(x, format = "f", digits = 3)
+
+# One section of metrics.csv as a table: a row per structure and item, a column per statistic, in file order.
+section_table <- function(section, format, items = NULL) {
+  x <- metrics[metrics$section == section, ]
+  if (!is.null(items)) x <- x[x$item %in% items, ]
+  if (!nrow(x)) return(NULL)
+  stats <- unique(x$statistic)
+  rows <- unique(x[c("structure", "item")])
+  for (s in stats) {
+    v <- x[x$statistic == s, ]
+    key <- paste(v$structure, v$item)
+    rows[[s]] <- vapply(paste(rows$structure, rows$item), function(k) {
+      i <- match(k, key)
+      if (is.na(i)) "" else format(v$value[i], v$item[i], s)
+    }, "")
+  }
+  rownames(rows) <- NULL
+  rows
+}
+show <- function(x) if (is.null(x)) cat("Not in the tables.\n") else print(knitr::kable(x, align = c("l", "l", rep("r", ncol(x) - 2))))
+```
+
+`r deal[["cedant"]]`, `r deal[["line_of_business"]]`. Treaty period
+`r deal[["period_start"]]` to `r deal[["period_end"]]`, valued at
+`r deal[["valuation_date"]]`. Amounts in `r deal[["currency"]]`,
+`r deal[["simulations"]]` simulations.
+
+## Structures
+
+```{r}
+#| label: structures
+#| results: asis
+wide <- reshape(structures, idvar = "item", timevar = "structure", direction = "wide")
+names(wide) <- sub("^value\\.", "", names(wide))
+for (s in names_of) {
+  v <- wide[[s]]
+  wide[[s]] <- ifelse(is.na(v), "", ifelse(grepl("premium", wide$item), money(v), percent(v)))
+}
+print(knitr::kable(wide, row.names = FALSE, align = c("l", rep("r", length(names_of)))))
+```
+
+## Loss ratio
+
+The treaty's loss ratio and the ratios that make up its result, as fractions
+of the ceded premium, in each structure.
+
+```{r}
+#| label: loss-ratio
+#| results: asis
+show(section_table("loss_ratio", function(v, item, stat) percent(v)))
+```
+
+## Ceded and net
+
+The cedant's loss in the treaty year, ceded to and kept from each structure.
+
+```{r}
+#| label: layers
+#| results: asis
+show(section_table("layers", function(v, item, stat) money(v)))
+```
+
+## Investor returns
+
+The investor's annual IRR and multiple on invested capital (MOIC) over the
+term. `Lower TVaR 5` is the mean of the worst 5% of simulations;
+`Probability of loss` is the share of simulations with an IRR below 0 or a
+MOIC below 1. Simulations whose flows have no IRR are left out of the IRR's
+statistics and counted.
+
+```{r}
+#| label: returns
+#| results: asis
+show(section_table("returns", function(v, item, stat) {
+  if (stat == "Simulations without a root") format(v)
+  else if (stat == "Probability of loss" || item == "irr") percent(v) else plain(v)
+}))
+```
+
+## Structures compared
+
+The mean amounts of each structure, with their ratio to its premium.
+
+```{r}
+#| label: comparison
+#| results: asis
+show(section_table("comparison", function(v, item, stat) if (stat == "Mean") money(v) else plain(v)))
+```
+
+## Monitoring: actual against expected
+
+Each period's actual amount against what was expected of it, their ratio,
+the expected amount's standard deviation under the model and the z-score
+of the difference, about standard normal while the model holds.
+
+```{r}
+#| label: monitoring
+#| results: asis
+if (is.null(ave)) {
+  cat("No actual against expected table yet: it is filled once the deal has a valuation after binding.\n")
+} else {
+  ave$actual <- money(ave$actual)
+  ave$expected <- money(ave$expected)
+  ave$std_dev <- money(ave$std_dev)
+  ave$ratio <- plain(ave$ratio)
+  ave$z <- sprintf("%.2f", ave$z)
+  print(knitr::kable(ave, row.names = FALSE, align = c("l", rep("r", ncol(ave) - 1))))
+}
+```

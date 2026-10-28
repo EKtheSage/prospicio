@@ -8,6 +8,7 @@ shown but not run.
 """
 
 import contextlib
+import csv
 import io
 import re
 import time
@@ -113,6 +114,54 @@ def test_the_harness_compares_printed_output(tmp_path):
     )
     with pytest.raises(AssertionError, match=r"python block 2 \(line 14\)"):
         run_guide(guide)
+
+
+def schema_columns(text):
+    """The first column of the first table under each '### `<file>.csv`' heading of a guide."""
+    columns, current = {}, None
+    for line in text.splitlines():
+        heading = re.match(r"^#+ `([\w.-]+\.csv)`$", line)
+        if heading:
+            current = heading.group(1)
+            columns[current] = []
+        elif current is not None and line.startswith("| `"):
+            columns[current].append(re.match(r"^\| `([^`]+)`", line).group(1))
+        elif current is not None and columns[current] and not line.startswith("|"):
+            current = None
+    return columns
+
+
+def test_submission_schema_lists_each_files_columns():
+    # docs/guides/submission-schema.md documents every file of the sample submission, column by column in the
+    # order of its header, so renaming, adding or moving a column fails here until the guide follows.
+    folder = GUIDES.parents[1] / "examples" / "data" / "submission"
+    documented = schema_columns((GUIDES / "submission-schema.md").read_text(encoding="utf-8"))
+    assert sorted(documented) == sorted(p.name for p in folder.glob("*.csv"))
+    for name, columns in documented.items():
+        with open(folder / name, newline="", encoding="utf-8") as f:
+            assert columns == next(csv.reader(f)), name
+
+
+def test_deal_report_sample_is_the_guides_output(tmp_path, monkeypatch):
+    # examples/data/deal_report/ holds the tables the report templates are rendered on in CI; they are what
+    # docs/guides/submission-schema.md writes. Floats are compared to a relative 1e-9 (the simulation goes
+    # through libm), and to 1e-12 absolute for round-off around zero.
+    committed = GUIDES.parents[1] / "examples" / "data" / "deal_report"
+    monkeypatch.setenv("PROSPICIO_DEAL_TABLES", str(tmp_path))
+    monkeypatch.chdir(GUIDES)
+    run_guide(GUIDES / "submission-schema.md")
+    names = sorted(p.name for p in committed.glob("*.csv"))
+    assert names == sorted(p.name for p in tmp_path.glob("*.csv"))
+    for name in names:
+        with open(tmp_path / name, newline="", encoding="utf-8") as f:
+            made = list(csv.reader(f))
+        with open(committed / name, newline="", encoding="utf-8") as f:
+            kept = list(csv.reader(f))
+        assert len(made) == len(kept) and made[0] == kept[0], name
+        for a, b in zip(made, kept):
+            assert len(a) == len(b) and all(
+                x == y or float(x) == pytest.approx(float(y), rel=1e-9, abs=1e-12) for x, y in zip(a, b)
+            ), (name, a, b)
 
 
 def test_chalk_portfolio_files_match_generator(tmp_path):
