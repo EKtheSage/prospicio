@@ -96,6 +96,19 @@ pub struct Layer {
     /// sliding-scale commission's range; see
     /// [`Layer::brokerage_within_commission_range`].
     pub brokerage_within_commission_range: bool,
+    /// The events the layer sees, by a label's values; see
+    /// [`Layer::scope`]. `None` sees every event.
+    pub scope: Option<Scope>,
+}
+
+/// The events a layer covers, by one label's values (#584): a windstorm
+/// treaty is scoped to `peril` in `["windstorm"]`. See [`Layer::scope`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Scope {
+    /// The label dimension, as in [`EventSet::with_labels`].
+    pub label: String,
+    /// The values the layer sees.
+    pub values: Vec<String>,
 }
 
 /// A premium that depends on the year's loss `x`:
@@ -349,6 +362,7 @@ impl Layer {
             deductions: Vec::new(),
             scales_before_annual_terms: false,
             brokerage_within_commission_range: false,
+            scope: None,
         })
     }
 
@@ -623,6 +637,47 @@ impl Layer {
     /// rata as to time).
     pub fn needs_times(&self) -> bool {
         self.pro_rata_time
+    }
+
+    /// The layer seen only by events whose `label` is one of `values`
+    /// (#584): a peril-specific treaty. Every other event, and the
+    /// aggregate part's other columns for a layer that sees the part, is
+    /// zero to this layer, for its occurrence terms and its annual terms
+    /// (deductible, corridor, annual limit, reinstatements) alike, while
+    /// the layers in later stages still see it. It needs labelled events
+    /// ([`EventSet::with_labels`]) in [`Tower::apply`],
+    /// [`Tower::apply_term`] and [`Tower::apply_timeline`]; the grid and
+    /// annual paths, which have no events, refuse it. A scope over every
+    /// value equals no scope, and the scoped layer on the whole set equals
+    /// the unscoped one on [`EventSet::filter`]'s set.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{EventSet, Layer, Tower};
+    /// use prospicio_prob::{Empirical, KeyValue};
+    ///
+    /// // A windstorm 10 xs 10 with an annual limit of 15 on a year of a
+    /// // windstorm of 25 and an earthquake of 30.
+    /// let events = EventSet::from_years(vec![vec![25.0, 30.0]], 0).unwrap()
+    ///     .with_labels(vec![("peril".into(), vec!["ws".into(), "eq".into()])]).unwrap();
+    /// let ws = Layer::xol("WS", 10.0, 10.0).unwrap()
+    ///     .aggregate_limit(15.0).unwrap()
+    ///     .scope("peril", &["ws"]).unwrap();
+    /// let result = Tower::new(vec![ws]).unwrap().apply(&events).unwrap()
+    ///     .aggregate(&["kind", "layer"]).unwrap();
+    /// let key = vec![KeyValue::from("ceded"), KeyValue::from("WS")];
+    /// assert_eq!(Empirical::draws(&result.marginal(&key).unwrap()), [10.0]);
+    /// ```
+    pub fn scope(mut self, label: &str, values: &[&str]) -> Result<Self> {
+        if values.is_empty() {
+            return Err(Error::Data(format!(
+                "a scope on {label:?} needs at least one value"
+            )));
+        }
+        self.scope = Some(Scope {
+            label: label.to_string(),
+            values: values.iter().map(|v| v.to_string()).collect(),
+        });
+        Ok(self)
     }
 
     /// How a binding annual deductible or limit is shared among the
@@ -1285,6 +1340,18 @@ impl Layer {
     }
 }
 
+/// Which entries of a year each [scoped](Layer::scope) layer sees: each
+/// entry's label combination and, for each layer, whether each
+/// combination is in its scope (`None` for an unscoped layer).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ScopeView<'a> {
+    /// Each aggregate column's combination.
+    pub(crate) aggregate: &'a [usize],
+    /// Each event's combination.
+    pub(crate) events: &'a [usize],
+    pub(crate) masks: &'a [Option<Vec<bool>>],
+}
+
 /// A reinsurance programme: layers in inuring stages.
 ///
 /// Layers in the same stage see the same losses: the gross losses in the
@@ -1383,6 +1450,68 @@ impl Tower {
         self.layers.iter().any(Layer::needs_times)
     }
 
+    /// Whether any layer is [scoped](Layer::scope) to some labels.
+    pub fn has_scope(&self) -> bool {
+        self.layers.iter().any(|l| l.scope.is_some())
+    }
+
+    /// An error for a path with no labelled events, naming the scoped
+    /// layer, when the tower has one.
+    pub(crate) fn refuse_scope(&self, path: &str) -> Result<()> {
+        match self.layers.iter().find(|l| l.scope.is_some()) {
+            Some(l) => Err(Error::Data(format!(
+                "layer {:?} is scoped to some labels, which {path} does not carry; apply the \
+                 tower to labelled events",
+                l.name
+            ))),
+            None => Ok(()),
+        }
+    }
+
+    /// Each layer's scope over `events`' label combinations: for a scoped
+    /// layer, whether each combination is in it; `None` for an unscoped
+    /// layer, and for every layer when none is scoped.
+    pub(crate) fn scope_masks(&self, events: &EventSet) -> Result<Option<Vec<Option<Vec<bool>>>>> {
+        if !self.has_scope() {
+            return Ok(None);
+        }
+        let Some(labels) = events.label_set() else {
+            return self.refuse_scope("unlabelled events").map(|_| None);
+        };
+        self.layers
+            .iter()
+            .map(|l| {
+                let Some(scope) = &l.scope else {
+                    return Ok(None);
+                };
+                let d = labels
+                    .dims
+                    .iter()
+                    .position(|x| *x == scope.label)
+                    .ok_or_else(|| {
+                        Error::Data(format!(
+                            "layer {:?} is scoped to label {:?}, which the events do not carry \
+                         (they carry {:?})",
+                            l.name, scope.label, labels.dims
+                        ))
+                    })?;
+                let mask: Vec<bool> = labels
+                    .combinations
+                    .iter()
+                    .map(|c| scope.values.contains(&c[d]))
+                    .collect();
+                if !mask.contains(&true) {
+                    return Err(Error::Data(format!(
+                        "layer {:?} is scoped to {:?} in {:?}, none of which the events carry",
+                        l.name, scope.values, scope.label
+                    )));
+                }
+                Ok(Some(mask))
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(Some)
+    }
+
     /// Ceded loss and reinstatement premium of each layer for one year.
     pub(crate) fn year(
         &self,
@@ -1390,7 +1519,7 @@ impl Tower {
         si: Option<&[f64]>,
         times: Option<&[f64]>,
     ) -> Vec<(f64, f64)> {
-        self.year_by_event(&[], losses, si, times, None, None, None)
+        self.year_by_event(&[], losses, si, times, None, None, None, None)
     }
 
     /// [`year`](Self::year) with each layer's scale key: the ceded loss, or
@@ -1399,7 +1528,7 @@ impl Tower {
     /// share of the year's recoveries before the annual terms.
     pub(crate) fn year_keyed(&self, losses: &[f64]) -> (Vec<(f64, f64)>, Vec<f64>) {
         let mut keys = Vec::with_capacity(self.layers.len());
-        let year = self.year_by_event(&[], losses, None, None, None, None, Some(&mut keys));
+        let year = self.year_by_event(&[], losses, None, None, None, None, None, Some(&mut keys));
         (year, keys)
     }
 
@@ -1419,11 +1548,17 @@ impl Tower {
         si: Option<&[f64]>,
         times: Option<&[f64]>,
         lf: Option<&[f64]>,
+        scope: Option<ScopeView<'_>>,
         mut by_event: Option<&mut Vec<Vec<f64>>>,
         mut keys: Option<&mut Vec<f64>>,
     ) -> Vec<(f64, f64)> {
         let mut ceded = Vec::with_capacity(self.layers.len());
         let n_agg = aggregate.len();
+        // Each entry's label combination, the aggregate part's first, when a
+        // layer is scoped.
+        let all_of: Option<Vec<usize>> =
+            scope.map(|v| v.aggregate.iter().chain(v.events).copied().collect());
+        let mut masked: Vec<f64> = Vec::new();
         let mut seen: Vec<f64> = aggregate.iter().chain(losses).copied().collect();
         // A layer that sees the aggregate part is on the loss, so needs no
         // sum insured; the part's time is the year's start.
@@ -1452,13 +1587,26 @@ impl Tower {
             let stage = self.stages[i];
             let end = i + self.stages[i..].iter().take_while(|&&s| s == stage).count();
             let mut stage_by_event = vec![0.0; seen.len()];
-            for layer in &self.layers[i..end] {
+            for (li, layer) in self.layers.iter().enumerate().take(end).skip(i) {
                 let sees = n_agg > 0 && layer.sees_aggregate_part();
-                let (x, s, t, f) = if sees {
+                let (mut x, s, t, f) = if sees {
                     (&seen[..], None, all_times.as_deref(), all_lf.as_deref())
                 } else {
                     (&seen[n_agg..], si, times, lf)
                 };
+                // A scoped layer sees the entries outside its scope as zero.
+                if let (Some(view), Some(of)) = (scope, all_of.as_deref())
+                    && let Some(mask) = &view.masks[li]
+                {
+                    let of = if sees { of } else { &of[n_agg..] };
+                    masked.clear();
+                    masked.extend(
+                        x.iter()
+                            .zip(of)
+                            .map(|(&v, &c)| if mask[c] { v } else { 0.0 }),
+                    );
+                    x = &masked;
+                }
                 let layer_ceded = layer.share * layer.layer_loss(x, s, f);
                 ceded.push((layer_ceded, layer.reinstatement_premium_at(x, s, t, f)));
                 if let Some(keys) = keys.as_deref_mut() {
@@ -1571,6 +1719,7 @@ impl Tower {
         if events.has_labels() {
             return self.apply_labeled(events, provenance);
         }
+        self.refuse_scope("unlabelled events")?;
         self.apply_years(
             (0..events.n_sims()).map(|i| {
                 (
@@ -1615,6 +1764,7 @@ impl Tower {
     /// assert_eq!(prospicio_prob::Empirical::draws(&ceded), [0.0, 30.0, 50.0]);
     /// ```
     pub fn apply_aggregate(&self, pd: &PredictiveDistribution) -> Result<PredictiveDistribution> {
+        self.refuse_scope("an aggregate loss")?;
         if self.needs_sums_insured() {
             return Err(Error::Data(
                 "a surplus treaty works risk by risk; an aggregate loss has no sum insured".into(),
@@ -1646,6 +1796,7 @@ impl Tower {
     /// `""` labels.
     fn apply_labeled(&self, events: &EventSet, base: Provenance) -> Result<PredictiveDistribution> {
         let labels = events.label_set().expect("the events carry labels");
+        let masks = self.scope_masks(events)?;
         let n_labels = labels.combinations.len();
         let n_layers = self.layers.len();
         let columns = Columns::new(self);
@@ -1685,12 +1836,18 @@ impl Tower {
                 .collect();
             let mut by_event = Vec::with_capacity(n_layers);
             let mut keys = Vec::with_capacity(n_layers);
+            let scope = masks.as_deref().map(|masks| ScopeView {
+                aggregate: agg_of,
+                events: &of[agg_of.len()..],
+                masks,
+            });
             let year = self.year_by_event(
                 aggregate,
                 losses,
                 si,
                 times,
                 None,
+                scope,
                 Some(&mut by_event),
                 Some(&mut keys),
             );
@@ -1763,6 +1920,7 @@ impl Tower {
     /// assert!((cc[0] - 30.0).abs() < 1e-12 && (cc[1] - 20.0).abs() < 1e-12 && (cc[2] - 10.0).abs() < 1e-12);
     /// ```
     pub fn apply_annual(&self, losses: &[f64]) -> Result<PredictiveDistribution> {
+        self.refuse_scope("an annual loss")?;
         if losses.is_empty() {
             return Err(Error::Data("needs at least one annual loss".into()));
         }
@@ -1820,6 +1978,7 @@ impl Tower {
                 si,
                 times,
                 None,
+                None,
                 0,
                 &mut carried,
             );
@@ -1848,13 +2007,23 @@ impl Tower {
         si: Option<&[f64]>,
         times: Option<&[f64]>,
         lf: Option<&[f64]>,
+        scope: Option<ScopeView<'_>>,
         t: usize,
         carried: &mut [Carried],
     ) {
         let gross: f64 = aggregate.iter().chain(losses).sum();
         draws.push(gross);
         let mut keys = Vec::with_capacity(self.layers.len());
-        let year = self.year_by_event(aggregate, losses, si, times, lf, None, Some(&mut keys));
+        let year = self.year_by_event(
+            aggregate,
+            losses,
+            si,
+            times,
+            lf,
+            scope,
+            None,
+            Some(&mut keys),
+        );
         let ceded_total: f64 = year.iter().map(|(c, _)| c).sum();
         draws.extend(year.iter().map(|(c, _)| c));
         draws.push(gross - ceded_total);
@@ -3150,6 +3319,203 @@ mod tests {
         // Nets behind the first stage: 5, 10, 10, so 0 + 5 + 5 for 5x5.
         assert_eq!((at("10x5", "a"), at("10x5", "b")), (10.0, 10.0));
         assert_eq!((at("5x5", "a"), at("5x5", "b")), (5.0, 5.0));
+    }
+
+    fn perils() -> EventSet {
+        // Two years: quake 20 then wind 15, and wind 8, flood 30, wind 12.
+        EventSet::from_years(vec![vec![20.0, 15.0], vec![8.0, 30.0, 12.0]], 4)
+            .unwrap()
+            .with_times(vec![0.1, 0.4, 0.2, 0.5, 0.9])
+            .unwrap()
+            .with_labels(vec![(
+                "peril".into(),
+                vec![
+                    "quake".into(),
+                    "wind".into(),
+                    "wind".into(),
+                    "flood".into(),
+                    "wind".into(),
+                ],
+            )])
+            .unwrap()
+    }
+
+    fn draws_of(pd: &PredictiveDistribution, key: &[&str]) -> Vec<f64> {
+        let key: Vec<KeyValue> = key.iter().map(|&k| k.into()).collect();
+        prospicio_prob::Empirical::draws(&pd.marginal(&key).unwrap()).to_vec()
+    }
+
+    #[test]
+    fn a_scope_over_every_value_is_no_scope() {
+        let layer = Layer::xol("10x5", 10.0, 5.0)
+            .unwrap()
+            .reinstatements(1)
+            .unwrap();
+        let all = layer
+            .clone()
+            .scope("peril", &["quake", "wind", "flood"])
+            .unwrap();
+        let plain = Tower::new(vec![layer]).unwrap().apply(&perils()).unwrap();
+        let scoped = Tower::new(vec![all]).unwrap().apply(&perils()).unwrap();
+        assert_eq!(plain.components(), scoped.components());
+        for k in plain.components() {
+            assert_eq!(
+                prospicio_prob::Empirical::draws(&plain.marginal(k).unwrap()),
+                prospicio_prob::Empirical::draws(&scoped.marginal(k).unwrap()),
+            );
+        }
+    }
+
+    #[test]
+    fn a_scoped_layer_cedes_what_it_cedes_on_the_filtered_set() {
+        let layer = Layer::xol("10x5", 10.0, 5.0)
+            .unwrap()
+            .aggregate_limit(15.0)
+            .unwrap()
+            .paid_reinstatements(2.0, vec![1.0])
+            .unwrap()
+            .ceding_commission(0.1)
+            .unwrap();
+        let scoped = Tower::new(vec![layer.clone().scope("peril", &["wind"]).unwrap()])
+            .unwrap()
+            .apply(&perils())
+            .unwrap()
+            .aggregate(&["kind", "layer"])
+            .unwrap();
+        let wind = perils().filter("peril", &["wind"]).unwrap();
+        assert_eq!(wind.events(0), &[15.0]);
+        assert_eq!(wind.events(1), &[8.0, 12.0]);
+        assert_eq!(wind.times(1), Some(&[0.2, 0.9][..]));
+        let alone = Tower::new(vec![layer])
+            .unwrap()
+            .apply(&wind)
+            .unwrap()
+            .aggregate(&["kind", "layer"])
+            .unwrap();
+        for k in alone
+            .components()
+            .iter()
+            .filter(|k| k[0].to_string() != "gross" && k[0].to_string() != "net")
+        {
+            assert_eq!(
+                prospicio_prob::Empirical::draws(&scoped.marginal(k).unwrap()),
+                prospicio_prob::Empirical::draws(&alone.marginal(k).unwrap()),
+                "{k:?}"
+            );
+        }
+        // Wind recovers 10, then 3 and 7 within the limit of 15.
+        assert_eq!(draws_of(&scoped, &["ceded", "10x5"]), [10.0, 10.0]);
+        // The net keeps every peril's loss.
+        assert_eq!(draws_of(&scoped, &["net", "retained"]), [25.0, 40.0]);
+    }
+
+    #[test]
+    fn a_later_stage_sees_the_out_of_scope_losses_whole() {
+        let wind_xl = Layer::xol("10x5", 10.0, 5.0)
+            .unwrap()
+            .scope("peril", &["wind"])
+            .unwrap();
+        let stop_loss = Layer::stop_loss("sl", 100.0, 20.0).unwrap();
+        let tower = Tower::inuring(vec![vec![wind_xl], vec![stop_loss]]).unwrap();
+        let result = tower.apply(&perils()).unwrap();
+        // Year 1: wind 15 cedes 10, so the stop loss sees 20 + 5 = 25.
+        // Year 2: wind 8 and 12 cede 3 and 7, so it sees 5 + 30 + 5 = 40.
+        assert_eq!(draws_of(&result, &["ceded", "10x5", "wind"]), [10.0, 10.0]);
+        assert_eq!(draws_of(&result, &["ceded", "10x5", "quake"]), [0.0, 0.0]);
+        let sl: Vec<f64> = ["quake", "wind", "flood"]
+            .iter()
+            .map(|p| draws_of(&result, &["ceded", "sl", p]))
+            .fold(vec![0.0; 2], |a, d| {
+                a.iter().zip(d).map(|(x, y)| x + y).collect()
+            });
+        assert_eq!(sl, [5.0, 20.0]);
+    }
+
+    #[test]
+    fn a_scope_masks_the_aggregate_part_too() {
+        // An attritional part by peril: wind 10 and 40, quake 30 and 5.
+        let part = PredictiveDistribution::from_draws(
+            vec!["peril".into()],
+            vec![vec!["quake".into()], vec!["wind".into()]],
+            vec![30.0, 10.0, 5.0, 40.0],
+            Provenance::new("part"),
+        )
+        .unwrap();
+        let events = perils().with_aggregate_part(&part).unwrap();
+        let sl = Layer::stop_loss("SL", 30.0, 20.0).unwrap();
+        let scoped = Tower::new(vec![sl.clone().scope("peril", &["wind"]).unwrap()])
+            .unwrap()
+            .apply(&events)
+            .unwrap()
+            .aggregate(&["kind", "layer"])
+            .unwrap();
+        let wind = events.filter("peril", &["wind"]).unwrap();
+        assert_eq!(wind.aggregate_part(1), Some(&[40.0][..]));
+        let alone = Tower::new(vec![sl])
+            .unwrap()
+            .apply(&wind)
+            .unwrap()
+            .aggregate(&["kind", "layer"])
+            .unwrap();
+        // Wind's years: 10 + 15 = 25 and 40 + 20 = 60, so 5 and 30.
+        assert_eq!(draws_of(&scoped, &["ceded", "SL"]), [5.0, 30.0]);
+        assert_eq!(draws_of(&alone, &["ceded", "SL"]), [5.0, 30.0]);
+    }
+
+    #[test]
+    fn a_scope_is_not_a_label_split() {
+        // Quake 20 comes first: unscoped, it uses 10 of the limit of 15 and
+        // wind's share is 5; scoped to wind, wind has the whole limit.
+        let layer = Layer::xol("10x5", 10.0, 5.0)
+            .unwrap()
+            .aggregate_limit(15.0)
+            .unwrap();
+        let split = Tower::new(vec![layer.clone()])
+            .unwrap()
+            .apply(&perils())
+            .unwrap();
+        let scoped = Tower::new(vec![layer.scope("peril", &["wind"]).unwrap()])
+            .unwrap()
+            .apply(&perils())
+            .unwrap();
+        assert_eq!(draws_of(&split, &["ceded", "10x5", "wind"])[0], 5.0);
+        assert_eq!(draws_of(&scoped, &["ceded", "10x5", "wind"])[0], 10.0);
+    }
+
+    #[test]
+    fn a_scope_needs_its_label() {
+        let scoped = Tower::new(vec![
+            Layer::xol("L", 10.0, 5.0)
+                .unwrap()
+                .scope("peril", &["wind"])
+                .unwrap(),
+        ])
+        .unwrap();
+        let plain = EventSet::from_years(vec![vec![15.0]], 0).unwrap();
+        assert!(scoped.apply(&plain).is_err());
+        let classes = plain
+            .clone()
+            .with_labels(vec![("class".into(), vec!["a".into()])])
+            .unwrap();
+        assert!(scoped.apply(&classes).is_err());
+        let other = plain
+            .with_labels(vec![("peril".into(), vec!["hail".into()])])
+            .unwrap();
+        assert!(scoped.apply(&other).is_err());
+        assert!(scoped.apply_annual(&[15.0]).is_err());
+        assert!(
+            Layer::xol("L", 1.0, 1.0)
+                .unwrap()
+                .scope("peril", &[])
+                .is_err()
+        );
+        assert!(perils().filter("class", &["a"]).is_err());
+        assert!(
+            EventSet::from_years(vec![vec![1.0]], 0)
+                .unwrap()
+                .filter("peril", &["a"])
+                .is_err()
+        );
     }
 
     #[test]

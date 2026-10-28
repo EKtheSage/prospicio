@@ -68,6 +68,16 @@ fn same_draws(a: &PredictiveDistribution, b: &PredictiveDistribution) {
     assert_eq!(a.draw_matrix(), b.draw_matrix());
 }
 
+/// `latest` for segment `A` followed by twice it for segment `B`, as
+/// `twins` builds them.
+fn twin_latest(latest: &[f64]) -> Vec<f64> {
+    latest
+        .iter()
+        .copied()
+        .chain(latest.iter().map(|l| 2.0 * l))
+        .collect()
+}
+
 fn origin_keys(origins: &[Period]) -> Vec<Vec<KeyValue>> {
     origins.iter().map(|&p| vec![KeyValue::Period(p)]).collect()
 }
@@ -91,20 +101,22 @@ fn short(chains: usize, n: usize) -> Sampler {
     }
 }
 
-/// `tri`'s `columns` twice, under the `lob` values `A` and `B`.
+/// `tri`'s `columns` twice, under the `lob` values `A` and `B`, with every
+/// value of `B` doubled (exactly, in floating point) so that a swap or
+/// misalignment of the segments' latest values shows.
 fn twins(tri: &Triangle, columns: &[&str]) -> Triangle {
     let long = tri.to_long();
     let n = long.origin.len();
     let column = |name: &str| -> &[f64] { &long.values.iter().find(|(c, _)| c == name).unwrap().1 };
     let (mut keys, mut origin, mut ages) = (vec![], vec![], vec![]);
     let mut values: Vec<Vec<f64>> = vec![vec![]; columns.len()];
-    for lob in ["A", "B"] {
+    for (lob, scale) in [("A", 1.0), ("B", 2.0)] {
         for i in 0..n {
             keys.push(lob);
             origin.push(long.origin[i]);
             ages.push(long.development[i]);
             for (c, name) in columns.iter().enumerate() {
-                values[c].push(column(name)[i]);
+                values[c].push(scale * column(name)[i]);
             }
         }
     }
@@ -146,7 +158,7 @@ fn bayes_odp_alone_and_over_segments() {
     let fits = model
         .fit_segments(&twins(&raa, &["values"]), "values")
         .unwrap();
-    let latest: Vec<f64> = [&cl.latest[..], &cl.latest[..]].concat();
+    let latest: Vec<f64> = twin_latest(&cl.latest[..]);
     check_layout(
         &fits,
         &segment_keys(&["A", "B"], &cl.origins),
@@ -271,7 +283,7 @@ fn meyers_crc_keeps_its_own_ultimates() {
         .fit_segments(&twins(comauto(), &["paid", "premium"]), "paid", "premium")
         .unwrap();
     same_draws(&fits.ultimates().unwrap(), &fits.ultimates);
-    let latest: Vec<f64> = [&cl.latest[..], &cl.latest[..]].concat();
+    let latest: Vec<f64> = twin_latest(&cl.latest[..]);
     check_layout(
         &fits,
         &segment_keys(&["A", "B"], &cl.origins),
@@ -397,7 +409,7 @@ fn compartmental_model_1_is_on_the_paid_basis() {
             "premium",
         )
         .unwrap();
-    let latest: Vec<f64> = [&fit.latest_paid[..], &fit.latest_paid[..]].concat();
+    let latest: Vec<f64> = twin_latest(&fit.latest_paid[..]);
     check_layout(
         &fits,
         &segment_keys(&["A", "B"], &fit.origins),

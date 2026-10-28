@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: A reserving fit's ultimates per simulation keep one order through towers, deal books and cash flows; Meyers' are its own draws and Compartmental's are paid
-description: Row i of a fit's reserves is simulation i for every origin and segment, and a fit run again with the same seed (bootstraps and NUTS alike, on one machine) gives the same rows; UltimateDraws adds each origin's latest value to its reserve draw, so a tower on total_ultimate_draws by apply_annual cedes, simulation by simulation, what it cedes on the joint ultimates or on the reserves with the attachment lowered by the latest values. Meyers' models keep their simulated value at the oldest age, which the reserves plus the latest values match to 1e-12; Compartmental's ultimate is the paid at the square's last age. On RAA the ODP bootstrap's mean total ultimate is about 0.77% (1,650) above the chain ladder's, though each origin's is within four standard errors of it.
+description: Row i of a fit's reserves is simulation i for every origin and segment, and a fit run again with the same seed (bootstraps and NUTS alike, on one machine) gives the same rows; UltimateDraws adds each origin's latest value to its reserve draw, so a tower on total_ultimate_draws by apply_annual cedes, simulation by simulation, what it cedes on the joint ultimates or on the reserves with the attachment lowered by the latest values. Meyers' models keep their simulated value at the oldest age, which the reserves plus the latest values match to 1e-12; Compartmental's ultimate is the paid at the square's last age.
 tags: [reserving, bootstrap, bayes, meyers, compartmental, predictive-distribution, simulation-order, reinsurance, cashflow]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-28T12:00:00Z }
@@ -57,12 +57,11 @@ sources:
   (1997) has its reserve as its ultimate.
 * On RAA the ODP bootstrap (gamma process, 4,000 simulations) has each
   origin's mean ultimate within four standard errors of the chain
-  ladder's, but the total's mean is 214,799 against the chain ladder's
-  213,122 (+0.79%); two runs of 40,000 simulations give +0.77% and
-  +0.76% (about 1,650, 3.2% of the 52,135 reserve), so the bias is the
-  bootstrap's and not Monte Carlo error. A check of "the mean equals the
-  expected ultimate" therefore compares the total with the bootstrap's
-  own larger run, not with the chain ladder.
+  ladder's, and its mean total ultimate is within four standard errors of
+  a run of ten times the simulations on another seed, which is within 2%
+  of the chain ladder's total, as the unit test asserts. The size of the
+  gap, measured by hand, is in
+  [the bootstrap's mean total ultimate](odp-bootstrap-total-ultimate-bias.md).
 * `BayesBfNormalisedFit::expected_ultimate()` is the posterior mean of
   the prior's `U_w`, without the process error and the cells already
   paid, so it is not the mean of the ultimate draws.

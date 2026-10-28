@@ -18,7 +18,7 @@ use prospicio_prob::portfolio::CorrelationKind;
 use prospicio_prob::{ComponentKey, KeyValue, PredictiveDistribution, Provenance};
 
 use crate::monte_carlo::EventSet;
-use crate::reinsurance::{Columns, Tower};
+use crate::reinsurance::{Columns, ScopeView, Tower};
 
 impl Tower {
     /// Applies the tower over a contract term of `years.len()` years, each
@@ -93,6 +93,11 @@ impl Tower {
                 )));
             }
         }
+        // Each year's scoped layers over its own label combinations.
+        let masks = years
+            .iter()
+            .map(|e| self.scope_masks(e))
+            .collect::<Result<Vec<_>>>()?;
         let mut provenance = first.provenance("reinsurance_term");
         for (t, events) in years.iter().enumerate().skip(1) {
             provenance =
@@ -105,12 +110,18 @@ impl Tower {
                 let e = &years[t];
                 let losses = e.events(j);
                 let lf = factors.map(|f| &f[t][e.offset(j)..e.offset(j) + losses.len()]);
+                let scope = masks[t].as_deref().map(|masks| ScopeView {
+                    aggregate: e.aggregate_part_indices().unwrap_or(&[]),
+                    events: e.label_indices(j).expect("a scope needs labels"),
+                    masks,
+                });
                 (
                     e.aggregate_part(j).unwrap_or(&[]),
                     losses,
                     e.sums_insured(j),
                     e.times(j),
                     lf,
+                    scope,
                 )
             },
             provenance,
@@ -129,6 +140,7 @@ impl Tower {
                 "an aggregate loss has no sums insured or event times".into(),
             ));
         }
+        self.refuse_scope("an aggregate loss")?;
         let first = years
             .first()
             .ok_or_else(|| Error::Data("a term needs at least one year".into()))?;
@@ -159,6 +171,7 @@ impl Tower {
                     None,
                     None,
                     None,
+                    None,
                 )
             },
             provenance,
@@ -178,7 +191,7 @@ impl Tower {
         for j in 0..n_sims {
             let mut carried = self.carries();
             for t in 0..n_years {
-                let (aggregate, losses, si, times, lf) = year(t, j);
+                let (aggregate, losses, si, times, lf, scope) = year(t, j);
                 self.push_year(
                     &columns,
                     &mut draws,
@@ -187,6 +200,7 @@ impl Tower {
                     si,
                     times,
                     lf,
+                    scope,
                     t,
                     &mut carried,
                 );
@@ -222,6 +236,7 @@ type YearInputs<'a> = (
     Option<&'a [f64]>,
     Option<&'a [f64]>,
     Option<&'a [f64]>,
+    Option<ScopeView<'a>>,
 );
 
 impl EventSet {
@@ -679,6 +694,62 @@ mod tests {
                 assert_eq!(a, b, "{key:?}");
             }
         }
+    }
+
+    #[test]
+    fn a_scoped_layer_carries_what_it_carries_on_the_filtered_years() {
+        let year = |shift: f64| {
+            EventSet::from_years(
+                vec![vec![20.0 + shift, 15.0], vec![8.0, 30.0, 12.0 + shift]],
+                4,
+            )
+            .unwrap()
+            .with_labels(vec![(
+                "peril".into(),
+                ["quake", "wind", "wind", "flood", "wind"]
+                    .map(String::from)
+                    .to_vec(),
+            )])
+            .unwrap()
+        };
+        let years = vec![year(0.0), year(5.0)];
+        let layer = Layer::xol("XL", 10.0, 5.0)
+            .unwrap()
+            .premium_rate(1.0, 12.0)
+            .unwrap()
+            .profit_commission(0.3, 0.2)
+            .unwrap()
+            .profit_commission_carry_forward(None)
+            .unwrap();
+        let scoped = Tower::new(vec![layer.clone().scope("peril", &["wind"]).unwrap()])
+            .unwrap()
+            .apply_term(&years)
+            .unwrap()
+            .aggregate(&["kind", "layer", "year"])
+            .unwrap();
+        let wind: Vec<EventSet> = years
+            .iter()
+            .map(|y| y.filter("peril", &["wind"]).unwrap())
+            .collect();
+        let alone = Tower::new(vec![layer])
+            .unwrap()
+            .apply_term(&wind)
+            .unwrap()
+            .aggregate(&["kind", "layer", "year"])
+            .unwrap();
+        let mut compared = 0;
+        for k in alone.components() {
+            if matches!(k[0].to_string().as_str(), "gross" | "net") {
+                continue;
+            }
+            assert_eq!(
+                Empirical::draws(&scoped.marginal(k).unwrap()),
+                Empirical::draws(&alone.marginal(k).unwrap()),
+                "{k:?}"
+            );
+            compared += 1;
+        }
+        assert!(compared >= 4);
     }
 
     #[test]
