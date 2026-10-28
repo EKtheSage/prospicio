@@ -4695,7 +4695,8 @@ reviewers ask for beside a Mack exhibit: a test for calendar-year effects
 
 Status: **Built** (2026-10-28), issue #600 (its Reserving part), branch
 `claude/reserving-pattern-draws`, in Rust, Python and R; items 2, 4, 5 and
-6 are **proposed** and built as recommended. The cash-flow engine takes a
+6 were proposed and built as recommended, and the user accepted them as
+built on 2026-10-28. The cash-flow engine takes a
 paid pattern per simulation (`PatternDraws`, `time-value.md` decision 33);
 this decision gives those patterns from a reserving fit, row `i` the same
 simulation as row `i` of the fit's `reserves` and of every vector
@@ -4712,7 +4713,7 @@ decision 26 gives.
    origin's simulated cells divided by its ultimate: those carry process
    error that differs by origin, and an old origin has only the end of its
    curve left. A deal on a new year pays by the first.
-2. **The tail** (proposed). A fit with a tail reaches 1 one development
+2. **The tail** (accepted 2026-10-28). A fit with a tail reaches 1 one development
    period after the oldest age (12 months on an annual triangle), the age
    at which the one-year view with a bootstrap tail (decision 11) closes
    an origin; the share at the oldest age is `1 / tail`. The Bayesian
@@ -4724,7 +4725,7 @@ decision 26 gives.
    reserves under a rank correlation: the reorder is
    `reorder_groups_indexed` (equal to `reorder_groups` on the reserves),
    and its index carries the patterns.
-4. **Monthly from inception** (proposed). `DevelopmentPatterns::monthly`
+4. **Monthly from inception** (accepted 2026-10-28). `DevelopmentPatterns::monthly`
    gives, per simulation, `months` values for the engine's `paid`: the
    share at the end of month `t + 1`. On the origin's own basis
    (`MonthlyBasis::Origin`, the default), a pattern of accident periods
@@ -4739,7 +4740,7 @@ decision 26 gives.
    so 10,000 simulations take about a minute and a half on one thread. The
    terms' `written` and `earned` must describe the same basis; the engine
    cannot check it.
-5. **A falling pattern** (proposed). A pseudo factor below 1 makes a
+5. **A falling pattern** (accepted 2026-10-28). A pseudo factor below 1 makes a
    simulation's share fall at that age, which the engine refuses.
    `Monotone::Refuse` (the default) refuses it, naming the number of such
    simulations and the first; `Monotone::RunningMax` holds each share at
@@ -4754,7 +4755,7 @@ decision 26 gives.
    (`knowledge/findings/pattern-draws-falling.md`). The default leaves the
    choice to the caller rather than altering a fit's draws without a
    word.
-6. **The horizon** (proposed). The patterns end at exactly 1, so the
+6. **The horizon** (accepted 2026-10-28). The patterns end at exactly 1, so the
    terms' `paid` must end at 1 for the engine to take them; `months`
    shorter than the age at which the converted pattern reaches 1 is an
    error, not a truncation, and longer is padded with 1.
