@@ -57,6 +57,22 @@ checks the committed files against:
   2,000 simulated years of dated events, in millions of a synthetic currency.
   The guide [`cat-0-overview.md`](../docs/guides/cat-0-overview.md) describes
   them.
+- `submission/`, the sample submission, written by `make_submission.py`; the
+  guide [`submission-schema.md`](../docs/guides/submission-schema.md)
+  describes its files column by column.
+- `deal_report/`, the tidy tables of the deal report for the sample
+  submission, written by the guide
+  [`submission-schema.md`](../docs/guides/submission-schema.md) itself (a test
+  runs it and compares), and read by the report templates.
+
+## Report templates
+
+[`templates/`](templates/README.md) holds Quarto templates that turn an
+analysis into a report for an investor or a committee: the deal report, in
+R (`deal_report.qmd`) and Python (`deal_report_py.qmd`), reads a folder of
+tidy tables named in its header and holds no data. They are not notebooks
+and not pages of the docs site; CI's `deal-report` job renders both on
+`data/deal_report/`.
 
 ## Running a notebook
 

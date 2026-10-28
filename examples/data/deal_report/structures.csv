@@ -1,0 +1,12 @@
+structure,item,value
+flat,share,0.2
+flat,ceded_premium,35980000
+flat,brokerage,0.025
+flat,ceding_commission,0.32
+sliding,share,0.2
+sliding,ceded_premium,35980000
+sliding,brokerage,0.025
+sliding,commission_max,0.36
+sliding,loss_ratio_at_commission_max,0.45
+sliding,commission_min,0.24
+sliding,loss_ratio_at_commission_min,0.7

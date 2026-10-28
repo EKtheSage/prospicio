@@ -1,0 +1,174 @@
+---
+title: "Deal report"
+format:
+  html:
+    toc: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+jupyter: python3
+---
+
+```{python}
+#| tags: [parameters]
+# The deal report template, Python version: the twin of deal_report.qmd.
+# Render with
+#   quarto render deal_report_py.qmd -P tables:<folder>
+tables = "../data/deal_report"
+money_unit = 1_000_000
+money_label = "m"
+```
+
+```{python}
+#| label: setup
+# It holds no data: every number comes from the tidy tables in `tables`, whose
+# columns are set out in docs/guides/submission-schema.md ("The report's
+# tables"). A missing table or column stops the render with its name.
+import csv
+from pathlib import Path
+
+from IPython.display import Markdown, display
+
+NEED = {
+    "deal.csv": ["item", "value"],
+    "structures.csv": ["structure", "item", "value"],
+    "metrics.csv": ["structure", "section", "item", "statistic", "value"],
+}
+OPTIONAL = {"actual_vs_expected.csv": ["period", "actual", "expected", "ratio", "std_dev", "z"]}
+
+
+def read_table(name, columns):
+    path = Path(tables) / name
+    if not path.exists():
+        raise FileNotFoundError(f"the report needs {path}")
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        missing = [c for c in columns if c not in (reader.fieldnames or [])]
+        if missing:
+            raise ValueError(f"{name} has no column {', '.join(missing)}")
+        return list(reader)
+
+
+data = {name: read_table(name, columns) for name, columns in NEED.items()}
+ave_name, ave_columns = next(iter(OPTIONAL.items()))
+ave = read_table(ave_name, ave_columns) if (Path(tables) / ave_name).exists() else None
+
+deal = {r["item"]: r["value"] for r in data["deal.csv"]}
+structures = data["structures.csv"]
+metrics = data["metrics.csv"]
+names = list(dict.fromkeys(r["structure"] for r in structures))
+
+
+def money(x):
+    return f"{float(x) / money_unit:,.1f}{money_label}"
+
+
+def percent(x):
+    return f"{100 * float(x):.1f}%"
+
+
+def plain(x):
+    return f"{float(x):.3f}"
+
+
+def table(header, rows, left=1):
+    # A Markdown table: the first `left` columns aligned left, the others right.
+    rule = ["---" if i < left else "---:" for i in range(len(header))]
+    lines = [header, rule, *rows]
+    display(Markdown("\n".join("| " + " | ".join(str(c) for c in line) + " |" for line in lines)))
+
+
+def section_table(section, fmt):
+    # One section of metrics.csv: a row per structure and item, a column per statistic, in file order.
+    rows = [r for r in metrics if r["section"] == section]
+    if not rows:
+        display(Markdown("Not in the tables."))
+        return
+    stats = list(dict.fromkeys(r["statistic"] for r in rows))
+    keys = list(dict.fromkeys((r["structure"], r["item"]) for r in rows))
+    value = {(r["structure"], r["item"], r["statistic"]): r["value"] for r in rows}
+    body = [[s, i, *(fmt(value[s, i, t], i, t) if (s, i, t) in value else "" for t in stats)] for s, i in keys]
+    table(["structure", "item", *stats], body, left=2)
+```
+
+```{python}
+#| output: asis
+display(Markdown(
+    f"{deal['cedant']}, {deal['line_of_business']}. Treaty period {deal['period_start']} to "
+    f"{deal['period_end']}, valued at {deal['valuation_date']}. Amounts in {deal['currency']}, "
+    f"{deal['simulations']} simulations."))
+```
+
+## Structures
+
+```{python}
+#| label: structures
+value = {(r["structure"], r["item"]): r["value"] for r in structures}
+items = list(dict.fromkeys(r["item"] for r in structures))
+table(["item", *names],
+      [[i, *((money if "premium" in i else percent)(value[s, i]) if (s, i) in value else "" for s in names)]
+       for i in items])
+```
+
+## Loss ratio
+
+The treaty's loss ratio and the ratios that make up its result, as fractions
+of the ceded premium, in each structure.
+
+```{python}
+#| label: loss-ratio
+section_table("loss_ratio", lambda v, item, stat: percent(v))
+```
+
+## Ceded and net
+
+The cedant's loss in the treaty year, ceded to and kept from each structure.
+
+```{python}
+#| label: layers
+section_table("layers", lambda v, item, stat: money(v))
+```
+
+## Investor returns
+
+The investor's annual IRR and multiple on invested capital (MOIC) over the
+term. `Lower TVaR 5` is the mean of the worst 5% of simulations;
+`Probability of loss` is the share of simulations with an IRR below 0 or a
+MOIC below 1. Simulations whose flows have no IRR are left out of the IRR's
+statistics and counted.
+
+```{python}
+#| label: returns
+def returns_format(v, item, stat):
+    if stat == "Simulations without a root":
+        return f"{float(v):.0f}"
+    return percent(v) if stat == "Probability of loss" or item == "irr" else plain(v)
+
+
+section_table("returns", returns_format)
+```
+
+## Structures compared
+
+The mean amounts of each structure, with their ratio to its premium.
+
+```{python}
+#| label: comparison
+section_table("comparison", lambda v, item, stat: money(v) if stat == "Mean" else plain(v))
+```
+
+## Monitoring: actual against expected
+
+Each period's actual amount against what was expected of it, their ratio,
+the expected amount's standard deviation under the model and the z-score
+of the difference, about standard normal while the model holds.
+
+```{python}
+#| label: monitoring
+if ave is None:
+    display(Markdown("No actual against expected table yet: it is filled once the deal has a valuation after binding."))
+else:
+    table(ave_columns, [[r["period"], money(r["actual"]), money(r["expected"]), plain(r["ratio"]),
+                         money(r["std_dev"]), f"{float(r['z']):.2f}"] for r in ave])
+```
