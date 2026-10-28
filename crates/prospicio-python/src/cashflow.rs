@@ -1,11 +1,12 @@
 //! `prospicio.pricing` (Aggregate lane): a collateralised deal's monthly
 //! cash flows over `prospicio_pricing::cashflow` (`docs/design/time-value.md`,
-//! decisions 13 to 20).
+//! decisions 13 to 20), and the deal valued after binding (decision 34).
 
 use prospicio_pricing::cashflow::{
-    Adjustment, AdjustmentBase, Base, Buffer, CashflowTerms, Cashflows, Dates, FeeBasis, Funding,
-    FundingRule, FundingSource, Interest, InterestBasis, MonthlyPatterns, ObligationReference,
-    Operating, PatternDraws, PerformanceFee, PremiumFlow, Requirement, Term, Timing, Trace,
+    ActualState, Adjustment, AdjustmentBase, Base, Buffer, CashflowTerms, Cashflows, Conditioning,
+    Dates, FeeBasis, Forward, Funding, FundingRule, FundingSource, Interest, InterestBasis,
+    MonthlyPatterns, ObligationReference, Operating, PatternDraws, PerformanceFee, PremiumFlow,
+    Requirement, Term, Timing, Trace, Valuation, condition_on_paid as condition, deal_ave as ave,
 };
 use prospicio_pricing::returns::{IrrOptions, TieredFee};
 use pyo3::exceptions::PyValueError;
@@ -682,7 +683,116 @@ impl PyCashflowTerms {
             Some(p) => self.inner.trace_with_pattern(u, commission, &p),
         }
         .map_err(to_py)?;
-        trace_dict(py, &t)
+        trace_dict(py, &t, 0)
+    }
+
+    /// The deal valued at the start of ``month`` from its actual accounts
+    /// to the end of the month before (#603): ``Valuation.run`` simulates
+    /// the months from there to commutation, each simulation conditioned
+    /// on the actual paid. Valuation is at a month end.
+    ///
+    /// ``premium_collected`` is what the trust has received; premium the
+    /// schedule would have collected by then and the trust has not is
+    /// collected in ``month``. ``flows``, the investor's actual flows in
+    /// months ``0`` to ``month - 1``, give the return since inception.
+    /// Under ``funding_rule="obligation-increase"`` the funding reference
+    /// (the trace's ``funding_reference``) is required after month 0. A
+    /// valuation after a premium adjustment month is refused.
+    ///
+    /// Parameters
+    /// ----------
+    /// month : int
+    /// premium_collected, paid, collateral, funded, released, operating : float
+    /// flows : list of float, optional
+    /// funding_reference : float, optional
+    ///
+    /// Returns
+    /// -------
+    /// Valuation
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.pricing import CashflowTerms, CollateralRequirement
+    /// >>> ramp = lambda m: [min((t + 1) / m, 1.0) for t in range(48)]
+    /// >>> req = CollateralRequirement({"outstanding": 1.0})
+    /// >>> terms = CashflowTerms(100.0, 36, ramp(12), ramp(24), ramp(36), req)
+    /// >>> # A path at a loss ratio of 0.8, valued after 12 months.
+    /// >>> val = terms.valuation(12, **terms.actual_state(0.8, 12))
+    /// >>> f = val.run([0.5, 0.8, 1.2])
+    /// >>> [round(x, 9) for x in f.since_inception_rows()[1]] == [
+    /// ...     round(x, 9) for x in terms.run([0.8]).flows[0]]
+    /// True
+    #[pyo3(signature = (
+        month, *, premium_collected = 0.0, paid = 0.0, collateral = 0.0, funded = 0.0,
+        released = 0.0, operating = 0.0, flows = None, funding_reference = None
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn valuation(
+        &self,
+        month: usize,
+        premium_collected: f64,
+        paid: f64,
+        collateral: f64,
+        funded: f64,
+        released: f64,
+        operating: f64,
+        flows: Option<Vec<f64>>,
+        funding_reference: Option<f64>,
+    ) -> PyResult<PyValuation> {
+        let state = ActualState {
+            month,
+            premium_collected,
+            paid,
+            collateral,
+            funded,
+            released,
+            operating,
+            flows,
+            funding_reference,
+        };
+        let inner = self.inner.valuation(state).map_err(to_py)?;
+        Ok(PyValuation { inner })
+    }
+
+    /// The actual state of one simulated path at the start of ``month``,
+    /// as keywords for ``valuation``: to value a path of a
+    /// simulation as if it had happened.
+    ///
+    /// Parameters
+    /// ----------
+    /// u : float
+    /// month : int
+    /// commission : float, default 0
+    /// paid_pattern : list of float, optional
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    #[pyo3(signature = (u, month, commission = 0.0, *, paid_pattern = None))]
+    fn actual_state<'py>(
+        &self,
+        py: Python<'py>,
+        u: f64,
+        month: usize,
+        commission: f64,
+        paid_pattern: Option<Vec<f64>>,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let trace = match paid_pattern {
+            None => self.inner.trace(u, commission),
+            Some(p) => self.inner.trace_with_pattern(u, commission, &p),
+        }
+        .map_err(to_py)?;
+        let s = ActualState::from_trace(&trace, month).map_err(to_py)?;
+        let d = PyDict::new(py);
+        d.set_item("premium_collected", s.premium_collected)?;
+        d.set_item("paid", s.paid)?;
+        d.set_item("collateral", s.collateral)?;
+        d.set_item("funded", s.funded)?;
+        d.set_item("released", s.released)?;
+        d.set_item("operating", s.operating)?;
+        d.set_item("flows", s.flows)?;
+        d.set_item("funding_reference", s.funding_reference)?;
+        Ok(d)
     }
 
     fn __repr__(&self) -> String {
@@ -693,10 +803,373 @@ impl PyCashflowTerms {
     }
 }
 
-fn trace_dict<'py>(py: Python<'py>, t: &Trace) -> PyResult<Bound<'py, PyDict>> {
+fn conditioning(name: &str) -> PyResult<Conditioning> {
+    match name {
+        "bornhuetter-ferguson" => Ok(Conditioning::BornhuetterFerguson),
+        "truncation" => Ok(Conditioning::Truncation),
+        other => Err(PyValueError::new_err(format!(
+            "unknown conditioning {other:?}; use \"bornhuetter-ferguson\" or \"truncation\""
+        ))),
+    }
+}
+
+fn irr_options(
+    lower: Option<f64>,
+    upper: Option<f64>,
+    points: usize,
+    bisections: usize,
+    newton_steps: usize,
+) -> IrrOptions {
+    let d = IrrOptions::default();
+    IrrOptions {
+        lower: lower.unwrap_or(d.lower),
+        upper: upper.unwrap_or(d.upper),
+        points,
+        bisections,
+        newton_steps,
+    }
+}
+
+fn rows(flat: Vec<f64>, width: usize) -> Vec<Vec<f64>> {
+    flat.chunks(width.max(1)).map(<[f64]>::to_vec).collect()
+}
+
+/// A bound deal's terms with its actual state at a valuation month, from
+/// ``CashflowTerms.valuation`` (#603).
+///
+/// ``conditioning`` says how each simulation's ultimate loss ratio is
+/// conditioned on the actual paid ``A`` when the pattern is ``S`` paid:
+/// ``"bornhuetter-ferguson"`` (the default) keeps every simulation at
+/// ``A + u P (1 - S)``; ``"truncation"`` keeps those with ``u P >= A``,
+/// unchanged.
+#[pyclass(name = "Valuation", module = "prospicio.pricing", frozen)]
+pub(crate) struct PyValuation {
+    inner: Valuation,
+}
+
+#[pymethods]
+impl PyValuation {
+    /// The valuation month, the first month the forward run simulates.
+    #[getter]
+    fn month(&self) -> usize {
+        self.inner.month()
+    }
+
+    /// The share of the paid pattern reached before the valuation month.
+    #[getter]
+    fn share_paid(&self) -> f64 {
+        self.inner.share_paid()
+    }
+
+    /// The trust's and operating account's balances, the investment the
+    /// forward return starts from.
+    #[getter]
+    fn nav(&self) -> f64 {
+        self.inner.nav()
+    }
+
+    /// Each simulation's cash flows from the valuation month to
+    /// commutation, conditioned on the actual paid.
+    ///
+    /// Parameters
+    /// ----------
+    /// u : list of float
+    /// commission : list of float, optional
+    /// conditioning : str, default "bornhuetter-ferguson"
+    ///
+    /// Returns
+    /// -------
+    /// Forward
+    #[pyo3(signature = (u, commission = None, *, conditioning = "bornhuetter-ferguson"))]
+    fn run(
+        &self,
+        py: Python<'_>,
+        u: Vec<f64>,
+        commission: Option<Vec<f64>>,
+        conditioning: &str,
+    ) -> PyResult<PyForward> {
+        let how = self::conditioning(conditioning)?;
+        let c = commission.unwrap_or_else(|| vec![0.0; u.len()]);
+        let inner = py.detach(|| self.inner.run(&u, &c, how)).map_err(to_py)?;
+        Ok(PyForward { inner })
+    }
+
+    /// Every account line of one simulation from the valuation month, as
+    /// ``CashflowTerms.trace``, with ``opening_balance`` the actual
+    /// balances; ``conservation_error`` counts them.
+    ///
+    /// Parameters
+    /// ----------
+    /// u : float
+    /// commission : float, default 0
+    /// conditioning : str, default "bornhuetter-ferguson"
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    #[pyo3(signature = (u, commission = 0.0, *, conditioning = "bornhuetter-ferguson"))]
+    fn trace<'py>(
+        &self,
+        py: Python<'py>,
+        u: f64,
+        commission: f64,
+        conditioning: &str,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let how = self::conditioning(conditioning)?;
+        let t = self.inner.trace(u, commission, how).map_err(to_py)?;
+        trace_dict(py, &t, self.inner.month())
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Valuation(month={}, nav={})",
+            self.inner.month(),
+            self.inner.nav()
+        )
+    }
+}
+
+/// The forward cash flows of a ``Valuation``: one row a simulation kept,
+/// months from the valuation month to commutation, with the returns from
+/// the valuation month (the net asset value as the investment) and since
+/// inception (the actual flows to date first).
+#[pyclass(name = "Forward", module = "prospicio.pricing", frozen)]
+pub(crate) struct PyForward {
+    inner: Forward,
+}
+
+#[pymethods]
+impl PyForward {
+    /// The valuation month.
+    #[getter]
+    fn month(&self) -> usize {
+        self.inner.month()
+    }
+
+    /// The simulations kept, by their index in the loss ratios given.
+    #[getter]
+    fn kept(&self) -> Vec<usize> {
+        self.inner.kept().to_vec()
+    }
+
+    /// Each kept simulation's ultimate loss ratio given the paid to date.
+    #[getter]
+    fn ultimate(&self) -> Vec<f64> {
+        self.inner.ultimate().to_vec()
+    }
+
+    /// The flows in months from the valuation month, with totals since
+    /// inception (``funded``, ``released``, ``fee``).
+    #[getter]
+    fn flows(&self) -> PyCashflows {
+        PyCashflows {
+            inner: self.inner.flows().clone(),
+        }
+    }
+
+    /// The net asset value at the valuation.
+    #[getter]
+    fn nav(&self) -> f64 {
+        self.inner.nav()
+    }
+
+    /// The forward flows with the net asset value paid in at their first
+    /// month: one list a kept simulation.
+    fn forward_rows(&self) -> Vec<Vec<f64>> {
+        rows(self.inner.forward_rows(), self.inner.flows().months())
+    }
+
+    /// The actual flows to date followed by each kept simulation's forward
+    /// flows; needs the actual ``flows`` in the state.
+    fn since_inception_rows(&self) -> PyResult<Vec<Vec<f64>>> {
+        let width = self.inner.month() + self.inner.flows().months();
+        Ok(rows(
+            self.inner.since_inception_rows().map_err(to_py)?,
+            width,
+        ))
+    }
+
+    /// Each kept simulation's net present value from the valuation month.
+    fn forward_npv(&self, rate: f64) -> PyResult<Vec<f64>> {
+        self.inner.forward_npv(rate).map_err(to_py)
+    }
+
+    /// Each kept simulation's net present value since inception.
+    fn since_inception_npv(&self, rate: f64) -> PyResult<Vec<f64>> {
+        self.inner.since_inception_npv(rate).map_err(to_py)
+    }
+
+    /// Each kept simulation's multiple from the valuation month,
+    /// ``1 + net / (nav + funded after it)``.
+    fn forward_moic(&self) -> PyResult<Vec<f64>> {
+        self.inner.forward_moic().map_err(to_py)
+    }
+
+    /// Each kept simulation's multiple on invested capital since inception.
+    fn since_inception_moic(&self) -> PyResult<Vec<f64>> {
+        self.inner.since_inception_moic().map_err(to_py)
+    }
+
+    /// Each kept simulation's internal rate of return from the valuation
+    /// month, as ``Cashflows.irr``.
+    #[pyo3(signature = (*, lower = None, upper = None, points = 400, bisections = 8, newton_steps = 3))]
+    fn forward_irr(
+        &self,
+        py: Python<'_>,
+        lower: Option<f64>,
+        upper: Option<f64>,
+        points: usize,
+        bisections: usize,
+        newton_steps: usize,
+    ) -> PyResult<PyIrrResult> {
+        let o = irr_options(lower, upper, points, bisections, newton_steps);
+        let inner = py.detach(|| self.inner.forward_irr(&o)).map_err(to_py)?;
+        Ok(PyIrrResult { inner })
+    }
+
+    /// Each kept simulation's internal rate of return since inception.
+    #[pyo3(signature = (*, lower = None, upper = None, points = 400, bisections = 8, newton_steps = 3))]
+    fn since_inception_irr(
+        &self,
+        py: Python<'_>,
+        lower: Option<f64>,
+        upper: Option<f64>,
+        points: usize,
+        bisections: usize,
+        newton_steps: usize,
+    ) -> PyResult<PyIrrResult> {
+        let o = irr_options(lower, upper, points, bisections, newton_steps);
+        let inner = py
+            .detach(|| self.inner.since_inception_irr(&o))
+            .map_err(to_py)?;
+        Ok(PyIrrResult { inner })
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.kept().len()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Forward(month={}, n={}, months={})",
+            self.inner.month(),
+            self.inner.kept().len(),
+            self.inner.flows().months()
+        )
+    }
+}
+
+/// Each simulation's ultimate loss ratio conditioned on the loss ``paid``
+/// to date when the pattern is ``share_paid`` paid (#603): a dict with
+/// ``kept``, the simulations kept, and ``ultimate``, their ultimate loss
+/// ratios. ``"bornhuetter-ferguson"`` keeps every simulation at
+/// ``paid / premium + u (1 - share_paid)``; ``"truncation"`` keeps those
+/// with ``u premium >= paid``, unchanged.
+///
+/// Parameters
+/// ----------
+/// u : list of float
+/// premium, paid, share_paid : float
+/// conditioning : str, default "bornhuetter-ferguson"
+///
+/// Returns
+/// -------
+/// dict
+///
+/// Examples
+/// --------
+/// >>> from prospicio.pricing import condition_on_paid
+/// >>> c = condition_on_paid([0.2, 0.8], 100.0, 30.0, 0.4, conditioning="truncation")
+/// >>> c["kept"], c["ultimate"]
+/// ([1], [0.8])
+#[pyfunction]
+#[pyo3(signature = (u, premium, paid, share_paid, *, conditioning = "bornhuetter-ferguson"))]
+pub(crate) fn condition_on_paid<'py>(
+    py: Python<'py>,
+    u: Vec<f64>,
+    premium: f64,
+    paid: f64,
+    share_paid: f64,
+    conditioning: &str,
+) -> PyResult<Bound<'py, PyDict>> {
+    let how = self::conditioning(conditioning)?;
+    let c = condition(&u, premium, paid, share_paid, how).map_err(to_py)?;
     let d = PyDict::new(py);
-    d.set_item("month", (0..t.requirement.len()).collect::<Vec<_>>())?;
-    let columns: [(&str, &Vec<f64>); 13] = [
+    d.set_item("kept", c.kept)?;
+    d.set_item("ultimate", c.ultimate)?;
+    Ok(d)
+}
+
+/// The actual cumulative paid at the end of each month ``0, 1, ...``
+/// against what the priced simulations expected (#603): each simulation's
+/// ``u P S(t)`` with ``S`` the terms' paid pattern, or the simulation's own
+/// from ``paid_patterns`` (and ``pattern_index``). A dict of columns
+/// ``month``, ``actual``, ``expected`` (the mean), ``ratio``,
+/// ``percentile`` (the actual's percentile among the simulations, ties
+/// counted half), with ``levels`` and ``quantiles`` (one list a month, the
+/// expected paid at each level, numpy's linear quantile). A reported loss
+/// works the same way with the reported pattern as ``paid_patterns``.
+///
+/// Parameters
+/// ----------
+/// actual : list of float
+/// terms : CashflowTerms
+/// u : list of float
+/// paid_patterns : list of list of float, optional
+/// pattern_index : list of int, optional
+/// levels : list of float, default [0.05, 0.5, 0.95]
+///
+/// Returns
+/// -------
+/// dict
+///
+/// Examples
+/// --------
+/// >>> from prospicio.pricing import CashflowTerms, CollateralRequirement, deal_ave
+/// >>> req = CollateralRequirement({"outstanding": 1.0})
+/// >>> terms = CashflowTerms(100.0, 4, [1.0] * 4, [1.0] * 4, [0.25, 0.5, 0.75, 1.0], req)
+/// >>> r = deal_ave([15.0, 45.0], terms, [0.4, 0.6, 0.8])
+/// >>> r["expected"], r["percentile"]
+/// ([15.0, 30.0], [0.5, 1.0])
+#[pyfunction]
+#[pyo3(signature = (actual, terms, u, *, paid_patterns = None, pattern_index = None, levels = None))]
+pub(crate) fn deal_ave<'py>(
+    py: Python<'py>,
+    actual: Vec<f64>,
+    terms: PyRef<'py, PyCashflowTerms>,
+    u: Vec<f64>,
+    paid_patterns: Option<Vec<Vec<f64>>>,
+    pattern_index: Option<Vec<usize>>,
+    levels: Option<Vec<f64>>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let draws = match (paid_patterns, pattern_index) {
+        (None, None) => None,
+        (Some(p), None) => Some(PatternDraws::new(p).map_err(to_py)?),
+        (Some(p), Some(i)) => Some(PatternDraws::indexed(p, i).map_err(to_py)?),
+        (None, Some(_)) => {
+            return Err(PyValueError::new_err("pattern_index needs paid_patterns"));
+        }
+    };
+    let levels = levels.unwrap_or_else(|| vec![0.05, 0.5, 0.95]);
+    let r = ave(&actual, &terms.inner, &u, draws.as_ref(), &levels).map_err(to_py)?;
+    let d = PyDict::new(py);
+    d.set_item("month", r.month)?;
+    d.set_item("actual", r.actual)?;
+    d.set_item("expected", r.expected)?;
+    d.set_item("ratio", r.ratio)?;
+    d.set_item("percentile", r.percentile)?;
+    d.set_item("quantiles", rows(r.quantiles, r.levels.len()))?;
+    d.set_item("levels", r.levels)?;
+    Ok(d)
+}
+
+fn trace_dict<'py>(py: Python<'py>, t: &Trace, first: usize) -> PyResult<Bound<'py, PyDict>> {
+    let d = PyDict::new(py);
+    d.set_item(
+        "month",
+        (first..first + t.requirement.len()).collect::<Vec<_>>(),
+    )?;
+    let columns: [(&str, &Vec<f64>); 14] = [
         ("requirement", &t.requirement),
         ("premium", &t.premium),
         ("adjustment", &t.adjustment),
@@ -710,10 +1183,12 @@ fn trace_dict<'py>(py: Python<'py>, t: &Trace) -> PyResult<Bound<'py, PyDict>> {
         ("equity_release", &t.equity_release),
         ("operating_balance", &t.operating_balance),
         ("investor", &t.investor),
+        ("funding_reference", &t.funding_reference),
     ];
     for (k, v) in columns {
         d.set_item(k, v)?;
     }
+    d.set_item("opening_balance", t.opening_balance)?;
     d.set_item("commutation_paid", t.commutation_paid)?;
     d.set_item("fee", t.fee)?;
     d.set_item("conservation_error", t.conservation_error())?;
@@ -811,14 +1286,7 @@ impl PyCashflows {
         bisections: usize,
         newton_steps: usize,
     ) -> PyResult<PyIrrResult> {
-        let d = IrrOptions::default();
-        let options = IrrOptions {
-            lower: lower.unwrap_or(d.lower),
-            upper: upper.unwrap_or(d.upper),
-            points,
-            bisections,
-            newton_steps,
-        };
+        let options = irr_options(lower, upper, points, bisections, newton_steps);
         let inner = py.detach(|| self.inner.irr(&options)).map_err(to_py)?;
         Ok(PyIrrResult { inner })
     }

@@ -5495,6 +5495,23 @@ class CashflowTerms:
     """
     def __new__(cls, /, premium: float, commutation_month: int, written: Sequence[float], earned: Sequence[float], paid: Sequence[float], requirement: CollateralRequirement, *, commutation_requirement: CollateralRequirement |None = None, collected_rate: float = 1.0, deduct_commission: bool = False, lag: int = 0, adjustments: Sequence[PremiumAdjustment] |None = None, funding_dates: Any |None = None, funding_rule: str = "shortfall", premium_offset: float = 1.0, reference: str = "previous-date", funding_source: str = "investor", collateral_release: Any |None = None, annual_yield: float = 0.0, interest_basis: str = "average", opening_fixed: float = 0.0, opening_share: float = 0.0, expense_rate: float = 0.0, buffer_months: int = 0, buffer_paid: bool = False, buffer_expenses: bool = False, equity_release: Any |None = None, fee: tuple[Sequence[float], Sequence[float]] |None = None, fee_basis: str = "profit") -> CashflowTerms: ...
     def __repr__(self, /) -> str: ...
+    def actual_state(self, /, u: float, month: int, commission: float = 0.0, *, paid_pattern: Sequence[float] |None = None) -> dict:
+        """
+        The actual state of one simulated path at the start of ``month``,
+        as keywords for ``valuation``: to value a path of a
+        simulation as if it had happened.
+        
+        Parameters
+        ----------
+        u : float
+        month : int
+        commission : float, default 0
+        paid_pattern : list of float, optional
+        
+        Returns
+        -------
+        dict
+        """
     @property
     def commutation_month(self, /) -> int:
         """
@@ -5576,6 +5593,45 @@ class CashflowTerms:
         Returns
         -------
         dict
+        """
+    def valuation(self, /, month: int, *, premium_collected: float = 0.0, paid: float = 0.0, collateral: float = 0.0, funded: float = 0.0, released: float = 0.0, operating: float = 0.0, flows: Sequence[float] |None = None, funding_reference: float |None = None) -> Valuation:
+        """
+        The deal valued at the start of ``month`` from its actual accounts
+        to the end of the month before (#603): ``Valuation.run`` simulates
+        the months from there to commutation, each simulation conditioned
+        on the actual paid. Valuation is at a month end.
+        
+        ``premium_collected`` is what the trust has received; premium the
+        schedule would have collected by then and the trust has not is
+        collected in ``month``. ``flows``, the investor's actual flows in
+        months ``0`` to ``month - 1``, give the return since inception.
+        Under ``funding_rule="obligation-increase"`` the funding reference
+        (the trace's ``funding_reference``) is required after month 0. A
+        valuation after a premium adjustment month is refused.
+        
+        Parameters
+        ----------
+        month : int
+        premium_collected, paid, collateral, funded, released, operating : float
+        flows : list of float, optional
+        funding_reference : float, optional
+        
+        Returns
+        -------
+        Valuation
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import CashflowTerms, CollateralRequirement
+        >>> ramp = lambda m: [min((t + 1) / m, 1.0) for t in range(48)]
+        >>> req = CollateralRequirement({"outstanding": 1.0})
+        >>> terms = CashflowTerms(100.0, 36, ramp(12), ramp(24), ramp(36), req)
+        >>> # A path at a loss ratio of 0.8, valued after 12 months.
+        >>> val = terms.valuation(12, **terms.actual_state(0.8, 12))
+        >>> f = val.run([0.5, 0.8, 1.2])
+        >>> [round(x, 9) for x in f.since_inception_rows()[1]] == [
+        ...     round(x, 9) for x in terms.run([0.8]).flows[0]]
+        True
         """
 
 @final
@@ -12712,6 +12768,79 @@ class FiniteRuin:
     def u(self, /) -> list[float]:
         """
         The initial surplus at each grid point.
+        """
+
+@final
+class Forward:
+    """
+    The forward cash flows of a ``Valuation``: one row a simulation kept,
+    months from the valuation month to commutation, with the returns from
+    the valuation month (the net asset value as the investment) and since
+    inception (the actual flows to date first).
+    """
+    def __len__(self, /) -> int: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def flows(self, /) -> Cashflows:
+        """
+        The flows in months from the valuation month, with totals since
+        inception (``funded``, ``released``, ``fee``).
+        """
+    def forward_irr(self, /, *, lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3) -> IrrResult:
+        """
+        Each kept simulation's internal rate of return from the valuation
+        month, as ``Cashflows.irr``.
+        """
+    def forward_moic(self, /) -> list[float]:
+        """
+        Each kept simulation's multiple from the valuation month,
+        ``1 + net / (nav + funded after it)``.
+        """
+    def forward_npv(self, /, rate: float) -> list[float]:
+        """
+        Each kept simulation's net present value from the valuation month.
+        """
+    def forward_rows(self, /) -> list[list[float]]:
+        """
+        The forward flows with the net asset value paid in at their first
+        month: one list a kept simulation.
+        """
+    @property
+    def kept(self, /) -> list[int]:
+        """
+        The simulations kept, by their index in the loss ratios given.
+        """
+    @property
+    def month(self, /) -> int:
+        """
+        The valuation month.
+        """
+    @property
+    def nav(self, /) -> float:
+        """
+        The net asset value at the valuation.
+        """
+    def since_inception_irr(self, /, *, lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3) -> IrrResult:
+        """
+        Each kept simulation's internal rate of return since inception.
+        """
+    def since_inception_moic(self, /) -> list[float]:
+        """
+        Each kept simulation's multiple on invested capital since inception.
+        """
+    def since_inception_npv(self, /, rate: float) -> list[float]:
+        """
+        Each kept simulation's net present value since inception.
+        """
+    def since_inception_rows(self, /) -> list[list[float]]:
+        """
+        The actual flows to date followed by each kept simulation's forward
+        flows; needs the actual ``flows`` in the state.
+        """
+    @property
+    def ultimate(self, /) -> list[float]:
+        """
+        Each kept simulation's ultimate loss ratio given the paid to date.
         """
 
 @final
@@ -29954,6 +30083,67 @@ class UnderwritingBasis:
         """
 
 @final
+class Valuation:
+    """
+    A bound deal's terms with its actual state at a valuation month, from
+    ``CashflowTerms.valuation`` (#603).
+    
+    ``conditioning`` says how each simulation's ultimate loss ratio is
+    conditioned on the actual paid ``A`` when the pattern is ``S`` paid:
+    ``"bornhuetter-ferguson"`` (the default) keeps every simulation at
+    ``A + u P (1 - S)``; ``"truncation"`` keeps those with ``u P >= A``,
+    unchanged.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def month(self, /) -> int:
+        """
+        The valuation month, the first month the forward run simulates.
+        """
+    @property
+    def nav(self, /) -> float:
+        """
+        The trust's and operating account's balances, the investment the
+        forward return starts from.
+        """
+    def run(self, /, u: Sequence[float], commission: Sequence[float] |None = None, *, conditioning: str = "bornhuetter-ferguson") -> Forward:
+        """
+        Each simulation's cash flows from the valuation month to
+        commutation, conditioned on the actual paid.
+        
+        Parameters
+        ----------
+        u : list of float
+        commission : list of float, optional
+        conditioning : str, default "bornhuetter-ferguson"
+        
+        Returns
+        -------
+        Forward
+        """
+    @property
+    def share_paid(self, /) -> float:
+        """
+        The share of the paid pattern reached before the valuation month.
+        """
+    def trace(self, /, u: float, commission: float = 0.0, *, conditioning: str = "bornhuetter-ferguson") -> dict:
+        """
+        Every account line of one simulation from the valuation month, as
+        ``CashflowTerms.trace``, with ``opening_balance`` the actual
+        balances; ``conservation_error`` counts them.
+        
+        Parameters
+        ----------
+        u : float
+        commission : float, default 0
+        conditioning : str, default "bornhuetter-ferguson"
+        
+        Returns
+        -------
+        dict
+        """
+
+@final
 class ViewPrice:
     """
     One view's price under a distortion, from ``TowerGrids.price``: the
@@ -30948,6 +31138,33 @@ def compound_moments(frequency: Any, severity: Any) -> CompoundMoments:
     [('shape', 15.2025), ('scale', 49.5), ('shift', -252.5253)]
     """
 
+def condition_on_paid(u: Sequence[float], premium: float, paid: float, share_paid: float, *, conditioning: str = "bornhuetter-ferguson") -> dict:
+    """
+    Each simulation's ultimate loss ratio conditioned on the loss ``paid``
+    to date when the pattern is ``share_paid`` paid (#603): a dict with
+    ``kept``, the simulations kept, and ``ultimate``, their ultimate loss
+    ratios. ``"bornhuetter-ferguson"`` keeps every simulation at
+    ``paid / premium + u (1 - share_paid)``; ``"truncation"`` keeps those
+    with ``u premium >= paid``, unchanged.
+    
+    Parameters
+    ----------
+    u : list of float
+    premium, paid, share_paid : float
+    conditioning : str, default "bornhuetter-ferguson"
+    
+    Returns
+    -------
+    dict
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import condition_on_paid
+    >>> c = condition_on_paid([0.2, 0.8], 100.0, 30.0, 0.4, conditioning="truncation")
+    >>> c["kept"], c["ultimate"]
+    ([1], [0.8])
+    """
+
 def confusion_matrix(y: Sequence[float], score: Sequence[float], threshold: float, weights: Sequence[float] |None = None) -> dict[str, float]:
     """
     The confusion matrix of a binary model at ``threshold`` (a row is
@@ -31073,6 +31290,41 @@ def crps(draws: Sequence[float], y: float) -> float:
     Returns
     -------
     float
+    """
+
+def deal_ave(actual: Sequence[float], terms: CashflowTerms, u: Sequence[float], *, paid_patterns: Sequence[Sequence[float]] |None = None, pattern_index: Sequence[int] |None = None, levels: Sequence[float] |None = None) -> dict:
+    """
+    The actual cumulative paid at the end of each month ``0, 1, ...``
+    against what the priced simulations expected (#603): each simulation's
+    ``u P S(t)`` with ``S`` the terms' paid pattern, or the simulation's own
+    from ``paid_patterns`` (and ``pattern_index``). A dict of columns
+    ``month``, ``actual``, ``expected`` (the mean), ``ratio``,
+    ``percentile`` (the actual's percentile among the simulations, ties
+    counted half), with ``levels`` and ``quantiles`` (one list a month, the
+    expected paid at each level, numpy's linear quantile). A reported loss
+    works the same way with the reported pattern as ``paid_patterns``.
+    
+    Parameters
+    ----------
+    actual : list of float
+    terms : CashflowTerms
+    u : list of float
+    paid_patterns : list of list of float, optional
+    pattern_index : list of int, optional
+    levels : list of float, default [0.05, 0.5, 0.95]
+    
+    Returns
+    -------
+    dict
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import CashflowTerms, CollateralRequirement, deal_ave
+    >>> req = CollateralRequirement({"outstanding": 1.0})
+    >>> terms = CashflowTerms(100.0, 4, [1.0] * 4, [1.0] * 4, [0.25, 0.5, 0.75, 1.0], req)
+    >>> r = deal_ave([15.0, 45.0], terms, [0.4, 0.6, 0.8])
+    >>> r["expected"], r["percentile"]
+    ([15.0, 30.0], [0.5, 1.0])
     """
 
 def derive_premium(technical: float, expenses: Sequence[Expense]) -> float:
