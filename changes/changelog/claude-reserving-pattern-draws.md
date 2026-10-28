@@ -1,7 +1,7 @@
 ### Reserving
 
 - A development pattern per simulation, aligned with the reserve draws, for
-  the cash-flow engine's paid patterns (#600): `DevelopmentPatterns` on the
+  the cash-flow engine's paid patterns (#600, #673): `DevelopmentPatterns` on the
   ODP and Mack bootstraps, `BayesOdp`, `BayesBf` and `BayesBfNormalised`
   (one fit or segments, carried through a rank correlation), with
   `pattern_draws` and `monthly` (on the origin's own basis or an
