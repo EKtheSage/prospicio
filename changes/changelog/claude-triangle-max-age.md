@@ -7,4 +7,5 @@
   the first is an error (`Error::AgeBeforeFirst`). In Python
   (`Triangle.max_age`) and R (`max_age()`). The errors of
   `BayesBfNormalised`, `BayesOdp` and `BayesBf` for a falling last age now
-  name it as the remedy (`reserving-bayes.md` decision 18, #667).
+  name it as the remedy, and on a triangle of several segments add that it
+  cuts every segment (`reserving-bayes.md` decision 18, #667).
