@@ -780,6 +780,103 @@ impl Triangle {
         })
     }
 
+    /// The triangle with the development ages up to `age` months: every
+    /// age at or before it is kept, in every segment, measure and origin,
+    /// and the later ages are left out, as chainladder-python's
+    /// `tri[tri.development <= age]`. A dropped age is not folded into a
+    /// tail, so a method fitted on the result has no development past the
+    /// last kept age unless it is given a tail.
+    ///
+    /// `age` need not be one of the triangle's ages: any value at or past
+    /// the first age keeps the ages up to it, and one at or past the last
+    /// age returns the triangle unchanged. The origins, the measures (a
+    /// premium column among them), the grains and the basis (cumulative or
+    /// incremental) are kept; the valuation becomes the latest valuation of
+    /// a kept observed cell. A measure observed only at a dropped age (a
+    /// premium recorded once at each origin's latest age, say) loses those
+    /// cells, and an origin observed only at dropped ages keeps an empty
+    /// row: the fits trim it when it is the first or the last origin of a
+    /// segment and refuse it between observed origins.
+    ///
+    /// On a cumulative triangle where every origin keeps an observed cell,
+    /// the result is what [`Triangle::from_long`] builds from the rows of
+    /// [`Triangle::to_long`] at the kept ages; an origin left without cells
+    /// (the oldest origins of a trapezoid, observed only at later ages) is
+    /// not in those rows, so the rebuild has fewer origins, while the fits
+    /// give the same results on both. On an incremental one it is not: `from_long` runs an incremental table's
+    /// ages to the oldest origin's age at the valuation and fills the
+    /// missing rows with zero increments, so the rebuild brings the dropped
+    /// ages back. This method cuts the development axis itself.
+    ///
+    /// An `age` before the first age, which keeps nothing, is
+    /// [`Error::AgeBeforeFirst`], and a cut that leaves no observed cell is
+    /// [`Error::Empty`].
+    ///
+    /// ```
+    /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
+    ///
+    /// let origin = [2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
+    /// let tri = Triangle::from_long(&Long {
+    ///     keys: &[],
+    ///     origin: &origin,
+    ///     development: DevelopmentColumn::Age(&[12, 24, 36, 12, 24, 12]),
+    ///     values: &[("paid", &[100.0, 150.0, 145.0, 110.0, 170.0, 120.0])],
+    ///     origin_grain: Grain::Year,
+    ///     development_grain: Grain::Year,
+    ///     cumulative: true,
+    /// })
+    /// .unwrap();
+    /// let cut = tri.max_age(24).unwrap();
+    /// assert_eq!(cut.development(), &[12, 24]);
+    /// assert_eq!(cut.get(0, 0, 0, 1), Some(150.0));
+    /// assert_eq!(tri.max_age(30).unwrap(), cut);
+    /// assert_eq!(tri.max_age(36).unwrap(), tri);
+    /// assert!(tri.max_age(6).is_err());
+    /// ```
+    pub fn max_age(&self, age: Lag) -> Result<Self> {
+        let nd = self.shape[3];
+        let kept = self.development.iter().take_while(|&&a| a <= age).count();
+        if kept == nd {
+            return Ok(self.clone());
+        }
+        if kept == 0 {
+            return Err(Error::AgeBeforeFirst {
+                age,
+                first: self.development[0],
+            });
+        }
+        let rows = self.values.len() / nd;
+        let mut values = Vec::with_capacity(rows * kept);
+        let mut mask = Vec::with_capacity(rows * kept);
+        for (row_values, row_mask) in self.values.chunks_exact(nd).zip(self.mask.chunks_exact(nd)) {
+            values.extend_from_slice(&row_values[..kept]);
+            mask.extend_from_slice(&row_mask[..kept]);
+        }
+        let mut out = Self {
+            values,
+            mask,
+            shape: [self.shape[0], self.shape[1], self.shape[2], kept],
+            development: self.development[..kept].to_vec(),
+            ..self.clone()
+        };
+        let no = self.shape[2];
+        out.valuation = out
+            .mask
+            .chunks_exact(kept)
+            .enumerate()
+            .flat_map(|(row, seen)| {
+                let o = row % no;
+                seen.iter()
+                    .enumerate()
+                    .filter(|&(_, &s)| s)
+                    .map(move |(d, _)| (o, d))
+            })
+            .map(|(o, d)| out.valuation_of(o, d))
+            .max()
+            .ok_or(Error::Empty)?;
+        Ok(out)
+    }
+
     /// Position of the key column named `name`.
     fn key_position(&self, name: &str) -> Result<usize> {
         self.keys
@@ -976,6 +1073,7 @@ impl Triangle {
                     ages: self.development[d0..=d1].to_vec(),
                     origin_offset: o0,
                     dev_offset: d0,
+                    alone: ni == 1,
                 })
             })
             .collect()
@@ -1057,6 +1155,11 @@ pub(crate) struct Segment {
     pub(crate) origin_offset: usize,
     /// Triangle development position of the segment's first age.
     pub(crate) dev_offset: usize,
+    /// Whether the segment is its triangle's only one, so that a cut of
+    /// the triangle's ages (`Triangle::max_age`) changes no other segment.
+    /// Read by the Bayesian models' error messages.
+    #[cfg_attr(not(feature = "bayes"), allow(dead_code))]
+    pub(crate) alone: bool,
 }
 
 impl Segment {
@@ -1078,6 +1181,7 @@ impl Segment {
             ages,
             origin_offset: 0,
             dev_offset: 0,
+            alone: true,
         }
     }
 
@@ -1828,5 +1932,211 @@ pub(crate) mod tests {
             t.select_columns(&["paid", "paid"]),
             Err(Error::DuplicateColumn("paid".into()))
         );
+    }
+
+    /// Two segments and two measures, origins 2020 to 2022 at ages 12 to 36.
+    fn two_segments() -> Triangle {
+        let mut keys = Vec::new();
+        let (mut origin, mut ages, mut paid, mut incurred) = (vec![], vec![], vec![], vec![]);
+        for (lob, scale) in [("Auto", 1.0), ("Home", 10.0)] {
+            for (k, row) in [&[100.0, 150.0, 160.0][..], &[110.0, 170.0], &[120.0]]
+                .iter()
+                .enumerate()
+            {
+                for (d, &v) in row.iter().enumerate() {
+                    keys.push(lob);
+                    origin.push(Month::january(2020 + k as i32));
+                    ages.push(12 * (d as Lag + 1));
+                    paid.push(scale * v);
+                    incurred.push(scale * (v + 20.0));
+                }
+            }
+        }
+        Triangle::from_long(&Long {
+            keys: &[("lob", &keys)],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("paid", &paid), ("incurred", &incurred)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn max_age_keeps_the_ages_up_to_it() {
+        let tri = raa();
+        let cut = tri.max_age(60).unwrap();
+        assert_eq!(cut.shape(), [1, 1, 10, 5]);
+        assert_eq!(cut.development(), &[12, 24, 36, 48, 60]);
+        assert_eq!(cut.origins(), tri.origins());
+        for o in 0..10 {
+            for d in 0..5 {
+                assert_eq!(cut.get(0, 0, o, d), tri.get(0, 0, o, d), "{o}, {d}");
+            }
+        }
+        assert_eq!(cut.get(0, 0, 0, 5), None);
+        // The youngest origins are still at the valuation.
+        assert_eq!(cut.valuation(), tri.valuation());
+        assert_eq!(cut.origin_grain(), Grain::Year);
+        assert_eq!(cut.development_grain(), Grain::Year);
+        assert!(cut.is_cumulative());
+        // An age between two of the triangle's keeps the ones before it.
+        assert_eq!(tri.max_age(71).unwrap(), cut);
+        // At or past the last age: unchanged.
+        assert_eq!(tri.max_age(120).unwrap(), tri);
+        assert_eq!(tri.max_age(1000).unwrap(), tri);
+        assert_eq!(tri.max_age(12).unwrap().development(), &[12]);
+    }
+
+    #[test]
+    fn max_age_cuts_every_segment_and_measure() {
+        let tri = two_segments();
+        let cut = tri.max_age(24).unwrap();
+        assert_eq!(cut.shape(), [2, 2, 3, 2]);
+        assert_eq!(cut.index(), tri.index());
+        assert_eq!(cut.columns(), tri.columns());
+        for i in 0..2 {
+            for c in 0..2 {
+                for o in 0..3 {
+                    for d in 0..2 {
+                        assert_eq!(cut.get(i, c, o, d), tri.get(i, c, o, d));
+                    }
+                }
+            }
+        }
+        assert_eq!(cut.get(1, 1, 1, 1), Some(1900.0));
+        assert_eq!(
+            cut.select(&[("lob", &["Home"])]).unwrap(),
+            tri.select(&[("lob", &["Home"])])
+                .unwrap()
+                .max_age(24)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn max_age_equals_the_rebuild_from_the_kept_rows() {
+        for (tri, age) in [(raa(), 48), (genins(), 96), (two_segments(), 24)] {
+            let long = tri.to_long();
+            let keep: Vec<usize> = (0..long.development.len())
+                .filter(|&i| long.development[i] <= age)
+                .collect();
+            let keys: Vec<(String, Vec<&str>)> = long
+                .keys
+                .iter()
+                .map(|(n, v)| (n.clone(), keep.iter().map(|&i| v[i].as_str()).collect()))
+                .collect();
+            let keys: Vec<(&str, &[&str])> = keys
+                .iter()
+                .map(|(n, v)| (n.as_str(), v.as_slice()))
+                .collect();
+            let origin: Vec<Month> = keep.iter().map(|&i| long.origin[i]).collect();
+            let development: Vec<Lag> = keep.iter().map(|&i| long.development[i]).collect();
+            let values: Vec<(&str, Vec<f64>)> = long
+                .values
+                .iter()
+                .map(|(n, v)| (n.as_str(), keep.iter().map(|&i| v[i]).collect()))
+                .collect();
+            let values: Vec<(&str, &[f64])> =
+                values.iter().map(|(n, v)| (*n, v.as_slice())).collect();
+            let rebuilt = Triangle::from_long(&Long {
+                keys: &keys,
+                origin: &origin,
+                development: DevelopmentColumn::Age(&development),
+                values: &values,
+                origin_grain: tri.origin_grain(),
+                development_grain: tri.development_grain(),
+                cumulative: true,
+            })
+            .unwrap();
+            assert_eq!(tri.max_age(age).unwrap(), rebuilt, "{age}");
+        }
+    }
+
+    /// A trapezoid whose oldest origin is observed only past the cut keeps
+    /// it as an empty row, which the rebuild from the long table does not
+    /// (`to_long` writes observed rows only, so the rebuilt origins start
+    /// later); the fits trim a leading empty origin, so both give the same
+    /// chain ladder.
+    #[test]
+    fn max_age_keeps_an_origin_left_without_cells() {
+        // Only calendar years 2020 and 2021 observed.
+        let origin = [2018, 2018, 2019, 2019, 2020, 2020, 2021].map(Month::january);
+        let tri = Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&[36, 48, 24, 36, 12, 24, 12]),
+            values: &[("paid", &[150.0, 160.0, 140.0, 150.0, 100.0, 145.0, 110.0])],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        let cut = tri.max_age(24).unwrap();
+        assert_eq!(cut.origins(), tri.origins());
+        assert!((0..2).all(|d| cut.get(0, 0, 0, d).is_none()));
+        let rebuilt = Triangle::from_long(&Long {
+            keys: &[],
+            origin: &[2019, 2020, 2020, 2021].map(Month::january),
+            development: DevelopmentColumn::Age(&[24, 12, 24, 12]),
+            values: &[("paid", &[140.0, 100.0, 145.0, 110.0])],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        assert_eq!(rebuilt.origins(), &tri.origins()[1..]);
+        assert_ne!(cut, rebuilt);
+        let fit = |t: &Triangle| crate::ChainLadder::default().fit(t, "paid").unwrap();
+        let (a, b) = (fit(&cut), fit(&rebuilt));
+        assert_eq!(a.origins, b.origins);
+        assert_eq!(a.ultimate, b.ultimate);
+    }
+
+    #[test]
+    fn max_age_keeps_an_incremental_triangle_incremental() {
+        let tri = raa();
+        let inc = tri.to_incremental().max_age(36).unwrap();
+        assert!(!inc.is_cumulative());
+        assert_eq!(inc, tri.max_age(36).unwrap().to_incremental());
+        assert_eq!(inc.development(), &[12, 24, 36]);
+    }
+
+    #[test]
+    fn max_age_moves_the_valuation_back_when_the_latest_cells_go() {
+        // One origin: its latest cell is the valuation, and it goes.
+        let tri = annual(2020, &[&[100.0, 150.0, 160.0]]);
+        assert_eq!(tri.valuation(), Month::new(2022, 12).unwrap());
+        let cut = tri.max_age(24).unwrap();
+        assert_eq!(cut.valuation(), Month::new(2021, 12).unwrap());
+        assert_eq!(cut.latest_diagonal().values(0, 0), vec![150.0]);
+    }
+
+    #[test]
+    fn max_age_before_the_first_age_is_an_error() {
+        let tri = raa();
+        assert_eq!(
+            tri.max_age(11),
+            Err(Error::AgeBeforeFirst { age: 11, first: 12 })
+        );
+        assert_eq!(
+            tri.max_age(0).unwrap_err().to_string(),
+            "age 0 months is before the triangle's first age, 12 months, so no age is kept"
+        );
+        // A cut that leaves no observed cell.
+        let late = Triangle::from_long(&Long {
+            keys: &[],
+            origin: &[Month::january(2020); 2],
+            development: DevelopmentColumn::Age(&[12, 24]),
+            values: &[("paid", &[f64::NAN, 5.0])],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        assert_eq!(late.development(), &[12, 24]);
+        assert_eq!(late.max_age(12), Err(Error::Empty));
     }
 }

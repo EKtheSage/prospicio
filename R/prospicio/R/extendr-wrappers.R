@@ -2379,6 +2379,8 @@ Triangle$group_by <- function(keys) .Call(wrap__Triangle__group_by, self, keys)
 
 Triangle$grain <- function(origin_grain, development_grain) .Call(wrap__Triangle__grain, self, origin_grain, development_grain)
 
+Triangle$max_age <- function(age) .Call(wrap__Triangle__max_age, self, age)
+
 Triangle$view <- function(keys, values, column) .Call(wrap__Triangle__view, self, keys, values, column)
 
 Triangle$summary <- function() .Call(wrap__Triangle__summary, self)

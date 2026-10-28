@@ -734,15 +734,17 @@ impl BayesOdp {
                 previous = cum;
             }
         }
-        let model = self.model(
-            no,
-            nd,
-            cells,
-            fit.scale,
-            priors,
-            |w| format!("origin {}", segment.origins[w]),
-            |d| format!("development age {} months", segment.ages[d]),
-        )?;
+        let model = self
+            .model(
+                no,
+                nd,
+                cells,
+                fit.scale,
+                priors,
+                |w| format!("origin {}", segment.origins[w]),
+                |d| format!("development age {} months", segment.ages[d]),
+            )
+            .map_err(|e| last_age_remedy(e, &segment.ages, segment.alone))?;
         // The chain ladder's fitted increments are U_w g_d, the ODP GLM's
         // MLE: their logs give the log-linear parameters when all are
         // positive. Otherwise start from the prior's centre.
@@ -1091,6 +1093,41 @@ impl ReserveFit for BayesOdpFit {
 
     fn total_columns(&self) -> Vec<(&'static str, f64)> {
         vec![("scale", self.scale)]
+    }
+}
+
+/// `e` with the remedy for a falling last age appended when it names the
+/// last of `ages` (design note `reserving-bayes.md`, decisions 18 and 26):
+/// keep the earlier ages with `Triangle::max_age`. Unless the segment is
+/// `alone` in its triangle, the remedy adds that `max_age` cuts every
+/// segment.
+pub(super) fn last_age_remedy(e: Error, ages: &[crate::Lag], alone: bool) -> Error {
+    match (e, ages) {
+        (Error::Bayes(m), [.., previous, last])
+            if m.starts_with(&format!("development age {last} months:")) =>
+        {
+            Error::Bayes(format!(
+                "{m}. The chain ladder accepts this triangle. Keep the ages up to {previous} \
+                 months with the triangle's max_age({previous}), which leaves out the rows at \
+                 {last} months{}, and carry the movement left out as a tail outside this model",
+                every_segment(*previous, alone)
+            ))
+        }
+        (e, _) => e,
+    }
+}
+
+/// The clause a `max_age(previous)` remedy adds on a triangle of several
+/// segments: the cut reaches every segment, so a segment that develops
+/// further loses its later ages unless this one is selected first.
+pub(super) fn every_segment(previous: crate::Lag, alone: bool) -> String {
+    if alone {
+        String::new()
+    } else {
+        format!(
+            " (max_age cuts every segment of the triangle at {previous} months, so select \
+             this segment first if another one develops further)"
+        )
     }
 }
 

@@ -31,6 +31,8 @@ pub enum Error {
     /// A development age is not on the triangle's development grid (a whole
     /// number of development periods from the youngest age).
     OffGrid { row: usize, age: u32 },
+    /// An age before the triangle's first age, so that nothing is kept.
+    AgeBeforeFirst { age: u32, first: u32 },
     /// No measure column has this name.
     UnknownColumn(String),
     /// No key column has this name.
@@ -163,6 +165,10 @@ impl fmt::Display for Error {
             Self::OffGrid { row, age } => write!(
                 f,
                 "row {row}: age {age} months is not on the development grid"
+            ),
+            Self::AgeBeforeFirst { age, first } => write!(
+                f,
+                "age {age} months is before the triangle's first age, {first} months, so no age is kept"
             ),
             Self::UnknownColumn(c) => write!(f, "no column named {c}"),
             Self::UnknownKey(k) => write!(f, "no key named {k}"),
