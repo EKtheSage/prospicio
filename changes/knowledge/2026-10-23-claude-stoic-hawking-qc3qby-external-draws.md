@@ -1,1 +1,0 @@
-* **Creation**: [CmdStan CSV and posterior](/references/stan-csv.md), from #395 (branch claude/stoic-hawking-qc3qby): CmdStan's sample CSV layout (warmup kept with save_warmup, sampler columns ending in __, column-major element names) and loo's r_eff, which defaults to 1 unless relative_eff is passed; external draws match posterior 1.7.0 and loo 2.10.1 on a real CmdStan run.
