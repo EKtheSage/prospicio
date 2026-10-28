@@ -313,6 +313,18 @@ impl XolLayer {
         ceded.iter().map(|&c| self.inner.premium_for(c)).collect()
     }
 
+    fn scope(&self) -> Robj {
+        self.inner.scope.as_ref().map_or_else(
+            || ().into(),
+            |s| list!(label = s.label.clone(), values = s.values.clone()).into(),
+        )
+    }
+
+    fn with_scope(&self, label: &str, values: Vec<String>) -> Result<Self> {
+        let values: Vec<&str> = values.iter().map(String::as_str).collect();
+        self.map(|l| l.scope(label, &values))
+    }
+
     fn ceding_commission_for(&self, ceded: &[f64]) -> Vec<f64> {
         ceded
             .iter()

@@ -43,6 +43,9 @@
 //! 5); a document without one loads with none. A tower whose contracts
 //! interlock ([`Tower::interlocking`]) has `"interlocking": true` (format
 //! version 6); a document without the key loads with interlocking off.
+//! A layer scoped to some labels ([`Layer::scope`]) has `"scope":
+//! {"label": …, "values": […]}` (format version 7); a layer without the
+//! key covers every loss.
 
 use prospicio_core::{Error, Result};
 use serde_json::{Map, Number, Value, json};
@@ -55,11 +58,11 @@ use crate::timeline::CoverBasis;
 /// Value of the `format` field.
 const FORMAT: &str = "risk_rs.tower";
 /// The newest format version this build reads. A document is stamped at
-/// the oldest version that reads it: 6 with interlocking, 5 with a cover basis, 4 with a deal scale, 3 when a layer has brokerage,
+/// the oldest version that reads it: 7 with a scoped layer, 6 with interlocking, 5 with a cover basis, 4 with a deal scale, 3 when a layer has brokerage,
 /// deductions or a scale read before annual terms, 2 when a layer carries
 /// deficits or credits over a term (which older readers would drop), else
 /// 1.
-const FORMAT_VERSION: u64 = 6;
+const FORMAT_VERSION: u64 = 7;
 
 impl Tower {
     /// The programme as a JSON document; [`from_json`](Self::from_json)
@@ -99,7 +102,9 @@ impl Tower {
         });
         let mut doc = json!({
             "format": FORMAT,
-            "format_version": if self.interlocking {
+            "format_version": if self.layers.iter().any(|l| l.scope.is_some()) {
+                7
+            } else if self.interlocking {
                 6
             } else if self.cover_basis.is_some() {
                 5
@@ -393,6 +398,12 @@ fn layer_json(l: &Layer) -> Value {
     if l.brokerage_within_commission_range {
         m.insert("brokerage_within_commission_range".into(), json!(true));
     }
+    if let Some(scope) = &l.scope {
+        m.insert(
+            "scope".into(),
+            json!({"label": scope.label, "values": scope.values}),
+        );
+    }
     Value::Object(m)
 }
 
@@ -621,6 +632,22 @@ fn layer_from(m: &Map<String, Value>) -> Result<Layer> {
             Some(Value::Bool(true)) => layer = set(layer),
             Some(_) => return Err(Error::Data(format!("{k} must be a boolean"))),
         }
+    }
+    match m.get("scope") {
+        None | Some(Value::Null) => {}
+        Some(Value::Object(sc)) => {
+            let label = sc
+                .get("label")
+                .and_then(Value::as_str)
+                .ok_or_else(|| Error::Data("a scope's label must be a string".into()))?;
+            let values = sc
+                .get("values")
+                .and_then(Value::as_array)
+                .and_then(|v| v.iter().map(Value::as_str).collect::<Option<Vec<_>>>())
+                .ok_or_else(|| Error::Data("a scope's values must be a list of strings".into()))?;
+            layer = layer.scope(label, &values)?;
+        }
+        Some(_) => return Err(Error::Data("scope must be an object".into())),
     }
     Ok(layer)
 }
@@ -914,6 +941,25 @@ mod tests {
     }
 
     #[test]
+    fn a_scope_round_trips() {
+        let plain = Layer::xol("L", 10.0, 5.0).unwrap();
+        let scoped = plain.clone().scope("peril", &["ws", "fl"]).unwrap();
+        let tower = Tower::new(vec![scoped, Layer::xol("M", 5.0, 20.0).unwrap()]).unwrap();
+        let text = tower.to_json();
+        assert!(text.contains("\"format_version\":7") && text.contains("\"scope\":"));
+        assert_eq!(Tower::from_json(&text).unwrap(), tower);
+        let off = Tower::new(vec![plain]).unwrap().to_json();
+        assert!(!off.contains("scope"));
+        assert!(
+            Tower::from_json(&text.replace("\"values\":[\"ws\",\"fl\"]", "\"values\":[]")).is_err()
+        );
+        assert!(
+            Tower::from_json(&text.replace("\"values\":[\"ws\",\"fl\"]", "\"values\":[1]"))
+                .is_err()
+        );
+    }
+
+    #[test]
     fn interlocking_round_trips() {
         let plain = Tower::new(vec![Layer::xol("L", 10.0, 5.0).unwrap()])
             .unwrap()
@@ -938,7 +984,7 @@ mod tests {
         assert!(Tower::from_json("not json").is_err());
         assert!(Tower::from_json(&good.replace("risk_rs.tower", "risk_rs.distribution")).is_err());
         assert!(
-            Tower::from_json(&good.replace("\"format_version\":1", "\"format_version\":7"))
+            Tower::from_json(&good.replace("\"format_version\":1", "\"format_version\":8"))
                 .is_err()
         );
         assert!(Tower::from_json(&good.replace("\"loss\"", "\"cat\"")).is_err());

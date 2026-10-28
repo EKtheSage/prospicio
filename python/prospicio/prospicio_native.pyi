@@ -10800,6 +10800,37 @@ class EventSet:
         IndexError
             If ``sim`` is not a simulated year.
         """
+    def filter(self, /, label: str, values: Sequence[str]) -> EventSet:
+        """
+        The losses whose label ``label`` takes one of ``values``, every
+        year kept (a year with none of them is empty), with their sums
+        insured, times and labels, and the aggregate part's columns with
+        one of the values: what a layer scoped to those values
+        (``Layer.with_scope``) sees.
+        
+        Parameters
+        ----------
+        label : str
+        values : list of str
+        
+        Returns
+        -------
+        EventSet
+        
+        Raises
+        ------
+        ValueError
+            Without labels, without the dimension, or with no values.
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_years([[20.0, 15.0], [8.0]]).with_labels(
+        ...     {"peril": ["quake", "wind", "quake"]})
+        >>> w = e.filter("peril", ["wind"])
+        >>> w.n_sims, w.events(0), w.events(1)
+        (2, [15.0], [])
+        """
     @staticmethod
     def from_long(years: Sequence[int], losses: Sequence[float], n_years: int, seed: int = 0, labels: dict |None = None) -> EventSet:
         """
@@ -15361,6 +15392,12 @@ class Layer:
         Whether the sliding scales read the loss ratio before annual terms.
         """
     @property
+    def scope(self, /) -> tuple[str, list[str]] |None:
+        """
+        The losses the layer covers, ``(label, values)``, or None for
+        every loss.
+        """
+    @property
     def sees_aggregate_part(self, /) -> bool:
         """
         Whether the layer cedes from an ``EventSet``'s aggregate part: it is
@@ -15737,6 +15774,44 @@ class Layer:
         [120.0, 140.0]
         >>> round(res.marginal(["ceding_commission", "cover"]).draws[0], 12)
         12.0
+        """
+    def with_scope(self, /, label: str, values: Sequence[str]) -> Layer:
+        """
+        The same layer covering only the losses whose label ``label``
+        takes one of ``values``: a windstorm treaty on a multi-peril event
+        set is scoped to ``("peril", ["windstorm"])``.
+        
+        The layer's occurrence and annual terms see only those losses, so
+        another peril's events neither use its annual limit nor count
+        toward its deductible; the losses it does not cover pass to the
+        next inuring stage whole. That differs from reading one label's
+        share of an unscoped layer, whose annual terms every peril uses
+        up. A tower with a scoped layer needs labelled events
+        (``Tower.apply``, ``apply_term``, ``apply_timeline``) and refuses
+        the grids and annual losses.
+        
+        Parameters
+        ----------
+        label : str
+            A label dimension of the events.
+        values : list of str
+            At least one; at least one must occur.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> e = EventSet.from_years([[20.0, 15.0]]).with_labels({"peril": ["quake", "wind"]})
+        >>> xl = Layer("10x5", 10.0, 5.0, aggregate_limit=15.0)
+        >>> wind = Tower([xl.with_scope("peril", ["wind"])]).apply(e)
+        >>> wind.marginal(("ceded", "10x5", "wind")).mean()
+        10.0
+        >>> Tower([xl]).apply(e).marginal(("ceded", "10x5", "wind")).mean()
+        5.0
         """
     def with_sliding_scale(self, /, anchors: Sequence[tuple[float, float]]) -> Layer:
         """
