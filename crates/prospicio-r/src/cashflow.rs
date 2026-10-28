@@ -1,13 +1,15 @@
 //! A collateralised deal's monthly cash flows (Aggregate lane) over
 //! `prospicio_pricing::cashflow` (`docs/design/time-value.md`, decisions
-//! 13 to 20). `R/cashflow.R` builds the arguments.
+//! 13 to 20), and the deal valued after binding (decision 34).
+//! `R/cashflow.R` builds the arguments.
 
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_pricing::cashflow::{
-    Adjustment, AdjustmentBase, Base, Buffer, CashflowTerms, Dates, FeeBasis, Funding, FundingRule,
-    FundingSource, Interest, InterestBasis, MonthlyPatterns, ObligationReference, Operating,
-    PatternDraws, PerformanceFee, PremiumFlow, Requirement, Term, Timing,
+    ActualState, Adjustment, AdjustmentBase, Base, Buffer, CashflowTerms, Conditioning, Dates,
+    FeeBasis, Funding, FundingRule, FundingSource, Interest, InterestBasis, MonthlyPatterns,
+    ObligationReference, Operating, PatternDraws, PerformanceFee, PremiumFlow, Requirement, Term,
+    Timing, Trace, Valuation, condition_on_paid, deal_ave,
 };
 use prospicio_pricing::returns::TieredFee;
 
@@ -72,6 +74,121 @@ fn dates(kind: &str, values: &[f64], name: &str) -> Result<Dates> {
         )),
         (other, _) => Err(Error::Other(format!("{name}: unknown dates {other:?}"))),
     }
+}
+
+fn conditioning(name: &str) -> Result<Conditioning> {
+    match name {
+        "bornhuetter-ferguson" => Ok(Conditioning::BornhuetterFerguson),
+        "truncation" => Ok(Conditioning::Truncation),
+        other => Err(bad(
+            "conditioning",
+            other,
+            "\"bornhuetter-ferguson\" or \"truncation\"",
+        )),
+    }
+}
+
+/// An actual state from `R/cashflow.R`'s `cashflow_valuation()`: the six
+/// amounts `c(premium_collected, paid, collateral, funded, released,
+/// operating)`, the flows when `has_flows`, and the funding reference
+/// (empty for none).
+fn actual_state(
+    month: f64,
+    amounts: &[f64],
+    flows: &[f64],
+    has_flows: bool,
+    reference: &[f64],
+) -> Result<ActualState> {
+    let [
+        premium_collected,
+        paid,
+        collateral,
+        funded,
+        released,
+        operating,
+    ] = amounts
+    else {
+        return Err(Error::Other("an actual state has six amounts".into()));
+    };
+    Ok(ActualState {
+        month: whole(month, "month")? as usize,
+        premium_collected: *premium_collected,
+        paid: *paid,
+        collateral: *collateral,
+        funded: *funded,
+        released: *released,
+        operating: *operating,
+        flows: has_flows.then(|| flows.to_vec()),
+        funding_reference: reference.first().copied(),
+    })
+}
+
+fn patterns(paid: &[f64], n_patterns: f64, index: &[f64]) -> Result<Option<PatternDraws>> {
+    if paid.is_empty() {
+        if !index.is_empty() {
+            return Err(Error::Other("pattern_index needs paid_patterns".into()));
+        }
+        return Ok(None);
+    }
+    let k = whole(n_patterns, "the number of paid patterns")? as usize;
+    if k == 0 || paid.len() % k != 0 {
+        return Err(Error::Other(format!(
+            "{} paid values do not split into {k} patterns",
+            paid.len()
+        )));
+    }
+    let patterns: Vec<Vec<f64>> = paid.chunks(paid.len() / k).map(<[f64]>::to_vec).collect();
+    let draws = if index.is_empty() {
+        PatternDraws::new(patterns)
+    } else {
+        let index = index
+            .iter()
+            .map(|&i| whole(i, "pattern_index").map(|i| i as usize))
+            .collect::<Result<Vec<_>>>()?;
+        PatternDraws::indexed(patterns, index)
+    }
+    .map_err(to_r)?;
+    Ok(Some(draws))
+}
+
+fn trace_list(t: Trace) -> List {
+    let error = t.conservation_error();
+    list!(
+        requirement = t.requirement,
+        premium = t.premium,
+        adjustment = t.adjustment,
+        paid = t.paid,
+        funding_investor = t.funding_investor,
+        funding_operating = t.funding_operating,
+        interest = t.interest,
+        collateral_release = t.collateral_release,
+        collateral_balance = t.collateral_balance,
+        expenses = t.expenses,
+        equity_release = t.equity_release,
+        operating_balance = t.operating_balance,
+        investor = t.investor,
+        funding_reference = t.funding_reference,
+        opening_balance = t.opening_balance,
+        commutation_paid = t.commutation_paid,
+        fee = t.fee,
+        conservation_error = error
+    )
+}
+
+/// Each simulation's ultimate loss ratio conditioned on the loss paid to
+/// date; `R/cashflow.R`'s `condition_on_paid()` documents the arguments.
+#[extendr]
+fn cashflow_condition_on_paid(
+    u: &[f64],
+    premium: f64,
+    paid: f64,
+    share_paid: f64,
+    conditioning: &str,
+) -> Result<List> {
+    let how = self::conditioning(conditioning)?;
+    let c = condition_on_paid(u, premium, paid, share_paid, how).map_err(to_r)?;
+    let kept: Vec<f64> = c.kept.iter().map(|&j| j as f64).collect();
+    Ok(list!(kept = kept, ultimate = c.ultimate))
 }
 
 fn timing(kind: &str, values: &[f64], name: &str) -> Result<Timing> {
@@ -295,34 +412,13 @@ impl Cashflow {
         n_patterns: f64,
         index: &[f64],
     ) -> Result<List> {
-        let out = if !paid.is_empty() {
+        let out = if let Some(draws) = patterns(paid, n_patterns, index)? {
             if !requirement.is_empty() {
                 return Err(Error::Other(
                     "give paid patterns or a months requirement, not both".into(),
                 ));
             }
-            let k = whole(n_patterns, "the number of paid patterns")? as usize;
-            if k == 0 || paid.len() % k != 0 {
-                return Err(Error::Other(format!(
-                    "{} paid values do not split into {k} patterns",
-                    paid.len()
-                )));
-            }
-            let patterns: Vec<Vec<f64>> =
-                paid.chunks(paid.len() / k).map(<[f64]>::to_vec).collect();
-            let draws = if index.is_empty() {
-                PatternDraws::new(patterns)
-            } else {
-                let index = index
-                    .iter()
-                    .map(|&i| whole(i, "pattern_index").map(|i| i as usize))
-                    .collect::<Result<Vec<_>>>()?;
-                PatternDraws::indexed(patterns, index)
-            }
-            .map_err(to_r)?;
             self.inner.run_with_patterns(u, commission, &draws)
-        } else if !index.is_empty() {
-            return Err(Error::Other("pattern_index needs paid_patterns".into()));
         } else if requirement.is_empty() {
             self.inner.run(u, commission)
         } else {
@@ -351,24 +447,134 @@ impl Cashflow {
             self.inner.trace_with_pattern(u, commission, paid)
         }
         .map_err(to_r)?;
-        let error = t.conservation_error();
+        Ok(trace_list(t))
+    }
+
+    /// The actual state of one simulated path at the start of `month`:
+    /// `amounts` as `cashflow_valuation()` passes them, the flows and the
+    /// funding reference.
+    fn actual_state(&self, u: f64, month: f64, commission: f64, paid: &[f64]) -> Result<List> {
+        let t = if paid.is_empty() {
+            self.inner.trace(u, commission)
+        } else {
+            self.inner.trace_with_pattern(u, commission, paid)
+        }
+        .map_err(to_r)?;
+        let s = ActualState::from_trace(&t, whole(month, "month")? as usize).map_err(to_r)?;
         Ok(list!(
-            requirement = t.requirement,
-            premium = t.premium,
-            adjustment = t.adjustment,
-            paid = t.paid,
-            funding_investor = t.funding_investor,
-            funding_operating = t.funding_operating,
-            interest = t.interest,
-            collateral_release = t.collateral_release,
-            collateral_balance = t.collateral_balance,
-            expenses = t.expenses,
-            equity_release = t.equity_release,
-            operating_balance = t.operating_balance,
-            investor = t.investor,
-            commutation_paid = t.commutation_paid,
-            fee = t.fee,
-            conservation_error = error
+            premium_collected = s.premium_collected,
+            paid = s.paid,
+            collateral = s.collateral,
+            funded = s.funded,
+            released = s.released,
+            operating = s.operating,
+            flows = s.flows.unwrap_or_default(),
+            funding_reference = s.funding_reference.unwrap_or(0.0)
+        ))
+    }
+
+    /// The valuation's share paid and net asset value, checking the state.
+    fn valuation(
+        &self,
+        month: f64,
+        amounts: &[f64],
+        flows: &[f64],
+        has_flows: bool,
+        reference: &[f64],
+    ) -> Result<List> {
+        let v = self.valued(month, amounts, flows, has_flows, reference)?;
+        Ok(list!(share_paid = v.share_paid(), nav = v.nav()))
+    }
+
+    /// Each simulation's flows from the valuation month, conditioned on
+    /// the actual paid; `kept` from 0.
+    #[allow(clippy::too_many_arguments)]
+    fn forward(
+        &self,
+        month: f64,
+        amounts: &[f64],
+        flows: &[f64],
+        has_flows: bool,
+        reference: &[f64],
+        u: &[f64],
+        commission: &[f64],
+        conditioning: &str,
+    ) -> Result<List> {
+        let v = self.valued(month, amounts, flows, has_flows, reference)?;
+        let f = v
+            .run(u, commission, self::conditioning(conditioning)?)
+            .map_err(to_r)?;
+        let since = if has_flows {
+            Robj::from(f.since_inception_rows().map_err(to_r)?)
+        } else {
+            Robj::from(())
+        };
+        let since_moic = if has_flows {
+            Robj::from(f.since_inception_moic().map_err(to_r)?)
+        } else {
+            Robj::from(())
+        };
+        let out = f.flows();
+        let kept: Vec<f64> = f.kept().iter().map(|&j| j as f64).collect();
+        Ok(list!(
+            kept = kept,
+            ultimate = f.ultimate().to_vec(),
+            nav = f.nav(),
+            flows = out.flows().to_vec(),
+            months = out.months() as i32,
+            forward_rows = f.forward_rows(),
+            since_inception_rows = since,
+            forward_moic = f.forward_moic().map_err(to_r)?,
+            since_inception_moic = since_moic,
+            funded = out.funded().to_vec(),
+            released = out.released().to_vec(),
+            distributed = out.distributed().to_vec(),
+            fee = out.fee().to_vec(),
+            commutation = out.commutation().to_vec()
+        ))
+    }
+
+    /// Every account line of one simulation from the valuation month.
+    #[allow(clippy::too_many_arguments)]
+    fn valuation_trace(
+        &self,
+        month: f64,
+        amounts: &[f64],
+        flows: &[f64],
+        has_flows: bool,
+        reference: &[f64],
+        u: f64,
+        commission: f64,
+        conditioning: &str,
+    ) -> Result<List> {
+        let v = self.valued(month, amounts, flows, has_flows, reference)?;
+        let t = v
+            .trace(u, commission, self::conditioning(conditioning)?)
+            .map_err(to_r)?;
+        Ok(trace_list(t))
+    }
+
+    /// Actual against expected paid by month; `paid`, `n_patterns` and
+    /// `index` as `run`'s.
+    fn deal_ave(
+        &self,
+        actual: &[f64],
+        u: &[f64],
+        paid: &[f64],
+        n_patterns: f64,
+        index: &[f64],
+        levels: &[f64],
+    ) -> Result<List> {
+        let draws = patterns(paid, n_patterns, index)?;
+        let r = deal_ave(actual, &self.inner, u, draws.as_ref(), levels).map_err(to_r)?;
+        let month: Vec<f64> = r.month.iter().map(|&m| m as f64).collect();
+        Ok(list!(
+            month = month,
+            actual = r.actual,
+            expected = r.expected,
+            ratio = r.ratio,
+            percentile = r.percentile,
+            quantiles = r.quantiles
         ))
     }
 
@@ -385,7 +591,22 @@ impl Cashflow {
     }
 }
 
+impl Cashflow {
+    fn valued(
+        &self,
+        month: f64,
+        amounts: &[f64],
+        flows: &[f64],
+        has_flows: bool,
+        reference: &[f64],
+    ) -> Result<Valuation> {
+        let state = actual_state(month, amounts, flows, has_flows, reference)?;
+        self.inner.valuation(state).map_err(to_r)
+    }
+}
+
 extendr_module! {
     mod cashflow;
+    fn cashflow_condition_on_paid;
     impl Cashflow;
 }

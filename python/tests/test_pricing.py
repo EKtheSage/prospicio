@@ -979,6 +979,85 @@ def test_cashflow_paid_pattern_per_simulation():
         terms.run([0.5], pattern_index=[0])
 
 
+def test_cashflow_valuation_after_binding():
+    """A bound deal valued from its actual accounts (#603)."""
+    terms = _full_cashflow_terms()
+    us, cs = [0.0, 0.4, 0.9, 1.3], [0.0, 0.25, 0.1, 0.3]
+    # At month 0 an empty state is inception: the run's flows.
+    zero = terms.valuation(0, flows=[])
+    for how in ["bornhuetter-ferguson", "truncation"]:
+        f = zero.run(us, cs, conditioning=how)
+        assert f.forward_rows() == terms.run(us, cs).flows
+        assert f.since_inception_rows() == terms.run(us, cs).flows
+    # A simulation at the path's own loss ratio pays what the path pays.
+    for u in [0.4, 0.9, 1.3]:
+        path = terms.trace(u, 0.2)
+        for v in [1, 12, 18]:
+            val = terms.valuation(v, **terms.actual_state(u, v, 0.2))
+            assert val.month == v and abs(val.share_paid - v / 48) < 1e-15
+            f = val.run([u], [0.2])
+            assert len(f) == 1 and f.kept == [0]
+            got = f.since_inception_rows()[0]
+            assert max(abs(a - b) for a, b in zip(got, path["investor"])) < 1e-9
+            tr = val.trace(u, 0.2)
+            assert tr["month"][0] == v
+            assert abs(tr["conservation_error"]) < 1e-9
+            assert abs(tr["opening_balance"] - val.nav) < 1e-12
+    # The forward return starts from the net asset value.
+    state = terms.actual_state(0.9, 12, 0.2)
+    val = terms.valuation(12, **state)
+    f = val.run([0.5, 0.9, 1.4], [0.2] * 3)
+    assert f.nav == val.nav == state["collateral"] + state["operating"]
+    assert f.forward_rows()[0][0] == f.flows.flows[0][0] - f.nav
+    fwd, all_ = f.forward_npv(0.05), f.since_inception_npv(0.05)
+    assert fwd[0] > fwd[1] > fwd[2] and all_[0] > all_[1] > all_[2]
+    assert len(f.forward_moic()) == len(f.since_inception_moic()) == 3
+    assert len(f.forward_irr().rate) == len(f.since_inception_irr().rate) == 3
+    # Truncation drops what has paid less than the actual.
+    paid = state["paid"]
+    cut = val.run([0.05, 0.9], conditioning="truncation")
+    assert cut.kept == [1] and 0.05 * 100 < paid
+    bf = P.condition_on_paid([0.05, 0.9], 100.0, paid, val.share_paid)
+    assert bf["kept"] == [0, 1]
+    assert abs(bf["ultimate"][0] - (paid / 100 + 0.05 * (1 - 12 / 48))) < 1e-15
+    # Refusals: after the adjustment at month 18, past commutation, the
+    # obligation rule without its reference, flows of the wrong length.
+    with pytest.raises(ValueError, match="adjustment"):
+        terms.valuation(19, **terms.actual_state(0.9, 19, 0.2))
+    with pytest.raises(ValueError, match="leaves nothing to run"):
+        terms.valuation(30, paid=1.0)
+    no_ref = dict(state, funding_reference=None)
+    with pytest.raises(ValueError, match="funding reference"):
+        terms.valuation(12, **no_ref)
+    with pytest.raises(ValueError, match="one a month"):
+        terms.valuation(12, **dict(state, flows=[0.0] * 11))
+    with pytest.raises(ValueError, match="month 0 is inception"):
+        terms.valuation(0, paid=1.0)
+    with pytest.raises(ValueError, match="unknown conditioning"):
+        val.run([0.5], conditioning="chain-ladder")
+    with pytest.raises(ValueError, match="actual flows"):
+        terms.valuation(12, **dict(state, flows=None)).run([0.5]).since_inception_rows()
+
+
+def test_deal_ave():
+    """Actual against expected paid by month (#603)."""
+    req = P.CollateralRequirement({"outstanding": 1.0})
+    terms = P.CashflowTerms(100.0, 4, [1.0] * 4, [1.0] * 4, [0.25, 0.5, 0.75, 1.0], req)
+    r = P.deal_ave([15.0, 45.0], terms, [0.4, 0.6, 0.8], levels=[0.0, 0.5, 1.0])
+    assert r["month"] == [0, 1]
+    assert r["expected"] == [15.0, 30.0]
+    assert r["percentile"] == [0.5, 1.0]
+    assert r["ratio"][1] == 1.5
+    assert r["quantiles"] == [[10.0, 15.0, 20.0], [20.0, 30.0, 40.0]]
+    # Each simulation's own pattern.
+    fast, slow = [0.5, 1.0, 1.0, 1.0], [0.25, 0.5, 0.75, 1.0]
+    r = P.deal_ave([20.0], terms, [0.4, 0.4], paid_patterns=[fast, slow])
+    assert r["expected"] == [0.5 * (20.0 + 10.0)]
+    assert r["percentile"] == [0.75]
+    with pytest.raises(ValueError, match="levels"):
+        P.deal_ave([1.0], terms, [0.5], levels=[1.5])
+
+
 def test_cashflow_terms_errors():
     thirds = [1 / 3, 2 / 3, 1.0]
     req = P.CollateralRequirement([("reserve", 1.0)])
