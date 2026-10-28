@@ -635,7 +635,7 @@ def test_ils_deal_analysis(monkeypatch, capsys):
     for deal in (flat, sliding):
         assert all(f > 0 for f in deal["funded"])
         assert len(deal["rate"]) == n and len(deal["moic"]) == n
-        assert sum(r != r for r in deal["rate"]) <= 0.01 * n  # NaN: no root found
+        assert not any(r != r for r in deal["rate"])  # NaN: no root found, as when the IRR is above the search range
         assert ns["mean"](deal["moic"]) > 1.0
     by_loss = sorted(range(n), key=lambda i: flat["loss"][i])
     low = [flat["moic"][i] for i in by_loss[: n // 10]]
