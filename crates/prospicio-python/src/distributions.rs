@@ -1509,6 +1509,55 @@ impl PyPredictiveDistribution {
         Ok(Self { inner })
     }
 
+    /// ``n_sims`` draws of a multivariate normal or lognormal joint.
+    ///
+    /// Simulation ``i`` draws only from stream ``i`` of ``seed``, so the
+    /// result reproduces by seed on any number of threads; the provenance
+    /// records the model, its dimension, the seed and a hash of the mean
+    /// and covariance.
+    ///
+    /// Parameters
+    /// ----------
+    /// joint : MultivariateNormal or MultivariateLognormal
+    /// n_sims : int
+    /// seed : int
+    /// keys : list of tuple, optional
+    ///     One component key per component; defaults to ``(0,), (1,), ...``.
+    /// dims : list of str, default ["component"]
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    ///
+    /// Raises
+    /// ------
+    /// TypeError
+    ///     If ``joint`` is neither joint.
+    /// ValueError
+    ///     If ``keys`` does not have one key per component.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import PredictiveDistribution
+    /// >>> from prospicio.risk import MultivariateNormal
+    /// >>> mvn = MultivariateNormal([100.0, 50.0], [[400.0, 120.0], [120.0, 100.0]])
+    /// >>> pd = PredictiveDistribution.from_gaussian(
+    /// ...     mvn, 20_000, 1, keys=[("auto",), ("property",)], dims=["line"])
+    /// >>> abs(pd.mean() - 150.0) < 1.0
+    /// True
+    #[staticmethod]
+    #[pyo3(signature = (joint, n_sims, seed, keys = None, dims = None))]
+    fn from_gaussian(
+        py: Python<'_>,
+        joint: &Bound<'_, PyAny>,
+        n_sims: usize,
+        seed: u64,
+        keys: Option<Vec<Vec<KeyArg>>>,
+        dims: Option<Vec<String>>,
+    ) -> PyResult<Self> {
+        crate::multivariate::from_gaussian(py, joint, n_sims, seed, keys, dims)
+    }
+
     /// Dimension names.
     #[getter]
     fn dims(&self) -> Vec<String> {

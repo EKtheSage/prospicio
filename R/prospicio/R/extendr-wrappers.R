@@ -108,6 +108,8 @@ credibility_standards <- function(p, k, cv) .Call(wrap__credibility_standards, p
 
 buhlmann_straub_rust <- function(ratios, weights, nrow, ncol, estimator, tol, max_iter) .Call(wrap__buhlmann_straub_rust, ratios, weights, nrow, ncol, estimator, tol, max_iter)
 
+hachemeister_rust <- function(ratios, weights, nrow, ncol, design, p, estimator, adjust_intercept, tol, max_iter) .Call(wrap__hachemeister_rust, ratios, weights, nrow, ncol, design, p, estimator, adjust_intercept, tol, max_iter)
+
 hierarchical_credibility_rust <- function(ratios, weights, nrow, ncol, levels, collective_mean, within_kind, within_scale, between_kinds, between_scales, chains, tune, draws, seed) .Call(wrap__hierarchical_credibility_rust, ratios, weights, nrow, ncol, levels, collective_mean, within_kind, within_scale, between_kinds, between_scales, chains, tune, draws, seed)
 
 credibility_premiums_rust <- function(ratios, weights, nrow, ncol, levels, within_variance, between_variances, collective_mean) .Call(wrap__credibility_premiums_rust, ratios, weights, nrow, ncol, levels, within_variance, between_variances, collective_mean)
@@ -500,6 +502,8 @@ XolLayer$ceded <- function(losses) .Call(wrap__XolLayer__ceded, self, losses)
 
 XolLayer$ceded_by_event <- function(losses) .Call(wrap__XolLayer__ceded_by_event, self, losses)
 
+XolLayer$trial_statistics <- function(events) .Call(wrap__XolLayer__trial_statistics, self, events)
+
 XolLayer$pro_rata_time <- function() .Call(wrap__XolLayer__pro_rata_time, self)
 
 XolLayer$allocation <- function() .Call(wrap__XolLayer__allocation, self)
@@ -615,6 +619,8 @@ ReinsuranceTower$deal_ratios <- function(result, layer) .Call(wrap__ReinsuranceT
 ReinsuranceTower$apply_annual <- function(losses) .Call(wrap__ReinsuranceTower__apply_annual, self, losses)
 
 ReinsuranceTower$apply <- function(events) .Call(wrap__ReinsuranceTower__apply, self, events)
+
+ReinsuranceTower$ceded_events <- function(events, layers) .Call(wrap__ReinsuranceTower__ceded_events, self, events, layers)
 
 ReinsuranceTower$with_cover_basis <- function(basis) .Call(wrap__ReinsuranceTower__with_cover_basis, self, basis)
 
@@ -1284,6 +1290,46 @@ DglmModel$predict_dispersion <- function(z, names, offset) .Call(wrap__DglmModel
 
 #' @export
 `[[.DglmModel` <- `$.DglmModel`
+
+GaussianJointR <- new.env(parent = emptyenv())
+
+GaussianJointR$normal <- function(mean, cov) .Call(wrap__GaussianJointR__normal, mean, cov)
+
+GaussianJointR$lognormal_moments <- function(mean, cov) .Call(wrap__GaussianJointR__lognormal_moments, mean, cov)
+
+GaussianJointR$lognormal_log_scale <- function(mu, log_cov) .Call(wrap__GaussianJointR__lognormal_log_scale, mu, log_cov)
+
+GaussianJointR$kind <- function() .Call(wrap__GaussianJointR__kind, self)
+
+GaussianJointR$dim <- function() .Call(wrap__GaussianJointR__dim, self)
+
+GaussianJointR$mean <- function() .Call(wrap__GaussianJointR__mean, self)
+
+GaussianJointR$cov <- function() .Call(wrap__GaussianJointR__cov, self)
+
+GaussianJointR$correlation <- function() .Call(wrap__GaussianJointR__correlation, self)
+
+GaussianJointR$mu <- function() .Call(wrap__GaussianJointR__mu, self)
+
+GaussianJointR$log_cov <- function() .Call(wrap__GaussianJointR__log_cov, self)
+
+GaussianJointR$marginal_normal <- function(j) .Call(wrap__GaussianJointR__marginal_normal, self, j)
+
+GaussianJointR$marginal_lognormal <- function(j) .Call(wrap__GaussianJointR__marginal_lognormal, self, j)
+
+GaussianJointR$total_normal <- function() .Call(wrap__GaussianJointR__total_normal, self)
+
+GaussianJointR$total_mean <- function() .Call(wrap__GaussianJointR__total_mean, self)
+
+GaussianJointR$total_variance <- function() .Call(wrap__GaussianJointR__total_variance, self)
+
+GaussianJointR$simulate <- function(n_sims, seed, dims, keys) .Call(wrap__GaussianJointR__simulate, self, n_sims, seed, dims, keys)
+
+#' @export
+`$.GaussianJointR` <- function (self, name) { func <- GaussianJointR[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.GaussianJointR` <- `$.GaussianJointR`
 
 Pareto <- new.env(parent = emptyenv())
 
@@ -2341,6 +2387,10 @@ Triangle$to_text <- function(max_rows, max_cols) .Call(wrap__Triangle__to_text, 
 
 Triangle$chain_ladder <- function(column, average, sigma_interpolation, excl, tail, ldf) .Call(wrap__Triangle__chain_ladder, self, column, average, sigma_interpolation, excl, tail, ldf)
 
+Triangle$calendar_year_effect <- function(column, ci) .Call(wrap__Triangle__calendar_year_effect, self, column, ci)
+
+Triangle$development_correlation <- function(column, ci) .Call(wrap__Triangle__development_correlation, self, column, ci)
+
 Triangle$mack <- function(column, average, sigma_interpolation, excl, tail, tail_sigma, tail_std_err, ldf) .Call(wrap__Triangle__mack, self, column, average, sigma_interpolation, excl, tail, tail_sigma, tail_std_err, ldf)
 
 Triangle$expected_loss <- function(column, exposure, apriori, average, sigma_interpolation, excl, tail, ldf) .Call(wrap__Triangle__expected_loss, self, column, exposure, apriori, average, sigma_interpolation, excl, tail, ldf)
@@ -2582,6 +2632,10 @@ MackFit$segment <- function(keys, values) .Call(wrap__MackFit__segment, self, ke
 
 MackFit$claims_development_result <- function() .Call(wrap__MackFit__claims_development_result, self)
 
+MackFit$calendar_year_effect <- function(ci) .Call(wrap__MackFit__calendar_year_effect, self, ci)
+
+MackFit$development_correlation <- function(ci) .Call(wrap__MackFit__development_correlation, self, ci)
+
 #' @export
 `$.MackFit` <- function (self, name) { func <- MackFit[[name]]; environment(func) <- environment(); func }
 
@@ -2660,6 +2714,52 @@ ClaimsDevelopmentResult$total_run_off_standard_error <- function() .Call(wrap__C
 #' @export
 `[[.ClaimsDevelopmentResult` <- `$.ClaimsDevelopmentResult`
 
+CalendarYearTest <- new.env(parent = emptyenv())
+
+CalendarYearTest$z <- function() .Call(wrap__CalendarYearTest__z, self)
+
+CalendarYearTest$expected <- function() .Call(wrap__CalendarYearTest__expected, self)
+
+CalendarYearTest$variance <- function() .Call(wrap__CalendarYearTest__variance, self)
+
+CalendarYearTest$ci <- function() .Call(wrap__CalendarYearTest__ci, self)
+
+CalendarYearTest$lower <- function() .Call(wrap__CalendarYearTest__lower, self)
+
+CalendarYearTest$upper <- function() .Call(wrap__CalendarYearTest__upper, self)
+
+CalendarYearTest$passes <- function() .Call(wrap__CalendarYearTest__passes, self)
+
+CalendarYearTest$table <- function() .Call(wrap__CalendarYearTest__table, self)
+
+#' @export
+`$.CalendarYearTest` <- function (self, name) { func <- CalendarYearTest[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.CalendarYearTest` <- `$.CalendarYearTest`
+
+DevelopmentCorrelationTest <- new.env(parent = emptyenv())
+
+DevelopmentCorrelationTest$t <- function() .Call(wrap__DevelopmentCorrelationTest__t, self)
+
+DevelopmentCorrelationTest$variance <- function() .Call(wrap__DevelopmentCorrelationTest__variance, self)
+
+DevelopmentCorrelationTest$ci <- function() .Call(wrap__DevelopmentCorrelationTest__ci, self)
+
+DevelopmentCorrelationTest$lower <- function() .Call(wrap__DevelopmentCorrelationTest__lower, self)
+
+DevelopmentCorrelationTest$upper <- function() .Call(wrap__DevelopmentCorrelationTest__upper, self)
+
+DevelopmentCorrelationTest$passes <- function() .Call(wrap__DevelopmentCorrelationTest__passes, self)
+
+DevelopmentCorrelationTest$table <- function() .Call(wrap__DevelopmentCorrelationTest__table, self)
+
+#' @export
+`$.DevelopmentCorrelationTest` <- function (self, name) { func <- DevelopmentCorrelationTest[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.DevelopmentCorrelationTest` <- `$.DevelopmentCorrelationTest`
+
 OdpBootstrapFit <- new.env(parent = emptyenv())
 
 OdpBootstrapFit$chain_ladder <- function() .Call(wrap__OdpBootstrapFit__chain_ladder, self)
@@ -2671,6 +2771,12 @@ OdpBootstrapFit$residuals <- function() .Call(wrap__OdpBootstrapFit__residuals, 
 OdpBootstrapFit$scale <- function() .Call(wrap__OdpBootstrapFit__scale, self)
 
 OdpBootstrapFit$reserves <- function() .Call(wrap__OdpBootstrapFit__reserves, self)
+
+OdpBootstrapFit$ultimates <- function() .Call(wrap__OdpBootstrapFit__ultimates, self)
+
+OdpBootstrapFit$ultimate_draws <- function(origin) .Call(wrap__OdpBootstrapFit__ultimate_draws, self, origin)
+
+OdpBootstrapFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__OdpBootstrapFit__loss_ratio_draws, self, origin, premium)
 
 OdpBootstrapFit$long_table <- function() .Call(wrap__OdpBootstrapFit__long_table, self)
 
@@ -2693,6 +2799,12 @@ BayesOdpFit$chain_ladder <- function() .Call(wrap__BayesOdpFit__chain_ladder, se
 BayesOdpFit$scale <- function() .Call(wrap__BayesOdpFit__scale, self)
 
 BayesOdpFit$reserves <- function() .Call(wrap__BayesOdpFit__reserves, self)
+
+BayesOdpFit$ultimates <- function() .Call(wrap__BayesOdpFit__ultimates, self)
+
+BayesOdpFit$ultimate_draws <- function(origin) .Call(wrap__BayesOdpFit__ultimate_draws, self, origin)
+
+BayesOdpFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__BayesOdpFit__loss_ratio_draws, self, origin, premium)
 
 BayesOdpFit$diagnostics <- function() .Call(wrap__BayesOdpFit__diagnostics, self)
 
@@ -2727,6 +2839,12 @@ BayesOdpFits$chain_ladder <- function() .Call(wrap__BayesOdpFits__chain_ladder, 
 BayesOdpFits$scale <- function() .Call(wrap__BayesOdpFits__scale, self)
 
 BayesOdpFits$reserves <- function() .Call(wrap__BayesOdpFits__reserves, self)
+
+BayesOdpFits$ultimates <- function() .Call(wrap__BayesOdpFits__ultimates, self)
+
+BayesOdpFits$ultimate_draws <- function(origin) .Call(wrap__BayesOdpFits__ultimate_draws, self, origin)
+
+BayesOdpFits$loss_ratio_draws <- function(origin, premium) .Call(wrap__BayesOdpFits__loss_ratio_draws, self, origin, premium)
 
 BayesOdpFits$diagnostics_table <- function() .Call(wrap__BayesOdpFits__diagnostics_table, self)
 
@@ -2860,6 +2978,10 @@ MeyersFit$ultimates <- function() .Call(wrap__MeyersFit__ultimates, self)
 
 MeyersFit$reserves <- function() .Call(wrap__MeyersFit__reserves, self)
 
+MeyersFit$ultimate_draws <- function(origin) .Call(wrap__MeyersFit__ultimate_draws, self, origin)
+
+MeyersFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__MeyersFit__loss_ratio_draws, self, origin, premium)
+
 MeyersFit$diagnostics <- function() .Call(wrap__MeyersFit__diagnostics, self)
 
 MeyersFit$parameter_names <- function() .Call(wrap__MeyersFit__parameter_names, self)
@@ -2898,6 +3020,10 @@ MeyersFits$ultimates <- function() .Call(wrap__MeyersFits__ultimates, self)
 
 MeyersFits$reserves <- function() .Call(wrap__MeyersFits__reserves, self)
 
+MeyersFits$ultimate_draws <- function(origin) .Call(wrap__MeyersFits__ultimate_draws, self, origin)
+
+MeyersFits$loss_ratio_draws <- function(origin, premium) .Call(wrap__MeyersFits__loss_ratio_draws, self, origin, premium)
+
 MeyersFits$diagnostics_table <- function() .Call(wrap__MeyersFits__diagnostics_table, self)
 
 MeyersFits$parameter_names <- function() .Call(wrap__MeyersFits__parameter_names, self)
@@ -2935,6 +3061,12 @@ CompartmentalFits$premium <- function() .Call(wrap__CompartmentalFits__premium, 
 CompartmentalFits$latest_paid <- function() .Call(wrap__CompartmentalFits__latest_paid, self)
 
 CompartmentalFits$reserves <- function() .Call(wrap__CompartmentalFits__reserves, self)
+
+CompartmentalFits$ultimates <- function() .Call(wrap__CompartmentalFits__ultimates, self)
+
+CompartmentalFits$ultimate_draws <- function(origin) .Call(wrap__CompartmentalFits__ultimate_draws, self, origin)
+
+CompartmentalFits$loss_ratio_draws <- function(origin, premium) .Call(wrap__CompartmentalFits__loss_ratio_draws, self, origin, premium)
 
 CompartmentalFits$paid <- function() .Call(wrap__CompartmentalFits__paid, self)
 
@@ -2981,6 +3113,12 @@ CompartmentalFit$latest_paid <- function() .Call(wrap__CompartmentalFit__latest_
 CompartmentalFit$population_origins <- function() .Call(wrap__CompartmentalFit__population_origins, self)
 
 CompartmentalFit$reserves <- function() .Call(wrap__CompartmentalFit__reserves, self)
+
+CompartmentalFit$ultimates <- function() .Call(wrap__CompartmentalFit__ultimates, self)
+
+CompartmentalFit$ultimate_draws <- function(origin) .Call(wrap__CompartmentalFit__ultimate_draws, self, origin)
+
+CompartmentalFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__CompartmentalFit__loss_ratio_draws, self, origin, premium)
 
 CompartmentalFit$paid <- function() .Call(wrap__CompartmentalFit__paid, self)
 
@@ -3148,6 +3286,12 @@ BayesBfFit$prior_ultimate <- function() .Call(wrap__BayesBfFit__prior_ultimate, 
 
 BayesBfFit$reserves <- function() .Call(wrap__BayesBfFit__reserves, self)
 
+BayesBfFit$ultimates <- function() .Call(wrap__BayesBfFit__ultimates, self)
+
+BayesBfFit$ultimate_draws <- function(origin) .Call(wrap__BayesBfFit__ultimate_draws, self, origin)
+
+BayesBfFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__BayesBfFit__loss_ratio_draws, self, origin, premium)
+
 BayesBfFit$diagnostics <- function() .Call(wrap__BayesBfFit__diagnostics, self)
 
 BayesBfFit$parameter_names <- function() .Call(wrap__BayesBfFit__parameter_names, self)
@@ -3190,6 +3334,12 @@ BayesBfNormalisedFit$expected_ultimate <- function() .Call(wrap__BayesBfNormalis
 
 BayesBfNormalisedFit$reserves <- function() .Call(wrap__BayesBfNormalisedFit__reserves, self)
 
+BayesBfNormalisedFit$ultimates <- function() .Call(wrap__BayesBfNormalisedFit__ultimates, self)
+
+BayesBfNormalisedFit$ultimate_draws <- function(origin) .Call(wrap__BayesBfNormalisedFit__ultimate_draws, self, origin)
+
+BayesBfNormalisedFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__BayesBfNormalisedFit__loss_ratio_draws, self, origin, premium)
+
 BayesBfNormalisedFit$diagnostics <- function() .Call(wrap__BayesBfNormalisedFit__diagnostics, self)
 
 BayesBfNormalisedFit$parameter_names <- function() .Call(wrap__BayesBfNormalisedFit__parameter_names, self)
@@ -3225,6 +3375,12 @@ MackBootstrapFit$mack <- function() .Call(wrap__MackBootstrapFit__mack, self)
 MackBootstrapFit$residuals <- function() .Call(wrap__MackBootstrapFit__residuals, self)
 
 MackBootstrapFit$reserves <- function() .Call(wrap__MackBootstrapFit__reserves, self)
+
+MackBootstrapFit$ultimates <- function() .Call(wrap__MackBootstrapFit__ultimates, self)
+
+MackBootstrapFit$ultimate_draws <- function(origin) .Call(wrap__MackBootstrapFit__ultimate_draws, self, origin)
+
+MackBootstrapFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__MackBootstrapFit__loss_ratio_draws, self, origin, premium)
 
 MackBootstrapFit$long_table <- function() .Call(wrap__MackBootstrapFit__long_table, self)
 
@@ -3610,6 +3766,8 @@ Book$summary <- function() .Call(wrap__Book__summary, self)
 
 Book$distribution <- function(item, percentiles, tvar_levels, sd_multiples, quantile, tvar, tail) .Call(wrap__Book__distribution, self, item, percentiles, tvar_levels, sd_multiples, quantile, tvar, tail)
 
+Book$marginal_price <- function(names, assets, rate, pricing) .Call(wrap__Book__marginal_price, self, names, assets, rate, pricing)
+
 Book$cashflows <- function(rate, lower, upper, points, bisections, newton_steps) .Call(wrap__Book__cashflows, self, rate, lower, upper, points, bisections, newton_steps)
 
 Book$calendar <- function(start_year) .Call(wrap__Book__calendar, self, start_year)
@@ -3624,9 +3782,9 @@ Cashflow <- new.env(parent = emptyenv())
 
 Cashflow$new <- function(premium, commutation_month, written, earned, paid, bases, loads, floor, limit, commutation_bases, commutation_loads, commutation_floor, commutation_limit, collected_rate, deduct_commission, lag, adjustment_month, adjustment_rate, adjustment_less_commission, adjustment_base, funding_kind, funding_values, funding_rule, premium_offset, reference, funding_source, release_kind, release_values, annual_yield, interest_basis, opening_fixed, opening_share, expense_rate, buffer_months, buffer_paid, buffer_expenses, equity_kind, equity_values, fee_breakpoints, fee_slopes, fee_basis) .Call(wrap__Cashflow__new, premium, commutation_month, written, earned, paid, bases, loads, floor, limit, commutation_bases, commutation_loads, commutation_floor, commutation_limit, collected_rate, deduct_commission, lag, adjustment_month, adjustment_rate, adjustment_less_commission, adjustment_base, funding_kind, funding_values, funding_rule, premium_offset, reference, funding_source, release_kind, release_values, annual_yield, interest_basis, opening_fixed, opening_share, expense_rate, buffer_months, buffer_paid, buffer_expenses, equity_kind, equity_values, fee_breakpoints, fee_slopes, fee_basis)
 
-Cashflow$run <- function(u, commission, requirement) .Call(wrap__Cashflow__run, self, u, commission, requirement)
+Cashflow$run <- function(u, commission, requirement, paid, n_patterns, index) .Call(wrap__Cashflow__run, self, u, commission, requirement, paid, n_patterns, index)
 
-Cashflow$trace <- function(u, commission) .Call(wrap__Cashflow__trace, self, u, commission)
+Cashflow$trace <- function(u, commission, paid) .Call(wrap__Cashflow__trace, self, u, commission, paid)
 
 Cashflow$buffer_months <- function() .Call(wrap__Cashflow__buffer_months, self)
 

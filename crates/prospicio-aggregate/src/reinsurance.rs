@@ -1307,7 +1307,7 @@ impl Layer {
     /// Per-occurrence recovery at 100%, before annual terms, for a loss on
     /// a risk with sum insured `si`, with the limit scaled by `lf` (1
     /// without interlocking).
-    fn recovery_at(&self, loss: f64, si: Option<f64>, lf: f64) -> f64 {
+    pub(crate) fn recovery_at(&self, loss: f64, si: Option<f64>, lf: f64) -> f64 {
         let amount = self.basis.amount(loss, si);
         if amount.is_nan() {
             // A surplus without a sum insured: `max` would turn NaN into 0.
@@ -1877,6 +1877,95 @@ impl Tower {
         PredictiveDistribution::from_draws(dims, components, draws, self.terms_provenance(base))
     }
 
+    /// Each event's ceded loss to the named layers, summed over them, as an
+    /// event set: the input to an occurrence retro on a reinsurer's own
+    /// cessions (#590). Each layer's split by event is the one
+    /// [`apply`](Self::apply)'s labels use ([`Layer::ceded_by_event`],
+    /// after the layer's annual terms under its [`LimitAllocation`] and at
+    /// its share, behind any earlier inuring stage), so in every year the
+    /// set's losses add to the layers' ceded total. The events keep their
+    /// times and labels; events that cede nothing are left out, sums
+    /// insured are dropped (they belong to the original losses), and when
+    /// a named layer [sees](Layer::sees_aggregate_part) the aggregate part
+    /// the set keeps its ceded part as its own aggregate part. Several
+    /// deals' sets join with [`EventSet::merge`], one occurrence each; to
+    /// make one occurrence of a deal's losses from the same event, group
+    /// the merged set by an hours clause ([`EventSet::grouped`]).
+    ///
+    /// ```
+    /// use prospicio_aggregate::{EventSet, Layer, Tower};
+    ///
+    /// // 10 xs 5 with an annual limit of 15 on 20, 8 and 15: 10, 3 and 2.
+    /// let events = EventSet::from_years(vec![vec![20.0, 8.0, 15.0], vec![4.0]], 0)
+    ///     .unwrap()
+    ///     .with_times(vec![0.1, 0.5, 0.9, 0.3])
+    ///     .unwrap();
+    /// let layer = Layer::xol("10x5", 10.0, 5.0).unwrap().aggregate_limit(15.0).unwrap();
+    /// let ceded = Tower::new(vec![layer]).unwrap().ceded_events(&events, &["10x5"]).unwrap();
+    /// assert_eq!(ceded.events(0), &[10.0, 3.0, 2.0]);
+    /// assert_eq!(ceded.times(0), Some(&[0.1, 0.5, 0.9][..]));
+    /// assert!(ceded.events(1).is_empty());
+    /// ```
+    pub fn ceded_events(&self, events: &EventSet, layers: &[&str]) -> Result<EventSet> {
+        if layers.is_empty() {
+            return Err(Error::Data("name at least one layer".into()));
+        }
+        let mut chosen = Vec::with_capacity(layers.len());
+        for name in layers {
+            let i = self
+                .layers
+                .iter()
+                .position(|l| l.name == *name)
+                .ok_or_else(|| Error::Data(format!("no layer named {name:?} in the tower")))?;
+            if chosen.contains(&i) {
+                return Err(Error::Data(format!("layer {name:?} is named twice")));
+            }
+            chosen.push(i);
+        }
+        if self.needs_sums_insured() && !events.has_sums_insured() {
+            return Err(Error::Data(
+                "a surplus layer needs each event's sum insured".into(),
+            ));
+        }
+        if self.needs_times() && !events.has_times() {
+            return Err(Error::Data(
+                "reinstatements pro rata as to time need each event's time".into(),
+            ));
+        }
+        let masks = self.scope_masks(events)?;
+        let agg_of = events.aggregate_part_indices().unwrap_or(&[]);
+        let mut by_year = Vec::with_capacity(events.n_sims());
+        for i in 0..events.n_sims() {
+            let aggregate = events.aggregate_part(i).unwrap_or(&[]);
+            let losses = events.events(i);
+            let scope = masks.as_deref().map(|masks| ScopeView {
+                aggregate: agg_of,
+                events: events.label_indices(i).expect("a scope needs labels"),
+                masks,
+            });
+            let mut by_event = Vec::with_capacity(self.layers.len());
+            self.year_by_event(
+                aggregate,
+                losses,
+                events.sums_insured(i),
+                events.times(i),
+                None,
+                scope,
+                Some(&mut by_event),
+                None,
+            );
+            let mut row = vec![0.0; aggregate.len() + losses.len()];
+            for &j in &chosen {
+                for (r, c) in row.iter_mut().zip(&by_event[j]) {
+                    *r += c;
+                }
+            }
+            by_year.push(row);
+        }
+        let sees = chosen.iter().any(|&j| self.layers[j].sees_aggregate_part());
+        Ok(events.with_amounts(&by_year, sees))
+    }
+
     /// Applies the tower to plain annual losses, one per simulation, each
     /// taken as one aggregate loss as in [`apply_aggregate`](Self::apply_aggregate),
     /// with no [`EventSet`] or [`PredictiveDistribution`] to build. A
@@ -1892,6 +1981,14 @@ impl Tower {
     /// loss ratio on its own premium, and the amounts add; adding the
     /// scales point by point is right only for one section.
     /// [`Commission::rate`] evaluates a scale on any loss ratio.
+    ///
+    /// Simulation `i` of the result is `losses[i]`: every component's draws
+    /// keep the order of `losses`, so the ceded, net and terms of index `i`
+    /// belong with whatever else was computed for simulation `i` (another
+    /// line's losses, the cash flows of the same year). A reserving fit's
+    /// `total_ultimate_draws` or `loss_ratio_draws` times the premium
+    /// (`prospicio_reserving::UltimateDraws`) are in its simulation order;
+    /// the losses must be finite and not negative.
     ///
     /// ```
     /// use prospicio_aggregate::{Layer, Tower};
@@ -3452,6 +3549,124 @@ mod tests {
         // Wind's years: 10 + 15 = 25 and 40 + 20 = 60, so 5 and 30.
         assert_eq!(draws_of(&scoped, &["ceded", "SL"]), [5.0, 30.0]);
         assert_eq!(draws_of(&alone, &["ceded", "SL"]), [5.0, 30.0]);
+    }
+
+    #[test]
+    fn ceded_events_add_to_the_layers_ceded_totals() {
+        let events = events();
+        let tower = Tower::inuring(vec![
+            vec![Layer::quota_share("QS", 0.3).unwrap()],
+            vec![
+                Layer::xol("5x5", 5e6, 5e6)
+                    .unwrap()
+                    .reinstatements(1)
+                    .unwrap(),
+                Layer::xol("10x10", 10e6, 10e6)
+                    .unwrap()
+                    .aggregate_limit(12e6)
+                    .unwrap()
+                    .allocation(LimitAllocation::ProRata)
+                    .unwrap(),
+            ],
+        ])
+        .unwrap();
+        let result = tower.apply(&events).unwrap();
+        for names in [&["QS"][..], &["5x5"], &["10x10"], &["5x5", "10x10"]] {
+            let ceded = tower.ceded_events(&events, names).unwrap();
+            assert_eq!(ceded.n_sims(), events.n_sims());
+            let totals: Vec<Vec<f64>> = names
+                .iter()
+                .map(|n| {
+                    let key: Vec<KeyValue> = vec!["ceded".into(), (*n).into()];
+                    prospicio_prob::Empirical::draws(&result.marginal(&key).unwrap()).to_vec()
+                })
+                .collect();
+            for i in 0..events.n_sims() {
+                let want: f64 = totals.iter().map(|t| t[i]).sum();
+                let got: f64 = ceded.events(i).iter().sum();
+                assert!(
+                    (got - want).abs() <= 1e-6 * want.max(1.0),
+                    "{names:?} year {i}"
+                );
+                assert!(ceded.events(i).iter().all(|&x| x > 0.0));
+            }
+        }
+    }
+
+    #[test]
+    fn an_occurrence_retro_on_two_deals_ceded_events() {
+        // Deal A: wind 30 at 0.2 under 20 xs 10, ceding 20. Deal B: the
+        // same wind event, 25 at 0.2, and quake 12 at 0.6 under 10 xs 10,
+        // ceding 10 and 2.
+        let a = EventSet::from_years(vec![vec![30.0]], 0)
+            .unwrap()
+            .with_times(vec![0.2])
+            .unwrap()
+            .with_labels(vec![("peril".into(), vec!["wind".into()])])
+            .unwrap();
+        let b = EventSet::from_years(vec![vec![25.0, 12.0]], 1)
+            .unwrap()
+            .with_times(vec![0.2, 0.6])
+            .unwrap()
+            .with_labels(vec![("peril".into(), vec!["wind".into(), "quake".into()])])
+            .unwrap();
+        let ca = Tower::new(vec![Layer::xol("A", 20.0, 10.0).unwrap()])
+            .unwrap()
+            .ceded_events(&a, &["A"])
+            .unwrap();
+        let cb = Tower::new(vec![Layer::xol("B", 10.0, 10.0).unwrap()])
+            .unwrap()
+            .ceded_events(&b, &["B"])
+            .unwrap();
+        let book = ca.merge(&cb).unwrap();
+        assert_eq!(book.events(0), &[20.0, 10.0, 2.0]);
+        assert_eq!(book.times(0), Some(&[0.2, 0.2, 0.6][..]));
+        assert_eq!(
+            book.label_combinations(),
+            [vec!["quake".to_string()], vec!["wind".to_string()]]
+        );
+        // A 15 xs 10 retro: each deal's cession its own occurrence (10), or
+        // the wind event's cessions grouped into one occurrence of 30 (15).
+        let retro = Tower::new(vec![Layer::xol("retro", 15.0, 10.0).unwrap()]).unwrap();
+        assert_eq!(retro.ceded(book.events(0)), [10.0]);
+        let one = book.grouped(72.0).unwrap();
+        assert_eq!(one.events(0), &[30.0, 2.0]);
+        assert_eq!(retro.ceded(one.events(0)), [15.0]);
+    }
+
+    #[test]
+    fn ceded_events_follow_scopes_and_the_aggregate_part() {
+        let part = PredictiveDistribution::from_draws(
+            vec!["peril".into()],
+            vec![vec!["wind".into()]],
+            vec![8.0, 0.0],
+            Provenance::new("part"),
+        )
+        .unwrap();
+        let events = perils().with_aggregate_part(&part).unwrap();
+        // A wind-scoped stop loss of 100 xs 20 on wind: 8 + 15 = 23 and
+        // 0 + 8 + 12 = 20 cede 3 and 0, split pro rata to each entry.
+        let sl = Layer::stop_loss("SL", 100.0, 20.0)
+            .unwrap()
+            .allocation(LimitAllocation::ProRata)
+            .unwrap()
+            .scope("peril", &["wind"])
+            .unwrap();
+        let ceded = Tower::new(vec![sl])
+            .unwrap()
+            .ceded_events(&events, &["SL"])
+            .unwrap();
+        let part0 = ceded.aggregate_part(0).unwrap()[0];
+        assert!((part0 - 3.0 * 8.0 / 23.0).abs() < 1e-12);
+        assert_eq!(ceded.events(0).len(), 1);
+        assert!((ceded.events(0)[0] - 3.0 * 15.0 / 23.0).abs() < 1e-12);
+        assert!(ceded.events(1).is_empty());
+        assert!(ceded.sums_insured(0).is_none());
+        // Errors: no layer, an unknown or repeated name.
+        let tower = Tower::new(vec![Layer::xol("L", 10.0, 5.0).unwrap()]).unwrap();
+        assert!(tower.ceded_events(&events, &[]).is_err());
+        assert!(tower.ceded_events(&events, &["M"]).is_err());
+        assert!(tower.ceded_events(&events, &["L", "L"]).is_err());
     }
 
     #[test]

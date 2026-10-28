@@ -43,6 +43,7 @@
 //! # Ok::<(), prospicio_reserving::Error>(())
 //! ```
 
+pub mod assumptions;
 pub mod backtest;
 #[cfg(feature = "bayes")]
 pub mod bayes;
@@ -53,6 +54,7 @@ pub mod clark;
 pub mod dependence;
 pub mod development;
 pub mod diagnostics;
+pub mod draws;
 pub mod error;
 pub mod excess;
 pub mod expected_loss;
@@ -70,6 +72,10 @@ pub mod tail;
 pub mod triangle;
 pub mod view;
 
+pub use assumptions::{
+    CALENDAR_YEAR_CI, CalendarDiagonal, CalendarYearTest, DEVELOPMENT_CORRELATION_CI,
+    DevelopmentCorrelationTest, DevelopmentPair, calendar_year_effect, development_correlation,
+};
 pub use backtest::{
     Backtest, CellForecast, GlmCandidate, METRICS, NamedModel, TriangleModel, diagonal_backtest,
 };
@@ -87,6 +93,7 @@ pub use clark::{ClarkCapeCod, ClarkFit, ClarkLdf, GrowthCurve};
 pub use dependence::SegmentDependence;
 pub use development::{Average, Development, DevelopmentFit, SigmaInterpolation};
 pub use diagnostics::Diagnostics;
+pub use draws::UltimateDraws;
 pub use error::{Error, Result};
 pub use excess::{Basis, ExcessPattern, Layer, SeverityByMaturity, layer_exposure, layer_share};
 pub use expected_loss::{

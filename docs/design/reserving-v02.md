@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 proposed) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -4459,3 +4459,234 @@ and `R/prospicio/tests/test-reserving-uy-pattern.R`):
   `s = 6` at 3), each under both curves. The sweep at 3,000 patterns
   (6,000 readings, about 70 s in release) found no failure; before these
   fixes about 1,100 of 2,940 such readings failed (review of PR #650).
+
+### 26. Ultimates and loss ratios per simulation for towers, deal books and cash flows
+
+Issue #602 asked for a documented bridge from a reserving fit's draws to
+the vectors per simulation that `Tower::apply_annual`, `DealRun` and
+`DealBook` and `CashflowTerms::run` take, with the guarantee that index
+`i` is the same simulation on every side. Built on branch
+`claude/loss-ratio-draws`, in Rust, Python and R.
+
+1. **One trait in this crate, not copies on each fit.**
+   `prospicio_reserving::UltimateDraws` (`draws.rs`) asks a fit for two
+   things, its joint `reserves` and each component's latest value in the
+   same order, and provides the rest: `ultimates()` (the reserves with
+   the latest values added, the same dimensions, components and rows, so
+   `join`, `select`, `aggregate` and `reorder_groups` work on it),
+   `ultimate_draws(origin)`, `loss_ratio_draws(origin, premium)`,
+   `total_ultimate_draws()` and `total_loss_ratio_draws(premium)`, the
+   totals summed index by index. A helper on `PredictiveDistribution`
+   was the other choice the issue named; it would have to be told the
+   latest values from outside, and `prospicio-prob` is the Probability
+   lane's crate, so the trait sits with the fits that know them.
+2. **Which fits.** Every fit with reserves per simulation:
+   `OdpBootstrapFit`, `OdpBootstrapFits`, `MackBootstrapFit`,
+   `MackBootstrapFits`, `BayesOdpFit`, `BayesOdpFits`, `BayesBfFit`,
+   `BayesBfNormalisedFit` (so `LayerSharePrior::fit` too), `MeyersFit`,
+   `MeyersFits`, `CompartmentalFit` and `CompartmentalFits`. The one-year
+   views (claims development results) are not ultimates and do not
+   implement it; their opening `fit` does.
+3. **The basis.** The ultimate is the latest value of the fitted column
+   plus the reserve draw: paid for a paid triangle, incurred for an
+   incurred one. Meyers' models simulate the value at the oldest age
+   itself and keep it as `ultimates`; the trait returns those draws (its
+   `ultimates` is overridden), which the reserves plus the latest values
+   match to rounding (1e-12 relative in the test). Compartmental models
+   reserve on the paid basis (the paid at the square's last age less the
+   latest paid), so their ultimate is the latest paid plus the reserve,
+   equal to the last future paid cell of each origin in the same
+   simulation; there is no tail past the square.
+4. **Naming an origin.** By its component key in `reserves`, as
+   `PredictiveDistribution::component_index` reads it: `[origin]` for one
+   segment, `[key values..., origin]` over segments, a period by its label
+   (`"2021"`, `2021`, `"2021Q3"`). A fit over segments needs the segment
+   in the key (an origin alone is an error, not the sum over segments);
+   the sum over segments is `ultimates()` with `aggregate` or `select`.
+   Python takes a tuple or a single label, R a list or a vector; `None`
+   or `NULL` gives the total.
+5. **The premium is an argument** (proposed). `loss_ratio_draws` takes the
+   origin's premium as the issue states, finite and positive, even for
+   Meyers' and the compartmental fits, which carry a premium of their own
+   (`premium`), and the Bayesian BFs, which carry an exposure. The
+   proposal keeps one signature for every fit and leaves the program's
+   subject premium (which need not be the triangle's premium column) to
+   the caller; a later convenience could default to the fit's own premium
+   where it has one.
+6. **The order guarantee, and where it is stated.** Row `i` of a
+   `PredictiveDistribution` is one simulation for every component, a
+   simulated one draws simulation `i` from `StreamRng::new(seed, i)`, so
+   the same inputs and seed give the same rows whatever the threads, and
+   NUTS fits with the same seed repeat their draws on one machine. The
+   operations that keep rows whole keep the pairing; `reorder_groups`
+   keeps each group's rows whole but pairs row `i` of one group with
+   another simulation of another (`reorder_groups_indexed` says which).
+   The trait's module docs state it, and doc comments only (a cross-lane
+   edit, no code) state it on `PredictiveDistribution`
+   (`prospicio-prob`), `Tower::apply_annual` (`prospicio-aggregate`),
+   `DealBook` and `CashflowTerms::run` (`prospicio-pricing`).
+7. **Bindings.** Python: an `ultimates` property on every fit above
+   (Meyers' already had it, with the same draws), `ultimate_draws(origin
+   = None)` and `loss_ratio_draws(origin, premium)`. R:
+   `ultimate_draws(fit, origin = NULL)`, `loss_ratio_draws(fit, origin =
+   NULL, premium)` and `ultimate_distribution(fit)`, each calling the
+   Rust trait through the fit's pointer.
+8. **Checks.** Unit tests in `draws.rs` (ODP and Mack bootstraps on RAA
+   and on RAA twice under a `lob` key): each origin's ultimate is its
+   latest plus its reserve in the same simulation, found by key; labels
+   and integers name the same origin; the totals and loss ratios by
+   index; the same seed gives the same draws and another seed different
+   ones; `join` keeps row `i` of each part, and after `reorder_groups_indexed`
+   every column of a model's row is the latest plus the reserve of the
+   one source simulation the index names. The mean of each origin's
+   ultimates is the chain ladder's within four standard errors of the
+   mean; the total is the bootstrap's own expected total (a run of ten
+   times the simulations on another seed) to that error, but not the
+   chain ladder's: on RAA the ODP bootstrap's mean total ultimate is
+   about 0.77% (1,650, 3.2% of the reserve) above the chain ladder's,
+   a bias that adds up over the origins (measured by hand; the test
+   bounds the gap below 2%). The issue's `expected_ultimate()`
+   exists only on `BayesBfNormalisedFit`, where it is the posterior mean
+   of the prior's `U_w` without the process error and the cells already
+   paid, so it is not the target; the Bayesian checks compare with the
+   long tables instead. `validation/tests/reserving_loss_ratio_draws.rs`
+   puts the draws through towers: a stop loss on `total_ultimate_draws`
+   by `apply_annual` cedes, simulation by simulation, what it cedes on
+   `ultimates()` by `apply_aggregate` and on `reserves` with the
+   attachment lowered by the latest values; the same for a contract on
+   one origin's loss ratio and for each line of a fit over segments.
+   `validation/tests/reserving_bayes_loss_ratio_draws.rs` (slow-bayes)
+   checks the layout, the long tables' means (Meyers' `ultimate_mean` and
+   `ulr_mean`) and the same-seed draws for `BayesOdp` (alone and over
+   segments), both Bayesian BFs, Meyers' CRC (alone and over segments)
+   and compartmental model 1 (alone and over segments, its ultimate the
+   last future paid cell; over segments the second segment is the first
+   with every value doubled, so a swap of the segments' latest values
+   shows). Python and R tests repeat the bootstrap checks
+   and the tower.
+9. **Later.** The how-to in `docs/guides/` that runs the chain end to end
+   (fit, loss ratios, tower, deal book, cash flows) belongs to the Guides
+   lane and is ready to write.
+
+### 27. Mack's tests of the chain ladder's assumptions
+
+Status: **Built** (2026-10-28), issue #551, branch
+`claude/mack-assumption-tests`, in Rust, Python and R; item 6 is
+**proposed** and built as recommended. Mack (1994, "Measuring the
+variability of chain ladder reserve estimates", CAS Forum Spring 1994)
+gives two cheap closed-form tests of the chain ladder's assumptions that
+reviewers ask for beside a Mack exhibit: a test for calendar-year effects
+(appendix H) and one for correlation between adjacent development factors
+(appendix G). R ChainLadder 0.2.21 has them as `cyEffTest` and `dfCorTest`.
+
+1. **What is built.** `prospicio_reserving::assumptions`:
+   `calendar_year_effect(&Triangle, column, ci) -> CalendarYearTest` and
+   `development_correlation(&Triangle, column, ci) ->
+   DevelopmentCorrelationTest` on every observed link ratio of a
+   single-segment triangle, and `MackFit::calendar_year_effect(ci)` and
+   `MackFit::development_correlation(ci)` on the link ratios the fit
+   averaged (item 6). `CalendarYearTest` holds each diagonal's `S_j`,
+   `L_j`, `Z_j`, `n`, `m`, `E[Z_j]` and `Var[Z_j]` (R's `test_table`), the
+   totals, the interval and `passes()`; `DevelopmentCorrelationTest` each
+   pair's `T_k`, origins in common and weight, `T`, `Var[T]`, the interval
+   and `passes()`. `passes()` is true when the statistic lies within the
+   interval, ends included (R prints the opposite, "Calendar Year Effect:
+   FALSE"). Python: `prospicio.reserving.calendar_year_effect(tri,
+   column, ci=0.95)`, `development_correlation(tri, column, ci=0.5)`, the
+   same two methods on `MackFit`, and `CalendarYearTest` and
+   `DevelopmentCorrelationTest` with `diagonals`, `pairs` and `to_frame()`.
+   R: `calendar_year_effect(x, column = NULL, ci = 0.95)` and
+   `development_correlation(x, column = NULL, ci = 0.5)` on a `triangle`
+   or a `mack_fit`, returning `calendar_year_test` and
+   `development_correlation_test` with `print` and `summary` methods
+   shaped as R ChainLadder's (`Table`, `Totals`, `Range`; `Results`,
+   `Range`, and the pairs as `Table`).
+2. **Mack's example is RAA, not GenIns.** The issue says Mack prints both
+   tests on the Taylor-Ashe triangle; his 1994 paper's example (chapter 6)
+   is the RAA triangle. His printed values are reproduced on RAA in the
+   unit tests: `T_k = 4/21, -9/28, 3/7, -1/5, 2/5, -1/2, 1` with weights 7
+   to 1, `T = .070`, `Var(T) = 1/28` (p. 161); the S/L table of p. 167,
+   `Z = 14`, `E(Z) = 12.875`, `Var(Z) = 3.9785`. His intervals use 2
+   standard deviations for 95% and .67 for 50%; prospicio, like R, uses
+   `qnorm((1 + ci) / 2)`, and his `(8.886, 16.864)` comes back with
+   `ci = 2 Phi(2) - 1`.
+3. **Default levels: 95% and 50%.** The issue's sketch had
+   `CalendarTestOptions { ci: 0.5 }`; Mack (p. 166) and R's `cyEffTest`
+   test calendar-year effects at 95%, and only the correlation test at
+   50% (Mack: the test is approximate and meant to catch correlation in a
+   substantial part of the triangle). The defaults are Mack's and R's,
+   exported as `CALENDAR_YEAR_CI` and `DEVELOPMENT_CORRELATION_CI`; the
+   level is a plain `f64` argument, strictly between 0 and 1.
+4. **Calendar diagonals by valuation month.** At each age the link ratios
+   are split at their median (R's `median`, the mean of the two middle
+   values for an even count); one equal to the median is in neither set.
+   A link ratio belongs to the diagonal of its later cell, keyed by that
+   cell's valuation month, which is R's anti-diagonal on a square triangle
+   and stays defined on a non-square one or with quarterly ages. Every
+   diagonal with at least two link ratios is reported, which on a square
+   triangle is R's rows `j = 2, ..., I - 1`; a diagonal with `n <= 1` has
+   `Z_j = E[Z_j] = Var[Z_j] = 0` (Mack leaves it out; it changes no
+   total). `choose(n - 1, m) / 2^n` is a product up to `n = 1000` and log
+   gamma beyond.
+5. **Correlation pairs over the origins they share.** Each pair of
+   adjacent link columns is ranked within the origins observed at both,
+   which is Mack's "leave out the last element and rank again" and R's
+   `use = "pairwise.complete.obs"`; Spearman's coefficient is Pearson's on
+   average ranks, which equals Mack's (G4) without ties and R's with them.
+   The weight is `n - 1` and `Var(T) = 1 / sum(weights)`: on a full
+   triangle exactly Mack's (G5) and (G6), and still 1 over the variance of
+   each `T_k` when exclusions or a non-square shape change the counts (R
+   hard-codes the weights `(I - 3):1` by position). A pair with fewer than
+   two origins is left out; one whose ranks are all tied in a column has
+   `T_k = NaN` and weight 0; no usable pair is an error.
+6. **Exclusions** (proposed; the user's to decide). The issue asks for the
+   `MackFit` methods to use "the same column and exclusions as the fit".
+   Built so: the fit stores the link ratios `Development::kept_mask`
+   keeps, and its two methods test those alone, so they need no triangle
+   argument and cannot be run against another one; the free functions on
+   a `Triangle` test every observed link ratio (R and chainladder-python
+   parity). Consequences, documented in the bindings: `n_periods` keeps
+   only the diagonals after its cutoff (on RAA with `n_periods = 4`, the
+   diagonals of 1987 to 1990), so the test asks whether the window the
+   factors use is free of calendar effects; `drop_high` and `drop_low`
+   remove, at each age, exactly the extreme factors the calendar test
+   counts, which weakens it; a selected pattern (`ldf`) changes no link
+   ratio and so not the tests. The alternative is to test every observed
+   link ratio always, the fit's methods then being the free functions on
+   its triangle. Recommendation: as built, since the tests are meant to
+   justify the factors the fit averaged, and the free functions give the
+   whole-triangle view in one call.
+7. **One segment.** Both tests need a single-segment triangle or fit (the
+   bindings name `segment(...)`), as `claims_development_result()` does. A
+   link ratio with a zero earlier value is not observed, as in
+   `Triangle::link_ratios`.
+8. **chainladder-python as a second target.** chainladder-python 0.10.1's
+   `ValuationCorrelation(total=True)` gives the same `z`, `z_expectation`
+   and `z_variance`, its `total=False` the same per-diagonal `z`, `E[Z_j]`
+   and `Var[Z_j]` (with one more, always-zero, row for the first
+   diagonal), and `DevelopmentCorrelation` the same `T_k`, weights, `T`,
+   variance and interval on RAA, GenIns and ABC. Its `total=True` range and
+   `z_critical` are not targets: the range is centred on the sum of the
+   variances instead of `E[Z]`, and `z_critical` compares that sum with
+   it, so it is false on every triangle (also on ABC, where R's test
+   rejects). Its `total=False` test is Mack's 1997 per-diagonal binomial
+   test, not built here. See
+   `knowledge/references/chainladder-python-correlation.md` and
+   `chainladder-python-correlation-traps.md`.
+9. **Checks.** `validation/tests/reserving_assumptions.rs`: every row of
+   `reserving_assumptions_r.csv` (R ChainLadder 0.2.21's `cyEffTest` at
+   0.95 and 0.9 and `dfCorTest` at 0.5 and 0.75, with its `T_k`, on RAA,
+   GenIns and ABC; `validation/scripts/reserving_assumptions_r.R`) and of
+   `reserving_assumptions_python.csv` (chainladder-python's statistics of
+   item 8; `reserving_assumptions_python.py`) to 1e-12; the Mack fit's
+   tests equal the free functions without exclusions; and a 15-origin
+   synthetic triangle passes until two calendar years' payments are
+   raised by 50%, after which it fails at 95% with no small factor on the
+   shocked diagonals. The same shock on RAA and GenIns still passes: on a
+   10 x 10 triangle the test has little power. On the real triangles R
+   and prospicio agree that RAA passes both tests, GenIns passes the
+   calendar test and fails the correlation test at 50% (`T = -0.164`
+   against `+-0.127`), and ABC fails both (`Z = 8` outside
+   `(12.22, 20.38)`, `T = 0.544`). Unit tests reproduce Mack's printed
+   values (item 2), his `n = 5` moments (`E = 50/32`, `Var = 95/256`), the
+   exclusions of item 6 and the errors.

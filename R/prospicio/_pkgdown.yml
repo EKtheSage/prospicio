@@ -81,6 +81,8 @@ reference:
       - total
       - draw_matrix
       - provenance
+      - multivariate_normal
+      - predictive_from_gaussian
   - title: Aggregate loss
     contents:
       - compound_distribution
@@ -137,6 +139,7 @@ reference:
       - surplus_treaty
       - ceded
       - ceded_by_event
+      - layer_trial_statistics
       - reinstatement_premium
       - reinsurance_tower
       - inuring_tower
@@ -147,6 +150,7 @@ reference:
       - with_cover_basis
       - with_interlocking
       - with_scope
+      - ceded_events
       - deal_ratios
       - with_deal_scale
       - tower_on_grid
@@ -184,6 +188,7 @@ reference:
       - cashflow_requirement
       - cashflow_adjustment
       - deal_run
+      - book_marginal_price
       - trend_large_losses
       - burning_cost
       - development_pattern
@@ -212,6 +217,7 @@ reference:
       - credibility_standard
       - buhlmann_straub
       - hierarchical_credibility
+      - hachemeister
       - bonus_malus
       - bonus_malus_transition
       - bonus_malus_portfolio
@@ -325,6 +331,8 @@ reference:
       - layer_share_prior
       - residual_summary
       - claims_development_result
+      - calendar_year_test
+      - development_correlation_test
       - tail_constant
       - tail_curve
       - tail_bondy
@@ -360,6 +368,7 @@ reference:
       - clark_fit
       - benchmark_curve_fit
       - fit_frames
+      - ultimate_draws
 # Articles: the R twins of the guides (docs/guides/*.qmd) and of the
 # notebooks (examples/*.qmd), staged into vignettes/articles by
 # `cargo xtask r` (gitignored). The `articles:` index is not written here:

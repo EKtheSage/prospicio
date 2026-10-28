@@ -1,6 +1,7 @@
 //! Mack's distribution-free chain ladder: the chain-ladder projection plus
 //! the mean squared error of each origin's and the total reserve.
 
+use crate::assumptions::LinkRatios;
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
 use crate::development::Development;
 use crate::error::{Error, Result};
@@ -91,6 +92,11 @@ pub struct MackFit {
     /// `drop_high` or `drop_low` (even one that removes nothing today),
     /// which the closed-form one-year view rejects.
     pub(crate) exclusions_set: bool,
+    /// The link ratios the factors averaged (after `n_periods` and the
+    /// drops), for Mack's assumption tests
+    /// ([`MackFit::calendar_year_effect`],
+    /// [`MackFit::development_correlation`]).
+    pub(crate) links: LinkRatios,
 }
 
 impl Mack {
@@ -157,6 +163,7 @@ impl Mack {
                 ));
             }
         }
+        let links = LinkRatios::of(segment, Some(&self.development))?;
         let tail = &chain_ladder.tail;
         let dev = &chain_ladder.development;
         let alpha = dev.alpha;
@@ -216,6 +223,7 @@ impl Mack {
             total_parameter_risk: total_parameter_var.sqrt(),
             total_standard_error: (total_process_var + total_parameter_var).sqrt(),
             exclusions_set: self.development.has_exclusions(),
+            links,
             chain_ladder,
         })
     }

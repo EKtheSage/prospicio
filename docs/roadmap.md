@@ -494,6 +494,13 @@ what it is aiming for by v1.0.
     the user's decision of 2026-10-27 (`AnnualReading`; decision 18's rule
     kept as `LnLinear`); the simulated book converts within 0.2% at every
     age, against 31% off at 12 months before.
+  - Mack's tests of the chain ladder's assumptions (`reserving-v02.md`,
+    decision 27; branch `claude/mack-assumption-tests`, issue #551, in
+    Rust, Python and R): the calendar-year effect test and the
+    development-factor correlation test of Mack (1994), on a triangle or
+    on the link ratios a Mack fit averaged; R ChainLadder's `cyEffTest`
+    and `dfCorTest` to 1e-12 on RAA, GenIns and ABC, and Mack's printed
+    values on RAA.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental
@@ -529,6 +536,10 @@ what it is aiming for by v1.0.
   uncertainty (PR 4: `LayerSharePrior` over the normalised Bayesian BF, in
   Rust, Python and R; done, which finishes the plan; PR 5, #518: one share
   error common to all origins as a parameter of the model, the default; done).
+  The ultimates and loss ratios per simulation of every fit with reserve
+  draws, in one simulation order for towers, deal books and the cash-flow
+  engine (`UltimateDraws`, `reserving-v02.md` decision 26, #602; Rust,
+  Python and R): done.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
 

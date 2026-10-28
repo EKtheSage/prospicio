@@ -23,6 +23,11 @@ use prospicio_reserving::{
     SegmentFits, SegmentMap, SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailConstant,
     TailCurve, Triangle as TriangleInner, UnderwritingBasis,
 };
+use prospicio_reserving::{
+    CalendarYearTest as CalendarYearInner,
+    DevelopmentCorrelationTest as DevelopmentCorrelationInner, calendar_year_effect,
+    development_correlation,
+};
 
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
 use prospicio_reserving::bayes::{
@@ -47,11 +52,50 @@ use prospicio_reserving::{
     Backtest, GlmCandidate, NamedModel, TriangleFrame, TriangleModel, diagonal_backtest,
 };
 
-use crate::distributions::PredictiveDistribution;
+use crate::distributions::{PredictiveDistribution, key_from_list};
 use crate::whole;
+use prospicio_prob::ComponentKey;
+use prospicio_reserving::UltimateDraws;
 
 fn to_r(e: prospicio_reserving::Error) -> Error {
     Error::Other(e.to_string())
+}
+
+/// The key an R list or vector names, or `None` for NULL.
+fn origin_key(origin: Nullable<List>) -> Result<Option<ComponentKey>> {
+    match origin {
+        Nullable::NotNull(key) => Ok(Some(key_from_list(key)?)),
+        Nullable::Null => Ok(None),
+    }
+}
+
+/// [`UltimateDraws::ultimates`] for R.
+fn ultimates_of(fit: &impl UltimateDraws) -> Result<PredictiveDistribution> {
+    Ok(PredictiveDistribution {
+        inner: fit.ultimates().map_err(to_r)?,
+    })
+}
+
+/// One origin's ultimate draws, or the total's with no origin.
+fn ultimate_draws_of(fit: &impl UltimateDraws, origin: Nullable<List>) -> Result<Vec<f64>> {
+    match origin_key(origin)? {
+        None => fit.total_ultimate_draws(),
+        Some(key) => fit.ultimate_draws(&key),
+    }
+    .map_err(to_r)
+}
+
+/// One origin's loss ratio draws, or the total's with no origin.
+fn loss_ratio_draws_of(
+    fit: &impl UltimateDraws,
+    origin: Nullable<List>,
+    premium: f64,
+) -> Result<Vec<f64>> {
+    match origin_key(origin)? {
+        None => fit.total_loss_ratio_draws(premium),
+        Some(key) => fit.loss_ratio_draws(&key, premium),
+    }
+    .map_err(to_r)
 }
 
 fn grain(name: &str, arg: &str) -> Result<Grain> {
@@ -929,6 +973,22 @@ impl Triangle {
         .fit_segments(&self.inner, column)
         .map_err(to_r)?;
         Ok(ChainLadderFit { inner })
+    }
+
+    /// Mack's calendar-year effect test on every observed link ratio of
+    /// `column`, at confidence level `ci`.
+    fn calendar_year_effect(&self, column: &str, ci: f64) -> Result<CalendarYearTest> {
+        Ok(CalendarYearTest {
+            inner: calendar_year_effect(&self.inner, column, ci).map_err(to_r)?,
+        })
+    }
+
+    /// Mack's development-factor correlation test on every observed link
+    /// ratio of `column`, at confidence level `ci`.
+    fn development_correlation(&self, column: &str, ci: f64) -> Result<DevelopmentCorrelationTest> {
+        Ok(DevelopmentCorrelationTest {
+            inner: development_correlation(&self.inner, column, ci).map_err(to_r)?,
+        })
     }
 
     /// `tail` is a `ReservingTail`; `tail_sigma` and `tail_std_err` are
@@ -2585,6 +2645,24 @@ impl MackFit {
             inner: fit.claims_development_result().map_err(to_r)?,
         })
     }
+
+    /// Mack's calendar-year effect test on the link ratios a
+    /// single-segment fit averaged.
+    fn calendar_year_effect(&self, ci: f64) -> Result<CalendarYearTest> {
+        let fit = single(&self.inner, "calendar_year_effect", "")?;
+        Ok(CalendarYearTest {
+            inner: fit.calendar_year_effect(ci).map_err(to_r)?,
+        })
+    }
+
+    /// Mack's development-factor correlation test on the link ratios a
+    /// single-segment fit averaged.
+    fn development_correlation(&self, ci: f64) -> Result<DevelopmentCorrelationTest> {
+        let fit = single(&self.inner, "development_correlation", "")?;
+        Ok(DevelopmentCorrelationTest {
+            inner: fit.development_correlation(ci).map_err(to_r)?,
+        })
+    }
 }
 
 /// Merz and Wüthrich's (2008) one-year view of a Mack fit: standard errors
@@ -2765,6 +2843,23 @@ impl OdpBootstrapFit {
         }
     }
 
+    /// The joint ultimates: the reserves with each origin's latest value
+    /// added in every simulation (`UltimateDraws::ultimates`).
+    fn ultimates(&self) -> Result<PredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     fn long_table(&self) -> List {
         fit_table(self.inner.to_long())
     }
@@ -2817,6 +2912,23 @@ impl MackBootstrapFit {
         PredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// The joint ultimates: the reserves with each origin's latest value
+    /// added in every simulation (`UltimateDraws::ultimates`).
+    fn ultimates(&self) -> Result<PredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     fn long_table(&self) -> List {
@@ -3118,6 +3230,23 @@ impl BayesOdpFit {
         PredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// The joint ultimates: the reserves with each origin's latest value
+    /// added in every simulation (`UltimateDraws::ultimates`).
+    fn ultimates(&self) -> Result<PredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// `list(max_rhat, min_ess_bulk, min_ess_tail, divergences, warnings)`.
@@ -3880,6 +4009,23 @@ impl BayesOdpFits {
         }
     }
 
+    /// The joint ultimates: the reserves with each origin's latest value
+    /// added in every simulation (`UltimateDraws::ultimates`).
+    fn ultimates(&self) -> Result<PredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     /// One row per segment: `list(table, warnings)`, as
     /// `segment_diagnostics`.
     fn diagnostics_table(&self) -> List {
@@ -3977,6 +4123,17 @@ impl MeyersFit {
         PredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// `list(max_rhat, min_ess_bulk, min_ess_tail, divergences, warnings)`.
@@ -4110,6 +4267,23 @@ impl BayesBfNormalisedFit {
         }
     }
 
+    /// The joint ultimates: the reserves with each origin's latest value
+    /// added in every simulation (`UltimateDraws::ultimates`).
+    fn ultimates(&self) -> Result<PredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     /// `list(max_rhat, min_ess_bulk, min_ess_tail, divergences, warnings)`.
     fn diagnostics(&self) -> List {
         let d = &self.inner.diagnostics;
@@ -4228,6 +4402,23 @@ impl BayesBfFit {
         PredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// The joint ultimates: the reserves with each origin's latest value
+    /// added in every simulation (`UltimateDraws::ultimates`).
+    fn ultimates(&self) -> Result<PredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// `list(max_rhat, min_ess_bulk, min_ess_tail, divergences, warnings)`.
@@ -4360,6 +4551,17 @@ impl MeyersFits {
         PredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// One row per segment: `list(table, warnings)`, as
@@ -5085,6 +5287,23 @@ impl CompartmentalFits {
         }
     }
 
+    /// The joint ultimates: the reserves with each origin's latest value
+    /// added in every simulation (`UltimateDraws::ultimates`).
+    fn ultimates(&self) -> Result<PredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     fn paid(&self) -> PredictiveDistribution {
         PredictiveDistribution {
             inner: self.inner.paid.clone(),
@@ -5211,6 +5430,23 @@ impl CompartmentalFit {
         PredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// The joint ultimates: the reserves with each origin's latest value
+    /// added in every simulation (`UltimateDraws::ultimates`).
+    fn ultimates(&self) -> Result<PredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// One origin's ultimate in each simulation, or the total's with
+    /// `origin` NULL, in simulation order.
+    fn ultimate_draws(&self, origin: Nullable<List>) -> Result<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
+    fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     fn paid(&self) -> PredictiveDistribution {
@@ -5937,6 +6173,8 @@ extendr_module! {
     impl ExpectedLossFit;
     impl CapeCodFit;
     impl ClaimsDevelopmentResult;
+    impl CalendarYearTest;
+    impl DevelopmentCorrelationTest;
     impl OdpBootstrapFit;
     impl BayesOdpFit;
     impl BayesOdpFits;
@@ -5955,6 +6193,110 @@ extendr_module! {
     impl OneYearFit;
     impl ClarkFit;
     impl BenchmarkCurveFit;
+}
+
+/// Mack's calendar-year effect test (`docs/design/reserving-v02.md`,
+/// decision 27). `table` is one list entry per column of R ChainLadder's
+/// `test_table`, one value per calendar diagonal.
+#[extendr]
+pub(crate) struct CalendarYearTest {
+    inner: CalendarYearInner,
+}
+
+#[extendr]
+impl CalendarYearTest {
+    fn z(&self) -> f64 {
+        self.inner.z
+    }
+
+    fn expected(&self) -> f64 {
+        self.inner.expected
+    }
+
+    fn variance(&self) -> f64 {
+        self.inner.variance
+    }
+
+    fn ci(&self) -> f64 {
+        self.inner.ci
+    }
+
+    fn lower(&self) -> f64 {
+        self.inner.lower
+    }
+
+    fn upper(&self) -> f64 {
+        self.inner.upper
+    }
+
+    fn passes(&self) -> bool {
+        self.inner.passes()
+    }
+
+    fn table(&self) -> List {
+        let d = &self.inner.diagonals;
+        let int = |f: fn(&prospicio_reserving::CalendarDiagonal) -> usize| -> Vec<i32> {
+            d.iter().map(|d| f(d) as i32).collect()
+        };
+        list!(
+            valuation = d
+                .iter()
+                .map(|d| d.valuation.to_string())
+                .collect::<Vec<_>>(),
+            small = int(|d| d.small),
+            large = int(|d| d.large),
+            z = int(|d| d.z),
+            n = int(|d| d.n),
+            m = int(|d| d.m),
+            expected = d.iter().map(|d| d.expected).collect::<Vec<_>>(),
+            variance = d.iter().map(|d| d.variance).collect::<Vec<_>>()
+        )
+    }
+}
+
+/// Mack's test for correlation between adjacent development factors.
+/// `table` is one list entry per column, one value per pair of adjacent
+/// link columns.
+#[extendr]
+pub(crate) struct DevelopmentCorrelationTest {
+    inner: DevelopmentCorrelationInner,
+}
+
+#[extendr]
+impl DevelopmentCorrelationTest {
+    fn t(&self) -> f64 {
+        self.inner.t
+    }
+
+    fn variance(&self) -> f64 {
+        self.inner.variance
+    }
+
+    fn ci(&self) -> f64 {
+        self.inner.ci
+    }
+
+    fn lower(&self) -> f64 {
+        self.inner.lower
+    }
+
+    fn upper(&self) -> f64 {
+        self.inner.upper
+    }
+
+    fn passes(&self) -> bool {
+        self.inner.passes()
+    }
+
+    fn table(&self) -> List {
+        let p = &self.inner.pairs;
+        list!(
+            age = p.iter().map(|p| p.age as i32).collect::<Vec<_>>(),
+            n = p.iter().map(|p| p.n as i32).collect::<Vec<_>>(),
+            t = p.iter().map(|p| p.t).collect::<Vec<_>>(),
+            weight = p.iter().map(|p| p.weight).collect::<Vec<_>>()
+        )
+    }
 }
 
 /// Which factors a one-year bootstrap simulates: with `bootstrap_ldf` the

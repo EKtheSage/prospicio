@@ -1185,6 +1185,25 @@ class BayesBfFit:
             If an observed increment is negative (the density does not
             exist there).
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def origins(self, /) -> list[str]:
         """
@@ -1251,6 +1270,35 @@ class BayesBfFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest value plus its reserve in that
+        simulation.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key (``(2021,)``) or the origin alone; an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the ultimate by origin: ``reserves`` with
+        each origin's latest value added in every simulation, the same
+        dimensions, components and rows, so ``join``, ``select`` and
+        ``reorder_groups`` keep each simulation's origins together.
         """
 
 @final
@@ -1613,6 +1661,25 @@ class BayesBfNormalisedFit:
             If an observed increment is negative (the density does not
             exist there).
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def origins(self, /) -> list[str]:
         """
@@ -1683,6 +1750,35 @@ class BayesBfNormalisedFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest value plus its reserve in that
+        simulation.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key (``(2021,)``) or the origin alone; an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the ultimate by origin: ``reserves`` with
+        each origin's latest value added in every simulation, the same
+        dimensions, components and rows, so ``join``, ``select`` and
+        ``reorder_groups`` keep each simulation's origins together.
         """
 
 @final
@@ -2449,6 +2545,25 @@ class BayesOdpFit:
             If an observed increment is negative (the density does not
             exist there).
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def origins(self, /) -> list[str]:
         """
@@ -2501,6 +2616,35 @@ class BayesOdpFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest value plus its reserve in that
+        simulation.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key (``(2021,)``) or the origin alone; an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the ultimate by origin: ``reserves`` with
+        each origin's latest value added in every simulation, the same
+        dimensions, components and rows, so ``join``, ``select`` and
+        ``reorder_groups`` keep each simulation's origins together.
         """
 
 @final
@@ -2593,6 +2737,25 @@ class BayesOdpFits:
             If the fit has several segments, or an observed increment is
             negative.
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def origins(self, /) -> list[str]:
         """
@@ -2655,6 +2818,35 @@ class BayesOdpFits:
         Returns
         -------
         pandas.DataFrame
+        """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest value plus its reserve in that
+        simulation.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the ultimate by segment and origin: ``reserves`` with
+        each origin's latest value added in every simulation, the same
+        dimensions, components and rows, so ``join``, ``select`` and
+        ``reorder_groups`` keep each simulation's origins together.
         """
 
 @final
@@ -4672,6 +4864,77 @@ class Burr:
         """
 
 @final
+class CalendarYearTest:
+    """
+    Mack's test for calendar-year effects (Mack 1994, appendix H; R
+    ChainLadder's ``cyEffTest``), from ``calendar_year_effect`` or
+    ``MackFit.calendar_year_effect``.
+    
+    At each age the link ratios are split at their median into small and
+    large ones (one equal to the median is in neither); each calendar
+    diagonal counts its small ones ``S_j`` and large ones ``L_j``, and
+    ``z``, the sum of ``min(S_j, L_j)``, is compared with the normal
+    interval ``expected ± q sqrt(variance)``, ``q`` the standard normal's
+    ``(1 + ci) / 2`` quantile. A diagonal where small (or large) factors
+    prevail lowers ``z``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def ci(self, /) -> float:
+        """
+        The interval's confidence level.
+        """
+    @property
+    def diagonals(self, /) -> list[dict]:
+        """
+        Every calendar diagonal with at least two link ratios, oldest
+        first, as a list of dicts with ``valuation`` (the year and month of
+        its later cells, as ``"1983-12"``), ``small``, ``large``, ``z``,
+        ``n`` (``small + large``), ``m`` (``(n - 1) // 2``), ``expected``
+        and ``variance``: R's ``test_table``.
+        """
+    @property
+    def expected(self, /) -> float:
+        """
+        ``E[Z]`` under no calendar-year effect.
+        """
+    @property
+    def lower(self, /) -> float:
+        """
+        The interval's lower end.
+        """
+    @property
+    def passes(self, /) -> bool:
+        """
+        Whether ``z`` lies within the interval (ends included): no
+        calendar-year effect is detected. R prints the opposite as
+        "Calendar Year Effect: TRUE".
+        """
+    def to_frame(self, /) -> Any:
+        """
+        ``diagonals`` as a table, one row per diagonal. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def upper(self, /) -> float:
+        """
+        The interval's upper end.
+        """
+    @property
+    def variance(self, /) -> float:
+        """
+        ``Var[Z]`` under no calendar-year effect.
+        """
+    @property
+    def z(self, /) -> float:
+        """
+        ``Z``, the sum of each diagonal's ``min(S_j, L_j)``.
+        """
+
+@final
 class Cann:
     """
     A Combined Actuarial Neural Network (Wüthrich and Merz): the design's
@@ -5241,19 +5504,41 @@ class CashflowTerms:
         """
         The premium.
         """
-    def run(self, /, u: Sequence[float], commission: Sequence[float] |None = None) -> Cashflows:
+    def run(self, /, u: Sequence[float], commission: Sequence[float] |None = None, *, paid_patterns: Sequence[Sequence[float]] |None = None, pattern_index: Sequence[int] |None = None) -> Cashflows:
         """
         Each simulation's cash flows to the investor, from its ultimate
         loss ratio and commission rate (0 when not given).
+        
+        With ``paid_patterns`` each simulation pays its ultimate loss by its
+        own monthly cumulative paid pattern (#600), the written and earned
+        patterns staying the terms': one pattern a simulation, or with
+        ``pattern_index`` a few patterns and each simulation's index into
+        them. Every pattern has the terms' length, does not decrease and
+        ends at the terms' paid share.
         
         Parameters
         ----------
         u : list of float
         commission : list of float, optional
+        paid_patterns : list of list of float, optional
+        pattern_index : list of int, optional
         
         Returns
         -------
         Cashflows
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import CashflowTerms, CollateralRequirement
+        >>> ramp = lambda m: [min((t + 1) / m, 1.0) for t in range(48)]
+        >>> req = CollateralRequirement({"outstanding": 1.0})
+        >>> terms = CashflowTerms(100.0, 36, ramp(12), ramp(24), ramp(36), req)
+        >>> # The same year paid fast and paid as the terms say.
+        >>> cf = terms.run([0.8, 0.8], paid_patterns=[ramp(12), ramp(36)], pattern_index=[0, 1])
+        >>> cf.flows[0] == cf.flows[1]
+        False
+        >>> cf.flows[1] == terms.run([0.8]).flows[0]
+        True
         """
     def run_with_requirement(self, /, u: Sequence[float], requirement: Sequence[Sequence[float]], commission: Sequence[float] |None = None) -> Cashflows:
         """
@@ -5272,7 +5557,7 @@ class CashflowTerms:
         -------
         Cashflows
         """
-    def trace(self, /, u: float, commission: float = 0.0) -> dict:
+    def trace(self, /, u: float, commission: float = 0.0, *, paid_pattern: Sequence[float] |None = None) -> dict:
         """
         Every account line of one simulation, month by month: a dict of
         columns, each a list of ``commutation_month`` values, with the
@@ -5283,6 +5568,9 @@ class CashflowTerms:
         ----------
         u : float
         commission : float, default 0
+        paid_pattern : list of float, optional
+            The simulation's own paid pattern, as one of ``run``'s
+            ``paid_patterns``.
         
         Returns
         -------
@@ -7686,6 +7974,25 @@ class CompartmentalFit:
         -------
         dict
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def origins(self, /) -> list[str]:
         """
@@ -7797,11 +8104,40 @@ class CompartmentalFit:
         -------
         pandas.DataFrame
         """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest paid plus its reserve in that
+        simulation: the paid at the square's last age, on the paid basis.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key (``(2021,)``) or the origin alone; an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def ultimate_loss_ratio(self, /) -> list[float]:
         """
         Each origin's posterior mean ultimate loss ratio ``RLR_i RRF_i``,
         without process error past the square.
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the ultimate by origin: ``reserves`` with
+        each origin's latest paid added in every simulation, the same
+        dimensions, components and rows, so ``join``, ``select`` and
+        ``reorder_groups`` keep each simulation's origins together.
         """
 
 @final
@@ -7878,6 +8214,25 @@ class CompartmentalFits:
         ------
         ValueError
             If the fit has several segments.
+        """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
         """
     @property
     def origins(self, /) -> list[str]:
@@ -7984,6 +8339,35 @@ class CompartmentalFits:
         Returns
         -------
         pandas.DataFrame
+        """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest paid plus its reserve in that
+        simulation: the paid at the square's last age, on the paid basis.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the ultimate by segment and origin: ``reserves`` with
+        each origin's latest paid added in every simulation, the same
+        dimensions, components and rows, so ``join``, ``select`` and
+        ``reorder_groups`` keep each simulation's origins together.
         """
 
 @final
@@ -9287,6 +9671,29 @@ class DealBook:
         The items of ``amounts``: ``premium``, ``loss``, each deduction,
         ``total_deductions``, ``nmbf`` and ``margin``.
         """
+    def marginal_price(self, /, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None, deals: Sequence[str] |None = None) -> dict:
+        """
+        The marginal price of each deal written last: the book's loss
+        priced with the deal and without it, on the assets of the capital
+        standard ``assets`` and by exactly one of ``cost_of_capital`` and
+        ``distortion`` as ``price_portfolio`` prices a portfolio, and the
+        differences. Under a cost of capital ``r`` the premium is
+        ``(EL + r dA) / (1 + r)``. Under a subadditive standard it is at
+        most the deal's allocated premium from ``price_portfolio``.
+        
+        Returns a dict of columns, one row a deal (those in ``deals``, all
+        by default): ``deal``, ``expected_loss``, ``assets`` (``dA``),
+        ``premium``, ``margin``, and the book's ``book_premium``,
+        ``book_assets``, ``premium_without`` and ``assets_without``.
+        
+        >>> from prospicio.pricing import DealBook, DealRun
+        >>> from prospicio.risk import Distortion
+        >>> a = DealRun("a", [10.0] * 4, [1.0, 2.0, 3.0, 9.0])
+        >>> b = DealRun("b", [10.0] * 4, [4.0, 1.0, 2.0, 3.0])
+        >>> m = DealBook([a, b]).marginal_price(Distortion.tvar(0.5), cost_of_capital=0.1)
+        >>> m["assets"], round(m["premium"][1], 6)
+        ([5.0, 2.5], 2.5)
+        """
     @property
     def n_sims(self, /) -> int:
         """
@@ -9473,6 +9880,71 @@ class Design:
     def weights(self, /) -> list[float]:
         """
         Prior weight per row.
+        """
+
+@final
+class DevelopmentCorrelationTest:
+    """
+    Mack's test for correlation between adjacent development factors
+    (Mack 1994, appendix G; R ChainLadder's ``dfCorTest``), from
+    ``development_correlation`` or ``MackFit.development_correlation``.
+    
+    ``t`` is the weighted mean of the Spearman rank correlations of each
+    pair of adjacent link-ratio columns over the origins they share
+    (weight ``n - 1``), with variance ``1 / sum(weights)``, Mack's
+    ``1 / ((I - 2)(I - 3) / 2)`` on a full triangle, compared with
+    ``± q sqrt(variance)``, ``q`` the standard normal's ``(1 + ci) / 2``
+    quantile.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def ci(self, /) -> float:
+        """
+        The interval's confidence level.
+        """
+    @property
+    def lower(self, /) -> float:
+        """
+        The interval's lower end, ``-upper``.
+        """
+    @property
+    def pairs(self, /) -> list[dict]:
+        """
+        Every pair of adjacent link columns with two origins in common,
+        youngest first, as a list of dicts with ``age`` (the age in months
+        at the start of the first link), ``n`` (the origins in common),
+        ``t`` (Spearman's correlation with average ranks for ties; NaN if a
+        column's ranks are all tied) and ``weight`` (``n - 1``, or 0 where
+        ``t`` is NaN).
+        """
+    @property
+    def passes(self, /) -> bool:
+        """
+        Whether ``t`` lies within the interval (ends included): no
+        correlation between adjacent development factors is detected.
+        """
+    @property
+    def t(self, /) -> float:
+        """
+        ``T``, the weighted mean of the pairs' Spearman correlations.
+        """
+    def to_frame(self, /) -> Any:
+        """
+        ``pairs`` as a table, one row per pair. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def upper(self, /) -> float:
+        """
+        The interval's upper end.
+        """
+    @property
+    def variance(self, /) -> float:
+        """
+        ``Var[T]``; ``E[T]`` is 0.
         """
 
 @final
@@ -14179,6 +14651,84 @@ class GroupedFit:
         """
 
 @final
+class HachemeisterFit:
+    """
+    A fitted Hachemeister model, from ``hachemeister``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def between(self, /) -> list[list[float]]:
+        """
+        The between-risk covariance of the coefficients, in the basis
+        fitted (diagonal when the intercept is adjusted).
+        """
+    @property
+    def coefficients(self, /) -> list[list[float]]:
+        """
+        Each risk's credibility coefficients (the collective for a risk
+        with no weight).
+        """
+    @property
+    def collective(self, /) -> list[float]:
+        """
+        The collective coefficients, one per design column.
+        """
+    @property
+    def credibility(self, /) -> list[list[list[float]]]:
+        """
+        Each risk's credibility matrix, in the basis fitted (the
+        orthogonalised design when the intercept is adjusted).
+        """
+    @property
+    def individual(self, /) -> list[list[float]]:
+        """
+        Each risk's own weighted least squares coefficients (0 for a risk
+        with no weight).
+        """
+    @property
+    def iterations(self, /) -> int:
+        """
+        Iterations of the iterative estimator.
+        """
+    def predict(self, /, x: Sequence[float]) -> list[float]:
+        """
+        Each risk's credibility premium at the design row ``x``.
+        
+        Parameters
+        ----------
+        x : list of float
+            One value per design column, such as ``[1.0, 13.0]`` for the
+            next quarter of a trend line over twelve.
+        
+        Returns
+        -------
+        list of float
+        
+        Raises
+        ------
+        ValueError
+            If ``x`` does not have one value per design column.
+        """
+    @property
+    def risk_weights(self, /) -> list[float]:
+        """
+        Each risk's total weight.
+        """
+    @property
+    def transition(self, /) -> list[list[float]] |None:
+        """
+        When the intercept is adjusted, the upper triangular ``R`` with the
+        design ``Y = Q R``: a coefficient ``c`` in the basis fitted is
+        ``R^-1 c`` in the design's. ``None`` at the origin.
+        """
+    @property
+    def within_variance(self, /) -> float:
+        """
+        The within-risk variance ``s2``, the mean of the risks' residual
+        variances.
+        """
+
+@final
 class HierarchicalCredibilityFit:
     """
     A fitted Bayesian hierarchical credibility model, from
@@ -15829,6 +16379,42 @@ class Layer:
         """
         The swing rating at 100% as ``(basic, lcm, minimum, maximum)``, or
         ``None``.
+        """
+    def trial_statistics(self, /, events: EventSet) -> dict[str, float]:
+        """
+        How often the layer is attached and used up in simulated years.
+        
+        Counted on ``events``' years as the first stage of a tower sees them
+        (the gross events, and the aggregate part for a layer without
+        occurrence terms). ``p_attach`` is the share of years with an
+        occurrence above the attachment, ``p_exhaust_occurrence`` with one at
+        or above attachment plus limit, and ``p_exhaust_annual`` in which the
+        annual limit (the aggregate limit, or the limit times one plus the
+        reinstatements) is used up; each has its binomial standard error
+        (``*_se``), to set beside an event loss table's per-occurrence
+        ``occurrence_layer_statistics``. ``occurrences_mean`` (with
+        ``occurrences_se``) is the mean number of occurrences a year that reach
+        the layer, ``ceded_mean`` the mean ceded loss and
+        ``ceded_given_attach`` its mean over the attached years (NaN when
+        none is).
+        
+        Parameters
+        ----------
+        events : EventSet
+        
+        Returns
+        -------
+        dict of str to float
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.reinsurance import Layer
+        >>> layer = Layer("10x10", 10.0, 10.0, reinstatements=1)
+        >>> years = EventSet.from_years([[5.0], [12.0], [25.0], [25.0, 30.0]])
+        >>> s = layer.trial_statistics(years)
+        >>> s["p_attach"], s["p_exhaust_occurrence"], s["p_exhaust_annual"]
+        (0.75, 0.5, 0.25)
         """
     def with_brokerage(self, /, rate: float) -> Layer:
         """
@@ -18301,6 +18887,25 @@ class MackBootstrapFit:
         """
         Names of the triangle's key columns; empty without keys.
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def mack(self, /) -> MackFit:
         """
@@ -18362,6 +18967,35 @@ class MackBootstrapFit:
         -------
         pandas.DataFrame
         """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest value plus its reserve in that
+        simulation.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the ultimate by segment and origin: ``reserves`` with
+        each origin's latest value added in every simulation, the same
+        dimensions, components and rows, so ``join``, ``select`` and
+        ``reorder_groups`` keep each simulation's origins together.
+        """
 
 @final
 class MackFit:
@@ -18381,6 +19015,31 @@ class MackFit:
     def blended_ldf(self, /) -> list[float]:
         """
         The factors before the tail, as ``ChainLadderFit.blended_ldf``.
+        """
+    def calendar_year_effect(self, /, ci: float = ...) -> CalendarYearTest:
+        """
+        Mack's calendar-year effect test (Mack 1994, appendix H; R
+        ChainLadder's ``cyEffTest``) on the link ratios this fit averaged:
+        its column's, without those ``n_periods``, ``drop_high`` and
+        ``drop_low`` exclude. A selected pattern (``ldf``) changes no link
+        ratio and so not the test (``docs/design/reserving-v02.md``,
+        decision 27).
+        
+        Parameters
+        ----------
+        ci : float, default 0.95
+            The interval's confidence level, Mack's and R's 95%.
+        
+        Returns
+        -------
+        CalendarYearTest
+        
+        Raises
+        ------
+        ValueError
+            If the fit has several segments (use ``segment(...)``),
+            ``ci`` is not strictly between 0 and 1, or no calendar diagonal
+            has two link ratios.
         """
     @property
     def cdf(self, /) -> list[float]:
@@ -18445,6 +19104,28 @@ class MackFit:
     def development(self, /) -> list[int]:
         """
         Development ages in months.
+        """
+    def development_correlation(self, /, ci: float = ...) -> DevelopmentCorrelationTest:
+        """
+        Mack's test for correlation between adjacent development factors
+        (Mack 1994, appendix G; R ChainLadder's ``dfCorTest``) on the link
+        ratios this fit averaged, as ``calendar_year_effect`` reads them.
+        
+        Parameters
+        ----------
+        ci : float, default 0.5
+            The interval's confidence level, Mack's and R's 50%.
+        
+        Returns
+        -------
+        DevelopmentCorrelationTest
+        
+        Raises
+        ------
+        ValueError
+            If the fit has several segments (use ``segment(...)``),
+            ``ci`` is not strictly between 0 and 1, or no pair of adjacent
+            link columns has two origins in common and untied ranks.
         """
     def development_frame(self, /) -> Any:
         """
@@ -19409,6 +20090,25 @@ class MeyersFit:
         -------
         Elpd
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def model(self, /) -> str:
         """
@@ -19472,6 +20172,27 @@ class MeyersFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest value plus its reserve in that
+        simulation, which is the simulated value at the oldest age itself (``ultimates``).
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key (``(2021,)``) or the origin alone; an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
         """
     @property
     def ultimates(self, /) -> PredictiveDistribution:
@@ -19570,6 +20291,25 @@ class MeyersFits:
         ValueError
             If the fit has several segments.
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def model(self, /) -> str:
         """
@@ -19642,6 +20382,27 @@ class MeyersFits:
         Returns
         -------
         pandas.DataFrame
+        """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest value plus its reserve in that
+        simulation, which is the simulated value at the oldest age itself (``ultimates``).
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
         """
     @property
     def ultimates(self, /) -> PredictiveDistribution:
@@ -19897,6 +20658,223 @@ class Mixture:
     def weights(self, /) -> list[float]:
         """
         Component weights.
+        """
+
+@final
+class MultivariateLognormal:
+    """
+    The multivariate lognormal: ``exp(Y)`` for ``Y`` multivariate normal.
+    
+    Built from a mean and covariance on the original scale, matched
+    exactly (``from_moments``: ``log_cov[i][j] = ln(1 + cov[i][j] / (m_i
+    m_j))``, ``mu_i = ln m_i - log_cov[i][i] / 2``), or from the log scale
+    (``from_log_scale``).
+    
+    Examples
+    --------
+    >>> from prospicio.risk import MultivariateLognormal
+    >>> mvl = MultivariateLognormal.from_moments([100.0, 50.0], [[400.0, 120.0], [120.0, 100.0]])
+    >>> [round(m, 9) for m in mvl.mean]
+    [100.0, 50.0]
+    >>> round(mvl.cov[0][1], 9), round(mvl.total_variance(), 6)
+    (120.0, 740.0)
+    """
+    def __repr__(self, /) -> str: ...
+    def correlation(self, /) -> list[list[float]]:
+        """
+        The correlation matrix on the original scale.
+        
+        Returns
+        -------
+        list of list of float
+        """
+    @property
+    def cov(self, /) -> list[list[float]]:
+        """
+        The covariance on the original scale, exact.
+        """
+    @property
+    def dim(self, /) -> int:
+        """
+        Number of components.
+        """
+    @staticmethod
+    def from_log_scale(mu: Sequence[float], log_cov: Sequence[Sequence[float]]) -> MultivariateLognormal:
+        """
+        The lognormal ``exp(Y)``, ``Y`` normal with mean ``mu`` and
+        covariance ``log_cov``.
+        
+        Parameters
+        ----------
+        mu : list of float
+        log_cov : list of list of float
+        
+        Returns
+        -------
+        MultivariateLognormal
+        
+        Raises
+        ------
+        ValueError
+            As ``MultivariateNormal``.
+        """
+    @staticmethod
+    def from_moments(mean: Sequence[float], cov: Sequence[Sequence[float]]) -> MultivariateLognormal:
+        """
+        The lognormal with mean ``mean`` and covariance ``cov`` on the
+        original scale.
+        
+        Parameters
+        ----------
+        mean : list of float
+            Positive.
+        cov : list of list of float
+        
+        Returns
+        -------
+        MultivariateLognormal
+        
+        Raises
+        ------
+        ValueError
+            If a mean is not positive, ``cov`` is not a symmetric square
+            matrix, a covariance is at or below ``-m_i m_j`` (no lognormal
+            has it), or the covariance on the log scale is not positive
+            definite (possible even when ``cov`` is).
+        """
+    @property
+    def log_cov(self, /) -> list[list[float]]:
+        """
+        The covariance on the log scale.
+        """
+    def marginal(self, /, j: int) -> Lognormal:
+        """
+        Component ``j``'s marginal, exact.
+        
+        Parameters
+        ----------
+        j : int
+        
+        Returns
+        -------
+        Lognormal
+        
+        Raises
+        ------
+        ValueError
+            If ``j`` is out of range.
+        """
+    @property
+    def mean(self, /) -> list[float]:
+        """
+        The mean on the original scale, exact.
+        """
+    @property
+    def mu(self, /) -> list[float]:
+        """
+        The mean on the log scale.
+        """
+    def total_mean(self, /) -> float:
+        """
+        The total's mean, exact. A sum of lognormals is not lognormal; draw
+        the total with ``PredictiveDistribution.from_gaussian``.
+        
+        Returns
+        -------
+        float
+        """
+    def total_variance(self, /) -> float:
+        """
+        The total's variance, exact.
+        
+        Returns
+        -------
+        float
+        """
+
+@final
+class MultivariateNormal:
+    """
+    The multivariate normal with mean ``mean`` and covariance ``cov``.
+    
+    Inputs such as a reserve by origin with its covariance across origins,
+    or lines joined by a correlation matrix, arrive as a mean and a
+    covariance; this holds the joint with its exact marginals and total,
+    and ``PredictiveDistribution.from_gaussian`` draws it by seed.
+    
+    Parameters
+    ----------
+    mean : list of float
+    cov : list of list of float
+        Symmetric and positive definite, one row and column per component.
+    
+    Raises
+    ------
+    ValueError
+        If a value is not finite, ``cov`` is not square with one row per
+        component, not symmetric or not positive definite (a zero variance
+        or a perfect correlation is singular and refused).
+    
+    Examples
+    --------
+    >>> from prospicio.risk import MultivariateNormal
+    >>> mvn = MultivariateNormal([100.0, 50.0], [[400.0, 120.0], [120.0, 100.0]])
+    >>> t = mvn.total()
+    >>> t.mean(), round(t.variance(), 9)
+    (150.0, 740.0)
+    >>> mvn.marginal(1).sigma
+    10.0
+    """
+    def __new__(cls, /, mean: Sequence[float], cov: Sequence[Sequence[float]]) -> MultivariateNormal: ...
+    def __repr__(self, /) -> str: ...
+    def correlation(self, /) -> list[list[float]]:
+        """
+        The correlation matrix.
+        
+        Returns
+        -------
+        list of list of float
+        """
+    @property
+    def cov(self, /) -> list[list[float]]:
+        """
+        The covariance matrix.
+        """
+    @property
+    def dim(self, /) -> int:
+        """
+        Number of components.
+        """
+    def marginal(self, /, j: int) -> Normal:
+        """
+        Component ``j``'s marginal, exact.
+        
+        Parameters
+        ----------
+        j : int
+        
+        Returns
+        -------
+        Normal
+        
+        Raises
+        ------
+        ValueError
+            If ``j`` is out of range.
+        """
+    @property
+    def mean(self, /) -> list[float]:
+        """
+        The mean vector.
+        """
+    def total(self, /) -> Normal:
+        """
+        The total over all components, exact: normal with mean the sum of
+        the means and variance the sum of the covariance's entries.
+        
+        Returns
+        -------
+        Normal
         """
 
 @final
@@ -20770,6 +21748,25 @@ class OdpBootstrapFit:
         """
         Names of the triangle's key columns; empty without keys.
         """
+    def loss_ratio_draws(self, /, origin: int |str |Sequence[int |str] |None, premium: float) -> list[float]:
+        """
+        Each simulation's ultimate over ``premium``: the loss ratio a
+        contract on the loss ratio reads, in the order of
+        ``ultimate_draws``. Multiply by the premium for
+        ``Tower.apply_annual``.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            As in ``ultimate_draws``; ``None`` for the total.
+        premium : float
+            The subject premium of the origin (of every origin for the
+            total), finite and positive.
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def origins(self, /) -> list[str]:
         """
@@ -20826,6 +21823,35 @@ class OdpBootstrapFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def ultimate_draws(self, /, origin: int |str |Sequence[int |str] |None = None) -> list[float]:
+        """
+        Each simulation's ultimate, for a tower, a deal book or the cash-flow
+        engine: index ``i`` is simulation ``i`` for every origin and every
+        call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+        the same again when the fit is run with the same seed.
+        
+        The ultimate is the origin's latest value plus its reserve in that
+        simulation.
+        
+        Parameters
+        ----------
+        origin : tuple, str, int or None
+            The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+            (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+            the total over every component, summed simulation by simulation.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def ultimates(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the ultimate by segment and origin: ``reserves`` with
+        each origin's latest value added in every simulation, the same
+        dimensions, components and rows, so ``join``, ``select`` and
+        ``reorder_groups`` keep each simulation's origins together.
         """
 
 @final
@@ -23773,6 +24799,46 @@ class PredictiveDistribution:
         Returns
         -------
         list of list of float
+        """
+    @staticmethod
+    def from_gaussian(joint: Any, n_sims: int, seed: int, keys: Sequence[Sequence[int |str]] |None = None, dims: Sequence[str] |None = None) -> PredictiveDistribution:
+        """
+        ``n_sims`` draws of a multivariate normal or lognormal joint.
+        
+        Simulation ``i`` draws only from stream ``i`` of ``seed``, so the
+        result reproduces by seed on any number of threads; the provenance
+        records the model, its dimension, the seed and a hash of the mean
+        and covariance.
+        
+        Parameters
+        ----------
+        joint : MultivariateNormal or MultivariateLognormal
+        n_sims : int
+        seed : int
+        keys : list of tuple, optional
+            One component key per component; defaults to ``(0,), (1,), ...``.
+        dims : list of str, default ["component"]
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        TypeError
+            If ``joint`` is neither joint.
+        ValueError
+            If ``keys`` does not have one key per component.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> from prospicio.risk import MultivariateNormal
+        >>> mvn = MultivariateNormal([100.0, 50.0], [[400.0, 120.0], [120.0, 100.0]])
+        >>> pd = PredictiveDistribution.from_gaussian(
+        ...     mvn, 20_000, 1, keys=[("auto",), ("property",)], dims=["line"])
+        >>> abs(pd.mean() - 150.0) < 1.0
+        True
         """
     def group_spearman(self, /, dim: str) -> tuple[list[Any], list[list[float]]]:
         """
@@ -26856,6 +27922,42 @@ class Tower:
         -------
         list of float
         """
+    def ceded_events(self, /, events: EventSet, layers: Any) -> EventSet:
+        """
+        Each event's ceded loss to the named layers, summed over them, as an
+        event set: the input to an occurrence retro on a reinsurer's own
+        cessions.
+        
+        Each layer's split by event is the one ``apply``'s labels use
+        (``Layer.ceded_by_event``: after the layer's annual terms, at its
+        share, behind any earlier inuring stage), so in every year the
+        set's losses add to the layers' ceded total. The events keep their
+        times and labels; events that cede nothing are left out, sums
+        insured are dropped, and a named layer that sees the aggregate part
+        passes its ceded part on as the set's aggregate part. Join several
+        deals' sets with ``EventSet.merge``, and group one event's cessions
+        into one occurrence with ``EventSet.grouped``.
+        
+        Parameters
+        ----------
+        events : EventSet
+        layers : str or list of str
+            Layer names of this tower.
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> e = EventSet.from_years([[20.0, 8.0, 15.0], [4.0]])
+        >>> t = Tower([Layer("10x5", 10.0, 5.0, aggregate_limit=15.0)])
+        >>> c = t.ceded_events(e, "10x5")
+        >>> c.events(0), c.events(1)
+        ([10.0, 3.0, 2.0], [])
+        """
     @property
     def cover_basis(self, /) -> str |None:
         """
@@ -29476,6 +30578,45 @@ def buhlmann_straub(ratios: Sequence[Sequence[float]], weights: Sequence[Sequenc
     4.0
     """
 
+def calendar_year_effect(triangle: Triangle, column: str, ci: float = ...) -> CalendarYearTest:
+    """
+    Mack's calendar-year effect test (Mack 1994, appendix H; R
+    ChainLadder's ``cyEffTest``) on every observed link ratio of one
+    column of a single-segment triangle. ``MackFit.calendar_year_effect``
+    tests only the link ratios a fit averaged.
+    
+    Parameters
+    ----------
+    triangle : Triangle
+    column : str
+    ci : float, default 0.95
+        The interval's confidence level, Mack's and R's 95%.
+    
+    Returns
+    -------
+    CalendarYearTest
+    
+    Raises
+    ------
+    ValueError
+        If the triangle has several segments or lacks the column, ``ci`` is
+        not strictly between 0 and 1, or no calendar diagonal has two link
+        ratios (fewer than three ages).
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import Triangle, calendar_year_effect
+    >>> paid = [[100.0, 160.0, 180.0, 186.0, 188.0], [110.0, 170.0, 195.0, 200.0],
+    ...         [120.0, 200.0, 220.0], [130.0, 205.0], [140.0]]
+    >>> rows = [(2020 + w, 12 * (d + 1), v) for w, r in enumerate(paid)
+    ...         for d, v in enumerate(r)]
+    >>> origin, age, values = map(list, zip(*rows))
+    >>> tri = Triangle.from_long(origin, age, {"paid": values})
+    >>> cy = calendar_year_effect(tri, "paid")
+    >>> cy.lower <= cy.expected <= cy.upper
+    True
+    """
+
 def calibrate(family: str, dist: Any, premium: float, assets: float |None = None, r0: float = 0.0) -> Distortion:
     """
     The member of a distortion family whose price of ``dist`` is ``premium``.
@@ -29909,6 +31050,47 @@ def derive_premium(technical: float, expenses: Sequence[Expense]) -> float:
     >>> from prospicio.aggregate import Expense, derive_premium
     >>> round(derive_premium(5.0, [Expense("premium", 0.1), Expense("fixed", 1.0)]), 12)
     6.666666666667
+    """
+
+def development_correlation(triangle: Triangle, column: str, ci: float = ...) -> DevelopmentCorrelationTest:
+    """
+    Mack's test for correlation between adjacent development factors
+    (Mack 1994, appendix G; R ChainLadder's ``dfCorTest``) on every
+    observed link ratio of one column of a single-segment triangle.
+    ``MackFit.development_correlation`` tests only the link ratios a fit
+    averaged.
+    
+    Parameters
+    ----------
+    triangle : Triangle
+    column : str
+    ci : float, default 0.5
+        The interval's confidence level, Mack's and R's 50%.
+    
+    Returns
+    -------
+    DevelopmentCorrelationTest
+    
+    Raises
+    ------
+    ValueError
+        If the triangle has several segments or lacks the column, ``ci`` is
+        not strictly between 0 and 1, or no pair of adjacent link columns
+        has two origins in common and untied ranks (fewer than four ages on
+        a square triangle).
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import Triangle, development_correlation
+    >>> paid = [[100.0, 160.0, 180.0, 186.0, 188.0], [110.0, 170.0, 195.0, 200.0],
+    ...         [120.0, 200.0, 220.0], [130.0, 205.0], [140.0]]
+    >>> rows = [(2020 + w, 12 * (d + 1), v) for w, r in enumerate(paid)
+    ...         for d, v in enumerate(r)]
+    >>> origin, age, values = map(list, zip(*rows))
+    >>> tri = Triangle.from_long(origin, age, {"paid": values})
+    >>> dc = development_correlation(tri, "paid")
+    >>> [p["age"] for p in dc.pairs]
+    [12, 24]
     """
 
 def deviance(family: str, y: Sequence[float], mu: Sequence[float], weights: Sequence[float] |None = None, theta: float |None = None, power: float |None = None) -> float:
@@ -30719,6 +31901,61 @@ def grouped_goodness_of_fit(severity: Any, bounds: Sequence[float], counts: Sequ
     >>> g = grouped_goodness_of_fit(Gamma(3.907288, 397.931), bounds, [42, 61, 47, 26, 14, 10])
     >>> round(g["chi_square"], 3)
     3.095
+    """
+
+def hachemeister(ratios: Sequence[Sequence[float]], design: Sequence[Sequence[float]], weights: Sequence[Sequence[float]] |None = None, estimator: str = "unbiased", adjust_intercept: bool = False, tol: float = 1.4901161193847656e-8, max_iter: int = 100) -> HachemeisterFit:
+    """
+    Hachemeister's regression credibility model, as R's ``actuar::cm(~risk,
+    regformula = ...)``: risk ``i`` in period ``t`` has ratio ``X_it`` with
+    weight ``w_it`` and a mean ``design[t] @ beta_i`` on a design shared by
+    the risks (a trend line ``[1, t]``, say). Each risk's own weighted least
+    squares fit is shrunk towards the collective by a credibility matrix.
+    
+    At the origin the matrices are full and the between covariance is
+    Hachemeister's iterative estimator whatever ``estimator`` says (as
+    ``actuar``; on near-collinear coefficients its iteration may wander in
+    the last digits). With ``adjust_intercept`` (``actuar``'s
+    ``adj.intercept``) the design is orthogonalised under the collective
+    weights, the matrices are diagonal and each diagonal is estimated as
+    Bühlmann–Straub's by ``estimator``; the design's first column must
+    then be constant.
+    
+    Parameters
+    ----------
+    ratios : list of list of float
+        One row per risk, one column per period; NaN for a missing cell.
+    design : list of list of float
+        One row per period, one column per coefficient.
+    weights : list of list of float, optional
+        The shape of ``ratios``, NaN in the same places; equal if omitted.
+    estimator : {"unbiased", "iterative"}, default "unbiased"
+    adjust_intercept : bool, default False
+    tol : float, default 1.49e-8
+        Relative tolerance of the iterations.
+    max_iter : int, default 100
+    
+    Returns
+    -------
+    HachemeisterFit
+    
+    Raises
+    ------
+    ValueError
+        For fewer than two risks with weight, mismatched shapes or missing
+        cells, a risk whose observed cells do not identify its coefficients,
+        linearly dependent design columns, or a singular system.
+    
+    Examples
+    --------
+    >>> from prospicio.credibility import hachemeister
+    >>> x = [[10.0, 12.0, 13.0, 15.0, 16.0],
+    ...      [8.0, 8.5, 9.5, 9.0, 10.0],
+    ...      [14.0, 13.0, 16.0, 17.0, 19.0]]
+    >>> design = [[1.0, float(t)] for t in range(1, 6)]
+    >>> fit = hachemeister(x, design, adjust_intercept=True)
+    >>> nxt = fit.predict([1.0, 6.0])
+    >>> nxt[1] < nxt[0] < nxt[2]
+    True
     """
 
 def haircut(pd: PredictiveDistribution, total: float, measure: str, level: float) -> LevelAllocation:

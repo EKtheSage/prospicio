@@ -26,6 +26,7 @@ mod excess;
 mod experience;
 mod grouped_fit;
 mod models;
+mod multivariate;
 mod natural;
 #[cfg(feature = "nn")]
 mod nn;
@@ -72,8 +73,8 @@ mod prospicio_native {
     use super::counts::PyCount;
     #[pymodule_export]
     use super::credibility::{
-        PyBuhlmannStraubFit, PyHierarchicalCredibilityFit, PyLimitedFluctuation, buhlmann_straub,
-        credibility_premiums, hierarchical_credibility,
+        PyBuhlmannStraubFit, PyHachemeisterFit, PyHierarchicalCredibilityFit, PyLimitedFluctuation,
+        buhlmann_straub, credibility_premiums, hachemeister, hierarchical_credibility,
     };
     #[pymodule_export]
     use super::discrete::PyDiscrete;
@@ -109,6 +110,8 @@ mod prospicio_native {
         pit, pit_from_draws, pit_histogram, ppc_check, pseudo_bma_weights, quantile_residuals, roc,
         simulate_from_means, stacking_weights, target_encode, time_ordered, tweedie_profile, vif,
     };
+    #[pymodule_export]
+    use super::multivariate::{PyMultivariateLognormal, PyMultivariateNormal};
     #[pymodule_export]
     use super::natural::{
         PyNaturalPrice, PyPentagon, PyPortfolio, PyPricingBounds, PyStandAlone,
@@ -166,15 +169,16 @@ mod prospicio_native {
     use super::reserving::{
         PyBacktest, PyBayesBf, PyBayesBfFit, PyBayesBfNormalised, PyBayesBfNormalisedFit,
         PyBayesOdp, PyBayesOdpFit, PyBayesOdpFits, PyBayesOneYearFit, PyBayesOneYearFits,
-        PyBenchmarkCurve, PyBenchmarkCurveFit, PyBenktander, PyBornhuetterFerguson, PyCapeCod,
-        PyCapeCodFit, PyChainLadder, PyChainLadderFit, PyClaimsDevelopmentResult, PyClarkCapeCod,
-        PyClarkFit, PyClarkLdf, PyCompartmental, PyCompartmentalCandidate, PyCompartmentalFit,
-        PyCompartmentalFits, PyCompartmentalOneYearFit, PyCompartmentalOneYearFits,
-        PyCompartmentalPriors, PyExpectedLoss, PyExpectedLossFit, PyGlmCandidate, PyLatestDiagonal,
-        PyLayerSharePrior, PyMack, PyMackBootstrap, PyMackBootstrapFit, PyMackFit, PyMeyers,
-        PyMeyersFit, PyMeyersFits, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy,
-        PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle, PyUnderwritingBasis,
-        diagonal_backtest,
+        PyBenchmarkCurve, PyBenchmarkCurveFit, PyBenktander, PyBornhuetterFerguson,
+        PyCalendarYearTest, PyCapeCod, PyCapeCodFit, PyChainLadder, PyChainLadderFit,
+        PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit, PyClarkLdf, PyCompartmental,
+        PyCompartmentalCandidate, PyCompartmentalFit, PyCompartmentalFits,
+        PyCompartmentalOneYearFit, PyCompartmentalOneYearFits, PyCompartmentalPriors,
+        PyDevelopmentCorrelationTest, PyExpectedLoss, PyExpectedLossFit, PyGlmCandidate,
+        PyLatestDiagonal, PyLayerSharePrior, PyMack, PyMackBootstrap, PyMackBootstrapFit,
+        PyMackFit, PyMeyers, PyMeyersFit, PyMeyersFits, PyOdpBootstrap, PyOdpBootstrapFit,
+        PyOneYearFit, PyTailBondy, PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle,
+        PyUnderwritingBasis, calendar_year_effect, development_correlation, diagonal_backtest,
     };
     #[pymodule_export]
     use super::risk::{

@@ -210,6 +210,41 @@ book_distribution <- function(book, item, percentiles, tvar_levels = double(),
        marginal = shape(r$marginal))
 }
 
+#' The marginal price of a deal on a book
+#'
+#' The price of each deal written last: the book's loss priced with the
+#' deal and without it, on the assets of the capital standard `assets` and
+#' by exactly one of `cost_of_capital` and `distortion`, as
+#' [price_portfolio()] prices a portfolio, and the differences. Under a
+#' cost of capital `r` the premium is `(EL + r dA) / (1 + r)`, with `EL` the
+#' deal's expected loss and `dA` the assets it adds. Under a subadditive
+#' standard (every distortion) it is at most the deal's allocated premium
+#' from [price_portfolio()]; the only deal in a book has its stand-alone
+#' price.
+#'
+#' @param book A [deal_book()].
+#' @param assets The capital standard, a [distortion].
+#' @param cost_of_capital,distortion Exactly one: the cost of capital or a
+#'   pricing [distortion].
+#' @param deals The deals to price, all by default.
+#' @returns A data frame with a row a deal: `deal`, `expected_loss`,
+#'   `assets` (`dA`), `premium`, `margin`, and the book's `book_premium`,
+#'   `book_assets`, `premium_without` and `assets_without`.
+#' @seealso [price_portfolio()], [book_distribution()].
+#' @export
+#' @examples
+#' a <- deal_run("a", rep(10, 4), c(1, 2, 3, 9))
+#' b <- deal_run("b", rep(10, 4), c(4, 1, 2, 3))
+#' book_marginal_price(deal_book(list(a, b)), distortion("tvar", 0.5), cost_of_capital = 0.1)
+book_marginal_price <- function(book, assets, cost_of_capital = NULL, distortion = NULL,
+                                deals = NULL) {
+  check_book(book)
+  if (is.null(deals)) deals <- book$ptr$names()
+  r <- rust_result(book$ptr$marginal_price(as.character(deals), assets@ptr,
+                                           rate_arg(cost_of_capital), pricing_arg(distortion)))
+  as.data.frame(r)
+}
+
 #' @rdname deal_run
 #' @export
 book_cashflows <- function(book, rate = 0, lower = -0.95, upper = 1, points = 400L,

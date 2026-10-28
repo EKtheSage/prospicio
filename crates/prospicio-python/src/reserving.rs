@@ -20,6 +20,11 @@ use prospicio_reserving::{
     SegmentDependence, SegmentFits, SegmentMap, SelectedPattern, SigmaInterpolation, Tail,
     TailBondy, TailConstant, TailCurve, Triangle, UnderwritingBasis, view,
 };
+use prospicio_reserving::{
+    CALENDAR_YEAR_CI, CalendarYearTest, DEVELOPMENT_CORRELATION_CI, DevelopmentCorrelationTest,
+    calendar_year_effect as run_calendar_year_effect,
+    development_correlation as run_development_correlation,
+};
 use pyo3::exceptions::{PyImportError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{
@@ -44,12 +49,60 @@ use prospicio_reserving::{
 use prospicio_glm::Glm;
 use prospicio_models::{Column, Terms};
 
-use crate::distributions::PyPredictiveDistribution;
+use crate::distributions::{KeyArg, PyPredictiveDistribution, key_from_py};
 use crate::models::{PyElpd, PyGlm, PyTerms};
 use crate::to_py;
+use prospicio_prob::ComponentKey;
+use prospicio_reserving::UltimateDraws;
 
 fn err(e: prospicio_reserving::Error) -> PyErr {
     PyValueError::new_err(e.to_string())
+}
+
+/// An origin as Python names it: a key tuple, one label (a string or an
+/// integer), or ``None`` for the total.
+#[derive(FromPyObject)]
+pub(crate) enum OriginArg {
+    One(KeyArg),
+    Key(Vec<KeyArg>),
+}
+
+impl OriginArg {
+    fn key(self) -> ComponentKey {
+        match self {
+            OriginArg::One(v) => key_from_py(vec![v]),
+            OriginArg::Key(k) => key_from_py(k),
+        }
+    }
+}
+
+/// [`UltimateDraws::ultimates`] for Python.
+fn ultimates_of(fit: &impl UltimateDraws) -> PyResult<PyPredictiveDistribution> {
+    Ok(PyPredictiveDistribution {
+        inner: fit.ultimates().map_err(err)?,
+    })
+}
+
+/// One origin's ultimate draws, or the total's with no origin.
+fn ultimate_draws_of(fit: &impl UltimateDraws, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+    match origin {
+        None => fit.total_ultimate_draws(),
+        Some(o) => fit.ultimate_draws(&o.key()),
+    }
+    .map_err(err)
+}
+
+/// One origin's loss ratio draws, or the total's with no origin.
+fn loss_ratio_draws_of(
+    fit: &impl UltimateDraws,
+    origin: Option<OriginArg>,
+    premium: f64,
+) -> PyResult<Vec<f64>> {
+    match origin {
+        None => fit.total_loss_ratio_draws(premium),
+        Some(o) => fit.loss_ratio_draws(&o.key(), premium),
+    }
+    .map_err(err)
 }
 
 fn grain(name: &str) -> PyResult<Grain> {
@@ -4177,6 +4230,61 @@ impl PyMackFit {
         Ok(PyClaimsDevelopmentResult { inner })
     }
 
+    /// Mack's calendar-year effect test (Mack 1994, appendix H; R
+    /// ChainLadder's ``cyEffTest``) on the link ratios this fit averaged:
+    /// its column's, without those ``n_periods``, ``drop_high`` and
+    /// ``drop_low`` exclude. A selected pattern (``ldf``) changes no link
+    /// ratio and so not the test (``docs/design/reserving-v02.md``,
+    /// decision 27).
+    ///
+    /// Parameters
+    /// ----------
+    /// ci : float, default 0.95
+    ///     The interval's confidence level, Mack's and R's 95%.
+    ///
+    /// Returns
+    /// -------
+    /// CalendarYearTest
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the fit has several segments (use ``segment(...)``),
+    ///     ``ci`` is not strictly between 0 and 1, or no calendar diagonal
+    ///     has two link ratios.
+    #[pyo3(signature = (ci = CALENDAR_YEAR_CI))]
+    fn calendar_year_effect(&self, ci: f64) -> PyResult<PyCalendarYearTest> {
+        let fit = single(&self.inner, "calendar_year_effect", "")?;
+        let inner = fit.calendar_year_effect(ci).map_err(err)?;
+        Ok(PyCalendarYearTest { inner })
+    }
+
+    /// Mack's test for correlation between adjacent development factors
+    /// (Mack 1994, appendix G; R ChainLadder's ``dfCorTest``) on the link
+    /// ratios this fit averaged, as ``calendar_year_effect`` reads them.
+    ///
+    /// Parameters
+    /// ----------
+    /// ci : float, default 0.5
+    ///     The interval's confidence level, Mack's and R's 50%.
+    ///
+    /// Returns
+    /// -------
+    /// DevelopmentCorrelationTest
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the fit has several segments (use ``segment(...)``),
+    ///     ``ci`` is not strictly between 0 and 1, or no pair of adjacent
+    ///     link columns has two origins in common and untied ranks.
+    #[pyo3(signature = (ci = DEVELOPMENT_CORRELATION_CI))]
+    fn development_correlation(&self, ci: f64) -> PyResult<PyDevelopmentCorrelationTest> {
+        let fit = single(&self.inner, "development_correlation", "")?;
+        let inner = fit.development_correlation(ci).map_err(err)?;
+        Ok(PyDevelopmentCorrelationTest { inner })
+    }
+
     /// Merz and Wüthrich's one-year view, as a property: the same
     /// ``ClaimsDevelopmentResult`` that ``claims_development_result()``
     /// returns (that method stays as an alias), named as ``OneYearFit.cdr``
@@ -7423,6 +7531,58 @@ impl PyOdpBootstrapFit {
         }
     }
 
+    /// Joint distribution of the ultimate by segment and origin: ``reserves`` with
+    /// each origin's latest value added in every simulation, the same
+    /// dimensions, components and rows, so ``join``, ``select`` and
+    /// ``reorder_groups`` keep each simulation's origins together.
+    #[getter]
+    fn ultimates(&self) -> PyResult<PyPredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest value plus its reserve in that
+    /// simulation.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     /// One row per segment and origin: the key columns, ``origin``, the
     /// chain ladder's ``latest``, ``ultimate`` and ``reserve``, and the
     /// ``mean`` and ``std_dev`` of the bootstrapped reserve. Needs pandas.
@@ -8175,6 +8335,58 @@ impl PyMackBootstrapFit {
         PyPredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// Joint distribution of the ultimate by segment and origin: ``reserves`` with
+    /// each origin's latest value added in every simulation, the same
+    /// dimensions, components and rows, so ``join``, ``select`` and
+    /// ``reorder_groups`` keep each simulation's origins together.
+    #[getter]
+    fn ultimates(&self) -> PyResult<PyPredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest value plus its reserve in that
+    /// simulation.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// One row per segment and origin: the key columns, ``origin``, the
@@ -9094,6 +9306,58 @@ impl PyBayesOdpFit {
         }
     }
 
+    /// Joint distribution of the ultimate by origin: ``reserves`` with
+    /// each origin's latest value added in every simulation, the same
+    /// dimensions, components and rows, so ``join``, ``select`` and
+    /// ``reorder_groups`` keep each simulation's origins together.
+    #[getter]
+    fn ultimates(&self) -> PyResult<PyPredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest value plus its reserve in that
+    /// simulation.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key (``(2021,)``) or the origin alone; an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     /// MCMC diagnostics: a dict with ``max_rhat``, ``min_ess_bulk``,
     /// ``min_ess_tail``, ``divergences`` and ``warnings`` (one message per
     /// failed threshold; empty when every threshold holds).
@@ -9415,6 +9679,58 @@ impl PyBayesOdpFits {
         PyPredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// Joint distribution of the ultimate by segment and origin: ``reserves`` with
+    /// each origin's latest value added in every simulation, the same
+    /// dimensions, components and rows, so ``join``, ``select`` and
+    /// ``reorder_groups`` keep each simulation's origins together.
+    #[getter]
+    fn ultimates(&self) -> PyResult<PyPredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest value plus its reserve in that
+    /// simulation.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// MCMC diagnostics of a single-segment fit, as
@@ -10734,6 +11050,58 @@ impl PyBayesBfFit {
         }
     }
 
+    /// Joint distribution of the ultimate by origin: ``reserves`` with
+    /// each origin's latest value added in every simulation, the same
+    /// dimensions, components and rows, so ``join``, ``select`` and
+    /// ``reorder_groups`` keep each simulation's origins together.
+    #[getter]
+    fn ultimates(&self) -> PyResult<PyPredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest value plus its reserve in that
+    /// simulation.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key (``(2021,)``) or the origin alone; an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     /// MCMC diagnostics: a dict with ``max_rhat``, ``min_ess_bulk``,
     /// ``min_ess_tail``, ``divergences`` and ``warnings`` (one message per
     /// failed threshold; empty when every threshold holds).
@@ -11376,6 +11744,58 @@ impl PyBayesBfNormalisedFit {
         PyPredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// Joint distribution of the ultimate by origin: ``reserves`` with
+    /// each origin's latest value added in every simulation, the same
+    /// dimensions, components and rows, so ``join``, ``select`` and
+    /// ``reorder_groups`` keep each simulation's origins together.
+    #[getter]
+    fn ultimates(&self) -> PyResult<PyPredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest value plus its reserve in that
+    /// simulation.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key (``(2021,)``) or the origin alone; an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// MCMC diagnostics: a dict with ``max_rhat``, ``min_ess_bulk``,
@@ -12636,6 +13056,49 @@ impl PyMeyersFit {
         }
     }
 
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest value plus its reserve in that
+    /// simulation, which is the simulated value at the oldest age itself (``ultimates``).
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key (``(2021,)``) or the origin alone; an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     /// MCMC diagnostics: a dict with ``max_rhat``, ``min_ess_bulk``,
     /// ``min_ess_tail``, ``divergences`` and ``warnings`` (one message per
     /// failed threshold; empty when every threshold holds).
@@ -12869,6 +13332,49 @@ impl PyMeyersFits {
         PyPredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest value plus its reserve in that
+    /// simulation, which is the simulated value at the oldest age itself (``ultimates``).
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// MCMC diagnostics of a single-segment fit, as
@@ -14933,6 +15439,58 @@ impl PyCompartmentalFit {
         }
     }
 
+    /// Joint distribution of the ultimate by origin: ``reserves`` with
+    /// each origin's latest paid added in every simulation, the same
+    /// dimensions, components and rows, so ``join``, ``select`` and
+    /// ``reorder_groups`` keep each simulation's origins together.
+    #[getter]
+    fn ultimates(&self) -> PyResult<PyPredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest paid plus its reserve in that
+    /// simulation: the paid at the square's last age, on the paid basis.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key (``(2021,)``) or the origin alone; an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
     /// Posterior predictive cumulative paid of each future cell of the
     /// square: dimensions ``"origin"`` and ``"age"`` (months).
     #[getter]
@@ -15207,6 +15765,58 @@ impl PyCompartmentalFits {
         PyPredictiveDistribution {
             inner: self.inner.reserves.clone(),
         }
+    }
+
+    /// Joint distribution of the ultimate by segment and origin: ``reserves`` with
+    /// each origin's latest paid added in every simulation, the same
+    /// dimensions, components and rows, so ``join``, ``select`` and
+    /// ``reorder_groups`` keep each simulation's origins together.
+    #[getter]
+    fn ultimates(&self) -> PyResult<PyPredictiveDistribution> {
+        ultimates_of(&self.inner)
+    }
+
+    /// Each simulation's ultimate, for a tower, a deal book or the cash-flow
+    /// engine: index ``i`` is simulation ``i`` for every origin and every
+    /// call, the same as row ``i`` of ``reserves`` and ``ultimates``, and
+    /// the same again when the fit is run with the same seed.
+    ///
+    /// The ultimate is the origin's latest paid plus its reserve in that
+    /// simulation: the paid at the square's last age, on the paid basis.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     The component key, the segment's key values then the origin (``("Auto", 2021)``); an origin period by its label
+    ///     (``"2021"``, ``2021``, ``"2021Q3"``). ``None`` (the default) gives
+    ///     the total over every component, summed simulation by simulation.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (origin = None))]
+    fn ultimate_draws(&self, origin: Option<OriginArg>) -> PyResult<Vec<f64>> {
+        ultimate_draws_of(&self.inner, origin)
+    }
+
+    /// Each simulation's ultimate over ``premium``: the loss ratio a
+    /// contract on the loss ratio reads, in the order of
+    /// ``ultimate_draws``. Multiply by the premium for
+    /// ``Tower.apply_annual``.
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : tuple, str, int or None
+    ///     As in ``ultimate_draws``; ``None`` for the total.
+    /// premium : float
+    ///     The subject premium of the origin (of every origin for the
+    ///     total), finite and positive.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn loss_ratio_draws(&self, origin: Option<OriginArg>, premium: f64) -> PyResult<Vec<f64>> {
+        loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
     /// Posterior predictive cumulative paid of each future cell of every
@@ -16291,4 +16901,331 @@ impl PyBacktest {
             self.inner.warnings().len(),
         )
     }
+}
+
+/// Mack's test for calendar-year effects (Mack 1994, appendix H; R
+/// ChainLadder's ``cyEffTest``), from ``calendar_year_effect`` or
+/// ``MackFit.calendar_year_effect``.
+///
+/// At each age the link ratios are split at their median into small and
+/// large ones (one equal to the median is in neither); each calendar
+/// diagonal counts its small ones ``S_j`` and large ones ``L_j``, and
+/// ``z``, the sum of ``min(S_j, L_j)``, is compared with the normal
+/// interval ``expected ± q sqrt(variance)``, ``q`` the standard normal's
+/// ``(1 + ci) / 2`` quantile. A diagonal where small (or large) factors
+/// prevail lowers ``z``.
+#[pyclass(name = "CalendarYearTest", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyCalendarYearTest {
+    inner: CalendarYearTest,
+}
+
+#[pymethods]
+impl PyCalendarYearTest {
+    /// ``Z``, the sum of each diagonal's ``min(S_j, L_j)``.
+    #[getter]
+    fn z(&self) -> f64 {
+        self.inner.z
+    }
+
+    /// ``E[Z]`` under no calendar-year effect.
+    #[getter]
+    fn expected(&self) -> f64 {
+        self.inner.expected
+    }
+
+    /// ``Var[Z]`` under no calendar-year effect.
+    #[getter]
+    fn variance(&self) -> f64 {
+        self.inner.variance
+    }
+
+    /// The interval's confidence level.
+    #[getter]
+    fn ci(&self) -> f64 {
+        self.inner.ci
+    }
+
+    /// The interval's lower end.
+    #[getter]
+    fn lower(&self) -> f64 {
+        self.inner.lower
+    }
+
+    /// The interval's upper end.
+    #[getter]
+    fn upper(&self) -> f64 {
+        self.inner.upper
+    }
+
+    /// Whether ``z`` lies within the interval (ends included): no
+    /// calendar-year effect is detected. R prints the opposite as
+    /// "Calendar Year Effect: TRUE".
+    #[getter]
+    fn passes(&self) -> bool {
+        self.inner.passes()
+    }
+
+    /// Every calendar diagonal with at least two link ratios, oldest
+    /// first, as a list of dicts with ``valuation`` (the year and month of
+    /// its later cells, as ``"1983-12"``), ``small``, ``large``, ``z``,
+    /// ``n`` (``small + large``), ``m`` (``(n - 1) // 2``), ``expected``
+    /// and ``variance``: R's ``test_table``.
+    #[getter]
+    fn diagonals<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyDict>>> {
+        self.inner
+            .diagonals
+            .iter()
+            .map(|d| {
+                let row = PyDict::new(py);
+                row.set_item("valuation", d.valuation.to_string())?;
+                row.set_item("small", d.small)?;
+                row.set_item("large", d.large)?;
+                row.set_item("z", d.z)?;
+                row.set_item("n", d.n)?;
+                row.set_item("m", d.m)?;
+                row.set_item("expected", d.expected)?;
+                row.set_item("variance", d.variance)?;
+                Ok(row)
+            })
+            .collect()
+    }
+
+    /// ``diagonals`` as a table, one row per diagonal. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let d = &self.inner.diagonals;
+        let out = PyDict::new(py);
+        let valuation: Vec<String> = d.iter().map(|d| d.valuation.to_string()).collect();
+        out.set_item("valuation", valuation)?;
+        out.set_item("small", d.iter().map(|d| d.small).collect::<Vec<_>>())?;
+        out.set_item("large", d.iter().map(|d| d.large).collect::<Vec<_>>())?;
+        out.set_item("z", d.iter().map(|d| d.z).collect::<Vec<_>>())?;
+        out.set_item("n", d.iter().map(|d| d.n).collect::<Vec<_>>())?;
+        out.set_item("m", d.iter().map(|d| d.m).collect::<Vec<_>>())?;
+        out.set_item("expected", d.iter().map(|d| d.expected).collect::<Vec<_>>())?;
+        out.set_item("variance", d.iter().map(|d| d.variance).collect::<Vec<_>>())?;
+        py.import("pandas")?.call_method1("DataFrame", (out,))
+    }
+
+    fn __repr__(&self) -> String {
+        let t = &self.inner;
+        format!(
+            "CalendarYearTest(z={:?}, expected={:?}, variance={:?}, ci={:?}, lower={:?}, \
+             upper={:?}, passes={})",
+            t.z,
+            t.expected,
+            t.variance,
+            t.ci,
+            t.lower,
+            t.upper,
+            if t.passes() { "True" } else { "False" }
+        )
+    }
+}
+
+/// Mack's test for correlation between adjacent development factors
+/// (Mack 1994, appendix G; R ChainLadder's ``dfCorTest``), from
+/// ``development_correlation`` or ``MackFit.development_correlation``.
+///
+/// ``t`` is the weighted mean of the Spearman rank correlations of each
+/// pair of adjacent link-ratio columns over the origins they share
+/// (weight ``n - 1``), with variance ``1 / sum(weights)``, Mack's
+/// ``1 / ((I - 2)(I - 3) / 2)`` on a full triangle, compared with
+/// ``± q sqrt(variance)``, ``q`` the standard normal's ``(1 + ci) / 2``
+/// quantile.
+#[pyclass(
+    name = "DevelopmentCorrelationTest",
+    module = "prospicio.reserving",
+    frozen
+)]
+pub(crate) struct PyDevelopmentCorrelationTest {
+    inner: DevelopmentCorrelationTest,
+}
+
+#[pymethods]
+impl PyDevelopmentCorrelationTest {
+    /// ``T``, the weighted mean of the pairs' Spearman correlations.
+    #[getter]
+    fn t(&self) -> f64 {
+        self.inner.t
+    }
+
+    /// ``Var[T]``; ``E[T]`` is 0.
+    #[getter]
+    fn variance(&self) -> f64 {
+        self.inner.variance
+    }
+
+    /// The interval's confidence level.
+    #[getter]
+    fn ci(&self) -> f64 {
+        self.inner.ci
+    }
+
+    /// The interval's lower end, ``-upper``.
+    #[getter]
+    fn lower(&self) -> f64 {
+        self.inner.lower
+    }
+
+    /// The interval's upper end.
+    #[getter]
+    fn upper(&self) -> f64 {
+        self.inner.upper
+    }
+
+    /// Whether ``t`` lies within the interval (ends included): no
+    /// correlation between adjacent development factors is detected.
+    #[getter]
+    fn passes(&self) -> bool {
+        self.inner.passes()
+    }
+
+    /// Every pair of adjacent link columns with two origins in common,
+    /// youngest first, as a list of dicts with ``age`` (the age in months
+    /// at the start of the first link), ``n`` (the origins in common),
+    /// ``t`` (Spearman's correlation with average ranks for ties; NaN if a
+    /// column's ranks are all tied) and ``weight`` (``n - 1``, or 0 where
+    /// ``t`` is NaN).
+    #[getter]
+    fn pairs<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyDict>>> {
+        self.inner
+            .pairs
+            .iter()
+            .map(|p| {
+                let row = PyDict::new(py);
+                row.set_item("age", p.age)?;
+                row.set_item("n", p.n)?;
+                row.set_item("t", p.t)?;
+                row.set_item("weight", p.weight)?;
+                Ok(row)
+            })
+            .collect()
+    }
+
+    /// ``pairs`` as a table, one row per pair. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let p = &self.inner.pairs;
+        let out = PyDict::new(py);
+        out.set_item("age", p.iter().map(|p| p.age).collect::<Vec<_>>())?;
+        out.set_item("n", p.iter().map(|p| p.n).collect::<Vec<_>>())?;
+        out.set_item("t", p.iter().map(|p| p.t).collect::<Vec<_>>())?;
+        out.set_item("weight", p.iter().map(|p| p.weight).collect::<Vec<_>>())?;
+        py.import("pandas")?.call_method1("DataFrame", (out,))
+    }
+
+    fn __repr__(&self) -> String {
+        let t = &self.inner;
+        format!(
+            "DevelopmentCorrelationTest(t={:?}, variance={:?}, ci={:?}, lower={:?}, \
+             upper={:?}, passes={})",
+            t.t,
+            t.variance,
+            t.ci,
+            t.lower,
+            t.upper,
+            if t.passes() { "True" } else { "False" }
+        )
+    }
+}
+
+/// Mack's calendar-year effect test (Mack 1994, appendix H; R
+/// ChainLadder's ``cyEffTest``) on every observed link ratio of one
+/// column of a single-segment triangle. ``MackFit.calendar_year_effect``
+/// tests only the link ratios a fit averaged.
+///
+/// Parameters
+/// ----------
+/// triangle : Triangle
+/// column : str
+/// ci : float, default 0.95
+///     The interval's confidence level, Mack's and R's 95%.
+///
+/// Returns
+/// -------
+/// CalendarYearTest
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the triangle has several segments or lacks the column, ``ci`` is
+///     not strictly between 0 and 1, or no calendar diagonal has two link
+///     ratios (fewer than three ages).
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reserving import Triangle, calendar_year_effect
+/// >>> paid = [[100.0, 160.0, 180.0, 186.0, 188.0], [110.0, 170.0, 195.0, 200.0],
+/// ...         [120.0, 200.0, 220.0], [130.0, 205.0], [140.0]]
+/// >>> rows = [(2020 + w, 12 * (d + 1), v) for w, r in enumerate(paid)
+/// ...         for d, v in enumerate(r)]
+/// >>> origin, age, values = map(list, zip(*rows))
+/// >>> tri = Triangle.from_long(origin, age, {"paid": values})
+/// >>> cy = calendar_year_effect(tri, "paid")
+/// >>> cy.lower <= cy.expected <= cy.upper
+/// True
+#[pyfunction]
+#[pyo3(signature = (triangle, column, ci = CALENDAR_YEAR_CI))]
+pub(crate) fn calendar_year_effect(
+    triangle: PyRef<'_, PyTriangle>,
+    column: &str,
+    ci: f64,
+) -> PyResult<PyCalendarYearTest> {
+    let inner = run_calendar_year_effect(&triangle.inner, column, ci).map_err(err)?;
+    Ok(PyCalendarYearTest { inner })
+}
+
+/// Mack's test for correlation between adjacent development factors
+/// (Mack 1994, appendix G; R ChainLadder's ``dfCorTest``) on every
+/// observed link ratio of one column of a single-segment triangle.
+/// ``MackFit.development_correlation`` tests only the link ratios a fit
+/// averaged.
+///
+/// Parameters
+/// ----------
+/// triangle : Triangle
+/// column : str
+/// ci : float, default 0.5
+///     The interval's confidence level, Mack's and R's 50%.
+///
+/// Returns
+/// -------
+/// DevelopmentCorrelationTest
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the triangle has several segments or lacks the column, ``ci`` is
+///     not strictly between 0 and 1, or no pair of adjacent link columns
+///     has two origins in common and untied ranks (fewer than four ages on
+///     a square triangle).
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reserving import Triangle, development_correlation
+/// >>> paid = [[100.0, 160.0, 180.0, 186.0, 188.0], [110.0, 170.0, 195.0, 200.0],
+/// ...         [120.0, 200.0, 220.0], [130.0, 205.0], [140.0]]
+/// >>> rows = [(2020 + w, 12 * (d + 1), v) for w, r in enumerate(paid)
+/// ...         for d, v in enumerate(r)]
+/// >>> origin, age, values = map(list, zip(*rows))
+/// >>> tri = Triangle.from_long(origin, age, {"paid": values})
+/// >>> dc = development_correlation(tri, "paid")
+/// >>> [p["age"] for p in dc.pairs]
+/// [12, 24]
+#[pyfunction]
+#[pyo3(signature = (triangle, column, ci = DEVELOPMENT_CORRELATION_CI))]
+pub(crate) fn development_correlation(
+    triangle: PyRef<'_, PyTriangle>,
+    column: &str,
+    ci: f64,
+) -> PyResult<PyDevelopmentCorrelationTest> {
+    let inner = run_development_correlation(&triangle.inner, column, ci).map_err(err)?;
+    Ok(PyDevelopmentCorrelationTest { inner })
 }

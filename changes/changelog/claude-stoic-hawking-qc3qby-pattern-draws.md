@@ -1,0 +1,3 @@
+### Pricing
+
+- The cash-flow engine pays each simulation by its own paid pattern (`CashflowTerms::run_with_patterns` with `PatternDraws`, one pattern a simulation or a few shared by an index, and `trace_with_pattern`; `time-value.md` decision 33), so the timing of payments, and the collateral held and released with it, can vary by simulation; each pattern ends at the terms' paid share and identical patterns equal to the terms' reproduce `run` exactly. Python `CashflowTerms.run(..., paid_patterns=, pattern_index=)` and `trace(..., paid_pattern=)`, R `cashflow_run(..., paid_patterns =, pattern_index =)` and `cashflow_trace(..., paid_pattern =)`. The patterns from a reserving fit's draws are the Reserving lane's part of #600 (#600, #658).
