@@ -5452,11 +5452,14 @@ class ChainLadder:
         ``ldf_origin``. An accident-month pattern (``ldf_origin="M"``)
         converts under any writing and term; a pattern of longer accident
         periods needs a policy term that is a whole multiple of them or
-        writing even within each of them, and is read between its ages by
-        the rule above, so an annual accident-year pattern is approximate in
-        the first two years (31% too much developed at 12 months on a
-        simulated parallelogram); give it at every month, or an
-        accident-month pattern, where it matters. The result is longer than
+        writing even within each of them. Given at every month from 1 it is
+        exact; at other ages (annual ones, say) it is read between them as
+        ``UnderwritingBasis.reading`` says: by default the Weibull fitted
+        through the period averages and corrected to the nearest monotone
+        accident-month pattern whose averages are the given values exactly,
+        within 0.2% of a simulated parallelogram book at every age, or by
+        the rule above with ``reading="ln-linear"`` (31% too much developed
+        at 12 months on that book). The result is longer than
         ``ldf`` by the writing months plus the policy term less the accident
         period (12 months for an accident-year pattern under the default,
         23 for an accident-month one), and a constant tail from ``ldf``'s
@@ -10823,6 +10826,37 @@ class EventSet:
         IndexError
             If ``sim`` is not a simulated year.
         """
+    def filter(self, /, label: str, values: Sequence[str]) -> EventSet:
+        """
+        The losses whose label ``label`` takes one of ``values``, every
+        year kept (a year with none of them is empty), with their sums
+        insured, times and labels, and the aggregate part's columns with
+        one of the values: what a layer scoped to those values
+        (``Layer.with_scope``) sees.
+        
+        Parameters
+        ----------
+        label : str
+        values : list of str
+        
+        Returns
+        -------
+        EventSet
+        
+        Raises
+        ------
+        ValueError
+            Without labels, without the dimension, or with no values.
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_years([[20.0, 15.0], [8.0]]).with_labels(
+        ...     {"peril": ["quake", "wind", "quake"]})
+        >>> w = e.filter("peril", ["wind"])
+        >>> w.n_sims, w.events(0), w.events(1)
+        (2, [15.0], [])
+        """
     @staticmethod
     def from_long(years: Sequence[int], losses: Sequence[float], n_years: int, seed: int = 0, labels: dict |None = None) -> EventSet:
         """
@@ -15384,6 +15418,12 @@ class Layer:
         Whether the sliding scales read the loss ratio before annual terms.
         """
     @property
+    def scope(self, /) -> tuple[str, list[str]] |None:
+        """
+        The losses the layer covers, ``(label, values)``, or None for
+        every loss.
+        """
+    @property
     def sees_aggregate_part(self, /) -> bool:
         """
         Whether the layer cedes from an ``EventSet``'s aggregate part: it is
@@ -15760,6 +15800,44 @@ class Layer:
         [120.0, 140.0]
         >>> round(res.marginal(["ceding_commission", "cover"]).draws[0], 12)
         12.0
+        """
+    def with_scope(self, /, label: str, values: Sequence[str]) -> Layer:
+        """
+        The same layer covering only the losses whose label ``label``
+        takes one of ``values``: a windstorm treaty on a multi-peril event
+        set is scoped to ``("peril", ["windstorm"])``.
+        
+        The layer's occurrence and annual terms see only those losses, so
+        another peril's events neither use its annual limit nor count
+        toward its deductible; the losses it does not cover pass to the
+        next inuring stage whole. That differs from reading one label's
+        share of an unscoped layer, whose annual terms every peril uses
+        up. A tower with a scoped layer needs labelled events
+        (``Tower.apply``, ``apply_term``, ``apply_timeline``) and refuses
+        the grids and annual losses.
+        
+        Parameters
+        ----------
+        label : str
+            A label dimension of the events.
+        values : list of str
+            At least one; at least one must occur.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> e = EventSet.from_years([[20.0, 15.0]]).with_labels({"peril": ["quake", "wind"]})
+        >>> xl = Layer("10x5", 10.0, 5.0, aggregate_limit=15.0)
+        >>> wind = Tower([xl.with_scope("peril", ["wind"])]).apply(e)
+        >>> wind.marginal(("ceded", "10x5", "wind")).mean()
+        10.0
+        >>> Tower([xl]).apply(e).marginal(("ceded", "10x5", "wind")).mean()
+        5.0
         """
     def with_sliding_scale(self, /, anchors: Sequence[tuple[float, float]]) -> Layer:
         """
@@ -28332,6 +28410,22 @@ class UnderwritingBasis:
         writing); longer writing is an error at fit time.
     policy_months : int, default 12
         Each policy's term in months; it earns evenly over the term.
+    reading : {"weibull", "loglogistic", "ln-linear"}, default "weibull"
+        How a pattern of accident periods longer than a month (an
+        accident-year pattern) is read between its ages when they are not
+        every month from 1: ``"weibull"`` or ``"loglogistic"`` fit that
+        growth curve through the period averages (an accident year at age
+        ``a`` reports the average of its twelve months) and correct it to
+        the nearest monotone accident-month pattern whose averages are the
+        given values exactly, so the given values are reproduced; increments
+        may fall only within a span where the given pattern itself develops
+        downward. ``"ln-linear"`` is the rule before this reading (linear
+        from 0 below the first age, ``ln CDF`` linear between ages), kept to
+        reproduce earlier results: on a simulated parallelogram book it puts
+        an underwriting year 31% too far developed at 12 months, where the
+        Weibull is within 0.2% at every age. An accident-month pattern, and
+        one given at every month, convert the same under every reading. A
+        curve needs two or more given values.
     
     The underwriting period's exposure in its ``t``-th accident month is the
     writing convolved with a policy's earning by month (``exposure``), and
@@ -28349,7 +28443,7 @@ class UnderwritingBasis:
     >>> len(e), round(e[0] * 288, 12), round(e[12] * 288, 12)
     (24, 1.0, 23.0)
     """
-    def __new__(cls, /, writing: Sequence[float] |None = None, policy_months: int = 12) -> UnderwritingBasis: ...
+    def __new__(cls, /, writing: Sequence[float] |None = None, policy_months: int = 12, reading: str = "weibull") -> UnderwritingBasis: ...
     def __repr__(self, /) -> str: ...
     def exposure(self, /) -> list[float]:
         """
@@ -28360,6 +28454,12 @@ class UnderwritingBasis:
     def policy_months(self, /) -> int:
         """
         The policy term in months.
+        """
+    @property
+    def reading(self, /) -> str:
+        """
+        How a pattern of longer accident periods is read between its ages:
+        ``"weibull"``, ``"loglogistic"`` or ``"ln-linear"``.
         """
     @property
     def writing(self, /) -> list[float]:
