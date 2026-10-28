@@ -562,6 +562,15 @@ impl Sampled {
             .map(|&p| self.inner.tvar_with(p, method).map_err(to_r))
             .collect()
     }
+
+    /// The window TVaR between `p_low` and `p_high`, under `method` as
+    /// `tvar`.
+    fn window_tvar(&self, p_low: f64, p_high: f64, method: &str) -> Result<f64> {
+        let method = crate::risk::tvar_method(method)?;
+        self.inner
+            .window_tvar_with(p_low, p_high, method)
+            .map_err(to_r)
+    }
 }
 
 /// Component keys from R key columns (a list with one column per dimension
@@ -970,6 +979,17 @@ fn tvar_weighted_rust(values: &[f64], probs: &[f64], p: &[f64]) -> Result<Vec<f6
         .collect()
 }
 
+/// The window TVaR of a discrete distribution (`risk::window_tvar_weighted`).
+#[extendr]
+fn window_tvar_weighted_rust(
+    values: &[f64],
+    probs: &[f64],
+    p_low: f64,
+    p_high: f64,
+) -> Result<f64> {
+    prospicio_prob::risk::window_tvar_weighted(values, probs, p_low, p_high).map_err(to_r)
+}
+
 /// `TVaR(t) = VaR(p)` at each `p` (`risk::tvar_threshold`).
 #[extendr]
 fn tvar_threshold_rust(values: &[f64], probs: &[f64], p: &[f64]) -> Result<Vec<f64>> {
@@ -983,6 +1003,7 @@ extendr_module! {
     fn tvar_weighted_rust;
     fn layer_third_moment_rust;
     fn tvar_threshold_rust;
+    fn window_tvar_weighted_rust;
     fn join_rust;
     fn reorder_groups_rust;
     fn reorder_groups_by_copula_rust;

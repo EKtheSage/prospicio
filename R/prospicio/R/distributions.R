@@ -486,6 +486,34 @@ VaR <- S7::new_generic("VaR", "dist", function(dist, p, ...) S7::S7_dispatch())
 #' @export
 TVaR <- S7::new_generic("TVaR", "dist", function(dist, p, ...) S7::S7_dispatch())
 
+#' Window TVaR, the mean between two probability levels
+#'
+#' The mean of a distribution between its levels `p_low` and `p_high`, a band
+#' of bad years such as the 98th to 99th percentiles that retrocession and
+#' layer pricing read:
+#' `((1 - p_low) * TVaR(p_low) - (1 - p_high) * TVaR(p_high)) / (p_high - p_low)`,
+#' each draw (or grid point) counted with
+#' the share of its probability inside the window. For a [sampled],
+#' `method = "linear"` reads the linear quantile function, and
+#' `"whole_years"` the mean of the draws ranked `floor((1 - p_high) * n) + 1`
+#' to `floor((1 - p_low) * n)` from the top (years 21 to 40 of 2,000 between
+#' 0.98 and 0.99), an error when that holds no draw.
+#'
+#' @param dist A [sampled] or a [grid_distribution].
+#' @param p_low,p_high The levels, from 0 to 1, `p_low` below `p_high`.
+#' @param ... For a [sampled], `method`: `"exact"`, `"linear"` or
+#'   `"whole_years"`, as [TVaR()]. Otherwise unused.
+#' @returns A number.
+#' @seealso [TVaR()].
+#' @export
+#' @examples
+#' years <- sampled(1:10)
+#' window_tvar(years, 0.7, 0.9)
+#' window_tvar(years, 0.5, 1) == TVaR(years, 0.5)
+#' window_tvar(grid_distribution(1, c(0.5, 0.3, 0.2)), 0.6, 0.9)
+window_tvar <- S7::new_generic("window_tvar", "dist",
+                               function(dist, p_low, p_high, ...) S7::S7_dispatch())
+
 # A severity's TVaR from its quantile and stop loss, VaR(p) + E[(X - VaR(p))+] / (1 - p).
 severity_tvar <- function(ptr, p, call) {
   p <- as.double(p)
@@ -539,6 +567,11 @@ S7::method(TVaR, grid_distribution) <- function(dist, p, ...) {
   rust_result(tvar_weighted_rust(grid_points(dist), dist@probs, as.double(p)), s7_call())
 }
 
+S7::method(window_tvar, grid_distribution) <- function(dist, p_low, p_high, ...) {
+  rust_result(window_tvar_weighted_rust(grid_points(dist), dist@probs, as.double(p_low),
+                                        as.double(p_high)), s7_call())
+}
+
 S7::method(tvar_threshold, grid_distribution) <- function(x, p, ...) {
   rust_result(tvar_threshold_rust(grid_points(x), x@probs, as.double(p)), s7_call())
 }
@@ -584,6 +617,10 @@ S7::method(VaR, sampled) <- function(dist, p, method = "inverted_cdf", ...) {
 }
 S7::method(TVaR, sampled) <- function(dist, p, method = "exact", ...) {
   rust_result(dist@ptr$tvar(as.double(p), as.character(method)), s7_call())
+}
+S7::method(window_tvar, sampled) <- function(dist, p_low, p_high, method = "exact", ...) {
+  rust_result(dist@ptr$window_tvar(as.double(p_low), as.double(p_high), as.character(method)),
+              s7_call())
 }
 S7::method(print, sampled) <- function(x, ...) {
   cat(sprintf("<sampled> %d draws, mean = %s\n", length(x@draws), format(mean(x), digits = 6)))

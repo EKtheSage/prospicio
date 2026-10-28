@@ -194,6 +194,102 @@ pub fn tvar_whole_years_sorted(sorted: &[f64], p: f64) -> Result<f64> {
     Ok(sorted[n - k..].iter().sum::<f64>() / k as f64)
 }
 
+/// The levels of a window, `0 <= p_low < p_high <= 1`.
+fn check_window(p_low: f64, p_high: f64) -> Result<()> {
+    check_probability(p_low)?;
+    check_probability(p_high)?;
+    if p_low >= p_high {
+        return Err(Error::InvalidParameter {
+            name: "p_low",
+            value: p_low,
+            reason: "must be below p_high",
+        });
+    }
+    Ok(())
+}
+
+/// Window TVaR of equally likely draws: the mean of the distribution
+/// between its levels `p_low` and `p_high`,
+/// `(1 / (p_high - p_low)) * integral from p_low to p_high of VaR(u) du`,
+/// each draw holding the levels `[i / n, (i + 1) / n]` and counted with the
+/// share of them inside the window (#583). It equals
+/// `((1 - p_low) TVaR(p_low) - (1 - p_high) TVaR(p_high)) / (p_high - p_low)`
+/// for [`tvar_sorted`], and `p_high = 1` gives [`tvar_sorted`] at `p_low`.
+/// `sorted` must be non-empty and sorted ascending; this is checked only
+/// in debug builds.
+///
+/// ```
+/// use prospicio_prob::risk::window_tvar_sorted;
+///
+/// let x: Vec<f64> = (1..=10).map(f64::from).collect();
+/// // Between the 70th and 90th percentiles: the draws 8 and 9.
+/// assert_eq!(window_tvar_sorted(&x, 0.7, 0.9), Ok(8.5));
+/// // Half of 8 and all of 9 between 0.75 and 0.9.
+/// assert!((window_tvar_sorted(&x, 0.75, 0.9).unwrap() - (0.5 * 8.0 + 9.0) / 1.5).abs() < 1e-12);
+/// ```
+pub fn window_tvar_sorted(sorted: &[f64], p_low: f64, p_high: f64) -> Result<f64> {
+    check_window(p_low, p_high)?;
+    debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
+    let nf = sorted.len() as f64;
+    let first = ((p_low * nf).floor() as usize).min(sorted.len() - 1);
+    let mut sum = 0.0;
+    for (i, &x) in sorted.iter().enumerate().skip(first) {
+        let (lo, hi) = (i as f64 / nf, (i + 1) as f64 / nf);
+        if lo >= p_high {
+            break;
+        }
+        let share = hi.min(p_high) - lo.max(p_low);
+        if share > 0.0 {
+            sum += x * share;
+        }
+    }
+    Ok(sum / (p_high - p_low))
+}
+
+/// Window TVaR under the linear quantile (numpy's default): the mean of the
+/// linear quantile function over `[p_low, p_high]`, from
+/// [`tvar_linear_sorted`] at both levels.
+pub fn window_tvar_linear_sorted(sorted: &[f64], p_low: f64, p_high: f64) -> Result<f64> {
+    check_window(p_low, p_high)?;
+    let area = |p: f64| -> Result<f64> {
+        Ok(if p == 1.0 {
+            0.0
+        } else {
+            (1.0 - p) * tvar_linear_sorted(sorted, p)?
+        })
+    };
+    Ok((area(p_low)? - area(p_high)?) / (p_high - p_low))
+}
+
+/// Window TVaR in whole years: the mean of the draws ranked `k(p_high) + 1`
+/// to `k(p_low)` from the top, `k(p) = floor((1 - p) n)`, so between the 98th
+/// and 99th percentiles of 2,000 years the years ranked 21 to 40. Fails when
+/// the window holds no whole draw.
+///
+/// ```
+/// use prospicio_prob::risk::window_tvar_whole_years_sorted;
+///
+/// let x: Vec<f64> = (1..=2000).map(f64::from).collect();
+/// // Ranked 21 to 40 from the top: 1961 to 1980.
+/// assert_eq!(window_tvar_whole_years_sorted(&x, 0.98, 0.99), Ok(1970.5));
+/// ```
+pub fn window_tvar_whole_years_sorted(sorted: &[f64], p_low: f64, p_high: f64) -> Result<f64> {
+    check_window(p_low, p_high)?;
+    debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
+    let n = sorted.len();
+    let count = |p: f64| if p == 0.0 { n } else { n - rank(n, p) };
+    let (k_low, k_high) = (count(p_low), count(p_high));
+    if k_low <= k_high {
+        return Err(Error::InvalidParameter {
+            name: "p_high",
+            value: p_high,
+            reason: "the window holds no whole draw",
+        });
+    }
+    let window = &sorted[n - k_low..n - k_high];
+    Ok(window.iter().sum::<f64>() / window.len() as f64)
+}
+
 /// Value at risk of a discrete distribution: the smallest value `x` with
 /// `P(X <= x) >= p`, the lower quantile. `values` are ascending, `probs`
 /// their probabilities. `p = 0` gives the smallest value.
@@ -237,6 +333,44 @@ pub fn tvar_weighted(values: &[f64], probs: &[f64], p: f64) -> Result<f64> {
     check_probability(p)?;
     check_weighted(values, probs)?;
     Ok(tvar_unchecked(values, probs, p))
+}
+
+/// Window TVaR of a discrete distribution: the mean of the values between
+/// the levels `p_low` and `p_high`, each value counted with the share of
+/// its mass inside the window, so
+/// `((1 - p_low) TVaR(p_low) - (1 - p_high) TVaR(p_high)) / (p_high - p_low)`
+/// for [`tvar_weighted`]. `values` are ascending, `probs` their
+/// probabilities.
+///
+/// ```
+/// use prospicio_prob::risk::window_tvar_weighted;
+///
+/// let (x, w) = ([0.0, 1.0, 2.0], [0.5, 0.3, 0.2]);
+/// // Between 0.6 and 0.9: 0.2 of the value 1 and 0.1 of the value 2.
+/// assert!((window_tvar_weighted(&x, &w, 0.6, 0.9).unwrap() - 0.4 / 0.3).abs() < 1e-12);
+/// ```
+pub fn window_tvar_weighted(values: &[f64], probs: &[f64], p_low: f64, p_high: f64) -> Result<f64> {
+    check_window(p_low, p_high)?;
+    check_weighted(values, probs)?;
+    let (mut start, mut sum) = (0.0_f64, 0.0);
+    for (j, (&x, &w)) in values.iter().zip(probs).enumerate() {
+        // The last value takes what rounding left of the total, as
+        // `tvar_weighted` does.
+        let end = if j + 1 == values.len() {
+            start.max(1.0)
+        } else {
+            start + w
+        };
+        let share = end.min(p_high) - start.max(p_low);
+        if share > 0.0 {
+            sum += x * share;
+        }
+        start = end;
+        if start >= p_high {
+            break;
+        }
+    }
+    Ok(sum / (p_high - p_low))
 }
 
 fn tvar_unchecked(values: &[f64], probs: &[f64], p: f64) -> f64 {
@@ -440,6 +574,89 @@ mod tests {
         assert_eq!(var_sorted(&X, 0.2000001), Ok(20.0));
         assert_eq!(var_sorted(&X, 0.6), Ok(30.0));
         assert_eq!(var_sorted(&X, 1.0), Ok(50.0));
+    }
+
+    /// The issue's test: the window is the difference of two tails.
+    fn by_identity(tvar: &dyn Fn(f64) -> f64, a: f64, b: f64) -> f64 {
+        let area = |p: f64| if p == 1.0 { 0.0 } else { (1.0 - p) * tvar(p) };
+        (area(a) - area(b)) / (b - a)
+    }
+
+    #[test]
+    fn a_window_is_the_difference_of_two_tails() {
+        let mut rng = prospicio_core::StreamRng::new(5, 0);
+        let mut x: Vec<f64> = (0..997).map(|_| -rng.next_open01().ln() * 10.0).collect();
+        x.sort_by(f64::total_cmp);
+        let levels = [0.0, 0.1, 0.5, 0.731, 0.9, 0.98, 0.99, 0.999, 1.0];
+        for &a in &levels {
+            for &b in levels.iter().filter(|&&b| b > a) {
+                let exact = window_tvar_sorted(&x, a, b).unwrap();
+                let want = by_identity(&|p| tvar_sorted(&x, p).unwrap(), a, b);
+                assert!(
+                    (exact - want).abs() < 1e-9 * want.abs().max(1.0),
+                    "{a} {b}: {exact} {want}"
+                );
+                let linear = window_tvar_linear_sorted(&x, a, b).unwrap();
+                let want = by_identity(&|p| tvar_linear_sorted(&x, p).unwrap(), a, b);
+                assert!((linear - want).abs() < 1e-9 * want.abs().max(1.0));
+            }
+        }
+        // The top of the window is TVaR itself.
+        assert!(
+            (window_tvar_sorted(&x, 0.9, 1.0).unwrap() - tvar_sorted(&x, 0.9).unwrap()).abs()
+                < 1e-9
+        );
+        // Between two levels the window lies between their VaR and the next.
+        let w = window_tvar_sorted(&x, 0.98, 0.99).unwrap();
+        assert!(var_sorted(&x, 0.98).unwrap() <= w && w <= var_sorted(&x, 0.99).unwrap());
+    }
+
+    #[test]
+    fn whole_years_windows_count_years() {
+        let x: Vec<f64> = (1..=2000).map(f64::from).collect();
+        // Where (1 - p) n is whole at both ends, as exact.
+        for (a, b) in [(0.98, 0.99), (0.9, 0.95), (0.5, 1.0)] {
+            let whole = window_tvar_whole_years_sorted(&x, a, b).unwrap();
+            assert!(
+                (whole - window_tvar_sorted(&x, a, b).unwrap()).abs() < 1e-9,
+                "{a} {b}"
+            );
+        }
+        // 3.5 and 1.5 years on 10 draws: the whole years 2 and 3 from the top.
+        let y: Vec<f64> = (1..=10).map(f64::from).collect();
+        assert_eq!(window_tvar_whole_years_sorted(&y, 0.65, 0.85), Ok(8.5));
+        assert!(window_tvar_whole_years_sorted(&y, 0.81, 0.85).is_err());
+    }
+
+    #[test]
+    fn a_weighted_window_is_the_difference_of_two_tails() {
+        let values: Vec<f64> = (0..40).map(f64::from).collect();
+        let raw: Vec<f64> = (0..40).map(|j| (-(j as f64) / 7.0).exp()).collect();
+        let total: f64 = raw.iter().sum();
+        let probs: Vec<f64> = raw.iter().map(|w| w / total).collect();
+        for (a, b) in [
+            (0.0, 0.5),
+            (0.5, 0.9),
+            (0.95, 0.99),
+            (0.99, 1.0),
+            (0.123, 0.456),
+        ] {
+            let got = window_tvar_weighted(&values, &probs, a, b).unwrap();
+            let want = by_identity(&|p| tvar_weighted(&values, &probs, p).unwrap(), a, b);
+            assert!(
+                (got - want).abs() < 1e-9 * want.max(1.0),
+                "{a} {b}: {got} {want}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_window_needs_p_low_below_p_high() {
+        let x = [1.0, 2.0, 3.0];
+        assert!(window_tvar_sorted(&x, 0.5, 0.5).is_err());
+        assert!(window_tvar_sorted(&x, 0.6, 0.5).is_err());
+        assert!(window_tvar_sorted(&x, -0.1, 0.5).is_err());
+        assert!(window_tvar_weighted(&x, &[0.5, 0.25, 0.25], 0.5, 1.5).is_err());
     }
 
     #[test]
