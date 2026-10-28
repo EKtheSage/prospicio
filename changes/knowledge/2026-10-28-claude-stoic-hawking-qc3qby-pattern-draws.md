@@ -1,0 +1,1 @@
+* **Creation**: funding under a paid pattern by simulation is not linear in the pattern (#600, branch claude/stoic-hawking-qc3qby-pattern-draws): `knowledge/findings/paid-pattern-per-simulation.md`; on the test deal at a 90% loss ratio, half the simulations paying over 24 months and half over 56 fund 46.09 on average against 38.96 under the average of the two patterns, 18% more.

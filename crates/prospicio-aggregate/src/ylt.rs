@@ -3,7 +3,8 @@
 //!
 //! The table comes in as columns, so the crate reads no files; the Python
 //! and R packages read CSV and Parquet into them. Rows are ordered by year,
-//! then by event slot, the file's order breaking ties, and each row is one
+//! then by time of loss when given, then by event slot, the file's order
+//! breaking ties, and each row is one
 //! loss of the [`EventSet`]: rows that share a slot (one event hitting
 //! several classes) stay separate losses, so an occurrence layer sees each
 //! of them, not their sum.
@@ -53,6 +54,8 @@ pub struct YearLossTable {
     years: Vec<usize>,
     losses: Vec<f64>,
     slots: Option<Vec<u64>>,
+    /// Each row's time, a fraction of the year.
+    times: Option<Vec<f64>>,
     labels: Vec<(String, Vec<String>)>,
     n_years: usize,
     source_hash: Option<String>,
@@ -91,6 +94,7 @@ impl YearLossTable {
             years: years.iter().map(|y| y - 1).collect(),
             losses: losses.to_vec(),
             slots: None,
+            times: None,
             labels: Vec::new(),
             n_years,
             source_hash: None,
@@ -107,6 +111,42 @@ impl YearLossTable {
             )));
         }
         self.slots = Some(slots);
+        Ok(self)
+    }
+
+    /// Each row's time of loss, the fraction of its year elapsed, in
+    /// `[0, 1]`: rows are then ordered by time within a year, the slot (or
+    /// the given order) breaking ties, and the events carry the times, so
+    /// an hours clause ([`EventSet::grouped`]) and reinstatements pro rata
+    /// as to time can be run on them.
+    ///
+    /// ```
+    /// use prospicio_aggregate::ylt::{Expansion, YearLossTable};
+    ///
+    /// let ylt = YearLossTable::new(&[1, 1, 2], &[5.0, 1.0, 7.0])
+    ///     .unwrap()
+    ///     .with_times(vec![0.75, 0.25, 0.5])
+    ///     .unwrap();
+    /// let events = ylt.events(None, Expansion::Tile).unwrap();
+    /// assert_eq!(events.events(0), &[1.0, 5.0]);
+    /// assert_eq!(events.times(0), Some(&[0.25, 0.75][..]));
+    /// ```
+    pub fn with_times(mut self, times: Vec<f64>) -> Result<Self> {
+        if times.len() != self.losses.len() {
+            return Err(Error::Data(format!(
+                "{} times for {} rows",
+                times.len(),
+                self.losses.len()
+            )));
+        }
+        if let Some(k) = times.iter().position(|t| !(0.0..=1.0).contains(t)) {
+            return Err(Error::Data(format!(
+                "row {}: the time {} is not a fraction of the year in [0, 1]",
+                k + 1,
+                times[k]
+            )));
+        }
+        self.times = Some(times);
         Ok(self)
     }
 
@@ -260,16 +300,23 @@ impl YearLossTable {
     }
 
     /// The table's years as `n_sims` simulated years of events, by
-    /// `expansion`, each row a loss with its labels, in order of slot within
-    /// its year (the table's order without slots). The events' seed is the
+    /// `expansion`, each row a loss with its labels and time, in order of
+    /// time (when given) and then slot within its year, the table's order
+    /// breaking ties. The events' seed is the
     /// resampling seed (0 when tiled), their samplers unrecorded and their
     /// input hash the table's source hash.
     pub fn events(&self, n_sims: Option<usize>, expansion: Expansion) -> Result<EventSet> {
         let sims = self.years_of_sims(n_sims, expansion)?;
         let mut order: Vec<usize> = (0..self.len()).collect();
-        match &self.slots {
-            Some(slots) => order.sort_by_key(|&k| (self.years[k], slots[k])),
-            None => order.sort_by_key(|&k| self.years[k]),
+        let slot = |k: usize| self.slots.as_ref().map_or(0, |s| s[k]);
+        match &self.times {
+            // A stable sort, so the given order breaks the last ties.
+            Some(times) => order.sort_by(|&a, &b| {
+                (self.years[a], times[a], slot(a))
+                    .partial_cmp(&(self.years[b], times[b], slot(b)))
+                    .expect("times are finite")
+            }),
+            None => order.sort_by_key(|&k| (self.years[k], slot(k))),
         }
         // Each year's rows, in order.
         let mut rows = vec![Vec::new(); self.n_years];
@@ -285,6 +332,13 @@ impl YearLossTable {
             Expansion::Resample { seed } => seed,
         };
         let mut events = EventSet::from_years(years, seed)?;
+        if let Some(times) = &self.times {
+            let per_loss = sims
+                .iter()
+                .flat_map(|&y| rows[y].iter().map(|&k| times[k]))
+                .collect();
+            events = events.with_times(per_loss)?;
+        }
         if !self.labels.is_empty() {
             let labels = self
                 .labels
@@ -414,6 +468,62 @@ mod tests {
         );
         let no_slots = YearLossTable::new(&[1], &[1.0]).unwrap();
         assert!(no_slots.check_unique(&[]).is_err());
+    }
+
+    #[test]
+    fn times_order_the_rows_and_feed_an_hours_clause() {
+        let h = 1.0 / 8760.0;
+        // Year 1: two wind rows 30 hours apart, a quake at 0.9; given out of
+        // order, with slots that would order them otherwise.
+        let peril = ["wind", "quake", "wind"].map(String::from).to_vec();
+        let ylt = YearLossTable::new(&[1, 1, 1], &[20.0, 7.0, 10.0])
+            .unwrap()
+            .with_slots(vec![1, 2, 3])
+            .unwrap()
+            .with_times(vec![0.5 + 30.0 * h, 0.9, 0.5])
+            .unwrap()
+            .with_labels(vec![("peril".into(), peril)])
+            .unwrap();
+        let events = ylt.events(Some(2), Expansion::Tile).unwrap();
+        assert_eq!(events.events(1), &[10.0, 20.0, 7.0]);
+        let by_hand = EventSet::from_years(vec![vec![10.0, 20.0, 7.0]; 2], 0)
+            .unwrap()
+            .with_times(vec![0.5, 0.5 + 30.0 * h, 0.9, 0.5, 0.5 + 30.0 * h, 0.9])
+            .unwrap()
+            .with_labels(vec![(
+                "peril".into(),
+                ["wind", "wind", "quake"]
+                    .repeat(2)
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+            )])
+            .unwrap();
+        assert_eq!(events, by_hand);
+        let g = events
+            .grouped_by("peril", 72.0, crate::GroupLabels::Agree)
+            .unwrap();
+        assert_eq!(g.events(0), &[30.0, 7.0]);
+        assert_eq!(
+            g.labels(0).unwrap(),
+            [["wind".to_string()], ["quake".to_string()]]
+        );
+        // Equal times fall back on the slots.
+        let tied = YearLossTable::new(&[1, 1], &[1.0, 2.0])
+            .unwrap()
+            .with_slots(vec![5, 4])
+            .unwrap()
+            .with_times(vec![0.5, 0.5])
+            .unwrap();
+        assert_eq!(
+            tied.events(None, Expansion::Tile).unwrap().events(0),
+            &[2.0, 1.0]
+        );
+
+        let one = YearLossTable::new(&[1], &[1.0]).unwrap();
+        assert!(one.clone().with_times(vec![1.5]).is_err());
+        assert!(one.clone().with_times(vec![f64::NAN]).is_err());
+        assert!(one.with_times(vec![0.1, 0.2]).is_err());
     }
 
     #[test]

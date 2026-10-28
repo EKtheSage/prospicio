@@ -544,6 +544,71 @@ fn credibility_matches_actuar() {
     });
 }
 
+// Hachemeister's regression credibility on his own data, a trend line
+// [1, t] over twelve quarters, against actuar's `cm(..., regformula = ~
+// time)` at the origin and with the intercept at the barycentre
+// (`validation/scripts/r_credibility_regression.R`). The origin's iteration
+// has no stable fixed point on these data (the between covariance's
+// correlation is 0.9998), so round-off decides its last steps and those
+// rows are checked to 1e-6.
+#[test]
+fn regression_credibility_matches_actuar() {
+    use prospicio_pricing::credibility::{Hachemeister, StructureEstimator};
+
+    let data = reference("hachemeister.csv");
+    let mut ratios = vec![vec![0.0; 12]; 5];
+    let mut weights = vec![vec![0.0; 12]; 5];
+    for row in &data {
+        let i = row.number("state").unwrap() as usize - 1;
+        let j = row.number("quarter").unwrap() as usize - 1;
+        ratios[i][j] = row.number("ratio").unwrap();
+        weights[i][j] = row.number("weight").unwrap();
+    }
+    let design: Vec<Vec<f64>> = (1..=12).map(|t| vec![1.0, t as f64]).collect();
+    let cases = reference("credibility_regression_actuar.csv");
+    check(&cases, |c| {
+        let params = c.get("params");
+        let (mut r, mut w) = (ratios.clone(), weights.clone());
+        if let Some(cells) = params.split(';').find_map(|kv| kv.strip_prefix("missing=")) {
+            for cell in cells.split('|') {
+                let (i, j) = cell.split_once('.')?;
+                let (i, j) = (i.parse::<usize>().ok()? - 1, j.parse::<usize>().ok()? - 1);
+                r[i][j] = f64::NAN;
+                w[i][j] = f64::NAN;
+            }
+        }
+        let estimator = if params.contains("estimator=iterative") {
+            StructureEstimator::iterative()
+        } else {
+            StructureEstimator::Unbiased
+        };
+        let adjust = params.contains("adj=yes");
+        let fit = Hachemeister::new(estimator, adjust)
+            .fit(&r, Some(&w), &design)
+            .ok()?;
+        let arg = || Some(c.number("arg")? as usize);
+        let digit = |n: usize, place: usize| (n / place) % 10 - 1;
+        match c.get("quantity") {
+            "collective" => Some(fit.collective[arg()? - 1]),
+            "coefficient" => {
+                let a = arg()?;
+                Some(fit.coefficients[digit(a, 10)][digit(a, 1)])
+            }
+            "credibility" => {
+                let a = arg()?;
+                Some(fit.credibility[digit(a, 100)][digit(a, 10)][digit(a, 1)])
+            }
+            "between" => {
+                let a = arg()?;
+                Some(fit.between[digit(a, 10)][digit(a, 1)])
+            }
+            "within" => Some(fit.within_variance),
+            "premium" => Some(fit.predict(&[1.0, 13.0]).ok()?[arg()? - 1]),
+            _ => None,
+        }
+    });
+}
+
 // Ratemaking against Werner and Modlin, *Basic Ratemaking* (5th ed., CAS,
 // 2016). The book's exhibits round at each step; each test checks the exact
 // value where the book's arithmetic is exact, and reproduces a printed
@@ -2205,4 +2270,59 @@ fn size_of_loss_tables_give_werner_and_modlin_chapter_11() {
     .unwrap();
     let ler = loss_elimination_ratio(&h, 250.0).unwrap();
     assert_eq!((ler * 1000.0).round() / 1000.0, 0.135);
+}
+
+#[test]
+fn bonus_malus_matches_scipy() {
+    use prospicio_pricing::bonus_malus::{BonusMalus, BonusRule, Portfolio};
+    use prospicio_prob::count_families::Mixing;
+
+    let cases = reference("bonus_malus_scipy.csv");
+    let list = |c: &prospicio_validation::Case, name: &str| -> Vec<f64> {
+        let params = c.get("params");
+        let v = params
+            .split(';')
+            .find_map(|kv| kv.strip_prefix(&format!("{name}=")))
+            .unwrap();
+        v.split('|').map(|x| x.parse().unwrap()).collect()
+    };
+    let mut fits = std::collections::HashMap::new();
+    check(&cases, |c| {
+        let n = |name| c.param("params", name) as usize;
+        let scale = BonusMalus::rule(
+            n("levels"),
+            n("start"),
+            BonusRule {
+                down: n("down"),
+                up_per_claim: n("up"),
+            },
+        )
+        .ok()?;
+        let cv = c.param("params", "cv");
+        let mixing = if c.get("params").contains("mixing=gamma") {
+            Mixing::Gamma { cv }
+        } else {
+            Mixing::InverseGaussian { cv }
+        };
+        let lambdas = list(c, "lambdas");
+        let portfolio = Portfolio::classes(list(c, "weights"), lambdas.clone(), mixing).ok()?;
+        let (pi, r) = fits
+            .entry(c.get("distribution").to_string())
+            .or_insert_with(|| {
+                (
+                    scale.stationary(&portfolio).unwrap(),
+                    scale.optimal_relativities(&portfolio).unwrap(),
+                )
+            })
+            .clone();
+        let arg = c.number("arg")?;
+        match c.get("quantity") {
+            "stationary" => Some(pi[arg as usize]),
+            "relativity" => Some(r[arg as usize]),
+            "stationary_at" => Some(scale.stationary_at(c.number("arg2")?).ok()?[arg as usize]),
+            "efficiency" => scale.efficiency(arg, &r).ok(),
+            "years" => Some(scale.years_to_stationarity(c.number("arg2")?, arg).ok()?? as f64),
+            _ => None,
+        }
+    });
 }

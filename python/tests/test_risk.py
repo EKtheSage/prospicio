@@ -418,6 +418,28 @@ def test_statistics_match_numpy_linear_and_the_integral_tvar():
         s.var(0.5, method="nearest")
 
 
+def test_the_kth_largest_year_and_the_whole_years_tvar():
+    from prospicio.risk import statistics
+
+    # 2,000 years: at 99% the 20th worst year and the mean of the 20 worst.
+    x = [float((i * 7919) % 1013) for i in range(2000)]
+    d = sorted(x, reverse=True)
+    s = Sampled(x)
+    assert s.var(0.99, method="kth_largest") == d[19]
+    assert s.var(0.99) == d[20]
+    assert s.tvar(0.99, method="whole_years") == pytest.approx(sum(d[:20]) / 20)
+    assert s.tvar(0.99, method="whole_years") == pytest.approx(s.tvar(0.99))
+    # 0.987 leaves 26 whole years, where the exact TVaR takes a part of the 27th.
+    assert s.tvar(0.987, method="whole_years") == pytest.approx(sum(d[:26]) / 26)
+    st = statistics(x, [99.0], tvar_levels=[98.7], quantile="kth_largest", tvar="whole_years")
+    assert st["Percentile 99"] == d[19]
+    assert st["TVaR 98.7"] == pytest.approx(sum(d[:26]) / 26)
+    with pytest.raises(ValueError, match="kth_largest"):
+        s.var(0.5, method="kth")
+    with pytest.raises(ValueError, match="whole_years"):
+        s.tvar(0.5, method="whole")
+
+
 def test_co_statistics_follow_the_reference_selection():
     import math
     import random
@@ -528,3 +550,52 @@ def test_bootstrap_se_shares_one_draw_and_holds_a_part_fixed():
         bootstrap_se(x, [50], replicates=1)
     with pytest.raises(ValueError, match="hold_fixed has no"):
         bootstrap_se({"a": x}, [50], hold_fixed={"b": x})
+
+
+def test_multivariate_normal_and_lognormal_joints():
+    np = pytest.importorskip("numpy")
+    stats = pytest.importorskip("scipy.stats")
+    from prospicio.distributions import PredictiveDistribution
+    from prospicio.risk import MultivariateLognormal, MultivariateNormal
+
+    sd = np.array([20.0, 10.0, 30.0])
+    r = np.array([[1.0, 0.6, -0.2], [0.6, 1.0, 0.3], [-0.2, 0.3, 1.0]])
+    cov = (r * np.outer(sd, sd)).tolist()
+    mean = [100.0, 50.0, 200.0]
+    mvn = MultivariateNormal(mean, cov)
+    assert mvn.dim == 3 and mvn.mean == mean
+    assert np.allclose(mvn.correlation(), r)
+    assert mvn.total().mean() == 350.0
+    assert mvn.total().variance() == pytest.approx(np.sum(cov))
+    n = 50_000
+    pd = PredictiveDistribution.from_gaussian(mvn, n, 7, keys=[("a",), ("b",), ("c",)], dims=["line"])
+    x = np.array(pd.draw_matrix())
+    assert np.allclose(x.mean(axis=0), mean, atol=4 * sd.max() / np.sqrt(n))
+    assert np.allclose(np.cov(x.T), cov, rtol=0.05, atol=10.0)
+    # The total and a marginal are the normals scipy gives, by KS.
+    total = x.sum(axis=1)
+    assert stats.kstest(total, stats.norm(350.0, mvn.total().sigma).cdf).pvalue > 0.01
+    assert stats.kstest(x[:, 1], stats.norm(50.0, 10.0).cdf).pvalue > 0.01
+    # Reproducible by seed; the provenance records the model and seed.
+    again = PredictiveDistribution.from_gaussian(mvn, n, 7, keys=[("a",), ("b",), ("c",)], dims=["line"])
+    assert again.draw_matrix() == pd.draw_matrix()
+    with pytest.raises(ValueError):
+        MultivariateNormal([0.0, 0.0], [[1.0, 1.0], [1.0, 1.0]])
+    with pytest.raises(ValueError):
+        PredictiveDistribution.from_gaussian(mvn, 10, 1, keys=[("a",)])
+    with pytest.raises(TypeError):
+        PredictiveDistribution.from_gaussian(1.0, 10, 1)
+
+    mvl = MultivariateLognormal.from_moments(mean, cov)
+    assert np.allclose(mvl.mean, mean, rtol=1e-12)
+    assert np.allclose(mvl.cov, cov, rtol=1e-10)
+    assert mvl.total_mean() == pytest.approx(350.0)
+    m = mvl.marginal(2)
+    assert stats.lognorm(m.sdlog, scale=np.exp(m.meanlog)).mean() == pytest.approx(200.0)
+    back = MultivariateLognormal.from_log_scale(mvl.mu, mvl.log_cov)
+    assert np.allclose(back.cov, cov, rtol=1e-10)
+    y = np.array(PredictiveDistribution.from_gaussian(mvl, n, 3).draw_matrix())
+    assert (y > 0).all()
+    assert stats.kstest(y[:, 2], stats.lognorm(m.sdlog, scale=np.exp(m.meanlog)).cdf).pvalue > 0.01
+    with pytest.raises(ValueError, match="log scale"):
+        MultivariateLognormal.from_moments([1.0, 1.0], [[1.0, -0.9], [-0.9, 1.0]])

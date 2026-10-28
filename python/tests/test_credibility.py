@@ -38,6 +38,55 @@ def test_buhlmann_straub():
         buhlmann_straub([[1.0, 2.0], [3.0, 4.0]], estimator="bayes")
 
 
+def _hachemeister_data():
+    import csv
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    ratios = [[0.0] * 12 for _ in range(5)]
+    weights = [[0.0] * 12 for _ in range(5)]
+    with open(root / "validation/reference/hachemeister.csv") as f:
+        for row in csv.DictReader(f):
+            i, j = int(row["state"]) - 1, int(row["quarter"]) - 1
+            ratios[i][j] = float(row["ratio"])
+            weights[i][j] = float(row["weight"])
+    return root, ratios, weights
+
+
+def test_hachemeister_matches_actuar():
+    # actuar::cm(~state, hachemeister, regformula = ~time, ...) at time 13
+    # (validation/reference/credibility_regression_actuar.csv).
+    import csv
+
+    from prospicio.credibility import hachemeister
+
+    root, ratios, weights = _hachemeister_data()
+    design = [[1.0, float(t)] for t in range(1, 13)]
+    want = {}
+    with open(root / "validation/reference/credibility_regression_actuar.csv") as f:
+        for row in csv.DictReader(f):
+            if row["quantity"] == "premium":
+                want.setdefault(row["params"], []).append(float(row["expected"]))
+    for params, kwargs, rel in [
+        ("adj=yes;estimator=unbiased", {"adjust_intercept": True}, 1e-10),
+        ("adj=yes;estimator=iterative", {"adjust_intercept": True, "estimator": "iterative"}, 1e-10),
+        ("adj=no", {}, 1e-6),
+    ]:
+        fit = hachemeister(ratios, design, weights, **kwargs)
+        assert fit.predict([1.0, 13.0]) == pytest.approx(want[params], rel=rel)
+    fit = hachemeister(ratios, design, weights, adjust_intercept=True)
+    assert len(fit.credibility) == 5 and fit.credibility[0][0][1] == 0.0
+    assert fit.transition is not None and fit.transition[1][0] == 0.0
+    # An intercept alone is Bühlmann–Straub.
+    one = hachemeister(ratios, [[1.0]] * 12, weights, adjust_intercept=True)
+    bs = buhlmann_straub(ratios, weights)
+    assert [c[0] for c in one.coefficients] == pytest.approx(bs.premiums, rel=1e-10)
+    with pytest.raises(ValueError):
+        hachemeister(ratios, design, weights, estimator="bayes")
+    with pytest.raises(ValueError):
+        fit.predict([1.0])
+
+
 def test_credibility_premiums_match_actuar_hierarchy():
     # actuar::cm(~cohort + cohort:state, hachemeister) with the
     # Buhlmann-Gisler estimator: its structure parameters plugged in.

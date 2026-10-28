@@ -28,7 +28,8 @@ equal to \code{t} count in neither).}
 
 \item{tvar_levels}{TVaR levels in percent.}
 
-\item{tvar}{\code{"exact"} (the default) or \code{"linear"}, as for \code{\link[=statistics]{statistics()}}.}
+\item{tvar}{\code{"exact"} (the default), \code{"linear"} or \code{"whole_years"}, as for
+\code{\link[=statistics]{statistics()}}.}
 }
 \value{
 For draws or a \link{sampled}, a named numeric vector. For a

@@ -11,6 +11,7 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 
 mod aggregate;
+mod bonus_malus;
 mod book;
 mod cashflow;
 mod casualty;
@@ -20,6 +21,7 @@ mod discrete;
 mod distributions;
 mod excess;
 mod models;
+mod multivariate;
 #[cfg(feature = "nn")]
 mod nn;
 mod normal;
@@ -59,6 +61,7 @@ pub(crate) fn whole(x: f64, name: &str) -> Result<u64> {
 extendr_module! {
     mod prospicio;
     use aggregate;
+    use bonus_malus;
     use book;
     use cashflow;
     use casualty;
@@ -68,6 +71,7 @@ extendr_module! {
     use distributions;
     use excess;
     use models;
+    use multivariate;
     use nn;
     use normal;
     use odp_glm;
