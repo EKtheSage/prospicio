@@ -1,5 +1,6 @@
 """Reserving: the loss triangle, the chain ladder with tail factors, Mack's
-model with its one-year view, the expected-loss methods, Clark's growth
+model with its one-year view and Mack's tests of its assumptions, the
+expected-loss methods, Clark's growth
 curves and a growth curve fitted to a benchmark pattern, the ODP model as a
 GLM with its analytic prediction error, and the ODP bootstrap with its
 simulated one-year view of the chain
@@ -28,6 +29,7 @@ from .prospicio_native import (
     BenchmarkCurveFit,
     Benktander,
     BornhuetterFerguson,
+    CalendarYearTest,
     CapeCod,
     CapeCodFit,
     ChainLadder,
@@ -43,6 +45,7 @@ from .prospicio_native import (
     CompartmentalOneYearFit,
     CompartmentalOneYearFits,
     CompartmentalPriors,
+    DevelopmentCorrelationTest,
     ExcessLayer,
     ExcessPattern,
     ExpectedLoss,
@@ -70,6 +73,8 @@ from .prospicio_native import (
     TailLogLinear,
     Triangle,
     UnderwritingBasis,
+    calendar_year_effect,
+    development_correlation,
     diagonal_backtest,
     layer_at_shift,
     layer_exposure,
@@ -84,6 +89,10 @@ __all__ = [
     "Mack",
     "MackFit",
     "ClaimsDevelopmentResult",
+    "calendar_year_effect",
+    "development_correlation",
+    "CalendarYearTest",
+    "DevelopmentCorrelationTest",
     "ExpectedLoss",
     "BornhuetterFerguson",
     "Benktander",

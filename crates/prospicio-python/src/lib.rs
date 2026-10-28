@@ -163,15 +163,16 @@ mod prospicio_native {
     use super::reserving::{
         PyBacktest, PyBayesBf, PyBayesBfFit, PyBayesBfNormalised, PyBayesBfNormalisedFit,
         PyBayesOdp, PyBayesOdpFit, PyBayesOdpFits, PyBayesOneYearFit, PyBayesOneYearFits,
-        PyBenchmarkCurve, PyBenchmarkCurveFit, PyBenktander, PyBornhuetterFerguson, PyCapeCod,
-        PyCapeCodFit, PyChainLadder, PyChainLadderFit, PyClaimsDevelopmentResult, PyClarkCapeCod,
-        PyClarkFit, PyClarkLdf, PyCompartmental, PyCompartmentalCandidate, PyCompartmentalFit,
-        PyCompartmentalFits, PyCompartmentalOneYearFit, PyCompartmentalOneYearFits,
-        PyCompartmentalPriors, PyExpectedLoss, PyExpectedLossFit, PyGlmCandidate, PyLatestDiagonal,
-        PyLayerSharePrior, PyMack, PyMackBootstrap, PyMackBootstrapFit, PyMackFit, PyMeyers,
-        PyMeyersFit, PyMeyersFits, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy,
-        PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle, PyUnderwritingBasis,
-        diagonal_backtest,
+        PyBenchmarkCurve, PyBenchmarkCurveFit, PyBenktander, PyBornhuetterFerguson,
+        PyCalendarYearTest, PyCapeCod, PyCapeCodFit, PyChainLadder, PyChainLadderFit,
+        PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit, PyClarkLdf, PyCompartmental,
+        PyCompartmentalCandidate, PyCompartmentalFit, PyCompartmentalFits,
+        PyCompartmentalOneYearFit, PyCompartmentalOneYearFits, PyCompartmentalPriors,
+        PyDevelopmentCorrelationTest, PyExpectedLoss, PyExpectedLossFit, PyGlmCandidate,
+        PyLatestDiagonal, PyLayerSharePrior, PyMack, PyMackBootstrap, PyMackBootstrapFit,
+        PyMackFit, PyMeyers, PyMeyersFit, PyMeyersFits, PyOdpBootstrap, PyOdpBootstrapFit,
+        PyOneYearFit, PyTailBondy, PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle,
+        PyUnderwritingBasis, calendar_year_effect, development_correlation, diagonal_backtest,
     };
     #[pymodule_export]
     use super::risk::{
