@@ -3,8 +3,10 @@
 Status: **Implemented** (PR 1: event loss tables with secondary
 uncertainty, the OEP curve, simulated years, year loss tables; PR 2:
 merging event sets, the hours clause; clash stays parked; PR 3: a year
-loss table checked and expanded, read from CSV or Parquet by the bindings)
-· Depends on: `EventSet`, towers · Lane: Aggregate · Issues: #196, #484
+loss table checked and expanded, read from CSV or Parquet by the bindings;
+PR 4: a year loss table's times of loss, and labels kept through the hours
+clause)
+· Depends on: `EventSet`, towers · Lane: Aggregate · Issues: #196, #484, #594
 
 ## Goal
 
@@ -48,6 +50,17 @@ run's simulations (`events(n_sims, Expansion::Tile | Resample { seed })`).
 `prospicio.aggregate.read_ylt(path, ...)` and R `read_ylt()` read CSV or
 Parquet (pyarrow or arrow, optional) into it; `EventSet.from_ylt` and
 `event_set_from_ylt()` take columns.
+
+PR 4 (#594): `YearLossTable::with_times` takes each row's time of loss, a
+fraction of its year, so a table read from a file carries times
+(`EventSet::has_times`) and the hours clause and reinstatements pro rata
+as to time run on it; the bindings read a `time` column, or `day` and
+`hour` columns. `EventSet::grouped_with(window_hours, GroupLabels)` keeps
+the labels through the hours clause and `EventSet::grouped_by(dim,
+window_hours, GroupLabels)` applies it within each value of a label
+dimension, a peril say. Python `EventSet.grouped(window_hours, labels=,
+by=)` and `read_ylt(..., time=, day=, hour=)`; R `hours_clause(x,
+window_hours, labels, by)` and `read_ylt(..., time, day, hour)`.
 
 Bindings: Python `prospicio.aggregate.EventLossTable`,
 `EventSet.from_long`, `EventSet.merge` and `EventSet.grouped`; R
@@ -112,6 +125,34 @@ Bindings: Python `prospicio.aggregate.EventLossTable`,
     blake3 of the file), and the events pass it to provenance's
     `input_hash`; merging two sets with hashes hashes the pair in order.
     The samplers stay unrecorded, as for any years from elsewhere.
+13. **A YLT's times order its rows** (#594). With times, rows are ordered
+    by year, then time, then slot, the file's order breaking the last
+    ties, since an `EventSet`'s losses are chronological within a year.
+    A time is a fraction of the year in `[0, 1]`, the range
+    `EventSet::with_times` takes (the issue asked for `[0, 1)`; 1 is kept
+    so a time built from a set's own times always reads back). From day
+    and hour columns the time is `((day - 1) * 24 + hour) / 8760`, day 1
+    to 365 and hour 0 to 24, on the hours clause's 8,760-hour year; a
+    366th day is refused rather than folded into a leap year the clause
+    does not have.
+14. **The hours clause keeps labels only when asked** (#594). `grouped`
+    still drops the labels (`GroupLabels::Drop`), so every existing call,
+    the cat guides' among them, gives the same result; a set that kept
+    them would split `Tower::apply`'s result by label where it did not
+    before. `GroupLabels::Agree` keeps the labels of an occurrence whose
+    losses agree and refuses one whose losses disagree, naming the year,
+    the time and the two labels; `GroupLabels::Largest` takes the largest
+    loss's labels (the earliest of equal ones), the issue's other rule.
+    `grouped_by(dim, ...)` keeps windows of different values of `dim`
+    apart (a windstorm and a flood a day apart stay two occurrences),
+    lists the occurrences by the time each window opens, and keeps the
+    labels (`Drop` read as `Agree` in the bindings); it is one pass over
+    the year, equal to grouping each value's set and merging them by
+    time. An aggregate part keeps its labelled columns when the labels
+    are kept and is summed into one column when they are dropped, as
+    before. Whether `grouped` should keep labels by default is left for
+    the user: switching it would change the result of every call on a
+    labelled set.
 
 ## Validation
 
@@ -133,6 +174,15 @@ Bindings: Python `prospicio.aggregate.EventLossTable`,
   carries the source hash into a result's provenance and through a merge
   (unit tests in `ylt.rs`; Python and R tests read a synthetic CSV, and
   Parquet when pyarrow is installed).
+- A YLT with a time column read and grouped equals the hand-built set
+  (times out of order and slots that would order them otherwise); equal
+  times fall back on the slots; times outside `[0, 1]` are refused. An
+  hours clause on a set with one label value keeps it under either rule
+  and drops it by default; mixed labels are refused under `Agree` and
+  take the largest loss's under `Largest`; grouping by peril keeps two
+  perils' windows apart and equals the plain clause on one peril (unit
+  tests in `ylt.rs` and `monte_carlo.rs`; the same file read and grouped
+  in Python and R, and day and hour columns).
 
 ## Next
 

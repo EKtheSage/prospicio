@@ -936,6 +936,12 @@ impl PyEventSet {
     ///     Finite and non-negative.
     /// slots : list of int, optional
     ///     Each row's event slot, which orders a year's rows.
+    /// times : list of float, optional
+    ///     Each row's time of loss, the fraction of its year elapsed, in
+    ///     ``[0, 1]``. Rows are then ordered by time within a year, the
+    ///     slot (or the given order) breaking ties, and the events carry
+    ///     the times (``has_times``), for an hours clause (``grouped``) and
+    ///     reinstatements pro rata as to time.
     /// labels : dict of str to list of str, optional
     ///     Each row's labels, a list per dimension (``{"peril": [...],
     ///     "class": [...]}``).
@@ -972,14 +978,16 @@ impl PyEventSet {
     /// ([7.0, 5.0], [7.0, 5.0])
     #[staticmethod]
     #[pyo3(signature = (
-        years, losses, *, slots = None, labels = None, n_years = None, n_sims = None,
-        expand = "tile", seed = 0, unique_by = None, expected = None, source_hash = None
+        years, losses, *, slots = None, times = None, labels = None, n_years = None,
+        n_sims = None, expand = "tile", seed = 0, unique_by = None, expected = None,
+        source_hash = None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn from_ylt(
         years: Vec<usize>,
         losses: Vec<f64>,
         slots: Option<Vec<u64>>,
+        times: Option<Vec<f64>>,
         labels: Option<&Bound<'_, PyDict>>,
         n_years: Option<usize>,
         n_sims: Option<usize>,
@@ -1003,6 +1011,9 @@ impl PyEventSet {
         let has_slots = slots.is_some();
         if let Some(slots) = slots {
             ylt = ylt.with_slots(slots).map_err(to_py)?;
+        }
+        if let Some(times) = times {
+            ylt = ylt.with_times(times).map_err(to_py)?;
         }
         let labels = labels
             .map(labels_from_dict)
@@ -1265,19 +1276,67 @@ impl PyEventSet {
         })
     }
 
+    /// The losses whose label ``label`` takes one of ``values``, every
+    /// year kept (a year with none of them is empty), with their sums
+    /// insured, times and labels, and the aggregate part's columns with
+    /// one of the values: what a layer scoped to those values
+    /// (``Layer.with_scope``) sees.
+    ///
+    /// Parameters
+    /// ----------
+    /// label : str
+    /// values : list of str
+    ///
+    /// Returns
+    /// -------
+    /// EventSet
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     Without labels, without the dimension, or with no values.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> e = EventSet.from_years([[20.0, 15.0], [8.0]]).with_labels(
+    /// ...     {"peril": ["quake", "wind", "quake"]})
+    /// >>> w = e.filter("peril", ["wind"])
+    /// >>> w.n_sims, w.events(0), w.events(1)
+    /// (2, [15.0], [])
+    fn filter(&self, label: &str, values: Vec<String>) -> PyResult<Self> {
+        let values: Vec<&str> = values.iter().map(String::as_str).collect();
+        Ok(Self {
+            inner: self.inner.filter(label, &values).map_err(to_py)?,
+        })
+    }
+
     /// Each year's losses grouped into occurrences by an hours clause.
     ///
     /// Losses within ``window_hours`` of the first loss of a window are one
     /// occurrence, whose loss is their sum and whose time is the window's
     /// start; the next loss after the window opens the next one. A year is
     /// 8,760 hours. Windows open at each first loss in turn, not where they
-    /// would recover most. Needs times; sums insured and labels are not
-    /// carried (group each peril's set before merging them).
+    /// would recover most. Needs times; sums insured are not carried.
     ///
     /// Parameters
     /// ----------
     /// window_hours : float
     ///     Such as 72 for a windstorm, 168 for a flood.
+    /// labels : {"drop", "agree", "largest"}, default "drop"
+    ///     What the occurrences carry of the losses' labels: none
+    ///     (``"drop"``), their losses' labels, which must agree within an
+    ///     occurrence (``"agree"``, an error otherwise), or the labels of
+    ///     the largest loss in the occurrence, the earliest of equal ones
+    ///     (``"largest"``). An aggregate part keeps its labels unless they
+    ///     are dropped.
+    /// by : str, optional
+    ///     A label dimension, ``"peril"`` say: the clause applies within
+    ///     each of its values, so losses of two perils are never one
+    ///     occurrence, and the occurrences keep the labels (``labels``
+    ///     then decides the other dimensions, ``"drop"`` read as
+    ///     ``"agree"``). Occurrences are listed by the time each window
+    ///     opens.
     ///
     /// Returns
     /// -------
@@ -1290,9 +1349,29 @@ impl PyEventSet {
     /// >>> e = EventSet.from_years([[10.0, 20.0, 5.0]], times=[[0.5, 0.5 + 30 * h, 0.5 + 80 * h]])
     /// >>> e.grouped(72.0).events(0)
     /// [30.0, 5.0]
-    fn grouped(&self, window_hours: f64) -> PyResult<Self> {
+    /// >>> p = EventSet.from_years([[10.0, 20.0, 5.0]], times=[[0.5, 0.5 + 30 * h, 0.5 + 40 * h]])
+    /// >>> g = p.with_labels({"peril": ["wind", "flood", "wind"]}).grouped(72.0, by="peril")
+    /// >>> g.events(0), g.labels(0)
+    /// ([15.0, 20.0], {'peril': ['wind', 'flood']})
+    #[pyo3(signature = (window_hours, *, labels = "drop", by = None))]
+    fn grouped(&self, window_hours: f64, labels: &str, by: Option<&str>) -> PyResult<Self> {
+        use prospicio_aggregate::GroupLabels;
+        let rule = match (labels, by) {
+            ("drop", None) => GroupLabels::Drop,
+            ("drop" | "agree", _) => GroupLabels::Agree,
+            ("largest", _) => GroupLabels::Largest,
+            (other, _) => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "labels must be \"drop\", \"agree\" or \"largest\", not {other:?}"
+                )));
+            }
+        };
+        let inner = match by {
+            Some(dim) => self.inner.grouped_by(dim, window_hours, rule),
+            None => self.inner.grouped_with(window_hours, rule),
+        };
         Ok(Self {
-            inner: self.inner.grouped(window_hours).map_err(to_py)?,
+            inner: inner.map_err(to_py)?,
         })
     }
 
@@ -2210,6 +2289,223 @@ pub(crate) fn eventual_ruin(
     let inner = prospicio_aggregate::pollaczeck_khinchine(&severity.inner, rho, points, part)
         .map_err(to_py)?;
     Ok(PyRuin { inner })
+}
+
+/// The probability of ruin within each period of a finite horizon at each
+/// initial surplus on the grid, from ``finite_horizon_ruin``.
+#[pyclass(name = "FiniteRuin", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyFiniteRuin {
+    inner: prospicio_aggregate::FiniteRuin,
+}
+
+#[pymethods]
+impl PyFiniteRuin {
+    /// The number of periods.
+    #[getter]
+    fn periods(&self) -> usize {
+        self.inner.periods()
+    }
+
+    /// The premium a period.
+    #[getter]
+    fn premium(&self) -> f64 {
+        self.inner.premium()
+    }
+
+    /// The steps a period at which the surplus is checked.
+    #[getter]
+    fn sub_periods(&self) -> usize {
+        self.inner.sub_periods()
+    }
+
+    /// The initial surplus at each grid point.
+    #[getter]
+    fn u(&self) -> PyResult<Vec<f64>> {
+        let h = self.inner.step();
+        let n = self.inner.psi(1).map_err(to_py)?.len();
+        Ok((0..n).map(|j| j as f64 * h).collect())
+    }
+
+    /// ``psi(u, t)`` at each grid point.
+    ///
+    /// Parameters
+    /// ----------
+    /// t : int
+    ///     The period, from 1.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``t`` is not a period of the horizon.
+    fn psi(&self, t: usize) -> PyResult<Vec<f64>> {
+        Ok(self.inner.psi(t).map_err(to_py)?.to_vec())
+    }
+
+    /// ``psi(u, t)`` at any initial surplus (constant between grid points).
+    ///
+    /// Parameters
+    /// ----------
+    /// u : float
+    /// t : int
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``t`` is not a period of the horizon.
+    fn psi_at(&self, u: f64, t: usize) -> PyResult<f64> {
+        self.inner.psi_at(u, t).map_err(to_py)
+    }
+
+    /// The initial surplus for ruin probability ``p`` within ``t`` periods:
+    /// the smallest grid point with ``psi(u, t) < p``, or linear between
+    /// grid points.
+    ///
+    /// Parameters
+    /// ----------
+    /// p : float
+    /// t : int
+    /// interpolate : bool, default False
+    ///
+    /// Returns
+    /// -------
+    /// float or None
+    ///     None when the grid does not reach it.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``t`` is not a period of the horizon.
+    #[pyo3(signature = (p, t, interpolate=false))]
+    fn capital(&self, p: f64, t: usize, interpolate: bool) -> PyResult<Option<f64>> {
+        if interpolate {
+            self.inner.capital_interpolated(p, t)
+        } else {
+            self.inner.capital(p, t)
+        }
+        .map_err(to_py)
+    }
+
+    /// The period loss's compound report; read ``aliasing_error``.
+    #[getter]
+    fn report(&self) -> PyCompoundReport {
+        PyCompoundReport {
+            inner: self.inner.report().clone(),
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "FiniteRuin(periods={}, premium={}, sub_periods={})",
+            self.inner.periods(),
+            self.inner.premium(),
+            self.inner.sub_periods()
+        )
+    }
+}
+
+/// The probability of ruin within each of ``periods`` periods, ``psi(u,
+/// t)``. ``aggregate`` has no finite-horizon ruin.
+///
+/// With ``frequency``, in discrete time: each period's loss is the compound
+/// of ``frequency`` and ``severity``, ``premium`` comes in each period and
+/// the surplus is checked at each period's end, exactly on the grid by De
+/// Vylder and Goovaerts' recursion. With ``rate``, a continuous-time
+/// approximation for Poisson claims at that rate a period: the same
+/// recursion on ``sub_periods`` steps a period, which misses only a ruin
+/// that recovers within a step. The premium of each step must be a whole
+/// number of grid steps.
+///
+/// Parameters
+/// ----------
+/// severity : Grid
+/// premium : float
+///     The premium a period.
+/// periods : int
+///     The horizon.
+/// frequency : count, optional
+///     Any claim count a period (discrete time). Or give ``rate``.
+/// rate : float, optional
+///     The Poisson rate a period (continuous time, approximately).
+/// sub_periods : int, default 1
+///     Steps a period with ``rate``.
+/// points : int, optional
+///     Initial surpluses on the grid; the severity's by default.
+///
+/// Returns
+/// -------
+/// FiniteRuin
+///
+/// Raises
+/// ------
+/// ValueError
+///     For both or neither of ``frequency`` and ``rate``, ``sub_periods``
+///     with ``frequency``, a premium that is not a whole number of steps,
+///     or no periods or points.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import finite_horizon_ruin
+/// >>> from prospicio.distributions import Binomial, Grid
+/// >>> # A claim of 2 with probability 0.4 a period, premium 1.
+/// >>> sev = Grid(1.0, [0.0, 0.0, 1.0])
+/// >>> ruin = finite_horizon_ruin(sev, 1.0, 3, frequency=Binomial(1, 0.4))
+/// >>> round(ruin.psi_at(0.0, 1), 12), round(ruin.psi_at(0.0, 3), 12)
+/// (0.4, 0.496)
+#[pyfunction]
+#[pyo3(signature = (severity, premium, periods, frequency=None, *, rate=None, sub_periods=1,
+                    points=None))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn finite_horizon_ruin(
+    py: Python<'_>,
+    severity: PyRef<'_, PyGrid>,
+    premium: f64,
+    periods: usize,
+    frequency: Option<&Bound<'_, PyAny>>,
+    rate: Option<f64>,
+    sub_periods: usize,
+    points: Option<usize>,
+) -> PyResult<PyFiniteRuin> {
+    use pyo3::exceptions::PyValueError;
+    let points = points.unwrap_or(severity.inner.len());
+    let sev = severity.inner.clone();
+    let inner = match (frequency, rate) {
+        (Some(f), None) => {
+            if sub_periods != 1 {
+                return Err(PyValueError::new_err(
+                    "sub_periods needs a Poisson rate: give rate, not frequency",
+                ));
+            }
+            let n = AnyCount::extract(f)?;
+            py.detach(|| {
+                prospicio_aggregate::finite_horizon(&sev, n.as_counting(), premium, periods, points)
+            })
+        }
+        (None, Some(r)) => py.detach(|| {
+            prospicio_aggregate::finite_horizon_poisson(
+                &sev,
+                r,
+                premium,
+                periods,
+                sub_periods,
+                points,
+            )
+        }),
+        _ => {
+            return Err(PyValueError::new_err(
+                "give exactly one of frequency and rate",
+            ));
+        }
+    }
+    .map_err(to_py)?;
+    Ok(PyFiniteRuin { inner })
 }
 
 /// The probability of eventual ruin at each initial surplus on the grid

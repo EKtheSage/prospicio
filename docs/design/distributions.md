@@ -320,6 +320,17 @@ conversion reports the error it introduces.
   atom at the VaR split fractionally. It is coherent and continuous in
   `p`. When `p * n` is a whole number it is the mean of the largest
   `n * (1 - p)` draws (the draw at the VaR gets no weight).
+- **Whole-years conventions (#582).** Many catastrophe pricing teams read
+  VaR as the `k`-th worst of `N` simulated years and TVaR as the mean of the
+  `k` worst, `k = max(1, floor((1 - p) N))`. These are `method`s, not new
+  defaults: `QuantileMethod::KthLargest` (`risk::var_kth_largest_sorted`)
+  and `TvarMethod::WholeYears` (`risk::tvar_whole_years_sorted`), Python
+  and R `"kth_largest"` and `"whole_years"`. The `k`-th largest is the
+  upper quantile `inf {x : F(x) > p}`, one order statistic above the
+  default unless both are the largest draw; the whole years' TVaR equals
+  the exact one when `(1 - p) N` is whole and is no smaller otherwise. `k`
+  is found as `n - rank(n, p)`, the same comparison as the default VaR, so
+  `1 - p`'s rounding cannot lose a year (`1 - 0.9` times 10 is just below 1).
 - **Simulation order is kept.** `draws()` returns draws in simulation order
   so marginals from one `PredictiveDistribution` can be paired row by row;
   a sorted copy is stored alongside for quantiles (2 × 8 bytes per draw).

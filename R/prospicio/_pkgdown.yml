@@ -81,6 +81,8 @@ reference:
       - total
       - draw_matrix
       - provenance
+      - multivariate_normal
+      - predictive_from_gaussian
   - title: Aggregate loss
     contents:
       - compound_distribution
@@ -92,11 +94,13 @@ reference:
       - event_loss_table
       - merge_event_sets
       - permute_events
+      - filter_events
       - with_aggregate_part
       - hours_clause
       - occurrence_pml
       - compound_moments
       - eventual_ruin
+      - finite_horizon_ruin
       - wiener_hopf
       - pnl_ledger
       - pnl_book
@@ -135,6 +139,7 @@ reference:
       - surplus_treaty
       - ceded
       - ceded_by_event
+      - layer_trial_statistics
       - reinstatement_premium
       - reinsurance_tower
       - inuring_tower
@@ -144,6 +149,8 @@ reference:
       - apply_tower_term
       - with_cover_basis
       - with_interlocking
+      - with_scope
+      - ceded_events
       - deal_ratios
       - with_deal_scale
       - tower_on_grid
@@ -181,6 +188,7 @@ reference:
       - cashflow_requirement
       - cashflow_adjustment
       - deal_run
+      - book_marginal_price
       - trend_large_losses
       - burning_cost
       - development_pattern
@@ -209,6 +217,10 @@ reference:
       - credibility_standard
       - buhlmann_straub
       - hierarchical_credibility
+      - hachemeister
+      - bonus_malus
+      - bonus_malus_transition
+      - bonus_malus_portfolio
   - title: Ratemaking
     contents:
       - year_fraction
@@ -356,6 +368,7 @@ reference:
       - clark_fit
       - benchmark_curve_fit
       - fit_frames
+      - ultimate_draws
 # Articles: the R twins of the guides (docs/guides/*.qmd) and of the
 # notebooks (examples/*.qmd), staged into vignettes/articles by
 # `cargo xtask r` (gitignored). The `articles:` index is not written here:

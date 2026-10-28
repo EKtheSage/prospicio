@@ -252,8 +252,17 @@ print.cashflow_terms <- function(x, ...) {
 #'   by month in place of `requirement`: a matrix with a row a simulation
 #'   and `commutation_month + buffer_months` columns. The commutation
 #'   requirement is still read from its terms.
+#' @param paid_patterns `NULL` for the terms' paid pattern in every
+#'   simulation, or paid patterns in its place (#600): a matrix with a row a
+#'   pattern and one column per month of the terms' paid pattern, each row
+#'   non-decreasing and ending at the same share as the terms'. Without
+#'   `pattern_index` there is one row a simulation, in order. Not with
+#'   `months_requirement`.
+#' @param pattern_index `NULL`, or each simulation's row of `paid_patterns`
+#'   (from 1).
 #' @export
-cashflow_run <- function(terms, u, commission = 0, months_requirement = NULL) {
+cashflow_run <- function(terms, u, commission = 0, months_requirement = NULL,
+                         paid_patterns = NULL, pattern_index = NULL) {
   if (!inherits(terms, "cashflow_terms")) stop("terms must be a cashflow_terms()")
   u <- as.double(u)
   commission <- rep_len(as.double(commission), length(u))
@@ -269,17 +278,30 @@ cashflow_run <- function(terms, u, commission = 0, months_requirement = NULL) {
     }
     req <- as.double(t(months_requirement))
   }
-  r <- rust_result(terms$ptr$run(u, commission, req))
+  paid <- double()
+  n_patterns <- 0
+  if (!is.null(paid_patterns)) {
+    if (is.null(dim(paid_patterns))) paid_patterns <- matrix(paid_patterns, nrow = 1)
+    paid <- as.double(t(paid_patterns))
+    n_patterns <- nrow(paid_patterns)
+  } else if (!is.null(pattern_index)) {
+    stop("pattern_index needs paid_patterns", call. = FALSE)
+  }
+  index <- if (is.null(pattern_index)) double() else as.double(pattern_index) - 1
+  r <- rust_result(terms$ptr$run(u, commission, req, paid, n_patterns, index))
   r$flows <- matrix(r$flows, nrow = length(u), ncol = r$months, byrow = TRUE)
   r$months <- seq_len(r$months) - 1
   r
 }
 
 #' @rdname cashflow_terms
+#' @param paid_pattern `NULL` for the terms' paid pattern, or one paid
+#'   pattern in its place, as a row of `paid_patterns`.
 #' @export
-cashflow_trace <- function(terms, u, commission = 0) {
+cashflow_trace <- function(terms, u, commission = 0, paid_pattern = NULL) {
   if (!inherits(terms, "cashflow_terms")) stop("terms must be a cashflow_terms()")
-  r <- rust_result(terms$ptr$trace(as.double(u), as.double(commission)))
+  paid <- if (is.null(paid_pattern)) double() else as.double(paid_pattern)
+  r <- rust_result(terms$ptr$trace(as.double(u), as.double(commission), paid))
   scalars <- c("commutation_paid", "fee", "conservation_error")
   accounts <- as.data.frame(r[setdiff(names(r), scalars)])
   list(accounts = cbind(month = seq_len(nrow(accounts)) - 1, accounts),

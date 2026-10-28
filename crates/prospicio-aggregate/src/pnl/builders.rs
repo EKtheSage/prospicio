@@ -1675,6 +1675,7 @@ fn flat_commission(layer: &Layer) -> f64 {
 
 /// Refuses a layer that needs each event's sum insured or time.
 fn check_events(tower: &Tower) -> Result<()> {
+    tower.refuse_scope("an annual loss")?;
     for l in &tower.layers {
         if l.needs_sums_insured() || l.needs_times() {
             return Err(Error::Data(format!(

@@ -10,6 +10,9 @@ read_ylt(
   year = "year",
   loss = "value",
   slot = "slot",
+  time = NULL,
+  day = NULL,
+  hour = NULL,
   labels = NULL,
   n_years = NULL,
   n_sims = NULL,
@@ -31,7 +34,8 @@ event_set_from_ylt(
   seed = 0,
   unique_by = NULL,
   expected = NULL,
-  source_hash = NULL
+  source_hash = NULL,
+  times = NULL
 )
 }
 \arguments{
@@ -41,6 +45,16 @@ event_set_from_ylt(
 
 \item{slot}{The column of each row's event slot, or \code{NULL} to keep the
 file's order within a year and skip the check for repeats.}
+
+\item{time}{The column of each row's time of loss, the fraction of its
+year elapsed, in \verb{[0, 1]}; \code{NULL} for none. The events then carry times
+(\code{\link[=event_times]{event_times()}}), for \code{\link[=hours_clause]{hours_clause()}} and reinstatements pro rata as
+to time.}
+
+\item{day, hour}{Instead of \code{time}: the columns of each row's day of the
+year, from 1 to 365, and hour of the day, from 0 to 24 (\code{NULL} for the
+start of the day); the time is \code{((day - 1) * 24 + hour) / 8760}, on the
+8,760-hour year of the hours clause.}
 
 \item{labels}{Columns kept as labels, \code{c("peril", "class")} say, by which
 \code{\link[=apply_tower]{apply_tower()}} splits its results.}
@@ -72,6 +86,8 @@ ends in \code{.parquet} or \code{.pq}, CSV otherwise.}
 
 \item{source_hash}{\code{NULL}, or a hash of the source kept as the events'
 \code{input_hash}.}
+
+\item{times}{\code{NULL}, or each row's time of loss, a fraction of the year.}
 }
 \value{
 An \link{event_set}.
@@ -85,8 +101,9 @@ reads a CSV or Parquet file (Parquet needs the arrow package);
 \details{
 The rows are checked: losses finite and non-negative, years from 1, no two
 rows with the same year, slot and values in the \code{unique_by} labels, labels
-among the \code{expected} values. They are ordered by year, then slot, the
-file's order breaking ties. Each row is one loss: rows sharing a slot, one
+among the \code{expected} values, times within the year. They are ordered by
+year, then time of loss when given, then slot, the file's order breaking
+ties. Each row is one loss: rows sharing a slot, one
 event hitting several classes, stay separate losses, so an occurrence
 layer sees each of them. \code{read_ylt()} hashes the file's bytes into the
 events' \code{input_hash}, which results keep in their \code{\link[=provenance]{provenance()}}.
@@ -98,4 +115,8 @@ ev <- read_ylt(path, labels = "peril", n_sims = 4)
 events(ev, 2)
 event_labels(ev, 2)
 ev@input_hash
+writeLines(c("year,day,hour,value", "1,200,6,5", "1,199,12,1"), path)
+timed <- read_ylt(path, slot = NULL, day = "day", hour = "hour")
+events(timed, 1)
+event_times(timed, 1)
 }

@@ -37,9 +37,16 @@ cashflow_terms(
   fee_basis = c("profit", "profit-over-premium", "profit-over-capital")
 )
 
-cashflow_run(terms, u, commission = 0, months_requirement = NULL)
+cashflow_run(
+  terms,
+  u,
+  commission = 0,
+  months_requirement = NULL,
+  paid_patterns = NULL,
+  pattern_index = NULL
+)
 
-cashflow_trace(terms, u, commission = 0)
+cashflow_trace(terms, u, commission = 0, paid_pattern = NULL)
 }
 \arguments{
 \item{premium}{The premium \code{P}.}
@@ -115,6 +122,19 @@ the investor.}
 by month in place of \code{requirement}: a matrix with a row a simulation
 and \code{commutation_month + buffer_months} columns. The commutation
 requirement is still read from its terms.}
+
+\item{paid_patterns}{\code{NULL} for the terms' paid pattern in every
+simulation, or paid patterns in its place (#600): a matrix with a row a
+pattern and one column per month of the terms' paid pattern, each row
+non-decreasing and ending at the same share as the terms'. Without
+\code{pattern_index} there is one row a simulation, in order. Not with
+\code{months_requirement}.}
+
+\item{pattern_index}{\code{NULL}, or each simulation's row of \code{paid_patterns}
+(from 1).}
+
+\item{paid_pattern}{\code{NULL} for the terms' paid pattern, or one paid
+pattern in its place, as a row of \code{paid_patterns}.}
 }
 \value{
 \code{cashflow_terms()} a \code{cashflow_terms}; \code{cashflow_run()} a list

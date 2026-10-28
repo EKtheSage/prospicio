@@ -94,6 +94,7 @@ xol_layer <- S7::new_class(
       S7::class_logical, getter = function(self) self@ptr$sees_aggregate_part()
     ),
     allocation = S7::new_property(S7::class_character, getter = function(self) self@ptr$allocation()),
+    scope = S7::new_property(S7::class_any, getter = function(self) self@ptr$scope()),
     loss_corridor = S7::new_property(S7::class_double, getter = function(self) self@ptr$loss_corridor()),
     ceding_commission = S7::new_property(
       S7::class_double, getter = function(self) self@ptr$ceding_commission()
@@ -696,6 +697,36 @@ S7::method(ceded_by_event, xol_layer) <- function(layer, losses, ...) {
   layer@ptr$ceded_by_event(as.double(losses))
 }
 
+#' How often a layer is attached and used up in simulated years
+#'
+#' Counts `events`' years as the first stage of a tower sees them: the gross
+#' events, and the aggregate part for a layer without occurrence terms
+#' (a quota share or a stop loss), which counts toward the annual terms but
+#' is no occurrence. `p_attach` is the share of years with an occurrence
+#' above the attachment, `p_exhaust_occurrence` with one at or above
+#' attachment plus limit, and `p_exhaust_annual` in which the annual limit
+#' (the aggregate limit, or the limit times one plus the reinstatements) is
+#' used up. Each has its binomial standard error (`*_se`), to set beside an
+#' event loss table's per-occurrence [occurrence_layer_statistics()].
+#'
+#' @param layer An [xol_layer].
+#' @param events An [event_set].
+#' @returns A named list: `n_years`, the three probabilities and their
+#'   standard errors, `occurrences_mean` and `occurrences_se` (occurrences
+#'   a year that reach the layer), `ceded_mean` and `ceded_given_attach`
+#'   (the mean ceded loss over the attached years, `NaN` when none is).
+#' @export
+#' @examples
+#' layer <- xol_layer("10x10", 10, 10, reinstatements = 1)
+#' years <- events_from_years(list(5, 12, 25, c(25, 30)))
+#' s <- layer_trial_statistics(layer, years)
+#' c(s$p_attach, s$p_exhaust_occurrence, s$p_exhaust_annual)
+layer_trial_statistics <- function(layer, events) {
+  if (!S7::S7_inherits(layer, xol_layer)) stop("layer must be an xol_layer()", call. = FALSE)
+  if (!S7::S7_inherits(events, event_set)) stop("events must be an event_set", call. = FALSE)
+  rust_result(layer@ptr$trial_statistics(events@ptr))
+}
+
 #' Reinstatement premium for one year
 #'
 #' With layer loss `L` at 100% after annual terms,
@@ -981,6 +1012,65 @@ with_cover_basis <- function(tower, basis) {
 #' draw_matrix(select_components(apply_tower_timeline(tw, timeline(ev, 24), shares), "kind", "ceded"))
 with_interlocking <- function(tower, on = TRUE) {
   reinsurance_tower(ptr = tower@ptr$with_interlocking(isTRUE(on)))
+}
+
+#' A layer scoped to some perils or classes
+#'
+#' The layer covers only the losses whose label `label` takes one of
+#' `values`: a windstorm treaty on a multi-peril event set is scoped to
+#' `with_scope(layer, "peril", "windstorm")`. Its occurrence and annual
+#' terms see only those losses, so another peril's events neither use its
+#' annual limit nor count toward its deductible, and the losses it does not
+#' cover pass to the next inuring stage whole. That differs from reading
+#' one label's share of an unscoped layer, whose annual terms every peril
+#' uses up. A tower with a scoped layer needs labelled events
+#' ([apply_tower()] on an [event_set], [apply_tower_term()],
+#' [apply_tower_timeline()]) and refuses the grids and annual losses.
+#' [filter_events()] gives the losses such a layer sees.
+#'
+#' @param layer An [xol_layer].
+#' @param label A label dimension of the events.
+#' @param values At least one value; at least one must occur.
+#' @returns The [xol_layer]; its `scope` property is `list(label, values)`,
+#'   `NULL` for every loss.
+#' @seealso [filter_events()]
+#' @export
+#' @examples
+#' ev <- with_labels(events_from_years(list(c(20, 15))), list(peril = c("quake", "wind")))
+#' xl <- xol_layer("10x5", 10, 5, aggregate_limit = 15)
+#' key <- list("ceded", "10x5", "wind")
+#' mean(marginal(apply_tower(reinsurance_tower(list(with_scope(xl, "peril", "wind"))), ev), key))
+#' mean(marginal(apply_tower(reinsurance_tower(list(xl)), ev), key))
+with_scope <- function(layer, label, values) {
+  xol_layer(ptr = rust_result(layer@ptr$with_scope(as.character(label), as.character(values))))
+}
+
+#' A tower's ceded losses by event
+#'
+#' Each event's ceded loss to the named layers, summed over them, as an
+#' [event_set]: the input to an occurrence retro on a reinsurer's own
+#' cessions. Each layer's split by event is the one [apply_tower()]'s labels
+#' use (after the layer's annual terms, at its share, behind any earlier
+#' inuring stage), so in every year the set's losses add to the layers'
+#' ceded total. The events keep their times and labels; events that cede
+#' nothing are left out, sums insured are dropped, and a named layer that
+#' sees the aggregate part passes its ceded part on as the set's aggregate
+#' part. Join several deals' sets with [merge_event_sets()], and group one
+#' event's cessions into one occurrence with [hours_clause()].
+#'
+#' @param tower A [reinsurance_tower].
+#' @param events An [event_set].
+#' @param layers Names of the tower's layers.
+#' @returns An [event_set] with as many years.
+#' @export
+#' @examples
+#' ev <- events_from_years(list(c(20, 8, 15), 4))
+#' tw <- reinsurance_tower(list(xol_layer("10x5", 10, 5, aggregate_limit = 15)))
+#' ce <- ceded_events(tw, ev, "10x5")
+#' events(ce, 1)
+#' events(ce, 2)
+ceded_events <- function(tower, events, layers) {
+  event_set(ptr = rust_result(tower@ptr$ceded_events(events@ptr, as.character(layers))))
 }
 
 #' @rdname with_cover_basis

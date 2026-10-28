@@ -114,6 +114,21 @@ impl Labels {
     }
 }
 
+/// What an hours clause does with the labels of the losses it groups
+/// ([`EventSet::grouped_with`], [`EventSet::grouped_by`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupLabels {
+    /// The occurrences carry no labels, as [`EventSet::grouped`] gives
+    /// them.
+    Drop,
+    /// An occurrence takes its losses' labels, which must agree: an
+    /// occurrence of losses with different labels is an error.
+    Agree,
+    /// An occurrence takes its largest loss's labels (the earliest of
+    /// equal largest losses).
+    Largest,
+}
+
 /// The hash of two merged sets' sources: either's alone, or one hash of
 /// both in order.
 fn merged_hash(a: &Option<String>, b: &Option<String>) -> Option<String> {
@@ -925,6 +940,176 @@ impl EventSet {
         })
     }
 
+    /// The losses whose label `dim` takes one of `values`, with every year
+    /// kept (a year with none of them is empty), each loss's sum insured,
+    /// time and labels kept with it, and the aggregate part's columns with
+    /// one of the values. The set a layer scoped to those values
+    /// ([`crate::Layer::scope`]) sees: the scoped layer on the whole set
+    /// cedes what the same layer unscoped cedes on this one.
+    ///
+    /// ```
+    /// use prospicio_aggregate::EventSet;
+    ///
+    /// let events = EventSet::from_years(vec![vec![25.0, 30.0], vec![40.0]], 1)
+    ///     .unwrap()
+    ///     .with_labels(vec![(
+    ///         "peril".into(),
+    ///         vec!["ws".into(), "eq".into(), "eq".into()],
+    ///     )])
+    ///     .unwrap();
+    /// let ws = events.filter("peril", &["ws"]).unwrap();
+    /// assert_eq!(ws.n_sims(), 2);
+    /// assert_eq!(ws.events(0), &[25.0]);
+    /// assert!(ws.events(1).is_empty());
+    /// ```
+    pub fn filter(&self, dim: &str, values: &[&str]) -> Result<Self> {
+        let labels = self
+            .labels
+            .as_ref()
+            .ok_or_else(|| Error::Data("a filter needs labelled losses".into()))?;
+        let d = labels.dims.iter().position(|x| x == dim).ok_or_else(|| {
+            Error::Data(format!(
+                "no label dimension {dim:?} among {:?}",
+                labels.dims
+            ))
+        })?;
+        if values.is_empty() {
+            return Err(Error::Data("a filter needs at least one value".into()));
+        }
+        let keep_combination: Vec<bool> = labels
+            .combinations
+            .iter()
+            .map(|c| values.contains(&c[d].as_str()))
+            .collect();
+        let mut offsets = Vec::with_capacity(self.offsets.len());
+        offsets.push(0);
+        let mut losses = Vec::new();
+        let mut sums = Vec::new();
+        let mut times = Vec::new();
+        let mut per_loss = Vec::new();
+        for y in 0..self.n_sims() {
+            for k in self.offsets[y]..self.offsets[y + 1] {
+                if !keep_combination[labels.of_loss[k]] {
+                    continue;
+                }
+                losses.push(self.losses[k]);
+                if let Some(s) = &self.sums_insured {
+                    sums.push(s[k]);
+                }
+                if let Some(t) = &self.times {
+                    times.push(t[k]);
+                }
+                per_loss.push(labels.values(k).to_vec());
+            }
+            offsets.push(losses.len());
+        }
+        let kept_columns: Vec<usize> = self.aggregate.as_ref().map_or_else(Vec::new, |a| {
+            (0..a.of_column.len())
+                .filter(|&j| keep_combination[a.of_column[j]])
+                .collect()
+        });
+        let columns: Vec<Vec<String>> = self.aggregate.as_ref().map_or_else(Vec::new, |a| {
+            kept_columns
+                .iter()
+                .map(|&j| labels.combinations[a.of_column[j]].clone())
+                .collect()
+        });
+        let (new_labels, of_column) = Labels::with_columns(labels.dims.clone(), per_loss, &columns);
+        let aggregate = self.aggregate.as_ref().and_then(|a| {
+            (!kept_columns.is_empty()).then(|| AggregatePart {
+                of_column,
+                amounts: (0..self.n_sims())
+                    .flat_map(|y| {
+                        let row = a.row(y);
+                        kept_columns.iter().map(move |&j| row[j])
+                    })
+                    .collect(),
+            })
+        });
+        Ok(Self {
+            offsets,
+            losses,
+            sums_insured: self.sums_insured.as_ref().map(|_| sums),
+            times: self.times.as_ref().map(|_| times),
+            labels: Some(new_labels),
+            aggregate,
+            seed: self.seed,
+            samplers: self.samplers.clone(),
+            input_hash: self.input_hash.clone(),
+        })
+    }
+
+    /// This set with each entry's amount replaced: `by_year[i]` holds year
+    /// `i`'s aggregate part's columns (when `aggregate` is set and the set
+    /// has one), then its events. Events whose new amount is 0 are dropped
+    /// with their times and labels; sums insured are dropped, since they
+    /// belong to the original losses; the samplers are cleared.
+    pub(crate) fn with_amounts(&self, by_year: &[Vec<f64>], aggregate: bool) -> Self {
+        let m = self.aggregate.as_ref().map_or(0, |a| a.of_column.len());
+        let keep_aggregate = aggregate && m > 0;
+        let mut offsets = Vec::with_capacity(self.offsets.len());
+        offsets.push(0);
+        let mut losses = Vec::new();
+        let mut times = Vec::new();
+        let mut per_loss = Vec::new();
+        let mut amounts = Vec::new();
+        for (y, row) in by_year.iter().enumerate() {
+            if keep_aggregate {
+                amounts.extend_from_slice(&row[..m]);
+            }
+            for (j, k) in (self.offsets[y]..self.offsets[y + 1]).enumerate() {
+                let x = row[m + j];
+                if x == 0.0 {
+                    continue;
+                }
+                losses.push(x);
+                if let Some(t) = &self.times {
+                    times.push(t[k]);
+                }
+                if let Some(l) = &self.labels {
+                    per_loss.push(l.values(k).to_vec());
+                }
+            }
+            offsets.push(losses.len());
+        }
+        let (labels, aggregate) = match &self.labels {
+            Some(l) => {
+                let columns: Vec<Vec<String>> = if keep_aggregate {
+                    let a = self.aggregate.as_ref().expect("an aggregate part");
+                    a.of_column
+                        .iter()
+                        .map(|&c| l.combinations[c].clone())
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                let (labels, of_column) = Labels::with_columns(l.dims.clone(), per_loss, &columns);
+                (
+                    Some(labels),
+                    keep_aggregate.then_some(AggregatePart { of_column, amounts }),
+                )
+            }
+            None => (
+                None,
+                keep_aggregate.then(|| AggregatePart {
+                    of_column: vec![0],
+                    amounts,
+                }),
+            ),
+        };
+        Self {
+            offsets,
+            losses,
+            sums_insured: None,
+            times: self.times.as_ref().map(|_| times),
+            labels,
+            aggregate,
+            seed: self.seed,
+            samplers: None,
+            input_hash: self.input_hash.clone(),
+        }
+    }
+
     /// Both sets' losses in each year: a catastrophe event set with a
     /// non-catastrophe one, say. The sets need the same number of years.
     /// With times on both, each year's losses are merged in time order
@@ -1099,8 +1284,9 @@ impl EventSet {
     /// start; the next loss after the window opens the next one. A year is
     /// 8,760 hours (times are fractions of the year). Needs times; sums
     /// insured are not carried, since an occurrence spans risks, and nor
-    /// are labels: group each peril's set before merging them to keep
-    /// those. An aggregate part stays, summed over its labels into one
+    /// are labels ([`GroupLabels::Drop`]): [`EventSet::grouped_with`] keeps
+    /// them, and [`EventSet::grouped_by`] applies the clause within each
+    /// peril. An aggregate part stays, summed over its labels into one
     /// amount a year.
     ///
     /// Windows open at each first loss in turn, rather than where they
@@ -1119,6 +1305,70 @@ impl EventSet {
     /// assert_eq!(occ.events(0), &[30.0, 5.0, 7.0]);
     /// ```
     pub fn grouped(&self, window_hours: f64) -> Result<Self> {
+        self.group(window_hours, None, GroupLabels::Drop)
+    }
+
+    /// [`EventSet::grouped`] keeping the labels by `rule`: an occurrence
+    /// takes the labels of its losses when they agree, and `rule` says what
+    /// it takes when they do not. An aggregate part keeps its labels too.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{EventSet, GroupLabels};
+    ///
+    /// let h = 1.0 / 8760.0;
+    /// let peril = |v: &[&str]| vec![("peril".to_string(), v.iter().map(|s| s.to_string()).collect())];
+    /// let e = EventSet::from_years(vec![vec![10.0, 20.0, 5.0]], 0)
+    ///     .unwrap()
+    ///     .with_times(vec![0.5, 0.5 + 30.0 * h, 0.9])
+    ///     .unwrap()
+    ///     .with_labels(peril(&["wind", "flood", "wind"]))
+    ///     .unwrap();
+    /// // 10 (wind) and 20 (flood) fall in one window: they disagree.
+    /// assert!(e.grouped_with(72.0, GroupLabels::Agree).is_err());
+    /// let g = e.grouped_with(72.0, GroupLabels::Largest).unwrap();
+    /// assert_eq!(g.events(0), &[30.0, 5.0]);
+    /// assert_eq!(g.labels(0).unwrap(), [["flood".to_string()], ["wind".to_string()]]);
+    /// ```
+    pub fn grouped_with(&self, window_hours: f64, rule: GroupLabels) -> Result<Self> {
+        self.group(window_hours, None, rule)
+    }
+
+    /// The hours clause within each value of label dimension `dim`: a
+    /// window holds only losses of its own peril, say, so a windstorm and
+    /// a flood a day apart stay two occurrences. Occurrences keep the
+    /// labels, `rule` deciding the other dimensions' values when a window's
+    /// losses disagree on them, and are listed by the time each window
+    /// opens. Needs times and labels.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{EventSet, GroupLabels};
+    ///
+    /// let h = 1.0 / 8760.0;
+    /// let e = EventSet::from_years(vec![vec![10.0, 20.0, 5.0]], 0)
+    ///     .unwrap()
+    ///     .with_times(vec![0.5, 0.5 + 30.0 * h, 0.5 + 40.0 * h])
+    ///     .unwrap()
+    ///     .with_labels(vec![("peril".into(), vec!["wind".into(), "flood".into(), "wind".into()])])
+    ///     .unwrap();
+    /// let g = e.grouped_by("peril", 72.0, GroupLabels::Agree).unwrap();
+    /// // Wind's 10 and 5 are one occurrence, flood's 20 another.
+    /// assert_eq!(g.events(0), &[15.0, 20.0]);
+    /// ```
+    pub fn grouped_by(&self, dim: &str, window_hours: f64, rule: GroupLabels) -> Result<Self> {
+        let Some(labels) = &self.labels else {
+            return Err(Error::Data(format!(
+                "an hours clause by label {dim:?} needs labels"
+            )));
+        };
+        let Some(d) = labels.dims.iter().position(|x| x == dim) else {
+            return Err(Error::Data(format!("no label dimension {dim:?}")));
+        };
+        self.group(window_hours, Some(d), rule)
+    }
+
+    /// The hours clause, windows kept apart by the value of label dimension
+    /// `by` when given, labels kept by `rule`.
+    fn group(&self, window_hours: f64, by: Option<usize>, rule: GroupLabels) -> Result<Self> {
         if !(window_hours.is_finite() && window_hours >= 0.0) {
             return Err(Error::InvalidParameter {
                 name: "window_hours",
@@ -1130,37 +1380,107 @@ impl EventSet {
             return Err(Error::Data("an hours clause needs each loss's time".into()));
         };
         const HOURS: f64 = 8760.0;
+        let labels = self.labels.as_ref().filter(|_| rule != GroupLabels::Drop);
         let mut offsets = Vec::with_capacity(self.offsets.len());
         offsets.push(0);
         let mut losses = Vec::new();
         let mut times = Vec::new();
-        for w in self.offsets.windows(2) {
-            let mut start: Option<f64> = None;
-            let year = w[0]..w[1];
-            for (&x, &t) in self.losses[year.clone()].iter().zip(&all_times[year]) {
-                match start {
-                    Some(s) if (t - s) * HOURS <= window_hours => {
-                        *losses.last_mut().expect("a window is open") += x;
+        // Each occurrence's combination, and its largest loss's.
+        let mut of_loss: Vec<usize> = Vec::new();
+        let mut largest: Vec<f64> = Vec::new();
+        for (sim, w) in self.offsets.windows(2).enumerate() {
+            // Each open window: its key, start and occurrence.
+            let mut open: Vec<(usize, f64, usize)> = Vec::new();
+            for (k, &t) in all_times.iter().enumerate().take(w[1]).skip(w[0]) {
+                let x = self.losses[k];
+                let key = match (by, &self.labels) {
+                    (Some(d), Some(l)) => {
+                        // The first combination with the value stands for it.
+                        let v = &l.combinations[l.of_loss[k]][d];
+                        l.combinations
+                            .iter()
+                            .position(|c| &c[d] == v)
+                            .expect("listed")
                     }
-                    _ => {
-                        start = Some(t);
+                    _ => 0,
+                };
+                let found = open.iter_mut().find(|(g, _, _)| *g == key);
+                match found {
+                    Some((_, s, at)) if (t - *s) * HOURS <= window_hours => {
+                        let at = *at;
+                        losses[at] += x;
+                        if let Some(l) = labels {
+                            let c = l.of_loss[k];
+                            if rule == GroupLabels::Agree && c != of_loss[at] {
+                                return Err(Error::Data(format!(
+                                    "year {}: the occurrence at time {} holds losses labelled \
+                                     {:?} and {:?}; group by a label, or take the largest \
+                                     loss's labels",
+                                    sim + 1,
+                                    times[at],
+                                    l.combinations[of_loss[at]],
+                                    l.combinations[c]
+                                )));
+                            }
+                            // Ties keep the earlier loss's labels.
+                            if x > largest[at] {
+                                largest[at] = x;
+                                of_loss[at] = c;
+                            }
+                        }
+                    }
+                    found => {
+                        let at = losses.len();
+                        match found {
+                            Some(entry) => *entry = (key, t, at),
+                            None => open.push((key, t, at)),
+                        }
                         losses.push(x);
                         times.push(t);
+                        if let Some(l) = labels {
+                            of_loss.push(l.of_loss[k]);
+                            largest.push(x);
+                        }
                     }
                 }
             }
             offsets.push(losses.len());
         }
+        let (labels, aggregate) = match labels {
+            Some(l) => {
+                let per_loss = of_loss.iter().map(|&c| l.combinations[c].clone()).collect();
+                let columns: Vec<Vec<String>> = self
+                    .aggregate
+                    .as_ref()
+                    .map(|a| {
+                        a.of_column
+                            .iter()
+                            .map(|&c| l.combinations[c].clone())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let (labels, of_column) = Labels::with_columns(l.dims.clone(), per_loss, &columns);
+                let aggregate = self.aggregate.as_ref().map(|a| AggregatePart {
+                    of_column,
+                    amounts: a.amounts.clone(),
+                });
+                (Some(labels), aggregate)
+            }
+            None => (
+                None,
+                self.aggregate.as_ref().map(|a| AggregatePart {
+                    of_column: vec![0],
+                    amounts: (0..self.n_sims()).map(|i| a.row(i).iter().sum()).collect(),
+                }),
+            ),
+        };
         Ok(Self {
             offsets,
             losses,
             sums_insured: None,
             times: Some(times),
-            labels: None,
-            aggregate: self.aggregate.as_ref().map(|a| AggregatePart {
-                of_column: vec![0],
-                amounts: (0..self.n_sims()).map(|i| a.row(i).iter().sum()).collect(),
-            }),
+            labels,
+            aggregate,
             seed: self.seed,
             samplers: self.samplers.clone(),
             input_hash: self.input_hash.clone(),
@@ -1369,6 +1689,11 @@ mod tests {
         let grouped = events.grouped(0.0).unwrap();
         assert!(!grouped.has_labels());
         assert_eq!(grouped.aggregate_part(2), Some(&[11.0][..]));
+        // Kept by label, the part keeps its columns.
+        let kept = events.grouped_with(0.0, GroupLabels::Largest).unwrap();
+        assert_eq!(kept.aggregate_part(2), Some(&[5.0, 6.0][..]));
+        assert_eq!(kept.aggregate_part_indices(), Some(&[1, 2][..]));
+        assert_eq!(kept.events(2), &[8.0, 9.0]);
         // Labels go before the part.
         assert!(
             events
@@ -1764,6 +2089,121 @@ mod tests {
                 .is_err()
         );
         assert!(e.grouped(-1.0).is_err());
+    }
+
+    fn peril(values: &[&str]) -> Vec<(String, Vec<String>)> {
+        vec![(
+            "peril".into(),
+            values.iter().map(|v| v.to_string()).collect(),
+        )]
+    }
+
+    #[test]
+    fn an_hours_clause_keeps_labels_that_agree() {
+        let h = 1.0 / 8760.0;
+        let e = EventSet::from_years(vec![vec![1.0, 2.0, 4.0], vec![8.0]], 0)
+            .unwrap()
+            .with_times(vec![0.0, 10.0 * h, 0.5, 0.2])
+            .unwrap()
+            .with_labels(peril(&["wind"; 4]))
+            .unwrap();
+        // One label value is kept by either rule; the default drops it.
+        for rule in [GroupLabels::Agree, GroupLabels::Largest] {
+            let g = e.grouped_with(72.0, rule).unwrap();
+            assert_eq!(g.events(0), &[3.0, 4.0]);
+            assert_eq!(g.label_combinations(), [["wind"]]);
+            assert_eq!(g.labels(1).unwrap(), [["wind".to_string()]]);
+        }
+        let dropped = e.grouped_with(72.0, GroupLabels::Drop).unwrap();
+        assert_eq!(dropped, e.grouped(72.0).unwrap());
+        assert!(!dropped.has_labels());
+        // Without labels, every rule groups as the plain clause does.
+        let plain = EventSet::from_years(vec![vec![1.0, 2.0]], 0)
+            .unwrap()
+            .with_times(vec![0.0, 0.0])
+            .unwrap();
+        assert_eq!(
+            plain.grouped_with(0.0, GroupLabels::Agree).unwrap(),
+            plain.grouped(0.0).unwrap()
+        );
+        assert!(plain.grouped_by("peril", 0.0, GroupLabels::Agree).is_err());
+    }
+
+    #[test]
+    fn an_occurrence_of_mixed_labels_takes_its_largest_loss_or_errs() {
+        let h = 1.0 / 8760.0;
+        let e = EventSet::from_years(vec![vec![5.0, 9.0, 9.0, 2.0]], 0)
+            .unwrap()
+            .with_times(vec![0.1, 0.1 + h, 0.1 + 2.0 * h, 0.6])
+            .unwrap()
+            .with_labels(peril(&["wind", "flood", "quake", "quake"]))
+            .unwrap();
+        let err = e
+            .grouped_with(72.0, GroupLabels::Agree)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("year 1") && err.contains("wind") && err.contains("flood"),
+            "{err}"
+        );
+        let g = e.grouped_with(72.0, GroupLabels::Largest).unwrap();
+        assert_eq!(g.events(0), &[23.0, 2.0]);
+        // The first of the two largest (flood's 9 before quake's 9).
+        assert_eq!(
+            g.labels(0).unwrap(),
+            [["flood".to_string()], ["quake".to_string()]]
+        );
+    }
+
+    #[test]
+    fn an_hours_clause_by_peril_keeps_perils_apart() {
+        let h = 1.0 / 8760.0;
+        let class = |v: &[&str]| {
+            (
+                "class".to_string(),
+                v.iter().map(|s| s.to_string()).collect(),
+            )
+        };
+        let mut labels = peril(&["wind", "flood", "wind", "wind", "flood"]);
+        labels.push(class(&["home", "home", "auto", "home", "home"]));
+        let e = EventSet::from_years(vec![vec![1.0, 2.0, 4.0, 16.0, 8.0]], 0)
+            .unwrap()
+            .with_times(vec![
+                0.1,
+                0.1 + 10.0 * h,
+                0.1 + 20.0 * h,
+                0.1 + 80.0 * h,
+                0.1 + 100.0 * h,
+            ])
+            .unwrap()
+            .with_labels(labels)
+            .unwrap();
+        // Wind: 1 and 4 at 0 and 20 hours, 16 at 80 opens a new window;
+        // flood: 2 at 10 hours, 8 at 100 (90 hours on) opens a new one.
+        // Listed by the time each window opens.
+        let g = e.grouped_by("peril", 72.0, GroupLabels::Largest).unwrap();
+        assert_eq!(g.events(0), &[5.0, 2.0, 16.0, 8.0]);
+        let t = g.times(0).unwrap();
+        assert_eq!(t, &[0.1, 0.1 + 10.0 * h, 0.1 + 80.0 * h, 0.1 + 100.0 * h]);
+        // Wind's first occurrence mixes classes and takes auto's (the 4).
+        assert_eq!(
+            g.labels(0).unwrap()[0],
+            ["wind".to_string(), "auto".to_string()]
+        );
+        // The classes disagree within wind's first window.
+        assert!(e.grouped_by("peril", 72.0, GroupLabels::Agree).is_err());
+        assert!(e.grouped_by("region", 72.0, GroupLabels::Agree).is_err());
+        // Grouping by peril on one peril is the plain clause.
+        let wind = EventSet::from_years(vec![vec![1.0, 4.0, 16.0]], 0)
+            .unwrap()
+            .with_times(vec![0.1, 0.1 + 20.0 * h, 0.1 + 80.0 * h])
+            .unwrap()
+            .with_labels(peril(&["wind"; 3]))
+            .unwrap();
+        assert_eq!(
+            wind.grouped_by("peril", 72.0, GroupLabels::Agree).unwrap(),
+            wind.grouped_with(72.0, GroupLabels::Agree).unwrap()
+        );
     }
 
     #[test]

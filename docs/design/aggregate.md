@@ -101,6 +101,10 @@ an `EventSet` keeps whatever dependence its events carry (#491).
 - `prospicio_aggregate::ruin::{wiener_hopf, RenewalRuin}`: eventual ruin
   for renewal claims, `aggregate`'s `wiener_hopf` ("Eventual ruin for
   renewal claims" below). Python `wiener_hopf`, R `wiener_hopf()`.
+- `prospicio_aggregate::ruin::{finite_horizon, finite_horizon_poisson,
+  FiniteRuin}`: ruin within a finite horizon, for any claim count a period
+  (#562; "Finite-horizon ruin" below). Python `finite_horizon_ruin`, R
+  `finite_horizon_ruin()`.
 - `prospicio_aggregate::pnl::{Ledger, Group, Leg, Source, Layout}`: the
   P&L ledger, `aggregate`'s `PnL`: signed legs in books that sell or buy
   cover, every row's exact distribution and the scenario columns, legs
@@ -169,7 +173,9 @@ an `EventSet` keeps whatever dependence its events carry (#491).
   result and an unlabelled set's result is unchanged. `merge` keeps either
   set's labels (this set's dimensions, then the other's new ones, `""` for
   a missing value); `grouped` drops them, as it drops sums insured, since
-  an occurrence may span labels; a term's years (`apply_term`) ignore them.
+  an occurrence may span labels, and `grouped_with` and `grouped_by` keep
+  them (`cat-inputs.md` decision 14, #594); a term's years (`apply_term`)
+  ignore them.
 - **A reorder hands back its permutation** (#483, first part). A class's
   annual total reordered with others by `reorder_groups` or
   `reorder_groups_by_copula` must keep its events; the `_indexed` variants
@@ -207,7 +213,8 @@ an `EventSet` keeps whatever dependence its events carry (#491).
   - `permute`, `slice`, `term_years` and `apply_term` carry the part with
     its years; `merge` keeps either set's and adds columns with the same
     labels; `grouped` keeps it summed over its labels, since it drops the
-    events' labels; `with_labels` after the part is an error, so labels
+    events' labels (`grouped_with` and `grouped_by`, which keep them, keep
+    its columns); `with_labels` after the part is an error, so labels
     are never rebuilt without it.
 - **Quota share and stop-loss are layers.** A quota share with cession
   `c` is unlimited cover from 0 with `share = c`; a stop-loss `l` xs `r`
@@ -777,6 +784,24 @@ moments. `reins_price_df`'s capital columns
 (`Q`, `a`, `ROE`) come with an asset level; `pricing.rs`'s pentagon gives
 them for any grid.
 
+On simulated years, `Layer::trial_statistics(&events)` (#581; Python
+`Layer.trial_statistics`, R `layer_trial_statistics()`) counts the same
+exhibit: `p_attach`, the share of years with an occurrence whose recovery
+before annual terms is positive; `p_exhaust_occurrence`, with one whose
+recovery is the whole limit; `p_exhaust_annual`, years whose layer loss
+after the deductible and corridor reaches the annual limit (the
+aggregate limit, so the limit times one plus the reinstatements); the
+mean number of occurrences that reach the layer; and the mean ceded loss
+a year and over the attached years. Each probability carries its binomial
+standard error `sqrt(p (1 − p) / n)`, the count the standard error of its
+mean. The years are the first stage's, as `Tower::apply` sees them, so a
+layer that sees the aggregate part counts it toward its annual terms and
+not as an occurrence, and the ceded mean is the one-layer tower's. They
+are per year where the grid's `pr_attach` and `pr_detach` are per
+occurrence: under Poisson counts with mean `λ` a year attaches with
+probability `1 − exp(−λ pr_attach)`, which the tests check within four
+standard errors on 200,000 simulated years.
+
 ### Priority ladder
 
 `aggregate`'s `priority_epd_df` and `priority_kappa`, on
@@ -914,6 +939,45 @@ keeps its Pollaczeck–Khinchine meaning, and exponential waits give
   simulated paths of `ruin_example`.
 - Python `wiener_hopf(severity, wait, rho, *, loss_ratio, points)`
   returning `RenewalRuin`; R `wiener_hopf()`.
+
+### Finite-horizon ruin
+
+Issue #562, in `prospicio_aggregate::ruin`, with no counterpart in
+`aggregate`. `finite_horizon(&severity, &count, premium, periods, points)`
+returns a `FiniteRuin`: `ψ(u, t)` on the severity's grid for every period
+`t` up to the horizon, with the capital lookups of `Ruin` per period.
+
+- Decision 1, discrete time: the surplus `u + t c - S_1 - ... - S_t` is
+  checked at the end of each period, so ruin inside a period that is made
+  good by its end is not counted. This is the model of a book reviewed
+  yearly and the one that holds for any claim count a period (the count's
+  pgf is all the recursion needs); the continuous-time answer is the
+  limit of decision 3.
+- Decision 2, the recursion `ψ_t(u) = P(S > u + c) + Σ_{s <= u + c}
+  p(s) ψ_{t-1}(u + c - s)`, `ψ_0 = 0`, on the grid with `c` a whole
+  number of steps (`premium / h` is refused otherwise, at `1e-9`). Each
+  period is one linear convolution by FFT of the period loss with the
+  previous `ψ`, shifted by `c`; the period loss is the compound by FFT on
+  `points + periods · c` points, so every shifted index the recursion
+  reads is on its grid. Beyond the grid `ψ` reads the last point, an
+  upper bound as for `Ruin`; `points` must cover the surplus of interest
+  plus the tail.
+- Decision 3, `finite_horizon_poisson(&severity, rate, premium, periods,
+  sub_periods, points)` checks the surplus `sub_periods` times a period,
+  each step Poisson with `rate / sub_periods` and premium `premium /
+  sub_periods` (which must be whole steps). It approaches the
+  continuous-time compound Poisson `ψ(u, t)` from below as the steps
+  shrink, and `pollaczeck_khinchine` as `t` grows; `psi(t)` indexes
+  periods, not steps.
+- Checked exactly against a random walk (every path enumerated for short
+  horizons; `(q/p)^(u+1)` at 2000 periods to `1e-12`), against 200,000
+  simulated paths of a gamma severity with Poisson counts at three
+  standard errors (`validation/tests/aggregate.rs`), and below the
+  exponential's closed-form eventual ruin within 0.03 at 30 steps a
+  period. There is no reference implementation to match.
+- Python `finite_horizon_ruin(severity, premium, periods, frequency=None,
+  *, rate=None, sub_periods=1, points=None)` returning `FiniteRuin`; R
+  `finite_horizon_ruin()` with `psi` as a matrix, one column per period.
 
 ### Layer loss picks
 
@@ -1373,6 +1437,78 @@ the repo).
       Interlocking is `Tower.with_interlocking(on=True)` and the
       `interlocking` property in Python, `with_interlocking()` and the
       tower's `interlocking` property in R.
+
+### Layers scoped to labels
+
+A multi-peril event set (a YLT with a `peril` label, or a merge of a
+windstorm and an earthquake set) often sits under a programme whose
+treaties each cover one peril or class (#584). Labels already split an
+unscoped layer's results by peril, but that split is a share of a layer
+that every peril uses up: the earthquake events take part of the annual
+limit and count toward the deductible. A windstorm treaty's own annual
+terms see only windstorm losses.
+
+1. `Layer::scope(label, values)` restricts the layer to the losses whose
+   label `label` takes one of `values` (`Scope { label, values }`, a
+   public field; `None` covers every loss). Masking happens per layer in
+   the tower's per-event step: losses out of scope are zeroed for that
+   layer only, with the year's lengths kept, so sums insured, times and
+   the labels stay aligned, the layer's occurrence terms, annual terms,
+   reinstatements and commission see only its losses, and the losses it
+   does not cover pass to the next inuring stage whole. An aggregate
+   (attritional) part's columns are masked the same way for a layer that
+   sees it.
+2. The labelled paths take scopes: `Tower::apply` on labelled events,
+   `apply_term` and `apply_timeline` (through `apply_term`). A scope is an
+   error on events without labels, without the dimension, or with none of
+   the values (a misspelt peril would otherwise cede nothing silently).
+   Paths that have no events to label refuse a tower with a scoped layer,
+   naming the path: `apply` on unlabelled events, `apply_aggregate`,
+   `apply_annual`, `on_grid`, `on_annual_grid` and the P&L ledger's
+   builders.
+3. `EventSet::filter(label, values)` keeps the losses with those values,
+   every year kept (a year without them is empty), with their sums
+   insured, times and labels, and the aggregate part's columns with one of
+   the values. It is the set a scoped layer sees: a scoped layer on the
+   whole set cedes what the same layer unscoped cedes on the filtered set,
+   checked component by component, in one year and over a term with a
+   profit commission carried forward.
+4. JSON: a scoped layer has `"scope": {"label": ..., "values": [...]}`,
+   format version 7; a layer without the key covers every loss.
+5. Checks by construction: a scope over every value equals no scope bit
+   for bit; the filtered-set identity above; a two-stage tower whose
+   inuring stop loss sees the out-of-scope losses whole; and a scope is
+   not a label split (`knowledge/findings/peril-scoped-layers.md`).
+6. Bindings: Python `Layer.with_scope(label, values)` with the `scope`
+   property (`(label, values)` or None) and `EventSet.filter`; R
+   `with_scope()` with the layer's `scope` property and
+   `filter_events()`.
+
+### Ceded losses by event for a retro
+
+An occurrence retro covers a reinsurer's own cessions, summed across its
+deals, event by event (#590). A tower result gives each layer's annual
+totals and a split by label, not each event's ceded loss in time order.
+
+1. `Tower::ceded_events(&events, &[layer names])` gives an `EventSet` of
+   each event's ceded loss to the named layers, summed over them. Each
+   layer's split by event is the one the labelled results use
+   (`Layer::ceded_by_event` after the layer's annual terms under its
+   limit allocation, at its share, behind earlier inuring stages, within
+   its scope), so the set's losses add to the layers' ceded total in
+   every year.
+2. The events keep their times and labels. Events that cede nothing are
+   left out, so the set's counts are attaching events. Sums insured are
+   dropped (they describe the original losses), and so are the samplers.
+   When a named layer sees the aggregate part, its ceded part becomes the
+   set's aggregate part.
+3. Several deals' sets join with `EventSet::merge`, which keeps each
+   deal's cession of an event as its own occurrence. An occurrence retro
+   on the event across deals groups the merged set with an hours clause
+   (`EventSet::grouped`), which needs times. The difference can be large
+   (`knowledge/findings/ceded-events-retro.md`).
+4. Bindings: Python `Tower.ceded_events(events, layers)` (a name or a
+   list); R `ceded_events(tower, events, layers)`.
 
 ## Validation
 

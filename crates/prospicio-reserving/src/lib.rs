@@ -54,6 +54,7 @@ pub mod clark;
 pub mod dependence;
 pub mod development;
 pub mod diagnostics;
+pub mod draws;
 pub mod error;
 pub mod excess;
 pub mod expected_loss;
@@ -92,6 +93,7 @@ pub use clark::{ClarkCapeCod, ClarkFit, ClarkLdf, GrowthCurve};
 pub use dependence::SegmentDependence;
 pub use development::{Average, Development, DevelopmentFit, SigmaInterpolation};
 pub use diagnostics::Diagnostics;
+pub use draws::UltimateDraws;
 pub use error::{Error, Result};
 pub use excess::{Basis, ExcessPattern, Layer, SeverityByMaturity, layer_exposure, layer_share};
 pub use expected_loss::{

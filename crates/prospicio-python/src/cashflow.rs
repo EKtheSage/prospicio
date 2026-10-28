@@ -5,7 +5,7 @@
 use prospicio_pricing::cashflow::{
     Adjustment, AdjustmentBase, Base, Buffer, CashflowTerms, Cashflows, Dates, FeeBasis, Funding,
     FundingRule, FundingSource, Interest, InterestBasis, MonthlyPatterns, ObligationReference,
-    Operating, PerformanceFee, PremiumFlow, Requirement, Term, Timing, Trace,
+    Operating, PatternDraws, PerformanceFee, PremiumFlow, Requirement, Term, Timing, Trace,
 };
 use prospicio_pricing::returns::{IrrOptions, TieredFee};
 use pyo3::exceptions::PyValueError;
@@ -554,23 +554,61 @@ impl PyCashflowTerms {
     /// Each simulation's cash flows to the investor, from its ultimate
     /// loss ratio and commission rate (0 when not given).
     ///
+    /// With ``paid_patterns`` each simulation pays its ultimate loss by its
+    /// own monthly cumulative paid pattern (#600), the written and earned
+    /// patterns staying the terms': one pattern a simulation, or with
+    /// ``pattern_index`` a few patterns and each simulation's index into
+    /// them. Every pattern has the terms' length, does not decrease and
+    /// ends at the terms' paid share.
+    ///
     /// Parameters
     /// ----------
     /// u : list of float
     /// commission : list of float, optional
+    /// paid_patterns : list of list of float, optional
+    /// pattern_index : list of int, optional
     ///
     /// Returns
     /// -------
     /// Cashflows
-    #[pyo3(signature = (u, commission = None))]
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.pricing import CashflowTerms, CollateralRequirement
+    /// >>> ramp = lambda m: [min((t + 1) / m, 1.0) for t in range(48)]
+    /// >>> req = CollateralRequirement({"outstanding": 1.0})
+    /// >>> terms = CashflowTerms(100.0, 36, ramp(12), ramp(24), ramp(36), req)
+    /// >>> # The same year paid fast and paid as the terms say.
+    /// >>> cf = terms.run([0.8, 0.8], paid_patterns=[ramp(12), ramp(36)], pattern_index=[0, 1])
+    /// >>> cf.flows[0] == cf.flows[1]
+    /// False
+    /// >>> cf.flows[1] == terms.run([0.8]).flows[0]
+    /// True
+    #[pyo3(signature = (u, commission = None, *, paid_patterns = None, pattern_index = None))]
     fn run(
         &self,
         py: Python<'_>,
         u: Vec<f64>,
         commission: Option<Vec<f64>>,
+        paid_patterns: Option<Vec<Vec<f64>>>,
+        pattern_index: Option<Vec<usize>>,
     ) -> PyResult<PyCashflows> {
         let c = commission.unwrap_or_else(|| vec![0.0; u.len()]);
-        let inner = py.detach(|| self.inner.run(&u, &c)).map_err(to_py)?;
+        let draws = match (paid_patterns, pattern_index) {
+            (None, None) => None,
+            (Some(p), None) => Some(PatternDraws::new(p).map_err(to_py)?),
+            (Some(p), Some(i)) => Some(PatternDraws::indexed(p, i).map_err(to_py)?),
+            (None, Some(_)) => {
+                return Err(PyValueError::new_err("pattern_index needs paid_patterns"));
+            }
+        };
+        let terms = &self.inner;
+        let inner = py
+            .detach(|| match &draws {
+                None => terms.run(&u, &c),
+                Some(d) => terms.run_with_patterns(&u, &c, d),
+            })
+            .map_err(to_py)?;
         Ok(PyCashflows { inner })
     }
 
@@ -624,13 +662,26 @@ impl PyCashflowTerms {
     /// ----------
     /// u : float
     /// commission : float, default 0
+    /// paid_pattern : list of float, optional
+    ///     The simulation's own paid pattern, as one of ``run``'s
+    ///     ``paid_patterns``.
     ///
     /// Returns
     /// -------
     /// dict
-    #[pyo3(signature = (u, commission = 0.0))]
-    fn trace<'py>(&self, py: Python<'py>, u: f64, commission: f64) -> PyResult<Bound<'py, PyDict>> {
-        let t = self.inner.trace(u, commission).map_err(to_py)?;
+    #[pyo3(signature = (u, commission = 0.0, *, paid_pattern = None))]
+    fn trace<'py>(
+        &self,
+        py: Python<'py>,
+        u: f64,
+        commission: f64,
+        paid_pattern: Option<Vec<f64>>,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let t = match paid_pattern {
+            None => self.inner.trace(u, commission),
+            Some(p) => self.inner.trace_with_pattern(u, commission, &p),
+        }
+        .map_err(to_py)?;
         trace_dict(py, &t)
     }
 
