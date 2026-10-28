@@ -5452,11 +5452,14 @@ class ChainLadder:
         ``ldf_origin``. An accident-month pattern (``ldf_origin="M"``)
         converts under any writing and term; a pattern of longer accident
         periods needs a policy term that is a whole multiple of them or
-        writing even within each of them, and is read between its ages by
-        the rule above, so an annual accident-year pattern is approximate in
-        the first two years (31% too much developed at 12 months on a
-        simulated parallelogram); give it at every month, or an
-        accident-month pattern, where it matters. The result is longer than
+        writing even within each of them. Given at every month from 1 it is
+        exact; at other ages (annual ones, say) it is read between them as
+        ``UnderwritingBasis.reading`` says: by default the Weibull fitted
+        through the period averages and corrected to the nearest monotone
+        accident-month pattern whose averages are the given values exactly,
+        within 0.2% of a simulated parallelogram book at every age, or by
+        the rule above with ``reading="ln-linear"`` (31% too much developed
+        at 12 months on that book). The result is longer than
         ``ldf`` by the writing months plus the policy term less the accident
         period (12 months for an accident-year pattern under the default,
         23 for an accident-month one), and a constant tail from ``ldf``'s
@@ -10800,6 +10803,37 @@ class EventSet:
         IndexError
             If ``sim`` is not a simulated year.
         """
+    def filter(self, /, label: str, values: Sequence[str]) -> EventSet:
+        """
+        The losses whose label ``label`` takes one of ``values``, every
+        year kept (a year with none of them is empty), with their sums
+        insured, times and labels, and the aggregate part's columns with
+        one of the values: what a layer scoped to those values
+        (``Layer.with_scope``) sees.
+        
+        Parameters
+        ----------
+        label : str
+        values : list of str
+        
+        Returns
+        -------
+        EventSet
+        
+        Raises
+        ------
+        ValueError
+            Without labels, without the dimension, or with no values.
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_years([[20.0, 15.0], [8.0]]).with_labels(
+        ...     {"peril": ["quake", "wind", "quake"]})
+        >>> w = e.filter("peril", ["wind"])
+        >>> w.n_sims, w.events(0), w.events(1)
+        (2, [15.0], [])
+        """
     @staticmethod
     def from_long(years: Sequence[int], losses: Sequence[float], n_years: int, seed: int = 0, labels: dict |None = None) -> EventSet:
         """
@@ -11885,6 +11919,97 @@ class Exposure:
         Returns
         -------
         Exposure
+        """
+
+@final
+class FiniteRuin:
+    """
+    The probability of ruin within each period of a finite horizon at each
+    initial surplus on the grid, from ``finite_horizon_ruin``.
+    """
+    def __repr__(self, /) -> str: ...
+    def capital(self, /, p: float, t: int, interpolate: bool = False) -> float |None:
+        """
+        The initial surplus for ruin probability ``p`` within ``t`` periods:
+        the smallest grid point with ``psi(u, t) < p``, or linear between
+        grid points.
+        
+        Parameters
+        ----------
+        p : float
+        t : int
+        interpolate : bool, default False
+        
+        Returns
+        -------
+        float or None
+            None when the grid does not reach it.
+        
+        Raises
+        ------
+        ValueError
+            If ``t`` is not a period of the horizon.
+        """
+    @property
+    def periods(self, /) -> int:
+        """
+        The number of periods.
+        """
+    @property
+    def premium(self, /) -> float:
+        """
+        The premium a period.
+        """
+    def psi(self, /, t: int) -> list[float]:
+        """
+        ``psi(u, t)`` at each grid point.
+        
+        Parameters
+        ----------
+        t : int
+            The period, from 1.
+        
+        Returns
+        -------
+        list of float
+        
+        Raises
+        ------
+        ValueError
+            If ``t`` is not a period of the horizon.
+        """
+    def psi_at(self, /, u: float, t: int) -> float:
+        """
+        ``psi(u, t)`` at any initial surplus (constant between grid points).
+        
+        Parameters
+        ----------
+        u : float
+        t : int
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``t`` is not a period of the horizon.
+        """
+    @property
+    def report(self, /) -> CompoundReport:
+        """
+        The period loss's compound report; read ``aliasing_error``.
+        """
+    @property
+    def sub_periods(self, /) -> int:
+        """
+        The steps a period at which the surplus is checked.
+        """
+    @property
+    def u(self, /) -> list[float]:
+        """
+        The initial surplus at each grid point.
         """
 
 @final
@@ -15384,6 +15509,12 @@ class Layer:
         Whether the sliding scales read the loss ratio before annual terms.
         """
     @property
+    def scope(self, /) -> tuple[str, list[str]] |None:
+        """
+        The losses the layer covers, ``(label, values)``, or None for
+        every loss.
+        """
+    @property
     def sees_aggregate_part(self, /) -> bool:
         """
         Whether the layer cedes from an ``EventSet``'s aggregate part: it is
@@ -15760,6 +15891,44 @@ class Layer:
         [120.0, 140.0]
         >>> round(res.marginal(["ceding_commission", "cover"]).draws[0], 12)
         12.0
+        """
+    def with_scope(self, /, label: str, values: Sequence[str]) -> Layer:
+        """
+        The same layer covering only the losses whose label ``label``
+        takes one of ``values``: a windstorm treaty on a multi-peril event
+        set is scoped to ``("peril", ["windstorm"])``.
+        
+        The layer's occurrence and annual terms see only those losses, so
+        another peril's events neither use its annual limit nor count
+        toward its deductible; the losses it does not cover pass to the
+        next inuring stage whole. That differs from reading one label's
+        share of an unscoped layer, whose annual terms every peril uses
+        up. A tower with a scoped layer needs labelled events
+        (``Tower.apply``, ``apply_term``, ``apply_timeline``) and refuses
+        the grids and annual losses.
+        
+        Parameters
+        ----------
+        label : str
+            A label dimension of the events.
+        values : list of str
+            At least one; at least one must occur.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> e = EventSet.from_years([[20.0, 15.0]]).with_labels({"peril": ["quake", "wind"]})
+        >>> xl = Layer("10x5", 10.0, 5.0, aggregate_limit=15.0)
+        >>> wind = Tower([xl.with_scope("peril", ["wind"])]).apply(e)
+        >>> wind.marginal(("ceded", "10x5", "wind")).mean()
+        10.0
+        >>> Tower([xl]).apply(e).marginal(("ceded", "10x5", "wind")).mean()
+        5.0
         """
     def with_sliding_scale(self, /, anchors: Sequence[tuple[float, float]]) -> Layer:
         """
@@ -24935,8 +25104,10 @@ class Sampled:
         p : float
         method : str
             ``"exact"`` (the default: the empirical distribution, mass ``1/n``
-            per draw) or ``"linear"`` (the mean of the linear quantile
-            function over ``[p, 1]``).
+            per draw), ``"linear"`` (the mean of the linear quantile
+            function over ``[p, 1]``) or ``"whole_years"`` (the mean of the
+            ``k`` largest draws, ``k = max(1, floor((1 - p) n))``, equal to
+            ``"exact"`` when ``(1 - p) n`` is whole).
         
         Returns
         -------
@@ -24946,6 +25117,15 @@ class Sampled:
         ------
         ValueError
             If ``p`` is outside ``[0, 1]`` or ``method`` is unknown.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Sampled
+        >>> years = Sampled([float(x) for x in range(1, 11)])
+        >>> years.var(0.75), years.var(0.75, method="kth_largest")
+        (8.0, 9.0)
+        >>> years.tvar(0.75, method="whole_years")
+        9.5
         """
     def var(self, /, p: float, method: str = "inverted_cdf") -> float:
         """
@@ -24955,8 +25135,11 @@ class Sampled:
         ----------
         p : float
         method : str
-            ``"inverted_cdf"`` (the default, R ``type = 1``) or ``"linear"``
-            (numpy's default, R ``type = 7``).
+            ``"inverted_cdf"`` (the default, R ``type = 1``), ``"linear"``
+            (numpy's default, R ``type = 7``) or ``"kth_largest"`` (the
+            ``k``-th largest draw, ``k = max(1, floor((1 - p) n))``: with years
+            as draws, the ``k``-th worst year, one draw above
+            ``"inverted_cdf"`` unless both are the largest).
         
         Returns
         -------
@@ -28332,6 +28515,22 @@ class UnderwritingBasis:
         writing); longer writing is an error at fit time.
     policy_months : int, default 12
         Each policy's term in months; it earns evenly over the term.
+    reading : {"weibull", "loglogistic", "ln-linear"}, default "weibull"
+        How a pattern of accident periods longer than a month (an
+        accident-year pattern) is read between its ages when they are not
+        every month from 1: ``"weibull"`` or ``"loglogistic"`` fit that
+        growth curve through the period averages (an accident year at age
+        ``a`` reports the average of its twelve months) and correct it to
+        the nearest monotone accident-month pattern whose averages are the
+        given values exactly, so the given values are reproduced; increments
+        may fall only within a span where the given pattern itself develops
+        downward. ``"ln-linear"`` is the rule before this reading (linear
+        from 0 below the first age, ``ln CDF`` linear between ages), kept to
+        reproduce earlier results: on a simulated parallelogram book it puts
+        an underwriting year 31% too far developed at 12 months, where the
+        Weibull is within 0.2% at every age. An accident-month pattern, and
+        one given at every month, convert the same under every reading. A
+        curve needs two or more given values.
     
     The underwriting period's exposure in its ``t``-th accident month is the
     writing convolved with a policy's earning by month (``exposure``), and
@@ -28349,7 +28548,7 @@ class UnderwritingBasis:
     >>> len(e), round(e[0] * 288, 12), round(e[12] * 288, 12)
     (24, 1.0, 23.0)
     """
-    def __new__(cls, /, writing: Sequence[float] |None = None, policy_months: int = 12) -> UnderwritingBasis: ...
+    def __new__(cls, /, writing: Sequence[float] |None = None, policy_months: int = 12, reading: str = "weibull") -> UnderwritingBasis: ...
     def __repr__(self, /) -> str: ...
     def exposure(self, /) -> list[float]:
         """
@@ -28360,6 +28559,12 @@ class UnderwritingBasis:
     def policy_months(self, /) -> int:
         """
         The policy term in months.
+        """
+    @property
+    def reading(self, /) -> str:
+        """
+        How a pattern of longer accident periods is read between its ages:
+        ``"weibull"``, ``"loglogistic"`` or ``"ln-linear"``.
         """
     @property
     def writing(self, /) -> list[float]:
@@ -29945,6 +30150,58 @@ def fft_bivariate(frequency: Any, severity: JointGrid, points: tuple[int, int]) 
     >>> joint, report = fft_bivariate(Poisson(2.0), JointGrid.independent(a, b), (64, 64))
     >>> round(joint.covariance(), 9)  # Var(N) E[X] E[Y]
     1.4
+    """
+
+def finite_horizon_ruin(severity: Grid, premium: float, periods: int, frequency: Any |None = None, *, rate: float |None = None, sub_periods: int = 1, points: int |None = None) -> FiniteRuin:
+    """
+    The probability of ruin within each of ``periods`` periods, ``psi(u,
+    t)``. ``aggregate`` has no finite-horizon ruin.
+    
+    With ``frequency``, in discrete time: each period's loss is the compound
+    of ``frequency`` and ``severity``, ``premium`` comes in each period and
+    the surplus is checked at each period's end, exactly on the grid by De
+    Vylder and Goovaerts' recursion. With ``rate``, a continuous-time
+    approximation for Poisson claims at that rate a period: the same
+    recursion on ``sub_periods`` steps a period, which misses only a ruin
+    that recovers within a step. The premium of each step must be a whole
+    number of grid steps.
+    
+    Parameters
+    ----------
+    severity : Grid
+    premium : float
+        The premium a period.
+    periods : int
+        The horizon.
+    frequency : count, optional
+        Any claim count a period (discrete time). Or give ``rate``.
+    rate : float, optional
+        The Poisson rate a period (continuous time, approximately).
+    sub_periods : int, default 1
+        Steps a period with ``rate``.
+    points : int, optional
+        Initial surpluses on the grid; the severity's by default.
+    
+    Returns
+    -------
+    FiniteRuin
+    
+    Raises
+    ------
+    ValueError
+        For both or neither of ``frequency`` and ``rate``, ``sub_periods``
+        with ``frequency``, a premium that is not a whole number of steps,
+        or no periods or points.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import finite_horizon_ruin
+    >>> from prospicio.distributions import Binomial, Grid
+    >>> # A claim of 2 with probability 0.4 a period, premium 1.
+    >>> sev = Grid(1.0, [0.0, 0.0, 1.0])
+    >>> ruin = finite_horizon_ruin(sev, 1.0, 3, frequency=Binomial(1, 0.4))
+    >>> round(ruin.psi_at(0.0, 1), 12), round(ruin.psi_at(0.0, 3), 12)
+    (0.4, 0.496)
     """
 
 def fit_grouped(family: str, bounds: Sequence[float], counts: Sequence[float], method: str = "ml") -> GroupedFit:
@@ -31936,7 +32193,8 @@ def risk_ratios(dist: Any, *, threshold: float = 0.0, sortino: str = "downside_d
     tvar_levels : list of float, optional
         In percent; by default 99.
     tvar : str
-        ``"exact"`` (the default) or ``"linear"``, as for ``statistics``.
+        ``"exact"`` (the default), ``"linear"`` or ``"whole_years"``, as for
+        ``statistics``.
     
     Returns
     -------
@@ -32306,12 +32564,14 @@ def statistics(dist: Any, percentiles: Sequence[float], *, tvar_levels: Sequence
     sd_multiples : list of float, optional
         By default 1, 2 and 3.
     quantile : str
-        ``"inverted_cdf"`` (the default, ``Sampled.var``'s) or ``"linear"``
-        (numpy's default, R ``type = 7``).
+        ``"inverted_cdf"`` (the default, ``Sampled.var``'s), ``"linear"``
+        (numpy's default, R ``type = 7``) or ``"kth_largest"`` (the ``k``-th
+        largest draw, ``k = max(1, floor((1 - p) n))``).
     tvar : str
-        ``"exact"`` (the default, ``Sampled.tvar``'s, mass ``1/n`` per draw)
-        or ``"linear"`` (the mean of the linear quantile function over
-        ``[p, 1]``).
+        ``"exact"`` (the default, ``Sampled.tvar``'s, mass ``1/n`` per draw),
+        ``"linear"`` (the mean of the linear quantile function over
+        ``[p, 1]``) or ``"whole_years"`` (the mean of the ``k`` largest
+        draws).
     
     Returns
     -------

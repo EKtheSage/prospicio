@@ -1,7 +1,8 @@
 """An accident-period development pattern on an underwriting basis
 (``docs/design/reserving-v02.md``, decision 21, issue #633):
 ``UnderwritingBasis`` and ``ldf_underwriting`` on the methods that take
-``ldf``. The Rust core is checked in
+``ldf``, and the reading of an annual accident-year pattern at monthly
+ages (decision 25, issue #646). The Rust core is checked in
 ``validation/tests/reserving_uy_pattern.rs``; these tests reproduce its
 hand-computed parallelogram through the binding."""
 
@@ -49,9 +50,14 @@ def test_the_default_basis_is_the_parallelogram():
     for t, x in enumerate(e):
         want = (2 * t + 1) / 288 if t <= 11 else (47 - 2 * t) / 288
         assert x == pytest.approx(want, rel=1e-14)
+    assert b.reading == "weibull"
     assert repr(UnderwritingBasis([1.0, 2.0], 6)) == (
-        "UnderwritingBasis(writing=[1.0, 2.0], policy_months=6)"
+        'UnderwritingBasis(writing=[1.0, 2.0], policy_months=6, reading="weibull")'
     )
+    assert UnderwritingBasis(reading="ln-linear").reading == "ln-linear"
+    assert UnderwritingBasis(reading="loglogistic").reading == "loglogistic"
+    with pytest.raises(ValueError, match="reading must be"):
+        UnderwritingBasis(reading="pchip")
 
 
 def test_an_accident_month_pattern_converts_to_the_parallelogram():
@@ -160,3 +166,52 @@ def test_the_writing_fits_in_the_triangles_origin_period():
 
     assert len(quarter.exposure()) == 15
     assert fit.selected_ldf[0] == pytest.approx(share(6) / share(3), rel=1e-12)
+
+
+def book_year(a):
+    """The book's accident year at age ``a``: the average of its twelve
+    months, each reporting ``1 - 0.9^t``, held from 60 months."""
+    return sum(1.0 - 0.9 ** min(a - q, 60) for q in range(12)) / 12.0
+
+
+def test_an_annual_accident_year_pattern_is_read_at_monthly_ages():
+    # The Rust validation's book (validation/tests/reserving_uy_pattern.rs):
+    # its underwriting year's own share developed at 12 months.
+    annual = {a: book_year(a) for a in range(12, 121, 12)}
+
+    def uy_truth(a):
+        e = UnderwritingBasis().exposure()
+        return sum(x * (1.0 - 0.9 ** min(a - t, 60)) for t, x in enumerate(e) if a - t > 0)
+
+    d = LatestDiagonal([2019], [12], [100.0])
+    shares = {}
+    for reading in ("weibull", "loglogistic", "ln-linear"):
+        fit = ChainLadder(
+            ldf=annual,
+            ldf_kind="percent_developed",
+            ldf_underwriting=UnderwritingBasis(reading=reading),
+        ).fit_diagonal(d)
+        shares[reading] = 100.0 / fit.ultimate[0] / uy_truth(12)
+    # The design study's ratios (decision 25): the Weibull 0.9989, the
+    # loglogistic 0.9308, decision 18's rule 1.3116.
+    assert shares["weibull"] == pytest.approx(0.998928, abs=1e-5)
+    assert shares["loglogistic"] == pytest.approx(0.930813, abs=1e-5)
+    assert shares["ln-linear"] == pytest.approx(1.311567, abs=1e-5)
+    # An accident-year pattern at every month converts the same under every
+    # reading.
+    every = {a: book_year(a) if a >= 12 else sum(
+        1.0 - 0.9 ** (a - q) for q in range(a)) / 12.0 for a in range(1, 121)}
+    ultimates = {
+        reading: ChainLadder(
+            ldf=every,
+            ldf_kind="percent_developed",
+            ldf_underwriting=UnderwritingBasis(reading=reading),
+        ).fit_diagonal(d).ultimate[0]
+        for reading in ("weibull", "ln-linear")
+    }
+    assert ultimates["weibull"] == ultimates["ln-linear"]
+    # A single value has no shape for a curve to read.
+    with pytest.raises(ValueError, match="single value"):
+        ChainLadder(
+            ldf={12: 0.5}, ldf_kind="percent_developed", ldf_underwriting=UnderwritingBasis()
+        ).fit_diagonal(d)

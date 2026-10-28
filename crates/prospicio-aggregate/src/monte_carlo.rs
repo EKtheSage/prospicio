@@ -940,6 +940,105 @@ impl EventSet {
         })
     }
 
+    /// The losses whose label `dim` takes one of `values`, with every year
+    /// kept (a year with none of them is empty), each loss's sum insured,
+    /// time and labels kept with it, and the aggregate part's columns with
+    /// one of the values. The set a layer scoped to those values
+    /// ([`crate::Layer::scope`]) sees: the scoped layer on the whole set
+    /// cedes what the same layer unscoped cedes on this one.
+    ///
+    /// ```
+    /// use prospicio_aggregate::EventSet;
+    ///
+    /// let events = EventSet::from_years(vec![vec![25.0, 30.0], vec![40.0]], 1)
+    ///     .unwrap()
+    ///     .with_labels(vec![(
+    ///         "peril".into(),
+    ///         vec!["ws".into(), "eq".into(), "eq".into()],
+    ///     )])
+    ///     .unwrap();
+    /// let ws = events.filter("peril", &["ws"]).unwrap();
+    /// assert_eq!(ws.n_sims(), 2);
+    /// assert_eq!(ws.events(0), &[25.0]);
+    /// assert!(ws.events(1).is_empty());
+    /// ```
+    pub fn filter(&self, dim: &str, values: &[&str]) -> Result<Self> {
+        let labels = self
+            .labels
+            .as_ref()
+            .ok_or_else(|| Error::Data("a filter needs labelled losses".into()))?;
+        let d = labels.dims.iter().position(|x| x == dim).ok_or_else(|| {
+            Error::Data(format!(
+                "no label dimension {dim:?} among {:?}",
+                labels.dims
+            ))
+        })?;
+        if values.is_empty() {
+            return Err(Error::Data("a filter needs at least one value".into()));
+        }
+        let keep_combination: Vec<bool> = labels
+            .combinations
+            .iter()
+            .map(|c| values.contains(&c[d].as_str()))
+            .collect();
+        let mut offsets = Vec::with_capacity(self.offsets.len());
+        offsets.push(0);
+        let mut losses = Vec::new();
+        let mut sums = Vec::new();
+        let mut times = Vec::new();
+        let mut per_loss = Vec::new();
+        for y in 0..self.n_sims() {
+            for k in self.offsets[y]..self.offsets[y + 1] {
+                if !keep_combination[labels.of_loss[k]] {
+                    continue;
+                }
+                losses.push(self.losses[k]);
+                if let Some(s) = &self.sums_insured {
+                    sums.push(s[k]);
+                }
+                if let Some(t) = &self.times {
+                    times.push(t[k]);
+                }
+                per_loss.push(labels.values(k).to_vec());
+            }
+            offsets.push(losses.len());
+        }
+        let kept_columns: Vec<usize> = self.aggregate.as_ref().map_or_else(Vec::new, |a| {
+            (0..a.of_column.len())
+                .filter(|&j| keep_combination[a.of_column[j]])
+                .collect()
+        });
+        let columns: Vec<Vec<String>> = self.aggregate.as_ref().map_or_else(Vec::new, |a| {
+            kept_columns
+                .iter()
+                .map(|&j| labels.combinations[a.of_column[j]].clone())
+                .collect()
+        });
+        let (new_labels, of_column) = Labels::with_columns(labels.dims.clone(), per_loss, &columns);
+        let aggregate = self.aggregate.as_ref().and_then(|a| {
+            (!kept_columns.is_empty()).then(|| AggregatePart {
+                of_column,
+                amounts: (0..self.n_sims())
+                    .flat_map(|y| {
+                        let row = a.row(y);
+                        kept_columns.iter().map(move |&j| row[j])
+                    })
+                    .collect(),
+            })
+        });
+        Ok(Self {
+            offsets,
+            losses,
+            sums_insured: self.sums_insured.as_ref().map(|_| sums),
+            times: self.times.as_ref().map(|_| times),
+            labels: Some(new_labels),
+            aggregate,
+            seed: self.seed,
+            samplers: self.samplers.clone(),
+            input_hash: self.input_hash.clone(),
+        })
+    }
+
     /// Both sets' losses in each year: a catastrophe event set with a
     /// non-catastrophe one, say. The sets need the same number of years.
     /// With times on both, each year's losses are merged in time order

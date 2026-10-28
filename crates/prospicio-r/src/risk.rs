@@ -269,24 +269,26 @@ fn as_predictive(pd: &Robj) -> Result<&PredictiveDistribution> {
         .map_err(|_| Error::Other("expected a predictive_distribution".into()))
 }
 
-/// A quantile method by name: "inverted_cdf" or "linear".
+/// A quantile method by name: "inverted_cdf", "linear" or "kth_largest".
 pub(crate) fn quantile_method(name: &str) -> Result<QuantileMethod> {
     match name {
         "inverted_cdf" => Ok(QuantileMethod::InvertedCdf),
         "linear" => Ok(QuantileMethod::Linear),
+        "kth_largest" => Ok(QuantileMethod::KthLargest),
         _ => Err(Error::Other(format!(
-            "quantile method must be \"inverted_cdf\" or \"linear\", not {name:?}"
+            "quantile method must be \"inverted_cdf\", \"linear\" or \"kth_largest\", not {name:?}"
         ))),
     }
 }
 
-/// A TVaR method by name: "exact" or "linear".
+/// A TVaR method by name: "exact", "linear" or "whole_years".
 pub(crate) fn tvar_method(name: &str) -> Result<TvarMethod> {
     match name {
         "exact" => Ok(TvarMethod::Exact),
         "linear" => Ok(TvarMethod::Linear),
+        "whole_years" => Ok(TvarMethod::WholeYears),
         _ => Err(Error::Other(format!(
-            "TVaR method must be \"exact\" or \"linear\", not {name:?}"
+            "TVaR method must be \"exact\", \"linear\" or \"whole_years\", not {name:?}"
         ))),
     }
 }

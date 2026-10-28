@@ -629,6 +629,34 @@ def test_eventual_ruin():
         eventual_ruin(sev, rho=0.0)
 
 
+def test_finite_horizon_ruin():
+    from prospicio.aggregate import finite_horizon_ruin
+    from prospicio.distributions import Binomial, Gamma, Grid
+
+    # A random walk: +1 with probability 0.6, -1 with 0.4. Ruin within 2000
+    # periods is the eventual (0.4 / 0.6) ** (u + 1).
+    sev = Grid(1.0, [0.0, 0.0, 1.0])
+    walk = finite_horizon_ruin(sev, 1.0, 2000, Binomial(1, 0.4), points=64)
+    for u in range(5):
+        assert walk.psi_at(float(u), 2000) == pytest.approx((2 / 3) ** (u + 1), abs=1e-12)
+    assert walk.psi_at(0.0, 3) == pytest.approx(0.496, abs=1e-12)
+    assert walk.u[:3] == [0.0, 1.0, 2.0]
+    # Poisson claims split into sub-periods grow with the horizon towards,
+    # and stay below, the exponential's eventual exp(-u / 3) / 1.5.
+    exp, _ = Grid.rounding(Gamma(1.0, 1.0), 0.05, 2**12)
+    ruin = finite_horizon_ruin(exp, 1.5, 60, rate=1.0, sub_periods=30)
+    eventual = math.exp(-1 / 3) / 1.5
+    assert ruin.psi_at(1.0, 1) < ruin.psi_at(1.0, 20) < ruin.psi_at(1.0, 60)
+    assert eventual - 0.03 < ruin.psi_at(1.0, 60) < eventual
+    assert ruin.capital(0.01, 60) is not None
+    with pytest.raises(ValueError):
+        finite_horizon_ruin(sev, 1.0, 3)
+    with pytest.raises(ValueError):
+        finite_horizon_ruin(sev, 1.0, 3, Binomial(1, 0.4), rate=1.0)
+    with pytest.raises(ValueError):
+        walk.psi(2001)
+
+
 
 def test_wiener_hopf():
     from prospicio.aggregate import wiener_hopf
@@ -1658,3 +1686,36 @@ def test_a_timeline_spreads_the_aggregate_part_by_its_pattern():
     term = Timeline(year(240.0), 24, aggregate_pattern=[1.0] * 12)
     split = term.years("losses_occurring", Exposure.uniform(2, 12))
     assert [y.aggregate_part(0)[0] for y in split] == pytest.approx([120.0, 120.0])
+
+
+def test_a_scoped_layer_covers_only_its_perils():
+    from prospicio.aggregate import EventSet
+
+    e = (
+        EventSet.from_years([[20.0, 15.0], [8.0, 30.0, 12.0]])
+        .with_labels({"peril": ["quake", "wind", "wind", "flood", "wind"]})
+    )
+    xl = Layer("10x5", 10.0, 5.0, aggregate_limit=15.0)
+    assert xl.scope is None
+    ws = xl.with_scope("peril", ["wind"])
+    assert ws.scope == ("peril", ["wind"])
+    scoped = Tower([ws]).apply(e)
+    # Wind has the whole limit: 10, then 3 and 7.
+    assert list(scoped.marginal(("ceded", "10x5", "wind")).draws) == [10.0, 10.0]
+    # Unscoped, quake 20 uses 10 of the limit first and wind gets 5.
+    split = Tower([xl]).apply(e)
+    assert split.marginal(("ceded", "10x5", "wind")).draws[0] == 5.0
+    # The scoped layer cedes what the plain one cedes on the filtered set.
+    w = e.filter("peril", ["wind"])
+    assert (w.n_sims, w.events(0), w.events(1)) == (2, [15.0], [8.0, 12.0])
+    alone = list(Tower([xl]).apply(w).marginal(("ceded", "10x5", "wind")).draws)
+    assert alone == [10.0, 10.0]
+    # A scope survives JSON; it needs labelled events.
+    tower = Tower([ws])
+    assert Tower.from_json(tower.to_json()).to_json() == tower.to_json()
+    with pytest.raises(ValueError):
+        tower.apply(EventSet.from_years([[15.0]]))
+    with pytest.raises(ValueError):
+        xl.with_scope("peril", [])
+    with pytest.raises(ValueError):
+        e.filter("class", ["a"])

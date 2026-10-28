@@ -28,6 +28,7 @@
 use prospicio_core::{Grain, Lag, Month, Period};
 
 use crate::error::{Error, Result};
+use crate::monthly_reading::{AnnualReading, every_month, read_monthly};
 use crate::triangle::Segment;
 use crate::{ChainLadder, Development, Tail};
 
@@ -634,13 +635,23 @@ impl SelectedPattern {
     /// deconvolution, when the policy term is a whole multiple of `s`
     /// months or the writing is even within each period of `s` months from
     /// the start of the underwriting period; otherwise the conversion is an
-    /// error, and an accident-month pattern is needed. `P_s` between its
-    /// given ages is read by decision 18's rule: exact for an accident-year
-    /// pattern given at every month, an approximation of the even-exposure
-    /// average between annual ages.
+    /// error, and an accident-month pattern is needed. A pattern of `s > 1`
+    /// months given at every month from 1 to its end is `P_s` itself, and
+    /// the conversion is exact. Given at other ages (annual ages, say),
+    /// `P_s` between them is read as the basis's
+    /// [`reading`](UnderwritingBasis::reading) says (decision 25): by
+    /// default the Weibull fitted through the period averages and
+    /// corrected to the nearest monotone accident-month pattern whose
+    /// averages are the given values exactly
+    /// ([`AnnualReading`], the [`monthly_reading`](crate::monthly_reading)
+    /// module), which converts a simulated parallelogram book within 0.2%
+    /// at every age; [`AnnualReading::LnLinear`] reads it by decision 18's
+    /// rule instead (linear from 0 below the first age, `ln CDF` linear
+    /// between ages), 31% too far developed at 12 months on that book.
     ///
     /// The result is a [`PatternKind::PercentDeveloped`] pattern at every
-    /// month from this pattern's first age to its end `E` plus the span of
+    /// month from this pattern's first age (from 1 when it is read at
+    /// every month by a curve) to its end `E` plus the span of
     /// `v`: `n + policy_months - 1` months for an accident-month pattern
     /// and `n` months of writing (23 for the default, the parallelogram),
     /// `n + policy_months - s` for a pattern of `s` months (12 for an
@@ -659,8 +670,11 @@ impl SelectedPattern {
     /// basis's errors ([`UnderwritingBasis::exposure`]); a pattern of
     /// accident periods longer than a month with a policy term that is not
     /// a whole multiple of them and writing that is not even within them; a
-    /// result longer than 2,400 months; and any error the pattern has on
-    /// its own ages.
+    /// result longer than 2,400 months; any error the pattern has on its
+    /// own ages; and the curve reading's errors: a single given value,
+    /// which has no shape to read, a curve fit that runs off to the edge
+    /// of its parameters, and given values that no monotone accident-month
+    /// pattern averages to.
     ///
     /// ```
     /// use prospicio_reserving::{Grain, PatternKind, SelectedPattern, UnderwritingBasis};
@@ -700,7 +714,16 @@ impl SelectedPattern {
             "a single age-to-age factor has no span to convert: give two or more, or factors \
              to ultimate",
         )?;
-        let (first, end) = (points[0], points[points.len() - 1]);
+        let s = pattern_origin.months();
+        let reading = match basis.reading {
+            AnnualReading::Curve(curve) if s > 1 && !every_month(&points) => Some(curve),
+            _ => None,
+        };
+        // A reading expands the pattern to every month from 1.
+        let (first, end) = (
+            if reading.is_some() { 1 } else { points[0].0 },
+            points[points.len() - 1],
+        );
         let last = Lag::try_from(v.len() - 1)
             .ok()
             .and_then(|extra| end.0.checked_add(extra))
@@ -708,15 +731,19 @@ impl SelectedPattern {
                 age: Some(end.0),
                 reason: "the age is too large",
             })?;
-        if last - first.0 >= MAX_GRID {
+        if last - first >= MAX_GRID {
             return err(
                 None,
                 "the underwriting pattern needs more than 2,400 monthly ages",
             );
         }
+        let points = match reading {
+            Some(curve) => read_monthly(&points, s, curve)?.expanded,
+            None => points,
+        };
         // At the last age every accident month is past the end: the level
         // itself, not a sum that rounds near it.
-        let values = (first.0..=last)
+        let values = (first..=last)
             .map(|a| {
                 if a == last {
                     return (a, end.1);
@@ -801,6 +828,9 @@ pub struct UnderwritingBasis {
     pub writing: Vec<f64>,
     /// The policy term in months, at least 1.
     pub policy_months: u32,
+    /// How a pattern of accident periods longer than a month is read
+    /// between its ages ([`with_reading`](Self::with_reading)).
+    reading: AnnualReading,
 }
 
 impl Default for UnderwritingBasis {
@@ -816,7 +846,45 @@ impl UnderwritingBasis {
         Self {
             writing,
             policy_months,
+            reading: AnnualReading::default(),
         }
+    }
+
+    /// This basis with `reading` for a pattern of accident periods longer
+    /// than a month given at ages that are not every month from 1
+    /// (`reserving-v02.md`, decision 25): the default,
+    /// [`AnnualReading::Curve`] with [`GrowthCurve::Weibull`](crate::GrowthCurve::Weibull),
+    /// or [`AnnualReading::LnLinear`], decision 18's rule, for the results
+    /// before decision 25. An accident-month pattern, and one given at
+    /// every month, convert the same under every reading.
+    ///
+    /// ```
+    /// use prospicio_reserving::{AnnualReading, Grain, PatternKind, SelectedPattern, UnderwritingBasis};
+    ///
+    /// // An accident-year pattern at annual ages: the book of
+    /// // `1 - 0.9^t` by accident month, averaged over each year.
+    /// let year = |a: u32| (0..12).map(|q| 1.0 - 0.9f64.powi((a - q).min(60) as i32)).sum::<f64>() / 12.0;
+    /// let ay = SelectedPattern::new(
+    ///     PatternKind::PercentDeveloped,
+    ///     (1..=10).map(|k| (12 * k, year(12 * k))).collect(),
+    /// );
+    /// let at = |p: &SelectedPattern, age| p.values.iter().find(|v| v.0 == age).unwrap().1;
+    /// let curve = ay.to_underwriting_basis(Grain::Year, &UnderwritingBasis::default()).unwrap();
+    /// let old = UnderwritingBasis::default().with_reading(AnnualReading::LnLinear);
+    /// let ln_linear = ay.to_underwriting_basis(Grain::Year, &old).unwrap();
+    /// // At 12 months the curve reads the book within 0.2% of its own
+    /// // underwriting year, and decision 18's rule 31% above it.
+    /// assert!((at(&curve, 12) / at(&ln_linear, 12) - 0.9989 / 1.3116).abs() < 1e-3);
+    /// ```
+    pub fn with_reading(mut self, reading: AnnualReading) -> Self {
+        self.reading = reading;
+        self
+    }
+
+    /// How a pattern of accident periods longer than a month is read
+    /// between its ages ([`with_reading`](Self::with_reading)).
+    pub fn reading(&self) -> AnnualReading {
+        self.reading
     }
 
     /// `n` months of even writing, each policy of `policy_months` months.

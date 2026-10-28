@@ -13,7 +13,10 @@ use prospicio_core::{Error, Result, StreamRng};
 
 use crate::distribution::Distribution;
 use crate::predictive::{ComponentKey, PredictiveDistribution};
-use crate::risk::{rank, tvar_linear_sorted, tvar_sorted, var_linear_sorted, var_sorted};
+use crate::risk::{
+    rank, tail_count, tvar_linear_sorted, tvar_sorted, tvar_whole_years_sorted,
+    var_kth_largest_sorted, var_linear_sorted, var_sorted,
+};
 use crate::sampled::{Empirical, Sampled};
 
 /// How a quantile of draws is read.
@@ -27,6 +30,10 @@ pub enum QuantileMethod {
     /// Linear interpolation of the order statistics (R `type = 7`, numpy's
     /// default `"linear"`): [`var_linear_sorted`].
     Linear,
+    /// The `k`-th largest draw, `k = max(1, floor((1 - p) n))`, the `k`-th
+    /// worst simulated year of catastrophe pricing: the upper quantile, one
+    /// order statistic above `InvertedCdf`: [`var_kth_largest_sorted`].
+    KthLargest,
 }
 
 /// How a tail value at risk of draws is read.
@@ -39,6 +46,10 @@ pub enum TvarMethod {
     /// The mean of the linear quantile function over `[p, 1]`:
     /// [`tvar_linear_sorted`].
     Linear,
+    /// The mean of the `k` largest draws, `k = max(1, floor((1 - p) n))`,
+    /// the `k` worst whole years: [`tvar_whole_years_sorted`]. Equal to
+    /// `Exact` when `(1 - p) n` is a whole number.
+    WholeYears,
 }
 
 impl QuantileMethod {
@@ -47,6 +58,7 @@ impl QuantileMethod {
         match self {
             QuantileMethod::InvertedCdf => var_sorted(sorted, p),
             QuantileMethod::Linear => var_linear_sorted(sorted, p),
+            QuantileMethod::KthLargest => var_kth_largest_sorted(sorted, p),
         }
     }
 }
@@ -57,6 +69,7 @@ impl TvarMethod {
         match self {
             TvarMethod::Exact => tvar_sorted(sorted, p),
             TvarMethod::Linear => tvar_linear_sorted(sorted, p),
+            TvarMethod::WholeYears => tvar_whole_years_sorted(sorted, p),
         }
     }
 }
@@ -697,6 +710,7 @@ impl<'a> Resample<'a> {
                 let (a, b) = (self.order(j), self.order(j + 1));
                 a + (h - j as f64) * (b - a)
             }
+            QuantileMethod::KthLargest => self.order(n - tail_count(n, p)),
         }
     }
 
@@ -724,6 +738,10 @@ impl<'a> Resample<'a> {
                 let partial = (v + b) / 2.0 * ((j + 1) as f64 - h);
                 let full = (2.0 * self.suffix(j + 1) - b - self.order(n - 1)) / 2.0;
                 (partial + full) / (top - h)
+            }
+            TvarMethod::WholeYears => {
+                let k = tail_count(n, p);
+                self.suffix(n - k) / k as f64
             }
         }
     }
@@ -1272,8 +1290,16 @@ mod tests {
                 written.push(x[s]);
             }
             let written = Sampled::new(written).unwrap();
-            for q in [QuantileMethod::InvertedCdf, QuantileMethod::Linear] {
-                for t in [TvarMethod::Exact, TvarMethod::Linear] {
+            for q in [
+                QuantileMethod::InvertedCdf,
+                QuantileMethod::Linear,
+                QuantileMethod::KthLargest,
+            ] {
+                for t in [
+                    TvarMethod::Exact,
+                    TvarMethod::Linear,
+                    TvarMethod::WholeYears,
+                ] {
                     let grid = full_grid().quantile_method(q).tvar_method(t);
                     let got = grid.of_resample(&Resample::new(&column, &counts));
                     let want = grid.of(&written);

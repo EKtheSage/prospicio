@@ -399,6 +399,20 @@ stopifnot(max(abs(same$psi$psi - ruin$psi$psi)) < 1e-14)
 stopifnot(abs(eventual_ruin(sev3, rho = 0.1, cap = 2)$severity_mean - 1.1 / 0.8) < 1e-12)
 stopifnot(inherits(try(eventual_ruin(sev3, rho = 0.1, cap = 2, excess = 1), silent = TRUE), "try-error"))
 stopifnot(inherits(try(eventual_ruin(sev3, rho = 0), silent = TRUE), "try-error"))
+# Finite-horizon ruin: a random walk (+1 with 0.6, -1 with 0.4) is ruined
+# within 2000 periods with the eventual (2 / 3)^(u + 1).
+walk <- finite_horizon_ruin(grid_distribution(1, c(0, 0, 1)), 1, 2000,
+  frequency = bernoulli_count(0.4), points = 64, p = 0.1)
+stopifnot(identical(dim(walk$psi), c(64L, 2000L)))
+stopifnot(max(abs(walk$psi[1:5, 2000] - (2 / 3)^(1:5))) < 1e-12, abs(walk$psi[1, 3] - 0.496) < 1e-12)
+stopifnot(walk$capital[1, 2000] == 5, all(diff(walk$psi[1, ]) >= -1e-15))
+# Poisson in sub-periods approaches exp(-u / 3) / 1.5 from below.
+gexp <- discretize(gamma_from_mean_cv(1, 1), step = 0.05, points = 2^12, method = "rounding")
+fin <- finite_horizon_ruin(gexp, 1.5, 60, rate = 1, sub_periods = 30)
+stopifnot(fin$psi[21, 1] < fin$psi[21, 20], fin$psi[21, 20] < fin$psi[21, 60])
+stopifnot(fin$psi[21, 60] < exp(-1 / 3) / 1.5, fin$psi[21, 60] > exp(-1 / 3) / 1.5 - 0.03)
+stopifnot(inherits(try(finite_horizon_ruin(gexp, 1.5, 3), silent = TRUE), "try-error"))
+stopifnot(inherits(try(finite_horizon_ruin(gexp, 1.51, 3, rate = 1), silent = TRUE), "try-error"))
 # Wiener-Hopf: the same claims after gamma waits (shape 2), against
 # aggregate 1.0.1's wiener_hopf at rho 0.1.
 wh <- wiener_hopf(sev3, gamma_distribution(2, 1), rho = 0.1, p = 0.01)
@@ -930,3 +944,26 @@ on <- with_interlocking(tw)
 stopifnot(identical(on@interlocking, TRUE), identical(with_interlocking(on, FALSE)@interlocking, FALSE))
 ceded <- draw_matrix(select_components(apply_tower_timeline(on, tl, shares), "kind", "ceded"))
 stopifnot(all(abs(ceded[1, ] - c(5, 37.5)) < 1e-12))
+
+# A layer scoped to one peril (#584): its annual limit is its own.
+ev <- with_labels(
+  events_from_years(list(c(20, 15), c(8, 30, 12))),
+  list(peril = c("quake", "wind", "wind", "flood", "wind"))
+)
+xl <- xol_layer("10x5", 10, 5, aggregate_limit = 15)
+stopifnot(is.null(xl@scope))
+ws <- with_scope(xl, "peril", "wind")
+stopifnot(identical(ws@scope, list(label = "peril", values = "wind")))
+key <- list("ceded", "10x5", "wind")
+# Wind has the whole limit (10, then 3 and 7); unscoped, quake and flood
+# use it first and wind gets 5 a year.
+stopifnot(mean(marginal(apply_tower(reinsurance_tower(list(ws)), ev), key)) == 10)
+stopifnot(mean(marginal(apply_tower(reinsurance_tower(list(xl)), ev), key)) == 5)
+w <- filter_events(ev, "peril", "wind")
+stopifnot(w@n_sims == 2, identical(events(w, 1), 15), identical(events(w, 2), c(8, 12)))
+stopifnot(mean(marginal(apply_tower(reinsurance_tower(list(xl)), w), key)) == 10)
+tw <- reinsurance_tower(list(ws))
+stopifnot(identical(tower_to_json(tower_from_json(tower_to_json(tw))), tower_to_json(tw)))
+stopifnot(grepl("\"scope\"", tower_to_json(tw)))
+stopifnot(inherits(try(apply_tower(tw, events_from_years(list(15))), silent = TRUE), "try-error"))
+stopifnot(inherits(try(filter_events(ev, "class", "a"), silent = TRUE), "try-error"))
