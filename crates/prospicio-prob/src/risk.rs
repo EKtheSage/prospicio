@@ -126,6 +126,74 @@ pub fn tvar_linear_sorted(sorted: &[f64], p: f64) -> Result<f64> {
     Ok((partial + full) / (top - h))
 }
 
+/// The number `k` of the largest draws a whole-tail convention reads at
+/// level `p` among `n`: the largest `k` with `k / n <= 1 - p`, at least 1
+/// (`max(1, floor((1 - p) n))`, compared as `(n - k) / n >= p` so that
+/// `1 - p`'s rounding cannot drop a draw).
+pub(crate) fn tail_count(n: usize, p: f64) -> usize {
+    let k = if p == 0.0 { n } else { n - rank(n, p) };
+    k.max(1)
+}
+
+/// Value at risk as the `k`-th largest draw, `k = max(1, floor((1 - p) n))`:
+/// with years as draws, the `k`-th worst of `n` simulated years, the
+/// convention of many catastrophe pricing teams.
+///
+/// It is the upper quantile `inf {x : F(x) > p}` of the empirical
+/// distribution, one order statistic above [`var_sorted`] (Hyndman and
+/// Fan's type 1, the lower quantile) unless both are the largest draw:
+/// at `p = 0.99` on 2,000 draws it is the 1,981st order statistic, the
+/// 20th largest, where [`var_sorted`] gives the 1,980th. `p = 0` gives the
+/// smallest draw and `p = 1` the largest. `sorted` must be non-empty and
+/// sorted ascending; this is checked only in debug builds.
+///
+/// ```
+/// use prospicio_prob::risk::{var_kth_largest_sorted, var_sorted};
+///
+/// let x: Vec<f64> = (1..=10).map(f64::from).collect();
+/// // k = floor(0.2 * 10) = 2: the second largest.
+/// assert_eq!(var_kth_largest_sorted(&x, 0.8), Ok(9.0));
+/// assert_eq!(var_sorted(&x, 0.8), Ok(8.0));
+/// // k = floor(0.25 * 10) = 2 again.
+/// assert_eq!(var_kth_largest_sorted(&x, 0.75), Ok(9.0));
+/// ```
+pub fn var_kth_largest_sorted(sorted: &[f64], p: f64) -> Result<f64> {
+    check_probability(p)?;
+    debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
+    let n = sorted.len();
+    Ok(sorted[n - tail_count(n, p)])
+}
+
+/// Tail value at risk as the mean of the `k` largest draws,
+/// `k = max(1, floor((1 - p) n))`: with years as draws, the mean of the
+/// `k` worst whole years, no year split at the level.
+///
+/// It equals [`tvar_sorted`], the exact TVaR, when `(1 - p) n` is a whole
+/// number; otherwise it leaves out the fraction of a year [`tvar_sorted`]
+/// counts, so it is the mean of a slightly thinner tail and at least as
+/// large. `p = 0` gives the mean and `p = 1` the largest draw. `sorted`
+/// must be non-empty and sorted ascending; this is checked only in debug
+/// builds.
+///
+/// ```
+/// use prospicio_prob::risk::{tvar_sorted, tvar_whole_years_sorted};
+///
+/// let x: Vec<f64> = (1..=10).map(f64::from).collect();
+/// // (1 - 0.8) * 10 = 2 years: 9 and 10, as the exact TVaR.
+/// assert_eq!(tvar_whole_years_sorted(&x, 0.8), Ok(9.5));
+/// assert!((tvar_sorted(&x, 0.8).unwrap() - 9.5).abs() < 1e-12);
+/// // 2.5 years: still the two worst, where the exact TVaR takes half of 8.
+/// assert_eq!(tvar_whole_years_sorted(&x, 0.75), Ok(9.5));
+/// assert!((tvar_sorted(&x, 0.75).unwrap() - 9.2).abs() < 1e-12);
+/// ```
+pub fn tvar_whole_years_sorted(sorted: &[f64], p: f64) -> Result<f64> {
+    check_probability(p)?;
+    debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
+    let n = sorted.len();
+    let k = tail_count(n, p);
+    Ok(sorted[n - k..].iter().sum::<f64>() / k as f64)
+}
+
 /// Value at risk of a discrete distribution: the smallest value `x` with
 /// `P(X <= x) >= p`, the lower quantile. `values` are ascending, `probs`
 /// their probabilities. `p = 0` gives the smallest value.
@@ -381,6 +449,64 @@ mod tests {
         // 0.7 * 10 = 7.000000000000001.
         assert_eq!(rank(10, 0.7), 7);
         assert_eq!(rank(3, 1.0 / 3.0), 1);
+    }
+
+    #[test]
+    fn tail_count_is_exact_where_one_minus_p_times_n_rounds_down() {
+        // 1 - 0.9 = 0.09999999999999998, times 10 is just below 1.
+        assert_eq!(tail_count(10, 0.9), 1);
+        assert_eq!(tail_count(20, 0.95), 1);
+        assert_eq!(tail_count(2000, 0.99), 20);
+        assert_eq!(tail_count(2000, 0.995), 10);
+        assert_eq!(tail_count(2000, 0.996), 8);
+        assert_eq!(tail_count(10, 0.75), 2);
+        assert_eq!(tail_count(10, 0.0), 10);
+        assert_eq!(tail_count(10, 1.0), 1);
+        assert_eq!(tail_count(10, 0.99), 1);
+    }
+
+    #[test]
+    fn the_kth_largest_and_whole_years_match_a_sort_by_hand() {
+        // A scrambled sample with ties.
+        let mut x: Vec<f64> = (0..2000u64)
+            .map(|i| ((i * 7919) % 1013) as f64 / 7.0)
+            .collect();
+        x.sort_by(f64::total_cmp);
+        let desc: Vec<f64> = x.iter().rev().copied().collect();
+        for (p, k) in [
+            (0.99, 20),
+            (0.995, 10),
+            (0.999, 2),
+            (0.9995, 1),
+            (0.5, 1000),
+            (0.987, 26),
+        ] {
+            assert_eq!(tail_count(x.len(), p), k, "p = {p}");
+            assert_eq!(var_kth_largest_sorted(&x, p).unwrap(), desc[k - 1]);
+            let mean = desc[..k].iter().sum::<f64>() / k as f64;
+            assert_close(tvar_whole_years_sorted(&x, p).unwrap(), mean);
+        }
+        // Where (1 - p) n is whole the TVaRs agree, and the k-th largest is
+        // one order statistic above the inverted cdf.
+        for p in [0.99, 0.995, 0.5] {
+            assert_close(
+                tvar_whole_years_sorted(&x, p).unwrap(),
+                tvar_sorted(&x, p).unwrap(),
+            );
+            let k = rank(x.len(), p);
+            assert_eq!(var_sorted(&x, p).unwrap(), x[k - 1]);
+            assert_eq!(var_kth_largest_sorted(&x, p).unwrap(), x[k]);
+        }
+        // Elsewhere the whole years leave a fraction out, so are no smaller.
+        assert!(tvar_whole_years_sorted(&x, 0.987).unwrap() >= tvar_sorted(&x, 0.987).unwrap());
+        assert_eq!(var_kth_largest_sorted(&x, 1.0).unwrap(), x[1999]);
+        assert_eq!(var_kth_largest_sorted(&x, 0.0).unwrap(), x[0]);
+        assert_close(
+            tvar_whole_years_sorted(&x, 0.0).unwrap(),
+            x.iter().sum::<f64>() / 2000.0,
+        );
+        assert!(var_kth_largest_sorted(&x, 1.5).is_err());
+        assert!(tvar_whole_years_sorted(&x, -0.1).is_err());
     }
 
     fn assert_close(got: f64, want: f64) {

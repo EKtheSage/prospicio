@@ -14,10 +14,12 @@ price_over_payout, PayoutPrice) and return metrics on simulated cash flows
 (npv, irr, IrrResult, moic, leverage, tiered_fee), and a collateralised
 deal's monthly cash flows (CashflowTerms, CollateralRequirement,
 PremiumAdjustment, Cashflows), and a book of deals on one shared simulation
-(DealRun, DealBook, BookCashflows)."""
+(DealRun, DealBook, BookCashflows), and bonus-malus scales as Markov
+chains (BonusMalus)."""
 
 from .prospicio_native import (
     AsIf,
+    BonusMalus,
     BookCashflows,
     BurningCost,
     CashflowTerms,
@@ -151,6 +153,7 @@ __all__ = [
     "DevelopmentPattern",
     "IndexClause",
     "AsIf",
+    "BonusMalus",
     "PaymentPattern",
     "PayoutPrice",
     "price_over_payout",

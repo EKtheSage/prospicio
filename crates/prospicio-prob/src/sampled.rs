@@ -51,7 +51,8 @@ pub trait Empirical: Distribution {
     /// Value at risk at level `p` under `method`: [`var_sorted`] for
     /// [`QuantileMethod::InvertedCdf`], linear interpolation of the order
     /// statistics (numpy's default, R `type = 7`) for
-    /// [`QuantileMethod::Linear`].
+    /// [`QuantileMethod::Linear`], the `k`-th largest draw for
+    /// [`QuantileMethod::KthLargest`].
     ///
     /// ```
     /// use prospicio_prob::statistics::QuantileMethod;
@@ -67,7 +68,8 @@ pub trait Empirical: Distribution {
 
     /// Tail value at risk at level `p` under `method`: [`tvar_sorted`] for
     /// [`TvarMethod::Exact`], the mean of the linear quantile function over
-    /// `[p, 1]` for [`TvarMethod::Linear`].
+    /// `[p, 1]` for [`TvarMethod::Linear`], the mean of the `k` largest
+    /// draws for [`TvarMethod::WholeYears`].
     fn tvar_with(&self, p: f64, method: TvarMethod) -> Result<f64> {
         method.tvar(self.sorted(), p)
     }

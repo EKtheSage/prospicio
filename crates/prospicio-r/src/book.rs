@@ -11,6 +11,7 @@ use prospicio_prob::statistics::StatisticsGrid;
 
 use crate::cashflow::Cashflow;
 use crate::distributions::PredictiveDistribution;
+use crate::pricing::{distortion_arg, premium_rule};
 use crate::reinsurance::ReinsuranceTower;
 use crate::risk::{quantile_method, tvar_method};
 use crate::{to_r, whole};
@@ -252,6 +253,38 @@ impl Book {
                 .iter()
                 .flat_map(|c| c.marginal.values.clone())
                 .collect::<Vec<_>>()
+        ))
+    }
+
+    /// Each named deal's marginal price: the book priced with and without
+    /// it, columns over `names`.
+    fn marginal_price(
+        &self,
+        names: Vec<String>,
+        assets: Robj,
+        rate: Option<f64>,
+        pricing: Robj,
+    ) -> Result<List> {
+        let rule = premium_rule(rate, &pricing)?;
+        let assets = distortion_arg(&assets, "assets")?;
+        let rows = names
+            .iter()
+            .map(|n| self.inner.marginal_price(n, &rule, &assets))
+            .collect::<prospicio_core::Result<Vec<_>>>()
+            .map_err(to_r)?;
+        let col = |f: &dyn Fn(&prospicio_pricing::book::MarginalPrice) -> f64| -> Vec<f64> {
+            rows.iter().map(f).collect()
+        };
+        Ok(list!(
+            deal = names.clone(),
+            expected_loss = col(&|m| m.expected_loss()),
+            assets = col(&|m| m.assets()),
+            premium = col(&|m| m.premium()),
+            margin = col(&|m| m.margin()),
+            book_premium = col(&|m| m.with.premium),
+            book_assets = col(&|m| m.with.assets),
+            premium_without = col(&|m| m.without.premium),
+            assets_without = col(&|m| m.without.assets)
         ))
     }
 

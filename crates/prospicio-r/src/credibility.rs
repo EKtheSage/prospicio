@@ -1,4 +1,5 @@
-//! Aggregate lane: classical credibility, and Models lane: Bayesian
+//! Aggregate lane: classical credibility and Hachemeister's regression
+//! model, and Models lane: Bayesian
 //! hierarchical credibility, for the R `credibility.R` API
 //! (`docs/design/credibility.md`).
 
@@ -7,7 +8,9 @@ use extendr_api::{Error, Result};
 use prospicio_bayes::credibility::{
     CredibilityPriors, HierarchicalCredibility, HierarchicalCredibilityFit, Sampler, ScalePrior,
 };
-use prospicio_pricing::credibility::{BuhlmannStraub, LimitedFluctuation, StructureEstimator};
+use prospicio_pricing::credibility::{
+    BuhlmannStraub, Hachemeister, LimitedFluctuation, StructureEstimator,
+};
 
 use crate::distributions::PredictiveDistribution;
 use crate::{to_r, whole};
@@ -49,18 +52,7 @@ fn buhlmann_straub_rust(
     max_iter: f64,
 ) -> Result<List> {
     let (nrow, ncol) = (whole(nrow, "nrow")? as usize, whole(ncol, "ncol")? as usize);
-    let estimator = match estimator {
-        "unbiased" => StructureEstimator::Unbiased,
-        "iterative" => StructureEstimator::Iterative {
-            tol,
-            max_iter: whole(max_iter, "max_iter")? as usize,
-        },
-        other => {
-            return Err(Error::Other(format!(
-                "estimator must be \"unbiased\" or \"iterative\", got {other}"
-            )));
-        }
-    };
+    let estimator = structure_estimator(estimator, tol, max_iter)?;
     let r = rows(ratios, nrow, ncol)?;
     let w = if weights.is_empty() {
         None
@@ -79,6 +71,76 @@ fn buhlmann_straub_rust(
         group_weights = fit.group_weights,
         credibility = fit.credibility,
         premiums = fit.premiums,
+        iterations = fit.iterations as f64
+    ))
+}
+
+fn structure_estimator(estimator: &str, tol: f64, max_iter: f64) -> Result<StructureEstimator> {
+    match estimator {
+        "unbiased" => Ok(StructureEstimator::Unbiased),
+        "iterative" => Ok(StructureEstimator::Iterative {
+            tol,
+            max_iter: whole(max_iter, "max_iter")? as usize,
+        }),
+        other => Err(Error::Other(format!(
+            "estimator must be \"unbiased\" or \"iterative\", got {other}"
+        ))),
+    }
+}
+
+/// Hachemeister's regression model on a risks x periods matrix and a
+/// periods x p design (both column-major, `weights` empty for equal
+/// weights). Matrices come back column-major; `credibility` holds each
+/// risk's `p x p` matrix in turn, as R's `array(, c(p, p, risks))`.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn hachemeister_rust(
+    ratios: &[f64],
+    weights: &[f64],
+    nrow: f64,
+    ncol: f64,
+    design: &[f64],
+    p: f64,
+    estimator: &str,
+    adjust_intercept: bool,
+    tol: f64,
+    max_iter: f64,
+) -> Result<List> {
+    let (nrow, ncol) = (whole(nrow, "nrow")? as usize, whole(ncol, "ncol")? as usize);
+    let p = whole(p, "p")? as usize;
+    let r = rows(ratios, nrow, ncol)?;
+    let w = if weights.is_empty() {
+        None
+    } else {
+        Some(rows(weights, nrow, ncol)?)
+    };
+    let y = rows(design, ncol, p)?;
+    let fit = Hachemeister::new(
+        structure_estimator(estimator, tol, max_iter)?,
+        adjust_intercept,
+    )
+    .fit(&r, w.as_deref(), &y)
+    .map_err(to_r)?;
+    // Column-major from row-major nested rows.
+    let cm = |m: &[Vec<f64>]| -> Vec<f64> {
+        let cols = m.first().map_or(0, Vec::len);
+        (0..cols)
+            .flat_map(|j| m.iter().map(move |row| row[j]))
+            .collect()
+    };
+    Ok(list!(
+        collective = fit.collective.clone(),
+        coefficients = cm(&fit.coefficients),
+        individual = cm(&fit.individual),
+        credibility = fit
+            .credibility
+            .iter()
+            .flat_map(|z| cm(z))
+            .collect::<Vec<f64>>(),
+        between = cm(&fit.between),
+        within_variance = fit.within_variance,
+        risk_weights = fit.risk_weights.clone(),
+        transition = fit.transition.as_deref().map(cm).unwrap_or_default(),
         iterations = fit.iterations as f64
     ))
 }
@@ -291,6 +353,7 @@ extendr_module! {
     mod credibility;
     fn credibility_standards;
     fn buhlmann_straub_rust;
+    fn hachemeister_rust;
     fn hierarchical_credibility_rust;
     fn credibility_premiums_rust;
     impl HierarchicalCredibilityR;

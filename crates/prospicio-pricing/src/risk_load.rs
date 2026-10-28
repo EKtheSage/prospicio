@@ -357,7 +357,7 @@ pub fn price_portfolio(
 /// [`price`] without the funding check: a component on its own may be
 /// priced above the assets it would need alone (a hedge priced by a
 /// distortion), which is not an error for the portfolio.
-fn price_unchecked<E: Empirical + ?Sized>(
+pub(crate) fn price_unchecked<E: Empirical + ?Sized>(
     losses: &E,
     rule: &PremiumRule,
     assets: &Distortion,

@@ -70,6 +70,13 @@ stopifnot(inherits(try(inuring_tower(list(list(), list(xol_layer("A", 1, 0)))), 
 # Per-event allocation and reinstatement premiums.
 l <- xol_layer("L", 10, 5, share = 0.5, aggregate_deductible = 4, aggregate_limit = 15)
 stopifnot(identical(ceded_by_event(l, c(8, 20, 12)), c(0, 4.5, 3)))
+# Attachment and exhaustion on simulated years (#581).
+tl <- xol_layer("L", 10, 10, share = 0.5, aggregate_deductible = 3, aggregate_limit = 15)
+ts <- layer_trial_statistics(tl, events_from_years(list(numeric(), 12, 20, c(20, 15, 30), c(9, 10))))
+stopifnot(ts$n_years == 5, ts$p_attach == 0.6, ts$p_exhaust_occurrence == 0.4,
+          ts$p_exhaust_annual == 0.2, ts$occurrences_mean == 1,
+          abs(ts$ceded_given_attach - 0.5 * 22 / 3) < 1e-12,
+          abs(ts$occurrences_se - sqrt(1.5 / 5)) < 1e-12)
 paid <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5))
 stopifnot(paid@aggregate_limit == 30, identical(paid@reinstatement_rates, c(1, 0.5)))
 stopifnot(reinstatement_premium(paid, c(15, 25)) == 2.5)
@@ -399,6 +406,20 @@ stopifnot(max(abs(same$psi$psi - ruin$psi$psi)) < 1e-14)
 stopifnot(abs(eventual_ruin(sev3, rho = 0.1, cap = 2)$severity_mean - 1.1 / 0.8) < 1e-12)
 stopifnot(inherits(try(eventual_ruin(sev3, rho = 0.1, cap = 2, excess = 1), silent = TRUE), "try-error"))
 stopifnot(inherits(try(eventual_ruin(sev3, rho = 0), silent = TRUE), "try-error"))
+# Finite-horizon ruin: a random walk (+1 with 0.6, -1 with 0.4) is ruined
+# within 2000 periods with the eventual (2 / 3)^(u + 1).
+walk <- finite_horizon_ruin(grid_distribution(1, c(0, 0, 1)), 1, 2000,
+  frequency = bernoulli_count(0.4), points = 64, p = 0.1)
+stopifnot(identical(dim(walk$psi), c(64L, 2000L)))
+stopifnot(max(abs(walk$psi[1:5, 2000] - (2 / 3)^(1:5))) < 1e-12, abs(walk$psi[1, 3] - 0.496) < 1e-12)
+stopifnot(walk$capital[1, 2000] == 5, all(diff(walk$psi[1, ]) >= -1e-15))
+# Poisson in sub-periods approaches exp(-u / 3) / 1.5 from below.
+gexp <- discretize(gamma_from_mean_cv(1, 1), step = 0.05, points = 2^12, method = "rounding")
+fin <- finite_horizon_ruin(gexp, 1.5, 60, rate = 1, sub_periods = 30)
+stopifnot(fin$psi[21, 1] < fin$psi[21, 20], fin$psi[21, 20] < fin$psi[21, 60])
+stopifnot(fin$psi[21, 60] < exp(-1 / 3) / 1.5, fin$psi[21, 60] > exp(-1 / 3) / 1.5 - 0.03)
+stopifnot(inherits(try(finite_horizon_ruin(gexp, 1.5, 3), silent = TRUE), "try-error"))
+stopifnot(inherits(try(finite_horizon_ruin(gexp, 1.51, 3, rate = 1), silent = TRUE), "try-error"))
 # Wiener-Hopf: the same claims after gamma waits (shape 2), against
 # aggregate 1.0.1's wiener_hopf at rho 0.1.
 wh <- wiener_hopf(sev3, gamma_distribution(2, 1), rho = 0.1, p = 0.01)
@@ -725,6 +746,30 @@ rev2 <- event_set_from_ylt(c(1, 1, 2, 1), c(10, 4, 30, 2), slots = c(5, 5, 1, 2)
                            expand = "resample", seed = 3)
 stopifnot(identical(lapply(1:7, function(i) events(rev, i)), lapply(1:7, function(i) events(rev2, i))))
 stopifnot(is.null(rev2@input_hash))
+
+# #594: a time column orders the rows and feeds an hours clause by peril.
+h <- 1 / 8760
+timed_path <- tempfile(fileext = ".csv")
+writeLines(c("year,slot,peril,time,value",
+             sprintf("1,1,wind,%.17g,20", 0.5 + 30 * h),
+             sprintf("1,2,flood,%.17g,7", 0.5 + 10 * h),
+             "1,3,wind,0.5,10", "2,1,wind,0.25,3"), timed_path)
+tev <- read_ylt(timed_path, time = "time", labels = "peril")
+stopifnot(identical(events(tev, 1), c(10, 7, 20)),
+          isTRUE(all.equal(event_times(tev, 1), c(0.5, 0.5 + 10 * h, 0.5 + 30 * h), tolerance = 0)))
+g <- hours_clause(tev, 72, by = "peril")
+stopifnot(identical(events(g, 1), c(30, 7)), identical(event_labels(g, 1)$peril, c("wind", "flood")))
+stopifnot(identical(events(hours_clause(tev, 72), 1), 37), is.null(event_labels(hours_clause(tev, 72), 1)))
+e <- tryCatch(hours_clause(tev, 72, labels = "agree"), error = identity)
+stopifnot(grepl("labelled", conditionMessage(e)))
+stopifnot(identical(event_labels(hours_clause(tev, 72, labels = "largest"), 1)$peril, "wind"))
+days_path <- tempfile(fileext = ".csv")
+writeLines(c("year,day,hour,value", "1,200,6,5", "1,1,0,1"), days_path)
+dev <- read_ylt(days_path, slot = NULL, day = "day", hour = "hour")
+stopifnot(identical(events(dev, 1), c(1, 5)),
+          identical(event_times(dev, 1), c(0, (199 * 24 + 6) / 8760)))
+e <- tryCatch(read_ylt(days_path, slot = NULL, time = "day", day = "day"), error = identity)
+stopifnot(grepl("not both", conditionMessage(e)))
 
 # #483: a reorder's index keeps a class's events with its totals, ties and all.
 n <- 600

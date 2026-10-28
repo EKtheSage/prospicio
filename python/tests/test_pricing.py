@@ -797,7 +797,7 @@ def _ramp(m, n=60):
     return [min((t + 1) / m, 1.0) for t in range(n)]
 
 
-def _full_cashflow_terms(**changes):
+def _full_cashflow_terms(paid=None, **changes):
     # The issue's chain with every rule set, as the Rust tests' `full()`.
     kwargs = dict(
         commutation_requirement=P.CollateralRequirement(
@@ -826,7 +826,7 @@ def _full_cashflow_terms(**changes):
         30,
         _ramp(12),
         _ramp(36),
-        _ramp(48),
+        paid or _ramp(48),
         P.CollateralRequirement({"unearned-premium": 0.3, "reserve": 1.2}, limit=(1.2, 1.5)),
         **kwargs,
     )
@@ -938,6 +938,47 @@ def test_cashflow_run_with_requirement():
         terms.run_with_requirement(u, [[0.0] * 3, [0.0] * 3], c)
 
 
+def test_cashflow_paid_pattern_per_simulation():
+    """Each simulation paid by its own pattern (#600)."""
+    terms = _full_cashflow_terms(funding_rule="shortfall")
+    fast, slow = _ramp(24), _ramp(56)
+    u, c = [0.4, 0.9, 1.3, 2.0], [0.2] * 4
+    # The terms' own pattern everywhere reproduces run.
+    same = terms.run(u, c, paid_patterns=[_ramp(48)], pattern_index=[0] * 4)
+    assert same.flows == terms.run(u, c).flows
+    # A mixture equals two runs recombined.
+    index = [0, 1, 1, 0]
+    mixed = terms.run(u, c, paid_patterns=[fast, slow], pattern_index=index)
+    for k, p in enumerate([fast, slow]):
+        alone = _full_cashflow_terms(paid=p, funding_rule="shortfall")
+        sims = [j for j in range(4) if index[j] == k]
+        run = alone.run([u[j] for j in sims], [c[j] for j in sims])
+        for i, j in enumerate(sims):
+            assert mixed.flows[j] == run.flows[i]
+    # One pattern a simulation, and the trace conserves money with it.
+    per = terms.run(u, c, paid_patterns=[fast, slow, slow, fast])
+    assert per.flows == mixed.flows
+    tr = terms.trace(1.3, 0.2, paid_pattern=slow)
+    assert abs(tr["conservation_error"]) < 1e-9
+    assert tr["investor"] == mixed.flows[2]
+    # Funding is not linear in the pattern: the mixture of the two needs
+    # more than the average pattern does
+    # (knowledge/findings/paid-pattern-per-simulation.md).
+    avg = [(a + b) / 2 for a, b in zip(fast, slow)]
+    two = terms.run([0.9] * 2, [0.2] * 2, paid_patterns=[fast, slow])
+    mid = terms.run([0.9] * 2, [0.2] * 2, paid_patterns=[avg, avg])
+    assert abs(sum(two.funded) / 2 - 46.086408345333) < 1e-9
+    assert abs(mid.funded[0] - 38.958552744709) < 1e-9
+    assert abs(sum(two.npv(0.1)) / 2 - (-31.734572289561)) < 1e-9
+    assert abs(mid.npv(0.1)[0] - (-31.196150060444)) < 1e-9
+    with pytest.raises(ValueError, match="does not decrease"):
+        terms.run([0.5], paid_patterns=[[0.5] + _ramp(48)[1:3] + [0.1] + _ramp(48)[4:]])
+    with pytest.raises(ValueError, match="2 paid patterns for 1 simulations"):
+        terms.run([0.5], paid_patterns=[fast, slow])
+    with pytest.raises(ValueError, match="needs paid_patterns"):
+        terms.run([0.5], pattern_index=[0])
+
+
 def test_cashflow_terms_errors():
     thirds = [1 / 3, 2 / 3, 1.0]
     req = P.CollateralRequirement([("reserve", 1.0)])
@@ -1029,6 +1070,33 @@ def test_deal_book_distribution_adds_up():
     assert set(low["marginal"]) == {"a", "b"}
     with pytest.raises(ValueError, match="unknown tail"):
         P.DealBook([a, b]).distribution("loss", [90.0], tail="middle")
+
+
+def test_deal_book_marginal_price():
+    a, b = _book_pair()
+    book = P.DealBook([a, b])
+    tvar = ar.risk.Distortion.tvar(0.5)
+    m = book.marginal_price(tvar, cost_of_capital=0.1)
+    assert m["deal"] == ["a", "b"]
+    # book TVaR 50 = 390; a alone 120, b alone 270
+    assert m["assets"] == pytest.approx([390.0 - 270.0, 390.0 - 120.0])
+    assert m["expected_loss"] == pytest.approx([75.0, 195.0])
+    for el, da, p in zip(m["expected_loss"], m["assets"], m["premium"]):
+        assert p == pytest.approx((el + 0.1 * da) / 1.1)
+    # at most the Euler price, here equal because the tail is the same
+    loss = book.amounts().select("item", ["loss"]).select("deal", ["a", "b"])
+    euler = P.price_portfolio(loss, tvar, cost_of_capital=0.1)
+    for p, e in zip(m["premium"], euler.allocated):
+        assert p <= e.premium + 1e-9
+    # the only deal has its stand-alone price
+    one = P.DealBook([b]).marginal_price(tvar, distortion=ar.risk.Distortion.tvar(0.25))
+    alone = P.price(ar.distributions.Sampled(b.loss), tvar, distortion=ar.risk.Distortion.tvar(0.25))
+    assert one["premium"][0] == pytest.approx(alone.premium)
+    assert book.marginal_price(tvar, cost_of_capital=0.1, deals=["b"])["deal"] == ["b"]
+    with pytest.raises(ValueError):
+        book.marginal_price(tvar, cost_of_capital=0.1, deals=["z"])
+    with pytest.raises(ValueError):
+        book.marginal_price(tvar)
 
 
 def test_deal_book_cashflows_and_calendar():
@@ -1201,3 +1269,45 @@ def test_reinstatement_premium_in_its_own_price():
     assert 0 < r.iterations < 200
     with pytest.raises(ValueError):
         price_with_reinstatements(x, [0.1] * 3, assets, cost_of_capital=0.15)
+
+
+def test_bonus_malus():
+    from prospicio.pricing import BonusMalus
+
+    # -1/+1 on two levels: pi_0 = (a / (a + lam))^a, r_0 = a / (a + lam)
+    # under a gamma Theta with shape a = 1 / cv^2.
+    two = BonusMalus.rule(2, 1, up_per_claim=1)
+    a, lam = 1 / 0.8**2, 0.12
+    pi = two.stationary(lam, cv=0.8)
+    r = two.optimal_relativities(lam, cv=0.8)
+    assert pi[0] == pytest.approx((a / (a + lam)) ** a, abs=1e-12)
+    assert r[0] == pytest.approx(a / (a + lam), abs=1e-12)
+    # Three a priori classes on -1/+3: relativities balance and increase.
+    scale = BonusMalus.rule(12, 7, down=1, up_per_claim=3)
+    assert scale.levels == 12 and scale.start == 7
+    assert scale.next_level(2, 1) == 5 and scale.transitions[11] == [10, 11, 11, 11, 11]
+    pi = scale.stationary([0.06, 0.1, 0.18], cv=1.3, weights=[0.5, 0.3, 0.2])
+    r = scale.optimal_relativities([0.06, 0.1, 0.18], cv=1.3, weights=[0.5, 0.3, 0.2])
+    assert sum(pi) == pytest.approx(1.0, abs=1e-12)
+    assert sum(p * x for p, x in zip(pi, r)) == pytest.approx(1.0, abs=1e-12)
+    assert all(x < y for x, y in zip(r, r[1:]))
+    # The stationary distribution is the limit of the chain from the start.
+    at = scale.stationary_at(0.1)
+    after = scale.distribution_after(0.1, 3000)
+    assert after == pytest.approx(at, abs=1e-12)
+    m = scale.transition_matrix(0.1)
+    assert all(sum(row) == pytest.approx(1.0, abs=1e-15) for row in m)
+    n = scale.years_to_stationarity(0.1, 0.01)
+    assert n is not None and n > 0
+    eta = scale.efficiency(0.1, r)
+    assert 0 < eta < 1
+    ig = scale.optimal_relativities(0.1, cv=0.8, mixing="inverse_gaussian")
+    assert len(ig) == 12
+    custom = BonusMalus.table(1, [[0, 1], [0, 2], [1, 2]])
+    assert custom.stationary_at(0.2) == pytest.approx(custom.distribution_after(0.2, 500))
+    with pytest.raises(ValueError):
+        scale.optimal_relativities(0.1, cv=0.8, mixing="beta")
+    with pytest.raises(ValueError):
+        BonusMalus.rule(4, 4, up_per_claim=1)
+    with pytest.raises(ValueError):
+        scale.efficiency(0.1, r[:5])

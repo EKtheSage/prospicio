@@ -1307,7 +1307,7 @@ impl Layer {
     /// Per-occurrence recovery at 100%, before annual terms, for a loss on
     /// a risk with sum insured `si`, with the limit scaled by `lf` (1
     /// without interlocking).
-    fn recovery_at(&self, loss: f64, si: Option<f64>, lf: f64) -> f64 {
+    pub(crate) fn recovery_at(&self, loss: f64, si: Option<f64>, lf: f64) -> f64 {
         let amount = self.basis.amount(loss, si);
         if amount.is_nan() {
             // A surplus without a sum insured: `max` would turn NaN into 0.

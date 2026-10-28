@@ -3748,6 +3748,225 @@ class BivariateReport:
         """
 
 @final
+class BonusMalus:
+    """
+    A bonus-malus or no-claim-discount scale as a Markov chain.
+    
+    A policyholder sits on one of the levels ``0 .. levels - 1``, 0 the
+    best, and moves each year by the number of claims. Under Poisson claims
+    with mean ``lam`` the levels are a Markov chain; over a mixed Poisson
+    portfolio (a priori classes with frequencies ``lambdas`` and a residual
+    heterogeneity ``Theta`` of mean 1, gamma or inverse Gaussian with
+    coefficient of variation ``cv``) the scale has a stationary distribution
+    of levels and Norberg's optimal relativities, ``E[Theta | level]``,
+    which balance to 1 over it.
+    
+    Build one with ``BonusMalus.rule`` or ``BonusMalus.table``.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import BonusMalus
+    >>> # -1/+top on six levels: any claim sends the driver to level 5.
+    >>> scale = BonusMalus.rule(6, 5, down=1, up_per_claim=5)
+    >>> r = scale.optimal_relativities(0.1, cv=1.0)
+    >>> round(r[0], 6), round(r[5], 6)
+    (0.666667, 1.909091)
+    >>> pi = scale.stationary(0.1, cv=1.0)
+    >>> round(sum(p * x for p, x in zip(pi, r)), 12)
+    1.0
+    """
+    def __repr__(self, /) -> str: ...
+    def distribution_after(self, /, lam: float, years: int) -> list[float]:
+        """
+        The distribution of the levels after ``years`` years from the start
+        level, at frequency ``lam``.
+        
+        Parameters
+        ----------
+        lam : float
+        years : int
+        
+        Returns
+        -------
+        list of float
+        """
+    def efficiency(self, /, lam: float, relativities: Sequence[float]) -> float:
+        """
+        Loimaranta's efficiency ``d ln r(lam) / d ln lam`` of the scale with
+        ``relativities``, exact.
+        
+        Parameters
+        ----------
+        lam : float
+        relativities : list of float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def levels(self, /) -> int:
+        """
+        Number of levels.
+        """
+    def mean_relativity(self, /, lam: float, relativities: Sequence[float]) -> float:
+        """
+        The stationary mean relativity ``sum_l pi_l(lam) r_l``.
+        
+        Parameters
+        ----------
+        lam : float
+        relativities : list of float
+            One per level.
+        
+        Returns
+        -------
+        float
+        """
+    def next_level(self, /, level: int, claims: int) -> int:
+        """
+        The level after ``claims`` claims from ``level``.
+        
+        Parameters
+        ----------
+        level : int
+        claims : int
+        
+        Returns
+        -------
+        int
+        """
+    def optimal_relativities(self, /, lambdas: Any, cv: float, mixing: str = "gamma", weights: Sequence[float] |None = None) -> list[float]:
+        """
+        Norberg's optimal relativities under quadratic loss,
+        ``E[Theta | level]`` over the stationary portfolio; a level it never
+        reaches gets NaN.
+        
+        Parameters
+        ----------
+        lambdas : float or list of float
+        cv : float
+        mixing : {"gamma", "inverse_gaussian"}, default "gamma"
+        weights : list of float, optional
+        
+        Returns
+        -------
+        list of float
+        """
+    @staticmethod
+    def rule(levels: int, start: int, *, down: int = 1, up_per_claim: int) -> BonusMalus:
+        """
+        A scale of ``levels`` levels, newcomers on ``start``, moving down
+        ``down`` levels after a claim-free year and up ``up_per_claim``
+        levels for each claim, capped at both ends. The -1/+top scale is
+        ``down=1, up_per_claim=levels - 1``.
+        
+        Parameters
+        ----------
+        levels : int
+            At least 2.
+        start : int
+        down : int, default 1
+        up_per_claim : int
+            At least 1.
+        
+        Returns
+        -------
+        BonusMalus
+        """
+    @property
+    def start(self, /) -> int:
+        """
+        The level a newcomer starts on.
+        """
+    def stationary(self, /, lambdas: Any, cv: float, mixing: str = "gamma", weights: Sequence[float] |None = None) -> list[float]:
+        """
+        The stationary distribution of the levels over a mixed Poisson
+        portfolio.
+        
+        Parameters
+        ----------
+        lambdas : float or list of float
+            The a priori classes' frequencies.
+        cv : float
+            The coefficient of variation of ``Theta``.
+        mixing : {"gamma", "inverse_gaussian"}, default "gamma"
+        weights : list of float, optional
+            The classes' weights; equal by default.
+        
+        Returns
+        -------
+        list of float
+        """
+    def stationary_at(self, /, lam: float) -> list[float]:
+        """
+        The stationary distribution of the levels at frequency ``lam``.
+        
+        Parameters
+        ----------
+        lam : float
+        
+        Returns
+        -------
+        list of float
+        
+        Raises
+        ------
+        ValueError
+            If it is not unique (unreachable or absorbing levels).
+        """
+    @staticmethod
+    def table(start: int, table: Sequence[Sequence[int]]) -> BonusMalus:
+        """
+        A scale from its table: ``table[l][k]`` is the level after ``k``
+        claims from level ``l``, one row per level, every row the same
+        length; the last column is for that many claims or more.
+        
+        Parameters
+        ----------
+        start : int
+        table : list of list of int
+        
+        Returns
+        -------
+        BonusMalus
+        """
+    def transition_matrix(self, /, lam: float) -> list[list[float]]:
+        """
+        The one-year transition matrix under Poisson claims with mean
+        ``lam``: row ``l``, column ``j`` is the probability of moving from
+        level ``l`` to ``j``.
+        
+        Parameters
+        ----------
+        lam : float
+        
+        Returns
+        -------
+        list of list of float
+        """
+    @property
+    def transitions(self, /) -> list[list[int]]:
+        """
+        The table of next levels by level and claim count.
+        """
+    def years_to_stationarity(self, /, lam: float, tolerance: float = 0.01) -> int |None:
+        """
+        The years from the start level until the distribution of the levels
+        is within ``tolerance`` of the stationary one in total variation.
+        
+        Parameters
+        ----------
+        lam : float
+        tolerance : float, default 0.01
+        
+        Returns
+        -------
+        int or None
+            None past 100,000 years.
+        """
+
+@final
 class Book:
     """
     A seller's book, ``aggregate``'s ``pnl`` and ``xpnl`` builders: a gross
@@ -5012,19 +5231,41 @@ class CashflowTerms:
         """
         The premium.
         """
-    def run(self, /, u: Sequence[float], commission: Sequence[float] |None = None) -> Cashflows:
+    def run(self, /, u: Sequence[float], commission: Sequence[float] |None = None, *, paid_patterns: Sequence[Sequence[float]] |None = None, pattern_index: Sequence[int] |None = None) -> Cashflows:
         """
         Each simulation's cash flows to the investor, from its ultimate
         loss ratio and commission rate (0 when not given).
+        
+        With ``paid_patterns`` each simulation pays its ultimate loss by its
+        own monthly cumulative paid pattern (#600), the written and earned
+        patterns staying the terms': one pattern a simulation, or with
+        ``pattern_index`` a few patterns and each simulation's index into
+        them. Every pattern has the terms' length, does not decrease and
+        ends at the terms' paid share.
         
         Parameters
         ----------
         u : list of float
         commission : list of float, optional
+        paid_patterns : list of list of float, optional
+        pattern_index : list of int, optional
         
         Returns
         -------
         Cashflows
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import CashflowTerms, CollateralRequirement
+        >>> ramp = lambda m: [min((t + 1) / m, 1.0) for t in range(48)]
+        >>> req = CollateralRequirement({"outstanding": 1.0})
+        >>> terms = CashflowTerms(100.0, 36, ramp(12), ramp(24), ramp(36), req)
+        >>> # The same year paid fast and paid as the terms say.
+        >>> cf = terms.run([0.8, 0.8], paid_patterns=[ramp(12), ramp(36)], pattern_index=[0, 1])
+        >>> cf.flows[0] == cf.flows[1]
+        False
+        >>> cf.flows[1] == terms.run([0.8]).flows[0]
+        True
         """
     def run_with_requirement(self, /, u: Sequence[float], requirement: Sequence[Sequence[float]], commission: Sequence[float] |None = None) -> Cashflows:
         """
@@ -5043,7 +5284,7 @@ class CashflowTerms:
         -------
         Cashflows
         """
-    def trace(self, /, u: float, commission: float = 0.0) -> dict:
+    def trace(self, /, u: float, commission: float = 0.0, *, paid_pattern: Sequence[float] |None = None) -> dict:
         """
         Every account line of one simulation, month by month: a dict of
         columns, each a list of ``commutation_month`` values, with the
@@ -5054,6 +5295,9 @@ class CashflowTerms:
         ----------
         u : float
         commission : float, default 0
+        paid_pattern : list of float, optional
+            The simulation's own paid pattern, as one of ``run``'s
+            ``paid_patterns``.
         
         Returns
         -------
@@ -9058,6 +9302,29 @@ class DealBook:
         The items of ``amounts``: ``premium``, ``loss``, each deduction,
         ``total_deductions``, ``nmbf`` and ``margin``.
         """
+    def marginal_price(self, /, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None, deals: Sequence[str] |None = None) -> dict:
+        """
+        The marginal price of each deal written last: the book's loss
+        priced with the deal and without it, on the assets of the capital
+        standard ``assets`` and by exactly one of ``cost_of_capital`` and
+        ``distortion`` as ``price_portfolio`` prices a portfolio, and the
+        differences. Under a cost of capital ``r`` the premium is
+        ``(EL + r dA) / (1 + r)``. Under a subadditive standard it is at
+        most the deal's allocated premium from ``price_portfolio``.
+        
+        Returns a dict of columns, one row a deal (those in ``deals``, all
+        by default): ``deal``, ``expected_loss``, ``assets`` (``dA``),
+        ``premium``, ``margin``, and the book's ``book_premium``,
+        ``book_assets``, ``premium_without`` and ``assets_without``.
+        
+        >>> from prospicio.pricing import DealBook, DealRun
+        >>> from prospicio.risk import Distortion
+        >>> a = DealRun("a", [10.0] * 4, [1.0, 2.0, 3.0, 9.0])
+        >>> b = DealRun("b", [10.0] * 4, [4.0, 1.0, 2.0, 3.0])
+        >>> m = DealBook([a, b]).marginal_price(Distortion.tvar(0.5), cost_of_capital=0.1)
+        >>> m["assets"], round(m["premium"][1], 6)
+        ([5.0, 2.5], 2.5)
+        """
     @property
     def n_sims(self, /) -> int:
         """
@@ -10901,7 +11168,7 @@ class EventSet:
         ([2, 0, 1], [50.0])
         """
     @staticmethod
-    def from_ylt(years: Sequence[int], losses: Sequence[float], *, slots: Sequence[int] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None) -> EventSet:
+    def from_ylt(years: Sequence[int], losses: Sequence[float], *, slots: Sequence[int] |None = None, times: Sequence[float] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None) -> EventSet:
         """
         Years of losses from a year loss table's columns, checked and
         expanded to a run's simulations.
@@ -10920,6 +11187,12 @@ class EventSet:
             Finite and non-negative.
         slots : list of int, optional
             Each row's event slot, which orders a year's rows.
+        times : list of float, optional
+            Each row's time of loss, the fraction of its year elapsed, in
+            ``[0, 1]``. Rows are then ordered by time within a year, the
+            slot (or the given order) breaking ties, and the events carry
+            the times (``has_times``), for an hours clause (``grouped``) and
+            reinstatements pro rata as to time.
         labels : dict of str to list of str, optional
             Each row's labels, a list per dimension (``{"peril": [...],
             "class": [...]}``).
@@ -10955,7 +11228,7 @@ class EventSet:
         >>> e.events(1), e.events(3)
         ([7.0, 5.0], [7.0, 5.0])
         """
-    def grouped(self, /, window_hours: float) -> EventSet:
+    def grouped(self, /, window_hours: float, *, labels: str = "drop", by: str |None = None) -> EventSet:
         """
         Each year's losses grouped into occurrences by an hours clause.
         
@@ -10963,13 +11236,26 @@ class EventSet:
         occurrence, whose loss is their sum and whose time is the window's
         start; the next loss after the window opens the next one. A year is
         8,760 hours. Windows open at each first loss in turn, not where they
-        would recover most. Needs times; sums insured and labels are not
-        carried (group each peril's set before merging them).
+        would recover most. Needs times; sums insured are not carried.
         
         Parameters
         ----------
         window_hours : float
             Such as 72 for a windstorm, 168 for a flood.
+        labels : {"drop", "agree", "largest"}, default "drop"
+            What the occurrences carry of the losses' labels: none
+            (``"drop"``), their losses' labels, which must agree within an
+            occurrence (``"agree"``, an error otherwise), or the labels of
+            the largest loss in the occurrence, the earliest of equal ones
+            (``"largest"``). An aggregate part keeps its labels unless they
+            are dropped.
+        by : str, optional
+            A label dimension, ``"peril"`` say: the clause applies within
+            each of its values, so losses of two perils are never one
+            occurrence, and the occurrences keep the labels (``labels``
+            then decides the other dimensions, ``"drop"`` read as
+            ``"agree"``). Occurrences are listed by the time each window
+            opens.
         
         Returns
         -------
@@ -10982,6 +11268,10 @@ class EventSet:
         >>> e = EventSet.from_years([[10.0, 20.0, 5.0]], times=[[0.5, 0.5 + 30 * h, 0.5 + 80 * h]])
         >>> e.grouped(72.0).events(0)
         [30.0, 5.0]
+        >>> p = EventSet.from_years([[10.0, 20.0, 5.0]], times=[[0.5, 0.5 + 30 * h, 0.5 + 40 * h]])
+        >>> g = p.with_labels({"peril": ["wind", "flood", "wind"]}).grouped(72.0, by="peril")
+        >>> g.events(0), g.labels(0)
+        ([15.0, 20.0], {'peril': ['wind', 'flood']})
         """
     @property
     def has_aggregate_part(self, /) -> bool:
@@ -11896,6 +12186,97 @@ class Exposure:
         Returns
         -------
         Exposure
+        """
+
+@final
+class FiniteRuin:
+    """
+    The probability of ruin within each period of a finite horizon at each
+    initial surplus on the grid, from ``finite_horizon_ruin``.
+    """
+    def __repr__(self, /) -> str: ...
+    def capital(self, /, p: float, t: int, interpolate: bool = False) -> float |None:
+        """
+        The initial surplus for ruin probability ``p`` within ``t`` periods:
+        the smallest grid point with ``psi(u, t) < p``, or linear between
+        grid points.
+        
+        Parameters
+        ----------
+        p : float
+        t : int
+        interpolate : bool, default False
+        
+        Returns
+        -------
+        float or None
+            None when the grid does not reach it.
+        
+        Raises
+        ------
+        ValueError
+            If ``t`` is not a period of the horizon.
+        """
+    @property
+    def periods(self, /) -> int:
+        """
+        The number of periods.
+        """
+    @property
+    def premium(self, /) -> float:
+        """
+        The premium a period.
+        """
+    def psi(self, /, t: int) -> list[float]:
+        """
+        ``psi(u, t)`` at each grid point.
+        
+        Parameters
+        ----------
+        t : int
+            The period, from 1.
+        
+        Returns
+        -------
+        list of float
+        
+        Raises
+        ------
+        ValueError
+            If ``t`` is not a period of the horizon.
+        """
+    def psi_at(self, /, u: float, t: int) -> float:
+        """
+        ``psi(u, t)`` at any initial surplus (constant between grid points).
+        
+        Parameters
+        ----------
+        u : float
+        t : int
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``t`` is not a period of the horizon.
+        """
+    @property
+    def report(self, /) -> CompoundReport:
+        """
+        The period loss's compound report; read ``aliasing_error``.
+        """
+    @property
+    def sub_periods(self, /) -> int:
+        """
+        The steps a period at which the surplus is checked.
+        """
+    @property
+    def u(self, /) -> list[float]:
+        """
+        The initial surplus at each grid point.
         """
 
 @final
@@ -13836,6 +14217,84 @@ class GroupedFit:
         """
 
 @final
+class HachemeisterFit:
+    """
+    A fitted Hachemeister model, from ``hachemeister``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def between(self, /) -> list[list[float]]:
+        """
+        The between-risk covariance of the coefficients, in the basis
+        fitted (diagonal when the intercept is adjusted).
+        """
+    @property
+    def coefficients(self, /) -> list[list[float]]:
+        """
+        Each risk's credibility coefficients (the collective for a risk
+        with no weight).
+        """
+    @property
+    def collective(self, /) -> list[float]:
+        """
+        The collective coefficients, one per design column.
+        """
+    @property
+    def credibility(self, /) -> list[list[list[float]]]:
+        """
+        Each risk's credibility matrix, in the basis fitted (the
+        orthogonalised design when the intercept is adjusted).
+        """
+    @property
+    def individual(self, /) -> list[list[float]]:
+        """
+        Each risk's own weighted least squares coefficients (0 for a risk
+        with no weight).
+        """
+    @property
+    def iterations(self, /) -> int:
+        """
+        Iterations of the iterative estimator.
+        """
+    def predict(self, /, x: Sequence[float]) -> list[float]:
+        """
+        Each risk's credibility premium at the design row ``x``.
+        
+        Parameters
+        ----------
+        x : list of float
+            One value per design column, such as ``[1.0, 13.0]`` for the
+            next quarter of a trend line over twelve.
+        
+        Returns
+        -------
+        list of float
+        
+        Raises
+        ------
+        ValueError
+            If ``x`` does not have one value per design column.
+        """
+    @property
+    def risk_weights(self, /) -> list[float]:
+        """
+        Each risk's total weight.
+        """
+    @property
+    def transition(self, /) -> list[list[float]] |None:
+        """
+        When the intercept is adjusted, the upper triangular ``R`` with the
+        design ``Y = Q R``: a coefficient ``c`` in the basis fitted is
+        ``R^-1 c`` in the design's. ``None`` at the origin.
+        """
+    @property
+    def within_variance(self, /) -> float:
+        """
+        The within-risk variance ``s2``, the mean of the risks' residual
+        variances.
+        """
+
+@final
 class HierarchicalCredibilityFit:
     """
     A fitted Bayesian hierarchical credibility model, from
@@ -15486,6 +15945,42 @@ class Layer:
         """
         The swing rating at 100% as ``(basic, lcm, minimum, maximum)``, or
         ``None``.
+        """
+    def trial_statistics(self, /, events: EventSet) -> dict[str, float]:
+        """
+        How often the layer is attached and used up in simulated years.
+        
+        Counted on ``events``' years as the first stage of a tower sees them
+        (the gross events, and the aggregate part for a layer without
+        occurrence terms). ``p_attach`` is the share of years with an
+        occurrence above the attachment, ``p_exhaust_occurrence`` with one at
+        or above attachment plus limit, and ``p_exhaust_annual`` in which the
+        annual limit (the aggregate limit, or the limit times one plus the
+        reinstatements) is used up; each has its binomial standard error
+        (``*_se``), to set beside an event loss table's per-occurrence
+        ``occurrence_layer_statistics``. ``occurrences_mean`` (with
+        ``occurrences_se``) is the mean number of occurrences a year that reach
+        the layer, ``ceded_mean`` the mean ceded loss and
+        ``ceded_given_attach`` its mean over the attached years (NaN when
+        none is).
+        
+        Parameters
+        ----------
+        events : EventSet
+        
+        Returns
+        -------
+        dict of str to float
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.reinsurance import Layer
+        >>> layer = Layer("10x10", 10.0, 10.0, reinstatements=1)
+        >>> years = EventSet.from_years([[5.0], [12.0], [25.0], [25.0, 30.0]])
+        >>> s = layer.trial_statistics(years)
+        >>> s["p_attach"], s["p_exhaust_occurrence"], s["p_exhaust_annual"]
+        (0.75, 0.5, 0.25)
         """
     def with_brokerage(self, /, rate: float) -> Layer:
         """
@@ -19557,6 +20052,223 @@ class Mixture:
         """
 
 @final
+class MultivariateLognormal:
+    """
+    The multivariate lognormal: ``exp(Y)`` for ``Y`` multivariate normal.
+    
+    Built from a mean and covariance on the original scale, matched
+    exactly (``from_moments``: ``log_cov[i][j] = ln(1 + cov[i][j] / (m_i
+    m_j))``, ``mu_i = ln m_i - log_cov[i][i] / 2``), or from the log scale
+    (``from_log_scale``).
+    
+    Examples
+    --------
+    >>> from prospicio.risk import MultivariateLognormal
+    >>> mvl = MultivariateLognormal.from_moments([100.0, 50.0], [[400.0, 120.0], [120.0, 100.0]])
+    >>> [round(m, 9) for m in mvl.mean]
+    [100.0, 50.0]
+    >>> round(mvl.cov[0][1], 9), round(mvl.total_variance(), 6)
+    (120.0, 740.0)
+    """
+    def __repr__(self, /) -> str: ...
+    def correlation(self, /) -> list[list[float]]:
+        """
+        The correlation matrix on the original scale.
+        
+        Returns
+        -------
+        list of list of float
+        """
+    @property
+    def cov(self, /) -> list[list[float]]:
+        """
+        The covariance on the original scale, exact.
+        """
+    @property
+    def dim(self, /) -> int:
+        """
+        Number of components.
+        """
+    @staticmethod
+    def from_log_scale(mu: Sequence[float], log_cov: Sequence[Sequence[float]]) -> MultivariateLognormal:
+        """
+        The lognormal ``exp(Y)``, ``Y`` normal with mean ``mu`` and
+        covariance ``log_cov``.
+        
+        Parameters
+        ----------
+        mu : list of float
+        log_cov : list of list of float
+        
+        Returns
+        -------
+        MultivariateLognormal
+        
+        Raises
+        ------
+        ValueError
+            As ``MultivariateNormal``.
+        """
+    @staticmethod
+    def from_moments(mean: Sequence[float], cov: Sequence[Sequence[float]]) -> MultivariateLognormal:
+        """
+        The lognormal with mean ``mean`` and covariance ``cov`` on the
+        original scale.
+        
+        Parameters
+        ----------
+        mean : list of float
+            Positive.
+        cov : list of list of float
+        
+        Returns
+        -------
+        MultivariateLognormal
+        
+        Raises
+        ------
+        ValueError
+            If a mean is not positive, ``cov`` is not a symmetric square
+            matrix, a covariance is at or below ``-m_i m_j`` (no lognormal
+            has it), or the covariance on the log scale is not positive
+            definite (possible even when ``cov`` is).
+        """
+    @property
+    def log_cov(self, /) -> list[list[float]]:
+        """
+        The covariance on the log scale.
+        """
+    def marginal(self, /, j: int) -> Lognormal:
+        """
+        Component ``j``'s marginal, exact.
+        
+        Parameters
+        ----------
+        j : int
+        
+        Returns
+        -------
+        Lognormal
+        
+        Raises
+        ------
+        ValueError
+            If ``j`` is out of range.
+        """
+    @property
+    def mean(self, /) -> list[float]:
+        """
+        The mean on the original scale, exact.
+        """
+    @property
+    def mu(self, /) -> list[float]:
+        """
+        The mean on the log scale.
+        """
+    def total_mean(self, /) -> float:
+        """
+        The total's mean, exact. A sum of lognormals is not lognormal; draw
+        the total with ``PredictiveDistribution.from_gaussian``.
+        
+        Returns
+        -------
+        float
+        """
+    def total_variance(self, /) -> float:
+        """
+        The total's variance, exact.
+        
+        Returns
+        -------
+        float
+        """
+
+@final
+class MultivariateNormal:
+    """
+    The multivariate normal with mean ``mean`` and covariance ``cov``.
+    
+    Inputs such as a reserve by origin with its covariance across origins,
+    or lines joined by a correlation matrix, arrive as a mean and a
+    covariance; this holds the joint with its exact marginals and total,
+    and ``PredictiveDistribution.from_gaussian`` draws it by seed.
+    
+    Parameters
+    ----------
+    mean : list of float
+    cov : list of list of float
+        Symmetric and positive definite, one row and column per component.
+    
+    Raises
+    ------
+    ValueError
+        If a value is not finite, ``cov`` is not square with one row per
+        component, not symmetric or not positive definite (a zero variance
+        or a perfect correlation is singular and refused).
+    
+    Examples
+    --------
+    >>> from prospicio.risk import MultivariateNormal
+    >>> mvn = MultivariateNormal([100.0, 50.0], [[400.0, 120.0], [120.0, 100.0]])
+    >>> t = mvn.total()
+    >>> t.mean(), round(t.variance(), 9)
+    (150.0, 740.0)
+    >>> mvn.marginal(1).sigma
+    10.0
+    """
+    def __new__(cls, /, mean: Sequence[float], cov: Sequence[Sequence[float]]) -> MultivariateNormal: ...
+    def __repr__(self, /) -> str: ...
+    def correlation(self, /) -> list[list[float]]:
+        """
+        The correlation matrix.
+        
+        Returns
+        -------
+        list of list of float
+        """
+    @property
+    def cov(self, /) -> list[list[float]]:
+        """
+        The covariance matrix.
+        """
+    @property
+    def dim(self, /) -> int:
+        """
+        Number of components.
+        """
+    def marginal(self, /, j: int) -> Normal:
+        """
+        Component ``j``'s marginal, exact.
+        
+        Parameters
+        ----------
+        j : int
+        
+        Returns
+        -------
+        Normal
+        
+        Raises
+        ------
+        ValueError
+            If ``j`` is out of range.
+        """
+    @property
+    def mean(self, /) -> list[float]:
+        """
+        The mean vector.
+        """
+    def total(self, /) -> Normal:
+        """
+        The total over all components, exact: normal with mean the sum of
+        the means and variance the sum of the covariance's entries.
+        
+        Returns
+        -------
+        Normal
+        """
+
+@final
 class NaturalPrice:
     """
     A portfolio's price and its natural allocation, from ``Portfolio.price``.
@@ -23431,6 +24143,46 @@ class PredictiveDistribution:
         -------
         list of list of float
         """
+    @staticmethod
+    def from_gaussian(joint: Any, n_sims: int, seed: int, keys: Sequence[Sequence[int |str]] |None = None, dims: Sequence[str] |None = None) -> PredictiveDistribution:
+        """
+        ``n_sims`` draws of a multivariate normal or lognormal joint.
+        
+        Simulation ``i`` draws only from stream ``i`` of ``seed``, so the
+        result reproduces by seed on any number of threads; the provenance
+        records the model, its dimension, the seed and a hash of the mean
+        and covariance.
+        
+        Parameters
+        ----------
+        joint : MultivariateNormal or MultivariateLognormal
+        n_sims : int
+        seed : int
+        keys : list of tuple, optional
+            One component key per component; defaults to ``(0,), (1,), ...``.
+        dims : list of str, default ["component"]
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        TypeError
+            If ``joint`` is neither joint.
+        ValueError
+            If ``keys`` does not have one key per component.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> from prospicio.risk import MultivariateNormal
+        >>> mvn = MultivariateNormal([100.0, 50.0], [[400.0, 120.0], [120.0, 100.0]])
+        >>> pd = PredictiveDistribution.from_gaussian(
+        ...     mvn, 20_000, 1, keys=[("auto",), ("property",)], dims=["line"])
+        >>> abs(pd.mean() - 150.0) < 1.0
+        True
+        """
     def group_spearman(self, /, dim: str) -> tuple[list[Any], list[list[float]]]:
         """
         Spearman's rho between the totals of the groups of ``dim``, ties
@@ -24990,8 +25742,10 @@ class Sampled:
         p : float
         method : str
             ``"exact"`` (the default: the empirical distribution, mass ``1/n``
-            per draw) or ``"linear"`` (the mean of the linear quantile
-            function over ``[p, 1]``).
+            per draw), ``"linear"`` (the mean of the linear quantile
+            function over ``[p, 1]``) or ``"whole_years"`` (the mean of the
+            ``k`` largest draws, ``k = max(1, floor((1 - p) n))``, equal to
+            ``"exact"`` when ``(1 - p) n`` is whole).
         
         Returns
         -------
@@ -25001,6 +25755,15 @@ class Sampled:
         ------
         ValueError
             If ``p`` is outside ``[0, 1]`` or ``method`` is unknown.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Sampled
+        >>> years = Sampled([float(x) for x in range(1, 11)])
+        >>> years.var(0.75), years.var(0.75, method="kth_largest")
+        (8.0, 9.0)
+        >>> years.tvar(0.75, method="whole_years")
+        9.5
         """
     def var(self, /, p: float, method: str = "inverted_cdf") -> float:
         """
@@ -25010,8 +25773,11 @@ class Sampled:
         ----------
         p : float
         method : str
-            ``"inverted_cdf"`` (the default, R ``type = 1``) or ``"linear"``
-            (numpy's default, R ``type = 7``).
+            ``"inverted_cdf"`` (the default, R ``type = 1``), ``"linear"``
+            (numpy's default, R ``type = 7``) or ``"kth_largest"`` (the
+            ``k``-th largest draw, ``k = max(1, floor((1 - p) n))``: with years
+            as draws, the ``k``-th worst year, one draw above
+            ``"inverted_cdf"`` unless both are the largest).
         
         Returns
         -------
@@ -30060,6 +30826,58 @@ def fft_bivariate(frequency: Any, severity: JointGrid, points: tuple[int, int]) 
     1.4
     """
 
+def finite_horizon_ruin(severity: Grid, premium: float, periods: int, frequency: Any |None = None, *, rate: float |None = None, sub_periods: int = 1, points: int |None = None) -> FiniteRuin:
+    """
+    The probability of ruin within each of ``periods`` periods, ``psi(u,
+    t)``. ``aggregate`` has no finite-horizon ruin.
+    
+    With ``frequency``, in discrete time: each period's loss is the compound
+    of ``frequency`` and ``severity``, ``premium`` comes in each period and
+    the surplus is checked at each period's end, exactly on the grid by De
+    Vylder and Goovaerts' recursion. With ``rate``, a continuous-time
+    approximation for Poisson claims at that rate a period: the same
+    recursion on ``sub_periods`` steps a period, which misses only a ruin
+    that recovers within a step. The premium of each step must be a whole
+    number of grid steps.
+    
+    Parameters
+    ----------
+    severity : Grid
+    premium : float
+        The premium a period.
+    periods : int
+        The horizon.
+    frequency : count, optional
+        Any claim count a period (discrete time). Or give ``rate``.
+    rate : float, optional
+        The Poisson rate a period (continuous time, approximately).
+    sub_periods : int, default 1
+        Steps a period with ``rate``.
+    points : int, optional
+        Initial surpluses on the grid; the severity's by default.
+    
+    Returns
+    -------
+    FiniteRuin
+    
+    Raises
+    ------
+    ValueError
+        For both or neither of ``frequency`` and ``rate``, ``sub_periods``
+        with ``frequency``, a premium that is not a whole number of steps,
+        or no periods or points.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import finite_horizon_ruin
+    >>> from prospicio.distributions import Binomial, Grid
+    >>> # A claim of 2 with probability 0.4 a period, premium 1.
+    >>> sev = Grid(1.0, [0.0, 0.0, 1.0])
+    >>> ruin = finite_horizon_ruin(sev, 1.0, 3, frequency=Binomial(1, 0.4))
+    >>> round(ruin.psi_at(0.0, 1), 12), round(ruin.psi_at(0.0, 3), 12)
+    (0.4, 0.496)
+    """
+
 def fit_grouped(family: str, bounds: Sequence[float], counts: Sequence[float], method: str = "ml") -> GroupedFit:
     """
     Fit of a lognormal, gamma, Weibull, Burr or Lomax severity to grouped
@@ -30346,6 +31164,61 @@ def grouped_goodness_of_fit(severity: Any, bounds: Sequence[float], counts: Sequ
     >>> g = grouped_goodness_of_fit(Gamma(3.907288, 397.931), bounds, [42, 61, 47, 26, 14, 10])
     >>> round(g["chi_square"], 3)
     3.095
+    """
+
+def hachemeister(ratios: Sequence[Sequence[float]], design: Sequence[Sequence[float]], weights: Sequence[Sequence[float]] |None = None, estimator: str = "unbiased", adjust_intercept: bool = False, tol: float = 1.4901161193847656e-8, max_iter: int = 100) -> HachemeisterFit:
+    """
+    Hachemeister's regression credibility model, as R's ``actuar::cm(~risk,
+    regformula = ...)``: risk ``i`` in period ``t`` has ratio ``X_it`` with
+    weight ``w_it`` and a mean ``design[t] @ beta_i`` on a design shared by
+    the risks (a trend line ``[1, t]``, say). Each risk's own weighted least
+    squares fit is shrunk towards the collective by a credibility matrix.
+    
+    At the origin the matrices are full and the between covariance is
+    Hachemeister's iterative estimator whatever ``estimator`` says (as
+    ``actuar``; on near-collinear coefficients its iteration may wander in
+    the last digits). With ``adjust_intercept`` (``actuar``'s
+    ``adj.intercept``) the design is orthogonalised under the collective
+    weights, the matrices are diagonal and each diagonal is estimated as
+    Bühlmann–Straub's by ``estimator``; the design's first column must
+    then be constant.
+    
+    Parameters
+    ----------
+    ratios : list of list of float
+        One row per risk, one column per period; NaN for a missing cell.
+    design : list of list of float
+        One row per period, one column per coefficient.
+    weights : list of list of float, optional
+        The shape of ``ratios``, NaN in the same places; equal if omitted.
+    estimator : {"unbiased", "iterative"}, default "unbiased"
+    adjust_intercept : bool, default False
+    tol : float, default 1.49e-8
+        Relative tolerance of the iterations.
+    max_iter : int, default 100
+    
+    Returns
+    -------
+    HachemeisterFit
+    
+    Raises
+    ------
+    ValueError
+        For fewer than two risks with weight, mismatched shapes or missing
+        cells, a risk whose observed cells do not identify its coefficients,
+        linearly dependent design columns, or a singular system.
+    
+    Examples
+    --------
+    >>> from prospicio.credibility import hachemeister
+    >>> x = [[10.0, 12.0, 13.0, 15.0, 16.0],
+    ...      [8.0, 8.5, 9.5, 9.0, 10.0],
+    ...      [14.0, 13.0, 16.0, 17.0, 19.0]]
+    >>> design = [[1.0, float(t)] for t in range(1, 6)]
+    >>> fit = hachemeister(x, design, adjust_intercept=True)
+    >>> nxt = fit.predict([1.0, 6.0])
+    >>> nxt[1] < nxt[0] < nxt[2]
+    True
     """
 
 def haircut(pd: PredictiveDistribution, total: float, measure: str, level: float) -> LevelAllocation:
@@ -32049,7 +32922,8 @@ def risk_ratios(dist: Any, *, threshold: float = 0.0, sortino: str = "downside_d
     tvar_levels : list of float, optional
         In percent; by default 99.
     tvar : str
-        ``"exact"`` (the default) or ``"linear"``, as for ``statistics``.
+        ``"exact"`` (the default), ``"linear"`` or ``"whole_years"``, as for
+        ``statistics``.
     
     Returns
     -------
@@ -32419,12 +33293,14 @@ def statistics(dist: Any, percentiles: Sequence[float], *, tvar_levels: Sequence
     sd_multiples : list of float, optional
         By default 1, 2 and 3.
     quantile : str
-        ``"inverted_cdf"`` (the default, ``Sampled.var``'s) or ``"linear"``
-        (numpy's default, R ``type = 7``).
+        ``"inverted_cdf"`` (the default, ``Sampled.var``'s), ``"linear"``
+        (numpy's default, R ``type = 7``) or ``"kth_largest"`` (the ``k``-th
+        largest draw, ``k = max(1, floor((1 - p) n))``).
     tvar : str
-        ``"exact"`` (the default, ``Sampled.tvar``'s, mass ``1/n`` per draw)
-        or ``"linear"`` (the mean of the linear quantile function over
-        ``[p, 1]``).
+        ``"exact"`` (the default, ``Sampled.tvar``'s, mass ``1/n`` per draw),
+        ``"linear"`` (the mean of the linear quantile function over
+        ``[p, 1]``) or ``"whole_years"`` (the mean of the ``k`` largest
+        draws).
     
     Returns
     -------

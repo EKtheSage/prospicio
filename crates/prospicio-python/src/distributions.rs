@@ -1303,8 +1303,11 @@ impl PySampled {
     /// ----------
     /// p : float
     /// method : str
-    ///     ``"inverted_cdf"`` (the default, R ``type = 1``) or ``"linear"``
-    ///     (numpy's default, R ``type = 7``).
+    ///     ``"inverted_cdf"`` (the default, R ``type = 1``), ``"linear"``
+    ///     (numpy's default, R ``type = 7``) or ``"kth_largest"`` (the
+    ///     ``k``-th largest draw, ``k = max(1, floor((1 - p) n))``: with years
+    ///     as draws, the ``k``-th worst year, one draw above
+    ///     ``"inverted_cdf"`` unless both are the largest).
     ///
     /// Returns
     /// -------
@@ -1328,8 +1331,10 @@ impl PySampled {
     /// p : float
     /// method : str
     ///     ``"exact"`` (the default: the empirical distribution, mass ``1/n``
-    ///     per draw) or ``"linear"`` (the mean of the linear quantile
-    ///     function over ``[p, 1]``).
+    ///     per draw), ``"linear"`` (the mean of the linear quantile
+    ///     function over ``[p, 1]``) or ``"whole_years"`` (the mean of the
+    ///     ``k`` largest draws, ``k = max(1, floor((1 - p) n))``, equal to
+    ///     ``"exact"`` when ``(1 - p) n`` is whole).
     ///
     /// Returns
     /// -------
@@ -1339,6 +1344,15 @@ impl PySampled {
     /// ------
     /// ValueError
     ///     If ``p`` is outside ``[0, 1]`` or ``method`` is unknown.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Sampled
+    /// >>> years = Sampled([float(x) for x in range(1, 11)])
+    /// >>> years.var(0.75), years.var(0.75, method="kth_largest")
+    /// (8.0, 9.0)
+    /// >>> years.tvar(0.75, method="whole_years")
+    /// 9.5
     #[pyo3(signature = (p, method = "exact"))]
     fn tvar(&self, p: f64, method: &str) -> PyResult<f64> {
         self.inner
@@ -1493,6 +1507,55 @@ impl PyPredictiveDistribution {
         )
         .map_err(to_py)?;
         Ok(Self { inner })
+    }
+
+    /// ``n_sims`` draws of a multivariate normal or lognormal joint.
+    ///
+    /// Simulation ``i`` draws only from stream ``i`` of ``seed``, so the
+    /// result reproduces by seed on any number of threads; the provenance
+    /// records the model, its dimension, the seed and a hash of the mean
+    /// and covariance.
+    ///
+    /// Parameters
+    /// ----------
+    /// joint : MultivariateNormal or MultivariateLognormal
+    /// n_sims : int
+    /// seed : int
+    /// keys : list of tuple, optional
+    ///     One component key per component; defaults to ``(0,), (1,), ...``.
+    /// dims : list of str, default ["component"]
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    ///
+    /// Raises
+    /// ------
+    /// TypeError
+    ///     If ``joint`` is neither joint.
+    /// ValueError
+    ///     If ``keys`` does not have one key per component.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import PredictiveDistribution
+    /// >>> from prospicio.risk import MultivariateNormal
+    /// >>> mvn = MultivariateNormal([100.0, 50.0], [[400.0, 120.0], [120.0, 100.0]])
+    /// >>> pd = PredictiveDistribution.from_gaussian(
+    /// ...     mvn, 20_000, 1, keys=[("auto",), ("property",)], dims=["line"])
+    /// >>> abs(pd.mean() - 150.0) < 1.0
+    /// True
+    #[staticmethod]
+    #[pyo3(signature = (joint, n_sims, seed, keys = None, dims = None))]
+    fn from_gaussian(
+        py: Python<'_>,
+        joint: &Bound<'_, PyAny>,
+        n_sims: usize,
+        seed: u64,
+        keys: Option<Vec<Vec<KeyArg>>>,
+        dims: Option<Vec<String>>,
+    ) -> PyResult<Self> {
+        crate::multivariate::from_gaussian(py, joint, n_sims, seed, keys, dims)
     }
 
     /// Dimension names.

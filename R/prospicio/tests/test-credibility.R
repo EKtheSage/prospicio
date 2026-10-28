@@ -31,6 +31,32 @@ if (requireNamespace("actuar", quietly = TRUE)) {
   near(ours$premiums, as.numeric(predict(ref)), 1e-12)
 }
 
+# Hachemeister's regression model on a hand case and against actuar's
+# premiums at time 13 (validation/reference/credibility_regression_actuar.csv).
+hx <- rbind(c(10, 12, 13, 15, 16), c(8, 8.5, 9.5, 9, 10), c(14, 13, 16, 17, 19))
+hf <- hachemeister(hx, adjust_intercept = TRUE)
+stopifnot(identical(names(hf@collective), c("(Intercept)", "time")))
+stopifnot(identical(dim(hf@credibility), c(2L, 2L, 3L)), hf@credibility[1, 2, 1] == 0)
+hp <- predict(hf, data.frame(time = 6:7))
+stopifnot(identical(dim(hp), c(2L, 3L)), hp[1, 2] < hp[1, 1], hp[1, 1] < hp[1, 3])
+near(hp[1, ], as.numeric(hf@coefficients %*% c(1, 6)), 1e-13)
+h1 <- hachemeister(hx, formula = ~1, adjust_intercept = TRUE)
+near(h1@coefficients[, 1], buhlmann_straub(hx)$premiums, 1e-10)
+stopifnot(inherits(try(hachemeister(hx, formula = ~ I(time * 0 + 2) + time, adjust_intercept = TRUE),
+                       silent = TRUE), "try-error"))
+if (requireNamespace("actuar", quietly = TRUE)) {
+  data(hachemeister, package = "actuar")
+  r <- as.matrix(hachemeister[, 2:13]); ww <- as.matrix(hachemeister[, 14:25])
+  for (adj in c(FALSE, TRUE)) {
+    ref <- actuar::cm(~state, hachemeister, regformula = ~time, regdata = data.frame(time = 1:12),
+                      ratios = ratio.1:ratio.12, weights = weight.1:weight.12, adj.intercept = adj)
+    ours <- hachemeister(r, ww, adjust_intercept = adj)
+    tol <- if (adj) 1e-10 else 1e-6
+    want <- as.numeric(predict(ref, newdata = data.frame(time = 13)))
+    stopifnot(all(abs(predict(ours, data.frame(time = 13))[1, ] / want - 1) < tol))
+  }
+}
+
 cat("prospicio R credibility tests passed\n")
 
 # Bayesian hierarchical credibility: the credibility formula at actuar's

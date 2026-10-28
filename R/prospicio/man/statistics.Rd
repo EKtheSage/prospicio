@@ -23,11 +23,13 @@ statistics(
 
 \item{sd_multiples}{Multiples of the standard deviation.}
 
-\item{quantile}{\code{"inverted_cdf"} (the default, \code{\link[=VaR]{VaR()}}'s, R \code{type = 1})
-or \code{"linear"} (\code{quantile(type = 7)}, numpy's default).}
+\item{quantile}{\code{"inverted_cdf"} (the default, \code{\link[=VaR]{VaR()}}'s, R \code{type = 1}),
+\code{"linear"} (\code{quantile(type = 7)}, numpy's default) or \code{"kth_largest"}
+(the \code{k}-th largest draw, \verb{k = max(1, floor((1 - p) n))}).}
 
-\item{tvar}{\code{"exact"} (the default, \code{\link[=TVaR]{TVaR()}}'s, mass \code{1/n} per draw) or
-\code{"linear"} (the mean of the linear quantile function over \verb{[p, 1]}).}
+\item{tvar}{\code{"exact"} (the default, \code{\link[=TVaR]{TVaR()}}'s, mass \code{1/n} per draw),
+\code{"linear"} (the mean of the linear quantile function over \verb{[p, 1]}) or
+\code{"whole_years"} (the mean of the \code{k} largest draws).}
 }
 \value{
 For draws or a \link{sampled}, a named numeric vector. For a

@@ -35,6 +35,7 @@ pub mod local_pareto;
 pub mod loglogistic;
 pub mod lognormal;
 pub mod mixture;
+pub mod multivariate;
 pub mod normal;
 pub mod ogive;
 pub mod pareto;
@@ -80,6 +81,7 @@ pub use local_pareto::{
 pub use loglogistic::Loglogistic;
 pub use lognormal::Lognormal;
 pub use mixture::Mixture;
+pub use multivariate::{GaussianJoint, MultivariateLognormal, MultivariateNormal};
 pub use normal::Normal;
 pub use ogive::Ogive;
 pub use pareto::Pareto;

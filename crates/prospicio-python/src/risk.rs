@@ -643,24 +643,26 @@ pub(crate) fn allocate(
     py.detach(|| pd.allocate(&d))
 }
 
-/// A quantile method from its numpy name: ``"inverted_cdf"`` or ``"linear"``.
+/// A quantile method from its numpy name: ``"inverted_cdf"``, ``"linear"`` or ``"kth_largest"``.
 pub(crate) fn quantile_method(name: &str) -> PyResult<QuantileMethod> {
     match name {
         "inverted_cdf" => Ok(QuantileMethod::InvertedCdf),
         "linear" => Ok(QuantileMethod::Linear),
+        "kth_largest" => Ok(QuantileMethod::KthLargest),
         _ => Err(PyValueError::new_err(format!(
-            "quantile method must be \"inverted_cdf\" or \"linear\", not {name:?}"
+            "quantile method must be \"inverted_cdf\", \"linear\" or \"kth_largest\", not {name:?}"
         ))),
     }
 }
 
-/// A TVaR method by name: ``"exact"`` or ``"linear"``.
+/// A TVaR method by name: ``"exact"``, ``"linear"`` or ``"whole_years"``.
 pub(crate) fn tvar_method(name: &str) -> PyResult<TvarMethod> {
     match name {
         "exact" => Ok(TvarMethod::Exact),
         "linear" => Ok(TvarMethod::Linear),
+        "whole_years" => Ok(TvarMethod::WholeYears),
         _ => Err(PyValueError::new_err(format!(
-            "TVaR method must be \"exact\" or \"linear\", not {name:?}"
+            "TVaR method must be \"exact\", \"linear\" or \"whole_years\", not {name:?}"
         ))),
     }
 }
@@ -685,12 +687,14 @@ pub(crate) fn tvar_method(name: &str) -> PyResult<TvarMethod> {
 /// sd_multiples : list of float, optional
 ///     By default 1, 2 and 3.
 /// quantile : str
-///     ``"inverted_cdf"`` (the default, ``Sampled.var``'s) or ``"linear"``
-///     (numpy's default, R ``type = 7``).
+///     ``"inverted_cdf"`` (the default, ``Sampled.var``'s), ``"linear"``
+///     (numpy's default, R ``type = 7``) or ``"kth_largest"`` (the ``k``-th
+///     largest draw, ``k = max(1, floor((1 - p) n))``).
 /// tvar : str
-///     ``"exact"`` (the default, ``Sampled.tvar``'s, mass ``1/n`` per draw)
-///     or ``"linear"`` (the mean of the linear quantile function over
-///     ``[p, 1]``).
+///     ``"exact"`` (the default, ``Sampled.tvar``'s, mass ``1/n`` per draw),
+///     ``"linear"`` (the mean of the linear quantile function over
+///     ``[p, 1]``) or ``"whole_years"`` (the mean of the ``k`` largest
+///     draws).
 ///
 /// Returns
 /// -------
@@ -1086,7 +1090,8 @@ pub(crate) fn bootstrap_se<'py>(
 /// tvar_levels : list of float, optional
 ///     In percent; by default 99.
 /// tvar : str
-///     ``"exact"`` (the default) or ``"linear"``, as for ``statistics``.
+///     ``"exact"`` (the default), ``"linear"`` or ``"whole_years"``, as for
+///     ``statistics``.
 ///
 /// Returns
 /// -------
