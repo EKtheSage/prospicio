@@ -53,6 +53,9 @@ use crate::development::Development;
 use crate::error::{Error, Result};
 use crate::one_year_bootstrap::Failures;
 use crate::pattern::{Blend, OneYearPattern, SelectedPattern};
+use crate::pattern_draws::{
+    DevelopmentPatterns, PatternLayout, origin_grain, pattern_ages, write_shares,
+};
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each};
 use crate::tail::Tail;
 use crate::triangle::{Label, Segment, Triangle};
@@ -233,6 +236,10 @@ pub struct OdpBootstrapFit {
     /// Joint distribution of the reserve (sum of future incremental values)
     /// by origin: dimension `origin`, one component per origin period.
     pub reserves: PredictiveDistribution,
+    /// The development pattern each simulation drew (its pseudo factors
+    /// and tail), row `i` simulation `i` of `reserves`
+    /// (`reserving-v02.md` decision 28).
+    pub patterns: DevelopmentPatterns,
 }
 
 /// What the bootstrap estimates in one segment before simulating: the
@@ -327,6 +334,9 @@ pub struct OdpBootstrapFits {
     /// the origins of each segment in turn, like the rows of
     /// [`to_long`](Self::to_long).
     pub reserves: PredictiveDistribution,
+    /// Each segment's development pattern in every simulation, moving with
+    /// the segment's reserves (`reserving-v02.md` decision 28).
+    pub patterns: DevelopmentPatterns,
 }
 
 impl OdpBootstrapFits {
@@ -357,7 +367,12 @@ impl OdpBootstrapFits {
     /// part of the joint reserves (same dimensions).
     pub fn segment(&self, keys: &[(&str, &str)]) -> Result<Self> {
         let (segments, reserves) = pick_segment(&self.segments, &self.reserves, keys)?;
-        Ok(Self { segments, reserves })
+        let patterns = self.patterns.only(&segments.labels[0]);
+        Ok(Self {
+            segments,
+            reserves,
+            patterns,
+        })
     }
 }
 
@@ -512,14 +527,30 @@ impl OdpBootstrap {
             blend: blend.as_ref(),
             kept: Some(&kept),
         };
-        let reserves = simulate_lifetime(
+        let layout = PatternLayout::new(
+            segment.n_origins,
+            vec![(
+                Label::default(),
+                origin_grain(&segment.origins),
+                pattern_ages(ages, tail.is_some()),
+            )],
+        );
+        let mut components: Vec<ComponentKey> =
+            segment.origins.iter().map(|&p| vec![p.into()]).collect();
+        components.extend(layout.keys(1));
+        let (offset, width) = (layout.offset(0), layout.width(0));
+        let wide = simulate_lifetime(
             vec!["origin".into()],
-            segment.origins.iter().map(|&p| vec![p.into()]).collect(),
+            components,
             self.n_sims,
             self.seed,
             self.provenance(column, hasher),
-            |rng, row| sim.run(rng, row, None),
+            |rng, row| {
+                let (reserves, shares) = row.split_at_mut(offset);
+                sim.run(rng, reserves, &mut shares[..width], None)
+            },
         )?;
+        let (reserves, patterns) = layout.split(wide)?;
         let OdpBootstrapSegment {
             chain_ladder,
             fitted,
@@ -532,6 +563,7 @@ impl OdpBootstrap {
             residuals,
             scale,
             reserves,
+            patterns,
         })
     }
 
@@ -572,10 +604,16 @@ impl OdpBootstrap {
         dims.push("origin".into());
         let mut components = Vec::new();
         let mut sims = Vec::with_capacity(prepared.len());
+        let mut layouts = Vec::with_capacity(prepared.len());
         for (label, (fit, pool, (tail, blend, kept), segment)) in prepared.iter() {
             hasher.str(&label.to_string());
             hash_segment(&mut hasher, segment, &fit.chain_ladder, &segment.ages);
             components.extend(origin_keys(label, &segment.origins));
+            layouts.push((
+                label.clone(),
+                origin_grain(&segment.origins),
+                pattern_ages(&segment.ages, tail.is_some()),
+            ));
             let sim = Simulation {
                 segment,
                 latest: &fit.chain_ladder.latest_position,
@@ -589,7 +627,10 @@ impl OdpBootstrap {
             };
             sims.push((sim, keyed.then(|| label.to_string())));
         }
-        let reserves = simulate_lifetime(
+        let layout = PatternLayout::new(components.len(), layouts);
+        let n_reserves = components.len();
+        components.extend(layout.keys(dims.len()));
+        let wide = simulate_lifetime(
             dims,
             components,
             self.n_sims,
@@ -599,19 +640,33 @@ impl OdpBootstrap {
                 .param("dependence", format!("{:?}", self.dependence)),
             |rng, row| {
                 let picks = shared.map(|s| s.picks(rng));
+                let (reserves, shares) = row.split_at_mut(n_reserves);
                 let mut start = 0;
-                for (sim, label) in &sims {
+                for (s, (sim, label)) in sims.iter().enumerate() {
                     let end = start + sim.segment.n_origins;
-                    sim.run(rng, &mut row[start..end], picks.as_deref())
-                        .map_err(|e| in_segment(label, e))?;
+                    let at = layout.offset(s) - n_reserves;
+                    sim.run(
+                        rng,
+                        &mut reserves[start..end],
+                        &mut shares[at..at + layout.width(s)],
+                        picks.as_deref(),
+                    )
+                    .map_err(|e| in_segment(label, e))?;
                     start = end;
                 }
                 Ok(())
             },
         )?;
+        let (reserves, mut patterns) = layout.split(wide)?;
         let segments = prepared.map(|(fit, _, _, _)| fit.clone());
-        let reserves = self.dependence.reorder(reserves, &segments, self.seed)?;
-        Ok(OdpBootstrapFits { segments, reserves })
+        let reserves =
+            self.dependence
+                .reorder_with(reserves, &segments, self.seed, &mut patterns)?;
+        Ok(OdpBootstrapFits {
+            segments,
+            reserves,
+            patterns,
+        })
     }
 
     /// `provenance` with the pattern when there is one; without one, as it
@@ -1058,10 +1113,15 @@ impl Simulation<'_> {
     /// positions: the tail is refitted on this segment's pseudo factors
     /// (so it follows the shared residuals), and a constant tail's
     /// lognormal draw is this segment's own.
+    ///
+    /// `shares` takes the simulation's development pattern, the cumulative
+    /// share at each age from its factors and tail (`reserving-v02.md`
+    /// decision 28), which draws no random number.
     fn run(
         &self,
         rng: &mut StreamRng,
         reserves: &mut [f64],
+        shares: &mut [f64],
         picks: Option<&[usize]>,
     ) -> Result<()> {
         let nd = self.segment.n_dev;
@@ -1077,6 +1137,7 @@ impl Simulation<'_> {
                 (selected, Some(factor))
             }
         };
+        write_shares(&factors, tail, shares);
         for (o, reserve) in reserves.iter_mut().enumerate() {
             let mut cum = pseudo[o * nd + self.latest[o]];
             let mut total = 0.0;

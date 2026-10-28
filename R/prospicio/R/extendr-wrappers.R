@@ -2778,6 +2778,12 @@ OdpBootstrapFit$ultimate_draws <- function(origin) .Call(wrap__OdpBootstrapFit__
 
 OdpBootstrapFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__OdpBootstrapFit__loss_ratio_draws, self, origin, premium)
 
+OdpBootstrapFit$pattern_ages <- function(segment) .Call(wrap__OdpBootstrapFit__pattern_ages, self, segment)
+
+OdpBootstrapFit$pattern_draws <- function(segment) .Call(wrap__OdpBootstrapFit__pattern_draws, self, segment)
+
+OdpBootstrapFit$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__OdpBootstrapFit__monthly_pattern_draws, self, segment, months, basis, monotone)
+
 OdpBootstrapFit$long_table <- function() .Call(wrap__OdpBootstrapFit__long_table, self)
 
 OdpBootstrapFit$totals_table <- function() .Call(wrap__OdpBootstrapFit__totals_table, self)
@@ -2805,6 +2811,12 @@ BayesOdpFit$ultimates <- function() .Call(wrap__BayesOdpFit__ultimates, self)
 BayesOdpFit$ultimate_draws <- function(origin) .Call(wrap__BayesOdpFit__ultimate_draws, self, origin)
 
 BayesOdpFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__BayesOdpFit__loss_ratio_draws, self, origin, premium)
+
+BayesOdpFit$pattern_ages <- function(segment) .Call(wrap__BayesOdpFit__pattern_ages, self, segment)
+
+BayesOdpFit$pattern_draws <- function(segment) .Call(wrap__BayesOdpFit__pattern_draws, self, segment)
+
+BayesOdpFit$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__BayesOdpFit__monthly_pattern_draws, self, segment, months, basis, monotone)
 
 BayesOdpFit$diagnostics <- function() .Call(wrap__BayesOdpFit__diagnostics, self)
 
@@ -2845,6 +2857,12 @@ BayesOdpFits$ultimates <- function() .Call(wrap__BayesOdpFits__ultimates, self)
 BayesOdpFits$ultimate_draws <- function(origin) .Call(wrap__BayesOdpFits__ultimate_draws, self, origin)
 
 BayesOdpFits$loss_ratio_draws <- function(origin, premium) .Call(wrap__BayesOdpFits__loss_ratio_draws, self, origin, premium)
+
+BayesOdpFits$pattern_ages <- function(segment) .Call(wrap__BayesOdpFits__pattern_ages, self, segment)
+
+BayesOdpFits$pattern_draws <- function(segment) .Call(wrap__BayesOdpFits__pattern_draws, self, segment)
+
+BayesOdpFits$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__BayesOdpFits__monthly_pattern_draws, self, segment, months, basis, monotone)
 
 BayesOdpFits$diagnostics_table <- function() .Call(wrap__BayesOdpFits__diagnostics_table, self)
 
@@ -3292,6 +3310,12 @@ BayesBfFit$ultimate_draws <- function(origin) .Call(wrap__BayesBfFit__ultimate_d
 
 BayesBfFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__BayesBfFit__loss_ratio_draws, self, origin, premium)
 
+BayesBfFit$pattern_ages <- function(segment) .Call(wrap__BayesBfFit__pattern_ages, self, segment)
+
+BayesBfFit$pattern_draws <- function(segment) .Call(wrap__BayesBfFit__pattern_draws, self, segment)
+
+BayesBfFit$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__BayesBfFit__monthly_pattern_draws, self, segment, months, basis, monotone)
+
 BayesBfFit$diagnostics <- function() .Call(wrap__BayesBfFit__diagnostics, self)
 
 BayesBfFit$parameter_names <- function() .Call(wrap__BayesBfFit__parameter_names, self)
@@ -3340,6 +3364,12 @@ BayesBfNormalisedFit$ultimate_draws <- function(origin) .Call(wrap__BayesBfNorma
 
 BayesBfNormalisedFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__BayesBfNormalisedFit__loss_ratio_draws, self, origin, premium)
 
+BayesBfNormalisedFit$pattern_ages <- function(segment) .Call(wrap__BayesBfNormalisedFit__pattern_ages, self, segment)
+
+BayesBfNormalisedFit$pattern_draws <- function(segment) .Call(wrap__BayesBfNormalisedFit__pattern_draws, self, segment)
+
+BayesBfNormalisedFit$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__BayesBfNormalisedFit__monthly_pattern_draws, self, segment, months, basis, monotone)
+
 BayesBfNormalisedFit$diagnostics <- function() .Call(wrap__BayesBfNormalisedFit__diagnostics, self)
 
 BayesBfNormalisedFit$parameter_names <- function() .Call(wrap__BayesBfNormalisedFit__parameter_names, self)
@@ -3381,6 +3411,12 @@ MackBootstrapFit$ultimates <- function() .Call(wrap__MackBootstrapFit__ultimates
 MackBootstrapFit$ultimate_draws <- function(origin) .Call(wrap__MackBootstrapFit__ultimate_draws, self, origin)
 
 MackBootstrapFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__MackBootstrapFit__loss_ratio_draws, self, origin, premium)
+
+MackBootstrapFit$pattern_ages <- function(segment) .Call(wrap__MackBootstrapFit__pattern_ages, self, segment)
+
+MackBootstrapFit$pattern_draws <- function(segment) .Call(wrap__MackBootstrapFit__pattern_draws, self, segment)
+
+MackBootstrapFit$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__MackBootstrapFit__monthly_pattern_draws, self, segment, months, basis, monotone)
 
 MackBootstrapFit$long_table <- function() .Call(wrap__MackBootstrapFit__long_table, self)
 

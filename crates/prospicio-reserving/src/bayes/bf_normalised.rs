@@ -20,6 +20,7 @@ use crate::bootstrap::{
 use crate::chain_ladder::ChainLadderFit;
 use crate::error::{Error, Result};
 use crate::expected_loss::origin_exposure;
+use crate::pattern_draws::{DevelopmentPatterns, predictive_with_patterns};
 use crate::segments::{FitTable, ReserveFit, SegmentFits};
 use crate::tail::Tail;
 use crate::triangle::{Label, Segment, Triangle};
@@ -225,6 +226,11 @@ pub struct BayesBfNormalisedFit {
     /// future incremental values) by origin: dimension `origin`, one
     /// component per origin, as [`BayesOdpFit::reserves`](super::BayesOdpFit::reserves).
     pub reserves: PredictiveDistribution,
+    /// The pattern `p_d` of the posterior draw each simulation took, as
+    /// cumulative shares, row `i` simulation `i` of `reserves`
+    /// (`reserving-v02.md` decision 28); [`pattern`](Self::pattern) is
+    /// their posterior mean.
+    pub patterns: DevelopmentPatterns,
     /// The model, for the pointwise log likelihood of [`loo`](Self::loo).
     model: Model,
 }
@@ -346,18 +352,21 @@ impl BayesBfNormalised {
         let latest = &chain_ladder.latest_position;
         let (no, nd) = (segment.n_origins, segment.n_dev);
         let (process, phi) = (self.process, model.phi);
-        let reserves = posterior.predictive(
-            vec!["origin".into()],
-            segment.origins.iter().map(|&o| vec![o.into()]).collect(),
+        let (reserves, patterns) = predictive_with_patterns(
+            &posterior,
+            segment,
             self.n_sims,
             derive_seed(self.seed, Stream::Predictive),
             self.provenance(column, exposure, &model, hasher),
-            |theta, rng: &mut StreamRng, row| {
+            |theta, rng: &mut StreamRng, row, increments| {
                 let log_share = log_pattern(no, nd, theta);
                 for (w, reserve) in row.iter_mut().enumerate() {
                     *reserve = (latest[w] + 1..nd)
                         .map(|d| process_draw(process, phi, (theta[w] + log_share[d]).exp(), rng))
                         .sum();
+                }
+                for (x, s) in increments.iter_mut().zip(&log_share) {
+                    *x = s.exp();
                 }
             },
         )?;
@@ -369,6 +378,7 @@ impl BayesBfNormalised {
             posterior,
             diagnostics,
             reserves,
+            patterns,
             model,
         })
     }

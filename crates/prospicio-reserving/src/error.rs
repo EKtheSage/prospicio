@@ -111,6 +111,10 @@ pub enum Error {
     /// An excess-layer pattern cannot be derived from this input
     /// (`reserving-excess.md`).
     Excess(String),
+    /// Development patterns per simulation cannot be read as asked
+    /// (`reserving-v02.md` decision 28): an unknown segment, a falling
+    /// pattern or a horizon too short.
+    PatternDraws(String),
     /// Clark's growth-curve model cannot be fitted to this triangle.
     Clark(String),
     /// A growth curve cannot be fitted to this benchmark pattern
@@ -228,6 +232,7 @@ impl fmt::Display for Error {
             Self::Bayes(why) => write!(f, "Bayesian reserving: {why}"),
             Self::Apriori(why) => write!(f, "apriori: {why}"),
             Self::Excess(why) => write!(f, "excess layer: {why}"),
+            Self::PatternDraws(why) => write!(f, "pattern draws: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
             Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),

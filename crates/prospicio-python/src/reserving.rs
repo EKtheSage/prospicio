@@ -12,13 +12,14 @@ use prospicio_core::{Grain, Lag, Month, Period};
 use prospicio_reserving::{
     AnnualReading, Apriori, Average, BenchmarkCurve, BenchmarkCurveFit, Benktander,
     BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder, ChainLadderFit, ClaimsDevelopmentResult,
-    ClarkCapeCod, ClarkFit, ClarkLdf, CurveShape, Development, DevelopmentColumn, DiagonalAge,
-    ExpectedLoss, ExpectedLossFit, FitTable, GrowthCurve, Label, LatestDiagonals, Long,
-    LongDiagonal, Mack, MackBootstrap, MackBootstrapFits, MackBootstrapSegment, MackFit,
-    MackProcess, OdpBootstrap, OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod,
-    OneYearPattern, PastPatternEnd, PatternKind, PatternWeight, ProcessDistribution, ReserveFit,
-    SegmentDependence, SegmentFits, SegmentMap, SelectedPattern, SigmaInterpolation, Tail,
-    TailBondy, TailConstant, TailCurve, Triangle, UnderwritingBasis, view,
+    ClarkCapeCod, ClarkFit, ClarkLdf, CurveShape, Development, DevelopmentColumn,
+    DevelopmentPatterns, DiagonalAge, ExpectedLoss, ExpectedLossFit, FitTable, GrowthCurve, Label,
+    LatestDiagonals, Long, LongDiagonal, Mack, MackBootstrap, MackBootstrapFits,
+    MackBootstrapSegment, MackFit, MackProcess, Monotone, MonthlyBasis, OdpBootstrap,
+    OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod, OneYearPattern,
+    PastPatternEnd, PatternKind, PatternWeight, ProcessDistribution, ReserveFit, SegmentDependence,
+    SegmentFits, SegmentMap, SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailConstant,
+    TailCurve, Triangle, UnderwritingBasis, view,
 };
 use prospicio_reserving::{
     CALENDAR_YEAR_CI, CalendarYearTest, DEVELOPMENT_CORRELATION_CI, DevelopmentCorrelationTest,
@@ -2124,6 +2125,185 @@ impl PyUnderwritingBasis {
 
     fn __repr__(&self) -> String {
         underwriting_repr(&self.inner)
+    }
+}
+
+/// The label parts of a segment: ``None`` (a fit of one segment), one
+/// string, or a tuple or list of strings.
+fn segment_parts(segment: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<String>> {
+    let Some(s) = segment.filter(|s| !s.is_none()) else {
+        return Ok(Vec::new());
+    };
+    if let Ok(one) = s.extract::<String>() {
+        return Ok(vec![one]);
+    }
+    s.extract::<Vec<String>>().map_err(|_| {
+        PyTypeError::new_err("segment must be None, a string, or a tuple or list of strings")
+    })
+}
+
+/// The monthly basis a ``basis`` argument names.
+fn monthly_basis(basis: Option<&Bound<'_, PyAny>>) -> PyResult<MonthlyBasis> {
+    let Some(b) = basis.filter(|b| !b.is_none()) else {
+        return Ok(MonthlyBasis::default());
+    };
+    if let Ok(u) = b.extract::<PyRef<'_, PyUnderwritingBasis>>() {
+        return Ok(MonthlyBasis::Underwriting(u.inner.clone()));
+    }
+    match b.extract::<String>().as_deref() {
+        Ok("origin") => Ok(MonthlyBasis::Origin(AnnualReading::default())),
+        Ok("origin_ln_linear") => Ok(MonthlyBasis::Origin(AnnualReading::LnLinear)),
+        _ => Err(PyValueError::new_err(
+            "basis must be None, \"origin\", \"origin_ln_linear\" or an UnderwritingBasis",
+        )),
+    }
+}
+
+/// Each simulation's development pattern of a stochastic reserving fit
+/// (``fit.patterns``), to pair with the simulation's loss ratio in the
+/// cash-flow engine.
+///
+/// A fit that draws its development per simulation (the bootstraps'
+/// pseudo factors, the Bayesian models' posterior draws) has a pattern
+/// for each simulation: row ``i`` is simulation ``i`` of the fit's
+/// ``reserves`` and of ``ultimate_draws``. A segment is named by its label
+/// parts, a tuple of strings; a fit of one segment needs no label.
+///
+/// Examples
+/// --------
+/// >>> # patterns = fit.patterns
+/// >>> # paid = patterns.monthly(120, monotone="running_max")
+/// >>> # terms.run(u, paid_patterns=paid)
+#[pyclass(name = "DevelopmentPatterns", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyDevelopmentPatterns {
+    inner: DevelopmentPatterns,
+}
+
+#[pymethods]
+impl PyDevelopmentPatterns {
+    /// The number of simulations, the fit's.
+    #[getter]
+    fn n_sims(&self) -> usize {
+        self.inner.n_sims()
+    }
+
+    /// The label of each segment, a tuple of strings (empty for a fit of
+    /// one segment).
+    #[getter]
+    fn segments<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyTuple>>> {
+        self.inner
+            .segments()
+            .iter()
+            .map(|s| PyTuple::new(py, s.label()))
+            .collect()
+    }
+
+    /// The development ages in months: the triangle's, and with a tail one
+    /// development period past the oldest, where the share is 1.
+    ///
+    /// Parameters
+    /// ----------
+    /// segment : None, str or tuple of str
+    ///     The segment's label parts; ``None`` for a fit of one segment.
+    #[pyo3(signature = (segment = None))]
+    fn ages(&self, segment: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<u32>> {
+        let parts = segment_parts(segment)?;
+        let refs: Vec<&str> = parts.iter().map(String::as_str).collect();
+        Ok(self.inner.segment(&refs).map_err(err)?.ages().to_vec())
+    }
+
+    /// The cumulative share of the ultimate at each age, one list per
+    /// simulation.
+    ///
+    /// Parameters
+    /// ----------
+    /// segment : None, str or tuple of str
+    ///     As in ``ages``.
+    ///
+    /// Returns
+    /// -------
+    /// list of list of float
+    #[pyo3(signature = (segment = None))]
+    fn pattern_draws(&self, segment: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<Vec<f64>>> {
+        let parts = segment_parts(segment)?;
+        let refs: Vec<&str> = parts.iter().map(String::as_str).collect();
+        self.inner.pattern_draws(&refs).map_err(err)
+    }
+
+    /// The mean share at each age over the simulations.
+    ///
+    /// Parameters
+    /// ----------
+    /// segment : None, str or tuple of str
+    ///     As in ``ages``.
+    #[pyo3(signature = (segment = None))]
+    fn mean(&self, segment: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<f64>> {
+        let parts = segment_parts(segment)?;
+        let refs: Vec<&str> = parts.iter().map(String::as_str).collect();
+        Ok(self.inner.segment(&refs).map_err(err)?.mean())
+    }
+
+    /// Each simulation's pattern by month, for the cash-flow engine's
+    /// ``paid_patterns``.
+    ///
+    /// Parameters
+    /// ----------
+    /// months : int
+    ///     The number of months in each row; it must reach the month at
+    ///     which the converted pattern reaches 1.
+    /// segment : None, str or tuple of str
+    ///     As in ``ages``.
+    /// basis : None, "origin", "origin_ln_linear" or UnderwritingBasis
+    ///     The basis the pattern is put on. ``None`` and ``"origin"``: the
+    ///     origin's own basis, a month from inception per month of age, a
+    ///     pattern of longer origin periods read between its ages by the
+    ///     Weibull growth curve; ``"origin_ln_linear"`` reads it as
+    ///     ``ln CDF`` linear between ages. An ``UnderwritingBasis``: the
+    ///     pattern of a year of policies written and earned as it says.
+    /// monotone : {"refuse", "running_max"}, default "refuse"
+    ///     What to do with a simulation whose share falls from one age to
+    ///     the next (a pseudo factor below 1) or is not positive (a
+    ///     negative factor, which Mack's bootstrap can draw):
+    ///     ``"refuse"`` raises an error naming how many simulations and the
+    ///     first; ``"running_max"`` holds each share at the largest before
+    ///     it, capped at 1, and gives a share that is not positive the next
+    ///     positive share, so nothing is paid until then.
+    ///
+    /// Returns
+    /// -------
+    /// list of list of float
+    ///     One row of ``months`` values per simulation.
+    #[pyo3(signature = (months, segment = None, basis = None, monotone = "refuse"))]
+    fn monthly(
+        &self,
+        months: usize,
+        segment: Option<&Bound<'_, PyAny>>,
+        basis: Option<&Bound<'_, PyAny>>,
+        monotone: &str,
+    ) -> PyResult<Vec<Vec<f64>>> {
+        let parts = segment_parts(segment)?;
+        let refs: Vec<&str> = parts.iter().map(String::as_str).collect();
+        let basis = monthly_basis(basis)?;
+        let monotone = match monotone {
+            "refuse" => Monotone::Refuse,
+            "running_max" => Monotone::RunningMax,
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "monotone must be \"refuse\" or \"running_max\", got {monotone:?}"
+                )));
+            }
+        };
+        self.inner
+            .monthly(&refs, &basis, months, monotone)
+            .map_err(err)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "DevelopmentPatterns(n_sims={}, segments={})",
+            self.inner.n_sims(),
+            self.inner.segments().len()
+        )
     }
 }
 
@@ -7461,6 +7641,21 @@ impl PyOdpBootstrapFit {
 
 #[pymethods]
 impl PyOdpBootstrapFit {
+    /// Each simulation's development pattern, to pair with the
+    /// simulation's loss ratio in the cash-flow engine.
+    ///
+    /// Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+    /// ``ultimates`` and ``ultimate_draws``.
+    ///
+    /// Returns
+    /// -------
+    /// DevelopmentPatterns
+    #[getter]
+    fn patterns(&self) -> PyDevelopmentPatterns {
+        PyDevelopmentPatterns {
+            inner: self.inner.patterns.clone(),
+        }
+    }
     /// The deterministic volume-weighted chain ladder the bootstrap is
     /// centred on, with the bootstrap's tail.
     #[getter]
@@ -8262,6 +8457,21 @@ pub(crate) struct PyMackBootstrapFit {
 
 #[pymethods]
 impl PyMackBootstrapFit {
+    /// Each simulation's development pattern, to pair with the
+    /// simulation's loss ratio in the cash-flow engine.
+    ///
+    /// Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+    /// ``ultimates`` and ``ultimate_draws``.
+    ///
+    /// Returns
+    /// -------
+    /// DevelopmentPatterns
+    #[getter]
+    fn patterns(&self) -> PyDevelopmentPatterns {
+        PyDevelopmentPatterns {
+            inner: self.inner.patterns.clone(),
+        }
+    }
     /// The chain ladder of Mack's model (its averaging), with the
     /// bootstrap's tail: the reserves the bootstrap's mean equals with
     /// ``centre_residuals=True``, the default, without a tail or with a
@@ -9259,6 +9469,21 @@ pub(crate) struct PyBayesOdpFit {
 
 #[pymethods]
 impl PyBayesOdpFit {
+    /// Each simulation's development pattern, to pair with the
+    /// simulation's loss ratio in the cash-flow engine.
+    ///
+    /// Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+    /// ``ultimates`` and ``ultimate_draws``.
+    ///
+    /// Returns
+    /// -------
+    /// DevelopmentPatterns
+    #[getter]
+    fn patterns(&self) -> PyDevelopmentPatterns {
+        PyDevelopmentPatterns {
+            inner: self.inner.patterns.clone(),
+        }
+    }
     /// The volume-weighted chain ladder of the triangle, whose latest
     /// values and Pearson scale the model uses.
     #[getter]
@@ -9628,6 +9853,21 @@ impl PyBayesOdpFits {
 
 #[pymethods]
 impl PyBayesOdpFits {
+    /// Each simulation's development pattern, to pair with the
+    /// simulation's loss ratio in the cash-flow engine.
+    ///
+    /// Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+    /// ``ultimates`` and ``ultimate_draws``.
+    ///
+    /// Returns
+    /// -------
+    /// DevelopmentPatterns
+    #[getter]
+    fn patterns(&self) -> PyDevelopmentPatterns {
+        PyDevelopmentPatterns {
+            inner: self.inner.patterns.clone(),
+        }
+    }
     /// The volume-weighted chain ladder of every segment, whose latest
     /// values and Pearson scales the model uses.
     #[getter]
@@ -10989,6 +11229,21 @@ pub(crate) struct PyBayesBfFit {
 
 #[pymethods]
 impl PyBayesBfFit {
+    /// Each simulation's development pattern, to pair with the
+    /// simulation's loss ratio in the cash-flow engine.
+    ///
+    /// Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+    /// ``ultimates`` and ``ultimate_draws``.
+    ///
+    /// Returns
+    /// -------
+    /// DevelopmentPatterns
+    #[getter]
+    fn patterns(&self) -> PyDevelopmentPatterns {
+        PyDevelopmentPatterns {
+            inner: self.inner.patterns.clone(),
+        }
+    }
     /// The volume-weighted chain ladder of the triangle, whose latest
     /// values and Pearson scale the model uses.
     #[getter]
@@ -11671,6 +11926,21 @@ pub(crate) struct PyBayesBfNormalisedFit {
 
 #[pymethods]
 impl PyBayesBfNormalisedFit {
+    /// Each simulation's development pattern, to pair with the
+    /// simulation's loss ratio in the cash-flow engine.
+    ///
+    /// Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+    /// ``ultimates`` and ``ultimate_draws``.
+    ///
+    /// Returns
+    /// -------
+    /// DevelopmentPatterns
+    #[getter]
+    fn patterns(&self) -> PyDevelopmentPatterns {
+        PyDevelopmentPatterns {
+            inner: self.inner.patterns.clone(),
+        }
+    }
     /// The volume-weighted chain ladder of the triangle, whose latest
     /// values and Pearson scale the model uses.
     #[getter]

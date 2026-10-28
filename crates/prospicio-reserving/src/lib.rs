@@ -67,6 +67,7 @@ pub mod odp_glm;
 pub mod one_year;
 pub mod one_year_bootstrap;
 pub mod pattern;
+pub mod pattern_draws;
 pub mod segments;
 pub mod tail;
 pub mod triangle;
@@ -115,6 +116,7 @@ pub use odp_glm::{
 pub use one_year::ClaimsDevelopmentResult;
 pub use one_year_bootstrap::{OneYearFit, OneYearFits, OneYearMethod, OneYearSegment};
 pub use pattern::{OneYearPattern, PatternKind, PatternWeight, SelectedPattern, UnderwritingBasis};
+pub use pattern_draws::{DevelopmentPatterns, Monotone, MonthlyBasis, SegmentPatterns};
 pub use prospicio_core::{Grain, Lag, Month, Period};
 pub use segments::{FitTable, ReserveFit, SegmentFits};
 pub use tail::{CurveShape, Tail, TailBondy, TailConstant, TailCurve, TailFit};

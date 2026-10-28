@@ -72,6 +72,7 @@ from .prospicio_native import (
     TailCurve,
     TailLogLinear,
     Triangle,
+    DevelopmentPatterns,
     UnderwritingBasis,
     calendar_year_effect,
     development_correlation,
@@ -84,6 +85,7 @@ from .prospicio_native import (
 __all__ = [
     "Triangle",
     "UnderwritingBasis",
+    "DevelopmentPatterns",
     "ChainLadder",
     "ChainLadderFit",
     "Mack",

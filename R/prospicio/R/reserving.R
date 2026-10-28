@@ -7381,3 +7381,116 @@ ultimate_distribution <- function(fit) {
   check_draws_fit(fit)
   predictive_distribution(ptr = rust_result(fit@ptr$ultimates(), call = sys.call()))
 }
+
+# The fits with a development pattern per simulation (`DevelopmentPatterns`
+# in Rust, reserving-v02.md decision 28).
+check_pattern_fit <- function(fit) {
+  classes <- list(odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits,
+                  bayes_bf_fit, bayes_bf_normalised_fit)
+  if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
+    stop("fit must be an odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, ",
+         "bayes_bf_fit or bayes_bf_normalised_fit", call. = FALSE)
+  }
+}
+
+segment_arg <- function(segment) {
+  if (is.null(segment)) character(0) else as.character(unlist(segment))
+}
+
+pattern_matrix <- function(flat, n_col) {
+  matrix(flat, ncol = n_col, byrow = TRUE)
+}
+
+#' Development patterns per simulation
+#'
+#' The cumulative share of the ultimate that an origin with nothing yet
+#' observed would have reached at each development age, under the
+#' development each simulation drew: the bootstraps' pseudo factors
+#' (selected, blended and with the tail drawn as the reserves use them), or
+#' the Bayesian models' column effects of the posterior draw the simulation
+#' took (`docs/design/reserving-v02.md`, decision 28). Row `i` is simulation
+#' `i` of `fit@reserves`, so it keeps the dependence with [ultimate_draws()]
+#' and every other vector built from the fit.
+#'
+#' `pattern_draws()` gives the shares at the triangle's own ages.
+#' `monthly_pattern_draws()` gives, per simulation, the share at the end of
+#' each of the first `months` months from inception, the form that
+#' [cashflow_run()] takes as `paid_patterns`. On the origin's own basis
+#' (`basis = NULL`, the default) a pattern of accident periods longer than a
+#' month is read between its ages by a Weibull growth curve; `"origin_ln_linear"`
+#' reads it log-linearly, as before decision 25. An [underwriting_basis()]
+#' converts it to the pattern of a year of policies written and earned as the
+#' basis says, so the terms' `written` and `earned` must describe the same
+#' basis (the engine cannot check it).
+#'
+#' A fit with a tail reaches 1 one development period after the oldest age;
+#' the Bayesian models have no tail, so their pattern reaches 1 at the oldest
+#' age. Every monthly pattern ends at exactly 1, and `months` shorter than
+#' the month at which a converted pattern reaches 1 is an error. A pseudo
+#' factor below 1 makes a simulation's share fall, and a negative factor (which
+#' Mack's bootstrap can draw) makes it negative; the cash-flow engine refuses
+#' both: `monotone = "refuse"` (the default) is an error naming how many
+#' simulations and the first, `"running_max"` holds each share at the
+#' largest before it, capped at 1, and gives a share that is not positive the
+#' next positive share, so nothing is paid until then.
+#'
+#' No fit knows whether its triangle is paid: a pattern from an incurred
+#' triangle is an incurred pattern, and the engine reads it as paid.
+#'
+#' @param fit An [odp_bootstrap_fit], [mack_bootstrap_fit], [bayes_odp_fit],
+#'   [bayes_odp_fits], [bayes_bf_fit] or [bayes_bf_normalised_fit].
+#' @param segment `NULL` for a fit of one segment, or the segment's key
+#'   values (`"Auto"`, `c("Auto", "NSW")`) over segments.
+#' @param months The number of months, a whole number of at least 1; patterns
+#'   are padded with 1 past the month at which they reach it.
+#' @param basis `NULL` or `"origin"` for the origin's own basis,
+#'   `"origin_ln_linear"` for its log-linear reading, or an
+#'   [underwriting_basis()].
+#' @param monotone `"refuse"` (the default) or `"running_max"`.
+#' @returns A numeric matrix with one row per simulation: for
+#'   `pattern_draws()` one column per development age, named by the age in
+#'   months; for `monthly_pattern_draws()` `months` columns.
+#' @name pattern_draws
+#' @examples
+#' long <- data.frame(year = c(2020, 2020, 2020, 2021, 2021, 2022),
+#'                    age = c(12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 110, 170, 120))
+#' fit <- odp_bootstrap(triangle(long, "year", "age", "paid"), n_sims = 200, seed = 1)
+#' p <- pattern_draws(fit)
+#' dim(p)
+#' colMeans(p)
+#' m <- monthly_pattern_draws(fit, 48, monotone = "running_max")
+#' dim(m)
+NULL
+
+#' @rdname pattern_draws
+#' @export
+pattern_draws <- function(fit, segment = NULL) {
+  check_pattern_fit(fit)
+  segment <- segment_arg(segment)
+  ages <- rust_result(fit@ptr$pattern_ages(segment), call = sys.call())
+  flat <- rust_result(fit@ptr$pattern_draws(segment), call = sys.call())
+  out <- pattern_matrix(flat, length(ages))
+  colnames(out) <- format(ages, trim = TRUE, scientific = FALSE)
+  out
+}
+
+#' @rdname pattern_draws
+#' @export
+monthly_pattern_draws <- function(fit, months, segment = NULL, basis = NULL,
+                                  monotone = "refuse") {
+  check_pattern_fit(fit)
+  if (!is.numeric(months) || length(months) != 1 || is.na(months)) {
+    stop("months must be a single number", call. = FALSE)
+  }
+  if (!is.null(basis) && !is.character(basis) && !inherits(basis, "underwriting_basis")) {
+    stop("basis must be NULL, \"origin\", \"origin_ln_linear\" or an underwriting_basis()",
+         call. = FALSE)
+  }
+  if (!is.character(monotone) || length(monotone) != 1) {
+    stop("monotone must be \"refuse\" or \"running_max\"", call. = FALSE)
+  }
+  flat <- rust_result(fit@ptr$monthly_pattern_draws(segment_arg(segment), as.double(months),
+                                                    basis, monotone), call = sys.call())
+  pattern_matrix(flat, as.integer(months))
+}

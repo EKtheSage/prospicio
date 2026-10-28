@@ -24,6 +24,7 @@ use crate::chain_ladder::ChainLadderFit;
 use crate::dependence::SegmentDependence;
 use crate::error::{Error, Result};
 use crate::frame::TriangleFrame;
+use crate::pattern_draws::{DevelopmentPatterns, predictive_with_patterns};
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each};
 use crate::tail::Tail;
 use crate::triangle::{Label, Segment, Triangle};
@@ -154,6 +155,10 @@ pub struct BayesOdpFit {
     /// future incremental values) by origin: dimension `origin`, one
     /// component per origin, as [`OdpBootstrapFit::reserves`](crate::OdpBootstrapFit::reserves).
     pub reserves: PredictiveDistribution,
+    /// The development pattern of the posterior draw each simulation took
+    /// (the shares `exp(b_d)` over their sum), row `i` simulation `i` of
+    /// `reserves` (`reserving-v02.md` decision 28).
+    pub patterns: DevelopmentPatterns,
     /// The model, for the pointwise log likelihood of [`loo`](Self::loo).
     model: Model,
 }
@@ -242,6 +247,9 @@ pub struct BayesOdpFits {
     /// components run over the origins of each segment in turn, like the
     /// rows of [`to_long`](Self::to_long).
     pub reserves: PredictiveDistribution,
+    /// Each segment's development pattern in every simulation, moving with
+    /// the segment's reserves (`reserving-v02.md` decision 28).
+    pub patterns: DevelopmentPatterns,
 }
 
 impl BayesOdpFits {
@@ -276,7 +284,12 @@ impl BayesOdpFits {
     /// part of the joint reserves (same dimensions).
     pub fn segment(&self, keys: &[(&str, &str)]) -> Result<Self> {
         let (segments, reserves) = pick_segment(&self.segments, &self.reserves, keys)?;
-        Ok(Self { segments, reserves })
+        let patterns = self.patterns.only(&segments.labels[0]);
+        Ok(Self {
+            segments,
+            reserves,
+            patterns,
+        })
     }
 }
 
@@ -290,7 +303,7 @@ impl BayesOdp {
     pub fn fit(&self, triangle: &Triangle, column: &str) -> Result<BayesOdpFit> {
         self.validate()?;
         let segment = triangle.segment(column)?;
-        let (fit, reserves) =
+        let (fit, reserves, patterns) =
             self.fit_segment(&segment, column, Stream::Chains, Stream::Predictive)?;
         let BayesOdpSegment {
             chain_ladder,
@@ -305,6 +318,7 @@ impl BayesOdp {
             posterior,
             diagnostics,
             reserves,
+            patterns,
             model,
         })
     }
@@ -351,7 +365,7 @@ impl BayesOdp {
         let mut dims = fitted.key_names.clone();
         dims.push("origin".into());
         let mut components = Vec::new();
-        for ((label, (fit, _)), segment) in fitted.iter().zip(triangle.segments(column)?) {
+        for ((label, (fit, _, _)), segment) in fitted.iter().zip(triangle.segments(column)?) {
             hasher.str(&label.to_string());
             hash_segment(&mut hasher, &segment, &fit.chain_ladder, &segment.ages);
             components.extend(origin_keys(label, &segment.origins));
@@ -359,7 +373,7 @@ impl BayesOdp {
         let n = components.len();
         let mut draws = Vec::with_capacity(self.n_sims * n);
         for i in 0..self.n_sims {
-            for (_, reserves) in &fitted.fits {
+            for (_, reserves, _) in &fitted.fits {
                 let m = reserves.n_components();
                 draws.extend_from_slice(&reserves.draw_matrix()[i * m..(i + 1) * m]);
             }
@@ -367,7 +381,7 @@ impl BayesOdp {
         let list = |f: fn(&BayesOdpSegment) -> f64| {
             format!(
                 "{:?}",
-                fitted.fits.iter().map(|(s, _)| f(s)).collect::<Vec<_>>()
+                fitted.fits.iter().map(|(s, _, _)| f(s)).collect::<Vec<_>>()
             )
         };
         let provenance = self
@@ -381,13 +395,23 @@ impl BayesOdp {
                 fitted
                     .fits
                     .first()
-                    .map_or(0, |(s, _)| s.posterior.n_draws()),
+                    .map_or(0, |(s, _, _)| s.posterior.n_draws()),
             )
             .input_hash(hasher.finish());
         let reserves = PredictiveDistribution::from_draws(dims, components, draws, provenance)?;
-        let segments = fitted.map(|(fit, _)| fit.clone());
-        let reserves = self.dependence.reorder(reserves, &segments, self.seed)?;
-        Ok(BayesOdpFits { segments, reserves })
+        let mut patterns = DevelopmentPatterns::joined(
+            &fitted.labels,
+            fitted.fits.iter().map(|(_, _, p)| p.clone()).collect(),
+        );
+        let segments = fitted.map(|(fit, _, _)| fit.clone());
+        let reserves =
+            self.dependence
+                .reorder_with(reserves, &segments, self.seed, &mut patterns)?;
+        Ok(BayesOdpFits {
+            segments,
+            reserves,
+            patterns,
+        })
     }
 
     /// The one-year view of `column` of a single-segment cumulative
@@ -469,7 +493,7 @@ impl BayesOdp {
         self.validate()?;
         settings.validate()?;
         let segment = triangle.segment(column)?;
-        let (fit, reserves) =
+        let (fit, reserves, patterns) =
             self.fit_segment(&segment, column, Stream::Chains, Stream::Predictive)?;
         let year = self.year_draws(triangle, &segment, &fit, Stream::Predictive, settings)?;
         let mut hasher = InputHasher::new();
@@ -491,6 +515,7 @@ impl BayesOdp {
             posterior,
             diagnostics,
             reserves,
+            patterns,
             model,
         };
         one_year::assemble(fit, year, &segment, settings, provenance)
@@ -518,7 +543,7 @@ impl BayesOdp {
             let predictive = Stream::SegmentPredictive(k);
             let fit = self
                 .fit_segment(segment, column, Stream::SegmentChains(k), predictive)
-                .and_then(|(fit, _)| {
+                .and_then(|(fit, _, _)| {
                     let year = self.year_draws(triangle, segment, &fit, predictive, settings)?;
                     Ok((fit, year))
                 });
@@ -615,15 +640,16 @@ impl BayesOdp {
             .param("scale", model.phi)
     }
 
-    /// The posterior of one segment and its reserves by origin, with the
-    /// seeds of `chains` and `predictive`.
+    /// The posterior of one segment, its reserves by origin and its
+    /// development pattern in each simulation, with the seeds of `chains`
+    /// and `predictive`.
     fn fit_segment(
         &self,
         segment: &Segment,
         column: &str,
         chains: Stream,
         predictive: Stream,
-    ) -> Result<(BayesOdpSegment, PredictiveDistribution)> {
+    ) -> Result<(BayesOdpSegment, PredictiveDistribution, DevelopmentPatterns)> {
         let Prepared {
             chain_ladder,
             model,
@@ -638,17 +664,21 @@ impl BayesOdp {
         let latest = &chain_ladder.latest_position;
         let nd = segment.n_dev;
         let (process, phi) = (self.process, model.phi);
-        let reserves = posterior.predictive(
-            vec!["origin".into()],
-            segment.origins.iter().map(|&o| vec![o.into()]).collect(),
+        let (reserves, patterns) = predictive_with_patterns(
+            &posterior,
+            segment,
             self.n_sims,
             derive_seed(self.seed, predictive),
             self.provenance(column, &model, hasher),
-            |theta, rng: &mut StreamRng, row| {
+            |theta, rng: &mut StreamRng, row, increments| {
                 for (w, reserve) in row.iter_mut().enumerate() {
                     *reserve = (latest[w] + 1..nd)
                         .map(|d| process_draw(process, phi, model.eta(theta, w, d).exp(), rng))
                         .sum();
+                }
+                // Every origin's increments are in proportion to exp(b_d).
+                for (d, x) in increments.iter_mut().enumerate() {
+                    *x = model.eta(theta, 0, d).exp();
                 }
             },
         )?;
@@ -661,6 +691,7 @@ impl BayesOdp {
                 model,
             },
             reserves,
+            patterns,
         ))
     }
 
@@ -2440,7 +2471,7 @@ mod tests {
             .into_iter()
             .map(|tri| {
                 let segment = tri.segment("values").unwrap();
-                let (fit, _) = model
+                let (fit, _, _) = model
                     .fit_segment(&segment, "values", Stream::Chains, Stream::Predictive)
                     .unwrap();
                 (tri, segment, fit)
@@ -2518,7 +2549,7 @@ mod tests {
         let model = quick(4);
         let tri = genins();
         let segment = tri.segment("values").unwrap();
-        let (fit, _) = model
+        let (fit, _, _) = model
             .fit_segment(&segment, "values", Stream::Chains, Stream::Predictive)
             .unwrap();
         let cells = OdpRefit::new(&model, &fit);
