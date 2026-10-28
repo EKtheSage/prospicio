@@ -6,6 +6,7 @@
 
 ## Next
 
+- [deal-monitoring] #603 deal monitoring after binding: actual vs expected paid and the forward cash flows from a valuation month, designed in `time-value.md` ("Deal monitoring after binding"), waiting on the user's decisions M1 to M6
 
 ## Done
 
