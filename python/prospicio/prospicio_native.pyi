@@ -1293,11 +1293,21 @@ class BayesBfNormalised:
     
     Every development column's observed increments must sum to more than
     zero, and every origin's to more than ``-phi / cv**2``; negative cells
-    are allowed. One ``seed`` replays a fit exactly, whatever the number of
-    threads. Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS
-    below 100 per chain, any divergent transition) do not fail the fit:
-    ``fit`` raises one ``UserWarning`` listing them, and they stay in
-    ``BayesBfNormalisedFit.diagnostics``.
+    are allowed. The error names the age or origin, its number of observed
+    cells, their sum and the remedies. A column that sums to zero or less
+    has no log-linear mean, since every mean is an ultimate times a
+    positive share; the chain ladder accepts the same triangle, and
+    ``BayesOdp`` and ``BayesBf`` refuse it too. To drop a sparse late age,
+    rebuild the triangle without its rows: with
+    ``df = pandas.DataFrame(tri.to_frame())``,
+    ``Triangle.from_frame(df[df["development"] != 120], "origin",
+    "development", ["paid", "premium"])``; carry the movement left out as a
+    tail outside the model. For an origin, a finite ``cv`` below the bound
+    the error prints makes its posterior proper. One ``seed`` replays a fit
+    exactly, whatever the number of threads. Failed MCMC diagnostics (R-hat
+    above 1.01, bulk or tail ESS below 100 per chain, any divergent
+    transition) do not fail the fit: ``fit`` raises one ``UserWarning``
+    listing them, and they stay in ``BayesBfNormalisedFit.diagnostics``.
     
     Parameters
     ----------
