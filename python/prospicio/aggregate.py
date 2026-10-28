@@ -2,7 +2,7 @@
 events, the occurrence exceedance (OEP) curve, compound moments to third
 order with the approximations fitted to them, eventual ruin by the
 Pollaczeck–Khinchine formula and, for renewal claims, by Wiener–Hopf
-(wiener_hopf), a severity reshaped to layer loss picks, and a catastrophe model's
+(wiener_hopf), ruin within a finite horizon (finite_horizon_ruin), a severity reshaped to layer loss picks, and a catastrophe model's
 event loss table with secondary uncertainty (EventLossTable), and two lines hit by
 the same events: their joint loss by a 2-D FFT (fft_bivariate, JointGrid) and the
 clash model (Clash), a vendor's year loss table read and expanded to a run's
@@ -25,6 +25,7 @@ from .prospicio_native import (
     EventSet,
     Expense,
     Exposure,
+    FiniteRuin,
     GridAudit,
     GridSize,
     Group,
@@ -44,6 +45,7 @@ from .prospicio_native import (
     fft,
     fft_auto,
     fft_bivariate,
+    finite_horizon_ruin,
     layer_loss_picks,
     occurrence_exceedance,
     occurrence_pml,
@@ -91,6 +93,8 @@ __all__ = [
     "Approximation",
     "eventual_ruin",
     "Ruin",
+    "finite_horizon_ruin",
+    "FiniteRuin",
     "wiener_hopf",
     "RenewalRuin",
     "layer_loss_picks",

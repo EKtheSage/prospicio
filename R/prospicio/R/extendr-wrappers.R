@@ -80,6 +80,8 @@ approximation_eval_rust <- function(moments, kind, values, quantile) .Call(wrap_
 
 eventual_ruin_rust <- function(severity, rho, points, part, value, p) .Call(wrap__eventual_ruin_rust, severity, rho, points, part, value, p)
 
+finite_horizon_ruin_rust <- function(severity, premium, periods, frequency, rate, sub_periods, points, p) .Call(wrap__finite_horizon_ruin_rust, severity, premium, periods, frequency, rate, sub_periods, points, p)
+
 wiener_hopf_rust <- function(severity, wait, rho, points, p) .Call(wrap__wiener_hopf_rust, severity, wait, rho, points, p)
 
 copula_severity_rust <- function(a, b, copula, trigger_a, trigger_b) .Call(wrap__copula_severity_rust, a, b, copula, trigger_a, trigger_b)

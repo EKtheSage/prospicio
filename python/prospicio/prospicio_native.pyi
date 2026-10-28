@@ -11899,6 +11899,97 @@ class Exposure:
         """
 
 @final
+class FiniteRuin:
+    """
+    The probability of ruin within each period of a finite horizon at each
+    initial surplus on the grid, from ``finite_horizon_ruin``.
+    """
+    def __repr__(self, /) -> str: ...
+    def capital(self, /, p: float, t: int, interpolate: bool = False) -> float |None:
+        """
+        The initial surplus for ruin probability ``p`` within ``t`` periods:
+        the smallest grid point with ``psi(u, t) < p``, or linear between
+        grid points.
+        
+        Parameters
+        ----------
+        p : float
+        t : int
+        interpolate : bool, default False
+        
+        Returns
+        -------
+        float or None
+            None when the grid does not reach it.
+        
+        Raises
+        ------
+        ValueError
+            If ``t`` is not a period of the horizon.
+        """
+    @property
+    def periods(self, /) -> int:
+        """
+        The number of periods.
+        """
+    @property
+    def premium(self, /) -> float:
+        """
+        The premium a period.
+        """
+    def psi(self, /, t: int) -> list[float]:
+        """
+        ``psi(u, t)`` at each grid point.
+        
+        Parameters
+        ----------
+        t : int
+            The period, from 1.
+        
+        Returns
+        -------
+        list of float
+        
+        Raises
+        ------
+        ValueError
+            If ``t`` is not a period of the horizon.
+        """
+    def psi_at(self, /, u: float, t: int) -> float:
+        """
+        ``psi(u, t)`` at any initial surplus (constant between grid points).
+        
+        Parameters
+        ----------
+        u : float
+        t : int
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``t`` is not a period of the horizon.
+        """
+    @property
+    def report(self, /) -> CompoundReport:
+        """
+        The period loss's compound report; read ``aliasing_error``.
+        """
+    @property
+    def sub_periods(self, /) -> int:
+        """
+        The steps a period at which the surplus is checked.
+        """
+    @property
+    def u(self, /) -> list[float]:
+        """
+        The initial surplus at each grid point.
+        """
+
+@final
 class Gam:
     """
     A generalized additive model: a ``Glm`` plus P-spline smooths of
@@ -30022,6 +30113,58 @@ def fft_bivariate(frequency: Any, severity: JointGrid, points: tuple[int, int]) 
     >>> joint, report = fft_bivariate(Poisson(2.0), JointGrid.independent(a, b), (64, 64))
     >>> round(joint.covariance(), 9)  # Var(N) E[X] E[Y]
     1.4
+    """
+
+def finite_horizon_ruin(severity: Grid, premium: float, periods: int, frequency: Any |None = None, *, rate: float |None = None, sub_periods: int = 1, points: int |None = None) -> FiniteRuin:
+    """
+    The probability of ruin within each of ``periods`` periods, ``psi(u,
+    t)``. ``aggregate`` has no finite-horizon ruin.
+    
+    With ``frequency``, in discrete time: each period's loss is the compound
+    of ``frequency`` and ``severity``, ``premium`` comes in each period and
+    the surplus is checked at each period's end, exactly on the grid by De
+    Vylder and Goovaerts' recursion. With ``rate``, a continuous-time
+    approximation for Poisson claims at that rate a period: the same
+    recursion on ``sub_periods`` steps a period, which misses only a ruin
+    that recovers within a step. The premium of each step must be a whole
+    number of grid steps.
+    
+    Parameters
+    ----------
+    severity : Grid
+    premium : float
+        The premium a period.
+    periods : int
+        The horizon.
+    frequency : count, optional
+        Any claim count a period (discrete time). Or give ``rate``.
+    rate : float, optional
+        The Poisson rate a period (continuous time, approximately).
+    sub_periods : int, default 1
+        Steps a period with ``rate``.
+    points : int, optional
+        Initial surpluses on the grid; the severity's by default.
+    
+    Returns
+    -------
+    FiniteRuin
+    
+    Raises
+    ------
+    ValueError
+        For both or neither of ``frequency`` and ``rate``, ``sub_periods``
+        with ``frequency``, a premium that is not a whole number of steps,
+        or no periods or points.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import finite_horizon_ruin
+    >>> from prospicio.distributions import Binomial, Grid
+    >>> # A claim of 2 with probability 0.4 a period, premium 1.
+    >>> sev = Grid(1.0, [0.0, 0.0, 1.0])
+    >>> ruin = finite_horizon_ruin(sev, 1.0, 3, frequency=Binomial(1, 0.4))
+    >>> round(ruin.psi_at(0.0, 1), 12), round(ruin.psi_at(0.0, 3), 12)
+    (0.4, 0.496)
     """
 
 def fit_grouped(family: str, bounds: Sequence[float], counts: Sequence[float], method: str = "ml") -> GroupedFit:

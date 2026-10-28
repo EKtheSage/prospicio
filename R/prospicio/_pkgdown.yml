@@ -98,6 +98,7 @@ reference:
       - occurrence_pml
       - compound_moments
       - eventual_ruin
+      - finite_horizon_ruin
       - wiener_hopf
       - pnl_ledger
       - pnl_book
