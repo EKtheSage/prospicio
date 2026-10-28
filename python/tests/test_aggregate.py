@@ -1605,3 +1605,36 @@ def test_a_timeline_spreads_the_aggregate_part_by_its_pattern():
     term = Timeline(year(240.0), 24, aggregate_pattern=[1.0] * 12)
     split = term.years("losses_occurring", Exposure.uniform(2, 12))
     assert [y.aggregate_part(0)[0] for y in split] == pytest.approx([120.0, 120.0])
+
+
+def test_a_scoped_layer_covers_only_its_perils():
+    from prospicio.aggregate import EventSet
+
+    e = (
+        EventSet.from_years([[20.0, 15.0], [8.0, 30.0, 12.0]])
+        .with_labels({"peril": ["quake", "wind", "wind", "flood", "wind"]})
+    )
+    xl = Layer("10x5", 10.0, 5.0, aggregate_limit=15.0)
+    assert xl.scope is None
+    ws = xl.with_scope("peril", ["wind"])
+    assert ws.scope == ("peril", ["wind"])
+    scoped = Tower([ws]).apply(e)
+    # Wind has the whole limit: 10, then 3 and 7.
+    assert list(scoped.marginal(("ceded", "10x5", "wind")).draws) == [10.0, 10.0]
+    # Unscoped, quake 20 uses 10 of the limit first and wind gets 5.
+    split = Tower([xl]).apply(e)
+    assert split.marginal(("ceded", "10x5", "wind")).draws[0] == 5.0
+    # The scoped layer cedes what the plain one cedes on the filtered set.
+    w = e.filter("peril", ["wind"])
+    assert (w.n_sims, w.events(0), w.events(1)) == (2, [15.0], [8.0, 12.0])
+    alone = list(Tower([xl]).apply(w).marginal(("ceded", "10x5", "wind")).draws)
+    assert alone == [10.0, 10.0]
+    # A scope survives JSON; it needs labelled events.
+    tower = Tower([ws])
+    assert Tower.from_json(tower.to_json()).to_json() == tower.to_json()
+    with pytest.raises(ValueError):
+        tower.apply(EventSet.from_years([[15.0]]))
+    with pytest.raises(ValueError):
+        xl.with_scope("peril", [])
+    with pytest.raises(ValueError):
+        e.filter("class", ["a"])

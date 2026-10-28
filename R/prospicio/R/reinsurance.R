@@ -94,6 +94,7 @@ xol_layer <- S7::new_class(
       S7::class_logical, getter = function(self) self@ptr$sees_aggregate_part()
     ),
     allocation = S7::new_property(S7::class_character, getter = function(self) self@ptr$allocation()),
+    scope = S7::new_property(S7::class_any, getter = function(self) self@ptr$scope()),
     loss_corridor = S7::new_property(S7::class_double, getter = function(self) self@ptr$loss_corridor()),
     ceding_commission = S7::new_property(
       S7::class_double, getter = function(self) self@ptr$ceding_commission()
@@ -981,6 +982,37 @@ with_cover_basis <- function(tower, basis) {
 #' draw_matrix(select_components(apply_tower_timeline(tw, timeline(ev, 24), shares), "kind", "ceded"))
 with_interlocking <- function(tower, on = TRUE) {
   reinsurance_tower(ptr = tower@ptr$with_interlocking(isTRUE(on)))
+}
+
+#' A layer scoped to some perils or classes
+#'
+#' The layer covers only the losses whose label `label` takes one of
+#' `values`: a windstorm treaty on a multi-peril event set is scoped to
+#' `with_scope(layer, "peril", "windstorm")`. Its occurrence and annual
+#' terms see only those losses, so another peril's events neither use its
+#' annual limit nor count toward its deductible, and the losses it does not
+#' cover pass to the next inuring stage whole. That differs from reading
+#' one label's share of an unscoped layer, whose annual terms every peril
+#' uses up. A tower with a scoped layer needs labelled events
+#' ([apply_tower()] on an [event_set], [apply_tower_term()],
+#' [apply_tower_timeline()]) and refuses the grids and annual losses.
+#' [filter_events()] gives the losses such a layer sees.
+#'
+#' @param layer An [xol_layer].
+#' @param label A label dimension of the events.
+#' @param values At least one value; at least one must occur.
+#' @returns The [xol_layer]; its `scope` property is `list(label, values)`,
+#'   `NULL` for every loss.
+#' @seealso [filter_events()]
+#' @export
+#' @examples
+#' ev <- with_labels(events_from_years(list(c(20, 15))), list(peril = c("quake", "wind")))
+#' xl <- xol_layer("10x5", 10, 5, aggregate_limit = 15)
+#' key <- list("ceded", "10x5", "wind")
+#' mean(marginal(apply_tower(reinsurance_tower(list(with_scope(xl, "peril", "wind"))), ev), key))
+#' mean(marginal(apply_tower(reinsurance_tower(list(xl)), ev), key))
+with_scope <- function(layer, label, values) {
+  xol_layer(ptr = rust_result(layer@ptr$with_scope(as.character(label), as.character(values))))
 }
 
 #' @rdname with_cover_basis
