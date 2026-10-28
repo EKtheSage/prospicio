@@ -58,7 +58,7 @@ pub use layer_statistics::{
     occurrence_cession_statistics, occurrence_layer_statistics,
 };
 pub use moments::{Approximation, ApproximationKind, CompoundMoments, compound_moments};
-pub use monte_carlo::{EventSet, simulate_events};
+pub use monte_carlo::{EventSet, GroupLabels, simulate_events};
 pub use panjer::panjer;
 pub use picks::{PickedLayer, Picks, layer_loss_picks};
 pub use pml::{OccurrencePml, occurrence_exceedance, occurrence_pml};
@@ -67,7 +67,10 @@ pub use reinsurance::{
     ProfitCommission, Tower,
 };
 pub use renewal::{RenewalCount, Wait, WaitGrid, renewal_count};
-pub use ruin::{RenewalRuin, Ruin, SeverityPart, pollaczeck_khinchine, wiener_hopf};
+pub use ruin::{
+    FiniteRuin, RenewalRuin, Ruin, SeverityPart, finite_horizon, finite_horizon_poisson,
+    pollaczeck_khinchine, wiener_hopf,
+};
 pub use sizing::{
     AuditSettings, GridAudit, GridCell, GridSize, ScoreTerms, Sizing, SizingMethod, audit_grid,
     audit_portfolio_grid, fft_auto, recommend_grid, recommend_portfolio_grid, round_bucket,

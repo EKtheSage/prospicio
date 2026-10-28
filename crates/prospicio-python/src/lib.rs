@@ -14,6 +14,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 mod aggregate;
+mod bonus_malus;
 mod book;
 mod cashflow;
 mod casualty;
@@ -49,13 +50,15 @@ mod prospicio_native {
     #[pymodule_export]
     use super::aggregate::{
         PyApproximation, PyBivariateReport, PyClash, PyCompoundMoments, PyCompoundReport,
-        PyEventLossTable, PyEventSet, PyExposure, PyGridAudit, PyGridSize, PyJointGrid,
-        PyOccurrencePml, PyPicks, PyRenewalRuin, PyRuin, PyTimeline, audit_grid,
+        PyEventLossTable, PyEventSet, PyExposure, PyFiniteRuin, PyGridAudit, PyGridSize,
+        PyJointGrid, PyOccurrencePml, PyPicks, PyRenewalRuin, PyRuin, PyTimeline, audit_grid,
         audit_portfolio_grid, compound_moments, eventual_ruin, fft, fft_auto, fft_bivariate,
-        layer_loss_picks, occurrence_exceedance, occurrence_pml, panjer, recommend_grid,
-        recommend_portfolio_grid, round_bucket, simulate_events, wiener_hopf,
+        finite_horizon_ruin, layer_loss_picks, occurrence_exceedance, occurrence_pml, panjer,
+        recommend_grid, recommend_portfolio_grid, round_bucket, simulate_events, wiener_hopf,
         year_correlation_for_ratio, ylt_hash,
     };
+    #[pymodule_export]
+    use super::bonus_malus::PyBonusMalus;
     #[pymodule_export]
     use super::book::{PyBookCashflows, PyDealBook, PyDealRun};
     #[pymodule_export]

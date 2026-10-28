@@ -1303,8 +1303,11 @@ impl PySampled {
     /// ----------
     /// p : float
     /// method : str
-    ///     ``"inverted_cdf"`` (the default, R ``type = 1``) or ``"linear"``
-    ///     (numpy's default, R ``type = 7``).
+    ///     ``"inverted_cdf"`` (the default, R ``type = 1``), ``"linear"``
+    ///     (numpy's default, R ``type = 7``) or ``"kth_largest"`` (the
+    ///     ``k``-th largest draw, ``k = max(1, floor((1 - p) n))``: with years
+    ///     as draws, the ``k``-th worst year, one draw above
+    ///     ``"inverted_cdf"`` unless both are the largest).
     ///
     /// Returns
     /// -------
@@ -1328,8 +1331,10 @@ impl PySampled {
     /// p : float
     /// method : str
     ///     ``"exact"`` (the default: the empirical distribution, mass ``1/n``
-    ///     per draw) or ``"linear"`` (the mean of the linear quantile
-    ///     function over ``[p, 1]``).
+    ///     per draw), ``"linear"`` (the mean of the linear quantile
+    ///     function over ``[p, 1]``) or ``"whole_years"`` (the mean of the
+    ///     ``k`` largest draws, ``k = max(1, floor((1 - p) n))``, equal to
+    ///     ``"exact"`` when ``(1 - p) n`` is whole).
     ///
     /// Returns
     /// -------
@@ -1339,6 +1344,15 @@ impl PySampled {
     /// ------
     /// ValueError
     ///     If ``p`` is outside ``[0, 1]`` or ``method`` is unknown.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Sampled
+    /// >>> years = Sampled([float(x) for x in range(1, 11)])
+    /// >>> years.var(0.75), years.var(0.75, method="kth_largest")
+    /// (8.0, 9.0)
+    /// >>> years.tvar(0.75, method="whole_years")
+    /// 9.5
     #[pyo3(signature = (p, method = "exact"))]
     fn tvar(&self, p: f64, method: &str) -> PyResult<f64> {
         self.inner

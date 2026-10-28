@@ -100,6 +100,7 @@ reference:
       - occurrence_pml
       - compound_moments
       - eventual_ruin
+      - finite_horizon_ruin
       - wiener_hopf
       - pnl_ledger
       - pnl_book
@@ -213,6 +214,9 @@ reference:
       - credibility_standard
       - buhlmann_straub
       - hierarchical_credibility
+      - bonus_malus
+      - bonus_malus_transition
+      - bonus_malus_portfolio
   - title: Ratemaking
     contents:
       - year_fraction

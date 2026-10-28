@@ -1,5 +1,8 @@
 //! Pricing on top of `prospicio-prob` severities and `prospicio-aggregate` models.
 //!
+//! - [`bonus_malus`]: bonus-malus and no-claim-discount scales as
+//!   Markov chains: stationary levels, Norberg's optimal relativities
+//!   over a mixed Poisson portfolio and Loimaranta's efficiency.
 //! - [`bounds`]: pricing bounds, the range of another risk's price over
 //!   the distortions that price a reference risk at a premium, and the
 //!   envelope of those distortions (Mildenhall 2022).
@@ -36,6 +39,7 @@
 //!
 //! See `docs/design/pareto.md`.
 
+pub mod bonus_malus;
 pub mod book;
 pub mod bounds;
 pub mod cashflow;
