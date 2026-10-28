@@ -460,6 +460,7 @@ impl BayesBf {
                         segment.ages[d]
                     )),
                     &segment.ages,
+                    segment.alone,
                 ));
             }
         }

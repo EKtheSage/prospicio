@@ -3256,9 +3256,12 @@ up to `age` (decision 18, decided by the user on 2026-10-28 as option (b),
 built on branch `claude/triangle-max-age`, #667; Python `tri.max_age(age)`,
 R `max_age(tri, age)`), so the remedy for a falling last age is
 `max_age` at the age before it, which equals the rebuild from the long
-table on a cumulative triangle and, unlike that rebuild, also drops the
-age of an incremental one. The messages of `BayesBfNormalised`,
-`BayesOdp` and `BayesBf` name it at the last age. It does not reach the
+table on a cumulative triangle where every origin keeps a cell and,
+unlike that rebuild, also drops the age of an incremental one. The
+messages of `BayesBfNormalised`, `BayesOdp` and `BayesBf` name it at the
+last age; on a triangle of several segments they add that `max_age` cuts
+every segment, so that a segment developing further than the failing one
+is not cut without notice (the age named is the failing segment's own). It does not reach the
 first age (the rebuild from the long table without its rows stays that
 remedy) or a middle age (no remedy in this model).
 
@@ -3525,10 +3528,16 @@ are settled.
     then run the light refits, so about 30 minutes in the weekly run
     (built so that the weekly run's default-view test uses 20 simulations).
 
-18. **A `Triangle` method that drops ages.** Raised 2026-10-28 by decision
-    26 (#610). A sparse late age that falls (one cell below the previous
-    one) stops `BayesOdp`, `BayesBf` and `BayesBfNormalised`, and today the
-    user leaves it out by rebuilding the triangle from its long table. (a)
+18. **A `Triangle` method that drops ages.** Decided 2026-10-28 by the
+    user: (b), `max_age`, as recommended; built on branch
+    `claude/triangle-max-age` (#667) in Rust, Python (`tri.max_age(age)`)
+    and R (`max_age(tri, age)`), and the last age's message of
+    `BayesBfNormalised`, `BayesOdp` and `BayesBf` names it (decision 26,
+    "Dropping an age"). `drop_ages`, (c) and `merge_ages` are not built.
+    The question as raised: raised 2026-10-28 by decision 26 (#610). A
+    sparse late age that falls (one cell below the previous one) stops
+    `BayesOdp`, `BayesBf` and `BayesBfNormalised`, and before #667 the
+    user left it out by rebuilding the triangle from its long table. (a)
     Keep that: the type docs and the error say how, in each language.
     It works only at the first and the last age: a middle age that falls
     (#665's review) comes back from `Triangle::from_long` with no cells,
@@ -3549,9 +3558,4 @@ are settled.
     recommended either. *Recommended: (b), `max_age`*: one method serves every model
     and the backtests, it is the operation users reach for after a
     message that names the age, and a model setting would hide the
-    change to the data inside a fit. Decided 2026-10-28 by the user: (b),
-    `max_age`, as recommended; built on branch `claude/triangle-max-age`
-    (#667) in Rust, Python (`tri.max_age(age)`) and R (`max_age(tri,
-    age)`), and the last age's message of `BayesBfNormalised`, `BayesOdp`
-    and `BayesBf` names it (decision 26, "Dropping an age"). `drop_ages`,
-    (c) and `merge_ages` are not built.
+    change to the data inside a fit.

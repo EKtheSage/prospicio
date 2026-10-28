@@ -166,11 +166,16 @@ the month) in both bindings, as `valuation` is.
   last age returns the triangle unchanged. An age before the first, which
   keeps nothing, is `Error::AgeBeforeFirst`, and a cut that leaves no
   observed cell is `Error::Empty`. The origins (an origin observed only at
-  dropped ages keeps an empty row), the measures (a premium column among
+  dropped ages keeps an empty row, which the fits trim when it is a
+  segment's first or last origin and refuse between observed origins),
+  the measures (a premium column among
   them, so premium recorded only at a dropped age loses those cells), the
   grains and the basis are kept, and the valuation becomes the latest
-  valuation of a kept observed cell. On a cumulative triangle the result
-  equals `from_long` on the rows of `to_long` at the kept ages; on an
+  valuation of a kept observed cell. On a cumulative triangle where every
+  origin keeps an observed cell the result equals `from_long` on the rows
+  of `to_long` at the kept ages (an origin left without cells, such as the
+  oldest origins of a trapezoid, is not in those rows, so the rebuild has
+  fewer origins and the same fits); on an
   incremental one that rebuild does not drop the ages, since `from_long`
   runs an incremental table's ages to the oldest origin's age at the
   valuation and fills the missing rows with zero increments, so

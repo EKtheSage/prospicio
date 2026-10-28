@@ -43,14 +43,17 @@ sources:
 * At the last age the remedy is `Triangle::max_age` at the previous age
   (Python `tri.max_age(age)`, R `max_age(tri, age)`; decision 18, #667),
   which the three models' messages name: the triangle keeps the other
-  origins' latest values and fits. On a cumulative triangle it equals the
-  rebuild from the long table without the rows at that age (Rust
+  origins' latest values and fits. On a cumulative triangle where every
+  origin keeps an observed cell it equals the rebuild from the long table
+  without the rows at that age (Rust
   `to_long` and `from_long`, Python `to_frame` and `from_frame`, R
   `as.data.frame()` and `triangle()`).[^triangle] On an incremental one the
   rebuild does not drop the age: `from_long` runs an incremental table's
   ages to the oldest origin's age at the valuation and fills the missing
   rows with zero increments, so the dropped age comes back with zeros;
-  `max_age` cuts the axis itself.[^triangle]
+  `max_age` cuts the axis itself.[^triangle] It cuts every segment of a
+  triangle, so on several segments the messages say so: select the
+  failing segment first when another one develops further.
 * `max_age` keeps every age up to one, so it does not reach the first age
   or a middle one, and the rebuild from the long table works only at the
   first and the last age.

@@ -509,7 +509,15 @@ impl BayesBfNormalised {
                     .filter(|&(&last, _)| last == d)
                     .map(|(_, origin)| origin.to_string())
                     .collect();
-                return Err(column_error(&segment.ages, d, n, sum, factor, &last_here));
+                return Err(column_error(
+                    &segment.ages,
+                    d,
+                    n,
+                    sum,
+                    factor,
+                    &last_here,
+                    segment.alone,
+                ));
             }
         }
         // Start at the strong-prior mode: the ultimates at their prior
@@ -880,6 +888,7 @@ fn column_error(
     sum: f64,
     factor: Option<f64>,
     last_here: &[String],
+    alone: bool,
 ) -> Error {
     let age = ages[d];
     let cause = format!(
@@ -903,9 +912,10 @@ fn column_error(
     let remedy = match (d.checked_sub(1).map(|k| ages[k]), ages.get(d + 1)) {
         (Some(previous), None) => format!(
             "{}. Keep the ages up to {previous} months with the triangle's max_age({previous}), \
-             which leaves out the rows at {age} months, or fold that age into {previous} months (book each origin's value at {age} months \
+             which leaves out the rows at {age} months{}, or fold that age into {previous} months (book each origin's value at {age} months \
              at {previous} months), and carry the movement left out as a tail outside this model",
-            accepts(previous)
+            accepts(previous),
+            super::odp::every_segment(previous, alone)
         ),
         (Some(previous), Some(_)) => format!(
             "{}, and so does Mack's model. This model cannot take it: no change to the triangle \
@@ -1976,6 +1986,8 @@ mod tests {
             ] {
                 assert!(m.contains(part), "{part:?} not in {m}");
             }
+            // On a triangle of one segment there are no others to warn of.
+            assert!(!m.contains("cuts every segment"), "{m}");
         }
         let segment = |t: &Triangle| t.segment("values").unwrap();
         assert!(
@@ -2027,6 +2039,58 @@ mod tests {
         assert_eq!(fit.latest, vec![160.0, 180.0, 175.0, 130.0]);
         assert_eq!(model.n_dev, 3);
         assert!(start.iter().all(|t| t.is_finite()));
+    }
+
+    /// On a triangle of several segments the `max_age` remedy says that it
+    /// cuts every segment, since a segment trimmed to its own ages can end
+    /// before another one that develops further.
+    #[test]
+    fn the_last_age_remedy_warns_that_max_age_cuts_every_segment() {
+        let rows: [&[f64]; 4] = [
+            &[100.0, 150.0, 160.0, 155.0],
+            &[110.0, 170.0, 180.0],
+            &[120.0, 175.0],
+            &[130.0],
+        ];
+        let (mut keys, mut origin, mut ages, mut values) = (vec![], vec![], vec![], vec![]);
+        for (lob, extra) in [("Auto", 0.0), ("Home", 20.0)] {
+            for (k, row) in rows.iter().enumerate() {
+                for (d, &v) in row.iter().enumerate() {
+                    keys.push(lob);
+                    origin.push(Month::january(2020 + k as i32));
+                    ages.push(12 * (d as Lag + 1));
+                    values.push(v + extra * d as f64);
+                }
+            }
+        }
+        let tri = Triangle::from_long(&Long {
+            keys: &[("lob", &keys)],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("values", &values)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        let e = BayesOdp::default()
+            .fit_segments(&tri, "values")
+            .unwrap_err();
+        let m = e.to_string();
+        for part in [
+            "development age 48 months: the observed increments sum to -5,",
+            "Keep the ages up to 36 months with the triangle's max_age(36), which leaves out the \
+             rows at 48 months (max_age cuts every segment of the triangle at 36 months, so \
+             select this segment first if another one develops further)",
+        ] {
+            assert!(m.contains(part), "{part:?} not in {m}");
+        }
+        // The normalised BF's message has the same clause.
+        let m = column_error(&[12, 24, 36, 48], 3, 1, -5.0, None, &[], false).to_string();
+        assert!(
+            m.contains("rows at 48 months (max_age cuts every segment of the triangle at 36"),
+            "{m}"
+        );
     }
 
     /// A middle age whose column falls: the message names no tail and no

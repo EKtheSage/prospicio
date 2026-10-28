@@ -323,6 +323,7 @@ reference:
       - latest_diagonal
       - link_ratios
       - grain
+      - max_age
       - chain_ladder_fit
       - mack_fit
       - odp_glm_fit

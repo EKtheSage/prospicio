@@ -795,11 +795,15 @@ impl Triangle {
     /// a kept observed cell. A measure observed only at a dropped age (a
     /// premium recorded once at each origin's latest age, say) loses those
     /// cells, and an origin observed only at dropped ages keeps an empty
-    /// row, which a method refuses.
+    /// row: the fits trim it when it is the first or the last origin of a
+    /// segment and refuse it between observed origins.
     ///
-    /// On a cumulative triangle the result is what [`Triangle::from_long`]
-    /// builds from the rows of [`Triangle::to_long`] at the kept ages. On an
-    /// incremental one it is not: `from_long` runs an incremental table's
+    /// On a cumulative triangle where every origin keeps an observed cell,
+    /// the result is what [`Triangle::from_long`] builds from the rows of
+    /// [`Triangle::to_long`] at the kept ages; an origin left without cells
+    /// (the oldest origins of a trapezoid, observed only at later ages) is
+    /// not in those rows, so the rebuild has fewer origins, while the fits
+    /// give the same results on both. On an incremental one it is not: `from_long` runs an incremental table's
     /// ages to the oldest origin's age at the valuation and fills the
     /// missing rows with zero increments, so the rebuild brings the dropped
     /// ages back. This method cuts the development axis itself.
@@ -1069,6 +1073,7 @@ impl Triangle {
                     ages: self.development[d0..=d1].to_vec(),
                     origin_offset: o0,
                     dev_offset: d0,
+                    alone: ni == 1,
                 })
             })
             .collect()
@@ -1150,6 +1155,11 @@ pub(crate) struct Segment {
     pub(crate) origin_offset: usize,
     /// Triangle development position of the segment's first age.
     pub(crate) dev_offset: usize,
+    /// Whether the segment is its triangle's only one, so that a cut of
+    /// the triangle's ages (`Triangle::max_age`) changes no other segment.
+    /// Read by the Bayesian models' error messages.
+    #[cfg_attr(not(feature = "bayes"), allow(dead_code))]
+    pub(crate) alone: bool,
 }
 
 impl Segment {
@@ -1171,6 +1181,7 @@ impl Segment {
             ages,
             origin_offset: 0,
             dev_offset: 0,
+            alone: true,
         }
     }
 
@@ -2042,6 +2053,46 @@ pub(crate) mod tests {
             .unwrap();
             assert_eq!(tri.max_age(age).unwrap(), rebuilt, "{age}");
         }
+    }
+
+    /// A trapezoid whose oldest origin is observed only past the cut keeps
+    /// it as an empty row, which the rebuild from the long table does not
+    /// (`to_long` writes observed rows only, so the rebuilt origins start
+    /// later); the fits trim a leading empty origin, so both give the same
+    /// chain ladder.
+    #[test]
+    fn max_age_keeps_an_origin_left_without_cells() {
+        // Only calendar years 2020 and 2021 observed.
+        let origin = [2018, 2018, 2019, 2019, 2020, 2020, 2021].map(Month::january);
+        let tri = Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&[36, 48, 24, 36, 12, 24, 12]),
+            values: &[("paid", &[150.0, 160.0, 140.0, 150.0, 100.0, 145.0, 110.0])],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        let cut = tri.max_age(24).unwrap();
+        assert_eq!(cut.origins(), tri.origins());
+        assert!((0..2).all(|d| cut.get(0, 0, 0, d).is_none()));
+        let rebuilt = Triangle::from_long(&Long {
+            keys: &[],
+            origin: &[2019, 2020, 2020, 2021].map(Month::january),
+            development: DevelopmentColumn::Age(&[24, 12, 24, 12]),
+            values: &[("paid", &[140.0, 100.0, 145.0, 110.0])],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        assert_eq!(rebuilt.origins(), &tri.origins()[1..]);
+        assert_ne!(cut, rebuilt);
+        let fit = |t: &Triangle| crate::ChainLadder::default().fit(t, "paid").unwrap();
+        let (a, b) = (fit(&cut), fit(&rebuilt));
+        assert_eq!(a.origins, b.origins);
+        assert_eq!(a.ultimate, b.ultimate);
     }
 
     #[test]

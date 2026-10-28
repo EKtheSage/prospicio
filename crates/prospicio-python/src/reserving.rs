@@ -1310,10 +1310,14 @@ impl PyTriangle {
     /// the last age returns the triangle unchanged. The origins, measures
     /// (a premium column among them), grains and basis (cumulative or
     /// incremental) are kept; the valuation becomes the latest valuation of
-    /// a kept observed cell. On a cumulative triangle the result equals
+    /// a kept observed cell. An origin observed only at dropped ages keeps
+    /// an empty row, which the fits trim when it is the first or the last
+    /// origin and refuse between observed origins. On a cumulative triangle
+    /// where every origin keeps an observed cell, the result equals
     /// ``Triangle.from_frame`` on the rows of ``to_frame()`` at the kept
-    /// ages; on an incremental one that rebuild brings the dropped ages
-    /// back as zero increments, and this method does not.
+    /// ages (an origin left without cells is not in those rows); on an
+    /// incremental one that rebuild brings the dropped ages back as zero
+    /// increments, and this method does not.
     ///
     /// Parameters
     /// ----------
@@ -1329,6 +1333,8 @@ impl PyTriangle {
     /// ValueError
     ///     If ``age`` is before the first age, so that nothing is kept, or
     ///     no observed cell is left.
+    /// OverflowError
+    ///     If ``age`` is negative.
     ///
     /// Examples
     /// --------

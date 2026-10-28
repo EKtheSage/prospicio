@@ -76,7 +76,7 @@ month_start <- function(year, month) as.Date(sprintf("%04d-%02d-01", year, month
 #' @param ptr A `Triangle` pointer; used internally.
 #' @returns A `triangle` object.
 #' @seealso [chain_ladder()], [mack()], [to_incremental()], [grain()],
-#'   [subset()][subset.triangle], [aggregate()][aggregate.triangle],
+#'   [max_age()], [subset()][subset.triangle], [aggregate()][aggregate.triangle],
 #'   [as.matrix()][triangle_views], [summary()][triangle_views].
 #' @export
 #' @examples
@@ -516,10 +516,14 @@ grain <- function(x, origin_grain, development_grain = origin_grain) {
 #' triangle's ages, and one at or past the last age returns the triangle
 #' unchanged. The origins, measures (a premium column among them), grains
 #' and basis (cumulative or incremental) are kept; the valuation becomes
-#' the latest valuation of a kept observed cell. On a cumulative triangle
-#' the result equals [triangle()] on the rows of `as.data.frame(x)` at the
-#' kept ages; on an incremental one that rebuild brings the dropped ages
-#' back as zero increments, and this function does not.
+#' the latest valuation of a kept observed cell. An origin observed only
+#' at dropped ages keeps an empty row, which the fits trim when it is the
+#' first or the last origin and refuse between observed origins. On a
+#' cumulative triangle where every origin keeps an observed cell, the
+#' result equals [triangle()] on the rows of `as.data.frame(x)` at the
+#' kept ages (an origin left without cells is not in those rows); on an
+#' incremental one that rebuild brings the dropped ages back as zero
+#' increments, and this function does not.
 #'
 #' @param x A [triangle].
 #' @param age The last age to keep, in months: one whole number, at or
