@@ -75,6 +75,8 @@ under "Unreleased" until then.
   to the premium; code that builds one in full adds it (#595, #623).
 - Rust: `Layer` gains the public field `scope`; code that builds one in
   full adds it (`None` covers every loss as before) (#584, #660).
+- Towers saved with a scoped layer are JSON format version 7, which
+  0.0.5 cannot read; towers without one are saved as before (#584, #660).
 
 ### Reserving
 
@@ -349,7 +351,7 @@ under "Unreleased" until then.
   `predict()` (#561, #654).
 - The marginal price of a deal on a book (`DealBook::marginal_price` and `marginal_prices`, `time-value.md` decision 32): the book's loss priced with the deal and without it, by a cost of capital or a pricing distortion on a capital standard as `price_portfolio` prices a portfolio, and the differences, so `P = (EL + r dA) / (1 + r)` without building the book twice; under a subadditive standard at most the deal's Euler price, and the only deal's stand-alone price. Python `DealBook.marginal_price`, R `book_marginal_price()` (#588, #657).
 - Monthly patterns for the cash-flow engine from a payment pattern by
-  development age (#601): `PaymentPattern::paid_by` and `to_monthly` read
+  development age (#601, #619): `PaymentPattern::paid_by` and `to_monthly` read
   it at each month end, as a step, linearly or log-linearly between its
   times, and `MonthlyPatterns::from_annual` builds the written, earned and
   paid patterns from a written pattern and a policy term, losses paid from
@@ -435,15 +437,6 @@ under "Unreleased" until then.
   twins, call `OdpGlm` (`prediction_error`, `residuals`, custom designs), the
   GLM diagnostics and quantile residuals, and the model-agnostic explanation
   helpers in their code, with every printed number checked (#542).
-- New guide `docs/guides/reserving-excess-layers.md` with its R twin:
-  excess-layer development from the ground-up triangle and a severity, with
-  Bloom and Patrik's, Pinto and Gogol's and Bear's printed factors beside
-  prospicio's, credibility blending, and the layer-share Bayesian BF prior
-  with the share error common to all origins (#530).
-- The Friedland and Werner-Modlin guides use the built development averages
-  (`n_periods`, `drop_high`, `drop_low`, the geometric average, `n_links`,
-  CDFs below 1 with `ldf_kind="cdf"`), and the compartmental guide names its
-  built segment, one-year segment and backtest functions (#530).
 - `docs/guides/a-first-course.md` and its R twin `a-first-course.qmd`, the start-here page for a
   student or new analyst: the ideas on a hand-sized book, two worked decisions (writing a new unit
   into two different books; excess of loss layers against a quota share for one cedant) and a
@@ -706,6 +699,18 @@ under "Unreleased" until then.
   charges the net view what the reinsurance costs (ceded premiums less the
   surplus's ceding commission, plus reinstatement premiums), reporting the TVaR
   saving net of cost and the cost against it (#266, #267, #268, #535).
+
+### Guides
+
+- New guide `docs/guides/reserving-excess-layers.md` with its R twin:
+  excess-layer development from the ground-up triangle and a severity, with
+  Bloom and Patrik's, Pinto and Gogol's and Bear's printed factors beside
+  prospicio's, credibility blending, and the layer-share Bayesian BF prior
+  with the share error common to all origins (#530).
+- The Friedland and Werner-Modlin guides use the built development averages
+  (`n_periods`, `drop_high`, `drop_low`, the geometric average, `n_links`,
+  CDFs below 1 with `ldf_kind="cdf"`), and the compartmental guide names its
+  built segment, one-year segment and backtest functions (#530).
 
 ## 0.0.4 (2026-10-21)
 
