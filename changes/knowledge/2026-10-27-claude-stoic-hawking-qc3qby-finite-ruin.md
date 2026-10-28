@@ -1,0 +1,1 @@
+* **Creation**: [Finite-horizon ruin by a convolution recursion](/findings/finite-horizon-ruin.md), from issue #562 (branch claude/stoic-hawking-qc3qby-finite-ruin): exact for a random walk, within three standard errors of 200,000 simulated paths, and 0.03 below the exponential's continuous eventual ruin at 30 Poisson steps a period.

@@ -1,12 +1,14 @@
 //! `prospicio.credibility`: classical credibility, the limited fluctuation
-//! standards and the Bühlmann–Straub model (Aggregate lane), and Bayesian
+//! standards, the Bühlmann–Straub model and Hachemeister's regression
+//! model (Aggregate lane), and Bayesian
 //! hierarchical credibility (Models lane; `docs/design/credibility.md`).
 
 use prospicio_bayes::credibility::{
     CredibilityPriors, HierarchicalCredibility, HierarchicalCredibilityFit, Sampler, ScalePrior,
 };
 use prospicio_pricing::credibility::{
-    BuhlmannStraub, BuhlmannStraubFit, LimitedFluctuation, StructureEstimator,
+    BuhlmannStraub, BuhlmannStraubFit, Hachemeister, HachemeisterFit, LimitedFluctuation,
+    StructureEstimator,
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -244,19 +246,191 @@ pub(crate) fn buhlmann_straub(
     tol: f64,
     max_iter: usize,
 ) -> PyResult<PyBuhlmannStraubFit> {
-    let estimator = match estimator {
-        "unbiased" => StructureEstimator::Unbiased,
-        "iterative" => StructureEstimator::Iterative { tol, max_iter },
-        other => {
-            return Err(PyValueError::new_err(format!(
-                "estimator must be \"unbiased\" or \"iterative\", got {other:?}"
-            )));
-        }
-    };
-    let inner = BuhlmannStraub::new(estimator)
+    let inner = BuhlmannStraub::new(structure_estimator(estimator, tol, max_iter)?)
         .fit(&ratios, weights.as_deref())
         .map_err(to_py)?;
     Ok(PyBuhlmannStraubFit { inner })
+}
+
+fn structure_estimator(estimator: &str, tol: f64, max_iter: usize) -> PyResult<StructureEstimator> {
+    match estimator {
+        "unbiased" => Ok(StructureEstimator::Unbiased),
+        "iterative" => Ok(StructureEstimator::Iterative { tol, max_iter }),
+        other => Err(PyValueError::new_err(format!(
+            "estimator must be \"unbiased\" or \"iterative\", got {other:?}"
+        ))),
+    }
+}
+
+/// A fitted Hachemeister model, from ``hachemeister``.
+#[pyclass(name = "HachemeisterFit", module = "prospicio.credibility", frozen)]
+pub(crate) struct PyHachemeisterFit {
+    inner: HachemeisterFit,
+}
+
+#[pymethods]
+impl PyHachemeisterFit {
+    /// The collective coefficients, one per design column.
+    #[getter]
+    fn collective(&self) -> Vec<f64> {
+        self.inner.collective.clone()
+    }
+
+    /// Each risk's credibility coefficients (the collective for a risk
+    /// with no weight).
+    #[getter]
+    fn coefficients(&self) -> Vec<Vec<f64>> {
+        self.inner.coefficients.clone()
+    }
+
+    /// Each risk's own weighted least squares coefficients (0 for a risk
+    /// with no weight).
+    #[getter]
+    fn individual(&self) -> Vec<Vec<f64>> {
+        self.inner.individual.clone()
+    }
+
+    /// Each risk's credibility matrix, in the basis fitted (the
+    /// orthogonalised design when the intercept is adjusted).
+    #[getter]
+    fn credibility(&self) -> Vec<Vec<Vec<f64>>> {
+        self.inner.credibility.clone()
+    }
+
+    /// The between-risk covariance of the coefficients, in the basis
+    /// fitted (diagonal when the intercept is adjusted).
+    #[getter]
+    fn between(&self) -> Vec<Vec<f64>> {
+        self.inner.between.clone()
+    }
+
+    /// The within-risk variance ``s2``, the mean of the risks' residual
+    /// variances.
+    #[getter]
+    fn within_variance(&self) -> f64 {
+        self.inner.within_variance
+    }
+
+    /// Each risk's total weight.
+    #[getter]
+    fn risk_weights(&self) -> Vec<f64> {
+        self.inner.risk_weights.clone()
+    }
+
+    /// When the intercept is adjusted, the upper triangular ``R`` with the
+    /// design ``Y = Q R``: a coefficient ``c`` in the basis fitted is
+    /// ``R^-1 c`` in the design's. ``None`` at the origin.
+    #[getter]
+    fn transition(&self) -> Option<Vec<Vec<f64>>> {
+        self.inner.transition.clone()
+    }
+
+    /// Iterations of the iterative estimator.
+    #[getter]
+    fn iterations(&self) -> usize {
+        self.inner.iterations
+    }
+
+    /// Each risk's credibility premium at the design row ``x``.
+    ///
+    /// Parameters
+    /// ----------
+    /// x : list of float
+    ///     One value per design column, such as ``[1.0, 13.0]`` for the
+    ///     next quarter of a trend line over twelve.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``x`` does not have one value per design column.
+    fn predict(&self, x: Vec<f64>) -> PyResult<Vec<f64>> {
+        self.inner.predict(&x).map_err(to_py)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "HachemeisterFit(collective={:?}, within_variance={:?})",
+            self.inner.collective, self.inner.within_variance
+        )
+    }
+}
+
+/// Hachemeister's regression credibility model, as R's ``actuar::cm(~risk,
+/// regformula = ...)``: risk ``i`` in period ``t`` has ratio ``X_it`` with
+/// weight ``w_it`` and a mean ``design[t] @ beta_i`` on a design shared by
+/// the risks (a trend line ``[1, t]``, say). Each risk's own weighted least
+/// squares fit is shrunk towards the collective by a credibility matrix.
+///
+/// At the origin the matrices are full and the between covariance is
+/// Hachemeister's iterative estimator whatever ``estimator`` says (as
+/// ``actuar``; on near-collinear coefficients its iteration may wander in
+/// the last digits). With ``adjust_intercept`` (``actuar``'s
+/// ``adj.intercept``) the design is orthogonalised under the collective
+/// weights, the matrices are diagonal and each diagonal is estimated as
+/// Bühlmann–Straub's by ``estimator``; the design's first column must
+/// then be constant.
+///
+/// Parameters
+/// ----------
+/// ratios : list of list of float
+///     One row per risk, one column per period; NaN for a missing cell.
+/// design : list of list of float
+///     One row per period, one column per coefficient.
+/// weights : list of list of float, optional
+///     The shape of ``ratios``, NaN in the same places; equal if omitted.
+/// estimator : {"unbiased", "iterative"}, default "unbiased"
+/// adjust_intercept : bool, default False
+/// tol : float, default 1.49e-8
+///     Relative tolerance of the iterations.
+/// max_iter : int, default 100
+///
+/// Returns
+/// -------
+/// HachemeisterFit
+///
+/// Raises
+/// ------
+/// ValueError
+///     For fewer than two risks with weight, mismatched shapes or missing
+///     cells, a risk whose observed cells do not identify its coefficients,
+///     linearly dependent design columns, or a singular system.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.credibility import hachemeister
+/// >>> x = [[10.0, 12.0, 13.0, 15.0, 16.0],
+/// ...      [8.0, 8.5, 9.5, 9.0, 10.0],
+/// ...      [14.0, 13.0, 16.0, 17.0, 19.0]]
+/// >>> design = [[1.0, float(t)] for t in range(1, 6)]
+/// >>> fit = hachemeister(x, design, adjust_intercept=True)
+/// >>> nxt = fit.predict([1.0, 6.0])
+/// >>> nxt[1] < nxt[0] < nxt[2]
+/// True
+#[pyfunction]
+#[pyo3(signature = (ratios, design, weights = None, estimator = "unbiased", adjust_intercept = false, tol = 1.4901161193847656e-8, max_iter = 100))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn hachemeister(
+    py: Python<'_>,
+    ratios: Vec<Vec<f64>>,
+    design: Vec<Vec<f64>>,
+    weights: Option<Vec<Vec<f64>>>,
+    estimator: &str,
+    adjust_intercept: bool,
+    tol: f64,
+    max_iter: usize,
+) -> PyResult<PyHachemeisterFit> {
+    let model = Hachemeister::new(
+        structure_estimator(estimator, tol, max_iter)?,
+        adjust_intercept,
+    );
+    let inner = py
+        .detach(|| model.fit(&ratios, weights.as_deref(), &design))
+        .map_err(to_py)?;
+    Ok(PyHachemeisterFit { inner })
 }
 
 /// A prior on a standard deviation from Python: ``("half_normal", scale)``

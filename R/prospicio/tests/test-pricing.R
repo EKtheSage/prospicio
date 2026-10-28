@@ -570,6 +570,20 @@ stopifnot(inherits(try(deal_book(list(a, a)), silent = TRUE), "try-error"),
           inherits(try(book_distribution(book, "loss", 90, tail = "middle"), silent = TRUE),
                    "try-error"),
           identical(book_select(book, "b")$ptr$names(), "b"))
+# #588: the marginal price of each deal written last.
+tv <- distortion("tvar", 0.5)
+m <- book_marginal_price(book, tv, cost_of_capital = 0.1)
+near(m$assets, c(390 - 270, 390 - 120))
+near(m$premium, (m$expected_loss + 0.1 * m$assets) / 1.1)
+pp <- price_portfolio(select_components(select_components(amounts, "item", "loss"), "deal",
+                                        c("a", "b")), tv, cost_of_capital = 0.1)
+stopifnot(all(m$premium <= pp$by_component$premium + 1e-9))
+one <- book_marginal_price(book_select(book, "b"), tv, distortion = distortion("tvar", 0.25))
+near(one$premium, risk_loaded_price(sampled(c(150, 330, 90, 210)), tv,
+                                    distortion = distortion("tvar", 0.25))$premium)
+stopifnot(identical(book_marginal_price(book, tv, cost_of_capital = 0.1, deals = "b")$deal, "b"),
+          inherits(try(book_marginal_price(book, tv, cost_of_capital = 0.1, deals = "z"),
+                       silent = TRUE), "try-error"))
 # A run from a tower takes each year's reinstatement premium (#595).
 tw <- reinsurance_tower(list(xol_layer("cat", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5))))
 res <- apply_tower(tw, event_set_from_long(c(1, 2, 3, 3, 4, 4, 4), c(5, 15, 22, 12, 40, 40, 40), 4))
