@@ -70,6 +70,113 @@ buhlmann_straub <- function(ratios, weights = NULL, estimator = c("unbiased", "i
                                    as.double(max_iter)))
 }
 
+#' Hachemeister's regression credibility
+#'
+#' Hachemeister's regression model, as `actuar::cm(~risk, regformula =
+#' formula, regdata = data)`: risk `i` in period `t` has ratio `X_it` with
+#' weight `w_it` and a mean on a design shared by the risks (a trend line
+#' `~ time`, say). Each risk's own weighted least squares fit is shrunk
+#' towards the collective by a credibility matrix
+#' `Z_i = A (A + s2 W_i)^-1`.
+#'
+#' At the origin the matrices are full and the between covariance `A` is
+#' Hachemeister's iterative estimator whatever `estimator` says, as in
+#' `actuar` (on nearly collinear coefficients its iteration may wander in
+#' the last digits). With `adjust_intercept = TRUE` (`actuar`'s
+#' `adj.intercept`) the design is orthogonalised under the collective
+#' weights, the matrices are diagonal and each diagonal is estimated as
+#' Bühlmann–Straub's by `estimator`; the formula must then have an
+#' intercept as its first column.
+#'
+#' @param ratios A matrix, one row per risk and one column per period; `NA`
+#'   for a missing cell.
+#' @param weights A matrix of the same shape with `NA` in the same places,
+#'   or `NULL` for equal weights.
+#' @param formula A one-sided formula for the design, evaluated in `data`.
+#' @param data A data frame with one row per period; by default
+#'   `time = 1, 2, ...`.
+#' @param estimator `"unbiased"` or `"iterative"`.
+#' @param adjust_intercept Put the intercept at the barycentre of the
+#'   periods.
+#' @param tol,max_iter Tolerance and iteration limit of the iterations.
+#' @returns A `hachemeister_fit` with properties `collective` (named by the
+#'   design's columns), `coefficients` and `individual` (one row per risk),
+#'   `credibility` (a `p x p x risks` array in the basis fitted), `between`,
+#'   `within_variance`, `risk_weights`, `transition` (`R` with the design
+#'   `Y = Q R` when adjusted, else `NULL`) and `iterations`; `predict(fit,
+#'   newdata)` gives each risk's premium at each row of `newdata`.
+#' @export
+#' @examples
+#' x <- rbind(c(10, 12, 13, 15, 16), c(8, 8.5, 9.5, 9, 10), c(14, 13, 16, 17, 19))
+#' fit <- hachemeister(x, adjust_intercept = TRUE)
+#' fit@collective
+#' predict(fit, data.frame(time = 6))
+hachemeister <- function(ratios, weights = NULL, formula = ~time,
+                         data = data.frame(time = seq_len(ncol(ratios))),
+                         estimator = c("unbiased", "iterative"), adjust_intercept = FALSE,
+                         tol = sqrt(.Machine$double.eps), max_iter = 100) {
+  estimator <- match.arg(estimator)
+  ratios <- as.matrix(ratios)
+  w <- if (is.null(weights)) double() else as.double(as.matrix(weights))
+  terms <- stats::delete.response(stats::terms(formula, data = data))
+  y <- stats::model.matrix(terms, stats::model.frame(terms, data))
+  if (nrow(y) != ncol(ratios)) {
+    stop("data needs one row per period (column of ratios)", call. = FALSE)
+  }
+  r <- rust_result(hachemeister_rust(as.double(ratios), w, as.double(nrow(ratios)),
+                                     as.double(ncol(ratios)), as.double(y), as.double(ncol(y)),
+                                     estimator, isTRUE(adjust_intercept), as.double(tol),
+                                     as.double(max_iter)))
+  p <- ncol(y)
+  k <- nrow(ratios)
+  names <- colnames(y)
+  coef_matrix <- function(v) matrix(v, k, p, dimnames = list(rownames(ratios), names))
+  hachemeister_fit(
+    collective = stats::setNames(r$collective, names),
+    coefficients = coef_matrix(r$coefficients),
+    individual = coef_matrix(r$individual),
+    credibility = array(r$credibility, c(p, p, k)),
+    between = matrix(r$between, p, p),
+    within_variance = r$within_variance,
+    risk_weights = r$risk_weights,
+    transition = if (length(r$transition)) matrix(r$transition, p, p) else NULL,
+    iterations = r$iterations,
+    terms = terms
+  )
+}
+
+#' @rdname hachemeister
+#' @export
+hachemeister_fit <- S7::new_class(
+  "hachemeister_fit",
+  package = "prospicio",
+  properties = list(
+    collective = S7::class_double,
+    coefficients = S7::class_any,
+    individual = S7::class_any,
+    credibility = S7::class_any,
+    between = S7::class_any,
+    within_variance = S7::class_double,
+    risk_weights = S7::class_double,
+    transition = S7::class_any,
+    iterations = S7::class_double,
+    terms = S7::class_any
+  )
+)
+
+S7::method(predict, hachemeister_fit) <- function(object, newdata, ...) {
+  x <- stats::model.matrix(object@terms, stats::model.frame(object@terms, newdata))
+  p <- x %*% t(object@coefficients)
+  dimnames(p) <- list(NULL, rownames(object@coefficients))
+  p
+}
+
+S7::method(print, hachemeister_fit) <- function(x, ...) {
+  cat("<hachemeister_fit> ", nrow(x@coefficients), " risks, collective:\n", sep = "")
+  print(x@collective)
+  invisible(x)
+}
+
 # Models lane: Bayesian hierarchical credibility, over prospicio_bayes's
 # credibility module.
 

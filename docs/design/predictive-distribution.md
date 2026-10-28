@@ -42,6 +42,35 @@ Status: **Core implemented** (draws only) · v0.1 · Depends on: `distributions.
 - **Draws only, `f64` only** (open questions 1 and 2): `Joint::Gaussian`
   and `f32` draws wait until a consumer or memory needs them. There is no
   `Joint` enum yet; it is introduced with the second variant.
+- **Gaussian joints are drawn, not stored (#564).** A mean and covariance
+  arrive as `prospicio_prob::multivariate::MultivariateNormal` or
+  `MultivariateLognormal`, which hold the exact marginals (`marginal(j)`),
+  the normal's exact total (`total()`, normal with variance `1ᵀ Σ 1`) and
+  the lognormal's exact total moments (`total_mean`, `total_variance`: a
+  sum of lognormals has no closed form). `PredictiveDistribution::from_gaussian`
+  turns either into draws through `simulate`, so the result is an ordinary
+  draws-backed distribution and the `Joint` enum is still not needed.
+  Simulation `i` draws `z_j = Φ⁻¹(u_j)` from stream `i`, one uniform per
+  component in order, and returns `mean + L z` (or its exponential), `L` the
+  lower Cholesky factor: inverse transform, so no `SAMPLERS` entry. The
+  provenance records the model (`multivariate_normal`,
+  `multivariate_lognormal`), `dim`, `n_sims`, the seed, and the mean and
+  covariance hashed into `input_hash` (the lognormal's on the log scale).
+- **Positive definite, not semi-definite (#564).** The covariance is
+  factored by `linalg::cholesky`, which refuses a singular matrix, so a
+  zero variance or a perfect correlation is an error rather than a
+  degenerate component; a pivoted factor is out of proportion until a
+  consumer needs one. Symmetry is checked to `1e-10` of the largest
+  variance, since Cholesky reads only the lower triangle.
+- **The lognormal from its moments is exact (#564).** `from_moments` sets
+  `log_cov_ij = ln(1 + cov_ij / (m_i m_j))` and
+  `mu_i = ln m_i - log_cov_ii / 2`, which reproduces the mean and
+  covariance to rounding. It refuses a mean that is not positive, a
+  covariance at or below `-m_i m_j` (no lognormal pair is that negatively
+  correlated), and a log-scale covariance that is not positive definite,
+  which can happen when `cov` is: correlation -0.9 at cv 1 gives
+  `ln 0.1 = -2.30` against log variances `ln 2 = 0.69`.
+  `from_log_scale(mu, log_cov)` takes the log scale directly.
 - **Key values are `Int`, `Text` or `Period`.** `Period` is
   `prospicio_core::Period`, the same type as the Triangle's origins, so a reserve
   component keyed by origin joins back to its triangle row without
@@ -109,8 +138,8 @@ PredictiveDistribution
 pub enum Joint {
     /// n_sims × n_components, simulation-major: row i is simulation i.
     Draws(DrawMatrix),
-    /// Deferred: multivariate normal / lognormal given mean and covariance
-    /// (e.g. Mack with its cross-origin covariance).
+    /// Not built: a mean and covariance are drawn into `Draws` by
+    /// `PredictiveDistribution::from_gaussian` (#564, Decisions).
     Gaussian { mean: Vec<f64>, cov: Vec<f64> },
 }
 ```

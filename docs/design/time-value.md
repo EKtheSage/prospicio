@@ -319,6 +319,106 @@ frame).
     Euler (co-measure) premium, so pricing every deal on its marginal
     leaves the book short; `marginal_prices` gives every deal in turn.
 
+## Deal monitoring after binding (#603): proposal
+
+Status: proposed, waiting on the user's decisions M1 to M6 below. Nothing
+is built yet. The decisions are numbered apart from the list above, since
+open PRs hold decisions 32 and 33; they take the next free numbers there
+when accepted.
+
+After binding, an investor asks two things: whether the deal is emerging
+as priced (actual against expected paid and reported loss), and what the
+rest of the deal is now worth (the forward distribution of IRR and MOIC
+from the current month, starting from what has happened). Today `run`
+always starts at month 0 with the opening capital and the full pattern.
+
+### What would be built
+
+1. `ActualState { month, premium_collected, paid, collateral, funded,
+   released, operating }`: the deal's state at the end of month
+   `month − 1`, each amount to date (`operating` the operating account's
+   balance), plus, optionally, the investor's actual flows by month so
+   far (M3).
+2. `CashflowTerms::from_valuation(&self, &ActualState)`: terms that start
+   at the valuation month. The patterns are cut at it and rescaled to
+   what is left, the trust and the operating account open at the actual
+   balances, and premium already collected is not collected again.
+   `run` on these terms gives the forward flows; the simulations' loss
+   ratios are first conditioned on the paid to date (M1) by
+   `condition_on_paid(u, paid, share_paid, method)`, a separate helper so
+   the conditioning can be inspected and reused.
+3. `deal_ave(actual_paid_by_month, &terms, u) -> AvEReport`: for each month
+   to date, the expected paid `u P S(t)` across the simulations (mean
+   and percentiles), the actual, the ratio actual over expected mean and
+   the actual's percentile among the simulations. With a paid pattern per
+   simulation (#600, open in the pattern-draws PR) each simulation uses
+   its own `S_j(t)`. Reported loss works the same way with a reported
+   pattern.
+4. Python `CashflowTerms.from_valuation`, `condition_on_paid`,
+   `deal_ave`; R `cashflow_from_valuation()`, `condition_on_paid()`,
+   `deal_ave()`.
+
+### Decisions for the user
+
+- **M1. How the simulations are conditioned on the paid to date.** With
+  `S(t)` the share paid by the valuation month and `A` the actual paid:
+  - (a) *Bornhuetter-Ferguson (recommended)*: keep every simulation and set
+    its ultimate to `A + u_j P (1 − S(t))`, the actual paid plus the
+    priced unpaid. Future emergence is independent of the past, as in
+    the BF method; the forward distribution narrows as the deal runs off
+    and at the last month is the realised loss exactly. No simulation is
+    lost.
+  - (b) *Truncation*: keep only the simulations with `u_j P ≥ A`
+    (the issue's floor), unchanged. Simple and exact under the priced
+    model when payment is certain, but it can drop most simulations late
+    in a deal and says nothing when `A` is below the expected paid.
+  - (c) *Reweighting*: weight each simulation by the likelihood of `A`
+    given its expected paid `u_j P S(t)` under a stated noise model (a
+    lognormal with a given cv, say); the results carry weights. This is
+    the most principled, but it needs a noise model nobody has stated,
+    and every downstream table would have to take weights.
+  - (d) *Chain ladder*: `u = A / (P S(t))` in every simulation: no
+    uncertainty left, unstable early.
+  The recommendation is (a) as the default, with (b) as an option, and
+  (c) left for later unless the user wants it now.
+- **M2. What the actual state holds.** The proposal is the six amounts
+  in item 1. Anything the engine carries month to month that is not
+  among them (an accrued fee, an adjustment already made, a commutation
+  already triggered) is either added or refused at valuation. The
+  recommendation is to refuse a valuation after an adjustment month or a
+  fee crystallisation until the user asks for it.
+- **M3. Which return is reported.** (a) *Since inception*: the investor's
+  actual flows to date followed by each simulation's forward flows, so the
+  IRR and MOIC are those of the whole deal (this needs the actual flows
+  by month); (b) *forward*: the current net asset value, the trust and
+  operating balances that belong to the investor, taken as the opening
+  investment at the valuation month. The recommendation is both, in two
+  columns, since an investor reports the first and decides on the second.
+- **M4. The percentile of the actual.** It is the share of simulations
+  with expected paid at or below the actual, with ties split in half, so
+  that over many paths it is uniform (the issue's check). With M1 (a) or
+  (b), the A vs E table uses the priced simulations, not the conditioned
+  ones.
+- **M5. Where `deal_ave` lives.** `prospicio-pricing` does not depend on
+  `prospicio-models`, whose `monitor::actual_vs_expected` compares by key
+  under a GLM family. The recommendation is to build `deal_ave` in
+  `prospicio_pricing::cashflow` without the dependency and to name its
+  columns as `monitor` does (`actual`, `expected`, `ratio`), rather than
+  add a crate dependency for one table.
+- **M6. Valuation within a month.** The engine's month is its step, so
+  valuation is at a month end. The recommendation is to keep that and
+  document it.
+
+### Validation (as the issue states it)
+
+- Valuation at month 0 with an empty state equals `run`.
+- Valuation at the last month returns the realised flows exactly (under
+  M1 (a) or (b)).
+- Simulate a deal, take one path as the actual, and check that the
+  conditioned forward IRR brackets the realised IRR, and that the A vs E
+  percentile is uniform over many paths (a Kolmogorov-Smirnov test on
+  the percentiles at a fixed seed).
+
 ## Conventions left as settings (cash-flow engine)
 
 The user accepted these on 2026-10-22 as built: each stays a setting with

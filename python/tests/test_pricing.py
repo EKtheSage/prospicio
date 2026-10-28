@@ -1228,3 +1228,45 @@ def test_reinstatement_premium_in_its_own_price():
     assert 0 < r.iterations < 200
     with pytest.raises(ValueError):
         price_with_reinstatements(x, [0.1] * 3, assets, cost_of_capital=0.15)
+
+
+def test_bonus_malus():
+    from prospicio.pricing import BonusMalus
+
+    # -1/+1 on two levels: pi_0 = (a / (a + lam))^a, r_0 = a / (a + lam)
+    # under a gamma Theta with shape a = 1 / cv^2.
+    two = BonusMalus.rule(2, 1, up_per_claim=1)
+    a, lam = 1 / 0.8**2, 0.12
+    pi = two.stationary(lam, cv=0.8)
+    r = two.optimal_relativities(lam, cv=0.8)
+    assert pi[0] == pytest.approx((a / (a + lam)) ** a, abs=1e-12)
+    assert r[0] == pytest.approx(a / (a + lam), abs=1e-12)
+    # Three a priori classes on -1/+3: relativities balance and increase.
+    scale = BonusMalus.rule(12, 7, down=1, up_per_claim=3)
+    assert scale.levels == 12 and scale.start == 7
+    assert scale.next_level(2, 1) == 5 and scale.transitions[11] == [10, 11, 11, 11, 11]
+    pi = scale.stationary([0.06, 0.1, 0.18], cv=1.3, weights=[0.5, 0.3, 0.2])
+    r = scale.optimal_relativities([0.06, 0.1, 0.18], cv=1.3, weights=[0.5, 0.3, 0.2])
+    assert sum(pi) == pytest.approx(1.0, abs=1e-12)
+    assert sum(p * x for p, x in zip(pi, r)) == pytest.approx(1.0, abs=1e-12)
+    assert all(x < y for x, y in zip(r, r[1:]))
+    # The stationary distribution is the limit of the chain from the start.
+    at = scale.stationary_at(0.1)
+    after = scale.distribution_after(0.1, 3000)
+    assert after == pytest.approx(at, abs=1e-12)
+    m = scale.transition_matrix(0.1)
+    assert all(sum(row) == pytest.approx(1.0, abs=1e-15) for row in m)
+    n = scale.years_to_stationarity(0.1, 0.01)
+    assert n is not None and n > 0
+    eta = scale.efficiency(0.1, r)
+    assert 0 < eta < 1
+    ig = scale.optimal_relativities(0.1, cv=0.8, mixing="inverse_gaussian")
+    assert len(ig) == 12
+    custom = BonusMalus.table(1, [[0, 1], [0, 2], [1, 2]])
+    assert custom.stationary_at(0.2) == pytest.approx(custom.distribution_after(0.2, 500))
+    with pytest.raises(ValueError):
+        scale.optimal_relativities(0.1, cv=0.8, mixing="beta")
+    with pytest.raises(ValueError):
+        BonusMalus.rule(4, 4, up_per_claim=1)
+    with pytest.raises(ValueError):
+        scale.efficiency(0.1, r[:5])

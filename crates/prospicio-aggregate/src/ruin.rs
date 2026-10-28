@@ -1,6 +1,8 @@
 //! Eventual ruin of the classical (Cramér–Lundberg) surplus process by the
 //! Pollaczeck–Khinchine formula: `aggregate`'s `pollaczeck_khinchine` and
-//! `eventual_ruin`.
+//! `eventual_ruin`; eventual ruin under renewal counts by Wiener–Hopf; and
+//! ruin within a finite horizon ([`finite_horizon`],
+//! [`finite_horizon_poisson`]).
 //!
 //! Claims arrive as a Poisson process and the premium comes in continuously
 //! at `(1 + ρ)` times the expected loss rate, with `ρ > 0`. The maximal
@@ -19,7 +21,7 @@
 //! compounded by [`fft`](crate::fft()) with its aliasing check.
 
 use prospicio_core::{Error, Result};
-use prospicio_prob::{Distribution, Grid, NegativeBinomial};
+use prospicio_prob::{Counting, Distribution, Grid, NegativeBinomial, Poisson};
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex64;
 
@@ -544,6 +546,254 @@ impl RenewalRuin {
     }
 }
 
+/// The probability of ruin within each period of a finite horizon at each
+/// initial surplus on the grid, from [`finite_horizon`] or
+/// [`finite_horizon_poisson`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct FiniteRuin {
+    step: f64,
+    premium: f64,
+    sub_periods: usize,
+    /// `psi[t - 1][j]` is `ψ(jh, t)`.
+    psi: Vec<Vec<f64>>,
+    report: CompoundReport,
+}
+
+/// `ψ(u, t)` in discrete time: the probability that the surplus
+/// `U_k = u + k c - (Y_1 + ... + Y_k)` is negative at the end of some
+/// period `k <= t`, for `t = 1, ..., periods`, where each period's loss `Y`
+/// is the compound of `count` and `severity` (independent across periods)
+/// and `c = premium` comes in each period. Ruin is checked only at period
+/// ends, so a surplus that dips below zero within a period and recovers by
+/// its end is not ruined; for continuous time see
+/// [`finite_horizon_poisson`].
+///
+/// On the severity's grid of step `h` the recursion is exact (De Vylder
+/// and Goovaerts'):
+/// `ψ(u, t) = P(Y > u + c) + Σ_{y <= u + c} P(Y = y) ψ(u + c - y, t - 1)`,
+/// `ψ(u, 0) = 0`, all `u` at once by one FFT convolution a period. The
+/// premium must be a whole number of steps (choose a step that divides
+/// it). `ψ` is returned on `points` surpluses `0, h, ...`; the period loss
+/// is compounded by [`fft`](crate::fft()) on `points + periods · c / h`
+/// points, which is all the recursion reads, so its
+/// [`aliasing_error`](CompoundReport::aliasing_error) in the
+/// [`report`](FiniteRuin::report) is the only error beyond round-off.
+///
+/// ```
+/// use prospicio_aggregate::ruin::finite_horizon;
+/// use prospicio_prob::{Binomial, Grid};
+///
+/// // Each period a claim of 2 with probability 0.4, premium 1: a simple
+/// // random walk, whose eventual ruin from u is (0.4 / 0.6)^(u + 1).
+/// let sev = Grid::new(1.0, vec![0.0, 0.0, 1.0]).unwrap();
+/// let count = Binomial::new(1, 0.4).unwrap();
+/// let ruin = finite_horizon(&sev, &count, 1.0, 2000, 8).unwrap();
+/// assert!((ruin.psi_at(0.0, 1).unwrap() - 0.4).abs() < 1e-15);
+/// assert!((ruin.psi_at(3.0, 2000).unwrap() - (0.4f64 / 0.6).powi(4)).abs() < 1e-12);
+/// ```
+pub fn finite_horizon<N: Counting + ?Sized>(
+    severity: &Grid,
+    count: &N,
+    premium: f64,
+    periods: usize,
+    points: usize,
+) -> Result<FiniteRuin> {
+    recursion(severity, count, premium, periods, 1, points)
+}
+
+/// `ψ(u, t)` in continuous time, approximately, for the compound Poisson
+/// surplus `u + c s - S(s)` with `rate` claims and `premium` `c` a period:
+/// [`finite_horizon`]'s recursion on `sub_periods` steps a period, each
+/// with Poisson(`rate / sub_periods`) claims and `premium / sub_periods`
+/// of premium, checked at the end of every step and reported at the end of
+/// each whole period. The approximation misses a ruin that recovers within
+/// a step, so it is below the continuous `ψ` and approaches it as
+/// `sub_periods` grows; `premium / sub_periods` must be a whole number of
+/// grid steps.
+///
+/// ```
+/// use prospicio_aggregate::ruin::{SeverityPart, finite_horizon_poisson, pollaczeck_khinchine};
+/// use prospicio_prob::{Gamma, Grid};
+///
+/// // Exponential claims of mean 1, a 50% margin: ψ(u, t) rises with t
+/// // towards the eventual ψ(u).
+/// let (sev, _) = Grid::rounding(&Gamma::new(1.0, 1.0).unwrap(), 0.05, 1 << 10).unwrap();
+/// let ruin = finite_horizon_poisson(&sev, 1.0, 1.5, 20, 30, 200).unwrap();
+/// let pk = pollaczeck_khinchine(&sev, 0.5, 1 << 12, SeverityPart::All).unwrap();
+/// let (p1, p20) = (ruin.psi_at(2.0, 1).unwrap(), ruin.psi_at(2.0, 20).unwrap());
+/// assert!(p1 < p20 && p20 < pk.psi_at(2.0));
+/// ```
+pub fn finite_horizon_poisson(
+    severity: &Grid,
+    rate: f64,
+    premium: f64,
+    periods: usize,
+    sub_periods: usize,
+    points: usize,
+) -> Result<FiniteRuin> {
+    if sub_periods == 0 {
+        return Err(Error::InvalidParameter {
+            name: "sub_periods",
+            value: 0.0,
+            reason: "must be positive",
+        });
+    }
+    let count = Poisson::new(rate / sub_periods as f64)?;
+    recursion(severity, &count, premium, periods, sub_periods, points)
+}
+
+fn recursion<N: Counting + ?Sized>(
+    severity: &Grid,
+    count: &N,
+    premium: f64,
+    periods: usize,
+    sub_periods: usize,
+    points: usize,
+) -> Result<FiniteRuin> {
+    if periods == 0 || points == 0 {
+        return Err(Error::InvalidParameter {
+            name: if periods == 0 { "periods" } else { "points" },
+            value: 0.0,
+            reason: "must be positive",
+        });
+    }
+    if !(premium.is_finite() && premium >= 0.0) {
+        return Err(Error::InvalidParameter {
+            name: "premium",
+            value: premium,
+            reason: "must be finite and non-negative",
+        });
+    }
+    let h = severity.step();
+    let steps = premium / sub_periods as f64 / h;
+    let m = steps.round();
+    if (steps - m).abs() > 1e-9 * steps.max(1.0) {
+        return Err(Error::InvalidParameter {
+            name: "premium",
+            value: premium,
+            reason: "the premium of each (sub-)period must be a whole number of grid steps; \
+                     choose a step that divides it",
+        });
+    }
+    let m = m as usize;
+    let stages = periods * sub_periods;
+    // Stage s reads ψ_{s-1} on `points + (stages - s + 1) m` values.
+    let longest = points + stages * m;
+    let (loss, report) = crate::fft(count, severity, longest + 1)?;
+    let p = &loss.probs()[..longest];
+    // P(Y > j h), summed from the bottom.
+    let mut survival = Vec::with_capacity(longest);
+    let mut cum = 0.0;
+    for &v in p {
+        cum += v;
+        survival.push((1.0 - cum).max(0.0));
+    }
+
+    let n = (2 * longest).next_power_of_two();
+    let mut planner = FftPlanner::<f64>::new();
+    let forward = planner.plan_fft_forward(n);
+    let inverse = planner.plan_fft_inverse(n);
+    let mut p_hat: Vec<Complex64> = p.iter().map(|&v| Complex64::new(v, 0.0)).collect();
+    p_hat.resize(n, Complex64::new(0.0, 0.0));
+    forward.process(&mut p_hat);
+
+    let mut previous = vec![0.0; longest];
+    let mut psi = Vec::with_capacity(periods);
+    let mut buffer = vec![Complex64::new(0.0, 0.0); n];
+    for stage in 1..=stages {
+        let len = points + (stages - stage) * m;
+        let read = len + m;
+        for (b, &v) in buffer.iter_mut().zip(&previous[..read]) {
+            *b = Complex64::new(v, 0.0);
+        }
+        buffer[read..].fill(Complex64::new(0.0, 0.0));
+        forward.process(&mut buffer);
+        for (b, q) in buffer.iter_mut().zip(&p_hat) {
+            *b *= q;
+        }
+        inverse.process(&mut buffer);
+        let scale = 1.0 / n as f64;
+        let current: Vec<f64> = (0..len)
+            .map(|u| (survival[u + m] + buffer[u + m].re * scale).clamp(0.0, 1.0))
+            .collect();
+        if stage % sub_periods == 0 {
+            psi.push(current[..points].to_vec());
+        }
+        previous = current;
+    }
+    Ok(FiniteRuin {
+        step: h,
+        premium,
+        sub_periods,
+        psi,
+        report,
+    })
+}
+
+impl FiniteRuin {
+    /// The number of periods.
+    pub fn periods(&self) -> usize {
+        self.psi.len()
+    }
+
+    /// The premium a period.
+    pub fn premium(&self) -> f64 {
+        self.premium
+    }
+
+    /// The steps a period at which the surplus is checked (1 in discrete
+    /// time).
+    pub fn sub_periods(&self) -> usize {
+        self.sub_periods
+    }
+
+    /// The grid's step.
+    pub fn step(&self) -> f64 {
+        self.step
+    }
+
+    fn period(&self, t: usize) -> Result<&[f64]> {
+        if t == 0 || t > self.psi.len() {
+            return Err(Error::InvalidParameter {
+                name: "t",
+                value: t as f64,
+                reason: "must be a period of the horizon, from 1",
+            });
+        }
+        Ok(&self.psi[t - 1])
+    }
+
+    /// `ψ(jh, t)` at each grid point, for period `t` from 1.
+    pub fn psi(&self, t: usize) -> Result<&[f64]> {
+        self.period(t)
+    }
+
+    /// `ψ(u, t)`: `ψ(jh, t)` for `jh <= u < (j + 1)h`; beyond the grid the
+    /// last value, an upper bound.
+    pub fn psi_at(&self, u: f64, t: usize) -> Result<f64> {
+        Ok(psi_at(self.period(t)?, self.step, u))
+    }
+
+    /// The smallest initial surplus on the grid with `ψ(u, t) < p`, or
+    /// `None` when the grid does not reach it.
+    pub fn capital(&self, p: f64, t: usize) -> Result<Option<f64>> {
+        Ok(capital(self.period(t)?, self.step, p))
+    }
+
+    /// The initial surplus with `ψ(u, t) = p`, linear between the
+    /// bracketing grid points; `None` when the grid does not reach it or
+    /// `p >= ψ(0, t)`.
+    pub fn capital_interpolated(&self, p: f64, t: usize) -> Result<Option<f64>> {
+        Ok(capital_interpolated(self.period(t)?, self.step, p))
+    }
+
+    /// The period (or step) loss's compound report; read
+    /// `aliasing_error`.
+    pub fn report(&self) -> &CompoundReport {
+        &self.report
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -648,5 +898,77 @@ mod tests {
         assert!((stop[2] - 0.5).abs() < 1e-15 && stop[3] == 0.0);
         assert!(pollaczeck_khinchine(&sev, 0.0, 16, SeverityPart::All).is_err());
         assert!(pollaczeck_khinchine(&sev, 0.1, 16, SeverityPart::Above(5.0)).is_err());
+    }
+
+    #[test]
+    fn finite_horizon_is_a_random_walk_exactly() {
+        // Claims of 2 with probability q a period, premium 1: ruin from u is
+        // the walk's first passage to -1, by brute force over all 2^t paths
+        // of t <= 12 steps, and (q / p)^(u + 1) eventually.
+        use prospicio_prob::Binomial;
+        let q = 0.35;
+        let sev = Grid::new(1.0, vec![0.0, 0.0, 1.0]).unwrap();
+        let ruin = finite_horizon(&sev, &Binomial::new(1, q).unwrap(), 1.0, 12, 6).unwrap();
+        for u in 0..6i64 {
+            for t in 1..=12usize {
+                let mut ruined = 0.0;
+                for path in 0u32..(1 << t) {
+                    let (mut x, mut prob, mut hit) = (u, 1.0, false);
+                    for k in 0..t {
+                        let claim = (path >> k) & 1 == 1;
+                        x += if claim { -1 } else { 1 };
+                        prob *= if claim { q } else { 1.0 - q };
+                        hit |= x < 0;
+                    }
+                    if hit {
+                        ruined += prob;
+                    }
+                }
+                let got = ruin.psi_at(u as f64, t).unwrap();
+                assert!(
+                    (got - ruined).abs() < 1e-13,
+                    "u = {u}, t = {t}: {got} vs {ruined}"
+                );
+            }
+        }
+        let long = finite_horizon(&sev, &Binomial::new(1, q).unwrap(), 1.0, 2000, 6).unwrap();
+        for u in 0..6 {
+            let eventual = (q / (1.0 - q)).powi(u + 1);
+            assert!((long.psi_at(u as f64, 2000).unwrap() - eventual).abs() < 1e-12);
+        }
+        // Non-decreasing in t, non-increasing in u.
+        for t in 1..12 {
+            for (a, b) in ruin.psi(t).unwrap().iter().zip(ruin.psi(t + 1).unwrap()) {
+                assert!(a <= b);
+            }
+        }
+        assert!(ruin.psi(1).unwrap().windows(2).all(|w| w[0] >= w[1]));
+        assert!(ruin.psi(0).is_err() && ruin.psi(13).is_err());
+        assert!(finite_horizon(&sev, &Binomial::new(1, q).unwrap(), 1.5, 4, 6).is_err());
+        assert!(finite_horizon(&sev, &Binomial::new(1, q).unwrap(), -1.0, 4, 6).is_err());
+        assert!(finite_horizon_poisson(&sev, 1.0, 1.0, 4, 0, 6).is_err());
+    }
+
+    #[test]
+    fn finite_horizon_poisson_approaches_pollaczeck_khinchine() {
+        // Exponential claims of mean 1, rate 1, 50% margin: after 60 periods
+        // on 30 steps each ψ(u, 60) is within the step and horizon errors of
+        // the eventual ψ(u) = e^{-u/3} / 1.5, and below it.
+        let (sev, _) = Grid::rounding(&Gamma::new(1.0, 1.0).unwrap(), 0.05, 1 << 10).unwrap();
+        let ruin = finite_horizon_poisson(&sev, 1.0, 1.5, 60, 30, 400).unwrap();
+        assert!(ruin.report().aliasing_error < 1e-12);
+        for u in [0.0, 2.0, 5.0, 10.0] {
+            let exact = (-u / 3.0f64).exp() / 1.5;
+            let got = ruin.psi_at(u, 60).unwrap();
+            assert!(
+                got < exact && exact - got < 0.03,
+                "u = {u}: {got} vs {exact}"
+            );
+        }
+        assert_eq!(ruin.sub_periods(), 30);
+        assert_eq!(ruin.periods(), 60);
+        let c = ruin.capital(0.05, 60).unwrap().unwrap();
+        assert!(ruin.psi_at(c, 60).unwrap() < 0.05);
+        assert!(ruin.psi_at(c - 0.05, 60).unwrap() >= 0.05);
     }
 }
