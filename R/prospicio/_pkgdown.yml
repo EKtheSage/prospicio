@@ -214,6 +214,7 @@ reference:
       - credibility_standard
       - buhlmann_straub
       - hierarchical_credibility
+      - hachemeister
       - bonus_malus
       - bonus_malus_transition
       - bonus_malus_portfolio

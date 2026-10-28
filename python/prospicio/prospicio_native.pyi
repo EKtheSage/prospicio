@@ -14169,6 +14169,84 @@ class GroupedFit:
         """
 
 @final
+class HachemeisterFit:
+    """
+    A fitted Hachemeister model, from ``hachemeister``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def between(self, /) -> list[list[float]]:
+        """
+        The between-risk covariance of the coefficients, in the basis
+        fitted (diagonal when the intercept is adjusted).
+        """
+    @property
+    def coefficients(self, /) -> list[list[float]]:
+        """
+        Each risk's credibility coefficients (the collective for a risk
+        with no weight).
+        """
+    @property
+    def collective(self, /) -> list[float]:
+        """
+        The collective coefficients, one per design column.
+        """
+    @property
+    def credibility(self, /) -> list[list[list[float]]]:
+        """
+        Each risk's credibility matrix, in the basis fitted (the
+        orthogonalised design when the intercept is adjusted).
+        """
+    @property
+    def individual(self, /) -> list[list[float]]:
+        """
+        Each risk's own weighted least squares coefficients (0 for a risk
+        with no weight).
+        """
+    @property
+    def iterations(self, /) -> int:
+        """
+        Iterations of the iterative estimator.
+        """
+    def predict(self, /, x: Sequence[float]) -> list[float]:
+        """
+        Each risk's credibility premium at the design row ``x``.
+        
+        Parameters
+        ----------
+        x : list of float
+            One value per design column, such as ``[1.0, 13.0]`` for the
+            next quarter of a trend line over twelve.
+        
+        Returns
+        -------
+        list of float
+        
+        Raises
+        ------
+        ValueError
+            If ``x`` does not have one value per design column.
+        """
+    @property
+    def risk_weights(self, /) -> list[float]:
+        """
+        Each risk's total weight.
+        """
+    @property
+    def transition(self, /) -> list[list[float]] |None:
+        """
+        When the intercept is adjusted, the upper triangular ``R`` with the
+        design ``Y = Q R``: a coefficient ``c`` in the basis fitted is
+        ``R^-1 c`` in the design's. ``None`` at the origin.
+        """
+    @property
+    def within_variance(self, /) -> float:
+        """
+        The within-risk variance ``s2``, the mean of the risks' residual
+        variances.
+        """
+
+@final
 class HierarchicalCredibilityFit:
     """
     A fitted Bayesian hierarchical credibility model, from
@@ -30966,6 +31044,61 @@ def grouped_goodness_of_fit(severity: Any, bounds: Sequence[float], counts: Sequ
     >>> g = grouped_goodness_of_fit(Gamma(3.907288, 397.931), bounds, [42, 61, 47, 26, 14, 10])
     >>> round(g["chi_square"], 3)
     3.095
+    """
+
+def hachemeister(ratios: Sequence[Sequence[float]], design: Sequence[Sequence[float]], weights: Sequence[Sequence[float]] |None = None, estimator: str = "unbiased", adjust_intercept: bool = False, tol: float = 1.4901161193847656e-8, max_iter: int = 100) -> HachemeisterFit:
+    """
+    Hachemeister's regression credibility model, as R's ``actuar::cm(~risk,
+    regformula = ...)``: risk ``i`` in period ``t`` has ratio ``X_it`` with
+    weight ``w_it`` and a mean ``design[t] @ beta_i`` on a design shared by
+    the risks (a trend line ``[1, t]``, say). Each risk's own weighted least
+    squares fit is shrunk towards the collective by a credibility matrix.
+    
+    At the origin the matrices are full and the between covariance is
+    Hachemeister's iterative estimator whatever ``estimator`` says (as
+    ``actuar``; on near-collinear coefficients its iteration may wander in
+    the last digits). With ``adjust_intercept`` (``actuar``'s
+    ``adj.intercept``) the design is orthogonalised under the collective
+    weights, the matrices are diagonal and each diagonal is estimated as
+    Bühlmann–Straub's by ``estimator``; the design's first column must
+    then be constant.
+    
+    Parameters
+    ----------
+    ratios : list of list of float
+        One row per risk, one column per period; NaN for a missing cell.
+    design : list of list of float
+        One row per period, one column per coefficient.
+    weights : list of list of float, optional
+        The shape of ``ratios``, NaN in the same places; equal if omitted.
+    estimator : {"unbiased", "iterative"}, default "unbiased"
+    adjust_intercept : bool, default False
+    tol : float, default 1.49e-8
+        Relative tolerance of the iterations.
+    max_iter : int, default 100
+    
+    Returns
+    -------
+    HachemeisterFit
+    
+    Raises
+    ------
+    ValueError
+        For fewer than two risks with weight, mismatched shapes or missing
+        cells, a risk whose observed cells do not identify its coefficients,
+        linearly dependent design columns, or a singular system.
+    
+    Examples
+    --------
+    >>> from prospicio.credibility import hachemeister
+    >>> x = [[10.0, 12.0, 13.0, 15.0, 16.0],
+    ...      [8.0, 8.5, 9.5, 9.0, 10.0],
+    ...      [14.0, 13.0, 16.0, 17.0, 19.0]]
+    >>> design = [[1.0, float(t)] for t in range(1, 6)]
+    >>> fit = hachemeister(x, design, adjust_intercept=True)
+    >>> nxt = fit.predict([1.0, 6.0])
+    >>> nxt[1] < nxt[0] < nxt[2]
+    True
     """
 
 def haircut(pd: PredictiveDistribution, total: float, measure: str, level: float) -> LevelAllocation:
