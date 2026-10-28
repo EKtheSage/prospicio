@@ -767,6 +767,34 @@ def test_grain():
         q.grain("W")
 
 
+def test_max_age():
+    tri = Triangle.from_long(
+        [2020, 2020, 2020, 2021, 2021, 2022] * 2,
+        [12, 24, 36, 12, 24, 12] * 2,
+        {"paid": [100.0, 150.0, 145.0, 110.0, 170.0, 120.0] * 2,
+         "premium": [200.0] * 12},
+        keys={"lob": ["Auto"] * 6 + ["Home"] * 6},
+    )
+    cut = tri.max_age(24)
+    assert cut.development == [12, 24]
+    assert cut.origins == tri.origins and cut.index == tri.index
+    assert cut.columns == ["paid", "premium"]
+    assert cut.valuation == tri.valuation and cut.is_cumulative
+    # The kept rows rebuild the same triangle.
+    frame = tri.to_frame()
+    keep = [i for i, age in enumerate(frame["development"]) if age <= 24]
+    rebuilt = Triangle.from_frame({k: [v[i] for i in keep] for k, v in frame.items()},
+                                  "origin", "development", ["paid", "premium"], keys=["lob"])
+    assert cut == rebuilt
+    # Any age at or past the first: the ages up to it; past the last: unchanged.
+    assert tri.max_age(30) == cut and tri.max_age(36) == tri and tri.max_age(1000) == tri
+    assert tri.to_incremental().max_age(24) == cut.to_incremental()
+    with pytest.raises(ValueError, match="before the triangle's first age, 12 months"):
+        tri.max_age(6)
+    with pytest.raises(OverflowError):
+        tri.max_age(-1)
+
+
 def test_errors():
     with pytest.raises(ValueError, match="rows"):
         Triangle.from_long([2020, 2021], [12], [1.0, 2.0])

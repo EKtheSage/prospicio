@@ -88,17 +88,19 @@ use crate::triangle::{Label, Segment, Triangle};
 /// expected movement is negative, which is what such a column says. The
 /// chain ladder accepts the same triangle (a factor below 1 there);
 /// [`BayesOdp`](super::BayesOdp) and [`BayesBf`](super::BayesBf) reject it
-/// as this model does. A sparse late age (one cell below the previous one,
-/// say) is best dropped before the fit: rebuild the triangle from
-/// [`Triangle::to_long`] without the rows at that age and pass them to
-/// [`Triangle::from_long`] (Python `to_frame` and `from_frame`, R
-/// `as.data.frame()` and `triangle()`), or fold the age into the previous
-/// one, and carry the movement left out as a tail outside the model.
+/// as this model does. A sparse last age (one cell below the previous one,
+/// say) is best dropped before the fit: keep the ages before it with
+/// [`Triangle::max_age`] (Python `Triangle.max_age`, R `max_age()`), or
+/// fold the age into the previous one, and carry the movement left out as
+/// a tail outside the model. A falling first age is dropped by rebuilding
+/// the triangle from [`Triangle::to_long`] without its rows and passing
+/// them to [`Triangle::from_long`] (Python `to_frame` and `from_frame`, R
+/// `as.data.frame()` and `triangle()`); a falling middle age has no remedy
+/// in this model.
 /// Supporting such a column would need a term at the late ages whose sign
 /// is free (an additive or tail factor with a normal prior, outside the
 /// log-linear ODP likelihood, whose variance `phi * mean` needs a positive
-/// mean); the design note's decision 26 has the details and open decision
-/// 18 a `Triangle` method that drops ages.
+/// mean); the design note's decision 26 has the details.
 ///
 /// The log posterior is not concave in general (the softmax), but
 /// the mode finder's ridge handles that; NUTS samples it on a scale
@@ -866,10 +868,11 @@ fn origin_error(origin: &crate::Period, n: usize, sum: f64, shape: f64, phi: f64
 /// the mean `U_w p_d` is positive, so the likelihood increases as the share
 /// falls to 0 and has no finite maximum (design note `reserving-bayes.md`,
 /// decision 26). The remedy depends on where the age is: dropping the last
-/// age leaves its movement out of the model (a tail), dropping the first
-/// removes the origins observed only there, and a middle age cannot be
-/// dropped, since `Triangle::from_long` fills every age from the first to
-/// the last and the chain ladder then refuses the empty column.
+/// age with `Triangle::max_age` leaves its movement out of the model (a
+/// tail), dropping the first removes the origins observed only there, and
+/// a middle age cannot be dropped, since `max_age` keeps every age up to
+/// one, `Triangle::from_long` fills every age from the first to the last
+/// and the chain ladder then refuses the empty column.
 fn column_error(
     ages: &[crate::Lag],
     d: usize,
@@ -899,17 +902,18 @@ fn column_error(
     };
     let remedy = match (d.checked_sub(1).map(|k| ages[k]), ages.get(d + 1)) {
         (Some(previous), None) => format!(
-            "{}. Rebuild the triangle from its long table without the rows at {age} months, \
-             or fold that age into {previous} months (book each origin's value at {age} months \
+            "{}. Keep the ages up to {previous} months with the triangle's max_age({previous}), \
+             which leaves out the rows at {age} months, or fold that age into {previous} months (book each origin's value at {age} months \
              at {previous} months), and carry the movement left out as a tail outside this model",
             accepts(previous)
         ),
         (Some(previous), Some(_)) => format!(
-            "{}, and so does Mack's model. This model cannot take it: no rebuild of the triangle \
-             removes an age between the first and the last today, since the development ages \
-             run without a gap from the first to the last, so without the rows at {age} months \
-             the column comes back with no cells and the chain ladder refuses it too (design \
-             note reserving-bayes.md, open decision 18)",
+            "{}, and so does Mack's model. This model cannot take it: no change to the triangle \
+             removes an age between the first and the last, since the development ages run \
+             without a gap from the first to the last, so without the rows at {age} months the \
+             column comes back with no cells and the chain ladder refuses it too, and the \
+             triangle's max_age keeps every age up to one, so it cannot leave out a middle age \
+             alone (design note reserving-bayes.md, decisions 18 and 26)",
             accepts(previous)
         ),
         (None, Some(next)) => {
@@ -1949,24 +1953,41 @@ mod tests {
             "development age 48 months: the observed increments (1 cell) sum to -5,",
             "no log-linear mean exists",
             "The chain ladder accepts this triangle (its factor from 36 to 48 months is 0.9688)",
-            "without the rows at 48 months",
+            "Keep the ages up to 36 months with the triangle's max_age(36), which leaves out the \
+             rows at 48 months",
             "fold that age into 36 months",
             "as a tail outside this model",
         ] {
             assert!(m.contains(part), "{part:?} not in {m}");
         }
-        // BayesOdp and BayesBf refuse the same column.
+        // BayesOdp and BayesBf refuse the same column and name the same
+        // remedy, which they accept.
         for e in [
             BayesOdp::default().fit(&falling, "values").unwrap_err(),
             BayesBf::default()
                 .fit(&falling, "values", "premium")
                 .unwrap_err(),
         ] {
-            assert!(
-                matches!(&e, Error::Bayes(m) if m.contains("48 months")),
-                "{e}"
-            );
+            let Error::Bayes(m) = &e else { panic!("{e}") };
+            for part in [
+                "development age 48 months: the observed increments sum to -5,",
+                "Keep the ages up to 36 months with the triangle's max_age(36)",
+                "as a tail outside this model",
+            ] {
+                assert!(m.contains(part), "{part:?} not in {m}");
+            }
         }
+        let segment = |t: &Triangle| t.segment("values").unwrap();
+        assert!(
+            BayesOdp::default()
+                .prepare(&segment(&falling), true)
+                .is_err()
+        );
+        assert!(
+            BayesOdp::default()
+                .prepare(&segment(&falling.max_age(36).unwrap()), true)
+                .is_ok()
+        );
         // The first age has nothing to fold into.
         let first = with_premium(
             2020,
@@ -1997,8 +2018,10 @@ mod tests {
         assert_eq!(model.n_dev, 3);
         assert!(start.iter().all(|t| t.is_finite()));
 
-        // The remedy: the triangle without the rows at 48 months.
-        let dropped = without_age(&falling, 48);
+        // The remedy: the triangle without the rows at 48 months, kept by
+        // max_age as the rebuild from the long table keeps it.
+        let dropped = falling.max_age(36).unwrap();
+        assert_eq!(dropped, without_age(&falling, 48));
         assert_eq!(dropped.development(), &[12, 24, 36]);
         let (fit, model, start) = prepared(&dropped, &quick(0));
         assert_eq!(fit.latest, vec![160.0, 180.0, 175.0, 130.0]);
@@ -2008,7 +2031,8 @@ mod tests {
 
     /// A middle age whose column falls: the message names no tail and no
     /// rebuild, since the triangle without that age's rows keeps the age
-    /// with no cells and the chain ladder refuses it (open decision 18).
+    /// with no cells and the chain ladder refuses it, and `max_age` keeps
+    /// every age up to one (decision 18).
     #[test]
     fn a_falling_middle_column_has_no_rebuild_remedy() {
         let falling = with_premium(
@@ -2029,8 +2053,8 @@ mod tests {
             "development age 36 months: the observed increments (2 cells) sum to -15,",
             "The chain ladder accepts this triangle (its factor from 24 to 36 months is \
              0.9531), and so does Mack's model",
-            "no rebuild of the triangle removes an age between the first and the last today",
-            "open decision 18",
+            "no change to the triangle removes an age between the first and the last",
+            "max_age keeps every age up to one, so it cannot leave out a middle age alone",
         ] {
             assert!(m.contains(part), "{part:?} not in {m}");
         }
@@ -2054,7 +2078,7 @@ mod tests {
     )]
     fn a_triangle_without_its_falling_age_fits() {
         let fit = quick(0)
-            .fit(&without_age(&falling(), 48), "values", "premium")
+            .fit(&falling().max_age(36).unwrap(), "values", "premium")
             .unwrap();
         assert_eq!(fit.chain_ladder.latest, vec![160.0, 180.0, 175.0, 130.0]);
         let total = fit.reserves.total().mean();

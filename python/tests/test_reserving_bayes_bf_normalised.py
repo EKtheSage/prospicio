@@ -269,13 +269,17 @@ def test_a_falling_late_column_names_its_age_and_the_remedy():
     message = str(e.value)
     for part in ["development age 36 months: the observed increments (1 cell) sum to -5,",
                  "The chain ladder accepts this triangle",
-                 "without the rows at 36 months", "fold that age into 24 months"]:
+                 "Keep the ages up to 24 months with the triangle's max_age(24)",
+                 "leaves out the rows at 36 months",
+                 "fold that age into 24 months"]:
         assert part in message, message
-    # The remedy: rebuild the triangle without the rows at 36 months.
+    # The remedy: max_age(24), the rebuild without the rows at 36 months.
+    dropped = falling.max_age(24)
     frame = falling.to_frame()
     keep = [i for i, age in enumerate(frame["development"]) if age != 36]
-    dropped = Triangle.from_frame({k: [v[i] for i in keep] for k, v in frame.items()},
+    rebuilt = Triangle.from_frame({k: [v[i] for i in keep] for k, v in frame.items()},
                                   "origin", "development", ["paid", "premium"])
+    assert dropped == rebuilt
     assert dropped.development == [12, 24]
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

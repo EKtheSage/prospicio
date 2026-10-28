@@ -109,10 +109,13 @@ allowed. The error names the age or origin, its number of observed
 cells, their sum and the remedies. A column that sums to zero or less
 has no log-linear mean, since every mean is an ultimate times a positive
 share; \code{\link[=chain_ladder]{chain_ladder()}} accepts the same triangle, and \code{\link[=bayes_odp]{bayes_odp()}} and
-\code{\link[=bayes_bf]{bayes_bf()}} refuse it too. To drop a sparse late age, rebuild the
-triangle without its rows (\code{df <- as.data.frame(tri)}, then
-\code{\link[=triangle]{triangle()}} on \code{df[df$development != 120, ]}) and carry the movement
-left out as a tail outside the model. For an origin, a finite \code{cv} below
+\code{\link[=bayes_bf]{bayes_bf()}} refuse it too. To drop a sparse last age, keep the ages
+before it with \code{\link[=max_age]{max_age()}} (\code{max_age(tri, 108)} for a last age of 120
+months) and carry the movement left out as a tail outside the model. A
+falling first age is dropped by rebuilding the triangle without its
+rows (\code{\link[=triangle]{triangle()}} on the rows of \code{as.data.frame(tri)} at the other
+ages); a falling middle age has no remedy in this model. For an origin,
+a finite \code{cv} below
 the bound the error prints makes its posterior proper. One \code{seed}
 replays a fit exactly, whatever the number of threads. Failed MCMC
 diagnostics (R-hat above 1.01, bulk or tail ESS below 100 per chain, any

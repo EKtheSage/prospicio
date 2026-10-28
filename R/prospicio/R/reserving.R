@@ -507,6 +507,43 @@ grain <- function(x, origin_grain, development_grain = origin_grain) {
   new_triangle(x, ptr)
 }
 
+#' Keep the development ages up to an age
+#'
+#' The triangle with the development ages up to `age` months, as
+#' chainladder-python's `tri[tri.development <= age]`. Every age at or
+#' before `age` is kept, in every segment, measure and origin; the later
+#' ages are left out, not folded into a tail. `age` need not be one of the
+#' triangle's ages, and one at or past the last age returns the triangle
+#' unchanged. The origins, measures (a premium column among them), grains
+#' and basis (cumulative or incremental) are kept; the valuation becomes
+#' the latest valuation of a kept observed cell. On a cumulative triangle
+#' the result equals [triangle()] on the rows of `as.data.frame(x)` at the
+#' kept ages; on an incremental one that rebuild brings the dropped ages
+#' back as zero increments, and this function does not.
+#'
+#' @param x A [triangle].
+#' @param age The last age to keep, in months: one whole number, at or
+#'   past the triangle's first age (an earlier one keeps nothing and is an
+#'   error).
+#' @returns A [triangle].
+#' @export
+#' @examples
+#' long <- data.frame(
+#'   year = c(2020, 2020, 2020, 2021, 2021, 2022),
+#'   age = c(12, 24, 36, 12, 24, 12),
+#'   paid = c(100, 150, 145, 110, 170, 120)
+#' )
+#' tri <- triangle(long, "year", "age", "paid")
+#' max_age(tri, 24)@development
+#' max_age(tri, 24)@values[1, 1, , ]
+max_age <- function(x, age) {
+  check_triangle(x)
+  if (!is.numeric(age) || length(age) != 1 || is.na(age) || age < 0 || age != round(age)) {
+    stop("`age` must be one whole number of months, 0 or more", call. = FALSE)
+  }
+  new_triangle(x, rust_result(x@ptr$max_age(as.integer(age))))
+}
+
 # The single column to fit, by default the triangle's only one.
 fit_column <- function(triangle, column) {
   check_triangle(triangle)
@@ -3954,10 +3991,13 @@ bayes_bf_one_year <- function(triangle, column, exposure, apriori = 1, cv = 0.1,
 #' cells, their sum and the remedies. A column that sums to zero or less
 #' has no log-linear mean, since every mean is an ultimate times a positive
 #' share; [chain_ladder()] accepts the same triangle, and [bayes_odp()] and
-#' [bayes_bf()] refuse it too. To drop a sparse late age, rebuild the
-#' triangle without its rows (`df <- as.data.frame(tri)`, then
-#' [triangle()] on `df[df$development != 120, ]`) and carry the movement
-#' left out as a tail outside the model. For an origin, a finite `cv` below
+#' [bayes_bf()] refuse it too. To drop a sparse last age, keep the ages
+#' before it with [max_age()] (`max_age(tri, 108)` for a last age of 120
+#' months) and carry the movement left out as a tail outside the model. A
+#' falling first age is dropped by rebuilding the triangle without its
+#' rows ([triangle()] on the rows of `as.data.frame(tri)` at the other
+#' ages); a falling middle age has no remedy in this model. For an origin,
+#' a finite `cv` below
 #' the bound the error prints makes its posterior proper. One `seed`
 #' replays a fit exactly, whatever the number of threads. Failed MCMC
 #' diagnostics (R-hat above 1.01, bulk or tail ESS below 100 per chain, any

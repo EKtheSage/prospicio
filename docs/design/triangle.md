@@ -73,6 +73,7 @@ pub struct Triangle {
 | `grain(origin, development)` | coarsen periods |
 | `select(key = values)` / `select_columns(names)` | segments by key value (conditions ANDed), measures by name |
 | `group_by(keys)` | sum segments over the other keys; `group_by([])` is the total |
+| `max_age(age)` | the development ages up to `age` months (#667) |
 | `from_long` / `to_long` | long ↔ wide: rows of (key columns by name, origin, development or valuation, value columns) |
 | `view(keys, column)` / `summary()` | one segment × measure as a grid; one row per segment × measure |
 
@@ -155,6 +156,28 @@ the month) in both bindings, as `valuation` is.
     `aggregate(keep =)` is what the package already uses to sum a
     `predictive_distribution` over its keys. A key named `columns` (or
     `x` in R) cannot be selected by keyword.
+- **Keep the ages up to an age (implemented, #667,
+  `reserving-bayes.md` decision 18).** `max_age(age)` (a `Lag`, months)
+  keeps every development age at or before `age`, in every segment,
+  measure and origin, as chainladder-python's
+  `tri[tri.development <= age]`; the later ages are left out, not folded
+  into a tail. `age` need not be one of the triangle's ages: any value at
+  or past the first age keeps the ages up to it, and one at or past the
+  last age returns the triangle unchanged. An age before the first, which
+  keeps nothing, is `Error::AgeBeforeFirst`, and a cut that leaves no
+  observed cell is `Error::Empty`. The origins (an origin observed only at
+  dropped ages keeps an empty row), the measures (a premium column among
+  them, so premium recorded only at a dropped age loses those cells), the
+  grains and the basis are kept, and the valuation becomes the latest
+  valuation of a kept observed cell. On a cumulative triangle the result
+  equals `from_long` on the rows of `to_long` at the kept ages; on an
+  incremental one that rebuild does not drop the ages, since `from_long`
+  runs an incremental table's ages to the oldest origin's age at the
+  valuation and fills the missing rows with zero increments, so
+  `max_age` cuts the development axis itself. Its use is the remedy for a
+  falling last age in the Bayesian chain ladder models
+  (`reserving-bayes.md` decision 26). Bindings: Python `tri.max_age(age)`,
+  R `max_age(tri, age)` (no base or dplyr generic has the name).
 
 ## Relationship to reserving methods
 
