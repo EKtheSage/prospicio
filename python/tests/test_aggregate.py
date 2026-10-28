@@ -1719,3 +1719,47 @@ def test_a_scoped_layer_covers_only_its_perils():
         xl.with_scope("peril", [])
     with pytest.raises(ValueError):
         e.filter("class", ["a"])
+
+
+def test_ceded_events_feed_an_occurrence_retro():
+    from prospicio.aggregate import EventSet
+
+    e = EventSet.from_years([[20.0, 8.0, 15.0], [4.0]], times=[[0.1, 0.5, 0.9], [0.3]])
+    t = Tower([Layer("10x5", 10.0, 5.0, aggregate_limit=15.0)])
+    c = t.ceded_events(e, "10x5")
+    assert (c.events(0), c.events(1)) == ([10.0, 3.0, 2.0], [])
+    assert c.times(0) == [0.1, 0.5, 0.9]
+    total = list(t.apply(e).marginal(("ceded", "10x5")).draws)
+    assert [sum(c.events(i)) for i in range(2)] == total
+    a = Tower([Layer("A", 20.0, 10.0)]).ceded_events(EventSet.from_years([[30.0]], times=[[0.2]]), ["A"])
+    b = Tower([Layer("B", 10.0, 10.0)]).ceded_events(
+        EventSet.from_years([[25.0, 12.0]], times=[[0.2, 0.6]]), "B"
+    )
+    book = a.merge(b)
+    assert book.events(0) == [20.0, 10.0, 2.0]
+    assert book.grouped(72.0).events(0) == [30.0, 2.0]
+    with pytest.raises(ValueError):
+        t.ceded_events(e, "nope")
+
+
+def test_layer_trial_statistics():
+    """Attachment and exhaustion counted on simulated years (#581)."""
+    from prospicio.aggregate import EventSet
+    from prospicio.reinsurance import Layer
+
+    layer = Layer(
+        "L", 10.0, 10.0, share=0.5, aggregate_deductible=3.0, aggregate_limit=15.0
+    )
+    years = EventSet.from_years([[], [12.0], [20.0], [20.0, 15.0, 30.0], [9.0, 10.0]])
+    s = layer.trial_statistics(years)
+    assert s["n_years"] == 5
+    assert (s["p_attach"], s["p_exhaust_occurrence"], s["p_exhaust_annual"]) == (
+        0.6,
+        0.4,
+        0.2,
+    )
+    assert s["occurrences_mean"] == 1.0
+    assert s["ceded_mean"] == pytest.approx(0.5 * 22.0 / 5.0)
+    assert s["ceded_given_attach"] == pytest.approx(0.5 * 22.0 / 3.0)
+    assert s["p_attach_se"] == pytest.approx((0.6 * 0.4 / 5.0) ** 0.5)
+    assert s["occurrences_se"] == pytest.approx((1.5 / 5.0) ** 0.5)

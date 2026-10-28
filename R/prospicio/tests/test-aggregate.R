@@ -70,6 +70,13 @@ stopifnot(inherits(try(inuring_tower(list(list(), list(xol_layer("A", 1, 0)))), 
 # Per-event allocation and reinstatement premiums.
 l <- xol_layer("L", 10, 5, share = 0.5, aggregate_deductible = 4, aggregate_limit = 15)
 stopifnot(identical(ceded_by_event(l, c(8, 20, 12)), c(0, 4.5, 3)))
+# Attachment and exhaustion on simulated years (#581).
+tl <- xol_layer("L", 10, 10, share = 0.5, aggregate_deductible = 3, aggregate_limit = 15)
+ts <- layer_trial_statistics(tl, events_from_years(list(numeric(), 12, 20, c(20, 15, 30), c(9, 10))))
+stopifnot(ts$n_years == 5, ts$p_attach == 0.6, ts$p_exhaust_occurrence == 0.4,
+          ts$p_exhaust_annual == 0.2, ts$occurrences_mean == 1,
+          abs(ts$ceded_given_attach - 0.5 * 22 / 3) < 1e-12,
+          abs(ts$occurrences_se - sqrt(1.5 / 5)) < 1e-12)
 paid <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5))
 stopifnot(paid@aggregate_limit == 30, identical(paid@reinstatement_rates, c(1, 0.5)))
 stopifnot(reinstatement_premium(paid, c(15, 25)) == 2.5)
@@ -967,3 +974,16 @@ stopifnot(identical(tower_to_json(tower_from_json(tower_to_json(tw))), tower_to_
 stopifnot(grepl("\"scope\"", tower_to_json(tw)))
 stopifnot(inherits(try(apply_tower(tw, events_from_years(list(15))), silent = TRUE), "try-error"))
 stopifnot(inherits(try(filter_events(ev, "class", "a"), silent = TRUE), "try-error"))
+
+# A tower's ceded losses by event, for an occurrence retro (#590).
+ev <- events_from_years(list(c(20, 8, 15), 4))
+tw <- reinsurance_tower(list(xol_layer("10x5", 10, 5, aggregate_limit = 15)))
+ce <- ceded_events(tw, ev, "10x5")
+stopifnot(identical(events(ce, 1), c(10, 3, 2)), length(events(ce, 2)) == 0)
+stopifnot(all.equal(sum(events(ce, 1)), mean(marginal(apply_tower(tw, ev), list("ceded", "10x5"))) * 2))
+a <- ceded_events(reinsurance_tower(list(xol_layer("A", 20, 10))), events_from_years(list(30), times = list(0.2)), "A")
+b <- ceded_events(reinsurance_tower(list(xol_layer("B", 10, 10))), events_from_years(list(c(25, 12)), times = list(c(0.2, 0.6))), "B")
+book <- merge_event_sets(a, b)
+stopifnot(identical(events(book, 1), c(20, 10, 2)))
+stopifnot(identical(events(hours_clause(book, 72), 1), c(30, 2)))
+stopifnot(inherits(try(ceded_events(tw, ev, "nope"), silent = TRUE), "try-error"))

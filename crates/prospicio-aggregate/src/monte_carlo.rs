@@ -1039,6 +1039,77 @@ impl EventSet {
         })
     }
 
+    /// This set with each entry's amount replaced: `by_year[i]` holds year
+    /// `i`'s aggregate part's columns (when `aggregate` is set and the set
+    /// has one), then its events. Events whose new amount is 0 are dropped
+    /// with their times and labels; sums insured are dropped, since they
+    /// belong to the original losses; the samplers are cleared.
+    pub(crate) fn with_amounts(&self, by_year: &[Vec<f64>], aggregate: bool) -> Self {
+        let m = self.aggregate.as_ref().map_or(0, |a| a.of_column.len());
+        let keep_aggregate = aggregate && m > 0;
+        let mut offsets = Vec::with_capacity(self.offsets.len());
+        offsets.push(0);
+        let mut losses = Vec::new();
+        let mut times = Vec::new();
+        let mut per_loss = Vec::new();
+        let mut amounts = Vec::new();
+        for (y, row) in by_year.iter().enumerate() {
+            if keep_aggregate {
+                amounts.extend_from_slice(&row[..m]);
+            }
+            for (j, k) in (self.offsets[y]..self.offsets[y + 1]).enumerate() {
+                let x = row[m + j];
+                if x == 0.0 {
+                    continue;
+                }
+                losses.push(x);
+                if let Some(t) = &self.times {
+                    times.push(t[k]);
+                }
+                if let Some(l) = &self.labels {
+                    per_loss.push(l.values(k).to_vec());
+                }
+            }
+            offsets.push(losses.len());
+        }
+        let (labels, aggregate) = match &self.labels {
+            Some(l) => {
+                let columns: Vec<Vec<String>> = if keep_aggregate {
+                    let a = self.aggregate.as_ref().expect("an aggregate part");
+                    a.of_column
+                        .iter()
+                        .map(|&c| l.combinations[c].clone())
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                let (labels, of_column) = Labels::with_columns(l.dims.clone(), per_loss, &columns);
+                (
+                    Some(labels),
+                    keep_aggregate.then_some(AggregatePart { of_column, amounts }),
+                )
+            }
+            None => (
+                None,
+                keep_aggregate.then(|| AggregatePart {
+                    of_column: vec![0],
+                    amounts,
+                }),
+            ),
+        };
+        Self {
+            offsets,
+            losses,
+            sums_insured: None,
+            times: self.times.as_ref().map(|_| times),
+            labels,
+            aggregate,
+            seed: self.seed,
+            samplers: None,
+            input_hash: self.input_hash.clone(),
+        }
+    }
+
     /// Both sets' losses in each year: a catastrophe event set with a
     /// non-catastrophe one, say. The sets need the same number of years.
     /// With times on both, each year's losses are merged in time order

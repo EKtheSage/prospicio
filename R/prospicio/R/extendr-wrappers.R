@@ -502,6 +502,8 @@ XolLayer$ceded <- function(losses) .Call(wrap__XolLayer__ceded, self, losses)
 
 XolLayer$ceded_by_event <- function(losses) .Call(wrap__XolLayer__ceded_by_event, self, losses)
 
+XolLayer$trial_statistics <- function(events) .Call(wrap__XolLayer__trial_statistics, self, events)
+
 XolLayer$pro_rata_time <- function() .Call(wrap__XolLayer__pro_rata_time, self)
 
 XolLayer$allocation <- function() .Call(wrap__XolLayer__allocation, self)
@@ -617,6 +619,8 @@ ReinsuranceTower$deal_ratios <- function(result, layer) .Call(wrap__ReinsuranceT
 ReinsuranceTower$apply_annual <- function(losses) .Call(wrap__ReinsuranceTower__apply_annual, self, losses)
 
 ReinsuranceTower$apply <- function(events) .Call(wrap__ReinsuranceTower__apply, self, events)
+
+ReinsuranceTower$ceded_events <- function(events, layers) .Call(wrap__ReinsuranceTower__ceded_events, self, events, layers)
 
 ReinsuranceTower$with_cover_basis <- function(basis) .Call(wrap__ReinsuranceTower__with_cover_basis, self, basis)
 

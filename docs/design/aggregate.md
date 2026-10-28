@@ -784,6 +784,24 @@ moments. `reins_price_df`'s capital columns
 (`Q`, `a`, `ROE`) come with an asset level; `pricing.rs`'s pentagon gives
 them for any grid.
 
+On simulated years, `Layer::trial_statistics(&events)` (#581; Python
+`Layer.trial_statistics`, R `layer_trial_statistics()`) counts the same
+exhibit: `p_attach`, the share of years with an occurrence whose recovery
+before annual terms is positive; `p_exhaust_occurrence`, with one whose
+recovery is the whole limit; `p_exhaust_annual`, years whose layer loss
+after the deductible and corridor reaches the annual limit (the
+aggregate limit, so the limit times one plus the reinstatements); the
+mean number of occurrences that reach the layer; and the mean ceded loss
+a year and over the attached years. Each probability carries its binomial
+standard error `sqrt(p (1 − p) / n)`, the count the standard error of its
+mean. The years are the first stage's, as `Tower::apply` sees them, so a
+layer that sees the aggregate part counts it toward its annual terms and
+not as an occurrence, and the ceded mean is the one-layer tower's. They
+are per year where the grid's `pr_attach` and `pr_detach` are per
+occurrence: under Poisson counts with mean `λ` a year attaches with
+probability `1 − exp(−λ pr_attach)`, which the tests check within four
+standard errors on 200,000 simulated years.
+
 ### Priority ladder
 
 `aggregate`'s `priority_epd_df` and `priority_kappa`, on
@@ -1465,6 +1483,32 @@ terms see only windstorm losses.
    property (`(label, values)` or None) and `EventSet.filter`; R
    `with_scope()` with the layer's `scope` property and
    `filter_events()`.
+
+### Ceded losses by event for a retro
+
+An occurrence retro covers a reinsurer's own cessions, summed across its
+deals, event by event (#590). A tower result gives each layer's annual
+totals and a split by label, not each event's ceded loss in time order.
+
+1. `Tower::ceded_events(&events, &[layer names])` gives an `EventSet` of
+   each event's ceded loss to the named layers, summed over them. Each
+   layer's split by event is the one the labelled results use
+   (`Layer::ceded_by_event` after the layer's annual terms under its
+   limit allocation, at its share, behind earlier inuring stages, within
+   its scope), so the set's losses add to the layers' ceded total in
+   every year.
+2. The events keep their times and labels. Events that cede nothing are
+   left out, so the set's counts are attaching events. Sums insured are
+   dropped (they describe the original losses), and so are the samplers.
+   When a named layer sees the aggregate part, its ceded part becomes the
+   set's aggregate part.
+3. Several deals' sets join with `EventSet::merge`, which keeps each
+   deal's cession of an event as its own occurrence. An occurrence retro
+   on the event across deals groups the merged set with an hours clause
+   (`EventSet::grouped`), which needs times. The difference can be large
+   (`knowledge/findings/ceded-events-retro.md`).
+4. Bindings: Python `Tower.ceded_events(events, layers)` (a name or a
+   list); R `ceded_events(tower, events, layers)`.
 
 ## Validation
 
