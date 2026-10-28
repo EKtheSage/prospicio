@@ -34,7 +34,7 @@ use crate::to_py;
 /// (2.326348, 2.665214)
 #[pyclass(name = "Normal", module = "prospicio.distributions", frozen)]
 pub(crate) struct PyNormal {
-    inner: Normal,
+    pub(crate) inner: Normal,
 }
 
 #[pymethods]

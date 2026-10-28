@@ -19890,6 +19890,223 @@ class Mixture:
         """
 
 @final
+class MultivariateLognormal:
+    """
+    The multivariate lognormal: ``exp(Y)`` for ``Y`` multivariate normal.
+    
+    Built from a mean and covariance on the original scale, matched
+    exactly (``from_moments``: ``log_cov[i][j] = ln(1 + cov[i][j] / (m_i
+    m_j))``, ``mu_i = ln m_i - log_cov[i][i] / 2``), or from the log scale
+    (``from_log_scale``).
+    
+    Examples
+    --------
+    >>> from prospicio.risk import MultivariateLognormal
+    >>> mvl = MultivariateLognormal.from_moments([100.0, 50.0], [[400.0, 120.0], [120.0, 100.0]])
+    >>> [round(m, 9) for m in mvl.mean]
+    [100.0, 50.0]
+    >>> round(mvl.cov[0][1], 9), round(mvl.total_variance(), 6)
+    (120.0, 740.0)
+    """
+    def __repr__(self, /) -> str: ...
+    def correlation(self, /) -> list[list[float]]:
+        """
+        The correlation matrix on the original scale.
+        
+        Returns
+        -------
+        list of list of float
+        """
+    @property
+    def cov(self, /) -> list[list[float]]:
+        """
+        The covariance on the original scale, exact.
+        """
+    @property
+    def dim(self, /) -> int:
+        """
+        Number of components.
+        """
+    @staticmethod
+    def from_log_scale(mu: Sequence[float], log_cov: Sequence[Sequence[float]]) -> MultivariateLognormal:
+        """
+        The lognormal ``exp(Y)``, ``Y`` normal with mean ``mu`` and
+        covariance ``log_cov``.
+        
+        Parameters
+        ----------
+        mu : list of float
+        log_cov : list of list of float
+        
+        Returns
+        -------
+        MultivariateLognormal
+        
+        Raises
+        ------
+        ValueError
+            As ``MultivariateNormal``.
+        """
+    @staticmethod
+    def from_moments(mean: Sequence[float], cov: Sequence[Sequence[float]]) -> MultivariateLognormal:
+        """
+        The lognormal with mean ``mean`` and covariance ``cov`` on the
+        original scale.
+        
+        Parameters
+        ----------
+        mean : list of float
+            Positive.
+        cov : list of list of float
+        
+        Returns
+        -------
+        MultivariateLognormal
+        
+        Raises
+        ------
+        ValueError
+            If a mean is not positive, ``cov`` is not a symmetric square
+            matrix, a covariance is at or below ``-m_i m_j`` (no lognormal
+            has it), or the covariance on the log scale is not positive
+            definite (possible even when ``cov`` is).
+        """
+    @property
+    def log_cov(self, /) -> list[list[float]]:
+        """
+        The covariance on the log scale.
+        """
+    def marginal(self, /, j: int) -> Lognormal:
+        """
+        Component ``j``'s marginal, exact.
+        
+        Parameters
+        ----------
+        j : int
+        
+        Returns
+        -------
+        Lognormal
+        
+        Raises
+        ------
+        ValueError
+            If ``j`` is out of range.
+        """
+    @property
+    def mean(self, /) -> list[float]:
+        """
+        The mean on the original scale, exact.
+        """
+    @property
+    def mu(self, /) -> list[float]:
+        """
+        The mean on the log scale.
+        """
+    def total_mean(self, /) -> float:
+        """
+        The total's mean, exact. A sum of lognormals is not lognormal; draw
+        the total with ``PredictiveDistribution.from_gaussian``.
+        
+        Returns
+        -------
+        float
+        """
+    def total_variance(self, /) -> float:
+        """
+        The total's variance, exact.
+        
+        Returns
+        -------
+        float
+        """
+
+@final
+class MultivariateNormal:
+    """
+    The multivariate normal with mean ``mean`` and covariance ``cov``.
+    
+    Inputs such as a reserve by origin with its covariance across origins,
+    or lines joined by a correlation matrix, arrive as a mean and a
+    covariance; this holds the joint with its exact marginals and total,
+    and ``PredictiveDistribution.from_gaussian`` draws it by seed.
+    
+    Parameters
+    ----------
+    mean : list of float
+    cov : list of list of float
+        Symmetric and positive definite, one row and column per component.
+    
+    Raises
+    ------
+    ValueError
+        If a value is not finite, ``cov`` is not square with one row per
+        component, not symmetric or not positive definite (a zero variance
+        or a perfect correlation is singular and refused).
+    
+    Examples
+    --------
+    >>> from prospicio.risk import MultivariateNormal
+    >>> mvn = MultivariateNormal([100.0, 50.0], [[400.0, 120.0], [120.0, 100.0]])
+    >>> t = mvn.total()
+    >>> t.mean(), round(t.variance(), 9)
+    (150.0, 740.0)
+    >>> mvn.marginal(1).sigma
+    10.0
+    """
+    def __new__(cls, /, mean: Sequence[float], cov: Sequence[Sequence[float]]) -> MultivariateNormal: ...
+    def __repr__(self, /) -> str: ...
+    def correlation(self, /) -> list[list[float]]:
+        """
+        The correlation matrix.
+        
+        Returns
+        -------
+        list of list of float
+        """
+    @property
+    def cov(self, /) -> list[list[float]]:
+        """
+        The covariance matrix.
+        """
+    @property
+    def dim(self, /) -> int:
+        """
+        Number of components.
+        """
+    def marginal(self, /, j: int) -> Normal:
+        """
+        Component ``j``'s marginal, exact.
+        
+        Parameters
+        ----------
+        j : int
+        
+        Returns
+        -------
+        Normal
+        
+        Raises
+        ------
+        ValueError
+            If ``j`` is out of range.
+        """
+    @property
+    def mean(self, /) -> list[float]:
+        """
+        The mean vector.
+        """
+    def total(self, /) -> Normal:
+        """
+        The total over all components, exact: normal with mean the sum of
+        the means and variance the sum of the covariance's entries.
+        
+        Returns
+        -------
+        Normal
+        """
+
+@final
 class NaturalPrice:
     """
     A portfolio's price and its natural allocation, from ``Portfolio.price``.
@@ -23763,6 +23980,46 @@ class PredictiveDistribution:
         Returns
         -------
         list of list of float
+        """
+    @staticmethod
+    def from_gaussian(joint: Any, n_sims: int, seed: int, keys: Sequence[Sequence[int |str]] |None = None, dims: Sequence[str] |None = None) -> PredictiveDistribution:
+        """
+        ``n_sims`` draws of a multivariate normal or lognormal joint.
+        
+        Simulation ``i`` draws only from stream ``i`` of ``seed``, so the
+        result reproduces by seed on any number of threads; the provenance
+        records the model, its dimension, the seed and a hash of the mean
+        and covariance.
+        
+        Parameters
+        ----------
+        joint : MultivariateNormal or MultivariateLognormal
+        n_sims : int
+        seed : int
+        keys : list of tuple, optional
+            One component key per component; defaults to ``(0,), (1,), ...``.
+        dims : list of str, default ["component"]
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        TypeError
+            If ``joint`` is neither joint.
+        ValueError
+            If ``keys`` does not have one key per component.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> from prospicio.risk import MultivariateNormal
+        >>> mvn = MultivariateNormal([100.0, 50.0], [[400.0, 120.0], [120.0, 100.0]])
+        >>> pd = PredictiveDistribution.from_gaussian(
+        ...     mvn, 20_000, 1, keys=[("auto",), ("property",)], dims=["line"])
+        >>> abs(pd.mean() - 150.0) < 1.0
+        True
         """
     def group_spearman(self, /, dim: str) -> tuple[list[Any], list[list[float]]]:
         """

@@ -11,7 +11,7 @@ use crate::{to_r, whole};
 /// The normal distribution.
 #[extendr]
 pub(crate) struct NormalDist {
-    inner: Normal,
+    pub(crate) inner: Normal,
 }
 
 #[extendr]

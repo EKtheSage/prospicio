@@ -1285,6 +1285,46 @@ DglmModel$predict_dispersion <- function(z, names, offset) .Call(wrap__DglmModel
 #' @export
 `[[.DglmModel` <- `$.DglmModel`
 
+GaussianJointR <- new.env(parent = emptyenv())
+
+GaussianJointR$normal <- function(mean, cov) .Call(wrap__GaussianJointR__normal, mean, cov)
+
+GaussianJointR$lognormal_moments <- function(mean, cov) .Call(wrap__GaussianJointR__lognormal_moments, mean, cov)
+
+GaussianJointR$lognormal_log_scale <- function(mu, log_cov) .Call(wrap__GaussianJointR__lognormal_log_scale, mu, log_cov)
+
+GaussianJointR$kind <- function() .Call(wrap__GaussianJointR__kind, self)
+
+GaussianJointR$dim <- function() .Call(wrap__GaussianJointR__dim, self)
+
+GaussianJointR$mean <- function() .Call(wrap__GaussianJointR__mean, self)
+
+GaussianJointR$cov <- function() .Call(wrap__GaussianJointR__cov, self)
+
+GaussianJointR$correlation <- function() .Call(wrap__GaussianJointR__correlation, self)
+
+GaussianJointR$mu <- function() .Call(wrap__GaussianJointR__mu, self)
+
+GaussianJointR$log_cov <- function() .Call(wrap__GaussianJointR__log_cov, self)
+
+GaussianJointR$marginal_normal <- function(j) .Call(wrap__GaussianJointR__marginal_normal, self, j)
+
+GaussianJointR$marginal_lognormal <- function(j) .Call(wrap__GaussianJointR__marginal_lognormal, self, j)
+
+GaussianJointR$total_normal <- function() .Call(wrap__GaussianJointR__total_normal, self)
+
+GaussianJointR$total_mean <- function() .Call(wrap__GaussianJointR__total_mean, self)
+
+GaussianJointR$total_variance <- function() .Call(wrap__GaussianJointR__total_variance, self)
+
+GaussianJointR$simulate <- function(n_sims, seed, dims, keys) .Call(wrap__GaussianJointR__simulate, self, n_sims, seed, dims, keys)
+
+#' @export
+`$.GaussianJointR` <- function (self, name) { func <- GaussianJointR[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.GaussianJointR` <- `$.GaussianJointR`
+
 Pareto <- new.env(parent = emptyenv())
 
 Pareto$new <- function(t, alpha, truncation_at) .Call(wrap__Pareto__new, t, alpha, truncation_at)
