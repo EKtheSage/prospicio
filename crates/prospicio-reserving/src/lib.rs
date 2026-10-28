@@ -43,6 +43,7 @@
 //! # Ok::<(), prospicio_reserving::Error>(())
 //! ```
 
+pub mod assumptions;
 pub mod backtest;
 #[cfg(feature = "bayes")]
 pub mod bayes;
@@ -70,6 +71,10 @@ pub mod tail;
 pub mod triangle;
 pub mod view;
 
+pub use assumptions::{
+    CALENDAR_YEAR_CI, CalendarDiagonal, CalendarYearTest, DEVELOPMENT_CORRELATION_CI,
+    DevelopmentCorrelationTest, DevelopmentPair, calendar_year_effect, development_correlation,
+};
 pub use backtest::{
     Backtest, CellForecast, GlmCandidate, METRICS, NamedModel, TriangleModel, diagonal_backtest,
 };
