@@ -797,7 +797,7 @@ def _ramp(m, n=60):
     return [min((t + 1) / m, 1.0) for t in range(n)]
 
 
-def _full_cashflow_terms(**changes):
+def _full_cashflow_terms(paid=None, **changes):
     # The issue's chain with every rule set, as the Rust tests' `full()`.
     kwargs = dict(
         commutation_requirement=P.CollateralRequirement(
@@ -826,7 +826,7 @@ def _full_cashflow_terms(**changes):
         30,
         _ramp(12),
         _ramp(36),
-        _ramp(48),
+        paid or _ramp(48),
         P.CollateralRequirement({"unearned-premium": 0.3, "reserve": 1.2}, limit=(1.2, 1.5)),
         **kwargs,
     )
@@ -936,6 +936,47 @@ def test_cashflow_run_with_requirement():
         assert a == pytest.approx(b, abs=1e-9)
     with pytest.raises(ValueError, match="row 0 has 3 months"):
         terms.run_with_requirement(u, [[0.0] * 3, [0.0] * 3], c)
+
+
+def test_cashflow_paid_pattern_per_simulation():
+    """Each simulation paid by its own pattern (#600)."""
+    terms = _full_cashflow_terms(funding_rule="shortfall")
+    fast, slow = _ramp(24), _ramp(56)
+    u, c = [0.4, 0.9, 1.3, 2.0], [0.2] * 4
+    # The terms' own pattern everywhere reproduces run.
+    same = terms.run(u, c, paid_patterns=[_ramp(48)], pattern_index=[0] * 4)
+    assert same.flows == terms.run(u, c).flows
+    # A mixture equals two runs recombined.
+    index = [0, 1, 1, 0]
+    mixed = terms.run(u, c, paid_patterns=[fast, slow], pattern_index=index)
+    for k, p in enumerate([fast, slow]):
+        alone = _full_cashflow_terms(paid=p, funding_rule="shortfall")
+        sims = [j for j in range(4) if index[j] == k]
+        run = alone.run([u[j] for j in sims], [c[j] for j in sims])
+        for i, j in enumerate(sims):
+            assert mixed.flows[j] == run.flows[i]
+    # One pattern a simulation, and the trace conserves money with it.
+    per = terms.run(u, c, paid_patterns=[fast, slow, slow, fast])
+    assert per.flows == mixed.flows
+    tr = terms.trace(1.3, 0.2, paid_pattern=slow)
+    assert abs(tr["conservation_error"]) < 1e-9
+    assert tr["investor"] == mixed.flows[2]
+    # Funding is not linear in the pattern: the mixture of the two needs
+    # more than the average pattern does
+    # (knowledge/findings/paid-pattern-per-simulation.md).
+    avg = [(a + b) / 2 for a, b in zip(fast, slow)]
+    two = terms.run([0.9] * 2, [0.2] * 2, paid_patterns=[fast, slow])
+    mid = terms.run([0.9] * 2, [0.2] * 2, paid_patterns=[avg, avg])
+    assert abs(sum(two.funded) / 2 - 46.086408345333) < 1e-9
+    assert abs(mid.funded[0] - 38.958552744709) < 1e-9
+    assert abs(sum(two.npv(0.1)) / 2 - (-31.734572289561)) < 1e-9
+    assert abs(mid.npv(0.1)[0] - (-31.196150060444)) < 1e-9
+    with pytest.raises(ValueError, match="does not decrease"):
+        terms.run([0.5], paid_patterns=[[0.5] + _ramp(48)[1:3] + [0.1] + _ramp(48)[4:]])
+    with pytest.raises(ValueError, match="2 paid patterns for 1 simulations"):
+        terms.run([0.5], paid_patterns=[fast, slow])
+    with pytest.raises(ValueError, match="needs paid_patterns"):
+        terms.run([0.5], pattern_index=[0])
 
 
 def test_cashflow_terms_errors():

@@ -70,9 +70,11 @@ accounts per simulation:
   commutation, distributed at it, the fee and the commutation payment,
   with `npv(rate)` and `irr(options)` through `npv_rows` and `irr_rows`.
   `run_with_requirement` takes each simulation's requirement path in
-  place of the terms.
+  place of the terms, and `run_with_patterns` each simulation's paid
+  pattern (`PatternDraws`, decision 33).
 - `trace(u, commission)` gives every account line of one simulation
-  month by month (`Trace`), with `conservation_error()`.
+  month by month (`Trace`), with `conservation_error()`;
+  `trace_with_pattern` the same under a paid pattern of its own.
 
 In Python (`prospicio.pricing`, `[cashflow-bindings]`): `CashflowTerms`
 takes the premium, the commutation month, the three patterns and a
@@ -82,12 +84,15 @@ limit), with every rule a keyword (names for the enums; dates as
 `{"every": n, "first": m}`; `"at-commutation"` for a release;
 `PremiumAdjustment`s; a fee as `(breakpoints, slopes)`); `run` gives
 `Cashflows` (`flows` a list of rows, `npv`, `irr` as `IrrResult`),
-`run_with_requirement` takes the rows, and `trace` gives a dict of the
-account columns with `conservation_error`. In R: `cashflow_requirement()`,
+`run_with_requirement` takes the rows, `run(..., paid_patterns=,
+pattern_index=)` each simulation's paid pattern, and `trace` (with
+`paid_pattern=`) gives a dict of the account columns with
+`conservation_error`. In R: `cashflow_requirement()`,
 `cashflow_adjustment()`, `cashflow_terms()` with the same arguments,
 `cashflow_run()` (a `flows` matrix and `months` for `npv()` and `irr()`
-with `unit = "months"`, `months_requirement` for a given path) and
-`cashflow_trace()` (an `accounts` data frame). Both check the terms when
+with `unit = "months"`, `months_requirement` for a given path,
+`paid_patterns` and `pattern_index` for a paid pattern by simulation) and
+`cashflow_trace()` (an `accounts` data frame, `paid_pattern` too). Both check the terms when
 they are built.
 
 `prospicio_pricing::book` (#490), several deals on one shared simulation:
@@ -318,6 +323,24 @@ frame).
     Under a subadditive standard the marginal premium is at most the
     Euler (co-measure) premium, so pricing every deal on its marginal
     leaves the book short; `marginal_prices` gives every deal in turn.
+
+33. **A paid pattern for each simulation** (#600, engine side): the
+    cash-flow engine takes, in place of the terms' one paid pattern,
+    `PatternDraws`: `K` monthly cumulative patterns and the pattern each
+    simulation pays by (`new` for one a simulation, `indexed` for a few
+    shared by many, as a reserving model's posterior draws or a handful of
+    scenarios would give them). Only the paid pattern varies; written and
+    earned stay the terms'. Each pattern is finite, non-decreasing, of the
+    terms' length and ends at the terms' paid share, so a simulation's
+    ultimate loss ratio means the same whichever pattern pays it; a
+    pattern that ends elsewhere is refused rather than rescaled.
+    Identical patterns equal to the terms' reproduce `run` bit for bit,
+    and a mixture is the runs of each pattern recombined. Patterns and a
+    requirement given month by month are not combined (the given
+    requirement already fixes what the pattern would move). Where the
+    patterns come from, a Reserving lane fit's posterior or bootstrap
+    draws turned into monthly patterns, is that lane's second part of
+    #600 and not built here.
 
 ## Deal monitoring after binding (#603): proposal
 

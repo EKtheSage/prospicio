@@ -5231,19 +5231,41 @@ class CashflowTerms:
         """
         The premium.
         """
-    def run(self, /, u: Sequence[float], commission: Sequence[float] |None = None) -> Cashflows:
+    def run(self, /, u: Sequence[float], commission: Sequence[float] |None = None, *, paid_patterns: Sequence[Sequence[float]] |None = None, pattern_index: Sequence[int] |None = None) -> Cashflows:
         """
         Each simulation's cash flows to the investor, from its ultimate
         loss ratio and commission rate (0 when not given).
+        
+        With ``paid_patterns`` each simulation pays its ultimate loss by its
+        own monthly cumulative paid pattern (#600), the written and earned
+        patterns staying the terms': one pattern a simulation, or with
+        ``pattern_index`` a few patterns and each simulation's index into
+        them. Every pattern has the terms' length, does not decrease and
+        ends at the terms' paid share.
         
         Parameters
         ----------
         u : list of float
         commission : list of float, optional
+        paid_patterns : list of list of float, optional
+        pattern_index : list of int, optional
         
         Returns
         -------
         Cashflows
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import CashflowTerms, CollateralRequirement
+        >>> ramp = lambda m: [min((t + 1) / m, 1.0) for t in range(48)]
+        >>> req = CollateralRequirement({"outstanding": 1.0})
+        >>> terms = CashflowTerms(100.0, 36, ramp(12), ramp(24), ramp(36), req)
+        >>> # The same year paid fast and paid as the terms say.
+        >>> cf = terms.run([0.8, 0.8], paid_patterns=[ramp(12), ramp(36)], pattern_index=[0, 1])
+        >>> cf.flows[0] == cf.flows[1]
+        False
+        >>> cf.flows[1] == terms.run([0.8]).flows[0]
+        True
         """
     def run_with_requirement(self, /, u: Sequence[float], requirement: Sequence[Sequence[float]], commission: Sequence[float] |None = None) -> Cashflows:
         """
@@ -5262,7 +5284,7 @@ class CashflowTerms:
         -------
         Cashflows
         """
-    def trace(self, /, u: float, commission: float = 0.0) -> dict:
+    def trace(self, /, u: float, commission: float = 0.0, *, paid_pattern: Sequence[float] |None = None) -> dict:
         """
         Every account line of one simulation, month by month: a dict of
         columns, each a list of ``commutation_month`` values, with the
@@ -5273,6 +5295,9 @@ class CashflowTerms:
         ----------
         u : float
         commission : float, default 0
+        paid_pattern : list of float, optional
+            The simulation's own paid pattern, as one of ``run``'s
+            ``paid_patterns``.
         
         Returns
         -------

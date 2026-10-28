@@ -7,7 +7,7 @@ use extendr_api::{Error, Result};
 use prospicio_pricing::cashflow::{
     Adjustment, AdjustmentBase, Base, Buffer, CashflowTerms, Dates, FeeBasis, Funding, FundingRule,
     FundingSource, Interest, InterestBasis, MonthlyPatterns, ObligationReference, Operating,
-    PerformanceFee, PremiumFlow, Requirement, Term, Timing,
+    PatternDraws, PerformanceFee, PremiumFlow, Requirement, Term, Timing,
 };
 use prospicio_pricing::returns::TieredFee;
 
@@ -282,9 +282,48 @@ impl Cashflow {
 
     /// Each simulation's flows (row-major, one row a simulation) and its
     /// totals; `requirement` empty for the terms' own requirement, or
-    /// row-major with `commutation_month + buffer_months` columns.
-    fn run(&self, u: &[f64], commission: &[f64], requirement: &[f64]) -> Result<List> {
-        let out = if requirement.is_empty() {
+    /// row-major with `commutation_month + buffer_months` columns. `paid`
+    /// empty for the terms' own paid pattern, or `n_patterns` patterns
+    /// row-major, each simulation's `index` from 0 (empty for one pattern a
+    /// simulation, in order).
+    fn run(
+        &self,
+        u: &[f64],
+        commission: &[f64],
+        requirement: &[f64],
+        paid: &[f64],
+        n_patterns: f64,
+        index: &[f64],
+    ) -> Result<List> {
+        let out = if !paid.is_empty() {
+            if !requirement.is_empty() {
+                return Err(Error::Other(
+                    "give paid patterns or a months requirement, not both".into(),
+                ));
+            }
+            let k = whole(n_patterns, "the number of paid patterns")? as usize;
+            if k == 0 || paid.len() % k != 0 {
+                return Err(Error::Other(format!(
+                    "{} paid values do not split into {k} patterns",
+                    paid.len()
+                )));
+            }
+            let patterns: Vec<Vec<f64>> =
+                paid.chunks(paid.len() / k).map(<[f64]>::to_vec).collect();
+            let draws = if index.is_empty() {
+                PatternDraws::new(patterns)
+            } else {
+                let index = index
+                    .iter()
+                    .map(|&i| whole(i, "pattern_index").map(|i| i as usize))
+                    .collect::<Result<Vec<_>>>()?;
+                PatternDraws::indexed(patterns, index)
+            }
+            .map_err(to_r)?;
+            self.inner.run_with_patterns(u, commission, &draws)
+        } else if !index.is_empty() {
+            return Err(Error::Other("pattern_index needs paid_patterns".into()));
+        } else if requirement.is_empty() {
             self.inner.run(u, commission)
         } else {
             self.inner.run_with_requirement(u, commission, requirement)
@@ -303,9 +342,15 @@ impl Cashflow {
         ))
     }
 
-    /// Every account line of one simulation, month by month.
-    fn trace(&self, u: f64, commission: f64) -> Result<List> {
-        let t = self.inner.trace(u, commission).map_err(to_r)?;
+    /// Every account line of one simulation, month by month; `paid` empty
+    /// for the terms' own paid pattern.
+    fn trace(&self, u: f64, commission: f64, paid: &[f64]) -> Result<List> {
+        let t = if paid.is_empty() {
+            self.inner.trace(u, commission)
+        } else {
+            self.inner.trace_with_pattern(u, commission, paid)
+        }
+        .map_err(to_r)?;
         let error = t.conservation_error();
         Ok(list!(
             requirement = t.requirement,
