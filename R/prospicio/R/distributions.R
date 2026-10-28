@@ -455,14 +455,21 @@ S7::method(print, grid_distribution) <- function(x, ...) {
 #' For a [sampled], `method = "linear"` picks the other convention: `VaR()`
 #' is then `quantile(x, p, type = 7)` (numpy's default) and `TVaR()` the
 #' mean of that quantile function over `[p, 1]`; the defaults are
-#' `"inverted_cdf"` and `"exact"`.
+#' `"inverted_cdf"` and `"exact"`. `method = "kth_largest"` makes `VaR()` the
+#' `k`-th largest draw and `method = "whole_years"` makes `TVaR()` the mean of
+#' the `k` largest, `k = max(1, floor((1 - p) n))`: with years as draws, the
+#' `k`-th worst year and the mean of the `k` worst whole years, the
+#' convention of many catastrophe pricing teams. The `k`-th largest is one
+#' draw above `"inverted_cdf"` (unless both are the largest), and the whole
+#' years' TVaR equals `"exact"` when `(1 - p) n` is whole.
 #'
 #' @param dist A [sampled], [predictive_distribution], [pot_tail],
 #'   [grid_distribution], or a severity ([lognormal], [pareto] and the
 #'   other parametric families).
 #' @param p Probabilities in `[0, 1]` (`[0, 1)` for a severity's `TVaR()`).
-#' @param ... For a [sampled], `method`: `"inverted_cdf"` or `"linear"` for
-#'   `VaR()`, `"exact"` or `"linear"` for `TVaR()`. Otherwise unused.
+#' @param ... For a [sampled], `method`: `"inverted_cdf"`, `"linear"` or
+#'   `"kth_largest"` for `VaR()`, `"exact"`, `"linear"` or `"whole_years"`
+#'   for `TVaR()`. Otherwise unused.
 #' @returns Numeric vector the length of `p`.
 #' @name risk_measures
 #' @examples

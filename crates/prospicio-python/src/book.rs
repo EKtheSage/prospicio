@@ -15,8 +15,9 @@ use pyo3::types::PyDict;
 use crate::cashflow::{PyCashflowTerms, PyCashflows};
 use crate::distributions::PyPredictiveDistribution;
 use crate::payout::PyIrrResult;
+use crate::pricing::premium_rule;
 use crate::reinsurance::PyTower;
-use crate::risk::{quantile_method, tvar_method};
+use crate::risk::{PyDistortion, quantile_method, tvar_method};
 use crate::to_py;
 
 /// One deal's results in each simulation of a shared simulation: its
@@ -444,6 +445,62 @@ impl PyDealBook {
         }
         d.set_item("contribution", contribution)?;
         d.set_item("marginal", marginal)?;
+        Ok(d)
+    }
+
+    /// The marginal price of each deal written last: the book's loss
+    /// priced with the deal and without it, on the assets of the capital
+    /// standard ``assets`` and by exactly one of ``cost_of_capital`` and
+    /// ``distortion`` as ``price_portfolio`` prices a portfolio, and the
+    /// differences. Under a cost of capital ``r`` the premium is
+    /// ``(EL + r dA) / (1 + r)``. Under a subadditive standard it is at
+    /// most the deal's allocated premium from ``price_portfolio``.
+    ///
+    /// Returns a dict of columns, one row a deal (those in ``deals``, all
+    /// by default): ``deal``, ``expected_loss``, ``assets`` (``dA``),
+    /// ``premium``, ``margin``, and the book's ``book_premium``,
+    /// ``book_assets``, ``premium_without`` and ``assets_without``.
+    ///
+    /// >>> from prospicio.pricing import DealBook, DealRun
+    /// >>> from prospicio.risk import Distortion
+    /// >>> a = DealRun("a", [10.0] * 4, [1.0, 2.0, 3.0, 9.0])
+    /// >>> b = DealRun("b", [10.0] * 4, [4.0, 1.0, 2.0, 3.0])
+    /// >>> m = DealBook([a, b]).marginal_price(Distortion.tvar(0.5), cost_of_capital=0.1)
+    /// >>> m["assets"], round(m["premium"][1], 6)
+    /// ([5.0, 2.5], 2.5)
+    #[pyo3(signature = (assets, *, cost_of_capital = None, distortion = None, deals = None))]
+    fn marginal_price<'py>(
+        &self,
+        py: Python<'py>,
+        assets: PyRef<'_, PyDistortion>,
+        cost_of_capital: Option<f64>,
+        distortion: Option<PyRef<'_, PyDistortion>>,
+        deals: Option<Vec<String>>,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let rule = premium_rule(cost_of_capital, distortion)?;
+        let names = deals.unwrap_or_else(|| self.names());
+        let (book, a) = (&self.inner, assets.inner.clone());
+        let rows = py
+            .detach(|| {
+                names
+                    .iter()
+                    .map(|n| book.marginal_price(n, &rule, &a))
+                    .collect::<prospicio_core::Result<Vec<_>>>()
+            })
+            .map_err(to_py)?;
+        let d = PyDict::new(py);
+        let col = |f: &dyn Fn(&prospicio_pricing::book::MarginalPrice) -> f64| -> Vec<f64> {
+            rows.iter().map(f).collect()
+        };
+        d.set_item("deal", names)?;
+        d.set_item("expected_loss", col(&|m| m.expected_loss()))?;
+        d.set_item("assets", col(&|m| m.assets()))?;
+        d.set_item("premium", col(&|m| m.premium()))?;
+        d.set_item("margin", col(&|m| m.margin()))?;
+        d.set_item("book_premium", col(&|m| m.with.premium))?;
+        d.set_item("book_assets", col(&|m| m.with.assets))?;
+        d.set_item("premium_without", col(&|m| m.without.premium))?;
+        d.set_item("assets_without", col(&|m| m.without.assets))?;
         Ok(d)
     }
 

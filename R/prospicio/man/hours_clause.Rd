@@ -4,12 +4,24 @@
 \alias{hours_clause}
 \title{Hours clause}
 \usage{
-hours_clause(x, window_hours)
+hours_clause(x, window_hours, labels = "drop", by = NULL)
 }
 \arguments{
 \item{x}{An \link{event_set} with times.}
 
 \item{window_hours}{Such as 72 for a windstorm, 168 for a flood.}
+
+\item{labels}{What the occurrences carry of the losses' labels: none
+(\code{"drop"}), their losses' labels, which must agree within an occurrence
+(\code{"agree"}, an error otherwise), or the labels of the largest loss in the
+occurrence, the earliest of equal ones (\code{"largest"}). An aggregate part
+keeps its labels unless they are dropped.}
+
+\item{by}{\code{NULL}, or a label dimension, \code{"peril"} say: the clause applies
+within each of its values, so losses of two perils are never one
+occurrence, and the occurrences keep the labels (\code{labels} then decides
+the other dimensions, \code{"drop"} read as \code{"agree"}). Occurrences are listed
+by the time each window opens.}
 }
 \value{
 An \link{event_set} of occurrences.
@@ -19,6 +31,14 @@ Each year's losses grouped into occurrences: losses within \code{window_hours}
 of the first loss of a window are one occurrence, whose loss is their sum
 and whose time is the window's start; the next loss after the window opens
 the next one. A year is 8,760 hours. Windows open at each first loss in
-turn, not where they would recover most. Needs times; sums insured and
-labels are not carried (group each peril's set before merging them).
+turn, not where they would recover most. Needs times; sums insured are not
+carried.
+}
+\examples{
+h <- 1 / 8760
+ev <- events_from_years(list(c(10, 20, 5)), times = list(c(0.5, 0.5 + 30 * h, 0.5 + 40 * h)))
+ev <- with_labels(ev, list(peril = c("wind", "flood", "wind")))
+g <- hours_clause(ev, 72, by = "peril")
+events(g, 1)
+event_labels(g, 1)
 }

@@ -167,6 +167,123 @@ impl MonthlyPatterns {
     }
 }
 
+/// Paid patterns that differ by simulation, for
+/// [`CashflowTerms::run_with_patterns`] (#600): `K` monthly cumulative
+/// paid patterns and, for each simulation, the pattern it pays by. One
+/// pattern a simulation is [`new`](Self::new); a few patterns shared by
+/// many simulations, to save memory, are [`indexed`](Self::indexed).
+///
+/// Each pattern is finite and non-decreasing and all end at the same
+/// share; against the terms they need the terms' length and to end at the
+/// terms' paid share, so that a simulation's ultimate loss ratio means the
+/// same whichever pattern pays it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PatternDraws {
+    patterns: Vec<Vec<f64>>,
+    index: Vec<usize>,
+}
+
+impl PatternDraws {
+    /// One paid pattern per simulation, in simulation order.
+    pub fn new(patterns: Vec<Vec<f64>>) -> Result<Self> {
+        let index = (0..patterns.len()).collect();
+        Self::indexed(patterns, index)
+    }
+
+    /// `patterns` shared by the simulations, simulation `j` paying by
+    /// `patterns[index[j]]`.
+    pub fn indexed(patterns: Vec<Vec<f64>>, index: Vec<usize>) -> Result<Self> {
+        let Some(first) = patterns.first() else {
+            return Err(Error::Data("at least one paid pattern is needed".into()));
+        };
+        let (n, end) = (first.len(), first.last().copied().unwrap_or(f64::NAN));
+        for (k, p) in patterns.iter().enumerate() {
+            if p.len() != n || n == 0 {
+                return Err(Error::Data(format!(
+                    "paid pattern {k} has {} months and pattern 0 has {n}; they need one \
+                     positive length",
+                    p.len()
+                )));
+            }
+            if p.iter().any(|x| !x.is_finite()) {
+                return Err(Error::Data(format!("paid pattern {k} is not finite")));
+            }
+            if let Some(t) = (1..n).find(|&t| p[t] < p[t - 1]) {
+                return Err(Error::Data(format!(
+                    "paid pattern {k} falls in month {t}; a cumulative pattern does not decrease"
+                )));
+            }
+            if (p[n - 1] - end).abs() > 1e-9 {
+                return Err(Error::Data(format!(
+                    "paid pattern {k} ends at {} and pattern 0 at {end}; they need one ultimate \
+                     share",
+                    p[n - 1]
+                )));
+            }
+        }
+        if let Some(&bad) = index.iter().find(|&&i| i >= patterns.len()) {
+            return Err(Error::Data(format!(
+                "pattern index {bad} is past the {} patterns",
+                patterns.len()
+            )));
+        }
+        Ok(Self { patterns, index })
+    }
+
+    /// The number of simulations.
+    pub fn len(&self) -> usize {
+        self.index.len()
+    }
+
+    /// Whether there are no simulations.
+    pub fn is_empty(&self) -> bool {
+        self.index.is_empty()
+    }
+
+    /// The paid pattern of simulation `j`.
+    pub fn pattern(&self, j: usize) -> &[f64] {
+        &self.patterns[self.index[j]]
+    }
+
+    /// The distinct patterns.
+    pub fn patterns(&self) -> &[Vec<f64>] {
+        &self.patterns
+    }
+
+    /// Each simulation's pattern, as an index into
+    /// [`patterns`](Self::patterns).
+    pub fn index(&self) -> &[usize] {
+        &self.index
+    }
+
+    /// Fails unless there are `n_sims` simulations and the patterns have
+    /// the length of `terms` and end at its paid share, to 1e-9.
+    pub fn check_against(&self, terms: &MonthlyPatterns, n_sims: usize) -> Result<()> {
+        if self.len() != n_sims {
+            return Err(Error::Data(format!(
+                "{} paid patterns for {n_sims} simulations",
+                self.len()
+            )));
+        }
+        let p = &self.patterns[0];
+        if p.len() != terms.len() {
+            return Err(Error::Data(format!(
+                "the paid patterns have {} months and the terms' patterns {}",
+                p.len(),
+                terms.len()
+            )));
+        }
+        let end = terms.paid[terms.len() - 1];
+        if (p[p.len() - 1] - end).abs() > 1e-9 {
+            return Err(Error::Data(format!(
+                "the paid patterns end at {} and the terms' paid pattern at {end}",
+                p[p.len() - 1]
+            )));
+        }
+        Ok(())
+    }
+}
+
 /// What a [`Requirement`] term is a load on, at the end of month `t`, with
 /// `P` the premium, `u` the simulation's ultimate loss ratio and `W`, `E`
 /// and `C` the premium written, the premium earned and the loss paid to
@@ -775,7 +892,35 @@ impl CashflowTerms {
         let mut out = Cashflows::empty(t_n, u.len());
         let req = |_: usize, m: &Month| self.requirement.at(m);
         for (&u, &c) in u.iter().zip(commission) {
-            out.push(self.simulate(u, c, &req, None));
+            out.push(self.simulate(u, c, &self.patterns.paid, &req, None));
+        }
+        Ok(out)
+    }
+
+    /// [`run`](Self::run) with each simulation's paid pattern drawn from
+    /// `paid` (#600): simulation `j` pays its ultimate loss by
+    /// `paid.pattern(j)`, so the timing of payments, and with it the
+    /// collateral held and released, differs by simulation. The written
+    /// and earned patterns stay those of the terms. Identical patterns
+    /// equal to the terms' paid pattern reproduce [`run`](Self::run)
+    /// exactly.
+    ///
+    /// Fails unless `paid` has one index per simulation and patterns of
+    /// the terms' length ending at the terms' paid share
+    /// ([`PatternDraws::check_against`]).
+    pub fn run_with_patterns(
+        &self,
+        u: &[f64],
+        commission: &[f64],
+        paid: &PatternDraws,
+    ) -> Result<Cashflows> {
+        self.check()?;
+        check_sims(u, commission)?;
+        paid.check_against(&self.patterns, u.len())?;
+        let mut out = Cashflows::empty(self.commutation_month, u.len());
+        let req = |_: usize, m: &Month| self.requirement.at(m);
+        for (j, (&u, &c)) in u.iter().zip(commission).enumerate() {
+            out.push(self.simulate(u, c, paid.pattern(j), &req, None));
         }
         Ok(out)
     }
@@ -807,7 +952,7 @@ impl CashflowTerms {
         for (j, (&u, &c)) in u.iter().zip(commission).enumerate() {
             let row = &requirement[j * width..(j + 1) * width];
             let req = |t: usize, _: &Month| row[t];
-            out.push(self.simulate(u, c, &req, None));
+            out.push(self.simulate(u, c, &self.patterns.paid, &req, None));
         }
         Ok(out)
     }
@@ -818,18 +963,30 @@ impl CashflowTerms {
         check_sims(&[u], &[commission])?;
         let mut trace = Trace::new(self.commutation_month);
         let req = |_: usize, m: &Month| self.requirement.at(m);
-        self.simulate(u, commission, &req, Some(&mut trace));
+        self.simulate(u, commission, &self.patterns.paid, &req, Some(&mut trace));
         Ok(trace)
     }
 
-    fn month(&self, t: usize, u: f64) -> Month {
+    /// [`trace`](Self::trace) of one simulation paid by its own pattern
+    /// `paid`, checked as each of [`PatternDraws`] is.
+    pub fn trace_with_pattern(&self, u: f64, commission: f64, paid: &[f64]) -> Result<Trace> {
+        self.check()?;
+        check_sims(&[u], &[commission])?;
+        PatternDraws::new(vec![paid.to_vec()])?.check_against(&self.patterns, 1)?;
+        let mut trace = Trace::new(self.commutation_month);
+        let req = |_: usize, m: &Month| self.requirement.at(m);
+        self.simulate(u, commission, paid, &req, Some(&mut trace));
+        Ok(trace)
+    }
+
+    fn month(&self, t: usize, u: f64, paid: &[f64]) -> Month {
         let p = &self.patterns;
         Month {
             premium: self.premium,
             u,
             written: self.premium * p.written[t],
             earned: self.premium * p.earned[t],
-            paid: u * self.premium * p.paid[t],
+            paid: u * self.premium * paid[t],
         }
     }
 
@@ -837,6 +994,7 @@ impl CashflowTerms {
         &self,
         u: f64,
         c: f64,
+        paid_pattern: &[f64],
         req: &dyn Fn(usize, &Month) -> f64,
         mut trace: Option<&mut Trace>,
     ) -> Sim {
@@ -847,16 +1005,18 @@ impl CashflowTerms {
         let at = |v: &[f64], t: isize| if t < 0 { 0.0 } else { v[t as usize] };
         let written_inc = |t: isize| pr * (at(&pat.written, t) - at(&pat.written, t - 1));
         let paid_inc =
-            |t: usize| u * pr * (at(&pat.paid, t as isize) - at(&pat.paid, t as isize - 1));
+            |t: usize| u * pr * (at(paid_pattern, t as isize) - at(paid_pattern, t as isize - 1));
         let lag = self.premium_flow.lag as isize;
         let monthly_rate = self.interest.annual_yield / 12.0;
         let expense = |s: f64| self.operating.expense_rate / 12.0 * s;
         let buffer_months = self.operating.buffer.months;
         // The regular requirement over the term and the buffer's months.
         let requirement: Vec<f64> = (0..t_n + buffer_months)
-            .map(|t| req(t, &self.month(t, u)))
+            .map(|t| req(t, &self.month(t, u, paid_pattern)))
             .collect();
-        let commutation = self.commutation_requirement.at(&self.month(t_n - 1, u));
+        let commutation = self
+            .commutation_requirement
+            .at(&self.month(t_n - 1, u, paid_pattern));
 
         let opening = self.operating.opening_fixed + self.operating.opening_share * pr;
         let mut collateral = 0.0;
@@ -1380,6 +1540,102 @@ mod tests {
         }
     }
 
+    /// A fast and a slow paid pattern of the terms' length, both reaching
+    /// the terms' ultimate share by the last month.
+    fn fast_and_slow() -> (Vec<f64>, Vec<f64>) {
+        let n = patterns().len();
+        let ramp = |m: f64| (0..n).map(|t| ((t + 1) as f64 / m).min(1.0)).collect();
+        (ramp(24.0), ramp(56.0))
+    }
+
+    #[test]
+    fn the_terms_pattern_in_every_simulation_reproduces_run() {
+        let us = [0.0, 0.4, 0.8, 1.3, 2.0];
+        let cs = [0.0, 0.25, 0.1, 0.0, 0.3];
+        for terms in variants() {
+            let draws = PatternDraws::indexed(vec![terms.patterns.paid.clone()], vec![0; us.len()])
+                .unwrap();
+            let a = terms.run(&us, &cs).unwrap();
+            let b = terms.run_with_patterns(&us, &cs, &draws).unwrap();
+            assert_eq!(a, b);
+        }
+    }
+
+    #[test]
+    fn a_mixture_of_two_patterns_is_two_runs_recombined() {
+        let (fast, slow) = fast_and_slow();
+        let us = [0.4, 0.9, 1.3, 0.7, 2.0, 0.0];
+        let cs = [0.0, 0.2, 0.1, 0.0, 0.3, 0.1];
+        let index = vec![0, 1, 1, 0, 1, 0];
+        for terms in variants() {
+            let draws =
+                PatternDraws::indexed(vec![fast.clone(), slow.clone()], index.clone()).unwrap();
+            let mixed = terms.run_with_patterns(&us, &cs, &draws).unwrap();
+            let months = mixed.months();
+            for (k, pattern) in [&fast, &slow].into_iter().enumerate() {
+                let mut alone = terms.clone();
+                alone.patterns.paid = pattern.clone();
+                let sims: Vec<usize> = (0..us.len()).filter(|&j| index[j] == k).collect();
+                let u: Vec<f64> = sims.iter().map(|&j| us[j]).collect();
+                let c: Vec<f64> = sims.iter().map(|&j| cs[j]).collect();
+                let run = alone.run(&u, &c).unwrap();
+                for (i, &j) in sims.iter().enumerate() {
+                    assert_eq!(
+                        &mixed.flows()[j * months..(j + 1) * months],
+                        &run.flows()[i * months..(i + 1) * months]
+                    );
+                    assert_eq!(mixed.funded()[j], run.funded()[i]);
+                    assert_eq!(mixed.fee()[j], run.fee()[i]);
+                }
+            }
+            // The pattern moves the result: a slow year differs from a fast one.
+            let one = |p: &Vec<f64>| {
+                let d = PatternDraws::new(vec![p.clone()]).unwrap();
+                terms.run_with_patterns(&[1.3], &[0.0], &d).unwrap()
+            };
+            assert_ne!(one(&fast).flows(), one(&slow).flows());
+        }
+    }
+
+    #[test]
+    fn money_is_conserved_with_a_simulation_pattern() {
+        let (fast, slow) = fast_and_slow();
+        for terms in variants() {
+            for p in [&fast, &slow] {
+                for &u in &[0.4, 1.3, 2.0] {
+                    let tr = terms.trace_with_pattern(u, 0.1, p).unwrap();
+                    assert!(tr.conservation_error().abs() < 1e-9);
+                    assert!(tr.collateral_balance.last().unwrap().abs() < 1e-9);
+                    let d = PatternDraws::new(vec![p.clone()]).unwrap();
+                    let run = terms.run_with_patterns(&[u], &[0.1], &d).unwrap();
+                    assert_eq!(run.flows(), tr.investor.as_slice());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn refuses_patterns_that_do_not_fit() {
+        let terms = full();
+        let (fast, _) = fast_and_slow();
+        let n = fast.len();
+        let mut falls = fast.clone();
+        falls[3] = falls[2] - 0.01;
+        assert!(PatternDraws::new(vec![falls]).is_err());
+        let mut short_end = fast.clone();
+        short_end[n - 1] = 0.9;
+        assert!(PatternDraws::new(vec![fast.clone(), short_end.clone()]).is_err());
+        assert!(PatternDraws::new(vec![fast[..n - 1].to_vec(), fast.clone()]).is_err());
+        assert!(PatternDraws::indexed(vec![fast.clone()], vec![1]).is_err());
+        assert!(PatternDraws::new(vec![]).is_err());
+        let two = PatternDraws::new(vec![fast.clone(), fast.clone()]).unwrap();
+        assert!(terms.run_with_patterns(&[0.5], &[0.0], &two).is_err());
+        let short = PatternDraws::new(vec![fast[..n - 1].to_vec()]).unwrap();
+        assert!(terms.run_with_patterns(&[0.5], &[0.0], &short).is_err());
+        let low = PatternDraws::new(vec![fast.iter().map(|x| 0.9 * x).collect()]).unwrap();
+        assert!(terms.run_with_patterns(&[0.5], &[0.0], &low).is_err());
+    }
+
     #[test]
     fn the_trust_holds_the_requirement_between_releases() {
         let terms = full();
@@ -1519,7 +1775,11 @@ mod tests {
         let tr = terms.trace(0.9, 0.2).unwrap();
         // Rebuild the term requirement as given rows: the same flows.
         let given: Vec<f64> = (0..width)
-            .map(|t| terms.requirement.at(&terms.month(t, 0.9)))
+            .map(|t| {
+                terms
+                    .requirement
+                    .at(&terms.month(t, 0.9, &terms.patterns.paid))
+            })
             .collect();
         let out = terms.run_with_requirement(&[0.9], &[0.2], &given).unwrap();
         assert_eq!(out.flows(), tr.investor.as_slice());

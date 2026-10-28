@@ -18,7 +18,9 @@
 //! - [`cashflows`](DealBook::cashflows): the investors' flows on one
 //!   calendar, with the book's IRR, NPV and MOIC on the summed flows;
 //! - [`calendar`](DealBook::calendar): written and earned premium, paid
-//!   loss and investor flows by calendar year.
+//!   loss and investor flows by calendar year;
+//! - [`marginal_price`](DealBook::marginal_price): the price of one deal
+//!   as the last one written, the book's price with it less without it.
 //!
 //! The inception moves only the cash flows and the patterns, not the
 //! events: each deal's year is its own contract year (decision 22). Book
@@ -29,10 +31,13 @@
 use prospicio_aggregate::{DealColumns, Tower};
 use prospicio_core::{Error, Result};
 use prospicio_prob::statistics::{IndexRule, Statistics, StatisticsGrid};
-use prospicio_prob::{ComponentKey, KeyValue, PredictiveDistribution, Provenance, Sampled};
+use prospicio_prob::{
+    ComponentKey, Distortion, KeyValue, PredictiveDistribution, Provenance, Sampled,
+};
 
 use crate::cashflow::{CashflowTerms, Cashflows, MonthlyPatterns};
 use crate::returns::{Irr, IrrOptions, TimeUnit, irr_rows, moic, npv_rows};
+use crate::risk_load::{PremiumRule, Price, price_unchecked};
 
 /// One deduction of a [`DealRun`]: a commission, the brokerage or another
 /// deduction, an amount in each simulation.
@@ -361,6 +366,44 @@ pub struct Distribution {
     /// Each deal's contribution and marginal effect, on the cells `"Mean"`,
     /// `"Percentile <q>"` and `"TVaR <q>"`.
     pub deals: Vec<DealContribution>,
+}
+
+/// One deal's marginal price on a book, from [`DealBook::marginal_price`]:
+/// the book's loss priced with the deal and without it, and the
+/// differences. Under a cost of capital `r` the premium is
+/// `(EL + r dA) / (1 + r)`, with `EL` the deal's expected loss and `dA`
+/// the assets it adds.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MarginalPrice {
+    /// The deal's name.
+    pub deal: String,
+    /// The book with the deal.
+    pub with: Price,
+    /// The book without the deal.
+    pub without: Price,
+}
+
+impl MarginalPrice {
+    /// The deal's expected loss, `with` less `without`.
+    pub fn expected_loss(&self) -> f64 {
+        self.with.expected_loss - self.without.expected_loss
+    }
+
+    /// The assets the deal adds, `dA`.
+    pub fn assets(&self) -> f64 {
+        self.with.assets - self.without.assets
+    }
+
+    /// The marginal premium, the book's premium with the deal less
+    /// without it.
+    pub fn premium(&self) -> f64 {
+        self.with.premium - self.without.premium
+    }
+
+    /// The marginal premium less the deal's expected loss.
+    pub fn margin(&self) -> f64 {
+        self.premium() - self.expected_loss()
+    }
 }
 
 /// The book's investor flows from [`DealBook::cashflows`].
@@ -706,6 +749,71 @@ impl DealBook {
         })
     }
 
+    /// The marginal price of the deal `name`: the book's loss priced with
+    /// it and without it, by `rule` on the assets of the capital standard
+    /// `assets` as [`price_portfolio`](crate::risk_load::price_portfolio)
+    /// prices a portfolio, and the differences. It answers what the deal
+    /// must charge, written last, so that the book's price still holds:
+    /// under a cost of capital `r`, `P = (EL + r dA) / (1 + r)`.
+    ///
+    /// Under a subadditive standard (every distortion) the marginal assets
+    /// are at most the deal's allocated assets, so the marginal premium is
+    /// at most its allocated premium; the only deal in a book has its
+    /// stand-alone price.
+    ///
+    /// ```
+    /// use prospicio_pricing::book::{DealBook, DealRun};
+    /// use prospicio_pricing::risk_load::PremiumRule;
+    /// use prospicio_prob::Distortion;
+    ///
+    /// let a = DealRun::new("a", vec![10.0; 4], vec![1.0, 2.0, 3.0, 9.0]).unwrap();
+    /// let b = DealRun::new("b", vec![10.0; 4], vec![4.0, 1.0, 2.0, 3.0]).unwrap();
+    /// let book = DealBook::new(vec![a, b]).unwrap();
+    /// let rule = PremiumRule::cost_of_capital(0.1).unwrap();
+    /// let m = book.marginal_price("b", &rule, &Distortion::tvar(0.5).unwrap()).unwrap();
+    /// // Book losses 5, 3, 5, 12 (TVaR 50 = 8.5); a alone 1, 2, 3, 9 (6).
+    /// assert_eq!(m.assets(), 2.5);
+    /// assert!((m.premium() - (2.5 + 0.1 * 2.5) / 1.1).abs() < 1e-12);
+    /// ```
+    pub fn marginal_price(
+        &self,
+        name: &str,
+        rule: &PremiumRule,
+        assets: &Distortion,
+    ) -> Result<MarginalPrice> {
+        let i = self
+            .deals
+            .iter()
+            .position(|d| d.name == name)
+            .ok_or_else(|| Error::Data(format!("the book has no deal {name:?}")))?;
+        let total = self.total("loss")?;
+        let without: Vec<f64> = total
+            .iter()
+            .zip(&self.deals[i].loss)
+            .map(|(t, x)| t - x)
+            .collect();
+        let with = price_unchecked(&Sampled::new(total)?, rule, assets);
+        let without = price_unchecked(&Sampled::new(without)?, rule, assets);
+        Ok(MarginalPrice {
+            deal: name.into(),
+            with,
+            without,
+        })
+    }
+
+    /// [`marginal_price`](Self::marginal_price) of every deal in turn, in
+    /// the book's order.
+    pub fn marginal_prices(
+        &self,
+        rule: &PremiumRule,
+        assets: &Distortion,
+    ) -> Result<Vec<MarginalPrice>> {
+        self.deals
+            .iter()
+            .map(|d| self.marginal_price(&d.name, rule, assets))
+            .collect()
+    }
+
     /// The investors' flows on the book's calendar: each deal's flows
     /// moved to its inception and summed in each simulation, and the
     /// book's IRR, NPV at `rate` (to book month 0) and MOIC on the summed
@@ -961,6 +1069,96 @@ mod tests {
         .unwrap()
         .cashflows(&t, &cf)
         .unwrap()
+    }
+
+    /// Three deals on 2,000 simulations of skewed, correlated losses.
+    fn priced_book() -> DealBook {
+        let n = 2000;
+        let u = |j: usize, k: u64| {
+            let x = (j as u64 + 1)
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(k * 1442695040888963407);
+            ((x >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+        };
+        let common: Vec<f64> = (0..n).map(|j| -u(j, 7).ln()).collect();
+        let deal = |name: &str, k: u64, w: f64| {
+            let loss = (0..n)
+                .map(|j| w * common[j] + (1.0 / u(j, k) - 1.0).min(50.0))
+                .collect();
+            DealRun::new(name, vec![5.0; n], loss).unwrap()
+        };
+        DealBook::new(vec![
+            deal("a", 1, 1.0),
+            deal("b", 2, 0.2),
+            deal("c", 3, 2.0),
+        ])
+        .unwrap()
+    }
+
+    #[test]
+    fn the_marginal_price_is_at_most_the_euler_price_under_tvar() {
+        use crate::risk_load::price_portfolio;
+        let book = priced_book();
+        let assets = Distortion::tvar(0.99).unwrap();
+        for rule in [
+            PremiumRule::cost_of_capital(0.1).unwrap(),
+            PremiumRule::Distortion(Distortion::tvar(0.9).unwrap()),
+        ] {
+            let losses = book
+                .amounts()
+                .unwrap()
+                .select("item", &["loss".into()])
+                .unwrap();
+            let losses = losses
+                .select("deal", &["a".into(), "b".into(), "c".into()])
+                .unwrap();
+            let euler = price_portfolio(&losses, &rule, &assets).unwrap();
+            let marginal = book.marginal_prices(&rule, &assets).unwrap();
+            for (m, e) in marginal.iter().zip(&euler.allocated) {
+                assert!(close(m.expected_loss(), e.expected_loss, 1e-12));
+                assert!(
+                    m.assets() <= e.assets + 1e-9,
+                    "{} {} {}",
+                    m.deal,
+                    m.assets(),
+                    e.assets
+                );
+                assert!(
+                    m.premium() <= e.premium + 1e-9,
+                    "{} {} {}",
+                    m.deal,
+                    m.premium(),
+                    e.premium
+                );
+                assert!(close(m.with.premium, euler.total.premium, 1e-12));
+            }
+            // Under a cost of capital the marginal premium is (EL + r dA) / (1 + r).
+            if let PremiumRule::CostOfCapital(r) = rule {
+                for m in &marginal {
+                    let p = (m.expected_loss() + r * m.assets()) / (1.0 + r);
+                    assert!(close(m.premium(), p, 1e-12));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_only_deal_has_its_standalone_price() {
+        use crate::risk_load::price;
+        let book = priced_book().select(&["c"]).unwrap();
+        let assets = Distortion::tvar(0.99).unwrap();
+        let rule = PremiumRule::cost_of_capital(0.15).unwrap();
+        let m = book.marginal_price("c", &rule, &assets).unwrap();
+        let alone = price(
+            &Sampled::new(book.deals()[0].loss().to_vec()).unwrap(),
+            &rule,
+            &assets,
+        )
+        .unwrap();
+        assert_eq!(m.premium(), alone.premium);
+        assert_eq!(m.assets(), alone.assets);
+        assert_eq!((m.without.premium, m.without.assets), (0.0, 0.0));
+        assert!(book.marginal_price("z", &rule, &assets).is_err());
     }
 
     #[test]

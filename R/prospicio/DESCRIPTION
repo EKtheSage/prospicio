@@ -17,6 +17,7 @@ Config/roxygen2/version: 8.1.0
 Collate: 
     'distributions.R'
     'aggregate.R'
+    'bonus_malus.R'
     'book.R'
     'models.R'
     'boosting.R'
@@ -28,8 +29,9 @@ Collate:
     'reserving.R'
     'excess.R'
     'extendr-wrappers.R'
-    'nn.R'
     'normal.R'
+    'multivariate.R'
+    'nn.R'
     'odp_glm.R'
     'pnl.R'
     'pricing.R'
