@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 proposed) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 accepted by the user on 2026-10-28 as proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 accepted by the user on 2026-10-28 as built) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -4505,7 +4505,7 @@ the vectors per simulation that `Tower::apply_annual`, `DealRun` and
    the sum over segments is `ultimates()` with `aggregate` or `select`.
    Python takes a tuple or a single label, R a list or a vector; `None`
    or `NULL` gives the total.
-5. **The premium is an argument** (proposed). `loss_ratio_draws` takes the
+5. **The premium is an argument** (accepted by the user on 2026-10-28). `loss_ratio_draws` takes the
    origin's premium as the issue states, finite and positive, even for
    Meyers' and the compartmental fits, which carry a premium of their own
    (`premium`), and the Bayesian BFs, which carry an exposure. The
@@ -4571,8 +4571,8 @@ the vectors per simulation that `Tower::apply_annual`, `DealRun` and
 ### 27. Mack's tests of the chain ladder's assumptions
 
 Status: **Built** (2026-10-28), issue #551, branch
-`claude/mack-assumption-tests`, in Rust, Python and R; item 6 is
-**proposed** and built as recommended. Mack (1994, "Measuring the
+`claude/mack-assumption-tests`, in Rust, Python and R; item 6 was
+accepted by the user on 2026-10-28 as built. Mack (1994, "Measuring the
 variability of chain ladder reserve estimates", CAS Forum Spring 1994)
 gives two cheap closed-form tests of the chain ladder's assumptions that
 reviewers ask for beside a Mack exhibit: a test for calendar-year effects
@@ -4639,7 +4639,7 @@ reviewers ask for beside a Mack exhibit: a test for calendar-year effects
    hard-codes the weights `(I - 3):1` by position). A pair with fewer than
    two origins is left out; one whose ranks are all tied in a column has
    `T_k = NaN` and weight 0; no usable pair is an error.
-6. **Exclusions** (proposed; the user's to decide). The issue asks for the
+6. **Exclusions** (accepted by the user on 2026-10-28 as built). The issue asks for the
    `MackFit` methods to use "the same column and exclusions as the fit".
    Built so: the fit stores the link ratios `Development::kept_mask`
    keeps, and its two methods test those alone, so they need no triangle

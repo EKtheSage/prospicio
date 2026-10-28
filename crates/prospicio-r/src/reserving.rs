@@ -941,6 +941,12 @@ impl Triangle {
         Ok(inner.into())
     }
 
+    /// The ages up to `age` months (a whole number, 0 or more).
+    fn max_age(&self, age: i32) -> Result<Self> {
+        let age = u32::try_from(age).map_err(|_| Error::Other("`age` must be 0 or more".into()))?;
+        Ok(self.inner.max_age(age).map_err(to_r)?.into())
+    }
+
     /// One segment (chosen by `keys` = `values`, one value each) and
     /// measure (`NULL`: the only one) as `origins`, `development` and
     /// `values` row-major over origin × development, NaN where unobserved.

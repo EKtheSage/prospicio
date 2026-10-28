@@ -338,7 +338,9 @@ for (name in names(deals)) {
   d$opening <- run$opening
   d$run <- deal_run_from_tower(name, d$tower, d$result, name, flows = run$flows, funded = run$funded,
                                opening = run$opening, patterns = list(written, earned, paid))
-  book_cf <- book_cashflows(deal_book(list(d$run)))  # a book of one deal: its IRR and MOIC in each simulation
+  # A book of one deal: its IRR and MOIC in each simulation. The IRR is searched up to 500% a year: the default
+  # upper bound, 100%, is below the best years of this deal, which would then show no root and drop out.
+  book_cf <- book_cashflows(deal_book(list(d$run)), upper = 5)
   d$rate <- book_cf$irr$rate
   d$moic <- book_cf$moic
   deals[[name]] <- d
@@ -352,7 +354,7 @@ cat("capital called from the fund over the term, summed (mean; it is recycled as
 
 For each structure, the chunk computes the return of each simulation:
 
-* the **IRR**. The chunk excludes and counts each simulation with no root in the search range, -95% to 100%.
+* the **IRR**. The chunk searches it between -95% and 500% a year. The default search stops at 100%, below the IRR of this deal's best years, which would then show no root and drop out of the percentiles, biasing them down (#670). The chunk still excludes and counts any simulation with no root in the range.
 * the **MOIC**: one plus the net flows divided by the capital called from the fund.
 * the downside: the probability of a negative IRR or a MOIC below 1, and the mean of the worst 5% of IRRs.
 
@@ -376,9 +378,9 @@ print(do.call(rbind, rows), row.names = FALSE)
 #| label: investor-chart
 op <- par(mfrow = c(1, 2), mar = c(5, 4, 3, 1))
 colours <- c(rgb(0.2, 0.4, 0.8, 0.5), rgb(0.9, 0.5, 0.1, 0.5))
-hist(deals$A_flat$rate[is.finite(deals$A_flat$rate)], breaks = seq(-0.95, 1, by = 0.025), col = colours[1],
-     xlim = c(-0.5, 0.6), main = "Investor IRR", xlab = "IRR (annual)")
-hist(deals$B_sliding$rate[is.finite(deals$B_sliding$rate)], breaks = seq(-0.95, 1, by = 0.025), col = colours[2],
+hist(deals$A_flat$rate[is.finite(deals$A_flat$rate)], breaks = seq(-0.95, 5, by = 0.025), col = colours[1],
+     xlim = c(-0.5, 1.0), main = "Investor IRR", xlab = "IRR (annual)")
+hist(deals$B_sliding$rate[is.finite(deals$B_sliding$rate)], breaks = seq(-0.95, 5, by = 0.025), col = colours[2],
      add = TRUE)
 hist(deals$A_flat$moic, breaks = 60, col = colours[1], xlim = c(0.5, 1.6), main = "Investor MOIC", xlab = "MOIC")
 hist(deals$B_sliding$moic, breaks = 60, col = colours[2], add = TRUE)

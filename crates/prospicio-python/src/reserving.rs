@@ -1302,6 +1302,56 @@ impl PyTriangle {
         self.inner.grain(origin, dev).map(wrap).map_err(err)
     }
 
+    /// The triangle with the development ages up to ``age`` months, as
+    /// chainladder-python's ``tri[tri.development <= age]``.
+    ///
+    /// Every age at or before ``age`` is kept, in every segment, measure
+    /// and origin; the later ages are left out, not folded into a tail.
+    /// ``age`` need not be one of the triangle's ages, and one at or past
+    /// the last age returns the triangle unchanged. The origins, measures
+    /// (a premium column among them), grains and basis (cumulative or
+    /// incremental) are kept; the valuation becomes the latest valuation of
+    /// a kept observed cell. An origin observed only at dropped ages keeps
+    /// an empty row, which the fits trim when it is the first or the last
+    /// origin and refuse between observed origins. On a cumulative triangle
+    /// where every origin keeps an observed cell, the result equals
+    /// ``Triangle.from_frame`` on the rows of ``to_frame()`` at the kept
+    /// ages (an origin left without cells is not in those rows); on an
+    /// incremental one that rebuild brings the dropped ages back as zero
+    /// increments, and this method does not.
+    ///
+    /// Parameters
+    /// ----------
+    /// age : int
+    ///     The last age to keep, in months.
+    ///
+    /// Returns
+    /// -------
+    /// Triangle
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``age`` is before the first age, so that nothing is kept, or
+    ///     no observed cell is left.
+    /// OverflowError
+    ///     If ``age`` is negative.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reserving import Triangle
+    /// >>> tri = Triangle.from_long(
+    /// ...     [2020, 2020, 2020, 2021, 2021, 2022], [12, 24, 36, 12, 24, 12],
+    /// ...     [100.0, 150.0, 145.0, 110.0, 170.0, 120.0],
+    /// ... )
+    /// >>> tri.max_age(24).development
+    /// [12, 24]
+    /// >>> tri.max_age(30) == tri.max_age(24), tri.max_age(36) == tri
+    /// (True, True)
+    fn max_age(&self, age: u32) -> PyResult<Self> {
+        self.inner.max_age(age).map(wrap).map_err(err)
+    }
+
     fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
         other
             .extract::<PyRef<'_, PyTriangle>>()
@@ -11536,12 +11586,13 @@ impl PyBayesBfFit {
 /// cells, their sum and the remedies. A column that sums to zero or less
 /// has no log-linear mean, since every mean is an ultimate times a
 /// positive share; the chain ladder accepts the same triangle, and
-/// ``BayesOdp`` and ``BayesBf`` refuse it too. To drop a sparse late age,
-/// rebuild the triangle without its rows: with
-/// ``df = pandas.DataFrame(tri.to_frame())``,
-/// ``Triangle.from_frame(df[df["development"] != 120], "origin",
-/// "development", ["paid", "premium"])``; carry the movement left out as a
-/// tail outside the model. For an origin, a finite ``cv`` below the bound
+/// ``BayesOdp`` and ``BayesBf`` refuse it too. To drop a sparse last age,
+/// keep the ages before it with ``Triangle.max_age`` (``tri.max_age(108)``
+/// for a last age of 120 months) and carry the movement left out as a tail
+/// outside the model. A falling first age is dropped by rebuilding the
+/// triangle without its rows (``Triangle.from_frame`` on the rows of
+/// ``tri.to_frame()`` at the other ages); a falling middle age has no
+/// remedy in this model. For an origin, a finite ``cv`` below the bound
 /// the error prints makes its posterior proper. One ``seed`` replays a fit
 /// exactly, whatever the number of threads. Failed MCMC diagnostics (R-hat
 /// above 1.01, bulk or tail ESS below 100 per chain, any divergent

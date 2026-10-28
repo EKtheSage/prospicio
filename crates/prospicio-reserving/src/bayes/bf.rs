@@ -463,11 +463,15 @@ impl BayesBf {
         }
         for (d, &sum) in column_sum.iter().enumerate() {
             if sum.is_nan() || sum <= 0.0 {
-                return Err(Error::Bayes(format!(
-                    "development age {} months: the observed increments sum to {sum}, so no \
-                     log-linear mean exists",
-                    segment.ages[d]
-                )));
+                return Err(super::odp::last_age_remedy(
+                    Error::Bayes(format!(
+                        "development age {} months: the observed increments sum to {sum}, so \
+                         no log-linear mean exists",
+                        segment.ages[d]
+                    )),
+                    &segment.ages,
+                    segment.alone,
+                ));
             }
         }
         // Start at the strong-prior mode: mu_w = m_w (u_w = 0) and the raw

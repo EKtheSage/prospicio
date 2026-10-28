@@ -1,0 +1,141 @@
+structure,section,item,statistic,value
+flat,loss_ratio,loss_ratio,Mean,0.4958285426
+flat,loss_ratio,loss_ratio,SD,0.08486032814
+flat,loss_ratio,loss_ratio,Percentile 5,0.3694041329
+flat,loss_ratio,loss_ratio,Percentile 50,0.4890964396
+flat,loss_ratio,loss_ratio,Percentile 95,0.6447974925
+flat,loss_ratio,ceding_commission,Mean,0.32
+flat,loss_ratio,ceding_commission,SD,5.218048216e-15
+flat,loss_ratio,ceding_commission,Percentile 5,0.32
+flat,loss_ratio,ceding_commission,Percentile 50,0.32
+flat,loss_ratio,ceding_commission,Percentile 95,0.32
+flat,loss_ratio,brokerage,Mean,0.025
+flat,loss_ratio,brokerage,SD,8.847089727e-16
+flat,loss_ratio,brokerage,Percentile 5,0.025
+flat,loss_ratio,brokerage,Percentile 50,0.025
+flat,loss_ratio,brokerage,Percentile 95,0.025
+flat,loss_ratio,combined_ratio,Mean,0.8408285426
+flat,loss_ratio,combined_ratio,SD,0.08486032814
+flat,loss_ratio,combined_ratio,Percentile 5,0.7144041329
+flat,loss_ratio,combined_ratio,Percentile 50,0.8340964396
+flat,loss_ratio,combined_ratio,Percentile 95,0.9897974925
+flat,loss_ratio,margin,Mean,0.1591714574
+flat,loss_ratio,margin,SD,0.08486032814
+flat,loss_ratio,margin,Percentile 5,0.009878097882
+flat,loss_ratio,margin,Percentile 50,0.165725014
+flat,loss_ratio,margin,Percentile 95,0.2851919662
+flat,layers,gross,Mean,89199554.81
+flat,layers,gross,SD,15266373.03
+flat,layers,gross,Percentile 5,66455803.51
+flat,layers,gross,Percentile 50,87988449.49
+flat,layers,gross,Percentile 95,115999068.9
+flat,layers,gross,TVaR 99,138594850.5
+flat,layers,ceded,Mean,17839910.96
+flat,layers,ceded,SD,3053274.607
+flat,layers,ceded,Percentile 5,13291160.7
+flat,layers,ceded,Percentile 50,17597689.9
+flat,layers,ceded,Percentile 95,23199813.78
+flat,layers,ceded,TVaR 99,27718970.1
+flat,layers,net,Mean,71359643.85
+flat,layers,net,SD,12213098.43
+flat,layers,net,Percentile 5,53164642.81
+flat,layers,net,Percentile 50,70390759.59
+flat,layers,net,Percentile 95,92799255.12
+flat,layers,net,TVaR 99,110875880.4
+flat,returns,irr,Mean,0.461336484
+flat,returns,irr,Percentile 5,0.07777115632
+flat,returns,irr,Percentile 50,0.404816408
+flat,returns,irr,Percentile 95,1.029391573
+flat,returns,irr,Lower TVaR 5,0.02355154481
+flat,returns,irr,Probability of loss,0.0115
+flat,returns,irr,Simulations without a root,0
+flat,returns,moic,Mean,1.377619444
+flat,returns,moic,Percentile 5,1.081846003
+flat,returns,moic,Percentile 50,1.357538985
+flat,returns,moic,Percentile 95,1.737782517
+flat,returns,moic,Lower TVaR 5,1.024199867
+flat,returns,moic,Probability of loss,0.0115
+sliding,loss_ratio,loss_ratio,Mean,0.4958285426
+sliding,loss_ratio,loss_ratio,SD,0.08486032814
+sliding,loss_ratio,loss_ratio,Percentile 5,0.3694041329
+sliding,loss_ratio,loss_ratio,Percentile 50,0.4890964396
+sliding,loss_ratio,loss_ratio,Percentile 95,0.6447974925
+sliding,loss_ratio,ceding_commission,Mean,0.3290835426
+sliding,loss_ratio,ceding_commission,SD,0.03265167087
+sliding,loss_ratio,ceding_commission,Percentile 5,0.2643902657
+sliding,loss_ratio,ceding_commission,Percentile 50,0.3375571509
+sliding,loss_ratio,ceding_commission,Percentile 95,0.36
+sliding,loss_ratio,brokerage,Mean,0.025
+sliding,loss_ratio,brokerage,SD,8.847089727e-16
+sliding,loss_ratio,brokerage,Percentile 5,0.025
+sliding,loss_ratio,brokerage,Percentile 50,0.025
+sliding,loss_ratio,brokerage,Percentile 95,0.025
+sliding,loss_ratio,combined_ratio,Mean,0.8499120852
+sliding,loss_ratio,combined_ratio,SD,0.05444897333
+sliding,loss_ratio,combined_ratio,Percentile 5,0.7544041329
+sliding,loss_ratio,combined_ratio,Percentile 50,0.851755617
+sliding,loss_ratio,combined_ratio,Percentile 95,0.9343319403
+sliding,loss_ratio,margin,Mean,0.1500879148
+sliding,loss_ratio,margin,SD,0.05444897333
+sliding,loss_ratio,margin,Percentile 5,0.06548783216
+sliding,loss_ratio,margin,Percentile 50,0.1481678631
+sliding,loss_ratio,margin,Percentile 95,0.2451919662
+sliding,layers,gross,Mean,89199554.81
+sliding,layers,gross,SD,15266373.03
+sliding,layers,gross,Percentile 5,66455803.51
+sliding,layers,gross,Percentile 50,87988449.49
+sliding,layers,gross,Percentile 95,115999068.9
+sliding,layers,gross,TVaR 99,138594850.5
+sliding,layers,ceded,Mean,17839910.96
+sliding,layers,ceded,SD,3053274.607
+sliding,layers,ceded,Percentile 5,13291160.7
+sliding,layers,ceded,Percentile 50,17597689.9
+sliding,layers,ceded,Percentile 95,23199813.78
+sliding,layers,ceded,TVaR 99,27718970.1
+sliding,layers,net,Mean,71359643.85
+sliding,layers,net,SD,12213098.43
+sliding,layers,net,Percentile 5,53164642.81
+sliding,layers,net,Percentile 50,70390759.59
+sliding,layers,net,Percentile 95,92799255.12
+sliding,layers,net,TVaR 99,110875880.4
+sliding,returns,irr,Mean,0.4076405263
+sliding,returns,irr,Percentile 5,0.1561666526
+sliding,returns,irr,Percentile 50,0.360606905
+sliding,returns,irr,Percentile 95,0.8323596425
+sliding,returns,irr,Lower TVaR 5,0.1089579358
+sliding,returns,irr,Probability of loss,0.002
+sliding,returns,irr,Simulations without a root,0
+sliding,returns,moic,Mean,1.351175071
+sliding,returns,moic,Percentile 5,1.154633891
+sliding,returns,moic,Percentile 50,1.32640531
+sliding,returns,moic,Percentile 95,1.639825579
+sliding,returns,moic,Lower TVaR 5,1.109533514
+sliding,returns,moic,Probability of loss,0.002
+flat,comparison,premium,Mean,35980000
+flat,comparison,premium,Ratio to premium,1
+flat,comparison,loss,Mean,17839910.96
+flat,comparison,loss,Ratio to premium,0.4958285426
+flat,comparison,ceding_commission,Mean,11513600
+flat,comparison,ceding_commission,Ratio to premium,0.32
+flat,comparison,brokerage,Mean,899500
+flat,comparison,brokerage,Ratio to premium,0.025
+flat,comparison,total_deductions,Mean,12413100
+flat,comparison,total_deductions,Ratio to premium,0.345
+flat,comparison,nmbf,Mean,5726989.037
+flat,comparison,nmbf,Ratio to premium,0.1591714574
+flat,comparison,margin,Mean,5726989.037
+flat,comparison,margin,Ratio to premium,0.1591714574
+sliding,comparison,premium,Mean,35980000
+sliding,comparison,premium,Ratio to premium,1
+sliding,comparison,loss,Mean,17839910.96
+sliding,comparison,loss,Ratio to premium,0.4958285426
+sliding,comparison,ceding_commission,Mean,11840425.86
+sliding,comparison,ceding_commission,Ratio to premium,0.3290835426
+sliding,comparison,brokerage,Mean,899500
+sliding,comparison,brokerage,Ratio to premium,0.025
+sliding,comparison,total_deductions,Mean,12739925.86
+sliding,comparison,total_deductions,Ratio to premium,0.3540835426
+sliding,comparison,nmbf,Mean,5400163.176
+sliding,comparison,nmbf,Ratio to premium,0.1500879148
+sliding,comparison,margin,Mean,5400163.176
+sliding,comparison,margin,Ratio to premium,0.1500879148

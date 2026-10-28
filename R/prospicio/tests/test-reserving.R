@@ -535,6 +535,21 @@ stopifnot(ya@development_grain == "Y", identical(ya@values, grain(qt, "Y", "Y")@
           identical(ya@valuation, as.Date("2020-12-31")))
 stopifnot(identical(grain(raa, "Y", "Y")@values, raa@values))
 
+# max_age() keeps the ages up to an age, in every segment and measure.
+raa60 <- max_age(raa, 60)
+stopifnot(identical(raa60@development, c(12L, 24L, 36L, 48L, 60L)),
+          identical(raa60@origins, raa@origins),
+          identical(raa60@values, raa@values[, , , 1:5, drop = FALSE]),
+          identical(raa60@valuation, raa@valuation))
+stopifnot(identical(max_age(raa, 71)@values, raa60@values),
+          identical(max_age(raa, 120)@values, raa@values))
+df <- as.data.frame(raa)
+rebuilt <- triangle(df[df$development <= 60, ], "origin", "development", "value")
+stopifnot(identical(raa60@values, rebuilt@values))
+expect_error_like(max_age(raa, 6), "before the triangle's first age, 12 months")
+expect_error_like(max_age(raa, -1), "one whole number of months")
+expect_error_like(max_age(raa, 12.5), "one whole number of months")
+
 # Errors are ordinary R errors carrying the Rust message.
 near(chain_ladder(multi, "paid")@total_reserve, 3 * chain_ladder(raa)@total_reserve, 1e-12)
 expect_error_like(chain_ladder(multi), "several columns")
