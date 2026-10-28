@@ -72,8 +72,35 @@ use crate::triangle::{Label, Segment, Triangle};
 ///
 /// Every development column's observed increments must sum to more than
 /// zero, and every origin's to more than `-phi / cv^2`, the bound below
-/// which its posterior is improper ([`Error::Bayes`]). Negative cells are
-/// allowed. The log posterior is not concave in general (the softmax), but
+/// which its posterior is improper ([`Error::Bayes`], naming the age or
+/// origin, its number of observed cells, their sum and the remedies).
+/// Negative cells are allowed. The column rule is not about propriety: the
+/// means `U_w p_d` are the positive products `exp(a_w + b_d)` with free
+/// `b_d` (the normalisation only reparametrises them), and the likelihood's
+/// score in `b_d` is `(S_d - sum_w exp(a_w + b_d)) / phi`, negative
+/// everywhere when the column's sum `S_d` is not positive, so the
+/// likelihood has no finite maximum: it rises as the share falls to 0, the
+/// share that maximises it given the ultimates (`S_d / (M_d + lambda)`
+/// above) is negative and the strong-prior start would take its log. The
+/// vague normal prior on `beta_d` would still give a proper posterior, with
+/// `beta_d` near `development_sd^2 S_d / phi` and so a share of about 0,
+/// set by the prior alone: the model cannot say that an age's
+/// expected movement is negative, which is what such a column says. The
+/// chain ladder accepts the same triangle (a factor below 1 there);
+/// [`BayesOdp`](super::BayesOdp) and [`BayesBf`](super::BayesBf) reject it
+/// as this model does. A sparse late age (one cell below the previous one,
+/// say) is best dropped before the fit: rebuild the triangle from
+/// [`Triangle::to_long`] without the rows at that age and pass them to
+/// [`Triangle::from_long`] (Python `to_frame` and `from_frame`, R
+/// `as.data.frame()` and `triangle()`), or fold the age into the previous
+/// one, and carry the movement left out as a tail outside the model.
+/// Supporting such a column would need a term at the late ages whose sign
+/// is free (an additive or tail factor with a normal prior, outside the
+/// log-linear ODP likelihood, whose variance `phi * mean` needs a positive
+/// mean); the design note's decision 26 has the details and open decision
+/// 18 a `Triangle` method that drops ages.
+///
+/// The log posterior is not concave in general (the softmax), but
 /// the mode finder's ridge handles that; NUTS samples it on a scale
 /// whitened at the mode, as for `BayesOdp`.
 ///
@@ -450,20 +477,10 @@ impl BayesBfNormalised {
         // The posterior of U_w given the pattern is a gamma of shape
         // shape + S_w / phi: proper only when that is positive.
         for w in 0..no {
-            let sum: f64 = cells.iter().filter(|c| c.0 == w).map(|c| c.2).sum();
+            let row = cells.iter().filter(|c| c.0 == w);
+            let (n, sum) = row.fold((0, 0.0), |(n, s), c| (n + 1, s + c.2));
             if sum.is_nan() || shape + sum / phi <= 0.0 {
-                let bound = if shape == 0.0 {
-                    "so no log-linear mean exists".to_string()
-                } else {
-                    format!(
-                        "at most -phi / cv^2 = {}, so the posterior of its ultimate is improper",
-                        -shape * phi
-                    )
-                };
-                return Err(Error::Bayes(format!(
-                    "origin {}: the observed increments sum to {sum}, {bound}",
-                    segment.origins[w]
-                )));
+                return Err(origin_error(&segment.origins[w], n, sum, shape, phi));
             }
         }
         let mut column_sum = vec![0.0; nd];
@@ -478,11 +495,11 @@ impl BayesBfNormalised {
         }
         for (d, &sum) in column_sum.iter().enumerate() {
             if sum.is_nan() || sum <= 0.0 {
-                return Err(Error::Bayes(format!(
-                    "development age {} months: the observed increments sum to {sum}, so no \
-                     log-linear mean exists",
-                    segment.ages[d]
-                )));
+                let n = cells.iter().filter(|c| c.1 == d).count();
+                let factor = d
+                    .checked_sub(1)
+                    .and_then(|k| fit.chain_ladder.development.ldf.get(k).copied());
+                return Err(column_error(&segment.ages, d, n, sum, factor));
             }
         }
         // Start at the strong-prior mode: the ultimates at their prior
@@ -791,6 +808,84 @@ impl Model {
         }
         theta
     }
+}
+
+/// `1 cell` or `n cells`.
+fn n_cells(n: usize) -> String {
+    if n == 1 {
+        "1 cell".to_string()
+    } else {
+        format!("{n} cells")
+    }
+}
+
+/// The error for an origin whose `n` observed increments sum to `sum`, at
+/// or below `-phi / cv^2` (`shape = 1 / cv^2`): under a flat prior no
+/// log-linear mean exists, under an informative one the posterior of the
+/// origin's ultimate is a gamma of shape `shape + sum / phi <= 0`, improper.
+/// A finite `cv` below `sqrt(-phi / sum)` makes it proper.
+fn origin_error(origin: &crate::Period, n: usize, sum: f64, shape: f64, phi: f64) -> Error {
+    let cells = n_cells(n);
+    let cause = if shape == 0.0 {
+        "so no log-linear mean exists under a flat prior (an infinite cv): the model's mean \
+         for an origin is its ultimate times positive shares, which cannot fit a row that \
+         sums to zero or less"
+            .to_string()
+    } else {
+        format!(
+            "at most -phi / cv^2 = {}, so the posterior of its ultimate is improper",
+            -shape * phi
+        )
+    };
+    let cv = if sum < 0.0 {
+        format!(
+            "a finite cv below sqrt(-phi / sum) = {}",
+            (-phi / sum).sqrt()
+        )
+    } else {
+        "a finite cv".to_string()
+    };
+    Error::Bayes(format!(
+        "origin {origin}: the observed increments ({cells}) sum to {sum}, {cause}. The chain \
+         ladder accepts this triangle. Give the prior {cv}, or rebuild the triangle from its \
+         long table without this origin's rows"
+    ))
+}
+
+/// The error for the development column at position `d` of `ages` whose `n`
+/// observed increments sum to `sum`, with the chain ladder's factor into
+/// that age (`None` at the first age): the mean `U_w p_d` is positive, so
+/// the likelihood increases as the share falls to 0 and has no
+/// finite maximum (design note `reserving-bayes.md`, decision 26).
+fn column_error(ages: &[crate::Lag], d: usize, n: usize, sum: f64, factor: Option<f64>) -> Error {
+    let age = ages[d];
+    let cause = format!(
+        "development age {age} months: the observed increments ({}) sum to {sum}, so no \
+         log-linear mean exists: the model's mean at an age is an ultimate times a positive \
+         share, which cannot fit a column that sums to zero or less",
+        n_cells(n)
+    );
+    let remedy = match (d.checked_sub(1).map(|k| ages[k]), ages.get(d + 1)) {
+        (Some(previous), _) => {
+            let factor = factor
+                .filter(|f| f.is_finite())
+                .map(|f| format!(" (its factor from {previous} to {age} months is {f:.4})"))
+                .unwrap_or_default();
+            format!(
+                "The chain ladder accepts this triangle{factor}. Rebuild the triangle from its \
+                 long table without the rows at {age} months, or fold that age into {previous} \
+                 months (book each origin's value at {age} months at {previous} months), and \
+                 carry the movement left out as a tail outside this model"
+            )
+        }
+        (None, Some(next)) => format!(
+            "The chain ladder accepts this triangle. The first age has no earlier one to fold \
+             into: rebuild the triangle from its long table without the rows at {age} months, \
+             so that development starts at {next} months"
+        ),
+        (None, None) => "The chain ladder accepts this triangle".to_string(),
+    };
+    Error::Bayes(format!("{cause}. {remedy}"))
 }
 
 /// The shares `S_d / (M_d + lambda)` that maximise the likelihood given
@@ -1712,9 +1807,24 @@ mod tests {
         };
         let e = weak.fit(&negative, "values", "premium").unwrap_err();
         assert!(
-            matches!(&e, Error::Bayes(m) if m.starts_with("origin 2023") && m.contains("improper")),
+            matches!(&e, Error::Bayes(m) if m.starts_with("origin 2023") && m.contains("improper")
+                && m.contains("(1 cell) sum to -1")
+                && m.contains("without this origin's rows")),
             "{e}"
         );
+        // The remedy it names: a cv below the bound it prints.
+        let Error::Bayes(m) = &e else { unreachable!() };
+        let bound: f64 = m
+            .split("sqrt(-phi / sum) = ")
+            .nth(1)
+            .and_then(|rest| rest.split(',').next())
+            .and_then(|b| b.parse().ok())
+            .unwrap_or_else(|| panic!("no cv bound in {m}"));
+        let proper = BayesBfNormalised {
+            cv: 0.9 * bound,
+            ..quick(0)
+        };
+        prepared(&negative, &proper);
         // The last development column falls.
         let falling = with_premium(
             2020,
@@ -1735,6 +1845,117 @@ mod tests {
             quick(0).fit(&annual(2020, &[&[1.0, 2.0], &[1.0]]), "values", "values"),
             Err(Error::Bootstrap(_))
         ));
+    }
+
+    /// A triangle rebuilt from its long table without the rows at `age`.
+    fn without_age(tri: &Triangle, age: Lag) -> Triangle {
+        let long = tri.to_long();
+        let keep: Vec<usize> = (0..long.development.len())
+            .filter(|&i| long.development[i] != age)
+            .collect();
+        let origin: Vec<Month> = keep.iter().map(|&i| long.origin[i]).collect();
+        let development: Vec<Lag> = keep.iter().map(|&i| long.development[i]).collect();
+        let values: Vec<(&str, Vec<f64>)> = long
+            .values
+            .iter()
+            .map(|(name, v)| (name.as_str(), keep.iter().map(|&i| v[i]).collect()))
+            .collect();
+        let values: Vec<(&str, &[f64])> = values.iter().map(|(n, v)| (*n, v.as_slice())).collect();
+        Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&development),
+            values: &values,
+            origin_grain: tri.origin_grain(),
+            development_grain: tri.development_grain(),
+            cumulative: tri.is_cumulative(),
+        })
+        .unwrap()
+    }
+
+    /// Four origins whose oldest age, 48 months, has one cell 5 below the
+    /// one at 36 months (issue #610).
+    fn falling() -> Triangle {
+        with_premium(
+            2020,
+            &[
+                &[100.0, 150.0, 160.0, 155.0],
+                &[110.0, 170.0, 180.0],
+                &[120.0, 175.0],
+                &[130.0],
+            ],
+            &[200.0; 4],
+        )
+    }
+
+    /// The oldest age's one cell falls: the chain ladder takes the
+    /// triangle, the model refuses it and says which age and what to do,
+    /// and the triangle without that age prepares.
+    #[test]
+    fn a_falling_late_column_names_its_age_and_the_remedy() {
+        let falling = falling();
+        let chain_ladder = ChainLadder::default().fit(&falling, "values").unwrap();
+        let factor = chain_ladder.development.ldf[2];
+        assert!((factor - 155.0 / 160.0).abs() < 1e-12);
+        let e = quick(0).fit(&falling, "values", "premium").unwrap_err();
+        let Error::Bayes(m) = &e else { panic!("{e}") };
+        for part in [
+            "development age 48 months: the observed increments (1 cell) sum to -5,",
+            "no log-linear mean exists",
+            "The chain ladder accepts this triangle (its factor from 36 to 48 months is 0.9688)",
+            "without the rows at 48 months",
+            "fold that age into 36 months",
+            "as a tail outside this model",
+        ] {
+            assert!(m.contains(part), "{part:?} not in {m}");
+        }
+        // BayesOdp and BayesBf refuse the same column.
+        for e in [
+            BayesOdp::default().fit(&falling, "values").unwrap_err(),
+            BayesBf::default()
+                .fit(&falling, "values", "premium")
+                .unwrap_err(),
+        ] {
+            assert!(
+                matches!(&e, Error::Bayes(m) if m.contains("48 months")),
+                "{e}"
+            );
+        }
+        // The first age has nothing to fold into.
+        let first = with_premium(
+            2020,
+            &[&[-10.0, 50.0, 60.0], &[-20.0, 40.0], &[5.0]],
+            &[200.0; 3],
+        );
+        let e = quick(0).fit(&first, "values", "premium").unwrap_err();
+        assert!(
+            matches!(&e, Error::Bayes(m) if m.starts_with("development age 12 months")
+                && m.contains("(3 cells) sum to -25")
+                && m.contains("development starts at 24 months")),
+            "{e}"
+        );
+
+        // The remedy: the triangle without the rows at 48 months.
+        let dropped = without_age(&falling, 48);
+        assert_eq!(dropped.development(), &[12, 24, 36]);
+        let (fit, model, start) = prepared(&dropped, &quick(0));
+        assert_eq!(fit.latest, vec![160.0, 180.0, 175.0, 130.0]);
+        assert_eq!(model.n_dev, 3);
+        assert!(start.iter().all(|t| t.is_finite()));
+    }
+
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn a_triangle_without_its_falling_age_fits() {
+        let fit = quick(0)
+            .fit(&without_age(&falling(), 48), "values", "premium")
+            .unwrap();
+        assert_eq!(fit.chain_ladder.latest, vec![160.0, 180.0, 175.0, 130.0]);
+        let total = fit.reserves.total().mean();
+        assert!(total.is_finite() && total > 0.0, "{total}");
     }
 
     #[test]

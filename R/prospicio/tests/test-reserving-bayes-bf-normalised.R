@@ -214,4 +214,21 @@ ok <- suppressWarnings(bayes_bf_normalised(negative, "paid", "premium", apriori 
 stopifnot(ok@reserves@n_sims == 100)
 expect_error_like(bayes_loo(ok), "non-negative increments")
 
+# The oldest age's one cell is 5 below the one at 24 months (#610): the error
+# names the age and the remedy, and the triangle without that age fits.
+falling <- triangle(data.frame(year = c(2020, 2020, 2020, 2021, 2021, 2022),
+                               age = c(12, 24, 36, 12, 24, 12),
+                               paid = c(100, 150, 145, 110, 170, 120), premium = 200),
+                    "year", "age", c("paid", "premium"))
+for (part in c("development age 36 months: the observed increments (1 cell) sum to -5,",
+               "The chain ladder accepts this triangle", "without the rows at 36 months",
+               "fold that age into 24 months")) {
+  expect_error_like(bayes_bf_normalised(falling, "paid", "premium", n_sims = 100), part)
+}
+df <- as.data.frame(falling)
+dropped <- triangle(df[df$development != 36, ], "origin", "development", c("paid", "premium"))
+stopifnot(identical(as.numeric(dropped@development), c(12, 24)))
+fit_dropped <- suppressWarnings(bayes_bf_normalised(dropped, "paid", "premium", n_sims = 100))
+stopifnot(fit_dropped@reserves@n_sims == 100)
+
 cat("prospicio R Bayesian Bornhuetter-Ferguson (normalised pattern) tests passed\n")

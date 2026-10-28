@@ -255,3 +255,29 @@ def test_errors(tri):
     # ... and PSIS-LOO has no density at a negative increment.
     with pytest.raises(ValueError, match="non-negative increments"):
         ok.loo()
+
+
+def test_a_falling_late_column_names_its_age_and_the_remedy():
+    # The oldest age's one cell is 5 below the one at 24 months (#610).
+    falling = Triangle.from_long(
+        [2020] * 3 + [2021] * 2 + [2022],
+        [12, 24, 36, 12, 24, 12],
+        {"paid": [100.0, 150.0, 145.0, 110.0, 170.0, 120.0], "premium": [200.0] * 6},
+    )
+    with pytest.raises(ValueError) as e:
+        BayesBfNormalised(**QUICK).fit(falling, "paid", "premium")
+    message = str(e.value)
+    for part in ["development age 36 months: the observed increments (1 cell) sum to -5,",
+                 "The chain ladder accepts this triangle",
+                 "without the rows at 36 months", "fold that age into 24 months"]:
+        assert part in message, message
+    # The remedy: rebuild the triangle without the rows at 36 months.
+    frame = falling.to_frame()
+    keep = [i for i, age in enumerate(frame["development"]) if age != 36]
+    dropped = Triangle.from_frame({k: [v[i] for i in keep] for k, v in frame.items()},
+                                  "origin", "development", ["paid", "premium"])
+    assert dropped.development == [12, 24]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        fit = BayesBfNormalised(**QUICK).fit(dropped, "paid", "premium")
+    assert fit.reserves.n_sims == 2000
