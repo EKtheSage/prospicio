@@ -100,6 +100,146 @@ pub fn time_ordered(periods: &[i64], n_test: usize) -> Result<Vec<Split>> {
         .collect())
 }
 
+/// The training window of [`TimeSplits`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Window {
+    /// Every period before the test window (less the gap).
+    Expanding,
+    /// The latest `w` such periods only, so an old regime drops out.
+    Rolling(usize),
+}
+
+/// Time-ordered splits with a training window, a forecast horizon, a gap
+/// and a step (#549), generalising [`time_ordered`]. Periods count as
+/// distinct values, so missing calendar periods are skipped as there.
+///
+/// Split `f` of `n_test` (oldest first) tests on `horizon` consecutive
+/// distinct periods, the last split's ending at the latest period and each
+/// earlier one `step` periods before the next; it trains on the periods
+/// before its test window less the `gap` periods just before it, all of
+/// them ([`Window::Expanding`]) or the latest `w` ([`Window::Rolling`]).
+/// The defaults (expanding, horizon 1, gap 0, step 1) are [`time_ordered`].
+///
+/// ```
+/// use prospicio_models::resample::TimeSplits;
+///
+/// // Periods 0 to 9, one row each: two tests of two periods, a gap of one,
+/// // training on the latest three periods before the gap.
+/// let periods: Vec<i64> = (0..10).collect();
+/// let s = TimeSplits::new(2).rolling(3).horizon(2).gap(1).step(2).splits(&periods).unwrap();
+/// assert_eq!((s[0].train.clone(), s[0].test.clone()), (vec![2, 3, 4], vec![6, 7]));
+/// assert_eq!((s[1].train.clone(), s[1].test.clone()), (vec![4, 5, 6], vec![8, 9]));
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TimeSplits {
+    n_test: usize,
+    window: Window,
+    horizon: usize,
+    gap: usize,
+    step: usize,
+}
+
+impl TimeSplits {
+    /// `n_test` splits with the defaults of [`time_ordered`].
+    pub fn new(n_test: usize) -> Self {
+        Self {
+            n_test,
+            window: Window::Expanding,
+            horizon: 1,
+            gap: 0,
+            step: 1,
+        }
+    }
+
+    /// Train on the latest `periods` periods only.
+    pub fn rolling(mut self, periods: usize) -> Self {
+        self.window = Window::Rolling(periods);
+        self
+    }
+
+    /// The training window.
+    pub fn window(mut self, window: Window) -> Self {
+        self.window = window;
+        self
+    }
+
+    /// Test on `periods` consecutive periods.
+    pub fn horizon(mut self, periods: usize) -> Self {
+        self.horizon = periods;
+        self
+    }
+
+    /// Leave `periods` periods out between training and test.
+    pub fn gap(mut self, periods: usize) -> Self {
+        self.gap = periods;
+        self
+    }
+
+    /// Move the test window `periods` periods from one split to the next.
+    pub fn step(mut self, periods: usize) -> Self {
+        self.step = periods;
+        self
+    }
+
+    /// The splits of rows with `periods`.
+    pub fn splits(&self, periods: &[i64]) -> Result<Vec<Split>> {
+        let bad = |name: &'static str, value: usize, reason: &'static str| {
+            Err(Error::InvalidParameter {
+                name,
+                value: value as f64,
+                reason,
+            })
+        };
+        if self.n_test == 0 {
+            return bad("n_test", 0, "must be at least 1");
+        }
+        if self.horizon == 0 {
+            return bad("horizon", 0, "must be at least 1");
+        }
+        if self.step == 0 {
+            return bad("step", 0, "must be at least 1");
+        }
+        if self.window == Window::Rolling(0) {
+            return bad("window", 0, "a rolling window needs at least 1 period");
+        }
+        let mut distinct: Vec<i64> = periods.to_vec();
+        distinct.sort_unstable();
+        distinct.dedup();
+        let p = distinct.len();
+        // The first split's test window starts here; it needs at least one
+        // training period before its gap.
+        let back = self.horizon + (self.n_test - 1) * self.step;
+        if back + self.gap >= p {
+            return Err(Error::Data(format!(
+                "{p} distinct periods leave no training period for {} splits of horizon {}, \
+                 step {} and gap {}",
+                self.n_test, self.horizon, self.step, self.gap
+            )));
+        }
+        let index = |t: i64| distinct.binary_search(&t).expect("a period of the rows");
+        let pos: Vec<usize> = periods.iter().map(|&t| index(t)).collect();
+        Ok((0..self.n_test)
+            .map(|f| {
+                let start = p - back + f * self.step;
+                let end = start + self.horizon;
+                let train_end = start - self.gap;
+                let train_start = match self.window {
+                    Window::Expanding => 0,
+                    Window::Rolling(w) => train_end.saturating_sub(w),
+                };
+                Split {
+                    train: (0..periods.len())
+                        .filter(|&i| (train_start..train_end).contains(&pos[i]))
+                        .collect(),
+                    test: (0..periods.len())
+                        .filter(|&i| (start..end).contains(&pos[i]))
+                        .collect(),
+                }
+            })
+            .collect())
+    }
+}
+
 /// Fits `model` on each split's training rows and scores its predictions
 /// on the test rows with `score(y_test, predicted, test_design)`. Returns
 /// one score per split. Splits run in parallel ([`map_splits`]).
@@ -419,5 +559,39 @@ mod tests {
                 assert!(s.train.iter().all(|&j| groups[j] != groups[i]));
             }
         }
+    }
+
+    #[test]
+    fn time_splits_default_to_time_ordered_and_check_their_windows() {
+        let periods = [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5];
+        for n in 1..6 {
+            assert_eq!(
+                TimeSplits::new(n).splits(&periods).unwrap(),
+                time_ordered(&periods, n).unwrap()
+            );
+        }
+        // Seven distinct periods: 2 splits of 3 with step 3 need 6, plus a
+        // gap of 1 leaves none to train on.
+        assert!(
+            TimeSplits::new(2)
+                .horizon(3)
+                .step(3)
+                .gap(1)
+                .splits(&periods)
+                .is_err()
+        );
+        assert!(
+            TimeSplits::new(2)
+                .horizon(3)
+                .step(3)
+                .splits(&periods)
+                .is_ok()
+        );
+        assert!(TimeSplits::new(1).rolling(0).splits(&periods).is_err());
+        assert!(TimeSplits::new(1).horizon(0).splits(&periods).is_err());
+        // A rolling window of 2 trains on the two periods before the test.
+        let s = TimeSplits::new(1).rolling(2).splits(&periods).unwrap();
+        let train: Vec<i64> = s[0].train.iter().map(|&i| periods[i]).collect();
+        assert_eq!(train, [5, 6, 5, 5]);
     }
 }

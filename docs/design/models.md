@@ -28,7 +28,8 @@ models and compares them.
   - `metrics`: deviance, mean deviance, RMSE, MAE, Gini of the ordered
     Lorenz curve, lift bands, CRPS of draws, interval coverage;
   - `resample`: k-fold, grouped k-fold and time-ordered (calendar
-    diagonal) splits, `cross_validate` and `grid_search`.
+    diagonal) splits, `TimeSplits` with a rolling window, a horizon, a gap
+    and a step (#549, below), `cross_validate` and `grid_search`.
   - `compare`: `compare(candidates, design, y, splits, metrics)` scores
     every `Candidate` (any `Model`, or a fit-and-predict function, so
     different engines sit in one table) on the same splits and metrics.
@@ -1148,6 +1149,31 @@ function of a data frame and its responses.
   split method's interval exactly.
 - (e) *Jackknife+ refits once a row*, `n` fits; the Python and R wrappers
   fit the folds on threads (Python) or in turn (R).
+
+## Time splits with windows, horizons and gaps (#549)
+
+Status: built; items (a) to (c) proposed by the Models lane for the
+user's acceptance.
+
+`resample::TimeSplits::new(n_test)` with `rolling(w)` (or
+`window(Window)`), `horizon(h)`, `gap(g)` and `step(s)`: split `f` of
+`n_test`, oldest first, tests on `h` consecutive distinct periods, the last
+split's ending at the latest period and each earlier one `s` periods before
+the next, and trains on the periods before its test window less the `g`
+just before it, all of them or the latest `w`. Python `time_splits(periods,
+n_test, window=None, horizon=1, gap=0, step=1)`, R `time_splits()`, next to
+`time_ordered`, which stays as it is.
+
+- (a) *Periods count as distinct values*, as in `time_ordered`, so a
+  missing calendar period is skipped rather than left as an empty test
+  window, and the windows, gap and step count distinct periods too.
+- (b) *The defaults are `time_ordered`'s splits*, and `horizon = step =
+  test_size` with `window = max_train_size` is scikit-learn's
+  `TimeSeriesSplit` on one row a period.
+- (c) *Test windows are anchored at the latest period* and step back;
+  periods before the first split's window that a rolling window leaves out
+  are never used, and too few periods for the first split's training rows
+  is an error naming the counts.
 
 ## Decisions
 

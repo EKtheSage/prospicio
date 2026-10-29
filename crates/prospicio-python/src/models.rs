@@ -2886,6 +2886,57 @@ pub(crate) fn time_ordered(
         .map_err(to_py)
 }
 
+/// Time-ordered splits with a training window, a forecast horizon, a gap
+/// and a step: split ``f`` of ``n_test`` (oldest first) tests on ``horizon``
+/// consecutive distinct periods, the last split's ending at the latest
+/// period and each earlier one ``step`` periods before the next, and trains
+/// on the periods before its test window less the ``gap`` just before it,
+/// all of them or, with ``window``, the latest ``window``. The defaults are
+/// ``time_ordered``; ``horizon = step = test_size`` with ``window =
+/// max_train_size`` is scikit-learn's ``TimeSeriesSplit`` on one row a
+/// period.
+///
+/// Parameters
+/// ----------
+/// periods : list of int
+/// n_test : int
+/// window : int, optional
+///     A rolling window of that many periods; expanding when omitted.
+/// horizon : int, default 1
+/// gap : int, default 0
+/// step : int, default 1
+///
+/// Returns
+/// -------
+/// list of (list of int, list of int)
+///     ``(train, test)`` rows per split.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import time_splits
+/// >>> s = time_splits(list(range(10)), 2, window=3, horizon=2, gap=1, step=2)
+/// >>> s[0]
+/// ([2, 3, 4], [6, 7])
+#[pyfunction]
+#[pyo3(signature = (periods, n_test, window = None, horizon = 1, gap = 0, step = 1))]
+pub(crate) fn time_splits(
+    periods: Vec<i64>,
+    n_test: usize,
+    window: Option<usize>,
+    horizon: usize,
+    gap: usize,
+    step: usize,
+) -> PyResult<Vec<(Vec<usize>, Vec<usize>)>> {
+    let mut spec = resample::TimeSplits::new(n_test)
+        .horizon(horizon)
+        .gap(gap)
+        .step(step);
+    if let Some(w) = window {
+        spec = spec.rolling(w);
+    }
+    spec.splits(&periods).map(splits).map_err(to_py)
+}
+
 /// An ELPD estimate from ``elpd_loo`` or ``elpd_waic``.
 #[pyclass(name = "Elpd", module = "prospicio.models", frozen)]
 pub(crate) struct PyElpd {

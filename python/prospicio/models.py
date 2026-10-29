@@ -82,6 +82,7 @@ from .prospicio_native import (
     target_encode,
     stacking_weights,
     time_ordered,
+    time_splits,
     tweedie_profile,
 )
 
@@ -168,6 +169,7 @@ __all__ = [
     "k_fold",
     "group_k_fold",
     "time_ordered",
+    "time_splits",
     "mcmc_diagnostics",
     "Draws",
     "read_stan_csv",

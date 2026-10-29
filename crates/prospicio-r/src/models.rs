@@ -2011,6 +2011,28 @@ fn time_ordered_rust(periods: &[f64], n_test: f64) -> Result<List> {
         .map_err(to_r)
 }
 
+/// Time-ordered splits with a window (`window` NaN for expanding), a
+/// horizon, a gap and a step.
+#[extendr]
+fn time_splits_rust(
+    periods: &[f64],
+    n_test: f64,
+    window: f64,
+    horizon: f64,
+    gap: f64,
+    step: f64,
+) -> Result<List> {
+    let p: Vec<i64> = periods.iter().map(|&v| v as i64).collect();
+    let mut spec = resample::TimeSplits::new(whole(n_test, "n_test")? as usize)
+        .horizon(whole(horizon, "horizon")? as usize)
+        .gap(whole(gap, "gap")? as usize)
+        .step(whole(step, "step")? as usize);
+    if !window.is_nan() {
+        spec = spec.rolling(whole(window, "window")? as usize);
+    }
+    spec.splits(&p).map(splits_r).map_err(to_r)
+}
+
 /// MCMC diagnostics of `draws` (column-major, `n_chains` columns).
 #[extendr]
 fn mcmc_diagnostics_rust(draws: &[f64], n_chains: f64) -> Result<List> {
@@ -2828,6 +2850,7 @@ extendr_module! {
     fn mars_rust;
     fn group_k_fold_rust;
     fn time_ordered_rust;
+    fn time_splits_rust;
     fn mcmc_diagnostics_rust;
     fn elpd_loo_rust;
     fn elpd_waic_rust;

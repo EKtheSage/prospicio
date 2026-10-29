@@ -194,6 +194,8 @@ group_k_fold_rust <- function(groups, k, seed) .Call(wrap__group_k_fold_rust, gr
 
 time_ordered_rust <- function(periods, n_test) .Call(wrap__time_ordered_rust, periods, n_test)
 
+time_splits_rust <- function(periods, n_test, window, horizon, gap, step) .Call(wrap__time_splits_rust, periods, n_test, window, horizon, gap, step)
+
 mcmc_diagnostics_rust <- function(draws, n_chains) .Call(wrap__mcmc_diagnostics_rust, draws, n_chains)
 
 elpd_loo_rust <- function(log_lik, n, r_eff) .Call(wrap__elpd_loo_rust, log_lik, n, r_eff)

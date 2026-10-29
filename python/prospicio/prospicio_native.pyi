@@ -36423,6 +36423,41 @@ def time_ordered(periods: Sequence[int], n_test: int) -> list[tuple[list[int], l
     list of (list of int, list of int)
     """
 
+def time_splits(periods: Sequence[int], n_test: int, window: int |None = None, horizon: int = 1, gap: int = 0, step: int = 1) -> list[tuple[list[int], list[int]]]:
+    """
+    Time-ordered splits with a training window, a forecast horizon, a gap
+    and a step: split ``f`` of ``n_test`` (oldest first) tests on ``horizon``
+    consecutive distinct periods, the last split's ending at the latest
+    period and each earlier one ``step`` periods before the next, and trains
+    on the periods before its test window less the ``gap`` just before it,
+    all of them or, with ``window``, the latest ``window``. The defaults are
+    ``time_ordered``; ``horizon = step = test_size`` with ``window =
+    max_train_size`` is scikit-learn's ``TimeSeriesSplit`` on one row a
+    period.
+    
+    Parameters
+    ----------
+    periods : list of int
+    n_test : int
+    window : int, optional
+        A rolling window of that many periods; expanding when omitted.
+    horizon : int, default 1
+    gap : int, default 0
+    step : int, default 1
+    
+    Returns
+    -------
+    list of (list of int, list of int)
+        ``(train, test)`` rows per split.
+    
+    Examples
+    --------
+    >>> from prospicio.models import time_splits
+    >>> s = time_splits(list(range(10)), 2, window=3, horizon=2, gap=1, step=2)
+    >>> s[0]
+    ([2, 3, 4], [6, 7])
+    """
+
 def to_json(dist: Any) -> str:
     """
     A distribution as a JSON document: the family and the parameters its

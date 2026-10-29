@@ -1472,3 +1472,24 @@ def test_conformal_intervals_match_mapie_and_cover():
         conformal_split(y, y, [1.0], score="pearson")
     with pytest.raises(ValueError, match="method"):
         conformal_intervals(fitted, d, y, t, method="naive")
+
+
+def test_time_splits_window_horizon_gap_step():
+    """Rolling windows, horizons and gaps in time splits (#549)."""
+    import csv
+    from pathlib import Path
+
+    from prospicio.models import time_ordered, time_splits
+
+    periods = [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5]
+    for n in range(1, 6):
+        assert time_splits(periods, n) == time_ordered(periods, n)
+    ref = Path(__file__).resolve().parents[2] / "validation" / "reference" / "time_splits_sklearn.csv"
+    with open(ref) as f:
+        for r in csv.DictReader(f):
+            h = int(r["horizon"])
+            s = time_splits(list(range(int(r["n"]))), int(r["n_test"]), window=int(r["window"]) if r["window"] else None,
+                            horizon=h, gap=int(r["gap"]), step=h)[int(r["split"])]
+            assert s == ([int(v) for v in r["train"].split()], [int(v) for v in r["test"].split()])
+    with pytest.raises(ValueError, match="training period"):
+        time_splits(periods, 2, horizon=3, step=3, gap=1)

@@ -1255,6 +1255,11 @@ deviance_score <- function(family, response, theta = NULL, power = NULL, weight_
 #' `group_k_fold()` keeps each group's rows in one fold; `time_ordered()`
 #' tests on each of the last `n_test` periods after training on the earlier
 #' ones (with calendar diagonals as periods, the triangle backtest).
+#' `time_splits()` generalises it: each split tests on `horizon` consecutive
+#' periods, the last ending at the latest period and each earlier one `step`
+#' periods before the next, and trains on the periods before its test window
+#' less the `gap` just before it, all of them or the latest `window`
+#' (scikit-learn's `TimeSeriesSplit` with `horizon = step = test_size`).
 #' `permutation()` shuffles `1:n` with `seed` on stream `stream`.
 #'
 #' @param n Number of rows.
@@ -1271,6 +1276,7 @@ deviance_score <- function(family, response, theta = NULL, power = NULL, weight_
 #' @examples
 #' length(k_fold(10, 5, seed = 1))
 #' time_ordered(c(0, 1, 2, 1, 2, 2), 1)
+#' time_splits(0:9, 2, window = 3, horizon = 2, gap = 1, step = 2)
 NULL
 
 #' Out-of-fold target encoding with credibility
@@ -1410,6 +1416,18 @@ group_k_fold <- function(groups, k, seed) {
 #' @export
 time_ordered <- function(periods, n_test) {
   rust_result(time_ordered_rust(as.double(periods), as.double(n_test)))
+}
+
+#' @rdname resampling
+#' @param window A rolling window of that many periods, or `NULL` for an
+#'   expanding one.
+#' @param horizon,gap,step Periods tested, left out before each test window,
+#'   and moved from one split to the next.
+#' @export
+time_splits <- function(periods, n_test, window = NULL, horizon = 1, gap = 0, step = 1) {
+  rust_result(time_splits_rust(as.double(periods), as.double(n_test),
+                               if (is.null(window)) NaN else as.double(window),
+                               as.double(horizon), as.double(gap), as.double(step)))
 }
 
 #' @rdname resampling
