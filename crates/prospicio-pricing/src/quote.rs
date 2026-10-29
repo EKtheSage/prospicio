@@ -319,7 +319,10 @@ impl Quote {
     /// The technical deposit of a layer whose commissions follow its loss
     /// ratio: a sliding-scale ceding commission or a profit commission,
     /// which depend on the deposit through the loss ratio, so the deposit
-    /// is solved for rather than read off in closed form. With `C(D)` the
+    /// is solved for rather than read off in closed form. A one-year
+    /// no-claims bonus enters at its expected rate per unit of deposit
+    /// ([`Layer::expected_no_claims_bonus`]), with the commissions in
+    /// `other_commission`; a bonus over several years is refused. With `C(D)` the
     /// expected sliding-scale and profit commission at a deposit `D`
     /// ([`Layer::expected_loss_sensitive_commissions`] over the layer's
     /// ceded grid), the deposit keeps the price's risk premium `R` (raised
@@ -403,8 +406,16 @@ impl Quote {
         let profit = layer
             .profit_commission
             .map_or(0.0, |pc| pc.share * (1.0 - pc.allowance).max(0.0));
+        // A no-claims bonus is linear in the deposit: its expected rate is
+        // the same at every trial deposit, a flat commission at that rate
+        // (#592, `docs/design/aggregate.md`, N6).
+        let bonus = match &layer.no_claims_bonus {
+            Some(_) => layer.expected_no_claims_bonus(1.0, ceded)?,
+            None => 0.0,
+        };
+        let (low, high) = (low + bonus, high + bonus);
         let sliding = matches!(layer.commission, Some(Commission::SlidingScale(_)));
-        if !sliding && layer.profit_commission.is_none() {
+        if !sliding && layer.profit_commission.is_none() && layer.no_claims_bonus.is_none() {
             return Ok(base);
         }
         let keep = keep_per_deposit(&loads, &terms)?;
@@ -426,7 +437,7 @@ impl Quote {
         }
         let commission = |d: f64| -> Result<f64> {
             let (cc, pc) = layer.expected_loss_sensitive_commissions(d, ceded)?;
-            Ok(cc + pc)
+            Ok(cc + pc + bonus * d)
         };
         let gap = |d: f64| -> Result<f64> { Ok(d * keep - commission(d)? - target) };
         let (d_low, d_high) = (target / (keep - low), target / (keep - high - profit));
@@ -1173,6 +1184,29 @@ mod tests {
             .unwrap();
             assert!(q.premium > flat.premium);
         }
+    }
+
+    #[test]
+    fn a_no_claims_bonus_is_solved_with_the_deposit() {
+        let ceded = qs_ceded();
+        let p = qs_price(&ceded);
+        let loads = Loads::new(0.03, 0.05, 0.5).unwrap();
+        // Paid in every year, the bonus is a flat commission of its share.
+        let always = qs(100.0).no_claims_bonus(0.1, 1, 1e9).unwrap();
+        let q = Quote::technical_for_layer(&p, loads, &always, &ceded, 0.0, true).unwrap();
+        let flat =
+            Quote::technical_with(&p, loads, PremiumTerms::new(0.0, 0.1).unwrap(), None).unwrap();
+        assert!((q.premium - flat.premium).abs() < 1e-10 * flat.premium);
+        // Paid only when the year cedes at most 20 (probability 0.14).
+        let some = qs(100.0).no_claims_bonus(0.1, 1, 20.0).unwrap();
+        let q = Quote::technical_for_layer(&p, loads, &some, &ceded, 0.0, true).unwrap();
+        let bonus = some.expected_no_claims_bonus(q.premium, &ceded).unwrap();
+        assert!((bonus - 0.1 * 0.14 * q.premium).abs() < 1e-10 * q.premium);
+        assert!((q.other_commission - bonus).abs() < 1e-10 * q.premium);
+        assert!((q.return_on_capital() - p.return_on_capital()).abs() < 1e-9);
+        // A bonus over several years needs the history and is refused.
+        let look = qs(100.0).no_claims_bonus(0.1, 3, 20.0).unwrap();
+        assert!(Quote::technical_for_layer(&p, loads, &look, &ceded, 0.0, true).is_err());
     }
 
     #[test]
