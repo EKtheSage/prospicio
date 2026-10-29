@@ -2886,6 +2886,57 @@ pub(crate) fn time_ordered(
         .map_err(to_py)
 }
 
+/// Time-ordered splits with a training window, a forecast horizon, a gap
+/// and a step: split ``f`` of ``n_test`` (oldest first) tests on ``horizon``
+/// consecutive distinct periods, the last split's ending at the latest
+/// period and each earlier one ``step`` periods before the next, and trains
+/// on the periods before its test window less the ``gap`` just before it,
+/// all of them or, with ``window``, the latest ``window``. The defaults are
+/// ``time_ordered``; ``horizon = step = test_size`` with ``window =
+/// max_train_size`` is scikit-learn's ``TimeSeriesSplit`` on one row a
+/// period.
+///
+/// Parameters
+/// ----------
+/// periods : list of int
+/// n_test : int
+/// window : int, optional
+///     A rolling window of that many periods; expanding when omitted.
+/// horizon : int, default 1
+/// gap : int, default 0
+/// step : int, default 1
+///
+/// Returns
+/// -------
+/// list of (list of int, list of int)
+///     ``(train, test)`` rows per split.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import time_splits
+/// >>> s = time_splits(list(range(10)), 2, window=3, horizon=2, gap=1, step=2)
+/// >>> s[0]
+/// ([2, 3, 4], [6, 7])
+#[pyfunction]
+#[pyo3(signature = (periods, n_test, window = None, horizon = 1, gap = 0, step = 1))]
+pub(crate) fn time_splits(
+    periods: Vec<i64>,
+    n_test: usize,
+    window: Option<usize>,
+    horizon: usize,
+    gap: usize,
+    step: usize,
+) -> PyResult<Vec<(Vec<usize>, Vec<usize>)>> {
+    let mut spec = resample::TimeSplits::new(n_test)
+        .horizon(horizon)
+        .gap(gap)
+        .step(step);
+    if let Some(w) = window {
+        spec = spec.rolling(w);
+    }
+    spec.splits(&periods).map(splits).map_err(to_py)
+}
+
 /// An ELPD estimate from ``elpd_loo`` or ``elpd_waic``.
 #[pyclass(name = "Elpd", module = "prospicio.models", frozen)]
 pub(crate) struct PyElpd {
@@ -5520,4 +5571,438 @@ pub(crate) fn mars(
         .fit(&refs, &columns, &y, weights.as_deref())
         .map_err(to_py)?;
     Ok(PyMarsFit { inner })
+}
+
+/// A fitted isotonic regression (``isotonic``, ``recalibrate``): monotone
+/// values at the distinct inputs, read linearly (or as steps) between them
+/// and held at the end values beyond them.
+#[pyclass(name = "Isotonic", module = "prospicio.models", frozen)]
+pub(crate) struct PyIsotonic {
+    inner: prospicio_models::calibrate::Isotonic,
+}
+
+#[pymethods]
+impl PyIsotonic {
+    /// The distinct inputs, ascending.
+    #[getter]
+    fn x(&self) -> Vec<f64> {
+        self.inner.x().to_vec()
+    }
+
+    /// The fitted value at each distinct input.
+    #[getter]
+    fn values(&self) -> Vec<f64> {
+        self.inner.values().to_vec()
+    }
+
+    /// Whether the fit is non-decreasing.
+    #[getter]
+    fn increasing(&self) -> bool {
+        self.inner.increasing()
+    }
+
+    /// The fit at ``x``.
+    ///
+    /// Parameters
+    /// ----------
+    /// x : list of float
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn predict(&self, x: Vec<f64>) -> Vec<f64> {
+        self.inner.predict(&x)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Isotonic(points={}, increasing={})",
+            self.inner.x().len(),
+            self.inner.increasing()
+        )
+    }
+}
+
+fn isotonic_fit(
+    x: &[f64],
+    y: &[f64],
+    weights: Option<&[f64]>,
+    increasing: bool,
+    y_min: Option<f64>,
+    y_max: Option<f64>,
+    interpolation: &str,
+) -> PyResult<PyIsotonic> {
+    use prospicio_models::calibrate::{Interpolation, isotonic};
+    let interp = match interpolation {
+        "linear" => Interpolation::Linear,
+        "step" => Interpolation::Step,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "interpolation must be \"linear\" or \"step\", not {other:?}"
+            )));
+        }
+    };
+    let mut f = isotonic(x, y, weights, increasing)
+        .map_err(to_py)?
+        .with_interpolation(interp);
+    if y_min.is_some() || y_max.is_some() {
+        f = f
+            .with_bounds(
+                y_min.unwrap_or(f64::NEG_INFINITY),
+                y_max.unwrap_or(f64::INFINITY),
+            )
+            .map_err(to_py)?;
+    }
+    Ok(PyIsotonic { inner: f })
+}
+
+/// Weighted isotonic regression of ``y`` on ``x`` by pool-adjacent-violators,
+/// as scikit-learn's ``IsotonicRegression(out_of_bounds="clip")``: tied
+/// ``x`` merged into their weighted mean first, the values clipped to
+/// ``[y_min, y_max]`` when given.
+///
+/// Parameters
+/// ----------
+/// x, y : list of float
+/// weights : list of float, optional
+/// increasing : bool, default True
+/// y_min, y_max : float, optional
+/// interpolation : {"linear", "step"}, default "linear"
+///
+/// Returns
+/// -------
+/// Isotonic
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import isotonic
+/// >>> f = isotonic([1.0, 2.0, 3.0, 4.0], [1.0, 3.0, 2.0, 4.0])
+/// >>> f.values, f.predict([2.5, 0.0, 9.0])
+/// ([1.0, 2.5, 2.5, 4.0], [2.5, 1.0, 4.0])
+#[pyfunction]
+#[pyo3(signature = (x, y, weights = None, increasing = true, y_min = None, y_max = None, interpolation = "linear"))]
+pub(crate) fn isotonic(
+    x: Vec<f64>,
+    y: Vec<f64>,
+    weights: Option<Vec<f64>>,
+    increasing: bool,
+    y_min: Option<f64>,
+    y_max: Option<f64>,
+    interpolation: &str,
+) -> PyResult<PyIsotonic> {
+    isotonic_fit(
+        &x,
+        &y,
+        weights.as_deref(),
+        increasing,
+        y_min,
+        y_max,
+        interpolation,
+    )
+}
+
+/// A recalibration map for a model: the increasing isotonic regression of
+/// the response ``y`` on the model's predictions ``pred`` on held-out or
+/// out-of-fold data. Apply it to new predictions with ``predict``; it keeps
+/// their ranking and fixes their levels. A frequency model needs a floor
+/// (``y_min``, say a small share of the mean), since the lowest pooled level
+/// can be 0.
+///
+/// Parameters
+/// ----------
+/// pred, y : list of float
+/// weights : list of float, optional
+///     Exposures when ``y`` and ``pred`` are rates.
+/// y_min, y_max : float, optional
+///
+/// Returns
+/// -------
+/// Isotonic
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import recalibrate
+/// >>> m = recalibrate([1.0, 2.0, 3.0, 4.0], [0.0, 1.0, 1.0, 2.0], y_min=0.1)
+/// >>> m.predict([1.0, 2.5, 4.0])
+/// [0.1, 1.0, 2.0]
+#[pyfunction]
+#[pyo3(signature = (pred, y, weights = None, y_min = None, y_max = None))]
+pub(crate) fn recalibrate(
+    pred: Vec<f64>,
+    y: Vec<f64>,
+    weights: Option<Vec<f64>>,
+    y_min: Option<f64>,
+    y_max: Option<f64>,
+) -> PyResult<PyIsotonic> {
+    isotonic_fit(&pred, &y, weights.as_deref(), true, y_min, y_max, "linear")
+}
+
+/// The multiplier ``sum(w y) / sum(w pred)`` that makes the weighted total
+/// prediction equal the weighted total response (the balance property).
+///
+/// Parameters
+/// ----------
+/// y, pred : list of float
+/// weights : list of float, optional
+///
+/// Returns
+/// -------
+/// float
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import balance_correction
+/// >>> balance_correction([1.0, 3.0], [1.0, 1.0])
+/// 2.0
+#[pyfunction]
+#[pyo3(signature = (y, pred, weights = None))]
+pub(crate) fn balance_correction(
+    y: Vec<f64>,
+    pred: Vec<f64>,
+    weights: Option<Vec<f64>>,
+) -> PyResult<f64> {
+    prospicio_models::calibrate::balance_correction(&y, &pred, weights.as_deref()).map_err(to_py)
+}
+
+/// Mean prediction against mean response in ``bins`` bands of about equal
+/// weight by ascending prediction, tied predictions kept in one band: an
+/// auto-calibrated model's bands lie on the diagonal.
+///
+/// Parameters
+/// ----------
+/// y, pred : list of float
+/// weights : list of float, optional
+/// bins : int, default 10
+///
+/// Returns
+/// -------
+/// list of dict
+///     ``lo``, ``hi``, ``mean_pred``, ``mean_actual``, ``weight`` and
+///     ``count`` per band.
+#[pyfunction]
+#[pyo3(signature = (y, pred, weights = None, bins = 10))]
+pub(crate) fn reliability(
+    y: Vec<f64>,
+    pred: Vec<f64>,
+    weights: Option<Vec<f64>>,
+    bins: usize,
+) -> PyResult<Vec<HashMap<String, f64>>> {
+    let bands = prospicio_models::calibrate::reliability(&y, &pred, weights.as_deref(), bins)
+        .map_err(to_py)?;
+    Ok(bands
+        .into_iter()
+        .map(|b| {
+            HashMap::from([
+                ("lo".to_string(), b.lo),
+                ("hi".to_string(), b.hi),
+                ("mean_pred".to_string(), b.mean_pred),
+                ("mean_actual".to_string(), b.mean_actual),
+                ("weight".to_string(), b.weight),
+                ("count".to_string(), b.count as f64),
+            ])
+        })
+        .collect())
+}
+
+/// The CORP decomposition of a family's mean deviance (the squared error
+/// for the Gaussian), ``score = miscalibration - discrimination +
+/// uncertainty``: the miscalibration is what the isotonic recalibration of
+/// ``pred`` gains (0 for an auto-calibrated model), the discrimination what
+/// the ranking is worth, the uncertainty the score of the mean response.
+///
+/// Parameters
+/// ----------
+/// y, pred : list of float
+/// family : str, default "gaussian"
+/// weights : list of float, optional
+/// theta, power : float, optional
+///     For the negative binomial and Tweedie.
+///
+/// Returns
+/// -------
+/// dict
+///     ``score``, ``miscalibration``, ``discrimination`` and
+///     ``uncertainty``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import murphy
+/// >>> m = murphy([0.0, 1.0, 1.0, 2.0], [0.5, 0.5, 2.0, 2.0])
+/// >>> round(m["miscalibration"] - m["discrimination"] + m["uncertainty"] - m["score"], 12)
+/// 0.0
+#[pyfunction]
+#[pyo3(signature = (y, pred, family = "gaussian", weights = None, theta = None, power = None))]
+pub(crate) fn murphy(
+    y: Vec<f64>,
+    pred: Vec<f64>,
+    family: &str,
+    weights: Option<Vec<f64>>,
+    theta: Option<f64>,
+    power: Option<f64>,
+) -> PyResult<HashMap<String, f64>> {
+    let f = self::family(family, theta, power)?;
+    let m = prospicio_models::calibrate::murphy(f, &y, &pred, weights.as_deref()).map_err(to_py)?;
+    Ok(HashMap::from([
+        ("score".to_string(), m.score),
+        ("miscalibration".to_string(), m.miscalibration),
+        ("discrimination".to_string(), m.discrimination),
+        ("uncertainty".to_string(), m.uncertainty),
+    ]))
+}
+
+fn intervals_dict(
+    py: Python<'_>,
+    i: prospicio_models::conformal::Intervals,
+) -> PyResult<Bound<'_, pyo3::types::PyDict>> {
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("lo", i.lo)?;
+    d.set_item("hi", i.hi)?;
+    Ok(d)
+}
+
+/// Split conformal prediction intervals from a model's predictions on a
+/// calibration set: the ``ceil((1 - alpha)(n + 1))``-th smallest score
+/// ``q`` gives each test prediction ``pred ± q`` (``score="absolute"``),
+/// ``mu ± q sqrt(V(mu))`` (``"pearson"``, the family's variance) or
+/// ``pred ± q s`` (``"scaled"``, with ``scale`` and ``test_scale``). With
+/// ``weights`` and ``test_weights`` the quantile is the weighted one with
+/// each test row's weight at infinity (covariate-shift conformal).
+///
+/// Parameters
+/// ----------
+/// y, pred : list of float
+///     Responses and predictions on the calibration set.
+/// test_pred : list of float
+/// alpha : float, default 0.1
+/// score : {"absolute", "pearson", "scaled"}, default "absolute"
+/// family : str, optional
+///     For ``"pearson"``.
+/// scale, test_scale : list of float, optional
+///     For ``"scaled"``.
+/// weights, test_weights : list of float, optional
+/// theta, power : float, optional
+///
+/// Returns
+/// -------
+/// dict
+///     ``lo`` and ``hi``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import conformal_split
+/// >>> i = conformal_split([float(k) for k in range(19)], [9.0] * 19, [100.0], alpha=0.1)
+/// >>> i["lo"], i["hi"]
+/// ([91.0], [109.0])
+#[pyfunction]
+#[pyo3(signature = (y, pred, test_pred, alpha = 0.1, score = "absolute", family = None, scale = None, test_scale = None, weights = None, test_weights = None, theta = None, power = None))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn conformal_split<'py>(
+    py: Python<'py>,
+    y: Vec<f64>,
+    pred: Vec<f64>,
+    test_pred: Vec<f64>,
+    alpha: f64,
+    score: &str,
+    family: Option<&str>,
+    scale: Option<Vec<f64>>,
+    test_scale: Option<Vec<f64>>,
+    weights: Option<Vec<f64>>,
+    test_weights: Option<Vec<f64>>,
+    theta: Option<f64>,
+    power: Option<f64>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    use prospicio_models::conformal::{Score, split, weighted_split};
+    let s = match score {
+        "absolute" => Score::Absolute,
+        "pearson" => Score::Pearson(self::family(
+            family.ok_or_else(|| PyValueError::new_err("a pearson score needs family"))?,
+            theta,
+            power,
+        )?),
+        "scaled" => Score::Scaled {
+            calibration: scale
+                .ok_or_else(|| PyValueError::new_err("a scaled score needs scale"))?,
+            test: test_scale
+                .ok_or_else(|| PyValueError::new_err("a scaled score needs test_scale"))?,
+        },
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "score must be \"absolute\", \"pearson\" or \"scaled\", not {other:?}"
+            )));
+        }
+    };
+    let i = match (weights, test_weights) {
+        (None, None) => split(&y, &pred, &test_pred, alpha, &s),
+        (Some(w), Some(tw)) => weighted_split(&y, &pred, &test_pred, alpha, &s, &w, &tw),
+        _ => {
+            return Err(PyValueError::new_err(
+                "give both weights and test_weights, or neither",
+            ));
+        }
+    }
+    .map_err(to_py)?;
+    intervals_dict(py, i)
+}
+
+/// Conformalised quantile regression intervals: from a lower and an upper
+/// quantile model's predictions on a calibration set and on the test set,
+/// the score ``max(lo - y, y - hi)`` and the intervals ``[lo - q, hi + q]``.
+///
+/// Parameters
+/// ----------
+/// y, lo, hi : list of float
+///     Calibration responses and the two models' predictions there.
+/// test_lo, test_hi : list of float
+/// alpha : float, default 0.1
+///
+/// Returns
+/// -------
+/// dict
+///     ``lo`` and ``hi``.
+#[pyfunction]
+#[pyo3(signature = (y, lo, hi, test_lo, test_hi, alpha = 0.1))]
+pub(crate) fn conformal_cqr<'py>(
+    py: Python<'py>,
+    y: Vec<f64>,
+    lo: Vec<f64>,
+    hi: Vec<f64>,
+    test_lo: Vec<f64>,
+    test_hi: Vec<f64>,
+    alpha: f64,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let i =
+        prospicio_models::conformal::cqr(&y, &lo, &hi, &test_lo, &test_hi, alpha).map_err(to_py)?;
+    intervals_dict(py, i)
+}
+
+/// CV+ intervals (the jackknife+ with one fold a row) from each fold's
+/// model's predictions: ``oof_pred[i]`` training row ``i``'s prediction by
+/// the model fitted without its fold ``folds[i]``, and ``test_pred[k]``
+/// fold ``k``'s model's predictions on the test rows. Coverage is at least
+/// ``1 - 2 alpha``.
+///
+/// Parameters
+/// ----------
+/// y, oof_pred : list of float
+/// folds : list of int
+/// test_pred : list of list of float
+/// alpha : float, default 0.1
+///
+/// Returns
+/// -------
+/// dict
+///     ``lo`` and ``hi``.
+#[pyfunction]
+#[pyo3(signature = (y, oof_pred, folds, test_pred, alpha = 0.1))]
+pub(crate) fn conformal_plus<'py>(
+    py: Python<'py>,
+    y: Vec<f64>,
+    oof_pred: Vec<f64>,
+    folds: Vec<usize>,
+    test_pred: Vec<Vec<f64>>,
+    alpha: f64,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let i = prospicio_models::conformal::cv_plus(&y, &oof_pred, &folds, &test_pred, alpha)
+        .map_err(to_py)?;
+    intervals_dict(py, i)
 }

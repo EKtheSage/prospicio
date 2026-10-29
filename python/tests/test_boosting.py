@@ -184,3 +184,72 @@ def test_dispersion_model(engine):
 def test_dispersion_model_needs_a_dispersion_family():
     with pytest.raises(ValueError):
         Booster("poisson", dispersion_model=True)
+
+
+def _chalk():
+    import csv
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[2] / "examples" / "data" / "chalk_portfolio.csv"
+    with open(path) as f:
+        rows = list(csv.DictReader(line for line in f if not line.startswith("#")))
+    cols = ["age", "veh_age", "exper", "noise"]
+    x = [[float(r[c]) for r in rows] for c in cols]
+    off = [math.log(float(r["exposure"])) for r in rows]
+    y = [float(r["claims"]) for r in rows]
+    return Design(x, cols, offset=off), y
+
+
+@pytest.mark.parametrize("engine", ["lightgbm", "xgboost"])
+def test_monotone_constraints_on_the_chalk_portfolio(engine):
+    """Typed monotone and interaction constraints (#575): unconstrained, the
+    partial dependence on experience wiggles against its trend and on vehicle
+    age with it; constrained, both are monotone on a fine grid, and the
+    typed constraint is the engine's own raw parameter."""
+    pytest.importorskip(engine)
+    d, y = _chalk()
+    params = {"num_leaves": 15} if engine == "lightgbm" else {"max_depth": 4}
+    grid = list(np.linspace(min(d.column(2)), max(d.column(2)), 60))
+    vgrid = list(np.linspace(min(d.column(1)), max(d.column(1)), 60))
+    free = Booster("poisson", engine=engine, n_rounds=150, params=params, seed=1).fit(d, y)
+    assert not free.check_monotone(d, "exper", grid=grid, direction=1)["monotone"]
+    assert not free.check_monotone(d, "veh_age", grid=vgrid, direction=-1)["monotone"]
+    spec = Booster("poisson", engine=engine, n_rounds=150, params=params, seed=1,
+                   monotone={"exper": 1, "veh_age": -1},
+                   interaction_constraints=[["age", "exper"], ["veh_age", "noise"]])
+    fit = spec.fit(d, y)
+    assert fit.check_monotone(d, "exper", grid=grid)["monotone"]
+    assert fit.check_monotone(d, "veh_age", grid=vgrid)["monotone"]
+    raw = spec.engine_params(d.names)
+    if engine == "lightgbm":
+        assert raw == {"monotone_constraints": [0, -1, 1, 0], "interaction_constraints": [[0, 2], [1, 3]]}
+    else:
+        assert raw == {"monotone_constraints": "(0,-1,1,0)", "interaction_constraints": "[[0, 2], [1, 3]]"}
+    by_hand = Booster("poisson", engine=engine, n_rounds=150, params={**params, **raw}, seed=1).fit(d, y)
+    assert fit.predict(d) == by_hand.predict(d)
+
+
+def test_constraints_reject_factors_unknown_names_and_clashes():
+    """A constraint on a factor, a polynomial or an interaction column, an
+    unknown name and a clash with params are errors (#575)."""
+    from prospicio.models import Terms
+
+    data = {"si": [1.0, 2.0, 3.0, 4.0], "region": ["A", "B", "A", "B"], "age": [20.0, 30.0, 40.0, 50.0]}
+    names = Terms().factor("region").numeric("si").poly("age", 2).hinges("si", [2.0]).fit(data).names
+    assert names == ["region[B]", "si", "age", "age^2", "hinge(si,2)"]
+    b = Booster("poisson", monotone={"si": 1}, interaction_constraints=[["region", "si"]])
+    assert b.engine_params(names) == {"monotone_constraints": [0, 1, 0, 0, 1],
+                                      "interaction_constraints": [[0, 1, 4]]}
+    with pytest.raises(ValueError, match="factor"):
+        Booster("poisson", monotone={"region": 1}).engine_params(names)
+    with pytest.raises(ValueError, match="monotone transform"):
+        Booster("poisson", monotone={"age": 1}).engine_params(names)
+    with pytest.raises(ValueError, match="not a feature"):
+        Booster("poisson", monotone={"bm_class": 1}).engine_params(names)
+    inter = Terms().numeric("si").numeric("age").interaction("si", "age").fit(data).names
+    with pytest.raises(ValueError, match="interaction"):
+        Booster("poisson", monotone={"si": 1}).engine_params(inter)
+    with pytest.raises(ValueError, match="params"):
+        Booster("poisson", monotone={"si": 1}, params={"monotone_constraints": [1]})
+    with pytest.raises(ValueError, match="1, -1 or 0"):
+        Booster("poisson", monotone={"si": 2})

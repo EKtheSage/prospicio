@@ -365,6 +365,39 @@ impl XolLayer {
         self.map(|l| l.scope(label, &values))
     }
 
+    fn with_franchise(&self) -> Result<Self> {
+        self.map(|l| l.franchise())
+    }
+
+    fn with_nth_event(&self, n: f64, threshold: f64) -> Result<Self> {
+        let n = u32::try_from(whole(n, "n")?).map_err(|_| Error::Other("n is too large".into()))?;
+        self.map(|l| l.nth_event(n, threshold))
+    }
+
+    fn with_top_and_drop(&self, underlying: &str, attachment: f64) -> Result<Self> {
+        self.map(|l| l.top_and_drop(underlying, attachment))
+    }
+
+    fn franchise(&self) -> bool {
+        self.inner.franchise
+    }
+
+    /// `c(n, threshold)`, empty when there is none.
+    fn nth_event(&self) -> Vec<f64> {
+        self.inner
+            .nth_event
+            .map(|e| vec![f64::from(e.n), e.threshold])
+            .unwrap_or_default()
+    }
+
+    /// `list(underlying, attachment)`, or NULL.
+    fn drop_down(&self) -> Robj {
+        self.inner.drop_down.as_ref().map_or_else(
+            || ().into(),
+            |d| list!(underlying = d.underlying.clone(), attachment = d.attachment).into(),
+        )
+    }
+
     fn ceding_commission_for(&self, ceded: &[f64]) -> Vec<f64> {
         ceded
             .iter()
@@ -1001,8 +1034,69 @@ fn aggregate_layer_statistics_rust(
     ))
 }
 
+/// A list of numeric vectors as vectors.
+fn numeric_rows(l: &List, what: &str) -> Result<Vec<Vec<f64>>> {
+    l.values()
+        .map(|v| {
+            v.as_real_vector()
+                .or_else(|| {
+                    v.as_integer_vector()
+                        .map(|x| x.into_iter().map(f64::from).collect())
+                })
+                .or_else(|| v.is_null().then(Vec::new))
+                .ok_or_else(|| Error::Other(format!("{what} must hold numeric vectors")))
+        })
+        .collect()
+}
+
+/// A per-risk layer with an event limit inuring to a cat cover:
+/// `list(ceded, ceded_by_event, net)`. `years` is a list (years) of lists
+/// (events) of numeric vectors (risk losses); `event_limit` NaN for none;
+/// `times` NULL or a list of numeric vectors, one time an event.
+#[extendr]
+fn per_risk_inuring_rust(
+    layer: Robj,
+    years: List,
+    event_limit: f64,
+    times: Robj,
+    seed: f64,
+) -> Result<List> {
+    let layer = <&XolLayer>::try_from(&layer)
+        .map_err(|_| Error::Other("layer must be an xol_layer".into()))?;
+    let ys: Vec<Vec<Vec<f64>>> = years
+        .values()
+        .map(|y| {
+            let events = List::try_from(&y)
+                .map_err(|_| Error::Other("each year must be a list of events".into()))?;
+            numeric_rows(&events, "each event")
+        })
+        .collect::<Result<_>>()?;
+    let t = if times.is_null() {
+        None
+    } else {
+        let l = List::try_from(&times)
+            .map_err(|_| Error::Other("times must be a list of numeric vectors".into()))?;
+        Some(numeric_rows(&l, "times")?)
+    };
+    let limit = (!event_limit.is_nan()).then_some(event_limit);
+    let r = prospicio_aggregate::per_risk_inuring(
+        &layer.inner,
+        limit,
+        &ys,
+        t.as_deref(),
+        whole(seed, "seed")?,
+    )
+    .map_err(to_r)?;
+    Ok(list!(
+        ceded = r.ceded,
+        ceded_by_event = List::from_values(r.ceded_by_event),
+        net = EventSet { inner: r.net }
+    ))
+}
+
 extendr_module! {
     mod reinsurance;
+    fn per_risk_inuring_rust;
     fn occurrence_cession_statistics_rust;
     fn aggregate_layer_statistics_rust;
     fn retro_premium_rust;

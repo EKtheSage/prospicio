@@ -2340,3 +2340,445 @@ impl PyTowerQuote {
         )
     }
 }
+
+/// An efficient frontier of reinsurance structures: for each retention and
+/// limit of a layer, the cost of the cover (``margin``, the ceded premium
+/// less the expected ceded loss) against the risk kept (``net_risk``, a VaR
+/// or TVaR of the net loss), and whether no other structure beats it on
+/// both (``efficient``).
+///
+/// ``losses`` is an ``EventSet`` (each structure a per-occurrence layer,
+/// or with ``kind="aggregate"`` a stop loss on the year's total), a list of
+/// annual losses (stop losses), or an annual ``Grid`` (stop losses, exact;
+/// retentions and finite limits on its step). The ceded premium is the
+/// expected value principle ``(1 + loading) E[C]`` when ``loading`` is
+/// given, else exactly one of ``cost_of_capital`` and ``distortion`` on the
+/// assets of the capital standard ``assets``, as ``price`` prices one
+/// cover. Among the efficient structures the least ``net_risk + premium``
+/// is Cai and Tan's choice.
+///
+/// Returns a dict of columns, one row a structure in the order of the
+/// retentions, then the limits: ``retention``, ``limit``, ``premium``,
+/// ``expected_ceded``, ``margin``, ``net_risk`` and ``efficient``.
+///
+/// >>> from prospicio.reinsurance import frontier
+/// >>> from prospicio.distributions import Grid
+/// >>> f = frontier(Grid(1.0, [0.25] * 4), [1.0, 2.0], [1.0, float("inf")], loading=0.5, risk="var", level=0.9)
+/// >>> f["expected_ceded"][1], f["premium"][1], f["net_risk"][1]
+/// (0.75, 1.125, 1.0)
+#[pyfunction]
+#[pyo3(signature = (losses, retentions, limits, *, kind = "occurrence", assets = None, cost_of_capital = None, distortion = None, loading = None, risk = "tvar", level = 0.99))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn frontier<'py>(
+    py: Python<'py>,
+    losses: &Bound<'py, PyAny>,
+    retentions: Vec<f64>,
+    limits: Vec<f64>,
+    kind: &str,
+    assets: Option<PyRef<'_, PyDistortion>>,
+    cost_of_capital: Option<f64>,
+    distortion: Option<PyRef<'_, PyDistortion>>,
+    loading: Option<f64>,
+    risk: &str,
+    level: f64,
+) -> PyResult<Bound<'py, PyDict>> {
+    use prospicio_pricing::frontier::{
+        CededPrice, LayerKind, RetainedRisk, frontier_annual, frontier_events, frontier_grid,
+    };
+    let price = match (loading, assets) {
+        (Some(l), _) if cost_of_capital.is_none() && distortion.is_none() => {
+            CededPrice::ExpectedValue { loading: l }
+        }
+        (None, Some(a)) => CededPrice::Rule {
+            rule: premium_rule(cost_of_capital, distortion)?,
+            assets: a.inner.clone(),
+        },
+        _ => {
+            return Err(PyValueError::new_err(
+                "give loading alone, or assets with one of cost_of_capital and distortion",
+            ));
+        }
+    };
+    let measure = match risk {
+        "var" => RetainedRisk::Var(level),
+        "tvar" => RetainedRisk::Tvar(level),
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "unknown risk {other:?}; use \"var\" or \"tvar\""
+            )));
+        }
+    };
+    let layer = match kind {
+        "occurrence" => LayerKind::PerOccurrence,
+        "aggregate" => LayerKind::Aggregate,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "unknown kind {other:?}; use \"occurrence\" or \"aggregate\""
+            )));
+        }
+    };
+    let f = if let Ok(ev) = losses.cast::<PyEventSet>() {
+        let ev = ev.get();
+        py.detach(|| frontier_events(&ev.inner, layer, &retentions, &limits, &price, measure))
+    } else if let Ok(g) = losses.cast::<PyGrid>() {
+        let g = g.get();
+        py.detach(|| frontier_grid(&g.inner, &retentions, &limits, &price, measure))
+    } else {
+        let x: Vec<f64> = losses.extract().map_err(|_| {
+            PyTypeError::new_err("losses must be an EventSet, a Grid or a list of annual losses")
+        })?;
+        py.detach(|| frontier_annual(&x, &retentions, &limits, &price, measure))
+    }
+    .map_err(to_py)?;
+    let col = |g: &dyn Fn(&prospicio_pricing::frontier::FrontierPoint) -> f64| -> Vec<f64> {
+        f.points.iter().map(g).collect()
+    };
+    let d = PyDict::new(py);
+    d.set_item("retention", col(&|p| p.retention))?;
+    d.set_item("limit", col(&|p| p.limit))?;
+    d.set_item("premium", col(&|p| p.premium))?;
+    d.set_item("expected_ceded", col(&|p| p.expected_ceded))?;
+    d.set_item("margin", col(&|p| p.margin))?;
+    d.set_item("net_risk", col(&|p| p.net_risk))?;
+    d.set_item(
+        "efficient",
+        f.points.iter().map(|p| p.efficient).collect::<Vec<_>>(),
+    )?;
+    Ok(d)
+}
+
+/// A cat bond: a tranche of principal lost on a trigger that need not be
+/// the cedant's own loss.
+///
+/// Parameters
+/// ----------
+/// trigger : {"indemnity", "modelled_loss", "industry_index", "parametric"}
+///     What turns an event into the index: the cedant's or a model's loss
+///     (one value an event), ``sum(w_c x_c)`` over the event's industry
+///     losses by region (``weights`` the cedant's shares), or
+///     ``sum(w_s f(x_s))`` over a measure at each site with ``f`` the
+///     ``payout`` table, read linearly between its points and flat beyond.
+/// attachment, exhaustion : float
+///     The index values at which the first and the last principal is lost.
+/// basis : {"occurrence", "aggregate"}, default "occurrence"
+///     Each event's index through the tranche, or the year's total.
+/// weights : list of float, optional
+///     For an industry index or a parametric trigger, one an event value.
+/// payout : list of (float, float), optional
+///     For a parametric trigger, ``(measure, share)`` points.
+/// principal : float, default 1.0
+/// term_years : int, default 1
+///     Consecutive runs of that many simulated years make one term, over
+///     which the principal is lost once.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reinsurance import CatBond
+/// >>> bond = CatBond("industry_index", 50.0, 150.0, weights=[0.10, 0.05], principal=100.0)
+/// >>> losses = bond.apply([[[800.0, 400.0]], []])
+/// >>> losses.annual, losses.expected_loss, losses.recoveries()
+/// ([0.5, 0.0], 0.25, [50.0, 0.0])
+#[pyclass(name = "CatBond", module = "prospicio.reinsurance", frozen)]
+pub(crate) struct PyCatBond {
+    inner: prospicio_pricing::ils::CatBond,
+}
+
+#[pymethods]
+impl PyCatBond {
+    #[new]
+    #[pyo3(signature = (trigger, attachment, exhaustion, basis = "occurrence", weights = None, payout = None, principal = 1.0, term_years = 1))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        trigger: &str,
+        attachment: f64,
+        exhaustion: f64,
+        basis: &str,
+        weights: Option<Vec<f64>>,
+        payout: Option<Vec<(f64, f64)>>,
+        principal: f64,
+        term_years: usize,
+    ) -> PyResult<Self> {
+        use prospicio_pricing::ils::{CatBond, Tranche, TrancheBasis, Trigger};
+        let need = |w: Option<Vec<f64>>| {
+            w.ok_or_else(|| PyValueError::new_err(format!("a {trigger} trigger needs weights")))
+        };
+        let t = match trigger {
+            "indemnity" | "modelled_loss" if weights.is_some() || payout.is_some() => {
+                return Err(PyValueError::new_err(format!(
+                    "a {trigger} trigger takes no weights or payout"
+                )));
+            }
+            "indemnity" => Trigger::Indemnity,
+            "modelled_loss" => Trigger::ModelledLoss,
+            "industry_index" if payout.is_some() => {
+                return Err(PyValueError::new_err("an industry index takes no payout"));
+            }
+            "industry_index" => Trigger::IndustryIndex {
+                weights: need(weights)?,
+            },
+            "parametric" => Trigger::Parametric {
+                weights: need(weights)?,
+                payout: payout
+                    .ok_or_else(|| PyValueError::new_err("a parametric trigger needs payout"))?,
+            },
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown trigger {other:?}; use \"indemnity\", \"modelled_loss\", \
+                     \"industry_index\" or \"parametric\""
+                )));
+            }
+        };
+        let basis = match basis {
+            "occurrence" => TrancheBasis::PerOccurrence,
+            "aggregate" => TrancheBasis::AnnualAggregate,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown basis {other:?}; use \"occurrence\" or \"aggregate\""
+                )));
+            }
+        };
+        let inner = CatBond::new(
+            t,
+            Tranche {
+                attachment,
+                exhaustion,
+                basis,
+            },
+        )
+        .and_then(|b| b.principal(principal))
+        .and_then(|b| b.term_years(term_years))
+        .map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// The bond on simulated years: an ``EventSet`` (for a trigger that
+    /// reads one value an event), or a list of years, each a list of
+    /// events, each a list of the values the trigger reads (or one number
+    /// for a one-value trigger). The number of years must be a whole number
+    /// of terms.
+    ///
+    /// Parameters
+    /// ----------
+    /// years : EventSet or list
+    ///
+    /// Returns
+    /// -------
+    /// CatBondLosses
+    fn apply(&self, py: Python<'_>, years: &Bound<'_, PyAny>) -> PyResult<PyCatBondLosses> {
+        let bond = &self.inner;
+        let inner = if let Ok(ev) = years.cast::<PyEventSet>() {
+            let ev = ev.get();
+            py.detach(|| bond.apply_events(&ev.inner))
+        } else if let Ok(y) = years.extract::<Vec<Vec<Vec<f64>>>>() {
+            py.detach(|| bond.apply(&y))
+        } else {
+            let y: Vec<Vec<f64>> = years.extract().map_err(|_| {
+                PyTypeError::new_err(
+                    "years must be an EventSet or a list of years of events of values",
+                )
+            })?;
+            let y: Vec<Vec<Vec<f64>>> = y
+                .into_iter()
+                .map(|e| e.into_iter().map(|x| vec![x]).collect())
+                .collect();
+            py.detach(|| bond.apply(&y))
+        }
+        .map_err(to_py)?;
+        Ok(PyCatBondLosses { inner })
+    }
+
+    /// The index of an event with ``values``, one a component.
+    ///
+    /// Parameters
+    /// ----------
+    /// values : list of float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn index(&self, values: Vec<f64>) -> PyResult<f64> {
+        self.inner.trigger().index(&values).map_err(to_py)
+    }
+
+    fn __repr__(&self) -> String {
+        let t = self.inner.tranche();
+        format!(
+            "CatBond({:?}, attachment={}, exhaustion={}, basis={:?})",
+            self.inner.trigger(),
+            t.attachment,
+            t.exhaustion,
+            t.basis
+        )
+    }
+}
+
+/// A cat bond's principal losses on simulated years (``CatBond.apply``).
+#[pyclass(name = "CatBondLosses", module = "prospicio.reinsurance", frozen)]
+pub(crate) struct PyCatBondLosses {
+    inner: prospicio_pricing::ils::CatBondLosses,
+}
+
+#[pymethods]
+impl PyCatBondLosses {
+    /// Each year's share of principal lost, in ``[0, 1]``.
+    #[getter]
+    fn annual(&self) -> Vec<f64> {
+        self.inner.annual().to_vec()
+    }
+
+    /// Each year's recovery, the share lost times the principal.
+    fn recoveries(&self) -> Vec<f64> {
+        self.inner.recoveries()
+    }
+
+    /// The mean annual share lost.
+    #[getter]
+    fn expected_loss(&self) -> f64 {
+        self.inner.expected_loss()
+    }
+
+    /// The share of years with any loss.
+    #[getter]
+    fn attachment_probability(&self) -> f64 {
+        self.inner.attachment_probability()
+    }
+
+    /// The share of years that lose all the principal.
+    #[getter]
+    fn exhaustion_probability(&self) -> f64 {
+        self.inner.exhaustion_probability()
+    }
+
+    /// The share of principal lost over each term.
+    fn term_losses(&self) -> Vec<f64> {
+        self.inner.term_losses()
+    }
+
+    /// The spread under ``distortion``: a dict with ``expected_loss``,
+    /// ``spread`` (the risk-adjusted annual loss), ``risk_load`` and
+    /// ``multiple``.
+    ///
+    /// Parameters
+    /// ----------
+    /// distortion : Distortion
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    fn price<'py>(
+        &self,
+        py: Python<'py>,
+        distortion: PyRef<'_, PyDistortion>,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let p = self.inner.price(&distortion.inner);
+        let d = PyDict::new(py);
+        d.set_item("expected_loss", p.expected_loss)?;
+        d.set_item("spread", p.spread)?;
+        d.set_item("risk_load", p.risk_load)?;
+        d.set_item("multiple", p.multiple)?;
+        Ok(d)
+    }
+
+    /// The distortion of ``family`` (as ``calibrate`` names them) that
+    /// prices the bond at ``spread``.
+    ///
+    /// Parameters
+    /// ----------
+    /// family : str
+    /// spread : float
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    fn calibrate(&self, family: &str, spread: f64) -> PyResult<PyDistortion> {
+        let f = crate::risk::family_from(family, 0.0)?;
+        Ok(PyDistortion {
+            inner: self.inner.calibrate(f, spread).map_err(to_py)?,
+        })
+    }
+
+    /// Lane's spread ``gamma * PFL**alpha * CEL**beta`` with the
+    /// coefficients given.
+    ///
+    /// Parameters
+    /// ----------
+    /// gamma, alpha, beta : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn lane_spread(&self, gamma: f64, alpha: f64, beta: f64) -> f64 {
+        self.inner.lane_spread(gamma, alpha, beta)
+    }
+
+    /// The investor's annual cash flows in each term per unit of principal:
+    /// ``-1`` at time 0, each year's coupon on the principal outstanding at
+    /// its start, and the principal left at the end.
+    ///
+    /// Parameters
+    /// ----------
+    /// coupon : float
+    ///
+    /// Returns
+    /// -------
+    /// list of list of float
+    fn investor_flows(&self, coupon: f64) -> Vec<Vec<f64>> {
+        self.inner.investor_flows(coupon)
+    }
+
+    /// The investor's internal rate of return in each term at ``coupon``
+    /// (the collateral yield plus the spread), searched past the default
+    /// range when needed.
+    ///
+    /// Parameters
+    /// ----------
+    /// coupon : float
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn investor_returns(&self, py: Python<'_>, coupon: f64) -> PyResult<Vec<f64>> {
+        let options = prospicio_pricing::returns::IrrOptions {
+            extend: true,
+            ..Default::default()
+        };
+        let l = &self.inner;
+        let r = py
+            .detach(|| l.investor_returns(coupon, &options))
+            .map_err(to_py)?;
+        Ok(r.iter().map(|x| x.rate).collect())
+    }
+
+    /// The basis risk against ``need``, the cedant's recovery from an
+    /// indemnity cover in each simulated year: a dict with ``difference``
+    /// (recovery less need by year), ``mean_shortfall``, ``mean_excess``,
+    /// ``std_dev``, ``correlation`` and ``missed`` (the share of years with
+    /// a need and no recovery).
+    ///
+    /// Parameters
+    /// ----------
+    /// need : list of float
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    fn basis_risk<'py>(&self, py: Python<'py>, need: Vec<f64>) -> PyResult<Bound<'py, PyDict>> {
+        let b = self.inner.basis_risk(&need).map_err(to_py)?;
+        let d = PyDict::new(py);
+        d.set_item("difference", b.difference)?;
+        d.set_item("mean_shortfall", b.mean_shortfall)?;
+        d.set_item("mean_excess", b.mean_excess)?;
+        d.set_item("std_dev", b.std_dev)?;
+        d.set_item("correlation", b.correlation)?;
+        d.set_item("missed", b.missed)?;
+        Ok(d)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "CatBondLosses(years={}, expected_loss={})",
+            self.inner.annual().len(),
+            self.inner.expected_loss()
+        )
+    }
+}

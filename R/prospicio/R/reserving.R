@@ -191,6 +191,170 @@ triangle_array <- function(x, flat, development) {
 
 new_triangle <- function(x, ptr) triangle(ptr = ptr)
 
+#' Read a triangle from a CSV file or a workbook
+#'
+#' Reads a [triangle] from a CSV file or a sheet of an Excel workbook
+#' (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) or OpenDocument spreadsheet (`.ods`),
+#' in Rust: no R package for spreadsheets is needed. Python's
+#' `Triangle.read_csv()` and `Triangle.read_excel()`.
+#'
+#' Long layout (`development` given): one row per (keys, origin,
+#' development) cell, as [triangle()] takes a data frame; rows with the same
+#' cell are summed. Wide layout (`development = NULL`): one row per (keys,
+#' origin), every other column a development age, named by its age in
+#' months (`12`, `24`, ...) unless `ages` gives them; a repeated origin is
+#' an error.
+#'
+#' How cells are written: an origin is a year (`1988`), a date
+#' (`2021-07-15` or `2021-07`, or an Excel date cell) or a period label as
+#' `tri@origins` prints it (`2021Q3`, `2021H2`); an age is a whole number of
+#' months; a valuation (`development_is_valuation = TRUE`) is a year (its
+#' December), a date or a period label (its last month); a value is a
+#' number, and an empty cell, `NA` or `NaN` is not observed. A workbook
+#' sheet's used range starts with the header row. Errors name the file line
+#' (CSV) or the cell and sheet (Excel) and the column.
+#'
+#' @param path Path to the file.
+#' @param origin Name of the origin column.
+#' @param development Name of the development column (long layout), or
+#'   `NULL` for a wide layout.
+#' @param columns Long: the measure columns, by default every column that is
+#'   not the origin, the development or a key. Wide: the name of the one
+#'   measure, `"values"` by default.
+#' @param keys Names of the key columns, or `NULL` for one segment.
+#' @param ages Wide only: the ages in months of the age columns, in column
+#'   order, in place of their names.
+#' @param sheet The sheet of a workbook, `NULL` for the first.
+#' @param format `"auto"` (by the file extension: `.csv` and `.txt` are
+#'   CSV, `.xlsx`, `.xlsm`, `.xlsb`, `.xls` and `.ods` are workbooks),
+#'   `"csv"` or `"excel"`.
+#' @param origin_grain,development_grain,cumulative As for [triangle()].
+#' @param development_is_valuation Long only: whether `development` holds
+#'   valuations instead of ages.
+#' @param comment A CSV comment character, such as `"#"`, or `NULL`.
+#' @returns A [triangle].
+#' @seealso [triangle()], [schedule_p_triangle()].
+#' @export
+#' @examples
+#' path <- tempfile(fileext = ".csv")
+#' writeLines(c("year,12,24", "2020,100,150", "2021,110,"), path)
+#' tri <- read_triangle(path, "year", columns = "paid")
+#' as.matrix(tri)
+read_triangle <- function(path, origin, development = NULL, columns = NULL, keys = NULL,
+                          ages = NULL, sheet = NULL, format = c("auto", "csv", "excel"),
+                          origin_grain = "Y", development_grain = "Y", cumulative = TRUE,
+                          development_is_valuation = FALSE, comment = NULL) {
+  format <- match.arg(format)
+  path <- path.expand(as.character(path))
+  if (format == "auto") {
+    # The extension, as tools::file_ext() reads it, without importing tools.
+    ext <- tolower(sub(".*\\.([[:alnum:]]+)$", "\\1", basename(path)))
+    if (!grepl(".", basename(path), fixed = TRUE)) ext <- ""
+    format <- if (ext %in% c("csv", "txt")) {
+      "csv"
+    } else if (ext %in% c("xlsx", "xlsm", "xlsb", "xls", "ods")) {
+      "excel"
+    } else {
+      stop(sprintf('cannot tell the format of "%s" from its extension; give format = "csv" or "excel"',
+                   basename(path)), call. = FALSE)
+    }
+  }
+  ptr <- rust_result(Triangle$read_file(
+    path, format, if (is.null(sheet)) NULL else as.character(sheet),
+    as.character(origin), if (is.null(development)) NULL else as.character(development),
+    as.character(columns), as.character(keys), if (is.null(ages)) NULL else as.double(ages),
+    as.character(origin_grain), as.character(development_grain), isTRUE(cumulative),
+    isTRUE(development_is_valuation), if (is.null(comment)) "" else as.character(comment)
+  ))
+  triangle(ptr = ptr)
+}
+
+#' Schedule P triangles from the CAS loss reserve database
+#'
+#' Reads a file of the CAS loss reserve database (NAIC Schedule P, one file
+#' per line such as `comauto_pos.csv`, downloaded from the CAS web site) as
+#' a [triangle] with one segment per company. Python's
+#' `prospicio.reserving.schedule_p()` reads the same data from the
+#' `cas-schedule-p` package instead; R has no such package, so the file is
+#' the user's (nothing is downloaded).
+#'
+#' The measures, as the calibration study reads them
+#' (`validation/scripts/calibration_panel.py`): `paid` is `CumPaidLoss`,
+#' `incurred` is `IncurLoss` (bulk and IBNR included), `case_incurred` is
+#' `IncurLoss - BulkLoss` (Meyers' incurred), `premium` is
+#' `EarnedPremNet` and `premium_direct` is `EarnedPremDIR`, in USD
+#' thousands; each file's columns carry a suffix per line (`_C`, `_B`,
+#' ...), found by its prefix. Ages are `DevelopmentLag * 12` months. The
+#' key is `company`, the `GRCODE` as text.
+#'
+#' @param path Path to a CAS loss reserve database CSV file.
+#' @param company Group codes (`GRCODE`) to keep, or `NULL` for every
+#'   company in the file.
+#' @param columns Measures among `"paid"`, `"incurred"`, `"case_incurred"`,
+#'   `"premium"` and `"premium_direct"`; all five by default.
+#' @param accident_years The first and last accident year.
+#' @param lower Whether to keep the cells valued after the last accident
+#'   year's first year-end: the lower triangle, which a study holds out as
+#'   the outcome. With it, each complete company is a 10 x 10 square.
+#' @returns A [triangle] keyed by `company`.
+#' @seealso [read_triangle()], [triangle()].
+#' @export
+#' @examples
+#' \dontrun{
+#' tri <- schedule_p_triangle("comauto_pos.csv", company = 353)
+#' }
+schedule_p_triangle <- function(path, company = NULL, columns = NULL,
+                                accident_years = c(1988, 1997), lower = FALSE) {
+  measures <- c(paid = "CumPaidLoss", incurred = "IncurLoss", case_incurred = NA,
+                premium = "EarnedPremNet", premium_direct = "EarnedPremDIR")
+  columns <- if (is.null(columns)) names(measures) else as.character(columns)
+  unknown <- setdiff(columns, names(measures))
+  if (length(unknown)) {
+    stop(sprintf('unknown Schedule P column "%s"; use %s', unknown[1],
+                 toString(sprintf('"%s"', names(measures)))), call. = FALSE)
+  }
+  data <- utils::read.csv(path, comment.char = "#", stringsAsFactors = FALSE)
+  find <- function(prefix) {
+    hit <- grep(paste0("^", prefix, "_"), names(data), value = TRUE)
+    if (length(hit) != 1) {
+      stop(sprintf('%s has %d columns named %s_*, not one; is it a CAS loss reserve database file?',
+                   basename(path), length(hit), prefix), call. = FALSE)
+    }
+    data[[hit]]
+  }
+  for (needed in c("GRCODE", "AccidentYear", "DevelopmentLag")) {
+    if (!needed %in% names(data)) {
+      stop(sprintf("%s has no column %s; is it a CAS loss reserve database file?",
+                   basename(path), needed), call. = FALSE)
+    }
+  }
+  first <- accident_years[1]
+  last <- accident_years[2]
+  ay <- data$AccidentYear
+  lag <- data$DevelopmentLag
+  keep <- ay >= first & ay <= last & (isTRUE(lower) | ay + lag - 1 <= last)
+  codes <- as.character(data$GRCODE)
+  if (!is.null(company)) {
+    company <- as.character(company)
+    missing_codes <- setdiff(company, codes[keep])
+    if (length(missing_codes)) {
+      stop(sprintf("no rows for company %s in %s, accident years %d to %d",
+                   missing_codes[1], basename(path), first, last), call. = FALSE)
+    }
+    keep <- keep & codes %in% company
+  }
+  if (!any(keep)) {
+    stop(sprintf("no rows in %s, accident years %d to %d", basename(path), first, last),
+         call. = FALSE)
+  }
+  value <- function(m) {
+    if (m == "case_incurred") find("IncurLoss") - find("BulkLoss") else find(measures[[m]])
+  }
+  long <- data.frame(company = codes[keep], origin = ay[keep], development = 12 * lag[keep])
+  for (m in columns) long[[m]] <- as.double(value(m)[keep])
+  triangle(long, "origin", "development", columns, keys = "company")
+}
+
 # Last day of each "YYYY-MM" month; NA for "" or NA.
 month_end <- function(ym) {
   out <- rep(as.Date(NA), length(ym))
@@ -7430,10 +7594,12 @@ ultimate_distribution <- function(fit) {
 # in Rust, reserving-v02.md decision 28).
 check_pattern_fit <- function(fit) {
   classes <- list(odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits,
-                  bayes_bf_fit, bayes_bf_normalised_fit)
+                  bayes_bf_fit, bayes_bf_normalised_fit, meyers_fit, meyers_fits,
+                  compartmental_fit, compartmental_fits)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
     stop("fit must be an odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, ",
-         "bayes_bf_fit or bayes_bf_normalised_fit", call. = FALSE)
+         "bayes_bf_fit, bayes_bf_normalised_fit, meyers_fit, meyers_fits, compartmental_fit ",
+         "or compartmental_fits", call. = FALSE)
   }
 }
 
@@ -7452,11 +7618,19 @@ pattern_matrix <- function(flat, n_col) {
 #' development each simulation drew: the bootstraps' pseudo factors
 #' (selected, blended and with the tail drawn as the reserves use them), or
 #' the Bayesian models' column effects of the posterior draw the simulation
-#' took (`docs/design/reserving-v02.md`, decision 28). Row `i` is simulation
+#' took (`docs/design/reserving-v02.md`, decision 28; for Meyers' models
+#' `exp(beta_d g)`, the median value at each age over the median at the
+#' oldest age of an origin after the newest, `g` its speed-up
+#' `(1 - gamma)^n` in CSR and 1 in CRC and CAY; for the compartmental model
+#' the ODE's expected cumulative paid at each age of the square over that at
+#' its last age, of an origin with nothing observed at the population's
+#' rates, with each observed age's development effects). Row `i` is simulation
 #' `i` of `fit@reserves`, so it keeps the dependence with [ultimate_draws()]
 #' and every other vector built from the fit.
 #'
-#' `pattern_draws()` gives the shares at the triangle's own ages.
+#' `pattern_draws()` gives the shares at the triangle's own ages (the
+#' compartmental model's at the ages of its square, one origin period per
+#' origin).
 #' `monthly_pattern_draws()` gives, per simulation, the share at the end of
 #' each of the first `months` months from inception, the form that
 #' [cashflow_run()] takes as `paid_patterns`. On the origin's own basis
@@ -7477,12 +7651,19 @@ pattern_matrix <- function(flat, n_col) {
 #' simulations and the first, `"running_max"` holds each share at the
 #' largest before it, capped at 1, and gives a share that is not positive the
 #' next positive share, which the simulation then pays from its first age.
+#' Nothing in Meyers' models keeps `beta_d` rising or below 0, so their
+#' shares can fall and pass 1 (on Meyers' group 353 data a share falls in
+#' nearly every simulation): use `"running_max"`, which also caps each share
+#' at 1. The compartmental model's paid curve rises, so its shares do not
+#' fall with cumulative paid and no development effects (model 1) or with
+#' incremental paid (model 2).
 #'
 #' No fit knows whether its triangle is paid: a pattern from an incurred
 #' triangle is an incurred pattern, and the engine reads it as paid.
 #'
 #' @param fit An [odp_bootstrap_fit], [mack_bootstrap_fit], [bayes_odp_fit],
-#'   [bayes_odp_fits], [bayes_bf_fit] or [bayes_bf_normalised_fit].
+#'   [bayes_odp_fits], [bayes_bf_fit], [bayes_bf_normalised_fit], [meyers_fit],
+#'   [meyers_fits], [compartmental_fit] or [compartmental_fits].
 #' @param segment `NULL` for a fit of one segment, or the segment's key
 #'   values (`"Auto"`, `c("Auto", "NSW")`) over segments.
 #' @param months The number of months, a whole number of at least 1; patterns

@@ -28,7 +28,8 @@ models and compares them.
   - `metrics`: deviance, mean deviance, RMSE, MAE, Gini of the ordered
     Lorenz curve, lift bands, CRPS of draws, interval coverage;
   - `resample`: k-fold, grouped k-fold and time-ordered (calendar
-    diagonal) splits, `cross_validate` and `grid_search`.
+    diagonal) splits, `TimeSplits` with a rolling window, a horizon, a gap
+    and a step (#549, below), `cross_validate` and `grid_search`.
   - `compare`: `compare(candidates, design, y, splits, metrics)` scores
     every `Candidate` (any `Model`, or a fit-and-predict function, so
     different engines sit in one table) on the same splits and metrics.
@@ -1069,6 +1070,145 @@ the Fisher–Yates shuffle that `k_fold` uses, bound in both languages, so
 Python and R give the same importances on the same rows (pinned in both
 test suites). Seed 3 on three rows is the monograph's shuffle of Tables
 9.1 to 9.4, whose importance 0.133 (100 on its scale) the tests reproduce.
+
+## Auto-calibration (#545)
+
+Status: built; items (a) to (e) proposed by the Models lane for the
+user's acceptance.
+
+`prospicio_models::calibrate` checks whether a model's predictions are
+right on average at every level and repairs them. `isotonic` is weighted
+isotonic regression by pool-adjacent-violators, as scikit-learn's
+`IsotonicRegression`; `Recalibrated<F>` maps any `Fitted` model's
+predictions through one fitted on held-out data; `balance_correction` and
+`Balanced<F>` scale the total prediction to the total response;
+`reliability` bins mean prediction against mean response; `murphy` splits a
+family's mean deviance into miscalibration, discrimination and uncertainty
+(the CORP decomposition of Dimitriadis, Gneiting and Jordan, 2021). Python
+`isotonic`, `Isotonic`, `recalibrate`, `balance_correction`, `reliability`,
+`murphy` in `prospicio.models`; R `isotonic_fit()`, `recalibrate()`,
+`balance_correction()`, `reliability()`, `murphy()`.
+
+- (a) *Ties in the input are merged before pooling* into their weighted
+  mean response and summed weight, so the fit is a function of the input,
+  as scikit-learn does; `predict` reads linearly between the distinct
+  inputs (or as steps) and holds the end values beyond them
+  (`out_of_bounds="clip"`).
+- (b) *One isotonic fit serves every family*: pool-adjacent-violators
+  gives the closest monotone fit under every Bregman score, so the
+  squared-error fit is also the Poisson, gamma and Tweedie one.
+- (c) *Bounds on the fitted values* (`with_bounds`, Python and R `y_min`,
+  `y_max`), as scikit-learn's: a frequency recalibrated on held-out data
+  can pool to 0 at its low end, where a later claim's Poisson deviance is
+  infinite, so a floor is the user's to set; none is set by default.
+- (d) *The recalibrated and balanced models' predictive distributions
+  scale each row's draws* of the inner model by the ratio of the new to
+  the old prediction, keeping the shape and moving the mean.
+- (e) *The auto-calibration diagnostic is CORP's miscalibration term*, the
+  mean deviance the isotonic recalibration gains on the same data; it is
+  in-sample, so it is positive even for a calibrated model on noisy data
+  (0.012 for a Poisson GLM on a third of the Chalk portfolio), and a
+  model is judged against a reference, not against zero. A test statistic
+  with a null distribution is later work.
+
+In Python and R the map is applied to predictions (`recalibrate(pred,
+y).predict(new_pred)`), so it serves every model of the bindings,
+boosting included; the Rust wrappers serve Rust `Fitted` models.
+
+## Conformal prediction (#546)
+
+Status: built; items (a) to (e) proposed by the Models lane for the
+user's acceptance.
+
+`prospicio_models::conformal` gives prediction intervals around any model
+from held-out residuals, with finite-sample coverage under exchangeability:
+`split` (absolute, Pearson or scaled scores), `weighted_split` (a weight a
+calibration and a test row), `cqr` (conformalised quantile regression) and
+`cv_plus` (CV+, and the jackknife+ with one fold a row), each on
+predictions, so any engine's model serves; `split_fitted` and
+`cv_plus_fit` (folds fitted in parallel through `map_splits`) take a Rust
+`Fitted` or `Model`. Python `conformal_split`, `conformal_cqr`,
+`conformal_plus` and `conformal_intervals(model, design, y, test_design,
+method=)`, R the same names, R's `conformal_intervals()` taking a fitting
+function of a data frame and its responses.
+
+- (a) *The conformal quantile is the `⌈(1 − α)(n + 1)⌉`-th smallest score*
+  for every method, and infinite when that rank exceeds `n` (MAPIE clips
+  the level to 1 unless `allow_infinite_bounds`). It is MAPIE's for split
+  and CV+; MAPIE's CQR takes numpy's `"higher"` quantile at
+  `(1 − α)(1 + 1/n)`, sometimes one order statistic higher, so the parity
+  case is one where the two agree.
+- (b) *The functions take predictions*, not models, so a boosted, network
+  or ONNX model's predictions go in as they are; the model-level wrappers
+  are thin.
+- (c) *The Pearson score scales by the family's variance at the
+  prediction*, `|y − μ| / √V(μ)`; a dispersion model's spread goes in as
+  a scaled score.
+- (d) *Weighted conformal places each test row's weight at infinity*
+  (Tibshirani, Barber, Candès and Ramdas, 2019); equal weights give the
+  split method's interval exactly.
+- (e) *Jackknife+ refits once a row*, `n` fits; the Python and R wrappers
+  fit the folds on threads (Python) or in turn (R).
+
+## Time splits with windows, horizons and gaps (#549)
+
+Status: built; items (a) to (c) proposed by the Models lane for the
+user's acceptance.
+
+`resample::TimeSplits::new(n_test)` with `rolling(w)` (or
+`window(Window)`), `horizon(h)`, `gap(g)` and `step(s)`: split `f` of
+`n_test`, oldest first, tests on `h` consecutive distinct periods, the last
+split's ending at the latest period and each earlier one `s` periods before
+the next, and trains on the periods before its test window less the `g`
+just before it, all of them or the latest `w`. Python `time_splits(periods,
+n_test, window=None, horizon=1, gap=0, step=1)`, R `time_splits()`, next to
+`time_ordered`, which stays as it is.
+
+- (a) *Periods count as distinct values*, as in `time_ordered`, so a
+  missing calendar period is skipped rather than left as an empty test
+  window, and the windows, gap and step count distinct periods too.
+- (b) *The defaults are `time_ordered`'s splits*, and `horizon = step =
+  test_size` with `window = max_train_size` is scikit-learn's
+  `TimeSeriesSplit` on one row a period.
+- (c) *Test windows are anchored at the latest period* and step back;
+  periods before the first split's window that a rolling window leaves out
+  are never used, and too few periods for the first split's training rows
+  is an error naming the counts.
+
+## Monotone and interaction constraints on the boosters (#575)
+
+Status: built; items (a) to (d) proposed by the Models lane for the
+user's acceptance.
+
+Python `Booster(..., monotone={"exper": 1, "veh_age": -1},
+interaction_constraints=[["age", "exper"], ["veh_age", "noise"]])` and R
+`booster_fit(..., monotone = c(exper = 1, veh_age = -1),
+interaction_constraints = list(c("age", "exper"), c("veh_age", "noise")))`
+name features, and the fit maps them onto the design's columns as the
+engine's own `monotone_constraints` and `interaction_constraints`
+(`Booster.engine_params(names)` in Python, `fit@spec$constraints` in R).
+`BoosterFit.check_monotone(design, feature)` and R `check_monotone(fit,
+data, feature)` give the partial dependence over a grid and the steps that
+go against the direction. On the Chalk portfolio (Poisson, 150 rounds)
+the unconstrained fits' dependence on experience falls at 7 (LightGBM) and
+8 (XGBoost) of 60 grid steps, and the constrained fits' at none.
+
+- (a) *A feature is a variable, not a column.* A monotone constraint goes
+  on every column of the feature that is a monotone function of it: the
+  variable itself, Python's `hinge`, `step` and `log` terms, R's `log`,
+  `log1p`, `sqrt` and `exp`. A factor, a polynomial or spline, a feature in
+  an interaction column and an unknown name are errors, since a direction
+  on such columns is not a direction in the feature.
+- (b) *An interaction group takes all of a feature's columns*, factor
+  levels included.
+- (c) *The engines' raw forms*: LightGBM a vector of directions and
+  column groups (0-based in Python, 1-based in R), XGBoost the strings
+  `"(0,-1,1,0)"` and `"[[0, 2], [1, 3]]"`, the forms both packages read in
+  both languages; a fit with the typed constraints equals one with these in
+  `params`. Giving a constraint both ways is an error.
+- (d) *`check_monotone` checks the fitted model*, the mean prediction
+  over the given rows with the feature set to each grid value, so a
+  violation within `tol` (relative, 1e-9) of the largest mean is ignored.
 
 ## Decisions
 

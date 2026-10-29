@@ -141,6 +141,7 @@ impl Tower {
             ));
         }
         self.refuse_scope("an aggregate loss")?;
+        self.refuse_event_order("an aggregate loss")?;
         let first = years
             .first()
             .ok_or_else(|| Error::Data("a term needs at least one year".into()))?;

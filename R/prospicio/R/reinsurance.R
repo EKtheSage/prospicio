@@ -55,7 +55,8 @@ NULL
 #'   `scales_before_annual_terms` and `brokerage_within_commission_range`;
 #'   see [with_brokerage()]), and `sees_aggregate_part`, whether the layer cedes from an
 #'   event set's aggregate part ([with_aggregate_part()]: on the loss with
-#'   attachment 0 and no limit, a quota share or a stop loss).
+#'   attachment 0 and no limit, a quota share or a stop loss), and
+#'   `franchise`, `nth_event` and `drop_down` ([with_franchise()]).
 #' @seealso [quota_share()] and [aggregate_stop_loss()] for the other contract
 #'   types, which are layers too; [with_loss_corridor()] for a corridor;
 #'   [with_rate_on_line()], [with_ceding_commission()] and
@@ -96,6 +97,12 @@ xol_layer <- S7::new_class(
     ),
     allocation = S7::new_property(S7::class_character, getter = function(self) self@ptr$allocation()),
     scope = S7::new_property(S7::class_any, getter = function(self) self@ptr$scope()),
+    franchise = S7::new_property(S7::class_logical, getter = function(self) self@ptr$franchise()),
+    nth_event = S7::new_property(S7::class_double, getter = function(self) {
+      p <- self@ptr$nth_event()
+      if (length(p)) stats::setNames(p, c("n", "threshold")) else p
+    }),
+    drop_down = S7::new_property(S7::class_any, getter = function(self) self@ptr$drop_down()),
     loss_corridor = S7::new_property(S7::class_double, getter = function(self) self@ptr$loss_corridor()),
     ceding_commission = S7::new_property(
       S7::class_double, getter = function(self) self@ptr$ceding_commission()
@@ -1094,6 +1101,62 @@ with_scope <- function(layer, label, values) {
   xol_layer(ptr = rust_result(layer@ptr$with_scope(as.character(label), as.character(values))))
 }
 
+#' Franchise, nth-event and top-and-drop covers
+#'
+#' Three catastrophe structures on a layer:
+#'
+#' - `with_franchise()`: a franchise deductible. An occurrence at or above
+#'   the attachment is paid from the ground up, `min(x, limit)`, and one
+#'   below it pays nothing. On the loss basis only.
+#' - `with_nth_event()`: only the `n`-th and later events of a year whose
+#'   loss to the layer exceeds `threshold` are covered; earlier ones, and
+#'   events at or below the threshold, cede nothing. Events count in the
+#'   order given, chronological when the event set has times.
+#'   `with_nth_event(layer, 1, attachment)` is the plain layer.
+#' - `with_top_and_drop()`: the layer sits at its own attachment until the
+#'   annual limit of the layer named `underlying` (earlier in the same
+#'   stage, with an annual limit) is used up, and from the next event
+#'   attaches at `attachment`, with the same occurrence and annual limits.
+#'   A drop-down whose underlying layer never exhausts is the plain layer.
+#'
+#' Nth-event and top-and-drop covers read the order of a year's events, so
+#' the grids ([tower_on_grid()]) and annual losses refuse them; apply the
+#' tower to an [event_set].
+#'
+#' @param layer An [xol_layer].
+#' @param n The first event covered, at least 1.
+#' @param threshold The loss an event must exceed to count.
+#' @param underlying The name of the layer whose exhaustion drops this one.
+#' @param attachment The attachment after the drop, below the layer's own.
+#' @returns The [xol_layer]; its `franchise`, `nth_event` (`c(n,
+#'   threshold)`) and `drop_down` (`list(underlying, attachment)`)
+#'   properties show the terms.
+#' @export
+#' @examples
+#' f <- with_franchise(xol_layer("F", 20, 5))
+#' ceded_by_event(f, c(4, 5, 12, 30))
+#' second <- with_nth_event(xol_layer("2nd", 10, 5), 2, 5)
+#' ceded_by_event(second, c(12, 3, 9, 20))
+#' lower <- xol_layer("lower", 10, 10, aggregate_limit = 20)
+#' top <- with_top_and_drop(xol_layer("top", 10, 30), "lower", 10)
+#' ev <- events_from_years(list(c(25, 25, 25, 40)))
+#' events(ceded_events(reinsurance_tower(list(lower, top)), ev, "top"), 1)
+with_franchise <- function(layer) {
+  xol_layer(ptr = rust_result(layer@ptr$with_franchise()))
+}
+
+#' @rdname with_franchise
+#' @export
+with_nth_event <- function(layer, n, threshold) {
+  xol_layer(ptr = rust_result(layer@ptr$with_nth_event(as.double(n), as.double(threshold))))
+}
+
+#' @rdname with_franchise
+#' @export
+with_top_and_drop <- function(layer, underlying, attachment) {
+  xol_layer(ptr = rust_result(layer@ptr$with_top_and_drop(as.character(underlying), as.double(attachment))))
+}
+
 #' A tower's ceded losses by event
 #'
 #' Each event's ceded loss to the named layers, summed over them, as an
@@ -1366,4 +1429,40 @@ aggregate_layer_statistics <- function(annual, limit, attachment, share = 1) {
   ))
   r$aggregate <- stats::setNames(r$aggregate, c("mean", "variance", "third_cumulant", "cv", "skew"))
   r
+}
+
+#' A per-risk excess of loss inuring to a cat cover
+#'
+#' A per-risk layer applied to each risk's loss within an event, with an
+#' event limit capping the sum of its recoveries from one event, and the
+#' events net of its cession for a tower of cat layers. Each risk's
+#' recovery is the layer's occurrence terms on its loss; an event's
+#' recoveries are summed and capped at `event_limit`; the layer's annual
+#' terms then use up the events' capped recoveries in order, at its share.
+#' The layer must be a plain per-risk layer on the loss basis.
+#'
+#' @param layer An [xol_layer].
+#' @param years A list of years, each a list of events, each a numeric
+#'   vector of the losses of the risks the event hits.
+#' @param event_limit The most the layer recovers from one event, at 100%;
+#'   `NULL` for none.
+#' @param times `NULL`, or a list of numeric vectors: each event's time in
+#'   the year, passed to the net events.
+#' @param seed Recorded on the net event set.
+#' @returns A list with `ceded` (each year's cession), `ceded_by_event` (a
+#'   list of numeric vectors) and `net`, an [event_set] for
+#'   [apply_tower()].
+#' @export
+#' @examples
+#' r <- per_risk_inuring(xol_layer("PR", 5, 5), list(list(c(12, 8, 15))), event_limit = 10)
+#' r$ceded
+#' events(r$net, 1)
+#' tower_ceded(reinsurance_tower(list(xol_layer("Cat", 20, 10))), events(r$net, 1))
+per_risk_inuring <- function(layer, years, event_limit = NULL, times = NULL, seed = 0) {
+  r <- rust_result(per_risk_inuring_rust(
+    layer@ptr, lapply(years, function(y) lapply(y, as.double)),
+    if (is.null(event_limit)) NaN else as.double(event_limit),
+    if (is.null(times)) NULL else lapply(times, as.double), as.double(seed)
+  ))
+  list(ceded = r$ceded, ceded_by_event = r$ceded_by_event, net = event_set(ptr = r$net))
 }

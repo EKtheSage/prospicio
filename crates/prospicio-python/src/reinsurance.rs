@@ -346,6 +346,102 @@ impl PyLayer {
             .map(|s| (s.label.clone(), s.values.clone()))
     }
 
+    /// Whether the layer has a franchise deductible (``with_franchise``).
+    #[getter]
+    fn franchise(&self) -> bool {
+        self.inner.franchise
+    }
+
+    /// An nth-event cover as ``(n, threshold)``, or ``None``.
+    #[getter]
+    fn nth_event(&self) -> Option<(u32, f64)> {
+        self.inner.nth_event.map(|e| (e.n, e.threshold))
+    }
+
+    /// A top-and-drop cover as ``(underlying, attachment)``, or ``None``.
+    #[getter]
+    fn drop_down(&self) -> Option<(String, f64)> {
+        self.inner
+            .drop_down
+            .as_ref()
+            .map(|d| (d.underlying.clone(), d.attachment))
+    }
+
+    /// The same layer with a franchise deductible: an occurrence at or
+    /// above the attachment is paid from the ground up, ``min(x, limit)``,
+    /// and one below it pays nothing. On the loss basis only.
+    ///
+    /// Returns
+    /// -------
+    /// Layer
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reinsurance import Layer
+    /// >>> Layer("F", 20.0, 5.0).with_franchise().ceded_by_event([4.0, 5.0, 12.0, 30.0])
+    /// [0.0, 5.0, 12.0, 20.0]
+    fn with_franchise(&self) -> PyResult<Self> {
+        self.map(|l| l.franchise())
+    }
+
+    /// The same layer as an nth-event cover: only the ``n``-th and later
+    /// events of a year whose loss to the layer exceeds ``threshold`` are
+    /// covered; earlier ones, and events at or below the threshold, cede
+    /// nothing. Events count in the order given, chronological when the
+    /// event set has times. ``with_nth_event(1, attachment)`` is the plain
+    /// layer. The grids and annual losses have no events in order and
+    /// refuse it.
+    ///
+    /// Parameters
+    /// ----------
+    /// n : int
+    ///     The first event covered, at least 1.
+    /// threshold : float
+    ///     The loss an event must exceed to count.
+    ///
+    /// Returns
+    /// -------
+    /// Layer
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reinsurance import Layer
+    /// >>> Layer("2nd", 10.0, 5.0).with_nth_event(2, 5.0).ceded_by_event([12.0, 3.0, 9.0, 20.0])
+    /// [0.0, 0.0, 4.0, 10.0]
+    fn with_nth_event(&self, n: u32, threshold: f64) -> PyResult<Self> {
+        self.map(|l| l.nth_event(n, threshold))
+    }
+
+    /// The same layer as a top-and-drop cover: it sits at its own
+    /// attachment until the annual limit of the layer named
+    /// ``underlying`` (earlier in the same stage, with an annual limit) is
+    /// used up, and from the next event attaches at ``attachment``, with
+    /// the same occurrence and annual limits. On the loss basis only. A
+    /// drop-down whose underlying layer never exhausts is the plain layer.
+    ///
+    /// Parameters
+    /// ----------
+    /// underlying : str
+    /// attachment : float
+    ///     Below the layer's own.
+    ///
+    /// Returns
+    /// -------
+    /// Layer
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> from prospicio.reinsurance import Layer, Tower
+    /// >>> lower = Layer("lower", 10.0, 10.0, aggregate_limit=20.0)
+    /// >>> top = Layer("top", 10.0, 30.0).with_top_and_drop("lower", 10.0)
+    /// >>> ce = Tower([lower, top]).ceded_events(EventSet.from_years([[25.0, 25.0, 25.0, 40.0]]), "top")
+    /// >>> ce.events(0)
+    /// [10.0, 10.0]
+    fn with_top_and_drop(&self, underlying: &str, attachment: f64) -> PyResult<Self> {
+        self.map(|l| l.top_and_drop(underlying, attachment))
+    }
+
     /// The same layer covering only the losses whose label ``label``
     /// takes one of ``values``: a windstorm treaty on a multi-peril event
     /// set is scoped to ``("peril", ["windstorm"])``.
@@ -2908,4 +3004,62 @@ impl PyAnnualGrids {
             self.inner.on_points
         )
     }
+}
+
+/// A per-risk excess of loss with an event limit, inuring to a cat cover.
+///
+/// ``years[i][e]`` are the losses of the risks event ``e`` of year ``i``
+/// hits. Each risk's recovery is ``layer``'s occurrence terms on its loss;
+/// an event's recoveries are summed and capped at ``event_limit``; the
+/// layer's annual terms then use up the events' capped recoveries in
+/// order, at its share. The net events, each event's gross less its
+/// cession, are an ``EventSet`` for a tower of cat layers to take as its
+/// gross. The layer must be a plain per-risk layer on the loss basis.
+///
+/// Parameters
+/// ----------
+/// layer : Layer
+/// years : list of list of list of float
+/// event_limit : float, optional
+///     The most the layer recovers from one event, at 100%.
+/// times : list of list of float, optional
+///     Each event's time in the year, passed to the net events.
+/// seed : int, default 0
+///     Recorded on the net event set.
+///
+/// Returns
+/// -------
+/// dict
+///     ``ceded`` (each year's cession), ``ceded_by_event`` and ``net``
+///     (an ``EventSet``).
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reinsurance import Layer, Tower, per_risk_inuring
+/// >>> r = per_risk_inuring(Layer("PR", 5.0, 5.0), [[[12.0, 8.0, 15.0]]], event_limit=10.0)
+/// >>> r["ceded"], r["net"].events(0)
+/// ([10.0], [25.0])
+/// >>> Tower([Layer("Cat", 20.0, 10.0)]).ceded(r["net"].events(0))
+/// [15.0]
+#[pyfunction]
+#[pyo3(signature = (layer, years, event_limit = None, times = None, seed = 0))]
+pub(crate) fn per_risk_inuring<'py>(
+    py: Python<'py>,
+    layer: PyRef<'_, PyLayer>,
+    years: Vec<Vec<Vec<f64>>>,
+    event_limit: Option<f64>,
+    times: Option<Vec<Vec<f64>>>,
+    seed: u64,
+) -> PyResult<Bound<'py, PyDict>> {
+    let l = layer.inner.clone();
+    let r = py
+        .detach(|| {
+            prospicio_aggregate::per_risk_inuring(&l, event_limit, &years, times.as_deref(), seed)
+        })
+        .map_err(to_py)?;
+    let d = PyDict::new(py);
+    d.set_item("ceded", r.ceded)?;
+    d.set_item("ceded_by_event", r.ceded_by_event)?;
+    d.set_item("net", crate::aggregate::PyEventSet { inner: r.net })?;
+    Ok(d)
 }

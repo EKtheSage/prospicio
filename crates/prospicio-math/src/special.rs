@@ -248,6 +248,9 @@ pub fn student_t_quantile(p: f64, nu: f64) -> f64 {
     }
     // Solve in the upper half and reflect: the quantile is odd about 1/2.
     let (q, sign) = if p > 0.5 { (p, 1.0) } else { (1.0 - p, -1.0) };
+    if let Some(x) = t_quantile_newton(q, nu) {
+        return sign * x;
+    }
     let f = |x: f64| student_t_cdf(x, nu) - q;
     let mut hi = 1.0;
     while f(hi) < 0.0 && hi < 1e300 {
@@ -260,6 +263,54 @@ pub fn student_t_quantile(p: f64, nu: f64) -> f64 {
         (lo, f(lo))
     };
     sign * crate::roots::illinois(lo, hi, f_lo, f(hi), f)
+}
+
+/// The upper-half t quantile (`q` in `(1/2, 1)`) by Newton's method on
+/// the density from a Cornish–Fisher start (Hill, 1970), each step kept
+/// inside a bracket that it narrows, to a relative `4 ε`; `None` when it
+/// does not converge in 60 steps, for the bracketing search to take over.
+fn t_quantile_newton(q: f64, nu: f64) -> Option<f64> {
+    if nu == 1.0 {
+        return Some((std::f64::consts::PI * (q - 0.5)).tan());
+    }
+    if nu == 2.0 {
+        return Some((2.0 * q - 1.0) / (2.0 * q * (1.0 - q)).sqrt());
+    }
+    let z = norm_quantile(q);
+    let (z2, z3) = (z * z, z * z * z);
+    let g1 = (z3 + z) / 4.0;
+    let g2 = (5.0 * z3 * z2 + 16.0 * z3 + 3.0 * z) / 96.0;
+    let g3 = (3.0 * z3 * z2 * z2 + 19.0 * z3 * z2 + 17.0 * z3 - 15.0 * z) / 384.0;
+    let mut x = z + g1 / nu + g2 / (nu * nu) + g3 / (nu * nu * nu);
+    if !(x.is_finite() && x > 0.0) {
+        x = 1.0;
+    }
+    // ln of the density's constant.
+    let c =
+        ln_gamma(0.5 * (nu + 1.0)) - ln_gamma(0.5 * nu) - 0.5 * (nu * std::f64::consts::PI).ln();
+    let (mut lo, mut hi) = (0.0f64, f64::INFINITY);
+    for _ in 0..60 {
+        let f = student_t_cdf(x, nu) - q;
+        if f < 0.0 {
+            lo = lo.max(x);
+        } else {
+            hi = hi.min(x);
+        }
+        let dens = (c - 0.5 * (nu + 1.0) * (x * x / nu).ln_1p()).exp();
+        let mut next = x - f / dens;
+        if !(next > lo && next < hi) {
+            next = if hi.is_finite() {
+                0.5 * (lo + hi)
+            } else {
+                2.0 * x.max(1.0)
+            };
+        }
+        if (next - x).abs() <= 4.0 * f64::EPSILON * next.abs() {
+            return Some(next);
+        }
+        x = next;
+    }
+    None
 }
 
 /// Regularized incomplete gamma functions `(P(a, x), Q(a, x))`, the lower

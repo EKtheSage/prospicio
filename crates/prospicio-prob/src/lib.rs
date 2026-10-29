@@ -46,6 +46,7 @@ pub mod predictive;
 pub mod provenance;
 pub mod rearrangement;
 pub mod risk;
+pub mod rvine;
 pub mod sampled;
 pub mod serial;
 pub mod severity;
@@ -55,7 +56,13 @@ pub mod statistics;
 pub mod truncated;
 pub mod tweedie;
 pub mod vine;
+pub mod vine_fit;
 pub mod weibull;
+pub mod weighted;
+
+/// Sobol points and the multivariate normal distribution function, from
+/// `prospicio-math`.
+pub use prospicio_math::{mvn, qmc};
 
 pub use affine::Affine;
 pub use beta::Beta;

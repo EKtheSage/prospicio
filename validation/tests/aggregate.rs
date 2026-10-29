@@ -2486,3 +2486,117 @@ fn a_stop_loss_net_grid_has_no_fft_fuzz() {
         .unwrap();
     assert!((premium - 50.420).abs() < 0.002, "{premium}");
 }
+
+#[test]
+fn hawkes_fits_match_scipy() {
+    use prospicio_aggregate::Hawkes;
+
+    let cases = reference("hawkes_scipy.csv");
+    assert_eq!(cases.len(), 4);
+    for case in &cases {
+        let horizon: f64 = case.get("horizon").parse().unwrap();
+        let periods: Vec<Vec<f64>> = case
+            .get("periods")
+            .split(';')
+            .map(|p| {
+                if p.is_empty() {
+                    Vec::new()
+                } else {
+                    p.split('|').map(|t| t.parse().unwrap()).collect()
+                }
+            })
+            .collect();
+        let want = |k: &str| -> f64 { case.get(k).parse().unwrap() };
+        let fit = Hawkes::fit(&periods, horizon).unwrap();
+        let name = case.get("case");
+        // The same optimum: Rust's log-likelihood at least SciPy's.
+        assert!(
+            fit.log_likelihood >= want("log_likelihood") - 1e-7,
+            "{name}: {} against {}",
+            fit.log_likelihood,
+            want("log_likelihood")
+        );
+        assert!(
+            (fit.log_likelihood - want("log_likelihood")).abs() < 1e-6,
+            "{name}"
+        );
+        // The parameters where the data identify them; with weak excitation
+        // the likelihood is nearly flat in beta.
+        if name != "weak excitation" {
+            for (got, key) in [
+                (fit.baseline, "baseline"),
+                (fit.alpha, "alpha"),
+                (fit.beta, "beta"),
+            ] {
+                assert!(
+                    (got / want(key) - 1.0).abs() < 1e-4,
+                    "{name} {key}: {got} against {}",
+                    want(key)
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn importance_sampling_matches_the_fft_tail_with_a_smaller_error() {
+    use prospicio_aggregate::{TailMixture, simulate_events_weighted};
+    use prospicio_prob::weighted::WeightedSample;
+    use prospicio_prob::{Distribution, Empirical};
+
+    // A heavy discrete severity: p_k ∝ k^-3 on 1..=200, step 1.
+    let mut probs = vec![0.0];
+    probs.extend((1..=200).map(|k| (k as f64).powi(-3)));
+    let z: f64 = probs.iter().sum();
+    probs.iter_mut().for_each(|p| *p /= z);
+    let sev = Grid::new(1.0, probs).unwrap();
+    let freq = Poisson::new(2.0).unwrap();
+    let (exact, _) = fft(&freq, &sev, 1 << 14).unwrap();
+    let n = 200_000;
+    let totals = |events: &prospicio_aggregate::EventSet| -> Vec<f64> {
+        Empirical::draws(&events.totals().unwrap()).to_vec()
+    };
+    let proposal = Poisson::new(4.0).unwrap();
+    let tail = TailMixture {
+        threshold: 20.0,
+        share: 0.3,
+    };
+    let (ev, w) =
+        simulate_events_weighted(&freq, &sev, n, Some(&proposal), Some(tail), 11).unwrap();
+    let is = WeightedSample::new(totals(&ev), w).unwrap();
+    let (plain_ev, ones) = simulate_events_weighted(&freq, &sev, n, None, None, 11).unwrap();
+    assert!(ones.iter().all(|&x| x == 1.0));
+    let plain = WeightedSample::new(totals(&plain_ev), ones).unwrap();
+    // Without a change of measure the years are simulate_events'.
+    let same = prospicio_aggregate::simulate_events(&freq, &sev, n, 11).unwrap();
+    assert_eq!(totals(&same), totals(&plain_ev));
+    // The weights average 1.
+    assert!(
+        (is.mean_weight() - 1.0).abs() < 0.02,
+        "{}",
+        is.mean_weight()
+    );
+    for p in [0.995, 0.999] {
+        let (want_var, want_tvar) = (exact.quantile(p).unwrap(), exact.tvar(p).unwrap());
+        let (var, tvar) = (is.var(p).unwrap(), is.tvar(p).unwrap());
+        let (se_var, se_tvar) = (
+            is.standard_error_var(p, 50).unwrap(),
+            is.standard_error_tvar(p, 50).unwrap(),
+        );
+        assert!(
+            (var - want_var).abs() <= (4.0 * se_var).max(1.0),
+            "VaR {p}: {var} {want_var} ± {se_var}"
+        );
+        assert!(
+            (tvar - want_tvar).abs() <= 4.0 * se_tvar,
+            "TVaR {p}: {tvar} {want_tvar} ± {se_tvar}"
+        );
+        // Several times smaller than plain Monte Carlo at the same count.
+        let plain_se = plain.standard_error_tvar(p, 50).unwrap();
+        assert!(
+            se_tvar < plain_se / 2.0,
+            "{p}: {se_tvar} against {plain_se}"
+        );
+    }
+    assert!((is.mean() - exact.mean()).abs() < 4.0 * is.standard_error_mean(50).unwrap());
+}

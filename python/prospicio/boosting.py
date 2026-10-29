@@ -33,11 +33,18 @@ evaluation logic: ``compare``, ``cross_validate`` and the metrics in
   ``models.pinball_score``; ``predict_quantiles`` puts several fits
   together as non-crossing quantile sets.
 
+- ``monotone`` and ``interaction_constraints`` take feature names and are
+  written in each engine's own form on the design's columns
+  (``BoosterFit.engine_params``); ``BoosterFit.check_monotone`` confirms a
+  fitted model's partial dependence on a grid, since the engines enforce
+  the constraints split by split.
+
 LightGBM and XGBoost are optional: install the one you use
 (``pip install lightgbm`` or ``pip install xgboost``).
 """
 
 import random
+import re
 
 from .prospicio_native import simulate_from_means
 
@@ -84,8 +91,19 @@ class Booster:
         Boosting rounds.
     learning_rate : float, default 0.05
     params : dict, optional
-        Further engine parameters (``num_leaves``, ``max_depth``,
-        ``monotone_constraints``, ...), passed as they are.
+        Further engine parameters (``num_leaves``, ``max_depth``, ...),
+        passed as they are; give constraints through ``monotone`` and
+        ``interaction_constraints`` instead.
+    monotone : dict, optional
+        ``{feature: 1, -1 or 0}``: the prediction non-decreasing (1) or
+        non-increasing (-1) in the feature. A feature is a design column's
+        name or the variable of a monotone term (``hinge(x,k)``,
+        ``step(x,k)``, ``log(x/b)``), and the constraint goes on every such
+        column. A factor, a polynomial or spline, a feature in an
+        interaction column and an unknown name are errors.
+    interaction_constraints : list of list of str, optional
+        Groups of features allowed to interact in a tree; each feature's
+        columns (factor levels included) enter its groups.
     n_boot : int, default 0
         Bootstrap refits for parameter uncertainty in
         ``predict_distribution``; 0 gives process noise only.
@@ -106,7 +124,7 @@ class Booster:
 
     def __init__(self, family="poisson", engine="lightgbm", power=None, n_rounds=200,
                  learning_rate=0.05, params=None, n_boot=0, seed=0, alpha=None,
-                 dispersion_model=False):
+                 dispersion_model=False, monotone=None, interaction_constraints=None):
         if family not in _OBJECTIVES:
             raise ValueError(f"family must be one of {sorted(_OBJECTIVES)}, got {family!r}")
         if engine not in _ENGINES:
@@ -130,8 +148,48 @@ class Booster:
         self.seed = seed
         self.alpha = alpha
         self.dispersion_model = dispersion_model
+        self.monotone = dict(monotone or {})
+        self.interaction_constraints = [list(g) for g in (interaction_constraints or [])]
+        if any(v not in (-1, 0, 1) for v in self.monotone.values()):
+            raise ValueError("monotone values must be 1, -1 or 0")
+        given = {"monotone_constraints", "monotone_constraint", "mc", "interaction_constraints"}
+        clash = sorted(given & set(self.params))
+        if clash and (self.monotone or self.interaction_constraints):
+            raise ValueError(f"params sets {clash}; give constraints through monotone and "
+                             "interaction_constraints only")
 
-    def _train(self, x, y, w, offset, seed):
+    def engine_params(self, names):
+        """The constraint parameters the engine gets for a design with
+        columns ``names``: LightGBM ``monotone_constraints`` (a list in
+        column order) and ``interaction_constraints`` (lists of column
+        indices), or XGBoost's tuple string and nested list string.
+
+        Parameters
+        ----------
+        names : list of str
+
+        Returns
+        -------
+        dict
+        """
+        names = list(names)
+        out = {}
+        if self.monotone:
+            signs = [0] * len(names)
+            for feature, sign in self.monotone.items():
+                for j in _monotone_columns(names, feature):
+                    signs[j] = int(sign)
+            out["monotone_constraints"] = (signs if self.engine == "lightgbm"
+                                           else "(" + ",".join(map(str, signs)) + ")")
+        if self.interaction_constraints:
+            groups = [sorted({j for f in g for j in _feature_columns(names, f)})
+                      for g in self.interaction_constraints]
+            out["interaction_constraints"] = (groups if self.engine == "lightgbm"
+                                              else "[" + ", ".join("[" + ", ".join(map(str, g)) + "]"
+                                                                   for g in groups) + "]")
+        return out
+
+    def _train(self, x, y, w, offset, seed, constraints=None):
         lgb_obj, xgb_obj, _ = _OBJECTIVES[self.family]
         if self.engine == "lightgbm":
             import lightgbm as lgb
@@ -143,6 +201,7 @@ class Booster:
             if self.family == "quantile":
                 params["alpha"] = self.alpha
             params.update(self.params)
+            params.update(constraints or {})
             data = lgb.Dataset(x, label=y, weight=w, init_score=offset, free_raw_data=False)
             return lgb.train(params, data, num_boost_round=self.n_rounds)
         import xgboost as xgb
@@ -153,6 +212,7 @@ class Booster:
         if self.family == "quantile":
             params["quantile_alpha"] = self.alpha
         params.update(self.params)
+        params.update(constraints or {})
         data = xgb.DMatrix(x, label=y, weight=w, base_margin=offset)
         return xgb.train(params, data, num_boost_round=self.n_rounds)
 
@@ -172,6 +232,7 @@ class Booster:
 
         if len(y) != design.n_rows:
             raise ValueError(f"{len(y)} responses for {design.n_rows} design rows")
+        constraints = self.engine_params(design.names)
         x = _matrix(design)
         y = np.asarray(y, dtype=float)
         w = np.asarray(design.weights, dtype=float)
@@ -183,23 +244,24 @@ class Booster:
             base = _weighted_quantile(y, w, self.alpha)
         else:
             base = _base_score(self.family, y, w, offset)
-        model = self._train(x, y, w, offset + base, self.seed)
+        model = self._train(x, y, w, offset + base, self.seed, constraints)
         boots = []
         rng = random.Random(self.seed)
         n = len(y)
         for b in range(self.n_boot):
             rows = np.array([rng.randrange(n) for _ in range(n)])
-            boots.append(self._train(x[rows], y[rows], w[rows], offset[rows] + base, self.seed + 1 + b))
+            boots.append(self._train(x[rows], y[rows], w[rows], offset[rows] + base, self.seed + 1 + b,
+                                     constraints))
         fit = BoosterFit(self, design.names, model, boots, 1.0, base)
         if self.family not in ("poisson", "quantile"):
             mu = np.asarray(fit.predict(design))
             v = np.array([_variance(self.family, m, self.power) for m in mu])
             fit.dispersion = float(np.sum(w * (y - mu) ** 2 / v) / n)
         if self.dispersion_model:
-            fit.dispersion_fit = self._fit_dispersion(x, y, w, offset, base)
+            fit.dispersion_fit = self._fit_dispersion(x, y, w, offset, base, constraints)
         return fit
 
-    def _fit_dispersion(self, x, y, w, offset, base):
+    def _fit_dispersion(self, x, y, w, offset, base, constraints=None):
         """A gamma booster for the Pearson residuals of 5-fold cross-fitted
         means: ``E[w (y - mu)^2 / V(mu)] = phi`` row by row."""
         import numpy as np
@@ -214,7 +276,8 @@ class Booster:
             if not test.any():
                 continue
             train = ~test
-            model = self._train(x[train], y[train], w[train], offset[train] + base, self.seed)
+            model = self._train(x[train], y[train], w[train], offset[train] + base, self.seed,
+                                constraints)
             eta = _raw_margin(self.engine, model, x[test], offset[test] + base)
             mu[test] = np.exp(eta) if link == "log" else eta
         v = np.array([_variance(self.family, m, self.power) for m in mu])
@@ -279,6 +342,56 @@ class BoosterFit:
         list of float
         """
         return self._means(self.model, design)
+
+    def check_monotone(self, design, feature, grid=None, direction=None, tol=1e-9):
+        """The partial dependence of the predictions on ``feature`` (a
+        design column) over ``grid``: the mean prediction over the rows of
+        ``design`` with the column set to each value, and where it moves
+        against ``direction`` (the fit's monotone constraint by default).
+        The engines enforce a constraint split by split, so this confirms
+        it on the model as fitted.
+
+        Parameters
+        ----------
+        design : Design
+        feature : str
+        grid : list of float, optional
+            Twenty quantiles of the column by default.
+        direction : {1, -1}, optional
+        tol : float, default 1e-9
+            Relative tolerance on a step against the direction.
+
+        Returns
+        -------
+        dict
+            ``grid``, ``mean``, ``direction``, ``violations`` (indices ``i``
+            whose step from ``i - 1`` goes against the direction) and
+            ``monotone``.
+        """
+        import numpy as np
+
+        from .models import Design
+
+        names = list(design.names)
+        if feature not in names:
+            raise ValueError(f"{feature!r} is not a column of the design")
+        if direction is None:
+            direction = self.spec.monotone.get(feature)
+        if direction not in (1, -1):
+            raise ValueError("give direction 1 or -1, or fit with a monotone constraint on the feature")
+        j = names.index(feature)
+        cols = [list(design.column(k)) for k in range(len(names))]
+        if grid is None:
+            grid = sorted(set(np.quantile(cols[j], np.linspace(0, 1, 20)).tolist()))
+        means = []
+        for v in grid:
+            c = [col if k != j else [float(v)] * design.n_rows for k, col in enumerate(cols)]
+            d = Design(c, names, offset=list(design.offset), weights=list(design.weights))
+            means.append(float(np.mean(self.predict(d))))
+        scale = max(abs(m) for m in means) or 1.0
+        bad = [i for i in range(1, len(means)) if direction * (means[i] - means[i - 1]) < -tol * scale]
+        return {"grid": list(grid), "mean": means, "direction": direction, "violations": bad,
+                "monotone": not bad}
 
     def predict_dispersion(self, design):
         """Each row's dispersion from the dispersion model, or the constant
@@ -391,3 +504,66 @@ def _matrix(design):
     import numpy as np
 
     return np.column_stack([design.column(j) for j in range(len(design.names))])
+
+
+_FUNCTION_COLUMN = re.compile(r"^(\w+)\(([^,/)]+)")
+_MONOTONE_FUNCTIONS = {"hinge", "step", "log"}
+
+
+def _column_feature(name):
+    """A single-term column's feature and its kind: ``"plain"`` (the column
+    itself), ``"monotone"`` (a monotone transform), ``"factor"`` (a level,
+    bin or ordinal indicator) or ``"other"`` (a polynomial or spline)."""
+    m = _FUNCTION_COLUMN.match(name)
+    if m:
+        return m.group(2), "monotone" if m.group(1) in _MONOTONE_FUNCTIONS else "other"
+    if "[" in name:
+        return name[:name.index("[")], "factor"
+    if "^" in name:
+        return name[:name.index("^")], "other"
+    return name, "plain"
+
+
+def _split_interaction(name):
+    """An interaction column's parts, split at ``:`` outside brackets."""
+    parts, depth, cur = [], 0, ""
+    for ch in name:
+        depth += ch in "[(" 
+        depth -= ch in "])"
+        if ch == ":" and depth == 0:
+            parts.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    return parts + [cur]
+
+
+def _feature_columns(names, feature):
+    """Every column a feature produces, interactions included."""
+    cols = [j for j, n in enumerate(names)
+            if any(_column_feature(p)[0] == feature for p in _split_interaction(n))]
+    if not cols:
+        raise ValueError(f"{feature!r} is not a feature of the design (columns: {names})")
+    return cols
+
+
+def _monotone_columns(names, feature):
+    """The columns a monotone constraint on a feature goes on."""
+    cols = []
+    for j, n in enumerate(names):
+        parts = _split_interaction(n)
+        hits = [_column_feature(p) for p in parts if _column_feature(p)[0] == feature]
+        if not hits:
+            continue
+        if len(parts) > 1:
+            raise ValueError(f"{feature!r} enters the interaction column {n!r}; constrain its "
+                             "main effect without the interaction, or give the column itself")
+        kind = hits[0][1]
+        if kind == "factor":
+            raise ValueError(f"{feature!r} is a factor ({n!r}); a monotone constraint needs a numeric feature")
+        if kind == "other":
+            raise ValueError(f"{n!r} is not a monotone transform of {feature!r}")
+        cols.append(j)
+    if not cols:
+        raise ValueError(f"{feature!r} is not a feature of the design (columns: {names})")
+    return cols

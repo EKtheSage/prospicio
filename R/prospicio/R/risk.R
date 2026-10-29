@@ -652,11 +652,12 @@ nac_node <- function(theta, leaves = numeric(), children = list()) {
 #' than `d - 1` truncate the vine (the rest independence).
 #' `copula_log_density()` is the vine's log-density.
 #'
-#' @param family One of `"independence"`, `"gaussian"`, `"clayton"`,
-#'   `"gumbel"`, `"frank"` and `"joe"`.
-#' @param parameter Gaussian correlation in (-1, 1); Clayton above 0; Gumbel
-#'   and Joe at least 1; Frank not 0.
-#' @param rotation 0, 90, 180 or 270.
+#' @param family One of `"independence"`, `"gaussian"`, `"student"`,
+#'   `"clayton"`, `"gumbel"`, `"frank"` and `"joe"`.
+#' @param parameter Gaussian and Student t correlation in (-1, 1); Clayton
+#'   above 0; Gumbel and Joe at least 1; Frank not 0.
+#' @param rotation 0, 90, 180 or 270 (0 for the Student t).
+#' @param nu The Student t's degrees of freedom; `NULL` for the others.
 #' @param kind `"c"` or `"d"`.
 #' @param order The dimensions (1, 2, ...) in vine order.
 #' @param pairs A list of trees, tree `t` a list of its `d - t` pair copulas.
@@ -678,11 +679,155 @@ vine_copula <- function(kind = c("c", "d"), order, pairs) {
 
 #' @rdname vine_copula
 #' @export
-pair_copula <- function(family = c("independence", "gaussian", "clayton", "gumbel", "frank",
-                                   "joe"),
-                        parameter = 0, rotation = 0) {
+pair_copula <- function(family = c("independence", "gaussian", "student", "clayton", "gumbel",
+                                   "frank", "joe"),
+                        parameter = 0, rotation = 0, nu = NULL) {
   family <- match.arg(family)
-  list(family, as.double(parameter), as.double(rotation))
+  list(family, as.double(parameter), as.double(rotation), if (is.null(nu)) NA_real_ else as.double(nu))
+}
+
+#' Fit a pair copula
+#'
+#' `fit_pair_copula()` is the maximum likelihood fit of one family in one
+#' rotation to observations `(u, v)` in `(0, 1)` (take [pseudo_obs()] of raw
+#' data first), within pyvinecopulib's parameter bounds; the Student t by
+#' its profile likelihood over `nu` in `[2, 50]`. `select_pair_copula()`
+#' picks the best by AIC or BIC over `families` (each of Clayton, Gumbel and
+#' Joe in the two rotations that match the sign of Kendall's tau) and
+#' independence, as pyvinecopulib's `Bicop.select` does; with
+#' `independence_test` a level, a pair whose Kendall test p-value is above
+#' it is independence. `kendall_tau()` is Kendall's tau-b and `pseudo_obs()`
+#' each value's average rank over `n + 1`.
+#'
+#' @param u,v Observations in `(0, 1)`.
+#' @param family A family, as for [pair_copula()].
+#' @param rotation 0, 90, 180 or 270.
+#' @param families Families to try; `NULL` for the Gaussian, Student,
+#'   Clayton, Gumbel, Frank and Joe.
+#' @param criterion `"aic"` or `"bic"`.
+#' @param independence_test A level for the independence test, or `NULL`.
+#' @param x,y Samples.
+#' @returns `fit_pair_copula()` and `select_pair_copula()`: a list with
+#'   `pair` (a [pair_copula()]), `log_likelihood`, `n_parameters`, `aic` and
+#'   `bic`; `kendall_tau()` a number; `pseudo_obs()` a vector.
+#' @export
+#' @examples
+#' set.seed(1)
+#' x <- rnorm(500)
+#' y <- x + rnorm(500)
+#' u <- pseudo_obs(x)
+#' v <- pseudo_obs(y)
+#' kendall_tau(x, y)
+#' select_pair_copula(u, v)$pair
+fit_pair_copula <- function(u, v, family, rotation = 0) {
+  pair_fit_result(rust_result(pair_fit_rust(as.double(u), as.double(v), as.character(family),
+                                            as.double(rotation))))
+}
+
+#' @rdname fit_pair_copula
+#' @export
+select_pair_copula <- function(u, v, families = NULL, criterion = c("aic", "bic"),
+                               independence_test = NULL) {
+  criterion <- match.arg(criterion)
+  pair_fit_result(rust_result(pair_select_rust(
+    as.double(u), as.double(v), if (is.null(families)) character() else as.character(families),
+    criterion, if (is.null(independence_test)) NaN else as.double(independence_test)
+  )))
+}
+
+#' @rdname fit_pair_copula
+#' @export
+kendall_tau <- function(x, y) rust_result(kendall_tau_rust(as.double(x), as.double(y)))
+
+#' @rdname fit_pair_copula
+#' @export
+pseudo_obs <- function(x) rust_result(pseudo_observations_rust(as.double(x)))
+
+pair_fit_result <- function(r) {
+  list(pair = list(r$family, r$parameter, r$rotation, r$nu), log_likelihood = r$log_likelihood,
+       n_parameters = r$n_parameters, aic = r$aic, bic = r$bic)
+}
+
+#' R-vine copulas
+#'
+#' `rvine_copula()` is a regular vine copula given by its R-vine matrix in
+#' vinecopulib's convention (rvinecopulib's `rvine_matrix`, pyvinecopulib's
+#' `Vinecop.matrix`): `d x d`, the order on the antidiagonal
+#' `M[d - j + 1, j]`, and above it in column `j` row `t` the variable that
+#' tree `t`'s edge `j` joins to it, given the variables above it in the
+#' column; 0 below the antidiagonal and in the rows of trees not kept. R's
+#' VineCopula package stores the same vine flipped upside down and left to
+#' right. `rvine_structure()` gives a vine's matrix and pair copulas, a C-
+#' or D-vine's as an R-vine. [copula_log_density()] and [copula_sample()]
+#' take an R-vine.
+#'
+#' @param matrix The R-vine matrix.
+#' @param pairs A list of trees, tree `t` a list of its `d - t` pair
+#'   copulas ([pair_copula()]) by column, each with first argument the
+#'   column's antidiagonal variable. Fewer trees truncate the vine.
+#' @param copula A vine [copula].
+#' @returns `rvine_copula()`: a [copula]; `rvine_structure()`: a list with
+#'   `matrix` and `pairs`.
+#' @export
+#' @examples
+#' g <- pair_copula("gaussian", 0.5)
+#' m <- matrix(c(2, 3, 1, 3, 2, 0, 3, 0, 0), 3)
+#' v <- rvine_copula(m, list(list(g, g), list(g)))
+#' copula_log_density(v, c(0.2, 0.7, 0.4))
+#' rvine_structure(vine_copula("d", 1:3, list(list(g, g), list(g))))$matrix
+rvine_copula <- function(matrix, pairs) {
+  copula(rust_result(RiskCopula$rvine(as.double(as.matrix(matrix)), pairs)))
+}
+
+#' @rdname rvine_copula
+#' @export
+rvine_structure <- function(copula) {
+  r <- rust_result(copula@ptr$rvine_structure())
+  d <- round(sqrt(length(r$matrix)))
+  list(matrix = matrix(as.integer(r$matrix), d), pairs = r$pairs)
+}
+
+#' Fit a vine copula
+#'
+#' A vine fitted to `data` tree by tree, each edge's pair copula chosen as
+#' [select_pair_copula()] chooses on the conditional values the trees below
+#' give at their estimates (sequential maximum likelihood). On a given R-vine
+#' `matrix` this is rvinecopulib's `vinecop(data, structure = matrix)`;
+#' without one the structure is chosen by Dissmann's algorithm, as
+#' `vinecop(data)`: each tree the spanning tree of largest total `|tau|`
+#' over the edges the proximity condition allows.
+#'
+#' @param data A matrix with one row an observation and one column a
+#'   variable, values in `(0, 1)` (take [pseudo_obs()] of each column of raw
+#'   data first).
+#' @param matrix An R-vine matrix as for [rvine_copula()], or `NULL` to
+#'   select the structure.
+#' @inheritParams fit_pair_copula
+#' @param trunc_level The number of trees to fit, or `NULL` for all.
+#' @returns A list with `copula` (an R-vine [copula]), `matrix`, `pairs`,
+#'   `log_likelihood`, `n_parameters`, `aic` and `bic`.
+#' @export
+#' @examples
+#' u <- copula_sample(gaussian_copula(matrix(c(1, 0.7, 0.5, 0.7, 1, 0.3, 0.5, 0.3, 1), 3)),
+#'                    1000, seed = 1)
+#' fit <- fit_vine_copula(u)
+#' fit$matrix
+#' fit$aic
+fit_vine_copula <- function(data, matrix = NULL, families = NULL, criterion = c("aic", "bic"),
+                            independence_test = NULL, trunc_level = NULL) {
+  criterion <- match.arg(criterion)
+  data <- as.matrix(data)
+  r <- rust_result(vine_fit_rust(
+    as.double(data), as.double(nrow(data)),
+    if (is.null(matrix)) double() else as.double(as.matrix(matrix)),
+    if (is.null(families)) character() else as.character(families), criterion,
+    if (is.null(independence_test)) NaN else as.double(independence_test),
+    if (is.null(trunc_level)) NaN else as.double(trunc_level)
+  ))
+  d <- ncol(data)
+  m <- base::matrix(as.integer(r$matrix), d)
+  list(copula = rvine_copula(m, r$pairs), matrix = m, pairs = r$pairs,
+       log_likelihood = r$log_likelihood, n_parameters = r$n_parameters, aic = r$aic, bic = r$bic)
 }
 
 #' @rdname vine_copula
@@ -695,9 +840,11 @@ copula_log_density <- function(copula, u) {
 #' Copula distribution function
 #'
 #' `C(u) = P(U_1 <= u_1, ..., U_d <= u_d)` at each point: the Gaussian
-#' copula's in two dimensions (the bivariate normal cdf by Genz's method,
-#' about `1e-15`), the Archimedean copulas' in any. The t copula has none
-#' yet and is an error.
+#' copula's exactly in two dimensions (the bivariate normal cdf by Genz's
+#' method, about `1e-15`) and in more by Genz's quasi-Monte Carlo method
+#' within an absolute error of about `1e-5` ([mvn_cdf()];
+#' [copula_cdf_estimate()] for the settings and the error), the
+#' Archimedean copulas' in any. The t copula has none yet and is an error.
 #'
 #' @param copula A [copula].
 #' @param u A point (a vector of `copula@dimension` values in `[0, 1]`) or a
@@ -710,6 +857,140 @@ copula_log_density <- function(copula, u) {
 copula_cdf <- function(copula, u) {
   u <- if (is.matrix(u)) u else matrix(u, nrow = 1)
   rust_result(copula@ptr$cdf(as.double(u), as.double(nrow(u))))
+}
+
+#' Gaussian copula cdf with its error estimate
+#'
+#' The Gaussian copula's distribution function at each point with Genz's
+#' error estimate ([mvn_cdf()]): exact in two dimensions, and wherever at
+#' most two coordinates are below 1.
+#'
+#' @param copula A [gaussian_copula()].
+#' @param u A point or a matrix with one point per row.
+#' @param abs_tol Absolute error to reach, three standard errors.
+#' @param max_points Most integrand evaluations.
+#' @param seed Seed of the scrambles, so a call is reproducible.
+#' @returns A data frame with `value`, `error`, `points` and `converged`,
+#'   one row per point.
+#' @export
+#' @examples
+#' r <- matrix(0.5, 3, 3)
+#' diag(r) <- 1
+#' copula_cdf_estimate(gaussian_copula(r), c(0.5, 0.5, 0.5), abs_tol = 1e-7)
+copula_cdf_estimate <- function(copula, u, abs_tol = 1e-5, max_points = 2^22, seed = 0) {
+  u <- if (is.matrix(u)) u else matrix(u, nrow = 1)
+  n <- nrow(u)
+  e <- rust_result(copula@ptr$cdf_estimate(
+    as.double(u), as.double(n), as.double(abs_tol), as.double(max_points), as.double(seed)
+  ))
+  data.frame(value = e[seq_len(n)], error = e[n + seq_len(n)],
+             points = e[2 * n + seq_len(n)], converged = e[3 * n + seq_len(n)] == 1)
+}
+
+#' Gaussian copula draws on Sobol points
+#'
+#' `n` draws on scrambled Sobol points ([sobol_points()]), quasi-Monte
+#' Carlo: each point `w` becomes `pnorm(L qnorm(w))`. Over a power of two of
+#' points each margin is spread far more evenly than random draws, so a
+#' statistic converges faster; the rows are not independent, so a standard
+#' error needs several seeds. At most 1,111 dimensions.
+#'
+#' @param copula A [gaussian_copula()].
+#' @param n Number of draws; a power of two keeps them balanced.
+#' @param seed Seed of the scramble.
+#' @returns An `n` by `copula@dimension` matrix of uniforms in `(0, 1)`.
+#' @export
+#' @examples
+#' u <- copula_sample_qmc(gaussian_copula(matrix(c(1, 0.6, 0.6, 1), 2)), 1024, seed = 7)
+#' all(sort(floor(u[, 1] * 1024)) == 0:1023)
+copula_sample_qmc <- function(copula, n, seed = 0) {
+  m <- rust_result(copula@ptr$sample_qmc(as.double(n), as.double(seed)))
+  matrix(m, nrow = n)
+}
+
+#' Multivariate normal probability
+#'
+#' `P(lower < X < upper)` for `X ~ N(0, R)` by Genz's method: exact in one
+#' and two dimensions; in more, Genz's integral after a Cholesky separation
+#' of the variables (reordered as Genz and Bretz do), estimated by
+#' `scrambles` independently scrambled Sobol sequences, the points doubled
+#' until three standard errors are at most `abs_tol` or the points reach
+#' `max_points`. The method of `mvtnorm::pmvnorm()`, with Sobol points in
+#' place of its lattice rules, so results agree within the errors.
+#'
+#' @param upper Upper limits (`Inf` for none).
+#' @param correlation A positive definite correlation or covariance matrix.
+#' @param lower Lower limits; `NULL` for `-Inf`.
+#' @param abs_tol Absolute error to reach, three standard errors; with ten
+#'   scrambles the true error exceeds it in about 1.5% of calls.
+#' @param max_points Most integrand evaluations.
+#' @param scrambles Independent scrambles, at least 2.
+#' @param seed Seed of the scrambles, so a call is reproducible.
+#' @returns The probability, with attributes `error`, `points` and
+#'   `converged`.
+#' @export
+#' @examples
+#' r <- matrix(0.5, 3, 3)
+#' diag(r) <- 1
+#' mvn_cdf(c(0, 0, 0), r) # 1/4
+mvn_cdf <- function(upper, correlation, lower = NULL, abs_tol = 1e-5, max_points = 2^22,
+                    scrambles = 10, seed = 0) {
+  upper <- as.double(upper)
+  lower <- if (is.null(lower)) rep(-Inf, length(upper)) else as.double(lower)
+  e <- rust_result(mvn_cdf_rust(lower, upper, as.double(correlation), as.double(abs_tol),
+                                as.double(max_points), as.double(scrambles), as.double(seed)))
+  structure(e[1], error = e[2], points = e[3], converged = e[4] == 1)
+}
+
+#' Tail statistics of weighted draws
+#'
+#' The estimators of an importance sample ([simulate_events_weighted()]):
+#' the self-normalised mean `sum(w * x) / sum(w)`, and the VaR and TVaR of
+#' the distribution putting mass `w_i / sum(w)` on draw `i`, each with a
+#' standard error by batch means (the draws split, in order, into
+#' `batches` runs, each estimated alone). Equal weights give the plain
+#' estimators.
+#'
+#' @param values The draws.
+#' @param weights One a draw, non-negative, with a positive sum.
+#' @param p Probability levels.
+#' @param batches Number of batches for the standard errors.
+#' @returns A data frame with a row a level: `p`, `var`, `var_se`, `tvar`
+#'   and `tvar_se`; attributes `mean`, `mean_se`, `mean_weight` and
+#'   `effective_sample_size` (`sum(w)^2 / sum(w^2)`).
+#' @export
+#' @examples
+#' weighted_tail(c(1, 2, 3), c(1, 1, 2), 0.5, batches = 3)
+weighted_tail <- function(values, weights, p, batches = 20) {
+  r <- rust_result(weighted_tail_rust(as.double(values), as.double(weights), as.double(p),
+                                      as.double(batches)))
+  structure(data.frame(p = r$p, var = r$var, var_se = r$var_se, tvar = r$tvar, tvar_se = r$tvar_se),
+            mean = r$mean, mean_se = r$mean_se, mean_weight = r$mean_weight,
+            effective_sample_size = r$effective_sample_size)
+}
+
+#' Sobol points
+#'
+#' `n` points of the Sobol sequence in `dim` dimensions: Joe and Kuo's
+#' direction numbers (up to 1,111 dimensions) at 32 bits, in Gray-code
+#' order. Unscrambled, the points are SciPy's
+#' `stats.qmc.Sobol(dim, scramble=False, bits=32)` exactly, the first at the
+#' origin. Scrambled, a linear matrix scramble with a digital shift drawn
+#' from `seed` (SciPy's kind of scramble, not its random stream) makes each
+#' point uniform and keeps the balance: over `2^m` points each `1 / 2^m` of
+#' a coordinate holds one point.
+#'
+#' @param n Number of points.
+#' @param dim Number of dimensions.
+#' @param scramble Whether to scramble.
+#' @param seed Seed of the scramble.
+#' @returns An `n` by `dim` matrix.
+#' @export
+#' @examples
+#' sobol_points(4, 2, scramble = FALSE)
+sobol_points <- function(n, dim, scramble = TRUE, seed = 0) {
+  m <- rust_result(sobol_rust(as.double(n), as.double(dim), isTRUE(scramble), as.double(seed)))
+  matrix(m, nrow = n)
 }
 
 #' Draw uniforms from a copula

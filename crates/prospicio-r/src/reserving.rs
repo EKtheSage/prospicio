@@ -15,13 +15,13 @@ use prospicio_reserving::{
     Benktander, BornhuetterFerguson, CapeCod, CapeCodFit as CapeCodInner, ChainLadder,
     ChainLadderFit as ChainLadderInner, ClaimsDevelopmentResult as ClaimsDevelopmentInner,
     ClarkCapeCod, ClarkFit as ClarkInner, ClarkLdf, CurveShape, Development, DevelopmentColumn,
-    DiagonalAge, ExpectedLoss, ExpectedLossFit as ExpectedLossInner, FitTable, Grain, GrowthCurve,
-    Label, Lag, LatestDiagonals as LatestDiagonalsInner, Long, LongDiagonal, Mack, MackBootstrap,
-    MackBootstrapFits, MackBootstrapSegment, MackFit as MackInner, MackProcess, Month,
-    OdpBootstrap, OdpBootstrapFits, OneYearFits, OneYearMethod, OneYearPattern, PastPatternEnd,
-    PatternKind, PatternWeight, Period, ProcessDistribution, ReserveFit, SegmentDependence,
-    SegmentFits, SegmentMap, SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailConstant,
-    TailCurve, Triangle as TriangleInner, UnderwritingBasis,
+    DiagonalAge, ExpectedLoss, ExpectedLossFit as ExpectedLossInner, FileLayout, FitTable, Grain,
+    GrowthCurve, Label, Lag, LatestDiagonals as LatestDiagonalsInner, Long, LongDiagonal, Mack,
+    MackBootstrap, MackBootstrapFits, MackBootstrapSegment, MackFit as MackInner, MackProcess,
+    Month, OdpBootstrap, OdpBootstrapFits, OneYearFits, OneYearMethod, OneYearPattern,
+    PastPatternEnd, PatternKind, PatternWeight, Period, ProcessDistribution, ReserveFit,
+    SegmentDependence, SegmentFits, SegmentMap, SelectedPattern, SigmaInterpolation, Tail,
+    TailBondy, TailConstant, TailCurve, Triangle as TriangleInner, UnderwritingBasis,
 };
 use prospicio_reserving::{
     CalendarYearTest as CalendarYearInner,
@@ -752,6 +752,98 @@ impl Triangle {
             development_grain: grain(development_grain, "development_grain")?,
             cumulative,
         })
+        .map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    /// Reads a triangle from a CSV file (`format` `"csv"`) or a sheet of a
+    /// workbook (`"excel"`; `sheet` `NULL` for the first). Long when
+    /// `development` is given, wide otherwise (`columns` then names the one
+    /// measure, `"values"` when empty, and `ages` may name the age columns).
+    /// `comment` is a CSV comment character, `""` for none.
+    #[allow(clippy::too_many_arguments)]
+    fn read_file(
+        path: &str,
+        format: &str,
+        sheet: Nullable<String>,
+        origin: &str,
+        development: Nullable<String>,
+        columns: Vec<String>,
+        keys: Vec<String>,
+        ages: Nullable<Vec<f64>>,
+        origin_grain: &str,
+        development_grain: &str,
+        cumulative: bool,
+        development_is_valuation: bool,
+        comment: &str,
+    ) -> Result<Self> {
+        let layout = match development {
+            Nullable::NotNull(development) => {
+                if matches!(ages, Nullable::NotNull(_)) {
+                    return Err(Error::Other(
+                        "ages name the columns of a wide layout; give development = NULL".into(),
+                    ));
+                }
+                FileLayout::long(origin, development, columns)
+            }
+            Nullable::Null => {
+                if development_is_valuation {
+                    return Err(Error::Other(
+                        "development_is_valuation needs a long layout: give the development column"
+                            .into(),
+                    ));
+                }
+                let column = match columns.as_slice() {
+                    [] => "values".to_string(),
+                    [one] => one.clone(),
+                    _ => {
+                        return Err(Error::Other(
+                            "a wide layout has one measure: give columns as one name".into(),
+                        ));
+                    }
+                };
+                let layout = FileLayout::wide(origin, column);
+                match ages {
+                    Nullable::NotNull(ages) => {
+                        layout.ages(ages.into_iter().map(age).collect::<Result<Vec<Lag>>>()?)
+                    }
+                    Nullable::Null => layout,
+                }
+            }
+        };
+        let comment = match comment.as_bytes() {
+            [] => None,
+            [c] if c.is_ascii() => Some(*c),
+            _ => {
+                return Err(Error::Other(format!(
+                    "comment must be one ASCII character, got {comment:?}"
+                )));
+            }
+        };
+        let layout = layout
+            .keys(keys)
+            .grains(
+                grain(origin_grain, "origin_grain")?,
+                grain(development_grain, "development_grain")?,
+            )
+            .cumulative(cumulative)
+            .development_is_valuation(development_is_valuation)
+            .comment(comment);
+        let inner = match format {
+            "csv" => TriangleInner::read_csv(path, &layout),
+            "excel" => {
+                let sheet = match &sheet {
+                    Nullable::NotNull(s) => Some(s.as_str()),
+                    Nullable::Null => None,
+                };
+                TriangleInner::read_excel(path, sheet, &layout)
+            }
+            other => {
+                return Err(Error::Other(format!(
+                    "format must be \"csv\" or \"excel\", got {other:?}"
+                )));
+            }
+        }
         .map_err(to_r)?;
         Ok(Self { inner })
     }
@@ -4316,6 +4408,31 @@ impl MeyersFit {
         loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
+    /// The development ages of a segment's pattern draws, in months
+    /// (`DevelopmentPatterns::segment`); `segment` is empty for a fit of
+    /// one segment.
+    fn pattern_ages(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_ages_of(&self.inner.patterns, &segment)
+    }
+
+    /// The pattern draws of a segment, row-major: simulation `i`'s
+    /// cumulative share at each age in row `i`.
+    fn pattern_draws(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_draws_of(&self.inner.patterns, &segment)
+    }
+
+    /// The monthly patterns for the cash-flow engine, row-major: simulation
+    /// `i`'s share at the end of each of `months` months in row `i`.
+    fn monthly_pattern_draws(
+        &self,
+        segment: Vec<String>,
+        months: f64,
+        basis: Robj,
+        monotone: &str,
+    ) -> Result<Vec<f64>> {
+        monthly_pattern_draws_of(&self.inner.patterns, &segment, months, &basis, monotone)
+    }
+
     /// `list(max_rhat, min_ess_bulk, min_ess_tail, divergences, warnings)`.
     fn diagnostics(&self) -> List {
         let d = &self.inner.diagnostics;
@@ -4792,6 +4909,31 @@ impl MeyersFits {
     /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
     fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
         loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
+    /// The development ages of a segment's pattern draws, in months
+    /// (`DevelopmentPatterns::segment`); `segment` is empty for a fit of
+    /// one segment.
+    fn pattern_ages(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_ages_of(&self.inner.patterns, &segment)
+    }
+
+    /// The pattern draws of a segment, row-major: simulation `i`'s
+    /// cumulative share at each age in row `i`.
+    fn pattern_draws(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_draws_of(&self.inner.patterns, &segment)
+    }
+
+    /// The monthly patterns for the cash-flow engine, row-major: simulation
+    /// `i`'s share at the end of each of `months` months in row `i`.
+    fn monthly_pattern_draws(
+        &self,
+        segment: Vec<String>,
+        months: f64,
+        basis: Robj,
+        monotone: &str,
+    ) -> Result<Vec<f64>> {
+        monthly_pattern_draws_of(&self.inner.patterns, &segment, months, &basis, monotone)
     }
 
     /// One row per segment: `list(table, warnings)`, as
@@ -5534,6 +5676,31 @@ impl CompartmentalFits {
         loss_ratio_draws_of(&self.inner, origin, premium)
     }
 
+    /// The development ages of a segment's pattern draws, in months
+    /// (`DevelopmentPatterns::segment`); `segment` is empty for a fit of
+    /// one segment.
+    fn pattern_ages(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_ages_of(&self.inner.patterns, &segment)
+    }
+
+    /// The pattern draws of a segment, row-major: simulation `i`'s
+    /// cumulative share at each age in row `i`.
+    fn pattern_draws(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_draws_of(&self.inner.patterns, &segment)
+    }
+
+    /// The monthly patterns for the cash-flow engine, row-major: simulation
+    /// `i`'s share at the end of each of `months` months in row `i`.
+    fn monthly_pattern_draws(
+        &self,
+        segment: Vec<String>,
+        months: f64,
+        basis: Robj,
+        monotone: &str,
+    ) -> Result<Vec<f64>> {
+        monthly_pattern_draws_of(&self.inner.patterns, &segment, months, &basis, monotone)
+    }
+
     fn paid(&self) -> PredictiveDistribution {
         PredictiveDistribution {
             inner: self.inner.paid.clone(),
@@ -5677,6 +5844,31 @@ impl CompartmentalFit {
     /// [`ultimate_draws`](Self::ultimate_draws) over `premium`.
     fn loss_ratio_draws(&self, origin: Nullable<List>, premium: f64) -> Result<Vec<f64>> {
         loss_ratio_draws_of(&self.inner, origin, premium)
+    }
+
+    /// The development ages of a segment's pattern draws, in months
+    /// (`DevelopmentPatterns::segment`); `segment` is empty for a fit of
+    /// one segment.
+    fn pattern_ages(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_ages_of(&self.inner.patterns, &segment)
+    }
+
+    /// The pattern draws of a segment, row-major: simulation `i`'s
+    /// cumulative share at each age in row `i`.
+    fn pattern_draws(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_draws_of(&self.inner.patterns, &segment)
+    }
+
+    /// The monthly patterns for the cash-flow engine, row-major: simulation
+    /// `i`'s share at the end of each of `months` months in row `i`.
+    fn monthly_pattern_draws(
+        &self,
+        segment: Vec<String>,
+        months: f64,
+        basis: Robj,
+        monotone: &str,
+    ) -> Result<Vec<f64>> {
+        monthly_pattern_draws_of(&self.inner.patterns, &segment, months, &basis, monotone)
     }
 
     fn paid(&self) -> PredictiveDistribution {

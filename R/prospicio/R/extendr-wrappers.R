@@ -20,6 +20,20 @@ ppc_check_rust <- function(observed, replicated, statistics, groups) .Call(wrap_
 
 loo_pit_rust <- function(observed, replicated, log_lik, r_eff, seed) .Call(wrap__loo_pit_rust, observed, replicated, log_lik, r_eff, seed)
 
+conformal_split_rust <- function(y, pred, test_pred, alpha, score, family_name, scale, test_scale, weights, test_weights, theta, power) .Call(wrap__conformal_split_rust, y, pred, test_pred, alpha, score, family_name, scale, test_scale, weights, test_weights, theta, power)
+
+conformal_cqr_rust <- function(y, lo, hi, test_lo, test_hi, alpha) .Call(wrap__conformal_cqr_rust, y, lo, hi, test_lo, test_hi, alpha)
+
+conformal_plus_rust <- function(y, oof_pred, folds, test_pred, alpha) .Call(wrap__conformal_plus_rust, y, oof_pred, folds, test_pred, alpha)
+
+isotonic_rust <- function(x, y, weights, increasing, y_min, y_max) .Call(wrap__isotonic_rust, x, y, weights, increasing, y_min, y_max)
+
+balance_correction_rust <- function(y, pred, weights) .Call(wrap__balance_correction_rust, y, pred, weights)
+
+reliability_rust <- function(y, pred, weights, bins) .Call(wrap__reliability_rust, y, pred, weights, bins)
+
+murphy_rust <- function(y, pred, family_name, weights, theta, power) .Call(wrap__murphy_rust, y, pred, family_name, weights, theta, power)
+
 bayes_stacking_rust <- function(lpd, k, concentration, sampler) .Call(wrap__bayes_stacking_rust, lpd, k, concentration, sampler)
 
 hierarchical_stacking_rust <- function(lpd, k, x, p, priors, pooling, adaptive, discrete, sampler) .Call(wrap__hierarchical_stacking_rust, lpd, k, x, p, priors, pooling, adaptive, discrete, sampler)
@@ -180,6 +194,8 @@ group_k_fold_rust <- function(groups, k, seed) .Call(wrap__group_k_fold_rust, gr
 
 time_ordered_rust <- function(periods, n_test) .Call(wrap__time_ordered_rust, periods, n_test)
 
+time_splits_rust <- function(periods, n_test, window, horizon, gap, step) .Call(wrap__time_splits_rust, periods, n_test, window, horizon, gap, step)
+
 mcmc_diagnostics_rust <- function(draws, n_chains) .Call(wrap__mcmc_diagnostics_rust, draws, n_chains)
 
 elpd_loo_rust <- function(log_lik, n, r_eff) .Call(wrap__elpd_loo_rust, log_lik, n, r_eff)
@@ -246,6 +262,16 @@ pricing_tower_quote <- function(tower, ceded, expected_reinstatement_premium, to
 
 pricing_layer_quote <- function(expected_loss, risk_premium, assets, layer, ceded, expected_reinstatement_premium, expenses, brokerage, fixed, premium_tax, income_tax, brokerage_on_reinstatements) .Call(wrap__pricing_layer_quote, expected_loss, risk_premium, assets, layer, ceded, expected_reinstatement_premium, expenses, brokerage, fixed, premium_tax, income_tax, brokerage_on_reinstatements)
 
+frontier_rust <- function(losses, retentions, limits, kind, assets, rate, pricing, loading, risk, level) .Call(wrap__frontier_rust, losses, retentions, limits, kind, assets, rate, pricing, loading, risk, level)
+
+cat_bond_rust <- function(trigger, attachment, exhaustion, basis, weights, payout_x, payout_y, principal, term_years, years) .Call(wrap__cat_bond_rust, trigger, attachment, exhaustion, basis, weights, payout_x, payout_y, principal, term_years, years)
+
+cat_bond_price_rust <- function(annual, distortion) .Call(wrap__cat_bond_price_rust, annual, distortion)
+
+cat_bond_returns_rust <- function(annual, term_years, coupon) .Call(wrap__cat_bond_returns_rust, annual, term_years, coupon)
+
+cat_bond_basis_rust <- function(annual, principal, need) .Call(wrap__cat_bond_basis_rust, annual, principal, need)
+
 pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_price, losses, assets, rate, pricing)
 
 pricing_price_with_reinstatements <- function(losses, g, assets, rate, pricing) .Call(wrap__pricing_price_with_reinstatements, losses, g, assets, rate, pricing)
@@ -298,7 +324,21 @@ indication_rust <- function(variable, profit, fixed_ratio, loss_ratio, pure_prem
 
 premium_based_expenses_rust <- function(ratio, fixed_share) .Call(wrap__premium_based_expenses_rust, ratio, fixed_share)
 
+hawkes_check_rust <- function(baseline, alpha, beta) .Call(wrap__hawkes_check_rust, baseline, alpha, beta)
+
+hawkes_moments_rust <- function(baseline, alpha, beta, horizon) .Call(wrap__hawkes_moments_rust, baseline, alpha, beta, horizon)
+
+hawkes_simulate_rust <- function(baseline, alpha, beta, horizon, seed, stream) .Call(wrap__hawkes_simulate_rust, baseline, alpha, beta, horizon, seed, stream)
+
+hawkes_counts_rust <- function(baseline, alpha, beta, n_years, burn_in, seed) .Call(wrap__hawkes_counts_rust, baseline, alpha, beta, n_years, burn_in, seed)
+
+hawkes_log_likelihood_rust <- function(baseline, alpha, beta, periods, horizon) .Call(wrap__hawkes_log_likelihood_rust, baseline, alpha, beta, periods, horizon)
+
+hawkes_fit_rust <- function(periods, horizon) .Call(wrap__hawkes_fit_rust, periods, horizon)
+
 retro_premium_rust <- function(losses, basic, lcm, minimum, maximum) .Call(wrap__retro_premium_rust, losses, basic, lcm, minimum, maximum)
+
+per_risk_inuring_rust <- function(layer, years, event_limit, times, seed) .Call(wrap__per_risk_inuring_rust, layer, years, event_limit, times, seed)
 
 occurrence_cession_statistics_rust <- function(frequency, severity, shares, limits, attachments) .Call(wrap__occurrence_cession_statistics_rust, frequency, severity, shares, limits, attachments)
 
@@ -309,6 +349,22 @@ occurrence_layer_statistics_rust <- function(frequency, severity, share, limit, 
 benchmark_curve_rust <- function(ages, values, kind, curve, weights, max_age, origin_width) .Call(wrap__benchmark_curve_rust, ages, values, kind, curve, weights, max_age, origin_width)
 
 underwriting_exposure_rust <- function(writing, policy_months) .Call(wrap__underwriting_exposure_rust, writing, policy_months)
+
+pair_fit_rust <- function(u, v, family, rotation) .Call(wrap__pair_fit_rust, u, v, family, rotation)
+
+pair_select_rust <- function(u, v, families, criterion, independence_test) .Call(wrap__pair_select_rust, u, v, families, criterion, independence_test)
+
+vine_fit_rust <- function(data, n, matrix, families, criterion, independence_test, trunc_level) .Call(wrap__vine_fit_rust, data, n, matrix, families, criterion, independence_test, trunc_level)
+
+kendall_tau_rust <- function(x, y) .Call(wrap__kendall_tau_rust, x, y)
+
+pseudo_observations_rust <- function(x) .Call(wrap__pseudo_observations_rust, x)
+
+weighted_tail_rust <- function(values, weights, p, batches) .Call(wrap__weighted_tail_rust, values, weights, p, batches)
+
+mvn_cdf_rust <- function(lower, upper, correlation, abs_tol, max_points, scrambles, seed) .Call(wrap__mvn_cdf_rust, lower, upper, correlation, abs_tol, max_points, scrambles, seed)
+
+sobol_rust <- function(n, dim, scramble, seed) .Call(wrap__sobol_rust, n, dim, scramble, seed)
 
 statistics_rust <- function(draws, percentiles, tvar_levels, sd_multiples, quantile, tvar) .Call(wrap__statistics_rust, draws, percentiles, tvar_levels, sd_multiples, quantile, tvar)
 
@@ -363,6 +419,10 @@ layer_share_prior_total_rust <- function(apriori, apriori_cv, shares, share_cv, 
 EventSet <- new.env(parent = emptyenv())
 
 EventSet$simulate <- function(frequency, severity, n_sims, seed) .Call(wrap__EventSet__simulate, frequency, severity, n_sims, seed)
+
+EventSet$hawkes <- function(baseline, alpha, beta, severity, n_years, burn_in, seed) .Call(wrap__EventSet__hawkes, baseline, alpha, beta, severity, n_years, burn_in, seed)
+
+EventSet$simulate_weighted <- function(frequency, severity, n_sims, seed, count, tail_threshold, tail_share) .Call(wrap__EventSet__simulate_weighted, frequency, severity, n_sims, seed, count, tail_threshold, tail_share)
 
 EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__EventSet__from_years, years, sums_insured, seed, times)
 
@@ -561,6 +621,18 @@ XolLayer$premium_for <- function(ceded) .Call(wrap__XolLayer__premium_for, self,
 XolLayer$scope <- function() .Call(wrap__XolLayer__scope, self)
 
 XolLayer$with_scope <- function(label, values) .Call(wrap__XolLayer__with_scope, self, label, values)
+
+XolLayer$with_franchise <- function() .Call(wrap__XolLayer__with_franchise, self)
+
+XolLayer$with_nth_event <- function(n, threshold) .Call(wrap__XolLayer__with_nth_event, self, n, threshold)
+
+XolLayer$with_top_and_drop <- function(underlying, attachment) .Call(wrap__XolLayer__with_top_and_drop, self, underlying, attachment)
+
+XolLayer$franchise <- function() .Call(wrap__XolLayer__franchise, self)
+
+XolLayer$nth_event <- function() .Call(wrap__XolLayer__nth_event, self)
+
+XolLayer$drop_down <- function() .Call(wrap__XolLayer__drop_down, self)
 
 XolLayer$ceding_commission_for <- function(ceded) .Call(wrap__XolLayer__ceding_commission_for, self, ceded)
 
@@ -2351,6 +2423,8 @@ Triangle <- new.env(parent = emptyenv())
 
 Triangle$from_long <- function(key_names, keys, origin_year, origin_month, ages, valuation_year, valuation_month, development_is_valuation, names, values, origin_grain, development_grain, cumulative) .Call(wrap__Triangle__from_long, key_names, keys, origin_year, origin_month, ages, valuation_year, valuation_month, development_is_valuation, names, values, origin_grain, development_grain, cumulative)
 
+Triangle$read_file <- function(path, format, sheet, origin, development, columns, keys, ages, origin_grain, development_grain, cumulative, development_is_valuation, comment) .Call(wrap__Triangle__read_file, path, format, sheet, origin, development, columns, keys, ages, origin_grain, development_grain, cumulative, development_is_valuation, comment)
+
 Triangle$shape <- function() .Call(wrap__Triangle__shape, self)
 
 Triangle$keys <- function() .Call(wrap__Triangle__keys, self)
@@ -3014,6 +3088,12 @@ MeyersFit$ultimate_draws <- function(origin) .Call(wrap__MeyersFit__ultimate_dra
 
 MeyersFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__MeyersFit__loss_ratio_draws, self, origin, premium)
 
+MeyersFit$pattern_ages <- function(segment) .Call(wrap__MeyersFit__pattern_ages, self, segment)
+
+MeyersFit$pattern_draws <- function(segment) .Call(wrap__MeyersFit__pattern_draws, self, segment)
+
+MeyersFit$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__MeyersFit__monthly_pattern_draws, self, segment, months, basis, monotone)
+
 MeyersFit$diagnostics <- function() .Call(wrap__MeyersFit__diagnostics, self)
 
 MeyersFit$parameter_names <- function() .Call(wrap__MeyersFit__parameter_names, self)
@@ -3055,6 +3135,12 @@ MeyersFits$reserves <- function() .Call(wrap__MeyersFits__reserves, self)
 MeyersFits$ultimate_draws <- function(origin) .Call(wrap__MeyersFits__ultimate_draws, self, origin)
 
 MeyersFits$loss_ratio_draws <- function(origin, premium) .Call(wrap__MeyersFits__loss_ratio_draws, self, origin, premium)
+
+MeyersFits$pattern_ages <- function(segment) .Call(wrap__MeyersFits__pattern_ages, self, segment)
+
+MeyersFits$pattern_draws <- function(segment) .Call(wrap__MeyersFits__pattern_draws, self, segment)
+
+MeyersFits$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__MeyersFits__monthly_pattern_draws, self, segment, months, basis, monotone)
 
 MeyersFits$diagnostics_table <- function() .Call(wrap__MeyersFits__diagnostics_table, self)
 
@@ -3099,6 +3185,12 @@ CompartmentalFits$ultimates <- function() .Call(wrap__CompartmentalFits__ultimat
 CompartmentalFits$ultimate_draws <- function(origin) .Call(wrap__CompartmentalFits__ultimate_draws, self, origin)
 
 CompartmentalFits$loss_ratio_draws <- function(origin, premium) .Call(wrap__CompartmentalFits__loss_ratio_draws, self, origin, premium)
+
+CompartmentalFits$pattern_ages <- function(segment) .Call(wrap__CompartmentalFits__pattern_ages, self, segment)
+
+CompartmentalFits$pattern_draws <- function(segment) .Call(wrap__CompartmentalFits__pattern_draws, self, segment)
+
+CompartmentalFits$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__CompartmentalFits__monthly_pattern_draws, self, segment, months, basis, monotone)
 
 CompartmentalFits$paid <- function() .Call(wrap__CompartmentalFits__paid, self)
 
@@ -3151,6 +3243,12 @@ CompartmentalFit$ultimates <- function() .Call(wrap__CompartmentalFit__ultimates
 CompartmentalFit$ultimate_draws <- function(origin) .Call(wrap__CompartmentalFit__ultimate_draws, self, origin)
 
 CompartmentalFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__CompartmentalFit__loss_ratio_draws, self, origin, premium)
+
+CompartmentalFit$pattern_ages <- function(segment) .Call(wrap__CompartmentalFit__pattern_ages, self, segment)
+
+CompartmentalFit$pattern_draws <- function(segment) .Call(wrap__CompartmentalFit__pattern_draws, self, segment)
+
+CompartmentalFit$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__CompartmentalFit__monthly_pattern_draws, self, segment, months, basis, monotone)
 
 CompartmentalFit$paid <- function() .Call(wrap__CompartmentalFit__paid, self)
 
@@ -3648,11 +3746,19 @@ RiskCopula$nested <- function(family, root) .Call(wrap__RiskCopula__nested, fami
 
 RiskCopula$vine <- function(kind, order, pairs) .Call(wrap__RiskCopula__vine, kind, order, pairs)
 
+RiskCopula$rvine <- function(matrix, pairs) .Call(wrap__RiskCopula__rvine, matrix, pairs)
+
+RiskCopula$rvine_structure <- function() .Call(wrap__RiskCopula__rvine_structure, self)
+
 RiskCopula$log_density <- function(u, n) .Call(wrap__RiskCopula__log_density, self, u, n)
 
 RiskCopula$dim <- function() .Call(wrap__RiskCopula__dim, self)
 
 RiskCopula$cdf <- function(u, n) .Call(wrap__RiskCopula__cdf, self, u, n)
+
+RiskCopula$cdf_estimate <- function(u, n, abs_tol, max_points, seed) .Call(wrap__RiskCopula__cdf_estimate, self, u, n, abs_tol, max_points, seed)
+
+RiskCopula$sample_qmc <- function(n, seed) .Call(wrap__RiskCopula__sample_qmc, self, n, seed)
 
 RiskCopula$description <- function() .Call(wrap__RiskCopula__description, self)
 
@@ -3817,6 +3923,8 @@ Book$summary <- function() .Call(wrap__Book__summary, self)
 Book$distribution <- function(item, percentiles, tvar_levels, sd_multiples, quantile, tvar, tail) .Call(wrap__Book__distribution, self, item, percentiles, tvar_levels, sd_multiples, quantile, tvar, tail)
 
 Book$marginal_price <- function(names, assets, rate, pricing) .Call(wrap__Book__marginal_price, self, names, assets, rate, pricing)
+
+Book$adequacy <- function(assets, rate, pricing) .Call(wrap__Book__adequacy, self, assets, rate, pricing)
 
 Book$cashflows <- function(rate, lower, upper, points, bisections, newton_steps, extend) .Call(wrap__Book__cashflows, self, rate, lower, upper, points, bisections, newton_steps, extend)
 

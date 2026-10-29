@@ -48,17 +48,17 @@ Ctrl+Alt+F9 to recalculate.
 
 | Function | Returns |
 |---|---|
-| `PRO.CL(triangle, [average], [tail], [origins], [selected], [kind], [weight])` | Chain ladder exhibit with a total row |
-| `PRO.CL.LDF(triangle, [average], [tail], [selected], [kind], [weight])` | Age-to-age factors, one per column; the last is the tail |
-| `PRO.CL.CDF(triangle, [average], [tail], [selected], [kind], [weight])` | Age-to-ultimate factors, one per column |
+| `PRO.CL(triangle, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Chain ladder exhibit with a total row |
+| `PRO.CL.LDF(triangle, [average], [tail], [selected], [kind], [weight], [pattern_ages])` | Age-to-age factors, one per column; the last is the tail |
+| `PRO.CL.CDF(triangle, [average], [tail], [selected], [kind], [weight], [pattern_ages])` | Age-to-ultimate factors, one per column |
 | `PRO.CL.ULTIMATE(...)`, `PRO.CL.RESERVE(...)` | One value per origin |
-| `PRO.CL.FACTORS(triangle, [average], [tail], [selected], [kind], [weight], [sigma])` | LDF, CDF, sigma and standard error per link, and the tail |
-| `PRO.MACK(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Mack exhibit: process, parameter and total SE and CV, with a total |
+| `PRO.CL.FACTORS(triangle, [average], [tail], [selected], [kind], [weight], [sigma], [pattern_ages])` | LDF, CDF, sigma and standard error per link, and the tail |
+| `PRO.MACK(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma], [pattern_ages])` | Mack exhibit: process, parameter and total SE and CV, with a total |
 | `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins], [average])` | ODP bootstrap exhibit: CL reserve, mean, SD, CV and percentiles, with a total |
 | `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins], [average])` | The bootstrap's draws: a row per simulation, a column per origin and the total (at most 100000 rows) |
 | `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap exhibit, laid out as `PRO.ODP` |
 | `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap's draws, laid out as `PRO.ODP.SIMS` |
-| `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Merz-Wuthrich one-year view: CDR(1) SE and run-off SE |
+| `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma], [pattern_ages])` | Merz-Wuthrich one-year view: CDR(1) SE and run-off SE |
 | `PRO.MACK.CDR.YEARS(...)`, same arguments | CDR SE by future calendar year |
 | `PRO.ODP.CDR(triangle, [sims], [seed], [percentiles], [tail], [process], [origins], [average])` | ODP bootstrap's simulated one-year CDR (negative is adverse) |
 | `PRO.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap's simulated one-year CDR |
@@ -67,13 +67,27 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.ODP.GLM(triangle, [origins])` | The ODP model as a quasi-Poisson GLM: reserve, process and parameter SE, RMSEP and CV per origin, with a total |
 | `PRO.ODP.GLM.PARAMS(triangle, [origins])` | Its coefficients and SEs (term, level), then Pearson's dispersion |
 | `PRO.ODP.GLM.RESIDUALS(triangle, [by], [origins])` | Its residuals by cell, or grouped by `"origin"`, `"development"` or `"calendar"` |
+| `PRO.GLM(data, response, terms, [family], [link], [exposure], [weights], [p])` | A GLM on a table with a header row: each coefficient's estimate, SE, statistic, p-value and exp(estimate), then deviance, dispersion, log-likelihood, AIC, BIC and the degrees of freedom (decision 41) |
+| `PRO.GLM.PREDICT(data, response, terms, newdata, [family], [link], [exposure], [weights], [p])` | The fitted model's mean on each row of a table of new rows |
+| `PRO.GLM.RELATIVITIES(data, response, terms, [family], [link], [exposure], [weights], [p], [level])` | A log-link GLM's relativities: each factor level against its base, a numeric term per unit, with a confidence interval |
+| `PRO.NPV(rate, flows, [times], [unit])` | Net present value: `Σ x (1 + rate)^-t`, times in years, months, days or as Excel dates (`XNPV`); one value, or one per row of a block of simulations (decision 42) |
+| `PRO.IRR(flows, [times], [unit], [lower], [upper], [extend], [detail])` | Internal rate of return by the crate's grid search; a root outside the range named in the error; with `detail`, the roots seen and whether one lies above or below |
+| `PRO.MOIC(released, funded, [opening])` | Multiple on invested capital `1 + released / (funded + opening)`, per row |
+| `PRO.CASHFLOW(u, terms, patterns, requirement, [commission], [output], [rate], [commutation_requirement])` | A collateralised deal on each simulated loss ratio: IRR, MOIC, NPV and totals per simulation, the monthly flows, or the first simulation's accounts |
+| `PRO.PNL(values, [probs], premium, [expenses], [covers], [face], [output], [levels], [expense_at_mean])` | A book's P&L ledger over annual gross losses with the annual covers it buys (`aggregate`'s `pnl` and `xpnl`): every line with its mean, SD, CV, skewness and the scenario columns that foot; the card; or the ratios (decision 43) |
+| `PRO.YLT.STATS(years, losses, [n_years], [probabilities], [quantile], [times], [hours], [negative])` | A year loss table's annual totals: years, losses and occurrences (under an hours clause), the average annual loss, SD, CV, skewness, VaR and TVaR under a stated quantile rule (decision 44) |
+| `PRO.YLT.OEP(years, losses, [return_periods], [amounts], [n_years], [quantile], [times], [hours], [negative])` | A year loss table's occurrence and aggregate exceedance curves: occurrence and aggregate PMLs and TVaRs by return period, or the OEP and AEP at amounts (decision 44) |
+| `PRO.ELT.STATS(rates, means, [sd_independent], [sd_correlated], exposures)` | An event loss table's events a year, chance of an event, expected annual loss, SD and CV (decision 44) |
+| `PRO.ELT.OEP(rates, means, [sd_independent], [sd_correlated], exposures, [return_periods], [amounts])` | An event loss table's occurrence exceedance curve with secondary uncertainty: occurrence PMLs by return period, or the exceedance frequency and OEP at amounts (decision 44) |
+| `PRO.ALLOCATE(draws, family, parameter, [method], [r0])` | A distortion risk measure of the portfolio (TVaR, PH, Wang, dual and the others) allocated to its units from columns of draws: Euler (natural), covariance, covariance margin, proportional, marginal or Shapley, with each unit's stand-alone measure and diversification (decision 45) |
+| `PRO.ALLOCATE.TOTAL(draws, total, [method], [measure], [level])` | An amount from outside, a premium or a capital, allocated to the units by the haircut or the equal risk rule on stand-alone VaR, TVaR or EPD (decision 45) |
 | `PRO.TRI.INCREMENTAL(triangle)`, `PRO.TRI.CUMULATIVE(triangle)` | Incremental from cumulative, and back |
 | `PRO.TRI.LINKRATIOS(triangle)` | Age-to-age link ratios |
 | `PRO.TRI.LATEST(triangle)` | The latest diagonal |
-| `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins])` | Expected loss method exhibit |
-| `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])` | Bornhuetter-Ferguson exhibit |
-| `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander exhibit |
-| `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins])` | Cape Cod exhibit |
+| `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Expected loss method exhibit |
+| `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Bornhuetter-Ferguson exhibit |
+| `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Benktander exhibit |
+| `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Cape Cod exhibit |
 | `PRO.DIAG.CL(origins, ages, latest, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | Chain ladder on a latest diagonal (a bordereau) with a selected pattern |
 | `PRO.DIAG.EL(origins, ages, latest, exposure, apriori, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | Expected loss method on a latest diagonal |
 | `PRO.DIAG.BF(origins, ages, latest, exposure, apriori, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | Bornhuetter-Ferguson on a latest diagonal |
@@ -163,10 +177,21 @@ Ctrl+Alt+F9 to recalculate.
 - `origins`: labels for the exhibit's first column; omitted for 1, 2, ...
 - `selected`: selected factors, a row with a cell per triangle column (a
   blank keeps the estimate); `kind`: `"ldf"` (default), `"cdf"` or
-  `"percent"`; `weight`: 0 to 1 on the selection, 1 if omitted.
+  `"percent"`; `weight`: 0 to 1 on the selection, 1 if omitted;
+  `pattern_ages`: each selected value's age in months, so a monthly (or
+  any other) pattern reaches the triangle's 12, 24, ... columns, read
+  between its own ages (12, 24, ... by cell if omitted). The chain-ladder
+  functions, Mack, the one-year view and the four expected-loss methods
+  take all four, last and in this order (after `sigma` where there is
+  one). With `pattern_ages`, an age-to-age factor runs to the next age
+  given, as on the diagonal functions. For a pattern of accident months
+  on accident years, average it with `PRO.PATTERN.AVERAGE` first and pass
+  its result with `kind` `"percent"`.
 - `sigma`: Mack's last sigma, `"log-linear"` (default) or `"mack"`.
 - `exposure`: premium per origin, a row or column of positive values;
-  `apriori`: the expected loss ratio, such as `0.75`.
+  `apriori`: the expected loss ratio, such as `0.75`, or a row or column
+  of them, one per origin (oldest first on a triangle; on the diagonal
+  functions, in the order of `origins`).
 - `curve`: Clark's growth curve, `"loglogistic"` (default) or
   `"weibull"`; `max_age`: months development stops at, omitted for none.
 - `sims` (default 10000, at most 1000000), `seed` (default 0; the same seed
@@ -320,8 +345,9 @@ Ctrl+Alt+F9 to recalculate.
   `frank` and `joe` their `theta`. `PRO.COPULA.SIM`'s row `i` is stream
   `i` of the seed, as the Python and R packages draw it; turn its
   uniforms into losses with `PRO.SEV.QUANTILE` column by column. The
-  Gaussian's cdf is in two dimensions, the Archimedean ones' in any, and
-  the t has none in closed form. `PRO.IMAN.CONOVER` reorders simulations
+  Gaussian's cdf is exact in two dimensions and within about `1e-5` in
+  more (Genz's method), the Archimedean ones' in any, and the t has none
+  in closed form. `PRO.IMAN.CONOVER` reorders simulations
   already on the sheet (`PRO.ODP.SIMS`, a column per line) and leaves
   each column's values as they are.
 - Contract terms: amounts are at 100% and losses ceded at the placed

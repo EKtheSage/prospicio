@@ -45,6 +45,7 @@ booster_train <- function(spec, x, y, w, start, seed) {
       if (spec$family == "tweedie") params$tweedie_variance_power <- spec$power
       if (spec$family == "quantile") params$alpha <- spec$alpha
       params[names(spec$params)] <- spec$params
+      params[names(spec$constraints)] <- spec$constraints
       data <- lightgbm::lgb.Dataset(x, label = y, weight = w, init_score = start)
       lightgbm::lgb.train(params, data, nrounds = spec$n_rounds, verbose = -1)
     } else {
@@ -52,6 +53,7 @@ booster_train <- function(spec, x, y, w, start, seed) {
       if (spec$family == "tweedie") params$tweedie_variance_power <- spec$power
       if (spec$family == "quantile") params$quantile_alpha <- spec$alpha
       params[names(spec$params)] <- spec$params
+      params[names(spec$constraints)] <- spec$constraints
       data <- xgboost::xgb.DMatrix(x, label = y, weight = w, base_margin = start)
       xgboost::xgb.train(params, data, nrounds = spec$n_rounds, verbose = 0)
     }
@@ -96,6 +98,71 @@ booster_dispersion_fit <- function(spec, x, y, w, off, base, seed) {
 
 booster_variance <- function(family, mu, power) {
   switch(family, poisson = mu, gamma = mu^2, tweedie = mu^power, gaussian = rep(1, length(mu)))
+}
+
+booster_constraint_keys <- c("monotone_constraints", "monotone_constraint", "mc",
+                             "interaction_constraints")
+booster_monotone_calls <- c("log", "log1p", "sqrt", "exp")
+
+# The variables each design column comes from, and whether a column is a
+# monotone function of its one variable: a numeric variable itself, or log,
+# log1p, sqrt or exp of it. Factors, polynomials, splines and interactions
+# are not.
+booster_column_terms <- function(x, terms, data) {
+  assign <- attr(x, "assign")[colnames(x) != "(Intercept)"]
+  labels <- attr(terms, "term.labels")
+  lapply(assign, function(a) {
+    label <- labels[[a]]
+    expr <- str2lang(label)
+    vars <- all.vars(expr)
+    plain <- length(vars) == 1 && !grepl(":", label, fixed = TRUE) && (
+      is.name(expr) ||
+        (is.call(expr) && as.character(expr[[1]]) %in% booster_monotone_calls && length(expr) == 2 &&
+           is.name(expr[[2]]))) &&
+      is.numeric(data[[vars]])
+    list(label = label, vars = vars, monotone = plain, factor = length(vars) == 1 &&
+           !is.numeric(data[[vars]]), interaction = grepl(":", label, fixed = TRUE))
+  })
+}
+
+# The engine's own monotone and interaction parameters, on the design's
+# columns.
+booster_constraints <- function(engine, monotone, interactions, cols) {
+  out <- list()
+  feature_cols <- function(v) {
+    j <- which(vapply(cols, function(c) v %in% c$vars, logical(1)))
+    if (!length(j)) {
+      stop(sprintf("'%s' is not a feature of the formula (features: %s)", v,
+                   toString(unique(unlist(lapply(cols, `[[`, "vars"))))), call. = FALSE)
+    }
+    j
+  }
+  if (length(monotone)) {
+    m <- integer(length(cols))
+    for (v in names(monotone)) {
+      for (j in feature_cols(v)) {
+        c <- cols[[j]]
+        if (c$interaction) {
+          stop(sprintf("'%s' enters the interaction term '%s'; constrain its main effect ",
+                       v, c$label), "without the interaction", call. = FALSE)
+        }
+        if (c$factor) stop(sprintf("'%s' is a factor; a monotone constraint needs a numeric ",
+                                   v), "feature", call. = FALSE)
+        if (!c$monotone) stop(sprintf("'%s' is not a monotone transform of '%s'", c$label, v),
+                              call. = FALSE)
+        m[[j]] <- as.integer(monotone[[v]])
+      }
+    }
+    out$monotone_constraints <- if (engine == "lightgbm") m else
+      paste0("(", paste(m, collapse = ","), ")")
+  }
+  if (length(interactions)) {
+    groups <- lapply(interactions, function(g) sort(unique(unlist(lapply(g, feature_cols)))) - 1L)
+    out$interaction_constraints <- if (engine == "lightgbm") lapply(groups, function(g) g + 1L) else
+      paste0("[", paste(vapply(groups, function(g) paste0("[", paste(g, collapse = ", "), "]"),
+                               character(1)), collapse = ", "), "]")
+  }
+  out
 }
 
 # The design without its intercept column: trees need none.
@@ -153,7 +220,17 @@ booster_matrix <- function(x) {
 #' @param n_rounds Boosting rounds.
 #' @param learning_rate Shrinkage per round.
 #' @param params A named list of further engine parameters (`num_leaves`,
-#'   `max_depth`, `monotone_constraints`, ...), passed as they are.
+#'   `max_depth`, ...), passed as they are.
+#' @param monotone A named vector or list of directions by feature, `1`
+#'   (rising), `-1` (falling) or `0`, such as `c(exper = 1, veh_age = -1)`:
+#'   the engine's `monotone_constraints` on the feature's columns. A feature
+#'   is a numeric variable of the formula, alone or in `log()`, `log1p()`,
+#'   `sqrt()` or `exp()`; a factor, a polynomial, a spline or a feature in an
+#'   interaction term is an error. Check the fit with [check_monotone()].
+#' @param interaction_constraints A list of character vectors of features,
+#'   such as `list(c("age", "exper"), c("veh_age", "noise"))`: features
+#'   may share a branch of a tree only within a group (the engine's
+#'   `interaction_constraints` on the features' columns).
 #' @param n_boot Bootstrap refits for parameter uncertainty in
 #'   [predict_distribution()]; 0 gives process noise only.
 #' @param seed Seeds the engine and the bootstrap resamples; R's own
@@ -175,7 +252,8 @@ booster_matrix <- function(x) {
 booster_fit <- function(formula, data, family = "poisson", engine = c("lightgbm", "xgboost"),
                         power = NULL, n_rounds = 200, learning_rate = 0.05, params = list(),
                         n_boot = 0, seed = 0, offset = NULL, weights = NULL, alpha = NULL,
-                        dispersion_model = FALSE) {
+                        dispersion_model = FALSE, monotone = NULL,
+                        interaction_constraints = NULL) {
   engine <- match.arg(engine)
   if (!family %in% names(booster_objectives)) {
     stop("family must be one of ", toString(names(booster_objectives)), ", got ", family)
@@ -192,6 +270,18 @@ booster_fit <- function(formula, data, family = "poisson", engine = c("lightgbm"
   if (n_rounds < 1 || n_boot < 0) stop("n_rounds must be positive and n_boot non-negative")
   if (length(params) && (is.null(names(params)) || any(names(params) == ""))) {
     stop("params must be a named list")
+  }
+  if (length(monotone)) {
+    if (is.null(names(monotone)) || any(names(monotone) == "")) stop("monotone must be named by feature")
+    if (!all(unlist(monotone) %in% c(-1, 0, 1))) stop("monotone directions must be 1, -1 or 0")
+  }
+  if (length(interaction_constraints) && !is.list(interaction_constraints)) {
+    stop("interaction_constraints must be a list of character vectors of features")
+  }
+  clash <- intersect(names(params), booster_constraint_keys)
+  if ((length(monotone) || length(interaction_constraints)) && length(clash)) {
+    stop("give the constraints as monotone and interaction_constraints or in params, not both (",
+         toString(clash), ")")
   }
   booster_engine(engine)
   des <- model_design(formula, data, offset, weights)
@@ -214,8 +304,11 @@ booster_fit <- function(formula, data, family = "poisson", engine = c("lightgbm"
   } else {
     sum(w * (y - off)) / sum(w)
   }
+  cols <- booster_column_terms(des$x, des$terms, data)
   spec <- list(family = family, engine = engine, power = power, n_rounds = n_rounds,
-               learning_rate = learning_rate, params = params, alpha = alpha)
+               learning_rate = learning_rate, params = params, alpha = alpha,
+               monotone = as.list(monotone),
+               constraints = booster_constraints(engine, monotone, interaction_constraints, cols))
   model <- booster_train(spec, x, y, w, off + base, seed)
   rows <- with_seed(seed, lapply(seq_len(n_boot), function(b) sample.int(n, n, replace = TRUE)))
   boots <- lapply(seq_len(n_boot), function(b) {
@@ -231,6 +324,44 @@ booster_fit <- function(formula, data, family = "poisson", engine = c("lightgbm"
   booster_model(spec = spec, model = model, boots = boots, base = base, dispersion = dispersion,
                 dispersion_fit = dfit, columns = colnames(x), terms = des$terms,
                 xlevels = des$xlevels)
+}
+
+#' Check a booster's monotonicity in a feature
+#'
+#' The partial dependence of a [booster_fit()] on a feature over a grid:
+#' the mean prediction over the rows of `data` with the feature set to each
+#' value, and where it moves against `direction` (the fit's `monotone`
+#' constraint on the feature by default). The engines enforce a constraint
+#' split by split; this confirms it on the model as fitted.
+#'
+#' @param object A `booster_model`.
+#' @param data A data frame with the model's variables.
+#' @param feature A numeric variable of the formula.
+#' @param grid Values of the feature; twenty quantiles of it by default.
+#' @param direction `1` or `-1`.
+#' @param tol Relative tolerance on a step against the direction.
+#' @returns A list with `grid`, `mean`, `direction`, `violations` (the
+#'   indices `i` whose step from `i - 1` goes against the direction) and
+#'   `monotone`.
+#' @export
+check_monotone <- function(object, data, feature, grid = NULL, direction = NULL, tol = 1e-9) {
+  if (!S7::S7_inherits(object, booster_model)) stop("check_monotone() needs a booster_model")
+  if (!is.numeric(data[[feature]])) stop(sprintf("'%s' is not a numeric column of data", feature))
+  if (is.null(direction)) direction <- object@spec$monotone[[feature]]
+  if (!isTRUE(direction %in% c(1, -1))) {
+    stop("give direction 1 or -1, or fit with a monotone constraint on the feature")
+  }
+  if (is.null(grid)) grid <- sort(unique(unname(stats::quantile(data[[feature]], seq(0, 1, length.out = 20)))))
+  means <- vapply(grid, function(v) {
+    d <- data
+    d[[feature]] <- v
+    mean(predict(object, d))
+  }, double(1))
+  scale <- max(abs(means))
+  if (scale == 0) scale <- 1
+  bad <- which(direction * diff(means) < -tol * scale) + 1L
+  list(grid = grid, mean = means, direction = direction, violations = bad,
+       monotone = !length(bad))
 }
 
 #' Fitted gradient-boosted trees (class)

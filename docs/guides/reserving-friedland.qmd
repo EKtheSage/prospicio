@@ -469,16 +469,17 @@ in chapter 13.
 The expected claims technique ignores the claims to date. The ultimate is an
 expected claim ratio times earned premium. For U.S. Industry Auto, Friedland
 selects 75% for 1998 to 2002 and 65% for 2003 to 2007 (chapter 8, Exhibit II,
-sheet 1). When the ratio changes by year, put the expected claims in a column
-and fit with `apriori = 1`. Section 4 of
-[`reserving-methods.md`](reserving-methods.md) explains this:
+sheet 1). When the ratio changes by year, give `apriori` as a vector named by
+year, with one ratio for each origin. The premium stays in the exposure column.
+Section 4 of [`reserving-methods.md`](reserving-methods.md) explains this:
 
 ```{r}
 #| label: ec
 US_RATIO <- c(rep(0.75, 5), rep(0.65, 5))
 us <- make_triangle(US_YEARS, list(reported = US_REPORTED, paid = US_PAID),
-                    list(premium = US_PREMIUM, expected = US_RATIO * US_PREMIUM))
-ec <- expected_loss(us, "reported", "expected", apriori = 1)
+                    list(premium = US_PREMIUM))
+US_APRIORI <- setNames(US_RATIO, US_YEARS)
+ec <- expected_loss(us, "reported", "premium", apriori = US_APRIORI)
 u <- unpaid(ec@ultimate)
 cat("expected claims", comma(sum(ec@ultimate)), "(book 569,281,839)\n")
 cat("IBNR ", comma(u[1]), " (book 25,800,252), total unpaid ", comma(u[2]), " (book 71,231,471)\n", sep = "")
@@ -504,9 +505,9 @@ as printed in sheet 1, column (11):
 #| label: xyz-ec
 XYZ_RATIO <- c(rep(0.783, 6), 0.871, 0.783, 0.658, 0.638, 0.825)
 xyz <- make_triangle(XYZ_YEARS, list(reported = XYZ_REPORTED, paid = XYZ_PAID),
-                     list(premium = XYZ_PREMIUM, expected = XYZ_RATIO * XYZ_PREMIUM),
-                     first_age = XYZ_FIRST_AGE)
-xec <- expected_loss(xyz, "reported", "expected", apriori = 1)
+                     list(premium = XYZ_PREMIUM), first_age = XYZ_FIRST_AGE)
+XYZ_APRIORI <- setNames(XYZ_RATIO, XYZ_YEARS)
+xec <- expected_loss(xyz, "reported", "premium", apriori = XYZ_APRIORI)
 u <- unpaid(xec@ultimate, xyz)
 cat("expected claims", comma(sum(xec@ultimate)), "(book 561,516)\n")
 cat("IBNR ", comma(u[1]), " (book 111,890), total unpaid ", comma(u[2]), " (book 230,887)\n", sep = "")
@@ -539,7 +540,7 @@ BOOK_BF_US <- list(  # chapter 9, Exhibit I, sheet 1, columns (11) and (12)
            58096743, 58447423, 60151912, 61425942, 63209774)
 )
 bf <- lapply(c(reported = "reported", paid = "paid"), function(col) {
-  bornhuetter_ferguson(us, col, "expected", apriori = 1, ldf = US_CDF[[col]], ldf_kind = "cdf")
+  bornhuetter_ferguson(us, col, "premium", apriori = US_APRIORI, ldf = US_CDF[[col]], ldf_kind = "cdf")
 })
 compare(US_YEARS, list(reported = list(bf$reported@ultimate, BOOK_BF_US$reported, 569091348),
                        paid = list(bf$paid@ultimate, BOOK_BF_US$paid, 570568198)), width = 11)
@@ -577,7 +578,7 @@ BOOK_BF_XYZ <- list(  # chapter 9, Exhibit II, sheet 1, columns (11) and (12)
   paid = c(15977, 25158, 37841, 40525, 49417, 50768, 82593, 94301, 71205, 45636, 41049)
 )
 xbf <- lapply(c(reported = "reported", paid = "paid"), function(col) {
-  bornhuetter_ferguson(xyz, col, "expected", apriori = 1, ldf = XYZ_CDF[[col]], ldf_kind = "cdf")
+  bornhuetter_ferguson(xyz, col, "premium", apriori = XYZ_APRIORI, ldf = XYZ_CDF[[col]], ldf_kind = "cdf")
 })
 compare(XYZ_YEARS, list(reported = list(xbf$reported@ultimate, BOOK_BF_XYZ$reported, 513207),
                         paid = list(xbf$paid@ultimate, BOOK_BF_XYZ$paid, 554471)))
@@ -615,7 +616,7 @@ printed U.S. Industry BF ultimates as input, the formula checks
 
 ```{r}
 #| label: benktander
-gb <- benktander(us, "reported", "expected", apriori = 1, n_iters = 2,
+gb <- benktander(us, "reported", "premium", apriori = US_APRIORI, n_iters = 2,
                  ldf = US_CDF$reported, ldf_kind = "cdf")
 cdf_by_year <- rev(CDF_REPORTED)  # the oldest year has the oldest age
 by_hand <- latest(us, "reported") + (1 - 1 / cdf_by_year) * BOOK_BF_US$reported
@@ -689,8 +690,8 @@ Each year's expected claim ratio is that ratio, taken back to the cost level,
 tort environment and rate level of the year. `cape_cod(trend = 0.03425)`
 applies a trend of this type, with the ratio of the latest origin as the
 reference. The code applies the tort factor and the rate level by hand. It
-estimates the ratio on the adjusted claims, then uses the expected claims in a
-BF fit on the actual claims:
+estimates the ratio on the adjusted claims, then gives each year's ratio on the actual premium to a BF
+fit on the actual claims:
 
 ```{r}
 #| label: xyz-cc
@@ -703,11 +704,10 @@ ratio <- cape_cod(xyz_cc, "adjusted", "on_level", trend = 0.03425,
                   ldf = XYZ_CDF$reported, ldf_kind = "cdf")
 cat(sprintf("adjusted expected claim ratio %.4f (book 70.8%%)\n", ratio@apriori[length(XYZ_YEARS)]))
 cc_expected <- ratio@apriori * ON_LEVEL_PREMIUM / TORT
-xyz_cc <- make_triangle(XYZ_YEARS, list(reported = XYZ_REPORTED), list(cc_expected = cc_expected),
-                        first_age = XYZ_FIRST_AGE)
-xcc <- bornhuetter_ferguson(xyz_cc, "reported", "cc_expected", apriori = 1,
+cc_ratio <- setNames(cc_expected / XYZ_PREMIUM, XYZ_YEARS)
+xcc <- bornhuetter_ferguson(xyz, "reported", "premium", apriori = cc_ratio,
                             ldf = XYZ_CDF$reported, ldf_kind = "cdf")
-cat("unadjusted ratios", f3(cc_expected / XYZ_PREMIUM), "\n")
+cat("unadjusted ratios", f3(cc_ratio), "\n")
 BOOK_CC_XYZ <- c(15822, 25107, 37246, 38798, 48313, 45062, 74754, 77931, 58759, 43307, 39201)
 compare(XYZ_YEARS, list("Cape Cod" = list(xcc@ultimate, BOOK_CC_XYZ, 504300)))
 ```

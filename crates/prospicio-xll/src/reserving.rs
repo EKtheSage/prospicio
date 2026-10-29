@@ -12,17 +12,18 @@
 use prospicio_core::{Grain, Lag, Month};
 use prospicio_prob::{Distribution, PredictiveDistribution, Sampled};
 use prospicio_reserving::{
-    Average, Benktander, BornhuetterFerguson, CapeCod, ChainLadder, ChainLadderFit, ClarkCapeCod,
-    ClarkFit, ClarkLdf, CurveShape, Development, DevelopmentColumn, ExpectedLoss, ExpectedLossFit,
-    GrowthCurve, Long, Mack, MackBootstrap, MackBootstrapFit, MackFit, MackProcess, OdpBootstrap,
-    OdpBootstrapFit, OneYearMethod, PatternKind, PatternWeight, ProcessDistribution,
-    SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailCurve, Triangle,
+    Apriori, Average, Benktander, BornhuetterFerguson, CapeCod, ChainLadder, ChainLadderFit,
+    ClarkCapeCod, ClarkFit, ClarkLdf, CurveShape, Development, DevelopmentColumn, ExpectedLoss,
+    ExpectedLossFit, GrowthCurve, Long, Mack, MackBootstrap, MackBootstrapFit, MackFit,
+    MackProcess, OdpBootstrap, OdpBootstrapFit, OneYearMethod, PatternKind, PatternWeight,
+    ProcessDistribution, SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailCurve, Triangle,
 };
 
+use crate::diagonal::months;
 use crate::sheet::{CellError, Grid, Value, position};
 
 /// The measure name inside the triangle; never shown on the sheet.
-pub(crate) const COLUMN: &str = "values";
+pub const COLUMN: &str = "values";
 
 /// Its position among the triangle's measures: the first.
 pub(crate) const COLUMN_POSITION: usize = 0;
@@ -35,7 +36,7 @@ pub fn triangle(grid: &Grid) -> Result<Triangle> {
 }
 
 /// The measure name of an exposure column inside the triangle.
-pub(crate) const EXPOSURE: &str = "exposure";
+pub const EXPOSURE: &str = "exposure";
 
 /// The triangle laid out in `grid`, with `exposure` (one value per origin)
 /// as a second measure on every observed cell of its origin when given.
@@ -258,35 +259,65 @@ fn sigma(grid: &Grid) -> Result<SigmaInterpolation> {
     }
 }
 
-/// The `selected`, `kind` and `weight` arguments: factors chosen by the
-/// user, one cell per triangle column (blank keeps the estimate), as
-/// age-to-age factors ("ldf", the default), factors to ultimate ("cdf") or
-/// percents developed ("percent"), blended `weight * selected + (1 -
-/// weight) * estimated` (1, fully selected, if omitted). `None` when no
-/// factor is selected.
-fn selected(selected: &Grid, kind: &Grid, weight: &Grid) -> Result<Option<SelectedPattern>> {
+/// The `selected`, `kind`, `weight` and `pattern_ages` arguments: factors
+/// chosen by the user, one cell per triangle column (blank keeps the
+/// estimate), or each at its age in months given by `pattern_ages` (a
+/// monthly pattern on the triangle's 12, 24, ... columns, read as
+/// `reserving-v02.md` decision 18 item 4 reads it), as age-to-age factors
+/// ("ldf", the default), factors to ultimate ("cdf") or percents developed
+/// ("percent"), blended `weight * selected + (1 - weight) * estimated` (1,
+/// fully selected, if omitted). `None` when no factor is selected.
+fn selected(
+    selected: &Grid,
+    kind: &Grid,
+    weight: &Grid,
+    ages_arg: &Grid,
+) -> Result<Option<SelectedPattern>> {
     if selected.is_blank() {
-        if !kind.is_blank() || !weight.is_blank() {
-            return Err("kind and weight need selected factors".into());
+        if !kind.is_blank() || !weight.is_blank() || !ages_arg.is_blank() {
+            return Err("kind, weight and pattern_ages need selected factors".into());
         }
         return Ok(None);
     }
     if selected.rows != 1 && selected.columns != 1 {
         return Err("selected must be a row or a column, one cell per triangle column".into());
     }
+    let ages = if ages_arg.is_blank() {
+        None
+    } else if ages_arg.rows != 1 && ages_arg.columns != 1 {
+        return Err("pattern_ages must be a row or a column, one age per selected value".into());
+    } else if ages_arg.cells.len() != selected.cells.len() {
+        return Err(format!(
+            "pattern_ages must have {} cells, one per selected value, got {}",
+            selected.cells.len(),
+            ages_arg.cells.len()
+        ));
+    } else {
+        Some(&ages_arg.cells)
+    };
     let kind = pattern_kind(kind)?;
     let mut values = Vec::new();
     for (c, v) in selected.cells.iter().enumerate() {
-        match v {
-            Value::Number(x) => values.push((12 * (c as Lag + 1), *x)),
-            v if v.is_blank() => {}
+        let x = match v {
+            Value::Number(x) => *x,
+            v if v.is_blank() => continue,
             other => {
                 return Err(format!(
                     "selected {} must be a number, got {other:?}",
                     c + 1
                 ));
             }
-        }
+        };
+        let age = match ages.map(|a| &a[c]) {
+            None => 12 * (c as Lag + 1),
+            Some(a) => months(a).ok_or_else(|| {
+                format!(
+                    "pattern_ages {} must be a whole number of months from 1, got {a:?}",
+                    c + 1
+                )
+            })?,
+        };
+        values.push((age, x));
     }
     let mut pattern = SelectedPattern::new(kind, values);
     if !weight.is_blank() {
@@ -311,16 +342,17 @@ pub(crate) fn pattern_kind(kind: &Grid) -> Result<PatternKind> {
     }
 }
 
-/// The development options of a chain-ladder function.
+/// The development options of a chain-ladder function; `selected_args`
+/// are `selected`, `kind`, `weight` and `pattern_ages`.
 fn development_with(
     average_arg: &Grid,
-    selected_args: [&Grid; 3],
+    selected_args: [&Grid; 4],
     sigma_arg: &Grid,
 ) -> Result<Development> {
-    let [s, kind, weight] = selected_args;
+    let [s, kind, weight, ages] = selected_args;
     Ok(Development {
         sigma_interpolation: sigma(sigma_arg)?,
-        pattern: selected(s, kind, weight)?,
+        pattern: selected(s, kind, weight, ages)?,
         ..average(average_arg)?
     })
 }
@@ -341,9 +373,13 @@ fn chain_ladder(
 }
 
 /// The chain-ladder fit of a vector function's arguments: `triangle,
-/// [average], [tail], [selected], [kind], [weight]`.
+/// [average], [tail], [selected], [kind], [weight], [pattern_ages]`.
 fn chain_ladder_args(args: &[Grid]) -> Result<ChainLadderFit> {
-    let dev = development_with(&args[1], [&args[3], &args[4], &args[5]], &Grid::missing())?;
+    let dev = development_with(
+        &args[1],
+        [&args[3], &args[4], &args[5], &args[6]],
+        &Grid::missing(),
+    )?;
     chain_ladder(&args[0], dev, &args[2])
 }
 
@@ -378,7 +414,11 @@ pub fn cl_reserve(args: &[Grid]) -> Result<Grid> {
 /// The chain-ladder exhibit: Origin, Latest, CDF, Ultimate, Reserve per
 /// origin, then a total row.
 pub fn cl_summary(args: &[Grid]) -> Result<Grid> {
-    let dev = development_with(&args[1], [&args[4], &args[5], &args[6]], &Grid::missing())?;
+    let dev = development_with(
+        &args[1],
+        [&args[4], &args[5], &args[6], &args[7]],
+        &Grid::missing(),
+    )?;
     let fit = chain_ladder(&args[0], dev, &args[2])?;
     let labels = origin_labels(&args[3], fit.origins.len())?;
     let reserves = fit.reserves();
@@ -409,7 +449,7 @@ pub fn cl_summary(args: &[Grid]) -> Result<Grid> {
 /// The development exhibit: per link, the selected factor, the factor to
 /// ultimate, Mack's sigma and the factor's standard error, then the tail.
 pub fn cl_factors(args: &[Grid]) -> Result<Grid> {
-    let dev = development_with(&args[1], [&args[3], &args[4], &args[5]], &args[6])?;
+    let dev = development_with(&args[1], [&args[3], &args[4], &args[5], &args[7]], &args[6])?;
     let fit = chain_ladder(&args[0], dev, &args[2])?;
     let ldf = fit.ldf();
     let n = ldf.len();
@@ -815,8 +855,9 @@ pub(crate) fn number_or(grid: &Grid, name: &str, default: f64) -> Result<f64> {
     }
 }
 
-/// The triangle and exposure arguments of an expected-loss method.
-pub(crate) fn exposed_triangle(triangle_arg: &Grid, exposure_arg: &Grid) -> Result<Triangle> {
+/// The triangle and exposure arguments of an expected-loss method: the
+/// values under [`COLUMN`] and the exposure under [`EXPOSURE`].
+pub fn exposed_triangle(triangle_arg: &Grid, exposure_arg: &Grid) -> Result<Triangle> {
     let e = exposure(exposure_arg, triangle_arg.rows)?;
     triangle_with(triangle_arg, Some(&e))
 }
@@ -857,21 +898,55 @@ fn expected_loss_exhibit(fit: &ExpectedLossFit, labels: Vec<Value>) -> Grid {
     Grid::from_rows(rows)
 }
 
-/// The chain ladder an expected-loss method takes its pattern from.
-fn pattern(average_arg: &Grid, tail_arg: &Grid) -> Result<ChainLadder> {
+/// The chain ladder an expected-loss method takes its pattern from: its
+/// `average` and `tail`, then `selected`, `kind`, `weight` and
+/// `pattern_ages` from `args[selected_at..]`.
+fn pattern(
+    average_arg: &Grid,
+    tail_arg: &Grid,
+    args: &[Grid],
+    selected_at: usize,
+) -> Result<ChainLadder> {
+    let [s, kind, weight, ages]: [&Grid; 4] = std::array::from_fn(|k| &args[selected_at + k]);
     Ok(ChainLadder {
-        development: average(average_arg)?,
+        development: Development {
+            pattern: selected(s, kind, weight, ages)?,
+            ..average(average_arg)?
+        },
         tail: tail(tail_arg)?,
     })
 }
 
+/// The `apriori` argument: one loss ratio for every origin, or a row or
+/// column of `origins` loss ratios, one per triangle row (or per origin of
+/// a diagonal), oldest first.
+pub(crate) fn apriori(grid: &Grid, origins: usize) -> Result<Apriori> {
+    if grid.cells.len() == 1 {
+        return Ok(number(grid, "apriori")?.into());
+    }
+    if grid.rows != 1 && grid.columns != 1 || grid.cells.len() != origins {
+        return Err(format!(
+            "apriori must be one loss ratio or a row or column of {origins}, one per origin"
+        ));
+    }
+    grid.cells
+        .iter()
+        .enumerate()
+        .map(|(i, v)| match v {
+            Value::Number(x) => Ok(*x),
+            other => Err(format!("apriori {} must be a number, got {other:?}", i + 1)),
+        })
+        .collect::<Result<_>>()
+        .map(Apriori::InOrder)
+}
+
 /// The expected loss method: exposure times the a priori loss ratio:
-/// `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins])`.
+/// `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])`.
 pub fn expected_loss(args: &[Grid]) -> Result<Grid> {
     let tri = exposed_triangle(&args[0], &args[1])?;
     let fit = ExpectedLoss {
-        apriori: number(&args[2], "apriori")?.into(),
-        chain_ladder: pattern(&args[3], &args[4])?,
+        apriori: apriori(&args[2], args[0].rows)?,
+        chain_ladder: pattern(&args[3], &args[4], args, 6)?,
     }
     .fit(&tri, COLUMN, EXPOSURE)
     .map_err(|e| e.to_string())?;
@@ -881,12 +956,12 @@ pub fn expected_loss(args: &[Grid]) -> Result<Grid> {
 
 /// Bornhuetter-Ferguson: the latest plus the a priori ultimate's
 /// unreported share:
-/// `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])`.
+/// `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])`.
 pub fn bornhuetter_ferguson(args: &[Grid]) -> Result<Grid> {
     let tri = exposed_triangle(&args[0], &args[1])?;
     let fit = BornhuetterFerguson {
-        apriori: number(&args[2], "apriori")?.into(),
-        chain_ladder: pattern(&args[3], &args[4])?,
+        apriori: apriori(&args[2], args[0].rows)?,
+        chain_ladder: pattern(&args[3], &args[4], args, 6)?,
     }
     .fit(&tri, COLUMN, EXPOSURE)
     .map_err(|e| e.to_string())?;
@@ -896,13 +971,13 @@ pub fn bornhuetter_ferguson(args: &[Grid]) -> Result<Grid> {
 
 /// Benktander: Bornhuetter-Ferguson iterated, each pass taking the last
 /// ultimate as its a priori (1 is Bornhuetter-Ferguson):
-/// `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])`.
+/// `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])`.
 pub fn benktander(args: &[Grid]) -> Result<Grid> {
     let tri = exposed_triangle(&args[0], &args[1])?;
     let fit = Benktander {
-        apriori: number(&args[2], "apriori")?.into(),
+        apriori: apriori(&args[2], args[0].rows)?,
         n_iters: count(&args[3], "iterations", 1, 10_000)?,
-        chain_ladder: pattern(&args[4], &args[5])?,
+        chain_ladder: pattern(&args[4], &args[5], args, 7)?,
     }
     .fit(&tri, COLUMN, EXPOSURE)
     .map_err(|e| e.to_string())?;
@@ -912,13 +987,13 @@ pub fn benktander(args: &[Grid]) -> Result<Grid> {
 
 /// Cape Cod (Stanard-Buhlmann): the a priori loss ratio estimated from the
 /// triangle, trended and decayed by distance between origins:
-/// `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins])`.
+/// `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])`.
 pub fn cape_cod(args: &[Grid]) -> Result<Grid> {
     let tri = exposed_triangle(&args[0], &args[1])?;
     let fit = CapeCod {
         trend: number_or(&args[2], "trend", 0.0)?,
         decay: number_or(&args[3], "decay", 1.0)?,
-        chain_ladder: pattern(&args[4], &args[5])?,
+        chain_ladder: pattern(&args[4], &args[5], args, 7)?,
     }
     .fit(&tri, COLUMN, EXPOSURE)
     .map_err(|e| e.to_string())?;
@@ -927,12 +1002,16 @@ pub fn cape_cod(args: &[Grid]) -> Result<Grid> {
 }
 
 /// Mack's model of a triangle argument with the chain-ladder options at
-/// `args[1]` (average), `args[2]` (tail) and `args[4..8]` (selected, kind,
-/// weight, sigma).
+/// `args[1]` (average), `args[2]` (tail) and `args[4..9]` (selected, kind,
+/// weight, sigma, pattern_ages).
 fn mack_fit(args: &[Grid]) -> Result<MackFit> {
     let tri = triangle(&args[0])?;
     Mack {
-        development: development_with(&args[1], [&args[4], &args[5], &args[6]], &args[7])?,
+        development: development_with(
+            &args[1],
+            [&args[4], &args[5], &args[6], &args[8]],
+            &args[7],
+        )?,
         tail: tail(&args[2])?,
         ..Mack::default()
     }
@@ -944,7 +1023,7 @@ fn mack_fit(args: &[Grid]) -> Result<MackFit> {
 /// reserve, the standard error of the claims development result in the
 /// coming year (R's `CDR(1)S.E.`) and of the full run-off (Mack's), then
 /// the total:
-/// `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])`.
+/// `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma], [pattern_ages])`.
 pub fn mack_cdr(args: &[Grid]) -> Result<Grid> {
     let fit = mack_fit(args)?;
     let cdr = fit.claims_development_result().map_err(|e| e.to_string())?;
@@ -977,7 +1056,7 @@ pub fn mack_cdr(args: &[Grid]) -> Result<Grid> {
 /// The standard error of each origin's claims development result in each
 /// future calendar year (R's `CDR(k)S.E.`), a column per year, then the
 /// total's:
-/// `PRO.MACK.CDR.YEARS(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])`.
+/// `PRO.MACK.CDR.YEARS(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma], [pattern_ages])`.
 pub fn mack_cdr_years(args: &[Grid]) -> Result<Grid> {
     let fit = mack_fit(args)?;
     let cdr = fit.claims_development_result().map_err(|e| e.to_string())?;

@@ -673,8 +673,10 @@ impl SelectedPattern {
     /// result longer than 2,400 months; any error the pattern has on its
     /// own ages; and the curve reading's errors: a single given value,
     /// which has no shape to read, a curve fit that runs off to the edge
-    /// of its parameters, and given values that no monotone accident-month
-    /// pattern averages to.
+    /// of its parameters on given values that fall (on values that never
+    /// fall the curve is clamped to the edge as the projection's prior,
+    /// and the reading still gives them exactly), and given values that no
+    /// monotone accident-month pattern averages to.
     ///
     /// ```
     /// use prospicio_reserving::{Grain, PatternKind, SelectedPattern, UnderwritingBasis};

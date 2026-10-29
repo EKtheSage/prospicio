@@ -193,6 +193,30 @@ impl SegmentDependence {
         }
     }
 
+    /// As [`reorder_ranges`](Self::reorder_ranges), with each segment's
+    /// patterns moved with its rows, as in
+    /// [`reorder_with`](Self::reorder_with): the draws are those
+    /// `reorder_ranges` gives.
+    #[cfg(feature = "bayes")]
+    pub(crate) fn reorder_ranges_with(
+        &self,
+        draws: PredictiveDistribution,
+        ranges: &[Range<usize>],
+        seed: u64,
+        patterns: &mut DevelopmentPatterns,
+    ) -> Result<PredictiveDistribution> {
+        match self {
+            Self::RankCorrelation { spearman } => {
+                let (draws, source) = rank_correlate_indexed(draws, ranges, spearman, seed)?;
+                for (s, source) in source.iter().enumerate() {
+                    patterns.permute(s, source);
+                }
+                Ok(draws)
+            }
+            Self::Independent | Self::Synchronized => Ok(draws),
+        }
+    }
+
     /// The simulations of several segments, `rows` (one row of `width`
     /// values per simulation, segment `s` holding the columns `ranges[s]`),
     /// reordered to the rank correlation if that is the choice, and as they
@@ -200,18 +224,30 @@ impl SegmentDependence {
     /// columns `ranked[s]` alone (its total reserve), and all of the
     /// segment's columns in `ranges[s]` then move with it, so a segment's
     /// values stay consistent row by row. `seed` is the fit's.
+    ///
+    /// Under a rank correlation, `moved(s, index)` is called for each
+    /// segment `s`, row `i` of the result being row `index[i]` of `rows` in
+    /// that segment's columns: the index
+    /// [`DevelopmentPatterns::permute`] takes, so a segment's patterns move
+    /// with its rows (`reserving-v02.md` decision 28).
     #[cfg(feature = "bayes")]
-    pub(crate) fn reorder_rows(
+    pub(crate) fn reorder_rows_with(
         &self,
         rows: Vec<f64>,
         width: usize,
         ranges: &[Range<usize>],
         ranked: &[Range<usize>],
         seed: u64,
+        mut moved: impl FnMut(usize, &[usize]),
     ) -> Result<Vec<f64>> {
         match self {
             Self::RankCorrelation { spearman } => {
-                rank_correlate_rows(&rows, width, ranges, ranked, spearman, seed)
+                let (rows, index) =
+                    rank_correlate_rows(&rows, width, ranges, ranked, spearman, seed)?;
+                for (s, index) in index.iter().enumerate() {
+                    moved(s, index);
+                }
+                Ok(rows)
             }
             Self::Independent | Self::Synchronized => Ok(rows),
         }
@@ -440,7 +476,7 @@ fn rank_correlate_rows(
     ranked: &[Range<usize>],
     spearman: &[f64],
     seed: u64,
-) -> Result<Vec<f64>> {
+) -> Result<(Vec<f64>, Vec<Vec<usize>>)> {
     let s = ranges.len();
     let normal = normal_scores(spearman, s)?;
     let n_sims = rows.len() / width;
@@ -484,15 +520,19 @@ fn rank_correlate_rows(
         })
         .collect();
     let order = shuffled_order(n_sims, &mut rng);
+    let index: Vec<Vec<usize>> = source
+        .iter()
+        .map(|source| order.iter().map(|&r| source[r]).collect())
+        .collect();
     let mut out = vec![0.0; rows.len()];
-    for (i, &r) in order.iter().enumerate() {
-        for (g, range) in ranges.iter().enumerate() {
-            let from = source[g][r] * width;
+    for (g, range) in ranges.iter().enumerate() {
+        for (i, &j) in index[g].iter().enumerate() {
+            let from = j * width;
             out[i * width + range.start..i * width + range.end]
                 .copy_from_slice(&rows[from + range.start..from + range.end]);
         }
     }
-    Ok(out)
+    Ok((out, index))
 }
 
 #[cfg(test)]
@@ -835,10 +875,24 @@ mod tests {
         let rank = SegmentDependence::RankCorrelation {
             spearman: vec![1.0, 0.7, 0.7, 1.0],
         };
+        let mut index = vec![Vec::new(); 2];
         let out = rank
-            .reorder_rows(rows.clone(), 6, &ranges, &ranked, 5)
+            .reorder_rows_with(rows.clone(), 6, &ranges, &ranked, 5, |s, i| {
+                index[s] = i.to_vec();
+            })
             .unwrap();
         assert_eq!(out.len(), rows.len());
+        // Row i of each segment is row index[i] of the input, the index the
+        // patterns follow.
+        for (s, range) in ranges.iter().enumerate() {
+            assert_eq!(index[s].len(), n_sims);
+            for (i, &j) in index[s].iter().enumerate() {
+                assert_eq!(
+                    out[i * 6 + range.start..i * 6 + range.end],
+                    rows[j * 6 + range.start..j * 6 + range.end]
+                );
+            }
+        }
         for row in out.chunks_exact(6) {
             for s in [0, 3] {
                 assert_eq!(row[s + 1], 2.0 * row[s] + 1.0);
@@ -874,7 +928,7 @@ mod tests {
         assert!((rho - 0.7).abs() < 0.06, "{rho}");
         // Independent leaves the rows alone.
         let same = SegmentDependence::Independent
-            .reorder_rows(rows.clone(), 6, &ranges, &ranked, 5)
+            .reorder_rows_with(rows.clone(), 6, &ranges, &ranked, 5, |_, _| {})
             .unwrap();
         assert_eq!(same, rows);
     }

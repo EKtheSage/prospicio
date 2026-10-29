@@ -9,9 +9,10 @@
 vine_copula(kind = c("c", "d"), order, pairs)
 
 pair_copula(
-  family = c("independence", "gaussian", "clayton", "gumbel", "frank", "joe"),
+  family = c("independence", "gaussian", "student", "clayton", "gumbel", "frank", "joe"),
   parameter = 0,
-  rotation = 0
+  rotation = 0,
+  nu = NULL
 )
 
 copula_log_density(copula, u)
@@ -23,13 +24,15 @@ copula_log_density(copula, u)
 
 \item{pairs}{A list of trees, tree \code{t} a list of its \code{d - t} pair copulas.}
 
-\item{family}{One of \code{"independence"}, \code{"gaussian"}, \code{"clayton"},
-\code{"gumbel"}, \code{"frank"} and \code{"joe"}.}
+\item{family}{One of \code{"independence"}, \code{"gaussian"}, \code{"student"},
+\code{"clayton"}, \code{"gumbel"}, \code{"frank"} and \code{"joe"}.}
 
-\item{parameter}{Gaussian correlation in (-1, 1); Clayton above 0; Gumbel
-and Joe at least 1; Frank not 0.}
+\item{parameter}{Gaussian and Student t correlation in (-1, 1); Clayton
+above 0; Gumbel and Joe at least 1; Frank not 0.}
 
-\item{rotation}{0, 90, 180 or 270.}
+\item{rotation}{0, 90, 180 or 270 (0 for the Student t).}
+
+\item{nu}{The Student t's degrees of freedom; \code{NULL} for the others.}
 
 \item{copula}{A vine \link{copula}.}
 

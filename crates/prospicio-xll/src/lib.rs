@@ -15,7 +15,10 @@
 //! and rename `prospicio_xll.dll` to `prospicio.xll`.
 
 pub mod aggregate;
+pub mod allocation;
 pub mod bayes;
+pub mod cashflow;
+pub mod cat;
 pub mod copulas;
 pub mod credibility;
 pub mod diagonal;
@@ -24,8 +27,10 @@ pub mod evt;
 pub mod experience;
 pub mod exposure;
 pub mod fitting;
+pub mod glm;
 pub mod odp_glm;
 pub mod payout;
+pub mod pnl;
 pub mod pricing;
 pub mod quote;
 pub mod ratemaking;
@@ -88,7 +93,11 @@ const TRIANGLE: Arg = Arg {
 };
 const SELECTED: Arg = Arg {
     name: "selected",
-    help: "Selected factors, one cell per triangle column; a blank keeps the estimate",
+    help: "Selected factors, one cell per triangle column (or at pattern_ages); a blank keeps the estimate",
+};
+const SELECTED_AGES: Arg = Arg {
+    name: "pattern_ages",
+    help: "Each selected value's age in months, such as 3, 6, 9, ... for a monthly pattern on the triangle's 12, 24, ... columns; omitted for 12, 24, ... by cell",
 };
 const KIND: Arg = Arg {
     name: "kind",
@@ -155,7 +164,7 @@ const EXPOSURE: Arg = Arg {
 };
 const APRIORI: Arg = Arg {
     name: "apriori",
-    help: "The a priori expected loss ratio, ultimate per unit of exposure, such as 0.75",
+    help: "The a priori expected loss ratio, ultimate per unit of exposure, such as 0.75; or a row or column, one per triangle row",
 };
 
 const DIAG_ORIGINS: Arg = Arg {
@@ -338,6 +347,51 @@ const PROBABILITY: Arg = Arg {
     help: "Probability or probabilities, between 0 and 1: a number or a range",
 };
 
+const CF_FLOWS: Arg = Arg {
+    name: "flows",
+    help: "The cash flows: a row or column, or a block with one simulation per row",
+};
+const CF_TIMES: Arg = Arg {
+    name: "times",
+    help: "Each flow's time (0, 1, 2, ... if omitted); dates when unit is \"dates\"",
+};
+const CF_UNIT: Arg = Arg {
+    name: "unit",
+    help: "\"years\" (default), \"months\", \"days\" (actual/365) or \"dates\" (Excel dates, days from the first over 365, as XNPV)",
+};
+const GLM_DATA: Arg = Arg {
+    name: "data",
+    help: "The table: a header row of column names, then one row per observation; text columns are factors",
+};
+const GLM_RESPONSE: Arg = Arg {
+    name: "response",
+    help: "The response's column name, such as \"claims\" (a proportion with binomial)",
+};
+const GLM_TERMS: Arg = Arg {
+    name: "terms",
+    help: "The predictors' column names, a row or column: \"age\", \"region=A\" (a factor with base level A) or \"age:region\" (an interaction)",
+};
+const GLM_FAMILY: Arg = Arg {
+    name: "family",
+    help: "poisson (default), quasipoisson, gamma, tweedie, gaussian, inverse_gaussian, binomial or negative_binomial",
+};
+const GLM_LINK: Arg = Arg {
+    name: "link",
+    help: "log (default; logit for binomial, identity for gaussian), identity, logit, probit, cloglog, inverse or inverse_squared",
+};
+const GLM_EXPOSURE: Arg = Arg {
+    name: "exposure",
+    help: "The exposure's column name: ln(exposure) as offset on the log link; omitted for none",
+};
+const GLM_WEIGHTS: Arg = Arg {
+    name: "weights",
+    help: "The prior weights' column name (claim counts for an average severity, trials for binomial); omitted for 1",
+};
+const GLM_P: Arg = Arg {
+    name: "p",
+    help: "The tweedie power (such as 1.5) or the negative_binomial theta; omitted otherwise",
+};
+
 fn version(_: &[Grid]) -> Result<Grid, String> {
     Ok(Grid::scalar(Value::Text(format!(
         "prospicio {}",
@@ -359,42 +413,92 @@ pub static FUNCTIONS: &[Function] = &[
         symbol: "pro_cl",
         name: "PRO.CL",
         help: "Chain ladder exhibit: latest, CDF, ultimate and reserve per origin, with a total.",
-        args: &[TRIANGLE, AVERAGE, TAIL, ORIGINS, SELECTED, KIND, WEIGHT],
+        args: &[
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            ORIGINS,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
+        ],
         run: reserving::cl_summary,
     },
     Function {
         symbol: "pro_cl_ldf",
         name: "PRO.CL.LDF",
         help: "Selected age-to-age factors, one per triangle column; the last is the tail.",
-        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT],
+        args: &[
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
+        ],
         run: reserving::cl_ldf,
     },
     Function {
         symbol: "pro_cl_cdf",
         name: "PRO.CL.CDF",
         help: "Age-to-ultimate factors, one per triangle column.",
-        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT],
+        args: &[
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
+        ],
         run: reserving::cl_cdf,
     },
     Function {
         symbol: "pro_cl_ultimate",
         name: "PRO.CL.ULTIMATE",
         help: "Chain ladder ultimate per origin.",
-        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT],
+        args: &[
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
+        ],
         run: reserving::cl_ultimate,
     },
     Function {
         symbol: "pro_cl_reserve",
         name: "PRO.CL.RESERVE",
         help: "Chain ladder reserve (ultimate less latest) per origin.",
-        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT],
+        args: &[
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
+        ],
         run: reserving::cl_reserve,
     },
     Function {
         symbol: "pro_cl_factors",
         name: "PRO.CL.FACTORS",
         help: "Development exhibit: LDF, CDF, Mack sigma and standard error per link, and the tail.",
-        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT, SIGMA],
+        args: &[
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SIGMA,
+            SELECTED_AGES,
+        ],
         run: reserving::cl_factors,
     },
     Function {
@@ -402,7 +506,15 @@ pub static FUNCTIONS: &[Function] = &[
         name: "PRO.MACK",
         help: "Mack exhibit: ultimate, reserve, process, parameter and total standard error and CV per origin, with a total.",
         args: &[
-            TRIANGLE, AVERAGE, TAIL, ORIGINS, SELECTED, KIND, WEIGHT, SIGMA,
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            ORIGINS,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SIGMA,
+            SELECTED_AGES,
         ],
         run: reserving::mack_summary,
     },
@@ -478,7 +590,15 @@ pub static FUNCTIONS: &[Function] = &[
         name: "PRO.MACK.CDR",
         help: "Merz-Wuthrich one-year view: reserve, CDR(1) SE and run-off (Mack) SE per origin, with a total.",
         args: &[
-            TRIANGLE, AVERAGE, TAIL, ORIGINS, SELECTED, KIND, WEIGHT, SIGMA,
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            ORIGINS,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SIGMA,
+            SELECTED_AGES,
         ],
         run: reserving::mack_cdr,
     },
@@ -487,7 +607,15 @@ pub static FUNCTIONS: &[Function] = &[
         name: "PRO.MACK.CDR.YEARS",
         help: "Merz-Wuthrich CDR standard error per origin in each future calendar year, with the total.",
         args: &[
-            TRIANGLE, AVERAGE, TAIL, ORIGINS, SELECTED, KIND, WEIGHT, SIGMA,
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            ORIGINS,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SIGMA,
+            SELECTED_AGES,
         ],
         run: reserving::mack_cdr_years,
     },
@@ -528,14 +656,36 @@ pub static FUNCTIONS: &[Function] = &[
         symbol: "pro_el",
         name: "PRO.EL",
         help: "Expected loss method: ultimate is exposure times the a priori loss ratio.",
-        args: &[TRIANGLE, EXPOSURE, APRIORI, AVERAGE, TAIL, ORIGINS],
+        args: &[
+            TRIANGLE,
+            EXPOSURE,
+            APRIORI,
+            AVERAGE,
+            TAIL,
+            ORIGINS,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
+        ],
         run: reserving::expected_loss,
     },
     Function {
         symbol: "pro_bf",
         name: "PRO.BF",
         help: "Bornhuetter-Ferguson: latest plus the a priori ultimate's unreported share, per origin, with a total.",
-        args: &[TRIANGLE, EXPOSURE, APRIORI, AVERAGE, TAIL, ORIGINS],
+        args: &[
+            TRIANGLE,
+            EXPOSURE,
+            APRIORI,
+            AVERAGE,
+            TAIL,
+            ORIGINS,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
+        ],
         run: reserving::bornhuetter_ferguson,
     },
     Function {
@@ -553,6 +703,10 @@ pub static FUNCTIONS: &[Function] = &[
             AVERAGE,
             TAIL,
             ORIGINS,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
         ],
         run: reserving::benktander,
     },
@@ -574,6 +728,10 @@ pub static FUNCTIONS: &[Function] = &[
             AVERAGE,
             TAIL,
             ORIGINS,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
         ],
         run: reserving::cape_cod,
     },
@@ -2082,7 +2240,7 @@ pub static FUNCTIONS: &[Function] = &[
     Function {
         symbol: "pro_copula_cdf",
         name: "PRO.COPULA.CDF",
-        help: "A copula's distribution function C(u) at each point, one point a row (Gaussian in two dimensions, Archimedean in any).",
+        help: "A copula's distribution function C(u) at each point, one point a row (Gaussian in any dimension, exact in two and within about 1e-5 in more; Archimedean in any).",
         args: &[
             Arg {
                 name: "points",
@@ -2346,6 +2504,412 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: aggregate::layer_terms,
+    },
+    Function {
+        symbol: "pro_glm",
+        name: "PRO.GLM",
+        help: "A GLM fitted to a table: each coefficient's estimate, SE, statistic, p-value and exp(estimate), then deviance, dispersion, AIC and the other statistics.",
+        args: &[
+            GLM_DATA,
+            GLM_RESPONSE,
+            GLM_TERMS,
+            GLM_FAMILY,
+            GLM_LINK,
+            GLM_EXPOSURE,
+            GLM_WEIGHTS,
+            GLM_P,
+        ],
+        run: glm::summary,
+    },
+    Function {
+        symbol: "pro_glm_predict",
+        name: "PRO.GLM.PREDICT",
+        help: "The fitted mean of each row of newdata under a GLM fitted to data, as a column.",
+        args: &[
+            GLM_DATA,
+            GLM_RESPONSE,
+            GLM_TERMS,
+            Arg {
+                name: "newdata",
+                help: "The rows to predict: a header row with the same column names (the exposure's too, when one is named), then one row each",
+            },
+            GLM_FAMILY,
+            GLM_LINK,
+            GLM_EXPOSURE,
+            GLM_WEIGHTS,
+            GLM_P,
+        ],
+        run: glm::predict,
+    },
+    Function {
+        symbol: "pro_glm_relativities",
+        name: "PRO.GLM.RELATIVITIES",
+        help: "A log-link GLM's relativities: exp(estimate) per factor level (the base at 1) and per unit of a numeric term, with a confidence interval.",
+        args: &[
+            GLM_DATA,
+            GLM_RESPONSE,
+            GLM_TERMS,
+            GLM_FAMILY,
+            GLM_LINK,
+            GLM_EXPOSURE,
+            GLM_WEIGHTS,
+            GLM_P,
+            Arg {
+                name: "level",
+                help: "The confidence interval's level, 0.95 if omitted",
+            },
+        ],
+        run: glm::relativities,
+    },
+    Function {
+        symbol: "pro_npv",
+        name: "PRO.NPV",
+        help: "Net present value of flows at times t: the sum of x (1 + rate)^-t, the first flow at its own time (unlike NPV, which discounts the first a period).",
+        args: &[
+            Arg {
+                name: "rate",
+                help: "The annual discount rate",
+            },
+            CF_FLOWS,
+            CF_TIMES,
+            CF_UNIT,
+        ],
+        run: cashflow::npv,
+    },
+    Function {
+        symbol: "pro_irr",
+        name: "PRO.IRR",
+        help: "Internal rate of return by a grid search from lower to upper: the rate nearest 0 at which the flows' value is 0.",
+        args: &[
+            CF_FLOWS,
+            CF_TIMES,
+            CF_UNIT,
+            Arg {
+                name: "lower",
+                help: "The lowest annual rate searched, -0.95 if omitted",
+            },
+            Arg {
+                name: "upper",
+                help: "The highest annual rate searched, 1 if omitted",
+            },
+            Arg {
+                name: "extend",
+                help: "TRUE to search past lower and upper when the root lies beyond them; FALSE if omitted",
+            },
+            Arg {
+                name: "detail",
+                help: "TRUE for a table: rate, found, NPV there, roots seen, root above, root below",
+            },
+        ],
+        run: cashflow::irr,
+    },
+    Function {
+        symbol: "pro_moic",
+        name: "PRO.MOIC",
+        help: "Multiple on invested capital: 1 + released / (funded + opening), per row.",
+        args: &[
+            Arg {
+                name: "released",
+                help: "The investor's net gain: equity released and distributed less capital paid in",
+            },
+            Arg {
+                name: "funded",
+                help: "The capital funded during the term",
+            },
+            Arg {
+                name: "opening",
+                help: "The opening capital, 0 if omitted",
+            },
+        ],
+        run: cashflow::moic,
+    },
+    Function {
+        symbol: "pro_cashflow",
+        name: "PRO.CASHFLOW",
+        help: "A collateralised deal's monthly cash flows on each simulated loss ratio: IRR, MOIC and totals per simulation, the monthly flows, or one simulation's accounts.",
+        args: &[
+            Arg {
+                name: "u",
+                help: "Simulated ultimate loss ratios, one per simulation",
+            },
+            Arg {
+                name: "terms",
+                help: "Rows of a label and its values: premium, commutation_month, and the optional rules (see the manual)",
+            },
+            Arg {
+                name: "patterns",
+                help: "Three columns: cumulative shares written, earned and paid at the end of each month from 0",
+            },
+            Arg {
+                name: "requirement",
+                help: "Rows of a base (unearned-premium, reserve, outstanding, written, earned, fixed) and its load; floor and limit rows",
+            },
+            Arg {
+                name: "commission",
+                help: "The commission rate: one, or one per simulation; 0 if omitted",
+            },
+            Arg {
+                name: "output",
+                help: "\"simulations\" (default), \"flows\" or \"trace\" (the first simulation's accounts)",
+            },
+            Arg {
+                name: "rate",
+                help: "A discount rate: adds each simulation's NPV",
+            },
+            Arg {
+                name: "commutation_requirement",
+                help: "The requirement at commutation, as requirement; the same if omitted",
+            },
+        ],
+        run: cashflow::cashflow,
+    },
+    Function {
+        symbol: "pro_pnl",
+        name: "PRO.PNL",
+        help: "A book's P&L ledger over annual gross losses, with the annual covers it buys: every line's distribution and the scenarios that foot, the card, or the ratios.",
+        args: &[
+            Arg {
+                name: "values",
+                help: "The annual gross losses: a grid's points or simulated years",
+            },
+            Arg {
+                name: "probs",
+                help: "Each value's probability; equally likely if omitted",
+            },
+            Arg {
+                name: "premium",
+                help: "The book's gross premium",
+            },
+            Arg {
+                name: "expenses",
+                help: "Rows of label, rate on premium, rate on loss, fixed amount",
+            },
+            Arg {
+                name: "covers",
+                help: "Annual stop losses: a header row (name, limit, attachment, share, premium, commission, profit_share, profit_allowance), a cover a row",
+            },
+            Arg {
+                name: "face",
+                help: "\"walk\" (default), \"consolidated\", \"top-down\" or \"bottom-up\"",
+            },
+            Arg {
+                name: "output",
+                help: "\"sheet\" (default), \"card\" or \"ratios\"",
+            },
+            Arg {
+                name: "levels",
+                help: "The scenario levels, 0.01 to 0.99 (aggregate's nine) if omitted",
+            },
+            Arg {
+                name: "expense_at_mean",
+                help: "TRUE to book a loss-basis expense at the expected gross loss on the consolidated face",
+            },
+        ],
+        run: pnl::pnl,
+    },
+    Function {
+        symbol: "pro_ylt_stats",
+        name: "PRO.YLT.STATS",
+        help: "A year loss table's annual loss: years, occurrences, mean (AAL), SD, CV, skewness, VaR and TVaR.",
+        args: &[
+            Arg {
+                name: "years",
+                help: "Each loss's year, from 1: a column",
+            },
+            Arg {
+                name: "losses",
+                help: "Each loss, a column beside years (a row per non-zero event loss)",
+            },
+            Arg {
+                name: "n_years",
+                help: "The table's number of years, if its last years have no loss; the largest year if omitted",
+            },
+            Arg {
+                name: "probabilities",
+                help: "Probabilities for VaR and TVaR: a row or column; 0.99, 0.995, 0.999 if omitted",
+            },
+            Arg {
+                name: "quantile",
+                help: "\"inverted_cdf\" (default, R type 1, exact TVaR), \"linear\" (R type 7) or \"kth_largest\" (the k-th worst year, the mean of the k worst)",
+            },
+            Arg {
+                name: "times",
+                help: "Each loss's time, the fraction of its year elapsed, such as ((day - 1) * 24 + hour) / 8760; only for an hours clause",
+            },
+            Arg {
+                name: "hours",
+                help: "An hours clause: losses within this many hours of a window's first are one occurrence (needs times)",
+            },
+            Arg {
+                name: "negative",
+                help: "TRUE if the table stores losses as negative numbers",
+            },
+        ],
+        run: cat::ylt_stats,
+    },
+    Function {
+        symbol: "pro_ylt_oep",
+        name: "PRO.YLT.OEP",
+        help: "A year loss table's occurrence (OEP) and aggregate (AEP) exceedance curves: PMLs by return period, or exceedance at amounts.",
+        args: &[
+            Arg {
+                name: "years",
+                help: "Each loss's year, from 1: a column",
+            },
+            Arg {
+                name: "losses",
+                help: "Each loss, a column beside years (a row per non-zero event loss)",
+            },
+            Arg {
+                name: "return_periods",
+                help: "Return periods in years (a row or column; below 1 read as probabilities); 2 to 1000 if omitted (those past the table's years left out)",
+            },
+            Arg {
+                name: "amounts",
+                help: "Amounts to read the OEP and AEP at, instead of return periods",
+            },
+            Arg {
+                name: "n_years",
+                help: "The table's number of years, if its last years have no loss; the largest year if omitted",
+            },
+            Arg {
+                name: "quantile",
+                help: "\"inverted_cdf\" (default, R type 1, exact TVaR), \"linear\" (R type 7) or \"kth_largest\" (the k-th worst year, the mean of the k worst)",
+            },
+            Arg {
+                name: "times",
+                help: "Each loss's time, the fraction of its year elapsed, such as ((day - 1) * 24 + hour) / 8760; only for an hours clause",
+            },
+            Arg {
+                name: "hours",
+                help: "An hours clause: losses within this many hours of a window's first are one occurrence (needs times)",
+            },
+            Arg {
+                name: "negative",
+                help: "TRUE if the table stores losses as negative numbers",
+            },
+        ],
+        run: cat::ylt_oep,
+    },
+    Function {
+        symbol: "pro_elt_stats",
+        name: "PRO.ELT.STATS",
+        help: "An event loss table's events a year, expected annual loss, SD and CV (compound Poisson).",
+        args: &[
+            Arg {
+                name: "rates",
+                help: "Each event's annual rate: a column",
+            },
+            Arg {
+                name: "means",
+                help: "Each event's mean loss",
+            },
+            Arg {
+                name: "sd_independent",
+                help: "Each event's independent standard deviation; 0 if omitted",
+            },
+            Arg {
+                name: "sd_correlated",
+                help: "Each event's correlated standard deviation (added to the independent one); 0 if omitted",
+            },
+            Arg {
+                name: "exposures",
+                help: "Each event's exposure, the most it can lose",
+            },
+        ],
+        run: cat::elt_stats,
+    },
+    Function {
+        symbol: "pro_elt_oep",
+        name: "PRO.ELT.OEP",
+        help: "An event loss table's occurrence exceedance (OEP) curve: occurrence PMLs by return period, or exceedance at amounts.",
+        args: &[
+            Arg {
+                name: "rates",
+                help: "Each event's annual rate: a column",
+            },
+            Arg {
+                name: "means",
+                help: "Each event's mean loss",
+            },
+            Arg {
+                name: "sd_independent",
+                help: "Each event's independent standard deviation; 0 if omitted",
+            },
+            Arg {
+                name: "sd_correlated",
+                help: "Each event's correlated standard deviation (added to the independent one); 0 if omitted",
+            },
+            Arg {
+                name: "exposures",
+                help: "Each event's exposure, the most it can lose",
+            },
+            Arg {
+                name: "return_periods",
+                help: "Return periods in years (a row or column; below 1 read as probabilities); 2 to 1000 if omitted",
+            },
+            Arg {
+                name: "amounts",
+                help: "Amounts to read the exceedance frequency and OEP at, instead of return periods",
+            },
+        ],
+        run: cat::elt_oep,
+    },
+    Function {
+        symbol: "pro_allocate",
+        name: "PRO.ALLOCATE",
+        help: "A distortion risk measure of the portfolio allocated to its units: Euler (natural), covariance, proportional, marginal or Shapley.",
+        args: &[
+            Arg {
+                name: "draws",
+                help: "Simulated draws: a column per unit, a row per simulation, an optional header row of names",
+            },
+            Arg {
+                name: "family",
+                help: "The distortion: \"tvar\", \"ph\", \"wang\", \"dual\", \"ccoc\" and the others PRO.DISTORTION names",
+            },
+            Arg {
+                name: "parameter",
+                help: "The distortion's parameter, such as 0.99 for TVaR",
+            },
+            Arg {
+                name: "method",
+                help: "\"euler\" (default, or \"natural\"), \"covariance\", \"covariance_margin\", \"proportional\", \"marginal\" or \"shapley\" (up to 12 units)",
+            },
+            Arg {
+                name: "r0",
+                help: "The intercept of \"clin\", \"cll\", \"lep\" or \"ly\"",
+            },
+        ],
+        run: allocation::allocate,
+    },
+    Function {
+        symbol: "pro_allocate_total",
+        name: "PRO.ALLOCATE.TOTAL",
+        help: "An amount from outside (a premium or a capital) allocated to the units: the haircut or equal risk rule on stand-alone VaR, TVaR or EPD.",
+        args: &[
+            Arg {
+                name: "draws",
+                help: "Simulated draws: a column per unit, a row per simulation, an optional header row of names",
+            },
+            Arg {
+                name: "total",
+                help: "The amount to allocate",
+            },
+            Arg {
+                name: "method",
+                help: "\"haircut\" (default) or \"equal_risk\" (the one level at which the stand-alone measures add up to total)",
+            },
+            Arg {
+                name: "measure",
+                help: "\"tvar\" (default), \"var\" or \"epd\" (the assets with an EPD of level times the mean)",
+            },
+            Arg {
+                name: "level",
+                help: "The haircut's level: a probability for VaR and TVaR (0.99 if omitted), an EPD ratio for EPD; none for equal risk",
+            },
+        ],
+        run: allocation::allocate_total,
     },
 ];
 

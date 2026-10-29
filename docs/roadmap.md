@@ -33,7 +33,7 @@ when from experience, and which pricing method fits which scenario.
 | v0.1: Reserving core | Distributions, `Triangle`, Chain Ladder, Mack, ODP bootstrap with a joint `PredictiveDistribution` | Done; parity on RAA, GenIns and ABC |
 | v0.2: Reserving breadth | BF, Cape Cod, Benktander, ELR, Clark, tails, one-year view (Merz–Wüthrich) | Done (#131–#136); selected development patterns (`reserving-v02.md` decision 12, in Rust, Python and R); latest diagonals, a development applied to another book, in Rust, Python and R (decisions 15 to 19) |
 | v0.3: Aggregate and reinsurance | Frequency-severity; FFT, Panjer, Monte Carlo; XOL, stop loss, reinstatements, towers, gross/ceded/net | Done, and more: surplus treaties, inuring stages, exact towers on the grid, risk profiles, exposure curves, reinstatements pro rata as to time, loss corridors, contract terms (ceding, sliding-scale and profit commissions, swing and retro rating) |
-| v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done, with nested Archimedean and C- and D-vine copulas (#261, #262) |
+| v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done, with nested Archimedean and C-, D- and R-vine copulas, pair copulas and vines fitted to data (#261, #262, #568) |
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
 | v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Done: P-splines, tensor product, cyclic and monotone smooths with GCV, UBRE or REML (#263), ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium |
@@ -67,8 +67,9 @@ what it is aiming for by v1.0.
   golden section), Nelder–Mead, root finding, special functions (with the
   incomplete beta and gamma past their usual domain, the exponential
   integral and the Mills ratio), splines, symmetric eigenvalues (Jacobi,
-  for REML's penalty determinants).
-- **Next, on demand:** Sobol sequences for quasi-Monte Carlo (v1.x).
+  for REML's penalty determinants), Sobol sequences for quasi-Monte Carlo
+  and the multivariate normal distribution function by Genz's method in
+  any dimension (#565).
 - **v1.0:** only the numerics other crates use. No general-purpose
   library.
 
@@ -89,7 +90,7 @@ what it is aiming for by v1.0.
     records the stream scheme and, apart from it, the sampler versions
     (`docs/design/rng.md`).
   - Risk measures and distortions, copulas (Gaussian, t, Archimedean,
-    nested Archimedean, C- and D-vines)
+    nested Archimedean, C-, D- and R-vines, fitted to data)
     with their distribution functions, Iman–Conover (normal, Student t or
     given scores), capital allocation (Euler, covariance, Shapley and
     others), EVT (GPD, POT, Hill, and threshold diagnostics: the mean
@@ -129,8 +130,9 @@ what it is aiming for by v1.0.
     commissions, profit commissions, swing rating; retro premiums.
     Over a multi-year term (`Tower::apply_term`), profit commission
     deficits and sliding scale deficits and credits carried forward,
-    to extinction or for a number of years. (Also done: towers saved as
-    JSON, seasonal event times, loss corridors.)
+    to extinction or for a number of years. Franchise deductibles,
+    nth-event and top-and-drop covers (#591). (Also done: towers saved
+    as JSON, seasonal event times, loss corridors.)
   - The occurrence exceedance (OEP) curve and occurrence PMLs for any
     count, exact and simulated; compound moments to third order and the
     moment approximations (normal, gamma, lognormal, shifted gamma and
@@ -158,7 +160,8 @@ what it is aiming for by v1.0.
     same events, by a 2-D compound FFT, `aggregate`'s clash model, and
     the two lines' losses in an event coupled by a copula; renewal claim
     counts, with any law for the waits between claims, and their eventual
-    ruin by Wiener–Hopf.
+    ruin by Wiener–Hopf; self-exciting (Hawkes) event times for clustered
+    catastrophe years, simulated, fitted and as event sets (#567).
 - **Next:** open. (Done: deficit and credit carry-forward in profit
   commissions and sliding scales over multi-year terms,
   `Tower::apply_term`, `docs/design/aggregate.md`; the P&L ledger, the
@@ -174,7 +177,8 @@ what it is aiming for by v1.0.
   - Exposure curves (MBBEFD, tabulated, from a severity, with the Swiss
     Re `c` calibrated to a mean rate or a layer's share) and risk
     profiles with spread sums insured.
-  - Risk-loaded prices from simulated losses.
+  - Risk-loaded prices from simulated losses, and the efficient frontier
+    of a layer's retention and limit (#569).
   - Classical credibility: limited fluctuation standards and the
     Bühlmann–Straub model (`docs/design/credibility.md`). Its Bayesian,
     hierarchical side is in `prospicio-bayes`; no `prospicio-credibility`
@@ -542,8 +546,8 @@ what it is aiming for by v1.0.
   Python and R): done. A development pattern per simulation, monthly from
   inception, for the cash-flow engine's paid patterns (`DevelopmentPatterns`,
   decision 28, #600; the bootstraps and `BayesOdp`, `BayesBf` and
-  `BayesBfNormalised`, in Rust, Python and R): done; Meyers' models and
-  `Compartmental` next.
+  `BayesBfNormalised`, Meyers' CRC, CSR and CAY (#678) and
+  `Compartmental`, models 1 and 2 (#679), in Rust, Python and R): done.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
 

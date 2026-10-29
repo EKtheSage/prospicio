@@ -117,6 +117,10 @@ pub enum Error {
     /// (`reserving-v02.md` decision 28): an unknown segment, a falling
     /// pattern or a horizon too short.
     PatternDraws(String),
+    /// A triangle cannot be read from a file (the `io` feature): the file
+    /// cannot be opened, a column is missing or a cell cannot be read. The
+    /// message names the file line or cell and the column.
+    File(String),
     /// Clark's growth-curve model cannot be fitted to this triangle.
     Clark(String),
     /// A growth curve cannot be fitted to this benchmark pattern
@@ -239,6 +243,7 @@ impl fmt::Display for Error {
             Self::Apriori(why) => write!(f, "apriori: {why}"),
             Self::Excess(why) => write!(f, "excess layer: {why}"),
             Self::PatternDraws(why) => write!(f, "pattern draws: {why}"),
+            Self::File(why) => write!(f, "reading a triangle: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
             Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),

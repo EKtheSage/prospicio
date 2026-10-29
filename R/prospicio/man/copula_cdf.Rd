@@ -17,9 +17,11 @@ The distribution function at each point.
 }
 \description{
 \code{C(u) = P(U_1 <= u_1, ..., U_d <= u_d)} at each point: the Gaussian
-copula's in two dimensions (the bivariate normal cdf by Genz's method,
-about \code{1e-15}), the Archimedean copulas' in any. The t copula has none
-yet and is an error.
+copula's exactly in two dimensions (the bivariate normal cdf by Genz's
+method, about \code{1e-15}) and in more by Genz's quasi-Monte Carlo method
+within an absolute error of about \code{1e-5} (\code{\link[=mvn_cdf]{mvn_cdf()}};
+\code{\link[=copula_cdf_estimate]{copula_cdf_estimate()}} for the settings and the error), the
+Archimedean copulas' in any. The t copula has none yet and is an error.
 }
 \examples{
 copula_cdf(gaussian_copula(matrix(c(1, 0.5, 0.5, 1), 2)), c(0.5, 0.5))

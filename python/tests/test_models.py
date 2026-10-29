@@ -1378,3 +1378,118 @@ def test_mars_matches_earth_on_the_chalk_portfolio():
     pruned = mars(x, y, threshold=0.0, max_terms=15, prune=True)
     assert pruned.rss == pytest.approx(7223.67323614061, rel=1e-10)
     assert len(pruned.terms) == 6
+
+
+def test_isotonic_recalibration_balance_and_murphy():
+    """Auto-calibration checks and repairs (#545)."""
+    import csv
+    from pathlib import Path
+
+    from prospicio.models import balance_correction, isotonic, murphy, recalibrate, reliability
+
+    ref = Path(__file__).resolve().parents[2] / "validation" / "reference" / "isotonic_sklearn.csv"
+
+    def nums(s):
+        return [float(v) for v in s.split(";")] if s else None
+
+    with open(ref) as f:
+        for r in csv.DictReader(f):
+            if r["case"] == "isotonic":
+                fit = isotonic(nums(r["x"]), nums(r["y"]), nums(r["w"]), increasing=r["increasing"] == "1")
+                assert fit.predict(nums(r["query"])) == pytest.approx(nums(r["expected"]), rel=1e-12, abs=1e-12)
+            else:
+                b = balance_correction(nums(r["y"]), nums(r["query"]), nums(r["w"]))
+                assert b == pytest.approx(float(r["expected"]), rel=1e-14)
+    m = recalibrate([1.0, 2.0, 3.0, 4.0], [0.0, 1.0, 1.0, 2.0], y_min=0.1)
+    assert m.predict([1.0, 2.5, 4.0]) == pytest.approx([0.1, 1.0, 2.0])
+    assert isotonic([1.0, 3.0], [1.0, 3.0], interpolation="step").predict([2.0]) == [1.0]
+    y = [float((i * 37) % 11) for i in range(200)]
+    pred = [1.0 + ((i * 37) % 11) * 0.7 + (i % 3) for i in range(200)]
+    for family in ("gaussian", "poisson"):
+        d = murphy(y, pred, family=family)
+        assert d["score"] == pytest.approx(d["miscalibration"] - d["discrimination"] + d["uncertainty"], abs=1e-12)
+        rc = isotonic(pred, y).predict(pred)
+        assert abs(murphy(y, rc, family=family)["miscalibration"]) < 1e-12
+    bands = reliability(y, pred, bins=4)
+    assert sum(b["count"] for b in bands) == 200
+    assert sum(b["weight"] * b["mean_actual"] for b in bands) == pytest.approx(sum(y))
+    with pytest.raises(ValueError):
+        isotonic([1.0], [1.0], interpolation="cubic")
+
+
+def test_conformal_intervals_match_mapie_and_cover():
+    """Conformal prediction intervals (#546)."""
+    import csv
+    from pathlib import Path
+
+    from prospicio.models import (
+        Design,
+        Glm,
+        conformal_cqr,
+        conformal_intervals,
+        conformal_plus,
+        conformal_split,
+        k_fold,
+    )
+
+    ref = Path(__file__).resolve().parents[2] / "validation" / "reference" / "conformal_mapie.csv"
+
+    def nums(s):
+        return [float(v) for v in s.split(";")]
+
+    with open(ref) as f:
+        for r in csv.DictReader(f):
+            a, y = float(r["alpha"]), nums(r["y"])
+            if r["case"] == "split":
+                i = conformal_split(y, nums(r["pred"]), nums(r["test"]), alpha=a)
+            elif r["case"] == "cqr":
+                p, t = r["pred"].split("|"), r["test"].split("|")
+                i = conformal_cqr(y, nums(p[0]), nums(p[1]), nums(t[0]), nums(t[1]), alpha=a)
+            else:
+                folds = [int(v) for v in nums(r["folds"])]
+                i = conformal_plus(y, nums(r["pred"]), folds, [nums(t) for t in r["test"].split("|")], alpha=a)
+            assert i["lo"] == pytest.approx(nums(r["lo"]), rel=1e-12, abs=1e-12)
+            assert i["hi"] == pytest.approx(nums(r["hi"]), rel=1e-12, abs=1e-12)
+    # The model-level wrapper equals the array functions on the same folds.
+    n = 60
+    x = [float((i * 7) % 13) for i in range(n)]
+    y = [1.0 + 0.5 * v + ((i * 31) % 7) - 3.0 for i, v in enumerate(x)]
+    d = Design([[1.0] * n, x], ["(Intercept)", "x"])
+    t = Design([[1.0] * 3, [0.5, 6.0, 12.5]], ["(Intercept)", "x"])
+    splits = k_fold(n, 5, 3)
+    got = conformal_intervals(Glm("gaussian"), d, y, t, method="cv+", splits=splits)
+    oof, folds, per = [0.0] * n, [0] * n, []
+    for k, (train, test) in enumerate(splits):
+        f = Glm("gaussian").fit(d.select(train), [y[i] for i in train])
+        for i, p in zip(test, f.predict(d.select(test))):
+            oof[i], folds[i] = p, k
+        per.append(f.predict(t))
+    assert got == conformal_plus(y, oof, folds, per, alpha=0.1)
+    fitted = Glm("gaussian").fit(d, y)
+    s = conformal_intervals(fitted, d, y, t, method="split")
+    assert all(lo < hi for lo, hi in zip(s["lo"], s["hi"]))
+    with pytest.raises(ValueError, match="family"):
+        conformal_split(y, y, [1.0], score="pearson")
+    with pytest.raises(ValueError, match="method"):
+        conformal_intervals(fitted, d, y, t, method="naive")
+
+
+def test_time_splits_window_horizon_gap_step():
+    """Rolling windows, horizons and gaps in time splits (#549)."""
+    import csv
+    from pathlib import Path
+
+    from prospicio.models import time_ordered, time_splits
+
+    periods = [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5]
+    for n in range(1, 6):
+        assert time_splits(periods, n) == time_ordered(periods, n)
+    ref = Path(__file__).resolve().parents[2] / "validation" / "reference" / "time_splits_sklearn.csv"
+    with open(ref) as f:
+        for r in csv.DictReader(f):
+            h = int(r["horizon"])
+            s = time_splits(list(range(int(r["n"]))), int(r["n_test"]), window=int(r["window"]) if r["window"] else None,
+                            horizon=h, gap=int(r["gap"]), step=h)[int(r["split"])]
+            assert s == ([int(v) for v in r["train"].split()], [int(v) for v in r["test"].split()])
+    with pytest.raises(ValueError, match="training period"):
+        time_splits(periods, 2, horizon=3, step=3, gap=1)

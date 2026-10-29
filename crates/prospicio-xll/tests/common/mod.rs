@@ -126,6 +126,36 @@ pub fn clrd_wkcomp() -> (Vec<f64>, Vec<f64>) {
         .unzip()
 }
 
+/// The CAS workers' compensation triangle (`validation/data/clrd_wkcomp.csv`)
+/// as a sheet range of cumulative paid, and each origin's latest premium
+/// as a column, as chainladder-python's `sample_weight=premium.latest_diagonal`.
+pub fn clrd_wkcomp_triangle() -> (Grid, Grid) {
+    let mut paid: BTreeMap<i32, BTreeMap<u32, f64>> = BTreeMap::new();
+    for line in validation("data/clrd_wkcomp.csv")
+        .lines()
+        .skip_while(|l| l.starts_with('#'))
+        .skip(1)
+    {
+        let f: Vec<&str> = line.split(',').collect();
+        paid.entry(f[0].parse().unwrap())
+            .or_default()
+            .insert(f[1].parse().unwrap(), f[2].parse().unwrap());
+    }
+    let ages = paid.values().map(BTreeMap::len).max().unwrap();
+    let rows = paid
+        .values()
+        .map(|row| {
+            let cells: Vec<f64> = row.values().copied().collect();
+            (0..ages)
+                .map(|c| cells.get(c).map_or(Value::Empty, |&x| Value::Number(x)))
+                .collect()
+        })
+        .collect();
+    let (_, premium) = clrd_wkcomp();
+    let premium = Grid::from_rows(premium.iter().map(|&p| vec![Value::Number(p)]).collect());
+    (Grid::from_rows(rows), premium)
+}
+
 /// The rows of a reference CSV under `validation/reference/`, comments
 /// and the header dropped, split on commas.
 pub fn reference(name: &str) -> Vec<Vec<String>> {

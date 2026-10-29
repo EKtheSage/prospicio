@@ -656,6 +656,30 @@ near(one$premium, risk_loaded_price(sampled(c(150, 330, 90, 210)), tv,
 stopifnot(identical(book_marginal_price(book, tv, cost_of_capital = 0.1, deals = "b")$deal, "b"),
           inherits(try(book_marginal_price(book, tv, cost_of_capital = 0.1, deals = "z"),
                        silent = TRUE), "try-error"))
+# #589: price adequacy of a book's deals.
+ad <- book_adequacy(book, tv, cost_of_capital = 0.1)
+stopifnot(identical(ad$deal, c("a", "b", "total")))
+near(ad$target_return, rep(0.1, 3))
+near(ad$marginal_assets[1:2], m$assets)
+near(ad$technical_premium[1:2], pp$by_component$premium)
+near(ad$target_premium, ad$technical_premium)
+near(ad$return_on_allocated, ad$margin / ad$allocated_capital)
+o1 <- book_adequacy(book_select(book, "b"), tv, cost_of_capital = 0.1)
+near(o1$allocated_assets[1], o1$marginal_assets[1])
+stopifnot(inherits(try(book_adequacy(book, tv), silent = TRUE), "try-error"))
+# #569: an efficient frontier of retentions and limits.
+fr <- reinsurance_frontier(grid_distribution(1, rep(0.25, 4)), c(1, 2), c(1, Inf),
+                           loading = 0.5, risk = "var", level = 0.9)
+near(c(fr$expected_ceded[2], fr$premium[2], fr$net_risk[2]), c(0.75, 1.125, 1))
+h <- 0.01
+pe <- exp(-(0:2999) * h) * (1 - exp(-h))
+pe[3000] <- pe[3000] + 1 - sum(pe)
+rs <- (0:59) * h
+fe <- reinsurance_frontier(grid_distribution(h, pe), rs, Inf, loading = 0.25, risk = "var", level = 0.99)
+stopifnot(abs(rs[which.min(fe$net_risk + fe$premium)] - log(1.25)) <= 2 * h)
+stopifnot(inherits(try(reinsurance_frontier(c(1, 2, 3), 1, 1), silent = TRUE), "try-error"))
+fa <- reinsurance_frontier(c(0, 1, 2, 3), c(1, 2), c(1, Inf), loading = 0.5, risk = "var", level = 0.9)
+near(fa$premium, fr$premium)
 # A run from a tower takes each year's reinstatement premium (#595).
 tw <- reinsurance_tower(list(xol_layer("cat", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5))))
 res <- apply_tower(tw, event_set_from_long(c(1, 2, 3, 3, 4, 4, 4), c(5, 15, 22, 12, 40, 40, 40), 4))
@@ -790,3 +814,29 @@ local({
                                    cashflow_requirement(c(outstanding = 1))), 0.7)
   stopifnot(length(r$funded) == 1)
 })
+
+# Cat bonds: triggers, tranches, distortion pricing and basis risk (#570).
+bond <- cat_bond("industry_index", 50, 150, weights = c(0.10, 0.05), principal = 100)
+cb <- cat_bond_apply(bond, list(list(c(800, 400)), list()))
+stopifnot(identical(cb$annual, c(0.5, 0)), identical(cb$recoveries, c(50, 0)), cb$expected_loss == 0.25)
+pb <- cat_bond("parametric", 0, 30, weights = c(10, 20), payout = list(measure = c(30, 50, 70), share = c(0, 0.5, 1)))
+near(cat_bond_apply(pb, list(list(c(40, 80))))$recoveries, 22.5 / 30)
+cyrs <- rep(list(c(30, 70), numeric(), 120, c(45, 50, 90)), 25)
+ind <- cat_bond("indemnity", 40, 100, principal = 60)
+cr <- cat_bond_apply(ind, lapply(cyrs, as.list))$recoveries
+lay <- xol_layer("T", 60, 40, aggregate_limit = 60)
+near(cr, vapply(cyrs, function(y) ceded(lay, y), 0), 1e-12)
+near(cat_bond_apply(ind, events_from_years(cyrs))$recoveries, cr, 1e-12)
+br <- cat_bond_basis_risk(cat_bond_apply(ind, events_from_years(cyrs)), cr)
+stopifnot(br$mean_shortfall == 0, br$mean_excess == 0, br$missed == 0)
+bin <- cat_bond_apply(cat_bond("modelled_loss", 100, 200),
+                      lapply(0:9999, function(i) if (i %% 50 == 0) list(500) else list()))
+sp <- cat_bond_price(bin, distortion("wang", 0.45))$spread
+near(sp, pnorm(qnorm(0.02) + 0.45), 1e-10)
+stopifnot(abs(cat_bond_calibrate(bin, "wang", sp)@parameter - 0.45) < 1e-6)
+near(cat_bond_lane_spread(bin, 0.55, 0.5, 0.5), 0.55 * sqrt(0.02))
+tb <- cat_bond_apply(cat_bond("indemnity", 0, 10, term_years = 3), list(list(4), list(8), list(), list(), list(), list()))
+stopifnot(identical(tb$term_losses, c(1, 0)))
+near(cat_bond_returns(tb, 0.1)[2], 0.1, 1e-9)
+stopifnot(inherits(try(cat_bond_apply(cat_bond("indemnity", 5, 5), list(list(1))), silent = TRUE), "try-error"))
+cat("cat bond tests passed\n")

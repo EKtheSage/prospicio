@@ -98,3 +98,96 @@ stopifnot(!identical(run$flows, cashflow_run(terms, u)$flows))
 # remedy, so when no simulation falls the two agree.
 refuse <- try(monthly_pattern_draws(odp, 120), silent = TRUE)
 if (!inherits(refuse, "try-error")) stopifnot(identical(refuse, patterns))
+
+# Meyers' CRC, CSR and CAY (#678): each simulation's pattern is exp(beta_d g)
+# of its posterior draw, ending at exactly 1 at the oldest age (no tail).
+comauto <- utils::read.csv(validation("data", "clrd_comauto_353.csv"), comment.char = "#")
+comauto <- comauto[comauto$origin - 1988 + comauto$development %/% 12 <= 10, ]
+tri353 <- triangle(comauto, "origin", "development", c("paid", "premium"))
+for (model in c("crc", "csr", "cay")) {
+  fit <- suppressWarnings(meyers(tri353, "paid", "premium", model = model, tune = 300,
+                                 draws = 300, n_sims = 1000, seed = 678))
+  p <- pattern_draws(fit)
+  stopifnot(nrow(p) == 1000, ncol(p) == 10, identical(colnames(p), as.character(12 * 1:10)))
+  stopifnot(all(p[, 10] == 1), all(p > 0), nrow(unique(p)) > 100)
+  # A late share falls in nearly every simulation on group 353: the default
+  # refuses, running_max holds each share at the largest before it.
+  stopifnot(fails(monthly_pattern_draws(fit, 120)))
+  m <- monthly_pattern_draws(fit, 120, monotone = "running_max")
+  stopifnot(identical(dim(m), c(1000L, 120L)), all(m[, 120] == 1),
+            all(m[, -1] - m[, -120] >= 0))
+}
+
+# Over segments, each segment has its own patterns, kept by segment().
+two353 <- rbind(transform(comauto, lob = "A"),
+                transform(comauto, lob = "B", paid = 2 * paid, premium = 2 * premium))
+tri2 <- triangle(two353, "origin", "development", c("paid", "premium"), keys = "lob")
+fits <- suppressWarnings(meyers_segments(tri2, "paid", "premium", tune = 300, draws = 300,
+                                         n_sims = 1000, seed = 679))
+pa <- pattern_draws(fits, "A")
+pb <- pattern_draws(fits, "B")
+stopifnot(nrow(pa) == 1000, all(pa[, 10] == 1), all(pb[, 10] == 1), !identical(pa, pb))
+stopifnot(fails(pattern_draws(fits)))
+stopifnot(identical(pattern_draws(segment(fits, lob = "B")), pb))
+
+# A pattern held flat until its last step (decision 28 item 4): ten origins 97%
+# developed at 12 months, flat to within 0.04% until 1 at 120 months. The
+# running maximum holds each draw at its first share; no Weibull runs
+# through that shape, and the default reading used to refuse it as not
+# increasing. It now reads the held shares exactly.
+noise <- c(0, 4e-4, -3e-4, 2e-4, -4e-4, 3e-4, -2e-4, 1e-4, 0)
+flat <- do.call(rbind, lapply(0:9, function(i) {
+  k <- 0:(9 - i)
+  u <- 1000 * (1 + 0.1 * i)
+  e <- ifelse(k == 0, 0, noise[(i * 7 + k * 3) %% 9 + 1])
+  data.frame(origin = 2011 + i, development = 12 * (k + 1),
+             paid = ifelse(k == 9, u, 0.97 * u * (1 + e)))
+}))
+flat_tri <- triangle(flat, "origin", "development", "paid")
+for (fit in list(odp_bootstrap(flat_tri, n_sims = 200, seed = 1),
+                 mack_bootstrap(flat_tri, n_sims = 200, seed = 1))) {
+  p <- pattern_draws(fit)
+  m <- monthly_pattern_draws(fit, 132, monotone = "running_max")
+  stopifnot(identical(dim(m), c(200L, 132L)), all(m[, 132] == 1),
+            all(m[, -1] - m[, -132] >= 0))
+  held <- t(apply(p, 1, function(x) pmin(cummax(x), 1)))
+  stopifnot(max(abs(m[, 12 * (1:10)] - held)) < 1e-9)
+  uw <- monthly_pattern_draws(fit, 144, basis = underwriting_basis(), monotone = "running_max")
+  stopifnot(all(uw[, 144] == 1))
+}
+# The compartmental model (#679): each simulation's pattern is the ODE's
+# expected cumulative paid over that at the square's last age (120 months
+# on company 337, one age past the paid triangle's), which never falls.
+wk <- utils::read.csv(validation("data", "clrd_wkcomp_337.csv"), comment.char = "#")
+wk337 <- wk[wk$origin + wk$development %/% 12 - 1 <= 1996, ]
+y1997 <- wk[wk$origin == 1997 & wk$development == 12, ]
+y1997$paid <- NA
+y1997$incurred <- NA
+wk337 <- rbind(wk337, y1997)
+tri337 <- triangle(wk337, "origin", "development", c("paid", "incurred", "premium"))
+cfit <- suppressWarnings(compartmental(tri337, "paid", "premium", gesmann_morris_priors(),
+                                       incurred = "incurred", n_sims = 1000, seed = 679))
+p <- pattern_draws(cfit)
+stopifnot(nrow(p) == 1000, ncol(p) == 10, identical(colnames(p), as.character(12 * 1:10)))
+stopifnot(all(p[, 10] == 1), all(p[, 1] > 0), nrow(unique(p)) > 100)
+stopifnot(all(p[, -1] - p[, -10] >= 0))
+# The default takes them, as running_max would leave them.
+m <- monthly_pattern_draws(cfit, 120)
+stopifnot(identical(dim(m), c(1000L, 120L)), all(m[, 120] == 1),
+          identical(m, monthly_pattern_draws(cfit, 120, monotone = "running_max")))
+
+# Over segments, each segment has its own patterns, kept by segment().
+two337 <- rbind(transform(wk337, lob = "A"),
+                transform(wk337, lob = "B", paid = 2 * paid, incurred = 2 * incurred,
+                          premium = 2 * premium))
+tri2 <- triangle(two337, "origin", "development", c("paid", "incurred", "premium"),
+                 keys = "lob")
+cfits <- suppressWarnings(compartmental_segments(tri2, "paid", "premium",
+                                                 gesmann_morris_priors(),
+                                                 incurred = "incurred", n_sims = 1000,
+                                                 seed = 680))
+pa <- pattern_draws(cfits, "A")
+pb <- pattern_draws(cfits, "B")
+stopifnot(nrow(pa) == 1000, all(pa[, 10] == 1), all(pb[, 10] == 1), !identical(pa, pb))
+stopifnot(fails(pattern_draws(cfits)))
+stopifnot(identical(pattern_draws(segment(cfits, lob = "B")), pb))

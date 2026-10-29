@@ -2055,3 +2055,167 @@ leverage <- function(rate, premium, funded, opening) {
 tiered_fee <- function(margins, breakpoints, slopes) {
   rust_result(pricing_tiered_fee(as.double(margins), as.double(breakpoints), as.double(slopes)))
 }
+
+#' An efficient frontier of reinsurance structures
+#'
+#' For each retention and limit of a layer, the cost of the cover
+#' (`margin`, the ceded premium less the expected ceded loss) against the
+#' risk kept (`net_risk`, a VaR or TVaR of the net loss), and whether no
+#' other structure beats it on both (`efficient`). Among the efficient ones
+#' the least `net_risk + premium` is Cai and Tan's choice (2007).
+#'
+#' `losses` is an [event_set] (each structure a per-occurrence layer, or
+#' with `kind = "aggregate"` a stop loss on the year's total), a numeric
+#' vector of annual losses (stop losses), or an annual [grid_distribution]
+#' (stop losses, exact; retentions and finite limits on its step). The ceded
+#' premium is the expected value principle `(1 + loading) E[C]` when
+#' `loading` is given, else exactly one of `cost_of_capital` and
+#' `distortion` on the assets of the capital standard `assets`, as
+#' [risk_loaded_price()] prices one cover.
+#'
+#' @param losses An [event_set], a numeric vector or a [grid_distribution].
+#' @param retentions,limits The structures' retentions and limits (`Inf`
+#'   for none).
+#' @param kind `"occurrence"` or `"aggregate"`, for an event set.
+#' @param assets The capital standard, a [distortion], with a premium rule.
+#' @param cost_of_capital,distortion The premium rule.
+#' @param loading The expected value principle's loading, instead of a
+#'   premium rule.
+#' @param risk `"tvar"` or `"var"` of the net.
+#' @param level The risk measure's level.
+#' @returns A data frame with a row a structure, the retentions slowest:
+#'   `retention`, `limit`, `premium`, `expected_ceded`, `margin`,
+#'   `net_risk` and `efficient`.
+#' @export
+#' @examples
+#' reinsurance_frontier(grid_distribution(1, rep(0.25, 4)), c(1, 2), c(1, Inf),
+#'                      loading = 0.5, risk = "var", level = 0.9)
+reinsurance_frontier <- function(losses, retentions, limits, kind = c("occurrence", "aggregate"),
+                                 assets = NULL, cost_of_capital = NULL, distortion = NULL,
+                                 loading = NULL, risk = c("tvar", "var"), level = 0.99) {
+  kind <- match.arg(kind)
+  risk <- match.arg(risk)
+  src <- if (is.numeric(losses)) as.double(losses) else losses@ptr
+  if (is.null(loading) && is.null(assets)) {
+    stop("give loading, or assets with one of cost_of_capital and distortion")
+  }
+  r <- rust_result(frontier_rust(src, as.double(retentions), as.double(limits), kind,
+                                 if (is.null(assets)) NULL else assets@ptr,
+                                 rate_arg(cost_of_capital), pricing_arg(distortion),
+                                 if (is.null(loading)) NA_real_ else as.double(loading),
+                                 risk, as.double(level)))
+  as.data.frame(r)
+}
+
+#' Cat bonds
+#'
+#' A cat bond loses a tranche of principal on a trigger that need not be the
+#' cedant's own loss. `cat_bond()` describes one; `cat_bond_apply()` runs it
+#' on simulated years and gives each year's share of principal lost
+#' (`annual`), the recoveries, the expected loss, the probabilities of
+#' attachment and exhaustion and each term's loss (over a term of several
+#' years the principal is lost once). `cat_bond_price()` gives the spread
+#' under a [distortion], `cat_bond_calibrate()` the distortion of a family
+#' that prices the bond at a spread, `cat_bond_lane_spread()` Lane's
+#' `gamma PFL^alpha CEL^beta` at given coefficients, `cat_bond_returns()`
+#' the investor's internal rate of return in each term at a coupon (the
+#' collateral yield plus the spread; coupons on the principal outstanding at
+#' each year's start, losses at its end) and `cat_bond_basis_risk()` the gap
+#' between the bond's recoveries and the cedant's indemnity recoveries.
+#'
+#' @param trigger `"indemnity"` or `"modelled_loss"` (one value an event,
+#'   the cedant's or a model's loss), `"industry_index"` (`sum(w * x)` over
+#'   an event's industry losses by region, `weights` the cedant's shares) or
+#'   `"parametric"` (`sum(w * f(x))` over a measure at each site, `f` the
+#'   `payout` table read linearly between its points and flat beyond).
+#' @param attachment,exhaustion The index values at which the first and the
+#'   last principal is lost.
+#' @param basis `"occurrence"` (each event through the tranche) or
+#'   `"aggregate"` (the year's total).
+#' @param weights For an index, one weight an event value.
+#' @param payout For a parametric trigger, a data frame or list with
+#'   `measure` (ascending) and `share` (in `[0, 1]`).
+#' @param principal The principal.
+#' @param term_years The term: consecutive runs of that many simulated years
+#'   make one term.
+#' @param bond A `cat_bond()`.
+#' @param years An [event_set] (for a one-value trigger) or a list of years,
+#'   each a list of events, each a numeric vector of the trigger's values.
+#' @param losses A `cat_bond_apply()` result.
+#' @param distortion A [distortion].
+#' @param family A distortion family, as for [calibrate_distortion()].
+#' @param spread The spread to price at.
+#' @param gamma,alpha,beta Lane's coefficients.
+#' @param coupon The annual coupon per unit of principal.
+#' @param need The cedant's indemnity recovery in each simulated year.
+#' @returns `cat_bond()`: a list; `cat_bond_apply()`: a list with `annual`,
+#'   `recoveries`, `expected_loss`, `attachment_probability`,
+#'   `exhaustion_probability` and `term_losses`; `cat_bond_price()`: a list
+#'   with `expected_loss`, `spread`, `risk_load` and `multiple`;
+#'   `cat_bond_calibrate()`: a [distortion]; `cat_bond_lane_spread()`: a
+#'   number; `cat_bond_returns()`: one rate a term; `cat_bond_basis_risk()`:
+#'   a list with `difference`, `mean_shortfall`, `mean_excess`, `std_dev`,
+#'   `correlation` and `missed`.
+#' @export
+#' @examples
+#' bond <- cat_bond("industry_index", 50, 150, weights = c(0.10, 0.05), principal = 100)
+#' l <- cat_bond_apply(bond, list(list(c(800, 400)), list()))
+#' l$annual
+#' l$recoveries
+#' cat_bond_price(l, distortion("wang", 0.3))$spread
+cat_bond <- function(trigger = c("indemnity", "modelled_loss", "industry_index", "parametric"),
+                     attachment, exhaustion, basis = c("occurrence", "aggregate"), weights = NULL,
+                     payout = NULL, principal = 1, term_years = 1) {
+  trigger <- match.arg(trigger)
+  basis <- match.arg(basis)
+  structure(list(trigger = trigger, attachment = as.double(attachment),
+                 exhaustion = as.double(exhaustion), basis = basis,
+                 weights = if (is.null(weights)) double() else as.double(weights),
+                 payout = payout, principal = as.double(principal),
+                 term_years = as.double(term_years)), class = "cat_bond")
+}
+
+#' @rdname cat_bond
+#' @export
+cat_bond_apply <- function(bond, years) {
+  src <- if (S7::S7_inherits(years)) years@ptr else years
+  r <- rust_result(cat_bond_rust(
+    bond$trigger, bond$attachment, bond$exhaustion, bond$basis, bond$weights,
+    if (is.null(bond$payout)) double() else as.double(bond$payout$measure),
+    if (is.null(bond$payout)) double() else as.double(bond$payout$share),
+    bond$principal, bond$term_years, src
+  ))
+  structure(c(r, list(principal = bond$principal, term_years = bond$term_years)),
+            class = "cat_bond_losses")
+}
+
+#' @rdname cat_bond
+#' @export
+cat_bond_price <- function(losses, distortion) {
+  rust_result(cat_bond_price_rust(losses$annual, distortion@ptr))
+}
+
+#' @rdname cat_bond
+#' @export
+cat_bond_calibrate <- function(losses, family, spread) {
+  calibrate_distortion(family, sampled(losses$annual), spread)
+}
+
+#' @rdname cat_bond
+#' @export
+cat_bond_lane_spread <- function(losses, gamma, alpha, beta) {
+  pfl <- losses$attachment_probability
+  if (pfl == 0) 0 else gamma * pfl^alpha * (losses$expected_loss / pfl)^beta
+}
+
+#' @rdname cat_bond
+#' @export
+cat_bond_returns <- function(losses, coupon) {
+  rust_result(cat_bond_returns_rust(losses$annual, losses$term_years, as.double(coupon)))
+}
+
+#' @rdname cat_bond
+#' @export
+cat_bond_basis_risk <- function(losses, need) {
+  rust_result(cat_bond_basis_rust(losses$annual, losses$principal, as.double(need)))
+}

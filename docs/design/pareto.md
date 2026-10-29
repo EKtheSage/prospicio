@@ -689,6 +689,96 @@ crate would gain nothing while nothing else depends on them.
 Then Python and R bindings. Each row is one small PR, in roughly this
 order.
 
+### Efficient frontier of structures (#569)
+
+Status: built; items (a) to (e) proposed by the Aggregate lane and accepted
+by the user on 2026-10-29 as built.
+
+`prospicio_pricing::frontier` evaluates every retention and limit of a
+layer on one loss source and marks the structures no other beats on both
+the cost of the cover and the risk kept: `frontier_events` (simulated
+years with their events, a per-occurrence layer or a stop loss on the
+year's total, each the tower API's `Layer::xol` or `Layer::stop_loss`),
+`frontier_annual` (annual losses, stop losses) and `frontier_grid` (an
+annual loss on a grid, exact, the gross grid's points moved for each
+structure). `Frontier::efficient` lists the efficient structures by
+margin, `best(budget)` the least net risk within a margin budget and
+`least_total` the least `net_risk + premium`, Cai and Tan's (2007)
+objective. Python `prospicio.reinsurance.frontier`, R
+`reinsurance_frontier()`, each a table of columns.
+
+Decisions:
+
+- (a) *One layer's retention and limit*, per occurrence or on the
+  aggregate, as the issue's search space; towers of several layers, terms
+  such as reinstatements, and a search beyond the given grid of values
+  wait for a user who needs them.
+- (b) *The cost is the margin paid away*, ceded premium less expected
+  ceded loss, and *the risk is a VaR or TVaR of the net loss* without the
+  premium; the total cost's risk (net plus premium) is `least_total`.
+- (c) *The ceded premium is a `PremiumRule` on a capital standard's
+  assets*, as `price` prices one cover, or *the expected value principle*
+  `(1 + ρ) E[C]` for comparison with the closed forms.
+- (d) *Efficiency is exact*: a structure is efficient when no other has
+  both a margin and a net risk at most its own with one smaller, so two
+  equal structures are both efficient.
+- (e) *On a grid the retentions and finite limits must be whole numbers of
+  the step*, which keeps the ceded and net grids exact without
+  re-discretising.
+
+### Cat bonds (#570)
+
+Status: built; items (a) to (f) proposed by the Aggregate lane and accepted
+by the user on 2026-10-29 as built.
+
+`prospicio_pricing::ils::CatBond` is a tranche of principal on a trigger:
+`Trigger::Indemnity` and `ModelledLoss` read one loss an event,
+`IndustryIndex { weights }` the sum `Σ w_c x_c` of an event's industry
+losses by region with the cedant's shares, and `Parametric { weights,
+payout }` the sum `Σ w_s f(x_s)` of a payout table `f` at each site's
+measure. The `Tranche` attaches and exhausts on the index per occurrence
+or on the year's aggregate. `apply` (years of events of the trigger's
+values) and `apply_events` (an `EventSet`, for a one-value trigger) give
+`CatBondLosses`: each year's share of principal lost, the recoveries,
+the expected loss, the probabilities of attachment and exhaustion, each
+term's loss, `price` under a distortion (the spread `ρ_g(L)`, its risk
+load and multiple), `calibrate` (a family's distortion that prices the
+bond at a spread), `lane_spread`, the investor's flows and internal rates
+of return in each term at a coupon, and `basis_risk` against the
+cedant's indemnity recoveries. Python `prospicio.reinsurance.CatBond`,
+`CatBondLosses`; R `cat_bond()`, `cat_bond_apply()`, `cat_bond_price()`,
+`cat_bond_calibrate()`, `cat_bond_lane_spread()`, `cat_bond_returns()`,
+`cat_bond_basis_risk()`.
+
+Decisions:
+
+- (a) *A trigger is a function of each event's values*, given as years of
+  events of numbers (industry losses by region, measures at sites), so
+  an index needs no new event set type; an indemnity or modelled-loss
+  trigger also reads an `EventSet`.
+- (b) *The principal is lost once a year and once a term*: a year's
+  share is the tranche's recovery over its width, at most 1, and a term's
+  is its years' sum at most 1, from consecutive runs of `term_years`
+  simulated years; a number of
+  years that is not a whole number of terms is an error.
+- (c) *The spread is the distortion's price of the annual share lost*,
+  `ρ_g(L)` over the simulated years, so the Wang transform, the
+  proportional hazard or any other distortion prices a bond, and
+  `calibrate` fits one to a market spread (Wang 2004); discounting and
+  the collateral yield stay outside the spread.
+- (d) *Lane's model takes the user's coefficients*: `γ PFL^α CEL^β` with
+  `PFL` the attachment probability and `CEL = EL / PFL`; no published
+  coefficients are built in, as they are fitted to one market's bonds.
+- (e) *Coupons are paid at each year's end on the principal outstanding
+  at its start, and losses are taken at the year's end*, the principal
+  left returned at the term's end; finer timing (quarterly coupons, a
+  loss date within the year, an extension period) waits for a deal that
+  needs it.
+- (f) *Basis risk is against a need the user gives*, the cedant's
+  indemnity recovery in each simulated year (from its own tower), as the
+  difference, the mean shortfall and excess, their spread, the
+  correlation and the share of years with a need and no recovery.
+
 ## Validation
 
 - **Closed forms** (cdf, quantile, layer moments) against 30-digit mpmath
@@ -705,6 +795,28 @@ order.
   under the same selection rule, since a tower has many matching models.
 - **Fits** recover known parameters from simulated data, with and
   without reporting thresholds and censoring.
+- **Frontier** (#569): on an exponential annual loss on a grid of step
+  0.001 the stop-loss retention minimising VaR(net) + premium, and TVaR(net)
+  + premium, under the expected value principle at loading 0.25 is Cai and
+  Tan's `S(d) = 1 / 1.25` within two steps; no efficient structure is
+  dominated and every other is; a structure's expected ceded loss equals
+  the tower API's on the same years; and the annual and grid frontiers of
+  one discrete loss agree on every premium and net risk (unit tests in
+  `frontier.rs`; Python and R tests).
+
+- **Cat bonds** (#570): an indemnity tranche per occurrence equals the
+  tower API's layer with the tranche's width as its annual limit, and an
+  annual-aggregate one its stop loss, year by year over 3,000 simulated
+  years, through years of values and an `EventSet` alike; attachment and
+  exhaustion are the OEP and AEP at the tranche's points; an indemnity
+  trigger against the same layer has no basis risk; on 400,000 compound
+  Poisson years the attachment probability is `1 − exp(−λ S(A))` and the
+  expected loss `λ E[layer] / width` within four standard errors; a
+  binary tranche's Wang spread is `Φ(Φ⁻¹(p) + λ)` to `1e-12` and
+  calibration finds `λ` back; an industry index, a parametric payout and
+  the principal lost once over a three-year term with the investor's
+  return are checked by hand (`ils.rs`, `validation/tests/pricing.rs`;
+  Python and R tests).
 
 ## Open questions
 

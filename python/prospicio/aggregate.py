@@ -11,7 +11,8 @@ ledgers' results side by side; Book, Expense and derive_premium build the ledger
 a book and its annual covers, and occurrence_source the joint gross and ceded loss
 its occurrence covers are walked over; pnl_program prices a book and its covers from
 target combined ratios), and a term of accident months shared by its underwriting
-years (Timeline, Exposure). Layers and towers are in
+years (Timeline, Exposure), and self-exciting (Hawkes) event times for
+clustered catastrophe years (Hawkes, HawkesFit). Layers and towers are in
 ``prospicio.reinsurance``."""
 
 from .prospicio_native import (
@@ -28,6 +29,8 @@ from .prospicio_native import (
     FiniteRuin,
     GridAudit,
     GridSize,
+    Hawkes,
+    HawkesFit,
     Group,
     JointGrid,
     Ledger,
@@ -58,6 +61,7 @@ from .prospicio_native import (
     round_bucket,
     round_premium,
     simulate_events,
+    simulate_events_weighted,
     size_premium,
     stack,
     wiener_hopf,
@@ -78,7 +82,10 @@ __all__ = [
     "GridAudit",
     "CompoundReport",
     "simulate_events",
+    "simulate_events_weighted",
     "EventSet",
+    "Hawkes",
+    "HawkesFit",
     "EventLossTable",
     "Timeline",
     "Exposure",

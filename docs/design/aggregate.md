@@ -1581,6 +1581,115 @@ look back over several years.
   `years > 1`, and the stitched peel refuses a bonus as it refuses the
   other loss-sensitive terms.
 
+### Franchise, nth-event and top-and-drop covers (#591)
+
+Status: built; items (a) to (e) proposed by the Aggregate lane and accepted
+by the user on 2026-10-29 as built.
+
+Three catastrophe structures as settings on a layer, each saved in the
+tower JSON (format version 9) and in Python and R:
+
+- `Layer::franchise()`: a franchise deductible. An occurrence at or above
+  the attachment is paid from the ground up, `min(x, limit)`, and one
+  below it pays nothing (in `recovery_at`, so the grids price it too).
+- `Layer::nth_event(n, threshold)`: only the `n`-th and later events of a
+  year whose loss to the layer exceeds `threshold` are covered.
+- `Layer::top_and_drop(underlying, attachment)`: the layer sits at its own
+  attachment until the annual limit of the layer `underlying` is used up,
+  and from the next event attaches at `attachment`, with the same
+  occurrence and annual limits. `Tower::inuring` checks that the
+  underlying layer exists, is earlier in the same stage and has an annual
+  limit. The tower feeds the layer each later event shifted up by the
+  drop, so every term the layer has reads the lower attachment.
+
+Decisions:
+
+- (a) *A franchise pays `min(x, limit)`*, as the issue states, so the limit
+  caps the whole payment; a franchise on the surplus basis, or with a
+  drop-down, is refused.
+- (b) *An nth-event cover counts events that exceed the threshold, in the
+  order given* (chronological when the set has times), and does not cover
+  an event at or below the threshold, so `nth_event(1, attachment)` is the
+  plain layer and a threshold above the attachment leaves the events
+  between them uncovered.
+- (c) *A top-and-drop cover drops from the event after the one that uses
+  up the underlying layer*, not within it, and keeps one annual limit
+  across both positions.
+- (d) *Nth-event and top-and-drop covers need events in order*: the grids,
+  `apply_annual`, `apply_aggregate`, `apply_aggregate_term` and the P&L
+  ledger refuse them (`Tower::refuse_event_order`), while a franchise,
+  being a function of each occurrence, works everywhere.
+- (e) *JSON format version 9* is stamped only when a layer has one of them.
+
+### A per-risk layer with an event limit, inuring to a cat cover (#585)
+
+Status: built; items (a) to (d) proposed by the Aggregate lane and accepted
+by the user on 2026-10-29 as built.
+
+`per_risk::per_risk_inuring(layer, event_limit, years, times, seed)` takes
+years of events of risk losses (`years[i][e]` the losses of the risks hit
+by event `e` of year `i`), applies the per-risk layer to each risk's loss,
+caps an event's recoveries at the event limit, uses up the layer's annual
+terms on the capped event recoveries in order, and returns the cession by
+year and by event and the events net of it as an `EventSet`, one loss an
+event, which any tower of cat layers takes as its gross. Python
+`reinsurance.per_risk_inuring`, R `per_risk_inuring()`.
+
+Decisions:
+
+- (a) *The per-risk stage is a function before the tower, not a basis
+  inside it*: an `EventSet` holds one loss an event, and risk-level
+  losses inside a tower would touch every path (grids, scopes, labels,
+  ledgers, the one-year views); returning the cat stage's gross composes
+  with every one of them unchanged.
+- (b) *The event limit caps the sum of an event's recoveries at 100%,
+  before the layer's annual terms*, which then use up the capped
+  recoveries in the events' order, at the layer's share.
+- (c) *The layer is a plain per-risk layer*: on the loss basis, without
+  reinstatements pro rata as to time, an nth-event or top-and-drop cover
+  or a scope, each of which reads whole events.
+- (d) *Times pass to the net events*; labels and sums insured do not, as
+  the input carries none.
+
+### Importance sampling of the tail (#566)
+
+Status: built; items (a) to (e) proposed by the Aggregate lane and accepted
+by the user on 2026-10-29 as built.
+
+`simulate_events_weighted(frequency, severity, n_sims, count, tail, seed)`
+draws simulated years from a proposal and returns them with each year's
+likelihood ratio; `prospicio_prob::weighted::WeightedSample` turns any
+statistic of the years and those weights into a self-normalised mean, VaR
+and TVaR with standard errors by batch means and an effective sample
+size. On a compound Poisson with a heavy discrete severity (the FFT exact)
+the weighted TVaR at 0.999 over 200,000 years has a standard error 14
+times smaller than plain Monte Carlo's, and 5.7 times at 0.995
+(`knowledge/findings/importance-sampling-tail.md`).
+
+Decisions:
+
+- (a) *Proposals are given, not tilted*: exponential tilting needs a
+  moment generating function, which the lognormal and Pareto severities
+  insurers use do not have, so the two changes of measure are a proposal
+  claim count of any family (weighted `p(n) / q(n)`) and a defensive tail
+  mixture for each loss (with chance `share` from the severity above
+  `threshold`, weighted `1 / ((1 − share) + share 1{x > u} / S(u))`, bounded
+  by `1 / (1 − share)`). A saddlepoint choice of the tilt waits for a
+  severity family that has one.
+- (b) *The weights are a separate vector beside an event set*, so every
+  tower, scope and label path applies to the years unchanged and any of
+  their columns can be estimated; `Sampled` and the statistics grid are
+  not changed.
+- (c) *The estimators are self-normalised* (the weights summed to 1), the
+  usual choice when the weights' mean is itself estimated; VaR is the
+  weighted inverted cdf and TVaR the weighted exact tail, so equal weights
+  give the plain estimators.
+- (d) *Standard errors are by batch means* over a given number of runs of
+  the draws in order (20 by default in the bindings), which needs no
+  resampling and keeps a call deterministic.
+- (e) *Without a change of measure the years are `simulate_events`'s*, by
+  seed, and every weight is 1.
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
@@ -1606,6 +1715,35 @@ discrete severity by a Kolmogorov–Smirnov statistic at the 0.1% level.
 The check covers gross, every ceded grid and net, for two per-occurrence
 layers (Poisson and negative binomial counts), a layer with a deductible
 and a reinstatement, and an excess-of-loss layer inuring to a stop-loss.
+
+Franchise, nth-event and top-and-drop covers (#591) are checked by hand
+(the franchise's recovery at, below and above the attachment and its
+expected cession on a grid; a second- and a third-event cover by event; a
+top-and-drop cover paying 10 on each event after its underlying layer is
+used up), against the plain layer where they reduce to it
+(`nth_event(1, attachment)` and a drop-down whose underlying layer never
+exhausts give the same draws on 2,000 simulated years), with the
+refusals on the grids, annual losses and towers whose underlying layer is
+missing, later or in another stage, and the JSON round trip at version 9.
+
+The per-risk layer inuring to a cat cover (#585) is checked against the
+inuring tower where they coincide (one risk an event: the per-risk cession
+and the cat layer's cession on the net events equal a two-stage tower's,
+year by year over 2,000 years), at an event limit of 0 (the net is the
+gross), without one (each risk's recovery), by hand (recoveries 13 capped
+at 10, then an annual limit leaving 6 for the second event) and in its
+refusals.
+
+Importance sampling (#566) is checked against the exact FFT on a compound
+Poisson (mean 2) with a discrete severity `p_k ∝ k^-3` on 1 to 200: over
+200,000 years from a Poisson(4) count proposal and a 30% tail mixture
+above 20, the weighted VaR and TVaR at 0.995 and 0.999 lie within four
+batch standard errors of the FFT's, the TVaR's error is at least half
+plain Monte Carlo's (in fact 5.7 and 14 times smaller), the weights
+average 1 within 0.02, and without a proposal the years equal
+`simulate_events`'s (`validation/tests/aggregate.rs`); over 20 seeds the
+standardised error of the TVaR has mean −0.04 and spread 1.2 at 0.999,
+and mean −0.5 and spread 0.93 at 0.995.
 
 The no-claims bonus (#592) is checked by hand: a layer with no loss pays
 `share` of its premium, a year above the threshold pays nothing, and the

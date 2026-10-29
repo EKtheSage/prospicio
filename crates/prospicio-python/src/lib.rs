@@ -50,12 +50,13 @@ mod prospicio_native {
     #[pymodule_export]
     use super::aggregate::{
         PyApproximation, PyBivariateReport, PyClash, PyCompoundMoments, PyCompoundReport,
-        PyEventLossTable, PyEventSet, PyExposure, PyFiniteRuin, PyGridAudit, PyGridSize,
-        PyJointGrid, PyOccurrencePml, PyPicks, PyRenewalRuin, PyRuin, PyTimeline, audit_grid,
-        audit_portfolio_grid, compound_moments, eventual_ruin, fft, fft_auto, fft_bivariate,
-        finite_horizon_ruin, layer_loss_picks, occurrence_exceedance, occurrence_pml, panjer,
-        recommend_grid, recommend_portfolio_grid, round_bucket, simulate_events, wiener_hopf,
-        year_correlation_for_ratio, ylt_hash,
+        PyEventLossTable, PyEventSet, PyExposure, PyFiniteRuin, PyGridAudit, PyGridSize, PyHawkes,
+        PyHawkesFit, PyJointGrid, PyOccurrencePml, PyPicks, PyRenewalRuin, PyRuin, PyTimeline,
+        audit_grid, audit_portfolio_grid, compound_moments, eventual_ruin, fft, fft_auto,
+        fft_bivariate, finite_horizon_ruin, layer_loss_picks, occurrence_exceedance,
+        occurrence_pml, panjer, recommend_grid, recommend_portfolio_grid, round_bucket,
+        simulate_events, simulate_events_weighted, wiener_hopf, year_correlation_for_ratio,
+        ylt_hash,
     };
     #[pymodule_export]
     use super::bonus_malus::PyBonusMalus;
@@ -103,13 +104,15 @@ mod prospicio_native {
         PyBayesGlm, PyBayesGlmFit, PyBayesGlmm, PyBayesGlmmFit, PyBayesStacking, PyCoding,
         PyCvPath, PyDesign, PyDoubleGlm, PyDoubleGlmFit, PyDraws, PyElasticNet, PyElasticNetFit,
         PyElpd, PyGam, PyGamFit, PyGlm, PyGlmFit, PyGlmm, PyGlmmFit, PyHierarchicalStacking,
-        PyMarsFit, PyNegativeBinomialFit, PyNegativeBinomialGlm, PyRelaxedCv, PyStackingFit,
-        PyTargetEncoding, PyTerms, PyTweedieFit, PyTweedieGlm, actual_vs_expected,
-        confusion_matrix, crps, deviance, double_lift, elpd_loo, elpd_waic, f_test, gini,
-        group_k_fold, k_fold, ks_uniform, lift, likelihood_ratio_test, log_score, loo_pit,
-        loss_ratio_chart, lppd, mars, mcmc_diagnostics, normalized_gini, permutation, pinball_loss,
-        pit, pit_from_draws, pit_histogram, ppc_check, pseudo_bma_weights, quantile_residuals, roc,
-        simulate_from_means, stacking_weights, target_encode, time_ordered, tweedie_profile, vif,
+        PyIsotonic, PyMarsFit, PyNegativeBinomialFit, PyNegativeBinomialGlm, PyRelaxedCv,
+        PyStackingFit, PyTargetEncoding, PyTerms, PyTweedieFit, PyTweedieGlm, actual_vs_expected,
+        balance_correction, conformal_cqr, conformal_plus, conformal_split, confusion_matrix, crps,
+        deviance, double_lift, elpd_loo, elpd_waic, f_test, gini, group_k_fold, isotonic, k_fold,
+        ks_uniform, lift, likelihood_ratio_test, log_score, loo_pit, loss_ratio_chart, lppd, mars,
+        mcmc_diagnostics, murphy, normalized_gini, permutation, pinball_loss, pit, pit_from_draws,
+        pit_histogram, ppc_check, pseudo_bma_weights, quantile_residuals, recalibrate, reliability,
+        roc, simulate_from_means, stacking_weights, target_encode, time_ordered, time_splits,
+        tweedie_profile, vif,
     };
     #[pymodule_export]
     use super::multivariate::{PyMultivariateLognormal, PyMultivariateNormal};
@@ -148,11 +151,12 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::pricing::{
-        PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice, PyQuote, PyReinstatementPrice,
-        PyRiskProfile, PyTabulatedCurve, PyTowerModel, PyTowerQuote, alpha_between_frequencies,
-        alpha_between_frequency_and_layer, alpha_between_layers, censored_las, fit_pml_curve,
-        fit_references, ilf, layer_cv, loss_elimination_ratio, match_tower, pareto_extrapolation,
-        price, price_portfolio, price_with_reinstatements, severity_exposure_curve,
+        PyCatBond, PyCatBondLosses, PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice,
+        PyQuote, PyReinstatementPrice, PyRiskProfile, PyTabulatedCurve, PyTowerModel, PyTowerQuote,
+        alpha_between_frequencies, alpha_between_frequency_and_layer, alpha_between_layers,
+        censored_las, fit_pml_curve, fit_references, frontier, ilf, layer_cv,
+        loss_elimination_ratio, match_tower, pareto_extrapolation, price, price_portfolio,
+        price_with_reinstatements, severity_exposure_curve,
     };
     #[pymodule_export]
     use super::ratemaking::{
@@ -165,6 +169,7 @@ mod prospicio_native {
         PyAggregateLayerStatistics, PyAnnualGrids, PyCessionStatistics, PyLayer, PyLayerStatistics,
         PyLossSensitivePremium, PyTower, PyTowerGrids, PyTowerPrice, PyViewPrice,
         aggregate_layer_statistics, occurrence_cession_statistics, occurrence_layer_statistics,
+        per_risk_inuring,
     };
     #[pymodule_export]
     use super::reserving::{
@@ -185,10 +190,12 @@ mod prospicio_native {
     #[pymodule_export]
     use super::risk::{
         PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd,
-        PyLevelAllocation, PyNestedArchimedeanCopula, PyPairCopula, PyPotTail, PyStudentTCopula,
-        PyVineCopula, allocate, bootstrap_se, calibrate, capital, co_statistics, covar, entropic,
-        equal_risk, esscher, esscher_allocation, haircut, hill, iman_conover,
-        marginal_expected_shortfall, mean_excess, rearrange, risk_ratios, shapley, simulate,
-        statistics, threshold_diagnostics, worst_var,
+        PyLevelAllocation, PyMvnEstimate, PyNestedArchimedeanCopula, PyPairCopula, PyPairFit,
+        PyPotTail, PyRVineCopula, PyStudentTCopula, PyVineCopula, PyVineFit, PyWeightedSample,
+        allocate, bootstrap_se, calibrate, capital, co_statistics, covar, entropic, equal_risk,
+        esscher, esscher_allocation, fit_pair, fit_vine, haircut, hill, iman_conover, kendall_tau,
+        marginal_expected_shortfall, mean_excess, mvn_cdf, pseudo_observations, rearrange,
+        risk_ratios, select_pair, select_vine, shapley, simulate, sobol, statistics,
+        threshold_diagnostics, worst_var,
     };
 }

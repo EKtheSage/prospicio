@@ -6,6 +6,8 @@ use prospicio_core::StreamRng;
 use prospicio_prob::capital::{AllocationMethod, LevelAllocation, LevelMeasure};
 use prospicio_prob::copula::{self, Copula};
 use prospicio_prob::evt::{Gpd, PotTail};
+use prospicio_prob::mvn::{MvnSettings, mvn_probability};
+use prospicio_prob::qmc::{Scramble, Sobol};
 use prospicio_prob::statistics::{QuantileMethod, StatisticsGrid, TvarMethod};
 use prospicio_prob::{
     Archimedean, ArchimedeanCopula, Distortion, Empirical, Family, GaussianCopula, Provenance,
@@ -592,6 +594,7 @@ pub(crate) enum AnyCopula {
     Archimedean(ArchimedeanCopula),
     Nested(prospicio_prob::NestedArchimedeanCopula),
     Vine(prospicio_prob::vine::VineCopula),
+    RVine(prospicio_prob::rvine::RVineCopula),
 }
 
 impl AnyCopula {
@@ -602,28 +605,49 @@ impl AnyCopula {
             Self::Archimedean(c) => c,
             Self::Nested(c) => c,
             Self::Vine(c) => c,
+            Self::RVine(c) => c,
         }
     }
 }
 
-/// A pair copula from `list(family, parameter, rotation)`.
-fn pair_copula(p: &Robj) -> Result<prospicio_prob::vine::PairCopula> {
-    use prospicio_prob::vine::{PairCopula, PairFamily};
-    let bad = || Error::Other("a pair copula is list(family, parameter, rotation)".into());
-    let l = List::try_from(p).map_err(|_| bad())?;
-    let parts: Vec<Robj> = l.values().collect();
-    if parts.len() != 3 {
-        return Err(bad());
-    }
-    let family = match parts[0].as_str().ok_or_else(bad)? {
+fn pair_family(name: &str) -> Result<prospicio_prob::vine::PairFamily> {
+    use prospicio_prob::vine::PairFamily;
+    Ok(match name {
         "independence" => PairFamily::Independence,
         "gaussian" => PairFamily::Gaussian,
+        "student" => PairFamily::Student,
         "clayton" => PairFamily::Clayton,
         "gumbel" => PairFamily::Gumbel,
         "frank" => PairFamily::Frank,
         "joe" => PairFamily::Joe,
         other => return Err(Error::Other(format!("unknown pair family {other:?}"))),
-    };
+    })
+}
+
+fn pair_family_name(f: prospicio_prob::vine::PairFamily) -> &'static str {
+    use prospicio_prob::vine::PairFamily;
+    match f {
+        PairFamily::Independence => "independence",
+        PairFamily::Gaussian => "gaussian",
+        PairFamily::Student => "student",
+        PairFamily::Clayton => "clayton",
+        PairFamily::Gumbel => "gumbel",
+        PairFamily::Frank => "frank",
+        PairFamily::Joe => "joe",
+    }
+}
+
+/// A pair copula from `list(family, parameter, rotation, nu)`, `nu` NA
+/// (or absent) but for the Student t.
+fn pair_copula(p: &Robj) -> Result<prospicio_prob::vine::PairCopula> {
+    use prospicio_prob::vine::{PairCopula, PairFamily};
+    let bad = || Error::Other("a pair copula is list(family, parameter, rotation, nu)".into());
+    let l = List::try_from(p).map_err(|_| bad())?;
+    let parts: Vec<Robj> = l.values().collect();
+    if !(3..=4).contains(&parts.len()) {
+        return Err(bad());
+    }
+    let family = pair_family(parts[0].as_str().ok_or_else(bad)?)?;
     let parameter = parts[1].as_real().ok_or_else(bad)?;
     let rotation = parts[2].as_real().ok_or_else(bad)?;
     if !matches!(rotation, 0.0 | 90.0 | 180.0 | 270.0) {
@@ -631,7 +655,191 @@ fn pair_copula(p: &Robj) -> Result<prospicio_prob::vine::PairCopula> {
             "rotation {rotation} is not 0, 90, 180 or 270"
         )));
     }
-    PairCopula::new(family, parameter, rotation as u16).map_err(to_r)
+    let nu = parts.get(3).and_then(Robj::as_real).filter(|x| !x.is_nan());
+    match (family, nu) {
+        (PairFamily::Student, Some(nu)) if rotation == 0.0 => PairCopula::student(parameter, nu),
+        (PairFamily::Student, Some(_)) => {
+            return Err(Error::Other("the Student t pair has no rotation".into()));
+        }
+        (PairFamily::Student, None) => {
+            return Err(Error::Other("the Student t pair needs nu".into()));
+        }
+        (_, Some(_)) => return Err(Error::Other("nu is for the Student t pair".into())),
+        (_, None) => PairCopula::new(family, parameter, rotation as u16),
+    }
+    .map_err(to_r)
+}
+
+/// A fitted pair as `list(family, parameter, rotation, nu, log_likelihood,
+/// n_parameters, aic, bic)`.
+fn pair_fit_list(f: &prospicio_prob::vine_fit::PairFit) -> List {
+    list!(
+        family = pair_family_name(f.pair.family()),
+        parameter = f.pair.parameter(),
+        rotation = f64::from(f.pair.rotation()),
+        nu = f.pair.nu().unwrap_or(f64::NAN),
+        log_likelihood = f.log_likelihood,
+        n_parameters = f.n_parameters as f64,
+        aic = f.aic(),
+        bic = f.bic()
+    )
+}
+
+#[extendr]
+fn pair_fit_rust(u: &[f64], v: &[f64], family: &str, rotation: f64) -> Result<List> {
+    let f = pair_family(family)?;
+    let fit = prospicio_prob::vine_fit::fit_pair(f, rotation as u16, u, v).map_err(to_r)?;
+    Ok(pair_fit_list(&fit))
+}
+
+/// `families` empty for the default set; `independence_test` NaN for none.
+#[extendr]
+fn pair_select_rust(
+    u: &[f64],
+    v: &[f64],
+    families: Vec<String>,
+    criterion: &str,
+    independence_test: f64,
+) -> Result<List> {
+    let select = pair_select(&families, criterion, independence_test)?;
+    let fit = prospicio_prob::vine_fit::select_pair(u, v, &select).map_err(to_r)?;
+    Ok(pair_fit_list(&fit))
+}
+
+fn pair_select(
+    families: &[String],
+    criterion: &str,
+    independence_test: f64,
+) -> Result<prospicio_prob::vine_fit::PairSelect> {
+    use prospicio_prob::vine_fit::{Criterion, PairSelect};
+    let mut select = PairSelect::default();
+    if !families.is_empty() {
+        select.families = families
+            .iter()
+            .map(|f| pair_family(f))
+            .collect::<Result<_>>()?;
+    }
+    select.criterion = match criterion {
+        "aic" => Criterion::Aic,
+        "bic" => Criterion::Bic,
+        other => return Err(Error::Other(format!("unknown criterion {other:?}"))),
+    };
+    select.independence_test = (!independence_test.is_nan()).then_some(independence_test);
+    Ok(select)
+}
+
+/// A pair copula as `list(family, parameter, rotation, nu)`.
+fn pair_copula_list(c: &prospicio_prob::vine::PairCopula) -> List {
+    list!(
+        pair_family_name(c.family()),
+        c.parameter(),
+        f64::from(c.rotation()),
+        c.nu().unwrap_or(f64::NAN)
+    )
+}
+
+/// An R-vine matrix from R's column-major `d × d` numbers.
+fn rvine_matrix(m: &[f64]) -> Result<Vec<Vec<usize>>> {
+    let d = (m.len() as f64).sqrt() as usize;
+    if d * d != m.len() {
+        return Err(Error::Other("an R-vine matrix is square".into()));
+    }
+    (0..d)
+        .map(|i| {
+            (0..d)
+                .map(|j| {
+                    let x = m[i + j * d];
+                    if x >= 0.0 && x.fract() == 0.0 {
+                        Ok(x as usize)
+                    } else {
+                        Err(Error::Other(format!("{x} is not a variable label")))
+                    }
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn rvine_pairs(pairs: &List) -> Result<Vec<Vec<prospicio_prob::vine::PairCopula>>> {
+    pairs
+        .values()
+        .map(|tree| {
+            List::try_from(&tree)
+                .map_err(|_| Error::Other("each tree is a list of pair copulas".into()))?
+                .values()
+                .map(|p| pair_copula(&p))
+                .collect::<Result<Vec<_>>>()
+        })
+        .collect()
+}
+
+/// An R-vine as `list(matrix, pairs)`: the matrix column-major, the pairs
+/// a list of trees of `list(family, parameter, rotation, nu)`.
+fn rvine_list(v: &prospicio_prob::rvine::RVineCopula) -> List {
+    let m = v.matrix();
+    let d = m.len();
+    let matrix: Vec<f64> = (0..d * d).map(|k| m[k % d][k / d] as f64).collect();
+    let pairs = List::from_values(
+        v.pairs()
+            .iter()
+            .map(|t| List::from_values(t.iter().map(pair_copula_list))),
+    );
+    list!(matrix = matrix, pairs = pairs)
+}
+
+/// A vine fitted to `data` (`n × d`, column-major): on the R-vine matrix
+/// `matrix` (column-major), or with its structure selected when `matrix` is
+/// empty. `trunc_level` NaN for every tree.
+#[extendr]
+fn vine_fit_rust(
+    data: &[f64],
+    n: f64,
+    matrix: &[f64],
+    families: Vec<String>,
+    criterion: &str,
+    independence_test: f64,
+    trunc_level: f64,
+) -> Result<List> {
+    use prospicio_prob::vine_fit::{VineSelect, fit_vine, select_vine};
+    let n = whole(n, "n")? as usize;
+    if n == 0 || data.len() % n != 0 {
+        return Err(Error::Other("data must be an n x d matrix".into()));
+    }
+    let d = data.len() / n;
+    let cols: Vec<Vec<f64>> = (0..d).map(|j| data[j * n..(j + 1) * n].to_vec()).collect();
+    let select = VineSelect {
+        pair: pair_select(&families, criterion, independence_test)?,
+        trunc_level: if trunc_level.is_nan() {
+            None
+        } else {
+            Some(whole(trunc_level, "trunc_level")? as usize)
+        },
+    };
+    let fit = if matrix.is_empty() {
+        select_vine(&cols, &select)
+    } else {
+        fit_vine(rvine_matrix(matrix)?, &cols, &select)
+    }
+    .map_err(to_r)?;
+    let v = rvine_list(&fit.vine);
+    Ok(list!(
+        matrix = v.dollar("matrix")?,
+        pairs = v.dollar("pairs")?,
+        log_likelihood = fit.log_likelihood,
+        n_parameters = fit.n_parameters as f64,
+        aic = fit.aic(),
+        bic = fit.bic()
+    ))
+}
+
+#[extendr]
+fn kendall_tau_rust(x: &[f64], y: &[f64]) -> Result<f64> {
+    prospicio_prob::vine_fit::kendall_tau(x, y).map_err(to_r)
+}
+
+#[extendr]
+fn pseudo_observations_rust(x: &[f64]) -> Result<Vec<f64>> {
+    prospicio_prob::vine_fit::pseudo_observations(x).map_err(to_r)
 }
 
 /// A node `list(theta, leaves, children)` with 1-based leaves.
@@ -765,15 +973,41 @@ impl RiskCopula {
         })
     }
 
+    /// An R-vine: `matrix` its R-vine matrix (column-major, vinecopulib's
+    /// convention), `pairs` a list of trees of pair copulas by column.
+    fn rvine(matrix: &[f64], pairs: List) -> Result<Self> {
+        let c =
+            prospicio_prob::rvine::RVineCopula::new(rvine_matrix(matrix)?, rvine_pairs(&pairs)?)
+                .map_err(to_r)?;
+        Ok(Self {
+            inner: AnyCopula::RVine(c),
+        })
+    }
+
+    /// A vine's R-vine matrix and pair copulas, `list(matrix, pairs)`.
+    fn rvine_structure(&self) -> Result<List> {
+        let v = match &self.inner {
+            AnyCopula::Vine(v) => prospicio_prob::rvine::RVineCopula::from(v),
+            AnyCopula::RVine(v) => v.clone(),
+            _ => return Err(Error::Other("an R-vine structure is a vine's".into())),
+        };
+        Ok(rvine_list(&v))
+    }
+
     /// The vine's log-density at each row of `u` (`n × dim`, column-major).
     fn log_density(&self, u: &[f64], n: f64) -> Result<Vec<f64>> {
-        let AnyCopula::Vine(v) = &self.inner else {
+        let density = |row: &[f64]| match &self.inner {
+            AnyCopula::Vine(v) => v.log_density(row),
+            AnyCopula::RVine(v) => v.log_density(row),
+            _ => unreachable!("checked below"),
+        };
+        if !matches!(self.inner, AnyCopula::Vine(_) | AnyCopula::RVine(_)) {
             return Err(Error::Other(
                 "only a vine copula has a log-density here".into(),
             ));
-        };
+        }
         let n = whole(n, "n")? as usize;
-        let d = v.dim();
+        let d = self.inner.as_copula().dim();
         if u.len() != n * d {
             return Err(Error::Other(format!(
                 "{} values for {n} points in {d} dimensions",
@@ -783,7 +1017,7 @@ impl RiskCopula {
         (0..n)
             .map(|i| {
                 let row: Vec<f64> = (0..d).map(|j| u[j * n + i]).collect();
-                v.log_density(&row).map_err(to_r)
+                density(&row).map_err(to_r)
             })
             .collect()
     }
@@ -812,6 +1046,61 @@ impl RiskCopula {
             .collect()
     }
 
+    /// The Gaussian copula's cdf at each row of `u` (column-major) with its
+    /// error: `c(value..., error..., points..., converged...)`, `n` each.
+    fn cdf_estimate(
+        &self,
+        u: &[f64],
+        n: f64,
+        abs_tol: f64,
+        max_points: f64,
+        seed: f64,
+    ) -> Result<Vec<f64>> {
+        let AnyCopula::Gaussian(c) = &self.inner else {
+            return Err(Error::Other(
+                "an error estimate of the cdf is for the Gaussian copula".into(),
+            ));
+        };
+        let n = whole(n, "n")? as usize;
+        let d = c.dim();
+        if u.len() != n * d {
+            return Err(Error::Other(format!(
+                "{} values for {n} points in {d} dimensions",
+                u.len()
+            )));
+        }
+        let settings = MvnSettings {
+            abs_tol,
+            max_points: whole(max_points, "max_points")? as usize,
+            seed: whole(seed, "seed")?,
+            ..MvnSettings::default()
+        };
+        let mut out = vec![0.0; 4 * n];
+        for i in 0..n {
+            let point: Vec<f64> = (0..d).map(|j| u[i + j * n]).collect();
+            let e = c.cdf_with(&point, settings).map_err(to_r)?;
+            out[i] = e.value;
+            out[n + i] = e.error;
+            out[2 * n + i] = e.points as f64;
+            out[3 * n + i] = f64::from(u8::from(e.converged));
+        }
+        Ok(out)
+    }
+
+    /// `n × dim` Gaussian copula draws on scrambled Sobol points, R's
+    /// column-major order.
+    fn sample_qmc(&self, n: f64, seed: f64) -> Result<Vec<f64>> {
+        let AnyCopula::Gaussian(c) = &self.inner else {
+            return Err(Error::Other(
+                "quasi-Monte Carlo draws are for the Gaussian copula".into(),
+            ));
+        };
+        let n = whole(n, "n")? as usize;
+        let d = c.dim();
+        let rows = c.sample_qmc(n, whole(seed, "seed")?).map_err(to_r)?;
+        Ok(column_major(&rows, n, d))
+    }
+
     fn description(&self) -> String {
         match &self.inner {
             AnyCopula::Gaussian(_) => "Gaussian".into(),
@@ -826,6 +1115,7 @@ impl RiskCopula {
                 },
                 c.pairs().len()
             ),
+            AnyCopula::RVine(c) => format!("R-vine on {} trees", c.trunc_level()),
         }
     }
 
@@ -998,8 +1288,97 @@ fn hill_rust(draws: &[f64], ks: &[f64]) -> Result<Vec<f64>> {
     prospicio_prob::evt::hill(draws, &ks).map_err(to_r)
 }
 
+/// Row-major `n × d` to R's column-major order.
+fn column_major(rows: &[f64], n: usize, d: usize) -> Vec<f64> {
+    let mut out = vec![0.0; n * d];
+    for i in 0..n {
+        for j in 0..d {
+            out[i + j * n] = rows[i * d + j];
+        }
+    }
+    out
+}
+
+/// `P(lower < X < upper)` for `X ~ N(0, R)`: `c(value, error, points,
+/// converged)`. `correlation` is symmetric, so R's order is row-major too.
+#[extendr]
+fn mvn_cdf_rust(
+    lower: &[f64],
+    upper: &[f64],
+    correlation: &[f64],
+    abs_tol: f64,
+    max_points: f64,
+    scrambles: f64,
+    seed: f64,
+) -> Result<Vec<f64>> {
+    let settings = MvnSettings {
+        abs_tol,
+        max_points: whole(max_points, "max_points")? as usize,
+        scrambles: whole(scrambles, "scrambles")? as usize,
+        seed: whole(seed, "seed")?,
+    };
+    let e = mvn_probability(lower, upper, correlation, settings).map_err(Error::Other)?;
+    Ok(vec![
+        e.value,
+        e.error,
+        e.points as f64,
+        f64::from(u8::from(e.converged)),
+    ])
+}
+
+/// `n × dim` Sobol points, column-major.
+#[extendr]
+fn sobol_rust(n: f64, dim: f64, scramble: bool, seed: f64) -> Result<Vec<f64>> {
+    let n = whole(n, "n")? as usize;
+    let dim = whole(dim, "dim")? as usize;
+    let kind = if scramble {
+        Scramble::Lms {
+            seed: whole(seed, "seed")?,
+        }
+    } else {
+        Scramble::None
+    };
+    let mut s = Sobol::new(dim, kind).map_err(Error::Other)?;
+    Ok(column_major(&s.points(n), n, dim))
+}
+
+/// A weighted sample's estimators: `list(mean, mean_se, mean_weight,
+/// effective_sample_size, p, var, var_se, tvar, tvar_se)`.
+#[extendr]
+fn weighted_tail_rust(
+    values: Vec<f64>,
+    weights: Vec<f64>,
+    p: &[f64],
+    batches: f64,
+) -> Result<List> {
+    let s = prospicio_prob::weighted::WeightedSample::new(values, weights).map_err(to_r)?;
+    let b = whole(batches, "batches")? as usize;
+    let col = |f: &dyn Fn(f64) -> prospicio_core::Result<f64>| -> Result<Vec<f64>> {
+        p.iter().map(|&q| f(q).map_err(to_r)).collect()
+    };
+    Ok(list!(
+        mean = s.mean(),
+        mean_se = s.standard_error_mean(b).map_err(to_r)?,
+        mean_weight = s.mean_weight(),
+        effective_sample_size = s.effective_sample_size(),
+        p = p.to_vec(),
+        var = col(&|q| s.var(q))?,
+        var_se = col(&|q| s.standard_error_var(q, b))?,
+        tvar = col(&|q| s.tvar(q))?,
+        tvar_se = col(&|q| s.standard_error_tvar(q, b))?
+    ))
+}
+
 extendr_module! {
     mod risk;
+    fn pair_fit_rust;
+    fn pair_select_rust;
+    fn vine_fit_rust;
+    fn kendall_tau_rust;
+    fn pseudo_observations_rust;
+    fn weighted_tail_rust;
+    fn mvn_cdf_rust;
+    fn sobol_rust;
     fn statistics_rust;
     fn bootstrap_se_rust;
     fn co_statistics_rust;

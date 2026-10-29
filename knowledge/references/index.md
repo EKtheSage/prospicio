@@ -1,5 +1,6 @@
 # Reference implementations
 
+* [MAPIE 0.9.1, the reference for prospicio's conformal intervals](mapie.md) - Its split and CV+ quantiles are the conformal order statistic, clipped instead of infinite; its CQR takes a quantile sometimes one order statistic higher.
 * [statsmodels](statsmodels.md) - Python statsmodels, the reference for prospicio-glm's GLMs, robust standard errors and Tweedie profiles; its conventions and quirks.
 * [glmmTMB and lme4](glmmtmb-lme4.md) - The references for GLMMs with random intercepts and slopes: glmmTMB stops short and is polished, its gamma dispersion parameter is the log shape, its condVar adds the estimates' uncertainty, and glmer's quadrature log-likelihood leaves out the saturated model's; glmmTMB's unstructured theta layout and lme4's split of `||` terms.
 * [R loo](r-loo.md) - The R package loo 2.6.0, the reference for ELPD by PSIS-LOO and WAIC, and 2.10.1 for the LOO-PIT by E_loo; its stacking_weights stops early.
@@ -56,3 +57,4 @@
 * [Mack's assumption tests in Mack (1994) and R ChainLadder](mack-1994-assumption-tests.md) - Mack (1994) appendices G and H, the development-factor correlation and calendar-year effect tests, printed on the RAA triangle (not Taylor-Ashe), and R ChainLadder 0.2.21's dfCorTest and cyEffTest, which reproduce them with qnorm intervals instead of Mack's 2 and .67; the calendar test has little power on a 10 x 10 triangle.
 * [chainladder-python's ValuationCorrelation and DevelopmentCorrelation](chainladder-python-correlation.md) - chainladder-python 0.10.1's Mack assumption tests give R ChainLadder's z, E[Z], Var[Z], T_k, weights, T, variance and 50% interval on RAA, GenIns and ABC to 1e-12; checked in CI.
 * [Where chainladder-python's ValuationCorrelation departs from R ChainLadder](chainladder-python-correlation-traps.md) - its total=True range is centred on the summed variance, so z_critical is False on every triangle; total=False is Mack's 1997 binomial test; p_critical is 1 - ci; from the source and an offline run, not checked in CI.
+* [Excel's NPV, IRR, XNPV and XIRR](excel-npv-irr.md) - NPV discounts its first value a period; XNPV and XIRR discount by days from the first date over 365, TimeUnit::Days in prospicio_pricing::returns; Microsoft's worked examples to more digits, reproduced by PRO.NPV and PRO.IRR.

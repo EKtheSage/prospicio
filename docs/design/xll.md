@@ -17,29 +17,43 @@ category of Insert Function:
 
 | Function | Returns |
 |---|---|
-| `PRO.CL(triangle, [average], [tail], [origins], [selected], [kind], [weight])` | Origin, Latest, CDF, Ultimate, Reserve per origin, and a total row |
-| `PRO.CL.LDF(triangle, [average], [tail], [selected], [kind], [weight])` | Selected age-to-age factors, one per triangle column; the last is the tail factor |
-| `PRO.CL.CDF(triangle, [average], [tail], [selected], [kind], [weight])` | Age-to-ultimate factors, one per triangle column |
+| `PRO.CL(triangle, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Origin, Latest, CDF, Ultimate, Reserve per origin, and a total row |
+| `PRO.CL.LDF(triangle, [average], [tail], [selected], [kind], [weight], [pattern_ages])` | Selected age-to-age factors, one per triangle column; the last is the tail factor |
+| `PRO.CL.CDF(triangle, [average], [tail], [selected], [kind], [weight], [pattern_ages])` | Age-to-ultimate factors, one per triangle column |
 | `PRO.CL.ULTIMATE(...)`, `PRO.CL.RESERVE(...)` | One column, one row per origin |
-| `PRO.CL.FACTORS(triangle, [average], [tail], [selected], [kind], [weight], [sigma])` | Per link: LDF, CDF, Mack sigma and the factor's standard error; then the tail |
-| `PRO.MACK(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Latest, Ultimate, Reserve, Process SE, Parameter SE, Mack SE and CV per origin, and the total |
+| `PRO.CL.FACTORS(triangle, [average], [tail], [selected], [kind], [weight], [sigma], [pattern_ages])` | Per link: LDF, CDF, Mack sigma and the factor's standard error; then the tail |
+| `PRO.MACK(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma], [pattern_ages])` | Latest, Ultimate, Reserve, Process SE, Parameter SE, Mack SE and CV per origin, and the total |
 | `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | ODP bootstrap: CL reserve, simulated mean, SD, CV and percentiles per origin, and the total |
 | `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins])` | The bootstrap's simulated reserves: one row per simulation, a column per origin and the total |
 | `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack's bootstrap (England, Verrall and Wuthrich), laid out as `PRO.ODP` |
 | `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins], [sigma])` | Its simulated reserves, laid out as `PRO.ODP.SIMS` |
-| `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Merz-Wuthrich: reserve, CDR(1) SE and run-off (Mack) SE per origin, and the total |
+| `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma], [pattern_ages])` | Merz-Wuthrich: reserve, CDR(1) SE and run-off (Mack) SE per origin, and the total |
 | `PRO.MACK.CDR.YEARS(...)`, same arguments | The CDR SE per origin in each future calendar year (R's `CDR(k)S.E.`) |
 | `PRO.ODP.CDR(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | The ODP bootstrap's one-year view: simulated CDR mean, SD and percentiles |
 | `PRO.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack's bootstrap's one-year view, laid out as `PRO.ODP.CDR` |
 | `PRO.CLARK(triangle, [exposure], [curve], [max_age], [origins])` | Clark's growth curve: the LDF method, or Cape Cod with `exposure`; reserve and its process, parameter and total SE |
 | `PRO.CLARK.PARAMS(triangle, [exposure], [curve], [max_age])` | Its fitted omega, theta, ELR (Cape Cod), scale and observations |
+| `PRO.GLM(data, response, terms, [family], [link], [exposure], [weights], [p])` | A GLM on a table with a header row: each coefficient's estimate, SE, statistic, p-value and exp(estimate), then deviance, dispersion, log-likelihood, AIC, BIC and the degrees of freedom (decision 41) |
+| `PRO.GLM.PREDICT(data, response, terms, newdata, [family], [link], [exposure], [weights], [p])` | The fitted model's mean on each row of a table of new rows |
+| `PRO.GLM.RELATIVITIES(data, response, terms, [family], [link], [exposure], [weights], [p], [level])` | A log-link GLM's relativities: each factor level against its base, a numeric term per unit, with a confidence interval |
+| `PRO.NPV(rate, flows, [times], [unit])` | Net present value: `Σ x (1 + rate)^-t`, times in years, months, days or as Excel dates (`XNPV`); one value, or one per row of a block of simulations (decision 42) |
+| `PRO.IRR(flows, [times], [unit], [lower], [upper], [extend], [detail])` | Internal rate of return by the crate's grid search; a root outside the range named in the error; with `detail`, the roots seen and whether one lies above or below |
+| `PRO.MOIC(released, funded, [opening])` | Multiple on invested capital `1 + released / (funded + opening)`, per row |
+| `PRO.CASHFLOW(u, terms, patterns, requirement, [commission], [output], [rate], [commutation_requirement])` | A collateralised deal on each simulated loss ratio: IRR, MOIC, NPV and totals per simulation, the monthly flows, or the first simulation's accounts |
+| `PRO.PNL(values, [probs], premium, [expenses], [covers], [face], [output], [levels], [expense_at_mean])` | A book's P&L ledger over annual gross losses with the annual covers it buys (`aggregate`'s `pnl` and `xpnl`): every line with its mean, SD, CV, skewness and the scenario columns that foot; the card; or the ratios (decision 43) |
+| `PRO.YLT.STATS(years, losses, [n_years], [probabilities], [quantile], [times], [hours], [negative])` | A year loss table's annual totals: years, losses and occurrences (under an hours clause), the average annual loss, SD, CV, skewness, VaR and TVaR under a stated quantile rule (decision 44) |
+| `PRO.YLT.OEP(years, losses, [return_periods], [amounts], [n_years], [quantile], [times], [hours], [negative])` | A year loss table's occurrence and aggregate exceedance curves: occurrence and aggregate PMLs and TVaRs by return period, or the OEP and AEP at amounts (decision 44) |
+| `PRO.ELT.STATS(rates, means, [sd_independent], [sd_correlated], exposures)` | An event loss table's events a year, chance of an event, expected annual loss, SD and CV (decision 44) |
+| `PRO.ELT.OEP(rates, means, [sd_independent], [sd_correlated], exposures, [return_periods], [amounts])` | An event loss table's occurrence exceedance curve with secondary uncertainty: occurrence PMLs by return period, or the exceedance frequency and OEP at amounts (decision 44) |
+| `PRO.ALLOCATE(draws, family, parameter, [method], [r0])` | A distortion risk measure of the portfolio (TVaR, PH, Wang, dual and the others) allocated to its units from columns of draws: Euler (natural), covariance, covariance margin, proportional, marginal or Shapley, with each unit's stand-alone measure and diversification (decision 45) |
+| `PRO.ALLOCATE.TOTAL(draws, total, [method], [measure], [level])` | An amount from outside, a premium or a capital, allocated to the units by the haircut or the equal risk rule on stand-alone VaR, TVaR or EPD (decision 45) |
 | `PRO.TRI.INCREMENTAL(triangle)`, `PRO.TRI.CUMULATIVE(triangle)` | The triangle turned incremental, or an incremental one cumulative, laid out as it is |
 | `PRO.TRI.LINKRATIOS(triangle)` | Age-to-age link ratios, one column fewer than the ages |
 | `PRO.TRI.LATEST(triangle)` | Each origin's latest value, a column |
-| `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins])` | Expected loss method: exposure times the a priori loss ratio |
-| `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])` | Bornhuetter-Ferguson |
-| `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander (iterated BF) |
-| `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins])` | Cape Cod (Stanard-Buhlmann) |
+| `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Expected loss method: exposure times the a priori loss ratio |
+| `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Bornhuetter-Ferguson |
+| `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Benktander (iterated BF) |
+| `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Cape Cod (Stanard-Buhlmann) |
 | `PRO.DIAG.CL(origins, ages, latest, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | A latest diagonal (a bordereau) projected with a selected pattern by the chain ladder: Origin, Age, Latest, CDF, Ultimate, Reserve, and a total row (decision 39) |
 | `PRO.DIAG.EL(origins, ages, latest, exposure, apriori, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])`, `PRO.DIAG.BF(...)`, same arguments | The expected loss method and Bornhuetter-Ferguson on a latest diagonal: Origin, Age, Exposure, Latest, CDF, A priori, Ultimate, Reserve, and a total row |
 | `PRO.DIAG.BENKTANDER(origins, ages, latest, exposure, apriori, pattern, [iterations], [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | Benktander on a latest diagonal |
@@ -789,8 +803,258 @@ real Excel.
     date gives a full triangle's ages, `PRO.TRI.LATEST` its latest
     values. Pattern ages on `PRO.CL`, `PRO.MACK` and the expected-loss
     functions on a triangle, so that a monthly pattern reaches them
-    (decision 18 item 4), are a follow-up (`[excel-triangle-pattern-ages]`
-    in the lane's Next): `selected` still reads 12, 24, ... by column.
+    (decision 18 item 4), are decision 40.
+40. **Selected patterns on every triangle function, at their ages, and an
+    a priori per origin** (#635 and #680, 0.0.7; the user's decisions of
+    2026-10-26 and 2026-10-28, and of 2026-10-29: one PR for both). The
+    expected-loss functions `PRO.EL`, `PRO.BF`, `PRO.BENKTANDER` and
+    `PRO.CAPECOD` take `selected`, `kind` and `weight` as the chain-ladder
+    functions read them, and the thirteen functions that take `selected`
+    (`PRO.CL`, `.LDF`, `.CDF`, `.ULTIMATE`, `.RESERVE`, `.FACTORS`,
+    `PRO.MACK`, `PRO.MACK.CDR`, `.CDR.YEARS` and the four) take
+    `pattern_ages`, each selected value's age in months. New arguments are
+    appended, so every sheet written before keeps its meaning, and the tail
+    of every list is the same: `selected, kind, weight, pattern_ages`, with
+    `sigma` before `pattern_ages` where a function already had it after
+    `weight` (`PRO.CL.FACTORS`, `PRO.MACK` and the one-year view). That
+    is decision 39's order (`pattern_ages, kind, ...`) only in part: a
+    triangle function's `kind` and `tail` came first, and moving them
+    would break sheets. Without `pattern_ages` a value sits at 12, 24, ...
+    by cell, as before; with it, the crate reads the pattern on its own
+    ages where they are not the triangle's (`reserving-v02.md` decision 18
+    item 4): an age-to-age factor runs to the next age given, a
+    cumulative pattern is `ln`-linear between its ages, and one past the
+    oldest age folds into the tail. A blank value skips its age, as on the
+    diagonal functions, and a value with a blank age is an error. The
+    triangle's columns stay 12, 24, ... months (decision 4's reading of
+    ages as development periods), so `pattern_ages` is in months against
+    an annual triangle; a quarterly triangle would need its period length
+    as an argument, which waits until a user asks. `pattern_origin` is not
+    added to the triangle functions: `PRO.PATTERN.AVERAGE` gives the same
+    averaged pattern in cells, which then goes in as `selected` with kind
+    `"percent"` at its ages. `apriori` on `PRO.EL`, `PRO.BF`,
+    `PRO.BENKTANDER` and their `PRO.DIAG.*` twins is one number or a row
+    or column with one loss ratio per origin (`Apriori` of #634): oldest
+    first on a triangle, one per row; on a diagonal in the order the
+    `origins` argument gives them, keyed by their periods, since those
+    rows may come in any order. `PRO.CAPECOD` estimates its own level and
+    takes none. Checks (`tests/selected_patterns.rs`): every
+    chainladder-python 0.10.1 `DevelopmentConstant` case of the four
+    methods on the CAS workers' compensation triangle (32 runs, the
+    patterns to ultimate as percents too) per origin and in total;
+    `pattern_ages` of 12, 24, ... equal to omitting it, to the bit, on all
+    thirteen functions; a monthly cumulative pattern through RAA's annual
+    factors equal to the annual selection to 1e-12 on all thirteen; a
+    pattern at 6, 18, ..., 114 months through `PRO.CL.ULTIMATE`,
+    `PRO.MACK` and `PRO.BF` equal to the crate's own fits to the bit; the
+    a priori per origin against the BF formula and the crate, and a
+    diagonal's against any order of its origins. The fake Excel checks
+    the last argument through the C API.
+
+41. **GLMs on a sheet** (#578 group 1, 0.0.7; the user's decision of
+    2026-10-29 to work on #578 after #635 and #680). `PRO.GLM`,
+    `PRO.GLM.PREDICT` and `PRO.GLM.RELATIVITIES` fit a `prospicio-glm`
+    GLM to a table whose first row names its columns, as an Excel table
+    or a pasted extract has it; trailing blank rows are dropped, so a
+    whole-column range works. `response` names a column, and `terms` is a
+    row or column of entries: a column's name (a numeric column is a
+    numeric term, a text column a factor), `name=level` for a factor with
+    that base level (otherwise the first level in sorted order, as R and
+    statsmodels choose it), and `a:b` for an interaction. The model is
+    refitted on each call rather than kept between calls: a handle to a
+    fit held by the add-in would go stale when the sheet changes, and the
+    fits a sheet needs take milliseconds (600 rows). `family` is
+    `poisson` (the default), `quasipoisson` (Poisson with Pearson's
+    dispersion), `gamma`, `gaussian`, `inverse_gaussian`, `binomial` (a
+    proportion with the trials as `weights`), `tweedie` (with `p` its
+    power) or `negative_binomial` (with `p` its theta); `link` defaults
+    to the log, the logit for the binomial and the identity for the
+    Gaussian. `exposure` names a column whose log is the offset, so it is
+    allowed only on the log link; `weights` names the prior weights.
+    Every function takes the same arguments in the same order, with
+    `newdata` after `terms` for the prediction and `level` (0.95) last
+    for the relativities, so one argument list is copied between them. A
+    level or column in `newdata` the training data lacks is an error
+    naming it. The relativities list a factor's base level first at 1,
+    labelled `(base)`, so the table reads as a rating manual's. Checks
+    (`tests/glm.rs`): every statsmodels 0.15.0 case of
+    `validation/reference/glm_statsmodels.csv` (ten families and links on
+    `validation/data/glm_policies.csv`, 144 values: coefficients, SEs,
+    deviance, null deviance, dispersion, log-likelihood and AIC) at the
+    file's tolerances; predictions against the coefficients by hand;
+    relativities and their intervals against exp(estimate), and a chosen
+    base level as the reciprocal; the errors. The fake Excel fits a
+    six-row table through the C API, and the test workbook's GLM sheet
+    checks the Poisson fit against statsmodels.
+
+42. **Cash flows and returns on a sheet** (#578 group 2, 0.0.7).
+    `PRO.NPV`, `PRO.IRR` and `PRO.MOIC` wrap
+    `prospicio_pricing::returns`; `PRO.CASHFLOW` wraps
+    `prospicio_pricing::cashflow` (`time-value.md`, decisions 13 to 20).
+    Flows are a row or column, one series, or a block with one
+    simulation a row, which gives a column of results. `times` default
+    to 0, 1, 2, ..., so the first flow is undiscounted, unlike Excel's
+    `NPV`, which discounts it a period; `unit` reads them as years,
+    months (twelfths) or days (actual/365), or as Excel dates, days from
+    the first over 365, which is `XNPV` and `XIRR` exactly. `PRO.IRR`
+    keeps the crate's grid search and its defaults (decision 9 there:
+    −95% to 100% a year, the root nearest 0), with `lower`, `upper` and
+    `extend` as arguments; a single series without a root is an error
+    that says whether one lies above or below the range, which Excel's
+    `#NUM!` does not, and in a block such a row is blank; `detail` TRUE
+    gives the search's flags. `PRO.CASHFLOW` reads a deal from three
+    blocks rather than dozens of arguments: `terms`, rows of a label and
+    its values with the labels the Python keyword names (`premium`,
+    `commutation_month`, `collected_rate`, `lag`, `funding_dates`,
+    `funding_rule`, `annual_yield`, `fee_breakpoints`, ...; case,
+    spaces, `-` and `_` alike), an `adjustment` row per premium
+    adjustment (month, rate, less commission, base), a set of months as
+    `monthly`, `quarterly`, `n`, `n | first` or `months | m1 | m2 ...`,
+    and `irr_lower`, `irr_upper` and `irr_extend` for the search;
+    `patterns`, three columns of cumulative shares written, earned and
+    paid by month; and `requirement` (and `commutation_requirement`),
+    rows of a base and its load with `floor` and `limit | trigger | cap`
+    rows. An unknown or repeated label is an error that lists the
+    labels. `output` is `"simulations"` (the default: each simulation's
+    loss ratio, IRR, NPV at `rate` when given, MOIC since inception,
+    funded, opening, released, distributed, fee, commutation and
+    whether it paid the investor first), `"flows"` (the investor's
+    monthly flows) or `"trace"` (every account line of the first
+    simulation, then the commutation payment, the fee and the
+    conservation error). Paid patterns that differ by simulation (#600)
+    and valuations after binding (#603) are left until a user asks.
+    Checks (`tests/cashflow.rs`): Microsoft's worked examples of `XNPV`,
+    `XIRR` and `IRR` to 1e-9 (`knowledge/references/excel-npv-irr.md`);
+    closed forms, roots above the range with and without `extend`, flows
+    of one sign; a deal with every rule set through the terms block
+    equal to the same deal built in the crate, to the bit, in its flows,
+    totals, IRR, NPV, MOIC and trace, and the crate's three-month
+    example; the errors. The fake Excel checks `XIRR`'s example, `MOIC`
+    and the three-month deal through the C API, and the test workbook's
+    Cash flows sheet puts `XNPV`, `XIRR` and `IRR` beside the add-in's.
+
+43. **The P&L ledger on a sheet** (#578 group 3, 0.0.7). `PRO.PNL`
+    wraps `prospicio_aggregate::pnl::Book::ledger` (`pnl.md`, PR 4): a
+    book's premium, its expenses and the annual covers it buys, as
+    signed legs over a distribution of annual gross losses. The gross is
+    atoms in cells, `values` and `probs` (equally likely when omitted),
+    so the ledger reads a grid's points, a year loss table's years or a
+    model's simulations alike, rather than rebuilding a compound
+    distribution from a count and a severity as `PRO.AGG.*` does: those
+    functions' grid can be passed in. `expenses` are rows of `label |
+    premium | loss | fixed`, a rate on the gross premium, a rate on the
+    gross loss and an amount, several in one row making one mixed leg
+    (`aggregate`'s `expense`), a blank label the crate's name; `covers`
+    is a table with a header row (`name`, `limit`, `attachment`,
+    `share`, `premium` as a deposit, `commission` flat, `profit_share`,
+    `profit_allowance`), each row an annual stop loss on the gross,
+    lowest first. `face` is the walk (the default, `xpnl`: the gross
+    book, then each cover, the running net and the covers' impact), the
+    consolidated net position (`pnl`) or either peel. `output` is the
+    sheet (the default: each row's step, side, line, mean, SD, CV and
+    skewness, then a scenario column per level, each row's mean given
+    the result at that lower quantile, which foot down the sheet; the
+    levels `aggregate`'s nine unless given), the card (each block's
+    consideration, obligation and margin with marginal 1%, 50% and 99%
+    quantiles) or the ratios (premium, loss, expense, result, LR, ER,
+    CR, their means at each atom, and the shares of the first block).
+    `expense_at_mean` books a loss-basis expense at the expected gross
+    loss on the consolidated face, as `aggregate`'s guaranteed-cost
+    builder does. Not yet: occurrence covers over the joint gross and
+    ceded loss, a deal's deductions (`Tower::deal_ledger`), reinstatement
+    premiums, retro rating, relabelled legs and `pnl_program`'s premium
+    ladder, each when a user asks. Checks (`tests/pnl.rs`): every
+    `aggregate` 1.0.1 case of `validation/reference/pnl_builders_aggregate.csv`
+    the arguments can state (eleven ledgers: one and two covers on the
+    walk and both peels, the consolidated face, premium, loss, fixed and
+    mixed expenses; 1,967 values of the sheet and the card) at the
+    file's tolerances, leaving out the consolidated κ75 that the Rust
+    parity test checks as a tie; the ratios against the crate's ledger;
+    equally likely years; a profit commission; the errors. The fake
+    Excel checks the crate's example (a net result of 4.54) through the
+    C API, and the test workbook's P&L sheet puts `aggregate`'s Example 3
+    beside the add-in's.
+
+44. **Year and event loss tables on a sheet** (#578 group 4, 0.0.7).
+    `PRO.YLT.STATS` and `PRO.YLT.OEP` read a year loss table as columns,
+    each row's year (from 1) and loss, through
+    `prospicio_aggregate::ylt::YearLossTable` (its checks: losses finite
+    and non-negative, or with `negative` stored as negative numbers,
+    years from 1, `n_years` at least the largest), tiled once into its
+    years. `times` (each loss's fraction of its year) with `hours` applies
+    the hours clause (`EventSet::grouped`), which joins the losses within
+    a window into one occurrence: it changes the counts and the largest
+    occurrences, not the totals. A row blank in every column is the empty
+    end of a selected range and is skipped; a row blank in some is an
+    error. `quantile` names the rule of `prospicio.risk.statistics`, its
+    TVaR going with it: `"inverted_cdf"` (R type 1, the exact TVaR; the
+    default, as `Sampled`'s), `"linear"` (R type 7) or `"kth_largest"`
+    (the k-th worst year, the mean of the k worst). STATS gives the
+    counts, the total's moments (population, dividing by the years), its
+    extremes and the largest occurrence, then VaR and TVaR at each
+    probability. OEP gives, by return period, the occurrence and
+    aggregate PMLs (the quantiles at `1 - p` of each year's largest
+    occurrence and total) with their TVaRs, or with `amounts` the share
+    of years whose largest occurrence or total is above each amount and
+    its return period; a return period past the table's years is an
+    error, and the defaults (2 to 1000 years, as `PRO.AGG.PML`) drop
+    those. `PRO.ELT.STATS` and `PRO.ELT.OEP` read an event loss table
+    (`prospicio_aggregate::cat::EventLossTable`: rates, means, the two
+    standard deviations, summed, a beta on `[0, exposure]` per event,
+    omitted deviations read as 0); STATS adds the compound Poisson SD
+    `sqrt(Σ rate (mean² + σ²))`, OEP gives the occurrence PML by return
+    period with the exceedance frequency at it and its occurrence return
+    period, or the frequency and OEP at amounts. Not yet: labels (a
+    peril or a class) and an hours clause by label, resampling a table to
+    more simulations, and towers applied to the years (`Tower::apply`),
+    each when a user asks. Checks (`tests/cat.rs`): Alder Mutual's tables
+    (`examples/data/cat_book_*.csv`) against every number the guide
+    `cat-2-risk-metrics.md` prints, which CI checks against the Python
+    package (the average annual loss, SD, VaR and TVaR under the three
+    rules, the OEP and AEP at 30, 70 and 110, raw and under a 72-hour
+    clause, the occurrences it leaves, the PMLs at 10 to 250 years, and
+    the ELT's rate, expected annual loss, OEP and occurrence PMLs); the
+    ELT's SD against 200,000 simulated years; negative losses, padded
+    ranges and the errors. The fake Excel checks a small table's average
+    annual loss and a one-event table's OEP through the C API, and the
+    test workbook's Cat sheet holds Alder's tables with the guide's
+    numbers beside the add-in's.
+
+45. **Capital allocation on a sheet** (#578 group 5, 0.0.7).
+    `PRO.ALLOCATE` and `PRO.ALLOCATE.TOTAL` read `draws`, a block with a
+    column per unit and a row per equally likely simulation, an optional
+    header row of names (a first row with any text), into a
+    `PredictiveDistribution` with one component per unit; rows blank in
+    every cell are skipped. The units must add up to the portfolio.
+    `PRO.ALLOCATE` takes a distortion as `PRO.DISTORTION` does (`family`,
+    `parameter`, `r0`) and a `method` of
+    `prospicio_prob::capital::AllocationMethod`: `"euler"` (the default;
+    `"natural"` too, the name of *Pricing Insurance Risk*),
+    `"covariance"`, `"covariance_margin"`, `"proportional"`,
+    `"marginal"` or `"shapley"` (up to 12 units). It returns a row per
+    unit (its stand-alone measure, allocation, share of the portfolio's
+    measure and diversification), the units' totals, and the portfolio's
+    measure with the diversification benefit; the marginal's totals fall
+    short of the portfolio's. `PRO.ALLOCATE.TOTAL` shares an amount given
+    from outside by `PredictiveDistribution::haircut` (each unit's
+    stand-alone `measure` at `level`, 0.99 unless given, scaled to the
+    total) or `equal_risk` (the one level at which the stand-alone
+    measures add up to the total, reported in the last row), on TVaR
+    (the default), VaR or EPD. Not yet: the lifted and natural
+    allocations of a priced book by layer (`aggregate`'s `price` with a
+    distortion over units, which `PRO.TOWER.PRICE` covers for a tower)
+    and allocation at a stated probability for VaR alone, each when a
+    user asks. Checks (`tests/allocation.rs`): all 100 cases of
+    `validation/reference/allocation_numpy.csv` (four units over 400
+    simulations with tied totals; TVaR at 90% and 75%, proportional
+    hazard and dual power; the portfolio's and each stand-alone measure,
+    Euler, covariance, proportional, marginal and Shapley from
+    definitions in numpy); *Pricing Insurance Risk*, Exercises 205 and
+    206 (a premium of 80 as a haircut at 75%, 8 and 72, and at the equal
+    risk level 0.6796, 9.56 and 70.44); the crate's example, names and
+    the errors. The fake Excel checks the crate's example through the C
+    API, and the test workbook's Allocation sheet puts the exercises and
+    numpy's values beside the add-in's.
 
 ## Parity plan
 

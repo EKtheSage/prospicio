@@ -30,10 +30,12 @@ pub mod compound;
 pub mod deal;
 pub mod fft;
 pub mod grid_reinsurance;
+pub mod hawkes;
 pub mod layer_statistics;
 pub mod moments;
 pub mod monte_carlo;
 pub mod panjer;
+pub mod per_risk;
 pub mod picks;
 pub mod pml;
 pub mod pnl;
@@ -54,13 +56,17 @@ pub use compound::{CompoundMethod, CompoundReport};
 pub use deal::{DealColumn, DealColumns, DealScale, Deduction};
 pub use fft::fft;
 pub use grid_reinsurance::{AnnualGrids, TowerGrids, TowerPrice, ViewPrice};
+pub use hawkes::{Hawkes, HawkesFit};
 pub use layer_statistics::{
     AggregateLayerStatistics, CessionStatistics, LayerStatistics, aggregate_layer_statistics,
     occurrence_cession_statistics, occurrence_layer_statistics,
 };
 pub use moments::{Approximation, ApproximationKind, CompoundMoments, compound_moments};
-pub use monte_carlo::{EventSet, GroupLabels, PartialYears, simulate_events};
+pub use monte_carlo::{
+    EventSet, GroupLabels, PartialYears, TailMixture, simulate_events, simulate_events_weighted,
+};
 pub use panjer::panjer;
+pub use per_risk::{PerRiskInuring, per_risk_inuring};
 pub use picks::{PickedLayer, Picks, layer_loss_picks};
 pub use pml::{OccurrencePml, occurrence_exceedance, occurrence_pml};
 pub use reinsurance::{

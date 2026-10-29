@@ -4378,8 +4378,12 @@ and `R/prospicio/tests/test-reserving-uy-pattern.R`):
   value is kept even when a search stops on its iteration limit, since the
   curve is only the projection's prior (two given ages can ask for a curve
   that steepens toward a step). Decision 23's edge check is kept as an
-  error. A flat pattern does not reach the edge: the curve reports
-  everything in the first month and the projection reproduces it.
+  error only on given values that fall. Given values that never fall are
+  read with the curve clamped to the edge of its parameters as the
+  projection's prior, which still gives the given values exactly
+  (decision 28 item 4, the fix of 2026-10-29). A flat pattern does not
+  reach the edge: the curve reports everything in the first month and the
+  projection reproduces it.
 - **No cap at the level** (a departure from items 1, 2 and 8, made after
   review on 2026-10-27, confirmed by the user on 2026-10-27). The study capped the
   increments at the level, `sum d <= L`. The given value at the last age
@@ -4426,7 +4430,9 @@ and `R/prospicio/tests/test-reserving-uy-pattern.R`):
   expanded pattern is the given value itself at each given age.
 - **Errors** (`Error::Pattern`): a single given value ("gives no shape to
   read between ages", naming the ln-linear reading, under which it still
-  converts), the curve's edge, no monotone accident-month pattern with the
+  converts), the curve's edge on given values that fall (on values that
+  never fall the curve is clamped to the edge instead; decision 28 item
+  4), no monotone accident-month pattern with the
   given averages, and a projection that does not converge. Each one that
   points to the ln-linear reading names it as `AnnualReading::LnLinear`
   and as `reading="ln-linear"` for Python and R, since the bindings pass
@@ -4696,7 +4702,13 @@ reviewers ask for beside a Mack exhibit: a test for calendar-year effects
 Status: **Built** (2026-10-28), issue #600 (its Reserving part), branch
 `claude/reserving-pattern-draws`, in Rust, Python and R; items 2, 4, 5 and
 6 were proposed and built as recommended, and the user accepted them as
-built on 2026-10-28. The cash-flow engine takes a
+built on 2026-10-28. Meyers' models followed (#678, branch
+`claude/meyers-pattern-draws`, in Rust, Python and R), with item 7's
+definition of their pattern proposed and accepted by the user as built
+on 2026-10-28, and `Compartmental` (#679, branch
+`claude/compartmental-pattern-draws`, in Rust, Python and R), with item
+7's definition of its pattern proposed and accepted by the user as built
+on 2026-10-29. The cash-flow engine takes a
 paid pattern per simulation (`PatternDraws`, `time-value.md` decision 33);
 this decision gives those patterns from a reserving fit, row `i` the same
 simulation as row `i` of the fit's `reserves` and of every vector
@@ -4739,7 +4751,21 @@ decision 26 gives.
    about 9 ms a simulation with the Weibull (30 microseconds `ln`-linear),
    so 10,000 simulations take about a minute and a half on one thread. The
    terms' `written` and `earned` must describe the same basis; the engine
-   cannot check it.
+   cannot check it. A pattern is complete at the first age its share
+   reaches 1 (a draw that `RunningMax` holds at 1 before the oldest age):
+   only the ages up to it are read and the later months are 1, and one
+   complete at its first age is read linearly from 0 to that age under
+   either reading. A pattern that never falls but that no Weibull follows
+   (nearly complete at its first age, then flat until a last step, as
+   `RunningMax` leaves a bootstrap or Meyers draw that falls after a high
+   first share) is read with the curve at the edge of its parameters as
+   the projection's prior, which still gives the given values exactly.
+   The same reading serves `to_underwriting_basis` and the monthly
+   conversions of a selected pattern, so a selected pattern of that shape
+   now converts there too. Before the fix of 2026-10-29 (branch
+   `claude/monthly-plateau`) such a pattern was refused as not increasing, and a draw held at 1 needed
+   months to the oldest age (72 for a draw at 1 from 48 months of a
+   six-age pattern, now 48).
 5. **A falling pattern** (accepted 2026-10-28). A pseudo factor below 1 makes a
    simulation's share fall at that age, which the engine refuses.
    `Monotone::Refuse` (the default) refuses it, naming the number of such
@@ -4761,12 +4787,111 @@ decision 26 gives.
    error, not a truncation, and longer is padded with 1.
 7. **Which fits.** `OdpBootstrapFit(s)`, `MackBootstrapFit(s)`,
    `BayesOdpFit(s)`, `BayesBfFit` and `BayesBfNormalisedFit` (so
-   `LayerSharePrior::fit` too), each with a `patterns` field. Meyers'
-   models simulate only the value at the oldest age, log-normal cell by
-   cell, and Compartmental's pattern is the ODE's for the drawn rates;
-   both are later items. No fit knows whether its column is paid: a
-   pattern from an incurred triangle is an incurred pattern, and the
-   engine would read it as paid.
+   `LayerSharePrior::fit` too), `MeyersFit(s)` (#678) and
+   `CompartmentalFit(s)` (#679), each with a `patterns` field. No fit
+   knows whether its column is paid: a pattern from an incurred triangle
+   is an incurred pattern, and the engine would read it as paid
+   (`Compartmental`'s is always its paid column's).
+
+   **Meyers' pattern** (#678, proposed and accepted by the user as built on 2026-10-28). Meyers' models are
+   log-normal in the cumulative values, `log C_wd ~ N(mu_wd, sigma_d^2)`
+   with `mu_wd = log P_w + logelr + alpha_w + beta_d g_w`, and simulate
+   only the value at the oldest age; the development they model is
+   `beta_d` (`beta_m = 0`) scaled by CSR's speed-up
+   `g_w = (1 - gamma)^(w - 1)`. A simulation's pattern is
+   `exp(beta_d g)` of the posterior draw it took: the median value at
+   age `d` over the median at the oldest age, which reaches exactly 1
+   there (no tail, as the other Bayesian models).
+   * CRC and CAY: `g = 1`, so the pattern is the same for every origin.
+     CAY's `rho` adds the previous origin's residual to each mean, a
+     correlation between origins, not development, and does not enter.
+   * CSR: the speed-up makes each origin's development its own, and a
+     segment has one pattern. It is that of the origin after the
+     triangle's newest, `g = (1 - gamma)^n` for `n` origins: an origin
+     with nothing yet observed, the year a deal on a new year writes
+     (item 1). The newest observed origin, `(1 - gamma)^(n - 1)`, is the
+     alternative; the two differ by one step of the trend (`gamma` has
+     prior sd 0.05).
+   * Medians, not means. The ratio of the expected values,
+     `exp(beta_d g + (sigma_d^2 - sigma_m^2) / 2)`, would add the larger
+     variance of the young ages to their shares (a volatility term, not
+     development), and in CAY would take `(1 + rho^2)` on each variance
+     or the previous origin's residual where that cell is observed, so
+     the pattern would depend on which neighbouring cells are observed.
+     Item 1's patterns of the other Bayesian models are ratios of
+     expected increments of a model whose development is a mean; in a
+     log-normal model of the cumulative values it is the median.
+   * Nothing keeps `beta_d` rising or below 0. On Meyers' group 353
+     data (default chains, 2,000 simulations) a share falls at some age
+     in 98% to 99% of the simulations of each model on paid and nearly
+     all on incurred, mostly from 60 months on, where the columns barely
+     move, and passes 1 in 70% to 75% on paid and 82% to 86% on incurred
+     (`knowledge/findings/pattern-draws-falling.md`). A share above 1
+     falls to the last, so `monthly` refuses both by default and Meyers'
+     patterns need `Monotone::RunningMax`, which caps each share at 1.
+   * As item 3: the pattern is written inside the predictive simulation
+     from the draw it took and draws no random number, so the ultimates
+     and reserves are bit for bit what they were (a unit test replays the
+     simulation without the pattern columns and compares the bits, and the
+     parity tests pass unchanged). `fit_segments`
+     reorders each segment's reserves and ultimates together by
+     Iman-Conover on their totals, and the reorder's index
+     (`reorder_ranges_with`) moves the patterns with them.
+
+   **Compartmental's pattern** (#679, proposed 2026-10-28 and accepted by the user as built on 2026-10-29). The model
+   simulates paid (and outstanding) to the square's last age, `n` origin
+   periods after the first origin's start, and a reserve is the paid
+   there less the latest paid. Its paid mean at age `t` is
+   `P RLR RRF PD(t)` with `PD(t) = 1 - e^(-k_p t) - k_p t e^(-k_p t)
+   exprel(-(k_er - k_p) t)`, the ODE's paid curve, which rises to 1 as
+   `t` grows; model 2's development-year effects multiply all four
+   parameters at each age, and its paid response is incremental, each
+   age's increment `PD(t) - PD(t - 1)` taken with that age's parameters.
+   A simulation's pattern is, at each age of the square, the expected
+   cumulative paid of the posterior draw it took over that at the
+   square's last age:
+   * The ultimate is the paid at the square's last age, where the
+     reserves end, so the share there is exactly 1 (no tail, as the other
+     Bayesian models), not the curve's limit: `PD` at 120 months is
+     about 0.98 of its limit on company 337 under model 1 (0.982 at the
+     posterior mean rates), and dividing by the limit would put the last
+     2% of the money after the reserves stop. The alternative is the limit, with the pattern
+     ending below 1 and a tail one period on.
+   * The origin is one with nothing observed (item 1) at the median of
+     the population: its origin effects 0, so its rates are the
+     population's `k_er` and `k_p` (model 1 has no origin effect on the
+     rates; model 2's are 0 there). Its `RLR` and `RRF` and its premium
+     cancel. A simulation does draw a new origin's effects, for the
+     origins the triangle holds without a cell, but the pattern takes
+     none (no random number, item 3), as Meyers' pattern takes medians.
+     The newest observed origin's rates are the alternative.
+   * The development effects (model 2) are each observed age's in the
+     draw, and 0 at an age with no observed cell (company 337's 120
+     months), where a simulation draws a new one; again no random number.
+   * Expected values of the cells as the model writes them: cumulative
+     paid's mean, or the running sum of incremental paid's means. Model
+     2's log-normal cells have one paid `sigma`, so the ratio of the
+     means is the ratio of the medians; the normal cells' means are the
+     curve's. Model 1's pattern is `PD(t) / PD(t_last)` at the drawn
+     rates.
+   * It never falls and never passes 1 in either preset: `PD` rises
+     (`PD' = k_p OS >= 0`), and model 2's incremental means are each
+     positive. On company 337 no share falls or passes 1 in any of 4,000
+     simulations of model 1 at its defaults or of model 2 (#679's
+     validation), so `monthly`'s default takes them. Only a cumulative
+     paid response with development effects (on the rates, `RLR` or
+     `RRF`), a setting no preset uses, can fall: with them each age's share
+     is read at that age's own rates, so a smaller `k_p` at a later age can
+     give a lower share.
+   * As item 3: the pattern is written inside the predictive simulation
+     from the draw and draws no random number, so the reserves and cells
+     are bit for bit what they were (a unit test replays the simulation
+     without the pattern columns, models 1 and 2). `fit_segments`
+     reorders each segment's reserves and cells as whole rows by
+     Iman-Conover on its reserves, and the reorder's index
+     (`reorder_rows_with`) moves its patterns with them. The patterns are
+     on the square's ages (to 120 months on company 337, where the paid
+     triangle reaches 108), the origin grain the triangle's.
 8. **Bindings.** Python: `fit.patterns` (`DevelopmentPatterns`) with
    `n_sims`, `segments`, `ages(segment=None)`, `mean(segment=None)`,
    `pattern_draws(segment=None)` (a list per simulation) and

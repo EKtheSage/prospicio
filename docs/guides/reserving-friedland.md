@@ -432,16 +432,15 @@ in chapter 13.
 The expected claims technique ignores the claims to date. The ultimate is an
 expected claim ratio times earned premium. For U.S. Industry Auto, Friedland
 selects 75% for 1998 to 2002 and 65% for 2003 to 2007 (chapter 8, Exhibit II,
-sheet 1). When the ratio changes by year, put the expected claims in a column
-and fit with `apriori=1.0`. Section 4 of
-[`reserving-methods.md`](reserving-methods.md) explains this:
+sheet 1). When the ratio changes by year, give `apriori` as a dict keyed by
+year, with one ratio for each origin. The premium stays in the exposure column.
+Section 4 of [`reserving-methods.md`](reserving-methods.md) explains this:
 
 ```python
 US_RATIO = [0.75] * 5 + [0.65] * 5
-us_expected = [r * p for r, p in zip(US_RATIO, US_PREMIUM)]
-us = triangle(US_YEARS, {"reported": US_REPORTED, "paid": US_PAID},
-              {"premium": US_PREMIUM, "expected": us_expected})
-ec = ExpectedLoss(apriori=1.0).fit(us, "reported", "expected")
+us = triangle(US_YEARS, {"reported": US_REPORTED, "paid": US_PAID}, {"premium": US_PREMIUM})
+US_APRIORI = dict(zip(US_YEARS, US_RATIO))
+ec = ExpectedLoss(apriori=US_APRIORI).fit(us, "reported", "premium")
 ibnr, total = unpaid(ec.ultimate)
 print(f"expected claims {sum(ec.ultimate):,.0f} (book 569,281,839)")
 print(f"IBNR {ibnr:,.0f} (book 25,800,252), total unpaid {total:,.0f} (book 71,231,471)")
@@ -465,10 +464,10 @@ as printed in sheet 1, column (11):
 
 ```python
 XYZ_RATIO = [0.783] * 6 + [0.871, 0.783, 0.658, 0.638, 0.825]
-xyz_expected = [r * p for r, p in zip(XYZ_RATIO, XYZ_PREMIUM)]
 xyz = triangle(XYZ_YEARS, {"reported": XYZ_REPORTED, "paid": XYZ_PAID},
-               {"premium": XYZ_PREMIUM, "expected": xyz_expected}, first_age=XYZ_FIRST_AGE)
-xec = ExpectedLoss(apriori=1.0).fit(xyz, "reported", "expected")
+               {"premium": XYZ_PREMIUM}, first_age=XYZ_FIRST_AGE)
+XYZ_APRIORI = dict(zip(XYZ_YEARS, XYZ_RATIO))
+xec = ExpectedLoss(apriori=XYZ_APRIORI).fit(xyz, "reported", "premium")
 ibnr, total = unpaid(xec.ultimate, xyz)
 print(f"expected claims {sum(xec.ultimate):,.0f} (book 561,516)")
 print(f"IBNR {ibnr:,.0f} (book 111,890), total unpaid {total:,.0f} (book 230,887)")
@@ -500,7 +499,7 @@ BOOK_BF_US = {  # chapter 9, Exhibit I, sheet 1, columns (11) and (12)
              58096743, 58447423, 60151912, 61425942, 63209774],
 }
 bf = {
-    col: BornhuetterFerguson(apriori=1.0, ldf=US_CDF[col], ldf_kind="cdf").fit(us, col, "expected")
+    col: BornhuetterFerguson(apriori=US_APRIORI, ldf=US_CDF[col], ldf_kind="cdf").fit(us, col, "premium")
     for col in ("reported", "paid")
 }
 BOOK_BF_US_TOTAL = {"reported": 569091348, "paid": 570568198}
@@ -539,7 +538,7 @@ BOOK_BF_XYZ = {  # chapter 9, Exhibit II, sheet 1, columns (11) and (12)
     "paid": [15977, 25158, 37841, 40525, 49417, 50768, 82593, 94301, 71205, 45636, 41049],
 }
 xbf = {
-    col: BornhuetterFerguson(apriori=1.0, ldf=XYZ_CDF[col], ldf_kind="cdf").fit(xyz, col, "expected")
+    col: BornhuetterFerguson(apriori=XYZ_APRIORI, ldf=XYZ_CDF[col], ldf_kind="cdf").fit(xyz, col, "premium")
     for col in ("reported", "paid")
 }
 BOOK_BF_XYZ_TOTAL = {"reported": 513207, "paid": 554471}
@@ -577,7 +576,7 @@ printed U.S. Industry BF ultimates as input, the formula checks prospicio's
 `Benktander(n_iters=2)`:
 
 ```python
-gb = Benktander(apriori=1.0, n_iters=2, ldf=US_CDF["reported"], ldf_kind="cdf").fit(us, "reported", "expected")
+gb = Benktander(apriori=US_APRIORI, n_iters=2, ldf=US_CDF["reported"], ldf_kind="cdf").fit(us, "reported", "premium")
 latest = us.latest_diagonal()[0][us.columns.index("reported")]
 cdf_by_year = CDF_REPORTED[::-1]  # the oldest year has the oldest age
 by_hand = [r + (1 - 1 / c) * u for r, c, u in zip(latest, cdf_by_year, BOOK_BF_US["reported"])]
@@ -647,8 +646,8 @@ Each year's expected claim ratio is that ratio, taken back to the cost level,
 tort environment and rate level of the year. prospicio's `CapeCod(trend=...)`
 applies a trend of this type, with the ratio of the latest origin as the
 reference. The code applies the tort factor and the rate level by hand. It
-estimates the ratio on the adjusted claims, then uses the expected claims in a
-BF fit on the actual claims:
+estimates the ratio on the adjusted claims, then gives each year's ratio on the actual premium to a BF
+fit on the actual claims:
 
 ```python
 ON_LEVEL_PREMIUM = [19783, 30548, 42784, 46606, 55911, 60204, 80411, 97258, 68850, 49950, 47797]
@@ -659,9 +658,9 @@ xyz_cc = triangle(XYZ_YEARS, {"adjusted": adjusted, "reported": XYZ_REPORTED},
 ratio = CapeCod(trend=0.03425, ldf=XYZ_CDF["reported"], ldf_kind="cdf").fit(xyz_cc, "adjusted", "on_level")
 print(f"adjusted expected claim ratio {ratio.apriori[-1]:.4f} (book 70.8%)")
 cc_expected = [a * p / t for a, p, t in zip(ratio.apriori, ON_LEVEL_PREMIUM, TORT)]
-xyz_cc = triangle(XYZ_YEARS, {"reported": XYZ_REPORTED}, {"cc_expected": cc_expected}, first_age=XYZ_FIRST_AGE)
-xcc = BornhuetterFerguson(apriori=1.0, ldf=XYZ_CDF["reported"], ldf_kind="cdf").fit(xyz_cc, "reported", "cc_expected")
-print("unadjusted ratios", " ".join(f"{e / p:.3f}" for e, p in zip(cc_expected, XYZ_PREMIUM)))
+cc_ratio = {y: e / p for y, e, p in zip(XYZ_YEARS, cc_expected, XYZ_PREMIUM)}
+xcc = BornhuetterFerguson(apriori=cc_ratio, ldf=XYZ_CDF["reported"], ldf_kind="cdf").fit(xyz, "reported", "premium")
+print("unadjusted ratios", " ".join(f"{r:.3f}" for r in cc_ratio.values()))
 BOOK_CC_XYZ = [15822, 25107, 37246, 38798, 48313, 45062, 74754, 77931, 58759, 43307, 39201]
 compare(XYZ_YEARS, {"Cape Cod": (xcc.ultimate, BOOK_CC_XYZ, 504300)})
 ```
