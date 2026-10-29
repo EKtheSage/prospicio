@@ -1583,8 +1583,8 @@ look back over several years.
 
 ### Franchise, nth-event and top-and-drop covers (#591)
 
-Status: built; items (a) to (e) proposed by the Aggregate lane for the
-user's acceptance.
+Status: built; items (a) to (e) proposed by the Aggregate lane and accepted
+by the user on 2026-10-29 as built.
 
 Three catastrophe structures as settings on a layer, each saved in the
 tower JSON (format version 9) and in Python and R:
@@ -1623,8 +1623,8 @@ Decisions:
 
 ### A per-risk layer with an event limit, inuring to a cat cover (#585)
 
-Status: built; items (a) to (d) proposed by the Aggregate lane for the
-user's acceptance.
+Status: built; items (a) to (d) proposed by the Aggregate lane and accepted
+by the user on 2026-10-29 as built.
 
 `per_risk::per_risk_inuring(layer, event_limit, years, times, seed)` takes
 years of events of risk losses (`years[i][e]` the losses of the risks hit
@@ -1653,8 +1653,8 @@ Decisions:
 
 ### Importance sampling of the tail (#566)
 
-Status: built; items (a) to (e) proposed by the Aggregate lane for the
-user's acceptance.
+Status: built; items (a) to (e) proposed by the Aggregate lane and accepted
+by the user on 2026-10-29 as built.
 
 `simulate_events_weighted(frequency, severity, n_sims, count, tail, seed)`
 draws simulated years from a proposal and returns them with each year's

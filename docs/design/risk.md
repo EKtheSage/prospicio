@@ -306,8 +306,8 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   pyvinecopulib's C-vine order puts the root last, and its D-vine inverse
   Rosenblatt runs backwards (`knowledge/references/pyvinecopulib.md`).
 - **Pair copulas fitted to data, and the Student t pair** (#568, first
-  part; items (a) to (f) proposed by the Probability lane for the user's
-  acceptance). (a) *The Student t pair's cdf is a one-dimensional
+  part; items (a) to (f) proposed by the Probability lane and accepted by
+  the user on 2026-10-29 as built). (a) *The Student t pair's cdf is a one-dimensional
   integral*, `C(u, v) = ∫₀^v h₂(u | s) ds`, taken on `s = v w²` (which
   removes the endpoint singularity) by adaptive 16-point Gauss–Legendre on
   eight starting panels to `1e-15`, since the bivariate t has no closed
@@ -328,7 +328,8 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   which the profile fit calls `n` times per `ν`; values are unchanged to
   `4 ε`.
 - **R-vines and fitting vines** (#568, second part; items (g) to (k)
-  proposed by the Probability lane for the user's acceptance). The density
+  proposed by the Probability lane and accepted by the user on 2026-10-29
+  as built). The density
   and the inverse Rosenblatt transform run Dißmann et al.'s (2013)
   natural-order recursions on the matrix, so a vine needs no tree objects.
   (g) *The matrix is vinecopulib's*, 1-based, as pyvinecopulib and
@@ -463,8 +464,8 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   0.75, and the series for `|ρ| ≥ 0.925`: about `1e-15` absolute. The
   bivariate t is not carried.
 - **Sobol points and the multivariate normal in any dimension** (#565;
-  items (a) to (e) proposed by the Probability lane for the user's
-  acceptance). `prospicio_math::qmc::Sobol` gives Joe and Kuo's Sobol
+  items (a) to (e) proposed by the Probability lane and accepted by the
+  user on 2026-10-29 as built). `prospicio_math::qmc::Sobol` gives Joe and Kuo's Sobol
   sequence at 32 bits in Gray-code order, unscrambled equal to SciPy's
   `stats.qmc.Sobol(d, scramble=False, bits=32)`.
   `prospicio_math::mvn::mvn_probability` (and `mvn_cdf` for no lower
