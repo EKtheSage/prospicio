@@ -44,7 +44,8 @@ NULL
 #' @returns An `xol_layer` object with read-only properties for each term
 #'   (`loss_corridor` is `c(lower, upper, retained)`, `ceding_commission` the
 #'   flat rate, `sliding_scale` a data frame of `commission` and `loss_ratio`
-#'   (or `NULL`), `profit_commission` `c(share, allowance)` and
+#'   (or `NULL`), `profit_commission` `c(share, allowance)`,
+#'   `no_claims_bonus` `c(share, years, threshold)` ([with_no_claims_bonus()]) and
 #'   `swing_rating` `c(basic, lcm, minimum, maximum)`; `profit_commission_carry`
 #'   `list(years)` and `sliding_scale_carry` `list(deficit, credit, years)`
 #'   (`NULL` when nothing is carried, `years` `NULL` without limit); each empty when there
@@ -108,6 +109,10 @@ xol_layer <- S7::new_class(
     profit_commission = S7::new_property(S7::class_double, getter = function(self) {
       p <- self@ptr$profit_commission()
       if (length(p)) stats::setNames(p, c("share", "allowance")) else p
+    }),
+    no_claims_bonus = S7::new_property(S7::class_double, getter = function(self) {
+      p <- self@ptr$no_claims_bonus()
+      if (length(p)) stats::setNames(p, c("share", "years", "threshold")) else p
     }),
     swing_rating = S7::new_property(S7::class_double, getter = function(self) {
       p <- self@ptr$swing_rating()
@@ -276,6 +281,39 @@ with_profit_commission <- function(layer, share, allowance = 0) {
   xol_layer(ptr = rust_result(layer@ptr$with_profit_commission(as.double(share), as.double(allowance))))
 }
 
+#' No-claims bonus
+#'
+#' The same layer with a no-claims bonus: `share` of the year's premium
+#' returned when the layer's ceded loss over the last `years` contract
+#' years (this one included) is at most `threshold`, 0 for a claims-free
+#' year. The bonus is figured on its own, beside any sliding scale or
+#' profit commission, on the year's premium as the layer prices it (the
+#' deposit or a swing-rated premium), without reinstatement premium. The
+#' tower's results report it as its own component `no_claims_bonus`, and
+#' [deal_ratios()] as a deduction inside NMBF.
+#'
+#' `years > 1` looks back over the earlier years of a term and needs
+#' [apply_tower_term()]; a single year, a grid or a ledger refuses it. Set
+#' the premium first.
+#'
+#' @param layer An [xol_layer].
+#' @param share Share of the premium returned, in `(0, 1]`.
+#' @param years Contract years looked at, at least 1.
+#' @param threshold The most ceded loss over those years that still earns
+#'   the bonus.
+#' @returns An [xol_layer].
+#' @seealso [no_claims_bonus_for()] for the bonus at a year's ceded loss.
+#' @export
+#' @examples
+#' cat <- with_premium_rate(xol_layer("20x10", 20, 10), 0.1, 20)
+#' cat <- with_no_claims_bonus(cat, 0.15)
+#' no_claims_bonus_for(cat, c(0, 5))
+with_no_claims_bonus <- function(layer, share, years = 1, threshold = 0) {
+  xol_layer(ptr = rust_result(layer@ptr$with_no_claims_bonus(
+    as.double(share), as.double(years), as.double(threshold)
+  )))
+}
+
 #' Deficits and credits carried over a contract term
 #'
 #' The same layer, carrying amounts between the years of a term
@@ -364,8 +402,9 @@ with_swing_rating <- function(layer, basic, lcm, minimum = NULL, maximum = NULL)
 #' Premium and commissions for a year's ceded loss
 #'
 #' The year's premium (swing rated, or else the layer's fixed premium),
-#' ceding commission (flat or sliding) and profit commission, for each
-#' value of the layer's ceded loss at the placed share.
+#' ceding commission (flat or sliding), profit commission and no-claims
+#' bonus (on that year alone), for each value of the layer's ceded loss at
+#' the placed share.
 #'
 #' @param layer An [xol_layer].
 #' @param ceded Numeric vector of annual ceded losses.
@@ -550,8 +589,8 @@ deduction_for <- function(layer, label, ceded) {
 #' @param layer The layer's or the deal's name.
 #' @returns A [predictive_distribution] with dimension `ratio` (and `year`
 #'   for a term): `loss_ratio`, `loss_ratio_before_terms` for a layer whose
-#'   scales read it, `ceding_commission`, `profit_commission` and
-#'   `brokerage` where the layer has them, each deduction by its label,
+#'   scales read it, `ceding_commission`, `profit_commission`,
+#'   `no_claims_bonus` and `brokerage` where the layer has them, each deduction by its label,
 #'   `total_deductions`, `combined_ratio`, `nmbf` and `margin`.
 #' @export
 #' @examples
@@ -571,6 +610,12 @@ deal_ratios <- function(tower, result, layer) {
 #' @export
 profit_commission_for <- function(layer, ceded) {
   layer@ptr$profit_commission_for(as.double(ceded))
+}
+
+#' @rdname premium_for
+#' @export
+no_claims_bonus_for <- function(layer, ceded) {
+  layer@ptr$no_claims_bonus_for(as.double(ceded))
 }
 
 #' Retrospectively rated premium
@@ -1123,8 +1168,8 @@ S7::method(print, reinsurance_tower) <- function(x, ...) {
 #'   per-occurrence stages; see [tower_quote()]),
 #'   `expected_reinstatement_premium` (named, 0 without paid reinstatements),
 #'   `expected_premium` (the swing-rated premium's mean, or else the fixed
-#'   premium), `expected_ceding_commission`, `expected_profit_commission`
-#'   (each named, 0 without the term), `expected_deal_ceding_commission`
+#'   premium), `expected_ceding_commission`, `expected_profit_commission`,
+#'   `expected_no_claims_bonus` (each named, 0 without the term), `expected_deal_ceding_commission`
 #'   and `expected_deal_brokerage` (each deal's, by its name, read on its
 #'   sections' loss ratio together; a deal whose section has annual terms
 #'   is an error here, as their sum is not one compound) and `on_points`.
@@ -1149,6 +1194,7 @@ tower_on_grid <- function(tower, frequency, severity, points) {
     expected_premium = stats::setNames(r$expected_premium, names),
     expected_ceding_commission = stats::setNames(r$expected_ceding_commission, names),
     expected_profit_commission = stats::setNames(r$expected_profit_commission, names),
+    expected_no_claims_bonus = stats::setNames(r$expected_no_claims_bonus, names),
     expected_deal_ceding_commission = stats::setNames(r$expected_deal_ceding_commission, r$deal_names),
     expected_deal_brokerage = stats::setNames(r$expected_deal_brokerage, r$deal_names),
     on_points = r$on_points
@@ -1171,7 +1217,7 @@ tower_on_grid <- function(tower, frequency, severity, points) {
 #' @returns A list as [tower_on_grid()]'s, without `stage_ceded`: `gross`,
 #'   `ceded` (named), `net`, `expected_reinstatement_premium`,
 #'   `expected_premium`, `expected_ceding_commission`,
-#'   `expected_profit_commission` (each named),
+#'   `expected_profit_commission`, `expected_no_claims_bonus` (each named),
 #'   `expected_deal_ceding_commission`, `expected_deal_brokerage` (by deal)
 #'   and `on_points`.
 #' @export
@@ -1193,6 +1239,7 @@ tower_on_annual_grid <- function(tower, annual) {
     expected_premium = stats::setNames(r$expected_premium, names),
     expected_ceding_commission = stats::setNames(r$expected_ceding_commission, names),
     expected_profit_commission = stats::setNames(r$expected_profit_commission, names),
+    expected_no_claims_bonus = stats::setNames(r$expected_no_claims_bonus, names),
     expected_deal_ceding_commission = stats::setNames(r$expected_deal_ceding_commission, r$deal_names),
     expected_deal_brokerage = stats::setNames(r$expected_deal_brokerage, r$deal_names),
     on_points = r$on_points

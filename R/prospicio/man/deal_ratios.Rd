@@ -16,8 +16,8 @@ deal_ratios(tower, result, layer)
 \value{
 A \link{predictive_distribution} with dimension \code{ratio} (and \code{year}
 for a term): \code{loss_ratio}, \code{loss_ratio_before_terms} for a layer whose
-scales read it, \code{ceding_commission}, \code{profit_commission} and
-\code{brokerage} where the layer has them, each deduction by its label,
+scales read it, \code{ceding_commission}, \code{profit_commission},
+\code{no_claims_bonus} and \code{brokerage} where the layer has them, each deduction by its label,
 \code{total_deductions}, \code{combined_ratio}, \code{nmbf} and \code{margin}.
 }
 \description{

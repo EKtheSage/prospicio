@@ -1510,6 +1510,77 @@ totals and a split by label, not each event's ceded loss in time order.
 4. Bindings: Python `Tower.ceded_events(events, layers)` (a name or a
    list); R `ceded_events(tower, events, layers)`.
 
+### No-claims bonus (#592)
+
+Status: built. Decisions N1 to N7 below were decided by the user on
+2026-10-29 as recommended, each option (a).
+
+A no-claims bonus returns a share of a layer's premium to the cedant when
+the layer has had no loss (or a loss at most a small threshold) in the
+year, or over several years. It is common on catastrophe layers. Before
+this, the cat guides approximated a one-year bonus with a sliding scale,
+which cannot sit beside a real sliding scale on the same layer and cannot
+look back over several years.
+
+#### What is built
+
+1. `NoClaimsBonus { share, years, threshold }` on `Layer` (a new public
+   field, `no_claims_bonus: Option<NoClaimsBonus>`, so breaking for
+   `Layer` struct literals, as `scope` was), set by
+   `Layer::no_claims_bonus(share, years, threshold)`: `share` in `(0, 1]`,
+   `years` at least 1, `threshold` finite and at least 0, the premium set
+   first. `Layer::no_claims_bonus_for(ceded)` is the bonus of one year.
+2. A tower's result has a component kind `no_claims_bonus` per layer that
+   has one, the refund in each simulated year, after `profit_commission`.
+3. `Tower::deal_ratios` has a `no_claims_bonus` ratio inside NMBF, and the
+   deal's margin falls by it; `Tower::deal_ledger` has a "No-claims bonus"
+   leg (`LegKind::Commission`).
+4. `Tower::apply_term` and `apply_timeline` look back over a term's
+   contract years (N3). `apply`, `apply_aggregate` and `apply_annual`
+   refuse `years > 1`, naming `apply_term`.
+5. `Tower::on_grid` and `on_annual_grid` give `expected_no_claims_bonus`
+   for each layer (N5), and `Layer::expected_no_claims_bonus(premium,
+   ceded)` reads it off a layer's ceded grid at a deposit.
+6. Tower JSON at format version 8 with `"no_claims_bonus"`, stamped only
+   when a layer has one, so other towers still write version 7 or older.
+7. `Quote::technical_for_layer` solves the deposit with the bonus (N6).
+8. The cedant's P&L ledger books it as a commission with the cover (N7).
+9. Python `Layer.with_no_claims_bonus(share, years=1, threshold=0.0)`,
+   `Layer.no_claims_bonus`, `Layer.no_claims_bonus_for` and the grids'
+   `expected_no_claims_bonus`; R `with_no_claims_bonus()`,
+   `no_claims_bonus_for()`, the layer's `@no_claims_bonus` and the grid
+   lists' `expected_no_claims_bonus`.
+
+#### Decisions
+
+- **N1. What "no claims" is measured on**: the ceded loss, the year's
+  loss to the reinsurer after the share and the annual terms, at most
+  `threshold`. A layer that a deductible or an inuring stage keeps free
+  of loss earns the bonus. Not chosen: the layer's loss at 100% before
+  its share and annual terms, or the ground-up loss.
+- **N2. What the refund is a share of**: the year's premium as the layer
+  prices it, `premium_for(ceded)`, the deposit or a swing-rated premium.
+  Reinstatement premium is left out, since a year with no claim has none.
+- **N3. Several years and the first years of a term**: with `years = N`,
+  a bonus is paid in a year whose last `N` contract years ceded at most
+  `threshold` in total, the window cut at the term's start, so a
+  claim-free first year pays. Not chosen: no bonus until `N` years have
+  passed, or one bonus per block of `N` years.
+- **N4. With other loss-sensitive terms**: independent. Each of the
+  sliding scale, the profit commission and the bonus reads the same
+  ceded loss, and none reduces another.
+- **N5. On the grid**: a one-year bonus has the exact expectation
+  `share × E[premium_for(C) 1{C <= threshold}]` on a grid; `years > 1` is
+  refused there, since a lookback needs paths, not a marginal.
+- **N6. In the technical premium**: the solve includes a one-year bonus.
+  It scales with the deposit like a flat commission at its expected rate,
+  so it is added to the solve's commission at each deposit; `years > 1` is
+  refused.
+- **N7. The P&L ledger**: the cedant's ledger books the bonus as a
+  commission leg with the cover that buys the layer; a ledger refuses
+  `years > 1`, and the stitched peel refuses a bonus as it refuses the
+  other loss-sensitive terms.
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
@@ -1535,6 +1606,17 @@ discrete severity by a Kolmogorov–Smirnov statistic at the 0.1% level.
 The check covers gross, every ceded grid and net, for two per-occurrence
 layers (Poisson and negative binomial counts), a layer with a deductible
 and a reinstatement, and an excess-of-loss layer inuring to a stop-loss.
+
+The no-claims bonus (#592) is checked by hand: a layer with no loss pays
+`share` of its premium, a year above the threshold pays nothing, and the
+one-year bonus equals the cat guide's sliding-scale approximation
+(`[(0.10, 0), (0, 1e-9)]` on the loss ratio) in each of 5,000 simulated
+years. Over a term the rolling window is checked on a four-year path
+(`[2, 0, 2, 2]`, `[2, 0, 0, 2]` and `[2, 0, 0, 0]` for windows of one, two
+and three years). The expected bonus on the grid is checked by hand, the
+deal ratios and the ledger leg against the bonus in each year, the
+technical premium's solve against a flat commission (a bonus paid in
+every year) and the JSON round trip at version 8.
 Expected reinstatement premiums are within four standard errors of the
 simulated mean. Layer means with boundaries between points are exact, and
 gross = Σ ceded + net in mean.

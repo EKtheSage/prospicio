@@ -669,6 +669,58 @@ mod tests {
         Empirical::draws(&pd.marginal(&key).unwrap()).to_vec()
     }
 
+    /// A cat layer named "QS" (so `component` reads it) with a bonus.
+    fn ncb_layer(years: u32, threshold: f64) -> Layer {
+        Layer::xol("QS", 20.0, 10.0)
+            .unwrap()
+            .premium_rate(0.1, 100.0)
+            .unwrap()
+            .no_claims_bonus(0.2, years, threshold)
+            .unwrap()
+    }
+
+    #[test]
+    fn a_no_claims_bonus_looks_back_over_the_term() {
+        // Four years of one path: a loss to the layer in year 2 only.
+        let years: Vec<EventSet> = [5.0, 25.0, 5.0, 5.0]
+            .iter()
+            .map(|&x| EventSet::from_years(vec![vec![x]], 0).unwrap())
+            .collect();
+        let bonus = |n: u32| -> Vec<f64> {
+            let term = Tower::new(vec![ncb_layer(n, 0.0)])
+                .unwrap()
+                .apply_term(&years)
+                .unwrap();
+            (1..=4)
+                .map(|y| component(&term, "no_claims_bonus", y)[0])
+                .collect()
+        };
+        // 20% of a premium of 10, when the window is claim free.
+        assert_eq!(bonus(1), [2.0, 0.0, 2.0, 2.0]);
+        // Two years: the window cut at the term's start pays in year 1.
+        assert_eq!(bonus(2), [2.0, 0.0, 0.0, 2.0]);
+        assert_eq!(bonus(3), [2.0, 0.0, 0.0, 0.0]);
+        // A threshold above the year's ceded 15 lets year 2 count as clean.
+        let term = Tower::new(vec![ncb_layer(2, 15.0)])
+            .unwrap()
+            .apply_term(&years)
+            .unwrap();
+        let clean: Vec<f64> = (1..=4)
+            .map(|y| component(&term, "no_claims_bonus", y)[0])
+            .collect();
+        assert_eq!(clean, [2.0, 2.0, 2.0, 2.0]);
+        // Outside a term a bonus over several years is refused.
+        let tower = Tower::new(vec![ncb_layer(2, 0.0)]).unwrap();
+        assert!(tower.apply(&years[0]).is_err());
+        assert!(tower.apply_annual(&[5.0]).is_err());
+        assert!(
+            Tower::new(vec![ncb_layer(1, 0.0)])
+                .unwrap()
+                .apply(&years[0])
+                .is_ok()
+        );
+    }
+
     #[test]
     fn each_year_matches_apply_without_a_carry() {
         let years = term_events();

@@ -355,6 +355,11 @@ class AnnualGrids:
         without one.
         """
     @property
+    def expected_no_claims_bonus(self, /) -> list[float]:
+        """
+        Expected no-claims bonus of each layer, 0 for a layer without one.
+        """
+    @property
     def expected_premium(self, /) -> list[float]:
         """
         Expected premium of each layer: the swing-rated premium's mean, or
@@ -16541,6 +16546,23 @@ class Layer:
         Whether the layer is a surplus treaty, which needs sums insured.
         """
     @property
+    def no_claims_bonus(self, /) -> tuple[float, int, float] |None:
+        """
+        The no-claims bonus as ``(share, years, threshold)``, or ``None``.
+        """
+    def no_claims_bonus_for(self, /, ceded: float) -> float:
+        """
+        The year's no-claims bonus given its ceded loss, on that year alone.
+        
+        Parameters
+        ----------
+        ceded : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
     def premium(self, /) -> float:
         """
         Upfront premium for the placed share.
@@ -16946,6 +16968,41 @@ class Layer:
         >>> qs = Layer.quota_share("QS", 0.3).with_loss_corridor(70.0, 90.0)
         >>> round(qs.ceded([50.0, 30.0]), 12), round(qs.ceded([120.0]), 12)
         (21.0, 30.0)
+        """
+    def with_no_claims_bonus(self, /, share: float, years: int = 1, threshold: float = 0.0) -> Layer:
+        """
+        The same layer with a no-claims bonus: ``share`` of the year's
+        premium returned when the layer's ceded loss over the last ``years``
+        contract years is at most ``threshold``.
+        
+        The bonus is figured on its own, beside any sliding scale or profit
+        commission, on the year's premium as the layer prices it (the
+        deposit or a swing-rated premium), without reinstatement premium.
+        ``years > 1`` looks back over the earlier years of a term and needs
+        ``Tower.apply_term``; a single year, a grid or a ledger refuses it.
+        Set the premium first.
+        
+        Parameters
+        ----------
+        share : float
+            In ``(0, 1]``.
+        years : int, default 1
+            The years looked at, this one included.
+        threshold : float, default 0.0
+            The most ceded loss over those years that still earns the bonus;
+            0 is a claims-free year.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> cat = (Layer("20x10", 20.0, 10.0).with_premium_rate(0.1, 20.0)
+        ...        .with_no_claims_bonus(0.15))
+        >>> round(cat.no_claims_bonus_for(0.0), 12), cat.no_claims_bonus_for(5.0)
+        (0.3, 0.0)
         """
     def with_premium_rate(self, /, rate: float, subject_premium: float) -> Layer:
         """
@@ -28812,6 +28869,11 @@ class TowerGrids:
         Expected ceding commission of each deal (``Tower.deal_scale``), by
         its name, read on its sections' loss ratio together; 0 for a deal
         without one.
+        """
+    @property
+    def expected_no_claims_bonus(self, /) -> list[float]:
+        """
+        Expected no-claims bonus of each layer, 0 for a layer without one.
         """
     @property
     def expected_premium(self, /) -> list[float]:
