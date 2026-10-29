@@ -90,6 +90,7 @@ reference:
       - recommend_grid
       - audit_grid
       - simulate_events
+      - simulate_events_weighted
       - hawkes
       - hawkes_fit
       - event_set_from_long
@@ -155,6 +156,7 @@ reference:
       - with_cover_basis
       - with_interlocking
       - with_scope
+      - per_risk_inuring
       - with_franchise
       - ceded_events
       - deal_ratios
@@ -173,6 +175,7 @@ reference:
       - layer_cv
       - censored_las
       - risk_loaded_price
+      - reinsurance_frontier
       - price_with_reinstatements
       - capital_portfolio
       - natural_price
@@ -198,6 +201,7 @@ reference:
       - deal_ave
       - deal_run
       - book_marginal_price
+      - book_adequacy
       - trend_large_losses
       - burning_cost
       - development_pattern
@@ -317,6 +321,7 @@ reference:
       - copula_sample_qmc
       - mvn_cdf
       - sobol_points
+      - weighted_tail
       - vine_copula
       - copula_simulate
       - iman_conover

@@ -272,6 +272,41 @@ book_marginal_price <- function(book, assets, cost_of_capital = NULL, distortion
   as.data.frame(r)
 }
 
+#' Price adequacy of a book's deals
+#'
+#' For each deal and the book: the premium charged and kept (less every
+#' deduction) beside the expected loss and margin, the allocated (Euler)
+#' and marginal assets and capital and the return on each, the technical
+#' and marginal premiums, the target premium that returns the target on
+#' the allocated capital, and the adequacy, kept over target. The book's
+#' losses are priced on the assets of the capital standard `assets` by
+#' exactly one of `cost_of_capital` and `distortion`, as [price_portfolio()]
+#' prices a portfolio; the target return is the book's return at its
+#' technical price (the cost of capital, under one). On a book of one deal
+#' the allocated and marginal bases agree.
+#'
+#' @param book A [deal_book()].
+#' @param assets The capital standard, a [distortion].
+#' @param cost_of_capital,distortion Exactly one: the cost of capital or a
+#'   pricing [distortion].
+#' @returns A data frame with a row a deal then `"total"`: `deal`,
+#'   `premium_charged`, `premium_kept`, `expected_loss`, `margin`,
+#'   `allocated_assets`, `allocated_capital`, `return_on_allocated`,
+#'   `marginal_assets`, `marginal_capital`, `return_on_marginal`,
+#'   `technical_premium`, `marginal_premium`, `target_premium`, `adequacy`
+#'   and `target_return`.
+#' @seealso [book_marginal_price()], [price_portfolio()].
+#' @export
+#' @examples
+#' a <- deal_run("a", rep(10, 4), c(1, 2, 3, 9))
+#' b <- deal_run("b", rep(3, 4), c(4, 1, 2, 3))
+#' book_adequacy(deal_book(list(a, b)), distortion("tvar", 0.5), cost_of_capital = 0.1)
+book_adequacy <- function(book, assets, cost_of_capital = NULL, distortion = NULL) {
+  check_book(book)
+  r <- rust_result(book$ptr$adequacy(assets@ptr, rate_arg(cost_of_capital), pricing_arg(distortion)))
+  as.data.frame(r)
+}
+
 #' @rdname deal_run
 #' @export
 book_cashflows <- function(book, rate = 0, lower = -0.95, upper = 1, points = 400L,

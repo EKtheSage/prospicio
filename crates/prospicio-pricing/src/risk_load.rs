@@ -367,7 +367,7 @@ pub(crate) fn price_unchecked<E: Empirical + ?Sized>(
 
 /// The price from the expected loss and a distortion risk measure of the
 /// losses.
-fn priced(
+pub(crate) fn priced(
     expected_loss: f64,
     measure: impl Fn(&Distortion) -> f64,
     rule: &PremiumRule,

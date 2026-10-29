@@ -1109,8 +1109,36 @@ fn sobol_rust(n: f64, dim: f64, scramble: bool, seed: f64) -> Result<Vec<f64>> {
     Ok(column_major(&s.points(n), n, dim))
 }
 
+/// A weighted sample's estimators: `list(mean, mean_se, mean_weight,
+/// effective_sample_size, p, var, var_se, tvar, tvar_se)`.
+#[extendr]
+fn weighted_tail_rust(
+    values: Vec<f64>,
+    weights: Vec<f64>,
+    p: &[f64],
+    batches: f64,
+) -> Result<List> {
+    let s = prospicio_prob::weighted::WeightedSample::new(values, weights).map_err(to_r)?;
+    let b = whole(batches, "batches")? as usize;
+    let col = |f: &dyn Fn(f64) -> prospicio_core::Result<f64>| -> Result<Vec<f64>> {
+        p.iter().map(|&q| f(q).map_err(to_r)).collect()
+    };
+    Ok(list!(
+        mean = s.mean(),
+        mean_se = s.standard_error_mean(b).map_err(to_r)?,
+        mean_weight = s.mean_weight(),
+        effective_sample_size = s.effective_sample_size(),
+        p = p.to_vec(),
+        var = col(&|q| s.var(q))?,
+        var_se = col(&|q| s.standard_error_var(q, b))?,
+        tvar = col(&|q| s.tvar(q))?,
+        tvar_se = col(&|q| s.standard_error_tvar(q, b))?
+    ))
+}
+
 extendr_module! {
     mod risk;
+    fn weighted_tail_rust;
     fn mvn_cdf_rust;
     fn sobol_rust;
     fn statistics_rust;

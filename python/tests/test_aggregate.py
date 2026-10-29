@@ -1914,3 +1914,53 @@ def test_hawkes_event_counts():
     assert fit.aic == pytest.approx(6 - 2 * fit.log_likelihood)
     with pytest.raises(ValueError, match="at least 3 events"):
         Hawkes.fit([[0.5]])
+
+
+def test_per_risk_inuring_to_a_cat_layer():
+    """A per-risk layer with an event limit inuring to a cat cover (#585)."""
+    from prospicio.reinsurance import per_risk_inuring
+
+    pr = Layer("PR", 5.0, 5.0, aggregate_limit=16.0)
+    r = per_risk_inuring(pr, [[[12.0, 8.0, 15.0], [20.0, 11.0]]], event_limit=10.0, times=[[0.2, 0.7]])
+    assert r["ceded_by_event"] == [[10.0, 6.0]]
+    assert r["net"].events(0) == [25.0, 25.0] and r["net"].times(0) == [0.2, 0.7]
+    # One risk an event is the inuring occurrence layer.
+    years = [[[30.0], [12.0], [45.0]], [[8.0]], []]
+    one = per_risk_inuring(Layer("PR", 30.0, 10.0), years)
+    tower = Tower.inuring([[Layer("PR", 30.0, 10.0)], [Layer("Cat", 40.0, 25.0)]])
+    cat = Tower([Layer("Cat", 40.0, 25.0)])
+    for i, y in enumerate(years):
+        both = tower.ceded([e[0] for e in y])
+        assert one["ceded"][i] == pytest.approx(both[0])
+        assert cat.ceded(one["net"].events(i))[0] == pytest.approx(both[1])
+    zero = per_risk_inuring(Layer("PR", 30.0, 10.0), [[[30.0, 50.0]]], event_limit=0.0)
+    assert zero["net"].events(0) == [80.0]
+    with pytest.raises(ValueError, match="loss basis"):
+        per_risk_inuring(Layer.surplus("S", 1.0, 2.0), years)
+
+
+def test_importance_sampling_of_the_tail():
+    """Weighted years for the tail (#566)."""
+    from prospicio.aggregate import simulate_events_weighted
+    from prospicio.risk import WeightedSample
+
+    probs = [0.0] + [k ** -3.0 for k in range(1, 201)]
+    z = sum(probs)
+    sev = Grid(1.0, [p / z for p in probs])
+    freq = Poisson(2.0)
+    exact, _ = fft(freq, sev, 1 << 14)
+    ev, w = simulate_events_weighted(freq, sev, 100_000, 11, count=Poisson(4.0), tail_threshold=20.0)
+    s = WeightedSample([r[0] for r in ev.totals().draw_matrix()], w)
+    assert abs(s.mean_weight - 1.0) < 0.03
+    for p in (0.995, 0.999):
+        assert abs(s.tvar(p) - exact.tvar(p)) < 4 * s.standard_error_tvar(p, 50)
+    plain, ones = simulate_events_weighted(freq, sev, 100_000, 11)
+    assert set(ones) == {1.0}
+    assert plain.totals().draw_matrix() == simulate_events(freq, sev, 100_000, seed=11).totals().draw_matrix()
+    flat = WeightedSample([r[0] for r in plain.totals().draw_matrix()], ones)
+    assert s.standard_error_tvar(0.999, 50) < flat.standard_error_tvar(0.999, 50) / 2
+    assert s.effective_sample_size < 100_000
+    with pytest.raises(ValueError, match="share"):
+        simulate_events_weighted(freq, sev, 10, 1, tail_threshold=20.0, tail_share=1.0)
+    with pytest.raises(ValueError):
+        WeightedSample([1.0, 2.0], [0.0, 0.0])

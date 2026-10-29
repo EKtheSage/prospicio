@@ -229,6 +229,35 @@ stopifnot(all(abs(c(fit$baseline, fit$alpha, fit$beta) - c(1.5, 6, 10)) < 3 * fi
 stopifnot(abs(hawkes_log_likelihood(fit$process, yrs) - fit$log_likelihood) < 1e-9)
 stopifnot(inherits(try(hawkes_fit(list(0.5)), silent = TRUE), "try-error"))
 
+# A per-risk layer with an event limit inuring to a cat cover (#585).
+pr <- per_risk_inuring(xol_layer("PR", 5, 5, aggregate_limit = 16), list(list(c(12, 8, 15), c(20, 11))),
+                       event_limit = 10, times = list(c(0.2, 0.7)))
+stopifnot(identical(pr$ceded_by_event[[1]], c(10, 6)), identical(events(pr$net, 1), c(25, 25)))
+yrs1 <- list(list(30, 12, 45), list(8))
+one <- per_risk_inuring(xol_layer("PR", 30, 10), yrs1)
+inu <- inuring_tower(list(list(xol_layer("PR", 30, 10)), list(xol_layer("Cat", 40, 25))))
+cat1 <- reinsurance_tower(list(xol_layer("Cat", 40, 25)))
+for (i in seq_along(yrs1)) {
+  both <- unname(tower_ceded(inu, unlist(yrs1[[i]])))
+  close(one$ceded[i], both[1], 1e-12)
+  close(unname(tower_ceded(cat1, events(one$net, i)))[1], both[2], 1e-12)
+}
+stopifnot(identical(events(per_risk_inuring(xol_layer("PR", 30, 10), list(list(c(30, 50))), event_limit = 0)$net, 1), 80))
+
+# Importance sampling of the tail (#566).
+pr <- c(0, (1:200)^-3)
+sev <- grid_distribution(1, pr / sum(pr))
+fq <- poisson_count(2)
+ex <- compound_distribution(fq, sev, method = "fft", points = 2^14)
+iw <- simulate_events_weighted(fq, sev, 100000, seed = 11, count = poisson_count(4), tail_threshold = 20)
+tt <- weighted_tail(draw_matrix(total(iw$events))[, 1], iw$weights, c(0.995, 0.999), batches = 50)
+stopifnot(abs(attr(tt, "mean_weight") - 1) < 0.03)
+stopifnot(all(abs(tt$tvar - c(TVaR(ex, 0.995), TVaR(ex, 0.999))) < 4 * tt$tvar_se))
+pl <- simulate_events_weighted(fq, sev, 100000, seed = 11)
+stopifnot(all(pl$weights == 1))
+stopifnot(identical(draw_matrix(total(pl$events)), draw_matrix(total(simulate_events(fq, sev, 100000, seed = 11)))))
+stopifnot(inherits(try(weighted_tail(c(1, 2), c(0, 0), 0.5), silent = TRUE), "try-error"))
+
 cat("prospicio R aggregate tests passed\n")
 
 # Surplus treaty on events that carry sums insured.

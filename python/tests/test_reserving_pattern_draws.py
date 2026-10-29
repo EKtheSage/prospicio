@@ -1,7 +1,8 @@
 """A development pattern per simulation from the bootstraps and the Bayesian
-fits (`reserving-v02.md` decision 28, #600, and Meyers' models, #678): row
-``i`` is simulation ``i`` of the fit's ``reserves``, and ``monthly`` puts the
-rows on the cash-flow engine's paid patterns."""
+fits (`reserving-v02.md` decision 28, #600, Meyers' models, #678, and the
+compartmental model, #679): row ``i`` is simulation ``i`` of the fit's
+``reserves``, and ``monthly`` puts the rows on the cash-flow engine's paid
+patterns."""
 
 import csv
 import math
@@ -11,6 +12,8 @@ import pytest
 
 import prospicio.pricing as P
 from prospicio.reserving import (
+    Compartmental,
+    CompartmentalPriors,
     DevelopmentPatterns,
     MackBootstrap,
     Meyers,
@@ -247,6 +250,83 @@ def test_meyers_segments_have_their_own_patterns():
     assert sorted(p.segments) == [("A",), ("B",)]
     a, b = p.pattern_draws("A"), p.pattern_draws("B")
     assert all(r[-1] == 1.0 for r in a + b)
+    # Each segment is sampled on its own seeds.
+    assert a != b
+    with pytest.raises(ValueError):
+        p.pattern_draws()
+    alone = fits.segment(lob="B").patterns
+    assert alone.pattern_draws() == b
+
+
+def wkcomp_337(keys=None):
+    """Company 337's workers' compensation as the papers fit it (accident
+    years 1988 to 1997 at calendar years up to 1996, 1997 with its premium
+    only); ``keys`` names copies of it, each doubling the one before."""
+    with open(VALIDATION / "data" / "clrd_wkcomp_337.csv", newline="") as f:
+        rows = list(csv.DictReader(line for line in f if not line.startswith("#")))
+    premium_1997 = next(float(r["premium"]) for r in rows if r["origin"] == "1997")
+    rows = [r for r in rows if int(r["origin"]) + int(r["development"]) // 12 - 1 <= 1996]
+    nan = float("nan")
+    names = keys or [None]
+    column = lambda k, last: [  # noqa: E731
+        v * 2.0**i
+        for i in range(len(names))
+        for v in [float(r[k]) for r in rows] + [last]
+    ]
+    return Triangle.from_long(
+        origin=[o for _ in names for o in [int(r["origin"]) for r in rows] + [1997]],
+        development=[d for _ in names for d in [int(r["development"]) for r in rows] + [12]],
+        values={
+            "paid": column("paid", nan),
+            "incurred": column("incurred", nan),
+            "premium": column("premium", premium_1997),
+        },
+        keys={"lob": [n for n in names for _ in range(len(rows) + 1)]} if keys else None,
+    )
+
+
+# The default chains take a few seconds on company 337 in a release build.
+COMPARTMENTAL = dict(n_sims=1000)
+GM = CompartmentalPriors.gesmann_morris()
+
+
+def test_compartmental_patterns_are_the_paid_curve_and_never_fall():
+    fit = Compartmental(GM, seed=679, **COMPARTMENTAL).fit(
+        wkcomp_337(), "paid", "premium", incurred="incurred"
+    )
+    p = fit.patterns
+    assert isinstance(p, DevelopmentPatterns)
+    assert p.n_sims == 1000 == fit.reserves.n_sims
+    # The square's ages, to 120 months, one more than the paid triangle's.
+    assert p.ages() == [12 * (d + 1) for d in range(10)]
+    rows = p.pattern_draws()
+    assert len(rows) == 1000
+    for row in rows:
+        assert row[-1] == 1.0
+        assert row[0] > 0.0
+        # The ODE's paid curve rises: no share falls or passes 1.
+        assert all(a <= b for a, b in zip(row, row[1:]))
+    assert len({tuple(r) for r in rows}) > 100
+    # So the default takes them, and each simulation's loss ratio is paid
+    # by its own pattern.
+    paid = p.monthly(120)
+    assert paid == p.monthly(120, monotone="running_max")
+    u = fit.loss_ratio_draws(None, 50_000.0)
+    terms = terms_of(120, paid[0])
+    out = terms.run(u, paid_patterns=paid)
+    assert len(out) == 1000
+    assert out.flows != terms.run(u).flows
+
+
+def test_compartmental_segments_have_their_own_patterns():
+    fits = Compartmental(GM, seed=680, **COMPARTMENTAL).fit_segments(
+        wkcomp_337(["A", "B"]), "paid", "premium", incurred="incurred"
+    )
+    p = fits.patterns
+    assert p.n_sims == 1000
+    assert sorted(p.segments) == [("A",), ("B",)]
+    a, b = p.pattern_draws("A"), p.pattern_draws("B")
+    assert all(r[-1] == 1.0 and len(r) == 10 for r in a + b)
     # Each segment is sampled on its own seeds.
     assert a != b
     with pytest.raises(ValueError):
