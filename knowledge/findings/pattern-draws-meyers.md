@@ -23,7 +23,14 @@ A simulation's pattern is the posterior draw's expected cumulative value at
 each age over the one at the oldest age, for an origin with nothing observed:
 `exp(beta_d g + sigma_d^2 / 2) / exp(sigma_m^2 / 2)`, with `g = 1` for CRC
 and CAY and `(1 - gamma)^n` for CSR (the origin after the last of `n`).
-`logelr`, `alpha` and the premium cancel. CAY's `rho` does not enter.
+`logelr`, `alpha` and the premium cancel. For CAY this is CRC's formula on
+CAY's draw: the expected values of an origin whose previous origin has no
+residual. CAY's own expected values for the origin after the last differ:
+the mean takes `rho` times the last origin's residual where that origin is
+observed (age 1) and the variance is `(1 + rho^2) sigma_d^2` at every later
+age, the oldest included, so `rho` would enter the share. Which of the two
+CAY's pattern should be is open (`reserving-bayes.md` decision 27,
+alternative (e)).
 
 On group 353's paid triangle (10 origins, `tune = 300`, `draws = 300`, four
 chains, 2,000 simulations, seed 21):

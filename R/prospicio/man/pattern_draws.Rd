@@ -17,7 +17,8 @@ monthly_pattern_draws(
 }
 \arguments{
 \item{fit}{An \link{odp_bootstrap_fit}, \link{mack_bootstrap_fit}, \link{bayes_odp_fit},
-\link{bayes_odp_fits}, \link{bayes_bf_fit} or \link{bayes_bf_normalised_fit}.}
+\link{bayes_odp_fits}, \link{bayes_bf_fit}, \link{bayes_bf_normalised_fit}, \link{meyers_fit}
+or \link{meyers_fits}.}
 
 \item{segment}{\code{NULL} for a fit of one segment, or the segment's key
 values (\code{"Auto"}, \code{c("Auto", "NSW")}) over segments.}
@@ -57,6 +58,15 @@ reads it log-linearly, as before decision 25. An \code{\link[=underwriting_basis
 converts it to the pattern of a year of policies written and earned as the
 basis says, so the terms' \code{written} and \code{earned} must describe the same
 basis (the engine cannot check it).
+
+Meyers' models (CRC, CSR and CAY) give, per posterior draw, the ratio of the
+expected cumulative values at each age to the one at the oldest age,
+\code{exp(beta_d + sigma_d^2 / 2)} over \code{exp(sigma_m^2 / 2)}; in CSR the draw's
+speedup for the origin after the last scales \code{beta_d}, and CAY's is CRC's
+formula on CAY's draw (the expected values of an origin whose previous
+origin has no residual; CAY's own for the origin after the last also depend
+on \code{rho}). The share can fall where \code{sigma_d} differs by age, which
+\code{monotone} handles as below.
 
 A fit with a tail reaches 1 one development period after the oldest age;
 the Bayesian models have no tail, so their pattern reaches 1 at the oldest

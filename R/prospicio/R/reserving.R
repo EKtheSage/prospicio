@@ -7470,8 +7470,10 @@ pattern_matrix <- function(flat, n_col) {
 #' Meyers' models (CRC, CSR and CAY) give, per posterior draw, the ratio of the
 #' expected cumulative values at each age to the one at the oldest age,
 #' `exp(beta_d + sigma_d^2 / 2)` over `exp(sigma_m^2 / 2)`; in CSR the draw's
-#' speedup for the origin after the last scales `beta_d`, and CAY's `rho` does
-#' not enter. The share can fall where `sigma_d` differs by age, which
+#' speedup for the origin after the last scales `beta_d`, and CAY's is CRC's
+#' formula on CAY's draw (the expected values of an origin whose previous
+#' origin has no residual; CAY's own for the origin after the last also depend
+#' on `rho`). The share can fall where `sigma_d` differs by age, which
 #' `monotone` handles as below.
 #'
 #' A fit with a tail reaches 1 one development period after the oldest age;

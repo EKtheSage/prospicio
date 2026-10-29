@@ -274,8 +274,10 @@ pub struct MeyersFit {
     /// simulation `i` of `ultimates` and `reserves` (`reserving-bayes.md`
     /// decision 27). It ends at 1 at the oldest age (no tail), and can fall
     /// where `sigma_d` differs by age. In CSR, `g` is the speedup of the
-    /// origin after the last. CAY's `rho` does not enter: the previous
-    /// origin's residual is process, not development.
+    /// origin after the last. In CAY it is CRC's formula on CAY's draw:
+    /// the expected values of an origin whose previous origin has no
+    /// residual, not CAY's own expected values for the origin after the
+    /// last, which also depend on `rho` (decision 27, alternative (e)).
     pub patterns: DevelopmentPatterns,
     /// The model, for the pointwise log likelihood of [`loo`](Self::loo).
     model: Model,
@@ -1804,7 +1806,11 @@ impl Model {
     /// the oldest age, `exp(beta_d g + sigma_d^2 / 2) / exp(sigma_m^2 / 2)`,
     /// where `logelr`, `alpha` and the premium cancel. `g` is the speedup of
     /// the origin after the last (CSR; 1 otherwise), `beta_m = 0` and the
-    /// last share is exactly 1. No random number is drawn.
+    /// last share is exactly 1. No random number is drawn. In CAY the
+    /// origin's previous origin is taken to have no residual, so `rho` does
+    /// not enter; CAY's own moments for the origin after the last
+    /// ([`log_moments`](Self::log_moments)) differ (decision 27,
+    /// alternative (e)).
     fn pattern_shares(&self, nat: &[f64], shares: &mut [f64]) {
         let m = self.n_dev;
         let gamma = if self.csr() {
@@ -4354,6 +4360,18 @@ pub(crate) mod tests {
         csr.pattern_shares(&nat, &mut shares);
         assert!(close(shares[0], (-0.25 + 0.36 / 2.0f64).exp() / top));
         assert!(close(shares[1], (-0.125 + 0.16 / 2.0f64).exp() / top));
+        assert_eq!(shares[2], 1.0);
+        // CAY at rho = 0.7: CRC's formula on the draw, rho left out
+        // (decision 27; the model's own moments are alternative (e)).
+        let cay = Model {
+            kind: MeyersModel::Cay,
+            cells: Vec::new(),
+            ..model
+        };
+        let nat = [-0.4, 0.1, -1.0, -0.5, 0.7, 0.6, 0.4, 0.2];
+        cay.pattern_shares(&nat, &mut shares);
+        assert!(close(shares[0], (-1.0 + 0.36 / 2.0f64).exp() / top));
+        assert!(close(shares[1], (-0.5 + 0.16 / 2.0f64).exp() / top));
         assert_eq!(shares[2], 1.0);
     }
 

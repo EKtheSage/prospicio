@@ -7,7 +7,9 @@
   carried through a rank correlation). A draw's pattern is the ratio of the
   expected cumulative values at each age to the one at the oldest age,
   `exp(beta_d + sigma_d^2 / 2)` over `exp(sigma_m^2 / 2)`; in CSR the pattern
-  of the origin after the last, and CAY's `rho` does not enter. The reserves
+  of the origin after the last, and in CAY CRC's formula on CAY's draw (the
+  expected values of an origin whose previous origin has no residual, not
+  CAY's own, which also depend on `rho`). The reserves
   and ultimates are unchanged. Python: `MeyersFit.patterns`,
   `MeyersFits.patterns`. R: `pattern_draws()` and `monthly_pattern_draws()`
   take `meyers_fit` and `meyers_fits`. **Breaking** in Rust: `MeyersFit` and

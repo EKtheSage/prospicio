@@ -13326,7 +13326,10 @@ impl PyMeyersFit {
     /// at 1 at the oldest age (no tail) and can fall where ``sigma_d``
     /// differs by age (``monthly`` refuses that unless
     /// ``monotone="running_max"``). In CSR the draw's speedup for the origin
-    /// after the last scales ``beta_d``; CAY's ``rho`` does not enter.
+    /// after the last scales ``beta_d``. In CAY it is CRC's formula on CAY's
+    /// draw, the expected values of an origin whose previous origin has no
+    /// residual; CAY's own expected values for the origin after the last
+    /// also depend on ``rho``.
     ///
     /// Returns
     /// -------
@@ -13615,7 +13618,10 @@ impl PyMeyersFits {
     /// at 1 at the oldest age (no tail) and can fall where ``sigma_d``
     /// differs by age (``monthly`` refuses that unless
     /// ``monotone="running_max"``). In CSR the draw's speedup for the origin
-    /// after the last scales ``beta_d``; CAY's ``rho`` does not enter. Name a segment by its label parts
+    /// after the last scales ``beta_d``. In CAY it is CRC's formula on CAY's
+    /// draw, the expected values of an origin whose previous origin has no
+    /// residual; CAY's own expected values for the origin after the last
+    /// also depend on ``rho``. Name a segment by its label parts
     /// (a tuple of strings).
     ///
     /// Returns

@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built; PR 9 (one generic one-year view, `BayesBf`'s) built; PR 13 (`BayesBfNormalised`) built; PR 14 (the light refit of the compartmental one-year view, decision 24, #394) built, its default open decision 17; PR 15 (the common share multiplier of `BayesBfNormalised`, decision 25, #518) built; decision 26 (`BayesBfNormalised`'s error for a column or origin that sums to zero or less, #610) built, its decision 18 (`Triangle::max_age`, #667) decided by the user on 2026-10-28 and built; decision 27 (a development pattern per posterior draw of Meyers' models, #678) built as proposed, awaiting the user's acceptance** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS, with the Python and R bindings (`BayesOdp.one_year` and `one_year_segments`, `bayes_odp_one_year()` and `bayes_odp_one_year_segments()`; decision 13). PR 9 is built on `claude/bayes-one-year-generic`, stacked on the Models-lane PR #273 that made `prospicio_bayes::elpd::psis` public (decision 17, open decisions 12 to 14 decided by the user on 2026-10-15): one interface every Bayesian model's one-year view implements, the view written once over it, a conformance suite run on every implementor, `BayesOdp` moved onto it bit for bit, `BayesBf::one_year` with its Python and R bindings (`BayesBf.one_year`, `bayes_bf_one_year()`; decision 13), and moment matching before refitting (decision 18, the opt-in `MomentMatchThenRefit`, in Rust, Python and R). PR 10 is built on `claude/bayes-one-year-meyers`, stacked on PR 9 and the CI slow-tests PR #279 (decision 19, the user's decisions of 2026-10-15 on open decisions 12 and 14): moment matching is the default fallback of the one-year view, and `Meyers` (CRC, CSR and CAY) has the one-year view through `YearModel`, with `one_year_segments`, in Rust, Python and R. PR 11 is built on `claude/bayes-one-year-compartmental`, stacked on PR 10 (decision 20): `Compartmental` (models 1 and 2) has the one-year view through `YearModel`, and every model's view takes a refit budget (`max_refits`), in Rust, Python and R; the user decided open decision 15 on 2026-10-16: model 1's view moment-matches by default, model 2's reweights only with a warning that it is approximate, both run at most 2,000 one-year simulations by default, and pull requests run model 1 of the compartmental one-year validation only. `Compartmental::one_year_segments` is built on `claude/compartmental-one-year-segments` (`reserving-compartmental.md` decision 8, "Built (one-year view over segments)"), in Rust, Python and R. PR 13 is built on `claude/bayes-bf-normalised` (decision 23, #410, the user's decision of 2026-10-21): `BayesBfNormalised`, the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate, beside `BayesBf` (unchanged at EVW parity), with its one-year view through `YearModel` (a fifth implementor, in the conformance suite's pull-request smoke run) and the Python and R bindings (`BayesBfNormalised`, `bayes_bf_normalised()`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built; PR 9 (one generic one-year view, `BayesBf`'s) built; PR 13 (`BayesBfNormalised`) built; PR 14 (the light refit of the compartmental one-year view, decision 24, #394) built, its default open decision 17; PR 15 (the common share multiplier of `BayesBfNormalised`, decision 25, #518) built; decision 26 (`BayesBfNormalised`'s error for a column or origin that sums to zero or less, #610) built, its decision 18 (`Triangle::max_age`, #667) decided by the user on 2026-10-28 and built; decision 27 (a development pattern per posterior draw of Meyers' models, #678) built as proposed, awaiting the user's acceptance, CAY's form open (alternative (e))** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS, with the Python and R bindings (`BayesOdp.one_year` and `one_year_segments`, `bayes_odp_one_year()` and `bayes_odp_one_year_segments()`; decision 13). PR 9 is built on `claude/bayes-one-year-generic`, stacked on the Models-lane PR #273 that made `prospicio_bayes::elpd::psis` public (decision 17, open decisions 12 to 14 decided by the user on 2026-10-15): one interface every Bayesian model's one-year view implements, the view written once over it, a conformance suite run on every implementor, `BayesOdp` moved onto it bit for bit, `BayesBf::one_year` with its Python and R bindings (`BayesBf.one_year`, `bayes_bf_one_year()`; decision 13), and moment matching before refitting (decision 18, the opt-in `MomentMatchThenRefit`, in Rust, Python and R). PR 10 is built on `claude/bayes-one-year-meyers`, stacked on PR 9 and the CI slow-tests PR #279 (decision 19, the user's decisions of 2026-10-15 on open decisions 12 and 14): moment matching is the default fallback of the one-year view, and `Meyers` (CRC, CSR and CAY) has the one-year view through `YearModel`, with `one_year_segments`, in Rust, Python and R. PR 11 is built on `claude/bayes-one-year-compartmental`, stacked on PR 10 (decision 20): `Compartmental` (models 1 and 2) has the one-year view through `YearModel`, and every model's view takes a refit budget (`max_refits`), in Rust, Python and R; the user decided open decision 15 on 2026-10-16: model 1's view moment-matches by default, model 2's reweights only with a warning that it is approximate, both run at most 2,000 one-year simulations by default, and pull requests run model 1 of the compartmental one-year validation only. `Compartmental::one_year_segments` is built on `claude/compartmental-one-year-segments` (`reserving-compartmental.md` decision 8, "Built (one-year view over segments)"), in Rust, Python and R. PR 13 is built on `claude/bayes-bf-normalised` (decision 23, #410, the user's decision of 2026-10-21): `BayesBfNormalised`, the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate, beside `BayesBf` (unchanged at EVW parity), with its one-year view through `YearModel` (a fifth implementor, in the conformance suite's pull-request smoke run) and the Python and R bindings (`BayesBfNormalised`, `bayes_bf_normalised()`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -3286,7 +3286,8 @@ is unchanged, so the conformance suite and the parity tests are unaffected.
 
 ### 27. A development pattern per posterior draw for Meyers' models (issue #678)
 
-Status: **Proposed and built as recommended, awaiting the user's acceptance**
+Status: **Proposed and built as recommended, awaiting the user's acceptance;
+CAY's form open (alternative (e))**
 (2026-10-28), issue #678 (the Reserving half of #600), branch
 `claude/pattern-draws-meyers`, in Rust, Python and R. It is the Meyers part
 of `reserving-v02.md` decision 28 item 7, which left Meyers' models as a
@@ -3301,16 +3302,16 @@ cumulative value, `log C_wd ~ N(mu_wd, sigma_d^2)` with
 `mu_wd = log P_w + logelr + alpha_w + beta_d g_w` (`beta_m = 0`,
 `alpha_1 = 0`, `g_w = 1` for CRC and CAY, `(1 - gamma)^w` for CSR with `w`
 counted from 0) and, for CAY, `rho` times the previous origin's residual.
-The expected cumulative value of an origin with nothing observed is
-`exp(mu_wd + sigma_d^2 / 2)`, and a draw's pattern is its ratio to the
-expected value at the oldest age:
+For CRC and CSR the expected cumulative value of an origin with nothing
+observed is `exp(mu_wd + sigma_d^2 / 2)`, and a draw's pattern is its ratio
+to the expected value at the oldest age:
 
 ```text
 share_d = exp(beta_d g + sigma_d^2 / 2) / exp(sigma_m^2 / 2)
 ```
 
-`logelr`, `alpha_w` and the premium cancel, so it is the same for every
-origin of the segment (decision 28 item 1: parameter uncertainty only, no
+`logelr`, `alpha_w` and the premium cancel, so for CRC it is the same for
+every origin of the segment (decision 28 item 1: parameter uncertainty only, no
 process error, and not an origin's simulated cells over its ultimate). It
 is exactly 1 at the oldest age, so there is no tail, as in the other
 Bayesian models (decision 28 item 2). It is taken from the same posterior
@@ -3318,8 +3319,18 @@ draw the simulation took, and no random number is drawn for it, so the
 ultimates and reserves are bit for bit what they were (a test replays each
 simulation's stream and checks both).
 
-**CAY.** The previous origin's residual is process, not development, so
-`rho` does not enter the pattern. **CSR.** The speedup makes development
+**CAY.** The pattern built for CAY is CRC's formula on CAY's draw: the
+expected values of an origin whose previous origin has no residual, so
+`rho` does not enter. It is not CAY's own expected value for the origin
+after the last, `w = n_origins`, which `Model::log_moments` and
+`draw_ultimates` give: where the last origin's cell at age `d` is observed
+(age 1 in a full triangle) the mean takes `rho r_{n-1,d}`, the last
+origin's residual, which depends on the draw and the data, and at every
+other age, the oldest included, the residual is integrated out and the
+variance is `(1 + rho^2) sigma_d^2`. So under CAY the model's own share is
+not the same for every origin, and the built one departs from the model's expected value
+for the next origin. Alternative (e) below is the faithful form; which one
+CAY uses is the user's to decide. **CSR.** The speedup makes development
 depend on the origin, and a draw holds one pattern per segment. The pattern
 is that of the origin after the last, `w = n_origins` (`g = (1 - gamma)^n`),
 the one a deal on a new year pays by (item 1's reading). The origins of the
@@ -3364,13 +3375,24 @@ expectation; the difference is `sigma_d^2 / 2`, large at the early ages. (c)
 For CSR, a pattern per origin: `DevelopmentPatterns` holds one pattern per
 segment per draw, so it would change that type. (d) For CSR, the first
 origin's pattern (`g = 1`, the CRC pattern): it ignores the speedup the
-model exists to fit.
+model exists to fit. (e) For CAY, the model's own expected values for the
+origin after the last: `share_1 = exp(beta_1 + rho r_{n-1,1} + sigma_1^2 / 2)`
+at the age where the last origin is observed (age 1 in a full triangle)
+and `share_d = exp(beta_d + (1 + rho^2) sigma_d^2 / 2)` at the others, each
+over `exp((1 + rho^2) sigma_m^2 / 2)` at the oldest age. Faithful to the
+model's predictive moments, but the age-1 share then moves with the last
+origin's observed residual, a level surprise read as development, and the
+residual comes from CAY's recursion over the origins' age-1 cells, so the
+pattern needs the data as well as the draw. Building it would change
+`Model::pattern_shares`, `expected_pattern` in the tests and the CAY case
+of `the_pattern_of_a_hand_set_draw`, and rerun the slow tests. Not built,
+open for the user.
 
 **Tests.** `each_simulations_pattern_is_its_posterior_draws` (for CRC, CSR
 and CAY: each simulation's pattern recomputed from the replayed posterior
 draw's own named parameters, and its ultimates replayed bit for bit),
-`the_pattern_of_a_hand_set_draw` (the formula on a draw set by hand, CRC and
-CSR), `csr_develops_faster_for_the_origin_after_the_last` and
+`the_pattern_of_a_hand_set_draw` (the formula on a draw set by hand, CRC,
+CSR and CAY, whose `rho` leaves the share as CRC's), `csr_develops_faster_for_the_origin_after_the_last` and
 `patterns_follow_the_reserves_through_a_rank_correlation` (each ranked row's
 pattern is that of the independent fit's row with the same reserves),
 all in `meyers.rs` and, but for the hand-set draw, under `slow-tests`;
