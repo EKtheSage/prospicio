@@ -326,6 +326,8 @@ reference:
   - title: Reserving
     contents:
       - triangle
+      - read_triangle
+      - schedule_p_triangle
       - subset.triangle
       - aggregate.triangle
       - triangle_views

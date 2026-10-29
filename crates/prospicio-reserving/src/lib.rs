@@ -21,6 +21,11 @@
 //! ladder, `BayesOdp`, and Meyers' CRC, CSR and CAY models, `Meyers`,
 //! sampled with NUTS (`docs/design/reserving-bayes.md`).
 //!
+//! With the `io` feature, the `io` module reads triangles from CSV files
+//! and Excel workbooks (`Triangle::from_csv`, `read_csv`, `read_excel`,
+//! `docs/design/triangle.md`, decision 6). It is off by default, so the
+//! default build reads no files and builds for WASM.
+//!
 //! ```
 //! use prospicio_reserving::{ChainLadder, DevelopmentColumn, Grain, Long, Mack, Month, Triangle};
 //!
@@ -59,6 +64,8 @@ pub mod error;
 pub mod excess;
 pub mod expected_loss;
 pub mod frame;
+#[cfg(feature = "io")]
+pub mod io;
 pub mod latest_diagonal;
 pub mod mack;
 pub mod mack_bootstrap;
@@ -101,6 +108,8 @@ pub use expected_loss::{
     Apriori, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ExpectedLoss, ExpectedLossFit,
 };
 pub use frame::TriangleFrame;
+#[cfg(feature = "io")]
+pub use io::FileLayout;
 pub use latest_diagonal::{
     DiagonalAge, LatestDiagonal, LatestDiagonals, LongDiagonal, PastPatternEnd, SegmentMap,
 };
