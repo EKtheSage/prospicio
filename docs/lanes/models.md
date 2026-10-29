@@ -6,9 +6,6 @@
 
 ## Next
 
-- #545 auto-calibration, isotonic recalibration and balance correction (0.0.7, first)
-- #546 conformal prediction intervals (0.0.7)
-
 - #549 rolling windows, horizons and gaps in time splits (0.0.7)
 
 - #575 typed monotone and interaction constraints on the boosting adapters (0.0.7)
