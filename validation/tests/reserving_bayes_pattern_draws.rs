@@ -245,7 +245,9 @@ fn meyers_patterns_end_at_one() {
             assert_eq!(row[9], 1.0);
             assert!(row.iter().all(|&x| x > 0.0 && x.is_finite()), "{row:?}");
         }
-        // The early shares are well below 1, as GenIns pays slowly.
+        // GenIns pays slowly: the chain ladder's share at 12 months is
+        // about 0.07 (1 over its factor to ultimate, about 14.4), so the
+        // first share is well below 0.3.
         let mean = segment.mean();
         assert!(mean[0] < 0.3 && mean[4] < mean[9], "{model:?} {mean:?}");
     }
