@@ -201,6 +201,8 @@ ev <- events_from_years(rep(list(20), n), seed = 9)
 one <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = 1, pro_rata_time = TRUE)
 stopifnot(inherits(try(apply_tower(reinsurance_tower(list(one)), ev), silent = TRUE), "try-error"))
 dated <- with_uniform_times(ev)
+# #596: has_times, as Python's EventSet.has_times.
+stopifnot(dated@has_times, !ev@has_times)
 rp <- draw_matrix(apply_tower(reinsurance_tower(list(one)), dated))[, 4]
 stopifnot(abs(mean(rp) - 1) < 4 * sd(rp) / sqrt(n), length(event_times(ev, 1)) == 0)
 

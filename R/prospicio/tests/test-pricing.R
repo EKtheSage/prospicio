@@ -621,6 +621,12 @@ book <- deal_book(list(a, b))
 stopifnot(identical(book$ptr$names(), c("a", "b")),
           identical(book$ptr$items(), c("premium", "loss", "brokerage", "fee", "total_deductions",
                                         "nmbf", "margin")))
+# #596: the accessors Python has, the same values as its test_deal_book_sums_and_summary.
+stopifnot(identical(book_names(book), c("a", "b")), book_n_sims(book) == 4,
+          identical(book_items(book), c("premium", "loss", "brokerage", "fee", "total_deductions",
+                                        "nmbf", "margin")),
+          identical(book_names(book_select(book, "b")), "b"),
+          inherits(try(book_names(list()), silent = TRUE), "try-error"))
 amounts <- book_amounts(book)
 k <- amounts@keys
 near(draw_matrix(amounts)[, k$item == "loss" & k$deal == "total"], c(190, 410, 110, 370))
