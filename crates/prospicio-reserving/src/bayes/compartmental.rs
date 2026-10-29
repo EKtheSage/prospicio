@@ -29,6 +29,7 @@ use super::{Diagnostics, Stream, derive_seed, one_year_seed, pilot_seed};
 use crate::bootstrap::{component_sums, origin_keys, push_moments};
 use crate::dependence::SegmentDependence;
 use crate::error::{Error, Result};
+use crate::pattern_draws::{DevelopmentPatterns, predictive_keyed_with_shares};
 use crate::segments::{FitTable, SegmentFits, fit_each};
 use crate::triangle::{Segment, Triangle};
 
@@ -958,15 +959,23 @@ impl Compartmental {
         let future = data.future_cells();
         let n_paid = future.paid.len();
         let n_future = n_paid + future.outstanding.len();
-        let joint = posterior.predictive(
-            vec!["cell".into()],
+        // The pattern columns after the cells, written from the draw alone:
+        // the cells are what they were without them (decision 28 item 3).
+        let (joint, patterns) = predictive_keyed_with_shares(
+            &posterior,
+            "cell",
             (0..n_future)
                 .map(|j| vec![KeyValue::Int(j as i64)])
                 .collect(),
+            data.grain.origin,
+            (0..data.n_ages).map(|k| data.age(k)).collect(),
             self.n_sims,
             derive_seed(self.seed, predictive),
             provenance.clone(),
-            |nat, rng, row| model.simulate(nat, &future, rng, row),
+            |nat, rng, cells, shares| {
+                model.simulate(nat, &future, rng, cells);
+                model.pattern(nat, shares);
+            },
         )?;
         let provenance = joint.provenance().clone();
         let n_origins = data.origins.len();
@@ -1042,6 +1051,7 @@ impl Compartmental {
             paid: paid_pd,
             outstanding: os_pd,
             ultimate_loss_ratio,
+            patterns,
             model,
             sampled,
             data,
@@ -1114,7 +1124,8 @@ impl Compartmental {
 
         // One row per simulation: every segment's reserves, then its future
         // paid cells, then its future outstanding cells. Iman–Conover ranks
-        // a segment by its reserves alone and moves the whole of its row.
+        // a segment by its reserves alone and moves the whole of its row,
+        // and its patterns with it.
         let (mut ranges, mut ranked, mut width) = (Vec::new(), Vec::new(), 0);
         for s in &fitted.fits {
             let f = &s.fit;
@@ -1133,9 +1144,14 @@ impl Compartmental {
                 }
             }
         }
-        let rows = self
-            .dependence
-            .reorder_rows(rows, width, &ranges, &ranked, self.seed)?;
+        let rows = self.dependence.reorder_rows_with(
+            rows,
+            width,
+            &ranges,
+            &ranked,
+            self.seed,
+            |s, index| fitted.fits[s].fit.patterns.permute(0, index),
+        )?;
         for (s, range) in fitted.fits.iter_mut().zip(&ranges) {
             let f = &mut s.fit;
             let mut start = range.start;
@@ -1969,6 +1985,15 @@ pub struct CompartmentalFit {
     /// mean over its effect too). The model's ultimate, without process
     /// error past the square.
     pub ultimate_loss_ratio: Vec<f64>,
+    /// The paid development pattern of the posterior draw each simulation
+    /// took (`reserving-v02.md` decision 28 item 7): at each age of the
+    /// square, the expected cumulative paid of an origin with nothing
+    /// observed (the population's rates, at a zero origin effect, with each
+    /// observed age's development effects) over that at the square's last
+    /// age, where it is exactly 1. Row `i` is simulation `i` of
+    /// [`reserves`](Self::reserves), [`paid`](Self::paid) and
+    /// [`outstanding`](Self::outstanding).
+    pub patterns: DevelopmentPatterns,
     model: Model,
     /// The same draws on the unconstrained scale of `theta`, for the
     /// one-year view (`docs/design/reserving-bayes.md`, decision 20).
@@ -2006,6 +2031,10 @@ pub struct CompartmentalFits {
     /// The future outstanding (or incurred) of every segment, the same
     /// layout; `None` under [`Fitted::PaidOnly`].
     pub outstanding: Option<PredictiveDistribution>,
+    /// Each segment's paid development pattern in every simulation, moving
+    /// with the segment's reserves and cells (`reserving-v02.md` decision
+    /// 28), as in [`CompartmentalFit::patterns`].
+    pub patterns: DevelopmentPatterns,
 }
 
 impl CompartmentalFits {
@@ -2058,10 +2087,19 @@ impl CompartmentalFits {
         } else {
             None
         };
+        let patterns = DevelopmentPatterns::joined(
+            &segments.labels,
+            segments
+                .fits
+                .iter()
+                .map(|s| s.fit.patterns.clone())
+                .collect(),
+        );
         Ok(Self {
             reserves: joint(|f| &f.reserves, "reserves")?,
             paid: joint(|f| &f.paid, "paid")?,
             outstanding,
+            patterns,
             segments,
         })
     }
@@ -3771,6 +3809,17 @@ impl Model {
     /// normal per parameter with a development effect, age by age), shared
     /// by every origin; 1 for a parameter with none.
     fn dev_multipliers(&self, nat: &[f64], rng: &mut StreamRng) -> Vec<[f64; 4]> {
+        self.dev_multipliers_with(nat, |tau| tau * norm_quantile(rng.next_open01()))
+    }
+
+    /// The development multipliers of [`dev_multipliers`](Self::dev_multipliers),
+    /// with `unobserved(tau)` the effect of an age with no observed cell,
+    /// given its sd, age by age and parameter by parameter.
+    fn dev_multipliers_with(
+        &self,
+        nat: &[f64],
+        mut unobserved: impl FnMut(f64) -> f64,
+    ) -> Vec<[f64; 4]> {
         let lay = &self.layout;
         let ms = self.priors.positive().map(lognormal);
         self.dev_level
@@ -3781,7 +3830,7 @@ impl Model {
                     if let (Some(first), Some(tau)) = (lay.nat_dev[p], lay.nat_tau_dev[p]) {
                         let v = match level {
                             Some(d) => nat[first + d],
-                            None => nat[tau] * norm_quantile(rng.next_open01()),
+                            None => unobserved(nat[tau]),
                         };
                         out[p] = (ms[p].1 * v).exp();
                     }
@@ -3889,6 +3938,52 @@ impl Model {
             };
             *x = self.draw_cell(mean, sigma_os, i, rng);
         }
+    }
+
+    /// The paid development pattern of a natural-scale draw into `shares`,
+    /// one per age of the square (`reserving-v02.md` decision 28 item 7):
+    /// the expected cumulative paid at each age over that at the square's
+    /// last age, where the reserves end, so the last share is exactly 1, of
+    /// an origin with nothing observed at the median of the population (its
+    /// origin effects 0, so its rates are the population's `k_er` and
+    /// `k_p`), with each observed age's development effects and 0 for an
+    /// age with none. The expected paid is the cell means' (cumulative, or
+    /// the running sum of the incremental means, each age's increment with
+    /// that age's parameters); `RLR` and `RRF` enter only through their
+    /// development effects, the premium and the origin's values cancelling.
+    /// No random number is drawn. Without development effects the share at
+    /// age `t` is `PD(t) / PD(t_last)` of the ODE's paid curve, which never
+    /// falls.
+    fn pattern(&self, nat: &[f64], shares: &mut [f64]) {
+        let n = self.times.len();
+        let dev = if self.has_dev() {
+            self.dev_multipliers_with(nat, |_| 0.0)
+        } else {
+            vec![[1.0; 4]; n]
+        };
+        let origin = [nat[KER], nat[KP], 1.0, 1.0];
+        let mut cumulative = 0.0;
+        for (k, share) in shares.iter_mut().enumerate() {
+            let th: [f64; 4] = std::array::from_fn(|p| origin[p] * dev[k][p]);
+            let pd = one_os(th[KER], th[KP], self.times[k]).1;
+            let scale = th[RLR] * th[RRF];
+            *share = if self.response.incremental {
+                let before = if k == 0 {
+                    0.0
+                } else {
+                    one_os(th[KER], th[KP], self.times[k - 1]).1
+                };
+                cumulative += scale * (pd - before);
+                cumulative
+            } else {
+                scale * pd
+            };
+        }
+        let last = shares[n - 1];
+        for share in &mut shares[..n - 1] {
+            *share /= last;
+        }
+        shares[n - 1] = 1.0;
     }
 
     /// The full log density of each cell's response from a natural-scale
@@ -5114,6 +5209,167 @@ mod tests {
         };
         assert_eq!(output(&fit.reserves), ["reserves"]);
         assert_eq!(output(&fit.paid), ["paid"]);
+    }
+
+    #[test]
+    fn the_pattern_is_the_odes_paid_curve() {
+        // The pattern from the named natural-scale draws, built here from
+        // one_os alone: model 1's PD(t) / PD(10) at the population's rates,
+        // and model 2's running sum of incremental means at the population's
+        // rates with each observed age's development effects (none at 120
+        // months, which has no observed cell), over its value at 120 months.
+        for two in [false, true] {
+            let m = if two { model_2(false) } else { model(false) };
+            let names = m.names();
+            for theta in points(&m) {
+                let nat = m.natural(&theta);
+                let named = |n: &str| nat[names.iter().position(|x| x == n).unwrap()];
+                let mut shares = vec![0.0; 10];
+                m.pattern(&nat, &mut shares);
+                let (k_er, k_p) = (named("k_er"), named("k_p"));
+                let mut expected = Vec::with_capacity(10);
+                if two {
+                    let mut cumulative = 0.0;
+                    for k in 0..10 {
+                        // Each multiplier exp(s v), s the prior's log sd.
+                        let dev = |short: &str, sd: f64| {
+                            names
+                                .iter()
+                                .position(|x| *x == format!("dev_{short}[{}]", 12 * (k + 1)))
+                                .map_or(1.0, |j| (sd * nat[j]).exp())
+                        };
+                        let (er, p) = (k_er * dev("ker", 0.1), k_p * dev("kp", 0.1));
+                        let scale = dev("RLR", 0.2) * dev("RRF", 0.1);
+                        let t = (k + 1) as f64;
+                        cumulative += scale * (one_os(er, p, t).1 - one_os(er, p, t - 1.0).1);
+                        expected.push(cumulative);
+                    }
+                } else {
+                    expected.extend((1..=10).map(|t| one_os(k_er, k_p, f64::from(t)).1));
+                }
+                assert_eq!(shares[9], 1.0);
+                for (k, share) in shares.iter().enumerate() {
+                    let e = expected[k] / expected[9];
+                    assert!(
+                        (share - e).abs() < 1e-12,
+                        "model 2 {two}, age {k}: {share} {e}"
+                    );
+                }
+                // The paid curve rises, and so does a running sum of
+                // positive increments: the pattern never falls nor passes 1.
+                assert!(shares[0] > 0.0);
+                assert!(shares.windows(2).all(|w| w[0] <= w[1]), "{shares:?}");
+            }
+        }
+        // Model 1's last share is a share of the paid curve's limit, 1: the
+        // pattern ends at the square's last age, not at the curve's limit.
+        let m = model(false);
+        let nat = m.natural(&points(&m)[0]);
+        assert!(one_os(nat[KER], nat[KP], 10.0).1 < 1.0);
+    }
+
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn each_simulations_pattern_is_its_posterior_draws() {
+        let tri = triangle(true);
+        let two = Compartmental {
+            sampler: Sampler {
+                chains: 2,
+                tune: 60,
+                draws: 60,
+                target_accept: 0.9,
+                ..preset_2().sampler
+            },
+            n_sims: 500,
+            seed: 21,
+            ..preset_2()
+        };
+        for (name, compartmental) in [("model 1", quick(21)), ("model 2", two)] {
+            let fit = compartmental
+                .fit(&tri, "paid", incurred(), "premium")
+                .unwrap();
+            let n_sims = compartmental.n_sims;
+            assert_eq!(fit.patterns.n_sims(), n_sims);
+            let patterns = fit.patterns.segment(&[]).unwrap();
+            // The square's ages: ten, to 120 months, one more than the
+            // triangle's paid.
+            assert_eq!(
+                patterns.ages(),
+                (1..=10).map(|k| 12 * k).collect::<Vec<_>>()
+            );
+            assert_eq!(patterns.origin_grain(), Grain::Year);
+            // One predictive run with the pattern columns after the cells,
+            // the pattern computed from the draw each simulation took: the
+            // fit's pattern row i is simulation i's.
+            let future = fit.data.future_cells();
+            let n_paid = future.paid.len();
+            let n_future = n_paid + future.outstanding.len();
+            let replay = |with_patterns: bool| {
+                let width = n_future + if with_patterns { 10 } else { 0 };
+                fit.posterior
+                    .predictive(
+                        vec!["column".into()],
+                        (0..width).map(|j| vec![KeyValue::Int(j as i64)]).collect(),
+                        n_sims,
+                        derive_seed(compartmental.seed, Stream::Predictive),
+                        Provenance::new("replay"),
+                        |nat, rng: &mut StreamRng, row| {
+                            let (cells, shares) = row.split_at_mut(n_future);
+                            fit.model.simulate(nat, &future, rng, cells);
+                            if with_patterns {
+                                fit.model.pattern(nat, shares);
+                            }
+                        },
+                    )
+                    .unwrap()
+            };
+            let with = replay(true);
+            for (i, row) in with.draw_matrix().chunks_exact(n_future + 10).enumerate() {
+                assert_eq!(&row[n_future..], patterns.draw(i), "{name} simulation {i}");
+            }
+            // The same run without the pattern columns, as the fit drew it
+            // before patterns: the fit's cells are bit for bit these, so
+            // writing the patterns moved no random number.
+            let without = replay(false);
+            let os = fit.outstanding.as_ref().unwrap();
+            let n_os = n_future - n_paid;
+            for (i, row) in without.draw_matrix().chunks_exact(n_future).enumerate() {
+                let paid = &fit.paid.draw_matrix()[i * n_paid..(i + 1) * n_paid];
+                let outstanding = &os.draw_matrix()[i * n_os..(i + 1) * n_os];
+                assert_eq!(&row[..n_paid], paid, "{name} simulation {i}");
+                assert_eq!(&row[n_paid..], outstanding, "{name} simulation {i}");
+            }
+            assert_eq!(
+                &without.draw_matrix()[..n_future],
+                &with.draw_matrix()[..n_future]
+            );
+            // The ODE's paid curve rises, and model 2's incremental means are
+            // positive: no share falls or passes 1, so the cash-flow
+            // engine's default takes them.
+            let falling = (0..n_sims)
+                .filter(|&i| patterns.draw(i).windows(2).any(|w| w[1] < w[0]))
+                .count();
+            let above = (0..n_sims)
+                .filter(|&i| patterns.draw(i).iter().any(|&x| x > 1.0))
+                .count();
+            let mean = patterns.mean();
+            eprintln!("{name}: mean {mean:?}, falling {falling}, above 1 {above} of {n_sims}");
+            assert_eq!((falling, above), (0, 0), "{name}");
+            for i in 0..n_sims {
+                let row = patterns.draw(i);
+                assert!(row[0] > 0.0 && row[9] == 1.0, "{name} {row:?}");
+            }
+            let basis = crate::MonthlyBasis::default();
+            let monthly = fit
+                .patterns
+                .monthly(&[], &basis, 120, crate::Monotone::Refuse)
+                .unwrap();
+            assert_eq!(monthly.len(), n_sims);
+            assert!(monthly.iter().all(|row| row[119] == 1.0));
+        }
     }
 
     #[test]

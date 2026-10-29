@@ -4698,7 +4698,9 @@ Status: **Built** (2026-10-28), issue #600 (its Reserving part), branch
 6 were proposed and built as recommended, and the user accepted them as
 built on 2026-10-28. Meyers' models followed (#678, branch
 `claude/meyers-pattern-draws`, in Rust, Python and R), with item 7's
-definition of their pattern proposed. The cash-flow engine takes a
+definition of their pattern proposed, and `Compartmental` (#679, branch
+`claude/compartmental-pattern-draws`, in Rust, Python and R), with item
+7's definition of its pattern proposed. The cash-flow engine takes a
 paid pattern per simulation (`PatternDraws`, `time-value.md` decision 33);
 this decision gives those patterns from a reserving fit, row `i` the same
 simulation as row `i` of the fit's `reserves` and of every vector
@@ -4763,11 +4765,11 @@ decision 26 gives.
    error, not a truncation, and longer is padded with 1.
 7. **Which fits.** `OdpBootstrapFit(s)`, `MackBootstrapFit(s)`,
    `BayesOdpFit(s)`, `BayesBfFit` and `BayesBfNormalisedFit` (so
-   `LayerSharePrior::fit` too), and `MeyersFit(s)` (#678), each with a
-   `patterns` field. Compartmental's pattern is the ODE's for the drawn
-   rates, a later item (#679). No fit knows whether its column is paid: a
-   pattern from an incurred triangle is an incurred pattern, and the
-   engine would read it as paid.
+   `LayerSharePrior::fit` too), `MeyersFit(s)` (#678) and
+   `CompartmentalFit(s)` (#679), each with a `patterns` field. No fit
+   knows whether its column is paid: a pattern from an incurred triangle
+   is an incurred pattern, and the engine would read it as paid
+   (`Compartmental`'s is always its paid column's).
 
    **Meyers' pattern** (#678, proposed 2026-10-28). Meyers' models are
    log-normal in the cumulative values, `log C_wd ~ N(mu_wd, sigma_d^2)`
@@ -4813,6 +4815,59 @@ decision 26 gives.
      reorders each segment's reserves and ultimates together by
      Iman-Conover on their totals, and the reorder's index
      (`reorder_ranges_with`) moves the patterns with them.
+
+   **Compartmental's pattern** (#679, proposed 2026-10-28). The model
+   simulates paid (and outstanding) to the square's last age, `n` origin
+   periods after the first origin's start, and a reserve is the paid
+   there less the latest paid. Its paid mean at age `t` is
+   `P RLR RRF PD(t)` with `PD(t) = 1 - e^(-k_p t) - k_p t e^(-k_p t)
+   exprel(-(k_er - k_p) t)`, the ODE's paid curve, which rises to 1 as
+   `t` grows; model 2's development-year effects multiply all four
+   parameters at each age, and its paid response is incremental, each
+   age's increment `PD(t) - PD(t - 1)` taken with that age's parameters.
+   A simulation's pattern is, at each age of the square, the expected
+   cumulative paid of the posterior draw it took over that at the
+   square's last age:
+   * The ultimate is the paid at the square's last age, where the
+     reserves end, so the share there is exactly 1 (no tail, as the other
+     Bayesian models), not the curve's limit: `PD` at 120 months is
+     about 0.98 of its limit on company 337 under model 1 (0.982 at the
+     posterior mean rates), and dividing by the limit would put the last
+     2% of the money after the reserves stop. The alternative is the limit, with the pattern
+     ending below 1 and a tail one period on.
+   * The origin is one with nothing observed (item 1) at the median of
+     the population: its origin effects 0, so its rates are the
+     population's `k_er` and `k_p` (model 1 has no origin effect on the
+     rates; model 2's are 0 there). Its `RLR` and `RRF` and its premium
+     cancel. A simulation does draw a new origin's effects, for the
+     origins the triangle holds without a cell, but the pattern takes
+     none (no random number, item 3), as Meyers' pattern takes medians.
+     The newest observed origin's rates are the alternative.
+   * The development effects (model 2) are each observed age's in the
+     draw, and 0 at an age with no observed cell (company 337's 120
+     months), where a simulation draws a new one; again no random number.
+   * Expected values of the cells as the model writes them: cumulative
+     paid's mean, or the running sum of incremental paid's means. Model
+     2's log-normal cells have one paid `sigma`, so the ratio of the
+     means is the ratio of the medians; the normal cells' means are the
+     curve's. Model 1's pattern is `PD(t) / PD(t_last)` at the drawn
+     rates.
+   * It never falls and never passes 1 in either preset: `PD` rises
+     (`PD' = k_p OS >= 0`), and model 2's incremental means are each
+     positive. On company 337 no share falls or passes 1 in any of 4,000
+     simulations of model 1 at its defaults or of model 2 (#679's
+     validation), so `monthly`'s default takes them. Only a cumulative
+     paid response with development effects on `RLR` or `RRF` (a setting
+     no preset uses) can fall.
+   * As item 3: the pattern is written inside the predictive simulation
+     from the draw and draws no random number, so the reserves and cells
+     are bit for bit what they were (a unit test replays the simulation
+     without the pattern columns, models 1 and 2). `fit_segments`
+     reorders each segment's reserves and cells as whole rows by
+     Iman-Conover on its reserves, and the reorder's index
+     (`reorder_rows_with`) moves its patterns with them. The patterns are
+     on the square's ages (to 120 months on company 337, where the paid
+     triangle reaches 108), the origin grain the triangle's.
 8. **Bindings.** Python: `fit.patterns` (`DevelopmentPatterns`) with
    `n_sims`, `segments`, `ages(segment=None)`, `mean(segment=None)`,
    `pattern_draws(segment=None)` (a list per simulation) and

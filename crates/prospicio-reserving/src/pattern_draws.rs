@@ -560,20 +560,45 @@ fn predictive_with<F>(
 where
     F: Fn(&[f64], &mut prospicio_core::StreamRng, &mut [f64], &mut [f64]) + Sync,
 {
-    let layout = PatternLayout::new(
-        segment.n_origins,
-        vec![(
-            Label::default(),
-            origin_grain(&segment.origins),
-            segment.ages.clone(),
-        )],
-    );
-    let mut components: Vec<ComponentKey> =
-        segment.origins.iter().map(|&o| vec![o.into()]).collect();
+    predictive_keyed_with_shares(
+        posterior,
+        "origin",
+        segment.origins.iter().map(|&o| vec![o.into()]).collect(),
+        origin_grain(&segment.origins),
+        segment.ages.clone(),
+        n_sims,
+        seed,
+        provenance,
+        simulate,
+    )
+}
+
+/// As [`predictive_with_shares`], with the simulated values keyed by
+/// `components` in the one dimension `dim` instead of by a segment's
+/// origins, and the pattern at `ages` of origins of grain `grain`
+/// (`Compartmental`, whose values are the future cells of its square and
+/// whose pattern runs over the square's ages).
+#[cfg(feature = "bayes")]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn predictive_keyed_with_shares<F>(
+    posterior: &prospicio_bayes::nuts::PosteriorDraws,
+    dim: &str,
+    mut components: Vec<ComponentKey>,
+    grain: Grain,
+    ages: Vec<Lag>,
+    n_sims: usize,
+    seed: u64,
+    provenance: prospicio_prob::Provenance,
+    simulate: F,
+) -> Result<(PredictiveDistribution, DevelopmentPatterns)>
+where
+    F: Fn(&[f64], &mut prospicio_core::StreamRng, &mut [f64], &mut [f64]) + Sync,
+{
+    let layout = PatternLayout::new(components.len(), vec![(Label::default(), grain, ages)]);
     components.extend(layout.keys(1));
     let (offset, width) = (layout.offset(0), layout.width(0));
     let wide = posterior.predictive(
-        vec!["origin".into()],
+        vec![dim.into()],
         components,
         n_sims,
         seed,

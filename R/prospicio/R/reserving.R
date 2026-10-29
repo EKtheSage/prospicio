@@ -7430,10 +7430,12 @@ ultimate_distribution <- function(fit) {
 # in Rust, reserving-v02.md decision 28).
 check_pattern_fit <- function(fit) {
   classes <- list(odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits,
-                  bayes_bf_fit, bayes_bf_normalised_fit, meyers_fit, meyers_fits)
+                  bayes_bf_fit, bayes_bf_normalised_fit, meyers_fit, meyers_fits,
+                  compartmental_fit, compartmental_fits)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
     stop("fit must be an odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, ",
-         "bayes_bf_fit, bayes_bf_normalised_fit, meyers_fit or meyers_fits", call. = FALSE)
+         "bayes_bf_fit, bayes_bf_normalised_fit, meyers_fit, meyers_fits, compartmental_fit ",
+         "or compartmental_fits", call. = FALSE)
   }
 }
 
@@ -7455,11 +7457,16 @@ pattern_matrix <- function(flat, n_col) {
 #' took (`docs/design/reserving-v02.md`, decision 28; for Meyers' models
 #' `exp(beta_d g)`, the median value at each age over the median at the
 #' oldest age of an origin after the newest, `g` its speed-up
-#' `(1 - gamma)^n` in CSR and 1 in CRC and CAY). Row `i` is simulation
+#' `(1 - gamma)^n` in CSR and 1 in CRC and CAY; for the compartmental model
+#' the ODE's expected cumulative paid at each age of the square over that at
+#' its last age, of an origin with nothing observed at the population's
+#' rates, with each observed age's development effects). Row `i` is simulation
 #' `i` of `fit@reserves`, so it keeps the dependence with [ultimate_draws()]
 #' and every other vector built from the fit.
 #'
-#' `pattern_draws()` gives the shares at the triangle's own ages.
+#' `pattern_draws()` gives the shares at the triangle's own ages (the
+#' compartmental model's at the ages of its square, one origin period per
+#' origin).
 #' `monthly_pattern_draws()` gives, per simulation, the share at the end of
 #' each of the first `months` months from inception, the form that
 #' [cashflow_run()] takes as `paid_patterns`. On the origin's own basis
@@ -7483,14 +7490,16 @@ pattern_matrix <- function(flat, n_col) {
 #' Nothing in Meyers' models keeps `beta_d` rising or below 0, so their
 #' shares can fall and pass 1 (on Meyers' group 353 data a share falls in
 #' nearly every simulation): use `"running_max"`, which also caps each share
-#' at 1.
+#' at 1. The compartmental model's paid curve rises, so its shares do not
+#' fall with cumulative paid and no development effects (model 1) or with
+#' incremental paid (model 2).
 #'
 #' No fit knows whether its triangle is paid: a pattern from an incurred
 #' triangle is an incurred pattern, and the engine reads it as paid.
 #'
 #' @param fit An [odp_bootstrap_fit], [mack_bootstrap_fit], [bayes_odp_fit],
-#'   [bayes_odp_fits], [bayes_bf_fit], [bayes_bf_normalised_fit], [meyers_fit]
-#'   or [meyers_fits].
+#'   [bayes_odp_fits], [bayes_bf_fit], [bayes_bf_normalised_fit], [meyers_fit],
+#'   [meyers_fits], [compartmental_fit] or [compartmental_fits].
 #' @param segment `NULL` for a fit of one segment, or the segment's key
 #'   values (`"Auto"`, `c("Auto", "NSW")`) over segments.
 #' @param months The number of months, a whole number of at least 1; patterns

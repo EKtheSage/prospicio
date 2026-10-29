@@ -8166,6 +8166,28 @@ class CompartmentalFit:
         there only when the priors have that effect.
         """
     @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        Each simulation's paid development pattern, to pair with the
+        simulation's loss ratio in the cash-flow engine: at each age of the
+        square (to the last age, where the reserves end), the expected
+        cumulative paid of the ODE for the posterior draw the simulation
+        took, for an origin with nothing observed (the population's rates,
+        with each observed age's development effects and none at an age with
+        no observed cell), over that at the last age. No tail: each pattern
+        ends at 1 at the square's last age. The paid curve rises, and so does
+        a running sum of positive incremental means, so with cumulative paid
+        and no development effects (model 1) or incremental paid (model 2) a
+        share never falls.
+        
+        Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+        ``paid``, ``outstanding`` and ``ultimate_draws``.
+        
+        Returns
+        -------
+        DevelopmentPatterns
+        """
+    @property
     def population_origins(self, /) -> list[str]:
         """
         The origins with no observed cell, whose effects each simulation
@@ -8395,6 +8417,28 @@ class CompartmentalFits:
         """
         Parameter names of a single-segment fit, as
         ``CompartmentalFit.parameter_names``.
+        """
+    @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        Each simulation's paid development pattern, to pair with the
+        simulation's loss ratio in the cash-flow engine: at each age of the
+        square (to the last age, where the reserves end), the expected
+        cumulative paid of the ODE for the posterior draw the simulation
+        took, for an origin with nothing observed (the population's rates,
+        with each observed age's development effects and none at an age with
+        no observed cell), over that at the last age. No tail: each pattern
+        ends at 1 at the square's last age. The paid curve rises, and so does
+        a running sum of positive incremental means, so with cumulative paid
+        and no development effects (model 1) or incremental paid (model 2) a
+        share never falls.
+        
+        Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+        ``paid``, ``outstanding`` and ``ultimate_draws``.
+        
+        Returns
+        -------
+        DevelopmentPatterns
         """
     @property
     def premium(self, /) -> list[float]:
