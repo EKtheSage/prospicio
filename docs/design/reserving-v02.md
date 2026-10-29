@@ -4857,8 +4857,10 @@ decision 26 gives.
      positive. On company 337 no share falls or passes 1 in any of 4,000
      simulations of model 1 at its defaults or of model 2 (#679's
      validation), so `monthly`'s default takes them. Only a cumulative
-     paid response with development effects on `RLR` or `RRF` (a setting
-     no preset uses) can fall.
+     paid response with development effects (on the rates, `RLR` or
+     `RRF`), a setting no preset uses, can fall: with them each age's share
+     is read at that age's own rates, so a smaller `k_p` at a later age can
+     give a lower share.
    * As item 3: the pattern is written inside the predictive simulation
      from the draw and draws no random number, so the reserves and cells
      are bit for bit what they were (a unit test replays the simulation

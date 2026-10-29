@@ -2248,8 +2248,9 @@ impl PyDevelopmentPatterns {
             .collect()
     }
 
-    /// The development ages in months: the triangle's, and with a tail one
-    /// development period past the oldest, where the share is 1.
+    /// The development ages in months: the triangle's (for ``Compartmental``,
+    /// its square's, to the last age the reserves reach), and with a tail
+    /// one development period past the oldest, where the share is 1.
     ///
     /// Parameters
     /// ----------

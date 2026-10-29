@@ -109,8 +109,9 @@ mean pattern is 0.197, 0.455, 0.646, 0.775, 0.860, 0.915, 0.951, 0.975,
 0.866, 0.928, 0.963, 0.981, 0.991, 0.997 and 1. The mean
 paid of 1997 (no observed cell) at each age over its mean at 120 months
 is within 0.02 of model 1's mean pattern. Only a cumulative paid response
-with development effects on `RLR` or `RRF`, which no preset uses, could
-fall.
+with development effects (on the rates, `RLR` or `RRF`), which no preset
+uses, could fall: each age's share is then read at that age's own rates,
+so a smaller `k_p` at a later age can give a lower share.
 
 # Other facts confirmed
 
