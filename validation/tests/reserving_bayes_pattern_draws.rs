@@ -1,11 +1,12 @@
 //! A development pattern per simulation from the Bayesian fits
-//! (`reserving-v02.md` decision 28, issue #600): each simulation's pattern is
-//! its posterior draw's, so it ends at 1, follows its reserves through a
-//! rank correlation of segments, and averages to the fit's own pattern.
+//! (`reserving-v02.md` decision 28, issue #600, and for Meyers' models
+//! #678): each simulation's pattern is its posterior draw's, so it ends at
+//! 1, follows its reserves through a rank correlation of segments, and
+//! averages to the fit's own pattern.
 
 use prospicio_bayes::nuts::Sampler;
 use prospicio_prob::PredictiveDistribution;
-use prospicio_reserving::bayes::{BayesBf, BayesBfNormalised};
+use prospicio_reserving::bayes::{BayesBf, BayesBfNormalised, Meyers, MeyersModel};
 use prospicio_reserving::{
     BayesOdp, ChainLadder, DevelopmentColumn, DevelopmentPatterns, Grain, Long, SegmentDependence,
     Triangle,
@@ -182,4 +183,99 @@ fn bayes_bf_normalised_patterns_average_to_its_pattern() {
             mean[k]
         );
     }
+}
+
+fn meyers(model: MeyersModel, n_sims: usize, seed: u64) -> Meyers {
+    Meyers {
+        model,
+        sampler: Sampler {
+            tune: 300,
+            draws: 300,
+            ..Meyers::default().sampler
+        },
+        n_sims,
+        seed,
+        ..Meyers::default()
+    }
+}
+
+/// `tri`'s `paid` and `premium` twice, under the `lob` values `A` and `B`,
+/// with every value of `B` doubled.
+fn twins_with_premium(tri: &Triangle) -> Triangle {
+    let long = tri.to_long();
+    let column = |name: &str| &long.values.iter().find(|(c, _)| c == name).unwrap().1;
+    let n = long.origin.len();
+    let keys: Vec<&str> = (0..2 * n).map(|i| if i < n { "A" } else { "B" }).collect();
+    let doubled = |values: &[f64]| -> Vec<f64> {
+        values
+            .iter()
+            .copied()
+            .chain(values.iter().map(|v| 2.0 * v))
+            .collect()
+    };
+    Triangle::from_long(&Long {
+        keys: &[("lob", &keys)],
+        origin: &[long.origin.clone(), long.origin.clone()].concat(),
+        development: DevelopmentColumn::Age(&[long.development.clone(), long.development].concat()),
+        values: &[
+            ("paid", &doubled(column("paid"))),
+            ("premium", &doubled(column("premium"))),
+        ],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Year,
+        cumulative: true,
+    })
+    .unwrap()
+}
+
+#[test]
+fn meyers_patterns_end_at_one() {
+    let genins = triangle_columns("genins_premium", &["paid", "premium"]);
+    for model in [MeyersModel::Crc, MeyersModel::Csr, MeyersModel::Cay] {
+        let fit = meyers(model, 1_000, 614)
+            .fit(&genins, "paid", "premium")
+            .unwrap();
+        assert_eq!(fit.patterns.n_sims(), fit.reserves.n_sims());
+        let segment = fit.patterns.segment(&[]).unwrap();
+        // Meyers' models have no tail: the pattern reaches exactly 1 at
+        // the oldest age, and every share is positive.
+        for i in 0..fit.patterns.n_sims() {
+            let row = segment.draw(i);
+            assert_eq!(row.len(), 10);
+            assert_eq!(row[9], 1.0);
+            assert!(row.iter().all(|&x| x > 0.0 && x.is_finite()), "{row:?}");
+        }
+        // The early shares are well below 1, as GenIns pays slowly.
+        let mean = segment.mean();
+        assert!(mean[0] < 0.3 && mean[4] < mean[9], "{model:?} {mean:?}");
+    }
+}
+
+#[test]
+fn meyers_patterns_follow_the_reserves_through_a_rank_correlation() {
+    let tri = twins_with_premium(&triangle_columns("genins_premium", &["paid", "premium"]));
+    let model = meyers(MeyersModel::Crc, 1_000, 615);
+    let a = model.fit_segments(&tri, "paid", "premium").unwrap();
+    let b = Meyers {
+        dependence: SegmentDependence::RankCorrelation {
+            spearman: vec![1.0, 0.7, 0.7, 1.0],
+        },
+        ..model
+    }
+    .fit_segments(&tri, "paid", "premium")
+    .unwrap();
+    for patterns in [&a.patterns, &b.patterns] {
+        assert_eq!(patterns.segments().len(), 2);
+        for segment in patterns.segments() {
+            assert!((0..patterns.n_sims()).all(|i| segment.draw(i)[9] == 1.0));
+        }
+    }
+    check_follows((&a.reserves, &a.patterns), (&b.reserves, &b.patterns));
+    // A segment picked from the fit keeps its own patterns.
+    let picked = b.segment(&[("lob", "B")]).unwrap();
+    assert_eq!(picked.patterns.segments().len(), 1);
+    assert_eq!(
+        picked.patterns.segment(&[]).unwrap(),
+        b.patterns.segment(&["B"]).unwrap()
+    );
 }

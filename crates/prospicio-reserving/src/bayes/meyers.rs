@@ -32,6 +32,7 @@ use crate::dependence::SegmentDependence;
 use crate::error::{Error, Result};
 use crate::expected_loss::origin_exposure;
 use crate::frame::TriangleFrame;
+use crate::pattern_draws::{DevelopmentPatterns, predictive_with_shares};
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each_with_exposure};
 use crate::triangle::{Label, Segment, Triangle};
 
@@ -266,6 +267,11 @@ pub struct MeyersFit {
     /// The ultimates less the latest values, simulation by simulation:
     /// the same layout as [`OdpBootstrapFit::reserves`](crate::OdpBootstrapFit::reserves).
     pub reserves: PredictiveDistribution,
+    /// The development pattern of the posterior draw each simulation took
+    /// (the shares `exp(beta_d g)` of the value at the oldest age, `g` the
+    /// next origin's speed-up in CSR and 1 otherwise), row `i` simulation
+    /// `i` of `ultimates` and `reserves` (`reserving-v02.md` decision 28).
+    pub patterns: DevelopmentPatterns,
     /// The model, for the pointwise log likelihood of [`loo`](Self::loo).
     model: Model,
 }
@@ -390,6 +396,10 @@ pub struct MeyersFits {
     /// The ultimates less the latest values, simulation by simulation,
     /// with the same layout.
     pub reserves: PredictiveDistribution,
+    /// Each segment's development pattern in every simulation, moving with
+    /// the segment's ultimates and reserves (`reserving-v02.md` decision
+    /// 28), as in [`MeyersFit::patterns`].
+    pub patterns: DevelopmentPatterns,
 }
 
 /// Appends `ulr_mean`, the row's posterior mean ultimate `ultimate_mean`
@@ -444,10 +454,12 @@ impl MeyersFits {
     pub fn segment(&self, keys: &[(&str, &str)]) -> Result<Self> {
         let (segments, reserves) = pick_segment(&self.segments, &self.reserves, keys)?;
         let (_, ultimates) = pick_segment(&self.segments, &self.ultimates, keys)?;
+        let patterns = self.patterns.only(&segments.labels[0]);
         Ok(Self {
             segments,
             ultimates,
             reserves,
+            patterns,
         })
     }
 }
@@ -474,7 +486,7 @@ impl Meyers {
         self.validate()?;
         let segment = triangle.segment(column)?;
         let premium_segment = triangle.segment(premium)?;
-        let (fit, ultimates, reserves) = self.fit_segment(
+        let (fit, ultimates, reserves, patterns) = self.fit_segment(
             &segment,
             &premium_segment,
             column,
@@ -482,7 +494,7 @@ impl Meyers {
             Stream::Chains,
             Stream::Predictive,
         )?;
-        Ok(fit.into_fit(ultimates, reserves))
+        Ok(fit.into_fit(ultimates, reserves, patterns))
     }
 
     /// The one-year view of `column` of a single-segment cumulative
@@ -588,7 +600,7 @@ impl Meyers {
         settings.validate()?;
         let segment = triangle.segment(column)?;
         let premium_segment = triangle.segment(premium)?;
-        let (fit, ultimates, reserves) = self.fit_segment(
+        let (fit, ultimates, reserves, patterns) = self.fit_segment(
             &segment,
             &premium_segment,
             column,
@@ -604,7 +616,7 @@ impl Meyers {
         hasher.f64s(&fit.premium);
         let provenance = self.one_year_provenance(column, premium, hasher, settings);
         one_year::assemble(
-            fit.into_fit(ultimates, reserves),
+            fit.into_fit(ultimates, reserves, patterns),
             year,
             &segment,
             settings,
@@ -647,7 +659,7 @@ impl Meyers {
                     Stream::SegmentChains(k),
                     predictive,
                 )
-                .and_then(|(fit, _, _)| {
+                .and_then(|(fit, _, _, _)| {
                     let year = self.year_draws(triangle, segment, &fit, predictive, settings)?;
                     Ok((fit, year))
                 });
@@ -796,7 +808,7 @@ impl Meyers {
         let mut dims = fitted.key_names.clone();
         dims.push("origin".into());
         let mut components = Vec::new();
-        for ((label, (fit, _, _)), segment) in fitted.iter().zip(triangle.segments(column)?) {
+        for ((label, (fit, _, _, _)), segment) in fitted.iter().zip(triangle.segments(column)?) {
             hasher.str(&label.to_string());
             hash_segment(&mut hasher, &segment, &fit.chain_ladder, &segment.ages);
             hasher.f64s(&fit.premium);
@@ -810,14 +822,14 @@ impl Meyers {
         // reserves do.
         let mut ranges = Vec::with_capacity(fitted.len());
         let mut start = 0;
-        for (fit, _, _) in &fitted.fits {
+        for (fit, _, _, _) in &fitted.fits {
             let m = fit.chain_ladder.origins.len();
             ranges.push(start..start + 2 * m);
             start += 2 * m;
         }
         let mut both = Vec::with_capacity(self.n_sims * 2 * n);
         for i in 0..self.n_sims {
-            for (_, ultimates, reserves) in &fitted.fits {
+            for (_, ultimates, reserves, _) in &fitted.fits {
                 let m = reserves.n_components();
                 both.extend_from_slice(&reserves.draw_matrix()[i * m..(i + 1) * m]);
                 both.extend_from_slice(&ultimates.draw_matrix()[i * m..(i + 1) * m]);
@@ -826,7 +838,11 @@ impl Meyers {
         let list = |f: fn(&MeyersSegment) -> f64| {
             format!(
                 "{:?}",
-                fitted.fits.iter().map(|(s, _, _)| f(s)).collect::<Vec<_>>()
+                fitted
+                    .fits
+                    .iter()
+                    .map(|(s, _, _, _)| f(s))
+                    .collect::<Vec<_>>()
             )
         };
         let provenance = self
@@ -839,7 +855,7 @@ impl Meyers {
                 fitted
                     .fits
                     .first()
-                    .map_or(0, |(s, _, _)| s.posterior.n_draws()),
+                    .map_or(0, |(s, _, _, _)| s.posterior.n_draws()),
             );
         let both = PredictiveDistribution::from_draws(
             vec!["column".into()],
@@ -847,7 +863,13 @@ impl Meyers {
             both,
             provenance,
         )?;
-        let both = self.dependence.reorder_ranges(both, &ranges, self.seed)?;
+        let mut patterns = DevelopmentPatterns::joined(
+            &fitted.labels,
+            fitted.fits.iter().map(|(_, _, _, p)| p.clone()).collect(),
+        );
+        let both = self
+            .dependence
+            .reorder_ranges_with(both, &ranges, self.seed, &mut patterns)?;
         let (mut reserve_draws, mut ultimate_draws) = (
             Vec::with_capacity(self.n_sims * n),
             Vec::with_capacity(self.n_sims * n),
@@ -872,17 +894,18 @@ impl Meyers {
             ultimate_draws,
             provenance.param("output", "ultimates"),
         )?;
-        let segments = fitted.map(|(fit, _, _)| fit.clone());
+        let segments = fitted.map(|(fit, _, _, _)| fit.clone());
         Ok(MeyersFits {
             segments,
             ultimates,
             reserves,
+            patterns,
         })
     }
 
     /// The posterior of one segment, its ultimates and its reserves by
-    /// origin, with the seeds of `chains` (and its pilot run) and
-    /// `predictive`.
+    /// origin and its development pattern in each simulation, with the
+    /// seeds of `chains` (and its pilot run) and `predictive`.
     fn fit_segment(
         &self,
         segment: &Segment,
@@ -895,6 +918,7 @@ impl Meyers {
         MeyersSegment,
         PredictiveDistribution,
         PredictiveDistribution,
+        DevelopmentPatterns,
     )> {
         let chain_ladder = ChainLadder::default().fit_segment(segment, &segment.ages)?;
         let premiums = origin_exposure(segment, premium_segment, premium)?;
@@ -916,14 +940,16 @@ impl Meyers {
             .collect();
         let latest = &chain_ladder.latest;
         let no = segment.n_origins;
-        let ultimates = posterior.predictive(
-            vec!["origin".into()],
-            segment.origins.iter().map(|&o| vec![o.into()]).collect(),
+        let (ultimates, patterns) = predictive_with_shares(
+            &posterior,
+            segment,
             self.n_sims,
             derive_seed(self.seed, predictive),
             provenance.param("output", "ultimates"),
-            |nat, rng: &mut StreamRng, row| {
+            |nat, rng: &mut StreamRng, row, shares| {
                 model.draw_ultimates(nat, &premiums, &closed, latest, rng, row);
+                // No random number: the ultimates are what they were.
+                model.pattern(nat, shares);
             },
         )?;
         let reserve_draws: Vec<f64> = ultimates
@@ -956,6 +982,7 @@ impl Meyers {
             },
             ultimates,
             reserves,
+            patterns,
         ))
     }
 
@@ -1487,6 +1514,7 @@ impl MeyersSegment {
         self,
         ultimates: PredictiveDistribution,
         reserves: PredictiveDistribution,
+        patterns: DevelopmentPatterns,
     ) -> MeyersFit {
         let MeyersSegment {
             chain_ladder,
@@ -1503,6 +1531,7 @@ impl MeyersSegment {
             diagnostics,
             ultimates,
             reserves,
+            patterns,
             model,
         }
     }
@@ -1871,6 +1900,31 @@ impl Model {
             prev: None,
         };
         self.mu(nat, &cell)
+    }
+
+    /// The development pattern of a natural-scale draw into `shares`, one
+    /// per age: `exp(beta_d g)`, the median value at age `d` over the
+    /// median at the oldest age, where the share is exactly 1 as
+    /// `beta_m = 0`, of an origin with nothing yet observed, the one after
+    /// the triangle's newest (`reserving-v02.md` decision 28 item 7). `g` is
+    /// that origin's speed-up `(1 - gamma)^n` in CSR (0-based origin `n`,
+    /// the number of origins) and 1 in CRC and CAY; CAY's `rho` correlates
+    /// origins and does not enter.
+    fn pattern(&self, nat: &[f64], shares: &mut [f64]) {
+        let gamma = if self.csr() {
+            nat[self.after_beta()]
+        } else {
+            0.0
+        };
+        let g = self.speedup(gamma, self.n_origins).0;
+        let m = self.n_dev;
+        for (d, share) in shares.iter_mut().enumerate() {
+            *share = if d + 1 < m {
+                (nat[self.beta0() + d] * g).exp()
+            } else {
+                1.0
+            };
+        }
     }
 
     /// CAY's residuals of the observed cells from a natural-scale draw, in
@@ -2736,6 +2790,135 @@ pub(crate) mod tests {
             "{:?}",
             fit.diagnostics.warnings
         );
+    }
+
+    #[test]
+    fn the_pattern_is_the_next_origins_development_effect() {
+        for kind in [MeyersModel::Crc, MeyersModel::Csr, MeyersModel::Cay] {
+            let model = prepared(kind);
+            let nat = model.natural(&off_mode(&model));
+            let m = model.n_dev;
+            let mut shares = vec![0.0; m];
+            model.pattern(&nat, &mut shares);
+            assert_eq!(shares[m - 1], 1.0, "{kind:?}");
+            // CSR scales each beta by the speed-up of the origin after the
+            // newest, (1 - gamma)^10 here; CRC and CAY (whose rho is off 0)
+            // take beta alone.
+            let g = match kind {
+                MeyersModel::Csr => {
+                    let gamma = nat[model.after_beta()];
+                    assert!(gamma.abs() > 1e-3);
+                    (1.0 - gamma).powi(10)
+                }
+                _ => 1.0,
+            };
+            for (d, share) in shares[..m - 1].iter().enumerate() {
+                let beta = nat[model.beta0() + d];
+                assert!((share - (beta * g).exp()).abs() < 1e-15, "{kind:?} {d}");
+            }
+            // The share times the median value at the oldest age is the
+            // median value at age d of that origin, whatever its premium.
+            let premiums = [PREMIUM.as_slice(), &[6000.0]].concat();
+            let oldest = model.mu_at(&nat, &premiums, 10, m - 1).exp();
+            for (d, share) in shares.iter().enumerate() {
+                let at_d = model.mu_at(&nat, &premiums, 10, d).exp();
+                assert!((share * oldest / at_d - 1.0).abs() < 1e-12, "{kind:?} {d}");
+            }
+        }
+    }
+
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn each_simulations_pattern_is_its_posterior_draws() {
+        let tri = comauto();
+        let segment = tri.segment("paid").unwrap();
+        // CAY's pattern is CRC's function of the draw (the cheap test above).
+        for kind in [MeyersModel::Crc, MeyersModel::Csr] {
+            let meyers = quick(kind, 21);
+            let fit = meyers.fit(&tri, "paid", "premium").unwrap();
+            let patterns = fit.patterns.segment(&[]).unwrap();
+            assert_eq!(fit.patterns.n_sims(), 2_000);
+            assert_eq!(patterns.ages(), segment.ages);
+            // The ultimates and patterns of one predictive run, the pattern
+            // computed from the draw each simulation took: the fit's
+            // ultimates are bit for bit those without patterns, and its
+            // pattern row i is simulation i's.
+            let latest = &fit.chain_ladder.latest;
+            let closed: Vec<bool> = fit
+                .chain_ladder
+                .latest_position
+                .iter()
+                .map(|&d| d + 1 == 10)
+                .collect();
+            let replay = fit
+                .posterior
+                .predictive(
+                    vec!["column".into()],
+                    (0..20).map(|j| vec![KeyValue::Int(j)]).collect(),
+                    meyers.n_sims,
+                    derive_seed(meyers.seed, Stream::Predictive),
+                    Provenance::new("replay"),
+                    |nat, rng: &mut StreamRng, row| {
+                        let (ultimates, shares) = row.split_at_mut(10);
+                        fit.model.draw_ultimates(
+                            nat,
+                            &fit.premium,
+                            &closed,
+                            latest,
+                            rng,
+                            ultimates,
+                        );
+                        fit.model.pattern(nat, shares);
+                    },
+                )
+                .unwrap();
+            for (i, row) in replay.draw_matrix().chunks_exact(20).enumerate() {
+                let ultimates = &fit.ultimates.draw_matrix()[i * 10..(i + 1) * 10];
+                assert_eq!(&row[..10], ultimates, "{kind:?} simulation {i}");
+                assert_eq!(&row[10..], patterns.draw(i), "{kind:?} simulation {i}");
+            }
+            // Every share is positive and the pattern ends at exactly 1, but
+            // nothing in the model keeps beta_d rising or below 0: a share
+            // falls in nearly every simulation, mostly from 60 months on.
+            let mean = patterns.mean();
+            assert_eq!(mean[9], 1.0);
+            let falling = (0..2_000)
+                .filter(|&i| patterns.draw(i).windows(2).any(|w| w[1] < w[0]))
+                .count();
+            // The number of simulations whose share falls into each age.
+            let mut by_age = [0usize; 10];
+            for i in 0..2_000 {
+                for (k, w) in patterns.draw(i).windows(2).enumerate() {
+                    by_age[k + 1] += usize::from(w[1] < w[0]);
+                }
+            }
+            eprintln!("{kind:?}: mean {mean:?}, falling in {falling} of 2000, by age {by_age:?}");
+            for i in 0..2_000 {
+                assert!(patterns.draw(i).iter().all(|&x| x > 0.0 && x.is_finite()));
+            }
+            // So the cash-flow engine's monthly patterns refuse them by
+            // default, and hold each share at the largest before it on
+            // request.
+            assert!(falling > 0);
+            let basis = crate::MonthlyBasis::default();
+            let refused = fit
+                .patterns
+                .monthly(&[], &basis, 120, crate::Monotone::Refuse)
+                .unwrap_err();
+            assert!(refused.to_string().contains("falls"), "{refused}");
+            let held = fit
+                .patterns
+                .monthly(&[], &basis, 120, crate::Monotone::RunningMax)
+                .unwrap();
+            assert_eq!(held.len(), 2_000);
+            for row in &held {
+                assert!(row.windows(2).all(|w| w[0] <= w[1]));
+                assert_eq!(row[119], 1.0);
+            }
+        }
     }
 
     #[test]
@@ -3851,7 +4034,7 @@ pub(crate) mod tests {
                 .map(|tri| {
                     let segment = tri.segment("paid").unwrap();
                     let premium = tri.segment("premium").unwrap();
-                    let (fit, _, _) = meyers
+                    let (fit, _, _, _) = meyers
                         .fit_segment(
                             &segment,
                             &premium,

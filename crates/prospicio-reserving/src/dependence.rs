@@ -193,6 +193,30 @@ impl SegmentDependence {
         }
     }
 
+    /// As [`reorder_ranges`](Self::reorder_ranges), with each segment's
+    /// patterns moved with its rows, as in
+    /// [`reorder_with`](Self::reorder_with): the draws are those
+    /// `reorder_ranges` gives.
+    #[cfg(feature = "bayes")]
+    pub(crate) fn reorder_ranges_with(
+        &self,
+        draws: PredictiveDistribution,
+        ranges: &[Range<usize>],
+        seed: u64,
+        patterns: &mut DevelopmentPatterns,
+    ) -> Result<PredictiveDistribution> {
+        match self {
+            Self::RankCorrelation { spearman } => {
+                let (draws, source) = rank_correlate_indexed(draws, ranges, spearman, seed)?;
+                for (s, source) in source.iter().enumerate() {
+                    patterns.permute(s, source);
+                }
+                Ok(draws)
+            }
+            Self::Independent | Self::Synchronized => Ok(draws),
+        }
+    }
+
     /// The simulations of several segments, `rows` (one row of `width`
     /// values per simulation, segment `s` holding the columns `ranges[s]`),
     /// reordered to the rank correlation if that is the choice, and as they
