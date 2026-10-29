@@ -2753,3 +2753,35 @@ fn mars_knots_feed_terms() {
         .unwrap();
     assert!((glm.deviance() / poisson.rss() - 1.0).abs() < 1e-9);
 }
+
+/// Time-ordered splits with a rolling window, a horizon and a gap against
+/// scikit-learn 1.5.2's `TimeSeriesSplit` on one row a period
+/// (`validation/scripts/time_splits_sklearn.py`): the same index sets.
+#[test]
+fn time_splits_match_scikit_learn() {
+    use prospicio_models::resample::TimeSplits;
+    let ids = |s: &str| -> Vec<usize> {
+        s.split(' ')
+            .filter(|x| !x.is_empty())
+            .map(|x| x.parse().unwrap())
+            .collect()
+    };
+    let mut checked = 0;
+    for c in &reference("time_splits_sklearn.csv") {
+        let num = |k: &str| -> usize { c.get(k).parse().unwrap() };
+        let periods: Vec<i64> = (0..num("n") as i64).collect();
+        let h = num("horizon");
+        let mut spec = TimeSplits::new(num("n_test"))
+            .horizon(h)
+            .step(h)
+            .gap(num("gap"));
+        if !c.get("window").is_empty() {
+            spec = spec.rolling(num("window"));
+        }
+        let s = &spec.splits(&periods).unwrap()[num("split")];
+        assert_eq!(s.train, ids(c.get("train")), "{:?}", c.get("case"));
+        assert_eq!(s.test, ids(c.get("test")), "{:?}", c.get("case"));
+        checked += 1;
+    }
+    assert_eq!(checked, 16);
+}

@@ -744,3 +744,21 @@ if (requireNamespace("posterior", quietly = TRUE)) {
 stopifnot(inherits(try(mcmc_draws(matrix(1:4, 2)), silent = TRUE), "try-error"))
 
 cat("prospicio R models tests passed\n")
+
+# Time splits with a window, a horizon and a gap (#549): the defaults are
+# time_ordered(), and scikit-learn 1.5.2's TimeSeriesSplit index sets.
+tper <- c(3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5)
+for (n in 1:5) stopifnot(identical(time_splits(tper, n), time_ordered(tper, n)))
+tref <- utils::read.csv(file.path(root, "reference", "time_splits_sklearn.csv"), stringsAsFactors = FALSE,
+                        colClasses = "character")
+for (i in seq_len(nrow(tref))) {
+  r <- tref[i, ]
+  h <- as.double(r$horizon)
+  s <- time_splits(0:(as.double(r$n) - 1), as.double(r$n_test),
+                   window = if (r$window == "") NULL else as.double(r$window),
+                   horizon = h, gap = as.double(r$gap), step = h)[[as.integer(r$split) + 1]]
+  stopifnot(identical(s$train, as.double(strsplit(r$train, " ")[[1]]) + 1),
+            identical(s$test, as.double(strsplit(r$test, " ")[[1]]) + 1))
+}
+stopifnot(inherits(try(time_splits(tper, 2, horizon = 3, step = 3, gap = 1), silent = TRUE), "try-error"))
+cat("time split tests passed\n")

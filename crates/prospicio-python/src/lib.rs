@@ -110,7 +110,8 @@ mod prospicio_native {
         group_k_fold, k_fold, ks_uniform, lift, likelihood_ratio_test, log_score, loo_pit,
         loss_ratio_chart, lppd, mars, mcmc_diagnostics, normalized_gini, permutation, pinball_loss,
         pit, pit_from_draws, pit_histogram, ppc_check, pseudo_bma_weights, quantile_residuals, roc,
-        simulate_from_means, stacking_weights, target_encode, time_ordered, tweedie_profile, vif,
+        simulate_from_means, stacking_weights, target_encode, time_ordered, time_splits,
+        tweedie_profile, vif,
     };
     #[pymodule_export]
     use super::multivariate::{PyMultivariateLognormal, PyMultivariateNormal};

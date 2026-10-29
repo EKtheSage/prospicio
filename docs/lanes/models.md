@@ -6,10 +6,12 @@
 
 ## Next
 
-- #545 auto-calibration, isotonic recalibration and balance correction (0.0.7, first)
-- #546 conformal prediction intervals (0.0.7)
-- #549 rolling windows, horizons and gaps in time splits (0.0.7)
-- #575 typed monotone and interaction constraints on the boosting adapters (0.0.7)
+- #545 auto-calibration, isotonic recalibration and balance correction (0.0.7, first)
+
+- #546 conformal prediction intervals (0.0.7)
+
+- #575 typed monotone and interaction constraints on the boosting adapters (0.0.7)
+
 - [survival-models] survival models when claim-level reserving resumes (`docs/design/models.md`)
 - [triangle-design-bridge] The triangle-to-design bridge and the diagonal backtest stay in the Reserving lane
 
@@ -44,3 +46,4 @@
 - #464 randomized quantile residuals (Dunn and Smyth: `GlmFit::quantile_residuals` and `metrics::quantile_residuals`, the normal scores of the randomized PIT, `statmod::qresiduals` parity on quine, exact for the continuous families; Python `quantile_residuals`, R `residuals(m, type = "quantile")` and `quantile_residuals()`)
 - #465 MARS knots for hinge terms (`prospicio_glm::mars::Mars`: R earth's degree-1 forward pass with its spans, gates and GCV, weights, an optional backward pass by GCV, a GLM deviance criterion; `MarsFit::add_terms` into `Terms`; earth parity on the Chalk portfolio, default, weighted, `nk = 15` and pruned; Python `models.mars()`, R `mars_knots()` and `mars_formula()`)
 - #395 draws sampled outside prospicio in the Bayes diagnostics and PSIS-LOO (`PosteriorDraws::from_chains`, `loo` with loo's `r_eff`, `stan_csv::read` for CmdStan's CSV; Python `Draws`, `read_stan_csv`, `draws_from_arrays`, `draws_from_inference_data` for arviz, nutpie and PyMC; R `read_stan_csv()`, `mcmc_draws()` for cmdstanr, rstan and posterior, `draws_summary()`, `draws_loo()`; posterior 1.7.0 and loo 2.10.1 parity on a CmdStan run)
+- #549 rolling windows, horizons and gaps in time splits (`models.md`, "Time splits with windows, horizons and gaps", items (a) to (c) proposed; branch `claude/cool-shannon-fqpoy8`): `resample::TimeSplits` with `rolling`, `horizon`, `gap` and `step` over distinct periods, the defaults equal to `time_ordered`, scikit-learn 1.5.2's `TimeSeriesSplit` index sets reproduced on 16 splits; Python `time_splits`, R `time_splits()`
