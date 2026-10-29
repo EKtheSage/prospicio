@@ -36,7 +36,8 @@ for (model in c("crc", "csr", "cay")) {
   # Too few months is an error, not a truncation.
   stopifnot(fails(monthly_pattern_draws(fit, 24, monotone = "running_max")))
 
-  # The patterns do not change what is drawn: the same seed, the same fit.
+  # A determinism check only: the same seed gives the same fit. That the
+  # patterns draw no random number is checked by the Rust replay test.
   again <- quick(model = model)
   stopifnot(identical(pattern_draws(again), p))
   stopifnot(identical(ultimate_draws(again), ultimate_draws(fit)))
@@ -61,11 +62,22 @@ ma <- monthly_pattern_draws(free, 120, segment = "A", monotone = "running_max")
 stopifnot(identical(dim(ma), c(400L, 120L)))
 
 ranked <- segs(dependence = "rank_correlation", spearman = matrix(c(1, 0.8, 0.8, 1), 2))
-sorted <- function(m) m[do.call(order, as.data.frame(m)), , drop = FALSE]
+# Each ranked row's reserves are some free row j's, and its pattern is that
+# same row j's pattern.
+moved <- 0
 for (s in c("A", "B")) {
-  stopifnot(identical(sorted(pattern_draws(ranked, s)), sorted(pattern_draws(free, s))))
+  key <- function(fits) apply(draw_matrix(segment(fits, lob = s)@reserves), 1, function(r) {
+    paste(sprintf("%a", r), collapse = " ")
+  })
+  from <- key(free)
+  to <- key(ranked)
+  stopifnot(!anyDuplicated(from))
+  j <- match(to, from)
+  stopifnot(!anyNA(j))
+  stopifnot(identical(unname(pattern_draws(ranked, s)), unname(pattern_draws(free, s)[j, ])))
+  moved <- moved + sum(j != seq_along(j))
 }
-stopifnot(!identical(pattern_draws(ranked, "A"), pattern_draws(free, "A")))
+stopifnot(moved > 100)
 
 # A fit of the wrong kind is refused.
 stopifnot(fails(pattern_draws(1)))

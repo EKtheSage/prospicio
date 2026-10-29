@@ -3317,7 +3317,8 @@ is exactly 1 at the oldest age, so there is no tail, as in the other
 Bayesian models (decision 28 item 2). It is taken from the same posterior
 draw the simulation took, and no random number is drawn for it, so the
 ultimates and reserves are bit for bit what they were (a test replays each
-simulation's stream and checks both).
+simulation's stream and checks both: bit for bit for CRC and CSR, to a
+relative 1e-12 for CAY).
 
 **CAY.** The pattern built for CAY is CRC's formula on CAY's draw: the
 expected values of an origin whose previous origin has no residual, so
@@ -3367,8 +3368,10 @@ themselves, not from `sigma_d`. By the rule set for the measurement (switch
 to the median form only if it fell in materially fewer draws), the built
 form stays the mean ratio, and the median form stays alternative (b).
 `each_simulations_pattern_is_its_posterior_draws` prints these counts and
-asserts that the median form falls in at least 90% as many draws as the
-built one.
+worst falls (the median form's worst fall from the test's own
+`median_pattern`) and asserts that the median form falls in at least 90% as
+many draws as the built one, a guard on this recorded measurement rather
+than a check of shipped code.
 
 The cash-flow engine refuses a falling pattern (decision 28 item 5), so
 `DevelopmentPatterns::monthly` with the default `Monotone::Refuse` refuses
@@ -3416,14 +3419,19 @@ open for the user.
 
 **Tests.** `each_simulations_pattern_is_its_posterior_draws` (for CRC, CSR
 and CAY: each simulation's pattern recomputed from the replayed posterior
-draw's own named parameters, and its ultimates replayed bit for bit),
+draw's own named parameters, and its ultimates replayed bit for bit for
+CRC and CSR, to a relative 1e-12 for CAY),
 `the_pattern_of_a_hand_set_draw` (the formula on a draw set by hand, CRC,
 CSR and CAY, whose `rho` leaves the share as CRC's), `csr_develops_faster_for_the_origin_after_the_last` and
 `patterns_follow_the_reserves_through_a_rank_correlation` (each ranked row's
 pattern is that of the independent fit's row with the same reserves),
 all in `meyers.rs` and, but for the hand-set draw, under `slow-tests`;
 Python `test_reserving_meyers_pattern_draws.py` and R
-`test-reserving-meyers-pattern-draws.R` check the bindings.
+`test-reserving-meyers-pattern-draws.R` check the bindings: the shape of
+the rows, `monthly`, the segments, a refit on the same seed repeating
+patterns and ultimates (a determinism check only), and, under a rank
+correlation, each ranked row's pattern being that of the independent fit's
+row with the same reserves.
 
 ## Later, not planned
 

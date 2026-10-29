@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: Meyers' development pattern per posterior draw falls somewhere in nearly every simulation on group 353, so the cash-flow engine needs the running maximum
-description: A posterior draw's pattern from Meyers' CRC, CSR or CAY is the ratio of the expected cumulative values to the one at the oldest age, exp(beta_d g + sigma_d^2 / 2) over exp(sigma_m^2 / 2). On group 353 (paid, 2,000 simulations) it falls at some age in 1,977 (CRC), 1,976 (CSR) and 1,964 (CAY) of them, mostly over the last four steps, because the late beta_d are all near 0 and unordered; the median form exp(beta_d g) falls about as often (1,974, 1,968, 1,964), so the mean ratio is kept; DevelopmentPatterns::monthly with the default refuses, so a caller passes Monotone::RunningMax. The reserves and ultimates are bit for bit unchanged.
+description: A posterior draw's pattern from Meyers' CRC, CSR or CAY is the ratio of the expected cumulative values to the one at the oldest age, exp(beta_d g + sigma_d^2 / 2) over exp(sigma_m^2 / 2). On group 353 (paid, 2,000 simulations) it falls at some age in 1,977 (CRC), 1,976 (CSR) and 1,964 (CAY) of them, mostly over the last four steps, because the late beta_d are all near 0 and unordered; the median form exp(beta_d g) falls about as often (1,974, 1,968, 1,964), so the mean ratio is kept; DevelopmentPatterns::monthly with the default refuses, so a caller passes Monotone::RunningMax. No random number goes to the pattern, so the reserves and ultimates are unchanged (a replay of each simulation's stream matches them bit for bit for CRC and CSR, to 1e-12 for CAY).
 tags: [reserving, meyers, bayes, payment-pattern, cashflow, simulation]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-28T18:00:00Z }
@@ -66,7 +66,9 @@ Shares above 1 are common under both forms, and the median form falls in as
 many draws to within 0.4%: the falls come from the late `beta_d`, which
 Meyers' priors do not order, not from `sigma_d`. The built form stays the
 mean ratio (`reserving-bayes.md` decision 27). The slow test prints these
-counts and asserts that the median form falls in at least 90% as many draws.
+counts and worst falls (the median form's from the test's own
+`median_pattern`) and asserts that the median form falls in at least 90% as
+many draws, a guard on this measurement, not a check of shipped code.
 
 # A reading the running maximum needed
 

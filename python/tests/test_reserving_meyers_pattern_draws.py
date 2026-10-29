@@ -74,8 +74,10 @@ def test_each_simulation_ends_at_one(fit):
     assert mean[-2] > 0.9
 
 
-def test_the_reserves_and_ultimates_are_the_fits_own(fit):
-    # Same seed, same fit: the patterns do not change what is drawn.
+def test_a_refit_on_the_same_seed_repeats_patterns_and_ultimates(fit):
+    # A determinism check only. That the patterns draw no random number, so
+    # the reserves are what they were, is checked by the Rust replay test
+    # (``each_simulations_pattern_is_its_posterior_draws``).
     again = Meyers(fit.model, **QUICK).fit(build(comauto_rows()), "paid", "premium")
     assert again.patterns.pattern_draws() == fit.patterns.pattern_draws()
     assert again.ultimate_draws() == fit.ultimate_draws()
@@ -121,9 +123,18 @@ def test_a_rank_correlation_moves_the_patterns_with_the_reserves():
     rho = [[1.0, 0.8], [0.8, 1.0]]
     free = Meyers("crc", **QUICK).fit_segments(tri, "paid", "premium")
     ranked = Meyers("crc", dependence="rank_correlation", spearman=rho, **QUICK).fit_segments(tri, "paid", "premium")
-    # Each segment keeps its own simulations as whole rows, patterns included.
+    # Each ranked row's reserves are some free row j's, and its pattern is
+    # that same row j's pattern.
+    moved = 0
     for label in ("A", "B"):
-        want = sorted(free.patterns.pattern_draws((label,)))
-        got = sorted(ranked.patterns.pattern_draws((label,)))
-        assert got == want
-    assert ranked.patterns.pattern_draws(("A",)) != free.patterns.pattern_draws(("A",))
+        free_reserves = free.segment(lob=label).reserves.draw_matrix()
+        ranked_reserves = ranked.segment(lob=label).reserves.draw_matrix()
+        source = {tuple(row): j for j, row in enumerate(free_reserves)}
+        assert len(source) == N
+        free_patterns = free.patterns.pattern_draws((label,))
+        ranked_patterns = ranked.patterns.pattern_draws((label,))
+        for i, row in enumerate(ranked_reserves):
+            j = source[tuple(row)]
+            assert ranked_patterns[i] == free_patterns[j], (label, i, j)
+            moved += i != j
+    assert moved > N // 4
