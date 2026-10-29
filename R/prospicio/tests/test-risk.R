@@ -221,6 +221,23 @@ u <- copula_sample_qmc(g, 2^14, seed = 11)
 stopifnot(abs(mean(u[, 1] <= 0.6 & u[, 2] <= 0.4 & u[, 3] <= 0.7) - e$value) < 2e-3)
 stopifnot(inherits(try(copula_sample_qmc(archimedean_copula("gumbel", 2), 8), silent = TRUE), "try-error"))
 
+# The Student t pair and fitting pair copulas (#568).
+tv <- vine_copula("d", 1:2, list(list(pair_copula("student", 0.6, nu = 4))))
+stopifnot(abs(copula_log_density(tv, c(0.3, 0.6)) - (-0.02730765499122425)) < 1e-10)
+stopifnot(inherits(try(vine_copula("d", 1:2, list(list(pair_copula("student", 0.6)))), silent = TRUE), "try-error"))
+stopifnot(identical(pseudo_obs(c(3, 1, 2, 2)), c(0.8, 0.2, 0.5, 0.5)))
+stopifnot(abs(kendall_tau(1:4, c(1, 3, 2, 4)) - 4 / 6) < 1e-15)
+set.seed(568)
+x <- rnorm(1500)
+y <- 0.7 * x + sqrt(1 - 0.49) * rnorm(1500)
+uu <- pseudo_obs(x)
+vv <- pseudo_obs(y)
+g <- fit_pair_copula(uu, vv, "gaussian")
+stopifnot(abs(g$pair[[2]] - 0.7) < 0.05, g$n_parameters == 1)
+sel <- select_pair_copula(uu, vv)
+stopifnot(sel$aic <= g$aic + 1e-9)
+it <- select_pair_copula(runif(300), runif(300), independence_test = 0.05)
+stopifnot(it$pair[[1]] %in% c("independence", "gaussian", "student", "clayton", "gumbel", "frank", "joe"))
 cat("prospicio R risk tests passed\n")
 # The covariance allocation of the margin keeps each unit's mean, and the
 # Shapley value of any cost agrees with the distortion's Shapley.
@@ -388,3 +405,39 @@ stopifnot(inherits(try(total(mvl), silent = TRUE), "try-error"))
 stopifnot(inherits(try(multivariate_lognormal(c(1, 1), matrix(c(1, -0.9, -0.9, 1), 2)), silent = TRUE), "try-error"))
 stopifnot(inherits(try(multivariate_lognormal(c(1, 1)), silent = TRUE), "try-error"))
 cat("multivariate joint tests passed\n")
+
+# R-vines and vine fits against pyvinecopulib 1.0.1 (#568;
+# validation/scripts/pyvinecopulib_rvine.py).
+vclose <- function(got, want, tol) stopifnot(all(abs(got - want) <= tol * pmax(1, abs(want))))
+vroot <- if (dir.exists("validation")) "validation" else file.path("..", "..", "..", "validation")
+vref <- utils::read.csv(file.path(vroot, "reference", "vine_rvine_pyvinecopulib.csv"), stringsAsFactors = FALSE)
+vdat <- utils::read.csv(file.path(vroot, "reference", "vine_rvine_data.csv"))
+vmat <- function(s) do.call(rbind, lapply(strsplit(strsplit(s, ";")[[1]], " "), as.integer))
+vpair <- function(s) {
+  f <- strsplit(s, ":")[[1]]
+  p <- as.double(f[-(1:2)])
+  if (f[1] == "student") pair_copula("student", p[1], nu = p[2]) else pair_copula(f[1], p[1], as.double(f[2]))
+}
+vpairs <- function(s) lapply(strsplit(s, "/")[[1]], function(t) lapply(strsplit(t, ";")[[1]], vpair))
+for (i in seq_len(nrow(vref))) {
+  r <- vref[i, ]
+  want <- as.double(strsplit(r$expected, ";")[[1]])
+  if (r$case == "density") {
+    v <- rvine_copula(vmat(r$matrix), vpairs(r$pairs))
+    stopifnot(identical(rvine_structure(v)$matrix, vmat(r$matrix)))
+    vclose(copula_log_density(v, as.double(strsplit(r$data, ";")[[1]])), want, 1e-9)
+  } else if (r$case %in% c("fit_structure", "select")) {
+    u <- as.matrix(vdat[vdat$set == as.integer(r$data), paste0("u", 1:5)])
+    fit <- fit_vine_copula(u, if (r$case == "fit_structure") vmat(r$matrix) else NULL)
+    stopifnot(abs(fit$log_likelihood - want) < 1e-3)
+    vclose(sum(copula_log_density(fit$copula, u)), fit$log_likelihood, 1e-6)
+  }
+}
+g <- pair_copula("gaussian", 0.5)
+dv <- vine_copula("d", 1:3, list(list(g, pair_copula("clayton", 1.5, 90)), list(pair_copula("frank", 3))))
+rv <- rvine_copula(rvine_structure(dv)$matrix, rvine_structure(dv)$pairs)
+vclose(copula_log_density(rv, c(0.2, 0.7, 0.4)), copula_log_density(dv, c(0.2, 0.7, 0.4)), 1e-12)
+stopifnot(inherits(try(rvine_copula(matrix(c(2, 3, 4, 1, 4, 3, 2, 0, 4, 3, 0, 0, 4, 0, 0, 0), 4),
+                                    list(list(g, g, g), list(g, g))), silent = TRUE), "try-error"))
+stopifnot(length(fit_vine_copula(u, trunc_level = 1)$pairs) == 1)
+cat("R-vine tests passed\n")
