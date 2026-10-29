@@ -4701,7 +4701,8 @@ built on 2026-10-28. Meyers' models followed (#678, branch
 definition of their pattern proposed and accepted by the user as built
 on 2026-10-28, and `Compartmental` (#679, branch
 `claude/compartmental-pattern-draws`, in Rust, Python and R), with item
-7's definition of its pattern proposed. The cash-flow engine takes a
+7's definition of its pattern proposed and accepted by the user as built
+on 2026-10-29. The cash-flow engine takes a
 paid pattern per simulation (`PatternDraws`, `time-value.md` decision 33);
 this decision gives those patterns from a reserving fit, row `i` the same
 simulation as row `i` of the fit's `reserves` and of every vector
@@ -4817,7 +4818,7 @@ decision 26 gives.
      Iman-Conover on their totals, and the reorder's index
      (`reorder_ranges_with`) moves the patterns with them.
 
-   **Compartmental's pattern** (#679, proposed 2026-10-28). The model
+   **Compartmental's pattern** (#679, proposed 2026-10-28 and accepted by the user as built on 2026-10-29). The model
    simulates paid (and outstanding) to the square's last age, `n` origin
    periods after the first origin's start, and a reserve is the paid
    there less the latest paid. Its paid mean at age `t` is
