@@ -200,6 +200,14 @@ n <- 20000
 ev <- events_from_years(rep(list(20), n), seed = 9)
 one <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = 1, pro_rata_time = TRUE)
 stopifnot(inherits(try(apply_tower(reinsurance_tower(list(one)), ev), silent = TRUE), "try-error"))
+# Dated events regrouped into contract years (#586).
+cal <- events_from_years(list(c(1, 2), 3), times = list(c(0.25, 0.75), 0.25))
+july <- contract_years(cal, 0.5)
+stopifnot(july@n_sims == 1, identical(events(july, 1), c(2, 3)),
+          isTRUE(all.equal(event_times(july, 1), c(0.25, 0.75))))
+kept <- contract_years(cal, 0.5, "keep")
+stopifnot(kept@n_sims == 3, identical(events(kept, 1), 1), length(events(kept, 3)) == 0,
+          inherits(try(contract_years(events_from_years(list(1)), 0.5), silent = TRUE), "try-error"))
 dated <- with_uniform_times(ev)
 # #596: has_times, as Python's EventSet.has_times.
 stopifnot(dated@has_times, !ev@has_times)

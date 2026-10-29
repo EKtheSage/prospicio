@@ -661,6 +661,23 @@ impl EventSet {
         })
     }
 
+    /// The events regrouped into contract years from `start`; `partial`
+    /// "drop" or "keep" (`R/aggregate.R`'s `contract_years()`).
+    fn contract_years(&self, start: f64, partial: &str) -> Result<Self> {
+        let partial = match partial {
+            "drop" => prospicio_aggregate::PartialYears::Drop,
+            "keep" => prospicio_aggregate::PartialYears::Keep,
+            other => {
+                return Err(Error::Other(format!(
+                    "partial must be \"drop\" or \"keep\", not {other:?}"
+                )));
+            }
+        };
+        Ok(Self {
+            inner: self.inner.contract_years(start, partial).map_err(to_r)?,
+        })
+    }
+
     /// The years in another order: year `i` of the result is year
     /// `index[i]` (1-based) of this set.
     fn permute(&self, index: &[f64]) -> Result<Self> {

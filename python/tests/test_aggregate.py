@@ -1328,6 +1328,25 @@ def test_read_ylt_orders_checks_and_tiles(tmp_path):
     assert r.seed == 3
 
 
+def test_contract_years():
+    """Dated events regrouped into contract years (#586)."""
+    from prospicio.aggregate import EventSet
+
+    cal = EventSet.from_years([[1.0, 2.0], [3.0]], times=[[0.25, 0.75], [0.25]])
+    july = cal.contract_years(0.5)
+    assert july.n_sims == 1 and july.events(0) == [2.0, 3.0]
+    assert july.times(0) == [0.25, 0.75]
+    kept = cal.contract_years(0.5, partial="keep")
+    assert kept.n_sims == 3 and kept.events(0) == [1.0] and kept.events(2) == []
+    assert cal.contract_years(0.0).events(0) == cal.events(0)
+    with pytest.raises(ValueError, match="times"):
+        EventSet.from_years([[1.0]]).contract_years(0.5)
+    with pytest.raises(ValueError, match="partial"):
+        cal.contract_years(0.5, partial="split")
+    with pytest.raises(ValueError, match="start"):
+        cal.contract_years(1.0)
+
+
 def test_read_ylt_with_losses_stored_as_negative_numbers(tmp_path):
     """A file of negative losses and its sign-flipped copy give one event set (#593)."""
     from prospicio.aggregate import read_ylt

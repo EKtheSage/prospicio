@@ -1417,6 +1417,35 @@ filter_events <- function(x, label, values) {
   event_set(ptr = rust_result(x@ptr$filter(as.character(label), as.character(values))))
 }
 
+#' Contract years of dated events
+#'
+#' The events regrouped into contract years starting at `start`, a fraction of
+#' the simulated year, for a treaty whose year is not the simulation's
+#' (#586). The simulated years are read as consecutive years of one
+#' timeline: a loss of year `i` at time `t` happens at `i + t`, contract year
+#' `j` runs from `j + start` to `j + 1 + start`, and each loss moves to its
+#' contract year with its time rebased to it, keeping its sum insured and
+#' labels. The first and last contract years are partial: `partial = "drop"`
+#' (the default) leaves them out with their losses, so one year fewer
+#' remains; `"keep"` keeps them, one year more. `start = 0` returns the set
+#' as it is. Needs times of loss ([with_uniform_times()], a timed
+#' [read_ylt()]); an aggregate part, which has no times, is refused.
+#'
+#' @param x An [event_set] with times.
+#' @param start The contract year's start, a fraction of the year from 0 to
+#'   below 1.
+#' @param partial `"drop"` or `"keep"`.
+#' @returns An [event_set].
+#' @export
+#' @examples
+#' cal <- events_from_years(list(c(1, 2), 3), times = list(c(0.25, 0.75), 0.25))
+#' july <- contract_years(cal, 0.5)
+#' events(july, 1)
+#' event_times(july, 1)
+contract_years <- function(x, start, partial = c("drop", "keep")) {
+  event_set(ptr = rust_result(x@ptr$contract_years(as.double(start), match.arg(partial))))
+}
+
 #' Hours clause
 #'
 #' Each year's losses grouped into occurrences: losses within `window_hours`

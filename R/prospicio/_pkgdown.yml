@@ -96,6 +96,7 @@ reference:
       - merge_event_sets
       - permute_events
       - filter_events
+      - contract_years
       - with_aggregate_part
       - hours_clause
       - occurrence_pml
