@@ -460,39 +460,57 @@ priors increase from 0.665 to 0.772. Use `decay=1` and `trend=0` only if the
 years are exchangeable. In a changing market, they are usually not
 exchangeable.
 
-**A different prior for each year (`apriori=1.0`).** The plan loss ratio is
-frequently different by year. Put the expected ultimate in a column, use this
-column as the exposure, and set `apriori=1.0`. Here the plan expects the loss
-ratio to decrease from 70% to 65% after rate increases:
+**A different prior for each year.** The plan loss ratio is frequently
+different by year. Give `apriori` as a dict keyed by accident year, with one
+loss ratio for each origin. The premium stays in the exposure column. Here the
+plan expects the loss ratio to decrease from 70% to 65% after rate increases:
 
 ```python
 elr = [0.70, 0.70, 0.69, 0.68, 0.67, 0.66, 0.65]
+plan = dict(zip(years, elr))
+bf = BornhuetterFerguson(apriori=plan).fit(tri, "paid", "premium")
+print("apriori", bf.apriori[:2], "...", bf.apriori[-1])
+print("reserve", [round(r) for r in bf.reserve], "total", round(bf.total_reserve))
+print("flat 70% prior, total", round(methods["Bornhuetter-Ferguson"].total_reserve))
+```
+
+```text
+apriori [0.7, 0.7] ... 0.65
+reserve [0, 12, 42, 104, 209, 377, 608] total 1353
+flat 70% prior, total 1436
+```
+
+Each origin now has its own expected ultimate, `apriori[o] * exposure[o]`. The
+decreasing plan changes the BF reserve from 1,436 (a flat 70%) to 1,353. Most of
+the change is in the two youngest origins. This works for `ExpectedLoss`,
+`BornhuetterFerguson` and `Benktander`. A list or array in origin order, oldest
+first, also works, but use the keys when you can. A list can go to the wrong
+origins without an error if your rows are not in the order you expect. A
+pandas Series is read by its index, so `df.set_index("origin")["elr"]` lines up
+in any row order. In R, give a vector named by origin: `apriori = c("2018" = 0.70, ...)`.
+
+Before this form existed, the workaround was to put the expected ultimate in a
+column, use it as the exposure and set `apriori=1.0`. It gives the same reserve.
+It is still the way to give Cape Cod (and Clark's Cape Cod) a column of
+relativities between years, because they estimate the level again. Here the
+data increase the plan by a factor of 1.034, to a reserve of 1,399:
+
+```python
 expected = [r * p for r, p in zip(elr, premium)]
 tri_prior = Triangle.from_long(
     origin, age, {"paid": [v for row in paid for v in row], "prior": [expected[years.index(y)] for y in origin]}
 )
-bf = BornhuetterFerguson(apriori=1.0).fit(tri_prior, "paid", "prior")
-print("exposure", [round(e) for e in bf.exposure], "apriori", bf.apriori[:2], "...")
-print("reserve", [round(r) for r in bf.reserve], "total", round(bf.total_reserve))
-print("flat 70% prior, total", round(methods["Bornhuetter-Ferguson"].total_reserve))
+bf_col = BornhuetterFerguson(apriori=1.0).fit(tri_prior, "paid", "prior")
+print("exposure column form, total", round(bf_col.total_reserve), "same as the dict form:",
+      abs(bf_col.total_reserve - bf.total_reserve) < 1e-9)
 cc_prior = CapeCod().fit(tri_prior, "paid", "prior")
 print(f"Cape Cod on the same column: apriori {cc_prior.apriori[0]:.3f}, total {cc_prior.total_reserve:.0f}")
 ```
 
 ```text
-exposure [700, 735, 759, 789, 817, 845, 878] apriori [1.0, 1.0] ...
-reserve [0, 12, 42, 104, 209, 377, 608] total 1353
-flat 70% prior, total 1436
+exposure column form, total 1353 same as the dict form: True
 Cape Cod on the same column: apriori 1.034, total 1399
 ```
-
-The exposure column now holds the expected ultimate of each origin, and the
-prior ratio is 1. The decreasing plan changes the BF reserve from 1,436 (a flat
-70%) to 1,353. Most of the change is in the two youngest origins. This method
-works for `ExpectedLoss`, `BornhuetterFerguson` and `Benktander` with
-`apriori=1.0`. Cape Cod (and Clark's Cape Cod) estimate the level again. For
-them, the column sets only the relativities between years. Here the data
-increase the plan by a factor of 1.034, to a reserve of 1,399.
 
 **Is the result reasonable?** Before you book a method, compare the ultimate
 loss ratio of each origin under each method with the plan:

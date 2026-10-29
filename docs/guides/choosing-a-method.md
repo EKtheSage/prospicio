@@ -827,8 +827,9 @@ scale. Use your own.
   Merz-Wuthrich. `knowledge/findings/one-year-bootstrap-vs-merz-wuthrich.md`
   records the causes. `MackBootstrap` agrees with Merz-Wuthrich.
 - BF takes its exposure as a triangle column (the latest value for each origin)
-  and `apriori` as one number. For a prior that changes by year, put the prior
-  loss ratio times premium in the exposure column and use `apriori=1.0`.
+  and `apriori` as one loss ratio for all origins. For a prior that changes by
+  year, give `apriori` as a dict keyed by accident year (or a pandas Series
+  indexed by year). Keys are safer than a list in origin order.
 - The bootstraps give a `PredictiveDistribution` (each simulation of each
   origin), which the capital section needs. The mean and quantiles come from
   `boot.reserves.total()`.
