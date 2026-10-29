@@ -187,7 +187,8 @@ Bindings: Python `prospicio.aggregate.EventLossTable`,
     docs say so. An aggregate part has no times to cut and is refused.
     Python `EventSet.contract_years(start, partial=)`, R `contract_years()`.
 17. **Self-exciting (Hawkes) event times** (#567, items (a) to (e)
-    proposed by the Aggregate lane for the user's acceptance).
+    proposed by the Aggregate lane and accepted by the user on 2026-10-29
+    as built).
     `prospicio_aggregate::Hawkes` is the process with intensity
     `μ + Σ α e^{−β(t − t_i)}`, `Hawkes::simulate` a path by the branching
     construction (exact: immigrants a Poisson process, each event a

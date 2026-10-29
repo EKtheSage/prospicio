@@ -8,10 +8,9 @@ This lane wraps other lanes' crates and changes none of them
 
 ## Next
 
+- [excel-578-rest] #578 (0.0.7): cash flows and returns (`PRO.CASHFLOW`, `PRO.IRR`, `PRO.NPV`, `PRO.MOIC`), the P&L ledger (`PRO.PNL`), year loss tables (`PRO.YLT.STATS`, `PRO.YLT.OEP`, `PRO.ELT.OEP`) and allocation (`PRO.ALLOCATE`), one PR each
 - [excel-more-functions] further functions as the user asks
 - [code-signing-certificate] a code-signing certificate is the user's to buy
-- #635 `selected`, `kind` and `weight` on PRO.EL, PRO.BF, PRO.BENKTANDER and PRO.CAPECOD, and a per-origin APRIORI (0.0.7)
-- [excel-triangle-pattern-ages] pattern ages on PRO.CL, PRO.MACK and the expected-loss functions so a monthly pattern reaches a triangle (#680, in 0.0.7, with #635; #544; reserving-v02.md decision 18 item 4; xll.md decision 39)
 
 ## Done
 
@@ -60,3 +59,5 @@ This lane wraps other lanes' crates and changes none of them
 - [excel-bayes-bf] the Bayesian Bornhuetter-Ferguson by MCMC (`PRO.BAYES.BF`: `BayesBfNormalised`, a gamma prior on each origin's ultimate at apriori times exposure, `cv` or `"flat"`, `common_cv`; reserves, ultimates, posterior and diagnostics of one kept fit; the flat limit at `PRO.BAYES.ODP`, the tight one at `PRO.BF`; decision 38)
 - [excel-diagonal] a latest diagonal on a sheet (#544, decision 39, branch `claude/excel-diagonal`): `PRO.DIAG.CL`, `.EL`, `.BF`, `.BENKTANDER` and `.CAPECOD` project origins (years or Excel dates) at their ages or a valuation date with a selected pattern (values and ages, `kind`, `tail`), the origin grain, `past_end` (reject, none, tail) and `pattern_origin` (a pattern of accident months averaged to the origins' grain), and `PRO.PATTERN.AVERAGE` shows that averaging; a triangle's pattern is frozen through `PRO.CL.LDF`; the hand diagonal, chainladder-python's `DevelopmentConstant` on GenIns and the CAS workers' compensation triangle at 1e-9 and the Reserving lane's past-end and averaging cases reproduced, each exhibit equal to the crate's fit to the bit
 - [excel-diagonal-details] decision 39's last three details accepted by the user on 2026-10-25 as built: `PRO.PATTERN.AVERAGE`'s `grain` defaults to `"year"`, a `pattern_origin` equal to `grain` is an error there, and a tail of exactly 1 counts as no tail (#544)
+- [excel-triangle-pattern-ages] #635 and #680 (0.0.7, branch `claude/xll-el-selected-ages`, decision 40): `selected`, `kind` and `weight` on `PRO.EL`, `PRO.BF`, `PRO.BENKTANDER` and `PRO.CAPECOD`; `pattern_ages` on the thirteen functions that take `selected`, so a monthly pattern reaches a triangle; `apriori` one per origin on the triangle and diagonal expected-loss functions; chainladder-python `DevelopmentConstant` parity on the CAS workers' compensation triangle, the crate's fits to the bit off the triangle's ages
+- [excel-glm] #578 group 1 (0.0.7, branch `claude/xll-glm`, decision 41): `PRO.GLM`, `PRO.GLM.PREDICT` and `PRO.GLM.RELATIVITIES` on a table with a header row, every family and link of `prospicio-glm` with an exposure offset and prior weights; statsmodels 0.15.0 parity on all ten reference cases

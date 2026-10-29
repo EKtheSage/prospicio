@@ -159,6 +159,8 @@
 "experience::PreparedLoss" = "unbound on 2026-10-28 (seed); review"
 "experience::YearCost" = "unbound on 2026-10-28 (seed); review"
 "frontier::Frontier" = "a result type: frontier returns its points as a dict of columns"
+"ils::BasisRisk" = "a result type: CatBondLosses.basis_risk returns its fields as a dict"
+"ils::CatBondPrice" = "a result type: CatBondLosses.price returns its fields as a dict"
 "layer::CensoredLayer" = "unbound on 2026-10-28 (seed); review"
 "natural::AllocationRange" = "unbound on 2026-10-28 (seed); review"
 "natural::PremiumBound" = "unbound on 2026-10-28 (seed); review"
@@ -196,6 +198,8 @@
 "severity_fit::GoodnessOfFit" = "unbound on 2026-10-28 (seed); review"
 "severity_fit::ProductLimitStep" = "unbound on 2026-10-28 (seed); review"
 "severity_fit::log_likelihood" = "unbound on 2026-10-28 (seed); review"
+"vine_fit::independence_p_value" = "internal: the independence test that select_pair runs under independence_test"
+"vine_fit::log_likelihood" = "internal: a pair fit reports it as PairFit.log_likelihood"
 
 [python.prospicio_reserving]
 "CalendarDiagonal" = "unbound on 2026-10-28 (seed); review"
@@ -398,6 +402,8 @@
 "experience::BurningCost" = "unbound on 2026-10-28 (seed); review"
 "experience::PreparedLoss" = "unbound on 2026-10-28 (seed); review"
 "frontier::Frontier" = "a result type: frontier() returns its points as a list of columns"
+"ils::BasisRisk" = "a result type: cat_bond_basis_risk() returns its fields as a list"
+"ils::CatBondPrice" = "a result type: cat_bond_price() returns its fields as a list"
 "natural::AllocationRange" = "unbound on 2026-10-28 (seed); review"
 "natural::NaturalPrice" = "unbound on 2026-10-28 (seed); review"
 "natural::PremiumBound" = "unbound on 2026-10-28 (seed); review"
@@ -447,6 +453,9 @@
 "severity_fit::SeverityFit" = "unbound on 2026-10-28 (seed); review"
 "severity_fit::log_likelihood" = "unbound on 2026-10-28 (seed); review"
 "statistics::Statistics" = "unbound on 2026-10-28 (seed); review"
+"vine_fit::VineFit" = "a result type: fit_vine_copula() returns its fields as a list"
+"vine_fit::independence_p_value" = "internal: the independence test that select_pair_copula() runs under independence_test"
+"vine_fit::log_likelihood" = "internal: a pair fit reports it as its log_likelihood"
 
 [r.prospicio_reserving]
 "CalendarView" = "unbound on 2026-10-28 (seed); review"

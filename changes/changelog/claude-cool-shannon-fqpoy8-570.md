@@ -1,0 +1,3 @@
+### Pricing
+
+- Cat bonds and insurance-linked securities: `prospicio_pricing::ils::CatBond`, a tranche of principal on an indemnity, modelled-loss, weighted industry-index or parametric trigger, per occurrence or on the annual aggregate, over a term of several years; its losses give the expected loss, the probabilities of attachment and exhaustion, the spread under a distortion and its calibration to a market spread, Lane's spread at given coefficients, the investor's return in each term and the basis risk against the cedant's indemnity recoveries (`pareto.md`, "Cat bonds"). Python `prospicio.reinsurance.CatBond`, R `cat_bond()` and its `cat_bond_*()` functions (#570, #708).

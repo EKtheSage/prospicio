@@ -161,7 +161,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and three functions registered", registered == 103);
+    check("one hundred and six functions registered", registered == 106);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -190,15 +190,42 @@ int main(int argc, char **argv) {
     print_result("PRO.VERSION()", v);
     free12(v);
 
-    XLOPER12 *ldf = ((Fn6)GetProcAddress(xll, "pro_cl_ldf"))(&tri, &missing, &tail, &missing, &missing, &missing);
+    XLOPER12 *ldf = ((Fn7)GetProcAddress(xll, "pro_cl_ldf"))(&tri, &missing, &tail, &missing, &missing, &missing,
+                                                             &missing);
     print_result("PRO.CL.LDF(RAA,,1.05)", ldf);
     check("LDF is 1 x 10", (ldf->xltype & 0xFFF) == xltypeMulti && ldf->val.array.rows == 1 &&
                                ldf->val.array.columns == 10);
     check("last LDF is the tail", ldf->val.array.lparray[9].val.num == 1.05);
     free12(ldf);
 
-    Fn8 mack = (Fn8)GetProcAddress(xll, "pro_mack");
-    XLOPER12 *m = mack(&tri, &missing, &missing, &missing, &missing, &missing, &missing, &missing);
+    /* Selected factors at their pattern_ages, the last argument (decision 40). */
+    XLOPER12 sel_cells[2], age_cells[3], sel, ages;
+    sel_cells[0].xltype = sel_cells[1].xltype = xltypeNum;
+    sel_cells[0].val.num = 3.0;
+    sel_cells[1].val.num = 2.0;
+    for (int i = 0; i < 3; i++) {
+        age_cells[i].xltype = xltypeNum;
+        age_cells[i].val.num = 12.0 * (i + 1);
+    }
+    sel.xltype = ages.xltype = xltypeMulti;
+    sel.val.array.lparray = sel_cells;
+    sel.val.array.rows = ages.val.array.rows = 1;
+    sel.val.array.columns = 2;
+    ages.val.array.lparray = age_cells;
+    ages.val.array.columns = 2;
+    Fn7 cl_ldf = (Fn7)GetProcAddress(xll, "pro_cl_ldf");
+    XLOPER12 *sel_ldf = cl_ldf(&tri, &missing, &missing, &sel, &missing, &missing, &ages);
+    check("selected 3, 2 at pattern_ages 12, 24", (sel_ldf->xltype & 0xFFF) == xltypeMulti &&
+                                                      sel_ldf->val.array.lparray[0].val.num == 3.0 &&
+                                                      sel_ldf->val.array.lparray[1].val.num == 2.0);
+    free12(sel_ldf);
+    ages.val.array.columns = 3;
+    XLOPER12 *sx = cl_ldf(&tri, &missing, &missing, &sel, &missing, &missing, &ages);
+    check("three pattern_ages for two values is an error", (sx->xltype & 0xFFF) == xltypeStr);
+    free12(sx);
+
+    Fn9 mack = (Fn9)GetProcAddress(xll, "pro_mack");
+    XLOPER12 *m = mack(&tri, &missing, &missing, &missing, &missing, &missing, &missing, &missing, &missing);
     print_result("PRO.MACK(RAA)", m);
     XLOPER12 *total = &m->val.array.lparray[11 * 8];
     check("total reserve 52135.228 (R ChainLadder)", fabs(total[3].val.num - 52135.2282612101) < 1e-6);
@@ -210,24 +237,25 @@ int main(int argc, char **argv) {
     XLOPER12 rule;
     rule.xltype = xltypeStr;
     rule.val.str = mack_s;
-    XLOPER12 *rs = mack(&tri, &missing, &missing, &missing, &missing, &missing, &missing, &rule);
+    XLOPER12 *rs = mack(&tri, &missing, &missing, &missing, &missing, &missing, &missing, &rule, &missing);
     check("Mack SE with Mack's sigma rule 26909.011 (R ChainLadder)",
           fabs(rs->val.array.lparray[11 * 8 + 6].val.num - 26909.0111556436) < 1e-6);
     free12(rs);
 
-    XLOPER12 *bad = mack(&tri, &tail, &missing, &missing, &missing, &missing, &missing, &missing);
+    XLOPER12 *bad = mack(&tri, &tail, &missing, &missing, &missing, &missing, &missing, &missing, &missing);
     print_result("PRO.MACK(RAA, 1.05)", bad);
     check("a bad argument comes back as text", (bad->xltype & 0xFFF) == xltypeStr);
     free12(bad);
 
-    XLOPER12 *s = ((Fn7)GetProcAddress(xll, "pro_cl"))(&tri, &simple, &missing, &missing, &missing, &missing, &missing);
+    XLOPER12 *s = ((Fn8)GetProcAddress(xll, "pro_cl"))(&tri, &simple, &missing, &missing, &missing, &missing, &missing,
+                                                       &missing);
     print_result("PRO.CL(RAA, \"simple\")", s);
     check("simple-average reserve 93643.031 (R ChainLadder)",
           fabs(s->val.array.lparray[11 * 5 + 4].val.num - 93643.0313432212) < 1e-6);
     free12(s);
 
     /* Many calls, freed each time: a leak or a double free shows here. */
-    for (int i = 0; i < 2000; i++) free12(mack(&tri, &missing, &missing, &missing, &missing, &missing, &missing, &missing));
+    for (int i = 0; i < 2000; i++) free12(mack(&tri, &missing, &missing, &missing, &missing, &missing, &missing, &missing, &missing));
     check("2000 calls and frees", 1);
 
     /* Layer pricing: Pareto(t = 500, alpha = 2), a column of attachments
@@ -339,7 +367,8 @@ int main(int argc, char **argv) {
     expo.val.array.columns = 1;
     apriori.xltype = xltypeNum;
     apriori.val.num = 1.0;
-    XLOPER12 *bf = ((Fn6)GetProcAddress(xll, "pro_bf"))(&tri, &expo, &apriori, &missing, &missing, &missing);
+    Fn10 bf_fn = (Fn10)GetProcAddress(xll, "pro_bf");
+    XLOPER12 *bf = bf_fn(&tri, &expo, &apriori, &missing, &missing, &missing, &missing, &missing, &missing, &missing);
     print_result("PRO.BF(RAA, 20000 each, 1)", bf);
     check("BF table is 12 x 7", (bf->xltype & 0xFFF) == xltypeMulti && bf->val.array.rows == 12 &&
                                     bf->val.array.columns == 7);
@@ -352,9 +381,29 @@ int main(int argc, char **argv) {
           fabs(bf->val.array.lparray[11 * 7 + 6].val.num - expect) < 1e-6);
     free12(bf);
 
+    /* An a priori loss ratio per origin, a column (decision 40). */
+    XLOPER12 lr_cells[10], lrs;
+    for (int i = 0; i < 10; i++) {
+        lr_cells[i].xltype = xltypeNum;
+        lr_cells[i].val.num = 0.5 + 0.1 * i;
+    }
+    lrs.xltype = xltypeMulti;
+    lrs.val.array.lparray = lr_cells;
+    lrs.val.array.rows = 10;
+    lrs.val.array.columns = 1;
+    XLOPER12 *bo = bf_fn(&tri, &expo, &lrs, &missing, &missing, &missing, &missing, &missing, &missing, &missing);
+    expect = 0;
+    for (int i = 1; i <= 10; i++) {
+        double cdf = bo->val.array.lparray[i * 7 + 3].val.num;
+        expect += (0.5 + 0.1 * (i - 1)) * 20000 * (1 - 1 / cdf);
+    }
+    check("BF reserve with an a priori per origin",
+          fabs(bo->val.array.lparray[11 * 7 + 6].val.num - expect) < 1e-6);
+    free12(bo);
+
     /* Merz-Wuthrich: RAA's total CDR(1) SE 25166.303 (R ChainLadder's CDR). */
-    XLOPER12 *cd = ((Fn8)GetProcAddress(xll, "pro_mack_cdr"))(&tri, &missing, &missing, &missing, &missing,
-                                                              &missing, &missing, &missing);
+    XLOPER12 *cd = ((Fn9)GetProcAddress(xll, "pro_mack_cdr"))(&tri, &missing, &missing, &missing, &missing,
+                                                              &missing, &missing, &missing, &missing);
     print_result("PRO.MACK.CDR(RAA)", cd);
     check("total CDR(1) SE 25166.303 (R ChainLadder)",
           fabs(cd->val.array.lparray[11 * 4 + 2].val.num - 25166.3025264382) < 1e-6);
@@ -764,6 +813,58 @@ int main(int argc, char **argv) {
     check("PRO.DIAG.CL total ultimate 3981.342857",
           fabs(dgl_fit->val.array.lparray[7 * 6 + 4].val.num - 3981.342857142857) < 1e-9);
     free12(dgl_fit);
+
+    /* A Poisson GLM on a six-row table (PRO.GLM): claims on age and region.
+     * With a log link and an intercept the fitted means add up to the
+     * observed claims, 9. */
+    static const double gl_age[6] = {20, 30, 40, 50, 60, 70}, gl_claims[6] = {3, 2, 2, 1, 1, 0};
+    static wchar_t s_age[] = L"\x03" L"age", s_region[] = L"\x06" L"region", s_claims[] = L"\x06" L"claims";
+    static wchar_t s_a[] = L"\x01" L"A", s_b[] = L"\x01" L"B";
+    XLOPER12 gl_cells[21], gl_data, gl_resp, gl_terms_cells[2], gl_terms;
+    wchar_t *gl_head[3] = {s_age, s_region, s_claims};
+    for (int c = 0; c < 3; c++) {
+        gl_cells[c].xltype = xltypeStr;
+        gl_cells[c].val.str = gl_head[c];
+    }
+    for (int r = 0; r < 6; r++) {
+        XLOPER12 *row = &gl_cells[3 * (r + 1)];
+        row[0].xltype = row[2].xltype = xltypeNum;
+        row[0].val.num = gl_age[r];
+        row[2].val.num = gl_claims[r];
+        row[1].xltype = xltypeStr;
+        row[1].val.str = r % 2 ? s_b : s_a;
+    }
+    gl_data.xltype = gl_terms.xltype = xltypeMulti;
+    gl_data.val.array.lparray = gl_cells;
+    gl_data.val.array.rows = 7;
+    gl_data.val.array.columns = 3;
+    gl_terms_cells[0] = gl_cells[0];
+    gl_terms_cells[1] = gl_cells[1];
+    gl_terms.val.array.lparray = gl_terms_cells;
+    gl_terms.val.array.rows = 1;
+    gl_terms.val.array.columns = 2;
+    gl_resp = gl_cells[2];
+    XLOPER12 *gl_fit = ((Fn8)GetProcAddress(xll, "pro_glm"))(&gl_data, &gl_resp, &gl_terms, &missing, &missing,
+                                                             &missing, &missing, &missing);
+    print_result("PRO.GLM(table, \"claims\", {\"age\",\"region\"})", gl_fit);
+    check("PRO.GLM has seven columns", (gl_fit->xltype & 0xFFF) == xltypeMulti && gl_fit->val.array.columns == 7);
+    free12(gl_fit);
+    XLOPER12 *gl_pred = ((Fn9)GetProcAddress(xll, "pro_glm_predict"))(&gl_data, &gl_resp, &gl_terms, &gl_data,
+                                                                      &missing, &missing, &missing, &missing,
+                                                                      &missing);
+    double gl_sum = 0;
+    if ((gl_pred->xltype & 0xFFF) == xltypeMulti)
+        for (int r = 0; r < gl_pred->val.array.rows; r++) gl_sum += gl_pred->val.array.lparray[r].val.num;
+    check("PRO.GLM.PREDICT means add up to the claims", fabs(gl_sum - 9) < 1e-8);
+    free12(gl_pred);
+    XLOPER12 *gl_rel = ((Fn9)GetProcAddress(xll, "pro_glm_relativities"))(&gl_data, &gl_resp, &gl_terms, &missing,
+                                                                          &missing, &missing, &missing, &missing,
+                                                                          &missing);
+    print_result("PRO.GLM.RELATIVITIES(table, \"claims\", {\"age\",\"region\"})", gl_rel);
+    check("PRO.GLM.RELATIVITIES base level at 1", (gl_rel->xltype & 0xFFF) == xltypeMulti &&
+                                                      gl_rel->val.array.rows == 4 &&
+                                                      gl_rel->val.array.lparray[2 * 5 + 2].val.num == 1);
+    free12(gl_rel);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

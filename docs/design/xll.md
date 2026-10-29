@@ -17,29 +17,32 @@ category of Insert Function:
 
 | Function | Returns |
 |---|---|
-| `PRO.CL(triangle, [average], [tail], [origins], [selected], [kind], [weight])` | Origin, Latest, CDF, Ultimate, Reserve per origin, and a total row |
-| `PRO.CL.LDF(triangle, [average], [tail], [selected], [kind], [weight])` | Selected age-to-age factors, one per triangle column; the last is the tail factor |
-| `PRO.CL.CDF(triangle, [average], [tail], [selected], [kind], [weight])` | Age-to-ultimate factors, one per triangle column |
+| `PRO.CL(triangle, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Origin, Latest, CDF, Ultimate, Reserve per origin, and a total row |
+| `PRO.CL.LDF(triangle, [average], [tail], [selected], [kind], [weight], [pattern_ages])` | Selected age-to-age factors, one per triangle column; the last is the tail factor |
+| `PRO.CL.CDF(triangle, [average], [tail], [selected], [kind], [weight], [pattern_ages])` | Age-to-ultimate factors, one per triangle column |
 | `PRO.CL.ULTIMATE(...)`, `PRO.CL.RESERVE(...)` | One column, one row per origin |
-| `PRO.CL.FACTORS(triangle, [average], [tail], [selected], [kind], [weight], [sigma])` | Per link: LDF, CDF, Mack sigma and the factor's standard error; then the tail |
-| `PRO.MACK(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Latest, Ultimate, Reserve, Process SE, Parameter SE, Mack SE and CV per origin, and the total |
+| `PRO.CL.FACTORS(triangle, [average], [tail], [selected], [kind], [weight], [sigma], [pattern_ages])` | Per link: LDF, CDF, Mack sigma and the factor's standard error; then the tail |
+| `PRO.MACK(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma], [pattern_ages])` | Latest, Ultimate, Reserve, Process SE, Parameter SE, Mack SE and CV per origin, and the total |
 | `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | ODP bootstrap: CL reserve, simulated mean, SD, CV and percentiles per origin, and the total |
 | `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins])` | The bootstrap's simulated reserves: one row per simulation, a column per origin and the total |
 | `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack's bootstrap (England, Verrall and Wuthrich), laid out as `PRO.ODP` |
 | `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins], [sigma])` | Its simulated reserves, laid out as `PRO.ODP.SIMS` |
-| `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Merz-Wuthrich: reserve, CDR(1) SE and run-off (Mack) SE per origin, and the total |
+| `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma], [pattern_ages])` | Merz-Wuthrich: reserve, CDR(1) SE and run-off (Mack) SE per origin, and the total |
 | `PRO.MACK.CDR.YEARS(...)`, same arguments | The CDR SE per origin in each future calendar year (R's `CDR(k)S.E.`) |
 | `PRO.ODP.CDR(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | The ODP bootstrap's one-year view: simulated CDR mean, SD and percentiles |
 | `PRO.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack's bootstrap's one-year view, laid out as `PRO.ODP.CDR` |
 | `PRO.CLARK(triangle, [exposure], [curve], [max_age], [origins])` | Clark's growth curve: the LDF method, or Cape Cod with `exposure`; reserve and its process, parameter and total SE |
 | `PRO.CLARK.PARAMS(triangle, [exposure], [curve], [max_age])` | Its fitted omega, theta, ELR (Cape Cod), scale and observations |
+| `PRO.GLM(data, response, terms, [family], [link], [exposure], [weights], [p])` | A GLM on a table with a header row: each coefficient's estimate, SE, statistic, p-value and exp(estimate), then deviance, dispersion, log-likelihood, AIC, BIC and the degrees of freedom (decision 41) |
+| `PRO.GLM.PREDICT(data, response, terms, newdata, [family], [link], [exposure], [weights], [p])` | The fitted model's mean on each row of a table of new rows |
+| `PRO.GLM.RELATIVITIES(data, response, terms, [family], [link], [exposure], [weights], [p], [level])` | A log-link GLM's relativities: each factor level against its base, a numeric term per unit, with a confidence interval |
 | `PRO.TRI.INCREMENTAL(triangle)`, `PRO.TRI.CUMULATIVE(triangle)` | The triangle turned incremental, or an incremental one cumulative, laid out as it is |
 | `PRO.TRI.LINKRATIOS(triangle)` | Age-to-age link ratios, one column fewer than the ages |
 | `PRO.TRI.LATEST(triangle)` | Each origin's latest value, a column |
-| `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins])` | Expected loss method: exposure times the a priori loss ratio |
-| `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])` | Bornhuetter-Ferguson |
-| `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander (iterated BF) |
-| `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins])` | Cape Cod (Stanard-Buhlmann) |
+| `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Expected loss method: exposure times the a priori loss ratio |
+| `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Bornhuetter-Ferguson |
+| `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Benktander (iterated BF) |
+| `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Cape Cod (Stanard-Buhlmann) |
 | `PRO.DIAG.CL(origins, ages, latest, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | A latest diagonal (a bordereau) projected with a selected pattern by the chain ladder: Origin, Age, Latest, CDF, Ultimate, Reserve, and a total row (decision 39) |
 | `PRO.DIAG.EL(origins, ages, latest, exposure, apriori, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])`, `PRO.DIAG.BF(...)`, same arguments | The expected loss method and Bornhuetter-Ferguson on a latest diagonal: Origin, Age, Exposure, Latest, CDF, A priori, Ultimate, Reserve, and a total row |
 | `PRO.DIAG.BENKTANDER(origins, ages, latest, exposure, apriori, pattern, [iterations], [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | Benktander on a latest diagonal |
@@ -789,8 +792,89 @@ real Excel.
     date gives a full triangle's ages, `PRO.TRI.LATEST` its latest
     values. Pattern ages on `PRO.CL`, `PRO.MACK` and the expected-loss
     functions on a triangle, so that a monthly pattern reaches them
-    (decision 18 item 4), are a follow-up (`[excel-triangle-pattern-ages]`
-    in the lane's Next): `selected` still reads 12, 24, ... by column.
+    (decision 18 item 4), are decision 40.
+40. **Selected patterns on every triangle function, at their ages, and an
+    a priori per origin** (#635 and #680, 0.0.7; the user's decisions of
+    2026-10-26 and 2026-10-28, and of 2026-10-29: one PR for both). The
+    expected-loss functions `PRO.EL`, `PRO.BF`, `PRO.BENKTANDER` and
+    `PRO.CAPECOD` take `selected`, `kind` and `weight` as the chain-ladder
+    functions read them, and the thirteen functions that take `selected`
+    (`PRO.CL`, `.LDF`, `.CDF`, `.ULTIMATE`, `.RESERVE`, `.FACTORS`,
+    `PRO.MACK`, `PRO.MACK.CDR`, `.CDR.YEARS` and the four) take
+    `pattern_ages`, each selected value's age in months. New arguments are
+    appended, so every sheet written before keeps its meaning, and the tail
+    of every list is the same: `selected, kind, weight, pattern_ages`, with
+    `sigma` before `pattern_ages` where a function already had it after
+    `weight` (`PRO.CL.FACTORS`, `PRO.MACK` and the one-year view). That
+    is decision 39's order (`pattern_ages, kind, ...`) only in part: a
+    triangle function's `kind` and `tail` came first, and moving them
+    would break sheets. Without `pattern_ages` a value sits at 12, 24, ...
+    by cell, as before; with it, the crate reads the pattern on its own
+    ages where they are not the triangle's (`reserving-v02.md` decision 18
+    item 4): an age-to-age factor runs to the next age given, a
+    cumulative pattern is `ln`-linear between its ages, and one past the
+    oldest age folds into the tail. A blank value skips its age, as on the
+    diagonal functions, and a value with a blank age is an error. The
+    triangle's columns stay 12, 24, ... months (decision 4's reading of
+    ages as development periods), so `pattern_ages` is in months against
+    an annual triangle; a quarterly triangle would need its period length
+    as an argument, which waits until a user asks. `pattern_origin` is not
+    added to the triangle functions: `PRO.PATTERN.AVERAGE` gives the same
+    averaged pattern in cells, which then goes in as `selected` with kind
+    `"percent"` at its ages. `apriori` on `PRO.EL`, `PRO.BF`,
+    `PRO.BENKTANDER` and their `PRO.DIAG.*` twins is one number or a row
+    or column with one loss ratio per origin (`Apriori` of #634): oldest
+    first on a triangle, one per row; on a diagonal in the order the
+    `origins` argument gives them, keyed by their periods, since those
+    rows may come in any order. `PRO.CAPECOD` estimates its own level and
+    takes none. Checks (`tests/selected_patterns.rs`): every
+    chainladder-python 0.10.1 `DevelopmentConstant` case of the four
+    methods on the CAS workers' compensation triangle (32 runs, the
+    patterns to ultimate as percents too) per origin and in total;
+    `pattern_ages` of 12, 24, ... equal to omitting it, to the bit, on all
+    thirteen functions; a monthly cumulative pattern through RAA's annual
+    factors equal to the annual selection to 1e-12 on all thirteen; a
+    pattern at 6, 18, ..., 114 months through `PRO.CL.ULTIMATE`,
+    `PRO.MACK` and `PRO.BF` equal to the crate's own fits to the bit; the
+    a priori per origin against the BF formula and the crate, and a
+    diagonal's against any order of its origins. The fake Excel checks
+    the last argument through the C API.
+
+41. **GLMs on a sheet** (#578 group 1, 0.0.7; the user's decision of
+    2026-10-29 to work on #578 after #635 and #680). `PRO.GLM`,
+    `PRO.GLM.PREDICT` and `PRO.GLM.RELATIVITIES` fit a `prospicio-glm`
+    GLM to a table whose first row names its columns, as an Excel table
+    or a pasted extract has it; trailing blank rows are dropped, so a
+    whole-column range works. `response` names a column, and `terms` is a
+    row or column of entries: a column's name (a numeric column is a
+    numeric term, a text column a factor), `name=level` for a factor with
+    that base level (otherwise the first level in sorted order, as R and
+    statsmodels choose it), and `a:b` for an interaction. The model is
+    refitted on each call rather than kept between calls: a handle to a
+    fit held by the add-in would go stale when the sheet changes, and the
+    fits a sheet needs take milliseconds (600 rows). `family` is
+    `poisson` (the default), `quasipoisson` (Poisson with Pearson's
+    dispersion), `gamma`, `gaussian`, `inverse_gaussian`, `binomial` (a
+    proportion with the trials as `weights`), `tweedie` (with `p` its
+    power) or `negative_binomial` (with `p` its theta); `link` defaults
+    to the log, the logit for the binomial and the identity for the
+    Gaussian. `exposure` names a column whose log is the offset, so it is
+    allowed only on the log link; `weights` names the prior weights.
+    Every function takes the same arguments in the same order, with
+    `newdata` after `terms` for the prediction and `level` (0.95) last
+    for the relativities, so one argument list is copied between them. A
+    level or column in `newdata` the training data lacks is an error
+    naming it. The relativities list a factor's base level first at 1,
+    labelled `(base)`, so the table reads as a rating manual's. Checks
+    (`tests/glm.rs`): every statsmodels 0.15.0 case of
+    `validation/reference/glm_statsmodels.csv` (ten families and links on
+    `validation/data/glm_policies.csv`, 144 values: coefficients, SEs,
+    deviance, null deviance, dispersion, log-likelihood and AIC) at the
+    file's tolerances; predictions against the coefficients by hand;
+    relativities and their intervals against exp(estimate), and a chosen
+    base level as the reciprocal; the errors. The fake Excel fits a
+    six-row table through the C API, and the test workbook's GLM sheet
+    checks the Poisson fit against statsmodels.
 
 ## Parity plan
 

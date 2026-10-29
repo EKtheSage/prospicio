@@ -24,6 +24,7 @@ pub mod evt;
 pub mod experience;
 pub mod exposure;
 pub mod fitting;
+pub mod glm;
 pub mod odp_glm;
 pub mod payout;
 pub mod pricing;
@@ -88,7 +89,11 @@ const TRIANGLE: Arg = Arg {
 };
 const SELECTED: Arg = Arg {
     name: "selected",
-    help: "Selected factors, one cell per triangle column; a blank keeps the estimate",
+    help: "Selected factors, one cell per triangle column (or at pattern_ages); a blank keeps the estimate",
+};
+const SELECTED_AGES: Arg = Arg {
+    name: "pattern_ages",
+    help: "Each selected value's age in months, such as 3, 6, 9, ... for a monthly pattern on the triangle's 12, 24, ... columns; omitted for 12, 24, ... by cell",
 };
 const KIND: Arg = Arg {
     name: "kind",
@@ -155,7 +160,7 @@ const EXPOSURE: Arg = Arg {
 };
 const APRIORI: Arg = Arg {
     name: "apriori",
-    help: "The a priori expected loss ratio, ultimate per unit of exposure, such as 0.75",
+    help: "The a priori expected loss ratio, ultimate per unit of exposure, such as 0.75; or a row or column, one per triangle row",
 };
 
 const DIAG_ORIGINS: Arg = Arg {
@@ -338,6 +343,39 @@ const PROBABILITY: Arg = Arg {
     help: "Probability or probabilities, between 0 and 1: a number or a range",
 };
 
+const GLM_DATA: Arg = Arg {
+    name: "data",
+    help: "The table: a header row of column names, then one row per observation; text columns are factors",
+};
+const GLM_RESPONSE: Arg = Arg {
+    name: "response",
+    help: "The response's column name, such as \"claims\" (a proportion with binomial)",
+};
+const GLM_TERMS: Arg = Arg {
+    name: "terms",
+    help: "The predictors' column names, a row or column: \"age\", \"region=A\" (a factor with base level A) or \"age:region\" (an interaction)",
+};
+const GLM_FAMILY: Arg = Arg {
+    name: "family",
+    help: "poisson (default), quasipoisson, gamma, tweedie, gaussian, inverse_gaussian, binomial or negative_binomial",
+};
+const GLM_LINK: Arg = Arg {
+    name: "link",
+    help: "log (default; logit for binomial, identity for gaussian), identity, logit, probit, cloglog, inverse or inverse_squared",
+};
+const GLM_EXPOSURE: Arg = Arg {
+    name: "exposure",
+    help: "The exposure's column name: ln(exposure) as offset on the log link; omitted for none",
+};
+const GLM_WEIGHTS: Arg = Arg {
+    name: "weights",
+    help: "The prior weights' column name (claim counts for an average severity, trials for binomial); omitted for 1",
+};
+const GLM_P: Arg = Arg {
+    name: "p",
+    help: "The tweedie power (such as 1.5) or the negative_binomial theta; omitted otherwise",
+};
+
 fn version(_: &[Grid]) -> Result<Grid, String> {
     Ok(Grid::scalar(Value::Text(format!(
         "prospicio {}",
@@ -359,42 +397,92 @@ pub static FUNCTIONS: &[Function] = &[
         symbol: "pro_cl",
         name: "PRO.CL",
         help: "Chain ladder exhibit: latest, CDF, ultimate and reserve per origin, with a total.",
-        args: &[TRIANGLE, AVERAGE, TAIL, ORIGINS, SELECTED, KIND, WEIGHT],
+        args: &[
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            ORIGINS,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
+        ],
         run: reserving::cl_summary,
     },
     Function {
         symbol: "pro_cl_ldf",
         name: "PRO.CL.LDF",
         help: "Selected age-to-age factors, one per triangle column; the last is the tail.",
-        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT],
+        args: &[
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
+        ],
         run: reserving::cl_ldf,
     },
     Function {
         symbol: "pro_cl_cdf",
         name: "PRO.CL.CDF",
         help: "Age-to-ultimate factors, one per triangle column.",
-        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT],
+        args: &[
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
+        ],
         run: reserving::cl_cdf,
     },
     Function {
         symbol: "pro_cl_ultimate",
         name: "PRO.CL.ULTIMATE",
         help: "Chain ladder ultimate per origin.",
-        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT],
+        args: &[
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
+        ],
         run: reserving::cl_ultimate,
     },
     Function {
         symbol: "pro_cl_reserve",
         name: "PRO.CL.RESERVE",
         help: "Chain ladder reserve (ultimate less latest) per origin.",
-        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT],
+        args: &[
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
+        ],
         run: reserving::cl_reserve,
     },
     Function {
         symbol: "pro_cl_factors",
         name: "PRO.CL.FACTORS",
         help: "Development exhibit: LDF, CDF, Mack sigma and standard error per link, and the tail.",
-        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT, SIGMA],
+        args: &[
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SIGMA,
+            SELECTED_AGES,
+        ],
         run: reserving::cl_factors,
     },
     Function {
@@ -402,7 +490,15 @@ pub static FUNCTIONS: &[Function] = &[
         name: "PRO.MACK",
         help: "Mack exhibit: ultimate, reserve, process, parameter and total standard error and CV per origin, with a total.",
         args: &[
-            TRIANGLE, AVERAGE, TAIL, ORIGINS, SELECTED, KIND, WEIGHT, SIGMA,
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            ORIGINS,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SIGMA,
+            SELECTED_AGES,
         ],
         run: reserving::mack_summary,
     },
@@ -478,7 +574,15 @@ pub static FUNCTIONS: &[Function] = &[
         name: "PRO.MACK.CDR",
         help: "Merz-Wuthrich one-year view: reserve, CDR(1) SE and run-off (Mack) SE per origin, with a total.",
         args: &[
-            TRIANGLE, AVERAGE, TAIL, ORIGINS, SELECTED, KIND, WEIGHT, SIGMA,
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            ORIGINS,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SIGMA,
+            SELECTED_AGES,
         ],
         run: reserving::mack_cdr,
     },
@@ -487,7 +591,15 @@ pub static FUNCTIONS: &[Function] = &[
         name: "PRO.MACK.CDR.YEARS",
         help: "Merz-Wuthrich CDR standard error per origin in each future calendar year, with the total.",
         args: &[
-            TRIANGLE, AVERAGE, TAIL, ORIGINS, SELECTED, KIND, WEIGHT, SIGMA,
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            ORIGINS,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SIGMA,
+            SELECTED_AGES,
         ],
         run: reserving::mack_cdr_years,
     },
@@ -528,14 +640,36 @@ pub static FUNCTIONS: &[Function] = &[
         symbol: "pro_el",
         name: "PRO.EL",
         help: "Expected loss method: ultimate is exposure times the a priori loss ratio.",
-        args: &[TRIANGLE, EXPOSURE, APRIORI, AVERAGE, TAIL, ORIGINS],
+        args: &[
+            TRIANGLE,
+            EXPOSURE,
+            APRIORI,
+            AVERAGE,
+            TAIL,
+            ORIGINS,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
+        ],
         run: reserving::expected_loss,
     },
     Function {
         symbol: "pro_bf",
         name: "PRO.BF",
         help: "Bornhuetter-Ferguson: latest plus the a priori ultimate's unreported share, per origin, with a total.",
-        args: &[TRIANGLE, EXPOSURE, APRIORI, AVERAGE, TAIL, ORIGINS],
+        args: &[
+            TRIANGLE,
+            EXPOSURE,
+            APRIORI,
+            AVERAGE,
+            TAIL,
+            ORIGINS,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
+        ],
         run: reserving::bornhuetter_ferguson,
     },
     Function {
@@ -553,6 +687,10 @@ pub static FUNCTIONS: &[Function] = &[
             AVERAGE,
             TAIL,
             ORIGINS,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
         ],
         run: reserving::benktander,
     },
@@ -574,6 +712,10 @@ pub static FUNCTIONS: &[Function] = &[
             AVERAGE,
             TAIL,
             ORIGINS,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
         ],
         run: reserving::cape_cod,
     },
@@ -2346,6 +2488,62 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: aggregate::layer_terms,
+    },
+    Function {
+        symbol: "pro_glm",
+        name: "PRO.GLM",
+        help: "A GLM fitted to a table: each coefficient's estimate, SE, statistic, p-value and exp(estimate), then deviance, dispersion, AIC and the other statistics.",
+        args: &[
+            GLM_DATA,
+            GLM_RESPONSE,
+            GLM_TERMS,
+            GLM_FAMILY,
+            GLM_LINK,
+            GLM_EXPOSURE,
+            GLM_WEIGHTS,
+            GLM_P,
+        ],
+        run: glm::summary,
+    },
+    Function {
+        symbol: "pro_glm_predict",
+        name: "PRO.GLM.PREDICT",
+        help: "The fitted mean of each row of newdata under a GLM fitted to data, as a column.",
+        args: &[
+            GLM_DATA,
+            GLM_RESPONSE,
+            GLM_TERMS,
+            Arg {
+                name: "newdata",
+                help: "The rows to predict: a header row with the same column names (the exposure's too, when one is named), then one row each",
+            },
+            GLM_FAMILY,
+            GLM_LINK,
+            GLM_EXPOSURE,
+            GLM_WEIGHTS,
+            GLM_P,
+        ],
+        run: glm::predict,
+    },
+    Function {
+        symbol: "pro_glm_relativities",
+        name: "PRO.GLM.RELATIVITIES",
+        help: "A log-link GLM's relativities: exp(estimate) per factor level (the base at 1) and per unit of a numeric term, with a confidence interval.",
+        args: &[
+            GLM_DATA,
+            GLM_RESPONSE,
+            GLM_TERMS,
+            GLM_FAMILY,
+            GLM_LINK,
+            GLM_EXPOSURE,
+            GLM_WEIGHTS,
+            GLM_P,
+            Arg {
+                name: "level",
+                help: "The confidence interval's level, 0.95 if omitted",
+            },
+        ],
+        run: glm::relativities,
     },
 ];
 

@@ -342,12 +342,38 @@ el["I54"] = "Its parameters"; el["I54"].font = bold
 el["I55"] = ArrayFormula("I55:J60", f"=PRO.CLARK.PARAMS({G},{P},,240)")
 el["A69"] = "Clark's LDF method on GenIns, Weibull"; el["A69"].font = bold
 el["A70"] = ArrayFormula("A70:G81", f'=PRO.CLARK({G},,"weibull",,{O})')
+# A selected pattern at its ages and an a priori per origin (decision 40).
+el["M3"] = "A priori by AY"; el["M3"].font = bold
+for r in range(10):
+    el.cell(row=4+r, column=13, value=round(0.70 + 0.01*r, 2)).fill = inp
+el["A84"] = "GenIns's own factors to ultimate (PRO.CL.CDF) at their ages, as a selected pattern"; el["A84"].font = bold
+el["A85"] = "Pattern age"; el["A86"] = "CDF"; el["A85"].font = el["A86"].font = bold
+for c in range(10):
+    el.cell(row=85, column=2+c, value=12*(c+1)).fill = inp
+el["B86"] = ArrayFormula("B86:K86", f"=PRO.CL.CDF({G})")
+el["A88"] = "Bornhuetter-Ferguson on the selected pattern"; el["A88"].font = bold
+el["A89"] = ArrayFormula("A89:G100", f'=PRO.BF({G},{P},$O$3,,,{O},$B$86:$K$86,"cdf",,$B$85:$K$85)')
+el["I88"] = "Bornhuetter-Ferguson, a priori by AY (column M)"; el["I88"].font = bold
+el["I89"] = ArrayFormula("I89:O100", f"=PRO.BF({G},{P},$M$4:$M$13,,,{O})")
+el["A102"] = "Check: the selected pattern and the a priori by AY"; el["A102"].font = bold
+for h, col in zip(["Check", "prospicio", "Expected", "Match"], "ABCD"):
+    el[f"{col}103"] = h; el[f"{col}103"].font = bold
+for i, (name, f, x) in enumerate([
+        ("Own pattern selected = BF", "=G100", "=G28"),
+        ("By AY = latest + LR x premium x (1 - 1/CDF)", "=N100",
+         "=SUMPRODUCT(K90:K99+M90:M99*J90:J99*(1-1/L90:L99))")]):
+    row = 104 + i
+    el[f"A{row}"] = name; el[f"B{row}"] = f; el[f"C{row}"] = x
+    el[f"D{row}"] = f"=ABS(B{row}-C{row})<1E-6*ABS(C{row})"
 el.column_dimensions["A"].width = 22
 for col in "BCDEFGHIJKLMNO":
     el.column_dimensions[col].width = 12
-for row in el.iter_rows(min_row=17, max_row=81, min_col=2, max_col=15):
+for row in el.iter_rows(min_row=17, max_row=105, min_col=2, max_col=15):
     for c in row:
-        c.number_format = "#,##0"
+        if c.row not in (85, 86):
+            c.number_format = "#,##0"
+for c in range(10):
+    el.cell(row=86, column=2+c).number_format = "0.0000"
 
 # The one-year view on the RAA sheet's triangle.
 oy = wb.create_sheet("One-year")
@@ -1078,6 +1104,46 @@ dg.column_dimensions["A"].width = 12
 dg.column_dimensions["H"].width = 40
 for col in [*"BCDEFGIJKLMOPQRSTUWXYZ", "AA", "AB"]:
     dg.column_dimensions[col].width = 12
+
+# A Poisson GLM on validation/data/glm_policies.csv (600 policies) with an
+# exposure offset, against statsmodels 0.15.0 (validation/reference/glm_statsmodels.csv).
+REF = Path(__file__).resolve().parents[3] / "validation"
+gl = wb.create_sheet("GLM")
+gl["A1"] = "prospicio XLL test: a Poisson GLM with an exposure offset (PRO.GLM, .PREDICT, .RELATIVITIES)"; gl["A1"].font = Font(bold=True, size=13)
+gl["A2"] = "600 policies from validation/data/glm_policies.csv; claims on age and region, log(exposure) as the offset."; gl["A2"].font = note
+with open(REF / "data" / "glm_policies.csv") as f:
+    policies = list(csv.DictReader(f))
+for c, h in enumerate(["age", "region", "exposure", "claims"]):
+    gl.cell(row=3, column=1 + c, value=h).font = bold
+    for r, p in enumerate(policies):
+        v = p[h]
+        gl.cell(row=4 + r, column=1 + c, value=v if h == "region" else float(v)).fill = inp
+DATA = f"$A$3:$D${3 + len(policies)}"
+gl["F3"] = "GLM summary"; gl["F3"].font = bold
+gl["F4"] = ArrayFormula("F4:L19", f'=PRO.GLM({DATA},"claims",{{"age","region"}},"poisson","log","exposure")')
+gl["N3"] = "Relativities, 95%"; gl["N3"].font = bold
+gl["N4"] = ArrayFormula("N4:R9", f'=PRO.GLM.RELATIVITIES({DATA},"claims",{{"age","region"}},"poisson","log","exposure")')
+gl["F23"] = "New rows"; gl["F23"].font = bold
+for c, h in enumerate(["age", "region", "exposure"]):
+    gl.cell(row=24, column=6 + c, value=h).font = bold
+for r, row in enumerate([(30, "A", 1), (45, "C", 0.5), (60, "D", 2)]):
+    for c, v in enumerate(row):
+        gl.cell(row=25 + r, column=6 + c, value=v).fill = inp
+gl["I24"] = "Mean"; gl["I24"].font = bold
+gl["I25"] = ArrayFormula("I25:I27", f'=PRO.GLM.PREDICT({DATA},"claims",{{"age","region"}},$F$24:$H$27,"poisson","log","exposure")')
+gl["F30"] = "Check against statsmodels 0.15.0"; gl["F30"].font = bold
+with open(REF / "reference" / "glm_statsmodels.csv") as f:
+    sm = {(r["quantity"], r["term"]): float(r["expected"]) for r in csv.DictReader(f) if r["case"] == "poisson_log"}
+for i, (name, cell) in enumerate([("(Intercept)", "H5"), ("age", "H6"), ("region[B]", "H7"),
+                                  ("region[C]", "H8"), ("region[D]", "H9")]):
+    row = 31 + i
+    gl[f"F{row}"] = f"coefficient {name}"; gl[f"G{row}"] = f"={cell}"; gl[f"H{row}"] = sm[("coef", name)]
+    gl[f"I{row}"] = f"=ABS(G{row}-H{row})<1e-8*MAX(1,ABS(H{row}))"
+gl["F36"] = "deviance"; gl["G36"] = "=G11"; gl["H36"] = sm[("deviance", "")]
+gl["I36"] = "=ABS(G36-H36)<1e-8*MAX(1,ABS(H36))"
+gl.column_dimensions["F"].width = 24
+for col in "GHIJKLNOPQR":
+    gl.column_dimensions[col].width = 13
 
 wb.save(out)
 
