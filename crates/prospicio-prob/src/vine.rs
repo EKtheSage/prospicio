@@ -450,7 +450,7 @@ impl PairCopula {
 }
 
 /// Keeps `u` strictly inside `(0, 1)`, where every density is finite.
-fn clamp01(u: f64) -> f64 {
+pub(crate) fn clamp01(u: f64) -> f64 {
     u.clamp(f64::MIN_POSITIVE, 1.0 - f64::EPSILON / 2.0)
 }
 

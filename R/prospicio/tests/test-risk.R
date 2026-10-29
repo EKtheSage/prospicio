@@ -405,3 +405,39 @@ stopifnot(inherits(try(total(mvl), silent = TRUE), "try-error"))
 stopifnot(inherits(try(multivariate_lognormal(c(1, 1), matrix(c(1, -0.9, -0.9, 1), 2)), silent = TRUE), "try-error"))
 stopifnot(inherits(try(multivariate_lognormal(c(1, 1)), silent = TRUE), "try-error"))
 cat("multivariate joint tests passed\n")
+
+# R-vines and vine fits against pyvinecopulib 1.0.1 (#568;
+# validation/scripts/pyvinecopulib_rvine.py).
+vclose <- function(got, want, tol) stopifnot(all(abs(got - want) <= tol * pmax(1, abs(want))))
+vroot <- if (dir.exists("validation")) "validation" else file.path("..", "..", "..", "validation")
+vref <- utils::read.csv(file.path(vroot, "reference", "vine_rvine_pyvinecopulib.csv"), stringsAsFactors = FALSE)
+vdat <- utils::read.csv(file.path(vroot, "reference", "vine_rvine_data.csv"))
+vmat <- function(s) do.call(rbind, lapply(strsplit(strsplit(s, ";")[[1]], " "), as.integer))
+vpair <- function(s) {
+  f <- strsplit(s, ":")[[1]]
+  p <- as.double(f[-(1:2)])
+  if (f[1] == "student") pair_copula("student", p[1], nu = p[2]) else pair_copula(f[1], p[1], as.double(f[2]))
+}
+vpairs <- function(s) lapply(strsplit(s, "/")[[1]], function(t) lapply(strsplit(t, ";")[[1]], vpair))
+for (i in seq_len(nrow(vref))) {
+  r <- vref[i, ]
+  want <- as.double(strsplit(r$expected, ";")[[1]])
+  if (r$case == "density") {
+    v <- rvine_copula(vmat(r$matrix), vpairs(r$pairs))
+    stopifnot(identical(rvine_structure(v)$matrix, vmat(r$matrix)))
+    vclose(copula_log_density(v, as.double(strsplit(r$data, ";")[[1]])), want, 1e-9)
+  } else if (r$case %in% c("fit_structure", "select")) {
+    u <- as.matrix(vdat[vdat$set == as.integer(r$data), paste0("u", 1:5)])
+    fit <- fit_vine_copula(u, if (r$case == "fit_structure") vmat(r$matrix) else NULL)
+    stopifnot(abs(fit$log_likelihood - want) < 1e-3)
+    vclose(sum(copula_log_density(fit$copula, u)), fit$log_likelihood, 1e-6)
+  }
+}
+g <- pair_copula("gaussian", 0.5)
+dv <- vine_copula("d", 1:3, list(list(g, pair_copula("clayton", 1.5, 90)), list(pair_copula("frank", 3))))
+rv <- rvine_copula(rvine_structure(dv)$matrix, rvine_structure(dv)$pairs)
+vclose(copula_log_density(rv, c(0.2, 0.7, 0.4)), copula_log_density(dv, c(0.2, 0.7, 0.4)), 1e-12)
+stopifnot(inherits(try(rvine_copula(matrix(c(2, 3, 4, 1, 4, 3, 2, 0, 4, 3, 0, 0, 4, 0, 0, 0), 4),
+                                    list(list(g, g, g), list(g, g))), silent = TRUE), "try-error"))
+stopifnot(length(fit_vine_copula(u, trunc_level = 1)$pairs) == 1)
+cat("R-vine tests passed\n")

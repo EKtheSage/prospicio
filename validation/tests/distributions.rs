@@ -1426,3 +1426,168 @@ fn pair_fits_and_the_student_pair_match_pyvinecopulib() {
     }
     assert_eq!((pairs, fits), (96, 14));
 }
+
+#[test]
+fn r_vines_and_vine_fits_match_pyvinecopulib() {
+    use std::collections::BTreeMap;
+
+    use prospicio_prob::rvine::RVineCopula;
+    use prospicio_prob::vine::{PairCopula, PairFamily};
+    use prospicio_prob::vine_fit::{VineSelect, fit_vine, select_vine};
+
+    let family = |s: &str| match s {
+        "independence" => PairFamily::Independence,
+        "gaussian" => PairFamily::Gaussian,
+        "student" => PairFamily::Student,
+        "clayton" => PairFamily::Clayton,
+        "gumbel" => PairFamily::Gumbel,
+        "frank" => PairFamily::Frank,
+        "joe" => PairFamily::Joe,
+        other => panic!("family {other}"),
+    };
+    let pair = |s: &str| -> PairCopula {
+        let f: Vec<&str> = s.split(':').collect();
+        let p: Vec<f64> = f[2..].iter().map(|x| x.parse().unwrap()).collect();
+        match family(f[0]) {
+            PairFamily::Student => PairCopula::student(p[0], p[1]).unwrap(),
+            PairFamily::Independence => PairCopula::independence(),
+            fam => PairCopula::new(fam, p[0], f[1].parse().unwrap()).unwrap(),
+        }
+    };
+    let matrix = |s: &str| -> Vec<Vec<usize>> {
+        s.split(';')
+            .map(|r| r.split(' ').map(|x| x.parse().unwrap()).collect())
+            .collect()
+    };
+    let pairs = |s: &str| -> Vec<Vec<PairCopula>> {
+        s.split('/')
+            .map(|t| t.split(';').map(pair).collect())
+            .collect()
+    };
+    let nums = |s: &str| -> Vec<f64> { s.split(';').map(|x| x.parse().unwrap()).collect() };
+    // The data sets, one column per variable.
+    let mut sets: BTreeMap<String, Vec<Vec<f64>>> = BTreeMap::new();
+    for r in &reference("vine_rvine_data.csv") {
+        let cols = sets
+            .entry(r.get("set").to_string())
+            .or_insert_with(|| vec![Vec::new(); 5]);
+        for (k, c) in cols.iter_mut().enumerate() {
+            c.push(r.get(&format!("u{}", k + 1)).parse().unwrap());
+        }
+    }
+    // An edge by its sorted pair and conditioning set, 1-based, with its
+    // pair copula's first argument the smaller variable.
+    type Key = ((usize, usize), Vec<usize>);
+    let canonical =
+        |a: usize, b: usize, mut given: Vec<usize>, c: PairCopula| -> (Key, PairCopula) {
+            given.sort_unstable();
+            if a < b {
+                (((a, b), given), c)
+            } else {
+                (((b, a), given), c.transposed())
+            }
+        };
+    let same = |got: &PairCopula, want: &PairCopula, what: &str| {
+        assert_eq!(
+            (got.family(), got.rotation()),
+            (want.family(), want.rotation()),
+            "{what}: {got:?} {want:?}"
+        );
+        assert!(
+            (got.parameter() - want.parameter()).abs() <= 2e-3 * want.parameter().abs().max(0.1),
+            "{what}: {got:?} {want:?}"
+        );
+        if let (Some(a), Some(b)) = (got.nu(), want.nu()) {
+            assert!((a / b - 1.0).abs() < 2e-2, "{what}: {got:?} {want:?}");
+        }
+    };
+    let (mut points, mut fits) = (0, 0);
+    for c in &reference("vine_rvine_pyvinecopulib.csv") {
+        match c.get("case") {
+            "density" | "inverse_rosenblatt" => {
+                let v = RVineCopula::new(matrix(c.get("matrix")), pairs(c.get("pairs"))).unwrap();
+                // Our matrix is pyvinecopulib's.
+                assert_eq!(v.matrix(), matrix(c.get("matrix")));
+                let u = nums(c.get("data"));
+                let want = nums(c.get("expected"));
+                if c.get("case") == "density" {
+                    let got = v.log_density(&u).unwrap();
+                    assert!(
+                        (got - want[0]).abs() < 1e-9 * want[0].abs().max(1.0),
+                        "{got} {want:?}"
+                    );
+                } else {
+                    let got = v.inverse_rosenblatt(&u).unwrap();
+                    for (g, w) in got.iter().zip(&want) {
+                        assert!((g - w).abs() < 1e-9, "{got:?} {want:?}");
+                    }
+                }
+                points += 1;
+            }
+            "fit_structure" => {
+                let data = &sets[c.get("data")];
+                let fit = fit_vine(matrix(c.get("matrix")), data, &VineSelect::default()).unwrap();
+                let want_ll: f64 = c.get("expected").parse().unwrap();
+                assert!(
+                    (fit.log_likelihood - want_ll).abs() < 1e-3,
+                    "{} {want_ll}",
+                    fit.log_likelihood
+                );
+                for (t, (got, want)) in fit
+                    .vine
+                    .pairs()
+                    .iter()
+                    .zip(pairs(c.get("pairs")))
+                    .enumerate()
+                {
+                    for (j, (g, w)) in got.iter().zip(&want).enumerate() {
+                        same(g, w, &format!("tree {t}, edge {j}"));
+                    }
+                }
+                fits += 1;
+            }
+            "select" => {
+                let data = &sets[c.get("data")];
+                let fit = select_vine(data, &VineSelect::default()).unwrap();
+                let want_ll: f64 = c.get("expected").parse().unwrap();
+                assert!(
+                    (fit.log_likelihood - want_ll).abs() < 1e-3,
+                    "{} {want_ll}",
+                    fit.log_likelihood
+                );
+                let mut want: BTreeMap<Key, PairCopula> = BTreeMap::new();
+                for e in c.get("pairs").split('/') {
+                    let f: Vec<&str> = e.split('|').collect();
+                    let ab: Vec<usize> = f[0].split(' ').map(|x| x.parse().unwrap()).collect();
+                    let given = f[1]
+                        .split(' ')
+                        .filter(|x| !x.is_empty())
+                        .map(|x| x.parse().unwrap())
+                        .collect();
+                    let (k, p) = canonical(ab[0], ab[1], given, pair(f[2]));
+                    want.insert(k, p);
+                }
+                let mut got: BTreeMap<Key, PairCopula> = BTreeMap::new();
+                for t in 0..fit.vine.trunc_level() {
+                    for j in 0..4 - t {
+                        let (a, b, given) = fit.vine.edge(t, j);
+                        let given = given.iter().map(|g| g + 1).collect();
+                        let (k, p) = canonical(a + 1, b + 1, given, fit.vine.pairs()[t][j]);
+                        got.insert(k, p);
+                    }
+                }
+                // The same edges, each with the same pair copula.
+                assert_eq!(
+                    got.keys().collect::<Vec<_>>(),
+                    want.keys().collect::<Vec<_>>()
+                );
+                for (k, w) in &want {
+                    same(&got[k], w, &format!("{k:?}"));
+                }
+                fits += 1;
+            }
+            other => panic!("case {other}"),
+        }
+    }
+    assert_eq!((points, fits), (16, 4));
+}

@@ -326,6 +326,8 @@ pair_fit_rust <- function(u, v, family, rotation) .Call(wrap__pair_fit_rust, u, 
 
 pair_select_rust <- function(u, v, families, criterion, independence_test) .Call(wrap__pair_select_rust, u, v, families, criterion, independence_test)
 
+vine_fit_rust <- function(data, n, matrix, families, criterion, independence_test, trunc_level) .Call(wrap__vine_fit_rust, data, n, matrix, families, criterion, independence_test, trunc_level)
+
 kendall_tau_rust <- function(x, y) .Call(wrap__kendall_tau_rust, x, y)
 
 pseudo_observations_rust <- function(x) .Call(wrap__pseudo_observations_rust, x)
@@ -3699,6 +3701,10 @@ RiskCopula$archimedean <- function(family, theta, dim) .Call(wrap__RiskCopula__a
 RiskCopula$nested <- function(family, root) .Call(wrap__RiskCopula__nested, family, root)
 
 RiskCopula$vine <- function(kind, order, pairs) .Call(wrap__RiskCopula__vine, kind, order, pairs)
+
+RiskCopula$rvine <- function(matrix, pairs) .Call(wrap__RiskCopula__rvine, matrix, pairs)
+
+RiskCopula$rvine_structure <- function() .Call(wrap__RiskCopula__rvine_structure, self)
 
 RiskCopula$log_density <- function(u, n) .Call(wrap__RiskCopula__log_density, self, u, n)
 

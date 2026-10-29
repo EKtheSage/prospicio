@@ -320,6 +320,8 @@ reference:
       - sobol_points
       - vine_copula
       - fit_pair_copula
+      - rvine_copula
+      - fit_vine_copula
       - copula_simulate
       - iman_conover
   - title: Extreme value tails

@@ -1,7 +1,9 @@
-//! Fitting pair copulas to data (#568): pseudo-observations, Kendall's
-//! tau, the maximum likelihood fit of one family and rotation, and the
-//! choice among families by an information criterion, with an
-//! independence test first, as pyvinecopulib's `Bicop.select` does.
+//! Fitting pair copulas and vines to data (#568): pseudo-observations,
+//! Kendall's tau, the maximum likelihood fit of one family and rotation,
+//! the choice among families by an information criterion, with an
+//! independence test first, as pyvinecopulib's `Bicop.select` does, and
+//! vines fitted tree by tree on a given R-vine matrix ([`fit_vine`]) or with
+//! the structure chosen by Dißmann's algorithm ([`select_vine`]).
 //!
 //! Parameters are searched within pyvinecopulib's bounds: the Gaussian and
 //! Student t correlation in `(−1, 1)`, Clayton in `(0, 28]`, Gumbel in
@@ -14,6 +16,7 @@ use prospicio_core::{Error, Result};
 use prospicio_math::optimize::minimize;
 use prospicio_math::special::norm_cdf;
 
+use crate::rvine::{RVineCopula, TreeEdge};
 use crate::vine::{PairCopula, PairFamily};
 
 /// Pseudo-observations of a sample: each value's average rank over
@@ -420,6 +423,271 @@ pub fn select_pair(u: &[f64], v: &[f64], select: &PairSelect) -> Result<PairFit>
     Ok(best)
 }
 
+/// How [`fit_vine`] and [`select_vine`] choose each edge's pair copula
+/// and how many trees they keep.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct VineSelect {
+    /// The choice of each pair copula.
+    pub pair: PairSelect,
+    /// The number of trees to fit; `None` for all `d − 1`. The trees above
+    /// it are independence.
+    pub trunc_level: Option<usize>,
+}
+
+/// A fitted vine.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VineFit {
+    /// The vine at its estimates.
+    pub vine: RVineCopula,
+    /// The log-likelihood, the sum of the pair copulas'.
+    pub log_likelihood: f64,
+    /// Its number of parameters.
+    pub n_parameters: usize,
+    /// The number of observations.
+    pub n: usize,
+}
+
+impl VineFit {
+    /// `2k − 2ℓ`.
+    pub fn aic(&self) -> f64 {
+        2.0 * self.n_parameters as f64 - 2.0 * self.log_likelihood
+    }
+
+    /// `k ln n − 2ℓ`.
+    pub fn bic(&self) -> f64 {
+        self.n_parameters as f64 * (self.n as f64).ln() - 2.0 * self.log_likelihood
+    }
+}
+
+/// Conditional values passed to the next tree stay inside `(0, 1)`, as
+/// vinecopulib keeps them within `1e-10` of the ends.
+fn trim(x: f64) -> f64 {
+    x.clamp(1e-10, 1.0 - 1e-10)
+}
+
+fn check_columns(data: &[Vec<f64>]) -> Result<(usize, usize)> {
+    let d = data.len();
+    if d < 2 {
+        return Err(Error::Data(format!(
+            "a vine needs at least 2 columns, got {d}"
+        )));
+    }
+    let n = data[0].len();
+    for c in &data[1..] {
+        check_data(&data[0], c)?;
+    }
+    Ok((d, n))
+}
+
+fn trunc_of(select: &VineSelect, d: usize) -> usize {
+    select.trunc_level.unwrap_or(d - 1).min(d - 1)
+}
+
+/// The vine on R-vine matrix `matrix` (vinecopulib's convention, see
+/// [`RVineCopula`]) fitted to `data` (one column per variable, values in
+/// `(0, 1)`, say [`pseudo_observations`]) tree by tree: each edge's pair
+/// copula chosen by [`select_pair`] on the conditional values the trees
+/// below give at their estimates (sequential maximum likelihood), as
+/// pyvinecopulib's `Vinecop.from_structure(matrix).select(data)`.
+pub fn fit_vine(
+    matrix: Vec<Vec<usize>>,
+    data: &[Vec<f64>],
+    select: &VineSelect,
+) -> Result<VineFit> {
+    let (d, n) = check_columns(data)?;
+    if matrix.len() != d {
+        return Err(Error::Data(format!(
+            "a {}-dimensional R-vine matrix for {d} columns",
+            matrix.len()
+        )));
+    }
+    let trunc = trunc_of(select, d);
+    let blank: Vec<Vec<PairCopula>> = (0..trunc)
+        .map(|t| vec![PairCopula::independence(); d - 1 - t])
+        .collect();
+    let shape = RVineCopula::new(matrix.clone(), blank)?;
+    let (natural, minimum) = shape.natural_order();
+    let mut h2: Vec<Vec<f64>> = shape.order().iter().map(|&v| data[v].clone()).collect();
+    let mut h1: Vec<Vec<f64>> = vec![Vec::new(); d];
+    let mut pairs = Vec::with_capacity(trunc);
+    let mut ll = 0.0;
+    for t in 0..trunc {
+        let mut tree = Vec::with_capacity(d - 1 - t);
+        for j in 0..d - 1 - t {
+            let m = minimum[t][j];
+            let b = if natural[t][j] == m { &h2[m] } else { &h1[m] };
+            let a = &h2[j];
+            let fit = select_pair(a, b, &select.pair)?;
+            ll += fit.log_likelihood;
+            let c = fit.pair;
+            let new1: Vec<f64> = a.iter().zip(b).map(|(&x, &y)| trim(c.h1(y, x))).collect();
+            let new2: Vec<f64> = a.iter().zip(b).map(|(&x, &y)| trim(c.h2(x, y))).collect();
+            h1[j] = new1;
+            h2[j] = new2;
+            tree.push(c);
+        }
+        pairs.push(tree);
+    }
+    let vine = RVineCopula::new(matrix, pairs)?;
+    Ok(VineFit {
+        n_parameters: vine.n_parameters(),
+        vine,
+        log_likelihood: ll,
+        n,
+    })
+}
+
+/// A candidate edge: its two variables, their conditional values and its
+/// conditioning set.
+type Candidate<'a> = (usize, usize, &'a [f64], &'a [f64], Vec<usize>);
+
+/// An edge of a tree being built: its variables, the conditional value of
+/// each given the rest of the edge, and the nodes of the tree below it
+/// joins.
+struct Built {
+    edge: TreeEdge,
+    a_given: Vec<f64>,
+    b_given: Vec<f64>,
+    ends: (usize, usize),
+}
+
+/// A vine fitted to `data` (one column per variable, values in `(0, 1)`)
+/// with its structure chosen by Dißmann, Brechmann, Czado and Kurowicka's
+/// (2013) algorithm, as pyvinecopulib's `Vinecop.from_data`: each tree is
+/// the spanning tree of largest total `|τ|` (Prim's algorithm) over the
+/// edges the proximity condition allows, each edge's pair copula is
+/// chosen by [`select_pair`], and the next tree's data are the conditional
+/// values at those fits. The matrix is read off the trees as vinecopulib
+/// does, so a structure equal to pyvinecopulib's may have a different
+/// matrix and edges with transposed pair copulas.
+///
+/// ```
+/// use prospicio_prob::copula::{Copula, GaussianCopula};
+/// use prospicio_prob::vine_fit::{VineSelect, select_vine};
+/// use prospicio_core::StreamRng;
+///
+/// let c = GaussianCopula::new(&[1.0, 0.7, 0.5, 0.7, 1.0, 0.3, 0.5, 0.3, 1.0], 3).unwrap();
+/// let mut cols = vec![Vec::new(); 3];
+/// for i in 0..2_000 {
+///     let mut rng = StreamRng::new(1, i);
+///     let mut u = [0.0; 3];
+///     c.sample(&mut rng, &mut u);
+///     for k in 0..3 {
+///         cols[k].push(u[k]);
+///     }
+/// }
+/// let fit = select_vine(&cols, &VineSelect::default()).unwrap();
+/// // The first tree joins the two strongest pairs, 0-1 and 0-2, so the
+/// // second joins 1 and 2 given 0.
+/// let (a, b, given) = fit.vine.edge(1, 0);
+/// assert_eq!(([a.min(b), a.max(b)], given), ([1, 2], vec![0]));
+/// ```
+pub fn select_vine(data: &[Vec<f64>], select: &VineSelect) -> Result<VineFit> {
+    let (d, n) = check_columns(data)?;
+    let trunc = trunc_of(select, d);
+    let mut trees: Vec<Vec<TreeEdge>> = Vec::with_capacity(trunc);
+    let mut ll = 0.0;
+    // Tree 0's nodes are the variables, each with its column.
+    let mut prev: Vec<Built> = Vec::new();
+    for t in 0..trunc {
+        let nodes = d - t;
+        // The candidate edges, each with its two variables, their data and
+        // the edge's conditioning set.
+        let mut weight = vec![f64::NEG_INFINITY; nodes * nodes];
+        let candidate = |p: usize, q: usize| -> Option<Candidate<'_>> {
+            if t == 0 {
+                return Some((p, q, &data[p][..], &data[q][..], Vec::new()));
+            }
+            let (ep, eq) = (&prev[p], &prev[q]);
+            let common = [ep.ends.0, ep.ends.1]
+                .into_iter()
+                .find(|c| *c == eq.ends.0 || *c == eq.ends.1)?;
+            // The variable each edge holds that the shared node does not:
+            // the end opposite the shared node.
+            fn other(e: &Built, common: usize) -> (usize, &[f64]) {
+                if e.ends.0 == common {
+                    (e.edge.b, &e.b_given)
+                } else {
+                    (e.edge.a, &e.a_given)
+                }
+            }
+            let ((xp, up), (xq, uq)) = (other(ep, common), other(eq, common));
+            let mut given: Vec<usize> = ep
+                .edge
+                .given
+                .iter()
+                .copied()
+                .chain([ep.edge.a, ep.edge.b])
+                .filter(|v| *v != xp)
+                .collect();
+            given.sort_unstable();
+            Some((xp, xq, up, uq, given))
+        };
+        for p in 0..nodes {
+            for q in p + 1..nodes {
+                if let Some((_, _, up, uq, _)) = candidate(p, q) {
+                    let w = kendall_tau(up, uq).map(f64::abs).unwrap_or(0.0);
+                    let w = if w.is_nan() { 0.0 } else { w };
+                    weight[p * nodes + q] = w;
+                    weight[q * nodes + p] = w;
+                }
+            }
+        }
+        // Prim's maximum spanning tree from node 0.
+        let mut inside = vec![false; nodes];
+        inside[0] = true;
+        let mut chosen: Vec<(usize, usize)> = Vec::with_capacity(nodes - 1);
+        for _ in 1..nodes {
+            let mut best: Option<(usize, usize, f64)> = None;
+            for p in (0..nodes).filter(|&p| inside[p]) {
+                for q in (0..nodes).filter(|&q| !inside[q]) {
+                    let w = weight[p * nodes + q];
+                    if w > f64::NEG_INFINITY && best.is_none_or(|b| w > b.2) {
+                        best = Some((p, q, w));
+                    }
+                }
+            }
+            let (p, q, _) = best.ok_or_else(|| {
+                Error::Data(format!(
+                    "tree {t} cannot be spanned under the proximity condition"
+                ))
+            })?;
+            inside[q] = true;
+            chosen.push((p.min(q), p.max(q)));
+        }
+        chosen.sort_unstable();
+        let mut built = Vec::with_capacity(chosen.len());
+        for (p, q) in chosen {
+            let (a, b, ua, ub, given) = candidate(p, q).expect("a candidate edge");
+            let fit = select_pair(ua, ub, &select.pair)?;
+            ll += fit.log_likelihood;
+            let c = fit.pair;
+            let a_given = ua.iter().zip(ub).map(|(&x, &y)| trim(c.h2(x, y))).collect();
+            let b_given = ua.iter().zip(ub).map(|(&x, &y)| trim(c.h1(y, x))).collect();
+            built.push(Built {
+                edge: TreeEdge {
+                    a,
+                    b,
+                    given,
+                    pair: c,
+                },
+                a_given,
+                b_given,
+                ends: (p, q),
+            });
+        }
+        trees.push(built.iter().map(|b| b.edge.clone()).collect());
+        prev = built;
+    }
+    let vine = RVineCopula::from_trees(d, trees)?;
+    Ok(VineFit {
+        n_parameters: vine.n_parameters(),
+        vine,
+        log_likelihood: ll,
+        n,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -521,5 +789,138 @@ mod tests {
             select_pair(&a, &b, &sel).unwrap().pair.family(),
             PairFamily::Independence
         );
+    }
+
+    /// `n` draws from a vine, one column per variable.
+    fn draws(v: &RVineCopula, n: usize, seed: u64) -> Vec<Vec<f64>> {
+        use crate::copula::Copula;
+        let d = v.dim();
+        let mut cols = vec![Vec::with_capacity(n); d];
+        let mut u = vec![0.0; d];
+        for i in 0..n as u64 {
+            let mut rng = prospicio_core::StreamRng::new(seed, i);
+            v.sample(&mut rng, &mut u);
+            for (c, x) in cols.iter_mut().zip(&u) {
+                c.push(*x);
+            }
+        }
+        cols
+    }
+
+    fn five_dimensional() -> RVineCopula {
+        // Neither a C- nor a D-vine: tree 0 is 0-1, 1-2, 1-3, 3-4.
+        let p = |f, x, r| PairCopula::new(f, x, r).unwrap();
+        let e = |a, b, given: &[usize], pair| TreeEdge {
+            a,
+            b,
+            given: given.to_vec(),
+            pair,
+        };
+        RVineCopula::from_trees(
+            5,
+            vec![
+                vec![
+                    e(0, 1, &[], p(PairFamily::Gumbel, 2.5, 0)),
+                    e(1, 2, &[], p(PairFamily::Clayton, 3.0, 0)),
+                    e(1, 3, &[], PairCopula::student(0.7, 4.0).unwrap()),
+                    e(3, 4, &[], p(PairFamily::Frank, 8.0, 0)),
+                ],
+                vec![
+                    e(0, 2, &[1], p(PairFamily::Gaussian, 0.4, 0)),
+                    e(2, 3, &[1], p(PairFamily::Joe, 1.6, 90)),
+                    e(1, 4, &[3], p(PairFamily::Clayton, 1.2, 180)),
+                ],
+                vec![
+                    e(0, 3, &[1, 2], p(PairFamily::Gaussian, -0.3, 0)),
+                    e(2, 4, &[1, 3], p(PairFamily::Frank, 2.0, 0)),
+                ],
+                vec![e(0, 4, &[1, 2, 3], p(PairFamily::Gaussian, 0.2, 0))],
+            ],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_vine_on_its_own_structure_recovers_its_pairs() {
+        let v = five_dimensional();
+        let data = draws(&v, 3_000, 4);
+        let fit = fit_vine(v.matrix(), &data, &VineSelect::default()).unwrap();
+        // The log-likelihood is the vine's log-density summed.
+        let ll: f64 = (0..3_000)
+            .map(|i| {
+                let u: Vec<f64> = data.iter().map(|c| c[i]).collect();
+                fit.vine.log_density(&u).unwrap()
+            })
+            .sum();
+        assert!(
+            (ll - fit.log_likelihood).abs() < 1e-6 * ll.abs(),
+            "{ll} {}",
+            fit.log_likelihood
+        );
+        // The strong first-tree pairs come back in family and parameter.
+        for (j, want) in v.pairs()[0].iter().enumerate() {
+            let got = fit.vine.pairs()[0][j];
+            assert_eq!(got.family(), want.family(), "{j}");
+            assert!(
+                (got.parameter() / want.parameter() - 1.0).abs() < 0.1,
+                "{got:?} {want:?}"
+            );
+        }
+        // Truncated after one tree: the first tree alone.
+        let one = fit_vine(
+            v.matrix(),
+            &data,
+            &VineSelect {
+                trunc_level: Some(1),
+                ..VineSelect::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(one.vine.trunc_level(), 1);
+        assert_eq!(one.vine.pairs()[0], fit.vine.pairs()[0]);
+        assert!(one.log_likelihood < fit.log_likelihood);
+    }
+
+    #[test]
+    fn selection_finds_the_first_tree() {
+        let v = five_dimensional();
+        let data = draws(&v, 3_000, 9);
+        let fit = select_vine(&data, &VineSelect::default()).unwrap();
+        // Tree 0 is the spanning tree of largest total |τ|: no better than
+        // any other, checked against all 125 labelled trees on 5 nodes by
+        // their Prüfer sequences.
+        let tau = |a: usize, b: usize| kendall_tau(&data[a], &data[b]).unwrap().abs();
+        let total: f64 = (0..4)
+            .map(|j| {
+                let (a, b, _) = fit.vine.edge(0, j);
+                tau(a, b)
+            })
+            .sum();
+        for code in 0..125 {
+            let mut prufer = [code / 25, (code / 5) % 5, code % 5].to_vec();
+            let mut degree = [1usize; 5];
+            for &x in &prufer {
+                degree[x] += 1;
+            }
+            let mut other = 0.0;
+            while let Some(x) = (!prufer.is_empty()).then(|| prufer.remove(0)) {
+                let leaf = (0..5).find(|&k| degree[k] == 1).unwrap();
+                other += tau(leaf, x);
+                degree[leaf] -= 1;
+                degree[x] -= 1;
+            }
+            let rest: Vec<usize> = (0..5).filter(|&k| degree[k] == 1).collect();
+            other += tau(rest[0], rest[1]);
+            assert!(total >= other - 1e-12, "{code}: {total} {other}");
+        }
+        // The density at the fit sums to its log-likelihood.
+        let ll: f64 = (0..3_000)
+            .map(|i| {
+                let u: Vec<f64> = data.iter().map(|c| c[i]).collect();
+                fit.vine.log_density(&u).unwrap()
+            })
+            .sum();
+        assert!((ll - fit.log_likelihood).abs() < 1e-6 * ll.abs());
+        assert!(select_vine(&data[..1], &VineSelect::default()).is_err());
     }
 }

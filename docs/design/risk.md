@@ -77,6 +77,15 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   implements `Copula`, so `simulate` and the two-line coupling take it.
   Python `PairCopula`, `VineCopula` (`log_density`, `inverse_rosenblatt`);
   R `pair_copula()`, `vine_copula()`, `copula_log_density()`.
+- `prospicio_prob::rvine` (#568): `RVineCopula`, any regular vine from
+  its R-vine matrix in vinecopulib's convention (1-based, the order on the
+  antidiagonal, 0 below it and in a truncated vine's missing rows) and its
+  pair copulas by tree and column, with `log_density`,
+  `inverse_rosenblatt` (uniforms by variable, as pyvinecopulib's),
+  `matrix`, `edge(t, j)` and `n_parameters`; it implements `Copula`, and
+  a C- or D-vine converts to it (`From<&VineCopula>`). Python
+  `RVineCopula`, `VineCopula.to_rvine()`; R `rvine_copula()`,
+  `rvine_structure()`.
 - `prospicio_prob::vine_fit` (#568): `pseudo_observations`, `kendall_tau`
   (tau-b, Knight's `O(n log n)`), `fit_pair` (one family and rotation by
   maximum likelihood, a `PairFit` with its log-likelihood, AIC and BIC),
@@ -84,7 +93,11 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   AIC or BIC and an optional independence test). Python `fit_pair`,
   `select_pair`, `kendall_tau`, `pseudo_observations`, `PairFit`; R
   `fit_pair_copula()`, `select_pair_copula()`, `kendall_tau()`,
-  `pseudo_obs()`.
+  `pseudo_obs()`. `fit_vine` fits a vine on a given matrix tree by tree
+  and `select_vine` chooses its structure too (`VineSelect`: the pair
+  choice and a truncation level; `VineFit` with the log-likelihood, AIC
+  and BIC). Python `fit_vine`, `select_vine`, `VineFit`; R
+  `fit_vine_copula()`.
 - `Copula::cdf(&u)`, the copula's distribution function: the Archimedean
   copulas' `ψ(Σ ψ⁻¹(u_j))` in any dimension (with
   `ArchimedeanCopula::inverse_generator`), the Gaussian copula's
@@ -284,9 +297,7 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   earlier variables' conditional values. Gumbel's and Joe's `h` are
   inverted by bisection to a relative `1e-15`, the others in closed form.
   The Student t pair's `h` and its inverse are closed forms in the t
-  quantile. An R-vine matrix (which covers both shapes and more), fitting
-  a vine by sequential maximum likelihood and structure selection are
-  #568's second part. Tested: against pyvinecopulib
+  quantile. Any regular vine is an `RVineCopula` (#568, below). Tested: against pyvinecopulib
   1.0.1, every family and rotation's cdf, density, `h₁`, `h₂` and inverses,
   and three-dimensional C- and D-vines' log-density and inverse Rosenblatt
   transform with rotated pairs (512 values, `1e-9` relative); Gaussian C-
@@ -316,6 +327,25 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   Cornish–Fisher start* inside its bracket before the bracketing search,
   which the profile fit calls `n` times per `ν`; values are unchanged to
   `4 ε`.
+- **R-vines and fitting vines** (#568, second part; items (g) to (k)
+  proposed by the Probability lane for the user's acceptance). The density
+  and the inverse Rosenblatt transform run Dißmann et al.'s (2013)
+  natural-order recursions on the matrix, so a vine needs no tree objects.
+  (g) *The matrix is vinecopulib's*, 1-based, as pyvinecopulib and
+  rvinecopulib print it, so a user moves a structure between them by
+  copying it; R's VineCopula package flips it. (h) *Fitting is sequential
+  maximum likelihood*: each edge chosen by `select_pair` on the trees
+  below at their estimates, as vinecopulib's `select`; a joint refit of
+  all parameters is not done. (i) *Structure selection is Dißmann's*, the
+  maximum spanning tree of `|τ|` by Prim's algorithm over the edges the
+  proximity condition allows, tree after tree, and the matrix is peeled
+  off the trees as vinecopulib does (each column's antidiagonal the first
+  leaf of the highest tree still holding edges), so the matrix may differ
+  from pyvinecopulib's for the same vine. (j) *Independence is always a
+  candidate* for each edge, as in pyvinecopulib's default family set;
+  family preselection (`preselect_families`) is not done, so every family
+  is fitted on every edge. (k) *Conditional values passed up the trees are
+  kept within `1e-10` of 0 and 1*, as vinecopulib keeps them.
 - **Uniforms stay inside `(0, 1)`.** Far in a tail, `Φ` or a generator
   rounds to 0 or 1, where marginal quantiles are infinite, so every copula
   clamps to `[f64::MIN_POSITIVE, 1 - 2^-53]`.
@@ -531,6 +561,17 @@ pyvinecopulib's log-likelihood (never below it by more than `1e-6`), the
 parameter within `1e-3` relative and `ν` within 1%, and `select_pair`
 choosing pyvinecopulib's family and rotation. pyvinecopulib rounds a
 non-integer `ν` in its pair functions, so the references use whole `ν`.
+`validation/reference/vine_rvine_pyvinecopulib.csv`
+(`validation/scripts/pyvinecopulib_rvine.py`, data in
+`vine_rvine_data.csv`) checks a five-dimensional R-vine that is neither a
+C- nor a D-vine, in full and truncated after two trees, with rotated and
+Student t pairs: the log-density and the inverse Rosenblatt transform at
+four points to `1e-9`, and on two samples of 800 the fit on the vine's own
+matrix (every edge's family, rotation and parameter, the log-likelihood
+within `1e-3`) and the selected structure (the same edges as
+pyvinecopulib's, each with the same pair copula, and the log-likelihood
+within `1e-3`). C- and D-vines as R-vines have the same density, and the
+inverse Rosenblatt transform's Jacobian is the density's inverse.
 
 `validation/reference/special_scipy.csv` checks `beta_inc` and
 `student_t_cdf` against SciPy at `1e-12`. Copula tests check Kendall's

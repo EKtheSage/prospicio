@@ -594,6 +594,7 @@ pub(crate) enum AnyCopula {
     Archimedean(ArchimedeanCopula),
     Nested(prospicio_prob::NestedArchimedeanCopula),
     Vine(prospicio_prob::vine::VineCopula),
+    RVine(prospicio_prob::rvine::RVineCopula),
 }
 
 impl AnyCopula {
@@ -604,6 +605,7 @@ impl AnyCopula {
             Self::Archimedean(c) => c,
             Self::Nested(c) => c,
             Self::Vine(c) => c,
+            Self::RVine(c) => c,
         }
     }
 }
@@ -699,6 +701,16 @@ fn pair_select_rust(
     criterion: &str,
     independence_test: f64,
 ) -> Result<List> {
+    let select = pair_select(&families, criterion, independence_test)?;
+    let fit = prospicio_prob::vine_fit::select_pair(u, v, &select).map_err(to_r)?;
+    Ok(pair_fit_list(&fit))
+}
+
+fn pair_select(
+    families: &[String],
+    criterion: &str,
+    independence_test: f64,
+) -> Result<prospicio_prob::vine_fit::PairSelect> {
     use prospicio_prob::vine_fit::{Criterion, PairSelect};
     let mut select = PairSelect::default();
     if !families.is_empty() {
@@ -713,8 +725,111 @@ fn pair_select_rust(
         other => return Err(Error::Other(format!("unknown criterion {other:?}"))),
     };
     select.independence_test = (!independence_test.is_nan()).then_some(independence_test);
-    let fit = prospicio_prob::vine_fit::select_pair(u, v, &select).map_err(to_r)?;
-    Ok(pair_fit_list(&fit))
+    Ok(select)
+}
+
+/// A pair copula as `list(family, parameter, rotation, nu)`.
+fn pair_copula_list(c: &prospicio_prob::vine::PairCopula) -> List {
+    list!(
+        pair_family_name(c.family()),
+        c.parameter(),
+        f64::from(c.rotation()),
+        c.nu().unwrap_or(f64::NAN)
+    )
+}
+
+/// An R-vine matrix from R's column-major `d × d` numbers.
+fn rvine_matrix(m: &[f64]) -> Result<Vec<Vec<usize>>> {
+    let d = (m.len() as f64).sqrt() as usize;
+    if d * d != m.len() {
+        return Err(Error::Other("an R-vine matrix is square".into()));
+    }
+    (0..d)
+        .map(|i| {
+            (0..d)
+                .map(|j| {
+                    let x = m[i + j * d];
+                    if x >= 0.0 && x.fract() == 0.0 {
+                        Ok(x as usize)
+                    } else {
+                        Err(Error::Other(format!("{x} is not a variable label")))
+                    }
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn rvine_pairs(pairs: &List) -> Result<Vec<Vec<prospicio_prob::vine::PairCopula>>> {
+    pairs
+        .values()
+        .map(|tree| {
+            List::try_from(&tree)
+                .map_err(|_| Error::Other("each tree is a list of pair copulas".into()))?
+                .values()
+                .map(|p| pair_copula(&p))
+                .collect::<Result<Vec<_>>>()
+        })
+        .collect()
+}
+
+/// An R-vine as `list(matrix, pairs)`: the matrix column-major, the pairs
+/// a list of trees of `list(family, parameter, rotation, nu)`.
+fn rvine_list(v: &prospicio_prob::rvine::RVineCopula) -> List {
+    let m = v.matrix();
+    let d = m.len();
+    let matrix: Vec<f64> = (0..d * d).map(|k| m[k % d][k / d] as f64).collect();
+    let pairs = List::from_values(
+        v.pairs()
+            .iter()
+            .map(|t| List::from_values(t.iter().map(pair_copula_list))),
+    );
+    list!(matrix = matrix, pairs = pairs)
+}
+
+/// A vine fitted to `data` (`n × d`, column-major): on the R-vine matrix
+/// `matrix` (column-major), or with its structure selected when `matrix` is
+/// empty. `trunc_level` NaN for every tree.
+#[extendr]
+fn vine_fit_rust(
+    data: &[f64],
+    n: f64,
+    matrix: &[f64],
+    families: Vec<String>,
+    criterion: &str,
+    independence_test: f64,
+    trunc_level: f64,
+) -> Result<List> {
+    use prospicio_prob::vine_fit::{VineSelect, fit_vine, select_vine};
+    let n = whole(n, "n")? as usize;
+    if n == 0 || data.len() % n != 0 {
+        return Err(Error::Other("data must be an n x d matrix".into()));
+    }
+    let d = data.len() / n;
+    let cols: Vec<Vec<f64>> = (0..d).map(|j| data[j * n..(j + 1) * n].to_vec()).collect();
+    let select = VineSelect {
+        pair: pair_select(&families, criterion, independence_test)?,
+        trunc_level: if trunc_level.is_nan() {
+            None
+        } else {
+            Some(whole(trunc_level, "trunc_level")? as usize)
+        },
+    };
+    let fit = if matrix.is_empty() {
+        select_vine(&cols, &select)
+    } else {
+        fit_vine(rvine_matrix(matrix)?, &cols, &select)
+    }
+    .map_err(to_r)?;
+    let v = rvine_list(&fit.vine);
+    Ok(list!(
+        matrix = v.dollar("matrix")?,
+        pairs = v.dollar("pairs")?,
+        log_likelihood = fit.log_likelihood,
+        n_parameters = fit.n_parameters as f64,
+        aic = fit.aic(),
+        bic = fit.bic()
+    ))
 }
 
 #[extendr]
@@ -858,15 +973,41 @@ impl RiskCopula {
         })
     }
 
+    /// An R-vine: `matrix` its R-vine matrix (column-major, vinecopulib's
+    /// convention), `pairs` a list of trees of pair copulas by column.
+    fn rvine(matrix: &[f64], pairs: List) -> Result<Self> {
+        let c =
+            prospicio_prob::rvine::RVineCopula::new(rvine_matrix(matrix)?, rvine_pairs(&pairs)?)
+                .map_err(to_r)?;
+        Ok(Self {
+            inner: AnyCopula::RVine(c),
+        })
+    }
+
+    /// A vine's R-vine matrix and pair copulas, `list(matrix, pairs)`.
+    fn rvine_structure(&self) -> Result<List> {
+        let v = match &self.inner {
+            AnyCopula::Vine(v) => prospicio_prob::rvine::RVineCopula::from(v),
+            AnyCopula::RVine(v) => v.clone(),
+            _ => return Err(Error::Other("an R-vine structure is a vine's".into())),
+        };
+        Ok(rvine_list(&v))
+    }
+
     /// The vine's log-density at each row of `u` (`n × dim`, column-major).
     fn log_density(&self, u: &[f64], n: f64) -> Result<Vec<f64>> {
-        let AnyCopula::Vine(v) = &self.inner else {
+        let density = |row: &[f64]| match &self.inner {
+            AnyCopula::Vine(v) => v.log_density(row),
+            AnyCopula::RVine(v) => v.log_density(row),
+            _ => unreachable!("checked below"),
+        };
+        if !matches!(self.inner, AnyCopula::Vine(_) | AnyCopula::RVine(_)) {
             return Err(Error::Other(
                 "only a vine copula has a log-density here".into(),
             ));
-        };
+        }
         let n = whole(n, "n")? as usize;
-        let d = v.dim();
+        let d = self.inner.as_copula().dim();
         if u.len() != n * d {
             return Err(Error::Other(format!(
                 "{} values for {n} points in {d} dimensions",
@@ -876,7 +1017,7 @@ impl RiskCopula {
         (0..n)
             .map(|i| {
                 let row: Vec<f64> = (0..d).map(|j| u[j * n + i]).collect();
-                v.log_density(&row).map_err(to_r)
+                density(&row).map_err(to_r)
             })
             .collect()
     }
@@ -974,6 +1115,7 @@ impl RiskCopula {
                 },
                 c.pairs().len()
             ),
+            AnyCopula::RVine(c) => format!("R-vine on {} trees", c.trunc_level()),
         }
     }
 
@@ -1204,6 +1346,7 @@ extendr_module! {
     mod risk;
     fn pair_fit_rust;
     fn pair_select_rust;
+    fn vine_fit_rust;
     fn kendall_tau_rust;
     fn pseudo_observations_rust;
     fn mvn_cdf_rust;

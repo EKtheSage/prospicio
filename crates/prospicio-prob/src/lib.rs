@@ -46,6 +46,7 @@ pub mod predictive;
 pub mod provenance;
 pub mod rearrangement;
 pub mod risk;
+pub mod rvine;
 pub mod sampled;
 pub mod serial;
 pub mod severity;

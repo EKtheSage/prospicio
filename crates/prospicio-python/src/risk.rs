@@ -1862,6 +1862,7 @@ pub(crate) enum AnyCopula {
     Archimedean(ArchimedeanCopula),
     Nested(copula::NestedArchimedeanCopula),
     Vine(prospicio_prob::vine::VineCopula),
+    RVine(prospicio_prob::rvine::RVineCopula),
 }
 
 impl AnyCopula {
@@ -1881,9 +1882,12 @@ impl AnyCopula {
         if let Ok(c) = obj.extract::<PyRef<'_, PyVineCopula>>() {
             return Ok(Self::Vine(c.inner.clone()));
         }
+        if let Ok(c) = obj.extract::<PyRef<'_, PyRVineCopula>>() {
+            return Ok(Self::RVine(c.inner.clone()));
+        }
         Err(PyTypeError::new_err(
             "expected a GaussianCopula, StudentTCopula, ArchimedeanCopula, \
-             NestedArchimedeanCopula or VineCopula",
+             NestedArchimedeanCopula, VineCopula or RVineCopula",
         ))
     }
 
@@ -1894,6 +1898,7 @@ impl AnyCopula {
             Self::Archimedean(c) => c,
             Self::Nested(c) => c,
             Self::Vine(c) => c,
+            Self::RVine(c) => c,
         }
     }
 }
@@ -2830,6 +2835,18 @@ pub(crate) fn select_pair(
     criterion: &str,
     independence_test: Option<f64>,
 ) -> PyResult<PyPairFit> {
+    let select = pair_select(families, criterion, independence_test)?;
+    let inner = py
+        .detach(|| prospicio_prob::vine_fit::select_pair(&u, &v, &select))
+        .map_err(to_py)?;
+    Ok(PyPairFit { inner })
+}
+
+fn pair_select(
+    families: Option<Vec<String>>,
+    criterion: &str,
+    independence_test: Option<f64>,
+) -> PyResult<prospicio_prob::vine_fit::PairSelect> {
     use prospicio_prob::vine_fit::{Criterion, PairSelect};
     let mut select = PairSelect::default();
     if let Some(fs) = families {
@@ -2845,10 +2862,7 @@ pub(crate) fn select_pair(
         }
     };
     select.independence_test = independence_test;
-    let inner = py
-        .detach(|| prospicio_prob::vine_fit::select_pair(&u, &v, &select))
-        .map_err(to_py)?;
-    Ok(PyPairFit { inner })
+    Ok(select)
 }
 
 /// Kendall's tau-b of two samples, ties counted as
@@ -2993,6 +3007,312 @@ impl PyVineCopula {
         let c = &self.inner;
         py.detach(|| sample_rows(c, n, seed))
     }
+
+    /// The same vine as an ``RVineCopula``, with its R-vine matrix.
+    ///
+    /// Returns
+    /// -------
+    /// RVineCopula
+    fn to_rvine(&self) -> PyRVineCopula {
+        PyRVineCopula {
+            inner: prospicio_prob::rvine::RVineCopula::from(&self.inner),
+        }
+    }
+}
+
+/// A regular (R-) vine copula, given by its R-vine matrix in vinecopulib's
+/// convention (``pyvinecopulib.Vinecop.matrix``, rvinecopulib's
+/// ``rvine_matrix``): ``d x d``, 1-based, the order on the antidiagonal
+/// ``M[d - 1 - j][j]``, and above it in column ``j`` row ``t`` the variable
+/// that tree ``t``'s edge ``j`` joins to it, given the variables above in
+/// the column; 0 below the antidiagonal and in the rows of trees not kept.
+///
+/// Parameters
+/// ----------
+/// matrix : list of list of int
+/// pairs : list of list of PairCopula
+///     Tree ``t``'s ``d - 1 - t`` pair copulas by column, each with first
+///     argument the column's antidiagonal variable, as pyvinecopulib's
+///     ``pair_copulas``. Fewer trees truncate the vine.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.risk import PairCopula, RVineCopula
+/// >>> g = PairCopula("gaussian", 0.5)
+/// >>> v = RVineCopula([[2, 3, 3], [3, 2, 0], [1, 0, 0]], [[g, g], [g]])
+/// >>> v.edge(1, 0)
+/// (0, 2, [1])
+#[pyclass(name = "RVineCopula", module = "prospicio.risk", frozen)]
+pub(crate) struct PyRVineCopula {
+    inner: prospicio_prob::rvine::RVineCopula,
+}
+
+#[pymethods]
+impl PyRVineCopula {
+    #[new]
+    fn new(matrix: Vec<Vec<usize>>, pairs: Vec<Vec<PyRef<'_, PyPairCopula>>>) -> PyResult<Self> {
+        let pairs = pairs
+            .iter()
+            .map(|tree| tree.iter().map(|p| p.inner).collect())
+            .collect();
+        Ok(Self {
+            inner: prospicio_prob::rvine::RVineCopula::new(matrix, pairs).map_err(to_py)?,
+        })
+    }
+
+    /// Number of dimensions.
+    #[getter]
+    fn dim(&self) -> usize {
+        self.inner.dim()
+    }
+
+    /// The R-vine matrix (1-based).
+    #[getter]
+    fn matrix(&self) -> Vec<Vec<usize>> {
+        self.inner.matrix()
+    }
+
+    /// The order, the antidiagonal (0-based).
+    #[getter]
+    fn order(&self) -> Vec<usize> {
+        self.inner.order().to_vec()
+    }
+
+    /// The number of trees kept.
+    #[getter]
+    fn trunc_level(&self) -> usize {
+        self.inner.trunc_level()
+    }
+
+    /// The number of parameters.
+    #[getter]
+    fn n_parameters(&self) -> usize {
+        self.inner.n_parameters()
+    }
+
+    /// The pair copulas by tree and column.
+    #[getter]
+    fn pairs(&self) -> Vec<Vec<PyPairCopula>> {
+        self.inner
+            .pairs()
+            .iter()
+            .map(|t| t.iter().map(|&inner| PyPairCopula { inner }).collect())
+            .collect()
+    }
+
+    /// Tree ``t``'s edge ``j``: its pair copula's first and second variables
+    /// and the conditioning set, 0-based.
+    ///
+    /// Parameters
+    /// ----------
+    /// t, j : int
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (int, int, list of int)
+    fn edge(&self, t: usize, j: usize) -> PyResult<(usize, usize, Vec<usize>)> {
+        if t >= self.inner.trunc_level() || j + t + 1 >= self.inner.dim() {
+            return Err(PyValueError::new_err(format!(
+                "no edge {j} in tree {t} of this vine"
+            )));
+        }
+        Ok(self.inner.edge(t, j))
+    }
+
+    /// The log-density at the point ``u``.
+    ///
+    /// Parameters
+    /// ----------
+    /// u : list of float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn log_density(&self, u: Vec<f64>) -> PyResult<f64> {
+        self.inner.log_density(&u).map_err(to_py)
+    }
+
+    /// The inverse Rosenblatt transform of uniforms ``w`` given by variable,
+    /// as pyvinecopulib's ``inverse_rosenblatt``.
+    ///
+    /// Parameters
+    /// ----------
+    /// w : list of float
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn inverse_rosenblatt(&self, w: Vec<f64>) -> PyResult<Vec<f64>> {
+        self.inner.inverse_rosenblatt(&w).map_err(to_py)
+    }
+
+    /// ``n`` draws of uniforms; draw ``i`` uses stream ``i`` of ``seed``.
+    ///
+    /// Parameters
+    /// ----------
+    /// n : int
+    /// seed : int
+    ///
+    /// Returns
+    /// -------
+    /// list of list of float
+    fn sample(&self, py: Python<'_>, n: usize, seed: u64) -> Vec<Vec<f64>> {
+        let c = &self.inner;
+        py.detach(|| sample_rows(c, n, seed))
+    }
+}
+
+/// A vine fitted by ``fit_vine`` or ``select_vine``.
+#[pyclass(name = "VineFit", module = "prospicio.risk", frozen)]
+pub(crate) struct PyVineFit {
+    inner: prospicio_prob::vine_fit::VineFit,
+}
+
+#[pymethods]
+impl PyVineFit {
+    /// The fitted vine.
+    #[getter]
+    fn vine(&self) -> PyRVineCopula {
+        PyRVineCopula {
+            inner: self.inner.vine.clone(),
+        }
+    }
+
+    /// The log-likelihood, the sum of the pair copulas'.
+    #[getter]
+    fn log_likelihood(&self) -> f64 {
+        self.inner.log_likelihood
+    }
+
+    /// The number of parameters.
+    #[getter]
+    fn n_parameters(&self) -> usize {
+        self.inner.n_parameters
+    }
+
+    /// ``2k - 2 log_likelihood``.
+    #[getter]
+    fn aic(&self) -> f64 {
+        self.inner.aic()
+    }
+
+    /// ``k ln n - 2 log_likelihood``.
+    #[getter]
+    fn bic(&self) -> f64 {
+        self.inner.bic()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "VineFit(dim={}, trunc_level={}, log_likelihood={})",
+            self.inner.vine.dim(),
+            self.inner.vine.trunc_level(),
+            self.inner.log_likelihood
+        )
+    }
+}
+
+fn columns(data: &[Vec<f64>]) -> PyResult<Vec<Vec<f64>>> {
+    let d = data.first().map_or(0, Vec::len);
+    if data.iter().any(|r| r.len() != d) {
+        return Err(PyValueError::new_err(
+            "every row of data needs the same number of values",
+        ));
+    }
+    Ok((0..d)
+        .map(|k| data.iter().map(|r| r[k]).collect())
+        .collect())
+}
+
+/// A vine on a given R-vine matrix fitted to ``data`` tree by tree: each
+/// edge's pair copula chosen as ``select_pair`` chooses, on the conditional
+/// values the trees below give at their estimates, as pyvinecopulib's
+/// ``Vinecop.from_data(data, controls, matrix=matrix)``.
+///
+/// Parameters
+/// ----------
+/// data : list of list of float
+///     One row an observation, one column a variable, values in ``(0, 1)``
+///     (take ``pseudo_observations`` of each column of raw data first).
+/// matrix : list of list of int
+///     The R-vine matrix, as for ``RVineCopula``.
+/// families : list of str, optional
+/// criterion : {"aic", "bic"}, default "aic"
+/// independence_test : float, optional
+/// trunc_level : int, optional
+///     The number of trees to fit; all by default.
+///
+/// Returns
+/// -------
+/// VineFit
+#[pyfunction]
+#[pyo3(signature = (data, matrix, families = None, criterion = "aic", independence_test = None, trunc_level = None))]
+pub(crate) fn fit_vine(
+    py: Python<'_>,
+    data: Vec<Vec<f64>>,
+    matrix: Vec<Vec<usize>>,
+    families: Option<Vec<String>>,
+    criterion: &str,
+    independence_test: Option<f64>,
+    trunc_level: Option<usize>,
+) -> PyResult<PyVineFit> {
+    let select = prospicio_prob::vine_fit::VineSelect {
+        pair: pair_select(families, criterion, independence_test)?,
+        trunc_level,
+    };
+    let cols = columns(&data)?;
+    let inner = py
+        .detach(|| prospicio_prob::vine_fit::fit_vine(matrix, &cols, &select))
+        .map_err(to_py)?;
+    Ok(PyVineFit { inner })
+}
+
+/// A vine fitted to ``data`` with its structure chosen by Dissmann's
+/// algorithm, as pyvinecopulib's ``Vinecop.from_data(data, controls)``:
+/// each tree the spanning tree of largest total ``|tau|`` over the edges
+/// the proximity condition allows, each edge's pair copula chosen as
+/// ``select_pair`` chooses.
+///
+/// Parameters
+/// ----------
+/// data : list of list of float
+///     One row an observation, values in ``(0, 1)``.
+/// families : list of str, optional
+/// criterion : {"aic", "bic"}, default "aic"
+/// independence_test : float, optional
+/// trunc_level : int, optional
+///
+/// Returns
+/// -------
+/// VineFit
+///
+/// Examples
+/// --------
+/// >>> from prospicio.risk import GaussianCopula, select_vine
+/// >>> c = GaussianCopula([[1.0, 0.7, 0.5], [0.7, 1.0, 0.3], [0.5, 0.3, 1.0]])
+/// >>> fit = select_vine(c.sample(2000, 1))
+/// >>> a, b, given = fit.vine.edge(1, 0)
+/// >>> (sorted([a, b]), given)
+/// ([1, 2], [0])
+#[pyfunction]
+#[pyo3(signature = (data, families = None, criterion = "aic", independence_test = None, trunc_level = None))]
+pub(crate) fn select_vine(
+    py: Python<'_>,
+    data: Vec<Vec<f64>>,
+    families: Option<Vec<String>>,
+    criterion: &str,
+    independence_test: Option<f64>,
+    trunc_level: Option<usize>,
+) -> PyResult<PyVineFit> {
+    let select = prospicio_prob::vine_fit::VineSelect {
+        pair: pair_select(families, criterion, independence_test)?,
+        trunc_level,
+    };
+    let cols = columns(&data)?;
+    let inner = py
+        .detach(|| prospicio_prob::vine_fit::select_vine(&cols, &select))
+        .map_err(to_py)?;
+    Ok(PyVineFit { inner })
 }
 
 /// Simulates marginals joined by a copula.

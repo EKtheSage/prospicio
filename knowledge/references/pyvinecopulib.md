@@ -17,6 +17,9 @@ sources:
   - id: fit
     resource: ../validation/tests/distributions.rs
     title: pair_fits_and_the_student_pair_match_pyvinecopulib
+  - id: rvine
+    resource: ../validation/tests/distributions.rs
+    title: r_vines_and_vine_fits_match_pyvinecopulib
 ---
 
 pyvinecopulib 1.0.1 installs from PyPI (`uv run --with pyvinecopulib`)
@@ -53,6 +56,22 @@ and is the reference for `prospicio_prob::vine`
   rotated Joe, and `prospicio_prob::vine_fit::select_pair` agrees with it
   on all seven reference sets.[^fit]
 
+- **R-vines.** `Vinecop.matrix` is `d x d`, 1-based, the order on the
+  antidiagonal `M[d - 1 - j][j]` and column `j` above it the partners of
+  that variable tree by tree, 0 below and in missing trees;
+  `pair_copulas[t][j]` takes the antidiagonal variable as its first
+  argument. `inverse_rosenblatt` takes its uniforms by variable.
+  `Vinecop.from_data(u, controls, matrix=m)` fits on a given structure,
+  and without `matrix` selects one by Dißmann's algorithm with Prim's
+  spanning tree on `|tau|`. Independence competes only when it is in
+  `family_set` (it is in the default), and `preselect_families=True` (the
+  default) may skip families on an edge; with independence in the set and
+  no preselection, prospicio's `select_vine` gives the same edges, pair
+  copulas and log-likelihood within `1e-3`.[^rvine] Like prospicio's, its
+  greedy selection can end far from the true structure's likelihood: on
+  800 draws from a five-dimensional R-vine it chose a different first tree
+  and a log-likelihood of 1,994 against 2,116 on the true matrix.[^rvine]
+
 On every family, each rotation and five points, and on three-dimensional
 C- and D-vines with rotated (asymmetric) pairs, 512 values agree to
 `1e-9` relative, inverses to `1e-7`.[^tests]
@@ -60,3 +79,4 @@ C- and D-vines with rotated (asymmetric) pairs, 512 values agree to
 [^docs]: pyvinecopulib documentation
 [^tests]: vines_match_pyvinecopulib
 [^fit]: pair_fits_and_the_student_pair_match_pyvinecopulib
+[^rvine]: r_vines_and_vine_fits_match_pyvinecopulib

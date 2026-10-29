@@ -748,6 +748,88 @@ pair_fit_result <- function(r) {
        n_parameters = r$n_parameters, aic = r$aic, bic = r$bic)
 }
 
+#' R-vine copulas
+#'
+#' `rvine_copula()` is a regular vine copula given by its R-vine matrix in
+#' vinecopulib's convention (rvinecopulib's `rvine_matrix`, pyvinecopulib's
+#' `Vinecop.matrix`): `d x d`, the order on the antidiagonal
+#' `M[d - j + 1, j]`, and above it in column `j` row `t` the variable that
+#' tree `t`'s edge `j` joins to it, given the variables above it in the
+#' column; 0 below the antidiagonal and in the rows of trees not kept. R's
+#' VineCopula package stores the same vine flipped upside down and left to
+#' right. `rvine_structure()` gives a vine's matrix and pair copulas, a C-
+#' or D-vine's as an R-vine. [copula_log_density()] and [copula_sample()]
+#' take an R-vine.
+#'
+#' @param matrix The R-vine matrix.
+#' @param pairs A list of trees, tree `t` a list of its `d - t` pair
+#'   copulas ([pair_copula()]) by column, each with first argument the
+#'   column's antidiagonal variable. Fewer trees truncate the vine.
+#' @param copula A vine [copula].
+#' @returns `rvine_copula()`: a [copula]; `rvine_structure()`: a list with
+#'   `matrix` and `pairs`.
+#' @export
+#' @examples
+#' g <- pair_copula("gaussian", 0.5)
+#' m <- matrix(c(2, 3, 1, 3, 2, 0, 3, 0, 0), 3)
+#' v <- rvine_copula(m, list(list(g, g), list(g)))
+#' copula_log_density(v, c(0.2, 0.7, 0.4))
+#' rvine_structure(vine_copula("d", 1:3, list(list(g, g), list(g))))$matrix
+rvine_copula <- function(matrix, pairs) {
+  copula(rust_result(RiskCopula$rvine(as.double(as.matrix(matrix)), pairs)))
+}
+
+#' @rdname rvine_copula
+#' @export
+rvine_structure <- function(copula) {
+  r <- rust_result(copula@ptr$rvine_structure())
+  d <- round(sqrt(length(r$matrix)))
+  list(matrix = matrix(as.integer(r$matrix), d), pairs = r$pairs)
+}
+
+#' Fit a vine copula
+#'
+#' A vine fitted to `data` tree by tree, each edge's pair copula chosen as
+#' [select_pair_copula()] chooses on the conditional values the trees below
+#' give at their estimates (sequential maximum likelihood). On a given R-vine
+#' `matrix` this is rvinecopulib's `vinecop(data, structure = matrix)`;
+#' without one the structure is chosen by Dissmann's algorithm, as
+#' `vinecop(data)`: each tree the spanning tree of largest total `|tau|`
+#' over the edges the proximity condition allows.
+#'
+#' @param data A matrix with one row an observation and one column a
+#'   variable, values in `(0, 1)` (take [pseudo_obs()] of each column of raw
+#'   data first).
+#' @param matrix An R-vine matrix as for [rvine_copula()], or `NULL` to
+#'   select the structure.
+#' @inheritParams fit_pair_copula
+#' @param trunc_level The number of trees to fit, or `NULL` for all.
+#' @returns A list with `copula` (an R-vine [copula]), `matrix`, `pairs`,
+#'   `log_likelihood`, `n_parameters`, `aic` and `bic`.
+#' @export
+#' @examples
+#' u <- copula_sample(gaussian_copula(matrix(c(1, 0.7, 0.5, 0.7, 1, 0.3, 0.5, 0.3, 1), 3)),
+#'                    1000, seed = 1)
+#' fit <- fit_vine_copula(u)
+#' fit$matrix
+#' fit$aic
+fit_vine_copula <- function(data, matrix = NULL, families = NULL, criterion = c("aic", "bic"),
+                            independence_test = NULL, trunc_level = NULL) {
+  criterion <- match.arg(criterion)
+  data <- as.matrix(data)
+  r <- rust_result(vine_fit_rust(
+    as.double(data), as.double(nrow(data)),
+    if (is.null(matrix)) double() else as.double(as.matrix(matrix)),
+    if (is.null(families)) character() else as.character(families), criterion,
+    if (is.null(independence_test)) NaN else as.double(independence_test),
+    if (is.null(trunc_level)) NaN else as.double(trunc_level)
+  ))
+  d <- ncol(data)
+  m <- base::matrix(as.integer(r$matrix), d)
+  list(copula = rvine_copula(m, r$pairs), matrix = m, pairs = r$pairs,
+       log_likelihood = r$log_likelihood, n_parameters = r$n_parameters, aic = r$aic, bic = r$bic)
+}
+
 #' @rdname vine_copula
 #' @export
 copula_log_density <- function(copula, u) {
