@@ -73,6 +73,8 @@ pub struct Layer {
     pub commission: Option<Commission>,
     /// Profit commission; see [`Layer::profit_commission`].
     pub profit_commission: Option<ProfitCommission>,
+    /// A no-claims bonus; see [`Layer::no_claims_bonus`].
+    pub no_claims_bonus: Option<NoClaimsBonus>,
     /// Deficits of the profit commission carried into later years of a
     /// term; see [`Layer::profit_commission_carry_forward`].
     pub profit_commission_carry: Option<CarryForward>,
@@ -234,6 +236,23 @@ pub struct ProfitCommission {
     pub allowance: f64,
 }
 
+/// A no-claims bonus (#592, `docs/design/aggregate.md`, "No-claims
+/// bonus"): `share` of the year's premium returned to the cedant when the
+/// layer's ceded loss over the last `years` contract years, the year
+/// itself included, is at most `threshold`. Within a term the window is
+/// cut at the term's start, so a claim-free first year pays; a single year
+/// takes `years = 1` only.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NoClaimsBonus {
+    /// The share of the year's premium returned, in `(0, 1]`.
+    pub share: f64,
+    /// The contract years looked back over, at least 1.
+    pub years: u32,
+    /// The ceded loss over those years that still counts as no claims, at
+    /// least 0.
+    pub threshold: f64,
+}
+
 /// What a profit commission or sliding scale carries from one year of a
 /// contract term into the next ([`Tower::apply_term`]).
 ///
@@ -355,6 +374,7 @@ impl Layer {
             corridor: None,
             commission: None,
             profit_commission: None,
+            no_claims_bonus: None,
             profit_commission_carry: None,
             sliding_scale_carry: None,
             swing: None,
@@ -980,6 +1000,76 @@ impl Layer {
             .collect()
     }
 
+    /// A no-claims bonus: `share` of the year's premium returned when the
+    /// layer's ceded loss over the last `years` contract years is at most
+    /// `threshold` ([`NoClaimsBonus`]). It is figured on its own, beside any
+    /// sliding scale or profit commission, on the year's premium as the
+    /// layer prices it ([`premium_for`](Self::premium_for), the deposit or
+    /// a swing-rated premium), without reinstatement premium. `years > 1`
+    /// needs a term ([`Tower::apply_term`]).
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    ///
+    /// let cat = Layer::xol("20x10", 20.0, 10.0).unwrap()
+    ///     .premium_rate(0.1, 20.0).unwrap()
+    ///     .no_claims_bonus(0.15, 1, 0.0).unwrap();
+    /// // A premium of 2: 0.3 back in a year with no loss to the layer.
+    /// assert!((cat.no_claims_bonus_for(0.0) - 0.3).abs() < 1e-12);
+    /// assert_eq!(cat.no_claims_bonus_for(5.0), 0.0);
+    /// ```
+    pub fn no_claims_bonus(mut self, share: f64, years: u32, threshold: f64) -> Result<Self> {
+        if !(share.is_finite() && share > 0.0 && share <= 1.0) {
+            return Err(invalid("share", share, "must be in (0, 1]"));
+        }
+        if years == 0 {
+            return Err(invalid("years", 0.0, "must be at least 1"));
+        }
+        if !(threshold.is_finite() && threshold >= 0.0) {
+            return Err(invalid(
+                "threshold",
+                threshold,
+                "must be finite and non-negative",
+            ));
+        }
+        if self.premium.is_nan() || self.premium <= 0.0 {
+            return Err(invalid(
+                "premium",
+                self.premium,
+                "must be set (positive) before a no-claims bonus",
+            ));
+        }
+        self.no_claims_bonus = Some(NoClaimsBonus {
+            share,
+            years,
+            threshold,
+        });
+        Ok(self)
+    }
+
+    /// The year's no-claims bonus given its ceded loss, the year alone;
+    /// zero without one.
+    pub fn no_claims_bonus_for(&self, ceded: f64) -> f64 {
+        match &self.no_claims_bonus {
+            Some(b) if ceded <= b.threshold => b.share * self.premium_for(ceded),
+            _ => 0.0,
+        }
+    }
+
+    /// Year `t`'s no-claims bonus in a term, on the ceded loss of the last
+    /// `years` contract years, `history` holding the earlier years'.
+    pub(crate) fn no_claims_bonus_in(&self, ceded: f64, t: usize, history: &mut Carried) -> f64 {
+        let Some(b) = &self.no_claims_bonus else {
+            return 0.0;
+        };
+        let window = history.window(ceded, t, b.years);
+        if window <= b.threshold {
+            b.share * self.premium_for(ceded)
+        } else {
+            0.0
+        }
+    }
+
     /// Year `t`'s profit commission in a term, updating what is carried.
     pub(crate) fn profit_commission_in(&self, ceded: f64, t: usize, carry: &mut Carried) -> f64 {
         let (Some(pc), Some(cf)) = (&self.profit_commission, &self.profit_commission_carry) else {
@@ -1450,6 +1540,24 @@ impl Tower {
         self.layers.iter().any(Layer::needs_times)
     }
 
+    /// An error for a path of single years, naming the layer, when a
+    /// layer's no-claims bonus looks back over several contract years,
+    /// which only a term has (#592).
+    pub(crate) fn refuse_lookback(&self, path: &str) -> Result<()> {
+        match self
+            .layers
+            .iter()
+            .find(|l| l.no_claims_bonus.is_some_and(|b| b.years > 1))
+        {
+            Some(l) => Err(Error::Data(format!(
+                "layer {:?} has a no-claims bonus over several years, which {path} cannot \
+                 look back over; apply the tower over a term (apply_term)",
+                l.name
+            ))),
+            None => Ok(()),
+        }
+    }
+
     /// Whether any layer is [scoped](Layer::scope) to some labels.
     pub fn has_scope(&self) -> bool {
         self.layers.iter().any(|l| l.scope.is_some())
@@ -1713,6 +1821,7 @@ impl Tower {
                     .into(),
             ));
         }
+        self.refuse_lookback("a single year")?;
         // The events' seed, stream scheme and samplers (none for years
         // from elsewhere).
         let provenance = events.provenance("reinsurance_tower");
@@ -1765,6 +1874,7 @@ impl Tower {
     /// ```
     pub fn apply_aggregate(&self, pd: &PredictiveDistribution) -> Result<PredictiveDistribution> {
         self.refuse_scope("an aggregate loss")?;
+        self.refuse_lookback("a single year")?;
         if self.needs_sums_insured() {
             return Err(Error::Data(
                 "a surplus treaty works risk by risk; an aggregate loss has no sum insured".into(),
@@ -2010,6 +2120,7 @@ impl Tower {
     /// ```
     pub fn apply_annual(&self, losses: &[f64]) -> Result<PredictiveDistribution> {
         self.refuse_scope("an annual loss")?;
+        self.refuse_lookback("a single year")?;
         if losses.is_empty() {
             return Err(Error::Data("needs at least one annual loss".into()));
         }
@@ -2154,6 +2265,12 @@ impl Tower {
             let c = self.layers[i].profit_commission_in(ceded(i), t, &mut carried[2 * i]);
             draws.push(c);
         }
+        // Each layer's no-claims history after the deals' carries.
+        let history = 2 * self.layers.len() + self.deals.len();
+        for &i in &columns.bonus {
+            let c = self.layers[i].no_claims_bonus_in(ceded(i), t, &mut carried[history + i]);
+            draws.push(c);
+        }
         draws.extend(
             columns
                 .brokerage
@@ -2192,9 +2309,10 @@ impl Tower {
     }
 
     /// What a simulated term carries, empty: two per layer (the profit
-    /// commission's, then the sliding scale's), then one per deal.
+    /// commission's, then the sliding scale's), then one per deal, then
+    /// each layer's no-claims history.
     pub(crate) fn carries(&self) -> Vec<Carried> {
-        vec![Carried::default(); 2 * self.layers.len() + self.deals.len()]
+        vec![Carried::default(); 3 * self.layers.len() + self.deals.len()]
     }
 
     /// The provenance of a result: `base` with every layer's terms.
@@ -2235,6 +2353,12 @@ impl Tower {
                     terms += &format!(", sliding scale (commission, loss ratio) {a:?}");
                 }
                 None => {}
+            }
+            if let Some(b) = &l.no_claims_bonus {
+                terms += &format!(
+                    ", no-claims bonus {} over {} years at {}",
+                    b.share, b.years, b.threshold
+                );
             }
             if let Some(pc) = &l.profit_commission {
                 terms += &format!(", profit commission {} after {}", pc.share, pc.allowance);
@@ -2329,6 +2453,7 @@ pub(crate) struct Columns {
     swing: Vec<usize>,
     commission: Vec<usize>,
     profit: Vec<usize>,
+    bonus: Vec<usize>,
     brokerage: Vec<usize>,
     deductions: Vec<usize>,
     keyed: Vec<usize>,
@@ -2355,6 +2480,7 @@ impl Columns {
             swing: tower.indices(|l| l.swing.is_some()),
             commission: tower.indices(|l| l.commission.is_some()),
             profit: tower.indices(|l| l.profit_commission.is_some()),
+            bonus: tower.indices(|l| l.no_claims_bonus.is_some()),
             brokerage: tower.indices(|l| l.brokerage.is_some()),
             deductions: tower.indices(|l| !l.deductions.is_empty()),
             keyed: tower.indices(|l| l.scales_before_annual_terms),
@@ -2370,6 +2496,7 @@ impl Columns {
             + self.swing.len()
             + self.commission.len()
             + self.profit.len()
+            + self.bonus.len()
             + self.brokerage.len()
             + self.keyed.len()
             + self
@@ -2408,6 +2535,7 @@ impl Columns {
             ("swing_premium", &self.swing),
             ("ceding_commission", &self.commission),
             ("profit_commission", &self.profit),
+            ("no_claims_bonus", &self.bonus),
             ("brokerage", &self.brokerage),
         ] {
             components.extend(layers.iter().map(|&i| key(kind, &s.layers[i].name)));
@@ -2490,6 +2618,14 @@ pub(crate) struct Carried {
 }
 
 impl Carried {
+    /// Records year `t`'s `value` and returns the sum over the last `years`
+    /// years recorded, `t` included (a no-claims bonus's window, #592).
+    pub(crate) fn window(&mut self, value: f64, t: usize, years: u32) -> f64 {
+        self.amounts.retain(|&(o, _)| t - o < years as usize);
+        self.amounts.push((t, value));
+        self.amounts.iter().map(|&(_, a)| a).sum()
+    }
+
     /// Year `t`: drops amounts older than `years`, adds what is left to the
     /// year's own `own` amount, and keeps `beyond(total)`, the part still
     /// outside the band, attributed to the newest contributions of its
@@ -2905,6 +3041,79 @@ mod tests {
         assert!(xl().rate_on_line(-0.1).is_err());
         assert!(xl().deposit_premium(f64::NAN).is_err());
         assert!(xl().premium_rate(0.1, f64::INFINITY).is_err());
+    }
+
+    #[test]
+    fn a_no_claims_bonus_refunds_a_share_in_a_clean_year() {
+        let layer = || {
+            Layer::xol("cat", 20.0, 10.0)
+                .unwrap()
+                .premium_rate(0.1, 100.0)
+                .unwrap()
+        };
+        assert!(layer().no_claims_bonus(0.0, 1, 0.0).is_err());
+        assert!(layer().no_claims_bonus(1.5, 1, 0.0).is_err());
+        assert!(layer().no_claims_bonus(0.1, 0, 0.0).is_err());
+        assert!(layer().no_claims_bonus(0.1, 1, -1.0).is_err());
+        assert!(
+            Layer::xol("free", 20.0, 10.0)
+                .unwrap()
+                .no_claims_bonus(0.1, 1, 0.0)
+                .is_err()
+        );
+        // The guide's sliding-scale approximation, 10% at a loss ratio of 0
+        // and 0 just above, on simulated years.
+        let ncb = layer().no_claims_bonus(0.1, 1, 0.0).unwrap();
+        let scale = layer()
+            .sliding_scale(vec![(0.10, 0.0), (0.0, 1e-9)])
+            .unwrap();
+        let events = crate::simulate_events(
+            &Poisson::new(0.5).unwrap(),
+            &Lognormal::from_mean_cv(8.0, 1.0).unwrap(),
+            5_000,
+            3,
+        )
+        .unwrap();
+        let a = Tower::new(vec![ncb.clone()])
+            .unwrap()
+            .apply(&events)
+            .unwrap();
+        let b = Tower::new(vec![scale]).unwrap().apply(&events).unwrap();
+        let col = |pd: &PredictiveDistribution, kind: &str| {
+            prospicio_prob::Empirical::draws(
+                &pd.marginal(&vec![KeyValue::from(kind), KeyValue::from("cat")])
+                    .unwrap(),
+            )
+            .to_vec()
+        };
+        let (bonus, comm, ceded) = (
+            col(&a, "no_claims_bonus"),
+            col(&b, "ceding_commission"),
+            col(&a, "ceded"),
+        );
+        let mut clean = 0;
+        for j in 0..bonus.len() {
+            assert!((bonus[j] - comm[j]).abs() < 1e-12, "year {j}");
+            assert_eq!(bonus[j], if ceded[j] == 0.0 { 1.0 } else { 0.0 });
+            clean += usize::from(ceded[j] == 0.0);
+        }
+        assert!(clean > 1_000 && clean < 5_000, "{clean}");
+        // On the grid, the expected bonus is the simulated mean's limit.
+        let grid = Tower::new(vec![ncb])
+            .unwrap()
+            .on_annual_grid(
+                &prospicio_prob::Grid::new(
+                    1.0,
+                    vec![
+                        0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.25,
+                    ],
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        // An annual 0 cedes nothing, 11 and 12 cede 1 and 2: clean half the
+        // time, 10% of a premium of 10 then.
+        assert!((grid.expected_no_claims_bonus[0] - 0.5).abs() < 1e-12);
     }
 
     #[test]

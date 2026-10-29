@@ -174,6 +174,29 @@ stopifnot(audit_portfolio_grid(units, log2 = 12)$score < 0.5)
 stopifnot(inherits(try(audit_grid(poisson_count(5), capped, step = -1, log2 = 10),
                        silent = TRUE), "try-error"))
 
+# A no-claims bonus, over a term and in expectation (#592).
+ncb <- function(years, threshold = 0) {
+  with_no_claims_bonus(with_premium_rate(xol_layer("L", 20, 10), 0.1, 100), 0.2, years, threshold)
+}
+stopifnot(identical(ncb(2, 15)@no_claims_bonus, c(share = 0.2, years = 2, threshold = 15)))
+stopifnot(length(xol_layer("L", 20, 10)@no_claims_bonus) == 0)
+close(no_claims_bonus_for(ncb(1), c(0, 5)), c(2, 0), 1e-12)
+stopifnot(inherits(try(with_no_claims_bonus(xol_layer("L", 20, 10), 0.2), silent = TRUE), "try-error"))
+yrs <- lapply(c(5, 25, 5, 5), function(x) events_from_years(list(x)))
+bonus <- function(layer) {
+  term <- apply_tower_term(reinsurance_tower(list(layer)), yrs)
+  m <- select_components(term, "kind", "no_claims_bonus")
+  as.numeric(draw_matrix(m)[1, ])
+}
+close(bonus(ncb(1)), c(2, 0, 2, 2), 1e-12)
+close(bonus(ncb(2)), c(2, 0, 0, 2), 1e-12)
+close(bonus(ncb(2, 15)), c(2, 2, 2, 2), 1e-12)
+stopifnot(inherits(try(apply_tower(reinsurance_tower(list(ncb(2))), yrs[[1]]), silent = TRUE), "try-error"))
+probs <- numeric(41)
+probs[c(6, 26)] <- c(0.6, 0.4)
+g <- tower_on_annual_grid(reinsurance_tower(list(ncb(1))), grid_distribution(1, probs))
+close(g$expected_no_claims_bonus[["L"]], 1.2, 1e-12)
+
 cat("prospicio R aggregate tests passed\n")
 
 # Surplus treaty on events that carry sums insured.

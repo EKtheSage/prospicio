@@ -526,6 +526,12 @@ XolLayer$with_sliding_scale <- function(commission, loss_ratio) .Call(wrap__XolL
 
 XolLayer$with_profit_commission <- function(share, allowance) .Call(wrap__XolLayer__with_profit_commission, self, share, allowance)
 
+XolLayer$with_no_claims_bonus <- function(share, years, threshold) .Call(wrap__XolLayer__with_no_claims_bonus, self, share, years, threshold)
+
+XolLayer$no_claims_bonus <- function() .Call(wrap__XolLayer__no_claims_bonus, self)
+
+XolLayer$no_claims_bonus_for <- function(ceded) .Call(wrap__XolLayer__no_claims_bonus_for, self, ceded)
+
 XolLayer$with_profit_commission_carry_forward <- function(years) .Call(wrap__XolLayer__with_profit_commission_carry_forward, self, years)
 
 XolLayer$with_sliding_scale_carry_forward <- function(deficit, credit, years) .Call(wrap__XolLayer__with_sliding_scale_carry_forward, self, deficit, credit, years)

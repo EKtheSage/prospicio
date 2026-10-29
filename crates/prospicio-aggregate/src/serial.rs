@@ -45,7 +45,10 @@
 //! version 6); a document without the key loads with interlocking off.
 //! A layer scoped to some labels ([`Layer::scope`]) has `"scope":
 //! {"label": …, "values": […]}` (format version 7); a layer without the
-//! key covers every loss.
+//! key covers every loss. A layer with a no-claims bonus
+//! ([`Layer::no_claims_bonus`]) has `"no_claims_bonus": {"share": …,
+//! "years": n, "threshold": …}` (format version 8); a layer without the key
+//! has none.
 
 use prospicio_core::{Error, Result};
 use serde_json::{Map, Number, Value, json};
@@ -58,11 +61,11 @@ use crate::timeline::CoverBasis;
 /// Value of the `format` field.
 const FORMAT: &str = "risk_rs.tower";
 /// The newest format version this build reads. A document is stamped at
-/// the oldest version that reads it: 7 with a scoped layer, 6 with interlocking, 5 with a cover basis, 4 with a deal scale, 3 when a layer has brokerage,
+/// the oldest version that reads it: 8 with a no-claims bonus, 7 with a scoped layer, 6 with interlocking, 5 with a cover basis, 4 with a deal scale, 3 when a layer has brokerage,
 /// deductions or a scale read before annual terms, 2 when a layer carries
 /// deficits or credits over a term (which older readers would drop), else
 /// 1.
-const FORMAT_VERSION: u64 = 7;
+const FORMAT_VERSION: u64 = 8;
 
 impl Tower {
     /// The programme as a JSON document; [`from_json`](Self::from_json)
@@ -102,7 +105,9 @@ impl Tower {
         });
         let mut doc = json!({
             "format": FORMAT,
-            "format_version": if self.layers.iter().any(|l| l.scope.is_some()) {
+            "format_version": if self.layers.iter().any(|l| l.no_claims_bonus.is_some()) {
+                8
+            } else if self.layers.iter().any(|l| l.scope.is_some()) {
                 7
             } else if self.interlocking {
                 6
@@ -352,6 +357,12 @@ fn layer_json(l: &Layer) -> Value {
             json!({"share": num(pc.share), "allowance": num(pc.allowance)}),
         );
     }
+    if let Some(b) = &l.no_claims_bonus {
+        m.insert(
+            "no_claims_bonus".into(),
+            json!({"share": num(b.share), "years": b.years, "threshold": num(b.threshold)}),
+        );
+    }
     if let Some(cf) = &l.profit_commission_carry {
         m.insert("profit_commission_carry".into(), json!({"years": cf.years}));
     }
@@ -520,6 +531,20 @@ fn layer_from(m: &Map<String, Value>) -> Result<Layer> {
             layer = layer.profit_commission(float(pc, "share")?, float(pc, "allowance")?)?;
         }
         Some(_) => return Err(Error::Data("profit_commission must be an object".into())),
+    }
+    match m.get("no_claims_bonus") {
+        None | Some(Value::Null) => {}
+        Some(Value::Object(b)) => {
+            let years = b
+                .get("years")
+                .and_then(Value::as_u64)
+                .and_then(|y| u32::try_from(y).ok())
+                .ok_or_else(|| {
+                    Error::Data("a no-claims bonus's years must be a whole number".into())
+                })?;
+            layer = layer.no_claims_bonus(float(b, "share")?, years, float(b, "threshold")?)?;
+        }
+        Some(_) => return Err(Error::Data("no_claims_bonus must be an object".into())),
     }
     // Carry-forward over a term, after the terms it carries.
     match m.get("profit_commission_carry") {
@@ -941,6 +966,23 @@ mod tests {
     }
 
     #[test]
+    fn a_no_claims_bonus_round_trips() {
+        let plain = Layer::xol("L", 10.0, 5.0)
+            .unwrap()
+            .premium_rate(0.1, 100.0)
+            .unwrap();
+        let bonus = plain.clone().no_claims_bonus(0.2, 3, 1.5).unwrap();
+        let tower = Tower::new(vec![bonus]).unwrap();
+        let text = tower.to_json();
+        assert!(text.contains("\"format_version\":8") && text.contains("\"no_claims_bonus\":"));
+        assert_eq!(Tower::from_json(&text).unwrap(), tower);
+        let off = Tower::new(vec![plain]).unwrap().to_json();
+        assert!(!off.contains("no_claims_bonus"));
+        assert!(Tower::from_json(&text.replace("\"years\":3", "\"years\":0")).is_err());
+        assert!(Tower::from_json(&text.replace("\"years\":3", "\"years\":1.5")).is_err());
+    }
+
+    #[test]
     fn a_scope_round_trips() {
         let plain = Layer::xol("L", 10.0, 5.0).unwrap();
         let scoped = plain.clone().scope("peril", &["ws", "fl"]).unwrap();
@@ -984,7 +1026,7 @@ mod tests {
         assert!(Tower::from_json("not json").is_err());
         assert!(Tower::from_json(&good.replace("risk_rs.tower", "risk_rs.distribution")).is_err());
         assert!(
-            Tower::from_json(&good.replace("\"format_version\":1", "\"format_version\":8"))
+            Tower::from_json(&good.replace("\"format_version\":1", "\"format_version\":9"))
                 .is_err()
         );
         assert!(Tower::from_json(&good.replace("\"loss\"", "\"cat\"")).is_err());

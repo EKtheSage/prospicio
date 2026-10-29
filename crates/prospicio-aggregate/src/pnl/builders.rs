@@ -741,6 +741,7 @@ impl Book {
                 l.swing.is_some()
                     || matches!(l.commission, Some(Commission::SlidingScale(_)))
                     || l.profit_commission.is_some()
+                    || l.no_claims_bonus.is_some()
             }) {
                 return Err(Error::Data(format!(
                     "aggregate layer {:?} has loss-sensitive terms; the stitched peel is \
@@ -852,6 +853,7 @@ impl Book {
                     flat: *comm,
                     sliding: None,
                     profit: None,
+                    bonus: None,
                 },
                 &mut used,
             ));
@@ -1220,7 +1222,7 @@ impl Book {
                 ceded_premium[k] += f.premium[k];
                 commission[k] += f.flat;
             }
-            for v in [&f.sliding, &f.profit].into_iter().flatten() {
+            for v in [&f.sliding, &f.profit, &f.bonus].into_iter().flatten() {
                 commission_varies = true;
                 for k in 0..n {
                     commission[k] += v[k];
@@ -1348,6 +1350,8 @@ struct Flows {
     flat: f64,
     sliding: Option<Vec<f64>>,
     profit: Option<Vec<f64>>,
+    /// The no-claims bonus at each atom, when a layer has one (#592).
+    bonus: Option<Vec<f64>>,
 }
 
 impl Flows {
@@ -1361,6 +1365,7 @@ impl Flows {
             flat: layers.iter().map(|l| flat_commission(l)).sum(),
             sliding: None,
             profit: None,
+            bonus: None,
         }
     }
 
@@ -1390,6 +1395,10 @@ impl Flows {
                 })
             }),
             profit: profit.then(|| at(&|l, c| l.profit_commission_for(c))),
+            bonus: layers
+                .iter()
+                .any(|l| l.no_claims_bonus.is_some())
+                .then(|| at(&|l, c| l.no_claims_bonus_for(c))),
         }
     }
 }
@@ -1424,6 +1433,10 @@ fn cover_group(label: String, f: Flows, taken: &mut Vec<String>) -> Group {
     }
     if let Some(v) = f.profit {
         let key = free_label("profit commission", &label, taken);
+        g = g.obligation(Leg::values(key, v).kind(LegKind::Commission));
+    }
+    if let Some(v) = f.bonus {
+        let key = free_label("no-claims bonus", &label, taken);
         g = g.obligation(Leg::values(key, v).kind(LegKind::Commission));
     }
     if f.flat != 0.0 {
@@ -1475,6 +1488,7 @@ fn occurrence_flows(tower: &Tower, ceded: &[f64]) -> Flows {
         flat: flat_commission(l),
         sliding: None,
         profit: None,
+        bonus: None,
     }
 }
 
@@ -1528,7 +1542,8 @@ fn check_occurrence(tower: &Tower) -> Result<()> {
         let variable = l.swing.is_some()
             || matches!(l.commission, Some(Commission::SlidingScale(_)))
             || matches!(l.brokerage, Some(Commission::SlidingScale(_)))
-            || l.profit_commission.is_some();
+            || l.profit_commission.is_some()
+            || l.no_claims_bonus.is_some();
         if variable {
             return Err(Error::Data(format!(
                 "occurrence layer {:?} has loss-sensitive terms; as in aggregate, they go on an \
@@ -1676,6 +1691,7 @@ fn flat_commission(layer: &Layer) -> f64 {
 /// Refuses a layer that needs each event's sum insured or time.
 fn check_events(tower: &Tower) -> Result<()> {
     tower.refuse_scope("an annual loss")?;
+    tower.refuse_lookback("a ledger, a single year,")?;
     for l in &tower.layers {
         if l.needs_sums_insured() || l.needs_times() {
             return Err(Error::Data(format!(

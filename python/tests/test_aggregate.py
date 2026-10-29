@@ -1763,3 +1763,43 @@ def test_layer_trial_statistics():
     assert s["ceded_given_attach"] == pytest.approx(0.5 * 22.0 / 3.0)
     assert s["p_attach_se"] == pytest.approx((0.6 * 0.4 / 5.0) ** 0.5)
     assert s["occurrences_se"] == pytest.approx((1.5 / 5.0) ** 0.5)
+
+
+def test_no_claims_bonus_over_a_term():
+    from prospicio.aggregate import EventSet
+
+    def layer(years, threshold=0.0):
+        return (
+            Layer("L", 20.0, 10.0)
+            .with_premium_rate(0.1, 100.0)
+            .with_no_claims_bonus(0.2, years, threshold)
+        )
+
+    assert layer(2, 15.0).no_claims_bonus == (0.2, 2, 15.0)
+    assert Layer("L", 20.0, 10.0).no_claims_bonus is None
+    assert layer(1).no_claims_bonus_for(0.0) == pytest.approx(2.0)
+    assert layer(1).no_claims_bonus_for(5.0) == 0.0
+    with pytest.raises(ValueError, match="premium"):
+        Layer("L", 20.0, 10.0).with_no_claims_bonus(0.2)
+    # A loss to the layer in year 2 only.
+    years = [EventSet.from_years([[x]]) for x in (5.0, 25.0, 5.0, 5.0)]
+
+    def bonus(lay):
+        term = Tower([lay]).apply_term(years)
+        return [
+            term.select("year", [y]).select("kind", ["no_claims_bonus"]).mean()
+            for y in (1, 2, 3, 4)
+        ]
+
+    assert bonus(layer(1)) == pytest.approx([2.0, 0.0, 2.0, 2.0])
+    assert bonus(layer(2)) == pytest.approx([2.0, 0.0, 0.0, 2.0])
+    assert bonus(layer(2, 15.0)) == pytest.approx([2.0, 2.0, 2.0, 2.0])
+    with pytest.raises(ValueError):
+        Tower([layer(2)]).apply(years[0])
+    # In expectation on a grid: paid when the year cedes nothing.
+    probs = [0.0] * 41
+    probs[5], probs[25] = 0.6, 0.4
+    g = Tower([layer(1)]).on_annual_grid(Grid(1.0, probs))
+    assert g.expected_no_claims_bonus == pytest.approx([0.6 * 2.0])
+    ratios = Tower([layer(1)]).deal_ratios(Tower([layer(1)]).apply_annual([5.0, 25.0]), "L")
+    assert ratios.marginal(("no_claims_bonus",)).draws == pytest.approx([0.2, 0.0])
