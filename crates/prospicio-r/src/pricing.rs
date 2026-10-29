@@ -1927,9 +1927,154 @@ fn frontier_rust(
     ))
 }
 
+/// A cat bond applied to simulated years: `years` an event set or a list of
+/// years, each a list of events' numeric values. `payout_x` and `payout_y`
+/// empty unless parametric; `weights` empty unless an index.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn cat_bond_rust(
+    trigger: &str,
+    attachment: f64,
+    exhaustion: f64,
+    basis: &str,
+    weights: &[f64],
+    payout_x: &[f64],
+    payout_y: &[f64],
+    principal: f64,
+    term_years: f64,
+    years: Robj,
+) -> Result<List> {
+    use prospicio_pricing::ils::{CatBond, Tranche, TrancheBasis, Trigger};
+    let t = match trigger {
+        "indemnity" => Trigger::Indemnity,
+        "modelled_loss" => Trigger::ModelledLoss,
+        "industry_index" => Trigger::IndustryIndex {
+            weights: weights.to_vec(),
+        },
+        "parametric" => {
+            if payout_x.len() != payout_y.len() {
+                return Err(Error::Other("payout needs one share a measure".into()));
+            }
+            Trigger::Parametric {
+                weights: weights.to_vec(),
+                payout: payout_x
+                    .iter()
+                    .copied()
+                    .zip(payout_y.iter().copied())
+                    .collect(),
+            }
+        }
+        other => return Err(Error::Other(format!("unknown trigger {other:?}"))),
+    };
+    let basis = match basis {
+        "occurrence" => TrancheBasis::PerOccurrence,
+        "aggregate" => TrancheBasis::AnnualAggregate,
+        other => return Err(Error::Other(format!("unknown basis {other:?}"))),
+    };
+    let term = whole(term_years, "term_years")? as usize;
+    let bond = CatBond::new(
+        t,
+        Tranche {
+            attachment,
+            exhaustion,
+            basis,
+        },
+    )
+    .and_then(|b| b.principal(principal))
+    .and_then(|b| b.term_years(term))
+    .map_err(to_r)?;
+    let l = if let Ok(ev) = <&EventSet>::try_from(&years) {
+        bond.apply_events(&ev.inner)
+    } else {
+        let bad = || Error::Other("years must be an event_set or a list of years of events".into());
+        let list = List::try_from(&years).map_err(|_| bad())?;
+        let ys = list
+            .values()
+            .map(|y| {
+                let events = List::try_from(&y).map_err(|_| bad())?;
+                events
+                    .values()
+                    .map(|e| e.as_real_vector().ok_or_else(bad))
+                    .collect::<Result<Vec<_>>>()
+            })
+            .collect::<Result<Vec<_>>>()?;
+        bond.apply(&ys)
+    }
+    .map_err(to_r)?;
+    Ok(list!(
+        annual = l.annual().to_vec(),
+        recoveries = l.recoveries(),
+        expected_loss = l.expected_loss(),
+        attachment_probability = l.attachment_probability(),
+        exhaustion_probability = l.exhaustion_probability(),
+        term_losses = l.term_losses()
+    ))
+}
+
+fn cat_bond_losses(
+    annual: &[f64],
+    principal: f64,
+    term_years: f64,
+) -> Result<prospicio_pricing::ils::CatBondLosses> {
+    prospicio_pricing::ils::CatBondLosses::from_annual(
+        annual.to_vec(),
+        principal,
+        whole(term_years, "term_years")? as usize,
+    )
+    .map_err(to_r)
+}
+
+/// A cat bond's spread under a distortion.
+#[extendr]
+fn cat_bond_price_rust(annual: &[f64], distortion: Robj) -> Result<List> {
+    let l = cat_bond_losses(annual, 1.0, 1.0)?;
+    let p = l.price(&distortion_arg(&distortion, "distortion")?);
+    Ok(list!(
+        expected_loss = p.expected_loss,
+        spread = p.spread,
+        risk_load = p.risk_load,
+        multiple = p.multiple
+    ))
+}
+
+/// The investor's internal rate of return in each term.
+#[extendr]
+fn cat_bond_returns_rust(annual: &[f64], term_years: f64, coupon: f64) -> Result<Vec<f64>> {
+    let l = cat_bond_losses(annual, 1.0, term_years)?;
+    let options = IrrOptions {
+        extend: true,
+        ..IrrOptions::default()
+    };
+    Ok(l.investor_returns(coupon, &options)
+        .map_err(to_r)?
+        .iter()
+        .map(|r| r.rate)
+        .collect())
+}
+
+/// The basis risk against the cedant's indemnity recoveries.
+#[extendr]
+fn cat_bond_basis_rust(annual: &[f64], principal: f64, need: &[f64]) -> Result<List> {
+    let b = cat_bond_losses(annual, principal, 1.0)?
+        .basis_risk(need)
+        .map_err(to_r)?;
+    Ok(list!(
+        difference = b.difference,
+        mean_shortfall = b.mean_shortfall,
+        mean_excess = b.mean_excess,
+        std_dev = b.std_dev,
+        correlation = b.correlation,
+        missed = b.missed
+    ))
+}
+
 extendr_module! {
     mod pricing;
     fn frontier_rust;
+    fn cat_bond_rust;
+    fn cat_bond_price_rust;
+    fn cat_bond_returns_rust;
+    fn cat_bond_basis_rust;
     fn pricing_trend_large_losses;
     fn pricing_burning_cost;
     fn pricing_development_pattern;

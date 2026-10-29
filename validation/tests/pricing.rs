@@ -2326,3 +2326,65 @@ fn bonus_malus_matches_scipy() {
         }
     });
 }
+
+#[test]
+fn cat_bond_tranches_match_their_closed_forms() {
+    // #570: on simulated compound Poisson years, a per-occurrence tranche
+    // attaches with probability 1 − exp(−λ S(A)), its expected loss is
+    // λ E[layer] / width when two events in the tranche are rare, and an
+    // annual-aggregate tranche attaches and exhausts at the AEP.
+    use prospicio_aggregate::simulate_events;
+    use prospicio_pricing::ils::{CatBond, Tranche, TrancheBasis, Trigger};
+    use prospicio_prob::{Distribution, Lognormal, Poisson, Severity};
+
+    let lambda = 0.5;
+    let freq = Poisson::new(lambda).unwrap();
+    let sev = Lognormal::from_mean_cv(100.0, 1.5).unwrap();
+    let n = 400_000;
+    let events = simulate_events(&freq, &sev, n, 7).unwrap();
+    let (a, e) = (600.0, 1_000.0);
+    let bond = CatBond::new(
+        Trigger::Indemnity,
+        Tranche {
+            attachment: a,
+            exhaustion: e,
+            basis: TrancheBasis::PerOccurrence,
+        },
+    )
+    .unwrap();
+    let l = bond.apply_events(&events).unwrap();
+    let p = 1.0 - (-lambda * sev.survival(a)).exp();
+    let se = (p * (1.0 - p) / n as f64).sqrt();
+    assert!(
+        (l.attachment_probability() - p).abs() < 4.0 * se,
+        "{} {p}",
+        l.attachment_probability()
+    );
+    let el = lambda * sev.layer(e - a, a) / (e - a);
+    let sd = l.annual().iter().map(|x| (x - el).powi(2)).sum::<f64>() / n as f64;
+    let se = (sd / n as f64).sqrt();
+    assert!(
+        (l.expected_loss() - el).abs() < 4.0 * se,
+        "{} {el}",
+        l.expected_loss()
+    );
+    // The annual-aggregate tranche at the AEP.
+    let agg = CatBond::new(
+        Trigger::Indemnity,
+        Tranche {
+            attachment: 300.0,
+            exhaustion: 500.0,
+            basis: TrancheBasis::AnnualAggregate,
+        },
+    )
+    .unwrap()
+    .apply_events(&events)
+    .unwrap();
+    let totals: Vec<f64> = (0..n).map(|i| events.events(i).iter().sum()).collect();
+    let aep = |x: f64| totals.iter().filter(|&&t| t > x).count() as f64 / n as f64;
+    assert_eq!(agg.attachment_probability(), aep(300.0));
+    assert_eq!(
+        agg.exhaustion_probability(),
+        totals.iter().filter(|&&t| t >= 500.0).count() as f64 / n as f64
+    );
+}
