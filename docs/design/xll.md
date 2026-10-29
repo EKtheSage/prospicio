@@ -36,6 +36,10 @@ category of Insert Function:
 | `PRO.GLM(data, response, terms, [family], [link], [exposure], [weights], [p])` | A GLM on a table with a header row: each coefficient's estimate, SE, statistic, p-value and exp(estimate), then deviance, dispersion, log-likelihood, AIC, BIC and the degrees of freedom (decision 41) |
 | `PRO.GLM.PREDICT(data, response, terms, newdata, [family], [link], [exposure], [weights], [p])` | The fitted model's mean on each row of a table of new rows |
 | `PRO.GLM.RELATIVITIES(data, response, terms, [family], [link], [exposure], [weights], [p], [level])` | A log-link GLM's relativities: each factor level against its base, a numeric term per unit, with a confidence interval |
+| `PRO.NPV(rate, flows, [times], [unit])` | Net present value: `Σ x (1 + rate)^-t`, times in years, months, days or as Excel dates (`XNPV`); one value, or one per row of a block of simulations (decision 42) |
+| `PRO.IRR(flows, [times], [unit], [lower], [upper], [extend], [detail])` | Internal rate of return by the crate's grid search; a root outside the range named in the error; with `detail`, the roots seen and whether one lies above or below |
+| `PRO.MOIC(released, funded, [opening])` | Multiple on invested capital `1 + released / (funded + opening)`, per row |
+| `PRO.CASHFLOW(u, terms, patterns, requirement, [commission], [output], [rate], [commutation_requirement])` | A collateralised deal on each simulated loss ratio: IRR, MOIC, NPV and totals per simulation, the monthly flows, or the first simulation's accounts |
 | `PRO.TRI.INCREMENTAL(triangle)`, `PRO.TRI.CUMULATIVE(triangle)` | The triangle turned incremental, or an incremental one cumulative, laid out as it is |
 | `PRO.TRI.LINKRATIOS(triangle)` | Age-to-age link ratios, one column fewer than the ages |
 | `PRO.TRI.LATEST(triangle)` | Each origin's latest value, a column |
@@ -875,6 +879,52 @@ real Excel.
     base level as the reciprocal; the errors. The fake Excel fits a
     six-row table through the C API, and the test workbook's GLM sheet
     checks the Poisson fit against statsmodels.
+
+42. **Cash flows and returns on a sheet** (#578 group 2, 0.0.7).
+    `PRO.NPV`, `PRO.IRR` and `PRO.MOIC` wrap
+    `prospicio_pricing::returns`; `PRO.CASHFLOW` wraps
+    `prospicio_pricing::cashflow` (`time-value.md`, decisions 13 to 20).
+    Flows are a row or column, one series, or a block with one
+    simulation a row, which gives a column of results. `times` default
+    to 0, 1, 2, ..., so the first flow is undiscounted, unlike Excel's
+    `NPV`, which discounts it a period; `unit` reads them as years,
+    months (twelfths) or days (actual/365), or as Excel dates, days from
+    the first over 365, which is `XNPV` and `XIRR` exactly. `PRO.IRR`
+    keeps the crate's grid search and its defaults (decision 9 there:
+    −95% to 100% a year, the root nearest 0), with `lower`, `upper` and
+    `extend` as arguments; a single series without a root is an error
+    that says whether one lies above or below the range, which Excel's
+    `#NUM!` does not, and in a block such a row is blank; `detail` TRUE
+    gives the search's flags. `PRO.CASHFLOW` reads a deal from three
+    blocks rather than dozens of arguments: `terms`, rows of a label and
+    its values with the labels the Python keyword names (`premium`,
+    `commutation_month`, `collected_rate`, `lag`, `funding_dates`,
+    `funding_rule`, `annual_yield`, `fee_breakpoints`, ...; case,
+    spaces, `-` and `_` alike), an `adjustment` row per premium
+    adjustment (month, rate, less commission, base), a set of months as
+    `monthly`, `quarterly`, `n`, `n | first` or `months | m1 | m2 ...`,
+    and `irr_lower`, `irr_upper` and `irr_extend` for the search;
+    `patterns`, three columns of cumulative shares written, earned and
+    paid by month; and `requirement` (and `commutation_requirement`),
+    rows of a base and its load with `floor` and `limit | trigger | cap`
+    rows. An unknown or repeated label is an error that lists the
+    labels. `output` is `"simulations"` (the default: each simulation's
+    loss ratio, IRR, NPV at `rate` when given, MOIC since inception,
+    funded, opening, released, distributed, fee, commutation and
+    whether it paid the investor first), `"flows"` (the investor's
+    monthly flows) or `"trace"` (every account line of the first
+    simulation, then the commutation payment, the fee and the
+    conservation error). Paid patterns that differ by simulation (#600)
+    and valuations after binding (#603) are left until a user asks.
+    Checks (`tests/cashflow.rs`): Microsoft's worked examples of `XNPV`,
+    `XIRR` and `IRR` to 1e-9 (`knowledge/references/excel-npv-irr.md`);
+    closed forms, roots above the range with and without `extend`, flows
+    of one sign; a deal with every rule set through the terms block
+    equal to the same deal built in the crate, to the bit, in its flows,
+    totals, IRR, NPV, MOIC and trace, and the crate's three-month
+    example; the errors. The fake Excel checks `XIRR`'s example, `MOIC`
+    and the three-month deal through the C API, and the test workbook's
+    Cash flows sheet puts `XNPV`, `XIRR` and `IRR` beside the add-in's.
 
 ## Parity plan
 

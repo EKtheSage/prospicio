@@ -16,6 +16,7 @@
 
 pub mod aggregate;
 pub mod bayes;
+pub mod cashflow;
 pub mod copulas;
 pub mod credibility;
 pub mod diagonal;
@@ -343,6 +344,18 @@ const PROBABILITY: Arg = Arg {
     help: "Probability or probabilities, between 0 and 1: a number or a range",
 };
 
+const CF_FLOWS: Arg = Arg {
+    name: "flows",
+    help: "The cash flows: a row or column, or a block with one simulation per row",
+};
+const CF_TIMES: Arg = Arg {
+    name: "times",
+    help: "Each flow's time (0, 1, 2, ... if omitted); dates when unit is \"dates\"",
+};
+const CF_UNIT: Arg = Arg {
+    name: "unit",
+    help: "\"years\" (default), \"months\", \"days\" (actual/365) or \"dates\" (Excel dates, days from the first over 365, as XNPV)",
+};
 const GLM_DATA: Arg = Arg {
     name: "data",
     help: "The table: a header row of column names, then one row per observation; text columns are factors",
@@ -2544,6 +2557,108 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: glm::relativities,
+    },
+    Function {
+        symbol: "pro_npv",
+        name: "PRO.NPV",
+        help: "Net present value of flows at times t: the sum of x (1 + rate)^-t, the first flow at its own time (unlike NPV, which discounts the first a period).",
+        args: &[
+            Arg {
+                name: "rate",
+                help: "The annual discount rate",
+            },
+            CF_FLOWS,
+            CF_TIMES,
+            CF_UNIT,
+        ],
+        run: cashflow::npv,
+    },
+    Function {
+        symbol: "pro_irr",
+        name: "PRO.IRR",
+        help: "Internal rate of return by a grid search from lower to upper: the rate nearest 0 at which the flows' value is 0.",
+        args: &[
+            CF_FLOWS,
+            CF_TIMES,
+            CF_UNIT,
+            Arg {
+                name: "lower",
+                help: "The lowest annual rate searched, -0.95 if omitted",
+            },
+            Arg {
+                name: "upper",
+                help: "The highest annual rate searched, 1 if omitted",
+            },
+            Arg {
+                name: "extend",
+                help: "TRUE to search past lower and upper when the root lies beyond them; FALSE if omitted",
+            },
+            Arg {
+                name: "detail",
+                help: "TRUE for a table: rate, found, NPV there, roots seen, root above, root below",
+            },
+        ],
+        run: cashflow::irr,
+    },
+    Function {
+        symbol: "pro_moic",
+        name: "PRO.MOIC",
+        help: "Multiple on invested capital: 1 + released / (funded + opening), per row.",
+        args: &[
+            Arg {
+                name: "released",
+                help: "The investor's net gain: equity released and distributed less capital paid in",
+            },
+            Arg {
+                name: "funded",
+                help: "The capital funded during the term",
+            },
+            Arg {
+                name: "opening",
+                help: "The opening capital, 0 if omitted",
+            },
+        ],
+        run: cashflow::moic,
+    },
+    Function {
+        symbol: "pro_cashflow",
+        name: "PRO.CASHFLOW",
+        help: "A collateralised deal's monthly cash flows on each simulated loss ratio: IRR, MOIC and totals per simulation, the monthly flows, or one simulation's accounts.",
+        args: &[
+            Arg {
+                name: "u",
+                help: "Simulated ultimate loss ratios, one per simulation",
+            },
+            Arg {
+                name: "terms",
+                help: "Rows of a label and its values: premium, commutation_month, and the optional rules (see the manual)",
+            },
+            Arg {
+                name: "patterns",
+                help: "Three columns: cumulative shares written, earned and paid at the end of each month from 0",
+            },
+            Arg {
+                name: "requirement",
+                help: "Rows of a base (unearned-premium, reserve, outstanding, written, earned, fixed) and its load; floor and limit rows",
+            },
+            Arg {
+                name: "commission",
+                help: "The commission rate: one, or one per simulation; 0 if omitted",
+            },
+            Arg {
+                name: "output",
+                help: "\"simulations\" (default), \"flows\" or \"trace\" (the first simulation's accounts)",
+            },
+            Arg {
+                name: "rate",
+                help: "A discount rate: adds each simulation's NPV",
+            },
+            Arg {
+                name: "commutation_requirement",
+                help: "The requirement at commutation, as requirement; the same if omitted",
+            },
+        ],
+        run: cashflow::cashflow,
     },
 ];
 

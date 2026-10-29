@@ -505,4 +505,8 @@ mod exports {
     udf!(pro_glm, data, response, terms, family, link, exposure, weights, p);
     udf!(pro_glm_predict, data, response, terms, newdata, family, link, exposure, weights, p);
     udf!(pro_glm_relativities, data, response, terms, family, link, exposure, weights, p, level);
+    udf!(pro_npv, rate, flows, times, unit);
+    udf!(pro_irr, flows, times, unit, lower, upper, extend, detail);
+    udf!(pro_moic, released, funded, opening);
+    udf!(pro_cashflow, u, terms, patterns, requirement, commission, output, rate, commutation_requirement);
 }
