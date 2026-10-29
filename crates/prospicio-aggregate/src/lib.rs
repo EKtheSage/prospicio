@@ -62,7 +62,9 @@ pub use layer_statistics::{
     occurrence_cession_statistics, occurrence_layer_statistics,
 };
 pub use moments::{Approximation, ApproximationKind, CompoundMoments, compound_moments};
-pub use monte_carlo::{EventSet, GroupLabels, PartialYears, simulate_events};
+pub use monte_carlo::{
+    EventSet, GroupLabels, PartialYears, TailMixture, simulate_events, simulate_events_weighted,
+};
 pub use panjer::panjer;
 pub use per_risk::{PerRiskInuring, per_risk_inuring};
 pub use picks::{PickedLayer, Picks, layer_loss_picks};

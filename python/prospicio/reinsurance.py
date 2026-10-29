@@ -1,5 +1,6 @@
 """Reinsurance: excess-of-loss layers, quota shares and stop-losses, and
-towers of them, applied to simulated losses or exactly on the grid."""
+towers of them, applied to simulated losses or exactly on the grid, and the
+efficient frontier of retentions and limits (frontier)."""
 
 from .prospicio_native import (
     AggregateLayerStatistics,
@@ -13,6 +14,7 @@ from .prospicio_native import (
     TowerPrice,
     ViewPrice,
     aggregate_layer_statistics,
+    frontier,
     occurrence_cession_statistics,
     occurrence_layer_statistics,
     per_risk_inuring,
@@ -28,6 +30,7 @@ __all__ = [
     "ViewPrice",
     "occurrence_layer_statistics",
     "per_risk_inuring",
+    "frontier",
     "LayerStatistics",
     "occurrence_cession_statistics",
     "CessionStatistics",

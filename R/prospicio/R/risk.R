@@ -797,6 +797,33 @@ mvn_cdf <- function(upper, correlation, lower = NULL, abs_tol = 1e-5, max_points
   structure(e[1], error = e[2], points = e[3], converged = e[4] == 1)
 }
 
+#' Tail statistics of weighted draws
+#'
+#' The estimators of an importance sample ([simulate_events_weighted()]):
+#' the self-normalised mean `sum(w * x) / sum(w)`, and the VaR and TVaR of
+#' the distribution putting mass `w_i / sum(w)` on draw `i`, each with a
+#' standard error by batch means (the draws split, in order, into
+#' `batches` runs, each estimated alone). Equal weights give the plain
+#' estimators.
+#'
+#' @param values The draws.
+#' @param weights One a draw, non-negative, with a positive sum.
+#' @param p Probability levels.
+#' @param batches Number of batches for the standard errors.
+#' @returns A data frame with a row a level: `p`, `var`, `var_se`, `tvar`
+#'   and `tvar_se`; attributes `mean`, `mean_se`, `mean_weight` and
+#'   `effective_sample_size` (`sum(w)^2 / sum(w^2)`).
+#' @export
+#' @examples
+#' weighted_tail(c(1, 2, 3), c(1, 1, 2), 0.5, batches = 3)
+weighted_tail <- function(values, weights, p, batches = 20) {
+  r <- rust_result(weighted_tail_rust(as.double(values), as.double(weights), as.double(p),
+                                      as.double(batches)))
+  structure(data.frame(p = r$p, var = r$var, var_se = r$var_se, tvar = r$tvar, tvar_se = r$tvar_se),
+            mean = r$mean, mean_se = r$mean_se, mean_weight = r$mean_weight,
+            effective_sample_size = r$effective_sample_size)
+}
+
 #' Sobol points
 #'
 #' `n` points of the Sobol sequence in `dim` dimensions: Joe and Kuo's

@@ -244,6 +244,20 @@ for (i in seq_along(yrs1)) {
 }
 stopifnot(identical(events(per_risk_inuring(xol_layer("PR", 30, 10), list(list(c(30, 50))), event_limit = 0)$net, 1), 80))
 
+# Importance sampling of the tail (#566).
+pr <- c(0, (1:200)^-3)
+sev <- grid_distribution(1, pr / sum(pr))
+fq <- poisson_count(2)
+ex <- compound_distribution(fq, sev, method = "fft", points = 2^14)
+iw <- simulate_events_weighted(fq, sev, 100000, seed = 11, count = poisson_count(4), tail_threshold = 20)
+tt <- weighted_tail(draw_matrix(total(iw$events))[, 1], iw$weights, c(0.995, 0.999), batches = 50)
+stopifnot(abs(attr(tt, "mean_weight") - 1) < 0.03)
+stopifnot(all(abs(tt$tvar - c(TVaR(ex, 0.995), TVaR(ex, 0.999))) < 4 * tt$tvar_se))
+pl <- simulate_events_weighted(fq, sev, 100000, seed = 11)
+stopifnot(all(pl$weights == 1))
+stopifnot(identical(draw_matrix(total(pl$events)), draw_matrix(total(simulate_events(fq, sev, 100000, seed = 11)))))
+stopifnot(inherits(try(weighted_tail(c(1, 2), c(0, 0), 0.5), silent = TRUE), "try-error"))
+
 cat("prospicio R aggregate tests passed\n")
 
 # Surplus treaty on events that carry sums insured.

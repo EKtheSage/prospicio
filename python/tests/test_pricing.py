@@ -1193,6 +1193,31 @@ def test_deal_book_marginal_price():
         book.marginal_price(tvar)
 
 
+def test_deal_book_adequacy():
+    """Price adequacy of a book's deals (#589)."""
+    a, b = _book_pair()
+    tvar = ar.risk.Distortion.tvar(0.5)
+    r = P.DealBook([a, b]).adequacy(tvar, cost_of_capital=0.1)
+    assert r["deal"] == ["a", "b", "total"]
+    assert r["target_return"] == pytest.approx([0.1] * 3)
+    m = P.DealBook([a, b]).marginal_price(tvar, cost_of_capital=0.1)
+    assert r["marginal_assets"][:2] == pytest.approx(m["assets"])
+    assert r["marginal_premium"][:2] == pytest.approx(m["premium"])
+    loss = P.DealBook([a, b]).amounts().select("item", ["loss"]).select("deal", ["a", "b"])
+    euler = P.price_portfolio(loss, tvar, cost_of_capital=0.1)
+    assert r["technical_premium"][:2] == pytest.approx([c.premium for c in euler.allocated])
+    assert r["allocated_assets"][2] == pytest.approx(sum(r["allocated_assets"][:2]))
+    # Under a cost of capital the target premium is the technical one, and
+    # a deal priced at it returns the target.
+    assert r["target_premium"] == pytest.approx(r["technical_premium"])
+    for kept, margin, cap, ret in zip(r["premium_kept"], r["margin"], r["allocated_capital"], r["return_on_allocated"]):
+        assert ret == pytest.approx(margin / cap)
+    one = P.DealBook([b]).adequacy(tvar, cost_of_capital=0.1)
+    assert one["allocated_assets"][0] == pytest.approx(one["marginal_assets"][0])
+    with pytest.raises(ValueError):
+        P.DealBook([a, b]).adequacy(tvar)
+
+
 def test_deal_book_cashflows_and_calendar():
     a, b = _book_pair()
     a = a.with_flows([[-10.0, 0.0, 10.1]] * 4, [0.0] * 4, [10.0] * 4)
@@ -1405,3 +1430,33 @@ def test_bonus_malus():
         BonusMalus.rule(4, 4, up_per_claim=1)
     with pytest.raises(ValueError):
         scale.efficiency(0.1, r[:5])
+
+
+def test_reinsurance_frontier():
+    """An efficient frontier of retentions and limits (#569)."""
+    import math
+
+    from prospicio.aggregate import simulate_events
+    from prospicio.distributions import Grid, Lognormal, Poisson
+    from prospicio.reinsurance import Layer, frontier
+
+    g = Grid(1.0, [0.25] * 4)
+    f = frontier(g, [1.0, 2.0], [1.0, math.inf], loading=0.5, risk="var", level=0.9)
+    assert (f["expected_ceded"][1], f["premium"][1], f["net_risk"][1]) == (0.75, 1.125, 1.0)
+    # Cai and Tan: the stop-loss retention at S(d) = 1 / (1 + loading).
+    h = 0.01
+    probs = [math.exp(-k * h) * (1 - math.exp(-h)) for k in range(3000)]
+    probs[-1] += 1 - sum(probs)
+    rs = [k * h for k in range(60)]
+    f = frontier(Grid(h, probs), rs, [math.inf], loading=0.25, risk="var", level=0.99)
+    total = [r + p for r, p in zip(f["net_risk"], f["premium"])]
+    best = rs[total.index(min(total))]
+    assert abs(best - math.log(1.25)) <= 2 * h
+    ev = simulate_events(Poisson(3.0), Lognormal.from_mean_cv(10.0, 1.5), 2_000, seed=2)
+    tv = ar.risk.Distortion.tvar(0.99)
+    f = frontier(ev, [10.0, 20.0], [20.0, math.inf], assets=tv, cost_of_capital=0.1)
+    mean = sum(Layer("L", 20.0, 10.0).ceded(ev.events(i)) for i in range(2_000)) / 2_000
+    assert f["expected_ceded"][0] == pytest.approx(mean)
+    assert any(f["efficient"])
+    with pytest.raises(ValueError, match="loading"):
+        frontier(ev, [10.0], [20.0])
