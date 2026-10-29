@@ -360,20 +360,36 @@ impl SegmentPatterns {
     }
 
     /// `shares` at this segment's ages as `months` monthly values on
-    /// `basis`.
+    /// `basis`. A pattern is complete at the first age its share reaches
+    /// 1 (a draw that `Monotone::RunningMax` held at 1 before the oldest
+    /// age): only the ages up to it are read, and the months after it are
+    /// all 1. Complete at its first age, it is read linearly from 0 to
+    /// that age under every reading (every accident month paid in full at
+    /// once), since a curve needs two ages.
     fn to_monthly(&self, shares: &[f64], basis: &MonthlyBasis, months: usize) -> Result<Vec<f64>> {
+        let k = shares
+            .iter()
+            .position(|&v| v >= 1.0)
+            .map_or(shares.len(), |k| k + 1);
         let pattern = SelectedPattern::new(
             PatternKind::PercentDeveloped,
-            self.ages
+            self.ages[..k]
                 .iter()
                 .copied()
-                .zip(shares.iter().copied())
+                .zip(shares[..k].iter().copied())
                 .collect(),
         );
         let converted = match basis {
+            MonthlyBasis::Origin(_) if k == 1 => {
+                pattern.monthly_on_own_basis(self.origin_grain, AnnualReading::LnLinear)?
+            }
             MonthlyBasis::Origin(reading) => {
                 pattern.monthly_on_own_basis(self.origin_grain, *reading)?
             }
+            MonthlyBasis::Underwriting(basis) if k == 1 => pattern.monthly_on_underwriting_basis(
+                self.origin_grain,
+                &basis.clone().with_reading(AnnualReading::LnLinear),
+            )?,
             MonthlyBasis::Underwriting(basis) => {
                 pattern.monthly_on_underwriting_basis(self.origin_grain, basis)?
             }
@@ -827,6 +843,160 @@ mod tests {
             assert!(m[0][0] > 0.0, "{reading:?}");
             assert!(m[0].windows(2).all(|w| w[1] >= w[0]), "{reading:?}");
             assert!((m[0][47] - 1.0).abs() < 1e-12, "{reading:?}");
+        }
+    }
+
+    #[test]
+    fn a_pattern_complete_before_its_oldest_age_reads_under_every_basis() {
+        // Fully developed at 48 months and held there, as
+        // `Monotone::RunningMax` leaves a draw whose share passes 1 early.
+        let ages = vec![12, 24, 36, 48, 60, 72];
+        let plateau = one(ages.clone(), vec![0.3, 0.6, 0.9, 1.0, 1.0, 1.0]);
+        let complete = one(vec![12, 24, 36, 48], vec![0.3, 0.6, 0.9, 1.0]);
+        let bases = [
+            MonthlyBasis::default(),
+            MonthlyBasis::Origin(AnnualReading::LnLinear),
+            MonthlyBasis::Underwriting(UnderwritingBasis::default()),
+            MonthlyBasis::Underwriting(
+                UnderwritingBasis::default().with_reading(AnnualReading::LnLinear),
+            ),
+        ];
+        for basis in &bases {
+            for monotone in [Monotone::Refuse, Monotone::RunningMax] {
+                let m = plateau.monthly(&[], basis, 120, monotone).unwrap();
+                // The same as the pattern that stops at 48 months.
+                let c = complete.monthly(&[], basis, 120, monotone).unwrap();
+                assert_eq!(m, c, "{basis:?} {monotone:?}");
+                let row = &m[0];
+                assert!(row.windows(2).all(|w| w[1] >= w[0]), "{basis:?}");
+                assert!(row[0] > 0.0, "{basis:?}");
+                assert_eq!(row[119], 1.0, "{basis:?}");
+            }
+            // It reaches 1 at 48 months, or 60 on an underwriting basis,
+            // not at 72 or 84, so 60 months are enough.
+            let m = plateau.monthly(&[], basis, 60, Monotone::Refuse).unwrap();
+            let end = m[0].iter().position(|&v| v == 1.0).unwrap() + 1;
+            let want = if let MonthlyBasis::Origin(_) = basis {
+                48
+            } else {
+                60
+            };
+            assert_eq!(end, want, "{basis:?}");
+        }
+        // Read at the given ages exactly on the origin basis.
+        for reading in [AnnualReading::default(), AnnualReading::LnLinear] {
+            let m = plateau
+                .monthly(&[], &MonthlyBasis::Origin(reading), 72, Monotone::Refuse)
+                .unwrap();
+            for (k, &v) in [0.3, 0.6, 0.9, 1.0, 1.0, 1.0].iter().enumerate() {
+                assert!((m[0][12 * k + 11] - v).abs() < 1e-9, "{reading:?} {k}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_pattern_complete_at_its_first_age_pays_through_the_first_period() {
+        // A draw whose first share passes 1, held at 1 by RunningMax.
+        let patterns = one(vec![12, 24, 36], vec![1.2, 1.1, 1.0]);
+        assert!(
+            patterns
+                .monthly(&[], &MonthlyBasis::default(), 36, Monotone::Refuse)
+                .is_err()
+        );
+        for reading in [AnnualReading::default(), AnnualReading::LnLinear] {
+            let m = patterns
+                .monthly(
+                    &[],
+                    &MonthlyBasis::Origin(reading),
+                    36,
+                    Monotone::RunningMax,
+                )
+                .unwrap();
+            // Every accident month paid in full at once: the year's share
+            // is the share of its months past, t / 12.
+            for (t, v) in m[0][..12].iter().enumerate() {
+                assert!((v - (t + 1) as f64 / 12.0).abs() < 1e-12, "{reading:?}");
+            }
+            assert!(m[0][12..].iter().all(|&v| v == 1.0), "{reading:?}");
+            let basis =
+                MonthlyBasis::Underwriting(UnderwritingBasis::default().with_reading(reading));
+            let m = patterns
+                .monthly(&[], &basis, 36, Monotone::RunningMax)
+                .unwrap();
+            assert!(m[0].windows(2).all(|w| w[1] >= w[0]), "{reading:?}");
+            assert_eq!(m[0][23], 1.0, "{reading:?}");
+            assert!(m[0][22] < 1.0, "{reading:?}");
+        }
+    }
+
+    #[test]
+    fn a_plateau_below_one_reads_under_every_basis() {
+        // A share held below 1 for a year: nothing paid between 24 and 36
+        // months, as RunningMax leaves a share that falls and recovers.
+        let held = one(vec![12, 24, 36, 48, 60], vec![0.3, 0.6, 0.55, 0.9, 1.0]);
+        let bases = [
+            MonthlyBasis::default(),
+            MonthlyBasis::Origin(AnnualReading::LnLinear),
+            MonthlyBasis::Underwriting(UnderwritingBasis::default()),
+            MonthlyBasis::Underwriting(
+                UnderwritingBasis::default().with_reading(AnnualReading::LnLinear),
+            ),
+        ];
+        for basis in &bases {
+            let m = held.monthly(&[], basis, 72, Monotone::RunningMax).unwrap();
+            let row = &m[0];
+            assert!(row.windows(2).all(|w| w[1] >= w[0]), "{basis:?}");
+            assert_eq!(row[71], 1.0, "{basis:?}");
+            if let MonthlyBasis::Origin(_) = basis {
+                assert!((row[23] - 0.6).abs() < 1e-9, "{basis:?}");
+                assert!((row[35] - 0.6).abs() < 1e-9, "{basis:?}");
+                assert!((row[47] - 0.9).abs() < 1e-9, "{basis:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_pattern_complete_at_once_and_then_flat_reads_under_the_curve() {
+        // A draw of Meyers' CRC on group 353 (the R test's seed): 96.6% at
+        // 12 months, then below that until the last age. Held by
+        // RunningMax at its first share for nine ages, it has no Weibull
+        // through it (the fit runs to the edge of its parameters), and is
+        // read with the curve at the edge as the projection's prior.
+        let draw = vec![
+            0.9655498908006142,
+            0.5701755693287793,
+            0.7664317780571832,
+            0.9411338273648351,
+            0.9463097925827557,
+            0.9559114412733235,
+            0.9434049449106626,
+            0.9345250209549616,
+            0.959136964040259,
+            1.0,
+        ];
+        let patterns = one((1..=10).map(|k| 12 * k).collect(), draw);
+        let first = 0.9655498908006142;
+        for basis in [
+            MonthlyBasis::default(),
+            MonthlyBasis::Underwriting(UnderwritingBasis::default()),
+        ] {
+            let m = patterns
+                .monthly(&[], &basis, 132, Monotone::RunningMax)
+                .unwrap();
+            let row = &m[0];
+            assert!(row.windows(2).all(|w| w[1] >= w[0]), "{basis:?}");
+            assert!(row[0] > 0.0, "{basis:?}");
+            assert_eq!(row[131], 1.0, "{basis:?}");
+            if let MonthlyBasis::Origin(_) = basis {
+                for k in 1..=9 {
+                    assert!(
+                        (row[12 * k - 1] - first).abs() < 1e-9,
+                        "{k}: {}",
+                        row[12 * k - 1]
+                    );
+                }
+                assert_eq!(row[119], 1.0);
+            }
         }
     }
 

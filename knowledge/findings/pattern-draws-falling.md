@@ -46,6 +46,22 @@ simulations fall and the first, and `Monotone::RunningMax` holds each
 share at the largest before it, capped at 1. On RAA's ODP bootstrap the
 default refuses almost every run of more than a few simulations.
 
+The running maximum can leave a shape that no Weibull follows: a draw
+whose first share is high and whose later shares fall below it is held
+flat at its first share until the last step to 1. On a ten-age triangle
+97% developed at 12 months and flat to the last age, with
+`RunningMax` before the fix of 2026-10-29 (branch
+`claude/monthly-plateau`), the default Weibull reading refused the whole
+run of 200 ODP or Mack bootstrap simulations (seeds 1 and 600), on the
+origin and the underwriting basis, saying the percents do not increase
+with age. The reading now takes the curve at the
+edge of its parameters as the projection's prior, which still gives the
+held values exactly, and reads a draw only up to the first age its share
+reaches 1 (`reserving-v02.md` decision 28 item 4). The unit tests in
+`pattern_draws.rs` and `monthly_reading.rs` check it, among them a real
+draw of the same shape from a Meyers CRC fit (0.9655 at 12 months, held
+to 108 months, then 1).
+
 Mack's bootstrap draws its factors from normal distributions, and on RAA
 it draws a negative first factor in 6 of 5,000 simulations at seed 600 and
 8 at seed 1, which makes the share at 12 months negative (-12 and -20 in

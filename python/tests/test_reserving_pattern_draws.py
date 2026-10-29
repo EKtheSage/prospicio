@@ -186,6 +186,42 @@ def test_a_share_that_is_not_positive_is_refused_or_lifted(raa):
         assert row[-1] == 1.0
 
 
+# Ten origins 97% developed at 12 months, flat (to within 0.04%) until the
+# oldest origin's last step to 1 at 120 months.
+NOISE = [0.0, 0.0004, -0.0003, 0.0002, -0.0004, 0.0003, -0.0002, 0.0001, 0.0]
+
+
+def plateau_triangle():
+    origin, development, paid = [], [], []
+    for i in range(10):
+        u = 1000.0 * (1.0 + 0.1 * i)
+        for k in range(10 - i):
+            e = NOISE[(i * 7 + k * 3) % 9]
+            origin.append(2011 + i)
+            development.append(12 * (k + 1))
+            paid.append(u if k == 9 else 0.97 * u * (1.0 + (e if k else 0.0)))
+    return Triangle.from_long(origin=origin, development=development, values={"paid": paid})
+
+
+@pytest.mark.parametrize("cls", [OdpBootstrap, MackBootstrap])
+def test_a_pattern_held_flat_until_its_last_step_reads_under_the_weibull(cls):
+    # The running maximum holds each draw at its first share, about 0.97,
+    # until 1 at 120 months. No Weibull runs through that shape; the default
+    # reading used to refuse it as not increasing, and now reads it exactly.
+    p = cls(n_sims=200, seed=1).fit(plateau_triangle(), "paid").patterns
+    rows = p.monthly(132, monotone="running_max")
+    assert len(rows) == 200
+    for draw, row in zip(p.pattern_draws(), rows):
+        assert all(b >= a for a, b in zip(row, row[1:]))
+        assert row[-1] == 1.0
+        held = 0.0
+        for k, share in enumerate(draw):
+            held = min(max(held, share), 1.0)
+            assert row[12 * k + 11] == pytest.approx(held, abs=1e-9)
+    uw = p.monthly(144, basis=UnderwritingBasis(), monotone="running_max")
+    assert len(uw) == 200 and all(r[-1] == 1.0 for r in uw)
+
+
 def comauto_353(keys=None):
     """Meyers' group 353 Commercial Auto paid, the upper triangle, with its
     premium; ``keys`` names copies of it, each doubling the one before."""
