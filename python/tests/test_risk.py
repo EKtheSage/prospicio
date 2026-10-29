@@ -620,3 +620,40 @@ def test_multivariate_normal_and_lognormal_joints():
     assert stats.kstest(y[:, 2], stats.lognorm(m.sdlog, scale=np.exp(m.meanlog)).cdf).pvalue > 0.01
     with pytest.raises(ValueError, match="log scale"):
         MultivariateLognormal.from_moments([1.0, 1.0], [[1.0, -0.9], [-0.9, 1.0]])
+
+
+def test_sobol_points_and_mvn_cdf():
+    """Sobol points and the multivariate normal cdf (#565)."""
+    from prospicio.risk import mvn_cdf, sobol
+
+    assert sobol(4, 2, scramble=False) == [[0.0, 0.0], [0.5, 0.5], [0.75, 0.25], [0.25, 0.75]]
+    s = sobol(256, 3, seed=5)
+    assert s == sobol(256, 3, seed=5) and s != sobol(256, 3, seed=6)
+    for d in range(3):
+        assert sorted(int(row[d] * 256) for row in s) == list(range(256))
+    with pytest.raises(ValueError, match="1 to 1111"):
+        sobol(4, 1112)
+    # Equicorrelated at a half: P(all below 0) = 1 / (d + 1).
+    for d in (3, 5, 8):
+        r = [[1.0 if i == j else 0.5 for j in range(d)] for i in range(d)]
+        p = mvn_cdf([0.0] * d, r, abs_tol=1e-6)
+        assert p.converged and abs(p.value - 1 / (d + 1)) < 3e-6
+    # Independence: the product; a box with lower limits.
+    p = mvn_cdf([0.1, -0.5, 1.2], [[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    want = math.prod(0.5 * math.erfc(-x / math.sqrt(2)) for x in (0.1, -0.5, 1.2))
+    assert abs(p.value - want) < 1e-5
+    q = mvn_cdf([1.0] * 3, [[1, 0, 0], [0, 1, 0], [0, 0, 1]], lower=[-1.0] * 3)
+    assert abs(q.value - math.erf(1 / math.sqrt(2)) ** 3) < 1e-5
+    # Two dimensions are exact.
+    assert mvn_cdf([0.0, 0.0], [[1, 0.5], [0.5, 1]]).error == 0.0
+    with pytest.raises(ValueError, match="positive definite"):
+        mvn_cdf([0.0] * 3, [[1, 1, 0], [1, 1, 0], [0, 0, 1]])
+    # The Gaussian copula's cdf in three dimensions, and its QMC draws.
+    r = [[1.0, 0.5, 0.2], [0.5, 1.0, 0.4], [0.2, 0.4, 1.0]]
+    c = GaussianCopula(r)
+    e = c.cdf_estimate([0.6, 0.4, 0.7], abs_tol=1e-7)
+    assert abs(c.cdf([0.6, 0.4, 0.7]) - e.value) < 2e-5
+    u = c.sample_qmc(1 << 14, seed=11)
+    below = sum(all(x <= p for x, p in zip(row, (0.6, 0.4, 0.7))) for row in u) / len(u)
+    assert abs(below - e.value) < 2e-3
+    assert "MvnEstimate(value=" in repr(e)
