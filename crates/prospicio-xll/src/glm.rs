@@ -129,7 +129,7 @@ impl Table {
 }
 
 /// A number as a factor level or a column name: `3`, not `3.0`.
-fn number_text(x: f64) -> String {
+pub(crate) fn number_text(x: f64) -> String {
     if x.fract() == 0.0 && x.abs() < 1e15 {
         format!("{}", x as i64)
     } else {

@@ -1072,6 +1072,8 @@ test suites). Seed 3 on three rows is the monograph's shuffle of Tables
 
 ## Conformal prediction (#546)
 
+## Auto-calibration (#545)
+
 Status: built; items (a) to (e) proposed by the Models lane for the
 user's acceptance.
 
@@ -1104,6 +1106,45 @@ function of a data frame and its responses.
   split method's interval exactly.
 - (e) *Jackknife+ refits once a row*, `n` fits; the Python and R wrappers
   fit the folds on threads (Python) or in turn (R).
+
+`prospicio_models::calibrate` checks whether a model's predictions are
+right on average at every level and repairs them. `isotonic` is weighted
+isotonic regression by pool-adjacent-violators, as scikit-learn's
+`IsotonicRegression`; `Recalibrated<F>` maps any `Fitted` model's
+predictions through one fitted on held-out data; `balance_correction` and
+`Balanced<F>` scale the total prediction to the total response;
+`reliability` bins mean prediction against mean response; `murphy` splits a
+family's mean deviance into miscalibration, discrimination and uncertainty
+(the CORP decomposition of Dimitriadis, Gneiting and Jordan, 2021). Python
+`isotonic`, `Isotonic`, `recalibrate`, `balance_correction`, `reliability`,
+`murphy` in `prospicio.models`; R `isotonic_fit()`, `recalibrate()`,
+`balance_correction()`, `reliability()`, `murphy()`.
+
+- (a) *Ties in the input are merged before pooling* into their weighted
+  mean response and summed weight, so the fit is a function of the input,
+  as scikit-learn does; `predict` reads linearly between the distinct
+  inputs (or as steps) and holds the end values beyond them
+  (`out_of_bounds="clip"`).
+- (b) *One isotonic fit serves every family*: pool-adjacent-violators
+  gives the closest monotone fit under every Bregman score, so the
+  squared-error fit is also the Poisson, gamma and Tweedie one.
+- (c) *Bounds on the fitted values* (`with_bounds`, Python and R `y_min`,
+  `y_max`), as scikit-learn's: a frequency recalibrated on held-out data
+  can pool to 0 at its low end, where a later claim's Poisson deviance is
+  infinite, so a floor is the user's to set; none is set by default.
+- (d) *The recalibrated and balanced models' predictive distributions
+  scale each row's draws* of the inner model by the ratio of the new to
+  the old prediction, keeping the shape and moving the mean.
+- (e) *The auto-calibration diagnostic is CORP's miscalibration term*, the
+  mean deviance the isotonic recalibration gains on the same data; it is
+  in-sample, so it is positive even for a calibrated model on noisy data
+  (0.012 for a Poisson GLM on a third of the Chalk portfolio), and a
+  model is judged against a reference, not against zero. A test statistic
+  with a null distribution is later work.
+
+In Python and R the map is applied to predictions (`recalibrate(pred,
+y).predict(new_pred)`), so it serves every model of the bindings,
+boosting included; the Rust wrappers serve Rust `Fitted` models.
 
 ## Decisions
 

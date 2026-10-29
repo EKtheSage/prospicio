@@ -1145,6 +1145,227 @@ gl.column_dimensions["F"].width = 24
 for col in "GHIJKLNOPQR":
     gl.column_dimensions[col].width = 13
 
+# Cash flows and returns beside Excel's own XNPV, XIRR and IRR on Microsoft's
+# examples, and a collateralised deal through PRO.CASHFLOW.
+cf = wb.create_sheet("Cash flows")
+cf["A1"] = "prospicio XLL test: cash flows and returns (PRO.NPV, PRO.IRR, PRO.MOIC, PRO.CASHFLOW)"; cf["A1"].font = Font(bold=True, size=13)
+cf["A2"] = "Flows on dates: PRO.NPV and PRO.IRR with unit \"dates\" are Excel's XNPV and XIRR."; cf["A2"].font = note
+cf["A3"] = "Date"; cf["B3"] = "Flow"; cf["D3"] = "Yearly flow"; cf["A3"].font = cf["B3"].font = cf["D3"].font = bold
+for r, (dt, x) in enumerate(zip([datetime.date(2008, 1, 1), datetime.date(2008, 3, 1), datetime.date(2008, 10, 30),
+                                 datetime.date(2009, 2, 15), datetime.date(2009, 4, 1)],
+                                [-10000, 2750, 4250, 3250, 2750])):
+    cf.cell(row=4 + r, column=1, value=dt).fill = inp
+    cf.cell(row=4 + r, column=2, value=x).fill = inp
+for r, x in enumerate([-70000, 12000, 15000, 18000, 21000, 26000]):
+    cf.cell(row=4 + r, column=4, value=x).fill = inp
+checks = [
+    ("PRO.NPV at 9% on dates", '=PRO.NPV(0.09,B4:B8,A4:A8,"dates")', "=XNPV(0.09,B4:B8,A4:A8)", "1e-9"),
+    ("PRO.IRR on dates", '=PRO.IRR(B4:B8,A4:A8,"dates")', "=XIRR(B4:B8,A4:A8)", "1e-7"),
+    ("PRO.IRR on five years", "=PRO.IRR(D4:D9)", "=IRR(D4:D9)", "1e-7"),
+    ("PRO.IRR on four years", "=PRO.IRR(D4:D8)", "=IRR(D4:D8)", "1e-7"),
+    ("PRO.NPV at 10% from time 0", "=PRO.NPV(0.1,D4:D9)", "=D4+NPV(0.1,D5:D9)", "1e-9"),
+    ("PRO.MOIC(30, 40, 60)", "=PRO.MOIC(30,40,60)", 1.3, "1e-12"),
+]
+cf["F3"] = "Check"; cf["G3"] = "prospicio"; cf["H3"] = "Excel"; cf["I3"] = "Agrees"
+for c in "FGHI":
+    cf[f"{c}3"].font = bold
+for i, (name, ours, excel, tol) in enumerate(checks):
+    row = 4 + i
+    cf[f"F{row}"] = name; cf[f"G{row}"] = ours; cf[f"H{row}"] = excel
+    cf[f"I{row}"] = f"=ABS(G{row}-H{row})<{tol}*MAX(1,ABS(H{row}))"
+
+cf["A12"] = "A collateralised deal: premium 1,000 written at once, earned over 12 months, paid over 30, commuting after 36"; cf["A12"].font = bold
+cf["A13"] = "Terms"; cf["D13"] = "Requirement"; cf["G13"] = "At commutation"
+for c in "ADG":
+    cf[f"{c}13"].font = bold
+terms = [("premium", 1000), ("commutation_month", 36), ("collected_rate", 0.9), ("annual_yield", 0.04),
+         ("opening_fixed", 50), ("expense_rate", 0.01), ("collateral_release", "quarterly"),
+         ("equity_release", "at-commutation"), ("fee_breakpoints", 0, 100), ("fee_slopes", 0.1, 0.2)]
+for r, (label, *values) in enumerate(terms):
+    cf.cell(row=14 + r, column=1, value=label)
+    for c, v in enumerate(values):
+        cf.cell(row=14 + r, column=2 + c, value=v).fill = inp
+for r, (label, *values) in enumerate([("outstanding", 1), ("unearned-premium", 0.3), ("floor", 20)]):
+    cf.cell(row=14 + r, column=4, value=label)
+    cf.cell(row=14 + r, column=5, value=values[0]).fill = inp
+cf["G14"] = "outstanding"; cf["H14"] = 1.1; cf["H14"].fill = inp
+cf["J13"] = "Month"; cf["K13"] = "written"; cf["L13"] = "earned"; cf["M13"] = "paid"
+for c in "JKLM":
+    cf[f"{c}13"].font = bold
+for t in range(40):
+    row = 14 + t
+    cf.cell(row=row, column=10, value=t)
+    for c, v in enumerate([1, min((t + 1) / 12, 1), min((t + 1) / 30, 1)]):
+        cf.cell(row=row, column=11 + c, value=v).fill = inp
+cf["O13"] = "Loss ratio"; cf["O13"].font = bold
+for r, u in enumerate([0.4, 0.65, 0.9, 1.3, 2.0]):
+    cf.cell(row=14 + r, column=15, value=u).fill = inp
+DEAL = "O14:O18,A14:C23,K13:M53,D14:E16"
+cf["A26"] = "Per simulation, with the NPV at 8%"; cf["A26"].font = bold
+cf["A27"] = ArrayFormula("A27:K32", f'=PRO.CASHFLOW({DEAL},,"simulations",0.08,G14:H14)')
+cf["A35"] = "The first simulation's accounts"; cf["A35"].font = bold
+cf["A36"] = ArrayFormula("A36:O76", f'=PRO.CASHFLOW({DEAL},,"trace",,G14:H14)')
+cf["Q26"] = "Check"; cf["Q26"].font = bold
+cf["Q27"] = "money is conserved"; cf["R27"] = "=ABS(B76)<1e-6"
+cf["Q28"] = "NPV of the trace's flows at 8%"; cf["R28"] = '=ABS(PRO.NPV(0.08,N37:N72,J14:J49,"months")-C28)<1e-6'
+cf.column_dimensions["A"].width = 20
+cf.column_dimensions["F"].width = 28
+cf.column_dimensions["Q"].width = 34
+
+# The P&L ledger: aggregate 1.0.1's Example 3 (annual losses 2 to 8, premium
+# 10, a 10% premium expense, an aggregate cover of 3 xs 5 for 1 with a 10%
+# commission), against its printed sheet (validation/reference/pnl_builders_aggregate.csv).
+pl = wb.create_sheet("P&L")
+pl["A1"] = "prospicio XLL test: the P&L ledger (PRO.PNL), aggregate's Example 3"; pl["A1"].font = Font(bold=True, size=13)
+pl["A2"] = "Annual gross losses and their probabilities; the book and the cover it buys."; pl["A2"].font = note
+pl["A3"] = "Loss"; pl["B3"] = "Prob"; pl["A3"].font = pl["B3"].font = bold
+for r, (x, p) in enumerate(zip([2, 3, 4, 5, 6, 8], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])):
+    pl.cell(row=4 + r, column=1, value=x).fill = inp
+    pl.cell(row=4 + r, column=2, value=p).fill = inp
+pl["D3"] = "Premium"; pl["E3"] = 10; pl["D3"].font = bold; pl["E3"].fill = inp
+for c, h in enumerate(["label", "premium", "loss", "fixed"]):
+    pl.cell(row=5, column=4 + c, value=h).font = bold
+pl["D6"] = "Acquisition"; pl["E6"] = 0.1; pl["E6"].fill = inp
+for c, (h, x) in enumerate(zip(["name", "limit", "attachment", "premium", "commission"], ["agg 3 xs 5", 3, 5, 1, 0.1])):
+    pl.cell(row=8, column=4 + c, value=h).font = bold
+    pl.cell(row=9, column=4 + c, value=x).fill = inp
+ARGS = "$A$4:$A$9,$B$4:$B$9,$E$3,$D$5:$G$6,$D$8:$H$9"
+pl["A12"] = "The walk: the gross book, then the cover"; pl["A12"].font = bold
+pl["A13"] = ArrayFormula("A13:P28", f'=PRO.PNL({ARGS},"walk")')
+pl["A31"] = "The card"; pl["A31"].font = bold
+pl["A32"] = ArrayFormula("A32:I43", f'=PRO.PNL({ARGS},"walk","card")')
+pl["K31"] = "The ratios"; pl["K31"].font = bold
+pl["K32"] = ArrayFormula("K32:X35", f'=PRO.PNL({ARGS},"walk","ratios")')
+pl["A46"] = "Check against aggregate 1.0.1"; pl["A46"].font = bold
+with open(REF / "reference" / "pnl_builders_aggregate.csv") as f:
+    ex3 = {(r["row"], r["col"]): float(r["expected"]) for r in csv.DictReader(f)
+           if r["case"] == "ex3a" and r["quantity"] == "sheet"}
+for i, (step, side, line, col, idx) in enumerate([
+        ("All", "Margin", "Net", "EX", 3), ("agg 3 xs 5", "Obligation", "agg 3 xs 5 recovery", "EX", 3),
+        ("All", "Margin", "Net", "k01", 7), ("All", "Margin", "Net", "k99", 15)]):
+    row = 47 + i
+    key = f"{step}|{side}|{line}"
+    col_letter = "ABCDEFGHIJKLMNOP"[idx]
+    pl[f"A{row}"] = f"{key} {col}"
+    pl[f"B{row}"] = (f'=SUMPRODUCT(($A$14:$A$28="{step}")*($B$14:$B$28="{side}")*($C$14:$C$28="{line}"),'
+                     f'${col_letter}$14:${col_letter}$28)')
+    pl[f"C{row}"] = ex3[(key, col)]
+    pl[f"D{row}"] = f"=ABS(B{row}-C{row})<1e-9"
+pl.column_dimensions["A"].width = 30
+pl.column_dimensions["C"].width = 22
+
+# Catastrophe model output: Alder Mutual's year and event loss tables
+# (examples/data/cat_book_*.csv), against the numbers the guide
+# docs/guides/cat-2-risk-metrics.md prints.
+ct = wb.create_sheet("Cat")
+ct["A1"] = "prospicio XLL test: year and event loss tables (PRO.YLT.STATS, PRO.YLT.OEP, PRO.ELT.STATS, PRO.ELT.OEP)"
+ct["A1"].font = Font(bold=True, size=13)
+ct["A2"] = "Alder Mutual's 2,000 simulated years and its event loss table, as in the guide cat-2-risk-metrics."; ct["A2"].font = note
+for c, h in enumerate(["Year", "Loss", "Time"]):
+    ct.cell(row=3, column=1 + c, value=h).font = bold
+with open(REF.parent / "examples" / "data" / "cat_book_yelt.csv") as f:
+    alder = [r for r in csv.DictReader(f) if r["cedent"] == "alder"]
+for r, x in enumerate(alder):
+    ct.cell(row=4 + r, column=1, value=int(x["year"])).fill = inp
+    ct.cell(row=4 + r, column=2, value=float(x["loss"])).fill = inp
+    ct.cell(row=4 + r, column=3, value=f"=(({int(x['day'])}-1)*24+{int(x['hour'])})/8760")
+last = 3 + len(alder)
+for c, h in enumerate(["Rate", "Mean", "SD independent", "SD correlated", "Exposure"]):
+    ct.cell(row=3, column=5 + c, value=h).font = bold
+with open(REF.parent / "examples" / "data" / "cat_book_elt_alder.csv") as f:
+    events = list(csv.DictReader(f))
+for r, x in enumerate(events):
+    for c, k in enumerate(["rate", "mean", "sd_independent", "sd_correlated", "exposure"]):
+        ct.cell(row=4 + r, column=5 + c, value=float(x[k])).fill = inp
+elast = 3 + len(events)
+Y = f"$A$4:$A${last},$B$4:$B${last}"
+E = f"$E$4:$E${elast},$F$4:$F${elast},$G$4:$G${elast},$H$4:$H${elast},$I$4:$I${elast}"
+T = f"$C$4:$C${last}"
+ct["K3"] = "Annual totals"; ct["K3"].font = bold
+ct["K4"] = ArrayFormula("K4:L19", f"=PRO.YLT.STATS({Y},2000,{{0.9,0.99}})")
+ct["N3"] = "Amounts"; ct["N3"].font = bold
+ct["N4"] = 30; ct["N5"] = 70; ct["N6"] = 110
+for c in ("N4", "N5", "N6"):
+    ct[c].fill = inp
+ct["P3"] = "Exceedance at amounts, raw"; ct["P3"].font = bold
+ct["P4"] = ArrayFormula("P4:T7", f"=PRO.YLT.OEP({Y},,N4:N6)")
+ct["P10"] = "PMLs by return period, a 72-hour clause"; ct["P10"].font = bold
+ct["N11"] = 10; ct["N12"] = 50; ct["N13"] = 100; ct["N14"] = 250
+for c in ("N11", "N12", "N13", "N14"):
+    ct[c].fill = inp
+ct["P11"] = ArrayFormula("P11:U15", f"=PRO.YLT.OEP({Y},N11:N14,,,,{T},72)")
+ct["K22"] = "The event loss table"; ct["K22"].font = bold
+ct["K23"] = ArrayFormula("K23:L29", f"=PRO.ELT.STATS({E})")
+ct["P18"] = "The event loss table's OEP"; ct["P18"].font = bold
+ct["P19"] = ArrayFormula("P19:T23", f"=PRO.ELT.OEP({E},N11:N14)")
+ct["P26"] = "Check against the guide"; ct["P26"].font = bold
+checks = [
+    ("Average annual loss", "L9", 16.778, 3), ("SD", "L10", 35.158, 3), ("VaR 99%", "L17", 176.824, 3),
+    ("TVaR 99%", "L19", 255.969, 3), ("OEP at 30", "Q5", 0.1070, 4), ("AEP at 110", "R7", 0.0235, 4),
+    ("100-year OEP loss, 72 hours", "R14", 163.418, 3), ("250-year AEP loss", "S15", 232.741, 3),
+    ("ELT events a year", "L24", 2.3365, 4), ("ELT expected annual loss", "L26", 16.056, 3),
+    ("ELT 100-year occurrence loss", "R22", 147.938, 3),
+]
+for i, (name, cell, value, digits) in enumerate(checks):
+    row = 27 + i
+    ct[f"P{row}"] = name
+    ct[f"Q{row}"] = f"={cell}"
+    ct[f"R{row}"] = value
+    ct[f"S{row}"] = f"=ROUND(Q{row},{digits})=R{row}"
+ct.column_dimensions["K"].width = 20
+ct.column_dimensions["P"].width = 30
+
+# Capital allocation: Pricing Insurance Risk's Simple Discrete Example
+# (Exercises 205 and 206) and numpy's allocations of four units
+# (validation/reference/allocation_numpy.csv).
+al = wb.create_sheet("Allocation")
+al["A1"] = "prospicio XLL test: capital allocation (PRO.ALLOCATE, PRO.ALLOCATE.TOTAL)"; al["A1"].font = Font(bold=True, size=13)
+al["A2"] = "Pricing Insurance Risk's Simple Discrete Example: two units over 16 equally likely years."; al["A2"].font = note
+al["A3"] = "X1"; al["B3"] = "X2"; al["A3"].font = al["B3"].font = bold
+r = 4
+for a, k in [(0, 2), (8, 1), (10, 1)]:
+    for b, j in [(0, 2), (1, 1), (90, 1)]:
+        for _ in range(k * j):
+            al.cell(row=r, column=1, value=a).fill = inp
+            al.cell(row=r, column=2, value=b).fill = inp
+            r += 1
+al["D3"] = "A premium of 80 by stand-alone TVaR at 75% (Exercise 205)"; al["D3"].font = bold
+al["D4"] = ArrayFormula("D4:G8", '=PRO.ALLOCATE.TOTAL(A3:B19,80,"haircut","tvar",0.75)')
+al["D11"] = "At the equal risk level (Exercise 206)"; al["D11"].font = bold
+al["D12"] = ArrayFormula("D12:G16", '=PRO.ALLOCATE.TOTAL(A3:B19,80,"equal_risk")')
+al["D19"] = "TVaR 90% by Euler"; al["D19"].font = bold
+al["D20"] = ArrayFormula("D20:H24", '=PRO.ALLOCATE(A3:B19,"tvar",0.9)')
+al["J3"] = "Four units over 400 simulations (numpy reference)"; al["J3"].font = bold
+for c, h in enumerate(["U1", "U2", "U3", "U4"]):
+    al.cell(row=4, column=10 + c, value=h).font = bold
+for i in range(400):
+    a = (i * 37) % 101
+    for c, v in enumerate([a, (i * 53) % 97 + a // 2, (i * i) % 89, 3 * ((i * 29) % 41) + (a // 10) ** 2]):
+        al.cell(row=5 + i, column=10 + c, value=v).fill = inp
+al["O3"] = "Shapley under PH 0.5"; al["O3"].font = bold
+al["O4"] = ArrayFormula("O4:S10", '=PRO.ALLOCATE(J4:M404,"ph",0.5,"shapley")')
+al["O13"] = "Covariance under dual power 3"; al["O13"].font = bold
+al["O14"] = ArrayFormula("O14:S20", '=PRO.ALLOCATE(J4:M404,"dual",3,"covariance")')
+with open(REF / "reference" / "allocation_numpy.csv") as f:
+    ref = {(r["distortion"], r["arg"], r["method"], r["component"]): float(r["expected"]) for r in csv.DictReader(f)}
+al["O23"] = "Check"; al["P23"] = "prospicio"; al["Q23"] = "Expected"; al["R23"] = "Agrees"
+for c in "OPQR":
+    al[f"{c}23"].font = bold
+checks = [
+    ("Exercise 205: X1 gets 8", "F5", 8.0, "1e-12"), ("Exercise 205: X2 gets 72", "F6", 72.0, "1e-12"),
+    ("Exercise 206: the level 0.6796", "E16", 0.6796, "5e-5"), ("Exercise 206: X1 gets 9.56", "F13", 9.56, "5e-3"),
+    ("Shapley, PH 0.5, unit 1", "Q5", ref[("proportional_hazard", "0.5", "shapley", "0")], "1e-9"),
+    ("Shapley, PH 0.5, unit 4", "Q8", ref[("proportional_hazard", "0.5", "shapley", "3")], "1e-9"),
+    ("Dual power 3, the portfolio", "Q20", ref[("dual_power", "3.0", "total", "")], "1e-9"),
+    ("Covariance, dual power 3, unit 2", "Q16", ref[("dual_power", "3.0", "covariance", "1")], "1e-9"),
+]
+for i, (name, cell, value, tol) in enumerate(checks):
+    row = 24 + i
+    al[f"O{row}"] = name; al[f"P{row}"] = f"={cell}"; al[f"Q{row}"] = value
+    al[f"R{row}"] = f"=ABS(P{row}-Q{row})<{tol}*MAX(1,ABS(Q{row}))"
+al.column_dimensions["D"].width = 14
+al.column_dimensions["O"].width = 34
+
 wb.save(out)
 
 METADATA = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

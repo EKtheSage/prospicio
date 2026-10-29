@@ -2652,6 +2652,113 @@ S7::method(predict, dglm_model) <- function(object, newdata, type = c("response"
               s7_call())
 }
 
+#' Auto-calibration: isotonic recalibration, balance and reliability
+#'
+#' A model is auto-calibrated when the mean response among rows with
+#' prediction `p` is `p`. `isotonic_fit()` is weighted isotonic regression by
+#' pool-adjacent-violators, as scikit-learn's `IsotonicRegression` (tied `x`
+#' merged into their weighted mean first, values clipped to `[y_min, y_max]`
+#' when given); `predict()` reads it linearly (or as steps) between its
+#' points and holds the end values beyond them. `recalibrate()` is the
+#' increasing isotonic regression of the response on a model's predictions
+#' on held-out data: apply it to new predictions with `predict()`. A
+#' frequency model needs a floor (`y_min`), since the lowest pooled level
+#' can be 0. `balance_correction()` is the multiplier `sum(w y) / sum(w
+#' pred)` that makes the totals agree. `reliability()` gives mean prediction
+#' against mean response in bands of about equal weight. `murphy()` splits a
+#' family's mean deviance into `miscalibration - discrimination +
+#' uncertainty` (Dimitriadis, Gneiting and Jordan's CORP decomposition): the
+#' miscalibration is what isotonic recalibration gains.
+#'
+#' @param x,y Inputs and responses.
+#' @param weights Weights (exposures when `y` and `pred` are rates), or
+#'   `NULL`.
+#' @param increasing Whether the fit is non-decreasing.
+#' @param y_min,y_max Bounds on the fitted values, or `NULL`.
+#' @param interpolation `"linear"` or `"step"`.
+#' @param pred A model's predictions.
+#' @param bins Number of bands.
+#' @param family A family name, as for [glm_fit()].
+#' @param theta,power For the negative binomial and Tweedie.
+#' @returns `isotonic_fit()` and `recalibrate()`: an `isotonic_fit` object
+#'   with properties `x` and `values`, read at new inputs by `predict()`; `balance_correction()` a number;
+#'   `reliability()` a data frame with `lo`, `hi`, `mean_pred`,
+#'   `mean_actual`, `weight` and `count`; `murphy()` a list with `score`,
+#'   `miscalibration`, `discrimination` and `uncertainty`.
+#' @export
+#' @examples
+#' f <- isotonic_fit(c(1, 2, 3, 4), c(1, 3, 2, 4))
+#' f@values
+#' predict(f, c(2.5, 0, 9))
+#' m <- recalibrate(c(1, 2, 3, 4), c(0, 1, 1, 2), y_min = 0.1)
+#' predict(m, c(1, 2.5, 4))
+#' balance_correction(c(1, 3), c(1, 1))
+#' murphy(c(0, 1, 1, 2), c(0.5, 0.5, 2, 2))
+isotonic_fit <- function(x, y, weights = NULL, increasing = TRUE, y_min = NULL, y_max = NULL,
+                         interpolation = c("linear", "step")) {
+  interpolation <- match.arg(interpolation)
+  r <- rust_result(isotonic_rust(as.double(x), as.double(y),
+                                 if (is.null(weights)) double() else as.double(weights),
+                                 isTRUE(increasing),
+                                 if (is.null(y_min)) NaN else as.double(y_min),
+                                 if (is.null(y_max)) NaN else as.double(y_max)))
+  isotonic_map(x = r$x, values = r$values, increasing = isTRUE(increasing),
+               interpolation = interpolation)
+}
+
+isotonic_map <- S7::new_class(
+  "isotonic_fit",
+  package = "prospicio",
+  properties = list(
+    x = S7::class_double,
+    values = S7::class_double,
+    increasing = S7::class_logical,
+    interpolation = S7::class_character
+  )
+)
+
+S7::method(predict, isotonic_map) <- function(object, newdata, ...) {
+  if (length(object@x) == 1) return(rep(object@values, length(newdata)))
+  stats::approx(object@x, object@values, xout = as.double(newdata), rule = 2,
+                method = if (object@interpolation == "step") "constant" else "linear", f = 0,
+                ties = "ordered")$y
+}
+
+S7::method(print, isotonic_map) <- function(x, ...) {
+  cat("<isotonic_fit> ", length(x@x), " points, ",
+      if (x@increasing) "increasing" else "decreasing", "\n", sep = "")
+  invisible(x)
+}
+
+#' @rdname isotonic_fit
+#' @export
+recalibrate <- function(pred, y, weights = NULL, y_min = NULL, y_max = NULL) {
+  isotonic_fit(pred, y, weights, TRUE, y_min, y_max)
+}
+
+#' @rdname isotonic_fit
+#' @export
+balance_correction <- function(y, pred, weights = NULL) {
+  rust_result(balance_correction_rust(as.double(y), as.double(pred),
+                                      if (is.null(weights)) double() else as.double(weights)))
+}
+
+#' @rdname isotonic_fit
+#' @export
+reliability <- function(y, pred, weights = NULL, bins = 10) {
+  as.data.frame(rust_result(reliability_rust(as.double(y), as.double(pred),
+                                             if (is.null(weights)) double() else as.double(weights),
+                                             as.double(bins))))
+}
+
+#' @rdname isotonic_fit
+#' @export
+murphy <- function(y, pred, family = "gaussian", weights = NULL, theta = NaN, power = NaN) {
+  rust_result(murphy_rust(as.double(y), as.double(pred), family,
+                          if (is.null(weights)) double() else as.double(weights),
+                          as.double(theta), as.double(power)))
+}
+
 #' Conformal prediction intervals
 #'
 #' Prediction intervals with coverage of at least `1 - alpha` (split, CQR)

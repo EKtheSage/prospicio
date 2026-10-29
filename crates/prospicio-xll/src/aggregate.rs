@@ -233,7 +233,7 @@ fn row(label: &str, x: f64) -> Vec<Value> {
 }
 
 /// `0.995` as `"99.5%"`.
-fn percent(p: f64) -> String {
+pub(crate) fn percent(p: f64) -> String {
     let s = format!("{:.6}", 100.0 * p);
     let s = s.trim_end_matches('0').trim_end_matches('.');
     format!("{s}%")

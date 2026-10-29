@@ -1380,6 +1380,43 @@ def test_mars_matches_earth_on_the_chalk_portfolio():
     assert len(pruned.terms) == 6
 
 
+def test_isotonic_recalibration_balance_and_murphy():
+    """Auto-calibration checks and repairs (#545)."""
+    import csv
+    from pathlib import Path
+
+    from prospicio.models import balance_correction, isotonic, murphy, recalibrate, reliability
+
+    ref = Path(__file__).resolve().parents[2] / "validation" / "reference" / "isotonic_sklearn.csv"
+
+    def nums(s):
+        return [float(v) for v in s.split(";")] if s else None
+
+    with open(ref) as f:
+        for r in csv.DictReader(f):
+            if r["case"] == "isotonic":
+                fit = isotonic(nums(r["x"]), nums(r["y"]), nums(r["w"]), increasing=r["increasing"] == "1")
+                assert fit.predict(nums(r["query"])) == pytest.approx(nums(r["expected"]), rel=1e-12, abs=1e-12)
+            else:
+                b = balance_correction(nums(r["y"]), nums(r["query"]), nums(r["w"]))
+                assert b == pytest.approx(float(r["expected"]), rel=1e-14)
+    m = recalibrate([1.0, 2.0, 3.0, 4.0], [0.0, 1.0, 1.0, 2.0], y_min=0.1)
+    assert m.predict([1.0, 2.5, 4.0]) == pytest.approx([0.1, 1.0, 2.0])
+    assert isotonic([1.0, 3.0], [1.0, 3.0], interpolation="step").predict([2.0]) == [1.0]
+    y = [float((i * 37) % 11) for i in range(200)]
+    pred = [1.0 + ((i * 37) % 11) * 0.7 + (i % 3) for i in range(200)]
+    for family in ("gaussian", "poisson"):
+        d = murphy(y, pred, family=family)
+        assert d["score"] == pytest.approx(d["miscalibration"] - d["discrimination"] + d["uncertainty"], abs=1e-12)
+        rc = isotonic(pred, y).predict(pred)
+        assert abs(murphy(y, rc, family=family)["miscalibration"]) < 1e-12
+    bands = reliability(y, pred, bins=4)
+    assert sum(b["count"] for b in bands) == 200
+    assert sum(b["weight"] * b["mean_actual"] for b in bands) == pytest.approx(sum(y))
+    with pytest.raises(ValueError):
+        isotonic([1.0], [1.0], interpolation="cubic")
+
+
 def test_conformal_intervals_match_mapie_and_cover():
     """Conformal prediction intervals (#546)."""
     import csv
