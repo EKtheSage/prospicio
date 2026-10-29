@@ -984,8 +984,8 @@ impl Compartmental {
             provenance.clone(),
             |nat, rng, row| {
                 let (cells, shares) = row.split_at_mut(offset);
-                model.simulate(nat, &future, rng, cells);
-                model.paid_pattern(nat, &mut shares[..width]);
+                let dev = model.simulate(nat, &future, rng, cells);
+                model.paid_pattern(nat, &dev, &mut shares[..width]);
             },
         )?;
         let (joint, patterns) = layout.split(wide)?;
@@ -3890,8 +3890,16 @@ impl Model {
     /// incremental paid, summed onto the latest paid) normal or log-normal
     /// about its mean with its type's σ, independent given the draw. An
     /// origin with no observed cell takes one new set of effects for all its
-    /// cells, and an age with none one new set for all its cells.
-    fn simulate(&self, nat: &[f64], future: &Future, rng: &mut StreamRng, row: &mut [f64]) {
+    /// cells, and an age with none one new set for all its cells. Returns
+    /// the development multipliers of each age it used (all 1 without
+    /// development effects), for the draw's paid pattern.
+    fn simulate(
+        &self,
+        nat: &[f64],
+        future: &Future,
+        rng: &mut StreamRng,
+        row: &mut [f64],
+    ) -> Vec<[f64; 4]> {
         let (k_er, k_p) = (nat[0], nat[1]);
         // Under incurred alone paid has no σ: its cells are their means.
         let [sigma_os, sigma_pd] = self.sigmas(nat);
@@ -3946,35 +3954,31 @@ impl Model {
             };
             *x = self.draw_cell(mean, sigma_os, i, rng);
         }
+        dev
     }
 
     /// The paid pattern of a natural-scale draw at each age of the square
     /// into `shares` (decision 14 of `reserving-compartmental.md`): the
     /// expected cumulative paid of an origin with nothing observed (the
     /// population values `k_er, k_p, RLR, RRF` at a zero origin effect),
-    /// with the draw's development-age effect at an age that has one (none
-    /// at an age without), over the same at the square's last age, where
-    /// the reserves stop; so the last share is exactly 1. No random number
-    /// is drawn. Cumulative paid is the closed form `RLR RRF PD(t)` with the
+    /// times the development multipliers `dev` that [`Model::simulate`]
+    /// used for the same draw (the draw's own effect at an age with an
+    /// observed cell, the effect the simulation drew at an age without),
+    /// over the same at the square's last age, where the reserves stop; so
+    /// the last share is exactly 1. No random number is drawn. Cumulative
+    /// paid is the closed form `RLR RRF PD(t)` with the
     /// age's parameters, incremental paid the sum of the increments
     /// `PD(t) - PD(t before)` as the simulation writes them. The premium
     /// cancels.
-    fn paid_pattern(&self, nat: &[f64], shares: &mut [f64]) {
-        let lay = &self.layout;
-        let ms = self.priors.positive().map(lognormal);
+    fn paid_pattern(&self, nat: &[f64], dev: &[[f64; 4]], shares: &mut [f64]) {
         let population = [nat[0], nat[1], nat[2], nat[3]];
         let mut cumulative = 0.0;
         for (k, share) in shares.iter_mut().enumerate() {
-            let mut th = population;
-            if self.cellwise
-                && let Some(d) = self.dev_level[k]
-            {
-                for (p, th) in th.iter_mut().enumerate() {
-                    if let Some(first) = lay.nat_dev[p] {
-                        *th *= (ms[p].1 * nat[first + d]).exp();
-                    }
-                }
-            }
+            let th: [f64; 4] = if self.cellwise {
+                std::array::from_fn(|p| population[p] * dev[k][p])
+            } else {
+                population
+            };
             let (_, pd) = one_os(th[KER], th[KP], self.times[k]);
             let scale = th[RLR] * th[RRF];
             cumulative = if self.response.incremental {
@@ -7365,8 +7369,9 @@ mod tests {
     /// Model 2 (incremental paid, effects on the rates and by development
     /// age): the pattern is the cumulative sum of the increments of the
     /// population origin, each at its age's rates times the draw's
-    /// development effects (none at the age with no observed cell), over the
-    /// total at the last age.
+    /// development effects (at the age with no observed cell, the effect
+    /// the simulation drew for its reserves), over the total at the last
+    /// age.
     #[test]
     #[cfg_attr(
         not(feature = "slow-tests"),
@@ -7392,19 +7397,31 @@ mod tests {
         let slope = fit.model.priors.positive().map(lognormal).map(|(_, s)| s);
         let patterns = &fit.patterns.segments()[0];
         assert_eq!(patterns.ages().len(), 10);
+        let future = fit.data.future_cells();
+        let n_cells = future.paid.len() + future.outstanding.len();
         let mut shifted = 0;
+        let mut drawn = 0;
         let mut falling = 0;
         for i in 0..m.n_sims {
-            let (nat, _) = replay(&fit, Stream::Predictive, m.seed, i);
+            let (nat, mut rng) = replay(&fit, Stream::Predictive, m.seed, i);
+            // The multipliers the simulation of row i's reserves used.
+            let mut cells = vec![0.0; n_cells];
+            let dev = fit.model.simulate(&nat, &future, &mut rng, &mut cells);
+            assert_eq!(dev.len(), 10);
             let (mut cumulative, mut shares) = (0.0, Vec::new());
-            for k in 0..10usize {
+            for (k, used) in dev.iter().enumerate() {
                 let mut th = [nat[0], nat[1], nat[2], nat[3]];
                 for (p, short) in SHORT.iter().enumerate() {
-                    // Ages 12 to 108 have an observed cell, age 120 none.
+                    // Ages 12 to 108 have an observed cell, age 120 none:
+                    // its effect is the one the simulation drew.
                     let name = format!("dev_{short}[{}]", 12 * (k + 1));
                     if let Some(j) = names.iter().position(|n| *n == name) {
                         th[p] *= (slope[p] * nat[j]).exp();
+                        assert!(((slope[p] * nat[j]).exp() - used[p]).abs() < 1e-12);
                         shifted += 1;
+                    } else if k == 9 && used[p] != 1.0 {
+                        th[p] *= used[p];
+                        drawn += 1;
                     }
                 }
                 let at = |t: f64| paid_curve(th[0], th[1], t);
@@ -7429,6 +7446,7 @@ mod tests {
         // this short fit.
         eprintln!("simulations whose share falls: {falling} of {}", m.n_sims);
         assert!(shifted > 0, "no development effect entered the pattern");
+        assert!(drawn > 0, "no drawn effect at the unobserved age");
     }
 
     /// Over segments, a segment's pattern in row `i` is the pattern of the

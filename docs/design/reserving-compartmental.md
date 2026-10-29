@@ -1921,10 +1921,16 @@ simulation as row `i` of that segment's `reserves`, `paid` and
    in item 4.
 4. **Development-age effects (model 2) enter as they enter the mean.** A
    cell's parameters are the origin's times `e^(s v)` with the draw's
-   effect `v` at the cell's age; the pattern uses the same multipliers at
-   an age that has an observed cell and none (a multiplier of 1, the
-   population's zero effect) at an age without, so a new age's effect is
-   not drawn, which would take a random number. Cumulative paid at age
+   effect `v` at the cell's age; the pattern uses the multipliers that the
+   simulation of the same row used: the draw's own effect at an age that
+   has an observed cell, and at an age without (120 months on company 337,
+   the square's last age) the effect the simulation drew from the
+   population for that row's future cells, shared by every origin.
+   `simulate` returns the multipliers it used, so the pattern takes no
+   random number of its own and describes the development of that row's
+   reserves (alternative: a multiplier of 1, the population's zero effect,
+   at an age without a cell, rejected because the row's reserves did not
+   use it). Cumulative paid at age
    `k` is `RLR RRF PD(t_k)` with that age's parameters; under incremental
    paid it is the sum of the increments `PD(t_j) - PD(t_(j-1))` with each
    age's parameters, as the simulation writes them. Either way the

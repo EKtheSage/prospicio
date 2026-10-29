@@ -36,8 +36,9 @@ samplers (2 chains of 100 kept draws for model 1, 500 simulations, seed 21;
 * Model 1's shares rise with age in all 500 simulations (the curve is
   increasing in `t`).
 * Model 2's shares, built from the cumulative sum of increments at each
-  age's rates times the draw's development-age effects, fell at no age in
-  200 simulations. The development effects could make a share fall, and
+  age's rates times the development-age effects that simulation's reserves
+  used (at 120 months, which has no observed cell on company 337, the
+  effect the simulation drew), fell at no age in 200 simulations. The development effects could make a share fall, and
   `DevelopmentPatterns::monthly` refuses a falling share by default
   (decision 28 item 5), so a user of a longer model 2 fit should expect to
   meet `Monotone::RunningMax` if the effects are large; this short fit did
