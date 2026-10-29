@@ -64,6 +64,7 @@ typedef XLOPER12 *(*Fn8)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER1
                          XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn7)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                          XLOPER12 *);
+typedef XLOPER12 *(*Fn3)(XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn5)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn6)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef void (*Free12)(XLOPER12 *);
@@ -161,7 +162,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and six functions registered", registered == 106);
+    check("one hundred and seventeen functions registered", registered == 117);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -865,6 +866,191 @@ int main(int argc, char **argv) {
                                                       gl_rel->val.array.rows == 4 &&
                                                       gl_rel->val.array.lparray[2 * 5 + 2].val.num == 1);
     free12(gl_rel);
+
+    /* Excel's XIRR example through PRO.IRR on dates (0.373362535), and a
+     * three-month deal through PRO.CASHFLOW: premium 100 at once, earned
+     * and paid evenly, collateral the reserve, commuting at the
+     * outstanding loss; at a loss ratio of 60% the investor's flows are
+     * 80, -20, -20 (prospicio_pricing::cashflow's example). */
+    static const double cf_x[5] = {-10000, 2750, 4250, 3250, 2750}, cf_d[5] = {39448, 39508, 39751, 39859, 39904};
+    XLOPER12 cf_xc[5], cf_dc[5], cf_flows, cf_dates, cf_unit;
+    for (int k = 0; k < 5; k++) {
+        cf_xc[k].xltype = cf_dc[k].xltype = xltypeNum;
+        cf_xc[k].val.num = cf_x[k];
+        cf_dc[k].val.num = cf_d[k];
+    }
+    cf_flows.xltype = cf_dates.xltype = xltypeMulti;
+    cf_flows.val.array.lparray = cf_xc;
+    cf_dates.val.array.lparray = cf_dc;
+    cf_flows.val.array.rows = cf_dates.val.array.rows = 5;
+    cf_flows.val.array.columns = cf_dates.val.array.columns = 1;
+    static wchar_t dates_s[] = L"\x05" L"dates";
+    cf_unit.xltype = xltypeStr;
+    cf_unit.val.str = dates_s;
+    XLOPER12 *cf_irr = ((Fn7)GetProcAddress(xll, "pro_irr"))(&cf_flows, &cf_dates, &cf_unit, &missing, &missing,
+                                                             &missing, &missing);
+    print_result("PRO.IRR(flows, dates, \"dates\")", cf_irr);
+    check("PRO.IRR is XIRR's 0.373362535",
+          (cf_irr->xltype & 0xFFF) == xltypeNum && fabs(cf_irr->val.num - 0.37336253351883164) < 1e-9);
+    free12(cf_irr);
+    XLOPER12 cf_rel, cf_fund, cf_open;
+    cf_rel.xltype = cf_fund.xltype = cf_open.xltype = xltypeNum;
+    cf_rel.val.num = 30;
+    cf_fund.val.num = 40;
+    cf_open.val.num = 60;
+    XLOPER12 *cf_moic = ((Fn3)GetProcAddress(xll, "pro_moic"))(&cf_rel, &cf_fund, &cf_open);
+    check("PRO.MOIC(30, 40, 60) is 1.3", (cf_moic->xltype & 0xFFF) == xltypeNum && cf_moic->val.num == 1.3);
+    free12(cf_moic);
+
+    static wchar_t s_premium[] = L"\x07" L"premium", s_cm[] = L"\x11" L"commutation_month",
+                   s_reserve[] = L"\x07" L"reserve", s_outstanding[] = L"\x0B" L"outstanding",
+                   s_flows[] = L"\x05" L"flows";
+    XLOPER12 cf_tc[4], cf_terms, cf_pc[9], cf_pat, cf_rc[2], cf_req, cf_cc[2], cf_com, cf_u, cf_out;
+    cf_tc[0].xltype = cf_tc[2].xltype = xltypeStr;
+    cf_tc[0].val.str = s_premium;
+    cf_tc[2].val.str = s_cm;
+    cf_tc[1].xltype = cf_tc[3].xltype = xltypeNum;
+    cf_tc[1].val.num = 100;
+    cf_tc[3].val.num = 3;
+    for (int r = 0; r < 3; r++) {
+        cf_pc[3 * r].xltype = cf_pc[3 * r + 1].xltype = cf_pc[3 * r + 2].xltype = xltypeNum;
+        cf_pc[3 * r].val.num = 1;
+        cf_pc[3 * r + 1].val.num = cf_pc[3 * r + 2].val.num = (r + 1) / 3.0;
+    }
+    cf_rc[0].xltype = cf_cc[0].xltype = xltypeStr;
+    cf_rc[0].val.str = s_reserve;
+    cf_cc[0].val.str = s_outstanding;
+    cf_rc[1].xltype = cf_cc[1].xltype = xltypeNum;
+    cf_rc[1].val.num = cf_cc[1].val.num = 1;
+    XLOPER12 *cf_blocks[4] = {&cf_terms, &cf_pat, &cf_req, &cf_com};
+    XLOPER12 *cf_cellsp[4] = {cf_tc, cf_pc, cf_rc, cf_cc};
+    int cf_shape[4][2] = {{2, 2}, {3, 3}, {1, 2}, {1, 2}};
+    for (int k = 0; k < 4; k++) {
+        cf_blocks[k]->xltype = xltypeMulti;
+        cf_blocks[k]->val.array.lparray = cf_cellsp[k];
+        cf_blocks[k]->val.array.rows = cf_shape[k][0];
+        cf_blocks[k]->val.array.columns = cf_shape[k][1];
+    }
+    cf_u.xltype = xltypeNum;
+    cf_u.val.num = 0.6;
+    cf_out.xltype = xltypeStr;
+    cf_out.val.str = s_flows;
+    XLOPER12 *cf_run = ((Fn8)GetProcAddress(xll, "pro_cashflow"))(&cf_u, &cf_terms, &cf_pat, &cf_req, &missing,
+                                                                  &cf_out, &missing, &cf_com);
+    print_result("PRO.CASHFLOW(0.6, terms, patterns, reserve,, \"flows\",, outstanding)", cf_run);
+    check("PRO.CASHFLOW flows 80, -20, -20",
+          (cf_run->xltype & 0xFFF) == xltypeMulti && cf_run->val.array.rows == 2 &&
+              fabs(cf_run->val.array.lparray[3].val.num - 80) < 1e-9 &&
+              fabs(cf_run->val.array.lparray[4].val.num + 20) < 1e-9 &&
+              fabs(cf_run->val.array.lparray[5].val.num + 20) < 1e-9);
+    free12(cf_run);
+
+    /* The P&L ledger (PRO.PNL): annual losses 2 to 8, premium 10, a 10%
+     * premium expense and an aggregate cover of 3 xs 5 bought for 1 with a
+     * 10% commission; the net result's mean is 4.54 (the crate's example). */
+    static const double pl_x[6] = {2, 3, 4, 5, 6, 8}, pl_p[6] = {0.25, 0.3, 0.09, 0.2, 0.12, 0.04};
+    static wchar_t s_limit[] = L"\x05" L"limit", s_att[] = L"\x0A" L"attachment", s_prem[] = L"\x07" L"premium",
+                   s_comm[] = L"\x0A" L"commission", s_consol[] = L"\x0C" L"consolidated", s_card[] = L"\x04" L"card";
+    XLOPER12 pl_xc[6], pl_pc[6], pl_ec[2], pl_cc[8], pl_vals, pl_probs, pl_prem, pl_exp, pl_cov, pl_face, pl_out;
+    for (int k = 0; k < 6; k++) {
+        pl_xc[k].xltype = pl_pc[k].xltype = xltypeNum;
+        pl_xc[k].val.num = pl_x[k];
+        pl_pc[k].val.num = pl_p[k];
+    }
+    pl_ec[0].xltype = xltypeNil;
+    pl_ec[1].xltype = xltypeNum;
+    pl_ec[1].val.num = 0.1;
+    wchar_t *pl_head[4] = {s_limit, s_att, s_prem, s_comm};
+    static const double pl_row[4] = {3, 5, 1, 0.1};
+    for (int c = 0; c < 4; c++) {
+        pl_cc[c].xltype = xltypeStr;
+        pl_cc[c].val.str = pl_head[c];
+        pl_cc[4 + c].xltype = xltypeNum;
+        pl_cc[4 + c].val.num = pl_row[c];
+    }
+    XLOPER12 *pl_blocks[4] = {&pl_vals, &pl_probs, &pl_exp, &pl_cov};
+    XLOPER12 *pl_cellsp[4] = {pl_xc, pl_pc, pl_ec, pl_cc};
+    int pl_shape[4][2] = {{6, 1}, {6, 1}, {1, 2}, {2, 4}};
+    for (int k = 0; k < 4; k++) {
+        pl_blocks[k]->xltype = xltypeMulti;
+        pl_blocks[k]->val.array.lparray = pl_cellsp[k];
+        pl_blocks[k]->val.array.rows = pl_shape[k][0];
+        pl_blocks[k]->val.array.columns = pl_shape[k][1];
+    }
+    pl_prem.xltype = xltypeNum;
+    pl_prem.val.num = 10;
+    pl_face.xltype = pl_out.xltype = xltypeStr;
+    pl_face.val.str = s_consol;
+    pl_out.val.str = s_card;
+    XLOPER12 *pl_run = ((Fn9)GetProcAddress(xll, "pro_pnl"))(&pl_vals, &pl_probs, &pl_prem, &pl_exp, &pl_cov,
+                                                             &pl_face, &pl_out, &missing, &missing);
+    print_result("PRO.PNL(losses, probs, 10, 10% of premium, 3 xs 5, \"consolidated\", \"card\")", pl_run);
+    check("PRO.PNL net result mean 4.54", (pl_run->xltype & 0xFFF) == xltypeMulti && pl_run->val.array.rows == 4 &&
+                                              fabs(pl_run->val.array.lparray[3 * 9 + 2].val.num - 4.54) < 1e-12);
+    free12(pl_run);
+
+    /* PRO.YLT.STATS: years 1 and 3 of a 4-year table, 5 then 7 and 2:
+     * the average annual loss 14 / 4. */
+    static XLOPER12 yl_yc[3], yl_lc[3], yl_years, yl_losses, yl_n, yl_p;
+    static const double yl_y[3] = {1, 3, 3}, yl_l[3] = {5, 7, 2};
+    for (int k = 0; k < 3; k++) {
+        yl_yc[k].xltype = yl_lc[k].xltype = xltypeNum;
+        yl_yc[k].val.num = yl_y[k];
+        yl_lc[k].val.num = yl_l[k];
+    }
+    yl_years.xltype = yl_losses.xltype = xltypeMulti;
+    yl_years.val.array.lparray = yl_yc;
+    yl_losses.val.array.lparray = yl_lc;
+    yl_years.val.array.rows = yl_losses.val.array.rows = 3;
+    yl_years.val.array.columns = yl_losses.val.array.columns = 1;
+    yl_n.xltype = yl_p.xltype = xltypeNum;
+    yl_n.val.num = 4;
+    yl_p.val.num = 0.5;
+    XLOPER12 *yl_run = ((Fn8)GetProcAddress(xll, "pro_ylt_stats"))(&yl_years, &yl_losses, &yl_n, &yl_p, &missing,
+                                                                   &missing, &missing, &missing);
+    print_result("PRO.YLT.STATS({1;3;3}, {5;7;2}, 4, 0.5)", yl_run);
+    check("PRO.YLT.STATS mean 3.5", (yl_run->xltype & 0xFFF) == xltypeMulti && yl_run->val.array.columns == 2 &&
+                                        yl_run->val.array.lparray[5 * 2 + 1].val.num == 3.5);
+    free12(yl_run);
+
+    /* PRO.ELT.OEP: one event a year in two, losing 100, above 50 with
+     * probability 1 - exp(-0.5). */
+    static XLOPER12 el_rate, el_mean, el_exp, el_at;
+    el_rate.xltype = el_mean.xltype = el_exp.xltype = el_at.xltype = xltypeNum;
+    el_rate.val.num = 0.5;
+    el_mean.val.num = 100;
+    el_exp.val.num = 500;
+    el_at.val.num = 50;
+    XLOPER12 *el_run = ((Fn7)GetProcAddress(xll, "pro_elt_oep"))(&el_rate, &el_mean, &missing, &missing, &el_exp,
+                                                                 &missing, &el_at);
+    print_result("PRO.ELT.OEP(0.5, 100, , , 500, , 50)", el_run);
+    check("PRO.ELT.OEP 1 - exp(-0.5)", (el_run->xltype & 0xFFF) == xltypeMulti && el_run->val.array.rows == 2 &&
+                                           fabs(el_run->val.array.lparray[1 * 4 + 2].val.num - 0.3934693402873666) < 1e-15);
+    free12(el_run);
+
+    /* PRO.ALLOCATE: two lines over four simulations, totals 3, 5, 7, 9;
+     * TVaR 50% of 8 by Euler gives the first line 2.5. */
+    static XLOPER12 al_c[8], al_draws, al_fam, al_par;
+    static const double al_x[8] = {1, 2, 4, 1, 2, 5, 3, 6};
+    static wchar_t s_tvar[] = L"\x04" L"tvar";
+    for (int k = 0; k < 8; k++) {
+        al_c[k].xltype = xltypeNum;
+        al_c[k].val.num = al_x[k];
+    }
+    al_draws.xltype = xltypeMulti;
+    al_draws.val.array.lparray = al_c;
+    al_draws.val.array.rows = 4;
+    al_draws.val.array.columns = 2;
+    al_fam.xltype = xltypeStr;
+    al_fam.val.str = s_tvar;
+    al_par.xltype = xltypeNum;
+    al_par.val.num = 0.5;
+    XLOPER12 *al_run = ((Fn5)GetProcAddress(xll, "pro_allocate"))(&al_draws, &al_fam, &al_par, &missing, &missing);
+    print_result("PRO.ALLOCATE({1,2;4,1;2,5;3,6}, \"tvar\", 0.5)", al_run);
+    check("PRO.ALLOCATE Euler TVaR 50% gives line 1 2.5", (al_run->xltype & 0xFFF) == xltypeMulti &&
+                                                           al_run->val.array.rows == 5 &&
+                                                           al_run->val.array.lparray[1 * 5 + 2].val.num == 2.5);
+    free12(al_run);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

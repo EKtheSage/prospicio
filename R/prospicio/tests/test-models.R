@@ -745,6 +745,77 @@ stopifnot(inherits(try(mcmc_draws(matrix(1:4, 2)), silent = TRUE), "try-error"))
 
 cat("prospicio R models tests passed\n")
 
+# Auto-calibration (#545): isotonic regression and the balance correction
+# against scikit-learn 1.5.2, recalibration, reliability and the CORP terms.
+iref <- utils::read.csv(file.path(root, "reference", "isotonic_sklearn.csv"), stringsAsFactors = FALSE,
+                        colClasses = "character")
+inum <- function(s) if (is.na(s) || s == "") NULL else as.double(strsplit(s, ";")[[1]])
+for (i in seq_len(nrow(iref))) {
+  r <- iref[i, ]
+  if (r$case == "isotonic") {
+    f <- isotonic_fit(inum(r$x), inum(r$y), inum(r$w), increasing = r$increasing == "1")
+    want <- inum(r$expected)
+    stopifnot(all(abs(predict(f, inum(r$query)) - want) <= 1e-12 * pmax(1, abs(want))))
+  } else {
+    want <- as.double(r$expected)
+    stopifnot(abs(balance_correction(inum(r$y), inum(r$query), inum(r$w)) - want) <= 1e-14 * want)
+  }
+}
+m <- recalibrate(c(1, 2, 3, 4), c(0, 1, 1, 2), y_min = 0.1)
+stopifnot(all(abs(predict(m, c(1, 2.5, 4)) - c(0.1, 1, 2)) < 1e-12))
+stopifnot(identical(predict(isotonic_fit(c(1, 3), c(1, 3), interpolation = "step"), 2), 1))
+yy <- ((0:199 * 37) %% 11)
+pp <- 1 + yy * 0.7 + (0:199 %% 3)
+for (fam in c("gaussian", "poisson")) {
+  d <- murphy(yy, pp, family = fam)
+  stopifnot(abs(d$score - (d$miscalibration - d$discrimination + d$uncertainty)) < 1e-12)
+  stopifnot(abs(murphy(yy, predict(isotonic_fit(pp, yy), pp), family = fam)$miscalibration) < 1e-12)
+}
+rb <- reliability(yy, pp, bins = 4)
+stopifnot(sum(rb$count) == 200, abs(sum(rb$weight * rb$mean_actual) - sum(yy)) < 1e-9)
+cat("calibration tests passed\n")
+
+# Conformal prediction intervals (#546) against MAPIE 0.9.1, and the
+# model-level wrapper equal to the array functions on the same folds.
+cref <- utils::read.csv(file.path(root, "reference", "conformal_mapie.csv"), stringsAsFactors = FALSE,
+                        colClasses = "character")
+cnum <- function(s) as.double(strsplit(s, ";")[[1]])
+for (i in seq_len(nrow(cref))) {
+  r <- cref[i, ]
+  a <- as.double(r$alpha)
+  got <- switch(r$case,
+    split = conformal_split(cnum(r$y), cnum(r$pred), cnum(r$test), alpha = a),
+    cqr = {
+      p <- strsplit(r$pred, "|", fixed = TRUE)[[1]]
+      t <- strsplit(r$test, "|", fixed = TRUE)[[1]]
+      conformal_cqr(cnum(r$y), cnum(p[1]), cnum(p[2]), cnum(t[1]), cnum(t[2]), alpha = a)
+    },
+    conformal_plus(cnum(r$y), cnum(r$pred), cnum(r$folds) + 1,
+                   lapply(strsplit(r$test, "|", fixed = TRUE)[[1]], cnum), alpha = a)
+  )
+  for (side in c("lo", "hi")) {
+    want <- cnum(r[[side]])
+    stopifnot(all(abs(got[[side]] - want) <= 1e-12 * pmax(1, abs(want))))
+  }
+}
+cd <- data.frame(x = ((0:59) * 7) %% 13)
+cy <- 1 + 0.5 * cd$x + ((0:59 * 31) %% 7) - 3
+cfit <- function(data, y) stats::lm(y ~ x, data = cbind(data, y = y))
+cnew <- data.frame(x = c(0.5, 6, 12.5))
+csp <- k_fold(60, 5, 3)
+cgot <- conformal_intervals(cfit, cd, cy, cnew, method = "cv+", splits = csp)
+coof <- numeric(60); cfold <- integer(60); cper <- list()
+for (k in seq_along(csp)) {
+  m <- cfit(cd[csp[[k]]$train, , drop = FALSE], cy[csp[[k]]$train])
+  coof[csp[[k]]$test] <- predict(m, cd[csp[[k]]$test, , drop = FALSE])
+  cfold[csp[[k]]$test] <- k
+  cper[[k]] <- predict(m, cnew)
+}
+stopifnot(isTRUE(all.equal(cgot, conformal_plus(cy, coof, cfold, cper, 0.1), tolerance = 0)))
+cs <- conformal_intervals(cfit(cd, cy), cd, cy, cnew, method = "split")
+stopifnot(all(cs$lo < cs$hi))
+cat("conformal tests passed\n")
+
 # Time splits with a window, a horizon and a gap (#549): the defaults are
 # time_ordered(), and scikit-learn 1.5.2's TimeSeriesSplit index sets.
 tper <- c(3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5)

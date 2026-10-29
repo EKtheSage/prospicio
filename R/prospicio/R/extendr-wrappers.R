@@ -20,6 +20,20 @@ ppc_check_rust <- function(observed, replicated, statistics, groups) .Call(wrap_
 
 loo_pit_rust <- function(observed, replicated, log_lik, r_eff, seed) .Call(wrap__loo_pit_rust, observed, replicated, log_lik, r_eff, seed)
 
+conformal_split_rust <- function(y, pred, test_pred, alpha, score, family_name, scale, test_scale, weights, test_weights, theta, power) .Call(wrap__conformal_split_rust, y, pred, test_pred, alpha, score, family_name, scale, test_scale, weights, test_weights, theta, power)
+
+conformal_cqr_rust <- function(y, lo, hi, test_lo, test_hi, alpha) .Call(wrap__conformal_cqr_rust, y, lo, hi, test_lo, test_hi, alpha)
+
+conformal_plus_rust <- function(y, oof_pred, folds, test_pred, alpha) .Call(wrap__conformal_plus_rust, y, oof_pred, folds, test_pred, alpha)
+
+isotonic_rust <- function(x, y, weights, increasing, y_min, y_max) .Call(wrap__isotonic_rust, x, y, weights, increasing, y_min, y_max)
+
+balance_correction_rust <- function(y, pred, weights) .Call(wrap__balance_correction_rust, y, pred, weights)
+
+reliability_rust <- function(y, pred, weights, bins) .Call(wrap__reliability_rust, y, pred, weights, bins)
+
+murphy_rust <- function(y, pred, family_name, weights, theta, power) .Call(wrap__murphy_rust, y, pred, family_name, weights, theta, power)
+
 bayes_stacking_rust <- function(lpd, k, concentration, sampler) .Call(wrap__bayes_stacking_rust, lpd, k, concentration, sampler)
 
 hierarchical_stacking_rust <- function(lpd, k, x, p, priors, pooling, adaptive, discrete, sampler) .Call(wrap__hierarchical_stacking_rust, lpd, k, x, p, priors, pooling, adaptive, discrete, sampler)

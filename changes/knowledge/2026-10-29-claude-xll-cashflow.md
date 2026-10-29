@@ -1,0 +1,1 @@
+* **Creation**: [Excel's NPV, IRR, XNPV and XIRR](/references/excel-npv-irr.md), from the Excel lane's #578 cash flows (branch claude/xll-cashflow): NPV discounts its first value a period, XNPV and XIRR read days from the first date over 365; Microsoft's worked examples reproduced to 1e-9.

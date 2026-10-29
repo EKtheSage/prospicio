@@ -505,4 +505,15 @@ mod exports {
     udf!(pro_glm, data, response, terms, family, link, exposure, weights, p);
     udf!(pro_glm_predict, data, response, terms, newdata, family, link, exposure, weights, p);
     udf!(pro_glm_relativities, data, response, terms, family, link, exposure, weights, p, level);
+    udf!(pro_npv, rate, flows, times, unit);
+    udf!(pro_irr, flows, times, unit, lower, upper, extend, detail);
+    udf!(pro_moic, released, funded, opening);
+    udf!(pro_cashflow, u, terms, patterns, requirement, commission, output, rate, commutation_requirement);
+    udf!(pro_pnl, values, probs, premium, expenses, covers, face, output, levels, expense_at_mean);
+    udf!(pro_ylt_stats, years, losses, n_years, probabilities, quantile, times, hours, negative);
+    udf!(pro_ylt_oep, years, losses, return_periods, amounts, n_years, quantile, times, hours, negative);
+    udf!(pro_elt_stats, rates, means, sd_independent, sd_correlated, exposures);
+    udf!(pro_elt_oep, rates, means, sd_independent, sd_correlated, exposures, return_periods, amounts);
+    udf!(pro_allocate, draws, family, parameter, method, r0);
+    udf!(pro_allocate_total, draws, total, method, measure, level);
 }

@@ -2669,3 +2669,222 @@ S7::method(predict, dglm_model) <- function(object, newdata, type = c("response"
                                             if (is.null(off)) double() else as.double(off)),
               s7_call())
 }
+
+#' Auto-calibration: isotonic recalibration, balance and reliability
+#'
+#' A model is auto-calibrated when the mean response among rows with
+#' prediction `p` is `p`. `isotonic_fit()` is weighted isotonic regression by
+#' pool-adjacent-violators, as scikit-learn's `IsotonicRegression` (tied `x`
+#' merged into their weighted mean first, values clipped to `[y_min, y_max]`
+#' when given); `predict()` reads it linearly (or as steps) between its
+#' points and holds the end values beyond them. `recalibrate()` is the
+#' increasing isotonic regression of the response on a model's predictions
+#' on held-out data: apply it to new predictions with `predict()`. A
+#' frequency model needs a floor (`y_min`), since the lowest pooled level
+#' can be 0. `balance_correction()` is the multiplier `sum(w y) / sum(w
+#' pred)` that makes the totals agree. `reliability()` gives mean prediction
+#' against mean response in bands of about equal weight. `murphy()` splits a
+#' family's mean deviance into `miscalibration - discrimination +
+#' uncertainty` (Dimitriadis, Gneiting and Jordan's CORP decomposition): the
+#' miscalibration is what isotonic recalibration gains.
+#'
+#' @param x,y Inputs and responses.
+#' @param weights Weights (exposures when `y` and `pred` are rates), or
+#'   `NULL`.
+#' @param increasing Whether the fit is non-decreasing.
+#' @param y_min,y_max Bounds on the fitted values, or `NULL`.
+#' @param interpolation `"linear"` or `"step"`.
+#' @param pred A model's predictions.
+#' @param bins Number of bands.
+#' @param family A family name, as for [glm_fit()].
+#' @param theta,power For the negative binomial and Tweedie.
+#' @returns `isotonic_fit()` and `recalibrate()`: an `isotonic_fit` object
+#'   with properties `x` and `values`, read at new inputs by `predict()`; `balance_correction()` a number;
+#'   `reliability()` a data frame with `lo`, `hi`, `mean_pred`,
+#'   `mean_actual`, `weight` and `count`; `murphy()` a list with `score`,
+#'   `miscalibration`, `discrimination` and `uncertainty`.
+#' @export
+#' @examples
+#' f <- isotonic_fit(c(1, 2, 3, 4), c(1, 3, 2, 4))
+#' f@values
+#' predict(f, c(2.5, 0, 9))
+#' m <- recalibrate(c(1, 2, 3, 4), c(0, 1, 1, 2), y_min = 0.1)
+#' predict(m, c(1, 2.5, 4))
+#' balance_correction(c(1, 3), c(1, 1))
+#' murphy(c(0, 1, 1, 2), c(0.5, 0.5, 2, 2))
+isotonic_fit <- function(x, y, weights = NULL, increasing = TRUE, y_min = NULL, y_max = NULL,
+                         interpolation = c("linear", "step")) {
+  interpolation <- match.arg(interpolation)
+  r <- rust_result(isotonic_rust(as.double(x), as.double(y),
+                                 if (is.null(weights)) double() else as.double(weights),
+                                 isTRUE(increasing),
+                                 if (is.null(y_min)) NaN else as.double(y_min),
+                                 if (is.null(y_max)) NaN else as.double(y_max)))
+  isotonic_map(x = r$x, values = r$values, increasing = isTRUE(increasing),
+               interpolation = interpolation)
+}
+
+isotonic_map <- S7::new_class(
+  "isotonic_fit",
+  package = "prospicio",
+  properties = list(
+    x = S7::class_double,
+    values = S7::class_double,
+    increasing = S7::class_logical,
+    interpolation = S7::class_character
+  )
+)
+
+S7::method(predict, isotonic_map) <- function(object, newdata, ...) {
+  if (length(object@x) == 1) return(rep(object@values, length(newdata)))
+  stats::approx(object@x, object@values, xout = as.double(newdata), rule = 2,
+                method = if (object@interpolation == "step") "constant" else "linear", f = 0,
+                ties = "ordered")$y
+}
+
+S7::method(print, isotonic_map) <- function(x, ...) {
+  cat("<isotonic_fit> ", length(x@x), " points, ",
+      if (x@increasing) "increasing" else "decreasing", "\n", sep = "")
+  invisible(x)
+}
+
+#' @rdname isotonic_fit
+#' @export
+recalibrate <- function(pred, y, weights = NULL, y_min = NULL, y_max = NULL) {
+  isotonic_fit(pred, y, weights, TRUE, y_min, y_max)
+}
+
+#' @rdname isotonic_fit
+#' @export
+balance_correction <- function(y, pred, weights = NULL) {
+  rust_result(balance_correction_rust(as.double(y), as.double(pred),
+                                      if (is.null(weights)) double() else as.double(weights)))
+}
+
+#' @rdname isotonic_fit
+#' @export
+reliability <- function(y, pred, weights = NULL, bins = 10) {
+  as.data.frame(rust_result(reliability_rust(as.double(y), as.double(pred),
+                                             if (is.null(weights)) double() else as.double(weights),
+                                             as.double(bins))))
+}
+
+#' @rdname isotonic_fit
+#' @export
+murphy <- function(y, pred, family = "gaussian", weights = NULL, theta = NaN, power = NaN) {
+  rust_result(murphy_rust(as.double(y), as.double(pred), family,
+                          if (is.null(weights)) double() else as.double(weights),
+                          as.double(theta), as.double(power)))
+}
+
+#' Conformal prediction intervals
+#'
+#' Prediction intervals with coverage of at least `1 - alpha` (split, CQR)
+#' or `1 - 2 alpha` (CV+, jackknife+) in finite samples under
+#' exchangeability alone, from held-out residuals. The conformal quantile is
+#' the `ceiling((1 - alpha)(n + 1))`-th smallest of `n` scores (infinite
+#' when that rank exceeds `n`), as MAPIE's.
+#'
+#' `conformal_split()` scores a model's predictions on a calibration set:
+#' `|y - pred|` (`"absolute"`, intervals `pred +/- q`), the Pearson residual
+#' of a family (`"pearson"`, `mu +/- q sqrt(V(mu))`) or a residual over a
+#' given spread (`"scaled"`, `pred +/- q s`); with `weights` and
+#' `test_weights` the quantile is the weighted one with each test row's
+#' weight at infinity. `conformal_cqr()` is conformalised quantile
+#' regression on a lower and an upper quantile model's predictions.
+#' `conformal_plus()` is CV+ (the jackknife+ with one fold a row) from each
+#' fold's model's out-of-fold and test predictions. `conformal_intervals()`
+#' does it from a model: for `"split"` a fitted model scored on `data` and
+#' `y`; for `"cqr"` a list of a fitted lower and upper quantile model; for
+#' `"cv+"` and `"jackknife+"` a function of a data frame and its responses
+#' returning a fitted model, fitted on each split's training rows. Every
+#' fitted model is read with `predict(model, newdata)`.
+#'
+#' @param y Responses on the calibration (or training) rows.
+#' @param pred,test_pred Predictions on the calibration and test rows.
+#' @param alpha The miscoverage level.
+#' @param score `"absolute"`, `"pearson"` or `"scaled"`.
+#' @param family A family name, for `"pearson"`.
+#' @param scale,test_scale Spreads, for `"scaled"`.
+#' @param weights,test_weights Weights, or `NULL`.
+#' @param theta,power For the negative binomial and Tweedie.
+#' @param lo,hi,test_lo,test_hi Lower and upper quantile predictions.
+#' @param oof_pred Each training row's prediction by its fold's model.
+#' @param folds Each training row's fold (1, 2, ...).
+#' @param fold_pred A list of each fold's model's test predictions.
+#' @param model A fitted model, a list of two, or a fitting function.
+#' @param data,newdata Calibration (or training) and test data frames.
+#' @param method `"split"`, `"cqr"`, `"cv+"` or `"jackknife+"`.
+#' @param splits For `"cv+"`: a list of `list(train, test)` (1-based), each
+#'   row in one test set; [k_fold()] with five folds by default.
+#' @returns A data frame with `lo` and `hi`, one row a test row.
+#' @export
+#' @examples
+#' conformal_split(0:18, rep(9, 19), 100, alpha = 0.1)
+#' d <- data.frame(x = (0:39) %% 7)
+#' y <- 1 + 0.5 * d$x + ((0:39 * 31) %% 7) - 3
+#' fit <- function(data, y) stats::lm(y ~ x, data = cbind(data, y = y))
+#' conformal_intervals(fit, d, y, data.frame(x = 3), method = "jackknife+")
+conformal_split <- function(y, pred, test_pred, alpha = 0.1, score = c("absolute", "pearson", "scaled"),
+                            family = "", scale = NULL, test_scale = NULL, weights = NULL,
+                            test_weights = NULL, theta = NaN, power = NaN) {
+  score <- match.arg(score)
+  num <- function(v) if (is.null(v)) double() else as.double(v)
+  as.data.frame(rust_result(conformal_split_rust(
+    num(y), num(pred), num(test_pred), as.double(alpha), score, family, num(scale), num(test_scale),
+    num(weights), num(test_weights), as.double(theta), as.double(power)
+  )))
+}
+
+#' @rdname conformal_split
+#' @export
+conformal_cqr <- function(y, lo, hi, test_lo, test_hi, alpha = 0.1) {
+  as.data.frame(rust_result(conformal_cqr_rust(as.double(y), as.double(lo), as.double(hi),
+                                               as.double(test_lo), as.double(test_hi),
+                                               as.double(alpha))))
+}
+
+#' @rdname conformal_split
+#' @export
+conformal_plus <- function(y, oof_pred, folds, fold_pred, alpha = 0.1) {
+  as.data.frame(rust_result(conformal_plus_rust(as.double(y), as.double(oof_pred), as.double(folds),
+                                                lapply(fold_pred, as.double), as.double(alpha))))
+}
+
+#' @rdname conformal_split
+#' @export
+conformal_intervals <- function(model, data, y, newdata, method = c("cv+", "jackknife+", "split", "cqr"),
+                                alpha = 0.1, splits = NULL, score = c("absolute", "pearson"),
+                                family = "") {
+  method <- match.arg(method)
+  score <- match.arg(score)
+  pr <- function(m, d) as.double(stats::predict(m, newdata = d))
+  if (method == "split") {
+    return(conformal_split(y, pr(model, data), pr(model, newdata), alpha, score = score, family = family))
+  }
+  if (method == "cqr") {
+    return(conformal_cqr(y, pr(model[[1]], data), pr(model[[2]], data),
+                         pr(model[[1]], newdata), pr(model[[2]], newdata), alpha))
+  }
+  n <- length(y)
+  if (method == "jackknife+") {
+    splits <- lapply(seq_len(n), function(i) list(train = setdiff(seq_len(n), i), test = i))
+  } else if (is.null(splits)) {
+    splits <- k_fold(n, 5, 0)
+  }
+  folds <- rep(NA_integer_, n)
+  for (k in seq_along(splits)) {
+    if (any(!is.na(folds[splits[[k]]$test]))) stop("each row must be in exactly one split's test set")
+    folds[splits[[k]]$test] <- k
+  }
+  if (anyNA(folds)) stop("each row must be in exactly one split's test set")
+  oof <- numeric(n)
+  per <- vector("list", length(splits))
+  for (k in seq_along(splits)) {
+    s <- splits[[k]]
+    m <- model(data[s$train, , drop = FALSE], y[s$train])
+    oof[s$test] <- pr(m, data[s$test, , drop = FALSE])
+    per[[k]] <- pr(m, newdata)
+  }
+  conformal_plus(y, oof, folds, per, alpha)
+}

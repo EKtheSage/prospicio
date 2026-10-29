@@ -2754,6 +2754,250 @@ fn mars_knots_feed_terms() {
     assert!((glm.deviance() / poisson.rss() - 1.0).abs() < 1e-9);
 }
 
+/// Isotonic regression and the balance correction against scikit-learn
+/// 1.5.2 (`validation/scripts/isotonic_sklearn.py`): weighted and tied data,
+/// increasing and decreasing, predictions inside and beyond the data.
+#[test]
+fn isotonic_matches_scikit_learn() {
+    use prospicio_models::calibrate::{balance_correction, isotonic};
+    let nums = |s: &str| -> Vec<f64> {
+        if s.is_empty() {
+            Vec::new()
+        } else {
+            s.split(';').map(|x| x.parse().unwrap()).collect()
+        }
+    };
+    let (mut fits, mut balances) = (0, 0);
+    for c in &reference("isotonic_sklearn.csv") {
+        let w = nums(c.get("w"));
+        let w = (!w.is_empty()).then_some(w.as_slice());
+        let want = nums(c.get("expected"));
+        match c.get("case") {
+            "isotonic" => {
+                let f = isotonic(
+                    &nums(c.get("x")),
+                    &nums(c.get("y")),
+                    w,
+                    c.get("increasing") == "1",
+                )
+                .unwrap();
+                for (g, e) in f.predict(&nums(c.get("query"))).iter().zip(&want) {
+                    assert!((g - e).abs() < 1e-12 * e.abs().max(1.0), "{g} {e}");
+                }
+                fits += 1;
+            }
+            "balance" => {
+                let b = balance_correction(&nums(c.get("y")), &nums(c.get("query")), w).unwrap();
+                assert!((b - want[0]).abs() < 1e-14 * want[0], "{b} {want:?}");
+                balances += 1;
+            }
+            other => panic!("case {other}"),
+        }
+    }
+    assert_eq!((fits, balances), (5, 5));
+}
+
+/// A Poisson GLM's predictions bent to `(p / m)^2.5 m`: the same ranking,
+/// the wrong levels.
+struct Bent(GlmFit, f64);
+
+impl prospicio_models::Fitted for Bent {
+    fn predict(&self, design: &Design) -> prospicio_core::Result<Vec<f64>> {
+        Ok(self
+            .0
+            .predict(design)?
+            .iter()
+            .map(|p| (p / self.1).powf(2.5) * self.1)
+            .collect())
+    }
+
+    fn predict_distribution(
+        &self,
+        design: &Design,
+        n_sims: usize,
+        seed: u64,
+    ) -> prospicio_core::Result<prospicio_prob::PredictiveDistribution> {
+        self.0.predict_distribution(design, n_sims, seed)
+    }
+}
+
+/// On the Chalk portfolio: a Poisson GLM fitted on a third of the policies
+/// is balanced on them and nearly auto-calibrated on another third; bent out
+/// of calibration, its miscalibration term grows while its discrimination
+/// is unchanged, an isotonic map fitted on the second third (with a floor)
+/// removes most of the miscalibration on the last third (0.047 to 0.007,
+/// the plain GLM's own term there 0.012 from the noise the isotonic fit
+/// takes up), and the balance correction makes the totals equal.
+#[test]
+fn recalibration_repairs_a_bent_model_on_the_chalk_portfolio() {
+    use prospicio_models::Fitted;
+    use prospicio_models::calibrate::{Balanced, Recalibrated, balance_correction, murphy};
+    let (x, y, w) = chalk();
+    let part = |k: usize| -> (Design, Vec<f64>, Vec<f64>) {
+        let rows: Vec<usize> = (0..y.len()).filter(|i| i % 3 == k).collect();
+        let col = |v: &[f64]| rows.iter().map(|&i| v[i]).collect::<Vec<f64>>();
+        let d = Design::new(
+            vec![
+                "(Intercept)".into(),
+                "age".into(),
+                "veh_age".into(),
+                "exper".into(),
+            ],
+            vec![vec![1.0; rows.len()], col(&x[0]), col(&x[1]), col(&x[2])],
+        )
+        .unwrap()
+        .with_weights(col(&w))
+        .unwrap();
+        (d, col(&y), col(&w))
+    };
+    let (d0, y0, w0) = part(0);
+    let (d1, y1, w1) = part(1);
+    let (d2, y2, w2) = part(2);
+    let glm = Glm::new(Family::Poisson, Link::Log).fit(&d0, &y0).unwrap();
+    // The balance property on the fitting data.
+    let f = balance_correction(&y0, &glm.predict(&d0).unwrap(), Some(&w0)).unwrap();
+    assert!((f - 1.0).abs() < 1e-8, "{f}");
+    let mean = glm
+        .predict(&d0)
+        .unwrap()
+        .iter()
+        .zip(&w0)
+        .map(|(p, w)| p * w)
+        .sum::<f64>()
+        / w0.iter().sum::<f64>();
+    let score =
+        |m: &dyn Fitted| murphy(Family::Poisson, &y2, &m.predict(&d2).unwrap(), Some(&w2)).unwrap();
+    let plain = score(&glm);
+    let glm2 = Glm::new(Family::Poisson, Link::Log).fit(&d0, &y0).unwrap();
+    let bent = Bent(glm2, mean);
+    let b = score(&bent);
+    assert!(
+        b.miscalibration > 3.0 * plain.miscalibration,
+        "{b:?} {plain:?}"
+    );
+    assert!(
+        (b.discrimination - plain.discrimination).abs() < 1e-9,
+        "{b:?} {plain:?}"
+    );
+    let glm3 = Glm::new(Family::Poisson, Link::Log).fit(&d0, &y0).unwrap();
+    // A floor at 5% of the mean frequency: the lowest pooled block can be 0.
+    let fixed = Recalibrated::fit(Bent(glm3, mean), &d1, &y1, Some(&w1))
+        .unwrap()
+        .with_bounds(0.05 * mean, f64::INFINITY)
+        .unwrap();
+    let r = score(&fixed);
+    // Most of the miscalibration gone, the score back at the plain GLM's.
+    assert!(r.miscalibration < b.miscalibration / 3.0, "{r:?} {b:?}");
+    assert!(
+        r.score < plain.score + 1e-3 && r.score < b.score,
+        "{r:?} {plain:?}"
+    );
+    // Balanced on the last third: its totals agree there exactly.
+    let glm4 = Glm::new(Family::Poisson, Link::Log).fit(&d0, &y0).unwrap();
+    let bal = Balanced::fit(Bent(glm4, mean), &d2, &y2, Some(&w2)).unwrap();
+    let p = bal.predict(&d2).unwrap();
+    let (tp, ty): (f64, f64) = p
+        .iter()
+        .zip(&y2)
+        .zip(&w2)
+        .fold((0.0, 0.0), |(a, c), ((p, y), w)| (a + p * w, c + y * w));
+    assert!((tp / ty - 1.0).abs() < 1e-12, "{tp} {ty}");
+}
+
+/// Conformal intervals against MAPIE 0.9.1 (`validation/scripts/conformal_mapie.py`):
+/// split conformal, CQR, CV+ on five folds and the jackknife+, each from the
+/// same model's predictions MAPIE used, to 1e-12.
+#[test]
+fn conformal_intervals_match_mapie() {
+    use prospicio_models::conformal::{Score, cqr, cv_plus, split};
+    let nums = |s: &str| -> Vec<f64> { s.split(';').map(|x| x.parse().unwrap()).collect() };
+    let mut cases = 0;
+    for c in &reference("conformal_mapie.csv") {
+        let alpha: f64 = c.get("alpha").parse().unwrap();
+        let y = nums(c.get("y"));
+        let i = match c.get("case") {
+            "split" => split(
+                &y,
+                &nums(c.get("pred")),
+                &nums(c.get("test")),
+                alpha,
+                &Score::Absolute,
+            )
+            .unwrap(),
+            "cqr" => {
+                let p: Vec<&str> = c.get("pred").split('|').collect();
+                let t: Vec<&str> = c.get("test").split('|').collect();
+                cqr(
+                    &y,
+                    &nums(p[0]),
+                    &nums(p[1]),
+                    &nums(t[0]),
+                    &nums(t[1]),
+                    alpha,
+                )
+                .unwrap()
+            }
+            "cv_plus" | "jackknife_plus" => {
+                let fold: Vec<usize> = nums(c.get("folds")).iter().map(|&k| k as usize).collect();
+                let test: Vec<Vec<f64>> = c.get("test").split('|').map(nums).collect();
+                cv_plus(&y, &nums(c.get("pred")), &fold, &test, alpha).unwrap()
+            }
+            other => panic!("case {other}"),
+        };
+        for (got, want) in [(&i.lo, nums(c.get("lo"))), (&i.hi, nums(c.get("hi")))] {
+            for (g, w) in got.iter().zip(&want) {
+                assert!(
+                    (g - w).abs() < 1e-12 * w.abs().max(1.0),
+                    "{}: {g} {w}",
+                    c.get("case")
+                );
+            }
+        }
+        cases += 1;
+    }
+    assert_eq!(cases, 4);
+}
+
+/// `cv_plus_fit` fits a Gaussian GLM on each fold in parallel and gives the
+/// intervals `cv_plus` gives from the same folds' predictions made by hand.
+#[test]
+fn cv_plus_fit_equals_cv_plus_on_its_folds() {
+    use prospicio_models::Fitted;
+    use prospicio_models::conformal::{cv_plus, cv_plus_fit};
+    use prospicio_models::resample::k_fold;
+    let n = 60;
+    let x: Vec<f64> = (0..n).map(|i| ((i * 7) % 13) as f64).collect();
+    let y: Vec<f64> = x
+        .iter()
+        .enumerate()
+        .map(|(i, x)| 1.0 + 0.5 * x + ((i * 31) % 7) as f64 - 3.0)
+        .collect();
+    let design = |x: &[f64]| {
+        Design::new(
+            vec!["(Intercept)".into(), "x".into()],
+            vec![vec![1.0; x.len()], x.to_vec()],
+        )
+        .unwrap()
+    };
+    let d = design(&x);
+    let test = design(&[0.5, 6.0, 12.5]);
+    let splits = k_fold(n, 5, 3).unwrap();
+    let glm = Glm::new(Family::Gaussian, Link::Identity);
+    let got = cv_plus_fit(&glm, &d, &y, &splits, &test, 0.1).unwrap();
+    let (mut oof, mut fold, mut per) = (vec![0.0; n], vec![0; n], Vec::new());
+    for (k, s) in splits.iter().enumerate() {
+        let yt: Vec<f64> = s.train.iter().map(|&i| y[i]).collect();
+        let f = glm.fit(&d.select(&s.train), &yt).unwrap();
+        for (&i, p) in s.test.iter().zip(f.predict(&d.select(&s.test)).unwrap()) {
+            oof[i] = p;
+            fold[i] = k;
+        }
+        per.push(f.predict(&test).unwrap());
+    }
+    assert_eq!(got, cv_plus(&y, &oof, &fold, &per, 0.1).unwrap());
+    assert!(got.lo.iter().zip(&got.hi).all(|(l, h)| l < h));
+}
+
 /// Time-ordered splits with a rolling window, a horizon and a gap against
 /// scikit-learn 1.5.2's `TimeSeriesSplit` on one row a period
 /// (`validation/scripts/time_splits_sklearn.py`): the same index sets.

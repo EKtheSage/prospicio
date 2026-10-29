@@ -43,7 +43,16 @@ from .prospicio_native import (
     elpd_loo,
     elpd_waic,
     confusion_matrix,
+    conformal_cqr,
+    conformal_plus,
+    conformal_split,
+    balance_correction,
     double_lift,
+    isotonic,
+    murphy,
+    recalibrate,
+    reliability,
+    Isotonic,
     f_test,
     gini,
     loss_ratio_chart,
@@ -129,6 +138,16 @@ __all__ = [
     "gini",
     "normalized_gini",
     "double_lift",
+    "conformal_split",
+    "conformal_cqr",
+    "conformal_plus",
+    "conformal_intervals",
+    "isotonic",
+    "Isotonic",
+    "recalibrate",
+    "balance_correction",
+    "reliability",
+    "murphy",
     "loss_ratio_chart",
     "roc",
     "confusion_matrix",
@@ -248,6 +267,90 @@ def deviance_score(family, theta=None, power=None):
         return deviance(family, y, pred, weights=w, theta=theta, power=power) / sum(w)
 
     return score
+
+
+def conformal_intervals(model, design, y, test_design, method="cv+", alpha=0.1, splits=None,
+                        score="absolute", family=None, n_jobs=None):
+    """Conformal prediction intervals around any model, with coverage of at
+    least ``1 - alpha`` (split, CQR) or ``1 - 2 alpha`` (CV+, jackknife+) in
+    finite samples under exchangeability.
+
+    Parameters
+    ----------
+    model : object
+        For ``"split"`` a fitted model (``predict(design)``), scored on the
+        calibration set ``design``, ``y``. For ``"cqr"`` a pair of fitted
+        lower and upper quantile models. For ``"cv+"`` and ``"jackknife+"``
+        a specification with ``fit(design, y)``, fitted on each split's
+        training rows on threads, as ``cross_validate`` does.
+    design : Design
+        The calibration set (split, CQR) or the training set (CV+,
+        jackknife+).
+    y : list of float
+    test_design : Design
+    method : {"split", "cqr", "cv+", "jackknife+"}, default "cv+"
+    alpha : float, default 0.1
+    splits : list of (list of int, list of int), optional
+        For ``"cv+"``: the folds, each row in one test set; ``k_fold(n, 5,
+        0)`` by default. ``"jackknife+"`` leaves out one row a fit.
+    score : {"absolute", "pearson"}, default "absolute"
+        For ``"split"``; ``"pearson"`` needs ``family``.
+    family : str, optional
+    n_jobs : int, optional
+
+    Returns
+    -------
+    dict
+        ``lo`` and ``hi``, one a test row.
+
+    Examples
+    --------
+    >>> from prospicio.models import Design, Glm, conformal_intervals
+    >>> x = [float(i % 7) for i in range(40)]
+    >>> y = [1.0 + 0.5 * v + ((i * 31) % 7) - 3.0 for i, v in enumerate(x)]
+    >>> d = Design([[1.0] * 40, x], ["(Intercept)", "x"])
+    >>> t = Design([[1.0], [3.0]], ["(Intercept)", "x"])
+    >>> i = conformal_intervals(Glm("gaussian"), d, y, t, method="jackknife+")
+    >>> i["lo"][0] < 2.5 < i["hi"][0]
+    True
+    """
+    if len(y) != design.n_rows:
+        raise ValueError(f"{len(y)} responses for {design.n_rows} design rows")
+    if method == "split":
+        return conformal_split(y, model.predict(design), model.predict(test_design), alpha=alpha,
+                               score=score, family=family)
+    if method == "cqr":
+        lower, upper = model
+        return conformal_cqr(y, lower.predict(design), upper.predict(design),
+                             lower.predict(test_design), upper.predict(test_design), alpha=alpha)
+    if method not in ("cv+", "jackknife+"):
+        raise ValueError(f'method must be "split", "cqr", "cv+" or "jackknife+", not {method!r}')
+    n = len(y)
+    if method == "jackknife+":
+        splits = [([j for j in range(n) if j != i], [i]) for i in range(n)]
+    elif splits is None:
+        splits = k_fold(n, 5, 0)
+    folds = [-1] * n
+    for k, (_, test) in enumerate(splits):
+        for i in test:
+            if folds[i] != -1:
+                raise ValueError("each row must be in exactly one split's test set")
+            folds[i] = k
+    if -1 in folds:
+        raise ValueError("each row must be in exactly one split's test set")
+
+    def one(split):
+        train, test = split
+        fitted = model.fit(design.select(train), [y[i] for i in train])
+        return fitted.predict(design.select(test)), fitted.predict(test_design)
+
+    with ThreadPoolExecutor(max_workers=n_jobs or min(32, max(1, len(splits)))) as pool:
+        results = list(pool.map(one, splits))
+    oof = [0.0] * n
+    for (_, test), (held, _) in zip(splits, results):
+        for i, p in zip(test, held):
+            oof[i] = p
+    return conformal_plus(y, oof, folds, [t for _, t in results], alpha=alpha)
 
 
 def cross_validate(model, design, y, splits, score, n_jobs=None):

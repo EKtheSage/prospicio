@@ -1071,6 +1071,85 @@ Python and R give the same importances on the same rows (pinned in both
 test suites). Seed 3 on three rows is the monograph's shuffle of Tables
 9.1 to 9.4, whose importance 0.133 (100 on its scale) the tests reproduce.
 
+## Auto-calibration (#545)
+
+Status: built; items (a) to (e) proposed by the Models lane for the
+user's acceptance.
+
+`prospicio_models::calibrate` checks whether a model's predictions are
+right on average at every level and repairs them. `isotonic` is weighted
+isotonic regression by pool-adjacent-violators, as scikit-learn's
+`IsotonicRegression`; `Recalibrated<F>` maps any `Fitted` model's
+predictions through one fitted on held-out data; `balance_correction` and
+`Balanced<F>` scale the total prediction to the total response;
+`reliability` bins mean prediction against mean response; `murphy` splits a
+family's mean deviance into miscalibration, discrimination and uncertainty
+(the CORP decomposition of Dimitriadis, Gneiting and Jordan, 2021). Python
+`isotonic`, `Isotonic`, `recalibrate`, `balance_correction`, `reliability`,
+`murphy` in `prospicio.models`; R `isotonic_fit()`, `recalibrate()`,
+`balance_correction()`, `reliability()`, `murphy()`.
+
+- (a) *Ties in the input are merged before pooling* into their weighted
+  mean response and summed weight, so the fit is a function of the input,
+  as scikit-learn does; `predict` reads linearly between the distinct
+  inputs (or as steps) and holds the end values beyond them
+  (`out_of_bounds="clip"`).
+- (b) *One isotonic fit serves every family*: pool-adjacent-violators
+  gives the closest monotone fit under every Bregman score, so the
+  squared-error fit is also the Poisson, gamma and Tweedie one.
+- (c) *Bounds on the fitted values* (`with_bounds`, Python and R `y_min`,
+  `y_max`), as scikit-learn's: a frequency recalibrated on held-out data
+  can pool to 0 at its low end, where a later claim's Poisson deviance is
+  infinite, so a floor is the user's to set; none is set by default.
+- (d) *The recalibrated and balanced models' predictive distributions
+  scale each row's draws* of the inner model by the ratio of the new to
+  the old prediction, keeping the shape and moving the mean.
+- (e) *The auto-calibration diagnostic is CORP's miscalibration term*, the
+  mean deviance the isotonic recalibration gains on the same data; it is
+  in-sample, so it is positive even for a calibrated model on noisy data
+  (0.012 for a Poisson GLM on a third of the Chalk portfolio), and a
+  model is judged against a reference, not against zero. A test statistic
+  with a null distribution is later work.
+
+In Python and R the map is applied to predictions (`recalibrate(pred,
+y).predict(new_pred)`), so it serves every model of the bindings,
+boosting included; the Rust wrappers serve Rust `Fitted` models.
+
+## Conformal prediction (#546)
+
+Status: built; items (a) to (e) proposed by the Models lane for the
+user's acceptance.
+
+`prospicio_models::conformal` gives prediction intervals around any model
+from held-out residuals, with finite-sample coverage under exchangeability:
+`split` (absolute, Pearson or scaled scores), `weighted_split` (a weight a
+calibration and a test row), `cqr` (conformalised quantile regression) and
+`cv_plus` (CV+, and the jackknife+ with one fold a row), each on
+predictions, so any engine's model serves; `split_fitted` and
+`cv_plus_fit` (folds fitted in parallel through `map_splits`) take a Rust
+`Fitted` or `Model`. Python `conformal_split`, `conformal_cqr`,
+`conformal_plus` and `conformal_intervals(model, design, y, test_design,
+method=)`, R the same names, R's `conformal_intervals()` taking a fitting
+function of a data frame and its responses.
+
+- (a) *The conformal quantile is the `⌈(1 − α)(n + 1)⌉`-th smallest score*
+  for every method, and infinite when that rank exceeds `n` (MAPIE clips
+  the level to 1 unless `allow_infinite_bounds`). It is MAPIE's for split
+  and CV+; MAPIE's CQR takes numpy's `"higher"` quantile at
+  `(1 − α)(1 + 1/n)`, sometimes one order statistic higher, so the parity
+  case is one where the two agree.
+- (b) *The functions take predictions*, not models, so a boosted, network
+  or ONNX model's predictions go in as they are; the model-level wrappers
+  are thin.
+- (c) *The Pearson score scales by the family's variance at the
+  prediction*, `|y − μ| / √V(μ)`; a dispersion model's spread goes in as
+  a scaled score.
+- (d) *Weighted conformal places each test row's weight at infinity*
+  (Tibshirani, Barber, Candès and Ramdas, 2019); equal weights give the
+  split method's interval exactly.
+- (e) *Jackknife+ refits once a row*, `n` fits; the Python and R wrappers
+  fit the folds on threads (Python) or in turn (R).
+
 ## Time splits with windows, horizons and gaps (#549)
 
 Status: built; items (a) to (c) proposed by the Models lane for the
