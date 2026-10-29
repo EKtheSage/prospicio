@@ -11,3 +11,6 @@ python/prospicio/prospicio_native.pyi text eol=lf
 
 # Lane status files: one bullet per line, so concurrent PRs merge by keeping both sides' lines.
 docs/lanes/*.md merge=union
+# The binding allow-list: one entry per line, so concurrent PRs merge by keeping both sides' lines;
+# check_bindings.py fails on a line the union brings back.
+validation/bindings-allowlist.toml merge=union

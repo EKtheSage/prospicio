@@ -6,11 +6,18 @@
 # crate; one line per item path (as the script prints it) with a reason.
 # Excel wraps a chosen subset and is report-only, so it has no tables here.
 #
-# Entries marked "(seed); review" were unbound when the list was started;
-# replace the reason with a real one (internal, Rust only by decision, ...)
-# or bind the item and delete the entry.
+# Entries marked "(seed); review" were unbound when the list was started
+# on 2026-10-28; replace the reason with a real one (internal, Rust only by
+# decision, ...) or bind the item and delete the entry. A new entry needs a
+# real reason: the check rejects an empty one, the "<reason: ...>"
+# placeholder and a seed reason with another date.
+#
+# Every lane edits this file, so it merges by union (.gitattributes): a line
+# that the union brings back fails the check as now bound or gone, and a key
+# added twice makes the file invalid TOML, which fails it too.
 
 [python.prospicio_aggregate]
+"Basis" = "unbound on 2026-10-28 (seed); review"
 "CarryForward" = "unbound on 2026-10-28 (seed); review"
 "Corridor" = "unbound on 2026-10-28 (seed); review"
 "DealColumn" = "unbound on 2026-10-28 (seed); review"
@@ -26,6 +33,8 @@
 "pnl::Side" = "unbound on 2026-10-28 (seed); review"
 "pnl::Span" = "unbound on 2026-10-28 (seed); review"
 "pnl::Validation" = "unbound on 2026-10-28 (seed); review"
+"reinsurance::DropDown" = "plain data of a Layer: set by its with_top_and_drop and read back by its drop_down getter"
+"reinsurance::NthEvent" = "plain data of a Layer: set by its with_nth_event and read back by its nth_event getter"
 "reinsurance::Scope" = "unbound on 2026-10-28 (seed); review"
 "renewal::renewal_count_pmf" = "unbound on 2026-10-28 (seed); review"
 "renewal::zero_wait_batches" = "unbound on 2026-10-28 (seed); review"
@@ -43,6 +52,7 @@
 "stan_csv::parse" = "unbound on 2026-10-28 (seed); review"
 
 [python.prospicio_glm]
+"diagnostics::Diagnostics" = "unbound on 2026-10-28 (seed); review"
 "gam::SmoothKind" = "unbound on 2026-10-28 (seed); review"
 "glmm::Integration" = "unbound on 2026-10-28 (seed); review"
 "glmm::RandomEffects" = "unbound on 2026-10-28 (seed); review"
@@ -135,6 +145,7 @@
 
 [python.prospicio_pricing]
 "book::DealContribution" = "unbound on 2026-10-28 (seed); review"
+"book::Distribution" = "unbound on 2026-10-28 (seed); review"
 "bounds::PriceRange" = "unbound on 2026-10-28 (seed); review"
 "cashflow::AvEReport" = "unbound on 2026-10-28 (seed); review"
 "cashflow::Conditioned" = "unbound on 2026-10-28 (seed); review"
@@ -199,6 +210,7 @@
 "OneYearFit" = "unbound on 2026-10-28 (seed); review"
 "OneYearSegment" = "unbound on 2026-10-28 (seed); review"
 "ResidualSummary" = "unbound on 2026-10-28 (seed); review"
+"Result" = "Result alias of the crate's error type (seed)"
 "SegmentPatterns" = "unbound on 2026-10-28 (seed); review"
 "SummaryRow" = "unbound on 2026-10-28 (seed); review"
 "TailFit" = "unbound on 2026-10-28 (seed); review"
@@ -211,6 +223,7 @@
 [r.prospicio_aggregate]
 "AggregateLayerStatistics" = "unbound on 2026-10-28 (seed); review"
 "AnnualGrids" = "unbound on 2026-10-28 (seed); review"
+"Basis" = "unbound on 2026-10-28 (seed); review"
 "CarryForward" = "unbound on 2026-10-28 (seed); review"
 "CessionStatistics" = "unbound on 2026-10-28 (seed); review"
 "Corridor" = "unbound on 2026-10-28 (seed); review"
@@ -237,6 +250,9 @@
 "pnl::Span" = "unbound on 2026-10-28 (seed); review"
 "pnl::Stats" = "unbound on 2026-10-28 (seed); review"
 "pnl::Validation" = "unbound on 2026-10-28 (seed); review"
+"pnl::stack" = "unbound on 2026-10-28 (seed); review"
+"reinsurance::DropDown" = "plain data of a Layer: set by its with_top_and_drop and read back by its drop_down getter"
+"reinsurance::NthEvent" = "plain data of a Layer: set by its with_nth_event and read back by its nth_event getter"
 "reinsurance::Scope" = "unbound on 2026-10-28 (seed); review"
 "renewal::renewal_count_pmf" = "unbound on 2026-10-28 (seed); review"
 "renewal::zero_wait_batches" = "unbound on 2026-10-28 (seed); review"
@@ -257,6 +273,7 @@
 "stan_csv::parse" = "unbound on 2026-10-28 (seed); review"
 
 [r.prospicio_glm]
+"diagnostics::Diagnostics" = "unbound on 2026-10-28 (seed); review"
 "gam::SmoothKind" = "unbound on 2026-10-28 (seed); review"
 "glmm::Integration" = "unbound on 2026-10-28 (seed); review"
 "glmm::RandomEffects" = "unbound on 2026-10-28 (seed); review"
@@ -313,6 +330,7 @@
 [r.prospicio_models]
 "Coding" = "unbound on 2026-10-28 (seed); review"
 "Frame" = "unbound on 2026-10-28 (seed); review"
+"Term" = "unbound on 2026-10-28 (seed); review"
 "artifact::array" = "unbound on 2026-10-28 (seed); review"
 "artifact::bad" = "unbound on 2026-10-28 (seed); review"
 "artifact::family_from" = "unbound on 2026-10-28 (seed); review"
@@ -358,6 +376,7 @@
 [r.prospicio_pricing]
 "book::BookCashflows" = "unbound on 2026-10-28 (seed); review"
 "book::DealContribution" = "unbound on 2026-10-28 (seed); review"
+"book::Distribution" = "unbound on 2026-10-28 (seed); review"
 "bounds::PriceRange" = "unbound on 2026-10-28 (seed); review"
 "cashflow::AvEReport" = "unbound on 2026-10-28 (seed); review"
 "cashflow::Cashflows" = "unbound on 2026-10-28 (seed); review"
@@ -397,6 +416,7 @@
 [r.prospicio_prob]
 "InputHasher" = "unbound on 2026-10-28 (seed); review"
 "LocalParetoApproximation" = "unbound on 2026-10-28 (seed); review"
+"capital::Allocation" = "unbound on 2026-10-28 (seed); review"
 "copula::iman_conover" = "unbound on 2026-10-28 (seed); review"
 "count_families::Gig" = "unbound on 2026-10-28 (seed); review"
 "discrete::return_period" = "unbound on 2026-10-28 (seed); review"
@@ -438,6 +458,7 @@
 "OneYearFit" = "unbound on 2026-10-28 (seed); review"
 "OneYearSegment" = "unbound on 2026-10-28 (seed); review"
 "ResidualSummary" = "unbound on 2026-10-28 (seed); review"
+"Result" = "Result alias of the crate's error type (seed)"
 "SegmentPatterns" = "unbound on 2026-10-28 (seed); review"
 "SummaryRow" = "unbound on 2026-10-28 (seed); review"
 "TailFit" = "unbound on 2026-10-28 (seed); review"

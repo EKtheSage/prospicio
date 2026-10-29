@@ -49,25 +49,31 @@ rustdoc JSON, so it is an approximation:
 What counts as bound
 --------------------
 
-Name matching on the binding crates' Rust source (`crates/prospicio-python/src`
+Path resolution on the binding crates' Rust source (`crates/prospicio-python/src`
 for Python, `crates/prospicio-r/src` for R). `R/prospicio/R` is not read:
 it calls the extendr wrappers by their own names and never names a Rust
-item. A library item is bound in a language when its name appears in that
-binding crate as
+item. A library item is bound in a language when that binding crate names
+it by a path that resolves to it, through the library's modules and
+re-exports (also another library crate's, such as reserving's
+`pub use prospicio_core::Grain`):
 
-- a name in a `use` tree that starts at a `prospicio_*` crate (the
-  original name of an `x as y` import counts),
-- a segment of an inline path starting at a `prospicio_*` crate, as in
+- a `use` tree that starts at a `prospicio_*` crate (an `x as y` import
+  resolves by its original path),
+- an inline path starting at a `prospicio_*` crate, as in
   `prospicio_prob::evt::fit_gpd(...)`, or
-- the segment after a lower-case name that such a `use` imported, as in
-  `use prospicio_reserving::view;` then `view::run(...)`.
+- a path starting at a lower-case name that such a `use` imported in the
+  same file, as in `use prospicio_reserving::view;` then `view::run(...)`.
 
-Known limits: the match is by name, not by path, so two crates' items of
-one name are bound together (a false "bound"), and an item reached only
-through a glob import or a type alias of the binding crate is missed (a
-false "unbound", which shows up as an allow-list entry to review). A trait
-that a binding imports only to call its methods counts as bound. Calling a
-method on a value of a bound type does not bind other items it returns.
+A path stops at its first item, so `Type::new` and `Enum::Variant` bind
+the type and nothing else; a path that ends at a module binds nothing.
+Items are keyed by crate and declaring module, so two crates' items of
+one name are told apart.
+
+Known limits: an item reached only through a glob import, a type alias
+or a macro of the binding crate is missed (a false "unbound", which shows
+up as an allow-list entry to review). A trait that a binding imports only
+to call its methods counts as bound. Calling a method on a value of a bound
+type does not bind other items it returns.
 
 Excel
 -----
@@ -81,15 +87,18 @@ The allow-list
 
 `validation/bindings-allowlist.toml` has one table per language and crate,
 `[python.prospicio_prob]`, with one entry per item path and a one-line
-reason: `"grid::Discretization" = "internal: ..."`. `--seed` rewrites it
-from the current tree: it keeps the entries (and reasons) still needed,
-drops stale ones and adds every new unbound item with a dated reason to
-review. Use it to start the list or after a large change, and replace the
-added reasons by real ones before committing.
+reason: `"grid::Discretization" = "internal: ..."`. The check also fails
+on an entry with no reason, the `<reason: ...>` placeholder, or an
+"unbound on <date> (seed)" reason dated other than the seed day
+(2026-10-28), so a pasted failure hint cannot pass. `--seed` rewrites the
+list from the current tree: it keeps the entries (and reasons) still
+needed, drops stale ones and adds every new unbound item with the
+placeholder (or a reason for an error type, trait or prospicio-math item),
+which must be replaced by a real reason before the check passes. The file
+merges by union (`.gitattributes`), as the lane status files do.
 """
 
 import argparse
-import datetime
 import pathlib
 import re
 import sys
@@ -204,7 +213,8 @@ def skip_item(toks, i, through_braces):
 def parse_use(toks):
     """A `use` tree's tokens (without `use` and `;`) to (path, leaf, alias) triples.
 
-    `leaf` is a name, `*` or `self`; alias is the imported name.
+    `leaf` is a name, `*` or `self`; alias is the imported name (for `self`,
+    the module's own name unless renamed).
     """
     out = []
 
@@ -234,6 +244,8 @@ def parse_use(toks):
                 if i + 1 < len(toks) and toks[i][1] == "as":
                     alias = toks[i + 1][1]
                     i += 2
+                if name == "self" and alias == "self" and path:
+                    alias = path[-1]  # `a::b::{self}` imports `b`
                 out.append((path, name, alias))
                 return i
             if kind == "path":  # leading `::`
@@ -367,77 +379,127 @@ def walk(module):
         yield from walk(child)
 
 
-def public_items(crate_dir, errors):
-    """{(decl module path, name): (kind, shortest public path)} for one crate."""
+def parse_crate(crate_dir, errors):
+    """{module path: Module} of one crate, from its `src/lib.rs`."""
     lib = crate_dir / "src" / "lib.rs"
     root = Module((), True)
     parse_module(tokenize(lib.read_text(encoding="utf-8")), root, lib.parent, errors)
-    modules = {m.path: m for m in walk(root)}
+    return {m.path: m for m in walk(root)}
 
-    def lookup(mod_path, name, seen):
-        """Resolve `name` in a module to ('item', decl path) or ('mod', path)."""
-        mod = modules.get(mod_path)
-        if mod is None or (mod_path, name) in seen:
-            return None
-        seen = seen | {(mod_path, name)}
-        if name in mod.children:
-            return ("mod", mod.children[name].path)
-        if name in mod.items:
-            return ("item", mod_path) if mod.items[name][1] else None
-        for _, path, leaf, alias in mod.uses:
-            if alias == name and leaf not in ("*", "self"):
-                hit = resolve(mod_path, path + [leaf], seen)
-                if hit:
-                    return hit
-            if leaf == "self" and path and path[-1] == name:
-                hit = resolve(mod_path, path, seen)
-                if hit:
-                    return hit
-        for _, path, leaf, _ in mod.uses:
-            if leaf == "*":
-                target = resolve(mod_path, path, seen)
-                if target and target[0] == "mod":
-                    hit = lookup(target[1], name, seen)
-                    if hit:
-                        return hit
+
+# A resolved name is ("item", crate, decl module path, decl name) or
+# ("mod", crate, module path). `crates` maps each library crate's snake-case
+# name to its modules, so a `use` of another library crate is followed there.
+
+
+def lookup(crates, crate, mod_path, name, seen=frozenset(), item=False):
+    """Resolve one name in a module, through its `use`s and globs.
+
+    A module and a function can share a name (`pub mod fft; pub use
+    fft::fft;`), as in Rust's separate namespaces: by default a module wins,
+    and with `item` only an item is returned.
+    """
+    mod = crates.get(crate, {}).get(mod_path)
+    key = (crate, mod_path, name, item)
+    if mod is None or key in seen:
         return None
+    seen = seen | {key}
 
-    def resolve(mod_path, segments, seen=frozenset()):
-        if not segments:
-            return ("mod", mod_path)
-        first, rest = segments[0], segments[1:]
-        if first == "crate":
-            base = ()
-        elif first == "self":
-            base = mod_path
-        elif first == "super":
-            base = mod_path[:-1]
-        else:
-            hit = lookup(mod_path, first, seen)
-            if hit is None:
-                return None
-            if not rest:
+    def ok(hit):
+        return hit if hit and (not item or hit[0] == "item") else None
+
+    if name in mod.children and not item:
+        return ("mod", crate, mod.children[name].path)
+    if name in mod.items:
+        return ("item", crate, mod_path, name) if mod.items[name][1] else None
+    for _, path, leaf, alias in mod.uses:
+        if alias == name and leaf not in ("*", "self"):
+            hit = ok(resolve(crates, crate, mod_path, path + [leaf], seen, item))
+            if hit:
                 return hit
-            if hit[0] != "mod":
-                return None
-            base = hit[1]
-        for k, seg in enumerate(rest):
-            if seg == "super":
-                base = base[:-1]
-                continue
-            hit = lookup(base, seg, seen)
-            if hit is None:
-                return None
-            if k == len(rest) - 1:
+        if leaf == "self" and path and alias == name and not item:
+            hit = resolve(crates, crate, mod_path, path, seen)
+            if hit:
                 return hit
-            if hit[0] != "mod":
-                return None
-            base = hit[1]
-        return ("mod", base)
+    for _, path, leaf, _ in mod.uses:
+        if leaf == "*":
+            target = resolve(crates, crate, mod_path, path, seen)
+            if target and target[0] == "mod":
+                hit = lookup(crates, target[1], target[2], name, seen, item)
+                if hit:
+                    return hit
+    return None
 
-    found = {}  # (decl path, name) -> (kind, public path tuple)
 
-    def offer(decl, name, public_path):
+def resolve(crates, crate, mod_path, segments, seen=frozenset(), item=False):
+    """Resolve a path written in a module (`crate::`, `self::`, `super::`, another crate).
+
+    With `item`, the last segment must name an item (see `lookup`).
+    """
+    if not segments:
+        return None if item else ("mod", crate, mod_path)
+    first, rest = segments[0], segments[1:]
+    if first == "crate":
+        base = (crate, ())
+    elif first == "self":
+        base = (crate, mod_path)
+    elif first == "super":
+        base = (crate, mod_path[:-1])
+    else:
+        if not rest and item:
+            return lookup(crates, crate, mod_path, first, seen, item=True)
+        hit = lookup(crates, crate, mod_path, first, seen)
+        if hit is None and first in crates:
+            hit = ("mod", first, ())
+        if hit is None:
+            return None
+        if not rest:
+            return hit
+        if hit[0] != "mod":
+            return None
+        base = (hit[1], hit[2])
+    for k, seg in enumerate(rest):
+        if seg == "super":
+            base = (base[0], base[1][:-1])
+            continue
+        last = k == len(rest) - 1
+        hit = lookup(crates, base[0], base[1], seg, seen, item and last)
+        if hit is None or last:
+            return hit
+        if hit[0] != "mod":
+            return None
+        base = (hit[1], hit[2])
+    return None if item else ("mod",) + base
+
+
+def exported(crates, crate, mod_path, seen=frozenset()):
+    """Names that a glob import of a module brings in: its public items,
+    public child modules and `pub use` names, through its own `pub use` globs."""
+    mod = crates[crate][mod_path]
+    names = {n for n, (_, is_pub) in mod.items.items() if is_pub}
+    names |= {n for n, child in mod.children.items() if child.public}
+    for is_pub, path, leaf, alias in mod.uses:
+        if not is_pub:
+            continue
+        if leaf == "*":
+            target = resolve(crates, crate, mod_path, path)
+            if target and target[0] == "mod" and target[1:] not in seen:
+                names |= exported(crates, target[1], target[2], seen | {target[1:]})
+        elif leaf != "self" or path:
+            names.add(alias)
+    return names
+
+
+def public_items(crates, crate):
+    """{(decl module path, decl name): (kind, shortest public path)} for one crate.
+
+    Items that the crate re-exports from another crate are left to that crate.
+    """
+    modules = crates[crate]
+    found = {}
+
+    def offer(hit, public_path):
+        _, _, decl, name = hit
         kind = modules[decl].items[name][0]
         old = found.get((decl, name))
         if old is None or len(public_path) < len(old[1]):
@@ -445,54 +507,59 @@ def public_items(crate_dir, errors):
 
     reachable = {(): ()}  # module decl path -> its public path
     queue = [()]
+
+    def reach(hit, public_path):
+        if hit is None or hit[1] != crate:
+            return
+        if hit[0] == "item":
+            offer(hit, public_path)
+        elif hit[2] not in reachable:
+            reachable[hit[2]] = public_path
+            queue.append(hit[2])
+
     while queue:
         mod_path = queue.pop()
         mod = modules[mod_path]
         here = reachable[mod_path]
         for name, child in mod.children.items():
-            if child.public and child.path not in reachable:
-                reachable[child.path] = here + (name,)
-                queue.append(child.path)
+            if child.public:
+                reach(("mod", crate, child.path), here + (name,))
         for name, (_, is_pub) in mod.items.items():
             if is_pub:
-                offer(mod_path, name, here + (name,))
+                offer(("item", crate, mod_path, name), here + (name,))
         for is_pub, path, leaf, alias in mod.uses:
             if not is_pub:
                 continue
             if leaf == "*":
-                target = resolve(mod_path, path)
+                target = resolve(crates, crate, mod_path, path)
                 if target and target[0] == "mod":
-                    tmod = modules[target[1]]
-                    for name, (_, item_pub) in tmod.items.items():
-                        if item_pub:
-                            offer(target[1], name, here + (name,))
-                    for name, child in tmod.children.items():
-                        if child.public and child.path not in reachable:
-                            reachable[child.path] = here + (name,)
-                            queue.append(child.path)
+                    for name in exported(crates, target[1], target[2]):
+                        for item in (True, False):
+                            reach(lookup(crates, target[1], target[2], name, item=item), here + (name,))
                 continue
             segs = path if leaf == "self" else path + [leaf]
-            target = resolve(mod_path, segs)
-            if target is None:
-                continue
-            if target[0] == "item":
-                offer(target[1], segs[-1], here + (alias,))
-            elif target[1] not in reachable:
-                reachable[target[1]] = here + (alias,)
-                queue.append(target[1])
+            for item in (True, False):
+                reach(resolve(crates, crate, mod_path, segs, item=item and leaf != "self"), here + (alias,))
     return found
 
 
-def library_items(root, errors):
-    """{crate name (snake): {public path: kind}}."""
+def library_crates(root, errors):
+    """{crate name (snake): {module path: Module}} of the library crates."""
     out = {}
     for crate_dir in sorted((root / "crates").glob("prospicio-*")):
         if crate_dir.name in NOT_LIBRARIES or not (crate_dir / "src" / "lib.rs").exists():
             continue
-        crate = crate_dir.name.replace("-", "_")
+        out[crate_dir.name.replace("-", "_")] = parse_crate(crate_dir, errors)
+    return out
+
+
+def library_items(crates):
+    """{crate: {public path: (kind, decl name, decl module path)}}."""
+    out = {}
+    for crate in sorted(crates):
         items = {}
-        for (_, name), (kind, public_path) in public_items(crate_dir, errors).items():
-            items["::".join(public_path)] = (kind, name)
+        for (decl, name), (kind, public_path) in public_items(crates, crate).items():
+            items["::".join(public_path)] = (kind, name, decl)
         out[crate] = items
     return out
 
@@ -500,43 +567,77 @@ def library_items(root, errors):
 # ------------------------------------------------------ binding names
 
 
-def binding_names(src_dir):
-    """Names of library items a binding crate's source reaches (see the docstring)."""
-    names = set()
-    module_aliases = set()
+def resolve_reference(crates, segments):
+    """The library item a path names, as (crate, decl path, decl name), or None.
+
+    The path starts at a library crate and is followed module by module; it
+    stops at the first item, so `Type::new` and `Enum::Variant` name the type.
+    A path that ends at a module, or that the scan cannot follow, names nothing.
+    """
+    if not segments or segments[0] not in crates:
+        return None
+    base = (segments[0], ())
+    for k, seg in enumerate(segments[1:]):
+        hit = None
+        if k == len(segments) - 2:  # the last segment: a function before a module of its name
+            hit = lookup(crates, base[0], base[1], seg, item=True)
+        hit = hit or lookup(crates, base[0], base[1], seg)
+        if hit is None:
+            return None
+        if hit[0] == "item":
+            return hit[1:]
+        base = (hit[1], hit[2])
+    return None
+
+
+def binding_names(src_dir, crates):
+    """Library items, as (crate, decl path, decl name), that a binding crate's source names."""
+    bound = set()
+
+    def add(segments):
+        hit = resolve_reference(crates, segments)
+        if hit:
+            bound.add(hit)
+
     for f in sorted(src_dir.rglob("*.rs")):
         toks = tokenize(f.read_text(encoding="utf-8"))
+        aliases = {}  # lower-case name that a `use` imported from a library crate -> its path
         i = 0
         while i < len(toks):
             kind, t = toks[i]
             if kind == "ident" and t == "use":
                 end = skip_item(toks, i + 1, through_braces=True)
                 for path, leaf, alias in parse_use(toks[i + 1:end - 1]):
-                    if not path or not path[0].startswith("prospicio_"):
+                    if not path or path[0] not in crates or leaf == "*":
                         continue
-                    names.update(path[1:])
-                    if leaf == "self":
-                        module_aliases.add(path[-1])
-                    elif leaf != "*":
-                        names.add(leaf)
-                        if alias[:1].islower():
-                            module_aliases.add(alias)
+                    segs = path if leaf == "self" else path + [leaf]
+                    add(segs)
+                    if alias[:1].islower():
+                        aliases[alias] = segs
                 i = end
                 continue
-            if kind == "ident" and t.startswith("prospicio_") and i + 1 < len(toks) and toks[i + 1][1] == "::":
+            i += 1
+        i = 0
+        while i < len(toks):
+            kind, t = toks[i]
+            starts = kind == "ident" and (t in crates or t in aliases)
+            # only the first segment of a path, not `x.view::<T>` or `a::view::b`
+            if (
+                starts
+                and i + 1 < len(toks)
+                and toks[i + 1][1] == "::"
+                and (i == 0 or toks[i - 1][1] not in ("::", "."))
+            ):
+                segs = [t] if t in crates else list(aliases[t])
                 j = i + 1
                 while j + 1 < len(toks) and toks[j][1] == "::" and toks[j + 1][0] == "ident":
-                    names.add(toks[j + 1][1])
+                    segs.append(toks[j + 1][1])
                     j += 2
+                add(segs)
                 i = j
                 continue
             i += 1
-        for i in range(len(toks) - 2):
-            if toks[i][1] in module_aliases and toks[i + 1][1] == "::" and toks[i + 2][0] == "ident":
-                # only a module alias at the start of a path, not `x.view::<T>`
-                if i == 0 or toks[i - 1][1] not in ("::", "."):
-                    names.add(toks[i + 2][1])
-    return names
+    return bound
 
 
 # ---------------------------------------------------------- allow-list
@@ -551,7 +652,30 @@ def seed_reason(crate, path, kind, name):
         return "Result alias of the crate's error type (seed)"
     if crate == "prospicio_math":
         return "numerical building block; the bindings do not depend on prospicio-math (seed); review"
-    return f"unbound on {datetime.date.today().isoformat()} (seed); review"
+    return PLACEHOLDER
+
+
+# The reason that the failure message and `--seed` print for an item with no
+# reason yet. The check rejects it, so pasting it does not pass.
+PLACEHOLDER = "<reason: internal | Rust only by decision (where recorded) | ...>"
+
+# The list was seeded on this date. Its "unbound on <date> (seed); review"
+# reasons are accepted as the backlog of that day; the same text with any
+# other date is rejected as a placeholder.
+SEED_DATE = "2026-10-28"
+SEED_PLACEHOLDER = re.compile(r"unbound on (\S+) \(seed\)")
+
+
+def reason_problem(reason):
+    """Why an allow-list reason is not a reason, or None."""
+    if not isinstance(reason, str) or not reason.strip():
+        return "has no reason"
+    if "<reason" in reason:
+        return "still has the placeholder reason"
+    m = SEED_PLACEHOLDER.search(reason)
+    if m and m.group(1) != SEED_DATE:
+        return f"has a seed placeholder dated {m.group(1)}, not a reason"
+    return None
 
 
 def quote(s):
@@ -567,9 +691,15 @@ HEADER = """\
 # crate; one line per item path (as the script prints it) with a reason.
 # Excel wraps a chosen subset and is report-only, so it has no tables here.
 #
-# Entries marked "(seed); review" were unbound when the list was started;
-# replace the reason with a real one (internal, Rust only by decision, ...)
-# or bind the item and delete the entry.
+# Entries marked "(seed); review" were unbound when the list was started
+# on 2026-10-28; replace the reason with a real one (internal, Rust only by
+# decision, ...) or bind the item and delete the entry. A new entry needs a
+# real reason: the check rejects an empty one, the "<reason: ...>"
+# placeholder and a seed reason with another date.
+#
+# Every lane edits this file, so it merges by union (.gitattributes): a line
+# that the union brings back fails the check as now bound or gone, and a key
+# added twice makes the file invalid TOML, which fails it too.
 """
 
 
@@ -592,13 +722,15 @@ def render_allowlist(entries):
 
 def analyse(root):
     errors = []
-    items = library_items(root, errors)
-    bound = {lang: binding_names(root / src) for lang, src in {**LANGUAGES, **REPORT_ONLY}.items()}
+    crates = library_crates(root, errors)
+    items = library_items(crates)
+    bound = {lang: binding_names(root / src, crates) for lang, src in {**LANGUAGES, **REPORT_ONLY}.items()}
     return items, bound, errors
 
 
-def is_bound(names, path, kind_name):
-    return kind_name[1] in names
+def is_bound(bound, crate, item):
+    """item is (kind, decl name, decl module path) from library_items."""
+    return (crate, item[2], item[1]) in bound
 
 
 def table(items, bound, allow):
@@ -611,11 +743,11 @@ def table(items, bound, allow):
         n = len(items[crate])
         cells = [n]
         for lang in langs:
-            cells.append(sum(is_bound(bound[lang], p, k) for p, k in items[crate].items()))
+            cells.append(sum(is_bound(bound[lang], crate, k) for k in items[crate].values()))
         for lang in langs:
             cells.append(len(allow.get(lang, {}).get(crate, {})))
         for lang in REPORT_ONLY:
-            cells.append(sum(is_bound(bound[lang], p, k) for p, k in items[crate].items()))
+            cells.append(sum(is_bound(bound[lang], crate, k) for k in items[crate].values()))
         totals = [a + b for a, b in zip(totals, cells)]
         rows.append([crate] + cells)
     rows.append(["total"] + totals)
@@ -655,7 +787,7 @@ def check(root, allow):
         for crate in sorted(items):
             listed = allow.get(lang, {}).get(crate, {})
             for path, kn in sorted(items[crate].items()):
-                if is_bound(bound[lang], path, kn):
+                if is_bound(bound[lang], crate, kn):
                     if path in listed:
                         problems.append(
                             f"{ALLOWLIST}: [{lang}.{crate}] {quote(path)} is now bound in {lang}; delete the entry"
@@ -664,8 +796,10 @@ def check(root, allow):
                     problems.append(
                         f"{crate}::{path} ({kn[0]}) has no {lang} binding: bind it, or add under "
                         f"[{lang}.{crate}] in {ALLOWLIST}:\n    {quote(path)} = "
-                        f"{quote(seed_reason(crate, path, kn[0], kn[1]))}"
+                        f"{quote(PLACEHOLDER)}"
                     )
+                elif why := reason_problem(listed[path]):
+                    problems.append(f"{ALLOWLIST}: [{lang}.{crate}] {quote(path)} {why}; give a one-line reason")
             for path in sorted(set(listed) - set(items[crate])):
                 problems.append(
                     f"{ALLOWLIST}: [{lang}.{crate}] {quote(path)} is not a public item; delete or rename the entry"
@@ -681,7 +815,7 @@ def seed(root, allow):
             old = allow.get(lang, {}).get(crate, {})
             rows = {}
             for path, kn in items[crate].items():
-                if not is_bound(bound[lang], path, kn):
+                if not is_bound(bound[lang], crate, kn):
                     rows[path] = old.get(path) or seed_reason(crate, path, kn[0], kn[1])
             entries.setdefault(lang, {})[crate] = rows
     return render_allowlist(entries), errors
