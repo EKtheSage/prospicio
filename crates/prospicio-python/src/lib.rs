@@ -151,8 +151,9 @@ mod prospicio_native {
         PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice, PyQuote, PyReinstatementPrice,
         PyRiskProfile, PyTabulatedCurve, PyTowerModel, PyTowerQuote, alpha_between_frequencies,
         alpha_between_frequency_and_layer, alpha_between_layers, censored_las, fit_pml_curve,
-        fit_references, ilf, layer_cv, loss_elimination_ratio, match_tower, pareto_extrapolation,
-        price, price_portfolio, price_with_reinstatements, severity_exposure_curve,
+        fit_references, frontier, ilf, layer_cv, loss_elimination_ratio, match_tower,
+        pareto_extrapolation, price, price_portfolio, price_with_reinstatements,
+        severity_exposure_curve,
     };
     #[pymodule_export]
     use super::ratemaking::{

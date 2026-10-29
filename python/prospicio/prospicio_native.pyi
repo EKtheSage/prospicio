@@ -32971,6 +32971,35 @@ def from_json(text: str) -> Any:
         version, or its parameters are out of range.
     """
 
+def frontier(losses: Any, retentions: Sequence[float], limits: Sequence[float], *, kind: str = "occurrence", assets: Distortion |None = None, cost_of_capital: float |None = None, distortion: Distortion |None = None, loading: float |None = None, risk: str = "tvar", level: float = 0.99) -> dict:
+    """
+    An efficient frontier of reinsurance structures: for each retention and
+    limit of a layer, the cost of the cover (``margin``, the ceded premium
+    less the expected ceded loss) against the risk kept (``net_risk``, a VaR
+    or TVaR of the net loss), and whether no other structure beats it on
+    both (``efficient``).
+    
+    ``losses`` is an ``EventSet`` (each structure a per-occurrence layer,
+    or with ``kind="aggregate"`` a stop loss on the year's total), a list of
+    annual losses (stop losses), or an annual ``Grid`` (stop losses, exact;
+    retentions and finite limits on its step). The ceded premium is the
+    expected value principle ``(1 + loading) E[C]`` when ``loading`` is
+    given, else exactly one of ``cost_of_capital`` and ``distortion`` on the
+    assets of the capital standard ``assets``, as ``price`` prices one
+    cover. Among the efficient structures the least ``net_risk + premium``
+    is Cai and Tan's choice.
+    
+    Returns a dict of columns, one row a structure in the order of the
+    retentions, then the limits: ``retention``, ``limit``, ``premium``,
+    ``expected_ceded``, ``margin``, ``net_risk`` and ``efficient``.
+    
+    >>> from prospicio.reinsurance import frontier
+    >>> from prospicio.distributions import Grid
+    >>> f = frontier(Grid(1.0, [0.25] * 4), [1.0, 2.0], [1.0, float("inf")], loading=0.5, risk="var", level=0.9)
+    >>> f["expected_ceded"][1], f["premium"][1], f["net_risk"][1]
+    (0.75, 1.125, 1.0)
+    """
+
 def gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None) -> float:
     """
     Gini index of the ordered Lorenz curve.

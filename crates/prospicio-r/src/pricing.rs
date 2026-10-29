@@ -1864,8 +1864,72 @@ fn pricing_burning_cost(
     ))
 }
 
+/// The efficient frontier: `list(retention, limit, premium,
+/// expected_ceded, margin, net_risk, efficient)`. `loading` NULL for a
+/// premium rule on `assets`.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn frontier_rust(
+    losses: Robj,
+    retentions: &[f64],
+    limits: &[f64],
+    kind: &str,
+    assets: Robj,
+    rate: Option<f64>,
+    pricing: Robj,
+    loading: Option<f64>,
+    risk: &str,
+    level: f64,
+) -> Result<List> {
+    use prospicio_pricing::frontier::{
+        CededPrice, LayerKind, RetainedRisk, frontier_annual, frontier_events, frontier_grid,
+    };
+    let price = match loading {
+        Some(l) => CededPrice::ExpectedValue { loading: l },
+        None => CededPrice::Rule {
+            rule: premium_rule(rate, &pricing)?,
+            assets: distortion_arg(&assets, "assets")?,
+        },
+    };
+    let measure = match risk {
+        "var" => RetainedRisk::Var(level),
+        "tvar" => RetainedRisk::Tvar(level),
+        other => return Err(Error::Other(format!("unknown risk {other:?}"))),
+    };
+    let layer = match kind {
+        "occurrence" => LayerKind::PerOccurrence,
+        "aggregate" => LayerKind::Aggregate,
+        other => return Err(Error::Other(format!("unknown kind {other:?}"))),
+    };
+    let f = if let Ok(ev) = <&EventSet>::try_from(&losses) {
+        frontier_events(&ev.inner, layer, retentions, limits, &price, measure)
+    } else if let Ok(g) = <&Grid>::try_from(&losses) {
+        frontier_grid(&g.inner, retentions, limits, &price, measure)
+    } else if let Some(x) = losses.as_real_slice() {
+        frontier_annual(x, retentions, limits, &price, measure)
+    } else {
+        return Err(Error::Other(
+            "losses must be an event_set, a grid_distribution or a numeric vector".into(),
+        ));
+    }
+    .map_err(to_r)?;
+    let col = |g: &dyn Fn(&prospicio_pricing::frontier::FrontierPoint) -> f64| -> Vec<f64> {
+        f.points.iter().map(g).collect()
+    };
+    Ok(list!(
+        retention = col(&|p| p.retention),
+        limit = col(&|p| p.limit),
+        premium = col(&|p| p.premium),
+        expected_ceded = col(&|p| p.expected_ceded),
+        margin = col(&|p| p.margin),
+        net_risk = col(&|p| p.net_risk),
+        efficient = f.points.iter().map(|p| p.efficient).collect::<Vec<_>>()
+    ))
+}
+
 extendr_module! {
     mod pricing;
+    fn frontier_rust;
     fn pricing_trend_large_losses;
     fn pricing_burning_cost;
     fn pricing_development_pattern;

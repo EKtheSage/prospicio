@@ -1405,3 +1405,33 @@ def test_bonus_malus():
         BonusMalus.rule(4, 4, up_per_claim=1)
     with pytest.raises(ValueError):
         scale.efficiency(0.1, r[:5])
+
+
+def test_reinsurance_frontier():
+    """An efficient frontier of retentions and limits (#569)."""
+    import math
+
+    from prospicio.aggregate import simulate_events
+    from prospicio.distributions import Grid, Lognormal, Poisson
+    from prospicio.reinsurance import Layer, frontier
+
+    g = Grid(1.0, [0.25] * 4)
+    f = frontier(g, [1.0, 2.0], [1.0, math.inf], loading=0.5, risk="var", level=0.9)
+    assert (f["expected_ceded"][1], f["premium"][1], f["net_risk"][1]) == (0.75, 1.125, 1.0)
+    # Cai and Tan: the stop-loss retention at S(d) = 1 / (1 + loading).
+    h = 0.01
+    probs = [math.exp(-k * h) * (1 - math.exp(-h)) for k in range(3000)]
+    probs[-1] += 1 - sum(probs)
+    rs = [k * h for k in range(60)]
+    f = frontier(Grid(h, probs), rs, [math.inf], loading=0.25, risk="var", level=0.99)
+    total = [r + p for r, p in zip(f["net_risk"], f["premium"])]
+    best = rs[total.index(min(total))]
+    assert abs(best - math.log(1.25)) <= 2 * h
+    ev = simulate_events(Poisson(3.0), Lognormal.from_mean_cv(10.0, 1.5), 2_000, seed=2)
+    tv = ar.risk.Distortion.tvar(0.99)
+    f = frontier(ev, [10.0, 20.0], [20.0, math.inf], assets=tv, cost_of_capital=0.1)
+    mean = sum(Layer("L", 20.0, 10.0).ceded(ev.events(i)) for i in range(2_000)) / 2_000
+    assert f["expected_ceded"][0] == pytest.approx(mean)
+    assert any(f["efficient"])
+    with pytest.raises(ValueError, match="loading"):
+        frontier(ev, [10.0], [20.0])
