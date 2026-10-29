@@ -474,6 +474,7 @@ impl EventSet {
         expected_dims: Vec<String>,
         expected_values: List,
         source_hash: Robj,
+        losses_negative: bool,
     ) -> Result<Self> {
         use prospicio_aggregate::ylt::{Expansion, YearLossTable};
         let seed = whole(seed, "seed")?;
@@ -490,7 +491,12 @@ impl EventSet {
             .iter()
             .map(|&y| whole(y, "years").map(|y| y as usize))
             .collect::<Result<Vec<_>>>()?;
-        let mut ylt = YearLossTable::new(&years, losses).map_err(to_r)?;
+        let mut ylt = if losses_negative {
+            YearLossTable::from_negative_losses(&years, losses)
+        } else {
+            YearLossTable::new(&years, losses)
+        }
+        .map_err(to_r)?;
         let has_slots = !slots.is_null();
         if has_slots {
             let slots = slots
@@ -652,6 +658,23 @@ impl EventSet {
         let values: Vec<&str> = values.iter().map(String::as_str).collect();
         Ok(Self {
             inner: self.inner.filter(label, &values).map_err(to_r)?,
+        })
+    }
+
+    /// The events regrouped into contract years from `start`; `partial`
+    /// "drop" or "keep" (`R/aggregate.R`'s `contract_years()`).
+    fn contract_years(&self, start: f64, partial: &str) -> Result<Self> {
+        let partial = match partial {
+            "drop" => prospicio_aggregate::PartialYears::Drop,
+            "keep" => prospicio_aggregate::PartialYears::Keep,
+            other => {
+                return Err(Error::Other(format!(
+                    "partial must be \"drop\" or \"keep\", not {other:?}"
+                )));
+            }
+        };
+        Ok(Self {
+            inner: self.inner.contract_years(start, partial).map_err(to_r)?,
         })
     }
 

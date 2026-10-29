@@ -20,7 +20,8 @@ read_ylt(
   seed = 0,
   unique_by = NULL,
   expected = NULL,
-  format = NULL
+  format = NULL,
+  losses_negative = FALSE
 )
 
 event_set_from_ylt(
@@ -35,7 +36,8 @@ event_set_from_ylt(
   unique_by = NULL,
   expected = NULL,
   source_hash = NULL,
-  times = NULL
+  times = NULL,
+  losses_negative = FALSE
 )
 }
 \arguments{
@@ -80,6 +82,10 @@ label (\code{list(peril = c("WS", "EQ"))}).}
 
 \item{format}{\code{"csv"} or \code{"parquet"}; \code{NULL} for Parquet when the file
 ends in \code{.parquet} or \code{.pq}, CSV otherwise.}
+
+\item{losses_negative}{The losses are stored as negative numbers, money
+going out, as some vendor and cedent files do: each must be at most 0 and
+is read with its sign flipped. Without it a negative loss is an error.}
 
 \item{years, losses, slots}{Each row's year (from 1), loss and slot
 (\code{NULL} for none).}

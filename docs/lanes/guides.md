@@ -11,7 +11,8 @@ This lane writes about the library and does not change crates; a gap it finds be
 ## Next
 
 - [guides-open] open, waiting on the user
-- [guides-current] keep the guides and notebooks current as the library changes
+- [guides-current] keep the guides and notebooks current as the library changes (0.0.7: #673's pattern draws, #552's loaders, #675's `extend` in place of the ILS notebook's `upper=5.0`)
+- #642 the per-origin a priori in the reserving guides, the Friedland guide and its R twin included (0.0.7)
 
 ## Done
 

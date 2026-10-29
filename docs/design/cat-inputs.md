@@ -154,6 +154,39 @@ Bindings: Python `prospicio.aggregate.EventLossTable`,
     the user: switching it would change the result of every call on a
     labelled set.
 
+15. **Losses stored as negative numbers are read with a flag, and a
+    negative loss in a layer is an error** (#593, proposed by the
+    Aggregate lane for the user's acceptance). Some vendor and cedent files
+    write losses as money going out. `read_ylt(..., losses_negative=True)`
+    (R `losses_negative = TRUE`, Rust `YearLossTable::from_negative_losses`)
+    reads them with the sign flipped and refuses a positive value, which
+    such a file does not hold; without the flag a negative loss stays an
+    error, naming its row. A negative loss given to a layer directly lay
+    below its attachment and ceded nothing without a word: `Layer::try_ceded`,
+    `try_ceded_by_event` and `Tower::try_ceded` refuse a negative or
+    non-finite loss, and the Python and R `ceded`, `ceded_by_event` and the
+    tower's `ceded` use them. The Rust `ceded` functions keep their `f64`
+    results, since every path that builds an event set already checks its
+    losses, with docs that point to the checked ones. There is no event
+    loss table reader to give the flag: an `EventLossTable` is built from
+    columns whose means and rates it already checks.
+
+16. **Contract years cut a timeline of dated events** (#586, proposed by
+    the Aggregate lane for the user's acceptance). `EventSet::contract_years(start,
+    partial)` reads the simulated years as consecutive years of one
+    timeline, a loss of year `i` at time `t` at `i + t`, and regroups the
+    losses into contract years from `j + start` to `j + 1 + start`, each
+    loss's time rebased and its sum insured and labels kept. The first and
+    last contract years are partial (only part of each is simulated):
+    `PartialYears::Drop`, the default, leaves them and their losses out,
+    `Keep` keeps them, so a set of `n` years gives `n - 1` or `n + 1`. With
+    the timeline every loss lies in one contract year, so there is no loss
+    outside every year to warn of; a dropped loss is one in a partial
+    year. Independent simulated years (a YLT's) are not a timeline, so
+    regrouping them joins the end of one year to the start of another; the
+    docs say so. An aggregate part has no times to cut and is refused.
+    Python `EventSet.contract_years(start, partial=)`, R `contract_years()`.
+
 ## Validation
 
 - Each row's beta has the row's mean and standard deviation (unit test).
@@ -183,6 +216,17 @@ Bindings: Python `prospicio.aggregate.EventLossTable`,
   perils' windows apart and equals the plain clause on one peril (unit
   tests in `ylt.rs` and `monte_carlo.rs`; the same file read and grouped
   in Python and R, and day and hour columns).
+- A file of negative losses read with the flag equals its sign-flipped
+  copy; a positive value in it, or a negative loss without the flag, is
+  refused naming the row; a negative or non-finite loss given to a layer,
+  its events or a tower is an error in the checked calls and the bindings
+  (unit tests in `ylt.rs` and `reinsurance.rs`; Python and R tests).
+
+- Contract years from the simulated start are the set itself; a set
+  shifted along its timeline by `start` and cut at `start` gives the
+  original's years, times and labels back, at three starts, and keeping
+  the partial years keeps every loss (unit tests in `monte_carlo.rs`;
+  Python and R tests on a hand case).
 
 ## Next
 

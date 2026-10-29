@@ -152,12 +152,12 @@ impl XolLayer {
         self.inner.reinstatement_rates.clone()
     }
 
-    fn ceded(&self, losses: &[f64]) -> f64 {
-        self.inner.ceded(losses)
+    fn ceded(&self, losses: &[f64]) -> Result<f64> {
+        self.inner.try_ceded(losses).map_err(to_r)
     }
 
-    fn ceded_by_event(&self, losses: &[f64]) -> Vec<f64> {
-        self.inner.ceded_by_event(losses)
+    fn ceded_by_event(&self, losses: &[f64]) -> Result<Vec<f64>> {
+        self.inner.try_ceded_by_event(losses).map_err(to_r)
     }
 
     /// Attachment and exhaustion over an event set's years (#581).
@@ -627,8 +627,8 @@ impl ReinsuranceTower {
         Ok(Self { inner })
     }
 
-    fn ceded(&self, losses: &[f64]) -> Vec<f64> {
-        self.inner.ceded(losses)
+    fn ceded(&self, losses: &[f64]) -> Result<Vec<f64>> {
+        self.inner.try_ceded(losses).map_err(to_r)
     }
 
     /// Gross, ceded and net annual distributions on the grid, by FFT:

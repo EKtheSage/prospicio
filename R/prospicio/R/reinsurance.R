@@ -705,6 +705,10 @@ aggregate_stop_loss <- function(name, limit, retention) {
 
 #' Ceded loss for one year
 #'
+#' A loss that is negative or not finite is an error: it is usually a loss
+#' stored with the sign of money paid out, which [read_ylt()] reads with
+#' `losses_negative = TRUE`.
+#'
 #' @param layer An [xol_layer].
 #' @param losses Numeric vector of one year's losses.
 #' @param sums_insured For a [surplus_treaty()], the sum insured of the
@@ -718,7 +722,7 @@ aggregate_stop_loss <- function(name, limit, retention) {
 ceded <- S7::new_generic("ceded", "layer", function(layer, losses, ...) S7::S7_dispatch())
 
 S7::method(ceded, xol_layer) <- function(layer, losses, sums_insured = NULL, ...) {
-  if (is.null(sums_insured)) return(layer@ptr$ceded(as.double(losses)))
+  if (is.null(sums_insured)) return(rust_result(layer@ptr$ceded(as.double(losses)), s7_call()))
   rust_result(layer@ptr$ceded_with_sums_insured(as.double(losses), as.double(sums_insured)))
 }
 
@@ -739,7 +743,7 @@ S7::method(ceded, xol_layer) <- function(layer, losses, sums_insured = NULL, ...
 ceded_by_event <- S7::new_generic("ceded_by_event", "layer", function(layer, losses, ...) S7::S7_dispatch())
 
 S7::method(ceded_by_event, xol_layer) <- function(layer, losses, ...) {
-  layer@ptr$ceded_by_event(as.double(losses))
+  rust_result(layer@ptr$ceded_by_event(as.double(losses)), s7_call())
 }
 
 #' How often a layer is attached and used up in simulated years
@@ -892,7 +896,7 @@ tower_from_json <- function(text) {
 #' tw <- reinsurance_tower(list(xol_layer("5x5", 5, 5), xol_layer("10x10", 10, 10)))
 #' tower_ceded(tw, c(7, 30))
 tower_ceded <- function(tower, losses) {
-  stats::setNames(tower@ptr$ceded(as.double(losses)), tower@layer_names)
+  stats::setNames(rust_result(tower@ptr$ceded(as.double(losses))), tower@layer_names)
 }
 
 #' Apply a reinsurance tower to simulated years

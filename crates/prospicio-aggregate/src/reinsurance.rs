@@ -9,6 +9,23 @@ use crate::deal::{DealScale, Deduction};
 use crate::monte_carlo::EventSet;
 use crate::timeline::CoverBasis;
 
+/// One year's losses for a layer: each finite and non-negative. A negative
+/// loss is usually one stored with the sign of money paid out.
+fn check_losses(losses: &[f64]) -> Result<()> {
+    if let Some((k, &x)) = losses
+        .iter()
+        .enumerate()
+        .find(|(_, x)| !(x.is_finite() && **x >= 0.0))
+    {
+        return Err(Error::Data(format!(
+            "loss {} is {x}: losses must be finite and non-negative (a file that stores \
+             losses as negative numbers is read with its sign flipped)",
+            k + 1
+        )));
+    }
+    Ok(())
+}
+
 /// A per-occurrence excess-of-loss layer: `limit` xs `attachment` on each
 /// loss, then annual terms.
 ///
@@ -1208,8 +1225,35 @@ impl Layer {
 
     /// Ceded loss for one year's losses (NaN for a surplus, which needs
     /// [`ceded_with_sums_insured`](Self::ceded_with_sums_insured)).
+    ///
+    /// The losses are taken as given: a negative loss lies below any
+    /// attachment and cedes nothing, so a file with losses stored as
+    /// negative numbers would cede nothing without a word.
+    /// [`try_ceded`](Self::try_ceded) refuses such a loss.
     pub fn ceded(&self, losses: &[f64]) -> f64 {
         self.share * self.layer_loss(losses, None, None)
+    }
+
+    /// [`ceded`](Self::ceded), refusing a loss that is negative or not
+    /// finite, usually a sign error in the data (#593).
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    ///
+    /// let layer = Layer::xol("10x5", 10.0, 5.0).unwrap();
+    /// assert_eq!(layer.try_ceded(&[12.0]), Ok(7.0));
+    /// assert!(layer.try_ceded(&[-12.0]).is_err());
+    /// ```
+    pub fn try_ceded(&self, losses: &[f64]) -> Result<f64> {
+        check_losses(losses)?;
+        Ok(self.ceded(losses))
+    }
+
+    /// [`ceded_by_event`](Self::ceded_by_event), refusing a loss that is
+    /// negative or not finite (#593).
+    pub fn try_ceded_by_event(&self, losses: &[f64]) -> Result<Vec<f64>> {
+        check_losses(losses)?;
+        Ok(self.ceded_by_event(losses))
     }
 
     /// Ceded loss for one year's losses on risks with the given sums
@@ -1512,12 +1556,21 @@ impl Tower {
         })
     }
 
-    /// Ceded loss of each layer, in tower order, for one year's losses.
+    /// Ceded loss of each layer, in tower order, for one year's losses,
+    /// taken as given as [`Layer::ceded`] takes them;
+    /// [`try_ceded`](Self::try_ceded) refuses a negative loss.
     pub fn ceded(&self, losses: &[f64]) -> Vec<f64> {
         self.year(losses, None, None)
             .into_iter()
             .map(|(c, _)| c)
             .collect()
+    }
+
+    /// [`ceded`](Self::ceded), refusing a loss that is negative or not
+    /// finite (#593).
+    pub fn try_ceded(&self, losses: &[f64]) -> Result<Vec<f64>> {
+        check_losses(losses)?;
+        Ok(self.ceded(losses))
     }
 
     /// Ceded loss of each layer for one year's losses on risks with the
@@ -2680,6 +2733,25 @@ mod tests {
     use crate::simulate_events;
     use prospicio_prob::provenance::SIM_INDEX_SCHEME;
     use prospicio_prob::{Distribution, Lognormal, Poisson, Severity};
+
+    #[test]
+    fn a_negative_loss_is_refused_by_the_checked_ceded() {
+        let layer = Layer::xol("10x5", 10.0, 5.0).unwrap();
+        // Unchecked, a sign error cedes nothing.
+        assert_eq!(layer.ceded(&[-12.0]), 0.0);
+        assert_eq!(layer.try_ceded(&[12.0]), Ok(7.0));
+        let err = layer.try_ceded(&[12.0, -3.0]).unwrap_err();
+        assert!(err.to_string().contains("loss 2"), "{err}");
+        assert!(layer.try_ceded(&[f64::INFINITY]).is_err());
+        assert_eq!(
+            layer.try_ceded_by_event(&[12.0, 20.0]),
+            Ok(layer.ceded_by_event(&[12.0, 20.0]))
+        );
+        assert!(layer.try_ceded_by_event(&[-1.0]).is_err());
+        let tower = Tower::new(vec![layer]).unwrap();
+        assert_eq!(tower.try_ceded(&[12.0]), Ok(vec![7.0]));
+        assert!(tower.try_ceded(&[f64::NAN]).is_err());
+    }
 
     /// #483's three years: attritional 10, 40, 30 and large losses [],
     /// [50], [5, 60], the attritional given by `part`.
