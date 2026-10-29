@@ -24,6 +24,7 @@ pub mod evt;
 pub mod experience;
 pub mod exposure;
 pub mod fitting;
+pub mod glm;
 pub mod odp_glm;
 pub mod payout;
 pub mod pricing;
@@ -340,6 +341,39 @@ const X: Arg = Arg {
 const PROBABILITY: Arg = Arg {
     name: "p",
     help: "Probability or probabilities, between 0 and 1: a number or a range",
+};
+
+const GLM_DATA: Arg = Arg {
+    name: "data",
+    help: "The table: a header row of column names, then one row per observation; text columns are factors",
+};
+const GLM_RESPONSE: Arg = Arg {
+    name: "response",
+    help: "The response's column name, such as \"claims\" (a proportion with binomial)",
+};
+const GLM_TERMS: Arg = Arg {
+    name: "terms",
+    help: "The predictors' column names, a row or column: \"age\", \"region=A\" (a factor with base level A) or \"age:region\" (an interaction)",
+};
+const GLM_FAMILY: Arg = Arg {
+    name: "family",
+    help: "poisson (default), quasipoisson, gamma, tweedie, gaussian, inverse_gaussian, binomial or negative_binomial",
+};
+const GLM_LINK: Arg = Arg {
+    name: "link",
+    help: "log (default; logit for binomial, identity for gaussian), identity, logit, probit, cloglog, inverse or inverse_squared",
+};
+const GLM_EXPOSURE: Arg = Arg {
+    name: "exposure",
+    help: "The exposure's column name: ln(exposure) as offset on the log link; omitted for none",
+};
+const GLM_WEIGHTS: Arg = Arg {
+    name: "weights",
+    help: "The prior weights' column name (claim counts for an average severity, trials for binomial); omitted for 1",
+};
+const GLM_P: Arg = Arg {
+    name: "p",
+    help: "The tweedie power (such as 1.5) or the negative_binomial theta; omitted otherwise",
 };
 
 fn version(_: &[Grid]) -> Result<Grid, String> {
@@ -2454,6 +2488,62 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: aggregate::layer_terms,
+    },
+    Function {
+        symbol: "pro_glm",
+        name: "PRO.GLM",
+        help: "A GLM fitted to a table: each coefficient's estimate, SE, statistic, p-value and exp(estimate), then deviance, dispersion, AIC and the other statistics.",
+        args: &[
+            GLM_DATA,
+            GLM_RESPONSE,
+            GLM_TERMS,
+            GLM_FAMILY,
+            GLM_LINK,
+            GLM_EXPOSURE,
+            GLM_WEIGHTS,
+            GLM_P,
+        ],
+        run: glm::summary,
+    },
+    Function {
+        symbol: "pro_glm_predict",
+        name: "PRO.GLM.PREDICT",
+        help: "The fitted mean of each row of newdata under a GLM fitted to data, as a column.",
+        args: &[
+            GLM_DATA,
+            GLM_RESPONSE,
+            GLM_TERMS,
+            Arg {
+                name: "newdata",
+                help: "The rows to predict: a header row with the same column names (the exposure's too, when one is named), then one row each",
+            },
+            GLM_FAMILY,
+            GLM_LINK,
+            GLM_EXPOSURE,
+            GLM_WEIGHTS,
+            GLM_P,
+        ],
+        run: glm::predict,
+    },
+    Function {
+        symbol: "pro_glm_relativities",
+        name: "PRO.GLM.RELATIVITIES",
+        help: "A log-link GLM's relativities: exp(estimate) per factor level (the base at 1) and per unit of a numeric term, with a confidence interval.",
+        args: &[
+            GLM_DATA,
+            GLM_RESPONSE,
+            GLM_TERMS,
+            GLM_FAMILY,
+            GLM_LINK,
+            GLM_EXPOSURE,
+            GLM_WEIGHTS,
+            GLM_P,
+            Arg {
+                name: "level",
+                help: "The confidence interval's level, 0.95 if omitted",
+            },
+        ],
+        run: glm::relativities,
     },
 ];
 
