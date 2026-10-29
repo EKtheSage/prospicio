@@ -152,6 +152,11 @@ pub(crate) fn read_monthly(points: &[(Lag, f64)], s: u32, curve: GrowthCurve) ->
         c.push(x - prev);
         prev = x;
     }
+    // A curve at the edge of its parameters can be 0 / 0 at every month;
+    // the projection then starts from no prior shape.
+    if !c.iter().all(|x| x.is_finite()) {
+        c.fill(0.0);
+    }
     let d = project(points, s, &c)?;
     let mut p = Vec::with_capacity(n);
     let mut sum = 0.0;
@@ -233,9 +238,25 @@ fn fit_curve(points: &[(Lag, f64)], s: u32, curve: GrowthCurve) -> Result<(f64, 
         return fail("the growth curve through the averages has no finite fit");
     };
     let (ln_omega, ln_theta) = (best.x[0], best.x[1]);
-    if !(MIN_OMEGA.ln()..=MAX_OMEGA.ln()).contains(&ln_omega)
-        || !(-MAX_LN_THETA..=MAX_LN_THETA).contains(&ln_theta)
-    {
+    let omega_range = MIN_OMEGA.ln()..=MAX_OMEGA.ln();
+    let theta_range = -MAX_LN_THETA..=MAX_LN_THETA;
+    if !omega_range.contains(&ln_omega) || !theta_range.contains(&ln_theta) {
+        // A pattern that never falls but has a shape no curve follows (a
+        // period nearly complete at its first age and then flat for years
+        // before a last step, as a running maximum leaves a simulated
+        // pattern) still has an exact monotone reading: the curve at the
+        // edge, or no curve at all, is only the projection's prior.
+        let tol = tolerance(points);
+        if points.windows(2).all(|w| w[1].1 >= w[0].1 - tol) {
+            return Ok((
+                ln_omega
+                    .clamp(*omega_range.start(), *omega_range.end())
+                    .exp(),
+                ln_theta
+                    .clamp(*theta_range.start(), *theta_range.end())
+                    .exp(),
+            ));
+        }
         return fail(
             "the growth curve through the averages ran off to the edge of its parameters: the \
              pattern's percents developed do not increase with age; read it with \
@@ -829,6 +850,13 @@ mod tests {
         let Reading { monthly: p, .. } = read_monthly(&flat, 12, GrowthCurve::Weibull).unwrap();
         check(&flat, 12, &p, false);
         assert!(p.iter().all(|&x| (x - 0.5).abs() < 1e-12));
+        // Nearly complete at once, flat, then a last step: no curve runs
+        // through it, and the pattern is read exactly all the same.
+        let step: Vec<(Lag, f64)> = (1..=10)
+            .map(|k| (12 * k, if k < 10 { 0.97 } else { 1.0 }))
+            .collect();
+        let Reading { monthly: p, .. } = read_monthly(&step, 12, GrowthCurve::Weibull).unwrap();
+        check(&step, 12, &p, false);
         assert!(every_month(&[(1, 0.1), (2, 0.2)]));
         assert!(!every_month(&[(1, 0.1), (3, 0.2)]));
         assert!(!every_month(&[(2, 0.1), (3, 0.2)]));
