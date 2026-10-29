@@ -320,8 +320,9 @@ Ctrl+Alt+F9 to recalculate.
   `frank` and `joe` their `theta`. `PRO.COPULA.SIM`'s row `i` is stream
   `i` of the seed, as the Python and R packages draw it; turn its
   uniforms into losses with `PRO.SEV.QUANTILE` column by column. The
-  Gaussian's cdf is in two dimensions, the Archimedean ones' in any, and
-  the t has none in closed form. `PRO.IMAN.CONOVER` reorders simulations
+  Gaussian's cdf is exact in two dimensions and within about `1e-5` in
+  more (Genz's method), the Archimedean ones' in any, and the t has none
+  in closed form. `PRO.IMAN.CONOVER` reorders simulations
   already on the sheet (`PRO.ODP.SIMS`, a column per line) and leaves
   each column's values as they are.
 - Contract terms: amounts are at 100% and losses ceded at the placed

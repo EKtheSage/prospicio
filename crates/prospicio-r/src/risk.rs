@@ -6,6 +6,8 @@ use prospicio_core::StreamRng;
 use prospicio_prob::capital::{AllocationMethod, LevelAllocation, LevelMeasure};
 use prospicio_prob::copula::{self, Copula};
 use prospicio_prob::evt::{Gpd, PotTail};
+use prospicio_prob::mvn::{MvnSettings, mvn_probability};
+use prospicio_prob::qmc::{Scramble, Sobol};
 use prospicio_prob::statistics::{QuantileMethod, StatisticsGrid, TvarMethod};
 use prospicio_prob::{
     Archimedean, ArchimedeanCopula, Distortion, Empirical, Family, GaussianCopula, Provenance,
@@ -812,6 +814,61 @@ impl RiskCopula {
             .collect()
     }
 
+    /// The Gaussian copula's cdf at each row of `u` (column-major) with its
+    /// error: `c(value..., error..., points..., converged...)`, `n` each.
+    fn cdf_estimate(
+        &self,
+        u: &[f64],
+        n: f64,
+        abs_tol: f64,
+        max_points: f64,
+        seed: f64,
+    ) -> Result<Vec<f64>> {
+        let AnyCopula::Gaussian(c) = &self.inner else {
+            return Err(Error::Other(
+                "an error estimate of the cdf is for the Gaussian copula".into(),
+            ));
+        };
+        let n = whole(n, "n")? as usize;
+        let d = c.dim();
+        if u.len() != n * d {
+            return Err(Error::Other(format!(
+                "{} values for {n} points in {d} dimensions",
+                u.len()
+            )));
+        }
+        let settings = MvnSettings {
+            abs_tol,
+            max_points: whole(max_points, "max_points")? as usize,
+            seed: whole(seed, "seed")?,
+            ..MvnSettings::default()
+        };
+        let mut out = vec![0.0; 4 * n];
+        for i in 0..n {
+            let point: Vec<f64> = (0..d).map(|j| u[i + j * n]).collect();
+            let e = c.cdf_with(&point, settings).map_err(to_r)?;
+            out[i] = e.value;
+            out[n + i] = e.error;
+            out[2 * n + i] = e.points as f64;
+            out[3 * n + i] = f64::from(u8::from(e.converged));
+        }
+        Ok(out)
+    }
+
+    /// `n × dim` Gaussian copula draws on scrambled Sobol points, R's
+    /// column-major order.
+    fn sample_qmc(&self, n: f64, seed: f64) -> Result<Vec<f64>> {
+        let AnyCopula::Gaussian(c) = &self.inner else {
+            return Err(Error::Other(
+                "quasi-Monte Carlo draws are for the Gaussian copula".into(),
+            ));
+        };
+        let n = whole(n, "n")? as usize;
+        let d = c.dim();
+        let rows = c.sample_qmc(n, whole(seed, "seed")?).map_err(to_r)?;
+        Ok(column_major(&rows, n, d))
+    }
+
     fn description(&self) -> String {
         match &self.inner {
             AnyCopula::Gaussian(_) => "Gaussian".into(),
@@ -998,8 +1055,64 @@ fn hill_rust(draws: &[f64], ks: &[f64]) -> Result<Vec<f64>> {
     prospicio_prob::evt::hill(draws, &ks).map_err(to_r)
 }
 
+/// Row-major `n × d` to R's column-major order.
+fn column_major(rows: &[f64], n: usize, d: usize) -> Vec<f64> {
+    let mut out = vec![0.0; n * d];
+    for i in 0..n {
+        for j in 0..d {
+            out[i + j * n] = rows[i * d + j];
+        }
+    }
+    out
+}
+
+/// `P(lower < X < upper)` for `X ~ N(0, R)`: `c(value, error, points,
+/// converged)`. `correlation` is symmetric, so R's order is row-major too.
+#[extendr]
+fn mvn_cdf_rust(
+    lower: &[f64],
+    upper: &[f64],
+    correlation: &[f64],
+    abs_tol: f64,
+    max_points: f64,
+    scrambles: f64,
+    seed: f64,
+) -> Result<Vec<f64>> {
+    let settings = MvnSettings {
+        abs_tol,
+        max_points: whole(max_points, "max_points")? as usize,
+        scrambles: whole(scrambles, "scrambles")? as usize,
+        seed: whole(seed, "seed")?,
+    };
+    let e = mvn_probability(lower, upper, correlation, settings).map_err(Error::Other)?;
+    Ok(vec![
+        e.value,
+        e.error,
+        e.points as f64,
+        f64::from(u8::from(e.converged)),
+    ])
+}
+
+/// `n × dim` Sobol points, column-major.
+#[extendr]
+fn sobol_rust(n: f64, dim: f64, scramble: bool, seed: f64) -> Result<Vec<f64>> {
+    let n = whole(n, "n")? as usize;
+    let dim = whole(dim, "dim")? as usize;
+    let kind = if scramble {
+        Scramble::Lms {
+            seed: whole(seed, "seed")?,
+        }
+    } else {
+        Scramble::None
+    };
+    let mut s = Sobol::new(dim, kind).map_err(Error::Other)?;
+    Ok(column_major(&s.points(n), n, dim))
+}
+
 extendr_module! {
     mod risk;
+    fn mvn_cdf_rust;
+    fn sobol_rust;
     fn statistics_rust;
     fn bootstrap_se_rust;
     fn co_statistics_rust;

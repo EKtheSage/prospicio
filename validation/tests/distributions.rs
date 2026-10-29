@@ -1281,3 +1281,65 @@ fn layer_third_moments_match_closed_forms() {
     let lower = g.layer_third_moment(100.0, 50.0);
     assert!(whole > lower && lower > 0.0);
 }
+
+#[test]
+fn sobol_points_match_scipy() {
+    use prospicio_math::qmc::{Scramble, Sobol};
+
+    let cases = reference("sobol_scipy.csv");
+    assert_eq!(cases.len(), 1 + 2 + 7 + 14 + 12);
+    for case in &cases {
+        let d: usize = case.get("dim").parse().unwrap();
+        let c: usize = case.get("coord").parse().unwrap();
+        let want: Vec<u64> = case
+            .get("points")
+            .split(';')
+            .map(|v| v.parse().unwrap())
+            .collect();
+        let points = Sobol::new(d, Scramble::None).unwrap().points(want.len());
+        for (i, &w) in want.iter().enumerate() {
+            let got = points[i * d + c] * 4_294_967_296.0;
+            assert_eq!(got, w as f64, "dimension {d}, coordinate {c}, point {i}");
+        }
+    }
+}
+
+#[test]
+fn mvn_probabilities_match_mvtnorm() {
+    use prospicio_math::mvn::{MvnSettings, mvn_probability};
+
+    let num = |s: &str| -> Vec<f64> {
+        s.split(';')
+            .map(|v| match v {
+                "inf" => f64::INFINITY,
+                "-inf" => f64::NEG_INFINITY,
+                _ => v.parse().unwrap(),
+            })
+            .collect()
+    };
+    let settings = MvnSettings {
+        abs_tol: 1e-6,
+        max_points: 1 << 24,
+        ..MvnSettings::default()
+    };
+    let cases = reference("mvn_mvtnorm.csv");
+    assert_eq!(cases.len(), 32);
+    for case in &cases {
+        let r = num(case.get("matrix"));
+        let (a, b) = (num(case.get("lower")), num(case.get("upper")));
+        let want: f64 = case.get("expected").parse().unwrap();
+        let theirs: f64 = case.get("error").parse().unwrap();
+        let p = mvn_probability(&a, &b, &r, settings).unwrap();
+        assert!(p.converged, "{} dimensions: {p:?}", b.len());
+        assert!(
+            // Each error is three standard errors, ours from ten scrambles
+            // (a t with 9 degrees of freedom, exceeded in about 1.5% of
+            // calls), so the check takes twice their sum.
+            (p.value - want).abs() <= 2.0 * (p.error + theirs) + 1e-12,
+            "{} dimensions: got {} ± {}, want {want} ± {theirs}",
+            b.len(),
+            p.value,
+            p.error
+        );
+    }
+}

@@ -196,6 +196,31 @@ stopifnot(is.unsorted(ic_shuffled), identical(sort(ic_shuffled), draw_matrix(ic_
 stopifnot(inherits(try(iman_conover(ic_pd, ic_r, seed = 5, dof = 2, scores = rep(0, 5000)),
                        silent = TRUE), "try-error"))
 
+# Sobol points and the multivariate normal cdf (#565).
+stopifnot(identical(sobol_points(4, 2, scramble = FALSE), rbind(c(0, 0), c(0.5, 0.5), c(0.75, 0.25), c(0.25, 0.75))))
+s <- sobol_points(256, 3, seed = 5)
+stopifnot(identical(s, sobol_points(256, 3, seed = 5)), all(sort(floor(s[, 2] * 256)) == 0:255))
+stopifnot(inherits(try(sobol_points(4, 1112), silent = TRUE), "try-error"))
+for (d in c(3, 5, 8)) {
+  r <- matrix(0.5, d, d)
+  diag(r) <- 1
+  p <- mvn_cdf(rep(0, d), r, abs_tol = 1e-6)
+  stopifnot(attr(p, "converged"), abs(p - 1 / (d + 1)) < 3e-6)
+}
+p <- mvn_cdf(c(0.1, -0.5, 1.2), diag(3))
+stopifnot(abs(p - prod(pnorm(c(0.1, -0.5, 1.2)))) < 1e-5)
+q <- mvn_cdf(rep(1, 3), diag(3), lower = rep(-1, 3))
+stopifnot(abs(q - (pnorm(1) - pnorm(-1))^3) < 1e-5)
+stopifnot(attr(mvn_cdf(c(0, 0), matrix(c(1, 0.5, 0.5, 1), 2)), "error") == 0)
+stopifnot(inherits(try(mvn_cdf(rep(0, 3), matrix(c(1, 1, 0, 1, 1, 0, 0, 0, 1), 3)), silent = TRUE), "try-error"))
+r <- rbind(c(1, 0.5, 0.2), c(0.5, 1, 0.4), c(0.2, 0.4, 1))
+g <- gaussian_copula(r)
+e <- copula_cdf_estimate(g, c(0.6, 0.4, 0.7), abs_tol = 1e-7)
+stopifnot(e$converged, abs(copula_cdf(g, c(0.6, 0.4, 0.7)) - e$value) < 2e-5)
+u <- copula_sample_qmc(g, 2^14, seed = 11)
+stopifnot(abs(mean(u[, 1] <= 0.6 & u[, 2] <= 0.4 & u[, 3] <= 0.7) - e$value) < 2e-3)
+stopifnot(inherits(try(copula_sample_qmc(archimedean_copula("gumbel", 2), 8), silent = TRUE), "try-error"))
+
 cat("prospicio R risk tests passed\n")
 # The covariance allocation of the margin keeps each unit's mean, and the
 # Shapley value of any cost agrees with the distortion's Shapley.

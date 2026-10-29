@@ -322,6 +322,10 @@ benchmark_curve_rust <- function(ages, values, kind, curve, weights, max_age, or
 
 underwriting_exposure_rust <- function(writing, policy_months) .Call(wrap__underwriting_exposure_rust, writing, policy_months)
 
+mvn_cdf_rust <- function(lower, upper, correlation, abs_tol, max_points, scrambles, seed) .Call(wrap__mvn_cdf_rust, lower, upper, correlation, abs_tol, max_points, scrambles, seed)
+
+sobol_rust <- function(n, dim, scramble, seed) .Call(wrap__sobol_rust, n, dim, scramble, seed)
+
 statistics_rust <- function(draws, percentiles, tvar_levels, sd_multiples, quantile, tvar) .Call(wrap__statistics_rust, draws, percentiles, tvar_levels, sd_multiples, quantile, tvar)
 
 bootstrap_se_rust <- function(columns, k, fixed, percentiles, tvar_levels, sd_multiples, quantile, tvar, replicates, seed) .Call(wrap__bootstrap_se_rust, columns, k, fixed, percentiles, tvar_levels, sd_multiples, quantile, tvar, replicates, seed)
@@ -3030,6 +3034,12 @@ MeyersFit$ultimate_draws <- function(origin) .Call(wrap__MeyersFit__ultimate_dra
 
 MeyersFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__MeyersFit__loss_ratio_draws, self, origin, premium)
 
+MeyersFit$pattern_ages <- function(segment) .Call(wrap__MeyersFit__pattern_ages, self, segment)
+
+MeyersFit$pattern_draws <- function(segment) .Call(wrap__MeyersFit__pattern_draws, self, segment)
+
+MeyersFit$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__MeyersFit__monthly_pattern_draws, self, segment, months, basis, monotone)
+
 MeyersFit$diagnostics <- function() .Call(wrap__MeyersFit__diagnostics, self)
 
 MeyersFit$parameter_names <- function() .Call(wrap__MeyersFit__parameter_names, self)
@@ -3071,6 +3081,12 @@ MeyersFits$reserves <- function() .Call(wrap__MeyersFits__reserves, self)
 MeyersFits$ultimate_draws <- function(origin) .Call(wrap__MeyersFits__ultimate_draws, self, origin)
 
 MeyersFits$loss_ratio_draws <- function(origin, premium) .Call(wrap__MeyersFits__loss_ratio_draws, self, origin, premium)
+
+MeyersFits$pattern_ages <- function(segment) .Call(wrap__MeyersFits__pattern_ages, self, segment)
+
+MeyersFits$pattern_draws <- function(segment) .Call(wrap__MeyersFits__pattern_draws, self, segment)
+
+MeyersFits$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__MeyersFits__monthly_pattern_draws, self, segment, months, basis, monotone)
 
 MeyersFits$diagnostics_table <- function() .Call(wrap__MeyersFits__diagnostics_table, self)
 
@@ -3669,6 +3685,10 @@ RiskCopula$log_density <- function(u, n) .Call(wrap__RiskCopula__log_density, se
 RiskCopula$dim <- function() .Call(wrap__RiskCopula__dim, self)
 
 RiskCopula$cdf <- function(u, n) .Call(wrap__RiskCopula__cdf, self, u, n)
+
+RiskCopula$cdf_estimate <- function(u, n, abs_tol, max_points, seed) .Call(wrap__RiskCopula__cdf_estimate, self, u, n, abs_tol, max_points, seed)
+
+RiskCopula$sample_qmc <- function(n, seed) .Call(wrap__RiskCopula__sample_qmc, self, n, seed)
 
 RiskCopula$description <- function() .Call(wrap__RiskCopula__description, self)
 

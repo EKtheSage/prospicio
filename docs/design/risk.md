@@ -400,8 +400,35 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
 - **The bivariate normal is Genz's BVND**, Drezner and Wesolowsky's method
   with Gauss–Legendre on 6, 12 or 20 points as `|ρ|` grows past 0.3 and
   0.75, and the series for `|ρ| ≥ 0.925`: about `1e-15` absolute. The
-  Gaussian copula in more than two dimensions needs Genz's quasi-Monte
-  Carlo method, which is not carried; nor is the bivariate t.
+  bivariate t is not carried.
+- **Sobol points and the multivariate normal in any dimension** (#565;
+  items (a) to (e) proposed by the Probability lane for the user's
+  acceptance). `prospicio_math::qmc::Sobol` gives Joe and Kuo's Sobol
+  sequence at 32 bits in Gray-code order, unscrambled equal to SciPy's
+  `stats.qmc.Sobol(d, scramble=False, bits=32)`.
+  `prospicio_math::mvn::mvn_probability` (and `mvn_cdf` for no lower
+  limits) is Genz's integral after a Cholesky separation of the
+  variables, reordered as Genz and Bretz (2009, section 4.1.3) do, exact
+  in one and two dimensions (BVND). `GaussianCopula::cdf` uses it in more
+  than two dimensions, `cdf_with` takes the settings and returns the error
+  estimate, and `sample_qmc` draws the copula on scrambled Sobol points.
+  Both modules are re-exported as `prospicio_prob::{mvn, qmc}`, so the
+  bindings need no new dependency. (a) *1,111 dimensions are carried*, the
+  first rows of SciPy's 21,201-dimension table (74 KB of source; all of
+  them would be about 1.5 MB). (b) *The scramble is Matoušek's linear
+  matrix scramble with a digital shift*, as SciPy's, drawn by SplitMix64
+  from a seed, so scrambled points are reproducible but not SciPy's; Owen's
+  nested scramble, which the issue named, costs a tree per dimension for
+  no gain at these point counts. (c) *The error is three standard errors
+  of the mean over ten independent scrambles* that see the same doubling
+  number of points; with 9 degrees of freedom the true error exceeds it in
+  about 1.5% of calls, which the docs say (`knowledge/findings/mvn-qmc-error.md`).
+  (d) *The copula's `cdf` runs at the default settings*, an absolute error
+  of `1e-5`, at most `2^22` evaluations and seed 0, so the same call gives
+  the same value. (e) *Quasi-Monte Carlo draws are on the Gaussian copula
+  alone* (`sample_qmc`), and `sobol` points are given to the bindings, so
+  a user takes a severity's quantile of a column themselves; the random
+  draw paths of the other copulas and of the severities are unchanged.
 
 ## Validation
 
@@ -415,6 +442,20 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   integral of `g(S)` above the last grid point, computed by the script, so
   each row states where its error comes from. The Wang rows also equal the
   closed form `exp(μ + λσ + σ²/2)` to 16 digits.
+
+`sobol_points_match_scipy` checks 36 coordinates of the first 256
+unscrambled points in 1, 2, 7, 40 and 1,111 dimensions against SciPy
+1.14.1 exactly (`validation/reference/sobol_scipy.csv`,
+`validation/scripts/sobol_scipy.py`; the direction numbers come from
+SciPy's own table through `validation/scripts/sobol_table.py`).
+`mvn_probabilities_match_mvtnorm` checks 32 rectangle and orthant
+probabilities in 3 to 10 dimensions on seeded correlation matrices against
+R mvtnorm 1.2.4's `pmvnorm` (GenzBretz, `abseps = 1e-8`;
+`validation/reference/mvn_mvtnorm.csv`, `validation/scripts/r_mvn.R`)
+within twice the sum of both error estimates at `abs_tol = 1e-6`. Unit
+tests check the closed forms: an equicorrelated orthant at `ρ = ½` is
+`1 / (d + 1)`, independence gives the product, a coordinate at 1 drops out
+of the copula's cdf, and QMC draws' share below a point is its cdf.
 
 `validation/reference/distortion_aggregate.csv`
 (`validation/scripts/aggregate_distortions.py`, Mildenhall's `aggregate`

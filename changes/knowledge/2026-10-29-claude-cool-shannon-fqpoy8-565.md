@@ -1,0 +1,1 @@
+* **Creation**: [Genz's multivariate normal by scrambled Sobol points is unbiased against mvtnorm, and three standard errors over ten scrambles is exceeded in about 1.5% of calls](/findings/mvn-qmc-error.md): verified by `mvn_probabilities_match_mvtnorm` (#565, #693, branch claude/cool-shannon-fqpoy8).

@@ -511,6 +511,55 @@ pub(crate) fn predictive_with_patterns<F>(
 where
     F: Fn(&[f64], &mut prospicio_core::StreamRng, &mut [f64], &mut [f64]) + Sync,
 {
+    predictive_with(
+        posterior,
+        segment,
+        n_sims,
+        seed,
+        provenance,
+        |theta, rng, reserves, shares| {
+            simulate(theta, rng, reserves, shares);
+            let mut cumulative = Vec::with_capacity(shares.len());
+            push_cumulative(shares.iter().copied(), &mut cumulative);
+            shares.copy_from_slice(&cumulative);
+        },
+    )
+}
+
+/// As [`predictive_with_patterns`], with `simulate(theta, rng, values,
+/// shares)` writing the cumulative `shares` of the posterior draw `theta`
+/// at the segment's ages itself, without drawing (Meyers' models, whose
+/// development effects are on the cumulative values).
+#[cfg(feature = "bayes")]
+pub(crate) fn predictive_with_shares<F>(
+    posterior: &prospicio_bayes::nuts::PosteriorDraws,
+    segment: &crate::triangle::Segment,
+    n_sims: usize,
+    seed: u64,
+    provenance: prospicio_prob::Provenance,
+    simulate: F,
+) -> Result<(PredictiveDistribution, DevelopmentPatterns)>
+where
+    F: Fn(&[f64], &mut prospicio_core::StreamRng, &mut [f64], &mut [f64]) + Sync,
+{
+    predictive_with(posterior, segment, n_sims, seed, provenance, simulate)
+}
+
+/// The simulations of one segment's values by origin with its pattern
+/// columns after them, taken apart: `simulate(theta, rng, values, shares)`
+/// fills both.
+#[cfg(feature = "bayes")]
+fn predictive_with<F>(
+    posterior: &prospicio_bayes::nuts::PosteriorDraws,
+    segment: &crate::triangle::Segment,
+    n_sims: usize,
+    seed: u64,
+    provenance: prospicio_prob::Provenance,
+    simulate: F,
+) -> Result<(PredictiveDistribution, DevelopmentPatterns)>
+where
+    F: Fn(&[f64], &mut prospicio_core::StreamRng, &mut [f64], &mut [f64]) + Sync,
+{
     let layout = PatternLayout::new(
         segment.n_origins,
         vec![(
@@ -530,12 +579,8 @@ where
         seed,
         provenance,
         |theta, rng, row| {
-            let (reserves, shares) = row.split_at_mut(offset);
-            let shares = &mut shares[..width];
-            simulate(theta, rng, reserves, shares);
-            let mut cumulative = Vec::with_capacity(width);
-            push_cumulative(shares.iter().copied(), &mut cumulative);
-            shares.copy_from_slice(&cumulative);
+            let (values, shares) = row.split_at_mut(offset);
+            simulate(theta, rng, values, &mut shares[..width]);
         },
     )?;
     layout.split(wide)

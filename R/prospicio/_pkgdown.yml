@@ -312,6 +312,10 @@ reference:
       - copula
       - copula_sample
       - copula_cdf
+      - copula_cdf_estimate
+      - copula_sample_qmc
+      - mvn_cdf
+      - sobol_points
       - vine_copula
       - copula_simulate
       - iman_conover

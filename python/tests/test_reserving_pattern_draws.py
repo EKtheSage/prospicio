@@ -1,9 +1,10 @@
 """A development pattern per simulation from the bootstraps and the Bayesian
-fits (`reserving-v02.md` decision 28, #600): row ``i`` is simulation ``i`` of
-the fit's ``reserves``, and ``monthly`` puts the rows on the cash-flow
-engine's paid patterns."""
+fits (`reserving-v02.md` decision 28, #600, and Meyers' models, #678): row
+``i`` is simulation ``i`` of the fit's ``reserves``, and ``monthly`` puts the
+rows on the cash-flow engine's paid patterns."""
 
 import csv
+import math
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ import prospicio.pricing as P
 from prospicio.reserving import (
     DevelopmentPatterns,
     MackBootstrap,
+    Meyers,
     OdpBootstrap,
     TailConstant,
     Triangle,
@@ -182,3 +184,72 @@ def test_a_share_that_is_not_positive_is_refused_or_lifted(raa):
         assert row[0] > 0.0
         assert all(b >= a for a, b in zip(row, row[1:]))
         assert row[-1] == 1.0
+
+
+def comauto_353(keys=None):
+    """Meyers' group 353 Commercial Auto paid, the upper triangle, with its
+    premium; ``keys`` names copies of it, each doubling the one before."""
+    with open(VALIDATION / "data" / "clrd_comauto_353.csv", newline="") as f:
+        rows = list(csv.DictReader(line for line in f if not line.startswith("#")))
+    rows = [r for r in rows if int(r["origin"]) - 1988 + int(r["development"]) // 12 <= 10]
+    names = keys or [None]
+    return Triangle.from_long(
+        origin=[int(r["origin"]) for _ in names for r in rows],
+        development=[int(r["development"]) for _ in names for r in rows],
+        values={
+            k: [float(r[k]) * 2.0**i for i in range(len(names)) for r in rows]
+            for k in ("paid", "premium")
+        },
+        keys={"lob": [n for n in names for _ in rows]} if keys else None,
+    )
+
+
+# Meyers' default chains pass every diagnostic on group 353.
+MEYERS = dict(n_sims=1000)
+
+
+@pytest.mark.parametrize("model", ["crc", "csr", "cay"])
+def test_meyers_patterns_end_at_one_at_the_oldest_age(model):
+    fit = Meyers(model, seed=678, **MEYERS).fit(comauto_353(), "paid", "premium")
+    p = fit.patterns
+    assert isinstance(p, DevelopmentPatterns)
+    assert p.n_sims == 1000 == fit.reserves.n_sims
+    assert p.ages() == [12 * (d + 1) for d in range(10)]
+    rows = p.pattern_draws()
+    assert len(rows) == 1000
+    for row in rows:
+        assert row[-1] == 1.0
+        assert all(x > 0.0 and math.isfinite(x) for x in row)
+    # The simulations take different posterior draws.
+    assert len({tuple(r) for r in rows}) > 100
+    # Nothing keeps beta_d rising, and on group 353 a late share falls in
+    # nearly every simulation: the default refuses, running_max holds.
+    with pytest.raises(ValueError, match="falls"):
+        p.monthly(120)
+    held = p.monthly(120, monotone="running_max")
+    assert len(held) == 1000
+    for row in held:
+        assert all(b >= a for a, b in zip(row, row[1:]))
+        assert row[-1] == 1.0
+    # Each simulation's loss ratio is paid by its own pattern.
+    u = fit.loss_ratio_draws(None, 50_000.0)
+    terms = terms_of(120, held[0])
+    out = terms.run(u, paid_patterns=held)
+    assert len(out) == 1000
+    assert out.flows != terms.run(u).flows
+
+
+def test_meyers_segments_have_their_own_patterns():
+    tri = comauto_353(["A", "B"])
+    fits = Meyers(seed=679, **MEYERS).fit_segments(tri, "paid", "premium")
+    p = fits.patterns
+    assert p.n_sims == 1000
+    assert sorted(p.segments) == [("A",), ("B",)]
+    a, b = p.pattern_draws("A"), p.pattern_draws("B")
+    assert all(r[-1] == 1.0 for r in a + b)
+    # Each segment is sampled on its own seeds.
+    assert a != b
+    with pytest.raises(ValueError):
+        p.pattern_draws()
+    alone = fits.segment(lob="B").patterns
+    assert alone.pattern_draws() == b
