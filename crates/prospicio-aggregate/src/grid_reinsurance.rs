@@ -346,6 +346,7 @@ impl Tower {
         }
         self.refuse_scope("a compound distribution")?;
         self.refuse_lookback("a grid, a single year,")?;
+        self.refuse_event_order("a grid")?;
         for &(start, end) in &stages[..stages.len() - 1] {
             if let Some(l) = self.layers[start..end]
                 .iter()
@@ -611,6 +612,7 @@ impl Tower {
         }
         self.refuse_scope("an annual loss")?;
         self.refuse_lookback("a grid, a single year,")?;
+        self.refuse_event_order("a grid")?;
         let h = annual.step();
         let m = self.layers.len();
         // Each layer's (ceded, reinstatement premium) and scale key at every

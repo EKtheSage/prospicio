@@ -1692,6 +1692,7 @@ fn flat_commission(layer: &Layer) -> f64 {
 fn check_events(tower: &Tower) -> Result<()> {
     tower.refuse_scope("an annual loss")?;
     tower.refuse_lookback("a ledger, a single year,")?;
+    tower.refuse_event_order("an annual loss")?;
     for l in &tower.layers {
         if l.needs_sums_insured() || l.needs_times() {
             return Err(Error::Data(format!(
