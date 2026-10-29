@@ -72,9 +72,26 @@ later release. The label `P4` marks an issue the user does not plan for any
 upcoming release.
 
 **0.0.6** was released on 2026-10-28 with the scope the user set on
-2026-10-23 (the work in flight and small fixes). The next release's scope
-is the user's to set. The M-sized P1s #545, #546, #552 and #572 wait for
-0.0.7 or later. #553 (IFRS 17) is `P4`.
+2026-10-23 (the work in flight and small fixes).
+
+**0.0.7** (the user's decision of 2026-10-28): the four P1s 0.0.6 deferred,
+the rest of #600's breaking change, and small fixes. Already on `main` since
+v0.0.6: #673 (#600, breaking), #675 (#670, breaking), #583.
+
+| Lane | New work | Small items |
+|---|---|---|
+| Reserving | #552 (`read_csv` takes a reader or sits behind an optional feature, and `csv` and `calamine` are optional dependencies, so the WASM check still passes), #678 and #679 (pattern draws from Meyers and Compartmental, breaking as #673 was) | |
+| Models | #545, then #546 | #549, #575 |
+| Excel | #680 (pattern ages on the triangle functions) | #635 (both its parts; one argument order with #680) |
+| Guides | `[guides-current]`: #673's pattern draws, #552's loaders, #675's `extend` in place of the notebook's `upper=5.0` | #642 (the Friedland guide and its R twin too) |
+| Shared | #572, a PR of its own (the local session) | |
+
+Probability and Aggregate have no 0.0.7 item: the cloud session that runs
+them carries the Models items, and picks up at most one or two of the P3s
+#593 and #596 after them. Everything else waits for 0.0.8 or later; #598 is
+the first candidate. #580 (one error for unsupported options) waits for
+0.0.8. Compartmental at a sub-annual grain (`[compartmental-subannual]`)
+waits. #553 (IFRS 17) is `P4`.
 
 ## Each release
 

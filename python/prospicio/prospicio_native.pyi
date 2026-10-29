@@ -11814,7 +11814,7 @@ class EventSet:
         ([2, 0, 1], [50.0])
         """
     @staticmethod
-    def from_ylt(years: Sequence[int], losses: Sequence[float], *, slots: Sequence[int] |None = None, times: Sequence[float] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None) -> EventSet:
+    def from_ylt(years: Sequence[int], losses: Sequence[float], *, slots: Sequence[int] |None = None, times: Sequence[float] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None, losses_negative: bool = False) -> EventSet:
         """
         Years of losses from a year loss table's columns, checked and
         expanded to a run's simulations.
@@ -11862,6 +11862,9 @@ class EventSet:
             "EQ"]}``).
         source_hash : str, optional
             A hash of the source, recorded as results' input hash.
+        losses_negative : bool, default False
+            The losses are stored as negative numbers, money going out: each
+            must be at most 0 and is read with its sign flipped.
         
         Returns
         -------
@@ -14737,6 +14740,29 @@ class Grid:
         -------
         float
         """
+    def window_tvar(self, /, p_low: float, p_high: float) -> float:
+        """
+        Window TVaR: the mean of the grid between the levels ``p_low`` and
+        ``p_high``, each point counted with the share of its mass inside the
+        window, ``((1 - p_low) tvar(p_low) - (1 - p_high) tvar(p_high)) /
+        (p_high - p_low)``.
+        
+        Parameters
+        ----------
+        p_low, p_high : float
+            ``0 <= p_low < p_high <= 1``.
+        
+        Returns
+        -------
+        float
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Grid
+        >>> g = Grid(1.0, [0.5, 0.3, 0.2])
+        >>> round(g.window_tvar(0.6, 0.9), 12)
+        1.333333333333
+        """
 
 @final
 class GridAudit:
@@ -16355,6 +16381,13 @@ class Layer:
         Returns
         -------
         float
+        
+        Raises
+        ------
+        ValueError
+            If a loss is negative or not finite, usually losses stored with
+            the sign of money paid out (``read_ylt(..., losses_negative=True)``
+            reads such a file).
         """
     def ceded_by_event(self, /, losses: Sequence[float]) -> list[float]:
         """
@@ -26775,6 +26808,37 @@ class Sampled:
         Returns
         -------
         float
+        """
+    def window_tvar(self, /, p_low: float, p_high: float, method: str = "exact") -> float:
+        """
+        Window TVaR: the mean of the draws between the levels ``p_low`` and
+        ``p_high``, a band of bad years such as the 98th to 99th
+        percentiles. It equals ``((1 - p_low) tvar(p_low) - (1 - p_high)
+        tvar(p_high)) / (p_high - p_low)`` under ``"exact"`` and
+        ``"linear"``; under ``"whole_years"`` it is the mean of the draws
+        ranked ``floor((1 - p_high) n) + 1`` to ``floor((1 - p_low) n)`` from
+        the top (years 21 to 40 of 2,000 between 0.98 and 0.99), an error
+        when that holds no draw.
+        
+        Parameters
+        ----------
+        p_low, p_high : float
+            ``0 <= p_low < p_high <= 1``.
+        method : str, default "exact"
+            As ``tvar``.
+        
+        Returns
+        -------
+        float
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Sampled
+        >>> years = Sampled([float(x) for x in range(1, 11)])
+        >>> years.window_tvar(0.7, 0.9)
+        8.5
+        >>> years.window_tvar(0.5, 1.0) == years.tvar(0.5)
+        True
         """
 
 @final

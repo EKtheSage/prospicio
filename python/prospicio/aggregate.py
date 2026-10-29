@@ -150,6 +150,7 @@ def read_ylt(
     unique_by=None,
     expected=None,
     file_format=None,
+    losses_negative=False,
 ):
     """Reads a year loss table from a CSV or Parquet file into years of
     events, checked and expanded to a run's simulations.
@@ -201,6 +202,10 @@ def read_ylt(
     file_format : {"csv", "parquet"}, optional
         By default Parquet for a ``.parquet`` or ``.pq`` file and CSV
         otherwise. Parquet needs ``pyarrow``.
+    losses_negative : bool, default False
+        The file stores losses as negative numbers, money going out, as some
+        vendor and cedent files do: each must be at most 0 and is read with
+        its sign flipped. Without it a negative loss is an error.
 
     Returns
     -------
@@ -297,4 +302,5 @@ def read_ylt(
         unique_by=unique_by,
         expected=expected,
         source_hash=ylt_hash(data),
+        losses_negative=losses_negative,
     )
