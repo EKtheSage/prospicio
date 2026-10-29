@@ -202,6 +202,42 @@ simulate_events <- function(frequency, severity, n_sims, seed) {
   event_set(ptr = ptr)
 }
 
+#' Simulated years for importance sampling
+#'
+#' Years drawn from a proposal, with each year's likelihood ratio, so that
+#' a tail statistic of the years (the total, a tower's ceded or net loss)
+#' has a smaller standard error for the same number of years. Year `i`
+#' draws from stream `i - 1` of `seed` as [simulate_events()] does, with two
+#' optional changes of measure: `count`, a proposal claim count (any
+#' family, such as a Poisson with a higher mean), weighted by
+#' `p(n) / q(n)`; and a tail mixture, each loss coming from the severity
+#' above `tail_threshold` with chance `tail_share`, weighted by
+#' `1 / ((1 - share) + share * (x > u) / S(u))`. Without either the years
+#' are [simulate_events()]'s and every weight is 1. Estimate the
+#' statistics with [weighted_tail()].
+#'
+#' @inheritParams simulate_events
+#' @param count A proposal claim count, or `NULL` for `frequency` itself.
+#' @param tail_threshold The threshold of the tail mixture, or `NULL` for
+#'   none.
+#' @param tail_share The tail mixture's chance, in `(0, 1)`.
+#' @returns A list with `events`, an [event_set], and `weights`, one a
+#'   year.
+#' @export
+#' @examples
+#' w <- simulate_events_weighted(poisson_count(2), lognormal_from_mean_cv(10, 2), 20000, seed = 7,
+#'                               count = poisson_count(4), tail_threshold = 40)
+#' weighted_tail(draw_matrix(total(w$events))[, 1], w$weights, c(0.99, 0.995))
+simulate_events_weighted <- function(frequency, severity, n_sims, seed, count = NULL,
+                                     tail_threshold = NULL, tail_share = 0.3) {
+  r <- rust_result(EventSet$simulate_weighted(
+    frequency@ptr, severity@ptr, as.double(n_sims), as.double(seed),
+    if (is.null(count)) NULL else count@ptr,
+    if (is.null(tail_threshold)) NaN else as.double(tail_threshold), as.double(tail_share)
+  ))
+  list(events = event_set(ptr = r$events), weights = r$weights)
+}
+
 #' The occurrence exceedance (OEP) curve and occurrence PMLs
 #'
 #' `occurrence_exceedance()` is the chance that a year's largest occurrence

@@ -401,6 +401,41 @@ impl EventSet {
         Ok(Self { inner })
     }
 
+    /// Years from a proposal with their likelihood ratios: `list(events,
+    /// weights)`. `count` NULL for the count itself, `tail_threshold` NaN
+    /// for no tail mixture.
+    fn simulate_weighted(
+        frequency: Robj,
+        severity: Robj,
+        n_sims: f64,
+        seed: f64,
+        count: Robj,
+        tail_threshold: f64,
+        tail_share: f64,
+    ) -> Result<List> {
+        let n = AnyCount::from_robj(&frequency)?;
+        let q = if count.is_null() {
+            None
+        } else {
+            Some(AnyCount::from_robj(&count)?)
+        };
+        let sev = severity_from_robj(&severity)?;
+        let tail = (!tail_threshold.is_nan()).then_some(prospicio_aggregate::TailMixture {
+            threshold: tail_threshold,
+            share: tail_share,
+        });
+        let (inner, w) = prospicio_aggregate::simulate_events_weighted(
+            n.as_counting(),
+            &sev,
+            whole(n_sims, "n_sims")? as usize,
+            q.as_ref().map(AnyCount::as_counting),
+            tail,
+            whole(seed, "seed")?,
+        )
+        .map_err(to_r)?;
+        Ok(list!(events = Self { inner }, weights = w))
+    }
+
     /// `years` is a list of numeric vectors; `sums_insured` and `times`
     /// NULL or lists of the same shape.
     fn from_years(years: List, sums_insured: Robj, seed: f64, times: Robj) -> Result<Self> {

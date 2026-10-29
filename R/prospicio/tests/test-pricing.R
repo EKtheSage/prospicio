@@ -656,6 +656,17 @@ near(one$premium, risk_loaded_price(sampled(c(150, 330, 90, 210)), tv,
 stopifnot(identical(book_marginal_price(book, tv, cost_of_capital = 0.1, deals = "b")$deal, "b"),
           inherits(try(book_marginal_price(book, tv, cost_of_capital = 0.1, deals = "z"),
                        silent = TRUE), "try-error"))
+# #589: price adequacy of a book's deals.
+ad <- book_adequacy(book, tv, cost_of_capital = 0.1)
+stopifnot(identical(ad$deal, c("a", "b", "total")))
+near(ad$target_return, rep(0.1, 3))
+near(ad$marginal_assets[1:2], m$assets)
+near(ad$technical_premium[1:2], pp$by_component$premium)
+near(ad$target_premium, ad$technical_premium)
+near(ad$return_on_allocated, ad$margin / ad$allocated_capital)
+o1 <- book_adequacy(book_select(book, "b"), tv, cost_of_capital = 0.1)
+near(o1$allocated_assets[1], o1$marginal_assets[1])
+stopifnot(inherits(try(book_adequacy(book, tv), silent = TRUE), "try-error"))
 # #569: an efficient frontier of retentions and limits.
 fr <- reinsurance_frontier(grid_distribution(1, rep(0.25, 4)), c(1, 2), c(1, Inf),
                            loading = 0.5, risk = "var", level = 0.9)

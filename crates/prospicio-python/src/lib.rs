@@ -55,7 +55,8 @@ mod prospicio_native {
         audit_grid, audit_portfolio_grid, compound_moments, eventual_ruin, fft, fft_auto,
         fft_bivariate, finite_horizon_ruin, layer_loss_picks, occurrence_exceedance,
         occurrence_pml, panjer, recommend_grid, recommend_portfolio_grid, round_bucket,
-        simulate_events, wiener_hopf, year_correlation_for_ratio, ylt_hash,
+        simulate_events, simulate_events_weighted, wiener_hopf, year_correlation_for_ratio,
+        ylt_hash,
     };
     #[pymodule_export]
     use super::bonus_malus::PyBonusMalus;
@@ -187,9 +188,9 @@ mod prospicio_native {
     use super::risk::{
         PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd,
         PyLevelAllocation, PyMvnEstimate, PyNestedArchimedeanCopula, PyPairCopula, PyPotTail,
-        PyStudentTCopula, PyVineCopula, allocate, bootstrap_se, calibrate, capital, co_statistics,
-        covar, entropic, equal_risk, esscher, esscher_allocation, haircut, hill, iman_conover,
-        marginal_expected_shortfall, mean_excess, mvn_cdf, rearrange, risk_ratios, shapley,
-        simulate, sobol, statistics, threshold_diagnostics, worst_var,
+        PyStudentTCopula, PyVineCopula, PyWeightedSample, allocate, bootstrap_se, calibrate,
+        capital, co_statistics, covar, entropic, equal_risk, esscher, esscher_allocation, haircut,
+        hill, iman_conover, marginal_expected_shortfall, mean_excess, mvn_cdf, rearrange,
+        risk_ratios, shapley, simulate, sobol, statistics, threshold_diagnostics, worst_var,
     };
 }

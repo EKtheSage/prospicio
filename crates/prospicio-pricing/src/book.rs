@@ -37,7 +37,7 @@ use prospicio_prob::{
 
 use crate::cashflow::{CashflowTerms, Cashflows, MonthlyPatterns};
 use crate::returns::{Irr, IrrOptions, TimeUnit, irr_rows, moic, npv_rows};
-use crate::risk_load::{PremiumRule, Price, price_unchecked};
+use crate::risk_load::{PremiumRule, Price, price_portfolio, price_unchecked};
 
 /// One deduction of a [`DealRun`]: a commission, the brokerage or another
 /// deduction, an amount in each simulation.
@@ -406,6 +406,62 @@ impl MarginalPrice {
     }
 }
 
+/// One line of [`DealBook::adequacy`]: a deal, or the book.
+///
+/// The margin is what the deal keeps less its expected loss. On the
+/// allocated basis the deal's assets are its Euler share of the book's
+/// ([`price_portfolio`]); on the marginal basis they are the assets it
+/// adds when written last ([`DealBook::marginal_price`]). Each basis's
+/// capital is its assets less the premium kept, and its return the margin
+/// over that capital.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AdequacyRow {
+    /// The deal's name, or `"total"` for the book.
+    pub deal: String,
+    /// The mean premium charged (with any reinstatement premium in the
+    /// deal's premium).
+    pub premium_charged: f64,
+    /// The mean premium less every deduction (commissions, brokerage, the
+    /// deal's deductions).
+    pub premium_kept: f64,
+    /// The mean loss.
+    pub expected_loss: f64,
+    /// `premium_kept − expected_loss`.
+    pub margin: f64,
+    /// The deal's Euler share of the book's assets.
+    pub allocated_assets: f64,
+    /// `allocated_assets − premium_kept`.
+    pub allocated_capital: f64,
+    /// `margin / allocated_capital`.
+    pub return_on_allocated: f64,
+    /// The assets the deal adds written last; the book's own on the total.
+    pub marginal_assets: f64,
+    /// `marginal_assets − premium_kept`.
+    pub marginal_capital: f64,
+    /// `margin / marginal_capital`.
+    pub return_on_marginal: f64,
+    /// The premium the rule allocates to the deal (its technical price).
+    pub technical_premium: f64,
+    /// The deal's marginal premium under the rule.
+    pub marginal_premium: f64,
+    /// The premium kept that returns the target on the allocated capital,
+    /// `(EL + t A) / (1 + t)`; under a cost of capital `t` it is
+    /// `technical_premium`.
+    pub target_premium: f64,
+    /// `premium_kept / target_premium`: above 1 the deal beats the target.
+    pub adequacy: f64,
+}
+
+/// The book's price adequacy from [`DealBook::adequacy`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct Adequacy {
+    /// The target return: the book's return on capital at its technical
+    /// price, the cost of capital under [`PremiumRule::CostOfCapital`].
+    pub target_return: f64,
+    /// One row a deal, in the book's order, then the book's `"total"`.
+    pub rows: Vec<AdequacyRow>,
+}
+
 /// The book's investor flows from [`DealBook::cashflows`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct BookCashflows {
@@ -751,7 +807,7 @@ impl DealBook {
 
     /// The marginal price of the deal `name`: the book's loss priced with
     /// it and without it, by `rule` on the assets of the capital standard
-    /// `assets` as [`price_portfolio`](crate::risk_load::price_portfolio)
+    /// `assets` as [`price_portfolio`]
     /// prices a portfolio, and the differences. It answers what the deal
     /// must charge, written last, so that the book's price still holds:
     /// under a cost of capital `r`, `P = (EL + r dA) / (1 + r)`.
@@ -798,6 +854,118 @@ impl DealBook {
             deal: name.into(),
             with,
             without,
+        })
+    }
+
+    /// Price adequacy for each deal and the book: the premium charged and
+    /// kept beside the expected loss, the technical premium the rule
+    /// allocates, the allocated (Euler) and marginal capital, the return
+    /// on each, the target return and the premium that meets it
+    /// ([`AdequacyRow`]). The book's losses are priced as
+    /// [`price_portfolio`] prices a portfolio, by `rule` on the assets of
+    /// the capital standard `assets`; the target return is the book's
+    /// return at its technical price, so a deal that keeps its target
+    /// premium returns the target on its allocated capital. On a book of
+    /// one deal the allocated and marginal bases agree.
+    ///
+    /// ```
+    /// use prospicio_pricing::book::{DealBook, DealRun};
+    /// use prospicio_pricing::risk_load::PremiumRule;
+    /// use prospicio_prob::Distortion;
+    ///
+    /// let a = DealRun::new("a", vec![10.0; 4], vec![1.0, 2.0, 3.0, 9.0]).unwrap();
+    /// let b = DealRun::new("b", vec![3.0; 4], vec![4.0, 1.0, 2.0, 3.0]).unwrap();
+    /// let book = DealBook::new(vec![a, b]).unwrap();
+    /// let rule = PremiumRule::cost_of_capital(0.1).unwrap();
+    /// let r = book.adequacy(&rule, &Distortion::tvar(0.5).unwrap()).unwrap();
+    /// assert!((r.target_return - 0.1).abs() < 1e-12);
+    /// let total = r.rows.last().unwrap();
+    /// assert_eq!((total.deal.as_str(), total.premium_kept), ("total", 13.0));
+    /// assert!(r.rows[0].adequacy > 1.0);
+    /// ```
+    pub fn adequacy(&self, rule: &PremiumRule, assets: &Distortion) -> Result<Adequacy> {
+        let n = self.n_sims();
+        let m = self.deals.len();
+        let mut draws = Vec::with_capacity(n * m);
+        for j in 0..n {
+            draws.extend(self.deals.iter().map(|d| d.loss[j]));
+        }
+        let keys: Vec<ComponentKey> = self
+            .deals
+            .iter()
+            .map(|d| vec![KeyValue::from(d.name.as_str())])
+            .collect();
+        let pd = PredictiveDistribution::from_draws(
+            vec!["deal".into()],
+            keys,
+            draws,
+            Provenance::new("deal book adequacy"),
+        )?;
+        let priced = price_portfolio(&pd, rule, assets)?;
+        let book = priced.total;
+        let t = book.return_on_capital();
+        let mean = |x: &[f64]| x.iter().sum::<f64>() / x.len() as f64;
+        let row = |deal: String,
+                   charged: f64,
+                   kept: f64,
+                   allocated: &Price,
+                   marginal_assets: f64,
+                   marginal_premium: f64|
+         -> AdequacyRow {
+            let el = allocated.expected_loss;
+            let margin = kept - el;
+            let (ac, mc) = (allocated.assets - kept, marginal_assets - kept);
+            let target_premium = (el + t * allocated.assets) / (1.0 + t);
+            AdequacyRow {
+                deal,
+                premium_charged: charged,
+                premium_kept: kept,
+                expected_loss: el,
+                margin,
+                allocated_assets: allocated.assets,
+                allocated_capital: ac,
+                return_on_allocated: margin / ac,
+                marginal_assets,
+                marginal_capital: mc,
+                return_on_marginal: margin / mc,
+                technical_premium: allocated.premium,
+                marginal_premium,
+                target_premium,
+                adequacy: kept / target_premium,
+            }
+        };
+        let mut rows = Vec::with_capacity(m + 1);
+        for (d, allocated) in self.deals.iter().zip(&priced.allocated) {
+            let marginal = self.marginal_price(&d.name, rule, assets)?;
+            let deductions = self.item(d, "total_deductions")?;
+            let kept: Vec<f64> = d
+                .premium
+                .iter()
+                .zip(&deductions)
+                .map(|(p, x)| p - x)
+                .collect();
+            rows.push(row(
+                d.name.clone(),
+                mean(&d.premium),
+                mean(&kept),
+                allocated,
+                marginal.assets(),
+                marginal.premium(),
+            ));
+        }
+        let charged = mean(&self.total("premium")?);
+        let deductions = mean(&self.total("total_deductions")?);
+        rows.push(row(
+            "total".into(),
+            charged,
+            charged - deductions,
+            &book,
+            book.assets,
+            book.premium,
+        ));
+        Ok(Adequacy {
+            target_return: t,
+            rows,
         })
     }
 
@@ -1516,5 +1684,64 @@ mod tests {
         );
         let total = DealRun::new("total", vec![1.0; 3], vec![0.5; 3]).unwrap();
         assert!(DealBook::new(vec![total]).unwrap().amounts().is_err());
+    }
+
+    #[test]
+    fn adequacy_on_one_deal_and_at_the_target_premium() {
+        let loss = vec![1.0, 2.0, 3.0, 9.0, 0.0, 4.0, 2.0, 5.0];
+        let rule = PremiumRule::cost_of_capital(0.1).unwrap();
+        let assets = Distortion::tvar(0.75).unwrap();
+        // One deal: the allocated and marginal bases agree, and match the
+        // book's own price.
+        let one =
+            DealBook::new(vec![DealRun::new("a", vec![6.0; 8], loss.clone()).unwrap()]).unwrap();
+        let r = one.adequacy(&rule, &assets).unwrap();
+        assert!((r.target_return - 0.1).abs() < 1e-12);
+        let (a, t) = (&r.rows[0], &r.rows[1]);
+        assert!((a.allocated_assets - a.marginal_assets).abs() < 1e-12);
+        assert!((a.technical_premium - a.marginal_premium).abs() < 1e-12);
+        assert!((a.technical_premium - t.technical_premium).abs() < 1e-12);
+        // Under a cost of capital the target premium is the technical one.
+        assert!((a.target_premium - a.technical_premium).abs() < 1e-12);
+        // A deal that keeps its technical premium returns the target.
+        let b_loss = vec![4.0, 1.0, 2.0, 3.0, 6.0, 0.0, 1.0, 2.0];
+        let two = DealBook::new(vec![
+            DealRun::new("a", vec![6.0; 8], loss.clone()).unwrap(),
+            DealRun::new("b", vec![1.0; 8], b_loss.clone()).unwrap(),
+        ])
+        .unwrap();
+        let first = two.adequacy(&rule, &assets).unwrap();
+        let p = first.rows[1].technical_premium;
+        let priced = DealBook::new(vec![
+            DealRun::new("a", vec![6.0; 8], loss.clone()).unwrap(),
+            DealRun::new("b", vec![p + 0.5; 8], b_loss)
+                .unwrap()
+                .deduction("brokerage", vec![0.5; 8], false)
+                .unwrap(),
+        ])
+        .unwrap();
+        let r = priced.adequacy(&rule, &assets).unwrap();
+        let b = &r.rows[1];
+        assert!((b.premium_charged - (p + 0.5)).abs() < 1e-12);
+        assert!((b.premium_kept - p).abs() < 1e-12);
+        assert!(
+            (b.return_on_allocated - 0.1).abs() < 1e-9,
+            "{}",
+            b.return_on_allocated
+        );
+        assert!((b.adequacy - 1.0).abs() < 1e-12);
+        // The allocated pieces add up to the book.
+        let t = r.rows.last().unwrap();
+        let sum = |f: &dyn Fn(&AdequacyRow) -> f64| r.rows[..2].iter().map(f).sum::<f64>();
+        assert!((sum(&|x| x.allocated_assets) - t.allocated_assets).abs() < 1e-9);
+        assert!((sum(&|x| x.technical_premium) - t.technical_premium).abs() < 1e-9);
+        assert!((sum(&|x| x.premium_kept) - t.premium_kept).abs() < 1e-12);
+        // Under a distortion the target is the book's return at its price.
+        let wang = PremiumRule::Distortion(Distortion::wang(0.3).unwrap());
+        let r = priced.adequacy(&wang, &assets).unwrap();
+        let t = r.rows.last().unwrap();
+        let book_return =
+            (t.technical_premium - t.expected_loss) / (t.allocated_assets - t.technical_premium);
+        assert!((r.target_return - book_return).abs() < 1e-12);
     }
 }
