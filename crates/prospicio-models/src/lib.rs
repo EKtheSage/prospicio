@@ -20,6 +20,7 @@
 //! This crate has no heavy dependencies; engines live in their own crates.
 
 pub mod artifact;
+pub mod calibrate;
 pub mod compare;
 pub mod design;
 pub mod encode;
