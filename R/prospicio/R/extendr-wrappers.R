@@ -248,6 +248,14 @@ pricing_layer_quote <- function(expected_loss, risk_premium, assets, layer, cede
 
 frontier_rust <- function(losses, retentions, limits, kind, assets, rate, pricing, loading, risk, level) .Call(wrap__frontier_rust, losses, retentions, limits, kind, assets, rate, pricing, loading, risk, level)
 
+cat_bond_rust <- function(trigger, attachment, exhaustion, basis, weights, payout_x, payout_y, principal, term_years, years) .Call(wrap__cat_bond_rust, trigger, attachment, exhaustion, basis, weights, payout_x, payout_y, principal, term_years, years)
+
+cat_bond_price_rust <- function(annual, distortion) .Call(wrap__cat_bond_price_rust, annual, distortion)
+
+cat_bond_returns_rust <- function(annual, term_years, coupon) .Call(wrap__cat_bond_returns_rust, annual, term_years, coupon)
+
+cat_bond_basis_rust <- function(annual, principal, need) .Call(wrap__cat_bond_basis_rust, annual, principal, need)
+
 pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_price, losses, assets, rate, pricing)
 
 pricing_price_with_reinstatements <- function(losses, g, assets, rate, pricing) .Call(wrap__pricing_price_with_reinstatements, losses, g, assets, rate, pricing)

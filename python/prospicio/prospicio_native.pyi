@@ -5942,6 +5942,192 @@ class CasualtyRating:
         """
 
 @final
+class CatBond:
+    """
+    A cat bond: a tranche of principal lost on a trigger that need not be
+    the cedant's own loss.
+    
+    Parameters
+    ----------
+    trigger : {"indemnity", "modelled_loss", "industry_index", "parametric"}
+        What turns an event into the index: the cedant's or a model's loss
+        (one value an event), ``sum(w_c x_c)`` over the event's industry
+        losses by region (``weights`` the cedant's shares), or
+        ``sum(w_s f(x_s))`` over a measure at each site with ``f`` the
+        ``payout`` table, read linearly between its points and flat beyond.
+    attachment, exhaustion : float
+        The index values at which the first and the last principal is lost.
+    basis : {"occurrence", "aggregate"}, default "occurrence"
+        Each event's index through the tranche, or the year's total.
+    weights : list of float, optional
+        For an industry index or a parametric trigger, one an event value.
+    payout : list of (float, float), optional
+        For a parametric trigger, ``(measure, share)`` points.
+    principal : float, default 1.0
+    term_years : int, default 1
+        Consecutive runs of that many simulated years make one term, over
+        which the principal is lost once.
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import CatBond
+    >>> bond = CatBond("industry_index", 50.0, 150.0, weights=[0.10, 0.05], principal=100.0)
+    >>> losses = bond.apply([[[800.0, 400.0]], []])
+    >>> losses.annual, losses.expected_loss, losses.recoveries()
+    ([0.5, 0.0], 0.25, [50.0, 0.0])
+    """
+    def __new__(cls, /, trigger: str, attachment: float, exhaustion: float, basis: str = "occurrence", weights: Sequence[float] |None = None, payout: Sequence[tuple[float, float]] |None = None, principal: float = 1.0, term_years: int = 1) -> CatBond: ...
+    def __repr__(self, /) -> str: ...
+    def apply(self, /, years: Any) -> CatBondLosses:
+        """
+        The bond on simulated years: an ``EventSet`` (for a trigger that
+        reads one value an event), or a list of years, each a list of
+        events, each a list of the values the trigger reads (or one number
+        for a one-value trigger). The number of years must be a whole number
+        of terms.
+        
+        Parameters
+        ----------
+        years : EventSet or list
+        
+        Returns
+        -------
+        CatBondLosses
+        """
+    def index(self, /, values: Sequence[float]) -> float:
+        """
+        The index of an event with ``values``, one a component.
+        
+        Parameters
+        ----------
+        values : list of float
+        
+        Returns
+        -------
+        float
+        """
+
+@final
+class CatBondLosses:
+    """
+    A cat bond's principal losses on simulated years (``CatBond.apply``).
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def annual(self, /) -> list[float]:
+        """
+        Each year's share of principal lost, in ``[0, 1]``.
+        """
+    @property
+    def attachment_probability(self, /) -> float:
+        """
+        The share of years with any loss.
+        """
+    def basis_risk(self, /, need: Sequence[float]) -> dict:
+        """
+        The basis risk against ``need``, the cedant's recovery from an
+        indemnity cover in each simulated year: a dict with ``difference``
+        (recovery less need by year), ``mean_shortfall``, ``mean_excess``,
+        ``std_dev``, ``correlation`` and ``missed`` (the share of years with
+        a need and no recovery).
+        
+        Parameters
+        ----------
+        need : list of float
+        
+        Returns
+        -------
+        dict
+        """
+    def calibrate(self, /, family: str, spread: float) -> Distortion:
+        """
+        The distortion of ``family`` (as ``calibrate`` names them) that
+        prices the bond at ``spread``.
+        
+        Parameters
+        ----------
+        family : str
+        spread : float
+        
+        Returns
+        -------
+        Distortion
+        """
+    @property
+    def exhaustion_probability(self, /) -> float:
+        """
+        The share of years that lose all the principal.
+        """
+    @property
+    def expected_loss(self, /) -> float:
+        """
+        The mean annual share lost.
+        """
+    def investor_flows(self, /, coupon: float) -> list[list[float]]:
+        """
+        The investor's annual cash flows in each term per unit of principal:
+        ``-1`` at time 0, each year's coupon on the principal outstanding at
+        its start, and the principal left at the end.
+        
+        Parameters
+        ----------
+        coupon : float
+        
+        Returns
+        -------
+        list of list of float
+        """
+    def investor_returns(self, /, coupon: float) -> list[float]:
+        """
+        The investor's internal rate of return in each term at ``coupon``
+        (the collateral yield plus the spread), searched past the default
+        range when needed.
+        
+        Parameters
+        ----------
+        coupon : float
+        
+        Returns
+        -------
+        list of float
+        """
+    def lane_spread(self, /, gamma: float, alpha: float, beta: float) -> float:
+        """
+        Lane's spread ``gamma * PFL**alpha * CEL**beta`` with the
+        coefficients given.
+        
+        Parameters
+        ----------
+        gamma, alpha, beta : float
+        
+        Returns
+        -------
+        float
+        """
+    def price(self, /, distortion: Distortion) -> dict:
+        """
+        The spread under ``distortion``: a dict with ``expected_loss``,
+        ``spread`` (the risk-adjusted annual loss), ``risk_load`` and
+        ``multiple``.
+        
+        Parameters
+        ----------
+        distortion : Distortion
+        
+        Returns
+        -------
+        dict
+        """
+    def recoveries(self, /) -> list[float]:
+        """
+        Each year's recovery, the share lost times the principal.
+        """
+    def term_losses(self, /) -> list[float]:
+        """
+        The share of principal lost over each term.
+        """
+
+@final
 class CessionStatistics:
     """
     The total cession of several per-occurrence layers, from
