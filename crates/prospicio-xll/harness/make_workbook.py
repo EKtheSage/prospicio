@@ -1105,6 +1105,46 @@ dg.column_dimensions["H"].width = 40
 for col in [*"BCDEFGIJKLMOPQRSTUWXYZ", "AA", "AB"]:
     dg.column_dimensions[col].width = 12
 
+# A Poisson GLM on validation/data/glm_policies.csv (600 policies) with an
+# exposure offset, against statsmodels 0.15.0 (validation/reference/glm_statsmodels.csv).
+REF = Path(__file__).resolve().parents[3] / "validation"
+gl = wb.create_sheet("GLM")
+gl["A1"] = "prospicio XLL test: a Poisson GLM with an exposure offset (PRO.GLM, .PREDICT, .RELATIVITIES)"; gl["A1"].font = Font(bold=True, size=13)
+gl["A2"] = "600 policies from validation/data/glm_policies.csv; claims on age and region, log(exposure) as the offset."; gl["A2"].font = note
+with open(REF / "data" / "glm_policies.csv") as f:
+    policies = list(csv.DictReader(f))
+for c, h in enumerate(["age", "region", "exposure", "claims"]):
+    gl.cell(row=3, column=1 + c, value=h).font = bold
+    for r, p in enumerate(policies):
+        v = p[h]
+        gl.cell(row=4 + r, column=1 + c, value=v if h == "region" else float(v)).fill = inp
+DATA = f"$A$3:$D${3 + len(policies)}"
+gl["F3"] = "GLM summary"; gl["F3"].font = bold
+gl["F4"] = ArrayFormula("F4:L19", f'=PRO.GLM({DATA},"claims",{{"age","region"}},"poisson","log","exposure")')
+gl["N3"] = "Relativities, 95%"; gl["N3"].font = bold
+gl["N4"] = ArrayFormula("N4:R9", f'=PRO.GLM.RELATIVITIES({DATA},"claims",{{"age","region"}},"poisson","log","exposure")')
+gl["F23"] = "New rows"; gl["F23"].font = bold
+for c, h in enumerate(["age", "region", "exposure"]):
+    gl.cell(row=24, column=6 + c, value=h).font = bold
+for r, row in enumerate([(30, "A", 1), (45, "C", 0.5), (60, "D", 2)]):
+    for c, v in enumerate(row):
+        gl.cell(row=25 + r, column=6 + c, value=v).fill = inp
+gl["I24"] = "Mean"; gl["I24"].font = bold
+gl["I25"] = ArrayFormula("I25:I27", f'=PRO.GLM.PREDICT({DATA},"claims",{{"age","region"}},$F$24:$H$27,"poisson","log","exposure")')
+gl["F30"] = "Check against statsmodels 0.15.0"; gl["F30"].font = bold
+with open(REF / "reference" / "glm_statsmodels.csv") as f:
+    sm = {(r["quantity"], r["term"]): float(r["expected"]) for r in csv.DictReader(f) if r["case"] == "poisson_log"}
+for i, (name, cell) in enumerate([("(Intercept)", "H5"), ("age", "H6"), ("region[B]", "H7"),
+                                  ("region[C]", "H8"), ("region[D]", "H9")]):
+    row = 31 + i
+    gl[f"F{row}"] = f"coefficient {name}"; gl[f"G{row}"] = f"={cell}"; gl[f"H{row}"] = sm[("coef", name)]
+    gl[f"I{row}"] = f"=ABS(G{row}-H{row})<1e-8*MAX(1,ABS(H{row}))"
+gl["F36"] = "deviance"; gl["G36"] = "=G11"; gl["H36"] = sm[("deviance", "")]
+gl["I36"] = "=ABS(G36-H36)<1e-8*MAX(1,ABS(H36))"
+gl.column_dimensions["F"].width = 24
+for col in "GHIJKLNOPQR":
+    gl.column_dimensions[col].width = 13
+
 wb.save(out)
 
 METADATA = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
