@@ -221,6 +221,23 @@ u <- copula_sample_qmc(g, 2^14, seed = 11)
 stopifnot(abs(mean(u[, 1] <= 0.6 & u[, 2] <= 0.4 & u[, 3] <= 0.7) - e$value) < 2e-3)
 stopifnot(inherits(try(copula_sample_qmc(archimedean_copula("gumbel", 2), 8), silent = TRUE), "try-error"))
 
+# The Student t pair and fitting pair copulas (#568).
+tv <- vine_copula("d", 1:2, list(list(pair_copula("student", 0.6, nu = 4))))
+stopifnot(abs(copula_log_density(tv, c(0.3, 0.6)) - (-0.02730765499122425)) < 1e-10)
+stopifnot(inherits(try(vine_copula("d", 1:2, list(list(pair_copula("student", 0.6)))), silent = TRUE), "try-error"))
+stopifnot(identical(pseudo_obs(c(3, 1, 2, 2)), c(0.8, 0.2, 0.5, 0.5)))
+stopifnot(abs(kendall_tau(1:4, c(1, 3, 2, 4)) - 4 / 6) < 1e-15)
+set.seed(568)
+x <- rnorm(1500)
+y <- 0.7 * x + sqrt(1 - 0.49) * rnorm(1500)
+uu <- pseudo_obs(x)
+vv <- pseudo_obs(y)
+g <- fit_pair_copula(uu, vv, "gaussian")
+stopifnot(abs(g$pair[[2]] - 0.7) < 0.05, g$n_parameters == 1)
+sel <- select_pair_copula(uu, vv)
+stopifnot(sel$aic <= g$aic + 1e-9)
+it <- select_pair_copula(runif(300), runif(300), independence_test = 0.05)
+stopifnot(it$pair[[1]] %in% c("independence", "gaussian", "student", "clayton", "gumbel", "frank", "joe"))
 cat("prospicio R risk tests passed\n")
 # The covariance allocation of the margin keeps each unit's mean, and the
 # Shapley value of any cost agrees with the distortion's Shapley.

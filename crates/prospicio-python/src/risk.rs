@@ -2568,27 +2568,44 @@ fn pair_family(name: &str) -> PyResult<prospicio_prob::vine::PairFamily> {
         "gumbel" => PairFamily::Gumbel,
         "frank" => PairFamily::Frank,
         "joe" => PairFamily::Joe,
+        "student" => PairFamily::Student,
         other => {
             return Err(PyValueError::new_err(format!(
                 "unknown pair family {other:?}: use \"independence\", \"gaussian\", \
-                 \"clayton\", \"gumbel\", \"frank\" or \"joe\""
+                 \"student\", \"clayton\", \"gumbel\", \"frank\" or \"joe\""
             )));
         }
     })
+}
+
+fn pair_family_name(f: prospicio_prob::vine::PairFamily) -> &'static str {
+    use prospicio_prob::vine::PairFamily;
+    match f {
+        PairFamily::Independence => "independence",
+        PairFamily::Gaussian => "gaussian",
+        PairFamily::Clayton => "clayton",
+        PairFamily::Gumbel => "gumbel",
+        PairFamily::Frank => "frank",
+        PairFamily::Joe => "joe",
+        PairFamily::Student => "student",
+    }
 }
 
 /// A bivariate copula for a vine: a family, its parameter and a rotation.
 ///
 /// Parameters
 /// ----------
-/// family : {"independence", "gaussian", "clayton", "gumbel", "frank", "joe"}
+/// family : {"independence", "gaussian", "student", "clayton", "gumbel", "frank", "joe"}
 /// parameter : float, default 0.0
-///     Gaussian correlation in (-1, 1); Clayton above 0; Gumbel and Joe at
-///     least 1; Frank not 0 (negative for negative dependence).
+///     Gaussian and Student t correlation in (-1, 1); Clayton above 0;
+///     Gumbel and Joe at least 1; Frank not 0 (negative for negative
+///     dependence).
 /// rotation : {0, 90, 180, 270}, default 0
 ///     For Clayton, Gumbel and Joe: 90 and 270 give negative dependence,
 ///     180 moves the tail dependence to the other corner (pyvinecopulib's
 ///     conventions).
+/// nu : float, optional
+///     The Student t's degrees of freedom, positive; required for it.
 ///
 /// Examples
 /// --------
@@ -2604,26 +2621,35 @@ pub(crate) struct PyPairCopula {
 #[pymethods]
 impl PyPairCopula {
     #[new]
-    #[pyo3(signature = (family, parameter = 0.0, rotation = 0))]
-    fn new(family: &str, parameter: f64, rotation: u16) -> PyResult<Self> {
+    #[pyo3(signature = (family, parameter = 0.0, rotation = 0, nu = None))]
+    fn new(family: &str, parameter: f64, rotation: u16, nu: Option<f64>) -> PyResult<Self> {
+        use prospicio_prob::vine::{PairCopula, PairFamily};
         let f = pair_family(family)?;
-        Ok(Self {
-            inner: prospicio_prob::vine::PairCopula::new(f, parameter, rotation).map_err(to_py)?,
-        })
+        let inner = match (f, nu) {
+            (PairFamily::Student, Some(nu)) if rotation == 0 => PairCopula::student(parameter, nu),
+            (PairFamily::Student, None) => {
+                return Err(PyValueError::new_err("the Student t pair needs nu"));
+            }
+            (PairFamily::Student, Some(_)) => {
+                return Err(PyValueError::new_err("the Student t pair has no rotation"));
+            }
+            (_, Some(_)) => return Err(PyValueError::new_err("nu is for the Student t pair")),
+            (_, None) => PairCopula::new(f, parameter, rotation),
+        }
+        .map_err(to_py)?;
+        Ok(Self { inner })
     }
 
     /// Family name.
     #[getter]
     fn family(&self) -> &'static str {
-        use prospicio_prob::vine::PairFamily;
-        match self.inner.family() {
-            PairFamily::Independence => "independence",
-            PairFamily::Gaussian => "gaussian",
-            PairFamily::Clayton => "clayton",
-            PairFamily::Gumbel => "gumbel",
-            PairFamily::Frank => "frank",
-            PairFamily::Joe => "joe",
-        }
+        pair_family_name(self.inner.family())
+    }
+
+    /// The Student t's degrees of freedom, or ``None``.
+    #[getter]
+    fn nu(&self) -> Option<f64> {
+        self.inner.nu()
     }
 
     /// The parameter.
@@ -2669,13 +2695,182 @@ impl PyPairCopula {
     }
 
     fn __repr__(&self) -> String {
+        match self.inner.nu() {
+            Some(nu) => format!(
+                "PairCopula(\"student\", {}, nu={nu})",
+                self.inner.parameter()
+            ),
+            None => format!(
+                "PairCopula({:?}, {}, rotation={})",
+                self.family(),
+                self.inner.parameter(),
+                self.inner.rotation()
+            ),
+        }
+    }
+}
+
+/// A pair copula fitted by maximum likelihood (``fit_pair``,
+/// ``select_pair``).
+#[pyclass(name = "PairFit", module = "prospicio.risk", frozen)]
+pub(crate) struct PyPairFit {
+    inner: prospicio_prob::vine_fit::PairFit,
+}
+
+#[pymethods]
+impl PyPairFit {
+    /// The fitted pair copula.
+    #[getter]
+    fn pair(&self) -> PyPairCopula {
+        PyPairCopula {
+            inner: self.inner.pair,
+        }
+    }
+
+    /// The maximised log-likelihood.
+    #[getter]
+    fn log_likelihood(&self) -> f64 {
+        self.inner.log_likelihood
+    }
+
+    /// The number of parameters.
+    #[getter]
+    fn n_parameters(&self) -> usize {
+        self.inner.n_parameters
+    }
+
+    /// ``2k - 2 log_likelihood``.
+    #[getter]
+    fn aic(&self) -> f64 {
+        self.inner.aic()
+    }
+
+    /// ``k ln n - 2 log_likelihood``.
+    #[getter]
+    fn bic(&self) -> f64 {
+        self.inner.bic()
+    }
+
+    fn __repr__(&self) -> String {
         format!(
-            "PairCopula({:?}, {}, rotation={})",
-            self.family(),
-            self.inner.parameter(),
-            self.inner.rotation()
+            "PairFit({}, log_likelihood={})",
+            PyPairCopula {
+                inner: self.inner.pair
+            }
+            .__repr__(),
+            self.inner.log_likelihood
         )
     }
+}
+
+/// The maximum likelihood fit of one pair copula family in one rotation to
+/// observations ``(u, v)`` in ``(0, 1)`` (take ``pseudo_observations`` of
+/// raw data first). Parameters are searched within pyvinecopulib's bounds;
+/// the Student t by its profile likelihood over ``nu`` in ``[2, 50]``.
+///
+/// Parameters
+/// ----------
+/// u, v : list of float
+/// family : str
+/// rotation : int, default 0
+///
+/// Returns
+/// -------
+/// PairFit
+///
+/// Examples
+/// --------
+/// >>> from prospicio.risk import PairCopula, fit_pair
+/// >>> c = PairCopula("clayton", 2.0)
+/// >>> v = [(i + 0.5) / 2000 for i in range(2000)]
+/// >>> u = [c.h2_inverse(((i * 7919) % 2000 + 0.25) / 2000, v[i]) for i in range(2000)]
+/// >>> abs(fit_pair(u, v, "clayton").pair.parameter - 2.0) < 0.2
+/// True
+#[pyfunction]
+#[pyo3(signature = (u, v, family, rotation = 0))]
+pub(crate) fn fit_pair(
+    py: Python<'_>,
+    u: Vec<f64>,
+    v: Vec<f64>,
+    family: &str,
+    rotation: u16,
+) -> PyResult<PyPairFit> {
+    let f = pair_family(family)?;
+    let inner = py
+        .detach(|| prospicio_prob::vine_fit::fit_pair(f, rotation, &u, &v))
+        .map_err(to_py)?;
+    Ok(PyPairFit { inner })
+}
+
+/// The best pair copula for observations ``(u, v)`` by AIC or BIC over
+/// ``families`` (each of Clayton, Gumbel and Joe in the two rotations that
+/// match the sign of Kendall's tau) and independence, as pyvinecopulib's
+/// ``Bicop.select`` chooses with ``parametric_method="mle"``. With
+/// ``independence_test`` a level, a pair whose Kendall test p-value is above
+/// it is independence without a fit.
+///
+/// Parameters
+/// ----------
+/// u, v : list of float
+/// families : list of str, optional
+///     By default the Gaussian, Student, Clayton, Gumbel, Frank and Joe.
+/// criterion : {"aic", "bic"}, default "aic"
+/// independence_test : float, optional
+///
+/// Returns
+/// -------
+/// PairFit
+#[pyfunction]
+#[pyo3(signature = (u, v, families = None, criterion = "aic", independence_test = None))]
+pub(crate) fn select_pair(
+    py: Python<'_>,
+    u: Vec<f64>,
+    v: Vec<f64>,
+    families: Option<Vec<String>>,
+    criterion: &str,
+    independence_test: Option<f64>,
+) -> PyResult<PyPairFit> {
+    use prospicio_prob::vine_fit::{Criterion, PairSelect};
+    let mut select = PairSelect::default();
+    if let Some(fs) = families {
+        select.families = fs.iter().map(|f| pair_family(f)).collect::<PyResult<_>>()?;
+    }
+    select.criterion = match criterion {
+        "aic" => Criterion::Aic,
+        "bic" => Criterion::Bic,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "unknown criterion {other:?}; use \"aic\" or \"bic\""
+            )));
+        }
+    };
+    select.independence_test = independence_test;
+    let inner = py
+        .detach(|| prospicio_prob::vine_fit::select_pair(&u, &v, &select))
+        .map_err(to_py)?;
+    Ok(PyPairFit { inner })
+}
+
+/// Kendall's tau-b of two samples, ties counted as
+/// ``scipy.stats.kendalltau`` counts them.
+///
+/// >>> from prospicio.risk import kendall_tau
+/// >>> round(kendall_tau([1.0, 2.0, 3.0, 4.0], [1.0, 3.0, 2.0, 4.0]), 12)
+/// 0.666666666667
+#[pyfunction]
+pub(crate) fn kendall_tau(x: Vec<f64>, y: Vec<f64>) -> PyResult<f64> {
+    prospicio_prob::vine_fit::kendall_tau(&x, &y).map_err(to_py)
+}
+
+/// Pseudo-observations: each value's average rank over ``n + 1``, in
+/// ``(0, 1)``, for fitting copulas to raw data.
+///
+/// >>> from prospicio.risk import pseudo_observations
+/// >>> pseudo_observations([3.0, 1.0, 2.0, 2.0])
+/// [0.8, 0.2, 0.5, 0.5]
+#[pyfunction]
+pub(crate) fn pseudo_observations(x: Vec<f64>) -> PyResult<Vec<f64>> {
+    prospicio_prob::vine_fit::pseudo_observations(&x).map_err(to_py)
 }
 
 /// A C- or D-vine copula built from bivariate pair copulas (Aas et al.

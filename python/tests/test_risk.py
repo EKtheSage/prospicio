@@ -657,3 +657,30 @@ def test_sobol_points_and_mvn_cdf():
     below = sum(all(x <= p for x, p in zip(row, (0.6, 0.4, 0.7))) for row in u) / len(u)
     assert abs(below - e.value) < 2e-3
     assert "MvnEstimate(value=" in repr(e)
+
+
+def test_student_pair_and_pair_fits():
+    """The Student t pair and fitting pair copulas (#568)."""
+    from prospicio.risk import PairCopula, fit_pair, kendall_tau, pseudo_observations, select_pair
+
+    t = PairCopula("student", 0.6, nu=4.0)
+    assert t.family == "student" and t.nu == 4.0 and t.rotation == 0
+    assert abs(t.cdf(0.3, 0.6) - 0.2559786497211124) < 1e-9  # pyvinecopulib 1.0.1
+    assert abs(t.h2_inverse(t.h2(0.3, 0.6), 0.6) - 0.3) < 1e-12
+    with pytest.raises(ValueError, match="nu"):
+        PairCopula("student", 0.6)
+    with pytest.raises(ValueError, match="nu"):
+        PairCopula("clayton", 2.0, nu=3.0)
+    assert pseudo_observations([3.0, 1.0, 2.0, 2.0]) == [0.8, 0.2, 0.5, 0.5]
+    assert kendall_tau([1.0, 2.0, 3.0, 4.0], [1.0, 3.0, 2.0, 4.0]) == pytest.approx(4 / 6)
+    n = 2000
+    c = PairCopula("gumbel", 2.0, 180)
+    v = [(i + 0.5) / n for i in range(n)]
+    u = [c.h2_inverse(((i * 7919) % n + 0.5) / n, v[i]) for i in range(n)]
+    own = fit_pair(u, v, "gumbel", 180)
+    assert abs(own.pair.parameter - 2.0) < 0.15 and own.n_parameters == 1
+    best = select_pair(u, v)
+    assert best.aic <= own.aic + 1e-9
+    assert select_pair(u, v, families=["frank"]).pair.family in ("frank", "independence")
+    with pytest.raises(ValueError, match="criterion"):
+        select_pair(u, v, criterion="hqc")

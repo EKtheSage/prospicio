@@ -10,7 +10,9 @@
 //! variable in the vine's order.
 
 use prospicio_core::{Error, Result, StreamRng};
-use prospicio_math::special::{bivariate_norm_cdf, norm_cdf, norm_quantile};
+use prospicio_math::special::{
+    bivariate_norm_cdf, ln_gamma, norm_cdf, norm_quantile, student_t_cdf, student_t_quantile,
+};
 
 use crate::copula::Copula;
 
@@ -30,6 +32,10 @@ pub enum PairFamily {
     Frank,
     /// Joe, `θ ≥ 1`: upper-tail dependence.
     Joe,
+    /// Student's t with correlation `ρ` in `(−1, 1)` and `ν > 0` degrees of
+    /// freedom ([`PairCopula::student`]): symmetric tail dependence, the
+    /// family most often chosen for insurance losses.
+    Student,
 }
 
 /// A bivariate copula for a vine: a family, its parameter and a rotation
@@ -58,6 +64,8 @@ pub struct PairCopula {
     family: PairFamily,
     parameter: f64,
     rotation: u16,
+    /// Degrees of freedom of the Student t; 0 for the other families.
+    nu: f64,
 }
 
 impl PairCopula {
@@ -65,12 +73,18 @@ impl PairCopula {
     /// independence) and `rotation` in degrees.
     pub fn new(family: PairFamily, parameter: f64, rotation: u16) -> Result<Self> {
         let p = parameter;
+        if family == PairFamily::Student {
+            return Err(Error::Data(
+                "the Student t pair has two parameters; use PairCopula::student(rho, nu)".into(),
+            ));
+        }
         let ok = match family {
             PairFamily::Independence => true,
             PairFamily::Gaussian => p > -1.0 && p < 1.0,
             PairFamily::Clayton => p.is_finite() && p > 0.0,
             PairFamily::Gumbel | PairFamily::Joe => p.is_finite() && p >= 1.0,
             PairFamily::Frank => p.is_finite() && p != 0.0,
+            PairFamily::Student => unreachable!("handled above"),
         };
         if !ok {
             return Err(Error::InvalidParameter {
@@ -100,6 +114,42 @@ impl PairCopula {
             family,
             parameter,
             rotation,
+            nu: 0.0,
+        })
+    }
+
+    /// The Student t pair with correlation `rho` in `(−1, 1)` and `nu`
+    /// degrees of freedom, positive (no rotation).
+    ///
+    /// ```
+    /// use prospicio_prob::vine::PairCopula;
+    ///
+    /// let t = PairCopula::student(0.5, 4.0).unwrap();
+    /// assert_eq!((t.parameter(), t.nu()), (0.5, Some(4.0)));
+    /// // Symmetric: C(u, v) = C(v, u), and h₂ inverts.
+    /// assert!((t.cdf(0.3, 0.7) - t.cdf(0.7, 0.3)).abs() < 1e-12);
+    /// assert!((t.h2_inverse(t.h2(0.3, 0.6), 0.6) - 0.3).abs() < 1e-12);
+    /// ```
+    pub fn student(rho: f64, nu: f64) -> Result<Self> {
+        if !(rho > -1.0 && rho < 1.0) {
+            return Err(Error::InvalidParameter {
+                name: "rho",
+                value: rho,
+                reason: "must be in (−1, 1)",
+            });
+        }
+        if !(nu.is_finite() && nu > 0.0) {
+            return Err(Error::InvalidParameter {
+                name: "nu",
+                value: nu,
+                reason: "must be finite and positive",
+            });
+        }
+        Ok(Self {
+            family: PairFamily::Student,
+            parameter: rho,
+            rotation: 0,
+            nu,
         })
     }
 
@@ -109,7 +159,13 @@ impl PairCopula {
             family: PairFamily::Independence,
             parameter: 0.0,
             rotation: 0,
+            nu: 0.0,
         }
+    }
+
+    /// The Student t's degrees of freedom; `None` for the other families.
+    pub fn nu(&self) -> Option<f64> {
+        (self.family == PairFamily::Student).then_some(self.nu)
     }
 
     pub fn family(&self) -> PairFamily {
@@ -225,7 +281,43 @@ impl PairCopula {
                 let (a, b) = ((1.0 - u).powf(th), (1.0 - v).powf(th));
                 1.0 - (a + b - a * b).powf(1.0 / th)
             }
+            PairFamily::Student => {
+                if u >= 1.0 || v >= 1.0 {
+                    return u.min(v);
+                }
+                self.student_cdf(u, v)
+            }
         }
+    }
+
+    /// The Student t pair's `C(u, v) = ∫₀ᵛ h₂(u | s) ds`, the integrand in
+    /// `s = v w²`, which softens its `s^(2/ν)` approach as `s → 0`, by
+    /// adaptive 16-point Gauss–Legendre on `w` in `(0, 1)`: each interval is
+    /// halved until its two halves agree with it to `1e-15` (absolute), at
+    /// most 40 levels deep.
+    fn student_cdf(&self, u: f64, v: f64) -> f64 {
+        let f = |w: f64| -> std::result::Result<f64, ()> {
+            let s = v * w * w;
+            Ok(self.base_h(u, s.max(f64::MIN_POSITIVE)) * 2.0 * v * w)
+        };
+        let gl = |a: f64, b: f64| -> f64 {
+            prospicio_math::integrate::gauss_legendre(f, a, b).expect("the integrand does not fail")
+        };
+        fn adapt(gl: &dyn Fn(f64, f64) -> f64, a: f64, b: f64, whole: f64, depth: u32) -> f64 {
+            let m = 0.5 * (a + b);
+            let (left, right) = (gl(a, m), gl(m, b));
+            if depth == 0 || (left + right - whole).abs() <= 1e-15 {
+                return left + right;
+            }
+            adapt(gl, a, m, left, depth - 1) + adapt(gl, m, b, right, depth - 1)
+        }
+        let mut sum = 0.0;
+        // Eight starting panels, so a narrow feature is not missed.
+        for k in 0..8 {
+            let (a, b) = (k as f64 / 8.0, (k + 1) as f64 / 8.0);
+            sum += adapt(&gl, a, b, gl(a, b), 40);
+        }
+        sum.clamp((u + v - 1.0).max(0.0), u.min(v))
     }
 
     fn base_log_density(&self, u: f64, v: f64) -> f64 {
@@ -261,6 +353,19 @@ impl PairCopula {
                 let s = a + b - a * b;
                 (1.0 / th - 2.0) * s.ln() + (th - 1.0) * (ub * vb).ln() + (th - 1.0 + s).ln()
             }
+            PairFamily::Student => {
+                let nu = self.nu;
+                let (x, y) = (student_t_quantile(u, nu), student_t_quantile(v, nu));
+                let s = 1.0 - th * th;
+                let q = (x * x - 2.0 * th * x * y + y * y) / (nu * s);
+                // ln t₂(x, y) − ln t₁(x) − ln t₁(y); the π and ν terms cancel
+                // to these.
+                ln_gamma(0.5 * (nu + 2.0)) + ln_gamma(0.5 * nu)
+                    - 2.0 * ln_gamma(0.5 * (nu + 1.0))
+                    - 0.5 * s.ln()
+                    - 0.5 * (nu + 2.0) * q.ln_1p()
+                    + 0.5 * (nu + 1.0) * ((x * x / nu).ln_1p() + (y * y / nu).ln_1p())
+            }
         }
     }
 
@@ -292,6 +397,12 @@ impl PairCopula {
                 let s = a + b - a * b;
                 s.powf(1.0 / th - 1.0) * vb.powf(th - 1.0) * (1.0 - a)
             }
+            PairFamily::Student => {
+                let nu = self.nu;
+                let (x, y) = (student_t_quantile(u, nu), student_t_quantile(v, nu));
+                let scale = ((nu + y * y) * (1.0 - th * th) / (nu + 1.0)).sqrt();
+                student_t_cdf((x - th * y) / scale, nu + 1.0)
+            }
         }
     }
 
@@ -311,6 +422,12 @@ impl PairCopula {
                 let bv = (-th * v).exp_m1();
                 let bu = p * a / ((-th * v).exp() - p * bv);
                 -bu.ln_1p() / th
+            }
+            PairFamily::Student => {
+                let nu = self.nu;
+                let y = student_t_quantile(v, nu);
+                let scale = ((nu + y * y) * (1.0 - th * th) / (nu + 1.0)).sqrt();
+                student_t_cdf(student_t_quantile(p, nu + 1.0) * scale + th * y, nu)
             }
             PairFamily::Gumbel | PairFamily::Joe => {
                 // h is increasing in u; bisect on (0, 1) to a relative 1e-15.
@@ -575,7 +692,23 @@ mod tests {
                 v.push(PairCopula::new(f, 2.5, r).unwrap());
             }
         }
+        v.push(PairCopula::student(0.6, 4.0).unwrap());
+        v.push(PairCopula::student(-0.3, 2.5).unwrap());
         v
+    }
+
+    #[test]
+    fn the_student_cdf_matches_quadrature_at_any_degrees_of_freedom() {
+        // SciPy 1.14.1 quad of h₂ over s, to 1e-13 (pyvinecopulib's t cdf
+        // rounds the degrees of freedom).
+        let t = PairCopula::student(0.5, 2.5).unwrap();
+        assert!((t.cdf(0.3, 0.6) - 0.240_598_834_693_245_2).abs() < 1e-12);
+        assert!((t.cdf(0.999, 0.998) - 0.997_469_702_656_018_3).abs() < 1e-12);
+        let t = PairCopula::student(0.9, 30.0).unwrap();
+        assert!((t.cdf(0.999, 0.998) - 0.997_654_677_808_199_6).abs() < 1e-12);
+        assert!(PairCopula::new(PairFamily::Student, 0.5, 0).is_err());
+        assert!(PairCopula::student(1.0, 4.0).is_err());
+        assert!(PairCopula::student(0.5, 0.0).is_err());
     }
 
     #[test]

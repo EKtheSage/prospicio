@@ -1,0 +1,1 @@
+* **Update**: [pyvinecopulib 1.0.1, the reference for prospicio's vine copulas](/references/pyvinecopulib.md): its Student t pair functions round a non-integer `nu`, `Bicop.fit`'s parameter bounds and `Bicop.select`'s defaults, verified by `pair_fits_and_the_student_pair_match_pyvinecopulib` (#568, branch claude/cool-shannon-fqpoy8).

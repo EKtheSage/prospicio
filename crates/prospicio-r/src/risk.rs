@@ -608,24 +608,44 @@ impl AnyCopula {
     }
 }
 
-/// A pair copula from `list(family, parameter, rotation)`.
-fn pair_copula(p: &Robj) -> Result<prospicio_prob::vine::PairCopula> {
-    use prospicio_prob::vine::{PairCopula, PairFamily};
-    let bad = || Error::Other("a pair copula is list(family, parameter, rotation)".into());
-    let l = List::try_from(p).map_err(|_| bad())?;
-    let parts: Vec<Robj> = l.values().collect();
-    if parts.len() != 3 {
-        return Err(bad());
-    }
-    let family = match parts[0].as_str().ok_or_else(bad)? {
+fn pair_family(name: &str) -> Result<prospicio_prob::vine::PairFamily> {
+    use prospicio_prob::vine::PairFamily;
+    Ok(match name {
         "independence" => PairFamily::Independence,
         "gaussian" => PairFamily::Gaussian,
+        "student" => PairFamily::Student,
         "clayton" => PairFamily::Clayton,
         "gumbel" => PairFamily::Gumbel,
         "frank" => PairFamily::Frank,
         "joe" => PairFamily::Joe,
         other => return Err(Error::Other(format!("unknown pair family {other:?}"))),
-    };
+    })
+}
+
+fn pair_family_name(f: prospicio_prob::vine::PairFamily) -> &'static str {
+    use prospicio_prob::vine::PairFamily;
+    match f {
+        PairFamily::Independence => "independence",
+        PairFamily::Gaussian => "gaussian",
+        PairFamily::Student => "student",
+        PairFamily::Clayton => "clayton",
+        PairFamily::Gumbel => "gumbel",
+        PairFamily::Frank => "frank",
+        PairFamily::Joe => "joe",
+    }
+}
+
+/// A pair copula from `list(family, parameter, rotation, nu)`, `nu` NA
+/// (or absent) but for the Student t.
+fn pair_copula(p: &Robj) -> Result<prospicio_prob::vine::PairCopula> {
+    use prospicio_prob::vine::{PairCopula, PairFamily};
+    let bad = || Error::Other("a pair copula is list(family, parameter, rotation, nu)".into());
+    let l = List::try_from(p).map_err(|_| bad())?;
+    let parts: Vec<Robj> = l.values().collect();
+    if !(3..=4).contains(&parts.len()) {
+        return Err(bad());
+    }
+    let family = pair_family(parts[0].as_str().ok_or_else(bad)?)?;
     let parameter = parts[1].as_real().ok_or_else(bad)?;
     let rotation = parts[2].as_real().ok_or_else(bad)?;
     if !matches!(rotation, 0.0 | 90.0 | 180.0 | 270.0) {
@@ -633,7 +653,78 @@ fn pair_copula(p: &Robj) -> Result<prospicio_prob::vine::PairCopula> {
             "rotation {rotation} is not 0, 90, 180 or 270"
         )));
     }
-    PairCopula::new(family, parameter, rotation as u16).map_err(to_r)
+    let nu = parts.get(3).and_then(Robj::as_real).filter(|x| !x.is_nan());
+    match (family, nu) {
+        (PairFamily::Student, Some(nu)) if rotation == 0.0 => PairCopula::student(parameter, nu),
+        (PairFamily::Student, Some(_)) => {
+            return Err(Error::Other("the Student t pair has no rotation".into()));
+        }
+        (PairFamily::Student, None) => {
+            return Err(Error::Other("the Student t pair needs nu".into()));
+        }
+        (_, Some(_)) => return Err(Error::Other("nu is for the Student t pair".into())),
+        (_, None) => PairCopula::new(family, parameter, rotation as u16),
+    }
+    .map_err(to_r)
+}
+
+/// A fitted pair as `list(family, parameter, rotation, nu, log_likelihood,
+/// n_parameters, aic, bic)`.
+fn pair_fit_list(f: &prospicio_prob::vine_fit::PairFit) -> List {
+    list!(
+        family = pair_family_name(f.pair.family()),
+        parameter = f.pair.parameter(),
+        rotation = f64::from(f.pair.rotation()),
+        nu = f.pair.nu().unwrap_or(f64::NAN),
+        log_likelihood = f.log_likelihood,
+        n_parameters = f.n_parameters as f64,
+        aic = f.aic(),
+        bic = f.bic()
+    )
+}
+
+#[extendr]
+fn pair_fit_rust(u: &[f64], v: &[f64], family: &str, rotation: f64) -> Result<List> {
+    let f = pair_family(family)?;
+    let fit = prospicio_prob::vine_fit::fit_pair(f, rotation as u16, u, v).map_err(to_r)?;
+    Ok(pair_fit_list(&fit))
+}
+
+/// `families` empty for the default set; `independence_test` NaN for none.
+#[extendr]
+fn pair_select_rust(
+    u: &[f64],
+    v: &[f64],
+    families: Vec<String>,
+    criterion: &str,
+    independence_test: f64,
+) -> Result<List> {
+    use prospicio_prob::vine_fit::{Criterion, PairSelect};
+    let mut select = PairSelect::default();
+    if !families.is_empty() {
+        select.families = families
+            .iter()
+            .map(|f| pair_family(f))
+            .collect::<Result<_>>()?;
+    }
+    select.criterion = match criterion {
+        "aic" => Criterion::Aic,
+        "bic" => Criterion::Bic,
+        other => return Err(Error::Other(format!("unknown criterion {other:?}"))),
+    };
+    select.independence_test = (!independence_test.is_nan()).then_some(independence_test);
+    let fit = prospicio_prob::vine_fit::select_pair(u, v, &select).map_err(to_r)?;
+    Ok(pair_fit_list(&fit))
+}
+
+#[extendr]
+fn kendall_tau_rust(x: &[f64], y: &[f64]) -> Result<f64> {
+    prospicio_prob::vine_fit::kendall_tau(x, y).map_err(to_r)
+}
+
+#[extendr]
+fn pseudo_observations_rust(x: &[f64]) -> Result<Vec<f64>> {
+    prospicio_prob::vine_fit::pseudo_observations(x).map_err(to_r)
 }
 
 /// A node `list(theta, leaves, children)` with 1-based leaves.
@@ -1111,6 +1202,10 @@ fn sobol_rust(n: f64, dim: f64, scramble: bool, seed: f64) -> Result<Vec<f64>> {
 
 extendr_module! {
     mod risk;
+    fn pair_fit_rust;
+    fn pair_select_rust;
+    fn kendall_tau_rust;
+    fn pseudo_observations_rust;
     fn mvn_cdf_rust;
     fn sobol_rust;
     fn statistics_rust;

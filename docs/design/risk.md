@@ -69,14 +69,22 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   dimensions or nodes; R `nested_archimedean_copula(family, nac_node(theta,
   leaves, children))` with 1-based leaves.
 - `prospicio_prob::vine` (decided 2026-10-14): `PairCopula` (independence,
-  Gaussian, Clayton, Gumbel, Frank, Joe; Clayton, Gumbel and Joe rotated by
-  90, 180 or 270 degrees) with its cdf, density, `h₂(u | v) = ∂C/∂v`,
+  Gaussian, Student t (#568), Clayton, Gumbel, Frank, Joe; Clayton, Gumbel
+  and Joe rotated by 90, 180 or 270 degrees) with its cdf, density, `h₂(u | v) = ∂C/∂v`,
   `h₁(v | u) = ∂C/∂u` and their inverses, and `VineCopula`, a C- or D-vine
   over an order with `pairs[t]` per tree. Each edge's first argument is its
   earlier variable in the order; fewer trees truncate the vine. It
   implements `Copula`, so `simulate` and the two-line coupling take it.
   Python `PairCopula`, `VineCopula` (`log_density`, `inverse_rosenblatt`);
   R `pair_copula()`, `vine_copula()`, `copula_log_density()`.
+- `prospicio_prob::vine_fit` (#568): `pseudo_observations`, `kendall_tau`
+  (tau-b, Knight's `O(n log n)`), `fit_pair` (one family and rotation by
+  maximum likelihood, a `PairFit` with its log-likelihood, AIC and BIC),
+  `independence_p_value` and `select_pair` (`PairSelect`: the families,
+  AIC or BIC and an optional independence test). Python `fit_pair`,
+  `select_pair`, `kendall_tau`, `pseudo_observations`, `PairFit`; R
+  `fit_pair_copula()`, `select_pair_copula()`, `kendall_tau()`,
+  `pseudo_obs()`.
 - `Copula::cdf(&u)`, the copula's distribution function: the Archimedean
   copulas' `ψ(Σ ψ⁻¹(u_j))` in any dimension (with
   `ArchimedeanCopula::inverse_generator`), the Gaussian copula's
@@ -275,9 +283,10 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   itself; in a D-vine each new variable walks down the trees, keeping the
   earlier variables' conditional values. Gumbel's and Joe's `h` are
   inverted by bisection to a relative `1e-15`, the others in closed form.
-  The student t pair waits for a t quantile, and an R-vine matrix (which
-  covers both shapes and more), fitting by sequential maximum likelihood
-  and structure selection are later work. Tested: against pyvinecopulib
+  The Student t pair's `h` and its inverse are closed forms in the t
+  quantile. An R-vine matrix (which covers both shapes and more), fitting
+  a vine by sequential maximum likelihood and structure selection are
+  #568's second part. Tested: against pyvinecopulib
   1.0.1, every family and rotation's cdf, density, `h₁`, `h₂` and inverses,
   and three-dimensional C- and D-vines' log-density and inverse Rosenblatt
   transform with rotated pairs (512 values, `1e-9` relative); Gaussian C-
@@ -285,6 +294,28 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   density to `1e-10`; and draws against the density's integral over a box.
   pyvinecopulib's C-vine order puts the root last, and its D-vine inverse
   Rosenblatt runs backwards (`knowledge/references/pyvinecopulib.md`).
+- **Pair copulas fitted to data, and the Student t pair** (#568, first
+  part; items (a) to (f) proposed by the Probability lane for the user's
+  acceptance). (a) *The Student t pair's cdf is a one-dimensional
+  integral*, `C(u, v) = ∫₀^v h₂(u | s) ds`, taken on `s = v w²` (which
+  removes the endpoint singularity) by adaptive 16-point Gauss–Legendre on
+  eight starting panels to `1e-15`, since the bivariate t has no closed
+  form at a non-integer `ν`; within `1e-9` of pyvinecopulib at whole `ν`
+  and `1e-12` of SciPy's adaptive quadrature at `ν` 2.5 and 30. (b) *Parameters are searched within
+  pyvinecopulib's bounds* (the module docs list them), so a fit near a
+  bound is the same model in both. (c) *The Student t is fitted by its
+  profile likelihood*: for each `ν` the data's t quantiles are taken once
+  and `ρ` maximised by Brent's method, and `ln ν` is searched by a
+  nine-point scan and Brent's method; a joint search took 30 times as
+  long for the same optimum. (d) *Selection is by AIC by default over the
+  six families*, Clayton, Gumbel and Joe in the two rotations that match
+  the sign of Kendall's tau, independence always a candidate, as
+  pyvinecopulib's `Bicop.select`. (e) *The independence test is Kendall's
+  normal approximation* and off by default (pyvinecopulib's
+  `select_threshold` off). (f) *The t quantile takes Newton steps from a
+  Cornish–Fisher start* inside its bracket before the bracketing search,
+  which the profile fit calls `n` times per `ν`; values are unchanged to
+  `4 ε`.
 - **Uniforms stay inside `(0, 1)`.** Far in a tail, `Φ` or a generator
   rounds to 0 or 1, where marginal quantiles are infinite, so every copula
   clamps to `[f64::MIN_POSITIVE, 1 - 2^-53]`.
@@ -491,6 +522,15 @@ with its mass the limit at 0; `g_inv` against `g`; the bid below the mean
 below the ask; `Ccoc` against the equivalent `BiTvar` and its closed-form
 price; the convex hull dropping interior points and keeping a jump at 0;
 and calibration of every family to three premiums.
+
+`validation/reference/vine_fit_pyvinecopulib.csv`
+(`validation/scripts/pyvinecopulib_fit.py`) checks the Student t pair's
+cdf, log density, `h₂` and its inverse at four `(ρ, ν)` (96 values), and
+14 fits on seeded draws: each family's own fit within `1e-4` of
+pyvinecopulib's log-likelihood (never below it by more than `1e-6`), the
+parameter within `1e-3` relative and `ν` within 1%, and `select_pair`
+choosing pyvinecopulib's family and rotation. pyvinecopulib rounds a
+non-integer `ν` in its pair functions, so the references use whole `ν`.
 
 `validation/reference/special_scipy.csv` checks `beta_inc` and
 `student_t_cdf` against SciPy at `1e-12`. Copula tests check Kendall's

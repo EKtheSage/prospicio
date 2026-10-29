@@ -322,6 +322,14 @@ benchmark_curve_rust <- function(ages, values, kind, curve, weights, max_age, or
 
 underwriting_exposure_rust <- function(writing, policy_months) .Call(wrap__underwriting_exposure_rust, writing, policy_months)
 
+pair_fit_rust <- function(u, v, family, rotation) .Call(wrap__pair_fit_rust, u, v, family, rotation)
+
+pair_select_rust <- function(u, v, families, criterion, independence_test) .Call(wrap__pair_select_rust, u, v, families, criterion, independence_test)
+
+kendall_tau_rust <- function(x, y) .Call(wrap__kendall_tau_rust, x, y)
+
+pseudo_observations_rust <- function(x) .Call(wrap__pseudo_observations_rust, x)
+
 mvn_cdf_rust <- function(lower, upper, correlation, abs_tol, max_points, scrambles, seed) .Call(wrap__mvn_cdf_rust, lower, upper, correlation, abs_tol, max_points, scrambles, seed)
 
 sobol_rust <- function(n, dim, scramble, seed) .Call(wrap__sobol_rust, n, dim, scramble, seed)

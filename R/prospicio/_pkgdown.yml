@@ -319,6 +319,7 @@ reference:
       - mvn_cdf
       - sobol_points
       - vine_copula
+      - fit_pair_copula
       - copula_simulate
       - iman_conover
   - title: Extreme value tails

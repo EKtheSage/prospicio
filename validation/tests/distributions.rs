@@ -1343,3 +1343,86 @@ fn mvn_probabilities_match_mvtnorm() {
         );
     }
 }
+
+#[test]
+fn pair_fits_and_the_student_pair_match_pyvinecopulib() {
+    use prospicio_prob::vine::{PairCopula, PairFamily};
+    use prospicio_prob::vine_fit::{PairSelect, fit_pair, select_pair};
+
+    let family = |s: &str| match s {
+        "independence" => PairFamily::Independence,
+        "gaussian" => PairFamily::Gaussian,
+        "student" => PairFamily::Student,
+        "clayton" => PairFamily::Clayton,
+        "gumbel" => PairFamily::Gumbel,
+        "frank" => PairFamily::Frank,
+        "joe" => PairFamily::Joe,
+        other => panic!("family {other}"),
+    };
+    let nums = |s: &str| -> Vec<f64> { s.split(';').map(|x| x.parse().unwrap()).collect() };
+    let cases = reference("vine_fit_pyvinecopulib.csv");
+    let mut data: Option<(Vec<f64>, Vec<f64>)> = None;
+    let (mut pairs, mut fits) = (0, 0);
+    for c in &cases {
+        let want: f64 = c.get("expected").parse().unwrap();
+        match c.get("case") {
+            "student" => {
+                let p = nums(c.get("parameters"));
+                let t = PairCopula::student(p[0], p[1]).unwrap();
+                let x = nums(c.get("data"));
+                let (got, tol) = match c.get("quantity") {
+                    "cdf" => (t.cdf(x[0], x[1]), 1e-9),
+                    "log_pdf" => (t.log_density(x[0], x[1]), 1e-10 * want.abs().max(1.0)),
+                    "h2" => (t.h2(x[0], x[1]), 1e-11),
+                    "h2_inverse" => (t.h2_inverse(x[0], x[1]), 1e-9),
+                    q => panic!("quantity {q}"),
+                };
+                assert!(
+                    (got - want).abs() <= tol,
+                    "{:?}: {got} {want}",
+                    c.get("quantity")
+                );
+                pairs += 1;
+            }
+            "fit" => {
+                if !c.get("data").is_empty() {
+                    let (u, v): (Vec<f64>, Vec<f64>) = c
+                        .get("data")
+                        .split(';')
+                        .map(|p| {
+                            let mut it = p.split('|').map(|x| x.parse::<f64>().unwrap());
+                            (it.next().unwrap(), it.next().unwrap())
+                        })
+                        .unzip();
+                    data = Some((u, v));
+                }
+                let (u, v) = data.as_ref().unwrap();
+                let (fam, rot) = (family(c.get("family")), c.get("rotation").parse().unwrap());
+                let params = nums(c.get("parameters"));
+                let fit = match c.get("quantity") {
+                    "own" => fit_pair(fam, rot, u, v).unwrap(),
+                    "select" => {
+                        let s = select_pair(u, v, &PairSelect::default()).unwrap();
+                        assert_eq!((s.pair.family(), s.pair.rotation()), (fam, rot), "{s:?}");
+                        s
+                    }
+                    q => panic!("quantity {q}"),
+                };
+                // The same optimum: the log-likelihood within 1e-6, never
+                // below pyvinecopulib's by more than that.
+                assert!(fit.log_likelihood >= want - 1e-6, "{fit:?} {want}");
+                assert!((fit.log_likelihood - want).abs() < 1e-4, "{fit:?} {want}");
+                assert!(
+                    (fit.pair.parameter() / params[0] - 1.0).abs() < 1e-3,
+                    "{fit:?} {params:?}"
+                );
+                if let Some(nu) = fit.pair.nu() {
+                    assert!((nu / params[1] - 1.0).abs() < 1e-2, "{fit:?} {params:?}");
+                }
+                fits += 1;
+            }
+            other => panic!("case {other}"),
+        }
+    }
+    assert_eq!((pairs, fits), (96, 14));
+}
