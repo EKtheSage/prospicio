@@ -130,6 +130,31 @@ stopifnot(nrow(pa) == 1000, all(pa[, 10] == 1), all(pb[, 10] == 1), !identical(p
 stopifnot(fails(pattern_draws(fits)))
 stopifnot(identical(pattern_draws(segment(fits, lob = "B")), pb))
 
+# A pattern held flat until its last step (decision 28 item 4): ten origins 97%
+# developed at 12 months, flat to within 0.04% until 1 at 120 months. The
+# running maximum holds each draw at its first share; no Weibull runs
+# through that shape, and the default reading used to refuse it as not
+# increasing. It now reads the held shares exactly.
+noise <- c(0, 4e-4, -3e-4, 2e-4, -4e-4, 3e-4, -2e-4, 1e-4, 0)
+flat <- do.call(rbind, lapply(0:9, function(i) {
+  k <- 0:(9 - i)
+  u <- 1000 * (1 + 0.1 * i)
+  e <- ifelse(k == 0, 0, noise[(i * 7 + k * 3) %% 9 + 1])
+  data.frame(origin = 2011 + i, development = 12 * (k + 1),
+             paid = ifelse(k == 9, u, 0.97 * u * (1 + e)))
+}))
+flat_tri <- triangle(flat, "origin", "development", "paid")
+for (fit in list(odp_bootstrap(flat_tri, n_sims = 200, seed = 1),
+                 mack_bootstrap(flat_tri, n_sims = 200, seed = 1))) {
+  p <- pattern_draws(fit)
+  m <- monthly_pattern_draws(fit, 132, monotone = "running_max")
+  stopifnot(identical(dim(m), c(200L, 132L)), all(m[, 132] == 1),
+            all(m[, -1] - m[, -132] >= 0))
+  held <- t(apply(p, 1, function(x) pmin(cummax(x), 1)))
+  stopifnot(max(abs(m[, 12 * (1:10)] - held)) < 1e-9)
+  uw <- monthly_pattern_draws(fit, 144, basis = underwriting_basis(), monotone = "running_max")
+  stopifnot(all(uw[, 144] == 1))
+}
 # The compartmental model (#679): each simulation's pattern is the ODE's
 # expected cumulative paid over that at the square's last age (120 months
 # on company 337, one age past the paid triangle's), which never falls.
