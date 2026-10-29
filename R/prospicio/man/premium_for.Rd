@@ -4,6 +4,7 @@
 \alias{premium_for}
 \alias{ceding_commission_for}
 \alias{profit_commission_for}
+\alias{no_claims_bonus_for}
 \title{Premium and commissions for a year's ceded loss}
 \usage{
 premium_for(layer, ceded)
@@ -11,6 +12,8 @@ premium_for(layer, ceded)
 ceding_commission_for(layer, ceded)
 
 profit_commission_for(layer, ceded)
+
+no_claims_bonus_for(layer, ceded)
 }
 \arguments{
 \item{layer}{An \link{xol_layer}.}
@@ -22,8 +25,9 @@ A numeric vector, one entry per ceded loss.
 }
 \description{
 The year's premium (swing rated, or else the layer's fixed premium),
-ceding commission (flat or sliding) and profit commission, for each
-value of the layer's ceded loss at the placed share.
+ceding commission (flat or sliding), profit commission and no-claims
+bonus (on that year alone), for each value of the layer's ceded loss at
+the placed share.
 }
 \examples{
 qs <- with_ceding_commission(with_premium_rate(quota_share("QS", 0.3), 1, 1000), 0.3)

@@ -15,7 +15,7 @@ tower_on_annual_grid(tower, annual)
 A list as \code{\link[=tower_on_grid]{tower_on_grid()}}'s, without \code{stage_ceded}: \code{gross},
 \code{ceded} (named), \code{net}, \code{expected_reinstatement_premium},
 \code{expected_premium}, \code{expected_ceding_commission},
-\code{expected_profit_commission} (each named),
+\code{expected_profit_commission}, \code{expected_no_claims_bonus} (each named),
 \code{expected_deal_ceding_commission}, \code{expected_deal_brokerage} (by deal)
 and \code{on_points}.
 }

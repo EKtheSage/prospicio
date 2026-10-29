@@ -571,6 +571,43 @@ impl PyLayer {
         self.map(|l| l.profit_commission(share, allowance))
     }
 
+    /// The same layer with a no-claims bonus: ``share`` of the year's
+    /// premium returned when the layer's ceded loss over the last ``years``
+    /// contract years is at most ``threshold``.
+    ///
+    /// The bonus is figured on its own, beside any sliding scale or profit
+    /// commission, on the year's premium as the layer prices it (the
+    /// deposit or a swing-rated premium), without reinstatement premium.
+    /// ``years > 1`` looks back over the earlier years of a term and needs
+    /// ``Tower.apply_term``; a single year, a grid or a ledger refuses it.
+    /// Set the premium first.
+    ///
+    /// Parameters
+    /// ----------
+    /// share : float
+    ///     In ``(0, 1]``.
+    /// years : int, default 1
+    ///     The years looked at, this one included.
+    /// threshold : float, default 0.0
+    ///     The most ceded loss over those years that still earns the bonus;
+    ///     0 is a claims-free year.
+    ///
+    /// Returns
+    /// -------
+    /// Layer
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reinsurance import Layer
+    /// >>> cat = (Layer("20x10", 20.0, 10.0).with_premium_rate(0.1, 20.0)
+    /// ...        .with_no_claims_bonus(0.15))
+    /// >>> round(cat.no_claims_bonus_for(0.0), 12), cat.no_claims_bonus_for(5.0)
+    /// (0.3, 0.0)
+    #[pyo3(signature = (share, years = 1, threshold = 0.0))]
+    fn with_no_claims_bonus(&self, share: f64, years: u32, threshold: f64) -> PyResult<Self> {
+        self.map(|l| l.no_claims_bonus(share, years, threshold))
+    }
+
     /// The same layer, carrying the profit commission's deficits forward
     /// between the years of a term (``Tower.apply_term``).
     ///
@@ -775,6 +812,14 @@ impl PyLayer {
             .map(|pc| (pc.share, pc.allowance))
     }
 
+    /// The no-claims bonus as ``(share, years, threshold)``, or ``None``.
+    #[getter]
+    fn no_claims_bonus(&self) -> Option<(f64, u32, f64)> {
+        self.inner
+            .no_claims_bonus
+            .map(|b| (b.share, b.years, b.threshold))
+    }
+
     /// The swing rating at 100% as ``(basic, lcm, minimum, maximum)``, or
     /// ``None``.
     #[getter]
@@ -823,6 +868,19 @@ impl PyLayer {
     /// float
     fn profit_commission_for(&self, ceded: f64) -> f64 {
         self.inner.profit_commission_for(ceded)
+    }
+
+    /// The year's no-claims bonus given its ceded loss, on that year alone.
+    ///
+    /// Parameters
+    /// ----------
+    /// ceded : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn no_claims_bonus_for(&self, ceded: f64) -> f64 {
+        self.inner.no_claims_bonus_for(ceded)
     }
 
     /// Ceded loss for one year's losses.
@@ -2235,6 +2293,12 @@ impl PyTowerGrids {
         self.inner.expected_profit_commission.clone()
     }
 
+    /// Expected no-claims bonus of each layer, 0 for a layer without one.
+    #[getter]
+    fn expected_no_claims_bonus(&self) -> Vec<f64> {
+        self.inner.expected_no_claims_bonus.clone()
+    }
+
     /// Expected ceding commission of each deal (``Tower.deal_scale``), by
     /// its name, read on its sections' loss ratio together; 0 for a deal
     /// without one.
@@ -2800,6 +2864,12 @@ impl PyAnnualGrids {
     #[getter]
     fn expected_profit_commission(&self) -> Vec<f64> {
         self.inner.expected_profit_commission.clone()
+    }
+
+    /// Expected no-claims bonus of each layer, 0 for a layer without one.
+    #[getter]
+    fn expected_no_claims_bonus(&self) -> Vec<f64> {
+        self.inner.expected_no_claims_bonus.clone()
     }
 
     /// Expected ceding commission of each deal (``Tower.deal_scale``), by

@@ -28,8 +28,8 @@ total: several layers with annual terms, or an aggregate cover after
 per-occurrence stages; see \code{\link[=tower_quote]{tower_quote()}}),
 \code{expected_reinstatement_premium} (named, 0 without paid reinstatements),
 \code{expected_premium} (the swing-rated premium's mean, or else the fixed
-premium), \code{expected_ceding_commission}, \code{expected_profit_commission}
-(each named, 0 without the term), \code{expected_deal_ceding_commission}
+premium), \code{expected_ceding_commission}, \code{expected_profit_commission},
+\code{expected_no_claims_bonus} (each named, 0 without the term), \code{expected_deal_ceding_commission}
 and \code{expected_deal_brokerage} (each deal's, by its name, read on its
 sections' loss ratio together; a deal whose section has annual terms
 is an error here, as their sum is not one compound) and \code{on_points}.
