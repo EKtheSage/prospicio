@@ -310,6 +310,10 @@ benchmark_curve_rust <- function(ages, values, kind, curve, weights, max_age, or
 
 underwriting_exposure_rust <- function(writing, policy_months) .Call(wrap__underwriting_exposure_rust, writing, policy_months)
 
+mvn_cdf_rust <- function(lower, upper, correlation, abs_tol, max_points, scrambles, seed) .Call(wrap__mvn_cdf_rust, lower, upper, correlation, abs_tol, max_points, scrambles, seed)
+
+sobol_rust <- function(n, dim, scramble, seed) .Call(wrap__sobol_rust, n, dim, scramble, seed)
+
 statistics_rust <- function(draws, percentiles, tvar_levels, sd_multiples, quantile, tvar) .Call(wrap__statistics_rust, draws, percentiles, tvar_levels, sd_multiples, quantile, tvar)
 
 bootstrap_se_rust <- function(columns, k, fixed, percentiles, tvar_levels, sd_multiples, quantile, tvar, replicates, seed) .Call(wrap__bootstrap_se_rust, columns, k, fixed, percentiles, tvar_levels, sd_multiples, quantile, tvar, replicates, seed)
@@ -3653,6 +3657,10 @@ RiskCopula$log_density <- function(u, n) .Call(wrap__RiskCopula__log_density, se
 RiskCopula$dim <- function() .Call(wrap__RiskCopula__dim, self)
 
 RiskCopula$cdf <- function(u, n) .Call(wrap__RiskCopula__cdf, self, u, n)
+
+RiskCopula$cdf_estimate <- function(u, n, abs_tol, max_points, seed) .Call(wrap__RiskCopula__cdf_estimate, self, u, n, abs_tol, max_points, seed)
+
+RiskCopula$sample_qmc <- function(n, seed) .Call(wrap__RiskCopula__sample_qmc, self, n, seed)
 
 RiskCopula$description <- function() .Call(wrap__RiskCopula__description, self)
 

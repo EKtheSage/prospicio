@@ -57,6 +57,10 @@ pub mod tweedie;
 pub mod vine;
 pub mod weibull;
 
+/// Sobol points and the multivariate normal distribution function, from
+/// `prospicio-math`.
+pub use prospicio_math::{mvn, qmc};
+
 pub use affine::Affine;
 pub use beta::Beta;
 pub use burr::Burr;

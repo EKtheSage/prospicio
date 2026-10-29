@@ -212,11 +212,14 @@ fn bad_inputs_are_named() {
         vec![Grid::row(&[0.5, 0.5]), t("t"), n(0.5), n(3.0)],
     );
     assert!(text(&e).contains("no closed-form"), "{}", text(&e));
-    let e = call(
+    // The Gaussian's cdf works in more than two dimensions (Genz's method,
+    // about 1e-5): three normals at ρ = ½ below their medians, 1/4.
+    let g = num(&call(
         "pro_copula_cdf",
         vec![Grid::row(&[0.5, 0.5, 0.5]), t("gaussian"), n(0.5)],
-    );
-    assert!(text(&e).contains("two dimensions"), "{}", text(&e));
+    )
+    .cells[0]);
+    assert!((g - 0.25).abs() < 2e-5, "{g}");
     let e = call(
         "pro_copula_cdf",
         vec![Grid::row(&[0.5, 0.5]), t("clayton"), n(2.0), n(3.0)],

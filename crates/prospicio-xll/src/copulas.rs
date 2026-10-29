@@ -107,7 +107,8 @@ fn copula(name: &Grid, parameter: &Grid, nu: &Grid, dim: Option<usize>) -> Resul
 
 /// `PRO.COPULA.CDF(points, family, parameter, [nu])`: `C(u)` at each
 /// point, one point a row of `points` (its columns the dimensions). The
-/// Gaussian's is in two dimensions; the t has none in closed form.
+/// Gaussian's is exact in two dimensions and by Genz's quasi-Monte Carlo
+/// method (about `1e-5`) in more; the t has none in closed form.
 pub fn cdf(args: &[Grid]) -> Result<Grid> {
     let points = &args[0];
     let u = matrix(points, "points")?;

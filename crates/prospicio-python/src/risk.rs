@@ -5,6 +5,8 @@ use prospicio_core::StreamRng;
 use prospicio_prob::capital::{Allocation, AllocationMethod, LevelAllocation, LevelMeasure};
 use prospicio_prob::copula::{self, Copula};
 use prospicio_prob::evt::{Gpd, PotTail};
+use prospicio_prob::mvn::{MvnEstimate, MvnSettings, mvn_probability};
+use prospicio_prob::qmc::{Scramble, Sobol};
 use prospicio_prob::rearrangement::Start;
 use prospicio_prob::statistics::{QuantileMethod, StatisticsGrid, TvarMethod};
 use prospicio_prob::{
@@ -1997,6 +1999,237 @@ impl PyGaussianCopula {
         let c = &self.inner;
         py.detach(|| sample_rows(c, n, seed))
     }
+
+    /// The distribution function at ``u`` with its error estimate: exact
+    /// in two dimensions, by Genz's randomized quasi-Monte Carlo method in
+    /// more (``mvn_cdf``). ``cdf`` is this at the defaults.
+    ///
+    /// Parameters
+    /// ----------
+    /// u : list of float
+    ///     One value per dimension, each in ``[0, 1]``.
+    /// abs_tol : float, default 1e-5
+    ///     Absolute error to reach, three standard errors.
+    /// max_points : int, default 4194304
+    ///     Most integrand evaluations.
+    /// seed : int, default 0
+    ///     Seed of the scrambles, so a call is reproducible.
+    ///
+    /// Returns
+    /// -------
+    /// MvnEstimate
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.risk import GaussianCopula
+    /// >>> r = [[1.0, 0.5, 0.5], [0.5, 1.0, 0.5], [0.5, 0.5, 1.0]]
+    /// >>> p = GaussianCopula(r).cdf_estimate([0.5, 0.5, 0.5], abs_tol=1e-7)
+    /// >>> abs(p.value - 0.25) < 1e-6, p.error < 1e-7, p.converged
+    /// (True, True, True)
+    #[pyo3(signature = (u, abs_tol = 1e-5, max_points = 1 << 22, seed = 0))]
+    fn cdf_estimate(
+        &self,
+        py: Python<'_>,
+        u: Vec<f64>,
+        abs_tol: f64,
+        max_points: usize,
+        seed: u64,
+    ) -> PyResult<PyMvnEstimate> {
+        let settings = MvnSettings {
+            abs_tol,
+            max_points,
+            seed,
+            ..MvnSettings::default()
+        };
+        let c = &self.inner;
+        let e = py.detach(|| c.cdf_with(&u, settings)).map_err(to_py)?;
+        Ok(PyMvnEstimate { inner: e })
+    }
+
+    /// ``n`` draws on scrambled Sobol points (quasi-Monte Carlo): each
+    /// point ``w`` becomes ``Φ(L Φ⁻¹(w))``. Over a power of two of points
+    /// each margin is spread far more evenly than random draws, so a
+    /// statistic converges faster; the rows are not independent, so a
+    /// standard error needs several seeds. At most 1,111 dimensions.
+    ///
+    /// Parameters
+    /// ----------
+    /// n : int
+    ///     A power of two keeps the points balanced.
+    /// seed : int, default 0
+    ///
+    /// Returns
+    /// -------
+    /// list of list of float
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.risk import GaussianCopula
+    /// >>> u = GaussianCopula([[1.0, 0.6], [0.6, 1.0]]).sample_qmc(1024, seed=7)
+    /// >>> sorted(int(row[0] * 1024) for row in u) == list(range(1024))
+    /// True
+    #[pyo3(signature = (n, seed = 0))]
+    fn sample_qmc(&self, py: Python<'_>, n: usize, seed: u64) -> PyResult<Vec<Vec<f64>>> {
+        let c = &self.inner;
+        let d = c.dim();
+        let flat = py.detach(|| c.sample_qmc(n, seed)).map_err(to_py)?;
+        Ok(flat.chunks(d).map(<[f64]>::to_vec).collect())
+    }
+}
+
+/// An estimate of a multivariate normal probability (``mvn_cdf``).
+#[pyclass(name = "MvnEstimate", module = "prospicio.risk", frozen)]
+pub(crate) struct PyMvnEstimate {
+    inner: MvnEstimate,
+}
+
+#[pymethods]
+impl PyMvnEstimate {
+    /// The probability, in ``[0, 1]``.
+    #[getter]
+    fn value(&self) -> f64 {
+        self.inner.value
+    }
+
+    /// Three standard errors of ``value`` over the scrambles, 0 when exact.
+    /// With ten scrambles the true error exceeds it in about 1.5% of calls.
+    #[getter]
+    fn error(&self) -> f64 {
+        self.inner.error
+    }
+
+    /// Integrand evaluations used.
+    #[getter]
+    fn points(&self) -> usize {
+        self.inner.points
+    }
+
+    /// Whether ``error`` reached ``abs_tol`` within ``max_points``.
+    #[getter]
+    fn converged(&self) -> bool {
+        self.inner.converged
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "MvnEstimate(value={}, error={:e}, points={}, converged={})",
+            self.inner.value,
+            self.inner.error,
+            self.inner.points,
+            if self.inner.converged {
+                "True"
+            } else {
+                "False"
+            }
+        )
+    }
+}
+
+/// ``P(lower < X < upper)`` for ``X ~ N(0, R)`` by Genz's method.
+///
+/// Exact in one and two dimensions (Genz's BVND, about ``1e-15``). In
+/// more, Genz's integral after a Cholesky separation of the variables,
+/// reordered as Genz and Bretz do, estimated by ``scrambles`` independently
+/// scrambled Sobol sequences, the points doubled until three standard
+/// errors are at most ``abs_tol`` or the points reach ``max_points``. The
+/// method of R's ``mvtnorm::pmvnorm`` and SciPy's
+/// ``multivariate_normal.cdf``, with Sobol points in place of their lattice
+/// rules, so results agree within the errors.
+///
+/// Parameters
+/// ----------
+/// upper : list of float
+///     Upper limits; ``inf`` for none.
+/// correlation : list of list of float
+///     A positive definite correlation or covariance matrix.
+/// lower : list of float, optional
+///     Lower limits; ``-inf`` (the default) for none.
+/// abs_tol : float, default 1e-5
+/// max_points : int, default 4194304
+/// scrambles : int, default 10
+///     At least 2.
+/// seed : int, default 0
+///
+/// Returns
+/// -------
+/// MvnEstimate
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the matrix is not symmetric positive definite, the limits have
+///     the wrong length or a lower limit is above its upper one.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.risk import mvn_cdf
+/// >>> r = [[1.0, 0.5, 0.5], [0.5, 1.0, 0.5], [0.5, 0.5, 1.0]]
+/// >>> p = mvn_cdf([0.0, 0.0, 0.0], r)
+/// >>> abs(p.value - 0.25) <= max(p.error, 1e-12), p.error < 1e-5
+/// (True, True)
+#[pyfunction]
+#[pyo3(signature = (upper, correlation, lower = None, abs_tol = 1e-5, max_points = 1 << 22, scrambles = 10, seed = 0))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn mvn_cdf(
+    py: Python<'_>,
+    upper: Vec<f64>,
+    correlation: Vec<Vec<f64>>,
+    lower: Option<Vec<f64>>,
+    abs_tol: f64,
+    max_points: usize,
+    scrambles: usize,
+    seed: u64,
+) -> PyResult<PyMvnEstimate> {
+    let (r, _) = flatten_square(correlation)?;
+    let lower = lower.unwrap_or_else(|| vec![f64::NEG_INFINITY; upper.len()]);
+    let settings = MvnSettings {
+        abs_tol,
+        max_points,
+        scrambles,
+        seed,
+    };
+    let e = py
+        .detach(|| mvn_probability(&lower, &upper, &r, settings))
+        .map_err(PyValueError::new_err)?;
+    Ok(PyMvnEstimate { inner: e })
+}
+
+/// ``n`` points of the Sobol sequence in ``dim`` dimensions.
+///
+/// Joe and Kuo's direction numbers (up to 1,111 dimensions) at 32 bits, in
+/// Gray-code order. Unscrambled, the points are SciPy's
+/// ``stats.qmc.Sobol(dim, scramble=False, bits=32)`` exactly, the first at
+/// the origin. Scrambled, a linear matrix scramble with a digital shift
+/// drawn from ``seed`` (SciPy's kind of scramble, not its random stream)
+/// makes each point uniform on ``[0, 1)^dim`` and keeps the balance: over
+/// ``2^m`` points each ``1 / 2^m`` of a coordinate holds one point.
+///
+/// Parameters
+/// ----------
+/// n : int
+/// dim : int
+/// scramble : bool, default True
+/// seed : int, default 0
+///
+/// Returns
+/// -------
+/// list of list of float
+///
+/// Examples
+/// --------
+/// >>> from prospicio.risk import sobol
+/// >>> sobol(4, 2, scramble=False)
+/// [[0.0, 0.0], [0.5, 0.5], [0.75, 0.25], [0.25, 0.75]]
+#[pyfunction]
+#[pyo3(signature = (n, dim, scramble = true, seed = 0))]
+pub(crate) fn sobol(n: usize, dim: usize, scramble: bool, seed: u64) -> PyResult<Vec<Vec<f64>>> {
+    let kind = if scramble {
+        Scramble::Lms { seed }
+    } else {
+        Scramble::None
+    };
+    let mut s = Sobol::new(dim, kind).map_err(PyValueError::new_err)?;
+    Ok(s.points(n).chunks(dim).map(<[f64]>::to_vec).collect())
 }
 
 /// The Student t copula with correlation matrix ``correlation`` and ``nu``

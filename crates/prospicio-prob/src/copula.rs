@@ -7,6 +7,8 @@
 
 use prospicio_core::{Error, Result, StreamRng};
 use prospicio_math::linalg::{cholesky, lower_mul, lower_solve};
+use prospicio_math::mvn::{MvnEstimate, MvnSettings, mvn_cdf};
+use prospicio_math::qmc::{Scramble, Sobol};
 use prospicio_math::special::{
     bivariate_norm_cdf, ln_gamma, norm_cdf, norm_quantile, student_t_cdf, student_t_quantile,
 };
@@ -97,6 +99,110 @@ impl GaussianCopula {
     pub fn factor(&self) -> &[f64] {
         &self.chol
     }
+
+    /// The correlation matrix `L Lᵀ`, row-major.
+    pub fn correlation(&self) -> Vec<f64> {
+        let d = self.dim;
+        let mut r = vec![0.0; d * d];
+        for i in 0..d {
+            for j in 0..=i {
+                let x: f64 = (0..=j)
+                    .map(|k| self.chol[i * d + k] * self.chol[j * d + k])
+                    .sum();
+                r[i * d + j] = x;
+                r[j * d + i] = x;
+            }
+        }
+        r
+    }
+
+    /// `P(U ≤ u)` with its error estimate, under `settings`: exact in two
+    /// dimensions (and wherever at most two coordinates are below 1), by
+    /// Genz's randomized quasi-Monte Carlo method in more
+    /// ([`prospicio_math::mvn`]). [`Copula::cdf`] is this at the default
+    /// settings, an absolute error of `1e-5` (three standard errors).
+    ///
+    /// ```
+    /// use prospicio_math::mvn::MvnSettings;
+    /// use prospicio_prob::copula::GaussianCopula;
+    ///
+    /// let r = [1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0];
+    /// let c = GaussianCopula::new(&r, 3).unwrap();
+    /// // P(all three below their medians) = 1/4 at ρ = ½.
+    /// let tight = MvnSettings { abs_tol: 1e-7, ..MvnSettings::default() };
+    /// let p = c.cdf_with(&[0.5; 3], tight).unwrap();
+    /// assert!((p.value - 0.25).abs() < 1e-6 && p.error < 1e-7);
+    /// ```
+    pub fn cdf_with(&self, u: &[f64], settings: MvnSettings) -> Result<MvnEstimate> {
+        let exact = |v: f64| MvnEstimate {
+            value: v,
+            error: 0.0,
+            points: 0,
+            converged: true,
+        };
+        match cdf_arguments(u, self.dim)? {
+            Ok(c) => Ok(exact(c)),
+            Err(v) if v.len() == 2 && self.dim == 2 => {
+                // L = [[1, 0], [ρ, √(1 − ρ²)]], row-major.
+                let rho = self.chol[2];
+                Ok(exact(bivariate_norm_cdf(
+                    norm_quantile(v[0]),
+                    norm_quantile(v[1]),
+                    rho,
+                )))
+            }
+            Err(_) => {
+                let upper: Vec<f64> = u
+                    .iter()
+                    .map(|&x| {
+                        if x >= 1.0 {
+                            f64::INFINITY
+                        } else {
+                            norm_quantile(x)
+                        }
+                    })
+                    .collect();
+                mvn_cdf(&upper, &self.correlation(), settings).map_err(Error::Data)
+            }
+        }
+    }
+
+    /// `n` draws from the copula on scrambled Sobol points (quasi-Monte
+    /// Carlo), row-major `n × d`: each point `w` in `(0, 1)^d` becomes
+    /// `Φ(L Φ⁻¹(w))`. Over `2^m` points the margins are far more even than
+    /// random draws, so a statistic of the draws converges faster; the
+    /// rows are not independent, so a standard error needs several seeds.
+    /// At most 1,111 dimensions.
+    ///
+    /// ```
+    /// use prospicio_prob::copula::GaussianCopula;
+    ///
+    /// let c = GaussianCopula::new(&[1.0, 0.6, 0.6, 1.0], 2).unwrap();
+    /// let u = c.sample_qmc(1024, 7).unwrap();
+    /// // Each margin holds one point in each 1/1024 of [0, 1).
+    /// let mut cells: Vec<usize> = u.chunks(2).map(|r| (r[0] * 1024.0) as usize).collect();
+    /// cells.sort();
+    /// assert_eq!(cells, (0..1024).collect::<Vec<_>>());
+    /// ```
+    pub fn sample_qmc(&self, n: usize, seed: u64) -> Result<Vec<f64>> {
+        let d = self.dim;
+        let mut seq = Sobol::new(d, Scramble::Lms { seed }).map_err(Error::Data)?;
+        let mut w = vec![0.0; d];
+        let mut z = vec![0.0; d];
+        let mut out = vec![0.0; n * d];
+        for row in out.chunks_exact_mut(d) {
+            seq.next_point(&mut w);
+            for (zi, &wi) in z.iter_mut().zip(&w) {
+                // The point's cell centre at 2^-33, so no coordinate is 0.
+                *zi = norm_quantile(open01(wi + 0.5 / 4_294_967_296.0));
+            }
+            lower_mul(&self.chol, &z, row);
+            for x in row.iter_mut() {
+                *x = open01(norm_cdf(*x));
+            }
+        }
+        Ok(out)
+    }
 }
 
 impl Copula for GaussianCopula {
@@ -112,7 +218,9 @@ impl Copula for GaussianCopula {
     }
 
     /// `Φ₂(Φ⁻¹(u), Φ⁻¹(v); ρ)` in two dimensions (Genz's BVND, about
-    /// `1e-15`); an error in more.
+    /// `1e-15`), and in more by Genz's quasi-Monte Carlo method within an
+    /// absolute error of about `1e-5` ([`GaussianCopula::cdf_with`] for the
+    /// settings and the error estimate).
     ///
     /// ```
     /// use prospicio_prob::copula::{Copula, GaussianCopula};
@@ -123,23 +231,7 @@ impl Copula for GaussianCopula {
     /// assert_eq!(c.cdf(&[0.3, 1.0]).unwrap(), 0.3);
     /// ```
     fn cdf(&self, u: &[f64]) -> Result<f64> {
-        if self.dim != 2 {
-            return Err(Error::Data(
-                "the Gaussian copula's distribution function is available in two dimensions".into(),
-            ));
-        }
-        match cdf_arguments(u, 2)? {
-            Ok(c) => Ok(c),
-            Err(v) => {
-                // L = [[1, 0], [ρ, √(1 − ρ²)]], row-major.
-                let rho = self.chol[2];
-                Ok(bivariate_norm_cdf(
-                    norm_quantile(v[0]),
-                    norm_quantile(v[1]),
-                    rho,
-                ))
-            }
-        }
+        Ok(self.cdf_with(u, MvnSettings::default())?.value)
     }
 }
 
@@ -1609,8 +1701,71 @@ mod tests {
         // Increasing in each argument.
         assert!(g.cdf(&[0.3, 0.5]).unwrap() < g.cdf(&[0.31, 0.5]).unwrap());
         let three = GaussianCopula::new(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], 3).unwrap();
-        assert!(three.cdf(&[0.5, 0.5, 0.5]).is_err());
+        // Independent: the product, within the default tolerance.
+        assert!((three.cdf(&[0.5, 0.3, 0.8]).unwrap() - 0.12).abs() < 1e-5);
         let t = StudentTCopula::new(&[1.0, 0.4, 0.4, 1.0], 2, 4.0).unwrap();
         assert!(t.cdf(&[0.5, 0.5]).is_err());
+    }
+
+    #[test]
+    fn the_gaussian_cdf_in_more_dimensions() {
+        let r = |d: usize, rho: f64| -> Vec<f64> {
+            (0..d * d)
+                .map(|k| if k % (d + 1) == 0 { 1.0 } else { rho })
+                .collect()
+        };
+        let four = GaussianCopula::new(&r(4, 0.3), 4).unwrap();
+        assert_eq!(four.correlation().len(), 16);
+        for (x, y) in four.correlation().iter().zip(r(4, 0.3)) {
+            assert!((x - y).abs() < 1e-15);
+        }
+        // A coordinate at 1 drops out: the three-dimensional margin.
+        let three = GaussianCopula::new(&r(3, 0.3), 3).unwrap();
+        let tight = MvnSettings {
+            abs_tol: 1e-7,
+            ..MvnSettings::default()
+        };
+        let a = four.cdf_with(&[0.4, 0.7, 1.0, 0.2], tight).unwrap();
+        let b = three.cdf_with(&[0.4, 0.7, 0.2], tight).unwrap();
+        assert!((a.value - b.value).abs() < a.error + b.error, "{a:?} {b:?}");
+        // Two below 1 is the exact bivariate value.
+        let two = four.cdf_with(&[0.4, 1.0, 1.0, 0.2], tight).unwrap();
+        assert_eq!(two.error, 0.0);
+        assert!(two.value > 0.0 && two.value < 0.2);
+        // The orthant at ρ = ½: 1 / (d + 1).
+        let five = GaussianCopula::new(&r(5, 0.5), 5).unwrap();
+        let p = five.cdf_with(&[0.5; 5], tight).unwrap();
+        assert!((p.value - 1.0 / 6.0).abs() < 3.0 * p.error.max(1e-9));
+    }
+
+    #[test]
+    fn qmc_draws_have_the_copula_and_a_cdf_to_match() {
+        let c = GaussianCopula::new(&[1.0, 0.5, 0.2, 0.5, 1.0, 0.4, 0.2, 0.4, 1.0], 3).unwrap();
+        let n = 1 << 14;
+        let u = c.sample_qmc(n, 11).unwrap();
+        assert!(u.iter().all(|&x| x > 0.0 && x < 1.0));
+        // The share of draws below a point is its cdf.
+        let point = [0.6, 0.4, 0.7];
+        let below = u
+            .chunks_exact(3)
+            .filter(|row| row.iter().zip(&point).all(|(x, p)| x <= p))
+            .count() as f64
+            / n as f64;
+        assert!((below - c.cdf(&point).unwrap()).abs() < 2e-3, "{below}");
+        // The normal scores' correlation.
+        let z: Vec<[f64; 3]> = u
+            .chunks_exact(3)
+            .map(|r| {
+                [
+                    norm_quantile(r[0]),
+                    norm_quantile(r[1]),
+                    norm_quantile(r[2]),
+                ]
+            })
+            .collect();
+        let corr = |i: usize, j: usize| z.iter().map(|x| x[i] * x[j]).sum::<f64>() / n as f64;
+        assert!((corr(0, 1) - 0.5).abs() < 0.01 && (corr(1, 2) - 0.4).abs() < 0.01);
+        assert_eq!(c.sample_qmc(8, 1).unwrap(), c.sample_qmc(8, 1).unwrap());
+        assert_ne!(c.sample_qmc(8, 1).unwrap(), c.sample_qmc(8, 2).unwrap());
     }
 }
