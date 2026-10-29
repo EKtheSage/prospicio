@@ -55,7 +55,8 @@ mod prospicio_native {
         audit_grid, audit_portfolio_grid, compound_moments, eventual_ruin, fft, fft_auto,
         fft_bivariate, finite_horizon_ruin, layer_loss_picks, occurrence_exceedance,
         occurrence_pml, panjer, recommend_grid, recommend_portfolio_grid, round_bucket,
-        simulate_events, wiener_hopf, year_correlation_for_ratio, ylt_hash,
+        simulate_events, simulate_events_weighted, wiener_hopf, year_correlation_for_ratio,
+        ylt_hash,
     };
     #[pymodule_export]
     use super::bonus_malus::PyBonusMalus;
@@ -151,8 +152,9 @@ mod prospicio_native {
         PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice, PyQuote, PyReinstatementPrice,
         PyRiskProfile, PyTabulatedCurve, PyTowerModel, PyTowerQuote, alpha_between_frequencies,
         alpha_between_frequency_and_layer, alpha_between_layers, censored_las, fit_pml_curve,
-        fit_references, ilf, layer_cv, loss_elimination_ratio, match_tower, pareto_extrapolation,
-        price, price_portfolio, price_with_reinstatements, severity_exposure_curve,
+        fit_references, frontier, ilf, layer_cv, loss_elimination_ratio, match_tower,
+        pareto_extrapolation, price, price_portfolio, price_with_reinstatements,
+        severity_exposure_curve,
     };
     #[pymodule_export]
     use super::ratemaking::{
@@ -165,6 +167,7 @@ mod prospicio_native {
         PyAggregateLayerStatistics, PyAnnualGrids, PyCessionStatistics, PyLayer, PyLayerStatistics,
         PyLossSensitivePremium, PyTower, PyTowerGrids, PyTowerPrice, PyViewPrice,
         aggregate_layer_statistics, occurrence_cession_statistics, occurrence_layer_statistics,
+        per_risk_inuring,
     };
     #[pymodule_export]
     use super::reserving::{
@@ -186,9 +189,9 @@ mod prospicio_native {
     use super::risk::{
         PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd,
         PyLevelAllocation, PyMvnEstimate, PyNestedArchimedeanCopula, PyPairCopula, PyPairFit,
-        PyPotTail, PyRVineCopula, PyStudentTCopula, PyVineCopula, PyVineFit, allocate,
-        bootstrap_se, calibrate, capital, co_statistics, covar, entropic, equal_risk, esscher,
-        esscher_allocation, fit_pair, fit_vine, haircut, hill, iman_conover, kendall_tau,
+        PyPotTail, PyRVineCopula, PyStudentTCopula, PyVineCopula, PyVineFit, PyWeightedSample,
+        allocate, bootstrap_se, calibrate, capital, co_statistics, covar, entropic, equal_risk,
+        esscher, esscher_allocation, fit_pair, fit_vine, haircut, hill, iman_conover, kendall_tau,
         marginal_expected_shortfall, mean_excess, mvn_cdf, pseudo_observations, rearrange,
         risk_ratios, select_pair, select_vine, shapley, simulate, sobol, statistics,
         threshold_diagnostics, worst_var,

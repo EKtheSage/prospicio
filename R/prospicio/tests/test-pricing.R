@@ -667,6 +667,19 @@ near(ad$return_on_allocated, ad$margin / ad$allocated_capital)
 o1 <- book_adequacy(book_select(book, "b"), tv, cost_of_capital = 0.1)
 near(o1$allocated_assets[1], o1$marginal_assets[1])
 stopifnot(inherits(try(book_adequacy(book, tv), silent = TRUE), "try-error"))
+# #569: an efficient frontier of retentions and limits.
+fr <- reinsurance_frontier(grid_distribution(1, rep(0.25, 4)), c(1, 2), c(1, Inf),
+                           loading = 0.5, risk = "var", level = 0.9)
+near(c(fr$expected_ceded[2], fr$premium[2], fr$net_risk[2]), c(0.75, 1.125, 1))
+h <- 0.01
+pe <- exp(-(0:2999) * h) * (1 - exp(-h))
+pe[3000] <- pe[3000] + 1 - sum(pe)
+rs <- (0:59) * h
+fe <- reinsurance_frontier(grid_distribution(h, pe), rs, Inf, loading = 0.25, risk = "var", level = 0.99)
+stopifnot(abs(rs[which.min(fe$net_risk + fe$premium)] - log(1.25)) <= 2 * h)
+stopifnot(inherits(try(reinsurance_frontier(c(1, 2, 3), 1, 1), silent = TRUE), "try-error"))
+fa <- reinsurance_frontier(c(0, 1, 2, 3), c(1, 2), c(1, Inf), loading = 0.5, risk = "var", level = 0.9)
+near(fa$premium, fr$premium)
 # A run from a tower takes each year's reinstatement premium (#595).
 tw <- reinsurance_tower(list(xol_layer("cat", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5))))
 res <- apply_tower(tw, event_set_from_long(c(1, 2, 3, 3, 4, 4, 4), c(5, 15, 22, 12, 40, 40, 40), 4))

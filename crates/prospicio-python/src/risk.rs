@@ -3770,3 +3770,85 @@ pub(crate) fn threshold_diagnostics<'py>(
 pub(crate) fn hill(draws: Vec<f64>, ks: Vec<usize>) -> PyResult<Vec<f64>> {
     prospicio_prob::evt::hill(&draws, &ks).map_err(to_py)
 }
+
+/// Draws with importance weights, for the estimators of an importance
+/// sample (``prospicio.aggregate.simulate_events_weighted``).
+///
+/// The mean is ``Σ w x / Σ w``; the VaR and TVaR are those of the
+/// distribution putting mass ``w_i / Σ w`` on draw ``i``. Standard errors
+/// are by batch means: the draws split, in the order given, into
+/// ``batches`` runs, each estimated alone. Equal weights give the plain
+/// estimators.
+///
+/// Parameters
+/// ----------
+/// values : list of float
+/// weights : list of float
+///     One a value, non-negative, with a positive sum.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.risk import WeightedSample
+/// >>> s = WeightedSample([1.0, 2.0, 3.0], [1.0, 1.0, 2.0])
+/// >>> s.mean, s.var(0.5), s.tvar(0.5)
+/// (2.25, 2.0, 3.0)
+#[pyclass(name = "WeightedSample", module = "prospicio.risk", frozen)]
+pub(crate) struct PyWeightedSample {
+    inner: prospicio_prob::weighted::WeightedSample,
+}
+
+#[pymethods]
+impl PyWeightedSample {
+    #[new]
+    fn new(values: Vec<f64>, weights: Vec<f64>) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_prob::weighted::WeightedSample::new(values, weights).map_err(to_py)?,
+        })
+    }
+
+    /// The self-normalised mean.
+    #[getter]
+    fn mean(&self) -> f64 {
+        self.inner.mean()
+    }
+
+    /// The mean weight; about 1 for likelihood ratios.
+    #[getter]
+    fn mean_weight(&self) -> f64 {
+        self.inner.mean_weight()
+    }
+
+    /// ``(Σ w)² / Σ w²``.
+    #[getter]
+    fn effective_sample_size(&self) -> f64 {
+        self.inner.effective_sample_size()
+    }
+
+    /// The VaR at ``p``.
+    fn var(&self, p: f64) -> PyResult<f64> {
+        self.inner.var(p).map_err(to_py)
+    }
+
+    /// The TVaR at ``p``.
+    fn tvar(&self, p: f64) -> PyResult<f64> {
+        self.inner.tvar(p).map_err(to_py)
+    }
+
+    /// The standard error of ``var(p)`` by batch means.
+    #[pyo3(signature = (p, batches = 20))]
+    fn standard_error_var(&self, p: f64, batches: usize) -> PyResult<f64> {
+        self.inner.standard_error_var(p, batches).map_err(to_py)
+    }
+
+    /// The standard error of ``tvar(p)`` by batch means.
+    #[pyo3(signature = (p, batches = 20))]
+    fn standard_error_tvar(&self, p: f64, batches: usize) -> PyResult<f64> {
+        self.inner.standard_error_tvar(p, batches).map_err(to_py)
+    }
+
+    /// The standard error of the mean by batch means.
+    #[pyo3(signature = (batches = 20))]
+    fn standard_error_mean(&self, batches: usize) -> PyResult<f64> {
+        self.inner.standard_error_mean(batches).map_err(to_py)
+    }
+}

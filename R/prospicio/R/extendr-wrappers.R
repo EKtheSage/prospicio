@@ -246,6 +246,8 @@ pricing_tower_quote <- function(tower, ceded, expected_reinstatement_premium, to
 
 pricing_layer_quote <- function(expected_loss, risk_premium, assets, layer, ceded, expected_reinstatement_premium, expenses, brokerage, fixed, premium_tax, income_tax, brokerage_on_reinstatements) .Call(wrap__pricing_layer_quote, expected_loss, risk_premium, assets, layer, ceded, expected_reinstatement_premium, expenses, brokerage, fixed, premium_tax, income_tax, brokerage_on_reinstatements)
 
+frontier_rust <- function(losses, retentions, limits, kind, assets, rate, pricing, loading, risk, level) .Call(wrap__frontier_rust, losses, retentions, limits, kind, assets, rate, pricing, loading, risk, level)
+
 pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_price, losses, assets, rate, pricing)
 
 pricing_price_with_reinstatements <- function(losses, g, assets, rate, pricing) .Call(wrap__pricing_price_with_reinstatements, losses, g, assets, rate, pricing)
@@ -312,6 +314,8 @@ hawkes_fit_rust <- function(periods, horizon) .Call(wrap__hawkes_fit_rust, perio
 
 retro_premium_rust <- function(losses, basic, lcm, minimum, maximum) .Call(wrap__retro_premium_rust, losses, basic, lcm, minimum, maximum)
 
+per_risk_inuring_rust <- function(layer, years, event_limit, times, seed) .Call(wrap__per_risk_inuring_rust, layer, years, event_limit, times, seed)
+
 occurrence_cession_statistics_rust <- function(frequency, severity, shares, limits, attachments) .Call(wrap__occurrence_cession_statistics_rust, frequency, severity, shares, limits, attachments)
 
 aggregate_layer_statistics_rust <- function(annual, share, limit, attachment) .Call(wrap__aggregate_layer_statistics_rust, annual, share, limit, attachment)
@@ -331,6 +335,8 @@ vine_fit_rust <- function(data, n, matrix, families, criterion, independence_tes
 kendall_tau_rust <- function(x, y) .Call(wrap__kendall_tau_rust, x, y)
 
 pseudo_observations_rust <- function(x) .Call(wrap__pseudo_observations_rust, x)
+
+weighted_tail_rust <- function(values, weights, p, batches) .Call(wrap__weighted_tail_rust, values, weights, p, batches)
 
 mvn_cdf_rust <- function(lower, upper, correlation, abs_tol, max_points, scrambles, seed) .Call(wrap__mvn_cdf_rust, lower, upper, correlation, abs_tol, max_points, scrambles, seed)
 
@@ -391,6 +397,8 @@ EventSet <- new.env(parent = emptyenv())
 EventSet$simulate <- function(frequency, severity, n_sims, seed) .Call(wrap__EventSet__simulate, frequency, severity, n_sims, seed)
 
 EventSet$hawkes <- function(baseline, alpha, beta, severity, n_years, burn_in, seed) .Call(wrap__EventSet__hawkes, baseline, alpha, beta, severity, n_years, burn_in, seed)
+
+EventSet$simulate_weighted <- function(frequency, severity, n_sims, seed, count, tail_threshold, tail_share) .Call(wrap__EventSet__simulate_weighted, frequency, severity, n_sims, seed, count, tail_threshold, tail_share)
 
 EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__EventSet__from_years, years, sums_insured, seed, times)
 
@@ -3154,6 +3162,12 @@ CompartmentalFits$ultimate_draws <- function(origin) .Call(wrap__CompartmentalFi
 
 CompartmentalFits$loss_ratio_draws <- function(origin, premium) .Call(wrap__CompartmentalFits__loss_ratio_draws, self, origin, premium)
 
+CompartmentalFits$pattern_ages <- function(segment) .Call(wrap__CompartmentalFits__pattern_ages, self, segment)
+
+CompartmentalFits$pattern_draws <- function(segment) .Call(wrap__CompartmentalFits__pattern_draws, self, segment)
+
+CompartmentalFits$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__CompartmentalFits__monthly_pattern_draws, self, segment, months, basis, monotone)
+
 CompartmentalFits$paid <- function() .Call(wrap__CompartmentalFits__paid, self)
 
 CompartmentalFits$outstanding <- function() .Call(wrap__CompartmentalFits__outstanding, self)
@@ -3205,6 +3219,12 @@ CompartmentalFit$ultimates <- function() .Call(wrap__CompartmentalFit__ultimates
 CompartmentalFit$ultimate_draws <- function(origin) .Call(wrap__CompartmentalFit__ultimate_draws, self, origin)
 
 CompartmentalFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__CompartmentalFit__loss_ratio_draws, self, origin, premium)
+
+CompartmentalFit$pattern_ages <- function(segment) .Call(wrap__CompartmentalFit__pattern_ages, self, segment)
+
+CompartmentalFit$pattern_draws <- function(segment) .Call(wrap__CompartmentalFit__pattern_draws, self, segment)
+
+CompartmentalFit$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__CompartmentalFit__monthly_pattern_draws, self, segment, months, basis, monotone)
 
 CompartmentalFit$paid <- function() .Call(wrap__CompartmentalFit__paid, self)
 

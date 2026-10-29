@@ -8166,6 +8166,28 @@ class CompartmentalFit:
         there only when the priors have that effect.
         """
     @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        Each simulation's paid development pattern, to pair with the
+        simulation's loss ratio in the cash-flow engine: at each age of the
+        square (to the last age, where the reserves end), the expected
+        cumulative paid of the ODE for the posterior draw the simulation
+        took, for an origin with nothing observed (the population's rates,
+        with each observed age's development effects and none at an age with
+        no observed cell), over that at the last age. No tail: each pattern
+        ends at 1 at the square's last age. The paid curve rises, and so does
+        a running sum of positive incremental means, so with cumulative paid
+        and no development effects (model 1) or incremental paid (model 2) a
+        share never falls.
+        
+        Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+        ``paid``, ``outstanding`` and ``ultimate_draws``.
+        
+        Returns
+        -------
+        DevelopmentPatterns
+        """
+    @property
     def population_origins(self, /) -> list[str]:
         """
         The origins with no observed cell, whose effects each simulation
@@ -8395,6 +8417,28 @@ class CompartmentalFits:
         """
         Parameter names of a single-segment fit, as
         ``CompartmentalFit.parameter_names``.
+        """
+    @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        Each simulation's paid development pattern, to pair with the
+        simulation's loss ratio in the cash-flow engine: at each age of the
+        square (to the last age, where the reserves end), the expected
+        cumulative paid of the ODE for the posterior draw the simulation
+        took, for an origin with nothing observed (the population's rates,
+        with each observed age's development effects and none at an age with
+        no observed cell), over that at the last age. No tail: each pattern
+        ends at 1 at the square's last age. The paid curve rises, and so does
+        a running sum of positive incremental means, so with cumulative paid
+        and no development effects (model 1) or incremental paid (model 2) a
+        share never falls.
+        
+        Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+        ``paid``, ``outstanding`` and ``ultimate_draws``.
+        
+        Returns
+        -------
+        DevelopmentPatterns
         """
     @property
     def premium(self, /) -> list[float]:
@@ -10205,8 +10249,9 @@ class DevelopmentPatterns:
     def __repr__(self, /) -> str: ...
     def ages(self, /, segment: Any |None = None) -> list[int]:
         """
-        The development ages in months: the triangle's, and with a tail one
-        development period past the oldest, where the share is 1.
+        The development ages in months: the triangle's (for ``Compartmental``,
+        its square's, to the last age the reserves reach), and with a tail
+        one development period past the oldest, where the share is 1.
         
         Parameters
         ----------
@@ -31557,6 +31602,68 @@ class Weibull:
         float
         """
 
+@final
+class WeightedSample:
+    """
+    Draws with importance weights, for the estimators of an importance
+    sample (``prospicio.aggregate.simulate_events_weighted``).
+    
+    The mean is ``Σ w x / Σ w``; the VaR and TVaR are those of the
+    distribution putting mass ``w_i / Σ w`` on draw ``i``. Standard errors
+    are by batch means: the draws split, in the order given, into
+    ``batches`` runs, each estimated alone. Equal weights give the plain
+    estimators.
+    
+    Parameters
+    ----------
+    values : list of float
+    weights : list of float
+        One a value, non-negative, with a positive sum.
+    
+    Examples
+    --------
+    >>> from prospicio.risk import WeightedSample
+    >>> s = WeightedSample([1.0, 2.0, 3.0], [1.0, 1.0, 2.0])
+    >>> s.mean, s.var(0.5), s.tvar(0.5)
+    (2.25, 2.0, 3.0)
+    """
+    def __new__(cls, /, values: Sequence[float], weights: Sequence[float]) -> WeightedSample: ...
+    @property
+    def effective_sample_size(self, /) -> float:
+        """
+        ``(Σ w)² / Σ w²``.
+        """
+    @property
+    def mean(self, /) -> float:
+        """
+        The self-normalised mean.
+        """
+    @property
+    def mean_weight(self, /) -> float:
+        """
+        The mean weight; about 1 for likelihood ratios.
+        """
+    def standard_error_mean(self, /, batches: int = 20) -> float:
+        """
+        The standard error of the mean by batch means.
+        """
+    def standard_error_tvar(self, /, p: float, batches: int = 20) -> float:
+        """
+        The standard error of ``tvar(p)`` by batch means.
+        """
+    def standard_error_var(self, /, p: float, batches: int = 20) -> float:
+        """
+        The standard error of ``var(p)`` by batch means.
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        The TVaR at ``p``.
+        """
+    def var(self, /, p: float) -> float:
+        """
+        The VaR at ``p``.
+        """
+
 def actual_vs_expected(periods: Sequence[int |str], family: str, y: Sequence[float], mu: Sequence[float], weights: Sequence[float] |None = None, dispersion: float = 1.0, theta: float |None = None, power: float |None = None) -> dict:
     """
     Actual against expected by period for a stored model's predictions on
@@ -33243,6 +33350,35 @@ def from_json(text: str) -> Any:
         version, or its parameters are out of range.
     """
 
+def frontier(losses: Any, retentions: Sequence[float], limits: Sequence[float], *, kind: str = "occurrence", assets: Distortion |None = None, cost_of_capital: float |None = None, distortion: Distortion |None = None, loading: float |None = None, risk: str = "tvar", level: float = 0.99) -> dict:
+    """
+    An efficient frontier of reinsurance structures: for each retention and
+    limit of a layer, the cost of the cover (``margin``, the ceded premium
+    less the expected ceded loss) against the risk kept (``net_risk``, a VaR
+    or TVaR of the net loss), and whether no other structure beats it on
+    both (``efficient``).
+    
+    ``losses`` is an ``EventSet`` (each structure a per-occurrence layer,
+    or with ``kind="aggregate"`` a stop loss on the year's total), a list of
+    annual losses (stop losses), or an annual ``Grid`` (stop losses, exact;
+    retentions and finite limits on its step). The ceded premium is the
+    expected value principle ``(1 + loading) E[C]`` when ``loading`` is
+    given, else exactly one of ``cost_of_capital`` and ``distortion`` on the
+    assets of the capital standard ``assets``, as ``price`` prices one
+    cover. Among the efficient structures the least ``net_risk + premium``
+    is Cai and Tan's choice.
+    
+    Returns a dict of columns, one row a structure in the order of the
+    retentions, then the limits: ``retention``, ``limit``, ``premium``,
+    ``expected_ceded``, ``margin``, ``net_risk`` and ``efficient``.
+    
+    >>> from prospicio.reinsurance import frontier
+    >>> from prospicio.distributions import Grid
+    >>> f = frontier(Grid(1.0, [0.25] * 4), [1.0, 2.0], [1.0, float("inf")], loading=0.5, risk="var", level=0.9)
+    >>> f["expected_ceded"][1], f["premium"][1], f["net_risk"][1]
+    (0.75, 1.125, 1.0)
+    """
+
 def gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None) -> float:
     """
     Gini index of the ordered Lorenz curve.
@@ -34558,6 +34694,45 @@ def pareto_extrapolation(from_: tuple[float, float], to: tuple[float, float], al
     0.5
     """
 
+def per_risk_inuring(layer: Layer, years: Sequence[Sequence[Sequence[float]]], event_limit: float |None = None, times: Sequence[Sequence[float]] |None = None, seed: int = 0) -> dict:
+    """
+    A per-risk excess of loss with an event limit, inuring to a cat cover.
+    
+    ``years[i][e]`` are the losses of the risks event ``e`` of year ``i``
+    hits. Each risk's recovery is ``layer``'s occurrence terms on its loss;
+    an event's recoveries are summed and capped at ``event_limit``; the
+    layer's annual terms then use up the events' capped recoveries in
+    order, at its share. The net events, each event's gross less its
+    cession, are an ``EventSet`` for a tower of cat layers to take as its
+    gross. The layer must be a plain per-risk layer on the loss basis.
+    
+    Parameters
+    ----------
+    layer : Layer
+    years : list of list of list of float
+    event_limit : float, optional
+        The most the layer recovers from one event, at 100%.
+    times : list of list of float, optional
+        Each event's time in the year, passed to the net events.
+    seed : int, default 0
+        Recorded on the net event set.
+    
+    Returns
+    -------
+    dict
+        ``ceded`` (each year's cession), ``ceded_by_event`` and ``net``
+        (an ``EventSet``).
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import Layer, Tower, per_risk_inuring
+    >>> r = per_risk_inuring(Layer("PR", 5.0, 5.0), [[[12.0, 8.0, 15.0]]], event_limit=10.0)
+    >>> r["ceded"], r["net"].events(0)
+    ([10.0], [25.0])
+    >>> Tower([Layer("Cat", 20.0, 10.0)]).ceded(r["net"].events(0))
+    [15.0]
+    """
+
 def permutation(n: int, seed: int, stream: int = 0) -> list[int]:
     """
     ``0..n`` shuffled with ``seed`` on stream ``stream``: the permutation
@@ -35453,6 +35628,49 @@ def simulate_events(frequency: Any, severity: Any, n_sims: int, seed: int) -> Ev
     >>> from prospicio.distributions import Lognormal, Poisson
     >>> events = simulate_events(Poisson(5.0), Lognormal.from_mean_cv(1000.0, 1.0), 20_000, 42)
     >>> abs(events.totals().mean() - 5000.0) < 75.0
+    True
+    """
+
+def simulate_events_weighted(frequency: Any, severity: Any, n_sims: int, seed: int, count: Any |None = None, tail_threshold: float |None = None, tail_share: float = 0.3) -> tuple[EventSet, list[float]]:
+    """
+    Simulated years drawn from a proposal, with each year's likelihood
+    ratio, for importance sampling of the tail.
+    
+    Year ``i`` draws from stream ``i`` of ``seed`` as ``simulate_events``
+    does, with two optional changes of measure: ``count``, a proposal claim
+    count (any family, such as a Poisson with a higher mean), weighted by
+    ``p(n) / q(n)``; and a tail mixture, each loss coming from the severity
+    above ``tail_threshold`` with chance ``tail_share``, weighted by
+    ``1 / ((1 - share) + share 1{x > u} / S(u))``. Without either the years
+    are ``simulate_events``'s and every weight is 1. Estimate any statistic
+    of the years (a tower's ceded or net loss, the total) with
+    ``prospicio.risk.WeightedSample`` and these weights.
+    
+    Parameters
+    ----------
+    frequency : a claim count
+    severity : a severity
+    n_sims : int
+    seed : int
+    count : a claim count, optional
+        The proposal count.
+    tail_threshold : float, optional
+    tail_share : float, default 0.3
+        In ``(0, 1)``; used with ``tail_threshold``.
+    
+    Returns
+    -------
+    tuple of (EventSet, list of float)
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import simulate_events_weighted
+    >>> from prospicio.distributions import Lognormal, Poisson
+    >>> from prospicio.risk import WeightedSample
+    >>> ev, w = simulate_events_weighted(Poisson(2.0), Lognormal.from_mean_cv(10.0, 2.0), 20_000, 7,
+    ...                                  count=Poisson(4.0), tail_threshold=40.0)
+    >>> s = WeightedSample([r[0] for r in ev.totals().draw_matrix()], w)
+    >>> abs(s.mean - 20.0) < 4 * s.standard_error_mean()
     True
     """
 

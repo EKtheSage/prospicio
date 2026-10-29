@@ -4065,3 +4065,77 @@ impl PyHawkesFit {
         })
     }
 }
+
+/// Simulated years drawn from a proposal, with each year's likelihood
+/// ratio, for importance sampling of the tail.
+///
+/// Year ``i`` draws from stream ``i`` of ``seed`` as ``simulate_events``
+/// does, with two optional changes of measure: ``count``, a proposal claim
+/// count (any family, such as a Poisson with a higher mean), weighted by
+/// ``p(n) / q(n)``; and a tail mixture, each loss coming from the severity
+/// above ``tail_threshold`` with chance ``tail_share``, weighted by
+/// ``1 / ((1 - share) + share 1{x > u} / S(u))``. Without either the years
+/// are ``simulate_events``'s and every weight is 1. Estimate any statistic
+/// of the years (a tower's ceded or net loss, the total) with
+/// ``prospicio.risk.WeightedSample`` and these weights.
+///
+/// Parameters
+/// ----------
+/// frequency : a claim count
+/// severity : a severity
+/// n_sims : int
+/// seed : int
+/// count : a claim count, optional
+///     The proposal count.
+/// tail_threshold : float, optional
+/// tail_share : float, default 0.3
+///     In ``(0, 1)``; used with ``tail_threshold``.
+///
+/// Returns
+/// -------
+/// tuple of (EventSet, list of float)
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import simulate_events_weighted
+/// >>> from prospicio.distributions import Lognormal, Poisson
+/// >>> from prospicio.risk import WeightedSample
+/// >>> ev, w = simulate_events_weighted(Poisson(2.0), Lognormal.from_mean_cv(10.0, 2.0), 20_000, 7,
+/// ...                                  count=Poisson(4.0), tail_threshold=40.0)
+/// >>> s = WeightedSample([r[0] for r in ev.totals().draw_matrix()], w)
+/// >>> abs(s.mean - 20.0) < 4 * s.standard_error_mean()
+/// True
+#[pyfunction]
+#[pyo3(signature = (frequency, severity, n_sims, seed, count = None, tail_threshold = None, tail_share = 0.3))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn simulate_events_weighted(
+    py: Python<'_>,
+    frequency: &Bound<'_, PyAny>,
+    severity: &Bound<'_, PyAny>,
+    n_sims: usize,
+    seed: u64,
+    count: Option<&Bound<'_, PyAny>>,
+    tail_threshold: Option<f64>,
+    tail_share: f64,
+) -> PyResult<(PyEventSet, Vec<f64>)> {
+    let n = AnyCount::extract(frequency)?;
+    let q = count.map(AnyCount::extract).transpose()?;
+    let sev = extract_severity(severity)?;
+    let tail = tail_threshold.map(|threshold| prospicio_aggregate::TailMixture {
+        threshold,
+        share: tail_share,
+    });
+    let (inner, w) = py
+        .detach(|| {
+            prospicio_aggregate::simulate_events_weighted(
+                n.as_counting(),
+                &sev,
+                n_sims,
+                q.as_ref().map(AnyCount::as_counting),
+                tail,
+                seed,
+            )
+        })
+        .map_err(to_py)?;
+    Ok((PyEventSet { inner }, w))
+}
