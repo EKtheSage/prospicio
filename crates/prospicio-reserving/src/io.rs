@@ -29,7 +29,7 @@
 //! Errors name the file line (CSV) or the cell (Excel) and the column. Rows
 //! whose cells are all empty are skipped. In a long file, rows with the same
 //! (keys, origin, development) are summed, as in [`Triangle::from_long`]; in
-//! a wide file a repeated (keys, origin) row is an error.
+//! a wide file two rows in the same (keys, origin period) are an error.
 //!
 //! ```
 //! use prospicio_reserving::{FileLayout, Triangle};
@@ -48,7 +48,7 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 
-use prospicio_core::{Grain, Lag, Month};
+use prospicio_core::{Grain, Lag, Month, Period};
 
 use crate::error::{Error, Result};
 use crate::triangle::{DevelopmentColumn, Long, Triangle};
@@ -673,16 +673,18 @@ fn build(table: &Table, layout: &FileLayout) -> Result<Triangle> {
             };
             names = vec![column.clone()];
             values = vec![Vec::new()];
-            let mut first_row: HashMap<(Vec<String>, Month), usize> = HashMap::new();
+            // Two rows in the same origin period (2021-01 and 2021-02 under
+            // annual origins) are the same origin.
+            let mut first_row: HashMap<(Vec<String>, Period), usize> = HashMap::new();
             for &r in &rows {
                 let o = origin_of(r)?;
                 let k = keys_of(r)?;
-                if let Some(before) = first_row.insert((k.clone(), o), r) {
+                let period = Period::containing(o, layout.origin_grain);
+                if let Some(before) = first_row.insert((k.clone(), period), r) {
                     return Err(Error::File(format!(
-                        "{} and {} hold the same origin {}",
+                        "{} and {} hold the same origin {period}",
                         table.at(before, origin_col),
                         table.at(r, origin_col),
-                        o
                     )));
                 }
                 for (&c, &a) in age_cols.iter().zip(&ages) {
@@ -979,8 +981,11 @@ company,ay,dy,paid,incurred
         let e = wide("year,12,24\n2020,1,2\n2021,3,\n2020,5,6\n");
         assert_eq!(
             e,
-            "line 2, column \"year\" and line 4, column \"year\" hold the same origin 2020-01"
+            "line 2, column \"year\" and line 4, column \"year\" hold the same origin 2020"
         );
+        // Months of one origin year are the same origin.
+        let e = wide("year,12\n2021-01,1\n2021-02,2\n");
+        assert!(e.ends_with("hold the same origin 2021"), "{e}");
         let e = wide("year,12,total\n2020,1,2\n");
         assert!(e.starts_with("column \"total\" of a wide layout"), "{e}");
 

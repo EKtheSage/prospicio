@@ -589,8 +589,8 @@ root sandbox crate is deleted.
      starts with its header row (a title above the table is not skipped).
    - **Duplicates** (*proposed*). A long file sums rows with the same
      (keys, origin, development), as `from_long` does for a claims extract;
-     a wide file with a repeated (keys, origin) row is an error naming both
-     rows.
+     a wide file with two rows in one (keys, origin period) is an error naming
+     both rows (`2021-01` and `2021-02` are one origin under annual grains).
    - **Errors** are `Error::File(message)`, naming the file line and
      column for CSV (`line 3, column "paid": "1O0" is not a number`) or the
      cell and sheet for Excel (`cell C3 (column "paid") of sheet "bad"`),
