@@ -174,6 +174,7 @@ reference:
       - layer_cv
       - censored_las
       - risk_loaded_price
+      - reinsurance_frontier
       - price_with_reinstatements
       - capital_portfolio
       - natural_price

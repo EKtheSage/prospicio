@@ -2340,3 +2340,109 @@ impl PyTowerQuote {
         )
     }
 }
+
+/// An efficient frontier of reinsurance structures: for each retention and
+/// limit of a layer, the cost of the cover (``margin``, the ceded premium
+/// less the expected ceded loss) against the risk kept (``net_risk``, a VaR
+/// or TVaR of the net loss), and whether no other structure beats it on
+/// both (``efficient``).
+///
+/// ``losses`` is an ``EventSet`` (each structure a per-occurrence layer,
+/// or with ``kind="aggregate"`` a stop loss on the year's total), a list of
+/// annual losses (stop losses), or an annual ``Grid`` (stop losses, exact;
+/// retentions and finite limits on its step). The ceded premium is the
+/// expected value principle ``(1 + loading) E[C]`` when ``loading`` is
+/// given, else exactly one of ``cost_of_capital`` and ``distortion`` on the
+/// assets of the capital standard ``assets``, as ``price`` prices one
+/// cover. Among the efficient structures the least ``net_risk + premium``
+/// is Cai and Tan's choice.
+///
+/// Returns a dict of columns, one row a structure in the order of the
+/// retentions, then the limits: ``retention``, ``limit``, ``premium``,
+/// ``expected_ceded``, ``margin``, ``net_risk`` and ``efficient``.
+///
+/// >>> from prospicio.reinsurance import frontier
+/// >>> from prospicio.distributions import Grid
+/// >>> f = frontier(Grid(1.0, [0.25] * 4), [1.0, 2.0], [1.0, float("inf")], loading=0.5, risk="var", level=0.9)
+/// >>> f["expected_ceded"][1], f["premium"][1], f["net_risk"][1]
+/// (0.75, 1.125, 1.0)
+#[pyfunction]
+#[pyo3(signature = (losses, retentions, limits, *, kind = "occurrence", assets = None, cost_of_capital = None, distortion = None, loading = None, risk = "tvar", level = 0.99))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn frontier<'py>(
+    py: Python<'py>,
+    losses: &Bound<'py, PyAny>,
+    retentions: Vec<f64>,
+    limits: Vec<f64>,
+    kind: &str,
+    assets: Option<PyRef<'_, PyDistortion>>,
+    cost_of_capital: Option<f64>,
+    distortion: Option<PyRef<'_, PyDistortion>>,
+    loading: Option<f64>,
+    risk: &str,
+    level: f64,
+) -> PyResult<Bound<'py, PyDict>> {
+    use prospicio_pricing::frontier::{
+        CededPrice, LayerKind, RetainedRisk, frontier_annual, frontier_events, frontier_grid,
+    };
+    let price = match (loading, assets) {
+        (Some(l), _) if cost_of_capital.is_none() && distortion.is_none() => {
+            CededPrice::ExpectedValue { loading: l }
+        }
+        (None, Some(a)) => CededPrice::Rule {
+            rule: premium_rule(cost_of_capital, distortion)?,
+            assets: a.inner.clone(),
+        },
+        _ => {
+            return Err(PyValueError::new_err(
+                "give loading alone, or assets with one of cost_of_capital and distortion",
+            ));
+        }
+    };
+    let measure = match risk {
+        "var" => RetainedRisk::Var(level),
+        "tvar" => RetainedRisk::Tvar(level),
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "unknown risk {other:?}; use \"var\" or \"tvar\""
+            )));
+        }
+    };
+    let layer = match kind {
+        "occurrence" => LayerKind::PerOccurrence,
+        "aggregate" => LayerKind::Aggregate,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "unknown kind {other:?}; use \"occurrence\" or \"aggregate\""
+            )));
+        }
+    };
+    let f = if let Ok(ev) = losses.cast::<PyEventSet>() {
+        let ev = ev.get();
+        py.detach(|| frontier_events(&ev.inner, layer, &retentions, &limits, &price, measure))
+    } else if let Ok(g) = losses.cast::<PyGrid>() {
+        let g = g.get();
+        py.detach(|| frontier_grid(&g.inner, &retentions, &limits, &price, measure))
+    } else {
+        let x: Vec<f64> = losses.extract().map_err(|_| {
+            PyTypeError::new_err("losses must be an EventSet, a Grid or a list of annual losses")
+        })?;
+        py.detach(|| frontier_annual(&x, &retentions, &limits, &price, measure))
+    }
+    .map_err(to_py)?;
+    let col = |g: &dyn Fn(&prospicio_pricing::frontier::FrontierPoint) -> f64| -> Vec<f64> {
+        f.points.iter().map(g).collect()
+    };
+    let d = PyDict::new(py);
+    d.set_item("retention", col(&|p| p.retention))?;
+    d.set_item("limit", col(&|p| p.limit))?;
+    d.set_item("premium", col(&|p| p.premium))?;
+    d.set_item("expected_ceded", col(&|p| p.expected_ceded))?;
+    d.set_item("margin", col(&|p| p.margin))?;
+    d.set_item("net_risk", col(&|p| p.net_risk))?;
+    d.set_item(
+        "efficient",
+        f.points.iter().map(|p| p.efficient).collect::<Vec<_>>(),
+    )?;
+    Ok(d)
+}

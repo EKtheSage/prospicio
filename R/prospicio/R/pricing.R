@@ -2055,3 +2055,54 @@ leverage <- function(rate, premium, funded, opening) {
 tiered_fee <- function(margins, breakpoints, slopes) {
   rust_result(pricing_tiered_fee(as.double(margins), as.double(breakpoints), as.double(slopes)))
 }
+
+#' An efficient frontier of reinsurance structures
+#'
+#' For each retention and limit of a layer, the cost of the cover
+#' (`margin`, the ceded premium less the expected ceded loss) against the
+#' risk kept (`net_risk`, a VaR or TVaR of the net loss), and whether no
+#' other structure beats it on both (`efficient`). Among the efficient ones
+#' the least `net_risk + premium` is Cai and Tan's choice (2007).
+#'
+#' `losses` is an [event_set] (each structure a per-occurrence layer, or
+#' with `kind = "aggregate"` a stop loss on the year's total), a numeric
+#' vector of annual losses (stop losses), or an annual [grid_distribution]
+#' (stop losses, exact; retentions and finite limits on its step). The ceded
+#' premium is the expected value principle `(1 + loading) E[C]` when
+#' `loading` is given, else exactly one of `cost_of_capital` and
+#' `distortion` on the assets of the capital standard `assets`, as
+#' [risk_loaded_price()] prices one cover.
+#'
+#' @param losses An [event_set], a numeric vector or a [grid_distribution].
+#' @param retentions,limits The structures' retentions and limits (`Inf`
+#'   for none).
+#' @param kind `"occurrence"` or `"aggregate"`, for an event set.
+#' @param assets The capital standard, a [distortion], with a premium rule.
+#' @param cost_of_capital,distortion The premium rule.
+#' @param loading The expected value principle's loading, instead of a
+#'   premium rule.
+#' @param risk `"tvar"` or `"var"` of the net.
+#' @param level The risk measure's level.
+#' @returns A data frame with a row a structure, the retentions slowest:
+#'   `retention`, `limit`, `premium`, `expected_ceded`, `margin`,
+#'   `net_risk` and `efficient`.
+#' @export
+#' @examples
+#' reinsurance_frontier(grid_distribution(1, rep(0.25, 4)), c(1, 2), c(1, Inf),
+#'                      loading = 0.5, risk = "var", level = 0.9)
+reinsurance_frontier <- function(losses, retentions, limits, kind = c("occurrence", "aggregate"),
+                                 assets = NULL, cost_of_capital = NULL, distortion = NULL,
+                                 loading = NULL, risk = c("tvar", "var"), level = 0.99) {
+  kind <- match.arg(kind)
+  risk <- match.arg(risk)
+  src <- if (is.numeric(losses)) as.double(losses) else losses@ptr
+  if (is.null(loading) && is.null(assets)) {
+    stop("give loading, or assets with one of cost_of_capital and distortion")
+  }
+  r <- rust_result(frontier_rust(src, as.double(retentions), as.double(limits), kind,
+                                 if (is.null(assets)) NULL else assets@ptr,
+                                 rate_arg(cost_of_capital), pricing_arg(distortion),
+                                 if (is.null(loading)) NA_real_ else as.double(loading),
+                                 risk, as.double(level)))
+  as.data.frame(r)
+}

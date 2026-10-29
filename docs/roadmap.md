@@ -177,7 +177,8 @@ what it is aiming for by v1.0.
   - Exposure curves (MBBEFD, tabulated, from a severity, with the Swiss
     Re `c` calibrated to a mean rate or a layer's share) and risk
     profiles with spread sums insured.
-  - Risk-loaded prices from simulated losses.
+  - Risk-loaded prices from simulated losses, and the efficient frontier
+    of a layer's retention and limit (#569).
   - Classical credibility: limited fluctuation standards and the
     Bühlmann–Straub model (`docs/design/credibility.md`). Its Bayesian,
     hierarchical side is in `prospicio-bayes`; no `prospicio-credibility`

@@ -689,6 +689,43 @@ crate would gain nothing while nothing else depends on them.
 Then Python and R bindings. Each row is one small PR, in roughly this
 order.
 
+### Efficient frontier of structures (#569)
+
+Status: built; items (a) to (e) proposed by the Aggregate lane for the
+user's acceptance.
+
+`prospicio_pricing::frontier` evaluates every retention and limit of a
+layer on one loss source and marks the structures no other beats on both
+the cost of the cover and the risk kept: `frontier_events` (simulated
+years with their events, a per-occurrence layer or a stop loss on the
+year's total, each the tower API's `Layer::xol` or `Layer::stop_loss`),
+`frontier_annual` (annual losses, stop losses) and `frontier_grid` (an
+annual loss on a grid, exact, the gross grid's points moved for each
+structure). `Frontier::efficient` lists the efficient structures by
+margin, `best(budget)` the least net risk within a margin budget and
+`least_total` the least `net_risk + premium`, Cai and Tan's (2007)
+objective. Python `prospicio.reinsurance.frontier`, R
+`reinsurance_frontier()`, each a table of columns.
+
+Decisions:
+
+- (a) *One layer's retention and limit*, per occurrence or on the
+  aggregate, as the issue's search space; towers of several layers, terms
+  such as reinstatements, and a search beyond the given grid of values
+  wait for a user who needs them.
+- (b) *The cost is the margin paid away*, ceded premium less expected
+  ceded loss, and *the risk is a VaR or TVaR of the net loss* without the
+  premium; the total cost's risk (net plus premium) is `least_total`.
+- (c) *The ceded premium is a `PremiumRule` on a capital standard's
+  assets*, as `price` prices one cover, or *the expected value principle*
+  `(1 + ρ) E[C]` for comparison with the closed forms.
+- (d) *Efficiency is exact*: a structure is efficient when no other has
+  both a margin and a net risk at most its own with one smaller, so two
+  equal structures are both efficient.
+- (e) *On a grid the retentions and finite limits must be whole numbers of
+  the step*, which keeps the ceded and net grids exact without
+  re-discretising.
+
 ## Validation
 
 - **Closed forms** (cdf, quantile, layer moments) against 30-digit mpmath
@@ -705,6 +742,14 @@ order.
   under the same selection rule, since a tower has many matching models.
 - **Fits** recover known parameters from simulated data, with and
   without reporting thresholds and censoring.
+- **Frontier** (#569): on an exponential annual loss on a grid of step
+  0.001 the stop-loss retention minimising VaR(net) + premium, and TVaR(net)
+  + premium, under the expected value principle at loading 0.25 is Cai and
+  Tan's `S(d) = 1 / 1.25` within two steps; no efficient structure is
+  dominated and every other is; a structure's expected ceded loss equals
+  the tower API's on the same years; and the annual and grid frontiers of
+  one discrete loss agree on every premium and net risk (unit tests in
+  `frontier.rs`; Python and R tests).
 
 ## Open questions
 

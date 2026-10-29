@@ -246,6 +246,8 @@ pricing_tower_quote <- function(tower, ceded, expected_reinstatement_premium, to
 
 pricing_layer_quote <- function(expected_loss, risk_premium, assets, layer, ceded, expected_reinstatement_premium, expenses, brokerage, fixed, premium_tax, income_tax, brokerage_on_reinstatements) .Call(wrap__pricing_layer_quote, expected_loss, risk_premium, assets, layer, ceded, expected_reinstatement_premium, expenses, brokerage, fixed, premium_tax, income_tax, brokerage_on_reinstatements)
 
+frontier_rust <- function(losses, retentions, limits, kind, assets, rate, pricing, loading, risk, level) .Call(wrap__frontier_rust, losses, retentions, limits, kind, assets, rate, pricing, loading, risk, level)
+
 pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_price, losses, assets, rate, pricing)
 
 pricing_price_with_reinstatements <- function(losses, g, assets, rate, pricing) .Call(wrap__pricing_price_with_reinstatements, losses, g, assets, rate, pricing)
