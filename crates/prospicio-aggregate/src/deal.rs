@@ -42,6 +42,7 @@ const RESERVED: &[&str] = &[
     "swing_premium",
     "ceding_commission",
     "profit_commission",
+    "no_claims_bonus",
     "brokerage",
     "loss_before_terms",
     "loss_ratio",
@@ -687,6 +688,7 @@ impl Tower {
             let (label, kind) = match name.as_str() {
                 "ceding_commission" => ("Ceding commission", LegKind::Commission),
                 "profit_commission" => ("Profit commission", LegKind::Commission),
+                "no_claims_bonus" => ("No-claims bonus", LegKind::Commission),
                 "brokerage" => ("Brokerage", LegKind::Expense),
                 other => (other, LegKind::Expense),
             };
@@ -793,6 +795,12 @@ impl Tower {
         for l in &sections {
             if l.profit_commission.is_some() {
                 add(pc, false, pc, &l.name)?;
+            }
+        }
+        let ncb = "no_claims_bonus";
+        for l in &sections {
+            if l.no_claims_bonus.is_some() {
+                add(ncb, false, ncb, &l.name)?;
             }
         }
         for l in &sections {
@@ -1652,6 +1660,39 @@ mod tests {
         // A section alone books its own terms.
         let a = tower.deal_ledger(&gross, "A").unwrap();
         assert!(a.row("Brokerage").is_none() && a.row("tax").is_some());
+    }
+
+    #[test]
+    fn a_no_claims_bonus_is_a_deduction_in_the_ratios_and_a_leg_in_the_ledger() {
+        let tower = Tower::new(vec![
+            Layer::quota_share("deal", 1.0)
+                .unwrap()
+                .premium_rate(1.0, 100.0)
+                .unwrap()
+                .no_claims_bonus(0.1, 1, 50.0)
+                .unwrap(),
+        ])
+        .unwrap();
+        let values = vec![20.0, 50.0, 60.0, 150.0];
+        let r = tower
+            .deal_ratios(&tower.apply_annual(&values).unwrap(), "deal")
+            .unwrap();
+        let (ncb, td, margin) = (
+            draws(&r, &["no_claims_bonus"]),
+            draws(&r, &["total_deductions"]),
+            draws(&r, &["margin"]),
+        );
+        assert_eq!(ncb, vec![0.1, 0.1, 0.0, 0.0]);
+        assert_eq!(td, ncb);
+        for (i, v) in values.iter().enumerate() {
+            assert!((margin[i] - (1.0 - v / 100.0 - ncb[i])).abs() < 1e-12);
+        }
+        let gross = Source::new(values, vec![0.25; 4]).unwrap();
+        let ledger = tower.deal_ledger(&gross, "deal").unwrap();
+        let leg = ledger.row("No-claims bonus").unwrap().values();
+        for (l, x) in leg.iter().zip(&ncb) {
+            assert!((l + 100.0 * x).abs() < 1e-9);
+        }
     }
 
     #[test]

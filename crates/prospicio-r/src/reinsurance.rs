@@ -152,12 +152,12 @@ impl XolLayer {
         self.inner.reinstatement_rates.clone()
     }
 
-    fn ceded(&self, losses: &[f64]) -> f64 {
-        self.inner.ceded(losses)
+    fn ceded(&self, losses: &[f64]) -> Result<f64> {
+        self.inner.try_ceded(losses).map_err(to_r)
     }
 
-    fn ceded_by_event(&self, losses: &[f64]) -> Vec<f64> {
-        self.inner.ceded_by_event(losses)
+    fn ceded_by_event(&self, losses: &[f64]) -> Result<Vec<f64>> {
+        self.inner.try_ceded_by_event(losses).map_err(to_r)
     }
 
     /// Attachment and exhaustion over an event set's years (#581).
@@ -238,6 +238,26 @@ impl XolLayer {
 
     fn with_profit_commission(&self, share: f64, allowance: f64) -> Result<Self> {
         self.map(|l| l.profit_commission(share, allowance))
+    }
+
+    fn with_no_claims_bonus(&self, share: f64, years: f64, threshold: f64) -> Result<Self> {
+        let years = whole(years, "years")? as u32;
+        self.map(|l| l.no_claims_bonus(share, years, threshold))
+    }
+
+    /// `c(share, years, threshold)`, empty when there is none.
+    fn no_claims_bonus(&self) -> Vec<f64> {
+        self.inner
+            .no_claims_bonus
+            .map(|b| vec![b.share, f64::from(b.years), b.threshold])
+            .unwrap_or_default()
+    }
+
+    fn no_claims_bonus_for(&self, ceded: &[f64]) -> Vec<f64> {
+        ceded
+            .iter()
+            .map(|&c| self.inner.no_claims_bonus_for(c))
+            .collect()
     }
 
     /// `years` NaN without limit.
@@ -607,14 +627,15 @@ impl ReinsuranceTower {
         Ok(Self { inner })
     }
 
-    fn ceded(&self, losses: &[f64]) -> Vec<f64> {
-        self.inner.ceded(losses)
+    fn ceded(&self, losses: &[f64]) -> Result<Vec<f64>> {
+        self.inner.try_ceded(losses).map_err(to_r)
     }
 
     /// Gross, ceded and net annual distributions on the grid, by FFT:
     /// `list(gross, ceded, net, expected_reinstatement_premium,
     /// expected_premium, expected_ceding_commission,
-    /// expected_profit_commission, expected_deal_ceding_commission,
+    /// expected_profit_commission, expected_no_claims_bonus,
+    /// expected_deal_ceding_commission,
     /// expected_deal_brokerage, deal_names, on_points)`, with `stage_ceded` one
     /// grid (or NULL) per stage,
     /// with `net` and `total_ceded` NULL when they are not one compound total.
@@ -665,6 +686,7 @@ impl ReinsuranceTower {
             expected_premium = r.expected_premium,
             expected_ceding_commission = r.expected_ceding_commission,
             expected_profit_commission = r.expected_profit_commission,
+            expected_no_claims_bonus = r.expected_no_claims_bonus,
             expected_deal_ceding_commission = r.expected_deal_ceding_commission,
             expected_deal_brokerage = r.expected_deal_brokerage,
             deal_names = self
@@ -680,7 +702,8 @@ impl ReinsuranceTower {
     /// The tower on an annual loss grid, each year's total as one loss:
     /// `list(gross, ceded, net, expected_reinstatement_premium,
     /// expected_premium, expected_ceding_commission,
-    /// expected_profit_commission, expected_deal_ceding_commission,
+    /// expected_profit_commission, expected_no_claims_bonus,
+    /// expected_deal_ceding_commission,
     /// expected_deal_brokerage, deal_names, on_points)`.
     fn on_annual_grid(&self, annual: Robj) -> Result<List> {
         let annual = <&Grid>::try_from(&annual)
@@ -695,6 +718,7 @@ impl ReinsuranceTower {
             expected_premium = r.expected_premium,
             expected_ceding_commission = r.expected_ceding_commission,
             expected_profit_commission = r.expected_profit_commission,
+            expected_no_claims_bonus = r.expected_no_claims_bonus,
             expected_deal_ceding_commission = r.expected_deal_ceding_commission,
             expected_deal_brokerage = r.expected_deal_brokerage,
             deal_names = self

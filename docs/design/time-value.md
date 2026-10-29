@@ -412,7 +412,8 @@ frame).
     pattern by simulation is not built.
 
 35. **A root outside the IRR's range is flagged, and found on request**
-    (#670, proposed by the Aggregate lane for the user's acceptance). Under
+    (#670, proposed by the Aggregate lane and accepted by the user on
+    2026-10-29 as built). Under
     the reference model's range, −95% to 100% a year (decision 9), a
     collateralised deal's best years return more than 100% and were
     reported as having no root, like flows with none, so leaving them out

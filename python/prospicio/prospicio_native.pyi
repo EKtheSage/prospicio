@@ -355,6 +355,11 @@ class AnnualGrids:
         without one.
         """
     @property
+    def expected_no_claims_bonus(self, /) -> list[float]:
+        """
+        Expected no-claims bonus of each layer, 0 for a layer without one.
+        """
+    @property
     def expected_premium(self, /) -> list[float]:
         """
         Expected premium of each layer: the swing-rated premium's mean, or
@@ -11688,6 +11693,45 @@ class EventSet:
         >>> abs(achieved - 0.75) < 1e-3, 0 < rho < 1, len(years)
         (True, True, 3)
         """
+    def contract_years(self, /, start: float, partial: str = "drop") -> EventSet:
+        """
+        The events regrouped into contract years starting at ``start``, a
+        fraction of the simulated year, for a treaty whose year is not the
+        simulation's (#586). The simulated years are read as consecutive
+        years of one timeline: a loss of year ``i`` at time ``t`` happens at
+        ``i + t``, contract year ``j`` runs from ``j + start`` to
+        ``j + 1 + start``, and each loss moves to its contract year with its
+        time rebased to it, keeping its sum insured and labels. The first
+        and last contract years are partial: ``partial="drop"`` (the
+        default) leaves them out with their losses, so ``n - 1`` whole
+        years remain; ``"keep"`` keeps them, ``n + 1`` years. ``start=0``
+        returns the set as it is.
+        
+        Parameters
+        ----------
+        start : float
+            In ``[0, 1)``.
+        partial : str, default "drop"
+            ``"drop"`` or ``"keep"``.
+        
+        Returns
+        -------
+        EventSet
+        
+        Raises
+        ------
+        ValueError
+            Without times, for ``start`` outside ``[0, 1)``, with an
+            aggregate part, or when no whole contract year is left.
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> cal = EventSet.from_years([[1.0, 2.0], [3.0]], times=[[0.25, 0.75], [0.25]])
+        >>> july = cal.contract_years(0.5)
+        >>> july.n_sims, july.events(0), july.times(0)
+        (1, [2.0, 3.0], [0.25, 0.75])
+        """
     def correlated_years(self, /, n_years: int, correlation: Any, *, kind: str = "spearman", draws: str = "same", seed: int = 0) -> list[EventSet]:
         """
         A term of ``n_years`` underwriting years whose yearly totals (each
@@ -11849,7 +11893,7 @@ class EventSet:
         ([2, 0, 1], [50.0])
         """
     @staticmethod
-    def from_ylt(years: Sequence[int], losses: Sequence[float], *, slots: Sequence[int] |None = None, times: Sequence[float] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None) -> EventSet:
+    def from_ylt(years: Sequence[int], losses: Sequence[float], *, slots: Sequence[int] |None = None, times: Sequence[float] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None, losses_negative: bool = False) -> EventSet:
         """
         Years of losses from a year loss table's columns, checked and
         expanded to a run's simulations.
@@ -11897,6 +11941,9 @@ class EventSet:
             "EQ"]}``).
         source_hash : str, optional
             A hash of the source, recorded as results' input hash.
+        losses_negative : bool, default False
+            The losses are stored as negative numbers, money going out: each
+            must be at most 0 and is read with its sign flipped.
         
         Returns
         -------
@@ -16413,6 +16460,13 @@ class Layer:
         Returns
         -------
         float
+        
+        Raises
+        ------
+        ValueError
+            If a loss is negative or not finite, usually losses stored with
+            the sign of money paid out (``read_ylt(..., losses_negative=True)``
+            reads such a file).
         """
     def ceded_by_event(self, /, losses: Sequence[float]) -> list[float]:
         """
@@ -16525,6 +16579,23 @@ class Layer:
     def needs_sums_insured(self, /) -> bool:
         """
         Whether the layer is a surplus treaty, which needs sums insured.
+        """
+    @property
+    def no_claims_bonus(self, /) -> tuple[float, int, float] |None:
+        """
+        The no-claims bonus as ``(share, years, threshold)``, or ``None``.
+        """
+    def no_claims_bonus_for(self, /, ceded: float) -> float:
+        """
+        The year's no-claims bonus given its ceded loss, on that year alone.
+        
+        Parameters
+        ----------
+        ceded : float
+        
+        Returns
+        -------
+        float
         """
     @property
     def premium(self, /) -> float:
@@ -16932,6 +17003,41 @@ class Layer:
         >>> qs = Layer.quota_share("QS", 0.3).with_loss_corridor(70.0, 90.0)
         >>> round(qs.ceded([50.0, 30.0]), 12), round(qs.ceded([120.0]), 12)
         (21.0, 30.0)
+        """
+    def with_no_claims_bonus(self, /, share: float, years: int = 1, threshold: float = 0.0) -> Layer:
+        """
+        The same layer with a no-claims bonus: ``share`` of the year's
+        premium returned when the layer's ceded loss over the last ``years``
+        contract years is at most ``threshold``.
+        
+        The bonus is figured on its own, beside any sliding scale or profit
+        commission, on the year's premium as the layer prices it (the
+        deposit or a swing-rated premium), without reinstatement premium.
+        ``years > 1`` looks back over the earlier years of a term and needs
+        ``Tower.apply_term``; a single year, a grid or a ledger refuses it.
+        Set the premium first.
+        
+        Parameters
+        ----------
+        share : float
+            In ``(0, 1]``.
+        years : int, default 1
+            The years looked at, this one included.
+        threshold : float, default 0.0
+            The most ceded loss over those years that still earns the bonus;
+            0 is a claims-free year.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> cat = (Layer("20x10", 20.0, 10.0).with_premium_rate(0.1, 20.0)
+        ...        .with_no_claims_bonus(0.15))
+        >>> round(cat.no_claims_bonus_for(0.0), 12), cat.no_claims_bonus_for(5.0)
+        (0.3, 0.0)
         """
     def with_premium_rate(self, /, rate: float, subject_premium: float) -> Layer:
         """
@@ -28798,6 +28904,11 @@ class TowerGrids:
         Expected ceding commission of each deal (``Tower.deal_scale``), by
         its name, read on its sections' loss ratio together; 0 for a deal
         without one.
+        """
+    @property
+    def expected_no_claims_bonus(self, /) -> list[float]:
+        """
+        Expected no-claims bonus of each layer, 0 for a layer without one.
         """
     @property
     def expected_premium(self, /) -> list[float]:
