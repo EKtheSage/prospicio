@@ -34276,6 +34276,45 @@ def pareto_extrapolation(from_: tuple[float, float], to: tuple[float, float], al
     0.5
     """
 
+def per_risk_inuring(layer: Layer, years: Sequence[Sequence[Sequence[float]]], event_limit: float |None = None, times: Sequence[Sequence[float]] |None = None, seed: int = 0) -> dict:
+    """
+    A per-risk excess of loss with an event limit, inuring to a cat cover.
+    
+    ``years[i][e]`` are the losses of the risks event ``e`` of year ``i``
+    hits. Each risk's recovery is ``layer``'s occurrence terms on its loss;
+    an event's recoveries are summed and capped at ``event_limit``; the
+    layer's annual terms then use up the events' capped recoveries in
+    order, at its share. The net events, each event's gross less its
+    cession, are an ``EventSet`` for a tower of cat layers to take as its
+    gross. The layer must be a plain per-risk layer on the loss basis.
+    
+    Parameters
+    ----------
+    layer : Layer
+    years : list of list of list of float
+    event_limit : float, optional
+        The most the layer recovers from one event, at 100%.
+    times : list of list of float, optional
+        Each event's time in the year, passed to the net events.
+    seed : int, default 0
+        Recorded on the net event set.
+    
+    Returns
+    -------
+    dict
+        ``ceded`` (each year's cession), ``ceded_by_event`` and ``net``
+        (an ``EventSet``).
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import Layer, Tower, per_risk_inuring
+    >>> r = per_risk_inuring(Layer("PR", 5.0, 5.0), [[[12.0, 8.0, 15.0]]], event_limit=10.0)
+    >>> r["ceded"], r["net"].events(0)
+    ([10.0], [25.0])
+    >>> Tower([Layer("Cat", 20.0, 10.0)]).ceded(r["net"].events(0))
+    [15.0]
+    """
+
 def permutation(n: int, seed: int, stream: int = 0) -> list[int]:
     """
     ``0..n`` shuffled with ``seed`` on stream ``stream``: the permutation

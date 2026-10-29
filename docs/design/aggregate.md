@@ -1621,6 +1621,36 @@ Decisions:
   being a function of each occurrence, works everywhere.
 - (e) *JSON format version 9* is stamped only when a layer has one of them.
 
+### A per-risk layer with an event limit, inuring to a cat cover (#585)
+
+Status: built; items (a) to (d) proposed by the Aggregate lane for the
+user's acceptance.
+
+`per_risk::per_risk_inuring(layer, event_limit, years, times, seed)` takes
+years of events of risk losses (`years[i][e]` the losses of the risks hit
+by event `e` of year `i`), applies the per-risk layer to each risk's loss,
+caps an event's recoveries at the event limit, uses up the layer's annual
+terms on the capped event recoveries in order, and returns the cession by
+year and by event and the events net of it as an `EventSet`, one loss an
+event, which any tower of cat layers takes as its gross. Python
+`reinsurance.per_risk_inuring`, R `per_risk_inuring()`.
+
+Decisions:
+
+- (a) *The per-risk stage is a function before the tower, not a basis
+  inside it*: an `EventSet` holds one loss an event, and risk-level
+  losses inside a tower would touch every path (grids, scopes, labels,
+  ledgers, the one-year views); returning the cat stage's gross composes
+  with every one of them unchanged.
+- (b) *The event limit caps the sum of an event's recoveries at 100%,
+  before the layer's annual terms*, which then use up the capped
+  recoveries in the events' order, at the layer's share.
+- (c) *The layer is a plain per-risk layer*: on the loss basis, without
+  reinstatements pro rata as to time, an nth-event or top-and-drop cover
+  or a scope, each of which reads whole events.
+- (d) *Times pass to the net events*; labels and sums insured do not, as
+  the input carries none.
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
@@ -1656,6 +1686,14 @@ used up), against the plain layer where they reduce to it
 exhausts give the same draws on 2,000 simulated years), with the
 refusals on the grids, annual losses and towers whose underlying layer is
 missing, later or in another stage, and the JSON round trip at version 9.
+
+The per-risk layer inuring to a cat cover (#585) is checked against the
+inuring tower where they coincide (one risk an event: the per-risk cession
+and the cat layer's cession on the net events equal a two-stage tower's,
+year by year over 2,000 years), at an event limit of 0 (the net is the
+gross), without one (each risk's recovery), by hand (recoveries 13 capped
+at 10, then an annual limit leaving 6 for the second event) and in its
+refusals.
 
 The no-claims bonus (#592) is checked by hand: a layer with no loss pays
 `share` of its premium, a year above the threshold pays nothing, and the

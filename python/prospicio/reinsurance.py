@@ -15,6 +15,7 @@ from .prospicio_native import (
     aggregate_layer_statistics,
     occurrence_cession_statistics,
     occurrence_layer_statistics,
+    per_risk_inuring,
 )
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "TowerPrice",
     "ViewPrice",
     "occurrence_layer_statistics",
+    "per_risk_inuring",
     "LayerStatistics",
     "occurrence_cession_statistics",
     "CessionStatistics",

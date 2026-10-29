@@ -3005,3 +3005,61 @@ impl PyAnnualGrids {
         )
     }
 }
+
+/// A per-risk excess of loss with an event limit, inuring to a cat cover.
+///
+/// ``years[i][e]`` are the losses of the risks event ``e`` of year ``i``
+/// hits. Each risk's recovery is ``layer``'s occurrence terms on its loss;
+/// an event's recoveries are summed and capped at ``event_limit``; the
+/// layer's annual terms then use up the events' capped recoveries in
+/// order, at its share. The net events, each event's gross less its
+/// cession, are an ``EventSet`` for a tower of cat layers to take as its
+/// gross. The layer must be a plain per-risk layer on the loss basis.
+///
+/// Parameters
+/// ----------
+/// layer : Layer
+/// years : list of list of list of float
+/// event_limit : float, optional
+///     The most the layer recovers from one event, at 100%.
+/// times : list of list of float, optional
+///     Each event's time in the year, passed to the net events.
+/// seed : int, default 0
+///     Recorded on the net event set.
+///
+/// Returns
+/// -------
+/// dict
+///     ``ceded`` (each year's cession), ``ceded_by_event`` and ``net``
+///     (an ``EventSet``).
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reinsurance import Layer, Tower, per_risk_inuring
+/// >>> r = per_risk_inuring(Layer("PR", 5.0, 5.0), [[[12.0, 8.0, 15.0]]], event_limit=10.0)
+/// >>> r["ceded"], r["net"].events(0)
+/// ([10.0], [25.0])
+/// >>> Tower([Layer("Cat", 20.0, 10.0)]).ceded(r["net"].events(0))
+/// [15.0]
+#[pyfunction]
+#[pyo3(signature = (layer, years, event_limit = None, times = None, seed = 0))]
+pub(crate) fn per_risk_inuring<'py>(
+    py: Python<'py>,
+    layer: PyRef<'_, PyLayer>,
+    years: Vec<Vec<Vec<f64>>>,
+    event_limit: Option<f64>,
+    times: Option<Vec<Vec<f64>>>,
+    seed: u64,
+) -> PyResult<Bound<'py, PyDict>> {
+    let l = layer.inner.clone();
+    let r = py
+        .detach(|| {
+            prospicio_aggregate::per_risk_inuring(&l, event_limit, &years, times.as_deref(), seed)
+        })
+        .map_err(to_py)?;
+    let d = PyDict::new(py);
+    d.set_item("ceded", r.ceded)?;
+    d.set_item("ceded_by_event", r.ceded_by_event)?;
+    d.set_item("net", crate::aggregate::PyEventSet { inner: r.net })?;
+    Ok(d)
+}

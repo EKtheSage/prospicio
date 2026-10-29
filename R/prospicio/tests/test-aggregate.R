@@ -229,6 +229,21 @@ stopifnot(all(abs(c(fit$baseline, fit$alpha, fit$beta) - c(1.5, 6, 10)) < 3 * fi
 stopifnot(abs(hawkes_log_likelihood(fit$process, yrs) - fit$log_likelihood) < 1e-9)
 stopifnot(inherits(try(hawkes_fit(list(0.5)), silent = TRUE), "try-error"))
 
+# A per-risk layer with an event limit inuring to a cat cover (#585).
+pr <- per_risk_inuring(xol_layer("PR", 5, 5, aggregate_limit = 16), list(list(c(12, 8, 15), c(20, 11))),
+                       event_limit = 10, times = list(c(0.2, 0.7)))
+stopifnot(identical(pr$ceded_by_event[[1]], c(10, 6)), identical(events(pr$net, 1), c(25, 25)))
+yrs1 <- list(list(30, 12, 45), list(8))
+one <- per_risk_inuring(xol_layer("PR", 30, 10), yrs1)
+inu <- inuring_tower(list(list(xol_layer("PR", 30, 10)), list(xol_layer("Cat", 40, 25))))
+cat1 <- reinsurance_tower(list(xol_layer("Cat", 40, 25)))
+for (i in seq_along(yrs1)) {
+  both <- unname(tower_ceded(inu, unlist(yrs1[[i]])))
+  close(one$ceded[i], both[1], 1e-12)
+  close(unname(tower_ceded(cat1, events(one$net, i)))[1], both[2], 1e-12)
+}
+stopifnot(identical(events(per_risk_inuring(xol_layer("PR", 30, 10), list(list(c(30, 50))), event_limit = 0)$net, 1), 80))
+
 cat("prospicio R aggregate tests passed\n")
 
 # Surplus treaty on events that carry sums insured.
