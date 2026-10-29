@@ -90,6 +90,8 @@ reference:
       - recommend_grid
       - audit_grid
       - simulate_events
+      - hawkes
+      - hawkes_fit
       - event_set_from_long
       - read_ylt
       - event_loss_table

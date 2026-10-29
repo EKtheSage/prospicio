@@ -2486,3 +2486,54 @@ fn a_stop_loss_net_grid_has_no_fft_fuzz() {
         .unwrap();
     assert!((premium - 50.420).abs() < 0.002, "{premium}");
 }
+
+#[test]
+fn hawkes_fits_match_scipy() {
+    use prospicio_aggregate::Hawkes;
+
+    let cases = reference("hawkes_scipy.csv");
+    assert_eq!(cases.len(), 4);
+    for case in &cases {
+        let horizon: f64 = case.get("horizon").parse().unwrap();
+        let periods: Vec<Vec<f64>> = case
+            .get("periods")
+            .split(';')
+            .map(|p| {
+                if p.is_empty() {
+                    Vec::new()
+                } else {
+                    p.split('|').map(|t| t.parse().unwrap()).collect()
+                }
+            })
+            .collect();
+        let want = |k: &str| -> f64 { case.get(k).parse().unwrap() };
+        let fit = Hawkes::fit(&periods, horizon).unwrap();
+        let name = case.get("case");
+        // The same optimum: Rust's log-likelihood at least SciPy's.
+        assert!(
+            fit.log_likelihood >= want("log_likelihood") - 1e-7,
+            "{name}: {} against {}",
+            fit.log_likelihood,
+            want("log_likelihood")
+        );
+        assert!(
+            (fit.log_likelihood - want("log_likelihood")).abs() < 1e-6,
+            "{name}"
+        );
+        // The parameters where the data identify them; with weak excitation
+        // the likelihood is nearly flat in beta.
+        if name != "weak excitation" {
+            for (got, key) in [
+                (fit.baseline, "baseline"),
+                (fit.alpha, "alpha"),
+                (fit.beta, "beta"),
+            ] {
+                assert!(
+                    (got / want(key) - 1.0).abs() < 1e-4,
+                    "{name} {key}: {got} against {}",
+                    want(key)
+                );
+            }
+        }
+    }
+}

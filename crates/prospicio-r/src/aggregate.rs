@@ -377,6 +377,30 @@ impl EventSet {
         Ok(Self { inner })
     }
 
+    /// `n_years` years of a Hawkes process's events with their times.
+    #[allow(clippy::too_many_arguments)]
+    fn hawkes(
+        baseline: f64,
+        alpha: f64,
+        beta: f64,
+        severity: Robj,
+        n_years: f64,
+        burn_in: f64,
+        seed: f64,
+    ) -> Result<Self> {
+        let h = prospicio_aggregate::Hawkes::new(baseline, alpha, beta).map_err(to_r)?;
+        let sev = severity_from_robj(&severity)?;
+        let inner = h
+            .event_set(
+                &sev,
+                whole(n_years, "n_years")? as usize,
+                burn_in,
+                whole(seed, "seed")?,
+            )
+            .map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
     /// `years` is a list of numeric vectors; `sums_insured` and `times`
     /// NULL or lists of the same shape.
     fn from_years(years: List, sums_insured: Robj, seed: f64, times: Robj) -> Result<Self> {
@@ -1363,8 +1387,116 @@ fn copula_severity_rust(
     joint_list(&joint, None)
 }
 
+fn hawkes_new(baseline: f64, alpha: f64, beta: f64) -> Result<prospicio_aggregate::Hawkes> {
+    prospicio_aggregate::Hawkes::new(baseline, alpha, beta).map_err(to_r)
+}
+
+/// `c(branching_ratio, stationary_rate)`, or an error for bad parameters.
+#[extendr]
+fn hawkes_check_rust(baseline: f64, alpha: f64, beta: f64) -> Result<Vec<f64>> {
+    let h = hawkes_new(baseline, alpha, beta)?;
+    Ok(vec![h.branching_ratio(), h.stationary_rate()])
+}
+
+/// `c(mean_count, stationary_count_variance)` over `horizon` years.
+#[extendr]
+fn hawkes_moments_rust(baseline: f64, alpha: f64, beta: f64, horizon: f64) -> Result<Vec<f64>> {
+    let h = hawkes_new(baseline, alpha, beta)?;
+    Ok(vec![
+        h.mean_count(horizon),
+        h.stationary_count_variance(horizon),
+    ])
+}
+
+#[extendr]
+fn hawkes_simulate_rust(
+    baseline: f64,
+    alpha: f64,
+    beta: f64,
+    horizon: f64,
+    seed: f64,
+    stream: f64,
+) -> Result<Vec<f64>> {
+    let h = hawkes_new(baseline, alpha, beta)?;
+    let mut rng = prospicio_core::StreamRng::new(whole(seed, "seed")?, whole(stream, "stream")?);
+    h.simulate(&mut rng, horizon).map_err(to_r)
+}
+
+#[extendr]
+fn hawkes_counts_rust(
+    baseline: f64,
+    alpha: f64,
+    beta: f64,
+    n_years: f64,
+    burn_in: f64,
+    seed: f64,
+) -> Result<Vec<f64>> {
+    let h = hawkes_new(baseline, alpha, beta)?;
+    let c = h
+        .annual_counts(
+            whole(n_years, "n_years")? as usize,
+            burn_in,
+            whole(seed, "seed")?,
+        )
+        .map_err(to_r)?;
+    Ok(c.into_iter().map(|k| k as f64).collect())
+}
+
+fn hawkes_periods(periods: &List) -> Result<Vec<Vec<f64>>> {
+    periods
+        .values()
+        .map(|v| {
+            if v.is_null() {
+                return Ok(Vec::new());
+            }
+            v.as_real_vector()
+                .or_else(|| {
+                    v.as_integer_vector()
+                        .map(|x| x.into_iter().map(f64::from).collect())
+                })
+                .ok_or_else(|| Error::Other("each period must be a numeric vector of times".into()))
+        })
+        .collect()
+}
+
+#[extendr]
+fn hawkes_log_likelihood_rust(
+    baseline: f64,
+    alpha: f64,
+    beta: f64,
+    periods: List,
+    horizon: f64,
+) -> Result<f64> {
+    let h = hawkes_new(baseline, alpha, beta)?;
+    Ok(h.log_likelihood(&hawkes_periods(&periods)?, horizon))
+}
+
+/// `list(baseline, alpha, beta, log_likelihood, std_errors, n_events,
+/// converged, branching_ratio, aic)`.
+#[extendr]
+fn hawkes_fit_rust(periods: List, horizon: f64) -> Result<List> {
+    let f = prospicio_aggregate::Hawkes::fit(&hawkes_periods(&periods)?, horizon).map_err(to_r)?;
+    Ok(list!(
+        baseline = f.baseline,
+        alpha = f.alpha,
+        beta = f.beta,
+        log_likelihood = f.log_likelihood,
+        std_errors = f.std_errors.to_vec(),
+        n_events = f.n_events as f64,
+        converged = f.converged,
+        branching_ratio = f.branching_ratio(),
+        aic = f.aic()
+    ))
+}
+
 extendr_module! {
     mod aggregate;
+    fn hawkes_check_rust;
+    fn hawkes_moments_rust;
+    fn hawkes_simulate_rust;
+    fn hawkes_counts_rust;
+    fn hawkes_log_likelihood_rust;
+    fn hawkes_fit_rust;
     fn copula_severity_rust;
     fn layer_loss_picks_rust;
     fn eventual_ruin_rust;
