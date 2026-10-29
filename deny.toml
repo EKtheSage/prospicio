@@ -19,6 +19,16 @@ ignore = [
     # Unmaintained, no vulnerability: paste is a proc macro of burn-ndarray
     # and gemm (faer, under nuts-rs) and runs only at compile time.
     { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained, not vulnerable; a compile-time macro of burn-ndarray and gemm" },
+    # calamine 0.35, the Excel reader of prospicio-reserving's optional
+    # `io` feature, pins quick-xml 0.39 and zip 7. calamine 0.36 and later
+    # need Rust 1.88 (the workspace is on 1.85); drop these five when the
+    # workspace moves and takes calamine 0.37 (the user's decision of
+    # 2026-10-28, #552).
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml via calamine 0.35: a crafted workbook can be slow or use much memory; fixed in calamine 0.37, which needs Rust 1.88" },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml via calamine 0.35: a crafted workbook can be slow or use much memory; fixed in calamine 0.37, which needs Rust 1.88" },
+    { id = "RUSTSEC-2026-0367", reason = "zip via calamine 0.35: extraction to disk, which calamine never calls" },
+    { id = "RUSTSEC-2026-0368", reason = "zip via calamine 0.35: extraction to disk, which calamine never calls" },
+    { id = "RUSTSEC-2026-0369", reason = "zip via calamine 0.35: extraction to disk, which calamine never calls" },
 ]
 
 [licenses]
@@ -43,6 +53,11 @@ exceptions = [
     # CC0-1.0, public domain: via const-random and ahash (arrow, under
     # prospicio-prob).
     { allow = ["CC0-1.0"], crate = "tiny-keccak" },
+    # (Apache-2.0 OR MIT) AND BSD-3-Clause, permissive: the BSD part covers
+    # the WHATWG encoding index data. Via calamine (prospicio-reserving's
+    # optional `io` feature, the Excel reader). CRAN lists BSD-3-Clause as
+    # free.
+    { allow = ["BSD-3-Clause"], crate = "encoding_rs" },
 ]
 
 [bans]

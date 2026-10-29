@@ -30,9 +30,11 @@ prospicio-nn = { workspace = true, optional = true }
 # nuts-rs and Burn, which Chain Ladder users should not compile.
 bayes = ["dep:prospicio-bayes", "prospicio-reserving/bayes"]
 nn = ["dep:prospicio-nn"]
+# Triangles read from CSV and Excel files (csv and calamine, pure Rust).
+io = ["prospicio-reserving/io"]
 # PredictiveDistribution to and from Arrow IPC files.
 arrow = ["prospicio-prob/arrow"]
-full = ["bayes", "nn", "arrow"]
+full = ["bayes", "nn", "arrow", "io"]
 
 [package.metadata.docs.rs]
 all-features = true
