@@ -314,6 +314,8 @@ hawkes_fit_rust <- function(periods, horizon) .Call(wrap__hawkes_fit_rust, perio
 
 retro_premium_rust <- function(losses, basic, lcm, minimum, maximum) .Call(wrap__retro_premium_rust, losses, basic, lcm, minimum, maximum)
 
+per_risk_inuring_rust <- function(layer, years, event_limit, times, seed) .Call(wrap__per_risk_inuring_rust, layer, years, event_limit, times, seed)
+
 occurrence_cession_statistics_rust <- function(frequency, severity, shares, limits, attachments) .Call(wrap__occurrence_cession_statistics_rust, frequency, severity, shares, limits, attachments)
 
 aggregate_layer_statistics_rust <- function(annual, share, limit, attachment) .Call(wrap__aggregate_layer_statistics_rust, annual, share, limit, attachment)

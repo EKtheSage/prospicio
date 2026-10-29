@@ -1430,3 +1430,39 @@ aggregate_layer_statistics <- function(annual, limit, attachment, share = 1) {
   r$aggregate <- stats::setNames(r$aggregate, c("mean", "variance", "third_cumulant", "cv", "skew"))
   r
 }
+
+#' A per-risk excess of loss inuring to a cat cover
+#'
+#' A per-risk layer applied to each risk's loss within an event, with an
+#' event limit capping the sum of its recoveries from one event, and the
+#' events net of its cession for a tower of cat layers. Each risk's
+#' recovery is the layer's occurrence terms on its loss; an event's
+#' recoveries are summed and capped at `event_limit`; the layer's annual
+#' terms then use up the events' capped recoveries in order, at its share.
+#' The layer must be a plain per-risk layer on the loss basis.
+#'
+#' @param layer An [xol_layer].
+#' @param years A list of years, each a list of events, each a numeric
+#'   vector of the losses of the risks the event hits.
+#' @param event_limit The most the layer recovers from one event, at 100%;
+#'   `NULL` for none.
+#' @param times `NULL`, or a list of numeric vectors: each event's time in
+#'   the year, passed to the net events.
+#' @param seed Recorded on the net event set.
+#' @returns A list with `ceded` (each year's cession), `ceded_by_event` (a
+#'   list of numeric vectors) and `net`, an [event_set] for
+#'   [apply_tower()].
+#' @export
+#' @examples
+#' r <- per_risk_inuring(xol_layer("PR", 5, 5), list(list(c(12, 8, 15))), event_limit = 10)
+#' r$ceded
+#' events(r$net, 1)
+#' tower_ceded(reinsurance_tower(list(xol_layer("Cat", 20, 10))), events(r$net, 1))
+per_risk_inuring <- function(layer, years, event_limit = NULL, times = NULL, seed = 0) {
+  r <- rust_result(per_risk_inuring_rust(
+    layer@ptr, lapply(years, function(y) lapply(y, as.double)),
+    if (is.null(event_limit)) NaN else as.double(event_limit),
+    if (is.null(times)) NULL else lapply(times, as.double), as.double(seed)
+  ))
+  list(ceded = r$ceded, ceded_by_event = r$ceded_by_event, net = event_set(ptr = r$net))
+}

@@ -167,6 +167,7 @@ mod prospicio_native {
         PyAggregateLayerStatistics, PyAnnualGrids, PyCessionStatistics, PyLayer, PyLayerStatistics,
         PyLossSensitivePremium, PyTower, PyTowerGrids, PyTowerPrice, PyViewPrice,
         aggregate_layer_statistics, occurrence_cession_statistics, occurrence_layer_statistics,
+        per_risk_inuring,
     };
     #[pymodule_export]
     use super::reserving::{
