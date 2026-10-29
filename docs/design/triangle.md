@@ -584,18 +584,26 @@ root sandbox crate is deleted.
      date, or a period label meaning its last month. A value is a finite
      number; an empty cell, `NA`, `NaN` or `nan` is not observed; anything
      else is an error. A key is text, a number written as it reads (`353`,
-     not `353.0`). Fields are trimmed, rows whose cells are all empty are
-     skipped, and a UTF-8 byte order mark is dropped. A sheet's used range
+     not `353.0`). Fields are trimmed, rows whose cells are all empty
+     (a line of only spaces too) are skipped, columns with no name and no
+     values (a header ending in a delimiter) are dropped while a column
+     with values and no name is an error, and a UTF-8 byte order mark is
+     dropped. CSV lines end in `
+`, `
+` or a bare ``. A sheet's used range
      starts with its header row (a title above the table is not skipped).
    - **Duplicates** (*proposed*). A long file sums rows with the same
      (keys, origin, development), as `from_long` does for a claims extract;
      a wide file with two rows in one (keys, origin period) is an error naming
-     both rows (`2021-01` and `2021-02` are one origin under annual grains).
+     both rows (`2021-01` and `2021-02` are one origin under annual grains),
+     and so are two columns at one age (`12` and `12.0`, or repeated given
+     ages), naming both columns.
    - **Errors** are `Error::File(message)`, naming the file line and
      column for CSV (`line 3, column "paid": "1O0" is not a number`) or the
      cell and sheet for Excel (`cell C3 (column "paid") of sheet "bad"`),
      and listing the columns or sheets when one is missing; an age off the
-     development grid names its cell. **Breaking** in Rust: a new variant
+     development grid names its cell, and a file with no observed value
+     says so (with the path, from `read_csv` and `read_excel`). **Breaking** in Rust: a new variant
      of the exhaustive `Error`.
    - **Python**: `Triangle.read_csv(path, origin, development=None,
      columns=None, keys=None, ages=None, ..., comment=None)` and

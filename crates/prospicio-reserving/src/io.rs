@@ -27,9 +27,12 @@
 //!   `353.0`).
 //!
 //! Errors name the file line (CSV) or the cell (Excel) and the column. Rows
-//! whose cells are all empty are skipped. In a long file, rows with the same
-//! (keys, origin, development) are summed, as in [`Triangle::from_long`]; in
-//! a wide file two rows in the same (keys, origin period) are an error.
+//! whose cells are all empty are skipped, and so are columns with no name
+//! and no values (a header ending in a delimiter); a column with values and
+//! no name is an error. In a long file, rows with the same (keys, origin,
+//! development) are summed, as in [`Triangle::from_long`]; in a wide file
+//! two rows in the same (keys, origin period), or two columns at the same
+//! age, are an error. A file with no observed value is an error.
 //!
 //! ```
 //! use prospicio_reserving::{FileLayout, Triangle};
@@ -247,13 +250,19 @@ fn csv_table<R: Read>(mut reader: R, comment: Option<u8>) -> Result<Table> {
     let text = text.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&text);
     let mut csv = csv::ReaderBuilder::new()
         .has_headers(true)
+        // A line of only spaces trims to one empty field: it is skipped with
+        // the other empty rows, and `build` names a ragged row.
+        .flexible(true)
         .trim(csv::Trim::All)
         .comment(comment)
         .from_reader(text);
     // The file line of a byte offset. The csv crate's own line count skips
-    // blank lines and counts a Windows line ending twice, so count the
-    // newlines before the record's first byte that is not a line ending.
-    let newlines: Vec<usize> = (0..text.len()).filter(|&k| text[k] == b'\n').collect();
+    // blank lines and counts a Windows line ending twice, so count the line
+    // breaks before the record's first byte that is not a line ending: a
+    // `\n`, or a `\r` not followed by `\n` (old Mac files end lines so).
+    let newlines: Vec<usize> = (0..text.len())
+        .filter(|&k| text[k] == b'\n' || (text[k] == b'\r' && text.get(k + 1) != Some(&b'\n')))
+        .collect();
     let line_at = |byte: u64| {
         let mut at = byte as usize;
         while at < text.len() && matches!(text[at], b'\r' | b'\n') {
@@ -533,8 +542,29 @@ fn cell_error(at: String, why: String) -> Error {
 
 /// The triangle a table holds under `layout`.
 fn build(table: &Table, layout: &FileLayout) -> Result<Triangle> {
+    // A column with no name and no values, as a header ending in a
+    // delimiter writes it, is not part of the table; a column with values
+    // and no name is an error.
+    let unnamed: Vec<usize> = (0..table.header.len())
+        .filter(|&c| table.header[c].is_empty())
+        .collect();
+    for &c in &unnamed {
+        if table
+            .rows
+            .iter()
+            .any(|(_, cells)| cells.get(c).is_some_and(|x| *x != Cell::Empty))
+        {
+            return Err(Error::File(format!(
+                "column {} has values but no name in the header",
+                c + 1
+            )));
+        }
+    }
     let mut seen: HashMap<&str, usize> = HashMap::new();
     for (k, name) in table.header.iter().enumerate() {
+        if name.is_empty() {
+            continue;
+        }
         if let Some(first) = seen.insert(name.as_str(), k) {
             return Err(Error::File(format!(
                 "columns {} and {} are both named \"{name}\"",
@@ -602,7 +632,12 @@ fn build(table: &Table, layout: &FileLayout) -> Result<Triangle> {
             let dev_col = table.column(development)?;
             let value_cols: Vec<usize> = if columns.is_empty() {
                 (0..n_cols)
-                    .filter(|c| *c != origin_col && *c != dev_col && !key_cols.contains(c))
+                    .filter(|c| {
+                        *c != origin_col
+                            && *c != dev_col
+                            && !key_cols.contains(c)
+                            && !unnamed.contains(c)
+                    })
                     .collect()
             } else {
                 columns
@@ -644,7 +679,7 @@ fn build(table: &Table, layout: &FileLayout) -> Result<Triangle> {
                 ));
             }
             let age_cols: Vec<usize> = (0..n_cols)
-                .filter(|c| *c != origin_col && !key_cols.contains(c))
+                .filter(|c| *c != origin_col && !key_cols.contains(c) && !unnamed.contains(c))
                 .collect();
             if age_cols.is_empty() {
                 return Err(Error::File("the file has no age columns".into()));
@@ -671,6 +706,17 @@ fn build(table: &Table, layout: &FileLayout) -> Result<Triangle> {
                     })
                     .collect::<Result<_>>()?,
             };
+            // Two columns at one age (`12` and `12.0`, or a repeated given
+            // age) would be summed into one cell.
+            let mut first_col: HashMap<Lag, usize> = HashMap::new();
+            for (&c, &a) in age_cols.iter().zip(&ages) {
+                if let Some(before) = first_col.insert(a, c) {
+                    return Err(Error::File(format!(
+                        "columns \"{}\" and \"{}\" both hold age {a}",
+                        table.header[before], table.header[c],
+                    )));
+                }
+            }
             names = vec![column.clone()];
             values = vec![Vec::new()];
             // Two rows in the same origin period (2021-01 and 2021-02 under
@@ -750,6 +796,7 @@ fn build(table: &Table, layout: &FileLayout) -> Result<Triangle> {
                 layout.development_grain
             ))
         }
+        Error::Empty => Error::File("the file has no observed values".into()),
         other => other,
     })
 }
@@ -1029,5 +1076,94 @@ company,ay,dy,paid,incurred
         assert!(value(&Cell::Text("NaN".into())).unwrap().is_nan());
         assert!(value(&Cell::Empty).unwrap().is_nan());
         assert_eq!(value(&Cell::Text("-1.5e3".into())), Ok(-1500.0));
+    }
+
+    #[test]
+    fn a_line_of_spaces_is_an_empty_row() {
+        let tri = Triangle::from_csv(
+            "year,age,paid\n2020,12,100\n   \n2021,12,5\n".as_bytes(),
+            &FileLayout::long("year", "age", ["paid"]),
+        )
+        .unwrap();
+        assert_eq!(tri.shape(), [1, 1, 2, 1]);
+        // A ragged row is still named, with its own line.
+        let e = file_error(Triangle::from_csv(
+            "year,age,paid\n2020,12\n".as_bytes(),
+            &FileLayout::long("year", "age", ["paid"]),
+        ));
+        assert_eq!(e, "line 2 has 2 cells, the header 3");
+    }
+
+    #[test]
+    fn an_unnamed_empty_column_is_dropped() {
+        // A header and rows ending in a delimiter, as spreadsheets export.
+        let tri = Triangle::from_csv(
+            "year,age,paid,\n2020,12,1,\n2020,24,2,\n".as_bytes(),
+            &FileLayout::long("year", "age", Vec::<String>::new()),
+        )
+        .unwrap();
+        assert_eq!(tri.columns(), ["paid"]);
+        let tri = Triangle::from_csv(
+            "year,12,24,,\n2020,1,2,,\n2021,3,,,\n".as_bytes(),
+            &FileLayout::wide("year", "paid"),
+        )
+        .unwrap();
+        assert_eq!(tri.development(), [12, 24]);
+        assert_eq!(tri.get(0, 0, 0, 1), Some(2.0));
+        // Given ages count only the named age columns.
+        let tri = Triangle::from_csv(
+            "year,first,second,\n2020,1,2,\n".as_bytes(),
+            &FileLayout::wide("year", "paid").ages([12, 24]),
+        )
+        .unwrap();
+        assert_eq!(tri.development(), [12, 24]);
+        // An unnamed column with values is an error.
+        let e = file_error(Triangle::from_csv(
+            "year,age,paid,\n2020,12,1,7\n".as_bytes(),
+            &FileLayout::long("year", "age", Vec::<String>::new()),
+        ));
+        assert_eq!(e, "column 4 has values but no name in the header");
+    }
+
+    #[test]
+    fn two_wide_columns_at_one_age_are_an_error() {
+        let e = file_error(Triangle::from_csv(
+            "year,first,second\n2020,100,150\n".as_bytes(),
+            &FileLayout::wide("year", "paid").ages([12, 12]),
+        ));
+        assert_eq!(e, "columns \"first\" and \"second\" both hold age 12");
+        let e = file_error(Triangle::from_csv(
+            "year,12,12.0\n2020,100,150\n".as_bytes(),
+            &FileLayout::wide("year", "paid"),
+        ));
+        assert_eq!(e, "columns \"12\" and \"12.0\" both hold age 12");
+    }
+
+    #[test]
+    fn old_mac_line_endings_count_lines() {
+        let e = file_error(Triangle::from_csv(
+            "year,age,paid\r2020,12,1\r2020,24,x\r".as_bytes(),
+            &FileLayout::long("year", "age", ["paid"]),
+        ));
+        assert_eq!(e, "line 3, column \"paid\": \"x\" is not a number");
+    }
+
+    #[test]
+    fn a_file_with_no_observed_value_names_the_file() {
+        let e = file_error(Triangle::from_csv(
+            "year,12,24\n2020,,\n".as_bytes(),
+            &FileLayout::wide("year", "paid"),
+        ));
+        assert_eq!(e, "the file has no observed values");
+        let dir = std::env::temp_dir().join(format!("prospicio-io-empty-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("blank.csv");
+        std::fs::write(&path, "year,12,24\n2020,NA,\n").unwrap();
+        let e = file_error(Triangle::read_csv(&path, &FileLayout::wide("year", "paid")));
+        assert!(
+            e.contains("blank.csv") && e.ends_with("the file has no observed values"),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
