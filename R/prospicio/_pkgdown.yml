@@ -90,6 +90,8 @@ reference:
       - recommend_grid
       - audit_grid
       - simulate_events
+      - hawkes
+      - hawkes_fit
       - event_set_from_long
       - read_ylt
       - event_loss_table
@@ -153,6 +155,7 @@ reference:
       - with_cover_basis
       - with_interlocking
       - with_scope
+      - with_franchise
       - ceded_events
       - deal_ratios
       - with_deal_scale

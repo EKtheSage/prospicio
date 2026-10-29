@@ -118,6 +118,41 @@ pub struct Layer {
     /// The events the layer sees, by a label's values; see
     /// [`Layer::scope`]. `None` sees every event.
     pub scope: Option<Scope>,
+    /// A franchise deductible: an occurrence at or above the attachment
+    /// is paid from the ground up, up to the limit; see
+    /// [`Layer::franchise`].
+    pub franchise: bool,
+    /// Only the `n`-th and later qualifying events of a year are covered;
+    /// see [`Layer::nth_event`].
+    pub nth_event: Option<NthEvent>,
+    /// The layer drops to a lower attachment once another layer's annual
+    /// limit is used up; see [`Layer::top_and_drop`].
+    pub drop_down: Option<DropDown>,
+}
+
+/// An nth-event cover (#591): only the `n`-th and later events in a year
+/// whose loss to the layer exceeds `threshold` count; the earlier ones
+/// cede nothing. Events are counted in the order given, which is
+/// chronological when the event set has times.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NthEvent {
+    /// The first event covered, 1 for every event, 2 for a second-event
+    /// cover.
+    pub n: u32,
+    /// The loss an event must exceed to count, at least 0.
+    pub threshold: f64,
+}
+
+/// A top-and-drop cover (#591): the layer sits at its own attachment until
+/// the annual limit of the layer named `underlying` (in the same stage,
+/// earlier in the tower) is used up, and from the next event attaches at
+/// `attachment` instead, with the same occurrence and annual limits.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DropDown {
+    /// The layer whose exhaustion drops this one.
+    pub underlying: String,
+    /// The attachment after the drop, below the layer's own.
+    pub attachment: f64,
 }
 
 /// The events a layer covers, by one label's values (#584): a windstorm
@@ -400,6 +435,9 @@ impl Layer {
             scales_before_annual_terms: false,
             brokerage_within_commission_range: false,
             scope: None,
+            franchise: false,
+            nth_event: None,
+            drop_down: None,
         })
     }
 
@@ -674,6 +712,109 @@ impl Layer {
     /// rata as to time).
     pub fn needs_times(&self) -> bool {
         self.pro_rata_time
+    }
+
+    /// Whether the layer reads the order of a year's events: an
+    /// nth-event or a top-and-drop cover. A grid or a year's annual total
+    /// has no events in order, so those paths refuse it.
+    pub fn needs_event_order(&self) -> bool {
+        self.nth_event.is_some() || self.drop_down.is_some()
+    }
+
+    /// A franchise deductible (#591): an occurrence whose loss is at or
+    /// above the attachment is paid from the ground up, `min(x, limit)`,
+    /// and one below it pays nothing. On the loss basis only; not with a
+    /// top-and-drop cover.
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    ///
+    /// let f = Layer::xol("F", 20.0, 5.0).unwrap().franchise().unwrap();
+    /// assert_eq!(f.ceded_by_event(&[4.0, 5.0, 12.0, 30.0]), [0.0, 5.0, 12.0, 20.0]);
+    /// ```
+    pub fn franchise(mut self) -> Result<Self> {
+        if self.basis != Basis::Loss {
+            return Err(Error::Data(format!(
+                "layer {:?}: a franchise deductible is on the loss basis",
+                self.name
+            )));
+        }
+        if self.drop_down.is_some() {
+            return Err(Error::Data(format!(
+                "layer {:?}: a franchise deductible cannot drop down",
+                self.name
+            )));
+        }
+        self.franchise = true;
+        Ok(self)
+    }
+
+    /// An nth-event cover (#591, [`NthEvent`]): only the `n`-th and later
+    /// events of a year whose loss to the layer exceeds `threshold` are
+    /// covered; earlier ones, and events at or below the threshold, cede
+    /// nothing. Events are counted in the order given, chronological when
+    /// the event set has times. `nth_event(1, attachment)` is the plain
+    /// layer. Grids and annual totals have no events in order and refuse
+    /// it.
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    ///
+    /// // A second-event cover: the first loss above 5 is the cedant's.
+    /// let l = Layer::xol("2nd", 10.0, 5.0).unwrap().nth_event(2, 5.0).unwrap();
+    /// assert_eq!(l.ceded_by_event(&[12.0, 3.0, 9.0, 20.0]), [0.0, 0.0, 4.0, 10.0]);
+    /// ```
+    pub fn nth_event(mut self, n: u32, threshold: f64) -> Result<Self> {
+        if n == 0 {
+            return Err(invalid("n", 0.0, "must be at least 1"));
+        }
+        if !(threshold.is_finite() && threshold >= 0.0) {
+            return Err(invalid(
+                "threshold",
+                threshold,
+                "must be finite and at least 0",
+            ));
+        }
+        self.nth_event = Some(NthEvent { n, threshold });
+        Ok(self)
+    }
+
+    /// A top-and-drop cover (#591, [`DropDown`]): the layer sits at its own
+    /// attachment until the annual limit of the layer named `underlying`
+    /// is used up, and from the next event attaches at `attachment`, with
+    /// the same occurrence and annual limits. The underlying layer must be
+    /// in the same stage, earlier in the tower, with an annual limit
+    /// ([`Tower::inuring`] checks). On the loss basis only; not with a
+    /// franchise. A drop-down whose underlying layer never exhausts is the
+    /// plain layer.
+    pub fn top_and_drop(mut self, underlying: &str, attachment: f64) -> Result<Self> {
+        if self.basis != Basis::Loss {
+            return Err(Error::Data(format!(
+                "layer {:?}: a top-and-drop cover is on the loss basis",
+                self.name
+            )));
+        }
+        if self.franchise {
+            return Err(Error::Data(format!(
+                "layer {:?}: a franchise deductible cannot drop down",
+                self.name
+            )));
+        }
+        if !(attachment.is_finite() && attachment >= 0.0 && attachment < self.attachment) {
+            return Err(invalid(
+                "attachment",
+                attachment,
+                "must be at least 0 and below the layer's own",
+            ));
+        }
+        if underlying == self.name {
+            return Err(invalid("underlying", 0.0, "must be another layer"));
+        }
+        self.drop_down = Some(DropDown {
+            underlying: underlying.to_string(),
+            attachment,
+        });
+        Ok(self)
     }
 
     /// The layer seen only by events whose `label` is one of `values`
@@ -1326,11 +1467,10 @@ impl Layer {
         lf: Option<&[f64]>,
     ) -> Vec<f64> {
         let mut recovery = 0.0;
-        losses
-            .iter()
-            .enumerate()
-            .map(|(e, &x)| {
-                recovery += self.recovery_at(x, si.map(|s| s[e]), factor(lf, e));
+        self.recoveries(losses, si, lf)
+            .into_iter()
+            .map(|r| {
+                recovery += r;
                 self.after_terms(recovery)
             })
             .collect()
@@ -1343,11 +1483,7 @@ impl Layer {
 
     /// Annual layer loss at 100%, before annual terms.
     fn before_terms(&self, losses: &[f64], si: Option<&[f64]>, lf: Option<&[f64]>) -> f64 {
-        losses
-            .iter()
-            .enumerate()
-            .map(|(e, &x)| self.recovery_at(x, si.map(|s| s[e]), factor(lf, e)))
-            .sum()
+        self.recoveries(losses, si, lf).into_iter().sum()
     }
 
     /// Ceded loss per event for one year, in the order given.
@@ -1380,11 +1516,7 @@ impl Layer {
         lf: Option<&[f64]>,
     ) -> Vec<f64> {
         if self.allocation == LimitAllocation::ProRata {
-            let recoveries: Vec<f64> = losses
-                .iter()
-                .enumerate()
-                .map(|(e, &x)| self.recovery_at(x, si.map(|s| s[e]), factor(lf, e)))
-                .collect();
+            let recoveries = self.recoveries(losses, si, lf);
             let total: f64 = recoveries.iter().sum();
             // No recovery, nothing to share; the factor is 1 by convention.
             let factor = if total > 0.0 {
@@ -1447,7 +1579,42 @@ impl Layer {
             // A surplus without a sum insured: `max` would turn NaN into 0.
             return f64::NAN;
         }
+        if self.franchise {
+            return if amount >= self.attachment {
+                amount.min(self.limit * lf)
+            } else {
+                0.0
+            };
+        }
         (amount - self.attachment).max(0.0).min(self.limit * lf)
+    }
+
+    /// Each event's recovery at 100%, before annual terms, in order: the
+    /// occurrence terms, then an nth-event cover's count of qualifying
+    /// events.
+    pub(crate) fn recoveries(
+        &self,
+        losses: &[f64],
+        si: Option<&[f64]>,
+        lf: Option<&[f64]>,
+    ) -> Vec<f64> {
+        let mut qualifying = 0u32;
+        losses
+            .iter()
+            .enumerate()
+            .map(|(e, &x)| {
+                let s = si.map(|s| s[e]);
+                let r = self.recovery_at(x, s, factor(lf, e));
+                match self.nth_event {
+                    Some(nth) if self.basis.amount(x, s) > nth.threshold => {
+                        qualifying += 1;
+                        if qualifying < nth.n { 0.0 } else { r }
+                    }
+                    Some(_) => 0.0,
+                    None => r,
+                }
+            })
+            .collect()
     }
 
     /// Annual terms applied to an annual recovery total at 100%: the
@@ -1547,6 +1714,28 @@ impl Tower {
                 return Err(invalid("layers", i as f64, "repeats an earlier layer name"));
             }
         }
+        let stage_of: Vec<usize> = stage_of;
+        for (i, layer) in layers.iter().enumerate() {
+            let Some(d) = &layer.drop_down else { continue };
+            let Some(u) = layers.iter().position(|l| l.name == d.underlying) else {
+                return Err(Error::Data(format!(
+                    "layer {:?} drops down on layer {:?}, which the tower does not have",
+                    layer.name, d.underlying
+                )));
+            };
+            if u > i || stage_of[u] != stage_of[i] {
+                return Err(Error::Data(format!(
+                    "layer {:?} drops down on layer {:?}, which must be earlier in the same stage",
+                    layer.name, d.underlying
+                )));
+            }
+            if !layers[u].aggregate_limit.is_finite() {
+                return Err(Error::Data(format!(
+                    "layer {:?} drops down on layer {:?}, which has no annual limit to use up",
+                    layer.name, d.underlying
+                )));
+            }
+        }
         Ok(Self {
             layers,
             stages: stage_of,
@@ -1591,6 +1780,20 @@ impl Tower {
     /// Whether any layer needs each event's time.
     pub fn needs_times(&self) -> bool {
         self.layers.iter().any(Layer::needs_times)
+    }
+
+    /// An error for a path with no events in order (a grid, an annual
+    /// total), naming the layer, when a layer is an nth-event or
+    /// top-and-drop cover (#591).
+    pub(crate) fn refuse_event_order(&self, path: &str) -> Result<()> {
+        match self.layers.iter().find(|l| l.needs_event_order()) {
+            Some(l) => Err(Error::Data(format!(
+                "layer {:?} is an nth-event or top-and-drop cover, which reads the order of a \
+                 year's events; {path} has none, so apply the tower to an event set",
+                l.name
+            ))),
+            None => Ok(()),
+        }
     }
 
     /// An error for a path of single years, naming the layer, when a
@@ -1720,6 +1923,7 @@ impl Tower {
         let all_of: Option<Vec<usize>> =
             scope.map(|v| v.aggregate.iter().chain(v.events).copied().collect());
         let mut masked: Vec<f64> = Vec::new();
+        let mut dropped: Vec<f64> = Vec::new();
         let mut seen: Vec<f64> = aggregate.iter().chain(losses).copied().collect();
         // A layer that sees the aggregate part is on the loss, so needs no
         // sum insured; the part's time is the year's start.
@@ -1767,6 +1971,40 @@ impl Tower {
                             .map(|(&v, &c)| if mask[c] { v } else { 0.0 }),
                     );
                     x = &masked;
+                }
+                // A top-and-drop layer sees each event after its underlying
+                // layer's annual limit is used up shifted up by the drop, so
+                // its own attachment reads as the lower one.
+                if let Some(d) = &layer.drop_down {
+                    let u = self
+                        .layers
+                        .iter()
+                        .position(|l| l.name == d.underlying)
+                        .expect("Tower::inuring checks the underlying layer");
+                    let under = &self.layers[u];
+                    let mut ux: Vec<f64> = seen[n_agg..].to_vec();
+                    if let (Some(view), Some(of)) = (scope, all_of.as_deref())
+                        && let Some(mask) = &view.masks[u]
+                    {
+                        for (v, &c) in ux.iter_mut().zip(&of[n_agg..]) {
+                            if !mask[c] {
+                                *v = 0.0;
+                            }
+                        }
+                    }
+                    let used = under.cumulative_layer_loss(&ux, si, lf);
+                    let shift = layer.attachment - d.attachment;
+                    let offset = x.len() - used.len();
+                    let mut exhausted = false;
+                    dropped.clear();
+                    dropped.extend_from_slice(x);
+                    for (e, cum) in used.iter().enumerate() {
+                        if exhausted {
+                            dropped[offset + e] += shift;
+                        }
+                        exhausted |= *cum >= under.aggregate_limit;
+                    }
+                    x = &dropped;
                 }
                 let layer_ceded = layer.share * layer.layer_loss(x, s, f);
                 ceded.push((layer_ceded, layer.reinstatement_premium_at(x, s, t, f)));
@@ -1928,6 +2166,7 @@ impl Tower {
     pub fn apply_aggregate(&self, pd: &PredictiveDistribution) -> Result<PredictiveDistribution> {
         self.refuse_scope("an aggregate loss")?;
         self.refuse_lookback("a single year")?;
+        self.refuse_event_order("an annual total")?;
         if self.needs_sums_insured() {
             return Err(Error::Data(
                 "a surplus treaty works risk by risk; an aggregate loss has no sum insured".into(),
@@ -2174,6 +2413,7 @@ impl Tower {
     pub fn apply_annual(&self, losses: &[f64]) -> Result<PredictiveDistribution> {
         self.refuse_scope("an annual loss")?;
         self.refuse_lookback("a single year")?;
+        self.refuse_event_order("an annual total")?;
         if losses.is_empty() {
             return Err(Error::Data("needs at least one annual loss".into()));
         }
@@ -4004,6 +4244,137 @@ mod tests {
                 .filter("peril", &["a"])
                 .is_err()
         );
+    }
+
+    #[test]
+    fn a_franchise_pays_from_the_ground_up() {
+        let f = Layer::xol("F", 20.0, 5.0).unwrap().franchise().unwrap();
+        assert_eq!(f.recovery(4.999), 0.0);
+        assert_eq!(f.recovery(5.0), 5.0);
+        assert_eq!(f.recovery(30.0), 20.0);
+        // Above the largest loss it pays nothing.
+        let sev = Lognormal::from_mean_cv(10.0, 1.0).unwrap();
+        let ev = simulate_events(&Poisson::new(3.0).unwrap(), &sev, 500, 2).unwrap();
+        let largest = (0..500)
+            .flat_map(|i| ev.events(i).to_vec())
+            .fold(0.0, f64::max);
+        let high = Layer::xol("H", 1e9, largest * 1.01)
+            .unwrap()
+            .franchise()
+            .unwrap();
+        let r = Tower::new(vec![high]).unwrap().apply(&ev).unwrap();
+        assert!(column(&r, &["ceded", "H"]).iter().all(|&c| c == 0.0));
+        // On the grid, the franchise recovery of each point.
+        let sev = prospicio_prob::Grid::new(1.0, vec![0.0, 0.2, 0.3, 0.3, 0.2]).unwrap();
+        let tower = Tower::new(vec![
+            Layer::xol("F", 10.0, 2.0).unwrap().franchise().unwrap(),
+        ])
+        .unwrap();
+        let g = tower
+            .on_grid(&Poisson::new(1.0).unwrap(), &sev, 64)
+            .unwrap();
+        // E[N] E[recovery] = 1 × (0.3 × 2 + 0.3 × 3 + 0.2 × 4).
+        assert!((g.ceded[0].mean() - 2.3).abs() < 1e-9);
+        assert!(Layer::surplus("S", 1.0, 2.0).unwrap().franchise().is_err());
+    }
+
+    #[test]
+    fn an_nth_event_cover_skips_the_first_qualifying_events() {
+        let l = Layer::xol("2nd", 10.0, 5.0)
+            .unwrap()
+            .nth_event(2, 5.0)
+            .unwrap();
+        assert_eq!(
+            l.ceded_by_event(&[12.0, 3.0, 9.0, 20.0]),
+            [0.0, 0.0, 4.0, 10.0]
+        );
+        // Third and later events above 8.
+        let third = Layer::xol("3rd", 10.0, 5.0)
+            .unwrap()
+            .nth_event(3, 8.0)
+            .unwrap();
+        assert_eq!(
+            third.ceded_by_event(&[9.0, 6.0, 12.0, 7.0, 15.0]),
+            [0.0, 0.0, 0.0, 0.0, 10.0]
+        );
+        // nth_event(1, attachment) is the plain layer on simulated years.
+        let sev = Lognormal::from_mean_cv(10.0, 1.5).unwrap();
+        let ev = simulate_events(&Poisson::new(4.0).unwrap(), &sev, 2_000, 5).unwrap();
+        let plain = Layer::xol("L", 20.0, 8.0)
+            .unwrap()
+            .aggregate_limit(40.0)
+            .unwrap();
+        let first = plain.clone().nth_event(1, 8.0).unwrap();
+        let a = Tower::new(vec![plain]).unwrap().apply(&ev).unwrap();
+        let b = Tower::new(vec![first.clone()]).unwrap().apply(&ev).unwrap();
+        assert_eq!(a.draw_matrix(), b.draw_matrix());
+        // Paths without events in order refuse it.
+        let t = Tower::new(vec![first]).unwrap();
+        assert!(t.apply_annual(&[30.0]).is_err());
+        let sev = prospicio_prob::Grid::new(1.0, vec![0.0, 0.5, 0.5]).unwrap();
+        assert!(t.on_grid(&Poisson::new(1.0).unwrap(), &sev, 16).is_err());
+        assert!(
+            Layer::xol("L", 1.0, 1.0)
+                .unwrap()
+                .nth_event(0, 1.0)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn a_top_and_drop_cover_drops_once_the_underlying_layer_is_used_up() {
+        let lower = Layer::xol("lower", 10.0, 10.0)
+            .unwrap()
+            .aggregate_limit(20.0)
+            .unwrap();
+        let top = Layer::xol("top", 10.0, 30.0)
+            .unwrap()
+            .top_and_drop("lower", 10.0)
+            .unwrap();
+        let tower = Tower::new(vec![lower.clone(), top.clone()]).unwrap();
+        let ev = EventSet::from_years(vec![vec![25.0, 25.0, 25.0, 40.0]], 0).unwrap();
+        let ce = tower.ceded_events(&ev, &["top"]).unwrap();
+        // The lower layer is used up by the second event; the top then sits
+        // at 10 and pays 10 on each later event.
+        assert_eq!(ce.events(0), [10.0, 10.0]);
+        let r = tower.apply(&ev).unwrap();
+        assert_eq!(column(&r, &["ceded", "lower"]), [20.0]);
+        assert_eq!(column(&r, &["ceded", "top"]), [20.0]);
+        // An underlying layer that never exhausts leaves the plain layer.
+        let sev = Lognormal::from_mean_cv(5.0, 1.0).unwrap();
+        let years = simulate_events(&Poisson::new(2.0).unwrap(), &sev, 2_000, 8).unwrap();
+        let roomy = lower.clone().aggregate_limit(1e12).unwrap();
+        let drop = Tower::new(vec![roomy.clone(), top.clone()])
+            .unwrap()
+            .apply(&years)
+            .unwrap();
+        let plain_top = Layer::xol("top", 10.0, 30.0).unwrap();
+        let plain = Tower::new(vec![roomy, plain_top])
+            .unwrap()
+            .apply(&years)
+            .unwrap();
+        assert_eq!(drop.draw_matrix(), plain.draw_matrix());
+        // The tower checks the underlying layer.
+        assert!(Tower::new(vec![top.clone()]).is_err());
+        assert!(Tower::new(vec![top.clone(), lower.clone()]).is_err());
+        let open = Layer::xol("lower", 10.0, 10.0).unwrap();
+        assert!(Tower::new(vec![open, top.clone()]).is_err());
+        assert!(Tower::inuring(vec![vec![lower.clone()], vec![top.clone()]]).is_err());
+        assert!(
+            Layer::xol("t", 10.0, 30.0)
+                .unwrap()
+                .top_and_drop("lower", 30.0)
+                .is_err()
+        );
+        assert!(
+            Layer::xol("t", 10.0, 30.0)
+                .unwrap()
+                .franchise()
+                .unwrap()
+                .top_and_drop("lower", 10.0)
+                .is_err()
+        );
+        assert!(tower.apply_annual(&[50.0]).is_err());
     }
 
     #[test]

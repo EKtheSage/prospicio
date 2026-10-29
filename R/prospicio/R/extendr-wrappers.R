@@ -298,6 +298,18 @@ indication_rust <- function(variable, profit, fixed_ratio, loss_ratio, pure_prem
 
 premium_based_expenses_rust <- function(ratio, fixed_share) .Call(wrap__premium_based_expenses_rust, ratio, fixed_share)
 
+hawkes_check_rust <- function(baseline, alpha, beta) .Call(wrap__hawkes_check_rust, baseline, alpha, beta)
+
+hawkes_moments_rust <- function(baseline, alpha, beta, horizon) .Call(wrap__hawkes_moments_rust, baseline, alpha, beta, horizon)
+
+hawkes_simulate_rust <- function(baseline, alpha, beta, horizon, seed, stream) .Call(wrap__hawkes_simulate_rust, baseline, alpha, beta, horizon, seed, stream)
+
+hawkes_counts_rust <- function(baseline, alpha, beta, n_years, burn_in, seed) .Call(wrap__hawkes_counts_rust, baseline, alpha, beta, n_years, burn_in, seed)
+
+hawkes_log_likelihood_rust <- function(baseline, alpha, beta, periods, horizon) .Call(wrap__hawkes_log_likelihood_rust, baseline, alpha, beta, periods, horizon)
+
+hawkes_fit_rust <- function(periods, horizon) .Call(wrap__hawkes_fit_rust, periods, horizon)
+
 retro_premium_rust <- function(losses, basic, lcm, minimum, maximum) .Call(wrap__retro_premium_rust, losses, basic, lcm, minimum, maximum)
 
 occurrence_cession_statistics_rust <- function(frequency, severity, shares, limits, attachments) .Call(wrap__occurrence_cession_statistics_rust, frequency, severity, shares, limits, attachments)
@@ -367,6 +379,8 @@ layer_share_prior_total_rust <- function(apriori, apriori_cv, shares, share_cv, 
 EventSet <- new.env(parent = emptyenv())
 
 EventSet$simulate <- function(frequency, severity, n_sims, seed) .Call(wrap__EventSet__simulate, frequency, severity, n_sims, seed)
+
+EventSet$hawkes <- function(baseline, alpha, beta, severity, n_years, burn_in, seed) .Call(wrap__EventSet__hawkes, baseline, alpha, beta, severity, n_years, burn_in, seed)
 
 EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__EventSet__from_years, years, sums_insured, seed, times)
 
@@ -565,6 +579,18 @@ XolLayer$premium_for <- function(ceded) .Call(wrap__XolLayer__premium_for, self,
 XolLayer$scope <- function() .Call(wrap__XolLayer__scope, self)
 
 XolLayer$with_scope <- function(label, values) .Call(wrap__XolLayer__with_scope, self, label, values)
+
+XolLayer$with_franchise <- function() .Call(wrap__XolLayer__with_franchise, self)
+
+XolLayer$with_nth_event <- function(n, threshold) .Call(wrap__XolLayer__with_nth_event, self, n, threshold)
+
+XolLayer$with_top_and_drop <- function(underlying, attachment) .Call(wrap__XolLayer__with_top_and_drop, self, underlying, attachment)
+
+XolLayer$franchise <- function() .Call(wrap__XolLayer__franchise, self)
+
+XolLayer$nth_event <- function() .Call(wrap__XolLayer__nth_event, self)
+
+XolLayer$drop_down <- function() .Call(wrap__XolLayer__drop_down, self)
 
 XolLayer$ceding_commission_for <- function(ceded) .Call(wrap__XolLayer__ceding_commission_for, self, ceded)
 

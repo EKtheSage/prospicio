@@ -15168,6 +15168,203 @@ class HachemeisterFit:
         """
 
 @final
+class Hawkes:
+    """
+    A self-exciting (Hawkes) process of events with an exponential kernel,
+    time in years: the rate ``baseline + Σ alpha · exp(-beta (t - t_i))``
+    over past events ``t_i``.
+    
+    Each event has on average ``alpha / beta`` direct offspring (the
+    branching ratio, below 1), so events cluster in time, as windstorm
+    series and aftershocks do, and the stationary rate is
+    ``baseline / (1 - alpha / beta)``. Paths are drawn exactly by the
+    branching construction. ``alpha = 0`` is the Poisson process.
+    
+    Parameters
+    ----------
+    baseline : float
+        Rate of the background events, a year; positive.
+    alpha : float
+        The rise in the rate at each event; at least 0 and below ``beta``.
+    beta : float
+        The excitation's decay rate, a year; positive.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import Hawkes
+    >>> h = Hawkes(2.0, 12.0, 24.0)
+    >>> h.branching_ratio, h.stationary_rate
+    (0.5, 4.0)
+    """
+    def __new__(cls, /, baseline: float, alpha: float, beta: float) -> Hawkes: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def alpha(self, /) -> float:
+        """
+        The jump in the rate at each event.
+        """
+    def annual_counts(self, /, n_years: int, burn_in: float = 0.0, seed: int = 0) -> list[int]:
+        """
+        The number of events in each of ``n_years`` independent years, year
+        ``i`` from stream ``i`` of ``seed``, after ``burn_in`` years whose
+        events excite the year and are dropped (0 for an empty history).
+        
+        Returns
+        -------
+        list of int
+        """
+    @property
+    def baseline(self, /) -> float:
+        """
+        The baseline rate, a year.
+        """
+    @property
+    def beta(self, /) -> float:
+        """
+        The decay rate, a year.
+        """
+    @property
+    def branching_ratio(self, /) -> float:
+        """
+        ``alpha / beta``, each event's mean number of direct offspring.
+        """
+    def event_set(self, /, severity: Any, n_years: int, burn_in: float = 0.0, seed: int = 0) -> EventSet:
+        """
+        ``n_years`` independent years of events with their times in
+        ``[0, 1)`` and a loss from ``severity`` each, as ``annual_counts``
+        draws the years.
+        
+        Parameters
+        ----------
+        severity : a severity
+        n_years : int
+        burn_in : float, default 0.0
+        seed : int, default 0
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import Hawkes
+        >>> from prospicio.distributions import Lognormal
+        >>> ev = Hawkes(2.0, 12.0, 24.0).event_set(Lognormal.from_mean_cv(10.0, 1.0), 100, seed=7)
+        >>> ev.n_sims, ev.has_times
+        (100, True)
+        """
+    @staticmethod
+    def fit(periods: Sequence[Sequence[float]], horizon: float = 1.0) -> HawkesFit:
+        """
+        The maximum likelihood fit to event times over one or more periods
+        of ``horizon`` years, each sorted and from an empty history (for
+        years, each year's times and ``horizon=1``).
+        
+        Parameters
+        ----------
+        periods : list of list of float
+        horizon : float, default 1.0
+        
+        Returns
+        -------
+        HawkesFit
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import Hawkes
+        >>> h = Hawkes(1.5, 6.0, 10.0)
+        >>> years = [h.simulate(1.0, seed=11, stream=i) for i in range(400)]
+        >>> fit = Hawkes.fit(years)
+        >>> abs(fit.baseline - 1.5) < 3 * fit.std_errors[0]
+        True
+        """
+    def log_likelihood(self, /, periods: Sequence[Sequence[float]], horizon: float = 1.0) -> float:
+        """
+        The log-likelihood of event times, each period a sorted list on
+        ``[0, horizon)`` from an empty history.
+        """
+    def mean_count(self, /, horizon: float) -> float:
+        """
+        The mean number of events on ``[0, horizon)`` from an empty history.
+        """
+    def simulate(self, /, horizon: float, seed: int, stream: int = 0) -> list[float]:
+        """
+        One path's event times on ``[0, horizon)`` from an empty history,
+        stream ``stream`` of ``seed``.
+        
+        Returns
+        -------
+        list of float
+        """
+    def stationary_count_variance(self, /, horizon: float) -> float:
+        """
+        The stationary variance of the count over a window of ``horizon``
+        years (Hawkes and Oakes' formula for the exponential kernel).
+        """
+    @property
+    def stationary_rate(self, /) -> float:
+        """
+        The stationary mean rate ``baseline / (1 - alpha / beta)``.
+        """
+
+@final
+class HawkesFit:
+    """
+    A Hawkes process fitted by maximum likelihood (``Hawkes.fit``).
+    """
+    @property
+    def aic(self, /) -> float:
+        """
+        ``6 - 2 log_likelihood``.
+        """
+    @property
+    def alpha(self, /) -> float:
+        """
+        The jump in the rate at each event.
+        """
+    @property
+    def baseline(self, /) -> float:
+        """
+        The baseline rate, a year.
+        """
+    @property
+    def beta(self, /) -> float:
+        """
+        The decay rate, a year.
+        """
+    @property
+    def branching_ratio(self, /) -> float:
+        """
+        ``alpha / beta``.
+        """
+    @property
+    def converged(self, /) -> bool:
+        """
+        Whether the optimiser met its tolerance.
+        """
+    @property
+    def log_likelihood(self, /) -> float:
+        """
+        The maximised log-likelihood.
+        """
+    @property
+    def n_events(self, /) -> int:
+        """
+        Events fitted.
+        """
+    def process(self, /) -> Hawkes:
+        """
+        The fitted process; ValueError when the branching ratio is at or
+        above 1.
+        """
+    @property
+    def std_errors(self, /) -> tuple[float, float, float]:
+        """
+        Standard errors of ``(baseline, alpha, beta)`` from the observed
+        information; NaN where it is not positive definite.
+        """
+
+@final
 class HierarchicalCredibilityFit:
     """
     A fitted Bayesian hierarchical credibility model, from
@@ -16610,6 +16807,16 @@ class Layer:
         The deductions as ``(label, basis, value, inside_nmbf)``.
         """
     @property
+    def drop_down(self, /) -> tuple[str, float] |None:
+        """
+        A top-and-drop cover as ``(underlying, attachment)``, or ``None``.
+        """
+    @property
+    def franchise(self, /) -> bool:
+        """
+        Whether the layer has a franchise deductible (``with_franchise``).
+        """
+    @property
     def limit(self, /) -> float:
         """
         Per-occurrence limit.
@@ -16645,6 +16852,11 @@ class Layer:
         Returns
         -------
         float
+        """
+    @property
+    def nth_event(self, /) -> tuple[int, float] |None:
+        """
+        An nth-event cover as ``(n, threshold)``, or ``None``.
         """
     @property
     def premium(self, /) -> float:
@@ -17020,6 +17232,22 @@ class Layer:
         >>> Layer("5x5", 5e6, 5e6, share=0.4).with_deposit_premium(1e6).premium
         400000.0
         """
+    def with_franchise(self, /) -> Layer:
+        """
+        The same layer with a franchise deductible: an occurrence at or
+        above the attachment is paid from the ground up, ``min(x, limit)``,
+        and one below it pays nothing. On the loss basis only.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> Layer("F", 20.0, 5.0).with_franchise().ceded_by_event([4.0, 5.0, 12.0, 30.0])
+        [0.0, 5.0, 12.0, 20.0]
+        """
     def with_loss_corridor(self, /, lower: float, upper: float, retained: float = 1.0) -> Layer:
         """
         The same layer with a loss corridor.
@@ -17087,6 +17315,33 @@ class Layer:
         ...        .with_no_claims_bonus(0.15))
         >>> round(cat.no_claims_bonus_for(0.0), 12), cat.no_claims_bonus_for(5.0)
         (0.3, 0.0)
+        """
+    def with_nth_event(self, /, n: int, threshold: float) -> Layer:
+        """
+        The same layer as an nth-event cover: only the ``n``-th and later
+        events of a year whose loss to the layer exceeds ``threshold`` are
+        covered; earlier ones, and events at or below the threshold, cede
+        nothing. Events count in the order given, chronological when the
+        event set has times. ``with_nth_event(1, attachment)`` is the plain
+        layer. The grids and annual losses have no events in order and
+        refuse it.
+        
+        Parameters
+        ----------
+        n : int
+            The first event covered, at least 1.
+        threshold : float
+            The loss an event must exceed to count.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> Layer("2nd", 10.0, 5.0).with_nth_event(2, 5.0).ceded_by_event([12.0, 3.0, 9.0, 20.0])
+        [0.0, 0.0, 4.0, 10.0]
         """
     def with_premium_rate(self, /, rate: float, subject_premium: float) -> Layer:
         """
@@ -17348,6 +17603,35 @@ class Layer:
         >>> layer = Layer("L", 1000.0, 0.0).with_swing_rating(0.0, 1.25, 100.0, 300.0)
         >>> [layer.premium_for(x) for x in (40.0, 200.0, 400.0)]
         [100.0, 250.0, 300.0]
+        """
+    def with_top_and_drop(self, /, underlying: str, attachment: float) -> Layer:
+        """
+        The same layer as a top-and-drop cover: it sits at its own
+        attachment until the annual limit of the layer named
+        ``underlying`` (earlier in the same stage, with an annual limit) is
+        used up, and from the next event attaches at ``attachment``, with
+        the same occurrence and annual limits. On the loss basis only. A
+        drop-down whose underlying layer never exhausts is the plain layer.
+        
+        Parameters
+        ----------
+        underlying : str
+        attachment : float
+            Below the layer's own.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> lower = Layer("lower", 10.0, 10.0, aggregate_limit=20.0)
+        >>> top = Layer("top", 10.0, 30.0).with_top_and_drop("lower", 10.0)
+        >>> ce = Tower([lower, top]).ceded_events(EventSet.from_years([[25.0, 25.0, 25.0, 40.0]]), "top")
+        >>> ce.events(0)
+        [10.0, 10.0]
         """
 
 @final

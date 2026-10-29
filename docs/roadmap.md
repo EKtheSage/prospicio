@@ -130,8 +130,9 @@ what it is aiming for by v1.0.
     commissions, profit commissions, swing rating; retro premiums.
     Over a multi-year term (`Tower::apply_term`), profit commission
     deficits and sliding scale deficits and credits carried forward,
-    to extinction or for a number of years. (Also done: towers saved as
-    JSON, seasonal event times, loss corridors.)
+    to extinction or for a number of years. Franchise deductibles,
+    nth-event and top-and-drop covers (#591). (Also done: towers saved
+    as JSON, seasonal event times, loss corridors.)
   - The occurrence exceedance (OEP) curve and occurrence PMLs for any
     count, exact and simulated; compound moments to third order and the
     moment approximations (normal, gamma, lognormal, shifted gamma and
@@ -159,7 +160,8 @@ what it is aiming for by v1.0.
     same events, by a 2-D compound FFT, `aggregate`'s clash model, and
     the two lines' losses in an event coupled by a copula; renewal claim
     counts, with any law for the waits between claims, and their eventual
-    ruin by Wiener–Hopf.
+    ruin by Wiener–Hopf; self-exciting (Hawkes) event times for clustered
+    catastrophe years, simulated, fitted and as event sets (#567).
 - **Next:** open. (Done: deficit and credit carry-forward in profit
   commissions and sliding scales over multi-year terms,
   `Tower::apply_term`, `docs/design/aggregate.md`; the P&L ledger, the
