@@ -688,3 +688,22 @@ def test_unequal_grain():
     paths = model.prior_predictive(q, "premium", n_sims=100)
     assert len(paths["paid"].components()) == 10 * 40
     assert paths["paid"].components()[39] == ("2011", 120)
+
+
+def test_patterns_are_the_paid_pattern_of_each_posterior_draw(fit):
+    # reserving-compartmental.md decision 14: the ODE's paid curve for the
+    # draw's rates over its value at the square's last age (where the
+    # reserves stop), one row per simulation.
+    patterns = fit.patterns
+    assert patterns.n_sims == 2000
+    assert patterns.ages() == list(range(12, 121, 12))
+    rows = patterns.pattern_draws()
+    assert len(rows) == 2000
+    for row in rows:
+        assert row[-1] == 1.0
+        assert row[0] > 0 and all(a < b for a, b in zip(row, row[1:]))
+    mean = patterns.mean()
+    assert mean[-1] == 1.0 and 0 < mean[0] < mean[4] < 1
+    monthly = patterns.monthly(144)
+    assert len(monthly) == 2000 and len(monthly[0]) == 144
+    assert monthly[0][-1] == 1.0

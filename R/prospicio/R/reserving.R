@@ -7430,10 +7430,11 @@ ultimate_distribution <- function(fit) {
 # in Rust, reserving-v02.md decision 28).
 check_pattern_fit <- function(fit) {
   classes <- list(odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits,
-                  bayes_bf_fit, bayes_bf_normalised_fit)
+                  bayes_bf_fit, bayes_bf_normalised_fit, compartmental_fit, compartmental_fits)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
     stop("fit must be an odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, ",
-         "bayes_bf_fit or bayes_bf_normalised_fit", call. = FALSE)
+         "bayes_bf_fit, bayes_bf_normalised_fit, compartmental_fit or compartmental_fits",
+         call. = FALSE)
   }
 }
 
@@ -7478,11 +7479,18 @@ pattern_matrix <- function(flat, n_col) {
 #' largest before it, capped at 1, and gives a share that is not positive the
 #' next positive share, which the simulation then pays from its first age.
 #'
+#' A [compartmental_fit] or [compartmental_fits] gives the paid curve of the model's
+#' ODE for each posterior draw's rates, over the same curve at the square's last age (where
+#' its reserves stop), for an origin with nothing observed (origin effects at zero), with the
+#' draw's development-age effects under model 2 (`docs/design/reserving-compartmental.md`,
+#' decision 14). It has parameter uncertainty only, and its ages are the square's.
+#'
 #' No fit knows whether its triangle is paid: a pattern from an incurred
 #' triangle is an incurred pattern, and the engine reads it as paid.
 #'
 #' @param fit An [odp_bootstrap_fit], [mack_bootstrap_fit], [bayes_odp_fit],
-#'   [bayes_odp_fits], [bayes_bf_fit] or [bayes_bf_normalised_fit].
+#'   [bayes_odp_fits], [bayes_bf_fit], [bayes_bf_normalised_fit],
+#'   [compartmental_fit] or [compartmental_fits].
 #' @param segment `NULL` for a fit of one segment, or the segment's key
 #'   values (`"Auto"`, `c("Auto", "NSW")`) over segments.
 #' @param months The number of months, a whole number of at least 1; patterns

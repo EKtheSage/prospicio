@@ -227,7 +227,8 @@ def test_independent_segments_are_independent(fits):
     assert sum(a) / sum(b) == pytest.approx(1.0, rel=0.02)
 
 
-def test_rank_correlation_moves_the_whole_row(two):
+def test_rank_correlation_moves_the_whole_row(two, fits):
+    independent = fits
     target = 0.5
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -246,6 +247,16 @@ def test_rank_correlation_moves_the_whole_row(two):
         assert cols, "the oldest age is 120 months"
         last = [sum(row[i] for i in cols) for row in paid.draw_matrix()]
         assert spearman(last, reserve) == pytest.approx(1.0, abs=1e-9)
+    # The paid patterns moved with the rows (reserving-compartmental.md
+    # decision 14): the same posterior draws as the independent fit's, in
+    # another order, each ending at 1 at the square's last age.
+    for seg in ("a", "b"):
+        moved = fits.patterns.pattern_draws(segment=seg)
+        base = independent.patterns.pattern_draws(segment=seg)
+        assert len(moved) == N_SIMS
+        assert all(row[-1] == 1.0 for row in moved)
+        assert sorted(map(tuple, moved)) == sorted(map(tuple, base))
+        assert moved != base
 
 
 def test_replay_by_seed(two):

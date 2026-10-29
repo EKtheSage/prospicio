@@ -268,6 +268,15 @@ impl SegmentPatterns {
         }
     }
 
+    /// These ages and label with other `draws` (same layout).
+    #[cfg(feature = "bayes")]
+    pub(crate) fn with_draws(&self, draws: Vec<f64>) -> Self {
+        Self {
+            draws,
+            ..self.clone()
+        }
+    }
+
     /// The segment's label, one part per key of the triangle; empty for a
     /// fit of one segment.
     pub fn label(&self) -> &[String] {

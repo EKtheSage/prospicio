@@ -4763,8 +4763,13 @@ decision 26 gives.
    `BayesOdpFit(s)`, `BayesBfFit` and `BayesBfNormalisedFit` (so
    `LayerSharePrior::fit` too), each with a `patterns` field. Meyers'
    models simulate only the value at the oldest age, log-normal cell by
-   cell, and Compartmental's pattern is the ODE's for the drawn rates;
-   both are later items. No fit knows whether its column is paid: a
+   cell, and Meyers' pattern is a later item. Compartmental's pattern, the
+   ODE's paid curve for the drawn rates, is built (2026-10-28, issue #679):
+   `CompartmentalFit` and `CompartmentalFits` carry `patterns`, a
+   proposal built as recommended and awaiting the user's acceptance,
+   recorded in `reserving-compartmental.md` decision 14 (normalised at
+   the square's last age, where its reserves stop; at the population
+   level; development-age effects as they enter the mean). No fit knows whether its column is paid: a
    pattern from an incurred triangle is an incurred pattern, and the
    engine would read it as paid.
 8. **Bindings.** Python: `fit.patterns` (`DevelopmentPatterns`) with

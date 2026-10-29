@@ -542,8 +542,9 @@ what it is aiming for by v1.0.
   Python and R): done. A development pattern per simulation, monthly from
   inception, for the cash-flow engine's paid patterns (`DevelopmentPatterns`,
   decision 28, #600; the bootstraps and `BayesOdp`, `BayesBf` and
-  `BayesBfNormalised`, in Rust, Python and R): done; Meyers' models and
-  `Compartmental` next.
+  `BayesBfNormalised`, in Rust, Python and R): done; `Compartmental`
+  (#679, `reserving-compartmental.md` decision 14, in Rust, Python and R):
+  done; Meyers' models next.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
 

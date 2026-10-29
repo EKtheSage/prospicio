@@ -1877,6 +1877,82 @@ choices:
   the one-year conformance on a quarterly triangle. The results are in
   `knowledge/findings/compartmental-grain.md`.
 
+### 14. A paid development pattern per posterior draw
+
+Status: **proposed and built as recommended, awaiting the user's
+acceptance** (2026-10-28), issue #679 (`reserving-v02.md` decision 28,
+item 7), branch `claude/pattern-draws-compartmental`, in Rust, Python and
+R. `CompartmentalFit` and `CompartmentalFits` carry `patterns`
+(`DevelopmentPatterns`): row `i` of a segment's patterns is the paid
+pattern of the posterior draw that simulation `i` took, the same
+simulation as row `i` of that segment's `reserves`, `paid` and
+`outstanding`. The choices decision 28 left open:
+
+1. **What the curve is.** The cumulative paid of an origin with nothing
+   observed under the draw: the closed form of decision 2 for the draw's
+   population rates, `RLR RRF PD(t)` with `PD(t) = (1 - e^(-k_p t)) - k_p
+   g(t)` (the ODE's solution, reused through `one_os`; no numerical solver
+   is added), at each age `t` of the square in years. The premium cancels.
+   It is the parameter uncertainty in the pattern only, the same for every
+   origin, with no process error (decision 28 item 1). Nothing new is
+   sampled: the pattern is computed from the draw the simulation already
+   took, so the cells and the reserves are bit for bit what they were
+   (a test replays the cells without it).
+2. **The normaliser: the paid at the square's last age** (alternative:
+   the curve's limit as `t` grows, the ODE's ultimate paid). The reserves
+   are the paid at the square's last age less the latest paid (decision
+   5's horizon), so the pattern divided by the paid at that age is what
+   the reserve measures, and it reaches exactly 1 at the last age, as
+   decision 28 item 2 says the Bayesian models do. The tail past the
+   square is not in the model, so no tail share is invented; with `k_p`
+   near 0.4 on company 337 the mean paid at ten years is 0.981 of the
+   ODE's limit (`knowledge/findings/compartmental-pattern-draws.md`, from a
+   short fit), and a user who wants the limit can read the curve from
+   the posterior. The ages are the square's, in months: the premium
+   column's origin periods in development periods (ten annual ages on
+   company 337, twenty for quarterly development of five annual origins),
+   not only the ages the triangle observes.
+3. **The level: the population** (alternative: one origin's own rates,
+   rejected because `DevelopmentPatterns` holds one pattern per segment
+   per simulation). Origin effects are at zero, the expected effect of a
+   new origin: `k_er`, `k_p`, `RLR` and `RRF` are the draw's population
+   values (`nat[0..4]`). `RLR` and `RRF` cancel in the share unless a
+   development effect on them differs by age (model 2), when they enter as
+   in item 4.
+4. **Development-age effects (model 2) enter as they enter the mean.** A
+   cell's parameters are the origin's times `e^(s v)` with the draw's
+   effect `v` at the cell's age; the pattern uses the same multipliers at
+   an age that has an observed cell and none (a multiplier of 1, the
+   population's zero effect) at an age without, so a new age's effect is
+   not drawn, which would take a random number. Cumulative paid at age
+   `k` is `RLR RRF PD(t_k)` with that age's parameters; under incremental
+   paid it is the sum of the increments `PD(t_j) - PD(t_(j-1))` with each
+   age's parameters, as the simulation writes them. Either way the
+   effects can make a share fall or exceed the share after it; the
+   monthly conversion refuses that by default and `Monotone::RunningMax`
+   holds it (decision 28 item 5). Without development effects (model 1,
+   shared rates) the share rises with age.
+5. **Settings that change nothing here.** The likelihood (normal or
+   log-normal), the loss-ratio or amount scale and the pair fitted do not
+   change the curve; under `Fitted::IncurredOnly` no paid cell is fitted,
+   so the paid rate `k_p` and the pattern come from its prior, which the
+   fit already warns of (decision 12). The pattern is a paid pattern
+   whatever the column named, as decision 28 item 7 says of every fit.
+6. **Over segments.** `fit_segments` fits each segment alone on its own
+   seeds, then, as it does for the reserves and the future cells, puts a
+   segment's pattern columns after its other columns in the row that
+   Iman-Conover moves whole (`reorder_rows`), so a segment's pattern in
+   row `i` is the pattern of the draw whose reserves are in row `i` of
+   that segment after the reorder; a test checks it against the same fit
+   without the correlation. `CompartmentalFits::patterns` joins the
+   segments' patterns by label, and `segment(...)` keeps its own.
+
+Bindings: Python `fit.patterns` on `CompartmentalFit` and
+`CompartmentalFits` (the `DevelopmentPatterns` of decision 28 item 8); R
+`pattern_draws()` and `monthly_pattern_draws()` take a `compartmental_fit`
+or `compartmental_fits`. Breaking in Rust: the two fit structs gain a
+public field.
+
 ## Risks
 
 * **Prior-data conflict.** On company 337 the data already overrule the

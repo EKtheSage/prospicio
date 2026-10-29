@@ -5479,6 +5479,28 @@ impl CompartmentalFits {
 
 #[extendr]
 impl CompartmentalFits {
+    /// The development ages of a segment's pattern draws, in months.
+    fn pattern_ages(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_ages_of(&self.inner.patterns, &segment)
+    }
+
+    /// The pattern draws of a segment, row-major: simulation `i`'s
+    /// cumulative share at each age in row `i`.
+    fn pattern_draws(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_draws_of(&self.inner.patterns, &segment)
+    }
+
+    /// The monthly patterns for the cash-flow engine, row-major.
+    fn monthly_pattern_draws(
+        &self,
+        segment: Vec<String>,
+        months: f64,
+        basis: Robj,
+        monotone: &str,
+    ) -> Result<Vec<f64>> {
+        monthly_pattern_draws_of(&self.inner.patterns, &segment, months, &basis, monotone)
+    }
+
     fn n_segments(&self) -> i32 {
         self.inner.segments.len() as i32
     }
@@ -5636,6 +5658,29 @@ pub(crate) struct CompartmentalFit {
 
 #[extendr]
 impl CompartmentalFit {
+    /// The development ages of the pattern draws, in months
+    /// (`DevelopmentPatterns::segment`); `segment` is empty.
+    fn pattern_ages(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_ages_of(&self.inner.patterns, &segment)
+    }
+
+    /// The pattern draws, row-major: simulation `i`'s cumulative share at
+    /// each age in row `i`.
+    fn pattern_draws(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_draws_of(&self.inner.patterns, &segment)
+    }
+
+    /// The monthly patterns for the cash-flow engine, row-major.
+    fn monthly_pattern_draws(
+        &self,
+        segment: Vec<String>,
+        months: f64,
+        basis: Robj,
+        monotone: &str,
+    ) -> Result<Vec<f64>> {
+        monthly_pattern_draws_of(&self.inner.patterns, &segment, months, &basis, monotone)
+    }
+
     fn origins(&self) -> Vec<String> {
         self.inner.origins.iter().map(ToString::to_string).collect()
     }

@@ -507,3 +507,16 @@ stopifnot(
 near(mean(qfit@reserves), 74873, 0.02)
 qpaths <- compartmental_prior_predictive(qtri, "premium", gm, n_sims = 100)
 stopifnot(nrow(qpaths$paid@keys) == 10 * 40)
+
+# The paid development pattern of each posterior draw (reserving-compartmental.md
+# decision 14): one row per simulation, one column per age of the square, the
+# paid curve of the draw's rates over its value at the last age.
+pd <- pattern_draws(fit)
+stopifnot(
+  nrow(pd) == 2000, ncol(pd) == 10,
+  identical(colnames(pd), as.character(seq(12, 120, by = 12))),
+  all(pd[, 10] == 1), all(pd[, 1] > 0),
+  all(pd[, -1] > pd[, -10])
+)
+md <- monthly_pattern_draws(fit, 144)
+stopifnot(nrow(md) == 2000, ncol(md) == 144, all(md[, 144] == 1))

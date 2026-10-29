@@ -3076,6 +3076,12 @@ MeyersFits$segment <- function(keys, values) .Call(wrap__MeyersFits__segment, se
 
 CompartmentalFits <- new.env(parent = emptyenv())
 
+CompartmentalFits$pattern_ages <- function(segment) .Call(wrap__CompartmentalFits__pattern_ages, self, segment)
+
+CompartmentalFits$pattern_draws <- function(segment) .Call(wrap__CompartmentalFits__pattern_draws, self, segment)
+
+CompartmentalFits$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__CompartmentalFits__monthly_pattern_draws, self, segment, months, basis, monotone)
+
 CompartmentalFits$n_segments <- function() .Call(wrap__CompartmentalFits__n_segments, self)
 
 CompartmentalFits$origins <- function() .Call(wrap__CompartmentalFits__origins, self)
@@ -3127,6 +3133,12 @@ CompartmentalFits$segment <- function(keys, values) .Call(wrap__CompartmentalFit
 `[[.CompartmentalFits` <- `$.CompartmentalFits`
 
 CompartmentalFit <- new.env(parent = emptyenv())
+
+CompartmentalFit$pattern_ages <- function(segment) .Call(wrap__CompartmentalFit__pattern_ages, self, segment)
+
+CompartmentalFit$pattern_draws <- function(segment) .Call(wrap__CompartmentalFit__pattern_draws, self, segment)
+
+CompartmentalFit$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__CompartmentalFit__monthly_pattern_draws, self, segment, months, basis, monotone)
 
 CompartmentalFit$origins <- function() .Call(wrap__CompartmentalFit__origins, self)
 

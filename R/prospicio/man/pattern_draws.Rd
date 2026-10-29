@@ -17,7 +17,8 @@ monthly_pattern_draws(
 }
 \arguments{
 \item{fit}{An \link{odp_bootstrap_fit}, \link{mack_bootstrap_fit}, \link{bayes_odp_fit},
-\link{bayes_odp_fits}, \link{bayes_bf_fit} or \link{bayes_bf_normalised_fit}.}
+\link{bayes_odp_fits}, \link{bayes_bf_fit}, \link{bayes_bf_normalised_fit},
+\link{compartmental_fit} or \link{compartmental_fits}.}
 
 \item{segment}{\code{NULL} for a fit of one segment, or the segment's key
 values (\code{"Auto"}, \code{c("Auto", "NSW")}) over segments.}
@@ -68,6 +69,12 @@ both: \code{monotone = "refuse"} (the default) is an error naming how many
 simulations and the first, \code{"running_max"} holds each share at the
 largest before it, capped at 1, and gives a share that is not positive the
 next positive share, which the simulation then pays from its first age.
+
+A \link{compartmental_fit} or \link{compartmental_fits} gives the paid curve of the model's
+ODE for each posterior draw's rates, over the same curve at the square's last age (where
+its reserves stop), for an origin with nothing observed (origin effects at zero), with the
+draw's development-age effects under model 2 (\code{docs/design/reserving-compartmental.md},
+decision 14). It has parameter uncertainty only, and its ages are the square's.
 
 No fit knows whether its triangle is paid: a pattern from an incurred
 triangle is an incurred pattern, and the engine reads it as paid.

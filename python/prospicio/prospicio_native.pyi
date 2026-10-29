@@ -8161,6 +8161,25 @@ class CompartmentalFit:
         there only when the priors have that effect.
         """
     @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        The paid development pattern of each simulation's posterior draw,
+        to pair with the simulation's loss ratio in the cash-flow engine.
+        
+        Row ``i`` of every pattern is simulation ``i`` of ``reserves``. The
+        share is that of an origin with nothing observed (origin effects at
+        zero): the ODE's paid curve for the draw's rates, with the draw's
+        development-age effects (model 2), over the same at the square's
+        last age, where the reserves stop, so it is exactly 1 there. The
+        ages are the square's, in months. It has the draw's parameter
+        uncertainty only, no process error. Drawing it takes no random
+        number, so the reserves are what they were without it.
+        
+        Returns
+        -------
+        DevelopmentPatterns
+        """
+    @property
     def population_origins(self, /) -> list[str]:
         """
         The origins with no observed cell, whose effects each simulation
@@ -8390,6 +8409,22 @@ class CompartmentalFits:
         """
         Parameter names of a single-segment fit, as
         ``CompartmentalFit.parameter_names``.
+        """
+    @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        Each segment's paid development pattern in every simulation, to
+        pair with the simulation's loss ratio in the cash-flow engine.
+        
+        A segment's row ``i`` is the pattern of the posterior draw whose
+        reserve is row ``i`` of that segment's reserves, after any rank
+        correlation between segments. Name a segment by its label parts in
+        ``segment=``; see ``CompartmentalFit.patterns`` for what a pattern
+        is.
+        
+        Returns
+        -------
+        DevelopmentPatterns
         """
     @property
     def premium(self, /) -> list[float]:
