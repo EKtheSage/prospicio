@@ -22,6 +22,7 @@
 pub mod artifact;
 pub mod calibrate;
 pub mod compare;
+pub mod conformal;
 pub mod design;
 pub mod encode;
 pub mod family;

@@ -774,3 +774,62 @@ for (fam in c("gaussian", "poisson")) {
 rb <- reliability(yy, pp, bins = 4)
 stopifnot(sum(rb$count) == 200, abs(sum(rb$weight * rb$mean_actual) - sum(yy)) < 1e-9)
 cat("calibration tests passed\n")
+
+# Conformal prediction intervals (#546) against MAPIE 0.9.1, and the
+# model-level wrapper equal to the array functions on the same folds.
+cref <- utils::read.csv(file.path(root, "reference", "conformal_mapie.csv"), stringsAsFactors = FALSE,
+                        colClasses = "character")
+cnum <- function(s) as.double(strsplit(s, ";")[[1]])
+for (i in seq_len(nrow(cref))) {
+  r <- cref[i, ]
+  a <- as.double(r$alpha)
+  got <- switch(r$case,
+    split = conformal_split(cnum(r$y), cnum(r$pred), cnum(r$test), alpha = a),
+    cqr = {
+      p <- strsplit(r$pred, "|", fixed = TRUE)[[1]]
+      t <- strsplit(r$test, "|", fixed = TRUE)[[1]]
+      conformal_cqr(cnum(r$y), cnum(p[1]), cnum(p[2]), cnum(t[1]), cnum(t[2]), alpha = a)
+    },
+    conformal_plus(cnum(r$y), cnum(r$pred), cnum(r$folds) + 1,
+                   lapply(strsplit(r$test, "|", fixed = TRUE)[[1]], cnum), alpha = a)
+  )
+  for (side in c("lo", "hi")) {
+    want <- cnum(r[[side]])
+    stopifnot(all(abs(got[[side]] - want) <= 1e-12 * pmax(1, abs(want))))
+  }
+}
+cd <- data.frame(x = ((0:59) * 7) %% 13)
+cy <- 1 + 0.5 * cd$x + ((0:59 * 31) %% 7) - 3
+cfit <- function(data, y) stats::lm(y ~ x, data = cbind(data, y = y))
+cnew <- data.frame(x = c(0.5, 6, 12.5))
+csp <- k_fold(60, 5, 3)
+cgot <- conformal_intervals(cfit, cd, cy, cnew, method = "cv+", splits = csp)
+coof <- numeric(60); cfold <- integer(60); cper <- list()
+for (k in seq_along(csp)) {
+  m <- cfit(cd[csp[[k]]$train, , drop = FALSE], cy[csp[[k]]$train])
+  coof[csp[[k]]$test] <- predict(m, cd[csp[[k]]$test, , drop = FALSE])
+  cfold[csp[[k]]$test] <- k
+  cper[[k]] <- predict(m, cnew)
+}
+stopifnot(isTRUE(all.equal(cgot, conformal_plus(cy, coof, cfold, cper, 0.1), tolerance = 0)))
+cs <- conformal_intervals(cfit(cd, cy), cd, cy, cnew, method = "split")
+stopifnot(all(cs$lo < cs$hi))
+cat("conformal tests passed\n")
+
+# Time splits with a window, a horizon and a gap (#549): the defaults are
+# time_ordered(), and scikit-learn 1.5.2's TimeSeriesSplit index sets.
+tper <- c(3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5)
+for (n in 1:5) stopifnot(identical(time_splits(tper, n), time_ordered(tper, n)))
+tref <- utils::read.csv(file.path(root, "reference", "time_splits_sklearn.csv"), stringsAsFactors = FALSE,
+                        colClasses = "character")
+for (i in seq_len(nrow(tref))) {
+  r <- tref[i, ]
+  h <- as.double(r$horizon)
+  s <- time_splits(0:(as.double(r$n) - 1), as.double(r$n_test),
+                   window = if (r$window == "") NULL else as.double(r$window),
+                   horizon = h, gap = as.double(r$gap), step = h)[[as.integer(r$split) + 1]]
+  stopifnot(identical(s$train, as.double(strsplit(r$train, " ")[[1]]) + 1),
+            identical(s$test, as.double(strsplit(r$test, " ")[[1]]) + 1))
+}
+stopifnot(inherits(try(time_splits(tper, 2, horizon = 3, step = 3, gap = 1), silent = TRUE), "try-error"))
+cat("time split tests passed\n")

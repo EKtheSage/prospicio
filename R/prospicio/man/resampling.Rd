@@ -5,6 +5,7 @@
 \alias{k_fold}
 \alias{group_k_fold}
 \alias{time_ordered}
+\alias{time_splits}
 \alias{permutation}
 \title{Resampling splits}
 \usage{
@@ -13,6 +14,8 @@ k_fold(n, k, seed)
 group_k_fold(groups, k, seed)
 
 time_ordered(periods, n_test)
+
+time_splits(periods, n_test, window = NULL, horizon = 1, gap = 0, step = 1)
 
 permutation(n, seed, stream = 0)
 }
@@ -29,6 +32,12 @@ permutation(n, seed, stream = 0)
 
 \item{n_test}{Number of final periods to test on.}
 
+\item{window}{A rolling window of that many periods, or \code{NULL} for an
+expanding one.}
+
+\item{horizon, gap, step}{Periods tested, left out before each test window,
+and moved from one split to the next.}
+
 \item{stream}{For \code{permutation()}, the stream of \code{seed} to draw from.}
 }
 \value{
@@ -41,9 +50,15 @@ A list of splits, each \code{list(train, test)} of row numbers;
 \code{group_k_fold()} keeps each group's rows in one fold; \code{time_ordered()}
 tests on each of the last \code{n_test} periods after training on the earlier
 ones (with calendar diagonals as periods, the triangle backtest).
+\code{time_splits()} generalises it: each split tests on \code{horizon} consecutive
+periods, the last ending at the latest period and each earlier one \code{step}
+periods before the next, and trains on the periods before its test window
+less the \code{gap} just before it, all of them or the latest \code{window}
+(scikit-learn's \code{TimeSeriesSplit} with \code{horizon = step = test_size}).
 \code{permutation()} shuffles \code{1:n} with \code{seed} on stream \code{stream}.
 }
 \examples{
 length(k_fold(10, 5, seed = 1))
 time_ordered(c(0, 1, 2, 1, 2, 2), 1)
+time_splits(0:9, 2, window = 3, horizon = 2, gap = 1, step = 2)
 }

@@ -2903,3 +2903,129 @@ fn recalibration_repairs_a_bent_model_on_the_chalk_portfolio() {
         .fold((0.0, 0.0), |(a, c), ((p, y), w)| (a + p * w, c + y * w));
     assert!((tp / ty - 1.0).abs() < 1e-12, "{tp} {ty}");
 }
+
+/// Conformal intervals against MAPIE 0.9.1 (`validation/scripts/conformal_mapie.py`):
+/// split conformal, CQR, CV+ on five folds and the jackknife+, each from the
+/// same model's predictions MAPIE used, to 1e-12.
+#[test]
+fn conformal_intervals_match_mapie() {
+    use prospicio_models::conformal::{Score, cqr, cv_plus, split};
+    let nums = |s: &str| -> Vec<f64> { s.split(';').map(|x| x.parse().unwrap()).collect() };
+    let mut cases = 0;
+    for c in &reference("conformal_mapie.csv") {
+        let alpha: f64 = c.get("alpha").parse().unwrap();
+        let y = nums(c.get("y"));
+        let i = match c.get("case") {
+            "split" => split(
+                &y,
+                &nums(c.get("pred")),
+                &nums(c.get("test")),
+                alpha,
+                &Score::Absolute,
+            )
+            .unwrap(),
+            "cqr" => {
+                let p: Vec<&str> = c.get("pred").split('|').collect();
+                let t: Vec<&str> = c.get("test").split('|').collect();
+                cqr(
+                    &y,
+                    &nums(p[0]),
+                    &nums(p[1]),
+                    &nums(t[0]),
+                    &nums(t[1]),
+                    alpha,
+                )
+                .unwrap()
+            }
+            "cv_plus" | "jackknife_plus" => {
+                let fold: Vec<usize> = nums(c.get("folds")).iter().map(|&k| k as usize).collect();
+                let test: Vec<Vec<f64>> = c.get("test").split('|').map(nums).collect();
+                cv_plus(&y, &nums(c.get("pred")), &fold, &test, alpha).unwrap()
+            }
+            other => panic!("case {other}"),
+        };
+        for (got, want) in [(&i.lo, nums(c.get("lo"))), (&i.hi, nums(c.get("hi")))] {
+            for (g, w) in got.iter().zip(&want) {
+                assert!(
+                    (g - w).abs() < 1e-12 * w.abs().max(1.0),
+                    "{}: {g} {w}",
+                    c.get("case")
+                );
+            }
+        }
+        cases += 1;
+    }
+    assert_eq!(cases, 4);
+}
+
+/// `cv_plus_fit` fits a Gaussian GLM on each fold in parallel and gives the
+/// intervals `cv_plus` gives from the same folds' predictions made by hand.
+#[test]
+fn cv_plus_fit_equals_cv_plus_on_its_folds() {
+    use prospicio_models::Fitted;
+    use prospicio_models::conformal::{cv_plus, cv_plus_fit};
+    use prospicio_models::resample::k_fold;
+    let n = 60;
+    let x: Vec<f64> = (0..n).map(|i| ((i * 7) % 13) as f64).collect();
+    let y: Vec<f64> = x
+        .iter()
+        .enumerate()
+        .map(|(i, x)| 1.0 + 0.5 * x + ((i * 31) % 7) as f64 - 3.0)
+        .collect();
+    let design = |x: &[f64]| {
+        Design::new(
+            vec!["(Intercept)".into(), "x".into()],
+            vec![vec![1.0; x.len()], x.to_vec()],
+        )
+        .unwrap()
+    };
+    let d = design(&x);
+    let test = design(&[0.5, 6.0, 12.5]);
+    let splits = k_fold(n, 5, 3).unwrap();
+    let glm = Glm::new(Family::Gaussian, Link::Identity);
+    let got = cv_plus_fit(&glm, &d, &y, &splits, &test, 0.1).unwrap();
+    let (mut oof, mut fold, mut per) = (vec![0.0; n], vec![0; n], Vec::new());
+    for (k, s) in splits.iter().enumerate() {
+        let yt: Vec<f64> = s.train.iter().map(|&i| y[i]).collect();
+        let f = glm.fit(&d.select(&s.train), &yt).unwrap();
+        for (&i, p) in s.test.iter().zip(f.predict(&d.select(&s.test)).unwrap()) {
+            oof[i] = p;
+            fold[i] = k;
+        }
+        per.push(f.predict(&test).unwrap());
+    }
+    assert_eq!(got, cv_plus(&y, &oof, &fold, &per, 0.1).unwrap());
+    assert!(got.lo.iter().zip(&got.hi).all(|(l, h)| l < h));
+}
+
+/// Time-ordered splits with a rolling window, a horizon and a gap against
+/// scikit-learn 1.5.2's `TimeSeriesSplit` on one row a period
+/// (`validation/scripts/time_splits_sklearn.py`): the same index sets.
+#[test]
+fn time_splits_match_scikit_learn() {
+    use prospicio_models::resample::TimeSplits;
+    let ids = |s: &str| -> Vec<usize> {
+        s.split(' ')
+            .filter(|x| !x.is_empty())
+            .map(|x| x.parse().unwrap())
+            .collect()
+    };
+    let mut checked = 0;
+    for c in &reference("time_splits_sklearn.csv") {
+        let num = |k: &str| -> usize { c.get(k).parse().unwrap() };
+        let periods: Vec<i64> = (0..num("n") as i64).collect();
+        let h = num("horizon");
+        let mut spec = TimeSplits::new(num("n_test"))
+            .horizon(h)
+            .step(h)
+            .gap(num("gap"));
+        if !c.get("window").is_empty() {
+            spec = spec.rolling(num("window"));
+        }
+        let s = &spec.splits(&periods).unwrap()[num("split")];
+        assert_eq!(s.train, ids(c.get("train")), "{:?}", c.get("case"));
+        assert_eq!(s.test, ids(c.get("test")), "{:?}", c.get("case"));
+        checked += 1;
+    }
+    assert_eq!(checked, 16);
+}

@@ -2011,6 +2011,28 @@ fn time_ordered_rust(periods: &[f64], n_test: f64) -> Result<List> {
         .map_err(to_r)
 }
 
+/// Time-ordered splits with a window (`window` NaN for expanding), a
+/// horizon, a gap and a step.
+#[extendr]
+fn time_splits_rust(
+    periods: &[f64],
+    n_test: f64,
+    window: f64,
+    horizon: f64,
+    gap: f64,
+    step: f64,
+) -> Result<List> {
+    let p: Vec<i64> = periods.iter().map(|&v| v as i64).collect();
+    let mut spec = resample::TimeSplits::new(whole(n_test, "n_test")? as usize)
+        .horizon(whole(horizon, "horizon")? as usize)
+        .gap(whole(gap, "gap")? as usize)
+        .step(whole(step, "step")? as usize);
+    if !window.is_nan() {
+        spec = spec.rolling(whole(window, "window")? as usize);
+    }
+    spec.splits(&p).map(splits_r).map_err(to_r)
+}
+
 /// MCMC diagnostics of `draws` (column-major, `n_chains` columns).
 #[extendr]
 fn mcmc_diagnostics_rust(draws: &[f64], n_chains: f64) -> Result<List> {
@@ -2687,8 +2709,98 @@ fn murphy_rust(
     ))
 }
 
+fn intervals_list(i: prospicio_models::conformal::Intervals) -> List {
+    list!(lo = i.lo, hi = i.hi)
+}
+
+/// Split conformal intervals; `score` "absolute", "pearson" (with
+/// `family_name`) or "scaled" (with `scale` and `test_scale`); `weights`
+/// and `test_weights` both empty for the unweighted method.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn conformal_split_rust(
+    y: &[f64],
+    pred: &[f64],
+    test_pred: &[f64],
+    alpha: f64,
+    score: &str,
+    family_name: &str,
+    scale: &[f64],
+    test_scale: &[f64],
+    weights: &[f64],
+    test_weights: &[f64],
+    theta: f64,
+    power: f64,
+) -> Result<List> {
+    use prospicio_models::conformal::{Score, split, weighted_split};
+    let s = match score {
+        "absolute" => Score::Absolute,
+        "pearson" => Score::Pearson(family(family_name, theta, power)?),
+        "scaled" => Score::Scaled {
+            calibration: scale.to_vec(),
+            test: test_scale.to_vec(),
+        },
+        other => return Err(Error::Other(format!("unknown score {other:?}"))),
+    };
+    let i = if weights.is_empty() && test_weights.is_empty() {
+        split(y, pred, test_pred, alpha, &s)
+    } else {
+        weighted_split(y, pred, test_pred, alpha, &s, weights, test_weights)
+    }
+    .map_err(to_r)?;
+    Ok(intervals_list(i))
+}
+
+/// Conformalised quantile regression intervals.
+#[extendr]
+fn conformal_cqr_rust(
+    y: &[f64],
+    lo: &[f64],
+    hi: &[f64],
+    test_lo: &[f64],
+    test_hi: &[f64],
+    alpha: f64,
+) -> Result<List> {
+    let i = prospicio_models::conformal::cqr(y, lo, hi, test_lo, test_hi, alpha).map_err(to_r)?;
+    Ok(intervals_list(i))
+}
+
+/// CV+ intervals; `folds` 1-based, `test_pred` a list of each fold's test
+/// predictions.
+#[extendr]
+fn conformal_plus_rust(
+    y: &[f64],
+    oof_pred: &[f64],
+    folds: &[f64],
+    test_pred: List,
+    alpha: f64,
+) -> Result<List> {
+    let fold = folds
+        .iter()
+        .map(|&k| {
+            if k >= 1.0 && k.fract() == 0.0 {
+                Ok(k as usize - 1)
+            } else {
+                Err(Error::Other(format!("{k} is not a fold (1, 2, ...)")))
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let per = test_pred
+        .values()
+        .map(|v| {
+            v.as_real_vector()
+                .ok_or_else(|| Error::Other("each fold's test predictions are numeric".into()))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let i = prospicio_models::conformal::cv_plus(y, oof_pred, &fold, &per, alpha).map_err(to_r)?;
+    Ok(intervals_list(i))
+}
+
 extendr_module! {
     mod models;
+    fn conformal_split_rust;
+    fn conformal_cqr_rust;
+    fn conformal_plus_rust;
     fn isotonic_rust;
     fn balance_correction_rust;
     fn reliability_rust;
@@ -2738,6 +2850,7 @@ extendr_module! {
     fn mars_rust;
     fn group_k_fold_rust;
     fn time_ordered_rust;
+    fn time_splits_rust;
     fn mcmc_diagnostics_rust;
     fn elpd_loo_rust;
     fn elpd_waic_rust;
