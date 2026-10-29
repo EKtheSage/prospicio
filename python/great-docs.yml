@@ -301,6 +301,7 @@ reference:
     desc: Loss triangles, the chain ladder with tail factors, Mack's model with its one-year view and its assumption tests, the expected-loss methods, the ODP bootstrap and Clark's growth curves.
     contents:
       - reserving.Triangle
+      - reserving.schedule_p
       - reserving.ChainLadder
       - reserving.ChainLadderFit
       - reserving.TailConstant
