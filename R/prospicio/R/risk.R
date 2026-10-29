@@ -695,9 +695,11 @@ copula_log_density <- function(copula, u) {
 #' Copula distribution function
 #'
 #' `C(u) = P(U_1 <= u_1, ..., U_d <= u_d)` at each point: the Gaussian
-#' copula's in two dimensions (the bivariate normal cdf by Genz's method,
-#' about `1e-15`), the Archimedean copulas' in any. The t copula has none
-#' yet and is an error.
+#' copula's exactly in two dimensions (the bivariate normal cdf by Genz's
+#' method, about `1e-15`) and in more by Genz's quasi-Monte Carlo method
+#' within an absolute error of about `1e-5` ([mvn_cdf()];
+#' [copula_cdf_estimate()] for the settings and the error), the
+#' Archimedean copulas' in any. The t copula has none yet and is an error.
 #'
 #' @param copula A [copula].
 #' @param u A point (a vector of `copula@dimension` values in `[0, 1]`) or a
@@ -710,6 +712,113 @@ copula_log_density <- function(copula, u) {
 copula_cdf <- function(copula, u) {
   u <- if (is.matrix(u)) u else matrix(u, nrow = 1)
   rust_result(copula@ptr$cdf(as.double(u), as.double(nrow(u))))
+}
+
+#' Gaussian copula cdf with its error estimate
+#'
+#' The Gaussian copula's distribution function at each point with Genz's
+#' error estimate ([mvn_cdf()]): exact in two dimensions, and wherever at
+#' most two coordinates are below 1.
+#'
+#' @param copula A [gaussian_copula()].
+#' @param u A point or a matrix with one point per row.
+#' @param abs_tol Absolute error to reach, three standard errors.
+#' @param max_points Most integrand evaluations.
+#' @param seed Seed of the scrambles, so a call is reproducible.
+#' @returns A data frame with `value`, `error`, `points` and `converged`,
+#'   one row per point.
+#' @export
+#' @examples
+#' r <- matrix(0.5, 3, 3)
+#' diag(r) <- 1
+#' copula_cdf_estimate(gaussian_copula(r), c(0.5, 0.5, 0.5), abs_tol = 1e-7)
+copula_cdf_estimate <- function(copula, u, abs_tol = 1e-5, max_points = 2^22, seed = 0) {
+  u <- if (is.matrix(u)) u else matrix(u, nrow = 1)
+  n <- nrow(u)
+  e <- rust_result(copula@ptr$cdf_estimate(
+    as.double(u), as.double(n), as.double(abs_tol), as.double(max_points), as.double(seed)
+  ))
+  data.frame(value = e[seq_len(n)], error = e[n + seq_len(n)],
+             points = e[2 * n + seq_len(n)], converged = e[3 * n + seq_len(n)] == 1)
+}
+
+#' Gaussian copula draws on Sobol points
+#'
+#' `n` draws on scrambled Sobol points ([sobol_points()]), quasi-Monte
+#' Carlo: each point `w` becomes `pnorm(L qnorm(w))`. Over a power of two of
+#' points each margin is spread far more evenly than random draws, so a
+#' statistic converges faster; the rows are not independent, so a standard
+#' error needs several seeds. At most 1,111 dimensions.
+#'
+#' @param copula A [gaussian_copula()].
+#' @param n Number of draws; a power of two keeps them balanced.
+#' @param seed Seed of the scramble.
+#' @returns An `n` by `copula@dimension` matrix of uniforms in `(0, 1)`.
+#' @export
+#' @examples
+#' u <- copula_sample_qmc(gaussian_copula(matrix(c(1, 0.6, 0.6, 1), 2)), 1024, seed = 7)
+#' all(sort(floor(u[, 1] * 1024)) == 0:1023)
+copula_sample_qmc <- function(copula, n, seed = 0) {
+  m <- rust_result(copula@ptr$sample_qmc(as.double(n), as.double(seed)))
+  matrix(m, nrow = n)
+}
+
+#' Multivariate normal probability
+#'
+#' `P(lower < X < upper)` for `X ~ N(0, R)` by Genz's method: exact in one
+#' and two dimensions; in more, Genz's integral after a Cholesky separation
+#' of the variables (reordered as Genz and Bretz do), estimated by
+#' `scrambles` independently scrambled Sobol sequences, the points doubled
+#' until three standard errors are at most `abs_tol` or the points reach
+#' `max_points`. The method of `mvtnorm::pmvnorm()`, with Sobol points in
+#' place of its lattice rules, so results agree within the errors.
+#'
+#' @param upper Upper limits (`Inf` for none).
+#' @param correlation A positive definite correlation or covariance matrix.
+#' @param lower Lower limits; `NULL` for `-Inf`.
+#' @param abs_tol Absolute error to reach, three standard errors; with ten
+#'   scrambles the true error exceeds it in about 1.5% of calls.
+#' @param max_points Most integrand evaluations.
+#' @param scrambles Independent scrambles, at least 2.
+#' @param seed Seed of the scrambles, so a call is reproducible.
+#' @returns The probability, with attributes `error`, `points` and
+#'   `converged`.
+#' @export
+#' @examples
+#' r <- matrix(0.5, 3, 3)
+#' diag(r) <- 1
+#' mvn_cdf(c(0, 0, 0), r) # 1/4
+mvn_cdf <- function(upper, correlation, lower = NULL, abs_tol = 1e-5, max_points = 2^22,
+                    scrambles = 10, seed = 0) {
+  upper <- as.double(upper)
+  lower <- if (is.null(lower)) rep(-Inf, length(upper)) else as.double(lower)
+  e <- rust_result(mvn_cdf_rust(lower, upper, as.double(correlation), as.double(abs_tol),
+                                as.double(max_points), as.double(scrambles), as.double(seed)))
+  structure(e[1], error = e[2], points = e[3], converged = e[4] == 1)
+}
+
+#' Sobol points
+#'
+#' `n` points of the Sobol sequence in `dim` dimensions: Joe and Kuo's
+#' direction numbers (up to 1,111 dimensions) at 32 bits, in Gray-code
+#' order. Unscrambled, the points are SciPy's
+#' `stats.qmc.Sobol(dim, scramble=False, bits=32)` exactly, the first at the
+#' origin. Scrambled, a linear matrix scramble with a digital shift drawn
+#' from `seed` (SciPy's kind of scramble, not its random stream) makes each
+#' point uniform and keeps the balance: over `2^m` points each `1 / 2^m` of
+#' a coordinate holds one point.
+#'
+#' @param n Number of points.
+#' @param dim Number of dimensions.
+#' @param scramble Whether to scramble.
+#' @param seed Seed of the scramble.
+#' @returns An `n` by `dim` matrix.
+#' @export
+#' @examples
+#' sobol_points(4, 2, scramble = FALSE)
+sobol_points <- function(n, dim, scramble = TRUE, seed = 0) {
+  m <- rust_result(sobol_rust(as.double(n), as.double(dim), isTRUE(scramble), as.double(seed)))
+  matrix(m, nrow = n)
 }
 
 #' Draw uniforms from a copula

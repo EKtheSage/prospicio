@@ -67,8 +67,9 @@ what it is aiming for by v1.0.
   golden section), Nelder–Mead, root finding, special functions (with the
   incomplete beta and gamma past their usual domain, the exponential
   integral and the Mills ratio), splines, symmetric eigenvalues (Jacobi,
-  for REML's penalty determinants).
-- **Next, on demand:** Sobol sequences for quasi-Monte Carlo (v1.x).
+  for REML's penalty determinants), Sobol sequences for quasi-Monte Carlo
+  and the multivariate normal distribution function by Genz's method in
+  any dimension (#565).
 - **v1.0:** only the numerics other crates use. No general-purpose
   library.
 

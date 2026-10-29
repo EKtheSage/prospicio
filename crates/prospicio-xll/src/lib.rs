@@ -2082,7 +2082,7 @@ pub static FUNCTIONS: &[Function] = &[
     Function {
         symbol: "pro_copula_cdf",
         name: "PRO.COPULA.CDF",
-        help: "A copula's distribution function C(u) at each point, one point a row (Gaussian in two dimensions, Archimedean in any).",
+        help: "A copula's distribution function C(u) at each point, one point a row (Gaussian in any dimension, exact in two and within about 1e-5 in more; Archimedean in any).",
         args: &[
             Arg {
                 name: "points",
