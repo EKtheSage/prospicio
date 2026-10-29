@@ -474,6 +474,7 @@ impl EventSet {
         expected_dims: Vec<String>,
         expected_values: List,
         source_hash: Robj,
+        losses_negative: bool,
     ) -> Result<Self> {
         use prospicio_aggregate::ylt::{Expansion, YearLossTable};
         let seed = whole(seed, "seed")?;
@@ -490,7 +491,12 @@ impl EventSet {
             .iter()
             .map(|&y| whole(y, "years").map(|y| y as usize))
             .collect::<Result<Vec<_>>>()?;
-        let mut ylt = YearLossTable::new(&years, losses).map_err(to_r)?;
+        let mut ylt = if losses_negative {
+            YearLossTable::from_negative_losses(&years, losses)
+        } else {
+            YearLossTable::new(&years, losses)
+        }
+        .map_err(to_r)?;
         let has_slots = !slots.is_null();
         if has_slots {
             let slots = slots

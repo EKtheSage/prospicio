@@ -731,6 +731,19 @@ stopifnot(identical(yev@n_sims, 6), identical(events(yev, 1), c(2, 10, 4)),
 stopifnot(identical(event_labels(yev, 1)$class, c("home", "home", "auto")))
 stopifnot(startsWith(yev@input_hash, "blake3:"),
           identical(provenance(total(yev))$input_hash, yev@input_hash))
+# A file of negative losses and its sign-flipped copy give one event set (#593).
+neg_path <- tempfile(fileext = ".csv")
+writeLines(c("year,peril,slot,class,value,item", "1,wind,5,home,-10,a", "1,wind,5,auto,-4,b",
+             "2,quake,1,home,-30,c", "1,wind,2,home,-2,d"), neg_path)
+nev <- read_ylt(neg_path, labels = c("peril", "class"), n_years = 3, losses_negative = TRUE)
+stopifnot(identical(events(nev, 1), c(2, 10, 4)), identical(events(nev, 2), 30))
+stopifnot(inherits(try(read_ylt(neg_path, labels = c("peril", "class")), silent = TRUE), "try-error"),
+          inherits(try(read_ylt(ylt_path, labels = c("peril", "class"), losses_negative = TRUE),
+                       silent = TRUE), "try-error"))
+neg_layer <- xol_layer("10x5", 10, 5)
+stopifnot(ceded(neg_layer, 12) == 7,
+          inherits(try(ceded(neg_layer, c(12, -3)), silent = TRUE), "try-error"),
+          inherits(try(ceded_by_event(neg_layer, -1), silent = TRUE), "try-error"))
 e <- tryCatch(read_ylt(ylt_path, labels = c("peril", "class"), unique_by = "peril"), error = identity)
 stopifnot(grepl("rows 1 and 2", conditionMessage(e)))
 e <- tryCatch(read_ylt(ylt_path, unique_by = character()), error = identity)
