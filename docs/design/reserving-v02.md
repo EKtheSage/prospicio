@@ -4378,8 +4378,12 @@ and `R/prospicio/tests/test-reserving-uy-pattern.R`):
   value is kept even when a search stops on its iteration limit, since the
   curve is only the projection's prior (two given ages can ask for a curve
   that steepens toward a step). Decision 23's edge check is kept as an
-  error. A flat pattern does not reach the edge: the curve reports
-  everything in the first month and the projection reproduces it.
+  error only on given values that fall. Given values that never fall are
+  read with the curve clamped to the edge of its parameters as the
+  projection's prior, which still gives the given values exactly
+  (decision 28 item 4, the fix of 2026-10-29). A flat pattern does not
+  reach the edge: the curve reports everything in the first month and the
+  projection reproduces it.
 - **No cap at the level** (a departure from items 1, 2 and 8, made after
   review on 2026-10-27, confirmed by the user on 2026-10-27). The study capped the
   increments at the level, `sum d <= L`. The given value at the last age
@@ -4426,7 +4430,9 @@ and `R/prospicio/tests/test-reserving-uy-pattern.R`):
   expanded pattern is the given value itself at each given age.
 - **Errors** (`Error::Pattern`): a single given value ("gives no shape to
   read between ages", naming the ln-linear reading, under which it still
-  converts), the curve's edge, no monotone accident-month pattern with the
+  converts), the curve's edge on given values that fall (on values that
+  never fall the curve is clamped to the edge instead; decision 28 item
+  4), no monotone accident-month pattern with the
   given averages, and a projection that does not converge. Each one that
   points to the ln-linear reading names it as `AnnualReading::LnLinear`
   and as `reading="ln-linear"` for Python and R, since the bindings pass
@@ -4751,8 +4757,10 @@ decision 26 gives.
    `RunningMax` leaves a bootstrap or Meyers draw that falls after a high
    first share) is read with the curve at the edge of its parameters as
    the projection's prior, which still gives the given values exactly.
-   Before the fix of 2026-10-29 (branch `claude/monthly-plateau`) such a
-   pattern was refused as not increasing, and a draw held at 1 needed
+   The same reading serves `to_underwriting_basis` and the monthly
+   conversions of a selected pattern, so a selected pattern of that shape
+   now converts there too. Before the fix of 2026-10-29 (branch
+   `claude/monthly-plateau`) such a pattern was refused as not increasing, and a draw held at 1 needed
    months to the oldest age (72 for a draw at 1 from 48 months of a
    six-age pattern, now 48).
 5. **A falling pattern** (accepted 2026-10-28). A pseudo factor below 1 makes a
