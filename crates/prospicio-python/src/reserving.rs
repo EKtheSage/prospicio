@@ -2468,8 +2468,9 @@ impl PyDevelopmentPatterns {
             .collect()
     }
 
-    /// The development ages in months: the triangle's, and with a tail one
-    /// development period past the oldest, where the share is 1.
+    /// The development ages in months: the triangle's (for ``Compartmental``,
+    /// its square's, to the last age the reserves reach), and with a tail
+    /// one development period past the oldest, where the share is 1.
     ///
     /// Parameters
     /// ----------
@@ -16100,6 +16101,31 @@ impl PyCompartmentalFit {
             .map(|inner| PyPredictiveDistribution { inner })
     }
 
+    /// Each simulation's paid development pattern, to pair with the
+    /// simulation's loss ratio in the cash-flow engine: at each age of the
+    /// square (to the last age, where the reserves end), the expected
+    /// cumulative paid of the ODE for the posterior draw the simulation
+    /// took, for an origin with nothing observed (the population's rates,
+    /// with each observed age's development effects and none at an age with
+    /// no observed cell), over that at the last age. No tail: each pattern
+    /// ends at 1 at the square's last age. The paid curve rises, and so does
+    /// a running sum of positive incremental means, so with cumulative paid
+    /// and no development effects (model 1) or incremental paid (model 2) a
+    /// share never falls.
+    ///
+    /// Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+    /// ``paid``, ``outstanding`` and ``ultimate_draws``.
+    ///
+    /// Returns
+    /// -------
+    /// DevelopmentPatterns
+    #[getter]
+    fn patterns(&self) -> PyDevelopmentPatterns {
+        PyDevelopmentPatterns {
+            inner: self.inner.patterns.clone(),
+        }
+    }
+
     /// Each origin's posterior mean ultimate loss ratio ``RLR_i RRF_i``,
     /// without process error past the square.
     #[getter]
@@ -16427,6 +16453,31 @@ impl PyCompartmentalFits {
             .outstanding
             .clone()
             .map(|inner| PyPredictiveDistribution { inner })
+    }
+
+    /// Each simulation's paid development pattern, to pair with the
+    /// simulation's loss ratio in the cash-flow engine: at each age of the
+    /// square (to the last age, where the reserves end), the expected
+    /// cumulative paid of the ODE for the posterior draw the simulation
+    /// took, for an origin with nothing observed (the population's rates,
+    /// with each observed age's development effects and none at an age with
+    /// no observed cell), over that at the last age. No tail: each pattern
+    /// ends at 1 at the square's last age. The paid curve rises, and so does
+    /// a running sum of positive incremental means, so with cumulative paid
+    /// and no development effects (model 1) or incremental paid (model 2) a
+    /// share never falls.
+    ///
+    /// Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+    /// ``paid``, ``outstanding`` and ``ultimate_draws``.
+    ///
+    /// Returns
+    /// -------
+    /// DevelopmentPatterns
+    #[getter]
+    fn patterns(&self) -> PyDevelopmentPatterns {
+        PyDevelopmentPatterns {
+            inner: self.inner.patterns.clone(),
+        }
     }
 
     /// The number of posterior draws with ``k_er <= k_p`` in each segment,

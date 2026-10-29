@@ -156,6 +156,7 @@ reference:
       - with_cover_basis
       - with_interlocking
       - with_scope
+      - per_risk_inuring
       - with_franchise
       - ceded_events
       - deal_ratios
@@ -322,6 +323,9 @@ reference:
       - sobol_points
       - weighted_tail
       - vine_copula
+      - fit_pair_copula
+      - rvine_copula
+      - fit_vine_copula
       - copula_simulate
       - iman_conover
   - title: Extreme value tails

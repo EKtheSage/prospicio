@@ -314,6 +314,8 @@ hawkes_fit_rust <- function(periods, horizon) .Call(wrap__hawkes_fit_rust, perio
 
 retro_premium_rust <- function(losses, basic, lcm, minimum, maximum) .Call(wrap__retro_premium_rust, losses, basic, lcm, minimum, maximum)
 
+per_risk_inuring_rust <- function(layer, years, event_limit, times, seed) .Call(wrap__per_risk_inuring_rust, layer, years, event_limit, times, seed)
+
 occurrence_cession_statistics_rust <- function(frequency, severity, shares, limits, attachments) .Call(wrap__occurrence_cession_statistics_rust, frequency, severity, shares, limits, attachments)
 
 aggregate_layer_statistics_rust <- function(annual, share, limit, attachment) .Call(wrap__aggregate_layer_statistics_rust, annual, share, limit, attachment)
@@ -323,6 +325,16 @@ occurrence_layer_statistics_rust <- function(frequency, severity, share, limit, 
 benchmark_curve_rust <- function(ages, values, kind, curve, weights, max_age, origin_width) .Call(wrap__benchmark_curve_rust, ages, values, kind, curve, weights, max_age, origin_width)
 
 underwriting_exposure_rust <- function(writing, policy_months) .Call(wrap__underwriting_exposure_rust, writing, policy_months)
+
+pair_fit_rust <- function(u, v, family, rotation) .Call(wrap__pair_fit_rust, u, v, family, rotation)
+
+pair_select_rust <- function(u, v, families, criterion, independence_test) .Call(wrap__pair_select_rust, u, v, families, criterion, independence_test)
+
+vine_fit_rust <- function(data, n, matrix, families, criterion, independence_test, trunc_level) .Call(wrap__vine_fit_rust, data, n, matrix, families, criterion, independence_test, trunc_level)
+
+kendall_tau_rust <- function(x, y) .Call(wrap__kendall_tau_rust, x, y)
+
+pseudo_observations_rust <- function(x) .Call(wrap__pseudo_observations_rust, x)
 
 weighted_tail_rust <- function(values, weights, p, batches) .Call(wrap__weighted_tail_rust, values, weights, p, batches)
 
@@ -3150,6 +3162,12 @@ CompartmentalFits$ultimate_draws <- function(origin) .Call(wrap__CompartmentalFi
 
 CompartmentalFits$loss_ratio_draws <- function(origin, premium) .Call(wrap__CompartmentalFits__loss_ratio_draws, self, origin, premium)
 
+CompartmentalFits$pattern_ages <- function(segment) .Call(wrap__CompartmentalFits__pattern_ages, self, segment)
+
+CompartmentalFits$pattern_draws <- function(segment) .Call(wrap__CompartmentalFits__pattern_draws, self, segment)
+
+CompartmentalFits$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__CompartmentalFits__monthly_pattern_draws, self, segment, months, basis, monotone)
+
 CompartmentalFits$paid <- function() .Call(wrap__CompartmentalFits__paid, self)
 
 CompartmentalFits$outstanding <- function() .Call(wrap__CompartmentalFits__outstanding, self)
@@ -3201,6 +3219,12 @@ CompartmentalFit$ultimates <- function() .Call(wrap__CompartmentalFit__ultimates
 CompartmentalFit$ultimate_draws <- function(origin) .Call(wrap__CompartmentalFit__ultimate_draws, self, origin)
 
 CompartmentalFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__CompartmentalFit__loss_ratio_draws, self, origin, premium)
+
+CompartmentalFit$pattern_ages <- function(segment) .Call(wrap__CompartmentalFit__pattern_ages, self, segment)
+
+CompartmentalFit$pattern_draws <- function(segment) .Call(wrap__CompartmentalFit__pattern_draws, self, segment)
+
+CompartmentalFit$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__CompartmentalFit__monthly_pattern_draws, self, segment, months, basis, monotone)
 
 CompartmentalFit$paid <- function() .Call(wrap__CompartmentalFit__paid, self)
 
@@ -3697,6 +3721,10 @@ RiskCopula$archimedean <- function(family, theta, dim) .Call(wrap__RiskCopula__a
 RiskCopula$nested <- function(family, root) .Call(wrap__RiskCopula__nested, family, root)
 
 RiskCopula$vine <- function(kind, order, pairs) .Call(wrap__RiskCopula__vine, kind, order, pairs)
+
+RiskCopula$rvine <- function(matrix, pairs) .Call(wrap__RiskCopula__rvine, matrix, pairs)
+
+RiskCopula$rvine_structure <- function() .Call(wrap__RiskCopula__rvine_structure, self)
 
 RiskCopula$log_density <- function(u, n) .Call(wrap__RiskCopula__log_density, self, u, n)
 

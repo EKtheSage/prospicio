@@ -155,3 +155,39 @@ for (fit in list(odp_bootstrap(flat_tri, n_sims = 200, seed = 1),
   uw <- monthly_pattern_draws(fit, 144, basis = underwriting_basis(), monotone = "running_max")
   stopifnot(all(uw[, 144] == 1))
 }
+# The compartmental model (#679): each simulation's pattern is the ODE's
+# expected cumulative paid over that at the square's last age (120 months
+# on company 337, one age past the paid triangle's), which never falls.
+wk <- utils::read.csv(validation("data", "clrd_wkcomp_337.csv"), comment.char = "#")
+wk337 <- wk[wk$origin + wk$development %/% 12 - 1 <= 1996, ]
+y1997 <- wk[wk$origin == 1997 & wk$development == 12, ]
+y1997$paid <- NA
+y1997$incurred <- NA
+wk337 <- rbind(wk337, y1997)
+tri337 <- triangle(wk337, "origin", "development", c("paid", "incurred", "premium"))
+cfit <- suppressWarnings(compartmental(tri337, "paid", "premium", gesmann_morris_priors(),
+                                       incurred = "incurred", n_sims = 1000, seed = 679))
+p <- pattern_draws(cfit)
+stopifnot(nrow(p) == 1000, ncol(p) == 10, identical(colnames(p), as.character(12 * 1:10)))
+stopifnot(all(p[, 10] == 1), all(p[, 1] > 0), nrow(unique(p)) > 100)
+stopifnot(all(p[, -1] - p[, -10] >= 0))
+# The default takes them, as running_max would leave them.
+m <- monthly_pattern_draws(cfit, 120)
+stopifnot(identical(dim(m), c(1000L, 120L)), all(m[, 120] == 1),
+          identical(m, monthly_pattern_draws(cfit, 120, monotone = "running_max")))
+
+# Over segments, each segment has its own patterns, kept by segment().
+two337 <- rbind(transform(wk337, lob = "A"),
+                transform(wk337, lob = "B", paid = 2 * paid, incurred = 2 * incurred,
+                          premium = 2 * premium))
+tri2 <- triangle(two337, "origin", "development", c("paid", "incurred", "premium"),
+                 keys = "lob")
+cfits <- suppressWarnings(compartmental_segments(tri2, "paid", "premium",
+                                                 gesmann_morris_priors(),
+                                                 incurred = "incurred", n_sims = 1000,
+                                                 seed = 680))
+pa <- pattern_draws(cfits, "A")
+pb <- pattern_draws(cfits, "B")
+stopifnot(nrow(pa) == 1000, all(pa[, 10] == 1), all(pb[, 10] == 1), !identical(pa, pb))
+stopifnot(fails(pattern_draws(cfits)))
+stopifnot(identical(pattern_draws(segment(cfits, lob = "B")), pb))

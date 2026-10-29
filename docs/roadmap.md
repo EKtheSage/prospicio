@@ -33,7 +33,7 @@ when from experience, and which pricing method fits which scenario.
 | v0.1: Reserving core | Distributions, `Triangle`, Chain Ladder, Mack, ODP bootstrap with a joint `PredictiveDistribution` | Done; parity on RAA, GenIns and ABC |
 | v0.2: Reserving breadth | BF, Cape Cod, Benktander, ELR, Clark, tails, one-year view (Merz–Wüthrich) | Done (#131–#136); selected development patterns (`reserving-v02.md` decision 12, in Rust, Python and R); latest diagonals, a development applied to another book, in Rust, Python and R (decisions 15 to 19) |
 | v0.3: Aggregate and reinsurance | Frequency-severity; FFT, Panjer, Monte Carlo; XOL, stop loss, reinstatements, towers, gross/ceded/net | Done, and more: surplus treaties, inuring stages, exact towers on the grid, risk profiles, exposure curves, reinstatements pro rata as to time, loss corridors, contract terms (ceding, sliding-scale and profit commissions, swing and retro rating) |
-| v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done, with nested Archimedean and C- and D-vine copulas (#261, #262) |
+| v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done, with nested Archimedean and C-, D- and R-vine copulas, pair copulas and vines fitted to data (#261, #262, #568) |
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
 | v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Done: P-splines, tensor product, cyclic and monotone smooths with GCV, UBRE or REML (#263), ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium |
@@ -90,7 +90,7 @@ what it is aiming for by v1.0.
     records the stream scheme and, apart from it, the sampler versions
     (`docs/design/rng.md`).
   - Risk measures and distortions, copulas (Gaussian, t, Archimedean,
-    nested Archimedean, C- and D-vines)
+    nested Archimedean, C-, D- and R-vines, fitted to data)
     with their distribution functions, Iman–Conover (normal, Student t or
     given scores), capital allocation (Euler, covariance, Shapley and
     others), EVT (GPD, POT, Hill, and threshold diagnostics: the mean
@@ -546,8 +546,8 @@ what it is aiming for by v1.0.
   Python and R): done. A development pattern per simulation, monthly from
   inception, for the cash-flow engine's paid patterns (`DevelopmentPatterns`,
   decision 28, #600; the bootstraps and `BayesOdp`, `BayesBf` and
-  `BayesBfNormalised`, and Meyers' CRC, CSR and CAY (#678), in Rust,
-  Python and R): done; `Compartmental` next.
+  `BayesBfNormalised`, Meyers' CRC, CSR and CAY (#678) and
+  `Compartmental`, models 1 and 2 (#679), in Rust, Python and R): done.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
 

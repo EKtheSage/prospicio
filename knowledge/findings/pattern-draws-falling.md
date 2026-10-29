@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: A bootstrap's development pattern per simulation falls somewhere in about half of RAA's ODP simulations, so the cash-flow engine cannot take it unchanged
-description: Each simulation's cumulative shares from the ODP or Mack bootstrap's pseudo factors fall at some age in 54% (ODP) and 22% (Mack) of 5,000 simulations on RAA and 10% and 2.5% on GenIns, because a pseudo factor at an old age can be below 1; the engine needs a non-decreasing paid pattern, so DevelopmentPatterns::monthly refuses by default and holds the running maximum on request. BayesOdp's, BayesBf's and BayesBfNormalised's patterns never fall; Meyers' CRC, CSR and CAY patterns (exp(beta_d g)) fall somewhere in 98% to 99% of the simulations on Meyers' group 353 paid data (nearly all on incurred) and pass 1 in 70% to 86%. Adding the pattern columns to the simulated row leaves every fit's reserves bit for bit unchanged.
+description: Each simulation's cumulative shares from the ODP or Mack bootstrap's pseudo factors fall at some age in 54% (ODP) and 22% (Mack) of 5,000 simulations on RAA and 10% and 2.5% on GenIns, because a pseudo factor at an old age can be below 1; the engine needs a non-decreasing paid pattern, so DevelopmentPatterns::monthly refuses by default and holds the running maximum on request. BayesOdp's, BayesBf's and BayesBfNormalised's patterns never fall; Meyers' CRC, CSR and CAY patterns (exp(beta_d g)) fall somewhere in 98% to 99% of the simulations on Meyers' group 353 paid data (nearly all on incurred) and pass 1 in 70% to 86%. Compartmental's patterns (the ODE's expected cumulative paid over that at the square's last age) never fall nor pass 1 in models 1 and 2 on company 337, as the paid curve rises. Adding the pattern columns to the simulated row leaves every fit's reserves bit for bit unchanged.
 tags: [reserving, bootstrap, payment-pattern, cashflow, simulation]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-28T12:00:00Z }
@@ -21,6 +21,12 @@ sources:
   - id: meyers-issue
     resource: https://github.com/EKtheSage/prospicio/issues/678
     title: Issue 678, a development pattern per simulation from Meyers' CRC, CSR and CAY
+  - id: compartmental-test
+    resource: ../validation/tests/reserving_bayes_pattern_draws.rs
+    title: compartmental_patterns_are_the_paid_curve_and_never_fall, run by CI's bayes job (model 2's compartmental_model_2_patterns_never_fall under RISK_RS_FULL_BAYES)
+  - id: compartmental-issue
+    resource: https://github.com/EKtheSage/prospicio/issues/679
+    title: Issue 679, a development pattern per simulation from Compartmental
 ---
 
 # What was found
@@ -102,6 +108,27 @@ the way to use one. The unit test
 `each_simulations_pattern_is_its_posterior_draws` (short chains, CRC and
 CSR on paid) prints the same picture: 98.7% and 98.4% fall.
 
+`Compartmental`'s patterns do not fall (#679). A simulation's pattern is
+the expected cumulative paid of the ODE for its posterior draw at each
+age of the square over that at the square's last age (`reserving-v02.md`
+decision 28 item 7). Model 1's is `PD(t) / PD(t_last)` at the drawn
+rates, and `PD' = k_p OS >= 0`; model 2's is a running sum of
+incremental means, each `RLR_t RRF_t (PD_t(t) - PD_t(t - 1))` with that
+age's parameters, all positive. On company 337 (the papers' training
+triangle, outstanding = incurred - paid), no share falls or passes 1 in
+any of 4,000 simulations of model 1 at the default sampler with 2 chains
+of 400 and 400 draws (seed 679), or of model 2 at its defaults (seed 681,
+under `RISK_RS_FULL_BAYES`), nor in 500 of each from short chains (the
+unit test `each_simulations_pattern_is_its_posterior_draws`). Model 1's
+mean pattern is 0.197, 0.455, 0.646, 0.775, 0.860, 0.915, 0.951, 0.975,
+0.990 and 1 at 12 to 120 months; model 2's is 0.249, 0.556, 0.750,
+0.866, 0.928, 0.963, 0.981, 0.991, 0.997 and 1. The mean
+paid of 1997 (no observed cell) at each age over its mean at 120 months
+is within 0.02 of model 1's mean pattern. Only a cumulative paid response
+with development effects (on the rates, `RLR` or `RRF`), which no preset
+uses, could fall: each age's share is then read at that age's own rates,
+so a smaller `k_p` at a later age can give a lower share.
+
 # Other facts confirmed
 
 * Appending the pattern columns to the simulated row draws no random
@@ -120,6 +147,9 @@ CSR on paid) prints the same picture: 98.7% and 98.4% fall.
   predictive simulation without them (a unit test replays it without the
   pattern columns and compares the bits), and Meyers' parity tests pass
   unchanged.
+* The same holds for `Compartmental`'s future paid and outstanding cells,
+  models 1 and 2 (a unit test replays the simulation without the pattern
+  columns and compares the bits), and its parity tests pass unchanged.
 * Mack's bootstrap draws a constant tail's factor with the tail's sigma,
   so its share at the oldest age varies about `1 / tail`; the ODP
   bootstrap keeps it fixed at exactly `1 / tail`.

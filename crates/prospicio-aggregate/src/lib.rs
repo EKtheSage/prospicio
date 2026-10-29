@@ -35,6 +35,7 @@ pub mod layer_statistics;
 pub mod moments;
 pub mod monte_carlo;
 pub mod panjer;
+pub mod per_risk;
 pub mod picks;
 pub mod pml;
 pub mod pnl;
@@ -65,6 +66,7 @@ pub use monte_carlo::{
     EventSet, GroupLabels, PartialYears, TailMixture, simulate_events, simulate_events_weighted,
 };
 pub use panjer::panjer;
+pub use per_risk::{PerRiskInuring, per_risk_inuring};
 pub use picks::{PickedLayer, Picks, layer_loss_picks};
 pub use pml::{OccurrencePml, occurrence_exceedance, occurrence_pml};
 pub use reinsurance::{
