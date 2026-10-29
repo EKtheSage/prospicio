@@ -365,6 +365,39 @@ impl XolLayer {
         self.map(|l| l.scope(label, &values))
     }
 
+    fn with_franchise(&self) -> Result<Self> {
+        self.map(|l| l.franchise())
+    }
+
+    fn with_nth_event(&self, n: f64, threshold: f64) -> Result<Self> {
+        let n = u32::try_from(whole(n, "n")?).map_err(|_| Error::Other("n is too large".into()))?;
+        self.map(|l| l.nth_event(n, threshold))
+    }
+
+    fn with_top_and_drop(&self, underlying: &str, attachment: f64) -> Result<Self> {
+        self.map(|l| l.top_and_drop(underlying, attachment))
+    }
+
+    fn franchise(&self) -> bool {
+        self.inner.franchise
+    }
+
+    /// `c(n, threshold)`, empty when there is none.
+    fn nth_event(&self) -> Vec<f64> {
+        self.inner
+            .nth_event
+            .map(|e| vec![f64::from(e.n), e.threshold])
+            .unwrap_or_default()
+    }
+
+    /// `list(underlying, attachment)`, or NULL.
+    fn drop_down(&self) -> Robj {
+        self.inner.drop_down.as_ref().map_or_else(
+            || ().into(),
+            |d| list!(underlying = d.underlying.clone(), attachment = d.attachment).into(),
+        )
+    }
+
     fn ceding_commission_for(&self, ceded: &[f64]) -> Vec<f64> {
         ceded
             .iter()

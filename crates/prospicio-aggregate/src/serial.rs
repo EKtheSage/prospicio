@@ -48,7 +48,11 @@
 //! key covers every loss. A layer with a no-claims bonus
 //! ([`Layer::no_claims_bonus`]) has `"no_claims_bonus": {"share": …,
 //! "years": n, "threshold": …}` (format version 8); a layer without the key
-//! has none.
+//! has none. A franchise deductible ([`Layer::franchise`]) is
+//! `"franchise": true`, an nth-event cover ([`Layer::nth_event`])
+//! `"nth_event": {"n": n, "threshold": …}` and a top-and-drop cover
+//! ([`Layer::top_and_drop`]) `"drop_down": {"underlying": …,
+//! "attachment": …}` (format version 9); a layer without the keys has none.
 
 use prospicio_core::{Error, Result};
 use serde_json::{Map, Number, Value, json};
@@ -61,11 +65,12 @@ use crate::timeline::CoverBasis;
 /// Value of the `format` field.
 const FORMAT: &str = "risk_rs.tower";
 /// The newest format version this build reads. A document is stamped at
-/// the oldest version that reads it: 8 with a no-claims bonus, 7 with a scoped layer, 6 with interlocking, 5 with a cover basis, 4 with a deal scale, 3 when a layer has brokerage,
+/// the oldest version that reads it: 9 with a franchise, nth-event or
+/// top-and-drop cover, 8 with a no-claims bonus, 7 with a scoped layer, 6 with interlocking, 5 with a cover basis, 4 with a deal scale, 3 when a layer has brokerage,
 /// deductions or a scale read before annual terms, 2 when a layer carries
 /// deficits or credits over a term (which older readers would drop), else
 /// 1.
-const FORMAT_VERSION: u64 = 8;
+const FORMAT_VERSION: u64 = 9;
 
 impl Tower {
     /// The programme as a JSON document; [`from_json`](Self::from_json)
@@ -105,7 +110,9 @@ impl Tower {
         });
         let mut doc = json!({
             "format": FORMAT,
-            "format_version": if self.layers.iter().any(|l| l.no_claims_bonus.is_some()) {
+            "format_version": if self.layers.iter().any(|l| l.franchise || l.needs_event_order()) {
+                9
+            } else if self.layers.iter().any(|l| l.no_claims_bonus.is_some()) {
                 8
             } else if self.layers.iter().any(|l| l.scope.is_some()) {
                 7
@@ -415,6 +422,21 @@ fn layer_json(l: &Layer) -> Value {
             json!({"label": scope.label, "values": scope.values}),
         );
     }
+    if l.franchise {
+        m.insert("franchise".into(), json!(true));
+    }
+    if let Some(n) = &l.nth_event {
+        m.insert(
+            "nth_event".into(),
+            json!({"n": n.n, "threshold": num(n.threshold)}),
+        );
+    }
+    if let Some(d) = &l.drop_down {
+        m.insert(
+            "drop_down".into(),
+            json!({"underlying": d.underlying, "attachment": num(d.attachment)}),
+        );
+    }
     Value::Object(m)
 }
 
@@ -673,6 +695,36 @@ fn layer_from(m: &Map<String, Value>) -> Result<Layer> {
             layer = layer.scope(label, &values)?;
         }
         Some(_) => return Err(Error::Data("scope must be an object".into())),
+    }
+    match m.get("franchise") {
+        None | Some(Value::Null | Value::Bool(false)) => {}
+        Some(Value::Bool(true)) => layer = layer.franchise()?,
+        Some(_) => return Err(Error::Data("franchise must be a boolean".into())),
+    }
+    match m.get("nth_event") {
+        None | Some(Value::Null) => {}
+        Some(Value::Object(e)) => {
+            let n = e
+                .get("n")
+                .and_then(Value::as_u64)
+                .and_then(|n| u32::try_from(n).ok())
+                .ok_or_else(|| {
+                    Error::Data("an nth-event cover's n must be a whole number".into())
+                })?;
+            layer = layer.nth_event(n, float(e, "threshold")?)?;
+        }
+        Some(_) => return Err(Error::Data("nth_event must be an object".into())),
+    }
+    match m.get("drop_down") {
+        None | Some(Value::Null) => {}
+        Some(Value::Object(d)) => {
+            let underlying = d
+                .get("underlying")
+                .and_then(Value::as_str)
+                .ok_or_else(|| Error::Data("a drop-down's underlying must be a string".into()))?;
+            layer = layer.top_and_drop(underlying, float(d, "attachment")?)?;
+        }
+        Some(_) => return Err(Error::Data("drop_down must be an object".into())),
     }
     Ok(layer)
 }
@@ -983,6 +1035,38 @@ mod tests {
     }
 
     #[test]
+    fn franchise_nth_event_and_drop_down_round_trip() {
+        let lower = Layer::xol("lower", 10.0, 10.0)
+            .unwrap()
+            .aggregate_limit(20.0)
+            .unwrap();
+        let top = Layer::xol("top", 10.0, 30.0)
+            .unwrap()
+            .top_and_drop("lower", 10.0)
+            .unwrap();
+        let f = Layer::xol("f", 5.0, 2.0).unwrap().franchise().unwrap();
+        let second = Layer::xol("2nd", 10.0, 5.0)
+            .unwrap()
+            .nth_event(2, 5.0)
+            .unwrap();
+        let tower = Tower::new(vec![lower, top, f, second]).unwrap();
+        let text = tower.to_json();
+        assert!(text.contains("\"format_version\":9"));
+        assert!(text.contains("\"franchise\":true") && text.contains("\"nth_event\":"));
+        assert!(text.contains("\"drop_down\":"));
+        assert_eq!(Tower::from_json(&text).unwrap(), tower);
+        assert!(Tower::from_json(&text.replace("\"n\":2", "\"n\":0")).is_err());
+        assert!(
+            Tower::from_json(&text.replace("\"underlying\":\"lower\"", "\"underlying\":\"x\""))
+                .is_err()
+        );
+        let plain = Tower::new(vec![Layer::xol("L", 1.0, 1.0).unwrap()])
+            .unwrap()
+            .to_json();
+        assert!(!plain.contains("franchise") && !plain.contains("nth_event"));
+    }
+
+    #[test]
     fn a_scope_round_trips() {
         let plain = Layer::xol("L", 10.0, 5.0).unwrap();
         let scoped = plain.clone().scope("peril", &["ws", "fl"]).unwrap();
@@ -1026,7 +1110,7 @@ mod tests {
         assert!(Tower::from_json("not json").is_err());
         assert!(Tower::from_json(&good.replace("risk_rs.tower", "risk_rs.distribution")).is_err());
         assert!(
-            Tower::from_json(&good.replace("\"format_version\":1", "\"format_version\":9"))
+            Tower::from_json(&good.replace("\"format_version\":1", "\"format_version\":10"))
                 .is_err()
         );
         assert!(Tower::from_json(&good.replace("\"loss\"", "\"cat\"")).is_err());

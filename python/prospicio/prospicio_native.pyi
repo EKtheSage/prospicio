@@ -9787,6 +9787,36 @@ class DealBook:
     def __len__(self, /) -> int: ...
     def __new__(cls, /, deals: Sequence[DealRun]) -> DealBook: ...
     def __repr__(self, /) -> str: ...
+    def adequacy(self, /, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> dict:
+        """
+        Price adequacy for each deal and the book: the premium charged and
+        kept (less every deduction) beside the expected loss and margin, the
+        allocated (Euler) and marginal assets and capital and the return on
+        each, the technical and marginal premiums the rule gives, the target
+        premium that returns the target on the allocated capital and the
+        adequacy, kept over target. The book's losses are priced on the
+        assets of the capital standard ``assets`` by exactly one of
+        ``cost_of_capital`` and ``distortion``, as ``price_portfolio``
+        prices a portfolio; the target return is the book's return at its
+        technical price (the cost of capital, under one).
+        
+        Returns a dict of columns, one row a deal then ``"total"``:
+        ``deal``, ``premium_charged``, ``premium_kept``, ``expected_loss``,
+        ``margin``, ``allocated_assets``, ``allocated_capital``,
+        ``return_on_allocated``, ``marginal_assets``, ``marginal_capital``,
+        ``return_on_marginal``, ``technical_premium``, ``marginal_premium``,
+        ``target_premium``, ``adequacy`` and ``target_return``.
+        
+        >>> from prospicio.pricing import DealBook, DealRun
+        >>> from prospicio.risk import Distortion
+        >>> a = DealRun("a", [10.0] * 4, [1.0, 2.0, 3.0, 9.0])
+        >>> b = DealRun("b", [3.0] * 4, [4.0, 1.0, 2.0, 3.0])
+        >>> r = DealBook([a, b]).adequacy(Distortion.tvar(0.5), cost_of_capital=0.1)
+        >>> r["deal"], r["premium_kept"]
+        (['a', 'b', 'total'], [10.0, 3.0, 13.0])
+        >>> round(r["target_return"][0], 12)
+        0.1
+        """
     def amounts(self, /) -> PredictiveDistribution:
         """
         Every item of every deal and of the book in each simulation, with
@@ -16822,6 +16852,16 @@ class Layer:
         The deductions as ``(label, basis, value, inside_nmbf)``.
         """
     @property
+    def drop_down(self, /) -> tuple[str, float] |None:
+        """
+        A top-and-drop cover as ``(underlying, attachment)``, or ``None``.
+        """
+    @property
+    def franchise(self, /) -> bool:
+        """
+        Whether the layer has a franchise deductible (``with_franchise``).
+        """
+    @property
     def limit(self, /) -> float:
         """
         Per-occurrence limit.
@@ -16857,6 +16897,11 @@ class Layer:
         Returns
         -------
         float
+        """
+    @property
+    def nth_event(self, /) -> tuple[int, float] |None:
+        """
+        An nth-event cover as ``(n, threshold)``, or ``None``.
         """
     @property
     def premium(self, /) -> float:
@@ -17232,6 +17277,22 @@ class Layer:
         >>> Layer("5x5", 5e6, 5e6, share=0.4).with_deposit_premium(1e6).premium
         400000.0
         """
+    def with_franchise(self, /) -> Layer:
+        """
+        The same layer with a franchise deductible: an occurrence at or
+        above the attachment is paid from the ground up, ``min(x, limit)``,
+        and one below it pays nothing. On the loss basis only.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> Layer("F", 20.0, 5.0).with_franchise().ceded_by_event([4.0, 5.0, 12.0, 30.0])
+        [0.0, 5.0, 12.0, 20.0]
+        """
     def with_loss_corridor(self, /, lower: float, upper: float, retained: float = 1.0) -> Layer:
         """
         The same layer with a loss corridor.
@@ -17299,6 +17360,33 @@ class Layer:
         ...        .with_no_claims_bonus(0.15))
         >>> round(cat.no_claims_bonus_for(0.0), 12), cat.no_claims_bonus_for(5.0)
         (0.3, 0.0)
+        """
+    def with_nth_event(self, /, n: int, threshold: float) -> Layer:
+        """
+        The same layer as an nth-event cover: only the ``n``-th and later
+        events of a year whose loss to the layer exceeds ``threshold`` are
+        covered; earlier ones, and events at or below the threshold, cede
+        nothing. Events count in the order given, chronological when the
+        event set has times. ``with_nth_event(1, attachment)`` is the plain
+        layer. The grids and annual losses have no events in order and
+        refuse it.
+        
+        Parameters
+        ----------
+        n : int
+            The first event covered, at least 1.
+        threshold : float
+            The loss an event must exceed to count.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> Layer("2nd", 10.0, 5.0).with_nth_event(2, 5.0).ceded_by_event([12.0, 3.0, 9.0, 20.0])
+        [0.0, 0.0, 4.0, 10.0]
         """
     def with_premium_rate(self, /, rate: float, subject_premium: float) -> Layer:
         """
@@ -17560,6 +17648,35 @@ class Layer:
         >>> layer = Layer("L", 1000.0, 0.0).with_swing_rating(0.0, 1.25, 100.0, 300.0)
         >>> [layer.premium_for(x) for x in (40.0, 200.0, 400.0)]
         [100.0, 250.0, 300.0]
+        """
+    def with_top_and_drop(self, /, underlying: str, attachment: float) -> Layer:
+        """
+        The same layer as a top-and-drop cover: it sits at its own
+        attachment until the annual limit of the layer named
+        ``underlying`` (earlier in the same stage, with an annual limit) is
+        used up, and from the next event attaches at ``attachment``, with
+        the same occurrence and annual limits. On the loss basis only. A
+        drop-down whose underlying layer never exhausts is the plain layer.
+        
+        Parameters
+        ----------
+        underlying : str
+        attachment : float
+            Below the layer's own.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> lower = Layer("lower", 10.0, 10.0, aggregate_limit=20.0)
+        >>> top = Layer("top", 10.0, 30.0).with_top_and_drop("lower", 10.0)
+        >>> ce = Tower([lower, top]).ceded_events(EventSet.from_years([[25.0, 25.0, 25.0, 40.0]]), "top")
+        >>> ce.events(0)
+        [10.0, 10.0]
         """
 
 @final
@@ -31295,6 +31412,68 @@ class Weibull:
         float
         """
 
+@final
+class WeightedSample:
+    """
+    Draws with importance weights, for the estimators of an importance
+    sample (``prospicio.aggregate.simulate_events_weighted``).
+    
+    The mean is ``Σ w x / Σ w``; the VaR and TVaR are those of the
+    distribution putting mass ``w_i / Σ w`` on draw ``i``. Standard errors
+    are by batch means: the draws split, in the order given, into
+    ``batches`` runs, each estimated alone. Equal weights give the plain
+    estimators.
+    
+    Parameters
+    ----------
+    values : list of float
+    weights : list of float
+        One a value, non-negative, with a positive sum.
+    
+    Examples
+    --------
+    >>> from prospicio.risk import WeightedSample
+    >>> s = WeightedSample([1.0, 2.0, 3.0], [1.0, 1.0, 2.0])
+    >>> s.mean, s.var(0.5), s.tvar(0.5)
+    (2.25, 2.0, 3.0)
+    """
+    def __new__(cls, /, values: Sequence[float], weights: Sequence[float]) -> WeightedSample: ...
+    @property
+    def effective_sample_size(self, /) -> float:
+        """
+        ``(Σ w)² / Σ w²``.
+        """
+    @property
+    def mean(self, /) -> float:
+        """
+        The self-normalised mean.
+        """
+    @property
+    def mean_weight(self, /) -> float:
+        """
+        The mean weight; about 1 for likelihood ratios.
+        """
+    def standard_error_mean(self, /, batches: int = 20) -> float:
+        """
+        The standard error of the mean by batch means.
+        """
+    def standard_error_tvar(self, /, p: float, batches: int = 20) -> float:
+        """
+        The standard error of ``tvar(p)`` by batch means.
+        """
+    def standard_error_var(self, /, p: float, batches: int = 20) -> float:
+        """
+        The standard error of ``var(p)`` by batch means.
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        The TVaR at ``p``.
+        """
+    def var(self, /, p: float) -> float:
+        """
+        The VaR at ``p``.
+        """
+
 def actual_vs_expected(periods: Sequence[int |str], family: str, y: Sequence[float], mu: Sequence[float], weights: Sequence[float] |None = None, dispersion: float = 1.0, theta: float |None = None, power: float |None = None) -> dict:
     """
     Actual against expected by period for a stored model's predictions on
@@ -32927,6 +33106,35 @@ def from_json(text: str) -> Any:
     ValueError
         If the document is malformed, of another format or a newer
         version, or its parameters are out of range.
+    """
+
+def frontier(losses: Any, retentions: Sequence[float], limits: Sequence[float], *, kind: str = "occurrence", assets: Distortion |None = None, cost_of_capital: float |None = None, distortion: Distortion |None = None, loading: float |None = None, risk: str = "tvar", level: float = 0.99) -> dict:
+    """
+    An efficient frontier of reinsurance structures: for each retention and
+    limit of a layer, the cost of the cover (``margin``, the ceded premium
+    less the expected ceded loss) against the risk kept (``net_risk``, a VaR
+    or TVaR of the net loss), and whether no other structure beats it on
+    both (``efficient``).
+    
+    ``losses`` is an ``EventSet`` (each structure a per-occurrence layer,
+    or with ``kind="aggregate"`` a stop loss on the year's total), a list of
+    annual losses (stop losses), or an annual ``Grid`` (stop losses, exact;
+    retentions and finite limits on its step). The ceded premium is the
+    expected value principle ``(1 + loading) E[C]`` when ``loading`` is
+    given, else exactly one of ``cost_of_capital`` and ``distortion`` on the
+    assets of the capital standard ``assets``, as ``price`` prices one
+    cover. Among the efficient structures the least ``net_risk + premium``
+    is Cai and Tan's choice.
+    
+    Returns a dict of columns, one row a structure in the order of the
+    retentions, then the limits: ``retention``, ``limit``, ``premium``,
+    ``expected_ceded``, ``margin``, ``net_risk`` and ``efficient``.
+    
+    >>> from prospicio.reinsurance import frontier
+    >>> from prospicio.distributions import Grid
+    >>> f = frontier(Grid(1.0, [0.25] * 4), [1.0, 2.0], [1.0, float("inf")], loading=0.5, risk="var", level=0.9)
+    >>> f["expected_ceded"][1], f["premium"][1], f["net_risk"][1]
+    (0.75, 1.125, 1.0)
     """
 
 def gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None) -> float:
@@ -35066,6 +35274,49 @@ def simulate_events(frequency: Any, severity: Any, n_sims: int, seed: int) -> Ev
     >>> from prospicio.distributions import Lognormal, Poisson
     >>> events = simulate_events(Poisson(5.0), Lognormal.from_mean_cv(1000.0, 1.0), 20_000, 42)
     >>> abs(events.totals().mean() - 5000.0) < 75.0
+    True
+    """
+
+def simulate_events_weighted(frequency: Any, severity: Any, n_sims: int, seed: int, count: Any |None = None, tail_threshold: float |None = None, tail_share: float = 0.3) -> tuple[EventSet, list[float]]:
+    """
+    Simulated years drawn from a proposal, with each year's likelihood
+    ratio, for importance sampling of the tail.
+    
+    Year ``i`` draws from stream ``i`` of ``seed`` as ``simulate_events``
+    does, with two optional changes of measure: ``count``, a proposal claim
+    count (any family, such as a Poisson with a higher mean), weighted by
+    ``p(n) / q(n)``; and a tail mixture, each loss coming from the severity
+    above ``tail_threshold`` with chance ``tail_share``, weighted by
+    ``1 / ((1 - share) + share 1{x > u} / S(u))``. Without either the years
+    are ``simulate_events``'s and every weight is 1. Estimate any statistic
+    of the years (a tower's ceded or net loss, the total) with
+    ``prospicio.risk.WeightedSample`` and these weights.
+    
+    Parameters
+    ----------
+    frequency : a claim count
+    severity : a severity
+    n_sims : int
+    seed : int
+    count : a claim count, optional
+        The proposal count.
+    tail_threshold : float, optional
+    tail_share : float, default 0.3
+        In ``(0, 1)``; used with ``tail_threshold``.
+    
+    Returns
+    -------
+    tuple of (EventSet, list of float)
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import simulate_events_weighted
+    >>> from prospicio.distributions import Lognormal, Poisson
+    >>> from prospicio.risk import WeightedSample
+    >>> ev, w = simulate_events_weighted(Poisson(2.0), Lognormal.from_mean_cv(10.0, 2.0), 20_000, 7,
+    ...                                  count=Poisson(4.0), tail_threshold=40.0)
+    >>> s = WeightedSample([r[0] for r in ev.totals().draw_matrix()], w)
+    >>> abs(s.mean - 20.0) < 4 * s.standard_error_mean()
     True
     """
 
