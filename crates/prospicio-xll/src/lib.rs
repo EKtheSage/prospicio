@@ -28,6 +28,7 @@ pub mod fitting;
 pub mod glm;
 pub mod odp_glm;
 pub mod payout;
+pub mod pnl;
 pub mod pricing;
 pub mod quote;
 pub mod ratemaking;
@@ -2659,6 +2660,50 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: cashflow::cashflow,
+    },
+    Function {
+        symbol: "pro_pnl",
+        name: "PRO.PNL",
+        help: "A book's P&L ledger over annual gross losses, with the annual covers it buys: every line's distribution and the scenarios that foot, the card, or the ratios.",
+        args: &[
+            Arg {
+                name: "values",
+                help: "The annual gross losses: a grid's points or simulated years",
+            },
+            Arg {
+                name: "probs",
+                help: "Each value's probability; equally likely if omitted",
+            },
+            Arg {
+                name: "premium",
+                help: "The book's gross premium",
+            },
+            Arg {
+                name: "expenses",
+                help: "Rows of label, rate on premium, rate on loss, fixed amount",
+            },
+            Arg {
+                name: "covers",
+                help: "Annual stop losses: a header row (name, limit, attachment, share, premium, commission, profit_share, profit_allowance), a cover a row",
+            },
+            Arg {
+                name: "face",
+                help: "\"walk\" (default), \"consolidated\", \"top-down\" or \"bottom-up\"",
+            },
+            Arg {
+                name: "output",
+                help: "\"sheet\" (default), \"card\" or \"ratios\"",
+            },
+            Arg {
+                name: "levels",
+                help: "The scenario levels, 0.01 to 0.99 (aggregate's nine) if omitted",
+            },
+            Arg {
+                name: "expense_at_mean",
+                help: "TRUE to book a loss-basis expense at the expected gross loss on the consolidated face",
+            },
+        ],
+        run: pnl::pnl,
     },
 ];
 

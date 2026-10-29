@@ -40,6 +40,7 @@ category of Insert Function:
 | `PRO.IRR(flows, [times], [unit], [lower], [upper], [extend], [detail])` | Internal rate of return by the crate's grid search; a root outside the range named in the error; with `detail`, the roots seen and whether one lies above or below |
 | `PRO.MOIC(released, funded, [opening])` | Multiple on invested capital `1 + released / (funded + opening)`, per row |
 | `PRO.CASHFLOW(u, terms, patterns, requirement, [commission], [output], [rate], [commutation_requirement])` | A collateralised deal on each simulated loss ratio: IRR, MOIC, NPV and totals per simulation, the monthly flows, or the first simulation's accounts |
+| `PRO.PNL(values, [probs], premium, [expenses], [covers], [face], [output], [levels], [expense_at_mean])` | A book's P&L ledger over annual gross losses with the annual covers it buys (`aggregate`'s `pnl` and `xpnl`): every line with its mean, SD, CV, skewness and the scenario columns that foot; the card; or the ratios (decision 43) |
 | `PRO.TRI.INCREMENTAL(triangle)`, `PRO.TRI.CUMULATIVE(triangle)` | The triangle turned incremental, or an incremental one cumulative, laid out as it is |
 | `PRO.TRI.LINKRATIOS(triangle)` | Age-to-age link ratios, one column fewer than the ages |
 | `PRO.TRI.LATEST(triangle)` | Each origin's latest value, a column |
@@ -925,6 +926,48 @@ real Excel.
     example; the errors. The fake Excel checks `XIRR`'s example, `MOIC`
     and the three-month deal through the C API, and the test workbook's
     Cash flows sheet puts `XNPV`, `XIRR` and `IRR` beside the add-in's.
+
+43. **The P&L ledger on a sheet** (#578 group 3, 0.0.7). `PRO.PNL`
+    wraps `prospicio_aggregate::pnl::Book::ledger` (`pnl.md`, PR 4): a
+    book's premium, its expenses and the annual covers it buys, as
+    signed legs over a distribution of annual gross losses. The gross is
+    atoms in cells, `values` and `probs` (equally likely when omitted),
+    so the ledger reads a grid's points, a year loss table's years or a
+    model's simulations alike, rather than rebuilding a compound
+    distribution from a count and a severity as `PRO.AGG.*` does: those
+    functions' grid can be passed in. `expenses` are rows of `label |
+    premium | loss | fixed`, a rate on the gross premium, a rate on the
+    gross loss and an amount, several in one row making one mixed leg
+    (`aggregate`'s `expense`), a blank label the crate's name; `covers`
+    is a table with a header row (`name`, `limit`, `attachment`,
+    `share`, `premium` as a deposit, `commission` flat, `profit_share`,
+    `profit_allowance`), each row an annual stop loss on the gross,
+    lowest first. `face` is the walk (the default, `xpnl`: the gross
+    book, then each cover, the running net and the covers' impact), the
+    consolidated net position (`pnl`) or either peel. `output` is the
+    sheet (the default: each row's step, side, line, mean, SD, CV and
+    skewness, then a scenario column per level, each row's mean given
+    the result at that lower quantile, which foot down the sheet; the
+    levels `aggregate`'s nine unless given), the card (each block's
+    consideration, obligation and margin with marginal 1%, 50% and 99%
+    quantiles) or the ratios (premium, loss, expense, result, LR, ER,
+    CR, their means at each atom, and the shares of the first block).
+    `expense_at_mean` books a loss-basis expense at the expected gross
+    loss on the consolidated face, as `aggregate`'s guaranteed-cost
+    builder does. Not yet: occurrence covers over the joint gross and
+    ceded loss, a deal's deductions (`Tower::deal_ledger`), reinstatement
+    premiums, retro rating, relabelled legs and `pnl_program`'s premium
+    ladder, each when a user asks. Checks (`tests/pnl.rs`): every
+    `aggregate` 1.0.1 case of `validation/reference/pnl_builders_aggregate.csv`
+    the arguments can state (eleven ledgers: one and two covers on the
+    walk and both peels, the consolidated face, premium, loss, fixed and
+    mixed expenses; 1,967 values of the sheet and the card) at the
+    file's tolerances, leaving out the consolidated κ75 that the Rust
+    parity test checks as a tie; the ratios against the crate's ledger;
+    equally likely years; a profit commission; the errors. The fake
+    Excel checks the crate's example (a net result of 4.54) through the
+    C API, and the test workbook's P&L sheet puts `aggregate`'s Example 3
+    beside the add-in's.
 
 ## Parity plan
 

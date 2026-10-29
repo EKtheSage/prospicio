@@ -1212,6 +1212,48 @@ cf.column_dimensions["A"].width = 20
 cf.column_dimensions["F"].width = 28
 cf.column_dimensions["Q"].width = 34
 
+# The P&L ledger: aggregate 1.0.1's Example 3 (annual losses 2 to 8, premium
+# 10, a 10% premium expense, an aggregate cover of 3 xs 5 for 1 with a 10%
+# commission), against its printed sheet (validation/reference/pnl_builders_aggregate.csv).
+pl = wb.create_sheet("P&L")
+pl["A1"] = "prospicio XLL test: the P&L ledger (PRO.PNL), aggregate's Example 3"; pl["A1"].font = Font(bold=True, size=13)
+pl["A2"] = "Annual gross losses and their probabilities; the book and the cover it buys."; pl["A2"].font = note
+pl["A3"] = "Loss"; pl["B3"] = "Prob"; pl["A3"].font = pl["B3"].font = bold
+for r, (x, p) in enumerate(zip([2, 3, 4, 5, 6, 8], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])):
+    pl.cell(row=4 + r, column=1, value=x).fill = inp
+    pl.cell(row=4 + r, column=2, value=p).fill = inp
+pl["D3"] = "Premium"; pl["E3"] = 10; pl["D3"].font = bold; pl["E3"].fill = inp
+for c, h in enumerate(["label", "premium", "loss", "fixed"]):
+    pl.cell(row=5, column=4 + c, value=h).font = bold
+pl["D6"] = "Acquisition"; pl["E6"] = 0.1; pl["E6"].fill = inp
+for c, (h, x) in enumerate(zip(["name", "limit", "attachment", "premium", "commission"], ["agg 3 xs 5", 3, 5, 1, 0.1])):
+    pl.cell(row=8, column=4 + c, value=h).font = bold
+    pl.cell(row=9, column=4 + c, value=x).fill = inp
+ARGS = "$A$4:$A$9,$B$4:$B$9,$E$3,$D$5:$G$6,$D$8:$H$9"
+pl["A12"] = "The walk: the gross book, then the cover"; pl["A12"].font = bold
+pl["A13"] = ArrayFormula("A13:P28", f'=PRO.PNL({ARGS},"walk")')
+pl["A31"] = "The card"; pl["A31"].font = bold
+pl["A32"] = ArrayFormula("A32:I43", f'=PRO.PNL({ARGS},"walk","card")')
+pl["K31"] = "The ratios"; pl["K31"].font = bold
+pl["K32"] = ArrayFormula("K32:X35", f'=PRO.PNL({ARGS},"walk","ratios")')
+pl["A46"] = "Check against aggregate 1.0.1"; pl["A46"].font = bold
+with open(REF / "reference" / "pnl_builders_aggregate.csv") as f:
+    ex3 = {(r["row"], r["col"]): float(r["expected"]) for r in csv.DictReader(f)
+           if r["case"] == "ex3a" and r["quantity"] == "sheet"}
+for i, (step, side, line, col, idx) in enumerate([
+        ("All", "Margin", "Net", "EX", 3), ("agg 3 xs 5", "Obligation", "agg 3 xs 5 recovery", "EX", 3),
+        ("All", "Margin", "Net", "k01", 7), ("All", "Margin", "Net", "k99", 15)]):
+    row = 47 + i
+    key = f"{step}|{side}|{line}"
+    col_letter = "ABCDEFGHIJKLMNOP"[idx]
+    pl[f"A{row}"] = f"{key} {col}"
+    pl[f"B{row}"] = (f'=SUMPRODUCT(($A$14:$A$28="{step}")*($B$14:$B$28="{side}")*($C$14:$C$28="{line}"),'
+                     f'${col_letter}$14:${col_letter}$28)')
+    pl[f"C{row}"] = ex3[(key, col)]
+    pl[f"D{row}"] = f"=ABS(B{row}-C{row})<1e-9"
+pl.column_dimensions["A"].width = 30
+pl.column_dimensions["C"].width = 22
+
 wb.save(out)
 
 METADATA = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
