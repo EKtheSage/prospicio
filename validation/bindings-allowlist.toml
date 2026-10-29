@@ -196,6 +196,8 @@
 "severity_fit::GoodnessOfFit" = "unbound on 2026-10-28 (seed); review"
 "severity_fit::ProductLimitStep" = "unbound on 2026-10-28 (seed); review"
 "severity_fit::log_likelihood" = "unbound on 2026-10-28 (seed); review"
+"vine_fit::independence_p_value" = "a building block of select_pair, reached through its independence_test"
+"vine_fit::log_likelihood" = "a building block of the pair fits, whose results carry the log-likelihood"
 
 [python.prospicio_reserving]
 "CalendarDiagonal" = "unbound on 2026-10-28 (seed); review"
@@ -447,6 +449,9 @@
 "severity_fit::SeverityFit" = "unbound on 2026-10-28 (seed); review"
 "severity_fit::log_likelihood" = "unbound on 2026-10-28 (seed); review"
 "statistics::Statistics" = "unbound on 2026-10-28 (seed); review"
+"vine_fit::VineFit" = "a result type: fit_vine_copula() returns its fields as a list"
+"vine_fit::independence_p_value" = "a building block of select_pair, reached through its independence_test"
+"vine_fit::log_likelihood" = "a building block of the pair fits, whose results carry the log-likelihood"
 
 [r.prospicio_reserving]
 "CalendarView" = "unbound on 2026-10-28 (seed); review"
