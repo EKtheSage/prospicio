@@ -388,6 +388,8 @@ EventSet$merge <- function(other) .Call(wrap__EventSet__merge, self, other)
 
 EventSet$filter <- function(label, values) .Call(wrap__EventSet__filter, self, label, values)
 
+EventSet$contract_years <- function(start, partial) .Call(wrap__EventSet__contract_years, self, start, partial)
+
 EventSet$permute <- function(index) .Call(wrap__EventSet__permute, self, index)
 
 EventSet$term_years <- function(n_years) .Call(wrap__EventSet__term_years, self, n_years)
