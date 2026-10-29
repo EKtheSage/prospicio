@@ -1073,8 +1073,8 @@ test suites). Seed 3 on three rows is the monograph's shuffle of Tables
 
 ## Auto-calibration (#545)
 
-Status: built; items (a) to (e) proposed by the Models lane for the
-user's acceptance.
+Status: built; items (a) to (e) accepted by the user on
+2026-10-29 as built.
 
 `prospicio_models::calibrate` checks whether a model's predictions are
 right on average at every level and repairs them. `isotonic` is weighted
@@ -1117,8 +1117,8 @@ boosting included; the Rust wrappers serve Rust `Fitted` models.
 
 ## Conformal prediction (#546)
 
-Status: built; items (a) to (e) proposed by the Models lane for the
-user's acceptance.
+Status: built; items (a) to (e) accepted by the user on
+2026-10-29 as built.
 
 `prospicio_models::conformal` gives prediction intervals around any model
 from held-out residuals, with finite-sample coverage under exchangeability:
@@ -1152,8 +1152,8 @@ function of a data frame and its responses.
 
 ## Time splits with windows, horizons and gaps (#549)
 
-Status: built; items (a) to (c) proposed by the Models lane for the
-user's acceptance.
+Status: built; items (a) to (c) accepted by the user on
+2026-10-29 as built.
 
 `resample::TimeSplits::new(n_test)` with `rolling(w)` (or
 `window(Window)`), `horizon(h)`, `gap(g)` and `step(s)`: split `f` of
@@ -1177,8 +1177,8 @@ n_test, window=None, horizon=1, gap=0, step=1)`, R `time_splits()`, next to
 
 ## Monotone and interaction constraints on the boosters (#575)
 
-Status: built; items (a) to (d) proposed by the Models lane for the
-user's acceptance.
+Status: built; items (a) to (d) accepted by the user on
+2026-10-29 as built.
 
 Python `Booster(..., monotone={"exper": 1, "veh_age": -1},
 interaction_constraints=[["age", "exper"], ["veh_age", "noise"]])` and R
