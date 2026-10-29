@@ -64,6 +64,10 @@
 #' @param start_year The calendar year of book month 0.
 #' @returns `deal_run()` and `deal_run_from_tower()` a `deal_run`;
 #'   `deal_book()`, `book_select()` and `book_shift()` a `deal_book`;
+#'   `book_names()` the deals' names in order, `book_n_sims()` the number of
+#'   simulations and `book_items()` the items of `book_amounts()`
+#'   (`premium`, `loss`, each deduction, `total_deductions`, `nmbf` and
+#'   `margin`);
 #'   `book_amounts()` a [predictive_distribution] with dimensions `item` and
 #'   `deal` (the deals, then `"total"`); `book_summary()` a data frame of
 #'   `deal`, `item`, `mean` and `ratio`; `book_distribution()` a list of
@@ -166,6 +170,27 @@ print.deal_book <- function(x, ...) {
 
 check_book <- function(book) {
   if (!inherits(book, "deal_book")) stop("book must be a deal_book()", call. = FALSE)
+}
+
+#' @rdname deal_run
+#' @export
+book_names <- function(book) {
+  check_book(book)
+  book$ptr$names()
+}
+
+#' @rdname deal_run
+#' @export
+book_n_sims <- function(book) {
+  check_book(book)
+  book$ptr$n_sims()
+}
+
+#' @rdname deal_run
+#' @export
+book_items <- function(book) {
+  check_book(book)
+  book$ptr$items()
 }
 
 #' @rdname deal_run

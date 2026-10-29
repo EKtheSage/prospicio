@@ -11653,6 +11653,45 @@ class EventSet:
         >>> abs(achieved - 0.75) < 1e-3, 0 < rho < 1, len(years)
         (True, True, 3)
         """
+    def contract_years(self, /, start: float, partial: str = "drop") -> EventSet:
+        """
+        The events regrouped into contract years starting at ``start``, a
+        fraction of the simulated year, for a treaty whose year is not the
+        simulation's (#586). The simulated years are read as consecutive
+        years of one timeline: a loss of year ``i`` at time ``t`` happens at
+        ``i + t``, contract year ``j`` runs from ``j + start`` to
+        ``j + 1 + start``, and each loss moves to its contract year with its
+        time rebased to it, keeping its sum insured and labels. The first
+        and last contract years are partial: ``partial="drop"`` (the
+        default) leaves them out with their losses, so ``n - 1`` whole
+        years remain; ``"keep"`` keeps them, ``n + 1`` years. ``start=0``
+        returns the set as it is.
+        
+        Parameters
+        ----------
+        start : float
+            In ``[0, 1)``.
+        partial : str, default "drop"
+            ``"drop"`` or ``"keep"``.
+        
+        Returns
+        -------
+        EventSet
+        
+        Raises
+        ------
+        ValueError
+            Without times, for ``start`` outside ``[0, 1)``, with an
+            aggregate part, or when no whole contract year is left.
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> cal = EventSet.from_years([[1.0, 2.0], [3.0]], times=[[0.25, 0.75], [0.25]])
+        >>> july = cal.contract_years(0.5)
+        >>> july.n_sims, july.events(0), july.times(0)
+        (1, [2.0, 3.0], [0.25, 0.75])
+        """
     def correlated_years(self, /, n_years: int, correlation: Any, *, kind: str = "spearman", draws: str = "same", seed: int = 0) -> list[EventSet]:
         """
         A term of ``n_years`` underwriting years whose yearly totals (each
@@ -11814,7 +11853,7 @@ class EventSet:
         ([2, 0, 1], [50.0])
         """
     @staticmethod
-    def from_ylt(years: Sequence[int], losses: Sequence[float], *, slots: Sequence[int] |None = None, times: Sequence[float] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None) -> EventSet:
+    def from_ylt(years: Sequence[int], losses: Sequence[float], *, slots: Sequence[int] |None = None, times: Sequence[float] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None, losses_negative: bool = False) -> EventSet:
         """
         Years of losses from a year loss table's columns, checked and
         expanded to a run's simulations.
@@ -11862,6 +11901,9 @@ class EventSet:
             "EQ"]}``).
         source_hash : str, optional
             A hash of the source, recorded as results' input hash.
+        losses_negative : bool, default False
+            The losses are stored as negative numbers, money going out: each
+            must be at most 0 and is read with its sign flipped.
         
         Returns
         -------
@@ -16378,6 +16420,13 @@ class Layer:
         Returns
         -------
         float
+        
+        Raises
+        ------
+        ValueError
+            If a loss is negative or not finite, usually losses stored with
+            the sign of money paid out (``read_ylt(..., losses_negative=True)``
+            reads such a file).
         """
     def ceded_by_event(self, /, losses: Sequence[float]) -> list[float]:
         """

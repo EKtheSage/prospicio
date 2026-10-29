@@ -368,7 +368,7 @@ EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__Ev
 
 EventSet$from_long <- function(years, losses, n_years, seed, label_dims, label_values) .Call(wrap__EventSet__from_long, years, losses, n_years, seed, label_dims, label_values)
 
-EventSet$from_ylt <- function(years, losses, slots, times, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash) .Call(wrap__EventSet__from_ylt, years, losses, slots, times, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash)
+EventSet$from_ylt <- function(years, losses, slots, times, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash, losses_negative) .Call(wrap__EventSet__from_ylt, years, losses, slots, times, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash, losses_negative)
 
 EventSet$with_labels <- function(dims, values) .Call(wrap__EventSet__with_labels, self, dims, values)
 
@@ -389,6 +389,8 @@ EventSet$aggregate_part_labels <- function() .Call(wrap__EventSet__aggregate_par
 EventSet$merge <- function(other) .Call(wrap__EventSet__merge, self, other)
 
 EventSet$filter <- function(label, values) .Call(wrap__EventSet__filter, self, label, values)
+
+EventSet$contract_years <- function(start, partial) .Call(wrap__EventSet__contract_years, self, start, partial)
 
 EventSet$permute <- function(index) .Call(wrap__EventSet__permute, self, index)
 

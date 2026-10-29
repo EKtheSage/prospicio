@@ -6,6 +6,10 @@
 
 ## Next
 
+- #545 auto-calibration, isotonic recalibration and balance correction (0.0.7, first)
+- #546 conformal prediction intervals (0.0.7)
+- #549 rolling windows, horizons and gaps in time splits (0.0.7)
+- #575 typed monotone and interaction constraints on the boosting adapters (0.0.7)
 - [survival-models] survival models when claim-level reserving resumes (`docs/design/models.md`)
 - [triangle-design-bridge] The triangle-to-design bridge and the diagonal backtest stay in the Reserving lane
 

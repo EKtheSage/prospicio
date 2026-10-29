@@ -7,8 +7,8 @@
 ## Next
 
 - [compartmental-subannual] fitting `Compartmental` well to quarterly or monthly data (rate priors for sub-annual development, development effects grouped by year, seasonality, a calibration check on sub-annual books; `reserving-compartmental.md` decision 13, the user's note of 2026-10-22)
-- [pattern-draws-meyers] a development pattern per simulation from Meyers' CRC, CSR and CAY (`reserving-v02.md` decision 28, item 7)
-- [pattern-draws-compartmental] a development pattern per simulation from `Compartmental`, the ODE's paid curve for the drawn rates (`reserving-v02.md` decision 28, item 7)
+- [pattern-draws-meyers] a development pattern per simulation from Meyers' CRC, CSR and CAY (`reserving-v02.md` decision 28, item 7; #678, in 0.0.7)
+- [pattern-draws-compartmental] a development pattern per simulation from `Compartmental`, the ODE's paid curve for the drawn rates (`reserving-v02.md` decision 28, item 7; #679, in 0.0.7)
 
 ## Done
 

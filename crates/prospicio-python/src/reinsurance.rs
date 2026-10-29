@@ -834,8 +834,15 @@ impl PyLayer {
     /// Returns
     /// -------
     /// float
-    fn ceded(&self, losses: Vec<f64>) -> f64 {
-        self.inner.ceded(&losses)
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a loss is negative or not finite, usually losses stored with
+    ///     the sign of money paid out (``read_ylt(..., losses_negative=True)``
+    ///     reads such a file).
+    fn ceded(&self, losses: Vec<f64>) -> PyResult<f64> {
+        self.inner.try_ceded(&losses).map_err(to_py)
     }
 
     /// Ceded loss per event for one year, taking losses as chronological.
@@ -857,8 +864,8 @@ impl PyLayer {
     /// >>> layer = Layer("L", 10.0, 5.0, aggregate_deductible=4.0, aggregate_limit=15.0)
     /// >>> layer.ceded_by_event([8.0, 20.0, 12.0])
     /// [0.0, 9.0, 6.0]
-    fn ceded_by_event(&self, losses: Vec<f64>) -> Vec<f64> {
-        self.inner.ceded_by_event(&losses)
+    fn ceded_by_event(&self, losses: Vec<f64>) -> PyResult<Vec<f64>> {
+        self.inner.try_ceded_by_event(&losses).map_err(to_py)
     }
 
     /// How often the layer is attached and used up in simulated years.
@@ -1637,8 +1644,8 @@ impl PyTower {
     /// Returns
     /// -------
     /// list of float
-    fn ceded(&self, losses: Vec<f64>) -> Vec<f64> {
-        self.inner.ceded(&losses)
+    fn ceded(&self, losses: Vec<f64>) -> PyResult<Vec<f64>> {
+        self.inner.try_ceded(&losses).map_err(to_py)
     }
 
     /// Layer names, in order.
