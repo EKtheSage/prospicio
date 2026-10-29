@@ -4,6 +4,9 @@
 \alias{deal_run}
 \alias{deal_run_from_tower}
 \alias{deal_book}
+\alias{book_names}
+\alias{book_n_sims}
+\alias{book_items}
 \alias{book_select}
 \alias{book_shift}
 \alias{book_amounts}
@@ -44,6 +47,12 @@ deal_run_from_tower(
 )
 
 deal_book(deals)
+
+book_names(book)
+
+book_n_sims(book)
+
+book_items(book)
 
 book_select(book, names)
 
@@ -145,6 +154,10 @@ whose return is above the range flagged by \code{root_above} and found with
 \value{
 \code{deal_run()} and \code{deal_run_from_tower()} a \code{deal_run};
 \code{deal_book()}, \code{book_select()} and \code{book_shift()} a \code{deal_book};
+\code{book_names()} the deals' names in order, \code{book_n_sims()} the number of
+simulations and \code{book_items()} the items of \code{book_amounts()}
+(\code{premium}, \code{loss}, each deduction, \code{total_deductions}, \code{nmbf} and
+\code{margin});
 \code{book_amounts()} a \link{predictive_distribution} with dimensions \code{item} and
 \code{deal} (the deals, then \code{"total"}); \code{book_summary()} a data frame of
 \code{deal}, \code{item}, \code{mean} and \code{ratio}; \code{book_distribution()} a list of

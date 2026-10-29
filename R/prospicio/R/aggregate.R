@@ -754,6 +754,8 @@ event_sums_insured <- function(x, sim) rust_result(x@ptr$sums_insured(as.double(
 #'
 #' @param ptr Internal.
 #' @returns An `event_set` object with read-only properties `n_sims`, `seed`,
+#'   `has_times` (whether the losses carry times of loss, see
+#'   [event_times()]),
 #'   `input_hash` (a hash of the years' source, see [read_ylt()], or `NULL`),
 #'   `label_dims` and `label_combinations` (see [with_labels()]),
 #'   `has_aggregate_part` and `aggregate_part_labels` (see
@@ -767,6 +769,7 @@ event_set <- S7::new_class(
     ptr = S7::new_S3_class("EventSet"),
     n_sims = S7::new_property(S7::class_double, getter = function(self) self@ptr$n_sims()),
     seed = S7::new_property(S7::class_double, getter = function(self) self@ptr$seed()),
+    has_times = S7::new_property(S7::class_logical, getter = function(self) self@ptr$has_times()),
     input_hash = S7::new_property(S7::class_any, getter = function(self) self@ptr$input_hash()),
     label_dims = S7::new_property(S7::class_character, getter = function(self) self@ptr$label_dims()),
     label_combinations = S7::new_property(S7::class_any, getter = function(self) {
@@ -1102,6 +1105,9 @@ event_set_from_long <- function(years, losses, n_years, seed = 0, labels = NULL)
 #' @param times `NULL`, or each row's time of loss, a fraction of the year.
 #' @param source_hash `NULL`, or a hash of the source kept as the events'
 #'   `input_hash`.
+#' @param losses_negative The losses are stored as negative numbers, money
+#'   going out, as some vendor and cedent files do: each must be at most 0 and
+#'   is read with its sign flipped. Without it a negative loss is an error.
 #' @returns An [event_set].
 #' @export
 #' @examples
@@ -1118,7 +1124,7 @@ event_set_from_long <- function(years, losses, n_years, seed = 0, labels = NULL)
 read_ylt <- function(path, year = "year", loss = "value", slot = "slot", time = NULL,
                      day = NULL, hour = NULL, labels = NULL, n_years = NULL, n_sims = NULL,
                      expand = "tile", seed = 0, unique_by = NULL, expected = NULL,
-                     format = NULL) {
+                     format = NULL, losses_negative = FALSE) {
   path <- normalizePath(path, mustWork = TRUE)
   if (is.null(format)) {
     format <- if (grepl("\\.(parquet|pq)$", tolower(path))) "parquet" else "csv"
@@ -1164,7 +1170,7 @@ read_ylt <- function(path, year = "year", loss = "value", slot = "slot", time = 
     labels = if (length(labels)) lapply(df[labels], as.character) else NULL,
     n_years = n_years, n_sims = n_sims, expand = expand, seed = seed,
     unique_by = unique_by, expected = expected,
-    source_hash = rust_result(ylt_file_hash_rust(path))
+    source_hash = rust_result(ylt_file_hash_rust(path)), losses_negative = losses_negative
   )
 }
 
@@ -1172,7 +1178,8 @@ read_ylt <- function(path, year = "year", loss = "value", slot = "slot", time = 
 #' @export
 event_set_from_ylt <- function(years, losses, slots = NULL, labels = NULL, n_years = NULL,
                                n_sims = NULL, expand = "tile", seed = 0, unique_by = NULL,
-                               expected = NULL, source_hash = NULL, times = NULL) {
+                               expected = NULL, source_hash = NULL, times = NULL,
+                               losses_negative = FALSE) {
   l <- label_columns(labels)
   e <- label_columns(expected)
   null_or <- function(x) if (is.null(x)) NULL else as.double(x)
@@ -1181,7 +1188,7 @@ event_set_from_ylt <- function(years, losses, slots = NULL, labels = NULL, n_yea
     if (is.null(slots)) NULL else as.double(slots), null_or(times),
     l$dims, l$values, null_or(n_years), null_or(n_sims), expand, as.double(seed),
     if (is.null(unique_by)) NULL else as.character(unique_by),
-    e$dims, e$values, source_hash
+    e$dims, e$values, source_hash, isTRUE(losses_negative)
   )))
 }
 

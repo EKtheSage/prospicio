@@ -101,6 +101,31 @@ impl YearLossTable {
         })
     }
 
+    /// [`new`](Self::new) for a file that stores losses as negative numbers,
+    /// money going out (#593): each loss must be finite and at most 0, and
+    /// is read with its sign flipped. A positive value is an error, since
+    /// such a file has no positive losses.
+    ///
+    /// ```
+    /// use prospicio_aggregate::ylt::YearLossTable;
+    ///
+    /// let flipped = YearLossTable::from_negative_losses(&[1, 2], &[-5.0, -7.0]).unwrap();
+    /// assert_eq!(flipped, YearLossTable::new(&[1, 2], &[5.0, 7.0]).unwrap());
+    /// assert!(YearLossTable::from_negative_losses(&[1], &[5.0]).is_err());
+    /// ```
+    pub fn from_negative_losses(years: &[usize], losses: &[f64]) -> Result<Self> {
+        if let Some(k) = losses.iter().position(|x| !(x.is_finite() && *x <= 0.0)) {
+            return Err(Error::Data(format!(
+                "row {}: the loss {} is not finite and at most 0, as a file of losses \
+                 stored as negative numbers holds",
+                k + 1,
+                losses[k]
+            )));
+        }
+        let flipped: Vec<f64> = losses.iter().map(|x| -x + 0.0).collect();
+        Self::new(years, &flipped)
+    }
+
     /// Each row's event slot, which orders the rows within a year.
     pub fn with_slots(mut self, slots: Vec<u64>) -> Result<Self> {
         if slots.len() != self.losses.len() {
@@ -390,6 +415,24 @@ mod tests {
             .with_n_years(3)
             .unwrap()
             .with_source_hash("blake3:00")
+    }
+
+    #[test]
+    fn a_table_of_negative_losses_reads_as_its_flipped_copy() {
+        let years = [1, 1, 2, 3];
+        let losses = [10.0, 4.0, 30.0, 0.0];
+        let negative: Vec<f64> = losses.iter().map(|x| -x).collect();
+        let flipped = YearLossTable::from_negative_losses(&years, &negative).unwrap();
+        assert_eq!(flipped, YearLossTable::new(&years, &losses).unwrap());
+        let e = flipped.events(None, Expansion::Tile).unwrap();
+        assert_eq!(e.events(0), &[10.0, 4.0]);
+        // A positive value has no place in such a file, nor a NaN.
+        let err = YearLossTable::from_negative_losses(&[1, 1], &[-1.0, 2.0]).unwrap_err();
+        assert!(err.to_string().contains("row 2"), "{err}");
+        assert!(YearLossTable::from_negative_losses(&[1], &[f64::NAN]).is_err());
+        // Without the option a negative loss is refused, naming the row.
+        let err = YearLossTable::new(&[1, 1], &[1.0, -2.0]).unwrap_err();
+        assert!(err.to_string().contains("row 2"), "{err}");
     }
 
     #[test]

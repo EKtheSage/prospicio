@@ -1347,6 +1347,36 @@ def test_contract_years():
         cal.contract_years(1.0)
 
 
+def test_read_ylt_with_losses_stored_as_negative_numbers(tmp_path):
+    """A file of negative losses and its sign-flipped copy give one event set (#593)."""
+    from prospicio.aggregate import read_ylt
+    from prospicio.reinsurance import Layer, Tower
+
+    plain, negative = tmp_path / "plain.csv", tmp_path / "negative.csv"
+    plain.write_text(YLT_CSV)
+    rows = YLT_CSV.strip().split("\n")
+    header = rows[0].split(",")
+    k = header.index("value")
+    flipped = [rows[0]] + [",".join(f"-{v}" if i == k else v for i, v in enumerate(r.split(","))) for r in rows[1:]]
+    negative.write_text("\n".join(flipped) + "\n")
+    a = read_ylt(plain, labels=["peril", "class"], n_years=3)
+    b = read_ylt(negative, labels=["peril", "class"], n_years=3, losses_negative=True)
+    assert [a.events(i) for i in range(3)] == [b.events(i) for i in range(3)]
+    with pytest.raises(ValueError, match="non-negative"):
+        read_ylt(negative, labels=["peril", "class"])
+    with pytest.raises(ValueError, match="at most 0"):
+        read_ylt(plain, labels=["peril", "class"], losses_negative=True)
+    # A negative loss in a layer is an error, not a silent zero.
+    layer = Layer("10x5", 10.0, 5.0)
+    assert layer.ceded([12.0]) == 7.0
+    with pytest.raises(ValueError, match="loss 2"):
+        layer.ceded([12.0, -3.0])
+    with pytest.raises(ValueError, match="non-negative"):
+        layer.ceded_by_event([-1.0])
+    with pytest.raises(ValueError, match="non-negative"):
+        Tower([layer]).ceded([float("nan")])
+
+
 def test_read_ylt_from_parquet(tmp_path):
     pa = pytest.importorskip("pyarrow")
     import pyarrow.parquet as pq

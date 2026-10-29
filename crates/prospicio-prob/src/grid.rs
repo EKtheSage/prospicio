@@ -287,6 +287,22 @@ impl Grid {
         crate::risk::tvar_weighted(&values, &self.probs, p)
     }
 
+    /// The mean of the grid between the levels `p_low` and `p_high`, each
+    /// point counted with the share of its mass inside the window (#583);
+    /// see [`crate::risk::window_tvar_weighted`].
+    ///
+    /// ```
+    /// use prospicio_prob::Grid;
+    ///
+    /// let g = Grid::new(1.0, vec![0.5, 0.3, 0.2]).unwrap();
+    /// assert!((g.window_tvar(0.6, 0.9).unwrap() - 0.4 / 0.3).abs() < 1e-12);
+    /// assert!((g.window_tvar(0.5, 1.0).unwrap() - g.tvar(0.5).unwrap()).abs() < 1e-12);
+    /// ```
+    pub fn window_tvar(&self, p_low: f64, p_high: f64) -> Result<f64> {
+        let values: Vec<f64> = (0..self.len()).map(|j| self.x(j)).collect();
+        crate::risk::window_tvar_weighted(&values, &self.probs, p_low, p_high)
+    }
+
     /// The level whose tail value at risk is the value at risk at `p`,
     /// `aggregate`'s `tvar_threshold`; see [`crate::risk::tvar_threshold`].
     ///

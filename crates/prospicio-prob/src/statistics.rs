@@ -15,7 +15,8 @@ use crate::distribution::Distribution;
 use crate::predictive::{ComponentKey, PredictiveDistribution};
 use crate::risk::{
     rank, tail_count, tvar_linear_sorted, tvar_sorted, tvar_whole_years_sorted,
-    var_kth_largest_sorted, var_linear_sorted, var_sorted,
+    var_kth_largest_sorted, var_linear_sorted, var_sorted, window_tvar_linear_sorted,
+    window_tvar_sorted, window_tvar_whole_years_sorted,
 };
 use crate::sampled::{Empirical, Sampled};
 
@@ -70,6 +71,17 @@ impl TvarMethod {
             TvarMethod::Exact => tvar_sorted(sorted, p),
             TvarMethod::Linear => tvar_linear_sorted(sorted, p),
             TvarMethod::WholeYears => tvar_whole_years_sorted(sorted, p),
+        }
+    }
+
+    /// The window TVaR of ascending `sorted` between `p_low` and `p_high`
+    /// under this method: [`window_tvar_sorted`], [`window_tvar_linear_sorted`]
+    /// or [`window_tvar_whole_years_sorted`] (#583).
+    pub fn window_tvar(self, sorted: &[f64], p_low: f64, p_high: f64) -> Result<f64> {
+        match self {
+            TvarMethod::Exact => window_tvar_sorted(sorted, p_low, p_high),
+            TvarMethod::Linear => window_tvar_linear_sorted(sorted, p_low, p_high),
+            TvarMethod::WholeYears => window_tvar_whole_years_sorted(sorted, p_low, p_high),
         }
     }
 }

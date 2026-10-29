@@ -11,6 +11,8 @@ event_set(ptr)
 }
 \value{
 An \code{event_set} object with read-only properties \code{n_sims}, \code{seed},
+\code{has_times} (whether the losses carry times of loss, see
+\code{\link[=event_times]{event_times()}}),
 \code{input_hash} (a hash of the years' source, see \code{\link[=read_ylt]{read_ylt()}}, or \code{NULL}),
 \code{label_dims} and \code{label_combinations} (see \code{\link[=with_labels]{with_labels()}}),
 \code{has_aggregate_part} and \code{aggregate_part_labels} (see

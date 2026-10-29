@@ -65,6 +65,7 @@ reference:
       - draws
       - severity
       - risk_measures
+      - window_tvar
       - statistics
       - bootstrap_se
       - co_statistics

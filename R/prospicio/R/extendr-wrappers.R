@@ -46,6 +46,8 @@ layer_third_moment_rust <- function(severity, limit, attachment) .Call(wrap__lay
 
 tvar_threshold_rust <- function(values, probs, p) .Call(wrap__tvar_threshold_rust, values, probs, p)
 
+window_tvar_weighted_rust <- function(values, probs, p_low, p_high) .Call(wrap__window_tvar_weighted_rust, values, probs, p_low, p_high)
+
 join_rust <- function(parts, labels, dim, same_simulations) .Call(wrap__join_rust, parts, labels, dim, same_simulations)
 
 reorder_groups_rust <- function(pd, dim, correlation, seed, kind) .Call(wrap__reorder_groups_rust, pd, dim, correlation, seed, kind)
@@ -366,7 +368,7 @@ EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__Ev
 
 EventSet$from_long <- function(years, losses, n_years, seed, label_dims, label_values) .Call(wrap__EventSet__from_long, years, losses, n_years, seed, label_dims, label_values)
 
-EventSet$from_ylt <- function(years, losses, slots, times, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash) .Call(wrap__EventSet__from_ylt, years, losses, slots, times, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash)
+EventSet$from_ylt <- function(years, losses, slots, times, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash, losses_negative) .Call(wrap__EventSet__from_ylt, years, losses, slots, times, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash, losses_negative)
 
 EventSet$with_labels <- function(dims, values) .Call(wrap__EventSet__with_labels, self, dims, values)
 
@@ -934,6 +936,8 @@ Sampled$quantile <- function(p) .Call(wrap__Sampled__quantile, self, p)
 Sampled$var <- function(p, method) .Call(wrap__Sampled__var, self, p, method)
 
 Sampled$tvar <- function(p, method) .Call(wrap__Sampled__tvar, self, p, method)
+
+Sampled$window_tvar <- function(p_low, p_high, method) .Call(wrap__Sampled__window_tvar, self, p_low, p_high, method)
 
 #' @export
 `$.Sampled` <- function (self, name) { func <- Sampled[[name]]; environment(func) <- environment(); func }
