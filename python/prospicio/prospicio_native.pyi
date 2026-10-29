@@ -20566,6 +20566,27 @@ class MeyersFit:
         (``"cay"`` only), and ``sigma[1]`` to ``sigma[m]``.
         """
     @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        Each simulation's development pattern, to pair with the
+        simulation's loss ratio in the cash-flow engine: the shares
+        ``exp(beta_d g)`` of the posterior draw the simulation took, the
+        median value at each age over the median at the oldest age of an
+        origin after the newest (``g`` its speed-up ``(1 - gamma)^n`` in CSR,
+        1 otherwise). No tail: each pattern ends at 1 at the oldest age.
+        Nothing keeps ``beta_d`` rising or below 0, so a share can fall or
+        pass 1 (on Meyers' group 353 data it falls in nearly every
+        simulation), which ``monthly`` refuses unless
+        ``monotone="running_max"``.
+        
+        Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+        ``ultimates`` and ``ultimate_draws``.
+        
+        Returns
+        -------
+        DevelopmentPatterns
+        """
+    @property
     def premium(self, /) -> list[float]:
         """
         The premium of each origin.
@@ -20764,6 +20785,27 @@ class MeyersFits:
         """
         Parameter names of a single-segment fit, as
         ``MeyersFit.parameter_names``.
+        """
+    @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        Each simulation's development pattern, to pair with the
+        simulation's loss ratio in the cash-flow engine: the shares
+        ``exp(beta_d g)`` of the posterior draw the simulation took, the
+        median value at each age over the median at the oldest age of an
+        origin after the newest (``g`` its speed-up ``(1 - gamma)^n`` in CSR,
+        1 otherwise). No tail: each pattern ends at 1 at the oldest age.
+        Nothing keeps ``beta_d`` rising or below 0, so a share can fall or
+        pass 1 (on Meyers' group 353 data it falls in nearly every
+        simulation), which ``monthly`` refuses unless
+        ``monotone="running_max"``.
+        
+        Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+        ``ultimates`` and ``ultimate_draws``.
+        
+        Returns
+        -------
+        DevelopmentPatterns
         """
     @property
     def premium(self, /) -> list[float]:

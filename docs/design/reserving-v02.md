@@ -4696,7 +4696,10 @@ reviewers ask for beside a Mack exhibit: a test for calendar-year effects
 Status: **Built** (2026-10-28), issue #600 (its Reserving part), branch
 `claude/reserving-pattern-draws`, in Rust, Python and R; items 2, 4, 5 and
 6 were proposed and built as recommended, and the user accepted them as
-built on 2026-10-28. The cash-flow engine takes a
+built on 2026-10-28. Meyers' models followed (#678, branch
+`claude/meyers-pattern-draws`, in Rust, Python and R), with item 7's
+definition of their pattern proposed and accepted by the user as built
+on 2026-10-28. The cash-flow engine takes a
 paid pattern per simulation (`PatternDraws`, `time-value.md` decision 33);
 this decision gives those patterns from a reserving fit, row `i` the same
 simulation as row `i` of the fit's `reserves` and of every vector
@@ -4761,12 +4764,56 @@ decision 26 gives.
    error, not a truncation, and longer is padded with 1.
 7. **Which fits.** `OdpBootstrapFit(s)`, `MackBootstrapFit(s)`,
    `BayesOdpFit(s)`, `BayesBfFit` and `BayesBfNormalisedFit` (so
-   `LayerSharePrior::fit` too), each with a `patterns` field. Meyers'
-   models simulate only the value at the oldest age, log-normal cell by
-   cell, and Compartmental's pattern is the ODE's for the drawn rates;
-   both are later items. No fit knows whether its column is paid: a
+   `LayerSharePrior::fit` too), and `MeyersFit(s)` (#678), each with a
+   `patterns` field. Compartmental's pattern is the ODE's for the drawn
+   rates, a later item (#679). No fit knows whether its column is paid: a
    pattern from an incurred triangle is an incurred pattern, and the
    engine would read it as paid.
+
+   **Meyers' pattern** (#678, proposed and accepted by the user as built on 2026-10-28). Meyers' models are
+   log-normal in the cumulative values, `log C_wd ~ N(mu_wd, sigma_d^2)`
+   with `mu_wd = log P_w + logelr + alpha_w + beta_d g_w`, and simulate
+   only the value at the oldest age; the development they model is
+   `beta_d` (`beta_m = 0`) scaled by CSR's speed-up
+   `g_w = (1 - gamma)^(w - 1)`. A simulation's pattern is
+   `exp(beta_d g)` of the posterior draw it took: the median value at
+   age `d` over the median at the oldest age, which reaches exactly 1
+   there (no tail, as the other Bayesian models).
+   * CRC and CAY: `g = 1`, so the pattern is the same for every origin.
+     CAY's `rho` adds the previous origin's residual to each mean, a
+     correlation between origins, not development, and does not enter.
+   * CSR: the speed-up makes each origin's development its own, and a
+     segment has one pattern. It is that of the origin after the
+     triangle's newest, `g = (1 - gamma)^n` for `n` origins: an origin
+     with nothing yet observed, the year a deal on a new year writes
+     (item 1). The newest observed origin, `(1 - gamma)^(n - 1)`, is the
+     alternative; the two differ by one step of the trend (`gamma` has
+     prior sd 0.05).
+   * Medians, not means. The ratio of the expected values,
+     `exp(beta_d g + (sigma_d^2 - sigma_m^2) / 2)`, would add the larger
+     variance of the young ages to their shares (a volatility term, not
+     development), and in CAY would take `(1 + rho^2)` on each variance
+     or the previous origin's residual where that cell is observed, so
+     the pattern would depend on which neighbouring cells are observed.
+     Item 1's patterns of the other Bayesian models are ratios of
+     expected increments of a model whose development is a mean; in a
+     log-normal model of the cumulative values it is the median.
+   * Nothing keeps `beta_d` rising or below 0. On Meyers' group 353
+     data (default chains, 2,000 simulations) a share falls at some age
+     in 98% to 99% of the simulations of each model on paid and nearly
+     all on incurred, mostly from 60 months on, where the columns barely
+     move, and passes 1 in 70% to 75% on paid and 82% to 86% on incurred
+     (`knowledge/findings/pattern-draws-falling.md`). A share above 1
+     falls to the last, so `monthly` refuses both by default and Meyers'
+     patterns need `Monotone::RunningMax`, which caps each share at 1.
+   * As item 3: the pattern is written inside the predictive simulation
+     from the draw it took and draws no random number, so the ultimates
+     and reserves are bit for bit what they were (a unit test replays the
+     simulation without the pattern columns and compares the bits, and the
+     parity tests pass unchanged). `fit_segments`
+     reorders each segment's reserves and ultimates together by
+     Iman-Conover on their totals, and the reorder's index
+     (`reorder_ranges_with`) moves the patterns with them.
 8. **Bindings.** Python: `fit.patterns` (`DevelopmentPatterns`) with
    `n_sims`, `segments`, `ages(segment=None)`, `mean(segment=None)`,
    `pattern_draws(segment=None)` (a list per simulation) and

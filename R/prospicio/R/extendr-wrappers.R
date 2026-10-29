@@ -3016,6 +3016,12 @@ MeyersFit$ultimate_draws <- function(origin) .Call(wrap__MeyersFit__ultimate_dra
 
 MeyersFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__MeyersFit__loss_ratio_draws, self, origin, premium)
 
+MeyersFit$pattern_ages <- function(segment) .Call(wrap__MeyersFit__pattern_ages, self, segment)
+
+MeyersFit$pattern_draws <- function(segment) .Call(wrap__MeyersFit__pattern_draws, self, segment)
+
+MeyersFit$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__MeyersFit__monthly_pattern_draws, self, segment, months, basis, monotone)
+
 MeyersFit$diagnostics <- function() .Call(wrap__MeyersFit__diagnostics, self)
 
 MeyersFit$parameter_names <- function() .Call(wrap__MeyersFit__parameter_names, self)
@@ -3057,6 +3063,12 @@ MeyersFits$reserves <- function() .Call(wrap__MeyersFits__reserves, self)
 MeyersFits$ultimate_draws <- function(origin) .Call(wrap__MeyersFits__ultimate_draws, self, origin)
 
 MeyersFits$loss_ratio_draws <- function(origin, premium) .Call(wrap__MeyersFits__loss_ratio_draws, self, origin, premium)
+
+MeyersFits$pattern_ages <- function(segment) .Call(wrap__MeyersFits__pattern_ages, self, segment)
+
+MeyersFits$pattern_draws <- function(segment) .Call(wrap__MeyersFits__pattern_draws, self, segment)
+
+MeyersFits$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__MeyersFits__monthly_pattern_draws, self, segment, months, basis, monotone)
 
 MeyersFits$diagnostics_table <- function() .Call(wrap__MeyersFits__diagnostics_table, self)
 
