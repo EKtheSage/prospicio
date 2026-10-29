@@ -510,4 +510,8 @@ mod exports {
     udf!(pro_moic, released, funded, opening);
     udf!(pro_cashflow, u, terms, patterns, requirement, commission, output, rate, commutation_requirement);
     udf!(pro_pnl, values, probs, premium, expenses, covers, face, output, levels, expense_at_mean);
+    udf!(pro_ylt_stats, years, losses, n_years, probabilities, quantile, times, hours, negative);
+    udf!(pro_ylt_oep, years, losses, return_periods, amounts, n_years, quantile, times, hours, negative);
+    udf!(pro_elt_stats, rates, means, sd_independent, sd_correlated, exposures);
+    udf!(pro_elt_oep, rates, means, sd_independent, sd_correlated, exposures, return_periods, amounts);
 }

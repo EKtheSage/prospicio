@@ -8,7 +8,7 @@ This lane wraps other lanes' crates and changes none of them
 
 ## Next
 
-- [excel-578-rest] #578 (0.0.7): year loss tables (`PRO.YLT.STATS`, `PRO.YLT.OEP`, `PRO.ELT.OEP`) and allocation (`PRO.ALLOCATE`), one PR each
+- [excel-578-rest] #578 (0.0.7): allocation (`PRO.ALLOCATE`)
 - [excel-more-functions] further functions as the user asks
 - [code-signing-certificate] a code-signing certificate is the user's to buy
 
@@ -63,3 +63,4 @@ This lane wraps other lanes' crates and changes none of them
 - [excel-glm] #578 group 1 (0.0.7, branch `claude/xll-glm`, decision 41): `PRO.GLM`, `PRO.GLM.PREDICT` and `PRO.GLM.RELATIVITIES` on a table with a header row, every family and link of `prospicio-glm` with an exposure offset and prior weights; statsmodels 0.15.0 parity on all ten reference cases
 - [excel-cashflow] #578 group 2 (0.0.7, branch `claude/xll-cashflow`, decision 42): `PRO.NPV`, `PRO.IRR` and `PRO.MOIC` on flows in cells, on dates as `XNPV` and `XIRR`; `PRO.CASHFLOW`, a collateralised deal from a block of labelled terms; Microsoft's worked examples reproduced, the deal equal to the crate's to the bit
 - [excel-pnl] #578 group 3 (0.0.7, branch `claude/xll-pnl`, decision 43): `PRO.PNL`, a book's P&L ledger over annual gross losses in cells with its expenses and annual covers, on the walk, consolidated or peeled; the sheet with its scenario columns, the card or the ratios; `aggregate` 1.0.1 parity on eleven ledgers
+- [excel-ylt] #578 group 4 (0.0.7, branch `claude/xll-ylt`, decision 44): `PRO.YLT.STATS`, `PRO.YLT.OEP`, `PRO.ELT.STATS`, `PRO.ELT.OEP`, a year loss table's totals and exceedance curves (with an hours clause) and an event loss table's OEP; parity with every number of the guide `cat-2-risk-metrics.md` on Alder Mutual's tables

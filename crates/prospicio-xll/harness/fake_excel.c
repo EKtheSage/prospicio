@@ -162,7 +162,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and eleven functions registered", registered == 111);
+    check("one hundred and fifteen functions registered", registered == 115);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -988,6 +988,45 @@ int main(int argc, char **argv) {
     check("PRO.PNL net result mean 4.54", (pl_run->xltype & 0xFFF) == xltypeMulti && pl_run->val.array.rows == 4 &&
                                               fabs(pl_run->val.array.lparray[3 * 9 + 2].val.num - 4.54) < 1e-12);
     free12(pl_run);
+
+    /* PRO.YLT.STATS: years 1 and 3 of a 4-year table, 5 then 7 and 2:
+     * the average annual loss 14 / 4. */
+    static XLOPER12 yl_yc[3], yl_lc[3], yl_years, yl_losses, yl_n, yl_p;
+    static const double yl_y[3] = {1, 3, 3}, yl_l[3] = {5, 7, 2};
+    for (int k = 0; k < 3; k++) {
+        yl_yc[k].xltype = yl_lc[k].xltype = xltypeNum;
+        yl_yc[k].val.num = yl_y[k];
+        yl_lc[k].val.num = yl_l[k];
+    }
+    yl_years.xltype = yl_losses.xltype = xltypeMulti;
+    yl_years.val.array.lparray = yl_yc;
+    yl_losses.val.array.lparray = yl_lc;
+    yl_years.val.array.rows = yl_losses.val.array.rows = 3;
+    yl_years.val.array.columns = yl_losses.val.array.columns = 1;
+    yl_n.xltype = yl_p.xltype = xltypeNum;
+    yl_n.val.num = 4;
+    yl_p.val.num = 0.5;
+    XLOPER12 *yl_run = ((Fn8)GetProcAddress(xll, "pro_ylt_stats"))(&yl_years, &yl_losses, &yl_n, &yl_p, &missing,
+                                                                   &missing, &missing, &missing);
+    print_result("PRO.YLT.STATS({1;3;3}, {5;7;2}, 4, 0.5)", yl_run);
+    check("PRO.YLT.STATS mean 3.5", (yl_run->xltype & 0xFFF) == xltypeMulti && yl_run->val.array.columns == 2 &&
+                                        yl_run->val.array.lparray[5 * 2 + 1].val.num == 3.5);
+    free12(yl_run);
+
+    /* PRO.ELT.OEP: one event a year in two, losing 100, above 50 with
+     * probability 1 - exp(-0.5). */
+    static XLOPER12 el_rate, el_mean, el_exp, el_at;
+    el_rate.xltype = el_mean.xltype = el_exp.xltype = el_at.xltype = xltypeNum;
+    el_rate.val.num = 0.5;
+    el_mean.val.num = 100;
+    el_exp.val.num = 500;
+    el_at.val.num = 50;
+    XLOPER12 *el_run = ((Fn7)GetProcAddress(xll, "pro_elt_oep"))(&el_rate, &el_mean, &missing, &missing, &el_exp,
+                                                                 &missing, &el_at);
+    print_result("PRO.ELT.OEP(0.5, 100, , , 500, , 50)", el_run);
+    check("PRO.ELT.OEP 1 - exp(-0.5)", (el_run->xltype & 0xFFF) == xltypeMulti && el_run->val.array.rows == 2 &&
+                                           fabs(el_run->val.array.lparray[1 * 4 + 2].val.num - 0.3934693402873666) < 1e-15);
+    free12(el_run);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

@@ -17,6 +17,7 @@
 pub mod aggregate;
 pub mod bayes;
 pub mod cashflow;
+pub mod cat;
 pub mod copulas;
 pub mod credibility;
 pub mod diagonal;
@@ -2704,6 +2705,154 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: pnl::pnl,
+    },
+    Function {
+        symbol: "pro_ylt_stats",
+        name: "PRO.YLT.STATS",
+        help: "A year loss table's annual loss: years, occurrences, mean (AAL), SD, CV, skewness, VaR and TVaR.",
+        args: &[
+            Arg {
+                name: "years",
+                help: "Each loss's year, from 1: a column",
+            },
+            Arg {
+                name: "losses",
+                help: "Each loss, a column beside years (a row per non-zero event loss)",
+            },
+            Arg {
+                name: "n_years",
+                help: "The table's number of years, if its last years have no loss; the largest year if omitted",
+            },
+            Arg {
+                name: "probabilities",
+                help: "Probabilities for VaR and TVaR: a row or column; 0.99, 0.995, 0.999 if omitted",
+            },
+            Arg {
+                name: "quantile",
+                help: "\"inverted_cdf\" (default, R type 1, exact TVaR), \"linear\" (R type 7) or \"kth_largest\" (the k-th worst year, the mean of the k worst)",
+            },
+            Arg {
+                name: "times",
+                help: "Each loss's time, the fraction of its year elapsed, such as ((day - 1) * 24 + hour) / 8760; only for an hours clause",
+            },
+            Arg {
+                name: "hours",
+                help: "An hours clause: losses within this many hours of a window's first are one occurrence (needs times)",
+            },
+            Arg {
+                name: "negative",
+                help: "TRUE if the table stores losses as negative numbers",
+            },
+        ],
+        run: cat::ylt_stats,
+    },
+    Function {
+        symbol: "pro_ylt_oep",
+        name: "PRO.YLT.OEP",
+        help: "A year loss table's occurrence (OEP) and aggregate (AEP) exceedance curves: PMLs by return period, or exceedance at amounts.",
+        args: &[
+            Arg {
+                name: "years",
+                help: "Each loss's year, from 1: a column",
+            },
+            Arg {
+                name: "losses",
+                help: "Each loss, a column beside years (a row per non-zero event loss)",
+            },
+            Arg {
+                name: "return_periods",
+                help: "Return periods in years (a row or column; below 1 read as probabilities); 2 to 1000 if omitted (those past the table's years left out)",
+            },
+            Arg {
+                name: "amounts",
+                help: "Amounts to read the OEP and AEP at, instead of return periods",
+            },
+            Arg {
+                name: "n_years",
+                help: "The table's number of years, if its last years have no loss; the largest year if omitted",
+            },
+            Arg {
+                name: "quantile",
+                help: "\"inverted_cdf\" (default, R type 1, exact TVaR), \"linear\" (R type 7) or \"kth_largest\" (the k-th worst year, the mean of the k worst)",
+            },
+            Arg {
+                name: "times",
+                help: "Each loss's time, the fraction of its year elapsed, such as ((day - 1) * 24 + hour) / 8760; only for an hours clause",
+            },
+            Arg {
+                name: "hours",
+                help: "An hours clause: losses within this many hours of a window's first are one occurrence (needs times)",
+            },
+            Arg {
+                name: "negative",
+                help: "TRUE if the table stores losses as negative numbers",
+            },
+        ],
+        run: cat::ylt_oep,
+    },
+    Function {
+        symbol: "pro_elt_stats",
+        name: "PRO.ELT.STATS",
+        help: "An event loss table's events a year, expected annual loss, SD and CV (compound Poisson).",
+        args: &[
+            Arg {
+                name: "rates",
+                help: "Each event's annual rate: a column",
+            },
+            Arg {
+                name: "means",
+                help: "Each event's mean loss",
+            },
+            Arg {
+                name: "sd_independent",
+                help: "Each event's independent standard deviation; 0 if omitted",
+            },
+            Arg {
+                name: "sd_correlated",
+                help: "Each event's correlated standard deviation (added to the independent one); 0 if omitted",
+            },
+            Arg {
+                name: "exposures",
+                help: "Each event's exposure, the most it can lose",
+            },
+        ],
+        run: cat::elt_stats,
+    },
+    Function {
+        symbol: "pro_elt_oep",
+        name: "PRO.ELT.OEP",
+        help: "An event loss table's occurrence exceedance (OEP) curve: occurrence PMLs by return period, or exceedance at amounts.",
+        args: &[
+            Arg {
+                name: "rates",
+                help: "Each event's annual rate: a column",
+            },
+            Arg {
+                name: "means",
+                help: "Each event's mean loss",
+            },
+            Arg {
+                name: "sd_independent",
+                help: "Each event's independent standard deviation; 0 if omitted",
+            },
+            Arg {
+                name: "sd_correlated",
+                help: "Each event's correlated standard deviation (added to the independent one); 0 if omitted",
+            },
+            Arg {
+                name: "exposures",
+                help: "Each event's exposure, the most it can lose",
+            },
+            Arg {
+                name: "return_periods",
+                help: "Return periods in years (a row or column; below 1 read as probabilities); 2 to 1000 if omitted",
+            },
+            Arg {
+                name: "amounts",
+                help: "Amounts to read the exceedance frequency and OEP at, instead of return periods",
+            },
+        ],
+        run: cat::elt_oep,
     },
 ];
 
