@@ -15,6 +15,7 @@
 //! and rename `prospicio_xll.dll` to `prospicio.xll`.
 
 pub mod aggregate;
+pub mod allocation;
 pub mod bayes;
 pub mod cashflow;
 pub mod cat;
@@ -2853,6 +2854,62 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: cat::elt_oep,
+    },
+    Function {
+        symbol: "pro_allocate",
+        name: "PRO.ALLOCATE",
+        help: "A distortion risk measure of the portfolio allocated to its units: Euler (natural), covariance, proportional, marginal or Shapley.",
+        args: &[
+            Arg {
+                name: "draws",
+                help: "Simulated draws: a column per unit, a row per simulation, an optional header row of names",
+            },
+            Arg {
+                name: "family",
+                help: "The distortion: \"tvar\", \"ph\", \"wang\", \"dual\", \"ccoc\" and the others PRO.DISTORTION names",
+            },
+            Arg {
+                name: "parameter",
+                help: "The distortion's parameter, such as 0.99 for TVaR",
+            },
+            Arg {
+                name: "method",
+                help: "\"euler\" (default, or \"natural\"), \"covariance\", \"covariance_margin\", \"proportional\", \"marginal\" or \"shapley\" (up to 12 units)",
+            },
+            Arg {
+                name: "r0",
+                help: "The intercept of \"clin\", \"cll\", \"lep\" or \"ly\"",
+            },
+        ],
+        run: allocation::allocate,
+    },
+    Function {
+        symbol: "pro_allocate_total",
+        name: "PRO.ALLOCATE.TOTAL",
+        help: "An amount from outside (a premium or a capital) allocated to the units: the haircut or equal risk rule on stand-alone VaR, TVaR or EPD.",
+        args: &[
+            Arg {
+                name: "draws",
+                help: "Simulated draws: a column per unit, a row per simulation, an optional header row of names",
+            },
+            Arg {
+                name: "total",
+                help: "The amount to allocate",
+            },
+            Arg {
+                name: "method",
+                help: "\"haircut\" (default) or \"equal_risk\" (the one level at which the stand-alone measures add up to total)",
+            },
+            Arg {
+                name: "measure",
+                help: "\"tvar\" (default), \"var\" or \"epd\" (the assets with an EPD of level times the mean)",
+            },
+            Arg {
+                name: "level",
+                help: "The haircut's level: a probability for VaR and TVaR (0.99 if omitted), an EPD ratio for EPD; none for equal risk",
+            },
+        ],
+        run: allocation::allocate_total,
     },
 ];
 
