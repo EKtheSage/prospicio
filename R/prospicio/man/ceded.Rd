@@ -20,7 +20,9 @@ risk each loss hit, one per loss.}
 A single number.
 }
 \description{
-Ceded loss for one year
+A loss that is negative or not finite is an error: it is usually a loss
+stored with the sign of money paid out, which \code{\link[=read_ylt]{read_ylt()}} reads with
+\code{losses_negative = TRUE}.
 }
 \examples{
 ceded(xol_layer("L", 10, 5), c(8, 20, 12))

@@ -368,7 +368,7 @@ EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__Ev
 
 EventSet$from_long <- function(years, losses, n_years, seed, label_dims, label_values) .Call(wrap__EventSet__from_long, years, losses, n_years, seed, label_dims, label_values)
 
-EventSet$from_ylt <- function(years, losses, slots, times, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash) .Call(wrap__EventSet__from_ylt, years, losses, slots, times, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash)
+EventSet$from_ylt <- function(years, losses, slots, times, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash, losses_negative) .Call(wrap__EventSet__from_ylt, years, losses, slots, times, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash, losses_negative)
 
 EventSet$with_labels <- function(dims, values) .Call(wrap__EventSet__with_labels, self, dims, values)
 
@@ -389,6 +389,8 @@ EventSet$aggregate_part_labels <- function() .Call(wrap__EventSet__aggregate_par
 EventSet$merge <- function(other) .Call(wrap__EventSet__merge, self, other)
 
 EventSet$filter <- function(label, values) .Call(wrap__EventSet__filter, self, label, values)
+
+EventSet$contract_years <- function(start, partial) .Call(wrap__EventSet__contract_years, self, start, partial)
 
 EventSet$permute <- function(index) .Call(wrap__EventSet__permute, self, index)
 
@@ -525,6 +527,12 @@ XolLayer$with_ceding_commission <- function(rate) .Call(wrap__XolLayer__with_ced
 XolLayer$with_sliding_scale <- function(commission, loss_ratio) .Call(wrap__XolLayer__with_sliding_scale, self, commission, loss_ratio)
 
 XolLayer$with_profit_commission <- function(share, allowance) .Call(wrap__XolLayer__with_profit_commission, self, share, allowance)
+
+XolLayer$with_no_claims_bonus <- function(share, years, threshold) .Call(wrap__XolLayer__with_no_claims_bonus, self, share, years, threshold)
+
+XolLayer$no_claims_bonus <- function() .Call(wrap__XolLayer__no_claims_bonus, self)
+
+XolLayer$no_claims_bonus_for <- function(ceded) .Call(wrap__XolLayer__no_claims_bonus_for, self, ceded)
 
 XolLayer$with_profit_commission_carry_forward <- function(years) .Call(wrap__XolLayer__with_profit_commission_carry_forward, self, years)
 

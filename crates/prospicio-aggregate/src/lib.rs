@@ -59,13 +59,13 @@ pub use layer_statistics::{
     occurrence_cession_statistics, occurrence_layer_statistics,
 };
 pub use moments::{Approximation, ApproximationKind, CompoundMoments, compound_moments};
-pub use monte_carlo::{EventSet, GroupLabels, simulate_events};
+pub use monte_carlo::{EventSet, GroupLabels, PartialYears, simulate_events};
 pub use panjer::panjer;
 pub use picks::{PickedLayer, Picks, layer_loss_picks};
 pub use pml::{OccurrencePml, occurrence_exceedance, occurrence_pml};
 pub use reinsurance::{
     Basis, CarryForward, Commission, Corridor, Layer, LimitAllocation, LossSensitivePremium,
-    ProfitCommission, Tower,
+    NoClaimsBonus, ProfitCommission, Tower,
 };
 pub use renewal::{RenewalCount, Wait, WaitGrid, renewal_count};
 pub use ruin::{

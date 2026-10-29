@@ -174,6 +174,29 @@ stopifnot(audit_portfolio_grid(units, log2 = 12)$score < 0.5)
 stopifnot(inherits(try(audit_grid(poisson_count(5), capped, step = -1, log2 = 10),
                        silent = TRUE), "try-error"))
 
+# A no-claims bonus, over a term and in expectation (#592).
+ncb <- function(years, threshold = 0) {
+  with_no_claims_bonus(with_premium_rate(xol_layer("L", 20, 10), 0.1, 100), 0.2, years, threshold)
+}
+stopifnot(identical(ncb(2, 15)@no_claims_bonus, c(share = 0.2, years = 2, threshold = 15)))
+stopifnot(length(xol_layer("L", 20, 10)@no_claims_bonus) == 0)
+close(no_claims_bonus_for(ncb(1), c(0, 5)), c(2, 0), 1e-12)
+stopifnot(inherits(try(with_no_claims_bonus(xol_layer("L", 20, 10), 0.2), silent = TRUE), "try-error"))
+yrs <- lapply(c(5, 25, 5, 5), function(x) events_from_years(list(x)))
+bonus <- function(layer) {
+  term <- apply_tower_term(reinsurance_tower(list(layer)), yrs)
+  m <- select_components(term, "kind", "no_claims_bonus")
+  as.numeric(draw_matrix(m)[1, ])
+}
+close(bonus(ncb(1)), c(2, 0, 2, 2), 1e-12)
+close(bonus(ncb(2)), c(2, 0, 0, 2), 1e-12)
+close(bonus(ncb(2, 15)), c(2, 2, 2, 2), 1e-12)
+stopifnot(inherits(try(apply_tower(reinsurance_tower(list(ncb(2))), yrs[[1]]), silent = TRUE), "try-error"))
+probs <- numeric(41)
+probs[c(6, 26)] <- c(0.6, 0.4)
+g <- tower_on_annual_grid(reinsurance_tower(list(ncb(1))), grid_distribution(1, probs))
+close(g$expected_no_claims_bonus[["L"]], 1.2, 1e-12)
+
 cat("prospicio R aggregate tests passed\n")
 
 # Surplus treaty on events that carry sums insured.
@@ -200,7 +223,17 @@ n <- 20000
 ev <- events_from_years(rep(list(20), n), seed = 9)
 one <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = 1, pro_rata_time = TRUE)
 stopifnot(inherits(try(apply_tower(reinsurance_tower(list(one)), ev), silent = TRUE), "try-error"))
+# Dated events regrouped into contract years (#586).
+cal <- events_from_years(list(c(1, 2), 3), times = list(c(0.25, 0.75), 0.25))
+july <- contract_years(cal, 0.5)
+stopifnot(july@n_sims == 1, identical(events(july, 1), c(2, 3)),
+          isTRUE(all.equal(event_times(july, 1), c(0.25, 0.75))))
+kept <- contract_years(cal, 0.5, "keep")
+stopifnot(kept@n_sims == 3, identical(events(kept, 1), 1), length(events(kept, 3)) == 0,
+          inherits(try(contract_years(events_from_years(list(1)), 0.5), silent = TRUE), "try-error"))
 dated <- with_uniform_times(ev)
+# #596: has_times, as Python's EventSet.has_times.
+stopifnot(dated@has_times, !ev@has_times)
 rp <- draw_matrix(apply_tower(reinsurance_tower(list(one)), dated))[, 4]
 stopifnot(abs(mean(rp) - 1) < 4 * sd(rp) / sqrt(n), length(event_times(ev, 1)) == 0)
 
@@ -731,6 +764,19 @@ stopifnot(identical(yev@n_sims, 6), identical(events(yev, 1), c(2, 10, 4)),
 stopifnot(identical(event_labels(yev, 1)$class, c("home", "home", "auto")))
 stopifnot(startsWith(yev@input_hash, "blake3:"),
           identical(provenance(total(yev))$input_hash, yev@input_hash))
+# A file of negative losses and its sign-flipped copy give one event set (#593).
+neg_path <- tempfile(fileext = ".csv")
+writeLines(c("year,peril,slot,class,value,item", "1,wind,5,home,-10,a", "1,wind,5,auto,-4,b",
+             "2,quake,1,home,-30,c", "1,wind,2,home,-2,d"), neg_path)
+nev <- read_ylt(neg_path, labels = c("peril", "class"), n_years = 3, losses_negative = TRUE)
+stopifnot(identical(events(nev, 1), c(2, 10, 4)), identical(events(nev, 2), 30))
+stopifnot(inherits(try(read_ylt(neg_path, labels = c("peril", "class")), silent = TRUE), "try-error"),
+          inherits(try(read_ylt(ylt_path, labels = c("peril", "class"), losses_negative = TRUE),
+                       silent = TRUE), "try-error"))
+neg_layer <- xol_layer("10x5", 10, 5)
+stopifnot(ceded(neg_layer, 12) == 7,
+          inherits(try(ceded(neg_layer, c(12, -3)), silent = TRUE), "try-error"),
+          inherits(try(ceded_by_event(neg_layer, -1), silent = TRUE), "try-error"))
 e <- tryCatch(read_ylt(ylt_path, labels = c("peril", "class"), unique_by = "peril"), error = identity)
 stopifnot(grepl("rows 1 and 2", conditionMessage(e)))
 e <- tryCatch(read_ylt(ylt_path, unique_by = character()), error = identity)

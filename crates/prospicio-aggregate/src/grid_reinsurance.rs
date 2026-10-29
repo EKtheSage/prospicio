@@ -55,6 +55,9 @@ pub struct TowerGrids {
     pub expected_ceding_commission: Vec<f64>,
     /// Expected profit commission of each layer; zero without one.
     pub expected_profit_commission: Vec<f64>,
+    /// Expected no-claims bonus of each layer (one year's, #592); zero
+    /// without one.
+    pub expected_no_claims_bonus: Vec<f64>,
     /// Expected ceding commission of each deal ([`Tower::deal_scale`]), in
     /// the order they were added, read on its sections' ceded losses
     /// together; zero for a deal without one.
@@ -108,6 +111,58 @@ pub struct TowerPrice {
 }
 
 impl Layer {
+    /// The layer's expected no-claims bonus if its premium were `premium`:
+    /// `share × premium × P(C <= threshold)` over `ceded`, the layer's
+    /// annual ceded loss at the placed share (#592). Linear in the premium,
+    /// so its rate per unit of premium is the same at every trial deposit;
+    /// zero without a bonus. Fails for a bonus over several years, which
+    /// one year's grid cannot look back over, for a swing-rated layer and
+    /// unless `premium` is finite and positive.
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    /// use prospicio_prob::Grid;
+    ///
+    /// // No loss to the layer half the time.
+    /// let ceded = Grid::new(10.0, vec![0.5, 0.3, 0.2]).unwrap();
+    /// let cat = Layer::xol("20x10", 20.0, 10.0).unwrap()
+    ///     .premium_rate(0.1, 20.0).unwrap()
+    ///     .no_claims_bonus(0.2, 1, 0.0).unwrap();
+    /// assert!((cat.expected_no_claims_bonus(5.0, &ceded).unwrap() - 0.5).abs() < 1e-12);
+    /// ```
+    pub fn expected_no_claims_bonus(&self, premium: f64, ceded: &Grid) -> Result<f64> {
+        if !(premium.is_finite() && premium > 0.0) {
+            return Err(Error::InvalidParameter {
+                name: "premium",
+                value: premium,
+                reason: "must be finite and positive",
+            });
+        }
+        let Some(b) = &self.no_claims_bonus else {
+            return Ok(0.0);
+        };
+        if b.years > 1 {
+            return Err(Error::InvalidParameter {
+                name: "years",
+                value: f64::from(b.years),
+                reason: "a no-claims bonus over several years needs a term; one year's grid \
+                         cannot look back",
+            });
+        }
+        if self.swing.is_some() {
+            return Err(Error::InvalidParameter {
+                name: "swing",
+                value: f64::NAN,
+                reason: "a swing-rated layer's premium follows its loss, not a deposit",
+            });
+        }
+        let trial = Layer {
+            premium,
+            ..self.clone()
+        };
+        Ok(expectation(ceded, |c| trial.no_claims_bonus_for(c)))
+    }
+
     /// The layer's expected loss-sensitive commissions if its premium were
     /// `premium`: the sliding-scale ceding commission and the profit
     /// commission, in that order, in expectation over `ceded`, the layer's
@@ -290,6 +345,7 @@ impl Tower {
             )));
         }
         self.refuse_scope("a compound distribution")?;
+        self.refuse_lookback("a grid, a single year,")?;
         for &(start, end) in &stages[..stages.len() - 1] {
             if let Some(l) = self.layers[start..end]
                 .iter()
@@ -325,6 +381,7 @@ impl Tower {
         let mut premium = Vec::with_capacity(self.layers.len());
         let mut commission = Vec::with_capacity(self.layers.len());
         let mut profit = Vec::with_capacity(self.layers.len());
+        let mut bonus = Vec::with_capacity(self.layers.len());
         let mut stage_ceded = Vec::with_capacity(stages.len());
         for &(start, end) in &stages {
             for layer in &self.layers[start..end] {
@@ -345,6 +402,7 @@ impl Tower {
                 profit.push(expectation(&layer_ceded, |c| {
                     layer.profit_commission_for(c)
                 }));
+                bonus.push(expectation(&layer_ceded, |c| layer.no_claims_bonus_for(c)));
                 ceded.push(layer_ceded.remove_fuzz(f64::EPSILON));
                 ceded_reports.push(report);
             }
@@ -447,6 +505,7 @@ impl Tower {
             expected_premium: premium,
             expected_ceding_commission: commission,
             expected_profit_commission: profit,
+            expected_no_claims_bonus: bonus,
             expected_deal_ceding_commission: deal_commission,
             expected_deal_brokerage: deal_brokerage,
             on_points,
@@ -491,6 +550,9 @@ pub struct AnnualGrids {
     pub expected_ceding_commission: Vec<f64>,
     /// Expected profit commission of each layer.
     pub expected_profit_commission: Vec<f64>,
+    /// Expected no-claims bonus of each layer (one year's, #592); zero
+    /// without one.
+    pub expected_no_claims_bonus: Vec<f64>,
     /// Expected ceding commission of each deal ([`Tower::deal_scale`]), in
     /// the order they were added, read on its sections' keys together;
     /// zero for a deal without one.
@@ -548,6 +610,7 @@ impl Tower {
             )));
         }
         self.refuse_scope("an annual loss")?;
+        self.refuse_lookback("a grid, a single year,")?;
         let h = annual.step();
         let m = self.layers.len();
         // Each layer's (ceded, reinstatement premium) and scale key at every
@@ -564,6 +627,7 @@ impl Tower {
         let mut ceded = Vec::with_capacity(m);
         let (mut reinstatement, mut premium, mut commission, mut profit) =
             (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        let mut bonus = Vec::new();
         for (i, layer) in self.layers.iter().enumerate() {
             // At 100%, then the share as the step, as `on_grid`.
             let (full, exact) = annual.map(|x| {
@@ -596,6 +660,7 @@ impl Tower {
             premium.push(mean(&|c| layer.premium_for(c)));
             commission.push(mean(&|c| layer.ceding_commission_for(c)));
             profit.push(mean(&|c| layer.profit_commission_for(c)));
+            bonus.push(mean(&|c| layer.no_claims_bonus_for(c)));
         }
         let (net, exact) = annual.map(|x| x - at(x).iter().map(|(c, _)| c).sum::<f64>())?;
         on_points &= exact;
@@ -622,6 +687,7 @@ impl Tower {
             expected_premium: premium,
             expected_ceding_commission: commission,
             expected_profit_commission: profit,
+            expected_no_claims_bonus: bonus,
             expected_deal_ceding_commission: deal_commission,
             expected_deal_brokerage: deal_brokerage,
             on_points,

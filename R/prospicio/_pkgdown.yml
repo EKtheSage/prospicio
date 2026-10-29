@@ -96,6 +96,7 @@ reference:
       - merge_event_sets
       - permute_events
       - filter_events
+      - contract_years
       - with_aggregate_part
       - hours_clause
       - occurrence_pml
@@ -132,6 +133,7 @@ reference:
       - with_ceding_commission
       - with_brokerage
       - with_profit_commission_carry_forward
+      - with_no_claims_bonus
       - with_swing_rating
       - premium_for
       - retro_premium

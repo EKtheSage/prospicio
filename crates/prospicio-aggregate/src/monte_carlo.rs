@@ -5,6 +5,19 @@ use prospicio_prob::provenance::{SIM_INDEX_SCHEME, current_samplers};
 use prospicio_prob::{Counting, Distribution, PredictiveDistribution, Provenance};
 use rayon::prelude::*;
 
+/// What [`EventSet::contract_years`] does with the partial contract years
+/// at the two ends of the simulated timeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PartialYears {
+    /// Keep them: the first holds the losses of the first simulated year
+    /// before the contract start, the last those of the last simulated
+    /// year from it.
+    Keep,
+    /// Leave them out, with their losses: only whole contract years.
+    #[default]
+    Drop,
+}
+
 /// Simulated years of individual losses (events), kept so that per-event
 /// terms such as excess-of-loss layers can be applied to them.
 ///
@@ -940,6 +953,132 @@ impl EventSet {
         })
     }
 
+    /// The events regrouped into contract years that start at `start`, a
+    /// fraction of the simulated year (1 July is about 0.4959 of a 365-day
+    /// year), for a treaty whose year is not the simulation's (#586).
+    ///
+    /// The simulated years are read as consecutive years of one timeline:
+    /// a loss of year `i` at time `t` happens at `i + t`, and contract year
+    /// `j` runs from `j + start` to `j + 1 + start`. Each loss moves to its
+    /// contract year with its time rebased to it, `i + t − start − j`, and
+    /// keeps its sum insured and labels; within a contract year the losses
+    /// of the earlier simulated year come first, in time order. Years
+    /// simulated independently (a year loss table's) are not a timeline:
+    /// regrouping them joins the end of one year to the start of another.
+    ///
+    /// For `start > 0` the first contract year (from `start − 1`) and the
+    /// last (to `n + start`) are partial, holding only the losses of year
+    /// 0 before `start` and of year `n − 1` from it. [`PartialYears::Keep`]
+    /// keeps them, so the set has `n + 1` years, the first and the last
+    /// partial; [`PartialYears::Drop`] leaves them out, so the set has the
+    /// `n − 1` whole contract years, and their losses are in no contract
+    /// year. `start = 0` returns the set as it is.
+    ///
+    /// Fails without times (a set from [`with_times`](Self::with_times),
+    /// [`with_uniform_times`](Self::with_uniform_times) or a timed year
+    /// loss table), for `start` outside `[0, 1)`, with an aggregate part,
+    /// which has no times to cut by, and when dropping the partial years
+    /// leaves no year.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{EventSet, PartialYears};
+    ///
+    /// let calendar = EventSet::from_years(vec![vec![1.0, 2.0], vec![3.0]], 0)
+    ///     .unwrap()
+    ///     .with_times(vec![0.25, 0.75, 0.25])
+    ///     .unwrap();
+    /// // Contract years from mid-year: the loss at 0.75 and the next
+    /// // year's at 0.25 fall in the one whole contract year.
+    /// let july = calendar.contract_years(0.5, PartialYears::Drop).unwrap();
+    /// assert_eq!(july.n_sims(), 1);
+    /// assert_eq!(july.events(0), &[2.0, 3.0]);
+    /// assert_eq!(july.times(0), Some(&[0.25, 0.75][..]));
+    /// let kept = calendar.contract_years(0.5, PartialYears::Keep).unwrap();
+    /// assert_eq!((kept.n_sims(), kept.events(0), kept.events(2)), (3, &[1.0][..], &[][..]));
+    /// ```
+    pub fn contract_years(&self, start: f64, partial: PartialYears) -> Result<Self> {
+        if !(0.0..1.0).contains(&start) {
+            return Err(Error::InvalidParameter {
+                name: "start",
+                value: start,
+                reason: "must be a fraction of the year in [0, 1)",
+            });
+        }
+        let Some(times) = &self.times else {
+            return Err(Error::Data(
+                "contract years cut the losses by their times of loss, which these events do \
+                 not carry"
+                    .into(),
+            ));
+        };
+        if self.aggregate.is_some() {
+            return Err(Error::Data(
+                "an aggregate part has no times to cut into contract years; regroup the events \
+                 before adding it"
+                    .into(),
+            ));
+        }
+        if start == 0.0 {
+            return Ok(self.clone());
+        }
+        let n = self.n_sims();
+        // Contract year j + 1 (so the first, partial one, is 0) of each loss.
+        let mut years: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n + 1];
+        for i in 0..n {
+            let (from, to) = (self.offsets[i], self.offsets[i + 1]);
+            for (k, &tk) in times.iter().enumerate().take(to).skip(from) {
+                let (j, rebased) = if tk >= start {
+                    (i + 1, tk - start)
+                } else {
+                    (i, tk + 1.0 - start)
+                };
+                years[j].push((k, rebased));
+            }
+        }
+        let keep: Vec<usize> = match partial {
+            PartialYears::Keep => (0..=n).collect(),
+            PartialYears::Drop => (1..n).collect(),
+        };
+        if keep.is_empty() {
+            return Err(Error::Data(
+                "one simulated year holds no whole contract year; keep the partial years".into(),
+            ));
+        }
+        let mut offsets = vec![0];
+        let mut losses = Vec::new();
+        let mut sums = Vec::new();
+        let mut new_times = Vec::new();
+        let mut of_loss = Vec::new();
+        for &j in &keep {
+            for &(k, rebased) in &years[j] {
+                losses.push(self.losses[k]);
+                new_times.push(rebased.min(1.0));
+                if let Some(s) = &self.sums_insured {
+                    sums.push(s[k]);
+                }
+                if let Some(l) = &self.labels {
+                    of_loss.push(l.of_loss[k]);
+                }
+            }
+            offsets.push(losses.len());
+        }
+        Ok(Self {
+            offsets,
+            losses,
+            sums_insured: self.sums_insured.as_ref().map(|_| sums),
+            times: Some(new_times),
+            labels: self.labels.as_ref().map(|l| Labels {
+                dims: l.dims.clone(),
+                combinations: l.combinations.clone(),
+                of_loss,
+            }),
+            aggregate: None,
+            seed: self.seed,
+            samplers: self.samplers.clone(),
+            input_hash: self.input_hash.clone(),
+        })
+    }
+
     /// The losses whose label `dim` takes one of `values`, with every year
     /// kept (a year with none of them is empty), each loss's sum insured,
     /// time and labels kept with it, and the aggregate part's columns with
@@ -1654,6 +1793,99 @@ mod tests {
             .map(|k| k.into_iter().map(prospicio_prob::KeyValue::from).collect())
             .collect();
         PredictiveDistribution::from_draws(dims, keys, draws, Provenance::new("part")).unwrap()
+    }
+
+    #[test]
+    fn contract_years_from_the_simulated_start_are_the_set() {
+        let e = EventSet::from_years(vec![vec![1.0, 2.0], vec![3.0]], 4)
+            .unwrap()
+            .with_times(vec![0.1, 0.9, 0.5])
+            .unwrap();
+        assert_eq!(e.contract_years(0.0, PartialYears::Drop).unwrap(), e);
+        assert!(e.contract_years(1.0, PartialYears::Drop).is_err());
+        assert!(e.contract_years(-0.1, PartialYears::Drop).is_err());
+        let untimed = EventSet::from_years(vec![vec![1.0]], 0).unwrap();
+        assert!(untimed.contract_years(0.5, PartialYears::Keep).is_err());
+    }
+
+    #[test]
+    fn a_set_shifted_by_the_start_regroups_to_itself() {
+        // Each loss of year i at time t moved to i + t + start on a
+        // calendar timeline, one year longer, then cut at start.
+        let mut rng = prospicio_core::StreamRng::new(11, 0);
+        let n = 30;
+        let mut years = Vec::new();
+        let mut times = Vec::new();
+        for _ in 0..n {
+            let k = (rng.next_open01() * 4.0) as usize;
+            let mut t: Vec<f64> = (0..k).map(|_| rng.next_open01()).collect();
+            t.sort_by(f64::total_cmp);
+            years.push(
+                (0..k)
+                    .map(|_| 1.0 + rng.next_open01() * 9.0)
+                    .collect::<Vec<_>>(),
+            );
+            times.extend(t);
+        }
+        let labels: Vec<String> = (0..times.len()).map(|k| format!("c{}", k % 3)).collect();
+        let original = EventSet::from_years(years.clone(), 2)
+            .unwrap()
+            .with_times(times.clone())
+            .unwrap()
+            .with_labels(vec![("class".into(), labels.clone())])
+            .unwrap();
+        for &start in &[0.25, 0.5, 0.875] {
+            let mut cal: Vec<Vec<(f64, f64, String)>> = vec![Vec::new(); n + 1];
+            let mut k = 0;
+            for (i, y) in years.iter().enumerate() {
+                for &x in y {
+                    let at = i as f64 + times[k] + start;
+                    let year = at.floor() as usize;
+                    cal[year].push((at - year as f64, x, labels[k].clone()));
+                    k += 1;
+                }
+            }
+            for y in &mut cal {
+                y.sort_by(|a, b| a.0.total_cmp(&b.0));
+            }
+            let calendar = EventSet::from_years(
+                cal.iter()
+                    .map(|y| y.iter().map(|e| e.1).collect())
+                    .collect(),
+                2,
+            )
+            .unwrap()
+            .with_times(cal.iter().flatten().map(|e| e.0).collect())
+            .unwrap()
+            .with_labels(vec![(
+                "class".into(),
+                cal.iter().flatten().map(|e| e.2.clone()).collect(),
+            )])
+            .unwrap();
+            let back = calendar.contract_years(start, PartialYears::Drop).unwrap();
+            assert_eq!(back.n_sims(), n);
+            for i in 0..n {
+                assert_eq!(
+                    back.events(i),
+                    original.events(i),
+                    "start {start}, year {i}"
+                );
+                let (a, b) = (back.times(i).unwrap(), original.times(i).unwrap());
+                assert!(a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-12));
+                assert_eq!(back.labels(i), original.labels(i));
+            }
+            // Keeping the partial years: the first is empty here, the last
+            // holds what ran past the original's end.
+            let kept = calendar.contract_years(start, PartialYears::Keep).unwrap();
+            assert_eq!(kept.n_sims(), n + 2);
+            assert!(kept.events(0).is_empty());
+            let total = |e: &EventSet| {
+                (0..e.n_sims())
+                    .map(|i| e.events(i).iter().sum::<f64>())
+                    .sum::<f64>()
+            };
+            assert!((total(&kept) - total(&calendar)).abs() < 1e-9);
+        }
     }
 
     #[test]
