@@ -1,7 +1,7 @@
 ### Reserving
 
 - A development pattern per posterior draw from Meyers' CRC, CSR and CAY, aligned
-  with the reserve draws, for the cash-flow engine's paid patterns (#600, #678):
+  with the reserve draws, for the cash-flow engine's paid patterns (#600, #678, #691):
   `MeyersFit::patterns` and `MeyersFits::patterns` (`DevelopmentPatterns`, with
   `pattern_draws` and `monthly` as for the other fits; one fit or segments,
   carried through a rank correlation). A draw's pattern is the ratio of the
