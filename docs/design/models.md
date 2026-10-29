@@ -1070,42 +1070,10 @@ Python and R give the same importances on the same rows (pinned in both
 test suites). Seed 3 on three rows is the monograph's shuffle of Tables
 9.1 to 9.4, whose importance 0.133 (100 on its scale) the tests reproduce.
 
-## Conformal prediction (#546)
-
 ## Auto-calibration (#545)
 
 Status: built; items (a) to (e) proposed by the Models lane for the
 user's acceptance.
-
-`prospicio_models::conformal` gives prediction intervals around any model
-from held-out residuals, with finite-sample coverage under exchangeability:
-`split` (absolute, Pearson or scaled scores), `weighted_split` (a weight a
-calibration and a test row), `cqr` (conformalised quantile regression) and
-`cv_plus` (CV+, and the jackknife+ with one fold a row), each on
-predictions, so any engine's model serves; `split_fitted` and
-`cv_plus_fit` (folds fitted in parallel through `map_splits`) take a Rust
-`Fitted` or `Model`. Python `conformal_split`, `conformal_cqr`,
-`conformal_plus` and `conformal_intervals(model, design, y, test_design,
-method=)`, R the same names, R's `conformal_intervals()` taking a fitting
-function of a data frame and its responses.
-
-- (a) *The conformal quantile is the `⌈(1 − α)(n + 1)⌉`-th smallest score*
-  for every method, and infinite when that rank exceeds `n` (MAPIE clips
-  the level to 1 unless `allow_infinite_bounds`). It is MAPIE's for split
-  and CV+; MAPIE's CQR takes numpy's `"higher"` quantile at
-  `(1 − α)(1 + 1/n)`, sometimes one order statistic higher, so the parity
-  case is one where the two agree.
-- (b) *The functions take predictions*, not models, so a boosted, network
-  or ONNX model's predictions go in as they are; the model-level wrappers
-  are thin.
-- (c) *The Pearson score scales by the family's variance at the
-  prediction*, `|y − μ| / √V(μ)`; a dispersion model's spread goes in as
-  a scaled score.
-- (d) *Weighted conformal places each test row's weight at infinity*
-  (Tibshirani, Barber, Candès and Ramdas, 2019); equal weights give the
-  split method's interval exactly.
-- (e) *Jackknife+ refits once a row*, `n` fits; the Python and R wrappers
-  fit the folds on threads (Python) or in turn (R).
 
 `prospicio_models::calibrate` checks whether a model's predictions are
 right on average at every level and repairs them. `isotonic` is weighted
@@ -1145,6 +1113,41 @@ family's mean deviance into miscalibration, discrimination and uncertainty
 In Python and R the map is applied to predictions (`recalibrate(pred,
 y).predict(new_pred)`), so it serves every model of the bindings,
 boosting included; the Rust wrappers serve Rust `Fitted` models.
+
+## Conformal prediction (#546)
+
+Status: built; items (a) to (e) proposed by the Models lane for the
+user's acceptance.
+
+`prospicio_models::conformal` gives prediction intervals around any model
+from held-out residuals, with finite-sample coverage under exchangeability:
+`split` (absolute, Pearson or scaled scores), `weighted_split` (a weight a
+calibration and a test row), `cqr` (conformalised quantile regression) and
+`cv_plus` (CV+, and the jackknife+ with one fold a row), each on
+predictions, so any engine's model serves; `split_fitted` and
+`cv_plus_fit` (folds fitted in parallel through `map_splits`) take a Rust
+`Fitted` or `Model`. Python `conformal_split`, `conformal_cqr`,
+`conformal_plus` and `conformal_intervals(model, design, y, test_design,
+method=)`, R the same names, R's `conformal_intervals()` taking a fitting
+function of a data frame and its responses.
+
+- (a) *The conformal quantile is the `⌈(1 − α)(n + 1)⌉`-th smallest score*
+  for every method, and infinite when that rank exceeds `n` (MAPIE clips
+  the level to 1 unless `allow_infinite_bounds`). It is MAPIE's for split
+  and CV+; MAPIE's CQR takes numpy's `"higher"` quantile at
+  `(1 − α)(1 + 1/n)`, sometimes one order statistic higher, so the parity
+  case is one where the two agree.
+- (b) *The functions take predictions*, not models, so a boosted, network
+  or ONNX model's predictions go in as they are; the model-level wrappers
+  are thin.
+- (c) *The Pearson score scales by the family's variance at the
+  prediction*, `|y − μ| / √V(μ)`; a dispersion model's spread goes in as
+  a scaled score.
+- (d) *Weighted conformal places each test row's weight at infinity*
+  (Tibshirani, Barber, Candès and Ramdas, 2019); equal weights give the
+  split method's interval exactly.
+- (e) *Jackknife+ refits once a row*, `n` fits; the Python and R wrappers
+  fit the folds on threads (Python) or in turn (R).
 
 ## Decisions
 
