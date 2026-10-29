@@ -1460,3 +1460,44 @@ def test_reinsurance_frontier():
     assert any(f["efficient"])
     with pytest.raises(ValueError, match="loading"):
         frontier(ev, [10.0], [20.0])
+
+
+def test_cat_bond_triggers_tranches_and_pricing():
+    """Cat bonds: triggers, tranches, distortion pricing and basis risk (#570)."""
+    from statistics import NormalDist
+
+    from prospicio.aggregate import EventSet
+    from prospicio.reinsurance import CatBond, Layer
+    from prospicio.risk import Distortion
+
+    bond = CatBond("industry_index", 50.0, 150.0, weights=[0.10, 0.05], principal=100.0)
+    losses = bond.apply([[[800.0, 400.0]], []])
+    assert losses.annual == [0.5, 0.0] and losses.recoveries() == [50.0, 0.0]
+    assert bond.index([800.0, 400.0]) == pytest.approx(100.0)
+    p = CatBond("parametric", 0.0, 10.0, weights=[10.0, 20.0], payout=[(30.0, 0.0), (50.0, 0.5), (70.0, 1.0)])
+    assert p.index([40.0, 80.0]) == pytest.approx(22.5)
+    # An indemnity tranche is the layer with its limit once a year.
+    years = [[30.0, 70.0], [], [120.0], [45.0, 50.0, 90.0]] * 25
+    ind = CatBond("indemnity", 40.0, 100.0, principal=60.0)
+    layer = Layer("T", 60.0, 40.0, aggregate_limit=60.0)
+    r = ind.apply(years).recoveries()
+    assert r == pytest.approx([layer.ceded(y) for y in years])
+    assert ind.apply(EventSet.from_years(years)).recoveries() == r
+    b = ind.apply(years).basis_risk(r)
+    assert (b["mean_shortfall"], b["mean_excess"], b["missed"]) == (0.0, 0.0, 0.0)
+    # A binary tranche's Wang spread is its closed form, and calibration finds it back.
+    binary = CatBond("modelled_loss", 100.0, 200.0).apply([[500.0] if i % 50 == 0 else [] for i in range(10_000)])
+    price = binary.price(Distortion.wang(0.45))
+    nd = NormalDist()
+    assert price["spread"] == pytest.approx(nd.cdf(nd.inv_cdf(0.02) + 0.45), abs=1e-12)
+    assert binary.calibrate("wang", price["spread"]).parameter == pytest.approx(0.45, abs=1e-6)
+    assert binary.lane_spread(0.55, 0.5, 0.5) == pytest.approx(0.55 * 0.02**0.5)
+    # A three-year term loses the principal once; the investor's return.
+    term = CatBond("indemnity", 0.0, 10.0, term_years=3).apply([[4.0], [8.0], [], [], [], []])
+    assert term.term_losses() == [1.0, 0.0]
+    assert term.investor_flows(0.1)[1] == [-1.0, 0.1, 0.1, 1.1]
+    assert term.investor_returns(0.1)[1] == pytest.approx(0.1)
+    with pytest.raises(ValueError, match="weights"):
+        CatBond("industry_index", 0.0, 1.0)
+    with pytest.raises(ValueError, match="terms"):
+        CatBond("indemnity", 0.0, 1.0, term_years=4).apply([[1.0]] * 6)

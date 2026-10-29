@@ -814,3 +814,29 @@ local({
                                    cashflow_requirement(c(outstanding = 1))), 0.7)
   stopifnot(length(r$funded) == 1)
 })
+
+# Cat bonds: triggers, tranches, distortion pricing and basis risk (#570).
+bond <- cat_bond("industry_index", 50, 150, weights = c(0.10, 0.05), principal = 100)
+cb <- cat_bond_apply(bond, list(list(c(800, 400)), list()))
+stopifnot(identical(cb$annual, c(0.5, 0)), identical(cb$recoveries, c(50, 0)), cb$expected_loss == 0.25)
+pb <- cat_bond("parametric", 0, 30, weights = c(10, 20), payout = list(measure = c(30, 50, 70), share = c(0, 0.5, 1)))
+near(cat_bond_apply(pb, list(list(c(40, 80))))$recoveries, 22.5 / 30)
+cyrs <- rep(list(c(30, 70), numeric(), 120, c(45, 50, 90)), 25)
+ind <- cat_bond("indemnity", 40, 100, principal = 60)
+cr <- cat_bond_apply(ind, lapply(cyrs, as.list))$recoveries
+lay <- xol_layer("T", 60, 40, aggregate_limit = 60)
+near(cr, vapply(cyrs, function(y) ceded(lay, y), 0), 1e-12)
+near(cat_bond_apply(ind, events_from_years(cyrs))$recoveries, cr, 1e-12)
+br <- cat_bond_basis_risk(cat_bond_apply(ind, events_from_years(cyrs)), cr)
+stopifnot(br$mean_shortfall == 0, br$mean_excess == 0, br$missed == 0)
+bin <- cat_bond_apply(cat_bond("modelled_loss", 100, 200),
+                      lapply(0:9999, function(i) if (i %% 50 == 0) list(500) else list()))
+sp <- cat_bond_price(bin, distortion("wang", 0.45))$spread
+near(sp, pnorm(qnorm(0.02) + 0.45), 1e-10)
+stopifnot(abs(cat_bond_calibrate(bin, "wang", sp)@parameter - 0.45) < 1e-6)
+near(cat_bond_lane_spread(bin, 0.55, 0.5, 0.5), 0.55 * sqrt(0.02))
+tb <- cat_bond_apply(cat_bond("indemnity", 0, 10, term_years = 3), list(list(4), list(8), list(), list(), list(), list()))
+stopifnot(identical(tb$term_losses, c(1, 0)))
+near(cat_bond_returns(tb, 0.1)[2], 0.1, 1e-9)
+stopifnot(inherits(try(cat_bond_apply(cat_bond("indemnity", 5, 5), list(list(1))), silent = TRUE), "try-error"))
+cat("cat bond tests passed\n")

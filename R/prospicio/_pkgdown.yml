@@ -176,6 +176,7 @@ reference:
       - censored_las
       - risk_loaded_price
       - reinsurance_frontier
+      - cat_bond
       - price_with_reinstatements
       - capital_portfolio
       - natural_price
