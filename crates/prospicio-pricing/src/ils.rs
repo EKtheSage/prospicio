@@ -192,6 +192,7 @@ pub struct Tranche {
 /// // the principal. Year 2: no event.
 /// let losses = bond.apply(&[vec![vec![800.0, 400.0]], vec![]]).unwrap();
 /// assert_eq!(losses.annual(), [0.5, 0.0]);
+/// assert!(losses.annual()[1].is_sign_positive());
 /// assert_eq!(losses.expected_loss(), 0.25);
 /// assert_eq!(losses.recoveries(), [50.0, 0.0]);
 /// ```
@@ -269,8 +270,9 @@ impl CatBond {
         } = self.tranche;
         let layer = |x: f64| (x - a).clamp(0.0, e - a);
         let recovered = match basis {
-            TrancheBasis::PerOccurrence => index.iter().map(|&x| layer(x)).sum(),
-            TrancheBasis::AnnualAggregate => layer(index.iter().sum()),
+            // From +0.0: an empty f64 sum is −0.0, which would print as such.
+            TrancheBasis::PerOccurrence => index.iter().fold(0.0, |s, &x| s + layer(x)),
+            TrancheBasis::AnnualAggregate => layer(index.iter().fold(0.0, |s, &x| s + x)),
         };
         (recovered / (e - a)).min(1.0)
     }
