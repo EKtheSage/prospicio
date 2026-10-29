@@ -195,6 +195,7 @@ reference:
       - deal_ave
       - deal_run
       - book_marginal_price
+      - book_adequacy
       - trend_large_losses
       - burning_cost
       - development_pattern

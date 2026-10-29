@@ -9743,6 +9743,36 @@ class DealBook:
     def __len__(self, /) -> int: ...
     def __new__(cls, /, deals: Sequence[DealRun]) -> DealBook: ...
     def __repr__(self, /) -> str: ...
+    def adequacy(self, /, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> dict:
+        """
+        Price adequacy for each deal and the book: the premium charged and
+        kept (less every deduction) beside the expected loss and margin, the
+        allocated (Euler) and marginal assets and capital and the return on
+        each, the technical and marginal premiums the rule gives, the target
+        premium that returns the target on the allocated capital and the
+        adequacy, kept over target. The book's losses are priced on the
+        assets of the capital standard ``assets`` by exactly one of
+        ``cost_of_capital`` and ``distortion``, as ``price_portfolio``
+        prices a portfolio; the target return is the book's return at its
+        technical price (the cost of capital, under one).
+        
+        Returns a dict of columns, one row a deal then ``"total"``:
+        ``deal``, ``premium_charged``, ``premium_kept``, ``expected_loss``,
+        ``margin``, ``allocated_assets``, ``allocated_capital``,
+        ``return_on_allocated``, ``marginal_assets``, ``marginal_capital``,
+        ``return_on_marginal``, ``technical_premium``, ``marginal_premium``,
+        ``target_premium``, ``adequacy`` and ``target_return``.
+        
+        >>> from prospicio.pricing import DealBook, DealRun
+        >>> from prospicio.risk import Distortion
+        >>> a = DealRun("a", [10.0] * 4, [1.0, 2.0, 3.0, 9.0])
+        >>> b = DealRun("b", [3.0] * 4, [4.0, 1.0, 2.0, 3.0])
+        >>> r = DealBook([a, b]).adequacy(Distortion.tvar(0.5), cost_of_capital=0.1)
+        >>> r["deal"], r["premium_kept"]
+        (['a', 'b', 'total'], [10.0, 3.0, 13.0])
+        >>> round(r["target_return"][0], 12)
+        0.1
+        """
     def amounts(self, /) -> PredictiveDistribution:
         """
         Every item of every deal and of the book in each simulation, with

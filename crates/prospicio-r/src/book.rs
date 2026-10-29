@@ -290,6 +290,34 @@ impl Book {
         ))
     }
 
+    fn adequacy(&self, assets: Robj, rate: Option<f64>, pricing: Robj) -> Result<List> {
+        let rule = premium_rule(rate, &pricing)?;
+        let assets = distortion_arg(&assets, "assets")?;
+        let r = self.inner.adequacy(&rule, &assets).map_err(to_r)?;
+        let rows = &r.rows;
+        let col = |f: &dyn Fn(&prospicio_pricing::book::AdequacyRow) -> f64| -> Vec<f64> {
+            rows.iter().map(f).collect()
+        };
+        Ok(list!(
+            deal = rows.iter().map(|x| x.deal.clone()).collect::<Vec<_>>(),
+            premium_charged = col(&|x| x.premium_charged),
+            premium_kept = col(&|x| x.premium_kept),
+            expected_loss = col(&|x| x.expected_loss),
+            margin = col(&|x| x.margin),
+            allocated_assets = col(&|x| x.allocated_assets),
+            allocated_capital = col(&|x| x.allocated_capital),
+            return_on_allocated = col(&|x| x.return_on_allocated),
+            marginal_assets = col(&|x| x.marginal_assets),
+            marginal_capital = col(&|x| x.marginal_capital),
+            return_on_marginal = col(&|x| x.return_on_marginal),
+            technical_premium = col(&|x| x.technical_premium),
+            marginal_premium = col(&|x| x.marginal_premium),
+            target_premium = col(&|x| x.target_premium),
+            adequacy = col(&|x| x.adequacy),
+            target_return = vec![r.target_return; rows.len()]
+        ))
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn cashflows(
         &self,

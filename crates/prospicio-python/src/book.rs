@@ -503,6 +503,71 @@ impl PyDealBook {
         Ok(d)
     }
 
+    /// Price adequacy for each deal and the book: the premium charged and
+    /// kept (less every deduction) beside the expected loss and margin, the
+    /// allocated (Euler) and marginal assets and capital and the return on
+    /// each, the technical and marginal premiums the rule gives, the target
+    /// premium that returns the target on the allocated capital and the
+    /// adequacy, kept over target. The book's losses are priced on the
+    /// assets of the capital standard ``assets`` by exactly one of
+    /// ``cost_of_capital`` and ``distortion``, as ``price_portfolio``
+    /// prices a portfolio; the target return is the book's return at its
+    /// technical price (the cost of capital, under one).
+    ///
+    /// Returns a dict of columns, one row a deal then ``"total"``:
+    /// ``deal``, ``premium_charged``, ``premium_kept``, ``expected_loss``,
+    /// ``margin``, ``allocated_assets``, ``allocated_capital``,
+    /// ``return_on_allocated``, ``marginal_assets``, ``marginal_capital``,
+    /// ``return_on_marginal``, ``technical_premium``, ``marginal_premium``,
+    /// ``target_premium``, ``adequacy`` and ``target_return``.
+    ///
+    /// >>> from prospicio.pricing import DealBook, DealRun
+    /// >>> from prospicio.risk import Distortion
+    /// >>> a = DealRun("a", [10.0] * 4, [1.0, 2.0, 3.0, 9.0])
+    /// >>> b = DealRun("b", [3.0] * 4, [4.0, 1.0, 2.0, 3.0])
+    /// >>> r = DealBook([a, b]).adequacy(Distortion.tvar(0.5), cost_of_capital=0.1)
+    /// >>> r["deal"], r["premium_kept"]
+    /// (['a', 'b', 'total'], [10.0, 3.0, 13.0])
+    /// >>> round(r["target_return"][0], 12)
+    /// 0.1
+    #[pyo3(signature = (assets, *, cost_of_capital = None, distortion = None))]
+    fn adequacy<'py>(
+        &self,
+        py: Python<'py>,
+        assets: PyRef<'_, PyDistortion>,
+        cost_of_capital: Option<f64>,
+        distortion: Option<PyRef<'_, PyDistortion>>,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let rule = premium_rule(cost_of_capital, distortion)?;
+        let (book, a) = (&self.inner, assets.inner.clone());
+        let r = py.detach(|| book.adequacy(&rule, &a)).map_err(to_py)?;
+        let rows = &r.rows;
+        let col = |f: &dyn Fn(&prospicio_pricing::book::AdequacyRow) -> f64| -> Vec<f64> {
+            rows.iter().map(f).collect()
+        };
+        let d = PyDict::new(py);
+        d.set_item(
+            "deal",
+            rows.iter().map(|x| x.deal.clone()).collect::<Vec<_>>(),
+        )?;
+        d.set_item("premium_charged", col(&|x| x.premium_charged))?;
+        d.set_item("premium_kept", col(&|x| x.premium_kept))?;
+        d.set_item("expected_loss", col(&|x| x.expected_loss))?;
+        d.set_item("margin", col(&|x| x.margin))?;
+        d.set_item("allocated_assets", col(&|x| x.allocated_assets))?;
+        d.set_item("allocated_capital", col(&|x| x.allocated_capital))?;
+        d.set_item("return_on_allocated", col(&|x| x.return_on_allocated))?;
+        d.set_item("marginal_assets", col(&|x| x.marginal_assets))?;
+        d.set_item("marginal_capital", col(&|x| x.marginal_capital))?;
+        d.set_item("return_on_marginal", col(&|x| x.return_on_marginal))?;
+        d.set_item("technical_premium", col(&|x| x.technical_premium))?;
+        d.set_item("marginal_premium", col(&|x| x.marginal_premium))?;
+        d.set_item("target_premium", col(&|x| x.target_premium))?;
+        d.set_item("adequacy", col(&|x| x.adequacy))?;
+        d.set_item("target_return", vec![r.target_return; rows.len()])?;
+        Ok(d)
+    }
+
     /// The investors' flows on the book's calendar, each deal's moved to
     /// its inception and summed in each simulation, with the book's IRR,
     /// NPV at ``rate`` and MOIC on the summed flows. Every deal needs

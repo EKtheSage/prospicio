@@ -1193,6 +1193,31 @@ def test_deal_book_marginal_price():
         book.marginal_price(tvar)
 
 
+def test_deal_book_adequacy():
+    """Price adequacy of a book's deals (#589)."""
+    a, b = _book_pair()
+    tvar = ar.risk.Distortion.tvar(0.5)
+    r = P.DealBook([a, b]).adequacy(tvar, cost_of_capital=0.1)
+    assert r["deal"] == ["a", "b", "total"]
+    assert r["target_return"] == pytest.approx([0.1] * 3)
+    m = P.DealBook([a, b]).marginal_price(tvar, cost_of_capital=0.1)
+    assert r["marginal_assets"][:2] == pytest.approx(m["assets"])
+    assert r["marginal_premium"][:2] == pytest.approx(m["premium"])
+    loss = P.DealBook([a, b]).amounts().select("item", ["loss"]).select("deal", ["a", "b"])
+    euler = P.price_portfolio(loss, tvar, cost_of_capital=0.1)
+    assert r["technical_premium"][:2] == pytest.approx([c.premium for c in euler.allocated])
+    assert r["allocated_assets"][2] == pytest.approx(sum(r["allocated_assets"][:2]))
+    # Under a cost of capital the target premium is the technical one, and
+    # a deal priced at it returns the target.
+    assert r["target_premium"] == pytest.approx(r["technical_premium"])
+    for kept, margin, cap, ret in zip(r["premium_kept"], r["margin"], r["allocated_capital"], r["return_on_allocated"]):
+        assert ret == pytest.approx(margin / cap)
+    one = P.DealBook([b]).adequacy(tvar, cost_of_capital=0.1)
+    assert one["allocated_assets"][0] == pytest.approx(one["marginal_assets"][0])
+    with pytest.raises(ValueError):
+        P.DealBook([a, b]).adequacy(tvar)
+
+
 def test_deal_book_cashflows_and_calendar():
     a, b = _book_pair()
     a = a.with_flows([[-10.0, 0.0, 10.1]] * 4, [0.0] * 4, [10.0] * 4)

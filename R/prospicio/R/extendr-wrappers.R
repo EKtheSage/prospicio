@@ -3840,6 +3840,8 @@ Book$distribution <- function(item, percentiles, tvar_levels, sd_multiples, quan
 
 Book$marginal_price <- function(names, assets, rate, pricing) .Call(wrap__Book__marginal_price, self, names, assets, rate, pricing)
 
+Book$adequacy <- function(assets, rate, pricing) .Call(wrap__Book__adequacy, self, assets, rate, pricing)
+
 Book$cashflows <- function(rate, lower, upper, points, bisections, newton_steps, extend) .Call(wrap__Book__cashflows, self, rate, lower, upper, points, bisections, newton_steps, extend)
 
 Book$calendar <- function(start_year) .Call(wrap__Book__calendar, self, start_year)
