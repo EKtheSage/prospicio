@@ -1,0 +1,1 @@
+* **Creation**: [On 2026-10-28 the bindings reached 77% (Python) and 72% (R) of the library crates' 787 public types and functions](/findings/binding-coverage.md), from the first run of `validation/scripts/check_bindings.py`, which seeded `validation/bindings-allowlist.toml` (#572, branch claude/binding-coverage).
