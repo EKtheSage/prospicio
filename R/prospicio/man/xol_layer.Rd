@@ -76,7 +76,8 @@ is none; \code{brokerage} the flat rate, \code{brokerage_scale} a data frame of
 \code{scales_before_annual_terms} and \code{brokerage_within_commission_range};
 see \code{\link[=with_brokerage]{with_brokerage()}}), and \code{sees_aggregate_part}, whether the layer cedes from an
 event set's aggregate part (\code{\link[=with_aggregate_part]{with_aggregate_part()}}: on the loss with
-attachment 0 and no limit, a quota share or a stop loss).
+attachment 0 and no limit, a quota share or a stop loss), and
+\code{franchise}, \code{nth_event} and \code{drop_down} (\code{\link[=with_franchise]{with_franchise()}}).
 }
 \description{
 \code{limit} xs \code{attachment} on each loss, then annual terms. For one year,

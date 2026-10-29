@@ -156,6 +156,7 @@ reference:
       - with_cover_basis
       - with_interlocking
       - with_scope
+      - with_franchise
       - ceded_events
       - deal_ratios
       - with_deal_scale
@@ -198,6 +199,7 @@ reference:
       - deal_ave
       - deal_run
       - book_marginal_price
+      - book_adequacy
       - trend_large_losses
       - burning_cost
       - development_pattern

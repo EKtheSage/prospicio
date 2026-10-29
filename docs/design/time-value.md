@@ -432,6 +432,31 @@ frame).
     `extend=` on `irr`, `Cashflows.irr`, `Forward.forward_irr` and
     `since_inception_irr` and `DealBook.cashflows`; in R `root_above` and
     `root_below` columns and `extend =` on `irr()` and `book_cashflows()`.
+36. **A deal's and a book's price adequacy in one table** (#589, items
+    (a) to (e) proposed by the Aggregate lane for the user's acceptance).
+    `DealBook::adequacy(rule, assets)` gives a row a deal and the book's
+    `"total"`: the premium charged and kept, the expected loss and margin,
+    the allocated and marginal assets and capital, the return on each, the
+    technical and marginal premiums, the target premium and the adequacy.
+    (a) *The premium kept is the premium less every deduction*
+    (commissions, brokerage and the deal's own deductions, inside NMBF or
+    not), the money that pays losses and earns the return; the premium
+    charged includes the reinstatement premium a run from a tower carries
+    (decision 31). (b) *Allocated assets are each deal's Euler share of the
+    book's* under the capital standard, as `price_portfolio` allocates, and
+    *marginal assets the book's with the deal less without it* (decision
+    32); each basis's capital is its assets less the premium kept, so a
+    deal that keeps more needs less capital, and its return the margin over
+    that capital. (c) *The target return is the book's return at its
+    technical price*: the cost of capital under `PremiumRule::CostOfCapital`
+    and the distortion's implied return under a pricing distortion. (d)
+    *The target premium is the premium kept that returns the target on the
+    allocated capital*, `(EL + t A) / (1 + t)`, which under a cost of capital
+    is the allocated technical premium, and the adequacy is the premium
+    kept over it. (e) *One deal's adequacy is a one-deal book*, where the
+    allocated and marginal bases agree, so there is no separate quote
+    method. In Python `DealBook.adequacy(assets, cost_of_capital=,
+    distortion=)` and in R `book_adequacy()`, each a table of columns.
 
 ## Conventions left as settings (cash-flow engine)
 
@@ -460,6 +485,16 @@ planned.
 - Against the Reserving lane's chain ladder on GenIns paid: the pattern from
   `cdf` has paid, by each origin's latest age, the fit's latest over its
   ultimate (`validation/tests/pricing.rs`, module `payment_pattern`).
+- Price adequacy (#589): on a one-deal book the allocated and marginal
+  assets and premiums agree with the book's own price; under a cost of
+  capital the target return is the rate and the target premium the
+  allocated technical premium; a deal whose premium kept (charged less a
+  brokerage deduction) is its technical premium returns the target on its
+  allocated capital to `1e-9` and has adequacy 1; the allocated assets,
+  technical premiums and premiums kept add up to the book's; under a
+  distortion the target is the book's return at its price (unit test in
+  `book.rs`; Python and R tests against `marginal_price` and
+  `price_portfolio`).
 - Return metrics (#480): an IRR in closed form (−100 now, 121 in two
   years, 10%); two roots, 10% and 20%, where the one nearest 0 is kept and
   a search from 15% finds the other; flows of one sign and a root outside

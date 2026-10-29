@@ -584,6 +584,18 @@ XolLayer$scope <- function() .Call(wrap__XolLayer__scope, self)
 
 XolLayer$with_scope <- function(label, values) .Call(wrap__XolLayer__with_scope, self, label, values)
 
+XolLayer$with_franchise <- function() .Call(wrap__XolLayer__with_franchise, self)
+
+XolLayer$with_nth_event <- function(n, threshold) .Call(wrap__XolLayer__with_nth_event, self, n, threshold)
+
+XolLayer$with_top_and_drop <- function(underlying, attachment) .Call(wrap__XolLayer__with_top_and_drop, self, underlying, attachment)
+
+XolLayer$franchise <- function() .Call(wrap__XolLayer__franchise, self)
+
+XolLayer$nth_event <- function() .Call(wrap__XolLayer__nth_event, self)
+
+XolLayer$drop_down <- function() .Call(wrap__XolLayer__drop_down, self)
+
 XolLayer$ceding_commission_for <- function(ceded) .Call(wrap__XolLayer__ceding_commission_for, self, ceded)
 
 XolLayer$with_brokerage <- function(rate) .Call(wrap__XolLayer__with_brokerage, self, rate)
@@ -3857,6 +3869,8 @@ Book$summary <- function() .Call(wrap__Book__summary, self)
 Book$distribution <- function(item, percentiles, tvar_levels, sd_multiples, quantile, tvar, tail) .Call(wrap__Book__distribution, self, item, percentiles, tvar_levels, sd_multiples, quantile, tvar, tail)
 
 Book$marginal_price <- function(names, assets, rate, pricing) .Call(wrap__Book__marginal_price, self, names, assets, rate, pricing)
+
+Book$adequacy <- function(assets, rate, pricing) .Call(wrap__Book__adequacy, self, assets, rate, pricing)
 
 Book$cashflows <- function(rate, lower, upper, points, bisections, newton_steps, extend) .Call(wrap__Book__cashflows, self, rate, lower, upper, points, bisections, newton_steps, extend)
 

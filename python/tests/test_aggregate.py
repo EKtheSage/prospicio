@@ -1854,6 +1854,35 @@ def test_no_claims_bonus_over_a_term():
     assert ratios.marginal(("no_claims_bonus",)).draws == pytest.approx([0.2, 0.0])
 
 
+def test_franchise_nth_event_and_top_and_drop():
+    """Franchise, nth-event and top-and-drop covers (#591)."""
+    from prospicio.aggregate import EventSet
+
+    f = Layer("F", 20.0, 5.0).with_franchise()
+    assert f.franchise and not Layer("F", 20.0, 5.0).franchise
+    assert f.ceded_by_event([4.0, 5.0, 12.0, 30.0]) == [0.0, 5.0, 12.0, 20.0]
+    second = Layer("2nd", 10.0, 5.0).with_nth_event(2, 5.0)
+    assert second.nth_event == (2, 5.0)
+    assert second.ceded_by_event([12.0, 3.0, 9.0, 20.0]) == [0.0, 0.0, 4.0, 10.0]
+    ev = simulate_events(Poisson(4.0), Lognormal.from_mean_cv(10.0, 1.5), 1_000, seed=5)
+    plain = Layer("L", 20.0, 8.0, aggregate_limit=40.0)
+    a = Tower([plain]).apply(ev).draw_matrix()
+    b = Tower([plain.with_nth_event(1, 8.0)]).apply(ev).draw_matrix()
+    assert a == b
+    with pytest.raises(ValueError, match="order"):
+        Tower([second]).apply_annual([30.0])
+    lower = Layer("lower", 10.0, 10.0, aggregate_limit=20.0)
+    top = Layer("top", 10.0, 30.0).with_top_and_drop("lower", 10.0)
+    assert top.drop_down == ("lower", 10.0)
+    ce = Tower([lower, top]).ceded_events(EventSet.from_years([[25.0, 25.0, 25.0, 40.0]]), "top")
+    assert ce.events(0) == [10.0, 10.0]
+    with pytest.raises(ValueError, match="does not have"):
+        Tower([top])
+    t = Tower([lower, top, f, second])
+    assert Tower.from_json(t.to_json()).to_json() == t.to_json()
+    assert '"format_version":9' in t.to_json()
+
+
 def test_hawkes_event_counts():
     """Self-exciting event times (#567)."""
     from prospicio.aggregate import Hawkes

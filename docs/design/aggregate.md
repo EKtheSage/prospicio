@@ -1581,6 +1581,46 @@ look back over several years.
   `years > 1`, and the stitched peel refuses a bonus as it refuses the
   other loss-sensitive terms.
 
+### Franchise, nth-event and top-and-drop covers (#591)
+
+Status: built; items (a) to (e) proposed by the Aggregate lane for the
+user's acceptance.
+
+Three catastrophe structures as settings on a layer, each saved in the
+tower JSON (format version 9) and in Python and R:
+
+- `Layer::franchise()`: a franchise deductible. An occurrence at or above
+  the attachment is paid from the ground up, `min(x, limit)`, and one
+  below it pays nothing (in `recovery_at`, so the grids price it too).
+- `Layer::nth_event(n, threshold)`: only the `n`-th and later events of a
+  year whose loss to the layer exceeds `threshold` are covered.
+- `Layer::top_and_drop(underlying, attachment)`: the layer sits at its own
+  attachment until the annual limit of the layer `underlying` is used up,
+  and from the next event attaches at `attachment`, with the same
+  occurrence and annual limits. `Tower::inuring` checks that the
+  underlying layer exists, is earlier in the same stage and has an annual
+  limit. The tower feeds the layer each later event shifted up by the
+  drop, so every term the layer has reads the lower attachment.
+
+Decisions:
+
+- (a) *A franchise pays `min(x, limit)`*, as the issue states, so the limit
+  caps the whole payment; a franchise on the surplus basis, or with a
+  drop-down, is refused.
+- (b) *An nth-event cover counts events that exceed the threshold, in the
+  order given* (chronological when the set has times), and does not cover
+  an event at or below the threshold, so `nth_event(1, attachment)` is the
+  plain layer and a threshold above the attachment leaves the events
+  between them uncovered.
+- (c) *A top-and-drop cover drops from the event after the one that uses
+  up the underlying layer*, not within it, and keeps one annual limit
+  across both positions.
+- (d) *Nth-event and top-and-drop covers need events in order*: the grids,
+  `apply_annual`, `apply_aggregate`, `apply_aggregate_term` and the P&L
+  ledger refuse them (`Tower::refuse_event_order`), while a franchise,
+  being a function of each occurrence, works everywhere.
+- (e) *JSON format version 9* is stamped only when a layer has one of them.
+
 ### Importance sampling of the tail (#566)
 
 Status: built; items (a) to (e) proposed by the Aggregate lane for the
@@ -1645,6 +1685,16 @@ discrete severity by a Kolmogorov–Smirnov statistic at the 0.1% level.
 The check covers gross, every ceded grid and net, for two per-occurrence
 layers (Poisson and negative binomial counts), a layer with a deductible
 and a reinstatement, and an excess-of-loss layer inuring to a stop-loss.
+
+Franchise, nth-event and top-and-drop covers (#591) are checked by hand
+(the franchise's recovery at, below and above the attachment and its
+expected cession on a grid; a second- and a third-event cover by event; a
+top-and-drop cover paying 10 on each event after its underlying layer is
+used up), against the plain layer where they reduce to it
+(`nth_event(1, attachment)` and a drop-down whose underlying layer never
+exhausts give the same draws on 2,000 simulated years), with the
+refusals on the grids, annual losses and towers whose underlying layer is
+missing, later or in another stage, and the JSON round trip at version 9.
 
 Importance sampling (#566) is checked against the exact FFT on a compound
 Poisson (mean 2) with a discrete severity `p_k ∝ k^-3` on 1 to 200: over
