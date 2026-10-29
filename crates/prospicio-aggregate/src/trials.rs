@@ -95,8 +95,7 @@ impl Layer {
                     .sum::<f64>();
             }
             let (mut count, mut full) = (0usize, false);
-            for (e, &x) in losses.iter().enumerate() {
-                let r = self.recovery_at(x, si.map(|s| s[e]), 1.0);
+            for r in self.recoveries(losses, si, None) {
                 recovery += r;
                 if r > 0.0 {
                     count += 1;
