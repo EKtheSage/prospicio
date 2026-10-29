@@ -7,6 +7,122 @@ under "Unreleased" until then.
 
 ## Unreleased
 
+## 0.0.7 (2026-10-29)
+
+### Breaking changes
+
+- Rust: `prospicio_reserving::Error` has the variant `File`, so an exhaustive `match` on it needs an arm for it (#552, #685).
+- Rust: the fit structs that carry a development pattern per simulation (the ODP and Mack bootstraps, `BayesOdp`, `BayesBf` and `BayesBfNormalised`, and their segment fits) gain the public field `patterns`, and can no longer be built with a struct literal that leaves it out (#600, #673).
+- Rust: `MeyersFit` and `MeyersFits` gain the public field `patterns`; code that builds either in full adds it (#678, #686).
+- Rust: `CompartmentalFit` and `CompartmentalFits` gain the public field `patterns`; code that builds either in full adds it (#679, #700).
+- Rust: `Layer` gains the public fields `franchise`, `nth_event` and `drop_down`; code that builds one in full adds them. A tower with a franchise, nth-event or top-and-drop layer is saved as JSON format version 9 (#591, #699).
+- Rust: `Layer` gains the public field `no_claims_bonus`, and `TowerGrids` and `AnnualGrids` gain `expected_no_claims_bonus`; code that builds any of them in full adds the field. A tower with a bonus is saved as JSON format version 8 (#592, #684).
+- Python `Layer.ceded`, `Layer.ceded_by_event` and `Tower.ceded`, and R `ceded()` and `ceded_by_event()`, raise on a negative or non-finite loss, where they returned the loss as ceding nothing (#593, #677).
+- Rust: `Irr` gains two public fields and `IrrOptions` one (`extend`); code that builds them in full adds the fields, or uses `..IrrOptions::default()` (#670, #675).
+
+### Reserving
+
+- A development pattern per simulation from `Compartmental`, models 1 and
+  2 (#679, #700): `patterns` (`DevelopmentPatterns`) on `CompartmentalFit` and
+  `CompartmentalFits`, each simulation's expected cumulative paid of the
+  ODE at each age of the square over that at its last age, for an origin
+  with nothing observed at the population's rates (with each observed
+  age's development effects in model 2), ending at 1 where the reserves
+  end and carried through a rank correlation of segments, in Python
+  (`fit.patterns`) and R (`pattern_draws()`, `monthly_pattern_draws()`).
+  The reserves and cells are unchanged. The paid curve rises, so in
+  models 1 and 2 (the presets) the shares never fall and `monthly`'s
+  default takes them.
+- A development pattern per simulation from Meyers' CRC, CSR and CAY
+  (#678, #686): `patterns` (`DevelopmentPatterns`) on `MeyersFit` and
+  `MeyersFits`, each simulation's `exp(beta_d g)` of the posterior draw it
+  took (`g` the speed-up of the origin after the newest in CSR, 1 in CRC
+  and CAY), ending at 1 at the oldest age and carried through a rank
+  correlation of segments, in Python (`fit.patterns`) and R
+  (`pattern_draws()`, `monthly_pattern_draws()`). The ultimates and
+  reserves are unchanged. A share usually falls somewhere and often
+  passes 1 (on Meyers' group 353 data), so `monthly` needs
+  `Monotone::RunningMax`.
+- Fixed (#709): `DevelopmentPatterns::monthly` with `Monotone::RunningMax` no longer refuses, under the default Weibull reading, a draw that the running maximum holds flat until its last step (nearly complete at its first age, as a bootstrap or Meyers draw that falls after a high first share is held). The fit of the Weibull through such a pattern runs to the edge of its parameters, and the reading now takes the curve at the edge as its prior and still gives the pattern's values exactly; a pattern that falls is still refused. A draw is also read only up to the first age its share reaches 1, with the months after it at 1, so a draw held at 1 from 48 months now needs 48 months of terms (60 on an underwriting basis) instead of 72 (84), and its monthly values under the Weibull reading change; one complete at its first age is read linearly from 0. The same Weibull reading is behind `SelectedPattern::to_underwriting_basis` and the monthly conversions of a selected pattern (Python and R under the default `reading="weibull"`), so a selected pattern that never falls but whose curve fit runs to the edge, which they refused before, now converts there too. No API change (`reserving-v02.md` decision 28 item 4; Python `DevelopmentPatterns.monthly`, R `monthly_pattern_draws()`).
+- A development pattern per simulation, aligned with the reserve draws, for
+  the cash-flow engine's paid patterns (#600, #673): `DevelopmentPatterns` on the
+  ODP and Mack bootstraps, `BayesOdp`, `BayesBf` and `BayesBfNormalised`
+  (one fit or segments, carried through a rank correlation), with
+  `pattern_draws` and `monthly` (on the origin's own basis or an
+  underwriting basis, a falling pattern refused or held with
+  `Monotone::RunningMax`), whose rows go to the engine's `PatternDraws`.
+  The reserves are unchanged.
+- Triangles read from files (#552, #685): `prospicio-reserving`'s optional `io`
+  feature (off by default; the `csv` and `calamine` crates) adds
+  `FileLayout` (long or wide), `Triangle::from_csv` on any reader,
+  `Triangle::read_csv` and `Triangle::read_excel` (`.xlsx`, `.xlsm`,
+  `.xlsb`, `.xls`, `.ods`), with errors that name the line or cell and the
+  column. Python `Triangle.read_csv` and `Triangle.read_excel`, and
+  `prospicio.reserving.schedule_p()`, CAS Schedule P triangles by line and
+  company from the `cas-schedule-p` package, with the held-out lower
+  triangle on request. R `read_triangle()` and `schedule_p_triangle()`, the
+  latter on the CAS loss reserve database's CSV files.
+
+### Models
+
+- Auto-calibration checks and repairs: `prospicio_models::calibrate` with `isotonic` (weighted pool-adjacent-violators, as scikit-learn's `IsotonicRegression`, with bounds and linear or step reading), `Recalibrated` and `Balanced` wrappers of any fitted model, `balance_correction`, `reliability` (binned mean prediction against mean response) and `murphy` (the CORP decomposition of a mean deviance into miscalibration, discrimination and uncertainty) (`models.md`, "Auto-calibration"). Python `isotonic`, `recalibrate`, `balance_correction`, `reliability`, `murphy` in `prospicio.models`; R `isotonic_fit()`, `recalibrate()`, `balance_correction()`, `reliability()`, `murphy()` (#545, #712).
+- Conformal prediction intervals around any model: `prospicio_models::conformal` with `split` (absolute, Pearson or scaled scores), `weighted_split`, `cqr` (conformalised quantile regression) and `cv_plus` (CV+ and the jackknife+), on predictions from any engine, and `split_fitted` and `cv_plus_fit` on Rust models; at parity with MAPIE 0.9.1 (`models.md`, "Conformal prediction"). Python `conformal_split`, `conformal_cqr`, `conformal_plus`, `conformal_intervals`; R the same names (#546, #713).
+- Time-ordered splits with a rolling window, a forecast horizon, a gap and a step: `prospicio_models::resample::TimeSplits`, the defaults equal to `time_ordered` and scikit-learn's `TimeSeriesSplit` reproduced (`models.md`, "Time splits with windows, horizons and gaps"). Python `time_splits(periods, n_test, window=, horizon=, gap=, step=)`, R `time_splits()` (#549, #714).
+- Typed monotone and interaction constraints on the boosting adapters: Python `Booster(monotone=, interaction_constraints=)` and R `booster_fit(monotone =, interaction_constraints =)` name features and map them onto the engine's own parameters on the design's columns, with `BoosterFit.check_monotone` and R `check_monotone()` for the fitted partial dependence (`models.md`, "Monotone and interaction constraints on the boosters") (#575, #715).
+
+### Distributions and probability
+
+- Sobol points and the multivariate normal distribution function in any dimension: `prospicio_math::qmc::Sobol` (Joe and Kuo's direction numbers up to 1,111 dimensions, unscrambled equal to SciPy's, or a linear matrix scramble with a digital shift from a seed) and `prospicio_math::mvn::mvn_probability` and `mvn_cdf` (Genz's method with Genz and Bretz's variable reordering on scrambled Sobol points, exact in one and two dimensions, with an error estimate; within the errors of R mvtnorm's `pmvnorm` in 3 to 10 dimensions), re-exported as `prospicio_prob::{mvn, qmc}`. `GaussianCopula::cdf` now works in more than two dimensions (about `1e-5`), `cdf_with` gives the settings and the error, and `sample_qmc` draws the copula on Sobol points. Python `prospicio.risk.mvn_cdf`, `sobol`, `MvnEstimate`, `GaussianCopula.cdf_estimate` and `.sample_qmc`; R `mvn_cdf()`, `sobol_points()`, `copula_cdf_estimate()`, `copula_sample_qmc()`; `PRO.COPULA.CDF` takes the Gaussian in any dimension (#565, #693).
+- Weighted draws: `prospicio_prob::weighted::WeightedSample` gives an importance sample's self-normalised mean, VaR and TVaR with batch-means standard errors and the effective sample size. Python `prospicio.risk.WeightedSample`, R `weighted_tail()` (#566, #703).
+- The Student t pair copula and pair copulas fitted to data: `PairCopula::student(rho, nu)` (its cdf by quadrature at any `nu`, closed-form density and `h`), and `prospicio_prob::vine_fit` with `pseudo_observations`, `kendall_tau`, `fit_pair` (one family and rotation by maximum likelihood within pyvinecopulib's bounds, the Student t by its profile likelihood) and `select_pair` (AIC or BIC over the families, the asymmetric ones in the rotations matching Kendall's tau, an optional independence test), at parity with pyvinecopulib 1.0.1; the t quantile is faster (Newton from a Cornish–Fisher start). Python `PairCopula("student", rho, nu=)`, `fit_pair`, `select_pair`, `kendall_tau`, `pseudo_observations`; R `pair_copula(..., nu)`, `fit_pair_copula()`, `select_pair_copula()`, `kendall_tau()`, `pseudo_obs()` (#568, #706).
+- Regular vine copulas and fitting vines: `prospicio_prob::rvine::RVineCopula`, any R-vine from its matrix in vinecopulib's convention with its density, inverse Rosenblatt transform and draws (C- and D-vines convert to it), and `vine_fit::fit_vine` (sequential maximum likelihood on a given matrix) and `select_vine` (the structure by Dißmann's algorithm), at parity with pyvinecopulib 1.0.1. Python `RVineCopula`, `VineCopula.to_rvine`, `fit_vine`, `select_vine`, `VineFit`; R `rvine_copula()`, `rvine_structure()`, `fit_vine_copula()` (#568, #706).
+- A window TVaR, the mean between two probability levels, such as the years between the 98th and 99th percentiles that retrocession and layer pricing read (`Empirical::window_tvar` and `window_tvar_with` on `Sampled`, `Grid::window_tvar`, `risk::window_tvar_sorted`, `window_tvar_linear_sorted`, `window_tvar_whole_years_sorted`, `window_tvar_weighted`, `TvarMethod::window_tvar`): `((1 - p_low) TVaR(p_low) - (1 - p_high) TVaR(p_high)) / (p_high - p_low)` under the exact and linear conventions, each draw counted with the share of its probability inside the window, and under whole years the draws ranked `floor((1 - p_high) n) + 1` to `floor((1 - p_low) n)` from the top. Python `Sampled.window_tvar(p_low, p_high, method=)` and `Grid.window_tvar`, R `window_tvar()` (#583, #676).
+
+### Aggregate and reinsurance
+
+- Importance sampling of the tail: `simulate_events_weighted(frequency, severity, n_sims, count, tail, seed)` draws years from a proposal claim count of any family and a defensive tail mixture for the losses (`TailMixture`), with each year's likelihood ratio; without either the years are `simulate_events`'s. On a compound Poisson the TVaR at 0.999 has a standard error 14 times smaller than plain Monte Carlo's (`aggregate.md`, "Importance sampling of the tail"). Python `prospicio.aggregate.simulate_events_weighted`, R `simulate_events_weighted()` (#566, #703).
+- Self-exciting (Hawkes) event times for clustered catastrophe years: `prospicio_aggregate::Hawkes` (exponential kernel, time in years, a branching ratio below 1) with `simulate` (the branching construction), `annual_counts` and `event_set` (independent years with their times and a loss each, from an empty history or after `burn_in` years), `mean_count` and `stationary_count_variance`, and `Hawkes::fit` (maximum likelihood over one or more periods with standard errors; at SciPy's optimum on four data sets) (`cat-inputs.md` decision 17). Python `prospicio.aggregate.Hawkes` and `HawkesFit`; R `hawkes()`, `hawkes_simulate()`, `hawkes_counts()`, `hawkes_event_set()`, `hawkes_moments()`, `hawkes_log_likelihood()`, `hawkes_fit()` (#567, #696).
+- A per-risk excess of loss with an event limit, inuring to a cat cover: `per_risk::per_risk_inuring(layer, event_limit, years, times, seed)` applies a per-risk layer to each risk's loss in each event, caps an event's recoveries at the event limit, uses up the layer's annual terms on them in order, and returns the cession and the events net of it as an `EventSet` for a tower of cat layers (`aggregate.md`, "A per-risk layer with an event limit"). Python `reinsurance.per_risk_inuring`, R `per_risk_inuring()` (#585, #705).
+- Contract years for dated events: `EventSet::contract_years(start, PartialYears)` reads the simulated years as one timeline and regroups the losses into contract years starting at `start`, a fraction of the year, each loss's time rebased and its sum insured and labels kept, the partial first and last years dropped by default or kept (`cat-inputs.md` decision 16). Python `EventSet.contract_years(start, partial=)`, R `contract_years()` (#586, #683).
+- Franchise, nth-event and top-and-drop covers on a layer: `Layer::franchise` (an occurrence at or above the attachment paid from the ground up, up to the limit), `Layer::nth_event(n, threshold)` (only the `n`-th and later events above the threshold in a year) and `Layer::top_and_drop(underlying, attachment)` (the layer drops to a lower attachment from the event after another layer's annual limit is used up); the grids and annual losses refuse the two that read the order of events, and the tower JSON moves to format version 9 when a layer has one (`aggregate.md`, "Franchise, nth-event and top-and-drop covers"). Python `Layer.with_franchise`, `with_nth_event`, `with_top_and_drop`; R `with_franchise()`, `with_nth_event()`, `with_top_and_drop()` (#591, #699).
+- A no-claims bonus on a layer: `Layer::no_claims_bonus(share, years, threshold)` returns `share` of the year's premium when the layer's ceded loss over the last `years` contract years is at most `threshold`, beside any sliding scale or profit commission; a tower's result reports it as `no_claims_bonus`, `deal_ratios` as a deduction inside NMBF and `deal_ledger` and the cedant's ledger as a commission leg; `apply_term` and `apply_timeline` look back over the term (the window cut at its start), the grids give `expected_no_claims_bonus` for a one-year bonus and `Quote::technical_for_layer` solves the deposit with it (`aggregate.md`, "No-claims bonus"). Python `Layer.with_no_claims_bonus`, `no_claims_bonus`, `no_claims_bonus_for`; R `with_no_claims_bonus()`, `no_claims_bonus_for()` (#592, #684).
+- A year loss table that stores losses as negative numbers is read with `losses_negative`: Python `read_ylt(..., losses_negative=True)` and `EventSet.from_ylt(..., losses_negative=True)`, R `read_ylt(..., losses_negative = TRUE)` and `event_set_from_ylt()`, Rust `YearLossTable::from_negative_losses`, each loss at most 0 and read with its sign flipped (`cat-inputs.md` decision 15). A negative or non-finite loss given to a layer is now an error rather than a silent zero: `Layer::try_ceded`, `Layer::try_ceded_by_event` and `Tower::try_ceded` in Rust, and in Python and R `Layer.ceded`, `Layer.ceded_by_event` and `Tower.ceded` (R `ceded()`, `ceded_by_event()` and the tower's `ceded()`) (#593, #677).
+- R accessors Python has: an `event_set`'s `has_times` property (`ev@has_times`, as `EventSet.has_times`), and `book_names()`, `book_n_sims()` and `book_items()` for a `deal_book` (as `DealBook.names`, `n_sims` and `items`) (#596, #682).
+
+### Pricing
+
+- An efficient frontier of reinsurance structures: `prospicio_pricing::frontier` evaluates every retention and limit of a layer on simulated years with their events (per occurrence or aggregate), annual losses or an annual grid (exact), with the ceded premium by a premium rule on a capital standard or the expected value principle, the margin paid away against a VaR or TVaR of the net, the efficient structures, the least risk within a budget and Cai and Tan's least total (`pareto.md`, "Efficient frontier of structures"). Python `prospicio.reinsurance.frontier`, R `reinsurance_frontier()` (#569, #704).
+- Cat bonds and insurance-linked securities: `prospicio_pricing::ils::CatBond`, a tranche of principal on an indemnity, modelled-loss, weighted industry-index or parametric trigger, per occurrence or on the annual aggregate, over a term of several years; its losses give the expected loss, the probabilities of attachment and exhaustion, the spread under a distortion and its calibration to a market spread, Lane's spread at given coefficients, the investor's return in each term and the basis risk against the cedant's indemnity recoveries (`pareto.md`, "Cat bonds"). Python `prospicio.reinsurance.CatBond`, R `cat_bond()` and its `cat_bond_*()` functions (#570, #708).
+- A deal's and a book's price adequacy in one table: `DealBook::adequacy(rule, assets)` gives each deal and the book the premium charged and kept (less every deduction), the expected loss and margin, the allocated (Euler) and marginal assets and capital and the return on each, the technical and marginal premiums, the target premium that returns the book's target on the allocated capital, and the adequacy, kept over target (`time-value.md` decision 36). Python `DealBook.adequacy`, R `book_adequacy()` (#589, #701).
+- An IRR whose root lies outside the searched range is told from flows with no root: `Irr::root_above` and `root_below` say whether a root lies above or below the range (by the signs of the value at the range's end and of its limit beyond), and `IrrOptions::extend` searches beyond the range for it when the grid sees none (off by default, so the reference model's results are unchanged; `time-value.md` decision 35). Python `IrrResult.root_above` and `root_below` and `extend=` on `irr`, `Cashflows.irr`, `Forward.forward_irr`, `Forward.since_inception_irr` and `DealBook.cashflows`; R `root_above` and `root_below` columns and `extend =` on `irr()` and `book_cashflows()` (#670, #675).
+
+### Guides
+
+- (#642, #711) `reserving-friedland` (and its R twin), `reserving-methods` and `choosing-a-method` give the a-priori loss ratio of the expected-loss, Bornhuetter-Ferguson and Benktander methods per origin (a dict or named vector keyed by year) in place of an expected-ultimate column with `apriori=1.0`. Every printed number is unchanged.
+- (#718) `submission-schema` searches the investor's IRR with `cashflows(extend=True)` (#675) in
+  place of `upper=5.0`, with every printed number unchanged, and names the per-simulation
+  patterns of #673 that it does not use yet (#717).
+- (#688) `cat-5-beyond-loss` (and its R twin) prices the no-claims bonus with the layer's own `no_claims_bonus` (#592) in place of a hand-built adjustment.
+
+### Examples
+
+- (#718) `ils_deal_analysis` and its R twin use `extend=True` (#675) in place of `upper=5.0`
+  (output byte-identical) and say why the notebook keeps one payment pattern (#673).
+  `one_year_view` and its R twin load GenIns with `Triangle.read_csv` and `read_triangle()`
+  (#552).
+
+### Excel
+
+- `PRO.ALLOCATE` and `PRO.ALLOCATE.TOTAL`: capital allocation from columns of simulated draws, a distortion risk measure of the portfolio by Euler (natural), covariance, proportional, marginal or Shapley, or an amount from outside by the haircut or equal risk rule on stand-alone VaR, TVaR or EPD (#578, #698).
+- `PRO.NPV`, `PRO.IRR` and `PRO.MOIC`: returns on flows in cells, at times in years, months or days, or on dates as `XNPV` and `XIRR` read them; one series or a block of simulations, a root beyond the search range named rather than `#NUM!`; Excel's worked examples reproduced (#578, #694).
+- `PRO.CASHFLOW`: a collateralised deal's monthly cash flows on simulated loss ratios, its terms a block of labelled rows (every rule of `prospicio_pricing::cashflow`), giving each simulation's IRR, MOIC, NPV and totals, the monthly flows, or one simulation's accounts month by month (#578, #694).
+- `PRO.EL`, `PRO.BF`, `PRO.BENKTANDER` and `PRO.CAPECOD` take a selected pattern (`selected`, `kind`, `weight`, as `PRO.CL` reads them), so BF runs on an industry or benchmark pattern; chainladder-python `DevelopmentConstant` parity on the CAS workers' compensation triangle (#635, #690).
+- `pattern_ages` on the thirteen functions that take `selected` (`PRO.CL` and its siblings, `PRO.MACK`, `PRO.MACK.CDR`, `.CDR.YEARS` and the four expected-loss functions): each selected value's age in months, so a monthly pattern reaches a triangle (#680, #690).
+- `apriori` on `PRO.EL`, `PRO.BF`, `PRO.BENKTANDER` and their `PRO.DIAG.*` twins takes a row or column with one loss ratio per origin (#635, #690).
+- `PRO.GLM`, `PRO.GLM.PREDICT` and `PRO.GLM.RELATIVITIES` fit a GLM to a table with a header row (Poisson, quasi-Poisson, gamma, Gaussian, inverse Gaussian, binomial, Tweedie and negative binomial; an exposure offset and prior weights) and return its coefficients and fit statistics, predictions on new rows, or a rating manual's relativities with intervals; statsmodels parity (#578, #692).
+- `PRO.PNL`: a book's P&L ledger over annual gross losses given as values and probabilities (or simulated years), with its expenses and the annual covers it buys, on the walk, the consolidated face or a peel; each line's distribution and the scenario columns that foot, the card, or the ratios; `aggregate` parity (#578, #695).
+- `PRO.YLT.STATS`, `PRO.YLT.OEP`, `PRO.ELT.STATS` and `PRO.ELT.OEP`: a year loss table's annual totals (average annual loss, SD, VaR and TVaR under a stated quantile rule) and its occurrence and aggregate exceedance curves, by return period or at amounts, with an optional hours clause; an event loss table's expected annual loss and occurrence exceedance curve with secondary uncertainty (#578, #697).
+
 ## 0.0.6 (2026-10-28)
 
 ### Breaking changes
