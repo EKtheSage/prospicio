@@ -418,6 +418,27 @@ def test_statistics_match_numpy_linear_and_the_integral_tvar():
         s.var(0.5, method="nearest")
 
 
+def test_window_tvar():
+    """The mean between two levels (#583), the difference of two tails."""
+    x = [float(v) for v in range(1, 2001)]
+    s = Sampled(x)
+
+    def identity(a, b, method="exact"):
+        area = lambda p: 0.0 if p == 1.0 else (1.0 - p) * s.tvar(p, method=method)
+        return (area(a) - area(b)) / (b - a)
+
+    for a, b in [(0.98, 0.99), (0.5, 0.9), (0.123, 0.987), (0.9, 1.0)]:
+        for method in ["exact", "linear"]:
+            assert s.window_tvar(a, b, method=method) == pytest.approx(identity(a, b, method), rel=1e-9)
+    # Years ranked 21 to 40 from the top of 2,000.
+    assert s.window_tvar(0.98, 0.99, method="whole_years") == pytest.approx(sum(range(1961, 1981)) / 20)
+    g = Grid(1.0, [0.5, 0.3, 0.2])
+    assert g.window_tvar(0.6, 0.9) == pytest.approx(0.4 / 0.3, rel=1e-12)
+    assert g.window_tvar(0.5, 1.0) == pytest.approx(g.tvar(0.5), rel=1e-12)
+    with pytest.raises(ValueError, match="p_low"):
+        s.window_tvar(0.9, 0.9)
+
+
 def test_the_kth_largest_year_and_the_whole_years_tvar():
     from prospicio.risk import statistics
 

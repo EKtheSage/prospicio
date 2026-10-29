@@ -258,6 +258,18 @@ stopifnot(abs(TVaR(ky_s, 0.987, method = "whole_years") - mean(ky_d[1:26])) < 1e
 ky_st <- statistics(ky_x, 99, tvar_levels = 98.7, quantile = "kth_largest", tvar = "whole_years")
 stopifnot(ky_st[["Percentile 99"]] == ky_d[20], abs(ky_st[["TVaR 98.7"]] - mean(ky_d[1:26])) < 1e-9)
 stopifnot(inherits(try(VaR(ky_s, 0.5, method = "kth"), silent = TRUE), "try-error"))
+# The mean between two levels (#583), the difference of two tails.
+wt_s <- sampled(1:2000)
+wt_area <- function(p, method = "exact") if (p == 1) 0 else (1 - p) * TVaR(wt_s, p, method = method)
+for (ab in list(c(0.98, 0.99), c(0.5, 0.9), c(0.123, 0.987), c(0.9, 1))) {
+  for (m in c("exact", "linear")) {
+    want <- (wt_area(ab[1], m) - wt_area(ab[2], m)) / (ab[2] - ab[1])
+    stopifnot(abs(window_tvar(wt_s, ab[1], ab[2], method = m) - want) < 1e-9 * want)
+  }
+}
+stopifnot(window_tvar(wt_s, 0.98, 0.99, method = "whole_years") == mean(1961:1980),
+          abs(window_tvar(grid_distribution(1, c(0.5, 0.3, 0.2)), 0.6, 0.9) - 0.4 / 0.3) < 1e-12,
+          inherits(try(window_tvar(wt_s, 0.9, 0.9), silent = TRUE), "try-error"))
 st_pd <- predictive_distribution(cbind(1:10, 2 * (1:10)), data.frame(lob = c("a", "b")))
 st_tab <- statistics(st_pd, 50, tvar_levels = 90, sd_multiples = 1)
 stopifnot(identical(st_tab$lob, c("a", "b")), all(st_tab$Mean == c(5.5, 11)))

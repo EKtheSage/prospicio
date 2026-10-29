@@ -1129,6 +1129,30 @@ impl PyGrid {
         self.inner.tvar_threshold(p).map_err(to_py)
     }
 
+    /// Window TVaR: the mean of the grid between the levels ``p_low`` and
+    /// ``p_high``, each point counted with the share of its mass inside the
+    /// window, ``((1 - p_low) tvar(p_low) - (1 - p_high) tvar(p_high)) /
+    /// (p_high - p_low)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// p_low, p_high : float
+    ///     ``0 <= p_low < p_high <= 1``.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Grid
+    /// >>> g = Grid(1.0, [0.5, 0.3, 0.2])
+    /// >>> round(g.window_tvar(0.6, 0.9), 12)
+    /// 1.333333333333
+    fn window_tvar(&self, p_low: f64, p_high: f64) -> PyResult<f64> {
+        self.inner.window_tvar(p_low, p_high).map_err(to_py)
+    }
+
     /// The grid with every probability below ``eps`` set to 0: the
     /// round-off an FFT leaves where the true mass is zero, as
     /// ``aggregate``'s ``remove_fuzz``. ``Tower.on_grid`` already removes
@@ -1357,6 +1381,41 @@ impl PySampled {
     fn tvar(&self, p: f64, method: &str) -> PyResult<f64> {
         self.inner
             .tvar_with(p, crate::risk::tvar_method(method)?)
+            .map_err(to_py)
+    }
+
+    /// Window TVaR: the mean of the draws between the levels ``p_low`` and
+    /// ``p_high``, a band of bad years such as the 98th to 99th
+    /// percentiles. It equals ``((1 - p_low) tvar(p_low) - (1 - p_high)
+    /// tvar(p_high)) / (p_high - p_low)`` under ``"exact"`` and
+    /// ``"linear"``; under ``"whole_years"`` it is the mean of the draws
+    /// ranked ``floor((1 - p_high) n) + 1`` to ``floor((1 - p_low) n)`` from
+    /// the top (years 21 to 40 of 2,000 between 0.98 and 0.99), an error
+    /// when that holds no draw.
+    ///
+    /// Parameters
+    /// ----------
+    /// p_low, p_high : float
+    ///     ``0 <= p_low < p_high <= 1``.
+    /// method : str, default "exact"
+    ///     As ``tvar``.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Sampled
+    /// >>> years = Sampled([float(x) for x in range(1, 11)])
+    /// >>> years.window_tvar(0.7, 0.9)
+    /// 8.5
+    /// >>> years.window_tvar(0.5, 1.0) == years.tvar(0.5)
+    /// True
+    #[pyo3(signature = (p_low, p_high, method = "exact"))]
+    fn window_tvar(&self, p_low: f64, p_high: f64, method: &str) -> PyResult<f64> {
+        self.inner
+            .window_tvar_with(p_low, p_high, crate::risk::tvar_method(method)?)
             .map_err(to_py)
     }
 

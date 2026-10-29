@@ -46,6 +46,8 @@ layer_third_moment_rust <- function(severity, limit, attachment) .Call(wrap__lay
 
 tvar_threshold_rust <- function(values, probs, p) .Call(wrap__tvar_threshold_rust, values, probs, p)
 
+window_tvar_weighted_rust <- function(values, probs, p_low, p_high) .Call(wrap__window_tvar_weighted_rust, values, probs, p_low, p_high)
+
 join_rust <- function(parts, labels, dim, same_simulations) .Call(wrap__join_rust, parts, labels, dim, same_simulations)
 
 reorder_groups_rust <- function(pd, dim, correlation, seed, kind) .Call(wrap__reorder_groups_rust, pd, dim, correlation, seed, kind)
@@ -932,6 +934,8 @@ Sampled$quantile <- function(p) .Call(wrap__Sampled__quantile, self, p)
 Sampled$var <- function(p, method) .Call(wrap__Sampled__var, self, p, method)
 
 Sampled$tvar <- function(p, method) .Call(wrap__Sampled__tvar, self, p, method)
+
+Sampled$window_tvar <- function(p_low, p_high, method) .Call(wrap__Sampled__window_tvar, self, p_low, p_high, method)
 
 #' @export
 `$.Sampled` <- function (self, name) { func <- Sampled[[name]]; environment(func) <- environment(); func }
