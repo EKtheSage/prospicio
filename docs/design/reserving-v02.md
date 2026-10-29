@@ -4698,7 +4698,8 @@ Status: **Built** (2026-10-28), issue #600 (its Reserving part), branch
 6 were proposed and built as recommended, and the user accepted them as
 built on 2026-10-28. Meyers' models followed (#678, branch
 `claude/meyers-pattern-draws`, in Rust, Python and R), with item 7's
-definition of their pattern proposed. The cash-flow engine takes a
+definition of their pattern proposed and accepted by the user as built
+on 2026-10-28. The cash-flow engine takes a
 paid pattern per simulation (`PatternDraws`, `time-value.md` decision 33);
 this decision gives those patterns from a reserving fit, row `i` the same
 simulation as row `i` of the fit's `reserves` and of every vector
@@ -4769,7 +4770,7 @@ decision 26 gives.
    pattern from an incurred triangle is an incurred pattern, and the
    engine would read it as paid.
 
-   **Meyers' pattern** (#678, proposed 2026-10-28). Meyers' models are
+   **Meyers' pattern** (#678, proposed and accepted by the user as built on 2026-10-28). Meyers' models are
    log-normal in the cumulative values, `log C_wd ~ N(mu_wd, sigma_d^2)`
    with `mu_wd = log P_w + logelr + alpha_w + beta_d g_w`, and simulate
    only the value at the oldest age; the development they model is
