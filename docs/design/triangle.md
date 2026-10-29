@@ -1,6 +1,6 @@
 # Design note: Triangle
 
-Status: **Implemented** in `crates/prospicio-reserving` (v0.1), except the Arrow feature; reading files (decision 6) built, its proposed items awaiting the user · Depends on: `distributions.md`, `predictive-distribution.md` (period keys) · Replaced: the provisional root `src/` sandbox
+Status: **Implemented** in `crates/prospicio-reserving` (v0.1), except the Arrow feature; reading files (decision 6) built, its proposed items accepted by the user on 2026-10-28 · Depends on: `distributions.md`, `predictive-distribution.md` (period keys) · Replaced: the provisional root `src/` sandbox
 
 ## Goal
 
@@ -543,8 +543,8 @@ root sandbox crate is deleted.
      `TriangleFrame` gains the key columns as features, so one model can
      share information across segments.
 6. **Triangles from files and the Schedule P loader** (#552, branch
-   `claude/triangle-io`; items marked *proposed* await the user's
-   acceptance).
+   `claude/triangle-io`; items marked *proposed* were accepted by the
+   user as built on 2026-10-28).
    - **Behind a feature.** `prospicio-reserving`'s `io` feature, off by
      default, turns on the `io` module and the optional dependencies
      `csv` 1.4 and `calamine` 0.35 (both pure Rust), so the default build
@@ -562,10 +562,9 @@ root sandbox crate is deleted.
      quick-xml 0.39 and zip 7, which carry RustSec advisories
      (RUSTSEC-2026-0194 and 0195, denial of service on a crafted
      workbook; RUSTSEC-2026-0367 to 0369, extraction to disk, which
-     calamine does not call), so `cargo deny check` fails until the user
-     chooses: ignore them in `deny.toml` with those reasons until the
-     workspace moves to Rust 1.88 and calamine 0.37, move now, or leave
-     Excel out. `encoding_rs` (via calamine) is `(Apache-2.0 OR MIT) AND
+     calamine does not call). By the user's decision of 2026-10-28 they
+     are ignored in `deny.toml`, with those reasons, until the workspace
+     moves to Rust 1.88 and calamine 0.37. `encoding_rs` (via calamine) is `(Apache-2.0 OR MIT) AND
      BSD-3-Clause` and has a licence exception in `deny.toml`.
    - **Layouts.** `FileLayout::long(origin, development, columns)` (one
      row per cell; no columns means every column that is not the origin,
@@ -588,9 +587,7 @@ root sandbox crate is deleted.
      (a line of only spaces too) are skipped, columns with no name and no
      values (a header ending in a delimiter) are dropped while a column
      with values and no name is an error, and a UTF-8 byte order mark is
-     dropped. CSV lines end in `
-`, `
-` or a bare ``. A sheet's used range
+     dropped. CSV lines end in `\n`, `\r\n` or a bare `\r`. A sheet's used range
      starts with its header row (a title above the table is not skipped).
    - **Duplicates** (*proposed*). A long file sums rows with the same
      (keys, origin, development), as `from_long` does for a claims extract;
