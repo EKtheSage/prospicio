@@ -43,10 +43,16 @@ Found while writing `examples/ils_deal_analysis.ipynb` (a collateralised
   default, and a simulation whose IRR is above 100% comes back as NaN,
   like flows with no root (#670). At 10,000 simulations 42 flat and 6
   sliding-scale simulations, among the best years, had no root and were
-  left out of the IRR percentiles. The notebook now calls
-  `cashflows(upper=5.0)` (R `upper = 5`): every simulation has an IRR, the
+  left out of the IRR percentiles. The notebook called
+  `cashflows(upper=5.0)` (R `upper = 5`), and since #675 calls
+  `cashflows(extend=True)` (R `extend = TRUE`) with byte-identical
+  output: every simulation has an IRR, the
   largest 199%, and the flat structure's 95th percentile moves from 47.7%
   to 48.9%.
 
 A per-simulation commission in `run`, and per-simulation payment patterns,
-are gaps of the cash-flow engine (the second is #600).
+were gaps of the cash-flow engine. The second, #600, is closed:
+`CashflowTerms.run(..., paid_patterns=)` takes a reserving fit's
+`patterns.monthly(...)` (#673). The notebook keeps one pattern, since its
+loss ratios are lognormal draws around the fit and not the fit's own
+simulations.

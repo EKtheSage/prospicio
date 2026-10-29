@@ -63,15 +63,11 @@ A negative CDR is an adverse development, so the loss of the reserve line is min
 
 ```{r}
 #| label: reserve
-genins <- read_data("genins.csv")
-tri <- triangle(
-  data.frame(origin = genins$origin, age = genins$development, paid = genins$value),
-  origin = "origin", development = "age", columns = "paid"
-)
-one_year <- odp_one_year(tri, "paid", method = "chain_ladder", n_sims = N_SIMS, seed = 1)
+tri <- read_triangle(file.path(DATA, "genins.csv"), "origin", "development", columns = "value", comment = "#")
+one_year <- odp_one_year(tri, "value", method = "chain_ladder", n_sims = N_SIMS, seed = 1)
 cdr <- total(one_year@cdr)
 reserve <- sampled(-cdr@draws)  # adverse development is the loss
-run_off <- total(odp_bootstrap(tri, "paid", n_sims = N_SIMS, seed = 1)@reserves)
+run_off <- total(odp_bootstrap(tri, "value", n_sims = N_SIMS, seed = 1)@reserves)
 
 cat(sprintf("opening reserve %s\n", money(sum(one_year@opening_reserve))))
 cat(sprintf("one-year: adverse development mean %s, sd %s, 99.5%% %s\n", money(mean(reserve)),

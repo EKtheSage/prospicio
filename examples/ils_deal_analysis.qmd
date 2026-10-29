@@ -275,7 +275,7 @@ cat("ceded premium", money(CEDED_PREMIUM), "\n")
 
 The money moves monthly. The parts:
 
-* **Payment pattern.** The factors of the paid chain ladder give the share of the ultimate loss paid by each age. `cashflow_terms()` takes cumulative *monthly* shares, so the chunk below interpolates the annual pattern linearly to months (#601). All simulations use the same pattern (#600).
+* **Payment pattern.** The factors of the paid chain ladder give the share of the ultimate loss paid by each age. `cashflow_terms()` takes cumulative *monthly* shares, so the chunk below interpolates the annual pattern linearly to months (#601). All simulations use the same pattern on purpose: the loss ratios `LR` are lognormal draws around the fit, and they are not paired row by row with its simulations. When the losses come from the same fit, `monthly_pattern_draws()` gives a monthly pattern for each simulation, and `cashflow_run(paid_patterns =)` pays each simulation on its own (#673).
 * **Premium.** The cedant writes premium evenly over 2026 and collects it as written. The premium earns over the following two years.
 * **Collateral.** The trust must hold 30% of the unearned premium plus 125% of the outstanding loss (the ultimate loss of the deal less paid to date).
 * **Yield, expenses and commutation.** The trust earns 3% a year, and expenses are 0.5% a year of the requirement. At month 60 the deal commutes.
@@ -338,9 +338,10 @@ for (name in names(deals)) {
   d$opening <- run$opening
   d$run <- deal_run_from_tower(name, d$tower, d$result, name, flows = run$flows, funded = run$funded,
                                opening = run$opening, patterns = list(written, earned, paid))
-  # A book of one deal: its IRR and MOIC in each simulation. The IRR is searched up to 500% a year: the default
-  # upper bound, 100%, is below the best years of this deal, which would then show no root and drop out.
-  book_cf <- book_cashflows(deal_book(list(d$run)), upper = 5)
+  # A book of one deal: its IRR and MOIC in each simulation. The IRR search starts at -95% to +100% a year.
+  # The best years of this deal are above 100%, so with extend = TRUE a simulation with no root there is searched
+  # above and below that range, and the root nearer 0 is taken (#675).
+  book_cf <- book_cashflows(deal_book(list(d$run)), extend = TRUE)
   d$rate <- book_cf$irr$rate
   d$moic <- book_cf$moic
   deals[[name]] <- d
@@ -354,7 +355,7 @@ cat("capital called from the fund over the term, summed (mean; it is recycled as
 
 For each structure, the chunk computes the return of each simulation:
 
-* the **IRR**. The chunk searches it between -95% and 500% a year. The default search stops at 100%, below the IRR of this deal's best years, which would then show no root and drop out of the percentiles, biasing them down (#670). The chunk still excludes and counts any simulation with no root in the range.
+* the **IRR**. The search starts between -95% and 100% a year. The best years of this deal are above 100%, so the chunk sets `extend = TRUE` (#675): when the search finds no root in that range, it looks above and below it, so no simulation drops out of the percentiles (#670). The chunk still excludes and counts any simulation with no root at all.
 * the **MOIC**: one plus the net flows divided by the capital called from the fund.
 * the downside: the probability of a negative IRR or a MOIC below 1, and the mean of the worst 5% of IRRs.
 

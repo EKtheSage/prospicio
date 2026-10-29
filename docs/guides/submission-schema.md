@@ -461,14 +461,19 @@ sliding loss_ratio 0.496, ceding_commission 0.329, margin 0.150
 The investor's cash flows come from the cash-flow engine: the premium paid
 into a trust, collateral of 30% of the unearned premium and 125% of the
 outstanding loss, claims paid on the chain ladder's pattern spread over the
-months, commutation at five years. `deduct_commission=True` takes each
+months, commutation at five years. Every simulation pays on that one
+pattern. The bootstrap also draws a pattern with each simulation's loss
+(`boot.patterns`, #673), and `terms.run(..., paid_patterns=...)` pays each
+simulation on its own; this guide keeps one pattern because reading 2,000
+drawn patterns month by month takes longer than a guide should.
+`deduct_commission=True` takes each
 simulation's commission (here the ceding commission and brokerage) off the
 premium paid in, so one run covers a sliding scale. A book of one deal gives
 its IRR and multiple (MOIC) in each simulation, and a book of both gives the
-side-by-side means. The IRR is searched between -95% and 100% by default;
-the best years of this deal return more than that, and outside the range
-they would show as having no IRR and drop out of its statistics, so the
-search here runs to 500%.
+side-by-side means. The IRR is searched between -95% and 100% by default.
+The best years of this deal return more than that, and a simulation with no
+root in the range would drop out of the statistics, so `extend=True` looks
+beyond the range when it holds no root (#675).
 
 ```python
 T = 60
@@ -484,7 +489,7 @@ for name, d in deals.items():
     flows = terms.run(column("loss_ratio"), [c + b for c, b in zip(column("ceding_commission"), column("brokerage"))])
     d["run"] = (DealRun.from_tower(name, d["tower"], d["result"], name)
                 .with_flows(flows.flows, flows.funded, flows.opening).with_patterns(written, earned, paid))
-    book = DealBook([d["run"]]).cashflows(upper=5.0)
+    book = DealBook([d["run"]]).cashflows(extend=True)
     d["irr"], d["moic"] = list(book.irr.rate), list(book.moic)
 summary = DealBook([d["run"] for d in deals.values()]).summary()
 for name, d in deals.items():
