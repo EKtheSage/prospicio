@@ -74,6 +74,27 @@ pub trait Empirical: Distribution {
         method.tvar(self.sorted(), p)
     }
 
+    /// The mean of the draws between the levels `p_low` and `p_high`, a
+    /// band of bad years such as the 98th to 99th percentiles (#583); see
+    /// [`window_tvar_sorted`](crate::risk::window_tvar_sorted).
+    ///
+    /// ```
+    /// use prospicio_prob::{Empirical, Sampled};
+    ///
+    /// let s = Sampled::new((1..=10).map(f64::from).collect()).unwrap();
+    /// assert_eq!(s.window_tvar(0.7, 0.9), Ok(8.5));
+    /// assert_eq!(s.window_tvar(0.5, 1.0), s.tvar(0.5));
+    /// ```
+    fn window_tvar(&self, p_low: f64, p_high: f64) -> Result<f64> {
+        TvarMethod::Exact.window_tvar(self.sorted(), p_low, p_high)
+    }
+
+    /// [`window_tvar`](Self::window_tvar) under `method`, the conventions of
+    /// [`tvar_with`](Self::tvar_with).
+    fn window_tvar_with(&self, p_low: f64, p_high: f64, method: TvarMethod) -> Result<f64> {
+        method.window_tvar(self.sorted(), p_low, p_high)
+    }
+
     /// Distortion risk measure of the draws; see
     /// [`Distortion::apply_sorted`].
     ///
