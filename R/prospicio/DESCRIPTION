@@ -29,6 +29,7 @@ Collate:
     'reserving.R'
     'excess.R'
     'extendr-wrappers.R'
+    'hawkes.R'
     'normal.R'
     'multivariate.R'
     'nn.R'

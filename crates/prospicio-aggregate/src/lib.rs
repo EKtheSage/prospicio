@@ -30,6 +30,7 @@ pub mod compound;
 pub mod deal;
 pub mod fft;
 pub mod grid_reinsurance;
+pub mod hawkes;
 pub mod layer_statistics;
 pub mod moments;
 pub mod monte_carlo;
@@ -54,6 +55,7 @@ pub use compound::{CompoundMethod, CompoundReport};
 pub use deal::{DealColumn, DealColumns, DealScale, Deduction};
 pub use fft::fft;
 pub use grid_reinsurance::{AnnualGrids, TowerGrids, TowerPrice, ViewPrice};
+pub use hawkes::{Hawkes, HawkesFit};
 pub use layer_statistics::{
     AggregateLayerStatistics, CessionStatistics, LayerStatistics, aggregate_layer_statistics,
     occurrence_cession_statistics, occurrence_layer_statistics,
