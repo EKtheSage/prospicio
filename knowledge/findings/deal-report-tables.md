@@ -33,7 +33,9 @@ templates in `examples/templates/` (#605).
   had no root under the default range. They were the best years (loss
   ratios 0.27 to 0.37, MOIC 1.72 to 2.30), so leaving them out of the
   IRR's statistics biases them down. `cashflows(upper=5.0)` finds every
-  root; the largest is 237%.
+  root; the largest is 237%. Since #675 the guide calls
+  `cashflows(extend=True)`, which looks past the range only when it
+  holds no root, and prints the same numbers.
 * `examples/ils_deal_analysis.ipynb` calls `cashflows()` with the default
   range and reports a "no root" count beside its IRR percentiles, so its
   IRR statistics leave out the deal's best years in the same way.
