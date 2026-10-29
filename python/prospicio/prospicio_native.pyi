@@ -23580,14 +23580,17 @@ class PairCopula:
     
     Parameters
     ----------
-    family : {"independence", "gaussian", "clayton", "gumbel", "frank", "joe"}
+    family : {"independence", "gaussian", "student", "clayton", "gumbel", "frank", "joe"}
     parameter : float, default 0.0
-        Gaussian correlation in (-1, 1); Clayton above 0; Gumbel and Joe at
-        least 1; Frank not 0 (negative for negative dependence).
+        Gaussian and Student t correlation in (-1, 1); Clayton above 0;
+        Gumbel and Joe at least 1; Frank not 0 (negative for negative
+        dependence).
     rotation : {0, 90, 180, 270}, default 0
         For Clayton, Gumbel and Joe: 90 and 270 give negative dependence,
         180 moves the tail dependence to the other corner (pyvinecopulib's
         conventions).
+    nu : float, optional
+        The Student t's degrees of freedom, positive; required for it.
     
     Examples
     --------
@@ -23596,7 +23599,7 @@ class PairCopula:
     >>> round(c.h2(0.3, 0.6), 12) == round(0.6**-3 * (0.3**-2 + 0.6**-2 - 1) ** -1.5, 12)
     True
     """
-    def __new__(cls, /, family: str, parameter: float = 0.0, rotation: int = 0) -> PairCopula: ...
+    def __new__(cls, /, family: str, parameter: float = 0.0, rotation: int = 0, nu: float |None = None) -> PairCopula: ...
     def __repr__(self, /) -> str: ...
     def cdf(self, /, u: float, v: float) -> float:
         """
@@ -23628,6 +23631,11 @@ class PairCopula:
         The ``u`` with ``h2(u | v) = p``.
         """
     @property
+    def nu(self, /) -> float |None:
+        """
+        The Student t's degrees of freedom, or ``None``.
+        """
+    @property
     def parameter(self, /) -> float:
         """
         The parameter.
@@ -23636,6 +23644,39 @@ class PairCopula:
     def rotation(self, /) -> int:
         """
         The rotation in degrees.
+        """
+
+@final
+class PairFit:
+    """
+    A pair copula fitted by maximum likelihood (``fit_pair``,
+    ``select_pair``).
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def aic(self, /) -> float:
+        """
+        ``2k - 2 log_likelihood``.
+        """
+    @property
+    def bic(self, /) -> float:
+        """
+        ``k ln n - 2 log_likelihood``.
+        """
+    @property
+    def log_likelihood(self, /) -> float:
+        """
+        The maximised log-likelihood.
+        """
+    @property
+    def n_parameters(self, /) -> int:
+        """
+        The number of parameters.
+        """
+    @property
+    def pair(self, /) -> PairCopula:
+        """
+        The fitted pair copula.
         """
 
 @final
@@ -26783,6 +26824,115 @@ class Quote:
         Returns
         -------
         dict of str to float
+        """
+
+@final
+class RVineCopula:
+    """
+    A regular (R-) vine copula, given by its R-vine matrix in vinecopulib's
+    convention (``pyvinecopulib.Vinecop.matrix``, rvinecopulib's
+    ``rvine_matrix``): ``d x d``, 1-based, the order on the antidiagonal
+    ``M[d - 1 - j][j]``, and above it in column ``j`` row ``t`` the variable
+    that tree ``t``'s edge ``j`` joins to it, given the variables above in
+    the column; 0 below the antidiagonal and in the rows of trees not kept.
+    
+    Parameters
+    ----------
+    matrix : list of list of int
+    pairs : list of list of PairCopula
+        Tree ``t``'s ``d - 1 - t`` pair copulas by column, each with first
+        argument the column's antidiagonal variable, as pyvinecopulib's
+        ``pair_copulas``. Fewer trees truncate the vine.
+    
+    Examples
+    --------
+    >>> from prospicio.risk import PairCopula, RVineCopula
+    >>> g = PairCopula("gaussian", 0.5)
+    >>> v = RVineCopula([[2, 3, 3], [3, 2, 0], [1, 0, 0]], [[g, g], [g]])
+    >>> v.edge(1, 0)
+    (0, 2, [1])
+    """
+    def __new__(cls, /, matrix: Sequence[Sequence[int]], pairs: Sequence[Sequence[PairCopula]]) -> RVineCopula: ...
+    @property
+    def dim(self, /) -> int:
+        """
+        Number of dimensions.
+        """
+    def edge(self, /, t: int, j: int) -> tuple[int, int, list[int]]:
+        """
+        Tree ``t``'s edge ``j``: its pair copula's first and second variables
+        and the conditioning set, 0-based.
+        
+        Parameters
+        ----------
+        t, j : int
+        
+        Returns
+        -------
+        tuple of (int, int, list of int)
+        """
+    def inverse_rosenblatt(self, /, w: Sequence[float]) -> list[float]:
+        """
+        The inverse Rosenblatt transform of uniforms ``w`` given by variable,
+        as pyvinecopulib's ``inverse_rosenblatt``.
+        
+        Parameters
+        ----------
+        w : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    def log_density(self, /, u: Sequence[float]) -> float:
+        """
+        The log-density at the point ``u``.
+        
+        Parameters
+        ----------
+        u : list of float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def matrix(self, /) -> list[list[int]]:
+        """
+        The R-vine matrix (1-based).
+        """
+    @property
+    def n_parameters(self, /) -> int:
+        """
+        The number of parameters.
+        """
+    @property
+    def order(self, /) -> list[int]:
+        """
+        The order, the antidiagonal (0-based).
+        """
+    @property
+    def pairs(self, /) -> list[list[PairCopula]]:
+        """
+        The pair copulas by tree and column.
+        """
+    def sample(self, /, n: int, seed: int) -> list[list[float]]:
+        """
+        ``n`` draws of uniforms; draw ``i`` uses stream ``i`` of ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        
+        Returns
+        -------
+        list of list of float
+        """
+    @property
+    def trunc_level(self, /) -> int:
+        """
+        The number of trees kept.
         """
 
 @final
@@ -31192,6 +31342,46 @@ class VineCopula:
         -------
         list of list of float
         """
+    def to_rvine(self, /) -> RVineCopula:
+        """
+        The same vine as an ``RVineCopula``, with its R-vine matrix.
+        
+        Returns
+        -------
+        RVineCopula
+        """
+
+@final
+class VineFit:
+    """
+    A vine fitted by ``fit_vine`` or ``select_vine``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def aic(self, /) -> float:
+        """
+        ``2k - 2 log_likelihood``.
+        """
+    @property
+    def bic(self, /) -> float:
+        """
+        ``k ln n - 2 log_likelihood``.
+        """
+    @property
+    def log_likelihood(self, /) -> float:
+        """
+        The log-likelihood, the sum of the pair copulas'.
+        """
+    @property
+    def n_parameters(self, /) -> int:
+        """
+        The number of parameters.
+        """
+    @property
+    def vine(self, /) -> RVineCopula:
+        """
+        The fitted vine.
+        """
 
 @final
 class Weibull:
@@ -32994,6 +33184,33 @@ def fit_lev_distance(family: str, sizes: Sequence[float], empirical: Sequence[fl
     7.0
     """
 
+def fit_pair(u: Sequence[float], v: Sequence[float], family: str, rotation: int = 0) -> PairFit:
+    """
+    The maximum likelihood fit of one pair copula family in one rotation to
+    observations ``(u, v)`` in ``(0, 1)`` (take ``pseudo_observations`` of
+    raw data first). Parameters are searched within pyvinecopulib's bounds;
+    the Student t by its profile likelihood over ``nu`` in ``[2, 50]``.
+    
+    Parameters
+    ----------
+    u, v : list of float
+    family : str
+    rotation : int, default 0
+    
+    Returns
+    -------
+    PairFit
+    
+    Examples
+    --------
+    >>> from prospicio.risk import PairCopula, fit_pair
+    >>> c = PairCopula("clayton", 2.0)
+    >>> v = [(i + 0.5) / 2000 for i in range(2000)]
+    >>> u = [c.h2_inverse(((i * 7919) % 2000 + 0.25) / 2000, v[i]) for i in range(2000)]
+    >>> abs(fit_pair(u, v, "clayton").pair.parameter - 2.0) < 0.2
+    True
+    """
+
 def fit_pml_curve(return_periods: Sequence[float], amounts: Sequence[float], tail_alpha: float = 2.0, truncation: float |None = None) -> TowerModel:
     """
     The model through the points of a PML curve: ``amounts[j]`` is
@@ -33086,6 +33303,31 @@ def fit_severity(family: str, losses: Sequence[float], reporting_thresholds: Seq
     >>> fit = fit_severity("lognormal", y)
     >>> round(fit.parameters["meanlog"], 6) == round(sum(map(math.log, y)) / 7, 6)
     True
+    """
+
+def fit_vine(data: Sequence[Sequence[float]], matrix: Sequence[Sequence[int]], families: Sequence[str] |None = None, criterion: str = "aic", independence_test: float |None = None, trunc_level: int |None = None) -> VineFit:
+    """
+    A vine on a given R-vine matrix fitted to ``data`` tree by tree: each
+    edge's pair copula chosen as ``select_pair`` chooses, on the conditional
+    values the trees below give at their estimates, as pyvinecopulib's
+    ``Vinecop.from_data(data, controls, matrix=matrix)``.
+    
+    Parameters
+    ----------
+    data : list of list of float
+        One row an observation, one column a variable, values in ``(0, 1)``
+        (take ``pseudo_observations`` of each column of raw data first).
+    matrix : list of list of int
+        The R-vine matrix, as for ``RVineCopula``.
+    families : list of str, optional
+    criterion : {"aic", "bic"}, default "aic"
+    independence_test : float, optional
+    trunc_level : int, optional
+        The number of trees to fit; all by default.
+    
+    Returns
+    -------
+    VineFit
     """
 
 def from_json(text: str) -> Any:
@@ -33529,6 +33771,16 @@ def k_fold(n: int, k: int, seed: int) -> list[tuple[list[int], list[int]]]:
     -------
     list of (list of int, list of int)
         ``(train, test)`` row indices per fold.
+    """
+
+def kendall_tau(x: Sequence[float], y: Sequence[float]) -> float:
+    """
+    Kendall's tau-b of two samples, ties counted as
+    ``scipy.stats.kendalltau`` counts them.
+    
+    >>> from prospicio.risk import kendall_tau
+    >>> round(kendall_tau([1.0, 2.0, 3.0, 4.0], [1.0, 3.0, 2.0, 4.0]), 12)
+    0.666666666667
     """
 
 def ks_uniform(values: Sequence[float]) -> float:
@@ -34938,6 +35190,16 @@ def pseudo_bma_weights(lpd: Sequence[Sequence[float]], bootstrap: bool = True, n
     list of float
     """
 
+def pseudo_observations(x: Sequence[float]) -> list[float]:
+    """
+    Pseudo-observations: each value's average rank over ``n + 1``, in
+    ``(0, 1)``, for fitting copulas to raw data.
+    
+    >>> from prospicio.risk import pseudo_observations
+    >>> pseudo_observations([3.0, 1.0, 2.0, 2.0])
+    [0.8, 0.2, 0.5, 0.5]
+    """
+
 def quantile_residuals(family: str, y: Sequence[float], mu: Sequence[float], dispersion: float = 1.0, weights: Sequence[float] |None = None, seed: int = 0, theta: float |None = None, power: float |None = None) -> list[float]:
     """
     Randomized quantile residuals (Dunn and Smyth, 1996): the normal scores
@@ -35186,6 +35448,59 @@ def round_premium(premium: float) -> float:
     >>> from prospicio.aggregate import round_premium
     >>> round_premium(714.12), round_premium(16.285)
     (714.0, 16.29)
+    """
+
+def select_pair(u: Sequence[float], v: Sequence[float], families: Sequence[str] |None = None, criterion: str = "aic", independence_test: float |None = None) -> PairFit:
+    """
+    The best pair copula for observations ``(u, v)`` by AIC or BIC over
+    ``families`` (each of Clayton, Gumbel and Joe in the two rotations that
+    match the sign of Kendall's tau) and independence, as pyvinecopulib's
+    ``Bicop.select`` chooses with ``parametric_method="mle"``. With
+    ``independence_test`` a level, a pair whose Kendall test p-value is above
+    it is independence without a fit.
+    
+    Parameters
+    ----------
+    u, v : list of float
+    families : list of str, optional
+        By default the Gaussian, Student, Clayton, Gumbel, Frank and Joe.
+    criterion : {"aic", "bic"}, default "aic"
+    independence_test : float, optional
+    
+    Returns
+    -------
+    PairFit
+    """
+
+def select_vine(data: Sequence[Sequence[float]], families: Sequence[str] |None = None, criterion: str = "aic", independence_test: float |None = None, trunc_level: int |None = None) -> VineFit:
+    """
+    A vine fitted to ``data`` with its structure chosen by Dissmann's
+    algorithm, as pyvinecopulib's ``Vinecop.from_data(data, controls)``:
+    each tree the spanning tree of largest total ``|tau|`` over the edges
+    the proximity condition allows, each edge's pair copula chosen as
+    ``select_pair`` chooses.
+    
+    Parameters
+    ----------
+    data : list of list of float
+        One row an observation, values in ``(0, 1)``.
+    families : list of str, optional
+    criterion : {"aic", "bic"}, default "aic"
+    independence_test : float, optional
+    trunc_level : int, optional
+    
+    Returns
+    -------
+    VineFit
+    
+    Examples
+    --------
+    >>> from prospicio.risk import GaussianCopula, select_vine
+    >>> c = GaussianCopula([[1.0, 0.7, 0.5], [0.7, 1.0, 0.3], [0.5, 0.3, 1.0]])
+    >>> fit = select_vine(c.sample(2000, 1))
+    >>> a, b, given = fit.vine.edge(1, 0)
+    >>> (sorted([a, b]), given)
+    ([1, 2], [0])
     """
 
 def severity_exposure_curve(severity: Any, mpl: float, x: Sequence[float]) -> list[float]:

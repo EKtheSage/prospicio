@@ -657,3 +657,86 @@ def test_sobol_points_and_mvn_cdf():
     below = sum(all(x <= p for x, p in zip(row, (0.6, 0.4, 0.7))) for row in u) / len(u)
     assert abs(below - e.value) < 2e-3
     assert "MvnEstimate(value=" in repr(e)
+
+
+def test_student_pair_and_pair_fits():
+    """The Student t pair and fitting pair copulas (#568)."""
+    from prospicio.risk import PairCopula, fit_pair, kendall_tau, pseudo_observations, select_pair
+
+    t = PairCopula("student", 0.6, nu=4.0)
+    assert t.family == "student" and t.nu == 4.0 and t.rotation == 0
+    assert abs(t.cdf(0.3, 0.6) - 0.2559786497211124) < 1e-9  # pyvinecopulib 1.0.1
+    assert abs(t.h2_inverse(t.h2(0.3, 0.6), 0.6) - 0.3) < 1e-12
+    with pytest.raises(ValueError, match="nu"):
+        PairCopula("student", 0.6)
+    with pytest.raises(ValueError, match="nu"):
+        PairCopula("clayton", 2.0, nu=3.0)
+    assert pseudo_observations([3.0, 1.0, 2.0, 2.0]) == [0.8, 0.2, 0.5, 0.5]
+    assert kendall_tau([1.0, 2.0, 3.0, 4.0], [1.0, 3.0, 2.0, 4.0]) == pytest.approx(4 / 6)
+    n = 2000
+    c = PairCopula("gumbel", 2.0, 180)
+    v = [(i + 0.5) / n for i in range(n)]
+    u = [c.h2_inverse(((i * 7919) % n + 0.5) / n, v[i]) for i in range(n)]
+    own = fit_pair(u, v, "gumbel", 180)
+    assert abs(own.pair.parameter - 2.0) < 0.15 and own.n_parameters == 1
+    best = select_pair(u, v)
+    assert best.aic <= own.aic + 1e-9
+    assert select_pair(u, v, families=["frank"]).pair.family in ("frank", "independence")
+    with pytest.raises(ValueError, match="criterion"):
+        select_pair(u, v, criterion="hqc")
+
+
+def test_r_vines_and_vine_fits_match_pyvinecopulib():
+    """R-vines and vines fitted tree by tree or by Dissmann's algorithm (#568)."""
+    import csv
+    from pathlib import Path
+
+    from prospicio.risk import PairCopula, RVineCopula, VineCopula, fit_vine, select_vine
+
+    ref = Path(__file__).resolve().parents[2] / "validation" / "reference"
+    data = {}
+    with open(ref / "vine_rvine_data.csv") as f:
+        for r in csv.DictReader(f):
+            data.setdefault(r["set"], []).append([float(r[f"u{k}"]) for k in range(1, 6)])
+
+    def matrix(s):
+        return [[int(x) for x in row.split()] for row in s.split(";")]
+
+    def pair(s):
+        f = s.split(":")
+        p = [float(x) for x in f[2:]]
+        if f[0] == "student":
+            return PairCopula("student", p[0], nu=p[1])
+        return PairCopula(f[0], p[0] if p else 0.0, int(f[1]))
+
+    with open(ref / "vine_rvine_pyvinecopulib.csv") as f:
+        rows = list(csv.DictReader(f))
+    for r in rows:
+        want = [float(x) for x in r["expected"].split(";")]
+        if r["case"] in ("density", "inverse_rosenblatt"):
+            v = RVineCopula(matrix(r["matrix"]), [[pair(x) for x in t.split(";")] for t in r["pairs"].split("/")])
+            assert v.matrix == matrix(r["matrix"])
+            u = [float(x) for x in r["data"].split(";")]
+            if r["case"] == "density":
+                assert v.log_density(u) == pytest.approx(want[0], rel=1e-9, abs=1e-9)
+            else:
+                assert v.inverse_rosenblatt(u) == pytest.approx(want, abs=1e-9)
+        elif r["case"] == "fit_structure":
+            fit = fit_vine(data[r["data"]], matrix(r["matrix"]))
+            assert fit.log_likelihood == pytest.approx(want[0], abs=1e-3)
+            assert fit.vine.matrix == matrix(r["matrix"])
+        else:
+            fit = select_vine(data[r["data"]])
+            assert fit.log_likelihood == pytest.approx(want[0], abs=1e-3)
+            assert fit.aic == pytest.approx(2 * fit.n_parameters - 2 * fit.log_likelihood)
+    # A D-vine as an R-vine, and truncation.
+    g, c = PairCopula("gaussian", 0.5), PairCopula("clayton", 1.5, 90)
+    d = VineCopula("d", [0, 1, 2], [[g, c], [PairCopula("frank", 3.0)]])
+    r = d.to_rvine()
+    assert r.log_density([0.2, 0.7, 0.4]) == pytest.approx(d.log_density([0.2, 0.7, 0.4]), abs=1e-12)
+    one = select_vine(data["0"], trunc_level=1)
+    assert one.vine.trunc_level == 1 and len(one.vine.pairs) == 1
+    with pytest.raises(ValueError, match="proximity"):
+        RVineCopula([[2, 4, 4, 4], [3, 3, 3, 0], [4, 2, 0, 0], [1, 0, 0, 0]], [[g, g, g], [g, g]])
+    with pytest.raises(ValueError):
+        r.edge(2, 0)
