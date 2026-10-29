@@ -254,6 +254,164 @@ where
     })
 }
 
+/// A defensive tail mixture for the losses of an importance sample
+/// ([`simulate_events_weighted`]): each loss comes, with chance `share`,
+/// from the severity conditioned above `threshold`, and otherwise from the
+/// severity itself.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TailMixture {
+    /// The threshold above which the tail component draws.
+    pub threshold: f64,
+    /// The chance of the tail component, in `(0, 1)`.
+    pub share: f64,
+}
+
+/// Simulated years drawn from a proposal, each with its likelihood ratio,
+/// for importance sampling of the tail (#566).
+///
+/// Year `i` draws from stream `i` of `seed` as [`simulate_events`] does,
+/// with two optional changes of measure:
+///
+/// - `count`, a proposal for the claim count (any family, a Poisson with a
+///   higher mean say): the count is drawn from it, and the year's weight
+///   carries `p(n) / q(n)` with `p` the count's pmf;
+/// - `tail`, a [`TailMixture`]: each loss comes from the severity above the
+///   threshold with chance `share`, and its weight is
+///   `1 / ((1 − share) + share 1{x > u} / S(u))`.
+///
+/// The year's weight is the product. Every statistic of the years (a
+/// tower's ceded loss, the net, the total) is then estimated by
+/// [`WeightedSample`](prospicio_prob::weighted::WeightedSample) with these
+/// weights. Without either change the years are [`simulate_events`]'s, and
+/// every weight is 1. Weights average 1 in expectation; a proposal that
+/// puts too little mass where the year matters shows as a small effective
+/// sample size.
+///
+/// ```
+/// use prospicio_aggregate::monte_carlo::{TailMixture, simulate_events_weighted};
+/// use prospicio_prob::weighted::WeightedSample;
+/// use prospicio_prob::{Empirical, Lognormal, Poisson};
+///
+/// let freq = Poisson::new(2.0).unwrap();
+/// let sev = Lognormal::from_mean_cv(10.0, 2.0).unwrap();
+/// let proposal = Poisson::new(4.0).unwrap();
+/// let tail = TailMixture { threshold: 40.0, share: 0.3 };
+/// let (events, w) =
+///     simulate_events_weighted(&freq, &sev, 20_000, Some(&proposal), Some(tail), 7).unwrap();
+/// let totals = Empirical::draws(&events.totals().unwrap()).to_vec();
+/// let s = WeightedSample::new(totals, w).unwrap();
+/// // The weighted mean estimates E[S] = 20.
+/// assert!((s.mean() - 20.0).abs() < 4.0 * s.standard_error_mean(20).unwrap());
+/// ```
+pub fn simulate_events_weighted<N, X>(
+    frequency: &N,
+    severity: &X,
+    n_sims: usize,
+    count: Option<&(dyn Counting + Sync)>,
+    tail: Option<TailMixture>,
+    seed: u64,
+) -> Result<(EventSet, Vec<f64>)>
+where
+    N: Counting + Sync + ?Sized,
+    X: Distribution + Sync + ?Sized,
+{
+    if n_sims == 0 {
+        return Err(Error::InvalidParameter {
+            name: "n_sims",
+            value: 0.0,
+            reason: "must be positive",
+        });
+    }
+    let tail_at = match tail {
+        Some(t) => {
+            if !(t.share > 0.0 && t.share < 1.0) {
+                return Err(Error::InvalidParameter {
+                    name: "share",
+                    value: t.share,
+                    reason: "must be in (0, 1)",
+                });
+            }
+            let s = severity.survival(t.threshold);
+            if !(t.threshold.is_finite() && s > 0.0) {
+                return Err(Error::InvalidParameter {
+                    name: "threshold",
+                    value: t.threshold,
+                    reason: "must be finite with the severity above it",
+                });
+            }
+            Some((t, severity.cdf(t.threshold), s))
+        }
+        None => None,
+    };
+    let year = |i: u64| -> (Vec<f64>, f64) {
+        let mut rng = StreamRng::new(seed, i);
+        let u = rng.next_open01();
+        let (n, mut w) = match count {
+            Some(q) => {
+                let n = q.quantile(u).expect("next_open01 is always in (0, 1)");
+                let (pn, qn) = (frequency.pmf(n), q.pmf(n));
+                (n, if qn > 0.0 { pn / qn } else { 0.0 })
+            }
+            None => (
+                frequency
+                    .quantile(u)
+                    .expect("next_open01 is always in (0, 1)"),
+                1.0,
+            ),
+        };
+        let losses = (0..n)
+            .map(|_| match tail_at {
+                None => severity
+                    .quantile(rng.next_open01())
+                    .expect("next_open01 is always in (0, 1)"),
+                Some((t, f, s)) => {
+                    let pick = rng.next_open01();
+                    let v = rng.next_open01();
+                    let x = if pick < t.share {
+                        severity
+                            .quantile((f + v * s).min(1.0 - f64::EPSILON / 2.0))
+                            .expect("a probability below 1")
+                    } else {
+                        severity
+                            .quantile(v)
+                            .expect("next_open01 is always in (0, 1)")
+                    };
+                    let above = if x > t.threshold { 1.0 / s } else { 0.0 };
+                    w /= (1.0 - t.share) + t.share * above;
+                    x
+                }
+            })
+            .collect();
+        (losses, w)
+    };
+    let years: Vec<(Vec<f64>, f64)> = if severity.is_parallel_safe() {
+        (0..n_sims as u64).into_par_iter().map(year).collect()
+    } else {
+        (0..n_sims as u64).map(year).collect()
+    };
+    let mut offsets = Vec::with_capacity(n_sims + 1);
+    offsets.push(0);
+    let mut losses = Vec::new();
+    let mut weights = Vec::with_capacity(n_sims);
+    for (year, w) in years {
+        losses.extend(year);
+        offsets.push(losses.len());
+        weights.push(w);
+    }
+    let events = EventSet {
+        offsets,
+        losses,
+        sums_insured: None,
+        times: None,
+        labels: None,
+        aggregate: None,
+        seed,
+        samplers: Some(current_samplers()),
+        input_hash: None,
+    };
+    Ok((events, weights))
+}
+
 impl EventSet {
     /// Years of losses from elsewhere (your own simulation, or a
     /// catastrophe model's event loss table by year), in order within each

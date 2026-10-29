@@ -90,6 +90,7 @@ reference:
       - recommend_grid
       - audit_grid
       - simulate_events
+      - simulate_events_weighted
       - hawkes
       - hawkes_fit
       - event_set_from_long
@@ -318,6 +319,7 @@ reference:
       - copula_sample_qmc
       - mvn_cdf
       - sobol_points
+      - weighted_tail
       - vine_copula
       - copula_simulate
       - iman_conover
