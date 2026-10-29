@@ -3152,6 +3152,12 @@ CompartmentalFits$ultimate_draws <- function(origin) .Call(wrap__CompartmentalFi
 
 CompartmentalFits$loss_ratio_draws <- function(origin, premium) .Call(wrap__CompartmentalFits__loss_ratio_draws, self, origin, premium)
 
+CompartmentalFits$pattern_ages <- function(segment) .Call(wrap__CompartmentalFits__pattern_ages, self, segment)
+
+CompartmentalFits$pattern_draws <- function(segment) .Call(wrap__CompartmentalFits__pattern_draws, self, segment)
+
+CompartmentalFits$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__CompartmentalFits__monthly_pattern_draws, self, segment, months, basis, monotone)
+
 CompartmentalFits$paid <- function() .Call(wrap__CompartmentalFits__paid, self)
 
 CompartmentalFits$outstanding <- function() .Call(wrap__CompartmentalFits__outstanding, self)
@@ -3203,6 +3209,12 @@ CompartmentalFit$ultimates <- function() .Call(wrap__CompartmentalFit__ultimates
 CompartmentalFit$ultimate_draws <- function(origin) .Call(wrap__CompartmentalFit__ultimate_draws, self, origin)
 
 CompartmentalFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__CompartmentalFit__loss_ratio_draws, self, origin, premium)
+
+CompartmentalFit$pattern_ages <- function(segment) .Call(wrap__CompartmentalFit__pattern_ages, self, segment)
+
+CompartmentalFit$pattern_draws <- function(segment) .Call(wrap__CompartmentalFit__pattern_draws, self, segment)
+
+CompartmentalFit$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__CompartmentalFit__monthly_pattern_draws, self, segment, months, basis, monotone)
 
 CompartmentalFit$paid <- function() .Call(wrap__CompartmentalFit__paid, self)
 
