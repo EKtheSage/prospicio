@@ -1933,11 +1933,16 @@ simulation as row `i` of that segment's `reserves`, `paid` and
    use it). Cumulative paid at age
    `k` is `RLR RRF PD(t_k)` with that age's parameters; under incremental
    paid it is the sum of the increments `PD(t_j) - PD(t_(j-1))` with each
-   age's parameters, as the simulation writes them. Either way the
-   effects can make a share fall or exceed the share after it; the
-   monthly conversion refuses that by default and `Monotone::RunningMax`
-   holds it (decision 28 item 5). Without development effects (model 1,
-   shared rates) the share rises with age.
+   age's parameters, as the simulation writes them. Under incremental
+   paid (model 2's preset) the shares rise strictly whatever the
+   effects: each increment is `RLR RRF (PD(t_k) - PD(t_(k-1)))` at one
+   age's parameters, `RLR RRF > 0`, and `PD` rises in `t` for any
+   positive rates (`PD'(t) = k_p k_er g(t) > 0` for `t > 0`). Only
+   cumulative paid with development effects can make a share fall, when
+   an age's `RLR RRF PD(t_k)` lies below the age before it; the monthly
+   conversion refuses that by default and `Monotone::RunningMax` holds
+   it (decision 28 item 5). Without development effects (model 1,
+   shared rates) the share rises with age under either response.
 5. **Settings that change nothing here.** The likelihood (normal or
    log-normal), the loss-ratio or amount scale and the pair fitted do not
    change the curve; under `Fitted::IncurredOnly` no paid cell is fitted,

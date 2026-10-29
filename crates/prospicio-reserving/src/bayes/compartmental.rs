@@ -7441,10 +7441,11 @@ mod tests {
             assert_eq!(row[9], 1.0);
             falling += usize::from(row.windows(2).any(|w| w[1] < w[0]));
         }
-        // The development effects can make a share fall (`monthly` refuses
-        // that by default): reported, not asserted, since it depends on
-        // this short fit.
-        eprintln!("simulations whose share falls: {falling} of {}", m.n_sims);
+        // Under incremental paid every increment is positive whatever the
+        // development effects (`RLR RRF > 0` and the paid curve rises in
+        // `t` for any positive rates), so no share can fall; only
+        // cumulative paid with development effects can.
+        assert_eq!(falling, 0, "a share fell under incremental paid");
         assert!(shifted > 0, "no development effect entered the pattern");
         assert!(drawn > 0, "no drawn effect at the unobserved age");
     }
