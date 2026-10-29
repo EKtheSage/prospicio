@@ -56,6 +56,7 @@ pub mod truncated;
 pub mod tweedie;
 pub mod vine;
 pub mod weibull;
+pub mod weighted;
 
 /// Sobol points and the multivariate normal distribution function, from
 /// `prospicio-math`.

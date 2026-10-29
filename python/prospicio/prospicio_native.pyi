@@ -31250,6 +31250,68 @@ class Weibull:
         float
         """
 
+@final
+class WeightedSample:
+    """
+    Draws with importance weights, for the estimators of an importance
+    sample (``prospicio.aggregate.simulate_events_weighted``).
+    
+    The mean is ``Σ w x / Σ w``; the VaR and TVaR are those of the
+    distribution putting mass ``w_i / Σ w`` on draw ``i``. Standard errors
+    are by batch means: the draws split, in the order given, into
+    ``batches`` runs, each estimated alone. Equal weights give the plain
+    estimators.
+    
+    Parameters
+    ----------
+    values : list of float
+    weights : list of float
+        One a value, non-negative, with a positive sum.
+    
+    Examples
+    --------
+    >>> from prospicio.risk import WeightedSample
+    >>> s = WeightedSample([1.0, 2.0, 3.0], [1.0, 1.0, 2.0])
+    >>> s.mean, s.var(0.5), s.tvar(0.5)
+    (2.25, 2.0, 3.0)
+    """
+    def __new__(cls, /, values: Sequence[float], weights: Sequence[float]) -> WeightedSample: ...
+    @property
+    def effective_sample_size(self, /) -> float:
+        """
+        ``(Σ w)² / Σ w²``.
+        """
+    @property
+    def mean(self, /) -> float:
+        """
+        The self-normalised mean.
+        """
+    @property
+    def mean_weight(self, /) -> float:
+        """
+        The mean weight; about 1 for likelihood ratios.
+        """
+    def standard_error_mean(self, /, batches: int = 20) -> float:
+        """
+        The standard error of the mean by batch means.
+        """
+    def standard_error_tvar(self, /, p: float, batches: int = 20) -> float:
+        """
+        The standard error of ``tvar(p)`` by batch means.
+        """
+    def standard_error_var(self, /, p: float, batches: int = 20) -> float:
+        """
+        The standard error of ``var(p)`` by batch means.
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        The TVaR at ``p``.
+        """
+    def var(self, /, p: float) -> float:
+        """
+        The VaR at ``p``.
+        """
+
 def actual_vs_expected(periods: Sequence[int |str], family: str, y: Sequence[float], mu: Sequence[float], weights: Sequence[float] |None = None, dispersion: float = 1.0, theta: float |None = None, power: float |None = None) -> dict:
     """
     Actual against expected by period for a stored model's predictions on
@@ -35021,6 +35083,49 @@ def simulate_events(frequency: Any, severity: Any, n_sims: int, seed: int) -> Ev
     >>> from prospicio.distributions import Lognormal, Poisson
     >>> events = simulate_events(Poisson(5.0), Lognormal.from_mean_cv(1000.0, 1.0), 20_000, 42)
     >>> abs(events.totals().mean() - 5000.0) < 75.0
+    True
+    """
+
+def simulate_events_weighted(frequency: Any, severity: Any, n_sims: int, seed: int, count: Any |None = None, tail_threshold: float |None = None, tail_share: float = 0.3) -> tuple[EventSet, list[float]]:
+    """
+    Simulated years drawn from a proposal, with each year's likelihood
+    ratio, for importance sampling of the tail.
+    
+    Year ``i`` draws from stream ``i`` of ``seed`` as ``simulate_events``
+    does, with two optional changes of measure: ``count``, a proposal claim
+    count (any family, such as a Poisson with a higher mean), weighted by
+    ``p(n) / q(n)``; and a tail mixture, each loss coming from the severity
+    above ``tail_threshold`` with chance ``tail_share``, weighted by
+    ``1 / ((1 - share) + share 1{x > u} / S(u))``. Without either the years
+    are ``simulate_events``'s and every weight is 1. Estimate any statistic
+    of the years (a tower's ceded or net loss, the total) with
+    ``prospicio.risk.WeightedSample`` and these weights.
+    
+    Parameters
+    ----------
+    frequency : a claim count
+    severity : a severity
+    n_sims : int
+    seed : int
+    count : a claim count, optional
+        The proposal count.
+    tail_threshold : float, optional
+    tail_share : float, default 0.3
+        In ``(0, 1)``; used with ``tail_threshold``.
+    
+    Returns
+    -------
+    tuple of (EventSet, list of float)
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import simulate_events_weighted
+    >>> from prospicio.distributions import Lognormal, Poisson
+    >>> from prospicio.risk import WeightedSample
+    >>> ev, w = simulate_events_weighted(Poisson(2.0), Lognormal.from_mean_cv(10.0, 2.0), 20_000, 7,
+    ...                                  count=Poisson(4.0), tail_threshold=40.0)
+    >>> s = WeightedSample([r[0] for r in ev.totals().draw_matrix()], w)
+    >>> abs(s.mean - 20.0) < 4 * s.standard_error_mean()
     True
     """
 

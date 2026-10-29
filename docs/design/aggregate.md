@@ -1581,6 +1581,45 @@ look back over several years.
   `years > 1`, and the stitched peel refuses a bonus as it refuses the
   other loss-sensitive terms.
 
+### Importance sampling of the tail (#566)
+
+Status: built; items (a) to (e) proposed by the Aggregate lane for the
+user's acceptance.
+
+`simulate_events_weighted(frequency, severity, n_sims, count, tail, seed)`
+draws simulated years from a proposal and returns them with each year's
+likelihood ratio; `prospicio_prob::weighted::WeightedSample` turns any
+statistic of the years and those weights into a self-normalised mean, VaR
+and TVaR with standard errors by batch means and an effective sample
+size. On a compound Poisson with a heavy discrete severity (the FFT exact)
+the weighted TVaR at 0.999 over 200,000 years has a standard error 14
+times smaller than plain Monte Carlo's, and 5.7 times at 0.995
+(`knowledge/findings/importance-sampling-tail.md`).
+
+Decisions:
+
+- (a) *Proposals are given, not tilted*: exponential tilting needs a
+  moment generating function, which the lognormal and Pareto severities
+  insurers use do not have, so the two changes of measure are a proposal
+  claim count of any family (weighted `p(n) / q(n)`) and a defensive tail
+  mixture for each loss (with chance `share` from the severity above
+  `threshold`, weighted `1 / ((1 − share) + share 1{x > u} / S(u))`, bounded
+  by `1 / (1 − share)`). A saddlepoint choice of the tilt waits for a
+  severity family that has one.
+- (b) *The weights are a separate vector beside an event set*, so every
+  tower, scope and label path applies to the years unchanged and any of
+  their columns can be estimated; `Sampled` and the statistics grid are
+  not changed.
+- (c) *The estimators are self-normalised* (the weights summed to 1), the
+  usual choice when the weights' mean is itself estimated; VaR is the
+  weighted inverted cdf and TVaR the weighted exact tail, so equal weights
+  give the plain estimators.
+- (d) *Standard errors are by batch means* over a given number of runs of
+  the draws in order (20 by default in the bindings), which needs no
+  resampling and keeps a call deterministic.
+- (e) *Without a change of measure the years are `simulate_events`'s*, by
+  seed, and every weight is 1.
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
@@ -1606,6 +1645,17 @@ discrete severity by a Kolmogorov–Smirnov statistic at the 0.1% level.
 The check covers gross, every ceded grid and net, for two per-occurrence
 layers (Poisson and negative binomial counts), a layer with a deductible
 and a reinstatement, and an excess-of-loss layer inuring to a stop-loss.
+
+Importance sampling (#566) is checked against the exact FFT on a compound
+Poisson (mean 2) with a discrete severity `p_k ∝ k^-3` on 1 to 200: over
+200,000 years from a Poisson(4) count proposal and a 30% tail mixture
+above 20, the weighted VaR and TVaR at 0.995 and 0.999 lie within four
+batch standard errors of the FFT's, the TVaR's error is at least half
+plain Monte Carlo's (in fact 5.7 and 14 times smaller), the weights
+average 1 within 0.02, and without a proposal the years equal
+`simulate_events`'s (`validation/tests/aggregate.rs`); over 20 seeds the
+standardised error of the TVaR has mean −0.04 and spread 1.2 at 0.999,
+and mean −0.5 and spread 0.93 at 0.995.
 
 The no-claims bonus (#592) is checked by hand: a layer with no loss pays
 `share` of its premium, a year above the threshold pays nothing, and the
