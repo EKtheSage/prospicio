@@ -37,11 +37,10 @@ add-in names (report only)[^script]:
 
 The 186 Python and 230 R gaps seeded the allow-list[^allowlist]: 79
 entries are `prospicio-math` (the bindings do not depend on it), 4 are
-error types, 2 are traits, 2 are reserving's `Result` alias, 4 are the
-layer terms `NthEvent` and `DropDown` (#591), which the bindings reach
-through `Layer`'s methods, and 325 are marked "(seed); review" for
-their lanes to bind or give a reason. R trails Python most in
-aggregate (36 against 22) and pricing (38 against 22).
+error types, 2 are traits, 2 are reserving's `Result` alias and 329 are
+marked "(seed); review" for their lanes to bind or give a reason. R
+trails Python most in aggregate (36 against 22) and pricing (38 against
+22).
 
 A first version of the scan matched names, not paths, and counted 607
 and 566: a name in one crate (`Basis`, `Diagnostics`, `Distribution`,
