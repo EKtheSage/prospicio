@@ -4,7 +4,7 @@ title: Building and testing the Excel XLL without Excel
 description: How the 64-bit XLL cross-builds from Linux with MinGW, what it imports, and how a fake Excel under Wine exercises the C API.
 tags: [environment, excel, xll, windows, wine]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-15T22:30:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-29T12:00:00Z }
 sources:
   - id: design
     resource: ../docs/design/xll.md
@@ -47,5 +47,15 @@ sources:
   served from `*.blob.core.windows.net`, which its egress proxy refuses.
   The job's steps and annotations come from the API
   (`actions/jobs/<id>`, `check-runs/<id>/annotations`).
+* `harness/fake_excel.c` calls each export through a function pointer
+  of a fixed arity (`Fn7`, `Fn10`, ...), so appending an argument to a
+  worksheet function needs its call sites there widened too. A call with
+  fewer arguments than the export takes is undefined behaviour under the
+  x64 calling convention: the add-in reads stack garbage as the missing
+  `XLOPER12 *` arguments. On 2026-10-29 the smoke test still passed with
+  `pro_cl` and `pro_bf` called two and four arguments short, so a green
+  smoke test does not prove the arities agree; `tests/catalogue.rs`
+  checks `xll.rs` against `FUNCTIONS`, not the harness. Real Excel always
+  passes every registered argument.[^harness]
 * XLOPER12 is 32 bytes on 64-bit Windows: a 24-byte value union (its
   largest member is `flow`) and the 4-byte `xltype`, padded.
