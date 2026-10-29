@@ -23,9 +23,15 @@ prospicio-prob.workspace = true
 # decision 2).
 prospicio-bayes = { workspace = true, optional = true }
 rayon = { workspace = true, optional = true }
+# Triangles read from CSV and Excel files (the `io` module), off by default
+# so that the WASM scope reads no files (docs/design/triangle.md, decision 6).
+calamine = { workspace = true, optional = true }
+csv = { workspace = true, optional = true }
 
 [features]
 bayes = ["dep:prospicio-bayes", "dep:rayon"]
+# `Triangle::from_csv`, `read_csv` and `read_excel` (the `io` module).
+io = ["dep:csv", "dep:calamine"]
 # Runs the unit tests that sample with NUTS (`bayes::*`). They are ignored
 # without it: in a debug build they took about 220 s single-threaded and
 # about 5 minutes of CI's 4-core `cargo test`, against seconds in release.

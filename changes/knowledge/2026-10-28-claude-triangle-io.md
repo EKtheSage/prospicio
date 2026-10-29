@@ -1,0 +1,1 @@
+* **Creation**: [The cas-schedule-p package's reserving mart](/datasets/cas-schedule-p.md), from the triangle readers (#552, branch claude/triangle-io): the mart's 17 columns, six lines and accident years 1988 to 2007, the CAS files' column names with a suffix per line, and `schedule_p()` reproducing group 353's committed square.

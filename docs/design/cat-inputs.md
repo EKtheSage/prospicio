@@ -156,7 +156,7 @@ Bindings: Python `prospicio.aggregate.EventLossTable`,
 
 15. **Losses stored as negative numbers are read with a flag, and a
     negative loss in a layer is an error** (#593, proposed by the
-    Aggregate lane for the user's acceptance). Some vendor and cedent files
+    Aggregate lane and accepted by the user on 2026-10-29 as built). Some vendor and cedent files
     write losses as money going out. `read_ylt(..., losses_negative=True)`
     (R `losses_negative = TRUE`, Rust `YearLossTable::from_negative_losses`)
     reads them with the sign flipped and refuses a positive value, which
@@ -172,7 +172,7 @@ Bindings: Python `prospicio.aggregate.EventLossTable`,
     columns whose means and rates it already checks.
 
 16. **Contract years cut a timeline of dated events** (#586, proposed by
-    the Aggregate lane for the user's acceptance). `EventSet::contract_years(start,
+    the Aggregate lane and accepted by the user on 2026-10-29 as built). `EventSet::contract_years(start,
     partial)` reads the simulated years as consecutive years of one
     timeline, a loss of year `i` at time `t` at `i + t`, and regroups the
     losses into contract years from `j + start` to `j + 1 + start`, each

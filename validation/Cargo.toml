@@ -9,7 +9,9 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
-prospicio-reserving = { workspace = true, features = ["bayes"] }
+# io: the triangle readers' tests (reserving_io.rs), and with feature
+# unification the `io` unit tests of prospicio-reserving in `cargo test`.
+prospicio-reserving = { workspace = true, features = ["bayes", "io"] }
 
 [dev-dependencies]
 prospicio-aggregate.workspace = true

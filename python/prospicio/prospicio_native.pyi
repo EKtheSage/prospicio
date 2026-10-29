@@ -29642,6 +29642,104 @@ class Triangle:
         Origin periods, oldest first: ``"2021"``, ``"2021H1"``,
         ``"2021Q3"`` or ``"2021-07"`` by grain.
         """
+    @staticmethod
+    def read_csv(path: str |PathLike[str], origin: str, development: str |None = None, columns: Any |None = None, keys: Any |None = None, ages: Sequence[int] |None = None, origin_grain: str = "Y", development_grain: str = "Y", cumulative: bool = True, development_is_valuation: bool = False, comment: str |None = None) -> Triangle:
+        """
+        Reads a triangle from a CSV file, in a long or a wide layout.
+        
+        Long (``development`` given): one row per (keys, origin,
+        development) cell, as ``from_frame`` takes it; rows with the same
+        cell are summed. Wide (``development=None``): one row per (keys,
+        origin), and every other column is a development age, named by its
+        age in months (``12``, ``24``, ...) unless ``ages`` gives them; a
+        repeated origin is an error.
+        
+        How cells are written: an origin is a year (``1988``), a date
+        (``2021-07-15`` or ``2021-07``) or a period label as ``origins``
+        prints it (``2021Q3``, ``2021H2``); an age is a whole number of
+        months; a valuation (``development_is_valuation``) is a year (its
+        December), a date or a period label (its last month); a value is a
+        number, and an empty cell, ``NA`` or ``NaN`` is not observed. Errors
+        name the file line and column. The file is read in Rust, so pandas is
+        not needed.
+        
+        Parameters
+        ----------
+        path : str or os.PathLike
+        origin : str
+            Name of the origin column.
+        development : str, optional
+            Name of the development column (long layout). ``None`` reads a
+            wide layout.
+        columns : str or list of str, optional
+            Long: the measure columns, by default every column that is not
+            the origin, the development or a key. Wide: the name of the one
+            measure, by default ``"values"``.
+        keys : str or list of str, optional
+            Names of the key columns; each distinct combination is a segment.
+        ages : list of int, optional
+            Wide only: the ages in months of the age columns, in column order.
+        origin_grain : {"Y", "S", "Q", "M"}, default "Y"
+        development_grain : {"Y", "S", "Q", "M"}, default "Y"
+        cumulative : bool, default True
+        development_is_valuation : bool, default False
+            Long only: whether ``development`` holds valuations, not ages.
+        comment : str, optional
+            A character that starts a comment line, such as ``"#"``.
+        
+        Returns
+        -------
+        Triangle
+        
+        Raises
+        ------
+        ValueError
+            If the file cannot be read, a column is missing or a cell cannot
+            be read (naming its line and column), or as for ``from_long``.
+        
+        Examples
+        --------
+        >>> import os, tempfile
+        >>> from prospicio.reserving import Triangle
+        >>> path = os.path.join(tempfile.mkdtemp(), "paid.csv")
+        >>> with open(path, "w") as f:
+        ...     _ = f.write("year,12,24\n2020,100,150\n2021,110,\n")
+        >>> tri = Triangle.read_csv(path, "year", columns="paid")
+        >>> tri.shape, tri.columns, tri.development
+        ((1, 1, 2, 2), ['paid'], [12, 24])
+        """
+    @staticmethod
+    def read_excel(path: str |PathLike[str], origin: str, development: str |None = None, columns: Any |None = None, keys: Any |None = None, ages: Sequence[int] |None = None, sheet: str |None = None, origin_grain: str = "Y", development_grain: str = "Y", cumulative: bool = True, development_is_valuation: bool = False) -> Triangle:
+        """
+        Reads a triangle from a sheet of an Excel workbook (``.xlsx``,
+        ``.xlsm``, ``.xlsb``, ``.xls``) or an OpenDocument spreadsheet
+        (``.ods``), in a long or a wide layout as ``read_csv`` reads them.
+        
+        The sheet's used range starts with the header row. Number cells are
+        numbers, date cells are dates (an origin or a valuation) and text
+        cells are read as in a CSV file. Errors name the cell (``C7``) and
+        the sheet. The workbook is read in Rust (calamine), so neither
+        openpyxl nor pandas is needed.
+        
+        Parameters
+        ----------
+        path : str or os.PathLike
+        origin, development, columns, keys, ages
+            As for ``read_csv``.
+        sheet : str, optional
+            The sheet's name; the first sheet by default.
+        origin_grain, development_grain, cumulative, development_is_valuation
+            As for ``read_csv``.
+        
+        Returns
+        -------
+        Triangle
+        
+        Raises
+        ------
+        ValueError
+            As for ``read_csv``, or if the workbook has no such sheet.
+        """
     def select(self, /, columns: Any |None = None, **keys) -> Triangle:
         """
         The segments whose key values match, and the measure columns named.
