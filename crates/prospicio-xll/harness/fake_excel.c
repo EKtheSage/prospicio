@@ -161,7 +161,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and three functions registered", registered == 103);
+    check("one hundred and six functions registered", registered == 106);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -813,6 +813,58 @@ int main(int argc, char **argv) {
     check("PRO.DIAG.CL total ultimate 3981.342857",
           fabs(dgl_fit->val.array.lparray[7 * 6 + 4].val.num - 3981.342857142857) < 1e-9);
     free12(dgl_fit);
+
+    /* A Poisson GLM on a six-row table (PRO.GLM): claims on age and region.
+     * With a log link and an intercept the fitted means add up to the
+     * observed claims, 9. */
+    static const double gl_age[6] = {20, 30, 40, 50, 60, 70}, gl_claims[6] = {3, 2, 2, 1, 1, 0};
+    static wchar_t s_age[] = L"\x03" L"age", s_region[] = L"\x06" L"region", s_claims[] = L"\x06" L"claims";
+    static wchar_t s_a[] = L"\x01" L"A", s_b[] = L"\x01" L"B";
+    XLOPER12 gl_cells[21], gl_data, gl_resp, gl_terms_cells[2], gl_terms;
+    wchar_t *gl_head[3] = {s_age, s_region, s_claims};
+    for (int c = 0; c < 3; c++) {
+        gl_cells[c].xltype = xltypeStr;
+        gl_cells[c].val.str = gl_head[c];
+    }
+    for (int r = 0; r < 6; r++) {
+        XLOPER12 *row = &gl_cells[3 * (r + 1)];
+        row[0].xltype = row[2].xltype = xltypeNum;
+        row[0].val.num = gl_age[r];
+        row[2].val.num = gl_claims[r];
+        row[1].xltype = xltypeStr;
+        row[1].val.str = r % 2 ? s_b : s_a;
+    }
+    gl_data.xltype = gl_terms.xltype = xltypeMulti;
+    gl_data.val.array.lparray = gl_cells;
+    gl_data.val.array.rows = 7;
+    gl_data.val.array.columns = 3;
+    gl_terms_cells[0] = gl_cells[0];
+    gl_terms_cells[1] = gl_cells[1];
+    gl_terms.val.array.lparray = gl_terms_cells;
+    gl_terms.val.array.rows = 1;
+    gl_terms.val.array.columns = 2;
+    gl_resp = gl_cells[2];
+    XLOPER12 *gl_fit = ((Fn8)GetProcAddress(xll, "pro_glm"))(&gl_data, &gl_resp, &gl_terms, &missing, &missing,
+                                                             &missing, &missing, &missing);
+    print_result("PRO.GLM(table, \"claims\", {\"age\",\"region\"})", gl_fit);
+    check("PRO.GLM has seven columns", (gl_fit->xltype & 0xFFF) == xltypeMulti && gl_fit->val.array.columns == 7);
+    free12(gl_fit);
+    XLOPER12 *gl_pred = ((Fn9)GetProcAddress(xll, "pro_glm_predict"))(&gl_data, &gl_resp, &gl_terms, &gl_data,
+                                                                      &missing, &missing, &missing, &missing,
+                                                                      &missing);
+    double gl_sum = 0;
+    if ((gl_pred->xltype & 0xFFF) == xltypeMulti)
+        for (int r = 0; r < gl_pred->val.array.rows; r++) gl_sum += gl_pred->val.array.lparray[r].val.num;
+    check("PRO.GLM.PREDICT means add up to the claims", fabs(gl_sum - 9) < 1e-8);
+    free12(gl_pred);
+    XLOPER12 *gl_rel = ((Fn9)GetProcAddress(xll, "pro_glm_relativities"))(&gl_data, &gl_resp, &gl_terms, &missing,
+                                                                          &missing, &missing, &missing, &missing,
+                                                                          &missing);
+    print_result("PRO.GLM.RELATIVITIES(table, \"claims\", {\"age\",\"region\"})", gl_rel);
+    check("PRO.GLM.RELATIVITIES base level at 1", (gl_rel->xltype & 0xFFF) == xltypeMulti &&
+                                                      gl_rel->val.array.rows == 4 &&
+                                                      gl_rel->val.array.lparray[2 * 5 + 2].val.num == 1);
+    free12(gl_rel);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

@@ -502,4 +502,7 @@ mod exports {
     udf!(pro_sliding_scale, loss, premium, commissions, loss_ratios);
     udf!(pro_profit_commission, loss, premium, share, allowance);
     udf!(pro_layer_terms, count_mean, dispersion, family, p1, p2, p3, layer_limit, layer_attachment, premium, reinstatements, commissions, loss_ratios, profit_share, profit_allowance, share, policy_limit, step, points);
+    udf!(pro_glm, data, response, terms, family, link, exposure, weights, p);
+    udf!(pro_glm_predict, data, response, terms, newdata, family, link, exposure, weights, p);
+    udf!(pro_glm_relativities, data, response, terms, family, link, exposure, weights, p, level);
 }

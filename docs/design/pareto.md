@@ -691,8 +691,8 @@ order.
 
 ### Efficient frontier of structures (#569)
 
-Status: built; items (a) to (e) proposed by the Aggregate lane for the
-user's acceptance.
+Status: built; items (a) to (e) proposed by the Aggregate lane and accepted
+by the user on 2026-10-29 as built.
 
 `prospicio_pricing::frontier` evaluates every retention and limit of a
 layer on one loss source and marks the structures no other beats on both
@@ -728,8 +728,8 @@ Decisions:
 
 ### Cat bonds (#570)
 
-Status: built; items (a) to (f) proposed by the Aggregate lane for the
-user's acceptance.
+Status: built; items (a) to (f) proposed by the Aggregate lane and accepted
+by the user on 2026-10-29 as built.
 
 `prospicio_pricing::ils::CatBond` is a tranche of principal on a trigger:
 `Trigger::Indemnity` and `ModelledLoss` read one loss an event,
