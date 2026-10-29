@@ -43,6 +43,11 @@ exceptions = [
     # CC0-1.0, public domain: via const-random and ahash (arrow, under
     # prospicio-prob).
     { allow = ["CC0-1.0"], crate = "tiny-keccak" },
+    # (Apache-2.0 OR MIT) AND BSD-3-Clause, permissive: the BSD part covers
+    # the WHATWG encoding index data. Via calamine (prospicio-reserving's
+    # optional `io` feature, the Excel reader). CRAN lists BSD-3-Clause as
+    # free.
+    { allow = ["BSD-3-Clause"], crate = "encoding_rs" },
 ]
 
 [bans]

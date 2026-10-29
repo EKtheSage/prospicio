@@ -1,6 +1,6 @@
 # Design note: Triangle
 
-Status: **Implemented** in `crates/prospicio-reserving` (v0.1), except the Arrow feature · Depends on: `distributions.md`, `predictive-distribution.md` (period keys) · Replaced: the provisional root `src/` sandbox
+Status: **Implemented** in `crates/prospicio-reserving` (v0.1), except the Arrow feature; reading files (decision 6) built, its proposed items awaiting the user · Depends on: `distributions.md`, `predictive-distribution.md` (period keys) · Replaced: the provisional root `src/` sandbox
 
 ## Goal
 
@@ -542,3 +542,102 @@ root sandbox crate is deleted.
 
      `TriangleFrame` gains the key columns as features, so one model can
      share information across segments.
+6. **Triangles from files and the Schedule P loader** (#552, branch
+   `claude/triangle-io`; items marked *proposed* await the user's
+   acceptance).
+   - **Behind a feature.** `prospicio-reserving`'s `io` feature, off by
+     default, turns on the `io` module and the optional dependencies
+     `csv` 1.4 and `calamine` 0.35 (both pure Rust), so the default build
+     reads no files and the WASM check (`-p prospicio-reserving -p
+     prospicio`) compiles neither. The umbrella crate's `io` (and `full`)
+     forwards it; the Python and R bindings and `prospicio-validation`
+     turn it on, which with feature unification puts the module's unit
+     tests and clippy under the workspace `cargo test` and `cargo clippy`
+     with no change to `ci.yml`. `Triangle::from_csv(reader, &layout)`
+     takes any `std::io::Read`, so a caller with its own bytes needs no
+     file access; `read_csv(path, ...)` and `read_excel(path, sheet, ...)`
+     open the file. calamine reads `.xlsx`, `.xlsm`, `.xlsb`, `.xls` and
+     `.ods`. *Proposed:* calamine 0.35 rather than 0.37, because 0.36 and
+     0.37 need rust-version 1.88 against the workspace's 1.85. It pins
+     quick-xml 0.39 and zip 7, which carry RustSec advisories
+     (RUSTSEC-2026-0194 and 0195, denial of service on a crafted
+     workbook; RUSTSEC-2026-0367 to 0369, extraction to disk, which
+     calamine does not call), so `cargo deny check` fails until the user
+     chooses: ignore them in `deny.toml` with those reasons until the
+     workspace moves to Rust 1.88 and calamine 0.37, move now, or leave
+     Excel out. `encoding_rs` (via calamine) is `(Apache-2.0 OR MIT) AND
+     BSD-3-Clause` and has a licence exception in `deny.toml`.
+   - **Layouts.** `FileLayout::long(origin, development, columns)` (one
+     row per cell; no columns means every column that is not the origin,
+     the development or a key) and `FileLayout::wide(origin, column)`
+     (one row per origin, every other column an age of the one measure,
+     named by its age in months unless `ages` gives them), with `keys`,
+     `grains`, `cumulative`, `development_is_valuation` (long only) and a
+     CSV `comment` character as builder methods. The name is `FileLayout`
+     rather than the issue's `CsvLayout`, since Excel uses it too.
+   - **How cells are written** (*proposed*). An origin is a year (`1988`,
+     or `1988.0` as a spreadsheet writes it), a date (`2021-07-15`,
+     `2021-07`, a time after the date is ignored, or an Excel date cell)
+     or a period label as the triangle prints it (`2021Q3`, `2021H2`). An
+     age is a whole number of months. A valuation is a year meaning its
+     December (as R's `triangle()` and Schedule P's `DevelopmentYear`), a
+     date, or a period label meaning its last month. A value is a finite
+     number; an empty cell, `NA`, `NaN` or `nan` is not observed; anything
+     else is an error. A key is text, a number written as it reads (`353`,
+     not `353.0`). Fields are trimmed, rows whose cells are all empty are
+     skipped, and a UTF-8 byte order mark is dropped. A sheet's used range
+     starts with its header row (a title above the table is not skipped).
+   - **Duplicates** (*proposed*). A long file sums rows with the same
+     (keys, origin, development), as `from_long` does for a claims extract;
+     a wide file with a repeated (keys, origin) row is an error naming both
+     rows.
+   - **Errors** are `Error::File(message)`, naming the file line and
+     column for CSV (`line 3, column "paid": "1O0" is not a number`) or the
+     cell and sheet for Excel (`cell C3 (column "paid") of sheet "bad"`),
+     and listing the columns or sheets when one is missing; an age off the
+     development grid names its cell. **Breaking** in Rust: a new variant
+     of the exhaustive `Error`.
+   - **Python**: `Triangle.read_csv(path, origin, development=None,
+     columns=None, keys=None, ages=None, ..., comment=None)` and
+     `Triangle.read_excel(path, ..., sheet=None)`, wide when `development`
+     is `None`, the other arguments as `from_frame`'s; pandas and openpyxl
+     are not needed.
+   - **Schedule P in Python** (*proposed*): `schedule_p(line, company=None,
+     columns=None, *, accident_years=(1988, 1997), lower=False)` reads the
+     `cas-schedule-p` package's `mart_reserving_model_training` with
+     pyarrow, as `validation/scripts/calibration_panel.py` does, and raises
+     `ImportError` with an install hint when either is missing. Measures:
+     `paid` (`cum_paid_loss`), `incurred` (`incurred_loss`, bulk and IBNR
+     included), `case_incurred` (`incurred_loss - bulk_loss`, Meyers'
+     incurred), `premium` (`earned_prem_net`), `premium_direct`
+     (`earned_prem_direct`), all five by default: the panel's columns
+     rather than the issue's `column="paid"`. Ages are `development_age *
+     12`. One segment per company, keyed `company` (the code as text).
+     Lines by the panel's codes (`ca`, `pa`, `wc`, `ol`, and `pl`, `mm`),
+     the CAS file names (`comauto`, ...) or the mart's names. `lower=True`
+     keeps the cells valued after the last accident year (the held-out
+     lower triangle), so a complete company is its 10 x 10 square. The
+     package is not a dependency of the Python package or its dev group,
+     so CI skips the test that reads it; it ran locally.
+   - **Schedule P in R** (*proposed*): `schedule_p_triangle(path, company =
+     NULL, columns = NULL, accident_years = c(1988, 1997), lower = FALSE)`
+     reads a file of the CAS loss reserve database in its own layout
+     (`comauto_pos.csv` and the other five, downloaded by the user from
+     the CAS web site; nothing is downloaded), finding each loss and
+     premium column by its prefix since the suffix differs by line (`_C`
+     for commercial auto). R has no package that bundles the mart, and
+     reading its Parquet would need `arrow`. The measures and options are
+     Python's. `read_triangle(path, origin, development = NULL, ...,
+     sheet = NULL, format = c("auto", "csv", "excel"), comment = NULL)`
+     calls the Rust readers, so Excel needs no R package either.
+   - **Tests.** The module's unit tests (both layouts round-trip RAA,
+     a file with a byte order mark and a comment, keys, valuations,
+     periods, every error); `validation/tests/reserving_io.rs` (RAA from
+     `validation/data/raa.csv` equals the built-in RAA, and from both data
+     sheets of `validation/data/raa.xlsx`, written by
+     `validation/scripts/raa_xlsx.py`); `python/tests/test_reserving_io.py`
+     and `R/prospicio/tests/test-reserving-io.R` (the same files, the
+     errors, and Schedule P group 353 equal to
+     `validation/data/clrd_comauto_353.csv`, in R from
+     `validation/data/schedule_p_comauto_sample.csv`, groups 353 and 8672
+     in the CAS layout written by `validation/scripts/schedule_p_sample.py`).

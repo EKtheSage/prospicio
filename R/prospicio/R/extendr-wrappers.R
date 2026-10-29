@@ -2343,6 +2343,8 @@ Triangle <- new.env(parent = emptyenv())
 
 Triangle$from_long <- function(key_names, keys, origin_year, origin_month, ages, valuation_year, valuation_month, development_is_valuation, names, values, origin_grain, development_grain, cumulative) .Call(wrap__Triangle__from_long, key_names, keys, origin_year, origin_month, ages, valuation_year, valuation_month, development_is_valuation, names, values, origin_grain, development_grain, cumulative)
 
+Triangle$read_file <- function(path, format, sheet, origin, development, columns, keys, ages, origin_grain, development_grain, cumulative, development_is_valuation, comment) .Call(wrap__Triangle__read_file, path, format, sheet, origin, development, columns, keys, ages, origin_grain, development_grain, cumulative, development_is_valuation, comment)
+
 Triangle$shape <- function() .Call(wrap__Triangle__shape, self)
 
 Triangle$keys <- function() .Call(wrap__Triangle__keys, self)

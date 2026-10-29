@@ -54,6 +54,12 @@ prospicio-reserving = { version = "0.0.6", path = "crates/prospicio-reserving" }
 arrow-array = { version = "59.3.0", default-features = false }
 arrow-ipc = { version = "59.3.0", default-features = false }
 arrow-schema = { version = "59.3.0", default-features = false }
+# Reading triangles from files (prospicio-reserving's `io` feature,
+# docs/design/triangle.md decision 6). Pure Rust and optional, so the WASM
+# scope and the default build do not compile them. calamine 0.36 and 0.37
+# need rust-version 1.88; 0.35 builds on the workspace's 1.85.
+calamine = { version = "0.35.0", default-features = false }
+csv = "1.4.0"
 libm = "0.2.16"
 # Linear programs in prospicio-pricing (reference fits). Pure Rust simplex, no
 # C or C++ build, so CRAN, Windows and WASM builds are unaffected.
