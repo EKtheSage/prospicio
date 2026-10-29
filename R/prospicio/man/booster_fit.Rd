@@ -18,7 +18,9 @@ booster_fit(
   offset = NULL,
   weights = NULL,
   alpha = NULL,
-  dispersion_model = FALSE
+  dispersion_model = FALSE,
+  monotone = NULL,
+  interaction_constraints = NULL
 )
 }
 \arguments{
@@ -39,7 +41,7 @@ three.}
 \item{learning_rate}{Shrinkage per round.}
 
 \item{params}{A named list of further engine parameters (\code{num_leaves},
-\code{max_depth}, \code{monotone_constraints}, ...), passed as they are.}
+\code{max_depth}, ...), passed as they are.}
 
 \item{n_boot}{Bootstrap refits for parameter uncertainty in
 \code{\link[=predict_distribution]{predict_distribution()}}; 0 gives process noise only.}
@@ -55,6 +57,18 @@ generator state is left as it was.}
 
 \item{dispersion_model}{Fit a dispersion per row (gamma, Tweedie and
 Gaussian families).}
+
+\item{monotone}{A named vector or list of directions by feature, \code{1}
+(rising), \code{-1} (falling) or \code{0}, such as \code{c(exper = 1, veh_age = -1)}:
+the engine's \code{monotone_constraints} on the feature's columns. A feature
+is a numeric variable of the formula, alone or in \code{log()}, \code{log1p()},
+\code{sqrt()} or \code{exp()}; a factor, a polynomial, a spline or a feature in an
+interaction term is an error. Check the fit with \code{\link[=check_monotone]{check_monotone()}}.}
+
+\item{interaction_constraints}{A list of character vectors of features,
+such as \code{list(c("age", "exper"), c("veh_age", "noise"))}: features
+may share a branch of a tree only within a group (the engine's
+\code{interaction_constraints} on the features' columns).}
 }
 \value{
 A \code{booster_model} with properties \code{model} (the engine's

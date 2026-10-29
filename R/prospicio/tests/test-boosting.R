@@ -131,3 +131,52 @@ for (engine in c("lightgbm", "xgboost")) {
   plain <- booster_fit(y ~ x, gd, family = "gamma", engine = engine, n_rounds = 20, params = params)
   stopifnot(all(predict_dispersion(plain, two) == plain@dispersion))
 }
+
+# Typed monotone and interaction constraints (#575) on the Chalk portfolio:
+# unconstrained, the partial dependence on experience moves against its
+# trend; constrained, it is monotone on a fine grid, and the typed
+# constraint is the engine's raw parameter.
+chalk <- utils::read.csv(file.path("examples", "data", "chalk_portfolio.csv"), comment.char = "#")
+cf <- claims ~ age + veh_age + exper + noise + offset(log(exposure))
+egrid <- seq(min(chalk$exper), max(chalk$exper), length.out = 60)
+vgrid <- seq(min(chalk$veh_age), max(chalk$veh_age), length.out = 60)
+for (engine in c("lightgbm", "xgboost")) {
+  if (!requireNamespace(engine, quietly = TRUE)) next
+  params <- if (engine == "lightgbm") list(num_leaves = 15) else list(max_depth = 4)
+  free <- booster_fit(cf, chalk, engine = engine, n_rounds = 150, params = params, seed = 1)
+  stopifnot(!check_monotone(free, chalk, "exper", egrid, direction = 1)$monotone)
+  cm <- booster_fit(cf, chalk, engine = engine, n_rounds = 150, params = params, seed = 1,
+                    monotone = c(exper = 1, veh_age = -1),
+                    interaction_constraints = list(c("age", "exper"), c("veh_age", "noise")))
+  stopifnot(check_monotone(cm, chalk, "exper", egrid)$monotone,
+            check_monotone(cm, chalk, "veh_age", vgrid)$monotone)
+  raw <- cm@spec$constraints
+  if (engine == "lightgbm") {
+    stopifnot(identical(raw, list(monotone_constraints = c(0L, -1L, 1L, 0L),
+                                  interaction_constraints = list(c(1L, 3L), c(2L, 4L)))))
+  } else {
+    stopifnot(identical(raw, list(monotone_constraints = "(0,-1,1,0)",
+                                  interaction_constraints = "[[0, 2], [1, 3]]")))
+  }
+  by_hand <- booster_fit(cf, chalk, engine = engine, n_rounds = 150, params = c(params, raw), seed = 1)
+  stopifnot(identical(predict(cm, chalk[1:500, ]), predict(by_hand, chalk[1:500, ])))
+}
+if (requireNamespace("lightgbm", quietly = TRUE)) {
+  small <- data.frame(y = c(1, 0, 2, 1), si = c(1, 2, 3, 4), region = c("A", "B", "A", "B"),
+                      age = c(20, 30, 40, 50))
+  err <- function(expr, pattern) {
+    msg <- tryCatch({ expr; "" }, error = conditionMessage)
+    if (!grepl(pattern, msg)) stop("expected an error matching ", pattern, ", got: ", msg)
+  }
+  err(booster_fit(y ~ si + region, small, monotone = c(region = 1)), "factor")
+  err(booster_fit(y ~ si + poly(age, 2), small, monotone = c(age = 1)), "monotone transform")
+  err(booster_fit(y ~ si, small, monotone = c(bm_class = 1)), "not a feature")
+  err(booster_fit(y ~ si * age, small, monotone = c(si = 1)), "interaction")
+  err(booster_fit(y ~ si, small, monotone = c(si = 1), params = list(monotone_constraints = 1)),
+      "not both")
+  err(booster_fit(y ~ si, small, monotone = c(si = 2)), "1, -1 or 0")
+  ok <- booster_fit(y ~ log(si) + region, small, n_rounds = 2, monotone = c(si = 1),
+                    interaction_constraints = list(c("si", "region")))
+  stopifnot(identical(ok@spec$constraints$monotone_constraints, c(1L, 0L)))
+}
+cat("booster constraint tests passed\n")
