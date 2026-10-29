@@ -1415,3 +1415,60 @@ def test_isotonic_recalibration_balance_and_murphy():
     assert sum(b["weight"] * b["mean_actual"] for b in bands) == pytest.approx(sum(y))
     with pytest.raises(ValueError):
         isotonic([1.0], [1.0], interpolation="cubic")
+
+
+def test_conformal_intervals_match_mapie_and_cover():
+    """Conformal prediction intervals (#546)."""
+    import csv
+    from pathlib import Path
+
+    from prospicio.models import (
+        Design,
+        Glm,
+        conformal_cqr,
+        conformal_intervals,
+        conformal_plus,
+        conformal_split,
+        k_fold,
+    )
+
+    ref = Path(__file__).resolve().parents[2] / "validation" / "reference" / "conformal_mapie.csv"
+
+    def nums(s):
+        return [float(v) for v in s.split(";")]
+
+    with open(ref) as f:
+        for r in csv.DictReader(f):
+            a, y = float(r["alpha"]), nums(r["y"])
+            if r["case"] == "split":
+                i = conformal_split(y, nums(r["pred"]), nums(r["test"]), alpha=a)
+            elif r["case"] == "cqr":
+                p, t = r["pred"].split("|"), r["test"].split("|")
+                i = conformal_cqr(y, nums(p[0]), nums(p[1]), nums(t[0]), nums(t[1]), alpha=a)
+            else:
+                folds = [int(v) for v in nums(r["folds"])]
+                i = conformal_plus(y, nums(r["pred"]), folds, [nums(t) for t in r["test"].split("|")], alpha=a)
+            assert i["lo"] == pytest.approx(nums(r["lo"]), rel=1e-12, abs=1e-12)
+            assert i["hi"] == pytest.approx(nums(r["hi"]), rel=1e-12, abs=1e-12)
+    # The model-level wrapper equals the array functions on the same folds.
+    n = 60
+    x = [float((i * 7) % 13) for i in range(n)]
+    y = [1.0 + 0.5 * v + ((i * 31) % 7) - 3.0 for i, v in enumerate(x)]
+    d = Design([[1.0] * n, x], ["(Intercept)", "x"])
+    t = Design([[1.0] * 3, [0.5, 6.0, 12.5]], ["(Intercept)", "x"])
+    splits = k_fold(n, 5, 3)
+    got = conformal_intervals(Glm("gaussian"), d, y, t, method="cv+", splits=splits)
+    oof, folds, per = [0.0] * n, [0] * n, []
+    for k, (train, test) in enumerate(splits):
+        f = Glm("gaussian").fit(d.select(train), [y[i] for i in train])
+        for i, p in zip(test, f.predict(d.select(test))):
+            oof[i], folds[i] = p, k
+        per.append(f.predict(t))
+    assert got == conformal_plus(y, oof, folds, per, alpha=0.1)
+    fitted = Glm("gaussian").fit(d, y)
+    s = conformal_intervals(fitted, d, y, t, method="split")
+    assert all(lo < hi for lo, hi in zip(s["lo"], s["hi"]))
+    with pytest.raises(ValueError, match="family"):
+        conformal_split(y, y, [1.0], score="pearson")
+    with pytest.raises(ValueError, match="method"):
+        conformal_intervals(fitted, d, y, t, method="naive")

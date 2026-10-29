@@ -106,12 +106,13 @@ mod prospicio_native {
         PyElpd, PyGam, PyGamFit, PyGlm, PyGlmFit, PyGlmm, PyGlmmFit, PyHierarchicalStacking,
         PyIsotonic, PyMarsFit, PyNegativeBinomialFit, PyNegativeBinomialGlm, PyRelaxedCv,
         PyStackingFit, PyTargetEncoding, PyTerms, PyTweedieFit, PyTweedieGlm, actual_vs_expected,
-        balance_correction, confusion_matrix, crps, deviance, double_lift, elpd_loo, elpd_waic,
-        f_test, gini, group_k_fold, isotonic, k_fold, ks_uniform, lift, likelihood_ratio_test,
-        log_score, loo_pit, loss_ratio_chart, lppd, mars, mcmc_diagnostics, murphy,
-        normalized_gini, permutation, pinball_loss, pit, pit_from_draws, pit_histogram, ppc_check,
-        pseudo_bma_weights, quantile_residuals, recalibrate, reliability, roc, simulate_from_means,
-        stacking_weights, target_encode, time_ordered, tweedie_profile, vif,
+        balance_correction, conformal_cqr, conformal_plus, conformal_split, confusion_matrix, crps,
+        deviance, double_lift, elpd_loo, elpd_waic, f_test, gini, group_k_fold, isotonic, k_fold,
+        ks_uniform, lift, likelihood_ratio_test, log_score, loo_pit, loss_ratio_chart, lppd, mars,
+        mcmc_diagnostics, murphy, normalized_gini, permutation, pinball_loss, pit, pit_from_draws,
+        pit_histogram, ppc_check, pseudo_bma_weights, quantile_residuals, recalibrate, reliability,
+        roc, simulate_from_means, stacking_weights, target_encode, time_ordered, tweedie_profile,
+        vif,
     };
     #[pymodule_export]
     use super::multivariate::{PyMultivariateLognormal, PyMultivariateNormal};

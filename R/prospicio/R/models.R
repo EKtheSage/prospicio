@@ -2758,3 +2758,115 @@ murphy <- function(y, pred, family = "gaussian", weights = NULL, theta = NaN, po
                           if (is.null(weights)) double() else as.double(weights),
                           as.double(theta), as.double(power)))
 }
+
+#' Conformal prediction intervals
+#'
+#' Prediction intervals with coverage of at least `1 - alpha` (split, CQR)
+#' or `1 - 2 alpha` (CV+, jackknife+) in finite samples under
+#' exchangeability alone, from held-out residuals. The conformal quantile is
+#' the `ceiling((1 - alpha)(n + 1))`-th smallest of `n` scores (infinite
+#' when that rank exceeds `n`), as MAPIE's.
+#'
+#' `conformal_split()` scores a model's predictions on a calibration set:
+#' `|y - pred|` (`"absolute"`, intervals `pred +/- q`), the Pearson residual
+#' of a family (`"pearson"`, `mu +/- q sqrt(V(mu))`) or a residual over a
+#' given spread (`"scaled"`, `pred +/- q s`); with `weights` and
+#' `test_weights` the quantile is the weighted one with each test row's
+#' weight at infinity. `conformal_cqr()` is conformalised quantile
+#' regression on a lower and an upper quantile model's predictions.
+#' `conformal_plus()` is CV+ (the jackknife+ with one fold a row) from each
+#' fold's model's out-of-fold and test predictions. `conformal_intervals()`
+#' does it from a model: for `"split"` a fitted model scored on `data` and
+#' `y`; for `"cqr"` a list of a fitted lower and upper quantile model; for
+#' `"cv+"` and `"jackknife+"` a function of a data frame and its responses
+#' returning a fitted model, fitted on each split's training rows. Every
+#' fitted model is read with `predict(model, newdata)`.
+#'
+#' @param y Responses on the calibration (or training) rows.
+#' @param pred,test_pred Predictions on the calibration and test rows.
+#' @param alpha The miscoverage level.
+#' @param score `"absolute"`, `"pearson"` or `"scaled"`.
+#' @param family A family name, for `"pearson"`.
+#' @param scale,test_scale Spreads, for `"scaled"`.
+#' @param weights,test_weights Weights, or `NULL`.
+#' @param theta,power For the negative binomial and Tweedie.
+#' @param lo,hi,test_lo,test_hi Lower and upper quantile predictions.
+#' @param oof_pred Each training row's prediction by its fold's model.
+#' @param folds Each training row's fold (1, 2, ...).
+#' @param fold_pred A list of each fold's model's test predictions.
+#' @param model A fitted model, a list of two, or a fitting function.
+#' @param data,newdata Calibration (or training) and test data frames.
+#' @param method `"split"`, `"cqr"`, `"cv+"` or `"jackknife+"`.
+#' @param splits For `"cv+"`: a list of `list(train, test)` (1-based), each
+#'   row in one test set; [k_fold()] with five folds by default.
+#' @returns A data frame with `lo` and `hi`, one row a test row.
+#' @export
+#' @examples
+#' conformal_split(0:18, rep(9, 19), 100, alpha = 0.1)
+#' d <- data.frame(x = (0:39) %% 7)
+#' y <- 1 + 0.5 * d$x + ((0:39 * 31) %% 7) - 3
+#' fit <- function(data, y) stats::lm(y ~ x, data = cbind(data, y = y))
+#' conformal_intervals(fit, d, y, data.frame(x = 3), method = "jackknife+")
+conformal_split <- function(y, pred, test_pred, alpha = 0.1, score = c("absolute", "pearson", "scaled"),
+                            family = "", scale = NULL, test_scale = NULL, weights = NULL,
+                            test_weights = NULL, theta = NaN, power = NaN) {
+  score <- match.arg(score)
+  num <- function(v) if (is.null(v)) double() else as.double(v)
+  as.data.frame(rust_result(conformal_split_rust(
+    num(y), num(pred), num(test_pred), as.double(alpha), score, family, num(scale), num(test_scale),
+    num(weights), num(test_weights), as.double(theta), as.double(power)
+  )))
+}
+
+#' @rdname conformal_split
+#' @export
+conformal_cqr <- function(y, lo, hi, test_lo, test_hi, alpha = 0.1) {
+  as.data.frame(rust_result(conformal_cqr_rust(as.double(y), as.double(lo), as.double(hi),
+                                               as.double(test_lo), as.double(test_hi),
+                                               as.double(alpha))))
+}
+
+#' @rdname conformal_split
+#' @export
+conformal_plus <- function(y, oof_pred, folds, fold_pred, alpha = 0.1) {
+  as.data.frame(rust_result(conformal_plus_rust(as.double(y), as.double(oof_pred), as.double(folds),
+                                                lapply(fold_pred, as.double), as.double(alpha))))
+}
+
+#' @rdname conformal_split
+#' @export
+conformal_intervals <- function(model, data, y, newdata, method = c("cv+", "jackknife+", "split", "cqr"),
+                                alpha = 0.1, splits = NULL, score = c("absolute", "pearson"),
+                                family = "") {
+  method <- match.arg(method)
+  score <- match.arg(score)
+  pr <- function(m, d) as.double(stats::predict(m, newdata = d))
+  if (method == "split") {
+    return(conformal_split(y, pr(model, data), pr(model, newdata), alpha, score = score, family = family))
+  }
+  if (method == "cqr") {
+    return(conformal_cqr(y, pr(model[[1]], data), pr(model[[2]], data),
+                         pr(model[[1]], newdata), pr(model[[2]], newdata), alpha))
+  }
+  n <- length(y)
+  if (method == "jackknife+") {
+    splits <- lapply(seq_len(n), function(i) list(train = setdiff(seq_len(n), i), test = i))
+  } else if (is.null(splits)) {
+    splits <- k_fold(n, 5, 0)
+  }
+  folds <- rep(NA_integer_, n)
+  for (k in seq_along(splits)) {
+    if (any(!is.na(folds[splits[[k]]$test]))) stop("each row must be in exactly one split's test set")
+    folds[splits[[k]]$test] <- k
+  }
+  if (anyNA(folds)) stop("each row must be in exactly one split's test set")
+  oof <- numeric(n)
+  per <- vector("list", length(splits))
+  for (k in seq_along(splits)) {
+    s <- splits[[k]]
+    m <- model(data[s$train, , drop = FALSE], y[s$train])
+    oof[s$test] <- pr(m, data[s$test, , drop = FALSE])
+    per[[k]] <- pr(m, newdata)
+  }
+  conformal_plus(y, oof, folds, per, alpha)
+}

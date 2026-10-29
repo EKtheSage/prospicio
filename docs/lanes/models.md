@@ -6,8 +6,6 @@
 
 ## Next
 
-- #546 conformal prediction intervals (0.0.7)
-
 - #549 rolling windows, horizons and gaps in time splits (0.0.7)
 
 - #575 typed monotone and interaction constraints on the boosting adapters (0.0.7)
@@ -46,4 +44,5 @@
 - #464 randomized quantile residuals (Dunn and Smyth: `GlmFit::quantile_residuals` and `metrics::quantile_residuals`, the normal scores of the randomized PIT, `statmod::qresiduals` parity on quine, exact for the continuous families; Python `quantile_residuals`, R `residuals(m, type = "quantile")` and `quantile_residuals()`)
 - #465 MARS knots for hinge terms (`prospicio_glm::mars::Mars`: R earth's degree-1 forward pass with its spans, gates and GCV, weights, an optional backward pass by GCV, a GLM deviance criterion; `MarsFit::add_terms` into `Terms`; earth parity on the Chalk portfolio, default, weighted, `nk = 15` and pruned; Python `models.mars()`, R `mars_knots()` and `mars_formula()`)
 - #395 draws sampled outside prospicio in the Bayes diagnostics and PSIS-LOO (`PosteriorDraws::from_chains`, `loo` with loo's `r_eff`, `stan_csv::read` for CmdStan's CSV; Python `Draws`, `read_stan_csv`, `draws_from_arrays`, `draws_from_inference_data` for arviz, nutpie and PyMC; R `read_stan_csv()`, `mcmc_draws()` for cmdstanr, rstan and posterior, `draws_summary()`, `draws_loo()`; posterior 1.7.0 and loo 2.10.1 parity on a CmdStan run)
+- #546 conformal prediction intervals (`models.md`, "Conformal prediction", items (a) to (e) proposed; branch `claude/cool-shannon-fqpoy8`): `conformal::split` (absolute, Pearson, scaled scores), `weighted_split`, `cqr`, `cv_plus` (CV+, jackknife+) on any engine's predictions, `split_fitted` and `cv_plus_fit` on Rust models; MAPIE 0.9.1 matched to 1e-12 on split, CQR, five-fold CV+ and the jackknife+; coverage of at least 1 - alpha (split, CQR) and 1 - 2 alpha (jackknife+) over 400 seeds; Python `conformal_split`, `conformal_cqr`, `conformal_plus`, `conformal_intervals`, R the same names
 - #545 auto-calibration, isotonic recalibration and a balance correction (`models.md`, "Auto-calibration", items (a) to (e) proposed; branch `claude/cool-shannon-fqpoy8`): `calibrate::isotonic` (weighted PAVA, ties merged, bounds, linear or step), `Recalibrated` and `Balanced` over any `Fitted`, `balance_correction`, `reliability` and `murphy` (CORP: miscalibration, discrimination, uncertainty); scikit-learn 1.5.2's `IsotonicRegression` matched to 1e-12 on weighted, tied, increasing and decreasing data; on the Chalk portfolio a bent Poisson GLM's miscalibration falls from 0.047 to 0.007 after recalibration with a floor (the plain GLM's 0.012), its discrimination unchanged before; Python `isotonic`, `recalibrate`, `reliability`, `murphy`, R `isotonic_fit()`, `recalibrate()`, `reliability()`, `murphy()`
