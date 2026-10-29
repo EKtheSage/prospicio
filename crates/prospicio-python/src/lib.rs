@@ -50,12 +50,12 @@ mod prospicio_native {
     #[pymodule_export]
     use super::aggregate::{
         PyApproximation, PyBivariateReport, PyClash, PyCompoundMoments, PyCompoundReport,
-        PyEventLossTable, PyEventSet, PyExposure, PyFiniteRuin, PyGridAudit, PyGridSize,
-        PyJointGrid, PyOccurrencePml, PyPicks, PyRenewalRuin, PyRuin, PyTimeline, audit_grid,
-        audit_portfolio_grid, compound_moments, eventual_ruin, fft, fft_auto, fft_bivariate,
-        finite_horizon_ruin, layer_loss_picks, occurrence_exceedance, occurrence_pml, panjer,
-        recommend_grid, recommend_portfolio_grid, round_bucket, simulate_events, wiener_hopf,
-        year_correlation_for_ratio, ylt_hash,
+        PyEventLossTable, PyEventSet, PyExposure, PyFiniteRuin, PyGridAudit, PyGridSize, PyHawkes,
+        PyHawkesFit, PyJointGrid, PyOccurrencePml, PyPicks, PyRenewalRuin, PyRuin, PyTimeline,
+        audit_grid, audit_portfolio_grid, compound_moments, eventual_ruin, fft, fft_auto,
+        fft_bivariate, finite_horizon_ruin, layer_loss_picks, occurrence_exceedance,
+        occurrence_pml, panjer, recommend_grid, recommend_portfolio_grid, round_bucket,
+        simulate_events, wiener_hopf, year_correlation_for_ratio, ylt_hash,
     };
     #[pymodule_export]
     use super::bonus_malus::PyBonusMalus;
@@ -185,10 +185,10 @@ mod prospicio_native {
     #[pymodule_export]
     use super::risk::{
         PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd,
-        PyLevelAllocation, PyNestedArchimedeanCopula, PyPairCopula, PyPotTail, PyStudentTCopula,
-        PyVineCopula, allocate, bootstrap_se, calibrate, capital, co_statistics, covar, entropic,
-        equal_risk, esscher, esscher_allocation, haircut, hill, iman_conover,
-        marginal_expected_shortfall, mean_excess, rearrange, risk_ratios, shapley, simulate,
-        statistics, threshold_diagnostics, worst_var,
+        PyLevelAllocation, PyMvnEstimate, PyNestedArchimedeanCopula, PyPairCopula, PyPotTail,
+        PyStudentTCopula, PyVineCopula, allocate, bootstrap_se, calibrate, capital, co_statistics,
+        covar, entropic, equal_risk, esscher, esscher_allocation, haircut, hill, iman_conover,
+        marginal_expected_shortfall, mean_excess, mvn_cdf, rearrange, risk_ratios, shapley,
+        simulate, sobol, statistics, threshold_diagnostics, worst_var,
     };
 }

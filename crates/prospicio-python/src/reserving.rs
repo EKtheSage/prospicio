@@ -13577,6 +13577,30 @@ impl PyMeyersFit {
         self.inner.premium.clone()
     }
 
+    /// Each simulation's development pattern, to pair with the
+    /// simulation's loss ratio in the cash-flow engine: the shares
+    /// ``exp(beta_d g)`` of the posterior draw the simulation took, the
+    /// median value at each age over the median at the oldest age of an
+    /// origin after the newest (``g`` its speed-up ``(1 - gamma)^n`` in CSR,
+    /// 1 otherwise). No tail: each pattern ends at 1 at the oldest age.
+    /// Nothing keeps ``beta_d`` rising or below 0, so a share can fall or
+    /// pass 1 (on Meyers' group 353 data it falls in nearly every
+    /// simulation), which ``monthly`` refuses unless
+    /// ``monotone="running_max"``.
+    ///
+    /// Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+    /// ``ultimates`` and ``ultimate_draws``.
+    ///
+    /// Returns
+    /// -------
+    /// DevelopmentPatterns
+    #[getter]
+    fn patterns(&self) -> PyDevelopmentPatterns {
+        PyDevelopmentPatterns {
+            inner: self.inner.patterns.clone(),
+        }
+    }
+
     /// Joint posterior predictive distribution of the ultimate (the value
     /// at the oldest age) by origin: dimension ``"origin"``, one component
     /// per origin, one row per simulation. An origin observed at the
@@ -13853,6 +13877,30 @@ impl PyMeyersFits {
             .iter()
             .flat_map(|s| s.premium.iter().copied())
             .collect()
+    }
+
+    /// Each simulation's development pattern, to pair with the
+    /// simulation's loss ratio in the cash-flow engine: the shares
+    /// ``exp(beta_d g)`` of the posterior draw the simulation took, the
+    /// median value at each age over the median at the oldest age of an
+    /// origin after the newest (``g`` its speed-up ``(1 - gamma)^n`` in CSR,
+    /// 1 otherwise). No tail: each pattern ends at 1 at the oldest age.
+    /// Nothing keeps ``beta_d`` rising or below 0, so a share can fall or
+    /// pass 1 (on Meyers' group 353 data it falls in nearly every
+    /// simulation), which ``monthly`` refuses unless
+    /// ``monotone="running_max"``.
+    ///
+    /// Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+    /// ``ultimates`` and ``ultimate_draws``.
+    ///
+    /// Returns
+    /// -------
+    /// DevelopmentPatterns
+    #[getter]
+    fn patterns(&self) -> PyDevelopmentPatterns {
+        PyDevelopmentPatterns {
+            inner: self.inner.patterns.clone(),
+        }
     }
 
     /// Joint posterior predictive distribution of the ultimate (the value

@@ -1,0 +1,1 @@
+* **Creation**: [A Hawkes year started from an empty history has fewer events than the stationary rate, and the stationary count variance needs its window correction when the decay is slow](/findings/hawkes-years.md): verified by the Hawkes unit tests (#567, #696, branch claude/cool-shannon-fqpoy8).

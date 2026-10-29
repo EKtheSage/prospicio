@@ -213,6 +213,21 @@ stopifnot(inherits(try(reinsurance_tower(list(top)), silent = TRUE), "try-error"
 stopifnot(inherits(try(apply_tower(reinsurance_tower(list(second)), c(30, 40)), silent = TRUE), "try-error"))
 tw <- reinsurance_tower(list(lower, top, f, second))
 stopifnot(identical(tower_to_json(tower_from_json(tower_to_json(tw))), tower_to_json(tw)))
+# Self-exciting event times (#567).
+h <- hawkes(2, 12, 24)
+stopifnot(h@branching_ratio == 0.5, h@stationary_rate == 4)
+stopifnot(inherits(try(hawkes(2, 24, 24), silent = TRUE), "try-error"))
+cn <- hawkes_counts(h, 20000, seed = 3)
+stopifnot(abs(mean(cn) - hawkes_moments(h)[["mean"]]) < 0.05)
+ev <- hawkes_event_set(h, lognormal_from_mean_cv(10, 1), 300, burn_in = 0.5, seed = 9)
+stopifnot(ev@n_sims == 300, ev@has_times)
+stopifnot(identical(event_counts(ev), hawkes_counts(h, 300, burn_in = 0.5, seed = 9)))
+tr <- hawkes(1.5, 6, 10)
+yrs <- lapply(0:399, function(i) hawkes_simulate(tr, 1, seed = 11, stream = i))
+fit <- hawkes_fit(yrs)
+stopifnot(all(abs(c(fit$baseline, fit$alpha, fit$beta) - c(1.5, 6, 10)) < 3 * fit$std_errors))
+stopifnot(abs(hawkes_log_likelihood(fit$process, yrs) - fit$log_likelihood) < 1e-9)
+stopifnot(inherits(try(hawkes_fit(list(0.5)), silent = TRUE), "try-error"))
 
 cat("prospicio R aggregate tests passed\n")
 

@@ -67,8 +67,9 @@ what it is aiming for by v1.0.
   golden section), Nelder–Mead, root finding, special functions (with the
   incomplete beta and gamma past their usual domain, the exponential
   integral and the Mills ratio), splines, symmetric eigenvalues (Jacobi,
-  for REML's penalty determinants).
-- **Next, on demand:** Sobol sequences for quasi-Monte Carlo (v1.x).
+  for REML's penalty determinants), Sobol sequences for quasi-Monte Carlo
+  and the multivariate normal distribution function by Genz's method in
+  any dimension (#565).
 - **v1.0:** only the numerics other crates use. No general-purpose
   library.
 
@@ -159,7 +160,8 @@ what it is aiming for by v1.0.
     same events, by a 2-D compound FFT, `aggregate`'s clash model, and
     the two lines' losses in an event coupled by a copula; renewal claim
     counts, with any law for the waits between claims, and their eventual
-    ruin by Wiener–Hopf.
+    ruin by Wiener–Hopf; self-exciting (Hawkes) event times for clustered
+    catastrophe years, simulated, fitted and as event sets (#567).
 - **Next:** open. (Done: deficit and credit carry-forward in profit
   commissions and sliding scales over multi-year terms,
   `Tower::apply_term`, `docs/design/aggregate.md`; the P&L ledger, the
@@ -543,8 +545,8 @@ what it is aiming for by v1.0.
   Python and R): done. A development pattern per simulation, monthly from
   inception, for the cash-flow engine's paid patterns (`DevelopmentPatterns`,
   decision 28, #600; the bootstraps and `BayesOdp`, `BayesBf` and
-  `BayesBfNormalised`, in Rust, Python and R): done; Meyers' models and
-  `Compartmental` next.
+  `BayesBfNormalised`, and Meyers' CRC, CSR and CAY (#678), in Rust,
+  Python and R): done; `Compartmental` next.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
 

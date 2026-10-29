@@ -1881,3 +1881,36 @@ def test_franchise_nth_event_and_top_and_drop():
     t = Tower([lower, top, f, second])
     assert Tower.from_json(t.to_json()).to_json() == t.to_json()
     assert '"format_version":9' in t.to_json()
+
+
+def test_hawkes_event_counts():
+    """Self-exciting event times (#567)."""
+    from prospicio.aggregate import Hawkes
+    from prospicio.distributions import Lognormal
+
+    h = Hawkes(2.0, 12.0, 24.0)
+    assert (h.branching_ratio, h.stationary_rate) == (0.5, 4.0)
+    with pytest.raises(ValueError, match="below beta"):
+        Hawkes(2.0, 24.0, 24.0)
+    counts = h.annual_counts(20_000, seed=3)
+    mean = sum(counts) / len(counts)
+    assert abs(mean - h.mean_count(1.0)) < 0.05
+    warm = h.annual_counts(20_000, burn_in=2.0, seed=3)
+    m = sum(warm) / len(warm)
+    v = sum((c - m) ** 2 for c in warm) / (len(warm) - 1)
+    assert abs(m - 4.0) < 0.06 and abs(v / h.stationary_count_variance(1.0) - 1) < 0.07
+    ev = h.event_set(Lognormal.from_mean_cv(10.0, 1.0), 300, burn_in=0.5, seed=9)
+    assert ev.n_sims == 300 and ev.has_times
+    assert [len(ev.events(i)) for i in range(300)] == h.annual_counts(300, burn_in=0.5, seed=9)
+    path = h.simulate(5.0, seed=1)
+    assert path == sorted(path) and all(0 <= t < 5 for t in path)
+    # The fit recovers simulated parameters within three standard errors.
+    truth = Hawkes(1.5, 6.0, 10.0)
+    years = [truth.simulate(1.0, seed=11, stream=i) for i in range(400)]
+    fit = Hawkes.fit(years)
+    for got, want, se in zip((fit.baseline, fit.alpha, fit.beta), (1.5, 6.0, 10.0), fit.std_errors):
+        assert abs(got - want) < 3 * se
+    assert fit.log_likelihood == pytest.approx(fit.process().log_likelihood(years), abs=1e-12)
+    assert fit.aic == pytest.approx(6 - 2 * fit.log_likelihood)
+    with pytest.raises(ValueError, match="at least 3 events"):
+        Hawkes.fit([[0.5]])

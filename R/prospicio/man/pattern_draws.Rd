@@ -17,7 +17,8 @@ monthly_pattern_draws(
 }
 \arguments{
 \item{fit}{An \link{odp_bootstrap_fit}, \link{mack_bootstrap_fit}, \link{bayes_odp_fit},
-\link{bayes_odp_fits}, \link{bayes_bf_fit} or \link{bayes_bf_normalised_fit}.}
+\link{bayes_odp_fits}, \link{bayes_bf_fit}, \link{bayes_bf_normalised_fit}, \link{meyers_fit}
+or \link{meyers_fits}.}
 
 \item{segment}{\code{NULL} for a fit of one segment, or the segment's key
 values (\code{"Auto"}, \code{c("Auto", "NSW")}) over segments.}
@@ -42,7 +43,10 @@ observed would have reached at each development age, under the
 development each simulation drew: the bootstraps' pseudo factors
 (selected, blended and with the tail drawn as the reserves use them), or
 the Bayesian models' column effects of the posterior draw the simulation
-took (\code{docs/design/reserving-v02.md}, decision 28). Row \code{i} is simulation
+took (\code{docs/design/reserving-v02.md}, decision 28; for Meyers' models
+\verb{exp(beta_d g)}, the median value at each age over the median at the
+oldest age of an origin after the newest, \code{g} its speed-up
+\code{(1 - gamma)^n} in CSR and 1 in CRC and CAY). Row \code{i} is simulation
 \code{i} of \code{fit@reserves}, so it keeps the dependence with \code{\link[=ultimate_draws]{ultimate_draws()}}
 and every other vector built from the fit.
 }
@@ -68,6 +72,10 @@ both: \code{monotone = "refuse"} (the default) is an error naming how many
 simulations and the first, \code{"running_max"} holds each share at the
 largest before it, capped at 1, and gives a share that is not positive the
 next positive share, which the simulation then pays from its first age.
+Nothing in Meyers' models keeps \code{beta_d} rising or below 0, so their
+shares can fall and pass 1 (on Meyers' group 353 data a share falls in
+nearly every simulation): use \code{"running_max"}, which also caps each share
+at 1.
 
 No fit knows whether its triangle is paid: a pattern from an incurred
 triangle is an incurred pattern, and the engine reads it as paid.

@@ -98,3 +98,34 @@ stopifnot(!identical(run$flows, cashflow_run(terms, u)$flows))
 # remedy, so when no simulation falls the two agree.
 refuse <- try(monthly_pattern_draws(odp, 120), silent = TRUE)
 if (!inherits(refuse, "try-error")) stopifnot(identical(refuse, patterns))
+
+# Meyers' CRC, CSR and CAY (#678): each simulation's pattern is exp(beta_d g)
+# of its posterior draw, ending at exactly 1 at the oldest age (no tail).
+comauto <- utils::read.csv(validation("data", "clrd_comauto_353.csv"), comment.char = "#")
+comauto <- comauto[comauto$origin - 1988 + comauto$development %/% 12 <= 10, ]
+tri353 <- triangle(comauto, "origin", "development", c("paid", "premium"))
+for (model in c("crc", "csr", "cay")) {
+  fit <- suppressWarnings(meyers(tri353, "paid", "premium", model = model, tune = 300,
+                                 draws = 300, n_sims = 1000, seed = 678))
+  p <- pattern_draws(fit)
+  stopifnot(nrow(p) == 1000, ncol(p) == 10, identical(colnames(p), as.character(12 * 1:10)))
+  stopifnot(all(p[, 10] == 1), all(p > 0), nrow(unique(p)) > 100)
+  # A late share falls in nearly every simulation on group 353: the default
+  # refuses, running_max holds each share at the largest before it.
+  stopifnot(fails(monthly_pattern_draws(fit, 120)))
+  m <- monthly_pattern_draws(fit, 120, monotone = "running_max")
+  stopifnot(identical(dim(m), c(1000L, 120L)), all(m[, 120] == 1),
+            all(m[, -1] - m[, -120] >= 0))
+}
+
+# Over segments, each segment has its own patterns, kept by segment().
+two353 <- rbind(transform(comauto, lob = "A"),
+                transform(comauto, lob = "B", paid = 2 * paid, premium = 2 * premium))
+tri2 <- triangle(two353, "origin", "development", c("paid", "premium"), keys = "lob")
+fits <- suppressWarnings(meyers_segments(tri2, "paid", "premium", tune = 300, draws = 300,
+                                         n_sims = 1000, seed = 679))
+pa <- pattern_draws(fits, "A")
+pb <- pattern_draws(fits, "B")
+stopifnot(nrow(pa) == 1000, all(pa[, 10] == 1), all(pb[, 10] == 1), !identical(pa, pb))
+stopifnot(fails(pattern_draws(fits)))
+stopifnot(identical(pattern_draws(segment(fits, lob = "B")), pb))

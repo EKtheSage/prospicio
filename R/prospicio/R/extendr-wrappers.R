@@ -298,6 +298,18 @@ indication_rust <- function(variable, profit, fixed_ratio, loss_ratio, pure_prem
 
 premium_based_expenses_rust <- function(ratio, fixed_share) .Call(wrap__premium_based_expenses_rust, ratio, fixed_share)
 
+hawkes_check_rust <- function(baseline, alpha, beta) .Call(wrap__hawkes_check_rust, baseline, alpha, beta)
+
+hawkes_moments_rust <- function(baseline, alpha, beta, horizon) .Call(wrap__hawkes_moments_rust, baseline, alpha, beta, horizon)
+
+hawkes_simulate_rust <- function(baseline, alpha, beta, horizon, seed, stream) .Call(wrap__hawkes_simulate_rust, baseline, alpha, beta, horizon, seed, stream)
+
+hawkes_counts_rust <- function(baseline, alpha, beta, n_years, burn_in, seed) .Call(wrap__hawkes_counts_rust, baseline, alpha, beta, n_years, burn_in, seed)
+
+hawkes_log_likelihood_rust <- function(baseline, alpha, beta, periods, horizon) .Call(wrap__hawkes_log_likelihood_rust, baseline, alpha, beta, periods, horizon)
+
+hawkes_fit_rust <- function(periods, horizon) .Call(wrap__hawkes_fit_rust, periods, horizon)
+
 retro_premium_rust <- function(losses, basic, lcm, minimum, maximum) .Call(wrap__retro_premium_rust, losses, basic, lcm, minimum, maximum)
 
 occurrence_cession_statistics_rust <- function(frequency, severity, shares, limits, attachments) .Call(wrap__occurrence_cession_statistics_rust, frequency, severity, shares, limits, attachments)
@@ -309,6 +321,10 @@ occurrence_layer_statistics_rust <- function(frequency, severity, share, limit, 
 benchmark_curve_rust <- function(ages, values, kind, curve, weights, max_age, origin_width) .Call(wrap__benchmark_curve_rust, ages, values, kind, curve, weights, max_age, origin_width)
 
 underwriting_exposure_rust <- function(writing, policy_months) .Call(wrap__underwriting_exposure_rust, writing, policy_months)
+
+mvn_cdf_rust <- function(lower, upper, correlation, abs_tol, max_points, scrambles, seed) .Call(wrap__mvn_cdf_rust, lower, upper, correlation, abs_tol, max_points, scrambles, seed)
+
+sobol_rust <- function(n, dim, scramble, seed) .Call(wrap__sobol_rust, n, dim, scramble, seed)
 
 statistics_rust <- function(draws, percentiles, tvar_levels, sd_multiples, quantile, tvar) .Call(wrap__statistics_rust, draws, percentiles, tvar_levels, sd_multiples, quantile, tvar)
 
@@ -363,6 +379,8 @@ layer_share_prior_total_rust <- function(apriori, apriori_cv, shares, share_cv, 
 EventSet <- new.env(parent = emptyenv())
 
 EventSet$simulate <- function(frequency, severity, n_sims, seed) .Call(wrap__EventSet__simulate, frequency, severity, n_sims, seed)
+
+EventSet$hawkes <- function(baseline, alpha, beta, severity, n_years, burn_in, seed) .Call(wrap__EventSet__hawkes, baseline, alpha, beta, severity, n_years, burn_in, seed)
 
 EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__EventSet__from_years, years, sums_insured, seed, times)
 
@@ -3028,6 +3046,12 @@ MeyersFit$ultimate_draws <- function(origin) .Call(wrap__MeyersFit__ultimate_dra
 
 MeyersFit$loss_ratio_draws <- function(origin, premium) .Call(wrap__MeyersFit__loss_ratio_draws, self, origin, premium)
 
+MeyersFit$pattern_ages <- function(segment) .Call(wrap__MeyersFit__pattern_ages, self, segment)
+
+MeyersFit$pattern_draws <- function(segment) .Call(wrap__MeyersFit__pattern_draws, self, segment)
+
+MeyersFit$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__MeyersFit__monthly_pattern_draws, self, segment, months, basis, monotone)
+
 MeyersFit$diagnostics <- function() .Call(wrap__MeyersFit__diagnostics, self)
 
 MeyersFit$parameter_names <- function() .Call(wrap__MeyersFit__parameter_names, self)
@@ -3069,6 +3093,12 @@ MeyersFits$reserves <- function() .Call(wrap__MeyersFits__reserves, self)
 MeyersFits$ultimate_draws <- function(origin) .Call(wrap__MeyersFits__ultimate_draws, self, origin)
 
 MeyersFits$loss_ratio_draws <- function(origin, premium) .Call(wrap__MeyersFits__loss_ratio_draws, self, origin, premium)
+
+MeyersFits$pattern_ages <- function(segment) .Call(wrap__MeyersFits__pattern_ages, self, segment)
+
+MeyersFits$pattern_draws <- function(segment) .Call(wrap__MeyersFits__pattern_draws, self, segment)
+
+MeyersFits$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__MeyersFits__monthly_pattern_draws, self, segment, months, basis, monotone)
 
 MeyersFits$diagnostics_table <- function() .Call(wrap__MeyersFits__diagnostics_table, self)
 
@@ -3667,6 +3697,10 @@ RiskCopula$log_density <- function(u, n) .Call(wrap__RiskCopula__log_density, se
 RiskCopula$dim <- function() .Call(wrap__RiskCopula__dim, self)
 
 RiskCopula$cdf <- function(u, n) .Call(wrap__RiskCopula__cdf, self, u, n)
+
+RiskCopula$cdf_estimate <- function(u, n, abs_tol, max_points, seed) .Call(wrap__RiskCopula__cdf_estimate, self, u, n, abs_tol, max_points, seed)
+
+RiskCopula$sample_qmc <- function(n, seed) .Call(wrap__RiskCopula__sample_qmc, self, n, seed)
 
 RiskCopula$description <- function() .Call(wrap__RiskCopula__description, self)
 

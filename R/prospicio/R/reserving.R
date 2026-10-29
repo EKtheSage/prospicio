@@ -7594,10 +7594,10 @@ ultimate_distribution <- function(fit) {
 # in Rust, reserving-v02.md decision 28).
 check_pattern_fit <- function(fit) {
   classes <- list(odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits,
-                  bayes_bf_fit, bayes_bf_normalised_fit)
+                  bayes_bf_fit, bayes_bf_normalised_fit, meyers_fit, meyers_fits)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
     stop("fit must be an odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, ",
-         "bayes_bf_fit or bayes_bf_normalised_fit", call. = FALSE)
+         "bayes_bf_fit, bayes_bf_normalised_fit, meyers_fit or meyers_fits", call. = FALSE)
   }
 }
 
@@ -7616,7 +7616,10 @@ pattern_matrix <- function(flat, n_col) {
 #' development each simulation drew: the bootstraps' pseudo factors
 #' (selected, blended and with the tail drawn as the reserves use them), or
 #' the Bayesian models' column effects of the posterior draw the simulation
-#' took (`docs/design/reserving-v02.md`, decision 28). Row `i` is simulation
+#' took (`docs/design/reserving-v02.md`, decision 28; for Meyers' models
+#' `exp(beta_d g)`, the median value at each age over the median at the
+#' oldest age of an origin after the newest, `g` its speed-up
+#' `(1 - gamma)^n` in CSR and 1 in CRC and CAY). Row `i` is simulation
 #' `i` of `fit@reserves`, so it keeps the dependence with [ultimate_draws()]
 #' and every other vector built from the fit.
 #'
@@ -7641,12 +7644,17 @@ pattern_matrix <- function(flat, n_col) {
 #' simulations and the first, `"running_max"` holds each share at the
 #' largest before it, capped at 1, and gives a share that is not positive the
 #' next positive share, which the simulation then pays from its first age.
+#' Nothing in Meyers' models keeps `beta_d` rising or below 0, so their
+#' shares can fall and pass 1 (on Meyers' group 353 data a share falls in
+#' nearly every simulation): use `"running_max"`, which also caps each share
+#' at 1.
 #'
 #' No fit knows whether its triangle is paid: a pattern from an incurred
 #' triangle is an incurred pattern, and the engine reads it as paid.
 #'
 #' @param fit An [odp_bootstrap_fit], [mack_bootstrap_fit], [bayes_odp_fit],
-#'   [bayes_odp_fits], [bayes_bf_fit] or [bayes_bf_normalised_fit].
+#'   [bayes_odp_fits], [bayes_bf_fit], [bayes_bf_normalised_fit], [meyers_fit]
+#'   or [meyers_fits].
 #' @param segment `NULL` for a fit of one segment, or the segment's key
 #'   values (`"Auto"`, `c("Auto", "NSW")`) over segments.
 #' @param months The number of months, a whole number of at least 1; patterns

@@ -13546,6 +13546,35 @@ class GaussianCopula:
         >>> round(GaussianCopula([[1.0, 0.5], [0.5, 1.0]]).cdf([0.5, 0.5]), 12)
         0.333333333333
         """
+    def cdf_estimate(self, /, u: Sequence[float], abs_tol: float = 1e-5, max_points: int = ..., seed: int = 0) -> MvnEstimate:
+        """
+        The distribution function at ``u`` with its error estimate: exact
+        in two dimensions, by Genz's randomized quasi-Monte Carlo method in
+        more (``mvn_cdf``). ``cdf`` is this at the defaults.
+        
+        Parameters
+        ----------
+        u : list of float
+            One value per dimension, each in ``[0, 1]``.
+        abs_tol : float, default 1e-5
+            Absolute error to reach, three standard errors.
+        max_points : int, default 4194304
+            Most integrand evaluations.
+        seed : int, default 0
+            Seed of the scrambles, so a call is reproducible.
+        
+        Returns
+        -------
+        MvnEstimate
+        
+        Examples
+        --------
+        >>> from prospicio.risk import GaussianCopula
+        >>> r = [[1.0, 0.5, 0.5], [0.5, 1.0, 0.5], [0.5, 0.5, 1.0]]
+        >>> p = GaussianCopula(r).cdf_estimate([0.5, 0.5, 0.5], abs_tol=1e-7)
+        >>> abs(p.value - 0.25) < 1e-6, p.error < 1e-7, p.converged
+        (True, True, True)
+        """
     @property
     def dim(self, /) -> int:
         """
@@ -13563,6 +13592,31 @@ class GaussianCopula:
         Returns
         -------
         list of list of float
+        """
+    def sample_qmc(self, /, n: int, seed: int = 0) -> list[list[float]]:
+        """
+        ``n`` draws on scrambled Sobol points (quasi-Monte Carlo): each
+        point ``w`` becomes ``Φ(L Φ⁻¹(w))``. Over a power of two of points
+        each margin is spread far more evenly than random draws, so a
+        statistic converges faster; the rows are not independent, so a
+        standard error needs several seeds. At most 1,111 dimensions.
+        
+        Parameters
+        ----------
+        n : int
+            A power of two keeps the points balanced.
+        seed : int, default 0
+        
+        Returns
+        -------
+        list of list of float
+        
+        Examples
+        --------
+        >>> from prospicio.risk import GaussianCopula
+        >>> u = GaussianCopula([[1.0, 0.6], [0.6, 1.0]]).sample_qmc(1024, seed=7)
+        >>> sorted(int(row[0] * 1024) for row in u) == list(range(1024))
+        True
         """
 
 @final
@@ -15081,6 +15135,203 @@ class HachemeisterFit:
         """
         The within-risk variance ``s2``, the mean of the risks' residual
         variances.
+        """
+
+@final
+class Hawkes:
+    """
+    A self-exciting (Hawkes) process of events with an exponential kernel,
+    time in years: the rate ``baseline + Σ alpha · exp(-beta (t - t_i))``
+    over past events ``t_i``.
+    
+    Each event has on average ``alpha / beta`` direct offspring (the
+    branching ratio, below 1), so events cluster in time, as windstorm
+    series and aftershocks do, and the stationary rate is
+    ``baseline / (1 - alpha / beta)``. Paths are drawn exactly by the
+    branching construction. ``alpha = 0`` is the Poisson process.
+    
+    Parameters
+    ----------
+    baseline : float
+        Rate of the background events, a year; positive.
+    alpha : float
+        The rise in the rate at each event; at least 0 and below ``beta``.
+    beta : float
+        The excitation's decay rate, a year; positive.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import Hawkes
+    >>> h = Hawkes(2.0, 12.0, 24.0)
+    >>> h.branching_ratio, h.stationary_rate
+    (0.5, 4.0)
+    """
+    def __new__(cls, /, baseline: float, alpha: float, beta: float) -> Hawkes: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def alpha(self, /) -> float:
+        """
+        The jump in the rate at each event.
+        """
+    def annual_counts(self, /, n_years: int, burn_in: float = 0.0, seed: int = 0) -> list[int]:
+        """
+        The number of events in each of ``n_years`` independent years, year
+        ``i`` from stream ``i`` of ``seed``, after ``burn_in`` years whose
+        events excite the year and are dropped (0 for an empty history).
+        
+        Returns
+        -------
+        list of int
+        """
+    @property
+    def baseline(self, /) -> float:
+        """
+        The baseline rate, a year.
+        """
+    @property
+    def beta(self, /) -> float:
+        """
+        The decay rate, a year.
+        """
+    @property
+    def branching_ratio(self, /) -> float:
+        """
+        ``alpha / beta``, each event's mean number of direct offspring.
+        """
+    def event_set(self, /, severity: Any, n_years: int, burn_in: float = 0.0, seed: int = 0) -> EventSet:
+        """
+        ``n_years`` independent years of events with their times in
+        ``[0, 1)`` and a loss from ``severity`` each, as ``annual_counts``
+        draws the years.
+        
+        Parameters
+        ----------
+        severity : a severity
+        n_years : int
+        burn_in : float, default 0.0
+        seed : int, default 0
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import Hawkes
+        >>> from prospicio.distributions import Lognormal
+        >>> ev = Hawkes(2.0, 12.0, 24.0).event_set(Lognormal.from_mean_cv(10.0, 1.0), 100, seed=7)
+        >>> ev.n_sims, ev.has_times
+        (100, True)
+        """
+    @staticmethod
+    def fit(periods: Sequence[Sequence[float]], horizon: float = 1.0) -> HawkesFit:
+        """
+        The maximum likelihood fit to event times over one or more periods
+        of ``horizon`` years, each sorted and from an empty history (for
+        years, each year's times and ``horizon=1``).
+        
+        Parameters
+        ----------
+        periods : list of list of float
+        horizon : float, default 1.0
+        
+        Returns
+        -------
+        HawkesFit
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import Hawkes
+        >>> h = Hawkes(1.5, 6.0, 10.0)
+        >>> years = [h.simulate(1.0, seed=11, stream=i) for i in range(400)]
+        >>> fit = Hawkes.fit(years)
+        >>> abs(fit.baseline - 1.5) < 3 * fit.std_errors[0]
+        True
+        """
+    def log_likelihood(self, /, periods: Sequence[Sequence[float]], horizon: float = 1.0) -> float:
+        """
+        The log-likelihood of event times, each period a sorted list on
+        ``[0, horizon)`` from an empty history.
+        """
+    def mean_count(self, /, horizon: float) -> float:
+        """
+        The mean number of events on ``[0, horizon)`` from an empty history.
+        """
+    def simulate(self, /, horizon: float, seed: int, stream: int = 0) -> list[float]:
+        """
+        One path's event times on ``[0, horizon)`` from an empty history,
+        stream ``stream`` of ``seed``.
+        
+        Returns
+        -------
+        list of float
+        """
+    def stationary_count_variance(self, /, horizon: float) -> float:
+        """
+        The stationary variance of the count over a window of ``horizon``
+        years (Hawkes and Oakes' formula for the exponential kernel).
+        """
+    @property
+    def stationary_rate(self, /) -> float:
+        """
+        The stationary mean rate ``baseline / (1 - alpha / beta)``.
+        """
+
+@final
+class HawkesFit:
+    """
+    A Hawkes process fitted by maximum likelihood (``Hawkes.fit``).
+    """
+    @property
+    def aic(self, /) -> float:
+        """
+        ``6 - 2 log_likelihood``.
+        """
+    @property
+    def alpha(self, /) -> float:
+        """
+        The jump in the rate at each event.
+        """
+    @property
+    def baseline(self, /) -> float:
+        """
+        The baseline rate, a year.
+        """
+    @property
+    def beta(self, /) -> float:
+        """
+        The decay rate, a year.
+        """
+    @property
+    def branching_ratio(self, /) -> float:
+        """
+        ``alpha / beta``.
+        """
+    @property
+    def converged(self, /) -> bool:
+        """
+        Whether the optimiser met its tolerance.
+        """
+    @property
+    def log_likelihood(self, /) -> float:
+        """
+        The maximised log-likelihood.
+        """
+    @property
+    def n_events(self, /) -> int:
+        """
+        Events fitted.
+        """
+    def process(self, /) -> Hawkes:
+        """
+        The fitted process; ValueError when the branching ratio is at or
+        above 1.
+        """
+    @property
+    def std_errors(self, /) -> tuple[float, float, float]:
+        """
+        Standard errors of ``(baseline, alpha, beta)`` from the observed
+        information; NaN where it is not positive definite.
         """
 
 @final
@@ -20653,6 +20904,27 @@ class MeyersFit:
         (``"cay"`` only), and ``sigma[1]`` to ``sigma[m]``.
         """
     @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        Each simulation's development pattern, to pair with the
+        simulation's loss ratio in the cash-flow engine: the shares
+        ``exp(beta_d g)`` of the posterior draw the simulation took, the
+        median value at each age over the median at the oldest age of an
+        origin after the newest (``g`` its speed-up ``(1 - gamma)^n`` in CSR,
+        1 otherwise). No tail: each pattern ends at 1 at the oldest age.
+        Nothing keeps ``beta_d`` rising or below 0, so a share can fall or
+        pass 1 (on Meyers' group 353 data it falls in nearly every
+        simulation), which ``monthly`` refuses unless
+        ``monotone="running_max"``.
+        
+        Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+        ``ultimates`` and ``ultimate_draws``.
+        
+        Returns
+        -------
+        DevelopmentPatterns
+        """
+    @property
     def premium(self, /) -> list[float]:
         """
         The premium of each origin.
@@ -20851,6 +21123,27 @@ class MeyersFits:
         """
         Parameter names of a single-segment fit, as
         ``MeyersFit.parameter_names``.
+        """
+    @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        Each simulation's development pattern, to pair with the
+        simulation's loss ratio in the cash-flow engine: the shares
+        ``exp(beta_d g)`` of the posterior draw the simulation took, the
+        median value at each age over the median at the oldest age of an
+        origin after the newest (``g`` its speed-up ``(1 - gamma)^n`` in CSR,
+        1 otherwise). No tail: each pattern ends at 1 at the oldest age.
+        Nothing keeps ``beta_d`` rising or below 0, so a share can fall or
+        pass 1 (on Meyers' group 353 data it falls in nearly every
+        simulation), which ``monthly`` refuses unless
+        ``monotone="running_max"``.
+        
+        Row ``i`` of every pattern is simulation ``i`` of ``reserves``,
+        ``ultimates`` and ``ultimate_draws``.
+        
+        Returns
+        -------
+        DevelopmentPatterns
         """
     @property
     def premium(self, /) -> list[float]:
@@ -21401,6 +21694,34 @@ class MultivariateNormal:
         Returns
         -------
         Normal
+        """
+
+@final
+class MvnEstimate:
+    """
+    An estimate of a multivariate normal probability (``mvn_cdf``).
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def converged(self, /) -> bool:
+        """
+        Whether ``error`` reached ``abs_tol`` within ``max_points``.
+        """
+    @property
+    def error(self, /) -> float:
+        """
+        Three standard errors of ``value`` over the scrambles, 0 when exact.
+        With ten scrambles the true error exceeds it in about 1.5% of calls.
+        """
+    @property
+    def points(self, /) -> int:
+        """
+        Integrand evaluations used.
+        """
+    @property
+    def value(self, /) -> float:
+        """
+        The probability, in ``[0, 1]``.
         """
 
 @final
@@ -33638,6 +33959,52 @@ def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_m
     (0.5, 1.0, 1.0)
     """
 
+def mvn_cdf(upper: Sequence[float], correlation: Sequence[Sequence[float]], lower: Sequence[float] |None = None, abs_tol: float = 1e-5, max_points: int = ..., scrambles: int = 10, seed: int = 0) -> MvnEstimate:
+    """
+    ``P(lower < X < upper)`` for ``X ~ N(0, R)`` by Genz's method.
+    
+    Exact in one and two dimensions (Genz's BVND, about ``1e-15``). In
+    more, Genz's integral after a Cholesky separation of the variables,
+    reordered as Genz and Bretz do, estimated by ``scrambles`` independently
+    scrambled Sobol sequences, the points doubled until three standard
+    errors are at most ``abs_tol`` or the points reach ``max_points``. The
+    method of R's ``mvtnorm::pmvnorm`` and SciPy's
+    ``multivariate_normal.cdf``, with Sobol points in place of their lattice
+    rules, so results agree within the errors.
+    
+    Parameters
+    ----------
+    upper : list of float
+        Upper limits; ``inf`` for none.
+    correlation : list of list of float
+        A positive definite correlation or covariance matrix.
+    lower : list of float, optional
+        Lower limits; ``-inf`` (the default) for none.
+    abs_tol : float, default 1e-5
+    max_points : int, default 4194304
+    scrambles : int, default 10
+        At least 2.
+    seed : int, default 0
+    
+    Returns
+    -------
+    MvnEstimate
+    
+    Raises
+    ------
+    ValueError
+        If the matrix is not symmetric positive definite, the limits have
+        the wrong length or a lower limit is above its upper one.
+    
+    Examples
+    --------
+    >>> from prospicio.risk import mvn_cdf
+    >>> r = [[1.0, 0.5, 0.5], [0.5, 1.0, 0.5], [0.5, 0.5, 1.0]]
+    >>> p = mvn_cdf([0.0, 0.0, 0.0], r)
+    >>> abs(p.value - 0.25) <= max(p.error, 1e-12), p.error < 1e-5
+    (True, True)
+    """
+
 def normalized_gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None) -> float:
     """
     The normalized Gini: ``gini`` over the Gini of a perfect ranking (rows
@@ -34802,6 +35169,36 @@ def size_premium(expected_loss: float, loss_ratio: float) -> float:
     ------
     ValueError
         If either is not positive and finite.
+    """
+
+def sobol(n: int, dim: int, scramble: bool = True, seed: int = 0) -> list[list[float]]:
+    """
+    ``n`` points of the Sobol sequence in ``dim`` dimensions.
+    
+    Joe and Kuo's direction numbers (up to 1,111 dimensions) at 32 bits, in
+    Gray-code order. Unscrambled, the points are SciPy's
+    ``stats.qmc.Sobol(dim, scramble=False, bits=32)`` exactly, the first at
+    the origin. Scrambled, a linear matrix scramble with a digital shift
+    drawn from ``seed`` (SciPy's kind of scramble, not its random stream)
+    makes each point uniform on ``[0, 1)^dim`` and keeps the balance: over
+    ``2^m`` points each ``1 / 2^m`` of a coordinate holds one point.
+    
+    Parameters
+    ----------
+    n : int
+    dim : int
+    scramble : bool, default True
+    seed : int, default 0
+    
+    Returns
+    -------
+    list of list of float
+    
+    Examples
+    --------
+    >>> from prospicio.risk import sobol
+    >>> sobol(4, 2, scramble=False)
+    [[0.0, 0.0], [0.5, 0.5], [0.75, 0.25], [0.25, 0.75]]
     """
 
 def stack(ledgers: dict, impacts: Sequence[tuple[str, str, str]] |None = None) -> dict:

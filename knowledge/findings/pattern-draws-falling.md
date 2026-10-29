@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: A bootstrap's development pattern per simulation falls somewhere in about half of RAA's ODP simulations, so the cash-flow engine cannot take it unchanged
-description: Each simulation's cumulative shares from the ODP or Mack bootstrap's pseudo factors fall at some age in 54% (ODP) and 22% (Mack) of 5,000 simulations on RAA and 10% and 2.5% on GenIns, because a pseudo factor at an old age can be below 1; the engine needs a non-decreasing paid pattern, so DevelopmentPatterns::monthly refuses by default and holds the running maximum on request. The Bayesian models' patterns never fall. Adding the pattern columns to the simulated row leaves every fit's reserves bit for bit unchanged.
+description: Each simulation's cumulative shares from the ODP or Mack bootstrap's pseudo factors fall at some age in 54% (ODP) and 22% (Mack) of 5,000 simulations on RAA and 10% and 2.5% on GenIns, because a pseudo factor at an old age can be below 1; the engine needs a non-decreasing paid pattern, so DevelopmentPatterns::monthly refuses by default and holds the running maximum on request. BayesOdp's, BayesBf's and BayesBfNormalised's patterns never fall; Meyers' CRC, CSR and CAY patterns (exp(beta_d g)) fall somewhere in 98% to 99% of the simulations on Meyers' group 353 paid data (nearly all on incurred) and pass 1 in 70% to 86%. Adding the pattern columns to the simulated row leaves every fit's reserves bit for bit unchanged.
 tags: [reserving, bootstrap, payment-pattern, cashflow, simulation]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-28T12:00:00Z }
@@ -15,6 +15,12 @@ sources:
   - id: issue
     resource: https://github.com/EKtheSage/prospicio/issues/600
     title: Issue 600, paid patterns that vary by simulation in the cash-flow engine
+  - id: meyers-test
+    resource: ../crates/prospicio-reserving/src/bayes/meyers.rs
+    title: Meyers' unit test each_simulations_pattern_is_its_posterior_draws, run by CI's bayes job
+  - id: meyers-issue
+    resource: https://github.com/EKtheSage/prospicio/issues/678
+    title: Issue 678, a development pattern per simulation from Meyers' CRC, CSR and CAY
 ---
 
 # What was found
@@ -52,6 +58,34 @@ at 24 months, about 0.4, is paid by 12 months.
 positive increments (`exp` of the column effects or the log shares), so
 their patterns never fall.
 
+Meyers' models are different (#678): their pattern is `exp(beta_d g)`,
+the median value at each age over the median at the oldest age
+(`reserving-v02.md` decision 28 item 7), and nothing in the model keeps
+`beta_d` rising or below 0. On Meyers' group 353 Commercial Auto data
+(the upper triangle, `Meyers`' default chains, 2,000 simulations, seed
+21; measured by hand from Python on 2026-10-28):
+
+| Column | Model | A share falls | A share passes 1 | Largest share |
+|---|---|---|---|---|
+| paid | CRC | 97.9% | 71.0% | 1.356 |
+| paid | CSR | 99.1% | 74.8% | 1.244 |
+| paid | CAY | 98.2% | 70.0% | 1.290 |
+| incurred | CRC | 99.6% | 81.8% | 1.163 |
+| incurred | CSR | 99.8% | 85.0% | 1.137 |
+| incurred | CAY | 99.7% | 86.4% | 1.192 |
+
+The falls are mostly from 60 months on, where the columns barely move
+and each late `beta_d` rests on one or two origins: on paid CRC, 422,
+246, 701, 893, 1,068 and 818 of the 2,000 simulations fall into 60, 72,
+84, 96, 108 and 120 months, and at most 13 into the younger ages. The
+mean pattern itself falls: on paid CRC it is 0.9932, 0.9961 and 0.9933
+at 84, 96 and 108 months. A share above 1 must fall to the last, which
+is exactly 1. The default `Monotone::Refuse` therefore refuses nearly
+every Meyers fit, and `RunningMax`, which also caps each share at 1, is
+the way to use one. The unit test
+`each_simulations_pattern_is_its_posterior_draws` (short chains, CRC and
+CSR on paid) prints the same picture: 98.7% and 98.4% fall.
+
 # Other facts confirmed
 
 * Appending the pattern columns to the simulated row draws no random
@@ -66,6 +100,10 @@ their patterns never fall.
   error and 0.28 in Mack's bootstrap with it (2,000 simulations on RAA),
   and with the next simulation's at under 0.1; the test asserts 0.3 and
   0.2.
+* Meyers' ultimates with the patterns are bit for bit those of the same
+  predictive simulation without them (a unit test replays it without the
+  pattern columns and compares the bits), and Meyers' parity tests pass
+  unchanged.
 * Mack's bootstrap draws a constant tail's factor with the tail's sigma,
   so its share at the oldest age varies about `1 / tail`; the ODP
   bootstrap keeps it fixed at exactly `1 / tail`.
