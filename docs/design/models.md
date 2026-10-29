@@ -1175,6 +1175,41 @@ n_test, window=None, horizon=1, gap=0, step=1)`, R `time_splits()`, next to
   are never used, and too few periods for the first split's training rows
   is an error naming the counts.
 
+## Monotone and interaction constraints on the boosters (#575)
+
+Status: built; items (a) to (d) proposed by the Models lane for the
+user's acceptance.
+
+Python `Booster(..., monotone={"exper": 1, "veh_age": -1},
+interaction_constraints=[["age", "exper"], ["veh_age", "noise"]])` and R
+`booster_fit(..., monotone = c(exper = 1, veh_age = -1),
+interaction_constraints = list(c("age", "exper"), c("veh_age", "noise")))`
+name features, and the fit maps them onto the design's columns as the
+engine's own `monotone_constraints` and `interaction_constraints`
+(`Booster.engine_params(names)` in Python, `fit@spec$constraints` in R).
+`BoosterFit.check_monotone(design, feature)` and R `check_monotone(fit,
+data, feature)` give the partial dependence over a grid and the steps that
+go against the direction. On the Chalk portfolio (Poisson, 150 rounds)
+the unconstrained fits' dependence on experience falls at 7 (LightGBM) and
+8 (XGBoost) of 60 grid steps, and the constrained fits' at none.
+
+- (a) *A feature is a variable, not a column.* A monotone constraint goes
+  on every column of the feature that is a monotone function of it: the
+  variable itself, Python's `hinge`, `step` and `log` terms, R's `log`,
+  `log1p`, `sqrt` and `exp`. A factor, a polynomial or spline, a feature in
+  an interaction column and an unknown name are errors, since a direction
+  on such columns is not a direction in the feature.
+- (b) *An interaction group takes all of a feature's columns*, factor
+  levels included.
+- (c) *The engines' raw forms*: LightGBM a vector of directions and
+  column groups (0-based in Python, 1-based in R), XGBoost the strings
+  `"(0,-1,1,0)"` and `"[[0, 2], [1, 3]]"`, the forms both packages read in
+  both languages; a fit with the typed constraints equals one with these in
+  `params`. Giving a constraint both ways is an error.
+- (d) *`check_monotone` checks the fitted model*, the mean prediction
+  over the given rows with the feature set to each grid value, so a
+  violation within `tol` (relative, 1e-9) of the largest mean is ignored.
+
 ## Decisions
 
 - **Burn for neural networks** (replaces PyTorch-only, `architecture.md`).

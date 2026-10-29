@@ -295,6 +295,7 @@ reference:
       - onnx_predictor_class
       - booster_fit
       - booster_model
+      - check_monotone
       - simulate_from_means
       - predict_quantiles
       - predict_dispersion
