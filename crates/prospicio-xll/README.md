@@ -74,6 +74,7 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.IRR(flows, [times], [unit], [lower], [upper], [extend], [detail])` | Internal rate of return by the crate's grid search; a root outside the range named in the error; with `detail`, the roots seen and whether one lies above or below |
 | `PRO.MOIC(released, funded, [opening])` | Multiple on invested capital `1 + released / (funded + opening)`, per row |
 | `PRO.CASHFLOW(u, terms, patterns, requirement, [commission], [output], [rate], [commutation_requirement])` | A collateralised deal on each simulated loss ratio: IRR, MOIC, NPV and totals per simulation, the monthly flows, or the first simulation's accounts |
+| `PRO.PNL(values, [probs], premium, [expenses], [covers], [face], [output], [levels], [expense_at_mean])` | A book's P&L ledger over annual gross losses with the annual covers it buys (`aggregate`'s `pnl` and `xpnl`): every line with its mean, SD, CV, skewness and the scenario columns that foot; the card; or the ratios (decision 43) |
 | `PRO.TRI.INCREMENTAL(triangle)`, `PRO.TRI.CUMULATIVE(triangle)` | Incremental from cumulative, and back |
 | `PRO.TRI.LINKRATIOS(triangle)` | Age-to-age link ratios |
 | `PRO.TRI.LATEST(triangle)` | The latest diagonal |

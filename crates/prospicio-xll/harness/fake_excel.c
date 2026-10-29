@@ -162,7 +162,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and ten functions registered", registered == 110);
+    check("one hundred and eleven functions registered", registered == 111);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -944,6 +944,50 @@ int main(int argc, char **argv) {
               fabs(cf_run->val.array.lparray[4].val.num + 20) < 1e-9 &&
               fabs(cf_run->val.array.lparray[5].val.num + 20) < 1e-9);
     free12(cf_run);
+
+    /* The P&L ledger (PRO.PNL): annual losses 2 to 8, premium 10, a 10%
+     * premium expense and an aggregate cover of 3 xs 5 bought for 1 with a
+     * 10% commission; the net result's mean is 4.54 (the crate's example). */
+    static const double pl_x[6] = {2, 3, 4, 5, 6, 8}, pl_p[6] = {0.25, 0.3, 0.09, 0.2, 0.12, 0.04};
+    static wchar_t s_limit[] = L"\x05" L"limit", s_att[] = L"\x0A" L"attachment", s_prem[] = L"\x07" L"premium",
+                   s_comm[] = L"\x0A" L"commission", s_consol[] = L"\x0C" L"consolidated", s_card[] = L"\x04" L"card";
+    XLOPER12 pl_xc[6], pl_pc[6], pl_ec[2], pl_cc[8], pl_vals, pl_probs, pl_prem, pl_exp, pl_cov, pl_face, pl_out;
+    for (int k = 0; k < 6; k++) {
+        pl_xc[k].xltype = pl_pc[k].xltype = xltypeNum;
+        pl_xc[k].val.num = pl_x[k];
+        pl_pc[k].val.num = pl_p[k];
+    }
+    pl_ec[0].xltype = xltypeNil;
+    pl_ec[1].xltype = xltypeNum;
+    pl_ec[1].val.num = 0.1;
+    wchar_t *pl_head[4] = {s_limit, s_att, s_prem, s_comm};
+    static const double pl_row[4] = {3, 5, 1, 0.1};
+    for (int c = 0; c < 4; c++) {
+        pl_cc[c].xltype = xltypeStr;
+        pl_cc[c].val.str = pl_head[c];
+        pl_cc[4 + c].xltype = xltypeNum;
+        pl_cc[4 + c].val.num = pl_row[c];
+    }
+    XLOPER12 *pl_blocks[4] = {&pl_vals, &pl_probs, &pl_exp, &pl_cov};
+    XLOPER12 *pl_cellsp[4] = {pl_xc, pl_pc, pl_ec, pl_cc};
+    int pl_shape[4][2] = {{6, 1}, {6, 1}, {1, 2}, {2, 4}};
+    for (int k = 0; k < 4; k++) {
+        pl_blocks[k]->xltype = xltypeMulti;
+        pl_blocks[k]->val.array.lparray = pl_cellsp[k];
+        pl_blocks[k]->val.array.rows = pl_shape[k][0];
+        pl_blocks[k]->val.array.columns = pl_shape[k][1];
+    }
+    pl_prem.xltype = xltypeNum;
+    pl_prem.val.num = 10;
+    pl_face.xltype = pl_out.xltype = xltypeStr;
+    pl_face.val.str = s_consol;
+    pl_out.val.str = s_card;
+    XLOPER12 *pl_run = ((Fn9)GetProcAddress(xll, "pro_pnl"))(&pl_vals, &pl_probs, &pl_prem, &pl_exp, &pl_cov,
+                                                             &pl_face, &pl_out, &missing, &missing);
+    print_result("PRO.PNL(losses, probs, 10, 10% of premium, 3 xs 5, \"consolidated\", \"card\")", pl_run);
+    check("PRO.PNL net result mean 4.54", (pl_run->xltype & 0xFFF) == xltypeMulti && pl_run->val.array.rows == 4 &&
+                                              fabs(pl_run->val.array.lparray[3 * 9 + 2].val.num - 4.54) < 1e-12);
+    free12(pl_run);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

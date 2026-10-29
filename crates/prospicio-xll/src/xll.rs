@@ -509,4 +509,5 @@ mod exports {
     udf!(pro_irr, flows, times, unit, lower, upper, extend, detail);
     udf!(pro_moic, released, funded, opening);
     udf!(pro_cashflow, u, terms, patterns, requirement, commission, output, rate, commutation_requirement);
+    udf!(pro_pnl, values, probs, premium, expenses, covers, face, output, levels, expense_at_mean);
 }
