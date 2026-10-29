@@ -1,7 +1,7 @@
 ### Reserving
 
 - A paid development pattern per posterior draw from `Compartmental`, models
-  1 and 2 (#679): `CompartmentalFit.patterns` and `CompartmentalFits.patterns`
+  1 and 2 (#679, #689): `CompartmentalFit.patterns` and `CompartmentalFits.patterns`
   (`DevelopmentPatterns`), row `i` the pattern of the draw that simulation `i`
   took, the ODE's paid curve for the draw's rates over the same at the
   square's last age, for the cash-flow engine's `PatternDraws`. Python
