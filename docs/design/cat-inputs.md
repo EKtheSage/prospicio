@@ -186,6 +186,33 @@ Bindings: Python `prospicio.aggregate.EventLossTable`,
     regrouping them joins the end of one year to the start of another; the
     docs say so. An aggregate part has no times to cut and is refused.
     Python `EventSet.contract_years(start, partial=)`, R `contract_years()`.
+17. **Self-exciting (Hawkes) event times** (#567, items (a) to (e)
+    proposed by the Aggregate lane for the user's acceptance).
+    `prospicio_aggregate::Hawkes` is the process with intensity
+    `μ + Σ α e^{−β(t − t_i)}`, `Hawkes::simulate` a path by the branching
+    construction (exact: immigrants a Poisson process, each event a
+    Poisson(`α/β`) number of children after exponential delays),
+    `annual_counts` and `event_set` independent years with their times and
+    losses, `mean_count` and `stationary_count_variance` the closed forms,
+    and `Hawkes::fit` the maximum likelihood estimate with standard errors
+    from the observed information. (a) *The exponential kernel alone*: it
+    has an `O(n)` likelihood and closed-form moments; a power-law kernel
+    (aftershocks) waits for a user who needs it. (b) *Time is in years*,
+    `μ` and `β` a year. (c) *Years are independent, each from an empty
+    history by default*, so a year's mean count is `mean_count(1)`, below
+    the stationary `μ / (1 − n)`; `burn_in` years simulated before each
+    year and dropped bring it near the stationary state, and clustering
+    across years needs a longer path cut into years by the user
+    (`simulate` and `EventSet::from_years`). (d) *A fit assumes each period
+    starts empty*, the likelihood's usual form, and its branching ratio is
+    not constrained: a fit at or above 1 is returned, and
+    `HawkesFit::process` refuses it. (e) *The reference for the fit is an
+    independent SciPy implementation* (Ogata's thinning and
+    `scipy.optimize` on the log parameters), since `tick` and R's `hawkes`
+    package are not installed in the build; Python `Hawkes`, `HawkesFit`,
+    R `hawkes()`, `hawkes_simulate()`, `hawkes_counts()`,
+    `hawkes_event_set()`, `hawkes_moments()`, `hawkes_log_likelihood()`
+    and `hawkes_fit()`.
 
 ## Validation
 
@@ -227,6 +254,19 @@ Bindings: Python `prospicio.aggregate.EventLossTable`,
   original's years, times and labels back, at three starts, and keeping
   the partial years keeps every loss (unit tests in `monte_carlo.rs`;
   Python and R tests on a hand case).
+- Hawkes: the mean annual count from an empty history within four
+  standard errors of `mean_count(1)` over 40,000 years; after a burn-in
+  the mean is the stationary rate and the variance Hawkes and Oakes'
+  within 5%, and within 3% for a slow decay whose window correction is a
+  third of it; `α = 0` is the Poisson process by seed; the fit recovers
+  simulated parameters within three standard errors, no nearby point
+  beats it, and on four data sets (one long path and three sets of years,
+  `validation/reference/hawkes_scipy.csv`,
+  `validation/scripts/hawkes_scipy.py`) its log-likelihood equals SciPy's
+  optimum within `1e-6` and its parameters within `1e-4` relative, where
+  the data identify them (unit tests in `hawkes.rs`;
+  `validation/tests/aggregate.rs`, `hawkes_fits_match_scipy`; Python and
+  R tests).
 
 ## Next
 

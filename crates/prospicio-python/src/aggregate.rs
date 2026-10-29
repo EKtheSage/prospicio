@@ -3799,3 +3799,269 @@ impl PyTimeline {
         )
     }
 }
+
+/// A self-exciting (Hawkes) process of events with an exponential kernel,
+/// time in years: the rate ``baseline + Σ alpha · exp(-beta (t - t_i))``
+/// over past events ``t_i``.
+///
+/// Each event has on average ``alpha / beta`` direct offspring (the
+/// branching ratio, below 1), so events cluster in time, as windstorm
+/// series and aftershocks do, and the stationary rate is
+/// ``baseline / (1 - alpha / beta)``. Paths are drawn exactly by the
+/// branching construction. ``alpha = 0`` is the Poisson process.
+///
+/// Parameters
+/// ----------
+/// baseline : float
+///     Rate of the background events, a year; positive.
+/// alpha : float
+///     The rise in the rate at each event; at least 0 and below ``beta``.
+/// beta : float
+///     The excitation's decay rate, a year; positive.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import Hawkes
+/// >>> h = Hawkes(2.0, 12.0, 24.0)
+/// >>> h.branching_ratio, h.stationary_rate
+/// (0.5, 4.0)
+#[pyclass(name = "Hawkes", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyHawkes {
+    inner: prospicio_aggregate::Hawkes,
+}
+
+#[pymethods]
+impl PyHawkes {
+    #[new]
+    fn new(baseline: f64, alpha: f64, beta: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_aggregate::Hawkes::new(baseline, alpha, beta).map_err(to_py)?,
+        })
+    }
+
+    /// The baseline rate, a year.
+    #[getter]
+    fn baseline(&self) -> f64 {
+        self.inner.baseline()
+    }
+
+    /// The jump in the rate at each event.
+    #[getter]
+    fn alpha(&self) -> f64 {
+        self.inner.alpha()
+    }
+
+    /// The decay rate, a year.
+    #[getter]
+    fn beta(&self) -> f64 {
+        self.inner.beta()
+    }
+
+    /// ``alpha / beta``, each event's mean number of direct offspring.
+    #[getter]
+    fn branching_ratio(&self) -> f64 {
+        self.inner.branching_ratio()
+    }
+
+    /// The stationary mean rate ``baseline / (1 - alpha / beta)``.
+    #[getter]
+    fn stationary_rate(&self) -> f64 {
+        self.inner.stationary_rate()
+    }
+
+    /// The mean number of events on ``[0, horizon)`` from an empty history.
+    fn mean_count(&self, horizon: f64) -> f64 {
+        self.inner.mean_count(horizon)
+    }
+
+    /// The stationary variance of the count over a window of ``horizon``
+    /// years (Hawkes and Oakes' formula for the exponential kernel).
+    fn stationary_count_variance(&self, horizon: f64) -> f64 {
+        self.inner.stationary_count_variance(horizon)
+    }
+
+    /// One path's event times on ``[0, horizon)`` from an empty history,
+    /// stream ``stream`` of ``seed``.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (horizon, seed, stream = 0))]
+    fn simulate(&self, horizon: f64, seed: u64, stream: u64) -> PyResult<Vec<f64>> {
+        self.inner
+            .simulate(&mut prospicio_core::StreamRng::new(seed, stream), horizon)
+            .map_err(to_py)
+    }
+
+    /// The number of events in each of ``n_years`` independent years, year
+    /// ``i`` from stream ``i`` of ``seed``, after ``burn_in`` years whose
+    /// events excite the year and are dropped (0 for an empty history).
+    ///
+    /// Returns
+    /// -------
+    /// list of int
+    #[pyo3(signature = (n_years, burn_in = 0.0, seed = 0))]
+    fn annual_counts(&self, n_years: usize, burn_in: f64, seed: u64) -> PyResult<Vec<u64>> {
+        self.inner
+            .annual_counts(n_years, burn_in, seed)
+            .map_err(to_py)
+    }
+
+    /// ``n_years`` independent years of events with their times in
+    /// ``[0, 1)`` and a loss from ``severity`` each, as ``annual_counts``
+    /// draws the years.
+    ///
+    /// Parameters
+    /// ----------
+    /// severity : a severity
+    /// n_years : int
+    /// burn_in : float, default 0.0
+    /// seed : int, default 0
+    ///
+    /// Returns
+    /// -------
+    /// EventSet
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import Hawkes
+    /// >>> from prospicio.distributions import Lognormal
+    /// >>> ev = Hawkes(2.0, 12.0, 24.0).event_set(Lognormal.from_mean_cv(10.0, 1.0), 100, seed=7)
+    /// >>> ev.n_sims, ev.has_times
+    /// (100, True)
+    #[pyo3(signature = (severity, n_years, burn_in = 0.0, seed = 0))]
+    fn event_set(
+        &self,
+        py: Python<'_>,
+        severity: &Bound<'_, PyAny>,
+        n_years: usize,
+        burn_in: f64,
+        seed: u64,
+    ) -> PyResult<PyEventSet> {
+        let sev = extract_severity(severity)?;
+        let h = self.inner;
+        let inner = py
+            .detach(|| h.event_set(&sev, n_years, burn_in, seed))
+            .map_err(to_py)?;
+        Ok(PyEventSet { inner })
+    }
+
+    /// The log-likelihood of event times, each period a sorted list on
+    /// ``[0, horizon)`` from an empty history.
+    #[pyo3(signature = (periods, horizon = 1.0))]
+    fn log_likelihood(&self, periods: Vec<Vec<f64>>, horizon: f64) -> f64 {
+        self.inner.log_likelihood(&periods, horizon)
+    }
+
+    /// The maximum likelihood fit to event times over one or more periods
+    /// of ``horizon`` years, each sorted and from an empty history (for
+    /// years, each year's times and ``horizon=1``).
+    ///
+    /// Parameters
+    /// ----------
+    /// periods : list of list of float
+    /// horizon : float, default 1.0
+    ///
+    /// Returns
+    /// -------
+    /// HawkesFit
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import Hawkes
+    /// >>> h = Hawkes(1.5, 6.0, 10.0)
+    /// >>> years = [h.simulate(1.0, seed=11, stream=i) for i in range(400)]
+    /// >>> fit = Hawkes.fit(years)
+    /// >>> abs(fit.baseline - 1.5) < 3 * fit.std_errors[0]
+    /// True
+    #[staticmethod]
+    #[pyo3(signature = (periods, horizon = 1.0))]
+    fn fit(py: Python<'_>, periods: Vec<Vec<f64>>, horizon: f64) -> PyResult<PyHawkesFit> {
+        let inner = py
+            .detach(|| prospicio_aggregate::Hawkes::fit(&periods, horizon))
+            .map_err(to_py)?;
+        Ok(PyHawkesFit { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Hawkes(baseline={}, alpha={}, beta={})",
+            self.inner.baseline(),
+            self.inner.alpha(),
+            self.inner.beta()
+        )
+    }
+}
+
+/// A Hawkes process fitted by maximum likelihood (``Hawkes.fit``).
+#[pyclass(name = "HawkesFit", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyHawkesFit {
+    inner: prospicio_aggregate::HawkesFit,
+}
+
+#[pymethods]
+impl PyHawkesFit {
+    /// The baseline rate, a year.
+    #[getter]
+    fn baseline(&self) -> f64 {
+        self.inner.baseline
+    }
+
+    /// The jump in the rate at each event.
+    #[getter]
+    fn alpha(&self) -> f64 {
+        self.inner.alpha
+    }
+
+    /// The decay rate, a year.
+    #[getter]
+    fn beta(&self) -> f64 {
+        self.inner.beta
+    }
+
+    /// The maximised log-likelihood.
+    #[getter]
+    fn log_likelihood(&self) -> f64 {
+        self.inner.log_likelihood
+    }
+
+    /// Standard errors of ``(baseline, alpha, beta)`` from the observed
+    /// information; NaN where it is not positive definite.
+    #[getter]
+    fn std_errors(&self) -> (f64, f64, f64) {
+        let s = self.inner.std_errors;
+        (s[0], s[1], s[2])
+    }
+
+    /// Events fitted.
+    #[getter]
+    fn n_events(&self) -> usize {
+        self.inner.n_events
+    }
+
+    /// Whether the optimiser met its tolerance.
+    #[getter]
+    fn converged(&self) -> bool {
+        self.inner.converged
+    }
+
+    /// ``alpha / beta``.
+    #[getter]
+    fn branching_ratio(&self) -> f64 {
+        self.inner.branching_ratio()
+    }
+
+    /// ``6 - 2 log_likelihood``.
+    #[getter]
+    fn aic(&self) -> f64 {
+        self.inner.aic()
+    }
+
+    /// The fitted process; ValueError when the branching ratio is at or
+    /// above 1.
+    fn process(&self) -> PyResult<PyHawkes> {
+        Ok(PyHawkes {
+            inner: self.inner.process().map_err(to_py)?,
+        })
+    }
+}

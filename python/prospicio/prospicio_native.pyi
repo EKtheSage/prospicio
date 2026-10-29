@@ -15084,6 +15084,203 @@ class HachemeisterFit:
         """
 
 @final
+class Hawkes:
+    """
+    A self-exciting (Hawkes) process of events with an exponential kernel,
+    time in years: the rate ``baseline + Σ alpha · exp(-beta (t - t_i))``
+    over past events ``t_i``.
+    
+    Each event has on average ``alpha / beta`` direct offspring (the
+    branching ratio, below 1), so events cluster in time, as windstorm
+    series and aftershocks do, and the stationary rate is
+    ``baseline / (1 - alpha / beta)``. Paths are drawn exactly by the
+    branching construction. ``alpha = 0`` is the Poisson process.
+    
+    Parameters
+    ----------
+    baseline : float
+        Rate of the background events, a year; positive.
+    alpha : float
+        The rise in the rate at each event; at least 0 and below ``beta``.
+    beta : float
+        The excitation's decay rate, a year; positive.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import Hawkes
+    >>> h = Hawkes(2.0, 12.0, 24.0)
+    >>> h.branching_ratio, h.stationary_rate
+    (0.5, 4.0)
+    """
+    def __new__(cls, /, baseline: float, alpha: float, beta: float) -> Hawkes: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def alpha(self, /) -> float:
+        """
+        The jump in the rate at each event.
+        """
+    def annual_counts(self, /, n_years: int, burn_in: float = 0.0, seed: int = 0) -> list[int]:
+        """
+        The number of events in each of ``n_years`` independent years, year
+        ``i`` from stream ``i`` of ``seed``, after ``burn_in`` years whose
+        events excite the year and are dropped (0 for an empty history).
+        
+        Returns
+        -------
+        list of int
+        """
+    @property
+    def baseline(self, /) -> float:
+        """
+        The baseline rate, a year.
+        """
+    @property
+    def beta(self, /) -> float:
+        """
+        The decay rate, a year.
+        """
+    @property
+    def branching_ratio(self, /) -> float:
+        """
+        ``alpha / beta``, each event's mean number of direct offspring.
+        """
+    def event_set(self, /, severity: Any, n_years: int, burn_in: float = 0.0, seed: int = 0) -> EventSet:
+        """
+        ``n_years`` independent years of events with their times in
+        ``[0, 1)`` and a loss from ``severity`` each, as ``annual_counts``
+        draws the years.
+        
+        Parameters
+        ----------
+        severity : a severity
+        n_years : int
+        burn_in : float, default 0.0
+        seed : int, default 0
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import Hawkes
+        >>> from prospicio.distributions import Lognormal
+        >>> ev = Hawkes(2.0, 12.0, 24.0).event_set(Lognormal.from_mean_cv(10.0, 1.0), 100, seed=7)
+        >>> ev.n_sims, ev.has_times
+        (100, True)
+        """
+    @staticmethod
+    def fit(periods: Sequence[Sequence[float]], horizon: float = 1.0) -> HawkesFit:
+        """
+        The maximum likelihood fit to event times over one or more periods
+        of ``horizon`` years, each sorted and from an empty history (for
+        years, each year's times and ``horizon=1``).
+        
+        Parameters
+        ----------
+        periods : list of list of float
+        horizon : float, default 1.0
+        
+        Returns
+        -------
+        HawkesFit
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import Hawkes
+        >>> h = Hawkes(1.5, 6.0, 10.0)
+        >>> years = [h.simulate(1.0, seed=11, stream=i) for i in range(400)]
+        >>> fit = Hawkes.fit(years)
+        >>> abs(fit.baseline - 1.5) < 3 * fit.std_errors[0]
+        True
+        """
+    def log_likelihood(self, /, periods: Sequence[Sequence[float]], horizon: float = 1.0) -> float:
+        """
+        The log-likelihood of event times, each period a sorted list on
+        ``[0, horizon)`` from an empty history.
+        """
+    def mean_count(self, /, horizon: float) -> float:
+        """
+        The mean number of events on ``[0, horizon)`` from an empty history.
+        """
+    def simulate(self, /, horizon: float, seed: int, stream: int = 0) -> list[float]:
+        """
+        One path's event times on ``[0, horizon)`` from an empty history,
+        stream ``stream`` of ``seed``.
+        
+        Returns
+        -------
+        list of float
+        """
+    def stationary_count_variance(self, /, horizon: float) -> float:
+        """
+        The stationary variance of the count over a window of ``horizon``
+        years (Hawkes and Oakes' formula for the exponential kernel).
+        """
+    @property
+    def stationary_rate(self, /) -> float:
+        """
+        The stationary mean rate ``baseline / (1 - alpha / beta)``.
+        """
+
+@final
+class HawkesFit:
+    """
+    A Hawkes process fitted by maximum likelihood (``Hawkes.fit``).
+    """
+    @property
+    def aic(self, /) -> float:
+        """
+        ``6 - 2 log_likelihood``.
+        """
+    @property
+    def alpha(self, /) -> float:
+        """
+        The jump in the rate at each event.
+        """
+    @property
+    def baseline(self, /) -> float:
+        """
+        The baseline rate, a year.
+        """
+    @property
+    def beta(self, /) -> float:
+        """
+        The decay rate, a year.
+        """
+    @property
+    def branching_ratio(self, /) -> float:
+        """
+        ``alpha / beta``.
+        """
+    @property
+    def converged(self, /) -> bool:
+        """
+        Whether the optimiser met its tolerance.
+        """
+    @property
+    def log_likelihood(self, /) -> float:
+        """
+        The maximised log-likelihood.
+        """
+    @property
+    def n_events(self, /) -> int:
+        """
+        Events fitted.
+        """
+    def process(self, /) -> Hawkes:
+        """
+        The fitted process; ValueError when the branching ratio is at or
+        above 1.
+        """
+    @property
+    def std_errors(self, /) -> tuple[float, float, float]:
+        """
+        Standard errors of ``(baseline, alpha, beta)`` from the observed
+        information; NaN where it is not positive definite.
+        """
+
+@final
 class HierarchicalCredibilityFit:
     """
     A fitted Bayesian hierarchical credibility model, from
