@@ -1583,8 +1583,8 @@ look back over several years.
 
 ### Franchise, nth-event and top-and-drop covers (#591)
 
-Status: built; items (a) to (e) proposed by the Aggregate lane for the
-user's acceptance.
+Status: built; items (a) to (e) proposed by the Aggregate lane and accepted
+by the user on 2026-10-29 as built.
 
 Three catastrophe structures as settings on a layer, each saved in the
 tower JSON (format version 9) and in Python and R:

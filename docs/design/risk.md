@@ -464,8 +464,8 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   0.75, and the series for `|ρ| ≥ 0.925`: about `1e-15` absolute. The
   bivariate t is not carried.
 - **Sobol points and the multivariate normal in any dimension** (#565;
-  items (a) to (e) proposed by the Probability lane for the user's
-  acceptance). `prospicio_math::qmc::Sobol` gives Joe and Kuo's Sobol
+  items (a) to (e) proposed by the Probability lane and accepted by the
+  user on 2026-10-29 as built). `prospicio_math::qmc::Sobol` gives Joe and Kuo's Sobol
   sequence at 32 bits in Gray-code order, unscrambled equal to SciPy's
   `stats.qmc.Sobol(d, scramble=False, bits=32)`.
   `prospicio_math::mvn::mvn_probability` (and `mvn_cdf` for no lower

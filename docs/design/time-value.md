@@ -433,7 +433,8 @@ frame).
     `since_inception_irr` and `DealBook.cashflows`; in R `root_above` and
     `root_below` columns and `extend =` on `irr()` and `book_cashflows()`.
 36. **A deal's and a book's price adequacy in one table** (#589, items
-    (a) to (e) proposed by the Aggregate lane for the user's acceptance).
+    (a) to (e) proposed by the Aggregate lane and accepted by the user on
+    2026-10-29 as built).
     `DealBook::adequacy(rule, assets)` gives a row a deal and the book's
     `"total"`: the premium charged and kept, the expected loss and margin,
     the allocated and marginal assets and capital, the return on each, the
