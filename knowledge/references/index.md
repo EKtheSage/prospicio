@@ -1,5 +1,6 @@
 # Reference implementations
 
+* [MAPIE 0.9.1, the reference for prospicio's conformal intervals](mapie.md) - Its split and CV+ quantiles are the conformal order statistic, clipped instead of infinite; its CQR takes a quantile sometimes one order statistic higher.
 * [statsmodels](statsmodels.md) - Python statsmodels, the reference for prospicio-glm's GLMs, robust standard errors and Tweedie profiles; its conventions and quirks.
 * [glmmTMB and lme4](glmmtmb-lme4.md) - The references for GLMMs with random intercepts and slopes: glmmTMB stops short and is polished, its gamma dispersion parameter is the log shape, its condVar adds the estimates' uncertainty, and glmer's quadrature log-likelihood leaves out the saturated model's; glmmTMB's unstructured theta layout and lme4's split of `||` terms.
 * [R loo](r-loo.md) - The R package loo 2.6.0, the reference for ELPD by PSIS-LOO and WAIC, and 2.10.1 for the LOO-PIT by E_loo; its stacking_weights stops early.

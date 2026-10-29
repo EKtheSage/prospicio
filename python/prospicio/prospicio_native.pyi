@@ -32542,6 +32542,83 @@ def condition_on_paid(u: Sequence[float], premium: float, paid: float, share_pai
     ([1], [0.8])
     """
 
+def conformal_cqr(y: Sequence[float], lo: Sequence[float], hi: Sequence[float], test_lo: Sequence[float], test_hi: Sequence[float], alpha: float = 0.1) -> dict:
+    """
+    Conformalised quantile regression intervals: from a lower and an upper
+    quantile model's predictions on a calibration set and on the test set,
+    the score ``max(lo - y, y - hi)`` and the intervals ``[lo - q, hi + q]``.
+    
+    Parameters
+    ----------
+    y, lo, hi : list of float
+        Calibration responses and the two models' predictions there.
+    test_lo, test_hi : list of float
+    alpha : float, default 0.1
+    
+    Returns
+    -------
+    dict
+        ``lo`` and ``hi``.
+    """
+
+def conformal_plus(y: Sequence[float], oof_pred: Sequence[float], folds: Sequence[int], test_pred: Sequence[Sequence[float]], alpha: float = 0.1) -> dict:
+    """
+    CV+ intervals (the jackknife+ with one fold a row) from each fold's
+    model's predictions: ``oof_pred[i]`` training row ``i``'s prediction by
+    the model fitted without its fold ``folds[i]``, and ``test_pred[k]``
+    fold ``k``'s model's predictions on the test rows. Coverage is at least
+    ``1 - 2 alpha``.
+    
+    Parameters
+    ----------
+    y, oof_pred : list of float
+    folds : list of int
+    test_pred : list of list of float
+    alpha : float, default 0.1
+    
+    Returns
+    -------
+    dict
+        ``lo`` and ``hi``.
+    """
+
+def conformal_split(y: Sequence[float], pred: Sequence[float], test_pred: Sequence[float], alpha: float = 0.1, score: str = "absolute", family: str |None = None, scale: Sequence[float] |None = None, test_scale: Sequence[float] |None = None, weights: Sequence[float] |None = None, test_weights: Sequence[float] |None = None, theta: float |None = None, power: float |None = None) -> dict:
+    """
+    Split conformal prediction intervals from a model's predictions on a
+    calibration set: the ``ceil((1 - alpha)(n + 1))``-th smallest score
+    ``q`` gives each test prediction ``pred ± q`` (``score="absolute"``),
+    ``mu ± q sqrt(V(mu))`` (``"pearson"``, the family's variance) or
+    ``pred ± q s`` (``"scaled"``, with ``scale`` and ``test_scale``). With
+    ``weights`` and ``test_weights`` the quantile is the weighted one with
+    each test row's weight at infinity (covariate-shift conformal).
+    
+    Parameters
+    ----------
+    y, pred : list of float
+        Responses and predictions on the calibration set.
+    test_pred : list of float
+    alpha : float, default 0.1
+    score : {"absolute", "pearson", "scaled"}, default "absolute"
+    family : str, optional
+        For ``"pearson"``.
+    scale, test_scale : list of float, optional
+        For ``"scaled"``.
+    weights, test_weights : list of float, optional
+    theta, power : float, optional
+    
+    Returns
+    -------
+    dict
+        ``lo`` and ``hi``.
+    
+    Examples
+    --------
+    >>> from prospicio.models import conformal_split
+    >>> i = conformal_split([float(k) for k in range(19)], [9.0] * 19, [100.0], alpha=0.1)
+    >>> i["lo"], i["hi"]
+    ([91.0], [109.0])
+    """
+
 def confusion_matrix(y: Sequence[float], score: Sequence[float], threshold: float, weights: Sequence[float] |None = None) -> dict[str, float]:
     """
     The confusion matrix of a binary model at ``threshold`` (a row is

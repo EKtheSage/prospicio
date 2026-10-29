@@ -300,6 +300,7 @@ reference:
       - predict_dispersion
       - predict_distribution
       - model_metrics
+      - conformal_split
       - model_charts
       - resampling
       - explanations

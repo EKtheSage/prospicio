@@ -744,3 +744,44 @@ if (requireNamespace("posterior", quietly = TRUE)) {
 stopifnot(inherits(try(mcmc_draws(matrix(1:4, 2)), silent = TRUE), "try-error"))
 
 cat("prospicio R models tests passed\n")
+
+# Conformal prediction intervals (#546) against MAPIE 0.9.1, and the
+# model-level wrapper equal to the array functions on the same folds.
+cref <- utils::read.csv(file.path(root, "reference", "conformal_mapie.csv"), stringsAsFactors = FALSE,
+                        colClasses = "character")
+cnum <- function(s) as.double(strsplit(s, ";")[[1]])
+for (i in seq_len(nrow(cref))) {
+  r <- cref[i, ]
+  a <- as.double(r$alpha)
+  got <- switch(r$case,
+    split = conformal_split(cnum(r$y), cnum(r$pred), cnum(r$test), alpha = a),
+    cqr = {
+      p <- strsplit(r$pred, "|", fixed = TRUE)[[1]]
+      t <- strsplit(r$test, "|", fixed = TRUE)[[1]]
+      conformal_cqr(cnum(r$y), cnum(p[1]), cnum(p[2]), cnum(t[1]), cnum(t[2]), alpha = a)
+    },
+    conformal_plus(cnum(r$y), cnum(r$pred), cnum(r$folds) + 1,
+                   lapply(strsplit(r$test, "|", fixed = TRUE)[[1]], cnum), alpha = a)
+  )
+  for (side in c("lo", "hi")) {
+    want <- cnum(r[[side]])
+    stopifnot(all(abs(got[[side]] - want) <= 1e-12 * pmax(1, abs(want))))
+  }
+}
+cd <- data.frame(x = ((0:59) * 7) %% 13)
+cy <- 1 + 0.5 * cd$x + ((0:59 * 31) %% 7) - 3
+cfit <- function(data, y) stats::lm(y ~ x, data = cbind(data, y = y))
+cnew <- data.frame(x = c(0.5, 6, 12.5))
+csp <- k_fold(60, 5, 3)
+cgot <- conformal_intervals(cfit, cd, cy, cnew, method = "cv+", splits = csp)
+coof <- numeric(60); cfold <- integer(60); cper <- list()
+for (k in seq_along(csp)) {
+  m <- cfit(cd[csp[[k]]$train, , drop = FALSE], cy[csp[[k]]$train])
+  coof[csp[[k]]$test] <- predict(m, cd[csp[[k]]$test, , drop = FALSE])
+  cfold[csp[[k]]$test] <- k
+  cper[[k]] <- predict(m, cnew)
+}
+stopifnot(isTRUE(all.equal(cgot, conformal_plus(cy, coof, cfold, cper, 0.1), tolerance = 0)))
+cs <- conformal_intervals(cfit(cd, cy), cd, cy, cnew, method = "split")
+stopifnot(all(cs$lo < cs$hi))
+cat("conformal tests passed\n")

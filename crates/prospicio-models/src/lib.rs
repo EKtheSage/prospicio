@@ -21,6 +21,7 @@
 
 pub mod artifact;
 pub mod compare;
+pub mod conformal;
 pub mod design;
 pub mod encode;
 pub mod family;

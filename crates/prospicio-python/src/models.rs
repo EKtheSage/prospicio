@@ -5521,3 +5521,160 @@ pub(crate) fn mars(
         .map_err(to_py)?;
     Ok(PyMarsFit { inner })
 }
+
+fn intervals_dict(
+    py: Python<'_>,
+    i: prospicio_models::conformal::Intervals,
+) -> PyResult<Bound<'_, pyo3::types::PyDict>> {
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("lo", i.lo)?;
+    d.set_item("hi", i.hi)?;
+    Ok(d)
+}
+
+/// Split conformal prediction intervals from a model's predictions on a
+/// calibration set: the ``ceil((1 - alpha)(n + 1))``-th smallest score
+/// ``q`` gives each test prediction ``pred ± q`` (``score="absolute"``),
+/// ``mu ± q sqrt(V(mu))`` (``"pearson"``, the family's variance) or
+/// ``pred ± q s`` (``"scaled"``, with ``scale`` and ``test_scale``). With
+/// ``weights`` and ``test_weights`` the quantile is the weighted one with
+/// each test row's weight at infinity (covariate-shift conformal).
+///
+/// Parameters
+/// ----------
+/// y, pred : list of float
+///     Responses and predictions on the calibration set.
+/// test_pred : list of float
+/// alpha : float, default 0.1
+/// score : {"absolute", "pearson", "scaled"}, default "absolute"
+/// family : str, optional
+///     For ``"pearson"``.
+/// scale, test_scale : list of float, optional
+///     For ``"scaled"``.
+/// weights, test_weights : list of float, optional
+/// theta, power : float, optional
+///
+/// Returns
+/// -------
+/// dict
+///     ``lo`` and ``hi``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import conformal_split
+/// >>> i = conformal_split([float(k) for k in range(19)], [9.0] * 19, [100.0], alpha=0.1)
+/// >>> i["lo"], i["hi"]
+/// ([91.0], [109.0])
+#[pyfunction]
+#[pyo3(signature = (y, pred, test_pred, alpha = 0.1, score = "absolute", family = None, scale = None, test_scale = None, weights = None, test_weights = None, theta = None, power = None))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn conformal_split<'py>(
+    py: Python<'py>,
+    y: Vec<f64>,
+    pred: Vec<f64>,
+    test_pred: Vec<f64>,
+    alpha: f64,
+    score: &str,
+    family: Option<&str>,
+    scale: Option<Vec<f64>>,
+    test_scale: Option<Vec<f64>>,
+    weights: Option<Vec<f64>>,
+    test_weights: Option<Vec<f64>>,
+    theta: Option<f64>,
+    power: Option<f64>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    use prospicio_models::conformal::{Score, split, weighted_split};
+    let s = match score {
+        "absolute" => Score::Absolute,
+        "pearson" => Score::Pearson(self::family(
+            family.ok_or_else(|| PyValueError::new_err("a pearson score needs family"))?,
+            theta,
+            power,
+        )?),
+        "scaled" => Score::Scaled {
+            calibration: scale
+                .ok_or_else(|| PyValueError::new_err("a scaled score needs scale"))?,
+            test: test_scale
+                .ok_or_else(|| PyValueError::new_err("a scaled score needs test_scale"))?,
+        },
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "score must be \"absolute\", \"pearson\" or \"scaled\", not {other:?}"
+            )));
+        }
+    };
+    let i = match (weights, test_weights) {
+        (None, None) => split(&y, &pred, &test_pred, alpha, &s),
+        (Some(w), Some(tw)) => weighted_split(&y, &pred, &test_pred, alpha, &s, &w, &tw),
+        _ => {
+            return Err(PyValueError::new_err(
+                "give both weights and test_weights, or neither",
+            ));
+        }
+    }
+    .map_err(to_py)?;
+    intervals_dict(py, i)
+}
+
+/// Conformalised quantile regression intervals: from a lower and an upper
+/// quantile model's predictions on a calibration set and on the test set,
+/// the score ``max(lo - y, y - hi)`` and the intervals ``[lo - q, hi + q]``.
+///
+/// Parameters
+/// ----------
+/// y, lo, hi : list of float
+///     Calibration responses and the two models' predictions there.
+/// test_lo, test_hi : list of float
+/// alpha : float, default 0.1
+///
+/// Returns
+/// -------
+/// dict
+///     ``lo`` and ``hi``.
+#[pyfunction]
+#[pyo3(signature = (y, lo, hi, test_lo, test_hi, alpha = 0.1))]
+pub(crate) fn conformal_cqr<'py>(
+    py: Python<'py>,
+    y: Vec<f64>,
+    lo: Vec<f64>,
+    hi: Vec<f64>,
+    test_lo: Vec<f64>,
+    test_hi: Vec<f64>,
+    alpha: f64,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let i =
+        prospicio_models::conformal::cqr(&y, &lo, &hi, &test_lo, &test_hi, alpha).map_err(to_py)?;
+    intervals_dict(py, i)
+}
+
+/// CV+ intervals (the jackknife+ with one fold a row) from each fold's
+/// model's predictions: ``oof_pred[i]`` training row ``i``'s prediction by
+/// the model fitted without its fold ``folds[i]``, and ``test_pred[k]``
+/// fold ``k``'s model's predictions on the test rows. Coverage is at least
+/// ``1 - 2 alpha``.
+///
+/// Parameters
+/// ----------
+/// y, oof_pred : list of float
+/// folds : list of int
+/// test_pred : list of list of float
+/// alpha : float, default 0.1
+///
+/// Returns
+/// -------
+/// dict
+///     ``lo`` and ``hi``.
+#[pyfunction]
+#[pyo3(signature = (y, oof_pred, folds, test_pred, alpha = 0.1))]
+pub(crate) fn conformal_plus<'py>(
+    py: Python<'py>,
+    y: Vec<f64>,
+    oof_pred: Vec<f64>,
+    folds: Vec<usize>,
+    test_pred: Vec<Vec<f64>>,
+    alpha: f64,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let i = prospicio_models::conformal::cv_plus(&y, &oof_pred, &folds, &test_pred, alpha)
+        .map_err(to_py)?;
+    intervals_dict(py, i)
+}
