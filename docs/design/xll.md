@@ -33,6 +33,9 @@ category of Insert Function:
 | `PRO.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack's bootstrap's one-year view, laid out as `PRO.ODP.CDR` |
 | `PRO.CLARK(triangle, [exposure], [curve], [max_age], [origins])` | Clark's growth curve: the LDF method, or Cape Cod with `exposure`; reserve and its process, parameter and total SE |
 | `PRO.CLARK.PARAMS(triangle, [exposure], [curve], [max_age])` | Its fitted omega, theta, ELR (Cape Cod), scale and observations |
+| `PRO.GLM(data, response, terms, [family], [link], [exposure], [weights], [p])` | A GLM on a table with a header row: each coefficient's estimate, SE, statistic, p-value and exp(estimate), then deviance, dispersion, log-likelihood, AIC, BIC and the degrees of freedom (decision 41) |
+| `PRO.GLM.PREDICT(data, response, terms, newdata, [family], [link], [exposure], [weights], [p])` | The fitted model's mean on each row of a table of new rows |
+| `PRO.GLM.RELATIVITIES(data, response, terms, [family], [link], [exposure], [weights], [p], [level])` | A log-link GLM's relativities: each factor level against its base, a numeric term per unit, with a confidence interval |
 | `PRO.TRI.INCREMENTAL(triangle)`, `PRO.TRI.CUMULATIVE(triangle)` | The triangle turned incremental, or an incremental one cumulative, laid out as it is |
 | `PRO.TRI.LINKRATIOS(triangle)` | Age-to-age link ratios, one column fewer than the ages |
 | `PRO.TRI.LATEST(triangle)` | Each origin's latest value, a column |
@@ -836,6 +839,42 @@ real Excel.
     a priori per origin against the BF formula and the crate, and a
     diagonal's against any order of its origins. The fake Excel checks
     the last argument through the C API.
+
+41. **GLMs on a sheet** (#578 group 1, 0.0.7; the user's decision of
+    2026-10-29 to work on #578 after #635 and #680). `PRO.GLM`,
+    `PRO.GLM.PREDICT` and `PRO.GLM.RELATIVITIES` fit a `prospicio-glm`
+    GLM to a table whose first row names its columns, as an Excel table
+    or a pasted extract has it; trailing blank rows are dropped, so a
+    whole-column range works. `response` names a column, and `terms` is a
+    row or column of entries: a column's name (a numeric column is a
+    numeric term, a text column a factor), `name=level` for a factor with
+    that base level (otherwise the first level in sorted order, as R and
+    statsmodels choose it), and `a:b` for an interaction. The model is
+    refitted on each call rather than kept between calls: a handle to a
+    fit held by the add-in would go stale when the sheet changes, and the
+    fits a sheet needs take milliseconds (600 rows). `family` is
+    `poisson` (the default), `quasipoisson` (Poisson with Pearson's
+    dispersion), `gamma`, `gaussian`, `inverse_gaussian`, `binomial` (a
+    proportion with the trials as `weights`), `tweedie` (with `p` its
+    power) or `negative_binomial` (with `p` its theta); `link` defaults
+    to the log, the logit for the binomial and the identity for the
+    Gaussian. `exposure` names a column whose log is the offset, so it is
+    allowed only on the log link; `weights` names the prior weights.
+    Every function takes the same arguments in the same order, with
+    `newdata` after `terms` for the prediction and `level` (0.95) last
+    for the relativities, so one argument list is copied between them. A
+    level or column in `newdata` the training data lacks is an error
+    naming it. The relativities list a factor's base level first at 1,
+    labelled `(base)`, so the table reads as a rating manual's. Checks
+    (`tests/glm.rs`): every statsmodels 0.15.0 case of
+    `validation/reference/glm_statsmodels.csv` (ten families and links on
+    `validation/data/glm_policies.csv`, 144 values: coefficients, SEs,
+    deviance, null deviance, dispersion, log-likelihood and AIC) at the
+    file's tolerances; predictions against the coefficients by hand;
+    relativities and their intervals against exp(estimate), and a chosen
+    base level as the reciprocal; the errors. The fake Excel fits a
+    six-row table through the C API, and the test workbook's GLM sheet
+    checks the Poisson fit against statsmodels.
 
 ## Parity plan
 

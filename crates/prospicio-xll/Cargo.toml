@@ -22,3 +22,6 @@ prospicio-bayes.workspace = true
 prospicio-prob.workspace = true
 prospicio-aggregate.workspace = true
 prospicio-pricing.workspace = true
+prospicio-glm.workspace = true
+prospicio-models.workspace = true
+prospicio-math.workspace = true
