@@ -41,6 +41,10 @@ category of Insert Function:
 | `PRO.MOIC(released, funded, [opening])` | Multiple on invested capital `1 + released / (funded + opening)`, per row |
 | `PRO.CASHFLOW(u, terms, patterns, requirement, [commission], [output], [rate], [commutation_requirement])` | A collateralised deal on each simulated loss ratio: IRR, MOIC, NPV and totals per simulation, the monthly flows, or the first simulation's accounts |
 | `PRO.PNL(values, [probs], premium, [expenses], [covers], [face], [output], [levels], [expense_at_mean])` | A book's P&L ledger over annual gross losses with the annual covers it buys (`aggregate`'s `pnl` and `xpnl`): every line with its mean, SD, CV, skewness and the scenario columns that foot; the card; or the ratios (decision 43) |
+| `PRO.YLT.STATS(years, losses, [n_years], [probabilities], [quantile], [times], [hours], [negative])` | A year loss table's annual totals: years, losses and occurrences (under an hours clause), the average annual loss, SD, CV, skewness, VaR and TVaR under a stated quantile rule (decision 44) |
+| `PRO.YLT.OEP(years, losses, [return_periods], [amounts], [n_years], [quantile], [times], [hours], [negative])` | A year loss table's occurrence and aggregate exceedance curves: occurrence and aggregate PMLs and TVaRs by return period, or the OEP and AEP at amounts (decision 44) |
+| `PRO.ELT.STATS(rates, means, [sd_independent], [sd_correlated], exposures)` | An event loss table's events a year, chance of an event, expected annual loss, SD and CV (decision 44) |
+| `PRO.ELT.OEP(rates, means, [sd_independent], [sd_correlated], exposures, [return_periods], [amounts])` | An event loss table's occurrence exceedance curve with secondary uncertainty: occurrence PMLs by return period, or the exceedance frequency and OEP at amounts (decision 44) |
 | `PRO.TRI.INCREMENTAL(triangle)`, `PRO.TRI.CUMULATIVE(triangle)` | The triangle turned incremental, or an incremental one cumulative, laid out as it is |
 | `PRO.TRI.LINKRATIOS(triangle)` | Age-to-age link ratios, one column fewer than the ages |
 | `PRO.TRI.LATEST(triangle)` | Each origin's latest value, a column |
@@ -968,6 +972,51 @@ real Excel.
     Excel checks the crate's example (a net result of 4.54) through the
     C API, and the test workbook's P&L sheet puts `aggregate`'s Example 3
     beside the add-in's.
+
+44. **Year and event loss tables on a sheet** (#578 group 4, 0.0.7).
+    `PRO.YLT.STATS` and `PRO.YLT.OEP` read a year loss table as columns,
+    each row's year (from 1) and loss, through
+    `prospicio_aggregate::ylt::YearLossTable` (its checks: losses finite
+    and non-negative, or with `negative` stored as negative numbers,
+    years from 1, `n_years` at least the largest), tiled once into its
+    years. `times` (each loss's fraction of its year) with `hours` applies
+    the hours clause (`EventSet::grouped`), which joins the losses within
+    a window into one occurrence: it changes the counts and the largest
+    occurrences, not the totals. A row blank in every column is the empty
+    end of a selected range and is skipped; a row blank in some is an
+    error. `quantile` names the rule of `prospicio.risk.statistics`, its
+    TVaR going with it: `"inverted_cdf"` (R type 1, the exact TVaR; the
+    default, as `Sampled`'s), `"linear"` (R type 7) or `"kth_largest"`
+    (the k-th worst year, the mean of the k worst). STATS gives the
+    counts, the total's moments (population, dividing by the years), its
+    extremes and the largest occurrence, then VaR and TVaR at each
+    probability. OEP gives, by return period, the occurrence and
+    aggregate PMLs (the quantiles at `1 - p` of each year's largest
+    occurrence and total) with their TVaRs, or with `amounts` the share
+    of years whose largest occurrence or total is above each amount and
+    its return period; a return period past the table's years is an
+    error, and the defaults (2 to 1000 years, as `PRO.AGG.PML`) drop
+    those. `PRO.ELT.STATS` and `PRO.ELT.OEP` read an event loss table
+    (`prospicio_aggregate::cat::EventLossTable`: rates, means, the two
+    standard deviations, summed, a beta on `[0, exposure]` per event,
+    omitted deviations read as 0); STATS adds the compound Poisson SD
+    `sqrt(Σ rate (mean² + σ²))`, OEP gives the occurrence PML by return
+    period with the exceedance frequency at it and its occurrence return
+    period, or the frequency and OEP at amounts. Not yet: labels (a
+    peril or a class) and an hours clause by label, resampling a table to
+    more simulations, and towers applied to the years (`Tower::apply`),
+    each when a user asks. Checks (`tests/cat.rs`): Alder Mutual's tables
+    (`examples/data/cat_book_*.csv`) against every number the guide
+    `cat-2-risk-metrics.md` prints, which CI checks against the Python
+    package (the average annual loss, SD, VaR and TVaR under the three
+    rules, the OEP and AEP at 30, 70 and 110, raw and under a 72-hour
+    clause, the occurrences it leaves, the PMLs at 10 to 250 years, and
+    the ELT's rate, expected annual loss, OEP and occurrence PMLs); the
+    ELT's SD against 200,000 simulated years; negative losses, padded
+    ranges and the errors. The fake Excel checks a small table's average
+    annual loss and a one-event table's OEP through the C API, and the
+    test workbook's Cat sheet holds Alder's tables with the guide's
+    numbers beside the add-in's.
 
 ## Parity plan
 

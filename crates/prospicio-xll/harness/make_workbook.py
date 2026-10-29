@@ -1254,6 +1254,67 @@ for i, (step, side, line, col, idx) in enumerate([
 pl.column_dimensions["A"].width = 30
 pl.column_dimensions["C"].width = 22
 
+# Catastrophe model output: Alder Mutual's year and event loss tables
+# (examples/data/cat_book_*.csv), against the numbers the guide
+# docs/guides/cat-2-risk-metrics.md prints.
+ct = wb.create_sheet("Cat")
+ct["A1"] = "prospicio XLL test: year and event loss tables (PRO.YLT.STATS, PRO.YLT.OEP, PRO.ELT.STATS, PRO.ELT.OEP)"
+ct["A1"].font = Font(bold=True, size=13)
+ct["A2"] = "Alder Mutual's 2,000 simulated years and its event loss table, as in the guide cat-2-risk-metrics."; ct["A2"].font = note
+for c, h in enumerate(["Year", "Loss", "Time"]):
+    ct.cell(row=3, column=1 + c, value=h).font = bold
+with open(REF.parent / "examples" / "data" / "cat_book_yelt.csv") as f:
+    alder = [r for r in csv.DictReader(f) if r["cedent"] == "alder"]
+for r, x in enumerate(alder):
+    ct.cell(row=4 + r, column=1, value=int(x["year"])).fill = inp
+    ct.cell(row=4 + r, column=2, value=float(x["loss"])).fill = inp
+    ct.cell(row=4 + r, column=3, value=f"=(({int(x['day'])}-1)*24+{int(x['hour'])})/8760")
+last = 3 + len(alder)
+for c, h in enumerate(["Rate", "Mean", "SD independent", "SD correlated", "Exposure"]):
+    ct.cell(row=3, column=5 + c, value=h).font = bold
+with open(REF.parent / "examples" / "data" / "cat_book_elt_alder.csv") as f:
+    events = list(csv.DictReader(f))
+for r, x in enumerate(events):
+    for c, k in enumerate(["rate", "mean", "sd_independent", "sd_correlated", "exposure"]):
+        ct.cell(row=4 + r, column=5 + c, value=float(x[k])).fill = inp
+elast = 3 + len(events)
+Y = f"$A$4:$A${last},$B$4:$B${last}"
+E = f"$E$4:$E${elast},$F$4:$F${elast},$G$4:$G${elast},$H$4:$H${elast},$I$4:$I${elast}"
+T = f"$C$4:$C${last}"
+ct["K3"] = "Annual totals"; ct["K3"].font = bold
+ct["K4"] = ArrayFormula("K4:L19", f"=PRO.YLT.STATS({Y},2000,{{0.9,0.99}})")
+ct["N3"] = "Amounts"; ct["N3"].font = bold
+ct["N4"] = 30; ct["N5"] = 70; ct["N6"] = 110
+for c in ("N4", "N5", "N6"):
+    ct[c].fill = inp
+ct["P3"] = "Exceedance at amounts, raw"; ct["P3"].font = bold
+ct["P4"] = ArrayFormula("P4:T7", f"=PRO.YLT.OEP({Y},,N4:N6)")
+ct["P10"] = "PMLs by return period, a 72-hour clause"; ct["P10"].font = bold
+ct["N11"] = 10; ct["N12"] = 50; ct["N13"] = 100; ct["N14"] = 250
+for c in ("N11", "N12", "N13", "N14"):
+    ct[c].fill = inp
+ct["P11"] = ArrayFormula("P11:U15", f"=PRO.YLT.OEP({Y},N11:N14,,,,{T},72)")
+ct["K22"] = "The event loss table"; ct["K22"].font = bold
+ct["K23"] = ArrayFormula("K23:L29", f"=PRO.ELT.STATS({E})")
+ct["P18"] = "The event loss table's OEP"; ct["P18"].font = bold
+ct["P19"] = ArrayFormula("P19:T23", f"=PRO.ELT.OEP({E},N11:N14)")
+ct["P26"] = "Check against the guide"; ct["P26"].font = bold
+checks = [
+    ("Average annual loss", "L9", 16.778, 3), ("SD", "L10", 35.158, 3), ("VaR 99%", "L17", 176.824, 3),
+    ("TVaR 99%", "L19", 255.969, 3), ("OEP at 30", "Q5", 0.1070, 4), ("AEP at 110", "R7", 0.0235, 4),
+    ("100-year OEP loss, 72 hours", "R14", 163.418, 3), ("250-year AEP loss", "S15", 232.741, 3),
+    ("ELT events a year", "L24", 2.3365, 4), ("ELT expected annual loss", "L26", 16.056, 3),
+    ("ELT 100-year occurrence loss", "R22", 147.938, 3),
+]
+for i, (name, cell, value, digits) in enumerate(checks):
+    row = 27 + i
+    ct[f"P{row}"] = name
+    ct[f"Q{row}"] = f"={cell}"
+    ct[f"R{row}"] = value
+    ct[f"S{row}"] = f"=ROUND(Q{row},{digits})=R{row}"
+ct.column_dimensions["K"].width = 20
+ct.column_dimensions["P"].width = 30
+
 wb.save(out)
 
 METADATA = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
