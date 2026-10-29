@@ -4739,7 +4739,17 @@ decision 26 gives.
    about 9 ms a simulation with the Weibull (30 microseconds `ln`-linear),
    so 10,000 simulations take about a minute and a half on one thread. The
    terms' `written` and `earned` must describe the same basis; the engine
-   cannot check it.
+   cannot check it. A pattern is complete at the first age its share
+   reaches 1 (a draw that `RunningMax` holds at 1 before the oldest age):
+   only the ages up to it are read and the later months are 1, and one
+   complete at its first age is read linearly from 0 to that age under
+   either reading. A pattern that never falls but that no Weibull follows
+   (nearly complete at its first age, then flat until a last step, as
+   `RunningMax` leaves some of Meyers' draws) is read with the curve at the
+   edge of its parameters as the projection's prior, which still gives the
+   given values exactly; before the fix of 2026-10-28 (branch
+   `claude/pattern-draws-meyers`) it was refused as not increasing, and a
+   draw held at 1 needed months to the oldest age.
 5. **A falling pattern** (accepted 2026-10-28). A pseudo factor below 1 makes a
    simulation's share fall at that age, which the engine refuses.
    `Monotone::Refuse` (the default) refuses it, naming the number of such

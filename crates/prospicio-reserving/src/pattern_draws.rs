@@ -363,8 +363,8 @@ impl SegmentPatterns {
     /// `basis`. A pattern is complete at the first age its share reaches
     /// 1 (a draw that `Monotone::RunningMax` held at 1 before the oldest
     /// age): only the ages up to it are read, and the months after it are
-    /// 1. Complete at its first age, it is read linearly from 0 to that
-    /// age under every reading (every accident month paid in full at
+    /// all 1. Complete at its first age, it is read linearly from 0 to
+    /// that age under every reading (every accident month paid in full at
     /// once), since a curve needs two ages.
     fn to_monthly(&self, shares: &[f64], basis: &MonthlyBasis, months: usize) -> Result<Vec<f64>> {
         let k = shares
@@ -926,11 +926,8 @@ mod tests {
                 .unwrap();
             // Every accident month paid in full at once: the year's share
             // is the share of its months past, t / 12.
-            for t in 0..12 {
-                assert!(
-                    (m[0][t] - (t + 1) as f64 / 12.0).abs() < 1e-12,
-                    "{reading:?}"
-                );
+            for (t, v) in m[0][..12].iter().enumerate() {
+                assert!((v - (t + 1) as f64 / 12.0).abs() < 1e-12, "{reading:?}");
             }
             assert!(m[0][12..].iter().all(|&v| v == 1.0), "{reading:?}");
             let basis =
@@ -978,19 +975,19 @@ mod tests {
         // through it (the fit runs to the edge of its parameters), and is
         // read with the curve at the edge as the projection's prior.
         let draw = vec![
-            0.96554989080061415,
-            0.57017556932877933,
-            0.76643177805718321,
-            0.94113382736483508,
-            0.94630979258275572,
+            0.9655498908006142,
+            0.5701755693287793,
+            0.7664317780571832,
+            0.9411338273648351,
+            0.9463097925827557,
             0.9559114412733235,
-            0.94340494491066262,
-            0.93452502095496159,
-            0.95913696404025905,
+            0.9434049449106626,
+            0.9345250209549616,
+            0.959136964040259,
             1.0,
         ];
         let patterns = one((1..=10).map(|k| 12 * k).collect(), draw);
-        let first = 0.96554989080061415;
+        let first = 0.9655498908006142;
         for basis in [
             MonthlyBasis::default(),
             MonthlyBasis::Underwriting(UnderwritingBasis::default()),

@@ -6,7 +6,8 @@
   `pattern_draws` and `monthly` as for the other fits; one fit or segments,
   carried through a rank correlation). A draw's pattern is the ratio of the
   expected cumulative values at each age to the one at the oldest age,
-  `exp(beta_d + sigma_d^2 / 2)` over `exp(sigma_m^2 / 2)`; in CSR the pattern
+  `exp(beta_d g + sigma_d^2 / 2)` over `exp(sigma_m^2 / 2)` (the ratio of the
+  means; the median form `exp(beta_d g)` falls in as many draws on group 353); in CSR the pattern
   of the origin after the last, and in CAY CRC's formula on CAY's draw (the
   expected values of an origin whose previous origin has no residual, not
   CAY's own, which also depend on `rho`). The reserves
@@ -15,3 +16,10 @@
   take `meyers_fit` and `meyers_fits`. **Breaking** in Rust: `MeyersFit` and
   `MeyersFits` gain the public `patterns` field, so a struct literal that
   leaves it out no longer builds.
+- `DevelopmentPatterns::monthly` reads a pattern that is complete before its
+  oldest age only up to the first age it reaches 1 (a draw that
+  `Monotone::RunningMax` holds at 1 early, from any fit, needed months to the
+  oldest age before, and its Weibull reading changes), reads one complete at
+  its first age linearly from 0, and no longer refuses a pattern that never
+  falls but that no Weibull follows (nearly complete at once, then flat until
+  a last step) as not increasing.

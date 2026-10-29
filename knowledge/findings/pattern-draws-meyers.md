@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: Meyers' development pattern per posterior draw falls somewhere in nearly every simulation on group 353, so the cash-flow engine needs the running maximum
-description: A posterior draw's pattern from Meyers' CRC, CSR or CAY is the ratio of the expected cumulative values to the one at the oldest age, exp(beta_d + sigma_d^2 / 2) over exp(sigma_m^2 / 2). On group 353 (paid, 2,000 simulations) it falls at some age in 1,977 (CRC), 1,976 (CSR) and 1,964 (CAY) of them, mostly over the last four steps, because the late beta_d are all near 0; DevelopmentPatterns::monthly with the default refuses, so a caller passes Monotone::RunningMax. The reserves and ultimates are bit for bit unchanged.
+description: A posterior draw's pattern from Meyers' CRC, CSR or CAY is the ratio of the expected cumulative values to the one at the oldest age, exp(beta_d g + sigma_d^2 / 2) over exp(sigma_m^2 / 2). On group 353 (paid, 2,000 simulations) it falls at some age in 1,977 (CRC), 1,976 (CSR) and 1,964 (CAY) of them, mostly over the last four steps, because the late beta_d are all near 0 and unordered; the median form exp(beta_d g) falls about as often (1,974, 1,968, 1,964), so the mean ratio is kept; DevelopmentPatterns::monthly with the default refuses, so a caller passes Monotone::RunningMax. The reserves and ultimates are bit for bit unchanged.
 tags: [reserving, meyers, bayes, payment-pattern, cashflow, simulation]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-28T18:00:00Z }
@@ -47,6 +47,38 @@ of the nine steps (age 1 to 2, up to age 9 to 10) is 4, 1, 19, 527, 223,
 near 1 over the last four or five ages and moves up and down with the
 draw. The mean pattern dips by less than 1% (CRC 0.9964, 0.9960, 0.9969 at
 ages 7, 8 and 9, then 1 at age 10).
+
+# The mean ratio against the median form
+
+One reading of the falls was that `sigma_d` falls with age while `beta_d` is
+near 0 late, so the `sigma_d^2 / 2` term lifts interior shares above 1 and
+the last age drops them to 1; the median form, `exp(beta_d g)` (`beta` 0 at
+the oldest age), would then fall far less often. On the same fits it does
+not:
+
+| Model | Built: falls | Built: a share above 1 before the oldest age | Built: largest share | Median form: falls | Median form: a share above 1 | Median form: largest share | Median form: worst fall |
+|---|---|---|---|---|---|---|---|
+| CRC | 1,977 | 1,476 | 1.245 | 1,974 | 1,459 | 1.243 | 18.5% |
+| CSR | 1,976 | 1,504 | 1.150 | 1,968 | 1,475 | 1.143 | 14.7% |
+| CAY | 1,964 | 1,489 | 1.316 | 1,964 | 1,471 | 1.296 | 24.8% |
+
+Shares above 1 are common under both forms, and the median form falls in as
+many draws to within 0.4%: the falls come from the late `beta_d`, which
+Meyers' priors do not order, not from `sigma_d`. The built form stays the
+mean ratio (`reserving-bayes.md` decision 27). The slow test prints these
+counts and asserts that the median form falls in at least 90% as many draws.
+
+# A reading the running maximum needed
+
+Held by the running maximum, a few of Meyers' draws are nearly complete at
+the first age and flat until the last step (on the R test's CRC fit, seed
+678, one draw at 96.6% from 12 to 108 months, then 1 at 120). No Weibull
+follows that shape, and `DevelopmentPatterns::monthly` under the default
+Weibull reading refused it as not increasing. The reading now takes the
+curve at the edge of its parameters as the projection's prior, which still
+gives the given values exactly, and reads a pattern only up to the first age
+it reaches 1. ODP and Mack bootstrap draws capped early by the running
+maximum went through the same code.
 
 # What follows
 

@@ -272,8 +272,9 @@ pub struct MeyersFit {
     /// at the oldest age, `exp(beta_d g + sigma_d^2 / 2)` over
     /// `exp(sigma_m^2 / 2)`, for an origin with nothing observed, row `i`
     /// simulation `i` of `ultimates` and `reserves` (`reserving-bayes.md`
-    /// decision 27). It ends at 1 at the oldest age (no tail), and can fall
-    /// where `sigma_d` differs by age. In CSR, `g` is the speedup of the
+    /// decision 27). It ends at 1 at the oldest age (no tail), and can fall:
+    /// the late `beta_d` are near 0 and unordered, so on Meyers' group 353
+    /// nearly every draw's share falls at some late age. In CSR, `g` is the speedup of the
     /// origin after the last. In CAY it is CRC's formula on CAY's draw:
     /// the expected values of an origin whose previous origin has no
     /// residual, not CAY's own expected values for the origin after the
@@ -4206,6 +4207,32 @@ pub(crate) mod tests {
             .collect()
     }
 
+    /// The median form of a draw's pattern, `exp(beta_d g)` (the ratio of
+    /// the medians, `beta` 0 at the oldest age), which decision 27 measured
+    /// against the built ratio of the means.
+    fn median_pattern(
+        posterior: &PosteriorDraws,
+        draw: &[f64],
+        kind: MeyersModel,
+        n_origins: usize,
+        n_dev: usize,
+    ) -> Vec<f64> {
+        let get = |name: &str| draw[position_in(posterior, name)];
+        let speed = match kind {
+            MeyersModel::Csr => (1.0 - get("gamma")).powi(n_origins as i32),
+            _ => 1.0,
+        };
+        (0..n_dev)
+            .map(|d| {
+                if d + 1 < n_dev {
+                    (get(&format!("beta[{}]", d + 1)) * speed).exp()
+                } else {
+                    1.0
+                }
+            })
+            .collect()
+    }
+
     /// Every origin's ultimate by the model's definition from the draw and
     /// the rest of its stream (as `draw_ultimates` reads it), CAY's
     /// recursion included. Group 353's first origin is observed at the
@@ -4263,16 +4290,26 @@ pub(crate) mod tests {
             let ultimates = fit.ultimates.draw_matrix();
             let mut falling = 0;
             let (mut at, mut worst) = ([0usize; 9], 0.0f64);
+            // Decision 27's measurement: shares above 1 before the oldest
+            // age, and how often the median form exp(beta_d g) would fall.
+            let (mut above, mut top) = (0, 0.0f64);
+            let (mut median_falling, mut median_above, mut median_top) = (0, 0, 0.0f64);
             for i in 0..fit.patterns.n_sims() {
                 let (draw, mut rng) = replay(&fit.posterior, seed, i);
                 // The pattern is the draw's, recomputed from its parameters.
                 let expected = expected_pattern(&fit.posterior, &draw, kind, 10, 10);
+                let median = median_pattern(&fit.posterior, &draw, kind, 10, 10);
+                median_falling += usize::from(median.windows(2).any(|w| w[1] < w[0]));
+                median_above += usize::from(median[..9].iter().any(|&v| v > 1.0));
+                median_top = median.iter().fold(median_top, |m, &v| m.max(v));
                 let row = segment.draw(i);
                 assert_eq!(row[9], 1.0);
                 for (d, (p, e)) in row.iter().zip(&expected).enumerate() {
                     assert!(close(*p, *e), "{kind:?} sim {i} age {d}: {p} against {e}");
                 }
                 falling += usize::from(row.windows(2).any(|w| w[1] < w[0]));
+                above += usize::from(row[..9].iter().any(|&v| v > 1.0));
+                top = row.iter().fold(top, |m, &v| m.max(v));
                 for (d, w) in row.windows(2).enumerate() {
                     if w[1] < w[0] {
                         at[d] += 1;
@@ -4294,8 +4331,17 @@ pub(crate) mod tests {
                 }
             }
             eprintln!(
-                "{kind:?}: {falling} of 2000 patterns fall; by step {at:?}, worst relative fall {worst:.5}, mean pattern {:.4?}",
+                "{kind:?}: {falling} of 2000 patterns fall; by step {at:?}, worst relative fall \
+                 {worst:.5}, {above} with a share above 1 before the oldest age, largest share \
+                 {top:.4}, mean pattern {:.4?}; the median form falls in {median_falling}, \
+                 {median_above} above 1, largest share {median_top:.4}",
                 segment.mean()
+            );
+            // The falls come from beta_d, not from sigma_d: the median form
+            // falls about as often (decision 27), so it is no remedy.
+            assert!(
+                10 * median_falling >= 9 * falling,
+                "{kind:?}: the median form falls in {median_falling}, the built one in {falling}"
             );
         }
     }

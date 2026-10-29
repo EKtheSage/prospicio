@@ -3338,14 +3338,38 @@ triangle each develop at their own speed, which the fit's cells carry, and
 are not in `patterns`.
 
 **The pattern falls, on group 353 in nearly every simulation.** The
-late `beta_d` are all near 0 and close together, so the
-share is flat near 1 over the last four or five ages and wobbles with the
-draw: on group 353 (paid, 2,000 simulations, 300 tuning and 300 kept draws
-per chain) 1,977 of CRC's patterns, 1,976 of CSR's and 1,964 of CAY's fall at
-some age, mostly at the steps from age 6 to the oldest, by up to 19%, 15% and
-25% of the share in the worst simulation; the mean pattern itself dips by
-under 1% (0.9964, 0.9960, 0.9969 at ages 7 to 9 for CRC). That is the model's
-own parameter uncertainty in a pattern that has nearly finished, not a bug.
+late `beta_d` are all near 0 and close together, and nothing in Meyers'
+priors orders them, so the share is flat near 1 over the last four or five
+ages and wobbles with the draw: on group 353 (paid, 2,000 simulations, 300
+tuning and 300 kept draws per chain) 1,977 of CRC's patterns, 1,976 of
+CSR's and 1,964 of CAY's fall at some age, mostly at the steps from age 6 to
+the oldest, by up to 19%, 15% and 25% of the share in the worst simulation;
+the mean pattern itself dips by under 1% (0.9964, 0.9960, 0.9969 at ages 7
+to 9 for CRC). That is the model's own parameter uncertainty in a pattern
+that has nearly finished, not a bug.
+
+**The mean ratio against the median form, measured.** One reading of the
+falls was that `sigma_d` falls with age while `beta_d` is near 0 late, so
+the `sigma_d^2 / 2` term lifts the interior shares above 1 before the last
+drops them to 1, and that the median form, `exp(beta_d g)` (alternative
+(b), `beta` 0 at the oldest age), would fall far less often. Measured on the
+same fits, it does not:
+
+| Model | Built: falls | Built: a share above 1 before the oldest age | Built: largest share | Median form: falls | Median form: a share above 1 | Median form: largest share | Median form: worst fall |
+|---|---|---|---|---|---|---|---|
+| CRC | 1,977 | 1,476 | 1.245 | 1,974 | 1,459 | 1.243 | 18.5% |
+| CSR | 1,976 | 1,504 | 1.150 | 1,968 | 1,475 | 1.143 | 14.7% |
+| CAY | 1,964 | 1,489 | 1.316 | 1,964 | 1,471 | 1.296 | 24.8% |
+
+Shares above 1 are common under both forms, and the median form falls in as
+many draws to within 0.4%: the falls come from the late `beta_d`
+themselves, not from `sigma_d`. By the rule set for the measurement (switch
+to the median form only if it fell in materially fewer draws), the built
+form stays the mean ratio, and the median form stays alternative (b).
+`each_simulations_pattern_is_its_posterior_draws` prints these counts and
+asserts that the median form falls in at least 90% as many draws as the
+built one.
+
 The cash-flow engine refuses a falling pattern (decision 28 item 5), so
 `DevelopmentPatterns::monthly` with the default `Monotone::Refuse` refuses
 Meyers' patterns nearly always, and a caller passes
@@ -3369,9 +3393,11 @@ accept `meyers_fit` and `meyers_fits`.
 
 **Alternatives not built.** (a) The ratio of an origin's simulated cells to
 its ultimate: carries process error and differs by origin, rejected in
-decision 28 item 1. (b) The ratio of the medians, `exp(beta_d)` alone:
+decision 28 item 1. (b) The ratio of the medians, `exp(beta_d g)` alone:
 simpler, but not the expected development the cash-flow engine pays on in
-expectation; the difference is `sigma_d^2 / 2`, large at the early ages. (c)
+expectation; the difference is `sigma_d^2 / 2`, large at the early ages, and
+on group 353 it falls in as many draws as the built form (the table above).
+(c)
 For CSR, a pattern per origin: `DevelopmentPatterns` holds one pattern per
 segment per draw, so it would change that type. (d) For CSR, the first
 origin's pattern (`g = 1`, the CRC pattern): it ignores the speedup the

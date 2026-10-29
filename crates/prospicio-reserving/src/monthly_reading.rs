@@ -228,7 +228,8 @@ fn fit_curve(points: &[(Lag, f64)], s: u32, curve: GrowthCurve) -> Result<(f64, 
     // The curve is only the projection's prior, so the best point found is
     // kept even where the search stops on its iteration limit (a curve that
     // steepens toward a step, as two given ages can ask for); the edge
-    // check below still rejects one that runs off.
+    // check below still rejects one that runs off on values that fall, and
+    // clamps it to the edge on values that do not.
     let best = starts
         .iter()
         .map(|x0| nelder_mead(objective, x0, &options))

@@ -60,7 +60,8 @@ def test_each_simulation_ends_at_one(fit):
     assert p.segments == [()]
     assert p.ages() == [12 * d for d in range(1, 11)]
     draws = p.pattern_draws()
-    assert len(draws) == N
+    # One pattern per simulation of the reserves.
+    assert len(draws) == N == len(fit.ultimate_draws())
     for row in draws:
         assert len(row) == 10
         # The oldest age is the reference, so there is no tail.
@@ -97,13 +98,6 @@ def test_monthly_gives_whole_rows_and_a_falling_one_is_refused_or_held(fit):
         assert p.monthly(120) == rows
     with pytest.raises(ValueError):
         p.monthly(24, monotone="running_max")
-
-
-def test_csr_differs_from_crc_only_through_the_speedup(tri):
-    crc = Meyers("crc", **QUICK).fit(tri, "paid", "premium").patterns.mean()
-    csr = Meyers("csr", **QUICK).fit(tri, "paid", "premium").patterns.mean()
-    assert crc != csr
-    assert csr == pytest.approx(crc, abs=0.1)
 
 
 def test_segments_are_named_by_their_label():

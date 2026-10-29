@@ -20469,14 +20469,16 @@ class MeyersFit:
         ``ultimates``. A simulation's pattern is the ratio of the expected
         cumulative values at each age to the one at the oldest age, under
         the posterior draw it took, for an origin with nothing observed:
-        ``exp(beta_d + sigma_d^2 / 2)`` over ``exp(sigma_m^2 / 2)``. It ends
-        at 1 at the oldest age (no tail) and can fall where ``sigma_d``
-        differs by age (``monthly`` refuses that unless
-        ``monotone="running_max"``). In CSR the draw's speedup for the origin
-        after the last scales ``beta_d``. In CAY it is CRC's formula on CAY's
-        draw, the expected values of an origin whose previous origin has no
-        residual; CAY's own expected values for the origin after the last
-        also depend on ``rho``.
+        ``exp(beta_d g + sigma_d^2 / 2)`` over ``exp(sigma_m^2 / 2)``. It
+        ends at 1 at the oldest age (no tail) and can fall: the late
+        ``beta_d`` are near 0 and unordered, so on Meyers' group 353 nearly
+        every draw's share falls at some late age (``monthly`` refuses that
+        unless ``monotone="running_max"``). In CSR the draw's speedup for
+        the origin after the last, ``g``, scales ``beta_d`` (``g = 1`` in
+        CRC and CAY). In CAY it is CRC's formula on CAY's draw, the expected
+        values of an origin whose previous origin has no residual; CAY's own
+        expected values for the origin after the last also depend on
+        ``rho``.
         
         Returns
         -------
@@ -20692,14 +20694,16 @@ class MeyersFits:
         ``ultimates``. A simulation's pattern is the ratio of the expected
         cumulative values at each age to the one at the oldest age, under
         the posterior draw it took, for an origin with nothing observed:
-        ``exp(beta_d + sigma_d^2 / 2)`` over ``exp(sigma_m^2 / 2)``. It ends
-        at 1 at the oldest age (no tail) and can fall where ``sigma_d``
-        differs by age (``monthly`` refuses that unless
-        ``monotone="running_max"``). In CSR the draw's speedup for the origin
-        after the last scales ``beta_d``. In CAY it is CRC's formula on CAY's
-        draw, the expected values of an origin whose previous origin has no
-        residual; CAY's own expected values for the origin after the last
-        also depend on ``rho``. Name a segment by its label parts
+        ``exp(beta_d g + sigma_d^2 / 2)`` over ``exp(sigma_m^2 / 2)``. It
+        ends at 1 at the oldest age (no tail) and can fall: the late
+        ``beta_d`` are near 0 and unordered, so on Meyers' group 353 nearly
+        every draw's share falls at some late age (``monthly`` refuses that
+        unless ``monotone="running_max"``). In CSR the draw's speedup for
+        the origin after the last, ``g``, scales ``beta_d`` (``g = 1`` in
+        CRC and CAY). In CAY it is CRC's formula on CAY's draw, the expected
+        values of an origin whose previous origin has no residual; CAY's own
+        expected values for the origin after the last also depend on
+        ``rho``. Name a segment by its label parts
         (a tuple of strings).
         
         Returns
