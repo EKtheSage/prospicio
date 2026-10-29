@@ -23,6 +23,7 @@
 "DealColumn" = "unbound on 2026-10-28 (seed); review"
 "DealColumns" = "unbound on 2026-10-28 (seed); review"
 "NoClaimsBonus" = "unbound on 2026-10-28 (seed); review"
+"PerRiskInuring" = "a result type: per_risk_inuring returns its fields as a dict"
 "ProfitCommission" = "unbound on 2026-10-28 (seed); review"
 "RenewalCount" = "unbound on 2026-10-28 (seed); review"
 "ScoreTerms" = "unbound on 2026-10-28 (seed); review"
@@ -144,6 +145,7 @@
 "onnx::OnnxInput" = "unbound on 2026-10-28 (seed); review"
 
 [python.prospicio_pricing]
+"book::Adequacy" = "a result type: Book.adequacy returns its fields as a dict"
 "book::DealContribution" = "unbound on 2026-10-28 (seed); review"
 "book::Distribution" = "unbound on 2026-10-28 (seed); review"
 "bounds::PriceRange" = "unbound on 2026-10-28 (seed); review"
@@ -156,6 +158,7 @@
 "experience::AsIfYear" = "unbound on 2026-10-28 (seed); review"
 "experience::PreparedLoss" = "unbound on 2026-10-28 (seed); review"
 "experience::YearCost" = "unbound on 2026-10-28 (seed); review"
+"frontier::Frontier" = "a result type: frontier returns its points as a dict of columns"
 "layer::CensoredLayer" = "unbound on 2026-10-28 (seed); review"
 "natural::AllocationRange" = "unbound on 2026-10-28 (seed); review"
 "natural::PremiumBound" = "unbound on 2026-10-28 (seed); review"
@@ -233,6 +236,7 @@
 "HawkesFit" = "unbound on 2026-10-28 (seed); review"
 "LayerStatistics" = "unbound on 2026-10-28 (seed); review"
 "NoClaimsBonus" = "unbound on 2026-10-28 (seed); review"
+"PerRiskInuring" = "a result type: per_risk_inuring() returns its fields as a list"
 "Picks" = "unbound on 2026-10-28 (seed); review"
 "ProfitCommission" = "unbound on 2026-10-28 (seed); review"
 "RenewalCount" = "unbound on 2026-10-28 (seed); review"
@@ -374,6 +378,7 @@
 "onnx::OnnxInput" = "unbound on 2026-10-28 (seed); review"
 
 [r.prospicio_pricing]
+"book::Adequacy" = "a result type: the book's adequacy() returns its fields as a list"
 "book::BookCashflows" = "unbound on 2026-10-28 (seed); review"
 "book::DealContribution" = "unbound on 2026-10-28 (seed); review"
 "book::Distribution" = "unbound on 2026-10-28 (seed); review"
@@ -392,6 +397,7 @@
 "experience::AsIfYear" = "unbound on 2026-10-28 (seed); review"
 "experience::BurningCost" = "unbound on 2026-10-28 (seed); review"
 "experience::PreparedLoss" = "unbound on 2026-10-28 (seed); review"
+"frontier::Frontier" = "a result type: frontier() returns its points as a list of columns"
 "natural::AllocationRange" = "unbound on 2026-10-28 (seed); review"
 "natural::NaturalPrice" = "unbound on 2026-10-28 (seed); review"
 "natural::PremiumBound" = "unbound on 2026-10-28 (seed); review"
