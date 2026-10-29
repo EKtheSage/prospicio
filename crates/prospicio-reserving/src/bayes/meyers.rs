@@ -2844,7 +2844,6 @@ pub(crate) mod tests {
             assert_eq!(patterns.ages(), segment.ages);
             // The ultimates and patterns of one predictive run, the pattern
             // computed from the draw each simulation took: the fit's
-            // ultimates are bit for bit those without patterns, and its
             // pattern row i is simulation i's.
             let latest = &fit.chain_ladder.latest;
             let closed: Vec<bool> = fit
@@ -2880,6 +2879,28 @@ pub(crate) mod tests {
                 assert_eq!(&row[..10], ultimates, "{kind:?} simulation {i}");
                 assert_eq!(&row[10..], patterns.draw(i), "{kind:?} simulation {i}");
             }
+            // The same predictive run without the pattern columns, as the
+            // fit drew it before patterns: the fit's ultimates are bit for
+            // bit these, so writing the patterns moved no random number.
+            let without = fit
+                .posterior
+                .predictive(
+                    vec!["origin".into()],
+                    (0..10).map(|j| vec![KeyValue::Int(j)]).collect(),
+                    meyers.n_sims,
+                    derive_seed(meyers.seed, Stream::Predictive),
+                    Provenance::new("replay without patterns"),
+                    |nat, rng: &mut StreamRng, row| {
+                        fit.model
+                            .draw_ultimates(nat, &fit.premium, &closed, latest, rng, row);
+                    },
+                )
+                .unwrap();
+            assert_eq!(
+                without.draw_matrix(),
+                fit.ultimates.draw_matrix(),
+                "{kind:?}: the ultimates moved when the patterns were added"
+            );
             // Every share is positive and the pattern ends at exactly 1, but
             // nothing in the model keeps beta_d rising or below 0: a share
             // falls in nearly every simulation, mostly from 60 months on.

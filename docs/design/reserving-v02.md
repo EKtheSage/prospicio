@@ -4808,7 +4808,8 @@ decision 26 gives.
    * As item 3: the pattern is written inside the predictive simulation
      from the draw it took and draws no random number, so the ultimates
      and reserves are bit for bit what they were (a unit test replays the
-     simulation, and the parity tests pass unchanged). `fit_segments`
+     simulation without the pattern columns and compares the bits, and the
+     parity tests pass unchanged). `fit_segments`
      reorders each segment's reserves and ultimates together by
      Iman-Conover on their totals, and the reorder's index
      (`reorder_ranges_with`) moves the patterns with them.

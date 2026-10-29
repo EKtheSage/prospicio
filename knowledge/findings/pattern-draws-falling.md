@@ -101,8 +101,9 @@ CSR on paid) prints the same picture: 98.7% and 98.4% fall.
   and with the next simulation's at under 0.1; the test asserts 0.3 and
   0.2.
 * Meyers' ultimates with the patterns are bit for bit those of the same
-  predictive simulation without them (a unit test replays it and compares
-  the bits), and Meyers' parity tests pass unchanged.
+  predictive simulation without them (a unit test replays it without the
+  pattern columns and compares the bits), and Meyers' parity tests pass
+  unchanged.
 * Mack's bootstrap draws a constant tail's factor with the tail's sigma,
   so its share at the oldest age varies about `1 / tail`; the ODP
   bootstrap keeps it fixed at exactly `1 / tail`.
