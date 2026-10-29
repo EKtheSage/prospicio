@@ -13,13 +13,13 @@ use prospicio_reserving::{
     AnnualReading, Apriori, Average, BenchmarkCurve, BenchmarkCurveFit, Benktander,
     BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder, ChainLadderFit, ClaimsDevelopmentResult,
     ClarkCapeCod, ClarkFit, ClarkLdf, CurveShape, Development, DevelopmentColumn,
-    DevelopmentPatterns, DiagonalAge, ExpectedLoss, ExpectedLossFit, FitTable, GrowthCurve, Label,
-    LatestDiagonals, Long, LongDiagonal, Mack, MackBootstrap, MackBootstrapFits,
-    MackBootstrapSegment, MackFit, MackProcess, Monotone, MonthlyBasis, OdpBootstrap,
-    OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod, OneYearPattern,
-    PastPatternEnd, PatternKind, PatternWeight, ProcessDistribution, ReserveFit, SegmentDependence,
-    SegmentFits, SegmentMap, SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailConstant,
-    TailCurve, Triangle, UnderwritingBasis, view,
+    DevelopmentPatterns, DiagonalAge, ExpectedLoss, ExpectedLossFit, FileLayout, FitTable,
+    GrowthCurve, Label, LatestDiagonals, Long, LongDiagonal, Mack, MackBootstrap,
+    MackBootstrapFits, MackBootstrapSegment, MackFit, MackProcess, Monotone, MonthlyBasis,
+    OdpBootstrap, OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod,
+    OneYearPattern, PastPatternEnd, PatternKind, PatternWeight, ProcessDistribution, ReserveFit,
+    SegmentDependence, SegmentFits, SegmentMap, SelectedPattern, SigmaInterpolation, Tail,
+    TailBondy, TailConstant, TailCurve, Triangle, UnderwritingBasis, view,
 };
 use prospicio_reserving::{
     CALENDAR_YEAR_CI, CalendarYearTest, DEVELOPMENT_CORRELATION_CI, DevelopmentCorrelationTest,
@@ -575,6 +575,60 @@ fn selection_values(obj: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
     }
 }
 
+/// The `FileLayout` of `Triangle.read_csv` and `read_excel`: long when
+/// `development` is given, wide otherwise.
+#[allow(clippy::too_many_arguments)]
+fn file_layout(
+    origin: &str,
+    development: Option<&str>,
+    columns: Option<&Bound<'_, PyAny>>,
+    keys: Option<&Bound<'_, PyAny>>,
+    ages: Option<Vec<Lag>>,
+    origin_grain: &str,
+    development_grain: &str,
+    cumulative: bool,
+    development_is_valuation: bool,
+) -> PyResult<FileLayout> {
+    let columns = columns.map(names).transpose()?.unwrap_or_default();
+    let layout = match development {
+        Some(development) => {
+            if ages.is_some() {
+                return Err(PyValueError::new_err(
+                    "ages name the columns of a wide layout; give development=None",
+                ));
+            }
+            FileLayout::long(origin, development, columns)
+        }
+        None => {
+            if development_is_valuation {
+                return Err(PyValueError::new_err(
+                    "development_is_valuation needs a long layout: give the development column",
+                ));
+            }
+            let column = match columns.as_slice() {
+                [] => "values".to_string(),
+                [one] => one.clone(),
+                _ => {
+                    return Err(PyValueError::new_err(
+                        "a wide layout has one measure: give columns as one name",
+                    ));
+                }
+            };
+            let layout = FileLayout::wide(origin, column);
+            match ages {
+                Some(ages) => layout.ages(ages),
+                None => layout,
+            }
+        }
+    };
+    let keys = keys.map(names).transpose()?.unwrap_or_default();
+    Ok(layout
+        .keys(keys)
+        .grains(grain(origin_grain)?, grain(development_grain)?)
+        .cumulative(cumulative)
+        .development_is_valuation(development_is_valuation))
+}
+
 fn names(obj: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
     if let Ok(name) = obj.extract::<String>() {
         Ok(vec![name])
@@ -940,6 +994,172 @@ impl PyTriangle {
             cumulative,
         )?
         .build(py)
+    }
+
+    /// Reads a triangle from a CSV file, in a long or a wide layout.
+    ///
+    /// Long (``development`` given): one row per (keys, origin,
+    /// development) cell, as ``from_frame`` takes it; rows with the same
+    /// cell are summed. Wide (``development=None``): one row per (keys,
+    /// origin), and every other column is a development age, named by its
+    /// age in months (``12``, ``24``, ...) unless ``ages`` gives them; a
+    /// repeated origin is an error.
+    ///
+    /// How cells are written: an origin is a year (``1988``), a date
+    /// (``2021-07-15`` or ``2021-07``) or a period label as ``origins``
+    /// prints it (``2021Q3``, ``2021H2``); an age is a whole number of
+    /// months; a valuation (``development_is_valuation``) is a year (its
+    /// December), a date or a period label (its last month); a value is a
+    /// number, and an empty cell, ``NA`` or ``NaN`` is not observed. Errors
+    /// name the file line and column. The file is read in Rust, so pandas is
+    /// not needed.
+    ///
+    /// Parameters
+    /// ----------
+    /// path : str or os.PathLike
+    /// origin : str
+    ///     Name of the origin column.
+    /// development : str, optional
+    ///     Name of the development column (long layout). ``None`` reads a
+    ///     wide layout.
+    /// columns : str or list of str, optional
+    ///     Long: the measure columns, by default every column that is not
+    ///     the origin, the development or a key. Wide: the name of the one
+    ///     measure, by default ``"values"``.
+    /// keys : str or list of str, optional
+    ///     Names of the key columns; each distinct combination is a segment.
+    /// ages : list of int, optional
+    ///     Wide only: the ages in months of the age columns, in column order.
+    /// origin_grain : {"Y", "S", "Q", "M"}, default "Y"
+    /// development_grain : {"Y", "S", "Q", "M"}, default "Y"
+    /// cumulative : bool, default True
+    /// development_is_valuation : bool, default False
+    ///     Long only: whether ``development`` holds valuations, not ages.
+    /// comment : str, optional
+    ///     A character that starts a comment line, such as ``"#"``.
+    ///
+    /// Returns
+    /// -------
+    /// Triangle
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the file cannot be read, a column is missing or a cell cannot
+    ///     be read (naming its line and column), or as for ``from_long``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> import os, tempfile
+    /// >>> from prospicio.reserving import Triangle
+    /// >>> path = os.path.join(tempfile.mkdtemp(), "paid.csv")
+    /// >>> with open(path, "w") as f:
+    /// ...     _ = f.write("year,12,24\n2020,100,150\n2021,110,\n")
+    /// >>> tri = Triangle.read_csv(path, "year", columns="paid")
+    /// >>> tri.shape, tri.columns, tri.development
+    /// ((1, 1, 2, 2), ['paid'], [12, 24])
+    #[staticmethod]
+    #[pyo3(signature = (path, origin, development = None, columns = None, keys = None, ages = None, origin_grain = "Y", development_grain = "Y", cumulative = true, development_is_valuation = false, comment = None))]
+    #[allow(clippy::too_many_arguments)]
+    fn read_csv(
+        py: Python<'_>,
+        path: std::path::PathBuf,
+        origin: &str,
+        development: Option<&str>,
+        columns: Option<&Bound<'_, PyAny>>,
+        keys: Option<&Bound<'_, PyAny>>,
+        ages: Option<Vec<Lag>>,
+        origin_grain: &str,
+        development_grain: &str,
+        cumulative: bool,
+        development_is_valuation: bool,
+        comment: Option<&str>,
+    ) -> PyResult<Self> {
+        let comment = match comment {
+            None => None,
+            Some(c) if c.len() == 1 && c.is_ascii() => Some(c.as_bytes()[0]),
+            Some(c) => {
+                return Err(PyValueError::new_err(format!(
+                    "comment must be one ASCII character, got {c:?}"
+                )));
+            }
+        };
+        let layout = file_layout(
+            origin,
+            development,
+            columns,
+            keys,
+            ages,
+            origin_grain,
+            development_grain,
+            cumulative,
+            development_is_valuation,
+        )?
+        .comment(comment);
+        py.detach(|| Triangle::read_csv(&path, &layout))
+            .map(wrap)
+            .map_err(err)
+    }
+
+    /// Reads a triangle from a sheet of an Excel workbook (``.xlsx``,
+    /// ``.xlsm``, ``.xlsb``, ``.xls``) or an OpenDocument spreadsheet
+    /// (``.ods``), in a long or a wide layout as ``read_csv`` reads them.
+    ///
+    /// The sheet's used range starts with the header row. Number cells are
+    /// numbers, date cells are dates (an origin or a valuation) and text
+    /// cells are read as in a CSV file. Errors name the cell (``C7``) and
+    /// the sheet. The workbook is read in Rust (calamine), so neither
+    /// openpyxl nor pandas is needed.
+    ///
+    /// Parameters
+    /// ----------
+    /// path : str or os.PathLike
+    /// origin, development, columns, keys, ages
+    ///     As for ``read_csv``.
+    /// sheet : str, optional
+    ///     The sheet's name; the first sheet by default.
+    /// origin_grain, development_grain, cumulative, development_is_valuation
+    ///     As for ``read_csv``.
+    ///
+    /// Returns
+    /// -------
+    /// Triangle
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As for ``read_csv``, or if the workbook has no such sheet.
+    #[staticmethod]
+    #[pyo3(signature = (path, origin, development = None, columns = None, keys = None, ages = None, sheet = None, origin_grain = "Y", development_grain = "Y", cumulative = true, development_is_valuation = false))]
+    #[allow(clippy::too_many_arguments)]
+    fn read_excel(
+        py: Python<'_>,
+        path: std::path::PathBuf,
+        origin: &str,
+        development: Option<&str>,
+        columns: Option<&Bound<'_, PyAny>>,
+        keys: Option<&Bound<'_, PyAny>>,
+        ages: Option<Vec<Lag>>,
+        sheet: Option<&str>,
+        origin_grain: &str,
+        development_grain: &str,
+        cumulative: bool,
+        development_is_valuation: bool,
+    ) -> PyResult<Self> {
+        let layout = file_layout(
+            origin,
+            development,
+            columns,
+            keys,
+            ages,
+            origin_grain,
+            development_grain,
+            cumulative,
+            development_is_valuation,
+        )?;
+        py.detach(|| Triangle::read_excel(&path, sheet, &layout))
+            .map(wrap)
+            .map_err(err)
     }
 
     /// Axis lengths: ``(index, column, origin, development)``.
