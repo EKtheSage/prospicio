@@ -12,7 +12,7 @@ It prices each flow on the same 2,000 simulated years. It covers:
 1. Reinstatement premium, as to amount and as to time.
 2. Ceding commission, profit commission, sliding scale and brokerage on
    Corran's quota share, read as deal ratios.
-3. A no-claims bonus, built from a sliding scale.
+3. A no-claims bonus, over one year and over several.
 4. The reinsurer's P&L ledger of Bracken's aggregate cover.
 
 Money is in millions of Varland crowns. The story, the files and the notation
@@ -314,16 +314,17 @@ scale. On this book they go on the quota share and the aggregate cover.
 
 ## 5. A no-claims bonus
 
-A no-claims bonus returns a share of the premium when the cover pays nothing
-in the year. A sliding scale gives the bonus (#592). The scale has a commission
-of 10% at a loss ratio of 0, and of 0 at any loss ratio above a very small
-threshold. On `bracken_agg`, the aggregate cover on the convective storm and
-flood losses of Bracken:
+A no-claims bonus returns a share of the premium when the cover pays nothing in
+the year. `Layer.with_no_claims_bonus(share, years, threshold)` sets it: the
+share of the premium returned, the contract years it looks back over, and the
+most ceded loss that still earns it (0, a year with no claim, by default). Here
+the bonus is 10% of the premium on `bracken_agg`, the aggregate cover on the
+convective storm and flood losses of Bracken:
 
 ```python
 b = CONTRACTS["bracken_agg"]
 bracken_cs_fl = cedent_events("bracken", "CS+FL")
-ncb = contract_layer(b).with_sliding_scale([(0.10, 0.0), (0.0, 1e-9)])
+ncb = contract_layer(b).with_no_claims_bonus(0.10)
 tower = Tower([ncb])
 res = tower.apply(bracken_cs_fl)
 ratios = tower.deal_ratios(res, "bracken_agg")
@@ -331,17 +332,44 @@ ceded = res.aggregate(["kind", "layer"]).marginal(["ceded", "bracken_agg"]).draw
 p_clean = sum(x == 0.0 for x in ceded) / N_YEARS
 print("chance of a year with no claim:", round(p_clean, 4))
 print("10% times that chance:         ", round(0.10 * p_clean, 4))
-print("mean bonus from the scale:     ", round(ratios.marginal(["ceding_commission"]).mean(), 4))
+print("mean no-claims bonus:          ", round(ratios.marginal(["no_claims_bonus"]).mean(), 4))
 ```
 
 ```text
 chance of a year with no claim: 0.9675
 10% times that chance:          0.0968
-mean bonus from the scale:      0.0967
+mean no-claims bonus:           0.0967
 ```
 
-The scale gives the bonus to rounding. It is an approximation: a real bonus
-often comes only after the year closes, and it can depend on several years.
+The mean bonus is 10% times the chance of a year with no claim, 0.09675; the
+two lines differ only in how that rounds. The bonus reads the ceded loss on
+its own, so a layer can carry it beside a sliding scale or a profit
+commission. Deal ratios count it as a deduction inside NMBF.
+
+A bonus can also look back over several contract years: it is paid only in a
+year whose last `years` years together ceded at most the threshold. That needs
+the paths of a term, so `Tower.apply_term` applies the tower year by year, and
+`Tower.apply` refuses it. Over a term of two years, each path made of two of
+the 2,000 simulated years, a bonus that looks back two years:
+
+```python
+full = ncb.no_claims_bonus_for(0.0)
+two_years = Tower([contract_layer(b).with_no_claims_bonus(0.10, years=2)])
+term = two_years.apply_term(bracken_cs_fl.term_years(2))
+for year in (1, 2):
+    paid = term.select("year", [year]).select("kind", ["no_claims_bonus"]).mean() / full
+    print(f"year {year}: bonus paid on {paid:.4f} of the paths")
+```
+
+```text
+year 1: bonus paid on 0.9710 of the paths
+year 2: bonus paid on 0.9360 of the paths
+```
+
+The first year looks back to the start of the term only, so it pays as often
+as a one-year bonus on the same 1,000 simulated years (0.9710 here, against
+0.9675 on all 2,000). The second year pays only when both years were free of
+claims, about the square of that chance, since the years are independent.
 
 ## 6. The reinsurer's ledger of the aggregate cover
 
@@ -387,8 +415,8 @@ library (`CashflowTerms`, `Cashflows`,
 
 The R twin, [cat-5-beyond-loss.qmd](cat-5-beyond-loss.qmd), runs the same
 steps with `xol_layer(pro_rata_time = )`, `reinstatement_premium()`,
-`with_profit_commission()`, `with_sliding_scale()`, `with_brokerage()`,
-`deal_ratios()` and `deal_ledger()`.
+`with_profit_commission()`, `with_sliding_scale()`, `with_no_claims_bonus()`,
+`apply_tower_term()`, `with_brokerage()`, `deal_ratios()` and `deal_ledger()`.
 
 ## Further reading
 

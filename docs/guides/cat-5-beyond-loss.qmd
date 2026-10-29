@@ -23,7 +23,7 @@ It prices each flow on the same 2,000 simulated years. It covers:
 1. Reinstatement premium, as to amount and as to time.
 2. Ceding commission, profit commission, sliding scale and brokerage on
    Corran's quota share, read as deal ratios.
-3. A no-claims bonus, built from a sliding scale.
+3. A no-claims bonus, over one year and over several.
 4. The reinsurer's P&L ledger of Bracken's aggregate cover.
 
 This is the R twin of the Python guide
@@ -345,16 +345,17 @@ scale. On this book they go on the quota share and the aggregate cover.
 
 ## 5. A no-claims bonus
 
-A no-claims bonus returns a share of the premium when the cover pays nothing
-in the year. A sliding scale gives the bonus (#592). The scale has a commission
-of 10% at a loss ratio of 0, and of 0 at any loss ratio above a very small
-threshold. On `bracken_agg`, the aggregate cover on the convective storm and
-flood losses of Bracken:
+A no-claims bonus returns a share of the premium when the cover pays nothing in
+the year. `with_no_claims_bonus(layer, share, years, threshold)` sets it: the
+share of the premium returned, the contract years it looks back over, and the
+most ceded loss that still earns it (0, a year with no claim, by default). Here
+the bonus is 10% of the premium on `bracken_agg`, the aggregate cover on the
+convective storm and flood losses of Bracken:
 
 ```{r}
 b <- CONTRACTS[["bracken_agg"]]
 bracken_cs_fl <- cedent_events("bracken", "CS+FL")
-ncb <- with_sliding_scale(contract_layer(b), c(0.10, 0), c(0, 1e-9))
+ncb <- with_no_claims_bonus(contract_layer(b), 0.10)
 tower <- reinsurance_tower(list(ncb))
 res <- apply_tower(tower, bracken_cs_fl)
 ratios <- deal_ratios(tower, res, "bracken_agg")
@@ -362,17 +363,45 @@ ceded <- marginal(aggregate(res, keep = c("kind", "layer")), c("ceded", "bracken
 p_clean <- sum(ceded == 0) / N_YEARS
 say("chance of a year with no claim:", py(p_clean, 4))
 say("10% times that chance:         ", py(0.10 * p_clean, 4))
-say("mean bonus from the scale:     ", py(mean(marginal(ratios, "ceding_commission")), 4))
+say("mean no-claims bonus:          ", py(mean(marginal(ratios, "no_claims_bonus")), 4))
 ```
 
 ```text
 chance of a year with no claim: 0.9675
 10% times that chance:          0.0968
-mean bonus from the scale:      0.0967
+mean no-claims bonus:           0.0967
 ```
 
-The scale gives the bonus to rounding. It is an approximation: a real bonus
-often comes only after the year closes, and it can depend on several years.
+The mean bonus is 10% times the chance of a year with no claim, 0.09675; the
+two lines differ only in how that rounds. The bonus reads the ceded loss on
+its own, so a layer can carry it beside a sliding scale or a profit
+commission. Deal ratios count it as a deduction inside NMBF.
+
+A bonus can also look back over several contract years: it is paid only in a
+year whose last `years` years together ceded at most the threshold. That needs
+the paths of a term, so `apply_tower_term()` applies the tower year by year,
+and `apply_tower()` refuses it. Over a term of two years, each path made of two
+of the 2,000 simulated years, a bonus that looks back two years:
+
+```{r}
+full <- no_claims_bonus_for(ncb, 0)
+two_years <- reinsurance_tower(list(with_no_claims_bonus(contract_layer(b), 0.10, years = 2)))
+term <- apply_tower_term(two_years, term_years(bracken_cs_fl, 2))
+for (year in 1:2) {
+  bonus <- select_components(select_components(term, "year", year), "kind", "no_claims_bonus")
+  cat(sprintf("year %d: bonus paid on %.4f of the paths\n", year, mean(bonus) / full))
+}
+```
+
+```text
+year 1: bonus paid on 0.9710 of the paths
+year 2: bonus paid on 0.9360 of the paths
+```
+
+The first year looks back to the start of the term only, so it pays as often
+as a one-year bonus on the same 1,000 simulated years (0.9710 here, against
+0.9675 on all 2,000). The second year pays only when both years were free of
+claims, about the square of that chance, since the years are independent.
 
 ## 6. The reinsurer's ledger of the aggregate cover
 
@@ -421,8 +450,9 @@ library (`cashflow_terms()`, `cashflow_run()`, and `deal_run()` with its
 
 The Python guide, [cat-5-beyond-loss.md](cat-5-beyond-loss.md), runs the same
 steps with `Layer(pro_rata_time=)`, `Layer.reinstatement_premium`,
-`with_profit_commission`, `with_sliding_scale`, `with_brokerage`,
-`Tower.deal_ratios` and `Tower.deal_ledger`.
+`with_profit_commission`, `with_sliding_scale`, `with_no_claims_bonus`,
+`Tower.apply_term`, `with_brokerage`, `Tower.deal_ratios` and
+`Tower.deal_ledger`.
 
 ## Further reading
 
