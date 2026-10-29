@@ -7430,10 +7430,10 @@ ultimate_distribution <- function(fit) {
 # in Rust, reserving-v02.md decision 28).
 check_pattern_fit <- function(fit) {
   classes <- list(odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits,
-                  bayes_bf_fit, bayes_bf_normalised_fit)
+                  bayes_bf_fit, bayes_bf_normalised_fit, meyers_fit, meyers_fits)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
     stop("fit must be an odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, ",
-         "bayes_bf_fit or bayes_bf_normalised_fit", call. = FALSE)
+         "bayes_bf_fit, bayes_bf_normalised_fit, meyers_fit or meyers_fits", call. = FALSE)
   }
 }
 
@@ -7467,6 +7467,13 @@ pattern_matrix <- function(flat, n_col) {
 #' basis says, so the terms' `written` and `earned` must describe the same
 #' basis (the engine cannot check it).
 #'
+#' Meyers' models (CRC, CSR and CAY) give, per posterior draw, the ratio of the
+#' expected cumulative values at each age to the one at the oldest age,
+#' `exp(beta_d + sigma_d^2 / 2)` over `exp(sigma_m^2 / 2)`; in CSR the draw's
+#' speedup for the origin after the last scales `beta_d`, and CAY's `rho` does
+#' not enter. The share can fall where `sigma_d` differs by age, which
+#' `monotone` handles as below.
+#'
 #' A fit with a tail reaches 1 one development period after the oldest age;
 #' the Bayesian models have no tail, so their pattern reaches 1 at the oldest
 #' age. Every monthly pattern ends at exactly 1, and `months` shorter than
@@ -7482,7 +7489,8 @@ pattern_matrix <- function(flat, n_col) {
 #' triangle is an incurred pattern, and the engine reads it as paid.
 #'
 #' @param fit An [odp_bootstrap_fit], [mack_bootstrap_fit], [bayes_odp_fit],
-#'   [bayes_odp_fits], [bayes_bf_fit] or [bayes_bf_normalised_fit].
+#'   [bayes_odp_fits], [bayes_bf_fit], [bayes_bf_normalised_fit], [meyers_fit]
+#'   or [meyers_fits].
 #' @param segment `NULL` for a fit of one segment, or the segment's key
 #'   values (`"Auto"`, `c("Auto", "NSW")`) over segments.
 #' @param months The number of months, a whole number of at least 1; patterns

@@ -4766,7 +4766,12 @@ decision 26 gives.
    cell, and Compartmental's pattern is the ODE's for the drawn rates;
    both are later items. No fit knows whether its column is paid: a
    pattern from an incurred triangle is an incurred pattern, and the
-   engine would read it as paid.
+   engine would read it as paid. **Meyers' models are built** (2026-10-28,
+   #678, `MeyersFit` and `MeyersFits`, proposed and built as recommended,
+   awaiting the user's acceptance): `reserving-bayes.md` decision 27 has the
+   pattern (the ratio of the expected cumulative values to the one at the
+   oldest age, per posterior draw) and its alternatives. `Compartmental`
+   is still a later item (#679).
 8. **Bindings.** Python: `fit.patterns` (`DevelopmentPatterns`) with
    `n_sims`, `segments`, `ages(segment=None)`, `mean(segment=None)`,
    `pattern_draws(segment=None)` (a list per simulation) and

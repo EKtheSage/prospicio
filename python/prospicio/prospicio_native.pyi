@@ -20460,6 +20460,26 @@ class MeyersFit:
         (``"cay"`` only), and ``sigma[1]`` to ``sigma[m]``.
         """
     @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        Each simulation's development pattern, to pair with the
+        simulation's loss ratio in the cash-flow engine.
+
+        Row ``i`` of every pattern is simulation ``i`` of ``reserves`` and
+        ``ultimates``. A simulation's pattern is the ratio of the expected
+        cumulative values at each age to the one at the oldest age, under
+        the posterior draw it took, for an origin with nothing observed:
+        ``exp(beta_d + sigma_d^2 / 2)`` over ``exp(sigma_m^2 / 2)``. It ends
+        at 1 at the oldest age (no tail) and can fall where ``sigma_d``
+        differs by age (``monthly`` refuses that unless
+        ``monotone="running_max"``). In CSR the draw's speedup for the origin
+        after the last scales ``beta_d``; CAY's ``rho`` does not enter.
+
+        Returns
+        -------
+        DevelopmentPatterns
+        """
+    @property
     def premium(self, /) -> list[float]:
         """
         The premium of each origin.
@@ -20658,6 +20678,27 @@ class MeyersFits:
         """
         Parameter names of a single-segment fit, as
         ``MeyersFit.parameter_names``.
+        """
+    @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        Each simulation's development pattern, to pair with the
+        simulation's loss ratio in the cash-flow engine.
+
+        Row ``i`` of every pattern is simulation ``i`` of ``reserves`` and
+        ``ultimates``. A simulation's pattern is the ratio of the expected
+        cumulative values at each age to the one at the oldest age, under
+        the posterior draw it took, for an origin with nothing observed:
+        ``exp(beta_d + sigma_d^2 / 2)`` over ``exp(sigma_m^2 / 2)``. It ends
+        at 1 at the oldest age (no tail) and can fall where ``sigma_d``
+        differs by age (``monthly`` refuses that unless
+        ``monotone="running_max"``). In CSR the draw's speedup for the origin
+        after the last scales ``beta_d``; CAY's ``rho`` does not enter. Name a segment by its label parts
+        (a tuple of strings).
+
+        Returns
+        -------
+        DevelopmentPatterns
         """
     @property
     def premium(self, /) -> list[float]:

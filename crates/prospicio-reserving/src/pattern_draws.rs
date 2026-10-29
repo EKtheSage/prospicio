@@ -511,6 +511,65 @@ pub(crate) fn predictive_with_patterns<F>(
 where
     F: Fn(&[f64], &mut prospicio_core::StreamRng, &mut [f64], &mut [f64]) + Sync,
 {
+    predictive_with_shares(
+        posterior,
+        segment,
+        n_sims,
+        seed,
+        provenance,
+        simulate,
+        |shares| {
+            let mut cumulative = Vec::with_capacity(shares.len());
+            push_cumulative(shares.iter().copied(), &mut cumulative);
+            shares.copy_from_slice(&cumulative);
+        },
+    )
+}
+
+/// As [`predictive_with_patterns`], for a model whose `simulate` writes the
+/// cumulative shares themselves into its last argument (Meyers' ratios of
+/// expected cumulative values), the last of them exactly 1. The first
+/// result holds what `simulate` writes in its third argument, as
+/// `posterior.predictive` would.
+#[cfg(feature = "bayes")]
+pub(crate) fn predictive_with_cumulative_patterns<F>(
+    posterior: &prospicio_bayes::nuts::PosteriorDraws,
+    segment: &crate::triangle::Segment,
+    n_sims: usize,
+    seed: u64,
+    provenance: prospicio_prob::Provenance,
+    simulate: F,
+) -> Result<(PredictiveDistribution, DevelopmentPatterns)>
+where
+    F: Fn(&[f64], &mut prospicio_core::StreamRng, &mut [f64], &mut [f64]) + Sync,
+{
+    predictive_with_shares(
+        posterior,
+        segment,
+        n_sims,
+        seed,
+        provenance,
+        simulate,
+        |_| {},
+    )
+}
+
+/// The one body of both: `finish` turns what `simulate` wrote into the
+/// cumulative shares.
+#[cfg(feature = "bayes")]
+fn predictive_with_shares<F, G>(
+    posterior: &prospicio_bayes::nuts::PosteriorDraws,
+    segment: &crate::triangle::Segment,
+    n_sims: usize,
+    seed: u64,
+    provenance: prospicio_prob::Provenance,
+    simulate: F,
+    finish: G,
+) -> Result<(PredictiveDistribution, DevelopmentPatterns)>
+where
+    F: Fn(&[f64], &mut prospicio_core::StreamRng, &mut [f64], &mut [f64]) + Sync,
+    G: Fn(&mut [f64]) + Sync,
+{
     let layout = PatternLayout::new(
         segment.n_origins,
         vec![(
@@ -533,9 +592,7 @@ where
             let (reserves, shares) = row.split_at_mut(offset);
             let shares = &mut shares[..width];
             simulate(theta, rng, reserves, shares);
-            let mut cumulative = Vec::with_capacity(width);
-            push_cumulative(shares.iter().copied(), &mut cumulative);
-            shares.copy_from_slice(&cumulative);
+            finish(shares);
         },
     )?;
     layout.split(wide)
