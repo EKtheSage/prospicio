@@ -562,6 +562,18 @@ XolLayer$scope <- function() .Call(wrap__XolLayer__scope, self)
 
 XolLayer$with_scope <- function(label, values) .Call(wrap__XolLayer__with_scope, self, label, values)
 
+XolLayer$with_franchise <- function() .Call(wrap__XolLayer__with_franchise, self)
+
+XolLayer$with_nth_event <- function(n, threshold) .Call(wrap__XolLayer__with_nth_event, self, n, threshold)
+
+XolLayer$with_top_and_drop <- function(underlying, attachment) .Call(wrap__XolLayer__with_top_and_drop, self, underlying, attachment)
+
+XolLayer$franchise <- function() .Call(wrap__XolLayer__franchise, self)
+
+XolLayer$nth_event <- function() .Call(wrap__XolLayer__nth_event, self)
+
+XolLayer$drop_down <- function() .Call(wrap__XolLayer__drop_down, self)
+
 XolLayer$ceding_commission_for <- function(ceded) .Call(wrap__XolLayer__ceding_commission_for, self, ceded)
 
 XolLayer$with_brokerage <- function(rate) .Call(wrap__XolLayer__with_brokerage, self, rate)

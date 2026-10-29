@@ -16526,6 +16526,16 @@ class Layer:
         The deductions as ``(label, basis, value, inside_nmbf)``.
         """
     @property
+    def drop_down(self, /) -> tuple[str, float] |None:
+        """
+        A top-and-drop cover as ``(underlying, attachment)``, or ``None``.
+        """
+    @property
+    def franchise(self, /) -> bool:
+        """
+        Whether the layer has a franchise deductible (``with_franchise``).
+        """
+    @property
     def limit(self, /) -> float:
         """
         Per-occurrence limit.
@@ -16561,6 +16571,11 @@ class Layer:
         Returns
         -------
         float
+        """
+    @property
+    def nth_event(self, /) -> tuple[int, float] |None:
+        """
+        An nth-event cover as ``(n, threshold)``, or ``None``.
         """
     @property
     def premium(self, /) -> float:
@@ -16936,6 +16951,22 @@ class Layer:
         >>> Layer("5x5", 5e6, 5e6, share=0.4).with_deposit_premium(1e6).premium
         400000.0
         """
+    def with_franchise(self, /) -> Layer:
+        """
+        The same layer with a franchise deductible: an occurrence at or
+        above the attachment is paid from the ground up, ``min(x, limit)``,
+        and one below it pays nothing. On the loss basis only.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> Layer("F", 20.0, 5.0).with_franchise().ceded_by_event([4.0, 5.0, 12.0, 30.0])
+        [0.0, 5.0, 12.0, 20.0]
+        """
     def with_loss_corridor(self, /, lower: float, upper: float, retained: float = 1.0) -> Layer:
         """
         The same layer with a loss corridor.
@@ -17003,6 +17034,33 @@ class Layer:
         ...        .with_no_claims_bonus(0.15))
         >>> round(cat.no_claims_bonus_for(0.0), 12), cat.no_claims_bonus_for(5.0)
         (0.3, 0.0)
+        """
+    def with_nth_event(self, /, n: int, threshold: float) -> Layer:
+        """
+        The same layer as an nth-event cover: only the ``n``-th and later
+        events of a year whose loss to the layer exceeds ``threshold`` are
+        covered; earlier ones, and events at or below the threshold, cede
+        nothing. Events count in the order given, chronological when the
+        event set has times. ``with_nth_event(1, attachment)`` is the plain
+        layer. The grids and annual losses have no events in order and
+        refuse it.
+        
+        Parameters
+        ----------
+        n : int
+            The first event covered, at least 1.
+        threshold : float
+            The loss an event must exceed to count.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> Layer("2nd", 10.0, 5.0).with_nth_event(2, 5.0).ceded_by_event([12.0, 3.0, 9.0, 20.0])
+        [0.0, 0.0, 4.0, 10.0]
         """
     def with_premium_rate(self, /, rate: float, subject_premium: float) -> Layer:
         """
@@ -17264,6 +17322,35 @@ class Layer:
         >>> layer = Layer("L", 1000.0, 0.0).with_swing_rating(0.0, 1.25, 100.0, 300.0)
         >>> [layer.premium_for(x) for x in (40.0, 200.0, 400.0)]
         [100.0, 250.0, 300.0]
+        """
+    def with_top_and_drop(self, /, underlying: str, attachment: float) -> Layer:
+        """
+        The same layer as a top-and-drop cover: it sits at its own
+        attachment until the annual limit of the layer named
+        ``underlying`` (earlier in the same stage, with an annual limit) is
+        used up, and from the next event attaches at ``attachment``, with
+        the same occurrence and annual limits. On the loss basis only. A
+        drop-down whose underlying layer never exhausts is the plain layer.
+        
+        Parameters
+        ----------
+        underlying : str
+        attachment : float
+            Below the layer's own.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> lower = Layer("lower", 10.0, 10.0, aggregate_limit=20.0)
+        >>> top = Layer("top", 10.0, 30.0).with_top_and_drop("lower", 10.0)
+        >>> ce = Tower([lower, top]).ceded_events(EventSet.from_years([[25.0, 25.0, 25.0, 40.0]]), "top")
+        >>> ce.events(0)
+        [10.0, 10.0]
         """
 
 @final

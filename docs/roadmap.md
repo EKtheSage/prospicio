@@ -129,8 +129,9 @@ what it is aiming for by v1.0.
     commissions, profit commissions, swing rating; retro premiums.
     Over a multi-year term (`Tower::apply_term`), profit commission
     deficits and sliding scale deficits and credits carried forward,
-    to extinction or for a number of years. (Also done: towers saved as
-    JSON, seasonal event times, loss corridors.)
+    to extinction or for a number of years. Franchise deductibles,
+    nth-event and top-and-drop covers (#591). (Also done: towers saved
+    as JSON, seasonal event times, loss corridors.)
   - The occurrence exceedance (OEP) curve and occurrence PMLs for any
     count, exact and simulated; compound moments to third order and the
     moment approximations (normal, gamma, lognormal, shifted gamma and

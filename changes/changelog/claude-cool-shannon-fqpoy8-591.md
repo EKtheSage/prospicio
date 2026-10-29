@@ -1,0 +1,4 @@
+### Aggregate and reinsurance
+
+- Franchise, nth-event and top-and-drop covers on a layer: `Layer::franchise` (an occurrence at or above the attachment paid from the ground up, up to the limit), `Layer::nth_event(n, threshold)` (only the `n`-th and later events above the threshold in a year) and `Layer::top_and_drop(underlying, attachment)` (the layer drops to a lower attachment from the event after another layer's annual limit is used up); the grids and annual losses refuse the two that read the order of events, and the tower JSON moves to format version 9 when a layer has one (`aggregate.md`, "Franchise, nth-event and top-and-drop covers"). Python `Layer.with_franchise`, `with_nth_event`, `with_top_and_drop`; R `with_franchise()`, `with_nth_event()`, `with_top_and_drop()` (#591).
+- **Breaking:** `Layer` has three new public fields (`franchise`, `nth_event`, `drop_down`), so struct literals must add them (#591).
