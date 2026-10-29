@@ -1315,6 +1315,57 @@ for i, (name, cell, value, digits) in enumerate(checks):
 ct.column_dimensions["K"].width = 20
 ct.column_dimensions["P"].width = 30
 
+# Capital allocation: Pricing Insurance Risk's Simple Discrete Example
+# (Exercises 205 and 206) and numpy's allocations of four units
+# (validation/reference/allocation_numpy.csv).
+al = wb.create_sheet("Allocation")
+al["A1"] = "prospicio XLL test: capital allocation (PRO.ALLOCATE, PRO.ALLOCATE.TOTAL)"; al["A1"].font = Font(bold=True, size=13)
+al["A2"] = "Pricing Insurance Risk's Simple Discrete Example: two units over 16 equally likely years."; al["A2"].font = note
+al["A3"] = "X1"; al["B3"] = "X2"; al["A3"].font = al["B3"].font = bold
+r = 4
+for a, k in [(0, 2), (8, 1), (10, 1)]:
+    for b, j in [(0, 2), (1, 1), (90, 1)]:
+        for _ in range(k * j):
+            al.cell(row=r, column=1, value=a).fill = inp
+            al.cell(row=r, column=2, value=b).fill = inp
+            r += 1
+al["D3"] = "A premium of 80 by stand-alone TVaR at 75% (Exercise 205)"; al["D3"].font = bold
+al["D4"] = ArrayFormula("D4:G8", '=PRO.ALLOCATE.TOTAL(A3:B19,80,"haircut","tvar",0.75)')
+al["D11"] = "At the equal risk level (Exercise 206)"; al["D11"].font = bold
+al["D12"] = ArrayFormula("D12:G16", '=PRO.ALLOCATE.TOTAL(A3:B19,80,"equal_risk")')
+al["D19"] = "TVaR 90% by Euler"; al["D19"].font = bold
+al["D20"] = ArrayFormula("D20:H24", '=PRO.ALLOCATE(A3:B19,"tvar",0.9)')
+al["J3"] = "Four units over 400 simulations (numpy reference)"; al["J3"].font = bold
+for c, h in enumerate(["U1", "U2", "U3", "U4"]):
+    al.cell(row=4, column=10 + c, value=h).font = bold
+for i in range(400):
+    a = (i * 37) % 101
+    for c, v in enumerate([a, (i * 53) % 97 + a // 2, (i * i) % 89, 3 * ((i * 29) % 41) + (a // 10) ** 2]):
+        al.cell(row=5 + i, column=10 + c, value=v).fill = inp
+al["O3"] = "Shapley under PH 0.5"; al["O3"].font = bold
+al["O4"] = ArrayFormula("O4:S10", '=PRO.ALLOCATE(J4:M404,"ph",0.5,"shapley")')
+al["O13"] = "Covariance under dual power 3"; al["O13"].font = bold
+al["O14"] = ArrayFormula("O14:S20", '=PRO.ALLOCATE(J4:M404,"dual",3,"covariance")')
+with open(REF / "reference" / "allocation_numpy.csv") as f:
+    ref = {(r["distortion"], r["arg"], r["method"], r["component"]): float(r["expected"]) for r in csv.DictReader(f)}
+al["O23"] = "Check"; al["P23"] = "prospicio"; al["Q23"] = "Expected"; al["R23"] = "Agrees"
+for c in "OPQR":
+    al[f"{c}23"].font = bold
+checks = [
+    ("Exercise 205: X1 gets 8", "F5", 8.0, "1e-12"), ("Exercise 205: X2 gets 72", "F6", 72.0, "1e-12"),
+    ("Exercise 206: the level 0.6796", "E16", 0.6796, "5e-5"), ("Exercise 206: X1 gets 9.56", "F13", 9.56, "5e-3"),
+    ("Shapley, PH 0.5, unit 1", "Q5", ref[("proportional_hazard", "0.5", "shapley", "0")], "1e-9"),
+    ("Shapley, PH 0.5, unit 4", "Q8", ref[("proportional_hazard", "0.5", "shapley", "3")], "1e-9"),
+    ("Dual power 3, the portfolio", "Q20", ref[("dual_power", "3.0", "total", "")], "1e-9"),
+    ("Covariance, dual power 3, unit 2", "Q16", ref[("dual_power", "3.0", "covariance", "1")], "1e-9"),
+]
+for i, (name, cell, value, tol) in enumerate(checks):
+    row = 24 + i
+    al[f"O{row}"] = name; al[f"P{row}"] = f"={cell}"; al[f"Q{row}"] = value
+    al[f"R{row}"] = f"=ABS(P{row}-Q{row})<{tol}*MAX(1,ABS(Q{row}))"
+al.column_dimensions["D"].width = 14
+al.column_dimensions["O"].width = 34
+
 wb.save(out)
 
 METADATA = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

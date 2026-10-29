@@ -162,7 +162,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and fifteen functions registered", registered == 115);
+    check("one hundred and seventeen functions registered", registered == 117);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -1027,6 +1027,30 @@ int main(int argc, char **argv) {
     check("PRO.ELT.OEP 1 - exp(-0.5)", (el_run->xltype & 0xFFF) == xltypeMulti && el_run->val.array.rows == 2 &&
                                            fabs(el_run->val.array.lparray[1 * 4 + 2].val.num - 0.3934693402873666) < 1e-15);
     free12(el_run);
+
+    /* PRO.ALLOCATE: two lines over four simulations, totals 3, 5, 7, 9;
+     * TVaR 50% of 8 by Euler gives the first line 2.5. */
+    static XLOPER12 al_c[8], al_draws, al_fam, al_par;
+    static const double al_x[8] = {1, 2, 4, 1, 2, 5, 3, 6};
+    static wchar_t s_tvar[] = L"\x04" L"tvar";
+    for (int k = 0; k < 8; k++) {
+        al_c[k].xltype = xltypeNum;
+        al_c[k].val.num = al_x[k];
+    }
+    al_draws.xltype = xltypeMulti;
+    al_draws.val.array.lparray = al_c;
+    al_draws.val.array.rows = 4;
+    al_draws.val.array.columns = 2;
+    al_fam.xltype = xltypeStr;
+    al_fam.val.str = s_tvar;
+    al_par.xltype = xltypeNum;
+    al_par.val.num = 0.5;
+    XLOPER12 *al_run = ((Fn5)GetProcAddress(xll, "pro_allocate"))(&al_draws, &al_fam, &al_par, &missing, &missing);
+    print_result("PRO.ALLOCATE({1,2;4,1;2,5;3,6}, \"tvar\", 0.5)", al_run);
+    check("PRO.ALLOCATE Euler TVaR 50% gives line 1 2.5", (al_run->xltype & 0xFFF) == xltypeMulti &&
+                                                           al_run->val.array.rows == 5 &&
+                                                           al_run->val.array.lparray[1 * 5 + 2].val.num == 2.5);
+    free12(al_run);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

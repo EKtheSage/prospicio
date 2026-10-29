@@ -514,4 +514,6 @@ mod exports {
     udf!(pro_ylt_oep, years, losses, return_periods, amounts, n_years, quantile, times, hours, negative);
     udf!(pro_elt_stats, rates, means, sd_independent, sd_correlated, exposures);
     udf!(pro_elt_oep, rates, means, sd_independent, sd_correlated, exposures, return_periods, amounts);
+    udf!(pro_allocate, draws, family, parameter, method, r0);
+    udf!(pro_allocate_total, draws, total, method, measure, level);
 }

@@ -79,6 +79,8 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.YLT.OEP(years, losses, [return_periods], [amounts], [n_years], [quantile], [times], [hours], [negative])` | A year loss table's occurrence and aggregate exceedance curves: occurrence and aggregate PMLs and TVaRs by return period, or the OEP and AEP at amounts (decision 44) |
 | `PRO.ELT.STATS(rates, means, [sd_independent], [sd_correlated], exposures)` | An event loss table's events a year, chance of an event, expected annual loss, SD and CV (decision 44) |
 | `PRO.ELT.OEP(rates, means, [sd_independent], [sd_correlated], exposures, [return_periods], [amounts])` | An event loss table's occurrence exceedance curve with secondary uncertainty: occurrence PMLs by return period, or the exceedance frequency and OEP at amounts (decision 44) |
+| `PRO.ALLOCATE(draws, family, parameter, [method], [r0])` | A distortion risk measure of the portfolio (TVaR, PH, Wang, dual and the others) allocated to its units from columns of draws: Euler (natural), covariance, covariance margin, proportional, marginal or Shapley, with each unit's stand-alone measure and diversification (decision 45) |
+| `PRO.ALLOCATE.TOTAL(draws, total, [method], [measure], [level])` | An amount from outside, a premium or a capital, allocated to the units by the haircut or the equal risk rule on stand-alone VaR, TVaR or EPD (decision 45) |
 | `PRO.TRI.INCREMENTAL(triangle)`, `PRO.TRI.CUMULATIVE(triangle)` | Incremental from cumulative, and back |
 | `PRO.TRI.LINKRATIOS(triangle)` | Age-to-age link ratios |
 | `PRO.TRI.LATEST(triangle)` | The latest diagonal |

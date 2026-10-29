@@ -45,6 +45,8 @@ category of Insert Function:
 | `PRO.YLT.OEP(years, losses, [return_periods], [amounts], [n_years], [quantile], [times], [hours], [negative])` | A year loss table's occurrence and aggregate exceedance curves: occurrence and aggregate PMLs and TVaRs by return period, or the OEP and AEP at amounts (decision 44) |
 | `PRO.ELT.STATS(rates, means, [sd_independent], [sd_correlated], exposures)` | An event loss table's events a year, chance of an event, expected annual loss, SD and CV (decision 44) |
 | `PRO.ELT.OEP(rates, means, [sd_independent], [sd_correlated], exposures, [return_periods], [amounts])` | An event loss table's occurrence exceedance curve with secondary uncertainty: occurrence PMLs by return period, or the exceedance frequency and OEP at amounts (decision 44) |
+| `PRO.ALLOCATE(draws, family, parameter, [method], [r0])` | A distortion risk measure of the portfolio (TVaR, PH, Wang, dual and the others) allocated to its units from columns of draws: Euler (natural), covariance, covariance margin, proportional, marginal or Shapley, with each unit's stand-alone measure and diversification (decision 45) |
+| `PRO.ALLOCATE.TOTAL(draws, total, [method], [measure], [level])` | An amount from outside, a premium or a capital, allocated to the units by the haircut or the equal risk rule on stand-alone VaR, TVaR or EPD (decision 45) |
 | `PRO.TRI.INCREMENTAL(triangle)`, `PRO.TRI.CUMULATIVE(triangle)` | The triangle turned incremental, or an incremental one cumulative, laid out as it is |
 | `PRO.TRI.LINKRATIOS(triangle)` | Age-to-age link ratios, one column fewer than the ages |
 | `PRO.TRI.LATEST(triangle)` | Each origin's latest value, a column |
@@ -1017,6 +1019,42 @@ real Excel.
     annual loss and a one-event table's OEP through the C API, and the
     test workbook's Cat sheet holds Alder's tables with the guide's
     numbers beside the add-in's.
+
+45. **Capital allocation on a sheet** (#578 group 5, 0.0.7).
+    `PRO.ALLOCATE` and `PRO.ALLOCATE.TOTAL` read `draws`, a block with a
+    column per unit and a row per equally likely simulation, an optional
+    header row of names (a first row with any text), into a
+    `PredictiveDistribution` with one component per unit; rows blank in
+    every cell are skipped. The units must add up to the portfolio.
+    `PRO.ALLOCATE` takes a distortion as `PRO.DISTORTION` does (`family`,
+    `parameter`, `r0`) and a `method` of
+    `prospicio_prob::capital::AllocationMethod`: `"euler"` (the default;
+    `"natural"` too, the name of *Pricing Insurance Risk*),
+    `"covariance"`, `"covariance_margin"`, `"proportional"`,
+    `"marginal"` or `"shapley"` (up to 12 units). It returns a row per
+    unit (its stand-alone measure, allocation, share of the portfolio's
+    measure and diversification), the units' totals, and the portfolio's
+    measure with the diversification benefit; the marginal's totals fall
+    short of the portfolio's. `PRO.ALLOCATE.TOTAL` shares an amount given
+    from outside by `PredictiveDistribution::haircut` (each unit's
+    stand-alone `measure` at `level`, 0.99 unless given, scaled to the
+    total) or `equal_risk` (the one level at which the stand-alone
+    measures add up to the total, reported in the last row), on TVaR
+    (the default), VaR or EPD. Not yet: the lifted and natural
+    allocations of a priced book by layer (`aggregate`'s `price` with a
+    distortion over units, which `PRO.TOWER.PRICE` covers for a tower)
+    and allocation at a stated probability for VaR alone, each when a
+    user asks. Checks (`tests/allocation.rs`): all 100 cases of
+    `validation/reference/allocation_numpy.csv` (four units over 400
+    simulations with tied totals; TVaR at 90% and 75%, proportional
+    hazard and dual power; the portfolio's and each stand-alone measure,
+    Euler, covariance, proportional, marginal and Shapley from
+    definitions in numpy); *Pricing Insurance Risk*, Exercises 205 and
+    206 (a premium of 80 as a haircut at 75%, 8 and 72, and at the equal
+    risk level 0.6796, 9.56 and 70.44); the crate's example, names and
+    the errors. The fake Excel checks the crate's example through the C
+    API, and the test workbook's Allocation sheet puts the exercises and
+    numpy's values beside the add-in's.
 
 ## Parity plan
 
