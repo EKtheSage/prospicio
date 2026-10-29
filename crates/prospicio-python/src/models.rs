@@ -5521,3 +5521,280 @@ pub(crate) fn mars(
         .map_err(to_py)?;
     Ok(PyMarsFit { inner })
 }
+
+/// A fitted isotonic regression (``isotonic``, ``recalibrate``): monotone
+/// values at the distinct inputs, read linearly (or as steps) between them
+/// and held at the end values beyond them.
+#[pyclass(name = "Isotonic", module = "prospicio.models", frozen)]
+pub(crate) struct PyIsotonic {
+    inner: prospicio_models::calibrate::Isotonic,
+}
+
+#[pymethods]
+impl PyIsotonic {
+    /// The distinct inputs, ascending.
+    #[getter]
+    fn x(&self) -> Vec<f64> {
+        self.inner.x().to_vec()
+    }
+
+    /// The fitted value at each distinct input.
+    #[getter]
+    fn values(&self) -> Vec<f64> {
+        self.inner.values().to_vec()
+    }
+
+    /// Whether the fit is non-decreasing.
+    #[getter]
+    fn increasing(&self) -> bool {
+        self.inner.increasing()
+    }
+
+    /// The fit at ``x``.
+    ///
+    /// Parameters
+    /// ----------
+    /// x : list of float
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn predict(&self, x: Vec<f64>) -> Vec<f64> {
+        self.inner.predict(&x)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Isotonic(points={}, increasing={})",
+            self.inner.x().len(),
+            self.inner.increasing()
+        )
+    }
+}
+
+fn isotonic_fit(
+    x: &[f64],
+    y: &[f64],
+    weights: Option<&[f64]>,
+    increasing: bool,
+    y_min: Option<f64>,
+    y_max: Option<f64>,
+    interpolation: &str,
+) -> PyResult<PyIsotonic> {
+    use prospicio_models::calibrate::{Interpolation, isotonic};
+    let interp = match interpolation {
+        "linear" => Interpolation::Linear,
+        "step" => Interpolation::Step,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "interpolation must be \"linear\" or \"step\", not {other:?}"
+            )));
+        }
+    };
+    let mut f = isotonic(x, y, weights, increasing)
+        .map_err(to_py)?
+        .with_interpolation(interp);
+    if y_min.is_some() || y_max.is_some() {
+        f = f
+            .with_bounds(
+                y_min.unwrap_or(f64::NEG_INFINITY),
+                y_max.unwrap_or(f64::INFINITY),
+            )
+            .map_err(to_py)?;
+    }
+    Ok(PyIsotonic { inner: f })
+}
+
+/// Weighted isotonic regression of ``y`` on ``x`` by pool-adjacent-violators,
+/// as scikit-learn's ``IsotonicRegression(out_of_bounds="clip")``: tied
+/// ``x`` merged into their weighted mean first, the values clipped to
+/// ``[y_min, y_max]`` when given.
+///
+/// Parameters
+/// ----------
+/// x, y : list of float
+/// weights : list of float, optional
+/// increasing : bool, default True
+/// y_min, y_max : float, optional
+/// interpolation : {"linear", "step"}, default "linear"
+///
+/// Returns
+/// -------
+/// Isotonic
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import isotonic
+/// >>> f = isotonic([1.0, 2.0, 3.0, 4.0], [1.0, 3.0, 2.0, 4.0])
+/// >>> f.values, f.predict([2.5, 0.0, 9.0])
+/// ([1.0, 2.5, 2.5, 4.0], [2.5, 1.0, 4.0])
+#[pyfunction]
+#[pyo3(signature = (x, y, weights = None, increasing = true, y_min = None, y_max = None, interpolation = "linear"))]
+pub(crate) fn isotonic(
+    x: Vec<f64>,
+    y: Vec<f64>,
+    weights: Option<Vec<f64>>,
+    increasing: bool,
+    y_min: Option<f64>,
+    y_max: Option<f64>,
+    interpolation: &str,
+) -> PyResult<PyIsotonic> {
+    isotonic_fit(
+        &x,
+        &y,
+        weights.as_deref(),
+        increasing,
+        y_min,
+        y_max,
+        interpolation,
+    )
+}
+
+/// A recalibration map for a model: the increasing isotonic regression of
+/// the response ``y`` on the model's predictions ``pred`` on held-out or
+/// out-of-fold data. Apply it to new predictions with ``predict``; it keeps
+/// their ranking and fixes their levels. A frequency model needs a floor
+/// (``y_min``, say a small share of the mean), since the lowest pooled level
+/// can be 0.
+///
+/// Parameters
+/// ----------
+/// pred, y : list of float
+/// weights : list of float, optional
+///     Exposures when ``y`` and ``pred`` are rates.
+/// y_min, y_max : float, optional
+///
+/// Returns
+/// -------
+/// Isotonic
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import recalibrate
+/// >>> m = recalibrate([1.0, 2.0, 3.0, 4.0], [0.0, 1.0, 1.0, 2.0], y_min=0.1)
+/// >>> m.predict([1.0, 2.5, 4.0])
+/// [0.1, 1.0, 2.0]
+#[pyfunction]
+#[pyo3(signature = (pred, y, weights = None, y_min = None, y_max = None))]
+pub(crate) fn recalibrate(
+    pred: Vec<f64>,
+    y: Vec<f64>,
+    weights: Option<Vec<f64>>,
+    y_min: Option<f64>,
+    y_max: Option<f64>,
+) -> PyResult<PyIsotonic> {
+    isotonic_fit(&pred, &y, weights.as_deref(), true, y_min, y_max, "linear")
+}
+
+/// The multiplier ``sum(w y) / sum(w pred)`` that makes the weighted total
+/// prediction equal the weighted total response (the balance property).
+///
+/// Parameters
+/// ----------
+/// y, pred : list of float
+/// weights : list of float, optional
+///
+/// Returns
+/// -------
+/// float
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import balance_correction
+/// >>> balance_correction([1.0, 3.0], [1.0, 1.0])
+/// 2.0
+#[pyfunction]
+#[pyo3(signature = (y, pred, weights = None))]
+pub(crate) fn balance_correction(
+    y: Vec<f64>,
+    pred: Vec<f64>,
+    weights: Option<Vec<f64>>,
+) -> PyResult<f64> {
+    prospicio_models::calibrate::balance_correction(&y, &pred, weights.as_deref()).map_err(to_py)
+}
+
+/// Mean prediction against mean response in ``bins`` bands of about equal
+/// weight by ascending prediction, tied predictions kept in one band: an
+/// auto-calibrated model's bands lie on the diagonal.
+///
+/// Parameters
+/// ----------
+/// y, pred : list of float
+/// weights : list of float, optional
+/// bins : int, default 10
+///
+/// Returns
+/// -------
+/// list of dict
+///     ``lo``, ``hi``, ``mean_pred``, ``mean_actual``, ``weight`` and
+///     ``count`` per band.
+#[pyfunction]
+#[pyo3(signature = (y, pred, weights = None, bins = 10))]
+pub(crate) fn reliability(
+    y: Vec<f64>,
+    pred: Vec<f64>,
+    weights: Option<Vec<f64>>,
+    bins: usize,
+) -> PyResult<Vec<HashMap<String, f64>>> {
+    let bands = prospicio_models::calibrate::reliability(&y, &pred, weights.as_deref(), bins)
+        .map_err(to_py)?;
+    Ok(bands
+        .into_iter()
+        .map(|b| {
+            HashMap::from([
+                ("lo".to_string(), b.lo),
+                ("hi".to_string(), b.hi),
+                ("mean_pred".to_string(), b.mean_pred),
+                ("mean_actual".to_string(), b.mean_actual),
+                ("weight".to_string(), b.weight),
+                ("count".to_string(), b.count as f64),
+            ])
+        })
+        .collect())
+}
+
+/// The CORP decomposition of a family's mean deviance (the squared error
+/// for the Gaussian), ``score = miscalibration - discrimination +
+/// uncertainty``: the miscalibration is what the isotonic recalibration of
+/// ``pred`` gains (0 for an auto-calibrated model), the discrimination what
+/// the ranking is worth, the uncertainty the score of the mean response.
+///
+/// Parameters
+/// ----------
+/// y, pred : list of float
+/// family : str, default "gaussian"
+/// weights : list of float, optional
+/// theta, power : float, optional
+///     For the negative binomial and Tweedie.
+///
+/// Returns
+/// -------
+/// dict
+///     ``score``, ``miscalibration``, ``discrimination`` and
+///     ``uncertainty``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import murphy
+/// >>> m = murphy([0.0, 1.0, 1.0, 2.0], [0.5, 0.5, 2.0, 2.0])
+/// >>> round(m["miscalibration"] - m["discrimination"] + m["uncertainty"] - m["score"], 12)
+/// 0.0
+#[pyfunction]
+#[pyo3(signature = (y, pred, family = "gaussian", weights = None, theta = None, power = None))]
+pub(crate) fn murphy(
+    y: Vec<f64>,
+    pred: Vec<f64>,
+    family: &str,
+    weights: Option<Vec<f64>>,
+    theta: Option<f64>,
+    power: Option<f64>,
+) -> PyResult<HashMap<String, f64>> {
+    let f = self::family(family, theta, power)?;
+    let m = prospicio_models::calibrate::murphy(f, &y, &pred, weights.as_deref()).map_err(to_py)?;
+    Ok(HashMap::from([
+        ("score".to_string(), m.score),
+        ("miscalibration".to_string(), m.miscalibration),
+        ("discrimination".to_string(), m.discrimination),
+        ("uncertainty".to_string(), m.uncertainty),
+    ]))
+}

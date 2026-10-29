@@ -2753,3 +2753,153 @@ fn mars_knots_feed_terms() {
         .unwrap();
     assert!((glm.deviance() / poisson.rss() - 1.0).abs() < 1e-9);
 }
+
+/// Isotonic regression and the balance correction against scikit-learn
+/// 1.5.2 (`validation/scripts/isotonic_sklearn.py`): weighted and tied data,
+/// increasing and decreasing, predictions inside and beyond the data.
+#[test]
+fn isotonic_matches_scikit_learn() {
+    use prospicio_models::calibrate::{balance_correction, isotonic};
+    let nums = |s: &str| -> Vec<f64> {
+        if s.is_empty() {
+            Vec::new()
+        } else {
+            s.split(';').map(|x| x.parse().unwrap()).collect()
+        }
+    };
+    let (mut fits, mut balances) = (0, 0);
+    for c in &reference("isotonic_sklearn.csv") {
+        let w = nums(c.get("w"));
+        let w = (!w.is_empty()).then_some(w.as_slice());
+        let want = nums(c.get("expected"));
+        match c.get("case") {
+            "isotonic" => {
+                let f = isotonic(
+                    &nums(c.get("x")),
+                    &nums(c.get("y")),
+                    w,
+                    c.get("increasing") == "1",
+                )
+                .unwrap();
+                for (g, e) in f.predict(&nums(c.get("query"))).iter().zip(&want) {
+                    assert!((g - e).abs() < 1e-12 * e.abs().max(1.0), "{g} {e}");
+                }
+                fits += 1;
+            }
+            "balance" => {
+                let b = balance_correction(&nums(c.get("y")), &nums(c.get("query")), w).unwrap();
+                assert!((b - want[0]).abs() < 1e-14 * want[0], "{b} {want:?}");
+                balances += 1;
+            }
+            other => panic!("case {other}"),
+        }
+    }
+    assert_eq!((fits, balances), (5, 5));
+}
+
+/// A Poisson GLM's predictions bent to `(p / m)^2.5 m`: the same ranking,
+/// the wrong levels.
+struct Bent(GlmFit, f64);
+
+impl prospicio_models::Fitted for Bent {
+    fn predict(&self, design: &Design) -> prospicio_core::Result<Vec<f64>> {
+        Ok(self
+            .0
+            .predict(design)?
+            .iter()
+            .map(|p| (p / self.1).powf(2.5) * self.1)
+            .collect())
+    }
+
+    fn predict_distribution(
+        &self,
+        design: &Design,
+        n_sims: usize,
+        seed: u64,
+    ) -> prospicio_core::Result<prospicio_prob::PredictiveDistribution> {
+        self.0.predict_distribution(design, n_sims, seed)
+    }
+}
+
+/// On the Chalk portfolio: a Poisson GLM fitted on a third of the policies
+/// is balanced on them and nearly auto-calibrated on another third; bent out
+/// of calibration, its miscalibration term grows while its discrimination
+/// is unchanged, an isotonic map fitted on the second third (with a floor)
+/// removes most of the miscalibration on the last third (0.047 to 0.007,
+/// the plain GLM's own term there 0.012 from the noise the isotonic fit
+/// takes up), and the balance correction makes the totals equal.
+#[test]
+fn recalibration_repairs_a_bent_model_on_the_chalk_portfolio() {
+    use prospicio_models::Fitted;
+    use prospicio_models::calibrate::{Balanced, Recalibrated, balance_correction, murphy};
+    let (x, y, w) = chalk();
+    let part = |k: usize| -> (Design, Vec<f64>, Vec<f64>) {
+        let rows: Vec<usize> = (0..y.len()).filter(|i| i % 3 == k).collect();
+        let col = |v: &[f64]| rows.iter().map(|&i| v[i]).collect::<Vec<f64>>();
+        let d = Design::new(
+            vec![
+                "(Intercept)".into(),
+                "age".into(),
+                "veh_age".into(),
+                "exper".into(),
+            ],
+            vec![vec![1.0; rows.len()], col(&x[0]), col(&x[1]), col(&x[2])],
+        )
+        .unwrap()
+        .with_weights(col(&w))
+        .unwrap();
+        (d, col(&y), col(&w))
+    };
+    let (d0, y0, w0) = part(0);
+    let (d1, y1, w1) = part(1);
+    let (d2, y2, w2) = part(2);
+    let glm = Glm::new(Family::Poisson, Link::Log).fit(&d0, &y0).unwrap();
+    // The balance property on the fitting data.
+    let f = balance_correction(&y0, &glm.predict(&d0).unwrap(), Some(&w0)).unwrap();
+    assert!((f - 1.0).abs() < 1e-8, "{f}");
+    let mean = glm
+        .predict(&d0)
+        .unwrap()
+        .iter()
+        .zip(&w0)
+        .map(|(p, w)| p * w)
+        .sum::<f64>()
+        / w0.iter().sum::<f64>();
+    let score =
+        |m: &dyn Fitted| murphy(Family::Poisson, &y2, &m.predict(&d2).unwrap(), Some(&w2)).unwrap();
+    let plain = score(&glm);
+    let glm2 = Glm::new(Family::Poisson, Link::Log).fit(&d0, &y0).unwrap();
+    let bent = Bent(glm2, mean);
+    let b = score(&bent);
+    assert!(
+        b.miscalibration > 3.0 * plain.miscalibration,
+        "{b:?} {plain:?}"
+    );
+    assert!(
+        (b.discrimination - plain.discrimination).abs() < 1e-9,
+        "{b:?} {plain:?}"
+    );
+    let glm3 = Glm::new(Family::Poisson, Link::Log).fit(&d0, &y0).unwrap();
+    // A floor at 5% of the mean frequency: the lowest pooled block can be 0.
+    let fixed = Recalibrated::fit(Bent(glm3, mean), &d1, &y1, Some(&w1))
+        .unwrap()
+        .with_bounds(0.05 * mean, f64::INFINITY)
+        .unwrap();
+    let r = score(&fixed);
+    // Most of the miscalibration gone, the score back at the plain GLM's.
+    assert!(r.miscalibration < b.miscalibration / 3.0, "{r:?} {b:?}");
+    assert!(
+        r.score < plain.score + 1e-3 && r.score < b.score,
+        "{r:?} {plain:?}"
+    );
+    // Balanced on the last third: its totals agree there exactly.
+    let glm4 = Glm::new(Family::Poisson, Link::Log).fit(&d0, &y0).unwrap();
+    let bal = Balanced::fit(Bent(glm4, mean), &d2, &y2, Some(&w2)).unwrap();
+    let p = bal.predict(&d2).unwrap();
+    let (tp, ty): (f64, f64) = p
+        .iter()
+        .zip(&y2)
+        .zip(&w2)
+        .fold((0.0, 0.0), |(a, c), ((p, y), w)| (a + p * w, c + y * w));
+    assert!((tp / ty - 1.0).abs() < 1e-12, "{tp} {ty}");
+}

@@ -2618,8 +2618,81 @@ fn loo_pit_rust(
     Ok(list!(pit = p.pit, pareto_k = p.pareto_k, ks = p.ks))
 }
 
+/// An isotonic fit as `list(x, values)`; `weights` empty for none, `y_min`
+/// and `y_max` NaN for none.
+#[extendr]
+fn isotonic_rust(
+    x: &[f64],
+    y: &[f64],
+    weights: &[f64],
+    increasing: bool,
+    y_min: f64,
+    y_max: f64,
+) -> Result<List> {
+    let w = (!weights.is_empty()).then_some(weights);
+    let mut f = prospicio_models::calibrate::isotonic(x, y, w, increasing).map_err(to_r)?;
+    if !y_min.is_nan() || !y_max.is_nan() {
+        let lo = if y_min.is_nan() {
+            f64::NEG_INFINITY
+        } else {
+            y_min
+        };
+        let hi = if y_max.is_nan() { f64::INFINITY } else { y_max };
+        f = f.with_bounds(lo, hi).map_err(to_r)?;
+    }
+    Ok(list!(x = f.x().to_vec(), values = f.values().to_vec()))
+}
+
+/// The balance correction; `weights` empty for none.
+#[extendr]
+fn balance_correction_rust(y: &[f64], pred: &[f64], weights: &[f64]) -> Result<f64> {
+    let w = (!weights.is_empty()).then_some(weights);
+    prospicio_models::calibrate::balance_correction(y, pred, w).map_err(to_r)
+}
+
+/// The reliability table as columns.
+#[extendr]
+fn reliability_rust(y: &[f64], pred: &[f64], weights: &[f64], bins: f64) -> Result<List> {
+    let w = (!weights.is_empty()).then_some(weights);
+    let t = prospicio_models::calibrate::reliability(y, pred, w, whole(bins, "bins")? as usize)
+        .map_err(to_r)?;
+    Ok(list!(
+        lo = t.iter().map(|b| b.lo).collect::<Vec<_>>(),
+        hi = t.iter().map(|b| b.hi).collect::<Vec<_>>(),
+        mean_pred = t.iter().map(|b| b.mean_pred).collect::<Vec<_>>(),
+        mean_actual = t.iter().map(|b| b.mean_actual).collect::<Vec<_>>(),
+        weight = t.iter().map(|b| b.weight).collect::<Vec<_>>(),
+        count = t.iter().map(|b| b.count as f64).collect::<Vec<_>>()
+    ))
+}
+
+/// The CORP decomposition of a family's mean deviance.
+#[extendr]
+fn murphy_rust(
+    y: &[f64],
+    pred: &[f64],
+    family_name: &str,
+    weights: &[f64],
+    theta: f64,
+    power: f64,
+) -> Result<List> {
+    let w = (!weights.is_empty()).then_some(weights);
+    let m = prospicio_models::calibrate::murphy(family(family_name, theta, power)?, y, pred, w)
+        .map_err(to_r)?;
+    Ok(list!(
+        score = m.score,
+        miscalibration = m.miscalibration,
+        discrimination = m.discrimination,
+        uncertainty = m.uncertainty
+    ))
+}
+
 extendr_module! {
     mod models;
+    fn isotonic_rust;
+    fn balance_correction_rust;
+    fn reliability_rust;
+    fn murphy_rust;
     fn bayes_stacking_rust;
     fn hierarchical_stacking_rust;
     impl StackingModel;

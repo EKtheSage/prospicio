@@ -16334,6 +16334,42 @@ class IrrResult:
         """
 
 @final
+class Isotonic:
+    """
+    A fitted isotonic regression (``isotonic``, ``recalibrate``): monotone
+    values at the distinct inputs, read linearly (or as steps) between them
+    and held at the end values beyond them.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def increasing(self, /) -> bool:
+        """
+        Whether the fit is non-decreasing.
+        """
+    def predict(self, /, x: Sequence[float]) -> list[float]:
+        """
+        The fit at ``x``.
+        
+        Parameters
+        ----------
+        x : list of float
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def values(self, /) -> list[float]:
+        """
+        The fitted value at each distinct input.
+        """
+    @property
+    def x(self, /) -> list[float]:
+        """
+        The distinct inputs, ascending.
+        """
+
+@final
 class JointGrid:
     """
     A joint distribution of two losses on a grid, ``P(A = i * step_a, B = j
@@ -32100,6 +32136,27 @@ def audit_portfolio_grid(units: Any, step: float |None = None, log2: int |None =
     True
     """
 
+def balance_correction(y: Sequence[float], pred: Sequence[float], weights: Sequence[float] |None = None) -> float:
+    """
+    The multiplier ``sum(w y) / sum(w pred)`` that makes the weighted total
+    prediction equal the weighted total response (the balance property).
+    
+    Parameters
+    ----------
+    y, pred : list of float
+    weights : list of float, optional
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.models import balance_correction
+    >>> balance_correction([1.0, 3.0], [1.0, 1.0])
+    2.0
+    """
+
 def bootstrap_se(dist: Any, percentiles: Sequence[float], *, replicates: int = 200, seed: int = 0, hold_fixed: Any |None = None, tvar_levels: Sequence[float] |None = None, sd_multiples: Sequence[float] |None = None, quantile: str = "inverted_cdf", tvar: str = "exact") -> dict:
     """
     Bootstrap standard errors of every statistic ``statistics`` reports.
@@ -33943,6 +34000,33 @@ def irr(flows: Sequence[Sequence[float]], times: Sequence[float], *, unit: str =
     [3.0]
     """
 
+def isotonic(x: Sequence[float], y: Sequence[float], weights: Sequence[float] |None = None, increasing: bool = True, y_min: float |None = None, y_max: float |None = None, interpolation: str = "linear") -> Isotonic:
+    """
+    Weighted isotonic regression of ``y`` on ``x`` by pool-adjacent-violators,
+    as scikit-learn's ``IsotonicRegression(out_of_bounds="clip")``: tied
+    ``x`` merged into their weighted mean first, the values clipped to
+    ``[y_min, y_max]`` when given.
+    
+    Parameters
+    ----------
+    x, y : list of float
+    weights : list of float, optional
+    increasing : bool, default True
+    y_min, y_max : float, optional
+    interpolation : {"linear", "step"}, default "linear"
+    
+    Returns
+    -------
+    Isotonic
+    
+    Examples
+    --------
+    >>> from prospicio.models import isotonic
+    >>> f = isotonic([1.0, 2.0, 3.0, 4.0], [1.0, 3.0, 2.0, 4.0])
+    >>> f.values, f.predict([2.5, 0.0, 9.0])
+    ([1.0, 2.5, 2.5, 4.0], [2.5, 1.0, 4.0])
+    """
+
 def k_fold(n: int, k: int, seed: int) -> list[tuple[list[int], list[int]]]:
     """
     ``k``-fold splits of ``n`` rows, shuffled with ``seed``.
@@ -34561,6 +34645,36 @@ def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_m
     >>> w, e, paid = monthly_patterns([1.0] * 60, p)
     >>> e[5], e[11], round(paid[59], 12)
     (0.5, 1.0, 1.0)
+    """
+
+def murphy(y: Sequence[float], pred: Sequence[float], family: str = "gaussian", weights: Sequence[float] |None = None, theta: float |None = None, power: float |None = None) -> dict[str, float]:
+    """
+    The CORP decomposition of a family's mean deviance (the squared error
+    for the Gaussian), ``score = miscalibration - discrimination +
+    uncertainty``: the miscalibration is what the isotonic recalibration of
+    ``pred`` gains (0 for an auto-calibrated model), the discrimination what
+    the ranking is worth, the uncertainty the score of the mean response.
+    
+    Parameters
+    ----------
+    y, pred : list of float
+    family : str, default "gaussian"
+    weights : list of float, optional
+    theta, power : float, optional
+        For the negative binomial and Tweedie.
+    
+    Returns
+    -------
+    dict
+        ``score``, ``miscalibration``, ``discrimination`` and
+        ``uncertainty``.
+    
+    Examples
+    --------
+    >>> from prospicio.models import murphy
+    >>> m = murphy([0.0, 1.0, 1.0, 2.0], [0.5, 0.5, 2.0, 2.0])
+    >>> round(m["miscalibration"] - m["discrimination"] + m["uncertainty"] - m["score"], 12)
+    0.0
     """
 
 def mvn_cdf(upper: Sequence[float], correlation: Sequence[Sequence[float]], lower: Sequence[float] |None = None, abs_tol: float = 1e-5, max_points: int = ..., scrambles: int = 10, seed: int = 0) -> MvnEstimate:
@@ -35440,6 +35554,34 @@ def rearrange(columns: Sequence[Sequence[float]], rotate: int |None = None, seed
     5.0
     """
 
+def recalibrate(pred: Sequence[float], y: Sequence[float], weights: Sequence[float] |None = None, y_min: float |None = None, y_max: float |None = None) -> Isotonic:
+    """
+    A recalibration map for a model: the increasing isotonic regression of
+    the response ``y`` on the model's predictions ``pred`` on held-out or
+    out-of-fold data. Apply it to new predictions with ``predict``; it keeps
+    their ranking and fixes their levels. A frequency model needs a floor
+    (``y_min``, say a small share of the mean), since the lowest pooled level
+    can be 0.
+    
+    Parameters
+    ----------
+    pred, y : list of float
+    weights : list of float, optional
+        Exposures when ``y`` and ``pred`` are rates.
+    y_min, y_max : float, optional
+    
+    Returns
+    -------
+    Isotonic
+    
+    Examples
+    --------
+    >>> from prospicio.models import recalibrate
+    >>> m = recalibrate([1.0, 2.0, 3.0, 4.0], [0.0, 1.0, 1.0, 2.0], y_min=0.1)
+    >>> m.predict([1.0, 2.5, 4.0])
+    [0.1, 1.0, 2.0]
+    """
+
 def recommend_grid(frequency: Any, severity: Any, log2: int = 16, p: float = ..., p_star: float = ...) -> GridSize:
     """
     A grid for the compound distribution of ``frequency`` claims of
@@ -35507,6 +35649,25 @@ def recommend_portfolio_grid(units: Any, log2: int = 16, p: float = ..., p_star:
     ...                               (Poisson(2.0), Gamma(0.5, 1000.0))])
     >>> g.points <= 2**16
     True
+    """
+
+def reliability(y: Sequence[float], pred: Sequence[float], weights: Sequence[float] |None = None, bins: int = 10) -> list[dict[str, float]]:
+    """
+    Mean prediction against mean response in ``bins`` bands of about equal
+    weight by ascending prediction, tied predictions kept in one band: an
+    auto-calibrated model's bands lie on the diagonal.
+    
+    Parameters
+    ----------
+    y, pred : list of float
+    weights : list of float, optional
+    bins : int, default 10
+    
+    Returns
+    -------
+    list of dict
+        ``lo``, ``hi``, ``mean_pred``, ``mean_actual``, ``weight`` and
+        ``count`` per band.
     """
 
 def risk_ratios(dist: Any, *, threshold: float = 0.0, sortino: str = "downside_deviation", omega: str = "partial_moments", tvar_levels: Sequence[float] |None = None, tvar: str = "exact") -> dict:
