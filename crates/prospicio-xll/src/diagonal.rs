@@ -11,13 +11,13 @@
 
 use prospicio_core::{Grain, Lag, Month, Period};
 use prospicio_reserving::{
-    Benktander, BornhuetterFerguson, CapeCod, ChainLadder, ChainLadderFit, Development,
+    Apriori, Benktander, BornhuetterFerguson, CapeCod, ChainLadder, ChainLadderFit, Development,
     ExpectedLoss, ExpectedLossFit, LatestDiagonal, PastPatternEnd, PatternKind, SelectedPattern,
     Tail,
 };
 
 use crate::ratemaking::civil;
-use crate::reserving::{count, number, number_or, pattern_kind, tail, text_option};
+use crate::reserving::{apriori, count, number_or, pattern_kind, tail, text_option};
 use crate::sheet::{Grid, Value};
 
 type Result<T> = std::result::Result<T, String>;
@@ -113,7 +113,7 @@ fn per_origin<'a>(grid: &'a Grid, name: &str, n: usize) -> Result<Option<&'a [Va
 }
 
 /// A whole number of months, at least 1, as an age.
-fn months(v: &Value) -> Option<Lag> {
+pub(crate) fn months(v: &Value) -> Option<Lag> {
     match v {
         Value::Number(x) if x.fract() == 0.0 && *x >= 1.0 && *x <= 1e6 => Some(*x as Lag),
         _ => None,
@@ -263,11 +263,25 @@ fn sheet_error(e: prospicio_reserving::Error) -> String {
     }
 }
 
-/// What a diagonal function fits: the diagonal and the chain ladder that
-/// holds its pattern and tail.
+/// What a diagonal function fits: the diagonal, the chain ladder that
+/// holds its pattern and tail, and the origin periods in the order given.
 struct Prepared {
     diagonal: LatestDiagonal,
     chain_ladder: ChainLadder,
+    origins: Vec<Period>,
+}
+
+impl Prepared {
+    /// The `apriori` argument at `grid`: one loss ratio, or one per origin
+    /// in the order the origins are given, keyed by their periods.
+    fn apriori(&self, grid: &Grid) -> Result<Apriori> {
+        Ok(match apriori(grid, self.origins.len())? {
+            Apriori::InOrder(values) => {
+                Apriori::by_origin(self.origins.iter().copied().zip(values))
+            }
+            a => a,
+        })
+    }
 }
 
 /// The arguments every diagonal function takes: `origins`, `ages` and
@@ -352,6 +366,10 @@ fn prepare(
             .map_err(sheet_error)?;
     }
     Ok(Prepared {
+        origins: origins
+            .iter()
+            .map(|&m| Period::containing(m, grain))
+            .collect(),
         diagonal: diagonal.with_past_pattern_end(rule),
         chain_ladder: ChainLadder {
             development: Development {
@@ -459,7 +477,7 @@ pub fn chain_ladder(args: &[Grid]) -> Result<Grid> {
 pub fn expected_loss(args: &[Grid]) -> Result<Grid> {
     let p = prepare(args, Some(&args[3]), 5, 6)?;
     let fit = ExpectedLoss {
-        apriori: number(&args[4], "apriori")?.into(),
+        apriori: p.apriori(&args[4])?,
         chain_ladder: p.chain_ladder,
     }
     .fit_diagonal(&p.diagonal)
@@ -472,7 +490,7 @@ pub fn expected_loss(args: &[Grid]) -> Result<Grid> {
 pub fn bornhuetter_ferguson(args: &[Grid]) -> Result<Grid> {
     let p = prepare(args, Some(&args[3]), 5, 6)?;
     let fit = BornhuetterFerguson {
-        apriori: number(&args[4], "apriori")?.into(),
+        apriori: p.apriori(&args[4])?,
         chain_ladder: p.chain_ladder,
     }
     .fit_diagonal(&p.diagonal)
@@ -485,7 +503,7 @@ pub fn bornhuetter_ferguson(args: &[Grid]) -> Result<Grid> {
 pub fn benktander(args: &[Grid]) -> Result<Grid> {
     let p = prepare(args, Some(&args[3]), 5, 7)?;
     let fit = Benktander {
-        apriori: number(&args[4], "apriori")?.into(),
+        apriori: p.apriori(&args[4])?,
         n_iters: count(&args[6], "iterations", 1, 10_000)?,
         chain_ladder: p.chain_ladder,
     }

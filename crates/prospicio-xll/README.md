@@ -48,17 +48,17 @@ Ctrl+Alt+F9 to recalculate.
 
 | Function | Returns |
 |---|---|
-| `PRO.CL(triangle, [average], [tail], [origins], [selected], [kind], [weight])` | Chain ladder exhibit with a total row |
-| `PRO.CL.LDF(triangle, [average], [tail], [selected], [kind], [weight])` | Age-to-age factors, one per column; the last is the tail |
-| `PRO.CL.CDF(triangle, [average], [tail], [selected], [kind], [weight])` | Age-to-ultimate factors, one per column |
+| `PRO.CL(triangle, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Chain ladder exhibit with a total row |
+| `PRO.CL.LDF(triangle, [average], [tail], [selected], [kind], [weight], [pattern_ages])` | Age-to-age factors, one per column; the last is the tail |
+| `PRO.CL.CDF(triangle, [average], [tail], [selected], [kind], [weight], [pattern_ages])` | Age-to-ultimate factors, one per column |
 | `PRO.CL.ULTIMATE(...)`, `PRO.CL.RESERVE(...)` | One value per origin |
-| `PRO.CL.FACTORS(triangle, [average], [tail], [selected], [kind], [weight], [sigma])` | LDF, CDF, sigma and standard error per link, and the tail |
-| `PRO.MACK(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Mack exhibit: process, parameter and total SE and CV, with a total |
+| `PRO.CL.FACTORS(triangle, [average], [tail], [selected], [kind], [weight], [sigma], [pattern_ages])` | LDF, CDF, sigma and standard error per link, and the tail |
+| `PRO.MACK(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma], [pattern_ages])` | Mack exhibit: process, parameter and total SE and CV, with a total |
 | `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins], [average])` | ODP bootstrap exhibit: CL reserve, mean, SD, CV and percentiles, with a total |
 | `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins], [average])` | The bootstrap's draws: a row per simulation, a column per origin and the total (at most 100000 rows) |
 | `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap exhibit, laid out as `PRO.ODP` |
 | `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap's draws, laid out as `PRO.ODP.SIMS` |
-| `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Merz-Wuthrich one-year view: CDR(1) SE and run-off SE |
+| `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma], [pattern_ages])` | Merz-Wuthrich one-year view: CDR(1) SE and run-off SE |
 | `PRO.MACK.CDR.YEARS(...)`, same arguments | CDR SE by future calendar year |
 | `PRO.ODP.CDR(triangle, [sims], [seed], [percentiles], [tail], [process], [origins], [average])` | ODP bootstrap's simulated one-year CDR (negative is adverse) |
 | `PRO.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap's simulated one-year CDR |
@@ -70,10 +70,10 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.TRI.INCREMENTAL(triangle)`, `PRO.TRI.CUMULATIVE(triangle)` | Incremental from cumulative, and back |
 | `PRO.TRI.LINKRATIOS(triangle)` | Age-to-age link ratios |
 | `PRO.TRI.LATEST(triangle)` | The latest diagonal |
-| `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins])` | Expected loss method exhibit |
-| `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])` | Bornhuetter-Ferguson exhibit |
-| `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander exhibit |
-| `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins])` | Cape Cod exhibit |
+| `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Expected loss method exhibit |
+| `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Bornhuetter-Ferguson exhibit |
+| `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Benktander exhibit |
+| `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Cape Cod exhibit |
 | `PRO.DIAG.CL(origins, ages, latest, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | Chain ladder on a latest diagonal (a bordereau) with a selected pattern |
 | `PRO.DIAG.EL(origins, ages, latest, exposure, apriori, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | Expected loss method on a latest diagonal |
 | `PRO.DIAG.BF(origins, ages, latest, exposure, apriori, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | Bornhuetter-Ferguson on a latest diagonal |
@@ -163,10 +163,21 @@ Ctrl+Alt+F9 to recalculate.
 - `origins`: labels for the exhibit's first column; omitted for 1, 2, ...
 - `selected`: selected factors, a row with a cell per triangle column (a
   blank keeps the estimate); `kind`: `"ldf"` (default), `"cdf"` or
-  `"percent"`; `weight`: 0 to 1 on the selection, 1 if omitted.
+  `"percent"`; `weight`: 0 to 1 on the selection, 1 if omitted;
+  `pattern_ages`: each selected value's age in months, so a monthly (or
+  any other) pattern reaches the triangle's 12, 24, ... columns, read
+  between its own ages (12, 24, ... by cell if omitted). The chain-ladder
+  functions, Mack, the one-year view and the four expected-loss methods
+  take all four, last and in this order (after `sigma` where there is
+  one). With `pattern_ages`, an age-to-age factor runs to the next age
+  given, as on the diagonal functions. For a pattern of accident months
+  on accident years, average it with `PRO.PATTERN.AVERAGE` first and pass
+  its result with `kind` `"percent"`.
 - `sigma`: Mack's last sigma, `"log-linear"` (default) or `"mack"`.
 - `exposure`: premium per origin, a row or column of positive values;
-  `apriori`: the expected loss ratio, such as `0.75`.
+  `apriori`: the expected loss ratio, such as `0.75`, or a row or column
+  of them, one per origin (oldest first on a triangle; on the diagonal
+  functions, in the order of `origins`).
 - `curve`: Clark's growth curve, `"loglogistic"` (default) or
   `"weibull"`; `max_age`: months development stops at, omitted for none.
 - `sims` (default 10000, at most 1000000), `seed` (default 0; the same seed

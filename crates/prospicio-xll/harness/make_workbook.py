@@ -342,12 +342,38 @@ el["I54"] = "Its parameters"; el["I54"].font = bold
 el["I55"] = ArrayFormula("I55:J60", f"=PRO.CLARK.PARAMS({G},{P},,240)")
 el["A69"] = "Clark's LDF method on GenIns, Weibull"; el["A69"].font = bold
 el["A70"] = ArrayFormula("A70:G81", f'=PRO.CLARK({G},,"weibull",,{O})')
+# A selected pattern at its ages and an a priori per origin (decision 40).
+el["M3"] = "A priori by AY"; el["M3"].font = bold
+for r in range(10):
+    el.cell(row=4+r, column=13, value=round(0.70 + 0.01*r, 2)).fill = inp
+el["A84"] = "GenIns's own factors to ultimate (PRO.CL.CDF) at their ages, as a selected pattern"; el["A84"].font = bold
+el["A85"] = "Pattern age"; el["A86"] = "CDF"; el["A85"].font = el["A86"].font = bold
+for c in range(10):
+    el.cell(row=85, column=2+c, value=12*(c+1)).fill = inp
+el["B86"] = ArrayFormula("B86:K86", f"=PRO.CL.CDF({G})")
+el["A88"] = "Bornhuetter-Ferguson on the selected pattern"; el["A88"].font = bold
+el["A89"] = ArrayFormula("A89:G100", f'=PRO.BF({G},{P},$O$3,,,{O},$B$86:$K$86,"cdf",,$B$85:$K$85)')
+el["I88"] = "Bornhuetter-Ferguson, a priori by AY (column M)"; el["I88"].font = bold
+el["I89"] = ArrayFormula("I89:O100", f"=PRO.BF({G},{P},$M$4:$M$13,,,{O})")
+el["A102"] = "Check: the selected pattern and the a priori by AY"; el["A102"].font = bold
+for h, col in zip(["Check", "prospicio", "Expected", "Match"], "ABCD"):
+    el[f"{col}103"] = h; el[f"{col}103"].font = bold
+for i, (name, f, x) in enumerate([
+        ("Own pattern selected = BF", "=G100", "=G28"),
+        ("By AY = latest + LR x premium x (1 - 1/CDF)", "=N100",
+         "=SUMPRODUCT(K90:K99+M90:M99*J90:J99*(1-1/L90:L99))")]):
+    row = 104 + i
+    el[f"A{row}"] = name; el[f"B{row}"] = f; el[f"C{row}"] = x
+    el[f"D{row}"] = f"=ABS(B{row}-C{row})<1E-6*ABS(C{row})"
 el.column_dimensions["A"].width = 22
 for col in "BCDEFGHIJKLMNO":
     el.column_dimensions[col].width = 12
-for row in el.iter_rows(min_row=17, max_row=81, min_col=2, max_col=15):
+for row in el.iter_rows(min_row=17, max_row=105, min_col=2, max_col=15):
     for c in row:
-        c.number_format = "#,##0"
+        if c.row not in (85, 86):
+            c.number_format = "#,##0"
+for c in range(10):
+    el.cell(row=86, column=2+c).number_format = "0.0000"
 
 # The one-year view on the RAA sheet's triangle.
 oy = wb.create_sheet("One-year")
