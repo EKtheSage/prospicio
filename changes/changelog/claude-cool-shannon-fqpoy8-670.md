@@ -1,4 +1,0 @@
-### Pricing
-
-- An IRR whose root lies outside the searched range is told from flows with no root: `Irr::root_above` and `root_below` say whether a root lies above or below the range (by the signs of the value at the range's end and of its limit beyond), and `IrrOptions::extend` searches beyond the range for it when the grid sees none (off by default, so the reference model's results are unchanged; `time-value.md` decision 35). Python `IrrResult.root_above` and `root_below` and `extend=` on `irr`, `Cashflows.irr`, `Forward.forward_irr`, `Forward.since_inception_irr` and `DealBook.cashflows`; R `root_above` and `root_below` columns and `extend =` on `irr()` and `book_cashflows()` (#670, #675).
-- **Breaking:** `Irr` has two new public fields and `IrrOptions` one (`extend`), so struct literals must add them (or use `..IrrOptions::default()`) (#670, #675).

@@ -1,1 +1,0 @@
-* **Creation**: [MAPIE 0.9.1, the reference for prospicio's conformal intervals](/references/mapie.md): its quantile conventions for split, CV+ and CQR, verified by `conformal_intervals_match_mapie` (#546, #713, branch claude/cool-shannon-fqpoy8).

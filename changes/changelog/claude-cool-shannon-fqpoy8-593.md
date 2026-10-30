@@ -1,4 +1,0 @@
-### Aggregate and reinsurance
-
-- A year loss table that stores losses as negative numbers is read with `losses_negative`: Python `read_ylt(..., losses_negative=True)` and `EventSet.from_ylt(..., losses_negative=True)`, R `read_ylt(..., losses_negative = TRUE)` and `event_set_from_ylt()`, Rust `YearLossTable::from_negative_losses`, each loss at most 0 and read with its sign flipped (`cat-inputs.md` decision 15). A negative or non-finite loss given to a layer is now an error rather than a silent zero: `Layer::try_ceded`, `Layer::try_ceded_by_event` and `Tower::try_ceded` in Rust, and in Python and R `Layer.ceded`, `Layer.ceded_by_event` and `Tower.ceded` (R `ceded()`, `ceded_by_event()` and the tower's `ceded()`) (#593, #677).
-- **Breaking:** Python `Layer.ceded`, `Layer.ceded_by_event` and `Tower.ceded`, and R `ceded()` and `ceded_by_event()`, raise on a negative or non-finite loss, where they returned the loss as ceding nothing (#593, #677).

@@ -1,3 +1,0 @@
-### Pricing
-
-- An efficient frontier of reinsurance structures: `prospicio_pricing::frontier` evaluates every retention and limit of a layer on simulated years with their events (per occurrence or aggregate), annual losses or an annual grid (exact), with the ceded premium by a premium rule on a capital standard or the expected value principle, the margin paid away against a VaR or TVaR of the net, the efficient structures, the least risk within a budget and Cai and Tan's least total (`pareto.md`, "Efficient frontier of structures"). Python `prospicio.reinsurance.frontier`, R `reinsurance_frontier()` (#569, #704).

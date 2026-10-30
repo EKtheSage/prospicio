@@ -1,3 +1,0 @@
-### Aggregate and reinsurance
-
-- Self-exciting (Hawkes) event times for clustered catastrophe years: `prospicio_aggregate::Hawkes` (exponential kernel, time in years, a branching ratio below 1) with `simulate` (the branching construction), `annual_counts` and `event_set` (independent years with their times and a loss each, from an empty history or after `burn_in` years), `mean_count` and `stationary_count_variance`, and `Hawkes::fit` (maximum likelihood over one or more periods with standard errors; at SciPy's optimum on four data sets) (`cat-inputs.md` decision 17). Python `prospicio.aggregate.Hawkes` and `HawkesFit`; R `hawkes()`, `hawkes_simulate()`, `hawkes_counts()`, `hawkes_event_set()`, `hawkes_moments()`, `hawkes_log_likelihood()`, `hawkes_fit()` (#567, #696).

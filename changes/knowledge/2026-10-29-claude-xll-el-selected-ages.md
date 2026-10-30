@@ -1,1 +1,0 @@
-* **Update**: [Building and testing the Excel XLL](/environment/xll-builds.md), from the Excel lane's #635 and #680 (branch claude/xll-el-selected-ages): the fake Excel calls each export at a fixed arity, so appending an argument means widening its call sites; calls two to four arguments short still passed under Wine.
