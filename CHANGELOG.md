@@ -11,7 +11,7 @@ under "Unreleased" until then.
 
 ### Breaking changes
 
-- Rust: `prospicio_reserving::Error` has the variant `File`, so an exhaustive `match` on it needs an arm for it (#552, #685).
+- Rust: `prospicio_reserving::Error` has the variants `PatternDraws` and `File`, so an exhaustive `match` on it needs an arm for each (#600, #673, #552, #685).
 - Rust: the fit structs that carry a development pattern per simulation (the ODP and Mack bootstraps, `BayesOdp`, `BayesBf` and `BayesBfNormalised`, and their segment fits) gain the public field `patterns`, and can no longer be built with a struct literal that leaves it out (#600, #673).
 - Rust: `MeyersFit` and `MeyersFits` gain the public field `patterns`; code that builds either in full adds it (#678, #686).
 - Rust: `CompartmentalFit` and `CompartmentalFits` gain the public field `patterns`; code that builds either in full adds it (#679, #700).
@@ -19,6 +19,7 @@ under "Unreleased" until then.
 - Rust: `Layer` gains the public field `no_claims_bonus`, and `TowerGrids` and `AnnualGrids` gain `expected_no_claims_bonus`; code that builds any of them in full adds the field. A tower with a bonus is saved as JSON format version 8 (#592, #684).
 - Python `Layer.ceded`, `Layer.ceded_by_event` and `Tower.ceded`, and R `ceded()` and `ceded_by_event()`, raise on a negative or non-finite loss, where they returned the loss as ceding nothing (#593, #677).
 - Rust: `Irr` gains two public fields and `IrrOptions` one (`extend`); code that builds them in full adds the fields, or uses `..IrrOptions::default()` (#670, #675).
+- Rust: `prospicio_prob::PairFamily` has the variant `Student`, so an exhaustive `match` on it needs an arm for it (#568, #706).
 
 ### Reserving
 
