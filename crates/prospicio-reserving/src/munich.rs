@@ -33,11 +33,10 @@ use crate::triangle::{Segment, Triangle};
 ///
 /// `P[s+1] = P[s] (f_P + lambda_P sigma_P / rho_P (I[s]/P[s] - q^-1_s))`
 ///
-/// and the same for incurred with `P/I` and `q`. The paid residual's
-/// centre is `1/q`, the projection's `q^-1`, as in both reference
-/// libraries (decision 29, item 3). A tail is one more step, with the
-/// tail's factor and sigma and the oldest age's ratios; without a tail the
-/// last step is 1 and uncorrected.
+/// and the same for incurred with `P/I` and `q`. Under these weights
+/// `q^-1` is `1/q` exactly (decision 29, item 3). A tail is one more step,
+/// with the tail's factor and sigma and the oldest age's ratios; without a
+/// tail the last step is 1 and uncorrected.
 ///
 /// With `lambda` 0 for both, the projection is the two separate chain
 /// ladders. When the ratios carry no information (every `rho` zero, as
@@ -99,7 +98,7 @@ pub struct MunichFit {
     /// the origins observed there (R's `q.f`).
     pub q: Vec<f64>,
     /// `q^-1_s`, the incurred-to-paid ratio at each age, fitted on its own:
-    /// `sum I / sum P` (R's `qinverse.f`). It is not `1 / q`.
+    /// `sum I / sum P` (R's `qinverse.f`), which is `1 / q`.
     pub q_inverse: Vec<f64>,
     /// `rho_P`, the deviation of `I/P` around `q^-1` (R's `rhoP.sigma`),
     /// extrapolated log-linearly where it cannot be estimated.
