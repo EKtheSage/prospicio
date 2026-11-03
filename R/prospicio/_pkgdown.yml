@@ -359,6 +359,7 @@ reference:
       - layer_share_prior
       - residual_summary
       - claims_development_result
+      - munich_fit
       - calendar_year_test
       - development_correlation_test
       - tail_constant
