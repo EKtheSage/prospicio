@@ -1,7 +1,7 @@
 ### Breaking changes
 
 - Rust: `prospicio_reserving::Error` has the variant `IndustryPrior`, so
-  an exhaustive `match` on it needs an arm for it (#604).
+  an exhaustive `match` on it needs an arm for it (#604, #732).
 
 ### Reserving
 
@@ -23,4 +23,4 @@
   `BayesBfNormalised(pattern_prior=)`; R `industry_prior()`,
   `pattern_prior()`, `industry_prior_at_age()`, `bayes_bf_industry()`,
   `bayes_bf_industry_one_year()` and `bayes_bf_normalised(pattern_prior =)`
-  (#604).
+  (#604, #732).
