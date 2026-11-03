@@ -123,6 +123,10 @@ pub enum Error {
     File(String),
     /// Clark's growth-curve model cannot be fitted to this triangle.
     Clark(String),
+    /// A method on claim counts (frequency-severity, disposal rates, case
+    /// outstanding development or a Berquist-Sherman adjustment) cannot be
+    /// applied to this triangle or with these settings.
+    Counts(String),
     /// A growth curve cannot be fitted to this benchmark pattern
     /// ([`BenchmarkCurve`](crate::BenchmarkCurve)).
     BenchmarkCurve(String),
@@ -245,6 +249,7 @@ impl fmt::Display for Error {
             Self::PatternDraws(why) => write!(f, "pattern draws: {why}"),
             Self::File(why) => write!(f, "reading a triangle: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
+            Self::Counts(why) => write!(f, "{why}"),
             Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
             Self::OneYear {
