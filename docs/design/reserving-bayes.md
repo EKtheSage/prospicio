@@ -3406,6 +3406,20 @@ observed by at least one program or held by an informative pattern prior:
 an age that no program observes under the vague `development_sd` prior is
 an error (`Error::Bayes`), as decision 23's propriety conditions are.
 
+**Columns and origins that sum to zero or less** (decisions 23 and 26).
+The column rule applies to the pooled column: under (B1) and (B2) an age
+whose increments, summed over every program, are zero or less is an
+`Error::Bayes` with decision 26's message. A single program's column that
+sums to zero or less is not an error under (B2): its deviation
+`delta_cd` is held by its prior, so the program's share there is pulled
+to the shared pattern instead of to 0. Under (B3) the rule is per
+program, as in `BayesBfNormalised`. The origin rule stays per origin
+with the program's own scale: an origin whose increments sum to
+`-phi_c / cv^2` or less is an error, as in decision 23. Under (D2), a
+panel with no degree of freedom at all (`sum_c df_c = 0`, every program
+of two origins or fewer) cannot estimate `kappa` and is an error that
+names the programs; (D3) has the same condition.
+
 **Output.** `HierarchicalBfFit`: for each program what
 `BayesBfNormalisedFit` gives (`expected_ultimate`, `pattern`, `reserves`,
 `prior_ultimate`, summaries and diagnostics) and its loss ratio `L s_c`;
@@ -3428,9 +3442,11 @@ and a program's total is a sum of them. One model rather than one per
 program, because a program's next diagonal moves `L`, `tau`, `beta_d` and
 `omega`, and through them the other programs' closing reserves; a view
 per program would miss that. `eta(theta, c, w, d) = alpha_cw + beta_cd -
-log sum_k exp(beta_ck)` reads only the origin and pattern blocks, as in
-decision 25; `L`, `tau`, `z_c` and `omega` enter the prior only and travel
-with the draw, as decision 25's `t` does. The year's cells are the ODP
+log sum_k exp(beta_ck)`, with `beta_cd = beta_d + omega delta_cd`, reads
+the origin block, the shared pattern, `omega` and the program's deviations
+(under (B2) `omega` is in the likelihood, not only in the prior); `L`,
+`tau` and `z_c` enter the prior only and travel with the draw, as decision
+25's `t` does. The year's cells are the ODP
 likelihood, so `closing_uses_year` is false and the shared `OdpYear`
 pieces apply per program with its own `phi_c`. The model must pass the
 conformance suite in both halves (an entry in `every_model`), as AGENTS.md
@@ -3529,7 +3545,9 @@ The issue's three checks and the conformance suite, in
    `J = 1`, `tau` and `omega` fixed at 0: with `L` held at `m_L` (the
    limit of `c_L` to 0) the log posterior equals `BayesBfNormalised`'s
    (apriori `m_L`, the same `cv` and `development_sd`) at random points
-   of the remaining parameters, up to a constant, to 1e-10 (unit test);
+   of the origin and pattern parameters `(u, beta)`, with `z_1` and the
+   `delta_1d` held at fixed values (their prior terms are then a
+   constant), up to that constant, to 1e-10 (unit test);
    with `c_L` 1e-6 the fits' total and per-origin means
    within `0.1 s` and sds within 10% on GenIns with premium and on RAA
    with a synthetic premium (decision 23's tolerances). Under (A2), also
@@ -3546,10 +3564,16 @@ The issue's three checks and the conformance suite, in
    mean `log(L s_c)` against `HierarchicalCredibility` fitted to the
    programs' log developed ratios with the same half-normal prior on the
    between sd, within 0.1 of the posterior sd; and the shrinkage
-   `Z_c = (post_c - post_L) / (own_c - post_L)` against
+   `Z_c = (post_c - post_mu) / (own_c - post_mu)` against
    `credibility_premiums`'s credibility factor at the posterior mean
-   structure parameters, within 0.05. The tolerances are proposals, to be
-   set from seed variation when built.
+   structure parameters, within 0.05, where `mu = log L - tau^2 / 2` is
+   the mean of `log(L s_c)` under (A1) and so the counterpart of
+   `HierarchicalCredibility`'s collective mean (not `log L` itself).
+   `HierarchicalCredibility` samples its within sd `sigma` where this model
+   fixes `cv`; with five origins a program and twenty programs `sigma` is
+   well estimated near `sqrt(log(1 + cv^2))`, and the tolerances absorb
+   the rest. They are proposals, to be set from seed variation when
+   built.
 3. **Simulation recovery of the hyperparameters.** Panels simulated from
    the model at known `L`, `tau`, `omega`, `cv` and `kappa` (5 and 20
    programs, three to ten origins): over 100 panels the 90% intervals of
