@@ -13569,15 +13569,6 @@ impl PyMeyers {
     }
 }
 
-/// A fitted ``Meyers``: the posterior of ``logelr``, ``alpha[2..n]``,
-/// ``beta[1..m-1]``, ``gamma`` (``"csr"`` only) or ``rho`` (``"cay"``
-/// only), and ``sigma[1..m]``, its
-/// MCMC diagnostics, and the posterior predictive distributions of the
-/// ultimates and reserves by origin. The frames' ``latest``, ``ultimate``
-/// and ``reserve`` are the volume-weighted chain ladder's
-/// (``chain_ladder``); ``mean`` and ``std_dev`` are the posterior
-/// predictive reserve's, and ``ultimate_mean`` and ``ultimate_std_dev``
-/// the posterior predictive ultimate's.
 /// The posterior predictive of a new underwriting year, from
 /// ``BayesBfNormalisedFit.new_year`` or ``MeyersFit.new_year``.
 ///
@@ -13643,6 +13634,15 @@ impl PyNewYear {
     }
 }
 
+/// A fitted ``Meyers``: the posterior of ``logelr``, ``alpha[2..n]``,
+/// ``beta[1..m-1]``, ``gamma`` (``"csr"`` only) or ``rho`` (``"cay"``
+/// only), and ``sigma[1..m]``, its
+/// MCMC diagnostics, and the posterior predictive distributions of the
+/// ultimates and reserves by origin. The frames' ``latest``, ``ultimate``
+/// and ``reserve`` are the volume-weighted chain ladder's
+/// (``chain_ladder``); ``mean`` and ``std_dev`` are the posterior
+/// predictive reserve's, and ``ultimate_mean`` and ``ultimate_std_dev``
+/// the posterior predictive ultimate's.
 #[pyclass(name = "MeyersFit", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyMeyersFit {
     inner: MeyersFit,
