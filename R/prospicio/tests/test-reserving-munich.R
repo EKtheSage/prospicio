@@ -1,7 +1,7 @@
 suppressMessages(library(prospicio))
 
 # The Munich chain ladder (Quarg and Mack 2004; docs/design/reserving-v02.md,
-# decision 29). The Rust core is checked against R ChainLadder and
+# decision 30). The Rust core is checked against R ChainLadder and
 # chainladder-python in validation/tests/reserving_munich.rs; these tests
 # check the binding's arguments, results, frames, print and errors against
 # the same R ChainLadder reference file, and against MunichChainLadder()

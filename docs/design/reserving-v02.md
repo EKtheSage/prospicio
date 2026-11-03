@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 accepted by the user on 2026-10-28 as proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 accepted by the user on 2026-10-28 as built; decision 29 built on branch `claude/munich-chain-ladder`, in Rust, Python and R, its items 5, 6 and 11 open) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 accepted by the user on 2026-10-28 as proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 accepted by the user on 2026-10-28 as built; decision 29 built on branch `claude/unify-not-supported`, issue #580, in Rust, Python and R, its items 4, 5 and 9 open for the user; decision 30 built on branch `claude/munich-chain-ladder`, in Rust, Python and R, its items 5, 6 and 11 open) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -4903,7 +4903,118 @@ decision 26 gives.
    months, segment = NULL, basis = NULL, monotone = "refuse")`, a matrix
    with one row per simulation for `cashflow_run(..., paid_patterns = )`.
 
-### 29. The Munich chain ladder
+### 29. One error for a setting a method does not support (issue #580)
+
+Status: **Built** (2026-11-02), issue #580, branch
+`claude/unify-not-supported`, in Rust, Python and R; items 4, 5 and 9
+are open for the user. The Bayesian cases are summarised in
+`reserving-bayes.md` decision 27.
+
+A user who asks a method for something it does not support gets the same
+error in every method, and as early as the code can tell: when the setting
+is chosen, not after a fit has run.
+
+1. **One variant.** `Error::NotSupported { setting, method, reason }` is
+   the one variant for a setting, or a combination of settings, that a
+   method does not support, as `std::io::ErrorKind::Unsupported` is one
+   kind for one situation. Its message reads "{setting} is not supported
+   by {method}: {reason}", the reason saying what to use instead where
+   there is something. `Error::is_not_supported()` is true for it, for
+   `NotYetBuilt`, for `ExclusionsMismatch` (a bootstrap's own link ratio
+   exclusions that differ from its re-reserving method's, item 3) and for
+   any of them inside `InSegment`; the bindings use it.
+2. **What moved.** Out of `ClaimsDevelopment`: Merz and Wüthrich's closed
+   form with `alpha` other than 1, a tail (the constant
+   `MERZ_WUTHRICH_TAIL`), a fully selected age without its own factor, and
+   link ratio exclusions. Out of `Bootstrap`: a fully selected age without
+   its own factor in the ODP and Mack bootstraps, and the one-year
+   bootstrap's settings that conflict with its re-reserving method's (a
+   different tail, a pattern whose implied tail differs, a different
+   pattern, a pattern of its own with `OneYearPattern::Estimated`, a
+   method pattern past the oldest age with no bootstrap tail, a method
+   pattern that is only its level with a tail of the method's own; the
+   constants in `one_year_bootstrap.rs`). Out of `Bayes`: `Synchronized`
+   dependence in every Bayesian model, `Compartmental`'s one response
+   alone under `RateOrder::Free`, `CompartmentalFit::outstanding_table`
+   under `Fitted::PaidOnly`, and the backtest of the second response under
+   `Fitted::PaidOnly` and of paid under `Fitted::IncurredOnly`.
+   `Compartmental`'s bound on the `k_p` prior under `Fitted::IncurredOnly`
+   is a value out of its range, so it moved to `InvalidSetting` with the
+   sd as its value.
+3. **What stayed.** `Bootstrap`, `Bayes` and `ClaimsDevelopment` keep the
+   failures on the data: an origin not observed from the first age, too
+   few cells, no residuals, negative cumulative values, a non-finite
+   ultimate, segments of different shapes under `Synchronized`, sums of
+   increments at or below zero, a mode or sampler that fails, and, for
+   the closed form, latest values off one calendar diagonal (a shape of the
+   triangle, like `LatestDiagonalOnly`). `n_sims` of 0 stays a `Bootstrap`
+   error with its message, a value out of range rather than an unsupported
+   setting, so the tests and binding messages that match "n_sims must be
+   positive" are unchanged. `ExclusionsMismatch` stays its own variant,
+   since it writes out both settings, and counts as not supported (item 1).
+4. **`NotYetBuilt { setting, method }`** is added for a setting that is
+   planned but not built in this release, as the issue proposes, and the
+   bindings treat it as not supported. No setting raises it today: the
+   issue's example, `Fitted::PaidOnly` and `IncurredOnly` raised at fit
+   time as "not yet built", was built by `reserving-compartmental.md`
+   decision 12 before this item. *Open for the user*: keep the variant for
+   the next planned setting, or remove it until one exists (it is a public
+   variant, so removing it later is breaking too).
+5. **When the check runs.** The classical methods check their settings
+   when the fit or view starts, before any computation on the cells, and
+   that is when the setting is used: Merz and Wüthrich's closed form is a
+   method of the Mack fit, so its settings are known only then.
+   `Compartmental`'s fields are public, so a fallible builder would not
+   stop a struct literal; the issue's alternative is built instead:
+   `Compartmental::check_supported()` refuses an unsupported combination
+   without reading any data, `fit`, `fit_segments`, `one_year` and
+   `one_year_segments` call it first (the Rust backtest candidate when it
+   trains, since `CompartmentalCandidate::new` returns no `Result`), and the
+   Python constructor (`Compartmental(...)`, `Compartmental.model_2(...)`)
+   and every R entry point (`compartmental_settings` in the R binding) call
+   it when the settings are read, so `Compartmental(priors,
+   fitted="paid_only")` raises at once. The range checks (`k_p`'s bound,
+   priors, `n_sims`) stay at fit time in the bindings, so
+   `prior_predictive` still runs on a prior the fit refuses, as decision 12
+   of the compartmental note wants. *Open for the user*: the same check at
+   construction for `Synchronized` in the Bayesian models' Python
+   constructors (today it fails in `fit_segments`, before any sampling).
+6. **Python.** `prospicio.NotSupportedError` (also
+   `prospicio.reserving.NotSupportedError`), a subclass of `ValueError`,
+   so code that catches `ValueError` still catches it. Every reserving
+   wrapper, including the excess-layer and ODP GLM ones, raises it for an
+   error that `is_not_supported()`, and `ValueError` otherwise.
+7. **R.** An extendr error carries only a message, so the R binding
+   prefixes the message of an error that `is_not_supported()` with
+   `[prospicio_not_supported] ` and `reserving_result()` in
+   `R/prospicio/R/reserving.R` (the reserving wrappers' `rust_result()`,
+   used in `reserving.R`, `excess.R` and `odp_glm.R`) removes the prefix
+   and signals an error of class `prospicio_not_supported`, which
+   `tryCatch(..., prospicio_not_supported = )` catches. `rust_result()` in
+   `distributions.R`, another lane's file, is unchanged.
+8. **Checks.** Rust: every test that expected one of the old variants for
+   an unsupported setting now expects `NotSupported` (often the same
+   constant), `error.rs` tests `is_not_supported` through `InSegment`,
+   `a_fully_selected_sparse_age_is_missing_not_an_error` checks that the
+   closed form and both bootstraps refuse a fully selected sparse age, and
+   `paid_alone_under_free_rates_is_refused_before_any_data_or_sampling`
+   shows the refusal comes from the settings alone (a triangle without the
+   named columns gives the same error). Python
+   (`python/tests/test_reserving_not_supported.py`) and R
+   (`R/prospicio/tests/test-reserving-not-supported.R`): Mack's geometric
+   average, Merz and Wüthrich with another `alpha` and with a tail, a
+   bootstrap tail other than the method's (Python), the geometric average
+   in the one-year bootstrap (R), `Synchronized` Bayesian segments and
+   `Compartmental` paid or incurred alone under free rates each raise the
+   one class, and a failure on the data does not.
+9. **Breaking.** Code that matched `Error::Bootstrap`, `Error::Bayes` or
+   `Error::ClaimsDevelopment` for these cases matches `NotSupported`; an
+   exhaustive `match` needs an arm for `NotYetBuilt`; the messages read as
+   item 1 says. *Open for the user*: whether the Python exception should
+   also carry the `setting` and `method` as attributes (today only the
+   message does).
+
+### 30. The Munich chain ladder
 
 Status: **Built** (2026-11-02), issue #559, branch
 `claude/munich-chain-ladder`, in Rust, Python and R; items 5, 6 and 11 are

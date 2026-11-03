@@ -8,6 +8,26 @@
 #' @include distributions.R
 NULL
 
+# rust_result() for the reserving wrappers (here, in excess.R and in
+# odp_glm.R). A setting the method does not support comes back from Rust
+# with the prefix "[prospicio_not_supported] " (`NOT_SUPPORTED_PREFIX` in
+# crates/prospicio-r/src/reserving.rs), since an extendr error carries only
+# a message: it is removed and the error signalled with the condition class
+# `prospicio_not_supported` (#580, reserving-v02.md decision 29), which
+# tryCatch(..., prospicio_not_supported = ) catches. Any other error is
+# rust_result()'s.
+reserving_result <- function(x, call = sys.call(-1)) {
+  if (inherits(x, "extendr_error")) {
+    msg <- as.character(x$value)
+    prefix <- "[prospicio_not_supported] "
+    if (startsWith(msg, prefix)) {
+      stop(errorCondition(substring(msg, nchar(prefix) + 1L),
+                          class = "prospicio_not_supported", call = call))
+    }
+  }
+  rust_result(x, call = call)
+}
+
 # Year and month of each element of `x`: a Date, a POSIXct or whole-number
 # years, which mean `month` of that year.
 year_month <- function(x, arg, month) {
@@ -167,7 +187,7 @@ triangle <- S7::new_class(
       v
     })
     values <- unlist(lapply(columns, numeric_column, what = "value"))
-    ptr <- rust_result(Triangle$from_long(
+    ptr <- reserving_result(Triangle$from_long(
       keys, as.character(unlist(key_values)), o$year, o$month,
       ages, v$year, v$month, isTRUE(development_is_valuation),
       as.character(columns), as.double(values),
@@ -259,7 +279,7 @@ read_triangle <- function(path, origin, development = NULL, columns = NULL, keys
                    basename(path)), call. = FALSE)
     }
   }
-  ptr <- rust_result(Triangle$read_file(
+  ptr <- reserving_result(Triangle$read_file(
     path, format, if (is.null(sheet)) NULL else as.character(sheet),
     as.character(origin), if (is.null(development)) NULL else as.character(development),
     as.character(columns), as.character(keys), if (is.null(ages)) NULL else as.double(ages),
@@ -431,7 +451,7 @@ S7::method(as.matrix, triangle) <- function(x, ..., column = NULL) {
   }
   values <- vapply(conditions, as.character, "", USE.NAMES = FALSE)
   col <- if (is.null(column)) NULL else as.character(column)
-  v <- rust_result(x@ptr$view(as.character(keys), values, col), call = call)
+  v <- reserving_result(x@ptr$view(as.character(keys), values, col), call = call)
   m <- matrix(v$values, nrow = length(v$origins), ncol = length(v$development), byrow = TRUE,
               dimnames = list(origin = v$origins, development = as.character(v$development)))
   m[is.nan(m)] <- NA_real_
@@ -462,7 +482,7 @@ S7::method(summary, triangle) <- function(object, ...) {
 S7::method(format, triangle) <- function(x, max_rows = 20, max_cols = 12, ...) {
   call <- sys.call()
   call[[1]] <- quote(format)
-  text <- rust_result(x@ptr$to_text(as.double(max_rows), as.double(max_cols)), call = call)
+  text <- reserving_result(x@ptr$to_text(as.double(max_rows), as.double(max_cols)), call = call)
   strsplit(text, "\n", fixed = TRUE)[[1]]
 }
 
@@ -528,7 +548,7 @@ S7::method(subset, triangle) <- function(x, ..., columns = NULL) {
   }
   values <- lapply(unname(conditions), as.character)
   cols <- if (is.null(columns)) NULL else as.character(columns)
-  new_triangle(x, rust_result(x@ptr$select(as.character(keys), values, cols), call = call))
+  new_triangle(x, reserving_result(x@ptr$select(as.character(keys), values, cols), call = call))
 }
 
 #' Sum a triangle over keys
@@ -566,7 +586,7 @@ NULL
 S7::method(aggregate, triangle) <- function(x, keep = character(), ...) {
   call <- sys.call()
   call[[1]] <- quote(aggregate)
-  new_triangle(x, rust_result(x@ptr$group_by(as.character(keep)), call = call))
+  new_triangle(x, reserving_result(x@ptr$group_by(as.character(keep)), call = call))
 }
 
 check_triangle <- function(x) {
@@ -667,7 +687,7 @@ link_ratios <- function(x) {
 #' grain(q, "Y")@development
 grain <- function(x, origin_grain, development_grain = origin_grain) {
   check_triangle(x)
-  ptr <- rust_result(x@ptr$grain(as.character(origin_grain), as.character(development_grain)))
+  ptr <- reserving_result(x@ptr$grain(as.character(origin_grain), as.character(development_grain)))
   new_triangle(x, ptr)
 }
 
@@ -709,7 +729,7 @@ max_age <- function(x, age) {
   if (!is.numeric(age) || length(age) != 1 || is.na(age) || age < 0 || age != round(age)) {
     stop("`age` must be one whole number of months, 0 or more", call. = FALSE)
   }
-  new_triangle(x, rust_result(x@ptr$max_age(as.integer(age))))
+  new_triangle(x, reserving_result(x@ptr$max_age(as.integer(age))))
 }
 
 # The single column to fit, by default the triangle's only one.
@@ -758,7 +778,7 @@ chain_ladder_properties <- function(cl) {
   }
   per_age <- function(f, names) {
     S7::new_property(S7::class_double, getter = function(self) {
-      stats::setNames(rust_result(f(cl(self)), call = NULL), names(self))
+      stats::setNames(reserving_result(f(cl(self)), call = NULL), names(self))
     })
   }
   list(
@@ -777,40 +797,40 @@ chain_ladder_properties <- function(cl) {
     std_err = per_age(function(p) p$std_err(), links),
     estimated_std_err = per_age(function(p) p$estimated_std_err(), links),
     selected_ldf = S7::new_property(S7::class_double, getter = function(self) {
-      v <- rust_result(cl(self)$selected_ldf(), call = NULL)
+      v <- reserving_result(cl(self)$selected_ldf(), call = NULL)
       stats::setNames(replace(v, is.nan(v), NA_real_), links(self))
     }),
     ldf_weight = per_age(function(p) p$ldf_weight(), links),
     blended_ldf = per_age(function(p) p$blended_ldf(), links),
     pattern_rescale = S7::new_property(NULL | S7::class_double, getter = function(self) {
-      v <- rust_result(cl(self)$pattern_rescale(), call = NULL)
+      v <- reserving_result(cl(self)$pattern_rescale(), call = NULL)
       if (is.nan(v)) NULL else v
     }),
     pattern_tail = S7::new_property(NULL | S7::class_double, getter = function(self) {
-      v <- rust_result(cl(self)$pattern_tail(), call = NULL)
+      v <- reserving_result(cl(self)$pattern_tail(), call = NULL)
       if (is.nan(v)) NULL else v
     }),
     alpha = S7::new_property(S7::class_double, getter = function(self) cl(self)$alpha()),
     n_links = S7::new_property(S7::class_integer, getter = function(self) {
-      stats::setNames(rust_result(cl(self)$n_links(), call = NULL), links(self))
+      stats::setNames(reserving_result(cl(self)$n_links(), call = NULL), links(self))
     }),
     excluded = S7::new_property(S7::class_logical, getter = function(self) {
-      rust_result(cl(self)$excluded(), call = NULL)
+      reserving_result(cl(self)$excluded(), call = NULL)
     }),
     tail = S7::new_property(S7::class_double, getter = function(self) {
-      rust_result(cl(self)$tail(), call = NULL)
+      reserving_result(cl(self)$tail(), call = NULL)
     }),
     tail_attachment_age = S7::new_property(S7::class_integer, getter = function(self) {
-      rust_result(cl(self)$tail_attachment_age(), call = NULL)
+      reserving_result(cl(self)$tail_attachment_age(), call = NULL)
     }),
     tail_ldf = S7::new_property(S7::class_double, getter = function(self) {
-      rust_result(cl(self)$tail_ldf(), call = NULL)
+      reserving_result(cl(self)$tail_ldf(), call = NULL)
     }),
     tail_sigma = S7::new_property(S7::class_double, getter = function(self) {
-      rust_result(cl(self)$tail_sigma(), call = NULL)
+      reserving_result(cl(self)$tail_sigma(), call = NULL)
     }),
     tail_std_err = S7::new_property(S7::class_double, getter = function(self) {
-      rust_result(cl(self)$tail_std_err(), call = NULL)
+      reserving_result(cl(self)$tail_std_err(), call = NULL)
     }),
     latest = by_origin(function(p) p$latest()),
     ultimate = by_origin(function(p) p$ultimate()),
@@ -895,7 +915,7 @@ underwriting_basis <- function(writing = NULL, policy_months = 12,
   if (!is.numeric(policy_months) || length(policy_months) != 1 || is.na(policy_months)) {
     stop("policy_months must be a single number", call. = FALSE)
   }
-  exposure <- rust_result(underwriting_exposure_rust(as.double(writing),
+  exposure <- reserving_result(underwriting_exposure_rust(as.double(writing),
                                                      as.double(policy_months)))
   structure(list(writing = as.double(writing), policy_months = as.double(policy_months),
                  reading = reading, exposure = exposure),
@@ -1059,7 +1079,7 @@ tail_constant <- S7::new_class(
     attachment_age = tail_age("attachment_age")
   ),
   constructor = function(factor = 1, decay = 0.5, attachment_age = NULL) {
-    ptr <- rust_result(ReservingTail$constant(
+    ptr <- reserving_result(ReservingTail$constant(
       single_number(factor, "factor"), single_number(decay, "decay"),
       optional_number(attachment_age, "attachment_age")
     ))
@@ -1122,7 +1142,7 @@ tail_curve <- S7::new_class(
     if (length(fit_period) != 2 || !(is.numeric(fit_period) || all(is.na(fit_period)))) {
       stop("fit_period must be two ages in months, NA for an open end", call. = FALSE)
     }
-    ptr <- rust_result(ReservingTail$curve(
+    ptr <- reserving_result(ReservingTail$curve(
       curve, optional_number(fit_period[1], "fit_period"), optional_number(fit_period[2], "fit_period"),
       single_number(extrap_periods, "extrap_periods"), optional_number(attachment_age, "attachment_age")
     ))
@@ -1173,7 +1193,7 @@ tail_bondy <- S7::new_class(
     attachment_age = tail_age("attachment_age")
   ),
   constructor = function(earliest_age = NULL, attachment_age = NULL) {
-    ptr <- rust_result(ReservingTail$bondy(
+    ptr <- reserving_result(ReservingTail$bondy(
       optional_number(earliest_age, "earliest_age"), optional_number(attachment_age, "attachment_age")
     ))
     S7::new_object(S7::S7_object(), ptr = ptr)
@@ -1478,7 +1498,7 @@ chain_ladder <- function(triangle, column = NULL, average = "volume",
   }
   no_development(development, segment_map)
   column <- fit_column(triangle, column)
-  ptr <- rust_result(triangle@ptr$chain_ladder(column, args$average, args$sigma, args$excl,
+  ptr <- reserving_result(triangle@ptr$chain_ladder(column, args$average, args$sigma, args$excl,
                                                tail_ptr(tail), pattern))
   chain_ladder_fit(ptr = ptr)
 }
@@ -1560,16 +1580,16 @@ mack_fit <- S7::new_class(
         stats::setNames(self@ptr$standard_error(), origin_names(self@chain_ladder@ptr))
       }),
       total_process_risk = S7::new_property(S7::class_double, getter = function(self) {
-        rust_result(self@ptr$total_process_risk(), call = NULL)
+        reserving_result(self@ptr$total_process_risk(), call = NULL)
       }),
       total_parameter_risk = S7::new_property(S7::class_double, getter = function(self) {
-        rust_result(self@ptr$total_parameter_risk(), call = NULL)
+        reserving_result(self@ptr$total_parameter_risk(), call = NULL)
       }),
       total_standard_error = S7::new_property(S7::class_double, getter = function(self) {
-        rust_result(self@ptr$total_standard_error(), call = NULL)
+        reserving_result(self@ptr$total_standard_error(), call = NULL)
       }),
       total_cv = S7::new_property(S7::class_double, getter = function(self) {
-        rust_result(self@ptr$total_cv(), call = NULL)
+        reserving_result(self@ptr$total_cv(), call = NULL)
       })
     )
   ),
@@ -1585,7 +1605,7 @@ mack <- function(triangle, column = NULL, average = "volume", sigma_interpolatio
                  ldf_weight = 1, ldf_origin = NULL, ldf_underwriting = NULL, n_periods = NULL, drop_high = 0, drop_low = 0) {
   column <- fit_column(triangle, column)
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
-  ptr <- rust_result(triangle@ptr$mack(
+  ptr <- reserving_result(triangle@ptr$mack(
     column, args$average, args$sigma, args$excl, tail_ptr(tail),
     optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
     ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting)
@@ -1597,7 +1617,7 @@ mack <- function(triangle, column = NULL, average = "volume", sigma_interpolatio
 #'
 #' The Munich chain ladder of Quarg and Mack (2004), as R ChainLadder's
 #' `MunichChainLadder()` and chainladder-python's `MunichAdjustment`
-#' (`docs/design/reserving-v02.md`, decision 29). Paid `P` and incurred
+#' (`docs/design/reserving-v02.md`, decision 30). Paid `P` and incurred
 #' `I` are two columns of one triangle, observed at the same cells. Each
 #' has Mack's volume-weighted model, and each age its ratios `q = sum P /
 #' sum I` and `q_inverse = sum I / sum P` with their deviations
@@ -1928,7 +1948,7 @@ expected_loss <- function(triangle, column = NULL, exposure = NULL, apriori = 1,
   }
   no_development(development, segment_map)
   cols <- exposure_columns(triangle, column, exposure)
-  ptr <- rust_result(triangle@ptr$expected_loss(
+  ptr <- reserving_result(triangle@ptr$expected_loss(
     cols[1], cols[2], apriori_arg(apriori), args$average, args$sigma, args$excl,
     tail_ptr(tail), pattern
   ))
@@ -1952,7 +1972,7 @@ bornhuetter_ferguson <- function(triangle, column = NULL, exposure = NULL, aprio
   }
   no_development(development, segment_map)
   cols <- exposure_columns(triangle, column, exposure)
-  ptr <- rust_result(triangle@ptr$bornhuetter_ferguson(
+  ptr <- reserving_result(triangle@ptr$bornhuetter_ferguson(
     cols[1], cols[2], apriori_arg(apriori), args$average, args$sigma, args$excl,
     tail_ptr(tail), pattern
   ))
@@ -1977,7 +1997,7 @@ benktander <- function(triangle, column = NULL, exposure = NULL, apriori = 1, n_
   }
   no_development(development, segment_map)
   cols <- exposure_columns(triangle, column, exposure)
-  ptr <- rust_result(triangle@ptr$benktander(
+  ptr <- reserving_result(triangle@ptr$benktander(
     cols[1], cols[2], apriori_arg(apriori), single_number(n_iters, "n_iters"),
     args$average, args$sigma, args$excl, tail_ptr(tail), pattern
   ))
@@ -2073,7 +2093,7 @@ cape_cod <- function(triangle, column = NULL, exposure = NULL, trend = 0, decay 
   }
   no_development(development, segment_map)
   cols <- exposure_columns(triangle, column, exposure)
-  ptr <- rust_result(triangle@ptr$cape_cod(
+  ptr <- reserving_result(triangle@ptr$cape_cod(
     cols[1], cols[2], single_number(trend, "trend"), single_number(decay, "decay"),
     args$average, args$sigma, args$excl, tail_ptr(tail), pattern
   ))
@@ -2214,7 +2234,7 @@ latest_valuation <- S7::new_class(
       if (anyNA(v)) stop(sprintf("key column %s has missing values", k), call. = FALSE)
       v
     })
-    ptr <- rust_result(LatestDiagonals$from_long(
+    ptr <- reserving_result(LatestDiagonals$from_long(
       keys, as.character(unlist(key_values)), o$year, o$month, ages, is.null(age), v$year,
       v$month, numeric_column(latest), if (is.null(exposure)) NULL else numeric_column(exposure),
       as.character(origin_grain), past_pattern_end
@@ -2248,7 +2268,7 @@ is_latest_valuation <- function(x) S7::S7_inherits(x, latest_valuation)
 as_latest_valuation <- function(triangle, column = NULL, exposure = NULL,
                                 past_pattern_end = "reject") {
   column <- fit_column(triangle, column)
-  ptr <- rust_result(LatestDiagonals$from_triangle(
+  ptr <- reserving_result(LatestDiagonals$from_triangle(
     triangle@ptr, column, if (is.null(exposure)) NULL else as.character(exposure),
     past_pattern_end_arg(past_pattern_end)
   ))
@@ -2274,14 +2294,14 @@ as_latest_valuation <- function(triangle, column = NULL, exposure = NULL,
 with_exposure <- function(x, exposure) {
   if (!is_latest_valuation(x)) stop("x must be a latest valuation", call. = FALSE)
   if (!is.numeric(exposure)) stop("exposure must be numeric", call. = FALSE)
-  latest_valuation(ptr = rust_result(x@ptr$with_exposure(as.double(exposure))))
+  latest_valuation(ptr = reserving_result(x@ptr$with_exposure(as.double(exposure))))
 }
 
 #' @rdname with_exposure
 #' @export
 with_past_pattern_end <- function(x, rule) {
   if (!is_latest_valuation(x)) stop("x must be a latest valuation", call. = FALSE)
-  latest_valuation(ptr = rust_result(x@ptr$with_past_pattern_end(past_pattern_end_arg(rule))))
+  latest_valuation(ptr = reserving_result(x@ptr$with_past_pattern_end(past_pattern_end_arg(rule))))
 }
 
 S7::method(as.data.frame, latest_valuation) <- function(x, ...) {
@@ -2325,7 +2345,7 @@ S7::method(print, latest_valuation) <- function(x, ...) {
 #' do.call(chain_ladder, c(list(book), to_chain_ladder(fit)))@ultimate
 to_chain_ladder <- function(fit) {
   ptr <- development_ptr(fit)
-  parts <- rust_result(ptr$to_chain_ladder())
+  parts <- reserving_result(ptr$to_chain_ladder())
   list(ldf = stats::setNames(parts$values, parts$ages), ldf_kind = "ldf", tail = parts$tail)
 }
 
@@ -2365,7 +2385,7 @@ latest_valuation_fit <- function(x, method, head, args, tail, pattern, developme
   development <- if (is.null(development)) NULL else development_ptr(development)
   call_args <- c(head, list(args$average, args$sigma, args$excl, tail_ptr(tail), pattern,
                             development, segment_map_arg(segment_map)))
-  rust_result(do.call(x@ptr[[method]], call_args))
+  reserving_result(do.call(x@ptr[[method]], call_args))
 }
 
 # The plain triangle path takes no development.
@@ -2458,7 +2478,7 @@ claims_development_result <- S7::new_class(
   constructor = function(fit, ptr = NULL) {
     if (is.null(ptr)) {
       if (!S7::S7_inherits(fit, mack_fit)) stop("fit must be a mack_fit", call. = FALSE)
-      ptr <- rust_result(fit@ptr$claims_development_result())
+      ptr <- reserving_result(fit@ptr$claims_development_result())
     }
     S7::new_object(S7::S7_object(), ptr = ptr)
   }
@@ -2556,9 +2576,9 @@ calendar_year_effect <- function(x, column = NULL, ci = 0.95) {
     stop("x must be a triangle or a mack_fit", call. = FALSE)
   }
   ptr <- if (S7::S7_inherits(x, mack_fit)) {
-    rust_result(x@ptr$calendar_year_effect(ci))
+    reserving_result(x@ptr$calendar_year_effect(ci))
   } else {
-    rust_result(x@ptr$calendar_year_effect(fit_column(x, column), ci))
+    reserving_result(x@ptr$calendar_year_effect(fit_column(x, column), ci))
   }
   calendar_year_test(ptr = ptr)
 }
@@ -2652,9 +2672,9 @@ development_correlation <- function(x, column = NULL, ci = 0.5) {
     stop("x must be a triangle or a mack_fit", call. = FALSE)
   }
   ptr <- if (S7::S7_inherits(x, mack_fit)) {
-    rust_result(x@ptr$development_correlation(ci))
+    reserving_result(x@ptr$development_correlation(ci))
   } else {
-    rust_result(x@ptr$development_correlation(fit_column(x, column), ci))
+    reserving_result(x@ptr$development_correlation(fit_column(x, column), ci))
   }
   development_correlation_test(ptr = ptr)
 }
@@ -2812,13 +2832,13 @@ odp_bootstrap_fit <- S7::new_class(
       self@chain_ladder@development
     }),
     fitted = S7::new_property(S7::class_double, getter = function(self) {
-      origin_matrix(self, rust_result(self@ptr$fitted(), call = NULL))
+      origin_matrix(self, reserving_result(self@ptr$fitted(), call = NULL))
     }),
     residuals = S7::new_property(S7::class_double, getter = function(self) {
-      origin_matrix(self, rust_result(self@ptr$residuals(), call = NULL))
+      origin_matrix(self, reserving_result(self@ptr$residuals(), call = NULL))
     }),
     scale = S7::new_property(S7::class_double, getter = function(self) {
-      rust_result(self@ptr$scale(), call = NULL)
+      reserving_result(self@ptr$scale(), call = NULL)
     }),
     reserves = predictive_distribution
   ),
@@ -2849,7 +2869,7 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
   process <- match.arg(process)
   dependence <- match.arg(dependence)
   excl <- development_args("volume", "log-linear", n_periods, drop_high, drop_low)$excl
-  ptr <- rust_result(triangle@ptr$odp_bootstrap(column, single_number(n_sims, "n_sims"),
+  ptr <- reserving_result(triangle@ptr$odp_bootstrap(column, single_number(n_sims, "n_sims"),
                                                 single_number(seed, "seed"), process,
                                                 tail_ptr(tail),
                                                 optional_number(tail_std_err, "tail_std_err"),
@@ -2995,7 +3015,7 @@ bayes_odp_fit <- S7::new_class(
       self@ptr$diagnostics()
     }),
     summary = S7::new_property(S7::class_any, getter = function(self) {
-      as.data.frame(rust_result(self@ptr$summary(), call = NULL))
+      as.data.frame(reserving_result(self@ptr$summary(), call = NULL))
     }),
     draws = S7::new_property(S7::class_any, getter = function(self) {
       nm <- self@ptr$parameter_names()
@@ -3019,7 +3039,7 @@ bayes_odp <- function(triangle, column = NULL, intercept_sd = 10, origin_sd = 10
   process <- match.arg(process)
   k <- bayes_odp_settings(intercept_sd, origin_sd, development_sd, chains, tune, draws,
                            target_accept, max_depth)
-  ptr <- rust_result(triangle@ptr$bayes_odp(
+  ptr <- reserving_result(triangle@ptr$bayes_odp(
     column, k$intercept_sd, k$origin_sd, k$development_sd, process, k$chains, k$tune, k$draws,
     single_number(n_sims, "n_sims"), single_number(seed, "seed"), k$target_accept,
     k$max_depth))
@@ -3104,7 +3124,7 @@ bayes_odp_fits <- S7::new_class(
       self@chain_ladder@development
     }),
     scale = S7::new_property(S7::class_double, getter = function(self) {
-      rust_result(self@ptr$scale(), call = NULL)
+      reserving_result(self@ptr$scale(), call = NULL)
     }),
     reserves = predictive_distribution,
     diagnostics = S7::new_property(S7::class_data.frame, getter = function(self) {
@@ -3115,11 +3135,11 @@ bayes_odp_fits <- S7::new_class(
       out
     }),
     summary = S7::new_property(S7::class_any, getter = function(self) {
-      as.data.frame(rust_result(self@ptr$summary(), call = NULL))
+      as.data.frame(reserving_result(self@ptr$summary(), call = NULL))
     }),
     draws = S7::new_property(S7::class_any, getter = function(self) {
-      nm <- rust_result(self@ptr$parameter_names(), call = NULL)
-      matrix(rust_result(self@ptr$draws(), call = NULL), ncol = length(nm), byrow = TRUE,
+      nm <- reserving_result(self@ptr$parameter_names(), call = NULL)
+      matrix(reserving_result(self@ptr$draws(), call = NULL), ncol = length(nm), byrow = TRUE,
              dimnames = list(NULL, nm))
     })
   ),
@@ -3141,7 +3161,7 @@ bayes_odp_segments <- function(triangle, column = NULL, intercept_sd = 10, origi
   column <- fit_column(triangle, column)
   process <- match.arg(process)
   dependence <- match.arg(dependence)
-  ptr <- rust_result(triangle@ptr$bayes_odp_segments(
+  ptr <- reserving_result(triangle@ptr$bayes_odp_segments(
     column, single_number(intercept_sd, "intercept_sd"), single_number(origin_sd, "origin_sd"),
     single_number(development_sd, "development_sd"), process, single_number(chains, "chains"),
     single_number(tune, "tune"), single_number(draws, "draws"), single_number(n_sims, "n_sims"),
@@ -3361,7 +3381,7 @@ bayes_one_year_fits <- S7::new_class(
       })
     }
     one <- function(class, f) {
-      S7::new_property(class, getter = function(self) rust_result(f(self@ptr), call = NULL))
+      S7::new_property(class, getter = function(self) reserving_result(f(self@ptr), call = NULL))
     }
     list(
       ptr = S7::new_S3_class("BayesOneYearFits"),
@@ -3390,15 +3410,15 @@ bayes_one_year_fits <- S7::new_class(
         out
       }),
       pareto_k = one(S7::class_double, function(p) p$pareto_k()),
-      refitted = one(S7::class_integer, function(p) as.integer(rust_result(p$refitted()))),
+      refitted = one(S7::class_integer, function(p) as.integer(reserving_result(p$refitted()))),
       moment_matched = one(S7::class_integer, function(p) {
-        as.integer(rust_result(p$moment_matched()))
+        as.integer(reserving_result(p$moment_matched()))
       }),
       unrefitted = one(S7::class_integer, function(p) {
-        as.integer(rust_result(p$unrefitted()))
+        as.integer(reserving_result(p$unrefitted()))
       }),
       refit_warnings = one(S7::class_integer, function(p) {
-        as.integer(rust_result(p$refit_warnings()))
+        as.integer(reserving_result(p$refit_warnings()))
       }),
       k_threshold = S7::new_property(S7::class_double, getter = function(self) {
         self@ptr$k_threshold()
@@ -3466,7 +3486,7 @@ bayes_odp_one_year <- function(triangle, column = NULL, intercept_sd = 10, origi
   refit <- match.arg(refit)
   s <- bayes_odp_run(intercept_sd, origin_sd, development_sd, chains, tune, draws, n_sims, seed,
                      target_accept, max_depth)
-  ptr <- rust_result(triangle@ptr$bayes_odp_one_year(
+  ptr <- reserving_result(triangle@ptr$bayes_odp_one_year(
     column, s$priors, process, s$run, single_number(k_threshold, "k_threshold"), refit,
     max_refits_arg(max_refits), optional_number(one_year_sims, "one_year_sims")))
   view <- bayes_one_year_fit(ptr = ptr)
@@ -3499,7 +3519,7 @@ bayes_odp_one_year_segments <- function(triangle, column = NULL, intercept_sd = 
   refit <- match.arg(refit)
   s <- bayes_odp_run(intercept_sd, origin_sd, development_sd, chains, tune, draws, n_sims, seed,
                      target_accept, max_depth)
-  ptr <- rust_result(triangle@ptr$bayes_odp_one_year_segments(
+  ptr <- reserving_result(triangle@ptr$bayes_odp_one_year_segments(
     column, s$priors, process, s$run, single_number(k_threshold, "k_threshold"), refit,
     max_refits_arg(max_refits), optional_number(one_year_sims, "one_year_sims"),
     dependence, spearman_arg(spearman)))
@@ -3662,7 +3682,7 @@ meyers_fit <- S7::new_class(
       self@ptr$diagnostics()
     }),
     summary = S7::new_property(S7::class_any, getter = function(self) {
-      as.data.frame(rust_result(self@ptr$summary(), call = NULL))
+      as.data.frame(reserving_result(self@ptr$summary(), call = NULL))
     }),
     draws = S7::new_property(S7::class_any, getter = function(self) {
       nm <- self@ptr$parameter_names()
@@ -3694,7 +3714,7 @@ meyers <- function(triangle, column, premium, model = c("crc", "csr", "cay"),
   model <- match.arg(model)
   k <- meyers_settings(logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape,
                       chains, tune, draws, target_accept, max_depth)
-  ptr <- rust_result(triangle@ptr$meyers(
+  ptr <- reserving_result(triangle@ptr$meyers(
     column, premium, model, k$logelr_mean, k$logelr_sd, k$origin_sd, k$development_sd,
     k$gamma_sd, k$rho_shape, k$chains, k$tune, k$draws, single_number(n_sims, "n_sims"),
     single_number(seed, "seed"), k$target_accept, k$max_depth))
@@ -3801,11 +3821,11 @@ meyers_fits <- S7::new_class(
       out
     }),
     summary = S7::new_property(S7::class_any, getter = function(self) {
-      as.data.frame(rust_result(self@ptr$summary(), call = NULL))
+      as.data.frame(reserving_result(self@ptr$summary(), call = NULL))
     }),
     draws = S7::new_property(S7::class_any, getter = function(self) {
-      nm <- rust_result(self@ptr$parameter_names(), call = NULL)
-      matrix(rust_result(self@ptr$draws(), call = NULL), ncol = length(nm), byrow = TRUE,
+      nm <- reserving_result(self@ptr$parameter_names(), call = NULL)
+      matrix(reserving_result(self@ptr$draws(), call = NULL), ncol = length(nm), byrow = TRUE,
              dimnames = list(NULL, nm))
     })
   ),
@@ -3835,7 +3855,7 @@ meyers_segments <- function(triangle, column, premium, model = c("crc", "csr", "
   }
   model <- match.arg(model)
   dependence <- match.arg(dependence)
-  ptr <- rust_result(triangle@ptr$meyers_segments(
+  ptr <- reserving_result(triangle@ptr$meyers_segments(
     column, premium, model, single_number(logelr_mean, "logelr_mean"),
     single_number(logelr_sd, "logelr_sd"), single_number(origin_sd, "origin_sd"),
     single_number(development_sd, "development_sd"), single_number(gamma_sd, "gamma_sd"),
@@ -3940,7 +3960,7 @@ meyers_one_year <- function(triangle, column, premium, model = c("crc", "csr", "
                    target_accept, max_depth)
   model <- match.arg(model)
   refit <- match.arg(refit)
-  ptr <- rust_result(triangle@ptr$meyers_one_year(
+  ptr <- reserving_result(triangle@ptr$meyers_one_year(
     column, premium, model, s$priors, s$run, single_number(k_threshold, "k_threshold"), refit,
     max_refits_arg(max_refits), optional_number(one_year_sims, "one_year_sims")))
   view <- bayes_one_year_fit(ptr = ptr)
@@ -3973,7 +3993,7 @@ meyers_one_year_segments <- function(triangle, column, premium, model = c("crc",
   model <- match.arg(model)
   dependence <- match.arg(dependence)
   refit <- match.arg(refit)
-  ptr <- rust_result(triangle@ptr$meyers_one_year_segments(
+  ptr <- reserving_result(triangle@ptr$meyers_one_year_segments(
     column, premium, model, s$priors, s$run, single_number(k_threshold, "k_threshold"), refit,
     max_refits_arg(max_refits), optional_number(one_year_sims, "one_year_sims"),
     dependence, spearman_arg(spearman)))
@@ -4145,7 +4165,7 @@ bayes_bf_fit <- S7::new_class(
       self@ptr$diagnostics()
     }),
     summary = S7::new_property(S7::class_any, getter = function(self) {
-      as.data.frame(rust_result(self@ptr$summary(), call = NULL))
+      as.data.frame(reserving_result(self@ptr$summary(), call = NULL))
     }),
     draws = S7::new_property(S7::class_any, getter = function(self) {
       nm <- self@ptr$parameter_names()
@@ -4166,7 +4186,7 @@ bayes_bf <- function(triangle, column, exposure, apriori = 1, cv = 0.1, developm
                      n_sims = 10000, seed = 0, target_accept = 0.95, max_depth = 10) {
   cols <- exposure_columns(triangle, column, exposure)
   process <- match.arg(process)
-  ptr <- rust_result(triangle@ptr$bayes_bf(
+  ptr <- reserving_result(triangle@ptr$bayes_bf(
     cols[1], cols[2], single_number(apriori, "apriori"), single_number(cv, "cv"),
     single_number(development_sd, "development_sd"), process, single_number(chains, "chains"),
     single_number(tune, "tune"), single_number(draws, "draws"), single_number(n_sims, "n_sims"),
@@ -4251,7 +4271,7 @@ bayes_bf_one_year <- function(triangle, column, exposure, apriori = 1, cv = 0.1,
            single_number(draws, "draws"), single_number(n_sims, "n_sims"),
            single_number(seed, "seed"), single_number(target_accept, "target_accept"),
            single_number(max_depth, "max_depth"))
-  ptr <- rust_result(triangle@ptr$bayes_bf_one_year(
+  ptr <- reserving_result(triangle@ptr$bayes_bf_one_year(
     cols[1], cols[2], priors, process, run, single_number(k_threshold, "k_threshold"), refit,
     max_refits_arg(max_refits), optional_number(one_year_sims, "one_year_sims")))
   view <- bayes_one_year_fit(ptr = ptr)
@@ -4411,7 +4431,7 @@ bayes_bf_normalised_fit <- S7::new_class(
       self@ptr$diagnostics()
     }),
     summary = S7::new_property(S7::class_any, getter = function(self) {
-      as.data.frame(rust_result(self@ptr$summary(), call = NULL))
+      as.data.frame(reserving_result(self@ptr$summary(), call = NULL))
     }),
     draws = S7::new_property(S7::class_any, getter = function(self) {
       nm <- self@ptr$parameter_names()
@@ -4433,7 +4453,7 @@ bayes_bf_normalised <- function(triangle, column, exposure, apriori = 1, cv = 0.
                      common_cv = 0) {
   cols <- exposure_columns(triangle, column, exposure)
   process <- match.arg(process)
-  ptr <- rust_result(triangle@ptr$bayes_bf_normalised(
+  ptr <- reserving_result(triangle@ptr$bayes_bf_normalised(
     cols[1], cols[2], single_number(apriori, "apriori"), single_number(cv, "cv"),
     single_number(development_sd, "development_sd"), process, single_number(chains, "chains"),
     single_number(tune, "tune"), single_number(draws, "draws"), single_number(n_sims, "n_sims"),
@@ -4517,7 +4537,7 @@ bayes_bf_normalised_one_year <- function(triangle, column, exposure, apriori = 1
            single_number(draws, "draws"), single_number(n_sims, "n_sims"),
            single_number(seed, "seed"), single_number(target_accept, "target_accept"),
            single_number(max_depth, "max_depth"))
-  ptr <- rust_result(triangle@ptr$bayes_bf_normalised_one_year(
+  ptr <- reserving_result(triangle@ptr$bayes_bf_normalised_one_year(
     cols[1], cols[2], priors, process, run, single_number(k_threshold, "k_threshold"), refit,
     max_refits_arg(max_refits), optional_number(one_year_sims, "one_year_sims")))
   view <- bayes_one_year_fit(ptr = ptr)
@@ -4663,7 +4683,7 @@ mack_bootstrap_fit <- S7::new_class(
       self@chain_ladder@development
     }),
     residuals = S7::new_property(S7::class_double, getter = function(self) {
-      origin_matrix(self, rust_result(self@ptr$residuals(), call = NULL))
+      origin_matrix(self, reserving_result(self@ptr$residuals(), call = NULL))
     }),
     reserves = predictive_distribution
   ),
@@ -4688,7 +4708,7 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
   process <- match.arg(process)
   dependence <- match.arg(dependence)
   model <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
-  ptr <- rust_result(triangle@ptr$mack_bootstrap(
+  ptr <- reserving_result(triangle@ptr$mack_bootstrap(
     column, single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
     model$average, model$sigma, model$excl, isTRUE(centre_residuals), tail_ptr(tail),
     optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
@@ -4921,7 +4941,7 @@ one_year_fit <- S7::new_class(
       model = S7::new_property(S7::class_character, getter = function(self) self@ptr$model()),
       chain_ladder = chain_ladder_fit,
       mack = S7::new_property(S7::class_any, getter = function(self) {
-        mack_fit(ptr = rust_result(self@ptr$mack(), call = NULL))
+        mack_fit(ptr = reserving_result(self@ptr$mack(), call = NULL))
       }),
       keys = S7::new_property(S7::class_character, getter = function(self) self@chain_ladder@keys),
       index = S7::new_property(S7::class_data.frame, getter = function(self) self@chain_ladder@index),
@@ -4933,7 +4953,7 @@ one_year_fit <- S7::new_class(
       opening_ultimate = by_origin(function(p) p$opening_ultimate()),
       opening_reserve = by_origin(function(p) p$opening_reserve()),
       scale = S7::new_property(S7::class_double, getter = function(self) {
-        rust_result(self@ptr$scale(), call = NULL)
+        reserving_result(self@ptr$scale(), call = NULL)
       }),
       cdr = predictive_distribution
     )
@@ -4967,7 +4987,7 @@ odp_one_year <- function(triangle, column = NULL,
                                               trend = !missing(trend), decay = !missing(decay)))
   check_bootstrap_tail_settings(bootstrap_tail, list(tail_std_err = tail_std_err))
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
-  ptr <- rust_result(triangle@ptr$odp_one_year(
+  ptr <- reserving_result(triangle@ptr$odp_one_year(
     column, method, exposure, apriori_arg(apriori), single_number(n_iters, "n_iters"),
     single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma, args$excl,
     tail_ptr(tail), isTRUE(bootstrap_tail),
@@ -5008,7 +5028,7 @@ mack_one_year <- function(triangle, column = NULL,
   model <- development_args(mack_average, mack_sigma_interpolation, mack_n_periods, mack_drop_high,
                             mack_drop_low,
                             c("mack_n_periods", "mack_drop_high", "mack_drop_low"))
-  ptr <- rust_result(triangle@ptr$mack_one_year(
+  ptr <- reserving_result(triangle@ptr$mack_one_year(
     column, method, exposure, apriori_arg(apriori), single_number(n_iters, "n_iters"),
     single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma, args$excl,
     tail_ptr(tail), isTRUE(bootstrap_tail),
@@ -5136,7 +5156,7 @@ clark_fit <- S7::new_class(
       })
     }
     one <- function(f) {
-      S7::new_property(S7::class_double, getter = function(self) rust_result(f(self@ptr), call = NULL))
+      S7::new_property(S7::class_double, getter = function(self) reserving_result(f(self@ptr), call = NULL))
     }
     cape_cod <- function(self) self@ptr$method() == "cape_cod"
     list(
@@ -5155,15 +5175,15 @@ clark_fit <- S7::new_class(
       theta = one(function(p) p$theta()),
       elr = S7::new_property(getter = function(self) {
         if (!cape_cod(self)) return(NULL)
-        rust_result(self@ptr$elr(), call = NULL)
+        reserving_result(self@ptr$elr(), call = NULL)
       }),
       scale = one(function(p) p$scale()),
       n_observations = S7::new_property(S7::class_integer, getter = function(self) {
-        rust_result(self@ptr$n_observations(), call = NULL)
+        reserving_result(self@ptr$n_observations(), call = NULL)
       }),
       origin_width = S7::new_property(S7::class_double, getter = function(self) self@ptr$origin_width()),
       covariance = S7::new_property(S7::class_double, getter = function(self) {
-        v <- rust_result(self@ptr$covariance(), call = NULL)
+        v <- reserving_result(self@ptr$covariance(), call = NULL)
         n <- as.integer(round(sqrt(length(v))))
         names <- c(if (cape_cod(self)) "elr" else self@origins, "omega", "theta")
         matrix(v, n, n, byrow = TRUE, dimnames = list(names, names))
@@ -5205,7 +5225,7 @@ clark_max_age <- function(max_age) {
 clark_ldf <- function(triangle, column = NULL, curve = c("loglogistic", "weibull"), max_age = Inf) {
   column <- fit_column(triangle, column)
   curve <- match.arg(curve)
-  clark_fit(ptr = rust_result(triangle@ptr$clark_ldf(column, curve, clark_max_age(max_age))))
+  clark_fit(ptr = reserving_result(triangle@ptr$clark_ldf(column, curve, clark_max_age(max_age))))
 }
 
 #' @rdname clark_fit
@@ -5220,7 +5240,7 @@ clark_cape_cod <- function(triangle, column, exposure, curve = c("loglogistic", 
     }
   }
   curve <- match.arg(curve)
-  ptr <- rust_result(triangle@ptr$clark_cape_cod(column, exposure, curve, clark_max_age(max_age)))
+  ptr <- reserving_result(triangle@ptr$clark_cape_cod(column, exposure, curve, clark_max_age(max_age)))
   clark_fit(ptr = ptr)
 }
 
@@ -5229,7 +5249,7 @@ clark_cape_cod <- function(triangle, column, exposure, curve = c("loglogistic", 
 growth <- function(fit, age) {
   if (!S7::S7_inherits(fit, clark_fit)) stop("fit must be a clark_fit", call. = FALSE)
   if (!is.numeric(age)) stop("age must be numeric", call. = FALSE)
-  rust_result(fit@ptr$growth(as.double(age)))
+  reserving_result(fit@ptr$growth(as.double(age)))
 }
 
 #' A growth curve fitted to a benchmark pattern
@@ -5375,7 +5395,7 @@ benchmark_curve <- function(pattern, kind = c("percent_developed", "cdf"),
         (!is.numeric(origin_width) || length(origin_width) != 1 || is.na(origin_width))) {
     stop("origin_width must be NULL or a single number", call. = FALSE)
   }
-  ptr <- rust_result(benchmark_curve_rust(ages, as.double(unname(pattern)), kind, curve, w,
+  ptr <- reserving_result(benchmark_curve_rust(ages, as.double(unname(pattern)), kind, curve, w,
                                           clark_max_age(max_age),
                                           if (is.null(origin_width)) NULL else
                                             as.double(origin_width)))
@@ -5407,7 +5427,7 @@ benchmark_cdf <- function(fit, age) {
 #' @export
 benchmark_selected <- function(fit, ages) {
   check_benchmark(fit, ages)
-  values <- rust_result(fit@ptr$pattern(as.double(ages)))
+  values <- reserving_result(fit@ptr$pattern(as.double(ages)))
   list(ldf = stats::setNames(values, format(ages, trim = TRUE, scientific = FALSE)),
        ldf_kind = "percent_developed", ldf_weight = 1)
 }
@@ -5553,7 +5573,7 @@ segment <- function(fit, ...) {
     stop("segment() takes one value per key", call. = FALSE)
   }
   values <- vapply(conditions, as.character, "", USE.NAMES = FALSE)
-  ptr <- rust_result(fit@ptr$segment(as.character(keys), values), call = call)
+  ptr <- reserving_result(fit@ptr$segment(as.character(keys), values), call = call)
   S7::S7_class(fit)(ptr = ptr)
 }
 
@@ -6271,17 +6291,17 @@ compartmental_fit <- S7::new_class(
       self@ptr$diagnostics()
     }),
     summary = S7::new_property(S7::class_any, getter = function(self) {
-      as.data.frame(rust_result(self@ptr$summary(), call = NULL))
+      as.data.frame(reserving_result(self@ptr$summary(), call = NULL))
     }),
     draws = S7::new_property(S7::class_any, getter = function(self) {
       nm <- self@ptr$parameter_names()
       matrix(self@ptr$draws(), ncol = length(nm), byrow = TRUE, dimnames = list(NULL, nm))
     }),
     paid_table = S7::new_property(S7::class_any, getter = function(self) {
-      fit_table_frame(rust_result(self@ptr$paid_table(), call = NULL))
+      fit_table_frame(reserving_result(self@ptr$paid_table(), call = NULL))
     }),
     outstanding_table = S7::new_property(S7::class_any, getter = function(self) {
-      fit_table_frame(rust_result(self@ptr$outstanding_table(), call = NULL))
+      fit_table_frame(reserving_result(self@ptr$outstanding_table(), call = NULL))
     })
   ),
   constructor = function(ptr) {
@@ -6322,7 +6342,7 @@ compartmental <- function(triangle, paid, premium, priors, outstanding = NULL, i
                                  fitted)
   settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
                 fitted, match.arg(rate_order), match.arg(start))
-  ptr <- rust_result(triangle@ptr$compartmental(
+  ptr <- reserving_result(triangle@ptr$compartmental(
     paid, inputs$os, inputs$from, premium, inputs$p$values, inputs$p$families,
     settings, compartmental_run(chains, tune, draws, n_sims, seed, target_accept, max_depth)),
     call = call)
@@ -6492,18 +6512,18 @@ compartmental_fits <- S7::new_class(
       out
     }),
     summary = S7::new_property(S7::class_any, getter = function(self) {
-      as.data.frame(rust_result(self@ptr$summary(), call = NULL))
+      as.data.frame(reserving_result(self@ptr$summary(), call = NULL))
     }),
     draws = S7::new_property(S7::class_any, getter = function(self) {
-      nm <- rust_result(self@ptr$parameter_names(), call = NULL)
-      matrix(rust_result(self@ptr$draws(), call = NULL), ncol = length(nm), byrow = TRUE,
+      nm <- reserving_result(self@ptr$parameter_names(), call = NULL)
+      matrix(reserving_result(self@ptr$draws(), call = NULL), ncol = length(nm), byrow = TRUE,
              dimnames = list(NULL, nm))
     }),
     paid_table = S7::new_property(S7::class_any, getter = function(self) {
-      fit_table_frame(rust_result(self@ptr$paid_table(), call = NULL))
+      fit_table_frame(reserving_result(self@ptr$paid_table(), call = NULL))
     }),
     outstanding_table = S7::new_property(S7::class_any, getter = function(self) {
-      fit_table_frame(rust_result(self@ptr$outstanding_table(), call = NULL))
+      fit_table_frame(reserving_result(self@ptr$outstanding_table(), call = NULL))
     })
   ),
   constructor = function(ptr) {
@@ -6548,7 +6568,7 @@ compartmental_segments <- function(triangle, paid, premium, priors, outstanding 
   settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
                 fitted, match.arg(rate_order), match.arg(start))
   dependence <- match.arg(dependence)
-  ptr <- rust_result(triangle@ptr$compartmental_segments(
+  ptr <- reserving_result(triangle@ptr$compartmental_segments(
     paid, os, if (is.null(incurred)) "column" else "incurred", premium, p$values, p$families,
     settings, compartmental_run(chains, tune, draws, n_sims, seed, target_accept, max_depth),
     dependence, spearman_arg(spearman)), call = call)
@@ -6621,7 +6641,7 @@ compartmental_prior_predictive <- function(triangle, premium, priors,
   p <- compartmental_prior_values(priors, call)
   settings <- c("normal", "amount", match.arg(paid_response), "paid_and_outstanding",
                 match.arg(rate_order), "data")
-  out <- rust_result(triangle@ptr$compartmental_prior_predictive(
+  out <- reserving_result(triangle@ptr$compartmental_prior_predictive(
     premium, p$values, p$families, settings,
     compartmental_run(4, 1000, 2000, n_sims, seed, 0.99, 10)), call = call)
   list(outstanding = predictive_distribution(ptr = out$outstanding),
@@ -6854,7 +6874,7 @@ compartmental_one_year <- function(triangle, paid, premium, priors, outstanding 
     refit <- match.arg(refit, c("moment_match_then_refit", "refit_flagged", "reweight_only",
                                 "refit_all"))
   }
-  ptr <- rust_result(triangle@ptr$compartmental_one_year(
+  ptr <- reserving_result(triangle@ptr$compartmental_one_year(
     paid, os, if (is.null(incurred)) "column" else "incurred", premium, p$values, p$families,
     settings, compartmental_run(chains, tune, draws, n_sims, seed, target_accept, max_depth),
     single_number(k_threshold, "k_threshold"), refit, max_refits_arg(max_refits),
@@ -6911,7 +6931,7 @@ compartmental_one_year_fits <- S7::new_class(
       })
     }
     one <- function(class, f) {
-      S7::new_property(class, getter = function(self) rust_result(f(self@ptr), call = NULL))
+      S7::new_property(class, getter = function(self) reserving_result(f(self@ptr), call = NULL))
     }
     list(
       ptr = S7::new_S3_class("CompartmentalOneYearFits"),
@@ -6935,24 +6955,24 @@ compartmental_one_year_fits <- S7::new_class(
         out
       }),
       pareto_k = one(S7::class_double, function(p) p$pareto_k()),
-      refitted = one(S7::class_integer, function(p) as.integer(rust_result(p$refitted()))),
+      refitted = one(S7::class_integer, function(p) as.integer(reserving_result(p$refitted()))),
       moment_matched = one(S7::class_integer, function(p) {
-        as.integer(rust_result(p$moment_matched()))
+        as.integer(reserving_result(p$moment_matched()))
       }),
-      unrefitted = one(S7::class_integer, function(p) as.integer(rust_result(p$unrefitted()))),
+      unrefitted = one(S7::class_integer, function(p) as.integer(reserving_result(p$unrefitted()))),
       refit_warnings = one(S7::class_integer, function(p) {
-        as.integer(rust_result(p$refit_warnings()))
+        as.integer(reserving_result(p$refit_warnings()))
       }),
       k_threshold = S7::new_property(S7::class_double, getter = function(self) {
         self@ptr$k_threshold()
       }),
       flagged_share = one(S7::class_double, function(p) p$flagged_share()),
       summary = S7::new_property(S7::class_any, getter = function(self) {
-        as.data.frame(rust_result(self@ptr$summary(), call = NULL))
+        as.data.frame(reserving_result(self@ptr$summary(), call = NULL))
       }),
       draws = S7::new_property(S7::class_any, getter = function(self) {
-        nm <- rust_result(self@ptr$parameter_names(), call = NULL)
-        matrix(rust_result(self@ptr$draws(), call = NULL), ncol = length(nm), byrow = TRUE,
+        nm <- reserving_result(self@ptr$parameter_names(), call = NULL)
+        matrix(reserving_result(self@ptr$draws(), call = NULL), ncol = length(nm), byrow = TRUE,
                dimnames = list(NULL, nm))
       })
     )
@@ -7017,7 +7037,7 @@ compartmental_one_year_segments <- function(triangle, paid, premium, priors, out
     refit <- match.arg(refit, c("moment_match_then_refit", "refit_flagged", "reweight_only",
                                 "refit_all"))
   }
-  ptr <- rust_result(triangle@ptr$compartmental_one_year_segments(
+  ptr <- reserving_result(triangle@ptr$compartmental_one_year_segments(
     paid, os, if (is.null(incurred)) "column" else "incurred", premium, p$values, p$families,
     settings, compartmental_run(chains, tune, draws, n_sims, seed, target_accept, max_depth),
     single_number(k_threshold, "k_threshold"), refit, max_refits_arg(max_refits),
@@ -7326,7 +7346,7 @@ compartmental_candidate <- function(triangle, paid, premium, priors, outstanding
   inputs <- compartmental_inputs(triangle, paid, premium, priors, outstanding, incurred, call)
   settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
                 "paid_and_outstanding", match.arg(rate_order), match.arg(start))
-  ptr <- rust_result(triangle@ptr$compartmental_candidate(
+  ptr <- reserving_result(triangle@ptr$compartmental_candidate(
     paid, inputs$os, inputs$from, premium, inputs$p$values, inputs$p$families, settings,
     compartmental_run(chains, tune, draws, 1, 0, target_accept, max_depth)), call = call)
   compartmental_backtest_model(ptr = ptr)
@@ -7390,7 +7410,7 @@ compartmental_outstanding_backtest <- function(candidate, n_diagonals, n_sims = 
   if (!S7::S7_inherits(candidate, compartmental_backtest_model)) {
     stop("candidate must be a compartmental_candidate()", call. = FALSE)
   }
-  backtest(rust_result(candidate@ptr$outstanding_backtest(
+  backtest(reserving_result(candidate@ptr$outstanding_backtest(
     single_number(n_diagonals, "n_diagonals"), single_number(n_sims, "n_sims"),
     single_number(seed, "seed"), single_number(interval, "interval"))))
 }
@@ -7640,7 +7660,7 @@ diagonal_backtest <- function(triangle, column, models, n_diagonals, premium = N
     stop("Meyers needs premium, one value per origin", call. = FALSE)
   }
   specs <- unname(Map(backtest_spec_wire, models, given))
-  raw <- rust_result(triangle@ptr$diagonal_backtest(
+  raw <- reserving_result(triangle@ptr$diagonal_backtest(
     column, if (is.null(premium)) NULL else as.double(premium), specs,
     single_number(n_diagonals, "n_diagonals"), single_number(n_sims, "n_sims"),
     single_number(seed, "seed"), single_number(interval, "interval")))
@@ -7723,21 +7743,21 @@ NULL
 #' @export
 ultimate_draws <- function(fit, origin = NULL) {
   check_draws_fit(fit)
-  rust_result(fit@ptr$ultimate_draws(origin_arg(origin)), call = sys.call())
+  reserving_result(fit@ptr$ultimate_draws(origin_arg(origin)), call = sys.call())
 }
 
 #' @rdname ultimate_draws
 #' @export
 loss_ratio_draws <- function(fit, origin = NULL, premium) {
   check_draws_fit(fit)
-  rust_result(fit@ptr$loss_ratio_draws(origin_arg(origin), as.double(premium)), call = sys.call())
+  reserving_result(fit@ptr$loss_ratio_draws(origin_arg(origin), as.double(premium)), call = sys.call())
 }
 
 #' @rdname ultimate_draws
 #' @export
 ultimate_distribution <- function(fit) {
   check_draws_fit(fit)
-  predictive_distribution(ptr = rust_result(fit@ptr$ultimates(), call = sys.call()))
+  predictive_distribution(ptr = reserving_result(fit@ptr$ultimates(), call = sys.call()))
 }
 
 # The fits with a development pattern per simulation (`DevelopmentPatterns`
@@ -7843,8 +7863,8 @@ NULL
 pattern_draws <- function(fit, segment = NULL) {
   check_pattern_fit(fit)
   segment <- segment_arg(segment)
-  ages <- rust_result(fit@ptr$pattern_ages(segment), call = sys.call())
-  flat <- rust_result(fit@ptr$pattern_draws(segment), call = sys.call())
+  ages <- reserving_result(fit@ptr$pattern_ages(segment), call = sys.call())
+  flat <- reserving_result(fit@ptr$pattern_draws(segment), call = sys.call())
   out <- pattern_matrix(flat, length(ages))
   colnames(out) <- format(ages, trim = TRUE, scientific = FALSE)
   out
@@ -7865,7 +7885,7 @@ monthly_pattern_draws <- function(fit, months, segment = NULL, basis = NULL,
   if (!is.character(monotone) || length(monotone) != 1) {
     stop("monotone must be \"refuse\" or \"running_max\"", call. = FALSE)
   }
-  flat <- rust_result(fit@ptr$monthly_pattern_draws(segment_arg(segment), as.double(months),
+  flat <- reserving_result(fit@ptr$monthly_pattern_draws(segment_arg(segment), as.double(months),
                                                     basis, monotone), call = sys.call())
   pattern_matrix(flat, as.integer(months))
 }

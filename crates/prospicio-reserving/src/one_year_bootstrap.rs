@@ -702,11 +702,11 @@ impl<B: NextYear> Prepared<B> {
         let in_use = bootstrap.chain_ladder().tail_in_use(tail);
         let tailed = !in_use.is_none();
         if tailed && !same_tail(in_use, method.chain_ladder().tail_in_use(&segment.ages)?) {
-            return Err(Error::Bootstrap(if tail.is_none() {
-                "the tail the bootstrap's pattern implies must be the re-reserving method's tail"
+            return Err(if tail.is_none() {
+                IMPLIED_TAIL_MISMATCH
             } else {
-                "the bootstrap's tail must be the re-reserving method's tail"
-            }));
+                TAIL_MISMATCH
+            });
         }
         let tail = tailed;
         let year = YearCells::of(
@@ -814,9 +814,55 @@ impl Failures {
     }
 }
 
-/// The simulations of a one-year bootstrap: how many, from which seed.
-const PATTERN_MISMATCH: Error =
-    Error::Bootstrap("the bootstrap's pattern must be the re-reserving method's pattern");
+/// A bootstrap with a pattern other than the re-reserving method's.
+pub(crate) const PATTERN_MISMATCH: Error = Error::NotSupported {
+    setting: "a bootstrap pattern other than the re-reserving method's",
+    method: ONE_YEAR_BOOTSTRAP,
+    reason: "the bootstrap's pattern must be the re-reserving method's pattern, the same \
+             selected factors and weights",
+};
+
+/// The method the one-year bootstrap's [`Error::NotSupported`] names.
+pub(crate) const ONE_YEAR_BOOTSTRAP: &str = "the one-year view of a bootstrap";
+
+/// A bootstrap with a tail other than the re-reserving method's.
+pub(crate) const TAIL_MISMATCH: Error = Error::NotSupported {
+    setting: "a bootstrap tail other than the re-reserving method's",
+    method: ONE_YEAR_BOOTSTRAP,
+    reason: "the bootstrap's tail must be the re-reserving method's tail",
+};
+
+/// A bootstrap whose pattern implies a tail other than the method's.
+pub(crate) const IMPLIED_TAIL_MISMATCH: Error = Error::NotSupported {
+    setting: "a bootstrap pattern whose implied tail is not the re-reserving method's",
+    method: ONE_YEAR_BOOTSTRAP,
+    reason: "the tail the bootstrap's pattern implies must be the re-reserving method's tail",
+};
+
+/// A bootstrap with a pattern of its own asked to simulate from the
+/// estimated factors.
+pub(crate) const OWN_PATTERN_ESTIMATED: Error = Error::NotSupported {
+    setting: "a bootstrap pattern of its own with OneYearPattern::Estimated",
+    method: ONE_YEAR_BOOTSTRAP,
+    reason: "a bootstrap with a pattern of its own cannot simulate from the estimated \
+             factors: give it no pattern, or OneYearPattern::Method",
+};
+
+/// A method pattern past the oldest age and no tail on the bootstrap.
+pub(crate) const PATTERN_PAST_OLDEST: Error = Error::NotSupported {
+    setting: "a method pattern past the oldest age with no tail on the bootstrap",
+    method: ONE_YEAR_BOOTSTRAP,
+    reason: "a pattern that runs past the oldest age carries the re-reserving method's tail \
+             into it: give the bootstrap the method's tail",
+};
+
+/// A method pattern that is only its level, with a tail of the method's own.
+pub(crate) const TAIL_ONLY_PATTERN: Error = Error::NotSupported {
+    setting: "a method pattern that is only its level with a tail of the method's own",
+    method: ONE_YEAR_BOOTSTRAP,
+    reason: "the re-reserving method's pattern is only its level, its tail, and the method \
+             has a tail of its own: give the method no tail, or two or more ages",
+};
 
 /// The bootstrap's pattern, if any, is the method's on the segment's
 /// `ages`: the same selected factors and weights, whatever the order, kind
@@ -834,6 +880,7 @@ fn same_pattern(
     }
 }
 
+/// The simulations of a one-year bootstrap: how many, from which seed.
 #[derive(Debug, Clone)]
 pub(crate) struct Sims {
     pub(crate) n_sims: usize,
@@ -874,9 +921,7 @@ impl Sims {
         // implies, which is compared per segment, on its ages
         // ([`Prepared::new`]).
         if self.tailed() && method.tail() != self.tail && !method.tail().is_none() {
-            return Err(Error::Bootstrap(
-                "the bootstrap's tail must be the re-reserving method's tail",
-            ));
+            return Err(TAIL_MISMATCH);
         }
         if self.pattern.is_some() && method.pattern().is_none() {
             return Err(PATTERN_MISMATCH);
@@ -1089,7 +1134,7 @@ impl OdpBootstrap {
     /// have a positive value for every origin. With a
     /// [`tail`](Self::tail), or with none and a pattern of its own that
     /// implies one, the method's tail must be the same (its own, or the one
-    /// its pattern implies), or the call returns [`Error::Bootstrap`]; a
+    /// its pattern implies), or the call returns [`Error::NotSupported`]; a
     /// pattern taken from the method is read as the method reads it
     /// ([`OneYearPattern::Method`](crate::OneYearPattern::Method)). A
     /// simulation whose pseudo factors

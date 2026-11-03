@@ -11,4 +11,4 @@
   `MunichChainLadder` and chainladder-python's `MunichAdjustment`, with
   tails and over segments (`MunichChainLadder`, `MunichFit`; Python
   `MunichChainLadder`, R `munich_chain_ladder()`;
-  `docs/design/reserving-v02.md` decision 29; #559, #731).
+  `docs/design/reserving-v02.md` decision 30; #559, #731).

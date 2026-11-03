@@ -1,5 +1,5 @@
 """The Munich chain ladder (Quarg and Mack 2004;
-``docs/design/reserving-v02.md``, decision 29). The Rust core is checked
+``docs/design/reserving-v02.md``, decision 30). The Rust core is checked
 against R ChainLadder and chainladder-python in
 ``validation/tests/reserving_munich.rs``; these tests check the bindings'
 arguments, results, frames and errors against the same references through

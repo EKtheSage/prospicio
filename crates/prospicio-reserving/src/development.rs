@@ -1058,7 +1058,13 @@ mod tests {
         // to the bootstrap's one-year view.
         let fit = mack(trimmed).fit(&raa(), "values").unwrap();
         let err = fit.claims_development_result().unwrap_err();
-        assert!(matches!(err, Error::ClaimsDevelopment(_)));
+        assert!(matches!(
+            err,
+            Error::NotSupported {
+                setting: "n_periods, drop_high and drop_low",
+                ..
+            }
+        ));
         assert!(err.to_string().contains("MackBootstrap::one_year"), "{err}");
         // A window past the triangle removes nothing today but slides with
         // next year's diagonal, so any setting is rejected.
@@ -1067,7 +1073,7 @@ mod tests {
             .unwrap();
         assert!(matches!(
             wide.claims_development_result(),
-            Err(Error::ClaimsDevelopment(_))
+            Err(Error::NotSupported { .. })
         ));
     }
 
@@ -1144,8 +1150,44 @@ mod tests {
         // The closed form of the one-year view needs every own factor.
         assert!(matches!(
             mack.claims_development_result(),
-            Err(Error::ClaimsDevelopment(_))
+            Err(Error::NotSupported { .. })
         ));
+        // The bootstraps resample every age's own link ratios, so they
+        // refuse the setting with the same variant (#580).
+        let odp = crate::OdpBootstrap {
+            n_sims: 10,
+            pattern: selected_first(1.0).pattern,
+            ..Default::default()
+        }
+        .fit(&tri, "values")
+        .err();
+        assert!(
+            matches!(
+                odp,
+                Some(Error::NotSupported {
+                    method: "the ODP bootstrap",
+                    ..
+                })
+            ),
+            "{odp:?}"
+        );
+        let mack_bootstrap = crate::MackBootstrap {
+            n_sims: 10,
+            development: selected_first(1.0),
+            ..Default::default()
+        }
+        .fit(&tri, "values")
+        .err();
+        assert!(
+            matches!(
+                mack_bootstrap,
+                Some(Error::NotSupported {
+                    method: "Mack's bootstrap",
+                    ..
+                })
+            ),
+            "{mack_bootstrap:?}"
+        );
     }
 
     #[test]

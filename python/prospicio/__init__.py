@@ -16,6 +16,7 @@ from . import (
     reserving,
     risk,
 )
+from .reserving import NotSupportedError
 
-__all__ = ["aggregate", "boosting", "credibility", "distributions", "models", "pricing",
-           "reinsurance", "reserving", "risk"]
+__all__ = ["NotSupportedError", "aggregate", "boosting", "credibility", "distributions", "models",
+           "pricing", "reinsurance", "reserving", "risk"]

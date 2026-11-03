@@ -505,7 +505,7 @@ what it is aiming for by v1.0.
     on the link ratios a Mack fit averaged; R ChainLadder's `cyEffTest`
     and `dfCorTest` to 1e-12 on RAA, GenIns and ABC, and Mack's printed
     values on RAA.
-  - The Munich chain ladder (`reserving-v02.md`, decision 29; branch
+  - The Munich chain ladder (`reserving-v02.md`, decision 30; branch
     `claude/munich-chain-ladder`, issue #559, in Rust, Python and R): paid
     and incurred developed together, each factor corrected by the origin's
     paid-to-incurred residual, with tails and over segments; R
@@ -587,6 +587,14 @@ what it is aiming for by v1.0.
   active-set solve for collinear bases (glmnet parity; Rust, Python
   and R, #356). Model-agnostic explanations: permutation importance,
   the interaction screen and partial dependence (Python and R, #355).
+  Zero-inflated and hurdle Poisson and negative binomial models with
+  Vuong's test (pscl parity; Rust, Python and R, #548).
+  Linear quantile regression (kernel and bootstrap standard errors,
+  rearrangement) and expectile regression, penalised or not (quantreg and
+  expectreg parity; Rust, Python and R, #550).
+  ICE curves, accumulated local effects and SHAP values, exact or
+  sampled, and tree SHAP on the boosters (ALEPlot and shap parity; Python
+  and R, #547).
 - **Next:** survival models, parked with claim-level reserving (the
   user's decision of 2026-10-29).
 - **v1.0:** mgcv's useful part for Tweedie, Poisson and gamma.

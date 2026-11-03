@@ -9,7 +9,7 @@ verified: { by: process:ci, at: 2026-11-02T18:00:00-08:00 }
 sources:
   - id: design
     resource: ../docs/design/reserving-v02.md
-    title: Design note, reserving v0.2, decision 29
+    title: Design note, reserving v0.2, decision 30
   - id: test
     resource: ../validation/tests/reserving_munich.rs
     title: Validation test of the Munich chain ladder

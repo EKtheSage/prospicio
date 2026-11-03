@@ -44,7 +44,7 @@ A \code{munich_fit} object.
 \description{
 The Munich chain ladder of Quarg and Mack (2004), as R ChainLadder's
 \code{MunichChainLadder()} and chainladder-python's \code{MunichAdjustment}
-(\code{docs/design/reserving-v02.md}, decision 29). Paid \code{P} and incurred
+(\code{docs/design/reserving-v02.md}, decision 30). Paid \code{P} and incurred
 \code{I} are two columns of one triangle, observed at the same cells. Each
 has Mack's volume-weighted model, and each age its ratios \verb{q = sum P / sum I} and \verb{q_inverse = sum I / sum P} with their deviations
 \code{rho_incurred} and \code{rho_paid} (an unestimable one extrapolated
