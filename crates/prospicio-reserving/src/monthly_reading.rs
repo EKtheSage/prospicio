@@ -141,7 +141,7 @@ pub(crate) fn read_monthly(points: &[(Lag, f64)], s: u32, curve: GrowthCurve) ->
 
 /// [`read_monthly`] with the curve's search started at `start`, `(ln
 /// omega, ln theta)` of a nearby pattern's curve, when given
-/// (`reserving-v02.md` decision 29): see [`fit_curve`].
+/// (`reserving-v02.md` decision 30): see [`fit_curve`].
 pub(crate) fn read_monthly_from(
     points: &[(Lag, f64)],
     s: u32,
@@ -212,7 +212,7 @@ pub(crate) fn curve_start(points: &[(Lag, f64)], s: u32, curve: GrowthCurve) -> 
 /// `(omega, theta)` of `curve` whose `s`-month averages are nearest the
 /// given values in least squares.
 ///
-/// From every start below, unless `start` is given (decision 29): then
+/// From every start below, unless `start` is given (decision 30): then
 /// from `start` and decision 23's line alone, the best kept if its search
 /// met the tolerance inside the parameters' range, and from every start
 /// otherwise. A simulation's pattern is near the mean pattern, so its

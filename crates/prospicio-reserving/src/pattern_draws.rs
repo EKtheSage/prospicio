@@ -195,7 +195,7 @@ impl DevelopmentPatterns {
     /// Under a growth-curve reading ([`AnnualReading::Curve`]) each
     /// simulation's curve is searched from the mean pattern's curve, not
     /// from every start a single pattern's conversion tries
-    /// (`reserving-v02.md` decision 29): within about `1e-9` of a share of
+    /// (`reserving-v02.md` decision 30): within about `1e-9` of a share of
     /// that search, at a fifth of its cost. With the `parallel` feature (on
     /// with `bayes`, and in the Python and R bindings) the simulations are
     /// read on all cores, and the result does not depend on the number of
@@ -221,7 +221,7 @@ impl DevelopmentPatterns {
             MonthlyBasis::Underwriting(basis) => basis.reading(),
         };
         // A curve reading's search starts each simulation at the mean
-        // pattern's curve (decision 29).
+        // pattern's curve (decision 30).
         let mut mean = segment.mean();
         if monotone == Monotone::RunningMax {
             running_max(&mut mean);
@@ -237,7 +237,7 @@ impl DevelopmentPatterns {
             segment.to_monthly(&shares, basis, months, start)
         };
         // Each simulation is read on its own, so threads change nothing but
-        // the time (`reserving-v02.md` decision 29); the error, if any, is
+        // the time (`reserving-v02.md` decision 30); the error, if any, is
         // the first simulation's in order, as without them.
         #[cfg(feature = "parallel")]
         let rows: Vec<Result<Vec<f64>>> = {
@@ -422,7 +422,7 @@ impl SegmentPatterns {
     /// that age under every reading (every accident month paid in full at
     /// once), since a curve needs two ages.
     ///
-    /// `start` starts a curve reading's search (decision 29).
+    /// `start` starts a curve reading's search (decision 30).
     fn to_monthly(
         &self,
         shares: &[f64],
@@ -1105,7 +1105,7 @@ mod tests {
 
     #[test]
     fn simulations_read_from_the_mean_curve_match_the_search_from_every_start() {
-        // Decision 29: each simulation's curve is searched from the mean
+        // Decision 30: each simulation's curve is searched from the mean
         // pattern's. Against the search from every start that a single
         // pattern's conversion makes, the monthly shares differ by less
         // than 1e-8 (about 1e-9 on the 2,000 ODP bootstrap draws of #717).

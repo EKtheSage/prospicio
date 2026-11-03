@@ -23,6 +23,7 @@ from prospicio.reserving import (
     Compartmental,
     CompartmentalFit,
     CompartmentalPriors,
+    NotSupportedError,
     Triangle,
 )
 
@@ -141,11 +142,12 @@ def test_settings_and_defaults():
 
 
 @pytest.mark.parametrize("fitted", ["paid_only", "incurred_only"])
-def test_one_response_needs_ordered_rates(tri, fitted):
-    m = Compartmental(GM, fitted=fitted)  # accepted and named
+def test_one_response_needs_ordered_rates(fitted):
+    # Refused when the model is built, before any data or sampling (#580).
+    with pytest.raises(NotSupportedError, match="needs rate_order Ordered"):
+        Compartmental(GM, fitted=fitted)
+    m = Compartmental(GM, fitted=fitted, rate_order="ordered")  # accepted and named
     assert m.fitted == fitted
-    with pytest.raises(ValueError, match="needs rate_order Ordered"):
-        m.fit(tri, "paid", "premium", incurred="incurred")
 
 
 def test_incurred_only_needs_a_payment_rate_prior_you_believe(tri):

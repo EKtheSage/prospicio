@@ -1,3 +1,4 @@
+from _typeshed import Incomplete
 from collections.abc import Sequence
 from datetime import date
 from os import PathLike
@@ -37114,3 +37115,5 @@ def ylt_hash(data: bytes) -> str:
     >>> ylt_hash(b"year,value").startswith("blake3:")
     True
     """
+
+def __getattr__(name: str) -> Incomplete: ...

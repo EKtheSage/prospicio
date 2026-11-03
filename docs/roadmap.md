@@ -549,7 +549,7 @@ what it is aiming for by v1.0.
   `BayesBfNormalised`, Meyers' CRC, CSR and CAY (#678) and
   `Compartmental`, models 1 and 2 (#679), in Rust, Python and R): done.
   Read month by month in parallel and from the mean pattern's curve,
-  2,000 draws at 144 months in about 0.4 s on 16 cores (decision 29,
+  2,000 draws at 144 months in about 0.4 s on 16 cores (decision 30,
   #717): done.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.

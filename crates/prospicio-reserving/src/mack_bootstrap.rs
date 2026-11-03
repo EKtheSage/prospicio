@@ -933,7 +933,7 @@ impl MackBootstrap {
     /// the oldest age moves only through the refitted method's tail; with
     /// one (or the one a pattern of its own implies), it must be the tail
     /// the method uses, its own or the one its pattern implies (or the call
-    /// returns [`Error::Bootstrap`]), and the origins whose tail step falls in the
+    /// returns [`Error::NotSupported`]), and the origins whose tail step falls in the
     /// coming year take it and are closed (see
     /// [`crate::one_year_bootstrap`]). A simulation whose pseudo factors
     /// the tail cannot be refitted on is counted in [`Error::OneYear`].
@@ -1062,9 +1062,11 @@ impl MackBootstrap {
         .fit_segment(segment, &segment.ages)?;
         let cl = &mack.chain_ladder;
         if cl.development.has_missing_factor() {
-            return Err(Error::Bootstrap(
-                "an age whose own factor could not be estimated (a fully selected sparse age) is not supported",
-            ));
+            return Err(Error::NotSupported {
+                setting: "an age whose own factor could not be estimated (a fully selected sparse age)",
+                method: "Mack's bootstrap",
+                reason: "the bootstrap resamples the residuals of every age's own link ratios",
+            });
         }
         // A constant tail's factor is drawn with Mack's standard error; an
         // estimated tail's is refitted, and a given standard error is an
@@ -2117,8 +2119,7 @@ mod tests {
         // The one-year view's method must have the bootstrap's tail
         // (decision 11), attachment and all; without a bootstrap tail any
         // method tail is allowed.
-        let mismatch =
-            Error::Bootstrap("the bootstrap's tail must be the re-reserving method's tail");
+        let mismatch = crate::one_year_bootstrap::TAIL_MISMATCH;
         let early = Tail::Constant(crate::TailConstant {
             factor: 1.05,
             attachment_age: Some(84),

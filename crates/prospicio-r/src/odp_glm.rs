@@ -15,9 +15,7 @@ use crate::models::design;
 use crate::reserving::Triangle;
 use crate::whole;
 
-fn to_r(e: prospicio_reserving::Error) -> Error {
-    Error::Other(e.to_string())
-}
+use crate::reserving::to_r;
 
 /// A fitted ODP GLM.
 #[extendr]
