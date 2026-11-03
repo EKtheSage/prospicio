@@ -12,6 +12,7 @@ use rayon::prelude::*;
 
 use super::bf::{PlugIn, input_hasher, push_posterior_ultimate};
 use super::laplace::{Posterior, Whitened, mode};
+use super::new_year::{self, NewYear};
 use super::one_year::{self, BayesOneYear, BayesOneYearFit, OdpCells, OdpYear};
 use super::{Diagnostics, Stream, derive_seed, one_year_seed};
 use crate::bootstrap::{
@@ -20,7 +21,7 @@ use crate::bootstrap::{
 use crate::chain_ladder::ChainLadderFit;
 use crate::error::{Error, Result};
 use crate::expected_loss::origin_exposure;
-use crate::pattern_draws::{DevelopmentPatterns, predictive_with_patterns};
+use crate::pattern_draws::{DevelopmentPatterns, predictive_with_patterns, push_cumulative};
 use crate::segments::{FitTable, ReserveFit, SegmentFits};
 use crate::tail::Tail;
 use crate::triangle::{Label, Segment, Triangle};
@@ -235,6 +236,10 @@ pub struct BayesBfNormalisedFit {
     pub patterns: DevelopmentPatterns,
     /// The model, for the pointwise log likelihood of [`loo`](Self::loo).
     model: Model,
+    /// The settings' `apriori`, for [`new_year`](Self::new_year).
+    apriori: f64,
+    /// The settings' process error, for [`new_year`](Self::new_year).
+    process: ProcessDistribution,
 }
 
 impl BayesBfNormalised {
@@ -382,6 +387,8 @@ impl BayesBfNormalised {
             reserves,
             patterns,
             model,
+            apriori: self.apriori,
+            process: self.process,
         })
     }
 
@@ -615,6 +622,134 @@ impl BayesBfNormalisedFit {
             }
         }
         share
+    }
+
+    /// The posterior predictive of a new underwriting year with `premium`
+    /// (its exposure), the origin after the triangle's newest
+    /// (`reserving-bayes.md` decision 27, issue #598): `n_sims` simulations
+    /// from `seed`, each taking a posterior draw and from it the new
+    /// origin's expected ultimate and then its ultimate,
+    ///
+    /// ```text
+    /// U | s ~ Gamma(shape 1 / cv^2, mean s apriori premium)
+    /// L | U ~ Gamma(shape U / phi, scale phi)     (Gamma process error; L = U without it)
+    /// ```
+    ///
+    /// with `s` the draw's common multiplier ([`BayesBfNormalised::common_cv`])
+    /// and `phi` the fit's [`scale`](Self::scale). The gamma process
+    /// is exact: the sum of the cells' gamma draws with means `U p_d` and
+    /// the common scale `phi` over the shares, which sum to 1. The loss ratio
+    /// is `L / premium`.
+    ///
+    /// **Where the data reach the new year.** The origins' priors are
+    /// independent given `s`, and `apriori` and `cv` are settings, not
+    /// parameters, so the triangle informs the new year only through `s`.
+    /// Without `common_cv` there is no `s` (it is 1) and the new year is
+    /// exactly the prior, `Gamma(1 / cv^2, apriori)` in loss ratio, plus
+    /// process error, whatever the data; with it, the new year's level is
+    /// `apriori` times the posterior of `s`, the triangle's loss ratio
+    /// relative to `apriori` pooled over the origins, and its scatter about
+    /// that level is `cv`. A vague `common_cv` (say 10) lets the data set
+    /// the level. The origin-to-origin `cv` itself is not learned.
+    ///
+    /// The result's [`patterns`](NewYear::patterns) are the draws'
+    /// development patterns, so their
+    /// [`monthly`](DevelopmentPatterns::monthly) is the new year's emergence
+    /// by month, paired with its loss ratio simulation by simulation.
+    ///
+    /// Errors: `premium` not finite and positive, `n_sims` 0, and a flat
+    /// prior (`cv` infinite), under which a new origin has no proper
+    /// predictive ([`Error::Bayes`]).
+    ///
+    /// ```
+    /// use prospicio_bayes::nuts::Sampler;
+    /// use prospicio_reserving::bayes::BayesBfNormalised;
+    /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
+    /// use prospicio_prob::Distribution;
+    ///
+    /// let origin = [2020, 2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2023].map(Month::january);
+    /// let premium = [200.0, 200.0, 200.0, 200.0, 220.0, 220.0, 220.0, 240.0, 240.0, 260.0];
+    /// let tri = Triangle::from_long(&Long {
+    ///     keys: &[],
+    ///     origin: &origin,
+    ///     development: DevelopmentColumn::Age(&[12, 24, 36, 48, 12, 24, 36, 12, 24, 12]),
+    ///     values: &[
+    ///         ("paid", &[100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0]),
+    ///         ("premium", &premium),
+    ///     ],
+    ///     origin_grain: Grain::Year,
+    ///     development_grain: Grain::Year,
+    ///     cumulative: true,
+    /// })?;
+    /// let model = BayesBfNormalised {
+    ///     apriori: 0.85,
+    ///     cv: 0.1,
+    ///     common_cv: Some(10.0),
+    ///     sampler: Sampler { tune: 300, draws: 300, ..Sampler::default() },
+    ///     n_sims: 500,
+    ///     ..BayesBfNormalised::default()
+    /// };
+    /// let fit = model.fit(&tri, "paid", "premium")?;
+    /// let year = fit.new_year(280.0, 2_000, 7)?;
+    /// assert_eq!(year.origin.to_string(), "2024");
+    /// assert_eq!(year.loss_ratio.n_components(), 1);
+    /// assert!(year.loss_ratio.mean() > 0.0);
+    /// assert_eq!(year.patterns.n_sims(), 2_000);
+    /// # Ok::<(), prospicio_reserving::Error>(())
+    /// ```
+    pub fn new_year(&self, premium: f64, n_sims: usize, seed: u64) -> Result<NewYear> {
+        new_year::validate(premium, n_sims)?;
+        let model = &self.model;
+        if model.shape == 0.0 {
+            return Err(Error::Bayes(
+                "a new year needs a finite cv: under a flat prior (cv infinite) a new origin's                  expected ultimate has no proper predictive, since nothing in the model ties it                  to the triangle's origins. Set a finite cv, and common_cv to let the data set                  the new year's level"
+                    .into(),
+            ));
+        }
+        let (no, nd) = (model.n_origins, model.n_dev);
+        let common = model.common_shape.is_some();
+        let (shape, phi, process) = (model.shape, model.phi, self.process);
+        let mean = self.apriori * premium;
+        let provenance = Provenance::new("bayes_bf_normalised_new_year")
+            .param("apriori", self.apriori)
+            .param("cv", model.shape.powf(-0.5))
+            .param("scale", phi)
+            .param("process", format!("{process:?}"))
+            .version("prospicio-reserving", env!("CARGO_PKG_VERSION"));
+        // The fit's input, so the new year traces to the triangle it read.
+        let provenance = match &self.reserves.provenance().input_hash {
+            Some(hash) => provenance.input_hash(hash.clone()),
+            None => provenance,
+        };
+        let provenance = match model.common_shape {
+            Some(k) => provenance.param("common_cv", k.powf(-0.5)),
+            None => provenance,
+        };
+        new_year::simulate(
+            &self.posterior,
+            &self.chain_ladder.origins,
+            &self.chain_ladder.development.development,
+            premium,
+            n_sims,
+            seed,
+            provenance,
+            |theta, rng, shares| {
+                let s = if common {
+                    theta[theta.len() - 1].exp()
+                } else {
+                    1.0
+                };
+                let expected = new_year::gamma_draw(shape, s * mean / shape, rng);
+                // The fit's patterns' definition, without drawing.
+                let mut cumulative = Vec::with_capacity(nd);
+                push_cumulative(
+                    log_pattern(no, nd, theta).iter().map(|l| l.exp()),
+                    &mut cumulative,
+                );
+                shares.copy_from_slice(&cumulative);
+                process_draw(process, phi, expected, rng)
+            },
+        )
     }
 
     /// The posterior mean of each origin's expected ultimate `U_w`, the
@@ -2454,5 +2589,130 @@ mod tests {
             ),
             "{e}"
         );
+    }
+
+    /// A short fit of GenIns with premium, one chain of 100 and 100.
+    fn short_fit(model: BayesBfNormalised) -> BayesBfNormalisedFit {
+        BayesBfNormalised {
+            sampler: Sampler {
+                chains: 1,
+                tune: 100,
+                draws: 100,
+                target_accept: 0.95,
+                ..Sampler::default()
+            },
+            n_sims: 100,
+            ..model
+        }
+        .fit(&genins(), "values", "premium")
+        .unwrap()
+    }
+
+    /// Decision 27: without the common multiplier the new year is the
+    /// prior, `Gamma(1 / cv^2, apriori)` in loss ratio, whatever the data;
+    /// with process error its variance adds `phi E[U]`; the origin is the
+    /// year after the newest; the seed replays and moves the draws; the
+    /// pattern is the draw's, ending at 1; and the arguments are checked.
+    #[test]
+    fn a_new_year_without_a_common_level_is_the_prior() {
+        let fit = short_fit(BayesBfNormalised {
+            process: ProcessDistribution::None,
+            ..quick(3)
+        });
+        let premium = 2e7;
+        let year = fit.new_year(premium, 40_000, 5).unwrap();
+        assert_eq!(year.origin, Period::year(2011));
+        assert_eq!(year.premium, premium);
+        let (mean, sd) = (year.loss_ratio.mean(), year.loss_ratio.std_dev());
+        // Gamma(25, 0.5): mean 0.5, sd 0.1; the mean's sd is 0.0005.
+        assert!((mean - 0.5).abs() < 0.002, "{mean}");
+        assert!((sd / 0.1 - 1.0).abs() < 0.02, "{sd}");
+        let ultimate = year.ultimate.draw_matrix();
+        for (u, lr) in ultimate.iter().zip(year.loss_ratio.draw_matrix()) {
+            assert!((u / premium - lr).abs() <= 1e-12 * lr);
+        }
+        let same = fit.new_year(premium, 40_000, 5).unwrap();
+        assert_eq!(same.loss_ratio.draw_matrix(), year.loss_ratio.draw_matrix());
+        let other = fit.new_year(premium, 40_000, 6).unwrap();
+        assert_ne!(
+            other.loss_ratio.draw_matrix(),
+            year.loss_ratio.draw_matrix()
+        );
+        let segment = year.patterns.segment(&[]).unwrap();
+        assert_eq!(segment.ages(), fit.chain_ladder.development.development);
+        assert_eq!(year.patterns.n_sims(), 40_000);
+        for i in [0, 17, 39_999] {
+            let draw = segment.draw(i);
+            assert_eq!(draw[draw.len() - 1], 1.0);
+            assert!(draw.windows(2).all(|w| w[0] <= w[1]));
+        }
+        // The mean pattern is the fit's posterior mean pattern within
+        // Monte Carlo error.
+        let cumulative: Vec<f64> = fit
+            .pattern()
+            .iter()
+            .scan(0.0, |s, p| {
+                *s += p;
+                Some(*s)
+            })
+            .collect();
+        for (a, b) in segment.mean().iter().zip(&cumulative) {
+            assert!((a - b).abs() < 0.01, "{a} {b}");
+        }
+
+        // Gamma process error: the variance adds phi E[U] in money.
+        let fit = short_fit(quick(3));
+        let year = fit.new_year(premium, 40_000, 5).unwrap();
+        let expected = 0.5 * premium;
+        let var = (0.2 * expected).powi(2) + fit.scale * expected;
+        let sd = year.ultimate.std_dev();
+        assert!((year.ultimate.mean() / expected - 1.0).abs() < 0.004);
+        assert!((sd / var.sqrt() - 1.0).abs() < 0.02, "{sd} {}", var.sqrt());
+
+        for (premium, n_sims) in [(0.0, 10), (f64::NAN, 10), (1.0, 0)] {
+            assert!(matches!(
+                fit.new_year(premium, n_sims, 0),
+                Err(Error::InvalidSetting { .. })
+            ));
+        }
+        let flat = short_fit(BayesBfNormalised {
+            cv: f64::INFINITY,
+            ..quick(3)
+        });
+        let e = flat.new_year(premium, 10, 0).unwrap_err().to_string();
+        assert!(e.contains("finite cv") && e.contains("common_cv"), "{e}");
+    }
+
+    /// Decision 27: with the common multiplier, the new year's level is
+    /// `apriori` times the posterior of `s`, simulation by simulation: the
+    /// new year's mean is `apriori` times the posterior mean of `s`, and its
+    /// cv at least `cv`.
+    #[test]
+    fn a_new_year_with_a_common_level_follows_its_posterior() {
+        let fit = short_fit(BayesBfNormalised {
+            apriori: 0.8,
+            common_cv: Some(10.0),
+            process: ProcessDistribution::None,
+            ..quick(4)
+        });
+        let s_mean = fit
+            .posterior
+            .values()
+            .chunks_exact(fit.posterior.dim())
+            .map(|theta| theta[theta.len() - 1].exp())
+            .sum::<f64>()
+            / fit.posterior.n_draws() as f64;
+        let year = fit.new_year(1e7, 40_000, 1).unwrap();
+        let (mean, cv) = (
+            year.loss_ratio.mean(),
+            year.loss_ratio.std_dev() / year.loss_ratio.mean(),
+        );
+        assert!(
+            (mean / (0.8 * s_mean) - 1.0).abs() < 0.01,
+            "{mean} {s_mean}"
+        );
+        assert!(cv >= 0.2, "{cv}");
+        // The data's loss ratio (GenIns, about 0.45 to 0.5), not the prior's.
+        assert!(mean < 0.65, "{mean}");
     }
 }

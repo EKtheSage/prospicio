@@ -37,8 +37,8 @@ use prospicio_reserving::bayes::{
     CompartmentalFit as CompartmentalInner, CompartmentalFits as CompartmentalFitsInner,
     CompartmentalLikelihood, CompartmentalOneYearFits as CompartmentalOneYearFitsInner,
     CompartmentalPriors, CompartmentalSegment, CompartmentalStart, Fitted, HalfPrior, LightRefit,
-    MeyersFits as MeyersFitsInner, MeyersSegment, OneYearRefit, Outstanding, PaidResponse,
-    PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
+    MeyersFits as MeyersFitsInner, MeyersSegment, NewOriginLevel, NewYear, OneYearRefit,
+    Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
 };
 use prospicio_reserving::{
     BayesBf, BayesBfFit as BayesBfInner, BayesBfNormalised,
@@ -4365,6 +4365,26 @@ pub(crate) struct MeyersFit {
 
 #[extendr]
 impl MeyersFit {
+    /// The posterior predictive of a new underwriting year with `premium`,
+    /// the level `"exchangeable"` or `"prior"` (decision 27).
+    fn new_year(&self, premium: f64, n_sims: f64, seed: f64, level: &str) -> Result<BayesNewYear> {
+        let level = match level {
+            "exchangeable" => NewOriginLevel::Exchangeable,
+            "prior" => NewOriginLevel::Prior,
+            other => {
+                return Err(Error::Other(format!(
+                    "level must be \"exchangeable\" or \"prior\", not {other:?}"
+                )));
+            }
+        };
+        let n_sims = whole(n_sims, "n_sims")? as usize;
+        let inner = self
+            .inner
+            .new_year_with_level(premium, level, n_sims, whole(seed, "seed")?)
+            .map_err(to_r)?;
+        Ok(BayesNewYear { inner })
+    }
+
     /// "crc", "csr" or "cay".
     fn model(&self) -> &'static str {
         self.inner.model().name()
@@ -4515,6 +4535,54 @@ impl MeyersFit {
     }
 }
 
+/// The posterior predictive of a new underwriting year (decision 27).
+#[extendr]
+pub(crate) struct BayesNewYear {
+    inner: NewYear,
+}
+
+#[extendr]
+impl BayesNewYear {
+    /// The new origin period's label.
+    fn origin(&self) -> String {
+        self.inner.origin.to_string()
+    }
+
+    fn premium(&self) -> f64 {
+        self.inner.premium
+    }
+
+    fn loss_ratio(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.loss_ratio.clone(),
+        }
+    }
+
+    fn ultimate(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.ultimate.clone(),
+        }
+    }
+
+    fn pattern_ages(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_ages_of(&self.inner.patterns, &segment)
+    }
+
+    fn pattern_draws(&self, segment: Vec<String>) -> Result<Vec<f64>> {
+        pattern_draws_of(&self.inner.patterns, &segment)
+    }
+
+    fn monthly_pattern_draws(
+        &self,
+        segment: Vec<String>,
+        months: f64,
+        basis: Robj,
+        monotone: &str,
+    ) -> Result<Vec<f64>> {
+        monthly_pattern_draws_of(&self.inner.patterns, &segment, months, &basis, monotone)
+    }
+}
+
 /// A Bayesian Bornhuetter-Ferguson with a normalised pattern of a
 /// single-segment triangle column.
 #[extendr]
@@ -4524,6 +4592,17 @@ pub(crate) struct BayesBfNormalisedFit {
 
 #[extendr]
 impl BayesBfNormalisedFit {
+    /// The posterior predictive of a new underwriting year with `premium`
+    /// (decision 27).
+    fn new_year(&self, premium: f64, n_sims: f64, seed: f64) -> Result<BayesNewYear> {
+        let n_sims = whole(n_sims, "n_sims")? as usize;
+        let inner = self
+            .inner
+            .new_year(premium, n_sims, whole(seed, "seed")?)
+            .map_err(to_r)?;
+        Ok(BayesNewYear { inner })
+    }
+
     /// The volume-weighted chain ladder the model takes its latest values
     /// and scale from.
     fn chain_ladder(&self) -> ChainLadderFit {
@@ -6611,6 +6690,7 @@ extendr_module! {
     impl CompartmentalOneYearFits;
     impl BayesBfFit;
     impl BayesBfNormalisedFit;
+    impl BayesNewYear;
     impl MackBootstrapFit;
     impl OneYearFit;
     impl ClarkFit;

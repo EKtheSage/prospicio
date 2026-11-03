@@ -3074,6 +3074,8 @@ BayesOneYearFits$segment <- function(keys, values) .Call(wrap__BayesOneYearFits_
 
 MeyersFit <- new.env(parent = emptyenv())
 
+MeyersFit$new_year <- function(premium, n_sims, seed, level) .Call(wrap__MeyersFit__new_year, self, premium, n_sims, seed, level)
+
 MeyersFit$model <- function() .Call(wrap__MeyersFit__model, self)
 
 MeyersFit$chain_ladder <- function() .Call(wrap__MeyersFit__chain_ladder, self)
@@ -3456,6 +3458,8 @@ BayesBfFit$segment <- function(keys, values) .Call(wrap__BayesBfFit__segment, se
 
 BayesBfNormalisedFit <- new.env(parent = emptyenv())
 
+BayesBfNormalisedFit$new_year <- function(premium, n_sims, seed) .Call(wrap__BayesBfNormalisedFit__new_year, self, premium, n_sims, seed)
+
 BayesBfNormalisedFit$chain_ladder <- function() .Call(wrap__BayesBfNormalisedFit__chain_ladder, self)
 
 BayesBfNormalisedFit$scale <- function() .Call(wrap__BayesBfNormalisedFit__scale, self)
@@ -3507,6 +3511,28 @@ BayesBfNormalisedFit$segment <- function(keys, values) .Call(wrap__BayesBfNormal
 
 #' @export
 `[[.BayesBfNormalisedFit` <- `$.BayesBfNormalisedFit`
+
+BayesNewYear <- new.env(parent = emptyenv())
+
+BayesNewYear$origin <- function() .Call(wrap__BayesNewYear__origin, self)
+
+BayesNewYear$premium <- function() .Call(wrap__BayesNewYear__premium, self)
+
+BayesNewYear$loss_ratio <- function() .Call(wrap__BayesNewYear__loss_ratio, self)
+
+BayesNewYear$ultimate <- function() .Call(wrap__BayesNewYear__ultimate, self)
+
+BayesNewYear$pattern_ages <- function(segment) .Call(wrap__BayesNewYear__pattern_ages, self, segment)
+
+BayesNewYear$pattern_draws <- function(segment) .Call(wrap__BayesNewYear__pattern_draws, self, segment)
+
+BayesNewYear$monthly_pattern_draws <- function(segment, months, basis, monotone) .Call(wrap__BayesNewYear__monthly_pattern_draws, self, segment, months, basis, monotone)
+
+#' @export
+`$.BayesNewYear` <- function (self, name) { func <- BayesNewYear[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BayesNewYear` <- `$.BayesNewYear`
 
 MackBootstrapFit <- new.env(parent = emptyenv())
 
