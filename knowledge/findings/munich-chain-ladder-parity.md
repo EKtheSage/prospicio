@@ -36,7 +36,12 @@ sources:
 * The residual pairs are those of links whose sigma was estimated (two or
   more link ratios in both columns): 20 on MCL. R blanks its residual
   matrices' last two columns and chainladder-python masks exact zeros;
-  both give the same 20 pairs on a square triangle.[^design]
+  both give the same 20 pairs on a square triangle. Within them R's two
+  `lm` fits drop missing values separately: where incurred's sigma is 0 at
+  a link (every ratio the same) its residuals there are 0/0 and leave the
+  incurred regression only, so on MCL with incurred flat from 60 to 72
+  months in 2001 and 2002 R keeps 20 paid and 18 incurred pairs and
+  `lambda_paid` stays 0.636021.[^design][^test]
 * The oldest age's rho (one origin) is extrapolated log-linearly by R
   whatever `est.sigma` says (0.1966 on MCL's paid), while
   chainladder-python fills it by the column's sigma interpolation (0.0311

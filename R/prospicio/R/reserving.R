@@ -1626,7 +1626,9 @@ mack <- function(triangle, column = NULL, average = "volume", sigma_interpolatio
 #' `chain_ladder_paid` and `chain_ladder_incurred`; the totals
 #' `total_ultimate_paid` and `total_ultimate_incurred`; per age `q`,
 #' `q_inverse`, `rho_paid` and `rho_incurred`; `lambda_paid`,
-#' `lambda_incurred` and `n_residuals`; and Mack's model of each column
+#' `lambda_incurred`, `n_residuals_paid` and `n_residuals_incurred` (the
+#' pairs behind each lambda: fewer for a column whose sigma is 0 at a link,
+#' whose residuals there are 0/0, as in R); and Mack's model of each column
 #' alone as `mack_paid` and `mack_incurred` ([mack_fit]). Per-age values and
 #' the lambdas need a single-segment fit: with several segments use
 #' [development_frame()], [totals_frame()] or [segment()].
@@ -1695,7 +1697,8 @@ munich_fit <- S7::new_class(
       }),
       lambda_paid = one(function(p) p$lambda_paid()),
       lambda_incurred = one(function(p) p$lambda_incurred()),
-      n_residuals = one(function(p) p$n_residuals(), S7::class_integer),
+      n_residuals_paid = one(function(p) p$n_residuals_paid(), S7::class_integer),
+      n_residuals_incurred = one(function(p) p$n_residuals_incurred(), S7::class_integer),
       q = per_age(function(p) p$q()),
       q_inverse = per_age(function(p) p$q_inverse()),
       rho_paid = per_age(function(p) p$rho_paid()),

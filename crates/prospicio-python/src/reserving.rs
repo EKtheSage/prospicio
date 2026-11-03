@@ -18170,10 +18170,22 @@ impl PyMunichFit {
             .lambda_incurred)
     }
 
-    /// The number of residual pairs behind each lambda.
+    /// The number of residual pairs behind ``lambda_paid``.
     #[getter]
-    fn n_residuals(&self) -> PyResult<usize> {
-        Ok(self.one("n_residuals", "")?.n_residuals)
+    fn n_residuals_paid(&self) -> PyResult<usize> {
+        Ok(self
+            .one("n_residuals_paid", "totals_frame()")?
+            .n_residuals_paid)
+    }
+
+    /// The number of residual pairs behind ``lambda_incurred``: fewer than
+    /// paid's where incurred's sigma is 0 at a link (residuals 0/0, left
+    /// out of incurred's regression only, as in R).
+    #[getter]
+    fn n_residuals_incurred(&self) -> PyResult<usize> {
+        Ok(self
+            .one("n_residuals_incurred", "totals_frame()")?
+            .n_residuals_incurred)
     }
 
     /// The paid-to-incurred ratio at each age, ``sum P / sum I`` (R's
@@ -18253,7 +18265,8 @@ impl PyMunichFit {
     }
 
     /// One row per segment: the totals of ``to_frame()``'s columns (the
-    /// ratios of the totals), ``lambda_paid`` and ``lambda_incurred``.
+    /// ratios of the totals), ``lambda_paid``, ``lambda_incurred``,
+    /// ``n_residuals_paid`` and ``n_residuals_incurred``.
     /// Needs pandas.
     ///
     /// Returns

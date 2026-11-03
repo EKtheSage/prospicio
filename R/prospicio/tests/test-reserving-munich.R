@@ -52,7 +52,7 @@ near(m@q, want("mack", "q"))
 near(m@q_inverse, want("mack", "q_inverse"))
 near(m@rho_paid, want("mack", "rho_paid"))
 near(m@rho_incurred, want("mack", "rho_incurred"))
-stopifnot(identical(m@n_residuals, 20L), identical(m@development, 12L * 1:7))
+stopifnot(identical(m@n_residuals_paid, 20L), identical(m@n_residuals_incurred, 20L), identical(m@development, 12L * 1:7))
 stopifnot(identical(names(m@ultimate_paid), as.character(2001:2007)))
 near(m@total_ultimate_paid, 32121.4969949898, rel = 1e-12)
 
@@ -73,6 +73,32 @@ if (requireNamespace("ChainLadder", quietly = TRUE)) {
     ChainLadder::MCLpaid, ChainLadder::MCLincurred, est.sigmaP = "Mack", est.sigmaI = "Mack"))
   near(m@ultimate_paid, r$MCLPaid[, 7])
   near(m@lambda_incurred, coef(r$lambdaI)[1])
+}
+
+# Incurred flat from 60 months in 2001 and 2002: incurred's sigma is 0 at 60
+# to 72 months and its residuals there are 0/0, which R's lm drops from the
+# incurred regression only (R ChainLadder 0.2.21, nobs 20 and 18).
+flat <- long
+at <- function(o, d) flat$origin == o & flat$development == d
+flat$incurred[at(2001, 72) | at(2001, 84)] <- 2174
+flat$incurred[at(2002, 72)] <- 2508
+z <- munich_chain_ladder(triangle(flat, "origin", "development", c("paid", "incurred")),
+                         sigma_interpolation_paid = "mack",
+                         sigma_interpolation_incurred = "mack")
+stopifnot(identical(z@n_residuals_paid, 20L), identical(z@n_residuals_incurred, 18L))
+near(z@lambda_paid, 0.636021466425142)
+near(z@lambda_incurred, 0.413992067837447)
+if (requireNamespace("ChainLadder", quietly = TRUE)) {
+  i <- ChainLadder::MCLincurred
+  i[1, 6] <- i[1, 5]
+  i[2, 6] <- i[2, 5]
+  i[1, 7] <- i[1, 6]
+  rz <- suppressWarnings(ChainLadder::MunichChainLadder(
+    ChainLadder::MCLpaid, i, est.sigmaP = "Mack", est.sigmaI = "Mack"))
+  near(z@lambda_paid, coef(rz$lambdaP)[1])
+  near(z@lambda_incurred, coef(rz$lambdaI)[1])
+  near(z@ultimate_paid, rz$MCLPaid[, 7], rel = 1e-10)
+  near(z@ultimate_incurred, rz$MCLIncurred[, 7], rel = 1e-10)
 }
 
 # Frames, the separate fits and print.

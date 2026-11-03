@@ -3714,7 +3714,9 @@ MunichFit$lambda_paid <- function() .Call(wrap__MunichFit__lambda_paid, self)
 
 MunichFit$lambda_incurred <- function() .Call(wrap__MunichFit__lambda_incurred, self)
 
-MunichFit$n_residuals <- function() .Call(wrap__MunichFit__n_residuals, self)
+MunichFit$n_residuals_paid <- function() .Call(wrap__MunichFit__n_residuals_paid, self)
+
+MunichFit$n_residuals_incurred <- function() .Call(wrap__MunichFit__n_residuals_incurred, self)
 
 MunichFit$q <- function() .Call(wrap__MunichFit__q, self)
 

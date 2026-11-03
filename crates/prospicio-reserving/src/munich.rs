@@ -28,7 +28,8 @@ use crate::triangle::{Segment, Triangle};
 /// link's starting cell, `(I/P - 1/q) / rho_P * sqrt(P)` for paid and
 /// `(P/I - q) / rho_I * sqrt(I)` for incurred, over the links whose sigma
 /// was estimated (two or more link ratios). The slopes are `lambda_P` and
-/// `lambda_I`. The projection then develops both columns together, step by
+/// `lambda_I`; each regression leaves out only its own residuals that are
+/// not finite (0/0 where a column's sigma is 0), as R's `lm` does. The projection then develops both columns together, step by
 /// step from each origin's latest cells:
 ///
 /// `P[s+1] = P[s] (f_P + lambda_P sigma_P / rho_P (I[s]/P[s] - q^-1_s))`
@@ -111,8 +112,13 @@ pub struct MunichFit {
     /// `lambda_I`, the slope of the incurred link-ratio residuals on the
     /// paid-to-incurred residuals.
     pub lambda_incurred: f64,
-    /// The number of residual pairs behind each lambda.
-    pub n_residuals: usize,
+    /// The number of residual pairs behind `lambda_paid`.
+    pub n_residuals_paid: usize,
+    /// The number of residual pairs behind `lambda_incurred`. It can
+    /// differ from paid's: a link whose sigma is 0 in one column (every
+    /// link ratio the same) has residuals 0/0 there, which leave that
+    /// column's regression only, as R's `lm` drops them.
+    pub n_residuals_incurred: usize,
     /// Development position of each origin's latest cells.
     pub latest_position: Vec<usize>,
     /// Latest paid per origin.
@@ -204,7 +210,8 @@ impl MunichChainLadder {
         let rho_incurred = interpolate_sigma(&rho_i, SigmaInterpolation::LogLinear);
 
         // Residual pairs over the links whose sigma was estimated.
-        let (mut pxy, mut pxx, mut ixy, mut ixx, mut n_residuals) = (0.0, 0.0, 0.0, 0.0, 0);
+        let (mut pxy, mut pxx, mut ixy, mut ixx) = (0.0, 0.0, 0.0, 0.0);
+        let (mut n_residuals_paid, mut n_residuals_incurred) = (0, 0);
         let (dp, di) = (
             &paid_fit.chain_ladder.development,
             &incurred_fit.chain_ladder.development,
@@ -224,15 +231,18 @@ impl MunichChainLadder {
                 let incurred_res = (i1 / i0 - fi[k]) / di.sigma[k] * i0.sqrt();
                 let q_inv_res = (i0 / p0 - 1.0 / q[k]) / rho_paid[k] * p0.sqrt();
                 let q_res = (p0 / i0 - q[k]) / rho_incurred[k] * i0.sqrt();
-                let pair = [paid_res, incurred_res, q_inv_res, q_res];
-                if pair.iter().any(|v| !v.is_finite()) {
-                    continue;
+                // Each column's regression drops its own pairs that are not
+                // finite, as R's two `lm` fits do.
+                if paid_res.is_finite() && q_inv_res.is_finite() {
+                    pxy += q_inv_res * paid_res;
+                    pxx += q_inv_res * q_inv_res;
+                    n_residuals_paid += 1;
                 }
-                pxy += q_inv_res * paid_res;
-                pxx += q_inv_res * q_inv_res;
-                ixy += q_res * incurred_res;
-                ixx += q_res * q_res;
-                n_residuals += 1;
+                if incurred_res.is_finite() && q_res.is_finite() {
+                    ixy += q_res * incurred_res;
+                    ixx += q_res * q_res;
+                    n_residuals_incurred += 1;
+                }
             }
         }
         let slope = |xy: f64, xx: f64| if xx > 0.0 { xy / xx } else { 0.0 };
@@ -253,7 +263,8 @@ impl MunichChainLadder {
             rho_incurred,
             lambda_paid: slope(pxy, pxx),
             lambda_incurred: slope(ixy, ixx),
-            n_residuals,
+            n_residuals_paid,
+            n_residuals_incurred,
         };
         let (up, ui) = fit.project(fit.lambda_paid, fit.lambda_incurred);
         if let Some(o) = (0..n_origins).find(|&o| !(up[o].is_finite() && ui[o].is_finite())) {
@@ -505,6 +516,8 @@ impl MunichFit {
             ),
             ("lambda_paid", self.lambda_paid),
             ("lambda_incurred", self.lambda_incurred),
+            ("n_residuals_paid", self.n_residuals_paid as f64),
+            ("n_residuals_incurred", self.n_residuals_incurred as f64),
         ]
         .into_iter()
         .map(|(n, v)| (n.to_string(), v))
@@ -572,7 +585,8 @@ impl SegmentFits<MunichFit> {
     }
 
     /// One row per segment: the totals of the per-origin columns (the
-    /// ratios of the totals), and `lambda_paid` and `lambda_incurred`.
+    /// ratios of the totals), `lambda_paid`, `lambda_incurred`,
+    /// `n_residuals_paid` and `n_residuals_incurred`.
     pub fn munich_totals(&self) -> FitTable {
         FitTable {
             keys: self.key_columns(|_| 1),
@@ -668,7 +682,40 @@ mod tests {
         close(fit.total_ultimate_incurred(), 32_719.512_501_042_9, 1e-8);
         close(fit.ultimate_paid[6], 7_504.575_860_343_22, 1e-8);
         close(fit.ultimate_incurred[6], 7_655.377_611_105_52, 1e-8);
-        assert_eq!(fit.n_residuals, 20);
+        assert_eq!((fit.n_residuals_paid, fit.n_residuals_incurred), (20, 20));
+    }
+
+    #[test]
+    fn a_zero_sigma_in_one_column_keeps_the_other_columns_residuals() {
+        // Incurred flat from 60 to 72 months in both origins observed
+        // there, so incurred's sigma is 0 at that link and its residuals
+        // there are 0/0. R ChainLadder 0.2.21 drops them from the
+        // incurred regression only and keeps the paid ones:
+        // MunichChainLadder(MCLpaid, I, est.sigmaP = "Mack",
+        // est.sigmaI = "Mack") with I = MCLincurred, I[1, 6] <- I[1, 5],
+        // I[2, 6] <- I[2, 5], I[1, 7] <- I[1, 6].
+        let incurred: [&[f64]; 7] = [
+            &[978.0, 2104.0, 2134.0, 2144.0, 2174.0, 2174.0, 2174.0],
+            &[1844.0, 2552.0, 2466.0, 2480.0, 2508.0, 2508.0],
+            INCURRED[2],
+            INCURRED[3],
+            INCURRED[4],
+            INCURRED[5],
+            INCURRED[6],
+        ];
+        let fit = MunichChainLadder {
+            paid: mack_sigma(),
+            incurred: mack_sigma(),
+            ..Default::default()
+        }
+        .fit(&pair(&PAID, &incurred), "paid", "incurred")
+        .unwrap();
+        close(fit.lambda_paid, 0.636_021_466_425_142, 1e-12);
+        close(fit.lambda_incurred, 0.413_992_067_837_447, 1e-12);
+        close(fit.total_ultimate_paid(), 32_506.252_871_173_0, 1e-7);
+        close(fit.total_ultimate_incurred(), 32_889.186_665_859_5, 1e-7);
+        // nobs(m$lambdaP) and nobs(m$lambdaI).
+        assert_eq!((fit.n_residuals_paid, fit.n_residuals_incurred), (20, 18));
     }
 
     #[test]

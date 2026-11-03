@@ -73,7 +73,9 @@ minus latest incurred) and the separate chain ladders'
 \code{chain_ladder_paid} and \code{chain_ladder_incurred}; the totals
 \code{total_ultimate_paid} and \code{total_ultimate_incurred}; per age \code{q},
 \code{q_inverse}, \code{rho_paid} and \code{rho_incurred}; \code{lambda_paid},
-\code{lambda_incurred} and \code{n_residuals}; and Mack's model of each column
+\code{lambda_incurred}, \code{n_residuals_paid} and \code{n_residuals_incurred} (the
+pairs behind each lambda: fewer for a column whose sigma is 0 at a link,
+whose residuals there are 0/0, as in R); and Mack's model of each column
 alone as \code{mack_paid} and \code{mack_incurred} (\link{mack_fit}). Per-age values and
 the lambdas need a single-segment fit: with several segments use
 \code{\link[=development_frame]{development_frame()}}, \code{\link[=totals_frame]{totals_frame()}} or \code{\link[=segment]{segment()}}.

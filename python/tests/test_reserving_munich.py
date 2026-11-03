@@ -70,7 +70,7 @@ def test_matches_r_with_mack_sigma():
         assert fit.q_inverse[k] == pytest.approx(ref[("q_inverse", str(age))], rel=1e-12)
         assert fit.rho_paid[k] == pytest.approx(ref[("rho_paid", str(age))], rel=1e-12)
         assert fit.rho_incurred[k] == pytest.approx(ref[("rho_incurred", str(age))], rel=1e-12)
-    assert fit.n_residuals == 20
+    assert (fit.n_residuals_paid, fit.n_residuals_incurred) == (20, 20)
 
 
 def test_matches_r_with_tails():
@@ -158,6 +158,23 @@ def test_no_information_is_the_separate_chain_ladders():
     assert (fit.lambda_paid, fit.lambda_incurred) == (0.0, 0.0)
     assert fit.ultimate_paid == pytest.approx(fit.chain_ladder_paid, rel=1e-12)
 
+
+def test_a_zero_sigma_leaves_only_its_own_regression():
+    # Incurred flat from 60 months in 2001 and 2002, so incurred's sigma is
+    # 0 at 60 to 72 months and its residuals there are 0/0. R ChainLadder
+    # 0.2.21, MunichChainLadder(MCLpaid, I, est.sigmaP = "Mack",
+    # est.sigmaI = "Mack") with I[1, 6] <- I[1, 5], I[2, 6] <- I[2, 5],
+    # I[1, 7] <- I[1, 6], drops them from the incurred regression only.
+    flat = {("2001", "72"): 2174.0, ("2001", "84"): 2174.0, ("2002", "72"): 2508.0}
+    incurred = [flat.get((r["origin"], r["development"]), float(r["incurred"])) for r in ROWS]
+    fit = MunichChainLadder(
+        sigma_interpolation_paid="mack", sigma_interpolation_incurred="mack"
+    ).fit(mcl(incurred), "paid", "incurred")
+    assert (fit.n_residuals_paid, fit.n_residuals_incurred) == (20, 18)
+    assert fit.lambda_paid == pytest.approx(0.636021466425142, rel=1e-12)
+    assert fit.lambda_incurred == pytest.approx(0.413992067837447, rel=1e-12)
+    totals = fit.totals_frame()
+    assert totals["n_residuals_incurred"].tolist() == [18.0]
 
 def test_missing_incurred_cell_is_refused():
     incurred = [float(r["incurred"]) for r in ROWS]

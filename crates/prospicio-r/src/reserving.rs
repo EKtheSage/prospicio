@@ -6887,8 +6887,15 @@ impl MunichFit {
         Ok(single(&self.inner, "lambda_incurred", "totals_frame()")?.lambda_incurred)
     }
 
-    fn n_residuals(&self) -> Result<i32> {
-        Ok(single(&self.inner, "n_residuals", "")?.n_residuals as i32)
+    fn n_residuals_paid(&self) -> Result<i32> {
+        Ok(single(&self.inner, "n_residuals_paid", "totals_frame()")?.n_residuals_paid as i32)
+    }
+
+    fn n_residuals_incurred(&self) -> Result<i32> {
+        Ok(
+            single(&self.inner, "n_residuals_incurred", "totals_frame()")?.n_residuals_incurred
+                as i32,
+        )
     }
 
     fn q(&self) -> Result<Vec<f64>> {

@@ -22177,9 +22177,16 @@ class MunichFit:
         Mack's model of the paid column alone.
         """
     @property
-    def n_residuals(self, /) -> int:
+    def n_residuals_incurred(self, /) -> int:
         """
-        The number of residual pairs behind each lambda.
+        The number of residual pairs behind ``lambda_incurred``: fewer than
+        paid's where incurred's sigma is 0 at a link (residuals 0/0, left
+        out of incurred's regression only, as in R).
+        """
+    @property
+    def n_residuals_paid(self, /) -> int:
+        """
+        The number of residual pairs behind ``lambda_paid``.
         """
     @property
     def origins(self, /) -> list[str]:
@@ -22247,7 +22254,8 @@ class MunichFit:
     def totals_frame(self, /) -> Any:
         """
         One row per segment: the totals of ``to_frame()``'s columns (the
-        ratios of the totals), ``lambda_paid`` and ``lambda_incurred``.
+        ratios of the totals), ``lambda_paid``, ``lambda_incurred``,
+        ``n_residuals_paid`` and ``n_residuals_incurred``.
         Needs pandas.
         
         Returns

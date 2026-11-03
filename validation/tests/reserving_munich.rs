@@ -216,3 +216,37 @@ fn a_missing_incurred_cell_is_refused() {
     assert!(matches!(err, Error::Munich(_)), "{err}");
     assert!(err.to_string().contains("origin 2004 at age 48"), "{err}");
 }
+
+#[test]
+fn a_zero_sigma_leaves_only_its_own_regression() {
+    // Incurred flat from 60 months in 2001 and 2002, so incurred's sigma is
+    // 0 at 60 to 72 months and its residuals there are 0/0. R ChainLadder
+    // 0.2.21 drops them from the incurred regression only:
+    // MunichChainLadder(MCLpaid, I, est.sigmaP = "Mack", est.sigmaI =
+    // "Mack") with I = MCLincurred, I[1, 6] <- I[1, 5], I[2, 6] <- I[2, 5]
+    // and I[1, 7] <- I[1, 6]; nobs(m$lambdaP) 20, nobs(m$lambdaI) 18.
+    let long = mcl_long();
+    let mut incurred = column(&long, "incurred");
+    for (k, (o, &d)) in long.origin.iter().zip(&long.development).enumerate() {
+        match (o.year(), d) {
+            (2001, 72 | 84) => incurred[k] = 2174.0,
+            (2002, 72) => incurred[k] = 2508.0,
+            _ => {}
+        }
+    }
+    let tri = with_values(&long, &column(&long, "paid"), &incurred);
+    let fit = MunichChainLadder {
+        paid: development(SigmaInterpolation::Mack),
+        incurred: development(SigmaInterpolation::Mack),
+        ..Default::default()
+    }
+    .fit(&tri, "paid", "incurred")
+    .unwrap();
+    let close =
+        |got: f64, want: f64| assert!((got - want).abs() <= 1e-12 * want.abs(), "{got} vs {want}");
+    assert_eq!((fit.n_residuals_paid, fit.n_residuals_incurred), (20, 18));
+    close(fit.lambda_paid, 0.636_021_466_425_142);
+    close(fit.lambda_incurred, 0.413_992_067_837_447);
+    close(fit.total_ultimate_paid(), 32_506.252_871_173_0);
+    close(fit.total_ultimate_incurred(), 32_889.186_665_859_5);
+}

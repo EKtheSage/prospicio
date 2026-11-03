@@ -4926,7 +4926,8 @@ R's `MCLpaid` and `MCLincurred` (`validation/data/mcl.csv`).
    sigmas, tail, separate chain-ladder ultimates), per age `q` (`sum P /
    sum I`, R's `q.f`), `q_inverse` (`sum I / sum P`, R's `qinverse.f`),
    `rho_paid` and `rho_incurred` (R's `rhoP.sigma`, `rhoI.sigma`), the
-   slopes `lambda_paid` and `lambda_incurred` with `n_residuals`, and per
+   slopes `lambda_paid` and `lambda_incurred` with the pairs behind each,
+   `n_residuals_paid` and `n_residuals_incurred`, and per
    origin the latest values and the Munich ultimates. `to_long()` has one
    row per origin (`latest_paid`, `latest_incurred`, `latest_ratio`,
    `ultimate_paid`, `ultimate_incurred`, `ultimate_ratio`, `reserve_paid`,
@@ -4934,7 +4935,8 @@ R's `MCLpaid` and `MCLincurred` (`validation/data/mcl.csv`).
    `development_table()` one per age (`q`, `q_inverse`, `rho_paid`,
    `rho_incurred`, each column's `ldf` and `sigma`); over segments
    `munich_long()`, `munich_development_table()` and `munich_totals()`
-   (the totals, the ratios of the totals and the lambdas). `MunichFit`
+   (the totals, the ratios of the totals, the lambdas and their pair
+   counts). `MunichFit`
    is not a `ReserveFit`: it has two ultimates per origin.
 2. **The model.** Each column has Mack's volume-weighted model. At age
    `s`, over the origins observed there, `rho_I^2 = sum I (P/I - q)^2 /
@@ -4958,7 +4960,15 @@ R's `MCLpaid` and `MCLincurred` (`validation/data/mcl.csv`).
    are exactly zero; on a square triangle both leave out the single last
    link, as this rule does (20 pairs on MCL). On a triangle with more
    origins than ages, which R refuses, the rule keeps every link with two
-   ratios.
+   ratios. Within those links each regression leaves out only its own
+   pairs that are not finite, as R's two `lm` fits drop their own
+   missing values: where one column's sigma is 0 at a link (every link
+   ratio the same, as with incurred flat at late ages) its residuals
+   there are 0/0 and leave its regression, while the other column's stay
+   in theirs. On MCL with incurred flat from 60 to 72 months in 2001 and
+   2002, R keeps 20 paid pairs and 18 incurred ones, and `lambda_paid` is
+   unchanged at 0.636021 (the fix found in review; the first version
+   dropped a pair from both regressions and gave 0.635368).
 5. **The oldest age's `rho`** (open decision). A `rho` with one origin
    cannot be estimated; it is extrapolated log-linearly from the estimated
    positive ones, as R does whatever `est.sigma` says. chainladder-python
