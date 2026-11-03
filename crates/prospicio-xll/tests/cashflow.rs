@@ -1,10 +1,10 @@
-//! Cash flows and returns on a sheet (`PRO.NPV`, `PRO.IRR`, `PRO.MOIC`,
-//! `PRO.CASHFLOW`, `docs/design/xll.md` decision 42), reached through the
-//! catalogue as Excel reaches them:
+//! A collateralised deal's cash flows on a sheet (`PRO.CASHFLOW`,
+//! `docs/design/xll.md` decisions 42 and 46), reached through the
+//! catalogue as Excel reaches it:
 //!
 //! * Excel's own worked examples of `XNPV`, `XIRR` and `IRR` (Microsoft's
-//!   function reference), on dates and on yearly flows;
-//! * closed forms, roots beyond the range and flows without one;
+//!   function reference) through `prospicio_pricing::returns`, the
+//!   discounting and root search `PRO.CASHFLOW` reports with;
 //! * a deal through the terms block equal to the same deal built in
 //!   `prospicio_pricing::cashflow`, to the bit, with every rule set: its
 //!   flows, totals, IRR, MOIC and trace; and the crate's documented
@@ -18,7 +18,7 @@ use prospicio_pricing::cashflow::{
     Adjustment, AdjustmentBase, Base, CashflowTerms, Dates, FeeBasis, FundingRule, FundingSource,
     InterestBasis, MonthlyPatterns, ObligationReference, PerformanceFee, Requirement, Term, Timing,
 };
-use prospicio_pricing::returns::{IrrOptions, TieredFee, moic};
+use prospicio_pricing::returns::{self, IrrOptions, TieredFee, moic};
 use prospicio_xll::call;
 use prospicio_xll::sheet::{Grid, Value};
 
@@ -35,145 +35,35 @@ fn rows(mut cells: Vec<Vec<Value>>) -> Grid {
     Grid::from_rows(cells)
 }
 
-fn num_row(values: &[f64]) -> Grid {
-    Grid::row(values)
-}
-
-/// Microsoft's `XNPV` and `XIRR` example: five flows on 1 January 2008, 1
-/// March 2008, 30 October 2008, 15 February 2009 and 1 April 2009.
-fn xirr_example() -> (Grid, Grid) {
-    (
-        Grid::column(&[-10000.0, 2750.0, 4250.0, 3250.0, 2750.0]),
-        Grid::column(&[39448.0, 39508.0, 39751.0, 39859.0, 39904.0]),
-    )
-}
-
 #[test]
 fn excel_s_worked_examples() {
-    let (flows, dates) = xirr_example();
+    // Microsoft's XNPV and XIRR example: five flows on 1 January 2008, 1
+    // March 2008, 30 October 2008, 15 February 2009 and 1 April 2009,
+    // discounted by days from the first over 365.
+    let flows = [-10000.0, 2750.0, 4250.0, 3250.0, 2750.0];
+    let dates = [39448.0, 39508.0, 39751.0, 39859.0, 39904.0];
+    let years: Vec<f64> = dates.iter().map(|d| (d - dates[0]) / 365.0).collect();
     // XNPV(0.09, ...) = 2086.65 and XIRR(...) = 0.373362535 in the
     // reference; to more digits, the root of the same sum.
-    let v = num(&call(
-        "pro_npv",
-        vec![n(0.09), flows.clone(), dates.clone(), t("dates")],
-    )
-    .cells[0]);
+    let v = returns::npv(&flows, &years, 0.09).unwrap();
     assert!((v - 2086.6476020315363).abs() < 1e-9, "{v}");
     assert_eq!((v * 100.0).round() / 100.0, 2086.65);
-    let r = num(&call("pro_irr", vec![flows, dates, t("dates")]).cells[0]);
+    let r = returns::irr(&flows, &years, &IrrOptions::default())
+        .unwrap()
+        .rate;
     assert!((r - 0.37336253351883164).abs() < 1e-9, "{r}");
 
     // IRR on yearly flows: 8.7% over five years, -2.1% over four.
     let flows = [-70000.0, 12000.0, 15000.0, 18000.0, 21000.0, 26000.0];
-    let five = num(&call("pro_irr", vec![Grid::column(&flows)]).cells[0]);
+    let yearly: Vec<f64> = (0..flows.len()).map(|t| t as f64).collect();
+    let five = returns::irr(&flows, &yearly, &IrrOptions::default())
+        .unwrap()
+        .rate;
     assert!((five - 0.0866309480365316).abs() < 1e-9, "{five}");
-    let four = num(&call("pro_irr", vec![Grid::column(&flows[..5])]).cells[0]);
+    let four = returns::irr(&flows[..5], &yearly[..5], &IrrOptions::default())
+        .unwrap()
+        .rate;
     assert!((four + 0.021244848273411054).abs() < 1e-9, "{four}");
-}
-
-#[test]
-fn npv_in_closed_form_and_by_unit() {
-    let flows = num_row(&[-100.0, 121.0]);
-    let at = |times: &[f64], unit: &str| {
-        num(&call(
-            "pro_npv",
-            vec![n(0.1), flows.clone(), Grid::row(times), t(unit)],
-        )
-        .cells[0])
-    };
-    assert!(at(&[0.0, 2.0], "years").abs() < 1e-12);
-    assert!(at(&[0.0, 24.0], "months").abs() < 1e-12);
-    assert!(at(&[0.0, 730.0], "days").abs() < 1e-12);
-    // Without times the flows are at 0, 1, 2, ...: 121 a year on.
-    let v = num(&call("pro_npv", vec![n(0.1), flows]).cells[0]);
-    assert!((v - 10.0).abs() < 1e-12);
-    // A block: one simulation a row, a column of values.
-    let block = rows(vec![
-        vec![Value::Number(-100.0), Value::Number(110.0)],
-        vec![Value::Number(-100.0), Value::Number(121.0)],
-        vec![Value::Number(-50.0), Value::Empty],
-    ]);
-    let out = call("pro_npv", vec![n(0.1), block, Grid::row(&[0.0, 1.0])]);
-    assert_eq!((out.rows, out.columns), (3, 1));
-    let got: Vec<f64> = out.cells.iter().map(num).collect();
-    assert!(got[0].abs() < 1e-12 && (got[1] - 10.0).abs() < 1e-12 && got[2] == -50.0);
-}
-
-#[test]
-fn irr_reports_roots_beyond_the_range_and_their_absence() {
-    let flows = num_row(&[-100.0, 121.0]);
-    let r = num(&call("pro_irr", vec![flows, Grid::row(&[0.0, 2.0])]).cells[0]);
-    assert!((r - 0.1).abs() < 1e-12);
-
-    // A tenfold return in a year is 900%, above the default range.
-    let big = num_row(&[-1.0, 10.0]);
-    let e = call("pro_irr", vec![big.clone()]);
-    assert!(text(&e).contains("lies above"), "{e:?}");
-    let r = num(&call(
-        "pro_irr",
-        vec![
-            big.clone(),
-            none(),
-            none(),
-            none(),
-            none(),
-            Value::Bool(true).into(),
-        ],
-    )
-    .cells[0]);
-    assert!((r - 9.0).abs() < 1e-9, "{r}");
-    let r = num(&call(
-        "pro_irr",
-        vec![big.clone(), none(), none(), none(), n(20.0)],
-    )
-    .cells[0]);
-    assert!((r - 9.0).abs() < 1e-9, "{r}");
-    let e = call("pro_irr", vec![num_row(&[1.0, 2.0])]);
-    assert!(text(&e).contains("never crosses"), "{e:?}");
-
-    // The detail table, and blank rates in a block.
-    let detail = call(
-        "pro_irr",
-        vec![
-            big,
-            none(),
-            none(),
-            none(),
-            none(),
-            none(),
-            Value::Bool(true).into(),
-        ],
-    );
-    assert_eq!((detail.rows, detail.columns), (2, 6));
-    assert_eq!(detail.get(0, 0), &Value::from("Rate"));
-    assert_eq!(detail.get(1, 1), &Value::Bool(false));
-    assert_eq!(detail.get(1, 4), &Value::Bool(true));
-    let block = rows(vec![
-        vec![Value::Number(-100.0), Value::Number(110.0)],
-        vec![Value::Number(-1.0), Value::Number(10.0)],
-    ]);
-    let out = call("pro_irr", vec![block]);
-    assert!((num(&out.cells[0]) - 0.1).abs() < 1e-12);
-    assert!(out.cells[1].is_blank());
-}
-
-#[test]
-fn moic_broadcasts() {
-    assert_eq!(
-        num(&call("pro_moic", vec![n(30.0), n(40.0), n(60.0)]).cells[0]),
-        1.3
-    );
-    let out = call("pro_moic", vec![Grid::column(&[30.0, -50.0]), n(100.0)]);
-    let got: Vec<f64> = out.cells.iter().map(num).collect();
-    assert_eq!(got, [1.3, 0.5]);
-    assert!(text(&call("pro_moic", vec![n(1.0), n(0.0)])).contains("positive"));
-    assert!(
-        text(&call(
-            "pro_moic",
-            vec![Grid::column(&[1.0, 2.0]), Grid::column(&[1.0, 2.0, 3.0])]
-        ))
-        .contains("give one value or 3")
-    );
 }
 
 fn label(name: &str, values: &[Value]) -> Vec<Value> {
@@ -508,20 +398,6 @@ fn errors() {
     assert!(
         run(bad_rule, patterns.clone(), requirement.clone())
             .contains("shortfall or obligation-increase")
-    );
-    assert!(
-        text(&call(
-            "pro_npv",
-            vec![n(0.1), Grid::column(&[1.0, 2.0]), none(), t("dates")]
-        ))
-        .contains("needs times")
-    );
-    assert!(
-        text(&call(
-            "pro_npv",
-            vec![n(0.1), Grid::column(&[1.0, 2.0]), Grid::column(&[0.0])]
-        ))
-        .contains("one time per flow")
     );
     assert!(
         text(&call(

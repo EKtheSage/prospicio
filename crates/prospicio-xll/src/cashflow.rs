@@ -16,10 +16,10 @@ use prospicio_pricing::cashflow::{
     FundingSource, Interest, InterestBasis, MonthlyPatterns, ObligationReference, PerformanceFee,
     Requirement, Term, Timing, Trace,
 };
-use prospicio_pricing::returns::{self, Irr, IrrOptions, TieredFee, TimeUnit};
+use prospicio_pricing::returns::{self, IrrOptions, TieredFee};
 
 use crate::pricing::numbers;
-use crate::reserving::{number_or, text_option};
+use crate::reserving::text_option;
 use crate::sheet::{Grid, Value, position};
 
 type Result<T> = std::result::Result<T, String>;
@@ -48,126 +48,7 @@ fn key(s: &str, separator: char) -> String {
         .collect()
 }
 
-/// The `unit` argument: what the times are.
-enum Unit {
-    Offsets(TimeUnit),
-    /// Excel dates, read from the first as days over 365 (`XNPV`, `XIRR`).
-    Dates,
-}
-
-fn unit(grid: &Grid) -> Result<Unit> {
-    Ok(match text_option(grid, "unit")?.as_deref() {
-        None | Some("years") => Unit::Offsets(TimeUnit::Years),
-        Some("months") => Unit::Offsets(TimeUnit::Months),
-        Some("days") => Unit::Offsets(TimeUnit::Days),
-        Some("dates") => Unit::Dates,
-        Some(other) => {
-            return Err(format!(
-                "unit must be \"years\", \"months\", \"days\" or \"dates\", got {other:?}"
-            ));
-        }
-    })
-}
-
-/// The `flows`, `times` and `unit` arguments: the flows as rows of one
-/// simulation each, and the times in years. A row or column of flows is
-/// one simulation; a block of several rows and columns is one simulation
-/// a row. Without `times` the flows are at 0, 1, 2, ... in `unit`.
-fn flows_and_times(
-    flows: &Grid,
-    times: &Grid,
-    unit_arg: &Grid,
-) -> Result<(Vec<Vec<f64>>, Vec<f64>)> {
-    if flows.is_blank() {
-        return Err("flows is required".into());
-    }
-    let unit = unit(unit_arg)?;
-    let cell = |r: usize, c: usize| match flows.get(r, c) {
-        Value::Number(x) => Ok(*x),
-        v if v.is_blank() => Ok(0.0),
-        other => Err(format!(
-            "flows {} must be a number, got {other:?}",
-            position(r, c)
-        )),
-    };
-    let rows: Vec<Vec<f64>> = if flows.rows == 1 || flows.columns == 1 {
-        vec![
-            (0..flows.rows)
-                .flat_map(|r| (0..flows.columns).map(move |c| (r, c)))
-                .map(|(r, c)| cell(r, c))
-                .collect::<Result<_>>()?,
-        ]
-    } else {
-        (0..flows.rows)
-            .map(|r| (0..flows.columns).map(|c| cell(r, c)).collect())
-            .collect::<Result<_>>()?
-    };
-    let n = rows[0].len();
-    let offsets = if times.is_blank() {
-        if matches!(unit, Unit::Dates) {
-            return Err("unit \"dates\" needs times, the flows' dates".into());
-        }
-        (0..n).map(|t| t as f64).collect()
-    } else {
-        let t = numbers(times, "times")?;
-        if t.len() != n {
-            return Err(format!(
-                "{} times for {n} flows a simulation: give one time per flow",
-                t.len()
-            ));
-        }
-        t
-    };
-    let years = match unit {
-        Unit::Offsets(u) => u.years(&offsets),
-        Unit::Dates => offsets.iter().map(|d| (d - offsets[0]) / 365.0).collect(),
-    };
-    Ok((rows, years))
-}
-
-/// One value, or a column of one per simulation.
-fn column_or_scalar(values: Vec<Value>) -> Grid {
-    if values.len() == 1 {
-        Grid::scalar(values.into_iter().next().expect("one value"))
-    } else {
-        Grid::from_rows(values.into_iter().map(|v| vec![v]).collect())
-    }
-}
-
-/// `PRO.NPV(rate, flows, [times], [unit])`: `Σ x_k (1 + rate)^-t_k`, one
-/// value, or one per row of a block of simulations.
-pub fn npv(args: &[Grid]) -> Result<Grid> {
-    let rate = crate::reserving::number(&args[0], "rate")?;
-    let (rows, years) = flows_and_times(&args[1], &args[2], &args[3])?;
-    let values = rows
-        .iter()
-        .map(|row| returns::npv(row, &years, rate).map(Value::number))
-        .collect::<prospicio_core::Result<Vec<_>>>()
-        .map_err(err)?;
-    Ok(column_or_scalar(values))
-}
-
-/// The IRR search's options: `lower` and `upper` (−0.95 and 1 a year if
-/// omitted) and `extend` (search past them, `FALSE` if omitted).
-fn irr_options(lower: &Grid, upper: &Grid, extend: &Grid) -> Result<IrrOptions> {
-    let d = IrrOptions::default();
-    Ok(IrrOptions {
-        lower: number_or(lower, "lower", d.lower)?,
-        upper: number_or(upper, "upper", d.upper)?,
-        extend: flag(extend, "extend", false)?,
-        ..d
-    })
-}
-
-/// An optional `TRUE`/`FALSE` argument (1 and 0 too).
-fn flag(grid: &Grid, name: &str, default: bool) -> Result<bool> {
-    match grid.as_scalar() {
-        Some(v) if v.is_blank() => Ok(default),
-        Some(v) => boolean(v).ok_or_else(|| format!("{name} must be TRUE or FALSE")),
-        None => Err(format!("{name} must be TRUE or FALSE")),
-    }
-}
-
+/// A `TRUE`/`FALSE` cell (1, 0 and the text `"yes"` and `"no"` too).
 fn boolean(v: &Value) -> Option<bool> {
     match v {
         Value::Bool(b) => Some(*b),
@@ -179,95 +60,6 @@ fn boolean(v: &Value) -> Option<bool> {
         },
         _ => None,
     }
-}
-
-/// Why no rate was found, for one simulation's error text.
-fn no_root(r: &Irr, o: &IrrOptions) -> String {
-    let range = format!("from {}% to {}% a year", o.lower * 100.0, o.upper * 100.0);
-    if r.root_above {
-        format!("no rate of return {range}; one lies above it (set extend TRUE, or a higher upper)")
-    } else if r.root_below {
-        format!("no rate of return {range}; one lies below it (set extend TRUE, or a lower lower)")
-    } else {
-        "no rate of return: the flows' value never crosses 0 (flows of one sign?)".into()
-    }
-}
-
-const IRR_HEADER: [&str; 6] = ["Rate", "Found", "NPV", "Roots", "Root above", "Root below"];
-
-fn irr_row(r: &Irr) -> Vec<Value> {
-    vec![
-        Value::number(r.rate),
-        Value::Bool(r.found),
-        Value::number(r.npv),
-        Value::Number(r.sign_changes as f64),
-        Value::Bool(r.root_above),
-        Value::Bool(r.root_below),
-    ]
-}
-
-/// `PRO.IRR(flows, [times], [unit], [lower], [upper], [extend],
-/// [detail])`: the annual rate at which the flows' value is 0, by the
-/// crate's grid search. One series without a root is an error saying
-/// why; in a block of simulations such a row is blank. With `detail`
-/// TRUE, a table: the rate, whether it was found, the value there, the
-/// roots seen and whether one lies above or below the range.
-pub fn irr(args: &[Grid]) -> Result<Grid> {
-    let (rows, years) = flows_and_times(&args[0], &args[1], &args[2])?;
-    let options = irr_options(&args[3], &args[4], &args[5])?;
-    let detail = flag(&args[6], "detail", false)?;
-    let found = rows
-        .iter()
-        .map(|row| returns::irr(row, &years, &options))
-        .collect::<prospicio_core::Result<Vec<_>>>()
-        .map_err(err)?;
-    if detail {
-        let mut out = vec![IRR_HEADER.iter().map(|h| Value::from(*h)).collect()];
-        out.extend(found.iter().map(irr_row));
-        return Ok(Grid::from_rows(out));
-    }
-    if let [r] = found.as_slice()
-        && !r.found
-    {
-        return Err(no_root(r, &options));
-    }
-    Ok(column_or_scalar(
-        found.iter().map(|r| Value::number(r.rate)).collect(),
-    ))
-}
-
-/// `PRO.MOIC(released, funded, [opening])`: `1 + released / (funded +
-/// opening)`, each argument one value or a column (or row) of them, a
-/// single value applying to every row.
-pub fn moic(args: &[Grid]) -> Result<Grid> {
-    let released = numbers(&args[0], "released")?;
-    let funded = numbers(&args[1], "funded")?;
-    let opening = if args[2].is_blank() {
-        vec![0.0]
-    } else {
-        numbers(&args[2], "opening")?
-    };
-    let n = released.len().max(funded.len()).max(opening.len());
-    for (name, v) in [
-        ("released", &released),
-        ("funded", &funded),
-        ("opening", &opening),
-    ] {
-        if v.len() != 1 && v.len() != n {
-            return Err(format!(
-                "{name} has {} values and another argument {n}: give one value or {n}",
-                v.len()
-            ));
-        }
-    }
-    let at = |v: &[f64], i: usize| if v.len() == 1 { v[0] } else { v[i] };
-    let values = (0..n)
-        .map(|i| {
-            returns::moic(at(&released, i), at(&funded, i), at(&opening, i)).map(Value::number)
-        })
-        .collect::<prospicio_core::Result<Vec<_>>>()
-        .map_err(err)?;
-    Ok(column_or_scalar(values))
 }
 
 /// A block of label rows: each row's label (normalized by [`key`]) and the
