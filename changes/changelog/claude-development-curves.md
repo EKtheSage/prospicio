@@ -3,11 +3,11 @@
 - Rust: `prospicio_reserving::CurveShape` has the variants `Hoerl`,
   `Sherman` and `Growth(GrowthCurve)`, and `prospicio_reserving::Error` the
   variant `DevelopmentCurve`, so an exhaustive `match` on either needs an
-  arm for each (#556).
+  arm for each (#556, #729).
 
 ### Reserving
 
-- Development curves fitted over every age (#556): `DevelopmentCurve`
+- Development curves fitted over every age (#556, #729): `DevelopmentCurve`
   fits the exponential, inverse power, Hoerl, Sherman or a log-logistic or
   Weibull growth curve to a triangle's estimated factors, keeps the
   observed factors before `keep_observed_until`, and gives the fitted
