@@ -1,5 +1,5 @@
 """The posterior predictive of a new underwriting year
-(docs/design/reserving-bayes.md, decision 27, issue #598):
+(docs/design/reserving-bayes.md, decision 28, issue #598):
 BayesBfNormalisedFit.new_year and MeyersFit.new_year.
 
 The exact distributions (the conjugate case on a square, the tight-prior

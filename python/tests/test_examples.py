@@ -616,6 +616,11 @@ def test_ils_deal_analysis(monkeypatch, capsys):
     assert all(m > 0 for m in ns["post_mean"].values())
     assert sum(ns["fit"].pattern) == pytest.approx(1.0, abs=1e-9)
     assert ns["fit"].diagnostics["max_rhat"] < 1.05
+    # `loss_ratio_draws` (#602) is the latest paid plus each simulation's reserve, over the premium, in reserve order.
+    o = ns["origins"][-1]
+    reserve = ns["fit"].reserves.marginal((str(o),)).draws
+    expected = [(ns["latest_fit"][o] + r) / ns["exposure"][o] for r in reserve]
+    assert ns["ultimate_lr"][o] == pytest.approx(expected, rel=1e-12)
 
     # The structure: the deal's loss ratio is the book's, both structures cede the same loss, the flat one
     # pays its stated commission and the sliding one pays more when the loss ratio is low.
@@ -646,11 +651,26 @@ def test_ils_deal_analysis(monkeypatch, capsys):
     posted = flat["funded"][i] + flat["opening"][i]
     assert flat["moic"][i] == pytest.approx(1 + sum(flat["flows"][i]) / posted, rel=1e-9)
 
+    # The monthly patterns (#601): a year written evenly, each policy earning over twelve months, losses paid later.
+    written, earned, paid = ns["written"], ns["earned"], ns["paid"]
+    assert written[11] == pytest.approx(1.0) and earned[23] == pytest.approx(1.0)
+    assert earned[11] == pytest.approx(13 / 24)  # each month written at its start: (1 + 2 + ... + 12) / 144
+    assert all(a <= b + 1e-12 for a, b in zip(earned, earned[1:])) and earned[23:] == pytest.approx([1.0] * (len(earned) - 23))
+    assert all(a <= b + 1e-12 for a, b in zip(paid, paid[1:])) and all(p <= e + 1e-12 for p, e in zip(paid, earned))
+
     # Monitoring: a percentile, and the one-year view's spread is positive.
     assert 0.0 <= ns["percentile"] <= 1.0
     assert ns["sd"](ns["cdr"].draws) > 0
+    # The deal's paid against its simulations (#603): paid on the pattern at 1.25 times the priced mean.
+    ave = ns["ave"]
+    assert len(ave["month"]) == 24
+    assert ave["ratio"][1:] == pytest.approx([1.25] * 23, rel=1e-9)
+    assert all(0.5 < p <= 1.0 for p in ave["percentile"][1:])
 
     # The prose names the eight gaps with their issues.
     text = prose(EXAMPLES / "ils_deal_analysis.ipynb")
     for gap, issue in zip(range(1, 9), range(598, 606)):
         assert re.search(rf"\| G{gap} \|.*\| #{issue} \|", text), gap
+    # Each closed issue's row says so: the notebook uses the fix or keeps the workaround with its reason.
+    for gap in (3, 4, 5, 6, 8):
+        assert re.search(rf"\| G{gap} \|[^|]*\| closed;", text), gap

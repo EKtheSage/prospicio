@@ -35,7 +35,7 @@ A \code{new_year_fit} with \code{origin} (the new origin's label),
 \description{
 The posterior predictive of an underwriting year that is not yet in the
 triangle, the origin after its newest, for pricing a year not yet
-written (\code{docs/design/reserving-bayes.md}, decision 27). Each simulation
+written (\code{docs/design/reserving-bayes.md}, decision 28). Each simulation
 takes a posterior draw of \code{fit} and from it the new origin's ultimate,
 parameter and process uncertainty both.
 }

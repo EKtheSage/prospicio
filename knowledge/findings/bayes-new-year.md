@@ -9,7 +9,7 @@ verified: { by: process:ci, at: 2026-11-03T12:00:00Z }
 sources:
   - id: note
     resource: ../docs/design/reserving-bayes.md
-    title: Design note, Bayesian reserving, decision 27 (a new underwriting year) and open decision 19
+    title: Design note, Bayesian reserving, decision 28 (a new underwriting year) and open decision 19
   - id: test
     resource: ../validation/tests/reserving_bayes_new_year.rs
     title: Validation of the new year, run by CI's bayes job (slow-bayes)
@@ -58,5 +58,5 @@ sources:
   percentile of its new year (median 0.741, 90% interval 0.452 to
   1.241).
 
-[^note]: `docs/design/reserving-bayes.md`, decision 27 and open decision 19.
+[^note]: `docs/design/reserving-bayes.md`, decision 28 and open decision 19.
 [^test]: `validation/tests/reserving_bayes_new_year.rs`.

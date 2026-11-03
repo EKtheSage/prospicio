@@ -88,10 +88,28 @@ v0.0.6: #673 (#600, breaking), #675 (#670, breaking), #583.
 
 Probability and Aggregate have no 0.0.7 item: the cloud session that runs
 them carries the Models items, and picks up at most one or two of the P3s
-#593 and #596 after them. Everything else waits for 0.0.8 or later; #598 is
-the first candidate. #580 (one error for unsupported options) waits for
-0.0.8. Compartmental at a sub-annual grain (`[compartmental-subannual]`)
-waits. #553 (IFRS 17) is `P4`.
+#593 and #596 after them. Everything else waits for 0.0.8 or later (see
+below).
+
+**0.0.8** (the user's decision of 2026-10-29): the gaps the ILS deal notebook
+found, the breaking change #580 left from 0.0.7, two new Models fits, and
+Excel parity with the Python and R bindings.
+
+| Lane | New work | Small items |
+|---|---|---|
+| Reserving | #598 (a new underwriting year's predictive loss ratio), then #604 (an industry prior from Schedule P triangles) | #717 (faster monthly Weibull and loglogistic patterns) |
+| Reserving and bindings | #580 (one `NotSupported` error, breaking) | |
+| Reserving | #599: the design note only (the pooling structure is the user's decision); the model waits | |
+| Models | #548 (zero-inflated and hurdle counts), #550 (quantile and expectile regression) | |
+| Excel | parity with the Python and R bindings, in batches of worksheet functions (issue to follow) | |
+| Guides | `examples/ils_deal_analysis.ipynb` uses #598 and #604 in place of its hard-coded prior; the submission-schema guide moves to per-simulation patterns after #717 | `[guides-current]` for 0.0.8's changes |
+
+Probability and Aggregate have no 0.0.8 item. Waiting for 0.0.9 or later:
+#554 and #555 (they share count and disposal data, so they go together),
+#556, #557, #558, #559, #560, #576, #577, the model of #599, and #579 (split
+between releases, one file per PR). Compartmental at a sub-annual grain
+(`[compartmental-subannual]`) waits. Claim-level reserving and the survival
+models stay parked. #553 (IFRS 17) is `P4`.
 
 ## Each release
 

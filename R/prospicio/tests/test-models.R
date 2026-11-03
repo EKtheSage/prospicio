@@ -833,3 +833,142 @@ for (i in seq_len(nrow(tref))) {
 }
 stopifnot(inherits(try(time_splits(tper, 2, horizon = 3, step = 3, gap = 1), silent = TRUE), "try-error"))
 cat("time split tests passed\n")
+
+# Zero-inflated and hurdle counts against pscl 1.5.9 maximised to the end by
+# Newton (validation/scripts/r_zero_counts.R), with pscl's two-part formula.
+zref <- utils::read.csv(file.path(root, "reference", "zero_counts_pscl.csv"), comment.char = "#")
+zwant <- function(case, quantity, arg = "") {
+  r <- zref[zref$case == case & zref$quantity == quantity & zref$arg == arg, ]
+  stopifnot(nrow(r) == 1)
+  r$expected
+}
+znear <- function(a, b, rel, abs = 0) stopifnot(all(abs(a - b) <= pmax(rel * abs(b), abs)))
+bio <- utils::read.csv(file.path(root, "data", "biochemists.csv"))
+zbook <- utils::read.csv(file.path(root, "data", "zero_book.csv"))
+zcases <- list(
+  bio_zinb = zeroinfl_fit(art ~ fem + mar + kid5 + phd + ment, bio, dist = "negbin"),
+  bio_zip_probit = zeroinfl_fit(art ~ fem + mar + kid5 + phd + ment | ment, bio, link = "probit"),
+  bio_hnb_cloglog = hurdle_fit(art ~ fem + mar + kid5 + phd + ment | kid5 + ment, bio,
+                               dist = "negbin", link = "cloglog"),
+  book_zinb_weighted = zeroinfl_fit(y ~ x + urban + offset(log(exposure)) | x, zbook,
+                                    dist = "negbin", weights = zbook$weight)
+)
+for (case in names(zcases)) {
+  zm <- zcases[[case]]
+  cf <- coef(zm)
+  for (nm in names(cf)) znear(cf[[nm]], zwant(case, "coef", nm), 1e-9, 1e-11)
+  se <- c(stats::setNames(zm@count_std_errors, paste0("count_", names(zm@count_std_errors))),
+          stats::setNames(zm@zero_std_errors, paste0("zero_", names(zm@zero_std_errors))))
+  for (nm in names(se)) znear(se[[nm]], zwant(case, "se", nm), 1e-7)
+  znear(zm@loglik, zwant(case, "loglik"), 1e-12)
+  znear(AIC(zm), zwant(case, "aic"), 1e-9)
+  znear(BIC(zm), zwant(case, "bic"), 1e-9)
+  if (zm@dist == "negbin") znear(zm@theta, zwant(case, "theta"), 1e-9)
+  data <- if (startsWith(case, "bio")) bio else zbook
+  rows <- c(1, 2, 3, 10, 100)
+  znear(predict(zm, data[rows, ]), sapply(rows, function(i) zwant(case, "mean", i)), 1e-8)
+  znear(predict(zm, data[rows, ], type = "zero"),
+        sapply(rows, function(i) zwant(case, "prob_zero", i)), 1e-8)
+  pr <- predict(zm, data[1, , drop = FALSE], type = "prob", max = 4)
+  znear(pr[1, 2:5], sapply(1:4, function(k) zwant(case, "prob", paste0("1:", k))), 1e-8)
+  znear(predict(zm, data), zm@fitted, 1e-12)
+}
+zip <- zeroinfl_fit(art ~ fem + mar + kid5 + phd + ment, bio)
+gp <- glm_fit(art ~ fem + mar + kid5 + phd + ment, bio, family = "poisson")
+vt <- vuong_test(zip, count_log_likelihoods(bio$art, gp@fitted), k2 = 6)
+for (a in c("raw", "aic", "bic")) {
+  znear(vt[a, "statistic"], zwant("bio_zip", "vuong", a), 1e-6)
+  znear(vt[a, "p_value"], zwant("bio_zip", "vuong_p", a), 1e-6)
+}
+zpd <- predict_distribution(zip, bio[1:5, ], n_sims = 200, seed = 1)
+stopifnot(S7::S7_inherits(zpd, predictive_distribution))
+stopifnot(inherits(tryCatch(zeroinfl_fit(art ~ fem, bio, dist = "gamma"), error = identity), "error"))
+
+# Quantile and expectile regression against quantreg 5.97 and expectreg 0.54
+# (validation/scripts/r_quantile_expectile.R).
+qref <- utils::read.csv(file.path(root, "reference", "quantile_expectile_r.csv"),
+                        comment.char = "#")
+qwant <- function(case, quantity, arg = "") {
+  r <- qref[qref$case == case & qref$quantity == quantity & qref$arg == arg, ]
+  stopifnot(nrow(r) == 1)
+  r$expected
+}
+engel <- utils::read.csv(file.path(root, "data", "engel.csv"))
+qm <- quantreg_fit(foodexp ~ income, engel, tau = c(0.1, 0.5, 0.9))
+for (k in 1:3) {
+  case <- paste0("engel_", qm@tau[k])
+  for (nm in rownames(qm@coefficients)) {
+    znear(qm@coefficients[nm, k], qwant(case, "coef", nm), 1e-10, 1e-12)
+    znear(qm@std_errors[nm, k], qwant(case, "se", nm), 1e-9)
+  }
+  znear(qm@objective[k], qwant(case, "objective"), 1e-10)
+}
+qb <- quantreg_fit(foodexp ~ income, engel, tau = 0.25, bandwidth = "bofinger")
+for (nm in names(qb@std_errors)) znear(qb@std_errors[[nm]], qwant("engel_0.25", "se_bofinger", nm), 1e-9)
+qbook <- utils::read.csv(file.path(root, "data", "quantile_book.csv"))
+q95 <- quantreg_fit(y ~ x + z, qbook, tau = 0.95, weights = qbook$w)
+for (nm in names(coef(q95))) znear(coef(q95)[[nm]], qwant("book_0.95", "coef", nm), 1e-10, 1e-12)
+pr <- predict(qm, engel[1:20, ], rearrange = TRUE)
+stopifnot(all(pr[, 1] <= pr[, 2]), all(pr[, 2] <= pr[, 3]))
+stopifnot(identical(dim(vcov(qm, se = "boot", n_boot = 50, seed = 1, k = 2)), c(2L, 2L)))
+for (tau in c(0.1, 0.5, 0.9)) {
+  em <- expectreg_fit(foodexp ~ income, engel, tau = tau)
+  for (nm in names(coef(em))) {
+    znear(coef(em)[[nm]], qwant(paste0("engel_", tau), "ecoef", nm), 1e-9)
+    znear(em@std_errors[[nm]], qwant(paste0("engel_", tau), "ese", nm), 1e-9)
+  }
+}
+eb <- utils::read.csv(file.path(root, "data", "expectreg_engel_basis.csv"))
+ep <- as.matrix(utils::read.csv(file.path(root, "data", "expectreg_engel_penalty.csv")))
+epen <- matrix(0, ncol(eb), ncol(eb))
+epen[-1, -1] <- ep
+ed <- cbind(engel["foodexp"], eb)
+es <- expectreg_fit(foodexp ~ 0 + ., ed, tau = 0.2, lambda = 5, penalty = epen)
+escale <- max(abs(qref$expected[qref$case == "engel_pspline_0.2" & qref$quantity == "ecoef"]))
+for (nm in names(coef(es))) znear(coef(es)[[nm]], qwant("engel_pspline_0.2", "ecoef", nm), 0, 1e-8 * escale)
+
+# ICE, ALE and SHAP (#547) against ALEPlot 1.1 (validation/scripts/r_ale.R)
+# and shap 0.54.1's exact KernelExplainer (validation/scripts/shap_kernel.py),
+# on their frame and prediction function.
+xf <- utils::read.csv(file.path(root, "data", "explain_frame.csv"))
+explain_model <- structure(list(), class = "explain_f")
+predict.explain_f <- function(object, newdata, ...) {
+  g <- as.character(newdata$g)
+  with(newdata, exp(0.3 * x1) + x1 * x2 + c(a = 0, b = 0.5, c = -0.3, d = 1)[g] +
+         0.5 * x3^2 + 0.4 * x3 * (g == "d"))
+}
+aref <- utils::read.csv(file.path(root, "reference", "ale_aleplot.csv"), comment.char = "#",
+                        colClasses = c(value = "character"))
+for (case in list(list("x1", 10), list("x3", 40), list("g", 40))) {
+  a <- ale(explain_model, xf, case[[1]], bins = case[[2]])
+  want <- aref[aref$feature == case[[1]], ]
+  stopifnot(nrow(a) == nrow(want))
+  if (case[[1]] == "g") stopifnot(identical(a$value, want$value))
+  znear(a$effect, want$effect, 1e-10, 1e-12)
+}
+sref <- utils::read.csv(file.path(root, "reference", "shap_kernel.csv"), comment.char = "#")
+for (name in c("identity", "log10")) {
+  out <- if (name == "log10") function(v) log(v + 10) else NULL
+  s <- shap_values(explain_model, xf[41:48, ], xf[1:40, ], output = out)
+  stopifnot(identical(colnames(s), c("x1", "x2", "x3", "g")), attr(s, "method") == "exact")
+  r <- sref[sref$output == name, ]
+  znear(attr(s, "baseline"), r$expected[r$quantity == "baseline"], 1e-12)
+  for (j in colnames(s)) {
+    znear(s[, j], r$expected[r$quantity == "shap" & r$feature == j], 1e-9, 1e-12)
+  }
+  znear(attr(s, "baseline") + rowSums(s), attr(s, "outputs"), 1e-12)
+}
+sp <- shap_values(explain_model, xf[41:48, ], xf[1:40, ], n_permutations = 200, seed = 3)
+znear(attr(sp, "baseline") + rowSums(sp), attr(sp, "outputs"), 1e-12)
+cv <- ice(explain_model, xf, "x3", c(-1, 0, 1, 2))
+pdv <- partial_dependence(explain_model, xf, "x3", c(-1, 0, 1, 2))
+znear(cv$mean, pdv$mean, 1e-12)
+stopifnot(all(ice(explain_model, xf, "x3", c(-1, 2), center = TRUE)$curves[, 1] == 0))
+if (requireNamespace("lightgbm", quietly = TRUE)) {
+  bd <- data.frame(x = (1:400) / 400, z = ((1:400) * 37 %% 101) / 101)
+  bd$y <- as.double(((1:400) * 13) %% 7 < 2 + 3 * bd$x)
+  bm <- booster_fit(y ~ x + z, bd, family = "poisson", n_rounds = 30)
+  bc <- booster_contributions(bm, bd)
+  znear(bc$bias + rowSums(bc$values), log(predict(bm, bd)), 1e-9, 1e-9)
+}
+cat("zero-inflated, hurdle, quantile, expectile, ICE, ALE and SHAP tests passed\n")

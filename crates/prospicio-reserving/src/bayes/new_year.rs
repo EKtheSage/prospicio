@@ -1,5 +1,5 @@
 //! The posterior predictive loss ratio of an underwriting year that is not
-//! yet in the triangle (`docs/design/reserving-bayes.md`, decision 27,
+//! yet in the triangle (`docs/design/reserving-bayes.md`, decision 28,
 //! issue #598): [`BayesBfNormalisedFit::new_year`](super::BayesBfNormalisedFit::new_year)
 //! and [`MeyersFit::new_year`](super::MeyersFit::new_year).
 //!

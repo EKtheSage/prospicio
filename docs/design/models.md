@@ -87,6 +87,19 @@ models and compares them.
 - `prospicio_glm::dglm::DoubleGlm`: double GLMs, a GLM for the mean and
   one for the log dispersion on their own designs, by ML or REML (see
   "Double GLMs"); Python `DoubleGlm`, R `dglm_fit()`.
+- ICE curves, accumulated local effects and SHAP values in the bindings
+  (see "ICE curves, accumulated local effects and SHAP values"); Python
+  `ice`, `ale`, `shap_values`, `BoosterFit.contributions`, R `ice()`,
+  `ale()`, `shap_values()`, `booster_contributions()`.
+- `prospicio_glm::zero`: zero-inflated and hurdle Poisson and negative
+  binomial models with Vuong's test (see "Zero-inflated and hurdle
+  counts"); Python `ZeroInflated`, `Hurdle`, R `zeroinfl_fit()`,
+  `hurdle_fit()`.
+- `prospicio_glm::quantile`: linear quantile regression with kernel or
+  bootstrap standard errors and rearrangement, and expectile regression,
+  penalised or not (see "Quantile and expectile regression"); Python
+  `QuantileRegression`, `ExpectileRegression`, R `quantreg_fit()`,
+  `expectreg_fit()`.
 - Parity: `validation/reference/glm_statsmodels.csv`
   (`validation/scripts/statsmodels_glm.py`): 10 GLMs on a synthetic
   600-policy portfolio (Poisson with exposure offset, quasi-Poisson, gamma
@@ -1209,6 +1222,184 @@ the unconstrained fits' dependence on experience falls at 7 (LightGBM) and
 - (d) *`check_monotone` checks the fitted model*, the mean prediction
   over the given rows with the feature set to each grid value, so a
   violation within `tol` (relative, 1e-9) of the largest mean is ignored.
+
+## ICE curves, accumulated local effects and SHAP values (#547)
+
+Status: built; items (a) to (f) accepted by the user on
+2026-11-03 as built.
+
+Three local explanations beside the global ones of #355, in Python and R
+like them, on predictions only:
+
+- **ICE curves** (`ice`): each row's prediction with a feature set to each
+  value, the curves whose mean is `partial_dependence`, and the centred
+  curves.
+- **Accumulated local effects** (`ale`), Apley and Zhu's first order, as
+  `ALEPlot`: for a numeric feature over quantile intervals, for a factor
+  over its levels in ALEPlot's order or a given one.
+- **SHAP values** (`shap_values`): the Shapley values of the
+  interventional game over a background sample, exact over every
+  coalition or estimated from sampled feature orders, with an `output`
+  transform; and tree SHAP on the boosters from the engines' own
+  contributions (Python `BoosterFit.contributions`, R
+  `booster_contributions()`).
+
+ALEPlot 1.1 is matched to 1e-10 on a seeded frame of 300 rows with
+correlated features, a four-level factor and a prediction function with
+interactions (`validation/scripts/r_ale.R`), for a numeric feature at 10
+and 40 intervals and the factor; shap 0.54.1's `KernelExplainer`, exact
+at four features, to 1e-9 on the same frame and function, on the response
+and on `log(f + 10)` (`validation/scripts/shap_kernel.py`). A log-link
+GLM's values on the linear predictor are `beta (x - mean x)` to 1e-10, the
+ICE mean is the partial dependence to 1e-12, and the boosters'
+contributions add up to the link-scale prediction.
+
+- (a) *Interventional SHAP over a background sample*, as SHAP's
+  `KernelExplainer`: `v(S)` is the mean over the background rows of the
+  output with the features in `S` from the row. Features may be moved in
+  groups, as the permutation importance's.
+- (b) *Exact values, not a sampled Kernel SHAP regression*, up to
+  `max_exact = 12` features (`2^M` predictions of rows times background);
+  above that, *permutation sampling* (Strumbelj and Kononenko) from
+  `permutation(M, seed, p)`, so Python and R give the same values and every
+  estimate adds up exactly. The issue's sampled Kernel SHAP is not built.
+- (c) *`output` applies to each prediction before the mean over the
+  background*: `log` gives a GLM's exact linear-predictor SHAP, `beta (x -
+  mean x)` for each term, with no GLM-specific code.
+- (d) *ALE grid and centring as ALEPlot's*: R's type 1 quantiles at
+  `seq(1/K, 1, length.out = K)` (whose rounding moves some quantiles to the
+  next value, reproduced in Python), right-closed intervals, the trapezoid
+  centring; a factor centred on its level frequencies.
+- (e) *A factor's default order is ALEPlot's* classical scaling of the
+  summed distances between the levels' distributions of the other columns,
+  read from the end whose level sorts first (scaling fixes it only up to
+  direction), or `levels` given.
+- (f) *Tree SHAP comes from the engines* (`pred_contrib`, `pred_contribs`,
+  R `type = "contrib"`, `predcontrib`) on the link scale, the offset and
+  base in the bias, with no tree code in prospicio; the values are per
+  design column, not per raw feature.
+
+## Zero-inflated and hurdle counts (#548)
+
+Status: built; items (a) to (f) accepted by the user on
+2026-11-03 as built.
+
+`prospicio_glm::zero` fits two-part count models as R's `pscl::zeroinfl`
+and `pscl::hurdle`. `ZeroInflated::poisson()` and `::negative_binomial()`
+mix structural zeros, `pi = h(z'gamma)`, with a Poisson or negative
+binomial count, `mu = exp(x'beta + offset)`, fitted jointly;
+`Hurdle::poisson()` and `::negative_binomial()` fit a binary part for
+`P(Y > 0)` and a zero-truncated count on the positive rows, one part at a
+time. `.zero_link(Link::Probit)` or `Link::Cloglog` replace the logit.
+`fit_parts(count, zero, y)` takes each part's design; the `Model` fit takes
+one design for both. The fit, `TwoPartFit`, gives both parts' coefficients
+and standard errors, `theta` and the standard error of `log(theta)`, the
+covariance of `(beta, gamma, log theta)`, the log-likelihood (also row by
+row), AIC and BIC; `predict_parts`, `prob_zero_parts` and
+`probabilities_parts` (or the same on one design, each part's columns read
+by name); and joint draws, with the parameters drawn from their normal
+approximation. `vuong(a, b, k_a, k_b)` is Vuong's test from two models'
+row log-likelihoods, with `count_log_likelihoods` for a plain Poisson or
+negative binomial GLM. Python `ZeroInflated`, `Hurdle`, `TwoPartFit`,
+`vuong` and `count_log_likelihoods` in `prospicio.models`; R
+`zeroinfl_fit(y ~ x | z)`, `hurdle_fit()`, `vuong_test()` and
+`count_log_likelihoods()`.
+
+pscl 1.5.9 is matched on its `bioChemists` data and a seeded book of 2,000
+policies with an exposure offset and prior weights (ten fits, 545 cases,
+`validation/scripts/r_zero_counts.R`): pscl's likelihood maximised to the
+end by Newton from its estimates, since its BFGS stops up to 2e-6 short in
+a coefficient, gives the coefficients and `theta` to 1e-9, the standard
+errors to 1e-7 and its predictions to 1e-8; pscl's own estimates and
+standard errors agree to 1e-4 and 2e-3. With prior weights pscl leaves
+them out of `theta`'s score, so its estimates and standard errors there are
+not the weighted likelihood's
+(`knowledge/findings/pscl-weighted-theta-score.md`).
+
+- (a) *Newton's method on analytic gradients*, the Hessian a central
+  difference of the gradient, each step damped until the Hessian is
+  negative definite and halved until the log-likelihood rises; it stops
+  when no parameter moves by more than `1e-10` of its size. pscl uses BFGS
+  after an optional EM start. The zero-inflated fit starts from the Poisson
+  GLM, the binary GLM of `y = 0` and `theta = 1`; the hurdle's parts from
+  their GLMs.
+- (b) *One design serves both parts with the offset on the count part
+  only.* pscl's `y ~ x + offset(log(e))` without `|` puts the offset on the
+  zero part too; an exposure scales the expected count, not the share of
+  structural zeros, so here it does not. A zero part with an offset takes
+  its own design (R: write the offset after `|`).
+- (c) *Standard errors from the observed information*, as pscl's, so they
+  include the correlation of the two parts and of `log(theta)` with the
+  coefficients; a hurdle's two parts are independent, its covariance block
+  diagonal.
+- (d) *Prior weights weight every row's log-likelihood, `theta`'s score
+  included* (pscl's leaves them out of `theta`'s); `log_likelihoods` gives
+  each row's value without its weight, and BIC's `n` counts the rows with a
+  positive weight.
+- (e) *`vuong` takes the parameter counts* as pscl does, the coefficients
+  without `theta` (`length(coef(m))`), so its AIC and BIC corrections are
+  pscl's; the p-value is one-sided, toward the sign of the statistic.
+- (f) *The draws* take `(beta, gamma, log theta)` from the normal
+  approximation at the maximum, then each row's count from the model at
+  them (a zero or a count for the zero-inflated model, a zero or a
+  truncated count for the hurdle), each by inversion of its own uniform.
+
+## Quantile and expectile regression (#550)
+
+Status: built; items (a) to (f) accepted by the user on
+2026-11-03 as built.
+
+`prospicio_glm::quantile::QuantileRegression::new(tau)` fits a linear
+quantile regression, minimising the weighted check loss
+`sum w rho_tau(y - x'beta)` as R's `quantreg::rq`; `fit_many(taus)` fits
+several `tau` at once, and `QuantileFits::predict(design, rearrange)` can
+sort each row's quantiles across them. `QuantileFit` gives the
+coefficients, Powell's kernel sandwich covariance (`summary.rq(se =
+"ker")`, with Hall and Sheather's or Bofinger's bandwidth), the bandwidth
+and the weighted objective; `bootstrap_covariance` gives a paired
+bootstrap. `ExpectileRegression::new(tau)` fits asymmetric least squares
+(Newey and Powell, 1987) by iteratively reweighted least squares, with a
+sandwich covariance and an optional quadratic penalty `lambda beta'P beta`
+for a P-spline basis. Both fits implement `Fitted` (their
+`predict_distribution` draws the fitted quantile or expectile from its
+coefficients' normal approximation). Python `QuantileRegression`,
+`QuantileFit`, `QuantileFits`, `ExpectileRegression`, `ExpectileFit` in
+`prospicio.models`; R `quantreg_fit(y ~ x, data, tau)` and
+`expectreg_fit()`.
+
+quantreg 5.97 and expectreg 0.54 are matched on Engel's food expenditure
+data at five `tau` and a seeded book of 400 weighted losses at two
+(`validation/scripts/r_quantile_expectile.R`, 135 cases):
+`rq(method = "br")`'s coefficients and the weighted loss at them to
+1e-10, `rq(method = "fn")` to 1e-5, the kernel standard errors under both
+bandwidths to 1e-9, `expectreg.ls`'s linear expectiles to 1e-9 and its
+P-spline expectiles at `lambda = 5` on its own basis and penalty to 1e-8.
+
+- (a) *An interior point, then the vertex.* The dual linear program is
+  solved by a primal-dual interior point with Mehrotra's
+  predictor-corrector steps, as quantreg's Frisch-Newton (`fn`), to a
+  relative duality gap of 1e-12; the coefficients are then the exact fit
+  through the `p` rows the interior point fits most closely, kept when its
+  loss is no higher. That is the Barrodale-Roberts (`br`) vertex when the
+  solution is unique; when it is not (ties, discrete responses) the fit is
+  one of the optimal vertices, not necessarily `br`'s.
+- (b) *Kernel standard errors by default*, `summary.rq(se = "ker")`
+  exactly, rather than quantreg's default by size (`rank` intervals below
+  1,001 rows, `nid` above); the paired bootstrap is the alternative, each
+  resample on its own stream of the seed.
+- (c) *The objective is the weighted check loss*, the one minimised;
+  `rq`'s `rho` sums the loss without the weights.
+- (d) *Rearrangement sorts each row's predictions over the fitted grid of
+  `tau`* (Chernozhukov, Fernandez-Val and Galichon, 2010, on a discrete
+  grid), and is off by default, so a single fit's quantile is its own.
+- (e) *The expectile's sandwich* is `A^-1 B A^-1` with `A = X'WX + lambda
+  P` and `B = X'(We)^2 X`, `W` the prior weights times `|tau - 1{e < 0}|`:
+  HC0 at `tau = 0.5` without a penalty. expectreg reports no standard
+  errors, so the reference is the same formula written out in R.
+- (f) *The P-spline expectile takes the basis and penalty as given* and a
+  fixed `lambda`: expectreg's choice of `lambda` (Schall's algorithm,
+  cross-validation) is not built, and its basis is reproduced from its
+  design matrix, not rebuilt.
 
 ## Decisions
 

@@ -1,7 +1,7 @@
 suppressMessages(library(prospicio))
 
 # bayes_new_year(), the posterior predictive of a new underwriting year
-# (docs/design/reserving-bayes.md, decision 27, issue #598). The exact
+# (docs/design/reserving-bayes.md, decision 28, issue #598). The exact
 # distributions are checked in validation/tests/reserving_bayes_new_year.rs;
 # these tests check the binding on Meyers' group 353 Commercial Auto triangle.
 

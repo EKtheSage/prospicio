@@ -626,7 +626,7 @@ impl BayesBfNormalisedFit {
 
     /// The posterior predictive of a new underwriting year with `premium`
     /// (its exposure), the origin after the triangle's newest
-    /// (`reserving-bayes.md` decision 27, issue #598): `n_sims` simulations
+    /// (`reserving-bayes.md` decision 28, issue #598): `n_sims` simulations
     /// from `seed`, each taking a posterior draw and from it the new
     /// origin's expected ultimate and then its ultimate,
     ///
