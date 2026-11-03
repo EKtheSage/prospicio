@@ -12,11 +12,11 @@ use prospicio_core::{Grain, Lag, Month, Period};
 use prospicio_reserving::{
     AnnualReading, Apriori, Average, BenchmarkCurve, BenchmarkCurveFit, Benktander,
     BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder, ChainLadderFit, ClaimsDevelopmentResult,
-    ClarkCapeCod, ClarkFit, ClarkLdf, CurveShape, Development, DevelopmentColumn,
-    DevelopmentPatterns, DiagonalAge, ExpectedLoss, ExpectedLossFit, FileLayout, FitTable,
-    GrowthCurve, Label, LatestDiagonals, Long, LongDiagonal, Mack, MackBootstrap,
-    MackBootstrapFits, MackBootstrapSegment, MackFit, MackProcess, Monotone, MonthlyBasis,
-    OdpBootstrap, OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod,
+    ClarkCapeCod, ClarkFit, ClarkLdf, CurveShape, Development, DevelopmentColumn, DevelopmentCurve,
+    DevelopmentCurveFit, DevelopmentPatterns, DiagonalAge, ExpectedLoss, ExpectedLossFit,
+    FileLayout, FitTable, GrowthCurve, Label, LatestDiagonals, Long, LongDiagonal, Mack,
+    MackBootstrap, MackBootstrapFits, MackBootstrapSegment, MackFit, MackProcess, Monotone,
+    MonthlyBasis, OdpBootstrap, OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod,
     OneYearPattern, PastPatternEnd, PatternKind, PatternWeight, ProcessDistribution, ReserveFit,
     SegmentDependence, SegmentFits, SegmentMap, SelectedPattern, SigmaInterpolation, Tail,
     TailBondy, TailConstant, TailCurve, Triangle, UnderwritingBasis, view,
@@ -1868,11 +1868,13 @@ impl PyTailConstant {
 /// ``ln(f - 1)`` on the 1-based development index ``k`` (exponential) or on
 /// ``ln(k)`` (inverse power). The fitted curve replaces the factors from the
 /// attachment age on and runs ``extrap_periods`` periods past the oldest
-/// age.
+/// age. The Hoerl, Sherman and growth shapes are fitted to the same factors
+/// as ``DevelopmentCurve`` fits them; chainladder-python has only the first
+/// two.
 ///
 /// Parameters
 /// ----------
-/// curve : {"exponential", "inverse_power"}, default "exponential"
+/// curve : {"exponential", "inverse_power", "hoerl", "sherman", "loglogistic", "weibull"}, default "exponential"
 /// fit_period : tuple of (int or None, int or None), default (None, None)
 ///     Ages in months whose factors enter the fit: from the last age at or
 ///     before the first (inclusive) to the last age at or before the second
@@ -1910,15 +1912,7 @@ impl PyTailCurve {
         extrap_periods: usize,
         attachment_age: Option<Lag>,
     ) -> PyResult<Self> {
-        let curve = match curve {
-            "exponential" => CurveShape::Exponential,
-            "inverse_power" => CurveShape::InversePower,
-            _ => {
-                return Err(PyValueError::new_err(format!(
-                    "curve must be \"exponential\" or \"inverse_power\", got {curve:?}"
-                )));
-            }
-        };
+        let curve = curve_shape(curve, "curve")?;
         Ok(Self {
             inner: TailCurve {
                 curve,
@@ -2063,6 +2057,10 @@ fn curve_name(c: CurveShape) -> &'static str {
     match c {
         CurveShape::Exponential => "exponential",
         CurveShape::InversePower => "inverse_power",
+        CurveShape::Hoerl => "hoerl",
+        CurveShape::Sherman => "sherman",
+        CurveShape::Growth(GrowthCurve::LogLogistic) => "loglogistic",
+        CurveShape::Growth(GrowthCurve::Weibull) => "weibull",
     }
 }
 
@@ -6999,6 +6997,443 @@ impl PyBenchmarkCurveFit {
             self.inner.sum_of_squares
         )
     }
+}
+
+/// A curve fitted to a triangle's age-to-age factors over every age (issue
+/// #556; design note ``reserving-v02.md``, decision 31), to smooth the
+/// whole pattern: the observed factors are kept before
+/// ``keep_observed_until`` and the curve's are used from there on.
+///
+/// ``k`` is the 1-based development index (1 for the factor from the
+/// youngest age to the next), as ``TailCurve`` reads it:
+///
+/// * ``"exponential"``: ``ln(f_k - 1) = a + b k``;
+/// * ``"inverse_power"``: ``ln(f_k - 1) = a + b ln(k)``;
+/// * ``"hoerl"``: ``ln(f_k - 1) = a + b k + c ln(k)``;
+/// * ``"sherman"``: ``f_k - 1 = a (k + c)**(-b)`` (Sherman 1984);
+/// * ``"loglogistic"``, ``"weibull"``: Clark's growth curve ``G`` as
+///   percents developed at the ages ``t`` in months,
+///   ``f_k = G(t_(k+1)) / G(t_k)``.
+///
+/// The first three are least-squares lines on ``ln(f - 1)``, the others
+/// nonlinear least squares on the factors. Every shape is fitted to the
+/// estimated factors in ``fit_period`` above 1.00001; the residuals, the sum
+/// of squares and R-squared are on the factor scale, so that ``compare``
+/// gives one table. The parameters match R's ``lm`` and ``nls``.
+///
+/// ``fit.selected()`` gives the fitted factors as the ``ldf``, ``ldf_kind``
+/// and ``ldf_weight`` arguments of ``ChainLadder``, ``Mack`` and the
+/// expected-loss methods, and ``fit.tail()`` the curve's development past
+/// the oldest age for their ``tail``. A selected factor carries no
+/// parameter error, so the curve lowers Mack's standard errors.
+///
+/// Parameters
+/// ----------
+/// shape : {"exponential", "inverse_power", "hoerl", "sherman", "loglogistic", "weibull"}, default "exponential"
+/// fit_period : tuple of (int or None, int or None), default (None, None)
+///     Ages in months whose factors enter the fit: from the last age at or
+///     before the first (inclusive) to the last age at or before the second
+///     (exclusive), as ``TailCurve`` reads them; ``None`` is open-ended.
+/// keep_observed_until : int, optional
+///     The observed factors are kept before this age in months and the
+///     curve is used from the first age at or after it on; ``None`` uses
+///     the curve at every age.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If ``shape`` is unknown.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reserving import ChainLadder, DevelopmentCurve, Triangle
+/// >>> rows = [[100.0, 180.0, 215.0, 228.0, 233.0], [110.0, 196.0, 236.0, 249.0],
+/// ...         [120.0, 218.0, 259.0], [130.0, 232.0], [140.0]]
+/// >>> tri = Triangle.from_long(
+/// ...     [2020 + i for i, row in enumerate(rows) for _ in row],
+/// ...     [12 * (d + 1) for row in rows for d in range(len(row))],
+/// ...     [v for row in rows for v in row],
+/// ... )
+/// >>> fit = DevelopmentCurve(shape="inverse_power").fit(tri, "values")
+/// >>> fit.r_squared > 0.9
+/// True
+/// >>> cl = ChainLadder(**fit.selected(), tail=fit.tail()).fit(tri, "values")
+/// >>> cl.ldf[:4] == fit.fitted
+/// True
+/// >>> table = DevelopmentCurve().compare(tri, "values", ["exponential", "inverse_power"])
+/// >>> table["shape"]
+/// ['exponential', 'inverse_power']
+#[pyclass(name = "DevelopmentCurve", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyDevelopmentCurve {
+    inner: DevelopmentCurve,
+}
+
+/// The estimated development of a single-segment triangle's column, for a
+/// curve to be fitted to.
+fn curve_development(
+    triangle: &Triangle,
+    column: &str,
+    average_: &str,
+    n_periods: Option<usize>,
+    drop_high: usize,
+    drop_low: usize,
+) -> PyResult<prospicio_reserving::DevelopmentFit> {
+    development(average_, "log-linear", None, n_periods, drop_high, drop_low)?
+        .fit(triangle, column)
+        .map_err(err)
+}
+
+#[pymethods]
+impl PyDevelopmentCurve {
+    #[new]
+    #[pyo3(signature = (shape = "exponential", fit_period = (None, None), keep_observed_until = None))]
+    fn new(
+        shape: &str,
+        fit_period: (Option<Lag>, Option<Lag>),
+        keep_observed_until: Option<Lag>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: DevelopmentCurve {
+                shape: curve_shape(shape, "shape")?,
+                fit_period,
+                keep_observed_until,
+            },
+        })
+    }
+
+    /// The curve fitted to the factors.
+    #[getter]
+    fn shape(&self) -> &'static str {
+        curve_name(self.inner.shape)
+    }
+
+    /// Ages whose factors enter the fit, from (inclusive) and to
+    /// (exclusive).
+    #[getter]
+    fn fit_period(&self) -> (Option<Lag>, Option<Lag>) {
+        self.inner.fit_period
+    }
+
+    /// Age in months from which the curve replaces the observed factors;
+    /// ``None`` for every age.
+    #[getter]
+    fn keep_observed_until(&self) -> Option<Lag> {
+        self.inner.keep_observed_until
+    }
+
+    /// Fits the curve to the estimated factors of a single-segment
+    /// triangle's column.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    ///     Cumulative or incremental, with one segment.
+    /// column : str
+    /// average : {"volume", "simple", "regression", "geometric"}, default "volume"
+    ///     How the link ratios are averaged into the factors the curve is
+    ///     fitted to, as ``ChainLadder``'s.
+    /// n_periods : int, optional
+    /// drop_high : int, default 0
+    /// drop_low : int, default 0
+    ///     The link ratio exclusions, as ``ChainLadder``'s.
+    ///
+    /// Returns
+    /// -------
+    /// DevelopmentCurveFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the column is unknown, a factor cannot be estimated, the fit
+    ///     period holds too few factors above 1.00001 for the shape (two for
+    ///     the exponential and inverse power, three for Hoerl and the growth
+    ///     curves, four for Sherman), a nonlinear fit does not converge or
+    ///     ``keep_observed_until`` is past the last factor's age.
+    #[pyo3(signature = (triangle, column, average = "volume", n_periods = None, drop_high = 0, drop_low = 0))]
+    fn fit(
+        &self,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+        average: &str,
+        n_periods: Option<usize>,
+        drop_high: usize,
+        drop_low: usize,
+    ) -> PyResult<PyDevelopmentCurveFit> {
+        let dev = curve_development(
+            &triangle.inner,
+            column,
+            average,
+            n_periods,
+            drop_high,
+            drop_low,
+        )?;
+        let inner = self.inner.fit(&dev).map_err(err)?;
+        Ok(PyDevelopmentCurveFit { inner })
+    }
+
+    /// Fits each of ``shapes``, with this curve's ``fit_period`` and
+    /// ``keep_observed_until``, to the same factors: a table of fit
+    /// statistics, one row per shape.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    /// column : str
+    /// shapes : list of str, optional
+    ///     The shapes to compare; every shape by default.
+    /// average, n_periods, drop_high, drop_low
+    ///     As in ``fit``.
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     Columns ``shape``, ``n_points``, ``n_parameters``,
+    ///     ``sum_of_squares``, ``r_squared`` and ``adjusted_r_squared``, a
+    ///     list each (``pandas.DataFrame(table)`` makes a frame of it).
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As ``fit``, for the first shape that cannot be fitted.
+    #[pyo3(signature = (triangle, column, shapes = None, average = "volume", n_periods = None, drop_high = 0, drop_low = 0))]
+    #[allow(clippy::too_many_arguments)]
+    fn compare<'py>(
+        &self,
+        py: Python<'py>,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+        shapes: Option<Vec<String>>,
+        average: &str,
+        n_periods: Option<usize>,
+        drop_high: usize,
+        drop_low: usize,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let shapes = match shapes {
+            Some(names) => names
+                .iter()
+                .map(|s| curve_shape(s, "shapes"))
+                .collect::<PyResult<Vec<_>>>()?,
+            None => ALL_CURVE_SHAPES.to_vec(),
+        };
+        let dev = curve_development(
+            &triangle.inner,
+            column,
+            average,
+            n_periods,
+            drop_high,
+            drop_low,
+        )?;
+        let rows = self.inner.compare(&dev, &shapes).map_err(err)?;
+        let d = PyDict::new(py);
+        let names: Vec<&str> = rows.iter().map(|r| curve_name(r.curve.shape)).collect();
+        d.set_item("shape", names)?;
+        let column = |f: fn(&DevelopmentCurveFit) -> f64| rows.iter().map(f).collect::<Vec<_>>();
+        let count = |f: fn(&DevelopmentCurveFit) -> usize| rows.iter().map(f).collect::<Vec<_>>();
+        d.set_item("n_points", count(|r| r.n_points))?;
+        d.set_item("n_parameters", count(|r| r.n_parameters))?;
+        d.set_item("sum_of_squares", column(|r| r.sum_of_squares))?;
+        d.set_item("r_squared", column(|r| r.r_squared))?;
+        d.set_item("adjusted_r_squared", column(|r| r.adjusted_r_squared))?;
+        Ok(d)
+    }
+
+    fn __repr__(&self) -> String {
+        let age = |a: Option<Lag>| a.map_or("None".to_string(), |a| a.to_string());
+        format!(
+            "DevelopmentCurve(shape={:?}, fit_period=({}, {}), keep_observed_until={})",
+            self.shape(),
+            age(self.inner.fit_period.0),
+            age(self.inner.fit_period.1),
+            age(self.inner.keep_observed_until)
+        )
+    }
+}
+
+/// A curve fitted by ``DevelopmentCurve.fit``.
+///
+/// Per development position (factor ``k`` links ``development[k]`` to
+/// ``development[k + 1]``): ``observed`` (the triangle's estimated factors,
+/// NaN where one is missing), ``fitted`` (the curve's), ``residuals``
+/// (``observed - fitted``), ``in_fit`` (whether the factor entered the fit)
+/// and ``ldf`` (``observed`` before ``attachment``, ``fitted`` from it on).
+#[pyclass(name = "DevelopmentCurveFit", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyDevelopmentCurveFit {
+    inner: DevelopmentCurveFit,
+}
+
+#[pymethods]
+impl PyDevelopmentCurveFit {
+    /// The curve fitted to the factors.
+    #[getter]
+    fn shape(&self) -> &'static str {
+        curve_name(self.inner.curve.shape)
+    }
+
+    /// Ages whose factors entered the fit, from (inclusive) and to
+    /// (exclusive).
+    #[getter]
+    fn fit_period(&self) -> (Option<Lag>, Option<Lag>) {
+        self.inner.curve.fit_period
+    }
+
+    /// Age in months from which the curve replaces the observed factors.
+    #[getter]
+    fn keep_observed_until(&self) -> Option<Lag> {
+        self.inner.curve.keep_observed_until
+    }
+
+    /// The curve's parameters: ``[a, b]`` for the exponential and inverse
+    /// power, ``[a, b, c]`` for Hoerl and Sherman, ``[omega, theta]`` for a
+    /// growth curve.
+    #[getter]
+    fn parameters(&self) -> Vec<f64> {
+        self.inner.parameters.clone()
+    }
+
+    /// Development ages in months.
+    #[getter]
+    fn development(&self) -> Vec<Lag> {
+        self.inner.development.clone()
+    }
+
+    /// The triangle's estimated factors, NaN where one is missing.
+    #[getter]
+    fn observed(&self) -> Vec<f64> {
+        self.inner.observed.clone()
+    }
+
+    /// The curve's factor at every development position.
+    #[getter]
+    fn fitted(&self) -> Vec<f64> {
+        self.inner.fitted.clone()
+    }
+
+    /// ``observed - fitted`` at every development position.
+    #[getter]
+    fn residuals(&self) -> Vec<f64> {
+        self.inner.residuals.clone()
+    }
+
+    /// Whether each position's factor entered the fit.
+    #[getter]
+    fn in_fit(&self) -> Vec<bool> {
+        self.inner.in_fit.clone()
+    }
+
+    /// The first position the curve replaces.
+    #[getter]
+    fn attachment(&self) -> usize {
+        self.inner.attachment
+    }
+
+    /// The selected factors: ``observed`` before ``attachment``,
+    /// ``fitted`` from it on.
+    #[getter]
+    fn ldf(&self) -> Vec<f64> {
+        self.inner.ldf.clone()
+    }
+
+    /// The number of points in the fit.
+    #[getter]
+    fn n_points(&self) -> usize {
+        self.inner.n_points
+    }
+
+    /// The number of parameters of the curve.
+    #[getter]
+    fn n_parameters(&self) -> usize {
+        self.inner.n_parameters
+    }
+
+    /// The sum of squared residuals over the points of the fit, on the
+    /// factor scale.
+    #[getter]
+    fn sum_of_squares(&self) -> f64 {
+        self.inner.sum_of_squares
+    }
+
+    /// ``1 - SSE / SST`` over the points of the fit.
+    #[getter]
+    fn r_squared(&self) -> f64 {
+        self.inner.r_squared
+    }
+
+    /// R-squared adjusted for the number of parameters; NaN with no more
+    /// points than parameters.
+    #[getter]
+    fn adjusted_r_squared(&self) -> f64 {
+        self.inner.adjusted_r_squared
+    }
+
+    /// The curve's factor at a 0-based development position, past the
+    /// oldest age too.
+    fn factor(&self, position: usize) -> f64 {
+        self.inner.factor(position)
+    }
+
+    /// The curve's development past the oldest age: the product of its
+    /// factors over the ``extrap_periods`` periods after it, as
+    /// ``TailCurve`` extrapolates.
+    #[pyo3(signature = (extrap_periods = 100))]
+    fn tail(&self, extrap_periods: usize) -> f64 {
+        self.inner.tail(extrap_periods)
+    }
+
+    /// The fitted factors from ``attachment`` on as the arguments of the
+    /// chain ladder, Mack and the expected-loss methods.
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     ``ldf`` (the age-to-age factors by age), ``ldf_kind`` (``"ldf"``)
+    ///     and ``ldf_weight`` (1.0), to be passed as keyword arguments, with
+    ///     ``tail=fit.tail()`` for the curve's development past the oldest
+    ///     age.
+    fn selected<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let pattern = self.inner.pattern();
+        let d = PyDict::new(py);
+        d.set_item("ldf", age_dict(py, &pattern.values)?)?;
+        d.set_item("ldf_kind", pattern_kind_name(pattern.kind))?;
+        d.set_item("ldf_weight", 1.0)?;
+        Ok(d)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "DevelopmentCurveFit(shape={:?}, parameters={:?}, r_squared={})",
+            self.shape(),
+            self.inner.parameters,
+            self.inner.r_squared
+        )
+    }
+}
+
+/// Every curve shape, in the order `DevelopmentCurve.compare` lists them.
+const ALL_CURVE_SHAPES: [CurveShape; 6] = [
+    CurveShape::Exponential,
+    CurveShape::InversePower,
+    CurveShape::Hoerl,
+    CurveShape::Sherman,
+    CurveShape::Growth(GrowthCurve::LogLogistic),
+    CurveShape::Growth(GrowthCurve::Weibull),
+];
+
+/// A curve shape by its name in the bindings.
+fn curve_shape(name: &str, what: &str) -> PyResult<CurveShape> {
+    Ok(match name {
+        "exponential" => CurveShape::Exponential,
+        "inverse_power" => CurveShape::InversePower,
+        "hoerl" => CurveShape::Hoerl,
+        "sherman" => CurveShape::Sherman,
+        "loglogistic" => CurveShape::Growth(GrowthCurve::LogLogistic),
+        "weibull" => CurveShape::Growth(GrowthCurve::Weibull),
+        _ => {
+            return Err(PyValueError::new_err(format!(
+                "{what} must be \"exponential\", \"inverse_power\", \"hoerl\", \"sherman\", \
+                 \"loglogistic\" or \"weibull\", got {name:?}"
+            )));
+        }
+    })
 }
 
 /// Clark's Cape Cod method (Clark 2003), as R ChainLadder's

@@ -180,12 +180,12 @@ mod prospicio_native {
         PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit, PyClarkLdf, PyCompartmental,
         PyCompartmentalCandidate, PyCompartmentalFit, PyCompartmentalFits,
         PyCompartmentalOneYearFit, PyCompartmentalOneYearFits, PyCompartmentalPriors,
-        PyDevelopmentCorrelationTest, PyDevelopmentPatterns, PyExpectedLoss, PyExpectedLossFit,
-        PyGlmCandidate, PyLatestDiagonal, PyLayerSharePrior, PyMack, PyMackBootstrap,
-        PyMackBootstrapFit, PyMackFit, PyMeyers, PyMeyersFit, PyMeyersFits, PyOdpBootstrap,
-        PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant, PyTailCurve, PyTailLogLinear,
-        PyTriangle, PyUnderwritingBasis, calendar_year_effect, development_correlation,
-        diagonal_backtest,
+        PyDevelopmentCorrelationTest, PyDevelopmentCurve, PyDevelopmentCurveFit,
+        PyDevelopmentPatterns, PyExpectedLoss, PyExpectedLossFit, PyGlmCandidate, PyLatestDiagonal,
+        PyLayerSharePrior, PyMack, PyMackBootstrap, PyMackBootstrapFit, PyMackFit, PyMeyers,
+        PyMeyersFit, PyMeyersFits, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy,
+        PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle, PyUnderwritingBasis,
+        calendar_year_effect, development_correlation, diagonal_backtest,
     };
     #[pymodule_export]
     use super::risk::{

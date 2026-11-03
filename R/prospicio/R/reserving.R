@@ -1075,12 +1075,15 @@ tail_constant <- S7::new_class(
 #' development index `k` (`"exponential"`) or on `log(k)`
 #' (`"inverse_power"`, a heavier tail). The fitted curve replaces the
 #' factors from the attachment age on and runs `extrap_periods` periods past
-#' the oldest age.
+#' the oldest age. The Hoerl, Sherman and growth shapes are fitted to the
+#' same factors as [development_curve()] fits them; chainladder-python has
+#' only the first two.
 #'
 #' Properties: `curve`, `fit_period` (two ages, `NA` for an open end),
 #' `extrap_periods` and `attachment_age` (`NULL` for the oldest age).
 #'
-#' @param curve `"exponential"` or `"inverse_power"`.
+#' @param curve `"exponential"`, `"inverse_power"`, `"hoerl"`, `"sherman"`,
+#'   `"loglogistic"` or `"weibull"`, as in [development_curve()].
 #' @param fit_period The ages in months whose factors enter the fit, from
 #'   the last age at or before the first (inclusive) to the last age at or
 #'   before the second (exclusive), as chainladder-python reads them; `NA`
@@ -1115,7 +1118,8 @@ tail_curve <- S7::new_class(
     }),
     attachment_age = tail_age("attachment_age")
   ),
-  constructor = function(curve = c("exponential", "inverse_power"), fit_period = NULL,
+  constructor = function(curve = c("exponential", "inverse_power", "hoerl", "sherman",
+                                   "loglogistic", "weibull"), fit_period = NULL,
                          extrap_periods = 100, attachment_age = NULL) {
     curve <- match.arg(curve)
     if (is.null(fit_period)) fit_period <- c(NA, NA)
@@ -5082,6 +5086,221 @@ growth <- function(fit, age) {
   if (!S7::S7_inherits(fit, clark_fit)) stop("fit must be a clark_fit", call. = FALSE)
   if (!is.numeric(age)) stop("age must be numeric", call. = FALSE)
   rust_result(fit@ptr$growth(as.double(age)))
+}
+
+#' A development curve fitted over every age
+#'
+#' Fits a curve to a triangle's estimated age-to-age factors over every age
+#' (issue #556; design note `docs/design/reserving-v02.md`, decision 31), to
+#' smooth the whole pattern: the observed factors are kept before
+#' `keep_observed_until` and the curve's are used from there on. The
+#' parameters match R's `lm()` and `nls()`
+#' (`validation/tests/reserving_curves.rs`).
+#'
+#' `k` is the 1-based development index (1 for the factor from the youngest
+#' age to the next), as [tail_curve()] reads it:
+#'
+#' * `"exponential"`: `log(f_k - 1) = a + b k`;
+#' * `"inverse_power"`: `log(f_k - 1) = a + b log(k)`;
+#' * `"hoerl"`: `log(f_k - 1) = a + b k + c log(k)`;
+#' * `"sherman"`: `f_k - 1 = a (k + c)^(-b)` (Sherman 1984);
+#' * `"loglogistic"`, `"weibull"`: Clark's growth curve `G` as percents
+#'   developed at the ages `t` in months, `f_k = G(t_(k+1)) / G(t_k)`.
+#'
+#' The first three are least-squares lines on `log(f - 1)`, the others
+#' nonlinear least squares on the factors. Every shape is fitted to the
+#' estimated factors in `fit_period` above 1.00001; the residuals, the sum
+#' of squares and R-squared are on the factor scale, so that
+#' `development_curve_compare()` gives one table.
+#'
+#' * `development_curve()` fits the curve. The properties of a
+#'   `development_curve_fit` are `shape`, `fit_period`,
+#'   `keep_observed_until`, `parameters` (named `a`, `b`, `c` or `omega`,
+#'   `theta`), `development` (the ages), by the age that starts each factor
+#'   `observed` (the estimated factors), `fitted`, `residuals`
+#'   (`observed - fitted`), `in_fit` and `ldf` (`observed` before
+#'   `attachment`, the first position the curve replaces, 0-based, and
+#'   `fitted` from it on), and `n_points`, `n_parameters`,
+#'   `sum_of_squares`, `r_squared` and `adjusted_r_squared`.
+#' * `development_curve_selected()` gives the fitted factors as the `ldf`,
+#'   `ldf_kind` and `ldf_weight` arguments of [chain_ladder()], [mack()]
+#'   and the expected-loss methods, and `development_curve_tail()` the
+#'   curve's development past the oldest age for their `tail`:
+#'   `do.call(chain_ladder, c(list(tri, tail = development_curve_tail(fit)),
+#'   development_curve_selected(fit)))`. A selected factor carries no
+#'   parameter error, so the curve lowers Mack's standard errors.
+#' * `development_curve_compare()` fits several shapes to the same factors:
+#'   a data.frame with one row per shape.
+#'
+#' These are Python's `DevelopmentCurve` and `DevelopmentCurveFit`.
+#'
+#' @param triangle A [triangle()] with one segment.
+#' @param column The column to fit; may be omitted when the triangle has
+#'   one.
+#' @param shape The curve: `"exponential"`, `"inverse_power"`, `"hoerl"`,
+#'   `"sherman"`, `"loglogistic"` or `"weibull"`.
+#' @param shapes The shapes to compare; every shape by default.
+#' @param fit_period The ages in months whose factors enter the fit, from
+#'   the last age at or before the first (inclusive) to the last age at or
+#'   before the second (exclusive), as [tail_curve()] reads them; `NA` for
+#'   an open end, `NULL` fits every factor.
+#' @param keep_observed_until The observed factors are kept before this age
+#'   in months and the curve is used from the first age at or after it on;
+#'   `NULL` uses the curve at every age.
+#' @param average,n_periods,drop_high,drop_low How the link ratios are
+#'   averaged into the factors the curve is fitted to, as in
+#'   [chain_ladder()].
+#' @param fit A `development_curve_fit`.
+#' @param extrap_periods Number of periods past the oldest age the curve is
+#'   extrapolated, as in [tail_curve()].
+#' @param ptr A `DevelopmentCurveFit` pointer; used internally.
+#' @returns `development_curve()`: a `development_curve_fit`.
+#'   `development_curve_selected()`: a list of `ldf`, `ldf_kind` and
+#'   `ldf_weight`. `development_curve_tail()`: a number.
+#'   `development_curve_compare()`: a data.frame of `shape`, `n_points`,
+#'   `n_parameters`, `sum_of_squares`, `r_squared` and
+#'   `adjusted_r_squared`.
+#' @seealso [tail_curve()], [chain_ladder()], [benchmark_curve()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2020:2024, 5:1),
+#'                    age = c(12, 24, 36, 48, 60, 12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 180, 215, 228, 233, 110, 196, 236, 249, 120, 218, 259,
+#'                             130, 232, 140))
+#' tri <- triangle(long, "year", "age", "paid")
+#' fit <- development_curve(tri, shape = "inverse_power")
+#' fit@parameters
+#' fit@r_squared
+#' cl <- do.call(chain_ladder, c(list(tri, tail = development_curve_tail(fit)),
+#'                               development_curve_selected(fit)))
+#' cl@ultimate
+#' development_curve_compare(tri, shapes = c("exponential", "inverse_power"))
+development_curve_fit <- S7::new_class(
+  "development_curve_fit",
+  package = "prospicio",
+  properties = local({
+    by_age <- function(f) {
+      S7::new_property(getter = function(self) {
+        ages <- self@ptr$development()
+        stats::setNames(f(self@ptr), format(ages[-length(ages)], trim = TRUE))
+      })
+    }
+    list(
+      ptr = S7::new_S3_class("DevelopmentCurveFit"),
+      shape = S7::new_property(S7::class_character, getter = function(self) self@ptr$shape()),
+      fit_period = S7::new_property(S7::class_double, getter = function(self) {
+        p <- self@ptr$fit_period()
+        p[is.nan(p)] <- NA_real_
+        p
+      }),
+      keep_observed_until = S7::new_property(getter = function(self) {
+        k <- self@ptr$keep_observed_until()
+        if (is.nan(k)) NULL else k
+      }),
+      parameters = S7::new_property(S7::class_double, getter = function(self) {
+        p <- self@ptr$parameters()
+        names(p) <- switch(self@ptr$shape(),
+                           loglogistic = , weibull = c("omega", "theta"),
+                           c("a", "b", "c")[seq_along(p)])
+        p
+      }),
+      development = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$development()
+      }),
+      observed = by_age(function(p) p$observed()),
+      fitted = by_age(function(p) p$fitted()),
+      residuals = by_age(function(p) p$residuals()),
+      in_fit = by_age(function(p) p$in_fit()),
+      ldf = by_age(function(p) p$ldf()),
+      attachment = S7::new_property(S7::class_double, getter = function(self) self@ptr$attachment()),
+      n_points = S7::new_property(S7::class_double, getter = function(self) self@ptr$n_points()),
+      n_parameters = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$n_parameters()
+      }),
+      sum_of_squares = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$sum_of_squares()
+      }),
+      r_squared = S7::new_property(S7::class_double, getter = function(self) self@ptr$r_squared()),
+      adjusted_r_squared = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$adjusted_r_squared()
+      })
+    )
+  }),
+  constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
+)
+
+S7::method(print, development_curve_fit) <- function(x, ...) {
+  cat(sprintf("development_curve_fit (%s): R-squared %s\n", x@shape,
+              format(x@r_squared, digits = 7)))
+  print(x@parameters, digits = 7)
+  print(rbind(observed = x@observed, fitted = x@fitted), digits = 7)
+  invisible(x)
+}
+
+curve_shapes <- c("exponential", "inverse_power", "hoerl", "sherman", "loglogistic", "weibull")
+
+# The fit period's two ends as the binding takes them: NULL for an open end.
+curve_fit_period <- function(fit_period) {
+  if (is.null(fit_period)) fit_period <- c(NA, NA)
+  if (length(fit_period) != 2 || !(is.numeric(fit_period) || all(is.na(fit_period)))) {
+    stop("fit_period must be two ages in months, NA for an open end", call. = FALSE)
+  }
+  list(optional_number(fit_period[1], "fit_period"), optional_number(fit_period[2], "fit_period"))
+}
+
+#' @rdname development_curve_fit
+#' @export
+development_curve <- function(triangle, column = NULL, shape = curve_shapes, fit_period = NULL,
+                              keep_observed_until = NULL, average = "volume", n_periods = NULL,
+                              drop_high = 0, drop_low = 0) {
+  shape <- match.arg(shape)
+  args <- development_args(average, "log-linear", n_periods, drop_high, drop_low)
+  column <- fit_column(triangle, column)
+  period <- curve_fit_period(fit_period)
+  ptr <- rust_result(triangle@ptr$development_curve(
+    column, args$average, args$excl, shape, period[[1]], period[[2]],
+    optional_number(keep_observed_until, "keep_observed_until")
+  ))
+  development_curve_fit(ptr = ptr)
+}
+
+#' @rdname development_curve_fit
+#' @export
+development_curve_selected <- function(fit) {
+  if (!S7::S7_inherits(fit, development_curve_fit)) {
+    stop("fit must be a development_curve_fit", call. = FALSE)
+  }
+  p <- fit@ptr$pattern()
+  list(ldf = stats::setNames(p$values, format(p$ages, trim = TRUE)), ldf_kind = "ldf",
+       ldf_weight = 1)
+}
+
+#' @rdname development_curve_fit
+#' @export
+development_curve_tail <- function(fit, extrap_periods = 100) {
+  if (!S7::S7_inherits(fit, development_curve_fit)) {
+    stop("fit must be a development_curve_fit", call. = FALSE)
+  }
+  rust_result(fit@ptr$tail(single_number(extrap_periods, "extrap_periods")))
+}
+
+#' @rdname development_curve_fit
+#' @export
+development_curve_compare <- function(triangle, column = NULL, shapes = curve_shapes,
+                                      fit_period = NULL, keep_observed_until = NULL,
+                                      average = "volume", n_periods = NULL, drop_high = 0,
+                                      drop_low = 0) {
+  if (!is.character(shapes) || length(shapes) == 0) {
+    stop("shapes must be a character vector of curve shapes", call. = FALSE)
+  }
+  args <- development_args(average, "log-linear", n_periods, drop_high, drop_low)
+  column <- fit_column(triangle, column)
+  period <- curve_fit_period(fit_period)
+  table <- rust_result(triangle@ptr$development_curve_compare(
+    column, args$average, args$excl, shapes, period[[1]], period[[2]],
+    optional_number(keep_observed_until, "keep_observed_until")
+  ))
+  as.data.frame(table)
 }
 
 #' A growth curve fitted to a benchmark pattern

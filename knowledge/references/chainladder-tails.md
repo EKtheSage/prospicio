@@ -94,6 +94,12 @@ GenIns and ABC.[^r-script][^py-script] Read from the sources:
 On RAA, GenIns and ABC every factor is above 1, so R's `tail = TRUE` and
 `TailCurve()` give the same tail, sigma and standard error to 1e-12.[^design]
 
+`prospicio_reserving::TailCurve` also takes Hoerl's and Sherman's curves and
+the growth curves (decision 31), fitted to the same factors as a
+`DevelopmentCurve`; chainladder-python has only the exponential and the
+inverse power, so the other shapes have R `lm` and `nls` parity only (see
+[development curves](/references/development-curves.md)).
+
 [^design]: Design note, reserving v0.2, decision 3
 [^tail]: prospicio_reserving::tail
 [^r-script]: R reference generator for tails

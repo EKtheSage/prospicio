@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 accepted by the user on 2026-10-28 as proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 accepted by the user on 2026-10-28 as built) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 accepted by the user on 2026-10-28 as proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 accepted by the user on 2026-10-28 as built; decision 31 built on branch `claude/development-curves`, in Rust, Python and R, its items proposed for the user's acceptance) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -4902,3 +4902,140 @@ decision 26 gives.
    `pattern_draws(fit, segment = NULL)` and `monthly_pattern_draws(fit,
    months, segment = NULL, basis = NULL, monotone = "refuse")`, a matrix
    with one row per simulation for `cashflow_run(..., paid_patterns = )`.
+
+### 31. Development curves fitted over every age
+
+Issue #556, branch `claude/development-curves`. (Numbered 31: the open PRs
+for #580 and #717 each add a decision 29.) Actuaries replace erratic
+age-to-age factors with a curve fitted over every age, not only past the
+oldest one: the exponential and inverse power decays, Hoerl's curve,
+Sherman's shifted inverse power (Sherman 1984) and Clark's growth curves.
+`TailCurve` (decision 3) fits the first two for a tail and, attached at the
+youngest age, already replaces every factor; it had no other shapes, no way
+to keep credible observed factors before a later age short of attaching
+there, and no fit statistics to choose a shape by.
+
+```rust
+pub enum CurveShape { Exponential, InversePower, Hoerl, Sherman, Growth(GrowthCurve) }
+pub struct DevelopmentCurve {
+    pub shape: CurveShape,
+    pub fit_period: (Option<Lag>, Option<Lag>),
+    pub keep_observed_until: Option<Lag>,
+}
+impl DevelopmentCurve {
+    pub fn fit(&self, development: &DevelopmentFit) -> Result<DevelopmentCurveFit>;
+    pub fn compare(&self, development: &DevelopmentFit, shapes: &[CurveShape]) -> Result<Vec<DevelopmentCurveFit>>;
+}
+impl DevelopmentCurveFit {
+    pub fn pattern(&self) -> SelectedPattern;
+    pub fn tail(&self, extrap_periods: usize) -> f64;
+    pub fn factor(&self, position: usize) -> f64;
+}
+```
+
+As built (`crates/prospicio-reserving/src/curve.rs`, parity in
+`validation/tests/reserving_curves.rs`, reference rows from
+`validation/scripts/reserving_curves_r.R`; the reference is
+`knowledge/references/development-curves.md`). The fit carries the
+parameters, the observed, fitted and selected factors, the residuals, which
+factors entered the fit, the sum of squares, R-squared and adjusted
+R-squared. Python `DevelopmentCurve(shape, fit_period,
+keep_observed_until)` with `fit(triangle, column, average, n_periods,
+drop_high, drop_low)` returning a `DevelopmentCurveFit` (with `selected()`,
+the `ldf`, `ldf_kind` and `ldf_weight` arguments, and `tail()`), and
+`compare(triangle, column, shapes, ...)`, a dict of columns; R
+`development_curve()`, `development_curve_selected()`,
+`development_curve_tail()` and `development_curve_compare()`, a data.frame.
+`TailCurve` and R's `tail_curve()` take every shape.
+
+Each item is proposed, for the user's acceptance:
+
+1. **A pattern source in two steps, not a field on `Development`.** The
+   curve is fitted to a `DevelopmentFit` and its fit gives a fully selected
+   age-to-age `SelectedPattern` for `Development::pattern`, with
+   `tail(100)` for the method's `tail`, as `BenchmarkCurveFit::pattern`
+   does (decision 23). Python passes it as `ChainLadder(**fit.selected(),
+   tail=fit.tail())`, R as `do.call(chain_ladder, c(list(tri, tail =
+   development_curve_tail(fit)), development_curve_selected(fit)))`. The
+   alternative was a `curve` field on `Development`, fitted inside every
+   method on each segment's own factors, so that `ldf=DevelopmentCurve(...)`
+   could be passed straight to a method. Every reader of
+   `Development::pattern` (the tail fold of decision 18, both bootstraps,
+   the one-year views' pattern checks, latest diagonals, `to_chain_ladder`)
+   would then have to handle it or reject it, and a curve refitted on each
+   bootstrap or one-year simulation is a different model from a fixed
+   selection. Left for the user (open decision): whether the field is
+   wanted later, for a curve per segment of a triangle with keys.
+2. **`k` is the 1-based development index** for every shape but the growth
+   curves, as chainladder-python's `TailCurve` reads it, so a curve over
+   every age with no `keep_observed_until` is `TailCurve` attached at the
+   youngest age, factor for factor (a unit test, every shape). On a
+   quarterly grain `k` counts quarters. The growth curves read the
+   development ages in months, as Clark's do, from the start of the origin
+   period (no average-date shift); past the oldest age the ages run on at
+   the last spacing.
+3. **The same points for every shape**: the estimated factors in
+   `fit_period` above 1.00001 (`TailCurve`'s `reg_threshold`), positions as
+   `TailCurve` reads its `fit_period`. The log-linear shapes need the
+   threshold; the nonlinear ones take it too, so that `compare` fits every
+   shape to the same factors. A missing factor (a fully selected sparse
+   age) is left out.
+4. **The fits.** The exponential and inverse power are `TailCurve`'s lines
+   on `ln(f - 1)`, unchanged to the bit (the existing tail parity rows are
+   unchanged). Hoerl's curve, `ln(f - 1) = a + b k + c ln k`, is least
+   squares on `ln(f - 1)`, centred normal equations. Sherman's curve,
+   `f - 1 = a (k + c)^(-b)`, is nonlinear least squares on `f - 1` (as the
+   issue asks), so on the factors: for given `(b, c)` the best `a` is
+   closed form, a simplex search runs over `(b, ln(1 + c))` (so `c > -1`
+   and every `k + c` is positive) from the inverse power's line at `c = 0`
+   and two other shifts, and Levenberg-Marquardt steps polish the three
+   parameters. A growth curve, `f_k = G(t_(k+1)) / G(t_k)`, is nonlinear
+   least squares on the factors the same way, from the line through the
+   linearized percents the factors imply and from Clark's start; a fit that
+   runs off to omega below 1e-6 or above 1e6 is an error. Hoerl needs three
+   points, a growth curve three, Sherman four.
+5. **Statistics on the factor scale** for every shape: the residual is
+   `f_k - fitted_k` at every age, and the sum of squares, R-squared (`1 -
+   SSE / SST`, `SST` about the mean factor) and adjusted R-squared (`1 - (1
+   - R^2)(n - 1) / (n - p)`) are over the points of the fit. For the
+   log-linear shapes this is not the minimized quantity; on the log scale
+   the shapes could not be compared with Sherman's and the growth curves'.
+   An information criterion (AIC) was left out: the factors are not
+   independent observations with a likelihood.
+6. **`keep_observed_until`** keeps the observed factors before that age and
+   uses the curve from the first age at or after it, as `TailCurve`'s
+   `attachment_age` attaches; the curve is still fitted over `fit_period`.
+   An age past the last factor's is an error, since it would replace
+   nothing. `None` uses the curve at every age. The pattern holds only the
+   replaced factors, so the factors before stay the triangle's estimate.
+7. **The tail is the method's own setting.** The pattern stops at the
+   oldest age; `tail(extrap_periods)` multiplies the curve's factors over
+   the periods past it, as `TailCurve` does, and is passed as a constant
+   tail. A curve attached early with its tail gives `TailCurve`'s factors,
+   tail and ultimates: chainladder-python's `TailCurve(attachment_age=60)`
+   rows of `reserving_tails_python.csv` are reproduced on RAA, GenIns and
+   ABC. Mack's risks differ from `TailCurve`'s by design: a selected factor
+   carries no parameter error (decision 12), so a curve lowers the reported
+   standard errors, and the curve's own estimation error is not in them.
+8. **`compare(&dev, &[shapes])`** fits each shape with the same
+   `fit_period` and `keep_observed_until` and returns the fits; an error
+   for the first shape that cannot be fitted, rather than a row with an
+   error field (open decision for the user: a table that keeps going would
+   need an error column in all three languages).
+9. **Shapes in `TailCurve`.** The new variants of `CurveShape` work in
+   `TailCurve` too (Sherman's curve is first a tail method), through the
+   same fit. chainladder-python has only the first two, so the others have
+   no Python parity; the tail's sigma and standard error are still
+   extrapolated log-linearly (decision 3). Adding variants to `CurveShape`
+   and `Error::DevelopmentCurve` is a breaking change for an exhaustive
+   match.
+10. **Parity.** R 4.5.3's `lm` for the exponential, inverse power and Hoerl
+    (1e-10 and 1e-9), `nls` by the port algorithm for Sherman and the two
+    growth curves (1e-6 on the parameters, fitted factors, R-squared and
+    tail, 1e-5 on the sum of squares), on the volume-weighted factors of
+    RAA and GenIns; chainladder-python 0.10.1's early-attached `TailCurve`
+    through the stored rows (item 7); a round trip from each shape's own
+    factors recovers its parameters to 1e-7. No printed value: Friedland
+    (2010) mentions curve fitting for tails but prints no fit, and Sherman's
+    1984 paper is not in `knowledge/references/`. chainladder-python was not
+    installed locally, so no new chainladder-python rows were generated.

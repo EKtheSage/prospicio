@@ -126,6 +126,10 @@ pub enum Error {
     /// A growth curve cannot be fitted to this benchmark pattern
     /// ([`BenchmarkCurve`](crate::BenchmarkCurve)).
     BenchmarkCurve(String),
+    /// A development curve cannot be fitted to these factors, or its
+    /// settings do not fit the triangle
+    /// ([`DevelopmentCurve`](crate::DevelopmentCurve)).
+    DevelopmentCurve(String),
     /// The claims development result (Merz–Wüthrich) does not apply to
     /// this fit.
     ClaimsDevelopment(&'static str),
@@ -246,6 +250,7 @@ impl fmt::Display for Error {
             Self::File(why) => write!(f, "reading a triangle: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
             Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),
+            Self::DevelopmentCurve(why) => write!(f, "development curve: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
             Self::OneYear {
                 failed,
