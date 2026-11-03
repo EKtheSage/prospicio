@@ -1076,14 +1076,14 @@ tail_constant <- S7::new_class(
 #' (`"inverse_power"`, a heavier tail). The fitted curve replaces the
 #' factors from the attachment age on and runs `extrap_periods` periods past
 #' the oldest age. The Hoerl, Sherman and growth shapes are fitted to the
-#' same factors as [development_curve()] fits them; chainladder-python has
+#' same factors as [development_curve_fit()] fits them; chainladder-python has
 #' only the first two.
 #'
 #' Properties: `curve`, `fit_period` (two ages, `NA` for an open end),
 #' `extrap_periods` and `attachment_age` (`NULL` for the oldest age).
 #'
 #' @param curve `"exponential"`, `"inverse_power"`, `"hoerl"`, `"sherman"`,
-#'   `"loglogistic"` or `"weibull"`, as in [development_curve()].
+#'   `"loglogistic"` or `"weibull"`, as in [development_curve_fit()].
 #' @param fit_period The ages in months whose factors enter the fit, from
 #'   the last age at or before the first (inclusive) to the last age at or
 #'   before the second (exclusive), as chainladder-python reads them; `NA`

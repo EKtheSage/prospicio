@@ -13,7 +13,7 @@ tail_curve(
 }
 \arguments{
 \item{curve}{\code{"exponential"}, \code{"inverse_power"}, \code{"hoerl"}, \code{"sherman"},
-\code{"loglogistic"} or \code{"weibull"}, as in \code{\link[=development_curve]{development_curve()}}.}
+\code{"loglogistic"} or \code{"weibull"}, as in \code{\link[=development_curve_fit]{development_curve_fit()}}.}
 
 \item{fit_period}{The ages in months whose factors enter the fit, from
 the last age at or before the first (inclusive) to the last age at or
@@ -37,7 +37,7 @@ development index \code{k} (\code{"exponential"}) or on \code{log(k)}
 (\code{"inverse_power"}, a heavier tail). The fitted curve replaces the
 factors from the attachment age on and runs \code{extrap_periods} periods past
 the oldest age. The Hoerl, Sherman and growth shapes are fitted to the
-same factors as \code{\link[=development_curve]{development_curve()}} fits them; chainladder-python has
+same factors as \code{\link[=development_curve_fit]{development_curve_fit()}} fits them; chainladder-python has
 only the first two.
 }
 \details{
