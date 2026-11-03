@@ -525,6 +525,10 @@ what it is aiming for by v1.0.
   (done), and `Compartmental::one_year_segments` gives the one-year view
   over segments (decision 8; Rust, Python and R).
   Claim-level reserving (v0.8) is parked; see the milestones.
+  Proposed: a hierarchical Bornhuetter-Ferguson over several programs with
+  an industry hyperprior on the loss ratio (#599, `reserving-bayes.md`
+  decision 30, PRs 16 and 17), waiting on the user's choice of pooling
+  structure (open decision 26).
   Also next: excess-layer loss development (#192,
   `reserving-excess.md`, Accepted 2026-10-21): layer factors derived from a ground-up
   incurred triangle and a severity (PR 1, in Rust: `ExcessPattern::from_ground_up`,
