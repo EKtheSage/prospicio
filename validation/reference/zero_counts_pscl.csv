@@ -2,51 +2,51 @@
 case,quantity,arg,expected,abs_tol,rel_tol,source
 bio_zip,coef,count_(Intercept),0.640838033083727,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip,coef_pscl,count_(Intercept),0.640838089308742,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip,se_pscl,count_(Intercept),0.121306777717745,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip,se_pscl,count_(Intercept),0.121306777717745,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip,se,count_(Intercept),0.121307233676127,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip,coef,count_fem,-0.209144579639978,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip,coef_pscl,count_fem,-0.209144586152996,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip,se_pscl,count_fem,0.0634046614876706,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip,se_pscl,count_fem,0.0634046614876706,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip,se,count_fem,0.0634047015894692,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip,coef,count_mar,0.103750938242851,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip,coef_pscl,count_mar,0.103750933677029,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip,se_pscl,count_mar,0.0711109423339244,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip,se_pscl,count_mar,0.0711109423339244,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip,se,count_mar,0.0711109769153314,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip,coef,count_kid5,-0.14331966161206,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip,coef_pscl,count_kid5,-0.143319655467035,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip,se_pscl,count_kid5,0.0474293185311276,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip,se_pscl,count_kid5,0.0474293185311276,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip,se,count_kid5,0.0474293059098654,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip,coef,count_phd,-0.00616605723039378,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip,coef_pscl,count_phd,-0.00616606693541108,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip,se_pscl,count_phd,0.0310081508856975,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip,se_pscl,count_phd,0.0310081508856975,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip,se,count_phd,0.0310086456973484,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip,coef,count_ment,0.0180977234255653,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip,coef_pscl,count_ment,0.018097724201301,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip,se_pscl,count_ment,0.00229434542055662,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip,se_pscl,count_ment,0.00229434542055662,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip,se,count_ment,0.00229483171158077,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip,coef,zero_(Intercept),-0.577060305932262,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip,coef_pscl,zero_(Intercept),-0.577060271288991,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip,se_pscl,zero_(Intercept),0.509386502770951,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip,se_pscl,zero_(Intercept),0.509386502770951,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip,se,zero_(Intercept),0.509387397304777,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip,coef,zero_fem,0.109747185566481,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip,coef_pscl,zero_fem,0.109747127898648,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip,se_pscl,zero_fem,0.280082337127488,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip,se_pscl,zero_fem,0.280082337127488,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip,se,zero_fem,0.280082544095395,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip,coef,zero_mar,-0.354013457524725,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip,coef_pscl,zero_mar,-0.354013392997142,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip,se_pscl,zero_mar,0.317611374386029,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip,se_pscl,zero_mar,0.317611374386029,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip,se,zero_mar,0.317611882940585,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip,coef,zero_kid5,0.217100603554445,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip,coef_pscl,zero_kid5,0.217100605206355,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip,se_pscl,zero_kid5,0.196481780538457,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip,se_pscl,zero_kid5,0.196481780538457,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip,se,zero_kid5,0.196481852172187,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip,coef,zero_phd,0.00127226406299095,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip,coef_pscl,zero_phd,0.0012721561167051,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip,se_pscl,zero_phd,0.145262835622914,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip,se_pscl,zero_phd,0.145262835622914,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip,se,zero_phd,0.145264654006996,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip,coef,zero_ment,-0.13411353041214,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip,coef_pscl,zero_ment,-0.134113436487729,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip,se_pscl,zero_ment,0.045242730439572,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip,se_pscl,zero_ment,0.045242730439572,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip,se,zero_ment,0.0452473664510912,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip,loglik,,-1604.77285321048,0,1e-12,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip,loglik_pscl,,-1604.77285321048,0,1e-09,pscl 1.5.9 zeroinfl
@@ -68,51 +68,51 @@ bio_zip,prob,1:3,0.1788074586577,0,1e-08,pscl 1.5.9 zeroinfl likelihood maximise
 bio_zip,prob,1:4,0.10518805908239,0,1e-08,pscl 1.5.9 zeroinfl likelihood maximised by Newton and pscl's predict
 bio_zinb,coef,count_(Intercept),0.416746570634003,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zinb,coef_pscl,count_(Intercept),0.416746600476339,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zinb,se_pscl,count_(Intercept),0.14359655018527,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zinb,se_pscl,count_(Intercept),0.14359655018527,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zinb,se,count_(Intercept),0.143596216149023,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zinb,coef,count_fem,-0.195506822923199,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zinb,coef_pscl,count_fem,-0.195506792544205,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zinb,se_pscl,count_fem,0.0755925590945832,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zinb,se_pscl,count_fem,0.0755925590945832,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zinb,se,count_fem,0.0755925588087326,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zinb,coef,count_mar,0.0975826081993304,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zinb,coef_pscl,count_mar,0.0975826265056356,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zinb,se_pscl,count_mar,0.0844519546455516,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zinb,se_pscl,count_mar,0.0844519546455516,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zinb,se,count_mar,0.0844519506491659,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zinb,coef,count_kid5,-0.151732453766598,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zinb,coef_pscl,count_kid5,-0.15173243152178,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zinb,se_pscl,count_kid5,0.0542060579129982,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zinb,se_pscl,count_kid5,0.0542060579129982,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zinb,se,count_kid5,0.0542060478817787,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zinb,coef,count_phd,-0.000700148392452739,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zinb,coef_pscl,count_phd,-0.000700140332400621,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zinb,se_pscl,count_phd,0.0362696630979071,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zinb,se_pscl,count_phd,0.0362696630979071,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zinb,se,count_phd,0.0362695808235565,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zinb,coef,count_ment,0.0247862015602972,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zinb,coef_pscl,count_ment,0.0247861968481174,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zinb,se_pscl,count_ment,0.00349267248621741,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zinb,se_pscl,count_ment,0.00349267248621741,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zinb,se,count_ment,0.00349242826101859,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zinb,coef,zero_(Intercept),-0.191686236282903,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zinb,coef_pscl,zero_(Intercept),-0.191688290628824,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zinb,se_pscl,zero_(Intercept),1.32281774058053,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zinb,se_pscl,zero_(Intercept),1.32281774058053,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zinb,se,zero_(Intercept),1.32282096570504,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zinb,coef,zero_fem,0.635932676844109,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zinb,coef_pscl,zero_fem,0.635932854077428,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zinb,se_pscl,zero_fem,0.848916708801277,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zinb,se_pscl,zero_fem,0.848916708801277,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zinb,se,zero_fem,0.848917646919488,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zinb,coef,zero_mar,-1.49946890084013,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zinb,coef_pscl,zero_mar,-1.49946685894189,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zinb,se_pscl,zero_mar,0.938669694158669,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zinb,se_pscl,zero_mar,0.938669694158669,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zinb,se,zero_mar,0.938670217916236,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zinb,coef,zero_kid5,0.628427418645753,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zinb,coef_pscl,zero_kid5,0.628427129731837,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zinb,se_pscl,zero_kid5,0.442782273134102,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zinb,se_pscl,zero_kid5,0.442782273134102,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zinb,se,zero_kid5,0.44278258581022,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zinb,coef,zero_phd,-0.0377153232253513,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zinb,coef_pscl,zero_phd,-0.0377148747979528,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zinb,se_pscl,zero_phd,0.308007955844197,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zinb,se_pscl,zero_phd,0.308007955844197,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zinb,se,zero_phd,0.308008630158631,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zinb,coef,zero_ment,-0.882293274021267,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zinb,coef_pscl,zero_ment,-0.882292259568868,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zinb,se_pscl,zero_ment,0.316227621415863,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zinb,se_pscl,zero_ment,0.316227621415863,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zinb,se,zero_ment,0.316227691370823,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zinb,theta,,2.65476582485525,0,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zinb,theta_pscl,,2.65476628491701,0,1e-04,pscl 1.5.9 zeroinfl
@@ -137,35 +137,35 @@ bio_zinb,prob,1:3,0.133871166914368,0,1e-08,pscl 1.5.9 zeroinfl likelihood maxim
 bio_zinb,prob,1:4,0.0809874583123524,0,1e-08,pscl 1.5.9 zeroinfl likelihood maximised by Newton and pscl's predict
 bio_zip_probit,coef,count_(Intercept),0.62836894178661,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip_probit,coef_pscl,count_(Intercept),0.628368970049092,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip_probit,se_pscl,count_(Intercept),0.113144637931605,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip_probit,se_pscl,count_(Intercept),0.113144637931605,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip_probit,se,count_(Intercept),0.113144961739299,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip_probit,coef,count_fem,-0.217631733271222,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip_probit,coef_pscl,count_fem,-0.217631738166848,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip_probit,se_pscl,count_fem,0.0587859106217806,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip_probit,se_pscl,count_fem,0.0587859106217806,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip_probit,se,count_fem,0.0587859652221582,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip_probit,coef,count_mar,0.13394572857623,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip_probit,coef_pscl,count_mar,0.133945722994091,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip_probit,se_pscl,count_mar,0.0660972222286024,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip_probit,se_pscl,count_mar,0.0660972222286024,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip_probit,se,count_mar,0.0660972413988228,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip_probit,coef,count_kid5,-0.163058920047586,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip_probit,coef_pscl,count_kid5,-0.16305891642615,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip_probit,se_pscl,count_kid5,0.0433392959612381,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip_probit,se_pscl,count_kid5,0.0433392959612381,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip_probit,se,count_kid5,0.0433392680132159,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip_probit,coef,count_phd,-0.00620786210238823,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip_probit,coef_pscl,count_phd,-0.0062078623243191,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip_probit,se_pscl,count_phd,0.0285147174189329,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip_probit,se_pscl,count_phd,0.0285147174189329,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip_probit,se,count_phd,0.0285150411752263,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip_probit,coef,count_ment,0.0182305648602654,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip_probit,coef_pscl,count_ment,0.018230565442451,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip_probit,se_pscl,count_ment,0.00227033446913265,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip_probit,se_pscl,count_ment,0.00227033446913265,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip_probit,se,count_ment,0.00227084497260717,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip_probit,coef,zero_(Intercept),-0.452489092433906,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip_probit,coef_pscl,zero_(Intercept),-0.452489273524172,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip_probit,se_pscl,zero_(Intercept),0.126089637854681,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip_probit,se_pscl,zero_(Intercept),0.126089637854681,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip_probit,se,zero_(Intercept),0.126112073359363,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip_probit,coef,zero_ment,-0.0699017689326114,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip_probit,coef_pscl,zero_ment,-0.0699017122808147,1e-06,1e-04,pscl 1.5.9 zeroinfl
-bio_zip_probit,se_pscl,zero_ment,0.0232446349056874,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+bio_zip_probit,se_pscl,zero_ment,0.0232446349056874,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 bio_zip_probit,se,zero_ment,0.0232530651135732,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 bio_zip_probit,loglik,,-1606.32352067683,0,1e-12,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 bio_zip_probit,loglik_pscl,,-1606.32352067683,0,1e-09,pscl 1.5.9 zeroinfl
@@ -187,51 +187,51 @@ bio_zip_probit,prob,1:3,0.172700945386223,0,1e-08,pscl 1.5.9 zeroinfl likelihood
 bio_zip_probit,prob,1:4,0.103497960808277,0,1e-08,pscl 1.5.9 zeroinfl likelihood maximised by Newton and pscl's predict
 bio_hp,coef,count_(Intercept),0.671139335945965,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hp,coef_pscl,count_(Intercept),0.67113933778427,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hp,se_pscl,count_(Intercept),0.122455726904387,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hp,se_pscl,count_(Intercept),0.122455726904387,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hp,se,count_(Intercept),0.122455990425596,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hp,coef,count_fem,-0.228582616639955,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hp,coef_pscl,count_fem,-0.228582616910619,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hp,se_pscl,count_fem,0.0652157266050008,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hp,se_pscl,count_fem,0.0652157266050008,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hp,se,count_fem,0.0652157487239853,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hp,coef,count_mar,0.0964849751603399,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hp,coef_pscl,count_mar,0.0964849745984013,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hp,se_pscl,count_mar,0.0728251600332789,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hp,se_pscl,count_mar,0.0728251600332789,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hp,se,count_mar,0.0728251732606091,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hp,coef,count_kid5,-0.142187244876777,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hp,coef_pscl,count_kid5,-0.142187244871267,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hp,se_pscl,count_kid5,0.0484538570248292,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hp,se_pscl,count_kid5,0.0484538570248292,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hp,se,count_kid5,0.0484538014134141,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hp,coef,count_phd,-0.0127265656154763,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hp,coef_pscl,count_phd,-0.0127265658748838,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hp,se_pscl,count_phd,0.0313038494987041,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hp,se_pscl,count_phd,0.0313038494987041,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hp,se,count_phd,0.0313042642914527,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hp,coef,count_ment,0.0187455025800646,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hp,coef_pscl,count_ment,0.0187455028553504,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hp,se_pscl,count_ment,0.00227989738532445,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hp,se_pscl,count_ment,0.00227989738532445,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hp,se,count_ment,0.00228048250918821,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hp,coef,zero_(Intercept),0.236796012429869,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hp,coef_pscl,zero_(Intercept),0.236796012435069,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hp,se_pscl,zero_(Intercept),0.295518826313165,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hp,se_pscl,zero_(Intercept),0.295518826313165,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hp,se,zero_(Intercept),0.295518912903168,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hp,coef,zero_fem,-0.251151128620135,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hp,coef_pscl,zero_fem,-0.25115112861808,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hp,se_pscl,zero_fem,0.159105221872553,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hp,se_pscl,zero_fem,0.159105221872553,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hp,se,zero_fem,0.159105214250244,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hp,coef,zero_mar,0.32623358360945,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hp,coef_pscl,zero_mar,0.32623358361292,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hp,se_pscl,zero_mar,0.180818229887033,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hp,se_pscl,zero_mar,0.180818229887033,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hp,se,zero_mar,0.180818240517592,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hp,coef,zero_kid5,-0.28524871578798,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hp,coef_pscl,zero_kid5,-0.285248715785195,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hp,se_pscl,zero_kid5,0.111130434113328,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hp,se_pscl,zero_kid5,0.111130434113328,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hp,se,zero_kid5,0.111130416834391,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hp,coef,zero_phd,0.0222193970805474,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hp,coef_pscl,zero_phd,0.0222193970986472,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hp,se_pscl,zero_phd,0.0795570956405956,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hp,se_pscl,zero_phd,0.0795570956405956,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hp,se,zero_phd,0.0795571335049303,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hp,coef,zero_ment,0.0801213545596382,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hp,coef_pscl,zero_ment,0.0801213546860447,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hp,se_pscl,zero_ment,0.0130176346006353,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hp,se_pscl,zero_ment,0.0130176346006353,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hp,se,zero_ment,0.0130180640821901,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hp,loglik,,-1605.31169411383,0,1e-12,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hp,loglik_pscl,,-1605.31169411383,0,1e-09,pscl 1.5.9 hurdle
@@ -253,51 +253,51 @@ bio_hp,prob,1:3,0.175267410305932,0,1e-08,pscl 1.5.9 hurdle likelihood maximised
 bio_hp,prob,1:4,0.104249846625451,0,1e-08,pscl 1.5.9 hurdle likelihood maximised by Newton and pscl's predict
 bio_hnb,coef,count_(Intercept),0.355124630806461,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb,coef_pscl,count_(Intercept),0.355124591281164,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb,se_pscl,count_(Intercept),0.196832193513669,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb,se_pscl,count_(Intercept),0.196832193513669,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb,se,count_(Intercept),0.196830789415611,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb,coef,count_fem,-0.244671238024416,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb,coef_pscl,count_fem,-0.244671149297675,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb,se_pscl,count_fem,0.097218154357619,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb,se_pscl,count_fem,0.097218154357619,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb,se,count_fem,0.097218148790426,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb,coef,count_mar,0.103417219347381,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb,coef_pscl,count_mar,0.103417246925472,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb,se_pscl,count_mar,0.109429746120871,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb,se_pscl,count_mar,0.109429746120871,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb,se,count_mar,0.109429735004295,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb,coef,count_kid5,-0.153259352976765,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb,coef_pscl,count_kid5,-0.153259244326195,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb,se_pscl,count_kid5,0.0722290894071218,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb,se_pscl,count_kid5,0.0722290894071218,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb,se,count_kid5,0.0722290791506485,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb,coef,count_phd,-0.00293355623333692,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb,coef_pscl,count_phd,-0.00293360922914964,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb,se_pscl,count_phd,0.048067395968028,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb,se_pscl,count_phd,0.048067395968028,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb,se,count_phd,0.0480673151608776,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb,coef,count_ment,0.0237382156255513,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb,coef_pscl,count_ment,0.0237382189423559,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb,se_pscl,count_ment,0.00428707721537807,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb,se_pscl,count_ment,0.00428707721537807,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb,se,count_ment,0.00428680308399568,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb,coef,zero_(Intercept),0.236796012429869,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb,coef_pscl,zero_(Intercept),0.236796012435069,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb,se_pscl,zero_(Intercept),0.295518826313165,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb,se_pscl,zero_(Intercept),0.295518826313165,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb,se,zero_(Intercept),0.295518912903168,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb,coef,zero_fem,-0.251151128620135,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb,coef_pscl,zero_fem,-0.25115112861808,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb,se_pscl,zero_fem,0.159105221872553,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb,se_pscl,zero_fem,0.159105221872553,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb,se,zero_fem,0.159105214250244,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb,coef,zero_mar,0.32623358360945,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb,coef_pscl,zero_mar,0.32623358361292,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb,se_pscl,zero_mar,0.180818229887033,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb,se_pscl,zero_mar,0.180818229887033,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb,se,zero_mar,0.180818240517592,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb,coef,zero_kid5,-0.28524871578798,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb,coef_pscl,zero_kid5,-0.285248715785195,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb,se_pscl,zero_kid5,0.111130434113328,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb,se_pscl,zero_kid5,0.111130434113328,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb,se,zero_kid5,0.111130416834391,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb,coef,zero_phd,0.0222193970805474,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb,coef_pscl,zero_phd,0.0222193970986472,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb,se_pscl,zero_phd,0.0795570956405956,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb,se_pscl,zero_phd,0.0795570956405956,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb,se,zero_phd,0.0795571335049303,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb,coef,zero_ment,0.0801213545596382,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb,coef_pscl,zero_ment,0.0801213546860447,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb,se_pscl,zero_ment,0.0130176346006353,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb,se_pscl,zero_ment,0.0130176346006353,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb,se,zero_ment,0.0130180640821901,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb,theta,,1.82846187002377,0,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb,theta_pscl,,1.82846135219279,0,1e-04,pscl 1.5.9 hurdle
@@ -322,39 +322,39 @@ bio_hnb,prob,1:3,0.124038693183743,0,1e-08,pscl 1.5.9 hurdle likelihood maximise
 bio_hnb,prob,1:4,0.0753826300694759,0,1e-08,pscl 1.5.9 hurdle likelihood maximised by Newton and pscl's predict
 bio_hnb_cloglog,coef,count_(Intercept),0.355124630806461,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb_cloglog,coef_pscl,count_(Intercept),0.355124591281164,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb_cloglog,se_pscl,count_(Intercept),0.196832193513669,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb_cloglog,se_pscl,count_(Intercept),0.196832193513669,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb_cloglog,se,count_(Intercept),0.196830789415611,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb_cloglog,coef,count_fem,-0.244671238024416,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb_cloglog,coef_pscl,count_fem,-0.244671149297675,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb_cloglog,se_pscl,count_fem,0.097218154357619,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb_cloglog,se_pscl,count_fem,0.097218154357619,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb_cloglog,se,count_fem,0.097218148790426,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb_cloglog,coef,count_mar,0.103417219347381,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb_cloglog,coef_pscl,count_mar,0.103417246925472,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb_cloglog,se_pscl,count_mar,0.109429746120871,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb_cloglog,se_pscl,count_mar,0.109429746120871,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb_cloglog,se,count_mar,0.109429735004295,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb_cloglog,coef,count_kid5,-0.153259352976765,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb_cloglog,coef_pscl,count_kid5,-0.153259244326195,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb_cloglog,se_pscl,count_kid5,0.0722290894071218,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb_cloglog,se_pscl,count_kid5,0.0722290894071218,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb_cloglog,se,count_kid5,0.0722290791506485,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb_cloglog,coef,count_phd,-0.00293355623333692,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb_cloglog,coef_pscl,count_phd,-0.00293360922914964,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb_cloglog,se_pscl,count_phd,0.048067395968028,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb_cloglog,se_pscl,count_phd,0.048067395968028,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb_cloglog,se,count_phd,0.0480673151608776,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb_cloglog,coef,count_ment,0.0237382156255513,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb_cloglog,coef_pscl,count_ment,0.0237382189423559,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb_cloglog,se_pscl,count_ment,0.00428707721537807,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb_cloglog,se_pscl,count_ment,0.00428707721537807,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb_cloglog,se,count_ment,0.00428680308399568,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb_cloglog,coef,zero_(Intercept),-0.076550286773819,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb_cloglog,coef_pscl,zero_(Intercept),-0.0765502867052932,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb_cloglog,se_pscl,zero_(Intercept),0.0675421967098277,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb_cloglog,se_pscl,zero_(Intercept),0.0675421967098277,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb_cloglog,se,zero_(Intercept),0.0675444451013201,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb_cloglog,coef,zero_kid5,-0.0869587376276291,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb_cloglog,coef_pscl,zero_kid5,-0.086958737581965,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb_cloglog,se_pscl,zero_kid5,0.0571975956461114,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb_cloglog,se_pscl,zero_kid5,0.0571975956461114,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb_cloglog,se,zero_kid5,0.0571975991362077,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb_cloglog,coef,zero_ment,0.0378516816894693,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb_cloglog,coef_pscl,zero_ment,0.0378516813397512,1e-06,1e-04,pscl 1.5.9 hurdle
-bio_hnb_cloglog,se_pscl,zero_ment,0.00537005392675663,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+bio_hnb_cloglog,se_pscl,zero_ment,0.00537005392675663,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 bio_hnb_cloglog,se,zero_ment,0.00537049992866173,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 bio_hnb_cloglog,theta,,1.82846187002377,0,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 bio_hnb_cloglog,theta_pscl,,1.82846135219279,0,1e-04,pscl 1.5.9 hurdle
@@ -379,23 +379,23 @@ bio_hnb_cloglog,prob,1:3,0.11367367412524,0,1e-08,pscl 1.5.9 hurdle likelihood m
 bio_hnb_cloglog,prob,1:4,0.0690834473121022,0,1e-08,pscl 1.5.9 hurdle likelihood maximised by Newton and pscl's predict
 book_zip,coef,count_(Intercept),0.017239128823929,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 book_zip,coef_pscl,count_(Intercept),0.0172391358618084,1e-06,1e-04,pscl 1.5.9 zeroinfl
-book_zip,se_pscl,count_(Intercept),0.0618594665658777,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+book_zip,se_pscl,count_(Intercept),0.0618594665658777,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 book_zip,se,count_(Intercept),0.0618594673283264,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 book_zip,coef,count_x,0.333347372675102,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 book_zip,coef_pscl,count_x,0.333347361042722,1e-06,1e-04,pscl 1.5.9 zeroinfl
-book_zip,se_pscl,count_x,0.0477115931472729,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+book_zip,se_pscl,count_x,0.0477115931472729,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 book_zip,se,count_x,0.0477115976456919,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 book_zip,coef,count_urban,0.377919778734665,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 book_zip,coef_pscl,count_urban,0.377919740942616,1e-06,1e-04,pscl 1.5.9 zeroinfl
-book_zip,se_pscl,count_urban,0.0724151752963363,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+book_zip,se_pscl,count_urban,0.0724151752963363,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 book_zip,se,count_urban,0.0724151779020194,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 book_zip,coef,zero_(Intercept),-0.0103829402261176,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 book_zip,coef_pscl,zero_(Intercept),-0.0103829256932172,1e-06,1e-04,pscl 1.5.9 zeroinfl
-book_zip,se_pscl,zero_(Intercept),0.094674120735919,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+book_zip,se_pscl,zero_(Intercept),0.094674120735919,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 book_zip,se,zero_(Intercept),0.0946741168397227,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 book_zip,coef,zero_x,0.351073832462471,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 book_zip,coef_pscl,zero_x,0.351073813170713,1e-06,1e-04,pscl 1.5.9 zeroinfl
-book_zip,se_pscl,zero_x,0.0997953330222709,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+book_zip,se_pscl,zero_x,0.0997953330222709,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 book_zip,se,zero_x,0.0997953285276273,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 book_zip,loglik,,-1843.45499031011,0,1e-12,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 book_zip,loglik_pscl,,-1843.45499031011,0,1e-09,pscl 1.5.9 zeroinfl
@@ -417,23 +417,23 @@ book_zip,prob,1:3,0.0139080244453487,0,1e-08,pscl 1.5.9 zeroinfl likelihood maxi
 book_zip,prob,1:4,0.00231177088177803,0,1e-08,pscl 1.5.9 zeroinfl likelihood maximised by Newton and pscl's predict
 book_zinb,coef,count_(Intercept),-0.440883174803979,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 book_zinb,coef_pscl,count_(Intercept),-0.44088320281965,1e-06,1e-04,pscl 1.5.9 zeroinfl
-book_zinb,se_pscl,count_(Intercept),0.107972307315397,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+book_zinb,se_pscl,count_(Intercept),0.107972307315397,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 book_zinb,se,count_(Intercept),0.10797235688576,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 book_zinb,coef,count_x,0.357598881533044,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 book_zinb,coef_pscl,count_x,0.357598911090939,1e-06,1e-04,pscl 1.5.9 zeroinfl
-book_zinb,se_pscl,count_x,0.0575031158705645,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+book_zinb,se_pscl,count_x,0.0575031158705645,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 book_zinb,se,count_x,0.0575031116580503,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 book_zinb,coef,count_urban,0.451233833327321,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 book_zinb,coef_pscl,count_urban,0.451233928203085,1e-06,1e-04,pscl 1.5.9 zeroinfl
-book_zinb,se_pscl,count_urban,0.0860318918258652,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+book_zinb,se_pscl,count_urban,0.0860318918258652,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 book_zinb,se,count_urban,0.0860318909845751,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 book_zinb,coef,zero_(Intercept),-1.39048765313951,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 book_zinb,coef_pscl,zero_(Intercept),-1.39048767253572,1e-06,1e-04,pscl 1.5.9 zeroinfl
-book_zinb,se_pscl,zero_(Intercept),0.487073521808654,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+book_zinb,se_pscl,zero_(Intercept),0.487073521808654,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 book_zinb,se,zero_(Intercept),0.487073863639527,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 book_zinb,coef,zero_x,0.864486267515589,1e-11,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 book_zinb,coef_pscl,zero_x,0.864486295540487,1e-06,1e-04,pscl 1.5.9 zeroinfl
-book_zinb,se_pscl,zero_x,0.236357158448033,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian, step 1e-3)
+book_zinb,se_pscl,zero_x,0.236357158448033,0,0.002,pscl 1.5.9 zeroinfl (optim Hessian; step 1e-3)
 book_zinb,se,zero_x,0.236357237071591,0,1e-07,pscl 1.5.9 zeroinfl likelihood maximised by Newton and its Hessian
 book_zinb,theta,,1.12982407574404,0,1e-09,pscl 1.5.9 zeroinfl likelihood maximised by Newton
 book_zinb,theta_pscl,,1.12982429830809,0,1e-04,pscl 1.5.9 zeroinfl
@@ -494,23 +494,23 @@ book_zinb_weighted,prob,1:3,0.0146505101536876,0,1e-08,pscl 1.5.9 zeroinfl likel
 book_zinb_weighted,prob,1:4,0.00409881180660725,0,1e-08,pscl 1.5.9 zeroinfl likelihood maximised by Newton and pscl's predict
 book_hnb,coef,count_(Intercept),-0.477558199548475,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 book_hnb,coef_pscl,count_(Intercept),-0.477558206479004,1e-06,1e-04,pscl 1.5.9 hurdle
-book_hnb,se_pscl,count_(Intercept),0.202307569855696,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+book_hnb,se_pscl,count_(Intercept),0.202307569855696,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 book_hnb,se,count_(Intercept),0.20230764222221,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 book_hnb,coef,count_x,0.337415769658872,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 book_hnb,coef_pscl,count_x,0.337415768629632,1e-06,1e-04,pscl 1.5.9 hurdle
-book_hnb,se_pscl,count_x,0.0738639953933465,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+book_hnb,se_pscl,count_x,0.0738639953933465,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 book_hnb,se,count_x,0.0738639904241791,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 book_hnb,coef,count_urban,0.371804854083116,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 book_hnb,coef_pscl,count_urban,0.371804856505609,1e-06,1e-04,pscl 1.5.9 hurdle
-book_hnb,se_pscl,count_urban,0.13237307918954,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+book_hnb,se_pscl,count_urban,0.13237307918954,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 book_hnb,se,count_urban,0.132373074955912,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 book_hnb,coef,zero_(Intercept),-0.899416265539149,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 book_hnb,coef_pscl,zero_(Intercept),-0.899416266249305,1e-06,1e-04,pscl 1.5.9 hurdle
-book_hnb,se_pscl,zero_(Intercept),0.0493407641020726,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+book_hnb,se_pscl,zero_(Intercept),0.0493407641020726,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 book_hnb,se,zero_(Intercept),0.0493407631340748,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 book_hnb,coef,zero_x,0.0431258218676353,1e-11,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 book_hnb,coef_pscl,zero_x,0.0431258220596446,1e-06,1e-04,pscl 1.5.9 hurdle
-book_hnb,se_pscl,zero_x,0.0503969821809675,0,0.002,pscl 1.5.9 hurdle (optim Hessian, step 1e-3)
+book_hnb,se_pscl,zero_x,0.0503969821809675,0,0.002,pscl 1.5.9 hurdle (optim Hessian; step 1e-3)
 book_hnb,se,zero_x,0.0503969794813531,0,1e-07,pscl 1.5.9 hurdle likelihood maximised by Newton and its Hessian
 book_hnb,theta,,0.943569483898969,0,1e-09,pscl 1.5.9 hurdle likelihood maximised by Newton
 book_hnb,theta_pscl,,0.943569472118936,0,1e-04,pscl 1.5.9 hurdle

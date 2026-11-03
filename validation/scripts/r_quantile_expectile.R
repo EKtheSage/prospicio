@@ -46,7 +46,7 @@ add <- function(case, quantity, arg, expected, rel_tol, source, abs_tol = 0) {
   rows[[length(rows) + 1]] <<- data.frame(
     case = case, quantity = quantity, arg = arg,
     expected = sprintf("%.15g", expected), abs_tol = abs_tol, rel_tol = rel_tol,
-    source = source
+    source = gsub(",", ";", source)
   )
 }
 qv <- paste0("quantreg ", packageVersion("quantreg"))

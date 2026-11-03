@@ -2,135 +2,135 @@
 case,quantity,arg,expected,abs_tol,rel_tol,source
 engel_0.1,coef,(Intercept),110.141574204948,1e-12,1e-10,quantreg 5.97 rq br
 engel_0.1,coef_fn,(Intercept),110.141574204911,1e-06,1e-05,quantreg 5.97 rq fn (duality gap 1e-6)
-engel_0.1,se,(Intercept),29.2965433965998,0,1e-09,quantreg 5.97 summary.rq ker, hs = TRUE
-engel_0.1,se_bofinger,(Intercept),29.9052728383528,0,1e-09,quantreg 5.97 summary.rq ker, hs = FALSE
+engel_0.1,se,(Intercept),29.2965433965998,0,1e-09,quantreg 5.97 summary.rq ker; hs = TRUE
+engel_0.1,se_bofinger,(Intercept),29.9052728383528,0,1e-09,quantreg 5.97 summary.rq ker; hs = FALSE
 engel_0.1,coef,income,0.401765759303481,1e-12,1e-10,quantreg 5.97 rq br
 engel_0.1,coef_fn,income,0.401765759303512,1e-06,1e-05,quantreg 5.97 rq fn (duality gap 1e-6)
-engel_0.1,se,income,0.0398968801973131,0,1e-09,quantreg 5.97 summary.rq ker, hs = TRUE
-engel_0.1,se_bofinger,income,0.0398461204231718,0,1e-09,quantreg 5.97 summary.rq ker, hs = FALSE
-engel_0.1,objective,,3869.93216098663,0,1e-10,quantreg 5.97 rq br, the weighted check loss at its estimates
+engel_0.1,se,income,0.0398968801973131,0,1e-09,quantreg 5.97 summary.rq ker; hs = TRUE
+engel_0.1,se_bofinger,income,0.0398461204231718,0,1e-09,quantreg 5.97 summary.rq ker; hs = FALSE
+engel_0.1,objective,,3869.93216098663,0,1e-10,quantreg 5.97 rq br; the weighted check loss at its estimates
 engel_0.25,coef,(Intercept),95.4835396345529,1e-12,1e-10,quantreg 5.97 rq br
 engel_0.25,coef_fn,(Intercept),95.4835396345451,1e-06,1e-05,quantreg 5.97 rq fn (duality gap 1e-6)
-engel_0.25,se,(Intercept),24.1639194918595,0,1e-09,quantreg 5.97 summary.rq ker, hs = TRUE
-engel_0.25,se_bofinger,(Intercept),28.3424707002663,0,1e-09,quantreg 5.97 summary.rq ker, hs = FALSE
+engel_0.25,se,(Intercept),24.1639194918595,0,1e-09,quantreg 5.97 summary.rq ker; hs = TRUE
+engel_0.25,se_bofinger,(Intercept),28.3424707002663,0,1e-09,quantreg 5.97 summary.rq ker; hs = FALSE
 engel_0.25,coef,income,0.47410320819331,1e-12,1e-10,quantreg 5.97 rq br
 engel_0.25,coef_fn,income,0.474103208193314,1e-06,1e-05,quantreg 5.97 rq fn (duality gap 1e-6)
-engel_0.25,se,income,0.0295488223199409,0,1e-09,quantreg 5.97 summary.rq ker, hs = TRUE
-engel_0.25,se_bofinger,income,0.0338566476142187,0,1e-09,quantreg 5.97 summary.rq ker, hs = FALSE
-engel_0.25,objective,,7082.31589897488,0,1e-10,quantreg 5.97 rq br, the weighted check loss at its estimates
+engel_0.25,se,income,0.0295488223199409,0,1e-09,quantreg 5.97 summary.rq ker; hs = TRUE
+engel_0.25,se_bofinger,income,0.0338566476142187,0,1e-09,quantreg 5.97 summary.rq ker; hs = FALSE
+engel_0.25,objective,,7082.31589897488,0,1e-10,quantreg 5.97 rq br; the weighted check loss at its estimates
 engel_0.5,coef,(Intercept),81.4822474169362,1e-12,1e-10,quantreg 5.97 rq br
 engel_0.5,coef_fn,(Intercept),81.4822474245582,1e-06,1e-05,quantreg 5.97 rq fn (duality gap 1e-6)
-engel_0.5,se,(Intercept),30.2153158527793,0,1e-09,quantreg 5.97 summary.rq ker, hs = TRUE
-engel_0.5,se_bofinger,(Intercept),34.283826273008,0,1e-09,quantreg 5.97 summary.rq ker, hs = FALSE
+engel_0.5,se,(Intercept),30.2153158527793,0,1e-09,quantreg 5.97 summary.rq ker; hs = TRUE
+engel_0.5,se_bofinger,(Intercept),34.283826273008,0,1e-09,quantreg 5.97 summary.rq ker; hs = FALSE
 engel_0.5,coef,income,0.56018055120942,1e-12,1e-10,quantreg 5.97 rq br
 engel_0.5,coef_fn,income,0.560180551200133,1e-06,1e-05,quantreg 5.97 rq fn (duality gap 1e-6)
-engel_0.5,se,income,0.0373170354527435,0,1e-09,quantreg 5.97 summary.rq ker, hs = TRUE
-engel_0.5,se_bofinger,income,0.0403861680466868,0,1e-09,quantreg 5.97 summary.rq ker, hs = FALSE
-engel_0.5,objective,,8779.96632381285,0,1e-10,quantreg 5.97 rq br, the weighted check loss at its estimates
+engel_0.5,se,income,0.0373170354527435,0,1e-09,quantreg 5.97 summary.rq ker; hs = TRUE
+engel_0.5,se_bofinger,income,0.0403861680466868,0,1e-09,quantreg 5.97 summary.rq ker; hs = FALSE
+engel_0.5,objective,,8779.96632381285,0,1e-10,quantreg 5.97 rq br; the weighted check loss at its estimates
 engel_0.75,coef,(Intercept),62.3965855289644,1e-12,1e-10,quantreg 5.97 rq br
 engel_0.75,coef_fn,(Intercept),62.3965855279613,1e-06,1e-05,quantreg 5.97 rq fn (duality gap 1e-6)
-engel_0.75,se,(Intercept),29.1187560218802,0,1e-09,quantreg 5.97 summary.rq ker, hs = TRUE
-engel_0.75,se_bofinger,(Intercept),31.6216026723202,0,1e-09,quantreg 5.97 summary.rq ker, hs = FALSE
+engel_0.75,se,(Intercept),29.1187560218802,0,1e-09,quantreg 5.97 summary.rq ker; hs = TRUE
+engel_0.75,se_bofinger,(Intercept),31.6216026723202,0,1e-09,quantreg 5.97 summary.rq ker; hs = FALSE
 engel_0.75,coef,income,0.64401413936869,1e-12,1e-10,quantreg 5.97 rq br
 engel_0.75,coef_fn,income,0.644014139369802,1e-06,1e-05,quantreg 5.97 rq fn (duality gap 1e-6)
-engel_0.75,se,income,0.0362160653555735,0,1e-09,quantreg 5.97 summary.rq ker, hs = TRUE
-engel_0.75,se_bofinger,income,0.0385607585404456,0,1e-09,quantreg 5.97 summary.rq ker, hs = FALSE
-engel_0.75,objective,,6529.25028389393,0,1e-10,quantreg 5.97 rq br, the weighted check loss at its estimates
+engel_0.75,se,income,0.0362160653555735,0,1e-09,quantreg 5.97 summary.rq ker; hs = TRUE
+engel_0.75,se_bofinger,income,0.0385607585404456,0,1e-09,quantreg 5.97 summary.rq ker; hs = FALSE
+engel_0.75,objective,,6529.25028389393,0,1e-10,quantreg 5.97 rq br; the weighted check loss at its estimates
 engel_0.9,coef,(Intercept),67.3508720801297,1e-12,1e-10,quantreg 5.97 rq br
 engel_0.9,coef_fn,(Intercept),67.3508720801285,1e-06,1e-05,quantreg 5.97 rq fn (duality gap 1e-6)
-engel_0.9,se,(Intercept),22.5691951036302,0,1e-09,quantreg 5.97 summary.rq ker, hs = TRUE
-engel_0.9,se_bofinger,(Intercept),23.3786909197091,0,1e-09,quantreg 5.97 summary.rq ker, hs = FALSE
+engel_0.9,se,(Intercept),22.5691951036302,0,1e-09,quantreg 5.97 summary.rq ker; hs = TRUE
+engel_0.9,se_bofinger,(Intercept),23.3786909197091,0,1e-09,quantreg 5.97 summary.rq ker; hs = FALSE
 engel_0.9,coef,income,0.686299480371905,1e-12,1e-10,quantreg 5.97 rq br
 engel_0.9,coef_fn,income,0.686299480371908,1e-06,1e-05,quantreg 5.97 rq fn (duality gap 1e-6)
-engel_0.9,se,income,0.0279602328286965,0,1e-09,quantreg 5.97 summary.rq ker, hs = TRUE
-engel_0.9,se_bofinger,income,0.0289124379290774,0,1e-09,quantreg 5.97 summary.rq ker, hs = FALSE
-engel_0.9,objective,,3391.98371102825,0,1e-10,quantreg 5.97 rq br, the weighted check loss at its estimates
+engel_0.9,se,income,0.0279602328286965,0,1e-09,quantreg 5.97 summary.rq ker; hs = TRUE
+engel_0.9,se_bofinger,income,0.0289124379290774,0,1e-09,quantreg 5.97 summary.rq ker; hs = FALSE
+engel_0.9,objective,,3391.98371102825,0,1e-10,quantreg 5.97 rq br; the weighted check loss at its estimates
 book_0.5,coef,(Intercept),1.78924201234568,1e-12,1e-10,quantreg 5.97 rq br
 book_0.5,coef_fn,(Intercept),1.78924201233626,1e-06,1e-05,quantreg 5.97 rq fn (duality gap 1e-6)
-book_0.5,se,(Intercept),0.529581826073163,0,1e-09,quantreg 5.97 summary.rq ker, hs = TRUE
-book_0.5,se_bofinger,(Intercept),0.684296435056576,0,1e-09,quantreg 5.97 summary.rq ker, hs = FALSE
+book_0.5,se,(Intercept),0.529581826073163,0,1e-09,quantreg 5.97 summary.rq ker; hs = TRUE
+book_0.5,se_bofinger,(Intercept),0.684296435056576,0,1e-09,quantreg 5.97 summary.rq ker; hs = FALSE
 book_0.5,coef,x,1.02638271604938,1e-12,1e-10,quantreg 5.97 rq br
 book_0.5,coef_fn,x,1.02638271604908,1e-06,1e-05,quantreg 5.97 rq fn (duality gap 1e-6)
-book_0.5,se,x,0.13694430680091,0,1e-09,quantreg 5.97 summary.rq ker, hs = TRUE
-book_0.5,se_bofinger,x,0.162926292977062,0,1e-09,quantreg 5.97 summary.rq ker, hs = FALSE
+book_0.5,se,x,0.13694430680091,0,1e-09,quantreg 5.97 summary.rq ker; hs = TRUE
+book_0.5,se_bofinger,x,0.162926292977062,0,1e-09,quantreg 5.97 summary.rq ker; hs = FALSE
 book_0.5,coef,z,2.02582050617284,1e-12,1e-10,quantreg 5.97 rq br
 book_0.5,coef_fn,z,2.02582050619103,1e-06,1e-05,quantreg 5.97 rq fn (duality gap 1e-6)
-book_0.5,se,z,0.758217055831718,0,1e-09,quantreg 5.97 summary.rq ker, hs = TRUE
-book_0.5,se_bofinger,z,0.908668243069243,0,1e-09,quantreg 5.97 summary.rq ker, hs = FALSE
-book_0.5,objective,,2124.8088339321,0,1e-10,quantreg 5.97 rq br, the weighted check loss at its estimates
+book_0.5,se,z,0.758217055831718,0,1e-09,quantreg 5.97 summary.rq ker; hs = TRUE
+book_0.5,se_bofinger,z,0.908668243069243,0,1e-09,quantreg 5.97 summary.rq ker; hs = FALSE
+book_0.5,objective,,2124.8088339321,0,1e-10,quantreg 5.97 rq br; the weighted check loss at its estimates
 book_0.95,coef,(Intercept),1.85845785374297,1e-12,1e-10,quantreg 5.97 rq br
 book_0.95,coef_fn,(Intercept),1.85845785361261,1e-06,1e-05,quantreg 5.97 rq fn (duality gap 1e-6)
-book_0.95,se,(Intercept),0.714953975794179,0,1e-09,quantreg 5.97 summary.rq ker, hs = TRUE
-book_0.95,se_bofinger,(Intercept),0.762898350097344,0,1e-09,quantreg 5.97 summary.rq ker, hs = FALSE
+book_0.95,se,(Intercept),0.714953975794179,0,1e-09,quantreg 5.97 summary.rq ker; hs = TRUE
+book_0.95,se_bofinger,(Intercept),0.762898350097344,0,1e-09,quantreg 5.97 summary.rq ker; hs = FALSE
 book_0.95,coef,x,4.15500865426222,1e-12,1e-10,quantreg 5.97 rq br
 book_0.95,coef_fn,x,4.15500865432193,1e-06,1e-05,quantreg 5.97 rq fn (duality gap 1e-6)
-book_0.95,se,x,0.326554377121475,0,1e-09,quantreg 5.97 summary.rq ker, hs = TRUE
-book_0.95,se_bofinger,x,0.320156866201322,0,1e-09,quantreg 5.97 summary.rq ker, hs = FALSE
+book_0.95,se,x,0.326554377121475,0,1e-09,quantreg 5.97 summary.rq ker; hs = TRUE
+book_0.95,se_bofinger,x,0.320156866201322,0,1e-09,quantreg 5.97 summary.rq ker; hs = FALSE
 book_0.95,coef,z,2.45636995889225,1e-12,1e-10,quantreg 5.97 rq br
 book_0.95,coef_fn,z,2.45636996068556,1e-06,1e-05,quantreg 5.97 rq fn (duality gap 1e-6)
-book_0.95,se,z,1.33323298824992,0,1e-09,quantreg 5.97 summary.rq ker, hs = TRUE
-book_0.95,se_bofinger,z,1.34099801444365,0,1e-09,quantreg 5.97 summary.rq ker, hs = FALSE
-book_0.95,objective,,924.512895437582,0,1e-10,quantreg 5.97 rq br, the weighted check loss at its estimates
-engel_0.1,ecoef,(Intercept),162.615941197977,0,1e-09,expectreg 0.54 expectreg.ls laws, uncentred
+book_0.95,se,z,1.33323298824992,0,1e-09,quantreg 5.97 summary.rq ker; hs = TRUE
+book_0.95,se_bofinger,z,1.34099801444365,0,1e-09,quantreg 5.97 summary.rq ker; hs = FALSE
+book_0.95,objective,,924.512895437582,0,1e-10,quantreg 5.97 rq br; the weighted check loss at its estimates
+engel_0.1,ecoef,(Intercept),162.615941197977,0,1e-09,expectreg 0.54 expectreg.ls laws; uncentred
 engel_0.1,ecoef,income,0.382971970332959,0,1e-09,expectreg 0.54 expectreg.ls laws
 engel_0.1,ese,(Intercept),27.5067870486143,0,1e-09,asymmetric least squares sandwich (R)
 engel_0.1,ese,income,0.0352983418716618,0,1e-09,asymmetric least squares sandwich (R)
-engel_0.5,ecoef,(Intercept),147.475388523705,0,1e-09,expectreg 0.54 expectreg.ls laws, uncentred
+engel_0.5,ecoef,(Intercept),147.475388523705,0,1e-09,expectreg 0.54 expectreg.ls laws; uncentred
 engel_0.5,ecoef,income,0.485178423676923,0,1e-09,expectreg 0.54 expectreg.ls laws
 engel_0.5,ese,(Intercept),46.448834489383,0,1e-09,asymmetric least squares sandwich (R)
 engel_0.5,ese,income,0.0517724124726345,0,1e-09,asymmetric least squares sandwich (R)
-engel_0.9,ecoef,(Intercept),109.021436837492,0,1e-09,expectreg 0.54 expectreg.ls laws, uncentred
+engel_0.9,ecoef,(Intercept),109.021436837492,0,1e-09,expectreg 0.54 expectreg.ls laws; uncentred
 engel_0.9,ecoef,income,0.601721125244175,0,1e-09,expectreg 0.54 expectreg.ls laws
 engel_0.9,ese,(Intercept),43.1673692528144,0,1e-09,asymmetric least squares sandwich (R)
 engel_0.9,ese,income,0.0455542921857569,0,1e-09,asymmetric least squares sandwich (R)
-engel_pspline_0.2,ecoef,b0,576.214826518889,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b1,3829.01820050661,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b2,-19.8889999946448,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b3,-0.912168806716407,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b4,-9.86085759540434,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b5,-8.20353172086388,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b6,-3.58394573172186,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b7,-6.17477550969392,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b8,5.53732334473852,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b9,-6.80741669632168,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b10,16.269208798244,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b11,-5.30300409894083,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b12,-10.173446774014,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b13,-8.95011398406083,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b14,-3.32298423090881,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b15,-6.034513872628,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b16,0.951288304197083,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b17,-3.81229722846154,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b18,0.736500123458829,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b19,-2.88102303618348,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b20,-0.619590302354974,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.2,ecoef,b21,-2.95213334812616,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
+engel_pspline_0.2,ecoef,b0,576.214826518889,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b1,3829.01820050661,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b2,-19.8889999946448,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b3,-0.912168806716407,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b4,-9.86085759540434,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b5,-8.20353172086388,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b6,-3.58394573172186,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b7,-6.17477550969392,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b8,5.53732334473852,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b9,-6.80741669632168,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b10,16.269208798244,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b11,-5.30300409894083,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b12,-10.173446774014,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b13,-8.95011398406083,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b14,-3.32298423090881,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b15,-6.034513872628,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b16,0.951288304197083,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b17,-3.81229722846154,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b18,0.736500123458829,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b19,-2.88102303618348,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b20,-0.619590302354974,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.2,ecoef,b21,-2.95213334812616,3.82901820050661e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
 engel_pspline_0.2,efitted,1,279.824317378856,0,1e-09,expectreg 0.54 expectreg.ls fitted
 engel_pspline_0.2,efitted,50,817.214968191963,0,1e-09,expectreg 0.54 expectreg.ls fitted
 engel_pspline_0.2,efitted,100,563.977768016791,0,1e-09,expectreg 0.54 expectreg.ls fitted
 engel_pspline_0.2,efitted,200,881.625863263584,0,1e-09,expectreg 0.54 expectreg.ls fitted
-engel_pspline_0.8,ecoef,b0,670.02049406175,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b1,4490.78499885472,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b2,-43.6578584461778,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b3,-37.0854231523083,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b4,-14.0769832611352,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b5,-30.485319135361,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b6,-5.45161178625975,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b7,10.1750996269819,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b8,-4.26151643545619,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b9,0.391347006689623,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b10,7.43797240294311,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b11,-4.95462973023447,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b12,-5.90885571096032,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b13,-7.77627917131115,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b14,-3.37418183918955,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b15,-7.11522397044874,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b16,-0.0842780859148902,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b17,-5.39376089262986,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b18,-1.92321996959728,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b19,-1.62119313746289,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b20,0.274971218341728,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
-engel_pspline_0.8,ecoef,b21,-1.66898231521665,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws, lambda 5
+engel_pspline_0.8,ecoef,b0,670.02049406175,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b1,4490.78499885472,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b2,-43.6578584461778,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b3,-37.0854231523083,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b4,-14.0769832611352,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b5,-30.485319135361,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b6,-5.45161178625975,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b7,10.1750996269819,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b8,-4.26151643545619,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b9,0.391347006689623,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b10,7.43797240294311,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b11,-4.95462973023447,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b12,-5.90885571096032,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b13,-7.77627917131115,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b14,-3.37418183918955,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b15,-7.11522397044874,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b16,-0.0842780859148902,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b17,-5.39376089262986,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b18,-1.92321996959728,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b19,-1.62119313746289,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b20,0.274971218341728,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
+engel_pspline_0.8,ecoef,b21,-1.66898231521665,4.49078499885472e-05,1e-08,expectreg 0.54 expectreg.ls laws; lambda 5
 engel_pspline_0.8,efitted,1,318.281826353974,0,1e-09,expectreg 0.54 expectreg.ls fitted
 engel_pspline_0.8,efitted,50,960.187130741053,0,1e-09,expectreg 0.54 expectreg.ls fitted
 engel_pspline_0.8,efitted,100,649.079411762238,0,1e-09,expectreg 0.54 expectreg.ls fitted
