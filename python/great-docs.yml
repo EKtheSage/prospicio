@@ -331,6 +331,8 @@ reference:
       - reserving.ClarkLdf
       - reserving.ClarkCapeCod
       - reserving.ClarkFit
+      - reserving.PaidIncurredChain
+      - reserving.PaidIncurredFit
       - reserving.ExcessLayer
       - reserving.ScaleShift
       - reserving.ParetoShape
