@@ -11,7 +11,8 @@
 //!
 //! R leaves out the coupling of `Psi_0` with `Phi_1, ..., Phi_J` in the
 //! posterior precision, so the parity runs under
-//! `PicConvention::RChainLadder`; the default, the model's posterior, is
+//! `PicConvention::RChainLadder`; the default, the model's posterior
+//! (`PicConvention::Model`), is
 //! checked against direct conditioning in `prospicio-reserving`'s unit
 //! tests, and its distance from R's is recorded below.
 
@@ -76,7 +77,7 @@ fn on_usaa_the_ultimates_lie_between_the_paid_and_incurred_chain_ladders() {
     // change in it is noticed; it is not a property of the model.
     use prospicio_reserving::ChainLadder;
     let tri = triangle_columns("usaa", &["paid", "incurred"]);
-    let pic = fit("usaa", PicConvention::Paper);
+    let pic = fit("usaa", PicConvention::Model);
     let paid = ChainLadder::default().fit(&tri, "paid").unwrap().ultimate;
     let incurred = ChainLadder::default()
         .fit(&tri, "incurred")
@@ -95,15 +96,15 @@ fn on_usaa_the_ultimates_lie_between_the_paid_and_incurred_chain_ladders() {
 #[test]
 fn the_models_posterior_is_close_to_rs() {
     // The distance between the two conventions (reserving-v02.md decision
-    // 29): the model's posterior moves the total reserve and its standard
+    // 32): the model's posterior moves the total reserve and its standard
     // error by about 0.5% on USAA (1,604,986 and 111,519 against R's
     // 1,596,954 and 110,977) and by about 1.1% and 1.7% on Dahms' data.
     for (dataset, reserve, se) in [("usaa", 0.0050, 0.0049), ("dahms", 0.0114, 0.0168)] {
-        let paper = fit(dataset, PicConvention::Paper);
+        let model = fit(dataset, PicConvention::Model);
         let r = fit(dataset, PicConvention::RChainLadder);
         let rel = |a: f64, b: f64| a / b - 1.0;
-        let dr = rel(paper.total_reserve(), r.total_reserve());
-        let ds = rel(paper.total_std_err, r.total_std_err);
+        let dr = rel(model.total_reserve(), r.total_reserve());
+        let ds = rel(model.total_std_err, r.total_std_err);
         assert!((dr - reserve).abs() < 1e-4, "{dataset}: reserve {dr}");
         assert!((ds - se).abs() < 1e-4, "{dataset}: standard error {ds}");
     }

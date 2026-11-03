@@ -1,7 +1,7 @@
 //! Merz and Wüthrich's paid-incurred chain (PIC, 2010): log-normal paid
 //! and incurred development combined into one ultimate per origin, with a
 //! closed-form posterior and mean squared error of prediction
-//! (`docs/design/reserving-v02.md`, decision 29).
+//! (`docs/design/reserving-v02.md`, decision 32).
 //!
 //! The model (Merz and Wüthrich 2010, Model Assumptions 2.1 and 3.1), with
 //! development periods `j = 0, ..., J` and as many origins:
@@ -138,14 +138,17 @@ pub struct PaidIncurredChain {
 /// `log(I[J,0] / P[J,0])`, which its `A` and `b` count elsewhere, involves
 /// all of them. That is not the posterior of the model; prospicio's default
 /// is (checked in the unit tests against conditioning on every origin's
-/// paid and incurred values directly). On R's USAA example the difference
+/// paid and incurred values directly). Whether the paper's printed formula
+/// for `A` shares R's omission could not be checked, the paper not being
+/// at hand. On R's USAA example the difference
 /// raises the total reserve and its standard error by about 0.5% each
-/// (`docs/design/reserving-v02.md`, decision 29).
+/// (`docs/design/reserving-v02.md`, decision 32).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PicConvention {
-    /// The posterior of the model (Merz and Wüthrich 2010).
+    /// The posterior of the model (Merz and Wüthrich 2010, Model
+    /// Assumptions 3.1).
     #[default]
-    Paper,
+    Model,
     /// R ChainLadder's `PaidIncurredChain` exactly, with the coupling of
     /// `Psi_0` and `Phi_1, ..., Phi_J` left out.
     RChainLadder,
@@ -318,12 +321,8 @@ impl PaidIncurredChain {
             let b = paid_after(k) / gap(k);
             weight[o] = b;
             let e = &mut forms[o];
-            for m in k + 1..n {
-                e[m] = 1.0 - b;
-            }
-            for m in k..jj {
-                e[psi(m)] = b;
-            }
+            e[k + 1..n].fill(1.0 - b);
+            e[psi(k)..psi(jj)].fill(b);
             let quad = quadratic(&covariance, e, e);
             let mu: f64 = e.iter().zip(&mean).map(|(a, t)| a * t).sum();
             own_var[o] = (1.0 - b) * paid_after(k);
@@ -399,7 +398,7 @@ impl PicPriors {
                 )));
             }
             for (&m, &s) in means.iter().zip(sds) {
-                if !(s > 0.0) {
+                if s.is_nan() || s <= 0.0 {
                     return Err(Error::PaidIncurred(format!(
                         "a {name} prior standard deviation must be positive or infinite, got {s}"
                     )));
@@ -497,9 +496,10 @@ fn estimated_sd(
 ) -> Result<Vec<f64>> {
     let len = obs.len();
     if len < 3 {
-        return Err(Error::PaidIncurred(format!(
-            "the last {name} cannot be extrapolated from fewer than two estimates; give {name}"
-        )));
+        return Err(Error::TooFewAges {
+            needed: 4,
+            found: len + usize::from(name == "tau"),
+        });
     }
     let mut var: Vec<f64> = obs[..len - 1]
         .iter()
@@ -508,7 +508,7 @@ fn estimated_sd(
             x.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (x.len() - 1) as f64
         })
         .collect();
-    if let Some(j) = var.iter().position(|v| !(*v > 0.0)) {
+    if let Some(j) = var.iter().position(|v| v.is_nan() || *v <= 0.0) {
         return Err(Error::PaidIncurred(format!(
             "the estimated {name} of development period {j} is zero; give {name}"
         )));
@@ -533,7 +533,7 @@ fn estimated_sd(
         }
     };
     var.push(last);
-    if !last.is_finite() || !(last > 0.0) {
+    if !last.is_finite() || last <= 0.0 {
         return Err(Error::PaidIncurred(format!(
             "the last {name} cannot be extrapolated; give {name}"
         )));
@@ -799,16 +799,13 @@ mod tests {
         .fit(&tri, "paid", "incurred")
         .unwrap();
         let cl = geometric_ultimates(&tri, "paid");
-        for o in 0..10 {
+        for (o, cl) in cl.iter().enumerate() {
             let k = 9 - o;
             let adj: f64 = (k + 1..10)
                 .map(|m| fit.sigma[m].powi(2) * (1.0 + 1.0 / (10 - m) as f64) / 2.0)
                 .sum();
             assert!(fit.incurred_weight[o] < 1e-9);
-            assert!(
-                close(fit.ultimate[o], cl[o] * adj.exp(), 1e-8),
-                "origin {o}"
-            );
+            assert!(close(fit.ultimate[o], cl * adj.exp(), 1e-8), "origin {o}");
         }
     }
 
@@ -822,9 +819,9 @@ mod tests {
         .fit(&tri, "paid", "incurred")
         .unwrap();
         let cl = geometric_ultimates(&tri, "incurred");
-        for o in 1..10 {
+        for (o, cl) in cl.iter().enumerate().skip(1) {
             assert!(fit.incurred_weight[o] > 1.0 - 1e-9);
-            assert!(close(fit.ultimate[o], cl[o], 1e-8), "origin {o}");
+            assert!(close(fit.ultimate[o], *cl, 1e-8), "origin {o}");
         }
     }
 

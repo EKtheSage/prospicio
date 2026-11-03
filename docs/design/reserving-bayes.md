@@ -76,7 +76,8 @@ R `ChainLadder` and chainladder-python have no MCMC reserving model, so
 the reference is a Stan program of the same model, not a package. R
 `ChainLadder::PaidIncurredChain` (Merz and Wüthrich 2010) is a conjugate
 Bayesian paid-incurred model with a closed form; it is a candidate exact
-reference if a paid-incurred model is taken up (not checked).
+reference if a paid-incurred model is taken up; it is built and checked
+in `reserving-v02.md` decision 32.
 
 Data:
 

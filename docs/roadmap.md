@@ -505,6 +505,12 @@ what it is aiming for by v1.0.
     on the link ratios a Mack fit averaged; R ChainLadder's `cyEffTest`
     and `dfCorTest` to 1e-12 on RAA, GenIns and ABC, and Mack's printed
     values on RAA.
+  - Merz and Wüthrich's paid-incurred chain (`reserving-v02.md`,
+    decision 32; branch `claude/paid-incurred-chain`, issue #560, in
+    Rust, Python and R): paid and incurred in one log-normal Bayesian
+    model with a closed-form posterior; R ChainLadder's
+    `PaidIncurredChain` to 1e-9 on USAA and Dahms' data under its own
+    convention, the model's posterior by default.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental
