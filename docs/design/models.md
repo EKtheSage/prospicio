@@ -87,6 +87,10 @@ models and compares them.
 - `prospicio_glm::dglm::DoubleGlm`: double GLMs, a GLM for the mean and
   one for the log dispersion on their own designs, by ML or REML (see
   "Double GLMs"); Python `DoubleGlm`, R `dglm_fit()`.
+- ICE curves, accumulated local effects and SHAP values in the bindings
+  (see "ICE curves, accumulated local effects and SHAP values"); Python
+  `ice`, `ale`, `shap_values`, `BoosterFit.contributions`, R `ice()`,
+  `ale()`, `shap_values()`, `booster_contributions()`.
 - `prospicio_glm::zero`: zero-inflated and hurdle Poisson and negative
   binomial models with Vuong's test (see "Zero-inflated and hurdle
   counts"); Python `ZeroInflated`, `Hurdle`, R `zeroinfl_fit()`,
@@ -1218,6 +1222,61 @@ the unconstrained fits' dependence on experience falls at 7 (LightGBM) and
 - (d) *`check_monotone` checks the fitted model*, the mean prediction
   over the given rows with the feature set to each grid value, so a
   violation within `tol` (relative, 1e-9) of the largest mean is ignored.
+
+## ICE curves, accumulated local effects and SHAP values (#547)
+
+Status: built; items (a) to (f) proposed for the user's acceptance.
+
+Three local explanations beside the global ones of #355, in Python and R
+like them, on predictions only:
+
+- **ICE curves** (`ice`): each row's prediction with a feature set to each
+  value, the curves whose mean is `partial_dependence`, and the centred
+  curves.
+- **Accumulated local effects** (`ale`), Apley and Zhu's first order, as
+  `ALEPlot`: for a numeric feature over quantile intervals, for a factor
+  over its levels in ALEPlot's order or a given one.
+- **SHAP values** (`shap_values`): the Shapley values of the
+  interventional game over a background sample, exact over every
+  coalition or estimated from sampled feature orders, with an `output`
+  transform; and tree SHAP on the boosters from the engines' own
+  contributions (Python `BoosterFit.contributions`, R
+  `booster_contributions()`).
+
+ALEPlot 1.1 is matched to 1e-10 on a seeded frame of 300 rows with
+correlated features, a four-level factor and a prediction function with
+interactions (`validation/scripts/r_ale.R`), for a numeric feature at 10
+and 40 intervals and the factor; shap 0.54.1's `KernelExplainer`, exact
+at four features, to 1e-9 on the same frame and function, on the response
+and on `log(f + 10)` (`validation/scripts/shap_kernel.py`). A log-link
+GLM's values on the linear predictor are `beta (x - mean x)` to 1e-10, the
+ICE mean is the partial dependence to 1e-12, and the boosters'
+contributions add up to the link-scale prediction.
+
+- (a) *Interventional SHAP over a background sample*, as SHAP's
+  `KernelExplainer`: `v(S)` is the mean over the background rows of the
+  output with the features in `S` from the row. Features may be moved in
+  groups, as the permutation importance's.
+- (b) *Exact values, not a sampled Kernel SHAP regression*, up to
+  `max_exact = 12` features (`2^M` predictions of rows times background);
+  above that, *permutation sampling* (Strumbelj and Kononenko) from
+  `permutation(M, seed, p)`, so Python and R give the same values and every
+  estimate adds up exactly. The issue's sampled Kernel SHAP is not built.
+- (c) *`output` applies to each prediction before the mean over the
+  background*: `log` gives a GLM's exact linear-predictor SHAP, `beta (x -
+  mean x)` for each term, with no GLM-specific code.
+- (d) *ALE grid and centring as ALEPlot's*: R's type 1 quantiles at
+  `seq(1/K, 1, length.out = K)` (whose rounding moves some quantiles to the
+  next value, reproduced in Python), right-closed intervals, the trapezoid
+  centring; a factor centred on its level frequencies.
+- (e) *A factor's default order is ALEPlot's* classical scaling of the
+  summed distances between the levels' distributions of the other columns,
+  read from the end whose level sorts first (scaling fixes it only up to
+  direction), or `levels` given.
+- (f) *Tree SHAP comes from the engines* (`pred_contrib`, `pred_contribs`,
+  R `type = "contrib"`, `predcontrib`) on the link scale, the offset and
+  base in the bias, with no tree code in prospicio; the values are per
+  design column, not per raw feature.
 
 ## Zero-inflated and hurdle counts (#548)
 

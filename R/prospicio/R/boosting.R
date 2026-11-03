@@ -417,6 +417,38 @@ S7::method(predict_distribution, booster_model) <- function(object, newdata, n_s
                       power = object@spec$power)
 }
 
+#' Tree SHAP contributions of a boosted model
+#'
+#' Each design column's contribution to each row's prediction on the link
+#' scale, from the engine's own path-dependent Tree SHAP (LightGBM's
+#' `type = "contrib"`, XGBoost's `predcontrib = TRUE`), with no tree code
+#' here. The `bias` holds each row's expected value plus its offset and the
+#' fit's base, so `bias + rowSums(values)` is the link-scale prediction: the
+#' log of the mean for a log-link family.
+#'
+#' @param object A `booster_model` from [booster_fit()].
+#' @param newdata A data frame.
+#' @param offset An optional offset added to the formula's.
+#' @returns A list with `values` (a rows by design columns matrix) and
+#'   `bias`.
+#' @export
+booster_contributions <- function(object, newdata, offset = NULL) {
+  nd <- booster_new_design(object, newdata, offset)
+  engine <- object@spec$engine
+  booster_engine(engine)
+  if (engine == "lightgbm") {
+    contrib <- predict(object@model, nd$x, type = "contrib")
+    bias <- contrib[, ncol(contrib)] + nd$start
+  } else {
+    contrib <- predict(object@model, xgboost::xgb.DMatrix(nd$x, base_margin = nd$start),
+                       predcontrib = TRUE)
+    bias <- contrib[, ncol(contrib)]
+  }
+  values <- matrix(as.double(contrib[, -ncol(contrib), drop = FALSE]), nrow(contrib),
+                   dimnames = list(NULL, colnames(nd$x)))
+  list(values = values, bias = unname(as.double(bias)))
+}
+
 #' Dispersion per row of a boosted model
 #'
 #' Each row's dispersion from the dispersion model of a [booster_fit()] with

@@ -1753,6 +1753,218 @@ partial_dependence <- function(model, data, feature, values, splits = NULL) {
   res
 }
 
+# `data` with column `feature` set to `values` (one value or one per row),
+# keeping a factor's levels.
+explain_set <- function(data, feature, values) {
+  col <- data[[feature]]
+  if (length(values) == 1) values <- rep(values, nrow(data))
+  data[[feature]] <- if (is.factor(col)) factor(as.character(values), levels = levels(col)) else values
+  data
+}
+
+#' ICE curves, accumulated local effects and SHAP values
+#'
+#' `ice()` gives individual conditional expectation curves (Goldstein,
+#' Kapelner, Bleich and Pitkin, 2015): each row's prediction with `feature`
+#' set to each value and its other columns as they are. Their mean is
+#' [partial_dependence()]; curves that cross or fan out show an interaction
+#' the mean hides. `center = TRUE` subtracts each curve's first value
+#' (c-ICE).
+#'
+#' `ale()` gives first-order accumulated local effects (Apley and Zhu,
+#' 2020), as `ALEPlot::ALEPlot()`: the effect of `feature` built from
+#' prediction differences across small intervals of it, each over only the
+#' rows in the interval, so correlated features are not pushed into
+#' combinations the data never shows. A numeric feature is cut at its
+#' minimum and its type 1 quantiles at `seq(1/bins, 1, length.out = bins)`;
+#' the effects are centred to a mean of 0 over the rows. A factor's levels
+#' accumulate in the order `levels` gives or, by default, ALEPlot's order
+#' (classical scaling of the distances between the levels' distributions of
+#' the other columns, read from the end whose level sorts first).
+#'
+#' `shap_values()` gives SHAP values (Lundberg and Lee, 2017): the Shapley
+#' values of the game `v(S)`, the mean over the `background` rows of the
+#' output with the features in `S` taken from the row and the others from
+#' the background row (interventional, as SHAP's `KernelExplainer`). A row's
+#' values sum to its output less the `baseline`. Without `n_permutations`
+#' they are exact over every coalition (up to `max_exact` features); with it
+#' they are estimated from that many feature orders, order `p` from
+#' `permutation(M, seed, p)`, the same values as Python's. `output`
+#' transforms each prediction before the mean: `log` explains a log-link
+#' model's linear predictor, where a GLM's values are exactly `beta * (x -
+#' mean(x))` over the background.
+#'
+#' @param model A fitted model with a `predict(model, newdata)` method.
+#' @param data A data frame: the rows to explain.
+#' @param feature One column of `data`.
+#' @param values The values to set it to.
+#' @param center Whether `ice()` subtracts each curve's first value.
+#' @param bins For a numeric feature, the number of quantile intervals.
+#' @param levels For a factor or character feature, the order of its levels.
+#' @param background A data frame with the columns of `data`: a sample of
+#'   the portfolio.
+#' @param features As for [permutation_importance()]: column names, or a
+#'   list of names moved together; every column by default.
+#' @param output A function applied to each prediction, or `NULL`.
+#' @param n_permutations Feature orders to sample, or `NULL` for exact
+#'   values.
+#' @param seed Seed of the orders.
+#' @param max_exact The most features the exact values enumerate.
+#' @returns `ice()`: a list with `feature`, `values`, `curves` (a rows by
+#'   values matrix) and `mean`. `ale()`: a data frame with `value`, `effect`
+#'   and `count` (rows in each interval or at each level). `shap_values()`:
+#'   a rows by features matrix with attributes `baseline`, `outputs` and
+#'   `method` (`"exact"` or `"permutation"`).
+#' @export
+#' @examples
+#' d <- data.frame(x = rep(0:3, 10), z = rep(0:4, 8))
+#' d$y <- 1 + d$x %% 3 + d$z
+#' fit <- glm_fit(y ~ x + z, d, family = "poisson")
+#' ice(fit, d, "x", c(0, 3))$mean
+#' ale(fit, d, "x", bins = 3)
+#' s <- shap_values(fit, d[1:2, c("x", "z")], d[, c("x", "z")], output = log)
+#' attr(s, "baseline") + rowSums(s) - log(predict(fit, d[1:2, ]))
+ice <- function(model, data, feature, values, center = FALSE) {
+  if (length(feature) != 1 || !feature %in% names(data)) stop("no column ", feature, " in the data")
+  if (!length(values)) stop("values must not be empty")
+  curves <- vapply(seq_along(values), function(v) {
+    as.double(stats::predict(model, explain_set(data, feature, values[[v]])))
+  }, double(nrow(data)))
+  curves <- matrix(curves, nrow(data))
+  if (center) curves <- curves - curves[, 1]
+  list(feature = feature, values = values, curves = curves, mean = colMeans(curves))
+}
+
+# ALEPlot's order of a factor's levels (its classical scaling of summed
+# distances over the other columns), read from the end that sorts first.
+ale_order <- function(data, feature, levs) {
+  x <- as.character(data[[feature]])
+  k <- length(levs)
+  dist <- matrix(0, k, k)
+  for (j in setdiff(names(data), feature)) {
+    col <- data[[j]]
+    d <- matrix(0, k, k)
+    if (is.numeric(col)) {
+      q <- stats::quantile(col, probs = seq(0, 1, length.out = 100), names = FALSE)
+      e <- lapply(levs, function(l) stats::ecdf(col[x == l])(q))
+      for (a in seq_len(k - 1)) for (b in (a + 1):k) d[a, b] <- d[b, a] <- max(abs(e[[a]] - e[[b]]))
+    } else {
+      tab <- table(factor(x, levels = levs), as.character(col))
+      tab <- tab / rowSums(tab)
+      for (a in seq_len(k - 1)) for (b in (a + 1):k) {
+        d[a, b] <- d[b, a] <- sum(abs(tab[a, ] - tab[b, ])) / 2
+      }
+    }
+    dist <- dist + d
+  }
+  order <- levs[order(stats::cmdscale(dist, k = 1)[, 1])]
+  if (order[1] > order[k]) rev(order) else order
+}
+
+#' @rdname ice
+#' @export
+ale <- function(model, data, feature, bins = 40, levels = NULL) {
+  if (length(feature) != 1 || !feature %in% names(data)) stop("no column ", feature, " in the data")
+  x <- data[[feature]]
+  pred <- function(v) as.double(stats::predict(model, explain_set(data, feature, v)))
+  n <- nrow(data)
+  if (is.null(levels) && is.numeric(x)) {
+    if (bins < 1) stop("bins must be at least 1")
+    z <- unique(c(min(x), stats::quantile(x, seq(1 / bins, 1, length.out = bins), type = 1,
+                                          names = FALSE)))
+    if (length(z) < 2) stop(feature, " takes one value: it has no local effect")
+    k <- length(z) - 1
+    a <- as.integer(cut(x, breaks = z, include.lowest = TRUE))
+    delta <- pred(z[a + 1]) - pred(z[a])
+    count <- tabulate(a, k)
+    f <- c(0, cumsum(vapply(seq_len(k), function(b) sum(delta[a == b]) / count[b], double(1))))
+    centre <- sum((f[1:k] + f[2:(k + 1)]) / 2 * count) / n
+    return(data.frame(value = z, effect = f - centre, count = c(NA, count)))
+  }
+  present <- unique(as.character(x))
+  order <- if (is.null(levels)) ale_order(data, feature, sort(present)) else {
+    levels <- as.character(levels)
+    missing <- setdiff(present, levels)
+    if (length(missing)) stop("levels lacks ", missing[1], ", a value of ", feature)
+    levels[levels %in% present]
+  }
+  k <- length(order)
+  if (k < 2) stop(feature, " takes one level: it has no local effect")
+  at <- match(as.character(x), order)
+  base <- pred(as.character(x))
+  up <- pred(order[pmin(at + 1, k)])
+  down <- pred(order[pmax(at - 1, 1)])
+  delta <- vapply(seq_len(k - 1), function(j) {
+    mean(c((up - base)[at == j], (base - down)[at == j + 1]))
+  }, double(1))
+  f <- c(0, cumsum(delta))
+  freq <- tabulate(at, k)
+  data.frame(value = order, effect = f - sum(f * freq) / n, count = freq)
+}
+
+#' @rdname ice
+#' @export
+shap_values <- function(model, data, background, features = NULL, output = NULL,
+                        n_permutations = NULL, seed = 0, max_exact = 12) {
+  if (!setequal(names(background), names(data))) stop("background must have the data's columns")
+  groups <- explain_groups(if (is.null(features)) names(data) else features, data)
+  m <- length(groups)
+  n <- nrow(data)
+  nb <- nrow(background)
+  out <- if (is.null(output)) identity else output
+  rows_x <- rep(seq_len(n), each = nb)
+  rows_b <- rep(seq_len(nb), times = n)
+  value <- function(mask) {
+    take <- unlist(groups[as.logical(mask)], use.names = FALSE)
+    comp <- background[rows_b, names(data), drop = FALSE]
+    comp[take] <- data[rows_x, take, drop = FALSE]
+    colMeans(matrix(out(as.double(stats::predict(model, comp))), nb))
+  }
+  baseline <- mean(out(as.double(stats::predict(model, background))))
+  outputs <- out(as.double(stats::predict(model, data)))
+  phi <- matrix(0, n, m, dimnames = list(NULL, names(groups)))
+  if (is.null(n_permutations)) {
+    if (m > max_exact) {
+      stop(m, " features need 2^", m, " coalitions; give n_permutations or raise max_exact")
+    }
+    masks <- lapply(0:(2^m - 1), function(i) as.integer(intToBits(i))[seq_len(m)])
+    values <- lapply(masks, function(mask) {
+      if (!any(mask)) rep(baseline, n) else if (all(mask == 1)) outputs else value(mask)
+    })
+    key <- function(mask) sum(mask * 2^(seq_len(m) - 1)) + 1
+    for (i in seq_along(masks)) {
+      mask <- masks[[i]]
+      size <- sum(mask)
+      for (g in which(mask == 0)) {
+        w <- factorial(size) * factorial(m - size - 1) / factorial(m)
+        with_g <- mask
+        with_g[g] <- 1L
+        phi[, g] <- phi[, g] + w * (values[[key(with_g)]] - values[[i]])
+      }
+    }
+    method <- "exact"
+  } else {
+    if (n_permutations < 1) stop("n_permutations must be at least 1")
+    for (p in seq_len(n_permutations) - 1) {
+      order <- permutation(m, seed, p)
+      mask <- integer(m)
+      prev <- rep(baseline, n)
+      for (step in seq_len(m)) {
+        g <- order[step]
+        mask[g] <- 1L
+        cur <- if (step == m) outputs else value(mask)
+        phi[, g] <- phi[, g] + (cur - prev) / n_permutations
+        prev <- cur
+      }
+    }
+    method <- "permutation"
+  }
+  attr(phi, "baseline") <- baseline
+  attr(phi, "outputs") <- outputs
+  attr(phi, "method") <- method
+  phi
+}
+
 #' Cross-validate an elastic net
 #'
 #' glmnet's `cv.glmnet()` on the Rust core: on each fold, fits the whole

@@ -393,6 +393,46 @@ class BoosterFit:
         return {"grid": list(grid), "mean": means, "direction": direction, "violations": bad,
                 "monotone": not bad}
 
+    def contributions(self, design):
+        """Tree SHAP: each design column's contribution to each row's
+        prediction on the link scale, from the engine's own path-dependent
+        Tree SHAP (Lundberg, Erion and Lee; LightGBM's ``pred_contrib``,
+        XGBoost's ``pred_contribs``), with no tree code here.
+
+        Parameters
+        ----------
+        design : Design
+            Same columns as the training design; its offset applies.
+
+        Returns
+        -------
+        dict
+            ``names`` (the design's columns), ``values`` (one list per row,
+            one contribution per column) and ``bias`` (each row's expected
+            value plus its offset and the fit's ``base``), so that
+            ``bias[i] + sum(values[i])`` is the row's link-scale prediction:
+            the log of the mean for a log-link family.
+        """
+        import numpy as np
+
+        if list(design.names) != self.names:
+            raise ValueError(f"design columns {design.names} differ from the fit's {self.names}")
+        x = _matrix(design)
+        start = np.asarray(design.offset, dtype=float) + self.base
+        if self.spec.engine == "lightgbm":
+            contrib = np.asarray(self.model.predict(x, pred_contrib=True), dtype=float)
+            bias = contrib[:, -1] + start
+        else:
+            import xgboost as xgb
+
+            contrib = np.asarray(
+                self.model.predict(xgb.DMatrix(x, base_margin=start), pred_contribs=True),
+                dtype=float,
+            )
+            bias = contrib[:, -1]
+        return {"names": list(self.names), "values": contrib[:, :-1].tolist(),
+                "bias": bias.tolist()}
+
     def predict_dispersion(self, design):
         """Each row's dispersion from the dispersion model, or the constant
         ``dispersion`` when the booster was fitted without one.

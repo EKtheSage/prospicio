@@ -267,6 +267,7 @@ reference:
       - dglm_fit
       - zeroinfl_fit
       - quantreg_fit
+      - ice
       - glm_model
       - glm_diagnostics
       - f_test
@@ -298,6 +299,7 @@ reference:
       - booster_fit
       - booster_model
       - check_monotone
+      - booster_contributions
       - simulate_from_means
       - predict_quantiles
       - predict_dispersion

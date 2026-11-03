@@ -585,6 +585,9 @@ what it is aiming for by v1.0.
   Linear quantile regression (kernel and bootstrap standard errors,
   rearrangement) and expectile regression, penalised or not (quantreg and
   expectreg parity; Rust, Python and R, #550).
+  ICE curves, accumulated local effects and SHAP values, exact or
+  sampled, and tree SHAP on the boosters (ALEPlot and shap parity; Python
+  and R, #547).
 - **Next:** survival models, parked with claim-level reserving (the
   user's decision of 2026-10-29).
 - **v1.0:** mgcv's useful part for Tweedie, Poisson and gamma.

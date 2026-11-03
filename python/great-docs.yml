@@ -220,6 +220,12 @@ reference:
       - models.InteractionScreen
       - models.partial_dependence
       - models.PartialDependence
+      - models.ice
+      - models.IceCurves
+      - models.ale
+      - models.AccumulatedLocalEffects
+      - models.shap_values
+      - models.ShapValues
       - models.actual_vs_expected
       - models.simulate_from_means
   - title: Gradient boosting

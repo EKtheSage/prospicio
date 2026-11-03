@@ -1684,3 +1684,134 @@ def test_time_splits_window_horizon_gap_step():
             assert s == ([int(v) for v in r["train"].split()], [int(v) for v in r["test"].split()])
     with pytest.raises(ValueError, match="training period"):
         time_splits(periods, 2, horizon=3, step=3, gap=1)
+
+
+def _explain_case():
+    """validation/data/explain_frame.csv and the prediction function of
+    validation/scripts/r_ale.R and shap_kernel.py, as a model on a design."""
+    import csv
+    import math
+    import pathlib
+
+    from prospicio.models import Design
+
+    root = pathlib.Path(__file__).resolve().parents[2] / "validation"
+    with open(root / "data" / "explain_frame.csv") as f:
+        rows = list(csv.DictReader(f))
+    frame = {
+        "x1": [float(r["x1"]) for r in rows],
+        "x2": [float(r["x2"]) for r in rows],
+        "x3": [float(r["x3"]) for r in rows],
+        "g": [r["g"] for r in rows],
+    }
+    effect = {"a": 0.0, "b": 0.5, "c": -0.3, "d": 1.0}
+    levels = ["a", "b", "c", "d"]
+
+    def build(f):
+        cols = [list(f["x1"]), list(f["x2"]), list(f["x3"])]
+        cols += [[float(v == lev) for v in f["g"]] for lev in levels]
+        return Design(cols, ["x1", "x2", "x3"] + [f"g{lev}" for lev in levels])
+
+    class Model:
+        def predict(self, design):
+            c = {name: design.column(j) for j, name in enumerate(design.names)}
+            out = []
+            for i in range(len(c["x1"])):
+                g = next(lev for lev in levels if c[f"g{lev}"][i] == 1.0)
+                x1, x2, x3 = c["x1"][i], c["x2"][i], c["x3"][i]
+                out.append(math.exp(0.3 * x1) + x1 * x2 + effect[g] + 0.5 * x3**2
+                           + 0.4 * x3 * (g == "d"))
+            return out
+
+    return root, frame, build, Model()
+
+
+def test_ale_matches_aleplot():
+    import csv
+
+    from prospicio.models import ale
+
+    root, frame, build, model = _explain_case()
+    with open(root / "reference" / "ale_aleplot.csv") as f:
+        ref = list(csv.DictReader(line for line in f if not line.startswith("#")))
+    for feature, bins in [("x1", 10), ("x3", 40), ("g", None)]:
+        want = [r for r in ref if r["feature"] == feature]
+        got = ale(model, frame, build, feature, bins=bins or 40)
+        assert len(got.values) == len(want)
+        for v, e, r in zip(got.values, got.effects, want):
+            if feature == "g":
+                assert v == r["value"]
+            else:
+                assert v == pytest.approx(float(r["value"]), rel=1e-12)
+            assert e == pytest.approx(float(r["effect"]), rel=1e-10, abs=1e-12)
+    # A given order of the levels changes only the path, not the levels'
+    # effects relative to one another in a model without interactions on g.
+    shuffled = ale(model, frame, build, "g", levels=["b", "a", "d", "c"])
+    assert shuffled.values == ["b", "a", "d", "c"]
+
+
+def test_shap_values_match_kernel_shap():
+    import csv
+    import math
+
+    from prospicio.models import shap_values
+
+    root, frame, build, model = _explain_case()
+    with open(root / "reference" / "shap_kernel.csv") as f:
+        ref = {
+            (r["output"], r["quantity"], r["row"], r["feature"]): float(r["expected"])
+            for r in csv.DictReader(line for line in f if not line.startswith("#"))
+        }
+    background = {k: v[:40] for k, v in frame.items()}
+    rows = {k: v[40:48] for k, v in frame.items()}
+    for name, output in [("identity", None), ("log10", lambda v: math.log(v + 10.0))]:
+        s = shap_values(model, rows, build, background, output=output)
+        assert s.labels == ["x1", "x2", "x3", "g"] and s.method == "exact"
+        assert s.baseline == pytest.approx(ref[(name, "baseline", "", "")], rel=1e-12)
+        for i in range(8):
+            for j, feature in enumerate(s.labels):
+                want = ref[(name, "shap", str(41 + i), feature)]
+                assert s.values[i][j] == pytest.approx(want, rel=1e-9, abs=1e-12)
+            assert s.baseline + sum(s.values[i]) == pytest.approx(s.outputs[i], rel=1e-12)
+    # Permutation sampling is additive exactly and near the exact values.
+    exact = shap_values(model, rows, build, background)
+    approx = shap_values(model, rows, build, background, n_permutations=200, seed=3)
+    assert approx.method == "permutation"
+    for i in range(8):
+        assert approx.baseline + sum(approx.values[i]) == pytest.approx(approx.outputs[i], rel=1e-12)
+        for a, b in zip(approx.values[i], exact.values[i]):
+            assert abs(a - b) < 0.15 * max(1.0, abs(b))
+    # Moving x1 and x2 together: their joint value is the sum of the pair's
+    # contributions only up to their interaction, and the total still adds up.
+    grouped = shap_values(model, rows, build, background, features={"x": ["x1", "x2"], "x3": "x3", "g": "g"})
+    assert grouped.labels == ["x", "x3", "g"]
+    assert grouped.baseline + sum(grouped.values[0]) == pytest.approx(grouped.outputs[0], rel=1e-12)
+
+
+def test_ice_mean_is_partial_dependence_and_glm_shap_is_closed_form():
+    import math
+
+    from prospicio.models import Design, Glm, ice, partial_dependence, shap_values
+
+    root, frame, build, model = _explain_case()
+    values = [-1.0, 0.0, 1.0, 2.0]
+    curves = ice(model, frame, build, "x3", values)
+    pd = partial_dependence(model, frame, build, "x3", values)
+    assert curves.mean == pytest.approx(pd.mean, rel=1e-12)
+    assert all(c[0] == 0.0 for c in curves.centered())
+    # The g = "d" rows' curves have a steeper slope: the interaction.
+    slope = [c[-1] - c[0] for c in curves.curves]
+    d = [s for s, g in zip(slope, frame["g"]) if g == "d"]
+    other = [s for s, g in zip(slope, frame["g"]) if g != "d"]
+    assert min(d) > max(other)
+    # A log-link GLM's SHAP on the linear predictor is beta (x - mean x).
+    n = len(frame["x1"])
+    f = {"x1": frame["x1"], "x3": frame["x3"]}
+    gb = lambda f: Design([[1.0] * len(f["x1"]), list(f["x1"]), list(f["x3"])], ["(Intercept)", "x1", "x3"])
+    y = [1.0 + (i % 5) for i in range(n)]
+    fit = Glm("poisson").fit(gb(f), y)
+    s = shap_values(fit, {k: v[:5] for k, v in f.items()}, gb, f, output=math.log)
+    for j, name in enumerate(["x1", "x3"]):
+        mean = sum(f[name]) / n
+        for i in range(5):
+            assert s.values[i][j] == pytest.approx(fit.coefficients[j + 1] * (f[name][i] - mean), abs=1e-10)

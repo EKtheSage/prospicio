@@ -14,3 +14,9 @@
   = "ker")` and expectreg 0.54's `expectreg.ls`; Python
   `QuantileRegression`, `ExpectileRegression`, R `quantreg_fit()`,
   `expectreg_fit()` (#550, #727).
+- ICE curves (`ice`), accumulated local effects (`ale`, as ALEPlot's,
+  numeric and categorical) and SHAP values (`shap_values`, exact or by
+  permutation sampling, additive, matching shap's exact `KernelExplainer`),
+  and tree SHAP on the boosters from the engines' own contributions
+  (`BoosterFit.contributions`); in Python and R (`ice()`, `ale()`,
+  `shap_values()`, `booster_contributions()`) (#547, #727).
