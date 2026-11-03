@@ -38,6 +38,16 @@ from .prospicio_native import (
     Terms,
     TweedieFit,
     TweedieGlm,
+    TwoPartFit,
+    Hurdle,
+    ZeroInflated,
+    QuantileRegression,
+    QuantileFit,
+    QuantileFits,
+    ExpectileRegression,
+    ExpectileFit,
+    count_log_likelihoods,
+    vuong,
     crps,
     deviance,
     elpd_loo,
@@ -128,6 +138,16 @@ __all__ = [
     "NegativeBinomialFit",
     "DoubleGlm",
     "DoubleGlmFit",
+    "ZeroInflated",
+    "Hurdle",
+    "TwoPartFit",
+    "QuantileRegression",
+    "QuantileFit",
+    "QuantileFits",
+    "ExpectileRegression",
+    "ExpectileFit",
+    "count_log_likelihoods",
+    "vuong",
     "Glmm",
     "GlmmFit",
     "ElasticNet",
@@ -194,6 +214,12 @@ __all__ = [
     "interaction_screen",
     "InteractionScreen",
     "partial_dependence",
+    "ice",
+    "IceCurves",
+    "ale",
+    "AccumulatedLocalEffects",
+    "shap_values",
+    "ShapValues",
     "PartialDependence",
     "stacking_weights",
     "pseudo_bma_weights",
@@ -1285,3 +1311,462 @@ def partial_dependence(model, frame, build, feature, values, y=None, splits=None
             raise ValueError("partial_dependence needs y to fit on the splits")
         by_split = _per_split(model, frame, y, build, splits, run, n_jobs)
     return PartialDependence(feature, values, by_split)
+
+
+def _set_column(column, value):
+    return _constant(column, value)
+
+
+@dataclass
+class IceCurves:
+    """The result of ``ice``.
+
+    Attributes
+    ----------
+    feature : str
+    values : list
+    curves : list of list of float
+        ``curves[i][v]``: row ``i``'s prediction with the feature set to
+        ``values[v]`` and its other columns as they are.
+    """
+
+    feature: str
+    values: list
+    curves: list
+
+    @property
+    def mean(self):
+        """The mean curve over the rows: ``partial_dependence``'s values."""
+        n = len(self.curves)
+        return [sum(c[v] for c in self.curves) / n for v in range(len(self.values))]
+
+    def centered(self, at=None):
+        """Each curve less its value at ``at`` (the first value by default),
+        so curves that differ only in level overlap (c-ICE)."""
+        k = 0 if at is None else self.values.index(at)
+        return [[p - c[k] for p in c] for c in self.curves]
+
+
+def ice(model, frame, build, feature, values):
+    """Individual conditional expectation curves (Goldstein, Kapelner, Bleich
+    and Pitkin, 2015): each row's prediction with ``feature`` set to each
+    value and its other columns as they are. Their mean is
+    ``partial_dependence``; curves that cross or fan out show an
+    interaction the mean hides.
+
+    Parameters
+    ----------
+    model : object
+        A fitted model with ``predict(design)``.
+    frame : dict
+        Column name to values, the rows to explain.
+    build : callable
+        ``build(frame) -> Design``.
+    feature : str
+        One column of ``frame``.
+    values : list
+        The values to set it to.
+
+    Returns
+    -------
+    IceCurves
+
+    Examples
+    --------
+    >>> from prospicio.models import Design, Glm, ice, partial_dependence
+    >>> f = {"x": [float(i % 4) for i in range(40)], "z": [float(i % 3) for i in range(40)]}
+    >>> build = lambda f: Design([[1.0] * len(f["x"]), list(f["x"]), list(f["z"])], ["(Intercept)", "x", "z"])
+    >>> fit = Glm("poisson").fit(build(f), [1.0 + (i % 5) for i in range(40)])
+    >>> curves = ice(fit, f, build, "x", [0.0, 3.0])
+    >>> pd = partial_dependence(fit, f, build, "x", [0.0, 3.0])
+    >>> [round(a - b, 12) for a, b in zip(curves.mean, pd.mean)]
+    [0.0, 0.0]
+    """
+    if feature not in frame:
+        raise ValueError(f"no column {feature!r} in the frame")
+    values = list(values)
+    if not values:
+        raise ValueError("values must not be empty")
+    n = _frame_rows(frame)
+    columns = [
+        list(model.predict(build(dict(frame, **{feature: _set_column(frame[feature], v)}))))
+        for v in values
+    ]
+    return IceCurves(feature, values, [[col[i] for col in columns] for i in range(n)])
+
+
+def _quantile_type1(sorted_values, p):
+    """R's ``quantile(type = 1)``: the inverse of the empirical cdf, with R's
+    fuzz of four machine epsilons."""
+    n = len(sorted_values)
+    fuzz = 4 * 2.220446049250313e-16
+    nppm = n * p
+    j = math.floor(nppm + fuzz)
+    k = j + 1 if nppm > j + fuzz else j
+    return sorted_values[min(max(k, 1), n) - 1]
+
+
+def _quantile_type7(sorted_values, p):
+    n = len(sorted_values)
+    h = (n - 1) * p
+    lo = math.floor(h + 4 * 2.220446049250313e-16)
+    hi = min(lo + 1, n - 1)
+    return sorted_values[lo] + (h - lo) * (sorted_values[hi] - sorted_values[lo])
+
+
+def _is_numeric(column):
+    return all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in column) or (
+        type(column).__module__ == "numpy" and column.dtype.kind in "iuf"
+    )
+
+
+def _ale_order(frame, feature, levels):
+    """ALEPlot's order of a factor's levels: the first coordinate of classical
+    scaling of the summed distances between the levels' distributions of
+    every other column (Kolmogorov-Smirnov on 100 quantiles for a numeric
+    column, half the L1 distance of the conditional frequencies for a
+    categorical one)."""
+    x = list(frame[feature])
+    k = len(levels)
+    rows = {lev: [i for i, v in enumerate(x) if v == lev] for lev in levels}
+    dist = [[0.0] * k for _ in range(k)]
+    for name, col in frame.items():
+        if name == feature:
+            continue
+        col = list(col)
+        if _is_numeric(col):
+            s = sorted(col)
+            grid = [_quantile_type7(s, q / 99) for q in range(100)]
+            ecdf = {}
+            for lev in levels:
+                vals = sorted(col[i] for i in rows[lev])
+                m = len(vals)
+                out, j = [], 0
+                for g in grid:
+                    while j < m and vals[j] <= g:
+                        j += 1
+                    out.append(j / m)
+                ecdf[lev] = out
+            for a in range(k):
+                for b in range(a + 1, k):
+                    d = max(abs(u - v) for u, v in zip(ecdf[levels[a]], ecdf[levels[b]]))
+                    dist[a][b] += d
+                    dist[b][a] += d
+        else:
+            cats = sorted(set(col), key=str)
+            freq = {
+                lev: [sum(1 for i in rows[lev] if col[i] == c) / len(rows[lev]) for c in cats]
+                for lev in levels
+            }
+            for a in range(k):
+                for b in range(a + 1, k):
+                    d = sum(abs(u - v) for u, v in zip(freq[levels[a]], freq[levels[b]])) / 2
+                    dist[a][b] += d
+                    dist[b][a] += d
+    # Classical scaling to one dimension: the leading eigenvector of
+    # -J D^2 J / 2 by power iteration.
+    d2 = [[v * v for v in r] for r in dist]
+    rmean = [sum(r) / k for r in d2]
+    tmean = sum(rmean) / k
+    b = [[-(d2[i][j] - rmean[i] - rmean[j] + tmean) / 2 for j in range(k)] for i in range(k)]
+    v = [1.0 + 0.1 * i for i in range(k)]
+    for _ in range(1000):
+        w = [sum(b[i][j] * v[j] for j in range(k)) for i in range(k)]
+        norm = math.sqrt(sum(t * t for t in w)) or 1.0
+        w = [t / norm for t in w]
+        if max(abs(p - q) for p, q in zip(w, v)) < 1e-14:
+            v = w
+            break
+        v = w
+    order = [levels[i] for i in sorted(range(k), key=lambda i: v[i])]
+    # Scaling fixes the order up to its direction: start from the end whose
+    # level sorts first, so Python and R agree.
+    return order if str(order[0]) <= str(order[-1]) else order[::-1]
+
+
+@dataclass
+class AccumulatedLocalEffects:
+    """The result of ``ale``.
+
+    Attributes
+    ----------
+    feature : str
+    values : list
+        A numeric feature's grid ``z_0 < ... < z_K``, or a categorical
+        feature's levels in the order the effects accumulate.
+    effects : list of float
+        The centred accumulated effect at each value.
+    counts : list of int
+        The rows in each interval ``(z_{k-1}, z_k]`` (the first closed), or
+        at each level.
+    """
+
+    feature: str
+    values: list
+    effects: list
+    counts: list
+
+
+def ale(model, frame, build, feature, bins=40, levels=None):
+    """First-order accumulated local effects (Apley and Zhu, 2020), as R's
+    ``ALEPlot``: the effect of ``feature`` built from prediction differences
+    across small intervals of it, each over only the rows that fall in the
+    interval, so correlated features are not pushed into combinations the
+    data never shows (partial dependence's weakness).
+
+    A numeric feature is cut at its minimum and its type 1 quantiles at
+    ``1/bins, ..., 1`` (duplicates merged); each interval's local effect is
+    the mean of ``f(z_k) - f(z_{k-1})`` over its rows, accumulated and then
+    centred so the mean effect over the rows is 0 (ALEPlot's trapezoid
+    rule). A categorical feature's levels are ordered as ``levels`` gives or,
+    by default, as ALEPlot orders them (classical scaling of the distances
+    between the levels' distributions of the other columns, read from the
+    end whose level sorts first); the local
+    effect between neighbouring levels averages the moves of the rows on
+    both sides, and the effects are centred on the level frequencies.
+
+    Parameters
+    ----------
+    model : object
+        A fitted model with ``predict(design)``.
+    frame : dict
+        Column name to values; every column but ``feature`` enters a
+        categorical feature's default order.
+    build : callable
+        ``build(frame) -> Design``.
+    feature : str
+    bins : int
+        For a numeric feature, the number of quantile intervals ``K``.
+    levels : list, optional
+        For a categorical feature, the order of its levels.
+
+    Returns
+    -------
+    AccumulatedLocalEffects
+
+    Examples
+    --------
+    >>> from prospicio.models import Design, Glm, ale
+    >>> f = {"x": [i / 10 for i in range(50)]}
+    >>> build = lambda f: Design([[1.0] * len(f["x"]), list(f["x"])], ["(Intercept)", "x"])
+    >>> fit = Glm("gaussian").fit(build(f), [2.0 * v + (i % 3) for i, v in enumerate(f["x"])])
+    >>> a = ale(fit, f, build, "x", bins=5)
+    >>> round((a.effects[-1] - a.effects[0]) / (a.values[-1] - a.values[0]) / fit.coefficients[1], 12)
+    1.0
+    """
+    if feature not in frame:
+        raise ValueError(f"no column {feature!r} in the frame")
+    n = _frame_rows(frame)
+    x = list(frame[feature])
+
+    def predict(col):
+        return list(model.predict(build(dict(frame, **{feature: col}))))
+
+    if levels is None and _is_numeric(x):
+        if bins < 1:
+            raise ValueError("bins must be at least 1")
+        s = sorted(x)
+        # The probabilities as R's seq(1/K, 1, length.out = K) computes them,
+        # whose rounding moves some type 1 quantiles to the next value.
+        by = (1 - 1 / bins) / (bins - 1) if bins > 1 else 0.0
+        probs = [1 / bins + k * by for k in range(bins)]
+        z = [s[0]] + [_quantile_type1(s, p) for p in probs]
+        z = sorted(set(z))
+        if len(z) < 2:
+            raise ValueError(f"{feature!r} takes one value: it has no local effect")
+        k = len(z) - 1
+        # cut(include.lowest = TRUE): interval k is (z[k-1], z[k]], the first
+        # also closed below.
+        import bisect
+
+        idx = [max(1, bisect.bisect_left(z, v)) for v in x]
+        lo = predict([z[i - 1] for i in idx])
+        hi = predict([z[i] for i in idx])
+        total = [0.0] * (k + 1)
+        count = [0] * (k + 1)
+        for i in range(n):
+            total[idx[i]] += hi[i] - lo[i]
+            count[idx[i]] += 1
+        f = [0.0]
+        for b in range(1, k + 1):
+            f.append(f[-1] + total[b] / count[b])
+        centre = sum((f[b - 1] + f[b]) / 2 * count[b] for b in range(1, k + 1)) / n
+        return AccumulatedLocalEffects(feature, z, [v - centre for v in f], count[1:])
+    present = list(dict.fromkeys(x))
+    if levels is None:
+        order = _ale_order(frame, feature, sorted(present, key=str))
+    else:
+        order = list(levels)
+        missing = [v for v in present if v not in order]
+        if missing:
+            raise ValueError(f"levels lacks {missing[0]!r}, a value of {feature!r}")
+        order = [v for v in order if v in present]
+    k = len(order)
+    if k < 2:
+        raise ValueError(f"{feature!r} takes one level: it has no local effect")
+    pos = {v: j for j, v in enumerate(order)}
+    at = [pos[v] for v in x]
+    base = predict(x)
+    up = predict([order[min(a + 1, k - 1)] for a in at])
+    down = predict([order[max(a - 1, 0)] for a in at])
+    total = [0.0] * (k - 1)
+    count = [0] * (k - 1)
+    for i in range(n):
+        a = at[i]
+        if a < k - 1:
+            total[a] += up[i] - base[i]
+            count[a] += 1
+        if a > 0:
+            total[a - 1] += base[i] - down[i]
+            count[a - 1] += 1
+    f = [0.0]
+    for j in range(k - 1):
+        f.append(f[-1] + total[j] / count[j])
+    freq = [sum(1 for a in at if a == j) for j in range(k)]
+    centre = sum(fj * c for fj, c in zip(f, freq)) / n
+    return AccumulatedLocalEffects(feature, order, [v - centre for v in f], freq)
+
+
+@dataclass
+class ShapValues:
+    """The result of ``shap_values``.
+
+    Attributes
+    ----------
+    labels : list of str
+        The features (or groups moved together).
+    values : list of list of float
+        ``values[i][j]``: feature ``j``'s contribution to row ``i``.
+    baseline : float
+        The mean output over the background, ``v(empty)``.
+    outputs : list of float
+        Each row's output; ``baseline + sum(values[i]) == outputs[i]``.
+    method : str
+        ``"exact"`` or ``"permutation"``.
+    """
+
+    labels: list
+    values: list
+    baseline: float
+    outputs: list
+    method: str
+
+    @property
+    def mean_abs(self):
+        """The mean absolute contribution of each feature: a global
+        importance."""
+        n = len(self.values)
+        return [sum(abs(r[j]) for r in self.values) / n for j in range(len(self.labels))]
+
+
+def shap_values(model, frame, build, background, features=None, output=None,
+                n_permutations=None, seed=0, max_exact=12):
+    """SHAP values (Lundberg and Lee, 2017): each feature's share of the
+    difference between a row's output and the mean output over a background
+    sample, the Shapley values of the game ``v(S)``, the mean over the
+    background rows of the output with the features in ``S`` taken from the
+    row and the others from the background row (interventional, as SHAP's
+    ``KernelExplainer``). Additive by construction: a row's values sum to
+    its output less the baseline.
+
+    Without ``n_permutations`` the values are exact, over every coalition
+    (Kernel SHAP's exact limit; up to ``max_exact`` features). With it they
+    are estimated from that many feature orders (Strumbelj and Kononenko's
+    permutation sampling, order ``p`` from ``permutation(M, seed, p)``, so R
+    gives the same values); each order's contributions add up exactly, so
+    the estimate is additive too.
+
+    Parameters
+    ----------
+    model : object
+        A fitted model with ``predict(design)``.
+    frame : dict
+        The rows to explain.
+    build : callable
+        ``build(frame) -> Design``.
+    background : dict
+        The background rows, the same columns as ``frame``: a sample of the
+        portfolio, a few dozen to a few hundred rows.
+    features : list or dict, optional
+        As for ``permutation_importance``: names, lists of names moved
+        together, or a dict from label to names; every column by default.
+    output : callable, optional
+        Applied to each prediction before averaging: ``math.log`` explains a
+        log-link model's linear predictor, where a GLM's values are exactly
+        ``beta (x - mean background x)`` for each term.
+    n_permutations : int, optional
+    seed : int
+    max_exact : int
+
+    Returns
+    -------
+    ShapValues
+
+    Examples
+    --------
+    >>> import math
+    >>> from prospicio.models import Design, Glm, shap_values
+    >>> f = {"x": [float(i % 4) for i in range(40)], "z": [float(i % 3) for i in range(40)]}
+    >>> build = lambda f: Design([[1.0] * len(f["x"]), list(f["x"]), list(f["z"])], ["(Intercept)", "x", "z"])
+    >>> fit = Glm("poisson").fit(build(f), [1.0 + (i % 5) for i in range(40)])
+    >>> s = shap_values(fit, {"x": [3.0], "z": [0.0]}, build, f, output=math.log)
+    >>> round(s.values[0][0] - fit.coefficients[1] * (3.0 - 1.5), 12)
+    0.0
+    """
+    n = _frame_rows(frame)
+    nb = _frame_rows(background)
+    if set(background) != set(frame):
+        raise ValueError("background must have the frame's columns")
+    groups = _groups(list(frame) if features is None else features, frame)
+    labels = [label for label, _ in groups]
+    m = len(groups)
+    out = output or (lambda v: v)
+
+    def value(mask):
+        """``v(S)`` for every row, ``S`` the groups whose bit is set."""
+        take = {name for g, (_, names) in enumerate(groups) if mask >> g & 1 for name in names}
+        composite = {
+            k: [frame[k][i] if k in take else background[k][b] for i in range(n) for b in range(nb)]
+            for k in frame
+        }
+        pred = list(model.predict(build(composite)))
+        return [sum(out(p) for p in pred[i * nb:(i + 1) * nb]) / nb for i in range(n)]
+
+    full = (1 << m) - 1
+    bg_pred = list(model.predict(build(dict(background))))
+    baseline = sum(out(p) for p in bg_pred) / nb
+    outputs = [out(p) for p in model.predict(build(dict(frame)))]
+    phi = [[0.0] * m for _ in range(n)]
+    if n_permutations is None:
+        if m > max_exact:
+            raise ValueError(
+                f"{m} features need 2^{m} coalitions; give n_permutations or raise max_exact"
+            )
+        cache = {0: [baseline] * n, full: outputs}
+        for mask in range(1, full):
+            cache[mask] = value(mask)
+        weight = [math.factorial(s) * math.factorial(m - s - 1) / math.factorial(m) for s in range(m)]
+        for mask in range(full + 1):
+            size = bin(mask).count("1")
+            for g in range(m):
+                if mask >> g & 1:
+                    continue
+                w = weight[size]
+                with_g, without = cache[mask | 1 << g], cache[mask]
+                for i in range(n):
+                    phi[i][g] += w * (with_g[i] - without[i])
+        method = "exact"
+    else:
+        if n_permutations < 1:
+            raise ValueError("n_permutations must be at least 1")
+        for p in range(n_permutations):
+            order = permutation(m, seed, p)
+            mask, prev = 0, [baseline] * n
+            for step, g in enumerate(order):
+                mask |= 1 << g
+                cur = outputs if step == m - 1 else value(mask)
+                for i in range(n):
+                    phi[i][g] += (cur[i] - prev[i]) / n_permutations
+                prev = cur
+        method = "permutation"
+    return ShapValues(labels, phi, baseline, outputs, method)

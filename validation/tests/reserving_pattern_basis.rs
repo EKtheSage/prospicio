@@ -1572,10 +1572,10 @@ fn the_bootstraps_take_a_one_value_pattern_as_its_tail() {
     // pattern without its level, names that conflict (item 5).
     let tailed = OneYearMethod::ChainLadder(chain_ladder(one(), Tail::from(1.05)));
     match odp(None, Tail::default()).one_year(&raa, "values", &tailed) {
-        Err(Error::Bootstrap(reason)) => {
+        Err(Error::NotSupported { reason, .. }) => {
             assert!(reason.contains("give the method no tail"), "{reason}")
         }
-        other => panic!("{:?} is not a bootstrap error", other.err()),
+        other => panic!("{:?} is not a NotSupported error", other.err()),
     }
 }
 
@@ -1635,10 +1635,12 @@ fn the_one_year_views_carry_the_folded_tail() {
     );
     // A method tail and none on the bootstrap: the level-free reading
     // cannot carry the method's tail into the pattern.
-    let level_free = Error::Bootstrap(
-        "a pattern that runs past the oldest age carries the re-reserving method's tail into \
-         it: give the bootstrap the method's tail",
-    );
+    let level_free = Error::NotSupported {
+        setting: "a method pattern past the oldest age with no tail on the bootstrap",
+        method: "the one-year view of a bootstrap",
+        reason: "a pattern that runs past the oldest age carries the re-reserving method's tail \
+                 into it: give the bootstrap the method's tail",
+    };
     let tailed = method(Tail::from(1.05));
     assert_eq!(
         odp(Tail::default())
@@ -1677,8 +1679,11 @@ fn the_one_year_views_carry_the_folded_tail() {
     .fit(&raa, "values")
     .unwrap();
     assert_rel(fit.chain_ladder.tail.factor, 1.1, 1e-15, "Mack's tail");
-    assert_eq!(
+    assert!(matches!(
         fit.claims_development_result().unwrap_err(),
-        Error::ClaimsDevelopment("needs no tail factor")
-    );
+        Error::NotSupported {
+            setting: "a tail factor",
+            ..
+        }
+    ));
 }

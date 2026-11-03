@@ -3029,3 +3029,272 @@ fn time_splits_match_scikit_learn() {
     }
     assert_eq!(checked, 16);
 }
+
+/// Zero-inflated and hurdle Poisson and negative binomial models against
+/// pscl 1.5.9's `zeroinfl` and `hurdle` (#548), on its `bioChemists` data
+/// and a seeded book with exposure offsets and prior weights
+/// (`validation/scripts/r_zero_counts.R`). pscl's BFGS stops short of the
+/// maximum (up to 2e-6 in a coefficient), so the reference maximises pscl's likelihood to
+/// the end by Newton from its estimates: there the coefficients and `θ` to
+/// 1e-9, the log-likelihood to 1e-12, pscl's predicted means and
+/// probabilities to 1e-8, and the standard errors to 1e-7 of the inverse of
+/// its Hessian; pscl's own estimates to 1e-4 and its standard errors (from
+/// optim's step-1e-3 Hessian) to 2e-3, except with prior weights, where
+/// pscl's score for `θ` leaves the weights out
+/// (`knowledge/findings/pscl-weighted-theta-score.md`); and Vuong's test
+/// against the plain GLM.
+#[test]
+fn zero_inflated_and_hurdle_counts_match_pscl() {
+    use prospicio_glm::negbin::NegativeBinomialGlm;
+    use prospicio_glm::zero::{Hurdle, TwoPartFit, ZeroInflated, count_log_likelihoods, vuong};
+    use std::collections::BTreeMap;
+    let read = |name: &str| {
+        let data = glmm_data(name);
+        move |col: &str| -> Vec<f64> {
+            glmm_column(&data, col)
+                .iter()
+                .map(|v| v.parse().unwrap())
+                .collect()
+        }
+    };
+    let bio = read("biochemists.csv");
+    let book = read("zero_book.csv");
+    let design = |cols: &[&str], get: &dyn Fn(&str) -> Vec<f64>| {
+        let n = get(cols.first().copied().unwrap_or("y")).len();
+        let mut names = vec!["(Intercept)".to_string()];
+        let mut columns = vec![vec![1.0; n]];
+        for c in cols {
+            names.push((*c).to_string());
+            columns.push(get(c));
+        }
+        Design::new(names, columns).unwrap()
+    };
+    let all = ["fem", "mar", "kid5", "phd", "ment"];
+    let art = bio("art");
+    let bio_x = design(&all, &bio);
+    let book_y = book("y");
+    let log_exposure: Vec<f64> = book("exposure").iter().map(|e| e.ln()).collect();
+    let book_x = design(&["x", "urban"], &book)
+        .with_offset(log_exposure)
+        .unwrap();
+    let book_z = design(&["x"], &book);
+    let fit_case = |case: &str| -> (TwoPartFit, Design, Design) {
+        let (count, zero, y) = match case {
+            "bio_zip_probit" => (bio_x.clone(), design(&["ment"], &bio), &art),
+            "bio_hnb_cloglog" => (bio_x.clone(), design(&["kid5", "ment"], &bio), &art),
+            c if c.starts_with("bio") => (bio_x.clone(), bio_x.clone(), &art),
+            "book_zinb_weighted" => (
+                book_x.clone().with_weights(book("weight")).unwrap(),
+                book_z.clone(),
+                &book_y,
+            ),
+            _ => (book_x.clone(), book_z.clone(), &book_y),
+        };
+        let fit = match case {
+            "bio_zip" | "book_zip" => ZeroInflated::poisson().fit_parts(&count, &zero, y),
+            "bio_zinb" | "book_zinb" | "book_zinb_weighted" => {
+                ZeroInflated::negative_binomial().fit_parts(&count, &zero, y)
+            }
+            "bio_zip_probit" => ZeroInflated::poisson()
+                .zero_link(Link::Probit)
+                .fit_parts(&count, &zero, y),
+            "bio_hp" => Hurdle::poisson().fit_parts(&count, &zero, y),
+            "bio_hnb" | "book_hnb" => Hurdle::negative_binomial().fit_parts(&count, &zero, y),
+            "bio_hnb_cloglog" => Hurdle::negative_binomial()
+                .zero_link(Link::Cloglog)
+                .fit_parts(&count, &zero, y),
+            other => panic!("unknown case {other}"),
+        }
+        .unwrap_or_else(|e| panic!("{case}: {e}"));
+        (fit, count, zero)
+    };
+    let cases = reference("zero_counts_pscl.csv");
+    let mut fits = BTreeMap::new();
+    check(&cases, |case| {
+        let name = case.get("case");
+        let (fit, count, zero) = fits
+            .entry(name.to_string())
+            .or_insert_with(|| fit_case(name));
+        let arg = case.get("arg");
+        let coefficient = |se: bool| {
+            let (names, part, values) = if let Some(n) = arg.strip_prefix("count_") {
+                let v = if se {
+                    fit.count_standard_errors()
+                } else {
+                    fit.count_coefficients().to_vec()
+                };
+                (fit.count_names(), n, v)
+            } else {
+                let n = arg.strip_prefix("zero_").unwrap();
+                let v = if se {
+                    fit.zero_standard_errors()
+                } else {
+                    fit.zero_coefficients().to_vec()
+                };
+                (fit.zero_names(), n, v)
+            };
+            names.iter().position(|x| x == part).map(|j| values[j])
+        };
+        let row = || arg.parse::<usize>().unwrap() - 1;
+        match case.get("quantity") {
+            "coef" | "coef_pscl" => coefficient(false),
+            "se" | "se_pscl" => coefficient(true),
+            "theta" | "theta_pscl" => fit.theta(),
+            "se_log_theta" => fit.se_log_theta(),
+            "loglik" | "loglik_pscl" => Some(fit.log_likelihood()),
+            "aic" => Some(fit.aic()),
+            "bic" => Some(fit.bic()),
+            "mean" => Some(fit.predict_parts(count, zero).unwrap()[row()]),
+            "prob_zero" => Some(fit.prob_zero_parts(count, zero).unwrap()[row()]),
+            "prob" => {
+                let (i, k) = arg.split_once(':').unwrap();
+                let i: usize = i.parse().unwrap();
+                let k: usize = k.parse().unwrap();
+                Some(fit.probabilities_parts(count, zero, 4).unwrap()[i - 1][k])
+            }
+            q @ ("vuong" | "vuong_p") => {
+                let plain = if name == "bio_zip" {
+                    let glm = Glm::new(Family::Poisson, Link::Log)
+                        .fit(&bio_x, &art)
+                        .unwrap();
+                    (
+                        count_log_likelihoods(&art, glm.fitted(), None).unwrap(),
+                        glm.coefficients().len(),
+                    )
+                } else {
+                    let nb = NegativeBinomialGlm::new(Link::Log)
+                        .fit(&bio_x, &art)
+                        .unwrap();
+                    (
+                        count_log_likelihoods(&art, nb.glm().fitted(), Some(nb.theta())).unwrap(),
+                        nb.glm().coefficients().len(),
+                    )
+                };
+                // pscl counts the coefficients alone, not θ.
+                let k = fit.count_coefficients().len() + fit.zero_coefficients().len();
+                let v = vuong(fit.log_likelihoods(), &plain.0, k, plain.1).unwrap();
+                let s = match arg {
+                    "raw" => v.raw,
+                    "aic" => v.aic,
+                    _ => v.bic,
+                };
+                Some(if q == "vuong" { s.statistic } else { s.p_value })
+            }
+            _ => None,
+        }
+    });
+}
+
+/// Linear quantile regression against R quantreg 5.97 and expectile
+/// regression against expectreg 0.54 (#550,
+/// `validation/scripts/r_quantile_expectile.R`), on Engel's food
+/// expenditure data and a seeded weighted loss book: `rq(method = "br")`'s
+/// exact vertex and the weighted check loss there to 1e-10 (`rq`'s `rho`
+/// leaves the weights out), `rq(method = "fn")` to 1e-5,
+/// `summary.rq(se = "ker")`'s standard errors under Hall and Sheather's and
+/// Bofinger's bandwidths to 1e-9; `expectreg.ls`'s linear expectiles (its
+/// intercept uncentred) and its P-spline expectiles at a fixed `λ = 5` on
+/// its own basis and penalty to 1e-8, with the sandwich standard errors of
+/// asymmetric least squares written out in R.
+#[test]
+fn quantile_and_expectile_regression_match_quantreg_and_expectreg() {
+    use prospicio_glm::quantile::{Bandwidth, ExpectileRegression, QuantileRegression};
+    use prospicio_models::Fitted;
+    use std::collections::BTreeMap;
+    let engel = glmm_data("engel.csv");
+    let book = glmm_data("quantile_book.csv");
+    let num = |data: &[(String, Vec<String>)], c: &str| -> Vec<f64> {
+        glmm_column(data, c)
+            .iter()
+            .map(|v| v.parse().unwrap())
+            .collect()
+    };
+    let income = num(&engel, "income");
+    let food = num(&engel, "foodexp");
+    let engel_x = Design::new(
+        vec!["(Intercept)".into(), "income".into()],
+        vec![vec![1.0; income.len()], income.clone()],
+    )
+    .unwrap();
+    let book_y = num(&book, "y");
+    let book_x = Design::new(
+        vec!["(Intercept)".into(), "x".into(), "z".into()],
+        vec![vec![1.0; book_y.len()], num(&book, "x"), num(&book, "z")],
+    )
+    .unwrap()
+    .with_weights(num(&book, "w"))
+    .unwrap();
+    let basis = glmm_data("expectreg_engel_basis.csv");
+    let names: Vec<String> = basis.iter().map(|(n, _)| n.clone()).collect();
+    let spline_x = Design::new(
+        names.clone(),
+        names.iter().map(|n| num(&basis, n)).collect(),
+    )
+    .unwrap();
+    let penalty_rows = glmm_data("expectreg_engel_penalty.csv");
+    let k = names.len();
+    let mut penalty = vec![0.0; k * k];
+    for (b, (_, col)) in penalty_rows.iter().enumerate() {
+        for (a, v) in col.iter().enumerate() {
+            penalty[(a + 1) * k + b + 1] = v.parse().unwrap();
+        }
+    }
+    let cases = reference("quantile_expectile_r.csv");
+    let mut quantile = BTreeMap::new();
+    let mut expectile = BTreeMap::new();
+    check(&cases, |case| {
+        let name = case.get("case");
+        let (data, tau) = name.rsplit_once('_').unwrap();
+        let tau: f64 = tau.parse().unwrap();
+        let (design, y) = if data == "book" {
+            (&book_x, &book_y)
+        } else if data == "engel_pspline" {
+            (&spline_x, &food)
+        } else {
+            (&engel_x, &food)
+        };
+        let arg = case.get("arg");
+        let at = |names: &[String]| names.iter().position(|n| n == arg);
+        match case.get("quantity") {
+            q @ ("coef" | "coef_fn" | "se" | "se_bofinger" | "objective") => {
+                let bandwidth = if q == "se_bofinger" {
+                    Bandwidth::Bofinger
+                } else {
+                    Bandwidth::HallSheather
+                };
+                let fit = quantile
+                    .entry((name.to_string(), q == "se_bofinger"))
+                    .or_insert_with(|| {
+                        QuantileRegression::new(tau)
+                            .bandwidth(bandwidth)
+                            .fit(design, y)
+                            .unwrap_or_else(|e| panic!("{name}: {e}"))
+                    });
+                match q {
+                    "objective" => Some(fit.objective()),
+                    "se" | "se_bofinger" => at(fit.names()).map(|j| fit.standard_errors()[j]),
+                    _ => at(fit.names()).map(|j| fit.coefficients()[j]),
+                }
+            }
+            q => {
+                let fit = expectile.entry(name.to_string()).or_insert_with(|| {
+                    let mut spec = ExpectileRegression::new(tau);
+                    if data == "engel_pspline" {
+                        spec = spec.penalty(5.0, penalty.clone());
+                    }
+                    spec.fit(design, y)
+                        .unwrap_or_else(|e| panic!("{name}: {e}"))
+                });
+                match q {
+                    "ecoef" => at(fit.names()).map(|j| fit.coefficients()[j]),
+                    "ese" => at(fit.names()).map(|j| fit.standard_errors()[j]),
+                    "efitted" => {
+                        let i: usize = arg.parse().unwrap();
+                        Some(fit.predict(design).unwrap()[i - 1])
+                    }
+                    _ => None,
+                }
+            }
+        }
+    });
+}

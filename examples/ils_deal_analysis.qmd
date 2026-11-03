@@ -191,8 +191,9 @@ fit <- do.call(bayes_bf_normalised,
 
 origins <- as.integer(fit@origins)
 exposure <- setNames(fit@exposure, origins)
-ultimate_lr <- lapply(setNames(origins, origins), function(o) {  # latest paid plus the reserve draws, over premium
-  (latest_fit[[as.character(o)]] + marginal(fit@reserves, as.character(o))@draws) / exposure[[as.character(o)]]
+# Per origin: each simulation's ultimate (latest paid plus its reserve) over the on-level premium (#602).
+ultimate_lr <- lapply(setNames(origins, origins), function(o) {
+  loss_ratio_draws(fit, as.character(o), exposure[[as.character(o)]])
 })
 post_mean <- vapply(ultimate_lr, mean, numeric(1))
 post_cv <- vapply(ultimate_lr, sd_pop, numeric(1)) / post_mean
@@ -206,7 +207,7 @@ cat("sampler diagnostics: max R-hat", format(fit@diagnostics$max_rhat), "\n")
 
 ## 5. The 2026 loss ratio
 
-The model forecasts the cells of the years in the triangle. Section 4 turns its reserve draws into a loss ratio for each simulation (#602). For 2026, a new accident year, the chunk below uses a **lognormal** (#598).
+The model forecasts the cells of the years in the triangle. Section 4 reads a loss ratio for each simulation with `loss_ratio_draws()`: latest paid plus the reserve of that simulation, divided by premium (#602). For 2026, a new accident year, the chunk below uses a **lognormal** (#598).
 
 The mean of the lognormal is the average of the posterior mean ultimate loss ratios of the last five years. Loss ratios increase over the ten years and the model has no trend, so older years would understate 2026. The coefficient of variation combines three parts:
 
@@ -275,8 +276,8 @@ cat("ceded premium", money(CEDED_PREMIUM), "\n")
 
 The money moves monthly. The parts:
 
-* **Payment pattern.** The factors of the paid chain ladder give the share of the ultimate loss paid by each age. `cashflow_terms()` takes cumulative *monthly* shares, so the chunk below interpolates the annual pattern linearly to months (#601). All simulations use the same pattern on purpose: the loss ratios `LR` are lognormal draws around the fit, and they are not paired row by row with its simulations. When the losses come from the same fit, `monthly_pattern_draws()` gives a monthly pattern for each simulation, and `cashflow_run(paid_patterns =)` pays each simulation on its own (#673).
-* **Premium.** The cedant writes premium evenly over 2026 and collects it as written. The premium earns over the following two years.
+* **Payment pattern.** The factors of the paid chain ladder give the share of the ultimate loss paid by each age. `cashflow_terms()` takes cumulative *monthly* shares. `cashflow_patterns_from_annual()` makes the written, earned and paid shares from the annual pattern (#601): the losses occur as the premium earns, and each month's losses are paid on the pattern from their accident date, read linearly between its ages. The chain ladder's pattern is an *accident-year* pattern, measured from the start of the year, so reading it from each accident date pays somewhat slowly: 7% of the ultimate by month 12. The exact route converts the pattern to an underwriting year (`monthly_pattern_draws(fit, T_MONTHS, basis = underwriting_basis())`), which pays 15% by month 12 and moves the median IRR by about 2 points, but it reads every simulation's pattern and takes about a minute for 2,000 simulations (#717, #722). All simulations use the same pattern on purpose: the loss ratios `LR` are lognormal draws around the fit, and they are not paired row by row with its simulations. When the losses come from the same fit, `monthly_pattern_draws()` gives a monthly pattern for each simulation, and `cashflow_run(paid_patterns =)` pays each simulation on its own (#673).
+* **Premium.** The cedant writes premium evenly over 2026 and collects it as written. Each policy earns over twelve months, so a year of policies written evenly earns over 24 months and is fully earned after that. (Before `cashflow_patterns_from_annual()`, a hand-written formula here let the earned share fall after month 24, which inflated the unearned premium, the collateral and the capital called: at 2,000 simulations the flat structure's median IRR was 18% where it is 40% now.)
 * **Collateral.** The trust must hold 30% of the unearned premium plus 125% of the outstanding loss (the ultimate loss of the deal less paid to date).
 * **Yield, expenses and commutation.** The trust earns 3% a year, and expenses are 0.5% a year of the requirement. At month 60 the deal commutes.
 
@@ -286,23 +287,11 @@ The cash-flow engine takes the ultimate loss ratio of the **deal** in each simul
 #| label: cashflows
 T_MONTHS <- 60
 pattern <- payment_pattern_from_development(AGES / 12, c(pmax(1, CDF[-length(CDF)]), 1))
-cum_paid <- cumsum(pattern$shares)
-
-paid_share <- function(month) {
-  # Cumulative share of the ultimate paid by the end of `month`: the annual pattern, interpolated linearly.
-  t <- month / 12
-  lo <- floor(t)
-  a <- if (lo > 0) cum_paid[lo] else 0
-  b <- cum_paid[lo + 1]
-  a + (b - a) * (t - lo)
-}
-earned_share <- function(month) {
-  t <- month / 12
-  if (t <= 1) t * t / 2 else min(1, 1 - (2 - t)^2 / 2)
-}
-written <- pmin(1, seq_len(T_MONTHS) / 12)
-earned <- vapply(seq_len(T_MONTHS), earned_share, 0)
-paid <- vapply(seq_len(T_MONTHS), paid_share, 0)
+# Premium written evenly over 2026, each policy earning over twelve months; losses paid from their accident date.
+patterns <- cashflow_patterns_from_annual(pmin(1, seq_len(T_MONTHS) / 12), pattern)
+written <- patterns$written
+earned <- patterns$earned
+paid <- patterns$paid
 duration <- sum(pattern$times * pattern$shares)
 cat(sprintf("payment pattern: mean time to payment %.2f years; paid by month 12, 24, 60: %.1f%%, %.1f%%, %.1f%%\n",
             duration, 100 * paid[12], 100 * paid[24], 100 * paid[60]))
@@ -417,7 +406,7 @@ Each quarter brings a new diagonal of actual paid losses. The check holds out th
 
 The realised result is the opening reserve, less the amount paid in the year, less the closing reserve, for each accident year in the triangle. The model fitted to the full triangle estimates the closing reserve.
 
-This check is on the cedant's *history* (#603).
+This check is on the cedant's *history*. The second chunk checks the **deal** itself (#603). `deal_ave()` compares the deal's actual cumulative paid at the end of each month with the paid that the priced simulations expected. The submission has no data after binding, so the actual paid below is an **illustration**: losses emerge on the pattern at a loss ratio 25% above the priced mean, for the first 24 months. With real data, replace `actual` with the cedant's reported paid, as a share of the deal. `cashflow_valuation()` then projects the remaining flows from the state of the trust at that month.
 
 ```{r}
 #| label: monitoring
@@ -441,19 +430,32 @@ cat(sprintf("valuation %d: one-year claims development result, forecast mean %s,
             last, money(mean(cdr)), money(sd_pop(cdr)), money(realised), 100 * percentile))
 ```
 
+```{r}
+#| label: deal-monitoring
+deal_a <- deals[["A_flat"]]
+ACTUAL_LR <- 1.25 * mean(deal_a$loss)  # an illustration: the deal runs 25% above the priced mean
+actual <- ACTUAL_LR * CEDED_PREMIUM * paid[1:24]  # the deal's cumulative paid, months 1 to 24
+ave <- deal_ave(actual, make_terms(0.32 + BROKERAGE), deal_a$loss)
+thousands <- function(x) paste0(formatC(x / 1e3, format = "f", digits = 0, big.mark = ","), "k")
+at <- c(6, 12, 18, 24)
+print(data.frame(month = at, actual_paid = thousands(ave$actual[at]), expected = thousands(ave$expected[at]),
+                 ratio = sprintf("%.2f", ave$ratio[at]), percentile = sprintf("%.0f%%", 100 * ave$percentile[at]),
+                 p5 = thousands(ave$q5[at]), p95 = thousands(ave$q95[at])), row.names = FALSE)
+```
+
 ## 11. A summary for the investor
 
-One table of the results, as a plain printout of the quantities above (#605).
+One table of the results, as a plain printout of the quantities above. `docs/guides/submission-schema.md` writes the tables of a report for an investment committee, and the templates in `examples/templates/` render them (#605).
 
 ```{r}
 #| label: report
 report <- data.frame(item = c("2026 loss ratio, mean (cv)", "industry prior m (cv)", "ceded premium",
                               "payment pattern, mean time to payment", "backtest sampler warnings",
-                              "monitoring: realised CDR percentile"),
+                              "monitoring: realised CDR percentile", "monitoring: deal paid at month 24, percentile"),
                      value = c(sprintf("%.1f%% (%.0f%%)", 100 * mean(LR), 100 * sd_pop(LR) / mean(LR)),
                                sprintf("%.1f%% (%.0f%%)", 100 * M_PRIOR, 100 * CV_PRIOR), money(CEDED_PREMIUM),
                                sprintf("%.2f years", duration), as.character(nrow(backtest@warnings)),
-                               sprintf("%.0f%%", 100 * percentile)))
+                               sprintf("%.0f%%", 100 * percentile), sprintf("%.0f%%", 100 * ave$percentile[24])))
 for (name in names(deals)) {
   d <- deals[[name]]
   rate <- d$rate[is.finite(d$rate)]
@@ -467,13 +469,15 @@ print(report, row.names = FALSE)
 
 ## Issues for the workarounds
 
-| Ref | Step in this document | Issue |
-|---|---|---|
-| G1 | the lognormal for 2026 in section 5 | #598 |
-| G2 | the synthetic peers in section 3 | #599 |
-| G3 | one payment pattern for all simulations in section 7 | #600 |
-| G4 | the monthly interpolation of the pattern in section 7 | #601 |
-| G5 | the draws of `fit@reserves` in section 4 | #602 |
-| G6 | the monitoring in section 10 | #603 |
-| G7 | the prior inputs in section 3 | #604 |
-| G8 | the printout in sections 1 and 11 | #605 |
+The table lists each step that works around a gap in `prospicio`, with the issue for the gap. Where the issue is closed, the document uses the fix or says why it keeps the workaround.
+
+| Ref | Step in this document | Status | Issue |
+|---|---|---|---|
+| G1 | the lognormal for 2026 in section 5 | open | #598 |
+| G2 | the synthetic peers in section 3 | open | #599 |
+| G3 | one payment pattern for all simulations in section 7 | closed; kept, because the 2026 loss ratios are not the fit's simulations (section 7 names the fix) | #600 |
+| G4 | the monthly patterns in section 7 | closed; `cashflow_patterns_from_annual()` used, which also corrects the earned pattern; paid is read from the accident date (section 7, #722) | #601 |
+| G5 | the loss ratio draws in section 4 | closed; `loss_ratio_draws()` used | #602 |
+| G6 | the deal's paid against its simulations in section 10 | closed; `deal_ave()` used | #603 |
+| G7 | the prior inputs in section 3 | open | #604 |
+| G8 | the printout in section 11 | closed; the report tables and templates of `submission-schema.md` | #605 |

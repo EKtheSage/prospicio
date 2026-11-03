@@ -21,9 +21,7 @@ use crate::distributions::severity_from_robj;
 use crate::reserving::{Triangle, tail_arg};
 use crate::whole;
 
-fn to_r(e: prospicio_reserving::Error) -> Error {
-    Error::Other(e.to_string())
-}
+use crate::reserving::to_r;
 
 fn layer(attachment: f64, limit: f64) -> Result<Layer> {
     Layer::new(attachment, limit).map_err(to_r)

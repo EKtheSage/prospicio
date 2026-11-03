@@ -120,7 +120,7 @@ pub enum Fitted {
     PaidAndIncurred,
     /// Paid alone (decision 12), cumulative or incremental, under either
     /// likelihood and scale. It needs [`RateOrder::Ordered`] (an
-    /// [`Error::Bayes`] under [`RateOrder::Free`]): from one response the
+    /// [`Error::NotSupported`] under [`RateOrder::Free`]): from one response the
     /// means are invariant under the rate swap, and from paid alone only
     /// `RLR × RRF` and the pair of rates are identified, so the priors on
     /// `RLR` and `RRF` carry their split. The second column of the fit is
@@ -151,7 +151,7 @@ pub enum Fitted {
     /// paid run-off and the reserve come from its prior, at every width of
     /// it. The user's decision of 2026-10-23 is that this fit requires a
     /// prior on `k_p` the user believes: it refuses one with a log-scale sd
-    /// above [`MAX_INCURRED_ONLY_KP_SD`] (0.5) with an [`Error::Bayes`],
+    /// above [`MAX_INCURRED_ONLY_KP_SD`] (0.5) with an [`Error::InvalidSetting`],
     /// before any data are read, so [`CompartmentalPriors::diffuse`] (sd 1)
     /// is refused and the paper's preset (0.1) is accepted. Take the prior
     /// from the book's paid history or from a paid-and-incurred fit of a
@@ -1080,7 +1080,7 @@ impl Compartmental {
     ///   simulation's reserve is still its paid at the last age less the
     ///   latest paid.
     /// * [`Synchronized`](SegmentDependence::Synchronized) is an
-    ///   [`Error::Bayes`]: it draws the residuals of the same positions in
+    ///   [`Error::NotSupported`]: it draws the residuals of the same positions in
     ///   every segment, and a posterior has no residuals to share.
     ///
     /// A bad rank-correlation matrix fails before any sampling, and a
@@ -1404,7 +1404,7 @@ impl Compartmental {
     /// [`dependence`](Self::dependence) says: `Independent` as drawn,
     /// `RankCorrelation` by Iman-Conover on the segments' total claims
     /// development results (as `BayesOdp` and `Meyers` do);
-    /// `Synchronized` is an [`Error::Bayes`] and a bad matrix an
+    /// `Synchronized` is an [`Error::NotSupported`] and a bad matrix an
     /// [`Error::InvalidSetting`], both before any sampling. The refit budget
     /// [`max_refits`](BayesOneYear::max_refits) applies to each segment. A
     /// failure names its segment.
@@ -1809,36 +1809,60 @@ impl Compartmental {
         }
     }
 
-    fn validate(&self) -> Result<()> {
+    /// Refuses a combination of settings the model does not support,
+    /// without reading any data (`reserving-v02.md` decision 29): one
+    /// response alone ([`Fitted::PaidOnly`] or [`Fitted::IncurredOnly`])
+    /// under [`RateOrder::Free`] is an [`Error::NotSupported`]. Every fit,
+    /// the one-year view and the backtest's candidate check it before
+    /// anything else, with the range checks of the settings (a prior on
+    /// `k_p` wider than [`MAX_INCURRED_ONLY_KP_SD`] under
+    /// [`Fitted::IncurredOnly`], a bad prior, `n_sims` of 0, each an
+    /// [`Error::InvalidSetting`]). The fields are public, so a struct
+    /// literal can hold any setting; call this when the settings are chosen
+    /// to refuse an unsupported one at once, as the Python and R bindings
+    /// do when they build a model. [`prior_predictive`](Self::prior_predictive)
+    /// does not need it, so the prior check runs on any settings.
+    pub fn check_supported(&self) -> Result<()> {
         let one = match self.fitted {
             Fitted::PaidAndOutstanding | Fitted::PaidAndIncurred => None,
-            Fitted::PaidOnly => Some("paid"),
-            Fitted::IncurredOnly => Some("incurred"),
+            Fitted::PaidOnly => Some("fitting paid alone (Fitted::PaidOnly)"),
+            Fitted::IncurredOnly => Some("fitting incurred alone (Fitted::IncurredOnly)"),
         };
         if let Some(what) = one
             && self.rate_order == RateOrder::Free
         {
-            return Err(Error::Bayes(format!(
-                "fitting {what} alone needs rate_order Ordered: from one response the means \
-                 are unchanged by the rate swap (k_er, k_p, RLR, RRF) -> (k_p, k_er, \
-                 RLR k_er / k_p, RRF k_p / k_er), and from paid alone only RLR x RRF is \
-                 identified, so under free rates the posterior has two modes the data cannot \
-                 tell apart (design note decisions 2 and 12); set rate_order to Ordered"
-            )));
+            return Err(Error::NotSupported {
+                setting: "rate_order Free",
+                method: what,
+                reason: "from one response the means are unchanged by the rate swap (k_er, k_p, \
+                         RLR, RRF) -> (k_p, k_er, RLR k_er / k_p, RRF k_p / k_er), and from paid \
+                         alone only RLR x RRF is identified, so under free rates the posterior has \
+                         two modes the data cannot tell apart (design note decisions 2 and 12); it \
+                         needs rate_order Ordered",
+            });
         }
+        Ok(())
+    }
+
+    /// [`check_supported`](Self::check_supported) and the range checks of
+    /// the settings, before any data are read.
+    fn validate(&self) -> Result<()> {
+        self.check_supported()?;
         self.validate_priors()?;
         if self.fitted == Fitted::IncurredOnly {
             let (_, sd) = lognormal(self.priors.k_p);
             if sd > MAX_INCURRED_ONLY_KP_SD {
-                return Err(Error::Bayes(format!(
-                    "fitting incurred alone needs a prior on k_p with a log-scale sd of at most \
-                     {MAX_INCURRED_ONLY_KP_SD}, and this one has {sd}: the incurred does not identify the \
-                     payment rate, so the paid run-off and the reserve follow the prior on k_p, and a wide \
-                     prior leaves them unidentified (on company 337 the reserve runs from -51,000 at a \
-                     log-scale sd of 1 to 203,000 at 0.3). Give a prior you believe, for example from the \
-                     book's paid history or a paid-and-incurred fit of a similar book, or fit paid as well \
-                     (decision 12)"
-                )));
+                return Err(Error::InvalidSetting {
+                    name: "the log-scale sd of the prior on k_p, fitting incurred alone (Fitted::IncurredOnly)",
+                    value: sd,
+                    expected: "at most 0.5: the incurred does not identify the payment rate, so \
+                               the paid run-off and the reserve follow the prior on k_p, and a \
+                               wide prior leaves them unidentified (on company 337 the reserve \
+                               runs from -51,000 at a log-scale sd of 1 to 203,000 at 0.3). Give a \
+                               prior you believe, for example from the book's paid history or a \
+                               paid-and-incurred fit of a similar book, or fit paid as well \
+                               (decision 12)",
+                });
             }
         }
         if self.n_sims == 0 {
@@ -2129,7 +2153,7 @@ impl CompartmentalFits {
     }
 
     /// The same for [`outstanding`](Self::outstanding); an
-    /// [`Error::Bayes`] under [`Fitted::PaidOnly`].
+    /// [`Error::NotSupported`] under [`Fitted::PaidOnly`].
     pub fn outstanding_table(&self) -> Result<FitTable> {
         let tables = self.segments.fits.iter().map(|s| s.fit.outstanding_table());
         Ok(self.stack(tables.collect::<Result<_>>()?))
@@ -2465,14 +2489,16 @@ impl CompartmentalFit {
     }
 
     /// The same for [`outstanding`](Self::outstanding); an
-    /// [`Error::Bayes`] under [`Fitted::PaidOnly`], which fits no second
+    /// [`Error::NotSupported`] under [`Fitted::PaidOnly`], which fits no second
     /// response.
     pub fn outstanding_table(&self) -> Result<FitTable> {
         match &self.outstanding {
             Some(outstanding) => cell_table(outstanding),
-            None => Err(Error::Bayes(
-                "a fit of paid alone (Fitted::PaidOnly) has no outstanding cells".into(),
-            )),
+            None => Err(Error::NotSupported {
+                setting: "Fitted::PaidOnly",
+                method: "CompartmentalFit::outstanding_table",
+                reason: "a fit of paid alone has no outstanding cells",
+            }),
         }
     }
 
@@ -5493,6 +5519,48 @@ mod tests {
         assert!((y_sum / n as f64).abs() < 0.03, "{}", y_sum / n as f64);
     }
 
+    /// Paid alone under free rates is refused by the settings alone (#580,
+    /// `reserving-v02.md` decision 29): `validate` reads no data, and a fit
+    /// refuses the settings before it reads the triangle, so a triangle
+    /// without the named columns gives the same error, not one about the
+    /// data, and nothing is sampled.
+    #[test]
+    fn paid_alone_under_free_rates_is_refused_before_any_data_or_sampling() {
+        let free = Compartmental {
+            fitted: Fitted::PaidOnly,
+            ..preset()
+        };
+        let e = free.check_supported().unwrap_err();
+        assert!(
+            matches!(
+                e,
+                Error::NotSupported {
+                    setting: "rate_order Free",
+                    method: "fitting paid alone (Fitted::PaidOnly)",
+                    ..
+                }
+            ),
+            "{e:?}"
+        );
+        let fit = free
+            .fit(
+                &triangle(true),
+                "no such paid",
+                Outstanding::Column("no such column"),
+                "no such premium",
+            )
+            .unwrap_err();
+        assert_eq!(fit, e);
+        assert_eq!(free.validate().unwrap_err(), e);
+        // With ordered rates the same settings are valid.
+        Compartmental {
+            rate_order: RateOrder::Ordered,
+            ..free
+        }
+        .check_supported()
+        .unwrap();
+    }
+
     /// One response alone needs ordered rates (decision 12): under free
     /// rates the fit, the segments, the one-year view and the backtest's
     /// fit are errors that say why; with ordered rates the settings are
@@ -5519,6 +5587,7 @@ mod tests {
                 .unwrap_err(),
             ];
             for e in errors {
+                assert!(e.is_not_supported(), "{e:?}");
                 let e = e.to_string();
                 assert!(
                     e.contains(what) && e.contains("rate_order Ordered") && e.contains("swap"),
@@ -7206,7 +7275,10 @@ mod tests {
         };
         assert!(matches!(
             run(SegmentDependence::Synchronized),
-            Error::Bayes(m) if m.contains("Synchronized")
+            Error::NotSupported {
+                setting: "Synchronized dependence",
+                ..
+            }
         ));
         for spearman in [
             vec![1.0, 0.5],
@@ -7451,7 +7523,10 @@ mod tests {
         let default = BayesOneYear::default();
         assert!(matches!(
             run(SegmentDependence::Synchronized, &default),
-            Error::Bayes(m) if m.contains("Synchronized")
+            Error::NotSupported {
+                setting: "Synchronized dependence",
+                ..
+            }
         ));
         for spearman in [
             vec![1.0, 0.5],

@@ -139,6 +139,16 @@ reference:
       - models.NegativeBinomialFit
       - models.DoubleGlm
       - models.DoubleGlmFit
+      - models.ZeroInflated
+      - models.Hurdle
+      - models.TwoPartFit
+      - models.vuong
+      - models.count_log_likelihoods
+      - models.QuantileRegression
+      - models.QuantileFit
+      - models.QuantileFits
+      - models.ExpectileRegression
+      - models.ExpectileFit
       - models.Glmm
       - models.GlmmFit
       - models.BayesGlm
@@ -210,6 +220,12 @@ reference:
       - models.InteractionScreen
       - models.partial_dependence
       - models.PartialDependence
+      - models.ice
+      - models.IceCurves
+      - models.ale
+      - models.AccumulatedLocalEffects
+      - models.shap_values
+      - models.ShapValues
       - models.actual_vs_expected
       - models.simulate_from_means
   - title: Gradient boosting

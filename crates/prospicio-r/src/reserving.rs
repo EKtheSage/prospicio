@@ -60,8 +60,22 @@ use crate::whole;
 use prospicio_prob::ComponentKey;
 use prospicio_reserving::{DevelopmentPatterns, Monotone, MonthlyBasis, UltimateDraws};
 
-fn to_r(e: prospicio_reserving::Error) -> Error {
-    Error::Other(e.to_string())
+/// The prefix that marks a setting the method does not support
+/// ([`prospicio_reserving::Error::is_not_supported`]) in an error message.
+/// extendr's error carries only a message, so `reserving_result()` in
+/// `R/prospicio/R/reserving.R` reads the prefix, removes it and signals the
+/// condition class `prospicio_not_supported` (#580, `reserving-v02.md`
+/// decision 29).
+pub(crate) const NOT_SUPPORTED_PREFIX: &str = "[prospicio_not_supported] ";
+
+/// A reserving error as an R error message, marked when the setting is not
+/// supported.
+pub(crate) fn to_r(e: prospicio_reserving::Error) -> Error {
+    if e.is_not_supported() {
+        Error::Other(format!("{NOT_SUPPORTED_PREFIX}{e}"))
+    } else {
+        Error::Other(e.to_string())
+    }
 }
 
 /// The key an R list or vector names, or `None` for NULL.
@@ -5290,7 +5304,7 @@ fn compartmental_settings(
     if n_sims == 0 {
         return Err(Error::Other("n_sims must be positive".into()));
     }
-    Ok(Compartmental {
+    let model = Compartmental {
         priors: compartmental_priors(priors, families)?,
         likelihood,
         scale,
@@ -5309,7 +5323,11 @@ fn compartmental_settings(
         n_sims,
         seed: whole(seed, "seed")?,
         dependence,
-    })
+    };
+    // Refuse a combination of settings the model does not support when the
+    // settings are read, before any data or sampling (#580).
+    model.check_supported().map_err(to_r)?;
+    Ok(model)
 }
 
 /// The flat pieces of a `Backtest` that R builds its tables from.
