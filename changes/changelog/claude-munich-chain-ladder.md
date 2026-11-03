@@ -1,7 +1,7 @@
 ### Breaking changes
 
 - Rust: `prospicio_reserving::Error` has a new variant `Munich`, so an
-  exhaustive `match` on it needs an arm (#559).
+  exhaustive `match` on it needs an arm (#559, #731).
 
 ### Reserving
 
@@ -11,4 +11,4 @@
   `MunichChainLadder` and chainladder-python's `MunichAdjustment`, with
   tails and over segments (`MunichChainLadder`, `MunichFit`; Python
   `MunichChainLadder`, R `munich_chain_ladder()`;
-  `docs/design/reserving-v02.md` decision 29; #559).
+  `docs/design/reserving-v02.md` decision 29; #559, #731).
