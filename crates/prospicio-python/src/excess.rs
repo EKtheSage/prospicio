@@ -22,9 +22,7 @@ use pyo3::types::{PyBool, PyDict, PyString};
 use crate::distributions::extract_severity;
 use crate::reserving::{PyTriangle, age_values, py_repr, tail_arg};
 
-fn err(e: prospicio_reserving::Error) -> PyErr {
-    PyValueError::new_err(e.to_string())
-}
+use crate::reserving::err;
 
 /// An excess layer ``limit xs attachment``, the same for every origin.
 ///

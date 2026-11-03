@@ -23,6 +23,7 @@ from prospicio.reserving import (
     ExcessPattern,
     ExpectedLoss,
     Mack,
+    NotSupportedError,
     ParetoShape,
     ScaleShift,
     TailConstant,
@@ -311,7 +312,7 @@ def test_a_tail_and_counts():
 def test_errors_and_objects():
     tri = ground_up(1.0)
     model = ScaleShift(ultimate(1.0))
-    with pytest.raises(ValueError, match="paid"):
+    with pytest.raises(NotSupportedError, match="paid"):
         ExcessPattern.from_ground_up(tri, "incurred", ExcessLayer(350.0), model, basis="paid")
     with pytest.raises(ValueError):
         ExcessPattern.from_ground_up(tri, "incurred", ExcessLayer(350.0), model, basis="x")
