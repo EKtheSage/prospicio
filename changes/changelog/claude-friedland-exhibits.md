@@ -1,7 +1,7 @@
 ### Breaking changes
 
 - Rust: `prospicio_reserving::Error` has the variant `Exhibit`, so an
-  exhaustive `match` on it needs an arm for it (#557).
+  exhaustive `match` on it needs an arm for it (#557, #735).
 
 ### Reserving
 
@@ -15,4 +15,4 @@
   and chainladder-python's `VotingChainladder` on GenIns. Python
   `DevelopmentExhibit`, `UltimateExhibit`, `SelectedUltimates` and
   `select_ultimates`; R `development_exhibit()`, `ultimate_exhibit()` and
-  `select_ultimates()` (#557).
+  `select_ultimates()` (#557, #735).
