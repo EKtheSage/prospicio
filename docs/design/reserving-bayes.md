@@ -3583,9 +3583,9 @@ the fit, `elpd::psis` for the one-year view, and
 `credibility::{ScalePrior, HierarchicalCredibility, credibility_premiums}`
 for the settings and validation item 2. In this crate: `laplace`
 (whitening and the pilot run, as Meyers' fit path), `autodiff`'s `Scalar`
-(decision 15), `bf_normalised`'s pieces (`OdpCells`, `OdpYear`, the
-plug-in `phi` of `bf::PlugIn`, the strong-prior start for each program)
-and `one_year`'s engine and conformance suite. Nothing cross-lane is
+(decision 15), `bf::PlugIn` (the plug-in `phi`), `bf_normalised`'s
+density and strong-prior start for each program, and `one_year`'s
+engine (`OdpCells`, `OdpYear`) and conformance suite. Nothing cross-lane is
 needed. Optional: #732 (`IndustryPrior`, `PatternPrior`) for the
 hyperprior and the pattern prior; the model does not wait on it.
 
