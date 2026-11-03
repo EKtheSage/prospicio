@@ -232,7 +232,7 @@ excess_pattern <- S7::new_class(
     } else {
       stop("model must be a scale_shift() or a pareto_shape()", call. = FALSE)
     }
-    out <- rust_result(excess_pattern_rust(
+    out <- reserving_result(excess_pattern_rust(
       triangle@ptr, column, l$attachment, l$limit, args$kind, args$ultimate, args$ground_up_cap,
       args$threshold, args$alpha_ages, args$alphas, args$ultimate_alpha, args$base_attachment,
       args$base_limit, counts, tail_ptr(tail)))
@@ -276,7 +276,7 @@ excess_credibility_weights <- function(pattern, layer_triangle, column = NULL, k
   if (!is.null(counts) && (!is.character(counts) || length(counts) != 1)) {
     stop("counts must be NULL or the name of a column", call. = FALSE)
   }
-  out <- rust_result(excess_credibility_weights_rust(
+  out <- reserving_result(excess_credibility_weights_rust(
     pattern@ages, pattern@layer_ldf, pattern@layer_cdf, pattern@ground_up_ldf,
     pattern@ground_up_tail, pattern@shifts, pattern@tail, layer_triangle@ptr, column, counts,
     single_number(k, "k"), single_number(max_influence, "max_influence")))
@@ -287,14 +287,14 @@ excess_credibility_weights <- function(pattern, layer_triangle, column = NULL, k
 #' @export
 layer_share <- function(severity, layer) {
   l <- layer_args(layer)
-  rust_result(excess_layer_share_rust(severity_arg(severity, "severity"), l$attachment, l$limit))
+  reserving_result(excess_layer_share_rust(severity_arg(severity, "severity"), l$attachment, l$limit))
 }
 
 #' @rdname excess_pattern
 #' @export
 layer_at_shift <- function(severity, layer, shift) {
   l <- layer_args(layer)
-  rust_result(excess_layer_at_shift_rust(severity_arg(severity, "severity"), l$attachment, l$limit,
+  reserving_result(excess_layer_at_shift_rust(severity_arg(severity, "severity"), l$attachment, l$limit,
                                          single_number(shift, "shift")))
 }
 
@@ -305,7 +305,7 @@ layer_exposure <- function(triangle, exposure, shares, name) {
   if (!is.numeric(shares) || anyNA(shares) || !length(shares)) {
     stop("shares must be a number or a numeric vector", call. = FALSE)
   }
-  ptr <- rust_result(excess_layer_exposure_rust(triangle@ptr, exposure, as.double(shares), name))
+  ptr <- reserving_result(excess_layer_exposure_rust(triangle@ptr, exposure, as.double(shares), name))
   triangle(ptr = ptr)
 }
 
@@ -419,7 +419,7 @@ layer_share_prior <- S7::new_class(
     apriori_cv <- single_number(apriori_cv, "apriori_cv")
     share_cv <- single_number(share_cv, "share_cv")
     shares <- as.double(shares)
-    parts <- rust_result(layer_share_prior_cv_rust(apriori, apriori_cv, shares, share_cv,
+    parts <- reserving_result(layer_share_prior_cv_rust(apriori, apriori_cv, shares, share_cv,
                                                     share_dependence == "common"))
     S7::new_object(S7::S7_object(), apriori = apriori, apriori_cv = apriori_cv, shares = shares,
                    share_cv = share_cv, share_dependence = share_dependence, cv = parts[1],
@@ -449,7 +449,7 @@ layer_prior_total <- function(prior, exposure_values) {
   if (!is.numeric(exposure_values) || anyNA(exposure_values) || !length(exposure_values)) {
     stop("exposure_values must be a numeric vector", call. = FALSE)
   }
-  out <- rust_result(layer_share_prior_total_rust(prior@apriori, prior@apriori_cv, prior@shares,
+  out <- reserving_result(layer_share_prior_total_rust(prior@apriori, prior@apriori_cv, prior@shares,
                                                   prior@share_cv, prior@share_dependence == "common",
                                                   as.double(exposure_values)))
   c(mean = out[1], sd = out[2])

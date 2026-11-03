@@ -629,11 +629,12 @@ impl CompartmentalCandidate {
     ) -> Result<Backtest> {
         check_settings(n_sims, interval)?;
         if self.model.fitted == Fitted::PaidOnly {
-            return Err(Error::Bayes(
-                "a candidate fitted to paid alone (Fitted::PaidOnly) fits no outstanding or \
-                 incurred cell, so it has no second table to score"
-                    .into(),
-            ));
+            return Err(Error::NotSupported {
+                setting: "Fitted::PaidOnly",
+                method: "the held-out outstanding backtest (outstanding_backtest)",
+                reason: "a candidate fitted to paid alone fits no outstanding or incurred cell, \
+                         so it has no second table to score",
+            });
         }
         let ScoredSplits {
             splits,
@@ -740,12 +741,13 @@ impl TriangleModel for CompartmentalCandidate {
         seed: u64,
     ) -> Result<CellForecast> {
         if self.model.fitted == Fitted::IncurredOnly {
-            return Err(Error::Bayes(
-                "a candidate fitted to incurred alone (Fitted::IncurredOnly) fits no paid \
-                 cell, so its paid increments have no observation noise and no density to \
-                 score; score its held-out incurred with outstanding_backtest"
-                    .into(),
-            ));
+            return Err(Error::NotSupported {
+                setting: "Fitted::IncurredOnly",
+                method: "the paid diagonal backtest",
+                reason: "a candidate fitted to incurred alone fits no paid cell, so its paid \
+                         increments have no observation noise and no density to score; score its \
+                         held-out incurred with outstanding_backtest",
+            });
         }
         let fit = self.train_fit(cells, train, seed)?;
         self.paid_forecast(&fit, cells, test, n_sims, seed)

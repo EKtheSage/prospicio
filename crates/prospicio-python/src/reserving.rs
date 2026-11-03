@@ -56,8 +56,27 @@ use crate::to_py;
 use prospicio_prob::ComponentKey;
 use prospicio_reserving::UltimateDraws;
 
-fn err(e: prospicio_reserving::Error) -> PyErr {
-    PyValueError::new_err(e.to_string())
+pyo3::create_exception!(
+    prospicio,
+    NotSupportedError,
+    PyValueError,
+    "A setting, or a combination of settings, that the method it was given \
+     to does not support, raised when the setting is chosen where it can be \
+     (the Rust error `NotSupported`, `reserving-v02.md` decision 29). A \
+     subclass of ``ValueError``, so code that catches ``ValueError`` still \
+     catches it."
+);
+
+/// A reserving error as a Python exception: [`NotSupportedError`] for a
+/// setting the method does not support
+/// ([`prospicio_reserving::Error::is_not_supported`]), `ValueError`
+/// otherwise.
+pub(crate) fn err(e: prospicio_reserving::Error) -> PyErr {
+    if e.is_not_supported() {
+        NotSupportedError::new_err(e.to_string())
+    } else {
+        PyValueError::new_err(e.to_string())
+    }
 }
 
 /// An origin as Python names it: a key tuple, one label (a string or an
@@ -14903,28 +14922,30 @@ impl PyCompartmental {
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
         }
-        Ok(Self {
-            inner: Compartmental {
-                priors: priors.inner,
-                likelihood: named("likelihood", likelihood, &LIKELIHOODS)?,
-                scale: named("scale", scale, &SCALES)?,
-                paid_response: named("paid_response", paid_response, &PAID_RESPONSES)?,
-                fitted: named("fitted", fitted, &FITTED)?,
-                rate_order: named("rate_order", rate_order, &RATE_ORDERS)?,
-                start: named("start", start, &STARTS)?,
-                sampler: BayesSampler {
-                    chains,
-                    tune,
-                    draws,
-                    seed: 0,
-                    target_accept,
-                    max_depth,
-                },
-                n_sims,
-                seed,
-                dependence: segment_dependence(dependence, spearman)?,
+        let inner = Compartmental {
+            priors: priors.inner,
+            likelihood: named("likelihood", likelihood, &LIKELIHOODS)?,
+            scale: named("scale", scale, &SCALES)?,
+            paid_response: named("paid_response", paid_response, &PAID_RESPONSES)?,
+            fitted: named("fitted", fitted, &FITTED)?,
+            rate_order: named("rate_order", rate_order, &RATE_ORDERS)?,
+            start: named("start", start, &STARTS)?,
+            sampler: BayesSampler {
+                chains,
+                tune,
+                draws,
+                seed: 0,
+                target_accept,
+                max_depth,
             },
-        })
+            n_sims,
+            seed,
+            dependence: segment_dependence(dependence, spearman)?,
+        };
+        // Refuse a combination of settings the model does not support when
+        // it is built, not when it is fitted (#580).
+        inner.check_supported().map_err(err)?;
+        Ok(Self { inner })
     }
 
     /// Gesmann and Morris' model 2 with ``priors`` (the paper's are

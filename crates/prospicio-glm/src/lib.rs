@@ -18,8 +18,10 @@ pub mod mars;
 pub mod negbin;
 pub mod nested;
 pub mod net;
+pub mod quantile;
 mod robust;
 pub mod tweedie;
+pub mod zero;
 
 pub use robust::Robust;
 
