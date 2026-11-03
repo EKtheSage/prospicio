@@ -7,6 +7,7 @@
 ## Next
 
 - [compartmental-subannual] fitting `Compartmental` well to quarterly or monthly data (rate priors for sub-annual development, development effects grouped by year, seasonality, a calibration check on sub-annual books; `reserving-compartmental.md` decision 13, the user's note of 2026-10-22)
+- [hierarchical-bf] #599, a hierarchical Bornhuetter-Ferguson over several programs with an industry hyperprior on the loss ratio and the pattern partially pooled (`HierarchicalBf`, Python `HierarchicalBf`, R `bayes_hierarchical_bf()`; `reserving-bayes.md` decision 30, proposed; waits on the user's choice of pooling structure, open decision 26), then its one-year view
 
 ## Done
 
