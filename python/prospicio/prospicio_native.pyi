@@ -10327,6 +10327,124 @@ class DevelopmentCorrelationTest:
         """
 
 @final
+class DevelopmentExhibit:
+    """
+    Friedland's development exhibit (chapter 7, Exhibit I, sheets 1 and 2)
+    of one column of a single-segment triangle: the link ratios, each named
+    average of them, the selected factors, the tail, the factors to ultimate
+    and the percents developed (``docs/design/reserving-v02.md``, decision
+    30).
+    
+    The selected factors and factors to ultimate are those of the chain
+    ladder ``selection`` fitted to the column, so a selected pattern
+    (``ldf=``), the exclusions and the tail apply as in ``ChainLadder``; the
+    exhibit rounds nothing. Friedland multiplies by factors to ultimate
+    rounded to three decimals: give those with ``ldf_kind="cdf"`` to
+    reproduce her projections.
+    
+    Parameters
+    ----------
+    triangle : Triangle
+    column : str
+    selection : ChainLadder, optional
+        The chain ladder whose factors are selected; ``ChainLadder()`` (the
+        volume-weighted average of every year, no tail) by default.
+    averages : dict of str to ChainLadder, optional
+        The averages to show, each the development of a ``ChainLadder``
+        (its ``average``, ``n_periods``, ``drop_high`` and ``drop_low``; its
+        tail is not used). By default Friedland's six: ``"simple latest
+        5"``, ``"simple latest 3"``, ``"medial latest 5x1"``, ``"volume
+        latest 5"``, ``"volume latest 3"`` and ``"geometric latest 4"``.
+    
+    Raises
+    ------
+    ValueError
+        If the triangle has several segments or lacks the column, an
+        average cannot be estimated (it is named), or the selection cannot
+        be fitted.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import ChainLadder, DevelopmentExhibit, Triangle
+    >>> paid = [[100.0, 160.0, 180.0], [110.0, 170.0], [120.0]]
+    >>> rows = [(2020 + w, 12 * (d + 1), v) for w, r in enumerate(paid)
+    ...         for d, v in enumerate(r)]
+    >>> origin, age, values = map(list, zip(*rows))
+    >>> tri = Triangle.from_long(origin, age, {"paid": values})
+    >>> ex = DevelopmentExhibit(tri, "paid", ChainLadder(tail=1.05))
+    >>> ex.link_labels
+    ['12-24', '24-36', '36-ult']
+    >>> round(ex.cdf[0], 4), ex.tail
+    (1.8563, 1.05)
+    """
+    def __new__(cls, /, triangle: Triangle, column: str, selection: ChainLadder | None = None, averages: Any | None = None) -> DevelopmentExhibit: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def ages(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    @property
+    def averages(self, /) -> dict:
+        """
+        Each average's factor per link, by name, in the order given.
+        """
+    @property
+    def cdf(self, /) -> list[float]:
+        """
+        The factor to ultimate at each age; the last is the tail.
+        """
+    @property
+    def link_labels(self, /) -> list[str]:
+        """
+        The label of each link, ``"12-24"`` and so on, then ``"120-ult"``
+        for the tail.
+        """
+    @property
+    def link_ratios(self, /) -> list[list[float]]:
+        """
+        Link ratios by origin, then link; ``nan`` where not observed.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin labels, oldest first.
+        """
+    @property
+    def percent_developed(self, /) -> list[float]:
+        """
+        The share of the ultimate developed at each age, ``1 / cdf``.
+        """
+    @property
+    def selected(self, /) -> list[float]:
+        """
+        The age-to-age factors the projection uses, per link.
+        """
+    @property
+    def tail(self, /) -> float:
+        """
+        The factor from the oldest age to ultimate.
+        """
+    def to_frames(self, /) -> tuple[Any, Any]:
+        """
+        Friedland's parts 2 to 4 as tables.
+        
+        Returns
+        -------
+        tuple of pandas.DataFrame or dict
+            The link ratios (one row per origin, a column per link label
+            without the tail) and the factors (one row per average, then
+            ``"selected"``, ``"cdf"`` and ``"percent_developed"``, a column
+            per link label with the tail: an average is ``nan`` there, the
+            selected factor is the tail). Dicts of lists without pandas.
+        """
+    @property
+    def values(self, /) -> list[list[float]]:
+        """
+        Cumulative values by origin, then age; ``nan`` where not observed.
+        """
+
+@final
 class DevelopmentPattern:
     """
     Development factors to ultimate by age.
@@ -27831,6 +27949,72 @@ class ScaleShift:
         """
 
 @final
+class SelectedUltimates:
+    """
+    The selected ultimate per origin, with its IBNR and unpaid and the
+    weights that gave it (``UltimateExhibit.select``).
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def ages(self, /) -> list[int]:
+        """
+        Each origin's age in months at the valuation date.
+        """
+    @property
+    def ibnr(self, /) -> list[float] | None:
+        """
+        The selected ultimate less reported, or ``None`` without reported
+        claims.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin labels, oldest first.
+        """
+    def to_frame(self, /, total: bool = False) -> Any:
+        """
+        One row per origin: ``reported`` and ``paid`` when given,
+        ``ultimate``, ``ibnr`` and ``unpaid`` when defined, then each
+        method's weight as ``weight_<method>``; with ``total=True`` a last
+        row ``"total"`` with the sums (``nan`` weights).
+        
+        Returns
+        -------
+        pandas.DataFrame or dict
+            Indexed by origin; a dict of lists without pandas.
+        """
+    @property
+    def total_ibnr(self, /) -> float | None:
+        """
+        The total IBNR, or ``None`` without reported claims.
+        """
+    @property
+    def total_ultimate(self, /) -> float:
+        """
+        The total selected ultimate.
+        """
+    @property
+    def total_unpaid(self, /) -> float | None:
+        """
+        The total unpaid, or ``None`` without paid claims.
+        """
+    @property
+    def ultimate(self, /) -> list[float]:
+        """
+        The selected ultimate per origin.
+        """
+    @property
+    def unpaid(self, /) -> list[float] | None:
+        """
+        The selected ultimate less paid, or ``None`` without paid claims.
+        """
+    @property
+    def weights(self, /) -> dict:
+        """
+        Every method's weight per origin, by name.
+        """
+
+@final
 class SeverityFit:
     """
     A severity fitted by maximum likelihood to large losses, from
@@ -31315,6 +31499,186 @@ class TweedieGlm:
         Returns
         -------
         TweedieFit
+        """
+
+@final
+class UltimateExhibit:
+    """
+    A summary of each method's ultimate per origin beside the claims to
+    date, from which IBNR (ultimate less reported), the total unpaid
+    (ultimate less paid) and the case outstanding follow: Friedland's
+    chapter 7, Exhibit I, sheet 4, and the summaries of chapter 15, Exhibit
+    I (``docs/design/reserving-v02.md``, decision 30). ``select`` weights the
+    methods' ultimates into the selected ultimate per origin.
+    
+    Build it from a triangle with ``UltimateExhibit.from_triangle`` or from
+    the claims to date, then add each method with ``with_method``, which
+    returns a new exhibit.
+    
+    Parameters
+    ----------
+    origin : array-like
+        Any date in each origin period, or integer years.
+    age : array-like of int
+        Each origin's age in months at the valuation date.
+    reported, paid : array-like of float, optional
+        Claims to date per origin.
+    origin_grain : str, default "Y"
+        ``"Y"``, ``"S"``, ``"Q"`` or ``"M"``.
+    
+    Raises
+    ------
+    ValueError
+        If the columns differ in length, an origin is given twice, or a
+        value to date is not finite.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import UltimateExhibit
+    >>> ex = UltimateExhibit([2007, 2008], [24, 12], reported=[31732.0, 18632.0],
+    ...                      paid=[11865.0, 3409.0])
+    >>> ex = ex.with_method("bf reported", [40300.0, 36842.0])
+    >>> ex = ex.with_method("frequency-severity", [30512.0, 30140.0])
+    >>> sel = ex.select({"bf reported": [1.0, 0.5], "frequency-severity": [0.0, 0.5]})
+    >>> sel.ultimate, sel.ibnr
+    ([40300.0, 33491.0], [8568.0, 14859.0])
+    """
+    def __new__(cls, /, origin: Any, age: Any, reported: Any | None = None, paid: Any | None = None, origin_grain: str = "Y") -> UltimateExhibit: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def ages(self, /) -> list[int]:
+        """
+        Each origin's age in months at the valuation date.
+        """
+    @property
+    def case_outstanding(self, /) -> list[float] | None:
+        """
+        Reported less paid, or ``None`` unless both are given.
+        """
+    @staticmethod
+    def from_triangle(triangle: Triangle, reported: str | None = None, paid: str | None = None) -> UltimateExhibit:
+        """
+        The exhibit of a single-segment triangle's latest reported and paid
+        values (either may be left out); each origin's age is its latest age
+        in the columns given.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        reported, paid : str, optional
+            The columns of reported and paid claims; give at least one.
+        
+        Returns
+        -------
+        UltimateExhibit
+            With no method yet.
+        """
+    def ibnr(self, /, name: str) -> list[float]:
+        """
+        The method ``name``'s IBNR per origin, its ultimate less reported.
+        """
+    @property
+    def methods(self, /) -> list[str]:
+        """
+        The names of the methods, in the order added.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin labels, oldest first.
+        """
+    @property
+    def paid(self, /) -> list[float] | None:
+        """
+        Paid claims to date, or ``None``.
+        """
+    @property
+    def reported(self, /) -> list[float] | None:
+        """
+        Reported claims to date, or ``None``.
+        """
+    def select(self, /, weights: Any | None = None, by_age: Any | None = None) -> SelectedUltimates:
+        """
+        The selected ultimate per origin, a weighting of the methods'
+        ultimates, with its IBNR and unpaid.
+        
+        Each origin's weights must be at least 0 and sum to 1 (within
+        1e-9); they are not rescaled, as chainladder-python's
+        ``VotingChainladder`` rescales them. A method left out has weight 0,
+        and a method with weight 0 may have no ultimate (``nan``) there.
+        
+        Parameters
+        ----------
+        weights : str or mapping, optional
+            A method name (that method for every origin), or a mapping (a
+            dict or a DataFrame) of method name to one weight for every
+            origin or a weight per origin.
+        by_age : mapping, optional
+            Instead of ``weights``, a mapping of age in months to a mapping
+            of method name to weight: each origin takes the row of the
+            oldest age not past its own age, so ``{12: {"bf": 1.0}, 48:
+            {"cl": 1.0}}`` selects Bornhuetter-Ferguson before 48 months and
+            the chain ladder from 48 months on.
+        
+        Returns
+        -------
+        SelectedUltimates
+        
+        Raises
+        ------
+        ValueError
+            If both or neither of ``weights`` and ``by_age`` are given, a
+            method is unknown or named twice, an origin's weights do not sum
+            to 1 or include a negative one, a method with a positive weight
+            has no ultimate there, or an origin is younger than the first
+            age of ``by_age``.
+        """
+    def to_frame(self, /, quantity: str = "ultimate") -> Any:
+        """
+        One of Friedland's summaries: one row per origin and a column per
+        method.
+        
+        Parameters
+        ----------
+        quantity : {"ultimate", "ibnr", "unpaid"}, default "ultimate"
+            The ultimates (after the ``reported`` and ``paid`` columns that
+            are given), the IBNR or the total unpaid.
+        
+        Returns
+        -------
+        pandas.DataFrame or dict
+            Indexed by origin; a dict of lists without pandas.
+        """
+    def ultimate(self, /, name: str) -> list[float]:
+        """
+        The method ``name``'s ultimate per origin.
+        """
+    def unpaid(self, /, name: str) -> list[float]:
+        """
+        The method ``name``'s total unpaid per origin, its ultimate less paid.
+        """
+    def with_method(self, /, name: str, ultimate: Any) -> UltimateExhibit:
+        """
+        The exhibit with one more method.
+        
+        Parameters
+        ----------
+        name : str
+        ultimate : fit or array-like of float
+            A fit of one segment (any fit with ``origins`` and ``ultimate``,
+            such as a ``ChainLadderFit``, ``ExpectedLossFit`` or
+            ``BayesOdpFit``), whose origins must be the exhibit's, or the
+            ultimate per origin, ``nan`` where the method gives none.
+        
+        Returns
+        -------
+        UltimateExhibit
+        
+        Raises
+        ------
+        ValueError
+            If the name is empty or already used, the fit's origins are not
+            the exhibit's, or the number of values is wrong.
         """
 
 @final

@@ -505,6 +505,15 @@ what it is aiming for by v1.0.
     on the link ratios a Mack fit averaged; R ChainLadder's `cyEffTest`
     and `dfCorTest` to 1e-12 on RAA, GenIns and ABC, and Mack's printed
     values on RAA.
+  - Friedland's exhibits and a weighted selection of ultimates
+    (`reserving-v02.md`, decision 30; branch `claude/friedland-exhibits`,
+    issue #557, in Rust, Python and R): `DevelopmentExhibit` (link ratios,
+    Friedland's six averages, selected factors, factors to ultimate and
+    percents developed), `UltimateExhibit` (each method's ultimate, IBNR
+    and unpaid beside the claims to date) and `UltimateSelection` with
+    weights by origin, by age or one method, summing to 1; Friedland's
+    chapter 7 and 15 exhibits to the printed digits and chainladder-python's
+    `VotingChainladder` on GenIns to 1e-9.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental

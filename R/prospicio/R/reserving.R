@@ -7719,3 +7719,430 @@ monthly_pattern_draws <- function(fit, months, segment = NULL, basis = NULL,
                                                     basis, monotone), call = sys.call())
   pattern_matrix(flat, as.integer(months))
 }
+
+#' Development exhibit
+#'
+#' Friedland's development exhibit of one column (*Estimating Unpaid Claims
+#' Using Basic Techniques*, chapter 7, Exhibit I; Rust's
+#' `DevelopmentExhibit`, `docs/design/reserving-v02.md`, decision 30): the
+#' cumulative values, the link ratios, several averages of them, the
+#' selected age-to-age factors, the factors to ultimate and the percents
+#' developed.
+#'
+#' The selection is the chain ladder that `average` to `drop_low` describe,
+#' as in [chain_ladder()]: by default the volume-weighted average of every
+#' link ratio, with `ldf` to select factors. The averages are displayed
+#' beside it and do not change it. By default they are Friedland's six:
+#' "simple latest 5", "simple latest 3", "medial latest 5x1" (the simple
+#' average of the latest five without the highest and the lowest),
+#' "volume latest 5", "volume latest 3" and "geometric latest 4".
+#'
+#' Properties: `origins`, `ages` (months), `values` (a matrix of the
+#' cumulative values, origins by ages, `NA` where not observed),
+#' `link_ratios` (origins by links, `NA` where either end is not observed or
+#' the earlier value is 0), `averages` (a matrix, one row per average, one
+#' column per link), `selected` (the age-to-age factors the projection
+#' uses, per link), `tail`, `cdf` and `percent_developed` (per age, named
+#' `"12-Ult"` and so on, as a [chain_ladder()] fit's). `as.data.frame()` gives Friedland's lower half: the
+#' averages, then `selected` (with the tail as its last value), `cdf` and
+#' `percent_developed`, one column per link and the last `"<age>-ult"`.
+#'
+#' @inheritParams chain_ladder_fit
+#' @param column The column, for a triangle with several.
+#' @param averages `NULL` for Friedland's six averages, or a named list of
+#'   averages, each a list with `average` (`"volume"`, `"simple"`,
+#'   `"regression"` or `"geometric"`) and optionally `n_periods`,
+#'   `drop_high` and `drop_low`, as in [chain_ladder()]. `list()` shows
+#'   none.
+#' @param ptr A `DevelopmentExhibit` pointer; used internally.
+#' @returns A `development_exhibit` object.
+#' @seealso [ultimate_exhibit()] and [select_ultimates()] for the summary of
+#'   the methods' ultimates.
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2018:2021, 4:1),
+#'                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130))
+#' tri <- triangle(long, "year", "age", "paid")
+#' ex <- development_exhibit(tri, tail = 1.05)
+#' ex@link_ratios
+#' ex@averages
+#' ex@cdf
+#' as.data.frame(ex)
+#'
+#' # Selected factors and two averages of one's own.
+#' development_exhibit(tri, ldf = c("12" = 1.45, "24" = 1.08, "36" = 1.03), ldf_kind = "ldf",
+#'                     averages = list(all = list(average = "simple"),
+#'                                     latest = list(average = "volume", n_periods = 2)))@averages
+#' @name development_exhibit
+development_exhibit_class <- S7::new_class(
+  "development_exhibit",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("DevelopmentExhibit"),
+    origins = S7::new_property(S7::class_character, getter = function(self) self@ptr$origins()),
+    ages = S7::new_property(S7::class_integer, getter = function(self) self@ptr$ages()),
+    values = S7::new_property(S7::class_double, getter = function(self) {
+      exhibit_matrix(self@ptr$values(), self@ptr$origins(), as.character(self@ptr$ages()))
+    }),
+    link_ratios = S7::new_property(S7::class_double, getter = function(self) {
+      exhibit_matrix(self@ptr$link_ratios(), self@ptr$origins(), exhibit_links(self@ptr))
+    }),
+    averages = S7::new_property(S7::class_double, getter = function(self) {
+      exhibit_matrix(self@ptr$averages(), self@ptr$average_names(), exhibit_links(self@ptr))
+    }),
+    selected = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$selected(), exhibit_links(self@ptr))
+    }),
+    tail = S7::new_property(S7::class_double, getter = function(self) self@ptr$tail()),
+    cdf = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$cdf(), paste0(self@ptr$ages(), "-Ult"))
+    }),
+    percent_developed = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$percent_developed(), paste0(self@ptr$ages(), "-Ult"))
+    })
+  ),
+  constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
+)
+
+# A row-major vector as a matrix with these row and column names; NaN
+# (not observed, or no average) becomes NA.
+exhibit_matrix <- function(values, rows, cols) {
+  values <- replace(values, is.nan(values), NA_real_)
+  matrix(values, nrow = length(rows), ncol = length(cols), byrow = TRUE,
+         dimnames = list(rows, cols))
+}
+
+# The labels of the links between ages, without the last "<age>-ult".
+exhibit_links <- function(p) utils::head(p$link_labels(), -1L)
+
+#' @rdname development_exhibit
+#' @export
+development_exhibit <- function(triangle, column = NULL, average = "volume",
+                                sigma_interpolation = "log-linear", tail = 1, ldf = NULL,
+                                ldf_kind = NULL, ldf_weight = 1, n_periods = NULL,
+                                drop_high = 0, drop_low = 0, averages = NULL) {
+  column <- fit_column(triangle, column)
+  args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
+  pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight)
+  friedland <- is.null(averages)
+  if (!friedland && (!is.list(averages) ||
+                     (length(averages) && (is.null(names(averages)) || any(names(averages) == ""))))) {
+    stop("averages must be NULL or a named list of averages", call. = FALSE)
+  }
+  specs <- lapply(names(averages), function(name) {
+    a <- averages[[name]]
+    if (!is.list(a) || is.null(a$average)) {
+      stop(sprintf("average %s must be a list with an `average`", deparse(name)), call. = FALSE)
+    }
+    development_args(a$average, "log-linear", a$n_periods,
+                     if (is.null(a$drop_high)) 0 else a$drop_high,
+                     if (is.null(a$drop_low)) 0 else a$drop_low)
+  })
+  ptr <- rust_result(triangle@ptr$development_exhibit(
+    column, args$average, args$sigma, args$excl, tail_ptr(tail), pattern, friedland,
+    as.character(names(averages)), vapply(specs, function(s) s$average, ""),
+    lapply(specs, function(s) s$excl)
+  ))
+  development_exhibit_class(ptr = ptr)
+}
+
+S7::method(print, development_exhibit_class) <- function(x, ...) {
+  cat(sprintf("<development_exhibit> %d origins, %d ages, %d averages, tail %s\n",
+              length(x@origins), length(x@ages), nrow(x@averages), format(x@tail)))
+  print(round(as.data.frame(x), 3))
+  invisible(x)
+}
+
+S7::method(as.data.frame, development_exhibit_class) <- function(x, ...) {
+  p <- x@ptr
+  n <- length(p$link_labels())
+  avg <- x@averages
+  rows <- rbind(cbind(avg, rep(NA_real_, nrow(avg))),
+                selected = c(x@selected, x@tail), cdf = unname(x@cdf),
+                percent_developed = unname(x@percent_developed))
+  colnames(rows) <- p$link_labels()
+  stopifnot(ncol(rows) == n)
+  as.data.frame(rows, optional = TRUE)
+}
+
+#' Ultimate exhibit
+#'
+#' A summary of each method's ultimate per origin beside the claims to date
+#' (Friedland, chapter 15, Exhibit I, sheets 1 to 6; Rust's
+#' `UltimateExhibit`, `docs/design/reserving-v02.md`, decision 30). Each
+#' method's IBNR is its ultimate less reported claims and its unpaid is its
+#' ultimate less paid claims. [select_ultimates()] weights the methods into
+#' a selected ultimate.
+#'
+#' Build it from a [triangle] (`reported` and `paid` name its columns, and
+#' each origin's age is its latest over them) or from the claims to date
+#' (`origin`, `age`, `reported` and `paid` as vectors, one value per
+#' origin). A method is a fit of one segment with `@origins` and
+#' `@ultimate` ([chain_ladder()], [mack()], [expected_loss()],
+#' [bornhuetter_ferguson()], [cape_cod()] and the like), whose origins must
+#' be the exhibit's, or a numeric vector of ultimates per origin; `NA` where
+#' a method does not project (a blank cell of the book's summaries).
+#'
+#' Properties: `origins`, `ages`, `reported` and `paid` (`NULL` when not
+#' given), `methods`, and data frames `ultimate`, `ibnr` and `unpaid`, one
+#' column per method (`ibnr` `NULL` without reported claims, `unpaid`
+#' without paid).
+#'
+#' @param x A [triangle], or `NULL` to give the claims to date as vectors.
+#' @param reported,paid With a triangle, its columns of reported and paid
+#'   claims (either may be `NULL`, not both); otherwise the claims to date
+#'   per origin.
+#' @param methods A named list of fits or numeric vectors of ultimates.
+#' @param origin Without a triangle, the origin periods: Dates or
+#'   whole-number years.
+#' @param age Without a triangle, each origin's age in months at the
+#'   valuation date.
+#' @param origin_grain Without a triangle, the length of an origin period:
+#'   `"Y"`, `"S"`, `"Q"` or `"M"`.
+#' @param ptr An `UltimateExhibit` pointer; used internally.
+#' @returns An `ultimate_exhibit` object.
+#' @seealso [select_ultimates()], [development_exhibit()].
+#' @export
+#' @examples
+#' long <- data.frame(year = c(2020, 2020, 2021), age = c(12, 24, 12),
+#'                    reported = c(100, 150, 120), paid = c(60, 140, 50))
+#' tri <- triangle(long, "year", "age", c("reported", "paid"))
+#' ex <- ultimate_exhibit(tri, reported = "reported", paid = "paid",
+#'                        methods = list(reported = chain_ladder(tri, "reported"),
+#'                                       paid = chain_ladder(tri, "paid")))
+#' ex@ultimate
+#' ex@ibnr
+#'
+#' # From the claims to date, with a method given by its ultimates.
+#' ultimate_exhibit(origin = 2020:2021, age = c(24, 12), reported = c(150, 120),
+#'                  methods = list(selected = c(150, 190)))@ibnr
+#' @name ultimate_exhibit
+ultimate_exhibit_class <- S7::new_class(
+  "ultimate_exhibit",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("UltimateExhibit"),
+    origins = S7::new_property(S7::class_character, getter = function(self) self@ptr$origins()),
+    ages = S7::new_property(S7::class_integer, getter = function(self) self@ptr$ages()),
+    reported = S7::new_property(NULL | S7::class_double, getter = function(self) {
+      exhibit_claims(self@ptr$reported(), self@ptr$origins())
+    }),
+    paid = S7::new_property(NULL | S7::class_double, getter = function(self) {
+      exhibit_claims(self@ptr$paid(), self@ptr$origins())
+    }),
+    methods = S7::new_property(S7::class_character, getter = function(self) self@ptr$methods()),
+    ultimate = S7::new_property(S7::class_data.frame, getter = function(self) {
+      exhibit_frame(self@ptr, function(m) self@ptr$ultimate(m))
+    }),
+    ibnr = S7::new_property(NULL | S7::class_data.frame, getter = function(self) {
+      if (!length(self@ptr$reported())) return(NULL)
+      exhibit_frame(self@ptr, function(m) self@ptr$ibnr(m))
+    }),
+    unpaid = S7::new_property(NULL | S7::class_data.frame, getter = function(self) {
+      if (!length(self@ptr$paid())) return(NULL)
+      exhibit_frame(self@ptr, function(m) self@ptr$unpaid(m))
+    })
+  ),
+  constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
+)
+
+# Claims to date named by origin, or NULL when the binding returns none.
+exhibit_claims <- function(values, origins) {
+  if (!length(values)) NULL else stats::setNames(values, origins)
+}
+
+# One column per method of `f(method)`, rows named by origin; NaN becomes NA.
+exhibit_frame <- function(p, f) {
+  cols <- lapply(p$methods(), function(m) {
+    v <- rust_result(f(m), call = NULL)
+    replace(v, is.nan(v), NA_real_)
+  })
+  names(cols) <- p$methods()
+  out <- as.data.frame(cols, optional = TRUE)
+  if (!length(cols)) out <- data.frame(matrix(nrow = length(p$origins()), ncol = 0L))
+  rownames(out) <- p$origins()
+  out
+}
+
+# Each method's ultimates per origin: a fit's, after checking its origins,
+# or a numeric vector.
+exhibit_ultimates <- function(name, method, origins) {
+  if (is.numeric(method)) {
+    if (length(method) != length(origins)) {
+      stop(sprintf("method %s has %d ultimates for %d origins", deparse(name), length(method),
+                   length(origins)), call. = FALSE)
+    }
+    return(as.double(method))
+  }
+  fit_origins <- tryCatch(method@origins, error = function(e) NULL)
+  ultimate <- tryCatch(method@ultimate, error = function(e) NULL)
+  if (is.null(fit_origins) || is.null(ultimate)) {
+    stop(sprintf("method %s must be a fit with @origins and @ultimate, or numeric ultimates",
+                 deparse(name)), call. = FALSE)
+  }
+  if (!identical(as.character(fit_origins), origins)) {
+    stop(sprintf("method %s has origins %s, not the exhibit's %s", deparse(name),
+                 paste(fit_origins, collapse = ", "), paste(origins, collapse = ", ")),
+         call. = FALSE)
+  }
+  as.double(unname(ultimate))
+}
+
+#' @rdname ultimate_exhibit
+#' @export
+ultimate_exhibit <- function(x = NULL, reported = NULL, paid = NULL, methods = list(),
+                             origin = NULL, age = NULL, origin_grain = "Y") {
+  if (!is.list(methods) || (length(methods) &&
+                            (is.null(names(methods)) || any(names(methods) == "")))) {
+    stop("methods must be a named list", call. = FALSE)
+  }
+  if (!is.null(x)) {
+    check_triangle(x)
+    if (!is.null(origin) || !is.null(age)) {
+      stop("give a triangle or origin and age, not both", call. = FALSE)
+    }
+    column <- function(v, arg) {
+      if (is.null(v)) return(NULL)
+      if (!is.character(v) || length(v) != 1) {
+        stop(sprintf("with a triangle, %s must be NULL or one column name", arg), call. = FALSE)
+      }
+      v
+    }
+    ptr <- rust_result(x@ptr$ultimate_exhibit(column(reported, "reported"), column(paid, "paid")))
+  } else {
+    if (is.null(origin) || is.null(age)) {
+      stop("without a triangle, give origin and age", call. = FALSE)
+    }
+    ym <- year_month(origin, "origin", 1L)
+    claims <- function(v) if (is.null(v)) NULL else as.double(v)
+    ptr <- rust_result(UltimateExhibit$from_claims(
+      ym$year, ym$month, as.character(origin_grain), as.double(age), claims(reported),
+      claims(paid)
+    ))
+  }
+  origins <- ptr$origins()
+  for (name in names(methods)) {
+    ptr <- rust_result(ptr$with_method(name, exhibit_ultimates(name, methods[[name]], origins)))
+  }
+  ultimate_exhibit_class(ptr = ptr)
+}
+
+S7::method(print, ultimate_exhibit_class) <- function(x, ...) {
+  cat(sprintf("<ultimate_exhibit> %d origins, methods: %s\n", length(x@origins),
+              if (length(x@methods)) paste(x@methods, collapse = ", ") else "none"))
+  print(x@ultimate)
+  invisible(x)
+}
+
+#' Select ultimates by weighting methods
+#'
+#' The selected ultimate per origin, a weighting of several methods'
+#' ultimates, with its IBNR and unpaid: Friedland's selected ultimate claims
+#' (chapter 15, Exhibit I, sheet 2, column (11)) and chainladder-python's
+#' `VotingChainladder` (Rust's `UltimateExhibit::select`,
+#' `docs/design/reserving-v02.md`, decision 30).
+#'
+#' Each origin's weights must be at least 0 and sum to 1 (within 1e-9);
+#' they are not rescaled, unlike `VotingChainladder`, which divides by
+#' their sum. A method left out has weight 0, and a method with weight 0
+#' may have no ultimate (`NA`) there; a positive weight on a missing
+#' ultimate is an error.
+#'
+#' @param x An [ultimate_exhibit()], or a named list of fits, with
+#'   `triangle` and `reported` or `paid` for the claims to date.
+#' @param weights A method name (that method alone), or a named list or
+#'   named numeric vector of method name to one weight for every origin or
+#'   a weight per origin.
+#' @param by_age Instead of `weights`, a data frame with a column `age` (in
+#'   months) and one column per method: each origin takes the row of the
+#'   oldest age not past its own; an origin younger than every age is an
+#'   error.
+#' @param triangle,reported,paid With a list of fits, the triangle and its
+#'   reported and paid columns, as in [ultimate_exhibit()].
+#' @param total Whether to end the table with a `"total"` row (the weights
+#'   `NA` there).
+#' @returns A data frame, one row per origin (and the total): `origin`,
+#'   `age`, `reported` and `paid` when given, `ultimate`, `ibnr` and
+#'   `unpaid` when defined, and each method's weight as `weight_<method>`.
+#' @seealso [ultimate_exhibit()].
+#' @export
+#' @examples
+#' long <- data.frame(year = c(2020, 2020, 2021), age = c(12, 24, 12),
+#'                    reported = c(100, 150, 120), paid = c(60, 140, 50))
+#' tri <- triangle(long, "year", "age", c("reported", "paid"))
+#' fits <- list(reported = chain_ladder(tri, "reported"), paid = chain_ladder(tri, "paid"))
+#' select_ultimates(fits, list(reported = c(1, 0.5), paid = c(0, 0.5)),
+#'                  triangle = tri, reported = "reported", paid = "paid")
+#'
+#' # Weights by age: the paid method alone from 24 months.
+#' ex <- ultimate_exhibit(tri, reported = "reported", paid = "paid", methods = fits)
+#' select_ultimates(ex, by_age = data.frame(age = c(12, 24), reported = c(1, 0),
+#'                                          paid = c(0, 1)))
+select_ultimates <- function(x, weights = NULL, by_age = NULL, triangle = NULL, reported = NULL,
+                             paid = NULL, total = TRUE) {
+  if (!S7::S7_inherits(x, ultimate_exhibit_class)) {
+    if (is.null(triangle) || (is.null(reported) && is.null(paid))) {
+      stop("with a list of fits, give the triangle and its reported or paid column",
+           call. = FALSE)
+    }
+    x <- ultimate_exhibit(triangle, reported = reported, paid = paid, methods = x)
+  }
+  p <- x@ptr
+  n <- length(p$origins())
+  if (!is.null(weights) && !is.null(by_age)) {
+    stop("give weights or by_age, not both", call. = FALSE)
+  }
+  sel <- if (!is.null(by_age)) {
+    if (!is.data.frame(by_age) || is.null(by_age$age)) {
+      stop("by_age must be a data frame with a column `age`", call. = FALSE)
+    }
+    names <- setdiff(names(by_age), "age")
+    w <- as.matrix(by_age[names])
+    rust_result(p$select_by_age(as.double(by_age$age), names, as.double(t(w))))
+  } else if (is.character(weights) && length(weights) == 1 && is.null(names(weights))) {
+    rust_result(p$select_single(weights))
+  } else if (is.null(weights)) {
+    stop("give weights or by_age", call. = FALSE)
+  } else {
+    if (is.null(names(weights)) || any(names(weights) == "")) {
+      stop("weights must be a method name or a named list of weights", call. = FALSE)
+    }
+    cols <- lapply(names(weights), function(m) {
+      w <- as.double(weights[[m]])
+      if (length(w) == 1) w <- rep(w, n)
+      if (length(w) != n) {
+        stop(sprintf("method %s has %d weights for %d origins", deparse(m), length(w), n),
+             call. = FALSE)
+      }
+      w
+    })
+    rust_result(p$select_by_origin(names(weights), unlist(cols)))
+  }
+  selected_frame(sel, isTRUE(total))
+}
+
+# The table of a SelectedUltimates pointer, with a total row if asked.
+selected_frame <- function(s, total) {
+  origins <- s$origins()
+  out <- data.frame(origin = origins, age = s$ages(), stringsAsFactors = FALSE)
+  add <- function(name, v) if (length(v)) out[[name]] <<- v
+  add("reported", s$reported())
+  add("paid", s$paid())
+  out$ultimate <- s$ultimate()
+  add("ibnr", s$ibnr())
+  add("unpaid", s$unpaid())
+  names <- s$weight_names()
+  w <- matrix(s$weights(), nrow = length(origins))
+  for (k in seq_along(names)) out[[paste0("weight_", names[k])]] <- w[, k]
+  if (total) {
+    row <- lapply(out, function(v) NA)
+    row$origin <- "total"
+    row$age <- NA_integer_
+    for (name in intersect(c("reported", "paid", "ultimate", "ibnr", "unpaid"), names(out))) {
+      row[[name]] <- sum(out[[name]])
+    }
+    out <- rbind(out, as.data.frame(row, stringsAsFactors = FALSE, optional = TRUE))
+  }
+  out
+}

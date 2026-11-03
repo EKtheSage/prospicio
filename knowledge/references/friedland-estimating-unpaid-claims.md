@@ -1,11 +1,12 @@
 ---
 type: Reference
 title: Friedland's Estimating Unpaid Claims Using Basic Techniques
-description: The CAS syllabus text on basic reserving; its exhibits multiply by factors to ultimate rounded to three decimals, hold claims with decimals behind whole-thousand printing, cap CDFs at 1 for Bornhuetter-Ferguson and Cape Cod on XYZ, and use an unrounded Cape Cod ratio; every printed ultimate of chapters 7 to 10 reproduces in prospicio to the unit or within that rounding.
+description: The CAS syllabus text on basic reserving; its exhibits multiply by factors to ultimate rounded to three decimals, hold claims with decimals behind whole-thousand printing, cap CDFs at 1 for Bornhuetter-Ferguson and Cape Cod on XYZ, and use an unrounded Cape Cod ratio; every printed ultimate of chapters 7 to 10 reproduces in prospicio to the unit or within that rounding, and chapter 15's selected ultimates reproduce as a weighting of the printed method columns.
 resource: https://www.casact.org/sites/default/files/old/studynotes_friedland_estimating.pdf
 tags: [reserving, chain-ladder, bornhuetter-ferguson, cape-cod, benktander, parity, guides]
 status: stable
-generated: { by: claude-code/local-session, at: 2026-10-17T12:00:00Z }
+generated: { by: claude-code/local-session, at: 2026-11-02T12:00:00Z }
+verified: { by: process:ci, at: 2026-11-02T12:00:00Z }
 sources:
   - id: friedland
     resource: https://www.casact.org/sites/default/files/old/studynotes_friedland_estimating.pdf
@@ -13,6 +14,9 @@ sources:
   - id: guide
     resource: ../docs/guides/reserving-friedland.md
     title: The guide that reproduces it, run by python/tests/test_guides.py
+  - id: exhibits
+    resource: ../validation/tests/reserving_exhibits.rs
+    title: The exhibit and selection tests (reserving-v02.md decision 30), run in CI
 ---
 
 # What it is
@@ -57,11 +61,32 @@ Exhibit numbers restart in every chapter.[^friedland]
   (chapter 9, Exhibits V and VI); its formula fed with the printed U.S. BF
   ultimates equals `Benktander(n_iters=2)`.[^guide]
 
+# Exhibits and the selection of ultimates
+
+- **Chapter 7, Exhibit I** (U.S. Industry Auto) reproduces with
+  `DevelopmentExhibit`: link ratios, the six averages, selected factors,
+  factors to ultimate and percents developed, to the printed digits; the
+  claims are in `validation/data/friedland_us_auto.csv`.[^exhibits]
+- **A medial borderline.** The paid medial latest-5x1 average at 72-84
+  months prints 1.010, while the printed claims give 1.0094965, 3.5e-6
+  under the rounding edge: the spreadsheet's claims carry decimals.[^exhibits]
+- **Chapter 15's selection** (XYZ Insurer, Exhibit I, sheets 2 and 6) is a
+  weighting of the methods' ultimates by origin: the development method
+  alone for 1998 to 2004, half reported and half paid
+  Bornhuetter-Ferguson for 2005 and 2006, reported BF for 2007, and half
+  reported BF and half frequency-severity method 2 for 2008. It
+  reproduces from the printed method columns within 0.5 per origin, total
+  483,781 and IBNR 34,155 within 1, by origin or as rows by age.[^exhibits]
+- **Frequency-severity columns.** Text extraction of sheet 2 shifts the
+  frequency-severity columns: method 2 projects only 2007 (30,512) and
+  2008 (30,140), method 3 covers 2001 to 2008. Read them from the page
+  layout, not the extracted text.[^friedland]
+
 # Not in prospicio
 
-Latest-n, medial and geometric averages as options; frequency-severity
-(chapter 11), case outstanding development (12), Berquist-Sherman adjustments
-(13), ALAE and ULAE ratio methods (16, 17).
+Frequency-severity (chapter 11), case outstanding development (12),
+Berquist-Sherman adjustments (13), ALAE and ULAE ratio methods (16, 17).
 
 [^friedland]: Friedland (2010), chapters 7 to 10 and their exhibits.
 [^guide]: `docs/guides/reserving-friedland.md`, checked by `python/tests/test_guides.py`.
+[^exhibits]: `validation/tests/reserving_exhibits.rs`, `python/tests/test_reserving_exhibits.py` and `R/prospicio/tests/test-reserving-exhibits.R`.
