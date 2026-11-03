@@ -6006,3 +6006,751 @@ pub(crate) fn conformal_plus<'py>(
         .map_err(to_py)?;
     intervals_dict(py, i)
 }
+
+fn count_distribution(name: &str) -> PyResult<prospicio_glm::zero::CountDistribution> {
+    use prospicio_glm::zero::CountDistribution;
+    match name {
+        "poisson" => Ok(CountDistribution::Poisson),
+        "negative_binomial" => Ok(CountDistribution::NegativeBinomial),
+        other => Err(PyValueError::new_err(format!(
+            "count must be poisson or negative_binomial, got {other:?}"
+        ))),
+    }
+}
+
+fn zero_link(name: &str) -> PyResult<Link> {
+    match name {
+        "logit" => Ok(Link::Logit),
+        "probit" => Ok(Link::Probit),
+        "cloglog" => Ok(Link::Cloglog),
+        other => Err(PyValueError::new_err(format!(
+            "zero_link must be logit, probit or cloglog, got {other:?}"
+        ))),
+    }
+}
+
+/// A zero-inflated Poisson or negative binomial model, as R's
+/// ``pscl::zeroinfl``: a zero is structural with probability
+/// ``pi = h(z' gamma)``, otherwise the count is Poisson or negative
+/// binomial with mean ``exp(x' beta + offset)``. Fitted by joint maximum
+/// likelihood; standard errors from the observed information.
+///
+/// Parameters
+/// ----------
+/// count : str
+///     ``"poisson"`` (the default) or ``"negative_binomial"`` (``theta``
+///     estimated).
+/// zero_link : str
+///     ``"logit"`` (the default), ``"probit"`` or ``"cloglog"``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import Design, ZeroInflated
+/// >>> x = [i % 4 / 3 for i in range(200)]
+/// >>> y = [0.0 if i % 3 == 0 else float(i * 7 % 5) for i in range(200)]
+/// >>> d = Design([[1.0] * 200, x], ["(Intercept)", "x"])
+/// >>> fit = ZeroInflated().fit(d, y)
+/// >>> abs(sum(fit.predict(d)) - sum(y)) < 0.1
+/// True
+#[pyclass(name = "ZeroInflated", module = "prospicio.models", frozen)]
+pub(crate) struct PyZeroInflated {
+    inner: prospicio_glm::zero::ZeroInflated,
+}
+
+#[pymethods]
+impl PyZeroInflated {
+    #[new]
+    #[pyo3(signature = (count = "poisson", zero_link = "logit"))]
+    fn new(count: &str, zero_link: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_glm::zero::ZeroInflated::new(count_distribution(count)?)
+                .zero_link(self::zero_link(zero_link)?),
+        })
+    }
+
+    /// Fits the count part on ``count`` (its offset and prior weights
+    /// apply) and the zero part on ``zero`` (its offset applies). Without
+    /// ``zero`` both parts use ``count``'s columns, the offset on the count
+    /// part only.
+    ///
+    /// Returns
+    /// -------
+    /// TwoPartFit
+    #[pyo3(signature = (count, y, zero = None))]
+    fn fit(
+        &self,
+        py: Python<'_>,
+        count: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+        zero: Option<PyRef<'_, PyDesign>>,
+    ) -> PyResult<PyTwoPartFit> {
+        let spec = &self.inner;
+        let x = &count.inner;
+        let z = zero.as_ref().map(|z| &z.inner);
+        let inner = py
+            .detach(|| match z {
+                Some(z) => spec.fit_parts(x, z, &y),
+                None => spec.fit(x, &y),
+            })
+            .map_err(to_py)?;
+        Ok(PyTwoPartFit { inner })
+    }
+}
+
+/// A hurdle model, as R's ``pscl::hurdle``: a binary part for
+/// ``P(Y > 0) = h(z' gamma)`` and a zero-truncated Poisson or negative
+/// binomial with mean ``exp(x' beta + offset)`` for the positive counts,
+/// each fitted by maximum likelihood.
+///
+/// Parameters
+/// ----------
+/// count : str
+///     ``"poisson"`` (the default) or ``"negative_binomial"``.
+/// zero_link : str
+///     ``"logit"`` (the default), ``"probit"`` or ``"cloglog"``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import Design, Hurdle
+/// >>> x = [i % 4 / 3 for i in range(200)]
+/// >>> y = [0.0 if i % 3 == 0 else float(1 + i * 7 % 5) for i in range(200)]
+/// >>> d = Design([[1.0] * 200, x], ["(Intercept)", "x"])
+/// >>> fit = Hurdle().fit(d, y)
+/// >>> round(sum(fit.prob_zero(d)), 6) == sum(v == 0 for v in y)
+/// True
+#[pyclass(name = "Hurdle", module = "prospicio.models", frozen)]
+pub(crate) struct PyHurdle {
+    inner: prospicio_glm::zero::Hurdle,
+}
+
+#[pymethods]
+impl PyHurdle {
+    #[new]
+    #[pyo3(signature = (count = "poisson", zero_link = "logit"))]
+    fn new(count: &str, zero_link: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_glm::zero::Hurdle::new(count_distribution(count)?)
+                .zero_link(self::zero_link(zero_link)?),
+        })
+    }
+
+    /// Fits as ``ZeroInflated.fit``.
+    ///
+    /// Returns
+    /// -------
+    /// TwoPartFit
+    #[pyo3(signature = (count, y, zero = None))]
+    fn fit(
+        &self,
+        py: Python<'_>,
+        count: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+        zero: Option<PyRef<'_, PyDesign>>,
+    ) -> PyResult<PyTwoPartFit> {
+        let spec = &self.inner;
+        let x = &count.inner;
+        let z = zero.as_ref().map(|z| &z.inner);
+        let inner = py
+            .detach(|| match z {
+                Some(z) => spec.fit_parts(x, z, &y),
+                None => spec.fit(x, &y),
+            })
+            .map_err(to_py)?;
+        Ok(PyTwoPartFit { inner })
+    }
+}
+
+/// A fitted zero-inflated or hurdle model, from ``ZeroInflated.fit`` or
+/// ``Hurdle.fit``. Methods taking ``count`` and ``zero`` designs read both
+/// parts' columns by name from ``count`` when ``zero`` is ``None``.
+#[pyclass(name = "TwoPartFit", module = "prospicio.models", frozen)]
+pub(crate) struct PyTwoPartFit {
+    pub(crate) inner: prospicio_glm::zero::TwoPartFit,
+}
+
+impl PyTwoPartFit {
+    fn parts(&self, count: &Design, zero: Option<&Design>) -> PyResult<(Design, Design)> {
+        match zero {
+            Some(z) => Ok((count.clone(), z.clone())),
+            None => self.inner.split(count).map_err(to_py),
+        }
+    }
+}
+
+#[pymethods]
+impl PyTwoPartFit {
+    /// ``"zero_inflated"`` or ``"hurdle"``.
+    #[getter]
+    fn kind(&self) -> &'static str {
+        self.inner.kind().name()
+    }
+
+    /// ``"poisson"`` or ``"negative_binomial"``.
+    #[getter]
+    fn count(&self) -> &'static str {
+        self.inner.count_distribution().name()
+    }
+
+    #[getter]
+    fn zero_link(&self) -> String {
+        link_name(self.inner.zero_link())
+    }
+
+    #[getter]
+    fn count_names(&self) -> Vec<String> {
+        self.inner.count_names().to_vec()
+    }
+
+    /// The count part's coefficients, on the log scale.
+    #[getter]
+    fn count_coefficients(&self) -> Vec<f64> {
+        self.inner.count_coefficients().to_vec()
+    }
+
+    #[getter]
+    fn count_standard_errors(&self) -> Vec<f64> {
+        self.inner.count_standard_errors()
+    }
+
+    #[getter]
+    fn zero_names(&self) -> Vec<String> {
+        self.inner.zero_names().to_vec()
+    }
+
+    /// The zero part's coefficients: of the structural zero's probability
+    /// (zero-inflated) or of ``P(Y > 0)`` (hurdle).
+    #[getter]
+    fn zero_coefficients(&self) -> Vec<f64> {
+        self.inner.zero_coefficients().to_vec()
+    }
+
+    #[getter]
+    fn zero_standard_errors(&self) -> Vec<f64> {
+        self.inner.zero_standard_errors()
+    }
+
+    /// The negative binomial's ``theta``, ``None`` for the Poisson.
+    #[getter]
+    fn theta(&self) -> Option<f64> {
+        self.inner.theta()
+    }
+
+    /// The standard error of ``log(theta)``, as pscl's ``SE.logtheta``.
+    #[getter]
+    fn se_log_theta(&self) -> Option<f64> {
+        self.inner.se_log_theta()
+    }
+
+    /// The covariance of ``(count, zero, log theta)``, a list of rows.
+    #[getter]
+    fn covariance(&self) -> Vec<Vec<f64>> {
+        let p = self.inner.n_parameters();
+        self.inner
+            .covariance()
+            .chunks(p)
+            .map(<[f64]>::to_vec)
+            .collect()
+    }
+
+    #[getter]
+    fn log_likelihood(&self) -> f64 {
+        self.inner.log_likelihood()
+    }
+
+    /// Each row's log-likelihood, without its weight.
+    #[getter]
+    fn log_likelihoods(&self) -> Vec<f64> {
+        self.inner.log_likelihoods().to_vec()
+    }
+
+    /// Both parts' coefficients and, for the negative binomial, ``theta``.
+    #[getter]
+    fn n_parameters(&self) -> usize {
+        self.inner.n_parameters()
+    }
+
+    #[getter]
+    fn aic(&self) -> f64 {
+        self.inner.aic()
+    }
+
+    #[getter]
+    fn bic(&self) -> f64 {
+        self.inner.bic()
+    }
+
+    #[getter]
+    fn iterations(&self) -> usize {
+        self.inner.iterations()
+    }
+
+    /// The fitted mean of each row of the data fitted.
+    #[getter]
+    fn fitted(&self) -> Vec<f64> {
+        self.inner.fitted().to_vec()
+    }
+
+    /// The expected count of each row.
+    #[pyo3(signature = (count, zero = None))]
+    fn predict(
+        &self,
+        py: Python<'_>,
+        count: PyRef<'_, PyDesign>,
+        zero: Option<PyRef<'_, PyDesign>>,
+    ) -> PyResult<Vec<f64>> {
+        let (c, z) = self.parts(&count.inner, zero.as_ref().map(|z| &z.inner))?;
+        let fit = &self.inner;
+        py.detach(|| fit.predict_parts(&c, &z)).map_err(to_py)
+    }
+
+    /// ``P(Y = 0)`` for each row.
+    #[pyo3(signature = (count, zero = None))]
+    fn prob_zero(
+        &self,
+        py: Python<'_>,
+        count: PyRef<'_, PyDesign>,
+        zero: Option<PyRef<'_, PyDesign>>,
+    ) -> PyResult<Vec<f64>> {
+        let (c, z) = self.parts(&count.inner, zero.as_ref().map(|z| &z.inner))?;
+        let fit = &self.inner;
+        py.detach(|| fit.prob_zero_parts(&c, &z)).map_err(to_py)
+    }
+
+    /// ``P(Y = k)`` for ``k = 0..max_count``, one list per row.
+    #[pyo3(signature = (count, zero = None, max_count = 10))]
+    fn probabilities(
+        &self,
+        py: Python<'_>,
+        count: PyRef<'_, PyDesign>,
+        zero: Option<PyRef<'_, PyDesign>>,
+        max_count: usize,
+    ) -> PyResult<Vec<Vec<f64>>> {
+        let (c, z) = self.parts(&count.inner, zero.as_ref().map(|z| &z.inner))?;
+        let fit = &self.inner;
+        py.detach(|| fit.probabilities_parts(&c, &z, max_count))
+            .map_err(to_py)
+    }
+
+    /// Joint draws of the counts: the parameters drawn from the normal
+    /// approximation at the maximum, then each row's count.
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    #[pyo3(signature = (count, n_sims, seed, zero = None))]
+    fn predict_distribution(
+        &self,
+        py: Python<'_>,
+        count: PyRef<'_, PyDesign>,
+        n_sims: usize,
+        seed: u64,
+        zero: Option<PyRef<'_, PyDesign>>,
+    ) -> PyResult<PyPredictiveDistribution> {
+        let (c, z) = self.parts(&count.inner, zero.as_ref().map(|z| &z.inner))?;
+        let fit = &self.inner;
+        let inner = py
+            .detach(|| fit.predict_distribution_parts(&c, &z, n_sims, seed))
+            .map_err(to_py)?;
+        Ok(PyPredictiveDistribution { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TwoPartFit(kind={:?}, count={:?}, log_likelihood={})",
+            self.inner.kind().name(),
+            self.inner.count_distribution().name(),
+            self.inner.log_likelihood()
+        )
+    }
+}
+
+/// Each row's log-likelihood under a plain Poisson (``theta`` ``None``) or
+/// negative binomial count model with means ``mu``: the input of ``vuong``
+/// for a GLM.
+#[pyfunction]
+#[pyo3(signature = (y, mu, theta = None))]
+pub(crate) fn count_log_likelihoods(
+    y: Vec<f64>,
+    mu: Vec<f64>,
+    theta: Option<f64>,
+) -> PyResult<Vec<f64>> {
+    prospicio_glm::zero::count_log_likelihoods(&y, &mu, theta).map_err(to_py)
+}
+
+/// Vuong's test of model ``a`` against model ``b``, as ``pscl::vuong``:
+/// from each row's log-likelihood under each and their parameter counts
+/// (pscl counts the coefficients only, not ``theta``). Returns a dict with
+/// ``"raw"``, ``"aic"`` and ``"bic"``, each ``(statistic, p_value)``: a
+/// positive statistic favours ``a``, the p-value is one-sided.
+#[pyfunction]
+pub(crate) fn vuong(
+    a: Vec<f64>,
+    b: Vec<f64>,
+    k_a: usize,
+    k_b: usize,
+) -> PyResult<HashMap<&'static str, (f64, f64)>> {
+    let v = prospicio_glm::zero::vuong(&a, &b, k_a, k_b).map_err(to_py)?;
+    Ok([("raw", v.raw), ("aic", v.aic), ("bic", v.bic)]
+        .into_iter()
+        .map(|(k, s)| (k, (s.statistic, s.p_value)))
+        .collect())
+}
+
+fn bandwidth(name: &str) -> PyResult<prospicio_glm::quantile::Bandwidth> {
+    use prospicio_glm::quantile::Bandwidth;
+    match name {
+        "hall_sheather" => Ok(Bandwidth::HallSheather),
+        "bofinger" => Ok(Bandwidth::Bofinger),
+        other => Err(PyValueError::new_err(format!(
+            "bandwidth must be hall_sheather or bofinger, got {other:?}"
+        ))),
+    }
+}
+
+fn square(values: &[f64], p: usize) -> Vec<Vec<f64>> {
+    values.chunks(p).map(<[f64]>::to_vec).collect()
+}
+
+/// Linear quantile regression, as R's ``quantreg::rq``: minimises the
+/// weighted check loss ``sum w rho_tau(y - x' beta)`` by an interior point
+/// on the dual, then moves to the exact vertex (``rq(method = "br")``'s
+/// solution when it is unique). Standard errors are Powell's kernel
+/// sandwich, ``summary.rq(se = "ker")``.
+///
+/// Parameters
+/// ----------
+/// tau : float
+///     The quantile, in (0, 1).
+/// bandwidth : str
+///     The kernel's bandwidth: ``"hall_sheather"`` (the default, as
+///     quantreg's ``hs = TRUE``) or ``"bofinger"``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import Design, QuantileRegression
+/// >>> d = Design([[1.0] * 9], ["(Intercept)"])
+/// >>> QuantileRegression(0.5).fit(d, [float(v) for v in range(1, 10)]).coefficients
+/// [5.0]
+#[pyclass(name = "QuantileRegression", module = "prospicio.models", frozen)]
+pub(crate) struct PyQuantileRegression {
+    inner: prospicio_glm::quantile::QuantileRegression,
+}
+
+#[pymethods]
+impl PyQuantileRegression {
+    #[new]
+    #[pyo3(signature = (tau, bandwidth = "hall_sheather"))]
+    fn new(tau: f64, bandwidth: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_glm::quantile::QuantileRegression::new(tau)
+                .bandwidth(self::bandwidth(bandwidth)?),
+        })
+    }
+
+    /// Fits on ``design`` (its offset is subtracted from ``y`` and its
+    /// prior weights weight the loss).
+    ///
+    /// Returns
+    /// -------
+    /// QuantileFit
+    fn fit(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+    ) -> PyResult<PyQuantileFit> {
+        let (spec, d) = (&self.inner, &design.inner);
+        let inner = py.detach(|| spec.fit(d, &y)).map_err(to_py)?;
+        Ok(PyQuantileFit { inner })
+    }
+
+    /// One fit for each ``tau`` in ``taus``.
+    ///
+    /// Returns
+    /// -------
+    /// QuantileFits
+    fn fit_many(
+        &self,
+        py: Python<'_>,
+        taus: Vec<f64>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+    ) -> PyResult<PyQuantileFits> {
+        let (spec, d) = (&self.inner, &design.inner);
+        let inner = py.detach(|| spec.fit_many(&taus, d, &y)).map_err(to_py)?;
+        Ok(PyQuantileFits { inner })
+    }
+
+    /// The paired bootstrap covariance of the coefficients, a list of rows:
+    /// ``n_boot`` resamples of the rows, each refitted, resample ``b`` from
+    /// stream ``b`` of ``seed``.
+    #[pyo3(signature = (design, y, n_boot = 200, seed = 0))]
+    fn bootstrap_covariance(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+        n_boot: usize,
+        seed: u64,
+    ) -> PyResult<Vec<Vec<f64>>> {
+        let (spec, d) = (&self.inner, &design.inner);
+        let p = d.n_cols();
+        let cov = py
+            .detach(|| spec.bootstrap_covariance(d, &y, n_boot, seed))
+            .map_err(to_py)?;
+        Ok(square(&cov, p))
+    }
+}
+
+/// A fitted quantile regression, from ``QuantileRegression.fit``.
+#[pyclass(name = "QuantileFit", module = "prospicio.models", frozen)]
+pub(crate) struct PyQuantileFit {
+    inner: prospicio_glm::quantile::QuantileFit,
+}
+
+#[pymethods]
+impl PyQuantileFit {
+    #[getter]
+    fn tau(&self) -> f64 {
+        self.inner.tau()
+    }
+
+    #[getter]
+    fn names(&self) -> Vec<String> {
+        self.inner.names().to_vec()
+    }
+
+    #[getter]
+    fn coefficients(&self) -> Vec<f64> {
+        self.inner.coefficients().to_vec()
+    }
+
+    /// Powell's kernel standard errors.
+    #[getter]
+    fn standard_errors(&self) -> Vec<f64> {
+        self.inner.standard_errors()
+    }
+
+    /// The kernel sandwich covariance, a list of rows.
+    #[getter]
+    fn covariance(&self) -> Vec<Vec<f64>> {
+        square(self.inner.covariance(), self.inner.coefficients().len())
+    }
+
+    /// The kernel's bandwidth on the residuals' scale.
+    #[getter]
+    fn bandwidth(&self) -> f64 {
+        self.inner.bandwidth()
+    }
+
+    /// The minimised weighted check loss (``rq``'s ``rho`` leaves the
+    /// weights out).
+    #[getter]
+    fn objective(&self) -> f64 {
+        self.inner.objective()
+    }
+
+    #[getter]
+    fn iterations(&self) -> usize {
+        self.inner.iterations()
+    }
+
+    /// The fitted quantile of each row.
+    fn predict(&self, py: Python<'_>, design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
+        let (fit, d) = (&self.inner, &design.inner);
+        py.detach(|| fit.predict(d)).map_err(to_py)
+    }
+
+    /// Draws of each row's fitted quantile from the coefficients' normal
+    /// approximation: the quantile's uncertainty, not the response's.
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    fn predict_distribution(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        n_sims: usize,
+        seed: u64,
+    ) -> PyResult<PyPredictiveDistribution> {
+        let (fit, d) = (&self.inner, &design.inner);
+        let inner = py
+            .detach(|| fit.predict_distribution(d, n_sims, seed))
+            .map_err(to_py)?;
+        Ok(PyPredictiveDistribution { inner })
+    }
+}
+
+/// Quantile regressions at several ``tau``, from
+/// ``QuantileRegression.fit_many``.
+#[pyclass(name = "QuantileFits", module = "prospicio.models", frozen)]
+pub(crate) struct PyQuantileFits {
+    inner: prospicio_glm::quantile::QuantileFits,
+}
+
+#[pymethods]
+impl PyQuantileFits {
+    /// The ``tau``, in the order given.
+    #[getter]
+    fn taus(&self) -> Vec<f64> {
+        self.inner.taus()
+    }
+
+    /// The fits, in the order given.
+    #[getter]
+    fn fits(&self) -> Vec<PyQuantileFit> {
+        self.inner
+            .fits()
+            .iter()
+            .map(|f| PyQuantileFit { inner: f.clone() })
+            .collect()
+    }
+
+    /// Each row's predicted quantiles, a list per row in the order of
+    /// ``taus``; with ``rearrange`` in increasing ``tau`` and sorted, so
+    /// they do not cross.
+    #[pyo3(signature = (design, rearrange = false))]
+    fn predict(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        rearrange: bool,
+    ) -> PyResult<Vec<Vec<f64>>> {
+        let (fits, d) = (&self.inner, &design.inner);
+        py.detach(|| fits.predict(d, rearrange)).map_err(to_py)
+    }
+}
+
+/// Linear expectile regression (asymmetric least squares, Newey and
+/// Powell 1987), as ``expectreg``'s least asymmetrically weighted squares,
+/// with sandwich standard errors and an optional quadratic penalty
+/// ``lam * beta' P beta`` (a P-spline basis's difference penalty, zeros on
+/// unpenalised columns). At ``tau = 0.5`` it is least squares.
+///
+/// Parameters
+/// ----------
+/// tau : float
+///     The expectile, in (0, 1).
+/// lam : float, optional
+///     The penalty's multiplier, with ``penalty``.
+/// penalty : list of list of float, optional
+///     ``P``, ``p`` rows of ``p``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import Design, ExpectileRegression
+/// >>> d = Design([[1.0] * 4], ["(Intercept)"])
+/// >>> round(ExpectileRegression(0.5).fit(d, [1.0, 2.0, 4.0, 9.0]).coefficients[0], 12)
+/// 4.0
+#[pyclass(name = "ExpectileRegression", module = "prospicio.models", frozen)]
+pub(crate) struct PyExpectileRegression {
+    inner: prospicio_glm::quantile::ExpectileRegression,
+}
+
+#[pymethods]
+impl PyExpectileRegression {
+    #[new]
+    #[pyo3(signature = (tau, lam = None, penalty = None))]
+    fn new(tau: f64, lam: Option<f64>, penalty: Option<Vec<Vec<f64>>>) -> PyResult<Self> {
+        let mut inner = prospicio_glm::quantile::ExpectileRegression::new(tau);
+        match (lam, penalty) {
+            (Some(l), Some(p)) => inner = inner.penalty(l, p.into_iter().flatten().collect()),
+            (None, None) => {}
+            _ => {
+                return Err(PyValueError::new_err(
+                    "give lam and penalty together, or neither",
+                ));
+            }
+        }
+        Ok(Self { inner })
+    }
+
+    /// Fits on ``design``.
+    ///
+    /// Returns
+    /// -------
+    /// ExpectileFit
+    fn fit(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+    ) -> PyResult<PyExpectileFit> {
+        let (spec, d) = (&self.inner, &design.inner);
+        let inner = py.detach(|| spec.fit(d, &y)).map_err(to_py)?;
+        Ok(PyExpectileFit { inner })
+    }
+}
+
+/// A fitted expectile regression, from ``ExpectileRegression.fit``.
+#[pyclass(name = "ExpectileFit", module = "prospicio.models", frozen)]
+pub(crate) struct PyExpectileFit {
+    inner: prospicio_glm::quantile::ExpectileFit,
+}
+
+#[pymethods]
+impl PyExpectileFit {
+    #[getter]
+    fn tau(&self) -> f64 {
+        self.inner.tau()
+    }
+
+    #[getter]
+    fn names(&self) -> Vec<String> {
+        self.inner.names().to_vec()
+    }
+
+    #[getter]
+    fn coefficients(&self) -> Vec<f64> {
+        self.inner.coefficients().to_vec()
+    }
+
+    /// The sandwich standard errors.
+    #[getter]
+    fn standard_errors(&self) -> Vec<f64> {
+        self.inner.standard_errors()
+    }
+
+    /// The sandwich covariance, a list of rows.
+    #[getter]
+    fn covariance(&self) -> Vec<Vec<f64>> {
+        square(self.inner.covariance(), self.inner.coefficients().len())
+    }
+
+    /// The minimised asymmetric squared loss, without the penalty.
+    #[getter]
+    fn objective(&self) -> f64 {
+        self.inner.objective()
+    }
+
+    #[getter]
+    fn iterations(&self) -> usize {
+        self.inner.iterations()
+    }
+
+    /// The fitted expectile of each row.
+    fn predict(&self, py: Python<'_>, design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
+        let (fit, d) = (&self.inner, &design.inner);
+        py.detach(|| fit.predict(d)).map_err(to_py)
+    }
+
+    /// Draws of each row's fitted expectile under the sandwich covariance.
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    fn predict_distribution(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        n_sims: usize,
+        seed: u64,
+    ) -> PyResult<PyPredictiveDistribution> {
+        let (fit, d) = (&self.inner, &design.inner);
+        let inner = py
+            .detach(|| fit.predict_distribution(d, n_sims, seed))
+            .map_err(to_py)?;
+        Ok(PyPredictiveDistribution { inner })
+    }
+}

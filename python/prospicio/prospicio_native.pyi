@@ -15739,6 +15739,41 @@ class HierarchicalStacking:
         """
 
 @final
+class Hurdle:
+    """
+    A hurdle model, as R's ``pscl::hurdle``: a binary part for
+    ``P(Y > 0) = h(z' gamma)`` and a zero-truncated Poisson or negative
+    binomial with mean ``exp(x' beta + offset)`` for the positive counts,
+    each fitted by maximum likelihood.
+    
+    Parameters
+    ----------
+    count : str
+        ``"poisson"`` (the default) or ``"negative_binomial"``.
+    zero_link : str
+        ``"logit"`` (the default), ``"probit"`` or ``"cloglog"``.
+    
+    Examples
+    --------
+    >>> from prospicio.models import Design, Hurdle
+    >>> x = [i % 4 / 3 for i in range(200)]
+    >>> y = [0.0 if i % 3 == 0 else float(1 + i * 7 % 5) for i in range(200)]
+    >>> d = Design([[1.0] * 200, x], ["(Intercept)", "x"])
+    >>> fit = Hurdle().fit(d, y)
+    >>> round(sum(fit.prob_zero(d)), 6) == sum(v == 0 for v in y)
+    True
+    """
+    def __new__(cls, /, count: str = "poisson", zero_link: str = "logit") -> Hurdle: ...
+    def fit(self, /, count: Design, y: Sequence[float], zero: Design |None = None) -> TwoPartFit:
+        """
+        Fits as ``ZeroInflated.fit``.
+        
+        Returns
+        -------
+        TwoPartFit
+        """
+
+@final
 class IlfTable:
     """
     An ILF table read as a limited expected value curve: linear between the
@@ -31318,6 +31353,105 @@ class TweedieGlm:
         """
 
 @final
+class TwoPartFit:
+    """
+    A fitted zero-inflated or hurdle model, from ``ZeroInflated.fit`` or
+    ``Hurdle.fit``. Methods taking ``count`` and ``zero`` designs read both
+    parts' columns by name from ``count`` when ``zero`` is ``None``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def aic(self, /) -> float: ...
+    @property
+    def bic(self, /) -> float: ...
+    @property
+    def count(self, /) -> str:
+        """
+        ``"poisson"`` or ``"negative_binomial"``.
+        """
+    @property
+    def count_coefficients(self, /) -> list[float]:
+        """
+        The count part's coefficients, on the log scale.
+        """
+    @property
+    def count_names(self, /) -> list[str]: ...
+    @property
+    def count_standard_errors(self, /) -> list[float]: ...
+    @property
+    def covariance(self, /) -> list[list[float]]:
+        """
+        The covariance of ``(count, zero, log theta)``, a list of rows.
+        """
+    @property
+    def fitted(self, /) -> list[float]:
+        """
+        The fitted mean of each row of the data fitted.
+        """
+    @property
+    def iterations(self, /) -> int: ...
+    @property
+    def kind(self, /) -> str:
+        """
+        ``"zero_inflated"`` or ``"hurdle"``.
+        """
+    @property
+    def log_likelihood(self, /) -> float: ...
+    @property
+    def log_likelihoods(self, /) -> list[float]:
+        """
+        Each row's log-likelihood, without its weight.
+        """
+    @property
+    def n_parameters(self, /) -> int:
+        """
+        Both parts' coefficients and, for the negative binomial, ``theta``.
+        """
+    def predict(self, /, count: Design, zero: Design |None = None) -> list[float]:
+        """
+        The expected count of each row.
+        """
+    def predict_distribution(self, /, count: Design, n_sims: int, seed: int, zero: Design |None = None) -> PredictiveDistribution:
+        """
+        Joint draws of the counts: the parameters drawn from the normal
+        approximation at the maximum, then each row's count.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
+    def prob_zero(self, /, count: Design, zero: Design |None = None) -> list[float]:
+        """
+        ``P(Y = 0)`` for each row.
+        """
+    def probabilities(self, /, count: Design, zero: Design |None = None, max_count: int = 10) -> list[list[float]]:
+        """
+        ``P(Y = k)`` for ``k = 0..max_count``, one list per row.
+        """
+    @property
+    def se_log_theta(self, /) -> float |None:
+        """
+        The standard error of ``log(theta)``, as pscl's ``SE.logtheta``.
+        """
+    @property
+    def theta(self, /) -> float |None:
+        """
+        The negative binomial's ``theta``, ``None`` for the Poisson.
+        """
+    @property
+    def zero_coefficients(self, /) -> list[float]:
+        """
+        The zero part's coefficients: of the structural zero's probability
+        (zero-inflated) or of ``P(Y > 0)`` (hurdle).
+        """
+    @property
+    def zero_link(self, /) -> str: ...
+    @property
+    def zero_names(self, /) -> list[str]: ...
+    @property
+    def zero_standard_errors(self, /) -> list[float]: ...
+
+@final
 class UnderwritingBasis:
     """
     How an underwriting period's policies are written and earned, to convert
@@ -31884,6 +32018,46 @@ class WeightedSample:
     def var(self, /, p: float) -> float:
         """
         The VaR at ``p``.
+        """
+
+@final
+class ZeroInflated:
+    """
+    A zero-inflated Poisson or negative binomial model, as R's
+    ``pscl::zeroinfl``: a zero is structural with probability
+    ``pi = h(z' gamma)``, otherwise the count is Poisson or negative
+    binomial with mean ``exp(x' beta + offset)``. Fitted by joint maximum
+    likelihood; standard errors from the observed information.
+    
+    Parameters
+    ----------
+    count : str
+        ``"poisson"`` (the default) or ``"negative_binomial"`` (``theta``
+        estimated).
+    zero_link : str
+        ``"logit"`` (the default), ``"probit"`` or ``"cloglog"``.
+    
+    Examples
+    --------
+    >>> from prospicio.models import Design, ZeroInflated
+    >>> x = [i % 4 / 3 for i in range(200)]
+    >>> y = [0.0 if i % 3 == 0 else float(i * 7 % 5) for i in range(200)]
+    >>> d = Design([[1.0] * 200, x], ["(Intercept)", "x"])
+    >>> fit = ZeroInflated().fit(d, y)
+    >>> abs(sum(fit.predict(d)) - sum(y)) < 0.1
+    True
+    """
+    def __new__(cls, /, count: str = "poisson", zero_link: str = "logit") -> ZeroInflated: ...
+    def fit(self, /, count: Design, y: Sequence[float], zero: Design |None = None) -> TwoPartFit:
+        """
+        Fits the count part on ``count`` (its offset and prior weights
+        apply) and the zero part on ``zero`` (its offset applies). Without
+        ``zero`` both parts use ``count``'s columns, the offset on the count
+        part only.
+        
+        Returns
+        -------
+        TwoPartFit
         """
 
 def actual_vs_expected(periods: Sequence[int |str], family: str, y: Sequence[float], mu: Sequence[float], weights: Sequence[float] |None = None, dispersion: float = 1.0, theta: float |None = None, power: float |None = None) -> dict:
@@ -32694,6 +32868,13 @@ def confusion_matrix(y: Sequence[float], score: Sequence[float], threshold: floa
     dict
         ``true_positive``, ``false_positive``, ``true_negative``,
         ``false_negative``, ``sensitivity`` and ``specificity``.
+    """
+
+def count_log_likelihoods(y: Sequence[float], mu: Sequence[float], theta: float |None = None) -> list[float]:
+    """
+    Each row's log-likelihood under a plain Poisson (``theta`` ``None``) or
+    negative binomial count model with means ``mu``: the input of ``vuong``
+    for a GLM.
     """
 
 def covar(pd: PredictiveDistribution, key: Sequence[int |str], p: float, q: float) -> float:
@@ -36575,6 +36756,15 @@ def vif(design: Design) -> list[float]:
     ...            ["(Intercept)", "x", "z"])
     >>> [round(v, 12) for v in vif(d)[1:]]
     [1.0, 1.0]
+    """
+
+def vuong(a: Sequence[float], b: Sequence[float], k_a: int, k_b: int) -> dict[str, tuple[float, float]]:
+    """
+    Vuong's test of model ``a`` against model ``b``, as ``pscl::vuong``:
+    from each row's log-likelihood under each and their parameter counts
+    (pscl counts the coefficients only, not ``theta``). Returns a dict with
+    ``"raw"``, ``"aic"`` and ``"bic"``, each ``(statistic, p_value)``: a
+    positive statistic favours ``a``, the p-value is one-sided.
     """
 
 def wiener_hopf(severity: Grid, wait: Any, rho: float |None = None, *, loss_ratio: float |None = None, points: int |None = None) -> RenewalRuin:

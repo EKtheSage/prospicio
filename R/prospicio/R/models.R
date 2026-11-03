@@ -4,7 +4,7 @@
 # stats::glm.
 
 #' @include distributions.R
-#' @importFrom stats coef predict
+#' @importFrom stats coef logLik predict vcov
 NULL
 
 # Design matrix, response, offset and weights from a formula, kept with
@@ -2887,4 +2887,438 @@ conformal_intervals <- function(model, data, y, newdata, method = c("cv+", "jack
     per[[k]] <- pr(m, newdata)
   }
   conformal_plus(y, oof, folds, per, alpha)
+}
+
+# The count and zero formulas of pscl's two-part `y ~ x | z`; without `|`
+# the zero part takes the count part's terms without its offsets.
+two_part_formulas <- function(formula) {
+  rhs <- formula[[3]]
+  if (is.call(rhs) && identical(rhs[[1]], as.name("|"))) {
+    count <- formula
+    count[[3]] <- rhs[[2]]
+    zero <- stats::as.formula(call("~", rhs[[3]]), env = environment(formula))
+    return(list(count = count, zero = zero, same = FALSE))
+  }
+  list(count = formula, zero = NULL, same = TRUE)
+}
+
+zero_designs <- function(object, newdata, offset) {
+  nd <- new_design(object, newdata, offset)
+  if (is.null(object@zterms)) {
+    return(list(x = nd$x, offset = nd$offset, z = nd$x, zoffset = double()))
+  }
+  mf <- stats::model.frame(object@zterms, newdata, xlev = object@zxlevels,
+                           na.action = stats::na.fail)
+  z <- stats::model.matrix(object@zterms, mf)
+  zoff <- stats::model.offset(mf)
+  list(x = nd$x, offset = nd$offset, z = z,
+       zoffset = if (is.null(zoff)) double() else as.double(zoff))
+}
+
+zero_fit <- function(model, formula, data, dist, link, offset, weights) {
+  parts <- two_part_formulas(formula)
+  des <- model_design(parts$count, data, offset, weights)
+  if (parts$same) {
+    z <- des$x
+    zoff <- double()
+    zterms <- NULL
+    zxlevels <- NULL
+  } else {
+    zdes <- model_design(parts$zero, data, NULL, NULL)
+    z <- zdes$x
+    zoff <- zdes$offset
+    zterms <- zdes$terms
+    zxlevels <- zdes$xlevels
+  }
+  ptr <- rust_result(zero_fit_design(
+    as.double(des$x), colnames(des$x), des$y, des$offset, des$weights,
+    as.double(z), colnames(z), zoff, model, dist, link
+  ), s7_call())
+  zero_model(ptr = ptr, terms = des$terms, xlevels = des$xlevels, zterms = zterms,
+             zxlevels = zxlevels,
+             n = if (length(des$weights)) sum(des$weights > 0) else length(des$y))
+}
+
+#' Zero-inflated and hurdle count models
+#'
+#' Counts with more zeros than a Poisson or negative binomial predicts, as
+#' `pscl::zeroinfl()` and `pscl::hurdle()`, with pscl's two-part formula
+#' `y ~ x | z`: the count part on `x`, `mu = exp(x beta + offset)`, the zero
+#' part on `z` with a binary `link`.
+#'
+#' `zeroinfl_fit()`: a zero is structural with probability
+#' `pi = h(z gamma)`, otherwise the count is drawn from the Poisson or the
+#' negative binomial (`theta` estimated), so `P(0) = pi + (1 - pi) f(0)`;
+#' the parameters are estimated jointly by maximum likelihood.
+#' `hurdle_fit()`: the zero part gives `p = h(z gamma) = P(y > 0)` and a
+#' positive count is drawn from the count distribution truncated at zero;
+#' its two parts are fitted one at a time. Both maximise by Newton's method
+#' on analytic gradients, and their standard errors come from the observed
+#' information, as pscl's. Without `|` both parts use the formula's terms;
+#' unlike pscl, the formula's `offset()` (an exposure) then applies to the
+#' count part only: write it on the zero side too (`y ~ x + offset(log(e))
+#' | x + offset(log(e))`) to put it there. Prior weights weight the whole
+#' likelihood, `theta`'s score included (pscl's leaves them out of it;
+#' `docs/design/models.md`, "Zero-inflated and hurdle counts").
+#'
+#' `vuong_test()` is Vuong's non-nested test of two models, as
+#' `pscl::vuong()`: each a `zero_model` or a numeric vector of the rows'
+#' log-likelihoods (with its parameter count `k1` or `k2`). The counts are
+#' pscl's, the coefficients without `theta`, so a plain GLM's is
+#' `length(coef(m))`. `count_log_likelihoods()` gives the rows'
+#' log-likelihoods of a plain Poisson or negative binomial with means `mu`.
+#'
+#' @param formula A two-part formula `y ~ x | z` or a one-part `y ~ x`.
+#' @param data A data frame.
+#' @param dist `"poisson"` or `"negbin"`.
+#' @param link The zero part's link: `"logit"`, `"probit"` or `"cloglog"`.
+#' @param offset,weights An optional offset of the count part (added to
+#'   any `offset()` term) and prior weights.
+#' @param m1,m2 Two `zero_model`s or numeric vectors of the rows'
+#'   log-likelihoods.
+#' @param k1,k2 Their parameter counts, needed for a numeric vector.
+#' @param y,mu,theta Counts, means and the negative binomial's `theta`
+#'   (`NULL` for the Poisson).
+#' @returns A `zero_model` with `count_coefficients`, `count_std_errors`,
+#'   `zero_coefficients`, `zero_std_errors` (of the structural zero's
+#'   probability, or of `P(y > 0)` for a hurdle), `theta` and
+#'   `se_log_theta` (`NA` for the Poisson), `covariance` (count, zero and
+#'   `log(theta)`), `loglik`, `log_likelihoods` (each row's, without its
+#'   weight), `aic`, `bic`, `fitted`, `n_parameters`, `kind`, `dist` and
+#'   `iterations`. `coef()` names them as pscl's `count_x` and `zero_x`;
+#'   `logLik()`, `AIC()` and `BIC()` work; `predict(m, newdata, type =)`
+#'   gives the mean (`"response"`), `P(y = 0)` (`"zero"`) or a matrix of
+#'   `P(y = k)` for `k` in `0:max` (`"prob"`); `predict_distribution()`
+#'   joint draws. `vuong_test()` returns a data frame of the raw, AIC- and
+#'   BIC-corrected statistics with their one-sided p-values (a positive
+#'   statistic favours `m1`).
+#' @export
+#' @examples
+#' d <- data.frame(x = rep(0:3 / 3, 50))
+#' d$y <- ifelse(seq_len(200) %% 3 == 1, 0, (seq_len(200) * 7) %% 5)
+#' m <- zeroinfl_fit(y ~ x | 1, d)
+#' coef(m)
+#' h <- hurdle_fit(y ~ x, d, dist = "negbin")
+#' predict(h, d[1:2, , drop = FALSE], type = "prob", max = 3)
+#' g <- glm_fit(y ~ x, d, family = "poisson")
+#' vuong_test(m, count_log_likelihoods(d$y, g@fitted), k2 = 2)
+zeroinfl_fit <- function(formula, data, dist = "poisson", link = "logit", offset = NULL,
+                         weights = NULL) {
+  zero_fit("zeroinfl", formula, data, dist, link, offset, weights)
+}
+
+#' @rdname zeroinfl_fit
+#' @export
+hurdle_fit <- function(formula, data, dist = "poisson", link = "logit", offset = NULL,
+                       weights = NULL) {
+  zero_fit("hurdle", formula, data, dist, link, offset, weights)
+}
+
+#' @rdname zeroinfl_fit
+#' @export
+zero_model <- S7::new_class(
+  "zero_model",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("ZeroModel"),
+    terms = S7::class_any,
+    xlevels = S7::class_any,
+    zterms = S7::class_any,
+    zxlevels = S7::class_any,
+    n = S7::class_double,
+    count_coefficients = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$count_coefficients(), self@ptr$count_names())
+    }),
+    count_std_errors = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$count_std_errors(), self@ptr$count_names())
+    }),
+    zero_coefficients = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$zero_coefficients(), self@ptr$zero_names())
+    }),
+    zero_std_errors = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$zero_std_errors(), self@ptr$zero_names())
+    }),
+    theta = S7::new_property(S7::class_double, getter = function(self) self@ptr$theta()),
+    se_log_theta = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$se_log_theta()
+    }),
+    covariance = S7::new_property(S7::class_any, getter = function(self) {
+      nm <- c(paste0("count_", self@ptr$count_names()), paste0("zero_", self@ptr$zero_names()))
+      if (self@ptr$dist() == "negbin") nm <- c(nm, "log(theta)")
+      matrix(self@ptr$covariance(), length(nm), dimnames = list(nm, nm))
+    }),
+    loglik = S7::new_property(S7::class_double, getter = function(self) self@ptr$loglik()),
+    log_likelihoods = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$log_likelihoods()
+    }),
+    aic = S7::new_property(S7::class_double, getter = function(self) self@ptr$aic()),
+    bic = S7::new_property(S7::class_double, getter = function(self) self@ptr$bic()),
+    fitted = S7::new_property(S7::class_double, getter = function(self) self@ptr$fitted()),
+    n_parameters = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$n_parameters()
+    }),
+    kind = S7::new_property(S7::class_character, getter = function(self) self@ptr$kind()),
+    dist = S7::new_property(S7::class_character, getter = function(self) self@ptr$dist()),
+    iterations = S7::new_property(S7::class_double, getter = function(self) self@ptr$iterations())
+  ),
+  constructor = function(ptr, terms, xlevels, zterms, zxlevels, n) {
+    S7::new_object(S7::S7_object(), ptr = ptr, terms = terms, xlevels = xlevels, zterms = zterms,
+                   zxlevels = zxlevels, n = as.double(n))
+  }
+)
+
+S7::method(coef, zero_model) <- function(object, ...) {
+  c(stats::setNames(object@count_coefficients, paste0("count_", names(object@count_coefficients))),
+    stats::setNames(object@zero_coefficients, paste0("zero_", names(object@zero_coefficients))))
+}
+
+S7::method(logLik, zero_model) <- function(object, ...) {
+  structure(object@loglik, df = object@n_parameters, nobs = object@n, class = "logLik")
+}
+
+S7::method(predict, zero_model) <- function(object, newdata, type = c("response", "zero", "prob"),
+                                            max = 10, offset = NULL, ...) {
+  type <- match.arg(type)
+  d <- zero_designs(object, newdata, offset)
+  out <- rust_result(object@ptr$predict(as.double(d$x), colnames(d$x), d$offset, as.double(d$z),
+                                        colnames(d$z), d$zoffset, type, as.double(max)),
+                     s7_call())
+  if (type != "prob") return(out)
+  matrix(out, nrow(d$x), dimnames = list(NULL, as.character(0:max)))
+}
+
+S7::method(predict_distribution, zero_model) <- function(object, newdata, n_sims, seed,
+                                                        offset = NULL, ...) {
+  d <- zero_designs(object, newdata, offset)
+  ptr <- rust_result(object@ptr$predict_distribution(
+    as.double(d$x), colnames(d$x), d$offset, as.double(d$z), colnames(d$z), d$zoffset,
+    as.double(n_sims), as.double(seed)
+  ), s7_call())
+  predictive_distribution(ptr = ptr)
+}
+
+S7::method(print, zero_model) <- function(x, ...) {
+  cat(sprintf("<zero_model> %s %s, log-likelihood %.4f\n", x@kind, x@dist, x@loglik))
+  cat("Count part:\n")
+  print(x@count_coefficients)
+  cat("Zero part:\n")
+  print(x@zero_coefficients)
+  if (!is.na(x@theta)) cat(sprintf("theta: %.6g\n", x@theta))
+  invisible(x)
+}
+
+#' @rdname zeroinfl_fit
+#' @export
+count_log_likelihoods <- function(y, mu, theta = NULL) {
+  rust_result(count_log_likelihoods_rust(as.double(y), as.double(mu),
+                                         if (is.null(theta)) NaN else as.double(theta)),
+              s7_call())
+}
+
+#' @rdname zeroinfl_fit
+#' @export
+vuong_test <- function(m1, m2, k1 = NULL, k2 = NULL) {
+  pointwise <- function(m, k, which) {
+    if (S7::S7_inherits(m, zero_model)) {
+      return(list(ll = m@log_likelihoods,
+                  k = length(m@count_coefficients) + length(m@zero_coefficients)))
+    }
+    if (is.null(k)) stop(sprintf("%s is a vector of log-likelihoods: give its parameter count", which))
+    list(ll = as.double(m), k = k)
+  }
+  a <- pointwise(m1, k1, "m1")
+  b <- pointwise(m2, k2, "m2")
+  v <- rust_result(vuong_rust(a$ll, b$ll, as.double(a$k), as.double(b$k)), s7_call())
+  data.frame(statistic = v[1:3], p_value = v[4:6], row.names = c("raw", "aic", "bic"))
+}
+
+#' Quantile and expectile regression
+#'
+#' `quantreg_fit()` fits linear quantile regressions, as
+#' `quantreg::rq()`: it minimises the weighted check loss
+#' `sum(w * rho_tau(y - X beta))` by an interior point on the dual (Koenker
+#' and Portnoy's Frisch-Newton) and then moves to the exact vertex, which is
+#' `rq(method = "br")`'s solution when it is unique. Its standard errors are
+#' Powell's kernel sandwich, `summary.rq(se = "ker")`, with Hall and
+#' Sheather's bandwidth (`hs = TRUE`) or Bofinger's; `vcov(m, se = "boot")`
+#' gives a paired bootstrap instead. Several `tau` fit at once, and
+#' `predict(m, newdata, rearrange = TRUE)` sorts each row's quantiles so they
+#' do not cross. The `objective` is the weighted check loss minimised
+#' (`rq`'s `rho` leaves the weights out).
+#'
+#' `expectreg_fit()` fits linear expectile regression (asymmetric least
+#' squares, Newey and Powell 1987), as `expectreg::expectreg.ls()`'s least
+#' asymmetrically weighted squares, by iteratively reweighted least squares,
+#' with the sandwich covariance `A^-1 B A^-1` (`lm`'s HC0 at `tau = 0.5`). A
+#' quadratic penalty `lambda * t(beta) %*% penalty %*% beta` on a P-spline
+#' basis gives `expectreg`'s smooth at a fixed `lambda`
+#' (`docs/design/models.md`, "Quantile and expectile regression").
+#'
+#' @param formula A model formula.
+#' @param data A data frame.
+#' @param tau The quantile or expectile: one value, or several for
+#'   `quantreg_fit()`.
+#' @param weights,offset Optional prior weights and an offset, subtracted
+#'   from the response.
+#' @param bandwidth `"hall_sheather"` (the default) or `"bofinger"`.
+#' @param lambda,penalty The penalty's multiplier and its matrix over the
+#'   design's columns (zeros for unpenalised ones), or `NULL`.
+#' @returns A `quantreg_model` with `tau`, `coefficients` (a named vector,
+#'   or a matrix with one column per `tau`), `std_errors`, `objective` and
+#'   `bandwidth`; `coef()`, `vcov(m, se = c("ker", "boot"), n_boot, seed,
+#'   k)`, `predict(m, newdata, rearrange)` and `predict_distribution(m,
+#'   newdata, n_sims, seed, k)` (draws of the fitted quantile `k` from its
+#'   coefficients' normal approximation). An `expectreg_model` with `tau`,
+#'   `coefficients`, `std_errors`, `covariance`, `objective` and
+#'   `iterations`, and the same methods.
+#' @export
+#' @examples
+#' d <- data.frame(x = 1:40, y = 1:40 + rep(c(-2, 0, 1, 5), 10))
+#' m <- quantreg_fit(y ~ x, d, tau = c(0.25, 0.5, 0.75))
+#' m@coefficients
+#' predict(m, data.frame(x = 41), rearrange = TRUE)
+#' e <- expectreg_fit(y ~ x, d, tau = 0.9)
+#' e@std_errors
+quantreg_fit <- function(formula, data, tau = 0.5, weights = NULL, offset = NULL,
+                         bandwidth = "hall_sheather") {
+  des <- model_design(formula, data, offset, weights)
+  ptr <- rust_result(quantreg_fit_design(
+    as.double(des$x), colnames(des$x), des$y, des$offset, des$weights, as.double(tau),
+    bandwidth
+  ), s7_call())
+  quantreg_model(ptr = ptr, terms = des$terms, xlevels = des$xlevels,
+                 data = list(x = des$x, y = des$y, offset = des$offset, weights = des$weights))
+}
+
+#' @rdname quantreg_fit
+#' @export
+quantreg_model <- S7::new_class(
+  "quantreg_model",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("QuantregFits"),
+    terms = S7::class_any,
+    xlevels = S7::class_any,
+    data = S7::class_list,
+    tau = S7::new_property(S7::class_double, getter = function(self) self@ptr$taus()),
+    coefficients = S7::new_property(S7::class_any, getter = function(self) {
+      quantreg_shape(self, self@ptr$coefficients())
+    }),
+    std_errors = S7::new_property(S7::class_any, getter = function(self) {
+      quantreg_shape(self, self@ptr$std_errors())
+    }),
+    objective = S7::new_property(S7::class_double, getter = function(self) self@ptr$objectives()),
+    bandwidth = S7::new_property(S7::class_double, getter = function(self) self@ptr$bandwidths())
+  ),
+  constructor = function(ptr, terms, xlevels, data) {
+    S7::new_object(S7::S7_object(), ptr = ptr, terms = terms, xlevels = xlevels, data = data)
+  }
+)
+
+quantreg_shape <- function(object, values) {
+  nm <- object@ptr$names()
+  taus <- object@ptr$taus()
+  if (length(taus) == 1) return(stats::setNames(values, nm))
+  matrix(values, length(nm), dimnames = list(nm, paste0("tau=", taus)))
+}
+
+S7::method(coef, quantreg_model) <- function(object, ...) object@coefficients
+
+S7::method(vcov, quantreg_model) <- function(object, se = c("ker", "boot"), n_boot = 200,
+                                            seed = 0, k = 1, ...) {
+  se <- match.arg(se)
+  nm <- object@ptr$names()
+  v <- if (se == "ker") {
+    rust_result(object@ptr$covariance(as.double(k)), s7_call())
+  } else {
+    d <- object@data
+    rust_result(quantreg_bootstrap_rust(as.double(d$x), colnames(d$x), d$y, d$offset, d$weights,
+                                        object@tau[[k]], as.double(n_boot), as.double(seed)),
+                s7_call())
+  }
+  matrix(v, length(nm), dimnames = list(nm, nm))
+}
+
+S7::method(predict, quantreg_model) <- function(object, newdata, rearrange = FALSE,
+                                                offset = NULL, ...) {
+  nd <- new_design(object, newdata, offset)
+  out <- rust_result(object@ptr$predict(as.double(nd$x), colnames(nd$x), nd$offset,
+                                        isTRUE(rearrange)), s7_call())
+  taus <- object@tau
+  if (length(taus) == 1) return(out)
+  if (rearrange) taus <- sort(taus)
+  matrix(out, nrow(nd$x), dimnames = list(NULL, paste0("tau=", taus)))
+}
+
+S7::method(predict_distribution, quantreg_model) <- function(object, newdata, n_sims, seed,
+                                                            k = 1, offset = NULL, ...) {
+  nd <- new_design(object, newdata, offset)
+  ptr <- rust_result(object@ptr$predict_distribution(
+    as.double(k), as.double(nd$x), colnames(nd$x), nd$offset, as.double(n_sims), as.double(seed)
+  ), s7_call())
+  predictive_distribution(ptr = ptr)
+}
+
+#' @rdname quantreg_fit
+#' @export
+expectreg_fit <- function(formula, data, tau = 0.5, weights = NULL, offset = NULL,
+                          lambda = NULL, penalty = NULL) {
+  des <- model_design(formula, data, offset, weights)
+  if (xor(is.null(lambda), is.null(penalty))) stop("give lambda and penalty together, or neither")
+  pen <- if (is.null(penalty)) double() else {
+    penalty <- as.matrix(penalty)
+    if (!identical(dim(penalty), c(ncol(des$x), ncol(des$x)))) {
+      stop(sprintf("penalty must be %d x %d, one row and column per design column",
+                   ncol(des$x), ncol(des$x)))
+    }
+    as.double(penalty)
+  }
+  ptr <- rust_result(expectreg_fit_design(
+    as.double(des$x), colnames(des$x), des$y, des$offset, des$weights, as.double(tau),
+    if (is.null(lambda)) 0 else as.double(lambda), pen
+  ), s7_call())
+  expectreg_model(ptr = ptr, terms = des$terms, xlevels = des$xlevels)
+}
+
+#' @rdname quantreg_fit
+#' @export
+expectreg_model <- S7::new_class(
+  "expectreg_model",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("ExpectregModel"),
+    terms = S7::class_any,
+    xlevels = S7::class_any,
+    tau = S7::new_property(S7::class_double, getter = function(self) self@ptr$tau()),
+    coefficients = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$coefficients(), self@ptr$names())
+    }),
+    std_errors = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$std_errors(), self@ptr$names())
+    }),
+    covariance = S7::new_property(S7::class_any, getter = function(self) {
+      nm <- self@ptr$names()
+      matrix(self@ptr$covariance(), length(nm), dimnames = list(nm, nm))
+    }),
+    objective = S7::new_property(S7::class_double, getter = function(self) self@ptr$objective()),
+    iterations = S7::new_property(S7::class_double, getter = function(self) self@ptr$iterations())
+  ),
+  constructor = function(ptr, terms, xlevels) {
+    S7::new_object(S7::S7_object(), ptr = ptr, terms = terms, xlevels = xlevels)
+  }
+)
+
+S7::method(coef, expectreg_model) <- function(object, ...) object@coefficients
+S7::method(vcov, expectreg_model) <- function(object, ...) object@covariance
+S7::method(predict, expectreg_model) <- function(object, newdata, offset = NULL, ...) {
+  nd <- new_design(object, newdata, offset)
+  rust_result(object@ptr$predict(as.double(nd$x), colnames(nd$x), nd$offset), s7_call())
+}
+S7::method(predict_distribution, expectreg_model) <- function(object, newdata, n_sims, seed,
+                                                             offset = NULL, ...) {
+  nd <- new_design(object, newdata, offset)
+  ptr <- rust_result(object@ptr$predict_distribution(
+    as.double(nd$x), colnames(nd$x), nd$offset, as.double(n_sims), as.double(seed)
+  ), s7_call())
+  predictive_distribution(ptr = ptr)
 }

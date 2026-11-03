@@ -87,6 +87,15 @@ models and compares them.
 - `prospicio_glm::dglm::DoubleGlm`: double GLMs, a GLM for the mean and
   one for the log dispersion on their own designs, by ML or REML (see
   "Double GLMs"); Python `DoubleGlm`, R `dglm_fit()`.
+- `prospicio_glm::zero`: zero-inflated and hurdle Poisson and negative
+  binomial models with Vuong's test (see "Zero-inflated and hurdle
+  counts"); Python `ZeroInflated`, `Hurdle`, R `zeroinfl_fit()`,
+  `hurdle_fit()`.
+- `prospicio_glm::quantile`: linear quantile regression with kernel or
+  bootstrap standard errors and rearrangement, and expectile regression,
+  penalised or not (see "Quantile and expectile regression"); Python
+  `QuantileRegression`, `ExpectileRegression`, R `quantreg_fit()`,
+  `expectreg_fit()`.
 - Parity: `validation/reference/glm_statsmodels.csv`
   (`validation/scripts/statsmodels_glm.py`): 10 GLMs on a synthetic
   600-policy portfolio (Poisson with exposure offset, quasi-Poisson, gamma
@@ -1209,6 +1218,126 @@ the unconstrained fits' dependence on experience falls at 7 (LightGBM) and
 - (d) *`check_monotone` checks the fitted model*, the mean prediction
   over the given rows with the feature set to each grid value, so a
   violation within `tol` (relative, 1e-9) of the largest mean is ignored.
+
+## Zero-inflated and hurdle counts (#548)
+
+Status: built; items (a) to (f) proposed for the user's acceptance.
+
+`prospicio_glm::zero` fits two-part count models as R's `pscl::zeroinfl`
+and `pscl::hurdle`. `ZeroInflated::poisson()` and `::negative_binomial()`
+mix structural zeros, `pi = h(z'gamma)`, with a Poisson or negative
+binomial count, `mu = exp(x'beta + offset)`, fitted jointly;
+`Hurdle::poisson()` and `::negative_binomial()` fit a binary part for
+`P(Y > 0)` and a zero-truncated count on the positive rows, one part at a
+time. `.zero_link(Link::Probit)` or `Link::Cloglog` replace the logit.
+`fit_parts(count, zero, y)` takes each part's design; the `Model` fit takes
+one design for both. The fit, `TwoPartFit`, gives both parts' coefficients
+and standard errors, `theta` and the standard error of `log(theta)`, the
+covariance of `(beta, gamma, log theta)`, the log-likelihood (also row by
+row), AIC and BIC; `predict_parts`, `prob_zero_parts` and
+`probabilities_parts` (or the same on one design, each part's columns read
+by name); and joint draws, with the parameters drawn from their normal
+approximation. `vuong(a, b, k_a, k_b)` is Vuong's test from two models'
+row log-likelihoods, with `count_log_likelihoods` for a plain Poisson or
+negative binomial GLM. Python `ZeroInflated`, `Hurdle`, `TwoPartFit`,
+`vuong` and `count_log_likelihoods` in `prospicio.models`; R
+`zeroinfl_fit(y ~ x | z)`, `hurdle_fit()`, `vuong_test()` and
+`count_log_likelihoods()`.
+
+pscl 1.5.9 is matched on its `bioChemists` data and a seeded book of 2,000
+policies with an exposure offset and prior weights (ten fits, 545 cases,
+`validation/scripts/r_zero_counts.R`): pscl's likelihood maximised to the
+end by Newton from its estimates, since its BFGS stops up to 2e-6 short in
+a coefficient, gives the coefficients and `theta` to 1e-9, the standard
+errors to 1e-7 and its predictions to 1e-8; pscl's own estimates and
+standard errors agree to 1e-4 and 2e-3. With prior weights pscl leaves
+them out of `theta`'s score, so its estimates and standard errors there are
+not the weighted likelihood's
+(`knowledge/findings/pscl-weighted-theta-score.md`).
+
+- (a) *Newton's method on analytic gradients*, the Hessian a central
+  difference of the gradient, each step damped until the Hessian is
+  negative definite and halved until the log-likelihood rises; it stops
+  when no parameter moves by more than `1e-10` of its size. pscl uses BFGS
+  after an optional EM start. The zero-inflated fit starts from the Poisson
+  GLM, the binary GLM of `y = 0` and `theta = 1`; the hurdle's parts from
+  their GLMs.
+- (b) *One design serves both parts with the offset on the count part
+  only.* pscl's `y ~ x + offset(log(e))` without `|` puts the offset on the
+  zero part too; an exposure scales the expected count, not the share of
+  structural zeros, so here it does not. A zero part with an offset takes
+  its own design (R: write the offset after `|`).
+- (c) *Standard errors from the observed information*, as pscl's, so they
+  include the correlation of the two parts and of `log(theta)` with the
+  coefficients; a hurdle's two parts are independent, its covariance block
+  diagonal.
+- (d) *Prior weights weight every row's log-likelihood, `theta`'s score
+  included* (pscl's leaves them out of `theta`'s); `log_likelihoods` gives
+  each row's value without its weight, and BIC's `n` counts the rows with a
+  positive weight.
+- (e) *`vuong` takes the parameter counts* as pscl does, the coefficients
+  without `theta` (`length(coef(m))`), so its AIC and BIC corrections are
+  pscl's; the p-value is one-sided, toward the sign of the statistic.
+- (f) *The draws* take `(beta, gamma, log theta)` from the normal
+  approximation at the maximum, then each row's count from the model at
+  them (a zero or a count for the zero-inflated model, a zero or a
+  truncated count for the hurdle), each by inversion of its own uniform.
+
+## Quantile and expectile regression (#550)
+
+Status: built; items (a) to (f) proposed for the user's acceptance.
+
+`prospicio_glm::quantile::QuantileRegression::new(tau)` fits a linear
+quantile regression, minimising the weighted check loss
+`sum w rho_tau(y - x'beta)` as R's `quantreg::rq`; `fit_many(taus)` fits
+several `tau` at once, and `QuantileFits::predict(design, rearrange)` can
+sort each row's quantiles across them. `QuantileFit` gives the
+coefficients, Powell's kernel sandwich covariance (`summary.rq(se =
+"ker")`, with Hall and Sheather's or Bofinger's bandwidth), the bandwidth
+and the weighted objective; `bootstrap_covariance` gives a paired
+bootstrap. `ExpectileRegression::new(tau)` fits asymmetric least squares
+(Newey and Powell, 1987) by iteratively reweighted least squares, with a
+sandwich covariance and an optional quadratic penalty `lambda beta'P beta`
+for a P-spline basis. Both fits implement `Fitted` (their
+`predict_distribution` draws the fitted quantile or expectile from its
+coefficients' normal approximation). Python `QuantileRegression`,
+`QuantileFit`, `QuantileFits`, `ExpectileRegression`, `ExpectileFit` in
+`prospicio.models`; R `quantreg_fit(y ~ x, data, tau)` and
+`expectreg_fit()`.
+
+quantreg 5.97 and expectreg 0.54 are matched on Engel's food expenditure
+data at five `tau` and a seeded book of 400 weighted losses at two
+(`validation/scripts/r_quantile_expectile.R`, 135 cases):
+`rq(method = "br")`'s coefficients and the weighted loss at them to
+1e-10, `rq(method = "fn")` to 1e-5, the kernel standard errors under both
+bandwidths to 1e-9, `expectreg.ls`'s linear expectiles to 1e-9 and its
+P-spline expectiles at `lambda = 5` on its own basis and penalty to 1e-8.
+
+- (a) *An interior point, then the vertex.* The dual linear program is
+  solved by a primal-dual interior point with Mehrotra's
+  predictor-corrector steps, as quantreg's Frisch-Newton (`fn`), to a
+  relative duality gap of 1e-12; the coefficients are then the exact fit
+  through the `p` rows the interior point fits most closely, kept when its
+  loss is no higher. That is the Barrodale-Roberts (`br`) vertex when the
+  solution is unique; when it is not (ties, discrete responses) the fit is
+  one of the optimal vertices, not necessarily `br`'s.
+- (b) *Kernel standard errors by default*, `summary.rq(se = "ker")`
+  exactly, rather than quantreg's default by size (`rank` intervals below
+  1,001 rows, `nid` above); the paired bootstrap is the alternative, each
+  resample on its own stream of the seed.
+- (c) *The objective is the weighted check loss*, the one minimised;
+  `rq`'s `rho` sums the loss without the weights.
+- (d) *Rearrangement sorts each row's predictions over the fitted grid of
+  `tau`* (Chernozhukov, Fernandez-Val and Galichon, 2010, on a discrete
+  grid), and is off by default, so a single fit's quantile is its own.
+- (e) *The expectile's sandwich* is `A^-1 B A^-1` with `A = X'WX + lambda
+  P` and `B = X'(We)^2 X`, `W` the prior weights times `|tau - 1{e < 0}|`:
+  HC0 at `tau = 0.5` without a penalty. expectreg reports no standard
+  errors, so the reference is the same formula written out in R.
+- (f) *The P-spline expectile takes the basis and penalty as given* and a
+  fixed `lambda`: expectreg's choice of `lambda` (Schall's algorithm,
+  cross-validation) is not built, and its basis is reproduced from its
+  design matrix, not rebuilt.
 
 ## Decisions
 

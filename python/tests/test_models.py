@@ -1051,6 +1051,197 @@ def test_double_glm_matches_corrected_dglm():
         assert fit.predict_dispersion(z_design) == pytest.approx(fit.dispersion_fitted, rel=1e-12)
 
 
+def _zero_reference():
+    import csv
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[2] / "validation"
+    with open(root / "reference" / "zero_counts_pscl.csv") as f:
+        ref = {
+            (r["case"], r["quantity"], r["arg"]): float(r["expected"])
+            for r in csv.DictReader(line for line in f if not line.startswith("#"))
+        }
+
+    def read(name):
+        with open(root / "data" / name) as f:
+            rows = list(csv.DictReader(f))
+        return {k: [float(r[k]) for r in rows] for k in rows[0]}
+
+    return ref, read("biochemists.csv"), read("zero_book.csv")
+
+
+def test_zero_inflated_and_hurdle_match_pscl():
+    # validation/scripts/r_zero_counts.R: pscl 1.5.9 maximised to the end by
+    # Newton, on bioChemists and the seeded book with an exposure offset.
+    import math
+
+    from prospicio.models import Design, Hurdle, ZeroInflated
+
+    ref, bio, book = _zero_reference()
+    n = len(bio["art"])
+    cols = ["fem", "mar", "kid5", "phd", "ment"]
+    x = Design([[1.0] * n] + [bio[c] for c in cols], ["(Intercept)"] + cols)
+    m = len(book["y"])
+    bx = Design(
+        [[1.0] * m, book["x"], book["urban"]],
+        ["(Intercept)", "x", "urban"],
+        offset=[math.log(e) for e in book["exposure"]],
+    )
+    bz = Design([[1.0] * m, book["x"]], ["(Intercept)", "x"])
+    cases = [
+        ("bio_zinb", ZeroInflated("negative_binomial"), x, None, bio["art"]),
+        ("bio_hp", Hurdle(), x, None, bio["art"]),
+        ("bio_zip_probit", ZeroInflated(zero_link="probit"), x,
+         Design([[1.0] * n, bio["ment"]], ["(Intercept)", "ment"]), bio["art"]),
+        ("book_hnb", Hurdle("negative_binomial"), bx, bz, book["y"]),
+    ]
+    for case, spec, count, zero, y in cases:
+        fit = spec.fit(count, y, zero)
+        for prefix, names, coefs, ses in [
+            ("count_", fit.count_names, fit.count_coefficients, fit.count_standard_errors),
+            ("zero_", fit.zero_names, fit.zero_coefficients, fit.zero_standard_errors),
+        ]:
+            for name, b, se in zip(names, coefs, ses):
+                assert b == pytest.approx(ref[(case, "coef", prefix + name)], rel=1e-9, abs=1e-11)
+                assert se == pytest.approx(ref[(case, "se", prefix + name)], rel=1e-7)
+        assert fit.log_likelihood == pytest.approx(ref[(case, "loglik", "")], rel=1e-12)
+        assert fit.aic == pytest.approx(ref[(case, "aic", "")], rel=1e-9)
+        if fit.theta is not None:
+            assert fit.theta == pytest.approx(ref[(case, "theta", "")], rel=1e-9)
+            assert fit.se_log_theta == pytest.approx(ref[(case, "se_log_theta", "")], rel=1e-7)
+        mean = fit.predict(count, zero)
+        p0 = fit.prob_zero(count, zero)
+        probs = fit.probabilities(count, zero, max_count=4)
+        for i in [1, 2, 3, 10, 100]:
+            assert mean[i - 1] == pytest.approx(ref[(case, "mean", str(i))], rel=1e-8)
+            assert p0[i - 1] == pytest.approx(ref[(case, "prob_zero", str(i))], rel=1e-8)
+        for k in range(1, 5):
+            assert probs[0][k] == pytest.approx(ref[(case, "prob", f"1:{k}")], rel=1e-8)
+        assert fit.fitted == pytest.approx(mean, rel=1e-12)
+
+
+def test_vuong_matches_pscl():
+    from prospicio.models import (
+        Design, Glm, NegativeBinomialGlm, ZeroInflated, count_log_likelihoods, vuong,
+    )
+
+    ref, bio, _ = _zero_reference()
+    n = len(bio["art"])
+    cols = ["fem", "mar", "kid5", "phd", "ment"]
+    x = Design([[1.0] * n] + [bio[c] for c in cols], ["(Intercept)"] + cols)
+    y = bio["art"]
+    zip_fit = ZeroInflated().fit(x, y)
+    glm = Glm("poisson", link="log").fit(x, y)
+    plain = count_log_likelihoods(y, glm.fitted)
+    v = vuong(zip_fit.log_likelihoods, plain, 12, 6)
+    for kind in ["raw", "aic", "bic"]:
+        assert v[kind][0] == pytest.approx(ref[("bio_zip", "vuong", kind)], rel=1e-6)
+        assert v[kind][1] == pytest.approx(ref[("bio_zip", "vuong_p", kind)], rel=1e-6)
+    nb = NegativeBinomialGlm(link="log").fit(x, y)
+    zinb = ZeroInflated("negative_binomial").fit(x, y)
+    v = vuong(zinb.log_likelihoods, count_log_likelihoods(y, nb.glm.fitted, nb.theta), 12, 6)
+    assert v["raw"][0] == pytest.approx(ref[("bio_zinb", "vuong", "raw")], rel=1e-6)
+
+
+def test_two_part_models_reject_what_they_cannot_fit():
+    from prospicio.models import Design, Hurdle, ZeroInflated
+
+    with pytest.raises(ValueError, match="poisson or negative_binomial"):
+        ZeroInflated("gamma")
+    with pytest.raises(ValueError, match="logit, probit or cloglog"):
+        Hurdle(zero_link="log")
+    d = Design([[1.0] * 4], ["(Intercept)"])
+    with pytest.raises(ValueError, match="no zeros"):
+        ZeroInflated().fit(d, [1.0, 2.0, 1.0, 3.0])
+    with pytest.raises(ValueError, match="whole, non-negative"):
+        Hurdle().fit(d, [0.0, 1.5, 1.0, 3.0])
+
+
+def _quantile_reference():
+    import csv
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[2] / "validation"
+    with open(root / "reference" / "quantile_expectile_r.csv") as f:
+        ref = {
+            (r["case"], r["quantity"], r["arg"]): float(r["expected"])
+            for r in csv.DictReader(line for line in f if not line.startswith("#"))
+        }
+
+    def read(name):
+        with open(root / "data" / name) as f:
+            rows = list(csv.DictReader(f))
+        return {k: [float(r[k]) for r in rows] for k in rows[0]}
+
+    return ref, read
+
+
+def test_quantile_regression_matches_quantreg():
+    # validation/scripts/r_quantile_expectile.R: rq(method = "br") and
+    # summary.rq(se = "ker") on Engel's data and the weighted loss book.
+    from prospicio.models import Design, QuantileRegression
+
+    ref, read = _quantile_reference()
+    engel = read("engel.csv")
+    n = len(engel["income"])
+    d = Design([[1.0] * n, engel["income"]], ["(Intercept)", "income"])
+    for tau in [0.1, 0.5, 0.9]:
+        case = f"engel_{tau}"
+        fit = QuantileRegression(tau).fit(d, engel["foodexp"])
+        for name, b, se in zip(fit.names, fit.coefficients, fit.standard_errors):
+            assert b == pytest.approx(ref[(case, "coef", name)], rel=1e-10, abs=1e-12)
+            assert se == pytest.approx(ref[(case, "se", name)], rel=1e-9)
+        assert fit.objective == pytest.approx(ref[(case, "objective", "")], rel=1e-10)
+        bof = QuantileRegression(tau, bandwidth="bofinger").fit(d, engel["foodexp"])
+        for name, se in zip(bof.names, bof.standard_errors):
+            assert se == pytest.approx(ref[(case, "se_bofinger", name)], rel=1e-9)
+    book = read("quantile_book.csv")
+    m = len(book["y"])
+    bd = Design([[1.0] * m, book["x"], book["z"]], ["(Intercept)", "x", "z"], weights=book["w"])
+    fit = QuantileRegression(0.95).fit(bd, book["y"])
+    for name, b in zip(fit.names, fit.coefficients):
+        assert b == pytest.approx(ref[("book_0.95", "coef", name)], rel=1e-10, abs=1e-12)
+    fits = QuantileRegression(0.5).fit_many([0.9, 0.1, 0.5], d, engel["foodexp"])
+    assert fits.taus == [0.9, 0.1, 0.5]
+    rows = fits.predict(d, rearrange=True)
+    assert all(r[0] <= r[1] <= r[2] for r in rows)
+    boot = QuantileRegression(0.5).bootstrap_covariance(d, engel["foodexp"], n_boot=100, seed=1)
+    assert len(boot) == 2 and boot[1][1] > 0
+
+
+def test_expectile_regression_matches_expectreg():
+    from prospicio.models import Design, ExpectileRegression
+
+    ref, read = _quantile_reference()
+    engel = read("engel.csv")
+    n = len(engel["income"])
+    d = Design([[1.0] * n, engel["income"]], ["(Intercept)", "income"])
+    for tau in [0.1, 0.5, 0.9]:
+        fit = ExpectileRegression(tau).fit(d, engel["foodexp"])
+        for name, b, se in zip(fit.names, fit.coefficients, fit.standard_errors):
+            assert b == pytest.approx(ref[(f"engel_{tau}", "ecoef", name)], rel=1e-9)
+            assert se == pytest.approx(ref[(f"engel_{tau}", "ese", name)], rel=1e-9)
+    basis = read("expectreg_engel_basis.csv")
+    names = list(basis)
+    k = len(names)
+    p_rows = read("expectreg_engel_penalty.csv")
+    penalty = [[0.0] * k for _ in range(k)]
+    for b, col in enumerate(p_rows.values()):
+        for a, v in enumerate(col):
+            penalty[a + 1][b + 1] = v
+    bd = Design([basis[c] for c in names], names)
+    fit = ExpectileRegression(0.8, lam=5.0, penalty=penalty).fit(bd, engel["foodexp"])
+    case = "engel_pspline_0.8"
+    scale = max(abs(ref[(case, "ecoef", c)]) for c in names)
+    for name, b in zip(fit.names, fit.coefficients):
+        assert b == pytest.approx(ref[(case, "ecoef", name)], abs=1e-8 * scale)
+    pred = fit.predict(bd)
+    for i in [1, 50, 100, 200]:
+        assert pred[i - 1] == pytest.approx(ref[(case, "efitted", str(i))], rel=1e-9)
+    with pytest.raises(ValueError, match="together"):
+        ExpectileRegression(0.5, lam=1.0)
+
+
 def test_double_glm_rejects_what_it_does_not_fit():
     from prospicio.models import Design, DoubleGlm
 

@@ -59,6 +59,9 @@
 "glmm::RandomEffects" = "unbound on 2026-10-28 (seed); review"
 "mars::MarsStep" = "unbound on 2026-10-28 (seed); review"
 "tweedie::TweedieProfile" = "unbound on 2026-10-28 (seed); review"
+"zero::TwoPart" = "the fit's kind, given as a string (\"zero_inflated\" or \"hurdle\")"
+"zero::Vuong" = "vuong returns a dict of (statistic, p_value) for raw, aic and bic"
+"zero::VuongStatistic" = "a (statistic, p-value) pair inside vuong's result"
 
 [python.prospicio_math]
 "integrate::gauss_legendre" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
@@ -300,6 +303,9 @@
 "net::RelaxedCv" = "unbound on 2026-10-28 (seed); review"
 "tweedie::TweedieFit" = "unbound on 2026-10-28 (seed); review"
 "tweedie::TweedieProfile" = "unbound on 2026-10-28 (seed); review"
+"zero::TwoPart" = "the fit's kind, given as a string (\"zero_inflated\" or \"hurdle\")"
+"zero::Vuong" = "vuong returns a data frame for raw, aic and bic"
+"zero::VuongStatistic" = "a (statistic, p-value) pair inside vuong_test()'s result"
 
 [r.prospicio_math]
 "integrate::gauss_legendre" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"

@@ -139,6 +139,16 @@ reference:
       - models.NegativeBinomialFit
       - models.DoubleGlm
       - models.DoubleGlmFit
+      - models.ZeroInflated
+      - models.Hurdle
+      - models.TwoPartFit
+      - models.vuong
+      - models.count_log_likelihoods
+      - models.QuantileRegression
+      - models.QuantileFit
+      - models.QuantileFits
+      - models.ExpectileRegression
+      - models.ExpectileFit
       - models.Glmm
       - models.GlmmFit
       - models.BayesGlm
