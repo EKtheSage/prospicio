@@ -93,14 +93,15 @@ below).
 
 **0.0.8** (the user's decision of 2026-10-29): the gaps the ILS deal notebook
 found, the breaking change #580 left from 0.0.7, two new Models fits, and
-Excel parity with the Python and R bindings.
+Excel parity with the Python and R bindings. On 2026-11-03 the user added
+#547 (local explanations), built with the two fits in #727.
 
 | Lane | New work | Small items |
 |---|---|---|
 | Reserving | #598 (a new underwriting year's predictive loss ratio), then #604 (an industry prior from Schedule P triangles) | #717 (faster monthly Weibull and loglogistic patterns) |
 | Reserving and bindings | #580 (one `NotSupported` error, breaking) | |
 | Reserving | #599: the design note only (the pooling structure is the user's decision); the model waits | |
-| Models | #548 (zero-inflated and hurdle counts), #550 (quantile and expectile regression) | |
+| Models | Done in #727: #548 (zero-inflated and hurdle counts), #550 (quantile and expectile regression), #547 (ICE curves, accumulated local effects and SHAP values) | |
 | Excel | parity with the Python and R bindings, in batches of worksheet functions (issue to follow) | |
 | Guides | `examples/ils_deal_analysis.ipynb` uses #598 and #604 in place of its hard-coded prior; the submission-schema guide moves to per-simulation patterns after #717 | `[guides-current]` for 0.0.8's changes |
 
