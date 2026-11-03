@@ -14,6 +14,18 @@ use crate::error::{Error, Result};
 use crate::mack::MackFit;
 use prospicio_core::Period;
 
+/// The method a setting of the closed form's [`Error::NotSupported`] names.
+pub(crate) const MERZ_WUTHRICH: &str = "Merz and Wüthrich's closed form";
+
+/// The closed form has no tail: a tail factor other than 1 past the oldest
+/// age, or a factor of 1 that replaces estimated factors.
+pub(crate) const MERZ_WUTHRICH_TAIL: Error = Error::NotSupported {
+    setting: "a tail factor",
+    method: MERZ_WUTHRICH,
+    reason: "the closed form has no tail; the one-year views of the ODP and Mack bootstraps \
+             carry one (OdpBootstrap::one_year, MackBootstrap::one_year)",
+};
+
 /// Standard errors of the claims development result per origin and in
 /// total: of the next calendar year (the one-year view) and of every future
 /// calendar year of the run-off, from a [`MackFit`].
@@ -107,7 +119,10 @@ impl MackFit {
     ///
     /// The formulas assume volume-weighted factors, no tail and a triangle
     /// whose latest values lie on one calendar diagonal, one new origin per
-    /// period. Anything else is an error ([`Error::ClaimsDevelopment`]).
+    /// period. A fit with another `alpha`, a tail or a fully selected age
+    /// without its own factor is an [`Error::NotSupported`]; a triangle
+    /// whose latest values are off one diagonal an
+    /// [`Error::ClaimsDevelopment`].
     ///
     /// The exclusions `n_periods`, `drop_high` and `drop_low` are an error
     /// too, even when they remove nothing today. Next year's estimate
@@ -155,20 +170,24 @@ impl MackFit {
         let cl = &self.chain_ladder;
         let dev = &cl.development;
         if dev.alpha != 1.0 {
-            return Err(Error::ClaimsDevelopment(
-                "needs volume-weighted factors (alpha = 1)",
-            ));
+            return Err(Error::NotSupported {
+                setting: "alpha other than 1",
+                method: MERZ_WUTHRICH,
+                reason: "the closed form needs volume-weighted factors (alpha = 1)",
+            });
         }
         if dev.has_missing_factor() {
-            return Err(Error::ClaimsDevelopment(
-                "an age whose own factor could not be estimated (a fully selected sparse age) is not supported",
-            ));
+            return Err(Error::NotSupported {
+                setting: "an age whose own factor could not be estimated (a fully selected sparse age)",
+                method: MERZ_WUTHRICH,
+                reason: "the closed form needs each age's own factor and sigma",
+            });
         }
         // No tail: a factor of exactly 1 past the oldest age and no
         // estimated factor replaced within the triangle.
         let n_links = dev.ldf.len();
         if cl.tail.factor != 1.0 || cl.tail.attachment < n_links {
-            return Err(Error::ClaimsDevelopment("needs no tail factor"));
+            return Err(MERZ_WUTHRICH_TAIL);
         }
         // The factors the projection uses (the estimated ones, since no
         // tail replaced any).
@@ -185,9 +204,12 @@ impl MackFit {
             ));
         }
         if self.exclusions_set {
-            return Err(Error::ClaimsDevelopment(
-                "n_periods, drop_high and drop_low are not supported, the closed form needs every link ratio; use the one-year view of Mack's bootstrap (MackBootstrap::one_year)",
-            ));
+            return Err(Error::NotSupported {
+                setting: "n_periods, drop_high and drop_low",
+                method: MERZ_WUTHRICH,
+                reason: "the closed form needs every link ratio; use the one-year view of Mack's \
+                         bootstrap (MackBootstrap::one_year)",
+            });
         }
 
         // Per factor k: sigma_k^2 / f_k^2, the volume S_k behind f_k, and
@@ -453,7 +475,10 @@ mod tests {
         .unwrap();
         assert!(matches!(
             simple.claims_development_result(),
-            Err(Error::ClaimsDevelopment(_))
+            Err(Error::NotSupported {
+                setting: "alpha other than 1",
+                ..
+            })
         ));
         let tailed = Mack {
             tail: 1.05.into(),
@@ -461,10 +486,7 @@ mod tests {
         }
         .fit(&raa(), "values")
         .unwrap();
-        assert_eq!(
-            tailed.claims_development_result(),
-            Err(Error::ClaimsDevelopment("needs no tail factor"))
-        );
+        assert_eq!(tailed.claims_development_result(), Err(MERZ_WUTHRICH_TAIL));
         // A factor of 1 that replaces estimated factors is a tail too.
         let replaced = Mack {
             tail: TailConstant {
@@ -483,7 +505,7 @@ mod tests {
         );
         assert_eq!(
             replaced.claims_development_result(),
-            Err(Error::ClaimsDevelopment("needs no tail factor"))
+            Err(MERZ_WUTHRICH_TAIL)
         );
         // An explicit constant tail of 1 is no tail.
         let none = Mack {

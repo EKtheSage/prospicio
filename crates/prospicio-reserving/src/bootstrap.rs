@@ -1004,9 +1004,11 @@ pub(crate) fn prepare_selected(
     let kept = development.kept_mask(segment)?;
     let chain_ladder = ChainLadder { tail, development }.fit_segment(segment, ages)?;
     if chain_ladder.development.has_missing_factor() {
-        return Err(Error::Bootstrap(
-            "an age whose own factor could not be estimated (a fully selected sparse age) is not supported",
-        ));
+        return Err(Error::NotSupported {
+            setting: "an age whose own factor could not be estimated (a fully selected sparse age)",
+            method: "the ODP bootstrap",
+            reason: "the bootstrap resamples the residuals of every age's own link ratios",
+        });
     }
     let ldf = &chain_ladder.development.ldf;
     let latest = &chain_ladder.latest_position;
@@ -1724,6 +1726,9 @@ mod tests {
             "values",
             &crate::OneYearMethod::ChainLadder(ChainLadder::default()),
         );
-        assert!(matches!(one_year, Err(Error::Bootstrap(_))));
+        assert_eq!(
+            one_year.unwrap_err(),
+            crate::one_year_bootstrap::TAIL_MISMATCH
+        );
     }
 }
