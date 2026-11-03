@@ -2,7 +2,7 @@
 
 - `DevelopmentPatterns::monthly` (Python `fit.patterns.monthly`, R
   `monthly_pattern_draws()`) is about fifty times faster under the Weibull
-  and loglogistic readings (#717): the simulations are read in parallel (a
+  and loglogistic readings (#717, #726): the simulations are read in parallel (a
   new `parallel` feature of `prospicio-reserving`, on with `bayes` and in
   the bindings, off on the WASM path), and each simulation's curve is
   searched from the mean pattern's. 2,000 ODP bootstrap draws at 144
