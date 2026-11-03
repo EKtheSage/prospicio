@@ -103,8 +103,9 @@ mod prospicio_native {
     use super::models::{
         PyBayesGlm, PyBayesGlmFit, PyBayesGlmm, PyBayesGlmmFit, PyBayesStacking, PyCoding,
         PyCvPath, PyDesign, PyDoubleGlm, PyDoubleGlmFit, PyDraws, PyElasticNet, PyElasticNetFit,
-        PyElpd, PyGam, PyGamFit, PyGlm, PyGlmFit, PyGlmm, PyGlmmFit, PyHierarchicalStacking,
-        PyHurdle, PyIsotonic, PyMarsFit, PyNegativeBinomialFit, PyNegativeBinomialGlm, PyRelaxedCv,
+        PyElpd, PyExpectileFit, PyExpectileRegression, PyGam, PyGamFit, PyGlm, PyGlmFit, PyGlmm,
+        PyGlmmFit, PyHierarchicalStacking, PyHurdle, PyIsotonic, PyMarsFit, PyNegativeBinomialFit,
+        PyNegativeBinomialGlm, PyQuantileFit, PyQuantileFits, PyQuantileRegression, PyRelaxedCv,
         PyStackingFit, PyTargetEncoding, PyTerms, PyTweedieFit, PyTweedieGlm, PyTwoPartFit,
         PyZeroInflated, actual_vs_expected, balance_correction, conformal_cqr, conformal_plus,
         conformal_split, confusion_matrix, count_log_likelihoods, crps, deviance, double_lift,

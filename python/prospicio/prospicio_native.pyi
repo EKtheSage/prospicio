@@ -13043,6 +13043,82 @@ class ExpectedLossFit:
         """
 
 @final
+class ExpectileFit:
+    """
+    A fitted expectile regression, from ``ExpectileRegression.fit``.
+    """
+    @property
+    def coefficients(self, /) -> list[float]: ...
+    @property
+    def covariance(self, /) -> list[list[float]]:
+        """
+        The sandwich covariance, a list of rows.
+        """
+    @property
+    def iterations(self, /) -> int: ...
+    @property
+    def names(self, /) -> list[str]: ...
+    @property
+    def objective(self, /) -> float:
+        """
+        The minimised asymmetric squared loss, without the penalty.
+        """
+    def predict(self, /, design: Design) -> list[float]:
+        """
+        The fitted expectile of each row.
+        """
+    def predict_distribution(self, /, design: Design, n_sims: int, seed: int) -> PredictiveDistribution:
+        """
+        Draws of each row's fitted expectile under the sandwich covariance.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
+    @property
+    def standard_errors(self, /) -> list[float]:
+        """
+        The sandwich standard errors.
+        """
+    @property
+    def tau(self, /) -> float: ...
+
+@final
+class ExpectileRegression:
+    """
+    Linear expectile regression (asymmetric least squares, Newey and
+    Powell 1987), as ``expectreg``'s least asymmetrically weighted squares,
+    with sandwich standard errors and an optional quadratic penalty
+    ``lam * beta' P beta`` (a P-spline basis's difference penalty, zeros on
+    unpenalised columns). At ``tau = 0.5`` it is least squares.
+    
+    Parameters
+    ----------
+    tau : float
+        The expectile, in (0, 1).
+    lam : float, optional
+        The penalty's multiplier, with ``penalty``.
+    penalty : list of list of float, optional
+        ``P``, ``p`` rows of ``p``.
+    
+    Examples
+    --------
+    >>> from prospicio.models import Design, ExpectileRegression
+    >>> d = Design([[1.0] * 4], ["(Intercept)"])
+    >>> round(ExpectileRegression(0.5).fit(d, [1.0, 2.0, 4.0, 9.0]).coefficients[0], 12)
+    4.0
+    """
+    def __new__(cls, /, tau: float, lam: float |None = None, penalty: Sequence[Sequence[float]] |None = None) -> ExpectileRegression: ...
+    def fit(self, /, design: Design, y: Sequence[float]) -> ExpectileFit:
+        """
+        Fits on ``design``.
+        
+        Returns
+        -------
+        ExpectileFit
+        """
+
+@final
 class Expense:
     """
     One expense leg of a :class:`Book`: an amount (``fixed``), a fraction of
@@ -26800,6 +26876,126 @@ class PurePremiumExperience:
     def pure_premium_by_year(self, /) -> list[float]:
         """
         Each year's projected pure premium.
+        """
+
+@final
+class QuantileFit:
+    """
+    A fitted quantile regression, from ``QuantileRegression.fit``.
+    """
+    @property
+    def bandwidth(self, /) -> float:
+        """
+        The kernel's bandwidth on the residuals' scale.
+        """
+    @property
+    def coefficients(self, /) -> list[float]: ...
+    @property
+    def covariance(self, /) -> list[list[float]]:
+        """
+        The kernel sandwich covariance, a list of rows.
+        """
+    @property
+    def iterations(self, /) -> int: ...
+    @property
+    def names(self, /) -> list[str]: ...
+    @property
+    def objective(self, /) -> float:
+        """
+        The minimised weighted check loss (``rq``'s ``rho`` leaves the
+        weights out).
+        """
+    def predict(self, /, design: Design) -> list[float]:
+        """
+        The fitted quantile of each row.
+        """
+    def predict_distribution(self, /, design: Design, n_sims: int, seed: int) -> PredictiveDistribution:
+        """
+        Draws of each row's fitted quantile from the coefficients' normal
+        approximation: the quantile's uncertainty, not the response's.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
+    @property
+    def standard_errors(self, /) -> list[float]:
+        """
+        Powell's kernel standard errors.
+        """
+    @property
+    def tau(self, /) -> float: ...
+
+@final
+class QuantileFits:
+    """
+    Quantile regressions at several ``tau``, from
+    ``QuantileRegression.fit_many``.
+    """
+    @property
+    def fits(self, /) -> list[QuantileFit]:
+        """
+        The fits, in the order given.
+        """
+    def predict(self, /, design: Design, rearrange: bool = False) -> list[list[float]]:
+        """
+        Each row's predicted quantiles, a list per row in the order of
+        ``taus``; with ``rearrange`` in increasing ``tau`` and sorted, so
+        they do not cross.
+        """
+    @property
+    def taus(self, /) -> list[float]:
+        """
+        The ``tau``, in the order given.
+        """
+
+@final
+class QuantileRegression:
+    """
+    Linear quantile regression, as R's ``quantreg::rq``: minimises the
+    weighted check loss ``sum w rho_tau(y - x' beta)`` by an interior point
+    on the dual, then moves to the exact vertex (``rq(method = "br")``'s
+    solution when it is unique). Standard errors are Powell's kernel
+    sandwich, ``summary.rq(se = "ker")``.
+    
+    Parameters
+    ----------
+    tau : float
+        The quantile, in (0, 1).
+    bandwidth : str
+        The kernel's bandwidth: ``"hall_sheather"`` (the default, as
+        quantreg's ``hs = TRUE``) or ``"bofinger"``.
+    
+    Examples
+    --------
+    >>> from prospicio.models import Design, QuantileRegression
+    >>> d = Design([[1.0] * 9], ["(Intercept)"])
+    >>> QuantileRegression(0.5).fit(d, [float(v) for v in range(1, 10)]).coefficients
+    [5.0]
+    """
+    def __new__(cls, /, tau: float, bandwidth: str = "hall_sheather") -> QuantileRegression: ...
+    def bootstrap_covariance(self, /, design: Design, y: Sequence[float], n_boot: int = 200, seed: int = 0) -> list[list[float]]:
+        """
+        The paired bootstrap covariance of the coefficients, a list of rows:
+        ``n_boot`` resamples of the rows, each refitted, resample ``b`` from
+        stream ``b`` of ``seed``.
+        """
+    def fit(self, /, design: Design, y: Sequence[float]) -> QuantileFit:
+        """
+        Fits on ``design`` (its offset is subtracted from ``y`` and its
+        prior weights weight the loss).
+        
+        Returns
+        -------
+        QuantileFit
+        """
+    def fit_many(self, /, taus: Sequence[float], design: Design, y: Sequence[float]) -> QuantileFits:
+        """
+        One fit for each ``tau`` in ``taus``.
+        
+        Returns
+        -------
+        QuantileFits
         """
 
 @final
