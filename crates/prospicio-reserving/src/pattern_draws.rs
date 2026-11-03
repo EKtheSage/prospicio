@@ -186,6 +186,21 @@ impl DevelopmentPatterns {
     /// `prospicio-pricing`, whose terms' `paid` must have `months` values
     /// ending at 1.
     ///
+    /// Bootstrap draws usually need [`Monotone::RunningMax`]: at the oldest
+    /// ages, where one or two cells set the factor, the ODP bootstrap draws
+    /// a pseudo factor below 1 in some simulations, which puts the share
+    /// above 1 before it falls back to 1 (77 of 2,000 draws on the sample
+    /// submission's paid triangle to 108 months, #717).
+    ///
+    /// Under a growth-curve reading ([`AnnualReading::Curve`]) each
+    /// simulation's curve is searched from the mean pattern's curve, not
+    /// from every start a single pattern's conversion tries
+    /// (`reserving-v02.md` decision 29): within about `1e-9` of a share of
+    /// that search, at a fifth of its cost. With the `parallel` feature (on
+    /// with `bayes`, and in the Python and R bindings) the simulations are
+    /// read on all cores, and the result does not depend on the number of
+    /// threads.
+    ///
     /// Errors ([`Error::PatternDraws`]): an unknown segment; under
     /// [`Monotone::Refuse`], a simulation whose share falls; `months` short
     /// of the month at which a converted pattern reaches 1; and the
@@ -201,15 +216,37 @@ impl DevelopmentPatterns {
         if monotone == Monotone::Refuse {
             segment.check_monotone()?;
         }
-        (0..self.n_sims)
-            .map(|i| {
-                let mut shares = segment.draw(i).to_vec();
-                if monotone == Monotone::RunningMax {
-                    running_max(&mut shares);
-                }
-                segment.to_monthly(&shares, basis, months)
-            })
-            .collect()
+        let reading = match basis {
+            MonthlyBasis::Origin(reading) => *reading,
+            MonthlyBasis::Underwriting(basis) => basis.reading(),
+        };
+        // A curve reading's search starts each simulation at the mean
+        // pattern's curve (decision 29).
+        let mut mean = segment.mean();
+        if monotone == Monotone::RunningMax {
+            running_max(&mut mean);
+        }
+        let start = segment
+            .complete(&mean)
+            .curve_start(segment.origin_grain, reading);
+        let one = |i: usize| {
+            let mut shares = segment.draw(i).to_vec();
+            if monotone == Monotone::RunningMax {
+                running_max(&mut shares);
+            }
+            segment.to_monthly(&shares, basis, months, start)
+        };
+        // Each simulation is read on its own, so threads change nothing but
+        // the time (`reserving-v02.md` decision 29); the error, if any, is
+        // the first simulation's in order, as without them.
+        #[cfg(feature = "parallel")]
+        let rows: Vec<Result<Vec<f64>>> = {
+            use rayon::prelude::*;
+            (0..self.n_sims).into_par_iter().map(one).collect()
+        };
+        #[cfg(not(feature = "parallel"))]
+        let rows: Vec<Result<Vec<f64>>> = (0..self.n_sims).map(one).collect();
+        rows.into_iter().collect()
     }
 
     /// One fit's patterns from each segment's own, fitted alone (a
@@ -360,6 +397,23 @@ impl SegmentPatterns {
         }
     }
 
+    /// `shares` at this segment's ages up to the first age they reach 1,
+    /// where the pattern is complete, as percents developed.
+    fn complete(&self, shares: &[f64]) -> SelectedPattern {
+        let k = shares
+            .iter()
+            .position(|&v| v >= 1.0)
+            .map_or(shares.len(), |k| k + 1);
+        SelectedPattern::new(
+            PatternKind::PercentDeveloped,
+            self.ages[..k]
+                .iter()
+                .copied()
+                .zip(shares[..k].iter().copied())
+                .collect(),
+        )
+    }
+
     /// `shares` at this segment's ages as `months` monthly values on
     /// `basis`. A pattern is complete at the first age its share reaches
     /// 1 (a draw that `Monotone::RunningMax` held at 1 before the oldest
@@ -367,32 +421,31 @@ impl SegmentPatterns {
     /// all 1. Complete at its first age, it is read linearly from 0 to
     /// that age under every reading (every accident month paid in full at
     /// once), since a curve needs two ages.
-    fn to_monthly(&self, shares: &[f64], basis: &MonthlyBasis, months: usize) -> Result<Vec<f64>> {
-        let k = shares
-            .iter()
-            .position(|&v| v >= 1.0)
-            .map_or(shares.len(), |k| k + 1);
-        let pattern = SelectedPattern::new(
-            PatternKind::PercentDeveloped,
-            self.ages[..k]
-                .iter()
-                .copied()
-                .zip(shares[..k].iter().copied())
-                .collect(),
-        );
+    ///
+    /// `start` starts a curve reading's search (decision 29).
+    fn to_monthly(
+        &self,
+        shares: &[f64],
+        basis: &MonthlyBasis,
+        months: usize,
+        start: Option<[f64; 2]>,
+    ) -> Result<Vec<f64>> {
+        let pattern = self.complete(shares);
+        let k = pattern.values.len();
         let converted = match basis {
             MonthlyBasis::Origin(_) if k == 1 => {
-                pattern.monthly_on_own_basis(self.origin_grain, AnnualReading::LnLinear)?
+                pattern.monthly_on_own_basis(self.origin_grain, AnnualReading::LnLinear, None)?
             }
             MonthlyBasis::Origin(reading) => {
-                pattern.monthly_on_own_basis(self.origin_grain, *reading)?
+                pattern.monthly_on_own_basis(self.origin_grain, *reading, start)?
             }
             MonthlyBasis::Underwriting(basis) if k == 1 => pattern.monthly_on_underwriting_basis(
                 self.origin_grain,
                 &basis.clone().with_reading(AnnualReading::LnLinear),
+                None,
             )?,
             MonthlyBasis::Underwriting(basis) => {
-                pattern.monthly_on_underwriting_basis(self.origin_grain, basis)?
+                pattern.monthly_on_underwriting_basis(self.origin_grain, basis, start)?
             }
         };
         let end = converted.values.last().map_or(0, |v| v.0) as usize;
@@ -713,6 +766,7 @@ fn running_max(shares: &mut [f64]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clark::GrowthCurve;
 
     fn one(ages: Vec<Lag>, draws: Vec<f64>) -> DevelopmentPatterns {
         let n = draws.len() / ages.len();
@@ -1023,6 +1077,63 @@ mod tests {
                 }
                 assert_eq!(row[119], 1.0);
             }
+        }
+    }
+
+    /// Simulated patterns as a bootstrap draws them: age-to-age factors at
+    /// annual ages 12 to 108 with noise, some below 1, and a tail of 1.
+    fn noisy_draws(n: usize) -> DevelopmentPatterns {
+        let base = [3.6, 1.35, 1.15, 1.08, 1.04, 1.02, 1.01, 1.004];
+        let mut state = 20_261_102u64;
+        let mut uniform = || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let mut draws = Vec::new();
+        for _ in 0..n {
+            let factors: Vec<f64> = base
+                .iter()
+                .map(|f| 1.0 + (f - 1.0) * (0.4 + 1.2 * uniform()) - 0.006 * uniform())
+                .collect();
+            push_shares(&factors, Some(1.0), &mut draws);
+        }
+        let ages = pattern_ages(&[12, 24, 36, 48, 60, 72, 84, 96, 108], true);
+        one(ages, draws)
+    }
+
+    #[test]
+    fn simulations_read_from_the_mean_curve_match_the_search_from_every_start() {
+        // Decision 29: each simulation's curve is searched from the mean
+        // pattern's. Against the search from every start that a single
+        // pattern's conversion makes, the monthly shares differ by less
+        // than 1e-8 (about 1e-9 on the 2,000 ODP bootstrap draws of #717).
+        let patterns = noisy_draws(40);
+        let segment = patterns.segment(&[]).unwrap();
+        let falling = (0..40)
+            .filter(|&i| segment.draw(i).windows(2).any(|w| w[1] < w[0]))
+            .count();
+        assert!(falling > 0, "the draws should include falling shares");
+        let bases = [
+            MonthlyBasis::default(),
+            MonthlyBasis::Origin(AnnualReading::Curve(GrowthCurve::LogLogistic)),
+            MonthlyBasis::Underwriting(UnderwritingBasis::default()),
+        ];
+        for basis in &bases {
+            let rows = patterns
+                .monthly(&[], basis, 144, Monotone::RunningMax)
+                .unwrap();
+            let mut worst = 0.0f64;
+            for (i, row) in rows.iter().enumerate() {
+                let mut shares = segment.draw(i).to_vec();
+                running_max(&mut shares);
+                let full = segment.to_monthly(&shares, basis, 144, None).unwrap();
+                for (a, b) in row.iter().zip(&full) {
+                    worst = worst.max((a - b).abs());
+                }
+            }
+            assert!(worst < 1e-8, "{basis:?}: {worst:e}");
         }
     }
 
