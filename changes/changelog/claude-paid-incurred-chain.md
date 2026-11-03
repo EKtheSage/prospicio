@@ -6,4 +6,4 @@
   posterior, with each origin's ultimate, reserve, incurred weight and
   standard error. `convention = "r_chainladder"` reproduces R
   ChainLadder's `PaidIncurredChain`, which leaves out part of the
-  posterior (`docs/design/reserving-v02.md` decision 32; #560).
+  posterior (`docs/design/reserving-v02.md` decision 32; #560, #734).
