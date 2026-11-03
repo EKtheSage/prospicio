@@ -60,4 +60,4 @@ commuted at month 60. Numbers are from a Windows run with #726's code.
 * **Time.** The monthly reading of the 2,000 rows takes 0.86 s on 16 cores
   with #726's code and the whole guide about 3 s. Without #726 the reading
   is about 20 s, which would break `test_guides.py`'s 20 s a guide, so the
-  guide's change merges after #726.
+  guide relies on #717's fast reading.

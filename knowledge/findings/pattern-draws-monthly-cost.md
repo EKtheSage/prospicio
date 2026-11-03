@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: Reading 2,000 ODP bootstrap patterns month by month on an underwriting basis took about 21 s with the Weibull reading; in parallel and from the mean pattern's curve it takes 0.3 s
-description: "DevelopmentPatterns.monthly(144, basis=UnderwritingBasis()) on the sample submission's paid triangle cut at 108 months took 17 s to 21 s for 2,000 ODP bootstrap draws (release, Windows, 16 cores), the loglogistic reading 11 s to 20 s and ln-linear 0.05 s, nearly all of it the growth curve's search from ten starts, on one thread. Since #717 (reserving-v02.md decision 30) the draws are read in parallel and each curve is searched from the mean pattern's: 0.3 s on 16 cores and 3.4 s on one, within 9.3e-10 of a share of the old result and the same with any number of threads. monotone='refuse' refuses 77 of the 2,000 draws, where a pseudo factor below 1 at the oldest ages puts the share above 1 at 96 months before it falls to 1 at 108 (1,344 on the uncut triangle to 120 months), so bootstrap draws need 'running_max'."
+description: "DevelopmentPatterns.monthly(144, basis=UnderwritingBasis()) on the sample submission's paid triangle cut at 108 months took 17 s to 21 s for 2,000 ODP bootstrap draws (release, Windows, 16 cores), the loglogistic reading 11 s to 20 s and ln-linear 0.05 s, nearly all of it the growth curve's search from ten starts, on one thread. Since #717 (reserving-v02.md decision 30) the draws are read in parallel and each curve is searched from the mean pattern's: 0.3 s on 16 cores and 3.4 s on one, within 9.3e-10 of a share of the old result and the same with any number of threads. monotone='refuse' refuses 77 of the 2,000 draws, where a pseudo factor below 1 at the oldest ages makes the share fall at 96 or 108 months, 50 of them after passing 1 (1,344 on the uncut triangle to 120 months), so bootstrap draws need 'running_max'."
 tags: [guides, reserving, cashflow, pattern, performance, prospicio-reserving]
 status: draft
 generated: { by: claude-code/local-session, at: 2026-11-02T12:00:00Z }
@@ -35,10 +35,10 @@ Measured while updating the guides for 0.0.7, with
 
 * About 10 ms a draw for the fitted readings; the time looks
   single-threaded. A guide must run in under 20 s
-  (`python/tests/test_guides.py`), so `submission-schema.md` keeps one
-  chain-ladder pattern for every simulation and says that per-simulation
-  patterns exist (#673). Issue #717 asks the Reserving lane to make the
-  reading faster.[^issue]
+  (`python/tests/test_guides.py`), so `submission-schema.md` kept one
+  chain-ladder pattern for every simulation until #717 made the reading
+  fast; it now pays each simulation on its own drawn pattern
+  ([the submission schema's drawn patterns](submission-schema-pattern-draws.md)).[^issue]
 * The ln-linear reading is fast, but the API docs flag it as putting an
   underwriting year too far developed at 12 months (see
   [ay-pattern-monthly-reading](/findings/ay-pattern-monthly-reading.md)),
@@ -48,8 +48,8 @@ Measured while updating the guides for 0.0.7, with
   below 1 makes the share fall over a period. `running_max` holds the share
   instead.
 * The guide's loss ratios are in the bootstrap's simulation order (built
-  from per-simulation sums of `boot.ultimate_draws(y)`), so the draws would
-  pair row for row with the losses once the reading is fast.
+  from per-simulation sums of `boot.ultimate_draws(y)`), so the draws pair
+  row for row with the losses, as the guide now uses them.
 
 # Made fast (#717)
 
