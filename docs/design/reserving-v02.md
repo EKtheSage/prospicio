@@ -5000,7 +5000,16 @@ a closed form. `prospicio_reserving::paid_incurred` builds it.
      chain ladder, a very small `tau` the geometric incurred chain ladder,
      a tight prior fixes the parameters, given variances equal to the
      estimates give the same fit.
-   * Not run: the paper's printed values (its Table 2 parameters and
-     results; the paper is not available here), and a comparison with
+   * Printed values: Hertig's paid-only model, which the 2010 paper's
+     section 3.1 derives as a special case, is printed for Dahms' data in
+     the tail-factor paper's Table 5 ("Hertig's model, no tail factor",
+     with Table 4's `sigma`, the last by Mack's rule). The PIC with a
+     very large `tau` and `VarianceExtrapolation::Mack` reproduces every
+     origin's reserve and msep and the totals (9,772,084 and 1,519,464)
+     to the unit (`hertigs_model_matches_merz_and_wuthrichs_printed_values`).
+     That column does not involve the incurred side, so it cannot decide
+     item 3.
+   * Not run: the 2010 paper's own PIC results (the paper is not
+     available here), and a comparison with
      `Compartmental`'s paid-and-incurred likelihood (it needs a premium
      column, which USAA lacks; a follow-up).

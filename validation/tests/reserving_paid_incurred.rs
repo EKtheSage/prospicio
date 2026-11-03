@@ -109,3 +109,51 @@ fn the_models_posterior_is_close_to_rs() {
         assert!((ds - se).abs() < 1e-4, "{dataset}: standard error {ds}");
     }
 }
+
+#[test]
+fn hertigs_model_matches_merz_and_wuthrichs_printed_values() {
+    // Merz and Wüthrich, "Estimation of tail development factors in the
+    // paid-incurred chain reserving method" (Variance 7(1), 2013), Table 5,
+    // column "Hertig's model, no tail factor" (their 2010 paper's section
+    // 3.1), on Dahms' data with Table 4's sigma (Mack's rule for the last).
+    // Hertig's paid-only model is the PIC with the incurred side switched
+    // off, here by a very large tau. Printed to the unit.
+    let tri = triangle_columns("dahms", &["paid", "incurred"]);
+    let fit = PaidIncurredChain {
+        extrapolation: prospicio_reserving::VarianceExtrapolation::Mack,
+        tau: Some(vec![1e4; 9]),
+        ..Default::default()
+    }
+    .fit(&tri, "paid", "incurred")
+    .unwrap();
+    let reserves = [
+        0.0,
+        47_060.0,
+        336_189.0,
+        549_682.0,
+        655_906.0,
+        1_190_955.0,
+        1_115_656.0,
+        1_611_611.0,
+        2_310_950.0,
+        1_954_075.0,
+    ];
+    let msep = [
+        0.0, 83_995.0, 241_482.0, 261_129.0, 242_377.0, 326_696.0, 249_249.0, 365_019.0, 521_674.0,
+        440_471.0,
+    ];
+    for o in 0..10 {
+        assert!(
+            (fit.reserve[o] - reserves[o]).abs() <= 0.5,
+            "reserve {o}: {}",
+            fit.reserve[o]
+        );
+        assert!(
+            (fit.std_err[o] - msep[o]).abs() <= 0.5,
+            "msep {o}: {}",
+            fit.std_err[o]
+        );
+    }
+    assert!((fit.total_reserve() - 9_772_084.0).abs() <= 0.5);
+    assert!((fit.total_std_err - 1_519_464.0).abs() <= 0.5);
+}

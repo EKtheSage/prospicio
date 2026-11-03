@@ -16,7 +16,10 @@ sources:
     title: Writes validation/data/dahms.csv
   - id: tests
     resource: ../validation/tests/reserving_paid_incurred.rs
-    title: matches_r_chainladder
+    title: matches_r_chainladder and hertigs_model_matches_merz_and_wuthrichs_printed_values
+  - id: table5
+    resource: https://casact.org/sites/default/files/2021-07/Estimation-Tail-Development-Merz-Wuthrich.pdf
+    title: Merz and Wuthrich, tail-factor paper, Tables 4 and 5 (Hertig's model, no tail factor)
 ---
 
 # Facts
@@ -26,7 +29,12 @@ sources:
   to 2010 and ages 0 to 9 are 12 to 120 months.[^tail][^script]
 * Under R's convention the paid-incurred chain's total reserve is
   11,074,832.95 with a standard error of 392,409.36.[^tests]
+* Hertig's paid-only model (Table 4's sigma, the last by Mack's rule)
+  gives a total reserve of 9,772,084 with a msep^(1/2) of 1,519,464, as
+  the tail-factor paper's Table 5 prints; prospicio's PIC with a very
+  large tau reproduces every origin's value to the unit.[^table5][^tests]
 
 [^tail]: Tail-factor paper
 [^script]: Generator
 [^tests]: Validation tests
+[^table5]: Tail-factor paper, Table 5
