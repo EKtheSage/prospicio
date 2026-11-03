@@ -21,6 +21,7 @@ use crate::bootstrap::{
 use crate::chain_ladder::ChainLadderFit;
 use crate::error::{Error, Result};
 use crate::expected_loss::origin_exposure;
+use crate::industry_prior::PatternPrior;
 use crate::pattern_draws::{DevelopmentPatterns, predictive_with_patterns, push_cumulative};
 use crate::segments::{FitTable, ReserveFit, SegmentFits};
 use crate::tail::Tail;
@@ -255,10 +256,39 @@ impl BayesBfNormalised {
         column: &str,
         exposure: &str,
     ) -> Result<BayesBfNormalisedFit> {
+        self.fit_with(triangle, column, exposure, None)
+    }
+
+    /// [`fit`](Self::fit) with an informative prior on the pattern: each
+    /// `beta_d ~ N(prior.mean_d, prior.sd_d^2)` in place of
+    /// `N(0, development_sd^2)` (`reserving-bayes.md`, decision 28), for
+    /// example the industry pattern of an
+    /// [`IndustryPrior`](crate::IndustryPrior). The prior's ages must be
+    /// the triangle's: cut a longer prior with
+    /// [`PatternPrior::truncated`] (or
+    /// [`IndustryPrior::at_age`](crate::IndustryPrior::at_age), which also
+    /// moves the loss ratio to that age). `development_sd` is then unused.
+    pub fn fit_with_pattern_prior(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        exposure: &str,
+        prior: &PatternPrior,
+    ) -> Result<BayesBfNormalisedFit> {
+        self.fit_with(triangle, column, exposure, Some(prior))
+    }
+
+    fn fit_with(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        exposure: &str,
+        prior: Option<&PatternPrior>,
+    ) -> Result<BayesBfNormalisedFit> {
         self.validate()?;
         let segment = triangle.segment(column)?;
         let exposures = origin_exposure(&segment, &triangle.segment(exposure)?, exposure)?;
-        self.fit_segment(&segment, column, exposure, exposures)
+        self.fit_segment_with(&segment, column, exposure, exposures, prior)
     }
 
     /// The one-year view of loss `column` of a single-segment cumulative
@@ -315,11 +345,36 @@ impl BayesBfNormalised {
         exposure: &str,
         settings: &BayesOneYear,
     ) -> Result<BayesOneYearFit<BayesBfNormalisedFit>> {
+        self.one_year_with(triangle, column, exposure, settings, None)
+    }
+
+    /// [`one_year`](Self::one_year) under a pattern prior, as
+    /// [`fit_with_pattern_prior`](Self::fit_with_pattern_prior): the
+    /// reweighting and any refit keep the prior.
+    pub fn one_year_with_pattern_prior(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        exposure: &str,
+        settings: &BayesOneYear,
+        prior: &PatternPrior,
+    ) -> Result<BayesOneYearFit<BayesBfNormalisedFit>> {
+        self.one_year_with(triangle, column, exposure, settings, Some(prior))
+    }
+
+    fn one_year_with(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        exposure: &str,
+        settings: &BayesOneYear,
+        prior: Option<&PatternPrior>,
+    ) -> Result<BayesOneYearFit<BayesBfNormalisedFit>> {
         self.validate()?;
         settings.validate()?;
         let segment = triangle.segment(column)?;
         let exposures = origin_exposure(&segment, &triangle.segment(exposure)?, exposure)?;
-        let fit = self.fit_segment(&segment, column, exposure, exposures)?;
+        let fit = self.fit_segment_with(&segment, column, exposure, exposures, prior)?;
         let cells = NormalisedRefit::new(self, &fit);
         let year = OdpYear::new(
             &cells,
@@ -344,6 +399,7 @@ impl BayesBfNormalised {
 
     /// The fit of one segment, with exposure `exposures` from the column
     /// named `exposure`.
+    #[cfg(test)]
     fn fit_segment(
         &self,
         segment: &Segment,
@@ -351,7 +407,19 @@ impl BayesBfNormalised {
         exposure: &str,
         exposures: Vec<f64>,
     ) -> Result<BayesBfNormalisedFit> {
-        let (chain_ladder, model, start) = self.prepare(segment, &exposures)?;
+        self.fit_segment_with(segment, column, exposure, exposures, None)
+    }
+
+    /// [`fit_segment`](Self::fit_segment) under a pattern prior.
+    fn fit_segment_with(
+        &self,
+        segment: &Segment,
+        column: &str,
+        exposure: &str,
+        exposures: Vec<f64>,
+        pattern: Option<&PatternPrior>,
+    ) -> Result<BayesBfNormalisedFit> {
+        let (chain_ladder, model, start) = self.prepare_with(segment, &exposures, pattern)?;
         let (posterior, diagnostics) =
             self.sample(&model, start, derive_seed(self.seed, Stream::Chains))?;
 
@@ -474,13 +542,46 @@ impl BayesBfNormalised {
     }
 
     /// The chain ladder, the model and the Newton start of one segment.
+    #[cfg(test)]
     fn prepare(
         &self,
         segment: &Segment,
         exposure: &[f64],
     ) -> Result<(ChainLadderFit, Model, Vec<f64>)> {
-        let (fit, _) = prepare(segment, &segment.ages, Tail::default())?;
+        self.prepare_with(segment, exposure, None)
+    }
+
+    /// [`prepare`](Self::prepare) under a pattern prior, whose ages must
+    /// be the segment's.
+    fn prepare_with(
+        &self,
+        segment: &Segment,
+        exposure: &[f64],
+        pattern: Option<&PatternPrior>,
+    ) -> Result<(ChainLadderFit, Model, Vec<f64>)> {
         let (no, nd) = (segment.n_origins, segment.n_dev);
+        let (development_mean, development_precision) = match pattern {
+            None => (
+                vec![0.0; nd - 1],
+                vec![self.development_sd.powi(-2); nd - 1],
+            ),
+            Some(prior) => {
+                if prior.ages != segment.ages {
+                    return Err(Error::Bayes(format!(
+                        "the pattern prior's ages {:?} are not the triangle's {:?}: a prior \
+                         with more ages is cut to the triangle's last age with \
+                         PatternPrior::truncated or IndustryPrior::at_age, which also moves \
+                         apriori to the development to that age",
+                        prior.ages, segment.ages
+                    )));
+                }
+                (
+                    prior.mean.clone(),
+                    prior.sd.iter().map(|s| s.powi(-2)).collect(),
+                )
+            }
+        };
+        let (fit, _) = prepare(segment, &segment.ages, Tail::default())?;
         let mut cells = Vec::new();
         for (w, &last) in fit.chain_ladder.latest_position.iter().enumerate() {
             let mut previous = 0.0;
@@ -562,7 +663,9 @@ impl BayesBfNormalised {
             common_shape,
             log_prior: prior_ultimate.iter().map(|m| m.ln()).collect(),
             prior_ultimate,
-            development_precision: self.development_sd.powi(-2),
+            development_mean,
+            development_precision,
+            pattern_prior: pattern.cloned(),
         };
         Ok((fit.chain_ladder, model, start))
     }
@@ -582,6 +685,13 @@ impl BayesBfNormalised {
         // provenance is unchanged.
         let provenance = match self.common_cv {
             Some(c) => provenance.param("common_cv", c),
+            None => provenance,
+        };
+        // Likewise only a fit under a pattern prior names it.
+        let provenance = match &model.pattern_prior {
+            Some(prior) => provenance
+                .param("pattern_prior_mean", format!("{:?}", prior.mean))
+                .param("pattern_prior_sd", format!("{:?}", prior.sd)),
             None => provenance,
         };
         provenance
@@ -911,8 +1021,14 @@ struct Model {
     prior_ultimate: Vec<f64>,
     /// `log m_w`.
     log_prior: Vec<f64>,
-    /// `1 / development_sd^2`.
-    development_precision: f64,
+    /// The prior mean of each `beta_d`, `d = 2..m`: 0, or a
+    /// [`PatternPrior`]'s means.
+    development_mean: Vec<f64>,
+    /// The prior precision of each `beta_d`: `1 / development_sd^2`, or a
+    /// [`PatternPrior`]'s `1 / sd_d^2`.
+    development_precision: Vec<f64>,
+    /// The pattern prior, if any, for the provenance.
+    pattern_prior: Option<PatternPrior>,
 }
 
 impl Model {
@@ -1255,8 +1371,14 @@ impl Posterior for Model {
             t_grad += self.shape * em1;
         }
         for j in no..no + nd - 1 {
-            f -= 0.5 * self.development_precision * theta[j] * theta[j];
-            grad[j] = -self.development_precision * theta[j];
+            // theta - 0.0 is theta exactly: without a pattern prior the
+            // density is the earlier one bit for bit.
+            let (precision, centred) = (
+                self.development_precision[j - no],
+                theta[j] - self.development_mean[j - no],
+            );
+            f -= 0.5 * precision * centred * centred;
+            grad[j] = -precision * centred;
         }
         if let (Some(k), Some(j)) = (self.common_shape, self.t_index()) {
             f += k * (t - t.exp_m1());
@@ -1295,7 +1417,7 @@ impl Posterior for Model {
             t_curvature += curvature;
         }
         for j in no..no + nd - 1 {
-            h[j * p + j] = self.development_precision;
+            h[j * p + j] = self.development_precision[j - no];
         }
         if let (Some(k), Some(j)) = (self.common_shape, self.t_index()) {
             // v = u - t: d2/du2 = c, d2/du dt = -c, d2/dt2 = sum c.
@@ -1367,8 +1489,9 @@ impl super::autodiff::GenericDensity for Model {
             f += (t - t.exp_m1()) * k;
         }
         let mut sum = S::from_f64(1.0);
-        for &b in &theta[no..no + self.n_dev - 1] {
-            f -= b * b * (0.5 * self.development_precision);
+        for (k, &b) in theta[no..no + self.n_dev - 1].iter().enumerate() {
+            let centred = b - S::from_f64(self.development_mean[k]);
+            f -= centred * centred * (0.5 * self.development_precision[k]);
             sum += b.exp();
         }
         let l = sum.ln();
@@ -2720,5 +2843,140 @@ mod tests {
         assert!(cv >= 0.2, "{cv}");
         // The data's loss ratio (GenIns, about 0.45 to 0.5), not the prior's.
         assert!(mean < 0.65, "{mean}");
+    }
+
+    /// A pattern prior on GenIns's ten ages: centred on shares of 0.3,
+    /// 0.2, then 0.5 spread over the other eight ages, sd 0.2.
+    fn genins_pattern(sd: f64) -> PatternPrior {
+        let ages: Vec<Lag> = (1..=10).map(|k| 12 * k).collect();
+        let mut shares = vec![0.3, 0.2];
+        shares.extend([0.5 / 8.0; 8]);
+        PatternPrior::from_shares(&ages, &shares, &[sd; 9]).unwrap()
+    }
+
+    fn prepared_with(
+        tri: &Triangle,
+        model: &BayesBfNormalised,
+        pattern: &PatternPrior,
+    ) -> (ChainLadderFit, Model, Vec<f64>) {
+        let segment = tri.segment("values").unwrap();
+        let exposure =
+            origin_exposure(&segment, &tri.segment("premium").unwrap(), "premium").unwrap();
+        model
+            .prepare_with(&segment, &exposure, Some(pattern))
+            .unwrap()
+    }
+
+    /// Decision 28: under a pattern prior the gradient, the Hessian and
+    /// the generic oracle agree; the prior term is the normal log density
+    /// `-(b - mean)^2 / (2 sd^2)` (two points' difference); without one the
+    /// density is the vague prior's, bit for bit.
+    #[test]
+    fn a_pattern_prior_is_a_normal_on_each_log_share_ratio() {
+        use crate::bayes::autodiff::{assert_oracle, posterior_points};
+        let pattern = genins_pattern(0.2);
+        for common_cv in [None, Some(0.5)] {
+            let settings = BayesBfNormalised {
+                common_cv,
+                ..quick(0)
+            };
+            let (_, model, start) = prepared_with(&genins(), &settings, &pattern);
+            assert_eq!(model.development_mean, pattern.mean);
+            let x: Vec<f64> = start
+                .iter()
+                .enumerate()
+                .map(|(j, v)| v + 0.01 * (j as f64 - 5.0))
+                .collect();
+            assert_gradient(|t, g| model.log_posterior(t, g), &x);
+            struct Numeric<'a>(&'a Model);
+            impl Posterior for Numeric<'_> {
+                fn dim(&self) -> usize {
+                    self.0.dim()
+                }
+                fn log_posterior(&self, t: &[f64], g: &mut [f64]) -> f64 {
+                    self.0.log_posterior(t, g)
+                }
+            }
+            let (exact, numeric) = (
+                model.negative_hessian(&x),
+                Numeric(&model).negative_hessian(&x),
+            );
+            for (a, b) in exact.iter().zip(&numeric) {
+                assert!((a - b).abs() <= 1e-5 * (1.0 + a.abs()), "{a} vs {b}");
+            }
+            let mode = mode(&model, start).unwrap();
+            let whitened = Whitened::new(&model, &mode).unwrap();
+            let points = posterior_points(&whitened, model.dim(), 20);
+            assert_oracle("BayesBfNormalised pattern prior", &model, &points);
+        }
+        // The prior term alone: the cells removed, beta_2 moved by 0.3.
+        let (_, mut model, start) = prepared_with(&genins(), &quick(0), &pattern);
+        model.cells.clear();
+        let mut moved = start.clone();
+        moved[10] += 0.3;
+        let mut g = vec![0.0; model.dim()];
+        let diff = model.log_posterior(&moved, &mut g) - model.log_posterior(&start, &mut g);
+        let (m, s) = (pattern.mean[0], 0.2);
+        let normal = |b: f64| -(b - m).powi(2) / (2.0 * s * s);
+        assert!((diff - (normal(moved[10]) - normal(start[10]))).abs() < 1e-9);
+        // Without a pattern prior: mean 0 and the scalar precision.
+        let (_, vague, _) = prepared(&genins(), &quick(0));
+        assert!(vague.development_mean.iter().all(|&m| m == 0.0));
+        assert!(vague.development_precision.iter().all(|&p| p == 0.01));
+        assert!(vague.pattern_prior.is_none());
+    }
+
+    /// A pattern prior on other ages than the triangle's is an error that
+    /// points to the cut.
+    #[test]
+    fn a_pattern_prior_on_other_ages_is_an_error() {
+        let pattern = genins_pattern(0.2).truncated(96).unwrap();
+        let err = quick(0)
+            .fit_with_pattern_prior(&genins(), "values", "premium", &pattern)
+            .unwrap_err();
+        assert!(err.to_string().contains("truncated"), "{err}");
+    }
+
+    /// A tight pattern prior holds the posterior pattern at the prior's
+    /// shares, a vague one leaves it at the data's; the provenance names
+    /// the prior only when there is one.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn a_tight_pattern_prior_holds_the_pattern() {
+        let model = BayesBfNormalised {
+            cv: f64::INFINITY,
+            ..quick(3)
+        };
+        let tight = genins_pattern(0.01);
+        let fit = model
+            .fit_with_pattern_prior(&genins(), "values", "premium", &tight)
+            .unwrap();
+        for (p, e) in fit.pattern().iter().zip(tight.shares()) {
+            assert!((p / e - 1.0).abs() < 0.05, "{p} {e}");
+        }
+        let params = &fit.reserves.provenance().parameters;
+        assert!(params.iter().any(|(k, _)| k == "pattern_prior_sd"));
+        let free = model.fit(&genins(), "values", "premium").unwrap();
+        // GenIns's first share is about 0.06, not the prior's 0.3.
+        assert!(free.pattern()[0] < 0.15, "{:?}", free.pattern());
+        let params = &free.reserves.provenance().parameters;
+        assert!(!params.iter().any(|(k, _)| k.starts_with("pattern_prior")));
+        // The one-year view keeps the prior.
+        let view = model
+            .one_year_with_pattern_prior(
+                &genins(),
+                "values",
+                "premium",
+                &BayesOneYear {
+                    refit: Some(crate::bayes::OneYearRefit::ReweightOnly),
+                    ..BayesOneYear::default()
+                },
+                &tight,
+            )
+            .unwrap();
+        assert!((view.fit.pattern()[0] / 0.3 - 1.0).abs() < 0.05);
     }
 }

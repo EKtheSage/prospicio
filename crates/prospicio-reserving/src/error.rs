@@ -126,6 +126,10 @@ pub enum Error {
     /// A growth curve cannot be fitted to this benchmark pattern
     /// ([`BenchmarkCurve`](crate::BenchmarkCurve)).
     BenchmarkCurve(String),
+    /// An industry prior cannot be built from these triangles
+    /// ([`IndustryPrior`](crate::IndustryPrior)): too few companies, ages
+    /// that differ, or a pattern or spread that cannot be estimated.
+    IndustryPrior(String),
     /// The claims development result (Merz–Wüthrich) does not apply to
     /// this fit.
     ClaimsDevelopment(&'static str),
@@ -246,6 +250,7 @@ impl fmt::Display for Error {
             Self::File(why) => write!(f, "reading a triangle: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
             Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),
+            Self::IndustryPrior(why) => write!(f, "industry prior: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
             Self::OneYear {
                 failed,

@@ -64,6 +64,7 @@ pub mod error;
 pub mod excess;
 pub mod expected_loss;
 pub mod frame;
+pub mod industry_prior;
 #[cfg(feature = "io")]
 pub mod io;
 pub mod latest_diagonal;
@@ -108,6 +109,7 @@ pub use expected_loss::{
     Apriori, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ExpectedLoss, ExpectedLossFit,
 };
 pub use frame::TriangleFrame;
+pub use industry_prior::{IndustryPrior, IndustryPriorSettings, PatternPrior, PriorReport};
 #[cfg(feature = "io")]
 pub use io::FileLayout;
 pub use latest_diagonal::{
