@@ -28,7 +28,7 @@
 use prospicio_core::{Grain, Lag, Month, Period};
 
 use crate::error::{Error, Result};
-use crate::monthly_reading::{AnnualReading, every_month, read_monthly};
+use crate::monthly_reading::{AnnualReading, curve_start, every_month, read_monthly_from};
 use crate::triangle::Segment;
 use crate::{ChainLadder, Development, Tail};
 
@@ -701,7 +701,7 @@ impl SelectedPattern {
         basis: &UnderwritingBasis,
     ) -> Result<SelectedPattern> {
         let v = basis.weights_over(pattern_origin.months())?;
-        self.convert(pattern_origin, &v, basis.reading, false)
+        self.convert(pattern_origin, &v, basis.reading, false, None)
     }
 
     /// The pattern on its own origin basis at every month from 1 to its
@@ -711,25 +711,54 @@ impl SelectedPattern {
     /// reads it, and decision 18 item 2 (linear from 0 to the first age,
     /// `ln CDF` linear between ages) for an accident-month pattern or under
     /// [`AnnualReading::LnLinear`]. Errors as `to_underwriting_basis`.
+    ///
+    /// `start` starts a curve reading's search (`reserving-v02.md` decision
+    /// 29, [`curve_start`](Self::curve_start)); `None` searches from every
+    /// start, as `to_underwriting_basis` does.
     pub(crate) fn monthly_on_own_basis(
         &self,
         pattern_origin: Grain,
         reading: AnnualReading,
+        start: Option<[f64; 2]>,
     ) -> Result<SelectedPattern> {
-        self.convert(pattern_origin, &[1.0], reading, true)
+        self.convert(pattern_origin, &[1.0], reading, true, start)
     }
 
     /// [`to_underwriting_basis`](Self::to_underwriting_basis) at every
     /// month from 1, under any reading (`reserving-v02.md` decision 28 item
     /// 4): an underwriting year has paid something before the pattern's
     /// first age.
+    ///
+    /// `start` as in [`monthly_on_own_basis`](Self::monthly_on_own_basis).
     pub(crate) fn monthly_on_underwriting_basis(
         &self,
         pattern_origin: Grain,
         basis: &UnderwritingBasis,
+        start: Option<[f64; 2]>,
     ) -> Result<SelectedPattern> {
         let v = basis.weights_over(pattern_origin.months())?;
-        self.convert(pattern_origin, &v, basis.reading, true)
+        self.convert(pattern_origin, &v, basis.reading, true, start)
+    }
+
+    /// `(ln omega, ln theta)` of the curve `reading` fits through this
+    /// pattern from every start (`reserving-v02.md` decision 30), the start
+    /// for the search of patterns near it; `None` where `reading` fits no
+    /// curve to it (the ln-linear reading, a pattern of accident months or
+    /// given at every month, one it cannot read).
+    pub(crate) fn curve_start(
+        &self,
+        pattern_origin: Grain,
+        reading: AnnualReading,
+    ) -> Option<[f64; 2]> {
+        let AnnualReading::Curve(curve) = reading else {
+            return None;
+        };
+        let s = pattern_origin.months();
+        let points = self.own_percents("").ok()?;
+        if s <= 1 || every_month(&points) {
+            return None;
+        }
+        curve_start(&points, s, curve)
     }
 
     /// [`to_underwriting_basis`](Self::to_underwriting_basis) on the
@@ -742,6 +771,7 @@ impl SelectedPattern {
         v: &[f64],
         reading: AnnualReading,
         from_one: bool,
+        start: Option<[f64; 2]>,
     ) -> Result<SelectedPattern> {
         let err = |age: Option<Lag>, reason: &'static str| Err(Error::Pattern { age, reason });
         if let PatternWeight::ByAge(_) = self.weight {
@@ -783,7 +813,7 @@ impl SelectedPattern {
             );
         }
         let points = match reading {
-            Some(curve) => read_monthly(&points, s, curve)?.expanded,
+            Some(curve) => read_monthly_from(&points, s, curve, start)?.expanded,
             None => points,
         };
         // At the last age every accident month is past the end: the level
