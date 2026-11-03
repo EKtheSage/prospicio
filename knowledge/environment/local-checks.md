@@ -86,7 +86,9 @@ the code change.
   docstring lines without their indentation and a newline escape in a
   docstring doubled. Keep the committed stub and add only the new classes' hunks
   (`git diff -w` shows them), with blank docstring lines indented like the
-  rest; CI's docs job checks the result.
+  rest, and write an optional type as `X |None` (no space after the
+  bar), as the generator on CI writes it everywhere in the stub;
+  `X | None` fails CI's docs job, which checks the result.
 * `cargo clippy -p prospicio-r` panics in extendr-api's build script
   (`DEP_R_R_VERSION_MAJOR`: `NotPresent`) when the target directory
   holds an `extendr-ffi` build from a run without R: setting `R_HOME`
