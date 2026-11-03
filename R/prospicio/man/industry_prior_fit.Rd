@@ -100,8 +100,9 @@ uncertain by the companies' spread and its origins share that error.
 The pattern prior is the mean and standard deviation over companies of
 each company's log share ratio at each age; a spread below 0.01 is set to
 0.01 with a warning, and an age only one company reaches has the vague
-standard deviation 10. \code{percent_developed} and \code{percent_developed_sd}
-are the companies' mean and spread of the percent developed at each age.
+standard deviation 10. \code{percent_developed} is the percent developed at each
+age at the pattern prior's means and \code{percent_developed_sd} the standard
+deviation over the companies of their own percent developed there.
 
 A panel of fewer than \code{min_companies} companies raises a warning in the
 \code{report}, whose other entries are \code{n_companies}, \code{n_companies_used},

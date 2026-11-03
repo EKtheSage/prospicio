@@ -7942,8 +7942,9 @@ pattern_prior_args <- function(prior) {
 #' The pattern prior is the mean and standard deviation over companies of
 #' each company's log share ratio at each age; a spread below 0.01 is set to
 #' 0.01 with a warning, and an age only one company reaches has the vague
-#' standard deviation 10. `percent_developed` and `percent_developed_sd`
-#' are the companies' mean and spread of the percent developed at each age.
+#' standard deviation 10. `percent_developed` is the percent developed at each
+#' age at the pattern prior's means and `percent_developed_sd` the standard
+#' deviation over the companies of their own percent developed there.
 #'
 #' A panel of fewer than `min_companies` companies raises a warning in the
 #' `report`, whose other entries are `n_companies`, `n_companies_used`,

@@ -12820,8 +12820,9 @@ impl PyLayerSharePrior {
     /// Parameters
     /// ----------
     /// model : BayesBfNormalised, optional
-    ///     Supplies the sampler, process error, simulations and seed; its
-    ///     own ``apriori``, ``cv`` and ``common_cv`` are replaced.
+    ///     Supplies the sampler, process error, simulations, seed and
+    ///     ``pattern_prior``; its own ``apriori``, ``cv`` and ``common_cv``
+    ///     are replaced.
     ///
     /// Returns
     /// -------
@@ -12836,10 +12837,11 @@ impl PyLayerSharePrior {
         &self,
         model: Option<PyRef<'_, PyBayesBfNormalised>>,
     ) -> PyResult<PyBayesBfNormalised> {
+        let pattern_prior = model.as_ref().and_then(|m| m.pattern_prior.clone());
         let base = model.map_or_else(BayesBfNormalised::default, |m| m.inner.clone());
         Ok(PyBayesBfNormalised {
             inner: self.inner.model(&base).map_err(err)?,
-            pattern_prior: None,
+            pattern_prior,
         })
     }
 

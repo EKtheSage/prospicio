@@ -3417,8 +3417,8 @@ with a segment per company), each also on `IndustryPriorSettings`
 open decision 23). The
 result carries `apriori` and its standard error, `between_cv`,
 `within_cv`, `process_cv`, `cv`, the pattern prior `pattern` (a
-`PatternPrior`), the companies' mean and spread of the percent developed
-at each age, each company's mean loss ratio, `tail_factor` (1 unless cut)
+`PatternPrior`), the percent developed at each age at the pattern
+prior's means with the companies' spread of their own, each company's mean loss ratio, `tail_factor` (1 unless cut)
 and a `PriorReport` (companies given and used, origins used in all and per
 company, companies observed at each age, the companies left out and why,
 and warnings: a panel below `min_companies`, a floored spread). Under the
@@ -3433,11 +3433,12 @@ and warnings: a panel below `min_companies`, a floored spread). Under the
 **Each company.** Its chain ladder (volume-weighted, no tail, every age)
 gives its pattern and each origin's ultimate loss ratio
 `x_cw = ultimate / premium`, and its Pearson scale `phi_c`. Only origins at
-least `min_developed` developed by the industry pattern (the mean over
-companies of the percent developed at each age) count in the loss ratio
+least `min_developed` developed by the industry pattern (the percent developed at the
+pattern prior's means, below) count in the loss ratio
 moments: a young origin's ultimate is mostly the chain ladder's
 projection, and its error would pass for spread between origins. An
-origin without a positive premium is skipped; a company with no origin
+origin without a positive premium is skipped and named in the report
+(review of #732); a company with no origin
 that mature or a chain ladder that cannot be fitted is left out, and
 either is named in the report. Every triangle must have the same ages.
 

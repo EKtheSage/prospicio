@@ -17,6 +17,7 @@ from prospicio.reserving import (
     BayesBfNormalised,
     BayesBfNormalisedFit,
     IndustryPrior,
+    LayerSharePrior,
     PatternPrior,
     Triangle,
 )
@@ -163,6 +164,9 @@ def test_the_model_carries_the_prior(prior):
     assert prior.to_bf_normalised_settings().pattern_prior.ages == [12, 24, 36, 48]
     assert "pattern_prior=PatternPrior" in repr(model)
     assert BayesBfNormalised().pattern_prior is None
+    # A layer's prior keeps the base model's pattern prior, as its fit does.
+    layered = LayerSharePrior(0.65, 0.2, apriori_cv=0.1, share_cv=0.3).model(model)
+    assert layered.pattern_prior.mean == prior.pattern.mean
     # A cut at 36 months: the loss ratio developed to it, the tail factor.
     cut = prior.at_age(36)
     assert cut.apriori == pytest.approx(prior.apriori * 0.9, abs=1e-12)

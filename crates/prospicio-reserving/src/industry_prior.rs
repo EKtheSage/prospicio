@@ -345,9 +345,12 @@ struct Company {
     /// `beta_d` of the company's own pattern at each age after the first,
     /// NaN where its share there is not positive.
     beta: Vec<f64>,
-    /// `(latest position, ultimate loss ratio, its ODP process variance)`
-    /// of each origin with a premium.
-    origins: Vec<(usize, f64, f64)>,
+    /// `(origin index, latest position, ultimate loss ratio, its ODP
+    /// process variance)` of each origin with a positive premium.
+    origins: Vec<(usize, usize, f64, f64)>,
+    /// The index of each origin left out for a premium that is not a
+    /// positive number.
+    no_premium: Vec<usize>,
 }
 
 impl IndustryPriorSettings {
@@ -523,8 +526,14 @@ impl IndustryPriorSettings {
         let mut used = Vec::new();
         for (c, (company, (name, segment, _))) in read.iter().zip(&companies).enumerate() {
             let Some(company) = company else { continue };
+            for &w in &company.no_premium {
+                report.excluded.push(format!(
+                    "{name}, origin {}: its premium is not a positive number",
+                    segment.origins[w]
+                ));
+            }
             let mut kept = Vec::new();
-            for (w, &(position, ratio, variance)) in company.origins.iter().enumerate() {
+            for &(w, position, ratio, variance) in &company.origins {
                 let origin = &segment.origins[w];
                 if percent_developed[position] < self.min_developed {
                     continue;
@@ -701,13 +710,17 @@ fn read_company(segment: &Segment, premium: &[f64]) -> Result<Company> {
             let position = cl.latest_position[w];
             let ratio = cl.ultimate[w] / premium[w];
             let variance = phi * ratio / (developed[position] * premium[w]);
-            (position, ratio, variance)
+            (w, position, ratio, variance)
         })
+        .collect();
+    let no_premium = (0..segment.n_origins)
+        .filter(|&w| !(premium[w].is_finite() && premium[w] > 0.0))
         .collect();
     Ok(Company {
         developed,
         beta,
         origins,
+        no_premium,
     })
 }
 
@@ -993,5 +1006,29 @@ mod tests {
             ..IndustryPriorSettings::default()
         };
         assert!(bad.from_triangles(&triangles, "paid", &premiums).is_err());
+    }
+
+    /// An origin without a positive premium is left out and reported under
+    /// its own label, not the next origin's.
+    #[test]
+    fn an_origin_without_premium_is_reported_by_its_own_label() {
+        let shares = [0.5, 0.3, 0.2];
+        let triangles: Vec<Triangle> = [0.6, 0.8]
+            .iter()
+            .map(|l| company(&shares, &[100.0 * l, 110.0 * l, 90.0 * l]))
+            .collect();
+        let premiums = vec![vec![0.0, 110.0, 90.0], vec![100.0, 110.0, 90.0]];
+        let prior = IndustryPrior::from_triangles(&triangles, "paid", &premiums).unwrap();
+        assert_eq!(prior.report.origins_used, vec![2, 3]);
+
+        let excluded = &prior.report.excluded;
+        assert_eq!(excluded.len(), 1, "{excluded:?}");
+        assert!(
+            excluded[0].starts_with("company 1, origin 2010:") && excluded[0].contains("premium"),
+            "{excluded:?}"
+        );
+        // The kept origins' loss ratios are 0.6 each: the label shift did
+        // not move a value.
+        assert!((prior.company_loss_ratios[0] - 0.6).abs() < 1e-9);
     }
 }
