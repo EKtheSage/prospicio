@@ -126,6 +126,10 @@ pub enum Error {
     /// A growth curve cannot be fitted to this benchmark pattern
     /// ([`BenchmarkCurve`](crate::BenchmarkCurve)).
     BenchmarkCurve(String),
+    /// The paid-incurred chain ([`PaidIncurredChain`](crate::PaidIncurredChain))
+    /// cannot be fitted: a triangle of the wrong shape, a value that is not
+    /// positive, or a setting of the wrong length or out of range.
+    PaidIncurred(String),
     /// The claims development result (Merz–Wüthrich) does not apply to
     /// this fit.
     ClaimsDevelopment(&'static str),
@@ -246,6 +250,7 @@ impl fmt::Display for Error {
             Self::File(why) => write!(f, "reading a triangle: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
             Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),
+            Self::PaidIncurred(why) => write!(f, "paid-incurred chain: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
             Self::OneYear {
                 failed,
