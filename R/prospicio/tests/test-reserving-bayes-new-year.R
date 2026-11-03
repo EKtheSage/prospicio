@@ -41,10 +41,12 @@ stopifnot(
   !identical(draws_of(bayes_new_year(fit, 5000, n_sims = 40000, seed = 4)@loss_ratio), lr)
 )
 
-# The patterns pair up with the loss ratio and give the monthly emergence.
+# The patterns pair up with the loss ratio and give the monthly emergence
+# (on fewer simulations, since the monthly reading takes a while).
 p <- pattern_draws(year)
-m <- monthly_pattern_draws(year, 120, monotone = "running_max")
-stopifnot(nrow(p) == 40000, all(p[, ncol(p)] == 1), dim(m) == c(40000, 120), all(m[, 120] == 1))
+small <- bayes_new_year(fit, premium = 5000, n_sims = 300, seed = 3)
+m <- monthly_pattern_draws(small, 120, monotone = "running_max")
+stopifnot(nrow(p) == 40000, all(p[, ncol(p)] == 1), dim(m) == c(300, 120), all(m[, 120] == 1))
 
 # Meyers: the exchangeable level follows the triangle, Meyers' own prior does not.
 mfit <- meyers(tri, "paid", "premium", n_sims = 200, seed = 1)
