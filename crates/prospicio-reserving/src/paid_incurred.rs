@@ -40,9 +40,11 @@ use crate::triangle::{Segment, Triangle};
 /// observation each, are filled in when the variances are estimated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VarianceExtrapolation {
-    /// `exp` of a least-squares line through the logs of every estimated
-    /// positive variance against its development period, as R ChainLadder's
-    /// `PaidIncurredChain` does.
+    /// `exp` of a least-squares line through the logs of the other
+    /// estimated variances against their development periods, as R
+    /// ChainLadder's `PaidIncurredChain` does. R leaves a variance of zero
+    /// out of the line; here an estimated variance of zero is an error
+    /// instead, and the variances are then to be given.
     #[default]
     LogLinear,
     /// Mack's rule on the standard deviations, `min(s_{J-1}, s_{J-2},
