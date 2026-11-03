@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: Reading 2,000 ODP bootstrap patterns month by month on an underwriting basis took about 21 s with the Weibull reading; in parallel and from the mean pattern's curve it takes 0.3 s
-description: "DevelopmentPatterns.monthly(144, basis=UnderwritingBasis()) on the sample submission's paid triangle cut at 108 months took 17 s to 21 s for 2,000 ODP bootstrap draws (release, Windows, 16 cores), the loglogistic reading 11 s to 20 s and ln-linear 0.05 s, nearly all of it the growth curve's search from eleven starts, on one thread. Since #717 (reserving-v02.md decision 29) the draws are read in parallel and each curve is searched from the mean pattern's: 0.3 s on 16 cores and 3.4 s on one, within 9.3e-10 of a share of the old result and the same with any number of threads. monotone='refuse' refuses 77 of the 2,000 draws, where a pseudo factor below 1 at the oldest ages puts the share above 1 at 96 months before it falls to 1 at 108 (1,344 on the uncut triangle to 120 months), so bootstrap draws need 'running_max'."
+description: "DevelopmentPatterns.monthly(144, basis=UnderwritingBasis()) on the sample submission's paid triangle cut at 108 months took 17 s to 21 s for 2,000 ODP bootstrap draws (release, Windows, 16 cores), the loglogistic reading 11 s to 20 s and ln-linear 0.05 s, nearly all of it the growth curve's search from ten starts, on one thread. Since #717 (reserving-v02.md decision 29) the draws are read in parallel and each curve is searched from the mean pattern's: 0.3 s on 16 cores and 3.4 s on one, within 9.3e-10 of a share of the old result and the same with any number of threads. monotone='refuse' refuses 77 of the 2,000 draws, where a pseudo factor below 1 at the oldest ages puts the share above 1 at 96 months before it falls to 1 at 108 (1,344 on the uncut triangle to 120 months), so bootstrap draws need 'running_max'."
 tags: [guides, reserving, cashflow, pattern, performance, prospicio-reserving]
 status: draft
 generated: { by: claude-code/local-session, at: 2026-11-02T12:00:00Z }
@@ -55,7 +55,7 @@ Measured while updating the guides for 0.0.7, with
 
 Profiled in Rust on the same draws (release, Windows, 16 cores), 21.6 s
 of the Weibull reading's 22 s on the uncut triangle was the growth curve's
-search (Nelder-Mead from eleven starts to a tolerance of `1e-12`, about
+search (Nelder-Mead from ten starts, decision 23's line and a 3 x 3 grid, to a tolerance of `1e-12`, about
 3,400 evaluations of the objective a draw, each 120 Weibull values); the
 projection onto the exact monthly pattern took 0.3 s. `reserving-v02.md`
 decision 29 reads the draws in parallel and searches each draw's curve
