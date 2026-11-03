@@ -99,7 +99,7 @@ Excel parity with the Python and R bindings. On 2026-11-03 the user added
 | Lane | New work | Small items |
 |---|---|---|
 | Reserving | #598 (a new underwriting year's predictive loss ratio), then #604 (an industry prior from Schedule P triangles) | #717 (faster monthly Weibull and loglogistic patterns) |
-| Reserving and bindings | #580 (one `NotSupported` error, breaking) | |
+| Reserving and bindings | Done in #725: #580 (one `NotSupported` error, breaking) | |
 | Reserving | #599: the design note only (the pooling structure is the user's decision); the model waits | |
 | Models | Done in #727: #548 (zero-inflated and hurdle counts), #550 (quantile and expectile regression), #547 (ICE curves, accumulated local effects and SHAP values) | |
 | Excel | parity with the Python and R bindings, in batches of worksheet functions (issue to follow) | |
