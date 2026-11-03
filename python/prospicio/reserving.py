@@ -8,13 +8,31 @@ ladder and the expected-loss methods, Mack's bootstrap for the lifetime and
 one-year views under Mack's process, and the Bayesian ODP chain ladder, the Bayesian
 Bornhuetter-Ferguson, Meyers' CRC, CSR and CAY models and Gesmann and Morris'
 compartmental model sampled with NUTS, a latest diagonal on its own
-projected with a pattern from elsewhere, and excess-layer development
-patterns derived from a ground-up triangle
+projected with a pattern from elsewhere, excess-layer development
+patterns derived from a ground-up triangle, and the methods on claim counts:
+frequency-severity, disposal rates, case outstanding development and the
+Berquist-Sherman adjustments
 (docs/design/triangle.md, docs/design/reserving-v02.md,
 docs/design/reserving-bayes.md, docs/design/reserving-compartmental.md,
 docs/design/reserving-excess.md)."""
 
 from .prospicio_native import (
+    CaseOutstanding,
+    CaseOutstandingFit,
+    Disposal,
+    DisposalFit,
+    FrequencySeverity,
+    FrequencySeverityFit,
+    Trended,
+    average_case,
+    berquist_sherman_adjust,
+    case_adequacy_adjust,
+    case_development_factor,
+    exponential_trend,
+    pooled_trend,
+    ratio_column,
+    settlement_rate_adjust,
+    trend_by_age,
     Backtest,
     BayesBf,
     BayesBfFit,
@@ -84,6 +102,22 @@ from .prospicio_native import (
 )
 
 __all__ = [
+    "CaseOutstanding",
+    "CaseOutstandingFit",
+    "Disposal",
+    "DisposalFit",
+    "FrequencySeverity",
+    "FrequencySeverityFit",
+    "Trended",
+    "average_case",
+    "berquist_sherman_adjust",
+    "case_adequacy_adjust",
+    "case_development_factor",
+    "exponential_trend",
+    "pooled_trend",
+    "ratio_column",
+    "settlement_rate_adjust",
+    "trend_by_age",
     "Triangle",
     "UnderwritingBasis",
     "DevelopmentPatterns",

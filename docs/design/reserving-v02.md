@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 accepted by the user on 2026-10-28 as proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 accepted by the user on 2026-10-28 as built; decision 29 built on branch `claude/unify-not-supported`, issue #580, in Rust, Python and R, its items 4, 5 and 9 open for the user) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 accepted by the user on 2026-10-28 as proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 accepted by the user on 2026-10-28 as built; decision 29 built on branch `claude/unify-not-supported`, issue #580, in Rust, Python and R, its items 4, 5 and 9 open for the user; decisions 33 and 34 built on branch `claude/friedland-counts`, issues #555 and #554, in Rust, Python and R, their items 8 and 9 and 4 to 6 open for the user) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -5013,3 +5013,138 @@ is chosen, not after a fit has run.
    item 1 says. *Open for the user*: whether the Python exception should
    also carry the `setting` and `method` as attributes (today only the
    message does).
+
+### 33. Frequency-severity, disposal rates and case outstanding development (issue #555)
+
+Status: **Built** (2026-11-02), issue #555, branch `claude/friedland-counts`,
+in Rust, Python and R; items 8 and 9 are open for the user.
+
+Friedland's chapters 11 and 12 project claims from counts or from case
+outstanding rather than from the claims triangle alone. The chain ladder and
+the expected-loss methods have one column; these have several.
+
+1. **One triangle, several columns.** Counts and amounts sit side by side as
+   measure columns of one `Triangle`, so that no new data type is needed and
+   the Berquist-Sherman adjustments (decision 34) can hand their result to
+   any method. Every method here needs a single segment.
+2. **Ultimate counts.** `UltimateCounts` is given, one per origin, or the
+   chain ladder on a count column with all of `ChainLadder`'s settings, or
+   the mean of several, as Friedland selects the mean of the closed and
+   reported projections. `FrequencySeverity`, `Disposal` and
+   `SettlementRate` all take it, so the count data is shared.
+3. **A selection per age.** `Selection` picks one value per age from a table
+   of ratios: the simple average over the latest `n` origins with the highest
+   and lowest dropped, the latest diagonal, or given values. It is a separate
+   type from `Development` because these are simple averages of rates and
+   ratios, with no volume to weight by. The default is the simple average of
+   every origin.
+4. **Frequency-severity.** `FrequencySeverity` has approach 1 (the chain
+   ladder on counts and on the severity triangle) and approach 2 (exposure
+   times a trended frequency, and a trended severity), through
+   `CountProjection` and `SeverityProjection`, which mix freely. `Trended`
+   carries a value selected at a base origin to the others:
+   `selected * (1 + trend)^(years(o) - years(base)) / factors[o]`, the factors
+   for anything besides the trend (Friedland's tort reform factors). When
+   counts and severities develop on consistent patterns the method equals the
+   chain ladder on the amounts: a unit test, a Python test and an R test.
+5. **Disposal.** Future incremental closed counts are
+   `(U - C_d) / (1 - r_d) * (r_k - r_(k-1))` from the selected rates `r`, the
+   last step `1 - r_last`, so an origin's own disposal position scales the
+   remaining pattern. Severities are incremental paid over incremental closed
+   counts brought to the base origin's level by the trend and `factors`.
+   `tail_severity_from` pools the ages from there on into one severity, total
+   trended paid over total counts, used to ultimate. The base defaults to the
+   latest origin.
+6. **Case outstanding.** `CaseOutstanding` selects paid on previous case and
+   case on previous case, runs each origin's latest case outstanding forward
+   through them, and takes `paid_to_ultimate` on the case at the oldest age.
+   `paid_to_ultimate` is required: there is no sound default. The
+   chapter's factor `1 + (R - 1) P / (P - R)` is
+   `case_development_factor`.
+7. **Trends.** `exponential_trend`, `trend_by_age` and `pooled_trend` (one
+   slope with an intercept for each age) fit the exponential trends that the
+   chapters tabulate, and `ratio_column` adds a column such as average paid.
+8. **Selections are not rounded.** *Open for the user.* The book projects some
+   exhibits with selections rounded to three decimals (US Auto in chapter 12,
+   XYZ's disposal rates) and others unrounded (XYZ in chapter 12). The methods
+   keep full precision, and the validation passes the printed values as
+   `Selection::Given` where the book rounds. An option to round selections
+   would only serve exhibit parity, so none is built.
+9. **No segments, no distribution.** *Open for the user.* Each method is
+   deterministic and single-segment: `fit_segments` and a simulated view are
+   not built. `Error::Counts` reports the data problems of these methods
+   (a missing column, a cell the method needs, a length that does not match).
+10. **Bindings.** Python `FrequencySeverity`, `Disposal`, `CaseOutstanding`,
+    `Trended` and `case_development_factor`; R `frequency_severity()`,
+    `disposal_method()`, `case_outstanding()`, `trended()`,
+    `development_method()` and `case_development_factor()`. A selection is
+    `None` (`NULL`) or `"all"`, a number of latest origins,
+    `"latest_diagonal"`, values by age, or a dict (list) of `n_periods`,
+    `drop_high` and `drop_low`. A base is an origin's label.
+11. **Checks.** `validation/tests/reserving_counts.rs`: chapter 11's XYZ
+    approaches 1 and 2, the workers compensation trended frequency and XYZ
+    disposal; chapter 12's US Auto and XYZ exhibits and the case development
+    factor. Tolerances come from the book's hidden decimals and the claims
+    rounded to the $000 in `validation/data/friedland_xyz.csv`
+    (`knowledge/findings/friedland-count-methods.md`). Chapter 12, Exhibit II
+    leaves 0.501 x 465 = 233 out of 2000's 120-month payment, so the test adds
+    it to the book's total.
+
+### 34. The Berquist-Sherman adjustments (issue #554)
+
+Status: **Built** (2026-11-02), issue #554, branch `claude/friedland-counts`,
+in Rust, Python and R; items 4, 5 and 6 are open for the user.
+
+Friedland's chapter 13 restates a triangle at the case adequacy or settlement
+rate of the latest diagonal before it is projected.
+
+1. **An adjustment returns a triangle.** `CaseAdequacy::adjust`,
+   `SettlementRate::adjust` and `BerquistSherman::adjust` return a cumulative
+   copy of the triangle with the adjusted columns replaced, not a fit, so the
+   chain ladder or any other method runs on the result unchanged. The latest
+   diagonal does not change.
+2. **Case adequacy.** The adjusted average case at age `a` is the average on
+   the latest diagonal at `a`, divided by `(1 + trend)` for each year back to
+   the cell's origin. Incurred is that times the open counts plus paid. Open
+   counts are a column or reported less closed. `max_age` stops the adjustment
+   at an age, as Friedland's XYZ does at 84 months; older cells keep their own
+   averages, also in the combined adjustment.
+3. **Settlement rate.** Adjusted closed counts are the selected disposal rate
+   at each age, by default the latest diagonal's, times the origin's ultimate
+   counts. Paid is read from a curve through the origin's successive observed
+   (closed, paid) points: the pair that spans the adjusted count, else the
+   nearest pair. The latest cell keeps its observed value.
+4. **Exponential between points by default.** *Open for the user.*
+   `Interpolation::Exponential` is Berquist and Sherman's and Friedland's
+   `paid = a exp(b closed)`; `Linear` is the alternative. A pair with zero
+   paid cannot carry the exponential curve and is not used.
+5. **Cells with no observed count.** *Open for the user.* Adjusted closed
+   counts fill every cell up to the valuation, including the ages before an
+   origin's first observed count, as the book does for 1998. Where the average
+   case cannot be formed, case outstanding is taken as zero, so incurred is
+   paid.
+6. **A fitted trend reads paid over closed.** *Open for the user.*
+   `CaseTrend::Given` is the selected trend. `CaseTrend::Fitted` is the pooled
+   trend of an amount over a count, meant for paid over closed: the average
+   case itself carries the change in adequacy being removed, so its own trend
+   is not a sound default.
+7. **Both adjustments.** `BerquistSherman` needs reported less closed as its
+   open counts, on the settlement adjustment's closed column: incurred is the
+   adjusted average case times reported less adjusted closed, plus adjusted
+   paid.
+8. **chainladder-python.** Its `BerquistSherman` differs in form, not in
+   substance: its incurred is the case adjustment alone, on unadjusted open
+   counts and paid, its paid and closed are the settlement adjustment with
+   ultimate reported counts from a volume chain ladder, and its lookup equals
+   the nearest-pair rule while closed counts rise. The comparison therefore
+   runs `CaseAdequacy` and `SettlementRate` separately.
+9. **Bindings.** Python and R `case_adequacy_adjust()`,
+   `settlement_rate_adjust()`, `berquist_sherman_adjust()`, `average_case()`
+   (the exhibit's adjusted averages as columns), `exponential_trend()`,
+   `trend_by_age()`, `pooled_trend()` and `ratio_column()`.
+10. **Checks.** `validation/tests/reserving_counts.rs`: Exhibit I (Medical
+    Malpractice: trends, adjusted cells and factors, 521,181,558), Exhibit II
+    (Auto BI settlement) and Exhibit III (XYZ: 476,678 case adjusted, 485,546
+    settlement adjusted, 489,258 both), and 528 cases of chainladder-python
+    0.10.1's `BerquistSherman` on its `berqsherm` sample at trends of 15% and
+    5% (`validation/scripts/reserving_berquist_sherman_python.py`).

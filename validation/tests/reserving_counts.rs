@@ -41,7 +41,9 @@ use prospicio_validation::{check, reference};
 fn rows(name: &str) -> Vec<BTreeMap<String, f64>> {
     let path = format!("{}/data/{name}.csv", env!("CARGO_MANIFEST_DIR"));
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
-    let mut lines = text.lines().filter(|l| !l.starts_with('#') && !l.is_empty());
+    let mut lines = text
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.is_empty());
     let header: Vec<&str> = lines.next().unwrap().split(',').collect();
     lines
         .map(|l| {
@@ -64,7 +66,10 @@ fn load(name: &str, columns: &[&str], first: i32, last: i32, max_age: Lag) -> Tr
             (first..=last).contains(&o) && a <= max_age
         })
         .collect();
-    let origin: Vec<Month> = rows.iter().map(|r| Month::january(r["origin"] as i32)).collect();
+    let origin: Vec<Month> = rows
+        .iter()
+        .map(|r| Month::january(r["origin"] as i32))
+        .collect();
     let ages: Vec<Lag> = rows.iter().map(|r| r["development"] as Lag).collect();
     let values: Vec<(&str, Vec<f64>)> = columns
         .iter()
@@ -83,7 +88,13 @@ fn load(name: &str, columns: &[&str], first: i32, last: i32, max_age: Lag) -> Tr
     .unwrap()
 }
 
-const XYZ: &[&str] = &["reported", "paid", "reported_counts", "closed_counts", "premium"];
+const XYZ: &[&str] = &[
+    "reported",
+    "paid",
+    "reported_counts",
+    "closed_counts",
+    "premium",
+];
 
 fn xyz() -> Triangle {
     load("friedland_xyz", XYZ, 1998, 2008, 132)
@@ -129,7 +140,10 @@ fn averages(tri: &Triangle, column: &str, average: Average, n: usize) -> Vec<f64
     }
     .fit(tri, column)
     .unwrap();
-    fit.ldf.iter().map(|f| (f * 1000.0).round() / 1000.0).collect()
+    fit.ldf
+        .iter()
+        .map(|f| (f * 1000.0).round() / 1000.0)
+        .collect()
 }
 
 /// The cells of `column` as origin by age rows.
@@ -152,14 +166,18 @@ fn xyz_counts() -> (UltimateCounts, UltimateCounts) {
     let closed = UltimateCounts::Development {
         column: "closed_counts".into(),
         method: printed_cdf(
-            &[6.085, 2.281, 1.612, 1.318, 1.161, 1.085, 1.035, 1.021, 1.015, 1.003, 1.000],
+            &[
+                6.085, 2.281, 1.612, 1.318, 1.161, 1.085, 1.035, 1.021, 1.015, 1.003, 1.000,
+            ],
             12,
         ),
     };
     let reported = UltimateCounts::Development {
         column: "reported_counts".into(),
         method: printed_cdf(
-            &[1.131, 1.035, 1.013, 1.005, 1.002, 1.001, 1.000, 1.000, 1.000, 1.000, 1.000],
+            &[
+                1.131, 1.035, 1.013, 1.005, 1.002, 1.001, 1.000, 1.000, 1.000, 1.000, 1.000,
+            ],
             12,
         ),
     };
@@ -176,12 +194,16 @@ fn friedland_11_xyz_frequency_severity_approach_1() {
     let closed = averages(&tri, "closed_counts", Average::Volume, 2);
     assert_eq!(
         closed,
-        [2.668, 1.415, 1.223, 1.135, 1.070, 1.048, 1.014, 1.006, 1.012, 1.003]
+        [
+            2.668, 1.415, 1.223, 1.135, 1.070, 1.048, 1.014, 1.006, 1.012, 1.003
+        ]
     );
     let reported = averages(&tri, "reported_counts", Average::Volume, 2);
     assert_eq!(
         reported,
-        [1.092, 1.022, 1.008, 1.003, 1.001, 1.001, 1.000, 1.000, 1.000, 1.000]
+        [
+            1.092, 1.022, 1.008, 1.003, 1.001, 1.001, 1.000, 1.000, 1.000, 1.000
+        ]
     );
     // Sheet 3.
     let (closed, reported) = xyz_counts();
@@ -191,22 +213,33 @@ fn friedland_11_xyz_frequency_severity_approach_1() {
     let selected_values = selected.resolve(&tri).unwrap();
     close_all(
         &closed,
-        &[637., 1047., 1423., 1476., 1576., 1701., 2356., 2565., 1936., 1804., 1679.],
+        &[
+            637., 1047., 1423., 1476., 1576., 1701., 2356., 2565., 1936., 1804., 1679.,
+        ],
         0.5,
         "closed count ultimates",
     );
     close_all(
         &reported,
-        &[637., 1047., 1408., 1455., 1554., 1631., 2263., 2402., 1679., 1308., 1172.],
+        &[
+            637., 1047., 1408., 1455., 1554., 1631., 2263., 2402., 1679., 1308., 1172.,
+        ],
         0.5,
         "reported count ultimates",
     );
-    close(selected_values.iter().sum(), 17378.0, 1.0, "selected ultimate counts");
+    close(
+        selected_values.iter().sum(),
+        17378.0,
+        1.0,
+        "selected ultimate counts",
+    );
 
     // Sheets 4 to 6: severities are reported claims ($000) over reported
     // counts, developed with the printed factors to ultimate.
     let sev = printed_cdf(
-        &[2.310, 1.498, 1.212, 1.100, 1.066, 1.016, 1.003, 0.992, 0.990, 0.999, 1.000],
+        &[
+            2.310, 1.498, 1.212, 1.100, 1.066, 1.016, 1.003, 0.992, 0.990, 0.999, 1.000,
+        ],
         12,
     );
     let fit = FrequencySeverity {
@@ -221,14 +254,18 @@ fn friedland_11_xyz_frequency_severity_approach_1() {
     let latest: Vec<f64> = fit.latest_severity.iter().map(|s| s * 1000.0).collect();
     close_all(
         &latest,
-        &[24839., 23980., 26453., 26665., 30997., 27239., 31129., 29563., 29453., 25104., 17985.],
+        &[
+            24839., 23980., 26453., 26665., 30997., 27239., 31129., 29563., 29453., 25104., 17985.,
+        ],
         1.5,
         "latest reported severities",
     );
     let ult: Vec<f64> = fit.ultimate_severity.iter().map(|s| s * 1000.0).collect();
     close_all(
         &ult,
-        &[24839., 23956., 26189., 26452., 31090., 27675., 33183., 32519., 35697., 37606., 41544.],
+        &[
+            24839., 23956., 26189., 26452., 31090., 27675., 33183., 32519., 35697., 37606., 41544.,
+        ],
         2.0,
         "ultimate severities",
     );
@@ -268,16 +305,41 @@ fn friedland_11_xyz_frequency_severity_approach_2() {
     .fit(&tri)
     .unwrap();
     // Sheet 1, line (11), and sheet 2, line (8).
-    close(fit.ultimate_counts[9] / 62438.0, 0.0192, 5e-5, "2007 frequency");
-    close(fit.ultimate_severity[9] * 1000.0, 25448.0, 0.5, "2007 severity");
+    close(
+        fit.ultimate_counts[9] / 62438.0,
+        0.0192,
+        5e-5,
+        "2007 frequency",
+    );
+    close(
+        fit.ultimate_severity[9] * 1000.0,
+        25448.0,
+        0.5,
+        "2007 severity",
+    );
     // Sheet 3, lines (3) and (5): the book multiplies the premium by the
     // frequency rounded to 1.92% (1,199 claims, 1,196.8 unrounded) and the
     // rounded counts by the rounded severities, 0.2% above the unrounded
     // product in 2007.
-    close(fit.ultimate_counts[9], 62438.0 * 0.0236 * 0.8 / 0.985, 1e-9, "2007 counts");
-    close(62438.0 * 0.0192, 1199.0, 0.5, "2007 counts at the rounded frequency");
+    close(
+        fit.ultimate_counts[9],
+        62438.0 * 0.0236 * 0.8 / 0.985,
+        1e-9,
+        "2007 counts",
+    );
+    close(
+        62438.0 * 0.0192,
+        1199.0,
+        0.5,
+        "2007 counts at the rounded frequency",
+    );
     close(fit.ultimate_counts[10], 1128.0, 0.5, "2008 counts");
-    close(fit.ultimate[9], 30512.152, 0.0025 * 30512.152, "2007 ultimate");
+    close(
+        fit.ultimate[9],
+        30512.152,
+        0.0025 * 30512.152,
+        "2007 ultimate",
+    );
     close(fit.ultimate[10], 30140.260, 0.5, "2008 ultimate");
     // Line (8): IBNR.
     close(fit.reserves()[10], 11508.260, 0.5, "2008 IBNR");
@@ -329,12 +391,20 @@ fn friedland_11_xyz_disposal() {
     let fit = method.fit(&tri).unwrap();
     // Sheet 1, part 3.
     let printed = [0.244, 0.572, 0.704, 0.814, 0.910, 0.952, 0.982, 0.994];
-    let rates: Vec<f64> = fit.selected_rates.iter().map(|r| (r * 1000.0).round() / 1000.0).collect();
+    let rates: Vec<f64> = fit
+        .selected_rates
+        .iter()
+        .map(|r| (r * 1000.0).round() / 1000.0)
+        .collect();
     assert_eq!(rates, printed);
     // The book projects with the rates rounded to three decimals.
     let fit = Disposal {
         disposal_rates: Selection::Given(
-            printed.iter().enumerate().map(|(k, &r)| (12 + 12 * k as Lag, r)).collect(),
+            printed
+                .iter()
+                .enumerate()
+                .map(|(k, &r)| (12 + 12 * k as Lag, r))
+                .collect(),
         ),
         ..method
     }
@@ -342,14 +412,19 @@ fn friedland_11_xyz_disposal() {
     .unwrap();
     // Sheet 2: projected incremental closed counts, step to ultimate last.
     let counts_2008 = [276., 389., 156., 130., 114., 50., 36., 14., 7.];
-    let got: Vec<f64> = fit.incremental_counts[7].iter().map(|c| c.unwrap()).collect();
+    let got: Vec<f64> = fit.incremental_counts[7]
+        .iter()
+        .map(|c| c.unwrap())
+        .collect();
     close_all(&got, &counts_2008, 0.5, "2008 incremental closed counts");
     // Sheets 4 and 5, in dollars. The claims are rounded to the $000, which
     // moves the selections by a few dollars (the pooled tail severity by 8).
     let sel: Vec<f64> = fit.selected_severities.iter().map(|s| s * 1000.0).collect();
     close_all(
         &sel,
-        &[11807., 15165., 26043., 35183., 41908., 62206., 70432., 70432., 70432.],
+        &[
+            11807., 15165., 26043., 35183., 41908., 62206., 70432., 70432., 70432.,
+        ],
         10.0,
         "selected severities at the 2008 level",
     );
@@ -364,12 +439,19 @@ fn friedland_11_xyz_disposal() {
     // rounded, so the totals agree to about 6 thousand dollars in 386 million.
     close_all(
         &fit.ultimate,
-        &[39192., 46869., 44479., 71906., 71684., 49913., 31805., 29828.],
+        &[
+            39192., 46869., 44479., 71906., 71684., 49913., 31805., 29828.,
+        ],
         2.0,
         "ultimates",
     );
     close(fit.total_ultimate(), 385676.0, 6.0, "total ultimate");
-    close(fit.total_reserve(), 385676.0 - 253208.0, 6.0, "total unpaid");
+    close(
+        fit.total_reserve(),
+        385676.0 - 253208.0,
+        6.0,
+        "total unpaid",
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -401,9 +483,18 @@ fn friedland_12_us_auto_case_outstanding() {
     };
     let fit = method.fit(&tri).unwrap();
     // Sheets 2 and 3: the selected ratios at 24 to 120 months.
-    let round = |v: &[f64]| -> Vec<f64> { v[1..].iter().map(|r| (r * 1000.0).round() / 1000.0).collect() };
-    let paid_on_case = [0.833, 0.701, 0.714, 0.714, 0.653, 0.631, 0.553, 0.437, 0.524];
-    let case_on_case = [0.526, 0.566, 0.528, 0.486, 0.511, 0.555, 0.632, 0.674, 0.580];
+    let round = |v: &[f64]| -> Vec<f64> {
+        v[1..]
+            .iter()
+            .map(|r| (r * 1000.0).round() / 1000.0)
+            .collect()
+    };
+    let paid_on_case = [
+        0.833, 0.701, 0.714, 0.714, 0.653, 0.631, 0.553, 0.437, 0.524,
+    ];
+    let case_on_case = [
+        0.526, 0.566, 0.528, 0.486, 0.511, 0.555, 0.632, 0.674, 0.580,
+    ];
     assert_eq!(round(&fit.selected_paid_on_case), paid_on_case);
     assert_eq!(round(&fit.selected_case_on_case), case_on_case);
     // Sheets 4 and 5: the book projects with the ratios rounded to three
@@ -424,7 +515,12 @@ fn friedland_12_us_auto_case_outstanding() {
     close(fit.total_reserve(), 69707370.0, 2.0, "total unpaid");
     close(fit.ibnr().iter().sum(), 24276151.0, 2.0, "total IBNR");
     // The 2007 case outstanding at 24 months: 0.526 x 21,623,594.
-    close(fit.case_outstanding[9][1].unwrap(), 11374010.0, 1.0, "2007 case at 24");
+    close(
+        fit.case_outstanding[9][1].unwrap(),
+        11374010.0,
+        1.0,
+        "2007 case at 24",
+    );
 }
 
 /// Chapter 12, Exhibit II: XYZ Insurer, ratios selected by the simple
@@ -436,8 +532,12 @@ fn friedland_12_us_auto_case_outstanding() {
 /// other row does. Its 2000 ultimate is 233 short of its own method.
 #[test]
 fn friedland_12_xyz_case_outstanding() {
-    let paid_on_case = [0.437, 0.369, 0.415, 0.494, 0.596, 0.730, 0.852, 0.618, 0.501, 0.816];
-    let case_on_case = [1.367, 0.986, 0.783, 0.584, 0.583, 0.353, 0.310, 0.514, 0.344, 0.000];
+    let paid_on_case = [
+        0.437, 0.369, 0.415, 0.494, 0.596, 0.730, 0.852, 0.618, 0.501, 0.816,
+    ];
+    let case_on_case = [
+        1.367, 0.986, 0.783, 0.584, 0.583, 0.353, 0.310, 0.514, 0.344, 0.000,
+    ];
     let fit = CaseOutstanding {
         paid: "paid".into(),
         incurred: "reported".into(),
@@ -449,8 +549,18 @@ fn friedland_12_xyz_case_outstanding() {
     .unwrap();
     // The data is rounded to the $000, so the 132-month ratio is 0.817 on it
     // (58 / 71) and 0.816 in the book.
-    close_all(&fit.selected_paid_on_case[1..], &paid_on_case, 1.5e-3, "paid on case");
-    close_all(&fit.selected_case_on_case[1..], &case_on_case, 1.5e-3, "case on case");
+    close_all(
+        &fit.selected_paid_on_case[1..],
+        &paid_on_case,
+        1.5e-3,
+        "paid on case",
+    );
+    close_all(
+        &fit.selected_case_on_case[1..],
+        &case_on_case,
+        1.5e-3,
+        "case on case",
+    );
     // Unlike Exhibit I, the book projects XYZ with its unrounded ratios.
     let mut want = [
         15822., 25054., 36912., 38803., 48796., 45093., 74873., 77723., 58665., 46198., 46005.,
@@ -459,7 +569,12 @@ fn friedland_12_xyz_case_outstanding() {
     want[2] += missing;
     // The printed data is rounded to the $000: within 2 per origin.
     close_all(&fit.ultimate, &want, 2.0, "ultimates");
-    close(fit.total_ultimate(), 513944.0 + missing, 6.0, "total ultimate");
+    close(
+        fit.total_ultimate(),
+        513944.0 + missing,
+        6.0,
+        "total ultimate",
+    );
 }
 
 /// Chapter 12, Exhibit III: the case development factor from reported and
@@ -484,7 +599,13 @@ fn friedland_12_case_development_factor() {
 // ---------------------------------------------------------------------------
 
 fn berqsherm(name: &str) -> Triangle {
-    load(name, &["incurred", "paid", "reported", "closed"], 1969, 1976, 96)
+    load(
+        name,
+        &["incurred", "paid", "reported", "closed"],
+        1969,
+        1976,
+        96,
+    )
 }
 
 fn reported_less_closed() -> OpenCounts {
@@ -509,7 +630,10 @@ fn friedland_13_medmal_case_adequacy() {
     // Sheet 4: the trend of the average case outstanding by age.
     let avg = case.average_case(&tri).unwrap();
     let trends = trend_by_age(&avg, "average_case").unwrap();
-    let rate: Vec<f64> = trends[..7].iter().map(|(_, t)| (t.unwrap().rate * 1000.0).round() / 10.0).collect();
+    let rate: Vec<f64> = trends[..7]
+        .iter()
+        .map(|(_, t)| (t.unwrap().rate * 1000.0).round() / 10.0)
+        .collect();
     assert_eq!(rate, [15.6, 29.5, 31.1, 34.2, 33.0, 32.2, 27.6]);
     let r2: Vec<f64> = trends[..7]
         .iter()
@@ -519,9 +643,15 @@ fn friedland_13_medmal_case_adequacy() {
     // Sheet 6: the adjusted reported claims, to the dollar.
     let adjusted = case.adjust(&tri).unwrap();
     let want: [&[f64]; 8] = [
-        &[3793504., 12084942., 18563821., 25924316., 23516364., 24979245., 24016864., 23506000.],
-        &[3760482., 15830500., 24615996., 33169802., 30722141., 33362729., 32216000.],
-        &[5982185., 25583831., 41384825., 50323342., 46191356., 48377000.],
+        &[
+            3793504., 12084942., 18563821., 25924316., 23516364., 24979245., 24016864., 23506000.,
+        ],
+        &[
+            3760482., 15830500., 24615996., 33169802., 30722141., 33362729., 32216000.,
+        ],
+        &[
+            5982185., 25583831., 41384825., 50323342., 46191356., 48377000.,
+        ],
         &[7819355., 33794110., 51361061., 64559286., 61163000.],
         &[9533246., 34585431., 49667342., 73733000.],
         &[10348458., 41241243., 63477000.],
@@ -531,7 +661,12 @@ fn friedland_13_medmal_case_adequacy() {
     let got = cells(&adjusted, "incurred");
     for (o, row) in want.iter().enumerate() {
         for (d, w) in row.iter().enumerate() {
-            close(got[o][d].unwrap(), *w, 0.5, &format!("adjusted incurred {o} {d}"));
+            close(
+                got[o][d].unwrap(),
+                *w,
+                0.5,
+                &format!("adjusted incurred {o} {d}"),
+            );
         }
     }
     // Sheet 7: the simple average factors of all years.
@@ -541,13 +676,25 @@ fn friedland_13_medmal_case_adequacy() {
     }
     .fit(&adjusted, "incurred")
     .unwrap();
-    let ldf: Vec<f64> = fit.ldf.iter().map(|f| (f * 1000.0).round() / 1000.0).collect();
+    let ldf: Vec<f64> = fit
+        .ldf
+        .iter()
+        .map(|f| (f * 1000.0).round() / 1000.0)
+        .collect();
     assert_eq!(ldf, [3.906, 1.534, 1.340, 0.925, 1.065, 0.964, 0.979]);
     // Sheet 8: the printed factors to ultimate give 521,181,558.
-    let cl = printed_cdf(&[7.465, 1.911, 1.246, 0.930, 1.005, 0.944, 0.979, 1.000], 12)
-        .fit(&adjusted, "incurred")
-        .unwrap();
-    close(cl.total_ultimate(), 521181558.0, 1.0, "adjusted reported ultimate");
+    let cl = printed_cdf(
+        &[7.465, 1.911, 1.246, 0.930, 1.005, 0.944, 0.979, 1.000],
+        12,
+    )
+    .fit(&adjusted, "incurred")
+    .unwrap();
+    close(
+        cl.total_ultimate(),
+        521181558.0,
+        1.0,
+        "adjusted reported ultimate",
+    );
 }
 
 /// Berquist and Sherman's ultimate counts in Friedland, chapter 13, Exhibit
@@ -600,13 +747,28 @@ fn friedland_13_auto_bi_settlement_rate() {
     let got_paid = cells(&adjusted, "paid");
     for o in 0..8 {
         for d in 0..closed[o].len() {
-            close(got_closed[o][d].unwrap(), closed[o][d], 0.5, &format!("closed {o} {d}"));
-            close(got_paid[o][d].unwrap(), paid[o][d], 0.5, &format!("paid {o} {d}"));
+            close(
+                got_closed[o][d].unwrap(),
+                closed[o][d],
+                0.5,
+                &format!("closed {o} {d}"),
+            );
+            close(
+                got_paid[o][d].unwrap(),
+                paid[o][d],
+                0.5,
+                &format!("paid {o} {d}"),
+            );
         }
     }
     // Sheet 8: volume-weighted factors of all years.
     let fit = ChainLadder::default().fit(&adjusted, "paid").unwrap();
-    let ldf: Vec<f64> = fit.development.ldf.iter().map(|f| (f * 1000.0).round() / 1000.0).collect();
+    let ldf: Vec<f64> = fit
+        .development
+        .ldf
+        .iter()
+        .map(|f| (f * 1000.0).round() / 1000.0)
+        .collect();
     assert_eq!(ldf, [3.158, 1.538, 1.277, 1.114, 1.047, 1.018, 1.006]);
 }
 
@@ -620,7 +782,10 @@ fn friedland_13_xyz() {
     // Sheet 1: average paid on closed counts, the trend by age.
     let avg = ratio_column(&tri, "paid", "closed_counts", "average_paid").unwrap();
     let trends = trend_by_age(&avg, "average_paid").unwrap();
-    let rate: Vec<f64> = trends[..10].iter().map(|(_, t)| (t.unwrap().rate * 1000.0).round() / 10.0).collect();
+    let rate: Vec<f64> = trends[..10]
+        .iter()
+        .map(|(_, t)| (t.unwrap().rate * 1000.0).round() / 10.0)
+        .collect();
     assert_eq!(rate, [8.1, 5.4, 4.6, 4.3, 5.5, 5.1, 6.8, 4.8, 3.1, -4.2]);
 
     let case = CaseAdequacy {
@@ -637,22 +802,39 @@ fn friedland_13_xyz() {
     // decimals, so cells agree within 3.
     let case_adjusted = case.adjust(&tri).unwrap();
     let got = cells(&case_adjusted, "reported");
-    let rows_2001 = [15789., 29146., 35224., 39380., 39748., 38452., 39706., 38798.];
+    let rows_2001 = [
+        15789., 29146., 35224., 39380., 39748., 38452., 39706., 38798.,
+    ];
     for (d, w) in rows_2001.iter().enumerate() {
-        close(got[3][d].unwrap(), *w, 3.0, &format!("case adjusted 2001 at {}", 12 * (d + 1)));
+        close(
+            got[3][d].unwrap(),
+            *w,
+            3.0,
+            &format!("case adjusted 2001 at {}", 12 * (d + 1)),
+        );
     }
-    let row_1998 = [14600., 15094., 15513., 17104., 16366., 16163., 15835., 15822.];
+    let row_1998 = [
+        14600., 15094., 15513., 17104., 16366., 16163., 15835., 15822.,
+    ];
     for (d, w) in row_1998.iter().enumerate() {
-        close(got[0][d + 3].unwrap(), *w, 3.0, &format!("case adjusted 1998 at {}", 48 + 12 * d));
+        close(
+            got[0][d + 3].unwrap(),
+            *w,
+            3.0,
+            &format!("case adjusted 1998 at {}", 48 + 12 * d),
+        );
     }
     assert!(got[0][2].is_none(), "1998 at 36 months has no counts");
     // Sheet 3: latest-3 volume-weighted averages, 1.658, 1.159, 1.040.
     let avg3 = averages(&case_adjusted, "reported", Average::Volume, 3);
     assert_eq!(&avg3[..3], [1.658, 1.159, 1.040]);
     // Sheet 10, column (8): 476,678.
-    let cl = printed_cdf(&[1.998, 1.205, 1.040, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], 12)
-        .fit(&case_adjusted, "reported")
-        .unwrap();
+    let cl = printed_cdf(
+        &[1.998, 1.205, 1.040, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        12,
+    )
+    .fit(&case_adjusted, "reported")
+    .unwrap();
     close(cl.total_ultimate(), 476678.0, 3.0, "case adjusted ultimate");
 
     // Sheets 4 to 7: the settlement adjustment on chapter 11's reported
@@ -669,52 +851,102 @@ fn friedland_13_xyz() {
     let closed = cells(&paid_adjusted, "closed_counts");
     let paid = cells(&paid_adjusted, "paid");
     // 1998 is filled from 12 months, before its first count.
-    let closed_1998 = [150., 385., 456., 516., 571., 613., 624., 633., 634., 635., 637.];
-    let paid_1998 = [1658., 4830., 6659., 8760., 11401., 14476., 15439., 15705., 15742., 15769., 15822.];
+    let closed_1998 = [
+        150., 385., 456., 516., 571., 613., 624., 633., 634., 635., 637.,
+    ];
+    let paid_1998 = [
+        1658., 4830., 6659., 8760., 11401., 14476., 15439., 15705., 15742., 15769., 15822.,
+    ];
     let paid_2005 = [4805., 19876., 29202., 40026.];
     for d in 0..11 {
-        close(closed[0][d].unwrap(), closed_1998[d], 0.5, &format!("closed 1998 {d}"));
-        close(paid[0][d].unwrap(), paid_1998[d], 2.0, &format!("paid 1998 {d}"));
+        close(
+            closed[0][d].unwrap(),
+            closed_1998[d],
+            0.5,
+            &format!("closed 1998 {d}"),
+        );
+        close(
+            paid[0][d].unwrap(),
+            paid_1998[d],
+            2.0,
+            &format!("paid 1998 {d}"),
+        );
     }
     for d in 0..4 {
-        close(paid[7][d].unwrap(), paid_2005[d], 2.0, &format!("paid 2005 {d}"));
+        close(
+            paid[7][d].unwrap(),
+            paid_2005[d],
+            2.0,
+            &format!("paid 2005 {d}"),
+        );
     }
     // Sheet 7: volume-weighted latest 5.
     let avg5 = averages(&paid_adjusted, "paid", Average::Volume, 5);
     assert_eq!(
         avg5,
-        [4.152, 1.432, 1.322, 1.269, 1.206, 1.053, 1.044, 1.005, 1.002, 1.003]
+        [
+            4.152, 1.432, 1.322, 1.269, 1.206, 1.053, 1.044, 1.005, 1.002, 1.003
+        ]
     );
     // Sheet 10, column (10): 485,546 with the printed factors and a 1.010
     // tail.
     let cl = printed_cdf(
-        &[13.490, 3.249, 2.269, 1.716, 1.352, 1.121, 1.065, 1.020, 1.015, 1.013, 1.010],
+        &[
+            13.490, 3.249, 2.269, 1.716, 1.352, 1.121, 1.065, 1.020, 1.015, 1.013, 1.010,
+        ],
         12,
     )
     .fit(&paid_adjusted, "paid")
     .unwrap();
-    close(cl.total_ultimate(), 485546.0, 3.0, "settlement adjusted ultimate");
+    close(
+        cl.total_ultimate(),
+        485546.0,
+        3.0,
+        "settlement adjusted ultimate",
+    );
 
     // Sheets 8 and 9: both adjustments, every age adjusted.
     let both = BerquistSherman {
-        case_adequacy: CaseAdequacy { max_age: Some(84), ..case },
+        case_adequacy: CaseAdequacy {
+            max_age: Some(84),
+            ..case
+        },
         settlement_rate: settlement,
     }
     .adjust(&tri)
     .unwrap();
     let got = cells(&both, "reported");
-    let row_2001 = [15467., 27457., 34478., 38046., 38343., 38516., 39877., 38798.];
+    let row_2001 = [
+        15467., 27457., 34478., 38046., 38343., 38516., 39877., 38798.,
+    ];
     for (d, w) in row_2001.iter().enumerate() {
-        close(got[3][d].unwrap(), *w, 3.0, &format!("both adjusted 2001 at {}", 12 * (d + 1)));
+        close(
+            got[3][d].unwrap(),
+            *w,
+            3.0,
+            &format!("both adjusted 2001 at {}", 12 * (d + 1)),
+        );
     }
-    let row_1998 = [14541., 15031., 15934., 16697., 16012., 15878., 15834., 15822.];
+    let row_1998 = [
+        14541., 15031., 15934., 16697., 16012., 15878., 15834., 15822.,
+    ];
     for (d, w) in row_1998.iter().enumerate() {
-        close(got[0][d + 3].unwrap(), *w, 3.0, &format!("both adjusted 1998 at {}", 48 + 12 * d));
+        close(
+            got[0][d + 3].unwrap(),
+            *w,
+            3.0,
+            &format!("both adjusted 1998 at {}", 48 + 12 * d),
+        );
     }
     // Sheet 10, column (9): 489,258.
-    let cl = printed_cdf(&[2.229, 1.345, 1.094, 1.010, 1.007, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], 12)
-        .fit(&both, "reported")
-        .unwrap();
+    let cl = printed_cdf(
+        &[
+            2.229, 1.345, 1.094, 1.010, 1.007, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        ],
+        12,
+    )
+    .fit(&both, "reported")
+    .unwrap();
     close(cl.total_ultimate(), 489258.0, 3.0, "both adjusted ultimate");
 }
 
@@ -734,33 +966,38 @@ fn chainladder_python_berquist_sherman() {
     check(&cases, |case| {
         let dataset = case.get("dataset").to_string();
         let method = case.get("method").to_string();
-        let tri = cache.entry((dataset.clone(), method.clone())).or_insert_with(|| {
-            let tri = berqsherm(&dataset);
-            let trend = case.param("method", "trend");
-            let incurred = CaseAdequacy {
-                incurred: "incurred".into(),
-                paid: "paid".into(),
-                open_counts: reported_less_closed(),
-                trend: CaseTrend::Given(trend),
-                max_age: None,
-            }
-            .adjust(&tri)
-            .unwrap();
-            let settled = SettlementRate {
-                paid: "paid".into(),
-                closed_counts: "closed".into(),
-                ultimate_counts: UltimateCounts::development("reported"),
-                disposal_rates: Selection::LatestDiagonal,
-                interpolation: Interpolation::Exponential,
-            }
-            .adjust(&tri)
-            .unwrap();
-            let rows = cells(&incurred, "incurred");
-            let paid = cells(&settled, "paid");
-            let closed = cells(&settled, "closed");
-            // Assemble the three adjusted columns on one triangle.
-            rebuild(&tri, &[("incurred", rows), ("paid", paid), ("closed", closed)])
-        });
+        let tri = cache
+            .entry((dataset.clone(), method.clone()))
+            .or_insert_with(|| {
+                let tri = berqsherm(&dataset);
+                let trend = case.param("method", "trend");
+                let incurred = CaseAdequacy {
+                    incurred: "incurred".into(),
+                    paid: "paid".into(),
+                    open_counts: reported_less_closed(),
+                    trend: CaseTrend::Given(trend),
+                    max_age: None,
+                }
+                .adjust(&tri)
+                .unwrap();
+                let settled = SettlementRate {
+                    paid: "paid".into(),
+                    closed_counts: "closed".into(),
+                    ultimate_counts: UltimateCounts::development("reported"),
+                    disposal_rates: Selection::LatestDiagonal,
+                    interpolation: Interpolation::Exponential,
+                }
+                .adjust(&tri)
+                .unwrap();
+                let rows = cells(&incurred, "incurred");
+                let paid = cells(&settled, "paid");
+                let closed = cells(&settled, "closed");
+                // Assemble the three adjusted columns on one triangle.
+                rebuild(
+                    &tri,
+                    &[("incurred", rows), ("paid", paid), ("closed", closed)],
+                )
+            });
         let quantity = case.get("quantity");
         let arg = case.get("arg");
         let origin_index = |year: i32| (year - 1969) as usize;

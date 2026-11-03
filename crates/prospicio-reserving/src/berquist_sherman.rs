@@ -1,6 +1,6 @@
 //! The Berquist-Sherman adjustments (Berquist and Sherman, 1977; Friedland,
 //! *Estimating Unpaid Claims Using Basic Techniques*, chapter 13;
-//! `reserving-v02.md` decisions 42 to 46): a triangle restated before it is
+//! `reserving-v02.md` decision 34): a triangle restated before it is
 //! projected, so that the chain ladder, the expected-loss methods or Mack
 //! run on it unchanged.
 //!
@@ -49,7 +49,12 @@ impl OpenCounts {
                 let c = tri.cells(closed)?;
                 Ok(r.iter()
                     .zip(&c)
-                    .map(|(r, c)| r.iter().zip(c).map(|(r, c)| Some(r.as_ref()? - c.as_ref()?)).collect())
+                    .map(|(r, c)| {
+                        r.iter()
+                            .zip(c)
+                            .map(|(r, c)| Some(r.as_ref()? - c.as_ref()?))
+                            .collect()
+                    })
                     .collect())
             }
         }
@@ -79,7 +84,11 @@ impl CaseTrend {
                 let t = ratio_column(tri, amount, counts, "__severity")?;
                 match pooled_trend(&t, "__severity")? {
                     Some(fit) => fit.rate,
-                    None => return bs_err("no severity trend can be fitted: fewer than two origins at every age"),
+                    None => {
+                        return bs_err(
+                            "no severity trend can be fitted: fewer than two origins at every age",
+                        );
+                    }
                 }
             }
         };
@@ -289,7 +298,11 @@ impl SettlementRate {
         let rates: Rows = closed
             .iter()
             .zip(&ultimate)
-            .map(|(r, &u)| r.iter().map(|c| c.filter(|_| u > 0.0).map(|c| c / u)).collect())
+            .map(|(r, &u)| {
+                r.iter()
+                    .map(|c| c.filter(|_| u > 0.0).map(|c| c / u))
+                    .collect()
+            })
             .collect();
         let val = valuation_positions(tri);
         let latest: Vec<Option<usize>> = closed.iter().map(|r| last_observed(r)).collect();
@@ -350,10 +363,13 @@ fn usable(p0: (f64, f64), p1: (f64, f64), how: Interpolation) -> bool {
         }
 }
 
+/// Two successive (closed count, paid) points.
+type Segment = ((f64, f64), (f64, f64));
+
 /// The paid claims at `x` closed counts on the pair whose closed counts span
 /// `x` (the first one), else on the nearest pair.
-fn interpolate(pairs: &[((f64, f64), (f64, f64))], x: f64, how: Interpolation) -> Option<f64> {
-    let distance = |((x0, _), (x1, _)): &((f64, f64), (f64, f64))| {
+fn interpolate(pairs: &[Segment], x: f64, how: Interpolation) -> Option<f64> {
+    let distance = |((x0, _), (x1, _)): &Segment| {
         let (lo, hi) = (x0.min(*x1), x0.max(*x1));
         if x < lo {
             lo - x
@@ -379,7 +395,8 @@ fn interpolate(pairs: &[((f64, f64), (f64, f64))], x: f64, how: Interpolation) -
 impl BerquistSherman {
     /// `tri` with incurred, paid and closed counts all restated, cumulative.
     pub fn adjust(&self, tri: &Triangle) -> Result<Triangle> {
-        let OpenCounts::ReportedLessClosed { reported, closed } = &self.case_adequacy.open_counts else {
+        let OpenCounts::ReportedLessClosed { reported, closed } = &self.case_adequacy.open_counts
+        else {
             return bs_err(
                 "both Berquist-Sherman adjustments need open counts as reported less closed counts",
             );
@@ -402,7 +419,12 @@ impl BerquistSherman {
         let open: Rows = reported_rows
             .iter()
             .zip(&s.closed)
-            .map(|(r, c)| r.iter().zip(c).map(|(r, c)| Some(r.as_ref()? - c.as_ref()?)).collect())
+            .map(|(r, c)| {
+                r.iter()
+                    .zip(c)
+                    .map(|(r, c)| Some(r.as_ref()? - c.as_ref()?))
+                    .collect()
+            })
             .collect();
         let incurred = combine(&a.adjusted, &open, &s.paid);
         tri.with_cells(closed, &s.closed)?
@@ -417,7 +439,10 @@ mod tests {
 
     #[test]
     fn interpolation_runs_through_both_points_and_extrapolates_on_the_nearest() {
-        let pairs = [((10.0, 100.0), (20.0, 400.0)), ((20.0, 400.0), (25.0, 500.0))];
+        let pairs = [
+            ((10.0, 100.0), (20.0, 400.0)),
+            ((20.0, 400.0), (25.0, 500.0)),
+        ];
         for how in [Interpolation::Exponential, Interpolation::Linear] {
             assert!((interpolate(&pairs, 10.0, how).unwrap() - 100.0).abs() < 1e-9);
             assert!((interpolate(&pairs, 25.0, how).unwrap() - 500.0).abs() < 1e-9);

@@ -1,7 +1,7 @@
 //! Methods on claim counts (Friedland, *Estimating Unpaid Claims Using
-//! Basic Techniques*, chapters 11 and 12; `reserving-v02.md` decisions 34
-//! to 41): frequency-severity ([`FrequencySeverity`]), the disposal rate
-//! method ([`Disposal`]) and case outstanding development
+//! Basic Techniques*, chapters 11 and 12; `reserving-v02.md` decision 33):
+//! frequency-severity ([`FrequencySeverity`]), the disposal rate method
+//! ([`Disposal`]) and case outstanding development
 //! ([`CaseOutstanding`], [`case_development_factor`]), with the pieces they
 //! share with the Berquist-Sherman adjustments
 //! ([`crate::berquist_sherman`]): ultimate claim counts
@@ -208,7 +208,11 @@ pub fn exponential_trend(points: &[(f64, f64)]) -> Option<TrendFit> {
     let sxy: f64 = pts.iter().map(|p| (p.0 - mx) * (p.1 - my)).sum();
     let syy: f64 = pts.iter().map(|p| (p.1 - my).powi(2)).sum();
     let b = sxy / sxx;
-    let r_squared = if syy > 0.0 { sxy * sxy / (sxx * syy) } else { 1.0 };
+    let r_squared = if syy > 0.0 {
+        sxy * sxy / (sxx * syy)
+    } else {
+        1.0
+    };
     Some(TrendFit {
         rate: b.exp() - 1.0,
         r_squared,
@@ -277,7 +281,11 @@ pub fn pooled_trend(tri: &Triangle, column: &str) -> Result<Option<TrendFit>> {
     let b = sxy / sxx;
     Ok(Some(TrendFit {
         rate: b.exp() - 1.0,
-        r_squared: if syy > 0.0 { sxy * sxy / (sxx * syy) } else { 1.0 },
+        r_squared: if syy > 0.0 {
+            sxy * sxy / (sxx * syy)
+        } else {
+            1.0
+        },
         n,
     }))
 }
@@ -286,7 +294,12 @@ pub fn pooled_trend(tri: &Triangle, column: &str) -> Result<Option<TrendFit>> {
 /// `denominator`, cell by cell where both are observed and the denominator
 /// is not zero: a severity (claims over claim counts), a disposal rate or an
 /// average case outstanding. The copy is cumulative.
-pub fn ratio_column(tri: &Triangle, numerator: &str, denominator: &str, name: &str) -> Result<Triangle> {
+pub fn ratio_column(
+    tri: &Triangle,
+    numerator: &str,
+    denominator: &str,
+    name: &str,
+) -> Result<Triangle> {
     let num = tri.cells(numerator)?;
     let den = tri.cells(denominator)?;
     let rows: Rows = num
@@ -344,7 +357,9 @@ impl UltimateCounts {
                     });
                 }
                 if let Some(v) = values.iter().find(|v| !v.is_finite() || **v < 0.0) {
-                    return counts_err(format!("an ultimate claim count of {v} is not finite and non-negative"));
+                    return counts_err(format!(
+                        "an ultimate claim count of {v} is not finite and non-negative"
+                    ));
                 }
                 Ok(values.clone())
             }
@@ -358,7 +373,9 @@ impl UltimateCounts {
                             .position(|p| p == o)
                             .map(|k| fit.ultimate[k])
                             .ok_or_else(|| {
-                                Error::Counts(format!("the origin {o} has no count in the column {column}"))
+                                Error::Counts(format!(
+                                    "the origin {o} has no count in the column {column}"
+                                ))
                             })
                     })
                     .collect()
@@ -772,7 +789,9 @@ impl Disposal {
             });
         }
         if let Some(f) = self.factors.iter().find(|f| !f.is_finite() || **f <= 0.0) {
-            return counts_err(format!("a severity factor of {f} is not finite and positive"));
+            return counts_err(format!(
+                "a severity factor of {f} is not finite and positive"
+            ));
         }
         let closed = tri.cells(&self.closed_counts)?;
         let paid = tri.cells(&self.paid)?;
@@ -783,7 +802,11 @@ impl Disposal {
         let disposal_rates: Rows = closed
             .iter()
             .zip(&ultimate_counts)
-            .map(|(r, &u)| r.iter().map(|c| c.filter(|_| u > 0.0).map(|c| c / u)).collect())
+            .map(|(r, &u)| {
+                r.iter()
+                    .map(|c| c.filter(|_| u > 0.0).map(|c| c / u))
+                    .collect()
+            })
             .collect();
         let selected_rates = self
             .disposal_rates
@@ -791,7 +814,9 @@ impl Disposal {
             .into_iter()
             .enumerate()
             .map(|(d, r)| {
-                r.ok_or_else(|| Error::Counts(format!("no disposal rate to select at age {}", ages[d])))
+                r.ok_or_else(|| {
+                    Error::Counts(format!("no disposal rate to select at age {}", ages[d]))
+                })
             })
             .collect::<Result<Vec<f64>>>()?;
 
@@ -823,12 +848,14 @@ impl Disposal {
             .enumerate()
             .map(|(o, r)| r.iter().map(|s| s.map(|s| s * to_base[o])).collect())
             .collect();
-        let selected = self
-            .severities
-            .select(&trended_severities, &ages, &latest_pos, "severities")?;
+        let selected =
+            self.severities
+                .select(&trended_severities, &ages, &latest_pos, "severities")?;
         let tail_from = match self.tail_severity_from {
             Some(age) => Some(ages.iter().position(|&a| a == age).ok_or_else(|| {
-                Error::Counts(format!("the tail severity age {age} is not one of the triangle's ages"))
+                Error::Counts(format!(
+                    "the tail severity age {age} is not one of the triangle's ages"
+                ))
             })?),
             None => None,
         };
@@ -854,12 +881,11 @@ impl Disposal {
             None => None,
         };
         let mut selected_severities = Vec::with_capacity(nd + 1);
-        for d in 0..nd {
-            let s = match (tail_from, pooled) {
+        for (d, &own) in selected.iter().enumerate() {
+            selected_severities.push(match (tail_from, pooled) {
                 (Some(k), Some(p)) if d >= k => Some(p),
-                _ => selected[d],
-            };
-            selected_severities.push(s);
+                _ => own,
+            });
         }
         selected_severities.push(pooled.or(selected_severities[nd - 1]));
         // Ages without a selection are needed only when an origin has a
@@ -1038,7 +1064,12 @@ impl CaseOutstanding {
         let case: Rows = incurred
             .iter()
             .zip(&paid)
-            .map(|(i, p)| i.iter().zip(p).map(|(i, p)| Some(i.as_ref()? - p.as_ref()?)).collect())
+            .map(|(i, p)| {
+                i.iter()
+                    .zip(p)
+                    .map(|(i, p)| Some(i.as_ref()? - p.as_ref()?))
+                    .collect()
+            })
             .collect();
         let inc_paid = incremental(&paid);
         let ratio = |num: &Rows| -> Rows {
@@ -1061,14 +1092,16 @@ impl CaseOutstanding {
         let latest_pos: Vec<Option<usize>> = case.iter().map(|r| last_observed(r)).collect();
         // Ratio rows sit at their numerator's age, so their latest diagonal
         // is the case's.
-        let sel_paid = self
-            .paid_on_case
-            .select(&paid_on_case, &ages, &latest_pos, "paid on case ratios")?;
-        let sel_case = self
-            .case_on_case
-            .select(&case_on_case, &ages, &latest_pos, "case on case ratios")?;
+        let sel_paid =
+            self.paid_on_case
+                .select(&paid_on_case, &ages, &latest_pos, "paid on case ratios")?;
+        let sel_case =
+            self.case_on_case
+                .select(&case_on_case, &ages, &latest_pos, "case on case ratios")?;
         let need = |sel: &[Option<f64>], d: usize, what: &str| -> Result<f64> {
-            sel[d].ok_or_else(|| Error::Counts(format!("no {what} ratio to select at age {}", ages[d])))
+            sel[d].ok_or_else(|| {
+                Error::Counts(format!("no {what} ratio to select at age {}", ages[d]))
+            })
         };
         let mut case_square = vec![vec![None; nd]; no];
         let mut paid_square = vec![vec![None; nd + 1]; no];
@@ -1175,26 +1208,44 @@ mod tests {
         ];
         let ages = [12, 24];
         let latest = [None, Some(1), None, Some(0)];
-        let s = Selection::latest(2).select(&rows, &ages, &latest, "x").unwrap();
+        let s = Selection::latest(2)
+            .select(&rows, &ages, &latest, "x")
+            .unwrap();
         assert_eq!(s, vec![Some(6.5), Some(5.5)]);
         let medial = Selection::Average {
             n_periods: Some(3),
             drop_high: 1,
             drop_low: 1,
         };
-        assert_eq!(medial.select(&rows, &ages, &latest, "x").unwrap()[0], Some(3.0));
+        assert_eq!(
+            medial.select(&rows, &ages, &latest, "x").unwrap()[0],
+            Some(3.0)
+        );
         // Drops that would leave nothing are not made.
-        assert_eq!(medial.select(&rows, &ages, &latest, "x").unwrap()[1], Some(5.5));
-        let diag = Selection::LatestDiagonal.select(&rows, &ages, &latest, "x").unwrap();
+        assert_eq!(
+            medial.select(&rows, &ages, &latest, "x").unwrap()[1],
+            Some(5.5)
+        );
+        let diag = Selection::LatestDiagonal
+            .select(&rows, &ages, &latest, "x")
+            .unwrap();
         assert_eq!(diag, vec![Some(10.0), Some(6.0)]);
-        let given = Selection::Given(vec![(24, 0.5)]).select(&rows, &ages, &latest, "x").unwrap();
+        let given = Selection::Given(vec![(24, 0.5)])
+            .select(&rows, &ages, &latest, "x")
+            .unwrap();
         assert_eq!(given, vec![None, Some(0.5)]);
-        assert!(Selection::Given(vec![(36, 0.5)]).select(&rows, &ages, &latest, "x").is_err());
+        assert!(
+            Selection::Given(vec![(36, 0.5)])
+                .select(&rows, &ages, &latest, "x")
+                .is_err()
+        );
     }
 
     #[test]
     fn exponential_trend_is_exact_on_a_geometric_series() {
-        let pts: Vec<(f64, f64)> = (0..5).map(|k| (2000.0 + k as f64, 100.0 * 1.07f64.powi(k))).collect();
+        let pts: Vec<(f64, f64)> = (0..5)
+            .map(|k| (2000.0 + k as f64, 100.0 * 1.07f64.powi(k)))
+            .collect();
         let fit = exponential_trend(&pts).unwrap();
         assert!((fit.rate - 0.07).abs() < 1e-12);
         assert!((fit.r_squared - 1.0).abs() < 1e-12);
@@ -1214,7 +1265,12 @@ mod tests {
             scale
                 .iter()
                 .enumerate()
-                .map(|(o, s)| base[..4 - o].iter().map(|v| v * s * (1.0 + o as f64 * 0.1)).collect())
+                .map(|(o, s)| {
+                    base[..4 - o]
+                        .iter()
+                        .map(|v| v * s * (1.0 + o as f64 * 0.1))
+                        .collect()
+                })
                 .collect()
         };
         let (c, a) = (rows(&base_c), rows(&base_a));

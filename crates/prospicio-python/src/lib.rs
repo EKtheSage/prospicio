@@ -39,6 +39,7 @@ mod pricing;
 mod ratemaking;
 mod reinsurance;
 mod reserving;
+mod reserving_counts;
 mod risk;
 
 fn to_py(e: prospicio_core::Error) -> PyErr {
@@ -190,6 +191,13 @@ mod prospicio_native {
         PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant, PyTailCurve, PyTailLogLinear,
         PyTriangle, PyUnderwritingBasis, calendar_year_effect, development_correlation,
         diagonal_backtest,
+    };
+    #[pymodule_export]
+    use super::reserving_counts::{
+        PyCaseOutstanding, PyCaseOutstandingFit, PyDisposal, PyDisposalFit, PyFrequencySeverity,
+        PyFrequencySeverityFit, PyTrended, average_case, berquist_sherman_adjust,
+        case_adequacy_adjust, case_development_factor, exponential_trend, pooled_trend,
+        ratio_column, settlement_rate_adjust, trend_by_age,
     };
     #[pymodule_export]
     use super::risk::{

@@ -498,6 +498,10 @@ what it is aiming for by v1.0.
     the user's decision of 2026-10-27 (`AnnualReading`; decision 18's rule
     kept as `LnLinear`); the simulated book converts within 0.2% at every
     age, against 31% off at 12 months before.
+  - The methods on claim counts (`reserving-v02.md`, decisions 33 and 34,
+    #554, #555): frequency-severity, disposal rates, case outstanding
+    development and the Berquist-Sherman adjustments, at parity with
+    Friedland's chapters 11 to 13 and chainladder-python.
   - Mack's tests of the chain ladder's assumptions (`reserving-v02.md`,
     decision 27; branch `claude/mack-assumption-tests`, issue #551, in
     Rust, Python and R): the calendar-year effect test and the

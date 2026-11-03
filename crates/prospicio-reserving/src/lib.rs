@@ -114,10 +114,9 @@ pub use expected_loss::{
 };
 pub use frame::TriangleFrame;
 pub use frequency_severity::{
-    CaseOutstanding, CaseOutstandingFit, CountProjection, Disposal, DisposalFit,
-    FrequencySeverity, FrequencySeverityFit, Selection, SeverityProjection, TrendFit, Trended,
-    UltimateCounts, case_development_factor, exponential_trend, pooled_trend, ratio_column,
-    trend_by_age,
+    CaseOutstanding, CaseOutstandingFit, CountProjection, Disposal, DisposalFit, FrequencySeverity,
+    FrequencySeverityFit, Selection, SeverityProjection, TrendFit, Trended, UltimateCounts,
+    case_development_factor, exponential_trend, pooled_trend, ratio_column, trend_by_age,
 };
 #[cfg(feature = "io")]
 pub use io::FileLayout;

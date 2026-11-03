@@ -1,0 +1,2 @@
+* **Creation**: [Friedland's chapters 11 to 13 reproduce within the book's rounding](/findings/friedland-count-methods.md), from the methods on claim counts (branch claude/friedland-counts): rounded and unrounded selections by exhibit, the $000 data, a payment left out of chapter 12's Exhibit II and chainladder-python's berqsherm sample.
+* **Update**: [Friedland's Estimating Unpaid Claims Using Basic Techniques](/references/friedland-estimating-unpaid-claims.md), chapters 11 to 13 are no longer listed as not in prospicio (branch claude/friedland-counts).
