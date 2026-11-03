@@ -39,6 +39,10 @@ use crate::triangle::{Label, Segment, Triangle};
 /// beta_d ~ N(0, development_sd^2)  for d = 2, ..., m
 /// ```
 ///
+/// (or `beta_d ~ N(mean_d, sd_d^2)` under a [`PatternPrior`], such as an
+/// industry pattern, with
+/// [`fit_with_pattern_prior`](Self::fit_with_pattern_prior), decision 28)
+///
 /// with `phi` the chain ladder's Pearson scale, plugged in as in
 /// [`BayesOdp`](super::BayesOdp). The gamma prior is on the origin's
 /// expected ultimate, so `apriori` is the expected ultimate loss ratio and
@@ -155,7 +159,9 @@ pub struct BayesBfNormalised {
     /// flat prior on `log U_w`, the Bayesian chain ladder.
     pub cv: f64,
     /// Standard deviation of the normal prior on each `beta_d` (the log
-    /// ratio of the share at age `d` to the first age's), centred on 0.
+    /// ratio of the share at age `d` to the first age's), centred on 0;
+    /// unused by [`fit_with_pattern_prior`](Self::fit_with_pattern_prior),
+    /// whose [`PatternPrior`] gives each age its own mean and sd.
     pub development_sd: f64,
     /// Process error on each simulated future increment, as in the ODP
     /// bootstrap and [`BayesOdp`](super::BayesOdp).

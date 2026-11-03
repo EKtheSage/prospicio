@@ -272,6 +272,14 @@ what it is aiming for by v1.0.
     the triangle's newest, with each simulation's development pattern for
     the emergence by month; in Rust, Python (`fit.new_year`) and R
     (`bayes_new_year()`).
+  - An industry prior for the normalised Bayesian BF from other
+    companies' triangles (`reserving-bayes.md` decision 28, #604):
+    `IndustryPrior::from_triangles` estimates the mean ultimate loss
+    ratio, its spread between and within companies and a pattern prior
+    from the companies' chain ladders, with a report and a small-panel
+    warning, and `BayesBfNormalised::fit_with_pattern_prior` takes the
+    pattern prior; in Rust, Python (`IndustryPrior`, `PatternPrior`) and
+    R (`industry_prior()`, `bayes_bf_industry()`). No data ships.
   - Meyers' CAY, `MeyersModel::Cay` (`reserving-bayes.md`, PR 5): CRC
     with the previous origin's residual at the same age in each mean, at
     parity with his own `CAY.R` Stan code and his printed results on

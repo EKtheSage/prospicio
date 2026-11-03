@@ -30,9 +30,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use prospicio_reserving::{
-    DevelopmentColumn, Grain, IndustryPrior, IndustryPriorSettings, Long, Month, Triangle,
-};
+use prospicio_reserving::{DevelopmentColumn, Grain, IndustryPriorSettings, Long, Month, Triangle};
 
 /// The calibration study's panel (cas-schedule-p 2026.6.13).
 const PANEL_SHA256: &str = "075b392525b26c505c251ea1d94f1641b4c6ab4216ee085655e5ec678fff59d2";

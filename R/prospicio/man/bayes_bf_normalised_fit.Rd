@@ -22,7 +22,8 @@ bayes_bf_normalised(
   seed = 0,
   target_accept = 0.95,
   max_depth = 10,
-  common_cv = 0
+  common_cv = 0,
+  pattern_prior = NULL
 )
 }
 \arguments{
@@ -44,7 +45,7 @@ unit of exposure: the expected ultimate loss ratio.}
 
 \item{development_sd}{Standard deviation of the normal prior on each
 \code{beta[d]} (the log ratio of the share at age \code{d} to the first age's),
-centred on 0.}
+centred on 0; ignored with a \code{pattern_prior}.}
 
 \item{process}{Process error on each simulated future increment:
 \code{"gamma"} (mean \code{mu}, variance \code{phi * mu}) or \code{"none"} for parameter
@@ -63,6 +64,11 @@ whole number.}
 adaptation.}
 
 \item{max_depth}{Largest NUTS tree depth.}
+
+\item{pattern_prior}{A \code{\link[=pattern_prior]{pattern_prior()}} on the triangle's ages, a normal
+prior on each \code{beta[d]} with its own mean and standard deviation in
+place of \code{development_sd} (decision 28; \code{\link[=industry_prior]{industry_prior()}} estimates
+one), or \code{NULL}.}
 }
 \value{
 A \code{bayes_bf_normalised_fit} object.
