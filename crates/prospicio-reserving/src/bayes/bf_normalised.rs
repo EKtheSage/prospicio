@@ -702,7 +702,10 @@ impl BayesBfNormalisedFit {
         let model = &self.model;
         if model.shape == 0.0 {
             return Err(Error::Bayes(
-                "a new year needs a finite cv: under a flat prior (cv infinite) a new origin's                  expected ultimate has no proper predictive, since nothing in the model ties it                  to the triangle's origins. Set a finite cv, and common_cv to let the data set                  the new year's level"
+                "a new year needs a finite cv: under a flat prior (cv infinite) a new origin's \
+                 expected ultimate has no proper predictive, since nothing in the model ties it \
+                 to the triangle's origins. Set a finite cv, and common_cv to let the data set \
+                 the new year's level"
                     .into(),
             ));
         }
@@ -2680,7 +2683,10 @@ mod tests {
             ..quick(3)
         });
         let e = flat.new_year(premium, 10, 0).unwrap_err().to_string();
-        assert!(e.contains("finite cv") && e.contains("common_cv"), "{e}");
+        assert!(
+            e.contains("finite cv") && e.contains("common_cv") && !e.contains("  "),
+            "{e}"
+        );
     }
 
     /// Decision 27: with the common multiplier, the new year's level is

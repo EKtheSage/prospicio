@@ -3376,7 +3376,10 @@ distributions the models imply):
 * *Pooling.* Eight origins of loss ratio 0.6 differing only by a fixed
   +-10% wobble, `apriori` 0.9, `cv` 0.2, `common_cv` 10: the origins'
   posterior loss ratios average 0.598, the new year's mean is 0.601 and its
-  cv 0.213 (at least `cv`).
+  cv 0.213 (at least `cv`). This is the issue's first criterion ("a flat
+  prior and many identical origins") read as flat on the level: a flat `cv`
+  has no proper new-year predictive (above), so the level is left vague
+  through `common_cv` 10 and the origin-to-origin `cv` is held at 0.2.
 * *Meyers.* On group 353 (CRC and CSR on paid, CAY on incurred), the new
   year's log loss ratio has the mean and variance the posterior implies
   (the t's variance `(n - 1) / (n - 3)` times its scale squared, plus
@@ -3686,4 +3689,6 @@ are settled.
     change no density, so every parity and conformance result stands, and
     a user who wants the data to set the level has `common_cv`; (b) and
     (d) are follow-ups if the spread itself should be estimated with the
-    fit.
+    fit. Under (c) a triangle of exactly three origins gives the level a
+    Student t with 2 degrees of freedom, whose variance is infinite; the
+    user may prefer a minimum of four origins.

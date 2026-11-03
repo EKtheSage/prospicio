@@ -78,8 +78,11 @@ def test_without_a_common_level_the_new_year_is_the_prior(tri):
     # Each simulation's pattern ends at 1, and the monthly emergence pairs up.
     draws = year.patterns.pattern_draws()
     assert len(draws) == 40_000 and all(row[-1] == 1.0 for row in draws[:100])
-    monthly = year.patterns.monthly(120, monotone="running_max")
-    assert len(monthly) == 40_000 and len(monthly[0]) == 120 and monthly[0][-1] == 1.0
+    # The monthly reading costs milliseconds a draw (knowledge/findings/
+    # pattern-draws-monthly-cost.md), so it is checked on fewer simulations.
+    small = fit.new_year(5000.0, n_sims=300, seed=3)
+    monthly = small.patterns.monthly(120, monotone="running_max")
+    assert len(monthly) == 300 and len(monthly[0]) == 120 and monthly[0][-1] == 1.0
 
 
 def test_a_common_level_follows_the_data(tri):
