@@ -78,6 +78,15 @@ the code change.
   `#'` doc lines (keep `#' @export`): the order is the
   `extendr_module!` order, impl by impl. The one known difference is
   the file's `ChainLadderFit$tail <-function()`, missing a space.
+  On Windows (2026-11-02) the generated free functions come in another
+  order than the file's (the `hawkes_*` functions first), so diff only
+  the new impl blocks and insert them by hand at their module place.
+* maturin 1.16.0's `--generate-stubs` on Windows (a uv venv, 2026-11-02)
+  writes a stub unlike the committed one: an `__all__` line, blank
+  docstring lines without their indentation and a newline escape in a
+  docstring doubled. Keep the committed stub and add only the new classes' hunks
+  (`git diff -w` shows them), with blank docstring lines indented like the
+  rest; CI's docs job checks the result.
 * `cargo clippy -p prospicio-r` panics in extendr-api's build script
   (`DEP_R_R_VERSION_MAJOR`: `NotPresent`) when the target directory
   holds an `extendr-ffi` build from a run without R: setting `R_HOME`

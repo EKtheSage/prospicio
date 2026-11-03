@@ -39,6 +39,10 @@ Found while writing `examples/ils_deal_analysis.ipynb` (a collateralised
   makes the fund call capital from the start (65.8m called in total over
   the term on a 36.0m premium, recycled as losses are paid) and gives a
   median IRR of 18% and a mean MOIC of 1.12 over 10,000 simulations.
+  Those three figures were measured under a hand-written earned pattern
+  that fell after month 24; with `monthly_patterns` (#601) they are 21.2m,
+  40% and 1.37 at 2,000 simulations
+  ([the monthly patterns of the ILS notebook](ils-deal-analysis-monthly-patterns.md)).
 * `DealBook.cashflows()` searches for the IRR between -95% and 100% by
   default, and a simulation whose IRR is above 100% comes back as NaN,
   like flows with no root (#670). At 10,000 simulations 42 flat and 6

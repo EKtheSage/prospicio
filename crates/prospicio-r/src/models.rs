@@ -2796,6 +2796,459 @@ fn conformal_plus_rust(
     Ok(intervals_list(i))
 }
 
+/// A zero-inflated or hurdle count model (`docs/design/models.md`,
+/// "Zero-inflated and hurdle counts"): the count part on `x`, the zero part
+/// on `z`; `model` "zeroinfl" or "hurdle", `dist` "poisson" or "negbin",
+/// `zero_link` "logit", "probit" or "cloglog".
+#[allow(clippy::too_many_arguments)]
+#[extendr]
+fn zero_fit_design(
+    x: &[f64],
+    names: Vec<String>,
+    y: &[f64],
+    offset: &[f64],
+    weights: &[f64],
+    z: &[f64],
+    zero_names: Vec<String>,
+    zero_offset: &[f64],
+    model: &str,
+    dist: &str,
+    zero_link: &str,
+) -> Result<ZeroModel> {
+    use prospicio_glm::zero::{CountDistribution, Hurdle, ZeroInflated};
+    let count = match dist {
+        "poisson" => CountDistribution::Poisson,
+        "negbin" => CountDistribution::NegativeBinomial,
+        other => {
+            return Err(Error::Other(format!(
+                "dist must be poisson or negbin, got {other}"
+            )));
+        }
+    };
+    let link = match zero_link {
+        "logit" => Link::Logit,
+        "probit" => Link::Probit,
+        "cloglog" => Link::Cloglog,
+        other => {
+            return Err(Error::Other(format!(
+                "link must be logit, probit or cloglog, got {other}"
+            )));
+        }
+    };
+    let xd = design(x, names, offset, weights)?;
+    let zd = design(z, zero_names, zero_offset, &[])?;
+    let inner = match model {
+        "zeroinfl" => ZeroInflated::new(count)
+            .zero_link(link)
+            .fit_parts(&xd, &zd, y),
+        "hurdle" => Hurdle::new(count).zero_link(link).fit_parts(&xd, &zd, y),
+        other => {
+            return Err(Error::Other(format!(
+                "model must be zeroinfl or hurdle, got {other}"
+            )));
+        }
+    }
+    .map_err(to_r)?;
+    Ok(ZeroModel { inner })
+}
+
+/// Each row's log-likelihood under a plain Poisson (`theta` NA) or
+/// negative binomial count model with means `mu`.
+#[extendr]
+fn count_log_likelihoods_rust(y: &[f64], mu: &[f64], theta: f64) -> Result<Vec<f64>> {
+    prospicio_glm::zero::count_log_likelihoods(y, mu, (!theta.is_nan()).then_some(theta))
+        .map_err(to_r)
+}
+
+/// Vuong's test: `(raw, aic, bic)` statistics then their p-values.
+#[extendr]
+fn vuong_rust(a: &[f64], b: &[f64], k_a: f64, k_b: f64) -> Result<Vec<f64>> {
+    let v =
+        prospicio_glm::zero::vuong(a, b, whole(k_a, "k1")? as usize, whole(k_b, "k2")? as usize)
+            .map_err(to_r)?;
+    Ok(vec![
+        v.raw.statistic,
+        v.aic.statistic,
+        v.bic.statistic,
+        v.raw.p_value,
+        v.aic.p_value,
+        v.bic.p_value,
+    ])
+}
+
+/// A fitted zero-inflated or hurdle model.
+#[extendr]
+pub(crate) struct ZeroModel {
+    inner: prospicio_glm::zero::TwoPartFit,
+}
+
+#[extendr]
+impl ZeroModel {
+    fn kind(&self) -> &'static str {
+        self.inner.kind().name()
+    }
+
+    fn dist(&self) -> &'static str {
+        match self.inner.count_distribution() {
+            prospicio_glm::zero::CountDistribution::Poisson => "poisson",
+            prospicio_glm::zero::CountDistribution::NegativeBinomial => "negbin",
+        }
+    }
+
+    fn count_names(&self) -> Vec<String> {
+        self.inner.count_names().to_vec()
+    }
+
+    fn count_coefficients(&self) -> Vec<f64> {
+        self.inner.count_coefficients().to_vec()
+    }
+
+    fn count_std_errors(&self) -> Vec<f64> {
+        self.inner.count_standard_errors()
+    }
+
+    fn zero_names(&self) -> Vec<String> {
+        self.inner.zero_names().to_vec()
+    }
+
+    fn zero_coefficients(&self) -> Vec<f64> {
+        self.inner.zero_coefficients().to_vec()
+    }
+
+    fn zero_std_errors(&self) -> Vec<f64> {
+        self.inner.zero_standard_errors()
+    }
+
+    fn theta(&self) -> f64 {
+        self.inner.theta().unwrap_or(f64::NAN)
+    }
+
+    fn se_log_theta(&self) -> f64 {
+        self.inner.se_log_theta().unwrap_or(f64::NAN)
+    }
+
+    fn covariance(&self) -> Vec<f64> {
+        self.inner.covariance().to_vec()
+    }
+
+    fn n_parameters(&self) -> f64 {
+        self.inner.n_parameters() as f64
+    }
+
+    fn loglik(&self) -> f64 {
+        self.inner.log_likelihood()
+    }
+
+    fn log_likelihoods(&self) -> Vec<f64> {
+        self.inner.log_likelihoods().to_vec()
+    }
+
+    fn aic(&self) -> f64 {
+        self.inner.aic()
+    }
+
+    fn bic(&self) -> f64 {
+        self.inner.bic()
+    }
+
+    fn iterations(&self) -> f64 {
+        self.inner.iterations() as f64
+    }
+
+    fn fitted(&self) -> Vec<f64> {
+        self.inner.fitted().to_vec()
+    }
+
+    /// `type` "response", "zero" or "prob" (`max` + 1 columns, column-major).
+    #[allow(clippy::too_many_arguments)]
+    fn predict(
+        &self,
+        x: &[f64],
+        names: Vec<String>,
+        offset: &[f64],
+        z: &[f64],
+        zero_names: Vec<String>,
+        zero_offset: &[f64],
+        what: &str,
+        max: f64,
+    ) -> Result<Vec<f64>> {
+        let xd = design(x, names, offset, &[])?;
+        let zd = design(z, zero_names, zero_offset, &[])?;
+        match what {
+            "response" => self.inner.predict_parts(&xd, &zd).map_err(to_r),
+            "zero" => self.inner.prob_zero_parts(&xd, &zd).map_err(to_r),
+            "prob" => {
+                let rows = self
+                    .inner
+                    .probabilities_parts(&xd, &zd, whole(max, "max")? as usize)
+                    .map_err(to_r)?;
+                let k = rows.first().map_or(0, Vec::len);
+                Ok((0..k)
+                    .flat_map(|j| rows.iter().map(move |r| r[j]))
+                    .collect())
+            }
+            other => Err(Error::Other(format!(
+                "type must be response, zero or prob, got {other}"
+            ))),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn predict_distribution(
+        &self,
+        x: &[f64],
+        names: Vec<String>,
+        offset: &[f64],
+        z: &[f64],
+        zero_names: Vec<String>,
+        zero_offset: &[f64],
+        n_sims: f64,
+        seed: f64,
+    ) -> Result<PredictiveDistribution> {
+        let xd = design(x, names, offset, &[])?;
+        let zd = design(z, zero_names, zero_offset, &[])?;
+        let inner = self
+            .inner
+            .predict_distribution_parts(
+                &xd,
+                &zd,
+                whole(n_sims, "n_sims")? as usize,
+                whole(seed, "seed")?,
+            )
+            .map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+}
+
+fn bandwidth(name: &str) -> Result<prospicio_glm::quantile::Bandwidth> {
+    use prospicio_glm::quantile::Bandwidth;
+    match name {
+        "hall_sheather" => Ok(Bandwidth::HallSheather),
+        "bofinger" => Ok(Bandwidth::Bofinger),
+        other => Err(Error::Other(format!(
+            "bandwidth must be hall_sheather or bofinger, got {other}"
+        ))),
+    }
+}
+
+/// Linear quantile regressions at each of `taus` (`docs/design/models.md`,
+/// "Quantile and expectile regression").
+#[allow(clippy::too_many_arguments)]
+#[extendr]
+fn quantreg_fit_design(
+    x: &[f64],
+    names: Vec<String>,
+    y: &[f64],
+    offset: &[f64],
+    weights: &[f64],
+    taus: &[f64],
+    bandwidth_name: &str,
+) -> Result<QuantregFits> {
+    let d = design(x, names, offset, weights)?;
+    let spec =
+        prospicio_glm::quantile::QuantileRegression::new(0.5).bandwidth(bandwidth(bandwidth_name)?);
+    let inner = spec.fit_many(taus, &d, y).map_err(to_r)?;
+    Ok(QuantregFits { inner })
+}
+
+/// The paired bootstrap covariance of a quantile regression's
+/// coefficients, column-major.
+#[allow(clippy::too_many_arguments)]
+#[extendr]
+fn quantreg_bootstrap_rust(
+    x: &[f64],
+    names: Vec<String>,
+    y: &[f64],
+    offset: &[f64],
+    weights: &[f64],
+    tau: f64,
+    n_boot: f64,
+    seed: f64,
+) -> Result<Vec<f64>> {
+    let d = design(x, names, offset, weights)?;
+    prospicio_glm::quantile::QuantileRegression::new(tau)
+        .bootstrap_covariance(
+            &d,
+            y,
+            whole(n_boot, "n_boot")? as usize,
+            whole(seed, "seed")?,
+        )
+        .map_err(to_r)
+}
+
+/// Quantile regressions at several `tau`.
+#[extendr]
+pub(crate) struct QuantregFits {
+    inner: prospicio_glm::quantile::QuantileFits,
+}
+
+#[extendr]
+impl QuantregFits {
+    fn taus(&self) -> Vec<f64> {
+        self.inner.taus()
+    }
+
+    fn names(&self) -> Vec<String> {
+        self.inner.fits()[0].names().to_vec()
+    }
+
+    /// Coefficients, one column per `tau`, column-major.
+    fn coefficients(&self) -> Vec<f64> {
+        self.inner
+            .fits()
+            .iter()
+            .flat_map(|f| f.coefficients().to_vec())
+            .collect()
+    }
+
+    fn std_errors(&self) -> Vec<f64> {
+        self.inner
+            .fits()
+            .iter()
+            .flat_map(|f| f.standard_errors())
+            .collect()
+    }
+
+    /// The covariance of fit `k` (from 1), column-major.
+    fn covariance(&self, k: f64) -> Result<Vec<f64>> {
+        Ok(self.fit(k)?.covariance().to_vec())
+    }
+
+    fn objectives(&self) -> Vec<f64> {
+        self.inner.fits().iter().map(|f| f.objective()).collect()
+    }
+
+    fn bandwidths(&self) -> Vec<f64> {
+        self.inner.fits().iter().map(|f| f.bandwidth()).collect()
+    }
+
+    /// Predictions, rows by `tau`, column-major; sorted across `tau` with
+    /// `rearrange`.
+    fn predict(
+        &self,
+        x: &[f64],
+        names: Vec<String>,
+        offset: &[f64],
+        rearrange: bool,
+    ) -> Result<Vec<f64>> {
+        let d = design(x, names, offset, &[])?;
+        let rows = self.inner.predict(&d, rearrange).map_err(to_r)?;
+        let k = self.inner.fits().len();
+        Ok((0..k)
+            .flat_map(|j| rows.iter().map(move |r| r[j]))
+            .collect())
+    }
+
+    fn predict_distribution(
+        &self,
+        k: f64,
+        x: &[f64],
+        names: Vec<String>,
+        offset: &[f64],
+        n_sims: f64,
+        seed: f64,
+    ) -> Result<PredictiveDistribution> {
+        let d = design(x, names, offset, &[])?;
+        let inner = self
+            .fit(k)?
+            .predict_distribution(&d, whole(n_sims, "n_sims")? as usize, whole(seed, "seed")?)
+            .map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+}
+
+impl QuantregFits {
+    fn fit(&self, k: f64) -> Result<&prospicio_glm::quantile::QuantileFit> {
+        let k = whole(k, "k")? as usize;
+        self.inner
+            .fits()
+            .get(k.wrapping_sub(1))
+            .ok_or_else(|| Error::Other(format!("no fit {k}")))
+    }
+}
+
+/// A linear expectile regression; `penalty` column-major `p x p`, empty for
+/// none.
+#[allow(clippy::too_many_arguments)]
+#[extendr]
+fn expectreg_fit_design(
+    x: &[f64],
+    names: Vec<String>,
+    y: &[f64],
+    offset: &[f64],
+    weights: &[f64],
+    tau: f64,
+    lambda: f64,
+    penalty: &[f64],
+) -> Result<ExpectregModel> {
+    let d = design(x, names, offset, weights)?;
+    let mut spec = prospicio_glm::quantile::ExpectileRegression::new(tau);
+    if !penalty.is_empty() {
+        // Column-major and symmetric: the same as row-major.
+        spec = spec.penalty(lambda, penalty.to_vec());
+    }
+    let inner = spec.fit(&d, y).map_err(to_r)?;
+    Ok(ExpectregModel { inner })
+}
+
+/// A fitted expectile regression.
+#[extendr]
+pub(crate) struct ExpectregModel {
+    inner: prospicio_glm::quantile::ExpectileFit,
+}
+
+#[extendr]
+impl ExpectregModel {
+    fn tau(&self) -> f64 {
+        self.inner.tau()
+    }
+
+    fn names(&self) -> Vec<String> {
+        self.inner.names().to_vec()
+    }
+
+    fn coefficients(&self) -> Vec<f64> {
+        self.inner.coefficients().to_vec()
+    }
+
+    fn std_errors(&self) -> Vec<f64> {
+        self.inner.standard_errors()
+    }
+
+    fn covariance(&self) -> Vec<f64> {
+        self.inner.covariance().to_vec()
+    }
+
+    fn objective(&self) -> f64 {
+        self.inner.objective()
+    }
+
+    fn iterations(&self) -> f64 {
+        self.inner.iterations() as f64
+    }
+
+    fn predict(&self, x: &[f64], names: Vec<String>, offset: &[f64]) -> Result<Vec<f64>> {
+        let d = design(x, names, offset, &[])?;
+        self.inner.predict(&d).map_err(to_r)
+    }
+
+    fn predict_distribution(
+        &self,
+        x: &[f64],
+        names: Vec<String>,
+        offset: &[f64],
+        n_sims: f64,
+        seed: f64,
+    ) -> Result<PredictiveDistribution> {
+        let d = design(x, names, offset, &[])?;
+        let inner = self
+            .inner
+            .predict_distribution(&d, whole(n_sims, "n_sims")? as usize, whole(seed, "seed")?)
+            .map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+}
+
 extendr_module! {
     mod models;
     fn conformal_split_rust;
@@ -2863,4 +3316,13 @@ extendr_module! {
     impl BayesGlmmModel;
     fn dglm_fit_design;
     impl DglmModel;
+    fn zero_fit_design;
+    fn count_log_likelihoods_rust;
+    fn vuong_rust;
+    impl ZeroModel;
+    fn quantreg_fit_design;
+    fn quantreg_bootstrap_rust;
+    impl QuantregFits;
+    fn expectreg_fit_design;
+    impl ExpectregModel;
 }
