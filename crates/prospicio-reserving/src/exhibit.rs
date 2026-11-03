@@ -361,9 +361,11 @@ impl UltimateExhibit {
     }
 
     /// The exhibit with one more method, `name`, whose ultimates are those
-    /// of a fit of one segment: the chain ladder, Mack, an expected-loss
-    /// method, Clark, a bootstrap or a Bayesian model
-    /// ([`ReserveFit::ultimate`], the mean for the stochastic ones).
+    /// of a fit of one segment, [`ReserveFit::ultimate`]: the method's own
+    /// for the chain ladder, Mack, the expected-loss methods and Clark. For
+    /// a bootstrap or a Bayesian model that is the chain ladder's point
+    /// projection, not the mean of the simulations or of the posterior:
+    /// give those means with [`with_method`](Self::with_method).
     ///
     /// Errors: a fit whose origins are not the exhibit's, and those of
     /// [`with_method`](Self::with_method).

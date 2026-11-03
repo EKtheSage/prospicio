@@ -4930,8 +4930,10 @@ weights several methods' ultimates by origin.
    and paid claims to date (either may be missing) and each named method's
    ultimate, with `ibnr` (ultimate less reported), `unpaid` (ultimate less
    paid), `case_outstanding` and long tables; `with_fit` adds any
-   `ReserveFit` of one segment whose origins are the exhibit's, and
-   `with_method` a vector of ultimates. `UltimateExhibit::select(&UltimateSelection)`
+   `ReserveFit` of one segment whose origins are the exhibit's (its
+   `ReserveFit::ultimate`, which for a bootstrap or a Bayesian model is the
+   chain ladder's point projection, so their mean ultimates go in with
+   `with_method`), and `with_method` a vector of ultimates. `UltimateExhibit::select(&UltimateSelection)`
    returns `SelectedUltimates`: the selected ultimate per origin, every
    method's weight, IBNR, unpaid and the totals.
 2. **Weights.** `MethodWeights::ByOrigin` (each method's weight per
@@ -5001,7 +5003,9 @@ Open decisions, each built with the default named:
     larger where they differ. Default as built; the alternative is to
     refuse columns with different latest ages.
 11. **Python fits by duck typing.** `UltimateExhibit.with_method` takes any
-    object with `origins` and `ultimate` (a fit) or a sequence of numbers;
+    object with `origins` and `ultimate` (a fit) or a sequence of numbers,
+    and refuses an object with `origins` but no `ultimate` (the bootstrap
+    and Bayesian fits, whose mean ultimates are given as numbers);
     R takes a fit with `@origins` and `@ultimate` or a numeric vector.
     Default as built; the alternative is a closed list of fit classes.
 12. **Exhibits as tables, not formatted reports.** The exhibits return

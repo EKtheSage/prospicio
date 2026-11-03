@@ -10377,7 +10377,7 @@ class DevelopmentExhibit:
     >>> round(ex.cdf[0], 4), ex.tail
     (1.8563, 1.05)
     """
-    def __new__(cls, /, triangle: Triangle, column: str, selection: ChainLadder | None = None, averages: Any | None = None) -> DevelopmentExhibit: ...
+    def __new__(cls, /, triangle: Triangle, column: str, selection: ChainLadder |None = None, averages: Any |None = None) -> DevelopmentExhibit: ...
     def __repr__(self, /) -> str: ...
     @property
     def ages(self, /) -> list[int]:
@@ -28192,7 +28192,7 @@ class SelectedUltimates:
         Each origin's age in months at the valuation date.
         """
     @property
-    def ibnr(self, /) -> list[float] | None:
+    def ibnr(self, /) -> list[float] |None:
         """
         The selected ultimate less reported, or ``None`` without reported
         claims.
@@ -28215,7 +28215,7 @@ class SelectedUltimates:
             Indexed by origin; a dict of lists without pandas.
         """
     @property
-    def total_ibnr(self, /) -> float | None:
+    def total_ibnr(self, /) -> float |None:
         """
         The total IBNR, or ``None`` without reported claims.
         """
@@ -28225,7 +28225,7 @@ class SelectedUltimates:
         The total selected ultimate.
         """
     @property
-    def total_unpaid(self, /) -> float | None:
+    def total_unpaid(self, /) -> float |None:
         """
         The total unpaid, or ``None`` without paid claims.
         """
@@ -28235,7 +28235,7 @@ class SelectedUltimates:
         The selected ultimate per origin.
         """
     @property
-    def unpaid(self, /) -> list[float] | None:
+    def unpaid(self, /) -> list[float] |None:
         """
         The selected ultimate less paid, or ``None`` without paid claims.
         """
@@ -31873,7 +31873,7 @@ class UltimateExhibit:
     >>> sel.ultimate, sel.ibnr
     ([40300.0, 33491.0], [8568.0, 14859.0])
     """
-    def __new__(cls, /, origin: Any, age: Any, reported: Any | None = None, paid: Any | None = None, origin_grain: str = "Y") -> UltimateExhibit: ...
+    def __new__(cls, /, origin: Any, age: Any, reported: Any |None = None, paid: Any |None = None, origin_grain: str = "Y") -> UltimateExhibit: ...
     def __repr__(self, /) -> str: ...
     @property
     def ages(self, /) -> list[int]:
@@ -31881,12 +31881,12 @@ class UltimateExhibit:
         Each origin's age in months at the valuation date.
         """
     @property
-    def case_outstanding(self, /) -> list[float] | None:
+    def case_outstanding(self, /) -> list[float] |None:
         """
         Reported less paid, or ``None`` unless both are given.
         """
     @staticmethod
-    def from_triangle(triangle: Triangle, reported: str | None = None, paid: str | None = None) -> UltimateExhibit:
+    def from_triangle(triangle: Triangle, reported: str |None = None, paid: str |None = None) -> UltimateExhibit:
         """
         The exhibit of a single-segment triangle's latest reported and paid
         values (either may be left out); each origin's age is its latest age
@@ -31918,23 +31918,23 @@ class UltimateExhibit:
         Origin labels, oldest first.
         """
     @property
-    def paid(self, /) -> list[float] | None:
+    def paid(self, /) -> list[float] |None:
         """
         Paid claims to date, or ``None``.
         """
     @property
-    def reported(self, /) -> list[float] | None:
+    def reported(self, /) -> list[float] |None:
         """
         Reported claims to date, or ``None``.
         """
-    def select(self, /, weights: Any | None = None, by_age: Any | None = None) -> SelectedUltimates:
+    def select(self, /, weights: Any |None = None, by_age: Any |None = None) -> SelectedUltimates:
         """
         The selected ultimate per origin, a weighting of the methods'
         ultimates, with its IBNR and unpaid.
         
         Each origin's weights must be at least 0 and sum to 1 (within
-        1e-9); they are not rescaled, as chainladder-python's
-        ``VotingChainladder`` rescales them. A method left out has weight 0,
+        1e-9); they are not rescaled, unlike chainladder-python's
+        ``VotingChainladder``, which divides by their sum. A method left out has weight 0,
         and a method with weight 0 may have no ultimate (``nan``) there.
         
         Parameters
@@ -31995,10 +31995,11 @@ class UltimateExhibit:
         ----------
         name : str
         ultimate : fit or array-like of float
-            A fit of one segment (any fit with ``origins`` and ``ultimate``,
-            such as a ``ChainLadderFit``, ``ExpectedLossFit`` or
-            ``BayesOdpFit``), whose origins must be the exhibit's, or the
-            ultimate per origin, ``nan`` where the method gives none.
+            A fit of one segment with ``origins`` and ``ultimate`` (a
+            ``ChainLadderFit``, ``MackFit``, ``ExpectedLossFit``, ``CapeCodFit``
+            or ``ClarkFit``), whose origins must be the exhibit's, or the
+            ultimate per origin, ``nan`` where the method gives none: for a
+            bootstrap or a Bayesian fit, its mean ultimate per origin.
         
         Returns
         -------
@@ -32009,6 +32010,8 @@ class UltimateExhibit:
         ValueError
             If the name is empty or already used, the fit's origins are not
             the exhibit's, or the number of values is wrong.
+        TypeError
+            If a fit (an object with ``origins``) has no ``ultimate``.
         """
 
 @final

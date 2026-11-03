@@ -225,3 +225,17 @@ def test_fit_with_other_origins_is_refused(us):
         ex.with_method("cl", ChainLadder().fit(other, "paid"))
     with pytest.raises(ValueError, match="triangle"):
         select_ultimates({"cl": ChainLadder().fit(us, "paid")}, "cl")
+
+
+def test_fit_without_ultimate_is_refused(us):
+    # The bootstrap and Bayesian fits have origins but no point ultimate:
+    # their mean ultimates go in as numbers.
+    ex = UltimateExhibit.from_triangle(us, paid="paid")
+
+    class NoUltimate:
+        origins = ex.origins
+
+    with pytest.raises(TypeError, match="no ultimate per origin"):
+        ex.with_method("bayes", NoUltimate())
+    means = [1.0] * len(ex.origins)
+    assert ex.with_method("bayes", means).ultimate("bayes") == means

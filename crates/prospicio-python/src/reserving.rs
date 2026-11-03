@@ -18240,10 +18240,11 @@ impl PyUltimateExhibit {
     /// ----------
     /// name : str
     /// ultimate : fit or array-like of float
-    ///     A fit of one segment (any fit with ``origins`` and ``ultimate``,
-    ///     such as a ``ChainLadderFit``, ``ExpectedLossFit`` or
-    ///     ``BayesOdpFit``), whose origins must be the exhibit's, or the
-    ///     ultimate per origin, ``nan`` where the method gives none.
+    ///     A fit of one segment with ``origins`` and ``ultimate`` (a
+    ///     ``ChainLadderFit``, ``MackFit``, ``ExpectedLossFit``, ``CapeCodFit``
+    ///     or ``ClarkFit``), whose origins must be the exhibit's, or the
+    ///     ultimate per origin, ``nan`` where the method gives none: for a
+    ///     bootstrap or a Bayesian fit, its mean ultimate per origin.
     ///
     /// Returns
     /// -------
@@ -18254,8 +18255,17 @@ impl PyUltimateExhibit {
     /// ValueError
     ///     If the name is empty or already used, the fit's origins are not
     ///     the exhibit's, or the number of values is wrong.
+    /// TypeError
+    ///     If a fit (an object with ``origins``) has no ``ultimate``.
     fn with_method(&self, name: &str, ultimate: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let values: Vec<f64> = if ultimate.hasattr("origins")? && ultimate.hasattr("ultimate")? {
+        let is_fit = ultimate.hasattr("origins")?;
+        if is_fit && !ultimate.hasattr("ultimate")? {
+            return Err(PyTypeError::new_err(format!(
+                "the fit {name:?} has no ultimate per origin; give its mean ultimate per \
+                 origin as a sequence of numbers"
+            )));
+        }
+        let values: Vec<f64> = if is_fit {
             let origins: Vec<String> = ultimate.getattr("origins")?.extract()?;
             if origins != self.origins() {
                 return Err(PyValueError::new_err(format!(
@@ -18357,8 +18367,8 @@ impl PyUltimateExhibit {
     /// ultimates, with its IBNR and unpaid.
     ///
     /// Each origin's weights must be at least 0 and sum to 1 (within
-    /// 1e-9); they are not rescaled, as chainladder-python's
-    /// ``VotingChainladder`` rescales them. A method left out has weight 0,
+    /// 1e-9); they are not rescaled, unlike chainladder-python's
+    /// ``VotingChainladder``, which divides by their sum. A method left out has weight 0,
     /// and a method with weight 0 may have no ultimate (``nan``) there.
     ///
     /// Parameters
