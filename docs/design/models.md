@@ -1225,7 +1225,8 @@ the unconstrained fits' dependence on experience falls at 7 (LightGBM) and
 
 ## ICE curves, accumulated local effects and SHAP values (#547)
 
-Status: built; items (a) to (f) proposed for the user's acceptance.
+Status: built; items (a) to (f) accepted by the user on
+2026-11-03 as built.
 
 Three local explanations beside the global ones of #355, in Python and R
 like them, on predictions only:
