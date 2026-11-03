@@ -12,98 +12,13 @@ user's machine; one file to load.
 ## What exists (prototype)
 
 `crates/prospicio-xll` builds `prospicio.xll`, a 64-bit Windows DLL that
-speaks the Excel C API (XLOPER12). Functions, all in the `prospicio`
-category of Insert Function:
-
-| Function | Returns |
-|---|---|
-| `PRO.CL(triangle, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Origin, Latest, CDF, Ultimate, Reserve per origin, and a total row |
-| `PRO.CL.LDF(triangle, [average], [tail], [selected], [kind], [weight], [pattern_ages])` | Selected age-to-age factors, one per triangle column; the last is the tail factor |
-| `PRO.CL.CDF(triangle, [average], [tail], [selected], [kind], [weight], [pattern_ages])` | Age-to-ultimate factors, one per triangle column |
-| `PRO.CL.ULTIMATE(...)`, `PRO.CL.RESERVE(...)` | One column, one row per origin |
-| `PRO.CL.FACTORS(triangle, [average], [tail], [selected], [kind], [weight], [sigma], [pattern_ages])` | Per link: LDF, CDF, Mack sigma and the factor's standard error; then the tail |
-| `PRO.MACK(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma], [pattern_ages])` | Latest, Ultimate, Reserve, Process SE, Parameter SE, Mack SE and CV per origin, and the total |
-| `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | ODP bootstrap: CL reserve, simulated mean, SD, CV and percentiles per origin, and the total |
-| `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins])` | The bootstrap's simulated reserves: one row per simulation, a column per origin and the total |
-| `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack's bootstrap (England, Verrall and Wuthrich), laid out as `PRO.ODP` |
-| `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins], [sigma])` | Its simulated reserves, laid out as `PRO.ODP.SIMS` |
-| `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma], [pattern_ages])` | Merz-Wuthrich: reserve, CDR(1) SE and run-off (Mack) SE per origin, and the total |
-| `PRO.MACK.CDR.YEARS(...)`, same arguments | The CDR SE per origin in each future calendar year (R's `CDR(k)S.E.`) |
-| `PRO.ODP.CDR(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | The ODP bootstrap's one-year view: simulated CDR mean, SD and percentiles |
-| `PRO.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack's bootstrap's one-year view, laid out as `PRO.ODP.CDR` |
-| `PRO.CLARK(triangle, [exposure], [curve], [max_age], [origins])` | Clark's growth curve: the LDF method, or Cape Cod with `exposure`; reserve and its process, parameter and total SE |
-| `PRO.CLARK.PARAMS(triangle, [exposure], [curve], [max_age])` | Its fitted omega, theta, ELR (Cape Cod), scale and observations |
-| `PRO.GLM(data, response, terms, [family], [link], [exposure], [weights], [p])` | A GLM on a table with a header row: each coefficient's estimate, SE, statistic, p-value and exp(estimate), then deviance, dispersion, log-likelihood, AIC, BIC and the degrees of freedom (decision 41) |
-| `PRO.GLM.PREDICT(data, response, terms, newdata, [family], [link], [exposure], [weights], [p])` | The fitted model's mean on each row of a table of new rows |
-| `PRO.GLM.RELATIVITIES(data, response, terms, [family], [link], [exposure], [weights], [p], [level])` | A log-link GLM's relativities: each factor level against its base, a numeric term per unit, with a confidence interval |
-| `PRO.NPV(rate, flows, [times], [unit])` | Net present value: `Σ x (1 + rate)^-t`, times in years, months, days or as Excel dates (`XNPV`); one value, or one per row of a block of simulations (decision 42) |
-| `PRO.IRR(flows, [times], [unit], [lower], [upper], [extend], [detail])` | Internal rate of return by the crate's grid search; a root outside the range named in the error; with `detail`, the roots seen and whether one lies above or below |
-| `PRO.MOIC(released, funded, [opening])` | Multiple on invested capital `1 + released / (funded + opening)`, per row |
-| `PRO.CASHFLOW(u, terms, patterns, requirement, [commission], [output], [rate], [commutation_requirement])` | A collateralised deal on each simulated loss ratio: IRR, MOIC, NPV and totals per simulation, the monthly flows, or the first simulation's accounts |
-| `PRO.PNL(values, [probs], premium, [expenses], [covers], [face], [output], [levels], [expense_at_mean])` | A book's P&L ledger over annual gross losses with the annual covers it buys (`aggregate`'s `pnl` and `xpnl`): every line with its mean, SD, CV, skewness and the scenario columns that foot; the card; or the ratios (decision 43) |
-| `PRO.YLT.STATS(years, losses, [n_years], [probabilities], [quantile], [times], [hours], [negative])` | A year loss table's annual totals: years, losses and occurrences (under an hours clause), the average annual loss, SD, CV, skewness, VaR and TVaR under a stated quantile rule (decision 44) |
-| `PRO.YLT.OEP(years, losses, [return_periods], [amounts], [n_years], [quantile], [times], [hours], [negative])` | A year loss table's occurrence and aggregate exceedance curves: occurrence and aggregate PMLs and TVaRs by return period, or the OEP and AEP at amounts (decision 44) |
-| `PRO.ELT.STATS(rates, means, [sd_independent], [sd_correlated], exposures)` | An event loss table's events a year, chance of an event, expected annual loss, SD and CV (decision 44) |
-| `PRO.ELT.OEP(rates, means, [sd_independent], [sd_correlated], exposures, [return_periods], [amounts])` | An event loss table's occurrence exceedance curve with secondary uncertainty: occurrence PMLs by return period, or the exceedance frequency and OEP at amounts (decision 44) |
-| `PRO.ALLOCATE(draws, family, parameter, [method], [r0])` | A distortion risk measure of the portfolio (TVaR, PH, Wang, dual and the others) allocated to its units from columns of draws: Euler (natural), covariance, covariance margin, proportional, marginal or Shapley, with each unit's stand-alone measure and diversification (decision 45) |
-| `PRO.ALLOCATE.TOTAL(draws, total, [method], [measure], [level])` | An amount from outside, a premium or a capital, allocated to the units by the haircut or the equal risk rule on stand-alone VaR, TVaR or EPD (decision 45) |
-| `PRO.TRI.INCREMENTAL(triangle)`, `PRO.TRI.CUMULATIVE(triangle)` | The triangle turned incremental, or an incremental one cumulative, laid out as it is |
-| `PRO.TRI.LINKRATIOS(triangle)` | Age-to-age link ratios, one column fewer than the ages |
-| `PRO.TRI.LATEST(triangle)` | Each origin's latest value, a column |
-| `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Expected loss method: exposure times the a priori loss ratio |
-| `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Bornhuetter-Ferguson |
-| `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Benktander (iterated BF) |
-| `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])` | Cape Cod (Stanard-Buhlmann) |
-| `PRO.DIAG.CL(origins, ages, latest, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | A latest diagonal (a bordereau) projected with a selected pattern by the chain ladder: Origin, Age, Latest, CDF, Ultimate, Reserve, and a total row (decision 39) |
-| `PRO.DIAG.EL(origins, ages, latest, exposure, apriori, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])`, `PRO.DIAG.BF(...)`, same arguments | The expected loss method and Bornhuetter-Ferguson on a latest diagonal: Origin, Age, Exposure, Latest, CDF, A priori, Ultimate, Reserve, and a total row |
-| `PRO.DIAG.BENKTANDER(origins, ages, latest, exposure, apriori, pattern, [iterations], [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | Benktander on a latest diagonal |
-| `PRO.DIAG.CAPECOD(origins, ages, latest, exposure, pattern, [trend], [decay], [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | Cape Cod on a latest diagonal, trended to its latest valuation |
-| `PRO.PATTERN.AVERAGE(pattern_ages, pattern, pattern_origin, [grain], [kind])` | A pattern measured on one origin basis averaged to a coarser one: Age, Percent developed and CDF for every month |
-| `PRO.VERSION()` | The prospicio version the add-in was built from |
-| `PRO.SEV.CDF(x, family, p1, p2, [p3])`, `PRO.SEV.SURVIVAL(...)` | A severity's distribution or survival function at each `x` |
-| `PRO.SEV.QUANTILE(p, family, p1, p2, [p3])` | Its quantile (VaR) at each probability |
-| `PRO.SEV.STATS(family, p1, p2, [p3])` | Its family, mean, SD and CV |
-| `PRO.LER(deductible, family, p1, p2, [p3])` | The loss elimination ratio of a deductible |
-| `PRO.PARETO.EXTRAPOLATE(from_limit, from_attachment, to_limit, to_attachment, alpha, [truncation])` | Each layer's expected loss per unit of the rated layer's, under a Pareto (R's `Pareto_Extrapolation`) |
-| `PRO.PARETO.ALPHA(limit1, attachment1, loss1, limit2, attachment2, loss2, [truncation])` | The alpha between two layers' expected losses |
-| `PRO.PARETO.ALPHA.FREQLAYER(threshold, frequency, limit, attachment, loss, [truncation])` | The alpha between a frequency above a threshold and a layer's expected loss |
-| `PRO.PARETO.ALPHA.FREQS(threshold1, frequency1, threshold2, frequency2, [truncation])` | The alpha between two frequencies |
-| `PRO.LEV(limit, family, p1, p2, [p3])` | Limited expected value `E[min(X, limit)]`, per limit |
-| `PRO.LAYER(limit, attachment, family, p1, p2, [p3])` | Expected loss to `limit` xs `attachment` per ground-up loss |
-| `PRO.LAYER.VAR(limit, attachment, family, p1, p2, [p3])` | Variance of the loss to the layer per ground-up loss |
-| `PRO.LAYER.CV(limit, attachment, family, p1, p2, [p3])` | CV of the layer loss given a loss above the attachment |
-| `PRO.ILF(limit, basic_limit, family, p1, p2, [p3])` | Increased limit factor `LEV(limit) / LEV(basic_limit)` |
-| `PRO.EXPOSURE.CURVE(x, curve, p1, [p2], [p3])` | An exposure curve's `G(x)` at each fraction `x` of the MPL |
-| `PRO.EXPOSURE.SHARE(limit, attachment, mpl, curve, p1, [p2], [p3])` | Share of a risk's expected loss in a layer; limits, attachments and MPLs broadcast |
-| `PRO.EXPOSURE.QUANTILE(p, curve, p1, [p2], [p3])` | The destruction rate (loss over MPL) at each probability |
-| `PRO.EXPOSURE.STATS(curve, p1, [p2], [p3])` | The curve's `b`, `g`, mean destruction rate and probability of a total loss |
-| `PRO.SWISSRE.C(rate)` | The Swiss Re `c` of a mean destruction rate |
-| `PRO.SWISSRE.C.LAYER(limit, attachment, mpl, share)` | The Swiss Re `c` of a layer's share |
-| `PRO.CRED.STANDARD(p, k, [kind], [cv])` | Limited fluctuation full credibility standard in claims (frequency, severity or pure premium) |
-| `PRO.CRED.Z(n, standard)` | Partial credibility by the square root rule |
-| `PRO.BUHLMANN(ratios, [weights], [estimator], [groups])` | Buhlmann-Straub: each group's weight, mean, credibility and premium |
-| `PRO.BUHLMANN.PARAMS(ratios, [weights], [estimator])` | Buhlmann-Straub structure parameters |
-| `PRO.YEARFRACTION(date)` | An Excel date on Werner and Modlin's half-month grid, as a year fraction |
-| `PRO.ONLEVEL(effective, changes, from, to, [period], [term], [applies], [given])` | Each period's on-level factor by the parallelogram method |
-| `PRO.RATELEVEL(effective, changes, from, to, [period], [term], [applies], [given])` | One period's premium by rate level, average and current levels |
-| `PRO.AVGDATE(from, to, [period], [term], [basis])` | Each period's average written or earned (accident) date, for trend lengths |
-| `PRO.TREND.FIT(times, values, [kind])` | An exponential or linear least-squares trend: annual change, R-squared |
-| `PRO.LR.EXPERIENCE(earned_premium, losses, [on_level], [premium_trend], [development], [loss_trend], [lae])` | Loss ratio method: each year's projected premium, losses and loss ratio, and the total |
-| `PRO.PP.EXPERIENCE(exposure, losses, [development], [loss_trend], [lae])` | Pure premium method: each year's projected losses and pure premium, and the total |
-| `PRO.INDICATED.CHANGE(loss_ratio, variable, profit, [fixed_ratio])` | The loss ratio method's indicated change |
-| `PRO.INDICATED.RATE(pure_premium, variable, profit, [fixed_per_exposure])` | The pure premium method's indicated rate |
-| `PRO.PERMISSIBLE.LR(variable, profit, [fixed_ratio])` | The permissible loss ratio |
-| `PRO.TRENDED.PRESENT(prior_indicated, prior_implemented, trend)` | The trended present rates complement, as a change |
-| `PRO.CRED.WEIGHTED(estimate, credibility, complement)` | A credibility-weighted estimate |
-| `PRO.EXPENSES(ratios, [fixed_shares])` | The premium-based projection's fixed and variable expense ratios |
-| `PRO.BURNINGCOST(accident, amounts, limits, attachments, years, premiums, [development], [trend], [trend_to], [threshold], [agg_deductible], [agg_limit])` | Burning cost from large losses: each accident year's trended layer losses, developed, over its premium |
-| `PRO.AGG.STATS(count_mean, [dispersion], family, p1, p2, [p3], [limit], [attachment], [probabilities], [step], [points])` | The annual aggregate loss, ground up or to a per-occurrence layer: mean, SD, CV, skewness, VaR, TVaR and the grid |
-| `PRO.AGG.LAYERS(count_mean, [dispersion], family, p1, p2, [p3], limits, attachments, [shares], [step], [points])` | Per-occurrence layer statistics, one column per layer (`aggregate`'s `reins_stats_df`) |
-| `PRO.AGG.COVER(count_mean, [dispersion], family, p1, p2, [p3], limits, retentions, [shares], [occ_limits], [occ_attachments], [occ_shares], [subject], [step], [points])` | Aggregate covers (a stop loss) on the annual total, ground up or net of per-occurrence layers, or on their ceded total: chances of attaching and exhausting, ceded mean, SD, CV, skewness, loss on line (`aggregate`'s `agg` block) |
-| `PRO.TOWER.PRICE(count_mean, [dispersion], family, p1, p2, [p3], [limit], [attachment], limits, attachments, [shares], [agg_deductibles], [agg_limits], [cover_limit], [cover_retention], distortion, parameter, [step], [points])` | A tower on the annual grid, each view priced on its own by a distortion (`aggregate`'s `reins_price_df`): gross, each layer, the layers' total, a stop loss on the net and the net, with loss, SD, CV, premium, margin, loss ratio and rate on line |
-| `PRO.AGG.PML(count_mean, [dispersion], family, p1, p2, [p3], [return_periods], [step], [points])` | The occurrence and aggregate PML curves by return period: the year's largest occurrence (`aggregate`'s `oep`, any count) beside the annual total's VaR |
-| `PRO.BAYES.ODP(triangle, [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins])` | The Bayesian ODP chain ladder sampled with NUTS: the reserve exhibit, the parameters' posterior with R-hat and ESS, or the sampler's diagnostics |
-| `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | An exposure-rated risk profile: each band's mean SI, expected claims, surplus cession and per-risk layer loss, with a total |
+speaks the Excel C API (XLOPER12). Its 114 functions are all in the
+`prospicio` category of Insert Function. The user manual,
+`crates/prospicio-xll/README.md`, lists them by area (reserving,
+severity and layers, exposure rating, experience rating and ratemaking,
+aggregate and treaty terms, capital) with their arguments; the
+catalogue in `crates/prospicio-xll/src/lib.rs` is the source of truth.
+This section records what each group wraps and how it is checked.
 
 `average` is `"volume"` (default), `"simple"` or `"regression"`; `tail` is
 omitted (none), a number (a constant factor to ultimate at the oldest age)
@@ -888,7 +803,9 @@ real Excel.
     checks the Poisson fit against statsmodels.
 
 42. **Cash flows and returns on a sheet** (#578 group 2, 0.0.7).
-    `PRO.NPV`, `PRO.IRR` and `PRO.MOIC` wrap
+    `PRO.NPV`, `PRO.IRR` and `PRO.MOIC` were removed after 0.0.7
+    (decision 46); what follows on them is kept as the record.
+    `PRO.NPV`, `PRO.IRR` and `PRO.MOIC` wrapped
     `prospicio_pricing::returns`; `PRO.CASHFLOW` wraps
     `prospicio_pricing::cashflow` (`time-value.md`, decisions 13 to 20).
     Flows are a row or column, one series, or a block with one
@@ -1055,6 +972,31 @@ real Excel.
     the errors. The fake Excel checks the crate's example through the C
     API, and the test workbook's Allocation sheet puts the exercises and
     numpy's values beside the add-in's.
+
+46. **No functions that duplicate Excel's own** (user, 2026-11-03).
+    The add-in does not expose a function that an Excel built-in already
+    does, or that is a one-line formula over Excel's arithmetic with no
+    actuarial rule in it. `PRO.NPV` and `PRO.IRR` were Excel's `NPV`,
+    `XNPV`, `IRR` and `XIRR` (`unit` `"dates"` was `XNPV` and `XIRR`
+    exactly; without `times`, `PRO.NPV` was `x0 + NPV(rate, x1..xn)`).
+    Their extras (a block of simulations a row at a time, a grid search
+    that names a root outside its range) are covered by `BYROW` with a
+    `LAMBDA` in Excel 365 and by `PRO.CASHFLOW`, which reports each
+    simulation's IRR, NPV and MOIC itself. Excel has no `MOIC`, but
+    `PRO.MOIC` was `1 + released / (funded + opening)`, a formula a cell
+    writes directly. All three are removed (a breaking change after
+    0.0.7). Microsoft's worked examples stay a CI check, now on
+    `prospicio_pricing::returns`, the discounting and root search
+    `PRO.CASHFLOW` reports with (`tests/cashflow.rs`). Not removed:
+    severities whose family Excel also has (`LOGNORM.DIST`,
+    `GAMMA.DIST`, `WEIBULL.DIST`), since `PRO.SEV.*` takes the same
+    family names and parameters as the layer functions; `PRO.TREND.FIT`
+    (Excel's `LOGEST` fits the same curve but does not give the annual
+    change or read year fractions); and the short ratemaking formulas
+    (`PRO.CRED.Z`, `PRO.CRED.WEIGHTED`, `PRO.PERMISSIBLE.LR`,
+    `PRO.INDICATED.*`, `PRO.TRENDED.PRESENT`), which encode Werner and
+    Modlin's definitions rather than duplicate a built-in. A new function
+    is checked against Excel's function list before it is added.
 
 ## Parity plan
 
