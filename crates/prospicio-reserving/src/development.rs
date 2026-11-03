@@ -469,7 +469,7 @@ fn geometric_mean(pairs: &[(f64, f64)], age: usize) -> Result<f64> {
 /// Fills the sigmas that could not be estimated. Those that cannot be
 /// filled either (too few estimated sigmas to extrapolate from) are NaN;
 /// the chain ladder does not need them and Mack rejects them.
-fn interpolate_sigma(sigma: &[Option<f64>], method: SigmaInterpolation) -> Vec<f64> {
+pub(crate) fn interpolate_sigma(sigma: &[Option<f64>], method: SigmaInterpolation) -> Vec<f64> {
     match method {
         SigmaInterpolation::LogLinear => {
             let points: Vec<(f64, f64)> = sigma
