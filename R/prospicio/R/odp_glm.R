@@ -115,14 +115,14 @@ odp_glm_fit <- S7::new_class(
       as.data.frame(self@ptr$future())
     }),
     residuals = S7::new_property(S7::class_data.frame, getter = function(self) {
-      r <- as.data.frame(rust_result(self@ptr$residuals(), call = NULL))
+      r <- as.data.frame(reserving_result(self@ptr$residuals(), call = NULL))
       for (col in c("standardized_deviance", "standardized_pearson")) {
         r[[col]][is.nan(r[[col]])] <- NA
       }
       r
     }),
     prediction_error = S7::new_property(S7::class_data.frame, getter = function(self) {
-      e <- as.data.frame(rust_result(self@ptr$prediction_error(), call = NULL))
+      e <- as.data.frame(reserving_result(self@ptr$prediction_error(), call = NULL))
       e$cv[is.nan(e$cv)] <- NA
       e
     })
@@ -161,7 +161,7 @@ odp_glm <- function(triangle, column = NULL, formula = NULL, tolerance = 1e-10,
     offset <- stats::model.offset(mf)
     offset <- if (is.null(offset)) double(nrow(cells)) else as.double(offset)
   }
-  ptr <- rust_result(odp_glm_fit_rust(triangle@ptr, column, x, names, offset,
+  ptr <- reserving_result(odp_glm_fit_rust(triangle@ptr, column, x, names, offset,
                                       single_number(tolerance, "tolerance"),
                                       single_number(max_iterations, "max_iterations"),
                                       family, power))
@@ -188,7 +188,7 @@ odp_glm <- function(triangle, column = NULL, formula = NULL, tolerance = 1e-10,
 #' odp_glm_cells(triangle(long, "year", "age", "paid"))
 odp_glm_cells <- function(triangle, column = NULL) {
   column <- fit_column(triangle, column)
-  as.data.frame(rust_result(odp_glm_cells_rust(triangle@ptr, column)),
+  as.data.frame(reserving_result(odp_glm_cells_rust(triangle@ptr, column)),
                 stringsAsFactors = FALSE)
 }
 
@@ -216,7 +216,7 @@ odp_glm_cells <- function(triangle, column = NULL) {
 residual_summary <- function(fit, by = c("development", "origin", "calendar")) {
   if (!S7::S7_inherits(fit, odp_glm_fit)) stop("fit must be an odp_glm_fit", call. = FALSE)
   by <- match.arg(by)
-  out <- as.data.frame(rust_result(fit@ptr$residual_summary(by)))
+  out <- as.data.frame(reserving_result(fit@ptr$residual_summary(by)))
   out$mean[is.nan(out$mean)] <- NA
   out$sd[is.nan(out$sd)] <- NA
   out
@@ -230,7 +230,7 @@ S7::method(predict_distribution, odp_glm_fit) <- function(object, newdata, n_sim
     stop("an odp_glm_fit draws its own future cells; pass no newdata", call. = FALSE)
   }
   parameters <- match.arg(parameters)
-  ptr <- rust_result(object@ptr$predict_distribution(as.double(n_sims), as.double(seed),
+  ptr <- reserving_result(object@ptr$predict_distribution(as.double(n_sims), as.double(seed),
                                                      parameters), s7_call())
   predictive_distribution(ptr = ptr)
 }

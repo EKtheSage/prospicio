@@ -14,9 +14,7 @@ use crate::distributions::PyPredictiveDistribution;
 use crate::models::{PyDesign, PyGlmFit, family};
 use crate::reserving::PyTriangle;
 
-fn err(e: prospicio_reserving::Error) -> PyErr {
-    PyValueError::new_err(e.to_string())
-}
+use crate::reserving::err;
 
 /// The over-dispersed Poisson (ODP) reserving model as a quasi-Poisson GLM:
 /// ``ln E[X] = c + a[origin] + b[development]`` on the incremental values,

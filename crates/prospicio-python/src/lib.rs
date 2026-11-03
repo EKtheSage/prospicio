@@ -174,6 +174,8 @@ mod prospicio_native {
         per_risk_inuring,
     };
     #[pymodule_export]
+    use super::reserving::NotSupportedError;
+    #[pymodule_export]
     use super::reserving::{
         PyBacktest, PyBayesBf, PyBayesBfFit, PyBayesBfNormalised, PyBayesBfNormalisedFit,
         PyBayesOdp, PyBayesOdpFit, PyBayesOdpFits, PyBayesOneYearFit, PyBayesOneYearFits,
