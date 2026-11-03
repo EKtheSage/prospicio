@@ -468,12 +468,14 @@ of policies written evenly through 2026, each earning over twelve months
 (`UnderwritingBasis()`), and `terms.run(..., paid_patterns=...)` pays each
 simulation on its row. The patterns run for ten years, until the last of
 them reaches 1, though the deal commutes at month 60: the engine needs each
-row to end at the terms' last paid share. A few of the drawn patterns pass 1
-at an old age and fall back, and `monotone="running_max"` holds each at its
-largest share so far. The terms' written and earned shares are on the same
+row to end at the terms' last paid share. A few of the drawn patterns fall
+at an old age (77 of 2,000, 50 of them after passing 1), and
+`monotone="running_max"` holds each at its largest share so far. The terms' written and earned shares are on the same
 basis: written evenly through each month, and earned by the basis's exposure.
-The terms' own paid pattern, the mean of the rows, is used only by the
-report's calendar view. Reading the pattern from each accident date instead
+The terms' own paid pattern, the mean of the rows, pays no simulation: the
+engine checks that each row ends at its last share, and `with_patterns`
+keeps it on the deal for `DealBook.calendar`, which this example does not
+call. Reading the pattern from each accident date instead
 (`monthly_patterns` with the chain ladder's accident-year pattern) would
 pay 7% of the ultimate by month 12 against about 15% on the underwriting
 basis (#722). On this deal the basis matters more than the draws: paying

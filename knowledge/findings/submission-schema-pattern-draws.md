@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: In the submission schema's quota share the underwriting basis moves the IRR, and paying each simulation on its own drawn pattern does not
-description: "docs/guides/submission-schema.md now pays each of its 2,000 ODP bootstrap simulations on that simulation's drawn pattern, read month by month on an underwriting basis (boot.patterns.monthly(120, basis=UnderwritingBasis(), monotone=\"running_max\")). The median IRR of the flat structure went from 40.5% to 41.3% and the mean MOIC from 1.378 to 1.366. Taken step by step: the underwriting basis for the paid pattern (15.0% paid by month 12 against 7.3% from each accident date) adds 1.7 points of median IRR, earning on the basis's exposure (0.500 earned at month 12 against 13/24) takes 0.9 back, and the drawn patterns against their mean move the median IRR, mean MOIC and the 5th and 95th percentiles by at most 0.1 point. The monthly reading needs 120 months, the month the converted pattern reaches 1, though the deal commutes at 60; 77 of 2,000 draws pass 1 at 96 months and need running_max. The reading takes 0.9 s with #726 and about 20 s without it."
+description: "docs/guides/submission-schema.md now pays each of its 2,000 ODP bootstrap simulations on that simulation's drawn pattern, read month by month on an underwriting basis (boot.patterns.monthly(120, basis=UnderwritingBasis(), monotone=\"running_max\")). The median IRR of the flat structure went from 40.5% to 41.3% and the mean MOIC from 1.378 to 1.366. Taken step by step: the underwriting basis for the paid pattern (15.0% paid by month 12 against 7.3% from each accident date) adds 1.7 points of median IRR, earning on the basis's exposure (0.500 earned at month 12 against 13/24) takes 0.9 back, and the drawn patterns against their mean move the median IRR, mean MOIC and the 5th and 95th percentiles by at most 0.1 point. The monthly reading needs 120 months, the month the converted pattern reaches 1, though the deal commutes at 60; 77 of 2,000 draws fall at 96 or 108 months (50 of them after passing 1) and need running_max. The reading takes 0.9 s with #726 and about 20 s without it."
 tags: [prospicio-pricing, prospicio-reserving, cashflow, payment-pattern, bootstrap, guides]
 status: draft
 generated: { by: claude-code/local-session, at: 2026-11-03T12:00:00Z }
@@ -34,7 +34,9 @@ commuted at month 60. Numbers are from a Windows run with #726's code.
   row to have the terms' length and to end at the terms' last paid share, so
   the terms' written, earned and paid shares run for 120 months as well,
   with commutation still at 60. `monotone="refuse"` fails on 77 draws, the
-  first falling from 1.00039 at 96 months to 1 at 108.
+  first falling from 1.00039 at 96 months to 1 at 108. Only 50 of the 77
+  pass 1; the other 27 fall from 84 to 96 months while still below 1
+  (0.99887 to 0.99880, say), from a pseudo factor below 1.
 * **Effect, step by step** (median IRR and mean MOIC):
 
   | Step | Flat | Sliding scale |
