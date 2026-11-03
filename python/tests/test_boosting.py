@@ -253,3 +253,28 @@ def test_constraints_reject_factors_unknown_names_and_clashes():
         Booster("poisson", monotone={"si": 1}, params={"monotone_constraints": [1]})
     with pytest.raises(ValueError, match="1, -1 or 0"):
         Booster("poisson", monotone={"si": 2})
+
+
+@pytest.mark.parametrize("engine", ["lightgbm", "xgboost"])
+def test_tree_shap_contributions_add_up_to_the_link_scale(engine):
+    pytest.importorskip(engine)
+    rng = random.Random(5)
+    n = 600
+    x = [rng.random() for _ in range(n)]
+    z = [rng.random() for _ in range(n)]
+    exposure = [0.5 + rng.random() for _ in range(n)]
+    y = [float(rng.random() < 0.2 * e * (1 + v + z_)) for v, z_, e in zip(x, z, exposure)]
+    d = Design([x, z], ["x", "z"], offset=[math.log(e) for e in exposure])
+    fit = Booster("poisson", engine=engine, n_rounds=40,
+                  params={"max_depth": 3} if engine == "xgboost" else {"num_leaves": 6}).fit(d, y)
+    c = fit.contributions(d)
+    assert c["names"] == ["x", "z"] and len(c["values"]) == n
+    mu = fit.predict(d)
+    rel = 1e-9 if engine == "lightgbm" else 1e-5
+    for i in range(n):
+        assert c["bias"][i] + sum(c["values"][i]) == pytest.approx(math.log(mu[i]), rel=rel, abs=rel)
+    # The offset sits in the bias, not in a column's contribution.
+    d2 = Design([x, z], ["x", "z"], offset=[o + 1.0 for o in d.offset])
+    c2 = fit.contributions(d2)
+    assert np.allclose(c2["values"], c["values"], rtol=rel, atol=rel)
+    assert [b - 1.0 for b in c2["bias"]] == pytest.approx(c["bias"], rel=rel, abs=rel)

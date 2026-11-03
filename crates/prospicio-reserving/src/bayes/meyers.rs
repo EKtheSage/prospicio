@@ -633,7 +633,7 @@ impl Meyers {
     /// [`dependence`](Self::dependence) says: `Independent` as drawn,
     /// `RankCorrelation` by Iman–Conover on the segments' total claims
     /// development results, as the bootstraps' one-year view does;
-    /// `Synchronized` is an [`Error::Bayes`]. A failure names its segment.
+    /// `Synchronized` is an [`Error::NotSupported`]. A failure names its segment.
     pub fn one_year_segments(
         &self,
         triangle: &Triangle,
@@ -772,7 +772,7 @@ impl Meyers {
     ///   the segment totals of the reserves, exactly as in the bootstraps;
     ///   each segment's ultimates move with its reserves, row by row.
     /// * [`Synchronized`](SegmentDependence::Synchronized) is an
-    ///   [`Error::Bayes`]: it draws the residuals of the same positions in
+    ///   [`Error::NotSupported`]: it draws the residuals of the same positions in
     ///   every segment, and a posterior has no residuals to share.
     ///
     /// A bad rank-correlation matrix fails before any sampling, and a
@@ -3423,7 +3423,13 @@ pub(crate) mod tests {
         };
         let e = model.fit_segments(&twins(), "paid", "premium").unwrap_err();
         assert!(
-            matches!(&e, Error::Bayes(m) if m.starts_with("Synchronized dependence")),
+            matches!(
+                &e,
+                Error::NotSupported {
+                    setting: "Synchronized dependence",
+                    ..
+                }
+            ),
             "{e}"
         );
     }
@@ -4243,7 +4249,13 @@ pub(crate) mod tests {
         .one_year_segments(&twins(), "paid", "premium", &BayesOneYear::default())
         .unwrap_err();
         assert!(
-            matches!(&e, Error::Bayes(m) if m.starts_with("Synchronized dependence")),
+            matches!(
+                &e,
+                Error::NotSupported {
+                    setting: "Synchronized dependence",
+                    ..
+                }
+            ),
             "{e}"
         );
         assert!(matches!(

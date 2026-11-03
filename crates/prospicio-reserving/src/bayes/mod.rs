@@ -207,12 +207,14 @@ pub(crate) fn one_year_seed(predictive: u64) -> u64 {
 /// The error every Bayesian model returns for `SegmentDependence::Synchronized`
 /// (`reserving-bayes.md`, decision 22).
 pub(crate) fn synchronized_error() -> crate::Error {
-    crate::Error::Bayes(
-        "Synchronized dependence resamples the residuals of the same positions in every \
-         segment, and a posterior has no residuals to resample; use RankCorrelation to \
-         correlate the segments (or Independent)"
-            .into(),
-    )
+    crate::Error::NotSupported {
+        setting: "Synchronized dependence",
+        method: "the Bayesian reserving models (BayesOdp, BayesBf, BayesBfNormalised, Meyers and \
+                 Compartmental)",
+        reason: "it resamples the residuals of the same positions in every segment, and a \
+                 posterior has no residuals to resample; use RankCorrelation to correlate the \
+                 segments (or Independent)",
+    }
 }
 
 #[cfg(test)]
@@ -235,9 +237,9 @@ mod tests {
 
     #[test]
     fn synchronized_dependence_is_refused_with_the_reason_and_the_alternative() {
-        let crate::Error::Bayes(m) = synchronized_error() else {
-            panic!("an Error::Bayes");
-        };
+        let e = synchronized_error();
+        assert!(e.is_not_supported());
+        let m = e.to_string();
         assert!(m.starts_with("Synchronized dependence"), "{m}");
         assert!(m.contains("no residuals to resample"), "{m}");
         assert!(m.contains("RankCorrelation"), "{m}");

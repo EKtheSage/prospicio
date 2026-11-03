@@ -99,10 +99,7 @@ impl OneYearPattern {
         method: Option<&SelectedPattern>,
     ) -> Result<Option<SelectedPattern>> {
         match (own, self) {
-            (Some(_), Self::Estimated) => Err(Error::Bootstrap(
-                "a bootstrap with a pattern of its own cannot simulate from the estimated \
-                 factors: give it no pattern, or OneYearPattern::Method",
-            )),
+            (Some(_), Self::Estimated) => Err(crate::one_year_bootstrap::OWN_PATTERN_ESTIMATED),
             (Some(p), Self::Method) => Ok(Some(p.clone())),
             (None, Self::Method) => Ok(method.cloned()),
             (None, Self::Estimated) => Ok(None),
@@ -1409,19 +1406,13 @@ impl SelectedPattern {
     pub(crate) fn without_level(&self, ages: &[Lag]) -> Result<Self> {
         let resolved = self.resolve(ages)?;
         if resolved.beyond.is_some() {
-            return Err(Error::Bootstrap(
-                "a pattern that runs past the oldest age carries the re-reserving method's tail \
-                 into it: give the bootstrap the method's tail",
-            ));
+            return Err(crate::one_year_bootstrap::PATTERN_PAST_OLDEST);
         }
         if resolved.is_tail_only() {
             // Only a method with a tail of its own is read without its
             // level, and then its pattern and tail conflict (decision 20
             // items 3 and 5).
-            return Err(Error::Bootstrap(
-                "the re-reserving method's pattern is only its level, its tail, and the method \
-                 has a tail of its own: give the method no tail, or two or more ages",
-            ));
+            return Err(crate::one_year_bootstrap::TAIL_ONLY_PATTERN);
         }
         let links: Vec<(Lag, f64, f64)> = resolved
             .selected
@@ -2349,8 +2340,7 @@ mod fits {
         let p = own(PatternWeight::All(1.0));
         let plain = OneYearMethod::ChainLadder(ChainLadder::default());
         let patterned = OneYearMethod::ChainLadder(chain_ladder(p.clone(), Tail::default()));
-        let want =
-            Error::Bootstrap("the bootstrap's pattern must be the re-reserving method's pattern");
+        let want = crate::one_year_bootstrap::PATTERN_MISMATCH;
         let odp = OdpBootstrap {
             n_sims: 10,
             pattern: Some(p.clone()),
@@ -2411,8 +2401,7 @@ mod fits {
         for p in same {
             assert!(run(p.clone()).is_ok(), "{p:?}");
         }
-        let want =
-            Error::Bootstrap("the bootstrap's pattern must be the re-reserving method's pattern");
+        let want = crate::one_year_bootstrap::PATTERN_MISMATCH;
         let mut other = base.clone();
         other.values[0].1 *= 1.01;
         assert_eq!(run(other).unwrap_err(), want);
@@ -2619,7 +2608,7 @@ mod fits {
         // Merz and Wüthrich's closed form has no tail.
         assert_eq!(
             implied.claims_development_result().unwrap_err(),
-            Error::ClaimsDevelopment("needs no tail factor")
+            crate::one_year::MERZ_WUTHRICH_TAIL
         );
     }
 
@@ -2704,9 +2693,7 @@ mod fits {
         };
         assert_eq!(
             own.one_year(&exact(), "values", &other).unwrap_err(),
-            Error::Bootstrap(
-                "the tail the bootstrap's pattern implies must be the re-reserving method's tail"
-            )
+            crate::one_year_bootstrap::IMPLIED_TAIL_MISMATCH
         );
         // The same factor as a constant tail is the same tail.
         let constant = OneYearMethod::ChainLadder(chain_ladder(p, (1.0 / 0.9).into()));
@@ -2772,9 +2759,7 @@ mod fits {
         };
         assert_eq!(
             own.one_year(&raa(), "values", &method).unwrap_err(),
-            Error::Bootstrap(
-                "the tail the bootstrap's pattern implies must be the re-reserving method's tail"
-            )
+            crate::one_year_bootstrap::IMPLIED_TAIL_MISMATCH
         );
     }
 
@@ -2817,13 +2802,13 @@ mod fits {
         };
         assert_eq!(
             other.one_year(&exact(), "values", &method).unwrap_err(),
-            Error::Bootstrap("the bootstrap's tail must be the re-reserving method's tail")
+            crate::one_year_bootstrap::TAIL_MISMATCH
         );
         // A method with neither a tail nor a pattern has no tail.
         let plain = OneYearMethod::ChainLadder(ChainLadder::default());
         assert_eq!(
             other.one_year(&exact(), "values", &plain).unwrap_err(),
-            Error::Bootstrap("the bootstrap's tail must be the re-reserving method's tail")
+            crate::one_year_bootstrap::TAIL_MISMATCH
         );
     }
 
@@ -2890,10 +2875,7 @@ mod fits {
         assert_eq!(by_default.cdr.draw_matrix(), given.cdr.draw_matrix());
         assert_ne!(by_default.cdr.draw_matrix(), estimated.cdr.draw_matrix());
         assert!(by_default.bootstrap.chain_ladder.development.has_pattern());
-        let want = Error::Bootstrap(
-            "a bootstrap with a pattern of its own cannot simulate from the estimated \
-             factors: give it no pattern, or OneYearPattern::Method",
-        );
+        let want = crate::one_year_bootstrap::OWN_PATTERN_ESTIMATED;
         assert_eq!(
             odp(Some(p.clone()), OneYearPattern::Estimated).unwrap_err(),
             want

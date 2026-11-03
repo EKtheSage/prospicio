@@ -739,13 +739,13 @@ stopifnot(identical(names(df), c("origin", paste0("cdr_", 1:9), "run_off")),
           identical(df$cdr_1, unname(claims_development_result(mack(raa))@one_year_standard_error)))
 invisible(utils::capture.output(print(cdr)))
 expect_error_like(claims_development_result(mack(raa, average = "simple")),
-                  "claims development result: needs volume-weighted")
+                  "needs volume-weighted factors")
 expect_error_like(claims_development_result(mack(lc, "paid")), "4 segments; use segment()")
 # Merz and Wuthrich assume no tail: a factor other than 1, or a factor of 1
 # that replaces estimated factors, is an error.
 for (tail in list(1.05, tail_constant(1.05), tail_log_linear(), tail_constant(1, attachment_age = 84))) {
   expect_error_like(claims_development_result(mack(raa, tail = tail)),
-                    "claims development result: needs no tail factor")
+                    "a tail factor is not supported by Merz and W")
 }
 stopifnot(identical(claims_development_result(mack(raa, tail = 1))@by_calendar_year,
                     claims_development_result(mack(raa))@by_calendar_year))

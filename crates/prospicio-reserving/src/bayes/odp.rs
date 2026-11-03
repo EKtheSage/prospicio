@@ -339,7 +339,7 @@ impl BayesOdp {
     ///   the segment totals, exactly as in the bootstraps, so row `i` is no
     ///   longer simulation `i`.
     /// * [`Synchronized`](SegmentDependence::Synchronized) is an
-    ///   [`Error::Bayes`]: it draws the residuals of the same positions in
+    ///   [`Error::NotSupported`]: it draws the residuals of the same positions in
     ///   every segment, and a posterior has no residuals to share.
     ///
     /// A failure names its segment.
@@ -528,7 +528,7 @@ impl BayesOdp {
     /// other as [`dependence`](Self::dependence) says: `Independent` as
     /// drawn, `RankCorrelation` by Iman–Conover on the segments' total
     /// claims development results, as the bootstraps' one-year view does;
-    /// `Synchronized` is an [`Error::Bayes`]. A failure names its segment.
+    /// `Synchronized` is an [`Error::NotSupported`]. A failure names its segment.
     pub fn one_year_segments(
         &self,
         triangle: &Triangle,
@@ -1873,7 +1873,13 @@ mod tests {
         };
         let e = model.fit_segments(&twins(), "values").unwrap_err();
         assert!(
-            matches!(&e, Error::Bayes(m) if m.starts_with("Synchronized dependence")),
+            matches!(
+                &e,
+                Error::NotSupported {
+                    setting: "Synchronized dependence",
+                    ..
+                }
+            ),
             "{e}"
         );
     }
@@ -2282,7 +2288,13 @@ mod tests {
             .one_year_segments(&twins(), "values", &BayesOneYear::default())
             .unwrap_err();
         assert!(
-            matches!(&e, Error::Bayes(m) if m.starts_with("Synchronized dependence")),
+            matches!(
+                &e,
+                Error::NotSupported {
+                    setting: "Synchronized dependence",
+                    ..
+                }
+            ),
             "{e}"
         );
     }
