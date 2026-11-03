@@ -1221,7 +1221,8 @@ the unconstrained fits' dependence on experience falls at 7 (LightGBM) and
 
 ## Zero-inflated and hurdle counts (#548)
 
-Status: built; items (a) to (f) proposed for the user's acceptance.
+Status: built; items (a) to (f) accepted by the user on
+2026-11-03 as built.
 
 `prospicio_glm::zero` fits two-part count models as R's `pscl::zeroinfl`
 and `pscl::hurdle`. `ZeroInflated::poisson()` and `::negative_binomial()`
@@ -1285,7 +1286,8 @@ not the weighted likelihood's
 
 ## Quantile and expectile regression (#550)
 
-Status: built; items (a) to (f) proposed for the user's acceptance.
+Status: built; items (a) to (f) accepted by the user on
+2026-11-03 as built.
 
 `prospicio_glm::quantile::QuantileRegression::new(tau)` fits a linear
 quantile regression, minimising the weighted check loss
