@@ -4994,7 +4994,9 @@ is chosen, not after a fit has run.
    `distributions.R`, another lane's file, is unchanged.
 8. **Checks.** Rust: every test that expected one of the old variants for
    an unsupported setting now expects `NotSupported` (often the same
-   constant), `error.rs` tests `is_not_supported` through `InSegment`, and
+   constant), `error.rs` tests `is_not_supported` through `InSegment`,
+   `a_fully_selected_sparse_age_is_missing_not_an_error` checks that the
+   closed form and both bootstraps refuse a fully selected sparse age, and
    `paid_alone_under_free_rates_is_refused_before_any_data_or_sampling`
    shows the refusal comes from the settings alone (a triangle without the
    named columns gives the same error). Python

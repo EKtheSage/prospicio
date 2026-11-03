@@ -814,7 +814,7 @@ impl Failures {
     }
 }
 
-/// The simulations of a one-year bootstrap: how many, from which seed.
+/// A bootstrap with a pattern other than the re-reserving method's.
 pub(crate) const PATTERN_MISMATCH: Error = Error::NotSupported {
     setting: "a bootstrap pattern other than the re-reserving method's",
     method: ONE_YEAR_BOOTSTRAP,
@@ -880,6 +880,7 @@ fn same_pattern(
     }
 }
 
+/// The simulations of a one-year bootstrap: how many, from which seed.
 #[derive(Debug, Clone)]
 pub(crate) struct Sims {
     pub(crate) n_sims: usize,

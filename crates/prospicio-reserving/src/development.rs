@@ -1152,6 +1152,42 @@ mod tests {
             mack.claims_development_result(),
             Err(Error::NotSupported { .. })
         ));
+        // The bootstraps resample every age's own link ratios, so they
+        // refuse the setting with the same variant (#580).
+        let odp = crate::OdpBootstrap {
+            n_sims: 10,
+            pattern: selected_first(1.0).pattern,
+            ..Default::default()
+        }
+        .fit(&tri, "values")
+        .err();
+        assert!(
+            matches!(
+                odp,
+                Some(Error::NotSupported {
+                    method: "the ODP bootstrap",
+                    ..
+                })
+            ),
+            "{odp:?}"
+        );
+        let mack_bootstrap = crate::MackBootstrap {
+            n_sims: 10,
+            development: selected_first(1.0),
+            ..Default::default()
+        }
+        .fit(&tri, "values")
+        .err();
+        assert!(
+            matches!(
+                mack_bootstrap,
+                Some(Error::NotSupported {
+                    method: "Mack's bootstrap",
+                    ..
+                })
+            ),
+            "{mack_bootstrap:?}"
+        );
     }
 
     #[test]
