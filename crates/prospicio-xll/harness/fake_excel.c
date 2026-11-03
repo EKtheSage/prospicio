@@ -162,7 +162,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and seventeen functions registered", registered == 117);
+    check("one hundred and fourteen functions registered", registered == 114);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -867,41 +867,10 @@ int main(int argc, char **argv) {
                                                       gl_rel->val.array.lparray[2 * 5 + 2].val.num == 1);
     free12(gl_rel);
 
-    /* Excel's XIRR example through PRO.IRR on dates (0.373362535), and a
-     * three-month deal through PRO.CASHFLOW: premium 100 at once, earned
+    /* A three-month deal through PRO.CASHFLOW: premium 100 at once, earned
      * and paid evenly, collateral the reserve, commuting at the
      * outstanding loss; at a loss ratio of 60% the investor's flows are
      * 80, -20, -20 (prospicio_pricing::cashflow's example). */
-    static const double cf_x[5] = {-10000, 2750, 4250, 3250, 2750}, cf_d[5] = {39448, 39508, 39751, 39859, 39904};
-    XLOPER12 cf_xc[5], cf_dc[5], cf_flows, cf_dates, cf_unit;
-    for (int k = 0; k < 5; k++) {
-        cf_xc[k].xltype = cf_dc[k].xltype = xltypeNum;
-        cf_xc[k].val.num = cf_x[k];
-        cf_dc[k].val.num = cf_d[k];
-    }
-    cf_flows.xltype = cf_dates.xltype = xltypeMulti;
-    cf_flows.val.array.lparray = cf_xc;
-    cf_dates.val.array.lparray = cf_dc;
-    cf_flows.val.array.rows = cf_dates.val.array.rows = 5;
-    cf_flows.val.array.columns = cf_dates.val.array.columns = 1;
-    static wchar_t dates_s[] = L"\x05" L"dates";
-    cf_unit.xltype = xltypeStr;
-    cf_unit.val.str = dates_s;
-    XLOPER12 *cf_irr = ((Fn7)GetProcAddress(xll, "pro_irr"))(&cf_flows, &cf_dates, &cf_unit, &missing, &missing,
-                                                             &missing, &missing);
-    print_result("PRO.IRR(flows, dates, \"dates\")", cf_irr);
-    check("PRO.IRR is XIRR's 0.373362535",
-          (cf_irr->xltype & 0xFFF) == xltypeNum && fabs(cf_irr->val.num - 0.37336253351883164) < 1e-9);
-    free12(cf_irr);
-    XLOPER12 cf_rel, cf_fund, cf_open;
-    cf_rel.xltype = cf_fund.xltype = cf_open.xltype = xltypeNum;
-    cf_rel.val.num = 30;
-    cf_fund.val.num = 40;
-    cf_open.val.num = 60;
-    XLOPER12 *cf_moic = ((Fn3)GetProcAddress(xll, "pro_moic"))(&cf_rel, &cf_fund, &cf_open);
-    check("PRO.MOIC(30, 40, 60) is 1.3", (cf_moic->xltype & 0xFFF) == xltypeNum && cf_moic->val.num == 1.3);
-    free12(cf_moic);
-
     static wchar_t s_premium[] = L"\x07" L"premium", s_cm[] = L"\x11" L"commutation_month",
                    s_reserve[] = L"\x07" L"reserve", s_outstanding[] = L"\x0B" L"outstanding",
                    s_flows[] = L"\x05" L"flows";

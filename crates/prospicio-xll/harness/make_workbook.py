@@ -1145,34 +1145,9 @@ gl.column_dimensions["F"].width = 24
 for col in "GHIJKLNOPQR":
     gl.column_dimensions[col].width = 13
 
-# Cash flows and returns beside Excel's own XNPV, XIRR and IRR on Microsoft's
-# examples, and a collateralised deal through PRO.CASHFLOW.
+# A collateralised deal through PRO.CASHFLOW.
 cf = wb.create_sheet("Cash flows")
-cf["A1"] = "prospicio XLL test: cash flows and returns (PRO.NPV, PRO.IRR, PRO.MOIC, PRO.CASHFLOW)"; cf["A1"].font = Font(bold=True, size=13)
-cf["A2"] = "Flows on dates: PRO.NPV and PRO.IRR with unit \"dates\" are Excel's XNPV and XIRR."; cf["A2"].font = note
-cf["A3"] = "Date"; cf["B3"] = "Flow"; cf["D3"] = "Yearly flow"; cf["A3"].font = cf["B3"].font = cf["D3"].font = bold
-for r, (dt, x) in enumerate(zip([datetime.date(2008, 1, 1), datetime.date(2008, 3, 1), datetime.date(2008, 10, 30),
-                                 datetime.date(2009, 2, 15), datetime.date(2009, 4, 1)],
-                                [-10000, 2750, 4250, 3250, 2750])):
-    cf.cell(row=4 + r, column=1, value=dt).fill = inp
-    cf.cell(row=4 + r, column=2, value=x).fill = inp
-for r, x in enumerate([-70000, 12000, 15000, 18000, 21000, 26000]):
-    cf.cell(row=4 + r, column=4, value=x).fill = inp
-checks = [
-    ("PRO.NPV at 9% on dates", '=PRO.NPV(0.09,B4:B8,A4:A8,"dates")', "=XNPV(0.09,B4:B8,A4:A8)", "1e-9"),
-    ("PRO.IRR on dates", '=PRO.IRR(B4:B8,A4:A8,"dates")', "=XIRR(B4:B8,A4:A8)", "1e-7"),
-    ("PRO.IRR on five years", "=PRO.IRR(D4:D9)", "=IRR(D4:D9)", "1e-7"),
-    ("PRO.IRR on four years", "=PRO.IRR(D4:D8)", "=IRR(D4:D8)", "1e-7"),
-    ("PRO.NPV at 10% from time 0", "=PRO.NPV(0.1,D4:D9)", "=D4+NPV(0.1,D5:D9)", "1e-9"),
-    ("PRO.MOIC(30, 40, 60)", "=PRO.MOIC(30,40,60)", 1.3, "1e-12"),
-]
-cf["F3"] = "Check"; cf["G3"] = "prospicio"; cf["H3"] = "Excel"; cf["I3"] = "Agrees"
-for c in "FGHI":
-    cf[f"{c}3"].font = bold
-for i, (name, ours, excel, tol) in enumerate(checks):
-    row = 4 + i
-    cf[f"F{row}"] = name; cf[f"G{row}"] = ours; cf[f"H{row}"] = excel
-    cf[f"I{row}"] = f"=ABS(G{row}-H{row})<{tol}*MAX(1,ABS(H{row}))"
+cf["A1"] = "prospicio XLL test: a collateralised deal's cash flows (PRO.CASHFLOW)"; cf["A1"].font = Font(bold=True, size=13)
 
 cf["A12"] = "A collateralised deal: premium 1,000 written at once, earned over 12 months, paid over 30, commuting after 36"; cf["A12"].font = bold
 cf["A13"] = "Terms"; cf["D13"] = "Requirement"; cf["G13"] = "At commutation"
@@ -1207,7 +1182,7 @@ cf["A35"] = "The first simulation's accounts"; cf["A35"].font = bold
 cf["A36"] = ArrayFormula("A36:O76", f'=PRO.CASHFLOW({DEAL},,"trace",,G14:H14)')
 cf["Q26"] = "Check"; cf["Q26"].font = bold
 cf["Q27"] = "money is conserved"; cf["R27"] = "=ABS(B76)<1e-6"
-cf["Q28"] = "NPV of the trace's flows at 8%"; cf["R28"] = '=ABS(PRO.NPV(0.08,N37:N72,J14:J49,"months")-C28)<1e-6'
+cf["Q28"] = "NPV of the trace's flows at 8%"; cf["R28"] = "=ABS(SUMPRODUCT(N37:N72,1.08^(-J14:J49/12))-C28)<1e-6"
 cf.column_dimensions["A"].width = 20
 cf.column_dimensions["F"].width = 28
 cf.column_dimensions["Q"].width = 34
