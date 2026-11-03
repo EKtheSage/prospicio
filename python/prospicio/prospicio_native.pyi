@@ -23796,6 +23796,251 @@ class OnnxPredictor:
         """
 
 @final
+class PaidIncurredChain:
+    """
+    Merz and Wüthrich's (2010) paid-incurred chain (design note
+    ``reserving-v02.md``, decision 32): a paid and an incurred column of one
+    square triangle combined into one ultimate per origin, in closed form.
+    
+    Log paid link ratios (and the log first paid values) are normal with
+    means ``Phi_j`` and standard deviations ``sigma_j``, log incurred link
+    ratios normal with means ``Psi_j`` and standard deviations ``tau_j``,
+    and both reach the same ultimate. With normal priors on ``Phi`` and
+    ``Psi`` (non-informative by default) the posterior is normal, and each
+    origin's ultimate is predicted from its latest paid and latest incurred
+    value, with the square root of its conditional mean squared error of
+    prediction. As ``tau`` grows the prediction becomes Hertig's paid chain
+    ladder, as it shrinks the incurred chain ladder on geometric averages.
+    
+    The defaults reproduce R ChainLadder's ``PaidIncurredChain``, except
+    that ChainLadder 0.2.21 leaves out of the posterior precision the terms
+    coupling ``Psi_0`` with ``Phi_1, ..., Phi_J``, which the newest origin's
+    incurred-paid ratio implies: ``convention="model"`` is the model's
+    posterior, ``convention="r_chainladder"`` ChainLadder's to its last
+    digits. On ChainLadder's USAA example the model's total reserve and
+    standard error are each about 0.5% above ChainLadder's.
+    
+    Parameters
+    ----------
+    sigma : sequence of float, optional
+        Paid standard deviations, one per development age; ``None``
+        estimates them (``sigma_0`` from the log first paid values).
+    tau : sequence of float, optional
+        Incurred standard deviations, one per development age but the last;
+        ``None`` estimates them.
+    extrapolation : {"loglinear", "mack"}, default "loglinear"
+        How the last estimated ``sigma`` and ``tau``, each with one
+        observation, are filled in: a log-linear fit to the others (R's
+        rule), or Mack's ``min(s[J-1], s[J-2], s[J-1]**2 / s[J-2])``.
+    convention : {"model", "r_chainladder"}, default "model"
+        The model's posterior, or R ChainLadder's.
+    phi_mean, phi_sd : sequence of float, optional
+        Prior means and standard deviations of ``Phi_0, ..., Phi_J``, one
+        per development age; ``None`` for a non-informative prior. An
+        infinite standard deviation leaves that parameter non-informative.
+    psi_mean, psi_sd : sequence of float, optional
+        The same for ``Psi_0, ..., Psi_{J-1}``, one per age but the last.
+    
+    Raises
+    ------
+    ValueError
+        If ``extrapolation`` or ``convention`` is unknown, or only one of a
+        prior's means and standard deviations is given.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import PaidIncurredChain, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    ...     {
+    ...         "paid": [100, 150, 170, 180, 110, 168, 186, 125, 180, 130],
+    ...         "incurred": [200, 195, 185, 181, 215, 200, 192, 240, 230, 260],
+    ...     },
+    ... )
+    >>> fit = PaidIncurredChain().fit(tri, "paid", "incurred")
+    >>> fit.reserve[0], fit.total_std_err > 0
+    (0.0, True)
+    """
+    def __new__(cls, /, sigma: Sequence[float] |None = None, tau: Sequence[float] |None = None, extrapolation: str = "loglinear", convention: str = "model", phi_mean: Sequence[float] |None = None, phi_sd: Sequence[float] |None = None, psi_mean: Sequence[float] |None = None, psi_sd: Sequence[float] |None = None) -> PaidIncurredChain: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def convention(self, /) -> str:
+        """
+        The posterior precision used.
+        """
+    @property
+    def extrapolation(self, /) -> str:
+        """
+        How the last estimated variances are filled in.
+        """
+    def fit(self, /, triangle: Triangle, paid: str, incurred: str) -> PaidIncurredFit:
+        """
+        Fits the paid and incurred columns of a single-segment triangle.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            As many origins as development ages (at least four), each origin
+            observed at exactly its ages up to the latest diagonal, every
+            value positive.
+        paid, incurred : str
+            Names of the paid and incurred columns.
+        
+        Returns
+        -------
+        PaidIncurredFit
+        
+        Raises
+        ------
+        ValueError
+            For a triangle of another shape or with several segments, a value
+            that is not positive, settings of the wrong length or out of
+            range, or an estimated variance of zero.
+        """
+    @property
+    def sigma(self, /) -> list[float] |None:
+        """
+        The given paid standard deviations, or ``None``.
+        """
+    @property
+    def tau(self, /) -> list[float] |None:
+        """
+        The given incurred standard deviations, or ``None``.
+        """
+
+@final
+class PaidIncurredFit:
+    """
+    A paid-incurred chain fitted by ``PaidIncurredChain.fit``. Per-origin
+    lists run over the triangle's origins; the oldest is taken as settled at
+    its last paid value, with no reserve and no error.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months, one per period.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        One row per development age: ``sigma``, ``phi``, ``phi_sd``,
+        ``tau``, ``psi`` and ``psi_sd`` (NaN at the last age for the
+        incurred side). Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def incurred_weight(self, /) -> list[float]:
+        """
+        Weight of the incurred side in each origin's prediction.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        Latest paid value per origin.
+        """
+    @property
+    def latest_incurred(self, /) -> list[float]:
+        """
+        Latest incurred value per origin.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value.
+        """
+    @property
+    def phi(self, /) -> list[float]:
+        """
+        Posterior means of ``Phi_0, ..., Phi_J``.
+        """
+    @property
+    def phi_sd(self, /) -> list[float]:
+        """
+        Posterior standard deviations of ``Phi_0, ..., Phi_J``.
+        """
+    @property
+    def posterior_covariance(self, /) -> list[list[float]]:
+        """
+        Posterior covariance of ``(Phi_0, ..., Phi_J, Psi_0, ...,
+        Psi_{J-1})``, as a list of rows.
+        """
+    @property
+    def psi(self, /) -> list[float]:
+        """
+        Posterior means of ``Psi_0, ..., Psi_{J-1}``.
+        """
+    @property
+    def psi_sd(self, /) -> list[float]:
+        """
+        Posterior standard deviations of ``Psi_0, ..., Psi_{J-1}``.
+        """
+    @property
+    def reserve(self, /) -> list[float]:
+        """
+        Reserve per origin: the ultimate less the latest paid value.
+        """
+    @property
+    def sigma(self, /) -> list[float]:
+        """
+        Paid standard deviations used, one per development age.
+        """
+    @property
+    def std_err(self, /) -> list[float]:
+        """
+        Square root of each origin's conditional mean squared error of
+        prediction.
+        """
+    @property
+    def tau(self, /) -> list[float]:
+        """
+        Incurred standard deviations used, one per age but the last.
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per origin: ``origin``, ``latest`` (paid),
+        ``latest_incurred``, ``ultimate``, ``reserve``, ``incurred_weight``
+        and ``std_err``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def total_reserve(self, /) -> float:
+        """
+        Total reserve.
+        """
+    @property
+    def total_std_err(self, /) -> float:
+        """
+        Square root of the total's conditional mean squared error of
+        prediction, with the covariance between origins.
+        """
+    @property
+    def total_ultimate(self, /) -> float:
+        """
+        Total ultimate, the oldest origin's last paid value included.
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row: the total ``latest``, ``latest_incurred``, ``ultimate``,
+        ``reserve`` and the ``std_err`` of the total. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def ultimate(self, /) -> list[float]:
+        """
+        Predicted ultimate per origin.
+        """
+
+@final
 class PairCopula:
     """
     A bivariate copula for a vine: a family, its parameter and a rotation.

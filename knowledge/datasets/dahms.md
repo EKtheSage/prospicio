@@ -26,10 +26,6 @@ sources:
   to 2010 and ages 0 to 9 are 12 to 120 months.[^tail][^script]
 * Under R's convention the paid-incurred chain's total reserve is
   11,074,832.95 with a standard error of 392,409.36.[^tests]
-* The 2010 paper's own printed results on these data were not reproduced:
-  the paper was not available. Values worked back from later papers'
-  tables give a total standard error near 389,500, which cannot be
-  matched exactly without the 2010 paper's parameters.
 
 [^tail]: Tail-factor paper
 [^script]: Generator
