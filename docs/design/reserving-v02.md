@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 accepted by the user on 2026-10-28 as proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 accepted by the user on 2026-10-28 as built; decision 29 built on branch `claude/unify-not-supported`, issue #580, in Rust, Python and R, its items 4, 5 and 9 open for the user; decisions 33 and 34 built on branch `claude/friedland-counts`, issues #555 and #554, in Rust, Python and R, their items 8 and 9 and 4 to 6 open for the user) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 accepted by the user on 2026-10-28 as proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 accepted by the user on 2026-10-28 as built; decision 29 built on branch `claude/unify-not-supported`, issue #580, in Rust, Python and R, its items 4, 5 and 9 open for the user; decision 30 built on branch `claude/monthly-pattern-speed`, issue #717, in Rust, with no API change in Python and R, its item 2 open for the user; decisions 33 and 34 built on branch `claude/friedland-counts`, issues #555 and #554, in Rust, Python and R, their items 8 and 9 and 4 to 6 open for the user) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -4747,9 +4747,11 @@ decision 26 gives.
    is converted as `to_underwriting_basis` converts it (decision 21), at
    every month from 1 under either reading (`to_underwriting_basis`
    itself starts at the pattern's first age under the `ln`-linear
-   reading, and the months before it would pay nothing). The reading costs
+   reading, and the months before it would pay nothing). The reading cost
    about 9 ms a simulation with the Weibull (30 microseconds `ln`-linear),
-   so 10,000 simulations take about a minute and a half on one thread. The
+   so 10,000 simulations took about a minute and a half on one thread;
+   decision 30 (#717) reads them in parallel and from the mean pattern's
+   curve, about 0.15 ms a simulation on 16 cores. The
    terms' `written` and `earned` must describe the same basis; the engine
    cannot check it. A pattern is complete at the first age its share
    reaches 1 (a draw that `RunningMax` holds at 1 before the oldest age):
@@ -5013,6 +5015,80 @@ is chosen, not after a fit has run.
    item 1 says. *Open for the user*: whether the Python exception should
    also carry the `setting` and `method` as attributes (today only the
    message does).
+
+### 30. Reading thousands of simulated patterns month by month quickly
+
+Status: **Built** (2026-11-02), issue #717, branch
+`claude/monthly-pattern-speed`, in Rust, with no API change in Python and
+R; item 2 is open for the user, proposed as built. Decision
+28 item 4 put the Weibull reading at about 9 ms a simulation on one
+thread. On the sample submission's paid triangle cut at 108 months
+(`examples/data/submission/triangle.csv`, as `submission-schema.md` cuts
+it), 2,000 ODP bootstrap draws (`seed = 20261028`) at 144 months on the
+default `UnderwritingBasis` took 17 s to 21 s with the Weibull and 11 s
+to 20 s with the loglogistic (the spread is the machine's load), where a
+guide must run in 20 s. Nearly all of it (21.6 s of 22 s on the uncut
+triangle, about 3,400 evaluations of the objective a simulation) was
+decision 25's search for the curve from its ten starts (decision 23's
+line and a 3 x 3 grid); the projection
+took 0.3 s.
+
+1. **Threads across the simulations.** Each simulation is read on its
+   own, so `DevelopmentPatterns::monthly` reads them in parallel with
+   rayon under a new `parallel` feature of `prospicio-reserving`, which
+   `bayes` turns on, so the Python and R bindings, the add-in and the
+   umbrella crate's `bayes` have it without a change of their own. It is
+   off by default, so the WASM scope's default path has no threads. The
+   result is the same bit for bit with and without threads and with any
+   number of them: the rows are collected in simulation order, and an
+   error is the first simulation's in order, as on one thread. Python's
+   `DevelopmentPatterns.monthly` releases the GIL while it reads. On 16
+   cores threads alone cut the time about twelve times.
+2. **The search from the mean pattern's curve** (open for the user,
+   proposed as built). `monthly` first fits the curve to the segment's
+   mean pattern (held at its running maximum under `RunningMax`) from
+   every start, then searches each simulation's curve from that point and
+   from decision 23's line only. It keeps the better of the two when that
+   search met its tolerance inside the parameters' range, and searches
+   from every start otherwise. A simulation's pattern is near the mean, so
+   its curve is a short search from the mean's: the time falls about five
+   times on one thread. The curve is only the projection's prior (decision
+   25 step 2), and the projection still reproduces each simulation's given
+   values exactly, so the monthly shares move only by where the two
+   searches stop: at most `9.3e-10` of a share over the 2,000 draws
+   (`3.3e-10` with the Weibull on the underwriting basis, `5.4e-10` on the
+   origin basis, `9.3e-10` with the loglogistic), and a unit test holds
+   simulated draws to `1e-8` of the search from every start under three
+   bases. `to_underwriting_basis` and the other conversions of a single
+   pattern still search from every start. The alternative is a setting
+   that keeps the search from every start in `monthly` too, at the old
+   cost divided by the threads; it is not built, since `1e-9` of a share
+   is far below any amount a cash flow reads.
+3. **Distinct patterns fitted once** (the issue's third direction) is not
+   built: a bootstrap's patterns are products of continuous pseudo
+   factors, so its 2,000 draws are 2,000 distinct patterns and a cache
+   would share nothing.
+4. **Timings** (release build, Windows, 16 cores, 2,000 draws at 144
+   months, `RunningMax`, the triangle cut at 108 months; Rust, and the
+   issue's reproduction in Python after the change):
+
+   | reading | before | after, one thread | after, 16 cores | Python, after |
+   |---|---|---|---|---|
+   | ln-linear, underwriting basis | 0.06 s | 0.05 s | 0.005 s | 0.016 s |
+   | Weibull, underwriting basis | 17.2 s | 3.4 s | 0.30 s | 0.35 s |
+   | loglogistic, underwriting basis | 11.1 s | 3.7 s | 0.22 s | 0.28 s |
+   | Weibull, origin basis | 19.4 s | 5.4 s | 0.31 s | |
+
+   The mean shares paid at 12, 24 and 60 months are the issue's (0.150,
+   0.586, 0.973 with the Weibull). On CI's 4-core runner the guide's
+   2,000 draws should take about a second.
+5. **A falling pattern** (decision 28 item 5). Bootstrap draws usually
+   need `Monotone::RunningMax`, which `monthly`'s documentation now says in
+   Rust, Python and R. On the triangle cut at 108 months `Refuse` refuses
+   77 of the 2,000 draws: one or two cells set the oldest factors, the
+   bootstrap draws one below 1, and the share passes 1 at 96 months before
+   it falls back to 1 at 108. On the uncut triangle (one cell at 120
+   months) it refuses 1,344.
 
 ### 33. Frequency-severity, disposal rates and case outstanding development (issue #555)
 

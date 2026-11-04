@@ -42,19 +42,19 @@ flat,layers,net,Percentile 5,53164642.81
 flat,layers,net,Percentile 50,70390759.59
 flat,layers,net,Percentile 95,92799255.12
 flat,layers,net,TVaR 99,110875880.4
-flat,returns,irr,Mean,0.461336484
-flat,returns,irr,Percentile 5,0.07777115632
-flat,returns,irr,Percentile 50,0.404816408
-flat,returns,irr,Percentile 95,1.029391573
-flat,returns,irr,Lower TVaR 5,0.02355154481
-flat,returns,irr,Probability of loss,0.0115
+flat,returns,irr,Mean,0.4667389076
+flat,returns,irr,Percentile 5,0.0726416187
+flat,returns,irr,Percentile 50,0.4131348107
+flat,returns,irr,Percentile 95,1.036359038
+flat,returns,irr,Lower TVaR 5,0.01447329257
+flat,returns,irr,Probability of loss,0.0165
 flat,returns,irr,Simulations without a root,0
-flat,returns,moic,Mean,1.377619444
-flat,returns,moic,Percentile 5,1.081846003
-flat,returns,moic,Percentile 50,1.357538985
-flat,returns,moic,Percentile 95,1.737782517
-flat,returns,moic,Lower TVaR 5,1.024199867
-flat,returns,moic,Probability of loss,0.0115
+flat,returns,moic,Mean,1.365918447
+flat,returns,moic,Percentile 5,1.070868882
+flat,returns,moic,Percentile 50,1.346156709
+flat,returns,moic,Percentile 95,1.725343946
+flat,returns,moic,Lower TVaR 5,1.013227574
+flat,returns,moic,Probability of loss,0.0165
 sliding,loss_ratio,loss_ratio,Mean,0.4958285426
 sliding,loss_ratio,loss_ratio,SD,0.08486032814
 sliding,loss_ratio,loss_ratio,Percentile 5,0.3694041329
@@ -98,18 +98,18 @@ sliding,layers,net,Percentile 5,53164642.81
 sliding,layers,net,Percentile 50,70390759.59
 sliding,layers,net,Percentile 95,92799255.12
 sliding,layers,net,TVaR 99,110875880.4
-sliding,returns,irr,Mean,0.4076405263
-sliding,returns,irr,Percentile 5,0.1561666526
-sliding,returns,irr,Percentile 50,0.360606905
-sliding,returns,irr,Percentile 95,0.8323596425
-sliding,returns,irr,Lower TVaR 5,0.1089579358
+sliding,returns,irr,Mean,0.4132150941
+sliding,returns,irr,Percentile 5,0.1556731654
+sliding,returns,irr,Percentile 50,0.3675582095
+sliding,returns,irr,Percentile 95,0.839975524
+sliding,returns,irr,Lower TVaR 5,0.1055848493
 sliding,returns,irr,Probability of loss,0.002
 sliding,returns,irr,Simulations without a root,0
-sliding,returns,moic,Mean,1.351175071
-sliding,returns,moic,Percentile 5,1.154633891
-sliding,returns,moic,Percentile 50,1.32640531
-sliding,returns,moic,Percentile 95,1.639825579
-sliding,returns,moic,Lower TVaR 5,1.109533514
+sliding,returns,moic,Mean,1.339564528
+sliding,returns,moic,Percentile 5,1.143495436
+sliding,returns,moic,Percentile 50,1.314945356
+sliding,returns,moic,Percentile 95,1.627712597
+sliding,returns,moic,Lower TVaR 5,1.098380112
 sliding,returns,moic,Probability of loss,0.002
 flat,comparison,premium,Mean,35980000
 flat,comparison,premium,Ratio to premium,1
