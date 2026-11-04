@@ -33578,63 +33578,6 @@ class TweedieGlm:
         """
 
 @final
-class UlaeEstimate:
-    """
-    An estimate of unpaid ULAE, from ``ulae_classical``, ``ulae_kittel`` or
-    ``ulae_conger_nolibos``.
-    """
-    def __repr__(self, /) -> str: ...
-    @property
-    def basis(self, /) -> list[float]:
-        """
-        The claims basis by calendar year.
-        """
-    @property
-    def bornhuetter_ferguson(self, /) -> float |None:
-        """
-        Conger and Nolibos' preferred form, ``W* (L - B)``; ``None`` without
-        ``ultimate`` or for the other techniques. Under their simplification
-        it loses the pure IBNR, and ``unpaid`` is the estimate.
-        """
-    @property
-    def development(self, /) -> float |None:
-        """
-        Conger and Nolibos' development form, ``M (L / B - 1)``; ``None``
-        without ``ultimate`` or for the other techniques.
-        """
-    @property
-    def expected_claims(self, /) -> float |None:
-        """
-        Conger and Nolibos' expected claims form, ``W* L - M``; ``None``
-        without ``ultimate`` or for the other techniques.
-        """
-    @property
-    def ratio(self, /) -> float:
-        """
-        The ratio applied: the selected one, or ``total_ratio``.
-        """
-    @property
-    def ratios(self, /) -> list[float]:
-        """
-        Paid ULAE over the basis by calendar year; NaN at a zero basis.
-        """
-    @property
-    def total(self, /) -> float:
-        """
-        Total unpaid ULAE.
-        """
-    @property
-    def total_ratio(self, /) -> float:
-        """
-        Total paid ULAE over the total basis.
-        """
-    @property
-    def unpaid(self, /) -> list[float]:
-        """
-        Unpaid ULAE by row of ``case_outstanding`` and ``ibnr``.
-        """
-
-@final
 class TwoPartFit:
     """
     A fitted zero-inflated or hurdle model, from ``ZeroInflated.fit`` or
@@ -33732,6 +33675,63 @@ class TwoPartFit:
     def zero_names(self, /) -> list[str]: ...
     @property
     def zero_standard_errors(self, /) -> list[float]: ...
+
+@final
+class UlaeEstimate:
+    """
+    An estimate of unpaid ULAE, from ``ulae_classical``, ``ulae_kittel`` or
+    ``ulae_conger_nolibos``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def basis(self, /) -> list[float]:
+        """
+        The claims basis by calendar year.
+        """
+    @property
+    def bornhuetter_ferguson(self, /) -> float |None:
+        """
+        Conger and Nolibos' preferred form, ``W* (L - B)``; ``None`` without
+        ``ultimate`` or for the other techniques. Under their simplification
+        it loses the pure IBNR, and ``unpaid`` is the estimate.
+        """
+    @property
+    def development(self, /) -> float |None:
+        """
+        Conger and Nolibos' development form, ``M (L / B - 1)``; ``None``
+        without ``ultimate`` or for the other techniques.
+        """
+    @property
+    def expected_claims(self, /) -> float |None:
+        """
+        Conger and Nolibos' expected claims form, ``W* L - M``; ``None``
+        without ``ultimate`` or for the other techniques.
+        """
+    @property
+    def ratio(self, /) -> float:
+        """
+        The ratio applied: the selected one, or ``total_ratio``.
+        """
+    @property
+    def ratios(self, /) -> list[float]:
+        """
+        Paid ULAE over the basis by calendar year; NaN at a zero basis.
+        """
+    @property
+    def total(self, /) -> float:
+        """
+        Total unpaid ULAE.
+        """
+    @property
+    def total_ratio(self, /) -> float:
+        """
+        Total paid ULAE over the total basis.
+        """
+    @property
+    def unpaid(self, /) -> list[float]:
+        """
+        Unpaid ULAE by row of ``case_outstanding`` and ``ibnr``.
+        """
 
 @final
 class UltimateExhibit:
