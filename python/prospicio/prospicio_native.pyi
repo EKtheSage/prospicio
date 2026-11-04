@@ -1402,6 +1402,15 @@ class BayesBfNormalised:
         Target mean acceptance rate of the step-size adaptation.
     max_depth : int, default 10
         Largest NUTS tree depth.
+    common_cv : float, optional
+        The coefficient of variation of one gamma multiplier (mean 1) common
+        to all origins' prior ultimates; ``None`` has none.
+    pattern_prior : PatternPrior, optional
+        An informative prior on the pattern: each ``beta[d]`` is normal with
+        the prior's mean and sd in place of ``N(0, development_sd**2)``, for
+        example ``IndustryPrior.pattern``. Its ages must be the fitted
+        triangle's (``PatternPrior.truncated`` or ``IndustryPrior.at_age``
+        cut a longer one). ``None`` (the default) keeps the vague prior.
     
     Raises
     ------
@@ -1429,7 +1438,7 @@ class BayesBfNormalised:
     >>> fit.parameter_names[:2]
     ['alpha[1]', 'alpha[2]']
     """
-    def __new__(cls, /, apriori: float = 1.0, cv: float = 0.1, development_sd: float = 10.0, process: str = "gamma", chains: int = 4, tune: int = 1000, draws: int = 1000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10, common_cv: float |None = None) -> BayesBfNormalised: ...
+    def __new__(cls, /, apriori: float = 1.0, cv: float = 0.1, development_sd: float = 10.0, process: str = "gamma", chains: int = 4, tune: int = 1000, draws: int = 1000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10, common_cv: float |None = None, pattern_prior: PatternPrior |None = None) -> BayesBfNormalised: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -1578,6 +1587,12 @@ class BayesBfNormalised:
         ('BayesBfNormalisedFit', 1000)
         >>> view.cdr.variance() < view.fit.reserves.variance()
         True
+        """
+    @property
+    def pattern_prior(self, /) -> PatternPrior |None:
+        """
+        The prior on the pattern, or ``None`` for the vague
+        ``N(0, development_sd**2)``.
         """
     @property
     def process(self, /) -> str:
@@ -15980,6 +15995,251 @@ class IndexClause:
         """
 
 @final
+class IndustryPrior:
+    """
+    An industry prior for ``BayesBfNormalised`` from other companies'
+    triangles (``docs/design/reserving-bayes.md``, decision 29): the mean
+    ultimate loss ratio over the companies (``apriori``), the cv of a
+    company's level about it (``between_cv``, the model's ``common_cv``),
+    the cv of an origin about its company's level (``cv``, the model's
+    ``cv``) and a ``PatternPrior`` with the mean and sd over the companies
+    of each age's log share ratio. Each company's loss ratios and pattern
+    come from its own volume-weighted chain ladder (no tail, so the
+    triangles' last age is the ultimate); only origins developed at least
+    ``min_developed`` by the industry pattern count. The estimators are
+    moments on the natural scale (a one-way random-effects decomposition),
+    written out in the Rust docs of ``IndustryPrior``. No data ship with
+    the library: the triangles are the user's, for example Schedule P
+    triangles read with the ``cas-schedule-p`` package.
+    
+    ``within_cv`` is the realised origin-to-origin spread and ``cv`` equals
+    it by default; ``subtract_process=True`` takes out the ODP process error
+    that each company's Pearson scale implies (``process_cv``), which the
+    model adds back through its own scale. On Schedule P that scale often
+    explains more than the whole spread (incurred above all), so the default
+    keeps the realised spread and errs wide.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import IndustryPrior, Triangle
+    >>> def company(scale):
+    ...     return Triangle.from_long(
+    ...         [2020, 2020, 2020, 2021, 2021, 2022],
+    ...         [12, 24, 36, 12, 24, 12],
+    ...         {"paid": [v * scale for v in [50.0, 80.0, 100.0, 55.0, 88.0, 60.0]]},
+    ...     )
+    >>> prior = IndustryPrior.from_triangles(
+    ...     [company(1.0), company(1.2), company(0.9)], "paid", [[160.0] * 3] * 3
+    ... )
+    >>> prior.report["n_companies_used"]
+    3
+    >>> prior.pattern.ages
+    [12, 24, 36]
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def apriori(self, /) -> float:
+        """
+        The mean over the companies of their mean ultimate loss ratio.
+        """
+    @property
+    def apriori_se(self, /) -> float:
+        """
+        The standard error of ``apriori``.
+        """
+    def at_age(self, /, age: int) -> IndustryPrior:
+        """
+        The prior for a triangle whose last age is ``age``: ``apriori``
+        becomes the loss ratio developed to it, the pattern keeps the ages up
+        to it and ``tail_factor`` is the factor from it to ultimate, which
+        the user applies outside the model.
+        
+        Parameters
+        ----------
+        age : int
+        
+        Returns
+        -------
+        IndustryPrior
+        """
+    @property
+    def between_cv(self, /) -> float:
+        """
+        The cv of a company's level about ``apriori``.
+        """
+    @property
+    def common_cv(self, /) -> float |None:
+        """
+        The model's ``common_cv``: ``between_cv``, or ``None`` when it is 0.
+        """
+    @property
+    def company_loss_ratios(self, /) -> list[float]:
+        """
+        Each company's mean ultimate loss ratio, companies left out omitted.
+        """
+    @property
+    def cv(self, /) -> float:
+        """
+        The model's ``cv``: ``within_cv``, or less the process error with
+        ``subtract_process``; at least 0.01.
+        """
+    def fit(self, /, triangle: Triangle, column: str, exposure: str, model: BayesBfNormalised |None = None) -> BayesBfNormalisedFit:
+        """
+        ``self.model(model).fit(triangle, column, exposure)``: the pattern
+        prior's ages must be the triangle's (``at_age`` cuts it). Raises
+        one ``UserWarning`` listing the failed diagnostics, if any.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+        exposure : str
+        model : BayesBfNormalised, optional
+        
+        Returns
+        -------
+        BayesBfNormalisedFit
+        """
+    @staticmethod
+    def from_segments(triangle: Triangle, column: str, exposure: str, min_developed: float = 0.5, min_companies: int = 10, subtract_process: bool = False) -> IndustryPrior:
+        """
+        The prior from one triangle with a segment per company (a key such
+        as the group code), loss ``column``, and each origin's premium from
+        the ``exposure`` column (its latest observed value).
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+        exposure : str
+        min_developed, min_companies, subtract_process
+            As in ``from_triangles``.
+        
+        Returns
+        -------
+        IndustryPrior
+        """
+    @staticmethod
+    def from_triangles(triangles: Sequence[Triangle], column: str, premiums: Sequence[Sequence[float]], min_developed: float = 0.5, min_companies: int = 10, subtract_process: bool = False) -> IndustryPrior:
+        """
+        The prior from single-segment triangles, one per company, of loss
+        ``column`` (cumulative or incremental), with each company's premium
+        per origin. Every triangle must have the same development ages.
+        
+        Parameters
+        ----------
+        triangles : list of Triangle
+            One per company; at least two.
+        column : str
+            The losses.
+        premiums : list of list of float
+            Each company's premium per origin, in origin order. An origin
+            whose premium is not positive is left out.
+        min_developed : float, default 0.5
+            The smallest share of the ultimate developed (by the industry
+            pattern) at an origin's latest age for its loss ratio to count.
+        min_companies : int, default 10
+            Fewer companies than this add a warning to ``report``.
+        subtract_process : bool, default False
+            Whether ``cv`` is ``within_cv`` less the ODP process error.
+        
+        Returns
+        -------
+        IndustryPrior
+        
+        Raises
+        ------
+        ValueError
+            If fewer than two companies have a loss ratio, the triangles'
+            ages differ, a company's premiums do not match its origins, no
+            company has a pattern at some age, or ``min_developed`` is
+            outside 0 to 1.
+        """
+    def model(self, /, model: BayesBfNormalised |None = None) -> BayesBfNormalised:
+        """
+        ``model`` (default settings if omitted) with this prior's
+        ``apriori``, ``cv``, ``common_cv`` and ``pattern`` as its
+        ``pattern_prior``; its other settings are kept.
+        
+        Parameters
+        ----------
+        model : BayesBfNormalised, optional
+        
+        Returns
+        -------
+        BayesBfNormalised
+        """
+    def one_year(self, /, triangle: Triangle, column: str, exposure: str, model: BayesBfNormalised |None = None, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", max_refits: int |None = None, n_sims: int |None = None) -> BayesOneYearFit:
+        """
+        The one-year view of the same fit (``BayesBfNormalised.one_year``).
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+        exposure : str
+        model : BayesBfNormalised, optional
+        k_threshold : float, default 0.7
+        refit : str, default "moment_match_then_refit"
+        max_refits : int, optional
+        n_sims : int, optional
+            As in ``BayesBfNormalised.one_year``.
+        
+        Returns
+        -------
+        BayesOneYearFit
+        """
+    @property
+    def pattern(self, /) -> PatternPrior:
+        """
+        The prior on the pattern.
+        """
+    @property
+    def percent_developed(self, /) -> list[float]:
+        """
+        The percent developed at each age at the pattern prior's mean.
+        """
+    @property
+    def percent_developed_sd(self, /) -> list[float]:
+        """
+        The sd over the companies of their percent developed at each age.
+        """
+    @property
+    def process_cv(self, /) -> float:
+        """
+        The part of ``within_cv`` that the companies' ODP process error
+        explains.
+        """
+    @property
+    def report(self, /) -> dict:
+        """
+        The report: ``n_companies``, ``n_companies_used``,
+        ``n_origins_used``, ``origins_used`` (per company),
+        ``companies_by_age`` (with a pattern at each age after the first),
+        ``excluded`` and ``warnings`` (lists of str).
+        """
+    @property
+    def tail_factor(self, /) -> float:
+        """
+        The factor from the pattern's last age to the ultimate: 1, or more
+        for a prior cut by ``at_age``.
+        """
+    def to_bf_normalised_settings(self, /) -> BayesBfNormalised:
+        """
+        ``model()`` on the default settings.
+        
+        Returns
+        -------
+        BayesBfNormalised
+        """
+    @property
+    def within_cv(self, /) -> float:
+        """
+        The cv of the realised loss ratios of a company's origins about its
+        level.
+        """
+
+@final
 class InverseGamma:
     """
     Inverse gamma distribution with shape ``alpha`` and scale ``theta``:
@@ -18229,8 +18489,9 @@ class LayerSharePrior:
         Parameters
         ----------
         model : BayesBfNormalised, optional
-            Supplies the sampler, process error, simulations and seed; its
-            own ``apriori``, ``cv`` and ``common_cv`` are replaced.
+            Supplies the sampler, process error, simulations, seed and
+            ``pattern_prior``; its own ``apriori``, ``cv`` and ``common_cv``
+            are replaced.
         
         Returns
         -------
@@ -24821,6 +25082,101 @@ class ParetoShape:
     def ultimate_alpha(self, /) -> float:
         """
         The shape of the fully developed claims.
+        """
+
+@final
+class PatternPrior:
+    """
+    A normal prior on the development pattern of ``BayesBfNormalised``: at
+    each age after the first, ``beta[d] = log(p[d] / p[1])`` (the log ratio
+    of the share of the ultimate at age ``d`` to the first age's) is normal
+    with mean ``mean[d]`` and sd ``sd[d]``, in place of the model's
+    ``N(0, development_sd**2)`` (``docs/design/reserving-bayes.md``,
+    decision 29). ``IndustryPrior.pattern`` builds one from other companies'
+    triangles.
+    
+    Parameters
+    ----------
+    ages : list of int
+        The development ages in months, increasing; at least two.
+    mean : list of float
+        The prior mean of each ``beta[d]``, one fewer than the ages.
+    sd : list of float
+        The prior sd of each ``beta[d]``, finite and positive.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import PatternPrior
+    >>> prior = PatternPrior.from_shares([12, 24, 36], [0.5, 0.3, 0.2], [0.1, 0.1])
+    >>> [round(p, 12) for p in prior.shares()]
+    [0.5, 0.3, 0.2]
+    >>> prior.truncated(24).ages
+    [12, 24]
+    """
+    def __new__(cls, /, ages: Sequence[int], mean: Sequence[float], sd: Sequence[float]) -> PatternPrior: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def ages(self, /) -> list[int]:
+        """
+        The development ages in months.
+        """
+    @staticmethod
+    def from_shares(ages: Sequence[int], shares: Sequence[float], sd: Sequence[float]) -> PatternPrior:
+        """
+        A prior centred on incremental ``shares`` of the ultimate (positive;
+        they need not sum to 1), with ``sd`` on each log ratio after the
+        first age.
+        
+        Parameters
+        ----------
+        ages : list of int
+        shares : list of float
+            One per age.
+        sd : list of float
+            One per age after the first.
+        
+        Returns
+        -------
+        PatternPrior
+        """
+    @property
+    def mean(self, /) -> list[float]:
+        """
+        The prior mean of each ``beta[d]``, ages after the first.
+        """
+    def percent_developed(self, /) -> list[float]:
+        """
+        The percent developed at each age at the prior mean, ending at 1.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def sd(self, /) -> list[float]:
+        """
+        The prior sd of each ``beta[d]``, ages after the first.
+        """
+    def shares(self, /) -> list[float]:
+        """
+        The incremental shares at the prior mean, summing to 1.
+        
+        Returns
+        -------
+        list of float
+        """
+    def truncated(self, /, age: int) -> PatternPrior:
+        """
+        The prior on the ages up to ``age`` (one of its ages, not the
+        first): the log ratios to the first age keep their means and sds.
+        
+        Parameters
+        ----------
+        age : int
+        
+        Returns
+        -------
+        PatternPrior
         """
 
 @final
