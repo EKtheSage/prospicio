@@ -26,10 +26,11 @@ use prospicio_reserving::{
 };
 use prospicio_reserving::{
     CalendarYearTest as CalendarYearInner,
-    DevelopmentCorrelationTest as DevelopmentCorrelationInner,
-    DevelopmentExhibit as DevelopmentExhibitInner, MethodWeights,
-    SelectedUltimates as SelectedUltimatesInner, UltimateExhibit as UltimateExhibitInner,
-    UltimateSelection, calendar_year_effect, development_correlation, friedland_averages,
+    DevelopmentCorrelationTest as DevelopmentCorrelationInner, DevelopmentCurve,
+    DevelopmentCurveFit as DevelopmentCurveInner, DevelopmentExhibit as DevelopmentExhibitInner,
+    MethodWeights, SelectedUltimates as SelectedUltimatesInner,
+    UltimateExhibit as UltimateExhibitInner, UltimateSelection, calendar_year_effect,
+    development_correlation, friedland_averages,
 };
 
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
@@ -1163,6 +1164,62 @@ impl Triangle {
         .fit_segments(&self.inner, column)
         .map_err(to_r)?;
         Ok(ChainLadderFit { inner })
+    }
+
+    /// A development curve (`development_curve()`) fitted to the estimated
+    /// factors of `column`, averaged as `average` with the exclusions
+    /// `excl`.
+    #[allow(clippy::too_many_arguments)]
+    fn development_curve(
+        &self,
+        column: &str,
+        average: &str,
+        excl: Robj,
+        shape: &str,
+        fit_from: Nullable<f64>,
+        fit_to: Nullable<f64>,
+        keep_observed_until: Nullable<f64>,
+    ) -> Result<DevelopmentCurveFit> {
+        let curve = development_curve_settings(shape, fit_from, fit_to, keep_observed_until)?;
+        let dev = curve_development(&self.inner, column, average, &excl)?;
+        let inner = curve.fit(&dev).map_err(to_r)?;
+        Ok(DevelopmentCurveFit { inner })
+    }
+
+    /// `development_curve_compare()`: each of `shapes` fitted to the same
+    /// factors, a list of columns `shape`, `n_points`, `n_parameters`,
+    /// `sum_of_squares`, `r_squared` and `adjusted_r_squared`.
+    #[allow(clippy::too_many_arguments)]
+    fn development_curve_compare(
+        &self,
+        column: &str,
+        average: &str,
+        excl: Robj,
+        shapes: Vec<String>,
+        fit_from: Nullable<f64>,
+        fit_to: Nullable<f64>,
+        keep_observed_until: Nullable<f64>,
+    ) -> Result<List> {
+        let curve =
+            development_curve_settings("exponential", fit_from, fit_to, keep_observed_until)?;
+        let shapes = shapes
+            .iter()
+            .map(|s| curve_shape(s, "shapes"))
+            .collect::<Result<Vec<_>>>()?;
+        let dev = curve_development(&self.inner, column, average, &excl)?;
+        let rows = curve.compare(&dev, &shapes).map_err(to_r)?;
+        let num = |f: fn(&DevelopmentCurveInner) -> f64| rows.iter().map(f).collect::<Vec<f64>>();
+        Ok(list!(
+            shape = rows
+                .iter()
+                .map(|r| curve_name(r.curve.shape))
+                .collect::<Vec<_>>(),
+            n_points = num(|r| r.n_points as f64),
+            n_parameters = num(|r| r.n_parameters as f64),
+            sum_of_squares = num(|r| r.sum_of_squares),
+            r_squared = num(|r| r.r_squared),
+            adjusted_r_squared = num(|r| r.adjusted_r_squared)
+        ))
     }
 
     /// Mack's calendar-year effect test on every observed link ratio of
@@ -2488,7 +2545,29 @@ fn curve_name(curve: CurveShape) -> &'static str {
     match curve {
         CurveShape::Exponential => "exponential",
         CurveShape::InversePower => "inverse_power",
+        CurveShape::Hoerl => "hoerl",
+        CurveShape::Sherman => "sherman",
+        CurveShape::Growth(GrowthCurve::LogLogistic) => "loglogistic",
+        CurveShape::Growth(GrowthCurve::Weibull) => "weibull",
     }
+}
+
+/// A curve shape by its name in the bindings.
+fn curve_shape(name: &str, what: &str) -> Result<CurveShape> {
+    Ok(match name {
+        "exponential" => CurveShape::Exponential,
+        "inverse_power" => CurveShape::InversePower,
+        "hoerl" => CurveShape::Hoerl,
+        "sherman" => CurveShape::Sherman,
+        "loglogistic" => CurveShape::Growth(GrowthCurve::LogLogistic),
+        "weibull" => CurveShape::Growth(GrowthCurve::Weibull),
+        _ => {
+            return Err(Error::Other(format!(
+                "{what} must be \"exponential\", \"inverse_power\", \"hoerl\", \"sherman\", \
+                 \"loglogistic\" or \"weibull\", got \"{name}\""
+            )));
+        }
+    })
 }
 
 #[extendr]
@@ -2503,8 +2582,8 @@ impl ReservingTail {
         })
     }
 
-    /// `curve` is "exponential" or "inverse_power"; the fit period runs
-    /// from `fit_from` (inclusive) to `fit_to` (exclusive).
+    /// `curve` is a shape's name (`curve_shape`); the fit period runs from
+    /// `fit_from` (inclusive) to `fit_to` (exclusive).
     fn curve(
         curve: &str,
         fit_from: Nullable<f64>,
@@ -2512,15 +2591,7 @@ impl ReservingTail {
         extrap_periods: f64,
         attachment_age: Nullable<f64>,
     ) -> Result<Self> {
-        let curve = match curve {
-            "exponential" => CurveShape::Exponential,
-            "inverse_power" => CurveShape::InversePower,
-            _ => {
-                return Err(Error::Other(format!(
-                    "curve must be \"exponential\" or \"inverse_power\", got \"{curve}\""
-                )));
-            }
-        };
+        let curve = curve_shape(curve, "curve")?;
         let extrap_periods = usize::try_from(whole(extrap_periods, "extrap_periods")?)
             .map_err(|_| Error::Other("extrap_periods is too large".into()))?;
         Ok(Self {
@@ -6882,6 +6953,153 @@ impl LatestDiagonals {
     }
 }
 
+/// The settings of `development_curve()`.
+fn development_curve_settings(
+    shape: &str,
+    fit_from: Nullable<f64>,
+    fit_to: Nullable<f64>,
+    keep_observed_until: Nullable<f64>,
+) -> Result<DevelopmentCurve> {
+    Ok(DevelopmentCurve {
+        shape: curve_shape(shape, "shape")?,
+        fit_period: (
+            optional_age(fit_from, "fit_period")?,
+            optional_age(fit_to, "fit_period")?,
+        ),
+        keep_observed_until: optional_age(keep_observed_until, "keep_observed_until")?,
+    })
+}
+
+/// The estimated development a curve is fitted to: `column` of a
+/// single-segment triangle, averaged as `average` with the exclusions
+/// `excl`.
+fn curve_development(
+    triangle: &TriangleInner,
+    column: &str,
+    average: &str,
+    excl: &Robj,
+) -> Result<prospicio_reserving::DevelopmentFit> {
+    development(average, "log-linear", excl, None)?
+        .fit(triangle, column)
+        .map_err(to_r)
+}
+
+/// A development curve fitted over every age (`development_curve()`).
+#[extendr]
+pub(crate) struct DevelopmentCurveFit {
+    inner: DevelopmentCurveInner,
+}
+
+#[extendr]
+impl DevelopmentCurveFit {
+    fn shape(&self) -> &'static str {
+        curve_name(self.inner.curve.shape)
+    }
+
+    /// The fit period's ends, NaN for an open end.
+    fn fit_period(&self) -> Vec<f64> {
+        let end = |a: Option<Lag>| a.map_or(f64::NAN, f64::from);
+        vec![
+            end(self.inner.curve.fit_period.0),
+            end(self.inner.curve.fit_period.1),
+        ]
+    }
+
+    /// NaN for the curve at every age.
+    fn keep_observed_until(&self) -> f64 {
+        self.inner
+            .curve
+            .keep_observed_until
+            .map_or(f64::NAN, f64::from)
+    }
+
+    fn parameters(&self) -> Vec<f64> {
+        self.inner.parameters.clone()
+    }
+
+    fn development(&self) -> Vec<f64> {
+        self.inner
+            .development
+            .iter()
+            .map(|&a| f64::from(a))
+            .collect()
+    }
+
+    fn observed(&self) -> Vec<f64> {
+        self.inner.observed.clone()
+    }
+
+    fn fitted(&self) -> Vec<f64> {
+        self.inner.fitted.clone()
+    }
+
+    fn residuals(&self) -> Vec<f64> {
+        self.inner.residuals.clone()
+    }
+
+    fn in_fit(&self) -> Vec<bool> {
+        self.inner.in_fit.clone()
+    }
+
+    /// The first position the curve replaces, 0-based.
+    fn attachment(&self) -> f64 {
+        self.inner.attachment as f64
+    }
+
+    fn ldf(&self) -> Vec<f64> {
+        self.inner.ldf.clone()
+    }
+
+    fn n_points(&self) -> f64 {
+        self.inner.n_points as f64
+    }
+
+    fn n_parameters(&self) -> f64 {
+        self.inner.n_parameters as f64
+    }
+
+    fn sum_of_squares(&self) -> f64 {
+        self.inner.sum_of_squares
+    }
+
+    fn r_squared(&self) -> f64 {
+        self.inner.r_squared
+    }
+
+    fn adjusted_r_squared(&self) -> f64 {
+        self.inner.adjusted_r_squared
+    }
+
+    /// The curve's factor at each 0-based development position.
+    fn factor(&self, position: &[f64]) -> Result<Vec<f64>> {
+        position
+            .iter()
+            .map(|&p| Ok(self.inner.factor(whole(p, "position")? as usize)))
+            .collect()
+    }
+
+    /// The product of the curve's factors over `extrap_periods` periods
+    /// past the oldest age.
+    fn tail(&self, extrap_periods: f64) -> Result<f64> {
+        Ok(self
+            .inner
+            .tail(whole(extrap_periods, "extrap_periods")? as usize))
+    }
+
+    /// The selected pattern's ages and age-to-age factors.
+    fn pattern(&self) -> List {
+        let p = self.inner.pattern();
+        list!(
+            ages = p
+                .values
+                .iter()
+                .map(|&(a, _)| f64::from(a))
+                .collect::<Vec<_>>(),
+            values = p.values.iter().map(|&(_, v)| v).collect::<Vec<_>>()
+        )
+    }
+}
+
 /// A growth curve fitted to a benchmark pattern (`benchmark_curve()`).
 #[extendr]
 pub(crate) struct BenchmarkCurveFit {
@@ -7039,6 +7257,7 @@ extendr_module! {
     impl OneYearFit;
     impl ClarkFit;
     impl BenchmarkCurveFit;
+    impl DevelopmentCurveFit;
     impl MunichFit;
 }
 

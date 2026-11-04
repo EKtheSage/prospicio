@@ -10380,13 +10380,54 @@ class DevelopmentCorrelationTest:
         """
 
 @final
+class DevelopmentCurve:
+    """
+    A curve fitted to a triangle's age-to-age factors over every age (issue
+    #556; design note ``reserving-v02.md``, decision 31), to smooth the
+    whole pattern: the observed factors are kept before
+    ``keep_observed_until`` and the curve's are used from there on.
+    
+    ``k`` is the 1-based development index (1 for the factor from the
+    youngest age to the next), as ``TailCurve`` reads it:
+    
+    * ``"exponential"``: ``ln(f_k - 1) = a + b k``;
+    * ``"inverse_power"``: ``ln(f_k - 1) = a + b ln(k)``;
+    * ``"hoerl"``: ``ln(f_k - 1) = a + b k + c ln(k)``;
+    * ``"sherman"``: ``f_k - 1 = a (k + c)**(-b)`` (Sherman 1984);
+    * ``"loglogistic"``, ``"weibull"``: Clark's growth curve ``G`` as
+      percents developed at the ages ``t`` in months,
+      ``f_k = G(t_(k+1)) / G(t_k)``.
+    
+    The first three are least-squares lines on ``ln(f - 1)``, the others
+    nonlinear least squares on the factors. Every shape is fitted to the
+    estimated factors in ``fit_period`` above 1.00001; the residuals, the sum
+    of squares and R-squared are on the factor scale, so that ``compare``
+    gives one table. The parameters match R's ``lm`` and ``nls``.
+    
+    ``fit.selected()`` gives the fitted factors as the ``ldf``, ``ldf_kind``
+    and ``ldf_weight`` arguments of ``ChainLadder``, ``Mack`` and the
+    expected-loss methods, and ``fit.tail()`` the curve's development past
+    the oldest age for their ``tail``. A selected factor carries no
+    parameter error, so the curve lowers Mack's standard errors.
+    
+    Parameters
+    ----------
+    shape : {"exponential", "inverse_power", "hoerl", "sherman", "loglogistic", "weibull"}, default "exponential"
+    fit_period : tuple of (int or None, int or None), default (None, None)
+        Ages in months whose factors enter the fit: from the last age at or
+        before the first (inclusive) to the last age at or before the second
+        (exclusive), as ``TailCurve`` reads them; ``None`` is open-ended.
+    keep_observed_until : int, optional
+        The observed factors are kept before this age in months and the
+        curve is used from the first age at or after it on; ``None`` uses
+        the curve at every age.
 class DevelopmentExhibit:
     """
     Friedland's development exhibit (chapter 7, Exhibit I, sheets 1 and 2)
     of one column of a single-segment triangle: the link ratios, each named
     average of them, the selected factors, the tail, the factors to ultimate
     and the percents developed (``docs/design/reserving-v02.md``, decision
-    30).
+    34).
     
     The selected factors and factors to ultimate are those of the chain
     ladder ``selection`` fitted to the column, so a selected pattern
@@ -10412,6 +10453,227 @@ class DevelopmentExhibit:
     Raises
     ------
     ValueError
+        If ``shape`` is unknown.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import ChainLadder, DevelopmentCurve, Triangle
+    >>> rows = [[100.0, 180.0, 215.0, 228.0, 233.0], [110.0, 196.0, 236.0, 249.0],
+    ...         [120.0, 218.0, 259.0], [130.0, 232.0], [140.0]]
+    >>> tri = Triangle.from_long(
+    ...     [2020 + i for i, row in enumerate(rows) for _ in row],
+    ...     [12 * (d + 1) for row in rows for d in range(len(row))],
+    ...     [v for row in rows for v in row],
+    ... )
+    >>> fit = DevelopmentCurve(shape="inverse_power").fit(tri, "values")
+    >>> fit.r_squared > 0.9
+    True
+    >>> cl = ChainLadder(**fit.selected(), tail=fit.tail()).fit(tri, "values")
+    >>> cl.ldf[:4] == fit.fitted
+    True
+    >>> table = DevelopmentCurve().compare(tri, "values", ["exponential", "inverse_power"])
+    >>> table["shape"]
+    ['exponential', 'inverse_power']
+    """
+    def __new__(cls, /, shape: str = "exponential", fit_period: tuple[int |None, int |None] = ..., keep_observed_until: int |None = None) -> DevelopmentCurve: ...
+    def __repr__(self, /) -> str: ...
+    def compare(self, /, triangle: Triangle, column: str, shapes: Sequence[str] |None = None, average: str = "volume", n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> dict:
+        """
+        Fits each of ``shapes``, with this curve's ``fit_period`` and
+        ``keep_observed_until``, to the same factors: a table of fit
+        statistics, one row per shape.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+        shapes : list of str, optional
+            The shapes to compare; every shape by default.
+        average, n_periods, drop_high, drop_low
+            As in ``fit``.
+        
+        Returns
+        -------
+        dict
+            Columns ``shape``, ``n_points``, ``n_parameters``,
+            ``sum_of_squares``, ``r_squared`` and ``adjusted_r_squared``, a
+            list each (``pandas.DataFrame(table)`` makes a frame of it).
+        
+        Raises
+        ------
+        ValueError
+            As ``fit``, for the first shape that cannot be fitted.
+        """
+    def fit(self, /, triangle: Triangle, column: str, average: str = "volume", n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> DevelopmentCurveFit:
+        """
+        Fits the curve to the estimated factors of a single-segment
+        triangle's column.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative or incremental, with one segment.
+        column : str
+        average : {"volume", "simple", "regression", "geometric"}, default "volume"
+            How the link ratios are averaged into the factors the curve is
+            fitted to, as ``ChainLadder``'s.
+        n_periods : int, optional
+        drop_high : int, default 0
+        drop_low : int, default 0
+            The link ratio exclusions, as ``ChainLadder``'s.
+        
+        Returns
+        -------
+        DevelopmentCurveFit
+        
+        Raises
+        ------
+        ValueError
+            If the column is unknown, a factor cannot be estimated, the fit
+            period holds too few factors above 1.00001 for the shape (two for
+            the exponential and inverse power, three for Hoerl and the growth
+            curves, four for Sherman), a nonlinear fit does not converge or
+            ``keep_observed_until`` is past the last factor's age.
+        """
+    @property
+    def fit_period(self, /) -> tuple[int |None, int |None]:
+        """
+        Ages whose factors enter the fit, from (inclusive) and to
+        (exclusive).
+        """
+    @property
+    def keep_observed_until(self, /) -> int |None:
+        """
+        Age in months from which the curve replaces the observed factors;
+        ``None`` for every age.
+        """
+    @property
+    def shape(self, /) -> str:
+        """
+        The curve fitted to the factors.
+        """
+
+@final
+class DevelopmentCurveFit:
+    """
+    A curve fitted by ``DevelopmentCurve.fit``.
+    
+    Per development position (factor ``k`` links ``development[k]`` to
+    ``development[k + 1]``): ``observed`` (the triangle's estimated factors,
+    NaN where one is missing), ``fitted`` (the curve's), ``residuals``
+    (``observed - fitted``), ``in_fit`` (whether the factor entered the fit)
+    and ``ldf`` (``observed`` before ``attachment``, ``fitted`` from it on).
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def adjusted_r_squared(self, /) -> float:
+        """
+        R-squared adjusted for the number of parameters; NaN with no more
+        points than parameters.
+        """
+    @property
+    def attachment(self, /) -> int:
+        """
+        The first position the curve replaces.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    def factor(self, /, position: int) -> float:
+        """
+        The curve's factor at a 0-based development position, past the
+        oldest age too.
+        """
+    @property
+    def fit_period(self, /) -> tuple[int |None, int |None]:
+        """
+        Ages whose factors entered the fit, from (inclusive) and to
+        (exclusive).
+        """
+    @property
+    def fitted(self, /) -> list[float]:
+        """
+        The curve's factor at every development position.
+        """
+    @property
+    def in_fit(self, /) -> list[bool]:
+        """
+        Whether each position's factor entered the fit.
+        """
+    @property
+    def keep_observed_until(self, /) -> int |None:
+        """
+        Age in months from which the curve replaces the observed factors.
+        """
+    @property
+    def ldf(self, /) -> list[float]:
+        """
+        The selected factors: ``observed`` before ``attachment``,
+        ``fitted`` from it on.
+        """
+    @property
+    def n_parameters(self, /) -> int:
+        """
+        The number of parameters of the curve.
+        """
+    @property
+    def n_points(self, /) -> int:
+        """
+        The number of points in the fit.
+        """
+    @property
+    def observed(self, /) -> list[float]:
+        """
+        The triangle's estimated factors, NaN where one is missing.
+        """
+    @property
+    def parameters(self, /) -> list[float]:
+        """
+        The curve's parameters: ``[a, b]`` for the exponential and inverse
+        power, ``[a, b, c]`` for Hoerl and Sherman, ``[omega, theta]`` for a
+        growth curve.
+        """
+    @property
+    def r_squared(self, /) -> float:
+        """
+        ``1 - SSE / SST`` over the points of the fit.
+        """
+    @property
+    def residuals(self, /) -> list[float]:
+        """
+        ``observed - fitted`` at every development position.
+        """
+    def selected(self, /) -> dict:
+        """
+        The fitted factors from ``attachment`` on as the arguments of the
+        chain ladder, Mack and the expected-loss methods.
+        
+        Returns
+        -------
+        dict
+            ``ldf`` (the age-to-age factors by age), ``ldf_kind`` (``"ldf"``)
+            and ``ldf_weight`` (1.0), to be passed as keyword arguments, with
+            ``tail=fit.tail()`` for the curve's development past the oldest
+            age.
+        """
+    @property
+    def shape(self, /) -> str:
+        """
+        The curve fitted to the factors.
+        """
+    @property
+    def sum_of_squares(self, /) -> float:
+        """
+        The sum of squared residuals over the points of the fit, on the
+        factor scale.
+        """
+    def tail(self, /, extrap_periods: int = 100) -> float:
+        """
+        The curve's development past the oldest age: the product of its
+        factors over the ``extrap_periods`` periods after it, as
+        ``TailCurve`` extrapolates.
         If the triangle has several segments or lacks the column, an
         average cannot be estimated (it is named), or the selection cannot
         be fitted.
@@ -29726,11 +29988,13 @@ class TailCurve:
     ``ln(f - 1)`` on the 1-based development index ``k`` (exponential) or on
     ``ln(k)`` (inverse power). The fitted curve replaces the factors from the
     attachment age on and runs ``extrap_periods`` periods past the oldest
-    age.
+    age. The Hoerl, Sherman and growth shapes are fitted to the same factors
+    as ``DevelopmentCurve`` fits them; chainladder-python has only the first
+    two.
     
     Parameters
     ----------
-    curve : {"exponential", "inverse_power"}, default "exponential"
+    curve : {"exponential", "inverse_power", "hoerl", "sherman", "loglogistic", "weibull"}, default "exponential"
     fit_period : tuple of (int or None, int or None), default (None, None)
         Ages in months whose factors enter the fit: from the last age at or
         before the first (inclusive) to the last age at or before the second

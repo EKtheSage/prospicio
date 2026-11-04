@@ -157,6 +157,10 @@ pub enum Error {
     /// A growth curve cannot be fitted to this benchmark pattern
     /// ([`BenchmarkCurve`](crate::BenchmarkCurve)).
     BenchmarkCurve(String),
+    /// A development curve cannot be fitted to these factors, or its
+    /// settings do not fit the triangle
+    /// ([`DevelopmentCurve`](crate::DevelopmentCurve)).
+    DevelopmentCurve(String),
     /// An industry prior cannot be built from these triangles
     /// ([`IndustryPrior`](crate::IndustryPrior)): too few companies, ages
     /// that differ, or a pattern or spread that cannot be estimated.
@@ -290,6 +294,7 @@ impl fmt::Display for Error {
             Self::Clark(why) => write!(f, "Clark: {why}"),
             Self::Munich(why) => write!(f, "Munich chain ladder: {why}"),
             Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),
+            Self::DevelopmentCurve(why) => write!(f, "development curve: {why}"),
             Self::IndustryPrior(why) => write!(f, "industry prior: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
             Self::OneYear {
