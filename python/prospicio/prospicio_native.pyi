@@ -28278,6 +28278,146 @@ class RateLevel:
         """
 
 @final
+class RatioDevelopment:
+    """
+    The ratio of two columns of one triangle, developed to ultimate and
+    applied to ultimate claims: Friedland's ratio approach to salvage and
+    subrogation (chapter 14) and to ALAE (chapter 16).
+    
+    Each cell's ratio comes from the two cumulative columns; a cell whose
+    denominator is zero or missing has none. The latest ratio is developed to
+    ultimate, a selected ratio replaces it where the actuary judges otherwise,
+    and the numerator's ultimate is the ratio times the ultimate claims from
+    any method.
+    
+    Parameters
+    ----------
+    development : ChainLadder, optional
+        How the ratio's factors are estimated, with its tail and any selected
+        ``ldf``. By default the simple average of every link ratio with no
+        tail, as Friedland averages ratios. Additive factors need
+        ``average="simple"`` and no tail or ``ldf``.
+    selected : dict, optional
+        An ultimate ratio by origin, as a label or integer year, which
+        replaces the projected one: ``{2008: 0.345}``.
+    additive : bool, default False
+        Average the differences between ages and add them to ultimate,
+        Friedland's chapter 16, Exhibit I, Sheets 9 and 10, instead of
+        multiplying age-to-age factors.
+    additive_selected : dict, optional
+        Selected differences by the age they start from, for ``additive``.
+    additive_tail : float, default 0.0
+        The addition past the oldest age, for ``additive``.
+    """
+    def __new__(cls, /, development: ChainLadder |None = None, *, selected: dict |None = None, additive: bool = False, additive_selected: Any |None = None, additive_tail: float = 0.0) -> RatioDevelopment: ...
+    def __repr__(self, /) -> str: ...
+    def fit(self, /, triangle: Triangle, numerator: str, denominator: str, ultimate_claims: Sequence[float]) -> RatioDevelopmentFit:
+        """
+        Fits the ratio of ``numerator`` to ``denominator``, two columns of a
+        single-segment triangle, and applies it to ``ultimate_claims``, one
+        value per origin, oldest first.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            The triangle holding both columns.
+        numerator : str
+            The cumulative column to project: received recoveries, paid ALAE.
+        denominator : str
+            The cumulative column it is a ratio to: paid claims.
+        ultimate_claims : sequence of float
+            The ultimate claims, from any method.
+        
+        Returns
+        -------
+        RatioDevelopmentFit
+        """
+
+@final
+class RatioDevelopmentFit:
+    """
+    A fitted ``RatioDevelopment``, per origin.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def ages(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    @property
+    def averages(self, /) -> list[float]:
+        """
+        The averages of the ratio's age-to-age factors or differences.
+        """
+    @property
+    def cdf(self, /) -> list[float]:
+        """
+        Age-to-ultimate factors or additions, one per age.
+        """
+    @property
+    def factors(self, /) -> list[float]:
+        """
+        The age-to-age factors or differences in use, after any selection.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        The latest cumulative numerator per origin.
+        """
+    @property
+    def latest_ratio(self, /) -> list[float]:
+        """
+        The latest ratio per origin.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin of each per-origin value.
+        """
+    @property
+    def projected_ratio(self, /) -> list[float]:
+        """
+        The latest ratio developed to ultimate.
+        """
+    @property
+    def ratios(self, /) -> list[list[float |None]]:
+        """
+        The ratio triangle, one row per origin; ``None`` where a cell has no
+        ratio.
+        """
+    @property
+    def selected_ratio(self, /) -> list[float]:
+        """
+        The ultimate ratio in use: the projected one, or the selected one.
+        """
+    @property
+    def total_ultimate(self, /) -> float:
+        """
+        The sum of the ultimates.
+        """
+    @property
+    def total_unpaid(self, /) -> float:
+        """
+        The sum of the unpaid amounts.
+        """
+    @property
+    def ultimate(self, /) -> list[float]:
+        """
+        The numerator's ultimate: the selected ratio times the ultimate
+        claims.
+        """
+    @property
+    def ultimate_claims(self, /) -> list[float]:
+        """
+        The ultimate claims the ratio applies to, as given.
+        """
+    @property
+    def unpaid(self, /) -> list[float]:
+        """
+        Ultimate less latest; for recoveries, the recoverable.
+        """
+
+@final
 class ReinstatementPrice:
     """
     The upfront premium of a cover whose reinstatement premium counts in
@@ -32420,6 +32560,63 @@ class TwoPartFit:
     def zero_names(self, /) -> list[str]: ...
     @property
     def zero_standard_errors(self, /) -> list[float]: ...
+
+@final
+class UlaeEstimate:
+    """
+    An estimate of unpaid ULAE, from ``ulae_classical``, ``ulae_kittel`` or
+    ``ulae_conger_nolibos``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def basis(self, /) -> list[float]:
+        """
+        The claims basis by calendar year.
+        """
+    @property
+    def bornhuetter_ferguson(self, /) -> float |None:
+        """
+        Conger and Nolibos' preferred form, ``W* (L - B)``; ``None`` without
+        ``ultimate`` or for the other techniques. Under their simplification
+        it loses the pure IBNR, and ``unpaid`` is the estimate.
+        """
+    @property
+    def development(self, /) -> float |None:
+        """
+        Conger and Nolibos' development form, ``M (L / B - 1)``; ``None``
+        without ``ultimate`` or for the other techniques.
+        """
+    @property
+    def expected_claims(self, /) -> float |None:
+        """
+        Conger and Nolibos' expected claims form, ``W* L - M``; ``None``
+        without ``ultimate`` or for the other techniques.
+        """
+    @property
+    def ratio(self, /) -> float:
+        """
+        The ratio applied: the selected one, or ``total_ratio``.
+        """
+    @property
+    def ratios(self, /) -> list[float]:
+        """
+        Paid ULAE over the basis by calendar year; NaN at a zero basis.
+        """
+    @property
+    def total(self, /) -> float:
+        """
+        Total unpaid ULAE.
+        """
+    @property
+    def total_ratio(self, /) -> float:
+        """
+        Total paid ULAE over the total basis.
+        """
+    @property
+    def unpaid(self, /) -> list[float]:
+        """
+        Unpaid ULAE by row of ``case_outstanding`` and ``ibnr``.
+        """
 
 @final
 class UnderwritingBasis:
@@ -37696,6 +37893,103 @@ def tweedie_profile(design: Design, y: Sequence[float], powers: Sequence[float],
         ``powers``, ``log_likelihood`` and ``dispersion`` (one per power),
         the refined ``power``, its ``phi`` and ``max_log_likelihood``, and
         the ``fit`` there (``GlmFit``).
+    """
+
+def ulae_classical(paid_ulae: Sequence[float], paid: Sequence[float], case_outstanding: Sequence[float], ibnr: Sequence[float], *, ratio: float |None = None, opening: float = 0.5, pure_ibnr: Sequence[float] |None = None) -> UlaeEstimate:
+    """
+    Unpaid ULAE by the classical, or paid-to-paid, technique (Friedland,
+    chapter 17): calendar paid ULAE over calendar paid claims, applied to
+    ``1 - opening`` of case outstanding and all of the IBNR.
+    
+    Mango and Allen's refinement is this technique with expected paid claims
+    as ``paid``.
+    
+    Parameters
+    ----------
+    paid_ulae, paid : sequence of float
+        Paid ULAE and paid claims by calendar year. Claims include ALAE.
+    case_outstanding, ibnr : sequence of float
+        Case outstanding and total IBNR at the valuation date, one value for
+        the book or one per accident year.
+    ratio : float, optional
+        The selected ULAE ratio; by default the ratio of the totals.
+    opening : float, default 0.5
+        The share of a claim's ULAE sustained when it opens. An insurer
+        spending 25% opening and 75% closing applies 75% of the ratio to case
+        outstanding and 100% to IBNR (Friedland's erratum to page 388).
+    pure_ibnr : sequence of float, optional
+        The part of ``ibnr`` on claims not yet reported, which alone takes
+        the full ratio; the rest of the IBNR is treated as known claims.
+    
+    Returns
+    -------
+    UlaeEstimate
+    """
+
+def ulae_conger_nolibos(paid_ulae: Sequence[float], paid: Sequence[float], reported: Sequence[float], case_outstanding: Sequence[float], ibnr: Sequence[float], *, weights: Any, ratio: float |None = None, pure_ibnr: Sequence[float] |None = None, closed: Sequence[float] |None = None, unclosed: Sequence[float] |None = None, ultimate: Sequence[float] |None = None) -> UlaeEstimate:
+    """
+    Unpaid ULAE by Conger and Nolibos' generalized approach (Friedland,
+    chapter 17): calendar paid ULAE over the claims basis ``B = U1 R + U2 P +
+    U3 C``, and ``W* (U1 (L - R) + U2 (L - P) + U3 (L - C))`` unpaid.
+    
+    Their simplification passes the accident years' ultimate claims as
+    ``reported`` and ``U3 = 0``.
+    
+    Parameters
+    ----------
+    paid_ulae, paid, reported : sequence of float
+        Paid ULAE ``M``, paid claims ``P`` and the ultimate cost of claims
+        reported ``R`` by calendar year.
+    case_outstanding, ibnr : sequence of float
+        Case outstanding and total IBNR at the valuation date, one value for
+        the book or one per accident year. Their sum is ``L - P(t)``.
+    weights : sequence of float
+        ``(U1, U2)`` or ``(U1, U2, U3)``, the shares spent opening,
+        maintaining and closing claims, summing to 1.
+    ratio : float, optional
+        The selected ULAE ratio ``W*``; by default the ratio of the totals.
+    pure_ibnr : sequence of float, optional
+        Claims not yet reported, ``L - R(t)``; needed unless ``U1`` is 0.
+    closed : sequence of float, optional
+        The ultimate cost of claims closed ``C`` by calendar year; needed
+        unless ``U3`` is 0.
+    unclosed : sequence of float, optional
+        The ultimate cost of claims not yet closed, ``L - C(t)``, one value
+        per row of ``case_outstanding``; needed unless ``U3`` is 0.
+    ultimate : sequence of float, optional
+        Ultimate claims ``L`` by accident year, over the same claims as the
+        calendar history, for ``expected_claims``,
+        ``bornhuetter_ferguson`` and ``development``.
+    
+    Returns
+    -------
+    UlaeEstimate
+    """
+
+def ulae_kittel(paid_ulae: Sequence[float], paid: Sequence[float], incurred: Sequence[float], case_outstanding: Sequence[float], ibnr: Sequence[float], *, ratio: float |None = None, pure_ibnr: Sequence[float] |None = None) -> UlaeEstimate:
+    """
+    Unpaid ULAE by Kittel's refinement of the classical technique (Friedland,
+    chapter 17): calendar paid ULAE over the average of calendar paid and
+    calendar incurred claims, applied to half of case outstanding and all of
+    the IBNR.
+    
+    Parameters
+    ----------
+    paid_ulae, paid, incurred : sequence of float
+        Paid ULAE, paid claims and incurred claims by calendar year. Incurred
+        claims are paid claims plus the change in case outstanding and IBNR.
+    case_outstanding, ibnr : sequence of float
+        Case outstanding and total IBNR at the valuation date, one value for
+        the book or one per accident year.
+    ratio : float, optional
+        The selected ULAE ratio; by default the ratio of the totals.
+    pure_ibnr : sequence of float, optional
+        The part of ``ibnr`` on claims not yet reported, which alone takes
+        the full ratio.
+    
+    Returns
+    -------
+    UlaeEstimate
     """
 
 def vif(design: Design) -> list[float]:

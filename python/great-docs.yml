@@ -353,6 +353,12 @@ reference:
       - reserving.ScaleShift
       - reserving.ParetoShape
       - reserving.ExcessPattern
+      - reserving.RatioDevelopment
+      - reserving.RatioDevelopmentFit
+      - reserving.UlaeEstimate
+      - reserving.ulae_classical
+      - reserving.ulae_kittel
+      - reserving.ulae_conger_nolibos
       - reserving.layer_share
       - reserving.layer_exposure
       - reserving.layer_at_shift
