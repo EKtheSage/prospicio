@@ -407,6 +407,7 @@ reference:
       - bayes_bf_normalised_one_year
       - meyers_one_year
       - clark_fit
+      - paid_incurred_fit
       - benchmark_curve_fit
       - development_curve_fit
       - fit_frames

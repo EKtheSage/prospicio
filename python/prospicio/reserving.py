@@ -11,7 +11,8 @@ one-year views under Mack's process, and the Bayesian ODP chain ladder, the Baye
 Bornhuetter-Ferguson, Meyers' CRC, CSR and CAY models and Gesmann and Morris'
 compartmental model sampled with NUTS, a latest diagonal on its own
 projected with a pattern from elsewhere, excess-layer development
-patterns derived from a ground-up triangle, and the methods on claim counts:
+patterns derived from a ground-up triangle, Merz and Wuthrich's paid-incurred
+chain of a paid and an incurred column, and the methods on claim counts:
 frequency-severity, disposal rates, case outstanding development and the
 Berquist-Sherman adjustments
 (docs/design/triangle.md, docs/design/reserving-v02.md,
@@ -58,6 +59,8 @@ from .prospicio_native import (
     ClarkCapeCod,
     ClarkFit,
     ClarkLdf,
+    PaidIncurredChain,
+    PaidIncurredFit,
     Compartmental,
     CompartmentalCandidate,
     CompartmentalFit,
@@ -151,6 +154,8 @@ __all__ = [
     "ClarkLdf",
     "ClarkCapeCod",
     "ClarkFit",
+    "PaidIncurredChain",
+    "PaidIncurredFit",
     "BenchmarkCurve",
     "BenchmarkCurveFit",
     "DevelopmentCurve",
