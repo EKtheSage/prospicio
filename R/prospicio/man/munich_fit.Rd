@@ -5,14 +5,7 @@
 \alias{munich_chain_ladder}
 \title{Munich chain ladder: paid and incurred developed together}
 \usage{
-munich_fit(
-  ptr = (function (.data) 
- {
-    
-    stop(sprintf("S3 class <\%s> doesn't have a constructor", class[[1]]), call. =
-    FALSE)
- })()
-)
+munich_fit(ptr)
 
 munich_chain_ladder(
   triangle,

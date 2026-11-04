@@ -1730,7 +1730,8 @@ munich_fit <- S7::new_class(
         mack_fit(ptr = self@ptr$mack_incurred())
       })
     )
-  })
+  }),
+  constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
 )
 
 #' @rdname munich_fit
