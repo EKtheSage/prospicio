@@ -29,7 +29,7 @@ use prospicio_reserving::{
     CountProjection, Development, DevelopmentColumn, Disposal, FrequencySeverity, Grain,
     Interpolation, Lag, Long, Month, OpenCounts, PatternKind, Period, SelectedPattern, Selection,
     SettlementRate, SeverityProjection, Trended, Triangle, UltimateCounts, case_development_factor,
-    ratio_column, trend_by_age,
+    pooled_trend, ratio_column, trend_by_age,
 };
 use prospicio_validation::{check, reference};
 
@@ -326,12 +326,6 @@ fn friedland_11_xyz_frequency_severity_approach_2() {
         62438.0 * 0.0236 * 0.8 / 0.985,
         1e-9,
         "2007 counts",
-    );
-    close(
-        62438.0 * 0.0192,
-        1199.0,
-        0.5,
-        "2007 counts at the rounded frequency",
     );
     close(fit.ultimate_counts[10], 1128.0, 0.5, "2008 counts");
     close(
@@ -770,6 +764,14 @@ fn friedland_13_auto_bi_settlement_rate() {
         .map(|f| (f * 1000.0).round() / 1000.0)
         .collect();
     assert_eq!(ldf, [3.158, 1.538, 1.277, 1.114, 1.047, 1.018, 1.006]);
+    // Sheet 11, column (9): the volume-weighted projection of the adjusted
+    // paid claims, in thousands, on the printed cells.
+    close(
+        fit.total_ultimate(),
+        132019.0,
+        15.0,
+        "adjusted paid ultimate",
+    );
 }
 
 /// Chapter 13, Exhibit III: XYZ Insurer. The average paid claim trends
@@ -905,7 +907,8 @@ fn friedland_13_xyz() {
         "settlement adjusted ultimate",
     );
 
-    // Sheets 8 and 9: both adjustments, every age adjusted.
+    // Sheets 8 and 9: both adjustments, the average case to 84 months as
+    // above and the settlement adjustment at every age.
     let both = BerquistSherman {
         case_adequacy: CaseAdequacy {
             max_age: Some(84),
@@ -1047,4 +1050,551 @@ fn rebuild(like: &Triangle, columns: &[(&str, Vec<Vec<Option<f64>>>)]) -> Triang
         cumulative: true,
     })
     .unwrap()
+}
+
+// ---------------------------------------------------------------------------
+// Chapter 11, GL Insurer
+// ---------------------------------------------------------------------------
+
+/// Chapter 11, Exhibit V: the disposal rate method on GL Insurer, the
+/// chapter's own worked example and the only one that selects its rates by
+/// the medial average of the latest 5, and pools the tail from an age before
+/// the oldest two. Sheet 3's selected counts are the mean of the closed and
+/// reported projections on the printed factors; the printed counts behind
+/// them are the only input besides the two triangles.
+#[test]
+fn friedland_11_gl_disposal() {
+    let tri = load("friedland_gl", &["closed_counts", "paid"], 2001, 2008, 96);
+    let closed = [796., 626., 542., 494., 403., 300., 188., 127.];
+    let closed_cdf = [1.100, 1.123, 1.174, 1.256, 1.390, 1.682, 2.199, 4.769];
+    let reported = [870., 731., 636., 684., 687., 734., 620., 812.];
+    let reported_cdf = [1.000, 1.007, 0.968, 0.932, 0.897, 0.818, 0.746, 0.753];
+    let ultimate: Vec<f64> = (0..8)
+        .map(|o| (closed[o] * closed_cdf[o] + reported[o] * reported_cdf[o]) / 2.0)
+        .collect();
+    close_all(
+        &ultimate,
+        &[873., 720., 626., 629., 588., 553., 438., 609.],
+        0.5,
+        "selected ultimate counts",
+    );
+    let method = Disposal {
+        closed_counts: "closed_counts".into(),
+        paid: "paid".into(),
+        ultimate_counts: UltimateCounts::Given(ultimate),
+        disposal_rates: Selection::Average {
+            n_periods: Some(5),
+            drop_high: 1,
+            drop_low: 1,
+        },
+        severities: Selection::latest(3),
+        tail_severity_from: Some(72),
+        trend: 0.05,
+        base: Some(Period::year(2008)),
+        factors: Vec::new(),
+    };
+    let fit = method.fit(&tri).unwrap();
+    // Sheet 4, part 3: the medial averages, the 72-month one of three values
+    // and the 84-month one of two.
+    let rates: Vec<f64> = fit
+        .selected_rates
+        .iter()
+        .map(|r| (r * 1000.0).round() / 1000.0)
+        .collect();
+    assert_eq!(
+        rates,
+        [0.200, 0.433, 0.585, 0.710, 0.791, 0.862, 0.882, 0.912]
+    );
+    // The book projects with the rates rounded to three decimals.
+    let fit = Disposal {
+        disposal_rates: Selection::Given(
+            rates
+                .iter()
+                .enumerate()
+                .map(|(k, &r)| (12 + 12 * k as Lag, r))
+                .collect(),
+        ),
+        ..method
+    }
+    .fit(&tri)
+    .unwrap();
+    // Sheet 6: the incremental paid severities.
+    let row_2002 = [7095., 32500., 53717., 64710., 105000., 229511., 126828.];
+    for (d, w) in row_2002.iter().enumerate() {
+        close(
+            fit.severities[1][d].unwrap(),
+            *w,
+            0.5,
+            &format!("2002 severity at {}", 12 * (d + 1)),
+        );
+    }
+    // Sheets 8 and 9: the selected severities at the 2008 level, the pooled
+    // tail from 72 months on carried to the step to ultimate.
+    close_all(
+        &fit.selected_severities,
+        &[
+            11259., 32980., 65523., 80544., 140802., 175816., 175816., 175816., 175816.,
+        ],
+        0.5,
+        "selected severities",
+    );
+    // Sheet 10: 2002 at 96 months is 175,816 / 1.05^6.
+    close(
+        fit.projected_severities[1][7].unwrap(),
+        131196.0,
+        0.5,
+        "2002 severity at 96",
+    );
+    // Sheet 5: the 2008 row and the step to ultimate of each origin.
+    let got: Vec<f64> = fit.incremental_counts[7]
+        .iter()
+        .map(|c| c.unwrap())
+        .collect();
+    close_all(
+        &got,
+        &[127., 140., 91., 75., 49., 43., 12., 18., 53.],
+        0.5,
+        "2008 incremental closed counts",
+    );
+    // Sheets 11 and 12, in dollars: every origin's ultimate. The book's counts
+    // and selections carry hidden decimals, worth up to 30 dollars in 40 million.
+    close_all(
+        &fit.ultimate,
+        &[
+            39497433., 44743308., 35510981., 37766027., 42007442., 41113459., 32859080., 47109641.,
+        ],
+        100.0,
+        "ultimates",
+    );
+    close(
+        fit.total_ultimate() / 1000.0,
+        320607.0,
+        0.5,
+        "total ultimate",
+    );
+    close(fit.total_reserve() / 1000.0, 185945.0, 0.5, "total unpaid");
+}
+
+// ---------------------------------------------------------------------------
+// The choices the exhibits do not reach
+// ---------------------------------------------------------------------------
+
+/// A cumulative annual triangle from rows of columns, each row from 12 months.
+fn small(columns: &[(&str, &[&[f64]])]) -> Triangle {
+    let mut origin = Vec::new();
+    let mut age: Vec<Lag> = Vec::new();
+    for (o, r) in columns[0].1.iter().enumerate() {
+        for d in 0..r.len() {
+            origin.push(Month::january(2020 + o as i32));
+            age.push(12 * (d as Lag + 1));
+        }
+    }
+    let values: Vec<(&str, Vec<f64>)> = columns
+        .iter()
+        .map(|(n, rows)| (*n, rows.iter().flat_map(|r| r.iter().copied()).collect()))
+        .collect();
+    let refs: Vec<(&str, &[f64])> = values.iter().map(|(n, v)| (*n, v.as_slice())).collect();
+    Triangle::from_long(&Long {
+        keys: &[],
+        origin: &origin,
+        development: DevelopmentColumn::Age(&age),
+        values: &refs,
+        origin_grain: Grain::Year,
+        development_grain: Grain::Year,
+        cumulative: true,
+    })
+    .unwrap()
+}
+
+fn medmal_case(trend: CaseTrend) -> CaseAdequacy {
+    CaseAdequacy {
+        incurred: "incurred".into(),
+        paid: "paid".into(),
+        open_counts: reported_less_closed(),
+        trend,
+        max_age: None,
+    }
+}
+
+/// #554 asks for a trend fitted on the average case. On a triangle whose
+/// averages grow exactly, each fit reads its own rate, and the average case's
+/// rate leaves incurred as it is, since the latest diagonal detrended at the
+/// true rate is the data. On the medical malpractice data the pooled trend
+/// of the average case lies among the printed trends by age, and a fitted
+/// trend restates exactly as the same rate given by hand.
+#[test]
+fn fitted_trends_read_their_rate_and_restate_as_given_rates() {
+    let closed: [&[f64]; 3] = [&[10., 20., 30.], &[10., 20.], &[10.]];
+    let open: [&[f64]; 3] = [&[4., 3., 2.], &[4., 3.], &[4.]];
+    let grow = |counts: &[&[f64]; 3], level: &[f64; 3], rate: f64| -> Vec<Vec<f64>> {
+        counts
+            .iter()
+            .enumerate()
+            .map(|(o, r)| {
+                r.iter()
+                    .zip(level)
+                    .map(|(n, a)| n * a * (1.0 + rate).powi(o as i32))
+                    .collect()
+            })
+            .collect()
+    };
+    let paid = grow(&closed, &[5., 6., 7.], 0.1);
+    let case = grow(&open, &[50., 60., 70.], 0.2);
+    let incurred: Vec<Vec<f64>> = paid
+        .iter()
+        .zip(&case)
+        .map(|(p, c)| p.iter().zip(c).map(|(p, c)| p + c).collect())
+        .collect();
+    let paid_refs: Vec<&[f64]> = paid.iter().map(Vec::as_slice).collect();
+    let incurred_refs: Vec<&[f64]> = incurred.iter().map(Vec::as_slice).collect();
+    let tri = small(&[
+        ("incurred", &incurred_refs),
+        ("paid", &paid_refs),
+        ("closed", &closed),
+        ("open", &open),
+    ]);
+    let exact = |trend: CaseTrend| {
+        let case = CaseAdequacy {
+            open_counts: OpenCounts::Column("open".into()),
+            ..medmal_case(trend)
+        };
+        cells(&case.adjust(&tri).unwrap(), "incurred")
+    };
+    let observed = cells(&tri, "incurred");
+    let restated = exact(CaseTrend::AverageCase);
+    for (a, b) in observed.iter().flatten().zip(restated.iter().flatten()) {
+        match (a, b) {
+            (Some(a), Some(b)) => close(*a, *b, 1e-9, "the true rate changes nothing"),
+            (a, b) => assert_eq!(a, b),
+        }
+    }
+    let fitted = exact(CaseTrend::Fitted {
+        amount: "paid".into(),
+        counts: "closed".into(),
+    });
+    let given = exact(CaseTrend::Given(0.1));
+    for (a, b) in fitted.iter().flatten().zip(given.iter().flatten()) {
+        match (a, b) {
+            (Some(a), Some(b)) => close(*a, *b, 1e-9, "paid over closed reads 10%"),
+            (a, b) => assert_eq!(a, b),
+        }
+    }
+
+    let tri = berqsherm("berqsherm_medmal");
+    let on = |trend: CaseTrend| medmal_case(trend).adjust(&tri).unwrap();
+    let average = medmal_case(CaseTrend::Given(0.0))
+        .average_case(&tri)
+        .unwrap();
+    let case_rate = pooled_trend(&average, "average_case")
+        .unwrap()
+        .unwrap()
+        .rate;
+    assert!((0.156..=0.342).contains(&case_rate), "{case_rate}");
+    assert_eq!(
+        cells(&on(CaseTrend::AverageCase), "incurred"),
+        cells(&on(CaseTrend::Given(case_rate)), "incurred")
+    );
+}
+
+/// Open counts as a column are the same as reported less closed when the
+/// column is their difference.
+#[test]
+fn an_open_count_column_is_reported_less_closed() {
+    let incurred: [&[f64]; 3] = [&[100., 150., 160.], &[120., 170.], &[130.]];
+    let paid: [&[f64]; 3] = [&[50., 100., 140.], &[60., 110.], &[70.]];
+    let reported: [&[f64]; 3] = [&[10., 12., 12.], &[11., 13.], &[12.]];
+    let closed: [&[f64]; 3] = [&[5., 9., 11.], &[5., 10.], &[6.]];
+    let open: [&[f64]; 3] = [&[5., 3., 1.], &[6., 3.], &[6.]];
+    let tri = small(&[
+        ("incurred", &incurred),
+        ("paid", &paid),
+        ("reported", &reported),
+        ("closed", &closed),
+        ("open", &open),
+    ]);
+    let on = |open_counts| {
+        let case = CaseAdequacy {
+            open_counts,
+            ..medmal_case(CaseTrend::Given(0.1))
+        };
+        cells(&case.adjust(&tri).unwrap(), "incurred")
+    };
+    let got = on(OpenCounts::Column("open".into()));
+    assert_eq!(got, on(reported_less_closed()));
+    // 2021 at 12 months: its 6 open at 2022's average, (130 - 70) / 6, a
+    // year back, plus paid 60.
+    close(
+        got[1][0].unwrap(),
+        60.0 + 6.0 * 10.0 / 1.1,
+        1e-9,
+        "2021 at 12",
+    );
+}
+
+/// Both curves leave the latest diagonal alone and differ off it, on
+/// Berquist and Sherman's data.
+#[test]
+fn linear_and_exponential_settlement_agree_on_the_latest_diagonal_only() {
+    let tri = berqsherm("berqsherm_auto");
+    let on = |interpolation| {
+        SettlementRate {
+            paid: "paid".into(),
+            closed_counts: "closed".into(),
+            ultimate_counts: auto_bi_ultimate_counts(&tri),
+            disposal_rates: Selection::LatestDiagonal,
+            interpolation,
+        }
+        .adjust(&tri)
+        .unwrap()
+    };
+    let observed = cells(&tri, "paid");
+    let exponential = on(Interpolation::Exponential);
+    let linear = on(Interpolation::Linear);
+    let (e, l) = (cells(&exponential, "paid"), cells(&linear, "paid"));
+    let mut differ = 0;
+    for o in 0..8 {
+        let last = 7 - o;
+        assert_eq!(e[o][last], observed[o][last], "exponential latest {o}");
+        assert_eq!(l[o][last], observed[o][last], "linear latest {o}");
+        for d in 0..last {
+            if (e[o][d].unwrap() - l[o][d].unwrap()).abs() > 1e-6 {
+                differ += 1;
+            }
+        }
+    }
+    assert!(differ > 15, "{differ} cells differ");
+}
+
+/// Cutting the oldest ages off a triangle leaves origins that stop at the
+/// oldest age without being on the latest diagonal. The latest diagonal at
+/// that age is still the most recent origin there, so the cells kept are
+/// the same as on the whole triangle.
+#[test]
+fn the_latest_diagonal_of_a_triangle_cut_at_an_age_is_its_most_recent_origin() {
+    let whole = xyz();
+    let cut = load("friedland_xyz", XYZ, 1998, 2008, 96);
+    let case = CaseAdequacy {
+        incurred: "reported".into(),
+        paid: "paid".into(),
+        open_counts: OpenCounts::ReportedLessClosed {
+            reported: "reported_counts".into(),
+            closed: "closed_counts".into(),
+        },
+        trend: CaseTrend::Given(0.05),
+        max_age: None,
+    };
+    let a = cells(&case.adjust(&whole).unwrap(), "reported");
+    let b = cells(&case.adjust(&cut).unwrap(), "reported");
+    for o in 0..11 {
+        for d in 0..8 {
+            match (a[o][d], b[o][d]) {
+                (Some(x), Some(y)) => close(x, y, 1e-6, &format!("case {o} {d}")),
+                (x, y) => assert_eq!(x, y, "case {o} {d}"),
+            }
+        }
+    }
+    let ultimate = UltimateCounts::Given(xyz_counts().1.resolve(&whole).unwrap());
+    let settlement = SettlementRate {
+        paid: "paid".into(),
+        closed_counts: "closed_counts".into(),
+        ultimate_counts: ultimate,
+        disposal_rates: Selection::LatestDiagonal,
+        interpolation: Interpolation::Exponential,
+    };
+    let a = cells(&settlement.adjust(&whole).unwrap(), "closed_counts");
+    let b = cells(&settlement.adjust(&cut).unwrap(), "closed_counts");
+    for o in 0..11 {
+        for d in 0..8 {
+            match (a[o][d], b[o][d]) {
+                (Some(x), Some(y)) => close(x, y, 1e-6, &format!("closed {o} {d}")),
+                (x, y) => assert_eq!(x, y, "closed {o} {d}"),
+            }
+        }
+    }
+}
+
+/// Annual origins on quarterly ages: the latest diagonal has cells at 12, 24
+/// and so on only, so the ages between have no adequacy to restate to.
+#[test]
+fn an_age_off_the_latest_diagonal_is_an_error_and_not_a_silent_zero() {
+    let ages: Vec<Lag> = (1..=8)
+        .map(|k| 3 * k)
+        .chain((1..=4).map(|k| 3 * k))
+        .collect();
+    let origin: Vec<Month> = std::iter::repeat_n(Month::january(2020), 8)
+        .chain(std::iter::repeat_n(Month::january(2021), 4))
+        .collect();
+    let v = |base: f64| -> Vec<f64> { ages.iter().map(|&a| base + f64::from(a)).collect() };
+    let (incurred, paid, reported, closed) = (v(200.), v(100.), v(15.), v(5.));
+    let tri = Triangle::from_long(&Long {
+        keys: &[],
+        origin: &origin,
+        development: DevelopmentColumn::Age(&ages),
+        values: &[
+            ("incurred", &incurred),
+            ("paid", &paid),
+            ("reported", &reported),
+            ("closed", &closed),
+        ],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Quarter,
+        cumulative: true,
+    })
+    .unwrap();
+    let e = medmal_case(CaseTrend::Given(0.1))
+        .adjust(&tri)
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("no cell at age 3"), "{e}");
+    let e = SettlementRate {
+        paid: "paid".into(),
+        closed_counts: "closed".into(),
+        ultimate_counts: UltimateCounts::Given(vec![50.0, 50.0]),
+        disposal_rates: Selection::LatestDiagonal,
+        interpolation: Interpolation::Exponential,
+    }
+    .adjust(&tri)
+    .unwrap_err()
+    .to_string();
+    assert!(e.contains("no disposal rate at age 3"), "{e}");
+}
+
+/// No open claim on the latest diagonal at an age gives that age no average.
+/// The older origins there keep their own case outstanding, and the
+/// diagonal's cell its incurred, instead of falling to paid.
+#[test]
+fn no_open_claim_on_the_diagonal_keeps_the_case_outstanding_of_the_age() {
+    let incurred: [&[f64]; 4] = [
+        &[100., 150., 160., 165.],
+        &[120., 170., 180.],
+        &[125., 175.],
+        &[130.],
+    ];
+    let paid: [&[f64]; 4] = [
+        &[50., 100., 140., 150.],
+        &[60., 110., 170.],
+        &[65., 120.],
+        &[70.],
+    ];
+    let open: [&[f64]; 4] = [&[5., 4., 0., 0.], &[6., 3., 2.], &[6., 0.], &[6.]];
+    let tri = small(&[("incurred", &incurred), ("paid", &paid), ("open", &open)]);
+    let case = CaseAdequacy {
+        open_counts: OpenCounts::Column("open".into()),
+        max_age: Some(24),
+        ..medmal_case(CaseTrend::Given(0.1))
+    };
+    let got = cells(&case.adjust(&tri).unwrap(), "incurred");
+    // 24 months: 2022 is on the diagonal with no open claim and 55 of case.
+    assert_eq!(got[2][1], Some(175.0), "the diagonal keeps its incurred");
+    assert_eq!(got[0][1], Some(150.0), "2020 keeps its own average");
+    assert_eq!(got[1][1], Some(170.0), "2021 keeps its own average");
+    // Past max_age: 2020 at 36 months has no open claim and 20 of case.
+    assert_eq!(got[0][2], Some(160.0));
+    // 12 months still restates to 2023's average, (130 - 70) / 6.
+    close(
+        got[0][0].unwrap(),
+        50.0 + 5.0 * 10.0 / 1.331,
+        1e-9,
+        "2020 at 12",
+    );
+}
+
+/// A selection that leaves out an observed age, or an origin with no usable
+/// curve, must not lose an observed cell without saying so.
+#[test]
+fn the_settlement_adjustment_keeps_or_refuses_what_it_cannot_restate() {
+    let paid: [&[f64]; 3] = [&[50., 100., 140.], &[0., 0.], &[70.]];
+    let closed: [&[f64]; 3] = [&[5., 9., 11.], &[5., 10.], &[6.]];
+    let tri = small(&[("paid", &paid), ("closed", &closed)]);
+    let method = SettlementRate {
+        paid: "paid".into(),
+        closed_counts: "closed".into(),
+        ultimate_counts: UltimateCounts::Given(vec![12.0, 12.0, 12.0]),
+        disposal_rates: Selection::LatestDiagonal,
+        interpolation: Interpolation::Exponential,
+    };
+    // 2021's paid is zero, so no exponential goes through it.
+    let got = cells(&method.adjust(&tri).unwrap(), "paid");
+    assert_eq!(got[1][0], Some(0.0));
+    let e = SettlementRate {
+        disposal_rates: Selection::Given(vec![(12, 0.5), (36, 0.9)]),
+        ..method
+    }
+    .adjust(&tri)
+    .unwrap_err()
+    .to_string();
+    assert!(e.contains("no disposal rate at age 24"), "{e}");
+}
+
+/// An origin the method has nothing for is an error, as it is for the chain
+/// ladder's ultimate counts, and not a NaN in the totals.
+#[test]
+fn an_origin_without_the_columns_is_an_error_and_not_a_nan_total() {
+    let nan = f64::NAN;
+    let reported: [&[f64]; 2] = [&[100., 150.], &[120.]];
+    let paid: [&[f64]; 2] = [&[50., 100.], &[nan]];
+    let counts: [&[f64]; 2] = [&[5., 9.], &[nan]];
+    let tri = small(&[
+        ("reported", &reported),
+        ("paid", &paid),
+        ("counts", &counts),
+    ]);
+    let e = FrequencySeverity {
+        amounts: "reported".into(),
+        counts: "counts".into(),
+        ultimate_counts: CountProjection::Counts(UltimateCounts::Given(vec![10.0, 10.0])),
+        severity: SeverityProjection::Development(ChainLadder::default()),
+    }
+    .fit(&tri)
+    .unwrap_err()
+    .to_string();
+    assert!(e.contains("2021"), "{e}");
+    let disposal = Disposal {
+        closed_counts: "counts".into(),
+        paid: "paid".into(),
+        ultimate_counts: UltimateCounts::Given(vec![10.0, 10.0]),
+        disposal_rates: Selection::default(),
+        severities: Selection::default(),
+        tail_severity_from: None,
+        trend: 0.0,
+        base: None,
+        factors: Vec::new(),
+    };
+    let e = disposal.fit(&tri).unwrap_err().to_string();
+    assert!(e.contains("2021"), "{e}");
+    let e = CaseOutstanding {
+        paid: "paid".into(),
+        incurred: "reported".into(),
+        paid_on_case: Selection::default(),
+        case_on_case: Selection::default(),
+        paid_to_ultimate: 1.0,
+    }
+    .fit(&tri)
+    .unwrap_err()
+    .to_string();
+    assert!(e.contains("2021"), "{e}");
+}
+
+/// A selected rate of 1 leaves no pattern to close an origin's open claims
+/// on: an error, not a reserve of nothing.
+#[test]
+fn a_disposal_rate_of_one_with_claims_open_is_an_error() {
+    let closed: [&[f64]; 2] = [&[8., 10.], &[8.]];
+    let paid: [&[f64]; 2] = [&[50., 100.], &[60.]];
+    let tri = small(&[("closed", &closed), ("paid", &paid)]);
+    let e = Disposal {
+        closed_counts: "closed".into(),
+        paid: "paid".into(),
+        ultimate_counts: UltimateCounts::Given(vec![10.0, 10.0]),
+        disposal_rates: Selection::Given(vec![(12, 1.0), (24, 1.0)]),
+        severities: Selection::default(),
+        tail_severity_from: None,
+        trend: 0.0,
+        base: None,
+        factors: Vec::new(),
+    }
+    .fit(&tri)
+    .unwrap_err()
+    .to_string();
+    assert!(e.contains("2 claims to close"), "{e}");
 }

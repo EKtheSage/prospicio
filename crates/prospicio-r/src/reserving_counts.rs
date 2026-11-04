@@ -170,7 +170,7 @@ fn frequency_severity_list(fit: &FrequencySeverityFit) -> List {
         ultimate_counts = fit.ultimate_counts.clone(),
         ultimate_severity = fit.ultimate_severity.clone(),
         ultimate = fit.ultimate.clone(),
-        reserves = fit.reserves()
+        reserve = fit.reserves()
     )
 }
 
@@ -222,7 +222,7 @@ fn disposal_list(fit: &DisposalFit) -> List {
         incremental_paid = flat(&fit.incremental_paid),
         latest = fit.latest.clone(),
         ultimate = fit.ultimate.clone(),
-        reserves = fit.reserves()
+        reserve = fit.reserves()
     )
 }
 
@@ -276,7 +276,7 @@ fn case_outstanding_list(fit: &CaseOutstandingFit) -> List {
         latest_incurred = fit.latest_incurred.clone(),
         ultimate = fit.ultimate.clone(),
         ibnr = fit.ibnr(),
-        reserves = fit.reserves()
+        reserve = fit.reserves()
     )
 }
 
@@ -319,6 +319,7 @@ fn case_adequacy(
     };
     let trend = match text(trend, "kind")?.as_str() {
         "given" => CaseTrend::Given(number(trend, "rate")?),
+        "average_case" => CaseTrend::AverageCase,
         _ => CaseTrend::Fitted {
             amount: text(trend, "amount")?,
             counts: text(trend, "counts")?,

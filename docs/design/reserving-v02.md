@@ -5149,7 +5149,8 @@ the expected-loss methods have one column; these have several.
 9. **No segments, no distribution.** *Open for the user.* Each method is
    deterministic and single-segment: `fit_segments` and a simulated view are
    not built. `Error::Counts` reports the data problems of these methods
-   (a missing column, a cell the method needs, a length that does not match).
+   (an origin the method has nothing for, a selected rate that leaves open
+   claims nowhere to close, a cell an adjustment needs), so no total is NaN.
 10. **Bindings.** Python `FrequencySeverity`, `Disposal`, `CaseOutstanding`,
     `Trended` and `case_development_factor`; R `frequency_severity()`,
     `disposal_method()`, `case_outstanding()`, `trended()`,
@@ -5158,8 +5159,9 @@ the expected-loss methods have one column; these have several.
     `"latest_diagonal"`, values by age, or a dict (list) of `n_periods`,
     `drop_high` and `drop_low`. A base is an origin's label.
 11. **Checks.** `validation/tests/reserving_counts.rs`: chapter 11's XYZ
-    approaches 1 and 2, the workers compensation trended frequency and XYZ
-    disposal; chapter 12's US Auto and XYZ exhibits and the case development
+    approaches 1 and 2, the workers compensation trended frequency, and the
+    disposal method on GL Insurer (Exhibit V: medial rates, a tail pooled from 72
+    months) and XYZ; chapter 12's US Auto and XYZ exhibits and the case development
     factor. Tolerances come from the book's hidden decimals and the claims
     rounded to the $000 in `validation/data/friedland_xyz.csv`
     (`knowledge/findings/friedland-count-methods.md`). Chapter 12, Exhibit II
@@ -5189,21 +5191,31 @@ rate of the latest diagonal before it is projected.
    at each age, by default the latest diagonal's, times the origin's ultimate
    counts. Paid is read from a curve through the origin's successive observed
    (closed, paid) points: the pair that spans the adjusted count, else the
-   nearest pair. The latest cell keeps its observed value.
+   nearest pair. A cell on the latest diagonal keeps its observed value, and
+   an observed cell at an age with no selected rate is an error.
 4. **Exponential between points by default.** *Open for the user.*
    `Interpolation::Exponential` is Berquist and Sherman's and Friedland's
    `paid = a exp(b closed)`; `Linear` is the alternative. A pair with zero
    paid cannot carry the exponential curve and is not used.
 5. **Cells with no observed count.** *Open for the user.* Adjusted closed
    counts fill every cell up to the valuation, including the ages before an
-   origin's first observed count, as the book does for 1998. Where the average
-   case cannot be formed, case outstanding is taken as zero, so incurred is
-   paid.
-6. **A fitted trend reads paid over closed.** *Open for the user.*
-   `CaseTrend::Given` is the selected trend. `CaseTrend::Fitted` is the pooled
-   trend of an amount over a count, meant for paid over closed: the average
-   case itself carries the change in adequacy being removed, so its own trend
-   is not a sound default.
+   origin's first observed count, as the book does for 1998. Where the latest
+   diagonal has no average at an age (no open claim there) a cell keeps its own
+   average, the diagonal's cell keeps its incurred, and only a cell with no open
+   claim of its own has no case. An origin with no usable pair keeps its observed
+   paid. An age with observed cells and no cell on the latest diagonal is an
+   error: quarterly ages on annual origins have no adequacy to restate to. The
+   latest diagonal at an age is the most recent origin there, so a triangle cut
+   at an age gives what the whole triangle does.
+6. **Two fitted trends, neither a default.** *Open for the user.*
+   `CaseTrend::Given` is the selected trend, which is what the book does.
+   `CaseTrend::AverageCase` is the pooled trend of the average case, as #554
+   proposed, and `CaseTrend::Fitted` the pooled trend of an amount over a count,
+   meant for paid over closed. Each has a weakness: the average case carries
+   the adequacy change being removed (25% on the medical malpractice data
+   against the selected 15%), and cumulative paid over closed includes payments
+   on open claims (24% there, not the 7% to 14% of the average paid triangle the
+   book reprints from the paper, which paid and closed do not reproduce).
 7. **Both adjustments.** `BerquistSherman` needs reported less closed as its
    open counts, on the settlement adjustment's closed column: incurred is the
    adjusted average case times reported less adjusted closed, plus adjusted
@@ -5220,7 +5232,7 @@ rate of the latest diagonal before it is projected.
    `trend_by_age()`, `pooled_trend()` and `ratio_column()`.
 10. **Checks.** `validation/tests/reserving_counts.rs`: Exhibit I (Medical
     Malpractice: trends, adjusted cells and factors, 521,181,558), Exhibit II
-    (Auto BI settlement) and Exhibit III (XYZ: 476,678 case adjusted, 485,546
+    (Auto BI settlement, 132,019) and Exhibit III (XYZ: 476,678 case adjusted, 485,546
     settlement adjusted, 489,258 both), and 528 cases of chainladder-python
     0.10.1's `BerquistSherman` on its `berqsherm` sample at trends of 15% and
     5% (`validation/scripts/reserving_berquist_sherman_python.py`).

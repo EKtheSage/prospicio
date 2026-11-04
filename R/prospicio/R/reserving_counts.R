@@ -112,7 +112,7 @@ cell_matrix <- function(x, origins, ages) {
 #' segment and holds counts and amounts as columns.
 #'
 #' The fit has per origin `latest`, `latest_severity`, `ultimate_counts`,
-#' `ultimate_severity`, `ultimate` and `reserves`, and `total_ultimate` and
+#' `ultimate_severity`, `ultimate` and `reserve`, and `total_ultimate` and
 #' `total_reserve`.
 #'
 #' @param triangle A [triangle].
@@ -161,11 +161,11 @@ frequency_severity <- function(triangle, amounts, counts, ultimate_counts = NULL
                          ultimate_counts = origin_named(out$ultimate_counts, o),
                          ultimate_severity = origin_named(out$ultimate_severity, o),
                          ultimate = origin_named(out$ultimate, o),
-                         reserves = origin_named(out$reserves, o))
+                         reserve = origin_named(out$reserve, o))
 }
 
 #' @rdname frequency_severity
-#' @param origins,latest,latest_severity,ultimate,reserves The fit's values.
+#' @param origins,latest,latest_severity,ultimate,reserve The fit's values.
 #' @export
 frequency_severity_fit <- S7::new_class(
   "frequency_severity_fit",
@@ -177,9 +177,9 @@ frequency_severity_fit <- S7::new_class(
     ultimate_counts = S7::class_double,
     ultimate_severity = S7::class_double,
     ultimate = S7::class_double,
-    reserves = S7::class_double,
+    reserve = S7::class_double,
     total_ultimate = S7::new_property(S7::class_double, getter = function(self) sum(self@ultimate)),
-    total_reserve = S7::new_property(S7::class_double, getter = function(self) sum(self@reserves))
+    total_reserve = S7::new_property(S7::class_double, getter = function(self) sum(self@reserve))
   )
 )
 
@@ -201,7 +201,7 @@ S7::method(print, frequency_severity_fit) <- function(x, ...) {
 #' `n_periods`, `drop_high` and `drop_low`.
 #'
 #' The fit has `ages`, per origin `ultimate_counts`, `latest`, `ultimate`
-#' and `reserves`, by age `selected_rates` and `selected_severities` (the
+#' and `reserve`, by age `selected_rates` and `selected_severities` (the
 #' step to ultimate last), the matrices `disposal_rates`, `severities`,
 #' `trended_severities`, `incremental_counts`, `projected_severities` and
 #' `incremental_paid`, and `total_ultimate` and `total_reserve`.
@@ -246,11 +246,11 @@ disposal_method <- function(triangle, closed_counts, paid, ultimate_counts, disp
                projected_severities = cell_matrix(out$projected_severities, o, a),
                incremental_paid = cell_matrix(out$incremental_paid, o, a),
                latest = origin_named(out$latest, o), ultimate = origin_named(out$ultimate, o),
-               reserves = origin_named(out$reserves, o))
+               reserve = origin_named(out$reserve, o))
 }
 
 #' @rdname disposal_method
-#' @param origins,ages,selected_rates,selected_severities,trended_severities,incremental_counts,projected_severities,incremental_paid,latest,ultimate,reserves
+#' @param origins,ages,selected_rates,selected_severities,trended_severities,incremental_counts,projected_severities,incremental_paid,latest,ultimate,reserve
 #'   The fit's values.
 #' @export
 disposal_fit <- S7::new_class(
@@ -270,9 +270,9 @@ disposal_fit <- S7::new_class(
     incremental_paid = S7::class_any,
     latest = S7::class_double,
     ultimate = S7::class_double,
-    reserves = S7::class_double,
+    reserve = S7::class_double,
     total_ultimate = S7::new_property(S7::class_double, getter = function(self) sum(self@ultimate)),
-    total_reserve = S7::new_property(S7::class_double, getter = function(self) sum(self@reserves))
+    total_reserve = S7::new_property(S7::class_double, getter = function(self) sum(self@reserve))
   )
 )
 
@@ -292,7 +292,7 @@ S7::method(print, disposal_fit) <- function(x, ...) {
 #' factors to ultimate.
 #'
 #' The fit has `ages`, per origin `latest_paid`, `latest_incurred`,
-#' `ultimate`, `ibnr` and `reserves`, by age `selected_paid_on_case` and
+#' `ultimate`, `ibnr` and `reserve`, by age `selected_paid_on_case` and
 #' `selected_case_on_case`, the matrices `paid_on_case`, `case_on_case`,
 #' `case_outstanding` and `incremental_paid`, and `total_ultimate` and
 #' `total_reserve`.
@@ -329,11 +329,11 @@ case_outstanding <- function(triangle, paid, incurred, paid_to_ultimate, paid_on
                        latest_paid = origin_named(out$latest_paid, o),
                        latest_incurred = origin_named(out$latest_incurred, o),
                        ultimate = origin_named(out$ultimate, o),
-                       ibnr = origin_named(out$ibnr, o), reserves = origin_named(out$reserves, o))
+                       ibnr = origin_named(out$ibnr, o), reserve = origin_named(out$reserve, o))
 }
 
 #' @rdname case_outstanding
-#' @param origins,ages,selected_paid_on_case,selected_case_on_case,case_outstanding,incremental_paid,latest_paid,latest_incurred,ultimate,ibnr,reserves
+#' @param origins,ages,selected_paid_on_case,selected_case_on_case,case_outstanding,incremental_paid,latest_paid,latest_incurred,ultimate,ibnr,reserve
 #'   The fit's values.
 #' @export
 case_outstanding_fit <- S7::new_class(
@@ -352,15 +352,15 @@ case_outstanding_fit <- S7::new_class(
     latest_incurred = S7::class_double,
     ultimate = S7::class_double,
     ibnr = S7::class_double,
-    reserves = S7::class_double,
+    reserve = S7::class_double,
     total_ultimate = S7::new_property(S7::class_double, getter = function(self) sum(self@ultimate)),
-    total_reserve = S7::new_property(S7::class_double, getter = function(self) sum(self@reserves))
+    total_reserve = S7::new_property(S7::class_double, getter = function(self) sum(self@reserve))
   )
 )
 
 S7::method(print, case_outstanding_fit) <- function(x, ...) {
   cat("case_outstanding_fit\n")
-  print(cbind(latest_paid = x@latest_paid, ultimate = x@ultimate, reserves = x@reserves))
+  print(cbind(latest_paid = x@latest_paid, ultimate = x@ultimate, reserve = x@reserve))
   invisible(x)
 }
 
@@ -386,10 +386,12 @@ case_trend_arg <- function(trend) {
   if (is.numeric(trend) && length(trend) == 1 && !is.na(trend)) {
     return(list(kind = "given", rate = as.double(trend)))
   }
+  if (identical(trend, "average_case")) return(list(kind = "average_case"))
   if (is.character(trend) && length(trend) == 2) {
     return(list(kind = "fitted", amount = trend[[1]], counts = trend[[2]]))
   }
-  stop("trend must be a number or two columns, an amount and a count", call. = FALSE)
+  stop('trend must be a number, "average_case" or two columns, an amount and a count',
+       call. = FALSE)
 }
 
 #' The Berquist-Sherman adjustments
@@ -419,8 +421,9 @@ case_trend_arg <- function(trend) {
 #'
 #' @param triangle A [triangle] with one segment.
 #' @param incurred,paid The reported and paid claims columns.
-#' @param trend The annual severity trend, or two column names, an amount
-#'   and a count (paid claims and closed counts), to fit it from.
+#' @param trend The annual severity trend, `"average_case"` to fit it from
+#'   the average case outstanding, or two column names, an amount and a count
+#'   (paid claims and closed counts), to fit it from.
 #' @param open_counts A column of open counts. Otherwise give `reported`
 #'   and `closed`.
 #' @param reported,closed Count columns whose difference is the open counts.

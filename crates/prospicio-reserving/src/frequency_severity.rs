@@ -140,10 +140,13 @@ impl Selection {
                     })
                     .collect())
             }
+            // The most recent origin at each age: older origins also stop at
+            // the oldest age when the triangle's ages are cut off.
             Self::LatestDiagonal => Ok((0..ages.len())
                 .map(|d| {
                     rows.iter()
                         .zip(latest)
+                        .rev()
                         .find_map(|(r, &l)| (l == Some(d)).then_some(r[d]).flatten())
                 })
                 .collect()),
@@ -641,11 +644,17 @@ impl FrequencySeverity {
             }
             SeverityProjection::Trended(t) => (t.values(&origins)?, None),
         };
-        let ultimate = ultimate_counts
+        let ultimate: Vec<f64> = ultimate_counts
             .iter()
             .zip(&ultimate_severity)
             .map(|(c, s)| c * s)
             .collect();
+        if let Some(o) = (0..origins.len()).find(|&o| !(ultimate[o] + latest[o]).is_finite()) {
+            return counts_err(format!(
+                "the origin {} has no ultimate or no latest value in {}",
+                origins[o], self.amounts
+            ));
+        }
         Ok(FrequencySeverityFit {
             origins,
             latest,
@@ -907,7 +916,10 @@ impl Disposal {
         let mut ultimate = vec![f64::NAN; no];
         for o in 0..no {
             let Some(d0) = latest_pos[o] else {
-                continue;
+                return counts_err(format!(
+                    "the origin {} has no closed count in {}",
+                    origins[o], self.closed_counts
+                ));
             };
             let Some(paid_latest) = paid[o][d0] else {
                 return counts_err(format!(
@@ -923,6 +935,13 @@ impl Disposal {
             }
             let open = ultimate_counts[o] - closed[o][d0].unwrap_or(0.0);
             let remaining = 1.0 - selected_rates[d0];
+            if open > 0.0 && remaining <= 0.0 {
+                return counts_err(format!(
+                    "the origin {} has {open} claims to close but the disposal rate selected at \
+                     age {} is {}, which leaves none",
+                    origins[o], ages[d0], selected_rates[d0]
+                ));
+            }
             let mut total = paid_latest;
             for d in d0 + 1..=nd {
                 let step = match d {
@@ -1109,12 +1128,15 @@ impl CaseOutstanding {
         let mut latest_incurred = vec![f64::NAN; no];
         let mut ultimate = vec![f64::NAN; no];
         for o in 0..no {
-            let Some(d0) = latest_pos[o] else {
-                continue;
+            let (Some(p0), Some(c0)) =
+                latest_pos[o].map_or((None, None), |d| (paid[o][d], case[o][d]))
+            else {
+                return counts_err(format!(
+                    "the origin {} has no cell with both {} and {}",
+                    origins[o], self.paid, self.incurred
+                ));
             };
-            let (Some(p0), Some(c0)) = (paid[o][d0], case[o][d0]) else {
-                continue;
-            };
+            let d0 = latest_pos[o].unwrap_or(0);
             latest_paid[o] = p0;
             latest_incurred[o] = p0 + c0;
             for d in 0..=d0 {

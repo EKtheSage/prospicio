@@ -5603,7 +5603,7 @@ class CaseOutstandingFit:
         Incremental paid over the previous case outstanding.
         """
     @property
-    def reserves(self, /) -> list[float]:
+    def reserve(self, /) -> list[float]:
         """
         Ultimate less latest paid.
         """
@@ -11020,7 +11020,7 @@ class DisposalFit:
         The severities at each origin's level.
         """
     @property
-    def reserves(self, /) -> list[float]:
+    def reserve(self, /) -> list[float]:
         """
         Ultimate less latest paid.
         """
@@ -13783,7 +13783,7 @@ class FrequencySeverityFit:
         Origin of each per-origin value.
         """
     @property
-    def reserves(self, /) -> list[float]:
+    def reserve(self, /) -> list[float]:
         """
         Ultimate less latest.
         """
@@ -33095,7 +33095,7 @@ def berquist_sherman_adjust(triangle: Triangle, incurred: str, paid: str, report
     triangle : Triangle
     incurred, paid, reported, closed_counts : str
         Reported and paid claims, reported and closed counts.
-    trend : float or (str, str)
+    trend : float, "average_case" or (str, str)
         As ``case_adequacy_adjust``'s ``trend``.
     ultimate_counts
         As ``settlement_rate_adjust``'s.
@@ -33358,7 +33358,7 @@ def case_adequacy_adjust(triangle: Triangle, incurred: str, paid: str, trend: An
     triangle : Triangle
     incurred, paid : str
         The reported and paid claims columns.
-    trend : float or (str, str)
+    trend : float, "average_case" or (str, str)
         The annual severity trend, or a pair of an amount and a count column
         to fit it from (paid claims and closed counts).
     open_counts : str, optional

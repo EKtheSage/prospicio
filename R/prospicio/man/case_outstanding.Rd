@@ -28,7 +28,7 @@ case_outstanding_fit(
   latest_incurred = numeric(0),
   ultimate = numeric(0),
   ibnr = numeric(0),
-  reserves = numeric(0)
+  reserve = numeric(0)
 )
 
 case_development_factor(reported_cdf, paid_cdf)
@@ -43,7 +43,7 @@ oldest age.}
 
 \item{paid_on_case, case_on_case}{Selections, as in \code{\link[=disposal_method]{disposal_method()}}.}
 
-\item{origins, ages, selected_paid_on_case, selected_case_on_case, case_outstanding, incremental_paid, latest_paid, latest_incurred, ultimate, ibnr, reserves}{The fit's values.}
+\item{origins, ages, selected_paid_on_case, selected_case_on_case, case_outstanding, incremental_paid, latest_paid, latest_incurred, ultimate, ibnr, reserve}{The fit's values.}
 
 \item{reported_cdf, paid_cdf}{Reported and paid factors to ultimate.}
 }
@@ -61,7 +61,7 @@ factors to ultimate.
 }
 \details{
 The fit has \code{ages}, per origin \code{latest_paid}, \code{latest_incurred},
-\code{ultimate}, \code{ibnr} and \code{reserves}, by age \code{selected_paid_on_case} and
+\code{ultimate}, \code{ibnr} and \code{reserve}, by age \code{selected_paid_on_case} and
 \code{selected_case_on_case}, the matrices \code{paid_on_case}, \code{case_on_case},
 \code{case_outstanding} and \code{incremental_paid}, and \code{total_ultimate} and
 \code{total_reserve}.

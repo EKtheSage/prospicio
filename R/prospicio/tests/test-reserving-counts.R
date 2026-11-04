@@ -65,7 +65,7 @@ tri <- triangle(d, origin = "origin", development = "age", columns = c("amounts"
 fs <- frequency_severity(tri, "amounts", "counts")
 cl <- chain_ladder(tri, "amounts")
 near(fs@ultimate, cl@ultimate)
-near(fs@total_reserve, sum(fs@reserves))
+near(fs@total_reserve, sum(fs@reserve))
 
 # A trended frequency and severity.
 fit <- frequency_severity(small, "reported", "reported_counts",
@@ -78,7 +78,7 @@ stopifnot(identical(fit@origins, c("2020", "2021")))
 fit <- case_outstanding(xyz(), "paid", "reported", 1.10, paid_on_case = 2, case_on_case = 2)
 near(fit@total_ultimate, 513944 + 0.501 * 465, 8)
 near(fit@ibnr, fit@ultimate - fit@latest_incurred)
-near(fit@reserves, fit@ultimate - fit@latest_paid)
+near(fit@reserve, fit@ultimate - fit@latest_paid)
 
 # Chapter 11, the disposal rate method.
 reported <- c(1455, 1554, 1629, 2258, 2390, 1657, 1264, 1036)
@@ -109,6 +109,20 @@ extra <- average_case(t, "reported", "paid", 0.05, reported = "reported_counts",
 stopifnot(all(c("average_case", "adjusted_average_case") %in% extra@columns))
 invisible(settlement_rate_adjust(t, "paid", "closed_counts",
                                  list(counts, development_method("closed_counts", n_periods = 2))))
+
+# A trend fitted on the average case is the same rate given by hand.
+averages <- average_case(t, "reported", "paid", 0, reported = "reported_counts",
+                         closed = "closed_counts")
+rate <- pooled_trend(averages, "average_case")$rate
+stopifnot(rate > 0)
+fitted <- case_adequacy_adjust(t, "reported", "paid", "average_case", reported = "reported_counts",
+                               closed = "closed_counts")
+given <- case_adequacy_adjust(t, "reported", "paid", rate, reported = "reported_counts",
+                              closed = "closed_counts")
+near(chain_ladder(fitted, "reported")@ultimate, chain_ladder(given, "reported")@ultimate)
+expect_error_like(case_adequacy_adjust(t, "reported", "paid", "average",
+                                       reported = "reported_counts", closed = "closed_counts"),
+                  "average_case")
 
 # Trends.
 near(exponential_trend(0:2, c(100, 110, 121))$rate, 0.1)

@@ -32,7 +32,7 @@ disposal_fit(
   incremental_paid = NULL,
   latest = numeric(0),
   ultimate = numeric(0),
-  reserves = numeric(0)
+  reserve = numeric(0)
 )
 }
 \arguments{
@@ -55,7 +55,7 @@ into one value, total trended paid over total counts, used to ultimate.}
 \item{factors}{One factor per origin that brings its severities to the
 base level besides the trend.}
 
-\item{origins, ages, selected_rates, selected_severities, trended_severities, incremental_counts, projected_severities, incremental_paid, latest, ultimate, reserves}{The fit's values.}
+\item{origins, ages, selected_rates, selected_severities, trended_severities, incremental_counts, projected_severities, incremental_paid, latest, ultimate, reserve}{The fit's values.}
 }
 \value{
 A \code{disposal_fit}.
@@ -72,7 +72,7 @@ simple average of every origin, a number for the latest n origins,
 \code{n_periods}, \code{drop_high} and \code{drop_low}.
 
 The fit has \code{ages}, per origin \code{ultimate_counts}, \code{latest}, \code{ultimate}
-and \code{reserves}, by age \code{selected_rates} and \code{selected_severities} (the
+and \code{reserve}, by age \code{selected_rates} and \code{selected_severities} (the
 step to ultimate last), the matrices \code{disposal_rates}, \code{severities},
 \code{trended_severities}, \code{incremental_counts}, \code{projected_severities} and
 \code{incremental_paid}, and \code{total_ultimate} and \code{total_reserve}.

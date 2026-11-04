@@ -380,7 +380,7 @@ impl PyFrequencySeverityFit {
     }
     /// Ultimate less latest.
     #[getter]
-    fn reserves(&self) -> Vec<f64> {
+    fn reserve(&self) -> Vec<f64> {
         self.inner.reserves()
     }
     /// The sum of the ultimates.
@@ -603,7 +603,7 @@ impl PyDisposalFit {
     }
     /// Ultimate less latest paid.
     #[getter]
-    fn reserves(&self) -> Vec<f64> {
+    fn reserve(&self) -> Vec<f64> {
         self.inner.reserves()
     }
     /// The sum of the ultimates.
@@ -772,7 +772,7 @@ impl PyCaseOutstandingFit {
     }
     /// Ultimate less latest paid.
     #[getter]
-    fn reserves(&self) -> Vec<f64> {
+    fn reserve(&self) -> Vec<f64> {
         self.inner.reserves()
     }
     /// The sum of the ultimates.
@@ -798,11 +798,17 @@ fn case_trend_arg(trend: &Bound<'_, PyAny>) -> PyResult<CaseTrend> {
     if let Ok(t) = trend.extract::<f64>() {
         return Ok(CaseTrend::Given(t));
     }
+    if trend
+        .extract::<String>()
+        .is_ok_and(|name| name == "average_case")
+    {
+        return Ok(CaseTrend::AverageCase);
+    }
     if let Ok((amount, counts)) = trend.extract::<(String, String)>() {
         return Ok(CaseTrend::Fitted { amount, counts });
     }
     Err(PyTypeError::new_err(format!(
-        "trend must be a number or a pair (amount column, count column), got {}",
+        "trend must be a number, \"average_case\" or a pair (amount column, count column), got {}",
         py_repr(trend)
     )))
 }
@@ -844,7 +850,7 @@ fn interpolation_arg(name: &str) -> PyResult<Interpolation> {
 /// triangle : Triangle
 /// incurred, paid : str
 ///     The reported and paid claims columns.
-/// trend : float or (str, str)
+/// trend : float, "average_case" or (str, str)
 ///     The annual severity trend, or a pair of an amount and a count column
 ///     to fit it from (paid claims and closed counts).
 /// open_counts : str, optional
@@ -1009,7 +1015,7 @@ pub(crate) fn settlement_rate_adjust(
 /// triangle : Triangle
 /// incurred, paid, reported, closed_counts : str
 ///     Reported and paid claims, reported and closed counts.
-/// trend : float or (str, str)
+/// trend : float, "average_case" or (str, str)
 ///     As ``case_adequacy_adjust``'s ``trend``.
 /// ultimate_counts
 ///     As ``settlement_rate_adjust``'s.

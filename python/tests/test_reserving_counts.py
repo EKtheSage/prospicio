@@ -105,7 +105,7 @@ def test_friedland_xyz_case_outstanding():
     # Exhibit II's 513,944 and the 233 it left out of 2000.
     assert fit.total_ultimate == pytest.approx(513944.0 + 0.501 * 465.0, abs=8.0)
     assert fit.ibnr[-1] == pytest.approx(fit.ultimate[-1] - fit.latest_incurred[-1])
-    assert fit.reserves[-1] == pytest.approx(fit.ultimate[-1] - fit.latest_paid[-1])
+    assert fit.reserve[-1] == pytest.approx(fit.ultimate[-1] - fit.latest_paid[-1])
 
 
 def test_friedland_xyz_disposal():
@@ -165,6 +165,21 @@ def test_friedland_xyz_berquist_sherman():
     assert {"average_case", "adjusted_average_case"} <= set(extra.columns)
     # A mean of two projections is accepted anywhere ultimate counts are.
     settlement_rate_adjust(tri, "paid", "closed_counts", [closed, reported])
+
+
+def test_a_trend_fitted_on_the_average_case():
+    tri = xyz()
+    counts = {"reported": "reported_counts", "closed": "closed_counts"}
+    averages = average_case(tri, "reported", "paid", 0.0, **counts)
+    rate = pooled_trend(averages, "average_case")["rate"]
+    assert rate > 0.0
+    fitted = case_adequacy_adjust(tri, "reported", "paid", "average_case", **counts)
+    given = case_adequacy_adjust(tri, "reported", "paid", rate, **counts)
+    assert list(ChainLadder().fit(fitted, "reported").ultimate) == pytest.approx(
+        list(ChainLadder().fit(given, "reported").ultimate), rel=1e-12
+    )
+    with pytest.raises(TypeError, match="average_case"):
+        case_adequacy_adjust(tri, "reported", "paid", "average", **counts)
 
 
 def test_trends():

@@ -69,28 +69,41 @@ pub enum CaseTrend {
     Given(f64),
     /// The exponential trend of `amount` over `counts` fitted over every
     /// age at once ([`pooled_trend`]): paid claims over closed counts, the
-    /// severity Berquist and Sherman compare with the average case. The
-    /// average case outstanding itself carries the change in adequacy being
-    /// removed, so its own trend is not a sound choice; pass it explicitly
-    /// to use it.
+    /// severity Berquist and Sherman compare with the average case. Cumulative
+    /// paid includes payments on open claims, so read the rate with care: on
+    /// their medical malpractice data it comes to 24%, not the 7% to 14% of
+    /// the average paid triangle Friedland reprints from the paper.
     Fitted { amount: String, counts: String },
+    /// The exponential trend of the average case outstanding itself, fitted
+    /// over every age at once ([`pooled_trend`]). Where adequacy is changing
+    /// this trend includes the change (25% against Berquist and Sherman's
+    /// selected 15% on their medical malpractice example), so a triangle
+    /// restated with it keeps part of the change.
+    AverageCase,
 }
 
 impl CaseTrend {
-    fn rate(&self, tri: &Triangle) -> Result<f64> {
-        let rate = match self {
-            Self::Given(r) => *r,
-            Self::Fitted { amount, counts } => {
-                let t = ratio_column(tri, amount, counts, "__severity")?;
-                match pooled_trend(&t, "__severity")? {
-                    Some(fit) => fit.rate,
-                    None => {
-                        return bs_err(
-                            "no severity trend can be fitted: fewer than two origins at every age",
-                        );
-                    }
+    /// The annual rate, given the triangle and the average case outstanding
+    /// of each cell.
+    fn rate(&self, tri: &Triangle, average: &Rows) -> Result<f64> {
+        let fitted = |t: &Triangle, column: &str| -> Result<f64> {
+            match pooled_trend(t, column)? {
+                Some(fit) => Ok(fit.rate),
+                None => {
+                    bs_err("no severity trend can be fitted: fewer than two origins at every age")
                 }
             }
+        };
+        let rate = match self {
+            Self::Given(r) => *r,
+            Self::Fitted { amount, counts } => fitted(
+                &ratio_column(tri, amount, counts, "__severity")?,
+                "__severity",
+            )?,
+            Self::AverageCase => fitted(
+                &tri.with_cells("__average_case", average)?,
+                "__average_case",
+            )?,
         };
         if !rate.is_finite() || rate <= -1.0 {
             return Err(Error::InvalidSetting {
@@ -109,11 +122,15 @@ impl CaseTrend {
 /// The adjusted average at origin `o` and age `k` is the latest diagonal's
 /// average at age `k` (origin `o*`) divided by `(1 + trend)` for each year
 /// from `o` to `o*`; adjusted incurred is that times the open counts plus
-/// paid. Ages after `max_age` keep their own average, so their incurred is
-/// unchanged (Friedland leaves XYZ Insurer's ages past 84 months as they
-/// are). A cell needs incurred, paid and open counts; where the average
-/// cannot be formed (no open claim on the latest diagonal) the case
-/// outstanding is taken as zero.
+/// paid. Ages after `max_age` keep their incurred unchanged (Friedland
+/// leaves XYZ Insurer's ages past 84 months as they are), and so does every
+/// cell on the latest diagonal. Where the latest diagonal's cell at an age
+/// has no average (no open claim there) a cell keeps its own average, and a
+/// cell with no open claim of its own has no case outstanding. The latest
+/// diagonal is the most recent origin at each age, so a triangle whose
+/// oldest ages have been cut off is read correctly. An age with observed
+/// cells and no cell on the latest diagonal (quarterly ages on annual
+/// origins, say) is an error, since nothing says what its adequacy is.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CaseAdequacy {
     pub incurred: String,
@@ -133,8 +150,10 @@ pub struct CaseAdequacy {
 /// two successive observed (closed, paid) points of its origin whose closed
 /// counts span the adjusted count, or, when none does, the nearest pair;
 /// Berquist and Sherman fit the exponential `paid = a exp(b closed)` through
-/// them, and a straight line is the alternative. Each origin's latest cell
-/// keeps its observed paid.
+/// them, and a straight line is the alternative. A cell on the latest
+/// diagonal keeps its observed closed count and paid, and a cell of an origin
+/// with no usable pair keeps its observed paid. An observed cell at an age
+/// with no selected disposal rate is an error.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SettlementRate {
     pub paid: String,
@@ -182,7 +201,6 @@ struct Averages {
 
 impl CaseAdequacy {
     fn averages(&self, tri: &Triangle) -> Result<Averages> {
-        let trend = self.trend.rate(tri)?;
         let incurred = tri.cells(&self.incurred)?;
         let paid = tri.cells(&self.paid)?;
         let open = self.open_counts.rows(tri)?;
@@ -199,21 +217,37 @@ impl CaseAdequacy {
                     .collect()
             })
             .collect();
+        let trend = self.trend.rate(tri, &average)?;
         let val = valuation_positions(tri);
-        // The latest diagonal's origin at each age.
+        // The latest diagonal's origin at each age: the most recent origin
+        // that stops there, since older ones stop at the oldest age when the
+        // triangle's ages are cut off.
         let diag: Vec<Option<usize>> = (0..ages.len())
-            .map(|d| val.iter().position(|&v| v == Some(d)))
+            .map(|d| val.iter().rposition(|&v| v == Some(d)))
             .collect();
+        let past_max = |d: usize| self.max_age.is_some_and(|m| ages[d] > m);
+        for d in 0..ages.len() {
+            if diag[d].is_none() && !past_max(d) && average.iter().any(|r| r[d].is_some()) {
+                return bs_err(format!(
+                    "the latest diagonal has no cell at age {}, so nothing sets the adequacy of \
+                     that age",
+                    ages[d]
+                ));
+            }
+        }
         let adjusted = (0..origins.len())
             .map(|o| {
                 (0..ages.len())
                     .map(|d| {
-                        if self.max_age.is_some_and(|m| ages[d] > m) {
+                        if past_max(d) {
                             return average[o][d];
                         }
-                        let star = diag[d]?;
-                        let a = average[star][d]?;
-                        Some(a / (1.0 + trend).powf(years[star] - years[o]))
+                        diag[d]
+                            .and_then(|star| {
+                                let a = average[star][d]?;
+                                Some(a / (1.0 + trend).powf(years[star] - years[o]))
+                            })
+                            .or(average[o][d])
                     })
                     .collect()
             })
@@ -253,17 +287,33 @@ impl CaseAdequacy {
     }
 
     /// `tri` with the incurred column restated at the latest diagonal's case
-    /// reserve adequacy, cumulative. Cells without paid claims or open
-    /// counts become unobserved.
+    /// reserve adequacy, cumulative. Cells up to `max_age` without paid
+    /// claims or open counts become unobserved.
     pub fn adjust(&self, tri: &Triangle) -> Result<Triangle> {
         let a = self.averages(tri)?;
-        let rows = combine(&a.adjusted, &a.open, &a.paid);
+        let mut rows = combine(&a.adjusted, &a.open, &a.paid);
+        let ages = tri.development();
+        keep_observed(tri, &mut rows, &a.incurred, |d| {
+            self.max_age.is_some_and(|m| ages[d] > m)
+        });
         tri.with_cells(&self.incurred, &rows)
     }
 }
 
-/// Adjusted average times open plus paid, cell by cell; zero case where the
-/// average is missing.
+/// Puts the observed `incurred` back on the latest diagonal and at the ages
+/// `keep` names, whatever the averages and counts there say.
+fn keep_observed(tri: &Triangle, rows: &mut Rows, incurred: &Rows, keep: impl Fn(usize) -> bool) {
+    for (o, row) in rows.iter_mut().enumerate() {
+        for (d, cell) in row.iter_mut().enumerate() {
+            if tri.valuation_of(o, d) == tri.valuation() || keep(d) {
+                *cell = incurred[o][d];
+            }
+        }
+    }
+}
+
+/// Adjusted average times open plus paid, cell by cell; a cell with no
+/// average (and so no open claim of its own) is its paid.
 fn combine(average: &Rows, open: &Rows, paid: &Rows) -> Rows {
     average
         .iter()
@@ -324,17 +374,24 @@ impl SettlementRate {
                 })
                 .collect();
             for d in 0..=last {
-                if latest[o] == Some(d) {
+                if tri.valuation_of(o, d) == tri.valuation() {
                     adj_closed[o][d] = closed[o][d];
                     adj_paid[o][d] = paid[o][d];
                     continue;
                 }
                 let Some(rate) = selected[d] else {
+                    if closed[o][d].is_some() {
+                        return bs_err(format!(
+                            "no disposal rate at age {} for the observed closed count of {}",
+                            ages[d],
+                            tri.origins()[o]
+                        ));
+                    }
                     continue;
                 };
                 let x = rate * ultimate[o];
                 adj_closed[o][d] = Some(x);
-                adj_paid[o][d] = interpolate(&pairs, x, self.interpolation);
+                adj_paid[o][d] = interpolate(&pairs, x, self.interpolation).or(paid[o][d]);
             }
         }
         Ok(Settled {
@@ -426,7 +483,8 @@ impl BerquistSherman {
                     .collect()
             })
             .collect();
-        let incurred = combine(&a.adjusted, &open, &s.paid);
+        let mut incurred = combine(&a.adjusted, &open, &s.paid);
+        keep_observed(tri, &mut incurred, &a.incurred, |_| false);
         tri.with_cells(closed, &s.closed)?
             .with_cells(&self.settlement_rate.paid, &s.paid)?
             .with_cells(&self.case_adequacy.incurred, &incurred)

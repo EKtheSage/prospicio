@@ -42,6 +42,14 @@ are in the note.[^note] What the exhibits do not say:
 - **`max_age` matters in the combined adjustment.** XYZ adjusts average case
   only to 84 months; older ages keep their unadjusted averages in the combined
   adjustment too, which is what gives the printed 489,258.
+- **The chapter's average paid triangle is not paid over closed.** Exhibit I,
+  sheet 5's average paid (402 at 12 months for 1969, trends of 7% to 14%) comes
+  from the paper; the paid and closed triangles beside it give 3,788 and, over
+  every age at once, 24%, about the 25% of the average case. A trend fitted on
+  paid over closed does not reproduce the comparison the chapter makes.
+- **GL Insurer's rates are rounded too.** Exhibit V projects with the medial
+  rates rounded to three decimals; on them every ultimate agrees within 30
+  dollars in 40 million, the rest being the counts' hidden decimals.
 
 chainladder-python 0.10.1's `BerquistSherman` agrees with the two adjustments
 separately on its `berqsherm` sample. That sample's Auto line has the same

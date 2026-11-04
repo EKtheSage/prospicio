@@ -22,7 +22,7 @@ frequency_severity_fit(
   ultimate_counts = numeric(0),
   ultimate_severity = numeric(0),
   ultimate = numeric(0),
-  reserves = numeric(0)
+  reserve = numeric(0)
 )
 }
 \arguments{
@@ -45,7 +45,7 @@ methods for their mean; or a \code{\link[=trended]{trended()}} frequency with \c
 \item{exposure_factors}{One factor per origin that brings the exposure to
 the base level.}
 
-\item{origins, latest, latest_severity, ultimate, reserves}{The fit's values.}
+\item{origins, latest, latest_severity, ultimate, reserve}{The fit's values.}
 }
 \value{
 A \code{frequency_severity_fit}.
@@ -58,7 +58,7 @@ segment and holds counts and amounts as columns.
 }
 \details{
 The fit has per origin \code{latest}, \code{latest_severity}, \code{ultimate_counts},
-\code{ultimate_severity}, \code{ultimate} and \code{reserves}, and \code{total_ultimate} and
+\code{ultimate_severity}, \code{ultimate} and \code{reserve}, and \code{total_ultimate} and
 \code{total_reserve}.
 }
 \examples{

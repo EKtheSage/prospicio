@@ -279,7 +279,7 @@ impl fmt::Display for Error {
             Self::PatternDraws(why) => write!(f, "pattern draws: {why}"),
             Self::File(why) => write!(f, "reading a triangle: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
-            Self::Counts(why) => write!(f, "{why}"),
+            Self::Counts(why) => write!(f, "claim counts: {why}"),
             Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
             Self::OneYear {

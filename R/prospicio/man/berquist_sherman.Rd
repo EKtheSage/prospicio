@@ -69,8 +69,9 @@ ratio_column(triangle, numerator, denominator, name)
 
 \item{incurred, paid}{The reported and paid claims columns.}
 
-\item{trend}{The annual severity trend, or two column names, an amount
-and a count (paid claims and closed counts), to fit it from.}
+\item{trend}{The annual severity trend, \code{"average_case"} to fit it from
+the average case outstanding, or two column names, an amount and a count
+(paid claims and closed counts), to fit it from.}
 
 \item{open_counts}{A column of open counts. Otherwise give \code{reported}
 and \code{closed}.}
