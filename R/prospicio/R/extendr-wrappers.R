@@ -2601,6 +2601,10 @@ Triangle$calendar_year_effect <- function(column, ci) .Call(wrap__Triangle__cale
 
 Triangle$development_correlation <- function(column, ci) .Call(wrap__Triangle__development_correlation, self, column, ci)
 
+Triangle$development_exhibit <- function(column, average, sigma_interpolation, excl, tail, ldf, friedland, average_names, average_kinds, average_excl) .Call(wrap__Triangle__development_exhibit, self, column, average, sigma_interpolation, excl, tail, ldf, friedland, average_names, average_kinds, average_excl)
+
+Triangle$ultimate_exhibit <- function(reported, paid) .Call(wrap__Triangle__ultimate_exhibit, self, reported, paid)
+
 Triangle$mack <- function(column, average, sigma_interpolation, excl, tail, tail_sigma, tail_std_err, ldf) .Call(wrap__Triangle__mack, self, column, average, sigma_interpolation, excl, tail, tail_sigma, tail_std_err, ldf)
 
 Triangle$munich_chain_ladder <- function(paid, incurred, sigma_paid, sigma_incurred, tail_paid, tail_incurred) .Call(wrap__Triangle__munich_chain_ladder, self, paid, incurred, sigma_paid, sigma_incurred, tail_paid, tail_incurred)
@@ -2973,6 +2977,96 @@ DevelopmentCorrelationTest$table <- function() .Call(wrap__DevelopmentCorrelatio
 
 #' @export
 `[[.DevelopmentCorrelationTest` <- `$.DevelopmentCorrelationTest`
+
+DevelopmentExhibit <- new.env(parent = emptyenv())
+
+DevelopmentExhibit$origins <- function() .Call(wrap__DevelopmentExhibit__origins, self)
+
+DevelopmentExhibit$ages <- function() .Call(wrap__DevelopmentExhibit__ages, self)
+
+DevelopmentExhibit$link_labels <- function() .Call(wrap__DevelopmentExhibit__link_labels, self)
+
+DevelopmentExhibit$values <- function() .Call(wrap__DevelopmentExhibit__values, self)
+
+DevelopmentExhibit$link_ratios <- function() .Call(wrap__DevelopmentExhibit__link_ratios, self)
+
+DevelopmentExhibit$average_names <- function() .Call(wrap__DevelopmentExhibit__average_names, self)
+
+DevelopmentExhibit$averages <- function() .Call(wrap__DevelopmentExhibit__averages, self)
+
+DevelopmentExhibit$selected <- function() .Call(wrap__DevelopmentExhibit__selected, self)
+
+DevelopmentExhibit$tail <- function() .Call(wrap__DevelopmentExhibit__tail, self)
+
+DevelopmentExhibit$cdf <- function() .Call(wrap__DevelopmentExhibit__cdf, self)
+
+DevelopmentExhibit$percent_developed <- function() .Call(wrap__DevelopmentExhibit__percent_developed, self)
+
+#' @export
+`$.DevelopmentExhibit` <- function (self, name) { func <- DevelopmentExhibit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.DevelopmentExhibit` <- `$.DevelopmentExhibit`
+
+UltimateExhibit <- new.env(parent = emptyenv())
+
+UltimateExhibit$from_claims <- function(origin_year, origin_month, origin_grain, ages, reported, paid) .Call(wrap__UltimateExhibit__from_claims, origin_year, origin_month, origin_grain, ages, reported, paid)
+
+UltimateExhibit$with_method <- function(name, ultimate) .Call(wrap__UltimateExhibit__with_method, self, name, ultimate)
+
+UltimateExhibit$origins <- function() .Call(wrap__UltimateExhibit__origins, self)
+
+UltimateExhibit$ages <- function() .Call(wrap__UltimateExhibit__ages, self)
+
+UltimateExhibit$reported <- function() .Call(wrap__UltimateExhibit__reported, self)
+
+UltimateExhibit$paid <- function() .Call(wrap__UltimateExhibit__paid, self)
+
+UltimateExhibit$methods <- function() .Call(wrap__UltimateExhibit__methods, self)
+
+UltimateExhibit$ultimate <- function(name) .Call(wrap__UltimateExhibit__ultimate, self, name)
+
+UltimateExhibit$ibnr <- function(name) .Call(wrap__UltimateExhibit__ibnr, self, name)
+
+UltimateExhibit$unpaid <- function(name) .Call(wrap__UltimateExhibit__unpaid, self, name)
+
+UltimateExhibit$select_by_origin <- function(names, weights) .Call(wrap__UltimateExhibit__select_by_origin, self, names, weights)
+
+UltimateExhibit$select_by_age <- function(ages, names, weights) .Call(wrap__UltimateExhibit__select_by_age, self, ages, names, weights)
+
+UltimateExhibit$select_single <- function(name) .Call(wrap__UltimateExhibit__select_single, self, name)
+
+#' @export
+`$.UltimateExhibit` <- function (self, name) { func <- UltimateExhibit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.UltimateExhibit` <- `$.UltimateExhibit`
+
+SelectedUltimates <- new.env(parent = emptyenv())
+
+SelectedUltimates$origins <- function() .Call(wrap__SelectedUltimates__origins, self)
+
+SelectedUltimates$ages <- function() .Call(wrap__SelectedUltimates__ages, self)
+
+SelectedUltimates$ultimate <- function() .Call(wrap__SelectedUltimates__ultimate, self)
+
+SelectedUltimates$ibnr <- function() .Call(wrap__SelectedUltimates__ibnr, self)
+
+SelectedUltimates$unpaid <- function() .Call(wrap__SelectedUltimates__unpaid, self)
+
+SelectedUltimates$reported <- function() .Call(wrap__SelectedUltimates__reported, self)
+
+SelectedUltimates$paid <- function() .Call(wrap__SelectedUltimates__paid, self)
+
+SelectedUltimates$weight_names <- function() .Call(wrap__SelectedUltimates__weight_names, self)
+
+SelectedUltimates$weights <- function() .Call(wrap__SelectedUltimates__weights, self)
+
+#' @export
+`$.SelectedUltimates` <- function (self, name) { func <- SelectedUltimates[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.SelectedUltimates` <- `$.SelectedUltimates`
 
 OdpBootstrapFit <- new.env(parent = emptyenv())
 

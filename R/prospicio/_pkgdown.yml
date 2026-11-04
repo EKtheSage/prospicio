@@ -404,6 +404,9 @@ reference:
       - paid_incurred_fit
       - benchmark_curve_fit
       - development_curve_fit
+      - development_exhibit
+      - ultimate_exhibit
+      - select_ultimates
       - fit_frames
       - ultimate_draws
       - pattern_draws

@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 accepted by the user on 2026-10-28 as proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 accepted by the user on 2026-10-28 as built; decision 29 built on branch `claude/unify-not-supported`, issue #580, in Rust, Python and R, its items 4, 5 and 9 open for the user; decision 30 built on branch `claude/monthly-pattern-speed`, issue #717, in Rust, with no API change in Python and R, its item 2 open for the user; decision 31 built on branch `claude/development-curves`, in Rust, Python and R, its items proposed for the user's acceptance; decision 32 built on branch `claude/paid-incurred-chain`, in Rust, Python and R; decision 33 built on branch `claude/munich-chain-ladder`, in Rust, Python and R, its items 5, 6 and 11 open) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 accepted by the user on 2026-10-28 as proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 accepted by the user on 2026-10-28 as built; decision 29 built on branch `claude/unify-not-supported`, issue #580, in Rust, Python and R, its items 4, 5 and 9 open for the user; decision 30 built on branch `claude/monthly-pattern-speed`, issue #717, in Rust, with no API change in Python and R, its item 2 open for the user; decision 31 built on branch `claude/development-curves`, in Rust, Python and R, its items proposed for the user's acceptance; decision 32 built on branch `claude/paid-incurred-chain`, in Rust, Python and R; decision 33 built on branch `claude/munich-chain-ladder`, in Rust, Python and R, its items 5, 6 and 11 open; decision 34 built on branch `claude/friedland-exhibits`, in Rust, Python and R, items 8 to 12 open) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -5470,3 +5470,112 @@ R's `MCLpaid` and `MCLincurred` (`validation/data/mcl.csv`).
     tail_incurred = 1)` returning a `munich_fit` with the same properties,
     `as.data.frame()`, `print`, `totals_frame()`, `development_frame()`
     and `segment()`.
+
+### 34. Friedland's exhibits and a weighted selection of ultimates
+
+Status: **Built** (2026-11-02), issue #557, branch
+`claude/friedland-exhibits`, in Rust, Python and R; items 8 to 12 are
+open decisions with the defaults as built. Numbers 29 and 30 are on main and 31 to 33 are taken by open
+branches, so this number may move when they merge. A reserving review ends
+in exhibits: the development triangle with averages and selected factors,
+a table of each method's ultimate by origin, and a selected ultimate with
+IBNR and unpaid. Friedland (*Estimating Unpaid Claims Using Basic
+Techniques*, 2010) builds them for every method and summarizes the
+selection in chapter 15; chainladder-python 0.10.1's `VotingChainladder`
+weights several methods' ultimates by origin.
+
+1. **What is built.** `prospicio_reserving::exhibit`:
+   `DevelopmentExhibit::new(&Triangle, column, &Development)` and
+   `with_averages(&Triangle, column, &ChainLadder, &[(String,
+   Development)])`: the cumulative values, the link ratios, each named
+   average of them, the selected age-to-age factors (the chain ladder's
+   `ldf`, so selected and blended patterns and tails apply), the tail,
+   the factors to ultimate and the percents developed.
+   `friedland_averages()` gives Friedland's six: simple and volume-weighted
+   over the latest 5 and 3, the medial average of the latest 5 without the
+   highest and the lowest, and the geometric average of the latest 4.
+   `UltimateExhibit` holds the origins, each origin's age, the reported
+   and paid claims to date (either may be missing) and each named method's
+   ultimate, with `ibnr` (ultimate less reported), `unpaid` (ultimate less
+   paid), `case_outstanding` and long tables; `with_fit` adds any
+   `ReserveFit` of one segment whose origins are the exhibit's (its
+   `ReserveFit::ultimate`, which for a bootstrap or a Bayesian model is the
+   chain ladder's point projection, so their mean ultimates go in with
+   `with_method`), and `with_method` a vector of ultimates. `UltimateExhibit::select(&UltimateSelection)`
+   returns `SelectedUltimates`: the selected ultimate per origin, every
+   method's weight, IBNR, unpaid and the totals.
+2. **Weights.** `MethodWeights::ByOrigin` (each method's weight per
+   origin), `ByAge` (rows of weights by age) or `Single` (one method). A
+   method left out has weight 0.
+3. **Weights sum to 1.** Each weight is finite and at least 0, and each
+   origin's weights sum to 1 within `WEIGHT_TOLERANCE` (1e-9); they are
+   not rescaled, so a mistyped weight is an error and not a silent change
+   of the selection (item 8).
+4. **Missing ultimates.** A method may have no ultimate (NaN) at an
+   origin, as the blank cells of Friedland's summaries (his
+   frequency-severity methods project only the latest origins). A weight
+   of 0 skips it there; a positive weight on it is an error. An infinite
+   ultimate is refused when the method is added.
+5. **Weights by age.** `ByAge` rows are a step function: an origin takes
+   the row of the oldest age not past its own age at the valuation date,
+   so rows at 12, 24 and 36 months give an origin at 30 months the 24-month
+   row. An origin younger than the first row's age is an error (item 9).
+6. **Bindings.** Python: `DevelopmentExhibit(triangle, column,
+   selection=None, averages=None)` with `to_frames()`,
+   `UltimateExhibit(origin, age, reported=None, paid=None)` and
+   `UltimateExhibit.from_triangle(triangle, reported=None, paid=None)`,
+   `with_method(name, fit_or_ultimates)`, `select(weights=None,
+   by_age=None)` returning `SelectedUltimates`, and
+   `select_ultimates(fits, weights=None, *, by_age=None, triangle=None,
+   reported=None, paid=None, total=True)` returning a DataFrame (a dict of
+   lists without pandas). Weights are a method name, a mapping of method to
+   one weight or a weight per origin, or `by_age`, a mapping of age to a
+   mapping of method to weight. R: `development_exhibit(triangle, column,
+   ..., averages = NULL)`, `ultimate_exhibit(x = NULL, reported, paid,
+   methods = list(), origin, age, origin_grain)` and `select_ultimates(x,
+   weights = NULL, by_age = NULL, triangle, reported, paid, total = TRUE)`
+   returning a data frame; `by_age` is a data frame with `age` and one
+   column per method.
+7. **Checks.** `validation/tests/reserving_exhibits.rs`, with a subset of each check in
+   `python/tests/test_reserving_exhibits.py` and
+   `R/prospicio/tests/test-reserving-exhibits.R`: Friedland's chapter 7,
+   Exhibit I (U.S. Industry Auto, `validation/data/friedland_us_auto.csv`)
+   link ratios, the six averages, selected factors, factors to ultimate
+   and percents developed of reported and paid claims to the printed
+   digits; sheet 4's ultimates, IBNR and unpaid of the development,
+   expected claims, Bornhuetter-Ferguson and Cape Cod methods per origin
+   and in total; chapter 15, Exhibit I's selected ultimates for XYZ
+   Insurer from the printed method columns, by origin and by age (total
+   483,781 and IBNR 34,155 within 1); chainladder-python's
+   `VotingChainladder` of the chain ladder, Bornhuetter-Ferguson and Cape
+   Cod on GenIns, phased by origin, blended and single, 156 values to
+   1e-9 (`validation/reference/reserving_exhibits_python.csv`,
+   `validation/scripts/reserving_exhibits_python.py`); and weights that do
+   not sum to 1, a positive weight on a missing ultimate, an unknown
+   method and a fit of other origins refused. One printed paid medial
+   average (72-84, printed 1.010) is 1.0094965 from the printed claims,
+   3.5e-6 under the rounding edge (the book's spreadsheet holds the claims
+   with decimals), and is checked against 1.0095 within 1e-5.
+
+Open decisions, each built with the default named:
+
+8. **Refuse or rescale weights that do not sum to 1.** `VotingChainladder`
+   divides each origin's weights by their sum. Default: refuse, as the
+   issue asks; rescaling would be a one-line option later.
+9. **`ByAge` as a step function.** The alternative is an exact match of
+   the origin's age, or interpolation between rows. Default: the step,
+   which is how Friedland's selections read ("chain ladder from 60
+   months").
+10. **An exhibit's age from a triangle.** `from_triangle` takes each
+    origin's latest age over the reported and paid columns given, the
+    larger where they differ. Default as built; the alternative is to
+    refuse columns with different latest ages.
+11. **Python fits by duck typing.** `UltimateExhibit.with_method` takes any
+    object with `origins` and `ultimate` (a fit) or a sequence of numbers,
+    and refuses an object with `origins` but no `ultimate` (the bootstrap
+    and Bayesian fits, whose mean ultimates are given as numbers);
+    R takes a fit with `@origins` and `@ultimate` or a numeric vector.
+    Default as built; the alternative is a closed list of fit classes.
+12. **Exhibits as tables, not formatted reports.** The exhibits return
+    numbers and tables (DataFrames, data frames); rounding and layout are
+    the user's. Default as built.

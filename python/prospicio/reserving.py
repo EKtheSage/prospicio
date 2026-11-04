@@ -3,7 +3,8 @@ model with its one-year view and Mack's tests of its assumptions, the
 Munich chain ladder of paid and incurred together, the
 expected-loss methods, Clark's growth
 curves, a growth curve fitted to a benchmark pattern and development curves
-fitted over every age, the ODP model as a
+fitted over every age, Friedland's exhibits and a weighted selection of the
+methods' ultimates, the ODP model as a
 GLM with its analytic prediction error, and the ODP bootstrap with its
 simulated one-year view of the chain
 ladder and the expected-loss methods, Mack's bootstrap for the lifetime and
@@ -53,6 +54,7 @@ from .prospicio_native import (
     DevelopmentCorrelationTest,
     DevelopmentCurve,
     DevelopmentCurveFit,
+    DevelopmentExhibit,
     ExcessLayer,
     ExcessPattern,
     ExpectedLoss,
@@ -80,6 +82,7 @@ from .prospicio_native import (
     OneYearFit,
     ParetoShape,
     ScaleShift,
+    SelectedUltimates,
     TailBondy,
     TailConstant,
     TailCurve,
@@ -87,6 +90,7 @@ from .prospicio_native import (
     Triangle,
     DevelopmentPatterns,
     UnderwritingBasis,
+    UltimateExhibit,
     calendar_year_effect,
     development_correlation,
     diagonal_backtest,
@@ -108,6 +112,10 @@ __all__ = [
     "development_correlation",
     "CalendarYearTest",
     "DevelopmentCorrelationTest",
+    "DevelopmentExhibit",
+    "UltimateExhibit",
+    "SelectedUltimates",
+    "select_ultimates",
     "MunichChainLadder",
     "MunichFit",
     "ExpectedLoss",
@@ -338,3 +346,77 @@ def schedule_p(line, company=None, columns=None, *, accident_years=(1988, 1997),
         values={c: column(c) for c in columns},
         keys={"company": [table["company_code"][k] for k in keep]},
     )
+
+
+def select_ultimates(
+    fits, weights=None, *, by_age=None, triangle=None, reported=None, paid=None, total=True
+):
+    """The selected ultimate per origin, a weighting of several methods'
+    ultimates, with its IBNR and unpaid, as a table: Friedland's selected
+    ultimate claims (chapter 15, Exhibit I, sheet 2, column (11)) and
+    chainladder-python's ``VotingChainladder``
+    (docs/design/reserving-v02.md, decision 34).
+
+    Each origin's weights must be at least 0 and sum to 1 (within 1e-9);
+    they are not rescaled. A method left out has weight 0, and a method
+    with weight 0 may have no ultimate (``nan``) there.
+
+    Parameters
+    ----------
+    fits : UltimateExhibit or dict
+        An exhibit with the methods, or a dict of method name to a fit of
+        one segment (or to its ultimate per origin), in which case
+        ``triangle`` and at least one of ``reported`` and ``paid`` give the
+        claims to date.
+    weights : str or mapping, optional
+        A method name, or a mapping (a dict or a DataFrame) of method name
+        to one weight for every origin or a weight per origin.
+    by_age : mapping, optional
+        Instead of ``weights``, age in months to a mapping of method name
+        to weight; each origin takes the row of the oldest age not past its
+        own (``UltimateExhibit.select``).
+    triangle : Triangle, optional
+        The triangle the fits came from, with ``fits`` as a dict.
+    reported, paid : str, optional
+        Its columns of reported and paid claims.
+    total : bool, default True
+        Whether to end the table with a ``"total"`` row.
+
+    Returns
+    -------
+    pandas.DataFrame or dict
+        One row per origin (and the total): ``reported`` and ``paid`` when
+        given, ``ultimate``, ``ibnr`` and ``unpaid`` when defined, and each
+        method's weight as ``weight_<method>``. A dict of lists without
+        pandas.
+
+    Raises
+    ------
+    ValueError
+        As ``UltimateExhibit.select``, or a dict of fits without a triangle
+        and a column.
+
+    Examples
+    --------
+    >>> from prospicio.reserving import ChainLadder, Triangle, select_ultimates
+    >>> rows = [(2020, 12, 100.0, 60.0), (2020, 24, 150.0, 140.0), (2021, 12, 120.0, 50.0)]
+    >>> origin, age, rep, pd_ = map(list, zip(*rows))
+    >>> tri = Triangle.from_long(origin, age, {"reported": rep, "paid": pd_})
+    >>> fits = {"reported": ChainLadder().fit(tri, "reported"),
+    ...         "paid": ChainLadder().fit(tri, "paid")}
+    >>> table = select_ultimates(fits, {"reported": [1.0, 0.5], "paid": [0.0, 0.5]},
+    ...                          triangle=tri, reported="reported", paid="paid")
+    >>> [round(u, 2) for u in table["ultimate"]]
+    [150.0, 148.33, 298.33]
+    """
+    if isinstance(fits, UltimateExhibit):
+        exhibit = fits
+    else:
+        if triangle is None or (reported is None and paid is None):
+            raise ValueError(
+                "with a dict of fits, give the triangle and its reported or paid column"
+            )
+        exhibit = UltimateExhibit.from_triangle(triangle, reported=reported, paid=paid)
+        for name, fit in fits.items():
+            exhibit = exhibit.with_method(name, fit)
+    return exhibit.select(weights, by_age=by_age).to_frame(total=total)

@@ -64,6 +64,7 @@ pub mod diagnostics;
 pub mod draws;
 pub mod error;
 pub mod excess;
+pub mod exhibit;
 pub mod expected_loss;
 pub mod frame;
 pub mod industry_prior;
@@ -110,6 +111,10 @@ pub use diagnostics::Diagnostics;
 pub use draws::UltimateDraws;
 pub use error::{Error, Result};
 pub use excess::{Basis, ExcessPattern, Layer, SeverityByMaturity, layer_exposure, layer_share};
+pub use exhibit::{
+    DevelopmentExhibit, MethodWeights, SelectedUltimates, UltimateExhibit, UltimateSelection,
+    WEIGHT_TOLERANCE, friedland_averages,
+};
 pub use expected_loss::{
     Apriori, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ExpectedLoss, ExpectedLossFit,
 };
