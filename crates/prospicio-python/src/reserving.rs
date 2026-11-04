@@ -3632,7 +3632,7 @@ impl PyChainLadder {
     /// The method with its pattern converted as ``ldf_origin`` and
     /// ``ldf_underwriting`` say, for
     /// origins of `origin`.
-    fn resolved(&self, origin: Grain) -> PyResult<ChainLadder> {
+    pub(crate) fn resolved(&self, origin: Grain) -> PyResult<ChainLadder> {
         chain_ladder_on(&self.inner, &self.ldf_basis, origin)
     }
 
@@ -5039,7 +5039,7 @@ fn is_pandas_series(obj: &Bound<'_, PyAny>) -> PyResult<bool> {
 
 /// An ``apriori`` keyed by origin from `(key, value)` pairs: a key is an
 /// origin label or an integer year.
-fn apriori_by_origin<'py>(
+pub(crate) fn apriori_by_origin<'py>(
     items: impl Iterator<Item = PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)>>,
 ) -> PyResult<Apriori> {
     let pairs = items

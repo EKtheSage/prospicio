@@ -41,6 +41,7 @@ mod pricing;
 mod ratemaking;
 mod reinsurance;
 mod reserving;
+mod reserving_expense;
 mod risk;
 
 pub(crate) fn to_r(e: prospicio_core::Error) -> Error {
@@ -81,5 +82,6 @@ extendr_module! {
     use ratemaking;
     use reinsurance;
     use reserving;
+    use reserving_expense;
     use risk;
 }

@@ -27,6 +27,7 @@ Collate:
     'pareto.R'
     'discrete.R'
     'reserving.R'
+    'reserving_expense.R'
     'excess.R'
     'extendr-wrappers.R'
     'hawkes.R'

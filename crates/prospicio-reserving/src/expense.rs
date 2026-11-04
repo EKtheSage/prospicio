@@ -727,18 +727,18 @@ fn ratio_unpaid(inputs: &UlaeInputs<'_>, ratio: f64, known: f64) -> Result<Vec<f
 
 /// `W* x (U1 (L - R(t)) + U2 (L - P(t)) + U3 (L - C(t)))` by row, with `L -
 /// R(t)` the pure IBNR, `L - P(t)` the case outstanding and IBNR and `L -
-/// C(t)` the claims not yet closed. No rows give none.
+/// C(t)` the claims not yet closed.
 fn conger_nolibos_unpaid(
     inputs: &UlaeInputs<'_>,
     ratio: f64,
     weights: UlaeWeights,
 ) -> Result<Vec<f64>> {
     let rows = inputs.case_outstanding.len();
-    check_values("ibnr", inputs.ibnr, rows)?;
     if rows == 0 {
-        return Ok(Vec::new());
+        return Err(Error::Empty);
     }
     check_values("case_outstanding", inputs.case_outstanding, rows)?;
+    check_values("ibnr", inputs.ibnr, rows)?;
     let pure = inputs.pure_ibnr.unwrap_or(&[]);
     if weights.opening != 0.0 || inputs.pure_ibnr.is_some() {
         check_values("pure_ibnr", pure, rows)?;

@@ -420,6 +420,12 @@ hill_rust <- function(draws, ks) .Call(wrap__hill_rust, draws, ks)
 
 threshold_diagnostics_rust <- function(draws, thresholds) .Call(wrap__threshold_diagnostics_rust, draws, thresholds)
 
+#' @noRd
+ratio_development_rust <- function(triangle, numerator, denominator, ultimate_claims, average, sigma, excl, tail, ldf, selected, additive, additive_ages, additive_values, additive_tail) .Call(wrap__ratio_development_rust, triangle, numerator, denominator, ultimate_claims, average, sigma, excl, tail, ldf, selected, additive, additive_ages, additive_values, additive_tail)
+
+#' @noRd
+ulae_rust <- function(method, paid_ulae, paid, reported, closed, case_outstanding, ibnr, pure_ibnr, unclosed, ultimate, ratio, opening, weights) .Call(wrap__ulae_rust, method, paid_ulae, paid, reported, closed, case_outstanding, ibnr, pure_ibnr, unclosed, ultimate, ratio, opening, weights)
+
 excess_pattern_rust <- function(triangle, column, attachment, limit, kind, ultimate, ground_up_cap, threshold, alpha_ages, alphas, ultimate_alpha, base_attachment, base_limit, counts, tail) .Call(wrap__excess_pattern_rust, triangle, column, attachment, limit, kind, ultimate, ground_up_cap, threshold, alpha_ages, alphas, ultimate_alpha, base_attachment, base_limit, counts, tail)
 
 excess_credibility_weights_rust <- function(ages, layer_ldf, layer_cdf, ground_up_ldf, ground_up_tail, shifts, layer_tail, layer_triangle, column, counts, k, max_influence) .Call(wrap__excess_credibility_weights_rust, ages, layer_ldf, layer_cdf, ground_up_ldf, ground_up_tail, shifts, layer_tail, layer_triangle, column, counts, k, max_influence)

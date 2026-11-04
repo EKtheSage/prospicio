@@ -39,6 +39,7 @@ mod pricing;
 mod ratemaking;
 mod reinsurance;
 mod reserving;
+mod reserving_expense;
 mod risk;
 
 fn to_py(e: prospicio_core::Error) -> PyErr {
@@ -190,6 +191,11 @@ mod prospicio_native {
         PyNewYear, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyPatternPrior, PyTailBondy,
         PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle, PyUnderwritingBasis,
         calendar_year_effect, development_correlation, diagonal_backtest,
+    };
+    #[pymodule_export]
+    use super::reserving_expense::{
+        PyRatioDevelopment, PyRatioDevelopmentFit, PyUlaeEstimate, ulae_classical,
+        ulae_conger_nolibos, ulae_kittel,
     };
     #[pymodule_export]
     use super::risk::{

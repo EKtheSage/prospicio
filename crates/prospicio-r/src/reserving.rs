@@ -408,7 +408,7 @@ fn underwriting_exposure_rust(writing: Vec<f64>, policy_months: f64) -> Result<V
 /// The chain ladder that gives a method its development pattern, with the
 /// selected pattern `ldf` (as `selected_pattern` reads it, for origins of
 /// `target`).
-fn pattern(
+pub(crate) fn pattern(
     average: &str,
     sigma_interpolation: &str,
     excl: &Robj,

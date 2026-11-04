@@ -617,6 +617,8 @@ fn a_cumulative_recovery_below_zero_still_develops() {
         ..Default::default()
     };
     assert!(geometric.fit(&tri, "recoveries").is_err());
+    // Mack's variance needs positive values: on these it cannot be estimated.
+    assert!(Mack::default().fit(&tri, "recoveries").is_err());
 }
 
 // Chapter 17, Exhibits I and II: XYZ Insurer, 2004 to 2008.
@@ -898,7 +900,8 @@ fn ulae_exhibit_iv_sheet_4_is_the_generalized_approach_at_70_30() {
 
 #[test]
 fn ulae_exhibit_iv_sheet_5_is_the_simplification() {
-    // The accident year's ultimate stands in for R. L - P is 405,983.
+    // The accident year's ultimate stands in for R. The case outstanding
+    // and IBNR of sheet 2 are L - P, 405,983.
     let model = Ulae::conger_nolibos(UlaeWeights::new(0.6, 0.4), Some(0.100));
     for (share, pure_printed, unpaid_printed) in
         [(0.04, 7_084.0, 16_664.0), (0.06, 10_626.0, 16_877.0)]
@@ -910,8 +913,8 @@ fn ulae_exhibit_iv_sheet_5_is_the_simplification() {
                 paid_ulae: &PQR_ULAE,
                 paid: &PQR_PAID,
                 reported: &PQR_ULTIMATE,
-                case_outstanding: &[713_400.0 - 307_417.0],
-                ibnr: &[0.0],
+                case_outstanding: &[292_130.0],
+                ibnr: &[113_853.0],
                 pure_ibnr: Some(&pure),
                 ..Default::default()
             })
