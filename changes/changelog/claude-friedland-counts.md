@@ -1,3 +1,7 @@
+### Breaking changes
+
+- Rust: `prospicio_reserving::Error` has the variant `Counts`, so an exhaustive `match` on it needs an arm for it (#554, #555, #739).
+
 ### Reserving
 
-- Methods on claim counts from Friedland's chapters 11 to 13 (#554, #555): `FrequencySeverity` (approaches 1 and 2), `Disposal`, `CaseOutstanding` and `case_development_factor`, and the Berquist-Sherman adjustments `CaseAdequacy`, `SettlementRate` and `BerquistSherman`, which return a triangle for any method to project; at parity with the printed exhibits and chainladder-python's `BerquistSherman`. In Python (`case_adequacy_adjust`, `settlement_rate_adjust`, `berquist_sherman_adjust`, `prospicio.reserving.FrequencySeverity`, `Disposal`, `CaseOutstanding`) and R (`case_adequacy_adjust()`, `settlement_rate_adjust()`, `berquist_sherman_adjust()`, `frequency_severity()`, `disposal_method()`, `case_outstanding()`). `Error` has the variant `Counts`, so an exhaustive `match` needs an arm for it.
+- Methods on claim counts from Friedland's chapters 11 to 13 (#554, #555, #739): `FrequencySeverity` (approaches 1 and 2), `Disposal`, `CaseOutstanding` and `case_development_factor`, and the Berquist-Sherman adjustments `CaseAdequacy`, `SettlementRate` and `BerquistSherman`, which return a triangle for any method to project; at parity with the printed exhibits and chainladder-python's `BerquistSherman`. In Python (`case_adequacy_adjust`, `settlement_rate_adjust`, `berquist_sherman_adjust`, `prospicio.reserving.FrequencySeverity`, `Disposal`, `CaseOutstanding`) and R (`case_adequacy_adjust()`, `settlement_rate_adjust()`, `berquist_sherman_adjust()`, `frequency_severity()`, `disposal_method()`, `case_outstanding()`).
