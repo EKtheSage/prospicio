@@ -14,7 +14,9 @@ under "Unreleased" until then.
 - Rust: `prospicio_reserving::CurveShape` has the variants `Hoerl`,
   `Sherman` and `Growth(GrowthCurve)`, and `prospicio_reserving::Error` the
   variant `DevelopmentCurve`, so an exhaustive `match` on either needs an
-  arm for each (#556, #729).
+  arm for each; with the data-carrying `Growth` variant, `CurveShape`'s
+  variants no longer have defined discriminants, so a `CurveShape as i32`
+  cast no longer compiles (#556, #729).
 - Rust: `prospicio_reserving::Error` has the variant `Counts`, so an exhaustive `match` on it needs an arm for it (#554, #555, #739).
 - Rust: `prospicio_reserving::Error` has the variant `Exhibit`, so an
   exhaustive `match` on it needs an arm for it (#557, #735).
@@ -22,6 +24,8 @@ under "Unreleased" until then.
   an exhaustive `match` on it needs an arm for it (#604, #732).
 - Rust: `prospicio_reserving::Error` has a new variant `Munich`, so an
   exhaustive `match` on it needs an arm (#559, #731).
+- Rust: `prospicio_reserving::Error` has the variant `PaidIncurred`, so an
+  exhaustive `match` on it needs an arm for it (#560, #734).
 - Rust: a setting a reserving method does not support is `prospicio_reserving::Error::NotSupported` in every method, no longer `Error::Bootstrap`, `Error::Bayes` or `Error::ClaimsDevelopment` (Merz and Wuthrich's closed form with another `alpha`, a tail, a fully selected sparse age or link ratio exclusions; the bootstraps with a sparse age or a one-year tail or pattern that conflicts with the re-reserving method's; `Synchronized` Bayesian segments; `Compartmental` with one response under free rates, its outstanding table under `Fitted::PaidOnly` and the backtest of a response it does not fit), and the messages read "{setting} is not supported by {method}: {reason}". `Compartmental`'s bound on the `k_p` prior under `Fitted::IncurredOnly` is `Error::InvalidSetting`. `Error` has the variant `NotYetBuilt`, so an exhaustive `match` needs an arm for it (#580, #725).
 - Python: these errors raise `prospicio.NotSupportedError`, a subclass of `ValueError`, and `Compartmental(priors, fitted="paid_only")` (or `"incurred_only"`) under free rates raises when it is built, not when it is fitted. R: they signal an error of class `prospicio_not_supported`, and the compartmental functions refuse those settings before reading the triangle (#580, #725).
 - Excel: `PRO.NPV`, `PRO.IRR` and `PRO.MOIC` are removed. They duplicated
