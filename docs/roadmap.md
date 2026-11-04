@@ -526,6 +526,10 @@ what it is aiming for by v1.0.
     ChainLadder's `MunichChainLadder` to 1e-12 on MCL with no tail and
     with log-linear and constant tails, and chainladder-python's
     `MunichAdjustment` under both sigma interpolations.
+  - Recoveries, ALAE and ULAE (`reserving-v02.md`, decision 35; branch
+    `claude/friedland-expenses`, issue #558, in Rust, Python and R):
+    `RatioDevelopment` and `Ulae` (classical, Kittel, Conger and Nolibos)
+    at parity with Friedland's chapters 14, 16 and 17.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental
