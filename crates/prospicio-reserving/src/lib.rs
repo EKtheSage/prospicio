@@ -63,6 +63,7 @@ pub mod draws;
 pub mod error;
 pub mod excess;
 pub mod expected_loss;
+pub mod expense;
 pub mod frame;
 pub mod industry_prior;
 #[cfg(feature = "io")]
@@ -107,6 +108,10 @@ pub use error::{Error, Result};
 pub use excess::{Basis, ExcessPattern, Layer, SeverityByMaturity, layer_exposure, layer_share};
 pub use expected_loss::{
     Apriori, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ExpectedLoss, ExpectedLossFit,
+};
+pub use expense::{
+    RatioDevelopment, RatioDevelopmentFit, RatioFactors, Ulae, UlaeEstimate, UlaeInputs,
+    UlaeWeights,
 };
 pub use frame::TriangleFrame;
 pub use industry_prior::{IndustryPrior, IndustryPriorSettings, PatternPrior, PriorReport};
