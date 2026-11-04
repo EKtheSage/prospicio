@@ -27,7 +27,6 @@ Collate:
     'pareto.R'
     'discrete.R'
     'reserving.R'
-    'reserving_expense.R'
     'excess.R'
     'extendr-wrappers.R'
     'hawkes.R'
@@ -39,4 +38,5 @@ Collate:
     'pricing.R'
     'ratemaking.R'
     'reinsurance.R'
+    'reserving_expense.R'
     'risk.R'
