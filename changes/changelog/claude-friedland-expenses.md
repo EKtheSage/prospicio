@@ -7,4 +7,4 @@
   chapters 14, 16 and 17 (`RatioDevelopment`, `Ulae`; Python
   `RatioDevelopment`, `ulae_classical`, `ulae_kittel`, `ulae_conger_nolibos`;
   R `ratio_development()`, `ulae_estimate()`;
-  `docs/design/reserving-v02.md` decision 35; #558).
+  `docs/design/reserving-v02.md` decision 35; #558, #740).
