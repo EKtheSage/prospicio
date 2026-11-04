@@ -23,7 +23,8 @@ bayes_bf_normalised_one_year(
   refit = c("moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"),
   max_refits = NULL,
   one_year_sims = NULL,
-  common_cv = 0
+  common_cv = 0,
+  pattern_prior = NULL
 )
 }
 \arguments{
@@ -43,7 +44,7 @@ unit of exposure: the expected ultimate loss ratio.}
 
 \item{development_sd}{Standard deviation of the normal prior on each
 \code{beta[d]} (the log ratio of the share at age \code{d} to the first age's),
-centred on 0.}
+centred on 0; ignored with a \code{pattern_prior}.}
 
 \item{process}{Process error on each simulated future increment:
 \code{"gamma"} (mean \code{mu}, variance \code{phi * mu}) or \code{"none"} for parameter
@@ -87,6 +88,11 @@ default) for the model's one-year default: \code{n_sims} for
 \code{bayes_odp_one_year()} and \code{bayes_bf_one_year()}, and \code{n_sims} capped
 at 2,000 for \code{meyers_one_year()}. The lifetime reserves keep \code{n_sims}.
 A smaller count gives the first simulations of a larger one.}
+
+\item{pattern_prior}{A \code{\link[=pattern_prior]{pattern_prior()}} on the triangle's ages, a normal
+prior on each \code{beta[d]} with its own mean and standard deviation in
+place of \code{development_sd} (decision 29; \code{\link[=industry_prior]{industry_prior()}} estimates
+one), or \code{NULL}.}
 }
 \value{
 A \code{bayes_one_year_fit} object.

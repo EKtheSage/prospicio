@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built; PR 9 (one generic one-year view, `BayesBf`'s) built; PR 13 (`BayesBfNormalised`) built; PR 14 (the light refit of the compartmental one-year view, decision 24, #394) built, its default open decision 17; PR 15 (the common share multiplier of `BayesBfNormalised`, decision 25, #518) built; decision 26 (`BayesBfNormalised`'s error for a column or origin that sums to zero or less, #610) built, its decision 18 (`Triangle::max_age`, #667) decided by the user on 2026-10-28 and built; decision 28 (a new underwriting year's loss ratio from `BayesBfNormalised` and Meyers' models, #598) built, its open decision 19 awaiting the user; decision 27 (the unsupported settings as `NotSupported`, #580) built; decision 30 (a hierarchical BF over programs, #599) proposed, its pooling structure open decision 26** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS, with the Python and R bindings (`BayesOdp.one_year` and `one_year_segments`, `bayes_odp_one_year()` and `bayes_odp_one_year_segments()`; decision 13). PR 9 is built on `claude/bayes-one-year-generic`, stacked on the Models-lane PR #273 that made `prospicio_bayes::elpd::psis` public (decision 17, open decisions 12 to 14 decided by the user on 2026-10-15): one interface every Bayesian model's one-year view implements, the view written once over it, a conformance suite run on every implementor, `BayesOdp` moved onto it bit for bit, `BayesBf::one_year` with its Python and R bindings (`BayesBf.one_year`, `bayes_bf_one_year()`; decision 13), and moment matching before refitting (decision 18, the opt-in `MomentMatchThenRefit`, in Rust, Python and R). PR 10 is built on `claude/bayes-one-year-meyers`, stacked on PR 9 and the CI slow-tests PR #279 (decision 19, the user's decisions of 2026-10-15 on open decisions 12 and 14): moment matching is the default fallback of the one-year view, and `Meyers` (CRC, CSR and CAY) has the one-year view through `YearModel`, with `one_year_segments`, in Rust, Python and R. PR 11 is built on `claude/bayes-one-year-compartmental`, stacked on PR 10 (decision 20): `Compartmental` (models 1 and 2) has the one-year view through `YearModel`, and every model's view takes a refit budget (`max_refits`), in Rust, Python and R; the user decided open decision 15 on 2026-10-16: model 1's view moment-matches by default, model 2's reweights only with a warning that it is approximate, both run at most 2,000 one-year simulations by default, and pull requests run model 1 of the compartmental one-year validation only. `Compartmental::one_year_segments` is built on `claude/compartmental-one-year-segments` (`reserving-compartmental.md` decision 8, "Built (one-year view over segments)"), in Rust, Python and R. PR 13 is built on `claude/bayes-bf-normalised` (decision 23, #410, the user's decision of 2026-10-21): `BayesBfNormalised`, the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate, beside `BayesBf` (unchanged at EVW parity), with its one-year view through `YearModel` (a fifth implementor, in the conformance suite's pull-request smoke run) and the Python and R bindings (`BayesBfNormalised`, `bayes_bf_normalised()`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built; PR 9 (one generic one-year view, `BayesBf`'s) built; PR 13 (`BayesBfNormalised`) built; PR 14 (the light refit of the compartmental one-year view, decision 24, #394) built, its default open decision 17; PR 15 (the common share multiplier of `BayesBfNormalised`, decision 25, #518) built; decision 26 (`BayesBfNormalised`'s error for a column or origin that sums to zero or less, #610) built, its decision 18 (`Triangle::max_age`, #667) decided by the user on 2026-10-28 and built; decision 28 (a new underwriting year's loss ratio from `BayesBfNormalised` and Meyers' models, #598) built, its open decision 19 awaiting the user; decision 27 (the unsupported settings as `NotSupported`, #580) built; decision 29 (an industry prior from other companies' triangles, with a pattern prior for `BayesBfNormalised`, #604) built, its open decisions 20 to 25 awaiting the user; decision 30 (a hierarchical BF over programs, #599) proposed, its pooling structure open decision 26** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS, with the Python and R bindings (`BayesOdp.one_year` and `one_year_segments`, `bayes_odp_one_year()` and `bayes_odp_one_year_segments()`; decision 13). PR 9 is built on `claude/bayes-one-year-generic`, stacked on the Models-lane PR #273 that made `prospicio_bayes::elpd::psis` public (decision 17, open decisions 12 to 14 decided by the user on 2026-10-15): one interface every Bayesian model's one-year view implements, the view written once over it, a conformance suite run on every implementor, `BayesOdp` moved onto it bit for bit, `BayesBf::one_year` with its Python and R bindings (`BayesBf.one_year`, `bayes_bf_one_year()`; decision 13), and moment matching before refitting (decision 18, the opt-in `MomentMatchThenRefit`, in Rust, Python and R). PR 10 is built on `claude/bayes-one-year-meyers`, stacked on PR 9 and the CI slow-tests PR #279 (decision 19, the user's decisions of 2026-10-15 on open decisions 12 and 14): moment matching is the default fallback of the one-year view, and `Meyers` (CRC, CSR and CAY) has the one-year view through `YearModel`, with `one_year_segments`, in Rust, Python and R. PR 11 is built on `claude/bayes-one-year-compartmental`, stacked on PR 10 (decision 20): `Compartmental` (models 1 and 2) has the one-year view through `YearModel`, and every model's view takes a refit budget (`max_refits`), in Rust, Python and R; the user decided open decision 15 on 2026-10-16: model 1's view moment-matches by default, model 2's reweights only with a warning that it is approximate, both run at most 2,000 one-year simulations by default, and pull requests run model 1 of the compartmental one-year validation only. `Compartmental::one_year_segments` is built on `claude/compartmental-one-year-segments` (`reserving-compartmental.md` decision 8, "Built (one-year view over segments)"), in Rust, Python and R. PR 13 is built on `claude/bayes-bf-normalised` (decision 23, #410, the user's decision of 2026-10-21): `BayesBfNormalised`, the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate, beside `BayesBf` (unchanged at EVW parity), with its one-year view through `YearModel` (a fifth implementor, in the conformance suite's pull-request smoke run) and the Python and R bindings (`BayesBfNormalised`, `bayes_bf_normalised()`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -3428,13 +3428,170 @@ new year's mean at `apriori` times the posterior mean of `s`; they sample
 one short chain and run in the debug test run. The models' densities are
 unchanged, so the one-year conformance suite is unaffected.
 
+### 29. An industry prior from other companies' triangles (issue #604)
+
+Built in Rust, Python and R on `claude/industry-prior` (2026-11-03). A thin program's
+`BayesBfNormalised` needs an `apriori`, a `cv`, a `common_cv` and a view
+of the pattern, and the usual source is an industry benchmark by line
+from Schedule P. Turning other companies' triangles into those numbers
+was done by hand. No data ships with the library: the user supplies the
+triangles (read with `cas-schedule-p` in Python, or any CSV).
+
+**The entry points.** `IndustryPrior::from_triangles(triangles, column,
+premiums)` (one triangle and one premium per origin for each company) and
+`IndustryPrior::from_segments(triangle, column, exposure)` (one triangle
+with a segment per company), each also on `IndustryPriorSettings`
+(`min_developed` 0.5, `min_companies` 10, `subtract_process` false;
+open decision 23). The
+result carries `apriori` and its standard error, `between_cv`,
+`within_cv`, `process_cv`, `cv`, the pattern prior `pattern` (a
+`PatternPrior`), the percent developed at each age at the pattern
+prior's means with the companies' spread of their own, each company's mean loss ratio, `tail_factor` (1 unless cut)
+and a `PriorReport` (companies given and used, origins used in all and per
+company, companies observed at each age, the companies left out and why,
+and warnings: a panel below `min_companies`, a floored spread). Under the
+`bayes` feature `model(&base)` and `to_bf_normalised_settings()` give the
+`BayesBfNormalised` with `apriori`, `cv` and `common_cv`, and
+`fit` and `one_year` fit it under the pattern prior. Python
+`IndustryPrior.from_triangles` and `from_segments`, `PatternPrior`, and
+`BayesBfNormalised(pattern_prior=)`; R `industry_prior()`,
+`pattern_prior()`, `industry_prior_at_age()`, `bayes_bf_industry()`,
+`bayes_bf_industry_one_year()` and `bayes_bf_normalised(pattern_prior =)`.
+
+**Each company.** Its chain ladder (volume-weighted, no tail, every age)
+gives its pattern and each origin's ultimate loss ratio
+`x_cw = ultimate / premium`, and its Pearson scale `phi_c`. Only origins at
+least `min_developed` developed by the industry pattern (the percent developed at the
+pattern prior's means, below) count in the loss ratio
+moments: a young origin's ultimate is mostly the chain ladder's
+projection, and its error would pass for spread between origins. An
+origin without a positive premium is skipped and named in the report
+(review of #732); a company with no origin
+that mature or a chain ladder that cannot be fitted is left out, and
+either is named in the report. Every triangle must have the same ages.
+
+**The estimators** are the moments of a one-way random-effects model on
+the natural scale, the scale of the normalised BF's gamma priors (a
+multiplier `s_c` per company with cv `between_cv`, and each origin's
+expected ultimate about `s_c apriori premium` with cv `within_cv`). With
+`n_c` origins counted for company `c`, their mean `xbar_c`, and `nbar` the
+mean of the `n_c`:
+
+```text
+apriori      = mean over companies of xbar_c
+r            = sum (x_cw - xbar_c)^2 / sum (n_c - 1) xbar_c^2
+within_cv^2  = r / (1 - r / nbar)
+between_cv^2 = (1 + q) / mean_c(1 + within_cv^2 / n_c) - 1,   q = var_c(xbar_c) / apriori^2
+process_cv^2 = within_cv^2 / r * sum (1 - 1 / n_c) sum_w v_cw / sum (n_c - 1) xbar_c^2,
+               v_cw = phi_c x_cw / (P_cw premium_cw)
+```
+
+where `v_cw` is the ODP process variance of the origin's ultimate loss
+ratio as its chain ladder projects it: the paid to date `C` has variance
+`phi_c C`, and the ultimate is `C / P_cw`, with `P_cw` the company's
+percent developed at the origin's latest age. `r` divides a
+company's spread by its own mean squared, so a company at a loss ratio of
+0.4 and one at 0.9 contribute their cvs; the `1 - r / nbar` corrects the
+bias of a ratio estimator. `between_cv` takes out what the within spread
+adds to each company's mean of `n_c` origins; a negative estimate is 0.
+Every company counts once (unweighted, open decision 21).
+
+**The prior's `cv`.** `within_cv` is realised: it is the spread of the
+ultimates themselves, process included. The normalised BF's `cv` is the
+spread of the expected ultimates, process excluded (the ODP likelihood
+adds the process). So the subtraction `cv^2 = within_cv^2 -
+process_cv^2` is the textbook choice, and `subtract_process` gives it.
+**It is not the default**: on the calibration panel the Pearson scale
+explains more than the whole within spread on every incurred line and on
+commercial auto paid (`process_cv` 0.32 to 0.89 against `within_cv` 0.16
+to 0.46, `knowledge/findings/industry-prior-calibration-panel.md`), so the
+subtraction leaves the floor 0.01, a prior that pins each origin to the
+company level. The Pearson scale of a chain ladder on Schedule P is
+inflated by the model's misfit (calendar effects, changes in reserving),
+which is not process. The default keeps the whole within spread (open
+decision 20).
+
+**The common multiplier.** `common_cv` is `between_cv`: the program is
+one more company, its level uncertain by the companies' spread, and its
+origins share that error (decision 25's `s`). The normalised BF learns
+`s` from the program's own triangle, so a program with many origins moves
+away from the industry level and one with two stays near it.
+
+**The pattern prior.** `PatternPrior { ages, mean, sd }` holds a normal
+prior on each `beta_d = log(p_d / p_1)`, `d` = 2, ..., m. The industry
+pattern's `mean` and `sd` are the mean and sd over companies of each
+company's chain-ladder `beta_d` (each company counted once), at each age at least two companies reach; an age only one company
+reaches has the vague sd 10, and a spread below 0.01 is set to 0.01 with
+a warning (identical patterns). The prior centres on the companies' mean
+log share ratios, not on the volume-weighted pooled chain ladder: each
+company is one draw of the pattern, as the program is (open decision 22).
+The sd includes each company's estimation error, which at late ages with
+few origins dominates (on the panel's triangles 1.07 to 2.1 at 120
+months, 0.28 to 1.09 at 24): it is wider than the spread of the true
+patterns, so the prior leans little on the industry at the ages where a
+company's own chain ladder is weakest (open decision 24). `BayesBfNormalised::fit_with_pattern_prior` and
+`one_year_with_pattern_prior` replace `N(0, development_sd^2)` by
+`N(mean_d, sd_d^2)` in the log posterior, its gradient, its negative
+Hessian (moment matching) and the oracle the one-year conformance suite
+checks against; without a pattern prior every result is bit for bit as
+before. The pattern prior is an argument of these methods, not a field of
+`BayesBfNormalised`: a new public field would break the struct literals
+in other crates (the Excel add-in builds the settings with a literal),
+and the methods leave every existing call unchanged (open decision 25).
+The bindings hold it as a setting (Python `pattern_prior=` on the model, R
+`pattern_prior =` on the function) and call the methods. The provenance
+records the prior's means and sds when one is set.
+
+**Ages.** The pattern prior's ages must be the triangle's, else an error
+that names `PatternPrior::truncated` and `IndustryPrior::at_age`. A
+program younger than the industry panel is fitted to its own ages:
+`at_age(age)` moves the prior to development to `age`: `apriori` times the
+industry percent developed there (the normalised BF's ultimate is then the
+development to `age`), the pattern cut to those ages
+(`PatternPrior::truncated`, which renormalises the shares), and
+`tail_factor` the factor from `age` to ultimate, which the user applies
+outside the model, with a warning saying so. The cvs are kept; the spread
+of the percent developed at `age` is in `percent_developed_sd`, not
+added.
+
+**Validation.** No reference implementation builds this prior, so the
+checks are recovery and closed forms.
+
+* *Recovery* (`validation/tests/reserving_industry_prior.rs`, in the
+  plain `cargo test`, no NUTS): companies drawn as the normalised BF with
+  a common multiplier describes them (`apriori` 0.7, `between_cv` 0.15,
+  `within_cv` 0.1, a pattern with sds 0.1 to 0.25 on its log share ratios,
+  10 x 10 triangles). With exact cells and 2,000 companies the estimates
+  are within four standard errors of the truth, each derived in the test
+  (`apriori` 0.69958, `within_cv` 0.09942, `between_cv` 0.15067, every
+  age's pattern mean and sd). With ODP cells (`phi` 1.75, a process cv of
+  0.05 on an ultimate) and 1,500 companies the default `cv` is the
+  realised `within_cv` (0.114), `subtract_process` recovers 0.1002, and
+  `between_cv` and `apriori` are still recovered. A panel of six
+  companies warns.
+* *Closed form* (unit tests, Python and R): four companies with exact
+  cells, whose prior is the formulas above by hand, and the same numbers
+  in all three languages.
+* *The pattern prior in the model* (`bf_normalised.rs` unit tests): the
+  log posterior differs from the default's by exactly the normal terms;
+  ages other than the triangle's are an error; with sd 0.01 the posterior
+  pattern holds the prior's shares (a `slow-tests` NUTS test).
+* *The panel* (`validation/tests/reserving_industry_prior_panel.rs`,
+  ignored, run by hand as the calibration study is): the prior per line,
+  paid and incurred, from the upper triangles at 1997 and from the full
+  squares, on the calibration study's 200 triangles (its pinned panel
+  hash), recorded to 1e-6 and written up in
+  `knowledge/findings/industry-prior-calibration-panel.md`.
+
+The one-year conformance suite runs on `BayesBfNormalised` as before; its
+density without a pattern prior is unchanged.
+
 ### 30. A hierarchical Bornhuetter-Ferguson over programs with an industry hyperprior (issue #599)
 
 Status: **Proposed** (2026-11-02), branch `claude/hierarchical-bf-note`,
 issue #599. Nothing is built; the pooling structure is the user's decision
-(open decision 26). The numbers skip 27 to 29 and open decisions 19 to 25
-because open pull requests already claim them (#725 and #728 decision 27,
-#732 decision 28 and open decisions 19 to 25).
+(open decision 26). The numbers follow decisions 27 (#580), 28 (#598) and 29 (#604), and
+open decisions 19 to 25 (#598 and #604).
 
 **Why.** Programs written through managing general agents often have two
 or three origins of thin data. Fitted one at a time, `BayesBfNormalised`
@@ -3452,7 +3609,7 @@ time, and their `fit_segments` fits segments independently or rank
 correlated, not pooled; decision 25's `common_cv` is one multiplier shared
 by the origins of one triangle with a fixed spread.
 
-**Relation to #604** (PR #732, open, decision 28 there). `IndustryPrior`
+**Relation to #604** (decision 29). `IndustryPrior`
 estimates the same quantities from other companies' triangles by moments
 and plugs them in: the industry loss ratio (`apriori`), the spread between
 companies (`between_cv`, which becomes `common_cv`), the spread within one
@@ -4065,11 +4222,64 @@ are settled.
     fit. Under (c) a triangle of exactly three origins gives the level a
     Student t with 2 degrees of freedom, whose variance is infinite; the
     user may prefer a minimum of four origins.
-
+20. **The industry prior's `cv`: realised or less process.** Raised
+    2026-11-03 by decision 29 (#604); built as (a), awaiting the user. (a)
+    `cv` is the realised within-company spread of the ultimate loss
+    ratios, process included, with `subtract_process` as the option; (b)
+    the textbook `cv^2 = within_cv^2 - process_cv^2` by default, the ODP
+    likelihood adding the process back. *Recommended: (a)*: on the
+    calibration panel the chain ladder's Pearson scale explains more than
+    the whole within spread on every incurred line and on commercial auto
+    paid, so (b) floors the `cv` at 0.01 there and pins each origin to the
+    company level; the scale is inflated by the chain ladder's misfit. The
+    cost of (a) is a prior that counts the process twice on a line where
+    the scale is honest (on simulated ODP companies the realised cv is
+    0.114 against a structural 0.1).
+21. **Companies weighted equally or by premium.** Raised 2026-11-03 by
+    decision 29. (a) Every company counts once in `apriori`, the cvs and
+    the pattern; (b) weights by premium, which lets the largest writers
+    set the benchmark. *Recommended: (a)*: the program the prior is for is
+    one more company, whatever its size, and a premium-weighted mean is a
+    market loss ratio, not a company's expected one.
+22. **Where the pattern prior centres.** Raised 2026-11-03 by decision 29.
+    (a) The mean over companies of each company's log share ratios; (b)
+    the log share ratios of one volume-weighted chain ladder on the pooled
+    triangles. *Recommended: (a)*, built: each company is one draw of the
+    pattern, as the program is, and its sd is the spread of the same
+    draws. (b) is the industry's aggregate pattern, dominated by the large
+    writers.
+23. **The defaults `min_developed` 0.5 and `min_companies` 10.** Raised
+    2026-11-03 by decision 29. Origins less than half developed by the
+    industry pattern are left out of the loss ratio moments, and a panel
+    of fewer than 10 companies warns (the between cv then rests on 8 or
+    fewer degrees of freedom, a relative error of about 25%).
+    *Recommended: keep them*; on the panel's triangles 0.5 keeps 9 of the
+    10 origins on paid (8 on other liability) and all 10 on incurred, and
+    every line has 50 companies.
+24. **The pattern's sd includes each company's estimation error.** Raised
+    2026-11-03 by decision 29. (a) Keep it: the sd is the spread of the
+    companies' chain-ladder patterns, wider than the spread of their true
+    patterns where few origins inform an age (on the panel's triangles 1.07
+    to 2.1 at 120 months, 0.28 to 1.09 at 24); (b) subtract each company's estimation variance of
+    `beta_d`, which narrows the late ages. *Recommended: (a)*: the
+    program's own chain ladder has the same error at those ages, so a
+    prior that leans on the industry there would rest on a few origins of
+    each company; (b) needs a variance of each company's `beta_d`, which
+    the chain ladder does not give directly.
+25. **The pattern prior as an argument or a field.** Raised 2026-11-03 by
+    decision 29. (a) `BayesBfNormalised::fit_with_pattern_prior` and
+    `one_year_with_pattern_prior` take it, the struct unchanged, and the
+    Python and R bindings hold it as a setting; (b) an
+    `Option<PatternPrior>` field of `BayesBfNormalised`, so `fit` and
+    `one_year` (and the new year, the segments and the backtest) honour
+    it. *Recommended: (a)* in this PR, since a new public field breaks the
+    struct literals in the Excel add-in (another lane) and in users' code;
+    (b) with the Excel lane's change in the next breaking release, if the
+    user wants the prior on every entry point.
 
 26. **The pooling structure of the hierarchical Bornhuetter-Ferguson.**
-    Raised 2026-11-02 by decision 30 (#599; the number skips 19 to 25,
-    which PR #732 claims). Open, waiting on the user; nothing is built
+    Raised 2026-11-02 by decision 30 (#599; it follows open decisions 19 to 25,
+    which #598 and #604 raise). Open, waiting on the user; nothing is built
     until it is decided. Four choices, each with its options in decision
     30, "Pooling structure: the options": (A) the program effect on the
     loss ratio: (A1) lognormal, non-centred; (A2) gamma, decision 25's
@@ -4089,3 +4299,4 @@ are settled.
     a few thin programs from inventing a large spread; and a scale per
     unit of premium is the only one that both pools the degrees of
     freedom and respects programs of different sizes.
+

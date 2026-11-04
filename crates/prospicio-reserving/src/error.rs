@@ -153,6 +153,10 @@ pub enum Error {
     /// settings do not fit the triangle
     /// ([`DevelopmentCurve`](crate::DevelopmentCurve)).
     DevelopmentCurve(String),
+    /// An industry prior cannot be built from these triangles
+    /// ([`IndustryPrior`](crate::IndustryPrior)): too few companies, ages
+    /// that differ, or a pattern or spread that cannot be estimated.
+    IndustryPrior(String),
     /// The claims development result (Merz–Wüthrich) does not apply to
     /// this triangle: its latest values are not on one calendar diagonal.
     /// A setting of the fit that the closed form does not support (a tail,
@@ -281,6 +285,7 @@ impl fmt::Display for Error {
             Self::Clark(why) => write!(f, "Clark: {why}"),
             Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),
             Self::DevelopmentCurve(why) => write!(f, "development curve: {why}"),
+            Self::IndustryPrior(why) => write!(f, "industry prior: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
             Self::OneYear {
                 failed,
