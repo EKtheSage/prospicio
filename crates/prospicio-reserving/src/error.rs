@@ -153,6 +153,10 @@ pub enum Error {
     /// cannot be fitted: a triangle of the wrong shape, a value that is not
     /// positive, or a setting of the wrong length or out of range.
     PaidIncurred(String),
+    /// An industry prior cannot be built from these triangles
+    /// ([`IndustryPrior`](crate::IndustryPrior)): too few companies, ages
+    /// that differ, or a pattern or spread that cannot be estimated.
+    IndustryPrior(String),
     /// The claims development result (Merz–Wüthrich) does not apply to
     /// this triangle: its latest values are not on one calendar diagonal.
     /// A setting of the fit that the closed form does not support (a tail,
@@ -281,6 +285,7 @@ impl fmt::Display for Error {
             Self::Clark(why) => write!(f, "Clark: {why}"),
             Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),
             Self::PaidIncurred(why) => write!(f, "paid-incurred chain: {why}"),
+            Self::IndustryPrior(why) => write!(f, "industry prior: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
             Self::OneYear {
                 failed,

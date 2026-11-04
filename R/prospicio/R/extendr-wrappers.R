@@ -360,6 +360,12 @@ occurrence_layer_statistics_rust <- function(frequency, severity, share, limit, 
 
 benchmark_curve_rust <- function(ages, values, kind, curve, weights, max_age, origin_width) .Call(wrap__benchmark_curve_rust, ages, values, kind, curve, weights, max_age, origin_width)
 
+pattern_prior_rust <- function(ages, values, sd, from_shares) .Call(wrap__pattern_prior_rust, ages, values, sd, from_shares)
+
+industry_prior_rust <- function(triangles, column, premiums, settings) .Call(wrap__industry_prior_rust, triangles, column, premiums, settings)
+
+industry_prior_segments_rust <- function(triangle, column, exposure, settings) .Call(wrap__industry_prior_segments_rust, triangle, column, exposure, settings)
+
 underwriting_exposure_rust <- function(writing, policy_months) .Call(wrap__underwriting_exposure_rust, writing, policy_months)
 
 pair_fit_rust <- function(u, v, family, rotation) .Call(wrap__pair_fit_rust, u, v, family, rotation)
@@ -2637,9 +2643,9 @@ Triangle$bayes_bf <- function(column, exposure, apriori, cv, development_sd, pro
 
 Triangle$bayes_bf_one_year <- function(column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__bayes_bf_one_year, self, column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims)
 
-Triangle$bayes_bf_normalised <- function(column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth, common_cv) .Call(wrap__Triangle__bayes_bf_normalised, self, column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth, common_cv)
+Triangle$bayes_bf_normalised <- function(column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth, common_cv, pattern_ages, pattern_mean, pattern_sd) .Call(wrap__Triangle__bayes_bf_normalised, self, column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth, common_cv, pattern_ages, pattern_mean, pattern_sd)
 
-Triangle$bayes_bf_normalised_one_year <- function(column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__bayes_bf_normalised_one_year, self, column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims)
+Triangle$bayes_bf_normalised_one_year <- function(column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims, pattern_ages, pattern_mean, pattern_sd) .Call(wrap__Triangle__bayes_bf_normalised_one_year, self, column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims, pattern_ages, pattern_mean, pattern_sd)
 
 Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, excl, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, excl, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf)
 
@@ -3647,6 +3653,28 @@ BayesNewYear$monthly_pattern_draws <- function(segment, months, basis, monotone)
 
 #' @export
 `[[.BayesNewYear` <- `$.BayesNewYear`
+
+IndustryPriorFit <- new.env(parent = emptyenv())
+
+IndustryPriorFit$numbers <- function() .Call(wrap__IndustryPriorFit__numbers, self)
+
+IndustryPriorFit$pattern <- function() .Call(wrap__IndustryPriorFit__pattern, self)
+
+IndustryPriorFit$percent_developed <- function() .Call(wrap__IndustryPriorFit__percent_developed, self)
+
+IndustryPriorFit$percent_developed_sd <- function() .Call(wrap__IndustryPriorFit__percent_developed_sd, self)
+
+IndustryPriorFit$company_loss_ratios <- function() .Call(wrap__IndustryPriorFit__company_loss_ratios, self)
+
+IndustryPriorFit$report <- function() .Call(wrap__IndustryPriorFit__report, self)
+
+IndustryPriorFit$at_age <- function(age) .Call(wrap__IndustryPriorFit__at_age, self, age)
+
+#' @export
+`$.IndustryPriorFit` <- function (self, name) { func <- IndustryPriorFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.IndustryPriorFit` <- `$.IndustryPriorFit`
 
 MackBootstrapFit <- new.env(parent = emptyenv())
 
