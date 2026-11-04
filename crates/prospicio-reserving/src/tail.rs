@@ -7,6 +7,8 @@
 //! The estimators follow chainladder-python (`TailConstant`, `TailCurve`,
 //! `TailBondy`) and R ChainLadder (`tail = TRUE` in `MackChainLadder`).
 
+use crate::clark::GrowthCurve;
+use crate::curve::{ShapeFit, curve_points, least_squares_line};
 use crate::development::DevelopmentFit;
 use crate::error::{Error, Result};
 use prospicio_core::Lag;
@@ -126,7 +128,10 @@ impl Default for TailConstant {
     }
 }
 
-/// Form of the curve a [`TailCurve`] fits to `f - 1`.
+/// Form of the curve a [`TailCurve`] or a
+/// [`DevelopmentCurve`](crate::DevelopmentCurve) fits to the factors `f_k`,
+/// `k` the 1-based development index (`docs/design/reserving-v02.md`,
+/// decisions 3 and 31).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CurveShape {
     /// `ln(f_k - 1) = a + b k`: development decays geometrically.
@@ -135,6 +140,17 @@ pub enum CurveShape {
     /// `ln(f_k - 1) = a + b ln(k)`: development decays as a power of the
     /// period, a heavier tail.
     InversePower,
+    /// Hoerl's curve, `ln(f_k - 1) = a + b k + c ln(k)`: the exponential and
+    /// the inverse power together, by least squares on `ln(f_k - 1)`.
+    Hoerl,
+    /// Sherman's shifted inverse power, `f_k - 1 = a (k + c)^(-b)` with
+    /// `c > -1`, by nonlinear least squares on `f_k - 1` (Sherman 1984).
+    Sherman,
+    /// Clark's growth curve `G` as percents developed at the development
+    /// ages `t` in months, `f_k = G(t_(k+1)) / G(t_k)`, by nonlinear least
+    /// squares on the factors; past the oldest age the ages run on at the
+    /// last spacing.
+    Growth(GrowthCurve),
 }
 
 /// A curve fitted to the estimated factors and extrapolated, as
@@ -143,7 +159,10 @@ pub enum CurveShape {
 /// Factors above 1.00001 in the fit period are regressed by least squares
 /// (`ln(f - 1)` on the 1-based development index `k`, or on `ln(k)`); the
 /// fitted curve replaces the factors from the attachment age on and runs
-/// `extrap_periods` periods past the oldest age.
+/// `extrap_periods` periods past the oldest age. The Hoerl, Sherman and
+/// growth shapes ([`CurveShape`]) are fitted to the same factors, as a
+/// [`DevelopmentCurve`](crate::DevelopmentCurve) fits them; chainladder-python
+/// has only the first two.
 ///
 /// ```
 /// use prospicio_reserving::{ChainLadder, CurveShape, Tail, TailCurve};
@@ -254,10 +273,6 @@ pub struct TailFit {
     /// Standard error of the tail factor, extrapolated the same way.
     pub std_err: f64,
 }
-
-/// Lower bound on the factors a curve is fitted to, chainladder-python's
-/// `reg_threshold`.
-const CURVE_THRESHOLD: f64 = 1.00001;
 
 impl Tail {
     /// Fits the tail to an estimated development pattern, whose ages
@@ -380,33 +395,13 @@ impl TailCurve {
         }
         // Positions as chainladder-python's `int(age / grain - 1)`: the last
         // age at or before the given one.
-        let position = |age: Option<Lag>, open: usize| match age {
-            Some(age) => Ok(last_age_at_or_before(ages, n_links, age)?.unwrap_or(0)),
-            None => Ok::<_, Error>(open),
-        };
-        let fitted_range = position(self.fit_period.0, 0)?..position(self.fit_period.1, n_links)?;
-        let x_of = |k: f64| match self.curve {
-            CurveShape::Exponential => k,
-            CurveShape::InversePower => k.ln(),
-        };
-        let points: Vec<(f64, f64)> = estimated
-            .iter()
-            .enumerate()
-            .filter(|&(k, &f)| f > CURVE_THRESHOLD && fitted_range.contains(&k))
-            .map(|(k, &f)| (x_of((k + 1) as f64), (f - 1.0).ln()))
-            .collect();
-        let (a, b) = least_squares_line(&points).ok_or(Error::Tail(
-            "a curve needs two factors above 1 in the fit period",
-        ))?;
+        let points = curve_points(estimated, ages, self.fit_period)?;
+        let shape = ShapeFit::fit(self.curve, &points, ages).map_err(Error::Tail)?;
         // Fitted factor at 0-based position p (1-based index p + 1), for the
         // positions up to `extrap_periods` past the oldest age.
         let last = n_links + self.extrap_periods;
         let fitted = |p: usize| {
-            if p < last {
-                1.0 + (a + b * x_of((p + 1) as f64)).exp()
-            } else {
-                1.0
-            }
+            if p < last { shape.factor(p, ages) } else { 1.0 }
         };
         let attach = match self.attachment_age {
             Some(age) => first_age_at_or_after(ages, n_links, age)?,
@@ -576,24 +571,6 @@ fn tail_statistics(development: &DevelopmentFit, factor: f64) -> (f64, f64) {
     let at =
         |values: &[f64]| line(values, 0.0, 0.0).map_or(f64::NAN, |(a, b)| (a + b * position).exp());
     (at(&development.sigma), at(&development.std_err))
-}
-
-/// Intercept and slope of the least-squares line through `points`, or
-/// `None` with fewer than two distinct `x`.
-fn least_squares_line(points: &[(f64, f64)]) -> Option<(f64, f64)> {
-    if points.len() < 2 {
-        return None;
-    }
-    let n = points.len() as f64;
-    let mean_x = points.iter().map(|p| p.0).sum::<f64>() / n;
-    let mean_y = points.iter().map(|p| p.1).sum::<f64>() / n;
-    let sxx: f64 = points.iter().map(|p| (p.0 - mean_x).powi(2)).sum();
-    if sxx == 0.0 {
-        return None;
-    }
-    let sxy: f64 = points.iter().map(|p| (p.0 - mean_x) * (p.1 - mean_y)).sum();
-    let slope = sxy / sxx;
-    Some((mean_y - slope * mean_x, slope))
 }
 
 /// Index of the first age at or after `age`, at most the oldest

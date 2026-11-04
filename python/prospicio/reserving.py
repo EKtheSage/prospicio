@@ -2,7 +2,8 @@
 model with its one-year view and Mack's tests of its assumptions, the
 Munich chain ladder of paid and incurred together, the
 expected-loss methods, Clark's growth
-curves and a growth curve fitted to a benchmark pattern, the ODP model as a
+curves, a growth curve fitted to a benchmark pattern and development curves
+fitted over every age, the ODP model as a
 GLM with its analytic prediction error, and the ODP bootstrap with its
 simulated one-year view of the chain
 ladder and the expected-loss methods, Mack's bootstrap for the lifetime and
@@ -47,6 +48,8 @@ from .prospicio_native import (
     CompartmentalOneYearFits,
     CompartmentalPriors,
     DevelopmentCorrelationTest,
+    DevelopmentCurve,
+    DevelopmentCurveFit,
     ExcessLayer,
     ExcessPattern,
     ExpectedLoss,
@@ -122,6 +125,8 @@ __all__ = [
     "ClarkFit",
     "BenchmarkCurve",
     "BenchmarkCurveFit",
+    "DevelopmentCurve",
+    "DevelopmentCurveFit",
     "OdpGlm",
     "OdpGlmFit",
     "OdpBootstrap",

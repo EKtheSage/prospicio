@@ -1,5 +1,5 @@
 //! Recoveries, ALAE and ULAE against Friedland's printed exhibits
-//! (`docs/design/reserving-v02.md`, decision 35).
+//! (`docs/design/reserving-v02.md`, decision 37).
 //!
 //! Friedland, *Estimating Unpaid Claims Using Basic Techniques* (CAS, version
 //! 3, July 2010): chapter 14, Exhibit I (salvage and subrogation, Auto

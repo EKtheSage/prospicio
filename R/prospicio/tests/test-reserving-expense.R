@@ -1,6 +1,6 @@
 suppressMessages(library(prospicio))
 
-# Recoveries, ALAE and ULAE (docs/design/reserving-v02.md, decision 35). The
+# Recoveries, ALAE and ULAE (docs/design/reserving-v02.md, decision 37). The
 # Rust core is checked exhibit by exhibit in validation/tests/reserving_expense.rs;
 # these tests reproduce Friedland's headline numbers through the R bindings
 # (Estimating Unpaid Claims Using Basic Techniques, chapters 14, 16 and 17), the

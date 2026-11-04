@@ -1,5 +1,5 @@
 //! Recoveries and claim adjustment expenses: the ratio methods that finish an
-//! unpaid estimate (`docs/design/reserving-v02.md`, decision 35).
+//! unpaid estimate (`docs/design/reserving-v02.md`, decision 37).
 //!
 //! An unpaid estimate covers more than losses. [`RatioDevelopment`] develops
 //! the ratio of two columns of a triangle (received salvage and subrogation

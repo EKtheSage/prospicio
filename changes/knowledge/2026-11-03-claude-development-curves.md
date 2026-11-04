@@ -1,0 +1,2 @@
+* **Creation**: [Development curves over every age in R lm and nls](/references/development-curves.md), from issue #556 (branch claude/development-curves): R lm and nls (port) parity for the exponential, inverse power, Hoerl, Sherman and growth curves on RAA and GenIns; Sherman's optimum is interior on both, Gauss-Newton nls does not converge at a tight tolerance.
+* **Update**: [Tails in R ChainLadder and chainladder-python](/references/chainladder-tails.md), TailCurve takes the Hoerl, Sherman and growth shapes, which chainladder-python lacks.

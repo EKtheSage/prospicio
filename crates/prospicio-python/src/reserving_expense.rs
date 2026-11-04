@@ -1,5 +1,5 @@
 //! `prospicio.reserving` recoveries, ALAE and ULAE (issue #558,
-//! `docs/design/reserving-v02.md`, decision 35), over
+//! `docs/design/reserving-v02.md`, decision 37), over
 //! `prospicio_reserving::expense`.
 
 use prospicio_core::{Lag, Period};

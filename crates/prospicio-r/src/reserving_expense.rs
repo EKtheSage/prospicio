@@ -1,5 +1,5 @@
 //! Recoveries, ALAE and ULAE (issue #558, `docs/design/reserving-v02.md`,
-//! decision 35): `ratio_development()` and `ulae_estimate()`, over
+//! decision 37): `ratio_development()` and `ulae_estimate()`, over
 //! `prospicio_reserving::expense`.
 //!
 //! Fits come back as plain numbers, the ratio triangle flattened row by row,

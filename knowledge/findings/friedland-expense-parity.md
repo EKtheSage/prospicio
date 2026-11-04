@@ -9,7 +9,7 @@ verified: { by: process:ci, at: 2026-11-04T12:00:00-08:00 }
 sources:
   - id: design
     resource: ../docs/design/reserving-v02.md
-    title: Design note, reserving v0.2, decision 35
+    title: Design note, reserving v0.2, decision 37
   - id: test
     resource: ../validation/tests/reserving_expense.rs
     title: Validation test of recoveries, ALAE and ULAE
@@ -34,4 +34,4 @@ sources:
   nor interpolated"), the geometric average errors on a negative link ratio, and
   the volume and simple averages work.[^test]
 
-[^test]: `validation/tests/reserving_expense.rs`; decisions in `docs/design/reserving-v02.md`, decision 35.
+[^test]: `validation/tests/reserving_expense.rs`; decisions in `docs/design/reserving-v02.md`, decision 37.
