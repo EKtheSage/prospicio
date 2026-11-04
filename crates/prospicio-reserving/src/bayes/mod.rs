@@ -56,6 +56,9 @@
 //! cell to each posterior draw: draw `d` from stream `d` of the first
 //! value of stream `u64::MAX` of the view's seed, which no simulation
 //! reaches (decision 20).
+//! A new underwriting year's simulations (decision 28) take the seed given
+//! to `new_year`, derived with its own tag (`2^62`), so a new year drawn
+//! with the fit's seed does not replay the fit's simulations.
 //! The pilot run of [`Meyers`] and [`Compartmental`], which sets the
 //! sampling scale, takes stream
 //! `u64::MAX` of its chains' seed (the segment's, over segments), which no
@@ -74,6 +77,7 @@ mod excess_prior;
 mod laplace;
 mod meyers;
 mod moment_match;
+mod new_year;
 mod odp;
 mod one_year;
 mod scalar;
@@ -88,7 +92,8 @@ pub use compartmental::{
     MAX_INCURRED_ONLY_KP_SD, Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior, Scale,
 };
 pub use excess_prior::{LAYER_EXPOSURE_COLUMN, LayerSharePrior, ShareDependence};
-pub use meyers::{Meyers, MeyersFit, MeyersFits, MeyersModel, MeyersSegment};
+pub use meyers::{Meyers, MeyersFit, MeyersFits, MeyersModel, MeyersSegment, NewOriginLevel};
+pub use new_year::NewYear;
 pub use odp::{BayesOdp, BayesOdpFit, BayesOdpFits, BayesOdpSegment};
 pub use one_year::{
     BayesOneYear, BayesOneYearFit, BayesOneYearFits, BayesOneYearSegment, LightRefit, OneYearRefit,
@@ -166,6 +171,9 @@ pub(crate) enum Stream {
     SegmentChains(usize),
     /// The simulations of segment `k` of a fit of several segments.
     SegmentPredictive(usize),
+    /// The simulations of a new underwriting year (decision 28), from the
+    /// seed given to `new_year`.
+    NewYear,
 }
 
 impl Stream {
@@ -175,6 +183,8 @@ impl Stream {
             Self::Predictive => 1,
             Self::SegmentChains(k) => 2 + 2 * k as u64,
             Self::SegmentPredictive(k) => 3 + 2 * k as u64,
+            // Far above any segment's tags.
+            Self::NewYear => 1 << 62,
         }
     }
 }

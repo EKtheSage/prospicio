@@ -1700,6 +1700,43 @@ class BayesBfNormalisedFit:
         -------
         list of float
         """
+    def new_year(self, /, premium: float, n_sims: int = 10000, seed: int = 0) -> NewYear:
+        """
+        The posterior predictive of a new underwriting year, the origin
+        after the triangle's newest, for pricing a year not yet written.
+        
+        Each simulation takes a posterior draw and from it the new origin's
+        expected ultimate, a gamma with cv ``cv`` and mean ``s * apriori *
+        premium`` (``s`` the draw's common multiplier, 1 without
+        ``common_cv``), then its ultimate with the fit's process error. The
+        data reach the new year only through ``s``: without ``common_cv``
+        the new year is the prior, ``Gamma(1 / cv**2, apriori)`` in loss
+        ratio, whatever the triangle says; with a vague ``common_cv`` (say
+        10) the triangle sets its level.
+        
+        Parameters
+        ----------
+        premium : float
+            The new year's premium (its exposure), finite and positive.
+        n_sims : int
+            Number of simulations.
+        seed : int
+            Seed of the simulations.
+        
+        Returns
+        -------
+        NewYear
+            ``loss_ratio`` and ``ultimate`` by simulation, and ``patterns``,
+            the development pattern of each simulation's posterior draw, whose
+            ``monthly`` is the new year's emergence by month.
+        
+        Raises
+        ------
+        ValueError
+            If ``premium`` is not positive, ``n_sims`` is 0, or the fit's
+            ``cv`` is infinite (a flat prior gives a new origin no proper
+            predictive).
+        """
     @property
     def origins(self, /) -> list[str]:
         """
@@ -21314,6 +21351,44 @@ class MeyersFit:
         """
         The model: ``"crc"``, ``"csr"`` or ``"cay"``.
         """
+    def new_year(self, /, premium: float, n_sims: int = 10000, seed: int = 0, level: str = "exchangeable") -> NewYear:
+        """
+        The posterior predictive of a new underwriting year, the origin
+        after the triangle's newest, for pricing a year not yet written.
+        
+        Each simulation takes a posterior draw and from it the new origin's
+        level ``logelr + alpha``, then its ultimate, log-normal with sd
+        ``sigma[m]`` (in CAY, plus ``rho`` times the newest origin's
+        residual). Meyers' models have no hyperparameter for the origin
+        effects, so ``level`` says how the new one is drawn.
+        
+        Parameters
+        ----------
+        premium : float
+            The new year's premium, finite and positive. The loss ratio does
+            not depend on it.
+        n_sims : int
+            Number of simulations.
+        seed : int
+            Seed of the simulations.
+        level : str
+            ``"exchangeable"`` (the default): the new origin is like the
+            triangle's, its level a Student t draw from a normal fitted to the
+            draw's origin levels (needs three origins). ``"prior"``: Meyers'
+            own prior ``alpha ~ N(0, origin_sd**2)``, too wide to price on at
+            his ``origin_sd`` of 3.162.
+        
+        Returns
+        -------
+        NewYear
+        
+        Raises
+        ------
+        ValueError
+            If ``premium`` is not positive, ``n_sims`` is 0, ``level`` is
+            unknown, or the triangle has fewer than three origins under
+            ``"exchangeable"``.
+        """
     @property
     def origins(self, /) -> list[str]:
         """
@@ -22732,6 +22807,49 @@ class NestedArchimedeanCopula:
     def tree(self, /) -> Any:
         """
         The tree, as given: ``(theta, members)``, leaves first.
+        """
+
+@final
+class NewYear:
+    """
+    The posterior predictive of a new underwriting year, from
+    ``BayesBfNormalisedFit.new_year`` or ``MeyersFit.new_year``.
+    
+    Row ``i`` of ``loss_ratio``, ``ultimate`` and every pattern of
+    ``patterns`` is simulation ``i``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def loss_ratio(self, /) -> PredictiveDistribution:
+        """
+        The ultimate loss ratio of the new year: dimension ``"origin"``,
+        one component, one row per simulation.
+        """
+    @property
+    def origin(self, /) -> str:
+        """
+        The new origin period, the one after the triangle's newest.
+        """
+    @property
+    def patterns(self, /) -> DevelopmentPatterns:
+        """
+        The development pattern of each simulation's posterior draw; its
+        ``monthly`` is the new year's emergence by month.
+        
+        Returns
+        -------
+        DevelopmentPatterns
+        """
+    @property
+    def premium(self, /) -> float:
+        """
+        The new year's premium.
+        """
+    @property
+    def ultimate(self, /) -> PredictiveDistribution:
+        """
+        The ultimate loss of the new year, ``loss_ratio`` times
+        ``premium``, with the same layout.
         """
 
 @final
