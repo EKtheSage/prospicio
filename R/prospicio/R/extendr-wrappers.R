@@ -420,6 +420,30 @@ hill_rust <- function(draws, ks) .Call(wrap__hill_rust, draws, ks)
 
 threshold_diagnostics_rust <- function(draws, thresholds) .Call(wrap__threshold_diagnostics_rust, draws, thresholds)
 
+frequency_severity_rust <- function(triangle, amounts, counts, ultimate, severity) .Call(wrap__frequency_severity_rust, triangle, amounts, counts, ultimate, severity)
+
+disposal_rust <- function(triangle, closed_counts, paid, ultimate, disposal_rates, severities, tail_severity_from, trend, base, factors) .Call(wrap__disposal_rust, triangle, closed_counts, paid, ultimate, disposal_rates, severities, tail_severity_from, trend, base, factors)
+
+case_outstanding_rust <- function(triangle, paid, incurred, paid_on_case, case_on_case, paid_to_ultimate) .Call(wrap__case_outstanding_rust, triangle, paid, incurred, paid_on_case, case_on_case, paid_to_ultimate)
+
+case_adequacy_rust <- function(triangle, incurred, paid, open_counts, trend, max_age) .Call(wrap__case_adequacy_rust, triangle, incurred, paid, open_counts, trend, max_age)
+
+average_case_rust <- function(triangle, incurred, paid, open_counts, trend, max_age) .Call(wrap__average_case_rust, triangle, incurred, paid, open_counts, trend, max_age)
+
+settlement_rate_rust <- function(triangle, paid, closed_counts, ultimate, disposal_rates, interpolation) .Call(wrap__settlement_rate_rust, triangle, paid, closed_counts, ultimate, disposal_rates, interpolation)
+
+berquist_sherman_rust <- function(triangle, incurred, paid, open_counts, closed_counts, trend, ultimate, max_age, disposal_rates, interpolation) .Call(wrap__berquist_sherman_rust, triangle, incurred, paid, open_counts, closed_counts, trend, ultimate, max_age, disposal_rates, interpolation)
+
+exponential_trend_rust <- function(x, y) .Call(wrap__exponential_trend_rust, x, y)
+
+trend_by_age_rust <- function(triangle, column) .Call(wrap__trend_by_age_rust, triangle, column)
+
+pooled_trend_rust <- function(triangle, column) .Call(wrap__pooled_trend_rust, triangle, column)
+
+ratio_column_rust <- function(triangle, numerator, denominator, name) .Call(wrap__ratio_column_rust, triangle, numerator, denominator, name)
+
+case_development_factor_rust <- function(reported_cdf, paid_cdf) .Call(wrap__case_development_factor_rust, reported_cdf, paid_cdf)
+
 excess_pattern_rust <- function(triangle, column, attachment, limit, kind, ultimate, ground_up_cap, threshold, alpha_ages, alphas, ultimate_alpha, base_attachment, base_limit, counts, tail) .Call(wrap__excess_pattern_rust, triangle, column, attachment, limit, kind, ultimate, ground_up_cap, threshold, alpha_ages, alphas, ultimate_alpha, base_attachment, base_limit, counts, tail)
 
 excess_credibility_weights_rust <- function(ages, layer_ldf, layer_cdf, ground_up_ldf, ground_up_tail, shifts, layer_tail, layer_triangle, column, counts, k, max_influence) .Call(wrap__excess_credibility_weights_rust, ages, layer_ldf, layer_cdf, ground_up_ldf, ground_up_tail, shifts, layer_tail, layer_triangle, column, counts, k, max_influence)

@@ -54,6 +54,7 @@ pub mod backtest;
 #[cfg(feature = "bayes")]
 pub mod bayes;
 pub mod benchmark_curve;
+pub mod berquist_sherman;
 pub mod bootstrap;
 pub mod chain_ladder;
 pub mod clark;
@@ -67,6 +68,7 @@ pub mod excess;
 pub mod exhibit;
 pub mod expected_loss;
 pub mod frame;
+pub mod frequency_severity;
 pub mod industry_prior;
 #[cfg(feature = "io")]
 pub mod io;
@@ -99,6 +101,9 @@ pub use bayes::{
     LayerSharePrior, Meyers, MeyersFit, MeyersModel, ShareDependence,
 };
 pub use benchmark_curve::{BenchmarkCurve, BenchmarkCurveFit};
+pub use berquist_sherman::{
+    BerquistSherman, CaseAdequacy, CaseTrend, Interpolation, OpenCounts, SettlementRate,
+};
 pub use bootstrap::{
     OdpBootstrap, OdpBootstrapFit, OdpBootstrapFits, OdpBootstrapSegment, ProcessDistribution,
 };
@@ -119,6 +124,11 @@ pub use expected_loss::{
     Apriori, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ExpectedLoss, ExpectedLossFit,
 };
 pub use frame::TriangleFrame;
+pub use frequency_severity::{
+    CaseOutstanding, CaseOutstandingFit, CountProjection, Disposal, DisposalFit, FrequencySeverity,
+    FrequencySeverityFit, Selection, SeverityProjection, TrendFit, Trended, UltimateCounts,
+    case_development_factor, exponential_trend, pooled_trend, ratio_column, trend_by_age,
+};
 pub use industry_prior::{IndustryPrior, IndustryPriorSettings, PatternPrior, PriorReport};
 #[cfg(feature = "io")]
 pub use io::FileLayout;

@@ -360,6 +360,12 @@ reference:
       - odp_glm_fit
       - odp_glm_cells
       - excess_pattern
+      - frequency_severity
+      - disposal_method
+      - case_outstanding
+      - development_method
+      - trended
+      - berquist_sherman
       - layer_share_prior
       - residual_summary
       - claims_development_result

@@ -150,6 +150,10 @@ pub enum Error {
     File(String),
     /// Clark's growth-curve model cannot be fitted to this triangle.
     Clark(String),
+    /// A method on claim counts (frequency-severity, disposal rates, case
+    /// outstanding development or a Berquist-Sherman adjustment) cannot be
+    /// applied to this triangle or with these settings.
+    Counts(String),
     /// The Munich chain ladder cannot be fitted: the paid and incurred
     /// columns are not observed at the same cells, or a cell is not
     /// positive ([`MunichChainLadder`](crate::MunichChainLadder)).
@@ -296,6 +300,7 @@ impl fmt::Display for Error {
             Self::Exhibit(why) => write!(f, "exhibit: {why}"),
             Self::File(why) => write!(f, "reading a triangle: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
+            Self::Counts(why) => write!(f, "claim counts: {why}"),
             Self::Munich(why) => write!(f, "Munich chain ladder: {why}"),
             Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),
             Self::PaidIncurred(why) => write!(f, "paid-incurred chain: {why}"),

@@ -355,6 +355,22 @@ reference:
       - reserving.ScaleShift
       - reserving.ParetoShape
       - reserving.ExcessPattern
+      - reserving.FrequencySeverity
+      - reserving.FrequencySeverityFit
+      - reserving.Disposal
+      - reserving.DisposalFit
+      - reserving.CaseOutstanding
+      - reserving.CaseOutstandingFit
+      - reserving.Trended
+      - reserving.case_development_factor
+      - reserving.case_adequacy_adjust
+      - reserving.settlement_rate_adjust
+      - reserving.berquist_sherman_adjust
+      - reserving.average_case
+      - reserving.exponential_trend
+      - reserving.trend_by_age
+      - reserving.pooled_trend
+      - reserving.ratio_column
       - reserving.layer_share
       - reserving.layer_exposure
       - reserving.layer_at_shift

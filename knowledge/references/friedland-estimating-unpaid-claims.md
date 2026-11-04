@@ -84,8 +84,10 @@ Exhibit numbers restart in every chapter.[^friedland]
 
 # Not in prospicio
 
-Frequency-severity (chapter 11), case outstanding development (12),
-Berquist-Sherman adjustments (13), ALAE and ULAE ratio methods (16, 17).
+ALAE and ULAE ratio methods (16, 17). Frequency-severity and disposal rates (chapter 11), case
+outstanding development (12) and the Berquist-Sherman adjustments (13) are in
+`FrequencySeverity`, `Disposal`, `CaseOutstanding` and `BerquistSherman`
+([findings](/findings/friedland-count-methods.md)).
 
 [^friedland]: Friedland (2010), chapters 7 to 10 and their exhibits.
 [^guide]: `docs/guides/reserving-friedland.md`, checked by `python/tests/test_guides.py`.
