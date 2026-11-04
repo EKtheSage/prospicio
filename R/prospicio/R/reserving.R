@@ -7834,11 +7834,11 @@ ultimate_distribution <- function(fit) {
 check_pattern_fit <- function(fit) {
   classes <- list(odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits,
                   bayes_bf_fit, bayes_bf_normalised_fit, meyers_fit, meyers_fits,
-                  compartmental_fit, compartmental_fits)
+                  compartmental_fit, compartmental_fits, new_year_fit)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
     stop("fit must be an odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, ",
-         "bayes_bf_fit, bayes_bf_normalised_fit, meyers_fit, meyers_fits, compartmental_fit ",
-         "or compartmental_fits", call. = FALSE)
+         "bayes_bf_fit, bayes_bf_normalised_fit, meyers_fit, meyers_fits, compartmental_fit, ",
+         "compartmental_fits or new_year_fit", call. = FALSE)
   }
 }
 
@@ -7914,7 +7914,8 @@ pattern_matrix <- function(flat, n_col) {
 #'
 #' @param fit An [odp_bootstrap_fit], [mack_bootstrap_fit], [bayes_odp_fit],
 #'   [bayes_odp_fits], [bayes_bf_fit], [bayes_bf_normalised_fit], [meyers_fit],
-#'   [meyers_fits], [compartmental_fit] or [compartmental_fits].
+#'   [meyers_fits], [compartmental_fit], [compartmental_fits] or a
+#'   [new_year_fit][bayes_new_year] (the new year's emergence).
 #' @param segment `NULL` for a fit of one segment, or the segment's key
 #'   values (`"Auto"`, `c("Auto", "NSW")`) over segments.
 #' @param months The number of months, a whole number of at least 1; patterns
@@ -7969,4 +7970,97 @@ monthly_pattern_draws <- function(fit, months, segment = NULL, basis = NULL,
   flat <- reserving_result(fit@ptr$monthly_pattern_draws(segment_arg(segment), as.double(months),
                                                     basis, monotone), call = sys.call())
   pattern_matrix(flat, as.integer(months))
+}
+
+#' The loss ratio of a new underwriting year
+#'
+#' The posterior predictive of an underwriting year that is not yet in the
+#' triangle, the origin after its newest, for pricing a year not yet
+#' written (`docs/design/reserving-bayes.md`, decision 28). Each simulation
+#' takes a posterior draw of `fit` and from it the new origin's ultimate,
+#' parameter and process uncertainty both.
+#'
+#' For a [bayes_bf_normalised_fit] the new origin's expected ultimate is a
+#' gamma with cv `cv` and mean `s * apriori * premium`, `s` the draw's
+#' common multiplier (1 without `common_cv`), and its ultimate adds the
+#' fit's process error. The data reach the new year only through `s`:
+#' without `common_cv` the new year is the prior, `Gamma(1 / cv^2, apriori)`
+#' in loss ratio, whatever the triangle says; with a vague `common_cv` (say
+#' 10) the triangle sets its level. A flat prior (`cv = Inf`) is an error.
+#'
+#' For a [meyers_fit] the new origin's level `logelr + alpha` is drawn as
+#' `level` says and its ultimate is log-normal with sd `sigma[m]` (in CAY,
+#' plus `rho` times the newest origin's residual). Meyers' models have no
+#' hyperparameter for the origin effects: `"exchangeable"` (the default)
+#' draws the level from a Student t fitted to the draw's origin levels
+#' (needs three origins); `"prior"` takes Meyers' own prior
+#' `N(0, origin_sd^2)`, too wide to price on at his `origin_sd` of 3.162.
+#'
+#' The result's patterns are each simulation's posterior development
+#' pattern: [pattern_draws()] and [monthly_pattern_draws()] take the result
+#' and give the new year's emergence, row `i` simulation `i` of
+#' `loss_ratio`.
+#'
+#' @param fit A [bayes_bf_normalised_fit] or a [meyers_fit].
+#' @param premium The new year's premium (its exposure for the normalised
+#'   Bornhuetter-Ferguson), finite and positive.
+#' @param n_sims The number of simulations.
+#' @param seed The seed of the simulations.
+#' @param level For a [meyers_fit]: `"exchangeable"` or `"prior"`.
+#' @returns A `new_year_fit` with `origin` (the new origin's label),
+#'   `premium`, and `loss_ratio` and `ultimate`, each a
+#'   [predictive_distribution] with one component.
+#' @name bayes_new_year
+#' @examples
+#' \donttest{
+#' long <- data.frame(
+#'   year = c(2020, 2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2023),
+#'   age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'   paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130),
+#'   premium = c(200, 200, 200, 200, 220, 220, 220, 240, 240, 260))
+#' tri <- triangle(long, "year", "age", c("paid", "premium"))
+#' fit <- bayes_bf_normalised(tri, "paid", "premium", apriori = 0.85, cv = 0.1,
+#'                            common_cv = 10, tune = 300, draws = 300, n_sims = 500)
+#' year <- bayes_new_year(fit, premium = 280, n_sims = 2000, seed = 7)
+#' year@origin
+#' mean(year@loss_ratio)
+#' dim(monthly_pattern_draws(year, 48))
+#' }
+NULL
+
+#' @rdname bayes_new_year
+#' @export
+new_year_fit <- S7::new_class(
+  "new_year_fit",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("BayesNewYear"),
+    origin = S7::new_property(S7::class_character, getter = function(self) self@ptr$origin()),
+    premium = S7::new_property(S7::class_double, getter = function(self) self@ptr$premium()),
+    loss_ratio = predictive_distribution,
+    ultimate = predictive_distribution
+  ),
+  constructor = function(ptr) {
+    S7::new_object(S7::S7_object(), ptr = ptr,
+                   loss_ratio = predictive_distribution(ptr = ptr$loss_ratio()),
+                   ultimate = predictive_distribution(ptr = ptr$ultimate()))
+  }
+)
+
+#' @rdname bayes_new_year
+#' @export
+bayes_new_year <- function(fit, premium, n_sims = 10000, seed = 0,
+                           level = c("exchangeable", "prior")) {
+  premium <- single_number(premium, "premium")
+  n_sims <- single_number(n_sims, "n_sims")
+  seed <- single_number(seed, "seed")
+  level <- match.arg(level)
+  if (S7::S7_inherits(fit, bayes_bf_normalised_fit)) {
+    ptr <- rust_result(fit@ptr$new_year(premium, n_sims, seed), call = sys.call())
+  } else if (S7::S7_inherits(fit, meyers_fit)) {
+    ptr <- rust_result(fit@ptr$new_year(premium, n_sims, seed, level), call = sys.call())
+  } else {
+    stop("fit must be a bayes_bf_normalised_fit or a meyers_fit", call. = FALSE)
+  }
+  new_year_fit(ptr = ptr)
 }
