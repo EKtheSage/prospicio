@@ -1,4 +1,4 @@
-//! The industry prior (`IndustryPrior`, `reserving-bayes.md` decision 28,
+//! The industry prior (`IndustryPrior`, `reserving-bayes.md` decision 29,
 //! issue #604) recovers the parameters of simulated companies.
 //!
 //! No reference implementation builds this prior, so the check is

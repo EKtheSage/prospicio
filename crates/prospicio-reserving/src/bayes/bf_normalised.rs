@@ -41,7 +41,7 @@ use crate::triangle::{Label, Segment, Triangle};
 ///
 /// (or `beta_d ~ N(mean_d, sd_d^2)` under a [`PatternPrior`], such as an
 /// industry pattern, with
-/// [`fit_with_pattern_prior`](Self::fit_with_pattern_prior), decision 28)
+/// [`fit_with_pattern_prior`](Self::fit_with_pattern_prior), decision 29)
 ///
 /// with `phi` the chain ladder's Pearson scale, plugged in as in
 /// [`BayesOdp`](super::BayesOdp). The gamma prior is on the origin's
@@ -267,7 +267,7 @@ impl BayesBfNormalised {
 
     /// [`fit`](Self::fit) with an informative prior on the pattern: each
     /// `beta_d ~ N(prior.mean_d, prior.sd_d^2)` in place of
-    /// `N(0, development_sd^2)` (`reserving-bayes.md`, decision 28), for
+    /// `N(0, development_sd^2)` (`reserving-bayes.md`, decision 29), for
     /// example the industry pattern of an
     /// [`IndustryPrior`](crate::IndustryPrior). The prior's ages must be
     /// the triangle's: cut a longer prior with
@@ -742,7 +742,7 @@ impl BayesBfNormalisedFit {
 
     /// The posterior predictive of a new underwriting year with `premium`
     /// (its exposure), the origin after the triangle's newest
-    /// (`reserving-bayes.md` decision 27, issue #598): `n_sims` simulations
+    /// (`reserving-bayes.md` decision 28, issue #598): `n_sims` simulations
     /// from `seed`, each taking a posterior draw and from it the new
     /// origin's expected ultimate and then its ultimate,
     ///

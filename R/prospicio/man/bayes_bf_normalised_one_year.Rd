@@ -91,7 +91,7 @@ A smaller count gives the first simulations of a larger one.}
 
 \item{pattern_prior}{A \code{\link[=pattern_prior]{pattern_prior()}} on the triangle's ages, a normal
 prior on each \code{beta[d]} with its own mean and standard deviation in
-place of \code{development_sd} (decision 28; \code{\link[=industry_prior]{industry_prior()}} estimates
+place of \code{development_sd} (decision 29; \code{\link[=industry_prior]{industry_prior()}} estimates
 one), or \code{NULL}.}
 }
 \value{

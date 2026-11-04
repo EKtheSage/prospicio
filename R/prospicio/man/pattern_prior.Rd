@@ -25,7 +25,7 @@ A \code{pattern_prior} object.
 A normal prior on each log share ratio \code{beta[d] = log(p[d] / p[1])} of
 \code{\link[=bayes_bf_normalised]{bayes_bf_normalised()}}, with its own mean and standard deviation at each
 age after the first, in place of the model's \code{N(0, development_sd^2)} on
-every age (decision 28 of \code{docs/design/reserving-bayes.md}). The prior's
+every age (decision 29 of \code{docs/design/reserving-bayes.md}). The prior's
 ages must be the triangle's ages; \code{\link[=industry_prior_at_age]{industry_prior_at_age()}} cuts an
 industry prior to a younger triangle.
 }

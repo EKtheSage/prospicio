@@ -67,7 +67,7 @@ impl MeyersModel {
 
 /// The level of a new origin in [`MeyersFit::new_year`]: how its
 /// `logelr + alpha` is drawn from a posterior draw (`reserving-bayes.md`
-/// decision 27). Meyers' models give each origin its own effect `alpha_w`
+/// decision 28). Meyers' models give each origin its own effect `alpha_w`
 /// with a vague prior and no hyperparameter, so the posterior alone says
 /// nothing about the effect of an origin with no data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -669,7 +669,7 @@ impl Meyers {
     /// [`dependence`](Self::dependence) says: `Independent` as drawn,
     /// `RankCorrelation` by Iman–Conover on the segments' total claims
     /// development results, as the bootstraps' one-year view does;
-    /// `Synchronized` is an [`Error::Bayes`]. A failure names its segment.
+    /// `Synchronized` is an [`Error::NotSupported`]. A failure names its segment.
     pub fn one_year_segments(
         &self,
         triangle: &Triangle,
@@ -808,7 +808,7 @@ impl Meyers {
     ///   the segment totals of the reserves, exactly as in the bootstraps;
     ///   each segment's ultimates move with its reserves, row by row.
     /// * [`Synchronized`](SegmentDependence::Synchronized) is an
-    ///   [`Error::Bayes`]: it draws the residuals of the same positions in
+    ///   [`Error::NotSupported`]: it draws the residuals of the same positions in
     ///   every segment, and a posterior has no residuals to share.
     ///
     /// A bad rank-correlation matrix fails before any sampling, and a
@@ -1581,7 +1581,7 @@ impl MeyersFit {
 
     /// The posterior predictive of a new underwriting year with `premium`,
     /// the origin after the triangle's newest (`reserving-bayes.md`
-    /// decision 27, issue #598), with the level drawn as
+    /// decision 28, issue #598), with the level drawn as
     /// [`NewOriginLevel::Exchangeable`]: see
     /// [`new_year_with_level`](Self::new_year_with_level).
     ///
@@ -3618,7 +3618,13 @@ pub(crate) mod tests {
         };
         let e = model.fit_segments(&twins(), "paid", "premium").unwrap_err();
         assert!(
-            matches!(&e, Error::Bayes(m) if m.starts_with("Synchronized dependence")),
+            matches!(
+                &e,
+                Error::NotSupported {
+                    setting: "Synchronized dependence",
+                    ..
+                }
+            ),
             "{e}"
         );
     }
@@ -4438,7 +4444,13 @@ pub(crate) mod tests {
         .one_year_segments(&twins(), "paid", "premium", &BayesOneYear::default())
         .unwrap_err();
         assert!(
-            matches!(&e, Error::Bayes(m) if m.starts_with("Synchronized dependence")),
+            matches!(
+                &e,
+                Error::NotSupported {
+                    setting: "Synchronized dependence",
+                    ..
+                }
+            ),
             "{e}"
         );
         assert!(matches!(

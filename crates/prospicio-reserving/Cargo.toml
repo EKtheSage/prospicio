@@ -29,7 +29,13 @@ calamine = { workspace = true, optional = true }
 csv = { workspace = true, optional = true }
 
 [features]
-bayes = ["dep:prospicio-bayes", "dep:rayon"]
+bayes = ["dep:prospicio-bayes", "parallel"]
+# Threads (rayon) where the work splits by simulation, as
+# `DevelopmentPatterns::monthly` reading each simulation's pattern. Off by
+# default so that the WASM scope runs single-threaded; `bayes` turns it on,
+# and so do the Python and R bindings and the add-in through it
+# (docs/design/reserving-v02.md, decision 30).
+parallel = ["dep:rayon"]
 # `Triangle::from_csv`, `read_csv` and `read_excel` (the `io` module).
 io = ["dep:csv", "dep:calamine"]
 # Runs the unit tests that sample with NUTS (`bayes::*`). They are ignored

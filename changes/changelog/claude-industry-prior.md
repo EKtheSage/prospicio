@@ -6,7 +6,7 @@
 ### Reserving
 
 - An industry prior for the normalised Bayesian Bornhuetter-Ferguson from
-  other companies' triangles (`reserving-bayes.md` decision 28):
+  other companies' triangles (`reserving-bayes.md` decision 29):
   `IndustryPrior::from_triangles` (one triangle and premium vector per
   company) and `from_segments` (one triangle with a segment per company)
   estimate the mean ultimate loss ratio, its spread between companies

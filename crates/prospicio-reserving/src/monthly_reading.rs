@@ -134,7 +134,20 @@ pub(crate) struct Reading {
 /// The reading of `points` (sorted percents developed of accident periods
 /// of `s` months, at least two, the last age `E`) by `curve`, with the
 /// given value at each given age of the expanded pattern.
+#[cfg(test)]
 pub(crate) fn read_monthly(points: &[(Lag, f64)], s: u32, curve: GrowthCurve) -> Result<Reading> {
+    read_monthly_from(points, s, curve, None)
+}
+
+/// [`read_monthly`] with the curve's search started at `start`, `(ln
+/// omega, ln theta)` of a nearby pattern's curve, when given
+/// (`reserving-v02.md` decision 30): see [`fit_curve`].
+pub(crate) fn read_monthly_from(
+    points: &[(Lag, f64)],
+    s: u32,
+    curve: GrowthCurve,
+    start: Option<[f64; 2]>,
+) -> Result<Reading> {
     if points.len() < 2 {
         return fail(
             "a single value gives no shape to read between ages: give two or more, or read it \
@@ -144,7 +157,7 @@ pub(crate) fn read_monthly(points: &[(Lag, f64)], s: u32, curve: GrowthCurve) ->
     }
     let n = points[points.len() - 1].0 as usize;
     let level = points[points.len() - 1].1;
-    let (omega, theta) = fit_curve(points, s, curve)?;
+    let (omega, theta) = fit_curve(points, s, curve, start)?;
     let g = curve_months(curve, omega, theta, level, n);
     let mut c = Vec::with_capacity(n);
     let mut prev = 0.0;
@@ -184,9 +197,32 @@ fn curve_months(curve: GrowthCurve, omega: f64, theta: f64, level: f64, n: usize
         .collect()
 }
 
+/// `(ln omega, ln theta)` of the curve the reading of `points` fits from
+/// every start (decision 25), or `None` where it fits none: the start
+/// [`read_monthly_from`] takes for patterns near these.
+pub(crate) fn curve_start(points: &[(Lag, f64)], s: u32, curve: GrowthCurve) -> Option<[f64; 2]> {
+    if points.len() < 2 {
+        return None;
+    }
+    fit_curve(points, s, curve, None)
+        .ok()
+        .map(|(omega, theta)| [omega.ln(), theta.ln()])
+}
+
 /// `(omega, theta)` of `curve` whose `s`-month averages are nearest the
 /// given values in least squares.
-fn fit_curve(points: &[(Lag, f64)], s: u32, curve: GrowthCurve) -> Result<(f64, f64)> {
+///
+/// From every start below, unless `start` is given (decision 30): then
+/// from `start` and decision 23's line alone, the best kept if its search
+/// met the tolerance inside the parameters' range, and from every start
+/// otherwise. A simulation's pattern is near the mean pattern, so its
+/// curve is a short search from the mean's.
+fn fit_curve(
+    points: &[(Lag, f64)],
+    s: u32,
+    curve: GrowthCurve,
+    start: Option<[f64; 2]>,
+) -> Result<(f64, f64)> {
     let n = points[points.len() - 1].0 as usize;
     let level = points[points.len() - 1].1;
     let objective = |x: &[f64]| {
@@ -220,6 +256,22 @@ fn fit_curve(points: &[(Lag, f64)], s: u32, curve: GrowthCurve) -> Result<(f64, 
             starts.push([omega.ln(), mx - my / omega]);
         }
     }
+    let omega_range = MIN_OMEGA.ln()..=MAX_OMEGA.ln();
+    let theta_range = -MAX_LN_THETA..=MAX_LN_THETA;
+    if let Some(start) = start {
+        let warm = std::iter::once(start)
+            .chain(starts.iter().copied())
+            .map(|x0| nelder_mead(objective, &x0, &options))
+            .filter(|m| m.value.is_finite())
+            .min_by(|a, b| a.value.total_cmp(&b.value));
+        if let Some(m) = warm
+            && m.converged
+            && omega_range.contains(&m.x[0])
+            && theta_range.contains(&m.x[1])
+        {
+            return Ok((m.x[0].exp(), m.x[1].exp()));
+        }
+    }
     for omega in [0.8f64, 1.5, 3.0] {
         for theta in [6.0f64, 18.0, 36.0] {
             starts.push([omega.ln(), theta.ln()]);
@@ -239,8 +291,6 @@ fn fit_curve(points: &[(Lag, f64)], s: u32, curve: GrowthCurve) -> Result<(f64, 
         return fail("the growth curve through the averages has no finite fit");
     };
     let (ln_omega, ln_theta) = (best.x[0], best.x[1]);
-    let omega_range = MIN_OMEGA.ln()..=MAX_OMEGA.ln();
-    let theta_range = -MAX_LN_THETA..=MAX_LN_THETA;
     if !omega_range.contains(&ln_omega) || !theta_range.contains(&ln_theta) {
         // A pattern that never falls but has a shape no curve follows (a
         // period nearly complete at its first age and then flat for years

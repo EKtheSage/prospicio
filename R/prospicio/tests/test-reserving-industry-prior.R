@@ -2,7 +2,7 @@ suppressMessages(library(prospicio))
 
 # industry_prior(), pattern_prior() and bayes_bf_industry(): the industry
 # prior for the Bayesian BF from other companies' triangles
-# (docs/design/reserving-bayes.md, decision 28, #604). The recovery of
+# (docs/design/reserving-bayes.md, decision 29, #604). The recovery of
 # simulated companies' parameters is checked in
 # validation/tests/reserving_industry_prior.rs; these tests check the binding
 # on four companies with exact cells, whose prior has a closed form, the same

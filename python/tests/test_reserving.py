@@ -24,6 +24,7 @@ from prospicio.reserving import (
     MackBootstrap,
     MackBootstrapFit,
     MackFit,
+    NotSupportedError,
     OdpBootstrap,
     OdpBootstrapFit,
     OneYearFit,
@@ -1092,14 +1093,14 @@ def test_claims_development_result_frame():
 
 def test_claims_development_result_errors(triangles):
     simple = Mack(average="simple").fit(triangles["raa"], "values")
-    with pytest.raises(ValueError, match="claims development result: needs volume-weighted"):
+    with pytest.raises(NotSupportedError, match="needs volume-weighted factors"):
         simple.claims_development_result()
     # Merz and Wuthrich assume no tail: a factor other than 1, or a factor
     # of 1 that replaces estimated factors, is an error.
-    no_tail = "claims development result: needs no tail factor"
+    no_tail = "a tail factor is not supported by Merz and W.*closed form has no tail"
     for tail in [1.05, TailConstant(1.05), TailLogLinear(), TailConstant(1.0, attachment_age=84)]:
         fit = Mack(tail=tail).fit(triangles["raa"], "values")
-        with pytest.raises(ValueError, match=no_tail):
+        with pytest.raises(NotSupportedError, match=no_tail):
             fit.claims_development_result()
     explicit = Mack(tail=1.0).fit(triangles["raa"], "values").claims_development_result()
     default = Mack().fit(triangles["raa"], "values").claims_development_result()

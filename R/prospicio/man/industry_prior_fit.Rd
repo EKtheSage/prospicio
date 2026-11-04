@@ -64,7 +64,7 @@ process part.}
 }
 \description{
 The prior of \code{\link[=bayes_bf_normalised]{bayes_bf_normalised()}} estimated from other companies'
-triangles of the same line (decision 28 of
+triangles of the same line (decision 29 of
 \code{docs/design/reserving-bayes.md}, #604): the mean ultimate loss ratio,
 its spread between companies, its spread within a company, and a pooled
 development pattern with its spread.

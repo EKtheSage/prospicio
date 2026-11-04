@@ -56,7 +56,7 @@
 //! cell to each posterior draw: draw `d` from stream `d` of the first
 //! value of stream `u64::MAX` of the view's seed, which no simulation
 //! reaches (decision 20).
-//! A new underwriting year's simulations (decision 27) take the seed given
+//! A new underwriting year's simulations (decision 28) take the seed given
 //! to `new_year`, derived with its own tag (`2^62`), so a new year drawn
 //! with the fit's seed does not replay the fit's simulations.
 //! The pilot run of [`Meyers`] and [`Compartmental`], which sets the
@@ -171,7 +171,7 @@ pub(crate) enum Stream {
     SegmentChains(usize),
     /// The simulations of segment `k` of a fit of several segments.
     SegmentPredictive(usize),
-    /// The simulations of a new underwriting year (decision 27), from the
+    /// The simulations of a new underwriting year (decision 28), from the
     /// seed given to `new_year`.
     NewYear,
 }
@@ -217,12 +217,14 @@ pub(crate) fn one_year_seed(predictive: u64) -> u64 {
 /// The error every Bayesian model returns for `SegmentDependence::Synchronized`
 /// (`reserving-bayes.md`, decision 22).
 pub(crate) fn synchronized_error() -> crate::Error {
-    crate::Error::Bayes(
-        "Synchronized dependence resamples the residuals of the same positions in every \
-         segment, and a posterior has no residuals to resample; use RankCorrelation to \
-         correlate the segments (or Independent)"
-            .into(),
-    )
+    crate::Error::NotSupported {
+        setting: "Synchronized dependence",
+        method: "the Bayesian reserving models (BayesOdp, BayesBf, BayesBfNormalised, Meyers and \
+                 Compartmental)",
+        reason: "it resamples the residuals of the same positions in every segment, and a \
+                 posterior has no residuals to resample; use RankCorrelation to correlate the \
+                 segments (or Independent)",
+    }
 }
 
 #[cfg(test)]
@@ -245,9 +247,9 @@ mod tests {
 
     #[test]
     fn synchronized_dependence_is_refused_with_the_reason_and_the_alternative() {
-        let crate::Error::Bayes(m) = synchronized_error() else {
-            panic!("an Error::Bayes");
-        };
+        let e = synchronized_error();
+        assert!(e.is_not_supported());
+        let m = e.to_string();
         assert!(m.starts_with("Synchronized dependence"), "{m}");
         assert!(m.contains("no residuals to resample"), "{m}");
         assert!(m.contains("RankCorrelation"), "{m}");

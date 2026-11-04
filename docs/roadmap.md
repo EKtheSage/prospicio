@@ -273,7 +273,7 @@ what it is aiming for by v1.0.
     the emergence by month; in Rust, Python (`fit.new_year`) and R
     (`bayes_new_year()`).
   - An industry prior for the normalised Bayesian BF from other
-    companies' triangles (`reserving-bayes.md` decision 28, #604):
+    companies' triangles (`reserving-bayes.md` decision 29, #604):
     `IndustryPrior::from_triangles` estimates the mean ultimate loss
     ratio, its spread between and within companies and a pattern prior
     from the companies' chain ladders, with a report and a small-panel
@@ -539,6 +539,10 @@ what it is aiming for by v1.0.
   (done), and `Compartmental::one_year_segments` gives the one-year view
   over segments (decision 8; Rust, Python and R).
   Claim-level reserving (v0.8) is parked; see the milestones.
+  Proposed: a hierarchical Bornhuetter-Ferguson over several programs with
+  an industry hyperprior on the loss ratio (#599, `reserving-bayes.md`
+  decision 30, PRs 16 and 17), waiting on the user's choice of pooling
+  structure (open decision 26).
   Also next: excess-layer loss development (#192,
   `reserving-excess.md`, Accepted 2026-10-21): layer factors derived from a ground-up
   incurred triangle and a severity (PR 1, in Rust: `ExcessPattern::from_ground_up`,
@@ -562,6 +566,9 @@ what it is aiming for by v1.0.
   decision 28, #600; the bootstraps and `BayesOdp`, `BayesBf` and
   `BayesBfNormalised`, Meyers' CRC, CSR and CAY (#678) and
   `Compartmental`, models 1 and 2 (#679), in Rust, Python and R): done.
+  Read month by month in parallel and from the mean pattern's curve,
+  2,000 draws at 144 months in about 0.4 s on 16 cores (decision 30,
+  #717): done.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
 
@@ -594,6 +601,14 @@ what it is aiming for by v1.0.
   active-set solve for collinear bases (glmnet parity; Rust, Python
   and R, #356). Model-agnostic explanations: permutation importance,
   the interaction screen and partial dependence (Python and R, #355).
+  Zero-inflated and hurdle Poisson and negative binomial models with
+  Vuong's test (pscl parity; Rust, Python and R, #548).
+  Linear quantile regression (kernel and bootstrap standard errors,
+  rearrangement) and expectile regression, penalised or not (quantreg and
+  expectreg parity; Rust, Python and R, #550).
+  ICE curves, accumulated local effects and SHAP values, exact or
+  sampled, and tree SHAP on the boosters (ALEPlot and shap parity; Python
+  and R, #547).
 - **Next:** survival models, parked with claim-level reserving (the
   user's decision of 2026-10-29).
 - **v1.0:** mgcv's useful part for Tweedie, Poisson and gamma.

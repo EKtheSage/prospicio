@@ -17,7 +17,7 @@ sources:
     title: Builds the panel from cas-schedule-p[screens]==2026.6.13
   - id: note
     resource: ../docs/design/reserving-bayes.md
-    title: Design note, decision 28 (the industry prior) and open decisions 20 to 25
+    title: Design note, decision 29 (the industry prior) and open decisions 20 to 25
   - id: code
     resource: ../crates/prospicio-reserving/src/industry_prior.rs
     title: prospicio_reserving::IndustryPrior, IndustryPriorSettings, PatternPrior, PriorReport
@@ -38,7 +38,7 @@ the pinned hash only. The prior is deterministic.
 The triangles are accident years 1988 to 1997 at 31 December 1997 (the
 upper triangle); the squares add the outcomes to 120 months. All 50
 companies of each line are used. "Process" is the chain ladder's ODP
-process cv of an origin's ultimate loss ratio (decision 28's
+process cv of an origin's ultimate loss ratio (decision 29's
 `process_cv`); `cv` is the within cv under the default.
 
 | Line | Basis | apriori (se) | between cv | within cv | process cv | origins |

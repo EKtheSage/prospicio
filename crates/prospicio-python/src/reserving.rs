@@ -57,8 +57,27 @@ use crate::to_py;
 use prospicio_prob::ComponentKey;
 use prospicio_reserving::UltimateDraws;
 
-fn err(e: prospicio_reserving::Error) -> PyErr {
-    PyValueError::new_err(e.to_string())
+pyo3::create_exception!(
+    prospicio,
+    NotSupportedError,
+    PyValueError,
+    "A setting, or a combination of settings, that the method it was given \
+     to does not support, raised when the setting is chosen where it can be \
+     (the Rust error `NotSupported`, `reserving-v02.md` decision 29). A \
+     subclass of ``ValueError``, so code that catches ``ValueError`` still \
+     catches it."
+);
+
+/// A reserving error as a Python exception: [`NotSupportedError`] for a
+/// setting the method does not support
+/// ([`prospicio_reserving::Error::is_not_supported`]), `ValueError`
+/// otherwise.
+pub(crate) fn err(e: prospicio_reserving::Error) -> PyErr {
+    if e.is_not_supported() {
+        NotSupportedError::new_err(e.to_string())
+    } else {
+        PyValueError::new_err(e.to_string())
+    }
 }
 
 /// An origin as Python names it: a key tuple, one label (a string or an
@@ -2540,14 +2559,29 @@ impl PyDevelopmentPatterns {
     ///     first; ``"running_max"`` holds each share at the largest before
     ///     it, capped at 1, and gives a share that is not positive the next
     ///     positive share, which the simulation then pays from its first age.
+    ///     Bootstrap draws usually need ``"running_max"``: at the oldest
+    ///     ages, where one or two cells set the factor, the ODP bootstrap
+    ///     draws a pseudo factor below 1 in some simulations, which puts
+    ///     the share above 1 before it falls back to 1 (77 of 2,000 draws
+    ///     on the sample submission's paid triangle to 108 months).
     ///
     /// Returns
     /// -------
     /// list of list of float
     ///     One row of ``months`` values per simulation.
+    ///
+    /// Notes
+    /// -----
+    /// Under a growth-curve reading each simulation's curve is searched
+    /// from the mean pattern's, and the simulations are read on all cores,
+    /// so 2,000 draws at 144 months take well under a second on 16 cores
+    /// (a few seconds on one). The result does not depend on the number of
+    /// threads; it is within about ``1e-9`` of a share of the search from
+    /// every start that converting a single pattern makes.
     #[pyo3(signature = (months, segment = None, basis = None, monotone = "refuse"))]
     fn monthly(
         &self,
+        py: Python<'_>,
         months: usize,
         segment: Option<&Bound<'_, PyAny>>,
         basis: Option<&Bound<'_, PyAny>>,
@@ -2565,8 +2599,7 @@ impl PyDevelopmentPatterns {
                 )));
             }
         };
-        self.inner
-            .monthly(&refs, &basis, months, monotone)
+        py.detach(|| self.inner.monthly(&refs, &basis, months, monotone))
             .map_err(err)
     }
 
@@ -11885,7 +11918,7 @@ impl PyBayesBfFit {
 pub(crate) struct PyBayesBfNormalised {
     pub(crate) inner: BayesBfNormalised,
     /// The pattern prior its fits take, if any (not a setting of the Rust
-    /// model, which takes it at the fit: decision 28).
+    /// model, which takes it at the fit: decision 29).
     pub(crate) pattern_prior: Option<PatternPrior>,
 }
 
@@ -12997,7 +13030,7 @@ impl PyLayerSharePrior {
 /// of the share of the ultimate at age ``d`` to the first age's) is normal
 /// with mean ``mean[d]`` and sd ``sd[d]``, in place of the model's
 /// ``N(0, development_sd**2)`` (``docs/design/reserving-bayes.md``,
-/// decision 28). ``IndustryPrior.pattern`` builds one from other companies'
+/// decision 29). ``IndustryPrior.pattern`` builds one from other companies'
 /// triangles.
 ///
 /// Parameters
@@ -13114,7 +13147,7 @@ impl PyPatternPrior {
 }
 
 /// An industry prior for ``BayesBfNormalised`` from other companies'
-/// triangles (``docs/design/reserving-bayes.md``, decision 28): the mean
+/// triangles (``docs/design/reserving-bayes.md``, decision 29): the mean
 /// ultimate loss ratio over the companies (``apriori``), the cv of a
 /// company's level about it (``between_cv``, the model's ``common_cv``),
 /// the cv of an origin about its company's level (``cv``, the model's
@@ -15641,28 +15674,30 @@ impl PyCompartmental {
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
         }
-        Ok(Self {
-            inner: Compartmental {
-                priors: priors.inner,
-                likelihood: named("likelihood", likelihood, &LIKELIHOODS)?,
-                scale: named("scale", scale, &SCALES)?,
-                paid_response: named("paid_response", paid_response, &PAID_RESPONSES)?,
-                fitted: named("fitted", fitted, &FITTED)?,
-                rate_order: named("rate_order", rate_order, &RATE_ORDERS)?,
-                start: named("start", start, &STARTS)?,
-                sampler: BayesSampler {
-                    chains,
-                    tune,
-                    draws,
-                    seed: 0,
-                    target_accept,
-                    max_depth,
-                },
-                n_sims,
-                seed,
-                dependence: segment_dependence(dependence, spearman)?,
+        let inner = Compartmental {
+            priors: priors.inner,
+            likelihood: named("likelihood", likelihood, &LIKELIHOODS)?,
+            scale: named("scale", scale, &SCALES)?,
+            paid_response: named("paid_response", paid_response, &PAID_RESPONSES)?,
+            fitted: named("fitted", fitted, &FITTED)?,
+            rate_order: named("rate_order", rate_order, &RATE_ORDERS)?,
+            start: named("start", start, &STARTS)?,
+            sampler: BayesSampler {
+                chains,
+                tune,
+                draws,
+                seed: 0,
+                target_accept,
+                max_depth,
             },
-        })
+            n_sims,
+            seed,
+            dependence: segment_dependence(dependence, spearman)?,
+        };
+        // Refuse a combination of settings the model does not support when
+        // it is built, not when it is fitted (#580).
+        inner.check_supported().map_err(err)?;
+        Ok(Self { inner })
     }
 
     /// Gesmann and Morris' model 2 with ``priors`` (the paper's are

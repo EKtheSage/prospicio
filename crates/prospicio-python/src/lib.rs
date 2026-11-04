@@ -103,16 +103,18 @@ mod prospicio_native {
     use super::models::{
         PyBayesGlm, PyBayesGlmFit, PyBayesGlmm, PyBayesGlmmFit, PyBayesStacking, PyCoding,
         PyCvPath, PyDesign, PyDoubleGlm, PyDoubleGlmFit, PyDraws, PyElasticNet, PyElasticNetFit,
-        PyElpd, PyGam, PyGamFit, PyGlm, PyGlmFit, PyGlmm, PyGlmmFit, PyHierarchicalStacking,
-        PyIsotonic, PyMarsFit, PyNegativeBinomialFit, PyNegativeBinomialGlm, PyRelaxedCv,
-        PyStackingFit, PyTargetEncoding, PyTerms, PyTweedieFit, PyTweedieGlm, actual_vs_expected,
-        balance_correction, conformal_cqr, conformal_plus, conformal_split, confusion_matrix, crps,
-        deviance, double_lift, elpd_loo, elpd_waic, f_test, gini, group_k_fold, isotonic, k_fold,
-        ks_uniform, lift, likelihood_ratio_test, log_score, loo_pit, loss_ratio_chart, lppd, mars,
-        mcmc_diagnostics, murphy, normalized_gini, permutation, pinball_loss, pit, pit_from_draws,
-        pit_histogram, ppc_check, pseudo_bma_weights, quantile_residuals, recalibrate, reliability,
-        roc, simulate_from_means, stacking_weights, target_encode, time_ordered, time_splits,
-        tweedie_profile, vif,
+        PyElpd, PyExpectileFit, PyExpectileRegression, PyGam, PyGamFit, PyGlm, PyGlmFit, PyGlmm,
+        PyGlmmFit, PyHierarchicalStacking, PyHurdle, PyIsotonic, PyMarsFit, PyNegativeBinomialFit,
+        PyNegativeBinomialGlm, PyQuantileFit, PyQuantileFits, PyQuantileRegression, PyRelaxedCv,
+        PyStackingFit, PyTargetEncoding, PyTerms, PyTweedieFit, PyTweedieGlm, PyTwoPartFit,
+        PyZeroInflated, actual_vs_expected, balance_correction, conformal_cqr, conformal_plus,
+        conformal_split, confusion_matrix, count_log_likelihoods, crps, deviance, double_lift,
+        elpd_loo, elpd_waic, f_test, gini, group_k_fold, isotonic, k_fold, ks_uniform, lift,
+        likelihood_ratio_test, log_score, loo_pit, loss_ratio_chart, lppd, mars, mcmc_diagnostics,
+        murphy, normalized_gini, permutation, pinball_loss, pit, pit_from_draws, pit_histogram,
+        ppc_check, pseudo_bma_weights, quantile_residuals, recalibrate, reliability, roc,
+        simulate_from_means, stacking_weights, target_encode, time_ordered, time_splits,
+        tweedie_profile, vif, vuong,
     };
     #[pymodule_export]
     use super::multivariate::{PyMultivariateLognormal, PyMultivariateNormal};
@@ -171,6 +173,8 @@ mod prospicio_native {
         aggregate_layer_statistics, occurrence_cession_statistics, occurrence_layer_statistics,
         per_risk_inuring,
     };
+    #[pymodule_export]
+    use super::reserving::NotSupportedError;
     #[pymodule_export]
     use super::reserving::{
         PyBacktest, PyBayesBf, PyBayesBfFit, PyBayesBfNormalised, PyBayesBfNormalisedFit,

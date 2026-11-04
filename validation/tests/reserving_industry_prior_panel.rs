@@ -1,5 +1,5 @@
 //! The industry prior per line on the calibration panel (issue #604,
-//! `reserving-bayes.md` decision 28): run by hand, as the calibration
+//! `reserving-bayes.md` decision 29): run by hand, as the calibration
 //! study is (nothing in CI runs it; it needs the panel, which is not in
 //! the repo).
 //!

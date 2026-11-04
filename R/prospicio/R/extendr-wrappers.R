@@ -210,6 +210,18 @@ read_stan_csv_rust <- function(paths) .Call(wrap__read_stan_csv_rust, paths)
 
 dglm_fit_design <- function(x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method) .Call(wrap__dglm_fit_design, x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method)
 
+zero_fit_design <- function(x, names, y, offset, weights, z, zero_names, zero_offset, model, dist, zero_link) .Call(wrap__zero_fit_design, x, names, y, offset, weights, z, zero_names, zero_offset, model, dist, zero_link)
+
+count_log_likelihoods_rust <- function(y, mu, theta) .Call(wrap__count_log_likelihoods_rust, y, mu, theta)
+
+vuong_rust <- function(a, b, k_a, k_b) .Call(wrap__vuong_rust, a, b, k_a, k_b)
+
+quantreg_fit_design <- function(x, names, y, offset, weights, taus, bandwidth_name) .Call(wrap__quantreg_fit_design, x, names, y, offset, weights, taus, bandwidth_name)
+
+quantreg_bootstrap_rust <- function(x, names, y, offset, weights, tau, n_boot, seed) .Call(wrap__quantreg_bootstrap_rust, x, names, y, offset, weights, tau, n_boot, seed)
+
+expectreg_fit_design <- function(x, names, y, offset, weights, tau, lambda, penalty) .Call(wrap__expectreg_fit_design, x, names, y, offset, weights, tau, lambda, penalty)
+
 glmm_fit_design <- function(x, names, y, offset, weights, family_name, power, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values, nodes) .Call(wrap__glmm_fit_design, x, names, y, offset, weights, family_name, power, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values, nodes)
 
 local_pareto_convert <- function(t, alpha, rel_tolerance, stop_survival, stop_at) .Call(wrap__local_pareto_convert, t, alpha, rel_tolerance, stop_survival, stop_at)
@@ -1380,6 +1392,106 @@ DglmModel$predict_dispersion <- function(z, names, offset) .Call(wrap__DglmModel
 
 #' @export
 `[[.DglmModel` <- `$.DglmModel`
+
+ZeroModel <- new.env(parent = emptyenv())
+
+ZeroModel$kind <- function() .Call(wrap__ZeroModel__kind, self)
+
+ZeroModel$dist <- function() .Call(wrap__ZeroModel__dist, self)
+
+ZeroModel$count_names <- function() .Call(wrap__ZeroModel__count_names, self)
+
+ZeroModel$count_coefficients <- function() .Call(wrap__ZeroModel__count_coefficients, self)
+
+ZeroModel$count_std_errors <- function() .Call(wrap__ZeroModel__count_std_errors, self)
+
+ZeroModel$zero_names <- function() .Call(wrap__ZeroModel__zero_names, self)
+
+ZeroModel$zero_coefficients <- function() .Call(wrap__ZeroModel__zero_coefficients, self)
+
+ZeroModel$zero_std_errors <- function() .Call(wrap__ZeroModel__zero_std_errors, self)
+
+ZeroModel$theta <- function() .Call(wrap__ZeroModel__theta, self)
+
+ZeroModel$se_log_theta <- function() .Call(wrap__ZeroModel__se_log_theta, self)
+
+ZeroModel$covariance <- function() .Call(wrap__ZeroModel__covariance, self)
+
+ZeroModel$n_parameters <- function() .Call(wrap__ZeroModel__n_parameters, self)
+
+ZeroModel$loglik <- function() .Call(wrap__ZeroModel__loglik, self)
+
+ZeroModel$log_likelihoods <- function() .Call(wrap__ZeroModel__log_likelihoods, self)
+
+ZeroModel$aic <- function() .Call(wrap__ZeroModel__aic, self)
+
+ZeroModel$bic <- function() .Call(wrap__ZeroModel__bic, self)
+
+ZeroModel$iterations <- function() .Call(wrap__ZeroModel__iterations, self)
+
+ZeroModel$fitted <- function() .Call(wrap__ZeroModel__fitted, self)
+
+ZeroModel$predict <- function(x, names, offset, z, zero_names, zero_offset, what, max) .Call(wrap__ZeroModel__predict, self, x, names, offset, z, zero_names, zero_offset, what, max)
+
+ZeroModel$predict_distribution <- function(x, names, offset, z, zero_names, zero_offset, n_sims, seed) .Call(wrap__ZeroModel__predict_distribution, self, x, names, offset, z, zero_names, zero_offset, n_sims, seed)
+
+#' @export
+`$.ZeroModel` <- function (self, name) { func <- ZeroModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.ZeroModel` <- `$.ZeroModel`
+
+QuantregFits <- new.env(parent = emptyenv())
+
+QuantregFits$taus <- function() .Call(wrap__QuantregFits__taus, self)
+
+QuantregFits$names <- function() .Call(wrap__QuantregFits__names, self)
+
+QuantregFits$coefficients <- function() .Call(wrap__QuantregFits__coefficients, self)
+
+QuantregFits$std_errors <- function() .Call(wrap__QuantregFits__std_errors, self)
+
+QuantregFits$covariance <- function(k) .Call(wrap__QuantregFits__covariance, self, k)
+
+QuantregFits$objectives <- function() .Call(wrap__QuantregFits__objectives, self)
+
+QuantregFits$bandwidths <- function() .Call(wrap__QuantregFits__bandwidths, self)
+
+QuantregFits$predict <- function(x, names, offset, rearrange) .Call(wrap__QuantregFits__predict, self, x, names, offset, rearrange)
+
+QuantregFits$predict_distribution <- function(k, x, names, offset, n_sims, seed) .Call(wrap__QuantregFits__predict_distribution, self, k, x, names, offset, n_sims, seed)
+
+#' @export
+`$.QuantregFits` <- function (self, name) { func <- QuantregFits[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.QuantregFits` <- `$.QuantregFits`
+
+ExpectregModel <- new.env(parent = emptyenv())
+
+ExpectregModel$tau <- function() .Call(wrap__ExpectregModel__tau, self)
+
+ExpectregModel$names <- function() .Call(wrap__ExpectregModel__names, self)
+
+ExpectregModel$coefficients <- function() .Call(wrap__ExpectregModel__coefficients, self)
+
+ExpectregModel$std_errors <- function() .Call(wrap__ExpectregModel__std_errors, self)
+
+ExpectregModel$covariance <- function() .Call(wrap__ExpectregModel__covariance, self)
+
+ExpectregModel$objective <- function() .Call(wrap__ExpectregModel__objective, self)
+
+ExpectregModel$iterations <- function() .Call(wrap__ExpectregModel__iterations, self)
+
+ExpectregModel$predict <- function(x, names, offset) .Call(wrap__ExpectregModel__predict, self, x, names, offset)
+
+ExpectregModel$predict_distribution <- function(x, names, offset, n_sims, seed) .Call(wrap__ExpectregModel__predict_distribution, self, x, names, offset, n_sims, seed)
+
+#' @export
+`$.ExpectregModel` <- function (self, name) { func <- ExpectregModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.ExpectregModel` <- `$.ExpectregModel`
 
 GaussianJointR <- new.env(parent = emptyenv())
 

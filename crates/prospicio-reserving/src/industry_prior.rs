@@ -1,5 +1,5 @@
 //! An industry prior for a thin program from other companies' triangles
-//! (`docs/design/reserving-bayes.md`, decision 28, issue #604).
+//! (`docs/design/reserving-bayes.md`, decision 29, issue #604).
 //!
 //! For a new or thin program the credible prior of the loss ratio, its
 //! dispersion and the development pattern is an industry benchmark by
@@ -227,7 +227,7 @@ pub struct IndustryPriorSettings {
     /// explains more than the whole spread, and the cv falls to its
     /// floor; the default keeps the realised spread, which counts the
     /// process error twice with the model's own and so errs wide
-    /// (`reserving-bayes.md`, decision 28).
+    /// (`reserving-bayes.md`, decision 29).
     pub subtract_process: bool,
 }
 
