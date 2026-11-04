@@ -234,7 +234,7 @@ def test_tail_arguments(triangles):
     with pytest.raises(TypeError, match="tail must be"):
         ChainLadder(tail="1.05")
     with pytest.raises(ValueError, match="curve must be"):
-        TailCurve("weibull")
+        TailCurve("cubic")
     with pytest.raises(ValueError, match="tail"):
         ChainLadder(tail=TailCurve(fit_period=(108, None))).fit(raa, "values")
     with pytest.raises(ValueError, match="tail"):

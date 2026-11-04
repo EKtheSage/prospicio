@@ -157,6 +157,10 @@ pub enum Error {
     /// cannot be fitted: a triangle of the wrong shape, a value that is not
     /// positive, or a setting of the wrong length or out of range.
     PaidIncurred(String),
+    /// A development curve cannot be fitted to these factors, or its
+    /// settings do not fit the triangle
+    /// ([`DevelopmentCurve`](crate::DevelopmentCurve)).
+    DevelopmentCurve(String),
     /// An industry prior cannot be built from these triangles
     /// ([`IndustryPrior`](crate::IndustryPrior)): too few companies, ages
     /// that differ, or a pattern or spread that cannot be estimated.
@@ -290,6 +294,7 @@ impl fmt::Display for Error {
             Self::Munich(why) => write!(f, "Munich chain ladder: {why}"),
             Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),
             Self::PaidIncurred(why) => write!(f, "paid-incurred chain: {why}"),
+            Self::DevelopmentCurve(why) => write!(f, "development curve: {why}"),
             Self::IndustryPrior(why) => write!(f, "industry prior: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
             Self::OneYear {

@@ -525,6 +525,14 @@ what it is aiming for by v1.0.
     model with a closed-form posterior; R ChainLadder's
     `PaidIncurredChain` to 1e-9 on USAA and Dahms' data under its own
     convention, the model's posterior by default.
+  - Development curves over every age (`reserving-v02.md`, decision 31;
+    branch `claude/development-curves`, issue #556, in Rust, Python and R):
+    `DevelopmentCurve` fits the exponential, inverse power, Hoerl, Sherman
+    or a growth curve to the estimated factors, keeps the observed ones
+    before `keep_observed_until`, gives the fitted factors as a selected
+    pattern with the curve's tail, and reports residuals, the sum of
+    squares and R-squared, with `compare` for a table of shapes; R's `lm`
+    and `nls` parity on RAA and GenIns, and `TailCurve` takes every shape.
   - The Munich chain ladder (`reserving-v02.md`, decision 33; branch
     `claude/munich-chain-ladder`, issue #559, in Rust, Python and R): paid
     and incurred developed together, each factor corrected by the origin's
