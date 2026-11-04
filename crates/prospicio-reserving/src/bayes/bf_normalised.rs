@@ -2873,7 +2873,7 @@ mod tests {
             .unwrap()
     }
 
-    /// Decision 28: under a pattern prior the gradient, the Hessian and
+    /// Decision 29: under a pattern prior the gradient, the Hessian and
     /// the generic oracle agree; the prior term is the normal log density
     /// `-(b - mean)^2 / (2 sd^2)` (two points' difference); without one the
     /// density is the vague prior's, bit for bit.

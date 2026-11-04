@@ -7846,9 +7846,9 @@ bayes_new_year <- function(fit, premium, n_sims = 10000, seed = 0,
   seed <- single_number(seed, "seed")
   level <- match.arg(level)
   if (S7::S7_inherits(fit, bayes_bf_normalised_fit)) {
-    ptr <- reserving_result(fit@ptr$new_year(premium, n_sims, seed), call = sys.call())
+    ptr <- rust_result(fit@ptr$new_year(premium, n_sims, seed), call = sys.call())
   } else if (S7::S7_inherits(fit, meyers_fit)) {
-    ptr <- reserving_result(fit@ptr$new_year(premium, n_sims, seed, level), call = sys.call())
+    ptr <- rust_result(fit@ptr$new_year(premium, n_sims, seed, level), call = sys.call())
   } else {
     stop("fit must be a bayes_bf_normalised_fit or a meyers_fit", call. = FALSE)
   }

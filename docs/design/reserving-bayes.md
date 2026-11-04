@@ -3430,8 +3430,7 @@ unchanged, so the one-year conformance suite is unaffected.
 
 ### 29. An industry prior from other companies' triangles (issue #604)
 
-Built in Rust, Python and R on `claude/industry-prior` (2026-11-03),
-stacked on `claude/bayes-new-year` (#728). A thin program's
+Built in Rust, Python and R on `claude/industry-prior` (2026-11-03). A thin program's
 `BayesBfNormalised` needs an `apriori`, a `cv`, a `common_cv` and a view
 of the pattern, and the usual source is an industry benchmark by line
 from Schedule P. Turning other companies' triangles into those numbers
@@ -3610,7 +3609,7 @@ time, and their `fit_segments` fits segments independently or rank
 correlated, not pooled; decision 25's `common_cv` is one multiplier shared
 by the origins of one triangle with a fixed spread.
 
-**Relation to #604** (PR #732, open, decision 29 there). `IndustryPrior`
+**Relation to #604** (decision 29). `IndustryPrior`
 estimates the same quantities from other companies' triangles by moments
 and plugs them in: the industry loss ratio (`apriori`), the spread between
 companies (`between_cv`, which becomes `common_cv`), the spread within one
