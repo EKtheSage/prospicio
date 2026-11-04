@@ -1,5 +1,6 @@
 """Reserving: the loss triangle, the chain ladder with tail factors, Mack's
 model with its one-year view and Mack's tests of its assumptions, the
+Munich chain ladder of paid and incurred together, the
 expected-loss methods, Clark's growth
 curves and a growth curve fitted to a benchmark pattern, Friedland's
 exhibits and a weighted selection of the methods' ultimates, the ODP model as a
@@ -64,6 +65,8 @@ from .prospicio_native import (
     Meyers,
     MeyersFit,
     MeyersFits,
+    MunichChainLadder,
+    MunichFit,
     NewYear,
     NotSupportedError,
     OdpBootstrap,
@@ -107,6 +110,8 @@ __all__ = [
     "UltimateExhibit",
     "SelectedUltimates",
     "select_ultimates",
+    "MunichChainLadder",
+    "MunichFit",
     "ExpectedLoss",
     "BornhuetterFerguson",
     "Benktander",
