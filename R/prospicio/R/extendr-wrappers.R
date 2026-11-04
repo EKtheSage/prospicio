@@ -2605,6 +2605,8 @@ Triangle$development_correlation <- function(column, ci) .Call(wrap__Triangle__d
 
 Triangle$mack <- function(column, average, sigma_interpolation, excl, tail, tail_sigma, tail_std_err, ldf) .Call(wrap__Triangle__mack, self, column, average, sigma_interpolation, excl, tail, tail_sigma, tail_std_err, ldf)
 
+Triangle$munich_chain_ladder <- function(paid, incurred, sigma_paid, sigma_incurred, tail_paid, tail_incurred) .Call(wrap__Triangle__munich_chain_ladder, self, paid, incurred, sigma_paid, sigma_incurred, tail_paid, tail_incurred)
+
 Triangle$expected_loss <- function(column, exposure, apriori, average, sigma_interpolation, excl, tail, ldf) .Call(wrap__Triangle__expected_loss, self, column, exposure, apriori, average, sigma_interpolation, excl, tail, ldf)
 
 Triangle$bornhuetter_ferguson <- function(column, exposure, apriori, average, sigma_interpolation, excl, tail, ldf) .Call(wrap__Triangle__bornhuetter_ferguson, self, column, exposure, apriori, average, sigma_interpolation, excl, tail, ldf)
@@ -3843,6 +3845,76 @@ BenchmarkCurveFit$pattern <- function(ages) .Call(wrap__BenchmarkCurveFit__patte
 
 #' @export
 `[[.BenchmarkCurveFit` <- `$.BenchmarkCurveFit`
+
+MunichFit <- new.env(parent = emptyenv())
+
+MunichFit$n_segments <- function() .Call(wrap__MunichFit__n_segments, self)
+
+MunichFit$keys <- function() .Call(wrap__MunichFit__keys, self)
+
+MunichFit$row_segments <- function() .Call(wrap__MunichFit__row_segments, self)
+
+MunichFit$origins <- function() .Call(wrap__MunichFit__origins, self)
+
+MunichFit$development <- function() .Call(wrap__MunichFit__development, self)
+
+MunichFit$latest_paid <- function() .Call(wrap__MunichFit__latest_paid, self)
+
+MunichFit$latest_incurred <- function() .Call(wrap__MunichFit__latest_incurred, self)
+
+MunichFit$ultimate_paid <- function() .Call(wrap__MunichFit__ultimate_paid, self)
+
+MunichFit$ultimate_incurred <- function() .Call(wrap__MunichFit__ultimate_incurred, self)
+
+MunichFit$reserve_paid <- function() .Call(wrap__MunichFit__reserve_paid, self)
+
+MunichFit$ibnr_incurred <- function() .Call(wrap__MunichFit__ibnr_incurred, self)
+
+MunichFit$latest_ratio <- function() .Call(wrap__MunichFit__latest_ratio, self)
+
+MunichFit$ultimate_ratio <- function() .Call(wrap__MunichFit__ultimate_ratio, self)
+
+MunichFit$chain_ladder_paid <- function() .Call(wrap__MunichFit__chain_ladder_paid, self)
+
+MunichFit$chain_ladder_incurred <- function() .Call(wrap__MunichFit__chain_ladder_incurred, self)
+
+MunichFit$total_ultimate_paid <- function() .Call(wrap__MunichFit__total_ultimate_paid, self)
+
+MunichFit$total_ultimate_incurred <- function() .Call(wrap__MunichFit__total_ultimate_incurred, self)
+
+MunichFit$lambda_paid <- function() .Call(wrap__MunichFit__lambda_paid, self)
+
+MunichFit$lambda_incurred <- function() .Call(wrap__MunichFit__lambda_incurred, self)
+
+MunichFit$n_residuals_paid <- function() .Call(wrap__MunichFit__n_residuals_paid, self)
+
+MunichFit$n_residuals_incurred <- function() .Call(wrap__MunichFit__n_residuals_incurred, self)
+
+MunichFit$q <- function() .Call(wrap__MunichFit__q, self)
+
+MunichFit$q_inverse <- function() .Call(wrap__MunichFit__q_inverse, self)
+
+MunichFit$rho_paid <- function() .Call(wrap__MunichFit__rho_paid, self)
+
+MunichFit$rho_incurred <- function() .Call(wrap__MunichFit__rho_incurred, self)
+
+MunichFit$mack_paid <- function() .Call(wrap__MunichFit__mack_paid, self)
+
+MunichFit$mack_incurred <- function() .Call(wrap__MunichFit__mack_incurred, self)
+
+MunichFit$long_table <- function() .Call(wrap__MunichFit__long_table, self)
+
+MunichFit$totals_table <- function() .Call(wrap__MunichFit__totals_table, self)
+
+MunichFit$development_table <- function() .Call(wrap__MunichFit__development_table, self)
+
+MunichFit$segment <- function(keys, values) .Call(wrap__MunichFit__segment, self, keys, values)
+
+#' @export
+`$.MunichFit` <- function (self, name) { func <- MunichFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.MunichFit` <- `$.MunichFit`
 
 EvtTail <- new.env(parent = emptyenv())
 
