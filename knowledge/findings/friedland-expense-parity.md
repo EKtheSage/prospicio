@@ -13,6 +13,9 @@ sources:
   - id: test
     resource: ../validation/tests/reserving_expense.rs
     title: Validation test of recoveries, ALAE and ULAE
+  - id: unit
+    resource: ../crates/prospicio-reserving/src/expense.rs
+    title: Unit tests of recoveries, ALAE and ULAE
   - id: friedland
     resource: https://www.casact.org/sites/default/files/old/studynotes_friedland_estimating.pdf
     title: Friedland, Estimating Unpaid Claims Using Basic Techniques, version 3, July 2010 (CAS); chapters 14, 16 and 17
@@ -34,7 +37,7 @@ sources:
   nor interpolated"), the geometric average errors on a negative link ratio, and
   the volume and simple averages work.[^test]
 - A ratio of exactly zero, a year with no recoveries yet, stops the simple average
-  of [`RatioDevelopment`] ("a zero value gets an infinite weight"), as it stops the
+  of `RatioDevelopment` ("a zero value gets an infinite weight"), as it stops the
   chain ladder; the volume average and additive factors take it.[^unit]
 
 [^test]: `validation/tests/reserving_expense.rs`; decisions in `docs/design/reserving-v02.md`, decision 37.
