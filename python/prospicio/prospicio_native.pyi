@@ -10421,34 +10421,6 @@ class DevelopmentCurve:
         The observed factors are kept before this age in months and the
         curve is used from the first age at or after it on; ``None`` uses
         the curve at every age.
-class DevelopmentExhibit:
-    """
-    Friedland's development exhibit (chapter 7, Exhibit I, sheets 1 and 2)
-    of one column of a single-segment triangle: the link ratios, each named
-    average of them, the selected factors, the tail, the factors to ultimate
-    and the percents developed (``docs/design/reserving-v02.md``, decision
-    34).
-    
-    The selected factors and factors to ultimate are those of the chain
-    ladder ``selection`` fitted to the column, so a selected pattern
-    (``ldf=``), the exclusions and the tail apply as in ``ChainLadder``; the
-    exhibit rounds nothing. Friedland multiplies by factors to ultimate
-    rounded to three decimals: give those with ``ldf_kind="cdf"`` to
-    reproduce her projections.
-    
-    Parameters
-    ----------
-    triangle : Triangle
-    column : str
-    selection : ChainLadder, optional
-        The chain ladder whose factors are selected; ``ChainLadder()`` (the
-        volume-weighted average of every year, no tail) by default.
-    averages : dict of str to ChainLadder, optional
-        The averages to show, each the development of a ``ChainLadder``
-        (its ``average``, ``n_periods``, ``drop_high`` and ``drop_low``; its
-        tail is not used). By default Friedland's six: ``"simple latest
-        5"``, ``"simple latest 3"``, ``"medial latest 5x1"``, ``"volume
-        latest 5"``, ``"volume latest 3"`` and ``"geometric latest 4"``.
     
     Raises
     ------
@@ -10674,6 +10646,41 @@ class DevelopmentCurveFit:
         The curve's development past the oldest age: the product of its
         factors over the ``extrap_periods`` periods after it, as
         ``TailCurve`` extrapolates.
+        """
+
+@final
+class DevelopmentExhibit:
+    """
+    Friedland's development exhibit (chapter 7, Exhibit I, sheets 1 and 2)
+    of one column of a single-segment triangle: the link ratios, each named
+    average of them, the selected factors, the tail, the factors to ultimate
+    and the percents developed (``docs/design/reserving-v02.md``, decision
+    34).
+    
+    The selected factors and factors to ultimate are those of the chain
+    ladder ``selection`` fitted to the column, so a selected pattern
+    (``ldf=``), the exclusions and the tail apply as in ``ChainLadder``; the
+    exhibit rounds nothing. Friedland multiplies by factors to ultimate
+    rounded to three decimals: give those with ``ldf_kind="cdf"`` to
+    reproduce her projections.
+    
+    Parameters
+    ----------
+    triangle : Triangle
+    column : str
+    selection : ChainLadder, optional
+        The chain ladder whose factors are selected; ``ChainLadder()`` (the
+        volume-weighted average of every year, no tail) by default.
+    averages : dict of str to ChainLadder, optional
+        The averages to show, each the development of a ``ChainLadder``
+        (its ``average``, ``n_periods``, ``drop_high`` and ``drop_low``; its
+        tail is not used). By default Friedland's six: ``"simple latest
+        5"``, ``"simple latest 3"``, ``"medial latest 5x1"``, ``"volume
+        latest 5"``, ``"volume latest 3"`` and ``"geometric latest 4"``.
+    
+    Raises
+    ------
+    ValueError
         If the triangle has several segments or lacks the column, an
         average cannot be estimated (it is named), or the selection cannot
         be fitted.
