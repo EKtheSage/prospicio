@@ -55,8 +55,10 @@ notebook's seed, on Windows.
   every simulation's pattern: 52 s for 2,000 draws, where the notebook's
   whole test takes about 40 s (#717). The notebook uses `monthly_patterns`
   and says that it pays slowly; #722 asks for the conversion of one
-  deterministic pattern. `docs/guides/submission-schema.md` passes
-  `chain.cdf` to `monthly_patterns` the same way.
+  deterministic pattern. `docs/guides/submission-schema.md` passed
+  `chain.cdf` to `monthly_patterns` the same way until it paid each
+  simulation on its drawn pattern
+  ([the submission schema's drawn patterns](submission-schema-pattern-draws.md)).
 * **`deal_ave`** (#603) compares a deal's actual cumulative paid with the
   priced simulations' `u P S(t)`. With the actual paid on the same pattern
   at 1.25 times the priced mean loss ratio, the ratio to expected is 1.25

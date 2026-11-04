@@ -373,10 +373,9 @@ import tempfile
 from statistics import NormalDist
 
 from prospicio.models import actual_vs_expected
-from prospicio.pricing import (CashflowTerms, CollateralRequirement, DealBook, DealRun, PaymentPattern, Period,
-                               RateHistory, monthly_patterns, year_fraction)
+from prospicio.pricing import CashflowTerms, CollateralRequirement, DealBook, DealRun, Period, RateHistory, year_fraction
 from prospicio.reinsurance import Layer, Tower
-from prospicio.reserving import OdpBootstrap, OdpGlm, Triangle
+from prospicio.reserving import OdpBootstrap, OdpGlm, Triangle, UnderwritingBasis
 from prospicio.risk import statistics
 
 N_SIMS, SEED = 2000, 20261028
@@ -460,12 +459,29 @@ sliding loss_ratio 0.496, ceding_commission 0.329, margin 0.150
 
 The investor's cash flows come from the cash-flow engine: the premium paid
 into a trust, collateral of 30% of the unearned premium and 125% of the
-outstanding loss, claims paid on the chain ladder's pattern spread over the
-months, commutation at five years. Every simulation pays on that one
-pattern. The bootstrap also draws a pattern with each simulation's loss
-(`boot.patterns`, #673), and `terms.run(..., paid_patterns=...)` pays each
-simulation on its own; this guide keeps one pattern because reading 2,000
-drawn patterns month by month takes longer than a guide should.
+outstanding loss, commutation at five years. Each simulation pays its
+claims on its own pattern. The bootstrap draws a development pattern with
+each simulation's loss (`boot.patterns`, #673), in the same order as its
+ultimates, so the 2026 loss ratios above pair with the patterns row by row.
+`boot.patterns.monthly` reads each drawn pattern month by month for a year
+of policies written evenly through 2026, each earning over twelve months
+(`UnderwritingBasis()`), and `terms.run(..., paid_patterns=...)` pays each
+simulation on its row. The patterns run for ten years, until the last of
+them reaches 1, though the deal commutes at month 60: the engine needs each
+row to end at the terms' last paid share. A few of the drawn patterns fall
+at an old age (77 of 2,000, 50 of them after passing 1), and
+`monotone="running_max"` holds each at its largest share so far. The terms' written and earned shares are on the same
+basis: written evenly through each month, and earned by the basis's exposure.
+The terms' own paid pattern, the mean of the rows, pays no simulation: the
+engine checks that each row ends at its last share, and `with_patterns`
+keeps it on the deal for `DealBook.calendar`, which this example does not
+call. Reading the pattern from each accident date instead
+(`monthly_patterns` with the chain ladder's accident-year pattern) would
+pay 7% of the ultimate by month 12 against about 15% on the underwriting
+basis (#722). On this deal the basis matters more than the draws: paying
+every simulation on the rows' mean pattern gives the same median IRR, mean
+MOIC and 5th and 95th percentiles to within 0.1 point, because a
+bootstrap's patterns carry only the factors' parameter uncertainty.
 `deduct_commission=True` takes each
 simulation's commission (here the ceding commission and brokerage) off the
 premium paid in, so one run covers a sliding scale. A book of one deal gives
@@ -476,17 +492,20 @@ root in the range would drop out of the statistics, so `extend=True` looks
 beyond the range when it holds no root (#675).
 
 ```python
-T = 60
-ages = [12 * (i + 1) for i in range(len(chain.cdf))]
-pattern = PaymentPattern.from_development([a / 12 for a in ages], [*[max(1.0, c) for c in chain.cdf[:-1]], 1.0])
-written, earned, paid = monthly_patterns([min(1.0, (m + 1) / 12) for m in range(T)], pattern)
+T, MONTHS = 60, 120
+basis = UnderwritingBasis()
+paid_draws = boot.patterns.monthly(MONTHS, basis=basis, monotone="running_max")  # one row per simulation
+written = [min(1.0, (m + 1) / 12) for m in range(MONTHS)]
+earned = [min(1.0, sum(basis.exposure()[: m + 1])) for m in range(MONTHS)]
+paid = [sum(column) / N_SIMS for column in zip(*paid_draws)]
 terms = CashflowTerms(SHARE * GNPI, T, written, earned, paid,
                       CollateralRequirement({"unearned-premium": 0.30, "outstanding": 1.25}),
                       commutation_requirement=CollateralRequirement({"outstanding": 1.0}),
                       deduct_commission=True, annual_yield=0.03, expense_rate=0.005)
 for name, d in deals.items():
     column = lambda k: d["ratios"].marginal([k]).draws
-    flows = terms.run(column("loss_ratio"), [c + b for c, b in zip(column("ceding_commission"), column("brokerage"))])
+    flows = terms.run(column("loss_ratio"), [c + b for c, b in zip(column("ceding_commission"), column("brokerage"))],
+                      paid_patterns=paid_draws)
     d["run"] = (DealRun.from_tower(name, d["tower"], d["result"], name)
                 .with_flows(flows.flows, flows.funded, flows.opening).with_patterns(written, earned, paid))
     book = DealBook([d["run"]]).cashflows(extend=True)
@@ -498,8 +517,8 @@ for name, d in deals.items():
 ```
 
 ```text
-flat: median IRR +0.405, mean MOIC 1.378
-sliding: median IRR +0.361, mean MOIC 1.351
+flat: median IRR +0.413, mean MOIC 1.366
+sliding: median IRR +0.368, mean MOIC 1.340
 ```
 
 Monitoring compares what happened with what was expected. Until the deal
