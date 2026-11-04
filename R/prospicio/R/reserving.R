@@ -7843,6 +7843,11 @@ pattern_matrix <- function(flat, n_col) {
 #' simulations and the first, `"running_max"` holds each share at the
 #' largest before it, capped at 1, and gives a share that is not positive the
 #' next positive share, which the simulation then pays from its first age.
+#' Bootstrap draws usually need `"running_max"`: at the oldest ages, where
+#' one or two cells set the factor, the ODP bootstrap draws a pseudo factor
+#' below 1 in some simulations, which puts the share above 1 before it falls
+#' back to 1 (77 of 2,000 draws on the sample submission's paid triangle to
+#' 108 months).
 #' Nothing in Meyers' models keeps `beta_d` rising or below 0, so their
 #' shares can fall and pass 1 (on Meyers' group 353 data a share falls in
 #' nearly every simulation): use `"running_max"`, which also caps each share
@@ -7852,6 +7857,13 @@ pattern_matrix <- function(flat, n_col) {
 #'
 #' No fit knows whether its triangle is paid: a pattern from an incurred
 #' triangle is an incurred pattern, and the engine reads it as paid.
+#'
+#' Under a growth-curve reading each simulation's curve is searched from the
+#' mean pattern's, and the simulations are read on all cores, so 2,000 draws
+#' at 144 months take well under a second on 16 cores (a few seconds on one).
+#' The result does not depend on the number of threads; it is within about
+#' `1e-9` of a share of the search from every start that
+#' an [underwriting_basis()]'s conversion of a single pattern makes.
 #'
 #' @param fit An [odp_bootstrap_fit], [mack_bootstrap_fit], [bayes_odp_fit],
 #'   [bayes_odp_fits], [bayes_bf_fit], [bayes_bf_normalised_fit], [meyers_fit],
