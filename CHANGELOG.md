@@ -7,6 +7,161 @@ under "Unreleased" until then.
 
 ## Unreleased
 
+## 0.0.8 (2026-11-04)
+
+### Breaking changes
+
+- Rust: `prospicio_reserving::CurveShape` has the variants `Hoerl`,
+  `Sherman` and `Growth(GrowthCurve)`, and `prospicio_reserving::Error` the
+  variant `DevelopmentCurve`, so an exhaustive `match` on either needs an
+  arm for each; with the data-carrying `Growth` variant, `CurveShape`'s
+  variants no longer have defined discriminants, so a `CurveShape as i32`
+  cast no longer compiles (#556, #729).
+- Rust: `prospicio_reserving::Error` has the variant `Counts`, so an exhaustive `match` on it needs an arm for it (#554, #555, #739).
+- Rust: `prospicio_reserving::Error` has the variant `Exhibit`, so an
+  exhaustive `match` on it needs an arm for it (#557, #735).
+- Rust: `prospicio_reserving::Error` has the variant `IndustryPrior`, so
+  an exhaustive `match` on it needs an arm for it (#604, #732).
+- Rust: `prospicio_reserving::Error` has a new variant `Munich`, so an
+  exhaustive `match` on it needs an arm (#559, #731).
+- Rust: `prospicio_reserving::Error` has the variant `PaidIncurred`, so an
+  exhaustive `match` on it needs an arm for it (#560, #734).
+- Rust: a setting a reserving method does not support is `prospicio_reserving::Error::NotSupported` in every method, no longer `Error::Bootstrap`, `Error::Bayes` or `Error::ClaimsDevelopment` (Merz and Wuthrich's closed form with another `alpha`, a tail, a fully selected sparse age or link ratio exclusions; the bootstraps with a sparse age or a one-year tail or pattern that conflicts with the re-reserving method's; `Synchronized` Bayesian segments; `Compartmental` with one response under free rates, its outstanding table under `Fitted::PaidOnly` and the backtest of a response it does not fit), and the messages read "{setting} is not supported by {method}: {reason}". `Compartmental`'s bound on the `k_p` prior under `Fitted::IncurredOnly` is `Error::InvalidSetting`. `Error` has the variant `NotYetBuilt`, so an exhaustive `match` needs an arm for it (#580, #725).
+- Python: these errors raise `prospicio.NotSupportedError`, a subclass of `ValueError`, and `Compartmental(priors, fitted="paid_only")` (or `"incurred_only"`) under free rates raises when it is built, not when it is fitted. R: they signal an error of class `prospicio_not_supported`, and the compartmental functions refuse those settings before reading the triangle (#580, #725).
+- Excel: `PRO.NPV`, `PRO.IRR` and `PRO.MOIC` are removed. They duplicated
+  Excel's `NPV`, `XNPV`, `IRR` and `XIRR`, or a one-line formula
+  (`1 + released / (funded + opening)`); `PRO.CASHFLOW` still reports each
+  simulation's IRR, NPV and MOIC (`docs/design/xll.md` decision 46; #723).
+
+### Reserving
+
+- A new underwriting year's loss ratio from the Bayesian models:
+  `BayesBfNormalisedFit::new_year` and `MeyersFit::new_year` (with
+  `new_year_with_level` and `NewOriginLevel`) return a `NewYear` with the
+  loss ratio, the ultimate and each simulation's development pattern, for
+  pricing a year not yet written; Python `fit.new_year`, R
+  `bayes_new_year()` (#598, #728).
+- Development curves fitted over every age (#556, #729): `DevelopmentCurve`
+  fits the exponential, inverse power, Hoerl, Sherman or a log-logistic or
+  Weibull growth curve to a triangle's estimated factors, keeps the
+  observed factors before `keep_observed_until`, and gives the fitted
+  factors as a selected pattern (`pattern()`, Python `selected()`, R
+  `development_curve_selected()`) with the curve's tail (`tail()`), the
+  residuals, the sum of squares, R-squared and adjusted R-squared;
+  `compare` fits several shapes to the same factors. Python
+  `DevelopmentCurve(shape=...)`, R `development_curve()` and
+  `development_curve_compare()`. `TailCurve` (R `tail_curve()`) takes
+  every shape. Matches R's `lm` and `nls` on RAA and GenIns.
+- Methods on claim counts from Friedland's chapters 11 to 13 (#554, #555, #739): `FrequencySeverity` (approaches 1 and 2), `Disposal`, `CaseOutstanding` and `case_development_factor`, and the Berquist-Sherman adjustments `CaseAdequacy`, `SettlementRate` and `BerquistSherman`, which return a triangle for any method to project; at parity with the printed exhibits, GL Insurer's disposal among them, and chainladder-python's `BerquistSherman`. In Python (`case_adequacy_adjust`, `settlement_rate_adjust`, `berquist_sherman_adjust`, `prospicio.reserving.FrequencySeverity`, `Disposal`, `CaseOutstanding`) and R (`case_adequacy_adjust()`, `settlement_rate_adjust()`, `berquist_sherman_adjust()`, `frequency_severity()`, `disposal_method()`, `case_outstanding()`).
+- Friedland's exhibits and a weighted selection of ultimates
+  (`docs/design/reserving-v02.md`, decision 34): `DevelopmentExhibit` (link
+  ratios, Friedland's six averages, selected factors, factors to ultimate
+  and percents developed), `UltimateExhibit` (each method's ultimate, IBNR
+  and unpaid beside the claims to date) and `UltimateExhibit::select` with
+  `MethodWeights` by origin, by age or one method, each origin's weights
+  summing to 1; Friedland's chapter 7 and 15 exhibits to the printed digits
+  and chainladder-python's `VotingChainladder` on GenIns. Python
+  `DevelopmentExhibit`, `UltimateExhibit`, `SelectedUltimates` and
+  `select_ultimates`; R `development_exhibit()`, `ultimate_exhibit()` and
+  `select_ultimates()` (#557, #735).
+- Salvage and subrogation, ALAE and ULAE: the ratio of two columns developed
+  to ultimate, multiplicatively or additively, with a selected ratio per
+  origin, and unpaid ULAE by the classical technique, Kittel's refinement and
+  Conger and Nolibos' generalized approach, at parity with Friedland's
+  chapters 14, 16 and 17 (`RatioDevelopment`, `Ulae`; Python
+  `RatioDevelopment`, `ulae_classical`, `ulae_kittel`, `ulae_conger_nolibos`;
+  R `ratio_development()`, `ulae_estimate()`;
+  `docs/design/reserving-v02.md` decision 37; #558, #740).
+- An industry prior for the normalised Bayesian Bornhuetter-Ferguson from
+  other companies' triangles (`reserving-bayes.md` decision 29):
+  `IndustryPrior::from_triangles` (one triangle and premium vector per
+  company) and `from_segments` (one triangle with a segment per company)
+  estimate the mean ultimate loss ratio, its spread between companies
+  (`common_cv`) and within a company (`cv`), the chain ladder's ODP
+  process part, and a pattern prior (`PatternPrior`, the mean and sd over
+  companies of each company's log share ratios), with a `PriorReport` and
+  a warning below 10 companies; `at_age` cuts the prior to a younger
+  triangle with a tail factor; `to_bf_normalised_settings`, `fit` and
+  `one_year` give and fit the `BayesBfNormalised`. No data ships with the
+  library. `BayesBfNormalised::fit_with_pattern_prior` and
+  `one_year_with_pattern_prior` replace the vague normal prior on each log
+  share ratio by the pattern prior's; without one every result is
+  unchanged. Python `IndustryPrior`, `PatternPrior` and
+  `BayesBfNormalised(pattern_prior=)`; R `industry_prior()`,
+  `pattern_prior()`, `industry_prior_at_age()`, `bayes_bf_industry()`,
+  `bayes_bf_industry_one_year()` and `bayes_bf_normalised(pattern_prior =)`
+  (#604, #732).
+- `DevelopmentPatterns::monthly` (Python `fit.patterns.monthly`, R
+  `monthly_pattern_draws()`) is about fifty times faster under the Weibull
+  and loglogistic readings (#717, #726): the simulations are read in parallel (a
+  new `parallel` feature of `prospicio-reserving`, on with `bayes` and in
+  the bindings, off on the WASM path), and each simulation's curve is
+  searched from the mean pattern's. 2,000 ODP bootstrap draws at 144
+  months on an underwriting basis take about 0.3 s on 16 cores, from 17 s
+  to 21 s (3.4 s on one thread). The monthly shares move by less than
+  `1e-9` of a share, and they do not depend on the number of threads. The
+  documentation says that bootstrap draws usually need
+  `monotone="running_max"`.
+- The Munich chain ladder (Quarg and Mack 2004): paid and incurred
+  developed together, each step's factor corrected by the origin's
+  paid-to-incurred residual, at parity with R ChainLadder's
+  `MunichChainLadder` and chainladder-python's `MunichAdjustment`, with
+  tails and over segments (`MunichChainLadder`, `MunichFit`; Python
+  `MunichChainLadder`, R `munich_chain_ladder()`;
+  `docs/design/reserving-v02.md` decision 33; #559, #731).
+- Merz and Wüthrich's paid-incurred chain: `PaidIncurredChain` in Rust
+  and Python and `paid_incurred_chain()` in R fit the paid and the
+  incurred triangle in one log-normal Bayesian model with a closed-form
+  posterior, with each origin's ultimate, reserve, incurred weight and
+  standard error. `convention = "r_chainladder"` reproduces R
+  ChainLadder's `PaidIncurredChain`, which leaves out part of the
+  posterior (`docs/design/reserving-v02.md` decision 32; #560, #734).
+- One error for a setting a method does not support (#580, #725): `Error::NotSupported` with `Error::is_not_supported()`, `Compartmental::check_supported()`, Python `prospicio.NotSupportedError` and the R condition class `prospicio_not_supported`, so a caller can catch the case in one place.
+
+### Models
+
+- Zero-inflated and hurdle Poisson and negative binomial models
+  (`prospicio_glm::zero::ZeroInflated`, `Hurdle`, `TwoPartFit`) with the
+  probability of each count, joint draws and Vuong's test (`vuong`,
+  `count_log_likelihoods`), matching pscl 1.5.9's `zeroinfl` and `hurdle`
+  maximised to the end; Python `ZeroInflated`, `Hurdle`, R
+  `zeroinfl_fit(y ~ x | z)`, `hurdle_fit()`, `vuong_test()` (#548, #727).
+- Linear quantile regression (`prospicio_glm::quantile::QuantileRegression`)
+  with Powell's kernel and paired bootstrap standard errors, several `tau`
+  at once with rearrangement, and expectile regression
+  (`ExpectileRegression`), penalised or not, with sandwich standard
+  errors, matching quantreg 5.97's `rq(method = "br")` and `summary.rq(se
+  = "ker")` and expectreg 0.54's `expectreg.ls`; Python
+  `QuantileRegression`, `ExpectileRegression`, R `quantreg_fit()`,
+  `expectreg_fit()` (#550, #727).
+- ICE curves (`ice`), accumulated local effects (`ale`, as ALEPlot's,
+  numeric and categorical) and SHAP values (`shap_values`, exact or by
+  permutation sampling, additive, matching shap's exact `KernelExplainer`),
+  and tree SHAP on the boosters from the engines' own contributions
+  (`BoosterFit.contributions`); in Python and R (`ice()`, `ale()`,
+  `shap_values()`, `booster_contributions()`) (#547, #727).
+
+### Examples
+
+- `ils_deal_analysis` and its R twin use the fixes of the closed workaround issues: `monthly_patterns`
+  (#601), which also corrects an earned pattern that fell after month 24 and held the flat
+  structure's median IRR at 18% where it is 40% (2,000 simulations), `loss_ratio_draws` (#602)
+  and `deal_ave` on an illustrative actual paid (#603); its workaround table gives each row's
+  status, with #600 kept on purpose and #605 done by `submission-schema`. The paid pattern's
+  basis is #722.
+- The `submission-schema` guide pays each bootstrap simulation on its own drawn pattern, read month
+  by month on an underwriting basis (`boot.patterns.monthly(..., basis=UnderwritingBasis())` and
+  `terms.run(..., paid_patterns=)`), with written and earned shares on the same basis; the flat
+  structure's median IRR moves from 40.5% to 41.3% and the sample tables in
+  `examples/data/deal_report/` change with it (#736).
+
+### Excel
+
+- The add-in's README is now a manual grouped by area (reserving,
+  severity and layers, exposure rating, experience rating and ratemaking,
+  aggregate and treaty terms, capital), with a "Start here" table of the
+  functions most work needs and each area's arguments beside its table (#723).
+
 ## 0.0.7 (2026-10-29)
 
 ### Breaking changes
