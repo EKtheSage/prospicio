@@ -86,19 +86,39 @@ pub enum Error {
         value: f64,
         expected: &'static str,
     },
-    /// A setting is not supported by the method it was given to: `setting`
-    /// names it, `method` the method and `reason` why.
+    /// A setting, or a combination of settings, that the method it was
+    /// given to does not support: `setting` names it, `method` the method
+    /// and `reason` why, usually with what to use instead. This is the one
+    /// variant for that situation in every method (`reserving-v02.md`
+    /// decision 29): the variants named after a method ([`Bootstrap`],
+    /// [`Bayes`], [`ClaimsDevelopment`]) carry only failures on the data.
+    /// The Python bindings raise it as `prospicio.NotSupportedError` and the
+    /// R package signals it with the condition class
+    /// `prospicio_not_supported`.
+    ///
+    /// [`Bootstrap`]: Self::Bootstrap
+    /// [`Bayes`]: Self::Bayes
+    /// [`ClaimsDevelopment`]: Self::ClaimsDevelopment
     NotSupported {
         setting: &'static str,
         method: &'static str,
         reason: &'static str,
+    },
+    /// A setting that is planned for the method but not built in this
+    /// release (`reserving-v02.md` decision 29). No setting raises it
+    /// today; the bindings treat it as [`NotSupported`](Self::NotSupported).
+    NotYetBuilt {
+        setting: &'static str,
+        method: &'static str,
     },
     /// The method needs link ratios and the triangle has none: every origin
     /// is observed at one age only, a latest diagonal. `method` names it.
     LatestDiagonalOnly { method: &'static str },
     /// A latest diagonal cannot be built or fitted as given.
     Diagonal(String),
-    /// The bootstrap cannot run on this input or with these settings.
+    /// The bootstrap cannot run on this input: the triangle's shape or
+    /// values, or a setting's value out of its range. A setting the
+    /// bootstrap does not support is [`NotSupported`](Self::NotSupported).
     Bootstrap(&'static str),
     /// A bootstrap's own link ratio exclusions (`n_periods`, `drop_high`
     /// and `drop_low`) differ from the re-reserving method's in its one-year
@@ -106,9 +126,12 @@ pub enum Error {
     ExclusionsMismatch { bootstrap: String, method: String },
     /// The ODP GLM cannot be fitted to this triangle.
     OdpGlm(String),
-    /// A Bayesian reserving model cannot be fitted to this triangle or
-    /// with these settings, for example an origin whose observed increments
-    /// sum to zero or less, which leaves the log-linear mean undefined.
+    /// A Bayesian reserving model cannot be fitted to this triangle, for
+    /// example an origin whose observed increments sum to zero or less,
+    /// which leaves the log-linear mean undefined, or its sampler or mode
+    /// search failed. A setting the model does not support is
+    /// [`NotSupported`](Self::NotSupported), and one out of its range
+    /// [`InvalidSetting`](Self::InvalidSetting).
     Bayes(String),
     /// An excess-layer pattern cannot be derived from this input
     /// (`reserving-excess.md`).
@@ -118,7 +141,7 @@ pub enum Error {
     /// pattern or a horizon too short.
     PatternDraws(String),
     /// An exhibit or a selection of ultimates cannot be built as given
-    /// (`reserving-v02.md` decision 30): lengths that differ, an unknown or
+    /// (`reserving-v02.md` decision 34): lengths that differ, an unknown or
     /// repeated method, or weights that do not sum to 1.
     Exhibit(String),
     /// A triangle cannot be read from a file (the `io` feature): the file
@@ -131,7 +154,10 @@ pub enum Error {
     /// ([`BenchmarkCurve`](crate::BenchmarkCurve)).
     BenchmarkCurve(String),
     /// The claims development result (Merz–Wüthrich) does not apply to
-    /// this fit.
+    /// this triangle: its latest values are not on one calendar diagonal.
+    /// A setting of the fit that the closed form does not support (a tail,
+    /// `alpha` other than 1, link ratio exclusions) is
+    /// [`NotSupported`](Self::NotSupported).
     ClaimsDevelopment(&'static str),
     /// Re-reserving failed in `failed` of `n_sims` simulations of the
     /// one-year bootstrap; `source` is one of the failures (the first in
@@ -230,6 +256,10 @@ impl fmt::Display for Error {
                 method,
                 reason,
             } => write!(f, "{setting} is not supported by {method}: {reason}"),
+            Self::NotYetBuilt { setting, method } => write!(
+                f,
+                "{setting} is not yet built for {method}: it is planned for a later release"
+            ),
             Self::LatestDiagonalOnly { method } => write!(
                 f,
                 "{method} needs link ratios, and the triangle has none: every origin is observed \
@@ -273,10 +303,66 @@ impl fmt::Display for Error {
     }
 }
 
+impl Error {
+    /// Whether the error is a setting the method does not support
+    /// ([`NotSupported`](Self::NotSupported), [`NotYetBuilt`](Self::NotYetBuilt)
+    /// or [`ExclusionsMismatch`](Self::ExclusionsMismatch), a bootstrap's
+    /// exclusions that differ from its re-reserving method's), looking
+    /// through [`InSegment`](Self::InSegment). The Python and R bindings use
+    /// it to raise `prospicio.NotSupportedError` and the condition class
+    /// `prospicio_not_supported`.
+    pub fn is_not_supported(&self) -> bool {
+        match self {
+            Self::NotSupported { .. }
+            | Self::NotYetBuilt { .. }
+            | Self::ExclusionsMismatch { .. } => true,
+            Self::InSegment { source, .. } => source.is_not_supported(),
+            _ => false,
+        }
+    }
+}
+
 impl std::error::Error for Error {}
 
 impl From<prospicio_core::Error> for Error {
     fn from(e: prospicio_core::Error) -> Self {
         Self::Core(e)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn not_supported_is_found_through_a_segment() {
+        let unsupported = Error::NotSupported {
+            setting: "s",
+            method: "m",
+            reason: "r",
+        };
+        assert!(unsupported.is_not_supported());
+        assert!(
+            Error::NotYetBuilt {
+                setting: "s",
+                method: "m"
+            }
+            .is_not_supported()
+        );
+        let wrapped = Error::InSegment {
+            label: "a".into(),
+            source: Box::new(unsupported),
+        };
+        assert!(wrapped.is_not_supported());
+        assert!(!Error::Bootstrap("no residuals to resample").is_not_supported());
+        assert!(!Error::Bayes("x".into()).is_not_supported());
+        assert_eq!(
+            Error::NotYetBuilt {
+                setting: "s",
+                method: "m"
+            }
+            .to_string(),
+            "s is not yet built for m: it is planned for a later release"
+        );
     }
 }

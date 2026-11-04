@@ -1,5 +1,5 @@
 //! Friedland-style exhibits and a weighted selection of the methods'
-//! ultimates (`docs/design/reserving-v02.md`, decision 30; issue #557).
+//! ultimates (`docs/design/reserving-v02.md`, decision 34; issue #557).
 //!
 //! A reserving review ends in exhibits: the development triangle with its
 //! link ratios, averages, selected factors, factors to ultimate and

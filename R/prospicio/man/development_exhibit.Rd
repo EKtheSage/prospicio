@@ -92,7 +92,7 @@ A \code{development_exhibit} object.
 \description{
 Friedland's development exhibit of one column (\emph{Estimating Unpaid Claims
 Using Basic Techniques}, chapter 7, Exhibit I; Rust's
-\code{DevelopmentExhibit}, \code{docs/design/reserving-v02.md}, decision 30): the
+\code{DevelopmentExhibit}, \code{docs/design/reserving-v02.md}, decision 34): the
 cumulative values, the link ratios, several averages of them, the
 selected age-to-age factors, the factors to ultimate and the percents
 developed.

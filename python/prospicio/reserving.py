@@ -62,6 +62,7 @@ from .prospicio_native import (
     Meyers,
     MeyersFit,
     MeyersFits,
+    NotSupportedError,
     OdpBootstrap,
     OdpBootstrapFit,
     OdpGlm,
@@ -133,6 +134,7 @@ __all__ = [
     "Meyers",
     "MeyersFit",
     "MeyersFits",
+    "NotSupportedError",
     "Compartmental",
     "CompartmentalCandidate",
     "CompartmentalPriors",
@@ -332,7 +334,7 @@ def select_ultimates(
     ultimates, with its IBNR and unpaid, as a table: Friedland's selected
     ultimate claims (chapter 15, Exhibit I, sheet 2, column (11)) and
     chainladder-python's ``VotingChainladder``
-    (docs/design/reserving-v02.md, decision 30).
+    (docs/design/reserving-v02.md, decision 34).
 
     Each origin's weights must be at least 0 and sum to 1 (within 1e-9);
     they are not rescaled. A method left out has weight 0, and a method

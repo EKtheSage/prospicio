@@ -26,7 +26,7 @@ default_weighting=...)` fits each method on the same triangle and
 `sample_weight` (the exposure, shared by every method) and returns, per
 origin, the weighted average of their ultimates. prospicio's
 `UltimateExhibit::select` with `MethodWeights::ByOrigin` reproduces it
-(`docs/design/reserving-v02.md`, decision 30).[^voting]
+(`docs/design/reserving-v02.md`, decision 34).[^voting]
 
 # Conventions that matter for parity
 
@@ -38,7 +38,7 @@ origin, the weighted average of their ultimates. prospicio's
 - **Rescaled by the sum.** The ultimate is the weighted sum divided by the
   sum of the origin's weights, so `(2, 1, 1)` is the same as
   `(0.5, 0.25, 0.25)`. prospicio refuses weights that do not sum to 1
-  within 1e-9 (decision 30, item 8, open).[^voting]
+  within 1e-9 (decision 34, item 8, open).[^voting]
 - **Missing ultimates.** The weighted sum multiplies every method's
   ultimate, so a NaN ultimate with weight 0 still gives NaN; prospicio
   skips a method with weight 0. Read from the source, not run.[^voting]

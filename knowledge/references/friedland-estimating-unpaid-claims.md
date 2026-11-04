@@ -16,7 +16,7 @@ sources:
     title: The guide that reproduces it, run by python/tests/test_guides.py
   - id: exhibits
     resource: ../validation/tests/reserving_exhibits.rs
-    title: The exhibit and selection tests (reserving-v02.md decision 30), run in CI
+    title: The exhibit and selection tests (reserving-v02.md decision 34), run in CI
 ---
 
 # What it is

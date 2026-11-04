@@ -43,7 +43,7 @@ The selected ultimate per origin, a weighting of several methods'
 ultimates, with its IBNR and unpaid: Friedland's selected ultimate claims
 (chapter 15, Exhibit I, sheet 2, column (11)) and chainladder-python's
 \code{VotingChainladder} (Rust's \code{UltimateExhibit::select},
-\code{docs/design/reserving-v02.md}, decision 30).
+\code{docs/design/reserving-v02.md}, decision 34).
 }
 \details{
 Each origin's weights must be at least 0 and sum to 1 (within 1e-9);

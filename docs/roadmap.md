@@ -506,7 +506,7 @@ what it is aiming for by v1.0.
     and `dfCorTest` to 1e-12 on RAA, GenIns and ABC, and Mack's printed
     values on RAA.
   - Friedland's exhibits and a weighted selection of ultimates
-    (`reserving-v02.md`, decision 30; branch `claude/friedland-exhibits`,
+    (`reserving-v02.md`, decision 34; branch `claude/friedland-exhibits`,
     issue #557, in Rust, Python and R): `DevelopmentExhibit` (link ratios,
     Friedland's six averages, selected factors, factors to ultimate and
     percents developed), `UltimateExhibit` (each method's ultimate, IBNR
@@ -534,6 +534,10 @@ what it is aiming for by v1.0.
   (done), and `Compartmental::one_year_segments` gives the one-year view
   over segments (decision 8; Rust, Python and R).
   Claim-level reserving (v0.8) is parked; see the milestones.
+  Proposed: a hierarchical Bornhuetter-Ferguson over several programs with
+  an industry hyperprior on the loss ratio (#599, `reserving-bayes.md`
+  decision 30, PRs 16 and 17), waiting on the user's choice of pooling
+  structure (open decision 26).
   Also next: excess-layer loss development (#192,
   `reserving-excess.md`, Accepted 2026-10-21): layer factors derived from a ground-up
   incurred triangle and a severity (PR 1, in Rust: `ExcessPattern::from_ground_up`,
@@ -557,6 +561,9 @@ what it is aiming for by v1.0.
   decision 28, #600; the bootstraps and `BayesOdp`, `BayesBf` and
   `BayesBfNormalised`, Meyers' CRC, CSR and CAY (#678) and
   `Compartmental`, models 1 and 2 (#679), in Rust, Python and R): done.
+  Read month by month in parallel and from the mean pattern's curve,
+  2,000 draws at 144 months in about 0.4 s on 16 cores (decision 30,
+  #717): done.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
 

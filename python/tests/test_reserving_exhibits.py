@@ -1,5 +1,5 @@
 """Friedland's exhibits and the weighted selection of ultimates
-(docs/design/reserving-v02.md, decision 30; issue #557).
+(docs/design/reserving-v02.md, decision 34; issue #557).
 
 Friedland (2010), Estimating Unpaid Claims Using Basic Techniques: chapter 7,
 Exhibit I (U.S. Industry Auto) and chapter 15, Exhibit I, sheets 2 and 6 (XYZ

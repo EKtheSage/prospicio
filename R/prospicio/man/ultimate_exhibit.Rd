@@ -43,7 +43,7 @@ An \code{ultimate_exhibit} object.
 \description{
 A summary of each method's ultimate per origin beside the claims to date
 (Friedland, chapter 15, Exhibit I, sheets 1 to 6; Rust's
-\code{UltimateExhibit}, \code{docs/design/reserving-v02.md}, decision 30). Each
+\code{UltimateExhibit}, \code{docs/design/reserving-v02.md}, decision 34). Each
 method's IBNR is its ultimate less reported claims and its unpaid is its
 ultimate less paid claims. \code{\link[=select_ultimates]{select_ultimates()}} weights the methods into
 a selected ultimate.

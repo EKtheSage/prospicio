@@ -6,7 +6,7 @@
 ### Reserving
 
 - Friedland's exhibits and a weighted selection of ultimates
-  (`docs/design/reserving-v02.md`, decision 30): `DevelopmentExhibit` (link
+  (`docs/design/reserving-v02.md`, decision 34): `DevelopmentExhibit` (link
   ratios, Friedland's six averages, selected factors, factors to ultimate
   and percents developed), `UltimateExhibit` (each method's ultimate, IBNR
   and unpaid beside the claims to date) and `UltimateExhibit::select` with
