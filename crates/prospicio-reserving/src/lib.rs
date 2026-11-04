@@ -56,6 +56,7 @@ pub mod benchmark_curve;
 pub mod bootstrap;
 pub mod chain_ladder;
 pub mod clark;
+pub mod curve;
 pub mod dependence;
 pub mod development;
 pub mod diagnostics;
@@ -100,6 +101,7 @@ pub use bootstrap::{
 };
 pub use chain_ladder::{ChainLadder, ChainLadderFit};
 pub use clark::{ClarkCapeCod, ClarkFit, ClarkLdf, GrowthCurve};
+pub use curve::{DevelopmentCurve, DevelopmentCurveFit};
 pub use dependence::SegmentDependence;
 pub use development::{Average, Development, DevelopmentFit, SigmaInterpolation};
 pub use diagnostics::Diagnostics;

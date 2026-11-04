@@ -73,7 +73,7 @@ impl GrowthCurve {
     }
 
     /// `(dG/domega, dG/dtheta)` at `age`; 0 at age 0 and at infinity.
-    fn gradient(self, age: f64, omega: f64, theta: f64) -> [f64; 2] {
+    pub(crate) fn gradient(self, age: f64, omega: f64, theta: f64) -> [f64; 2] {
         if !(age > 0.0 && age.is_finite()) {
             return [0.0; 2];
         }

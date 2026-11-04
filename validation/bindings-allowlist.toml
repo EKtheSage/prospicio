@@ -216,7 +216,6 @@
 "CalendarDiagonal" = "unbound on 2026-10-28 (seed); review"
 "CalendarView" = "unbound on 2026-10-28 (seed); review"
 "CellForecast" = "unbound on 2026-10-28 (seed); review"
-"DevelopmentFit" = "unbound on 2026-10-28 (seed); review"
 "DevelopmentPair" = "unbound on 2026-10-28 (seed); review"
 "Diagonal" = "unbound on 2026-10-28 (seed); review"
 "LatestDiagonal" = "unbound on 2026-10-28 (seed); review"
@@ -485,7 +484,6 @@
 [r.prospicio_reserving]
 "CalendarView" = "unbound on 2026-10-28 (seed); review"
 "CellForecast" = "unbound on 2026-10-28 (seed); review"
-"DevelopmentFit" = "unbound on 2026-10-28 (seed); review"
 "DevelopmentPair" = "unbound on 2026-10-28 (seed); review"
 "Diagonal" = "unbound on 2026-10-28 (seed); review"
 "LatestDiagonal" = "unbound on 2026-10-28 (seed); review"

@@ -2593,6 +2593,10 @@ Triangle$to_text <- function(max_rows, max_cols) .Call(wrap__Triangle__to_text, 
 
 Triangle$chain_ladder <- function(column, average, sigma_interpolation, excl, tail, ldf) .Call(wrap__Triangle__chain_ladder, self, column, average, sigma_interpolation, excl, tail, ldf)
 
+Triangle$development_curve <- function(column, average, excl, shape, fit_from, fit_to, keep_observed_until) .Call(wrap__Triangle__development_curve, self, column, average, excl, shape, fit_from, fit_to, keep_observed_until)
+
+Triangle$development_curve_compare <- function(column, average, excl, shapes, fit_from, fit_to, keep_observed_until) .Call(wrap__Triangle__development_curve_compare, self, column, average, excl, shapes, fit_from, fit_to, keep_observed_until)
+
 Triangle$calendar_year_effect <- function(column, ci) .Call(wrap__Triangle__calendar_year_effect, self, column, ci)
 
 Triangle$development_correlation <- function(column, ci) .Call(wrap__Triangle__development_correlation, self, column, ci)
@@ -3840,6 +3844,51 @@ BenchmarkCurveFit$pattern <- function(ages) .Call(wrap__BenchmarkCurveFit__patte
 #' @export
 `[[.BenchmarkCurveFit` <- `$.BenchmarkCurveFit`
 
+DevelopmentCurveFit <- new.env(parent = emptyenv())
+
+DevelopmentCurveFit$shape <- function() .Call(wrap__DevelopmentCurveFit__shape, self)
+
+DevelopmentCurveFit$fit_period <- function() .Call(wrap__DevelopmentCurveFit__fit_period, self)
+
+DevelopmentCurveFit$keep_observed_until <- function() .Call(wrap__DevelopmentCurveFit__keep_observed_until, self)
+
+DevelopmentCurveFit$parameters <- function() .Call(wrap__DevelopmentCurveFit__parameters, self)
+
+DevelopmentCurveFit$development <- function() .Call(wrap__DevelopmentCurveFit__development, self)
+
+DevelopmentCurveFit$observed <- function() .Call(wrap__DevelopmentCurveFit__observed, self)
+
+DevelopmentCurveFit$fitted <- function() .Call(wrap__DevelopmentCurveFit__fitted, self)
+
+DevelopmentCurveFit$residuals <- function() .Call(wrap__DevelopmentCurveFit__residuals, self)
+
+DevelopmentCurveFit$in_fit <- function() .Call(wrap__DevelopmentCurveFit__in_fit, self)
+
+DevelopmentCurveFit$attachment <- function() .Call(wrap__DevelopmentCurveFit__attachment, self)
+
+DevelopmentCurveFit$ldf <- function() .Call(wrap__DevelopmentCurveFit__ldf, self)
+
+DevelopmentCurveFit$n_points <- function() .Call(wrap__DevelopmentCurveFit__n_points, self)
+
+DevelopmentCurveFit$n_parameters <- function() .Call(wrap__DevelopmentCurveFit__n_parameters, self)
+
+DevelopmentCurveFit$sum_of_squares <- function() .Call(wrap__DevelopmentCurveFit__sum_of_squares, self)
+
+DevelopmentCurveFit$r_squared <- function() .Call(wrap__DevelopmentCurveFit__r_squared, self)
+
+DevelopmentCurveFit$adjusted_r_squared <- function() .Call(wrap__DevelopmentCurveFit__adjusted_r_squared, self)
+
+DevelopmentCurveFit$factor <- function(position) .Call(wrap__DevelopmentCurveFit__factor, self, position)
+
+DevelopmentCurveFit$tail <- function(extrap_periods) .Call(wrap__DevelopmentCurveFit__tail, self, extrap_periods)
+
+DevelopmentCurveFit$pattern <- function() .Call(wrap__DevelopmentCurveFit__pattern, self)
+
+#' @export
+`$.DevelopmentCurveFit` <- function (self, name) { func <- DevelopmentCurveFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.DevelopmentCurveFit` <- `$.DevelopmentCurveFit`
 MunichFit <- new.env(parent = emptyenv())
 
 MunichFit$n_segments <- function() .Call(wrap__MunichFit__n_segments, self)
