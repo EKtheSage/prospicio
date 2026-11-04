@@ -32,6 +32,9 @@ use prospicio_reserving::{
     UltimateExhibit as UltimateExhibitInner, UltimateSelection, calendar_year_effect,
     development_correlation, friedland_averages,
 };
+use prospicio_reserving::{
+    PaidIncurredChain, PicConvention, PicFit, PicPriors, VarianceExtrapolation,
+};
 
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
 use prospicio_reserving::bayes::{
@@ -2525,6 +2528,63 @@ impl Triangle {
         .map_err(to_r)?;
         Ok(ClarkFit { inner })
     }
+
+    /// Merz and Wuthrich's paid-incurred chain on the `paid` and `incurred`
+    /// columns (`reserving-v02.md`, decision 32). `sigma` and `tau` are
+    /// `NULL` to estimate them; an empty prior pair leaves that side
+    /// non-informative.
+    #[allow(clippy::too_many_arguments)]
+    fn paid_incurred_chain(
+        &self,
+        paid: &str,
+        incurred: &str,
+        sigma: Nullable<Vec<f64>>,
+        tau: Nullable<Vec<f64>>,
+        extrapolation: &str,
+        convention: &str,
+        phi_mean: Vec<f64>,
+        phi_sd: Vec<f64>,
+        psi_mean: Vec<f64>,
+        psi_sd: Vec<f64>,
+    ) -> Result<PaidIncurredFit> {
+        let given = |x: Nullable<Vec<f64>>| match x {
+            Nullable::NotNull(v) => Some(v),
+            Nullable::Null => None,
+        };
+        let extrapolation = match extrapolation {
+            "loglinear" => VarianceExtrapolation::LogLinear,
+            "mack" => VarianceExtrapolation::Mack,
+            other => {
+                return Err(Error::Other(format!(
+                    "extrapolation must be \"loglinear\" or \"mack\", got {other:?}"
+                )));
+            }
+        };
+        let convention = match convention {
+            "model" => PicConvention::Model,
+            "r_chainladder" => PicConvention::RChainLadder,
+            other => {
+                return Err(Error::Other(format!(
+                    "convention must be \"model\" or \"r_chainladder\", got {other:?}"
+                )));
+            }
+        };
+        let inner = PaidIncurredChain {
+            priors: PicPriors {
+                phi_mean,
+                phi_sd,
+                psi_mean,
+                psi_sd,
+            },
+            sigma: given(sigma),
+            tau: given(tau),
+            extrapolation,
+            convention,
+        }
+        .fit(&self.inner, paid, incurred)
+        .map_err(to_r)?;
+        Ok(PaidIncurredFit { inner })
+    }
 }
 
 /// How development past the oldest age is estimated: a constant factor, a
@@ -3632,6 +3692,101 @@ impl ClarkFit {
         Ok(Self {
             inner: pick(&self.inner, keys, values)?,
         })
+    }
+}
+
+/// A paid-incurred chain fit of a single-segment triangle (Merz and
+/// Wuthrich 2010). Per-origin vectors run over the triangle's origins.
+#[extendr]
+pub(crate) struct PaidIncurredFit {
+    inner: PicFit,
+}
+
+#[extendr]
+impl PaidIncurredFit {
+    fn origins(&self) -> Vec<String> {
+        self.inner.origins.iter().map(ToString::to_string).collect()
+    }
+
+    fn development(&self) -> Vec<i32> {
+        self.inner.ages.iter().map(|&a| a as i32).collect()
+    }
+
+    fn latest(&self) -> Vec<f64> {
+        self.inner.latest_paid.clone()
+    }
+
+    fn latest_incurred(&self) -> Vec<f64> {
+        self.inner.latest_incurred.clone()
+    }
+
+    fn ultimate(&self) -> Vec<f64> {
+        self.inner.ultimate.clone()
+    }
+
+    fn reserve(&self) -> Vec<f64> {
+        self.inner.reserve.clone()
+    }
+
+    fn incurred_weight(&self) -> Vec<f64> {
+        self.inner.incurred_weight.clone()
+    }
+
+    fn std_err(&self) -> Vec<f64> {
+        self.inner.std_err.clone()
+    }
+
+    fn total_ultimate(&self) -> f64 {
+        self.inner.total_ultimate()
+    }
+
+    fn total_reserve(&self) -> f64 {
+        self.inner.total_reserve()
+    }
+
+    fn total_std_err(&self) -> f64 {
+        self.inner.total_std_err
+    }
+
+    fn sigma(&self) -> Vec<f64> {
+        self.inner.sigma.clone()
+    }
+
+    fn tau(&self) -> Vec<f64> {
+        self.inner.tau.clone()
+    }
+
+    fn phi(&self) -> Vec<f64> {
+        self.inner.phi().to_vec()
+    }
+
+    fn psi(&self) -> Vec<f64> {
+        self.inner.psi().to_vec()
+    }
+
+    fn posterior_sd(&self) -> Vec<f64> {
+        self.inner.posterior_sd()
+    }
+
+    /// Row-major, `(Phi_0..Phi_J, Psi_0..Psi_{J-1})` on both axes.
+    fn posterior_covariance(&self) -> Vec<f64> {
+        self.inner.posterior_covariance.clone()
+    }
+
+    fn n_segments(&self) -> i32 {
+        1
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn development_table(&self) -> List {
+        fit_table(self.inner.development_table())
     }
 }
 
@@ -7257,6 +7412,7 @@ extendr_module! {
     impl OneYearFit;
     impl ClarkFit;
     impl BenchmarkCurveFit;
+    impl PaidIncurredFit;
     impl DevelopmentCurveFit;
     impl MunichFit;
 }

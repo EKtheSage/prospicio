@@ -189,9 +189,9 @@ mod prospicio_native {
         PyGlmCandidate, PyIndustryPrior, PyLatestDiagonal, PyLayerSharePrior, PyMack,
         PyMackBootstrap, PyMackBootstrapFit, PyMackFit, PyMeyers, PyMeyersFit, PyMeyersFits,
         PyMunichChainLadder, PyMunichFit, PyNewYear, PyOdpBootstrap, PyOdpBootstrapFit,
-        PyOneYearFit, PyPatternPrior, PySelectedUltimates, PyTailBondy, PyTailConstant,
-        PyTailCurve, PyTailLogLinear, PyTriangle, PyUltimateExhibit, PyUnderwritingBasis,
-        calendar_year_effect, development_correlation, diagonal_backtest,
+        PyOneYearFit, PyPaidIncurredChain, PyPaidIncurredFit, PyPatternPrior, PySelectedUltimates,
+        PyTailBondy, PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle, PyUltimateExhibit,
+        PyUnderwritingBasis, calendar_year_effect, development_correlation, diagonal_backtest,
     };
     #[pymodule_export]
     use super::risk::{

@@ -12,7 +12,8 @@
 //! ([`MackBootstrap::fit`]), and Clark's growth curves
 //! ([`ClarkLdf`], [`ClarkCapeCod`]), and selected development patterns
 //! ([`SelectedPattern`], decision 12), and a growth curve fitted to a
-//! benchmark pattern ([`BenchmarkCurve`], decision 23)
+//! benchmark pattern ([`BenchmarkCurve`], decision 23), and Merz and
+//! Wüthrich's paid-incurred chain ([`PaidIncurredChain`], decision 32)
 //! (`docs/design/reserving-v02.md`).
 //! Results are checked against R ChainLadder and chainladder-python in
 //! `validation/tests/reserving*.rs`.
@@ -77,6 +78,7 @@ pub mod munich;
 pub mod odp_glm;
 pub mod one_year;
 pub mod one_year_bootstrap;
+pub mod paid_incurred;
 pub mod pattern;
 pub mod pattern_draws;
 pub mod segments;
@@ -135,6 +137,9 @@ pub use odp_glm::{
 };
 pub use one_year::ClaimsDevelopmentResult;
 pub use one_year_bootstrap::{OneYearFit, OneYearFits, OneYearMethod, OneYearSegment};
+pub use paid_incurred::{
+    PaidIncurredChain, PicConvention, PicFit, PicPriors, VarianceExtrapolation,
+};
 pub use pattern::{OneYearPattern, PatternKind, PatternWeight, SelectedPattern, UnderwritingBasis};
 pub use pattern_draws::{DevelopmentPatterns, Monotone, MonthlyBasis, SegmentPatterns};
 pub use prospicio_core::{Grain, Lag, Month, Period};
