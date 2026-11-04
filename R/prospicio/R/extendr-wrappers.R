@@ -420,6 +420,11 @@ hill_rust <- function(draws, ks) .Call(wrap__hill_rust, draws, ks)
 
 threshold_diagnostics_rust <- function(draws, thresholds) .Call(wrap__threshold_diagnostics_rust, draws, thresholds)
 
+#' @noRd
+ratio_development_rust <- function(triangle, numerator, denominator, ultimate_claims, average, sigma, excl, tail, ldf, selected, additive, additive_ages, additive_values, additive_tail) .Call(wrap__ratio_development_rust, triangle, numerator, denominator, ultimate_claims, average, sigma, excl, tail, ldf, selected, additive, additive_ages, additive_values, additive_tail)
+
+#' @noRd
+ulae_rust <- function(method, paid_ulae, paid, reported, closed, case_outstanding, ibnr, pure_ibnr, unclosed, ultimate, ratio, opening, weights) .Call(wrap__ulae_rust, method, paid_ulae, paid, reported, closed, case_outstanding, ibnr, pure_ibnr, unclosed, ultimate, ratio, opening, weights)
 frequency_severity_rust <- function(triangle, amounts, counts, ultimate, severity) .Call(wrap__frequency_severity_rust, triangle, amounts, counts, ultimate, severity)
 
 disposal_rust <- function(triangle, closed_counts, paid, ultimate, disposal_rates, severities, tail_severity_from, trend, base, factors) .Call(wrap__disposal_rust, triangle, closed_counts, paid, ultimate, disposal_rates, severities, tail_severity_from, trend, base, factors)

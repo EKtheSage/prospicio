@@ -360,6 +360,8 @@ reference:
       - odp_glm_fit
       - odp_glm_cells
       - excess_pattern
+      - ratio_development
+      - ulae_estimate
       - frequency_severity
       - disposal_method
       - case_outstanding

@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 accepted by the user on 2026-10-28 as proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 accepted by the user on 2026-10-28 as built; decision 29 built on branch `claude/unify-not-supported`, issue #580, in Rust, Python and R, its items 4, 5 and 9 open for the user; decision 30 built on branch `claude/monthly-pattern-speed`, issue #717, in Rust, with no API change in Python and R, its item 2 open for the user; decision 31 built on branch `claude/development-curves`, in Rust, Python and R, its items proposed for the user's acceptance; decision 32 built on branch `claude/paid-incurred-chain`, in Rust, Python and R; decision 33 built on branch `claude/munich-chain-ladder`, in Rust, Python and R, its items 5, 6 and 11 open; decision 34 built on branch `claude/friedland-exhibits`, in Rust, Python and R, items 8 to 12 open; decisions 35 and 36 built on branch `claude/friedland-counts`, issues #555 and #554, in Rust, Python and R, their items 8 and 9 and 4 to 6 open for the user) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 accepted by the user on 2026-10-28 as proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 accepted by the user on 2026-10-28 as built; decision 29 built on branch `claude/unify-not-supported`, issue #580, in Rust, Python and R, its items 4, 5 and 9 open for the user; decision 30 built on branch `claude/monthly-pattern-speed`, issue #717, in Rust, with no API change in Python and R, its item 2 open for the user; decision 31 built on branch `claude/development-curves`, in Rust, Python and R, its items proposed for the user's acceptance; decision 32 built on branch `claude/paid-incurred-chain`, in Rust, Python and R; decision 33 built on branch `claude/munich-chain-ladder`, in Rust, Python and R, its items 5, 6 and 11 open; decision 34 built on branch `claude/friedland-exhibits`, in Rust, Python and R, items 8 to 12 open; decisions 35 and 36 built on branch `claude/friedland-counts`, issues #555 and #554, in Rust, Python and R, their items 8 and 9 and 4 to 6 open for the user; decision 37 built on branch `claude/friedland-expenses`, issue #558, in Rust, Python and R, its items 3, 5, 8, 11 and 12 open) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -5726,3 +5726,135 @@ rate of the latest diagonal before it is projected.
     settlement adjusted, 489,258 both), and 528 cases of chainladder-python
     0.10.1's `BerquistSherman` on its `berqsherm` sample at trends of 15% and
     5% (`validation/scripts/reserving_berquist_sherman_python.py`).
+
+### 37. Recoveries, ALAE and ULAE
+
+Status: **Built** (2026-11-04), issue #558, branch
+`claude/friedland-expenses`, in Rust, Python and R; items 3, 5, 8, 11 and 12
+are open decisions for the user, built with the defaults below. The number
+may move: branches open at the same time hold decisions 32 and 34 to 36. An unpaid
+estimate covers more than losses, and Friedland's *Estimating Unpaid Claims
+Using Basic Techniques* gives three simple ratio methods for the rest.
+
+1. **The chapters.** Issue #558 says chapters 14 and 15, from an older table
+   of contents. In version 3 (July 2010), chapter 14 is salvage and
+   subrogation (Exhibit I, Auto Physical Damage Insurer), chapter 15 the
+   evaluation of techniques, chapter 16 ALAE (Exhibit I, Auto Property Damage
+   Insurer) and chapter 17 ULAE (Exhibits I to IV: XYZ Insurer, New Small
+   Insurer, PQR Insurer). The parity tests are against 14, 16 and 17.
+
+2. **What is built.** `prospicio_reserving::expense`:
+   `RatioDevelopment { development, tail, factors, selected }` with
+   `fit(&tri, numerator, denominator, &ultimate_claims)`, and
+   `Ulae::{Classical, Kittel, CongerNolibos}` with `estimate(&UlaeInputs)`.
+   The ratio of each cell comes from the two cumulative columns, unrounded:
+   5,957 / 16,822 x 1.009 x 16,893 is the printed 6,036, where the printed
+   0.354 would give 6,034. A cell whose denominator is zero or missing has no
+   ratio. Age-to-age factors are the chain ladder's own machinery on the
+   ratio, so `Development` brings the averages, exclusions, selected patterns
+   and tails of decisions 12 and 13. A ratio of exactly zero has no link ratio
+   to the next age, so the simple average errors on it as the chain ladder
+   does; the volume average, additive factors or a selected factor take it. The
+   latest numerator is read over every age of the triangle, which may run past
+   the denominator's last age.
+
+3. **Additive development** (open decision). Friedland develops ALAE ratios
+   by adding differences too (chapter 16, Exhibit I, Sheets 9 and 10), because
+   a small early ratio makes multiplicative factors unstable. The issue did
+   not name it. It is built as `RatioFactors::Additive { selected, tail }`,
+   since Exhibit I cannot be reproduced without it. It takes the simple
+   average with `n_periods`, `drop_high` and `drop_low`, the drops ranking the
+   differences: another average, a selected pattern or a `Tail` is a
+   `NotSupported` error. The book's selected differences add to
+   0.0018 against its printed factor of 0.0019, so the test runs on the
+   unrounded averages, which reproduce every projected value within 1.
+
+4. **Selected ratios per origin.** Friedland selects by judgment for the
+   latest origins (0.345 for 2008; 0.0077 for 2007 and 2008). `selected` is a
+   list by origin that replaces the projected ratio, and an origin that is
+   unknown or named twice is an error. A selection can put the ultimate below
+   the numerator to date: the printed 2007 ALAE is -94, and `unpaid` keeps it.
+
+5. **The simple average by default** (open decision). `RatioDevelopment`
+   defaults to the simple average, because a ratio has no natural volume, and
+   not to the chain ladder's volume-weighted one. The book's selections are
+   the medial latest 5x1 for recoveries (the text does not say so; the printed
+   row does) and the simple latest 3 for ALAE, with no tail in either.
+
+6. **`UlaeInputs` in place of the issue's positional signature.** The issue
+   proposes `estimate(paid_ulae, paid, reported, ultimate, ibnr)`. The three
+   techniques need different subsets of nine inputs, some optional, so a
+   struct of slices with `Default` keeps calls readable and lets a missing
+   input be a named error. Calendar-year columns (`paid_ulae`, `paid`,
+   `reported`, `closed`) must have one length, and valuation columns
+   (`case_outstanding`, `ibnr`, `pure_ibnr`, `unclosed`) another: one row for
+   a book or one per accident year. Every form is linear, so rows sum to the
+   total; Friedland works on totals.
+
+7. **The classical technique and Kittel.** `unpaid = ratio x (known x (case +
+   IBNR - pure) + pure)`, with `known` one less the opening share and `pure`
+   the pure IBNR, or the whole IBNR without it, which is `ratio x (known x
+   case + IBNR)`.
+   The ratio is the selected one or the ratio of the totals. Kittel's basis
+   is the average of paid and incurred, with incurred passed as `reported`.
+   Mango and Allen's refinement is the classical technique with expected paid
+   claims as `paid`, so it needs no type of its own (Exhibit III).
+
+8. **The opening share** (open decision). The classical technique's 50% is
+   `opening`, default 0.5: an insurer spending 25% opening and 75% closing
+   applies 75% of the ratio to case outstanding and 100% to IBNR, which is
+   the book's erratum to page 388. The share lives on the classical technique
+   alone, since Kittel's derivation fixes the half. Whether Kittel should take
+   it too is the user's.
+
+9. **Conger and Nolibos.** `UlaeWeights { opening, maintaining, closing }` are
+   `U1`, `U2` and `U3`, summing to 1, and the basis is `B = U1 R + U2 P + U3
+   C`. `unpaid` is `W* (U1 (L - R) + U2 (L - P) + U3 (L - C))`, with `L - R`
+   the pure IBNR, `L - P` case outstanding plus IBNR, and `L - C` the input
+   `unclosed`. With `ultimate`, the estimate also holds their three forms over
+   the book's calendar period: expected claims `W* L - M`, Bornhuetter-Ferguson
+   `W* (L - B)` and development `M (L / B - 1)`. Their simplification passes
+   each accident year's ultimate as `reported`. Under it `L - B` loses the
+   pure IBNR, so the Bornhuetter-Ferguson form is not the printed one and
+   `unpaid` is the estimate (Exhibit IV, Sheet 5). Sheets 3 and 4 agree with
+   `unpaid` exactly.
+
+10. **Negative values.** Recoveries give negative increments. They pass
+    through `Triangle::from_long` with `cumulative: false`, the chain ladder
+    and Mack, with link ratios and factors to ultimate below 1 and negative
+    reserves, as the printed 0.999 does. A cumulative value below zero is
+    fine for the volume and simple averages. The geometric average errors on a
+    negative link ratio, and Mack errors on it because the sigma can be neither
+    estimated nor interpolated. Neither is changed: a geometric mean of a
+    negative is undefined, and Mack's variance assumes positive values.
+
+11. **No helper for expected paid claims** (open decision). Exhibit III's
+    premium x ELR x pattern is a line of arithmetic in the test and is left to
+    the caller.
+
+12. **Not built** (open decision). `fit_segments`, chapter 14's Exhibit II
+    (recoveries from reinsurance), and the count-based and triangle-based
+    ULAE techniques the book mentions without an exhibit. Nothing here simulates:
+    these are point estimates.
+
+13. **Errors.** No new variant. `Apriori` for a selected origin, `LengthMismatch`
+    (also for a missing `pure_ibnr`), `Empty`, `NonFinite`, `InvalidSetting`,
+    `Pattern`, `EmptyOrigin` and `NotSupported`.
+
+14. **Parity** (`validation/tests/reserving_expense.rs`). The triangles are in
+    `validation/data/friedland_auto_physical_damage.csv` and
+    `friedland_auto_property_damage.csv`, read from the PDF by position and
+    checked against the printed diagonals. The book's spreadsheets hold decimals
+    and multiply by factors to ultimate rounded to three decimals, so the tests
+    pass the printed factors as selected patterns and allow a unit on a printed
+    cell and two on a printed total. The ULAE exhibits reproduce exactly or to
+    the printed rounding. The 1.005 paid ALAE tail is the book's selection from
+    reported to paid ratios and is passed as a constant.
+
+15. **Bindings.** Python: `RatioDevelopment(development=None, *, selected=None,
+    additive=False, additive_selected=None, additive_tail=0.0)`, with a
+    `ChainLadder` as `development`, `RatioDevelopmentFit`, `UlaeEstimate`,
+    `ulae_classical`, `ulae_kittel` and `ulae_conger_nolibos`, the last not
+    named by the issue but needed to reach the third technique. R:
+    `ratio_development()` and `ulae_estimate(method = )`. Both modules are
+    separate files, `reserving_expense.rs` and `reserving_expense.R`.

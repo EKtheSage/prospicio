@@ -1,0 +1,3 @@
+* **Creation**: [Recoveries, ALAE and ULAE against Friedland's printed exhibits](/findings/friedland-expense-parity.md), branch claude/friedland-expenses: chapters 14, 16 and 17 reproduced to the unit or the printed rounding (#558).
+* **Creation**: [Friedland's Auto Physical Damage and Auto Property Damage triangles](/datasets/friedland-auto-damage.md), branch claude/friedland-expenses: the triangles of chapters 14 and 16 in `validation/data/` (#558).
+* **Correction**: [Friedland's Estimating Unpaid Claims Using Basic Techniques](/references/friedland-estimating-unpaid-claims.md), branch claude/friedland-expenses: `ldf_kind="cdf"` takes factors to ultimate below 1, the latest-n averages are options, and the conventions of chapters 14, 16 and 17 are recorded (#558).

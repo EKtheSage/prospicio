@@ -355,6 +355,12 @@ reference:
       - reserving.ScaleShift
       - reserving.ParetoShape
       - reserving.ExcessPattern
+      - reserving.RatioDevelopment
+      - reserving.RatioDevelopmentFit
+      - reserving.UlaeEstimate
+      - reserving.ulae_classical
+      - reserving.ulae_kittel
+      - reserving.ulae_conger_nolibos
       - reserving.FrequencySeverity
       - reserving.FrequencySeverityFit
       - reserving.Disposal

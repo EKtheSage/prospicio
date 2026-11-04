@@ -67,6 +67,7 @@ pub mod error;
 pub mod excess;
 pub mod exhibit;
 pub mod expected_loss;
+pub mod expense;
 pub mod frame;
 pub mod frequency_severity;
 pub mod industry_prior;
@@ -122,6 +123,10 @@ pub use exhibit::{
 };
 pub use expected_loss::{
     Apriori, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ExpectedLoss, ExpectedLossFit,
+};
+pub use expense::{
+    RatioDevelopment, RatioDevelopmentFit, RatioFactors, Ulae, UlaeEstimate, UlaeInputs,
+    UlaeWeights,
 };
 pub use frame::TriangleFrame;
 pub use frequency_severity::{

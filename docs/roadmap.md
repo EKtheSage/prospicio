@@ -512,10 +512,6 @@ what it is aiming for by v1.0.
     the user's decision of 2026-10-27 (`AnnualReading`; decision 18's rule
     kept as `LnLinear`); the simulated book converts within 0.2% at every
     age, against 31% off at 12 months before.
-  - The methods on claim counts (`reserving-v02.md`, decisions 35 and 36,
-    #554, #555): frequency-severity, disposal rates, case outstanding
-    development and the Berquist-Sherman adjustments, at parity with
-    Friedland's chapters 11 to 13 and chainladder-python.
   - Mack's tests of the chain ladder's assumptions (`reserving-v02.md`,
     decision 27; branch `claude/mack-assumption-tests`, issue #551, in
     Rust, Python and R): the calendar-year effect test and the
@@ -553,6 +549,14 @@ what it is aiming for by v1.0.
     weights by origin, by age or one method, summing to 1; Friedland's
     chapter 7 and 15 exhibits to the printed digits and chainladder-python's
     `VotingChainladder` on GenIns to 1e-9.
+  - The methods on claim counts (`reserving-v02.md`, decisions 35 and 36,
+    #554, #555): frequency-severity, disposal rates, case outstanding
+    development and the Berquist-Sherman adjustments, at parity with
+    Friedland's chapters 11 to 13 and chainladder-python.
+  - Recoveries, ALAE and ULAE (`reserving-v02.md`, decision 37; branch
+    `claude/friedland-expenses`, issue #558, in Rust, Python and R):
+    `RatioDevelopment` and `Ulae` (classical, Kittel, Conger and Nolibos)
+    at parity with Friedland's chapters 14, 16 and 17.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental

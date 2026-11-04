@@ -13,3 +13,4 @@
 * [USAA paid and incurred triangles](usaa.md) - R ChainLadder's USAApaid and USAAincurred, a 10x10 pair of cumulative paid and incurred triangles, the R parity data for the paid-incurred chain.
 * [Dahms' paid and incurred triangles](dahms.md) - Dahms' (2008) 10x10 paid and incurred triangles, the example of Merz and Wuthrich's paid-incurred chain papers, as printed in their tail-factor paper; a second R parity set.
 * [MCL paid and incurred triangles](mcl.md) - Quarg and Mack's (2004) 7x7 paid and incurred triangles, R ChainLadder's MCLpaid and MCLincurred and chainladder-python's mcl sample; the Munich chain ladder's reference example.
+* [Friedland's Auto Physical Damage and Auto Property Damage triangles](friedland-auto-damage.md) - The recovery, ALAE and claims triangles of Friedland's chapters 14 and 16, read from the PDF and checked against the printed diagonals.

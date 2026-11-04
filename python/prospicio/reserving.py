@@ -13,9 +13,9 @@ Bornhuetter-Ferguson, Meyers' CRC, CSR and CAY models and Gesmann and Morris'
 compartmental model sampled with NUTS, a latest diagonal on its own
 projected with a pattern from elsewhere, excess-layer development
 patterns derived from a ground-up triangle, Merz and Wuthrich's paid-incurred
-chain of a paid and an incurred column, and the methods on claim counts:
+chain of a paid and an incurred column, the methods on claim counts:
 frequency-severity, disposal rates, case outstanding development and the
-Berquist-Sherman adjustments
+Berquist-Sherman adjustments, and recoveries, ALAE and ULAE
 (docs/design/triangle.md, docs/design/reserving-v02.md,
 docs/design/reserving-bayes.md, docs/design/reserving-compartmental.md,
 docs/design/reserving-excess.md)."""
@@ -99,6 +99,8 @@ from .prospicio_native import (
     OdpGlmFit,
     OneYearFit,
     ParetoShape,
+    RatioDevelopment,
+    RatioDevelopmentFit,
     ScaleShift,
     SelectedUltimates,
     TailBondy,
@@ -107,6 +109,7 @@ from .prospicio_native import (
     TailLogLinear,
     Triangle,
     DevelopmentPatterns,
+    UlaeEstimate,
     UnderwritingBasis,
     UltimateExhibit,
     calendar_year_effect,
@@ -115,6 +118,9 @@ from .prospicio_native import (
     layer_at_shift,
     layer_exposure,
     layer_share,
+    ulae_classical,
+    ulae_conger_nolibos,
+    ulae_kittel,
 )
 
 __all__ = [
@@ -208,6 +214,12 @@ __all__ = [
     "diagonal_backtest",
     "ExcessLayer",
     "ScaleShift",
+    "RatioDevelopment",
+    "RatioDevelopmentFit",
+    "UlaeEstimate",
+    "ulae_classical",
+    "ulae_conger_nolibos",
+    "ulae_kittel",
     "ParetoShape",
     "ExcessPattern",
     "layer_share",
