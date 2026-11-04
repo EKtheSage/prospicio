@@ -58,6 +58,11 @@ pub enum RatioFactors {
 /// for the multiplicative factors, with its [`pattern`](Development::pattern)
 /// for selected factors.
 ///
+/// A ratio of exactly zero, a year with no recoveries yet at an early age, has
+/// no link ratio to the next age. The simple average then stops with
+/// [`Error::Factor`], as it does for the chain ladder on a zero. The volume
+/// average, additive factors or a selected pattern at that age all take it.
+///
 /// ```
 /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, RatioDevelopment, Triangle};
 ///
@@ -164,21 +169,26 @@ impl RatioDevelopment {
         check_values("ultimate_claims", ultimate_claims, den.n_origins)?;
         let c = triangle.column_position(numerator)?;
         let cum = triangle.to_cumulative();
-        let cell = |o: usize, d: usize| cum.get(0, c, o + den.origin_offset, d + den.dev_offset);
+        let n_ages = cum.development().len();
         let mut cells = Vec::with_capacity(den.n_origins * den.n_dev);
         let mut latest = Vec::with_capacity(den.n_origins);
         for o in 0..den.n_origins {
+            let row = o + den.origin_offset;
+            // Over every age of the triangle: the numerator may run past the
+            // last age the denominator reaches.
             latest.push(
-                (0..den.n_dev)
+                (0..n_ages)
                     .rev()
-                    .find_map(|d| cell(o, d))
+                    .find_map(|d| cum.get(0, c, row, d))
                     .ok_or_else(|| Error::EmptyOrigin(den.origins[o].to_string()))?,
             );
             for d in 0..den.n_dev {
-                cells.push(match (cell(o, d), den.get(o, d)) {
-                    (Some(n), Some(x)) if x != 0.0 => Some(n / x),
-                    _ => None,
-                });
+                cells.push(
+                    match (cum.get(0, c, row, d + den.dev_offset), den.get(o, d)) {
+                        (Some(n), Some(x)) if x != 0.0 => Some(n / x),
+                        _ => None,
+                    },
+                );
             }
         }
         let ratios = Segment::from_cells(den.origins.clone(), den.ages.clone(), cells);
@@ -541,7 +551,8 @@ pub struct UlaeInputs<'a> {
     pub ibnr: &'a [f64],
     /// Pure IBNR, the part of [`ibnr`](Self::ibnr) on claims not yet
     /// reported. With it the classical technique and Kittel apply the full
-    /// ratio to it alone, and half of it to the rest of the IBNR. Conger and
+    /// ratio to it alone, and the share on known claims (half, unless
+    /// [`Ulae::Classical`] sets another) to the rest of the IBNR. Conger and
     /// Nolibos need it when `U1` is not 0: it is `L - R(t)`, their claims
     /// not yet reported.
     pub pure_ibnr: Option<&'a [f64]>,
@@ -654,11 +665,9 @@ impl Ulae {
         }
         let basis: Vec<f64> = (0..years)
             .map(|y| {
-                let reported = inputs.reported.get(y).unwrap_or(&0.0);
-                let closed = inputs.closed.get(y).unwrap_or(&0.0);
-                weights.opening * reported
+                share(weights.opening, inputs.reported, y)
                     + weights.maintaining * inputs.paid[y]
-                    + weights.closing * closed
+                    + share(weights.closing, inputs.closed, y)
             })
             .collect();
         let ratios = inputs
@@ -748,15 +757,23 @@ fn conger_nolibos_unpaid(
     }
     Ok((0..rows)
         .map(|i| {
-            let opening = pure.get(i).unwrap_or(&0.0);
-            let closing = inputs.unclosed.get(i).unwrap_or(&0.0);
             let unpaid_claims = inputs.case_outstanding[i] + inputs.ibnr[i];
             ratio
-                * (weights.opening * opening
+                * (share(weights.opening, pure, i)
                     + weights.maintaining * unpaid_claims
-                    + weights.closing * closing)
+                    + share(weights.closing, inputs.unclosed, i))
         })
         .collect())
+}
+
+/// `weight x values[i]`, and 0 at a weight of 0 without reading `values`,
+/// which the technique does not use and has not checked.
+fn share(weight: f64, values: &[f64], i: usize) -> f64 {
+    if weight == 0.0 {
+        0.0
+    } else {
+        weight * values[i]
+    }
 }
 
 /// Errors unless `values` has `expected` entries, all finite.
@@ -910,6 +927,51 @@ mod tests {
             RatioDevelopment::default().fit(&book(), "num", "den", &[1.0, f64::NAN, 1.0]),
             Err(Error::NonFinite { .. })
         ));
+    }
+
+    #[test]
+    fn the_latest_numerator_may_run_past_the_denominator() {
+        // The denominator stops at 24 months and the numerator reaches 36.
+        let tri = triangle(
+            &[1.0, 3.0, 4.0, 2.0, 5.0, 3.0],
+            &[10.0, 20.0, f64::NAN, 20.0, 25.0, 30.0],
+        );
+        let fit = RatioDevelopment::default()
+            .fit(&tri, "num", "den", &[20.0, 25.0, 40.0])
+            .unwrap();
+        assert_eq!(fit.ages, vec![12, 24]);
+        assert_eq!(fit.latest, vec![4.0, 5.0, 3.0]);
+    }
+
+    #[test]
+    fn a_ratio_of_zero_stops_the_simple_average_and_not_the_others() {
+        // No recoveries yet at 12 months for 2020.
+        let tri = triangle(
+            &[0.0, 3.0, 4.0, 2.0, 5.0, 3.0],
+            &[10.0, 20.0, 20.0, 20.0, 25.0, 30.0],
+        );
+        let ultimate = [20.0, 25.0, 40.0];
+        assert!(matches!(
+            RatioDevelopment::default().fit(&tri, "num", "den", &ultimate),
+            Err(Error::Factor { age: 0, .. })
+        ));
+        let volume = RatioDevelopment {
+            development: Development::default(),
+            ..Default::default()
+        }
+        .fit(&tri, "num", "den", &ultimate)
+        .unwrap();
+        close(volume.factors[0], (0.15 + 0.2) / 0.1);
+        let additive = RatioDevelopment {
+            factors: RatioFactors::Additive {
+                selected: vec![],
+                tail: 0.0,
+            },
+            ..Default::default()
+        }
+        .fit(&tri, "num", "den", &ultimate)
+        .unwrap();
+        close(additive.factors[0], (0.15 + 0.1) / 2.0);
     }
 
     #[test]
@@ -1116,6 +1178,29 @@ mod tests {
         ));
         let fit = Ulae::classical(Some(0.1)).estimate(&zero).unwrap();
         assert!(fit.ratios[0].is_nan());
+    }
+
+    #[test]
+    fn inputs_a_technique_does_not_use_are_not_read() {
+        let unused = [f64::NAN];
+        let classical = Ulae::classical(None)
+            .estimate(&UlaeInputs {
+                reported: &unused,
+                closed: &unused,
+                ..inputs()
+            })
+            .unwrap();
+        assert_eq!(classical.basis, vec![100.0, 300.0]);
+        let general = Ulae::conger_nolibos(UlaeWeights::new(0.0, 1.0), Some(0.1))
+            .estimate(&UlaeInputs {
+                reported: &unused,
+                closed: &unused,
+                unclosed: &unused,
+                ..inputs()
+            })
+            .unwrap();
+        assert_eq!(general.basis, vec![100.0, 300.0]);
+        close(general.unpaid[0], 0.1 * 90.0);
     }
 
     #[test]

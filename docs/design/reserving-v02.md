@@ -5385,7 +5385,11 @@ Using Basic Techniques* gives three simple ratio methods for the rest.
    0.354 would give 6,034. A cell whose denominator is zero or missing has no
    ratio. Age-to-age factors are the chain ladder's own machinery on the
    ratio, so `Development` brings the averages, exclusions, selected patterns
-   and tails of decisions 12 and 13.
+   and tails of decisions 12 and 13. A ratio of exactly zero has no link ratio
+   to the next age, so the simple average errors on it as the chain ladder
+   does; the volume average, additive factors or a selected factor take it. The
+   latest numerator is read over every age of the triangle, which may run past
+   the denominator's last age.
 
 3. **Additive development** (open decision). Friedland develops ALAE ratios
    by adding differences too (chapter 16, Exhibit I, Sheets 9 and 10), because
@@ -5422,7 +5426,8 @@ Using Basic Techniques* gives three simple ratio methods for the rest.
 
 7. **The classical technique and Kittel.** `unpaid = ratio x (known x (case +
    IBNR - pure) + pure)`, with `known` one less the opening share and `pure`
-   the pure IBNR, or 0 without it, which is `ratio x (known x case + IBNR)`.
+   the pure IBNR, or the whole IBNR without it, which is `ratio x (known x
+   case + IBNR)`.
    The ratio is the selected one or the ratio of the totals. Kittel's basis
    is the average of paid and incurred, with incurred passed as `reported`.
    Mango and Allen's refinement is the classical technique with expected paid

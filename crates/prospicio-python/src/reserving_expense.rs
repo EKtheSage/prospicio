@@ -23,6 +23,10 @@ use crate::reserving::{PyChainLadder, PyTriangle, age_values, apriori_by_origin,
 /// and the numerator's ultimate is the ratio times the ultimate claims from
 /// any method.
 ///
+/// A ratio of exactly zero has no link ratio to the next age, so the simple
+/// average stops on it; the volume average, ``additive`` or a selected ``ldf``
+/// at that age take it.
+///
 /// Parameters
 /// ----------
 /// development : ChainLadder, optional

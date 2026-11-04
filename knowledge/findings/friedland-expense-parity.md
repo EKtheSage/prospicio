@@ -33,5 +33,9 @@ sources:
 - Mack on a cumulative value below zero errors ("sigma can neither be estimated
   nor interpolated"), the geometric average errors on a negative link ratio, and
   the volume and simple averages work.[^test]
+- A ratio of exactly zero, a year with no recoveries yet, stops the simple average
+  of [`RatioDevelopment`] ("a zero value gets an infinite weight"), as it stops the
+  chain ladder; the volume average and additive factors take it.[^unit]
 
 [^test]: `validation/tests/reserving_expense.rs`; decisions in `docs/design/reserving-v02.md`, decision 37.
+[^unit]: The unit tests of `crates/prospicio-reserving/src/expense.rs`.

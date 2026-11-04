@@ -33,7 +33,9 @@ ratio_development_fit <- S7::new_class(
 #' cell whose denominator is zero or missing has none. The latest ratio is
 #' developed to ultimate, `selected` replaces it where the actuary judges
 #' otherwise, and the numerator's ultimate is the ratio times the ultimate
-#' claims from any method.
+#' claims from any method. A ratio of exactly zero has no link ratio to the
+#' next age, so the simple average stops on it; `average = "volume"`,
+#' `additive` or a selected `ldf` at that age take it.
 #'
 #' @param triangle A single-segment triangle holding both columns.
 #' @param numerator The cumulative column to project: received recoveries,
@@ -176,6 +178,9 @@ ulae_estimate <- function(paid_ulae, paid, case_outstanding, ibnr,
   method <- match.arg(method)
   if (method != "classical" && !identical(as.double(opening), 0.5)) {
     stop('opening is a setting of method = "classical"', call. = FALSE)
+  }
+  if (method == "classical" && !is.null(reported)) {
+    stop('reported is not used by method = "classical"', call. = FALSE)
   }
   conger_nolibos <- method == "conger_nolibos"
   if (conger_nolibos) {

@@ -158,6 +158,7 @@ near(closing@total, closing@ratio * (0.5 * 8 + 0.25 * 50 + 0.25 * 60), 1e-12)
 
 expect_error_like(ulae_estimate(1, 1, 1, 1, method = "conger_nolibos", reported = 1), "needs weights")
 expect_error_like(ulae_estimate(1, 1, 1, 1, weights = c(0.5, 0.5)), "conger_nolibos")
+expect_error_like(ulae_estimate(1, 1, 1, 1, reported = 1), "reported")
 expect_error_like(ulae_estimate(1, 1, 1, 1, method = "kittel", reported = 1, opening = 0.25),
                   "opening")
 stopifnot(inherits(tryCatch(ulae_estimate(1:2, 1, 1, 1), error = identity), "error"))

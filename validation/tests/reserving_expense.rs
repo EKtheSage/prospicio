@@ -524,6 +524,15 @@ fn alae_sheets_9_and_10_add_the_differences() {
         1.0,
     );
     close("total", &[fit.total_ultimate()], &[13_215.0], 2.0);
+    // Sheet 11, column (11).
+    close(
+        "unpaid",
+        &fit.unpaid(),
+        &[
+            0.0, 0.0, 1.0, 5.0, 10.0, 27.0, 57.0, 90.0, 168.0, 255.0, 918.0,
+        ],
+        1.0,
+    );
     close("total unpaid", &[fit.total_unpaid()], &[1_530.0], 2.0);
 }
 

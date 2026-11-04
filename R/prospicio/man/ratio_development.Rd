@@ -66,7 +66,9 @@ to ultimate claims: Friedland's ratio approach to salvage and subrogation
 cell whose denominator is zero or missing has none. The latest ratio is
 developed to ultimate, \code{selected} replaces it where the actuary judges
 otherwise, and the numerator's ultimate is the ratio times the ultimate
-claims from any method.
+claims from any method. A ratio of exactly zero has no link ratio to the
+next age, so the simple average stops on it; \code{average = "volume"},
+\code{additive} or a selected \code{ldf} at that age take it.
 }
 \examples{
 rows <- data.frame(origin = c(2020, 2020, 2021), age = c(12, 24, 12),
