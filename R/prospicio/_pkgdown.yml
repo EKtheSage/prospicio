@@ -380,6 +380,8 @@ reference:
       - bayes_odp_fit
       - bayes_bf_fit
       - bayes_bf_normalised_fit
+      - industry_prior_fit
+      - pattern_prior
       - bayes_odp_fits
       - meyers_fit
       - meyers_fits
