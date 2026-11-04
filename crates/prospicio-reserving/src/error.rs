@@ -140,6 +140,10 @@ pub enum Error {
     /// (`reserving-v02.md` decision 28): an unknown segment, a falling
     /// pattern or a horizon too short.
     PatternDraws(String),
+    /// An exhibit or a selection of ultimates cannot be built as given
+    /// (`reserving-v02.md` decision 34): lengths that differ, an unknown or
+    /// repeated method, or weights that do not sum to 1.
+    Exhibit(String),
     /// A triangle cannot be read from a file (the `io` feature): the file
     /// cannot be opened, a column is missing or a cell cannot be read. The
     /// message names the file line or cell and the column.
@@ -293,6 +297,7 @@ impl fmt::Display for Error {
             Self::Apriori(why) => write!(f, "apriori: {why}"),
             Self::Excess(why) => write!(f, "excess layer: {why}"),
             Self::PatternDraws(why) => write!(f, "pattern draws: {why}"),
+            Self::Exhibit(why) => write!(f, "exhibit: {why}"),
             Self::File(why) => write!(f, "reading a triangle: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
             Self::Counts(why) => write!(f, "claim counts: {why}"),
