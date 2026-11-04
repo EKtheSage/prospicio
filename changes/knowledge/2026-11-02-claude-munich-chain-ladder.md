@@ -1,2 +1,0 @@
-* **Creation**: [MCL paid and incurred triangles](/datasets/mcl.md), branch claude/munich-chain-ladder: Quarg and Mack's paid and incurred triangles in `validation/data/mcl.csv`, the Munich chain ladder's reference example (#559).
-* **Creation**: [The Munich chain ladder against R ChainLadder and chainladder-python](/findings/munich-chain-ladder-parity.md), branch claude/munich-chain-ladder: parity to 1e-12 relative; R's default log-linear sigma falls back to Mack's rule on MCL, q_inverse is exactly 1/q, the oldest rho differs between the libraries (#559).

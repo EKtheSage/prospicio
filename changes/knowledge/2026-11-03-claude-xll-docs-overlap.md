@@ -1,1 +1,0 @@
-* **Update**: [Excel's NPV, IRR, XNPV and XIRR](/references/excel-npv-irr.md), branch claude/xll-docs-overlap: `PRO.NPV`, `PRO.IRR` and `PRO.MOIC` are removed as duplicates of Excel's built-ins (xll.md decision 46); Microsoft's worked examples are now checked on `prospicio_pricing::returns` directly, which `PRO.CASHFLOW` reports with.
