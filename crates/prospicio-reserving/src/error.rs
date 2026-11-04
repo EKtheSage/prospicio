@@ -140,12 +140,20 @@ pub enum Error {
     /// (`reserving-v02.md` decision 28): an unknown segment, a falling
     /// pattern or a horizon too short.
     PatternDraws(String),
+    /// An exhibit or a selection of ultimates cannot be built as given
+    /// (`reserving-v02.md` decision 34): lengths that differ, an unknown or
+    /// repeated method, or weights that do not sum to 1.
+    Exhibit(String),
     /// A triangle cannot be read from a file (the `io` feature): the file
     /// cannot be opened, a column is missing or a cell cannot be read. The
     /// message names the file line or cell and the column.
     File(String),
     /// Clark's growth-curve model cannot be fitted to this triangle.
     Clark(String),
+    /// A method on claim counts (frequency-severity, disposal rates, case
+    /// outstanding development or a Berquist-Sherman adjustment) cannot be
+    /// applied to this triangle or with these settings.
+    Counts(String),
     /// The Munich chain ladder cannot be fitted: the paid and incurred
     /// columns are not observed at the same cells, or a cell is not
     /// positive ([`MunichChainLadder`](crate::MunichChainLadder)).
@@ -289,8 +297,10 @@ impl fmt::Display for Error {
             Self::Apriori(why) => write!(f, "apriori: {why}"),
             Self::Excess(why) => write!(f, "excess layer: {why}"),
             Self::PatternDraws(why) => write!(f, "pattern draws: {why}"),
+            Self::Exhibit(why) => write!(f, "exhibit: {why}"),
             Self::File(why) => write!(f, "reading a triangle: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
+            Self::Counts(why) => write!(f, "claim counts: {why}"),
             Self::Munich(why) => write!(f, "Munich chain ladder: {why}"),
             Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),
             Self::PaidIncurred(why) => write!(f, "paid-incurred chain: {why}"),

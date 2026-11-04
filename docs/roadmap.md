@@ -540,6 +540,19 @@ what it is aiming for by v1.0.
     ChainLadder's `MunichChainLadder` to 1e-12 on MCL with no tail and
     with log-linear and constant tails, and chainladder-python's
     `MunichAdjustment` under both sigma interpolations.
+  - Friedland's exhibits and a weighted selection of ultimates
+    (`reserving-v02.md`, decision 34; branch `claude/friedland-exhibits`,
+    issue #557, in Rust, Python and R): `DevelopmentExhibit` (link ratios,
+    Friedland's six averages, selected factors, factors to ultimate and
+    percents developed), `UltimateExhibit` (each method's ultimate, IBNR
+    and unpaid beside the claims to date) and `UltimateSelection` with
+    weights by origin, by age or one method, summing to 1; Friedland's
+    chapter 7 and 15 exhibits to the printed digits and chainladder-python's
+    `VotingChainladder` on GenIns to 1e-9.
+  - The methods on claim counts (`reserving-v02.md`, decisions 35 and 36,
+    #554, #555): frequency-severity, disposal rates, case outstanding
+    development and the Berquist-Sherman adjustments, at parity with
+    Friedland's chapters 11 to 13 and chainladder-python.
   - Recoveries, ALAE and ULAE (`reserving-v02.md`, decision 37; branch
     `claude/friedland-expenses`, issue #558, in Rust, Python and R):
     `RatioDevelopment` and `Ulae` (classical, Kittel, Conger and Nolibos)

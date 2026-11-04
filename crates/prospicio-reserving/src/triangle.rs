@@ -707,6 +707,69 @@ impl Triangle {
         })
     }
 
+    /// The cumulative cells of `column` in the only index position, origin
+    /// by origin (each row one value per development age, `None` where
+    /// unobserved), over every origin and age of the triangle. The count and
+    /// severity methods (`frequency_severity`, `berquist_sherman`) read their
+    /// columns with it.
+    pub(crate) fn cells(&self, column: &str) -> Result<Vec<Vec<Option<f64>>>> {
+        if self.shape[0] != 1 {
+            return Err(Error::MultipleSegments(self.shape[0]));
+        }
+        let c = self.column_position(column)?;
+        let cum = self.to_cumulative();
+        let [_, _, no, nd] = self.shape;
+        Ok((0..no)
+            .map(|o| (0..nd).map(|d| cum.get(0, c, o, d)).collect())
+            .collect())
+    }
+
+    /// A cumulative copy of a single-segment triangle with the column `name`
+    /// holding `rows` (one row per origin, one value per age, `None` where
+    /// unobserved): the column is replaced when it exists and added last
+    /// otherwise.
+    pub(crate) fn with_cells(&self, name: &str, rows: &[Vec<Option<f64>>]) -> Result<Self> {
+        if self.shape[0] != 1 {
+            return Err(Error::MultipleSegments(self.shape[0]));
+        }
+        let [_, nc, no, nd] = self.shape;
+        if rows.len() != no || rows.iter().any(|r| r.len() != nd) {
+            return Err(Error::LengthMismatch {
+                column: name.to_string(),
+                expected: no * nd,
+                found: rows.iter().map(Vec::len).sum(),
+            });
+        }
+        let mut out = self.to_cumulative();
+        let c = match out.columns.iter().position(|n| n == name) {
+            Some(c) => c,
+            None => {
+                let block = no * nd;
+                out.values.extend(std::iter::repeat_n(0.0, block));
+                out.mask.extend(std::iter::repeat_n(false, block));
+                out.columns.push(name.to_string());
+                out.shape = [1, nc + 1, no, nd];
+                nc
+            }
+        };
+        for (o, row) in rows.iter().enumerate() {
+            for (d, v) in row.iter().enumerate() {
+                let at = out.offset(0, c, o, d);
+                match v {
+                    Some(v) if v.is_finite() => {
+                        out.values[at] = *v;
+                        out.mask[at] = true;
+                    }
+                    _ => {
+                        out.values[at] = 0.0;
+                        out.mask[at] = false;
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+
     /// Sums the segments that share the values of `keys`, dropping the other
     /// keys. The result has `keys` as its keys, in the order given, and its
     /// segments sorted by them; `&[]` sums everything into one segment

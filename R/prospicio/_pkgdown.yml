@@ -362,6 +362,12 @@ reference:
       - excess_pattern
       - ratio_development
       - ulae_estimate
+      - frequency_severity
+      - disposal_method
+      - case_outstanding
+      - development_method
+      - trended
+      - berquist_sherman
       - layer_share_prior
       - residual_summary
       - claims_development_result
@@ -406,6 +412,9 @@ reference:
       - paid_incurred_fit
       - benchmark_curve_fit
       - development_curve_fit
+      - development_exhibit
+      - ultimate_exhibit
+      - select_ultimates
       - fit_frames
       - ultimate_draws
       - pattern_draws

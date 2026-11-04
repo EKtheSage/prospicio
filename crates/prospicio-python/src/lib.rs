@@ -39,6 +39,7 @@ mod pricing;
 mod ratemaking;
 mod reinsurance;
 mod reserving;
+mod reserving_counts;
 mod reserving_expense;
 mod risk;
 
@@ -186,13 +187,20 @@ mod prospicio_native {
         PyCompartmentalCandidate, PyCompartmentalFit, PyCompartmentalFits,
         PyCompartmentalOneYearFit, PyCompartmentalOneYearFits, PyCompartmentalPriors,
         PyDevelopmentCorrelationTest, PyDevelopmentCurve, PyDevelopmentCurveFit,
-        PyDevelopmentPatterns, PyExpectedLoss, PyExpectedLossFit, PyGlmCandidate, PyIndustryPrior,
-        PyLatestDiagonal, PyLayerSharePrior, PyMack, PyMackBootstrap, PyMackBootstrapFit,
-        PyMackFit, PyMeyers, PyMeyersFit, PyMeyersFits, PyMunichChainLadder, PyMunichFit,
-        PyNewYear, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyPaidIncurredChain,
-        PyPaidIncurredFit, PyPatternPrior, PyTailBondy, PyTailConstant, PyTailCurve,
-        PyTailLogLinear, PyTriangle, PyUnderwritingBasis, calendar_year_effect,
-        development_correlation, diagonal_backtest,
+        PyDevelopmentExhibit, PyDevelopmentPatterns, PyExpectedLoss, PyExpectedLossFit,
+        PyGlmCandidate, PyIndustryPrior, PyLatestDiagonal, PyLayerSharePrior, PyMack,
+        PyMackBootstrap, PyMackBootstrapFit, PyMackFit, PyMeyers, PyMeyersFit, PyMeyersFits,
+        PyMunichChainLadder, PyMunichFit, PyNewYear, PyOdpBootstrap, PyOdpBootstrapFit,
+        PyOneYearFit, PyPaidIncurredChain, PyPaidIncurredFit, PyPatternPrior, PySelectedUltimates,
+        PyTailBondy, PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle, PyUltimateExhibit,
+        PyUnderwritingBasis, calendar_year_effect, development_correlation, diagonal_backtest,
+    };
+    #[pymodule_export]
+    use super::reserving_counts::{
+        PyCaseOutstanding, PyCaseOutstandingFit, PyDisposal, PyDisposalFit, PyFrequencySeverity,
+        PyFrequencySeverityFit, PyTrended, average_case, berquist_sherman_adjust,
+        case_adequacy_adjust, case_development_factor, exponential_trend, pooled_trend,
+        ratio_column, settlement_rate_adjust, trend_by_age,
     };
     #[pymodule_export]
     use super::reserving_expense::{

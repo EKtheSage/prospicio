@@ -54,6 +54,7 @@ pub mod backtest;
 #[cfg(feature = "bayes")]
 pub mod bayes;
 pub mod benchmark_curve;
+pub mod berquist_sherman;
 pub mod bootstrap;
 pub mod chain_ladder;
 pub mod clark;
@@ -64,9 +65,11 @@ pub mod diagnostics;
 pub mod draws;
 pub mod error;
 pub mod excess;
+pub mod exhibit;
 pub mod expected_loss;
 pub mod expense;
 pub mod frame;
+pub mod frequency_severity;
 pub mod industry_prior;
 #[cfg(feature = "io")]
 pub mod io;
@@ -99,6 +102,9 @@ pub use bayes::{
     LayerSharePrior, Meyers, MeyersFit, MeyersModel, ShareDependence,
 };
 pub use benchmark_curve::{BenchmarkCurve, BenchmarkCurveFit};
+pub use berquist_sherman::{
+    BerquistSherman, CaseAdequacy, CaseTrend, Interpolation, OpenCounts, SettlementRate,
+};
 pub use bootstrap::{
     OdpBootstrap, OdpBootstrapFit, OdpBootstrapFits, OdpBootstrapSegment, ProcessDistribution,
 };
@@ -111,6 +117,10 @@ pub use diagnostics::Diagnostics;
 pub use draws::UltimateDraws;
 pub use error::{Error, Result};
 pub use excess::{Basis, ExcessPattern, Layer, SeverityByMaturity, layer_exposure, layer_share};
+pub use exhibit::{
+    DevelopmentExhibit, MethodWeights, SelectedUltimates, UltimateExhibit, UltimateSelection,
+    WEIGHT_TOLERANCE, friedland_averages,
+};
 pub use expected_loss::{
     Apriori, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ExpectedLoss, ExpectedLossFit,
 };
@@ -119,6 +129,11 @@ pub use expense::{
     UlaeWeights,
 };
 pub use frame::TriangleFrame;
+pub use frequency_severity::{
+    CaseOutstanding, CaseOutstandingFit, CountProjection, Disposal, DisposalFit, FrequencySeverity,
+    FrequencySeverityFit, Selection, SeverityProjection, TrendFit, Trended, UltimateCounts,
+    case_development_factor, exponential_trend, pooled_trend, ratio_column, trend_by_age,
+};
 pub use industry_prior::{IndustryPrior, IndustryPriorSettings, PatternPrior, PriorReport};
 #[cfg(feature = "io")]
 pub use io::FileLayout;

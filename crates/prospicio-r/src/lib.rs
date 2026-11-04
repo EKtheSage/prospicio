@@ -41,6 +41,7 @@ mod pricing;
 mod ratemaking;
 mod reinsurance;
 mod reserving;
+mod reserving_counts;
 mod reserving_expense;
 mod risk;
 
@@ -82,6 +83,7 @@ extendr_module! {
     use ratemaking;
     use reinsurance;
     use reserving;
+    use reserving_counts;
     use reserving_expense;
     use risk;
 }
