@@ -1,7 +1,7 @@
 //! The Munich chain ladder (Quarg and Mack 2004): paid and incurred
 //! developed together, each age-to-age factor corrected by how far the
 //! origin's paid-to-incurred ratio sits from its average at that age
-//! (`docs/design/reserving-v02.md`, decision 30).
+//! (`docs/design/reserving-v02.md`, decision 33).
 
 use prospicio_core::{Lag, Period};
 
@@ -35,7 +35,7 @@ use crate::triangle::{Segment, Triangle};
 /// `P[s+1] = P[s] (f_P + lambda_P sigma_P / rho_P (I[s]/P[s] - q^-1_s))`
 ///
 /// and the same for incurred with `P/I` and `q`. Under these weights
-/// `q^-1` is `1/q` exactly (decision 30, item 3). A tail is one more step,
+/// `q^-1` is `1/q` exactly (decision 33, item 3). A tail is one more step,
 /// with the tail's factor and sigma and the oldest age's ratios; without a
 /// tail the last step is 1 and uncorrected.
 ///
@@ -45,7 +45,7 @@ use crate::triangle::{Segment, Triangle};
 ///
 /// Mack's model here is the volume-weighted one (`alpha = 1`), which the
 /// residuals assume: another average, a selected pattern, `n_periods` or
-/// the drops are an error (decision 30, item 6).
+/// the drops are an error (decision 33, item 6).
 ///
 /// ```
 /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, MunichChainLadder, Triangle};

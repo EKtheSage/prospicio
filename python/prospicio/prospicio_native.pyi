@@ -10481,11 +10481,25 @@ class DevelopmentPatterns:
             first; ``"running_max"`` holds each share at the largest before
             it, capped at 1, and gives a share that is not positive the next
             positive share, which the simulation then pays from its first age.
+            Bootstrap draws usually need ``"running_max"``: at the oldest
+            ages, where one or two cells set the factor, the ODP bootstrap
+            draws a pseudo factor below 1 in some simulations, which puts
+            the share above 1 before it falls back to 1 (77 of 2,000 draws
+            on the sample submission's paid triangle to 108 months).
         
         Returns
         -------
         list of list of float
             One row of ``months`` values per simulation.
+        
+        Notes
+        -----
+        Under a growth-curve reading each simulation's curve is searched
+        from the mean pattern's, and the simulations are read on all cores,
+        so 2,000 draws at 144 months take well under a second on 16 cores
+        (a few seconds on one). The result does not depend on the number of
+        threads; it is within about ``1e-9`` of a share of the search from
+        every start that converting a single pattern makes.
         """
     @property
     def n_sims(self, /) -> int:
@@ -22112,7 +22126,7 @@ class MunichChainLadder:
     developed together, each factor corrected by how far the origin's
     paid-to-incurred ratio sits from its average at that age, as R
     ChainLadder's ``MunichChainLadder`` and chainladder-python's
-    ``MunichAdjustment`` (``docs/design/reserving-v02.md``, decision 30).
+    ``MunichAdjustment`` (``docs/design/reserving-v02.md``, decision 33).
     
     Each column has Mack's volume-weighted model; the slopes ``lambda_paid``
     and ``lambda_incurred`` of its link-ratio residuals on the ratio

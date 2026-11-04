@@ -6797,7 +6797,7 @@ fn fixed<const N: usize>(values: &[f64], name: &str) -> Result<[f64; N]> {
 }
 
 /// The Munich chain ladder fitted to every segment of a triangle's paid
-/// and incurred columns (`docs/design/reserving-v02.md`, decision 30).
+/// and incurred columns (`docs/design/reserving-v02.md`, decision 33).
 /// Per-origin vectors run over the origins of each segment in turn.
 #[extendr]
 pub(crate) struct MunichFit {
