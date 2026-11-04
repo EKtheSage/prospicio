@@ -22725,6 +22725,291 @@ class MultivariateNormal:
         """
 
 @final
+class MunichChainLadder:
+    """
+    The Munich chain ladder (Quarg and Mack 2004): paid and incurred
+    developed together, each factor corrected by how far the origin's
+    paid-to-incurred ratio sits from its average at that age, as R
+    ChainLadder's ``MunichChainLadder`` and chainladder-python's
+    ``MunichAdjustment`` (``docs/design/reserving-v02.md``, decision 33).
+    
+    Each column has Mack's volume-weighted model; the slopes ``lambda_paid``
+    and ``lambda_incurred`` of its link-ratio residuals on the ratio
+    residuals set the correction. With both 0 the projections are the two
+    separate chain ladders.
+    
+    Parameters
+    ----------
+    sigma_interpolation_paid : str, default "log-linear"
+        How the paid column's unestimable sigma is filled in (R's
+        ``est.sigmaP``): ``"log-linear"`` or ``"mack"``. R's default call
+        falls back to ``"mack"`` with a warning when its log-linear model
+        is poor (as on its ``MCLpaid``); prospicio does not, so give
+        ``"mack"`` to match it there.
+    sigma_interpolation_incurred : str, default "log-linear"
+        The same for incurred (R's ``est.sigmaI``).
+    tail_paid : float or tail estimator, optional
+        The paid tail (R's ``tailP``), as ``Mack``'s ``tail``; none by
+        default.
+    tail_incurred : float or tail estimator, optional
+        The incurred tail (R's ``tailI``).
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import MunichChainLadder, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    ...     {
+    ...         "paid": [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    ...         "incurred": [160.0, 175.0, 172.0, 171.0, 150.0, 190.0, 185.0, 200.0, 185.0, 210.0],
+    ...     },
+    ... )
+    >>> fit = MunichChainLadder().fit(tri, "paid", "incurred")
+    >>> fit.ultimate_paid[0]
+    170.0
+    """
+    def __new__(cls, /, sigma_interpolation_paid: str = "log-linear", sigma_interpolation_incurred: str = "log-linear", tail_paid: Any |None = None, tail_incurred: Any |None = None) -> MunichChainLadder: ...
+    def __repr__(self, /) -> str: ...
+    def fit(self, /, triangle: Triangle, paid: str, incurred: str) -> MunichFit:
+        """
+        Fits the paid and incurred columns of a triangle, in every segment
+        on its own.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Holds both columns, observed at the same cells.
+        paid : str
+            The paid column.
+        incurred : str
+            The incurred column.
+        
+        Returns
+        -------
+        MunichFit
+        
+        Raises
+        ------
+        ValueError
+            If the two columns are not observed at the same cells (a missing
+            incurred cell, say), a cell is not positive, or either column
+            fails as in ``Mack.fit``.
+        """
+    @property
+    def sigma_interpolation_incurred(self, /) -> str:
+        """
+        How the incurred column's unestimable sigma is filled in.
+        """
+    @property
+    def sigma_interpolation_paid(self, /) -> str:
+        """
+        How the paid column's unestimable sigma is filled in.
+        """
+    @property
+    def tail_incurred(self, /) -> Any:
+        """
+        The incurred tail.
+        """
+    @property
+    def tail_paid(self, /) -> Any:
+        """
+        The paid tail: a constant factor as a number, otherwise its
+        estimator.
+        """
+
+@final
+class MunichFit:
+    """
+    A fitted Munich chain ladder of every segment.
+    
+    Per-origin lists run over the origins of each segment in turn, like the
+    rows of ``to_frame()``. Per-age lists and the lambdas need a
+    single-segment fit; for several segments use ``development_frame()``,
+    ``totals_frame()`` or ``segment(...)``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def chain_ladder_incurred(self, /) -> list[float]:
+        """
+        The separate chain ladder's incurred ultimate per origin.
+        """
+    @property
+    def chain_ladder_paid(self, /) -> list[float]:
+        """
+        The separate chain ladder's paid ultimate per origin.
+        """
+    @property
+    def development(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    def development_frame(self, /) -> Any:
+        """
+        One row per segment and age: ``q``, ``q_inverse``, ``rho_paid``,
+        ``rho_incurred``, and each column's ``ldf_paid``, ``sigma_paid``,
+        ``ldf_incurred`` and ``sigma_incurred`` (NaN at the oldest age).
+        Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def ibnr_incurred(self, /) -> list[float]:
+        """
+        Incurred ultimate minus latest incurred per origin.
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the triangle's key columns; empty without keys.
+        """
+    @property
+    def lambda_incurred(self, /) -> float:
+        """
+        The slope of the incurred link-ratio residuals on the
+        paid-to-incurred residuals (R's ``lambdaI``).
+        """
+    @property
+    def lambda_paid(self, /) -> float:
+        """
+        The slope of the paid link-ratio residuals on the incurred-to-paid
+        residuals (R's ``lambdaP``); 0 when the ratios carry no information.
+        """
+    @property
+    def latest_incurred(self, /) -> list[float]:
+        """
+        Latest incurred per origin.
+        """
+    @property
+    def latest_paid(self, /) -> list[float]:
+        """
+        Latest paid per origin.
+        """
+    @property
+    def latest_ratio(self, /) -> list[float]:
+        """
+        Latest paid over latest incurred per origin.
+        """
+    @property
+    def mack_incurred(self, /) -> MackFit:
+        """
+        Mack's model of the incurred column alone.
+        """
+    @property
+    def mack_paid(self, /) -> MackFit:
+        """
+        Mack's model of the paid column alone.
+        """
+    @property
+    def n_residuals_incurred(self, /) -> int:
+        """
+        The number of residual pairs behind ``lambda_incurred``: fewer than
+        paid's where incurred's sigma is 0 at a link (residuals 0/0, left
+        out of incurred's regression only, as in R).
+        """
+    @property
+    def n_residuals_paid(self, /) -> int:
+        """
+        The number of residual pairs behind ``lambda_paid``.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value.
+        """
+    @property
+    def q(self, /) -> list[float]:
+        """
+        The paid-to-incurred ratio at each age, ``sum P / sum I`` (R's
+        ``q.f``).
+        """
+    @property
+    def q_inverse(self, /) -> list[float]:
+        """
+        The incurred-to-paid ratio at each age, fitted on its own,
+        ``sum I / sum P`` (R's ``qinverse.f``).
+        """
+    @property
+    def reserve_paid(self, /) -> list[float]:
+        """
+        Paid ultimate minus latest paid per origin.
+        """
+    @property
+    def rho_incurred(self, /) -> list[float]:
+        """
+        The deviation of ``P/I`` around ``q`` (R's ``rhoI.sigma``).
+        """
+    @property
+    def rho_paid(self, /) -> list[float]:
+        """
+        The deviation of ``I/P`` around ``q_inverse`` (R's ``rhoP.sigma``).
+        """
+    def segment(self, /, **keys) -> MunichFit:
+        """
+        The fit of one segment, chosen by key values as
+        ``ChainLadderFit.segment``.
+        
+        Returns
+        -------
+        MunichFit
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per segment and origin: the key columns, ``origin``,
+        ``latest_paid``, ``latest_incurred``, ``latest_ratio``,
+        ``ultimate_paid``, ``ultimate_incurred``, ``ultimate_ratio``,
+        ``reserve_paid``, ``ibnr_incurred``, ``chain_ladder_paid`` and
+        ``chain_ladder_incurred``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def total_ultimate_incurred(self, /) -> float:
+        """
+        Total Munich incurred ultimate over every segment.
+        """
+    @property
+    def total_ultimate_paid(self, /) -> float:
+        """
+        Total Munich paid ultimate over every segment.
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per segment: the totals of ``to_frame()``'s columns (the
+        ratios of the totals), ``lambda_paid``, ``lambda_incurred``,
+        ``n_residuals_paid`` and ``n_residuals_incurred``.
+        Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def ultimate_incurred(self, /) -> list[float]:
+        """
+        The Munich incurred ultimate per origin.
+        """
+    @property
+    def ultimate_paid(self, /) -> list[float]:
+        """
+        The Munich paid ultimate per origin.
+        """
+    @property
+    def ultimate_ratio(self, /) -> list[float]:
+        """
+        Paid ultimate over incurred ultimate per origin.
+        """
+
+@final
 class MvnEstimate:
     """
     An estimate of a multivariate normal probability (``mvn_cdf``).

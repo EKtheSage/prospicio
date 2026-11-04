@@ -1617,6 +1617,155 @@ mack <- function(triangle, column = NULL, average = "volume", sigma_interpolatio
   mack_fit(ptr = ptr)
 }
 
+#' Munich chain ladder: paid and incurred developed together
+#'
+#' The Munich chain ladder of Quarg and Mack (2004), as R ChainLadder's
+#' `MunichChainLadder()` and chainladder-python's `MunichAdjustment`
+#' (`docs/design/reserving-v02.md`, decision 33). Paid `P` and incurred
+#' `I` are two columns of one triangle, observed at the same cells. Each
+#' has Mack's volume-weighted model, and each age its ratios `q = sum P /
+#' sum I` and `q_inverse = sum I / sum P` with their deviations
+#' `rho_incurred` and `rho_paid` (an unestimable one extrapolated
+#' log-linearly, as R does). The link-ratio residuals, regressed through
+#' the origin on the ratio residuals, give the slopes `lambda_paid` and
+#' `lambda_incurred`, and the projection corrects each step's factor by
+#' `lambda * sigma / rho` times how far the origin's projected ratio sits
+#' from its average, so the two ultimates come together. With both lambdas
+#' 0 the projections are the separate chain ladders; when the ratios carry
+#' no information (incurred a fixed multiple of paid) the lambdas are 0.
+#' A tail is one more step with the tail's factor and sigma.
+#'
+#' R's `MunichChainLadder()` with its default `est.sigmaP = "log-linear"`
+#' falls back to Mack's rule with a warning when the log-linear model of
+#' sigma is poor, as on its `MCLpaid` and `MCLincurred`; prospicio does
+#' not fall back, so give `sigma_interpolation_paid = "mack"` and
+#' `sigma_interpolation_incurred = "mack"` to reproduce it there. The
+#' default reproduces chainladder-python's `MunichAdjustment` on
+#' `Development()`.
+#'
+#' The fit has per origin `latest_paid`, `latest_incurred`, `latest_ratio`,
+#' `ultimate_paid`, `ultimate_incurred`, `ultimate_ratio`, `reserve_paid`
+#' (paid ultimate minus latest paid), `ibnr_incurred` (incurred ultimate
+#' minus latest incurred) and the separate chain ladders'
+#' `chain_ladder_paid` and `chain_ladder_incurred`; the totals
+#' `total_ultimate_paid` and `total_ultimate_incurred`; per age `q`,
+#' `q_inverse`, `rho_paid` and `rho_incurred`; `lambda_paid`,
+#' `lambda_incurred`, `n_residuals_paid` and `n_residuals_incurred` (the
+#' pairs behind each lambda: fewer for a column whose sigma is 0 at a link,
+#' whose residuals there are 0/0, as in R); and Mack's model of each column
+#' alone as `mack_paid` and `mack_incurred` ([mack_fit]). Per-age values and
+#' the lambdas need a single-segment fit: with several segments use
+#' [development_frame()], [totals_frame()] or [segment()].
+#' `as.data.frame()` gives one row per segment and origin.
+#'
+#' @param triangle A [triangle] holding both columns.
+#' @param paid,incurred The paid and incurred column names.
+#' @param sigma_interpolation_paid,sigma_interpolation_incurred How each
+#'   column's unestimable sigma is filled in: `"log-linear"` (the default)
+#'   or `"mack"` (R's `est.sigmaP` and `est.sigmaI`).
+#' @param tail_paid,tail_incurred Each column's tail, as [mack()]'s `tail`
+#'   (R's `tailP` and `tailI`); none by default.
+#' @param ptr Internal: the Rust fit.
+#' @returns A `munich_fit` object.
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2018:2021, 4:1),
+#'                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130),
+#'                    incurred = c(160, 175, 172, 171, 150, 190, 185, 200, 185, 210))
+#' tri <- triangle(long, "year", "age", c("paid", "incurred"))
+#' m <- munich_chain_ladder(tri)
+#' m@ultimate_paid
+#' m@ultimate_ratio
+#' as.data.frame(m)
+munich_fit <- S7::new_class(
+  "munich_fit",
+  package = "prospicio",
+  properties = local({
+    by_origin <- function(f) {
+      S7::new_property(S7::class_double, getter = function(self) {
+        p <- self@ptr
+        names <- if (p$n_segments() > 1) paste(p$row_segments(), p$origins(), sep = " / ") else p$origins()
+        stats::setNames(f(p), names)
+      })
+    }
+    per_age <- function(f) {
+      S7::new_property(S7::class_double, getter = function(self) {
+        v <- rust_result(f(self@ptr), call = NULL)
+        stats::setNames(v, rust_result(self@ptr$development(), call = NULL))
+      })
+    }
+    one <- function(f, cls = S7::class_double) {
+      S7::new_property(cls, getter = function(self) rust_result(f(self@ptr), call = NULL))
+    }
+    list(
+      ptr = S7::new_S3_class("MunichFit"),
+      keys = S7::new_property(S7::class_character, getter = function(self) self@ptr$keys()),
+      origins = S7::new_property(S7::class_character, getter = function(self) self@ptr$origins()),
+      development = one(function(p) p$development(), S7::class_integer),
+      latest_paid = by_origin(function(p) p$latest_paid()),
+      latest_incurred = by_origin(function(p) p$latest_incurred()),
+      latest_ratio = by_origin(function(p) p$latest_ratio()),
+      ultimate_paid = by_origin(function(p) p$ultimate_paid()),
+      ultimate_incurred = by_origin(function(p) p$ultimate_incurred()),
+      ultimate_ratio = by_origin(function(p) p$ultimate_ratio()),
+      reserve_paid = by_origin(function(p) p$reserve_paid()),
+      ibnr_incurred = by_origin(function(p) p$ibnr_incurred()),
+      chain_ladder_paid = by_origin(function(p) p$chain_ladder_paid()),
+      chain_ladder_incurred = by_origin(function(p) p$chain_ladder_incurred()),
+      total_ultimate_paid = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$total_ultimate_paid()
+      }),
+      total_ultimate_incurred = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$total_ultimate_incurred()
+      }),
+      lambda_paid = one(function(p) p$lambda_paid()),
+      lambda_incurred = one(function(p) p$lambda_incurred()),
+      n_residuals_paid = one(function(p) p$n_residuals_paid(), S7::class_integer),
+      n_residuals_incurred = one(function(p) p$n_residuals_incurred(), S7::class_integer),
+      q = per_age(function(p) p$q()),
+      q_inverse = per_age(function(p) p$q_inverse()),
+      rho_paid = per_age(function(p) p$rho_paid()),
+      rho_incurred = per_age(function(p) p$rho_incurred()),
+      mack_paid = S7::new_property(S7::class_any, getter = function(self) {
+        mack_fit(ptr = self@ptr$mack_paid())
+      }),
+      mack_incurred = S7::new_property(S7::class_any, getter = function(self) {
+        mack_fit(ptr = self@ptr$mack_incurred())
+      })
+    )
+  }),
+  constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
+)
+
+#' @rdname munich_fit
+#' @export
+munich_chain_ladder <- function(triangle, paid = "paid", incurred = "incurred",
+                                sigma_interpolation_paid = "log-linear",
+                                sigma_interpolation_incurred = "log-linear",
+                                tail_paid = 1, tail_incurred = 1) {
+  check_triangle(triangle)
+  sigma <- c("log-linear", "mack")
+  ptr <- rust_result(triangle@ptr$munich_chain_ladder(
+    as.character(paid), as.character(incurred),
+    match.arg(sigma_interpolation_paid, sigma), match.arg(sigma_interpolation_incurred, sigma),
+    tail_ptr(tail_paid), tail_ptr(tail_incurred)
+  ))
+  munich_fit(ptr = ptr)
+}
+
+S7::method(as.data.frame, munich_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
+
+S7::method(print, munich_fit) <- function(x, ...) {
+  n <- x@ptr$n_segments()
+  note <- if (n > 1) sprintf(", %d segments", n) else ""
+  cat(sprintf("<munich_fit> total ultimate paid %s, incurred %s%s\n",
+              format(x@total_ultimate_paid, digits = 10),
+              format(x@total_ultimate_incurred, digits = 10), note))
+  print(as.data.frame(x), row.names = FALSE)
+  invisible(x)
+}
+
 # Checks that `value` is a single number and returns it as a double.
 single_number <- function(value, arg) {
   if (!is.numeric(value) || length(value) != 1 || is.na(value)) {
@@ -5518,14 +5667,14 @@ check_fit <- function(fit) {
                   bayes_bf_normalised_fit, meyers_fit,
                   meyers_fits, one_year_fit, bayes_one_year_fit, bayes_one_year_fits, clark_fit,
                   compartmental_fit, compartmental_fits, compartmental_one_year_fit,
-                  compartmental_one_year_fits)
+                  compartmental_one_year_fits, munich_fit)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
     stop("fit must be a chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, ",
          "odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, bayes_bf_fit, ",
          "bayes_bf_normalised_fit, ",
          "meyers_fit, meyers_fits, one_year_fit, bayes_one_year_fit, bayes_one_year_fits, ",
-         "clark_fit, compartmental_fit, compartmental_fits, compartmental_one_year_fit or ",
-         "compartmental_one_year_fits",
+         "clark_fit, compartmental_fit, compartmental_fits, compartmental_one_year_fit, ",
+         "compartmental_one_year_fits or munich_fit",
          call. = FALSE)
   }
 }
@@ -5575,7 +5724,9 @@ check_fit <- function(fit) {
 #' `ldf` (to the next age), `cdf` (to ultimate, with the tail), `sigma` and
 #' `std_err`; the oldest age has `NA` for `ldf`, `sigma` and `std_err`. A
 #' [clark_fit] has no development table of its own: use
-#' `development_frame(fit@chain_ladder)` for the chain ladder's.
+#' `development_frame(fit@chain_ladder)` for the chain ladder's. A
+#' [munich_fit]'s three tables have its own columns, paid and incurred side
+#' by side (see [munich_fit]).
 #'
 #' `segment()` returns the fit of one segment, chosen by key values as in
 #' `segment(fit, lob = "auto")` (compared as character). Keys not named may
@@ -5593,8 +5744,8 @@ check_fit <- function(fit) {
 #'   [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
 #'   [bayes_odp_fit], [bayes_odp_fits], [bayes_bf_fit], [bayes_bf_normalised_fit],
 #'   [meyers_fit], [meyers_fits], [one_year_fit], [bayes_one_year_fit], [bayes_one_year_fits], [clark_fit],
-#'   [compartmental_fit], [compartmental_fits], [compartmental_one_year_fit] or
-#'   [compartmental_one_year_fits] (a [clark_fit] or
+#'   [compartmental_fit], [compartmental_fits], [compartmental_one_year_fit],
+#'   [compartmental_one_year_fits] or [munich_fit] (a [clark_fit] or
 #'   a compartmental fit not for `development_frame()`); for `segment()`,
 #'   also a [latest_valuation].
 #' @param ... Key conditions as `key = value`, one value each.

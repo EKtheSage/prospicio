@@ -1,5 +1,6 @@
 """Reserving: the loss triangle, the chain ladder with tail factors, Mack's
 model with its one-year view and Mack's tests of its assumptions, the
+Munich chain ladder of paid and incurred together, the
 expected-loss methods, Clark's growth
 curves, a growth curve fitted to a benchmark pattern and development curves
 fitted over every age, the ODP model as a
@@ -65,6 +66,8 @@ from .prospicio_native import (
     Meyers,
     MeyersFit,
     MeyersFits,
+    MunichChainLadder,
+    MunichFit,
     NewYear,
     NotSupportedError,
     OdpBootstrap,
@@ -102,6 +105,8 @@ __all__ = [
     "development_correlation",
     "CalendarYearTest",
     "DevelopmentCorrelationTest",
+    "MunichChainLadder",
+    "MunichFit",
     "ExpectedLoss",
     "BornhuetterFerguson",
     "Benktander",
