@@ -408,6 +408,7 @@ reference:
       - meyers_one_year
       - clark_fit
       - benchmark_curve_fit
+      - development_curve_fit
       - fit_frames
       - ultimate_draws
       - pattern_draws
