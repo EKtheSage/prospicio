@@ -150,9 +150,17 @@ pub enum Error {
     /// outstanding development or a Berquist-Sherman adjustment) cannot be
     /// applied to this triangle or with these settings.
     Counts(String),
+    /// The Munich chain ladder cannot be fitted: the paid and incurred
+    /// columns are not observed at the same cells, or a cell is not
+    /// positive ([`MunichChainLadder`](crate::MunichChainLadder)).
+    Munich(String),
     /// A growth curve cannot be fitted to this benchmark pattern
     /// ([`BenchmarkCurve`](crate::BenchmarkCurve)).
     BenchmarkCurve(String),
+    /// An industry prior cannot be built from these triangles
+    /// ([`IndustryPrior`](crate::IndustryPrior)): too few companies, ages
+    /// that differ, or a pattern or spread that cannot be estimated.
+    IndustryPrior(String),
     /// The claims development result (Merz–Wüthrich) does not apply to
     /// this triangle: its latest values are not on one calendar diagonal.
     /// A setting of the fit that the closed form does not support (a tail,
@@ -280,7 +288,9 @@ impl fmt::Display for Error {
             Self::File(why) => write!(f, "reading a triangle: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
             Self::Counts(why) => write!(f, "claim counts: {why}"),
+            Self::Munich(why) => write!(f, "Munich chain ladder: {why}"),
             Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),
+            Self::IndustryPrior(why) => write!(f, "industry prior: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
             Self::OneYear {
                 failed,

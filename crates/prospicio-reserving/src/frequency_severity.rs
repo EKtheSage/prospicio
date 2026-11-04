@@ -1,5 +1,5 @@
 //! Methods on claim counts (Friedland, *Estimating Unpaid Claims Using
-//! Basic Techniques*, chapters 11 and 12; `reserving-v02.md` decision 33):
+//! Basic Techniques*, chapters 11 and 12; `reserving-v02.md` decision 35):
 //! frequency-severity ([`FrequencySeverity`]), the disposal rate method
 //! ([`Disposal`]) and case outstanding development
 //! ([`CaseOutstanding`], [`case_development_factor`]), with the pieces they

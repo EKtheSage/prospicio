@@ -1,6 +1,6 @@
 # Methods on claim counts: frequency-severity, the disposal rate method, case
 # outstanding development and the Berquist-Sherman adjustments (issues #554
-# and #555, docs/design/reserving-v02.md, decisions 33 and 34). Each choice
+# and #555, docs/design/reserving-v02.md, decisions 35 and 36). Each choice
 # is encoded here as a named list with a `kind`, which
 # crates/prospicio-r/src/reserving_counts.rs reads.
 

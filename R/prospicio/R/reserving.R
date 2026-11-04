@@ -1613,6 +1613,155 @@ mack <- function(triangle, column = NULL, average = "volume", sigma_interpolatio
   mack_fit(ptr = ptr)
 }
 
+#' Munich chain ladder: paid and incurred developed together
+#'
+#' The Munich chain ladder of Quarg and Mack (2004), as R ChainLadder's
+#' `MunichChainLadder()` and chainladder-python's `MunichAdjustment`
+#' (`docs/design/reserving-v02.md`, decision 33). Paid `P` and incurred
+#' `I` are two columns of one triangle, observed at the same cells. Each
+#' has Mack's volume-weighted model, and each age its ratios `q = sum P /
+#' sum I` and `q_inverse = sum I / sum P` with their deviations
+#' `rho_incurred` and `rho_paid` (an unestimable one extrapolated
+#' log-linearly, as R does). The link-ratio residuals, regressed through
+#' the origin on the ratio residuals, give the slopes `lambda_paid` and
+#' `lambda_incurred`, and the projection corrects each step's factor by
+#' `lambda * sigma / rho` times how far the origin's projected ratio sits
+#' from its average, so the two ultimates come together. With both lambdas
+#' 0 the projections are the separate chain ladders; when the ratios carry
+#' no information (incurred a fixed multiple of paid) the lambdas are 0.
+#' A tail is one more step with the tail's factor and sigma.
+#'
+#' R's `MunichChainLadder()` with its default `est.sigmaP = "log-linear"`
+#' falls back to Mack's rule with a warning when the log-linear model of
+#' sigma is poor, as on its `MCLpaid` and `MCLincurred`; prospicio does
+#' not fall back, so give `sigma_interpolation_paid = "mack"` and
+#' `sigma_interpolation_incurred = "mack"` to reproduce it there. The
+#' default reproduces chainladder-python's `MunichAdjustment` on
+#' `Development()`.
+#'
+#' The fit has per origin `latest_paid`, `latest_incurred`, `latest_ratio`,
+#' `ultimate_paid`, `ultimate_incurred`, `ultimate_ratio`, `reserve_paid`
+#' (paid ultimate minus latest paid), `ibnr_incurred` (incurred ultimate
+#' minus latest incurred) and the separate chain ladders'
+#' `chain_ladder_paid` and `chain_ladder_incurred`; the totals
+#' `total_ultimate_paid` and `total_ultimate_incurred`; per age `q`,
+#' `q_inverse`, `rho_paid` and `rho_incurred`; `lambda_paid`,
+#' `lambda_incurred`, `n_residuals_paid` and `n_residuals_incurred` (the
+#' pairs behind each lambda: fewer for a column whose sigma is 0 at a link,
+#' whose residuals there are 0/0, as in R); and Mack's model of each column
+#' alone as `mack_paid` and `mack_incurred` ([mack_fit]). Per-age values and
+#' the lambdas need a single-segment fit: with several segments use
+#' [development_frame()], [totals_frame()] or [segment()].
+#' `as.data.frame()` gives one row per segment and origin.
+#'
+#' @param triangle A [triangle] holding both columns.
+#' @param paid,incurred The paid and incurred column names.
+#' @param sigma_interpolation_paid,sigma_interpolation_incurred How each
+#'   column's unestimable sigma is filled in: `"log-linear"` (the default)
+#'   or `"mack"` (R's `est.sigmaP` and `est.sigmaI`).
+#' @param tail_paid,tail_incurred Each column's tail, as [mack()]'s `tail`
+#'   (R's `tailP` and `tailI`); none by default.
+#' @param ptr Internal: the Rust fit.
+#' @returns A `munich_fit` object.
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2018:2021, 4:1),
+#'                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130),
+#'                    incurred = c(160, 175, 172, 171, 150, 190, 185, 200, 185, 210))
+#' tri <- triangle(long, "year", "age", c("paid", "incurred"))
+#' m <- munich_chain_ladder(tri)
+#' m@ultimate_paid
+#' m@ultimate_ratio
+#' as.data.frame(m)
+munich_fit <- S7::new_class(
+  "munich_fit",
+  package = "prospicio",
+  properties = local({
+    by_origin <- function(f) {
+      S7::new_property(S7::class_double, getter = function(self) {
+        p <- self@ptr
+        names <- if (p$n_segments() > 1) paste(p$row_segments(), p$origins(), sep = " / ") else p$origins()
+        stats::setNames(f(p), names)
+      })
+    }
+    per_age <- function(f) {
+      S7::new_property(S7::class_double, getter = function(self) {
+        v <- rust_result(f(self@ptr), call = NULL)
+        stats::setNames(v, rust_result(self@ptr$development(), call = NULL))
+      })
+    }
+    one <- function(f, cls = S7::class_double) {
+      S7::new_property(cls, getter = function(self) rust_result(f(self@ptr), call = NULL))
+    }
+    list(
+      ptr = S7::new_S3_class("MunichFit"),
+      keys = S7::new_property(S7::class_character, getter = function(self) self@ptr$keys()),
+      origins = S7::new_property(S7::class_character, getter = function(self) self@ptr$origins()),
+      development = one(function(p) p$development(), S7::class_integer),
+      latest_paid = by_origin(function(p) p$latest_paid()),
+      latest_incurred = by_origin(function(p) p$latest_incurred()),
+      latest_ratio = by_origin(function(p) p$latest_ratio()),
+      ultimate_paid = by_origin(function(p) p$ultimate_paid()),
+      ultimate_incurred = by_origin(function(p) p$ultimate_incurred()),
+      ultimate_ratio = by_origin(function(p) p$ultimate_ratio()),
+      reserve_paid = by_origin(function(p) p$reserve_paid()),
+      ibnr_incurred = by_origin(function(p) p$ibnr_incurred()),
+      chain_ladder_paid = by_origin(function(p) p$chain_ladder_paid()),
+      chain_ladder_incurred = by_origin(function(p) p$chain_ladder_incurred()),
+      total_ultimate_paid = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$total_ultimate_paid()
+      }),
+      total_ultimate_incurred = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$total_ultimate_incurred()
+      }),
+      lambda_paid = one(function(p) p$lambda_paid()),
+      lambda_incurred = one(function(p) p$lambda_incurred()),
+      n_residuals_paid = one(function(p) p$n_residuals_paid(), S7::class_integer),
+      n_residuals_incurred = one(function(p) p$n_residuals_incurred(), S7::class_integer),
+      q = per_age(function(p) p$q()),
+      q_inverse = per_age(function(p) p$q_inverse()),
+      rho_paid = per_age(function(p) p$rho_paid()),
+      rho_incurred = per_age(function(p) p$rho_incurred()),
+      mack_paid = S7::new_property(S7::class_any, getter = function(self) {
+        mack_fit(ptr = self@ptr$mack_paid())
+      }),
+      mack_incurred = S7::new_property(S7::class_any, getter = function(self) {
+        mack_fit(ptr = self@ptr$mack_incurred())
+      })
+    )
+  }),
+  constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
+)
+
+#' @rdname munich_fit
+#' @export
+munich_chain_ladder <- function(triangle, paid = "paid", incurred = "incurred",
+                                sigma_interpolation_paid = "log-linear",
+                                sigma_interpolation_incurred = "log-linear",
+                                tail_paid = 1, tail_incurred = 1) {
+  check_triangle(triangle)
+  sigma <- c("log-linear", "mack")
+  ptr <- rust_result(triangle@ptr$munich_chain_ladder(
+    as.character(paid), as.character(incurred),
+    match.arg(sigma_interpolation_paid, sigma), match.arg(sigma_interpolation_incurred, sigma),
+    tail_ptr(tail_paid), tail_ptr(tail_incurred)
+  ))
+  munich_fit(ptr = ptr)
+}
+
+S7::method(as.data.frame, munich_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
+
+S7::method(print, munich_fit) <- function(x, ...) {
+  n <- x@ptr$n_segments()
+  note <- if (n > 1) sprintf(", %d segments", n) else ""
+  cat(sprintf("<munich_fit> total ultimate paid %s, incurred %s%s\n",
+              format(x@total_ultimate_paid, digits = 10),
+              format(x@total_ultimate_incurred, digits = 10), note))
+  print(as.data.frame(x), row.names = FALSE)
+  invisible(x)
+}
+
 # Checks that `value` is a single number and returns it as a double.
 single_number <- function(value, arg) {
   if (!is.numeric(value) || length(value) != 1 || is.na(value)) {
@@ -4228,7 +4377,11 @@ bayes_bf_one_year <- function(triangle, column, exposure, apriori = 1, cv = 0.1,
 #'   (shape `1 / cv^2`); `Inf` for a flat prior.
 #' @param development_sd Standard deviation of the normal prior on each
 #'   `beta[d]` (the log ratio of the share at age `d` to the first age's),
-#'   centred on 0.
+#'   centred on 0; ignored with a `pattern_prior`.
+#' @param pattern_prior A [pattern_prior()] on the triangle's ages, a normal
+#'   prior on each `beta[d]` with its own mean and standard deviation in
+#'   place of `development_sd` (decision 29; [industry_prior()] estimates
+#'   one), or `NULL`.
 #' @param process Process error on each simulated future increment:
 #'   `"gamma"` (mean `mu`, variance `phi * mu`) or `"none"` for parameter
 #'   error only.
@@ -4302,15 +4455,17 @@ bayes_bf_normalised_fit <- S7::new_class(
 bayes_bf_normalised <- function(triangle, column, exposure, apriori = 1, cv = 0.1, development_sd = 10,
                      process = c("gamma", "none"), chains = 4, tune = 1000, draws = 1000,
                      n_sims = 10000, seed = 0, target_accept = 0.95, max_depth = 10,
-                     common_cv = 0) {
+                     common_cv = 0, pattern_prior = NULL) {
   cols <- exposure_columns(triangle, column, exposure)
   process <- match.arg(process)
+  pattern <- pattern_prior_args(pattern_prior)
   ptr <- reserving_result(triangle@ptr$bayes_bf_normalised(
     cols[1], cols[2], single_number(apriori, "apriori"), single_number(cv, "cv"),
     single_number(development_sd, "development_sd"), process, single_number(chains, "chains"),
     single_number(tune, "tune"), single_number(draws, "draws"), single_number(n_sims, "n_sims"),
     single_number(seed, "seed"), single_number(target_accept, "target_accept"),
-    single_number(max_depth, "max_depth"), single_number(common_cv, "common_cv")))
+    single_number(max_depth, "max_depth"), single_number(common_cv, "common_cv"),
+    pattern[[1]], pattern[[2]], pattern[[3]]))
   fit <- bayes_bf_normalised_fit(ptr = ptr)
   failed <- fit@diagnostics$warnings
   if (length(failed)) {
@@ -4378,10 +4533,12 @@ bayes_bf_normalised_one_year <- function(triangle, column, exposure, apriori = 1
                               target_accept = 0.95, max_depth = 10, k_threshold = 0.7,
                               refit = c("moment_match_then_refit", "refit_flagged",
                                         "reweight_only", "refit_all"),
-                              max_refits = NULL, one_year_sims = NULL, common_cv = 0) {
+                              max_refits = NULL, one_year_sims = NULL, common_cv = 0,
+                              pattern_prior = NULL) {
   cols <- exposure_columns(triangle, column, exposure)
   process <- match.arg(process)
   refit <- match.arg(refit)
+  pattern <- pattern_prior_args(pattern_prior)
   priors <- c(single_number(apriori, "apriori"), single_number(cv, "cv"),
               single_number(development_sd, "development_sd"),
               single_number(common_cv, "common_cv"))
@@ -4391,7 +4548,8 @@ bayes_bf_normalised_one_year <- function(triangle, column, exposure, apriori = 1
            single_number(max_depth, "max_depth"))
   ptr <- reserving_result(triangle@ptr$bayes_bf_normalised_one_year(
     cols[1], cols[2], priors, process, run, single_number(k_threshold, "k_threshold"), refit,
-    max_refits_arg(max_refits), optional_number(one_year_sims, "one_year_sims")))
+    max_refits_arg(max_refits), optional_number(one_year_sims, "one_year_sims"),
+    pattern[[1]], pattern[[2]], pattern[[3]]))
   view <- bayes_one_year_fit(ptr = ptr)
   failed <- view@fit@diagnostics$warnings
   if (length(failed)) {
@@ -5290,14 +5448,14 @@ check_fit <- function(fit) {
                   bayes_bf_normalised_fit, meyers_fit,
                   meyers_fits, one_year_fit, bayes_one_year_fit, bayes_one_year_fits, clark_fit,
                   compartmental_fit, compartmental_fits, compartmental_one_year_fit,
-                  compartmental_one_year_fits)
+                  compartmental_one_year_fits, munich_fit)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
     stop("fit must be a chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, ",
          "odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, bayes_bf_fit, ",
          "bayes_bf_normalised_fit, ",
          "meyers_fit, meyers_fits, one_year_fit, bayes_one_year_fit, bayes_one_year_fits, ",
-         "clark_fit, compartmental_fit, compartmental_fits, compartmental_one_year_fit or ",
-         "compartmental_one_year_fits",
+         "clark_fit, compartmental_fit, compartmental_fits, compartmental_one_year_fit, ",
+         "compartmental_one_year_fits or munich_fit",
          call. = FALSE)
   }
 }
@@ -5347,7 +5505,9 @@ check_fit <- function(fit) {
 #' `ldf` (to the next age), `cdf` (to ultimate, with the tail), `sigma` and
 #' `std_err`; the oldest age has `NA` for `ldf`, `sigma` and `std_err`. A
 #' [clark_fit] has no development table of its own: use
-#' `development_frame(fit@chain_ladder)` for the chain ladder's.
+#' `development_frame(fit@chain_ladder)` for the chain ladder's. A
+#' [munich_fit]'s three tables have its own columns, paid and incurred side
+#' by side (see [munich_fit]).
 #'
 #' `segment()` returns the fit of one segment, chosen by key values as in
 #' `segment(fit, lob = "auto")` (compared as character). Keys not named may
@@ -5365,8 +5525,8 @@ check_fit <- function(fit) {
 #'   [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
 #'   [bayes_odp_fit], [bayes_odp_fits], [bayes_bf_fit], [bayes_bf_normalised_fit],
 #'   [meyers_fit], [meyers_fits], [one_year_fit], [bayes_one_year_fit], [bayes_one_year_fits], [clark_fit],
-#'   [compartmental_fit], [compartmental_fits], [compartmental_one_year_fit] or
-#'   [compartmental_one_year_fits] (a [clark_fit] or
+#'   [compartmental_fit], [compartmental_fits], [compartmental_one_year_fit],
+#'   [compartmental_one_year_fits] or [munich_fit] (a [clark_fit] or
 #'   a compartmental fit not for `development_frame()`); for `segment()`,
 #'   also a [latest_valuation].
 #' @param ... Key conditions as `key = value`, one value each.
@@ -7844,4 +8004,309 @@ bayes_new_year <- function(fit, premium, n_sims = 10000, seed = 0,
     stop("fit must be a bayes_bf_normalised_fit or a meyers_fit", call. = FALSE)
   }
   new_year_fit(ptr = ptr)
+}
+
+#' A prior on the Bayesian Bornhuetter-Ferguson's development pattern
+#'
+#' A normal prior on each log share ratio `beta[d] = log(p[d] / p[1])` of
+#' [bayes_bf_normalised()], with its own mean and standard deviation at each
+#' age after the first, in place of the model's `N(0, development_sd^2)` on
+#' every age (decision 29 of `docs/design/reserving-bayes.md`). The prior's
+#' ages must be the triangle's ages; [industry_prior_at_age()] cuts an
+#' industry prior to a younger triangle.
+#'
+#' Give either `mean` (the means of `beta[2]`, ..., `beta[m]`) or `shares`
+#' (one incremental share per age, from which the means are
+#' `log(shares[d] / shares[1])`); `sd` has one standard deviation per age
+#' after the first, each positive and finite.
+#'
+#' Properties: `ages`, `mean`, `sd`, and `shares` and `percent_developed`
+#' (the pattern at the prior means).
+#'
+#' This is Python's `PatternPrior`.
+#'
+#' @param ages Development ages in months, increasing whole numbers.
+#' @param mean Means of the log share ratios after the first age, or `NULL`
+#'   when `shares` is given.
+#' @param sd Standard deviations of the log share ratios after the first
+#'   age.
+#' @param shares Incremental shares of the ultimate, one per age, or `NULL`
+#'   when `mean` is given.
+#' @returns A `pattern_prior` object.
+#' @seealso [industry_prior()], [bayes_bf_normalised()].
+#' @export
+#' @examples
+#' p <- pattern_prior(c(12, 24, 36), shares = c(0.5, 0.3, 0.2), sd = c(0.1, 0.2))
+#' p@mean
+#' p@percent_developed
+pattern_prior <- S7::new_class(
+  "pattern_prior",
+  package = "prospicio",
+  properties = list(
+    ages = S7::class_double,
+    mean = S7::class_double,
+    sd = S7::class_double,
+    shares = S7::class_double,
+    percent_developed = S7::class_double
+  ),
+  constructor = function(ages, mean = NULL, sd, shares = NULL) {
+    if (is.null(mean) == is.null(shares)) {
+      stop("give either mean or shares", call. = FALSE)
+    }
+    values <- if (is.null(mean)) shares else mean
+    for (arg in list(list(ages, "ages"), list(values, if (is.null(mean)) "shares" else "mean"),
+                     list(sd, "sd"))) {
+      if (!is.numeric(arg[[1]]) || anyNA(arg[[1]])) {
+        stop(sprintf("%s must be a numeric vector", arg[[2]]), call. = FALSE)
+      }
+    }
+    out <- reserving_result(pattern_prior_rust(as.double(ages), as.double(values), as.double(sd),
+                                          is.null(mean)))
+    S7::new_object(S7::S7_object(), ages = out$ages, mean = out$mean, sd = out$sd,
+                   shares = out$shares, percent_developed = out$percent_developed)
+  }
+)
+
+# A pattern_prior from the list IndustryPriorFit$pattern() returns.
+new_pattern_prior <- function(out) pattern_prior(out$ages, mean = out$mean, sd = out$sd)
+
+S7::method(print, pattern_prior) <- function(x, ...) {
+  cat(sprintf("pattern_prior(ages = %s, mean = %s, sd = %s)\n",
+              paste(x@ages, collapse = ", "),
+              paste(format(x@mean, digits = 6), collapse = ", "),
+              paste(format(x@sd, digits = 6), collapse = ", ")))
+  invisible(x)
+}
+
+# The pattern prior's ages, means and sds as the Rust methods take them:
+# NULL ages for none.
+pattern_prior_args <- function(prior) {
+  if (is.null(prior)) return(list(NULL, numeric(0), numeric(0)))
+  if (!S7::S7_inherits(prior, pattern_prior)) {
+    stop("pattern_prior must be a pattern_prior() or NULL", call. = FALSE)
+  }
+  list(prior@ages, prior@mean, prior@sd)
+}
+
+#' An industry prior for the Bayesian Bornhuetter-Ferguson
+#'
+#' The prior of [bayes_bf_normalised()] estimated from other companies'
+#' triangles of the same line (decision 29 of
+#' `docs/design/reserving-bayes.md`, #604): the mean ultimate loss ratio,
+#' its spread between companies, its spread within a company, and a pooled
+#' development pattern with its spread.
+#'
+#' Each company's chain ladder gives its pattern and each origin's ultimate
+#' loss ratio `x[c, w]` (ultimate over premium). Only origins at least
+#' `min_developed` developed by the industry pattern count. With `n[c]`
+#' such origins and `xbar[c]` their mean, the estimators are moments of a
+#' one-way random-effects decomposition on the natural scale:
+#'
+#' * `apriori` is the mean of the companies' `xbar[c]`, and `apriori_se`
+#'   its standard error;
+#' * `within_cv` is the origins' spread about their company's mean, as a
+#'   cv: with `ratio = sum((x - xbar[c])^2) / sum((n[c] - 1) * xbar[c]^2)`,
+#'   `within_cv^2 = ratio / (1 - ratio / nbar)`;
+#' * `between_cv` is the companies' spread about `apriori` less what the
+#'   within spread adds to each mean of `n[c]` origins;
+#' * `process_cv` is the part of the within spread that the chain ladder's
+#'   ODP scale explains (each company's Pearson scale over its ultimates).
+#'
+#' `cv` is the prior's cv of an origin's expected ultimate given its
+#' company: `within_cv`, or with `subtract_process = TRUE` the within spread
+#' less the process part, `sqrt(within_cv^2 - process_cv^2)`. On the
+#' Schedule P panel the process part is often larger than the within spread
+#' (the Pearson scale is inflated by the chain ladder's misfit), which
+#' leaves no structural spread, so the default keeps the whole within spread.
+#' `common_cv` is `between_cv`, the cv of [bayes_bf_normalised()]'s
+#' common multiplier: the program is one more company, so its level is
+#' uncertain by the companies' spread and its origins share that error.
+#'
+#' The pattern prior is the mean and standard deviation over companies of
+#' each company's log share ratio at each age; a spread below 0.01 is set to
+#' 0.01 with a warning, and an age only one company reaches has the vague
+#' standard deviation 10. `percent_developed` is the percent developed at each
+#' age at the pattern prior's means and `percent_developed_sd` the standard
+#' deviation over the companies of their own percent developed there.
+#'
+#' A panel of fewer than `min_companies` companies raises a warning in the
+#' `report`, whose other entries are `n_companies`, `n_companies_used`,
+#' `n_origins_used`, `origins_used` (per company), `companies_by_age` (the
+#' number of companies observed at each age after the first) and
+#' `excluded` (the companies left out and why).
+#'
+#' * `industry_prior()` estimates the prior from a list of triangles, one
+#'   per company, with `premiums` a list of one numeric vector of premium
+#'   per origin for each; or from one triangle with a segment per company
+#'   (keys such as the NAIC code) and an `exposure` column.
+#' * `industry_prior_at_age()` cuts the prior to a triangle whose last age
+#'   is `age`: `apriori` becomes the loss ratio developed to `age`, the
+#'   pattern prior keeps the ages up to it and `tail_factor` is the factor
+#'   from it to ultimate, which the user applies outside the model.
+#' * `bayes_bf_industry()` fits [bayes_bf_normalised()] with the prior's
+#'   `apriori`, `cv`, `common_cv` and pattern prior; the other arguments are
+#'   those of [bayes_bf_normalised()]. `bayes_bf_industry_one_year()` is its
+#'   one-year view, as [bayes_bf_normalised_one_year()].
+#'
+#' Errors: fewer than two companies with an origin developed far enough; a
+#' premium list whose length is not the number of triangles, or a company's
+#' premium that is not one per origin; a `min_developed` outside `[0, 1]`;
+#' a company whose chain ladder cannot be fitted.
+#'
+#' This is Python's `IndustryPrior`.
+#'
+#' @param triangles A list of cumulative [triangle]s, one per company, or a
+#'   triangle with one segment per company.
+#' @param column Name of the loss column.
+#' @param premiums With a list of triangles: a list of numeric vectors, each
+#'   company's premium per origin.
+#' @param exposure With one triangle of segments: the name of its premium
+#'   column.
+#' @param min_developed Least percent developed, by the industry pattern,
+#'   of an origin that counts in the loss ratio moments.
+#' @param min_companies Number of companies below which the report warns.
+#' @param subtract_process Whether `cv` is the within spread less the
+#'   process part.
+#' @param prior An `industry_prior`.
+#' @param age The last age, in months, of the triangle the cut prior is for.
+#' @param triangle A cumulative [triangle] of the program to fit.
+#' @param ... The other arguments of [bayes_bf_normalised()] (or
+#'   [bayes_bf_normalised_one_year()]).
+#' @param ptr An `IndustryPriorFit` pointer; used internally.
+#' @returns `industry_prior()` and `industry_prior_at_age()` an
+#'   `industry_prior`; `bayes_bf_industry()` a [bayes_bf_normalised_fit];
+#'   `bayes_bf_industry_one_year()` a [bayes_one_year_fit].
+#' @seealso [pattern_prior()], [bayes_bf_normalised()], [layer_share_prior()].
+#' @export
+#' @examples
+#' company <- function(level) {
+#'   long <- data.frame(year = rep(2018:2021, 4:1),
+#'                      age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12))
+#'   share <- c(0.4, 0.3, 0.2, 0.1)[long$age / 12]
+#'   long$paid <- ave(100 * level * share, long$year, FUN = cumsum)
+#'   triangle(long, "year", "age", "paid")
+#' }
+#' prior <- industry_prior(lapply(c(0.6, 0.8, 0.7, 0.9), company), "paid",
+#'                         premiums = rep(list(rep(100, 4)), 4), min_developed = 0)
+#' c(prior@apriori, prior@between_cv, prior@within_cv)
+#' prior@pattern@shares
+#' prior@report$warnings
+industry_prior_fit <- S7::new_class(
+  "industry_prior",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("IndustryPriorFit"),
+    apriori = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$numbers()$apriori
+    }),
+    apriori_se = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$numbers()$apriori_se
+    }),
+    between_cv = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$numbers()$between_cv
+    }),
+    within_cv = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$numbers()$within_cv
+    }),
+    process_cv = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$numbers()$process_cv
+    }),
+    cv = S7::new_property(S7::class_double, getter = function(self) self@ptr$numbers()$cv),
+    common_cv = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$numbers()$between_cv
+    }),
+    tail_factor = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$numbers()$tail_factor
+    }),
+    pattern = S7::new_property(S7::class_any, getter = function(self) {
+      new_pattern_prior(self@ptr$pattern())
+    }),
+    percent_developed = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$percent_developed()
+    }),
+    percent_developed_sd = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$percent_developed_sd()
+    }),
+    company_loss_ratios = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$company_loss_ratios()
+    }),
+    report = S7::new_property(S7::class_list, getter = function(self) self@ptr$report())
+  ),
+  constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
+)
+
+S7::method(print, industry_prior_fit) <- function(x, ...) {
+  cat(sprintf(paste0("industry_prior(apriori = %.4f, between_cv = %.4f, within_cv = %.4f, ",
+                     "cv = %.4f, companies = %d)\n"),
+              x@apriori, x@between_cv, x@within_cv, x@cv, x@report$n_companies_used))
+  invisible(x)
+}
+
+#' @rdname industry_prior_fit
+#' @export
+industry_prior <- function(triangles, column, premiums = NULL, exposure = NULL,
+                           min_developed = 0.5, min_companies = 10, subtract_process = FALSE) {
+  if (!is.character(column) || length(column) != 1 || is.na(column)) {
+    stop("column must be the name of a column", call. = FALSE)
+  }
+  if (!is.logical(subtract_process) || length(subtract_process) != 1 || is.na(subtract_process)) {
+    stop("subtract_process must be TRUE or FALSE", call. = FALSE)
+  }
+  settings <- c(single_number(min_developed, "min_developed"),
+                single_number(min_companies, "min_companies"), as.double(subtract_process))
+  if (S7::S7_inherits(triangles, triangle)) {
+    if (!is.null(premiums)) stop("with one triangle of segments, give exposure, not premiums",
+                                 call. = FALSE)
+    cols <- exposure_columns(triangles, column, exposure)
+    ptr <- reserving_result(industry_prior_segments_rust(triangles@ptr, cols[1], cols[2], settings))
+  } else {
+    if (!is.list(triangles) || !all(vapply(triangles, S7::S7_inherits, logical(1), triangle))) {
+      stop("triangles must be a list of triangles or one triangle with a segment per company",
+           call. = FALSE)
+    }
+    if (!is.null(exposure)) stop("with a list of triangles, give premiums, not exposure",
+                                 call. = FALSE)
+    if (!is.list(premiums)) {
+      stop("premiums must be a list of numeric vectors, one per triangle", call. = FALSE)
+    }
+    premiums <- lapply(premiums, function(p) {
+      if (!is.numeric(p) || anyNA(p)) {
+        stop("each of premiums must be a numeric vector", call. = FALSE)
+      }
+      as.double(p)
+    })
+    ptr <- reserving_result(industry_prior_rust(lapply(triangles, function(t) t@ptr), column,
+                                           premiums, settings))
+  }
+  industry_prior_fit(ptr = ptr)
+}
+
+check_industry_prior <- function(prior) {
+  if (!S7::S7_inherits(prior, industry_prior_fit)) {
+    stop("prior must be an industry_prior()", call. = FALSE)
+  }
+}
+
+#' @rdname industry_prior_fit
+#' @export
+industry_prior_at_age <- function(prior, age) {
+  check_industry_prior(prior)
+  industry_prior_fit(ptr = reserving_result(prior@ptr$at_age(single_number(age, "age"))))
+}
+
+#' @rdname industry_prior_fit
+#' @export
+bayes_bf_industry <- function(triangle, column, exposure, prior, ...) {
+  check_industry_prior(prior)
+  bayes_bf_normalised(triangle, column, exposure, apriori = prior@apriori, cv = prior@cv,
+                      common_cv = prior@common_cv, pattern_prior = prior@pattern, ...)
+}
+
+#' @rdname industry_prior_fit
+#' @export
+bayes_bf_industry_one_year <- function(triangle, column, exposure, prior, ...) {
+  check_industry_prior(prior)
+  bayes_bf_normalised_one_year(triangle, column, exposure, apriori = prior@apriori,
+                               cv = prior@cv, common_cv = prior@common_cv,
+                               pattern_prior = prior@pattern, ...)
 }

@@ -16,16 +16,17 @@ use prospicio_reserving::{
     DevelopmentPatterns, DiagonalAge, ExpectedLoss, ExpectedLossFit, FileLayout, FitTable,
     GrowthCurve, Label, LatestDiagonals, Long, LongDiagonal, Mack, MackBootstrap,
     MackBootstrapFits, MackBootstrapSegment, MackFit, MackProcess, Monotone, MonthlyBasis,
-    OdpBootstrap, OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod,
-    OneYearPattern, PastPatternEnd, PatternKind, PatternWeight, ProcessDistribution, ReserveFit,
-    SegmentDependence, SegmentFits, SegmentMap, SelectedPattern, SigmaInterpolation, Tail,
-    TailBondy, TailConstant, TailCurve, Triangle, UnderwritingBasis, view,
+    MunichChainLadder, MunichFit, OdpBootstrap, OdpBootstrapFits, OdpBootstrapSegment, OneYearFits,
+    OneYearMethod, OneYearPattern, PastPatternEnd, PatternKind, PatternWeight, ProcessDistribution,
+    ReserveFit, SegmentDependence, SegmentFits, SegmentMap, SelectedPattern, SigmaInterpolation,
+    Tail, TailBondy, TailConstant, TailCurve, Triangle, UnderwritingBasis, view,
 };
 use prospicio_reserving::{
     CALENDAR_YEAR_CI, CalendarYearTest, DEVELOPMENT_CORRELATION_CI, DevelopmentCorrelationTest,
     calendar_year_effect as run_calendar_year_effect,
     development_correlation as run_development_correlation,
 };
+use prospicio_reserving::{IndustryPrior, IndustryPriorSettings, PatternPrior};
 use pyo3::exceptions::{PyImportError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{
@@ -11878,6 +11879,15 @@ impl PyBayesBfFit {
 ///     Target mean acceptance rate of the step-size adaptation.
 /// max_depth : int, default 10
 ///     Largest NUTS tree depth.
+/// common_cv : float, optional
+///     The coefficient of variation of one gamma multiplier (mean 1) common
+///     to all origins' prior ultimates; ``None`` has none.
+/// pattern_prior : PatternPrior, optional
+///     An informative prior on the pattern: each ``beta[d]`` is normal with
+///     the prior's mean and sd in place of ``N(0, development_sd**2)``, for
+///     example ``IndustryPrior.pattern``. Its ages must be the fitted
+///     triangle's (``PatternPrior.truncated`` or ``IndustryPrior.at_age``
+///     cut a longer one). ``None`` (the default) keeps the vague prior.
 ///
 /// Raises
 /// ------
@@ -11907,6 +11917,9 @@ impl PyBayesBfFit {
 #[pyclass(name = "BayesBfNormalised", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyBayesBfNormalised {
     pub(crate) inner: BayesBfNormalised,
+    /// The pattern prior its fits take, if any (not a setting of the Rust
+    /// model, which takes it at the fit: decision 29).
+    pub(crate) pattern_prior: Option<PatternPrior>,
 }
 
 #[pymethods]
@@ -11925,6 +11938,7 @@ impl PyBayesBfNormalised {
         target_accept = 0.95,
         max_depth = 10,
         common_cv = None,
+        pattern_prior = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -11940,6 +11954,7 @@ impl PyBayesBfNormalised {
         target_accept: f64,
         max_depth: u64,
         common_cv: Option<f64>,
+        pattern_prior: Option<PyRef<'_, PyPatternPrior>>,
     ) -> PyResult<Self> {
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
@@ -11962,6 +11977,7 @@ impl PyBayesBfNormalised {
                 seed,
                 common_cv,
             },
+            pattern_prior: pattern_prior.map(|p| p.inner.clone()),
         })
     }
 
@@ -11970,6 +11986,15 @@ impl PyBayesBfNormalised {
     #[getter]
     fn common_cv(&self) -> Option<f64> {
         self.inner.common_cv
+    }
+
+    /// The prior on the pattern, or ``None`` for the vague
+    /// ``N(0, development_sd**2)``.
+    #[getter]
+    fn pattern_prior(&self) -> Option<PyPatternPrior> {
+        self.pattern_prior
+            .clone()
+            .map(|inner| PyPatternPrior { inner })
     }
 
     /// Prior mean of each origin's expected ultimate per unit of exposure.
@@ -12075,9 +12100,12 @@ impl PyBayesBfNormalised {
         column: &str,
         exposure: &str,
     ) -> PyResult<PyBayesBfNormalisedFit> {
-        let (model, tri) = (&self.inner, &triangle.inner);
+        let (model, tri, prior) = (&self.inner, &triangle.inner, &self.pattern_prior);
         let inner = py
-            .detach(|| model.fit(tri, column, exposure))
+            .detach(|| match prior {
+                Some(p) => model.fit_with_pattern_prior(tri, column, exposure, p),
+                None => model.fit(tri, column, exposure),
+            })
             .map_err(err)?;
         let warnings = &inner.diagnostics.warnings;
         if !warnings.is_empty() {
@@ -12178,9 +12206,12 @@ impl PyBayesBfNormalised {
         n_sims: Option<usize>,
     ) -> PyResult<PyBayesOneYearFit> {
         let settings = one_year_settings(k_threshold, Some(refit), max_refits, n_sims)?;
-        let (model, tri) = (&self.inner, &triangle.inner);
+        let (model, tri, prior) = (&self.inner, &triangle.inner, &self.pattern_prior);
         let inner = py
-            .detach(|| model.one_year(tri, column, exposure, &settings))
+            .detach(|| match prior {
+                Some(p) => model.one_year_with_pattern_prior(tri, column, exposure, &settings, p),
+                None => model.one_year(tri, column, exposure, &settings),
+            })
             .map_err(err)?;
         warn_diagnostics(py, "BayesBfNormalised", &inner.fit.diagnostics.warnings)?;
         warn_refits(
@@ -12202,7 +12233,7 @@ impl PyBayesBfNormalised {
         let s = &self.inner.sampler;
         format!(
             "BayesBfNormalised(apriori={:?}, cv={:?}, development_sd={:?}, process={:?}, chains={}, \
-             tune={}, draws={}, n_sims={}, seed={})",
+             tune={}, draws={}, n_sims={}, seed={}{}{})",
             self.inner.apriori,
             self.inner.cv,
             self.inner.development_sd,
@@ -12212,6 +12243,14 @@ impl PyBayesBfNormalised {
             s.draws,
             self.inner.n_sims,
             self.inner.seed,
+            self.inner
+                .common_cv
+                .map_or_else(String::new, |c| format!(", common_cv={c:?}")),
+            if self.pattern_prior.is_some() {
+                ", pattern_prior=PatternPrior(...)"
+            } else {
+                ""
+            },
         )
     }
 }
@@ -12814,8 +12853,9 @@ impl PyLayerSharePrior {
     /// Parameters
     /// ----------
     /// model : BayesBfNormalised, optional
-    ///     Supplies the sampler, process error, simulations and seed; its
-    ///     own ``apriori``, ``cv`` and ``common_cv`` are replaced.
+    ///     Supplies the sampler, process error, simulations, seed and
+    ///     ``pattern_prior``; its own ``apriori``, ``cv`` and ``common_cv``
+    ///     are replaced.
     ///
     /// Returns
     /// -------
@@ -12830,9 +12870,11 @@ impl PyLayerSharePrior {
         &self,
         model: Option<PyRef<'_, PyBayesBfNormalised>>,
     ) -> PyResult<PyBayesBfNormalised> {
+        let pattern_prior = model.as_ref().and_then(|m| m.pattern_prior.clone());
         let base = model.map_or_else(BayesBfNormalised::default, |m| m.inner.clone());
         Ok(PyBayesBfNormalised {
             inner: self.inner.model(&base).map_err(err)?,
+            pattern_prior,
         })
     }
 
@@ -12890,12 +12932,534 @@ impl PyLayerSharePrior {
         exposure: &str,
         model: Option<PyRef<'_, PyBayesBfNormalised>>,
     ) -> PyResult<PyBayesBfNormalisedFit> {
+        let pattern = model.as_ref().and_then(|m| m.pattern_prior.clone());
+        let base = model.map_or_else(BayesBfNormalised::default, |m| m.inner.clone());
+        let (prior, tri) = (&self.inner, &triangle.inner);
+        let inner = py
+            .detach(|| match &pattern {
+                Some(p) => prior.model(&base)?.fit_with_pattern_prior(
+                    &prior.triangle(tri, exposure)?,
+                    column,
+                    prospicio_reserving::bayes::LAYER_EXPOSURE_COLUMN,
+                    p,
+                ),
+                None => prior.fit(&base, tri, column, exposure),
+            })
+            .map_err(err)?;
+        warn_diagnostics(py, "LayerSharePrior", &inner.diagnostics.warnings)?;
+        Ok(PyBayesBfNormalisedFit { inner })
+    }
+
+    /// The one-year view of the same fit (``BayesBfNormalised.one_year``).
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    /// column : str
+    /// exposure : str
+    /// model : BayesBfNormalised, optional
+    /// k_threshold : float, default 0.7
+    /// refit : str, default "moment_match_then_refit"
+    /// max_refits : int, optional
+    /// n_sims : int, optional
+    ///     As in ``BayesBfNormalised.one_year``.
+    ///
+    /// Returns
+    /// -------
+    /// BayesOneYearFit
+    #[pyo3(signature = (triangle, column, exposure, model = None, k_threshold = 0.7, refit = "moment_match_then_refit", max_refits = None, n_sims = None))]
+    #[allow(clippy::too_many_arguments)]
+    fn one_year(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+        exposure: &str,
+        model: Option<PyRef<'_, PyBayesBfNormalised>>,
+        k_threshold: f64,
+        refit: &str,
+        max_refits: Option<usize>,
+        n_sims: Option<usize>,
+    ) -> PyResult<PyBayesOneYearFit> {
+        let settings = one_year_settings(k_threshold, Some(refit), max_refits, n_sims)?;
+        let pattern = model.as_ref().and_then(|m| m.pattern_prior.clone());
+        let base = model.map_or_else(BayesBfNormalised::default, |m| m.inner.clone());
+        let (prior, tri) = (&self.inner, &triangle.inner);
+        let inner = py
+            .detach(|| match &pattern {
+                Some(p) => prior.model(&base)?.one_year_with_pattern_prior(
+                    &prior.triangle(tri, exposure)?,
+                    column,
+                    prospicio_reserving::bayes::LAYER_EXPOSURE_COLUMN,
+                    &settings,
+                    p,
+                ),
+                None => prior.one_year(&base, tri, column, exposure, &settings),
+            })
+            .map_err(err)?;
+        warn_diagnostics(py, "LayerSharePrior", &inner.fit.diagnostics.warnings)?;
+        warn_refits(
+            py,
+            "LayerSharePrior",
+            &[(
+                String::new(),
+                inner.refitted.len(),
+                inner.refit_warnings,
+                inner.unrefitted.len(),
+            )],
+        )?;
+        Ok(PyBayesOneYearFit {
+            inner: BayesOneYearOf::BfNormalised(inner),
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "LayerSharePrior(apriori={:?}, shares={:?}, apriori_cv={:?}, share_cv={:?}, share_dependence={:?})",
+            self.inner.apriori,
+            self.inner.shares,
+            self.inner.apriori_cv,
+            self.inner.share_cv,
+            self.share_dependence(),
+        )
+    }
+}
+
+/// A normal prior on the development pattern of ``BayesBfNormalised``: at
+/// each age after the first, ``beta[d] = log(p[d] / p[1])`` (the log ratio
+/// of the share of the ultimate at age ``d`` to the first age's) is normal
+/// with mean ``mean[d]`` and sd ``sd[d]``, in place of the model's
+/// ``N(0, development_sd**2)`` (``docs/design/reserving-bayes.md``,
+/// decision 29). ``IndustryPrior.pattern`` builds one from other companies'
+/// triangles.
+///
+/// Parameters
+/// ----------
+/// ages : list of int
+///     The development ages in months, increasing; at least two.
+/// mean : list of float
+///     The prior mean of each ``beta[d]``, one fewer than the ages.
+/// sd : list of float
+///     The prior sd of each ``beta[d]``, finite and positive.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reserving import PatternPrior
+/// >>> prior = PatternPrior.from_shares([12, 24, 36], [0.5, 0.3, 0.2], [0.1, 0.1])
+/// >>> [round(p, 12) for p in prior.shares()]
+/// [0.5, 0.3, 0.2]
+/// >>> prior.truncated(24).ages
+/// [12, 24]
+#[pyclass(name = "PatternPrior", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyPatternPrior {
+    pub(crate) inner: PatternPrior,
+}
+
+#[pymethods]
+impl PyPatternPrior {
+    #[new]
+    fn new(ages: Vec<Lag>, mean: Vec<f64>, sd: Vec<f64>) -> PyResult<Self> {
+        Ok(Self {
+            inner: PatternPrior::new(&ages, &mean, &sd).map_err(err)?,
+        })
+    }
+
+    /// A prior centred on incremental ``shares`` of the ultimate (positive;
+    /// they need not sum to 1), with ``sd`` on each log ratio after the
+    /// first age.
+    ///
+    /// Parameters
+    /// ----------
+    /// ages : list of int
+    /// shares : list of float
+    ///     One per age.
+    /// sd : list of float
+    ///     One per age after the first.
+    ///
+    /// Returns
+    /// -------
+    /// PatternPrior
+    #[staticmethod]
+    fn from_shares(ages: Vec<Lag>, shares: Vec<f64>, sd: Vec<f64>) -> PyResult<Self> {
+        Ok(Self {
+            inner: PatternPrior::from_shares(&ages, &shares, &sd).map_err(err)?,
+        })
+    }
+
+    /// The development ages in months.
+    #[getter]
+    fn ages(&self) -> Vec<Lag> {
+        self.inner.ages.clone()
+    }
+
+    /// The prior mean of each ``beta[d]``, ages after the first.
+    #[getter]
+    fn mean(&self) -> Vec<f64> {
+        self.inner.mean.clone()
+    }
+
+    /// The prior sd of each ``beta[d]``, ages after the first.
+    #[getter]
+    fn sd(&self) -> Vec<f64> {
+        self.inner.sd.clone()
+    }
+
+    /// The incremental shares at the prior mean, summing to 1.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn shares(&self) -> Vec<f64> {
+        self.inner.shares()
+    }
+
+    /// The percent developed at each age at the prior mean, ending at 1.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn percent_developed(&self) -> Vec<f64> {
+        self.inner.percent_developed()
+    }
+
+    /// The prior on the ages up to ``age`` (one of its ages, not the
+    /// first): the log ratios to the first age keep their means and sds.
+    ///
+    /// Parameters
+    /// ----------
+    /// age : int
+    ///
+    /// Returns
+    /// -------
+    /// PatternPrior
+    fn truncated(&self, age: Lag) -> PyResult<Self> {
+        Ok(Self {
+            inner: self.inner.truncated(age).map_err(err)?,
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "PatternPrior(ages={:?}, mean={:?}, sd={:?})",
+            self.inner.ages, self.inner.mean, self.inner.sd
+        )
+    }
+}
+
+/// An industry prior for ``BayesBfNormalised`` from other companies'
+/// triangles (``docs/design/reserving-bayes.md``, decision 29): the mean
+/// ultimate loss ratio over the companies (``apriori``), the cv of a
+/// company's level about it (``between_cv``, the model's ``common_cv``),
+/// the cv of an origin about its company's level (``cv``, the model's
+/// ``cv``) and a ``PatternPrior`` with the mean and sd over the companies
+/// of each age's log share ratio. Each company's loss ratios and pattern
+/// come from its own volume-weighted chain ladder (no tail, so the
+/// triangles' last age is the ultimate); only origins developed at least
+/// ``min_developed`` by the industry pattern count. The estimators are
+/// moments on the natural scale (a one-way random-effects decomposition),
+/// written out in the Rust docs of ``IndustryPrior``. No data ship with
+/// the library: the triangles are the user's, for example Schedule P
+/// triangles read with the ``cas-schedule-p`` package.
+///
+/// ``within_cv`` is the realised origin-to-origin spread and ``cv`` equals
+/// it by default; ``subtract_process=True`` takes out the ODP process error
+/// that each company's Pearson scale implies (``process_cv``), which the
+/// model adds back through its own scale. On Schedule P that scale often
+/// explains more than the whole spread (incurred above all), so the default
+/// keeps the realised spread and errs wide.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reserving import IndustryPrior, Triangle
+/// >>> def company(scale):
+/// ...     return Triangle.from_long(
+/// ...         [2020, 2020, 2020, 2021, 2021, 2022],
+/// ...         [12, 24, 36, 12, 24, 12],
+/// ...         {"paid": [v * scale for v in [50.0, 80.0, 100.0, 55.0, 88.0, 60.0]]},
+/// ...     )
+/// >>> prior = IndustryPrior.from_triangles(
+/// ...     [company(1.0), company(1.2), company(0.9)], "paid", [[160.0] * 3] * 3
+/// ... )
+/// >>> prior.report["n_companies_used"]
+/// 3
+/// >>> prior.pattern.ages
+/// [12, 24, 36]
+#[pyclass(name = "IndustryPrior", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyIndustryPrior {
+    inner: IndustryPrior,
+}
+
+fn industry_settings(
+    min_developed: f64,
+    min_companies: usize,
+    subtract_process: bool,
+) -> IndustryPriorSettings {
+    IndustryPriorSettings {
+        min_developed,
+        min_companies,
+        subtract_process,
+    }
+}
+
+#[pymethods]
+impl PyIndustryPrior {
+    /// The prior from single-segment triangles, one per company, of loss
+    /// ``column`` (cumulative or incremental), with each company's premium
+    /// per origin. Every triangle must have the same development ages.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangles : list of Triangle
+    ///     One per company; at least two.
+    /// column : str
+    ///     The losses.
+    /// premiums : list of list of float
+    ///     Each company's premium per origin, in origin order. An origin
+    ///     whose premium is not positive is left out.
+    /// min_developed : float, default 0.5
+    ///     The smallest share of the ultimate developed (by the industry
+    ///     pattern) at an origin's latest age for its loss ratio to count.
+    /// min_companies : int, default 10
+    ///     Fewer companies than this add a warning to ``report``.
+    /// subtract_process : bool, default False
+    ///     Whether ``cv`` is ``within_cv`` less the ODP process error.
+    ///
+    /// Returns
+    /// -------
+    /// IndustryPrior
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If fewer than two companies have a loss ratio, the triangles'
+    ///     ages differ, a company's premiums do not match its origins, no
+    ///     company has a pattern at some age, or ``min_developed`` is
+    ///     outside 0 to 1.
+    #[staticmethod]
+    #[pyo3(signature = (triangles, column, premiums, min_developed = 0.5, min_companies = 10, subtract_process = false))]
+    fn from_triangles(
+        py: Python<'_>,
+        triangles: Vec<PyRef<'_, PyTriangle>>,
+        column: &str,
+        premiums: Vec<Vec<f64>>,
+        min_developed: f64,
+        min_companies: usize,
+        subtract_process: bool,
+    ) -> PyResult<Self> {
+        let triangles: Vec<Triangle> = triangles.iter().map(|t| t.inner.clone()).collect();
+        let settings = industry_settings(min_developed, min_companies, subtract_process);
+        let inner = py
+            .detach(|| settings.from_triangles(&triangles, column, &premiums))
+            .map_err(err)?;
+        Ok(Self { inner })
+    }
+
+    /// The prior from one triangle with a segment per company (a key such
+    /// as the group code), loss ``column``, and each origin's premium from
+    /// the ``exposure`` column (its latest observed value).
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    /// column : str
+    /// exposure : str
+    /// min_developed, min_companies, subtract_process
+    ///     As in ``from_triangles``.
+    ///
+    /// Returns
+    /// -------
+    /// IndustryPrior
+    #[staticmethod]
+    #[pyo3(signature = (triangle, column, exposure, min_developed = 0.5, min_companies = 10, subtract_process = false))]
+    fn from_segments(
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+        exposure: &str,
+        min_developed: f64,
+        min_companies: usize,
+        subtract_process: bool,
+    ) -> PyResult<Self> {
+        let settings = industry_settings(min_developed, min_companies, subtract_process);
+        let tri = &triangle.inner;
+        let inner = py
+            .detach(|| settings.from_segments(tri, column, exposure))
+            .map_err(err)?;
+        Ok(Self { inner })
+    }
+
+    /// The mean over the companies of their mean ultimate loss ratio.
+    #[getter]
+    fn apriori(&self) -> f64 {
+        self.inner.apriori
+    }
+
+    /// The standard error of ``apriori``.
+    #[getter]
+    fn apriori_se(&self) -> f64 {
+        self.inner.apriori_se
+    }
+
+    /// The cv of a company's level about ``apriori``.
+    #[getter]
+    fn between_cv(&self) -> f64 {
+        self.inner.between_cv
+    }
+
+    /// The cv of the realised loss ratios of a company's origins about its
+    /// level.
+    #[getter]
+    fn within_cv(&self) -> f64 {
+        self.inner.within_cv
+    }
+
+    /// The part of ``within_cv`` that the companies' ODP process error
+    /// explains.
+    #[getter]
+    fn process_cv(&self) -> f64 {
+        self.inner.process_cv
+    }
+
+    /// The model's ``cv``: ``within_cv``, or less the process error with
+    /// ``subtract_process``; at least 0.01.
+    #[getter]
+    fn cv(&self) -> f64 {
+        self.inner.cv
+    }
+
+    /// The model's ``common_cv``: ``between_cv``, or ``None`` when it is 0.
+    #[getter]
+    fn common_cv(&self) -> Option<f64> {
+        self.inner.common_cv()
+    }
+
+    /// The prior on the pattern.
+    #[getter]
+    fn pattern(&self) -> PyPatternPrior {
+        PyPatternPrior {
+            inner: self.inner.pattern.clone(),
+        }
+    }
+
+    /// The percent developed at each age at the pattern prior's mean.
+    #[getter]
+    fn percent_developed(&self) -> Vec<f64> {
+        self.inner.percent_developed.clone()
+    }
+
+    /// The sd over the companies of their percent developed at each age.
+    #[getter]
+    fn percent_developed_sd(&self) -> Vec<f64> {
+        self.inner.percent_developed_sd.clone()
+    }
+
+    /// Each company's mean ultimate loss ratio, companies left out omitted.
+    #[getter]
+    fn company_loss_ratios(&self) -> Vec<f64> {
+        self.inner.company_loss_ratios.clone()
+    }
+
+    /// The factor from the pattern's last age to the ultimate: 1, or more
+    /// for a prior cut by ``at_age``.
+    #[getter]
+    fn tail_factor(&self) -> f64 {
+        self.inner.tail_factor
+    }
+
+    /// The report: ``n_companies``, ``n_companies_used``,
+    /// ``n_origins_used``, ``origins_used`` (per company),
+    /// ``companies_by_age`` (with a pattern at each age after the first),
+    /// ``excluded`` and ``warnings`` (lists of str).
+    #[getter]
+    fn report<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let r = &self.inner.report;
+        let d = PyDict::new(py);
+        d.set_item("n_companies", r.n_companies)?;
+        d.set_item("n_companies_used", r.n_companies_used)?;
+        d.set_item("n_origins_used", r.n_origins_used)?;
+        d.set_item("origins_used", r.origins_used.clone())?;
+        d.set_item("companies_by_age", r.companies_by_age.clone())?;
+        d.set_item("excluded", r.excluded.clone())?;
+        d.set_item("warnings", r.warnings.clone())?;
+        Ok(d)
+    }
+
+    /// The prior for a triangle whose last age is ``age``: ``apriori``
+    /// becomes the loss ratio developed to it, the pattern keeps the ages up
+    /// to it and ``tail_factor`` is the factor from it to ultimate, which
+    /// the user applies outside the model.
+    ///
+    /// Parameters
+    /// ----------
+    /// age : int
+    ///
+    /// Returns
+    /// -------
+    /// IndustryPrior
+    fn at_age(&self, age: Lag) -> PyResult<Self> {
+        Ok(Self {
+            inner: self.inner.at_age(age).map_err(err)?,
+        })
+    }
+
+    /// ``model`` (default settings if omitted) with this prior's
+    /// ``apriori``, ``cv``, ``common_cv`` and ``pattern`` as its
+    /// ``pattern_prior``; its other settings are kept.
+    ///
+    /// Parameters
+    /// ----------
+    /// model : BayesBfNormalised, optional
+    ///
+    /// Returns
+    /// -------
+    /// BayesBfNormalised
+    #[pyo3(signature = (model = None))]
+    fn model(&self, model: Option<PyRef<'_, PyBayesBfNormalised>>) -> PyBayesBfNormalised {
+        let base = model.map_or_else(BayesBfNormalised::default, |m| m.inner.clone());
+        PyBayesBfNormalised {
+            inner: self.inner.model(&base),
+            pattern_prior: Some(self.inner.pattern.clone()),
+        }
+    }
+
+    /// ``model()`` on the default settings.
+    ///
+    /// Returns
+    /// -------
+    /// BayesBfNormalised
+    fn to_bf_normalised_settings(&self) -> PyBayesBfNormalised {
+        self.model(None)
+    }
+
+    /// ``self.model(model).fit(triangle, column, exposure)``: the pattern
+    /// prior's ages must be the triangle's (``at_age`` cuts it). Raises
+    /// one ``UserWarning`` listing the failed diagnostics, if any.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    /// column : str
+    /// exposure : str
+    /// model : BayesBfNormalised, optional
+    ///
+    /// Returns
+    /// -------
+    /// BayesBfNormalisedFit
+    #[pyo3(signature = (triangle, column, exposure, model = None))]
+    fn fit(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+        exposure: &str,
+        model: Option<PyRef<'_, PyBayesBfNormalised>>,
+    ) -> PyResult<PyBayesBfNormalisedFit> {
         let base = model.map_or_else(BayesBfNormalised::default, |m| m.inner.clone());
         let (prior, tri) = (&self.inner, &triangle.inner);
         let inner = py
             .detach(|| prior.fit(&base, tri, column, exposure))
             .map_err(err)?;
-        warn_diagnostics(py, "LayerSharePrior", &inner.diagnostics.warnings)?;
+        warn_diagnostics(py, "IndustryPrior", &inner.diagnostics.warnings)?;
         Ok(PyBayesBfNormalisedFit { inner })
     }
 
@@ -12936,10 +13500,10 @@ impl PyLayerSharePrior {
         let inner = py
             .detach(|| prior.one_year(&base, tri, column, exposure, &settings))
             .map_err(err)?;
-        warn_diagnostics(py, "LayerSharePrior", &inner.fit.diagnostics.warnings)?;
+        warn_diagnostics(py, "IndustryPrior", &inner.fit.diagnostics.warnings)?;
         warn_refits(
             py,
-            "LayerSharePrior",
+            "IndustryPrior",
             &[(
                 String::new(),
                 inner.refitted.len(),
@@ -12954,12 +13518,12 @@ impl PyLayerSharePrior {
 
     fn __repr__(&self) -> String {
         format!(
-            "LayerSharePrior(apriori={:?}, shares={:?}, apriori_cv={:?}, share_cv={:?}, share_dependence={:?})",
+            "IndustryPrior(apriori={:.4}, between_cv={:.4}, cv={:.4}, ages={:?}, companies={})",
             self.inner.apriori,
-            self.inner.shares,
-            self.inner.apriori_cv,
-            self.inner.share_cv,
-            self.share_dependence(),
+            self.inner.between_cv,
+            self.inner.cv,
+            self.inner.pattern.ages,
+            self.inner.report.n_companies_used,
         )
     }
 }
@@ -18077,4 +18641,434 @@ pub(crate) fn development_correlation(
 ) -> PyResult<PyDevelopmentCorrelationTest> {
     let inner = run_development_correlation(&triangle.inner, column, ci).map_err(err)?;
     Ok(PyDevelopmentCorrelationTest { inner })
+}
+
+/// The Munich chain ladder (Quarg and Mack 2004): paid and incurred
+/// developed together, each factor corrected by how far the origin's
+/// paid-to-incurred ratio sits from its average at that age, as R
+/// ChainLadder's ``MunichChainLadder`` and chainladder-python's
+/// ``MunichAdjustment`` (``docs/design/reserving-v02.md``, decision 33).
+///
+/// Each column has Mack's volume-weighted model; the slopes ``lambda_paid``
+/// and ``lambda_incurred`` of its link-ratio residuals on the ratio
+/// residuals set the correction. With both 0 the projections are the two
+/// separate chain ladders.
+///
+/// Parameters
+/// ----------
+/// sigma_interpolation_paid : str, default "log-linear"
+///     How the paid column's unestimable sigma is filled in (R's
+///     ``est.sigmaP``): ``"log-linear"`` or ``"mack"``. R's default call
+///     falls back to ``"mack"`` with a warning when its log-linear model
+///     is poor (as on its ``MCLpaid``); prospicio does not, so give
+///     ``"mack"`` to match it there.
+/// sigma_interpolation_incurred : str, default "log-linear"
+///     The same for incurred (R's ``est.sigmaI``).
+/// tail_paid : float or tail estimator, optional
+///     The paid tail (R's ``tailP``), as ``Mack``'s ``tail``; none by
+///     default.
+/// tail_incurred : float or tail estimator, optional
+///     The incurred tail (R's ``tailI``).
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reserving import MunichChainLadder, Triangle
+/// >>> tri = Triangle.from_long(
+/// ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+/// ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+/// ...     {
+/// ...         "paid": [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+/// ...         "incurred": [160.0, 175.0, 172.0, 171.0, 150.0, 190.0, 185.0, 200.0, 185.0, 210.0],
+/// ...     },
+/// ... )
+/// >>> fit = MunichChainLadder().fit(tri, "paid", "incurred")
+/// >>> fit.ultimate_paid[0]
+/// 170.0
+#[pyclass(name = "MunichChainLadder", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyMunichChainLadder {
+    inner: MunichChainLadder,
+}
+
+#[pymethods]
+impl PyMunichChainLadder {
+    #[new]
+    #[pyo3(signature = (
+        sigma_interpolation_paid = "log-linear",
+        sigma_interpolation_incurred = "log-linear",
+        tail_paid = None,
+        tail_incurred = None,
+    ))]
+    fn new(
+        sigma_interpolation_paid: &str,
+        sigma_interpolation_incurred: &str,
+        tail_paid: Option<&Bound<'_, PyAny>>,
+        tail_incurred: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        let dev = |name: &str| -> PyResult<Development> {
+            Ok(Development {
+                sigma_interpolation: sigma_interpolation(name)?,
+                ..Default::default()
+            })
+        };
+        Ok(Self {
+            inner: MunichChainLadder {
+                paid: dev(sigma_interpolation_paid)?,
+                incurred: dev(sigma_interpolation_incurred)?,
+                tail_paid: tail_arg(tail_paid)?,
+                tail_incurred: tail_arg(tail_incurred)?,
+            },
+        })
+    }
+
+    /// How the paid column's unestimable sigma is filled in.
+    #[getter]
+    fn sigma_interpolation_paid(&self) -> &'static str {
+        sigma_interpolation_name(self.inner.paid.sigma_interpolation)
+    }
+
+    /// How the incurred column's unestimable sigma is filled in.
+    #[getter]
+    fn sigma_interpolation_incurred(&self) -> &'static str {
+        sigma_interpolation_name(self.inner.incurred.sigma_interpolation)
+    }
+
+    /// The paid tail: a constant factor as a number, otherwise its
+    /// estimator.
+    #[getter]
+    fn tail_paid<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        tail_object(py, &self.inner.tail_paid)
+    }
+
+    /// The incurred tail.
+    #[getter]
+    fn tail_incurred<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        tail_object(py, &self.inner.tail_incurred)
+    }
+
+    /// Fits the paid and incurred columns of a triangle, in every segment
+    /// on its own.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    ///     Holds both columns, observed at the same cells.
+    /// paid : str
+    ///     The paid column.
+    /// incurred : str
+    ///     The incurred column.
+    ///
+    /// Returns
+    /// -------
+    /// MunichFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the two columns are not observed at the same cells (a missing
+    ///     incurred cell, say), a cell is not positive, or either column
+    ///     fails as in ``Mack.fit``.
+    fn fit(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        paid: &str,
+        incurred: &str,
+    ) -> PyResult<PyMunichFit> {
+        let tri = &triangle.inner;
+        let inner = py
+            .detach(|| self.inner.fit_segments(tri, paid, incurred))
+            .map_err(err)?;
+        Ok(PyMunichFit { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "MunichChainLadder(sigma_interpolation_paid={:?}, sigma_interpolation_incurred={:?}, \
+             tail_paid={}, tail_incurred={})",
+            self.sigma_interpolation_paid(),
+            self.sigma_interpolation_incurred(),
+            tail_arg_repr(&self.inner.tail_paid),
+            tail_arg_repr(&self.inner.tail_incurred),
+        )
+    }
+}
+
+/// A fitted Munich chain ladder of every segment.
+///
+/// Per-origin lists run over the origins of each segment in turn, like the
+/// rows of ``to_frame()``. Per-age lists and the lambdas need a
+/// single-segment fit; for several segments use ``development_frame()``,
+/// ``totals_frame()`` or ``segment(...)``.
+#[pyclass(name = "MunichFit", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyMunichFit {
+    inner: SegmentFits<MunichFit>,
+}
+
+impl PyMunichFit {
+    fn one(&self, field: &str, instead: &str) -> PyResult<&MunichFit> {
+        single(&self.inner, field, instead)
+    }
+
+    fn per_origin(&self, f: impl Fn(&MunichFit) -> Vec<f64>) -> Vec<f64> {
+        by_origin(&self.inner, f)
+    }
+}
+
+#[pymethods]
+impl PyMunichFit {
+    /// Names of the triangle's key columns; empty without keys.
+    #[getter]
+    fn keys(&self) -> Vec<String> {
+        self.inner.key_names.clone()
+    }
+
+    /// Label of each segment, as ``Triangle.index``.
+    #[getter]
+    fn index<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        segment_labels(py, &self.inner)
+    }
+
+    /// Origin period of each per-origin value.
+    #[getter]
+    fn origins(&self) -> Vec<String> {
+        self.inner
+            .fits
+            .iter()
+            .flat_map(|f| f.origins.iter().map(ToString::to_string))
+            .collect()
+    }
+
+    /// Development ages in months.
+    #[getter]
+    fn development(&self) -> PyResult<Vec<Lag>> {
+        Ok(self
+            .one("development", "development_frame()")?
+            .development
+            .clone())
+    }
+
+    /// The Munich paid ultimate per origin.
+    #[getter]
+    fn ultimate_paid(&self) -> Vec<f64> {
+        self.per_origin(|f| f.ultimate_paid.clone())
+    }
+
+    /// The Munich incurred ultimate per origin.
+    #[getter]
+    fn ultimate_incurred(&self) -> Vec<f64> {
+        self.per_origin(|f| f.ultimate_incurred.clone())
+    }
+
+    /// Latest paid per origin.
+    #[getter]
+    fn latest_paid(&self) -> Vec<f64> {
+        self.per_origin(|f| f.latest_paid.clone())
+    }
+
+    /// Latest incurred per origin.
+    #[getter]
+    fn latest_incurred(&self) -> Vec<f64> {
+        self.per_origin(|f| f.latest_incurred.clone())
+    }
+
+    /// Paid ultimate minus latest paid per origin.
+    #[getter]
+    fn reserve_paid(&self) -> Vec<f64> {
+        self.per_origin(MunichFit::reserve_paid)
+    }
+
+    /// Incurred ultimate minus latest incurred per origin.
+    #[getter]
+    fn ibnr_incurred(&self) -> Vec<f64> {
+        self.per_origin(MunichFit::ibnr_incurred)
+    }
+
+    /// Latest paid over latest incurred per origin.
+    #[getter]
+    fn latest_ratio(&self) -> Vec<f64> {
+        self.per_origin(MunichFit::latest_ratio)
+    }
+
+    /// Paid ultimate over incurred ultimate per origin.
+    #[getter]
+    fn ultimate_ratio(&self) -> Vec<f64> {
+        self.per_origin(MunichFit::ultimate_ratio)
+    }
+
+    /// The separate chain ladder's paid ultimate per origin.
+    #[getter]
+    fn chain_ladder_paid(&self) -> Vec<f64> {
+        self.per_origin(|f| f.paid.chain_ladder.ultimate.clone())
+    }
+
+    /// The separate chain ladder's incurred ultimate per origin.
+    #[getter]
+    fn chain_ladder_incurred(&self) -> Vec<f64> {
+        self.per_origin(|f| f.incurred.chain_ladder.ultimate.clone())
+    }
+
+    /// Total Munich paid ultimate over every segment.
+    #[getter]
+    fn total_ultimate_paid(&self) -> f64 {
+        self.inner
+            .fits
+            .iter()
+            .map(MunichFit::total_ultimate_paid)
+            .sum()
+    }
+
+    /// Total Munich incurred ultimate over every segment.
+    #[getter]
+    fn total_ultimate_incurred(&self) -> f64 {
+        self.inner
+            .fits
+            .iter()
+            .map(MunichFit::total_ultimate_incurred)
+            .sum()
+    }
+
+    /// The slope of the paid link-ratio residuals on the incurred-to-paid
+    /// residuals (R's ``lambdaP``); 0 when the ratios carry no information.
+    #[getter]
+    fn lambda_paid(&self) -> PyResult<f64> {
+        Ok(self.one("lambda_paid", "totals_frame()")?.lambda_paid)
+    }
+
+    /// The slope of the incurred link-ratio residuals on the
+    /// paid-to-incurred residuals (R's ``lambdaI``).
+    #[getter]
+    fn lambda_incurred(&self) -> PyResult<f64> {
+        Ok(self
+            .one("lambda_incurred", "totals_frame()")?
+            .lambda_incurred)
+    }
+
+    /// The number of residual pairs behind ``lambda_paid``.
+    #[getter]
+    fn n_residuals_paid(&self) -> PyResult<usize> {
+        Ok(self
+            .one("n_residuals_paid", "totals_frame()")?
+            .n_residuals_paid)
+    }
+
+    /// The number of residual pairs behind ``lambda_incurred``: fewer than
+    /// paid's where incurred's sigma is 0 at a link (residuals 0/0, left
+    /// out of incurred's regression only, as in R).
+    #[getter]
+    fn n_residuals_incurred(&self) -> PyResult<usize> {
+        Ok(self
+            .one("n_residuals_incurred", "totals_frame()")?
+            .n_residuals_incurred)
+    }
+
+    /// The paid-to-incurred ratio at each age, ``sum P / sum I`` (R's
+    /// ``q.f``).
+    #[getter]
+    fn q(&self) -> PyResult<Vec<f64>> {
+        Ok(self.one("q", "development_frame()")?.q.clone())
+    }
+
+    /// The incurred-to-paid ratio at each age, fitted on its own,
+    /// ``sum I / sum P`` (R's ``qinverse.f``).
+    #[getter]
+    fn q_inverse(&self) -> PyResult<Vec<f64>> {
+        Ok(self
+            .one("q_inverse", "development_frame()")?
+            .q_inverse
+            .clone())
+    }
+
+    /// The deviation of ``I/P`` around ``q_inverse`` (R's ``rhoP.sigma``).
+    #[getter]
+    fn rho_paid(&self) -> PyResult<Vec<f64>> {
+        Ok(self
+            .one("rho_paid", "development_frame()")?
+            .rho_paid
+            .clone())
+    }
+
+    /// The deviation of ``P/I`` around ``q`` (R's ``rhoI.sigma``).
+    #[getter]
+    fn rho_incurred(&self) -> PyResult<Vec<f64>> {
+        Ok(self
+            .one("rho_incurred", "development_frame()")?
+            .rho_incurred
+            .clone())
+    }
+
+    /// Mack's model of the paid column alone.
+    #[getter]
+    fn mack_paid(&self) -> PyMackFit {
+        PyMackFit {
+            inner: self.inner.map(|f| f.paid.clone()),
+        }
+    }
+
+    /// Mack's model of the incurred column alone.
+    #[getter]
+    fn mack_incurred(&self) -> PyMackFit {
+        PyMackFit {
+            inner: self.inner.map(|f| f.incurred.clone()),
+        }
+    }
+
+    /// One row per segment and origin: the key columns, ``origin``,
+    /// ``latest_paid``, ``latest_incurred``, ``latest_ratio``,
+    /// ``ultimate_paid``, ``ultimate_incurred``, ``ultimate_ratio``,
+    /// ``reserve_paid``, ``ibnr_incurred``, ``chain_ladder_paid`` and
+    /// ``chain_ladder_incurred``. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.munich_long())
+    }
+
+    /// One row per segment and age: ``q``, ``q_inverse``, ``rho_paid``,
+    /// ``rho_incurred``, and each column's ``ldf_paid``, ``sigma_paid``,
+    /// ``ldf_incurred`` and ``sigma_incurred`` (NaN at the oldest age).
+    /// Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn development_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.munich_development_table())
+    }
+
+    /// One row per segment: the totals of ``to_frame()``'s columns (the
+    /// ratios of the totals), ``lambda_paid``, ``lambda_incurred``,
+    /// ``n_residuals_paid`` and ``n_residuals_incurred``.
+    /// Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn totals_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.munich_totals())
+    }
+
+    /// The fit of one segment, chosen by key values as
+    /// ``ChainLadderFit.segment``.
+    ///
+    /// Returns
+    /// -------
+    /// MunichFit
+    #[pyo3(signature = (**keys))]
+    fn segment(&self, keys: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        Ok(Self {
+            inner: pick(&self.inner, keys)?,
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "MunichFit({}origins={}, total_ultimate_paid={:?}, total_ultimate_incurred={:?})",
+            segments_prefix(&self.inner),
+            self.origins().len(),
+            self.total_ultimate_paid(),
+            self.total_ultimate_incurred(),
+        )
+    }
 }

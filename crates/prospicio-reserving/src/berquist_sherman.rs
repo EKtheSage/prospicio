@@ -1,6 +1,6 @@
 //! The Berquist-Sherman adjustments (Berquist and Sherman, 1977; Friedland,
 //! *Estimating Unpaid Claims Using Basic Techniques*, chapter 13;
-//! `reserving-v02.md` decision 34): a triangle restated before it is
+//! `reserving-v02.md` decision 36): a triangle restated before it is
 //! projected, so that the chain ladder, the expected-loss methods or Mack
 //! run on it unchanged.
 //!

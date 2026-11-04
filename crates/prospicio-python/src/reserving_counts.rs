@@ -1,5 +1,5 @@
 //! `prospicio.reserving` methods on claim counts (issues #554 and #555,
-//! `docs/design/reserving-v02.md`, decisions 33 and 34): frequency-severity,
+//! `docs/design/reserving-v02.md`, decisions 35 and 36): frequency-severity,
 //! the disposal rate method, case outstanding development and the
 //! Berquist-Sherman adjustments, over
 //! `prospicio_reserving::{frequency_severity, berquist_sherman}`.

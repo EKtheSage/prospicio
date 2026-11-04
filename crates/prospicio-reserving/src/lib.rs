@@ -66,12 +66,14 @@ pub mod excess;
 pub mod expected_loss;
 pub mod frame;
 pub mod frequency_severity;
+pub mod industry_prior;
 #[cfg(feature = "io")]
 pub mod io;
 pub mod latest_diagonal;
 pub mod mack;
 pub mod mack_bootstrap;
 pub mod monthly_reading;
+pub mod munich;
 pub mod odp_glm;
 pub mod one_year;
 pub mod one_year_bootstrap;
@@ -118,6 +120,7 @@ pub use frequency_severity::{
     FrequencySeverityFit, Selection, SeverityProjection, TrendFit, Trended, UltimateCounts,
     case_development_factor, exponential_trend, pooled_trend, ratio_column, trend_by_age,
 };
+pub use industry_prior::{IndustryPrior, IndustryPriorSettings, PatternPrior, PriorReport};
 #[cfg(feature = "io")]
 pub use io::FileLayout;
 pub use latest_diagonal::{
@@ -128,6 +131,7 @@ pub use mack_bootstrap::{
     MackBootstrap, MackBootstrapFit, MackBootstrapFits, MackBootstrapSegment, MackProcess,
 };
 pub use monthly_reading::AnnualReading;
+pub use munich::{MunichChainLadder, MunichFit};
 pub use odp_glm::{
     OdpGlm, OdpGlmFit, OdpPredictionError, OdpResiduals, ResidualGroup, ResidualSummary,
     SumPredictionError,

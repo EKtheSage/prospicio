@@ -1,5 +1,5 @@
 //! Methods on claim counts (issues #554 and #555,
-//! `docs/design/reserving-v02.md`, decisions 33 and 34): `frequency_severity()`,
+//! `docs/design/reserving-v02.md`, decisions 35 and 36): `frequency_severity()`,
 //! `disposal_method()`, `case_outstanding()` and the Berquist-Sherman
 //! adjustments, over `prospicio_reserving::{frequency_severity,
 //! berquist_sherman}`.

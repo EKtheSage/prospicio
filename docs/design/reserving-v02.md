@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 accepted by the user on 2026-10-28 as proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 accepted by the user on 2026-10-28 as built; decision 29 built on branch `claude/unify-not-supported`, issue #580, in Rust, Python and R, its items 4, 5 and 9 open for the user; decision 30 built on branch `claude/monthly-pattern-speed`, issue #717, in Rust, with no API change in Python and R, its item 2 open for the user; decisions 33 and 34 built on branch `claude/friedland-counts`, issues #555 and #554, in Rust, Python and R, their items 8 and 9 and 4 to 6 open for the user) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 accepted by the user on 2026-10-28 as proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 accepted by the user on 2026-10-28 as built; decision 29 built on branch `claude/unify-not-supported`, issue #580, in Rust, Python and R, its items 4, 5 and 9 open for the user; decision 30 built on branch `claude/monthly-pattern-speed`, issue #717, in Rust, with no API change in Python and R, its item 2 open for the user; decision 33 built on branch `claude/munich-chain-ladder`, in Rust, Python and R, its items 5, 6 and 11 open; decisions 35 and 36 built on branch `claude/friedland-counts`, issues #555 and #554, in Rust, Python and R, their items 8 and 9 and 4 to 6 open for the user) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -5090,7 +5090,140 @@ took 0.3 s.
    it falls back to 1 at 108. On the uncut triangle (one cell at 120
    months) it refuses 1,344.
 
-### 33. Frequency-severity, disposal rates and case outstanding development (issue #555)
+### 33. The Munich chain ladder
+
+Status: **Built** (2026-11-02), issue #559, branch
+`claude/munich-chain-ladder`, in Rust, Python and R; items 5, 6 and 11 are
+open decisions for the user, built with the defaults below. Separate paid
+and incurred chain ladders often give different ultimates, because an
+origin's paid-to-incurred ratio carries information neither uses. The
+Munich chain ladder (Quarg and Mack 2004, "Munich Chain Ladder", Blätter
+der DGVFM 26) develops the two together and corrects each factor by the
+residual of the ratio, so the projections converge. R ChainLadder 0.2.21
+has it as `MunichChainLadder` and chainladder-python 0.10.1 as
+`MunichAdjustment`; both are reproduced on Quarg and Mack's own example,
+R's `MCLpaid` and `MCLincurred` (`validation/data/mcl.csv`).
+
+1. **What is built.** `prospicio_reserving::munich`:
+   `MunichChainLadder { paid: Development, incurred: Development,
+   tail_paid: Tail, tail_incurred: Tail }` with `fit(&tri, "paid",
+   "incurred") -> MunichFit` and `fit_segments(..) ->
+   SegmentFits<MunichFit>` on one triangle holding both columns. A fit
+   holds Mack's model of each column alone (`paid`, `incurred`: factors,
+   sigmas, tail, separate chain-ladder ultimates), per age `q` (`sum P /
+   sum I`, R's `q.f`), `q_inverse` (`sum I / sum P`, R's `qinverse.f`),
+   `rho_paid` and `rho_incurred` (R's `rhoP.sigma`, `rhoI.sigma`), the
+   slopes `lambda_paid` and `lambda_incurred` with the pairs behind each,
+   `n_residuals_paid` and `n_residuals_incurred`, and per
+   origin the latest values and the Munich ultimates. `to_long()` has one
+   row per origin (`latest_paid`, `latest_incurred`, `latest_ratio`,
+   `ultimate_paid`, `ultimate_incurred`, `ultimate_ratio`, `reserve_paid`,
+   `ibnr_incurred`, `chain_ladder_paid`, `chain_ladder_incurred`) and
+   `development_table()` one per age (`q`, `q_inverse`, `rho_paid`,
+   `rho_incurred`, each column's `ldf` and `sigma`); over segments
+   `munich_long()`, `munich_development_table()` and `munich_totals()`
+   (the totals, the ratios of the totals, the lambdas and their pair
+   counts). `MunichFit`
+   is not a `ReserveFit`: it has two ultimates per origin.
+2. **The model.** Each column has Mack's volume-weighted model. At age
+   `s`, over the origins observed there, `rho_I^2 = sum I (P/I - q)^2 /
+   (n - 1)` and `rho_P^2 = sum P (I/P - q^-1)^2 / (n - 1)`, R's weighted
+   regressions through the origin. The link-ratio residuals `(F - f) /
+   sigma * sqrt(C)` are regressed through the origin, unweighted, on the
+   ratio residuals at the link's starting cell, `(I/P - 1/q) / rho_P *
+   sqrt(P)` for paid and `(P/I - q) / rho_I * sqrt(I)` for incurred.
+   The projection runs step by step from each origin's latest cells, on
+   the projected pair: `P' = P (f_P + lambda_P sigma_P / rho_P (I/P -
+   q^-1))` and `I' = I (f_I + lambda_I sigma_I / rho_I (P/I - q))`.
+3. **`q^-1` is `1/q`.** R fits `q^-1` by its own regression of incurred on
+   paid, and centres the paid residuals on `1/q` but the projection on
+   `q^-1`; chainladder-python does the same. With R's weights both
+   regressions are ratios of the same sums over the same origins, so
+   `q^-1 = 1/q` exactly at every age, and the two centres are one. The
+   fit reports both, as R does.
+4. **Which residuals.** Those of the links whose sigma was estimated,
+   two or more link ratios in both columns. R blanks the last two columns
+   of its residual matrices and chainladder-python masks residuals that
+   are exactly zero; on a square triangle both leave out the single last
+   link, as this rule does (20 pairs on MCL). On a triangle with more
+   origins than ages, which R refuses, the rule keeps every link with two
+   ratios. Within those links each regression leaves out only its own
+   pairs that are not finite, as R's two `lm` fits drop their own
+   missing values: where one column's sigma is 0 at a link (every link
+   ratio the same, as with incurred flat at late ages) its residuals
+   there are 0/0 and leave its regression, while the other column's stay
+   in theirs. On MCL with incurred flat from 60 to 72 months in 2001 and
+   2002, R keeps 20 paid pairs and 18 incurred ones, and `lambda_paid` is
+   unchanged at 0.636021 (the fix found in review; the first version
+   dropped a pair from both regressions and gave 0.635368).
+5. **The oldest age's `rho`** (open decision). A `rho` with one origin
+   cannot be estimated; it is extrapolated log-linearly from the estimated
+   positive ones, as R does whatever `est.sigma` says. chainladder-python
+   fills it by the column's sigma interpolation (Mack's rule gives 0.0311
+   on MCL's paid, R 0.1966). It enters only the tail step, so the two
+   agree without a tail; with a tail R is the precedent, since
+   chainladder-python's adjustment has no tail step.
+6. **Only Mack's volume-weighted model** (open decision). The residuals
+   `(F - f) / sigma * sqrt(C)` assume `alpha = 1`, and every link ratio.
+   Another average, a selected pattern, `n_periods` and the drops are
+   `Error::NotSupported`. A later PR could take `C^(alpha / 2)` and the
+   kept links of decision 14's mask; neither library does.
+7. **No information.** When every ratio residual is zero (incurred a fixed
+   multiple of paid, every `rho` 0), R's slope is `NA`; here `lambda` is
+   0, so the projections are the separate chain ladders exactly, which a
+   test checks. A correction that is `NaN` (an unfilled `rho`) is 0, as R
+   takes a missing correction; a projection that is still not finite is
+   `Error::Munich`.
+8. **Tails.** A tail is one more step with the tail's factor and sigma and
+   the oldest age's `q`, `q^-1` and `rho`, as R's loop does over column
+   `n + 1`; without a tail (factor 1, R's `sigma[n]` missing) the step is
+   1 and uncorrected. Each column has its own tail, through Mack's own
+   (`tail_paid`, `tail_incurred`), so a log-linear tail and its sigma are
+   extrapolated as `MackChainLadder(tail = TRUE)` does. R's
+   `tailP = TRUE, tailI = TRUE` and `tailP = 1.05, tailI = 1.02` are
+   matched.
+9. **Errors.** The two columns must cover the same origins and ages and
+   be observed at the same cells, every one positive (the ratios and
+   square roots need both): otherwise `Error::Munich`, naming the first
+   origin and age at fault, as "origin 2004 at age 48 has paid but no
+   incurred". `Error::Munich` is a new variant (breaking for an
+   exhaustive `match`).
+10. **Parity** (`validation/tests/reserving_munich.rs`). R ChainLadder
+    0.2.21 `MunichChainLadder(MCLpaid, MCLincurred, est.sigmaP = "Mack",
+    est.sigmaI = "Mack")` with no tail, `tailP = tailI = TRUE` and the
+    constants 1.05 and 1.02: lambdas, `q`, `q^-1`, both `rho`, both
+    sigmas, the tails and every ultimate to 1e-12 relative
+    (`scripts/reserving_munich_r.R`). R's default call
+    (`est.sigma = "log-linear"`) falls back to Mack's rule on MCL with a
+    warning (its log-linear model of sigma has a p-value above 5%), which
+    prospicio's Mack does not do: R's default numbers are the Mack arm's,
+    and prospicio's default gives chainladder-python's instead.
+    chainladder-python 0.10.1 `MunichAdjustment(("paid", "incurred"))` on
+    `Development(sigma_interpolation=...)`, log-linear and Mack: the same
+    quantities and the ultimates of `Chainladder()` on the adjusted
+    factors (`scripts/reserving_munich_python.py`; the oldest `rho` left
+    out under Mack, item 5). Quarg and Mack's printed tables could not be
+    compared: the paper is not in `knowledge/references/`. R's `MCLpaid`
+    and `MCLincurred` are its data, and R's output stands in for it.
+11. **No prediction error** (open decision). Neither library gives the
+    Munich chain ladder a standard error; Liu and Verrall (2010) bootstrap
+    it. `MunichFit` carries each column's Mack standard errors (`paid`,
+    `incurred`), which are the separate chain ladders', not the Munich
+    projection's. A bootstrap is a later PR if wanted.
+12. **Bindings.** Python: `MunichChainLadder(sigma_interpolation_paid=
+    "log-linear", sigma_interpolation_incurred="log-linear",
+    tail_paid=None, tail_incurred=None).fit(tri, "paid", "incurred")`
+    returning `MunichFit` (per-origin lists, the per-age lists and lambdas
+    of a single segment, `mack_paid` and `mack_incurred` as `MackFit`,
+    `to_frame()`, `development_frame()`, `totals_frame()`,
+    `segment(**keys)`). R: `munich_chain_ladder(triangle, paid = "paid",
+    incurred = "incurred", sigma_interpolation_paid = "log-linear",
+    sigma_interpolation_incurred = "log-linear", tail_paid = 1,
+    tail_incurred = 1)` returning a `munich_fit` with the same properties,
+    `as.data.frame()`, `print`, `totals_frame()`, `development_frame()`
+    and `segment()`.
+
+### 35. Frequency-severity, disposal rates and case outstanding development (issue #555)
 
 Status: **Built** (2026-11-02), issue #555, branch `claude/friedland-counts`,
 in Rust, Python and R; items 8 and 9 are open for the user.
@@ -5101,7 +5234,7 @@ the expected-loss methods have one column; these have several.
 
 1. **One triangle, several columns.** Counts and amounts sit side by side as
    measure columns of one `Triangle`, so that no new data type is needed and
-   the Berquist-Sherman adjustments (decision 34) can hand their result to
+   the Berquist-Sherman adjustments (decision 36) can hand their result to
    any method. Every method here needs a single segment.
 2. **Ultimate counts.** `UltimateCounts` is given, one per origin, or the
    chain ladder on a count column with all of `ChainLadder`'s settings, or
@@ -5168,7 +5301,7 @@ the expected-loss methods have one column; these have several.
     leaves 0.501 x 465 = 233 out of 2000's 120-month payment, so the test adds
     it to the book's total.
 
-### 34. The Berquist-Sherman adjustments (issue #554)
+### 36. The Berquist-Sherman adjustments (issue #554)
 
 Status: **Built** (2026-11-02), issue #554, branch `claude/friedland-counts`,
 in Rust, Python and R; items 4, 5 and 6 are open for the user.

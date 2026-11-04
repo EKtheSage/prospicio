@@ -272,6 +272,14 @@ what it is aiming for by v1.0.
     the triangle's newest, with each simulation's development pattern for
     the emergence by month; in Rust, Python (`fit.new_year`) and R
     (`bayes_new_year()`).
+  - An industry prior for the normalised Bayesian BF from other
+    companies' triangles (`reserving-bayes.md` decision 29, #604):
+    `IndustryPrior::from_triangles` estimates the mean ultimate loss
+    ratio, its spread between and within companies and a pattern prior
+    from the companies' chain ladders, with a report and a small-panel
+    warning, and `BayesBfNormalised::fit_with_pattern_prior` takes the
+    pattern prior; in Rust, Python (`IndustryPrior`, `PatternPrior`) and
+    R (`industry_prior()`, `bayes_bf_industry()`). No data ships.
   - Meyers' CAY, `MeyersModel::Cay` (`reserving-bayes.md`, PR 5): CRC
     with the previous origin's residual at the same age in each mean, at
     parity with his own `CAY.R` Stan code and his printed results on
@@ -504,7 +512,7 @@ what it is aiming for by v1.0.
     the user's decision of 2026-10-27 (`AnnualReading`; decision 18's rule
     kept as `LnLinear`); the simulated book converts within 0.2% at every
     age, against 31% off at 12 months before.
-  - The methods on claim counts (`reserving-v02.md`, decisions 33 and 34,
+  - The methods on claim counts (`reserving-v02.md`, decisions 35 and 36,
     #554, #555): frequency-severity, disposal rates, case outstanding
     development and the Berquist-Sherman adjustments, at parity with
     Friedland's chapters 11 to 13 and chainladder-python.
@@ -515,6 +523,13 @@ what it is aiming for by v1.0.
     on the link ratios a Mack fit averaged; R ChainLadder's `cyEffTest`
     and `dfCorTest` to 1e-12 on RAA, GenIns and ABC, and Mack's printed
     values on RAA.
+  - The Munich chain ladder (`reserving-v02.md`, decision 33; branch
+    `claude/munich-chain-ladder`, issue #559, in Rust, Python and R): paid
+    and incurred developed together, each factor corrected by the origin's
+    paid-to-incurred residual, with tails and over segments; R
+    ChainLadder's `MunichChainLadder` to 1e-12 on MCL with no tail and
+    with log-linear and constant tails, and chainladder-python's
+    `MunichAdjustment` under both sigma interpolations.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental

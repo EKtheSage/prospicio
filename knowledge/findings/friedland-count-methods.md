@@ -12,7 +12,7 @@ sources:
     title: Friedland, Estimating Unpaid Claims Using Basic Techniques, version 3, July 2010 (CAS); chapters 11 to 13
   - id: note
     resource: ../docs/design/reserving-v02.md
-    title: Design note, reserving v0.2, decisions 33 and 34, the methods on claim counts and the Berquist-Sherman adjustments
+    title: Design note, reserving v0.2, decisions 35 and 36, the methods on claim counts and the Berquist-Sherman adjustments
   - id: test
     resource: ../validation/tests/reserving_counts.rs
     title: Validation test of the exhibits of chapters 11 to 13 and of chainladder-python's BerquistSherman, run in every cargo test
@@ -57,5 +57,5 @@ Incurred as its MedMal line, so it is a test of arithmetic and not an example
 to read as data.
 
 [^friedland]: Friedland (2010), chapters 11 to 13 and their exhibits.
-[^note]: `docs/design/reserving-v02.md`, decisions 33 and 34.
+[^note]: `docs/design/reserving-v02.md`, decisions 35 and 36.
 [^test]: `validation/tests/reserving_counts.rs`.

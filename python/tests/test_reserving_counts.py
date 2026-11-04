@@ -1,5 +1,5 @@
-"""Methods on claim counts (``docs/design/reserving-v02.md``, decisions 33 and
-34): frequency-severity, disposal rates, case outstanding development and
+"""Methods on claim counts (``docs/design/reserving-v02.md``, decisions 35 and
+36): frequency-severity, disposal rates, case outstanding development and
 the Berquist-Sherman adjustments.
 
 The Rust core is checked against Friedland's exhibits and chainladder-python
