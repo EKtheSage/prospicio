@@ -146,6 +146,10 @@ pub enum Error {
     File(String),
     /// Clark's growth-curve model cannot be fitted to this triangle.
     Clark(String),
+    /// The Munich chain ladder cannot be fitted: the paid and incurred
+    /// columns are not observed at the same cells, or a cell is not
+    /// positive ([`MunichChainLadder`](crate::MunichChainLadder)).
+    Munich(String),
     /// A growth curve cannot be fitted to this benchmark pattern
     /// ([`BenchmarkCurve`](crate::BenchmarkCurve)).
     BenchmarkCurve(String),
@@ -279,6 +283,7 @@ impl fmt::Display for Error {
             Self::PatternDraws(why) => write!(f, "pattern draws: {why}"),
             Self::File(why) => write!(f, "reading a triangle: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
+            Self::Munich(why) => write!(f, "Munich chain ladder: {why}"),
             Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),
             Self::IndustryPrior(why) => write!(f, "industry prior: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
