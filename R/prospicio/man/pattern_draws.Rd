@@ -18,7 +18,8 @@ monthly_pattern_draws(
 \arguments{
 \item{fit}{An \link{odp_bootstrap_fit}, \link{mack_bootstrap_fit}, \link{bayes_odp_fit},
 \link{bayes_odp_fits}, \link{bayes_bf_fit}, \link{bayes_bf_normalised_fit}, \link{meyers_fit},
-\link{meyers_fits}, \link{compartmental_fit} or \link{compartmental_fits}.}
+\link{meyers_fits}, \link{compartmental_fit}, \link{compartmental_fits} or a
+\link[=bayes_new_year]{new_year_fit} (the new year's emergence).}
 
 \item{segment}{\code{NULL} for a fit of one segment, or the segment's key
 values (\code{"Auto"}, \code{c("Auto", "NSW")}) over segments.}

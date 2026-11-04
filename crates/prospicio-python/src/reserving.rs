@@ -38,9 +38,9 @@ use prospicio_reserving::bayes::{
     BayesOneYear, BayesOneYearFit, BayesOneYearFits, BayesOneYearSegment, Compartmental,
     CompartmentalCandidate, CompartmentalFit, CompartmentalFits, CompartmentalLikelihood,
     CompartmentalOneYearFits, CompartmentalPriors, CompartmentalSegment, CompartmentalStart,
-    Fitted, HalfPrior, LayerSharePrior, LightRefit, MeyersFits, MeyersSegment, OneYearRefit,
-    Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
-    ShareDependence,
+    Fitted, HalfPrior, LayerSharePrior, LightRefit, MeyersFits, MeyersSegment, NewOriginLevel,
+    NewYear, OneYearRefit, Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior,
+    Scale as CompartmentalScale, ShareDependence,
 };
 use prospicio_reserving::{
     Backtest, BayesOdp, BayesOdpFit, Diagnostics, GlmCandidate, Meyers, MeyersFit, MeyersModel,
@@ -12231,6 +12231,55 @@ pub(crate) struct PyBayesBfNormalisedFit {
 
 #[pymethods]
 impl PyBayesBfNormalisedFit {
+    /// The posterior predictive of a new underwriting year, the origin
+    /// after the triangle's newest, for pricing a year not yet written.
+    ///
+    /// Each simulation takes a posterior draw and from it the new origin's
+    /// expected ultimate, a gamma with cv ``cv`` and mean ``s * apriori *
+    /// premium`` (``s`` the draw's common multiplier, 1 without
+    /// ``common_cv``), then its ultimate with the fit's process error. The
+    /// data reach the new year only through ``s``: without ``common_cv``
+    /// the new year is the prior, ``Gamma(1 / cv**2, apriori)`` in loss
+    /// ratio, whatever the triangle says; with a vague ``common_cv`` (say
+    /// 10) the triangle sets its level.
+    ///
+    /// Parameters
+    /// ----------
+    /// premium : float
+    ///     The new year's premium (its exposure), finite and positive.
+    /// n_sims : int
+    ///     Number of simulations.
+    /// seed : int
+    ///     Seed of the simulations.
+    ///
+    /// Returns
+    /// -------
+    /// NewYear
+    ///     ``loss_ratio`` and ``ultimate`` by simulation, and ``patterns``,
+    ///     the development pattern of each simulation's posterior draw, whose
+    ///     ``monthly`` is the new year's emergence by month.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``premium`` is not positive, ``n_sims`` is 0, or the fit's
+    ///     ``cv`` is infinite (a flat prior gives a new origin no proper
+    ///     predictive).
+    #[pyo3(signature = (premium, n_sims = 10_000, seed = 0))]
+    fn new_year(
+        &self,
+        py: Python<'_>,
+        premium: f64,
+        n_sims: usize,
+        seed: u64,
+    ) -> PyResult<PyNewYear> {
+        let fit = &self.inner;
+        let inner = py
+            .detach(|| fit.new_year(premium, n_sims, seed))
+            .map_err(err)?;
+        Ok(PyNewYear { inner })
+    }
+
     /// Each simulation's development pattern, to pair with the
     /// simulation's loss ratio in the cash-flow engine.
     ///
@@ -13553,6 +13602,71 @@ impl PyMeyers {
     }
 }
 
+/// The posterior predictive of a new underwriting year, from
+/// ``BayesBfNormalisedFit.new_year`` or ``MeyersFit.new_year``.
+///
+/// Row ``i`` of ``loss_ratio``, ``ultimate`` and every pattern of
+/// ``patterns`` is simulation ``i``.
+#[pyclass(name = "NewYear", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyNewYear {
+    inner: NewYear,
+}
+
+#[pymethods]
+impl PyNewYear {
+    /// The new origin period, the one after the triangle's newest.
+    #[getter]
+    fn origin(&self) -> String {
+        self.inner.origin.to_string()
+    }
+
+    /// The new year's premium.
+    #[getter]
+    fn premium(&self) -> f64 {
+        self.inner.premium
+    }
+
+    /// The ultimate loss ratio of the new year: dimension ``"origin"``,
+    /// one component, one row per simulation.
+    #[getter]
+    fn loss_ratio(&self) -> PyPredictiveDistribution {
+        PyPredictiveDistribution {
+            inner: self.inner.loss_ratio.clone(),
+        }
+    }
+
+    /// The ultimate loss of the new year, ``loss_ratio`` times
+    /// ``premium``, with the same layout.
+    #[getter]
+    fn ultimate(&self) -> PyPredictiveDistribution {
+        PyPredictiveDistribution {
+            inner: self.inner.ultimate.clone(),
+        }
+    }
+
+    /// The development pattern of each simulation's posterior draw; its
+    /// ``monthly`` is the new year's emergence by month.
+    ///
+    /// Returns
+    /// -------
+    /// DevelopmentPatterns
+    #[getter]
+    fn patterns(&self) -> PyDevelopmentPatterns {
+        PyDevelopmentPatterns {
+            inner: self.inner.patterns.clone(),
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "NewYear(origin={}, premium={}, n_sims={})",
+            self.inner.origin,
+            self.inner.premium,
+            self.inner.patterns.n_sims()
+        )
+    }
+}
+
 /// A fitted ``Meyers``: the posterior of ``logelr``, ``alpha[2..n]``,
 /// ``beta[1..m-1]``, ``gamma`` (``"csr"`` only) or ``rho`` (``"cay"``
 /// only), and ``sigma[1..m]``, its
@@ -13569,6 +13683,66 @@ pub(crate) struct PyMeyersFit {
 
 #[pymethods]
 impl PyMeyersFit {
+    /// The posterior predictive of a new underwriting year, the origin
+    /// after the triangle's newest, for pricing a year not yet written.
+    ///
+    /// Each simulation takes a posterior draw and from it the new origin's
+    /// level ``logelr + alpha``, then its ultimate, log-normal with sd
+    /// ``sigma[m]`` (in CAY, plus ``rho`` times the newest origin's
+    /// residual). Meyers' models have no hyperparameter for the origin
+    /// effects, so ``level`` says how the new one is drawn.
+    ///
+    /// Parameters
+    /// ----------
+    /// premium : float
+    ///     The new year's premium, finite and positive. The loss ratio does
+    ///     not depend on it.
+    /// n_sims : int
+    ///     Number of simulations.
+    /// seed : int
+    ///     Seed of the simulations.
+    /// level : str
+    ///     ``"exchangeable"`` (the default): the new origin is like the
+    ///     triangle's, its level a Student t draw from a normal fitted to the
+    ///     draw's origin levels (needs three origins). ``"prior"``: Meyers'
+    ///     own prior ``alpha ~ N(0, origin_sd**2)``, too wide to price on at
+    ///     his ``origin_sd`` of 3.162.
+    ///
+    /// Returns
+    /// -------
+    /// NewYear
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``premium`` is not positive, ``n_sims`` is 0, ``level`` is
+    ///     unknown, or the triangle has fewer than three origins under
+    ///     ``"exchangeable"``.
+    #[pyo3(signature = (premium, n_sims = 10_000, seed = 0, level = "exchangeable"))]
+    fn new_year(
+        &self,
+        py: Python<'_>,
+        premium: f64,
+        n_sims: usize,
+        seed: u64,
+        level: &str,
+    ) -> PyResult<PyNewYear> {
+        let level = match level {
+            "exchangeable" => NewOriginLevel::Exchangeable,
+            "prior" => NewOriginLevel::Prior,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "level must be \"exchangeable\" or \"prior\", not {other:?}"
+                )));
+            }
+        };
+        let fit = &self.inner;
+        let inner = py
+            .detach(|| fit.new_year_with_level(premium, level, n_sims, seed))
+            .map_err(err)?;
+        Ok(PyNewYear { inner })
+    }
+
     /// The model: ``"crc"``, ``"csr"`` or ``"cay"``.
     #[getter]
     fn model(&self) -> &'static str {

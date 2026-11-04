@@ -266,6 +266,12 @@ what it is aiming for by v1.0.
     ultimates the classical Bornhuetter–Ferguson reserve; with its
     one-year view through the generic engine, in Rust, Python
     (`BayesBfNormalised`) and R (`bayes_bf_normalised()`).
+  - A new underwriting year's loss ratio (`reserving-bayes.md` decision
+    27, #598): `BayesBfNormalisedFit::new_year` and `MeyersFit::new_year`
+    give the posterior predictive loss ratio and ultimate of the year after
+    the triangle's newest, with each simulation's development pattern for
+    the emergence by month; in Rust, Python (`fit.new_year`) and R
+    (`bayes_new_year()`).
   - Meyers' CAY, `MeyersModel::Cay` (`reserving-bayes.md`, PR 5): CRC
     with the previous origin's residual at the same age in each mean, at
     parity with his own `CAY.R` Stan code and his printed results on
