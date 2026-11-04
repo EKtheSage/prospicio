@@ -5266,130 +5266,6 @@ growth <- function(fit, age) {
   reserving_result(fit@ptr$growth(as.double(age)))
 }
 
-#' Merz and Wuthrich's paid-incurred chain
-#'
-#' The paid-incurred chain (PIC) of Merz and Wuthrich (2010) combines a
-#' paid and an incurred column of one square triangle into one ultimate per
-#' origin. Log paid link ratios (and the log first paid values) are normal
-#' with means `Phi_j` and standard deviations `sigma_j`, log incurred link
-#' ratios normal with means `Psi_j` and standard deviations `tau_j`, and
-#' both reach the same ultimate. With normal priors on `Phi` and `Psi` (by
-#' default non-informative) the posterior is normal, and each origin's
-#' ultimate is predicted from its latest paid and its latest incurred value
-#' in closed form, `incurred_weight` the weight of the incurred side, with
-#' the square root of its conditional mean squared error of prediction,
-#' `std_err`, for each origin and for the total. As `tau` grows the
-#' prediction becomes Hertig's paid chain ladder, as it shrinks the
-#' incurred chain ladder on geometric averages.
-#'
-#' The defaults reproduce R ChainLadder's `PaidIncurredChain()`, with one
-#' difference: ChainLadder 0.2.21 leaves out of the posterior precision the
-#' terms coupling `Psi_0` with `Phi_1, ..., Phi_J`, which the newest
-#' origin's incurred-paid ratio implies. `convention = "model"` (the
-#' default) is the model's posterior; `convention = "r_chainladder"` is
-#' ChainLadder's to its last digits
-#' (`validation/reference/reserving_paid_incurred_r.csv`). On ChainLadder's
-#' `USAApaid` and `USAAincurred` the model's total reserve and standard
-#' error are each about 0.5% above ChainLadder's. ChainLadder reports the
-#' origins after the first; here the oldest origin is included, taken as
-#' settled at its last paid value with no reserve.
-#'
-#' `sigma_0` is the sample standard deviation of the log first paid values
-#' and `sigma_j`, `tau_j` those of each period's log link ratios; the last
-#' of each, with one observation, is extrapolated log-linearly
-#' (ChainLadder's rule) or by Mack's rule `min(s[J-1], s[J-2], s[J-1]^2 /
-#' s[J-2])` (`extrapolation = "mack"`, Merz and Wuthrich's tail paper).
-#'
-#' Properties of the fit, per origin: `latest` (paid), `latest_incurred`,
-#' `ultimate`, `reserve`, `incurred_weight` and `std_err`; per development
-#' age: `sigma`, `tau` (one fewer), `phi` and `psi` (the posterior means)
-#' and `phi_sd` and `psi_sd` (the posterior standard deviations);
-#' `posterior_covariance` (of `Phi_0, ..., Phi_J, Psi_0, ..., Psi_{J-1}`),
-#' `origins`, `development`, `total_ultimate`, `total_reserve` and
-#' `total_std_err`. `as.data.frame()`, [totals_frame()] and
-#' [development_frame()] give the long tables. This is Python's
-#' `PaidIncurredChain`.
-#'
-#' @param triangle A cumulative [triangle] with one segment, as many
-#'   origins as development ages (at least four), each origin observed at
-#'   exactly its ages up to the latest diagonal, every value positive.
-#' @param paid,incurred Names of the paid and incurred columns.
-#' @param sigma Paid standard deviations, one per development age; `NULL`
-#'   estimates them.
-#' @param tau Incurred standard deviations, one per development age but the
-#'   last; `NULL` estimates them.
-#' @param extrapolation How the last estimated `sigma` and `tau` are filled
-#'   in: `"loglinear"` or `"mack"`.
-#' @param convention `"model"` for the model's posterior, or
-#'   `"r_chainladder"` for R ChainLadder's.
-#' @param phi_mean,phi_sd Prior means and standard deviations of `Phi_0,
-#'   ..., Phi_J`, one per development age; `NULL` for a non-informative
-#'   prior. An infinite standard deviation leaves that parameter
-#'   non-informative.
-#' @param psi_mean,psi_sd The same for `Psi_0, ..., Psi_{J-1}`, one per
-#'   development age but the last.
-#' @param ptr A `PaidIncurredFit` pointer; used internally.
-#' @returns A `paid_incurred_fit` object.
-#' @seealso [mack()], [chain_ladder()].
-#' @export
-#' @examples
-#' long <- data.frame(
-#'   year = rep(2020:2023, 4:1),
-#'   age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
-#'   paid = c(100, 150, 170, 180, 110, 168, 186, 125, 180, 130),
-#'   incurred = c(200, 195, 185, 181, 215, 200, 192, 240, 230, 260)
-#' )
-#' tri <- triangle(long, "year", "age", c("paid", "incurred"))
-#' fit <- paid_incurred_chain(tri, "paid", "incurred")
-#' fit@reserve
-#' fit@total_std_err
-#' development_frame(fit)
-paid_incurred_fit <- S7::new_class(
-  "paid_incurred_fit",
-  package = "prospicio",
-  properties = local({
-    by_origin <- function(f) {
-      S7::new_property(S7::class_double, getter = function(self) {
-        stats::setNames(f(self@ptr), self@ptr$origins())
-      })
-    }
-    by_age <- function(f, last = TRUE) {
-      S7::new_property(S7::class_double, getter = function(self) {
-        ages <- self@ptr$development()
-        if (!last) ages <- ages[-length(ages)]
-        stats::setNames(f(self@ptr), ages)
-      })
-    }
-    value <- function(f) S7::new_property(S7::class_double, getter = function(self) f(self@ptr))
-    n_ages <- function(p) length(p$development())
-    list(
-      ptr = S7::new_S3_class("PaidIncurredFit"),
-      origins = S7::new_property(S7::class_character, getter = function(self) self@ptr$origins()),
-      development = S7::new_property(S7::class_integer, getter = function(self) {
-        self@ptr$development()
-      }),
-      latest = by_origin(function(p) p$latest()),
-      latest_incurred = by_origin(function(p) p$latest_incurred()),
-      ultimate = by_origin(function(p) p$ultimate()),
-      reserve = by_origin(function(p) p$reserve()),
-      incurred_weight = by_origin(function(p) p$incurred_weight()),
-      std_err = by_origin(function(p) p$std_err()),
-      sigma = by_age(function(p) p$sigma()),
-      tau = by_age(function(p) p$tau(), last = FALSE),
-      phi = by_age(function(p) p$phi()),
-      psi = by_age(function(p) p$psi(), last = FALSE),
-      phi_sd = by_age(function(p) p$posterior_sd()[seq_len(n_ages(p))]),
-      psi_sd = by_age(function(p) p$posterior_sd()[-seq_len(n_ages(p))], last = FALSE),
-      posterior_covariance = S7::new_property(S7::class_double, getter = function(self) {
-        p <- self@ptr
-        ages <- p$development()
-        names <- c(paste0("phi_", ages), paste0("psi_", ages[-length(ages)]))
-        matrix(p$posterior_covariance(), length(names), length(names), byrow = TRUE,
-               dimnames = list(names, names))
-      }),
-      total_ultimate = value(function(p) p$total_ultimate()),
-      total_reserve = value(function(p) p$total_reserve()),
-      total_std_err = value(function(p) p$total_std_err())
 #' A development curve fitted over every age
 #'
 #' Fits a curve to a triangle's estimated age-to-age factors over every age
@@ -5531,40 +5407,6 @@ development_curve_fit <- S7::new_class(
   constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
 )
 
-# A numeric setting of paid_incurred_chain(): `null` for NULL, or a
-# numeric vector without NA.
-pic_numbers <- function(x, name, null = numeric(0)) {
-  if (is.null(x)) return(null)
-  if (!is.numeric(x) || anyNA(x)) stop(sprintf("%s must be numeric", name), call. = FALSE)
-  as.double(x)
-}
-
-#' @rdname paid_incurred_fit
-#' @export
-paid_incurred_chain <- function(triangle, paid, incurred, sigma = NULL, tau = NULL,
-                                extrapolation = c("loglinear", "mack"),
-                                convention = c("model", "r_chainladder"),
-                                phi_mean = NULL, phi_sd = NULL, psi_mean = NULL, psi_sd = NULL) {
-  check_triangle(triangle)
-  for (arg in c("paid", "incurred")) {
-    value <- get(arg)
-    if (!is.character(value) || length(value) != 1 || is.na(value)) {
-      stop(sprintf("%s must be the name of one column", arg), call. = FALSE)
-    }
-  }
-  extrapolation <- match.arg(extrapolation)
-  convention <- match.arg(convention)
-  for (pair in list(c("phi_mean", "phi_sd"), c("psi_mean", "psi_sd"))) {
-    if (is.null(get(pair[1])) != is.null(get(pair[2]))) {
-      stop(sprintf("give both %s and %s, or neither", pair[1], pair[2]), call. = FALSE)
-    }
-  }
-  ptr <- rust_result(triangle@ptr$paid_incurred_chain(
-    paid, incurred, pic_numbers(sigma, "sigma", NULL), pic_numbers(tau, "tau", NULL),
-    extrapolation, convention, pic_numbers(phi_mean, "phi_mean"), pic_numbers(phi_sd, "phi_sd"),
-    pic_numbers(psi_mean, "psi_mean"), pic_numbers(psi_sd, "psi_sd")
-  ))
-  paid_incurred_fit(ptr = ptr)
 S7::method(print, development_curve_fit) <- function(x, ...) {
   cat(sprintf("development_curve_fit (%s): R-squared %s\n", x@shape,
               format(x@r_squared, digits = 7)))
@@ -5637,6 +5479,171 @@ development_curve_compare <- function(triangle, column = NULL, shapes = curve_sh
     optional_number(keep_observed_until, "keep_observed_until")
   ))
   as.data.frame(table)
+}
+
+#' Merz and Wuthrich's paid-incurred chain
+#'
+#' The paid-incurred chain (PIC) of Merz and Wuthrich (2010) combines a
+#' paid and an incurred column of one square triangle into one ultimate per
+#' origin. Log paid link ratios (and the log first paid values) are normal
+#' with means `Phi_j` and standard deviations `sigma_j`, log incurred link
+#' ratios normal with means `Psi_j` and standard deviations `tau_j`, and
+#' both reach the same ultimate. With normal priors on `Phi` and `Psi` (by
+#' default non-informative) the posterior is normal, and each origin's
+#' ultimate is predicted from its latest paid and its latest incurred value
+#' in closed form, `incurred_weight` the weight of the incurred side, with
+#' the square root of its conditional mean squared error of prediction,
+#' `std_err`, for each origin and for the total. As `tau` grows the
+#' prediction becomes Hertig's paid chain ladder, as it shrinks the
+#' incurred chain ladder on geometric averages.
+#'
+#' The defaults reproduce R ChainLadder's `PaidIncurredChain()`, with one
+#' difference: ChainLadder 0.2.21 leaves out of the posterior precision the
+#' terms coupling `Psi_0` with `Phi_1, ..., Phi_J`, which the newest
+#' origin's incurred-paid ratio implies. `convention = "model"` (the
+#' default) is the model's posterior; `convention = "r_chainladder"` is
+#' ChainLadder's to its last digits
+#' (`validation/reference/reserving_paid_incurred_r.csv`). On ChainLadder's
+#' `USAApaid` and `USAAincurred` the model's total reserve and standard
+#' error are each about 0.5% above ChainLadder's. ChainLadder reports the
+#' origins after the first; here the oldest origin is included, taken as
+#' settled at its last paid value with no reserve.
+#'
+#' `sigma_0` is the sample standard deviation of the log first paid values
+#' and `sigma_j`, `tau_j` those of each period's log link ratios; the last
+#' of each, with one observation, is extrapolated log-linearly
+#' (ChainLadder's rule) or by Mack's rule `min(s[J-1], s[J-2], s[J-1]^2 /
+#' s[J-2])` (`extrapolation = "mack"`, Merz and Wuthrich's tail paper).
+#'
+#' Properties of the fit, per origin: `latest` (paid), `latest_incurred`,
+#' `ultimate`, `reserve`, `incurred_weight` and `std_err`; per development
+#' age: `sigma`, `tau` (one fewer), `phi` and `psi` (the posterior means)
+#' and `phi_sd` and `psi_sd` (the posterior standard deviations);
+#' `posterior_covariance` (of `Phi_0, ..., Phi_J, Psi_0, ..., Psi_{J-1}`),
+#' `origins`, `development`, `total_ultimate`, `total_reserve` and
+#' `total_std_err`. `as.data.frame()`, [totals_frame()] and
+#' [development_frame()] give the long tables. This is Python's
+#' `PaidIncurredChain`.
+#'
+#' @param triangle A cumulative [triangle] with one segment, as many
+#'   origins as development ages (at least four), each origin observed at
+#'   exactly its ages up to the latest diagonal, every value positive.
+#' @param paid,incurred Names of the paid and incurred columns.
+#' @param sigma Paid standard deviations, one per development age; `NULL`
+#'   estimates them.
+#' @param tau Incurred standard deviations, one per development age but the
+#'   last; `NULL` estimates them.
+#' @param extrapolation How the last estimated `sigma` and `tau` are filled
+#'   in: `"loglinear"` or `"mack"`.
+#' @param convention `"model"` for the model's posterior, or
+#'   `"r_chainladder"` for R ChainLadder's.
+#' @param phi_mean,phi_sd Prior means and standard deviations of `Phi_0,
+#'   ..., Phi_J`, one per development age; `NULL` for a non-informative
+#'   prior. An infinite standard deviation leaves that parameter
+#'   non-informative.
+#' @param psi_mean,psi_sd The same for `Psi_0, ..., Psi_{J-1}`, one per
+#'   development age but the last.
+#' @param ptr A `PaidIncurredFit` pointer; used internally.
+#' @returns A `paid_incurred_fit` object.
+#' @seealso [mack()], [chain_ladder()].
+#' @export
+#' @examples
+#' long <- data.frame(
+#'   year = rep(2020:2023, 4:1),
+#'   age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'   paid = c(100, 150, 170, 180, 110, 168, 186, 125, 180, 130),
+#'   incurred = c(200, 195, 185, 181, 215, 200, 192, 240, 230, 260)
+#' )
+#' tri <- triangle(long, "year", "age", c("paid", "incurred"))
+#' fit <- paid_incurred_chain(tri, "paid", "incurred")
+#' fit@reserve
+#' fit@total_std_err
+#' development_frame(fit)
+paid_incurred_fit <- S7::new_class(
+  "paid_incurred_fit",
+  package = "prospicio",
+  properties = local({
+    by_origin <- function(f) {
+      S7::new_property(S7::class_double, getter = function(self) {
+        stats::setNames(f(self@ptr), self@ptr$origins())
+      })
+    }
+    by_age <- function(f, last = TRUE) {
+      S7::new_property(S7::class_double, getter = function(self) {
+        ages <- self@ptr$development()
+        if (!last) ages <- ages[-length(ages)]
+        stats::setNames(f(self@ptr), ages)
+      })
+    }
+    value <- function(f) S7::new_property(S7::class_double, getter = function(self) f(self@ptr))
+    n_ages <- function(p) length(p$development())
+    list(
+      ptr = S7::new_S3_class("PaidIncurredFit"),
+      origins = S7::new_property(S7::class_character, getter = function(self) self@ptr$origins()),
+      development = S7::new_property(S7::class_integer, getter = function(self) {
+        self@ptr$development()
+      }),
+      latest = by_origin(function(p) p$latest()),
+      latest_incurred = by_origin(function(p) p$latest_incurred()),
+      ultimate = by_origin(function(p) p$ultimate()),
+      reserve = by_origin(function(p) p$reserve()),
+      incurred_weight = by_origin(function(p) p$incurred_weight()),
+      std_err = by_origin(function(p) p$std_err()),
+      sigma = by_age(function(p) p$sigma()),
+      tau = by_age(function(p) p$tau(), last = FALSE),
+      phi = by_age(function(p) p$phi()),
+      psi = by_age(function(p) p$psi(), last = FALSE),
+      phi_sd = by_age(function(p) p$posterior_sd()[seq_len(n_ages(p))]),
+      psi_sd = by_age(function(p) p$posterior_sd()[-seq_len(n_ages(p))], last = FALSE),
+      posterior_covariance = S7::new_property(S7::class_double, getter = function(self) {
+        p <- self@ptr
+        ages <- p$development()
+        names <- c(paste0("phi_", ages), paste0("psi_", ages[-length(ages)]))
+        matrix(p$posterior_covariance(), length(names), length(names), byrow = TRUE,
+               dimnames = list(names, names))
+      }),
+      total_ultimate = value(function(p) p$total_ultimate()),
+      total_reserve = value(function(p) p$total_reserve()),
+      total_std_err = value(function(p) p$total_std_err())
+    )
+  }),
+  constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
+)
+
+# A numeric setting of paid_incurred_chain(): `null` for NULL, or a
+# numeric vector without NA.
+pic_numbers <- function(x, name, null = numeric(0)) {
+  if (is.null(x)) return(null)
+  if (!is.numeric(x) || anyNA(x)) stop(sprintf("%s must be numeric", name), call. = FALSE)
+  as.double(x)
+}
+
+#' @rdname paid_incurred_fit
+#' @export
+paid_incurred_chain <- function(triangle, paid, incurred, sigma = NULL, tau = NULL,
+                                extrapolation = c("loglinear", "mack"),
+                                convention = c("model", "r_chainladder"),
+                                phi_mean = NULL, phi_sd = NULL, psi_mean = NULL, psi_sd = NULL) {
+  check_triangle(triangle)
+  for (arg in c("paid", "incurred")) {
+    value <- get(arg)
+    if (!is.character(value) || length(value) != 1 || is.na(value)) {
+      stop(sprintf("%s must be the name of one column", arg), call. = FALSE)
+    }
+  }
+  extrapolation <- match.arg(extrapolation)
+  convention <- match.arg(convention)
+  for (pair in list(c("phi_mean", "phi_sd"), c("psi_mean", "psi_sd"))) {
+    if (is.null(get(pair[1])) != is.null(get(pair[2]))) {
+      stop(sprintf("give both %s and %s, or neither", pair[1], pair[2]), call. = FALSE)
+    }
+  }
+  ptr <- rust_result(triangle@ptr$paid_incurred_chain(
+    paid, incurred, pic_numbers(sigma, "sigma", NULL), pic_numbers(tau, "tau", NULL),
+    extrapolation, convention, pic_numbers(phi_mean, "phi_mean"), pic_numbers(phi_sd, "phi_sd"),
+    pic_numbers(psi_mean, "psi_mean"), pic_numbers(psi_sd, "psi_sd")
+  ))
+  paid_incurred_fit(ptr = ptr)
 }
 
 #' A growth curve fitted to a benchmark pattern
