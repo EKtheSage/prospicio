@@ -519,6 +519,12 @@ what it is aiming for by v1.0.
     on the link ratios a Mack fit averaged; R ChainLadder's `cyEffTest`
     and `dfCorTest` to 1e-12 on RAA, GenIns and ABC, and Mack's printed
     values on RAA.
+  - Merz and Wüthrich's paid-incurred chain (`reserving-v02.md`,
+    decision 32; branch `claude/paid-incurred-chain`, issue #560, in
+    Rust, Python and R): paid and incurred in one log-normal Bayesian
+    model with a closed-form posterior; R ChainLadder's
+    `PaidIncurredChain` to 1e-9 on USAA and Dahms' data under its own
+    convention, the model's posterior by default.
   - Development curves over every age (`reserving-v02.md`, decision 31;
     branch `claude/development-curves`, issue #556, in Rust, Python and R):
     `DevelopmentCurve` fits the exponential, inverse power, Hoerl, Sherman
