@@ -12,9 +12,10 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_core::{Lag, Period};
 use prospicio_reserving::{
-    BerquistSherman, CaseAdequacy, CaseOutstanding, CaseTrend, ChainLadder, CountProjection,
-    Disposal, FrequencySeverity, Interpolation, OpenCounts, Selection, SettlementRate,
-    SeverityProjection, TrendFit, Trended, Triangle as TriangleInner, UltimateCounts,
+    BerquistSherman, CaseAdequacy, CaseOutstanding, CaseOutstandingFit, CaseTrend, ChainLadder,
+    CountProjection, Disposal, DisposalFit, FrequencySeverity, FrequencySeverityFit, Interpolation,
+    OpenCounts, Selection, SettlementRate, SeverityProjection, TrendFit, Trended,
+    Triangle as TriangleInner, UltimateCounts,
 };
 
 use crate::reserving::{Triangle, pattern, to_r};
@@ -161,6 +162,18 @@ fn ages(ages: &[Lag]) -> Vec<f64> {
     ages.iter().map(|&a| f64::from(a)).collect()
 }
 
+fn frequency_severity_list(fit: &FrequencySeverityFit) -> List {
+    list!(
+        origins = labels(&fit.origins),
+        latest = fit.latest.clone(),
+        latest_severity = fit.latest_severity.clone(),
+        ultimate_counts = fit.ultimate_counts.clone(),
+        ultimate_severity = fit.ultimate_severity.clone(),
+        ultimate = fit.ultimate.clone(),
+        reserves = fit.reserves()
+    )
+}
+
 /// `frequency_severity()`.
 #[extendr]
 fn frequency_severity_rust(
@@ -191,15 +204,26 @@ fn frequency_severity_rust(
     }
     .fit(tri)
     .map_err(to_r)?;
-    Ok(list!(
+    Ok(frequency_severity_list(&fit))
+}
+
+fn disposal_list(fit: &DisposalFit) -> List {
+    list!(
         origins = labels(&fit.origins),
-        latest = fit.latest.clone(),
-        latest_severity = fit.latest_severity.clone(),
+        ages = ages(&fit.ages),
         ultimate_counts = fit.ultimate_counts.clone(),
-        ultimate_severity = fit.ultimate_severity.clone(),
+        disposal_rates = flat(&fit.disposal_rates),
+        selected_rates = fit.selected_rates.clone(),
+        severities = flat(&fit.severities),
+        trended_severities = flat(&fit.trended_severities),
+        selected_severities = fit.selected_severities.clone(),
+        incremental_counts = flat(&fit.incremental_counts),
+        projected_severities = flat(&fit.projected_severities),
+        incremental_paid = flat(&fit.incremental_paid),
+        latest = fit.latest.clone(),
         ultimate = fit.ultimate.clone(),
         reserves = fit.reserves()
-    ))
+    )
 }
 
 /// `disposal_method()`.
@@ -235,23 +259,25 @@ fn disposal_rust(
     }
     .fit(tri)
     .map_err(to_r)?;
-    let selected_severities = fit.selected_severities.clone();
-    Ok(list!(
+    Ok(disposal_list(&fit))
+}
+
+fn case_outstanding_list(fit: &CaseOutstandingFit) -> List {
+    list!(
         origins = labels(&fit.origins),
         ages = ages(&fit.ages),
-        ultimate_counts = fit.ultimate_counts.clone(),
-        disposal_rates = flat(&fit.disposal_rates),
-        selected_rates = fit.selected_rates.clone(),
-        severities = flat(&fit.severities),
-        trended_severities = flat(&fit.trended_severities),
-        selected_severities = selected_severities,
-        incremental_counts = flat(&fit.incremental_counts),
-        projected_severities = flat(&fit.projected_severities),
+        paid_on_case = flat(&fit.paid_on_case),
+        case_on_case = flat(&fit.case_on_case),
+        selected_paid_on_case = fit.selected_paid_on_case.clone(),
+        selected_case_on_case = fit.selected_case_on_case.clone(),
+        case_outstanding = flat(&fit.case_outstanding),
         incremental_paid = flat(&fit.incremental_paid),
-        latest = fit.latest.clone(),
+        latest_paid = fit.latest_paid.clone(),
+        latest_incurred = fit.latest_incurred.clone(),
         ultimate = fit.ultimate.clone(),
+        ibnr = fit.ibnr(),
         reserves = fit.reserves()
-    ))
+    )
 }
 
 /// `case_outstanding()`.
@@ -274,21 +300,7 @@ fn case_outstanding_rust(
     }
     .fit(tri)
     .map_err(to_r)?;
-    Ok(list!(
-        origins = labels(&fit.origins),
-        ages = ages(&fit.ages),
-        paid_on_case = flat(&fit.paid_on_case),
-        case_on_case = flat(&fit.case_on_case),
-        selected_paid_on_case = fit.selected_paid_on_case.clone(),
-        selected_case_on_case = fit.selected_case_on_case.clone(),
-        case_outstanding = flat(&fit.case_outstanding),
-        incremental_paid = flat(&fit.incremental_paid),
-        latest_paid = fit.latest_paid.clone(),
-        latest_incurred = fit.latest_incurred.clone(),
-        ultimate = fit.ultimate.clone(),
-        ibnr = fit.ibnr(),
-        reserves = fit.reserves()
-    ))
+    Ok(case_outstanding_list(&fit))
 }
 
 fn case_adequacy(

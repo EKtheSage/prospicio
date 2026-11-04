@@ -5469,6 +5469,134 @@ class CapeCodFit:
         """
 
 @final
+class CaseOutstanding:
+    """
+    Case outstanding development (Friedland, chapter 12): each period's paid
+    claims and closing case outstanding as ratios to the case outstanding a
+    period before, run out from the latest diagonal, with paid to ultimate
+    on the last case outstanding.
+    
+    Parameters
+    ----------
+    paid : str
+        The cumulative paid claims column.
+    incurred : str
+        The cumulative reported claims column; case outstanding is reported
+        less paid.
+    paid_to_ultimate : float
+        Remaining paid over the case outstanding at the oldest age.
+    paid_on_case, case_on_case : optional
+        How the ratios at each age are selected, as ``Disposal``'s
+        ``disposal_rates``.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import CaseOutstanding, Triangle
+    >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12],
+    ...     {"paid": [50.0, 90.0, 60.0], "reported": [100.0, 110.0, 120.0]})
+    >>> fit = CaseOutstanding("paid", "reported", 1.0).fit(tri)
+    >>> round(fit.ultimate[0], 6)
+    110.0
+    """
+    def __new__(cls, /, paid: str, incurred: str, paid_to_ultimate: float, paid_on_case: Any |None = None, case_on_case: Any |None = None) -> CaseOutstanding: ...
+    def __repr__(self, /) -> str: ...
+    def fit(self, /, triangle: Triangle) -> CaseOutstandingFit:
+        """
+        Fit to a single-segment triangle holding the columns.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        
+        Returns
+        -------
+        CaseOutstandingFit
+        """
+
+@final
+class CaseOutstandingFit:
+    """
+    A fitted ``CaseOutstanding``. Cell tables are lists of rows by origin,
+    ``None`` where a cell does not apply.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def ages(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    @property
+    def case_on_case(self, /) -> list[list[float |None]]:
+        """
+        Case outstanding over the previous case outstanding.
+        """
+    @property
+    def case_outstanding(self, /) -> list[list[float |None]]:
+        """
+        Observed and projected case outstanding.
+        """
+    @property
+    def ibnr(self, /) -> list[float]:
+        """
+        Ultimate less latest reported.
+        """
+    @property
+    def incremental_paid(self, /) -> list[list[float |None]]:
+        """
+        Projected incremental paid, the step to ultimate last.
+        """
+    @property
+    def latest_incurred(self, /) -> list[float]:
+        """
+        The latest reported claims.
+        """
+    @property
+    def latest_paid(self, /) -> list[float]:
+        """
+        The latest paid claims.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin of each per-origin value.
+        """
+    @property
+    def paid_on_case(self, /) -> list[list[float |None]]:
+        """
+        Incremental paid over the previous case outstanding.
+        """
+    @property
+    def reserves(self, /) -> list[float]:
+        """
+        Ultimate less latest paid.
+        """
+    @property
+    def selected_case_on_case(self, /) -> list[float]:
+        """
+        The case ratio selected at each age.
+        """
+    @property
+    def selected_paid_on_case(self, /) -> list[float]:
+        """
+        The paid ratio selected at each age.
+        """
+    @property
+    def total_reserve(self, /) -> float:
+        """
+        The sum of the reserves.
+        """
+    @property
+    def total_ultimate(self, /) -> float:
+        """
+        The sum of the ultimates.
+        """
+    @property
+    def ultimate(self, /) -> list[float]:
+        """
+        Ultimate claims.
+        """
+
+@final
 class CashflowTerms:
     """
     A collateralised deal's monthly cash flows: the premium, the monthly
@@ -10753,6 +10881,154 @@ class DiscretizationReport:
         """
 
 @final
+class Disposal:
+    """
+    The disposal rate method (Friedland, chapter 11): incremental closed
+    counts from selected disposal rates, each priced at a selected
+    incremental severity brought to the origin's cost level.
+    
+    Parameters
+    ----------
+    closed_counts : str
+        The cumulative closed count column.
+    paid : str
+        The cumulative paid claims column.
+    ultimate_counts
+        Numbers, one per origin; a column for the chain ladder on it; a pair
+        ``(column, ChainLadder)``; or a list of these for their mean.
+    disposal_rates : optional
+        How the rate at each age is selected: ``None`` or ``"all"`` for the
+        simple average of every origin, an integer for the latest n,
+        ``"latest_diagonal"``, a dict of values by age, or a dict of
+        ``n_periods``, ``drop_high`` and ``drop_low``.
+    severities : optional
+        How the incremental severity at each age is selected, as
+        ``disposal_rates``, on severities at the base origin's level.
+    tail_severity_from : int, optional
+        The age from which the severities are pooled into one value, total
+        trended paid over total counts, used to ultimate. By default the
+        last selection carries on.
+    trend : float, default 0.0
+        The annual severity trend.
+    base : int or str, optional
+        The origin of the common cost level; by default the latest origin.
+    factors : sequence of float, optional
+        One factor per origin that brings its severities to the base level
+        besides the trend (tort reform factors).
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import Disposal, Triangle
+    >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12],
+    ...     {"closed": [5.0, 10.0, 6.0], "paid": [50.0, 100.0, 60.0]})
+    >>> fit = Disposal("closed", "paid", [10.0, 12.0]).fit(tri)
+    >>> round(fit.ultimate[1], 6)
+    120.0
+    """
+    def __new__(cls, /, closed_counts: str, paid: str, ultimate_counts: Any, disposal_rates: Any |None = None, severities: Any |None = None, tail_severity_from: int |None = None, trend: float = 0.0, base: Any |None = None, factors: Sequence[float] |None = None) -> Disposal: ...
+    def __repr__(self, /) -> str: ...
+    def fit(self, /, triangle: Triangle) -> DisposalFit:
+        """
+        Fit to a single-segment triangle holding the columns.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        
+        Returns
+        -------
+        DisposalFit
+        """
+
+@final
+class DisposalFit:
+    """
+    A fitted ``Disposal``. Cell tables are lists of rows by origin, ``None``
+    where a cell does not apply.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def ages(self, /) -> list[int]:
+        """
+        Development ages in months.
+        """
+    @property
+    def disposal_rates(self, /) -> list[list[float |None]]:
+        """
+        Observed closed counts over the ultimate counts.
+        """
+    @property
+    def incremental_counts(self, /) -> list[list[float |None]]:
+        """
+        Projected incremental closed counts, the step to ultimate last.
+        """
+    @property
+    def incremental_paid(self, /) -> list[list[float |None]]:
+        """
+        Projected incremental paid, the step to ultimate last.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        The latest paid claims.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin of each per-origin value.
+        """
+    @property
+    def projected_severities(self, /) -> list[list[float |None]]:
+        """
+        The severities at each origin's level.
+        """
+    @property
+    def reserves(self, /) -> list[float]:
+        """
+        Ultimate less latest paid.
+        """
+    @property
+    def selected_rates(self, /) -> list[float]:
+        """
+        The disposal rate selected at each age.
+        """
+    @property
+    def selected_severities(self, /) -> list[float]:
+        """
+        The selected severity at each age and, last, to ultimate.
+        """
+    @property
+    def severities(self, /) -> list[list[float |None]]:
+        """
+        Incremental paid over incremental closed counts.
+        """
+    @property
+    def total_reserve(self, /) -> float:
+        """
+        The sum of the reserves.
+        """
+    @property
+    def total_ultimate(self, /) -> float:
+        """
+        The sum of the ultimates.
+        """
+    @property
+    def trended_severities(self, /) -> list[list[float |None]]:
+        """
+        The severities at the base origin's level.
+        """
+    @property
+    def ultimate(self, /) -> list[float]:
+        """
+        Ultimate claims.
+        """
+    @property
+    def ultimate_counts(self, /) -> list[float]:
+        """
+        Ultimate claim counts.
+        """
+
+@final
 class Distortion:
     """
     A distortion risk measure: ``rho(X) = integral of g(S(x)) dx`` for a
@@ -13395,6 +13671,109 @@ class Forward:
     def ultimate(self, /) -> list[float]:
         """
         Each kept simulation's ultimate loss ratio given the paid to date.
+        """
+
+@final
+class FrequencySeverity:
+    """
+    Frequency-severity: ultimate claims as ultimate counts times an ultimate
+    severity, each projected on its own (Friedland, chapter 11, approaches
+    #1 and #2).
+    
+    Parameters
+    ----------
+    amounts : str
+        The claims column (reported or paid) whose ultimate is projected.
+    counts : str
+        The count column the severity triangle divides the amounts by.
+    ultimate_counts : optional
+        Numbers, one per origin; a column for the chain ladder on it; a pair
+        ``(column, ChainLadder)``; a list of columns or pairs for their mean;
+        or a ``Trended`` frequency with ``exposure`` (approach #2). By
+        default the chain ladder on ``counts``.
+    severity : ChainLadder or Trended, optional
+        The chain ladder on the triangle of severities (approach #1, the
+        default) or a severity selected at a base origin and trended.
+    exposure : str, optional
+        The exposure column of a ``Trended`` frequency.
+    exposure_factors : sequence of float, optional
+        One factor per origin that brings the exposure to the base level
+        (on-level factors, wage inflation).
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import FrequencySeverity, Triangle
+    >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12],
+    ...     {"reported": [100.0, 150.0, 120.0], "counts": [10.0, 12.0, 11.0]})
+    >>> fit = FrequencySeverity("reported", "counts").fit(tri)
+    >>> round(fit.ultimate[1], 6)
+    180.0
+    """
+    def __new__(cls, /, amounts: str, counts: str, ultimate_counts: Any |None = None, severity: Any |None = None, exposure: str |None = None, exposure_factors: Sequence[float] |None = None) -> FrequencySeverity: ...
+    def __repr__(self, /) -> str: ...
+    def fit(self, /, triangle: Triangle) -> FrequencySeverityFit:
+        """
+        Fit to a single-segment triangle holding the columns.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        
+        Returns
+        -------
+        FrequencySeverityFit
+        """
+
+@final
+class FrequencySeverityFit:
+    """
+    A fitted ``FrequencySeverity``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        The latest value of the amounts column.
+        """
+    @property
+    def latest_severity(self, /) -> list[float]:
+        """
+        The latest amounts over the latest counts.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin of each per-origin value.
+        """
+    @property
+    def reserves(self, /) -> list[float]:
+        """
+        Ultimate less latest.
+        """
+    @property
+    def total_reserve(self, /) -> float:
+        """
+        The sum of the reserves.
+        """
+    @property
+    def total_ultimate(self, /) -> float:
+        """
+        The sum of the ultimates.
+        """
+    @property
+    def ultimate(self, /) -> list[float]:
+        """
+        Ultimate claims, counts times severity.
+        """
+    @property
+    def ultimate_counts(self, /) -> list[float]:
+        """
+        Ultimate claim counts.
+        """
+    @property
+    def ultimate_severity(self, /) -> list[float]:
+        """
+        Ultimate severities.
         """
 
 @final
@@ -30320,6 +30699,38 @@ class TrendFit:
         """
 
 @final
+class Trended:
+    """
+    A value selected at the level of a base origin and carried to the other
+    origins by an annual trend: at origin ``o``,
+    ``selected * (1 + trend) ** (years(o) - years(base)) / factors[o]``.
+    Friedland's approach #2 selects a frequency and a severity this way from
+    the older, mature years.
+    
+    Parameters
+    ----------
+    selected : float
+        The value at the base origin's level.
+    base : int or str
+        The origin whose level ``selected`` is at, as ``Triangle.origins``
+        prints it.
+    trend : float
+        The annual trend.
+    factors : sequence of float, optional
+        One factor per origin, oldest first, that brings the origin's value
+        to the base level for anything besides the trend (Friedland's tort
+        reform factors).
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import Trended
+    >>> Trended(20.0, 2008, 0.05)
+    Trended(selected=20.0, base="2008", trend=0.05)
+    """
+    def __new__(cls, /, selected: float, base: Any, trend: float, factors: Sequence[float] |None = None) -> Trended: ...
+    def __repr__(self, /) -> str: ...
+
+@final
 class Triangle:
     """
     A loss triangle with four axes: index (segment), column (measure), origin
@@ -32521,6 +32932,17 @@ def audit_portfolio_grid(units: Any, step: float |None = None, log2: int |None =
     True
     """
 
+def average_case(triangle: Triangle, incurred: str, paid: str, trend: Any, open_counts: str |None = None, reported: str |None = None, closed: str |None = None, max_age: int |None = None) -> Triangle:
+    """
+    The triangle with the columns ``average_case`` and
+    ``adjusted_average_case`` added, the exhibits behind
+    ``case_adequacy_adjust``, which has the same arguments.
+    
+    Returns
+    -------
+    Triangle
+    """
+
 def balance_correction(y: Sequence[float], pred: Sequence[float], weights: Sequence[float] |None = None) -> float:
     """
     The multiplier ``sum(w y) / sum(w pred)`` that makes the weighted total
@@ -32540,6 +32962,33 @@ def balance_correction(y: Sequence[float], pred: Sequence[float], weights: Seque
     >>> from prospicio.models import balance_correction
     >>> balance_correction([1.0, 3.0], [1.0, 1.0])
     2.0
+    """
+
+def berquist_sherman_adjust(triangle: Triangle, incurred: str, paid: str, reported: str, closed_counts: str, trend: Any, ultimate_counts: Any, max_age: int |None = None, disposal_rates: Any |None = None, interpolation: str = "exponential") -> Triangle:
+    """
+    Both Berquist-Sherman adjustments: paid claims and closed counts as
+    ``settlement_rate_adjust`` restates them, and incurred claims as the
+    adjusted average case outstanding times the adjusted open counts plus
+    the adjusted paid (Friedland, chapter 13, XYZ Insurer's third
+    projection).
+    
+    Parameters
+    ----------
+    triangle : Triangle
+    incurred, paid, reported, closed_counts : str
+        Reported and paid claims, reported and closed counts.
+    trend : float or (str, str)
+        As ``case_adequacy_adjust``'s ``trend``.
+    ultimate_counts
+        As ``settlement_rate_adjust``'s.
+    max_age : int, optional
+        As ``case_adequacy_adjust``'s.
+    disposal_rates, interpolation
+        As ``settlement_rate_adjust``'s.
+    
+    Returns
+    -------
+    Triangle
     """
 
 def bootstrap_se(dist: Any, percentiles: Sequence[float], *, replicates: int = 200, seed: int = 0, hold_fixed: Any |None = None, tvar_levels: Sequence[float] |None = None, sd_multiples: Sequence[float] |None = None, quantile: str = "inverted_cdf", tvar: str = "exact") -> dict:
@@ -32776,6 +33225,65 @@ def capital(pd: PredictiveDistribution, distortion: Distortion, method: str = "e
     (8.0, [3.5, 5.5], [2.5, 5.5])
     >>> a.diversification_benefit()
     1.0
+    """
+
+def case_adequacy_adjust(triangle: Triangle, incurred: str, paid: str, trend: Any, open_counts: str |None = None, reported: str |None = None, closed: str |None = None, max_age: int |None = None) -> Triangle:
+    """
+    The triangle restated at the case reserve adequacy of the latest
+    diagonal (Berquist and Sherman; Friedland, chapter 13): the average case
+    outstanding of each age on the latest diagonal, detrended to the earlier
+    origins, times the open counts, plus paid. The result is a cumulative
+    triangle with ``incurred`` replaced, for any method to project.
+    
+    Parameters
+    ----------
+    triangle : Triangle
+    incurred, paid : str
+        The reported and paid claims columns.
+    trend : float or (str, str)
+        The annual severity trend, or a pair of an amount and a count column
+        to fit it from (paid claims and closed counts).
+    open_counts : str, optional
+        A column of open counts. Otherwise give ``reported`` and ``closed``.
+    reported, closed : str, optional
+        Count columns whose difference is the open counts.
+    max_age : int, optional
+        The oldest age adjusted, where older averages are too thin to use.
+    
+    Returns
+    -------
+    Triangle
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import Triangle, case_adequacy_adjust
+    >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], {
+    ...     "incurred": [100.0, 120.0, 150.0], "paid": [50.0, 100.0, 50.0],
+    ...     "open": [5.0, 2.0, 5.0]})
+    >>> out = case_adequacy_adjust(tri, "incurred", "paid", 0.25, open_counts="open")
+    >>> out.columns
+    ['incurred', 'paid', 'open']
+    """
+
+def case_development_factor(reported_cdf: float, paid_cdf: float) -> float:
+    """
+    Friedland's chapter 12 factor from case outstanding to unpaid claims:
+    ``1 + (R - 1) P / (P - R)`` from the reported and paid factors to
+    ultimate at an age.
+    
+    Parameters
+    ----------
+    reported_cdf, paid_cdf : float
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import case_development_factor
+    >>> round(case_development_factor(1.2, 2.0), 6)
+    1.5
     """
 
 def censored_las(tables: Sequence[SizeOfLoss]) -> list[dict]:
@@ -33643,6 +34151,28 @@ def eventual_ruin(severity: Grid, rho: float |None = None, *, loss_ratio: float 
     >>> # Exponential claims: exp(-u / 600) / 1.2 = 0.157; the step costs 1%.
     >>> round(ruin.psi_at(1000.0), 3)
     0.156
+    """
+
+def exponential_trend(x: Sequence[float], y: Sequence[float]) -> Any:
+    """
+    The exponential trend through points by least squares on the logarithm.
+    
+    Parameters
+    ----------
+    x, y : sequence of float
+        Times in years and positive values.
+    
+    Returns
+    -------
+    dict or None
+        ``rate``, ``r_squared`` and ``n``; ``None`` with fewer than two
+        usable points.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import exponential_trend
+    >>> round(exponential_trend([0.0, 1.0, 2.0], [100.0, 110.0, 121.0])["rate"], 12)
+    0.1
     """
 
 def f_test(small: GlmFit, big: GlmFit) -> dict:
@@ -35689,6 +36219,17 @@ def poisson_tail(expected: float, observed: int) -> float:
     True
     """
 
+def pooled_trend(triangle: Triangle, column: str) -> Any:
+    """
+    One exponential trend of a column over every age at once: a common
+    slope with an intercept for each age.
+    
+    Returns
+    -------
+    dict or None
+        ``rate``, ``r_squared`` and ``n``.
+    """
+
 def ppc_check(observed: Sequence[float], replicated: Sequence[Sequence[float]], statistics: Sequence[Any] |None = None, groups: Sequence[int] |None = None) -> list[dict]:
     """
     Posterior predictive checks of any model: each test statistic of
@@ -35992,6 +36533,16 @@ def quantile_residuals(family: str, y: Sequence[float], mu: Sequence[float], dis
     Returns
     -------
     list of float
+    """
+
+def ratio_column(triangle: Triangle, numerator: str, denominator: str, name: str) -> Triangle:
+    """
+    The triangle with a column ``name`` that is ``numerator`` over
+    ``denominator`` cell by cell, as average paid or a frequency.
+    
+    Returns
+    -------
+    Triangle
     """
 
 def rearrange(columns: Sequence[Sequence[float]], rotate: int |None = None, seed: int |None = None, tolerance: float = 1e-6) -> dict:
@@ -36317,6 +36868,40 @@ def select_vine(data: Sequence[Sequence[float]], families: Sequence[str] |None =
     >>> a, b, given = fit.vine.edge(1, 0)
     >>> (sorted([a, b]), given)
     ([1, 2], [0])
+    """
+
+def settlement_rate_adjust(triangle: Triangle, paid: str, closed_counts: str, ultimate_counts: Any, disposal_rates: Any |None = None, interpolation: str = "exponential") -> Triangle:
+    """
+    The triangle restated at the settlement rate of the latest diagonal
+    (Berquist and Sherman; Friedland, chapter 13): closed counts are the
+    selected disposal rates times each origin's ultimate counts, and paid
+    claims are read off a curve through each origin's observed (closed
+    count, paid) pairs at those counts.
+    
+    Parameters
+    ----------
+    triangle : Triangle
+    paid, closed_counts : str
+        The paid claims and closed count columns, both replaced.
+    ultimate_counts
+        Numbers, one per origin; a column for the chain ladder on it; a pair
+        ``(column, ChainLadder)``; or a list of these for their mean.
+    disposal_rates : optional, default "latest_diagonal"
+        As ``Disposal``'s ``disposal_rates``.
+    interpolation : {"exponential", "linear"}, default "exponential"
+        The curve between two successive points.
+    
+    Returns
+    -------
+    Triangle
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import Triangle, settlement_rate_adjust
+    >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], {
+    ...     "paid": [50.0, 100.0, 60.0], "closed": [5.0, 10.0, 6.0]})
+    >>> settlement_rate_adjust(tri, "paid", "closed", [10.0, 12.0]).columns
+    ['paid', 'closed']
     """
 
 def severity_exposure_curve(severity: Any, mpl: float, x: Sequence[float]) -> list[float]:
@@ -36878,6 +37463,16 @@ def to_json(dist: Any) -> str:
     >>> text = to_json(Lognormal(7.0, 0.5))
     >>> from_json(text).mean() == Lognormal(7.0, 0.5).mean()
     True
+    """
+
+def trend_by_age(triangle: Triangle, column: str) -> dict:
+    """
+    The exponential trend of a column at each age, down the origins.
+    
+    Returns
+    -------
+    dict
+        Each age with its ``rate``, ``r_squared`` and ``n``, or ``None``.
     """
 
 def trend_factor(rate: float, years: float) -> float:
