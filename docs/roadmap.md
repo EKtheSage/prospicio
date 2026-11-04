@@ -525,6 +525,13 @@ what it is aiming for by v1.0.
     model with a closed-form posterior; R ChainLadder's
     `PaidIncurredChain` to 1e-9 on USAA and Dahms' data under its own
     convention, the model's posterior by default.
+  - The Munich chain ladder (`reserving-v02.md`, decision 33; branch
+    `claude/munich-chain-ladder`, issue #559, in Rust, Python and R): paid
+    and incurred developed together, each factor corrected by the origin's
+    paid-to-incurred residual, with tails and over segments; R
+    ChainLadder's `MunichChainLadder` to 1e-12 on MCL with no tail and
+    with log-linear and constant tails, and chainladder-python's
+    `MunichAdjustment` under both sigma interpolations.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental

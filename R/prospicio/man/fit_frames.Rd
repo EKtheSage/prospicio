@@ -18,8 +18,8 @@ segment(fit, ...)
 \link{cape_cod_fit}, \link{odp_bootstrap_fit}, \link{mack_bootstrap_fit},
 \link{bayes_odp_fit}, \link{bayes_odp_fits}, \link{bayes_bf_fit}, \link{bayes_bf_normalised_fit},
 \link{meyers_fit}, \link{meyers_fits}, \link{one_year_fit}, \link{bayes_one_year_fit}, \link{bayes_one_year_fits}, \link{clark_fit},
-\link{compartmental_fit}, \link{compartmental_fits}, \link{compartmental_one_year_fit} or
-\link{compartmental_one_year_fits} (a \link{clark_fit} or
+\link{compartmental_fit}, \link{compartmental_fits}, \link{compartmental_one_year_fit},
+\link{compartmental_one_year_fits} or \link{munich_fit} (a \link{clark_fit} or
 a compartmental fit not for \code{development_frame()}); for \code{segment()},
 also a \link{latest_valuation}.}
 
@@ -72,7 +72,9 @@ for Clark its \code{omega}, \code{theta}, \code{scale} and, for Cape Cod, \code{
 \code{ldf} (to the next age), \code{cdf} (to ultimate, with the tail), \code{sigma} and
 \code{std_err}; the oldest age has \code{NA} for \code{ldf}, \code{sigma} and \code{std_err}. A
 \link{clark_fit} has no development table of its own: use
-\code{development_frame(fit@chain_ladder)} for the chain ladder's.
+\code{development_frame(fit@chain_ladder)} for the chain ladder's. A
+\link{munich_fit}'s three tables have its own columns, paid and incurred side
+by side (see \link{munich_fit}).
 }
 \details{
 \code{segment()} returns the fit of one segment, chosen by key values as in
