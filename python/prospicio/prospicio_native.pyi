@@ -18489,8 +18489,9 @@ class LayerSharePrior:
         Parameters
         ----------
         model : BayesBfNormalised, optional
-            Supplies the sampler, process error, simulations and seed; its
-            own ``apriori``, ``cv`` and ``common_cv`` are replaced.
+            Supplies the sampler, process error, simulations, seed and
+            ``pattern_prior``; its own ``apriori``, ``cv`` and ``common_cv``
+            are replaced.
         
         Returns
         -------
