@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 accepted by the user on 2026-10-28 as proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 accepted by the user on 2026-10-28 as built; decision 29 built on branch `claude/unify-not-supported`, issue #580, in Rust, Python and R, its items 4, 5 and 9 open for the user; decision 30 built on branch `claude/monthly-pattern-speed`, issue #717, in Rust, with no API change in Python and R, its item 2 open for the user; decision 31 built on branch `claude/development-curves`, in Rust, Python and R, its items proposed for the user's acceptance; decision 33 built on branch `claude/munich-chain-ladder`, in Rust, Python and R, its items 5, 6 and 11 open) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/one-value-pattern`, in Rust, Python and R; decision 21 built on branch `claude/uy-pattern`, in Rust, Python and R; decision 22 built on branch `claude/apriori-by-origin`, in Rust, Python and R; decision 23 built on branch `claude/benchmark-curve`, in Rust, Python and R; decision 24 built on branch `claude/ulr-column`, in Rust, Python and R, its item 4 follow-up `ulr_mean` on branch `claude/ulr-mean`, in Rust, Python and R; decisions 20 to 24 accepted by the user on 2026-10-27; decision 25 accepted by the user on 2026-10-27 (replace, the Weibull the default) and built on branch `claude/ay-monthly-reading`, in Rust, Python and R; decision 26 built on branch `claude/loss-ratio-draws`, in Rust, Python and R, its item 5 accepted by the user on 2026-10-28 as proposed; decision 27 built on branch `claude/mack-assumption-tests`, in Rust, Python and R, its item 6 accepted by the user on 2026-10-28 as built; decision 29 built on branch `claude/unify-not-supported`, issue #580, in Rust, Python and R, its items 4, 5 and 9 open for the user; decision 30 built on branch `claude/monthly-pattern-speed`, issue #717, in Rust, with no API change in Python and R, its item 2 open for the user; decision 31 built on branch `claude/development-curves`, in Rust, Python and R, its items proposed for the user's acceptance; decision 32 built on branch `claude/paid-incurred-chain`, in Rust, Python and R; decision 33 built on branch `claude/munich-chain-ladder`, in Rust, Python and R, its items 5, 6 and 11 open) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -5226,6 +5226,117 @@ Each item is proposed, for the user's acceptance:
     (2010) mentions curve fitting for tails but prints no fit, and Sherman's
     1984 paper is not in `knowledge/references/`. chainladder-python was not
     installed locally, so no new chainladder-python rows were generated.
+
+### 32. Merz and Wüthrich's paid-incurred chain
+
+Status: **Built** (2026-11-03), issue #560, branch
+`claude/paid-incurred-chain`, in Rust, Python and R. Items 3, 4, 6 and 7
+were picked by the session where the issue left the choice; they are open
+for the user. (Numbered 32 after decisions 29 to 31, which main and other
+open pull requests built or propose; the Munich chain ladder is 33.)
+
+Merz and Wüthrich (2010, "Paid-incurred chain claims reserving method",
+Insurance: Mathematics and Economics 46(3), 568-579) combine the paid and
+the incurred triangle in one log-normal Bayesian model whose posterior has
+a closed form. `prospicio_reserving::paid_incurred` builds it.
+
+1. **The model.** With `P[i,j]` cumulative paid and `I[i,j]` incurred at
+   origin `i` and age `j = 0..J` (a square of `J + 1` origins and ages):
+   * paid: `xi[i,j] = log(P[i,j] / P[i,j-1])` (with `P[i,-1] = 1`) is
+     `N(Phi_j, sigma_j^2)` for `j = 0..J`;
+   * incurred: `zeta[i,j] = log(I[i,j+1] / I[i,j])` is
+     `N(Psi_j, tau_j^2)` for `j = 0..J-1`, with `I[i,J] = P[i,J]`, so that
+     paid and incurred reach the same ultimate;
+   * priors `Phi_j ~ N(phi_j, s_j^2)` and `Psi_j ~ N(psi_j, t_j^2)`,
+     independent; non-informative (`s` and `t` infinite) by default, as in
+     R.
+
+   The variances are fixed (estimated or given). The posterior of
+   `(Phi, Psi)` given both triangles is Gaussian. It is assembled term by
+   term from the likelihood: each paid observation of `Phi_j`, each
+   incurred observation of `Psi_j` (origin 0's last step uses its observed
+   `I[0,J]`), and for each origin `i >= 1` with latest age `k = J - i` the
+   observed `log(I[i,k] / P[i,k])`, whose mean is
+   `sum_{m>k} Phi_m - sum_{n>=k} Psi_n` and whose variance is
+   `gap(k) = sum_{m>k} sigma_m^2 + sum_{n>=k} tau_n^2`. Each term adds
+   `a a' / v` to the precision and `a y / v` to the shift.
+2. **Prediction.** With `b_k = sum_{m>k} sigma_m^2 / gap(k)` (the weight on
+   incurred, `incurred_weight`), the ultimate of origin `i` is
+   `exp((1 - b) log P + b log I + e' mu + (1 - b) sum_{m>k} sigma_m^2 / 2
+   + e' C e / 2)`, where `e` is the origin's linear form in the posterior
+   mean `mu` and covariance `C`. The conditional mean squared error of
+   prediction between origins `a` and `c` is
+   `(exp(delta_ac (1 - b_a) sum_{m>k_a} sigma_m^2 + e_a' C e_c) - 1) U_a U_c`.
+   The total's standard error sums the matrix.
+3. **R ChainLadder leaves out a coupling.** R ChainLadder 0.2.21's
+   `PaidIncurredChain` sets the posterior precision's entries between
+   `Phi_n` (`n >= 1`) and `Psi_0` to zero: its loops test `n == 0 | m == 0`
+   where only `n == 0` should give zero. Zeroing those entries reproduces
+   R to 1e-9; a direct Gaussian conditioning of the model (a unit test)
+   equals the default here. `PicConvention::Model` (the default) is the
+   model's posterior; `PicConvention::RChainLadder` reproduces R. The
+   default is above R's by 0.50% on the total reserve and 0.49% on its
+   standard error on USAA, and by 1.14% and 1.68% on Dahms' data. Whether
+   the paper's printed formula has the same omission could not be checked
+   (the paper is not available to the session). Open: keep the R
+   convention as an option, and whether to report the omission upstream.
+4. **Variances on the method, not in the priors.** The issue sketched
+   `PicPriors` holding the variances; the model conditions on them, so
+   they are not priors. `sigma` and `tau` are `Option<Vec<f64>>` on
+   `PaidIncurredChain`, and `PicPriors` holds only the normal priors' means
+   and standard deviations. An empty pair is non-informative; an infinite
+   sd is no prior for that parameter. Open for the user.
+5. **Estimated variances.** Sample variances (divisor `n - 1`) of the
+   observed `xi` and `zeta`, `sigma_0` from `log P[i,0]`, as R. The last
+   `sigma` and the last `tau` have one observation and are filled in by
+   `VarianceExtrapolation`: `LogLinear` (the default), R's
+   `lm(log(s2) ~ dev)` over every estimated value, or `Mack`,
+   `min(s1, s2, s1^2 / s2)` on the two previous values, the rule of Merz
+   and Wüthrich's tail-factor paper. Estimating needs at least four ages;
+   given variances need three.
+6. **The oldest origin.** Origin 0 is settled: its ultimate is `P[0,J]`,
+   its reserve and standard error 0. It is in the fit's rows and in
+   `total_ultimate`; R's `Ult.Loss` leaves it out, so the parity compares
+   R's total ultimate with ours less origin 0. Open for the user.
+7. **Scope.** A square, fully observed triangle of positive paid and
+   incurred values, one segment; anything else is
+   `Error::PaidIncurred`. No `fit_segments`, one-year view or simulation.
+   Open: whether any of them is wanted later.
+8. **Results.** `PicFit` holds per origin the latest paid and incurred,
+   ultimate, reserve, incurred weight and standard error (R returns only
+   the total's), the totals, `sigma`, `tau`, the posterior mean and
+   covariance (`phi()`, `psi()`, `posterior_sd()`), and `to_long()`,
+   `totals()` and `development_table()` as `FitTable`s. Python
+   `PaidIncurredChain(...).fit(triangle, paid, incurred)` and R
+   `paid_incurred_chain(triangle, paid, incurred, ...)` (an S7
+   `paid_incurred_fit` with `as.data.frame`, `totals_frame`,
+   `development_frame` and `print`).
+9. **Checks.**
+   * R ChainLadder 0.2.21 (`validation/scripts/reserving_paid_incurred_r.R`
+     writes `validation/reference/reserving_paid_incurred_r.csv`, 192
+     values to 1e-9): `sigma`, `tau`, `beta`, the posterior means and sds,
+     each origin's ultimate, reserve and standard error and the totals, on
+     USAA (`USAApaid`, `USAAincurred`) and on Dahms' (2008) data as
+     printed in Merz and Wüthrich's tail-factor paper, under
+     `RChainLadder` (`validation/tests/reserving_paid_incurred.rs`, the
+     Python and R tests).
+   * Limits (unit tests): a very large `tau` gives Hertig's log-normal paid
+     chain ladder, a very small `tau` the geometric incurred chain ladder,
+     a tight prior fixes the parameters, given variances equal to the
+     estimates give the same fit.
+   * Printed values: Hertig's paid-only model, which the 2010 paper's
+     section 3.1 derives as a special case, is printed for Dahms' data in
+     the tail-factor paper's Table 5 ("Hertig's model, no tail factor",
+     with Table 4's `sigma`, the last by Mack's rule). The PIC with a
+     very large `tau` and `VarianceExtrapolation::Mack` reproduces every
+     origin's reserve and msep and the totals (9,772,084 and 1,519,464)
+     to the unit (`hertigs_model_matches_merz_and_wuthrichs_printed_values`).
+     That column does not involve the incurred side, so it cannot decide
+     item 3.
+   * Not run: the 2010 paper's own PIC results (the paper is not
+     available here), and a comparison with
+     `Compartmental`'s paid-and-incurred likelihood (it needs a premium
+     column, which USAA lacks; a follow-up).
 
 ### 33. The Munich chain ladder
 

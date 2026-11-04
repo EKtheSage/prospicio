@@ -2663,6 +2663,8 @@ Triangle$clark_ldf <- function(column, curve, max_age) .Call(wrap__Triangle__cla
 
 Triangle$clark_cape_cod <- function(column, exposure, curve, max_age) .Call(wrap__Triangle__clark_cape_cod, self, column, exposure, curve, max_age)
 
+Triangle$paid_incurred_chain <- function(paid, incurred, sigma, tau, extrapolation, convention, phi_mean, phi_sd, psi_mean, psi_sd) .Call(wrap__Triangle__paid_incurred_chain, self, paid, incurred, sigma, tau, extrapolation, convention, phi_mean, phi_sd, psi_mean, psi_sd)
+
 #' @export
 `$.Triangle` <- function (self, name) { func <- Triangle[[name]]; environment(func) <- environment(); func }
 
@@ -3844,6 +3846,55 @@ BenchmarkCurveFit$pattern <- function(ages) .Call(wrap__BenchmarkCurveFit__patte
 #' @export
 `[[.BenchmarkCurveFit` <- `$.BenchmarkCurveFit`
 
+PaidIncurredFit <- new.env(parent = emptyenv())
+
+PaidIncurredFit$origins <- function() .Call(wrap__PaidIncurredFit__origins, self)
+
+PaidIncurredFit$development <- function() .Call(wrap__PaidIncurredFit__development, self)
+
+PaidIncurredFit$latest <- function() .Call(wrap__PaidIncurredFit__latest, self)
+
+PaidIncurredFit$latest_incurred <- function() .Call(wrap__PaidIncurredFit__latest_incurred, self)
+
+PaidIncurredFit$ultimate <- function() .Call(wrap__PaidIncurredFit__ultimate, self)
+
+PaidIncurredFit$reserve <- function() .Call(wrap__PaidIncurredFit__reserve, self)
+
+PaidIncurredFit$incurred_weight <- function() .Call(wrap__PaidIncurredFit__incurred_weight, self)
+
+PaidIncurredFit$std_err <- function() .Call(wrap__PaidIncurredFit__std_err, self)
+
+PaidIncurredFit$total_ultimate <- function() .Call(wrap__PaidIncurredFit__total_ultimate, self)
+
+PaidIncurredFit$total_reserve <- function() .Call(wrap__PaidIncurredFit__total_reserve, self)
+
+PaidIncurredFit$total_std_err <- function() .Call(wrap__PaidIncurredFit__total_std_err, self)
+
+PaidIncurredFit$sigma <- function() .Call(wrap__PaidIncurredFit__sigma, self)
+
+PaidIncurredFit$tau <- function() .Call(wrap__PaidIncurredFit__tau, self)
+
+PaidIncurredFit$phi <- function() .Call(wrap__PaidIncurredFit__phi, self)
+
+PaidIncurredFit$psi <- function() .Call(wrap__PaidIncurredFit__psi, self)
+
+PaidIncurredFit$posterior_sd <- function() .Call(wrap__PaidIncurredFit__posterior_sd, self)
+
+PaidIncurredFit$posterior_covariance <- function() .Call(wrap__PaidIncurredFit__posterior_covariance, self)
+
+PaidIncurredFit$n_segments <- function() .Call(wrap__PaidIncurredFit__n_segments, self)
+
+PaidIncurredFit$long_table <- function() .Call(wrap__PaidIncurredFit__long_table, self)
+
+PaidIncurredFit$totals_table <- function() .Call(wrap__PaidIncurredFit__totals_table, self)
+
+PaidIncurredFit$development_table <- function() .Call(wrap__PaidIncurredFit__development_table, self)
+
+#' @export
+`$.PaidIncurredFit` <- function (self, name) { func <- PaidIncurredFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.PaidIncurredFit` <- `$.PaidIncurredFit`
 DevelopmentCurveFit <- new.env(parent = emptyenv())
 
 DevelopmentCurveFit$shape <- function() .Call(wrap__DevelopmentCurveFit__shape, self)
