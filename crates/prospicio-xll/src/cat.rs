@@ -179,7 +179,7 @@ fn totals_and_maxima(events: &EventSet) -> (Vec<f64>, Vec<f64>) {
         .unzip()
 }
 
-/// A year loss table's annual totals: `PRO.YLT.STATS(years, losses,
+/// A year loss table's annual totals: `PRO.CAP.YLT.STATS(years, losses,
 /// [n_years], [probabilities], [quantile], [times], [hours], [negative])`.
 /// The rows are the years, losses and occurrences (fewer than the losses
 /// under an hours clause), the years with a loss, the occurrences a year,
@@ -286,7 +286,7 @@ fn period(p: f64) -> Value {
     Value::number(1.0 / p)
 }
 
-/// A year loss table's exceedance curves: `PRO.YLT.OEP(years, losses,
+/// A year loss table's exceedance curves: `PRO.CAP.YLT.OEP(years, losses,
 /// [return_periods], [amounts], [n_years], [quantile], [times], [hours],
 /// [negative])`. By return period (2 to 1000 years if omitted, those
 /// past the table's years left out), a row each: the return period, its
@@ -391,7 +391,7 @@ fn elt(args: &[Grid]) -> Result<(EventLossTable, Vec<f64>, Vec<f64>)> {
     Ok((elt, rates, means))
 }
 
-/// An event loss table's summary: `PRO.ELT.STATS(rates, means,
+/// An event loss table's summary: `PRO.CAP.ELT.STATS(rates, means,
 /// [sd_independent], [sd_correlated], exposures)`. The rows are the
 /// events, the mean number of events a year `Λ = Σ rate`, the chance of a
 /// year with an event `1 - exp(-Λ)`, the expected annual loss
@@ -422,7 +422,7 @@ pub fn elt_stats(args: &[Grid]) -> Result<Grid> {
 }
 
 /// An event loss table's occurrence exceedance curve:
-/// `PRO.ELT.OEP(rates, means, [sd_independent], [sd_correlated],
+/// `PRO.CAP.ELT.OEP(rates, means, [sd_independent], [sd_correlated],
 /// exposures, [return_periods], [amounts])`, events independent Poisson
 /// processes and each one's loss a beta on `[0, exposure]` with its mean
 /// and standard deviation. By return period (2 to 1000 years if omitted,

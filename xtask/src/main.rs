@@ -890,7 +890,11 @@ fn xll() -> Result {
             "--target",
             target,
         ])
-        .args(["--config", "profile.release.strip=true"]);
+        .args(["--config", "profile.release.strip=true"])
+        // Link-time optimization across crates and one codegen unit drop the
+        // engines' unused code: 16.3 MB to 14.0 MB (xll.md, decision 47).
+        .args(["--config", "profile.release.lto=\"fat\""])
+        .args(["--config", "profile.release.codegen-units=1"]);
     let linker = "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER";
     if !cfg!(windows) && env::var_os(linker).is_none() {
         build.env(linker, MINGW_GCC);

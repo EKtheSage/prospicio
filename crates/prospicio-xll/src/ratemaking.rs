@@ -215,7 +215,7 @@ fn term(g: &Grid) -> Result<f64> {
 
 /// The factor that brings each period's premium to the current rate level
 /// (current level over the period's average level, by the parallelogram
-/// method): `PRO.ONLEVEL(effective, changes, from, to, [period], [term],
+/// method): `PRO.PRC.ONLEVEL(effective, changes, from, to, [period], [term],
 /// [applies], [given])`. `from` and `to` broadcast, so columns of period
 /// starts and ends give a column of factors.
 pub fn on_level(args: &[Grid]) -> Result<Grid> {
@@ -237,7 +237,7 @@ pub fn on_level(args: &[Grid]) -> Result<Grid> {
 
 /// One period's premium by rate level, the parallelogram's cells: each
 /// cell's level and share, then the average and current levels and the
-/// on-level factor: `PRO.RATELEVEL(effective, changes, from, to, [period],
+/// on-level factor: `PRO.PRC.RATELEVEL(effective, changes, from, to, [period],
 /// [term], [applies], [given])`.
 pub fn rate_level(args: &[Grid]) -> Result<Grid> {
     let h = history(&args[0], &args[1], &args[6], &args[7])?;
@@ -279,7 +279,7 @@ pub fn rate_level(args: &[Grid]) -> Result<Grid> {
 
 /// The average date on which each period's premium is written or earned
 /// (the average accident date of its losses), which sets trend lengths:
-/// `PRO.AVGDATE(from, to, [period], [term], [basis])`, `basis`
+/// `PRO.PRC.AVGDATE(from, to, [period], [term], [basis])`, `basis`
 /// `"earned"` (default) or `"written"`. A trend factor is then
 /// `(1 + trend) ^ (to_date - from_date)`.
 pub fn average_date(args: &[Grid]) -> Result<Grid> {
@@ -314,7 +314,7 @@ pub fn average_date(args: &[Grid]) -> Result<Grid> {
 }
 
 /// A trend fitted by least squares to `values` at `times` (in years, or
-/// Excel dates): `PRO.TREND.FIT(times, values, [kind])`, `kind`
+/// Excel dates): `PRO.PRC.TREND.FIT(times, values, [kind])`, `kind`
 /// `"exponential"` (default) or `"linear"`. Returns the annual change
 /// (`exp(slope) - 1`, or the slope for a linear fit), intercept, slope,
 /// R-squared and the number of points; blank pairs are skipped.
@@ -416,7 +416,7 @@ fn per_year(g: &Grid, name: &str, n: Option<usize>) -> Result<Vec<f64>> {
 /// The loss ratio method's experience (Werner and Modlin, ch. 8): each
 /// year's premium at the current rate level, trended, and its losses
 /// developed, trended and loaded for LAE, its loss ratio, and the total
-/// (the ratio of the totals): `PRO.LR.EXPERIENCE(earned_premium, losses,
+/// (the ratio of the totals): `PRO.PRC.LR.EXPERIENCE(earned_premium, losses,
 /// [on_level], [premium_trend], [development], [loss_trend], [lae])`. A
 /// factor is omitted (1), one for every year, or one per year.
 pub fn lr_experience(args: &[Grid]) -> Result<Grid> {
@@ -462,7 +462,7 @@ pub fn lr_experience(args: &[Grid]) -> Result<Grid> {
 
 /// The pure premium method's experience: each year's exposure, losses
 /// developed, trended and loaded for LAE, and pure premium, then the total:
-/// `PRO.PP.EXPERIENCE(exposure, losses, [development], [loss_trend],
+/// `PRO.PRC.PP.EXPERIENCE(exposure, losses, [development], [loss_trend],
 /// [lae])`.
 pub fn pp_experience(args: &[Grid]) -> Result<Grid> {
     let exposure = per_year(&args[0], "exposure", None)?;
@@ -516,7 +516,7 @@ fn or_zero(g: &Grid, name: &str) -> Result<f64> {
 }
 
 /// The loss ratio method's indicated change, `(LR + F) / (1 - V - Q) - 1`:
-/// `PRO.INDICATED.CHANGE(loss_ratio, variable, profit, [fixed_ratio])`.
+/// `PRO.PRC.INDICATED.CHANGE(loss_ratio, variable, profit, [fixed_ratio])`.
 pub fn indicated_change(args: &[Grid]) -> Result<Grid> {
     let p = provisions(&args[1], &args[2])?;
     let fixed = or_zero(&args[3], "fixed_ratio")?;
@@ -526,7 +526,7 @@ pub fn indicated_change(args: &[Grid]) -> Result<Grid> {
 }
 
 /// The pure premium method's indicated rate, `(PP + fixed) / (1 - V -
-/// Q)`: `PRO.INDICATED.RATE(pure_premium, variable, profit,
+/// Q)`: `PRO.PRC.INDICATED.RATE(pure_premium, variable, profit,
 /// [fixed_per_exposure])`.
 pub fn indicated_rate(args: &[Grid]) -> Result<Grid> {
     let p = provisions(&args[1], &args[2])?;
@@ -537,7 +537,7 @@ pub fn indicated_rate(args: &[Grid]) -> Result<Grid> {
 }
 
 /// The permissible loss ratio, `1 - F - V - Q`:
-/// `PRO.PERMISSIBLE.LR(variable, profit, [fixed_ratio])`.
+/// `PRO.PRC.PERMISSIBLE.LR(variable, profit, [fixed_ratio])`.
 pub fn permissible_lr(args: &[Grid]) -> Result<Grid> {
     let p = provisions(&args[0], &args[1])?;
     let fixed = or_zero(&args[2], "fixed_ratio")?;
@@ -546,7 +546,7 @@ pub fn permissible_lr(args: &[Grid]) -> Result<Grid> {
 
 /// The trended present rates complement as an indicated change,
 /// `(1 + prior indicated) / (1 + prior implemented) * trend - 1`:
-/// `PRO.TRENDED.PRESENT(prior_indicated, prior_implemented, trend)`.
+/// `PRO.PRC.TRENDED.PRESENT(prior_indicated, prior_implemented, trend)`.
 pub fn trended_present(args: &[Grid]) -> Result<Grid> {
     broadcast(
         &[&args[0], &args[1], &args[2]],
@@ -562,7 +562,7 @@ pub fn trended_present(args: &[Grid]) -> Result<Grid> {
 }
 
 /// `Z * estimate + (1 - Z) * complement`:
-/// `PRO.CRED.WEIGHTED(estimate, credibility, complement)`.
+/// `PRO.PRC.CRED.WEIGHTED(estimate, credibility, complement)`.
 pub fn cred_weighted(args: &[Grid]) -> Result<Grid> {
     broadcast(
         &[&args[0], &args[1], &args[2]],
@@ -580,7 +580,7 @@ pub fn cred_weighted(args: &[Grid]) -> Result<Grid> {
 
 /// The premium-based projection's fixed and variable expense ratios: each
 /// category's ratio split by its fixed share, summed:
-/// `PRO.EXPENSES(ratios, fixed_shares)`.
+/// `PRO.PRC.EXPENSES(ratios, fixed_shares)`.
 pub fn expenses(args: &[Grid]) -> Result<Grid> {
     let ratios = per_year(&args[0], "ratios", None)?;
     let shares = factors(&args[1], "fixed_shares", ratios.len())

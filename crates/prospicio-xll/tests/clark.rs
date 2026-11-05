@@ -1,4 +1,4 @@
-//! Clark's growth curves (`PRO.CLARK`, `PRO.CLARK.PARAMS`), reached through
+//! Clark's growth curves (`PRO.RES.CLARK`, `PRO.RES.CLARK.PARAMS`), reached through
 //! the catalogue as Excel reaches them, against R ChainLadder 0.2.21's
 //! `ClarkLDF` on RAA and `ClarkCapeCod` on GenIns with its premium, run to
 //! convergence (`optim=tight` in
@@ -48,7 +48,7 @@ fn matches_r_chainladder() {
                     n(s["max_age"].parse().unwrap())
                 };
                 let exhibit = call(
-                    "pro_clark",
+                    "pro_res_clark",
                     vec![
                         tri.clone(),
                         exposure.clone(),
@@ -56,7 +56,7 @@ fn matches_r_chainladder() {
                         max_age.clone(),
                     ],
                 );
-                let params = call("pro_clark_params", vec![tri, exposure, curve, max_age]);
+                let params = call("pro_res_clark_params", vec![tri, exposure, curve, max_age]);
                 (exhibit, params)
             });
         assert_eq!(
@@ -121,19 +121,19 @@ fn raa_or_genins(dataset: &str) -> Grid {
 
 #[test]
 fn ldf_method_has_no_elr_and_errors_come_back_as_text() {
-    let params = call("pro_clark_params", vec![raa()]);
+    let params = call("pro_res_clark_params", vec![raa()]);
     assert_eq!(params.get(0, 1), &Value::from("loglogistic"));
     assert!((0..params.rows).all(|r| params.get(r, 0) != &Value::from("ELR")));
     assert!(
         text(&call(
-            "pro_clark",
+            "pro_res_clark",
             vec![raa(), Grid::missing(), t("gompertz")]
         ))
         .contains("curve must be")
     );
     assert!(
         text(&call(
-            "pro_clark",
+            "pro_res_clark",
             vec![raa(), Grid::missing(), Grid::missing(), n(-1.0)]
         ))
         .contains("max_age")

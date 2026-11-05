@@ -1,5 +1,5 @@
-//! The Pareto helpers (`PRO.PARETO.EXTRAPOLATE`, `PRO.PARETO.ALPHA`,
-//! `PRO.PARETO.ALPHA.FREQLAYER`, `PRO.PARETO.ALPHA.FREQS`), reached through
+//! The Pareto helpers (`PRO.PRC.PARETO.EXTRAPOLATE`, `PRO.PRC.PARETO.ALPHA`,
+//! `PRO.PRC.PARETO.ALPHA.FREQLAYER`, `PRO.PRC.PARETO.ALPHA.FREQS`), reached through
 //! the catalogue as Excel reaches them, against every case of the R package
 //! Pareto 2.4.5 in `validation/reference/pareto_rating_r.csv`, at its
 //! tolerances, truncated cases included.
@@ -33,7 +33,7 @@ fn matches_the_r_package_pareto() {
         };
         let out = match row[0].as_str() {
             "extrapolation" => call(
-                "pro_pareto_extrapolate",
+                "pro_prc_pareto_extrapolate",
                 vec![
                     v("c1"),
                     v("a1"),
@@ -44,7 +44,7 @@ fn matches_the_r_package_pareto() {
                 ],
             ),
             "alpha_between_layers" => call(
-                "pro_pareto_alpha",
+                "pro_prc_pareto_alpha",
                 vec![
                     v("c1"),
                     v("a1"),
@@ -56,7 +56,7 @@ fn matches_the_r_package_pareto() {
                 ],
             ),
             "alpha_between_frequency_and_layer" => call(
-                "pro_pareto_alpha_freqlayer",
+                "pro_prc_pareto_alpha_freqlayer",
                 vec![
                     v("threshold"),
                     v("frequency"),
@@ -67,7 +67,7 @@ fn matches_the_r_package_pareto() {
                 ],
             ),
             "alpha_between_frequencies" => call(
-                "pro_pareto_alpha_freqs",
+                "pro_prc_pareto_alpha_freqs",
                 vec![v("t1"), v("f1"), v("t2"), v("f2"), v("truncation")],
             ),
             other => panic!("unknown quantity {other}"),
@@ -94,7 +94,7 @@ fn extrapolation_broadcasts_and_errors_are_text() {
         prospicio_xll::sheet::Value::Number(1e6),
     ]]);
     let out = call(
-        "pro_pareto_extrapolate",
+        "pro_prc_pareto_extrapolate",
         vec![n(1e6), n(1e6), limits, n(2e6), n(2.0)],
     );
     assert_eq!((out.rows, out.columns), (1, 2));
@@ -102,7 +102,7 @@ fn extrapolation_broadcasts_and_errors_are_text() {
     assert!((num(&out.cells[1]) - 1.0 / 3.0).abs() < 1e-14);
     assert!(
         text(&call(
-            "pro_pareto_alpha_freqs",
+            "pro_prc_pareto_alpha_freqs",
             vec![n(1e6), n(1.0), n(2e6), n(4.0)]
         ))
         .starts_with("#PROSPICIO!")

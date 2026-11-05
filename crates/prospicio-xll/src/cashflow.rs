@@ -28,7 +28,7 @@ fn err(e: prospicio_core::Error) -> String {
     e.to_string()
 }
 
-/// The most simulations `PRO.CASHFLOW` runs.
+/// The most simulations `PRO.CAP.CASHFLOW` runs.
 const MAX_SIMS: usize = 1_000_000;
 
 /// A label or an option's text: lower case, with `_`, `-` and spaces one
@@ -603,7 +603,7 @@ fn trace_table(t: &Trace) -> Grid {
     Grid::from_rows(rows)
 }
 
-/// `PRO.CASHFLOW(u, terms, patterns, requirement, [commission], [output],
+/// `PRO.CAP.CASHFLOW(u, terms, patterns, requirement, [commission], [output],
 /// [rate], [commutation_requirement])`: the deal run on each simulated
 /// ultimate loss ratio in `u`. `output` is `"simulations"` (the default:
 /// one row a simulation with its IRR, MOIC and the totals, and its NPV

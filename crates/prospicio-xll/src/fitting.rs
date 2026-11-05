@@ -4,7 +4,7 @@
 //! (`prospicio_prob::severity_fit`) or a Pareto family (the R package
 //! Pareto's estimators, `prospicio_prob::LargeLosses`). The parameters come
 //! out in the order the severity functions take them, so a fit's cells
-//! feed `PRO.SEV.CDF`, `PRO.LAYER` and the others directly.
+//! feed `PRO.SEV.CDF`, `PRO.PRC.LAYER` and the others directly.
 
 use prospicio_prob::evt::Gpd;
 use prospicio_prob::grouped_fit::{GroupedLosses, GroupedMethod, fit_grouped, fit_lev_distance};

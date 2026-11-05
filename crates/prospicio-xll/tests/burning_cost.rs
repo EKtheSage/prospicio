@@ -1,4 +1,4 @@
-//! `PRO.BURNINGCOST`, reached through the catalogue as Excel reaches it,
+//! `PRO.PRC.BURNINGCOST`, reached through the catalogue as Excel reaches it,
 //! against Clark, *Basics of Reinsurance Pricing* (CAS study note, 2014),
 //! the per-risk example of section A.4.a: fourteen losses, 400,000 xs
 //! 100,000, trended at 4% to 7/1/97, eight accident years with their
@@ -82,7 +82,7 @@ fn matches_clark() {
     assert_eq!(serial(1997, 7, 1), 35_612.0);
     // The note's printed trend factors, one per loss.
     let b = call(
-        "pro_burningcost",
+        "pro_prc_burningcost",
         args(column(&LOSSES.map(|l| l.2)), Grid::missing()),
     );
     assert_eq!((b.rows, b.columns), (11, 7), "{:?}", b.as_scalar());
@@ -104,7 +104,7 @@ fn matches_clark() {
 
     // At 4% to 7/1/97 (an Excel date) the trend factors agree with the
     // note's to its three decimals, so the total loss cost does too.
-    let r = call("pro_burningcost", args(n(0.04), n(35_612.0)));
+    let r = call("pro_prc_burningcost", args(n(0.04), n(35_612.0)));
     assert!(
         (num(r.get(9, 6)) - 0.124).abs() <= 0.0005,
         "{:?}",
@@ -124,17 +124,17 @@ fn layers_terms_and_errors() {
         Value::Number(100_000.0),
         Value::Number(500_000.0),
     ]]);
-    let b = call("pro_burningcost", a.clone());
+    let b = call("pro_prc_burningcost", a.clone());
     assert_eq!(b.columns, 10, "{:?}", b.as_scalar());
     assert_eq!(b.get(0, 7), &Value::from("unlimited xs 500,000 layer loss"));
     // 1988: 1,156,671 trended, 656,671 above 500,000.
     assert!((num(b.get(1, 7)) - (821_499.0 * 1.408 - 500_000.0)).abs() < 1e-6);
     a.extend([Grid::missing(), Grid::missing(), n(500_000.0)]);
-    let capped = call("pro_burningcost", a);
+    let capped = call("pro_prc_burningcost", a);
     assert!((num(capped.get(1, 4)) - 500_000.0).abs() < 1e-9); // 639,975 capped
     assert!((num(capped.get(1, 7)) - 500_000.0).abs() < 1e-9);
 
-    let e = |a: Vec<Grid>| text(&call("pro_burningcost", a)).to_owned();
+    let e = |a: Vec<Grid>| text(&call("pro_prc_burningcost", a)).to_owned();
     let mut bad = args(n(0.04), Grid::missing());
     assert!(e(bad.clone()).contains("trend_to"));
     bad[1] = column(&[1.0, 2.0]);

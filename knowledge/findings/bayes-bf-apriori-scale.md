@@ -47,7 +47,7 @@ sources:
 * Consequence: a prior on the ultimate (premium times an a-priori loss
   ratio, with a CV), as a Bornhuetter-Ferguson user expects, needs a
   normalised pattern (Verrall 2004's model, or a prior on `mu_w sum
-  gamma_d`), which `BayesBf` is not. The Excel add-in's `PRO.BAYES.BF` was
+  gamma_d`), which `BayesBf` is not. The Excel add-in's `PRO.RES.BAYES.BF` was
   held until the user chose between them (2026-10-19); it now wraps
   `BayesBfNormalised` (`docs/design/xll.md`, decision 38, 2026-10-22).
 * Resolved 2026-10-21: the user chose a new model and left `BayesBf` at

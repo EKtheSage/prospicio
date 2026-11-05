@@ -1,7 +1,7 @@
 //! The time-value functions, reached through the catalogue as Excel
-//! reaches them: `PRO.PAYOUT.PATTERN` and `PRO.PAYOUT.STATS` on closed
+//! reaches them: `PRO.PRC.PAYOUT.PATTERN` and `PRO.PRC.PAYOUT.STATS` on closed
 //! forms (an annuity, an even run-off) and on RAA's chain ladder through
-//! `PRO.CL.CDF`; `PRO.PAYOUT.PRICE` reducing to the one-period price and
+//! `PRO.RES.CL.CDF`; `PRO.PRC.PAYOUT.PRICE` reducing to the one-period price and
 //! solving its premium equation term by term.
 
 mod common;
@@ -25,7 +25,7 @@ fn stat(out: &Grid, label: &str) -> f64 {
 fn an_even_annuity_has_its_closed_forms() {
     let (times, shares) = (row(&[1.0, 2.0, 3.0, 4.0]), row(&[0.25; 4]));
     let out = call(
-        "pro_payout_stats",
+        "pro_prc_payout_stats",
         vec![times.clone(), shares.clone(), n(0.05)],
     );
     let v: f64 = 1.0 / 1.05;
@@ -36,7 +36,7 @@ fn an_even_annuity_has_its_closed_forms() {
     assert!((stat(&out, "Capital years") - years).abs() < 1e-15);
     // The same pattern as the share paid to date.
     let paid = call(
-        "pro_payout_stats",
+        "pro_prc_payout_stats",
         vec![
             times.clone(),
             row(&[0.25, 0.5, 0.75, 1.0]),
@@ -46,7 +46,7 @@ fn an_even_annuity_has_its_closed_forms() {
     );
     assert!((stat(&paid, "Discount factor") - annuity / 4.0).abs() < 1e-15);
     let table = call(
-        "pro_payout_pattern",
+        "pro_prc_payout_pattern",
         vec![times, shares, Grid::missing(), n(0.5), n(0.05)],
     );
     assert_eq!((table.rows, table.columns), (5, 5));
@@ -58,16 +58,16 @@ fn an_even_annuity_has_its_closed_forms() {
 
 #[test]
 fn a_chain_ladder_cdf_is_a_pattern() {
-    let cdf = call("pro_cl_cdf", vec![raa()]);
+    let cdf = call("pro_res_cl_cdf", vec![raa()]);
     assert_eq!(cdf.columns, 10);
     let ages: Vec<f64> = (1..=10).map(f64::from).collect();
     let table = call(
-        "pro_payout_pattern",
+        "pro_prc_payout_pattern",
         vec![row(&ages), cdf.clone(), t("factors")],
     );
     // Paid to date at each age is one over its factor to ultimate, so an
     // origin at that age has paid its latest over its ultimate.
-    let cl = call("pro_cl", vec![raa()]);
+    let cl = call("pro_res_cl", vec![raa()]);
     for origin in 0..10 {
         let age = 10 - origin;
         let paid = num(table.get(age, 2));
@@ -83,7 +83,7 @@ fn the_payout_price_solves_its_equation() {
     let one_year = (e + coc * a) / (1.0 + coc);
     // Paid within the year, undiscounted: the one-period price.
     let now = call(
-        "pro_payout_price",
+        "pro_prc_payout_price",
         vec![n(e), n(a), n(coc), n(0.5), n(1.0), n(0.0)],
     );
     assert!((stat(&now, "Premium") - one_year).abs() < 1e-12);
@@ -91,10 +91,10 @@ fn the_payout_price_solves_its_equation() {
     // Over three years at 4%: P = E d + coc (a - P) A, term by term.
     let (times, shares) = (row(&[1.0, 2.0, 3.0]), row(&[0.2, 0.3, 0.5]));
     let out = call(
-        "pro_payout_price",
+        "pro_prc_payout_price",
         vec![n(e), n(a), n(coc), times.clone(), shares.clone(), n(0.04)],
     );
-    let s = call("pro_payout_stats", vec![times, shares, n(0.04)]);
+    let s = call("pro_prc_payout_stats", vec![times, shares, n(0.04)]);
     let (d, big_a) = (stat(&s, "Discount factor"), stat(&s, "Capital years"));
     assert_eq!(stat(&out, "Discount factor"), d);
     assert_eq!(stat(&out, "Capital years"), big_a);
@@ -108,12 +108,12 @@ fn the_payout_price_solves_its_equation() {
 #[test]
 fn bad_patterns_are_named() {
     let e = call(
-        "pro_payout_stats",
+        "pro_prc_payout_stats",
         vec![row(&[1.0, 2.0]), row(&[0.5, 0.4]), n(0.05)],
     );
     assert!(text(&e).contains("must sum to 1"), "{}", text(&e));
     let e = call(
-        "pro_payout_stats",
+        "pro_prc_payout_stats",
         vec![row(&[1.0, 2.0]), row(&[2.0, 1.1]), n(0.05), t("factors")],
     );
     assert!(
@@ -122,14 +122,17 @@ fn bad_patterns_are_named() {
         text(&e)
     );
     let e = call(
-        "pro_payout_stats",
+        "pro_prc_payout_stats",
         vec![row(&[1.0]), row(&[1.0, 0.0]), n(0.05)],
     );
     assert!(text(&e).contains("1 times and 2 values"), "{}", text(&e));
-    let e = call("pro_payout_stats", vec![row(&[1.0]), row(&[1.0]), n(-2.0)]);
+    let e = call(
+        "pro_prc_payout_stats",
+        vec![row(&[1.0]), row(&[1.0]), n(-2.0)],
+    );
     assert!(text(&e).contains("rate must be"), "{}", text(&e));
     let e = call(
-        "pro_payout_stats",
+        "pro_prc_payout_stats",
         vec![row(&[1.0]), row(&[1.0]), n(0.0), t("ratios")],
     );
     assert!(text(&e).contains("kind must be"), "{}", text(&e));

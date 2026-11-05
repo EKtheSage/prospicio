@@ -1,5 +1,5 @@
-//! A latest diagonal projected with a selected pattern (`PRO.DIAG.CL`,
-//! `.EL`, `.BF`, `.BENKTANDER`, `.CAPECOD` and `PRO.PATTERN.AVERAGE`,
+//! A latest diagonal projected with a selected pattern (`PRO.RES.DIAG.CL`,
+//! `.EL`, `.BF`, `.BENKTANDER`, `.CAPECOD` and `PRO.RES.PATTERN.AVERAGE`,
 //! `docs/design/xll.md` decision 39), reached through the catalogue as
 //! Excel reaches them:
 //!
@@ -128,7 +128,7 @@ impl Diag {
         let mut args = self.head();
         args.push(self.pattern.clone());
         args.extend(self.shared());
-        call("pro_diag_cl", args)
+        call("pro_res_diag_cl", args)
     }
 
     fn el_like(&self, symbol: &str, apriori: f64) -> Grid {
@@ -139,11 +139,11 @@ impl Diag {
     }
 
     fn el(&self, apriori: f64) -> Grid {
-        self.el_like("pro_diag_el", apriori)
+        self.el_like("pro_res_diag_el", apriori)
     }
 
     fn bf(&self, apriori: f64) -> Grid {
-        self.el_like("pro_diag_bf", apriori)
+        self.el_like("pro_res_diag_bf", apriori)
     }
 
     fn bk(&self, apriori: f64, iterations: f64) -> Grid {
@@ -155,7 +155,7 @@ impl Diag {
             n(iterations),
         ]);
         args.extend(self.shared());
-        call("pro_diag_benktander", args)
+        call("pro_res_diag_benktander", args)
     }
 
     fn cc(&self, trend: f64, decay: f64) -> Grid {
@@ -167,7 +167,7 @@ impl Diag {
             n(decay),
         ]);
         args.extend(self.shared());
-        call("pro_diag_capecod", args)
+        call("pro_res_diag_capecod", args)
     }
 }
 
@@ -861,7 +861,7 @@ fn linear_month() -> (Vec<f64>, Vec<f64>) {
 fn a_pattern_averages_over_origin_months() {
     let (ages, values) = linear_month();
     let g = call(
-        "pro_pattern_average",
+        "pro_res_pattern_average",
         vec![
             row(&ages),
             row(&values),
@@ -888,7 +888,7 @@ fn a_pattern_averages_over_origin_months() {
     // The grain defaults to the year.
     assert_eq!(
         call(
-            "pro_pattern_average",
+            "pro_res_pattern_average",
             vec![
                 row(&ages),
                 row(&values),
@@ -950,10 +950,10 @@ fn a_monthly_pattern_reaches_accident_years() {
         tail: Tail::default(),
     };
     same_cl(&g, &direct.fit_diagonal(&d).unwrap());
-    // PRO.PATTERN.AVERAGE's output fed back as percents developed gives the
+    // PRO.RES.PATTERN.AVERAGE's output fed back as percents developed gives the
     // same exhibit, to the bit.
     let avg = call(
-        "pro_pattern_average",
+        "pro_res_pattern_average",
         vec![
             row(&ages),
             row(&values),
@@ -981,10 +981,10 @@ fn a_monthly_pattern_reaches_accident_years() {
     );
 }
 
-/// `PRO.CL.LDF`'s row on `tri` with `tail`.
+/// `PRO.RES.CL.LDF`'s row on `tri` with `tail`.
 fn ldf_row(tri: &Grid, tail: &Grid) -> Vec<f64> {
     let g = call(
-        "pro_cl_ldf",
+        "pro_res_cl_ldf",
         vec![tri.clone(), Grid::missing(), tail.clone()],
     );
     (0..g.columns).map(|c| num(g.get(0, c))).collect()
@@ -1003,7 +1003,10 @@ fn a_triangles_pattern_frozen_on_the_sheet_reproduces_its_chain_ladder() {
         ] {
             let ldf = ldf_row(&tri, &tail);
             let k = ldf.len() - 1;
-            let cl = call("pro_cl", vec![tri.clone(), Grid::missing(), tail.clone()]);
+            let cl = call(
+                "pro_res_cl",
+                vec![tri.clone(), Grid::missing(), tail.clone()],
+            );
             let cl_ult = column(&cl, "Ultimate");
             // Exact: the factors at 12 to 108 months and the tail factor.
             let exact = Diag::new(&years(2001, 10), &latest, &ldf[..k])
@@ -1175,7 +1178,7 @@ fn input_errors_name_their_argument() {
     assert!(e(no_pattern.cl()).starts_with("pattern is required"));
     assert_eq!(
         e(call(
-            "pro_pattern_average",
+            "pro_res_pattern_average",
             vec![
                 row(&[1.0, 2.0]),
                 row(&[0.5, 1.0]),

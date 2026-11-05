@@ -528,11 +528,11 @@ pub fn mack_summary(args: &[Grid]) -> Result<Grid> {
     Ok(Grid::from_rows(rows))
 }
 
-/// The most simulations `PRO.ODP` runs: a recalculation should not hang
+/// The most simulations `PRO.RES.ODP` runs: a recalculation should not hang
 /// Excel for minutes.
 pub const MAX_SIMS: usize = 1_000_000;
 
-/// The percentiles `PRO.ODP` reports when none are given.
+/// The percentiles `PRO.RES.ODP` reports when none are given.
 pub const PERCENTILES: [f64; 4] = [0.75, 0.9, 0.95, 0.995];
 
 /// An optional whole-number argument within `1..=max`.
@@ -709,7 +709,7 @@ fn odp_excluding(boot: OdpBootstrap, average_arg: &Grid) -> Result<OdpBootstrap>
 /// simulated reserve's mean, standard deviation, CV and percentiles, then
 /// the total, whose percentiles are of the simulated total (not the sum of
 /// the origins'):
-/// `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins], [average])`.
+/// `PRO.RES.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins], [average])`.
 pub fn odp_summary(args: &[Grid]) -> Result<Grid> {
     let probabilities = percentiles(&args[3])?;
     let fit = odp_fit(
@@ -719,7 +719,7 @@ pub fn odp_summary(args: &[Grid]) -> Result<Grid> {
     bootstrap_exhibit(&fit.reserves, &fit.chain_ladder, labels, &probabilities)
 }
 
-/// The most simulations `PRO.ODP.SIMS` returns: each is a row of cells
+/// The most simulations `PRO.RES.ODP.SIMS` returns: each is a row of cells
 /// Excel holds in memory (100,000 rows of 11 cells is about 35 MB), well
 /// under its 1,048,576 rows.
 pub const MAX_SIM_ROWS: usize = 100_000;
@@ -727,8 +727,8 @@ pub const MAX_SIM_ROWS: usize = 100_000;
 /// The ODP bootstrap's simulated reserves, one row per simulation: a
 /// column per origin, then the total, under a header row of the origin
 /// labels and "Total". The same `sims`, `seed`, `tail` and `process` give
-/// the draws `PRO.ODP` summarizes:
-/// `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins], [average])`.
+/// the draws `PRO.RES.ODP` summarizes:
+/// `PRO.RES.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins], [average])`.
 pub fn odp_sims(args: &[Grid]) -> Result<Grid> {
     let fit = odp_fit(
         &args[0],
@@ -788,8 +788,8 @@ fn mack_bootstrap_fit(
     .map_err(|e| e.to_string())
 }
 
-/// Mack's bootstrap exhibit, laid out as `PRO.ODP`'s:
-/// `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])`.
+/// Mack's bootstrap exhibit, laid out as `PRO.RES.ODP`'s:
+/// `PRO.RES.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])`.
 pub fn mack_bootstrap_summary(args: &[Grid]) -> Result<Grid> {
     let probabilities = percentiles(&args[3])?;
     let fit = mack_bootstrap_fit(
@@ -800,8 +800,8 @@ pub fn mack_bootstrap_summary(args: &[Grid]) -> Result<Grid> {
     bootstrap_exhibit(&fit.reserves, cl, labels, &probabilities)
 }
 
-/// Mack's bootstrap's simulated reserves, laid out as `PRO.ODP.SIMS`':
-/// `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins], [sigma])`.
+/// Mack's bootstrap's simulated reserves, laid out as `PRO.RES.ODP.SIMS`':
+/// `PRO.RES.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins], [sigma])`.
 pub fn mack_bootstrap_sims(args: &[Grid]) -> Result<Grid> {
     let fit = mack_bootstrap_fit(
         &args[0],
@@ -941,7 +941,7 @@ pub(crate) fn apriori(grid: &Grid, origins: usize) -> Result<Apriori> {
 }
 
 /// The expected loss method: exposure times the a priori loss ratio:
-/// `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])`.
+/// `PRO.RES.EL(triangle, exposure, apriori, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])`.
 pub fn expected_loss(args: &[Grid]) -> Result<Grid> {
     let tri = exposed_triangle(&args[0], &args[1])?;
     let fit = ExpectedLoss {
@@ -956,7 +956,7 @@ pub fn expected_loss(args: &[Grid]) -> Result<Grid> {
 
 /// Bornhuetter-Ferguson: the latest plus the a priori ultimate's
 /// unreported share:
-/// `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])`.
+/// `PRO.RES.BF(triangle, exposure, apriori, [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])`.
 pub fn bornhuetter_ferguson(args: &[Grid]) -> Result<Grid> {
     let tri = exposed_triangle(&args[0], &args[1])?;
     let fit = BornhuetterFerguson {
@@ -971,7 +971,7 @@ pub fn bornhuetter_ferguson(args: &[Grid]) -> Result<Grid> {
 
 /// Benktander: Bornhuetter-Ferguson iterated, each pass taking the last
 /// ultimate as its a priori (1 is Bornhuetter-Ferguson):
-/// `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])`.
+/// `PRO.RES.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])`.
 pub fn benktander(args: &[Grid]) -> Result<Grid> {
     let tri = exposed_triangle(&args[0], &args[1])?;
     let fit = Benktander {
@@ -987,7 +987,7 @@ pub fn benktander(args: &[Grid]) -> Result<Grid> {
 
 /// Cape Cod (Stanard-Buhlmann): the a priori loss ratio estimated from the
 /// triangle, trended and decayed by distance between origins:
-/// `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])`.
+/// `PRO.RES.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins], [selected], [kind], [weight], [pattern_ages])`.
 pub fn cape_cod(args: &[Grid]) -> Result<Grid> {
     let tri = exposed_triangle(&args[0], &args[1])?;
     let fit = CapeCod {
@@ -1023,7 +1023,7 @@ fn mack_fit(args: &[Grid]) -> Result<MackFit> {
 /// reserve, the standard error of the claims development result in the
 /// coming year (R's `CDR(1)S.E.`) and of the full run-off (Mack's), then
 /// the total:
-/// `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma], [pattern_ages])`.
+/// `PRO.RES.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma], [pattern_ages])`.
 pub fn mack_cdr(args: &[Grid]) -> Result<Grid> {
     let fit = mack_fit(args)?;
     let cdr = fit.claims_development_result().map_err(|e| e.to_string())?;
@@ -1056,7 +1056,7 @@ pub fn mack_cdr(args: &[Grid]) -> Result<Grid> {
 /// The standard error of each origin's claims development result in each
 /// future calendar year (R's `CDR(k)S.E.`), a column per year, then the
 /// total's:
-/// `PRO.MACK.CDR.YEARS(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma], [pattern_ages])`.
+/// `PRO.RES.MACK.CDR.YEARS(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma], [pattern_ages])`.
 pub fn mack_cdr_years(args: &[Grid]) -> Result<Grid> {
     let fit = mack_fit(args)?;
     let cdr = fit.claims_development_result().map_err(|e| e.to_string())?;
@@ -1140,7 +1140,7 @@ fn cdr_percentiles(grid: &Grid) -> Result<Vec<f64>> {
 
 /// The ODP bootstrap's one-year view, re-reserving with the chain ladder
 /// on each simulated year:
-/// `PRO.ODP.CDR(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])`.
+/// `PRO.RES.ODP.CDR(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])`.
 pub fn odp_cdr(args: &[Grid]) -> Result<Grid> {
     let tri = triangle(&args[0])?;
     let probabilities = cdr_percentiles(&args[3])?;
@@ -1169,7 +1169,7 @@ pub fn odp_cdr(args: &[Grid]) -> Result<Grid> {
 
 /// Mack's bootstrap's one-year view, re-reserving with the chain ladder
 /// (the same average and sigma rule) on each simulated year:
-/// `PRO.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])`.
+/// `PRO.RES.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])`.
 pub fn mack_bootstrap_cdr(args: &[Grid]) -> Result<Grid> {
     let tri = triangle(&args[0])?;
     let probabilities = cdr_percentiles(&args[3])?;
@@ -1250,7 +1250,7 @@ fn clark_fit(
 /// Clark's exhibit (R's `ClarkLDF` and `ClarkCapeCod`): per origin the
 /// latest, the ultimate, the reserve and its process, parameter and total
 /// standard errors, then the total:
-/// `PRO.CLARK(triangle, [exposure], [curve], [max_age], [origins])`.
+/// `PRO.RES.CLARK(triangle, [exposure], [curve], [max_age], [origins])`.
 pub fn clark(args: &[Grid]) -> Result<Grid> {
     let fit = clark_fit(&args[0], &args[1], &args[2], &args[3])?;
     let cl = &fit.chain_ladder;
@@ -1295,7 +1295,7 @@ pub fn clark(args: &[Grid]) -> Result<Grid> {
 /// Clark's fitted parameters, a name and a value per row: the curve,
 /// omega, theta, the expected loss ratio (Cape Cod only), the scale
 /// (R's `sigma2`) and the number of incremental observations:
-/// `PRO.CLARK.PARAMS(triangle, [exposure], [curve], [max_age])`.
+/// `PRO.RES.CLARK.PARAMS(triangle, [exposure], [curve], [max_age])`.
 pub fn clark_params(args: &[Grid]) -> Result<Grid> {
     let fit = clark_fit(&args[0], &args[1], &args[2], &args[3])?;
     let curve = match fit.curve {

@@ -733,13 +733,19 @@ what it is aiming for by v1.0.
   truncation from above, grouped losses and minimum-distance fits; a
   latest diagonal (a bordereau) projected with a selected pattern by the
   chain ladder and the expected-loss methods, patterns averaged over
-  origin periods and origins past the pattern's end (#544).
+  origin periods and origins past the pattern's end (#544); the functions
+  grouped as reserving, pricing and capital (`PRO.RES.`, `PRO.PRC.`,
+  `PRO.CAP.`), each group a category in Insert Function, the old names
+  kept hidden through 0.0.9, and the add-in built with LTO (decision 47).
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
      form (`xll.md`, parity plan): all nine groups done (the eighth,
      what the other lanes had built since; the ninth, the latest
-     diagonal of #544); further functions as the user asks.
-  2. Signing, once the owner has a code-signing certificate (`xll.md`,
+     diagonal of #544); further functions as the user asks, each in its
+     group.
+  2. The old names removed in 0.0.10 (decision 47).
+  3. Asynchronous functions and fit handles for simulations and MCMC.
+  4. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).
 
 ## Order of work (set by the user 2026-10-09)

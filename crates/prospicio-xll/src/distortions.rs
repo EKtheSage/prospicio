@@ -155,7 +155,7 @@ pub(crate) fn parse(name: &Grid, parameter: &Grid, r0: &Grid) -> Result<Distorti
     d.map_err(|e| e.to_string())
 }
 
-/// `PRO.DISTORTION(s, family, parameter, [r0])`: `g(s)` at each
+/// `PRO.CAP.DISTORTION(s, family, parameter, [r0])`: `g(s)` at each
 /// exceedance probability `s` in `[0, 1]`.
 pub fn g(args: &[Grid]) -> Result<Grid> {
     let d = parse(&args[1], &args[2], &args[3])?;
@@ -197,7 +197,7 @@ fn outcomes(values: &Grid, probs: &Grid) -> Result<(Vec<f64>, Vec<f64>)> {
     Ok(pairs.into_iter().unzip())
 }
 
-/// `PRO.DISTORTION.PRICE(values, [probs], family, parameter, [r0])`: the
+/// `PRO.CAP.DISTORTION.PRICE(values, [probs], family, parameter, [r0])`: the
 /// distortion risk measure `ρ_g(X) = Σ x (g(P(X ≥ x)) − g(P(X > x)))` of
 /// the outcomes (draws when `probs` is omitted), with the mean and margin.
 pub fn price(args: &[Grid]) -> Result<Grid> {
@@ -214,7 +214,7 @@ pub fn price(args: &[Grid]) -> Result<Grid> {
     ]))
 }
 
-/// `PRO.DISTORTION.CALIBRATE(values, [probs], premium, [families], [r0])`:
+/// `PRO.CAP.DISTORTION.CALIBRATE(values, [probs], premium, [families], [r0])`:
 /// the member of each family whose price of the outcomes is `premium`,
 /// for the five standard families (CCoC, PH, Wang, dual, TVaR) unless
 /// `families` names others. To price a loss backed by assets `a`, give

@@ -12,7 +12,7 @@ sources:
     title: CmdStan 2.39 fit of bayes_odp.stan on RAA and GenIns (4 x 25,000 draws)
   - id: test
     resource: ../crates/prospicio-xll/tests/bayes.rs
-    title: PRO.BAYES.ODP against the Stan reference at its defaults
+    title: PRO.RES.BAYES.ODP against the Stan reference at its defaults
   - id: finding
     resource: bayes-odp-vs-odp-bootstrap.md
     title: The Bayesian ODP chain ladder against Stan, the chain ladder and the ODP bootstrap
@@ -23,7 +23,7 @@ sources:
 * The chain ladder's total reserve on RAA is 52,135. The same ODP model
   sampled in CmdStan (priors SD 10, Gamma process error) has a posterior
   mean total reserve of 54,444, 4.4% higher, with SD 18,772 and a 95%
-  quantile of 89,037. `PRO.BAYES.ODP` at its defaults (seed 0) gives
+  quantile of 89,037. `PRO.RES.BAYES.ODP` at its defaults (seed 0) gives
   54,733, inside the reference's tolerance of four times its Monte Carlo
   error.
 * On GenIns the gap is 0.7% ([the GenIns finding](bayes-odp-vs-odp-bootstrap.md)).

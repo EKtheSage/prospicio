@@ -1,4 +1,4 @@
-//! `PRO.PROFILE`, an exposure-rated risk profile, reached through the
+//! `PRO.PRC.PROFILE`, an exposure-rated risk profile, reached through the
 //! catalogue as Excel reaches it, against `prospicio_pricing`'s
 //! `RiskProfile` (the engine behind Python's `RiskProfile` and R's) on the
 //! same bands, and against closed forms: the whole loss is the expected
@@ -23,7 +23,7 @@ const EL: [f64; 4] = [1.2e6, 0.9e6, 0.6e6, 0.3e6];
 fn profile(rest: Vec<Grid>) -> Grid {
     let mut args = vec![column(&SI), column(&EL)];
     args.extend(rest);
-    call("pro_profile", args)
+    call("pro_prc_profile", args)
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn errors_come_back_as_text() {
     let e = |g: Grid| text(&g).to_owned();
     assert!(
         e(call(
-            "pro_profile",
+            "pro_prc_profile",
             vec![
                 column(&SI),
                 column(&EL[..3]),

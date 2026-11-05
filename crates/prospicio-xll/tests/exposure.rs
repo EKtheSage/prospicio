@@ -1,4 +1,4 @@
-//! Exposure curves (`PRO.EXPOSURE.*`, `PRO.SWISSRE.C*`), reached through
+//! Exposure curves (`PRO.PRC.EXPOSURE.*`, `PRO.PRC.SWISSRE.C*`), reached through
 //! the catalogue as Excel reaches them:
 //!
 //! * `G(x)` and the mean destruction rate of the Swiss Re curves
@@ -38,10 +38,10 @@ fn curves_and_mean_rates_match_mpmath() {
             "G" => {
                 let mut a = vec![n(row[2].parse().unwrap())];
                 a.extend(c);
-                num(call("pro_exposure_curve", a).as_scalar().unwrap())
+                num(call("pro_prc_exposure_curve", a).as_scalar().unwrap())
             }
             "mean" => {
-                let stats = call("pro_exposure_stats", c);
+                let stats = call("pro_prc_exposure_stats", c);
                 assert_eq!(stats.get(3, 0), &Value::from("Mean rate"));
                 num(stats.get(3, 1))
             }
@@ -78,7 +78,10 @@ fn shares_add_up_and_swiss_re_c_is_recovered() {
             .collect(),
     );
     let mpls = Grid::from_rows(vec![vec![Value::Number(10e6), Value::Number(20e6)]]);
-    let shares = call("pro_exposure_share", with(vec![n(2.5e6), atts, mpls], &c3));
+    let shares = call(
+        "pro_prc_exposure_share",
+        with(vec![n(2.5e6), atts, mpls], &c3),
+    );
     assert_eq!((shares.rows, shares.columns), (4, 2));
     let total: f64 = (0..4).map(|r| num(shares.get(r, 0))).sum();
     assert!((total - 1.0).abs() < 1e-12);
@@ -86,18 +89,18 @@ fn shares_add_up_and_swiss_re_c_is_recovered() {
     assert!((1..4).all(|r| num(shares.get(r, 0)) < num(shares.get(r - 1, 0))));
     // An unlimited layer takes everything above its attachment.
     let top = call(
-        "pro_exposure_share",
+        "pro_prc_exposure_share",
         with(vec![t("unlimited"), n(5e6), n(10e6)], &c3),
     );
-    let g = call("pro_exposure_curve", with(vec![n(0.5)], &c3));
+    let g = call("pro_prc_exposure_curve", with(vec![n(0.5)], &c3));
     assert!((num(top.as_scalar().unwrap()) - (1.0 - num(g.as_scalar().unwrap()))).abs() < 1e-12);
 
     // c from a mean rate and from a layer's share.
-    let mean = num(call("pro_exposure_stats", c3.to_vec()).get(3, 1));
-    let c = call("pro_swissre_c", vec![n(mean)]);
+    let mean = num(call("pro_prc_exposure_stats", c3.to_vec()).get(3, 1));
+    let c = call("pro_prc_swissre_c", vec![n(mean)]);
     assert!((num(c.as_scalar().unwrap()) - 3.0).abs() < 1e-9);
     let c = call(
-        "pro_swissre_c_layer",
+        "pro_prc_swissre_c_layer",
         vec![n(2.5e6), n(2.5e6), n(10e6), shares.get(1, 0).clone().into()],
     );
     assert!((num(c.as_scalar().unwrap()) - 3.0).abs() < 1e-8);
@@ -110,12 +113,12 @@ fn quantile_inverts_the_mbbefd_and_stats() {
     let m = [t("mbbefd"), n(0.5), n(4.0)];
     let f = |x: f64| 1.0 - 0.5 / (3.0 * 0.5f64.powf(1.0 - x) + 1.0 - 2.0);
     for x in [0.1, 0.4, 0.7] {
-        let q = call("pro_exposure_quantile", with(vec![n(f(x))], &m));
+        let q = call("pro_prc_exposure_quantile", with(vec![n(f(x))], &m));
         assert!((num(q.as_scalar().unwrap()) - x).abs() < 1e-9, "{x}");
     }
-    let q = call("pro_exposure_quantile", with(vec![n(0.9)], &m));
+    let q = call("pro_prc_exposure_quantile", with(vec![n(0.9)], &m));
     assert_eq!(num(q.as_scalar().unwrap()), 1.0);
-    let stats = call("pro_exposure_stats", m.to_vec());
+    let stats = call("pro_prc_exposure_stats", m.to_vec());
     assert_eq!(stats.get(0, 1), &Value::from("mbbefd"));
     assert_eq!(num(stats.get(4, 1)), 0.25);
 }
@@ -128,20 +131,20 @@ fn tabulated_curve() {
         row(&[0.0, 0.1, 0.5, 1.0]),
         row(&[0.0, 0.4, 0.8, 1.0]),
     ];
-    let g = call("pro_exposure_curve", with(vec![n(0.3)], &tab));
+    let g = call("pro_prc_exposure_curve", with(vec![n(0.3)], &tab));
     assert!((num(g.as_scalar().unwrap()) - 0.6).abs() < 1e-15);
     // Slopes 4, 1, 0.4: mean rate 1/4, a total loss with probability 0.1.
-    let stats = call("pro_exposure_stats", tab.to_vec());
+    let stats = call("pro_prc_exposure_stats", tab.to_vec());
     assert_eq!(stats.get(0, 1), &Value::from("tabulated"));
     assert!((num(stats.get(3, 1)) - 0.25).abs() < 1e-15);
     assert_eq!(stats.get(1, 1), &Value::Empty);
-    let q = call("pro_exposure_quantile", with(vec![n(0.95)], &tab));
+    let q = call("pro_prc_exposure_quantile", with(vec![n(0.95)], &tab));
     assert_eq!(num(q.as_scalar().unwrap()), 1.0);
     // Log-log runs above the chord between points past the first.
     let mut ll = tab.to_vec();
     ll.push(t("log-log"));
-    let lin = call("pro_exposure_curve", with(vec![n(0.3)], &tab));
-    let log = call("pro_exposure_curve", with(vec![n(0.3)], &ll));
+    let lin = call("pro_prc_exposure_curve", with(vec![n(0.3)], &tab));
+    let log = call("pro_prc_exposure_curve", with(vec![n(0.3)], &ll));
     assert!(num(log.as_scalar().unwrap()) > num(lin.as_scalar().unwrap()));
 }
 
@@ -149,31 +152,46 @@ fn tabulated_curve() {
 fn errors_come_back_as_text() {
     let e = |f: &str, a: Vec<Grid>| text(&call(f, a)).to_owned();
     assert!(
-        e("pro_exposure_curve", vec![n(0.5), t("salzmann"), n(1.0)])
-            .contains("curve must be one of")
+        e(
+            "pro_prc_exposure_curve",
+            vec![n(0.5), t("salzmann"), n(1.0)]
+        )
+        .contains("curve must be one of")
     );
-    assert!(e("pro_exposure_curve", vec![n(1.5), t("swiss_re"), n(3.0)]).contains("[0, 1]"));
     assert!(
         e(
-            "pro_exposure_curve",
+            "pro_prc_exposure_curve",
+            vec![n(1.5), t("swiss_re"), n(3.0)]
+        )
+        .contains("[0, 1]")
+    );
+    assert!(
+        e(
+            "pro_prc_exposure_curve",
             vec![n(0.5), t("swiss_re"), n(3.0), n(2.0)]
         )
         .contains("p2 is not taken")
     );
     assert!(
         e(
-            "pro_exposure_share",
+            "pro_prc_exposure_share",
             vec![n(1.0), n(0.0), n(-1.0), t("swiss_re"), n(3.0)]
         )
         .contains("mpl")
     );
-    assert!(e("pro_exposure_quantile", vec![n(1.0), t("swiss_re"), n(3.0)]).contains("(0, 1)"));
-    assert!(e("pro_swissre_c", vec![n(1.5)]).starts_with("#PROSPICIO!"));
+    assert!(
+        e(
+            "pro_prc_exposure_quantile",
+            vec![n(1.0), t("swiss_re"), n(3.0)]
+        )
+        .contains("(0, 1)")
+    );
+    assert!(e("pro_prc_swissre_c", vec![n(1.5)]).starts_with("#PROSPICIO!"));
     let col = Grid::from_rows(vec![vec![Value::Number(1.0)], vec![Value::Number(2.0)]]);
     let three = Grid::from_rows(vec![vec![Value::Number(1.0)]; 3]);
     assert!(
         e(
-            "pro_exposure_share",
+            "pro_prc_exposure_share",
             vec![col, three, n(10.0), t("swiss_re"), n(3.0)]
         )
         .contains("do not combine")
@@ -188,13 +206,13 @@ fn a_row_of_parameters_gives_one_column_per_curve() {
     let xs = [0.0, 0.1, 0.3, 0.7, 1.0];
     let cs = [1.5, 2.0, 3.0, 4.0, 5.0];
     let table = call(
-        "pro_exposure_curve",
+        "pro_prc_exposure_curve",
         vec![Grid::column(&xs), t("swiss_re"), Grid::row(&cs)],
     );
     assert_eq!((table.rows, table.columns), (5, 5));
     for (k, &c) in cs.iter().enumerate() {
         let one = call(
-            "pro_exposure_curve",
+            "pro_prc_exposure_curve",
             vec![Grid::column(&xs), t("swiss_re"), n(c)],
         );
         for i in 0..xs.len() {
@@ -202,7 +220,7 @@ fn a_row_of_parameters_gives_one_column_per_curve() {
         }
     }
     let transposed = call(
-        "pro_exposure_curve",
+        "pro_prc_exposure_curve",
         vec![Grid::row(&xs), t("swiss_re"), Grid::column(&cs)],
     );
     assert_eq!((transposed.rows, transposed.columns), (5, 5));
@@ -214,7 +232,7 @@ fn a_row_of_parameters_gives_one_column_per_curve() {
 
     // MBBEFD: b a row, g one value for all.
     let mb = call(
-        "pro_exposure_curve",
+        "pro_prc_exposure_curve",
         vec![
             Grid::column(&xs),
             t("mbbefd"),
@@ -224,26 +242,26 @@ fn a_row_of_parameters_gives_one_column_per_curve() {
     );
     assert_eq!((mb.rows, mb.columns), (5, 2));
     let one = call(
-        "pro_exposure_curve",
+        "pro_prc_exposure_curve",
         vec![Grid::column(&xs), t("mbbefd"), n(5.0), n(10.0)],
     );
     assert_eq!(mb.get(2, 1), one.get(2, 0));
 
     let us = [0.5, 0.9, 0.99];
     let q = call(
-        "pro_exposure_quantile",
+        "pro_prc_exposure_quantile",
         vec![Grid::column(&us), t("swiss_re"), Grid::row(&cs)],
     );
     assert_eq!((q.rows, q.columns), (3, 5));
     let one = call(
-        "pro_exposure_quantile",
+        "pro_prc_exposure_quantile",
         vec![Grid::column(&us), t("swiss_re"), n(4.0)],
     );
     assert_eq!(q.get(1, 3), one.get(1, 0));
 
     // A tabulated curve's x and G(x) are one curve, not several.
     let tab = call(
-        "pro_exposure_curve",
+        "pro_prc_exposure_curve",
         vec![
             Grid::column(&[0.25, 0.5]),
             t("tabulated"),
@@ -256,7 +274,7 @@ fn a_row_of_parameters_gives_one_column_per_curve() {
 
     // Both a row: which way the table goes is ambiguous.
     let e = call(
-        "pro_exposure_curve",
+        "pro_prc_exposure_curve",
         vec![Grid::row(&xs), t("swiss_re"), Grid::row(&cs)],
     );
     assert!(text(&e).contains("must be a column"), "{}", text(&e));

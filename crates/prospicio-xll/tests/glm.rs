@@ -1,4 +1,4 @@
-//! GLMs on a sheet (`PRO.GLM`, `PRO.GLM.PREDICT`, `PRO.GLM.RELATIVITIES`,
+//! GLMs on a sheet (`PRO.PRC.GLM`, `PRO.PRC.GLM.PREDICT`, `PRO.PRC.GLM.RELATIVITIES`,
 //! `docs/design/xll.md` decision 41), reached through the catalogue as
 //! Excel reaches them, on `validation/data/glm_policies.csv` as a table
 //! with a header row:
@@ -99,7 +99,7 @@ fn case(name: &str) -> [Grid; 7] {
 fn glm(data: &Grid, name: &str) -> Grid {
     let mut args = vec![data.clone()];
     args.extend(case(name));
-    call("pro_glm", args)
+    call("pro_prc_glm", args)
 }
 
 /// A coefficient row's design-column name: `region[B]`, or `age`.
@@ -211,7 +211,7 @@ fn predictions_are_the_coefficients_applied_to_new_rows() {
     };
     let [response, terms, family, link, exposure, weights, p] = case("poisson_log");
     let out = call(
-        "pro_glm_predict",
+        "pro_prc_glm_predict",
         vec![
             data.clone(),
             response,
@@ -249,7 +249,7 @@ fn predictions_are_the_coefficients_applied_to_new_rows() {
     let [response, terms, family, link, exposure, ..] = case("poisson_log");
     assert!(
         text(&call(
-            "pro_glm_predict",
+            "pro_prc_glm_predict",
             vec![data, response, terms, unseen, family, link, exposure]
         ))
         .contains("Z")
@@ -262,7 +262,7 @@ fn relativities_with_their_base_levels() {
     let fit = glm(&data, "poisson_log");
     let mut args = vec![data.clone()];
     args.extend(case("poisson_log"));
-    let out = call("pro_glm_relativities", args.clone());
+    let out = call("pro_prc_glm_relativities", args.clone());
     // age per unit, region's base A, then B, C, D.
     assert_eq!((out.rows, out.columns), (6, 5), "{out:?}");
     assert_eq!(out.get(0, 3), &Value::from("Lower 95%"));
@@ -279,7 +279,7 @@ fn relativities_with_their_base_levels() {
     }
     // At 90%, a narrower interval.
     args.push(n(0.9));
-    let narrow = call("pro_glm_relativities", args);
+    let narrow = call("pro_prc_glm_relativities", args);
     assert_eq!(narrow.get(0, 3), &Value::from("Lower 90%"));
     assert!(num(narrow.get(3, 3)) > num(out.get(3, 3)));
 
@@ -288,7 +288,7 @@ fn relativities_with_their_base_levels() {
     let mut c = case("poisson_log");
     c[1] = Grid::from_rows(vec![vec![Value::from("age"), Value::from("region=D")]]);
     args.extend(c);
-    let based = call("pro_glm_relativities", args);
+    let based = call("pro_prc_glm_relativities", args);
     assert_eq!(based.get(2, 1), &Value::from("D (base)"));
     let a = (1..based.rows)
         .find(|&r| based.get(r, 1) == &Value::from("A"))
@@ -301,26 +301,27 @@ fn errors() {
     let data = policies();
     let run = |symbol: &str, args: Vec<Grid>| text(&call(symbol, args)).to_owned();
     assert!(
-        run("pro_glm", vec![data.clone(), t("nope"), terms()]).contains("no column named \"nope\"")
+        run("pro_prc_glm", vec![data.clone(), t("nope"), terms()])
+            .contains("no column named \"nope\"")
     );
-    assert!(run("pro_glm", vec![data.clone(), t("claims")]).contains("terms is required"));
+    assert!(run("pro_prc_glm", vec![data.clone(), t("claims")]).contains("terms is required"));
     assert!(
         run(
-            "pro_glm",
+            "pro_prc_glm",
             vec![data.clone(), t("claims"), terms(), t("weibull")]
         )
         .contains("family must be")
     );
     assert!(
         run(
-            "pro_glm",
+            "pro_prc_glm",
             vec![data.clone(), t("claims"), terms(), t("tweedie")]
         )
         .contains("needs p")
     );
     assert!(
         run(
-            "pro_glm",
+            "pro_prc_glm",
             vec![
                 data.clone(),
                 t("claims"),
@@ -336,7 +337,7 @@ fn errors() {
     );
     assert!(
         run(
-            "pro_glm",
+            "pro_prc_glm",
             vec![
                 data.clone(),
                 t("claims"),
@@ -348,13 +349,15 @@ fn errors() {
         )
         .contains("log link")
     );
-    assert!(run("pro_glm", vec![data.clone(), t("region"), terms()]).contains("must be numbers"));
+    assert!(
+        run("pro_prc_glm", vec![data.clone(), t("region"), terms()]).contains("must be numbers")
+    );
     let mut blank = data.clone();
     blank.cells[3 * blank.columns + 1] = Value::Empty;
-    assert!(run("pro_glm", vec![blank, t("claims"), terms()]).contains("blank in row 3"));
+    assert!(run("pro_prc_glm", vec![blank, t("claims"), terms()]).contains("blank in row 3"));
     assert!(
         run(
-            "pro_glm",
+            "pro_prc_glm",
             vec![
                 data.clone(),
                 t("claims"),
@@ -365,10 +368,10 @@ fn errors() {
     );
     let mut args = vec![data.clone()];
     args.extend(case("gamma_inverse"));
-    assert!(run("pro_glm_relativities", args).contains("log link"));
+    assert!(run("pro_prc_glm_relativities", args).contains("log link"));
     assert!(
         run(
-            "pro_glm",
+            "pro_prc_glm",
             vec![
                 Grid::from_rows(vec![vec![Value::from("a")]]),
                 t("a"),

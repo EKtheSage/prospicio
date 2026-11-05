@@ -1,4 +1,4 @@
-//! The P&L ledger on a sheet (`PRO.PNL`, `docs/design/xll.md` decision
+//! The P&L ledger on a sheet (`PRO.CAP.PNL`, `docs/design/xll.md` decision
 //! 43), reached through the catalogue as Excel reaches it:
 //!
 //! * every `aggregate` 1.0.1 case of
@@ -152,7 +152,7 @@ fn case(name: &str) -> Option<[Grid; 6]> {
 fn pnl(args: &[Grid; 6], output: &str) -> Grid {
     let mut a = args.to_vec();
     a.push(t(output));
-    let out = call("pro_pnl", a);
+    let out = call("pro_cap_pnl", a);
     assert!(out.rows > 1, "{out:?}");
     out
 }
@@ -241,7 +241,7 @@ fn ledgers_match_aggregate() {
 fn ratios_are_the_crate_s() {
     let (x, p) = source("ex3a");
     let out = call(
-        "pro_pnl",
+        "pro_cap_pnl",
         vec![
             x.clone(),
             p.clone(),
@@ -288,8 +288,8 @@ fn ratios_are_the_crate_s() {
 fn simulated_years_are_equally_likely() {
     let years = Grid::column(&[2.0, 3.0, 8.0, 4.0]);
     let quarter = Grid::column(&[0.25; 4]);
-    let a = call("pro_pnl", vec![years.clone(), none(), n(10.0)]);
-    let b = call("pro_pnl", vec![years, quarter, n(10.0)]);
+    let a = call("pro_cap_pnl", vec![years.clone(), none(), n(10.0)]);
+    let b = call("pro_cap_pnl", vec![years, quarter, n(10.0)]);
     assert_eq!(a, b);
     // Premium 10 less a mean loss of 4.25.
     let result = (1..a.rows)
@@ -298,7 +298,7 @@ fn simulated_years_are_equally_likely() {
     assert!((num(a.get(result, 3)) - 5.75).abs() < 1e-12, "{a:?}");
     // A scenario level of one's own.
     let c = call(
-        "pro_pnl",
+        "pro_cap_pnl",
         vec![
             Grid::column(&[2.0, 3.0, 8.0, 4.0]),
             none(),
@@ -327,7 +327,10 @@ fn a_profit_commission_is_booked() {
         ],
         vec![v(3.0), v(5.0), v(1.0), v(0.5), v(0.2)],
     ]);
-    let out = call("pro_pnl", vec![x, p, n(10.0), none(), covers, t("walk")]);
+    let out = call(
+        "pro_cap_pnl",
+        vec![x, p, n(10.0), none(), covers, t("walk")],
+    );
     let pc = (1..out.rows)
         .find(|&r| cell_text(out.get(r, 2)).contains("profit"))
         .unwrap_or_else(|| panic!("no profit commission row: {out:?}"));
@@ -338,7 +341,7 @@ fn a_profit_commission_is_booked() {
 #[test]
 fn errors() {
     let (x, p) = source("ex3a");
-    let run = |args: Vec<Grid>| text(&call("pro_pnl", args)).to_owned();
+    let run = |args: Vec<Grid>| text(&call("pro_cap_pnl", args)).to_owned();
     assert!(
         run(vec![x.clone(), Grid::column(&[0.5]), n(10.0)]).contains("one probability per value")
     );

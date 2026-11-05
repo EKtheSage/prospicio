@@ -419,7 +419,7 @@ fn term_level(name: &str) -> (Value, Value) {
     }
 }
 
-/// `PRO.GLM(data, response, terms, [family], [link], [exposure],
+/// `PRO.PRC.GLM(data, response, terms, [family], [link], [exposure],
 /// [weights], [p])`: per coefficient its term, level, estimate, standard
 /// error, statistic, p-value and exp(estimate), then the fit's statistics
 /// as label and value.
@@ -473,7 +473,7 @@ pub fn summary(args: &[Grid]) -> Result<Grid> {
     Ok(Grid::from_rows(rows))
 }
 
-/// `PRO.GLM.PREDICT(data, response, terms, newdata, [family], [link],
+/// `PRO.PRC.GLM.PREDICT(data, response, terms, newdata, [family], [link],
 /// [exposure], [weights], [p])`: the fitted mean of each row of `newdata`,
 /// a table with the same column names (its exposure too, when one is
 /// named), as a column.
@@ -495,7 +495,7 @@ pub fn predict(args: &[Grid]) -> Result<Grid> {
     Ok(Grid::column(&mean))
 }
 
-/// `PRO.GLM.RELATIVITIES(data, response, terms, [family], [link],
+/// `PRO.PRC.GLM.RELATIVITIES(data, response, terms, [family], [link],
 /// [exposure], [weights], [p], [level])`: on the log link, each term's
 /// relativity exp(estimate) with its confidence interval at `level` (95%
 /// if omitted), every factor's base level first at 1, and a numeric term's

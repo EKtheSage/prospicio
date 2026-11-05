@@ -1,4 +1,4 @@
-//! Aggregate distributions (`PRO.AGG.STATS`, `PRO.AGG.LAYERS`), reached
+//! Aggregate distributions (`PRO.CAP.AGG.STATS`, `PRO.CAP.AGG.LAYERS`), reached
 //! through the catalogue as Excel reaches them:
 //!
 //! * per-occurrence layer statistics against `aggregate` 1.0.1's
@@ -9,13 +9,13 @@
 //! * VaR and TVaR against the Panjer recursion on the same grid (a second
 //!   algorithm), and a layer's annual mean and SD against the collective
 //!   model's closed forms;
-//! * the occurrence PML (`PRO.AGG.PML`) against `aggregate` 1.0.1's `oep`
+//! * the occurrence PML (`PRO.CAP.AGG.PML`) against `aggregate` 1.0.1's `oep`
 //!   (`oep_aggregate.csv`), and its aggregate PML against Panjer's VaR;
-//! * aggregate covers (`PRO.AGG.COVER`) on the total net of occurrence
+//! * aggregate covers (`PRO.CAP.AGG.COVER`) on the total net of occurrence
 //!   layers against `reins_stats_df`'s `agg` block (books R and T), a stop
 //!   loss against Panjer's on the same grid, and a cover on the
-//!   occurrence layer's ceded total against `PRO.AGG.LAYERS`;
-//! * a tower's views priced by a distortion (`PRO.TOWER.PRICE`) against
+//!   occurrence layer's ceded total against `PRO.CAP.AGG.LAYERS`;
+//! * a tower's views priced by a distortion (`PRO.PRC.TOWER.PRICE`) against
 //!   `reins_price_df` (books C, R, S and T, PH 0.7), and annual terms
 //!   against `Tower::on_grid` and the closed-form CCoC price.
 
@@ -92,7 +92,7 @@ fn layer_statistics_match_aggregate() {
             let cap: f64 = f["cap"].parse().unwrap();
             let mut args = book(&f);
             args.extend([r(1), r(2), r(0), n(1.0), n(cap + 1.0)]);
-            call("pro_agg_layers", args)
+            call("pro_cap_agg_layers", args)
         });
         assert_eq!(ex.rows, 15, "{name}: {:?}", ex.as_scalar());
         let label = match stat {
@@ -134,7 +134,7 @@ fn ground_up_moments_match_aggregate_to_the_grid() {
         }
         let s = books
             .entry(row[1].clone())
-            .or_insert_with(|| call("pro_agg_stats", book(&fields(&row[1]))));
+            .or_insert_with(|| call("pro_cap_agg_stats", book(&fields(&row[1]))));
         assert_eq!(s.columns, 2, "{}: {:?}", row[0], s.as_scalar());
         let label = match q {
             "mean" => "Mean",
@@ -175,7 +175,7 @@ fn var_and_tvar_match_panjer_and_layers_their_closed_forms() {
         n(10.0),
         n(4096.0),
     ];
-    let s = call("pro_agg_stats", args);
+    let s = call("pro_cap_agg_stats", args);
     let sev = Gamma::from_mean_cv(1000.0, 1.5).unwrap();
     let (grid, _) = PGrid::rounding(&sev, 10.0, 4096).unwrap();
     let (agg, _) = panjer(&Poisson::new(3.0).unwrap(), &grid, 4096).unwrap();
@@ -192,7 +192,7 @@ fn var_and_tvar_match_panjer_and_layers_their_closed_forms() {
     // A per-occurrence layer on the automatic grid: 2,000 xs 1,000 under
     // a negative binomial with dispersion 2.
     let s = call(
-        "pro_agg_stats",
+        "pro_cap_agg_stats",
         vec![
             n(3.0),
             n(2.0),
@@ -232,7 +232,7 @@ fn occurrence_pml_matches_aggregate() {
                 .collect();
             let mut args = book(&fields(&row[1]));
             args.push(Grid::column(&ps));
-            call("pro_agg_pml", args)
+            call("pro_cap_agg_pml", args)
         });
         assert_eq!(s.columns, 6, "{}: {:?}", row[0], s.as_scalar());
         let r = (1..s.rows)
@@ -270,7 +270,7 @@ fn aggregate_pml_is_panjers_var_and_clustering_is_exact() {
         panic!("{nb:?}")
     };
     let s = call(
-        "pro_agg_pml",
+        "pro_cap_agg_pml",
         vec![
             n(3.0),
             n(2.0),
@@ -299,7 +299,7 @@ fn aggregate_pml_is_panjers_var_and_clustering_is_exact() {
     // Clustering lowers the OEP at a given mean: the Poisson's PML is
     // higher.
     let poisson = call(
-        "pro_agg_pml",
+        "pro_cap_agg_pml",
         vec![n(3.0), Grid::missing(), t("gamma_cv"), n(1000.0), n(1.5)],
     );
     assert_eq!(poisson.rows, 10);
@@ -347,7 +347,7 @@ fn aggregate_covers_match_aggregate() {
                 n(1.0),
                 n(f64::from(1 << 14)),
             ]);
-            call("pro_agg_cover", args)
+            call("pro_cap_agg_cover", args)
         });
         assert_eq!(
             (ex.rows, ex.columns),
@@ -400,7 +400,7 @@ fn a_stop_loss_is_panjers_and_a_cover_on_the_ceded_total_its_layer() {
         Grid::missing(),
     ]);
     args.extend([n(10.0), n(4096.0)]);
-    let s = call("pro_agg_cover", args);
+    let s = call("pro_cap_agg_cover", args);
     assert_eq!((s.rows, s.columns), (9, 3), "{:?}", s.as_scalar());
     assert_eq!(s.get(0, 1), &Value::from("50% of 2000 xs 5000"));
     assert_eq!(s.get(0, 2), &Value::from("50% of unlimited xs 4000"));
@@ -426,7 +426,7 @@ fn a_stop_loss_is_panjers_and_a_cover_on_the_ceded_total_its_layer() {
     assert!((num(s.get(row_of(&s, "Pr attach"), 2)) - p_attach).abs() < 1e-12);
 
     // Unlimited xs 0 on the ceded total of 2,000 xs 1,000 per claim is
-    // that layer's annual loss, as PRO.AGG.LAYERS has it.
+    // that layer's annual loss, as PRO.CAP.AGG.LAYERS has it.
     let base = || {
         vec![
             n(3.0),
@@ -446,11 +446,11 @@ fn a_stop_loss_is_panjers_and_a_cover_on_the_ceded_total_its_layer() {
         n(1000.0),
     ]);
     a.extend([Grid::missing(), t("ceded"), n(10.0), n(4096.0)]);
-    let c = call("pro_agg_cover", a);
+    let c = call("pro_cap_agg_cover", a);
     assert_eq!(c.columns, 2, "{:?}", c.as_scalar());
     let mut a = base();
     a.extend([n(2000.0), n(1000.0), Grid::missing(), n(10.0), n(4096.0)]);
-    let l = call("pro_agg_layers", a);
+    let l = call("pro_cap_agg_layers", a);
     for label in ["Annual mean", "Annual SD", "Annual skewness"] {
         let (x, y) = (
             num(c.get(row_of(&c, label), 1)),
@@ -502,7 +502,7 @@ fn tower_prices_match_aggregate() {
                 cover_retention,
             ]);
             args.extend([t("ph"), n(0.7), n(1.0), n(f64::from(1 << 14))]);
-            call("pro_tower_price", args)
+            call("pro_prc_tower_price", args)
         });
         assert_eq!(ex.columns, 8, "{}: {:?}", row[0], ex.as_scalar());
         let label = match view {
@@ -557,7 +557,7 @@ fn a_tower_with_annual_terms_is_the_librarys_and_ccoc_is_closed_form() {
         n(10.0),
         n(4096.0),
     ];
-    let s = call("pro_tower_price", args.clone());
+    let s = call("pro_prc_tower_price", args.clone());
     assert_eq!((s.rows, s.columns), (6, 8), "{:?}", s.as_scalar());
     let sev = Gamma::from_mean_cv(1000.0, 1.5).unwrap();
     let (grid, _) = PGrid::rounding(&sev, 10.0, 4096).unwrap();
@@ -594,7 +594,7 @@ fn a_tower_with_annual_terms_is_the_librarys_and_ccoc_is_closed_form() {
     let mut bitvar = args.clone();
     bitvar[15] = t("bitvar");
     bitvar[16] = Grid::row(&[0.0, 1.0, 0.1 / 1.1]);
-    let b = call("pro_tower_price", bitvar);
+    let b = call("pro_prc_tower_price", bitvar);
     for row in 0..s.rows {
         if let (Value::Number(x), Value::Number(y)) = (s.get(row, 4), b.get(row, 4)) {
             assert!(
@@ -619,7 +619,7 @@ fn a_tower_with_annual_terms_is_the_librarys_and_ccoc_is_closed_form() {
     // lighter).
     args[11] = Grid::missing();
     args[12] = Grid::missing();
-    let s = call("pro_tower_price", args);
+    let s = call("pro_prc_tower_price", args);
     let loss = |label: &str| num(s.get(row_of(&s, label), 1));
     assert!(
         (loss("Gross") / (loss("Occurrence total") + loss("Net")) - 1.0).abs() < 1e-6,
@@ -646,29 +646,29 @@ fn errors_come_back_as_text() {
     let e = |a: Vec<Grid>, f: &str| text(&call(f, a)).to_owned();
     let mut a = base();
     a.extend([Grid::missing(), Grid::missing(), Grid::missing(), n(10.0)]);
-    assert!(e(a, "pro_agg_stats").contains("both step and points"));
+    assert!(e(a, "pro_cap_agg_stats").contains("both step and points"));
     let mut a = base();
     a.extend([Grid::missing(), Grid::missing(), n(1.5)]);
-    assert!(e(a, "pro_agg_stats").contains("(0, 1)"));
+    assert!(e(a, "pro_cap_agg_stats").contains("(0, 1)"));
     let mut a = base();
     a[1] = n(-1.0);
-    assert!(e(a, "pro_agg_stats").contains("dispersion"));
+    assert!(e(a, "pro_cap_agg_stats").contains("dispersion"));
     let mut a = base();
     a.extend([
         Grid::from_rows(vec![vec![Value::Number(1.0), Value::Number(2.0)]]),
         Grid::from_rows(vec![vec![Value::Number(0.0); 3]]),
     ]);
-    assert!(e(a, "pro_agg_layers").contains("one per limit"));
+    assert!(e(a, "pro_cap_agg_layers").contains("one per limit"));
     let mut a = base();
     a.push(n(1.0));
-    assert!(e(a, "pro_agg_pml").contains("above 1"));
+    assert!(e(a, "pro_cap_agg_pml").contains("above 1"));
     let mut a = base();
     a[0] = n(0.01);
     a.push(n(10.0));
-    assert!(e(a, "pro_agg_pml").contains("any occurrence"));
+    assert!(e(a, "pro_cap_agg_pml").contains("any occurrence"));
     let mut a = base();
     a.extend([n(100.0), Grid::missing()]);
-    assert!(e(a, "pro_agg_cover").contains("retentions is required"));
+    assert!(e(a, "pro_cap_agg_cover").contains("retentions is required"));
     let mut a = base();
     a.extend([n(100.0), n(0.0), Grid::missing()]);
     a.extend([
@@ -677,18 +677,18 @@ fn errors_come_back_as_text() {
         Grid::missing(),
         t("ceded"),
     ]);
-    assert!(e(a, "pro_agg_cover").contains("needs occurrence layers"));
+    assert!(e(a, "pro_cap_agg_cover").contains("needs occurrence layers"));
     let mut a = base();
     a.extend([n(100.0), n(0.0), Grid::missing(), n(50.0), n(0.0)]);
     a.extend([Grid::missing(), t("gross")]);
-    assert!(e(a, "pro_agg_cover").contains("\"net\" (default)"));
+    assert!(e(a, "pro_cap_agg_cover").contains("\"net\" (default)"));
     let tower = |distortion: &str, cover: Option<f64>| {
         let mut a = base();
         a.extend([Grid::missing(), Grid::missing(), n(500.0), n(100.0)]);
         a.extend([Grid::missing(), Grid::missing(), Grid::missing()]);
         a.extend([cover.map_or(Grid::missing(), n), Grid::missing()]);
         a.extend([t(distortion), n(0.7)]);
-        e(a, "pro_tower_price")
+        e(a, "pro_prc_tower_price")
     };
     assert!(tower("gamma", None).contains("\"ccoc\", \"ph\""));
     assert!(tower("ph", Some(1000.0)).contains("retention"));

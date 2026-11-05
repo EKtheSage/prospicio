@@ -67,7 +67,7 @@ fn g_and_insco_match_aggregate() {
                     }
                 };
                 several += 1;
-                num(&call("pro_distortion", vec![n(arg), t(family), parameter]).cells[0])
+                num(&call("pro_cap_distortion", vec![n(arg), t(family), parameter]).cells[0])
             }
             ("g", _) => {
                 let (parameter, r0) = match family {
@@ -82,18 +82,22 @@ fn g_and_insco_match_aggregate() {
                     _ => continue,
                 };
                 let r0 = r0.map_or(Grid::missing(), n);
-                num(&call("pro_distortion", vec![n(arg), t(family), n(parameter), r0]).cells[0])
+                num(&call(
+                    "pro_cap_distortion",
+                    vec![n(arg), t(family), n(parameter), r0],
+                )
+                .cells[0])
             }
             ("insco_price", _) => {
                 let out = call(
-                    "pro_distortion_price",
+                    "pro_cap_distortion_price",
                     vec![Grid::column(&X), Grid::column(&P), t(family), n(arg)],
                 );
                 num(out.get(1, 1))
             }
             ("insco_calibrate", _) => {
                 let out = call(
-                    "pro_distortion_calibrate",
+                    "pro_cap_distortion_calibrate",
                     vec![Grid::column(&X), Grid::column(&P), n(arg), t(family)],
                 );
                 assert_eq!(out.get(1, 0), &Value::from(family));
@@ -117,9 +121,12 @@ fn g_and_insco_match_aggregate() {
 /// bitvar `(0, 1, r / (1 + r))`, on a sheet and in a tower's price.
 #[test]
 fn several_parameters_in_one_range() {
-    let side = call("pro_distortion", vec![n(0.3), t("lep"), n(0.2), n(0.05)]);
+    let side = call(
+        "pro_cap_distortion",
+        vec![n(0.3), t("lep"), n(0.2), n(0.05)],
+    );
     let range = call(
-        "pro_distortion",
+        "pro_cap_distortion",
         vec![n(0.3), t("lep"), Grid::row(&[0.05, 0.2])],
     );
     assert_eq!(side, range);
@@ -133,20 +140,20 @@ fn several_parameters_in_one_range() {
         vec![Value::Number(0.2), Value::Number(0.5), Value::Number(0.3)],
     ]);
     let a = call(
-        "pro_distortion_price",
+        "pro_cap_distortion_price",
         vec![Grid::column(&X), Grid::column(&P), t("wtdtvar"), column],
     );
     let b = call(
-        "pro_distortion_price",
+        "pro_cap_distortion_price",
         vec![Grid::column(&X), Grid::column(&P), t("wtdtvar"), rows],
     );
     assert_eq!(a, b);
     let ccoc = call(
-        "pro_distortion_price",
+        "pro_cap_distortion_price",
         vec![Grid::column(&X), Grid::column(&P), t("ccoc"), n(0.15)],
     );
     let bitvar = call(
-        "pro_distortion_price",
+        "pro_cap_distortion_price",
         vec![
             Grid::column(&X),
             Grid::column(&P),
@@ -160,7 +167,7 @@ fn several_parameters_in_one_range() {
 #[test]
 fn several_parameters_are_checked() {
     let e = call(
-        "pro_distortion",
+        "pro_cap_distortion",
         vec![n(0.5), t("bitvar"), Grid::row(&[0.2, 0.9])],
     );
     assert!(
@@ -169,22 +176,22 @@ fn several_parameters_are_checked() {
         text(&e)
     );
     let e = call(
-        "pro_distortion",
+        "pro_cap_distortion",
         vec![n(0.5), t("bitvar"), Grid::row(&[0.9, 0.2, 0.3])],
     );
     assert!(text(&e).contains("p0"), "{}", text(&e));
     let e = call(
-        "pro_distortion",
+        "pro_cap_distortion",
         vec![n(0.5), t("beta"), Grid::row(&[0.6, 1.5]), n(0.1)],
     );
     assert!(text(&e).contains("r0 is taken only by"), "{}", text(&e));
     let e = call(
-        "pro_distortion",
+        "pro_cap_distortion",
         vec![n(0.5), t("wtdtvar"), Grid::row(&[0.1, 0.5, 0.9])],
     );
     assert!(text(&e).contains("two columns"), "{}", text(&e));
     let out = call(
-        "pro_distortion_calibrate",
+        "pro_cap_distortion_calibrate",
         vec![Grid::column(&X), Grid::column(&P), n(50.0), t("beta")],
     );
     assert!(text(&out).contains("several parameters"), "{}", text(&out));
@@ -194,7 +201,7 @@ fn several_parameters_are_checked() {
 fn calibration_defaults_to_the_standard_five_and_prices_back() {
     let premium = (46.6 + 0.15 * 100.0) / 1.15;
     let out = call(
-        "pro_distortion_calibrate",
+        "pro_cap_distortion_calibrate",
         vec![Grid::column(&X), Grid::column(&P), n(premium)],
     );
     assert_eq!((out.rows, out.columns), (6, 3));
@@ -211,7 +218,7 @@ fn calibration_defaults_to_the_standard_five_and_prices_back() {
         assert!((num(out.get(r, 2)) - premium).abs() < 1e-8, "row {r}");
         // Each calibrated parameter prices the outcomes at the premium.
         let p = call(
-            "pro_distortion_price",
+            "pro_cap_distortion_price",
             vec![
                 Grid::column(&X),
                 Grid::column(&P),
@@ -227,7 +234,7 @@ fn calibration_defaults_to_the_standard_five_and_prices_back() {
 fn draws_are_equally_likely_and_any_order() {
     // TVaR at 50% of four draws is the mean of the top two.
     let out = call(
-        "pro_distortion_price",
+        "pro_cap_distortion_price",
         vec![
             Grid::column(&[6.0, 0.0, 2.0, 0.0]),
             Grid::missing(),
@@ -243,22 +250,22 @@ fn draws_are_equally_likely_and_any_order() {
 
 #[test]
 fn bad_inputs_are_named() {
-    let e = call("pro_distortion", vec![n(1.5), t("ph"), n(0.5)]);
+    let e = call("pro_cap_distortion", vec![n(1.5), t("ph"), n(0.5)]);
     assert!(text(&e).contains("s must be a probability"), "{}", text(&e));
-    let e = call("pro_distortion", vec![n(0.5), t("ph"), n(0.5), n(0.1)]);
+    let e = call("pro_cap_distortion", vec![n(0.5), t("ph"), n(0.5), n(0.1)]);
     assert!(text(&e).contains("r0 is taken only by"), "{}", text(&e));
-    let e = call("pro_distortion", vec![n(0.5), t("clin"), n(0.5)]);
+    let e = call("pro_cap_distortion", vec![n(0.5), t("clin"), n(0.5)]);
     assert!(text(&e).contains("r0"), "{}", text(&e));
-    let e = call("pro_distortion", vec![n(0.5), t("normal"), n(0.5)]);
+    let e = call("pro_cap_distortion", vec![n(0.5), t("normal"), n(0.5)]);
     assert!(text(&e).contains("family must be"), "{}", text(&e));
     let e = call(
-        "pro_distortion_price",
+        "pro_cap_distortion_price",
         vec![Grid::column(&X), Grid::column(&[0.5, 0.5]), t("ph"), n(0.5)],
     );
     assert!(text(&e).contains("7 values and 2 probs"), "{}", text(&e));
     // A premium above the largest outcome is out of reach for every family.
     let out = call(
-        "pro_distortion_calibrate",
+        "pro_cap_distortion_calibrate",
         vec![Grid::column(&X), Grid::column(&P), n(120.0)],
     );
     assert!(matches!(out.get(2, 1), Value::Text(s) if s.contains("strictly between")));

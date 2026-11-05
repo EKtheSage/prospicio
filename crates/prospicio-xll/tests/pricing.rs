@@ -48,10 +48,10 @@ fn pareto(limit: Grid, attachment: Grid) -> Vec<Grid> {
 #[test]
 fn pareto_layer_matches_the_r_package() {
     // R package Pareto, vignette: Pareto(t = 500, alpha = 2), 4000 xs 1000.
-    let out = call("pro_layer", pareto(n(4000.0), n(1000.0)));
+    let out = call("pro_prc_layer", pareto(n(4000.0), n(1000.0)));
     assert!((one(&out) - 200.0).abs() < 1e-12);
     // Unlimited: t^a d^(1-a) / (a - 1) = 500^2 / 1000.
-    let out = call("pro_layer", pareto(t("unlimited"), n(1000.0)));
+    let out = call("pro_prc_layer", pareto(t("unlimited"), n(1000.0)));
     assert!((one(&out) - 250.0).abs() < 1e-12);
 }
 
@@ -63,9 +63,9 @@ fn lognormal_matches_mpmath() {
         v.extend([t("lognormal"), n(0.0), n(1.0), Grid::missing()]);
         v
     };
-    let lev = call("pro_lev", args(n(1.0), None));
+    let lev = call("pro_prc_lev", args(n(1.0), None));
     assert!((one(&lev) - 0.761_578_291_865_123_4).abs() < 1e-12);
-    let layer = call("pro_layer", args(n(1.0), Some(n(1.0))));
+    let layer = call("pro_prc_layer", args(n(1.0), Some(n(1.0))));
     assert!((one(&layer) - 0.352_291_857_299_111_94).abs() < 1e-11);
 }
 
@@ -82,14 +82,14 @@ fn a_column_of_attachments_against_a_row_of_limits_is_a_table() {
         Value::from("unlimited"),
     ]]);
     let p = Pareto::new(500.0, 2.0).unwrap();
-    let out = call("pro_layer", pareto(limits.clone(), attachments.clone()));
+    let out = call("pro_prc_layer", pareto(limits.clone(), attachments.clone()));
     assert_eq!((out.rows, out.columns), (3, 3));
     for (r, a) in [1000.0, 2000.0, 5000.0].into_iter().enumerate() {
         for (c, l) in [1000.0, 5000.0, f64::INFINITY].into_iter().enumerate() {
             assert_eq!(num(out.get(r, c)), p.layer(l, a));
         }
     }
-    let cv = call("pro_layer_cv", pareto(limits, attachments));
+    let cv = call("pro_prc_layer_cv", pareto(limits, attachments));
     assert_eq!(num(cv.get(2, 1)), layer_cv(&p, 5000.0, 5000.0).unwrap());
     assert_eq!(
         cv.get(0, 2),
@@ -118,14 +118,14 @@ fn ilf_and_lev_match_the_crates() {
             Grid::missing(),
         ]
     };
-    let out = call("pro_ilf", args(limits.clone()));
+    let out = call("pro_prc_ilf", args(limits.clone()));
     assert_eq!((out.rows, out.columns), (4, 1));
     assert_eq!(num(&out.cells[0]), 1.0);
     assert_eq!(num(&out.cells[2]), ilf(&sev, 1e6, 1e5).unwrap());
     assert_eq!(out.cells[3], Value::Empty, "a blank limit gives a blank");
 
     let lev = call(
-        "pro_lev",
+        "pro_prc_lev",
         vec![
             limits,
             t("Lognormal CV"),
@@ -141,7 +141,7 @@ fn ilf_and_lev_match_the_crates() {
 fn a_truncated_pareto() {
     let p = Pareto::new(500.0, 1.5).unwrap().truncated(1e6).unwrap();
     let out = call(
-        "pro_layer",
+        "pro_prc_layer",
         vec![
             t("unlimited"),
             n(1000.0),
@@ -156,7 +156,7 @@ fn a_truncated_pareto() {
 
 #[test]
 fn errors_come_back_as_text() {
-    let bad = |args| text(&call("pro_layer", args)).to_owned();
+    let bad = |args| text(&call("pro_prc_layer", args)).to_owned();
     assert!(
         bad(vec![
             n(1.0),
@@ -196,7 +196,7 @@ fn errors_come_back_as_text() {
     let three = Grid::from_rows(vec![vec![Value::Number(1.0); 3]]);
     assert!(bad(pareto(two, three)).contains("do not combine"));
     let ilf = call(
-        "pro_ilf",
+        "pro_prc_ilf",
         vec![
             n(1e6),
             t("unlimited"),

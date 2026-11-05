@@ -69,7 +69,7 @@ typedef XLOPER12 *(*Fn5)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER1
 typedef XLOPER12 *(*Fn6)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef void (*Free12)(XLOPER12 *);
 
-static int registered = 0, failures = 0;
+static int registered = 0, hidden = 0, failures = 0;
 static wchar_t dll_name[] = L"\x0F" L"C:\\prospicio.xll";
 
 static void narrow(const wchar_t *s, char *out, size_t cap) {
@@ -99,6 +99,8 @@ __declspec(dllexport) int __stdcall MdCallBack12(int xlfn, int count, XLOPER12 *
                ok ? "ok" : "BAD");
         if (!ok) failures++;
         registered++;
+        /* Macro type 0: an old name, calculating but not listed (xll.md, decision 47). */
+        if (args[5]->val.w == 0) hidden++;
         res->xltype = xltypeNum;
         res->val.num = registered;
         return 0;
@@ -162,7 +164,8 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and fourteen functions registered", registered == 114);
+    check("one hundred and fourteen functions and 98 old names registered", registered == 212);
+    check("the 98 old names registered hidden", hidden == 98);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -191,9 +194,9 @@ int main(int argc, char **argv) {
     print_result("PRO.VERSION()", v);
     free12(v);
 
-    XLOPER12 *ldf = ((Fn7)GetProcAddress(xll, "pro_cl_ldf"))(&tri, &missing, &tail, &missing, &missing, &missing,
+    XLOPER12 *ldf = ((Fn7)GetProcAddress(xll, "pro_res_cl_ldf"))(&tri, &missing, &tail, &missing, &missing, &missing,
                                                              &missing);
-    print_result("PRO.CL.LDF(RAA,,1.05)", ldf);
+    print_result("PRO.RES.CL.LDF(RAA,,1.05)", ldf);
     check("LDF is 1 x 10", (ldf->xltype & 0xFFF) == xltypeMulti && ldf->val.array.rows == 1 &&
                                ldf->val.array.columns == 10);
     check("last LDF is the tail", ldf->val.array.lparray[9].val.num == 1.05);
@@ -214,7 +217,7 @@ int main(int argc, char **argv) {
     sel.val.array.columns = 2;
     ages.val.array.lparray = age_cells;
     ages.val.array.columns = 2;
-    Fn7 cl_ldf = (Fn7)GetProcAddress(xll, "pro_cl_ldf");
+    Fn7 cl_ldf = (Fn7)GetProcAddress(xll, "pro_res_cl_ldf");
     XLOPER12 *sel_ldf = cl_ldf(&tri, &missing, &missing, &sel, &missing, &missing, &ages);
     check("selected 3, 2 at pattern_ages 12, 24", (sel_ldf->xltype & 0xFFF) == xltypeMulti &&
                                                       sel_ldf->val.array.lparray[0].val.num == 3.0 &&
@@ -225,13 +228,21 @@ int main(int argc, char **argv) {
     check("three pattern_ages for two values is an error", (sx->xltype & 0xFFF) == xltypeStr);
     free12(sx);
 
-    Fn9 mack = (Fn9)GetProcAddress(xll, "pro_mack");
+    Fn9 mack = (Fn9)GetProcAddress(xll, "pro_res_mack");
     XLOPER12 *m = mack(&tri, &missing, &missing, &missing, &missing, &missing, &missing, &missing, &missing);
-    print_result("PRO.MACK(RAA)", m);
+    print_result("PRO.RES.MACK(RAA)", m);
     XLOPER12 *total = &m->val.array.lparray[11 * 8];
     check("total reserve 52135.228 (R ChainLadder)", fabs(total[3].val.num - 52135.2282612101) < 1e-6);
     check("total Mack SE 26880.740 (R ChainLadder)", fabs(total[6].val.num - 26880.7403298914) < 1e-6);
     free12(m);
+
+    /* An old name still calculates: PRO.MACK runs PRO.RES.MACK. */
+    Fn9 old_mack = (Fn9)GetProcAddress(xll, "pro_mack");
+    XLOPER12 *om = old_mack ? old_mack(&tri, &missing, &missing, &missing, &missing, &missing, &missing,
+                                       &missing, &missing) : NULL;
+    check("the old name PRO.MACK gives PRO.RES.MACK's total reserve",
+          om && (om->xltype & 0xFFF) == xltypeMulti && fabs(om->val.array.lparray[11 * 8 + 3].val.num - 52135.2282612101) < 1e-6);
+    if (om) free12(om);
 
     /* Mack's rule for the last sigma: R's MackChainLadder(est.sigma = "Mack"). */
     static wchar_t mack_s[] = L"\x04" L"mack";
@@ -244,13 +255,13 @@ int main(int argc, char **argv) {
     free12(rs);
 
     XLOPER12 *bad = mack(&tri, &tail, &missing, &missing, &missing, &missing, &missing, &missing, &missing);
-    print_result("PRO.MACK(RAA, 1.05)", bad);
+    print_result("PRO.RES.MACK(RAA, 1.05)", bad);
     check("a bad argument comes back as text", (bad->xltype & 0xFFF) == xltypeStr);
     free12(bad);
 
-    XLOPER12 *s = ((Fn8)GetProcAddress(xll, "pro_cl"))(&tri, &simple, &missing, &missing, &missing, &missing, &missing,
+    XLOPER12 *s = ((Fn8)GetProcAddress(xll, "pro_res_cl"))(&tri, &simple, &missing, &missing, &missing, &missing, &missing,
                                                        &missing);
-    print_result("PRO.CL(RAA, \"simple\")", s);
+    print_result("PRO.RES.CL(RAA, \"simple\")", s);
     check("simple-average reserve 93643.031 (R ChainLadder)",
           fabs(s->val.array.lparray[11 * 5 + 4].val.num - 93643.0313432212) < 1e-6);
     free12(s);
@@ -286,8 +297,8 @@ int main(int argc, char **argv) {
     t.val.num = 500;
     alpha.xltype = xltypeNum;
     alpha.val.num = 2;
-    XLOPER12 *layer = ((Fn6)GetProcAddress(xll, "pro_layer"))(&lim, &att, &fam, &t, &alpha, &missing);
-    print_result("PRO.LAYER({4000,\"unlimited\"}, {1000;5000}, \"pareto\", 500, 2)", layer);
+    XLOPER12 *layer = ((Fn6)GetProcAddress(xll, "pro_prc_layer"))(&lim, &att, &fam, &t, &alpha, &missing);
+    print_result("PRO.PRC.LAYER({4000,\"unlimited\"}, {1000;5000}, \"pareto\", 500, 2)", layer);
     check("layer table is 2 x 2", (layer->xltype & 0xFFF) == xltypeMulti && layer->val.array.rows == 2 &&
                                        layer->val.array.columns == 2);
     check("4000 xs 1000 is 200 (R package Pareto)", fabs(layer->val.array.lparray[0].val.num - 200) < 1e-9);
@@ -298,8 +309,8 @@ int main(int argc, char **argv) {
     basic.val.num = 1000;
     lim1m.xltype = xltypeNum;
     lim1m.val.num = 1000;
-    XLOPER12 *f = ((Fn6)GetProcAddress(xll, "pro_ilf"))(&lim1m, &basic, &fam, &t, &alpha, &missing);
-    print_result("PRO.ILF(1000, 1000, \"pareto\", 500, 2)", f);
+    XLOPER12 *f = ((Fn6)GetProcAddress(xll, "pro_prc_ilf"))(&lim1m, &basic, &fam, &t, &alpha, &missing);
+    print_result("PRO.PRC.ILF(1000, 1000, \"pareto\", 500, 2)", f);
     check("ILF at the basic limit is 1", (f->xltype & 0xFFF) == xltypeNum && f->val.num == 1.0);
     free12(f);
 
@@ -311,10 +322,10 @@ int main(int argc, char **argv) {
     seed.xltype = xltypeNum;
     seed.val.num = 1;
     DWORD t0 = GetTickCount();
-    XLOPER12 *o = ((Fn8)GetProcAddress(xll, "pro_odp"))(&tri, &sims, &seed, &missing, &missing, &missing, &missing,
+    XLOPER12 *o = ((Fn8)GetProcAddress(xll, "pro_res_odp"))(&tri, &sims, &seed, &missing, &missing, &missing, &missing,
                                                        &missing);
     DWORD ms = GetTickCount() - t0;
-    print_result("PRO.ODP(RAA, 20000, 1)", o);
+    print_result("PRO.RES.ODP(RAA, 20000, 1)", o);
     printf("  (%lu ms)\n", ms);
     check("ODP table is 12 x 9", (o->xltype & 0xFFF) == xltypeMulti && o->val.array.rows == 12 &&
                                      o->val.array.columns == 9);
@@ -327,9 +338,9 @@ int main(int argc, char **argv) {
      * XLL and freed by xlAutoFree12. */
     sims.val.num = 100000;
     t0 = GetTickCount();
-    XLOPER12 *d = ((Fn7)GetProcAddress(xll, "pro_odp_sims"))(&tri, &sims, &seed, &missing, &missing, &missing, &missing);
+    XLOPER12 *d = ((Fn7)GetProcAddress(xll, "pro_res_odp_sims"))(&tri, &sims, &seed, &missing, &missing, &missing, &missing);
     ms = GetTickCount() - t0;
-    printf("PRO.ODP.SIMS(RAA, 100000, 1): %d x %d (%lu ms)\n", d->val.array.rows, d->val.array.columns, ms);
+    printf("PRO.RES.ODP.SIMS(RAA, 100000, 1): %d x %d (%lu ms)\n", d->val.array.rows, d->val.array.columns, ms);
     check("draws are 100001 x 11", (d->xltype & 0xFFF) == xltypeMulti && d->val.array.rows == 100001 &&
                                        d->val.array.columns == 11);
     char head[16];
@@ -344,9 +355,9 @@ int main(int argc, char **argv) {
      * Mack's sqrt(process^2 + 0.981 parameter^2) = 26845 (R ChainLadder's
      * risks), within five Monte Carlo standard errors (about 1000). */
     sims.val.num = 20000;
-    XLOPER12 *mb = ((Fn9)GetProcAddress(xll, "pro_mack_boot"))(&tri, &sims, &seed, &missing, &missing, &missing,
+    XLOPER12 *mb = ((Fn9)GetProcAddress(xll, "pro_res_mack_boot"))(&tri, &sims, &seed, &missing, &missing, &missing,
                                                                &missing, &missing, &missing);
-    print_result("PRO.MACK.BOOT(RAA, 20000, 1)", mb);
+    print_result("PRO.RES.MACK.BOOT(RAA, 20000, 1)", mb);
     check("Mack bootstrap table is 12 x 9", (mb->xltype & 0xFFF) == xltypeMulti && mb->val.array.rows == 12 &&
                                                 mb->val.array.columns == 9);
     XLOPER12 *mt = &mb->val.array.lparray[11 * 9];
@@ -368,9 +379,9 @@ int main(int argc, char **argv) {
     expo.val.array.columns = 1;
     apriori.xltype = xltypeNum;
     apriori.val.num = 1.0;
-    Fn10 bf_fn = (Fn10)GetProcAddress(xll, "pro_bf");
+    Fn10 bf_fn = (Fn10)GetProcAddress(xll, "pro_res_bf");
     XLOPER12 *bf = bf_fn(&tri, &expo, &apriori, &missing, &missing, &missing, &missing, &missing, &missing, &missing);
-    print_result("PRO.BF(RAA, 20000 each, 1)", bf);
+    print_result("PRO.RES.BF(RAA, 20000 each, 1)", bf);
     check("BF table is 12 x 7", (bf->xltype & 0xFFF) == xltypeMulti && bf->val.array.rows == 12 &&
                                     bf->val.array.columns == 7);
     double expect = 0;
@@ -403,14 +414,14 @@ int main(int argc, char **argv) {
     free12(bo);
 
     /* Merz-Wuthrich: RAA's total CDR(1) SE 25166.303 (R ChainLadder's CDR). */
-    XLOPER12 *cd = ((Fn9)GetProcAddress(xll, "pro_mack_cdr"))(&tri, &missing, &missing, &missing, &missing,
+    XLOPER12 *cd = ((Fn9)GetProcAddress(xll, "pro_res_mack_cdr"))(&tri, &missing, &missing, &missing, &missing,
                                                               &missing, &missing, &missing, &missing);
-    print_result("PRO.MACK.CDR(RAA)", cd);
+    print_result("PRO.RES.MACK.CDR(RAA)", cd);
     check("total CDR(1) SE 25166.303 (R ChainLadder)",
           fabs(cd->val.array.lparray[11 * 4 + 2].val.num - 25166.3025264382) < 1e-6);
     free12(cd);
     sims.val.num = 2000;
-    XLOPER12 *oc = ((Fn8)GetProcAddress(xll, "pro_odp_cdr"))(&tri, &sims, &seed, &missing, &missing, &missing,
+    XLOPER12 *oc = ((Fn8)GetProcAddress(xll, "pro_res_odp_cdr"))(&tri, &sims, &seed, &missing, &missing, &missing,
                                                              &missing, &missing);
     check("ODP one-year table is 12 x 8", (oc->xltype & 0xFFF) == xltypeMulti && oc->val.array.rows == 12 &&
                                               oc->val.array.columns == 8);
@@ -418,16 +429,16 @@ int main(int argc, char **argv) {
 
     /* Clark's LDF method on RAA, log-logistic to infinity: total reserve
      * 111006.63 (R ChainLadder's ClarkLDF run to convergence, 1e-5). */
-    XLOPER12 *ck = ((Fn5)GetProcAddress(xll, "pro_clark"))(&tri, &missing, &missing, &missing, &missing);
-    print_result("PRO.CLARK(RAA)", ck);
+    XLOPER12 *ck = ((Fn5)GetProcAddress(xll, "pro_res_clark"))(&tri, &missing, &missing, &missing, &missing);
+    print_result("PRO.RES.CLARK(RAA)", ck);
     check("Clark LDF total reserve 111006.63 (R ChainLadder)",
           fabs(ck->val.array.lparray[11 * 7 + 3].val.num - 111006.625765179) < 1.2);
     free12(ck);
 
     /* The ODP GLM on RAA: the chain ladder's total reserve, 52135.23. */
     typedef XLOPER12 *(*Fn2)(XLOPER12 *, XLOPER12 *);
-    XLOPER12 *og = ((Fn2)GetProcAddress(xll, "pro_odp_glm"))(&tri, &missing);
-    check("PRO.ODP.GLM total reserve is the chain ladder's 52135.23",
+    XLOPER12 *og = ((Fn2)GetProcAddress(xll, "pro_res_odp_glm"))(&tri, &missing);
+    check("PRO.RES.ODP.GLM total reserve is the chain ladder's 52135.23",
           (og->xltype & 0xFFF) == xltypeMulti && og->val.array.rows == 12 && og->val.array.columns == 8 &&
               fabs(og->val.array.lparray[11 * 8 + 3].val.num - 52135.2283) < 0.01);
     free12(og);
@@ -465,8 +476,8 @@ int main(int argc, char **argv) {
     f1.val.num = 4;
     t2.val.num = 2e6;
     f2.val.num = 1;
-    XLOPER12 *pa = ((Fn5)GetProcAddress(xll, "pro_pareto_alpha_freqs"))(&t1, &f1, &t2, &f2, &missing);
-    check("PRO.PARETO.ALPHA.FREQS(1e6, 4, 2e6, 1) is 2", (pa->xltype & 0xFFF) == xltypeNum && fabs(pa->val.num - 2) < 1e-14);
+    XLOPER12 *pa = ((Fn5)GetProcAddress(xll, "pro_prc_pareto_alpha_freqs"))(&t1, &f1, &t2, &f2, &missing);
+    check("PRO.PRC.PARETO.ALPHA.FREQS(1e6, 4, 2e6, 1) is 2", (pa->xltype & 0xFFF) == xltypeNum && fabs(pa->val.num - 2) < 1e-14);
     free12(pa);
 
     /* Pareto(1, 3), unlimited xs 0: E[X^2] - E[X]^2 = 3 - 1.5^2. */
@@ -476,8 +487,8 @@ int main(int argc, char **argv) {
     zero.xltype = three.xltype = xltypeNum;
     zero.val.num = 0;
     three.val.num = 3;
-    XLOPER12 *lv = ((Fn6)GetProcAddress(xll, "pro_layer_var"))(&unl, &zero, &fam, &one, &three, &missing);
-    check("PRO.LAYER.VAR(\"unlimited\", 0, \"pareto\", 1, 3) is 0.75",
+    XLOPER12 *lv = ((Fn6)GetProcAddress(xll, "pro_prc_layer_var"))(&unl, &zero, &fam, &one, &three, &missing);
+    check("PRO.PRC.LAYER.VAR(\"unlimited\", 0, \"pareto\", 1, 3) is 0.75",
           (lv->xltype & 0xFFF) == xltypeNum && fabs(lv->val.num - 0.75) < 1e-12);
     free12(lv);
 
@@ -486,8 +497,8 @@ int main(int argc, char **argv) {
     XLOPER12 sfam;
     sfam.xltype = xltypeStr;
     sfam.val.str = swiss_s;
-    XLOPER12 *g1 = ((Fn5)GetProcAddress(xll, "pro_exposure_curve"))(&one, &sfam, &three, &missing, &missing);
-    check("PRO.EXPOSURE.CURVE(1, \"swiss_re\", 3) is 1",
+    XLOPER12 *g1 = ((Fn5)GetProcAddress(xll, "pro_prc_exposure_curve"))(&one, &sfam, &three, &missing, &missing);
+    check("PRO.PRC.EXPOSURE.CURVE(1, \"swiss_re\", 3) is 1",
           (g1->xltype & 0xFFF) == xltypeNum && fabs(g1->val.num - 1) < 1e-15);
     free12(g1);
 
@@ -496,8 +507,8 @@ int main(int argc, char **argv) {
     quarter.xltype = full.xltype = xltypeNum;
     quarter.val.num = 250;
     full.val.num = 1000;
-    XLOPER12 *cz = ((Fn2)GetProcAddress(xll, "pro_cred_z"))(&quarter, &full);
-    check("PRO.CRED.Z(250, 1000) is 0.5", (cz->xltype & 0xFFF) == xltypeNum && fabs(cz->val.num - 0.5) < 1e-15);
+    XLOPER12 *cz = ((Fn2)GetProcAddress(xll, "pro_prc_cred_z"))(&quarter, &full);
+    check("PRO.PRC.CRED.Z(250, 1000) is 0.5", (cz->xltype & 0xFFF) == xltypeNum && fabs(cz->val.num - 0.5) < 1e-15);
     free12(cz);
 
     /* An Excel date on the half-month grid: 30 June 2013 is 2013.5. */
@@ -516,8 +527,8 @@ int main(int argc, char **argv) {
     vv.val.num = 0.25;
     qq.val.num = 0.10;
     ff.val.num = 0.065;
-    XLOPER12 *ic = ((Fn4)GetProcAddress(xll, "pro_indicated_change"))(&lr, &vv, &qq, &ff);
-    check("PRO.INDICATED.CHANGE(0.65, 0.25, 0.10, 0.065) is +10%",
+    XLOPER12 *ic = ((Fn4)GetProcAddress(xll, "pro_prc_indicated_change"))(&lr, &vv, &qq, &ff);
+    check("PRO.PRC.INDICATED.CHANGE(0.65, 0.25, 0.10, 0.065) is +10%",
           (ic->xltype & 0xFFF) == xltypeNum && fabs(ic->val.num - 0.10) < 1e-12);
     free12(ic);
 
@@ -530,9 +541,9 @@ int main(int argc, char **argv) {
     two.xltype = hundred.xltype = xltypeNum;
     two.val.num = 2;
     hundred.val.num = 100;
-    XLOPER12 *pml = ((Fn9)GetProcAddress(xll, "pro_agg_pml"))(&two, &missing, &lncv, &hundred, &two, &missing,
+    XLOPER12 *pml = ((Fn9)GetProcAddress(xll, "pro_cap_agg_pml"))(&two, &missing, &lncv, &hundred, &two, &missing,
                                                              &hundred, &missing, &missing);
-    check("PRO.AGG.PML 100-year occurrence PML 1171.4979 (aggregate)",
+    check("PRO.CAP.AGG.PML 100-year occurrence PML 1171.4979 (aggregate)",
           (pml->xltype & 0xFFF) == xltypeMulti && pml->val.array.rows == 2 && pml->val.array.columns == 6 &&
               fabs(pml->val.array.lparray[8].val.num / 1171.497873505582 - 1) < 1e-10 &&
               pml->val.array.lparray[9].val.num > pml->val.array.lparray[8].val.num);
@@ -547,10 +558,10 @@ int main(int argc, char **argv) {
     sl_r.val.num = 400;
     occ_l.val.num = 500;
     occ_a.val.num = 100;
-    XLOPER12 *sl = ((Fn15)GetProcAddress(xll, "pro_agg_cover"))(&two, &missing, &lncv, &hundred, &two, &missing,
+    XLOPER12 *sl = ((Fn15)GetProcAddress(xll, "pro_cap_agg_cover"))(&two, &missing, &lncv, &hundred, &two, &missing,
                                                                 &sl_l, &sl_r, &missing, &occ_l, &occ_a, &missing,
                                                                 &missing, &missing, &missing);
-    check("PRO.AGG.COVER stop loss net of an occurrence layer",
+    check("PRO.CAP.AGG.COVER stop loss net of an occurrence layer",
           (sl->xltype & 0xFFF) == xltypeMulti && sl->val.array.rows == 9 && sl->val.array.columns == 2 &&
               sl->val.array.lparray[9].val.num < sl->val.array.lparray[3].val.num &&
               sl->val.array.lparray[7].val.num < sl->val.array.lparray[5].val.num &&
@@ -568,10 +579,10 @@ int main(int argc, char **argv) {
     rho.val.num = 0.7;
     cap.val.num = 1000;
     n14.val.num = 16384;
-    XLOPER12 *tp = ((Fn19)GetProcAddress(xll, "pro_tower_price"))(
+    XLOPER12 *tp = ((Fn19)GetProcAddress(xll, "pro_prc_tower_price"))(
         &two, &missing, &lncv, &hundred, &two, &missing, &cap, &missing, &occ_l, &occ_a, &missing, &missing,
         &missing, &missing, &missing, &ph, &rho, &one, &n14);
-    check("PRO.TOWER.PRICE book C under PH 0.7 (aggregate)",
+    check("PRO.PRC.TOWER.PRICE book C under PH 0.7 (aggregate)",
           (tp->xltype & 0xFFF) == xltypeMulti && tp->val.array.rows == 4 && tp->val.array.columns == 8 &&
               fabs(tp->val.array.lparray[12].val.num / 297.44318995353353 - 1) < 2e-8 &&
               fabs(tp->val.array.lparray[20].val.num / 139.35875318947413 - 1) < 2e-8);
@@ -583,13 +594,13 @@ int main(int argc, char **argv) {
     XLOPER12 diag;
     diag.xltype = xltypeStr;
     diag.val.str = diag_s;
-    XLOPER12 *bd = ((Fn10)GetProcAddress(xll, "pro_bayes_odp"))(&tri, &diag, &missing, &missing, &missing,
+    XLOPER12 *bd = ((Fn10)GetProcAddress(xll, "pro_res_bayes_odp"))(&tri, &diag, &missing, &missing, &missing,
                                                                  &missing, &missing, &missing, &missing, &missing);
     int bd_ok = (bd->xltype & 0xFFF) == xltypeMulti && bd->val.array.columns == 2 &&
                 (bd->val.array.lparray[1].xltype & 0xFFF) == xltypeNum;
     double rhat = bd_ok ? bd->val.array.lparray[1].val.num : 99;
-    printf("PRO.BAYES.ODP(RAA, \"diagnostics\"): max R-hat %.4f\n", rhat);
-    check("PRO.BAYES.ODP samples RAA with R-hat under 1.01", bd_ok && rhat < 1.01);
+    printf("PRO.RES.BAYES.ODP(RAA, \"diagnostics\"): max R-hat %.4f\n", rhat);
+    check("PRO.RES.BAYES.ODP samples RAA with R-hat under 1.01", bd_ok && rhat < 1.01);
     free12(bd);
 
     /* The Bayesian BF on RAA with a flat premium of 40,000 and an a priori
@@ -605,14 +616,14 @@ int main(int argc, char **argv) {
     bf_prem.val.array.columns = 1;
     bf_lr.xltype = xltypeNum;
     bf_lr.val.num = 0.6;
-    XLOPER12 *bb = ((Fn14)GetProcAddress(xll, "pro_bayes_bf"))(&tri, &bf_prem, &bf_lr, &missing, &diag, &missing,
+    XLOPER12 *bb = ((Fn14)GetProcAddress(xll, "pro_res_bayes_bf"))(&tri, &bf_prem, &bf_lr, &missing, &diag, &missing,
                                                                 &missing, &missing, &missing, &missing, &missing,
                                                                 &missing, &missing, &missing);
     int bb_ok = (bb->xltype & 0xFFF) == xltypeMulti && bb->val.array.columns == 2 &&
                 (bb->val.array.lparray[1].xltype & 0xFFF) == xltypeNum;
     double bf_rhat = bb_ok ? bb->val.array.lparray[1].val.num : 99;
-    printf("PRO.BAYES.BF(RAA, premium, 0.6, , \"diagnostics\"): max R-hat %.4f\n", bf_rhat);
-    check("PRO.BAYES.BF samples RAA with R-hat under 1.01", bb_ok && bf_rhat < 1.01);
+    printf("PRO.RES.BAYES.BF(RAA, premium, 0.6, , \"diagnostics\"): max R-hat %.4f\n", bf_rhat);
+    check("PRO.RES.BAYES.BF samples RAA with R-hat under 1.01", bb_ok && bf_rhat < 1.01);
     free12(bb);
 
     /* A lognormal fitted to a column of losses: meanlog is the mean of the
@@ -689,8 +700,8 @@ int main(int argc, char **argv) {
     py_t.xltype = py_r.xltype = xltypeNum;
     py_t.val.num = 1;
     py_r.val.num = 0.1;
-    XLOPER12 *ps = ((Fn5)GetProcAddress(xll, "pro_payout_stats"))(&py_t, &py_t, &py_r, &missing, &missing);
-    check("PRO.PAYOUT.STATS one payment after a year at 10% is 1 / 1.1",
+    XLOPER12 *ps = ((Fn5)GetProcAddress(xll, "pro_prc_payout_stats"))(&py_t, &py_t, &py_r, &missing, &missing);
+    check("PRO.PRC.PAYOUT.STATS one payment after a year at 10% is 1 / 1.1",
           (ps->xltype & 0xFFF) == xltypeMulti && ps->val.array.rows == 3 &&
               fabs(ps->val.array.lparray[1].val.num - 1 / 1.1) < 1e-15);
     free12(ps);
@@ -703,9 +714,9 @@ int main(int argc, char **argv) {
     q_r.val.num = 87;
     q_x.val.num = 0.03;
     q_b.val.num = 0.10;
-    XLOPER12 *qt = ((Fn8)GetProcAddress(xll, "pro_quote"))(&q_e, &q_r, &missing, &q_x, &q_b, &missing, &missing,
+    XLOPER12 *qt = ((Fn8)GetProcAddress(xll, "pro_prc_quote"))(&q_e, &q_r, &missing, &q_x, &q_b, &missing, &missing,
                                                            &missing);
-    check("PRO.QUOTE grosses a risk premium of 87 up to 100",
+    check("PRO.PRC.QUOTE grosses a risk premium of 87 up to 100",
           (qt->xltype & 0xFFF) == xltypeMulti && qt->val.array.columns == 2 &&
               fabs(qt->val.array.lparray[3].val.num - 100) < 1e-12);
     free12(qt);
@@ -718,8 +729,8 @@ int main(int argc, char **argv) {
     d_p.val.num = 0.5;
     d_f.xltype = xltypeStr;
     d_f.val.str = phd_s;
-    XLOPER12 *dg = ((Fn4)GetProcAddress(xll, "pro_distortion"))(&d_s, &d_f, &d_p, &missing);
-    check("PRO.DISTORTION(0.25, \"ph\", 0.5) is 0.5",
+    XLOPER12 *dg = ((Fn4)GetProcAddress(xll, "pro_cap_distortion"))(&d_s, &d_f, &d_p, &missing);
+    check("PRO.CAP.DISTORTION(0.25, \"ph\", 0.5) is 0.5",
           (dg->xltype & 0xFFF) == xltypeNum && fabs(dg->val.num - 0.5) < 1e-15);
     free12(dg);
 
@@ -740,8 +751,8 @@ int main(int argc, char **argv) {
     tm_p.val.num = 100;
     tm_s.val.num = 0.5;
     tm_a.val.num = 0.2;
-    XLOPER12 *pct = ((Fn5)GetProcAddress(xll, "pro_profit_commission_term"))(&tm_row, &tm_p, &tm_s, &tm_a, &missing);
-    check("PRO.PROFIT.COMMISSION.TERM carries a deficit into year 3",
+    XLOPER12 *pct = ((Fn5)GetProcAddress(xll, "pro_prc_profit_commission_term"))(&tm_row, &tm_p, &tm_s, &tm_a, &missing);
+    check("PRO.PRC.PROFIT.COMMISSION.TERM carries a deficit into year 3",
           (pct->xltype & 0xFFF) == xltypeMulti && pct->val.array.columns == 3 &&
               fabs(pct->val.array.lparray[2].val.num - 10) < 1e-12);
     free12(pct);
@@ -761,8 +772,8 @@ int main(int argc, char **argv) {
     cu_f.val.str = gau_s;
     cu_r.xltype = xltypeNum;
     cu_r.val.num = 0.5;
-    XLOPER12 *cc = ((Fn4)GetProcAddress(xll, "pro_copula_cdf"))(&cu_row, &cu_f, &cu_r, &missing);
-    check("PRO.COPULA.CDF Gaussian at (1/2, 1/2), rho 1/2, is 1/3",
+    XLOPER12 *cc = ((Fn4)GetProcAddress(xll, "pro_cap_copula_cdf"))(&cu_row, &cu_f, &cu_r, &missing);
+    check("PRO.CAP.COPULA.CDF Gaussian at (1/2, 1/2), rho 1/2, is 1/3",
           (cc->xltype & 0xFFF) == xltypeNum && fabs(cc->val.num - 1.0 / 3.0) < 1e-15);
     free12(cc);
 
@@ -774,12 +785,12 @@ int main(int argc, char **argv) {
     pc_p.val.num = 100;
     pc_s.val.num = 0.25;
     pc_a.val.num = 0.1;
-    XLOPER12 *pcm = ((Fn4)GetProcAddress(xll, "pro_profit_commission"))(&pc_x, &pc_p, &pc_s, &pc_a);
-    check("PRO.PROFIT.COMMISSION(50, 100, 0.25, 0.1) is 10",
+    XLOPER12 *pcm = ((Fn4)GetProcAddress(xll, "pro_prc_profit_commission"))(&pc_x, &pc_p, &pc_s, &pc_a);
+    check("PRO.PRC.PROFIT.COMMISSION(50, 100, 0.25, 0.1) is 10",
           (pcm->xltype & 0xFFF) == xltypeNum && fabs(pcm->val.num - 10) < 1e-12);
     free12(pcm);
 
-    /* A latest diagonal (PRO.DIAG.CL): accident years 2019 to 2024 at 72
+    /* A latest diagonal (PRO.RES.DIAG.CL): accident years 2019 to 2024 at 72
      * down to 12 months, factors to ultimate at 12 to 72 months; the 2024
      * ultimate is 150 x 12/7 (validation/tests/reserving_latest_diagonal.rs). */
     static const double dg_latest[6] = {980, 860, 700, 520, 400, 150};
@@ -803,19 +814,19 @@ int main(int argc, char **argv) {
     static wchar_t cdf_s[] = L"\x03" L"cdf";
     dg_kind.xltype = xltypeStr;
     dg_kind.val.str = cdf_s;
-    XLOPER12 *dgl_fit = ((Fn11)GetProcAddress(xll, "pro_diag_cl"))(&dg_origins, &dg_ages, &dg_lat, &dg_pat, &missing,
+    XLOPER12 *dgl_fit = ((Fn11)GetProcAddress(xll, "pro_res_diag_cl"))(&dg_origins, &dg_ages, &dg_lat, &dg_pat, &missing,
                                                                 &dg_kind, &missing, &missing, &missing, &missing,
                                                                 &missing);
-    print_result("PRO.DIAG.CL(years, ages, latest, cdf pattern,, \"cdf\")", dgl_fit);
-    check("PRO.DIAG.CL is 8 x 6", (dgl_fit->xltype & 0xFFF) == xltypeMulti && dgl_fit->val.array.rows == 8 &&
+    print_result("PRO.RES.DIAG.CL(years, ages, latest, cdf pattern,, \"cdf\")", dgl_fit);
+    check("PRO.RES.DIAG.CL is 8 x 6", (dgl_fit->xltype & 0xFFF) == xltypeMulti && dgl_fit->val.array.rows == 8 &&
                                       dgl_fit->val.array.columns == 6);
-    check("PRO.DIAG.CL 2024 ultimate 150 x 12/7",
+    check("PRO.RES.DIAG.CL 2024 ultimate 150 x 12/7",
           fabs(dgl_fit->val.array.lparray[6 * 6 + 4].val.num - 1800.0 / 7.0) < 1e-9);
-    check("PRO.DIAG.CL total ultimate 3981.342857",
+    check("PRO.RES.DIAG.CL total ultimate 3981.342857",
           fabs(dgl_fit->val.array.lparray[7 * 6 + 4].val.num - 3981.342857142857) < 1e-9);
     free12(dgl_fit);
 
-    /* A Poisson GLM on a six-row table (PRO.GLM): claims on age and region.
+    /* A Poisson GLM on a six-row table (PRO.PRC.GLM): claims on age and region.
      * With a log link and an intercept the fitted means add up to the
      * observed claims, 9. */
     static const double gl_age[6] = {20, 30, 40, 50, 60, 70}, gl_claims[6] = {3, 2, 2, 1, 1, 0};
@@ -845,29 +856,29 @@ int main(int argc, char **argv) {
     gl_terms.val.array.rows = 1;
     gl_terms.val.array.columns = 2;
     gl_resp = gl_cells[2];
-    XLOPER12 *gl_fit = ((Fn8)GetProcAddress(xll, "pro_glm"))(&gl_data, &gl_resp, &gl_terms, &missing, &missing,
+    XLOPER12 *gl_fit = ((Fn8)GetProcAddress(xll, "pro_prc_glm"))(&gl_data, &gl_resp, &gl_terms, &missing, &missing,
                                                              &missing, &missing, &missing);
-    print_result("PRO.GLM(table, \"claims\", {\"age\",\"region\"})", gl_fit);
-    check("PRO.GLM has seven columns", (gl_fit->xltype & 0xFFF) == xltypeMulti && gl_fit->val.array.columns == 7);
+    print_result("PRO.PRC.GLM(table, \"claims\", {\"age\",\"region\"})", gl_fit);
+    check("PRO.PRC.GLM has seven columns", (gl_fit->xltype & 0xFFF) == xltypeMulti && gl_fit->val.array.columns == 7);
     free12(gl_fit);
-    XLOPER12 *gl_pred = ((Fn9)GetProcAddress(xll, "pro_glm_predict"))(&gl_data, &gl_resp, &gl_terms, &gl_data,
+    XLOPER12 *gl_pred = ((Fn9)GetProcAddress(xll, "pro_prc_glm_predict"))(&gl_data, &gl_resp, &gl_terms, &gl_data,
                                                                       &missing, &missing, &missing, &missing,
                                                                       &missing);
     double gl_sum = 0;
     if ((gl_pred->xltype & 0xFFF) == xltypeMulti)
         for (int r = 0; r < gl_pred->val.array.rows; r++) gl_sum += gl_pred->val.array.lparray[r].val.num;
-    check("PRO.GLM.PREDICT means add up to the claims", fabs(gl_sum - 9) < 1e-8);
+    check("PRO.PRC.GLM.PREDICT means add up to the claims", fabs(gl_sum - 9) < 1e-8);
     free12(gl_pred);
-    XLOPER12 *gl_rel = ((Fn9)GetProcAddress(xll, "pro_glm_relativities"))(&gl_data, &gl_resp, &gl_terms, &missing,
+    XLOPER12 *gl_rel = ((Fn9)GetProcAddress(xll, "pro_prc_glm_relativities"))(&gl_data, &gl_resp, &gl_terms, &missing,
                                                                           &missing, &missing, &missing, &missing,
                                                                           &missing);
-    print_result("PRO.GLM.RELATIVITIES(table, \"claims\", {\"age\",\"region\"})", gl_rel);
-    check("PRO.GLM.RELATIVITIES base level at 1", (gl_rel->xltype & 0xFFF) == xltypeMulti &&
+    print_result("PRO.PRC.GLM.RELATIVITIES(table, \"claims\", {\"age\",\"region\"})", gl_rel);
+    check("PRO.PRC.GLM.RELATIVITIES base level at 1", (gl_rel->xltype & 0xFFF) == xltypeMulti &&
                                                       gl_rel->val.array.rows == 4 &&
                                                       gl_rel->val.array.lparray[2 * 5 + 2].val.num == 1);
     free12(gl_rel);
 
-    /* A three-month deal through PRO.CASHFLOW: premium 100 at once, earned
+    /* A three-month deal through PRO.CAP.CASHFLOW: premium 100 at once, earned
      * and paid evenly, collateral the reserve, commuting at the
      * outstanding loss; at a loss ratio of 60% the investor's flows are
      * 80, -20, -20 (prospicio_pricing::cashflow's example). */
@@ -904,17 +915,17 @@ int main(int argc, char **argv) {
     cf_u.val.num = 0.6;
     cf_out.xltype = xltypeStr;
     cf_out.val.str = s_flows;
-    XLOPER12 *cf_run = ((Fn8)GetProcAddress(xll, "pro_cashflow"))(&cf_u, &cf_terms, &cf_pat, &cf_req, &missing,
+    XLOPER12 *cf_run = ((Fn8)GetProcAddress(xll, "pro_cap_cashflow"))(&cf_u, &cf_terms, &cf_pat, &cf_req, &missing,
                                                                   &cf_out, &missing, &cf_com);
-    print_result("PRO.CASHFLOW(0.6, terms, patterns, reserve,, \"flows\",, outstanding)", cf_run);
-    check("PRO.CASHFLOW flows 80, -20, -20",
+    print_result("PRO.CAP.CASHFLOW(0.6, terms, patterns, reserve,, \"flows\",, outstanding)", cf_run);
+    check("PRO.CAP.CASHFLOW flows 80, -20, -20",
           (cf_run->xltype & 0xFFF) == xltypeMulti && cf_run->val.array.rows == 2 &&
               fabs(cf_run->val.array.lparray[3].val.num - 80) < 1e-9 &&
               fabs(cf_run->val.array.lparray[4].val.num + 20) < 1e-9 &&
               fabs(cf_run->val.array.lparray[5].val.num + 20) < 1e-9);
     free12(cf_run);
 
-    /* The P&L ledger (PRO.PNL): annual losses 2 to 8, premium 10, a 10%
+    /* The P&L ledger (PRO.CAP.PNL): annual losses 2 to 8, premium 10, a 10%
      * premium expense and an aggregate cover of 3 xs 5 bought for 1 with a
      * 10% commission; the net result's mean is 4.54 (the crate's example). */
     static const double pl_x[6] = {2, 3, 4, 5, 6, 8}, pl_p[6] = {0.25, 0.3, 0.09, 0.2, 0.12, 0.04};
@@ -951,14 +962,14 @@ int main(int argc, char **argv) {
     pl_face.xltype = pl_out.xltype = xltypeStr;
     pl_face.val.str = s_consol;
     pl_out.val.str = s_card;
-    XLOPER12 *pl_run = ((Fn9)GetProcAddress(xll, "pro_pnl"))(&pl_vals, &pl_probs, &pl_prem, &pl_exp, &pl_cov,
+    XLOPER12 *pl_run = ((Fn9)GetProcAddress(xll, "pro_cap_pnl"))(&pl_vals, &pl_probs, &pl_prem, &pl_exp, &pl_cov,
                                                              &pl_face, &pl_out, &missing, &missing);
-    print_result("PRO.PNL(losses, probs, 10, 10% of premium, 3 xs 5, \"consolidated\", \"card\")", pl_run);
-    check("PRO.PNL net result mean 4.54", (pl_run->xltype & 0xFFF) == xltypeMulti && pl_run->val.array.rows == 4 &&
+    print_result("PRO.CAP.PNL(losses, probs, 10, 10% of premium, 3 xs 5, \"consolidated\", \"card\")", pl_run);
+    check("PRO.CAP.PNL net result mean 4.54", (pl_run->xltype & 0xFFF) == xltypeMulti && pl_run->val.array.rows == 4 &&
                                               fabs(pl_run->val.array.lparray[3 * 9 + 2].val.num - 4.54) < 1e-12);
     free12(pl_run);
 
-    /* PRO.YLT.STATS: years 1 and 3 of a 4-year table, 5 then 7 and 2:
+    /* PRO.CAP.YLT.STATS: years 1 and 3 of a 4-year table, 5 then 7 and 2:
      * the average annual loss 14 / 4. */
     static XLOPER12 yl_yc[3], yl_lc[3], yl_years, yl_losses, yl_n, yl_p;
     static const double yl_y[3] = {1, 3, 3}, yl_l[3] = {5, 7, 2};
@@ -975,14 +986,14 @@ int main(int argc, char **argv) {
     yl_n.xltype = yl_p.xltype = xltypeNum;
     yl_n.val.num = 4;
     yl_p.val.num = 0.5;
-    XLOPER12 *yl_run = ((Fn8)GetProcAddress(xll, "pro_ylt_stats"))(&yl_years, &yl_losses, &yl_n, &yl_p, &missing,
+    XLOPER12 *yl_run = ((Fn8)GetProcAddress(xll, "pro_cap_ylt_stats"))(&yl_years, &yl_losses, &yl_n, &yl_p, &missing,
                                                                    &missing, &missing, &missing);
-    print_result("PRO.YLT.STATS({1;3;3}, {5;7;2}, 4, 0.5)", yl_run);
-    check("PRO.YLT.STATS mean 3.5", (yl_run->xltype & 0xFFF) == xltypeMulti && yl_run->val.array.columns == 2 &&
+    print_result("PRO.CAP.YLT.STATS({1;3;3}, {5;7;2}, 4, 0.5)", yl_run);
+    check("PRO.CAP.YLT.STATS mean 3.5", (yl_run->xltype & 0xFFF) == xltypeMulti && yl_run->val.array.columns == 2 &&
                                         yl_run->val.array.lparray[5 * 2 + 1].val.num == 3.5);
     free12(yl_run);
 
-    /* PRO.ELT.OEP: one event a year in two, losing 100, above 50 with
+    /* PRO.CAP.ELT.OEP: one event a year in two, losing 100, above 50 with
      * probability 1 - exp(-0.5). */
     static XLOPER12 el_rate, el_mean, el_exp, el_at;
     el_rate.xltype = el_mean.xltype = el_exp.xltype = el_at.xltype = xltypeNum;
@@ -990,14 +1001,14 @@ int main(int argc, char **argv) {
     el_mean.val.num = 100;
     el_exp.val.num = 500;
     el_at.val.num = 50;
-    XLOPER12 *el_run = ((Fn7)GetProcAddress(xll, "pro_elt_oep"))(&el_rate, &el_mean, &missing, &missing, &el_exp,
+    XLOPER12 *el_run = ((Fn7)GetProcAddress(xll, "pro_cap_elt_oep"))(&el_rate, &el_mean, &missing, &missing, &el_exp,
                                                                  &missing, &el_at);
-    print_result("PRO.ELT.OEP(0.5, 100, , , 500, , 50)", el_run);
-    check("PRO.ELT.OEP 1 - exp(-0.5)", (el_run->xltype & 0xFFF) == xltypeMulti && el_run->val.array.rows == 2 &&
+    print_result("PRO.CAP.ELT.OEP(0.5, 100, , , 500, , 50)", el_run);
+    check("PRO.CAP.ELT.OEP 1 - exp(-0.5)", (el_run->xltype & 0xFFF) == xltypeMulti && el_run->val.array.rows == 2 &&
                                            fabs(el_run->val.array.lparray[1 * 4 + 2].val.num - 0.3934693402873666) < 1e-15);
     free12(el_run);
 
-    /* PRO.ALLOCATE: two lines over four simulations, totals 3, 5, 7, 9;
+    /* PRO.CAP.ALLOCATE: two lines over four simulations, totals 3, 5, 7, 9;
      * TVaR 50% of 8 by Euler gives the first line 2.5. */
     static XLOPER12 al_c[8], al_draws, al_fam, al_par;
     static const double al_x[8] = {1, 2, 4, 1, 2, 5, 3, 6};
@@ -1014,9 +1025,9 @@ int main(int argc, char **argv) {
     al_fam.val.str = s_tvar;
     al_par.xltype = xltypeNum;
     al_par.val.num = 0.5;
-    XLOPER12 *al_run = ((Fn5)GetProcAddress(xll, "pro_allocate"))(&al_draws, &al_fam, &al_par, &missing, &missing);
-    print_result("PRO.ALLOCATE({1,2;4,1;2,5;3,6}, \"tvar\", 0.5)", al_run);
-    check("PRO.ALLOCATE Euler TVaR 50% gives line 1 2.5", (al_run->xltype & 0xFFF) == xltypeMulti &&
+    XLOPER12 *al_run = ((Fn5)GetProcAddress(xll, "pro_cap_allocate"))(&al_draws, &al_fam, &al_par, &missing, &missing);
+    print_result("PRO.CAP.ALLOCATE({1,2;4,1;2,5;3,6}, \"tvar\", 0.5)", al_run);
+    check("PRO.CAP.ALLOCATE Euler TVaR 50% gives line 1 2.5", (al_run->xltype & 0xFFF) == xltypeMulti &&
                                                            al_run->val.array.rows == 5 &&
                                                            al_run->val.array.lparray[1 * 5 + 2].val.num == 2.5);
     free12(al_run);

@@ -1,4 +1,4 @@
-//! `PRO.BAYES.ODP`, the Bayesian ODP chain ladder sampled with NUTS,
+//! `PRO.RES.BAYES.ODP`, the Bayesian ODP chain ladder sampled with NUTS,
 //! reached through the catalogue as Excel reaches it:
 //!
 //! * at its defaults, against the same model in CmdStan 2.39
@@ -23,11 +23,11 @@ use prospicio_xll::call;
 use prospicio_xll::reserving::triangle;
 use prospicio_xll::sheet::{Grid, Value};
 
-/// `PRO.BAYES.ODP(RAA, output, 500, 4, 7, 4000)`: small enough for a
+/// `PRO.RES.BAYES.ODP(RAA, output, 500, 4, 7, 4000)`: small enough for a
 /// debug build.
 fn small(output: &str) -> Grid {
     call(
-        "pro_bayes_odp",
+        "pro_res_bayes_odp",
         vec![raa(), t(output), n(500.0), n(4.0), n(7.0), n(4000.0)],
     )
 }
@@ -79,7 +79,7 @@ fn matches_stan_at_the_defaults() {
     let mut checked = 0;
     for (dataset, tri, first) in [("raa", raa(), 1981), ("genins", genins().0, 2001)] {
         let ex = call(
-            "pro_bayes_odp",
+            "pro_res_bayes_odp",
             vec![
                 tri.clone(),
                 Grid::missing(),
@@ -90,8 +90,8 @@ fn matches_stan_at_the_defaults() {
                 ps.clone(),
             ],
         );
-        let params = call("pro_bayes_odp", vec![tri.clone(), t("params")]);
-        let diag = call("pro_bayes_odp", vec![tri, t("diagnostics")]);
+        let params = call("pro_res_bayes_odp", vec![tri.clone(), t("params")]);
+        let diag = call("pro_res_bayes_odp", vec![tri, t("diagnostics")]);
         assert!(
             num(diag.get(0, 1)) < 1.01,
             "{dataset} R-hat {:?}",
@@ -158,7 +158,7 @@ fn the_cache_returns_the_refit_and_a_new_seed_a_new_fit() {
     let b = small("reserves");
     assert_eq!(a, b);
     let c = call(
-        "pro_bayes_odp",
+        "pro_res_bayes_odp",
         vec![raa(), Grid::missing(), n(500.0), n(4.0), n(8.0), n(4000.0)],
     );
     assert_ne!(num(a.get(11, 2)), num(c.get(11, 2)));
@@ -169,7 +169,7 @@ fn the_cache_returns_the_refit_and_a_new_seed_a_new_fit() {
 
 #[test]
 fn errors_come_back_as_text() {
-    let e = |a: Vec<Grid>| text(&call("pro_bayes_odp", a)).to_owned();
+    let e = |a: Vec<Grid>| text(&call("pro_res_bayes_odp", a)).to_owned();
     assert!(e(vec![raa(), t("trace")]).contains("output must be"));
     assert!(e(vec![raa(), Grid::missing(), n(0.0)]).contains("draws"));
     assert!(e(vec![raa(), Grid::missing(), Grid::missing(), n(9.0)]).contains("chains"));

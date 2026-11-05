@@ -1,4 +1,4 @@
-//! `PRO.QUOTE`, reached through the catalogue as Excel reaches it: the
+//! `PRO.PRC.QUOTE`, reached through the catalogue as Excel reaches it: the
 //! technical premium of `docs/guides/reinsurance-price.md`'s middle layer
 //! (risk premium 1.24 on an expected loss of 0.586 and a limit of 5, 3%
 //! expenses and 10% brokerage) at the guide's printed ratios, the build-up
@@ -23,7 +23,7 @@ fn at(out: &Grid, label: &str, column: usize) -> f64 {
 
 fn guide(quoted: Grid) -> Grid {
     call(
-        "pro_quote",
+        "pro_prc_quote",
         vec![
             n(0.586),
             n(1.24),
@@ -82,7 +82,7 @@ fn quoted_premiums_give_their_returns() {
 #[test]
 fn a_fixed_expense_and_no_assets_or_limit() {
     let out = call(
-        "pro_quote",
+        "pro_prc_quote",
         vec![
             n(100.0),
             n(120.0),
@@ -101,16 +101,16 @@ fn a_fixed_expense_and_no_assets_or_limit() {
 
 #[test]
 fn bad_inputs_are_named() {
-    let e = call("pro_quote", vec![n(1.0), n(0.5)]);
+    let e = call("pro_prc_quote", vec![n(1.0), n(0.5)]);
     assert!(
         text(&e).contains("at least the expected loss"),
         "{}",
         text(&e)
     );
-    let e = call("pro_quote", vec![n(1.0), n(2.0), n(1.5)]);
+    let e = call("pro_prc_quote", vec![n(1.0), n(2.0), n(1.5)]);
     assert!(text(&e).contains("assets must exceed"), "{}", text(&e));
     let e = call(
-        "pro_quote",
+        "pro_prc_quote",
         vec![n(1.0), n(2.0), Grid::missing(), n(0.5), n(0.5)],
     );
     assert!(text(&e).contains("sum below 1"), "{}", text(&e));

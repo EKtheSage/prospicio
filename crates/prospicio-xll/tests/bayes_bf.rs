@@ -1,12 +1,12 @@
-//! `PRO.BAYES.BF`, the Bayesian Bornhuetter-Ferguson with a normalised
+//! `PRO.RES.BAYES.BF`, the Bayesian Bornhuetter-Ferguson with a normalised
 //! pattern and a gamma prior on each origin's ultimate, sampled with NUTS,
 //! reached through the catalogue as Excel reaches it:
 //!
 //! * every view is the library's `BayesBfNormalised` fit with the same
 //!   settings, exactly, since the fit is reproducible by seed;
-//! * a flat prior (`cv` `"flat"`) gives `PRO.BAYES.ODP`'s reserves within
+//! * a flat prior (`cv` `"flat"`) gives `PRO.RES.BAYES.ODP`'s reserves within
 //!   Monte Carlo error, the Bayesian chain ladder;
-//! * a tight prior at the chain ladder's ultimates gives `PRO.BF`'s
+//! * a tight prior at the chain ladder's ultimates gives `PRO.RES.BF`'s
 //!   classical reserve;
 //! * the cache returns the fit a refit gives, and errors come back as text.
 
@@ -23,7 +23,7 @@ use prospicio_xll::sheet::{Grid, Value};
 /// GenIns has ten origins: the exhibit's total is on row 11.
 const TOTAL: usize = 11;
 
-/// `PRO.BAYES.BF(GenIns, premium, apriori, cv, output, draws, 4, seed,
+/// `PRO.RES.BAYES.BF(GenIns, premium, apriori, cv, output, draws, 4, seed,
 /// sims, , prior_sd, process)`, blanks where `None`.
 #[allow(clippy::too_many_arguments)]
 fn bf(
@@ -39,7 +39,7 @@ fn bf(
 ) -> Grid {
     let (tri, _) = genins();
     call(
-        "pro_bayes_bf",
+        "pro_res_bayes_bf",
         vec![
             tri,
             exposure,
@@ -141,7 +141,7 @@ fn views_are_the_library_fit() {
 /// The two limits of `reserving-bayes.md` decision 23, on the sheet.
 #[test]
 fn a_flat_prior_is_the_bayesian_chain_ladder_and_a_tight_one_is_classical_bf() {
-    // Flat: PRO.BAYES.ODP's reserves within Monte Carlo error, as the
+    // Flat: PRO.RES.BAYES.ODP's reserves within Monte Carlo error, as the
     // library's own test (mean within 0.1 SD, SD within 10%).
     let flat = bf(
         genins().1,
@@ -155,7 +155,7 @@ fn a_flat_prior_is_the_bayesian_chain_ladder_and_a_tight_one_is_classical_bf() {
         None,
     );
     let odp = call(
-        "pro_bayes_odp",
+        "pro_res_bayes_odp",
         vec![
             genins().0,
             Grid::missing(),
@@ -191,7 +191,7 @@ fn a_flat_prior_is_the_bayesian_chain_ladder_and_a_tight_one_is_classical_bf() {
             .map(|&u| vec![Value::Number(u)])
             .collect(),
     );
-    let classical = call("pro_bf", vec![genins().0, at_cl.clone(), n(1.0)]);
+    let classical = call("pro_res_bf", vec![genins().0, at_cl.clone(), n(1.0)]);
     let classical = num(classical.get(TOTAL, 6));
     assert!((classical / cl.total_reserve() - 1.0).abs() < 1e-9);
     let tight = bf(
@@ -236,7 +236,7 @@ fn the_cache_returns_the_refit_and_a_new_seed_a_new_fit() {
 #[test]
 fn errors_come_back_as_text() {
     let (tri, premium) = genins();
-    let e = |a: Vec<Grid>| text(&call("pro_bayes_bf", a)).to_owned();
+    let e = |a: Vec<Grid>| text(&call("pro_res_bayes_bf", a)).to_owned();
     let base = || vec![tri.clone(), premium.clone(), n(0.65)];
     let with = |i: usize, g: Grid| {
         let mut a = base();

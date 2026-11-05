@@ -9,7 +9,7 @@ use crate::pricing::{Result, scalar};
 use crate::sheet::{Grid, Value, position};
 
 /// The full credibility standard in expected claims for probability `p`
-/// of lying within `k` of the mean: `PRO.CRED.STANDARD(p, k, [kind],
+/// of lying within `k` of the mean: `PRO.PRC.CRED.STANDARD(p, k, [kind],
 /// [cv])`, `kind` `"frequency"` (default), `"severity"` or
 /// `"pure_premium"`, the last two with the severity's `cv`. `p` and `k`
 /// broadcast, so a column of `p` against a row of `k` is the textbook
@@ -57,7 +57,7 @@ enum Kind {
 }
 
 /// Partial credibility by the square root rule, `min(1, sqrt(n /
-/// standard))`: `PRO.CRED.Z(n, standard)`, broadcast.
+/// standard))`: `PRO.PRC.CRED.Z(n, standard)`, broadcast.
 pub fn z(args: &[Grid]) -> Result<Grid> {
     broadcast(
         &[&args[0], &args[1]],
@@ -126,7 +126,7 @@ fn fit(args: &[Grid]) -> Result<prospicio_pricing::credibility::BuhlmannStraubFi
 
 /// The Bühlmann–Straub model's exhibit, one row per group (a row of
 /// `ratios`): its weight, weighted mean, credibility factor and
-/// credibility premium: `PRO.BUHLMANN(ratios, [weights], [estimator],
+/// credibility premium: `PRO.PRC.BUHLMANN(ratios, [weights], [estimator],
 /// [groups])`. Without weights it is Bühlmann's model.
 pub fn buhlmann(args: &[Grid]) -> Result<Grid> {
     let f = fit(args)?;
@@ -161,7 +161,7 @@ pub fn buhlmann(args: &[Grid]) -> Result<Grid> {
 /// The Bühlmann–Straub structure parameters as a two-column table: the
 /// collective mean, the between and within variances, `k = s² / a` (blank
 /// when `a <= 0`) and the iterations:
-/// `PRO.BUHLMANN.PARAMS(ratios, [weights], [estimator])`.
+/// `PRO.PRC.BUHLMANN.PARAMS(ratios, [weights], [estimator])`.
 pub fn buhlmann_params(args: &[Grid]) -> Result<Grid> {
     let f = fit(args)?;
     Ok(Grid::from_rows(vec![

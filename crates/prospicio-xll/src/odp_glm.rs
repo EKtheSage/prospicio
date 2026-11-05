@@ -39,7 +39,7 @@ fn latest(grid: &Grid) -> Vec<f64> {
         .collect()
 }
 
-/// `PRO.ODP.GLM(triangle, [origins])`: per origin and in total, the
+/// `PRO.RES.ODP.GLM(triangle, [origins])`: per origin and in total, the
 /// latest value, ultimate, reserve (the chain ladder's), process and
 /// parameter standard errors, RMSEP and CV, Taylor and McGuire's Table 5-4.
 pub fn summary(args: &[Grid]) -> Result<Grid> {
@@ -84,7 +84,7 @@ pub fn summary(args: &[Grid]) -> Result<Grid> {
     Ok(Grid::from_rows(rows))
 }
 
-/// `PRO.ODP.GLM.PARAMS(triangle, [origins])`: a row per coefficient (its
+/// `PRO.RES.ODP.GLM.PARAMS(triangle, [origins])`: a row per coefficient (its
 /// term, level, estimate and standard error), the intercept first, then
 /// the origins from the second and the development periods from the
 /// second (the first of each is the reference), then Pearson's dispersion.
@@ -149,7 +149,7 @@ pub fn params(args: &[Grid]) -> Result<Grid> {
     Ok(Grid::from_rows(rows))
 }
 
-/// `PRO.ODP.GLM.RESIDUALS(triangle, [by], [origins])`: with `by` blank or
+/// `PRO.RES.ODP.GLM.RESIDUALS(triangle, [by], [origins])`: with `by` blank or
 /// "cell", a row per observed increment, origin-major: origin, development
 /// and calendar period, actual, fitted, actual to fitted, Pearson and
 /// deviance residuals, leverage and the standardized deviance and Pearson

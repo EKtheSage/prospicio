@@ -1,4 +1,4 @@
-//! `PRO.MACK.BOOT` and `PRO.MACK.BOOT.SIMS` on RAA, reached through the
+//! `PRO.RES.MACK.BOOT` and `PRO.RES.MACK.BOOT.SIMS` on RAA, reached through the
 //! catalogue as Excel reaches them: the same draws as
 //! `prospicio_reserving::MackBootstrap`, and the reconciliation
 //! `validation/tests/reserving_mack_bootstrap.rs` makes: with centred
@@ -17,7 +17,7 @@ use prospicio_xll::sheet::Grid;
 
 fn boot(sims: f64, seed: f64, process: Grid) -> Grid {
     call(
-        "pro_mack_boot",
+        "pro_res_mack_boot",
         vec![
             raa(),
             n(sims),
@@ -82,7 +82,7 @@ fn sims_are_the_crates_draws_and_the_exhibits() {
     .fit(&triangle(&raa()).unwrap(), "values")
     .unwrap();
     let draws = call(
-        "pro_mack_boot_sims",
+        "pro_res_mack_boot_sims",
         vec![
             raa(),
             n(1_000.0),
@@ -113,7 +113,7 @@ fn options_and_errors() {
         assert_eq!(out.rows, 12, "{process}");
     }
     let tail = call(
-        "pro_mack_boot",
+        "pro_res_mack_boot",
         vec![
             raa(),
             n(500.0),

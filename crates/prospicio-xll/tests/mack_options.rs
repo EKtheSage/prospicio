@@ -46,7 +46,7 @@ fn none() -> Grid {
 fn mack_sigma_rule_matches_r() {
     let file = "reserving_chainladder_r.csv";
     let factors = call(
-        "pro_cl_factors",
+        "pro_res_cl_factors",
         vec![raa(), none(), none(), none(), none(), none(), t("mack")],
     );
     for (quantity, col) in [("sigma", 3), ("f_se", 4)] {
@@ -63,7 +63,7 @@ fn mack_sigma_rule_matches_r() {
     }
     let total = targets(file, "raa", "mack_sigma_mack", "total_standard_error")[0].1;
     let mack = call(
-        "pro_mack",
+        "pro_res_mack",
         vec![
             raa(),
             none(),
@@ -77,12 +77,12 @@ fn mack_sigma_rule_matches_r() {
     );
     assert!((num(mack.get(11, 6)) - total).abs() <= 1e-9 * total);
     // The default rule is log-linear, R's default.
-    let default = call("pro_mack", vec![raa()]);
+    let default = call("pro_res_mack", vec![raa()]);
     let log_linear = targets(file, "raa", "mack", "total_standard_error")[0].1;
     assert!((num(default.get(11, 6)) - log_linear).abs() <= 1e-9 * log_linear);
     assert!(
         text(&call(
-            "pro_mack",
+            "pro_res_mack",
             vec![
                 raa(),
                 none(),
@@ -121,7 +121,7 @@ fn total_ultimate(method: &str) -> f64 {
 
 fn cl(selected: Grid, kind: &str, weight: Grid) -> Grid {
     call(
-        "pro_cl",
+        "pro_res_cl",
         vec![raa(), none(), none(), none(), selected, t(kind), weight],
     )
 }
@@ -151,19 +151,22 @@ fn selected_factors_match_chainladder_python() {
 
     // The selection reaches every chain-ladder function and Mack.
     let row = selected_row("chain_ladder;style=ldf");
-    let ldf = call("pro_cl_ldf", vec![raa(), none(), none(), row.clone()]);
+    let ldf = call("pro_res_cl_ldf", vec![raa(), none(), none(), row.clone()]);
     assert_eq!(ldf.cells[0], row.cells[0]);
-    let mack = call("pro_mack", vec![raa(), none(), none(), none(), row.clone()]);
+    let mack = call(
+        "pro_res_mack",
+        vec![raa(), none(), none(), none(), row.clone()],
+    );
     assert!((num(mack.get(11, 2)) - total_ultimate("chain_ladder;style=ldf")).abs() < 1e-6);
 }
 
 #[test]
 fn a_partial_selection_keeps_the_other_estimates() {
-    let estimated = call("pro_cl_ldf", vec![raa()]);
+    let estimated = call("pro_res_cl_ldf", vec![raa()]);
     let mut cells = vec![Value::Empty; 10];
     cells[0] = Value::Number(3.5);
     let partial = call(
-        "pro_cl_ldf",
+        "pro_res_cl_ldf",
         vec![raa(), none(), none(), Grid::from_rows(vec![cells])],
     );
     assert_eq!(num(&partial.cells[0]), 3.5);

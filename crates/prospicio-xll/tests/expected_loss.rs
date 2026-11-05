@@ -1,5 +1,5 @@
-//! The expected-loss methods (`PRO.EL`, `PRO.BF`, `PRO.BENKTANDER`,
-//! `PRO.CAPECOD`) on GenIns with R ChainLadder's ClarkCapeCod premium,
+//! The expected-loss methods (`PRO.RES.EL`, `PRO.RES.BF`, `PRO.RES.BENKTANDER`,
+//! `PRO.RES.CAPECOD`) on GenIns with R ChainLadder's ClarkCapeCod premium,
 //! reached through the catalogue as Excel reaches them, against every
 //! total chainladder-python 0.10.1 gives in
 //! `validation/reference/reserving_expected_loss_python.csv`.
@@ -32,15 +32,15 @@ fn run(method: &str, s: &BTreeMap<String, String>) -> Grid {
     let none = Grid::missing;
     match method {
         "expected_loss" => call(
-            "pro_el",
+            "pro_res_el",
             vec![tri, premium, f("apriori"), average, none(), none()],
         ),
         "bornhuetter_ferguson" => call(
-            "pro_bf",
+            "pro_res_bf",
             vec![tri, premium, f("apriori"), average, none(), none()],
         ),
         "benktander" => call(
-            "pro_benktander",
+            "pro_res_benktander",
             vec![
                 tri,
                 premium,
@@ -52,7 +52,7 @@ fn run(method: &str, s: &BTreeMap<String, String>) -> Grid {
             ],
         ),
         "cape_cod" => call(
-            "pro_capecod",
+            "pro_res_capecod",
             vec![
                 tri,
                 premium,
@@ -97,7 +97,7 @@ fn totals_match_chainladder_python_on_genins() {
 fn exhibit_columns_and_errors() {
     let (tri, premium) = genins();
     let out = call(
-        "pro_bf",
+        "pro_res_bf",
         vec![
             tri.clone(),
             premium.clone(),
@@ -117,14 +117,14 @@ fn exhibit_columns_and_errors() {
     let none = Grid::missing;
     assert!(
         text(&call(
-            "pro_bf",
+            "pro_res_bf",
             vec![tri.clone(), short, n(0.75), none(), none(), none()]
         ))
         .contains("10 values")
     );
     assert!(
         text(&call(
-            "pro_bf",
+            "pro_res_bf",
             vec![tri.clone(), premium.clone(), none(), none(), none(), none()]
         ))
         .contains("apriori is required")
@@ -133,7 +133,7 @@ fn exhibit_columns_and_errors() {
     zero.cells[3] = Value::Number(0.0);
     assert!(
         text(&call(
-            "pro_el",
+            "pro_res_el",
             vec![tri, zero, n(0.5), none(), none(), none()]
         ))
         .contains("positive")

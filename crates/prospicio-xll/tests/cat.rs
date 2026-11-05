@@ -1,5 +1,5 @@
-//! Catastrophe model output on a sheet (`PRO.YLT.STATS`, `PRO.YLT.OEP`,
-//! `PRO.ELT.STATS`, `PRO.ELT.OEP`, `docs/design/xll.md` decision 44),
+//! Catastrophe model output on a sheet (`PRO.CAP.YLT.STATS`, `PRO.CAP.YLT.OEP`,
+//! `PRO.CAP.ELT.STATS`, `PRO.CAP.ELT.OEP`, `docs/design/xll.md` decision 44),
 //! reached through the catalogue as Excel reaches it:
 //!
 //! * Alder Mutual's year loss table and event loss table
@@ -98,7 +98,7 @@ fn printed(x: f64, printed: f64, decimals: i32) {
 fn ylt_stats_match_the_guide() {
     let (years, losses, _) = alder();
     let st = call(
-        "pro_ylt_stats",
+        "pro_cap_ylt_stats",
         vec![
             years.clone(),
             losses.clone(),
@@ -117,13 +117,13 @@ fn ylt_stats_match_the_guide() {
     assert!((get(&st, "CV") - get(&st, "SD") / get(&st, "Mean")).abs() < 1e-15);
 
     let linear = call(
-        "pro_ylt_stats",
+        "pro_cap_ylt_stats",
         vec![years.clone(), losses.clone(), none(), n(0.99), t("linear")],
     );
     printed(get(&linear, "VaR 99%"), 176.836, 3);
     printed(get(&linear, "TVaR 99%"), 246.942, 3);
     let kth = call(
-        "pro_ylt_stats",
+        "pro_cap_ylt_stats",
         vec![years, losses, none(), n(0.99), t("kth_largest")],
     );
     printed(get(&kth, "VaR 99%"), 177.979, 3);
@@ -135,7 +135,7 @@ fn ylt_exceedance_at_amounts_raw_and_grouped() {
     let (years, losses, times) = alder();
     let amounts = Grid::column(&[30.0, 70.0, 110.0]);
     let raw = call(
-        "pro_ylt_oep",
+        "pro_cap_ylt_oep",
         vec![years.clone(), losses.clone(), none(), amounts.clone()],
     );
     assert_eq!(raw.get(0, 1), &Value::from("OEP"));
@@ -148,7 +148,7 @@ fn ylt_exceedance_at_amounts_raw_and_grouped() {
         assert!((num(raw.get(r + 1, 3)) * num(raw.get(r + 1, 1)) - 1.0).abs() < 1e-12);
     }
     let grouped = call(
-        "pro_ylt_oep",
+        "pro_cap_ylt_oep",
         vec![
             years.clone(),
             losses.clone(),
@@ -166,7 +166,7 @@ fn ylt_exceedance_at_amounts_raw_and_grouped() {
         assert_eq!(grouped.get(r + 1, 2), raw.get(r + 1, 2));
     }
     let st = call(
-        "pro_ylt_stats",
+        "pro_cap_ylt_stats",
         vec![years, losses, none(), none(), none(), times, n(72.0)],
     );
     assert_eq!(get(&st, "Occurrences"), 4238.0);
@@ -178,7 +178,7 @@ fn ylt_pmls_by_return_period() {
     let (years, losses, times) = alder();
     let rp = Grid::column(&[10.0, 50.0, 100.0, 250.0]);
     let curve = call(
-        "pro_ylt_oep",
+        "pro_cap_ylt_oep",
         vec![
             years.clone(),
             losses.clone(),
@@ -207,17 +207,20 @@ fn ylt_pmls_by_return_period() {
     }
     // The 100-year aggregate TVaR is STATS' TVaR 99%.
     let st = call(
-        "pro_ylt_stats",
+        "pro_cap_ylt_stats",
         vec![years.clone(), losses.clone(), none(), n(0.99)],
     );
-    let plain = call("pro_ylt_oep", vec![years.clone(), losses.clone(), n(100.0)]);
+    let plain = call(
+        "pro_cap_ylt_oep",
+        vec![years.clone(), losses.clone(), n(100.0)],
+    );
     assert_eq!(num(plain.get(1, 5)), get(&st, "TVaR 99%"));
     // The defaults stop at the table's 2,000 years, so 2 to 1000 all stay.
-    let defaults = call("pro_ylt_oep", vec![years.clone(), losses.clone()]);
+    let defaults = call("pro_cap_ylt_oep", vec![years.clone(), losses.clone()]);
     assert_eq!(defaults.rows, 10);
     assert_eq!(num(defaults.get(9, 0)), 1000.0);
     let short = call(
-        "pro_ylt_oep",
+        "pro_cap_ylt_oep",
         vec![
             Grid::column(&[1.0, 3.0]),
             Grid::column(&[5.0, 7.0]),
@@ -234,7 +237,7 @@ fn ylt_pmls_by_return_period() {
 fn elt_matches_the_guide() {
     let [rates, means, sdi, sdc, exposures] = alder_elt();
     let st = call(
-        "pro_elt_stats",
+        "pro_cap_elt_stats",
         vec![
             rates.clone(),
             means.clone(),
@@ -249,7 +252,7 @@ fn elt_matches_the_guide() {
     let elt = vec![rates, means, sdi, sdc, exposures];
     let mut at = elt.clone();
     at.extend([none(), Grid::column(&[30.0, 70.0, 110.0])]);
-    let at = call("pro_elt_oep", at);
+    let at = call("pro_cap_elt_oep", at);
     for (r, p) in [0.1136, 0.0374, 0.0180].into_iter().enumerate() {
         printed(num(at.get(r + 1, 2)), p, 4);
         let f = num(at.get(r + 1, 1));
@@ -257,7 +260,7 @@ fn elt_matches_the_guide() {
     }
     let mut by = elt.clone();
     by.push(Grid::column(&[10.0, 50.0, 100.0, 250.0]));
-    let by = call("pro_elt_oep", by);
+    let by = call("pro_cap_elt_oep", by);
     for (r, pml) in [33.648, 103.432, 147.938, 199.470].into_iter().enumerate() {
         printed(num(by.get(r + 1, 2)), pml, 3);
         // The exceedance frequency at the PML gives the probability back.
@@ -274,7 +277,7 @@ fn elt_sd_agrees_with_simulated_years() {
     let sdc = [2000.0, 1000.0, 200.0, 0.0];
     let exposures = [60_000.0, 25_000.0, 8000.0, 2000.0];
     let st = call(
-        "pro_elt_stats",
+        "pro_cap_elt_stats",
         [&rates[..], &means, &sdi, &sdc, &exposures]
             .map(Grid::column)
             .to_vec(),
@@ -295,7 +298,7 @@ fn elt_sd_agrees_with_simulated_years() {
     assert_eq!(get(&st, "Largest exposure"), 60_000.0);
     // Without the standard deviations each event loses its mean.
     let point = call(
-        "pro_elt_stats",
+        "pro_cap_elt_stats",
         vec![
             Grid::column(&rates),
             Grid::column(&means),
@@ -316,7 +319,7 @@ fn small_tables_and_errors() {
     let losses = Grid::column(&[5.0, 7.0, 2.0]);
     let times = Grid::column(&[0.5, 0.2, 0.2 + 24.0 / 8760.0]);
     let st = call(
-        "pro_ylt_stats",
+        "pro_cap_ylt_stats",
         vec![years.clone(), losses.clone(), n(4.0), n(0.5)],
     );
     assert_eq!(get(&st, "Years"), 4.0);
@@ -324,7 +327,7 @@ fn small_tables_and_errors() {
     assert_eq!(get(&st, "Years with a loss"), 2.0);
     assert_eq!(get(&st, "Largest occurrence"), 7.0);
     let g = call(
-        "pro_ylt_stats",
+        "pro_cap_ylt_stats",
         vec![
             years.clone(),
             losses.clone(),
@@ -339,7 +342,7 @@ fn small_tables_and_errors() {
     assert_eq!(get(&g, "Largest occurrence"), 9.0);
     // Negative losses, as some files store them.
     let neg = call(
-        "pro_ylt_stats",
+        "pro_cap_ylt_stats",
         vec![
             years.clone(),
             Grid::column(&[-5.0, -7.0, -2.0]),
@@ -354,7 +357,7 @@ fn small_tables_and_errors() {
     assert_eq!(neg, st);
     // A blank row at the end of the range is skipped.
     let padded = call(
-        "pro_ylt_stats",
+        "pro_cap_ylt_stats",
         vec![
             Grid::from_rows(vec![
                 vec![v(1.0)],
@@ -381,17 +384,17 @@ fn small_tables_and_errors() {
     };
     error(
         vec![years.clone(), Grid::column(&[5.0, 7.0])],
-        "pro_ylt_stats",
+        "pro_cap_ylt_stats",
         "2 cells for 3 years",
     );
     error(
         vec![Grid::column(&[1.0, 0.0, 3.0]), losses.clone()],
-        "pro_ylt_stats",
+        "pro_cap_ylt_stats",
         "row 2",
     );
     error(
         vec![years.clone(), Grid::column(&[5.0, -7.0, 2.0])],
-        "pro_ylt_stats",
+        "pro_cap_ylt_stats",
         "not finite and non-negative",
     );
     error(
@@ -404,49 +407,49 @@ fn small_tables_and_errors() {
             none(),
             n(72.0),
         ],
-        "pro_ylt_stats",
+        "pro_cap_ylt_stats",
         "needs each loss's time",
     );
     error(
         vec![years.clone(), losses.clone(), n(2.0)],
-        "pro_ylt_stats",
+        "pro_cap_ylt_stats",
         "below the largest year",
     );
     error(
         vec![years.clone(), losses.clone(), none(), n(1.5)],
-        "pro_ylt_stats",
+        "pro_cap_ylt_stats",
         "probabilities must be in (0, 1)",
     );
     error(
         vec![years.clone(), losses.clone(), none(), none(), t("type7")],
-        "pro_ylt_stats",
+        "pro_cap_ylt_stats",
         "quantile must be",
     );
     error(
         vec![years.clone(), losses.clone(), n(10.0)],
-        "pro_ylt_oep",
+        "pro_cap_ylt_oep",
         "the table has 3 years",
     );
     error(
         vec![years.clone(), losses.clone(), n(2.0), n(5.0)],
-        "pro_ylt_oep",
+        "pro_cap_ylt_oep",
         "not both",
     );
     let one = |x: f64| Grid::column(&[x]);
     error(
         vec![one(0.5), one(100.0), one(200.0), none(), one(500.0)],
-        "pro_elt_stats",
+        "pro_cap_elt_stats",
         "no beta on [0, 500]",
     );
     error(
         vec![one(0.5), one(100.0), none(), none(), one(500.0), n(1.2)],
-        "pro_elt_oep",
+        "pro_cap_elt_oep",
         "probability 0.8333",
     );
     // The defaults stop where the chance of any event does: 1 - e^-0.5 is
     // about 0.39, so the 2-year point is left out.
     let curve = call(
-        "pro_elt_oep",
+        "pro_cap_elt_oep",
         vec![one(0.5), one(100.0), none(), none(), one(500.0)],
     );
     assert_eq!(curve.rows, 9);

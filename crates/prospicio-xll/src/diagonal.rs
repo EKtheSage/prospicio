@@ -193,7 +193,7 @@ fn pattern(values: &Grid, ages_arg: &Grid, kind: &Grid) -> Result<SelectedPatter
     let kind = pattern_kind(kind)?;
     let Some(cells) = vector(values, "pattern")? else {
         return Err(
-            "pattern is required: the selected pattern's values, such as a row of PRO.CL.LDF"
+            "pattern is required: the selected pattern's values, such as a row of PRO.RES.CL.LDF"
                 .into(),
         );
     };
@@ -461,7 +461,7 @@ fn expected_loss_exhibit(fit: &ExpectedLossFit, grain: Grain) -> Grid {
 }
 
 /// The chain ladder on a latest diagonal:
-/// `PRO.DIAG.CL(origins, ages, latest, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])`.
+/// `PRO.RES.DIAG.CL(origins, ages, latest, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])`.
 pub fn chain_ladder(args: &[Grid]) -> Result<Grid> {
     let p = prepare(args, None, 3, 4)?;
     let fit = p
@@ -472,7 +472,7 @@ pub fn chain_ladder(args: &[Grid]) -> Result<Grid> {
 }
 
 /// The expected loss method on a latest diagonal:
-/// `PRO.DIAG.EL(origins, ages, latest, exposure, apriori, pattern, ...)`,
+/// `PRO.RES.DIAG.EL(origins, ages, latest, exposure, apriori, pattern, ...)`,
 /// the seven shared arguments after `pattern`.
 pub fn expected_loss(args: &[Grid]) -> Result<Grid> {
     let p = prepare(args, Some(&args[3]), 5, 6)?;
@@ -486,7 +486,7 @@ pub fn expected_loss(args: &[Grid]) -> Result<Grid> {
 }
 
 /// Bornhuetter-Ferguson on a latest diagonal:
-/// `PRO.DIAG.BF(origins, ages, latest, exposure, apriori, pattern, ...)`.
+/// `PRO.RES.DIAG.BF(origins, ages, latest, exposure, apriori, pattern, ...)`.
 pub fn bornhuetter_ferguson(args: &[Grid]) -> Result<Grid> {
     let p = prepare(args, Some(&args[3]), 5, 6)?;
     let fit = BornhuetterFerguson {
@@ -499,7 +499,7 @@ pub fn bornhuetter_ferguson(args: &[Grid]) -> Result<Grid> {
 }
 
 /// Benktander on a latest diagonal:
-/// `PRO.DIAG.BENKTANDER(origins, ages, latest, exposure, apriori, pattern, [iterations], ...)`.
+/// `PRO.RES.DIAG.BENKTANDER(origins, ages, latest, exposure, apriori, pattern, [iterations], ...)`.
 pub fn benktander(args: &[Grid]) -> Result<Grid> {
     let p = prepare(args, Some(&args[3]), 5, 7)?;
     let fit = Benktander {
@@ -514,7 +514,7 @@ pub fn benktander(args: &[Grid]) -> Result<Grid> {
 
 /// Cape Cod on a latest diagonal, trended to the diagonal's valuation (the
 /// latest month any origin is valued at):
-/// `PRO.DIAG.CAPECOD(origins, ages, latest, exposure, pattern, [trend], [decay], ...)`.
+/// `PRO.RES.DIAG.CAPECOD(origins, ages, latest, exposure, pattern, [trend], [decay], ...)`.
 pub fn cape_cod(args: &[Grid]) -> Result<Grid> {
     let p = prepare(args, Some(&args[3]), 4, 7)?;
     let fit = CapeCod {
@@ -535,7 +535,7 @@ pub fn cape_cod(args: &[Grid]) -> Result<Grid> {
 /// developed and CDF for every month of the result. Fed back to the
 /// diagonal functions as `pattern_ages` and `pattern` with kind "percent",
 /// it gives what their `pattern_origin` gives:
-/// `PRO.PATTERN.AVERAGE(pattern_ages, pattern, pattern_origin, [grain], [kind])`.
+/// `PRO.RES.PATTERN.AVERAGE(pattern_ages, pattern, pattern_origin, [grain], [kind])`.
 pub fn pattern_average(args: &[Grid]) -> Result<Grid> {
     let given = pattern(&args[1], &args[0], &args[4])?;
     let Some(basis) = grain_option(&args[2], "pattern_origin")? else {

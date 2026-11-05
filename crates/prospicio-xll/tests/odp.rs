@@ -1,4 +1,4 @@
-//! `PRO.ODP` on RAA, reached through the catalogue as Excel reaches it:
+//! `PRO.RES.ODP` on RAA, reached through the catalogue as Excel reaches it:
 //! the same draws as `prospicio_reserving::OdpBootstrap`, and the total's
 //! mean, standard deviation and percentiles within R ChainLadder's
 //! `BootChainLadder` targets (`validation/reference/reserving_bootstrap_r.csv`,
@@ -51,7 +51,7 @@ fn t(s: &str) -> Grid {
 
 fn odp(sims: f64, seed: f64, percentiles: Grid, process: Grid) -> Grid {
     call(
-        "pro_odp",
+        "pro_res_odp",
         vec![
             raa(),
             n(sims),
@@ -179,7 +179,7 @@ fn errors_come_back_as_text() {
 
 fn sims(sims: f64, seed: f64, origins: Grid) -> Grid {
     call(
-        "pro_odp_sims",
+        "pro_res_odp_sims",
         vec![
             raa(),
             n(sims),

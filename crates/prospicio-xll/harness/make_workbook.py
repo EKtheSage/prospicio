@@ -47,23 +47,23 @@ for r, row in enumerate(RAA):
         ws.cell(row=4+r, column=2+c, value=x).fill = inp
 T = "B4:K13"
 ws["A14"] = "LDF"; ws["A14"].font = bold
-ws["B14"] = ArrayFormula("B14:K14", f"=PRO.CL.LDF({T})")
+ws["B14"] = ArrayFormula("B14:K14", f"=PRO.RES.CL.LDF({T})")
 ws["A15"] = "CDF"; ws["A15"].font = bold
-ws["B15"] = ArrayFormula("B15:K15", f"=PRO.CL.CDF({T})")
+ws["B15"] = ArrayFormula("B15:K15", f"=PRO.RES.CL.CDF({T})")
 ws["A16"] = "LDF, simple avg, tail 1.05"; ws["A16"].font = note
-ws["B16"] = ArrayFormula("B16:K16", f'=PRO.CL.LDF({T},"simple",1.05)')
+ws["B16"] = ArrayFormula("B16:K16", f'=PRO.RES.CL.LDF({T},"simple",1.05)')
 ws["A17"] = "LDF, latest 5, ex high/low"; ws["A17"].font = note
-ws["B17"] = ArrayFormula("B17:K17", f'=PRO.CL.LDF({T},{{"volume",5,1,1}})')
+ws["B17"] = ArrayFormula("B17:K17", f'=PRO.RES.CL.LDF({T},{{"volume",5,1,1}})')
 
-ws["M3"] = ArrayFormula("M3:Q14", f"=PRO.CL({T},,,A4:A13)")
-ws["M16"] = "PRO.CL.ULTIMATE and PRO.CL.RESERVE as plain columns:"; ws["M16"].font = note
-ws["M17"] = ArrayFormula("M17:M26", f"=PRO.CL.ULTIMATE({T})")
-ws["N17"] = ArrayFormula("N17:N26", f"=PRO.CL.RESERVE({T})")
+ws["M3"] = ArrayFormula("M3:Q14", f"=PRO.RES.CL({T},,,A4:A13)")
+ws["M16"] = "PRO.RES.CL.ULTIMATE and PRO.RES.CL.RESERVE as plain columns:"; ws["M16"].font = note
+ws["M17"] = ArrayFormula("M17:M26", f"=PRO.RES.CL.ULTIMATE({T})")
+ws["N17"] = ArrayFormula("N17:N26", f"=PRO.RES.CL.RESERVE({T})")
 
 ws["A18"] = "Mack (volume-weighted, no tail)"; ws["A18"].font = bold
-ws["A19"] = ArrayFormula("A19:H30", f"=PRO.MACK({T},,,A4:A13)")
+ws["A19"] = ArrayFormula("A19:H30", f"=PRO.RES.MACK({T},,,A4:A13)")
 ws["A32"] = "Development factors, exponential tail"; ws["A32"].font = bold
-ws["A33"] = ArrayFormula("A33:E43", f'=PRO.CL.FACTORS({T},,"exponential")')
+ws["A33"] = ArrayFormula("A33:E43", f'=PRO.RES.CL.FACTORS({T},,"exponential")')
 
 ws["J32"] = "Check against R ChainLadder 0.2.21"; ws["J32"].font = bold
 checks = [
@@ -79,7 +79,7 @@ for i, (name, f, r) in enumerate(checks):
     ws[f"J{row}"] = name; ws[f"K{row}"] = f; ws[f"L{row}"] = r
     ws[f"M{row}"] = f"=ABS(K{row}-L{row})<1E-6"
 ws["J39"] = "Try an error: average \"median\""; ws["J39"].font = note
-ws["J40"] = ArrayFormula("J40", f'=PRO.CL.LDF({T},"median")')
+ws["J40"] = ArrayFormula("J40", f'=PRO.RES.CL.LDF({T},"median")')
 for col, w in {"A":12,"J":22,"M":12,"N":12}.items():
     ws.column_dimensions[col].width = w
 for col in "BCDEFGHIKLOPQ":
@@ -100,24 +100,24 @@ for row, (label, value) in enumerate([
     ly[f"B{row}"] = value; ly[f"B{row}"].fill = inp
 PAR = '"pareto",$B$4,$B$5'
 LOG = '"lognormal_cv",$B$6,$B$7'
-ly["A10"] = "Pareto: expected loss per ground-up loss, PRO.LAYER"; ly["A10"].font = bold
+ly["A10"] = "Pareto: expected loss per ground-up loss, PRO.PRC.LAYER"; ly["A10"].font = bold
 ly["A11"] = "Attachment \\ limit"; ly["A11"].font = note
 for c, lim in enumerate([1000, 4000, 10000, "unlimited"]):
     cell = ly.cell(row=11, column=2+c, value=lim); cell.fill = inp; cell.font = bold
 for r, a in enumerate([1000, 5000, 10000]):
     cell = ly.cell(row=12+r, column=1, value=a); cell.fill = inp; cell.font = bold
-ly["B12"] = ArrayFormula("B12:E14", f"=PRO.LAYER(B11:E11,A12:A14,{PAR})")
-ly["A16"] = "Layer CV given a loss above the attachment, PRO.LAYER.CV"; ly["A16"].font = note
-ly["B17"] = ArrayFormula("B17:E19", f"=PRO.LAYER.CV(B11:E11,A12:A14,{PAR})")
+ly["B12"] = ArrayFormula("B12:E14", f"=PRO.PRC.LAYER(B11:E11,A12:A14,{PAR})")
+ly["A16"] = "Layer CV given a loss above the attachment, PRO.PRC.LAYER.CV"; ly["A16"].font = note
+ly["B17"] = ArrayFormula("B17:E19", f"=PRO.PRC.LAYER.CV(B11:E11,A12:A14,{PAR})")
 
 ly["G10"] = "Lognormal: ILF and LEV by limit"; ly["G10"].font = bold
 for col, h in zip("GHIJ", ["Limit", "ILF", "LEV", "LEV, Pareto"]):
     ly[f"{col}11"] = h; ly[f"{col}11"].font = bold
 for r, lim in enumerate([100000, 250000, 500000, 1000000, 2000000, 5000000, "unlimited"]):
     ly.cell(row=12+r, column=7, value=lim).fill = inp
-ly["H12"] = ArrayFormula("H12:H18", f"=PRO.ILF(G12:G18,$B$8,{LOG})")
-ly["I12"] = ArrayFormula("I12:I18", f"=PRO.LEV(G12:G18,{LOG})")
-ly["J12"] = ArrayFormula("J12:J18", f"=PRO.LEV(G12:G18,{PAR})")
+ly["H12"] = ArrayFormula("H12:H18", f"=PRO.PRC.ILF(G12:G18,$B$8,{LOG})")
+ly["I12"] = ArrayFormula("I12:I18", f"=PRO.PRC.LEV(G12:G18,{LOG})")
+ly["J12"] = ArrayFormula("J12:J18", f"=PRO.PRC.LEV(G12:G18,{PAR})")
 
 ly["A22"] = "Check against the R package Pareto (vignette, t = 500, alpha = 2)"; ly["A22"].font = bold
 for h, col in zip(["Quantity", "prospicio", "Expected", "Match"], "ABCD"):
@@ -144,23 +144,23 @@ for i, (fam, ps) in enumerate([
     a = f'A{r},B{r},C{r},D{r}'
     ly[f"E{r}"] = ArrayFormula(f"E{r}", f"=INDEX(PRO.SEV.STATS({a}),2,2)")
     ly[f"F{r}"] = ArrayFormula(f"F{r}", f"=PRO.SEV.QUANTILE(0.995,{a})")
-    ly[f"G{r}"] = ArrayFormula(f"G{r}", f"=PRO.LEV(1000000,{a})")
-    ly[f"H{r}"] = ArrayFormula(f"H{r}", f"=PRO.LER(10000,{a})")
+    ly[f"G{r}"] = ArrayFormula(f"G{r}", f"=PRO.PRC.LEV(1000000,{a})")
+    ly[f"H{r}"] = ArrayFormula(f"H{r}", f"=PRO.PRC.LER(10000,{a})")
     for c in "EFG":
         ly[f"{c}{r}"].number_format = "#,##0"
     ly[f"H{r}"].number_format = "0.0000"
 
 ly["A43"] = "Pareto helpers (R package Pareto)"; ly["A43"].font = bold
 ly["A44"] = "Alpha from two layers: 1m xs 1m expects 1, 2m xs 3m expects"; ly["F44"] = 0.6; ly["F44"].fill = inp
-ly["G44"] = ArrayFormula("G44", "=PRO.PARETO.ALPHA(1000000,1000000,1,2000000,3000000,F44)")
+ly["G44"] = ArrayFormula("G44", "=PRO.PRC.PARETO.ALPHA(1000000,1000000,1,2000000,3000000,F44)")
 ly["A45"] = "Alpha from 4 losses above 1m and 1 above 2m"
-ly["G45"] = ArrayFormula("G45", "=PRO.PARETO.ALPHA.FREQS(1000000,4,2000000,1)")
+ly["G45"] = ArrayFormula("G45", "=PRO.PRC.PARETO.ALPHA.FREQS(1000000,4,2000000,1)")
 ly["A46"] = "1m xs 1m at alpha G44, extrapolated to each layer below (per unit)"
 for c, lim in enumerate([1000000, 2000000, 5000000]):
     ly.cell(row=47, column=2+c, value=lim).fill = inp
 for r, att in enumerate([2000000, 3000000]):
     ly.cell(row=48+r, column=1, value=att).fill = inp
-ly["B48"] = ArrayFormula("B48:D49", "=PRO.PARETO.EXTRAPOLATE(1000000,1000000,B47:D47,A48:A49,G44)")
+ly["B48"] = ArrayFormula("B48:D49", "=PRO.PRC.PARETO.EXTRAPOLATE(1000000,1000000,B47:D47,A48:A49,G44)")
 
 ly["A52"] = "Piecewise Pareto: thresholds and alphas as rows, truncated at 50m (last piece)"; ly["A52"].font = bold
 for c, x in zip("BCD", [1000000, 2000000, 5000000]):
@@ -176,8 +176,8 @@ for i, (lim, att) in enumerate([(1000000, 1000000), (3000000, 2000000), (5000000
     r = 57 + i
     ly[f"A{r}"] = f"{lim // 1000000}m xs {att // 1000000}m"
     a = f'{lim},{att},"piecewise_pareto",$B$53:$D$53,$B$54:$D$54,$B$55:$C$55'
-    ly[f"B{r}"] = ArrayFormula(f"B{r}", f"=PRO.LAYER({a})")
-    ly[f"C{r}"] = ArrayFormula(f"C{r}", f"=SQRT(PRO.LAYER.VAR({a}))")
+    ly[f"B{r}"] = ArrayFormula(f"B{r}", f"=PRO.PRC.LAYER({a})")
+    ly[f"C{r}"] = ArrayFormula(f"C{r}", f"=SQRT(PRO.PRC.LAYER.VAR({a}))")
     for c in "BC":
         ly[f"{c}{r}"].number_format = "#,##0"
 ly.column_dimensions["A"].width = 34
@@ -203,9 +203,9 @@ for c, p in enumerate([0.75, 0.9, 0.95, 0.995]):
     cell = od.cell(row=4, column=5+c, value=p); cell.fill = inp
 TRI, ORI = "RAA!$B$4:$K$13", "RAA!$A$4:$A$13"
 od["A7"] = "Gamma process error (R's process.distr = 'gamma')"; od["A7"].font = bold
-od["A8"] = ArrayFormula("A8:I19", f"=PRO.ODP({TRI},$B$4,$B$5,$E$4:$H$4,,,{ORI})")
+od["A8"] = ArrayFormula("A8:I19", f"=PRO.RES.ODP({TRI},$B$4,$B$5,$E$4:$H$4,,,{ORI})")
 od["A21"] = "Parameter error only (process \"none\")"; od["A21"].font = bold
-od["A22"] = ArrayFormula("A22:I33", f'=PRO.ODP({TRI},$B$4,$B$5,$E$4:$H$4,,"none",{ORI})')
+od["A22"] = ArrayFormula("A22:I33", f'=PRO.RES.ODP({TRI},$B$4,$B$5,$E$4:$H$4,,"none",{ORI})')
 
 od["K7"] = "Check: total against R ChainLadder 0.2.21 BootChainLadder (100,000 sims)"; od["K7"].font = bold
 for h, col in zip(["Quantity", "prospicio", "R", "Tolerance", "Within"], "KLMNO"):
@@ -237,7 +237,7 @@ for c in od[4][4:8]:
 
 # The draws behind the ODP sheet's gamma table: same simulations and seed.
 dr = wb.create_sheet("ODP draws")
-dr["A1"] = "prospicio XLL test: the ODP bootstrap's draws (PRO.ODP.SIMS)"; dr["A1"].font = Font(bold=True, size=13)
+dr["A1"] = "prospicio XLL test: the ODP bootstrap's draws (PRO.RES.ODP.SIMS)"; dr["A1"].font = Font(bold=True, size=13)
 dr["A2"] = "Simulations and seed come from the ODP sheet; the average of each column is that sheet's Mean."
 dr["A2"].font = note
 dr["N3"] = "Check"; dr["N3"].font = bold
@@ -253,7 +253,7 @@ for i, b in enumerate(range(20000, 160001, 20000)):
 dr["N18"] = "more"
 # FREQUENCY returns one count per bin and one for everything above.
 dr["O10"] = ArrayFormula("O10:O18", "=FREQUENCY(K5:K100004,N10:N17)")
-dr["A4"] = ArrayFormula("A4:K20004", f"=PRO.ODP.SIMS({TRI},ODP!$B$4,ODP!$B$5,,,{ORI})")
+dr["A4"] = ArrayFormula("A4:K20004", f"=PRO.RES.ODP.SIMS({TRI},ODP!$B$4,ODP!$B$5,,,{ORI})")
 dr.column_dimensions["N"].width = 22
 for col in "ABCDEFGHIJKO":
     dr.column_dimensions[col].width = 11
@@ -266,13 +266,13 @@ dr["O4"].number_format = dr["O5"].number_format = "#,##0.00"
 mk = wb.create_sheet("Mack bootstrap")
 mk["A1"] = "prospicio XLL test: Mack's bootstrap on RAA (England, Verrall and Wuthrich)"
 mk["A1"].font = Font(bold=True, size=13)
-mk["A2"] = "Centred residuals: the simulated SD is Mack's standard error (the RAA sheet's PRO.MACK)."
+mk["A2"] = "Centred residuals: the simulated SD is Mack's standard error (the RAA sheet's PRO.RES.MACK)."
 mk["A2"].font = note
 for row, (label, value) in enumerate([("Simulations", 20000), ("Seed", 1)], start=4):
     mk[f"A{row}"] = label; mk[f"A{row}"].font = bold
     mk[f"B{row}"] = value; mk[f"B{row}"].fill = inp
 mk["A7"] = "Gamma process error"; mk["A7"].font = bold
-mk["A8"] = ArrayFormula("A8:I19", f"=PRO.MACK.BOOT({TRI},$B$4,$B$5,,,,,{ORI})")
+mk["A8"] = ArrayFormula("A8:I19", f"=PRO.RES.MACK.BOOT({TRI},$B$4,$B$5,,,,,{ORI})")
 mk["K7"] = "Check: total against Mack's closed form"; mk["K7"].font = bold
 for h, col in zip(["Quantity", "Bootstrap", "Mack", "Tolerance", "Within"], "KLMNO"):
     mk[f"{col}8"] = h; mk[f"{col}8"].font = bold
@@ -318,13 +318,13 @@ for r, row in enumerate(GENINS):
 el["N3"] = "A priori LR"; el["N3"].font = bold; el["O3"] = 0.75; el["O3"].fill = inp
 G, P, O = "$B$4:$K$13", "$L$4:$L$13", "$A$4:$A$13"
 el["A16"] = "Bornhuetter-Ferguson"; el["A16"].font = bold
-el["A17"] = ArrayFormula("A17:G28", f"=PRO.BF({G},{P},$O$3,,,{O})")
+el["A17"] = ArrayFormula("A17:G28", f"=PRO.RES.BF({G},{P},$O$3,,,{O})")
 el["I16"] = "Benktander, 2 iterations"; el["I16"].font = bold
-el["I17"] = ArrayFormula("I17:O28", f"=PRO.BENKTANDER({G},{P},$O$3,2,,,{O})")
+el["I17"] = ArrayFormula("I17:O28", f"=PRO.RES.BENKTANDER({G},{P},$O$3,2,,,{O})")
 el["A31"] = "Cape Cod, trend 5%, decay 0.75"; el["A31"].font = bold
-el["A32"] = ArrayFormula("A32:G43", f"=PRO.CAPECOD({G},{P},0.05,0.75,,,{O})")
+el["A32"] = ArrayFormula("A32:G43", f"=PRO.RES.CAPECOD({G},{P},0.05,0.75,,,{O})")
 el["I31"] = "Expected loss"; el["I31"].font = bold
-el["I32"] = ArrayFormula("I32:O43", f"=PRO.EL({G},{P},$O$3,,,{O})")
+el["I32"] = ArrayFormula("I32:O43", f"=PRO.RES.EL({G},{P},$O$3,,,{O})")
 el["A46"] = "Check: total reserve against chainladder-python 0.10.1 (with a priori 0.75)"; el["A46"].font = bold
 for h, col in zip(["Method", "prospicio", "chainladder-python", "Match"], "ABCD"):
     el[f"{col}47"] = h; el[f"{col}47"].font = bold
@@ -337,24 +337,24 @@ for i, (name, f, x) in enumerate([
     el[f"A{row}"] = name; el[f"B{row}"] = f; el[f"C{row}"] = x
     el[f"D{row}"] = f"=ABS(B{row}-C{row})<1E-6*C{row}"
 el["A54"] = "Clark's Cape Cod, log-logistic, max age 240 (R's ClarkCapeCod)"; el["A54"].font = bold
-el["A55"] = ArrayFormula("A55:G66", f"=PRO.CLARK({G},{P},,240,{O})")
+el["A55"] = ArrayFormula("A55:G66", f"=PRO.RES.CLARK({G},{P},,240,{O})")
 el["I54"] = "Its parameters"; el["I54"].font = bold
-el["I55"] = ArrayFormula("I55:J60", f"=PRO.CLARK.PARAMS({G},{P},,240)")
+el["I55"] = ArrayFormula("I55:J60", f"=PRO.RES.CLARK.PARAMS({G},{P},,240)")
 el["A69"] = "Clark's LDF method on GenIns, Weibull"; el["A69"].font = bold
-el["A70"] = ArrayFormula("A70:G81", f'=PRO.CLARK({G},,"weibull",,{O})')
+el["A70"] = ArrayFormula("A70:G81", f'=PRO.RES.CLARK({G},,"weibull",,{O})')
 # A selected pattern at its ages and an a priori per origin (decision 40).
 el["M3"] = "A priori by AY"; el["M3"].font = bold
 for r in range(10):
     el.cell(row=4+r, column=13, value=round(0.70 + 0.01*r, 2)).fill = inp
-el["A84"] = "GenIns's own factors to ultimate (PRO.CL.CDF) at their ages, as a selected pattern"; el["A84"].font = bold
+el["A84"] = "GenIns's own factors to ultimate (PRO.RES.CL.CDF) at their ages, as a selected pattern"; el["A84"].font = bold
 el["A85"] = "Pattern age"; el["A86"] = "CDF"; el["A85"].font = el["A86"].font = bold
 for c in range(10):
     el.cell(row=85, column=2+c, value=12*(c+1)).fill = inp
-el["B86"] = ArrayFormula("B86:K86", f"=PRO.CL.CDF({G})")
+el["B86"] = ArrayFormula("B86:K86", f"=PRO.RES.CL.CDF({G})")
 el["A88"] = "Bornhuetter-Ferguson on the selected pattern"; el["A88"].font = bold
-el["A89"] = ArrayFormula("A89:G100", f'=PRO.BF({G},{P},$O$3,,,{O},$B$86:$K$86,"cdf",,$B$85:$K$85)')
+el["A89"] = ArrayFormula("A89:G100", f'=PRO.RES.BF({G},{P},$O$3,,,{O},$B$86:$K$86,"cdf",,$B$85:$K$85)')
 el["I88"] = "Bornhuetter-Ferguson, a priori by AY (column M)"; el["I88"].font = bold
-el["I89"] = ArrayFormula("I89:O100", f"=PRO.BF({G},{P},$M$4:$M$13,,,{O})")
+el["I89"] = ArrayFormula("I89:O100", f"=PRO.RES.BF({G},{P},$M$4:$M$13,,,{O})")
 el["A102"] = "Check: the selected pattern and the a priori by AY"; el["A102"].font = bold
 for h, col in zip(["Check", "prospicio", "Expected", "Match"], "ABCD"):
     el[f"{col}103"] = h; el[f"{col}103"].font = bold
@@ -381,13 +381,13 @@ oy["A1"] = "prospicio XLL test: the one-year view on RAA"; oy["A1"].font = Font(
 oy["A2"] = "CDR = opening ultimate less the re-estimated one: a negative CDR is adverse."
 oy["A2"].font = note
 oy["A4"] = "Merz-Wuthrich (closed form)"; oy["A4"].font = bold
-oy["A5"] = ArrayFormula("A5:D16", f"=PRO.MACK.CDR({TRI},,,{ORI})")
+oy["A5"] = ArrayFormula("A5:D16", f"=PRO.RES.MACK.CDR({TRI},,,{ORI})")
 oy["F4"] = "CDR SE by future calendar year"; oy["F4"].font = bold
-oy["F5"] = ArrayFormula("F5:O16", f"=PRO.MACK.CDR.YEARS({TRI},,,{ORI})")
+oy["F5"] = ArrayFormula("F5:O16", f"=PRO.RES.MACK.CDR.YEARS({TRI},,,{ORI})")
 oy["A19"] = "ODP bootstrap, 20000 simulations, seed 1"; oy["A19"].font = bold
-oy["A20"] = ArrayFormula("A20:H31", f"=PRO.ODP.CDR({TRI},20000,1,,,,{ORI})")
+oy["A20"] = ArrayFormula("A20:H31", f"=PRO.RES.ODP.CDR({TRI},20000,1,,,,{ORI})")
 oy["J19"] = "Mack bootstrap, 20000 simulations, seed 1"; oy["J19"].font = bold
-oy["J20"] = ArrayFormula("J20:Q31", f"=PRO.MACK.BOOT.CDR({TRI},20000,1,,,,,{ORI})")
+oy["J20"] = ArrayFormula("J20:Q31", f"=PRO.RES.MACK.BOOT.CDR({TRI},20000,1,,,,,{ORI})")
 oy["A34"] = "Check against R ChainLadder 0.2.21 CDR(MackChainLadder(RAA))"; oy["A34"].font = bold
 for h, col in zip(["Quantity", "prospicio", "R", "Match"], "ABCD"):
     oy[f"{col}35"] = h; oy[f"{col}35"].font = bold
@@ -411,15 +411,15 @@ og["A1"] = "prospicio XLL test: the ODP model as a quasi-Poisson GLM on RAA"; og
 og["A2"] = "The reserves are the chain ladder's; RMSEP is the analytic prediction error (delta method)."
 og["A2"].font = note
 og["A4"] = "Prediction error"; og["A4"].font = bold
-og["A5"] = ArrayFormula("A5:H16", f"=PRO.ODP.GLM({TRI},{ORI})")
+og["A5"] = ArrayFormula("A5:H16", f"=PRO.RES.ODP.GLM({TRI},{ORI})")
 og["A19"] = "Coefficients and dispersion"; og["A19"].font = bold
-og["A20"] = ArrayFormula("A20:D40", f"=PRO.ODP.GLM.PARAMS({TRI},{ORI})")
+og["A20"] = ArrayFormula("A20:D40", f"=PRO.RES.ODP.GLM.PARAMS({TRI},{ORI})")
 og["F19"] = "Standardized deviance residuals by development period"; og["F19"].font = bold
-og["F20"] = ArrayFormula("F20:I30", f'=PRO.ODP.GLM.RESIDUALS({TRI},"development",{ORI})')
+og["F20"] = ArrayFormula("F20:I30", f'=PRO.RES.ODP.GLM.RESIDUALS({TRI},"development",{ORI})')
 og["F33"] = "Check: total reserve against the chain ladder"; og["F33"].font = bold
 og["F34"] = "=D16"; og["G34"] = 52135.2283; og["H34"] = "=ABS(F34-G34)<0.001"
 og["K4"] = "Residuals by cell"; og["K4"].font = bold
-og["K5"] = ArrayFormula("K5:U60", f"=PRO.ODP.GLM.RESIDUALS({TRI},,{ORI})")
+og["K5"] = ArrayFormula("K5:U60", f"=PRO.RES.ODP.GLM.RESIDUALS({TRI},,{ORI})")
 for col in "ABCDEFGHIJKLMNOPQRSTU":
     og.column_dimensions[col].width = 12
 
@@ -448,7 +448,7 @@ ex["A1"] = "Exposure rating with a Swiss Re curve (MBBEFD)"; ex["A1"].font = bol
 ex["A2"] = "Swiss Re c"; ex["B2"] = 3; ex["B2"].fill = inp
 ex["A3"] = "Layer limit"; ex["B3"] = 4000000; ex["B3"].fill = inp
 ex["A4"] = "Layer attachment"; ex["B4"] = 1000000; ex["B4"].fill = inp
-ex["D2"] = ArrayFormula("D2:E6", '=PRO.EXPOSURE.STATS("swiss_re",B2)')
+ex["D2"] = ArrayFormula("D2:E6", '=PRO.PRC.EXPOSURE.STATS("swiss_re",B2)')
 for h, col in zip(["Sum insured", "Premium", "Loss ratio", "Expected loss", "Layer share", "Layer loss"], "ABCDEF"):
     ex[f"{col}8"] = h; ex[f"{col}8"].font = bold
 for k, (si, prem) in enumerate([(500000, 2000000), (2000000, 3000000), (5000000, 2500000), (10000000, 1500000), (25000000, 1000000)]):
@@ -460,7 +460,7 @@ for k, (si, prem) in enumerate([(500000, 2000000), (2000000, 3000000), (5000000,
 for c in "ABDF":
     for r in range(9, 14):
         ex[f"{c}{r}"].number_format = "#,##0"
-ex["E9"] = ArrayFormula("E9:E13", '=PRO.EXPOSURE.SHARE($B$3,$B$4,A9:A13,"swiss_re",$B$2)')
+ex["E9"] = ArrayFormula("E9:E13", '=PRO.PRC.EXPOSURE.SHARE($B$3,$B$4,A9:A13,"swiss_re",$B$2)')
 for r in range(9, 14):
     ex[f"E{r}"].number_format = "0.0000"
     ex[f"F{r}"] = f"=D{r}*E{r}"
@@ -473,13 +473,13 @@ for k, c in enumerate([1.5, 2, 3, 4, 5]):
     ex.cell(row=17, column=2 + k, value=c).fill = inp
 for k, x in enumerate([0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9, 1]):
     ex.cell(row=18 + k, column=1, value=x).fill = inp
-ex["B18"] = ArrayFormula("B18:F26", '=PRO.EXPOSURE.CURVE(A18:A26,"swiss_re",B17:F17)')
+ex["B18"] = ArrayFormula("B18:F26", '=PRO.PRC.EXPOSURE.CURVE(A18:A26,"swiss_re",B17:F17)')
 ex["A28"] = "The c whose mean rate is"; ex["B28"] = 0.05; ex["B28"].fill = inp
-ex["C28"] = ArrayFormula("C28", "=PRO.SWISSRE.C(B28)")
-ex["A30"] = "The same profile by PRO.PROFILE, net of a surplus of 4 lines on 1,000,000"; ex["A30"].font = bold
+ex["C28"] = ArrayFormula("C28", "=PRO.PRC.SWISSRE.C(B28)")
+ex["A30"] = "The same profile by PRO.PRC.PROFILE, net of a surplus of 4 lines on 1,000,000"; ex["A30"].font = bold
 ex["A31"] = "Retention"; ex["B31"] = 1000000; ex["B31"].fill = inp
 ex["A32"] = "Lines"; ex["B32"] = 4; ex["B32"].fill = inp
-ex["A33"] = ArrayFormula("A33:G39", '=PRO.PROFILE(A9:A13,D9:D13,B3,B4,"swiss_re",B2,,,,,,B31,B32)')
+ex["A33"] = ArrayFormula("A33:G39", '=PRO.PRC.PROFILE(A9:A13,D9:D13,B3,B4,"swiss_re",B2,,,,,,B31,B32)')
 for row in ex.iter_rows(min_row=34, max_row=39, min_col=1, max_col=6):
     for c in row:
         c.number_format = "#,##0.00" if c.column == 4 else "#,##0"
@@ -506,10 +506,10 @@ for h in hach:
     i, j = int(h["state"]) - 1, int(h["quarter"]) - 1
     cr.cell(row=3 + i, column=2 + j, value=float(h["ratio"])).fill = inp
     cr.cell(row=10 + i, column=2 + j, value=float(h["weight"])).fill = inp
-cr["A17"] = ArrayFormula("A17:E22", "=PRO.BUHLMANN(B3:M7,B10:M14,,A3:A7)")
-cr["G17"] = ArrayFormula("G17:H21", "=PRO.BUHLMANN.PARAMS(B3:M7,B10:M14)")
+cr["A17"] = ArrayFormula("A17:E22", "=PRO.PRC.BUHLMANN(B3:M7,B10:M14,,A3:A7)")
+cr["G17"] = ArrayFormula("G17:H21", "=PRO.PRC.BUHLMANN.PARAMS(B3:M7,B10:M14)")
 cr["J16"] = "Iterative (Bichsel-Straub)"; cr["J16"].font = bold
-cr["J17"] = ArrayFormula("J17:K21", '=PRO.BUHLMANN.PARAMS(B3:M7,B10:M14,"iterative")')
+cr["J17"] = ArrayFormula("J17:K21", '=PRO.PRC.BUHLMANN.PARAMS(B3:M7,B10:M14,"iterative")')
 cr["A23"] = "Matches R: premium of state 1 is 2055.17"
 cr["A24"] = "=ROUND(E18,2)=2055.17"
 cr["A26"] = "Limited fluctuation: full credibility standards in claims"; cr["A26"].font = bold
@@ -518,9 +518,9 @@ for c, k in enumerate([0.025, 0.05, 0.1]):
     cr.cell(row=27, column=2 + c, value=k).fill = inp
 for r, p in enumerate([0.9, 0.95, 0.99]):
     cr.cell(row=28 + r, column=1, value=p).fill = inp
-cr["B28"] = ArrayFormula("B28:D30", "=PRO.CRED.STANDARD(A28:A30,B27:D27)")
+cr["B28"] = ArrayFormula("B28:D30", "=PRO.PRC.CRED.STANDARD(A28:A30,B27:D27)")
 cr["A32"] = "Credibility of 500 claims against each standard"
-cr["B32"] = ArrayFormula("B32:D34", "=PRO.CRED.Z(500,B28:D30)")
+cr["B32"] = ArrayFormula("B32:D34", "=PRO.PRC.CRED.Z(500,B28:D30)")
 for row in cr.iter_rows(min_row=28, max_row=30, min_col=2, max_col=4):
     for c in row:
         c.number_format = "#,##0"
@@ -542,14 +542,14 @@ for h in ("D2", "E2", "F2"):
     rm[h].font = bold
 for k, y in enumerate(range(2010, 2014)):
     rm.cell(row=3 + k, column=4, value=y).fill = inp
-rm["E3"] = ArrayFormula("E3:E6", "=PRO.ONLEVEL(A3:A5,B3:B5,D3:D6,D3:D6+1)")
-rm["F3"] = ArrayFormula("F3:F6", '=PRO.ONLEVEL(A3:A5,B3:B5,D3:D6,D3:D6+1,"calendar",0.5)')
+rm["E3"] = ArrayFormula("E3:E6", "=PRO.PRC.ONLEVEL(A3:A5,B3:B5,D3:D6,D3:D6+1)")
+rm["F3"] = ArrayFormula("F3:F6", '=PRO.PRC.ONLEVEL(A3:A5,B3:B5,D3:D6,D3:D6+1,"calendar",0.5)')
 for r in range(3, 7):
     rm[f"E{r}"].number_format = rm[f"F{r}"].number_format = "0.0000"
 rm["A9"] = "Calendar year 2011's cells (Figure 5.17)"; rm["A9"].font = bold
-rm["A10"] = ArrayFormula("A10:D16", "=PRO.RATELEVEL(A3:A5,B3:B5,2011,2012)")
+rm["A10"] = ArrayFormula("A10:D16", "=PRO.PRC.RATELEVEL(A3:A5,B3:B5,2011,2012)")
 rm["A18"] = "Trend length: CY2011 losses to rates effective 1/1/2015 for a year"
-rm["A19"] = ArrayFormula("A19", '=PRO.AVGDATE(2015,2016,"policy")-PRO.AVGDATE(2011,2012)')
+rm["A19"] = ArrayFormula("A19", '=PRO.PRC.AVGDATE(2015,2016,"policy")-PRO.PRC.AVGDATE(2011,2012)')
 rm["A21"] = "Exponential trend of Table 6.14's severities, quarterly"; rm["A21"].font = bold
 sev = [1061.45, 1076.56, 1085.56, 1098.02, 1102.46, 1107.52, 1117.71, 1123.70, 1127.63, 1124.01,
        1116.42, 1109.48, 1105.38, 1102.61, 1096.67, 1093.77, 1100.67, 1108.79, 1122.13, 1126.46]
@@ -558,8 +558,8 @@ for k, v in enumerate(sev):
     rm.cell(row=23 + k, column=1, value=2010 + k / 4)
     rm.cell(row=23 + k, column=2, value=v).fill = inp
 rm["D22"] = "20 points"; rm["G22"] = "Last 8"; rm["D22"].font = rm["G22"].font = bold
-rm["D23"] = ArrayFormula("D23:E28", "=PRO.TREND.FIT(A23:A42,B23:B42)")
-rm["G23"] = ArrayFormula("G23:H28", "=PRO.TREND.FIT(A35:A42,B35:B42)")
+rm["D23"] = ArrayFormula("D23:E28", "=PRO.PRC.TREND.FIT(A23:A42,B23:B42)")
+rm["G23"] = ArrayFormula("G23:H28", "=PRO.PRC.TREND.FIT(A35:A42,B35:B42)")
 rm["E24"].number_format = rm["H24"].number_format = "0.0%"
 rm["A45"] = "Loss ratio indication (Werner and Modlin, Appendix A)"; rm["A45"].font = bold
 heads = ["Earned premium", "On-level", "Premium trend", "Losses", "Development", "Loss trend"]
@@ -573,7 +573,7 @@ for r, row in enumerate(appendix_a):
     for c, x in enumerate(row):
         rm.cell(row=47 + r, column=1 + c, value=x).fill = inp
 rm["H46"] = "ULAE factor"; rm["H46"].font = bold; rm["H47"] = 1.143; rm["H47"].fill = inp
-rm["A53"] = ArrayFormula("A53:C59", "=PRO.LR.EXPERIENCE(A47:A51,D47:D51,B47:B51,C47:C51,E47:E51,F47:F51,H47)")
+rm["A53"] = ArrayFormula("A53:C59", "=PRO.PRC.LR.EXPERIENCE(A47:A51,D47:D51,B47:B51,C47:C51,E47:E51,F47:F51,H47)")
 for row in rm.iter_rows(min_row=54, max_row=59, min_col=1, max_col=2):
     for c in row:
         c.number_format = "#,##0"
@@ -583,12 +583,12 @@ rm["A61"] = "Expenses (premium-based): ratio, fixed share"; rm["A61"].font = bol
 for r, (x, sh) in enumerate([(0.063, 0.75), (0.085, 0.75), (0.002, 1.0), (0.112, 0.0), (0.021, 0.0)]):
     rm.cell(row=62 + r, column=1, value=x).fill = inp
     rm.cell(row=62 + r, column=2, value=sh).fill = inp
-rm["D62"] = ArrayFormula("D62:E63", "=PRO.EXPENSES(A62:A66,B62:B66)")
+rm["D62"] = ArrayFormula("D62:E63", "=PRO.PRC.EXPENSES(A62:A66,B62:B66)")
 rm["D65"] = "Profit"; rm["E65"] = 0.05; rm["E65"].fill = inp
 rm["D66"] = "Indicated change"
-rm["E66"] = ArrayFormula("E66", "=PRO.INDICATED.CHANGE(C59,E63,E65,E62)")
+rm["E66"] = ArrayFormula("E66", "=PRO.PRC.INDICATED.CHANGE(C59,E63,E65,E62)")
 rm["D67"] = "Permissible loss ratio"
-rm["E67"] = ArrayFormula("E67", "=PRO.PERMISSIBLE.LR(E63,E65,E62)")
+rm["E67"] = ArrayFormula("E67", "=PRO.PRC.PERMISSIBLE.LR(E63,E65,E62)")
 for c in ("E62", "E63", "E66", "E67"):
     rm[c].number_format = "0.0%"
 rm.column_dimensions["A"].width = 16
@@ -620,7 +620,7 @@ bc["H4"] = "Trend"; bc["H5"] = 0.04; bc["I4"] = "Trended to"; bc["I5"] = datetim
 bc["I5"].number_format = "yyyy-mm-dd"
 for c in ("H3", "I3", "H5", "I5"):
     bc[c].fill = inp
-bc["A19"] = ArrayFormula("A19:G29", "=PRO.BURNINGCOST(A3:A16,B3:B16,H3,I3,D3:D10,E3:E10,F3:F10,H5,I5)")
+bc["A19"] = ArrayFormula("A19:G29", "=PRO.PRC.BURNINGCOST(A3:A16,B3:B16,H3,I3,D3:D10,E3:E10,F3:F10,H5,I5)")
 for row in bc.iter_rows(min_row=20, max_row=29, min_col=2, max_col=6):
     for c in row:
         c.number_format = "0.000" if c.column == 4 else "#,##0"
@@ -637,8 +637,8 @@ for r, (label, x) in enumerate([("Claims a year", 3), ("Dispersion", 2), ("Famil
     ag.cell(row=2 + r, column=1, value=label)
     ag.cell(row=2 + r, column=2, value=x).fill = inp
 ag["D1"] = "Ground up"; ag["G1"] = "100,000 xs 50,000 per claim"; ag["D1"].font = ag["G1"].font = bold
-ag["D2"] = ArrayFormula("D2:E18", "=PRO.AGG.STATS(B2,B3,B4,B5,B6)")
-ag["G2"] = ArrayFormula("G2:H18", "=PRO.AGG.STATS(B2,B3,B4,B5,B6,,100000,50000)")
+ag["D2"] = ArrayFormula("D2:E18", "=PRO.CAP.AGG.STATS(B2,B3,B4,B5,B6)")
+ag["G2"] = ArrayFormula("G2:H18", "=PRO.CAP.AGG.STATS(B2,B3,B4,B5,B6,,100000,50000)")
 for c in ("E", "H"):
     for r in range(2, 19):
         ag[f"{c}{r}"].number_format = "#,##0.0000" if r in (4, 5) or r >= 16 else "#,##0"
@@ -647,17 +647,17 @@ ag["A22"] = "Limits"; ag["A23"] = "Attachments"
 for c, (l, a) in enumerate([(50000, 50000), (100000, 100000), (300000, 200000)]):
     ag.cell(row=22, column=2 + c, value=l).fill = inp
     ag.cell(row=23, column=2 + c, value=a).fill = inp
-ag["A25"] = ArrayFormula("A25:D39", "=PRO.AGG.LAYERS(B2,B3,B4,B5,B6,,B22:D22,B23:D23)")
+ag["A25"] = ArrayFormula("A25:D39", "=PRO.CAP.AGG.LAYERS(B2,B3,B4,B5,B6,,B22:D22,B23:D23)")
 for row in ag.iter_rows(min_row=26, max_row=39, min_col=2, max_col=4):
     for c in row:
         c.number_format = "0.0000"
 ag["A41"] = "Occurrence and aggregate PML curves (aggregate's oep beside the total's VaR)"; ag["A41"].font = bold
-ag["A42"] = ArrayFormula("A42:F51", "=PRO.AGG.PML(B2,B3,B4,B5,B6)")
+ag["A42"] = ArrayFormula("A42:F51", "=PRO.CAP.AGG.PML(B2,B3,B4,B5,B6)")
 for row in ag.iter_rows(min_row=43, max_row=51, min_col=1, max_col=6):
     for c in row:
         c.number_format = "0.0000" if c.column in (2, 5) else "#,##0.0" if c.column == 6 else "#,##0"
 ag["A54"] = "Stop loss: 150,000 xs 200,000 a year, net of 100,000 xs 50,000 per claim (aggregate's agg block)"; ag["A54"].font = bold
-ag["A55"] = ArrayFormula("A55:B63", "=PRO.AGG.COVER(B2,B3,B4,B5,B6,,150000,200000,,100000,50000)")
+ag["A55"] = ArrayFormula("A55:B63", "=PRO.CAP.AGG.COVER(B2,B3,B4,B5,B6,,150000,200000,,100000,50000)")
 for r in range(56, 64):
     ag[f"B{r}"].number_format = "0.0000" if r in (57, 58, 61, 62, 63) else "#,##0"
 ag["A66"] = "Tower priced on the grid by a proportional hazard of 0.7: two layers and a stop loss on the net"; ag["A66"].font = bold
@@ -665,14 +665,14 @@ ag["A67"] = "Limits"; ag["A68"] = "Attachments"
 for c, (l, a) in enumerate([(100000, 50000), (300000, 150000)]):
     ag.cell(row=67, column=2 + c, value=l).fill = inp
     ag.cell(row=68, column=2 + c, value=a).fill = inp
-ag["A70"] = ArrayFormula("A70:H75", '=PRO.TOWER.PRICE(B2,B3,B4,B5,B6,,,,B67:C67,B68:C68,,,,200000,400000,"ph",0.7)')
+ag["A70"] = ArrayFormula("A70:H75", '=PRO.PRC.TOWER.PRICE(B2,B3,B4,B5,B6,,,,B67:C67,B68:C68,,,,200000,400000,"ph",0.7)')
 for row in ag.iter_rows(min_row=71, max_row=75, min_col=2, max_col=8):
     for c in row:
         c.number_format = "0.0000" if c.column in (4, 7, 8) else "#,##0"
 ag["J66"] = "Contract terms on 100,000 xs 50,000 in expectation: deposit 60,000, one reinstatement at 100%"; ag["J66"].font = bold
-ag["J67"] = ArrayFormula("J67:K74", "=PRO.LAYER.TERMS(B2,B3,B4,B5,B6,,100000,50000,60000,1)")
+ag["J67"] = ArrayFormula("J67:K74", "=PRO.PRC.LAYER.TERMS(B2,B3,B4,B5,B6,,100000,50000,60000,1)")
 ag["M66"] = "With a sliding scale (35% at 50% down to 25% at 70%) and a 20% profit commission after 30%"; ag["M66"].font = bold
-ag["M67"] = ArrayFormula("M67:N74", "=PRO.LAYER.TERMS(B2,B3,B4,B5,B6,,100000,50000,60000,,{0.35,0.25},{0.5,0.7},0.2,0.3)")
+ag["M67"] = ArrayFormula("M67:N74", "=PRO.PRC.LAYER.TERMS(B2,B3,B4,B5,B6,,100000,50000,60000,,{0.35,0.25},{0.5,0.7},0.2,0.3)")
 ag.column_dimensions["A"].width = 18
 ag.column_dimensions["D"].width = 16
 ag.column_dimensions["G"].width = 16
@@ -699,7 +699,7 @@ sf["E4"] = ArrayFormula("E4:G13", "=PRO.SEV.FIT(" + data.format(fam='"lognormal"
 sf["I3"] = "Pareto above 1,000"; sf["I3"].font = bold
 sf["I4"] = ArrayFormula("I4:K13", "=PRO.SEV.FIT(" + data.format(fam='"pareto"', out="", t="1000") + ")")
 sf["E14"] = "The lognormal's 1M xs 1M from the fit's cells"
-sf["I14"] = ArrayFormula("I14", "=PRO.LAYER(1000000,1000000,\"lognormal\",F5,F6)")
+sf["I14"] = ArrayFormula("I14", "=PRO.PRC.LAYER(1000000,1000000,\"lognormal\",F5,F6)")
 sf["E16"] = "Body families compared"; sf["E16"].font = bold
 sf["E17"] = ArrayFormula("E17:N22", "=PRO.SEV.FIT(" + data.format(fam="", out='"compare"', t="") + ")")
 sf["E23"] = "Lognormal against the product-limit estimate (P-P and Q-Q)"; sf["E23"].font = bold
@@ -760,11 +760,11 @@ pv["A7"] = "Cost of capital"; pv["B7"] = 0.10; pv["B7"].fill = inp
 pv["A8"] = "Expected loss"; pv["B8"] = 1000000; pv["B8"].fill = inp
 pv["A9"] = "Assets (one-year VaR)"; pv["B9"] = 2500000; pv["B9"].fill = inp
 pv["A11"] = "Pattern"; pv["A11"].font = bold
-pv["A12"] = ArrayFormula("A12:E22", '=PRO.PAYOUT.PATTERN(B3:K3,B4:K4,"factors",0.5,B6)')
+pv["A12"] = ArrayFormula("A12:E22", '=PRO.PRC.PAYOUT.PATTERN(B3:K3,B4:K4,"factors",0.5,B6)')
 pv["G11"] = "Statistics"; pv["G11"].font = bold
-pv["G12"] = ArrayFormula("G12:H14", '=PRO.PAYOUT.STATS(B3:K3,B4:K4,B6,"factors",0.5)')
+pv["G12"] = ArrayFormula("G12:H14", '=PRO.PRC.PAYOUT.STATS(B3:K3,B4:K4,B6,"factors",0.5)')
 pv["G16"] = "Cost-of-capital price over the payout"; pv["G16"].font = bold
-pv["G17"] = ArrayFormula("G17:H25", '=PRO.PAYOUT.PRICE(B8,B9,B7,B3:K3,B4:K4,B6,"factors",0.5)')
+pv["G17"] = ArrayFormula("G17:H25", '=PRO.PRC.PAYOUT.PRICE(B8,B9,B7,B3:K3,B4:K4,B6,"factors",0.5)')
 for col in "ABCDEFGH":
     pv.column_dimensions[col].width = 16
 pv["A27"] = "A cover's quote: the guide's middle layer, risk premium 1.24 on an expected loss of 0.586, limit 5"; pv["A27"].font = bold
@@ -775,7 +775,7 @@ pv["A31"] = "Expenses"; pv["B31"] = 0.03; pv["B31"].fill = inp
 pv["A32"] = "Brokerage"; pv["B32"] = 0.10; pv["B32"].fill = inp
 pv["A33"] = "Limit"; pv["B33"] = 5; pv["B33"].fill = inp
 pv["A34"] = "Quoted"; pv["B34"] = 1.30; pv["C34"] = 1.60; pv["B34"].fill = pv["C34"].fill = inp
-pv["E27"] = ArrayFormula("E27:H40", "=PRO.QUOTE(B28,B29,B30,B31,B32,,B33,B34:C34)")
+pv["E27"] = ArrayFormula("E27:H40", "=PRO.PRC.QUOTE(B28,B29,B30,B31,B32,,B33,B34:C34)")
 
 # Distortions: Mildenhall and Major's InsCo, priced and calibrated.
 ds = wb.create_sheet("Distortions")
@@ -786,17 +786,17 @@ for i, (x, p) in enumerate(zip([22, 28, 36, 40, 55, 65, 100], [0.1, 0.1, 0.1, 0.
     ds[f"A{4 + i}"].fill = ds[f"B{4 + i}"].fill = inp
 ds["A12"] = "Target premium"; ds["B12"] = "=(46.6+0.15*100)/1.15"
 ds["D3"] = "Calibrated to the target"; ds["D3"].font = bold
-ds["D4"] = ArrayFormula("D4:F9", "=PRO.DISTORTION.CALIBRATE(A4:A10,B4:B10,B12)")
+ds["D4"] = ArrayFormula("D4:F9", "=PRO.CAP.DISTORTION.CALIBRATE(A4:A10,B4:B10,B12)")
 ds["D12"] = "The PH at its calibrated rho, priced back"; ds["D12"].font = bold
-ds["D13"] = ArrayFormula("D13:E16", '=PRO.DISTORTION.PRICE(A4:A10,B4:B10,"ph",E6)')
+ds["D13"] = ArrayFormula("D13:E16", '=PRO.CAP.DISTORTION.PRICE(A4:A10,B4:B10,"ph",E6)')
 ds["H3"] = "s"; ds["I3"] = "PH"; ds["J3"] = "Wang"; ds["K3"] = "TVaR"
 for c in ("H3", "I3", "J3", "K3"):
     ds[c].font = bold
 for i in range(11):
     ds[f"H{4 + i}"] = i / 10
-ds["I4"] = ArrayFormula("I4:I14", '=PRO.DISTORTION(H4:H14,"ph",E6)')
-ds["J4"] = ArrayFormula("J4:J14", '=PRO.DISTORTION(H4:H14,"wang",E7)')
-ds["K4"] = ArrayFormula("K4:K14", '=PRO.DISTORTION(H4:H14,"tvar",E9)')
+ds["I4"] = ArrayFormula("I4:I14", '=PRO.CAP.DISTORTION(H4:H14,"ph",E6)')
+ds["J4"] = ArrayFormula("J4:J14", '=PRO.CAP.DISTORTION(H4:H14,"wang",E7)')
+ds["K4"] = ArrayFormula("K4:K14", '=PRO.CAP.DISTORTION(H4:H14,"tvar",E9)')
 ds["L3"] = "Bi-TVaR"; ds["M3"] = "Beta"; ds["L3"].font = ds["M3"].font = bold
 ds["O3"] = "Bi-TVaR p0, p1, w"; ds["O3"].font = bold
 for i, v in enumerate([0.2, 0.9, 0.3]):
@@ -804,14 +804,14 @@ for i, v in enumerate([0.2, 0.9, 0.3]):
 ds["O6"] = "Beta a, b"; ds["O6"].font = bold
 for i, v in enumerate([0.6, 1.5]):
     ds.cell(row=7, column=15 + i, value=v).fill = inp
-ds["L4"] = ArrayFormula("L4:L14", '=PRO.DISTORTION(H4:H14,"bitvar",O4:Q4)')
-ds["M4"] = ArrayFormula("M4:M14", '=PRO.DISTORTION(H4:H14,"beta",O7:P7)')
+ds["L4"] = ArrayFormula("L4:L14", '=PRO.CAP.DISTORTION(H4:H14,"bitvar",O4:Q4)')
+ds["M4"] = ArrayFormula("M4:M14", '=PRO.CAP.DISTORTION(H4:H14,"beta",O7:P7)')
 ds["O9"] = "Weighted TVaR: levels | weights"; ds["O9"].font = bold
 for i, (p, w) in enumerate([(0.1, 0.2), (0.5, 0.5), (0.9, 0.3)]):
     ds[f"O{10 + i}"] = p; ds[f"P{10 + i}"] = w
     ds[f"O{10 + i}"].fill = ds[f"P{10 + i}"].fill = inp
 ds["D18"] = "InsCo priced by the weighted TVaR"; ds["D18"].font = bold
-ds["D19"] = ArrayFormula("D19:E22", '=PRO.DISTORTION.PRICE(A4:A10,B4:B10,"wtdtvar",O10:P12)')
+ds["D19"] = ArrayFormula("D19:E22", '=PRO.CAP.DISTORTION.PRICE(A4:A10,B4:B10,"wtdtvar",O10:P12)')
 for col in "ABDEFHIJKLMOPQ":
     ds.column_dimensions[col].width = 14
 
@@ -826,18 +826,18 @@ for i, (u, v) in enumerate([(0.1, 0.1), (0.5, 0.5), (0.9, 0.9), (0.4, 0.6)]):
     cp[f"A{8 + i}"] = u; cp[f"B{8 + i}"] = v
     cp[f"A{8 + i}"].fill = cp[f"B{8 + i}"].fill = inp
 cp["C7"] = "Clayton"; cp["D7"] = "Gaussian at 0.5"; cp["C7"].font = cp["D7"].font = bold
-cp["C8"] = ArrayFormula("C8:C11", '=PRO.COPULA.CDF(A8:B11,"clayton",B3)')
-cp["D8"] = ArrayFormula("D8:D11", '=PRO.COPULA.CDF(A8:B11,"gaussian",0.5)')
+cp["C8"] = ArrayFormula("C8:C11", '=PRO.CAP.COPULA.CDF(A8:B11,"clayton",B3)')
+cp["D8"] = ArrayFormula("D8:D11", '=PRO.CAP.COPULA.CDF(A8:B11,"gaussian",0.5)')
 cp["F3"] = "U"; cp["G3"] = "V"; cp["H3"] = "Line A"; cp["I3"] = "Line B"; cp["J3"] = "Total"
 cp["L3"] = "A, reordered"; cp["M3"] = "B, reordered"
 for c in ("F3", "G3", "H3", "I3", "J3", "L3", "M3"):
     cp[c].font = bold
-cp["F4"] = ArrayFormula("F4:G1003", '=PRO.COPULA.SIM("clayton",B3,1000,2,B4)')
+cp["F4"] = ArrayFormula("F4:G1003", '=PRO.CAP.COPULA.SIM("clayton",B3,1000,2,B4)')
 cp["H4"] = ArrayFormula("H4:H1003", '=PRO.SEV.QUANTILE(F4:F1003,"lognormal_cv",50000,3)')
 cp["I4"] = ArrayFormula("I4:I1003", '=PRO.SEV.QUANTILE(G4:G1003,"gamma_cv",50000,1)')
 for r in range(4, 1004):
     cp[f"J{r}"] = f"=H{r}+I{r}"
-cp["L4"] = ArrayFormula("L4:M1003", "=PRO.IMAN.CONOVER(H4:I1003,B5,B4)")
+cp["L4"] = ArrayFormula("L4:M1003", "=PRO.CAP.IMAN.CONOVER(H4:I1003,B5,B4)")
 cp["A14"] = "Total's 99th percentile"; cp["B14"] = "=PERCENTILE(J4:J1003,0.99)"
 for col in "ABCDFGHIJLM":
     cp.column_dimensions[col].width = 14
@@ -860,11 +860,11 @@ for i, path in enumerate([(120, 70, 30), (90, 40, 30), (60, 60, 60), (30, 110, 5
     for j, x in enumerate(path):
         cell = tm.cell(row=11 + i, column=1 + j, value=x)
         cell.fill = inp
-tm["E11"] = ArrayFormula("E11:G15", "=PRO.PROFIT.COMMISSION.TERM(A11:C15,B3,B4,B5,B6)")
-tm["I11"] = ArrayFormula("I11:K15", '=PRO.SLIDING.SCALE.TERM(A11:C15,B3,B7:C7,B8:C8,"both",B6)')
+tm["E11"] = ArrayFormula("E11:G15", "=PRO.PRC.PROFIT.COMMISSION.TERM(A11:C15,B3,B4,B5,B6)")
+tm["I11"] = ArrayFormula("I11:K15", '=PRO.PRC.SLIDING.SCALE.TERM(A11:C15,B3,B7:C7,B8:C8,"both",B6)')
 tm["A17"] = "Year by year without a carry, for comparison"; tm["A17"].font = bold
-tm["E17"] = ArrayFormula("E17:G21", "=PRO.PROFIT.COMMISSION(A11:C15,B3,B4,B5)")
-tm["I17"] = ArrayFormula("I17:K21", "=PRO.SLIDING.SCALE(A11:C15,B3,B7:C7,B8:C8)")
+tm["E17"] = ArrayFormula("E17:G21", "=PRO.PRC.PROFIT.COMMISSION(A11:C15,B3,B4,B5)")
+tm["I17"] = ArrayFormula("I17:K21", "=PRO.PRC.SLIDING.SCALE(A11:C15,B3,B7:C7,B8:C8)")
 tm.column_dimensions["A"].width = 30
 
 # Bayesian MCMC: the ODP chain ladder sampled with NUTS on RAA (England and Verrall).
@@ -877,13 +877,13 @@ by["A5"] = "Seed"; by["B5"] = 0; by["B5"].fill = inp
 by["A6"] = "Prior SD"; by["B6"] = 10; by["B6"].fill = inp
 args = "RAA!B4:K13,{out},B3,B4,B5,,,B6"
 by["A8"] = "Diagnostics (check these first: R-hat under 1.01, ESS above 400, no divergences)"; by["A8"].font = bold
-by["A9"] = ArrayFormula("A9:B16", "=PRO.BAYES.ODP(" + args.format(out='"diagnostics"') + ")")
+by["A9"] = ArrayFormula("A9:B16", "=PRO.RES.BAYES.ODP(" + args.format(out='"diagnostics"') + ")")
 by["D8"] = "Reserves: chain ladder, posterior mean, SD, CV and percentiles"; by["D8"].font = bold
-by["D9"] = ArrayFormula("D9:L20", "=PRO.BAYES.ODP(" + args.format(out='"reserves"') + ")")
+by["D9"] = ArrayFormula("D9:L20", "=PRO.RES.BAYES.ODP(" + args.format(out='"reserves"') + ")")
 by["A23"] = "Posterior of the log-scale parameters: c, the origin effects a[w] and development effects b[d]"; by["A23"].font = bold
-by["A24"] = ArrayFormula("A24:I43", "=PRO.BAYES.ODP(" + args.format(out='"params"') + ")")
+by["A24"] = ArrayFormula("A24:I43", "=PRO.RES.BAYES.ODP(" + args.format(out='"params"') + ")")
 by["D22"] = "Compare: the ODP bootstrap's total SD"
-by["H22"] = ArrayFormula("H22", "=INDEX(PRO.ODP(RAA!B4:K13,20000),12,4)")
+by["H22"] = ArrayFormula("H22", "=INDEX(PRO.RES.ODP(RAA!B4:K13,20000),12,4)")
 for row in by.iter_rows(min_row=10, max_row=20, min_col=5, max_col=12):
     for c in row:
         c.number_format = "0.000" if c.column == 8 else "#,##0"
@@ -900,14 +900,14 @@ by["A46"] = "Bayesian Bornhuetter-Ferguson on GenIns (Expected loss sheet), prio
 by["A47"] = "Prior CV"; by["B47"] = 0.1; by["B47"].fill = inp
 bfargs = EG + "," + EP + ",'Expected loss'!$O$3,$B$47,{out},B3,B4,B5,,,,," + EO
 by["A49"] = "Diagnostics"; by["A49"].font = bold
-by["A50"] = ArrayFormula("A50:B57", "=PRO.BAYES.BF(" + bfargs.format(out='"diagnostics"') + ")")
+by["A50"] = ArrayFormula("A50:B57", "=PRO.RES.BAYES.BF(" + bfargs.format(out='"diagnostics"') + ")")
 by["D49"] = "Prior and posterior ultimates"; by["D49"].font = bold
-by["D50"] = ArrayFormula("D50:I61", "=PRO.BAYES.BF(" + bfargs.format(out='"ultimates"') + ")")
+by["D50"] = ArrayFormula("D50:I61", "=PRO.RES.BAYES.BF(" + bfargs.format(out='"ultimates"') + ")")
 by["K49"] = "Prior total = LR x premium"
 by["K50"] = "=ABS(INDEX(D50:I61,12,4)-'Expected loss'!$O$3*SUM(" + EP + "))<1E-6"
 by["K51"] = "R-hat under 1.01"; by["K52"] = "=B50<1.01"
 by["A63"] = "Reserves: chain ladder, posterior mean, SD, CV and percentiles"; by["A63"].font = bold
-by["A64"] = ArrayFormula("A64:I75", "=PRO.BAYES.BF(" + bfargs.format(out='"reserves"') + ")")
+by["A64"] = ArrayFormula("A64:I75", "=PRO.RES.BAYES.BF(" + bfargs.format(out='"reserves"') + ")")
 for row in by.iter_rows(min_row=51, max_row=61, min_col=5, max_col=9):
     for c in row:
         c.number_format = "0.000" if c.column == 9 else "#,##0"
@@ -926,7 +926,7 @@ for r in range(72, 76):
     ly[f"D{r}"] = f"=ABS(B{r}+C{r}-1)<1E-12"
     ly[f"B{r}"].number_format = ly[f"C{r}"].number_format = "0.000000"
 ly["A77"] = "Alpha between a frequency and a layer (R Pareto: 3 losses above 800, expected loss 1,200 to 1000 xs 1000)"
-ly["G77"] = ArrayFormula("G77", "=PRO.PARETO.ALPHA.FREQLAYER(800,3,1000,1000,1200)")
+ly["G77"] = ArrayFormula("G77", "=PRO.PRC.PARETO.ALPHA.FREQLAYER(800,3,1000,1000,1200)")
 ly["H77"] = 1.5853501938706767; ly["I77"] = "=ABS(G77-H77)<1E-9"
 
 rm["A70"] = "Pure premium indication (Werner and Modlin, Appendix B)"; rm["A70"].font = bold
@@ -938,16 +938,16 @@ for r, row in enumerate(appendix_b):
     for c, x in enumerate(row):
         rm.cell(row=72 + r, column=1 + c, value=x).fill = inp
 rm["F71"] = "LAE factor"; rm["F71"].font = bold; rm["F72"] = 1.012; rm["F72"].fill = inp
-rm["A78"] = ArrayFormula("A78:C84", "=PRO.PP.EXPERIENCE(A72:A76,B72:B76,C72:C76,D72:D76,F72)")
+rm["A78"] = ArrayFormula("A78:C84", "=PRO.PRC.PP.EXPERIENCE(A72:A76,B72:B76,C72:C76,D72:D76,F72)")
 rm["E78"] = "Book: pure premium 469.88"; rm["E79"] = "=ROUND(C84,2)=469.88"
 rm["E81"] = "Credibility 0.795 on 469.88, complement 585.75 (book 493.63)"
-rm["E82"] = ArrayFormula("E82", "=PRO.CRED.WEIGHTED(469.88,0.795,585.75)")
+rm["E82"] = ArrayFormula("E82", "=PRO.PRC.CRED.WEIGHTED(469.88,0.795,585.75)")
 rm["F82"] = "=ROUND(E82,2)=493.63"
 rm["E84"] = "Indicated rate: fixed 77.83, variable 13.8%, profit 5% (book 850.76)"
-rm["E85"] = ArrayFormula("E85", "=PRO.INDICATED.RATE(493.63+29.11+74.57+15.68,0.138,0.05,77.83)")
+rm["E85"] = ArrayFormula("E85", "=PRO.PRC.INDICATED.RATE(493.63+29.11+74.57+15.68,0.138,0.05,77.83)")
 rm["F85"] = "=ROUND(E85,2)=850.76"
 rm["A87"] = "Trended present rates complement (Appendix A: 13.2% indicated, 5% taken, trend 1.005/1.02; book 6.2%)"
-rm["E88"] = ArrayFormula("E88", "=PRO.TRENDED.PRESENT(0.132,0.05,1.005/1.02)")
+rm["E88"] = ArrayFormula("E88", "=PRO.PRC.TRENDED.PRESENT(0.132,0.05,1.005/1.02)")
 rm["F88"] = "=ROUND(E88,3)=0.062"
 rm["E88"].number_format = "0.0%"
 rm["A90"] = "Excel dates as half-month year fractions"; rm["A90"].font = bold
@@ -958,7 +958,7 @@ for k, (d, want) in enumerate([((2013, 6, 30), 2013.5), ((2011, 11, 15), 2011.87
 rm["B91"] = ArrayFormula("B91:B94", "=PRO.YEARFRACTION(A91:A94)")
 
 cr["A37"] = "Credibility-weighted estimate: Z 0.30 on 200 against 300 (Werner and Modlin, ch. 12: 270)"
-cr["F37"] = ArrayFormula("F37", "=PRO.CRED.WEIGHTED(200,0.3,300)")
+cr["F37"] = ArrayFormula("F37", "=PRO.PRC.CRED.WEIGHTED(200,0.3,300)")
 cr["G37"] = "=ROUND(F37,2)=270"
 
 ex["A42"] = "Destruction rate quantiles (for simulating losses), one column per c"; ex["A42"].font = bold
@@ -967,10 +967,10 @@ for k, c in enumerate([1.5, 2, 3, 4, 5]):
     ex.cell(row=43, column=2 + k, value=c).fill = inp
 for k, u in enumerate([0.5, 0.9, 0.99, 0.999]):
     ex.cell(row=44 + k, column=1, value=u).fill = inp
-ex["B44"] = ArrayFormula("B44:F47", '=PRO.EXPOSURE.QUANTILE(A44:A47,"swiss_re",B43:F43)')
+ex["B44"] = ArrayFormula("B44:F47", '=PRO.PRC.EXPOSURE.QUANTILE(A44:A47,"swiss_re",B43:F43)')
 ex["A49"] = "The c whose share of 2.5m xs 2.5m on a 10m risk is that of c = 3"
-ex["B49"] = ArrayFormula("B49", '=PRO.EXPOSURE.SHARE(2500000,2500000,10000000,"swiss_re",3)')
-ex["C49"] = ArrayFormula("C49", "=PRO.SWISSRE.C.LAYER(2500000,2500000,10000000,B49)")
+ex["B49"] = ArrayFormula("B49", '=PRO.PRC.EXPOSURE.SHARE(2500000,2500000,10000000,"swiss_re",3)')
+ex["C49"] = ArrayFormula("C49", "=PRO.PRC.SWISSRE.C.LAYER(2500000,2500000,10000000,B49)")
 ex["D49"] = "=ABS(C49-3)<1E-8"
 for row in ex.iter_rows(min_row=44, max_row=47, min_col=2, max_col=6):
     for c in row:
@@ -981,24 +981,24 @@ for k, (x, want) in enumerate([(50, 100), (200, 200), (400, 300)]):
     tm.cell(row=25 + k, column=1, value=x).fill = inp
     tm.cell(row=25 + k, column=3, value=want)
     tm.cell(row=25 + k, column=4, value=f"=B{25 + k}=C{25 + k}")
-tm["B25"] = ArrayFormula("B25:B27", "=PRO.SWING(A25:A27,0,1,100,300)")
+tm["B25"] = ArrayFormula("B25:B27", "=PRO.PRC.SWING(A25:A27,0,1,100,300)")
 
 md = wb.create_sheet("Mack draws")
-md["A1"] = "prospicio XLL test: Mack's bootstrap draws (PRO.MACK.BOOT.SIMS)"; md["A1"].font = Font(bold=True, size=13)
+md["A1"] = "prospicio XLL test: Mack's bootstrap draws (PRO.RES.MACK.BOOT.SIMS)"; md["A1"].font = Font(bold=True, size=13)
 md["A2"] = "Simulations and seed come from the Mack bootstrap sheet; the average total is that sheet's Mean."
 md["A2"].font = note
 md["N3"] = "Check"; md["N3"].font = bold
 md["N4"] = "Mean total, here"; md["O4"] = "=AVERAGE(K5:K100004)"
 md["N5"] = "Mean total, Mack bootstrap sheet"; md["O5"] = "='Mack bootstrap'!C19"
 md["N6"] = "Match"; md["O6"] = "=ABS(O4-O5)<1E-6*O5"
-md["A4"] = ArrayFormula("A4:K20004", f"=PRO.MACK.BOOT.SIMS({TRI},'Mack bootstrap'!$B$4,'Mack bootstrap'!$B$5,,,,{ORI})")
+md["A4"] = ArrayFormula("A4:K20004", f"=PRO.RES.MACK.BOOT.SIMS({TRI},'Mack bootstrap'!$B$4,'Mack bootstrap'!$B$5,,,,{ORI})")
 md.column_dimensions["N"].width = 30
 for col in "ABCDEFGHIJKO":
     md.column_dimensions[col].width = 11
 
 # A latest diagonal (a bordereau) projected with a selected pattern (decision 39).
 dg = wb.create_sheet("Diagonal")
-dg["A1"] = "prospicio XLL test: a latest diagonal projected with a selected pattern (PRO.DIAG.*)"; dg["A1"].font = Font(bold=True, size=13)
+dg["A1"] = "prospicio XLL test: a latest diagonal projected with a selected pattern (PRO.RES.DIAG.*)"; dg["A1"].font = Font(bold=True, size=13)
 dg["A2"] = "Six accident years at 31 December 2024, factors to ultimate from a prior study, premium 200 each."; dg["A2"].font = note
 for h, col in zip(["AY", "Age", "Latest", "Premium"], "ABCD"):
     dg[f"{col}3"] = h; dg[f"{col}3"].font = bold
@@ -1012,15 +1012,15 @@ for k, (age, cdf) in enumerate(zip(range(12, 84, 12), [12 / 7, 1.3, 1.15, 1.07, 
     dg.cell(row=4, column=7 + k, value=cdf).fill = inp
 O_, A_, L_, P_, PAT, PAGES = "$A$4:$A$9", "$B$4:$B$9", "$C$4:$C$9", "$D$4:$D$9", "$G$4:$L$4", "$G$3:$L$3"
 dg["A11"] = "Chain ladder"; dg["A11"].font = bold
-dg["A12"] = ArrayFormula("A12:F19", f'=PRO.DIAG.CL({O_},{A_},{L_},{PAT},{PAGES},"cdf")')
+dg["A12"] = ArrayFormula("A12:F19", f'=PRO.RES.DIAG.CL({O_},{A_},{L_},{PAT},{PAGES},"cdf")')
 dg["H11"] = "Bornhuetter-Ferguson, a priori 0.7"; dg["H11"].font = bold
-dg["H12"] = ArrayFormula("H12:O19", f'=PRO.DIAG.BF({O_},{A_},{L_},{P_},0.7,{PAT},{PAGES},"cdf")')
+dg["H12"] = ArrayFormula("H12:O19", f'=PRO.RES.DIAG.BF({O_},{A_},{L_},{P_},0.7,{PAT},{PAGES},"cdf")')
 dg["A21"] = "Benktander, 2 iterations"; dg["A21"].font = bold
-dg["A22"] = ArrayFormula("A22:H29", f'=PRO.DIAG.BENKTANDER({O_},{A_},{L_},{P_},0.7,{PAT},2,{PAGES},"cdf")')
+dg["A22"] = ArrayFormula("A22:H29", f'=PRO.RES.DIAG.BENKTANDER({O_},{A_},{L_},{P_},0.7,{PAT},2,{PAGES},"cdf")')
 dg["J21"] = "Cape Cod, ages from the valuation date 31 December 2024"; dg["J21"].font = bold
-dg["J22"] = ArrayFormula("J22:Q29", f'=PRO.DIAG.CAPECOD({O_},,{L_},{P_},{PAT},,,{PAGES},"cdf",,,45657)')
+dg["J22"] = ArrayFormula("J22:Q29", f'=PRO.RES.DIAG.CAPECOD({O_},,{L_},{P_},{PAT},,,{PAGES},"cdf",,,45657)')
 dg["A31"] = "Expected loss method, a priori 0.7"; dg["A31"].font = bold
-dg["A32"] = ArrayFormula("A32:H39", f'=PRO.DIAG.EL({O_},{A_},{L_},{P_},0.7,{PAT},{PAGES},"cdf")')
+dg["A32"] = ArrayFormula("A32:H39", f'=PRO.RES.DIAG.EL({O_},{A_},{L_},{P_},0.7,{PAT},{PAGES},"cdf")')
 
 # GenIns's diagonal (the Expected loss sheet's triangle) with its own volume-weighted
 # factors to ultimate, against chainladder-python 0.10.1's DevelopmentConstant.
@@ -1030,7 +1030,7 @@ dg["A42"] = "GenIns's latest diagonal with its own factors to ultimate, valued 3
 dg["A43"] = "CDF"; dg["A43"].font = bold
 for k, x in enumerate(GENINS_CDF):
     dg.cell(row=43, column=2 + k, value=x).fill = inp
-dg["A45"] = ArrayFormula("A45:F56", "=PRO.DIAG.CL('Expected loss'!$A$4:$A$13,,PRO.TRI.LATEST('Expected loss'!$B$4:$K$13),$B$43:$K$43,,\"cdf\",,,40543)")
+dg["A45"] = ArrayFormula("A45:F56", "=PRO.RES.DIAG.CL('Expected loss'!$A$4:$A$13,,PRO.TRI.LATEST('Expected loss'!$B$4:$K$13),$B$43:$K$43,,\"cdf\",,,40543)")
 
 # Accident quarters of 2024 at December 2024, a pattern at 3, 12, 24 and 36 months.
 dg["N42"] = "Accident quarters of 2024 (Excel dates), a pattern at 3, 12, 24, 36 months"; dg["N42"].font = bold
@@ -1042,7 +1042,7 @@ for k, (m, x) in enumerate(zip([1, 4, 7, 10], [400, 300, 200, 100])):
 for k, (age, cdf) in enumerate(zip([3, 12, 24, 36], [4, 2, 1.25, 1])):
     dg.cell(row=44 + k, column=17, value=age).fill = inp
     dg.cell(row=44 + k, column=18, value=cdf).fill = inp
-dg["N50"] = ArrayFormula("N50:S55", '=PRO.DIAG.CL(N44:N47,,O44:O47,R44:R47,Q44:Q47,"cdf",,"quarter",45657)')
+dg["N50"] = ArrayFormula("N50:S55", '=PRO.RES.DIAG.CL(N44:N47,,O44:O47,R44:R47,Q44:Q47,"cdf",,"quarter",45657)')
 
 # Semiannual origins of 2023 and 2024 at December 2024 (24, 18 and 12
 # months), the annual pattern read log-linearly at 18 months.
@@ -1056,7 +1056,7 @@ for k, (d, x) in enumerate(zip([datetime.date(2023, 1, 1), datetime.date(2023, 7
 for k, (age, cdf) in enumerate(zip([12, 24, 36], [2, 1.25, 1])):
     dg.cell(row=44 + k, column=26, value=age).fill = inp
     dg.cell(row=44 + k, column=27, value=cdf).fill = inp
-dg["W50"] = ArrayFormula("W50:AB54", '=PRO.DIAG.CL(W44:W46,,X44:X46,AA44:AA46,Z44:Z46,"cdf",,"semiannual",45657)')
+dg["W50"] = ArrayFormula("W50:AB54", '=PRO.RES.DIAG.CL(W44:W46,,X44:X46,AA44:AA46,Z44:Z46,"cdf",,"semiannual",45657)')
 
 # Past the pattern's end: nine factors of 1.1 from 12 to 108 months and a tail of 1.05.
 dg["A59"] = "Past the pattern's end: factors 1.1 from 12 to 108 months, tail 1.05 spread one step per year"; dg["A59"].font = bold
@@ -1067,7 +1067,7 @@ for k, age in enumerate([144, 132, 120, 108, 12]):
 dg["E59"] = "LDF"; dg["E59"].font = bold
 for k in range(9):
     dg.cell(row=59, column=6 + k, value=1.1).fill = inp
-dg["A66"] = ArrayFormula("A66:F72", '=PRO.DIAG.CL(A60:A64,B60:B64,C60:C64,F59:N59,,,1.05,,,"tail")')
+dg["A66"] = ArrayFormula("A66:F72", '=PRO.RES.DIAG.CL(A60:A64,B60:B64,C60:C64,F59:N59,,,1.05,,,"tail")')
 
 # An accident month's pattern t/12 averaged to accident years.
 # Right of the past-end exhibit's LDF row (F59:N59), so no input lands in it.
@@ -1075,11 +1075,11 @@ dg["P59"] = "An accident month's t/12 at 1 to 12 months, averaged to accident ye
 for k in range(12):
     dg.cell(row=60 + k, column=16, value=k + 1).fill = inp
     dg.cell(row=60 + k, column=17, value=(k + 1) / 12).fill = inp
-dg["S60"] = ArrayFormula("S60:U83", '=PRO.PATTERN.AVERAGE(P60:P71,Q60:Q71,"month","year","percent")')
+dg["S60"] = ArrayFormula("S60:U83", '=PRO.RES.PATTERN.AVERAGE(P60:P71,Q60:Q71,"month","year","percent")')
 
-# The RAA sheet's chain ladder frozen in PRO.CL.LDF and applied to its own diagonal.
-dg["A75"] = "RAA's own factors (the RAA sheet's PRO.CL.LDF row) applied to its latest diagonal"; dg["A75"].font = bold
-dg["A76"] = ArrayFormula("A76:F87", "=PRO.DIAG.CL(RAA!$A$4:$A$13,,PRO.TRI.LATEST(RAA!$B$4:$K$13),RAA!$B$14:$J$14,,,RAA!$K$14,,DATE(1990,12,31))")
+# The RAA sheet's chain ladder frozen in PRO.RES.CL.LDF and applied to its own diagonal.
+dg["A75"] = "RAA's own factors (the RAA sheet's PRO.RES.CL.LDF row) applied to its latest diagonal"; dg["A75"].font = bold
+dg["A76"] = ArrayFormula("A76:F87", "=PRO.RES.DIAG.CL(RAA!$A$4:$A$13,,PRO.TRI.LATEST(RAA!$B$4:$K$13),RAA!$B$14:$J$14,,,RAA!$K$14,,DATE(1990,12,31))")
 
 dg["H86"] = "Checks"; dg["H86"].font = bold
 for h, col in zip(["Quantity", "prospicio", "Expected", "Match"], "HIJK"):
@@ -1096,7 +1096,7 @@ for i, (name, f, x, tol) in enumerate([
         ("Semiannual, 2023H2 ultimate (300 x sqrt(2.5))", "=AA52", 300 * 2.5 ** 0.5, 1e-9),
         ("132 months: CDF past the end", "=D68", 1.0253798721500054, 1e-12),
         ("Averaged: percent at 12 months (78/144)", "=T72", 78 / 144, 1e-12),
-        ("RAA frozen: total ultimate against PRO.CL", "=E87", "=RAA!P14", 1e-12)]):
+        ("RAA frozen: total ultimate against PRO.RES.CL", "=E87", "=RAA!P14", 1e-12)]):
     row = 88 + i
     dg[f"H{row}"] = name; dg[f"I{row}"] = f; dg[f"J{row}"] = x
     dg[f"K{row}"] = f"=ABS(I{row}-J{row})<{tol}*MAX(1,ABS(J{row}))"
@@ -1109,7 +1109,7 @@ for col in [*"BCDEFGIJKLMOPQRSTUWXYZ", "AA", "AB"]:
 # exposure offset, against statsmodels 0.15.0 (validation/reference/glm_statsmodels.csv).
 REF = Path(__file__).resolve().parents[3] / "validation"
 gl = wb.create_sheet("GLM")
-gl["A1"] = "prospicio XLL test: a Poisson GLM with an exposure offset (PRO.GLM, .PREDICT, .RELATIVITIES)"; gl["A1"].font = Font(bold=True, size=13)
+gl["A1"] = "prospicio XLL test: a Poisson GLM with an exposure offset (PRO.PRC.GLM, .PREDICT, .RELATIVITIES)"; gl["A1"].font = Font(bold=True, size=13)
 gl["A2"] = "600 policies from validation/data/glm_policies.csv; claims on age and region, log(exposure) as the offset."; gl["A2"].font = note
 with open(REF / "data" / "glm_policies.csv") as f:
     policies = list(csv.DictReader(f))
@@ -1120,9 +1120,9 @@ for c, h in enumerate(["age", "region", "exposure", "claims"]):
         gl.cell(row=4 + r, column=1 + c, value=v if h == "region" else float(v)).fill = inp
 DATA = f"$A$3:$D${3 + len(policies)}"
 gl["F3"] = "GLM summary"; gl["F3"].font = bold
-gl["F4"] = ArrayFormula("F4:L19", f'=PRO.GLM({DATA},"claims",{{"age","region"}},"poisson","log","exposure")')
+gl["F4"] = ArrayFormula("F4:L19", f'=PRO.PRC.GLM({DATA},"claims",{{"age","region"}},"poisson","log","exposure")')
 gl["N3"] = "Relativities, 95%"; gl["N3"].font = bold
-gl["N4"] = ArrayFormula("N4:R9", f'=PRO.GLM.RELATIVITIES({DATA},"claims",{{"age","region"}},"poisson","log","exposure")')
+gl["N4"] = ArrayFormula("N4:R9", f'=PRO.PRC.GLM.RELATIVITIES({DATA},"claims",{{"age","region"}},"poisson","log","exposure")')
 gl["F23"] = "New rows"; gl["F23"].font = bold
 for c, h in enumerate(["age", "region", "exposure"]):
     gl.cell(row=24, column=6 + c, value=h).font = bold
@@ -1130,7 +1130,7 @@ for r, row in enumerate([(30, "A", 1), (45, "C", 0.5), (60, "D", 2)]):
     for c, v in enumerate(row):
         gl.cell(row=25 + r, column=6 + c, value=v).fill = inp
 gl["I24"] = "Mean"; gl["I24"].font = bold
-gl["I25"] = ArrayFormula("I25:I27", f'=PRO.GLM.PREDICT({DATA},"claims",{{"age","region"}},$F$24:$H$27,"poisson","log","exposure")')
+gl["I25"] = ArrayFormula("I25:I27", f'=PRO.PRC.GLM.PREDICT({DATA},"claims",{{"age","region"}},$F$24:$H$27,"poisson","log","exposure")')
 gl["F30"] = "Check against statsmodels 0.15.0"; gl["F30"].font = bold
 with open(REF / "reference" / "glm_statsmodels.csv") as f:
     sm = {(r["quantity"], r["term"]): float(r["expected"]) for r in csv.DictReader(f) if r["case"] == "poisson_log"}
@@ -1145,9 +1145,9 @@ gl.column_dimensions["F"].width = 24
 for col in "GHIJKLNOPQR":
     gl.column_dimensions[col].width = 13
 
-# A collateralised deal through PRO.CASHFLOW.
+# A collateralised deal through PRO.CAP.CASHFLOW.
 cf = wb.create_sheet("Cash flows")
-cf["A1"] = "prospicio XLL test: a collateralised deal's cash flows (PRO.CASHFLOW)"; cf["A1"].font = Font(bold=True, size=13)
+cf["A1"] = "prospicio XLL test: a collateralised deal's cash flows (PRO.CAP.CASHFLOW)"; cf["A1"].font = Font(bold=True, size=13)
 
 cf["A12"] = "A collateralised deal: premium 1,000 written at once, earned over 12 months, paid over 30, commuting after 36"; cf["A12"].font = bold
 cf["A13"] = "Terms"; cf["D13"] = "Requirement"; cf["G13"] = "At commutation"
@@ -1177,9 +1177,9 @@ for r, u in enumerate([0.4, 0.65, 0.9, 1.3, 2.0]):
     cf.cell(row=14 + r, column=15, value=u).fill = inp
 DEAL = "O14:O18,A14:C23,K13:M53,D14:E16"
 cf["A26"] = "Per simulation, with the NPV at 8%"; cf["A26"].font = bold
-cf["A27"] = ArrayFormula("A27:K32", f'=PRO.CASHFLOW({DEAL},,"simulations",0.08,G14:H14)')
+cf["A27"] = ArrayFormula("A27:K32", f'=PRO.CAP.CASHFLOW({DEAL},,"simulations",0.08,G14:H14)')
 cf["A35"] = "The first simulation's accounts"; cf["A35"].font = bold
-cf["A36"] = ArrayFormula("A36:O76", f'=PRO.CASHFLOW({DEAL},,"trace",,G14:H14)')
+cf["A36"] = ArrayFormula("A36:O76", f'=PRO.CAP.CASHFLOW({DEAL},,"trace",,G14:H14)')
 cf["Q26"] = "Check"; cf["Q26"].font = bold
 cf["Q27"] = "money is conserved"; cf["R27"] = "=ABS(B76)<1e-6"
 cf["Q28"] = "NPV of the trace's flows at 8%"; cf["R28"] = "=ABS(SUMPRODUCT(N37:N72,1.08^(-J14:J49/12))-C28)<1e-6"
@@ -1191,7 +1191,7 @@ cf.column_dimensions["Q"].width = 34
 # 10, a 10% premium expense, an aggregate cover of 3 xs 5 for 1 with a 10%
 # commission), against its printed sheet (validation/reference/pnl_builders_aggregate.csv).
 pl = wb.create_sheet("P&L")
-pl["A1"] = "prospicio XLL test: the P&L ledger (PRO.PNL), aggregate's Example 3"; pl["A1"].font = Font(bold=True, size=13)
+pl["A1"] = "prospicio XLL test: the P&L ledger (PRO.CAP.PNL), aggregate's Example 3"; pl["A1"].font = Font(bold=True, size=13)
 pl["A2"] = "Annual gross losses and their probabilities; the book and the cover it buys."; pl["A2"].font = note
 pl["A3"] = "Loss"; pl["B3"] = "Prob"; pl["A3"].font = pl["B3"].font = bold
 for r, (x, p) in enumerate(zip([2, 3, 4, 5, 6, 8], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])):
@@ -1206,11 +1206,11 @@ for c, (h, x) in enumerate(zip(["name", "limit", "attachment", "premium", "commi
     pl.cell(row=9, column=4 + c, value=x).fill = inp
 ARGS = "$A$4:$A$9,$B$4:$B$9,$E$3,$D$5:$G$6,$D$8:$H$9"
 pl["A12"] = "The walk: the gross book, then the cover"; pl["A12"].font = bold
-pl["A13"] = ArrayFormula("A13:P28", f'=PRO.PNL({ARGS},"walk")')
+pl["A13"] = ArrayFormula("A13:P28", f'=PRO.CAP.PNL({ARGS},"walk")')
 pl["A31"] = "The card"; pl["A31"].font = bold
-pl["A32"] = ArrayFormula("A32:I43", f'=PRO.PNL({ARGS},"walk","card")')
+pl["A32"] = ArrayFormula("A32:I43", f'=PRO.CAP.PNL({ARGS},"walk","card")')
 pl["K31"] = "The ratios"; pl["K31"].font = bold
-pl["K32"] = ArrayFormula("K32:X35", f'=PRO.PNL({ARGS},"walk","ratios")')
+pl["K32"] = ArrayFormula("K32:X35", f'=PRO.CAP.PNL({ARGS},"walk","ratios")')
 pl["A46"] = "Check against aggregate 1.0.1"; pl["A46"].font = bold
 with open(REF / "reference" / "pnl_builders_aggregate.csv") as f:
     ex3 = {(r["row"], r["col"]): float(r["expected"]) for r in csv.DictReader(f)
@@ -1233,7 +1233,7 @@ pl.column_dimensions["C"].width = 22
 # (examples/data/cat_book_*.csv), against the numbers the guide
 # docs/guides/cat-2-risk-metrics.md prints.
 ct = wb.create_sheet("Cat")
-ct["A1"] = "prospicio XLL test: year and event loss tables (PRO.YLT.STATS, PRO.YLT.OEP, PRO.ELT.STATS, PRO.ELT.OEP)"
+ct["A1"] = "prospicio XLL test: year and event loss tables (PRO.CAP.YLT.STATS, PRO.CAP.YLT.OEP, PRO.CAP.ELT.STATS, PRO.CAP.ELT.OEP)"
 ct["A1"].font = Font(bold=True, size=13)
 ct["A2"] = "Alder Mutual's 2,000 simulated years and its event loss table, as in the guide cat-2-risk-metrics."; ct["A2"].font = note
 for c, h in enumerate(["Year", "Loss", "Time"]):
@@ -1257,22 +1257,22 @@ Y = f"$A$4:$A${last},$B$4:$B${last}"
 E = f"$E$4:$E${elast},$F$4:$F${elast},$G$4:$G${elast},$H$4:$H${elast},$I$4:$I${elast}"
 T = f"$C$4:$C${last}"
 ct["K3"] = "Annual totals"; ct["K3"].font = bold
-ct["K4"] = ArrayFormula("K4:L19", f"=PRO.YLT.STATS({Y},2000,{{0.9,0.99}})")
+ct["K4"] = ArrayFormula("K4:L19", f"=PRO.CAP.YLT.STATS({Y},2000,{{0.9,0.99}})")
 ct["N3"] = "Amounts"; ct["N3"].font = bold
 ct["N4"] = 30; ct["N5"] = 70; ct["N6"] = 110
 for c in ("N4", "N5", "N6"):
     ct[c].fill = inp
 ct["P3"] = "Exceedance at amounts, raw"; ct["P3"].font = bold
-ct["P4"] = ArrayFormula("P4:T7", f"=PRO.YLT.OEP({Y},,N4:N6)")
+ct["P4"] = ArrayFormula("P4:T7", f"=PRO.CAP.YLT.OEP({Y},,N4:N6)")
 ct["P10"] = "PMLs by return period, a 72-hour clause"; ct["P10"].font = bold
 ct["N11"] = 10; ct["N12"] = 50; ct["N13"] = 100; ct["N14"] = 250
 for c in ("N11", "N12", "N13", "N14"):
     ct[c].fill = inp
-ct["P11"] = ArrayFormula("P11:U15", f"=PRO.YLT.OEP({Y},N11:N14,,,,{T},72)")
+ct["P11"] = ArrayFormula("P11:U15", f"=PRO.CAP.YLT.OEP({Y},N11:N14,,,,{T},72)")
 ct["K22"] = "The event loss table"; ct["K22"].font = bold
-ct["K23"] = ArrayFormula("K23:L29", f"=PRO.ELT.STATS({E})")
+ct["K23"] = ArrayFormula("K23:L29", f"=PRO.CAP.ELT.STATS({E})")
 ct["P18"] = "The event loss table's OEP"; ct["P18"].font = bold
-ct["P19"] = ArrayFormula("P19:T23", f"=PRO.ELT.OEP({E},N11:N14)")
+ct["P19"] = ArrayFormula("P19:T23", f"=PRO.CAP.ELT.OEP({E},N11:N14)")
 ct["P26"] = "Check against the guide"; ct["P26"].font = bold
 checks = [
     ("Average annual loss", "L9", 16.778, 3), ("SD", "L10", 35.158, 3), ("VaR 99%", "L17", 176.824, 3),
@@ -1294,7 +1294,7 @@ ct.column_dimensions["P"].width = 30
 # (Exercises 205 and 206) and numpy's allocations of four units
 # (validation/reference/allocation_numpy.csv).
 al = wb.create_sheet("Allocation")
-al["A1"] = "prospicio XLL test: capital allocation (PRO.ALLOCATE, PRO.ALLOCATE.TOTAL)"; al["A1"].font = Font(bold=True, size=13)
+al["A1"] = "prospicio XLL test: capital allocation (PRO.CAP.ALLOCATE, PRO.CAP.ALLOCATE.TOTAL)"; al["A1"].font = Font(bold=True, size=13)
 al["A2"] = "Pricing Insurance Risk's Simple Discrete Example: two units over 16 equally likely years."; al["A2"].font = note
 al["A3"] = "X1"; al["B3"] = "X2"; al["A3"].font = al["B3"].font = bold
 r = 4
@@ -1305,11 +1305,11 @@ for a, k in [(0, 2), (8, 1), (10, 1)]:
             al.cell(row=r, column=2, value=b).fill = inp
             r += 1
 al["D3"] = "A premium of 80 by stand-alone TVaR at 75% (Exercise 205)"; al["D3"].font = bold
-al["D4"] = ArrayFormula("D4:G8", '=PRO.ALLOCATE.TOTAL(A3:B19,80,"haircut","tvar",0.75)')
+al["D4"] = ArrayFormula("D4:G8", '=PRO.CAP.ALLOCATE.TOTAL(A3:B19,80,"haircut","tvar",0.75)')
 al["D11"] = "At the equal risk level (Exercise 206)"; al["D11"].font = bold
-al["D12"] = ArrayFormula("D12:G16", '=PRO.ALLOCATE.TOTAL(A3:B19,80,"equal_risk")')
+al["D12"] = ArrayFormula("D12:G16", '=PRO.CAP.ALLOCATE.TOTAL(A3:B19,80,"equal_risk")')
 al["D19"] = "TVaR 90% by Euler"; al["D19"].font = bold
-al["D20"] = ArrayFormula("D20:H24", '=PRO.ALLOCATE(A3:B19,"tvar",0.9)')
+al["D20"] = ArrayFormula("D20:H24", '=PRO.CAP.ALLOCATE(A3:B19,"tvar",0.9)')
 al["J3"] = "Four units over 400 simulations (numpy reference)"; al["J3"].font = bold
 for c, h in enumerate(["U1", "U2", "U3", "U4"]):
     al.cell(row=4, column=10 + c, value=h).font = bold
@@ -1318,9 +1318,9 @@ for i in range(400):
     for c, v in enumerate([a, (i * 53) % 97 + a // 2, (i * i) % 89, 3 * ((i * 29) % 41) + (a // 10) ** 2]):
         al.cell(row=5 + i, column=10 + c, value=v).fill = inp
 al["O3"] = "Shapley under PH 0.5"; al["O3"].font = bold
-al["O4"] = ArrayFormula("O4:S10", '=PRO.ALLOCATE(J4:M404,"ph",0.5,"shapley")')
+al["O4"] = ArrayFormula("O4:S10", '=PRO.CAP.ALLOCATE(J4:M404,"ph",0.5,"shapley")')
 al["O13"] = "Covariance under dual power 3"; al["O13"].font = bold
-al["O14"] = ArrayFormula("O14:S20", '=PRO.ALLOCATE(J4:M404,"dual",3,"covariance")')
+al["O14"] = ArrayFormula("O14:S20", '=PRO.CAP.ALLOCATE(J4:M404,"dual",3,"covariance")')
 with open(REF / "reference" / "allocation_numpy.csv") as f:
     ref = {(r["distortion"], r["arg"], r["method"], r["component"]): float(r["expected"]) for r in csv.DictReader(f)}
 al["O23"] = "Check"; al["P23"] = "prospicio"; al["Q23"] = "Expected"; al["R23"] = "Agrees"

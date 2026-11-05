@@ -1,5 +1,5 @@
 //! The piecewise Pareto and Riegel's generalized Pareto as severity
-//! families, and `PRO.LAYER.VAR`, reached through the catalogue as Excel
+//! families, and `PRO.PRC.LAYER.VAR`, reached through the catalogue as Excel
 //! reaches them, against the R package Pareto 2.4.5
 //! (`validation/reference/piecewise_pareto_r.csv` and
 //! `gen_pareto_r.csv`): every cdf, quantile, layer mean, second moment and
@@ -73,11 +73,15 @@ fn check(file: &str) -> usize {
             "quantile" => num(call("pro_sev_quantile", first(vec![arg()]))
                 .as_scalar()
                 .unwrap()),
-            "layer" => num(call("pro_layer", first(layer())).as_scalar().unwrap()),
-            "layer_variance" => num(call("pro_layer_var", first(layer())).as_scalar().unwrap()),
+            "layer" => num(call("pro_prc_layer", first(layer())).as_scalar().unwrap()),
+            "layer_variance" => num(call("pro_prc_layer_var", first(layer()))
+                .as_scalar()
+                .unwrap()),
             "layer_second_moment" => {
-                let m = num(call("pro_layer", first(layer())).as_scalar().unwrap());
-                let v = num(call("pro_layer_var", first(layer())).as_scalar().unwrap());
+                let m = num(call("pro_prc_layer", first(layer())).as_scalar().unwrap());
+                let v = num(call("pro_prc_layer_var", first(layer()))
+                    .as_scalar()
+                    .unwrap());
                 v + m * m
             }
             other => panic!("unknown quantity {other}"),
@@ -119,13 +123,13 @@ fn layer_variance_closed_form_and_errors() {
         m2 += 2.0 * (x - 1000.0) * s(x) * h;
     }
     let v = call(
-        "pro_layer_var",
+        "pro_prc_layer_var",
         vec![n(1000.0), n(1000.0), t("pareto"), n(1000.0), n(3.0)],
     );
     assert!((num(v.as_scalar().unwrap()) - (m2 - m1 * m1)).abs() < 1e-3);
     // A piecewise Pareto of one piece is the Pareto.
     let pp = call(
-        "pro_layer_var",
+        "pro_prc_layer_var",
         vec![
             n(1000.0),
             n(1000.0),
@@ -137,7 +141,7 @@ fn layer_variance_closed_form_and_errors() {
     assert!((num(pp.as_scalar().unwrap()) - num(v.as_scalar().unwrap())).abs() < 1e-9);
     // Alpha 1.5 has no second moment: the unlimited variance is blank.
     let inf = call(
-        "pro_layer_var",
+        "pro_prc_layer_var",
         vec![t("unlimited"), n(0.0), t("pareto"), n(1000.0), n(1.5)],
     );
     assert_eq!(inf.as_scalar(), Some(&Value::Empty));
