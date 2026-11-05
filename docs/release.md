@@ -112,23 +112,22 @@ of 0.0.9: #554 and #555 (#739), #556 (#729), #557 (#735), #558 (#740), #559
 Status on 2026-11-04: the release PR sets 0.0.8; the Excel parity batches and
 #730 move to 0.0.9.
 
-**0.0.9** (proposed on 2026-11-04 for the user's decision; nothing here is
-decided): what 0.0.8 carried over, the open issues that are not parked, and
-the large items for the user to admit or defer.
+**0.0.9** (the user's decision of 2026-11-04): close as many of the open
+issues as possible. Only IFRS 17 (#553, `P4`), claim-level reserving and the
+survival models stay parked. #599's pooling structure is the recommended one
+(`reserving-bayes.md` open decision 26, decided 2026-11-04).
 
 | Lane | New work | Small items |
 |---|---|---|
-| Reserving | #599: `HierarchicalBf`, once the user picks the pooling structure (`reserving-bayes.md` open decision 26), then its one-year view | |
+| Reserving | #599: `HierarchicalBf` with the recommended pooling (a non-centred lognormal program effect, one partially pooled pattern, half-normal spread priors, the ODP scale pooled per unit of premium), then its one-year view; Compartmental at a sub-annual grain (`[compartmental-subannual]`) | |
 | Aggregate | | #722 (an accident-year payment pattern on the underwriting basis in `monthly_patterns`) |
-| Excel | parity with the Python and R bindings in batches (carried from 0.0.8; an issue to file, listing the batches: the 0.0.8 Models fits, the new reserving methods #554 to #560, the industry prior and the new underwriting year) | |
-| Guides | #730 (an industry prior from a user-fetched Schedule P line, replacing the ILS notebook's hard-coded prior) | `[guides-current-next]` for the methods 0.0.8 added (the Munich chain ladder, the paid-incurred chain, development curves, Friedland's exhibits, the count methods, salvage and ALAE ratios, the Models fits and explanations) |
-| Shared | #579, one large file split per PR between releases | |
+| Models | #577 (tabular networks with categorical embeddings and multi-task heads) | |
+| Excel | parity with the Python and R bindings in batches (#742) | |
+| Guides | #730 (an industry prior from a user-fetched Schedule P line, replacing the ILS notebook's hard-coded prior) | `[guides-current-next]` for the methods 0.0.8 added |
+| Shared | #576 (a WASM JavaScript package; its npm name is the user's), #579 (one large file split per PR) | |
 
-For the user to admit or defer: #577 (tabular networks with embeddings and
-multi-task heads, large, Models), #576 (a WASM JavaScript package, large,
-shared; its npm name is the user's) and Compartmental at a sub-annual grain
-(`[compartmental-subannual]`). Probability has no open item. Claim-level
-reserving and the survival models stay parked. #553 (IFRS 17) is `P4`.
+Probability has no open item. Parked: #553 (IFRS 17, `P4`), claim-level
+reserving and the survival models.
 
 ## Each release
 
