@@ -9,7 +9,7 @@ This lane wraps other lanes' crates and changes none of them
 ## Next
 
 - [excel-confirm-groups] in Excel 365: the four categories in Insert Function
-- [excel-long-runs] asynchronous functions and fit handles, so a bootstrap or an MCMC fit does not rerun or block Excel on every edit (a design note first)
+- [excel-confirm-async] in Excel 365: `#GETTING_DATA` then the result for the bootstraps and Bayesian fits, and an edit during a long run (decision 48)
 - [excel-more-functions] further functions as the user asks, each in its group
 - [code-signing-certificate] a code-signing certificate is the user's to buy
 
@@ -69,3 +69,4 @@ This lane wraps other lanes' crates and changes none of them
 - [excel-no-duplicates] decision 46 (branch `claude/xll-docs-overlap`, user 2026-11-03): `PRO.NPV`, `PRO.IRR` and `PRO.MOIC` removed as duplicates of Excel's `NPV`, `XNPV`, `IRR`, `XIRR` or a one-line formula; the README rewritten as a manual grouped by area with a "Start here" table
 - [excel-groups] decision 47 (branch `claude/xll-groups`, user 2026-11-05): every name carries its group (`PRO.RES.`, `PRO.PRC.`, `PRO.CAP.`; severities, tails, triangle helpers, the version and dates common), each group a category of its own in Insert Function; the 98 old names registered hidden through 0.0.9; the add-in built with LTO (16.3 MB to 14.0 MB); the README regrouped to match. Names in the bullets above are the ones the functions had then
 - [excel-remove-aliases] the 98 old names removed in 0.0.9 rather than 0.0.10 (branch `claude/xll-remove-aliases`, user 2026-11-05): a formula with one shows `#NAME?`; decision 47's table is the find-and-replace list, checked against the catalogue
+- [excel-async] decision 48 (branch `claude/xll-async`, user 2026-11-05): the nine functions that simulate or sample (the bootstraps, their draws and one-year views, the Bayesian ODP and BF, `PRO.CAP.COPULA.SIM`) are Excel asynchronous functions answered through `xlAsyncReturn`; one run per inputs, the last 32 results kept, an interrupted recalculation loses no run; the add-in pinned from the first asynchronous call; fit handles left open as not needed
