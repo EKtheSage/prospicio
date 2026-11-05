@@ -378,10 +378,11 @@ jobs:
 
   # GLM parity at scale: the freMTPL2 claim frequency GLM and claim
   # indicator logit (678,013 policies) and the freMTPL2sev gamma severity
-  # GLM against statsmodels, in a release build (about 30 s; several
-  # minutes unoptimized). The data is downloaded from OpenML once and
-  # cached. On a pull request it runs only when the GLM code or the
-  # freMTPL2 parity files change; otherwise its steps are skipped. On a
+  # GLM against statsmodels, and the tabular networks' embeddings against
+  # a one-hot CANN, in a release build (about 90 s; several minutes
+  # unoptimized). The data is downloaded from OpenML once and cached. On a
+  # pull request it runs only when the GLM or network code or the freMTPL2
+  # parity files change; otherwise its steps are skipped. On a
   # push to main it only builds the test, if its cache is missing.
   fremtpl2:
     runs-on: ubuntu-latest
@@ -396,7 +397,7 @@ jobs:
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
-              | grep -qE '^(crates/prospicio-glm/|crates/prospicio-models/|crates/prospicio-math/|validation/(tests|scripts|reference)/.*fremtpl2|\.github/workflows/ci\.yml)'; then
+              | grep -qE '^(crates/prospicio-glm/|crates/prospicio-models/|crates/prospicio-math/|crates/prospicio-nn/|validation/(tests|scripts|reference)/.*fremtpl2|\.github/workflows/ci\.yml)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"

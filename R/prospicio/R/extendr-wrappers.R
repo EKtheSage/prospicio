@@ -4335,6 +4335,42 @@ OnnxPredictorModel$predict_distribution <- function(x, names, offset, weights, n
 #' @export
 `[[.OnnxPredictorModel` <- `$.OnnxPredictorModel`
 
+tabular_net_fit_design <- function(x, names, offset, weights, embed_factors, embed_dims, embed_references, head_names, head_families, head_links, head_powers, head_loss_weights, ys, head_weights, head_offsets, hidden, epochs, batch_size, learning_rate, seed, validation_share, patience) .Call(wrap__tabular_net_fit_design, x, names, offset, weights, embed_factors, embed_dims, embed_references, head_names, head_families, head_links, head_powers, head_loss_weights, ys, head_weights, head_offsets, hidden, epochs, batch_size, learning_rate, seed, validation_share, patience)
+
+TabularNetModel <- new.env(parent = emptyenv())
+
+TabularNetModel$to_json <- function() .Call(wrap__TabularNetModel__to_json, self)
+
+TabularNetModel$from_json <- function(text) .Call(wrap__TabularNetModel__from_json, text)
+
+TabularNetModel$input_hash <- function() .Call(wrap__TabularNetModel__input_hash, self)
+
+TabularNetModel$head_names <- function() .Call(wrap__TabularNetModel__head_names, self)
+
+TabularNetModel$factors <- function() .Call(wrap__TabularNetModel__factors, self)
+
+TabularNetModel$fitted <- function(head) .Call(wrap__TabularNetModel__fitted, self, head)
+
+TabularNetModel$dispersions <- function() .Call(wrap__TabularNetModel__dispersions, self)
+
+TabularNetModel$best_epoch <- function() .Call(wrap__TabularNetModel__best_epoch, self)
+
+TabularNetModel$validation_history <- function() .Call(wrap__TabularNetModel__validation_history, self)
+
+TabularNetModel$predict <- function(x, names, head, offset) .Call(wrap__TabularNetModel__predict, self, x, names, head, offset)
+
+TabularNetModel$corrections <- function(x, names) .Call(wrap__TabularNetModel__corrections, self, x, names)
+
+TabularNetModel$embeddings <- function(factor) .Call(wrap__TabularNetModel__embeddings, self, factor)
+
+TabularNetModel$predict_distribution <- function(x, names, offset, weights, n_sims, seed) .Call(wrap__TabularNetModel__predict_distribution, self, x, names, offset, weights, n_sims, seed)
+
+#' @export
+`$.TabularNetModel` <- function (self, name) { func <- TabularNetModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.TabularNetModel` <- `$.TabularNetModel`
+
 BookDeal <- new.env(parent = emptyenv())
 
 BookDeal$new <- function(name, premium, loss, names, deductions, outside, inception) .Call(wrap__BookDeal__new, name, premium, loss, names, deductions, outside, inception)

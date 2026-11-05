@@ -3,7 +3,8 @@
 //! of Noll, Salzmann and Wüthrich (2018) on all 678,013 policies of
 //! freMTPL2freq, a logistic regression of whether a policy has a claim on
 //! the same design, and a gamma severity GLM on freMTPL2sev joined to the
-//! portfolio.
+//! portfolio; and the tabular networks' embeddings of VehBrand and Region
+//! against a CANN on their indicator columns (`prospicio-nn`, #577).
 //!
 //! The data is downloaded, not committed: `python
 //! validation/scripts/fetch_fremtpl2.py` writes
@@ -196,4 +197,81 @@ fn fremtpl2_gamma_severity_matches_statsmodels() {
         .fit(&d, &y)
         .unwrap();
     check_fit("gamma_log_weighted", &d, &y, &fit);
+}
+
+/// The network's features as Schelldorfer and Wüthrich (2019) feed them:
+/// VehPower a number, not the GLM's factor, beside the other columns, and
+/// the GLM's classes of VehAge and DrivAge.
+fn network_design(data: &[(String, Vec<String>)]) -> Design {
+    let mut columns = Vec::new();
+    for name in ["Area", "VehPower", "BonusMalus", "Density"] {
+        columns.push((name.to_string(), Column::Numeric(numeric(data, name))));
+    }
+    for name in ["VehAge", "DrivAge", "VehBrand", "VehGas", "Region"] {
+        columns.push((
+            name.to_string(),
+            Column::Categorical(column(data, name).to_vec()),
+        ));
+    }
+    let frame = Frame::new(columns).unwrap();
+    let mut terms = Terms::new();
+    for name in ["Area", "VehPower", "BonusMalus", "Density"] {
+        terms = terms.numeric(name);
+    }
+    for name in ["VehAge", "DrivAge", "VehBrand", "VehGas", "Region"] {
+        terms = terms.factor(name);
+    }
+    terms.fit(&frame).unwrap().design(&frame).unwrap()
+}
+
+/// Schelldorfer and Wüthrich's comparison (2019, section 4) of a CANN on
+/// indicator columns with one that enters VehBrand and Region as
+/// two-dimensional embeddings, on a learning and a test sample of the
+/// portfolio (every fifth policy held out). Both start at the GLM fitted on
+/// the learning sample, so the comparison is of what each network adds.
+#[test]
+fn fremtpl2_embeddings_beat_the_one_hot_cann() {
+    use prospicio_models::metrics::mean_deviance;
+    use prospicio_models::{Family, Fitted, Link};
+    use prospicio_nn::{Head, TabularNet, Target};
+
+    let Some(data) = portfolio(DATA) else {
+        return;
+    };
+    let log_exposure: Vec<f64> = numeric(&data, "Exposure").iter().map(|e| e.ln()).collect();
+    let glm_design = design(&data).with_offset(log_exposure).unwrap();
+    let features = network_design(&data);
+    let y = numeric(&data, "ClaimNb");
+    let (learn, test): (Vec<usize>, Vec<usize>) = (0..y.len()).partition(|i| i % 5 != 0);
+    let pick = |rows: &[usize]| rows.iter().map(|&i| y[i]).collect::<Vec<f64>>();
+    let (yl, yt) = (pick(&learn), pick(&test));
+    let (gl, gt) = (glm_design.select(&learn), glm_design.select(&test));
+    let glm = Glm::new(Family::Poisson, Link::Log).fit(&gl, &yl).unwrap();
+    let glm_test = mean_deviance(Family::Poisson, &yt, &glm.predict(&gt).unwrap(), None).unwrap();
+    let eta = |d: &Design| d.linear_predictor(glm.coefficients());
+    let dl = features.select(&learn).with_offset(eta(&gl)).unwrap();
+    let dt = features.select(&test).with_offset(eta(&gt)).unwrap();
+    let net = |spec: TabularNet| {
+        let mut spec = spec
+            .hidden(&[20, 15, 10])
+            .head(Head::new("freq", Family::Poisson));
+        spec.epochs = 15;
+        spec.batch_size = 10_000;
+        spec.learning_rate = 1e-2;
+        spec.seed = 1;
+        let fit = spec.fit_heads(&dl, &[Target::new(&yl)]).unwrap();
+        mean_deviance(Family::Poisson, &yt, &fit.predict(&dt).unwrap(), None).unwrap()
+    };
+    let one_hot = net(TabularNet::new());
+    let embedded = net(TabularNet::new()
+        .embedding("VehBrand", 2)
+        .embedding("Region", 2));
+    eprintln!(
+        "test mean deviance: GLM {glm_test:.6}, one-hot CANN {one_hot:.6}, embeddings {embedded:.6}"
+    );
+    assert!(one_hot < glm_test, "{one_hot} vs the GLM's {glm_test}");
+    assert!(
+        embedded < one_hot,
+        "{embedded} vs the one-hot CANN's {one_hot}"
+    );
 }

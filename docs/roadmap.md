@@ -658,9 +658,11 @@ what it is aiming for by v1.0.
   inference (`prospicio_nn::onnx`, v0.9); all of it in Python and R,
   behind the bindings' default `nn` feature.
   Fitted networks save, load and pickle like the GLM (`to_json` /
-  `from_json`, every weight by its path).
-- **Next:**
-  1. Tabular MLPs with embeddings, and multi-task claim models.
+  `from_json`, every weight by its path). Tabular networks with
+  embeddings of rating factors and several claim heads on a shared body
+  (`TabularNet`, #577; in Python and R).
+- **Next:** nothing planned; sequence models for claim trajectories are
+  later work (`docs/architecture.md`).
 - **v1.0:** networks behind the shared model protocol, in every front
   end.
 

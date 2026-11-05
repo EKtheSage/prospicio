@@ -4143,6 +4143,7 @@ dependencies = [
  "prospicio-glm",
  "prospicio-math",
  "prospicio-models",
+ "prospicio-nn",
  "prospicio-pricing",
  "prospicio-prob",
  "prospicio-reserving",

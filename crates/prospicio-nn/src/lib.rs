@@ -18,8 +18,10 @@ mod artifact;
 pub mod attention;
 #[cfg(feature = "onnx")]
 pub mod onnx;
+pub mod tabular;
 
 pub use attention::{AttentionCann, AttentionCannFit, TokenAttention};
+pub use tabular::{Embedding, EmbeddingTable, Head, TabularNet, TabularNetFit, Target};
 
 use burn::backend::{Autodiff, NdArray};
 use burn::module::{AutodiffModule, Initializer, Module, ModuleVisitor, Param};
