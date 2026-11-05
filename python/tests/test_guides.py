@@ -22,7 +22,7 @@ PROSE_PAGES = {"reading-list.md"}
 PAGES = sorted(p for p in GUIDES.glob("*.md") if p.name != "README.md")
 GUIDE_FILES = [p for p in PAGES if p.name not in PROSE_PAGES]
 EM_DASH = "\u2014"
-SECONDS_PER_GUIDE = 20.0
+SECONDS_PER_GUIDE = 30.0
 
 
 def fenced_blocks(text):
