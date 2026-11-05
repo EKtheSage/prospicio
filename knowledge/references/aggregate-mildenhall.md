@@ -364,7 +364,7 @@ sources:
 * The reference books' severity is limited (`1000 xs 0`, rounded onto
   `cap + 1` points of step 1) while the annual total runs on `2^14`. A
   caller that rounds the severity and compounds it on one length (the
-  XLL's `PRO.AGG.COVER`, `step` and `points`) reproduces the book by one
+  XLL's `PRO.CAP.AGG.COVER`, `step` and `points`) reproduces the book by one
   more occurrence layer, unlimited above the cap at 100%: the net is then
   the capped severity's exactly, and the `agg` block's statistics match
   at the reference's tolerances.[^reins]

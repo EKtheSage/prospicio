@@ -11,7 +11,7 @@ sources:
     title: prospicio_reserving::bayes::BayesOdp (the model and its priors)
   - id: xll
     resource: ../docs/design/xll.md
-    title: Design note, the Excel add-in (decision 21, PRO.BAYES.ODP's prior_sd)
+    title: Design note, the Excel add-in (decision 21, PRO.RES.BAYES.ODP's prior_sd)
 ---
 
 # Finding
@@ -24,7 +24,7 @@ sources:
   binds them.[^odp]
 * On RAA (four chains of 1,000 warm-up and 1,000 kept draws, 10,000
   simulations, seed 1, release build), with one SD for the intercept,
-  origin and development effects as `PRO.BAYES.ODP`'s `prior_sd` sets
+  origin and development effects as `PRO.RES.BAYES.ODP`'s `prior_sd` sets
   them:[^xll]
 
   | prior SD | b[7] | b[9] | b[10] | total mean reserve |

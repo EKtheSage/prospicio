@@ -1,6 +1,6 @@
-//! Ratemaking, part two (`PRO.LR.EXPERIENCE`, `PRO.PP.EXPERIENCE`,
-//! `PRO.INDICATED.CHANGE`, `PRO.INDICATED.RATE`, `PRO.PERMISSIBLE.LR`,
-//! `PRO.TRENDED.PRESENT`, `PRO.CRED.WEIGHTED`, `PRO.EXPENSES`), reached
+//! Ratemaking, part two (`PRO.PRC.LR.EXPERIENCE`, `PRO.PRC.PP.EXPERIENCE`,
+//! `PRO.PRC.INDICATED.CHANGE`, `PRO.PRC.INDICATED.RATE`, `PRO.PRC.PERMISSIBLE.LR`,
+//! `PRO.PRC.TRENDED.PRESENT`, `PRO.PRC.CRED.WEIGHTED`, `PRO.PRC.EXPENSES`), reached
 //! through the catalogue as Excel reaches them, against Werner and Modlin,
 //! *Basic Ratemaking* (5th ed., CAS, 2016): chapters 7, 8 and 12 and the
 //! indications of Appendices A (loss ratio), B (pure premium) and C (loss
@@ -37,7 +37,7 @@ fn one(f: &str, args: Vec<Grid>) -> f64 {
 fn chapters_7_8_and_12() {
     printed(
         one(
-            "pro_indicated_rate",
+            "pro_prc_indicated_rate",
             vec![n(180.0), n(0.15), n(0.05), n(20.0)],
         ),
         250.0,
@@ -45,20 +45,20 @@ fn chapters_7_8_and_12() {
     );
     // Table 7.3: a column of losses gives a column of rates.
     let rates = call(
-        "pro_indicated_rate",
+        "pro_prc_indicated_rate",
         vec![column(&[135.0, 180.0, 225.0]), n(0.15), n(0.05), n(20.0)],
     );
     for (k, r) in [193.75, 250.0, 306.25].iter().enumerate() {
         printed(num(rates.get(k, 0)), *r, 2);
     }
     // Table 7.4: 5.9% general expenses, 75% fixed.
-    let e = call("pro_expenses", vec![n(0.059), n(0.75)]);
+    let e = call("pro_prc_expenses", vec![n(0.059), n(0.75)]);
     printed(100.0 * num(e.get(0, 1)), 4.4, 1);
     printed(100.0 * num(e.get(1, 1)), 1.5, 1);
     // Chapter 8: $500 and +10%.
     printed(
         one(
-            "pro_indicated_rate",
+            "pro_prc_indicated_rate",
             vec![n(300.0), n(0.25), n(0.10), n(25.0)],
         ),
         500.0,
@@ -66,25 +66,25 @@ fn chapters_7_8_and_12() {
     );
     printed(
         one(
-            "pro_indicated_change",
+            "pro_prc_indicated_change",
             vec![n(0.65), n(0.25), n(0.10), n(0.065)],
         ),
         0.10,
         4,
     );
     // Chapter 12: Z 0.30 on $200 against $300; trended present rates $229.
-    let z = one("pro_cred_z", vec![n(100.0), n(1082.0)]);
+    let z = one("pro_prc_cred_z", vec![n(100.0), n(1082.0)]);
     printed(z, 0.30, 2);
     printed(
         one(
-            "pro_cred_weighted",
+            "pro_prc_cred_weighted",
             vec![n(200.0), n(round(z, 2)), n(300.0)],
         ),
         270.0,
         2,
     );
     let c = one(
-        "pro_trended_present",
+        "pro_prc_trended_present",
         vec![n(0.10), n(0.06), n(1.05f64.powi(2))],
     );
     printed(200.0 * (1.0 + c), 229.0, 0);
@@ -113,7 +113,7 @@ fn appendix_a_loss_ratio() {
     ];
     let loss_book = [970_359.0, 967_578.0, 955_974.0, 971_450.0, 1_011_357.0];
     let ex = call(
-        "pro_lr_experience",
+        "pro_prc_lr_experience",
         vec![
             column(&ep),
             column(&losses),
@@ -134,7 +134,7 @@ fn appendix_a_loss_ratio() {
     printed(100.0 * num(ex.get(6, 2)), 61.9, 1);
     // Expense-1, each category split and rounded to 0.1%: 11.3% and 17.0%.
     let split = |r: f64, s: f64| {
-        let e = call("pro_expenses", vec![n(r), n(s)]);
+        let e = call("pro_prc_expenses", vec![n(r), n(s)]);
         (
             round(100.0 * num(e.get(0, 1)), 1),
             round(100.0 * num(e.get(1, 1)), 1),
@@ -151,24 +151,24 @@ fn appendix_a_loss_ratio() {
     printed(f, 11.3, 1);
     printed(v, 17.0, 1);
     printed(
-        100.0 * one("pro_permissible_lr", vec![n(0.170), n(0.05)]),
+        100.0 * one("pro_prc_permissible_lr", vec![n(0.170), n(0.05)]),
         78.0,
         1,
     );
     let indicated = one(
-        "pro_indicated_change",
+        "pro_prc_indicated_change",
         vec![n(0.619), n(0.170), n(0.05), n(0.113)],
     );
     printed(100.0 * indicated, -6.2, 1);
     let complement = one(
-        "pro_trended_present",
+        "pro_prc_trended_present",
         vec![n(0.132), n(0.05), n(1.005 / 1.02)],
     );
     printed(100.0 * complement, 6.2, 1);
     printed(
         100.0
             * one(
-                "pro_cred_weighted",
+                "pro_prc_cred_weighted",
                 vec![n(indicated), n(1.0), n(complement)],
             ),
         -6.2,
@@ -196,7 +196,7 @@ fn appendix_b_pure_premium() {
         7_727_993.0,
     ];
     let ex = call(
-        "pro_pp_experience",
+        "pro_prc_pp_experience",
         vec![
             column(&exposure),
             column(&losses),
@@ -210,11 +210,11 @@ fn appendix_b_pure_premium() {
     }
     printed(num(ex.get(6, 1)), 30_343_206.0, 0);
     printed(num(ex.get(6, 2)), 469.88, 2);
-    let z = one("pro_cred_z", vec![n(683.0), n(1_082.0)]);
+    let z = one("pro_prc_cred_z", vec![n(683.0), n(1_082.0)]);
     printed(z, 0.795, 3);
     printed(
         one(
-            "pro_cred_weighted",
+            "pro_prc_cred_weighted",
             vec![n(469.88), n(round(z, 3)), n(585.75)],
         ),
         493.63,
@@ -222,7 +222,7 @@ fn appendix_b_pure_premium() {
     );
     printed(
         one(
-            "pro_indicated_rate",
+            "pro_prc_indicated_rate",
             vec![
                 n(493.63 + 29.11 + 74.57 + 15.68),
                 n(0.138),
@@ -254,7 +254,7 @@ fn appendix_c_loss_ratio_net_trend() {
     ];
     let nt = [1.7902, 1.6439, 1.5095, 1.3862, 1.2729];
     let ex = call(
-        "pro_lr_experience",
+        "pro_prc_lr_experience",
         vec![
             column(&ep),
             column(&losses),
@@ -268,28 +268,28 @@ fn appendix_c_loss_ratio_net_trend() {
     printed(num(ex.get(6, 1)), 103_860_568.0, 0);
     printed(100.0 * num(ex.get(6, 2)), 108.5, 1);
     let e = call(
-        "pro_expenses",
+        "pro_prc_expenses",
         vec![column(&[0.064, 0.026, 0.021, 0.212, 0.024])],
     );
     assert_eq!(num(e.get(0, 1)), 0.0);
     let variable = num(e.get(1, 1));
     printed(100.0 * variable, 34.7, 1);
     printed(
-        100.0 * one("pro_permissible_lr", vec![n(variable), n(-0.05)]),
+        100.0 * one("pro_prc_permissible_lr", vec![n(variable), n(-0.05)]),
         70.3,
         1,
     );
     let indicated = one(
-        "pro_indicated_change",
+        "pro_prc_indicated_change",
         vec![n(1.085), n(variable), n(-0.05)],
     );
     printed(100.0 * indicated, 54.3, 1);
-    let z = one("pro_cred_z", vec![n(283.0), n(683.0)]);
+    let z = one("pro_prc_cred_z", vec![n(283.0), n(683.0)]);
     printed(z, 0.644, 3);
     printed(
         100.0
             * one(
-                "pro_cred_weighted",
+                "pro_prc_cred_weighted",
                 vec![n(round(indicated, 3)), n(round(z, 3)), n(0.185)],
             ),
         41.6,
@@ -302,14 +302,14 @@ fn errors_come_back_as_text() {
     let e = |f: &str, a: Vec<Grid>| text(&call(f, a)).to_owned();
     assert!(
         e(
-            "pro_lr_experience",
+            "pro_prc_lr_experience",
             vec![column(&[1.0, 2.0]), column(&[1.0])]
         )
         .contains("one value per year")
     );
     assert!(
         e(
-            "pro_lr_experience",
+            "pro_prc_lr_experience",
             vec![
                 column(&[1.0, 2.0]),
                 column(&[1.0, 1.0]),
@@ -319,13 +319,17 @@ fn errors_come_back_as_text() {
         .contains("one per year")
     );
     assert!(
-        e("pro_lr_experience", vec![column(&[-1.0]), column(&[1.0])]).contains("earned_premium")
+        e(
+            "pro_prc_lr_experience",
+            vec![column(&[-1.0]), column(&[1.0])]
+        )
+        .contains("earned_premium")
     );
-    assert!(e("pro_indicated_change", vec![n(0.6), n(0.7), n(0.4)]).starts_with("#PROSPICIO!"));
-    assert!(e("pro_cred_weighted", vec![n(1.0), n(1.5), n(2.0)]).contains("[0, 1]"));
+    assert!(e("pro_prc_indicated_change", vec![n(0.6), n(0.7), n(0.4)]).starts_with("#PROSPICIO!"));
+    assert!(e("pro_prc_cred_weighted", vec![n(1.0), n(1.5), n(2.0)]).contains("[0, 1]"));
     assert!(
         e(
-            "pro_expenses",
+            "pro_prc_expenses",
             vec![column(&[0.1, 0.2]), column(&[0.5, 0.5, 0.5])]
         )
         .contains("one per ratio")

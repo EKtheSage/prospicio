@@ -5,10 +5,10 @@
 //! `draws` is a block with a column per unit and a row per simulation,
 //! equally likely, with an optional header row of the units' names; the
 //! units must add up to the portfolio (lines or segments, not gross and
-//! ceded side by side). `PRO.ALLOCATE` allocates a distortion risk
+//! ceded side by side). `PRO.CAP.ALLOCATE` allocates a distortion risk
 //! measure of the total (TVaR, proportional hazard, Wang and the others
-//! `PRO.DISTORTION` names) by Euler (the natural allocation), covariance,
-//! proportional, marginal or Shapley; `PRO.ALLOCATE.TOTAL` allocates an
+//! `PRO.CAP.DISTORTION` names) by Euler (the natural allocation), covariance,
+//! proportional, marginal or Shapley; `PRO.CAP.ALLOCATE.TOTAL` allocates an
 //! amount given from outside, a premium or a capital, by the haircut or
 //! the equal risk rule on a stand-alone VaR, TVaR or EPD.
 
@@ -97,8 +97,8 @@ fn header(columns: &[&str]) -> Vec<Value> {
 }
 
 /// A distortion risk measure of the portfolio shared among its units:
-/// `PRO.ALLOCATE(draws, family, parameter, [method], [r0])`, `family`,
-/// `parameter` and `r0` as `PRO.DISTORTION` takes them. A row per unit:
+/// `PRO.CAP.ALLOCATE(draws, family, parameter, [method], [r0])`, `family`,
+/// `parameter` and `r0` as `PRO.CAP.DISTORTION` takes them. A row per unit:
 /// its name, its stand-alone measure `ρ(X_j)`, its allocation, its share
 /// of the portfolio's measure and its diversification (stand-alone less
 /// allocated); then the units' totals, and the portfolio's measure `ρ(S)`
@@ -145,7 +145,7 @@ pub fn allocate(args: &[Grid]) -> Result<Grid> {
 }
 
 /// An amount given from outside shared among the units:
-/// `PRO.ALLOCATE.TOTAL(draws, total, [method], [measure], [level])`.
+/// `PRO.CAP.ALLOCATE.TOTAL(draws, total, [method], [measure], [level])`.
 /// `method` is `"haircut"` (the default: each unit's stand-alone measure
 /// at `level` scaled to `total`) or `"equal_risk"` (the one level at which
 /// the stand-alone measures add up to `total`, which it reports);

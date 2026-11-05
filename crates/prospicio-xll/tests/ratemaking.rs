@@ -1,5 +1,5 @@
-//! Ratemaking, part one (`PRO.YEARFRACTION`, `PRO.ONLEVEL`,
-//! `PRO.RATELEVEL`, `PRO.AVGDATE`, `PRO.TREND.FIT`), reached through the
+//! Ratemaking, part one (`PRO.YEARFRACTION`, `PRO.PRC.ONLEVEL`,
+//! `PRO.PRC.RATELEVEL`, `PRO.PRC.AVGDATE`, `PRO.PRC.TREND.FIT`), reached through the
 //! catalogue as Excel reaches it, against Werner and Modlin, *Basic
 //! Ratemaking* (5th ed., CAS, 2016): the parallelogram method of chapter
 //! 5 and Appendices A and C (shares, average levels and on-level factors,
@@ -54,7 +54,7 @@ fn parallelogram_chapter_5() {
     let changes = column(&[0.05, 0.10, -0.01]);
     let ol = |from: f64, to: f64, period: &str, term: f64| {
         num(call(
-            "pro_onlevel",
+            "pro_prc_onlevel",
             vec![
                 eff.clone(),
                 changes.clone(),
@@ -75,7 +75,7 @@ fn parallelogram_chapter_5() {
     // Calendar year 2011's cells: 1/8 at 1.05, 3/8 at 1.155, 1/2 ... the
     // shares 0.125, 0.375, 0.5 and the average level 1.09625.
     let rl = call(
-        "pro_ratelevel",
+        "pro_prc_ratelevel",
         vec![eff.clone(), changes.clone(), n(2011.0), n(2012.0)],
     );
     assert_eq!((rl.rows, rl.columns), (7, 4), "{:?}", rl.as_scalar());
@@ -91,7 +91,7 @@ fn parallelogram_chapter_5() {
     let levels = column(&[1.05, 1.155, 1.1435]);
     let years = column(&[2011.0]);
     let book = call(
-        "pro_onlevel",
+        "pro_prc_onlevel",
         vec![
             eff.clone(),
             levels.clone(),
@@ -104,7 +104,7 @@ fn parallelogram_chapter_5() {
         ],
     );
     let rl = call(
-        "pro_ratelevel",
+        "pro_prc_ratelevel",
         vec![
             eff,
             levels,
@@ -132,7 +132,7 @@ fn parallelogram_appendices() {
     let book = [1.2161, 1.2176, 1.1311, 1.0892, 1.0991];
     let averages = [0.9750, 0.9738, 1.0483, 1.0886, 1.0788];
     let f = call(
-        "pro_onlevel",
+        "pro_prc_onlevel",
         vec![
             eff.clone(),
             levels.clone(),
@@ -159,7 +159,7 @@ fn parallelogram_appendices() {
     let years = [2010.0, 2011.0, 2012.0, 2013.0, 2014.0, 2015.0];
     let book = [1.2029, 1.2058, 1.2724, 1.3018, 1.2391, 1.1190];
     let f = call(
-        "pro_onlevel",
+        "pro_prc_onlevel",
         vec![
             eff,
             levels,
@@ -181,7 +181,7 @@ fn parallelogram_appendices() {
 fn trend_lengths() {
     let avg = |from: f64, to: f64, period: &str, term: f64, basis: &str| {
         num(call(
-            "pro_avgdate",
+            "pro_prc_avgdate",
             vec![n(from), n(to), t(period), n(term), t(basis)],
         )
         .as_scalar()
@@ -202,12 +202,13 @@ fn trend_lengths() {
     );
     assert_eq!(to - avg(2011.0, 2012.0, "policy", 1.0, "earned"), 4.0);
     // Appendix C, rates effective 5/1/2016 (an Excel date) from CY2010.
-    let to = num(
-        call("pro_avgdate", vec![n(42_491.0), n(42_856.0), t("policy")])
-            .as_scalar()
-            .unwrap(),
-    );
-    let from = num(call("pro_avgdate", vec![n(2010.0), n(2011.0)])
+    let to = num(call(
+        "pro_prc_avgdate",
+        vec![n(42_491.0), n(42_856.0), t("policy")],
+    )
+    .as_scalar()
+    .unwrap());
+    let from = num(call("pro_prc_avgdate", vec![n(2010.0), n(2011.0)])
         .as_scalar()
         .unwrap());
     assert!((to - from - (6.0 + 10.0 / 12.0)).abs() < 1e-12);
@@ -252,7 +253,7 @@ fn trend_fits_table_6_14() {
         for (points, pct) in fits {
             let v = &values[values.len() - points..];
             let times: Vec<f64> = (0..points).map(|i| 2010.0 + i as f64 / 4.0).collect();
-            let fit = call("pro_trend_fit", vec![column(&times), column(v)]);
+            let fit = call("pro_prc_trend_fit", vec![column(&times), column(v)]);
             assert_eq!(fit.get(1, 0), &Value::from("Annual change"));
             let got = 100.0 * num(fit.get(1, 1));
             assert!(
@@ -275,7 +276,7 @@ fn trend_fits_table_6_14() {
         Value::Number(99.0),
         Value::Number(16.0),
     ]]);
-    let fit = call("pro_trend_fit", vec![times, values, t("linear")]);
+    let fit = call("pro_prc_trend_fit", vec![times, values, t("linear")]);
     assert!((num(fit.get(1, 1)) - 2.0).abs() < 1e-12);
     assert!((num(fit.get(4, 1)) - 1.0).abs() < 1e-12);
     assert_eq!(num(fit.get(5, 1)), 3.0);
@@ -287,14 +288,14 @@ fn errors_come_back_as_text() {
     let eff = column(&[2011.0, 2012.0]);
     assert!(
         e(
-            "pro_onlevel",
+            "pro_prc_onlevel",
             vec![eff.clone(), column(&[0.1]), n(2011.0), n(2012.0)]
         )
         .contains("one value per effective date")
     );
     assert!(
         e(
-            "pro_onlevel",
+            "pro_prc_onlevel",
             vec![
                 column(&[2012.0, 2011.0]),
                 column(&[0.1, 0.1]),
@@ -306,14 +307,14 @@ fn errors_come_back_as_text() {
     );
     assert!(
         e(
-            "pro_onlevel",
+            "pro_prc_onlevel",
             vec![eff.clone(), column(&[0.1, 0.1]), n(2012.0), n(2011.0)]
         )
         .contains("end after")
     );
     assert!(
         e(
-            "pro_onlevel",
+            "pro_prc_onlevel",
             vec![
                 eff.clone(),
                 column(&[0.1, 0.1]),
@@ -326,7 +327,7 @@ fn errors_come_back_as_text() {
     );
     assert!(
         e(
-            "pro_onlevel",
+            "pro_prc_onlevel",
             vec![
                 eff,
                 column(&[0.1, 0.1]),
@@ -341,13 +342,16 @@ fn errors_come_back_as_text() {
     );
     assert!(
         e(
-            "pro_trend_fit",
+            "pro_prc_trend_fit",
             vec![column(&[0.0, 1.0]), column(&[1.0, -1.0])]
         )
         .contains("positive")
     );
     assert!(
-        e("pro_trend_fit", vec![column(&[0.0, 1.0]), column(&[1.0])])
-            .contains("same number of cells")
+        e(
+            "pro_prc_trend_fit",
+            vec![column(&[0.0, 1.0]), column(&[1.0])]
+        )
+        .contains("same number of cells")
     );
 }

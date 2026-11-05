@@ -38,7 +38,7 @@ fn profit_commission_deficits_by_hand() {
     let ceded = rows(&[&[120.0, 70.0, 30.0, 85.0, 50.0]]);
     let pc = |years: Grid| {
         call(
-            "pro_profit_commission_term",
+            "pro_prc_profit_commission_term",
             vec![ceded.clone(), n(100.0), n(0.5), n(0.2), years],
         )
     };
@@ -55,7 +55,7 @@ fn sliding_scale_deficits_and_credits_by_hand() {
     let ceded = rows(&[&[90.0, 40.0, 30.0, 60.0]]);
     let slide = |carry: &str, years: Grid| {
         call(
-            "pro_sliding_scale_term",
+            "pro_prc_sliding_scale_term",
             vec![
                 ceded.clone(),
                 n(100.0),
@@ -77,7 +77,7 @@ fn sliding_scale_deficits_and_credits_by_hand() {
     close(&row(&slide("both", n(1.0)), 0), &[20.0, 30.0, 40.0, 40.0]);
     // Both is the default.
     let both = call(
-        "pro_sliding_scale_term",
+        "pro_prc_sliding_scale_term",
         vec![
             ceded.clone(),
             n(100.0),
@@ -139,7 +139,7 @@ fn simulated_terms_match_the_tower() {
         .profit_commission_carry_forward(Some(2))
         .unwrap();
     let sheet = call(
-        "pro_profit_commission_term",
+        "pro_prc_profit_commission_term",
         vec![losses.clone(), n(100.0), n(0.3), n(0.15), n(2.0)],
     );
     assert_eq!((sheet.rows, sheet.columns), (n_paths, n_years));
@@ -151,7 +151,7 @@ fn simulated_terms_match_the_tower() {
         .sliding_scale_carry_forward(true, true, None)
         .unwrap();
     let sheet = call(
-        "pro_sliding_scale_term",
+        "pro_prc_sliding_scale_term",
         vec![
             losses,
             n(100.0),
@@ -166,17 +166,17 @@ fn simulated_terms_match_the_tower() {
 fn bad_inputs_are_named() {
     let blank = Grid::from_rows(vec![vec![Value::Number(50.0), Value::Empty]]);
     let e = call(
-        "pro_profit_commission_term",
+        "pro_prc_profit_commission_term",
         vec![blank, n(100.0), n(0.5), n(0.2)],
     );
     assert!(text(&e).contains("row 1, column 2"), "{}", text(&e));
     let e = call(
-        "pro_profit_commission_term",
+        "pro_prc_profit_commission_term",
         vec![rows(&[&[50.0]]), n(100.0), n(0.5), n(0.2), n(0.0)],
     );
     assert!(text(&e).contains("carry_years"), "{}", text(&e));
     let e = call(
-        "pro_sliding_scale_term",
+        "pro_prc_sliding_scale_term",
         vec![
             rows(&[&[50.0, 60.0]]),
             n(100.0),

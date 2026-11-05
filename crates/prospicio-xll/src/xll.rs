@@ -12,7 +12,7 @@ use std::ffi::c_void;
 use std::sync::OnceLock;
 
 use crate::sheet::{CellError, Grid, Value};
-use crate::{ADDIN_NAME, CATEGORY, FUNCTIONS, Function, call};
+use crate::{ADDIN_NAME, ALIASES, FUNCTIONS, Function, call};
 
 const XLTYPE_NUM: u32 = 0x0001;
 const XLTYPE_STR: u32 = 0x0002;
@@ -297,22 +297,37 @@ fn excel_free(mut x: XlOper) {
     excel(XL_FREE, std::slice::from_mut(&mut x));
 }
 
-/// Registers `f` with Excel under the add-in's path `dll`.
-fn register(dll: &XlOper, f: &Function) -> bool {
+/// How a name is registered: listed in the Insert Function dialog, or
+/// hidden (an old name, still calculating; `docs/design/xll.md`, decision 47).
+#[derive(Clone, Copy, PartialEq)]
+enum Listing {
+    Listed,
+    Hidden,
+}
+
+/// Registers `f` with Excel under the add-in's path `dll`, as `name`
+/// exported as `symbol`.
+fn register(dll: &XlOper, symbol: &str, name: &str, f: &Function, listing: Listing) -> bool {
     // Type text: the result, then each argument, all `Q`; `$` thread safe.
     let types = format!("Q{}$", "Q".repeat(f.args.len()));
     let arg_names = f.args.iter().map(|a| a.name).collect::<Vec<_>>().join(",");
+    // xlfRegister's macro type: 1 a worksheet function listed in the
+    // Insert Function dialog, 0 one that calculates but is not listed.
+    let (macro_type, help) = match listing {
+        Listing::Listed => (1, f.help.to_owned()),
+        Listing::Hidden => (0, renamed_help(f)),
+    };
     let mut args = vec![
         *dll,
-        XlOper::str(f.symbol),
+        XlOper::str(symbol),
         XlOper::str(&types),
-        XlOper::str(f.name),
+        XlOper::str(name),
         XlOper::str(&arg_names),
-        XlOper::int(1),
-        XlOper::str(CATEGORY),
+        XlOper::int(macro_type),
+        XlOper::str(f.category()),
         XlOper::str(""),
         XlOper::str(""),
-        XlOper::str(f.help),
+        XlOper::str(&help),
     ];
     // The Insert Function dialog drops the last two characters of the last
     // argument's help, a long-standing Excel quirk; pad it.
@@ -338,14 +353,29 @@ fn register(dll: &XlOper, f: &Function) -> bool {
     }
 }
 
-/// Called by Excel when the add-in loads: registers every function.
+/// An old name's help: where the function went, then as much of its help
+/// as fits in xlfRegister's 255 characters.
+fn renamed_help(f: &Function) -> String {
+    format!("Renamed {}. {}", f.name, f.help)
+        .chars()
+        .take(255)
+        .collect()
+}
+
+/// Called by Excel when the add-in loads: registers every function, then
+/// the old names (hidden).
 #[unsafe(no_mangle)]
 pub extern "system" fn xlAutoOpen() -> i32 {
     let Some(dll) = excel(XL_GET_NAME, &mut []) else {
         return 0;
     };
     for f in FUNCTIONS {
-        register(&dll, f);
+        register(&dll, f.symbol, f.name, f, Listing::Listed);
+    }
+    for a in ALIASES {
+        if let Some(f) = FUNCTIONS.iter().find(|f| f.symbol == a.target) {
+            register(&dll, a.symbol, a.name, f, Listing::Hidden);
+        }
     }
     excel_free(dll);
     1
@@ -400,36 +430,36 @@ mod exports {
     use super::*;
 
     udf!(pro_version);
-    udf!(pro_cl, triangle, average, tail, origins, selected, kind, weight, pattern_ages);
-    udf!(pro_cl_ldf, triangle, average, tail, selected, kind, weight, pattern_ages);
-    udf!(pro_cl_cdf, triangle, average, tail, selected, kind, weight, pattern_ages);
-    udf!(pro_cl_ultimate, triangle, average, tail, selected, kind, weight, pattern_ages);
-    udf!(pro_cl_reserve, triangle, average, tail, selected, kind, weight, pattern_ages);
-    udf!(pro_cl_factors, triangle, average, tail, selected, kind, weight, sigma, pattern_ages);
-    udf!(pro_mack, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
-    udf!(pro_odp, triangle, sims, seed, percentiles, tail, process, origins, average);
-    udf!(pro_odp_sims, triangle, sims, seed, tail, process, origins, average);
-    udf!(pro_mack_boot, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
-    udf!(pro_mack_boot_sims, triangle, sims, seed, average, tail, process, origins, sigma);
-    udf!(pro_mack_cdr, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
-    udf!(pro_mack_cdr_years, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
-    udf!(pro_odp_cdr, triangle, sims, seed, percentiles, tail, process, origins, average);
-    udf!(pro_mack_boot_cdr, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
-    udf!(pro_el, triangle, exposure, apriori, average, tail, origins, selected, kind, weight, pattern_ages);
-    udf!(pro_bf, triangle, exposure, apriori, average, tail, origins, selected, kind, weight, pattern_ages);
-    udf!(pro_benktander, triangle, exposure, apriori, iterations, average, tail, origins, selected, kind, weight, pattern_ages);
-    udf!(pro_capecod, triangle, exposure, trend, decay, average, tail, origins, selected, kind, weight, pattern_ages);
-    udf!(pro_diag_cl, origins, ages, latest, pattern, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
-    udf!(pro_diag_el, origins, ages, latest, exposure, apriori, pattern, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
-    udf!(pro_diag_bf, origins, ages, latest, exposure, apriori, pattern, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
-    udf!(pro_diag_benktander, origins, ages, latest, exposure, apriori, pattern, iterations, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
-    udf!(pro_diag_capecod, origins, ages, latest, exposure, pattern, trend, decay, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
-    udf!(pro_pattern_average, pattern_ages, pattern, pattern_origin, grain, kind);
-    udf!(pro_clark, triangle, exposure, curve, max_age, origins);
-    udf!(pro_clark_params, triangle, exposure, curve, max_age);
-    udf!(pro_odp_glm, triangle, origins);
-    udf!(pro_odp_glm_params, triangle, origins);
-    udf!(pro_odp_glm_residuals, triangle, by, origins);
+    udf!(pro_res_cl, triangle, average, tail, origins, selected, kind, weight, pattern_ages);
+    udf!(pro_res_cl_ldf, triangle, average, tail, selected, kind, weight, pattern_ages);
+    udf!(pro_res_cl_cdf, triangle, average, tail, selected, kind, weight, pattern_ages);
+    udf!(pro_res_cl_ultimate, triangle, average, tail, selected, kind, weight, pattern_ages);
+    udf!(pro_res_cl_reserve, triangle, average, tail, selected, kind, weight, pattern_ages);
+    udf!(pro_res_cl_factors, triangle, average, tail, selected, kind, weight, sigma, pattern_ages);
+    udf!(pro_res_mack, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
+    udf!(pro_res_odp, triangle, sims, seed, percentiles, tail, process, origins, average);
+    udf!(pro_res_odp_sims, triangle, sims, seed, tail, process, origins, average);
+    udf!(pro_res_mack_boot, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
+    udf!(pro_res_mack_boot_sims, triangle, sims, seed, average, tail, process, origins, sigma);
+    udf!(pro_res_mack_cdr, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
+    udf!(pro_res_mack_cdr_years, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
+    udf!(pro_res_odp_cdr, triangle, sims, seed, percentiles, tail, process, origins, average);
+    udf!(pro_res_mack_boot_cdr, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
+    udf!(pro_res_el, triangle, exposure, apriori, average, tail, origins, selected, kind, weight, pattern_ages);
+    udf!(pro_res_bf, triangle, exposure, apriori, average, tail, origins, selected, kind, weight, pattern_ages);
+    udf!(pro_res_benktander, triangle, exposure, apriori, iterations, average, tail, origins, selected, kind, weight, pattern_ages);
+    udf!(pro_res_capecod, triangle, exposure, trend, decay, average, tail, origins, selected, kind, weight, pattern_ages);
+    udf!(pro_res_diag_cl, origins, ages, latest, pattern, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
+    udf!(pro_res_diag_el, origins, ages, latest, exposure, apriori, pattern, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
+    udf!(pro_res_diag_bf, origins, ages, latest, exposure, apriori, pattern, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
+    udf!(pro_res_diag_benktander, origins, ages, latest, exposure, apriori, pattern, iterations, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
+    udf!(pro_res_diag_capecod, origins, ages, latest, exposure, pattern, trend, decay, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
+    udf!(pro_res_pattern_average, pattern_ages, pattern, pattern_origin, grain, kind);
+    udf!(pro_res_clark, triangle, exposure, curve, max_age, origins);
+    udf!(pro_res_clark_params, triangle, exposure, curve, max_age);
+    udf!(pro_res_odp_glm, triangle, origins);
+    udf!(pro_res_odp_glm_params, triangle, origins);
+    udf!(pro_res_odp_glm_residuals, triangle, by, origins);
     udf!(pro_tri_incremental, triangle);
     udf!(pro_tri_cumulative, triangle);
     udf!(pro_tri_linkratios, triangle);
@@ -438,16 +468,146 @@ mod exports {
     udf!(pro_sev_survival, x, family, p1, p2, p3);
     udf!(pro_sev_quantile, p, family, p1, p2, p3);
     udf!(pro_sev_stats, family, p1, p2, p3);
-    udf!(pro_ler, deductible, family, p1, p2, p3);
-    udf!(pro_pareto_extrapolate, from_limit, from_attachment, to_limit, to_attachment, alpha, truncation);
-    udf!(pro_pareto_alpha, limit1, attachment1, loss1, limit2, attachment2, loss2, truncation);
-    udf!(pro_pareto_alpha_freqlayer, threshold, frequency, limit, attachment, loss, truncation);
-    udf!(pro_pareto_alpha_freqs, threshold1, frequency1, threshold2, frequency2, truncation);
+    udf!(pro_prc_ler, deductible, family, p1, p2, p3);
+    udf!(pro_prc_pareto_extrapolate, from_limit, from_attachment, to_limit, to_attachment, alpha, truncation);
+    udf!(pro_prc_pareto_alpha, limit1, attachment1, loss1, limit2, attachment2, loss2, truncation);
+    udf!(pro_prc_pareto_alpha_freqlayer, threshold, frequency, limit, attachment, loss, truncation);
+    udf!(pro_prc_pareto_alpha_freqs, threshold1, frequency1, threshold2, frequency2, truncation);
+    udf!(pro_prc_lev, limit, family, p1, p2, p3);
+    udf!(pro_prc_layer, limit, attachment, family, p1, p2, p3);
+    udf!(pro_prc_layer_var, limit, attachment, family, p1, p2, p3);
+    udf!(pro_prc_layer_cv, limit, attachment, family, p1, p2, p3);
+    udf!(pro_prc_ilf, limit, basic_limit, family, p1, p2, p3);
+    udf!(pro_prc_exposure_curve, x, curve, p1, p2, p3);
+    udf!(pro_prc_exposure_share, limit, attachment, mpl, curve, p1, p2, p3);
+    udf!(pro_prc_exposure_quantile, p, curve, p1, p2, p3);
+    udf!(pro_prc_exposure_stats, curve, p1, p2, p3);
+    udf!(pro_prc_swissre_c, rate);
+    udf!(pro_prc_swissre_c_layer, limit, attachment, mpl, share);
+    udf!(pro_prc_profile, sums_insured, expected_losses, limit, attachment, curve, p1, p2, p3, lower, upper, spread, retention, lines);
+    udf!(pro_prc_cred_standard, p, k, kind, cv);
+    udf!(pro_prc_cred_z, n, standard);
+    udf!(pro_prc_buhlmann, ratios, weights, estimator, groups);
+    udf!(pro_prc_buhlmann_params, ratios, weights, estimator);
+    udf!(pro_yearfraction, date);
+    udf!(pro_prc_onlevel, effective, changes, from, to, period, term, applies, given);
+    udf!(pro_prc_ratelevel, effective, changes, from, to, period, term, applies, given);
+    udf!(pro_prc_avgdate, from, to, period, term, basis);
+    udf!(pro_prc_trend_fit, times, values, kind);
+    udf!(pro_prc_lr_experience, earned_premium, losses, on_level, premium_trend, development, loss_trend, lae);
+    udf!(pro_prc_pp_experience, exposure, losses, development, loss_trend, lae);
+    udf!(pro_prc_indicated_change, loss_ratio, variable, profit, fixed_ratio);
+    udf!(pro_prc_indicated_rate, pure_premium, variable, profit, fixed_per_exposure);
+    udf!(pro_prc_permissible_lr, variable, profit, fixed_ratio);
+    udf!(pro_prc_trended_present, prior_indicated, prior_implemented, trend);
+    udf!(pro_prc_cred_weighted, estimate, credibility, complement);
+    udf!(pro_prc_expenses, ratios, fixed_shares);
+    udf!(pro_prc_burningcost, accident, amounts, limits, attachments, years, premiums, development, trend, trend_to, threshold, agg_deductible, agg_limit);
+    udf!(pro_cap_agg_stats, count_mean, dispersion, family, p1, p2, p3, limit, attachment, probabilities, step, points);
+    udf!(pro_cap_agg_layers, count_mean, dispersion, family, p1, p2, p3, limits, attachments, shares, step, points);
+    udf!(pro_cap_agg_cover, count_mean, dispersion, family, p1, p2, p3, limits, retentions, shares, occ_limits, occ_attachments, occ_shares, subject, step, points);
+    udf!(pro_prc_tower_price, count_mean, dispersion, family, p1, p2, p3, limit, attachment, limits, attachments, shares, agg_deductibles, agg_limits, cover_limit, cover_retention, distortion, parameter, step, points);
+    udf!(pro_cap_agg_pml, count_mean, dispersion, family, p1, p2, p3, return_periods, step, points);
+    udf!(pro_res_bayes_odp, triangle, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins);
+    udf!(pro_res_bayes_bf, triangle, exposure, apriori, cv, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins, common_cv);
+    udf!(pro_sev_fit, losses, family, output, t, truncation, thresholds, censored, weights, upper);
+    udf!(pro_sev_fit_grouped, bounds, counts, family, method, output);
+    udf!(pro_sev_fit_lev, sizes, lev, family, weights, output);
+    udf!(pro_evt_thresholds, data, thresholds);
+    udf!(pro_evt_fit, data, threshold, probabilities);
+    udf!(pro_evt_hill, data, k);
+    udf!(pro_prc_payout_pattern, times, values, kind, shift, rate);
+    udf!(pro_prc_payout_stats, times, values, rate, kind, shift);
+    udf!(pro_prc_payout_price, expected_loss, assets, coc, times, values, rate, kind, shift);
+    udf!(pro_prc_quote, expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, quoted);
+    udf!(pro_cap_distortion, s, family, parameter, r0);
+    udf!(pro_cap_distortion_price, values, probs, family, parameter, r0);
+    udf!(pro_cap_distortion_calibrate, values, probs, premium, families, r0);
+    udf!(pro_cap_copula_cdf, points, family, parameter, nu);
+    udf!(pro_cap_copula_sim, family, parameter, sims, dim, seed, nu);
+    udf!(pro_cap_iman_conover, draws, correlation, seed, dof, shuffle);
+    udf!(pro_prc_swing, loss, basic, lcm, minimum, maximum, share);
+    udf!(pro_prc_profit_commission_term, losses, premium, share, allowance, carry_years);
+    udf!(pro_prc_sliding_scale_term, losses, premium, commissions, loss_ratios, carry, carry_years);
+    udf!(pro_prc_sliding_scale, loss, premium, commissions, loss_ratios);
+    udf!(pro_prc_profit_commission, loss, premium, share, allowance);
+    udf!(pro_prc_layer_terms, count_mean, dispersion, family, p1, p2, p3, layer_limit, layer_attachment, premium, reinstatements, commissions, loss_ratios, profit_share, profit_allowance, share, policy_limit, step, points);
+    udf!(pro_prc_glm, data, response, terms, family, link, exposure, weights, p);
+    udf!(pro_prc_glm_predict, data, response, terms, newdata, family, link, exposure, weights, p);
+    udf!(pro_prc_glm_relativities, data, response, terms, family, link, exposure, weights, p, level);
+    udf!(pro_cap_cashflow, u, terms, patterns, requirement, commission, output, rate, commutation_requirement);
+    udf!(pro_cap_pnl, values, probs, premium, expenses, covers, face, output, levels, expense_at_mean);
+    udf!(pro_cap_ylt_stats, years, losses, n_years, probabilities, quantile, times, hours, negative);
+    udf!(pro_cap_ylt_oep, years, losses, return_periods, amounts, n_years, quantile, times, hours, negative);
+    udf!(pro_cap_elt_stats, rates, means, sd_independent, sd_correlated, exposures);
+    udf!(pro_cap_elt_oep, rates, means, sd_independent, sd_correlated, exposures, return_periods, amounts);
+    udf!(pro_cap_allocate, draws, family, parameter, method, r0);
+    udf!(pro_cap_allocate_total, draws, total, method, measure, level);
+}
+
+// The old names (`crate::ALIASES`), one line each with the arguments of the
+// function they now run; tests/catalogue.rs checks them. Removed in 0.0.10.
+#[rustfmt::skip]
+mod alias_exports {
+    use super::*;
+
+    udf!(pro_cl, triangle, average, tail, origins, selected, kind, weight, pattern_ages);
+    udf!(pro_cl_cdf, triangle, average, tail, selected, kind, weight, pattern_ages);
+    udf!(pro_cl_factors, triangle, average, tail, selected, kind, weight, sigma, pattern_ages);
+    udf!(pro_cl_ldf, triangle, average, tail, selected, kind, weight, pattern_ages);
+    udf!(pro_cl_reserve, triangle, average, tail, selected, kind, weight, pattern_ages);
+    udf!(pro_cl_ultimate, triangle, average, tail, selected, kind, weight, pattern_ages);
+    udf!(pro_mack, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
+    udf!(pro_mack_cdr, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
+    udf!(pro_mack_cdr_years, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
+    udf!(pro_mack_boot, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
+    udf!(pro_mack_boot_cdr, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
+    udf!(pro_mack_boot_sims, triangle, sims, seed, average, tail, process, origins, sigma);
+    udf!(pro_odp, triangle, sims, seed, percentiles, tail, process, origins, average);
+    udf!(pro_odp_cdr, triangle, sims, seed, percentiles, tail, process, origins, average);
+    udf!(pro_odp_sims, triangle, sims, seed, tail, process, origins, average);
+    udf!(pro_odp_glm, triangle, origins);
+    udf!(pro_odp_glm_params, triangle, origins);
+    udf!(pro_odp_glm_residuals, triangle, by, origins);
+    udf!(pro_el, triangle, exposure, apriori, average, tail, origins, selected, kind, weight, pattern_ages);
+    udf!(pro_bf, triangle, exposure, apriori, average, tail, origins, selected, kind, weight, pattern_ages);
+    udf!(pro_benktander, triangle, exposure, apriori, iterations, average, tail, origins, selected, kind, weight, pattern_ages);
+    udf!(pro_capecod, triangle, exposure, trend, decay, average, tail, origins, selected, kind, weight, pattern_ages);
+    udf!(pro_clark, triangle, exposure, curve, max_age, origins);
+    udf!(pro_clark_params, triangle, exposure, curve, max_age);
+    udf!(pro_bayes_odp, triangle, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins);
+    udf!(pro_bayes_bf, triangle, exposure, apriori, cv, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins, common_cv);
+    udf!(pro_diag_cl, origins, ages, latest, pattern, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
+    udf!(pro_diag_el, origins, ages, latest, exposure, apriori, pattern, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
+    udf!(pro_diag_bf, origins, ages, latest, exposure, apriori, pattern, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
+    udf!(pro_diag_benktander, origins, ages, latest, exposure, apriori, pattern, iterations, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
+    udf!(pro_diag_capecod, origins, ages, latest, exposure, pattern, trend, decay, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
+    udf!(pro_pattern_average, pattern_ages, pattern, pattern_origin, grain, kind);
+    udf!(pro_avgdate, from, to, period, term, basis);
+    udf!(pro_onlevel, effective, changes, from, to, period, term, applies, given);
+    udf!(pro_ratelevel, effective, changes, from, to, period, term, applies, given);
+    udf!(pro_trend_fit, times, values, kind);
+    udf!(pro_trended_present, prior_indicated, prior_implemented, trend);
+    udf!(pro_lr_experience, earned_premium, losses, on_level, premium_trend, development, loss_trend, lae);
+    udf!(pro_pp_experience, exposure, losses, development, loss_trend, lae);
+    udf!(pro_indicated_change, loss_ratio, variable, profit, fixed_ratio);
+    udf!(pro_indicated_rate, pure_premium, variable, profit, fixed_per_exposure);
+    udf!(pro_permissible_lr, variable, profit, fixed_ratio);
+    udf!(pro_expenses, ratios, fixed_shares);
+    udf!(pro_cred_standard, p, k, kind, cv);
+    udf!(pro_cred_z, n, standard);
+    udf!(pro_cred_weighted, estimate, credibility, complement);
+    udf!(pro_buhlmann, ratios, weights, estimator, groups);
+    udf!(pro_buhlmann_params, ratios, weights, estimator);
+    udf!(pro_glm, data, response, terms, family, link, exposure, weights, p);
+    udf!(pro_glm_predict, data, response, terms, newdata, family, link, exposure, weights, p);
+    udf!(pro_glm_relativities, data, response, terms, family, link, exposure, weights, p, level);
     udf!(pro_lev, limit, family, p1, p2, p3);
     udf!(pro_layer, limit, attachment, family, p1, p2, p3);
-    udf!(pro_layer_var, limit, attachment, family, p1, p2, p3);
     udf!(pro_layer_cv, limit, attachment, family, p1, p2, p3);
+    udf!(pro_layer_var, limit, attachment, family, p1, p2, p3);
     udf!(pro_ilf, limit, basic_limit, family, p1, p2, p3);
+    udf!(pro_ler, deductible, family, p1, p2, p3);
     udf!(pro_exposure_curve, x, curve, p1, p2, p3);
     udf!(pro_exposure_share, limit, attachment, mpl, curve, p1, p2, p3);
     udf!(pro_exposure_quantile, p, curve, p1, p2, p3);
@@ -455,62 +615,38 @@ mod exports {
     udf!(pro_swissre_c, rate);
     udf!(pro_swissre_c_layer, limit, attachment, mpl, share);
     udf!(pro_profile, sums_insured, expected_losses, limit, attachment, curve, p1, p2, p3, lower, upper, spread, retention, lines);
-    udf!(pro_cred_standard, p, k, kind, cv);
-    udf!(pro_cred_z, n, standard);
-    udf!(pro_buhlmann, ratios, weights, estimator, groups);
-    udf!(pro_buhlmann_params, ratios, weights, estimator);
-    udf!(pro_yearfraction, date);
-    udf!(pro_onlevel, effective, changes, from, to, period, term, applies, given);
-    udf!(pro_ratelevel, effective, changes, from, to, period, term, applies, given);
-    udf!(pro_avgdate, from, to, period, term, basis);
-    udf!(pro_trend_fit, times, values, kind);
-    udf!(pro_lr_experience, earned_premium, losses, on_level, premium_trend, development, loss_trend, lae);
-    udf!(pro_pp_experience, exposure, losses, development, loss_trend, lae);
-    udf!(pro_indicated_change, loss_ratio, variable, profit, fixed_ratio);
-    udf!(pro_indicated_rate, pure_premium, variable, profit, fixed_per_exposure);
-    udf!(pro_permissible_lr, variable, profit, fixed_ratio);
-    udf!(pro_trended_present, prior_indicated, prior_implemented, trend);
-    udf!(pro_cred_weighted, estimate, credibility, complement);
-    udf!(pro_expenses, ratios, fixed_shares);
     udf!(pro_burningcost, accident, amounts, limits, attachments, years, premiums, development, trend, trend_to, threshold, agg_deductible, agg_limit);
-    udf!(pro_agg_stats, count_mean, dispersion, family, p1, p2, p3, limit, attachment, probabilities, step, points);
-    udf!(pro_agg_layers, count_mean, dispersion, family, p1, p2, p3, limits, attachments, shares, step, points);
-    udf!(pro_agg_cover, count_mean, dispersion, family, p1, p2, p3, limits, retentions, shares, occ_limits, occ_attachments, occ_shares, subject, step, points);
+    udf!(pro_pareto_extrapolate, from_limit, from_attachment, to_limit, to_attachment, alpha, truncation);
+    udf!(pro_pareto_alpha, limit1, attachment1, loss1, limit2, attachment2, loss2, truncation);
+    udf!(pro_pareto_alpha_freqlayer, threshold, frequency, limit, attachment, loss, truncation);
+    udf!(pro_pareto_alpha_freqs, threshold1, frequency1, threshold2, frequency2, truncation);
+    udf!(pro_quote, expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, quoted);
+    udf!(pro_layer_terms, count_mean, dispersion, family, p1, p2, p3, layer_limit, layer_attachment, premium, reinstatements, commissions, loss_ratios, profit_share, profit_allowance, share, policy_limit, step, points);
+    udf!(pro_profit_commission, loss, premium, share, allowance);
+    udf!(pro_profit_commission_term, losses, premium, share, allowance, carry_years);
+    udf!(pro_sliding_scale, loss, premium, commissions, loss_ratios);
+    udf!(pro_sliding_scale_term, losses, premium, commissions, loss_ratios, carry, carry_years);
+    udf!(pro_swing, loss, basic, lcm, minimum, maximum, share);
     udf!(pro_tower_price, count_mean, dispersion, family, p1, p2, p3, limit, attachment, limits, attachments, shares, agg_deductibles, agg_limits, cover_limit, cover_retention, distortion, parameter, step, points);
-    udf!(pro_agg_pml, count_mean, dispersion, family, p1, p2, p3, return_periods, step, points);
-    udf!(pro_bayes_odp, triangle, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins);
-    udf!(pro_bayes_bf, triangle, exposure, apriori, cv, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins, common_cv);
-    udf!(pro_sev_fit, losses, family, output, t, truncation, thresholds, censored, weights, upper);
-    udf!(pro_sev_fit_grouped, bounds, counts, family, method, output);
-    udf!(pro_sev_fit_lev, sizes, lev, family, weights, output);
-    udf!(pro_evt_thresholds, data, thresholds);
-    udf!(pro_evt_fit, data, threshold, probabilities);
-    udf!(pro_evt_hill, data, k);
     udf!(pro_payout_pattern, times, values, kind, shift, rate);
     udf!(pro_payout_stats, times, values, rate, kind, shift);
     udf!(pro_payout_price, expected_loss, assets, coc, times, values, rate, kind, shift);
-    udf!(pro_quote, expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, quoted);
-    udf!(pro_distortion, s, family, parameter, r0);
-    udf!(pro_distortion_price, values, probs, family, parameter, r0);
-    udf!(pro_distortion_calibrate, values, probs, premium, families, r0);
+    udf!(pro_agg_stats, count_mean, dispersion, family, p1, p2, p3, limit, attachment, probabilities, step, points);
+    udf!(pro_agg_layers, count_mean, dispersion, family, p1, p2, p3, limits, attachments, shares, step, points);
+    udf!(pro_agg_cover, count_mean, dispersion, family, p1, p2, p3, limits, retentions, shares, occ_limits, occ_attachments, occ_shares, subject, step, points);
+    udf!(pro_agg_pml, count_mean, dispersion, family, p1, p2, p3, return_periods, step, points);
+    udf!(pro_elt_stats, rates, means, sd_independent, sd_correlated, exposures);
+    udf!(pro_elt_oep, rates, means, sd_independent, sd_correlated, exposures, return_periods, amounts);
+    udf!(pro_ylt_stats, years, losses, n_years, probabilities, quantile, times, hours, negative);
+    udf!(pro_ylt_oep, years, losses, return_periods, amounts, n_years, quantile, times, hours, negative);
     udf!(pro_copula_cdf, points, family, parameter, nu);
     udf!(pro_copula_sim, family, parameter, sims, dim, seed, nu);
     udf!(pro_iman_conover, draws, correlation, seed, dof, shuffle);
-    udf!(pro_swing, loss, basic, lcm, minimum, maximum, share);
-    udf!(pro_profit_commission_term, losses, premium, share, allowance, carry_years);
-    udf!(pro_sliding_scale_term, losses, premium, commissions, loss_ratios, carry, carry_years);
-    udf!(pro_sliding_scale, loss, premium, commissions, loss_ratios);
-    udf!(pro_profit_commission, loss, premium, share, allowance);
-    udf!(pro_layer_terms, count_mean, dispersion, family, p1, p2, p3, layer_limit, layer_attachment, premium, reinstatements, commissions, loss_ratios, profit_share, profit_allowance, share, policy_limit, step, points);
-    udf!(pro_glm, data, response, terms, family, link, exposure, weights, p);
-    udf!(pro_glm_predict, data, response, terms, newdata, family, link, exposure, weights, p);
-    udf!(pro_glm_relativities, data, response, terms, family, link, exposure, weights, p, level);
-    udf!(pro_cashflow, u, terms, patterns, requirement, commission, output, rate, commutation_requirement);
-    udf!(pro_pnl, values, probs, premium, expenses, covers, face, output, levels, expense_at_mean);
-    udf!(pro_ylt_stats, years, losses, n_years, probabilities, quantile, times, hours, negative);
-    udf!(pro_ylt_oep, years, losses, return_periods, amounts, n_years, quantile, times, hours, negative);
-    udf!(pro_elt_stats, rates, means, sd_independent, sd_correlated, exposures);
-    udf!(pro_elt_oep, rates, means, sd_independent, sd_correlated, exposures, return_periods, amounts);
     udf!(pro_allocate, draws, family, parameter, method, r0);
     udf!(pro_allocate_total, draws, total, method, measure, level);
+    udf!(pro_distortion, s, family, parameter, r0);
+    udf!(pro_distortion_price, values, probs, family, parameter, r0);
+    udf!(pro_distortion_calibrate, values, probs, premium, families, r0);
+    udf!(pro_pnl, values, probs, premium, expenses, covers, face, output, levels, expense_at_mean);
+    udf!(pro_cashflow, u, terms, patterns, requirement, commission, output, rate, commutation_requirement);
 }

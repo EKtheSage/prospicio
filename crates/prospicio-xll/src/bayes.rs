@@ -109,10 +109,10 @@ fn fit(args: &[Grid]) -> Result<Arc<BayesOdpFit>> {
     })
 }
 
-/// The Bayesian ODP chain ladder: `PRO.BAYES.ODP(triangle, [output],
+/// The Bayesian ODP chain ladder: `PRO.RES.BAYES.ODP(triangle, [output],
 /// [draws], [chains], [seed], [sims], [percentiles], [prior_sd],
 /// [process], [origins])`. `output` is `"reserves"` (default: the reserve
-/// exhibit, as `PRO.ODP`'s), `"params"` (each parameter's posterior
+/// exhibit, as `PRO.RES.ODP`'s), `"params"` (each parameter's posterior
 /// summary with R-hat and ESS) or `"diagnostics"` (the sampler's checks
 /// and any warnings).
 pub fn bayes_odp(args: &[Grid]) -> Result<Grid> {
@@ -203,7 +203,7 @@ fn bf_fit(args: &[Grid]) -> Result<Arc<BayesBfNormalisedFit>> {
 
 /// The Bayesian Bornhuetter-Ferguson with a normalised pattern and a
 /// gamma prior on each origin's ultimate, mean `apriori` times exposure:
-/// `PRO.BAYES.BF(triangle, exposure, apriori, [cv], [output], [draws],
+/// `PRO.RES.BAYES.BF(triangle, exposure, apriori, [cv], [output], [draws],
 /// [chains], [seed], [sims], [percentiles], [prior_sd], [process],
 /// [origins], [common_cv])`. `output` is `"reserves"` (default),
 /// `"ultimates"` (each origin's exposure, prior and posterior expected

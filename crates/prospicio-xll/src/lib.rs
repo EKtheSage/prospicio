@@ -15,6 +15,7 @@
 //! and rename `prospicio_xll.dll` to `prospicio.xll`.
 
 pub mod aggregate;
+pub mod aliases;
 pub mod allocation;
 pub mod bayes;
 pub mod cashflow;
@@ -41,6 +42,7 @@ pub mod triangles;
 #[cfg(windows)]
 mod xll;
 
+pub use aliases::{ALIASES, Alias};
 use sheet::{Grid, Value};
 
 /// One worksheet argument.
@@ -61,8 +63,33 @@ pub struct Function {
     pub run: fn(&[Grid]) -> Result<Grid, String>,
 }
 
-/// The function category in Excel's Insert Function dialog.
-pub const CATEGORY: &str = "prospicio";
+/// The groups of the catalogue (`docs/design/xll.md`, decision 47): the
+/// word after `PRO.` names one, and each is a category of its own in
+/// Excel's Insert Function dialog.
+pub const GROUP_CATEGORIES: &[(&str, &str)] = &[
+    ("RES", "Prospicio \u{2013} Reserving"),
+    ("PRC", "Prospicio \u{2013} Pricing"),
+    ("CAP", "Prospicio \u{2013} Capital"),
+];
+
+/// The category of the functions every group uses (severities, EVT
+/// tails, triangle helpers, dates and the version), which keep a name
+/// without a group.
+pub const COMMON: &str = "Prospicio \u{2013} Common";
+
+/// The first words of the names in [`COMMON`].
+pub const COMMON_PREFIXES: &[&str] = &["SEV", "EVT", "TRI", "VERSION", "YEARFRACTION"];
+
+impl Function {
+    /// The function's category in Excel's Insert Function dialog.
+    pub fn category(&self) -> &'static str {
+        let group = self.name.split('.').nth(1).unwrap_or("");
+        GROUP_CATEGORIES
+            .iter()
+            .find(|(g, _)| *g == group)
+            .map_or(COMMON, |(_, category)| category)
+    }
+}
 
 /// The add-in's name in Excel's Add-ins dialog.
 pub const ADDIN_NAME: &str = "prospicio";
@@ -185,7 +212,7 @@ const DIAG_EXPOSURE: Arg = Arg {
 };
 const DIAG_PATTERN: Arg = Arg {
     name: "pattern",
-    help: "The selected pattern's values, a row or column, such as PRO.CL.LDF's; a blank value is skipped, so an age-to-age factor before it runs to the next age given (give 1 for no development)",
+    help: "The selected pattern's values, a row or column, such as PRO.RES.CL.LDF's; a blank value is skipped, so an age-to-age factor before it runs to the next age given (give 1 for no development)",
 };
 const PATTERN_AGES: Arg = Arg {
     name: "pattern_ages",
@@ -398,8 +425,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: version,
     },
     Function {
-        symbol: "pro_cl",
-        name: "PRO.CL",
+        symbol: "pro_res_cl",
+        name: "PRO.RES.CL",
         help: "Chain ladder exhibit: latest, CDF, ultimate and reserve per origin, with a total.",
         args: &[
             TRIANGLE,
@@ -414,8 +441,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::cl_summary,
     },
     Function {
-        symbol: "pro_cl_ldf",
-        name: "PRO.CL.LDF",
+        symbol: "pro_res_cl_ldf",
+        name: "PRO.RES.CL.LDF",
         help: "Selected age-to-age factors, one per triangle column; the last is the tail.",
         args: &[
             TRIANGLE,
@@ -429,8 +456,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::cl_ldf,
     },
     Function {
-        symbol: "pro_cl_cdf",
-        name: "PRO.CL.CDF",
+        symbol: "pro_res_cl_cdf",
+        name: "PRO.RES.CL.CDF",
         help: "Age-to-ultimate factors, one per triangle column.",
         args: &[
             TRIANGLE,
@@ -444,8 +471,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::cl_cdf,
     },
     Function {
-        symbol: "pro_cl_ultimate",
-        name: "PRO.CL.ULTIMATE",
+        symbol: "pro_res_cl_ultimate",
+        name: "PRO.RES.CL.ULTIMATE",
         help: "Chain ladder ultimate per origin.",
         args: &[
             TRIANGLE,
@@ -459,8 +486,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::cl_ultimate,
     },
     Function {
-        symbol: "pro_cl_reserve",
-        name: "PRO.CL.RESERVE",
+        symbol: "pro_res_cl_reserve",
+        name: "PRO.RES.CL.RESERVE",
         help: "Chain ladder reserve (ultimate less latest) per origin.",
         args: &[
             TRIANGLE,
@@ -474,8 +501,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::cl_reserve,
     },
     Function {
-        symbol: "pro_cl_factors",
-        name: "PRO.CL.FACTORS",
+        symbol: "pro_res_cl_factors",
+        name: "PRO.RES.CL.FACTORS",
         help: "Development exhibit: LDF, CDF, Mack sigma and standard error per link, and the tail.",
         args: &[
             TRIANGLE,
@@ -490,8 +517,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::cl_factors,
     },
     Function {
-        symbol: "pro_mack",
-        name: "PRO.MACK",
+        symbol: "pro_res_mack",
+        name: "PRO.RES.MACK",
         help: "Mack exhibit: ultimate, reserve, process, parameter and total standard error and CV per origin, with a total.",
         args: &[
             TRIANGLE,
@@ -507,8 +534,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::mack_summary,
     },
     Function {
-        symbol: "pro_odp",
-        name: "PRO.ODP",
+        symbol: "pro_res_odp",
+        name: "PRO.RES.ODP",
         help: "ODP bootstrap exhibit: CL reserve, simulated mean, SD, CV and percentiles per origin, with a total.",
         args: &[
             TRIANGLE,
@@ -523,8 +550,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::odp_summary,
     },
     Function {
-        symbol: "pro_odp_sims",
-        name: "PRO.ODP.SIMS",
+        symbol: "pro_res_odp_sims",
+        name: "PRO.RES.ODP.SIMS",
         help: "ODP bootstrap's simulated reserves: one row per simulation, a column per origin and the total.",
         args: &[
             TRIANGLE,
@@ -541,8 +568,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::odp_sims,
     },
     Function {
-        symbol: "pro_mack_boot",
-        name: "PRO.MACK.BOOT",
+        symbol: "pro_res_mack_boot",
+        name: "PRO.RES.MACK.BOOT",
         help: "Mack bootstrap exhibit: CL reserve, simulated mean, SD, CV and percentiles per origin, with a total.",
         args: &[
             TRIANGLE,
@@ -558,8 +585,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::mack_bootstrap_summary,
     },
     Function {
-        symbol: "pro_mack_boot_sims",
-        name: "PRO.MACK.BOOT.SIMS",
+        symbol: "pro_res_mack_boot_sims",
+        name: "PRO.RES.MACK.BOOT.SIMS",
         help: "Mack bootstrap's simulated reserves: one row per simulation, a column per origin and the total.",
         args: &[
             TRIANGLE,
@@ -574,8 +601,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::mack_bootstrap_sims,
     },
     Function {
-        symbol: "pro_mack_cdr",
-        name: "PRO.MACK.CDR",
+        symbol: "pro_res_mack_cdr",
+        name: "PRO.RES.MACK.CDR",
         help: "Merz-Wuthrich one-year view: reserve, CDR(1) SE and run-off (Mack) SE per origin, with a total.",
         args: &[
             TRIANGLE,
@@ -591,8 +618,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::mack_cdr,
     },
     Function {
-        symbol: "pro_mack_cdr_years",
-        name: "PRO.MACK.CDR.YEARS",
+        symbol: "pro_res_mack_cdr_years",
+        name: "PRO.RES.MACK.CDR.YEARS",
         help: "Merz-Wuthrich CDR standard error per origin in each future calendar year, with the total.",
         args: &[
             TRIANGLE,
@@ -608,8 +635,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::mack_cdr_years,
     },
     Function {
-        symbol: "pro_odp_cdr",
-        name: "PRO.ODP.CDR",
+        symbol: "pro_res_odp_cdr",
+        name: "PRO.RES.ODP.CDR",
         help: "ODP bootstrap one-year view: simulated CDR mean, SD and percentiles per origin; negative is adverse.",
         args: &[
             TRIANGLE,
@@ -624,8 +651,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::odp_cdr,
     },
     Function {
-        symbol: "pro_mack_boot_cdr",
-        name: "PRO.MACK.BOOT.CDR",
+        symbol: "pro_res_mack_boot_cdr",
+        name: "PRO.RES.MACK.BOOT.CDR",
         help: "Mack bootstrap one-year view: simulated CDR mean, SD and percentiles per origin; negative is adverse.",
         args: &[
             TRIANGLE,
@@ -641,8 +668,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::mack_bootstrap_cdr,
     },
     Function {
-        symbol: "pro_el",
-        name: "PRO.EL",
+        symbol: "pro_res_el",
+        name: "PRO.RES.EL",
         help: "Expected loss method: ultimate is exposure times the a priori loss ratio.",
         args: &[
             TRIANGLE,
@@ -659,8 +686,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::expected_loss,
     },
     Function {
-        symbol: "pro_bf",
-        name: "PRO.BF",
+        symbol: "pro_res_bf",
+        name: "PRO.RES.BF",
         help: "Bornhuetter-Ferguson: latest plus the a priori ultimate's unreported share, per origin, with a total.",
         args: &[
             TRIANGLE,
@@ -677,8 +704,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::bornhuetter_ferguson,
     },
     Function {
-        symbol: "pro_benktander",
-        name: "PRO.BENKTANDER",
+        symbol: "pro_res_benktander",
+        name: "PRO.RES.BENKTANDER",
         help: "Benktander: Bornhuetter-Ferguson iterated on its own ultimate (1 iteration is BF).",
         args: &[
             TRIANGLE,
@@ -699,8 +726,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::benktander,
     },
     Function {
-        symbol: "pro_capecod",
-        name: "PRO.CAPECOD",
+        symbol: "pro_res_capecod",
+        name: "PRO.RES.CAPECOD",
         help: "Cape Cod (Stanard-Buhlmann): the a priori loss ratio estimated from the triangle and exposure.",
         args: &[
             TRIANGLE,
@@ -724,8 +751,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::cape_cod,
     },
     Function {
-        symbol: "pro_diag_cl",
-        name: "PRO.DIAG.CL",
+        symbol: "pro_res_diag_cl",
+        name: "PRO.RES.DIAG.CL",
         help: "Chain ladder on a latest diagonal (a bordereau) with a selected pattern: each origin's age, latest, CDF, ultimate and reserve, oldest first, with a total.",
         args: &[
             DIAG_ORIGINS,
@@ -743,8 +770,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: diagonal::chain_ladder,
     },
     Function {
-        symbol: "pro_diag_el",
-        name: "PRO.DIAG.EL",
+        symbol: "pro_res_diag_el",
+        name: "PRO.RES.DIAG.EL",
         help: "Expected loss method on a latest diagonal with a selected pattern: ultimate is exposure times the a priori loss ratio.",
         args: &[
             DIAG_ORIGINS,
@@ -764,8 +791,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: diagonal::expected_loss,
     },
     Function {
-        symbol: "pro_diag_bf",
-        name: "PRO.DIAG.BF",
+        symbol: "pro_res_diag_bf",
+        name: "PRO.RES.DIAG.BF",
         help: "Bornhuetter-Ferguson on a latest diagonal with a selected pattern: latest plus the a priori ultimate's unreported share, per origin, with a total.",
         args: &[
             DIAG_ORIGINS,
@@ -785,8 +812,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: diagonal::bornhuetter_ferguson,
     },
     Function {
-        symbol: "pro_diag_benktander",
-        name: "PRO.DIAG.BENKTANDER",
+        symbol: "pro_res_diag_benktander",
+        name: "PRO.RES.DIAG.BENKTANDER",
         help: "Benktander on a latest diagonal with a selected pattern: Bornhuetter-Ferguson iterated on its own ultimate (1 iteration is BF).",
         args: &[
             DIAG_ORIGINS,
@@ -810,8 +837,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: diagonal::benktander,
     },
     Function {
-        symbol: "pro_diag_capecod",
-        name: "PRO.DIAG.CAPECOD",
+        symbol: "pro_res_diag_capecod",
+        name: "PRO.RES.DIAG.CAPECOD",
         help: "Cape Cod on a latest diagonal with a selected pattern: the a priori loss ratio estimated from the diagonal and exposure, trended to the latest valuation.",
         args: &[
             DIAG_ORIGINS,
@@ -838,8 +865,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: diagonal::cape_cod,
     },
     Function {
-        symbol: "pro_pattern_average",
-        name: "PRO.PATTERN.AVERAGE",
+        symbol: "pro_res_pattern_average",
+        name: "PRO.RES.PATTERN.AVERAGE",
         help: "A pattern measured on one origin basis (such as accident months) averaged to a coarser one: age, percent developed and CDF for every month.",
         args: &[
             Arg {
@@ -860,36 +887,36 @@ pub static FUNCTIONS: &[Function] = &[
         run: diagonal::pattern_average,
     },
     Function {
-        symbol: "pro_clark",
-        name: "PRO.CLARK",
+        symbol: "pro_res_clark",
+        name: "PRO.RES.CLARK",
         help: "Clark's growth curve: LDF method, or Cape Cod with exposure; reserve and its SEs per origin, with a total.",
         args: &[TRIANGLE, CLARK_EXPOSURE, CURVE, MAX_AGE, ORIGINS],
         run: reserving::clark,
     },
     Function {
-        symbol: "pro_clark_params",
-        name: "PRO.CLARK.PARAMS",
+        symbol: "pro_res_clark_params",
+        name: "PRO.RES.CLARK.PARAMS",
         help: "Clark's fitted parameters: curve, omega, theta, the ELR (Cape Cod), the scale and the observations.",
         args: &[TRIANGLE, CLARK_EXPOSURE, CURVE, MAX_AGE],
         run: reserving::clark_params,
     },
     Function {
-        symbol: "pro_odp_glm",
-        name: "PRO.ODP.GLM",
+        symbol: "pro_res_odp_glm",
+        name: "PRO.RES.ODP.GLM",
         help: "ODP GLM exhibit: latest, ultimate, reserve, process and parameter SE, RMSEP and CV per origin, with a total (Taylor and McGuire's Table 5-4).",
         args: &[TRIANGLE, ORIGINS],
         run: odp_glm::summary,
     },
     Function {
-        symbol: "pro_odp_glm_params",
-        name: "PRO.ODP.GLM.PARAMS",
+        symbol: "pro_res_odp_glm_params",
+        name: "PRO.RES.ODP.GLM.PARAMS",
         help: "The ODP GLM's coefficients: term, level, estimate and SE (intercept, origins and development periods from the second), then Pearson's dispersion.",
         args: &[TRIANGLE, ORIGINS],
         run: odp_glm::params,
     },
     Function {
-        symbol: "pro_odp_glm_residuals",
-        name: "PRO.ODP.GLM.RESIDUALS",
+        symbol: "pro_res_odp_glm_residuals",
+        name: "PRO.RES.ODP.GLM.RESIDUALS",
         help: "The ODP GLM's residuals: a row per observed increment (actual, fitted, Pearson, deviance, leverage, standardized), or grouped by origin, development or calendar period.",
         args: &[TRIANGLE, RESIDUALS_BY, ORIGINS],
         run: odp_glm::residuals,
@@ -954,8 +981,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: pricing::stats,
     },
     Function {
-        symbol: "pro_ler",
-        name: "PRO.LER",
+        symbol: "pro_prc_ler",
+        name: "PRO.PRC.LER",
         help: "Loss elimination ratio of a deductible, LEV(d) / E[X]: the credit for a straight deductible.",
         args: &[
             Arg {
@@ -970,8 +997,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: pricing::ler,
     },
     Function {
-        symbol: "pro_pareto_extrapolate",
-        name: "PRO.PARETO.EXTRAPOLATE",
+        symbol: "pro_prc_pareto_extrapolate",
+        name: "PRO.PRC.PARETO.EXTRAPOLATE",
         help: "Pareto extrapolation: expected loss of each to layer per unit of the from layer's, at this alpha.",
         args: &[
             arg("from_limit", "The rated layer's limit, or \"unlimited\""),
@@ -990,8 +1017,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: pricing::pareto_extrapolate,
     },
     Function {
-        symbol: "pro_pareto_alpha",
-        name: "PRO.PARETO.ALPHA",
+        symbol: "pro_prc_pareto_alpha",
+        name: "PRO.PRC.PARETO.ALPHA",
         help: "The Pareto alpha at which two layers have the given expected losses.",
         args: &[
             arg("limit1", "First layer's limit, or \"unlimited\""),
@@ -1005,8 +1032,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: pricing::pareto_alpha_layers,
     },
     Function {
-        symbol: "pro_pareto_alpha_freqlayer",
-        name: "PRO.PARETO.ALPHA.FREQLAYER",
+        symbol: "pro_prc_pareto_alpha_freqlayer",
+        name: "PRO.PRC.PARETO.ALPHA.FREQLAYER",
         help: "The Pareto alpha at which a frequency of losses above a threshold gives a layer its expected loss.",
         args: &[
             arg(
@@ -1025,8 +1052,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: pricing::pareto_alpha_frequency_layer,
     },
     Function {
-        symbol: "pro_pareto_alpha_freqs",
-        name: "PRO.PARETO.ALPHA.FREQS",
+        symbol: "pro_prc_pareto_alpha_freqs",
+        name: "PRO.PRC.PARETO.ALPHA.FREQS",
         help: "The Pareto alpha between two frequencies above two thresholds.",
         args: &[
             arg("threshold1", "First threshold"),
@@ -1044,36 +1071,36 @@ pub static FUNCTIONS: &[Function] = &[
         run: pricing::pareto_alpha_frequencies,
     },
     Function {
-        symbol: "pro_lev",
-        name: "PRO.LEV",
+        symbol: "pro_prc_lev",
+        name: "PRO.PRC.LEV",
         help: "Limited expected value E[min(X, limit)] of a severity, per limit.",
         args: &[LIMIT, FAMILY, P1, P2, P3],
         run: pricing::lev,
     },
     Function {
-        symbol: "pro_layer",
-        name: "PRO.LAYER",
+        symbol: "pro_prc_layer",
+        name: "PRO.PRC.LAYER",
         help: "Expected loss to the layer limit xs attachment per ground-up loss.",
         args: &[LIMIT, ATTACHMENT, FAMILY, P1, P2, P3],
         run: pricing::layer,
     },
     Function {
-        symbol: "pro_layer_var",
-        name: "PRO.LAYER.VAR",
+        symbol: "pro_prc_layer_var",
+        name: "PRO.PRC.LAYER.VAR",
         help: "Variance of the loss to the layer limit xs attachment per ground-up loss.",
         args: &[LIMIT, ATTACHMENT, FAMILY, P1, P2, P3],
         run: pricing::layer_variance,
     },
     Function {
-        symbol: "pro_layer_cv",
-        name: "PRO.LAYER.CV",
+        symbol: "pro_prc_layer_cv",
+        name: "PRO.PRC.LAYER.CV",
         help: "CV of the loss to the layer, given a loss above its attachment.",
         args: &[LIMIT, ATTACHMENT, FAMILY, P1, P2, P3],
         run: pricing::layer_coefficient_of_variation,
     },
     Function {
-        symbol: "pro_ilf",
-        name: "PRO.ILF",
+        symbol: "pro_prc_ilf",
+        name: "PRO.PRC.ILF",
         help: "Increased limit factor LEV(limit) / LEV(basic_limit).",
         args: &[
             LIMIT,
@@ -1089,8 +1116,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: pricing::increased_limit_factor,
     },
     Function {
-        symbol: "pro_exposure_curve",
-        name: "PRO.EXPOSURE.CURVE",
+        symbol: "pro_prc_exposure_curve",
+        name: "PRO.PRC.EXPOSURE.CURVE",
         help: "Exposure curve G(x): the share of a risk's expected loss below a fraction x of its MPL. A column of x against a row of c (or b, g) gives one column per curve.",
         args: &[
             Arg {
@@ -1105,29 +1132,29 @@ pub static FUNCTIONS: &[Function] = &[
         run: exposure::exposure_curve,
     },
     Function {
-        symbol: "pro_exposure_share",
-        name: "PRO.EXPOSURE.SHARE",
+        symbol: "pro_prc_exposure_share",
+        name: "PRO.PRC.EXPOSURE.SHARE",
         help: "Share of a risk's expected loss in the layer limit xs attachment, for a risk of the given MPL.",
         args: &[LIMIT, ATTACHMENT, MPL, EXPOSURE_CURVE, CP1, CP2, CP3],
         run: exposure::share,
     },
     Function {
-        symbol: "pro_exposure_quantile",
-        name: "PRO.EXPOSURE.QUANTILE",
+        symbol: "pro_prc_exposure_quantile",
+        name: "PRO.PRC.EXPOSURE.QUANTILE",
         help: "Destruction rate (loss over MPL) at each probability, for simulating losses from the curve. A column of u against a row of c (or b, g) gives one column per curve.",
         args: &[PROBABILITY, EXPOSURE_CURVE, CP1, CP2, CP3],
         run: exposure::quantile,
     },
     Function {
-        symbol: "pro_exposure_stats",
-        name: "PRO.EXPOSURE.STATS",
+        symbol: "pro_prc_exposure_stats",
+        name: "PRO.PRC.EXPOSURE.STATS",
         help: "The curve's b, g, mean destruction rate and probability of a total loss.",
         args: &[EXPOSURE_CURVE, CP1, CP2, CP3],
         run: exposure::stats,
     },
     Function {
-        symbol: "pro_swissre_c",
-        name: "PRO.SWISSRE.C",
+        symbol: "pro_prc_swissre_c",
+        name: "PRO.PRC.SWISSRE.C",
         help: "The Swiss Re c whose mean destruction rate (expected loss over MPL) is rate.",
         args: &[Arg {
             name: "rate",
@@ -1136,8 +1163,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: exposure::swiss_re_c,
     },
     Function {
-        symbol: "pro_swissre_c_layer",
-        name: "PRO.SWISSRE.C.LAYER",
+        symbol: "pro_prc_swissre_c_layer",
+        name: "PRO.PRC.SWISSRE.C.LAYER",
         help: "The Swiss Re c whose share of a risk's expected loss in limit xs attachment is share.",
         args: &[
             LIMIT,
@@ -1151,8 +1178,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: exposure::swiss_re_c_layer,
     },
     Function {
-        symbol: "pro_profile",
-        name: "PRO.PROFILE",
+        symbol: "pro_prc_profile",
+        name: "PRO.PRC.PROFILE",
         help: "Exposure-rated risk profile: each band's expected claims, surplus cession and loss to a per-risk layer, with a total.",
         args: &[
             Arg {
@@ -1205,8 +1232,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: exposure::profile,
     },
     Function {
-        symbol: "pro_cred_standard",
-        name: "PRO.CRED.STANDARD",
+        symbol: "pro_prc_cred_standard",
+        name: "PRO.PRC.CRED.STANDARD",
         help: "Full credibility standard in expected claims (limited fluctuation): within k of the mean with probability p.",
         args: &[
             Arg {
@@ -1229,8 +1256,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: credibility::standard,
     },
     Function {
-        symbol: "pro_cred_z",
-        name: "PRO.CRED.Z",
+        symbol: "pro_prc_cred_z",
+        name: "PRO.PRC.CRED.Z",
         help: "Partial credibility by the square root rule, min(1, sqrt(n / standard)).",
         args: &[
             Arg {
@@ -1245,15 +1272,15 @@ pub static FUNCTIONS: &[Function] = &[
         run: credibility::z,
     },
     Function {
-        symbol: "pro_buhlmann",
-        name: "PRO.BUHLMANN",
+        symbol: "pro_prc_buhlmann",
+        name: "PRO.PRC.BUHLMANN",
         help: "Buhlmann-Straub credibility: each group's weight, mean, credibility factor and premium.",
         args: &[RATIOS, WEIGHTS, ESTIMATOR, GROUPS],
         run: credibility::buhlmann,
     },
     Function {
-        symbol: "pro_buhlmann_params",
-        name: "PRO.BUHLMANN.PARAMS",
+        symbol: "pro_prc_buhlmann_params",
+        name: "PRO.PRC.BUHLMANN.PARAMS",
         help: "Buhlmann-Straub structure parameters: collective mean, between and within variances, k.",
         args: &[RATIOS, WEIGHTS, ESTIMATOR],
         run: credibility::buhlmann_params,
@@ -1269,22 +1296,22 @@ pub static FUNCTIONS: &[Function] = &[
         run: ratemaking::year_fraction_of,
     },
     Function {
-        symbol: "pro_onlevel",
-        name: "PRO.ONLEVEL",
+        symbol: "pro_prc_onlevel",
+        name: "PRO.PRC.ONLEVEL",
         help: "On-level factor of each period's premium by the parallelogram method: current over average rate level.",
         args: &[EFFECTIVE, CHANGES, FROM, TO, PERIOD, TERM, APPLIES, GIVEN],
         run: ratemaking::on_level,
     },
     Function {
-        symbol: "pro_ratelevel",
-        name: "PRO.RATELEVEL",
+        symbol: "pro_prc_ratelevel",
+        name: "PRO.PRC.RATELEVEL",
         help: "One period's premium by rate level (the parallelogram's cells), average and current levels, on-level factor.",
         args: &[EFFECTIVE, CHANGES, FROM, TO, PERIOD, TERM, APPLIES, GIVEN],
         run: ratemaking::rate_level,
     },
     Function {
-        symbol: "pro_avgdate",
-        name: "PRO.AVGDATE",
+        symbol: "pro_prc_avgdate",
+        name: "PRO.PRC.AVGDATE",
         help: "Average written or earned (accident) date of each period, for trend lengths.",
         args: &[
             FROM,
@@ -1299,8 +1326,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: ratemaking::average_date,
     },
     Function {
-        symbol: "pro_trend_fit",
-        name: "PRO.TREND.FIT",
+        symbol: "pro_prc_trend_fit",
+        name: "PRO.PRC.TREND.FIT",
         help: "Least-squares trend of values over time: annual change, intercept, slope, R-squared.",
         args: &[
             Arg {
@@ -1319,8 +1346,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: ratemaking::trend_fit,
     },
     Function {
-        symbol: "pro_lr_experience",
-        name: "PRO.LR.EXPERIENCE",
+        symbol: "pro_prc_lr_experience",
+        name: "PRO.PRC.LR.EXPERIENCE",
         help: "Loss ratio method: each year's projected premium, losses and loss ratio, and the total.",
         args: &[
             Arg {
@@ -1355,8 +1382,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: ratemaking::lr_experience,
     },
     Function {
-        symbol: "pro_pp_experience",
-        name: "PRO.PP.EXPERIENCE",
+        symbol: "pro_prc_pp_experience",
+        name: "PRO.PRC.PP.EXPERIENCE",
         help: "Pure premium method: each year's exposure, projected losses and pure premium, and the total.",
         args: &[
             Arg {
@@ -1383,8 +1410,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: ratemaking::pp_experience,
     },
     Function {
-        symbol: "pro_indicated_change",
-        name: "PRO.INDICATED.CHANGE",
+        symbol: "pro_prc_indicated_change",
+        name: "PRO.PRC.INDICATED.CHANGE",
         help: "Loss ratio method's indicated change, (LR + F) / (1 - V - Q) - 1.",
         args: &[
             Arg {
@@ -1407,8 +1434,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: ratemaking::indicated_change,
     },
     Function {
-        symbol: "pro_indicated_rate",
-        name: "PRO.INDICATED.RATE",
+        symbol: "pro_prc_indicated_rate",
+        name: "PRO.PRC.INDICATED.RATE",
         help: "Pure premium method's indicated rate, (PP + fixed) / (1 - V - Q).",
         args: &[
             Arg {
@@ -1431,8 +1458,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: ratemaking::indicated_rate,
     },
     Function {
-        symbol: "pro_permissible_lr",
-        name: "PRO.PERMISSIBLE.LR",
+        symbol: "pro_prc_permissible_lr",
+        name: "PRO.PRC.PERMISSIBLE.LR",
         help: "Permissible loss ratio, 1 - F - V - Q.",
         args: &[
             Arg {
@@ -1451,8 +1478,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: ratemaking::permissible_lr,
     },
     Function {
-        symbol: "pro_trended_present",
-        name: "PRO.TRENDED.PRESENT",
+        symbol: "pro_prc_trended_present",
+        name: "PRO.PRC.TRENDED.PRESENT",
         help: "Trended present rates complement as a change: (1 + indicated) / (1 + implemented) * trend - 1.",
         args: &[
             Arg {
@@ -1471,8 +1498,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: ratemaking::trended_present,
     },
     Function {
-        symbol: "pro_cred_weighted",
-        name: "PRO.CRED.WEIGHTED",
+        symbol: "pro_prc_cred_weighted",
+        name: "PRO.PRC.CRED.WEIGHTED",
         help: "Credibility-weighted estimate, Z * estimate + (1 - Z) * complement.",
         args: &[
             Arg {
@@ -1491,8 +1518,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: ratemaking::cred_weighted,
     },
     Function {
-        symbol: "pro_expenses",
-        name: "PRO.EXPENSES",
+        symbol: "pro_prc_expenses",
+        name: "PRO.PRC.EXPENSES",
         help: "Premium-based projection: fixed and variable expense ratios from each category's ratio and fixed share.",
         args: &[
             Arg {
@@ -1507,8 +1534,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: ratemaking::expenses,
     },
     Function {
-        symbol: "pro_burningcost",
-        name: "PRO.BURNINGCOST",
+        symbol: "pro_prc_burningcost",
+        name: "PRO.PRC.BURNINGCOST",
         help: "Burning cost from large losses: each accident year's trended layer losses, developed, over its premium.",
         args: &[
             Arg {
@@ -1563,8 +1590,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: experience::burning_cost,
     },
     Function {
-        symbol: "pro_agg_stats",
-        name: "PRO.AGG.STATS",
+        symbol: "pro_cap_agg_stats",
+        name: "PRO.CAP.AGG.STATS",
         help: "Aggregate (compound) annual loss, ground up or to a per-occurrence layer: mean, SD, CV, skewness, VaR, TVaR.",
         args: &[
             Arg {
@@ -1603,8 +1630,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: aggregate::stats,
     },
     Function {
-        symbol: "pro_agg_layers",
-        name: "PRO.AGG.LAYERS",
+        symbol: "pro_cap_agg_layers",
+        name: "PRO.CAP.AGG.LAYERS",
         help: "Per-occurrence layer statistics, one column per layer: chances of attaching and exhausting, annual moments.",
         args: &[
             Arg {
@@ -1643,8 +1670,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: aggregate::layers,
     },
     Function {
-        symbol: "pro_agg_cover",
-        name: "PRO.AGG.COVER",
+        symbol: "pro_cap_agg_cover",
+        name: "PRO.CAP.AGG.COVER",
         help: "Aggregate covers (a stop loss) on the annual total, one column per cover: chances of attaching and exhausting, annual moments.",
         args: &[
             Arg {
@@ -1699,8 +1726,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: aggregate::cover,
     },
     Function {
-        symbol: "pro_tower_price",
-        name: "PRO.TOWER.PRICE",
+        symbol: "pro_prc_tower_price",
+        name: "PRO.PRC.TOWER.PRICE",
         help: "A reinsurance tower on the annual grid, each view (gross, layers, cover, net) priced by a distortion: loss, SD, premium, margin, loss ratio, rate on line.",
         args: &[
             Arg {
@@ -1771,8 +1798,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: aggregate::tower_price,
     },
     Function {
-        symbol: "pro_agg_pml",
-        name: "PRO.AGG.PML",
+        symbol: "pro_cap_agg_pml",
+        name: "PRO.CAP.AGG.PML",
         help: "Occurrence and aggregate PML curves by return period: the year's largest occurrence and its total.",
         args: &[
             Arg {
@@ -1803,8 +1830,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: aggregate::pml,
     },
     Function {
-        symbol: "pro_bayes_odp",
-        name: "PRO.BAYES.ODP",
+        symbol: "pro_res_bayes_odp",
+        name: "PRO.RES.BAYES.ODP",
         help: "Bayesian ODP chain ladder sampled by MCMC (NUTS): reserves, parameters' posterior, or diagnostics.",
         args: &[
             TRIANGLE,
@@ -1833,8 +1860,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: bayes::bayes_odp,
     },
     Function {
-        symbol: "pro_bayes_bf",
-        name: "PRO.BAYES.BF",
+        symbol: "pro_res_bayes_bf",
+        name: "PRO.RES.BAYES.BF",
         help: "Bayesian Bornhuetter-Ferguson by MCMC (NUTS): a gamma prior on each ultimate, a normalised pattern; reserves, ultimates, posterior or diagnostics.",
         args: &[
             TRIANGLE,
@@ -2010,8 +2037,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: evt::hill_estimates,
     },
     Function {
-        symbol: "pro_payout_pattern",
-        name: "PRO.PAYOUT.PATTERN",
+        symbol: "pro_prc_payout_pattern",
+        name: "PRO.PRC.PAYOUT.PATTERN",
         help: "A payment pattern by time: share paid, paid to date, outstanding and the discount at a rate.",
         args: &[
             Arg {
@@ -2024,7 +2051,7 @@ pub static FUNCTIONS: &[Function] = &[
             },
             Arg {
                 name: "kind",
-                help: "\"shares\" (default, summing to 1), \"paid\" (share paid to date, the last 1) or \"factors\" (to ultimate, such as PRO.CL.CDF, the last 1)",
+                help: "\"shares\" (default, summing to 1), \"paid\" (share paid to date, the last 1) or \"factors\" (to ultimate, such as PRO.RES.CL.CDF, the last 1)",
             },
             Arg {
                 name: "shift",
@@ -2038,8 +2065,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: payout::pattern_table,
     },
     Function {
-        symbol: "pro_payout_stats",
-        name: "PRO.PAYOUT.STATS",
+        symbol: "pro_prc_payout_stats",
+        name: "PRO.PRC.PAYOUT.STATS",
         help: "A payment pattern's discount factor, duration and discounted capital years at a rate.",
         args: &[
             Arg {
@@ -2056,7 +2083,7 @@ pub static FUNCTIONS: &[Function] = &[
             },
             Arg {
                 name: "kind",
-                help: "\"shares\" (default, summing to 1), \"paid\" (share paid to date, the last 1) or \"factors\" (to ultimate, such as PRO.CL.CDF, the last 1)",
+                help: "\"shares\" (default, summing to 1), \"paid\" (share paid to date, the last 1) or \"factors\" (to ultimate, such as PRO.RES.CL.CDF, the last 1)",
             },
             Arg {
                 name: "shift",
@@ -2066,8 +2093,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: payout::stats,
     },
     Function {
-        symbol: "pro_payout_price",
-        name: "PRO.PAYOUT.PRICE",
+        symbol: "pro_prc_payout_price",
+        name: "PRO.PRC.PAYOUT.PRICE",
         help: "A cost-of-capital price over the payout: P = E d + coc (assets - P) A, capital held while losses are outstanding.",
         args: &[
             Arg {
@@ -2076,7 +2103,7 @@ pub static FUNCTIONS: &[Function] = &[
             },
             Arg {
                 name: "assets",
-                help: "Assets backing the loss: the one-year risk measure, such as a VaR from PRO.AGG.STATS",
+                help: "Assets backing the loss: the one-year risk measure, such as a VaR from PRO.CAP.AGG.STATS",
             },
             Arg {
                 name: "coc",
@@ -2096,7 +2123,7 @@ pub static FUNCTIONS: &[Function] = &[
             },
             Arg {
                 name: "kind",
-                help: "\"shares\" (default, summing to 1), \"paid\" (share paid to date, the last 1) or \"factors\" (to ultimate, such as PRO.CL.CDF, the last 1)",
+                help: "\"shares\" (default, summing to 1), \"paid\" (share paid to date, the last 1) or \"factors\" (to ultimate, such as PRO.RES.CL.CDF, the last 1)",
             },
             Arg {
                 name: "shift",
@@ -2106,8 +2133,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: payout::price,
     },
     Function {
-        symbol: "pro_quote",
-        name: "PRO.QUOTE",
+        symbol: "pro_prc_quote",
+        name: "PRO.PRC.QUOTE",
         help: "A cover's technical premium (R + f) / (1 - e - b) with its build-up and market ratios, and the cover at each quoted premium.",
         args: &[
             Arg {
@@ -2116,7 +2143,7 @@ pub static FUNCTIONS: &[Function] = &[
             },
             Arg {
                 name: "risk_premium",
-                help: "The risk-loaded premium R, such as PRO.TOWER.PRICE's premium",
+                help: "The risk-loaded premium R, such as PRO.PRC.TOWER.PRICE's premium",
             },
             Arg {
                 name: "assets",
@@ -2146,8 +2173,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: quote::quote,
     },
     Function {
-        symbol: "pro_distortion",
-        name: "PRO.DISTORTION",
+        symbol: "pro_cap_distortion",
+        name: "PRO.CAP.DISTORTION",
         help: "A distortion's g(s) at each exceedance probability s.",
         args: &[
             Arg {
@@ -2170,8 +2197,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: distortions::g,
     },
     Function {
-        symbol: "pro_distortion_price",
-        name: "PRO.DISTORTION.PRICE",
+        symbol: "pro_cap_distortion_price",
+        name: "PRO.CAP.DISTORTION.PRICE",
         help: "A distortion's risk measure of a discrete or simulated distribution, with its mean and margin.",
         args: &[
             Arg {
@@ -2198,8 +2225,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: distortions::price,
     },
     Function {
-        symbol: "pro_distortion_calibrate",
-        name: "PRO.DISTORTION.CALIBRATE",
+        symbol: "pro_cap_distortion_calibrate",
+        name: "PRO.CAP.DISTORTION.CALIBRATE",
         help: "Each family's parameter that prices the outcomes at a target premium (CCoC, PH, Wang, dual, TVaR by default).",
         args: &[
             Arg {
@@ -2226,8 +2253,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: distortions::calibrate_families,
     },
     Function {
-        symbol: "pro_copula_cdf",
-        name: "PRO.COPULA.CDF",
+        symbol: "pro_cap_copula_cdf",
+        name: "PRO.CAP.COPULA.CDF",
         help: "A copula's distribution function C(u) at each point, one point a row (Gaussian in any dimension, exact in two and within about 1e-5 in more; Archimedean in any).",
         args: &[
             Arg {
@@ -2244,8 +2271,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: copulas::cdf,
     },
     Function {
-        symbol: "pro_copula_sim",
-        name: "PRO.COPULA.SIM",
+        symbol: "pro_cap_copula_sim",
+        name: "PRO.CAP.COPULA.SIM",
         help: "Uniforms simulated from a copula, one row a simulation and one column a dimension; reproducible by seed. Turn them into losses with PRO.SEV.QUANTILE.",
         args: &[
             COPULA_FAMILY,
@@ -2270,8 +2297,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: copulas::sim,
     },
     Function {
-        symbol: "pro_iman_conover",
-        name: "PRO.IMAN.CONOVER",
+        symbol: "pro_cap_iman_conover",
+        name: "PRO.CAP.IMAN.CONOVER",
         help: "Simulated columns reordered to a target rank correlation by Iman and Conover's method, each column keeping its own values.",
         args: &[
             Arg {
@@ -2298,8 +2325,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: copulas::iman_conover,
     },
     Function {
-        symbol: "pro_swing",
-        name: "PRO.SWING",
+        symbol: "pro_prc_swing",
+        name: "PRO.PRC.SWING",
         help: "A swing-rated or retro premium at each loss: clip(basic + lcm x loss, minimum, maximum) (aggregate's contract_terms).",
         args: &[
             Arg {
@@ -2330,8 +2357,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: terms::swing,
     },
     Function {
-        symbol: "pro_sliding_scale",
-        name: "PRO.SLIDING.SCALE",
+        symbol: "pro_prc_sliding_scale",
+        name: "PRO.PRC.SLIDING.SCALE",
         help: "A sliding-scale ceding commission at each ceded loss: the rate at loss / premium, linear between anchors, times the premium.",
         args: &[
             Arg {
@@ -2354,8 +2381,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: terms::sliding_scale,
     },
     Function {
-        symbol: "pro_profit_commission",
-        name: "PRO.PROFIT.COMMISSION",
+        symbol: "pro_prc_profit_commission",
+        name: "PRO.PRC.PROFIT.COMMISSION",
         help: "A profit commission at each ceded loss: share x max(premium x (1 - allowance) - loss, 0).",
         args: &[
             Arg {
@@ -2378,8 +2405,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: terms::profit_commission,
     },
     Function {
-        symbol: "pro_profit_commission_term",
-        name: "PRO.PROFIT.COMMISSION.TERM",
+        symbol: "pro_prc_profit_commission_term",
+        name: "PRO.PRC.PROFIT.COMMISSION.TERM",
         help: "A profit commission in each year of a term, deficits carried forward and used oldest first; one row a term, one column a year.",
         args: &[
             TERM_LOSSES,
@@ -2400,8 +2427,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: terms::profit_commission_term,
     },
     Function {
-        symbol: "pro_sliding_scale_term",
-        name: "PRO.SLIDING.SCALE.TERM",
+        symbol: "pro_prc_sliding_scale_term",
+        name: "PRO.PRC.SLIDING.SCALE.TERM",
         help: "A sliding-scale ceding commission in each year of a term, deficits and credits carried forward; one row a term, one column a year.",
         args: &[
             TERM_LOSSES,
@@ -2426,8 +2453,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: terms::sliding_scale_term,
     },
     Function {
-        symbol: "pro_layer_terms",
-        name: "PRO.LAYER.TERMS",
+        symbol: "pro_prc_layer_terms",
+        name: "PRO.PRC.LAYER.TERMS",
         help: "A layer's contract terms in expectation over its annual loss: premium, reinstatement premium, ceding and profit commissions, margin.",
         args: &[
             Arg {
@@ -2494,8 +2521,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: aggregate::layer_terms,
     },
     Function {
-        symbol: "pro_glm",
-        name: "PRO.GLM",
+        symbol: "pro_prc_glm",
+        name: "PRO.PRC.GLM",
         help: "A GLM fitted to a table: each coefficient's estimate, SE, statistic, p-value and exp(estimate), then deviance, dispersion, AIC and the other statistics.",
         args: &[
             GLM_DATA,
@@ -2510,8 +2537,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: glm::summary,
     },
     Function {
-        symbol: "pro_glm_predict",
-        name: "PRO.GLM.PREDICT",
+        symbol: "pro_prc_glm_predict",
+        name: "PRO.PRC.GLM.PREDICT",
         help: "The fitted mean of each row of newdata under a GLM fitted to data, as a column.",
         args: &[
             GLM_DATA,
@@ -2530,8 +2557,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: glm::predict,
     },
     Function {
-        symbol: "pro_glm_relativities",
-        name: "PRO.GLM.RELATIVITIES",
+        symbol: "pro_prc_glm_relativities",
+        name: "PRO.PRC.GLM.RELATIVITIES",
         help: "A log-link GLM's relativities: exp(estimate) per factor level (the base at 1) and per unit of a numeric term, with a confidence interval.",
         args: &[
             GLM_DATA,
@@ -2550,8 +2577,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: glm::relativities,
     },
     Function {
-        symbol: "pro_cashflow",
-        name: "PRO.CASHFLOW",
+        symbol: "pro_cap_cashflow",
+        name: "PRO.CAP.CASHFLOW",
         help: "A collateralised deal's monthly cash flows on each simulated loss ratio: IRR, MOIC and totals per simulation, the monthly flows, or one simulation's accounts.",
         args: &[
             Arg {
@@ -2590,8 +2617,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: cashflow::cashflow,
     },
     Function {
-        symbol: "pro_pnl",
-        name: "PRO.PNL",
+        symbol: "pro_cap_pnl",
+        name: "PRO.CAP.PNL",
         help: "A book's P&L ledger over annual gross losses, with the annual covers it buys: every line's distribution and the scenarios that foot, the card, or the ratios.",
         args: &[
             Arg {
@@ -2634,8 +2661,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: pnl::pnl,
     },
     Function {
-        symbol: "pro_ylt_stats",
-        name: "PRO.YLT.STATS",
+        symbol: "pro_cap_ylt_stats",
+        name: "PRO.CAP.YLT.STATS",
         help: "A year loss table's annual loss: years, occurrences, mean (AAL), SD, CV, skewness, VaR and TVaR.",
         args: &[
             Arg {
@@ -2674,8 +2701,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: cat::ylt_stats,
     },
     Function {
-        symbol: "pro_ylt_oep",
-        name: "PRO.YLT.OEP",
+        symbol: "pro_cap_ylt_oep",
+        name: "PRO.CAP.YLT.OEP",
         help: "A year loss table's occurrence (OEP) and aggregate (AEP) exceedance curves: PMLs by return period, or exceedance at amounts.",
         args: &[
             Arg {
@@ -2718,8 +2745,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: cat::ylt_oep,
     },
     Function {
-        symbol: "pro_elt_stats",
-        name: "PRO.ELT.STATS",
+        symbol: "pro_cap_elt_stats",
+        name: "PRO.CAP.ELT.STATS",
         help: "An event loss table's events a year, expected annual loss, SD and CV (compound Poisson).",
         args: &[
             Arg {
@@ -2746,8 +2773,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: cat::elt_stats,
     },
     Function {
-        symbol: "pro_elt_oep",
-        name: "PRO.ELT.OEP",
+        symbol: "pro_cap_elt_oep",
+        name: "PRO.CAP.ELT.OEP",
         help: "An event loss table's occurrence exceedance (OEP) curve: occurrence PMLs by return period, or exceedance at amounts.",
         args: &[
             Arg {
@@ -2782,8 +2809,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: cat::elt_oep,
     },
     Function {
-        symbol: "pro_allocate",
-        name: "PRO.ALLOCATE",
+        symbol: "pro_cap_allocate",
+        name: "PRO.CAP.ALLOCATE",
         help: "A distortion risk measure of the portfolio allocated to its units: Euler (natural), covariance, proportional, marginal or Shapley.",
         args: &[
             Arg {
@@ -2792,7 +2819,7 @@ pub static FUNCTIONS: &[Function] = &[
             },
             Arg {
                 name: "family",
-                help: "The distortion: \"tvar\", \"ph\", \"wang\", \"dual\", \"ccoc\" and the others PRO.DISTORTION names",
+                help: "The distortion: \"tvar\", \"ph\", \"wang\", \"dual\", \"ccoc\" and the others PRO.CAP.DISTORTION names",
             },
             Arg {
                 name: "parameter",
@@ -2810,8 +2837,8 @@ pub static FUNCTIONS: &[Function] = &[
         run: allocation::allocate,
     },
     Function {
-        symbol: "pro_allocate_total",
-        name: "PRO.ALLOCATE.TOTAL",
+        symbol: "pro_cap_allocate_total",
+        name: "PRO.CAP.ALLOCATE.TOTAL",
         help: "An amount from outside (a premium or a capital) allocated to the units: the haircut or equal risk rule on stand-alone VaR, TVaR or EPD.",
         args: &[
             Arg {
@@ -2839,13 +2866,18 @@ pub static FUNCTIONS: &[Function] = &[
     },
 ];
 
-/// Runs the function exported as `symbol` on `args`, catching a panic so
+/// Runs the function exported as `symbol` (or an old name's alias of it,
+/// [`ALIASES`]) on `args`, catching a panic so
 /// that it never unwinds into Excel. An error comes back as a single text
 /// cell starting with `#PROSPICIO!`, which shows the user why.
 ///
 /// Arguments past those given are omitted ones, as Excel passes for an
 /// optional argument left out.
 pub fn call(symbol: &str, mut args: Vec<Grid>) -> Grid {
+    let symbol = ALIASES
+        .iter()
+        .find(|a| a.symbol == symbol)
+        .map_or(symbol, |a| a.target);
     let Some(f) = FUNCTIONS.iter().find(|f| f.symbol == symbol) else {
         return error_cell(&format!("no function {symbol}"));
     };

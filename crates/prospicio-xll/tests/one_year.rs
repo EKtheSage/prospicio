@@ -1,11 +1,11 @@
 //! The one-year view on RAA, reached through the catalogue as Excel
 //! reaches it:
 //!
-//! * `PRO.MACK.CDR` and `PRO.MACK.CDR.YEARS` against R ChainLadder's
+//! * `PRO.RES.MACK.CDR` and `PRO.RES.MACK.CDR.YEARS` against R ChainLadder's
 //!   `CDR(MackChainLadder(RAA), dev = "all")`
 //!   (`validation/reference/reserving_cdr_r.csv`): every origin's reserve,
 //!   `CDR(1)S.E.` and Mack S.E., every origin's and the total's `CDR(k)S.E.`;
-//! * `PRO.ODP.CDR` and `PRO.MACK.BOOT.CDR`: the same simulated claims
+//! * `PRO.RES.ODP.CDR` and `PRO.RES.MACK.BOOT.CDR`: the same simulated claims
 //!   development results as `OdpBootstrap::one_year` and
 //!   `MackBootstrap::one_year` with the chain ladder.
 
@@ -44,7 +44,7 @@ fn close(got: f64, want: f64, what: &str) {
 
 #[test]
 fn merz_wuthrich_matches_r() {
-    let out = call("pro_mack_cdr", vec![raa()]);
+    let out = call("pro_res_mack_cdr", vec![raa()]);
     assert_eq!((out.rows, out.columns), (12, 4));
     assert_eq!(out.get(0, 2), &Value::from("CDR(1) SE"));
     let mut checked = 0;
@@ -67,7 +67,7 @@ fn merz_wuthrich_matches_r() {
 
 #[test]
 fn cdr_by_calendar_year_matches_r() {
-    let out = call("pro_mack_cdr_years", vec![raa()]);
+    let out = call("pro_res_mack_cdr_years", vec![raa()]);
     assert_eq!((out.rows, out.columns), (12, 10), "nine future years");
     let mut checked = 0;
     for (quantity, arg, want) in r_cdr() {
@@ -112,7 +112,7 @@ fn simulated_cdr_is_the_crates() {
     }
     .one_year(&tri, "values", &cl)
     .unwrap();
-    let out = call("pro_odp_cdr", vec![raa(), n(2_000.0), n(3.0)]);
+    let out = call("pro_res_odp_cdr", vec![raa(), n(2_000.0), n(3.0)]);
     assert_eq!((out.rows, out.columns), (12, 8));
     assert_eq!(out.get(0, 4), &Value::from("P0.5"));
     for (j, m) in column_means(&odp.cdr).into_iter().enumerate() {
@@ -138,7 +138,7 @@ fn simulated_cdr_is_the_crates() {
     }
     .one_year(&tri, "values", &cl)
     .unwrap();
-    let out = call("pro_mack_boot_cdr", vec![raa(), n(2_000.0), n(3.0)]);
+    let out = call("pro_res_mack_boot_cdr", vec![raa(), n(2_000.0), n(3.0)]);
     for (j, m) in column_means(&mack.cdr).into_iter().enumerate() {
         close(num(out.get(j + 1, 2)), m, &format!("Mack mean CDR {j}"));
     }
@@ -152,12 +152,12 @@ fn simulated_cdr_is_the_crates() {
 #[test]
 fn options_and_errors() {
     let tail = call(
-        "pro_odp_cdr",
+        "pro_res_odp_cdr",
         vec![raa(), n(500.0), n(0.0), Grid::missing(), n(1.05)],
     );
     assert_eq!(tail.rows, 12, "{:?}", tail.as_scalar());
     let sigma = call(
-        "pro_mack_cdr",
+        "pro_res_mack_cdr",
         vec![
             raa(),
             Grid::missing(),
@@ -173,5 +173,5 @@ fn options_and_errors() {
         num(sigma.get(11, 3)) > 26_900.0,
         "Mack's rule raises the SE"
     );
-    assert!(text(&call("pro_mack_boot_cdr", vec![raa(), n(0.0)])).contains("sims"));
+    assert!(text(&call("pro_res_mack_boot_cdr", vec![raa(), n(0.0)])).contains("sims"));
 }

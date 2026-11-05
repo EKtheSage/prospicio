@@ -54,7 +54,7 @@ fn close(got: f64, row: &[String]) -> bool {
     (got - want).abs() <= abs.max(rel * want.abs())
 }
 
-/// The row of `PRO.ODP.GLM.PARAMS` for R's coefficient name.
+/// The row of `PRO.RES.ODP.GLM.PARAMS` for R's coefficient name.
 fn coefficient_row(params: &Grid, name: &str) -> usize {
     let (term, level) = if name == "(Intercept)" {
         ("Intercept", Value::Empty)
@@ -79,7 +79,7 @@ fn coefficient_row(params: &Grid, name: &str) -> usize {
 fn matches_r_glm() {
     let mut checked = 0;
     for row in reference("reserving_glm_r.csv") {
-        // `PRO.ODP.GLM` fits the ODP; the gamma and Tweedie rows are the
+        // `PRO.RES.ODP.GLM` fits the ODP; the gamma and Tweedie rows are the
         // crate's (`validation/tests/reserving.rs`).
         if row[1] != "odp_glm" {
             continue;
@@ -89,24 +89,24 @@ fn matches_r_glm() {
         let first_year = if data == "genins" { 2001 } else { 1977 };
         let got = match quantity {
             "coefficient" | "std_error" => {
-                let p = call("pro_odp_glm_params", vec![tri, labels]);
+                let p = call("pro_res_odp_glm_params", vec![tri, labels]);
                 let r = coefficient_row(&p, arg);
                 num(p.get(r, if quantity == "coefficient" { 2 } else { 3 }))
             }
             "dispersion" => {
-                let p = call("pro_odp_glm_params", vec![tri, labels]);
+                let p = call("pro_res_odp_glm_params", vec![tri, labels]);
                 assert_eq!(*p.get(p.rows - 1, 0), Value::from("Dispersion"));
                 num(p.get(p.rows - 1, 2))
             }
             "reserve" => {
-                let s = call("pro_odp_glm", vec![tri, labels]);
+                let s = call("pro_res_odp_glm", vec![tri, labels]);
                 let year: i32 = arg.parse().unwrap();
                 let r = (year - first_year) as usize + 1;
                 assert_eq!(num(s.get(r, 0)), f64::from(year));
                 num(s.get(r, 3))
             }
             "total_reserve" => {
-                let s = call("pro_odp_glm", vec![tri, labels]);
+                let s = call("pro_res_odp_glm", vec![tri, labels]);
                 assert_eq!(*s.get(s.rows - 1, 0), Value::from("Total"));
                 num(s.get(s.rows - 1, 3))
             }
@@ -161,7 +161,7 @@ fn taylor_mcguire() -> Grid {
 
 #[test]
 fn prediction_error_matches_taylor_mcguire_table_5_4() {
-    let s = call("pro_odp_glm", vec![taylor_mcguire()]);
+    let s = call("pro_res_odp_glm", vec![taylor_mcguire()]);
     assert_eq!((s.rows, s.columns), (12, 8));
     assert_eq!(*s.get(0, 6), Value::from("RMSEP"));
     // Forecast and RMSEP by accident year 1989 to 1997, then the total.
@@ -199,7 +199,7 @@ fn prediction_error_matches_taylor_mcguire_table_5_4() {
 
 #[test]
 fn residuals_match_taylor_mcguire_chapter_6() {
-    let cells = call("pro_odp_glm_residuals", vec![taylor_mcguire()]);
+    let cells = call("pro_res_odp_glm_residuals", vec![taylor_mcguire()]);
     assert_eq!((cells.rows, cells.columns), (56, 11));
     // 1988's last year and 1997's first have leverage 1: no standardized
     // residual.
@@ -229,7 +229,7 @@ fn residuals_match_taylor_mcguire_chapter_6() {
     // The spread by development year 1 to 8 (divisor n in the guide) and
     // the mean by calendar year, to two decimals.
     let by_age = call(
-        "pro_odp_glm_residuals",
+        "pro_res_odp_glm_residuals",
         vec![taylor_mcguire(), t("development")],
     );
     assert_eq!((by_age.rows, by_age.columns), (11, 4));
@@ -245,7 +245,7 @@ fn residuals_match_taylor_mcguire_chapter_6() {
     assert_eq!(num(by_age.get(10, 1)), 0.0);
     assert_eq!(*by_age.get(10, 2), Value::Empty);
     let by_calendar = call(
-        "pro_odp_glm_residuals",
+        "pro_res_odp_glm_residuals",
         vec![taylor_mcguire(), t("calendar")],
     );
     let means = [
@@ -257,7 +257,7 @@ fn residuals_match_taylor_mcguire_chapter_6() {
     }
     let labels = Grid::column(&(1988..=1997).map(f64::from).collect::<Vec<_>>());
     let by_origin = call(
-        "pro_odp_glm_residuals",
+        "pro_res_odp_glm_residuals",
         vec![taylor_mcguire(), t("origin"), labels],
     );
     assert_eq!(*by_origin.get(0, 0), Value::from("Origin"));
@@ -269,12 +269,12 @@ fn residuals_match_taylor_mcguire_chapter_6() {
 /// The reserves are the chain ladder's, a negative increment and all.
 #[test]
 fn reserves_are_the_chain_ladders() {
-    let s = call("pro_odp_glm", vec![raa()]);
-    let cl = call("pro_cl_reserve", vec![raa()]);
+    let s = call("pro_res_odp_glm", vec![raa()]);
+    let cl = call("pro_res_cl_reserve", vec![raa()]);
     for i in 0..10 {
         assert!((num(s.get(i + 1, 3)) - num(&cl.cells[i])).abs() < 1e-6);
     }
-    let p = call("pro_odp_glm_params", vec![raa()]);
+    let p = call("pro_res_odp_glm_params", vec![raa()]);
     assert_eq!((p.rows, p.columns), (21, 4));
     assert_eq!(*p.get(1, 0), Value::from("Intercept"));
     assert_eq!(
@@ -290,15 +290,15 @@ fn reserves_are_the_chain_ladders() {
 
 #[test]
 fn bad_inputs_are_named() {
-    let e = call("pro_odp_glm_residuals", vec![raa(), t("diagonal")]);
+    let e = call("pro_res_odp_glm_residuals", vec![raa(), t("diagonal")]);
     assert!(text(&e).contains("by must be"), "{}", text(&e));
-    let e = call("pro_odp_glm", vec![raa(), Grid::column(&[1.0, 2.0])]);
+    let e = call("pro_res_odp_glm", vec![raa(), Grid::column(&[1.0, 2.0])]);
     assert!(text(&e).contains("origins must be"), "{}", text(&e));
     // An origin whose only increment is negative has no positive mean.
     let tri = Grid::from_rows(vec![
         vec![Value::Number(100.0), Value::Number(150.0)],
         vec![Value::Number(-10.0), Value::Empty],
     ]);
-    let e = call("pro_odp_glm", vec![tri]);
+    let e = call("pro_res_odp_glm", vec![tri]);
     assert!(text(&e).starts_with("#PROSPICIO! "), "{e:?}");
 }

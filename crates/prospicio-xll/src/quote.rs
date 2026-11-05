@@ -61,10 +61,10 @@ fn column(q: &Quote, with_assets: bool) -> [f64; 13] {
     ]
 }
 
-/// `PRO.QUOTE(expected_loss, risk_premium, [assets], [expenses],
+/// `PRO.PRC.QUOTE(expected_loss, risk_premium, [assets], [expenses],
 /// [brokerage], [fixed], [limit], [quoted])`: the technical premium
 /// `(R + f) / (1 - e - b)` of a risk premium `R` (the premium of
-/// `PRO.TOWER.PRICE` or another risk-loaded price), its build-up and
+/// `PRO.PRC.TOWER.PRICE` or another risk-loaded price), its build-up and
 /// ratios, and the same cover at each quoted premium: what the quote
 /// leaves after the loads is the reinsurer's risk premium, and the margin
 /// and return on capital follow.

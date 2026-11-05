@@ -167,7 +167,7 @@ pub(crate) fn broadcast(
 }
 
 /// The exposure curve `G(x)` at each `x` in `[0, 1]`:
-/// `PRO.EXPOSURE.CURVE(x, curve, p1, [p2], [p3])`. A row of Swiss Re `c`
+/// `PRO.PRC.EXPOSURE.CURVE(x, curve, p1, [p2], [p3])`. A row of Swiss Re `c`
 /// (or MBBEFD `b`, `g`) against a column of `x` gives one column per
 /// curve.
 pub fn exposure_curve(args: &[Grid]) -> Result<Grid> {
@@ -235,7 +235,7 @@ fn curve_table(
 
 /// Share of a risk's expected loss in `limit` xs `attachment`, for a risk
 /// of maximum possible loss `mpl`:
-/// `PRO.EXPOSURE.SHARE(limit, attachment, mpl, curve, p1, [p2], [p3])`.
+/// `PRO.PRC.EXPOSURE.SHARE(limit, attachment, mpl, curve, p1, [p2], [p3])`.
 pub fn share(args: &[Grid]) -> Result<Grid> {
     let c = curve(&args[3], &args[4], &args[5], &args[6])?;
     broadcast(
@@ -247,7 +247,7 @@ pub fn share(args: &[Grid]) -> Result<Grid> {
 }
 
 /// The destruction rate (loss over MPL) at each probability `u`:
-/// `PRO.EXPOSURE.QUANTILE(u, curve, p1, [p2], [p3])`.
+/// `PRO.PRC.EXPOSURE.QUANTILE(u, curve, p1, [p2], [p3])`.
 pub fn quantile(args: &[Grid]) -> Result<Grid> {
     curve_table(args, "u", |c, u| {
         if u > 0.0 && u < 1.0 {
@@ -259,7 +259,7 @@ pub fn quantile(args: &[Grid]) -> Result<Grid> {
 }
 
 /// A curve's parameters and destruction-rate statistics as a two-column
-/// table: `PRO.EXPOSURE.STATS(curve, p1, [p2], [p3])`. The MBBEFD's `b`,
+/// table: `PRO.PRC.EXPOSURE.STATS(curve, p1, [p2], [p3])`. The MBBEFD's `b`,
 /// `g` and probability of a total loss are blank for a tabulated curve.
 pub fn stats(args: &[Grid]) -> Result<Grid> {
     let c = curve(&args[0], &args[1], &args[2], &args[3])?;
@@ -283,7 +283,7 @@ pub fn stats(args: &[Grid]) -> Result<Grid> {
 }
 
 /// The Swiss Re `c` whose mean destruction rate is each `rate`:
-/// `PRO.SWISSRE.C(rate)`.
+/// `PRO.PRC.SWISSRE.C(rate)`.
 pub fn swiss_re_c(args: &[Grid]) -> Result<Grid> {
     map1(&args[0], "rate", false, |r| {
         Mbbefd::swiss_re_for_mean_rate(r)
@@ -293,7 +293,7 @@ pub fn swiss_re_c(args: &[Grid]) -> Result<Grid> {
 }
 
 /// The Swiss Re `c` whose share of a risk's expected loss in `limit` xs
-/// `attachment` is `share`: `PRO.SWISSRE.C.LAYER(limit, attachment, mpl,
+/// `attachment` is `share`: `PRO.PRC.SWISSRE.C.LAYER(limit, attachment, mpl,
 /// share)`, each broadcast against the others.
 pub fn swiss_re_c_layer(args: &[Grid]) -> Result<Grid> {
     broadcast(
@@ -338,7 +338,7 @@ fn bounds(g: &Grid, name: &str, n: usize) -> Result<Vec<Option<f64>>> {
 /// loss and claims, its loss ceded to a surplus treaty and its expected
 /// loss to the per-risk layer `limit` xs `attachment` (net of the surplus
 /// when one is given), with a total row:
-/// `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve,
+/// `PRO.PRC.PROFILE(sums_insured, expected_losses, limit, attachment, curve,
 /// p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])`.
 pub fn profile(args: &[Grid]) -> Result<Grid> {
     let si = numbers(&args[0], "sums_insured")?;

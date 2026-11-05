@@ -3,7 +3,7 @@
 //! `docs/design/xll.md` decision 40), reached through the catalogue as
 //! Excel reaches them:
 //!
-//! * `PRO.EL`, `PRO.BF`, `PRO.BENKTANDER` and `PRO.CAPECOD` with
+//! * `PRO.RES.EL`, `PRO.RES.BF`, `PRO.RES.BENKTANDER` and `PRO.RES.CAPECOD` with
 //!   `selected`, `kind` and `weight` against every chainladder-python 0.10.1
 //!   `DevelopmentConstant` case on the CAS workers' compensation triangle
 //!   (`validation/reference/reserving_patterns_python.csv`), each origin's
@@ -105,10 +105,10 @@ fn run_case(method: &str, selected: Grid, kind: &str) -> Grid {
     let weight = if has("weight=0.6") { n(0.6) } else { none() };
     let pattern = [selected, t(kind), weight];
     let (symbol, mut args) = match method.split(';').next().unwrap() {
-        "expected_loss" => ("pro_el", vec![tri, premium, param(method, "apriori")]),
-        "bornhuetter_ferguson" => ("pro_bf", vec![tri, premium, param(method, "apriori")]),
+        "expected_loss" => ("pro_res_el", vec![tri, premium, param(method, "apriori")]),
+        "bornhuetter_ferguson" => ("pro_res_bf", vec![tri, premium, param(method, "apriori")]),
         "benktander" => (
-            "pro_benktander",
+            "pro_res_benktander",
             vec![
                 tri,
                 premium,
@@ -117,7 +117,7 @@ fn run_case(method: &str, selected: Grid, kind: &str) -> Grid {
             ],
         ),
         "cape_cod" => (
-            "pro_capecod",
+            "pro_res_capecod",
             vec![tri, premium, param(method, "trend"), param(method, "decay")],
         ),
         other => panic!("unknown method {other}"),
@@ -163,28 +163,28 @@ fn expected_loss_functions_match_chainladder_python_with_a_selected_pattern() {
 fn with_pattern(symbol: &str, selected: Grid, kind: &str, ages: Grid) -> Grid {
     let tail = [selected, t(kind), none()];
     let args = match symbol {
-        "pro_cl" => [
+        "pro_res_cl" => [
             vec![raa(), none(), none(), none()],
             tail.to_vec(),
             vec![ages],
         ]
         .concat(),
-        "pro_cl_ldf" | "pro_cl_cdf" | "pro_cl_ultimate" | "pro_cl_reserve" => {
+        "pro_res_cl_ldf" | "pro_res_cl_cdf" | "pro_res_cl_ultimate" | "pro_res_cl_reserve" => {
             [vec![raa(), none(), none()], tail.to_vec(), vec![ages]].concat()
         }
-        "pro_cl_factors" => [
+        "pro_res_cl_factors" => [
             vec![raa(), none(), none()],
             tail.to_vec(),
             vec![none(), ages],
         ]
         .concat(),
-        "pro_mack" | "pro_mack_cdr" | "pro_mack_cdr_years" => [
+        "pro_res_mack" | "pro_res_mack_cdr" | "pro_res_mack_cdr_years" => [
             vec![raa(), none(), none(), none()],
             tail.to_vec(),
             vec![none(), ages],
         ]
         .concat(),
-        "pro_el" | "pro_bf" => {
+        "pro_res_el" | "pro_res_bf" => {
             let (tri, premium) = genins();
             [
                 vec![tri, premium, n(0.6), none(), none(), none()],
@@ -193,9 +193,9 @@ fn with_pattern(symbol: &str, selected: Grid, kind: &str, ages: Grid) -> Grid {
             ]
             .concat()
         }
-        "pro_benktander" | "pro_capecod" => {
+        "pro_res_benktander" | "pro_res_capecod" => {
             let (tri, premium) = genins();
-            let third = if symbol == "pro_benktander" {
+            let third = if symbol == "pro_res_benktander" {
                 n(0.6)
             } else {
                 none()
@@ -213,19 +213,19 @@ fn with_pattern(symbol: &str, selected: Grid, kind: &str, ages: Grid) -> Grid {
 }
 
 const WITH_SELECTED: [&str; 13] = [
-    "pro_cl",
-    "pro_cl_ldf",
-    "pro_cl_cdf",
-    "pro_cl_ultimate",
-    "pro_cl_reserve",
-    "pro_cl_factors",
-    "pro_mack",
-    "pro_mack_cdr",
-    "pro_mack_cdr_years",
-    "pro_el",
-    "pro_bf",
-    "pro_benktander",
-    "pro_capecod",
+    "pro_res_cl",
+    "pro_res_cl_ldf",
+    "pro_res_cl_cdf",
+    "pro_res_cl_ultimate",
+    "pro_res_cl_reserve",
+    "pro_res_cl_factors",
+    "pro_res_mack",
+    "pro_res_mack_cdr",
+    "pro_res_mack_cdr_years",
+    "pro_res_el",
+    "pro_res_bf",
+    "pro_res_benktander",
+    "pro_res_capecod",
 ];
 
 #[test]
@@ -252,7 +252,7 @@ fn pattern_ages_at_twelve_month_steps_are_the_default() {
 /// monthly pattern through them: `ln CDF` linear between them, and from 1
 /// month up to 12 at the slope of the first year.
 fn monthly_raa() -> (Vec<f64>, Vec<f64>, Vec<f64>) {
-    let annual = call("pro_cl_cdf", vec![raa()]);
+    let annual = call("pro_res_cl_cdf", vec![raa()]);
     let annual: Vec<f64> = annual.cells.iter().map(num).collect();
     assert_eq!(annual.len(), 10);
     let ln = |k: usize| annual[k].ln();
@@ -326,7 +326,7 @@ fn a_pattern_off_the_triangles_ages_is_the_crates_fit() {
     }
     .fit(&tri, COLUMN)
     .unwrap();
-    let out = with_pattern("pro_cl_ultimate", row(&values), "cdf", ages_row.clone());
+    let out = with_pattern("pro_res_cl_ultimate", row(&values), "cdf", ages_row.clone());
     assert_eq!(out.cells.iter().map(num).collect::<Vec<_>>(), cl.ultimate);
     let mack = Mack {
         development: development.clone(),
@@ -334,7 +334,7 @@ fn a_pattern_off_the_triangles_ages_is_the_crates_fit() {
     }
     .fit(&tri, COLUMN)
     .unwrap();
-    let out = with_pattern("pro_mack", row(&values), "cdf", ages_row.clone());
+    let out = with_pattern("pro_res_mack", row(&values), "cdf", ages_row.clone());
     assert_eq!(column(&out, 6), mack.standard_error);
     assert_eq!(num(out.get(11, 6)), mack.total_standard_error);
 
@@ -349,7 +349,7 @@ fn a_pattern_off_the_triangles_ages_is_the_crates_fit() {
     }
     .fit(&exposed_triangle(&g, &premium).unwrap(), COLUMN, EXPOSURE)
     .unwrap();
-    let out = with_pattern("pro_bf", row(&values), "cdf", ages_row);
+    let out = with_pattern("pro_res_bf", row(&values), "cdf", ages_row);
     assert_eq!(column(&out, 5), fit.ultimate);
     let cl = &fit.chain_ladder;
     let cdf: Vec<f64> = cl.latest_position.iter().map(|&d| cl.cdf[d]).collect();
@@ -361,9 +361,9 @@ fn apriori_per_origin_on_a_triangle() {
     let (tri, premium) = genins();
     let ratios: Vec<f64> = (0..10).map(|i| 0.5 + 0.03 * f64::from(i)).collect();
     for (symbol, iterations) in [
-        ("pro_el", None),
-        ("pro_bf", None),
-        ("pro_benktander", Some(2.0)),
+        ("pro_res_el", None),
+        ("pro_res_bf", None),
+        ("pro_res_benktander", Some(2.0)),
     ] {
         let args = |apriori: Grid| {
             let mut a = vec![tri.clone(), premium.clone(), apriori];
@@ -382,7 +382,10 @@ fn apriori_per_origin_on_a_triangle() {
 
     // Bornhuetter-Ferguson: the latest plus each origin's own a priori
     // ultimate's unreported share, and the crate's fit to the bit.
-    let out = call("pro_bf", vec![tri.clone(), premium.clone(), col(&ratios)]);
+    let out = call(
+        "pro_res_bf",
+        vec![tri.clone(), premium.clone(), col(&ratios)],
+    );
     let (latest, cdf, exposure) = (column(&out, 2), column(&out, 3), column(&out, 1));
     for (i, u) in column(&out, 5).into_iter().enumerate() {
         let by_hand = latest[i] + ratios[i] * exposure[i] * (1.0 - 1.0 / cdf[i]);
@@ -408,7 +411,7 @@ fn apriori_per_origin_on_a_latest_diagonal_follows_the_origins_order() {
     let bf = |order: &[usize]| {
         let pick = |v: &[f64]| order.iter().map(|&i| v[i]).collect::<Vec<_>>();
         call(
-            "pro_diag_bf",
+            "pro_res_diag_bf",
             vec![
                 col(&pick(&origins)),
                 col(&pick(&ages)),
@@ -432,33 +435,36 @@ fn errors() {
     let (tri, premium) = genins();
     let short = col(&[0.6, 0.7, 0.8]);
     assert!(
-        text(&call("pro_bf", vec![tri.clone(), premium.clone(), short]))
-            .contains("a row or column of 10, one per origin")
+        text(&call(
+            "pro_res_bf",
+            vec![tri.clone(), premium.clone(), short]
+        ))
+        .contains("a row or column of 10, one per origin")
     );
     let mut cells = vec![Value::Number(0.6); 10];
     cells[4] = Value::from("x");
     let bad = Grid::from_rows(cells.into_iter().map(|v| vec![v]).collect());
     assert!(
-        text(&call("pro_bf", vec![tri.clone(), premium.clone(), bad]))
+        text(&call("pro_res_bf", vec![tri.clone(), premium.clone(), bad]))
             .contains("apriori 5 must be a number")
     );
     let mut zero = vec![0.6; 10];
     zero[2] = 0.0;
     assert!(
         text(&call(
-            "pro_el",
+            "pro_res_el",
             vec![tri.clone(), premium.clone(), col(&zero)]
         ))
         .contains("positive")
     );
     let selected = row(&[2.5, 1.6, 1.2]);
     assert!(
-        text(&with_pattern("pro_cl", none(), "", row(&[6.0, 18.0])))
+        text(&with_pattern("pro_res_cl", none(), "", row(&[6.0, 18.0])))
             .contains("need selected factors")
     );
     assert!(
         text(&with_pattern(
-            "pro_bf",
+            "pro_res_bf",
             selected.clone(),
             "ldf",
             row(&[6.0, 18.0])
@@ -467,7 +473,7 @@ fn errors() {
     );
     assert!(
         text(&with_pattern(
-            "pro_mack",
+            "pro_res_mack",
             selected.clone(),
             "ldf",
             row(&[6.0, 0.0, 30.0])
@@ -476,7 +482,7 @@ fn errors() {
     );
     assert!(
         text(&with_pattern(
-            "pro_capecod",
+            "pro_res_capecod",
             selected.clone(),
             "ldf",
             Grid::from_rows(vec![vec![Value::Number(6.0); 3]; 2])
@@ -487,7 +493,7 @@ fn errors() {
     let mut ages = vec![Value::Number(6.0), Value::Empty, Value::Number(30.0)];
     assert!(
         text(&with_pattern(
-            "pro_cl",
+            "pro_res_cl",
             selected.clone(),
             "ldf",
             Grid::from_rows(vec![ages.clone()])
@@ -500,7 +506,7 @@ fn errors() {
         Value::Empty,
         Value::Number(1.2),
     ]]);
-    let skipped = with_pattern("pro_cl", gap, "ldf", Grid::from_rows(vec![ages]));
-    let direct = with_pattern("pro_cl", row(&[2.5, 1.2]), "ldf", row(&[6.0, 30.0]));
+    let skipped = with_pattern("pro_res_cl", gap, "ldf", Grid::from_rows(vec![ages]));
+    let direct = with_pattern("pro_res_cl", row(&[2.5, 1.2]), "ldf", row(&[6.0, 30.0]));
     assert_eq!(skipped, direct);
 }

@@ -1,12 +1,12 @@
 //! The severity functions over every family, reached through the
 //! catalogue as Excel reaches them:
 //!
-//! * `PRO.LEV` and `PRO.LAYER` (a stop loss as an unlimited layer) on the
+//! * `PRO.PRC.LEV` and `PRO.PRC.LAYER` (a stop loss as an unlimited layer) on the
 //!   gamma, log-logistic, lognormal and Weibull against mpmath's
 //!   quadrature (`validation/reference/severity_mpmath.csv`), at its
 //!   tolerances;
 //! * `PRO.SEV.CDF`, `PRO.SEV.SURVIVAL` and `PRO.SEV.QUANTILE` inverse to
-//!   each other for every family, and `PRO.SEV.STATS` and `PRO.LER` on
+//!   each other for every family, and `PRO.SEV.STATS` and `PRO.PRC.LER` on
 //!   closed forms.
 
 mod common;
@@ -37,9 +37,12 @@ fn lev_layer_and_stop_loss_match_mpmath() {
         };
         let arg: f64 = row[3].parse().unwrap();
         let out = match quantity {
-            "lev" => call("pro_lev", sev(vec![n(arg)])),
-            "layer" => call("pro_layer", sev(vec![n(arg), n(row[4].parse().unwrap())])),
-            "stop_loss" => call("pro_layer", sev(vec![t("unlimited"), n(arg)])),
+            "lev" => call("pro_prc_lev", sev(vec![n(arg)])),
+            "layer" => call(
+                "pro_prc_layer",
+                sev(vec![n(arg), n(row[4].parse().unwrap())]),
+            ),
+            "stop_loss" => call("pro_prc_layer", sev(vec![t("unlimited"), n(arg)])),
             _ => continue,
         };
         let got = num(out.as_scalar().unwrap());
@@ -107,7 +110,7 @@ fn quantile_and_cdf_are_inverse_for_every_family() {
         });
         assert_eq!((stats.rows, stats.columns), (4, 2), "{family}");
         // The unlimited LEV is the mean.
-        let lev = call("pro_lev", with(family, &p, t("unlimited")));
+        let lev = call("pro_prc_lev", with(family, &p, t("unlimited")));
         let mean = num(stats.get(1, 1));
         assert!(
             (num(lev.as_scalar().unwrap()) - mean).abs() <= 1e-9 * mean,
@@ -135,7 +138,10 @@ fn closed_forms() {
         vec![n(3.0), t("loglogistic"), n(1.0), n(2.0)],
     );
     assert!((num(f.as_scalar().unwrap()) - 0.6).abs() < 1e-15);
-    let l = call("pro_lev", vec![n(3.0), t("loglogistic"), n(1.0), n(2.0)]);
+    let l = call(
+        "pro_prc_lev",
+        vec![n(3.0), t("loglogistic"), n(1.0), n(2.0)],
+    );
     assert!((num(l.as_scalar().unwrap()) - 2.0 * 2.5f64.ln()).abs() < 1e-13);
     assert_eq!(g.get(0, 1), &Value::from("generalized_pareto"));
     // An infinite moment is blank: log-logistic shape 1 has no mean.
@@ -143,7 +149,10 @@ fn closed_forms() {
     assert_eq!(inf.get(1, 1), &Value::Empty);
 
     // Loss elimination ratio: exponential (gamma shape 1) mean 1000, d 500.
-    let ler = call("pro_ler", vec![n(500.0), t("gamma"), n(1.0), n(1_000.0)]);
+    let ler = call(
+        "pro_prc_ler",
+        vec![n(500.0), t("gamma"), n(1.0), n(1_000.0)],
+    );
     assert!((num(ler.as_scalar().unwrap()) - (1.0 - (-0.5f64).exp())).abs() < 1e-12);
 }
 

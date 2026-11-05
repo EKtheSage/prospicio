@@ -1,4 +1,4 @@
-//! Capital allocation on a sheet (`PRO.ALLOCATE`, `PRO.ALLOCATE.TOTAL`,
+//! Capital allocation on a sheet (`PRO.CAP.ALLOCATE`, `PRO.CAP.ALLOCATE.TOTAL`,
 //! `docs/design/xll.md` decision 45), reached through the catalogue as
 //! Excel reaches it:
 //!
@@ -66,7 +66,7 @@ fn allocations_match_numpy() {
             m => m,
         };
         let out = call(
-            "pro_allocate",
+            "pro_cap_allocate",
             vec![x.clone(), t(family), n(arg), t(method)],
         );
         assert_eq!(out.rows, 7, "{out:?}");
@@ -102,7 +102,7 @@ fn simple_discrete() -> Grid {
 fn haircut_and_equal_risk_match_pricing_insurance_risk() {
     let x = simple_discrete();
     let h = call(
-        "pro_allocate_total",
+        "pro_cap_allocate_total",
         vec![x.clone(), n(80.0), t("haircut"), t("tvar"), n(0.75)],
     );
     assert_eq!(h.get(1, 0), &Value::from("X1"));
@@ -112,7 +112,7 @@ fn haircut_and_equal_risk_match_pricing_insurance_risk() {
     assert!((num(h.get(3, 2)) - 80.0).abs() < 1e-12);
     assert_eq!(num(h.get(4, 1)), 0.75);
     let e = call(
-        "pro_allocate_total",
+        "pro_cap_allocate_total",
         vec![x.clone(), n(80.0), t("equal_risk")],
     );
     assert!((num(e.get(4, 1)) - 0.6796).abs() < 5e-5, "{e:?}");
@@ -120,7 +120,7 @@ fn haircut_and_equal_risk_match_pricing_insurance_risk() {
     assert!((num(e.get(2, 2)) - 70.44).abs() < 5e-3);
     assert!((num(e.get(1, 3)) + num(e.get(2, 3)) - 1.0).abs() < 1e-12);
     // The haircut's level defaults to 0.99.
-    let d = call("pro_allocate_total", vec![x, n(80.0)]);
+    let d = call("pro_cap_allocate_total", vec![x, n(80.0)]);
     assert_eq!(num(d.get(4, 1)), 0.99);
 }
 
@@ -134,7 +134,7 @@ fn totals_and_names() {
             .map(|r| r.iter().map(|&v| Value::Number(v)).collect())
             .collect(),
     );
-    let out = call("pro_allocate", vec![x.clone(), t("tvar"), n(0.5)]);
+    let out = call("pro_cap_allocate", vec![x.clone(), t("tvar"), n(0.5)]);
     assert_eq!(out.get(1, 0), &Value::from("Unit 1"));
     assert_eq!((num(out.get(1, 1)), num(out.get(2, 1))), (3.5, 5.5));
     assert_eq!((num(out.get(1, 2)), num(out.get(2, 2))), (2.5, 5.5));
@@ -144,7 +144,7 @@ fn totals_and_names() {
     assert_eq!(num(out.get(1, 4)), 1.0);
     // The marginal leaves part of the portfolio's measure unallocated.
     let m = call(
-        "pro_allocate",
+        "pro_cap_allocate",
         vec![x.clone(), t("tvar"), n(0.5), t("marginal")],
     );
     assert!(num(m.get(3, 2)) <= num(m.get(4, 2)));
@@ -156,10 +156,14 @@ fn totals_and_names() {
     };
     error(
         vec![x.clone(), t("tvar"), n(0.5), t("average")],
-        "pro_allocate",
+        "pro_cap_allocate",
         "method must be",
     );
-    error(vec![x.clone(), t("nope"), n(0.5)], "pro_allocate", "nope");
+    error(
+        vec![x.clone(), t("nope"), n(0.5)],
+        "pro_cap_allocate",
+        "nope",
+    );
     error(
         vec![
             Grid::from_rows(vec![
@@ -169,27 +173,27 @@ fn totals_and_names() {
             t("tvar"),
             n(0.5),
         ],
-        "pro_allocate",
+        "pro_cap_allocate",
         "must be a number",
     );
     error(
         vec![x.clone(), n(80.0), t("haircut"), t("epd")],
-        "pro_allocate_total",
+        "pro_cap_allocate_total",
         "needs a level",
     );
     error(
         vec![x.clone(), n(10.0), t("equal_risk"), none(), n(0.5)],
-        "pro_allocate_total",
+        "pro_cap_allocate_total",
         "leave level out",
     );
     error(
         vec![x.clone(), n(1000.0), t("equal_risk")],
-        "pro_allocate_total",
+        "pro_cap_allocate_total",
         "outside the range",
     );
     error(
         vec![x, n(10.0), t("haircut"), t("cte")],
-        "pro_allocate_total",
+        "pro_cap_allocate_total",
         "measure must be",
     );
 }

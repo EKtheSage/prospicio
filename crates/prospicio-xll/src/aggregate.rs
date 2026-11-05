@@ -179,7 +179,7 @@ fn total(
 
 /// The annual total's mean, SD, CV and skewness, then its VaR and TVaR at
 /// each probability, and the grid it was computed on:
-/// `PRO.AGG.STATS(count_mean, [dispersion], family, p1, p2, [p3],
+/// `PRO.CAP.AGG.STATS(count_mean, [dispersion], family, p1, p2, [p3],
 /// [limit], [attachment], [probabilities], [step], [points])`. With a
 /// limit or attachment the total is of the per-occurrence layer's losses.
 /// Ground up the moments are exact when finite (the grid's mean is shown
@@ -245,7 +245,7 @@ pub(crate) fn percent(p: f64) -> String {
 /// count's and the layer severity's (given a loss to it) mean, CV and
 /// skewness, the
 /// annual ceded loss's mean, SD, CV and skewness, and the loss on line:
-/// `PRO.AGG.LAYERS(count_mean, [dispersion], family, p1, p2, [p3], limits,
+/// `PRO.CAP.AGG.LAYERS(count_mean, [dispersion], family, p1, p2, [p3], limits,
 /// attachments, [shares], [step], [points])`.
 pub fn layers(args: &[Range]) -> Result<Range> {
     let n = count(&args[0], &args[1])?;
@@ -356,14 +356,14 @@ fn per_limit(g: &Range, name: &str, k: usize, default: Option<f64>) -> Result<Ve
 /// cover, as `aggregate`'s `reins_stats_df` for its `agg` layers: the
 /// subject total's mean, the chances the year reaches and exhausts the
 /// cover, the annual ceded loss's mean, SD, CV and skewness, and the loss
-/// on line: `PRO.AGG.COVER(count_mean, [dispersion], family, p1, p2,
+/// on line: `PRO.CAP.AGG.COVER(count_mean, [dispersion], family, p1, p2,
 /// [p3], limits, retentions, [shares], [occ_limits], [occ_attachments],
 /// [occ_shares], [subject], [step], [points])`. A stop loss is `limits`
 /// xs `retentions` of the ground-up total; with per-occurrence layers the
 /// covers sit on the total `net` of them (the default, `aggregate`'s
 /// `occurrence net of ... aggregate ceded to`) or on their `ceded` total
 /// (an annual deductible and limit on an excess of loss treaty). Every
-/// statistic is the grid's, sized as for `PRO.AGG.STATS` ground up.
+/// statistic is the grid's, sized as for `PRO.CAP.AGG.STATS` ground up.
 pub fn cover(args: &[Range]) -> Result<Range> {
     let n = count(&args[0], &args[1])?;
     let sev = severity(&args[2], &args[3], &args[4], &args[5])?;
@@ -443,7 +443,7 @@ pub fn cover(args: &[Range]) -> Result<Range> {
 
 /// A distortion by `aggregate`'s short name (or its long one) and its
 /// parameter.
-/// A distortion by name, any of `PRO.DISTORTION`'s families; a capped
+/// A distortion by name, any of `PRO.CAP.DISTORTION`'s families; a capped
 /// family takes `r0` and its parameter together in `parameter`.
 fn distortion(name: &Range, parameter: &Range) -> Result<Distortion> {
     if name.is_blank() {
@@ -458,11 +458,11 @@ fn distortion(name: &Range, parameter: &Range) -> Result<Distortion> {
 /// several, the aggregate cover and the net, with the expected loss, SD,
 /// CV, the premium `ρ_g(X)`, margin, loss ratio and, for a layer or the
 /// cover, the rate on line (premium over share times limit):
-/// `PRO.TOWER.PRICE(count_mean, [dispersion], family, p1, p2, [p3],
+/// `PRO.PRC.TOWER.PRICE(count_mean, [dispersion], family, p1, p2, [p3],
 /// [limit], [attachment], limits, attachments, [shares],
 /// [agg_deductibles], [agg_limits], [cover_limit], [cover_retention],
 /// distortion, parameter, [step], [points])`. `limit` and `attachment`
-/// are the gross per-claim terms (a policy limit, `PRO.AGG.STATS`'s);
+/// are the gross per-claim terms (a policy limit, `PRO.CAP.AGG.STATS`'s);
 /// the layers' annual deductibles and limits apply to each layer's annual
 /// recoveries; the cover is a stop loss on the annual total net of the
 /// layers. Every view is exact on the grid when the boundaries fall on
@@ -566,7 +566,7 @@ pub fn tower_price(args: &[Range]) -> Result<Range> {
     Ok(Range::from_rows(rows))
 }
 
-/// One view's row of `PRO.TOWER.PRICE`; `line` is the limit its rate on
+/// One view's row of `PRO.PRC.TOWER.PRICE`; `line` is the limit its rate on
 /// line is over, if any.
 fn view(rows: &mut Vec<Vec<Value>>, label: &str, grid: &Grid, p: &ViewPrice, line: Option<f64>) {
     let sd = grid.variance().sqrt();
@@ -596,7 +596,7 @@ fn note(label: &str, text: &str) -> Vec<Value> {
 /// `1 − G_N(F(x)) = p`), the aggregate PML (the annual total's VaR at
 /// `1 − p`, on the FFT grid), the severity's exceedance at the occurrence
 /// PML and the average years between occurrences above it:
-/// `PRO.AGG.PML(count_mean, [dispersion], family, p1, p2, [p3],
+/// `PRO.CAP.AGG.PML(count_mean, [dispersion], family, p1, p2, [p3],
 /// [return_periods], [step], [points])`. A return period below 1 is read
 /// as the probability itself.
 pub fn pml(args: &[Range]) -> Result<Range> {
@@ -666,7 +666,7 @@ fn cells(g: &Range, name: &str, unlimited: bool) -> Result<Vec<f64>> {
 }
 
 /// A layer's contract terms in expectation over its annual loss on the
-/// grid: `PRO.LAYER.TERMS(count_mean, [dispersion], family, p1, p2, [p3],
+/// grid: `PRO.PRC.LAYER.TERMS(count_mean, [dispersion], family, p1, p2, [p3],
 /// layer_limit, layer_attachment, premium, [reinstatements],
 /// [commissions], [loss_ratios], [profit_share], [profit_allowance],
 /// [share], [policy_limit], [step], [points])`. `premium` is the deposit

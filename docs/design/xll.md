@@ -12,8 +12,10 @@ user's machine; one file to load.
 ## What exists (prototype)
 
 `crates/prospicio-xll` builds `prospicio.xll`, a 64-bit Windows DLL that
-speaks the Excel C API (XLOPER12). Its 114 functions are all in the
-`prospicio` category of Insert Function. The user manual,
+speaks the Excel C API (XLOPER12). Its 114 functions are in four groups
+(decision 47): reserving (`PRO.RES.`), pricing (`PRO.PRC.`), capital
+(`PRO.CAP.`) and the common functions every group uses, each group a
+category of its own in Insert Function. The user manual,
 `crates/prospicio-xll/README.md`, lists them by area (reserving,
 severity and layers, exposure rating, experience rating and ratemaking,
 aggregate and treaty terms, capital) with their arguments; the
@@ -34,28 +36,28 @@ RAA, `sigma = "mack"` matches R's sigmas, their standard errors and the
 total Mack SE, and the selections match chainladder-python's
 `DevelopmentConstant` (`tests/mack_options.rs`).
 
-`PRO.ODP` wraps `OdpBootstrap::fit` (R's `BootChainLadder`): `sims`
+`PRO.RES.ODP` wraps `OdpBootstrap::fit` (R's `BootChainLadder`): `sims`
 defaults to 10,000 (at most 1,000,000), `seed` to 0, `percentiles` to
 75%, 90%, 95% and 99.5%, `process` to `"gamma"` (`"none"` for parameter
 error only); `tail` is read as for the chain ladder.
 
-`PRO.MACK.BOOT` wraps `MackBootstrap::fit` with centred residuals (the
+`PRO.RES.MACK.BOOT` wraps `MackBootstrap::fit` with centred residuals (the
 crate's default, which reconciles with Mack's standard errors); `process`
 is `"gamma"` (default), `"lognormal"`, `"normal"`, `"residuals"` or
 `"none"`.
 
-The one-year view: `PRO.MACK.CDR` and `PRO.MACK.CDR.YEARS` wrap
+The one-year view: `PRO.RES.MACK.CDR` and `PRO.RES.MACK.CDR.YEARS` wrap
 `MackFit::claims_development_result` (Merz and Wuthrich), and on RAA
 every reserve, `CDR(1)S.E.`, Mack S.E. and `CDR(k)S.E.` R's
 `CDR(MackChainLadder(RAA), dev = "all")` gives matches
-(`tests/one_year.rs`). `PRO.ODP.CDR` and `PRO.MACK.BOOT.CDR` wrap the
+(`tests/one_year.rs`). `PRO.RES.ODP.CDR` and `PRO.RES.MACK.BOOT.CDR` wrap the
 bootstraps' `one_year` with the chain ladder (the bootstrap's tail, and
 for Mack its average and sigma rule) as the re-reserving method; the CDR
 is the opening ultimate less the re-estimated one, so a negative CDR is
 adverse, and the default percentiles are 0.5%, 5%, 95% and 99.5%. The
 re-reserving with the expected-loss methods is not exposed yet.
 
-`PRO.CLARK` wraps `ClarkLdf` without `exposure` and `ClarkCapeCod` with
+`PRO.RES.CLARK` wraps `ClarkLdf` without `exposure` and `ClarkCapeCod` with
 it (R's `ClarkLDF` and `ClarkCapeCod`, `adol = TRUE`); `curve` is
 `"loglogistic"` (default) or `"weibull"`, `max_age` an age in months
 (omitted or `"inf"` for none). Against R run to convergence (`optim=tight`
@@ -135,7 +137,7 @@ host that exports `MdCallBack12` as Excel does, loads the XLL, checks the
 registrations and calls the functions with real XLOPER12 arguments (RAA's
 Mack totals against R to 1e-6, an error, 2000 calls and frees, and a
 2 x 2 Pareto layer table against the R package Pareto).
-`cargo test` checks `PRO.ODP` against `OdpBootstrap` draw for draw and
+`cargo test` checks `PRO.RES.ODP` against `OdpBootstrap` draw for draw and
 its RAA total (mean, SD, 75%, 95% and 99.5% percentiles, gamma and
 parameter-only) against R ChainLadder's `BootChainLadder` targets in
 `validation/reference/reserving_bootstrap_r.csv`, and the harness repeats
@@ -187,7 +189,8 @@ real Excel.
    release asset, and code signing, come after the user has tried it.
 
 10. **The prefix is `PRO.`** (user, 2026-10-15): short to type. Every
-    function keeps it, since renaming breaks saved workbooks.
+    function keeps it, since renaming breaks saved workbooks. Decision 47
+    adds a group after it, and keeps the old names working for a release.
 11. **Errors stay text** (user, 2026-10-15): `#PROSPICIO! <reason>`, which
     says why; `ISERROR` does not see it (test with `LEFT(x, 11) =
     "#PROSPICIO!"`).
@@ -211,7 +214,7 @@ real Excel.
     about 0.2 s). The total's percentiles are of the simulated total, not
     the sum of the origins' percentiles; percentiles are the inverse of
     the empirical distribution function (R `type = 1`), as `Sampled`'s.
-    `PRO.ODP.SIMS` returns the draws themselves, the same ones for the
+    `PRO.RES.ODP.SIMS` returns the draws themselves, the same ones for the
     same `sims`, `seed`, `tail` and `process`, so a sheet can chart them or
     compute its own statistics; it is capped at 100,000 rows (about 1 s and
     35 MB of cells in Excel), under the sheet's 1,048,576 rows.
@@ -250,12 +253,12 @@ real Excel.
     `curve, p1, [p2], [p3]`, with `"swiss_re"` (`c`), `"mbbefd"` (`b`,
     `g`) and `"tabulated"` (a range of `x`, a range of `G(x)` and the
     interpolation), so a sheet keeps the parameters in cells.
-    `PRO.EXPOSURE.SHARE` broadcasts its limits, attachments and MPLs
+    `PRO.PRC.EXPOSURE.SHARE` broadcasts its limits, attachments and MPLs
     against each other (decision 13), so a column of a risk profile's sums
     insured gives each band's share of one layer, and a row of layers
     against it a table. A severity's own curve, `LEV(x MPL) / LEV(MPL)`,
-    is `PRO.LEV` over `PRO.LEV` and needs no function of its own.
-    `PRO.PROFILE` takes one curve, or a Swiss Re `c` or an MBBEFD `b` and
+    is `PRO.PRC.LEV` over `PRO.PRC.LEV` and needs no function of its own.
+    `PRO.PRC.PROFILE` takes one curve, or a Swiss Re `c` or an MBBEFD `b` and
     `g` per band (a range with one cell per band), as Python's
     `RiskProfile` takes one curve or a list. A band spreads its sums
     insured between `lower` and `upper` when it has both; the spread is
@@ -270,10 +273,10 @@ real Excel.
     puts a calendar date (30 June is 1 July), anything smaller is a year
     fraction. No ratemaking year reaches 10,000 and no Excel date of
     interest falls below it, so the two never mix. `PRO.YEARFRACTION`
-    shows the conversion. `PRO.ONLEVEL`'s `given` reads its changes as
+    shows the conversion. `PRO.PRC.ONLEVEL`'s `given` reads its changes as
     the cumulative levels an exhibit prints (`RateHistory::from_levels`),
     so a sheet can reproduce a book's rounded factors. An accident date
-    is the exception: `PRO.BURNINGCOST` puts an Excel date at its exact
+    is the exception: `PRO.PRC.BURNINGCOST` puts an Excel date at its exact
     decimal year (day of the year over the days in it), since the grid
     would move 31 December into the next accident year.
 20. **An aggregate is a count by mean and dispersion and a severity by
@@ -292,13 +295,13 @@ real Excel.
     family, whose third cumulant is closed form
     (`knowledge/findings/panjer-class-third-cumulant.md`).
 21. **MCMC on a sheet: one function, three views, kept fits** (user,
-    2026-10-16, "how you do Bayesian MCMC methods"). `PRO.BAYES.ODP` runs
+    2026-10-16, "how you do Bayesian MCMC methods"). `PRO.RES.BAYES.ODP` runs
     the Reserving lane's `BayesOdp` (England and Verrall's ODP chain
     ladder, NUTS on the posterior whitened at its mode, chains on worker
     threads) at its defaults: four chains of 1,000 warm-up and 1,000 kept
     draws, target acceptance 0.95, normal priors of SD 10 on the log
     scale, Gamma process error, 10,000 simulations. Its `output` picks the
-    view of one fit: the reserve exhibit (`PRO.ODP`'s layout), each
+    view of one fit: the reserve exhibit (`PRO.RES.ODP`'s layout), each
     parameter's posterior (mean, SD, 5/50/95% quantiles, R-hat, bulk and
     tail ESS) or the diagnostics (largest R-hat, smallest ESS,
     divergences, the plugged-in scale, and the library's warnings as text,
@@ -320,8 +323,8 @@ real Excel.
     when wanted: the BF with a normalised pattern does (decision 38);
     Meyers' and the compartmental models do not yet.
 22. **PML curves by return period, occurrence beside aggregate** (user,
-    2026-10-16, the parity plan's next items). `PRO.AGG.PML` takes the
-    count and severity as `PRO.AGG.STATS` does (decision 20) and return
+    2026-10-16, the parity plan's next items). `PRO.CAP.AGG.PML` takes the
+    count and severity as `PRO.CAP.AGG.STATS` does (decision 20) and return
     periods (2 to 1,000 years if omitted; a value below 1 is read as the
     annual probability, as `aggregate`'s `oep` takes it). Each row gives
     the return period, the probability `p`, the occurrence PML (the loss
@@ -335,9 +338,9 @@ real Excel.
     exhibit makes; a layer's occurrence PML is the curve clipped to the
     layer, so it takes no layer arguments.
 23. **An aggregate cover sits on a chosen annual total** (user,
-    2026-10-19, the parity plan's next item). `PRO.AGG.COVER` takes the
-    count and severity as `PRO.AGG.STATS` does (decision 20), then the
-    covers as `PRO.AGG.LAYERS` takes layers: annual `limits` (a row,
+    2026-10-19, the parity plan's next item). `PRO.CAP.AGG.COVER` takes the
+    count and severity as `PRO.CAP.AGG.STATS` does (decision 20), then the
+    covers as `PRO.CAP.AGG.LAYERS` takes layers: annual `limits` (a row,
     `"unlimited"` allowed), `retentions` and `shares`, each one value or
     one per limit, one column per cover. Optional per-occurrence layers
     (`occ_limits`, `occ_attachments`, `occ_shares`) inure to the covers:
@@ -348,7 +351,7 @@ real Excel.
     of loss treaty. The rows are
     `aggregate`'s `reins_stats_df` for its `agg` block (Pr attach, Pr
     detach, the ceded mean, SD, CV and skewness, loss on line) under the
-    subject total's mean. The subject is on the grid `PRO.AGG.STATS`
+    subject total's mean. The subject is on the grid `PRO.CAP.AGG.STATS`
     sizes ground up (the net or ceded total is lighter, so the gross
     grid covers it); `step` and `points` set it, the severity rounded onto
     as many points as the total. A cover's retention in loss-ratio terms
@@ -357,10 +360,10 @@ real Excel.
     0` given as one more occurrence layer, unlimited above 1,000, so the
     net is the capped severity's) match at the reference's tolerances.
 24. **A tower is priced view by view on the grid** (user, 2026-10-19,
-    the parity plan's last item). `PRO.TOWER.PRICE` wraps
+    the parity plan's last item). `PRO.PRC.TOWER.PRICE` wraps
     `Tower::on_grid` and `TowerGrids::price`: the count and severity as
     in decision 20, with the gross per-claim `limit` and `attachment` of
-    `PRO.AGG.STATS` (a policy limit, `aggregate`'s `1000 xs 0`); one
+    `PRO.CAP.AGG.STATS` (a policy limit, `aggregate`'s `1000 xs 0`); one
     stage of per-occurrence layers (`limits`, `attachments`, `shares`,
     each layer's annual `agg_deductibles` and `agg_limits`); and an
     optional stop loss on the annual total net of them (`cover_limit`,
@@ -395,7 +398,7 @@ real Excel.
     errors from the observed information, then the log-likelihood, AIC and
     BIC (body families), the largest distance to the product-limit
     estimate, convergence and a note; the estimates feed `PRO.SEV.CDF`,
-    `PRO.LAYER` and the rest. `"gof"` is the product-limit estimate beside
+    `PRO.PRC.LAYER` and the rest. `"gof"` is the product-limit estimate beside
     the fit's survival and quantile at each loss (P-P and Q-Q), and
     `"compare"` the four body families side by side. The note flags a fit
     with no standard errors (a boundary of the family), and names a Burr
@@ -427,11 +430,11 @@ real Excel.
     2026-10-19, the sixth group), over `prospicio_pricing::payout`
     (`time-value.md`). `kind` reads the values as shares paid at each
     time (summing to 1), the share paid to date or factors to ultimate,
-    so a paid `PRO.CL.CDF` row feeds the pattern directly; a tail goes in
+    so a paid `PRO.RES.CL.CDF` row feeds the pattern directly; a tail goes in
     as one more time, never placed silently (`time-value.md` decision 2).
-    `PRO.PAYOUT.PATTERN` shows the pattern with the share outstanding and
-    the discount at each time, `PRO.PAYOUT.STATS` its discount factor,
-    duration and discounted capital years, and `PRO.PAYOUT.PRICE` the
+    `PRO.PRC.PAYOUT.PATTERN` shows the pattern with the share outstanding and
+    the discount at each time, `PRO.PRC.PAYOUT.STATS` its discount factor,
+    duration and discounted capital years, and `PRO.PRC.PAYOUT.PRICE` the
     cost-of-capital price over the payout from the expected loss, the
     one-year assets and the cost of capital: `P = E d + coc (a - P) A`.
     The one-period price comes back for one payment within the year at a
@@ -439,10 +442,10 @@ real Excel.
     discount factor (`time-value.md` decision 6), a sheet product, so it
     has no function of its own.
 28. **A quote starts from a risk premium on the sheet** (user,
-    2026-10-19, the sixth group). `PRO.QUOTE` wraps
+    2026-10-19, the sixth group). `PRO.PRC.QUOTE` wraps
     `prospicio_pricing::quote`: the technical premium
     `(R + fixed) / (1 - expenses - brokerage)` of a risk premium `R`
-    (a `PRO.TOWER.PRICE` premium, or any risk-loaded price), its build-up
+    (a `PRO.PRC.TOWER.PRICE` premium, or any risk-loaded price), its build-up
     (expenses, brokerage, the premium net of brokerage, the margin), the
     capital and its return when `assets` is given, and the market's
     ratios (loss ratio, multiple, and rate on line and payback when
@@ -457,14 +460,14 @@ real Excel.
     multiple 2.43 and loss ratio 41.1%.
 29. **A distortion is a family name and a parameter; outcomes are a
     range** (user, 2026-10-19, the sixth group), over
-    `prospicio_prob::distortion`. `PRO.DISTORTION(s, family, parameter,
-    [r0])` gives `g(s)` over a range of `s`, `PRO.DISTORTION.PRICE` the
+    `prospicio_prob::distortion`. `PRO.CAP.DISTORTION(s, family, parameter,
+    [r0])` gives `g(s)` over a range of `s`, `PRO.CAP.DISTORTION.PRICE` the
     risk measure of outcomes with probabilities, or of equally likely
     draws when `probs` is omitted, so a column of simulations prices
-    directly, and `PRO.DISTORTION.CALIBRATE` each family's parameter
+    directly, and `PRO.CAP.DISTORTION.CALIBRATE` each family's parameter
     that gives a target premium (the five standard families of
     Mildenhall and Major unless named). Families take `aggregate`'s
-    short names, as `PRO.TOWER.PRICE` does (decision 24), and here also
+    short names, as `PRO.PRC.TOWER.PRICE` does (decision 24), and here also
     the four capped families with their intercept `r0`; the bi-TVaR,
     beta and weighted TVaR, which take more than one parameter, came
     later (decision 31). A family that cannot reach the premium gets a
@@ -474,12 +477,12 @@ real Excel.
     calibrations match at the reference's tolerances.
 30. **Contract terms are evaluated at a loss and in expectation** (user,
     2026-10-19, the sixth group's last item), over
-    `prospicio_aggregate::Layer`. `PRO.SWING` (a swing-rated or retro
-    premium), `PRO.SLIDING.SCALE` (a ceding commission from anchors given
+    `prospicio_aggregate::Layer`. `PRO.PRC.SWING` (a swing-rated or retro
+    premium), `PRO.PRC.SLIDING.SCALE` (a ceding commission from anchors given
     as two ranges, rates and their increasing loss ratios) and
-    `PRO.PROFIT.COMMISSION` take a range of losses and give the term at
+    `PRO.PRC.PROFIT.COMMISSION` take a range of losses and give the term at
     each, as `aggregate`'s `contract_terms` does, so a sheet can tabulate
-    or chart a term against the loss. `PRO.LAYER.TERMS` gives a layer's
+    or chart a term against the loss. `PRO.PRC.LAYER.TERMS` gives a layer's
     terms in expectation over its annual loss on the grid
     (`Tower::on_grid`): the expected ceded loss, premium, reinstatement
     premium, ceding and profit commissions, the premium net of them, the
@@ -493,27 +496,27 @@ real Excel.
     of books RI2 and RI10 match at the reference's tolerances.
 31. **A distortion with several parameters takes them in one range**
     (user, 2026-10-19, the seventh group). The `parameter` argument of
-    `PRO.DISTORTION`, `PRO.DISTORTION.PRICE` and `PRO.TOWER.PRICE` is a
+    `PRO.CAP.DISTORTION`, `PRO.CAP.DISTORTION.PRICE` and `PRO.PRC.TOWER.PRICE` is a
     number for a one-parameter family, three cells `p0, p1, w` for the
     bi-TVaR (`bitvar`), two `a, b` for the beta, and two columns (levels
     | weights) or two rows for the weighted TVaR (`wtdtvar`), in
     `aggregate`'s order; no function gains an argument. The capped
     families keep `r0` beside the parameter and also take the two
-    together in one range, which is how `PRO.TOWER.PRICE`, without an
+    together in one range, which is how `PRO.PRC.TOWER.PRICE`, without an
     `r0` argument, reaches them. The families with several parameters
     are not calibrated: a target premium fixes one number, not two or
-    three, and `PRO.DISTORTION.CALIBRATE` says so. Against `aggregate`
+    three, and `PRO.CAP.DISTORTION.CALIBRATE` says so. Against `aggregate`
     1.0.1 the 48 `g(s)` values of the bi-TVaR, beta and weighted TVaR in
     `distortion_aggregate.csv` match at its tolerances, and CCoC at `r`
     prices as the bi-TVaR `(0, 1, r / (1 + r))` on a sheet and in every
     view of a tower.
 32. **Copulas are rebuilt from their parameters in each call** (user,
     2026-10-19, the seventh group), over `prospicio_prob::copula`.
-    `PRO.COPULA.CDF(points, family, parameter, [nu])` gives `C(u)` at
-    each row of `points`; `PRO.COPULA.SIM(family, parameter, [sims],
+    `PRO.CAP.COPULA.CDF(points, family, parameter, [nu])` gives `C(u)` at
+    each row of `points`; `PRO.CAP.COPULA.SIM(family, parameter, [sims],
     [dim], [seed], [nu])` simulates uniforms, row `i` from stream `i` of
     the seed as `copula::simulate` draws them, so a sheet agrees with the
-    Python and R packages draw for draw; `PRO.IMAN.CONOVER(draws,
+    Python and R packages draw for draw; `PRO.CAP.IMAN.CONOVER(draws,
     correlation, [seed], [dof], [shuffle])` reorders simulated columns
     to a rank correlation with normal or t scores. The Gaussian and t
     take one correlation for every pair or a square matrix; the four
@@ -530,9 +533,9 @@ real Excel.
 33. **A term of several years is a row of losses** (user, 2026-10-19,
     the seventh group's last item), over
     `prospicio_aggregate::Layer::profit_commissions_over` and
-    `ceding_commissions_over`. `PRO.PROFIT.COMMISSION.TERM(losses,
+    `ceding_commissions_over`. `PRO.PRC.PROFIT.COMMISSION.TERM(losses,
     premium, share, allowance, [carry_years])` and
-    `PRO.SLIDING.SCALE.TERM(losses, premium, commissions, loss_ratios,
+    `PRO.PRC.SLIDING.SCALE.TERM(losses, premium, commissions, loss_ratios,
     [carry], [carry_years])` read one term from each row of `losses`,
     its columns the years in order, and give each year's commission in
     the same shape, deficits (and for the sliding scale credits, both by
@@ -554,7 +557,7 @@ real Excel.
     sixteen chain-ladder, Mack, expected-loss and Mack bootstrap functions
     that take `average` get the exclusions without a new argument, and a
     formula written before keeps its meaning. The ODP bootstrap
-    functions (`PRO.ODP`, `.SIMS`, `.CDR`), which had no `average`, take
+    functions (`PRO.RES.ODP`, `.SIMS`, `.CDR`), which had no `average`, take
     the same row as a last argument, its kind the volume average; the
     one-year view re-reserves each year on the same link ratios. The
     geometric average has no Mack variance, so Mack's functions refuse
@@ -564,12 +567,12 @@ real Excel.
     = W)` the standard errors of `reserving_averages_r.csv`, an infinite
     one as a blank cell.
 35. **The ODP GLM is three functions on a triangle** (the eighth
-    group), over `OdpGlm::fit`: `PRO.ODP.GLM(triangle, [origins])` is the
+    group), over `OdpGlm::fit`: `PRO.RES.ODP.GLM(triangle, [origins])` is the
     exhibit of Taylor and McGuire's Table 5-4 (latest, ultimate, the
     reserve, which is the chain ladder's, the process and parameter
     standard errors, RMSEP and CV per origin and in total);
-    `PRO.ODP.GLM.PARAMS` the coefficients with their standard errors and
-    Pearson's dispersion; `PRO.ODP.GLM.RESIDUALS(triangle, [by],
+    `PRO.RES.ODP.GLM.PARAMS` the coefficients with their standard errors and
+    Pearson's dispersion; `PRO.RES.ODP.GLM.RESIDUALS(triangle, [by],
     [origins])` a row per observed increment (actual, fitted, actual to
     fitted, Pearson and deviance residuals, leverage, standardized
     residuals) or, with `by` "origin", "development" or "calendar", the
@@ -607,7 +610,7 @@ real Excel.
     truncated likelihood against `fit_severity` and the closed form.
 37. **Exposure curves tabulate side by side, and the test workbook calls
     every function** (user, 2026-10-21, after checking 0.0.4 in Excel).
-    `PRO.EXPOSURE.CURVE` and `PRO.EXPOSURE.QUANTILE` took one curve, so a
+    `PRO.PRC.EXPOSURE.CURVE` and `PRO.PRC.EXPOSURE.QUANTILE` took one curve, so a
     row of c beside a column of x was refused; a curve comparison is the
     common exhibit, so a row (or column) of parameters now gives one curve
     each, across the other direction from the x. Both directions the same
@@ -619,14 +622,14 @@ real Excel.
     P95 column, not P90.
 38. **The Bayesian BF puts its prior on the ultimate** (user, 2026-10-22,
     "go ahead", after `BayesBfNormalised` merged; decision 21's pattern).
-    `PRO.BAYES.BF(triangle, exposure, apriori, [cv], [output], ...)` runs
+    `PRO.RES.BAYES.BF(triangle, exposure, apriori, [cv], [output], ...)` runs
     the Reserving lane's `BayesBfNormalised`, not `BayesBf`: its pattern
     is normalised, so each origin's gamma prior has mean `apriori` times
     exposure and is on the ultimate a Bornhuetter-Ferguson user means,
     where `BayesBf`'s level is absorbed by its pattern
     (`knowledge/findings/bayes-bf-apriori-scale.md`). The arguments
-    follow `PRO.BF`'s (triangle, exposure, apriori first) and then
-    `PRO.BAYES.ODP`'s sampler arguments in its order; `cv` is the prior's
+    follow `PRO.RES.BF`'s (triangle, exposure, apriori first) and then
+    `PRO.RES.BAYES.ODP`'s sampler arguments in its order; `cv` is the prior's
     CV (0.1, the library's default) or `"flat"` for a flat prior on the
     log ultimate, and `prior_sd` is the SD of the pattern's log share
     ratios. `common_cv`, last, is the library's multiplier common to all
@@ -638,18 +641,18 @@ real Excel.
     `cv` and the share's CV as `common_cv` (or, with an error of its own
     per origin, the combined CV `sqrt((1 + cv^2)(1 + share_cv^2) - 1)` as
     `cv`, `common_cv` omitted). Its
-    views are `PRO.BAYES.ODP`'s three plus `"ultimates"` (exposure,
+    views are `PRO.RES.BAYES.ODP`'s three plus `"ultimates"` (exposure,
     latest, prior and posterior expected ultimate, posterior loss ratio),
     the comparison a BF exhibit makes. The fits are kept as decision 21's,
     eight per model. The tests check every view against the library's
-    fit at the same seed, the flat limit against `PRO.BAYES.ODP` within
+    fit at the same seed, the flat limit against `PRO.RES.BAYES.ODP` within
     Monte Carlo error and the tight limit at the chain ladder's ultimates
-    against `PRO.BF`'s reserve. `BayesBf` (EVW's Model 3.1) stays
+    against `PRO.RES.BF`'s reserve. `BayesBf` (EVW's Model 3.1) stays
     without a sheet form; its one use, EVW parity, is a library check.
 39. **A latest diagonal is projected by five functions, one per method**
     (#544, the Excel part; `reserving-v02.md` decisions 15 to 18).
-    `PRO.DIAG.CL`, `PRO.DIAG.EL`, `PRO.DIAG.BF`, `PRO.DIAG.BENKTANDER`
-    and `PRO.DIAG.CAPECOD` follow the triangle functions, one function
+    `PRO.RES.DIAG.CL`, `PRO.RES.DIAG.EL`, `PRO.RES.DIAG.BF`, `PRO.RES.DIAG.BENKTANDER`
+    and `PRO.RES.DIAG.CAPECOD` follow the triangle functions, one function
     per method, not one function with a `method` argument: each method
     has its own arguments (`apriori`, `iterations`, `trend` and
     `decay`), and decision 21's single function is for views of one fit,
@@ -661,9 +664,9 @@ real Excel.
     past_end, pattern_origin`. `ages` and `valuation` are two arguments,
     exactly one given, rather than one argument read by decision 19's
     rule, since an age of 10,000 months is not a date. The pattern is
-    two ranges, values and ages, as `PRO.PAYOUT.PATTERN` takes times and
+    two ranges, values and ages, as `PRO.PRC.PAYOUT.PATTERN` takes times and
     values; its ages default to 12, 24, ... by cell, as `selected`
-    reads them, so a row of `PRO.CL.LDF` feeds in directly. A blank
+    reads them, so a row of `PRO.RES.CL.LDF` feeds in directly. A blank
     value skips its pair; a value with a blank age is an error. An
     age-to-age factor runs from its age to the next age given (decision
     16 and item 4 of decision 18 in `reserving-v02.md`), so a skipped
@@ -685,7 +688,7 @@ real Excel.
     change of wording in the reserving crate fails the add-in's tests
     on purpose; the two settings errors (`"none"` with a tail,
     `"tail"` without one) are checked in the add-in before the fit,
-    on the same conditions as the crate. `PRO.PATTERN.AVERAGE(pattern_ages,
+    on the same conditions as the crate. `PRO.RES.PATTERN.AVERAGE(pattern_ages,
     pattern, pattern_origin, [grain], [kind])` shows decision 18's
     conversion on the sheet (Age, Percent developed and CDF for every
     month of the result); fed back as `pattern_ages` and `pattern` with
@@ -702,11 +705,11 @@ real Excel.
     here), so nothing older keeps them as aliases. A tail of exactly 1
     is read as no tail, as the crate reads it, so `past_end` `"none"`
     accepts it and `"tail"` rejects it. The other three details
-    (`PRO.PATTERN.AVERAGE`'s `grain` defaulting to `"year"`, a
+    (`PRO.RES.PATTERN.AVERAGE`'s `grain` defaulting to `"year"`, a
     `pattern_origin` equal to `grain` being an error there, a tail of
     exactly 1 counting as no tail) were accepted by the user on
     2026-10-25 as built.
-    Decision 17's frozen pattern needs no function: `PRO.CL.LDF`
+    Decision 17's frozen pattern needs no function: `PRO.RES.CL.LDF`
     already gives what `ChainLadderFit::to_chain_ladder` holds (the
     factors in use, then the tail factor), and the pattern stays in
     cells (decision 4). Its first n - 1 cells as `pattern` (ages 12 to
@@ -716,22 +719,22 @@ real Excel.
     every origin up to the pattern's end (to about 1e-14 with a tail),
     since a factor at the oldest age runs one more period. A valuation
     date gives a full triangle's ages, `PRO.TRI.LATEST` its latest
-    values. Pattern ages on `PRO.CL`, `PRO.MACK` and the expected-loss
+    values. Pattern ages on `PRO.RES.CL`, `PRO.RES.MACK` and the expected-loss
     functions on a triangle, so that a monthly pattern reaches them
     (decision 18 item 4), are decision 40.
 40. **Selected patterns on every triangle function, at their ages, and an
     a priori per origin** (#635 and #680, 0.0.7; the user's decisions of
     2026-10-26 and 2026-10-28, and of 2026-10-29: one PR for both). The
-    expected-loss functions `PRO.EL`, `PRO.BF`, `PRO.BENKTANDER` and
-    `PRO.CAPECOD` take `selected`, `kind` and `weight` as the chain-ladder
+    expected-loss functions `PRO.RES.EL`, `PRO.RES.BF`, `PRO.RES.BENKTANDER` and
+    `PRO.RES.CAPECOD` take `selected`, `kind` and `weight` as the chain-ladder
     functions read them, and the thirteen functions that take `selected`
-    (`PRO.CL`, `.LDF`, `.CDF`, `.ULTIMATE`, `.RESERVE`, `.FACTORS`,
-    `PRO.MACK`, `PRO.MACK.CDR`, `.CDR.YEARS` and the four) take
+    (`PRO.RES.CL`, `.LDF`, `.CDF`, `.ULTIMATE`, `.RESERVE`, `.FACTORS`,
+    `PRO.RES.MACK`, `PRO.RES.MACK.CDR`, `.CDR.YEARS` and the four) take
     `pattern_ages`, each selected value's age in months. New arguments are
     appended, so every sheet written before keeps its meaning, and the tail
     of every list is the same: `selected, kind, weight, pattern_ages`, with
     `sigma` before `pattern_ages` where a function already had it after
-    `weight` (`PRO.CL.FACTORS`, `PRO.MACK` and the one-year view). That
+    `weight` (`PRO.RES.CL.FACTORS`, `PRO.RES.MACK` and the one-year view). That
     is decision 39's order (`pattern_ages, kind, ...`) only in part: a
     triangle function's `kind` and `tail` came first, and moving them
     would break sheets. Without `pattern_ages` a value sits at 12, 24, ...
@@ -745,14 +748,14 @@ real Excel.
     ages as development periods), so `pattern_ages` is in months against
     an annual triangle; a quarterly triangle would need its period length
     as an argument, which waits until a user asks. `pattern_origin` is not
-    added to the triangle functions: `PRO.PATTERN.AVERAGE` gives the same
+    added to the triangle functions: `PRO.RES.PATTERN.AVERAGE` gives the same
     averaged pattern in cells, which then goes in as `selected` with kind
-    `"percent"` at its ages. `apriori` on `PRO.EL`, `PRO.BF`,
-    `PRO.BENKTANDER` and their `PRO.DIAG.*` twins is one number or a row
+    `"percent"` at its ages. `apriori` on `PRO.RES.EL`, `PRO.RES.BF`,
+    `PRO.RES.BENKTANDER` and their `PRO.RES.DIAG.*` twins is one number or a row
     or column with one loss ratio per origin (`Apriori` of #634): oldest
     first on a triangle, one per row; on a diagonal in the order the
     `origins` argument gives them, keyed by their periods, since those
-    rows may come in any order. `PRO.CAPECOD` estimates its own level and
+    rows may come in any order. `PRO.RES.CAPECOD` estimates its own level and
     takes none. Checks (`tests/selected_patterns.rs`): every
     chainladder-python 0.10.1 `DevelopmentConstant` case of the four
     methods on the CAS workers' compensation triangle (32 runs, the
@@ -760,15 +763,15 @@ real Excel.
     `pattern_ages` of 12, 24, ... equal to omitting it, to the bit, on all
     thirteen functions; a monthly cumulative pattern through RAA's annual
     factors equal to the annual selection to 1e-12 on all thirteen; a
-    pattern at 6, 18, ..., 114 months through `PRO.CL.ULTIMATE`,
-    `PRO.MACK` and `PRO.BF` equal to the crate's own fits to the bit; the
+    pattern at 6, 18, ..., 114 months through `PRO.RES.CL.ULTIMATE`,
+    `PRO.RES.MACK` and `PRO.RES.BF` equal to the crate's own fits to the bit; the
     a priori per origin against the BF formula and the crate, and a
     diagonal's against any order of its origins. The fake Excel checks
     the last argument through the C API.
 
 41. **GLMs on a sheet** (#578 group 1, 0.0.7; the user's decision of
-    2026-10-29 to work on #578 after #635 and #680). `PRO.GLM`,
-    `PRO.GLM.PREDICT` and `PRO.GLM.RELATIVITIES` fit a `prospicio-glm`
+    2026-10-29 to work on #578 after #635 and #680). `PRO.PRC.GLM`,
+    `PRO.PRC.GLM.PREDICT` and `PRO.PRC.GLM.RELATIVITIES` fit a `prospicio-glm`
     GLM to a table whose first row names its columns, as an Excel table
     or a pasted extract has it; trailing blank rows are dropped, so a
     whole-column range works. `response` names a column, and `terms` is a
@@ -806,7 +809,7 @@ real Excel.
     `PRO.NPV`, `PRO.IRR` and `PRO.MOIC` were removed after 0.0.7
     (decision 46); what follows on them is kept as the record.
     `PRO.NPV`, `PRO.IRR` and `PRO.MOIC` wrapped
-    `prospicio_pricing::returns`; `PRO.CASHFLOW` wraps
+    `prospicio_pricing::returns`; `PRO.CAP.CASHFLOW` wraps
     `prospicio_pricing::cashflow` (`time-value.md`, decisions 13 to 20).
     Flows are a row or column, one series, or a block with one
     simulation a row, which gives a column of results. `times` default
@@ -819,7 +822,7 @@ real Excel.
     `extend` as arguments; a single series without a root is an error
     that says whether one lies above or below the range, which Excel's
     `#NUM!` does not, and in a block such a row is blank; `detail` TRUE
-    gives the search's flags. `PRO.CASHFLOW` reads a deal from three
+    gives the search's flags. `PRO.CAP.CASHFLOW` reads a deal from three
     blocks rather than dozens of arguments: `terms`, rows of a label and
     its values with the labels the Python keyword names (`premium`,
     `commutation_month`, `collected_rate`, `lag`, `funding_dates`,
@@ -850,14 +853,14 @@ real Excel.
     and the three-month deal through the C API, and the test workbook's
     Cash flows sheet puts `XNPV`, `XIRR` and `IRR` beside the add-in's.
 
-43. **The P&L ledger on a sheet** (#578 group 3, 0.0.7). `PRO.PNL`
+43. **The P&L ledger on a sheet** (#578 group 3, 0.0.7). `PRO.CAP.PNL`
     wraps `prospicio_aggregate::pnl::Book::ledger` (`pnl.md`, PR 4): a
     book's premium, its expenses and the annual covers it buys, as
     signed legs over a distribution of annual gross losses. The gross is
     atoms in cells, `values` and `probs` (equally likely when omitted),
     so the ledger reads a grid's points, a year loss table's years or a
     model's simulations alike, rather than rebuilding a compound
-    distribution from a count and a severity as `PRO.AGG.*` does: those
+    distribution from a count and a severity as `PRO.CAP.AGG.*` does: those
     functions' grid can be passed in. `expenses` are rows of `label |
     premium | loss | fixed`, a rate on the gross premium, a rate on the
     gross loss and an amount, several in one row making one mixed leg
@@ -893,7 +896,7 @@ real Excel.
     beside the add-in's.
 
 44. **Year and event loss tables on a sheet** (#578 group 4, 0.0.7).
-    `PRO.YLT.STATS` and `PRO.YLT.OEP` read a year loss table as columns,
+    `PRO.CAP.YLT.STATS` and `PRO.CAP.YLT.OEP` read a year loss table as columns,
     each row's year (from 1) and loss, through
     `prospicio_aggregate::ylt::YearLossTable` (its checks: losses finite
     and non-negative, or with `negative` stored as negative numbers,
@@ -914,8 +917,8 @@ real Excel.
     occurrence and total) with their TVaRs, or with `amounts` the share
     of years whose largest occurrence or total is above each amount and
     its return period; a return period past the table's years is an
-    error, and the defaults (2 to 1000 years, as `PRO.AGG.PML`) drop
-    those. `PRO.ELT.STATS` and `PRO.ELT.OEP` read an event loss table
+    error, and the defaults (2 to 1000 years, as `PRO.CAP.AGG.PML`) drop
+    those. `PRO.CAP.ELT.STATS` and `PRO.CAP.ELT.OEP` read an event loss table
     (`prospicio_aggregate::cat::EventLossTable`: rates, means, the two
     standard deviations, summed, a beta on `[0, exposure]` per event,
     omitted deviations read as 0); STATS adds the compound Poisson SD
@@ -938,12 +941,12 @@ real Excel.
     numbers beside the add-in's.
 
 45. **Capital allocation on a sheet** (#578 group 5, 0.0.7).
-    `PRO.ALLOCATE` and `PRO.ALLOCATE.TOTAL` read `draws`, a block with a
+    `PRO.CAP.ALLOCATE` and `PRO.CAP.ALLOCATE.TOTAL` read `draws`, a block with a
     column per unit and a row per equally likely simulation, an optional
     header row of names (a first row with any text), into a
     `PredictiveDistribution` with one component per unit; rows blank in
     every cell are skipped. The units must add up to the portfolio.
-    `PRO.ALLOCATE` takes a distortion as `PRO.DISTORTION` does (`family`,
+    `PRO.CAP.ALLOCATE` takes a distortion as `PRO.CAP.DISTORTION` does (`family`,
     `parameter`, `r0`) and a `method` of
     `prospicio_prob::capital::AllocationMethod`: `"euler"` (the default;
     `"natural"` too, the name of *Pricing Insurance Risk*),
@@ -952,14 +955,14 @@ real Excel.
     unit (its stand-alone measure, allocation, share of the portfolio's
     measure and diversification), the units' totals, and the portfolio's
     measure with the diversification benefit; the marginal's totals fall
-    short of the portfolio's. `PRO.ALLOCATE.TOTAL` shares an amount given
+    short of the portfolio's. `PRO.CAP.ALLOCATE.TOTAL` shares an amount given
     from outside by `PredictiveDistribution::haircut` (each unit's
     stand-alone `measure` at `level`, 0.99 unless given, scaled to the
     total) or `equal_risk` (the one level at which the stand-alone
     measures add up to the total, reported in the last row), on TVaR
     (the default), VaR or EPD. Not yet: the lifted and natural
     allocations of a priced book by layer (`aggregate`'s `price` with a
-    distortion over units, which `PRO.TOWER.PRICE` covers for a tower)
+    distortion over units, which `PRO.PRC.TOWER.PRICE` covers for a tower)
     and allocation at a stated probability for VaR alone, each when a
     user asks. Checks (`tests/allocation.rs`): all 100 cases of
     `validation/reference/allocation_numpy.csv` (four units over 400
@@ -981,22 +984,173 @@ real Excel.
     exactly; without `times`, `PRO.NPV` was `x0 + NPV(rate, x1..xn)`).
     Their extras (a block of simulations a row at a time, a grid search
     that names a root outside its range) are covered by `BYROW` with a
-    `LAMBDA` in Excel 365 and by `PRO.CASHFLOW`, which reports each
+    `LAMBDA` in Excel 365 and by `PRO.CAP.CASHFLOW`, which reports each
     simulation's IRR, NPV and MOIC itself. Excel has no `MOIC`, but
     `PRO.MOIC` was `1 + released / (funded + opening)`, a formula a cell
     writes directly. All three are removed (a breaking change after
     0.0.7). Microsoft's worked examples stay a CI check, now on
     `prospicio_pricing::returns`, the discounting and root search
-    `PRO.CASHFLOW` reports with (`tests/cashflow.rs`). Not removed:
+    `PRO.CAP.CASHFLOW` reports with (`tests/cashflow.rs`). Not removed:
     severities whose family Excel also has (`LOGNORM.DIST`,
     `GAMMA.DIST`, `WEIBULL.DIST`), since `PRO.SEV.*` takes the same
-    family names and parameters as the layer functions; `PRO.TREND.FIT`
+    family names and parameters as the layer functions; `PRO.PRC.TREND.FIT`
     (Excel's `LOGEST` fits the same curve but does not give the annual
     change or read year fractions); and the short ratemaking formulas
-    (`PRO.CRED.Z`, `PRO.CRED.WEIGHTED`, `PRO.PERMISSIBLE.LR`,
-    `PRO.INDICATED.*`, `PRO.TRENDED.PRESENT`), which encode Werner and
+    (`PRO.PRC.CRED.Z`, `PRO.PRC.CRED.WEIGHTED`, `PRO.PRC.PERMISSIBLE.LR`,
+    `PRO.PRC.INDICATED.*`, `PRO.PRC.TRENDED.PRESENT`), which encode Werner and
     Modlin's definitions rather than duplicate a built-in. A new function
     is checked against Excel's function list before it is added.
+47. **Functions are grouped by the question they answer** (user,
+    2026-11-05). At 114 functions one alphabetical list was hard to keep
+    track of, so each name now carries its group after `PRO.`: Excel's
+    autocomplete lists a group's functions when its prefix is typed, and
+    each group is a category of its own in Insert Function
+    ("Prospicio – Reserving" and so on).
+    - **`PRO.RES.`, reserving** (32): what the reserve is, from a triangle
+      or a latest diagonal, by any method, with its uncertainty: the chain
+      ladder, Mack, the bootstraps, the ODP GLM, the expected-loss
+      methods, Clark, the Bayesian ODP and BF, the one-year view, the
+      diagonal methods and averaged patterns.
+    - **`PRO.PRC.`, pricing** (48): what a policy or a cover costs:
+      ratemaking and the indication, credibility, GLMs, layers and ILFs,
+      exposure and experience rating, the quote, contract terms, a tower's
+      price on the grid and the payout's cost of capital.
+    - **`PRO.CAP.`, capital** (18): the distribution of the year's total
+      and what it implies: aggregate distributions, PMLs and covers on the
+      total, event and year loss tables, copulas and Iman-Conover,
+      distortions as risk measures, allocation, the P&L ledger and a
+      deal's cash flows.
+    - **Common, no group** (16): what every group reads, keeping its name:
+      `PRO.SEV.CDF`, `PRO.SEV.SURVIVAL`, `PRO.SEV.QUANTILE`, `PRO.SEV.STATS`, `PRO.SEV.FIT`, `PRO.SEV.FIT.GROUPED`, `PRO.SEV.FIT.LEV`, `PRO.EVT.FIT`, `PRO.EVT.HILL`, `PRO.EVT.THRESHOLDS`, `PRO.TRI.INCREMENTAL`, `PRO.TRI.CUMULATIVE`, `PRO.TRI.LINKRATIOS`, `PRO.TRI.LATEST`, `PRO.VERSION`, `PRO.YEARFRACTION`.
+
+    A function that could go in two goes where the user runs it: the
+    bootstraps are reserving (run on a triangle) though capital reads
+    their draws; layer pricing is pricing; aggregate distributions are
+    capital though pricing uses them for aggregate covers. The word after
+    `PRO.` decides the category (`Function::category`), and
+    `tests/catalogue.rs` fails on a name in no group.
+
+    **Old names stay for one release, hidden.** Every renamed function is
+    also registered under its old name (`src/aliases.rs`) with
+    xlfRegister's macro type 0: it calculates on a sheet, but the Insert
+    Function dialog does not list it, and its help starts "Renamed
+    `<new name>`". A workbook saved before the rename keeps calculating
+    through 0.0.9; 0.0.10 removes the old names, after which a formula
+    still using one shows `#NAME?` and a find-and-replace from the table
+    below fixes it. Whether Excel's autocomplete also leaves the hidden
+    names out is to be confirmed in Excel 365.
+
+    **The add-in is built with link-time optimization.** Simulations,
+    MCMC and models stay on the sheet (user, 2026-11-05), so the add-in
+    stays one file holding every engine, and its size is not a reason to
+    leave a function out. `cargo xtask xll` builds with `lto = "fat"`
+    and one codegen unit, which drops unused code across crates: 16.3 MB
+    to 14.0 MB on the GNU target (2026-11-05; 16.2 MB on `main` before
+    the old names were added), for a few more minutes of release build.
+    The wrappers are 5% of the code; the rest is the engines
+    (`rustfft`'s scalar, SSE and AVX kernels 16%, the Bayesian stack with
+    the GLMs and the thread pool about 17%, `prospicio-reserving` 12%).
+
+    | Old name | New name | Group |
+    |---|---|---|
+    | `PRO.CL` | `PRO.RES.CL` | Reserving |
+    | `PRO.CL.CDF` | `PRO.RES.CL.CDF` | Reserving |
+    | `PRO.CL.FACTORS` | `PRO.RES.CL.FACTORS` | Reserving |
+    | `PRO.CL.LDF` | `PRO.RES.CL.LDF` | Reserving |
+    | `PRO.CL.RESERVE` | `PRO.RES.CL.RESERVE` | Reserving |
+    | `PRO.CL.ULTIMATE` | `PRO.RES.CL.ULTIMATE` | Reserving |
+    | `PRO.MACK` | `PRO.RES.MACK` | Reserving |
+    | `PRO.MACK.CDR` | `PRO.RES.MACK.CDR` | Reserving |
+    | `PRO.MACK.CDR.YEARS` | `PRO.RES.MACK.CDR.YEARS` | Reserving |
+    | `PRO.MACK.BOOT` | `PRO.RES.MACK.BOOT` | Reserving |
+    | `PRO.MACK.BOOT.CDR` | `PRO.RES.MACK.BOOT.CDR` | Reserving |
+    | `PRO.MACK.BOOT.SIMS` | `PRO.RES.MACK.BOOT.SIMS` | Reserving |
+    | `PRO.ODP` | `PRO.RES.ODP` | Reserving |
+    | `PRO.ODP.CDR` | `PRO.RES.ODP.CDR` | Reserving |
+    | `PRO.ODP.SIMS` | `PRO.RES.ODP.SIMS` | Reserving |
+    | `PRO.ODP.GLM` | `PRO.RES.ODP.GLM` | Reserving |
+    | `PRO.ODP.GLM.PARAMS` | `PRO.RES.ODP.GLM.PARAMS` | Reserving |
+    | `PRO.ODP.GLM.RESIDUALS` | `PRO.RES.ODP.GLM.RESIDUALS` | Reserving |
+    | `PRO.EL` | `PRO.RES.EL` | Reserving |
+    | `PRO.BF` | `PRO.RES.BF` | Reserving |
+    | `PRO.BENKTANDER` | `PRO.RES.BENKTANDER` | Reserving |
+    | `PRO.CAPECOD` | `PRO.RES.CAPECOD` | Reserving |
+    | `PRO.CLARK` | `PRO.RES.CLARK` | Reserving |
+    | `PRO.CLARK.PARAMS` | `PRO.RES.CLARK.PARAMS` | Reserving |
+    | `PRO.BAYES.ODP` | `PRO.RES.BAYES.ODP` | Reserving |
+    | `PRO.BAYES.BF` | `PRO.RES.BAYES.BF` | Reserving |
+    | `PRO.DIAG.CL` | `PRO.RES.DIAG.CL` | Reserving |
+    | `PRO.DIAG.EL` | `PRO.RES.DIAG.EL` | Reserving |
+    | `PRO.DIAG.BF` | `PRO.RES.DIAG.BF` | Reserving |
+    | `PRO.DIAG.BENKTANDER` | `PRO.RES.DIAG.BENKTANDER` | Reserving |
+    | `PRO.DIAG.CAPECOD` | `PRO.RES.DIAG.CAPECOD` | Reserving |
+    | `PRO.PATTERN.AVERAGE` | `PRO.RES.PATTERN.AVERAGE` | Reserving |
+    | `PRO.AVGDATE` | `PRO.PRC.AVGDATE` | Pricing |
+    | `PRO.ONLEVEL` | `PRO.PRC.ONLEVEL` | Pricing |
+    | `PRO.RATELEVEL` | `PRO.PRC.RATELEVEL` | Pricing |
+    | `PRO.TREND.FIT` | `PRO.PRC.TREND.FIT` | Pricing |
+    | `PRO.TRENDED.PRESENT` | `PRO.PRC.TRENDED.PRESENT` | Pricing |
+    | `PRO.LR.EXPERIENCE` | `PRO.PRC.LR.EXPERIENCE` | Pricing |
+    | `PRO.PP.EXPERIENCE` | `PRO.PRC.PP.EXPERIENCE` | Pricing |
+    | `PRO.INDICATED.CHANGE` | `PRO.PRC.INDICATED.CHANGE` | Pricing |
+    | `PRO.INDICATED.RATE` | `PRO.PRC.INDICATED.RATE` | Pricing |
+    | `PRO.PERMISSIBLE.LR` | `PRO.PRC.PERMISSIBLE.LR` | Pricing |
+    | `PRO.EXPENSES` | `PRO.PRC.EXPENSES` | Pricing |
+    | `PRO.CRED.STANDARD` | `PRO.PRC.CRED.STANDARD` | Pricing |
+    | `PRO.CRED.Z` | `PRO.PRC.CRED.Z` | Pricing |
+    | `PRO.CRED.WEIGHTED` | `PRO.PRC.CRED.WEIGHTED` | Pricing |
+    | `PRO.BUHLMANN` | `PRO.PRC.BUHLMANN` | Pricing |
+    | `PRO.BUHLMANN.PARAMS` | `PRO.PRC.BUHLMANN.PARAMS` | Pricing |
+    | `PRO.GLM` | `PRO.PRC.GLM` | Pricing |
+    | `PRO.GLM.PREDICT` | `PRO.PRC.GLM.PREDICT` | Pricing |
+    | `PRO.GLM.RELATIVITIES` | `PRO.PRC.GLM.RELATIVITIES` | Pricing |
+    | `PRO.LEV` | `PRO.PRC.LEV` | Pricing |
+    | `PRO.LAYER` | `PRO.PRC.LAYER` | Pricing |
+    | `PRO.LAYER.CV` | `PRO.PRC.LAYER.CV` | Pricing |
+    | `PRO.LAYER.VAR` | `PRO.PRC.LAYER.VAR` | Pricing |
+    | `PRO.ILF` | `PRO.PRC.ILF` | Pricing |
+    | `PRO.LER` | `PRO.PRC.LER` | Pricing |
+    | `PRO.EXPOSURE.CURVE` | `PRO.PRC.EXPOSURE.CURVE` | Pricing |
+    | `PRO.EXPOSURE.SHARE` | `PRO.PRC.EXPOSURE.SHARE` | Pricing |
+    | `PRO.EXPOSURE.QUANTILE` | `PRO.PRC.EXPOSURE.QUANTILE` | Pricing |
+    | `PRO.EXPOSURE.STATS` | `PRO.PRC.EXPOSURE.STATS` | Pricing |
+    | `PRO.SWISSRE.C` | `PRO.PRC.SWISSRE.C` | Pricing |
+    | `PRO.SWISSRE.C.LAYER` | `PRO.PRC.SWISSRE.C.LAYER` | Pricing |
+    | `PRO.PROFILE` | `PRO.PRC.PROFILE` | Pricing |
+    | `PRO.BURNINGCOST` | `PRO.PRC.BURNINGCOST` | Pricing |
+    | `PRO.PARETO.EXTRAPOLATE` | `PRO.PRC.PARETO.EXTRAPOLATE` | Pricing |
+    | `PRO.PARETO.ALPHA` | `PRO.PRC.PARETO.ALPHA` | Pricing |
+    | `PRO.PARETO.ALPHA.FREQLAYER` | `PRO.PRC.PARETO.ALPHA.FREQLAYER` | Pricing |
+    | `PRO.PARETO.ALPHA.FREQS` | `PRO.PRC.PARETO.ALPHA.FREQS` | Pricing |
+    | `PRO.QUOTE` | `PRO.PRC.QUOTE` | Pricing |
+    | `PRO.LAYER.TERMS` | `PRO.PRC.LAYER.TERMS` | Pricing |
+    | `PRO.PROFIT.COMMISSION` | `PRO.PRC.PROFIT.COMMISSION` | Pricing |
+    | `PRO.PROFIT.COMMISSION.TERM` | `PRO.PRC.PROFIT.COMMISSION.TERM` | Pricing |
+    | `PRO.SLIDING.SCALE` | `PRO.PRC.SLIDING.SCALE` | Pricing |
+    | `PRO.SLIDING.SCALE.TERM` | `PRO.PRC.SLIDING.SCALE.TERM` | Pricing |
+    | `PRO.SWING` | `PRO.PRC.SWING` | Pricing |
+    | `PRO.TOWER.PRICE` | `PRO.PRC.TOWER.PRICE` | Pricing |
+    | `PRO.PAYOUT.PATTERN` | `PRO.PRC.PAYOUT.PATTERN` | Pricing |
+    | `PRO.PAYOUT.STATS` | `PRO.PRC.PAYOUT.STATS` | Pricing |
+    | `PRO.PAYOUT.PRICE` | `PRO.PRC.PAYOUT.PRICE` | Pricing |
+    | `PRO.AGG.STATS` | `PRO.CAP.AGG.STATS` | Capital |
+    | `PRO.AGG.LAYERS` | `PRO.CAP.AGG.LAYERS` | Capital |
+    | `PRO.AGG.COVER` | `PRO.CAP.AGG.COVER` | Capital |
+    | `PRO.AGG.PML` | `PRO.CAP.AGG.PML` | Capital |
+    | `PRO.ELT.STATS` | `PRO.CAP.ELT.STATS` | Capital |
+    | `PRO.ELT.OEP` | `PRO.CAP.ELT.OEP` | Capital |
+    | `PRO.YLT.STATS` | `PRO.CAP.YLT.STATS` | Capital |
+    | `PRO.YLT.OEP` | `PRO.CAP.YLT.OEP` | Capital |
+    | `PRO.COPULA.CDF` | `PRO.CAP.COPULA.CDF` | Capital |
+    | `PRO.COPULA.SIM` | `PRO.CAP.COPULA.SIM` | Capital |
+    | `PRO.IMAN.CONOVER` | `PRO.CAP.IMAN.CONOVER` | Capital |
+    | `PRO.ALLOCATE` | `PRO.CAP.ALLOCATE` | Capital |
+    | `PRO.ALLOCATE.TOTAL` | `PRO.CAP.ALLOCATE.TOTAL` | Capital |
+    | `PRO.DISTORTION` | `PRO.CAP.DISTORTION` | Capital |
+    | `PRO.DISTORTION.PRICE` | `PRO.CAP.DISTORTION.PRICE` | Capital |
+    | `PRO.DISTORTION.CALIBRATE` | `PRO.CAP.DISTORTION.CALIBRATE` | Capital |
+    | `PRO.PNL` | `PRO.CAP.PNL` | Capital |
+    | `PRO.CASHFLOW` | `PRO.CAP.CASHFLOW` | Capital |
 
 ## Parity plan
 

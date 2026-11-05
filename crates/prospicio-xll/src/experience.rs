@@ -44,7 +44,7 @@ fn each(g: &Grid, name: &str, n: usize, unit: &str, default: Option<f64>) -> Res
 }
 
 /// The burning cost by accident year:
-/// `PRO.BURNINGCOST(accident, amounts, limits, attachments, years,
+/// `PRO.PRC.BURNINGCOST(accident, amounts, limits, attachments, years,
 /// premiums, [development], [trend], [trend_to], [threshold],
 /// [agg_deductible], [agg_limit])`. Each year gets its premium, its count
 /// of losses through the layers and its development factor, then each

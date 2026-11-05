@@ -294,7 +294,7 @@ fn check_layer(limit: f64, attachment: f64) -> Result<()> {
 }
 
 /// Limited expected value `E[min(X, limit)]` per limit:
-/// `PRO.LEV(limit, family, p1, p2, [truncation])`.
+/// `PRO.PRC.LEV(limit, family, p1, p2, [truncation])`.
 pub fn lev(args: &[Grid]) -> Result<Grid> {
     let sev = severity(&args[1], &args[2], &args[3], &args[4])?;
     let limits = &args[0];
@@ -318,7 +318,7 @@ pub fn lev(args: &[Grid]) -> Result<Grid> {
 }
 
 /// Expected loss to the layer `limit` xs `attachment` per ground-up loss:
-/// `PRO.LAYER(limit, attachment, family, p1, p2, [truncation])`.
+/// `PRO.PRC.LAYER(limit, attachment, family, p1, p2, [truncation])`.
 pub fn layer(args: &[Grid]) -> Result<Grid> {
     let sev = severity(&args[2], &args[3], &args[4], &args[5])?;
     map2(
@@ -335,7 +335,7 @@ pub fn layer(args: &[Grid]) -> Result<Grid> {
 
 /// Variance of the loss to the layer `limit` xs `attachment` per loss,
 /// `Var[min((X - attachment)+, limit)]`:
-/// `PRO.LAYER.VAR(limit, attachment, family, p1, p2, [p3])`. A limit of
+/// `PRO.PRC.LAYER.VAR(limit, attachment, family, p1, p2, [p3])`. A limit of
 /// `"unlimited"` gives the stop loss's variance, infinite when the second
 /// moment is.
 pub fn layer_variance(args: &[Grid]) -> Result<Grid> {
@@ -353,7 +353,7 @@ pub fn layer_variance(args: &[Grid]) -> Result<Grid> {
 }
 
 /// CV of the loss to the layer given a loss above its attachment:
-/// `PRO.LAYER.CV(limit, attachment, family, p1, p2, [truncation])`.
+/// `PRO.PRC.LAYER.CV(limit, attachment, family, p1, p2, [truncation])`.
 pub fn layer_coefficient_of_variation(args: &[Grid]) -> Result<Grid> {
     let sev = severity(&args[2], &args[3], &args[4], &args[5])?;
     map2(
@@ -366,7 +366,7 @@ pub fn layer_coefficient_of_variation(args: &[Grid]) -> Result<Grid> {
 }
 
 /// Increased limit factor `LEV(limit) / LEV(basic_limit)`:
-/// `PRO.ILF(limit, basic_limit, family, p1, p2, [truncation])`.
+/// `PRO.PRC.ILF(limit, basic_limit, family, p1, p2, [truncation])`.
 pub fn increased_limit_factor(args: &[Grid]) -> Result<Grid> {
     let sev = severity(&args[2], &args[3], &args[4], &args[5])?;
     map2(
@@ -440,7 +440,7 @@ pub fn stats(args: &[Grid]) -> Result<Grid> {
 
 /// The loss elimination ratio of a deductible, `LEV(d) / E[X]`, the
 /// credit for a straight deductible, at each `deductible`:
-/// `PRO.LER(deductible, family, p1, p2, [p3])`.
+/// `PRO.PRC.LER(deductible, family, p1, p2, [p3])`.
 pub fn ler(args: &[Grid]) -> Result<Grid> {
     let sev = severity(&args[1], &args[2], &args[3], &args[4])?;
     map1(&args[0], "deductible", false, |d| {
@@ -474,8 +474,8 @@ fn xs_layer(limit: &Grid, attachment: &Grid, which: &str) -> Result<XsLayer> {
 
 /// The expected loss of each `to` layer per unit of the `from` layer's,
 /// under a Pareto with this `alpha` (R's `Pareto_Extrapolation`); the `to`
-/// limits and attachments broadcast as `PRO.LAYER`'s:
-/// `PRO.PARETO.EXTRAPOLATE(from_limit, from_attachment, to_limit, to_attachment, alpha, [truncation])`.
+/// limits and attachments broadcast as `PRO.PRC.LAYER`'s:
+/// `PRO.PRC.PARETO.EXTRAPOLATE(from_limit, from_attachment, to_limit, to_attachment, alpha, [truncation])`.
 pub fn pareto_extrapolate(args: &[Grid]) -> Result<Grid> {
     let from = xs_layer(&args[0], &args[1], "from")?;
     let alpha = scalar(&args[4], "alpha")?;
@@ -494,7 +494,7 @@ pub fn pareto_extrapolate(args: &[Grid]) -> Result<Grid> {
 
 /// The Pareto alpha at which two layers have the given expected losses
 /// (R's `Pareto_Find_Alpha_btw_Layers`):
-/// `PRO.PARETO.ALPHA(limit1, attachment1, loss1, limit2, attachment2, loss2, [truncation])`.
+/// `PRO.PRC.PARETO.ALPHA(limit1, attachment1, loss1, limit2, attachment2, loss2, [truncation])`.
 pub fn pareto_alpha_layers(args: &[Grid]) -> Result<Grid> {
     let a = (
         xs_layer(&args[0], &args[1], "first")?,
@@ -511,7 +511,7 @@ pub fn pareto_alpha_layers(args: &[Grid]) -> Result<Grid> {
 /// The Pareto alpha at which `frequency` losses a year above `threshold`
 /// give the layer an expected loss of `loss` (R's
 /// `Pareto_Find_Alpha_btw_FQ_Layer`):
-/// `PRO.PARETO.ALPHA.FREQLAYER(threshold, frequency, limit, attachment, loss, [truncation])`.
+/// `PRO.PRC.PARETO.ALPHA.FREQLAYER(threshold, frequency, limit, attachment, loss, [truncation])`.
 pub fn pareto_alpha_frequency_layer(args: &[Grid]) -> Result<Grid> {
     let alpha = alpha_between_frequency_and_layer(
         scalar(&args[0], "threshold")?,
@@ -526,7 +526,7 @@ pub fn pareto_alpha_frequency_layer(args: &[Grid]) -> Result<Grid> {
 
 /// The Pareto alpha between two frequencies above two thresholds (R's
 /// `Pareto_Find_Alpha_btw_FQs`):
-/// `PRO.PARETO.ALPHA.FREQS(threshold1, frequency1, threshold2, frequency2, [truncation])`.
+/// `PRO.PRC.PARETO.ALPHA.FREQS(threshold1, frequency1, threshold2, frequency2, [truncation])`.
 pub fn pareto_alpha_frequencies(args: &[Grid]) -> Result<Grid> {
     let alpha = alpha_between_frequencies(
         scalar(&args[0], "threshold1")?,

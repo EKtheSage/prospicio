@@ -61,10 +61,10 @@ fn factors_and_ultimates_match_chainladder_python() {
         let tri = dataset(data);
         let arg: usize = row[3].parse().unwrap();
         let got = if quantity == "ldf" {
-            let ldf = call("pro_cl_ldf", vec![tri, average_row(method)]);
+            let ldf = call("pro_res_cl_ldf", vec![tri, average_row(method)]);
             num(&ldf.cells[arg / 12 - 1])
         } else {
-            let ult = call("pro_cl_ultimate", vec![tri, average_row(method)]);
+            let ult = call("pro_res_cl_ultimate", vec![tri, average_row(method)]);
             num(&ult.cells[arg - first_year(data)])
         };
         assert!(
@@ -82,7 +82,7 @@ fn mack_matches_r_with_weights() {
     let mut checked = 0;
     for row in reference("reserving_averages_r.csv") {
         let (data, method, quantity) = (row[0].as_str(), row[1].as_str(), row[2].as_str());
-        let mack = || call("pro_mack", vec![dataset(data), average_row(method)]);
+        let mack = || call("pro_res_mack", vec![dataset(data), average_row(method)]);
         let first_year = if data == "raa" { 1981 } else { 2001 };
         let got = match quantity {
             "se" => mack()
@@ -145,7 +145,7 @@ fn the_odp_bootstrap_takes_the_exclusions() {
     ]]);
     let none = Grid::missing;
     let sheet = call(
-        "pro_odp",
+        "pro_res_odp",
         vec![
             raa(),
             n(2000.0),
@@ -171,12 +171,12 @@ fn the_odp_bootstrap_takes_the_exclusions() {
     assert!((num(sheet.get(total, 1)) - fit.chain_ladder.total_reserve()).abs() < 1e-6);
     let mean = prospicio_prob::Distribution::mean(fit.reserves.total());
     assert!((num(sheet.get(total, 2)) - mean).abs() < 1e-6 * mean);
-    let plain = call("pro_odp", vec![raa(), n(2000.0), n(3.0)]);
+    let plain = call("pro_res_odp", vec![raa(), n(2000.0), n(3.0)]);
     assert_ne!(plain.get(total, 2), sheet.get(total, 2));
 
     // The one-year view and the draws take the same row.
     let cdr = call(
-        "pro_odp_cdr",
+        "pro_res_odp_cdr",
         vec![
             raa(),
             n(500.0),
@@ -190,7 +190,7 @@ fn the_odp_bootstrap_takes_the_exclusions() {
     );
     assert!(matches!(cdr.get(1, 1), Value::Number(_)), "{cdr:?}");
     let sims = call(
-        "pro_odp_sims",
+        "pro_res_odp_sims",
         vec![raa(), n(10.0), n(3.0), none(), none(), none(), row],
     );
     assert_eq!(sims.rows, 11);
@@ -200,11 +200,11 @@ fn the_odp_bootstrap_takes_the_exclusions() {
 /// the geometric average reaches the chain ladder but not Mack.
 #[test]
 fn kinds_and_errors() {
-    let plain = call("pro_cl_ldf", vec![raa()]);
+    let plain = call("pro_res_cl_ldf", vec![raa()]);
     let row = Grid::from_rows(vec![vec![Value::from("volume"), Value::Empty]]);
-    assert_eq!(call("pro_cl_ldf", vec![raa(), row]), plain);
+    assert_eq!(call("pro_res_cl_ldf", vec![raa(), row]), plain);
 
-    let geo = call("pro_cl_ldf", vec![raa(), t("geometric")]);
+    let geo = call("pro_res_cl_ldf", vec![raa(), t("geometric")]);
     let first: Vec<f64> = common::RAA
         .iter()
         .filter(|r| r.len() > 1)
@@ -212,22 +212,22 @@ fn kinds_and_errors() {
         .collect();
     let want = (first.iter().sum::<f64>() / first.len() as f64).exp();
     assert!((num(&geo.cells[0]) - want).abs() < 1e-12 * want);
-    let e = call("pro_mack", vec![raa(), t("geometric")]);
+    let e = call("pro_res_mack", vec![raa(), t("geometric")]);
     assert!(
         text(&e).to_lowercase().contains("geometric"),
         "{}",
         text(&e)
     );
 
-    let e = call("pro_cl_ldf", vec![raa(), t("medial")]);
+    let e = call("pro_res_cl_ldf", vec![raa(), t("medial")]);
     assert!(text(&e).contains("average must be"), "{}", text(&e));
-    let e = call("pro_cl_ldf", vec![raa(), Grid::row(&[5.0, 1.0])]);
+    let e = call("pro_res_cl_ldf", vec![raa(), Grid::row(&[5.0, 1.0])]);
     assert!(text(&e).contains("first cell is its kind"), "{}", text(&e));
     let zero = Grid::from_rows(vec![vec![Value::from("volume"), Value::Number(0.0)]]);
-    let e = call("pro_cl_ldf", vec![raa(), zero]);
+    let e = call("pro_res_cl_ldf", vec![raa(), zero]);
     assert!(text(&e).contains("n_periods"), "{}", text(&e));
     let e = call(
-        "pro_odp",
+        "pro_res_odp",
         vec![
             raa(),
             n(100.0),

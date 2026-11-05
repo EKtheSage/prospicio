@@ -105,7 +105,7 @@ fn copula(name: &Grid, parameter: &Grid, nu: &Grid, dim: Option<usize>) -> Resul
     }
 }
 
-/// `PRO.COPULA.CDF(points, family, parameter, [nu])`: `C(u)` at each
+/// `PRO.CAP.COPULA.CDF(points, family, parameter, [nu])`: `C(u)` at each
 /// point, one point a row of `points` (its columns the dimensions). The
 /// Gaussian's is exact in two dimensions and by Genz's quasi-Monte Carlo
 /// method (about `1e-5`) in more; the t has none in closed form.
@@ -127,7 +127,7 @@ pub fn cdf(args: &[Grid]) -> Result<Grid> {
     ))
 }
 
-/// `PRO.COPULA.SIM(family, parameter, sims, [dim], [seed], [nu])`:
+/// `PRO.CAP.COPULA.SIM(family, parameter, sims, [dim], [seed], [nu])`:
 /// `sims` rows of uniforms in `(0, 1)`, one column a dimension. Row `i`
 /// is drawn from stream `i` of `seed`, as `prospicio_prob::copula::simulate`
 /// draws it, so a sheet and the Python and R packages agree; turn the
@@ -152,7 +152,7 @@ pub fn sim(args: &[Grid]) -> Result<Grid> {
     Ok(Grid::from_rows(rows))
 }
 
-/// `PRO.IMAN.CONOVER(draws, correlation, [seed], [dof], [shuffle])`: the
+/// `PRO.CAP.IMAN.CONOVER(draws, correlation, [seed], [dof], [shuffle])`: the
 /// columns of `draws` (one a variable, one row a simulation) reordered so
 /// that their rank correlation is close to `correlation`, each column
 /// keeping its own values. Normal scores, or Student t scores with `dof`
@@ -183,7 +183,7 @@ pub fn iman_conover(args: &[Grid]) -> Result<Grid> {
         vec!["column".into()],
         (0..m).map(|j| vec![KeyValue::Int(j as i64)]).collect(),
         x,
-        Provenance::new("PRO.IMAN.CONOVER"),
+        Provenance::new("PRO.CAP.IMAN.CONOVER"),
     )
     .map_err(|e| e.to_string())?;
     let options = ImanConover {

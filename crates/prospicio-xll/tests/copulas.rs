@@ -40,7 +40,7 @@ fn cdfs_match_mpmath() {
             point.push(param(params, "w"));
         }
         let got = num(&call(
-            "pro_copula_cdf",
+            "pro_cap_copula_cdf",
             vec![Grid::row(&point), t(family), n(parameter)],
         )
         .cells[0]);
@@ -72,10 +72,10 @@ fn points_are_rows() {
         vec![Value::Number(0.5), Value::Number(1.0)],
     ]);
     let a = call(
-        "pro_copula_cdf",
+        "pro_cap_copula_cdf",
         vec![points.clone(), t("gaussian"), n(0.5)],
     );
-    let b = call("pro_copula_cdf", vec![points, t("gaussian"), r]);
+    let b = call("pro_cap_copula_cdf", vec![points, t("gaussian"), r]);
     assert_eq!(a, b);
     assert_eq!((a.rows, a.columns), (3, 1));
     assert!((num(a.get(0, 0)) - 1.0 / 3.0).abs() < 1e-15);
@@ -109,7 +109,7 @@ fn column(g: &Grid, j: usize) -> Vec<f64> {
 #[test]
 fn simulated_uniforms_follow_their_copula() {
     let s = call(
-        "pro_copula_sim",
+        "pro_cap_copula_sim",
         vec![t("clayton"), n(2.0), n(2000.0), n(3.0), n(7.0)],
     );
     assert_eq!((s.rows, s.columns), (2000, 3));
@@ -128,19 +128,22 @@ fn simulated_uniforms_follow_their_copula() {
     assert_eq!(
         s,
         call(
-            "pro_copula_sim",
+            "pro_cap_copula_sim",
             vec![t("clayton"), n(2.0), n(2000.0), n(3.0), n(7.0)]
         )
     );
 
-    let g = call("pro_copula_sim", vec![t("gaussian"), n(0.5), n(20000.0)]);
+    let g = call(
+        "pro_cap_copula_sim",
+        vec![t("gaussian"), n(0.5), n(20000.0)],
+    );
     assert_eq!((g.rows, g.columns), (20000, 2));
     let want = 6.0 / std::f64::consts::PI * (0.25f64).asin();
     let got = spearman(&column(&g, 0), &column(&g, 1));
     assert!((got - want).abs() < 0.02, "{got} vs {want}");
 
     let tc = call(
-        "pro_copula_sim",
+        "pro_cap_copula_sim",
         vec![t("t"), n(0.5), n(100.0), n(4.0), Grid::missing(), n(3.0)],
     );
     assert_eq!((tc.rows, tc.columns), (100, 4));
@@ -159,7 +162,7 @@ fn iman_conover_keeps_the_marginals() {
             .map(|(a, b)| vec![Value::Number(*a), Value::Number(*b)])
             .collect(),
     );
-    let out = call("pro_iman_conover", vec![draws.clone(), n(0.7), n(3.0)]);
+    let out = call("pro_cap_iman_conover", vec![draws.clone(), n(0.7), n(3.0)]);
     assert_eq!((out.rows, out.columns), (n_sims, 2));
     for (j, original) in [&x, &y].into_iter().enumerate() {
         let mut a = column(&out, j);
@@ -189,7 +192,7 @@ fn iman_conover_keeps_the_marginals() {
 
     // t scores and shuffled rows keep the marginals too.
     let s = call(
-        "pro_iman_conover",
+        "pro_cap_iman_conover",
         vec![
             draws,
             n(0.7),
@@ -208,20 +211,20 @@ fn iman_conover_keeps_the_marginals() {
 #[test]
 fn bad_inputs_are_named() {
     let e = call(
-        "pro_copula_cdf",
+        "pro_cap_copula_cdf",
         vec![Grid::row(&[0.5, 0.5]), t("t"), n(0.5), n(3.0)],
     );
     assert!(text(&e).contains("no closed-form"), "{}", text(&e));
     // The Gaussian's cdf works in more than two dimensions (Genz's method,
     // about 1e-5): three normals at ρ = ½ below their medians, 1/4.
     let g = num(&call(
-        "pro_copula_cdf",
+        "pro_cap_copula_cdf",
         vec![Grid::row(&[0.5, 0.5, 0.5]), t("gaussian"), n(0.5)],
     )
     .cells[0]);
     assert!((g - 0.25).abs() < 2e-5, "{g}");
     let e = call(
-        "pro_copula_cdf",
+        "pro_cap_copula_cdf",
         vec![Grid::row(&[0.5, 0.5]), t("clayton"), n(2.0), n(3.0)],
     );
     assert!(
@@ -230,20 +233,23 @@ fn bad_inputs_are_named() {
         text(&e)
     );
     let e = call(
-        "pro_copula_cdf",
+        "pro_cap_copula_cdf",
         vec![Grid::row(&[0.5, 0.5]), t("plackett"), n(2.0)],
     );
     assert!(text(&e).contains("family must be"), "{}", text(&e));
-    let e = call("pro_copula_sim", vec![t("t"), n(0.5), n(10.0)]);
+    let e = call("pro_cap_copula_sim", vec![t("t"), n(0.5), n(10.0)]);
     assert!(text(&e).contains("nu"), "{}", text(&e));
     let r = Grid::from_rows(vec![
         vec![Value::Number(1.0), Value::Number(0.5)],
         vec![Value::Number(0.5), Value::Number(1.0)],
     ]);
-    let e = call("pro_copula_sim", vec![t("gaussian"), r, n(10.0), n(3.0)]);
+    let e = call(
+        "pro_cap_copula_sim",
+        vec![t("gaussian"), r, n(10.0), n(3.0)],
+    );
     assert!(text(&e).contains("dim is 3"), "{}", text(&e));
     let e = call(
-        "pro_iman_conover",
+        "pro_cap_iman_conover",
         vec![Grid::column(&[1.0, 2.0, 3.0]), n(0.5)],
     );
     assert!(text(&e).contains("at least two columns"), "{}", text(&e));

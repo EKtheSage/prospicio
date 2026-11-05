@@ -3,9 +3,9 @@
 //! ceding commission and a profit commission, each evaluated at a range
 //! of losses as `aggregate`'s `contract_terms` does, over
 //! `prospicio_aggregate::Layer`. Their expected values over a layer's
-//! annual loss are `PRO.LAYER.TERMS`'s. Over a term of several years,
+//! annual loss are `PRO.PRC.LAYER.TERMS`'s. Over a term of several years,
 //! with deficits and credits carried from year to year, they are
-//! `PRO.PROFIT.COMMISSION.TERM`'s and `PRO.SLIDING.SCALE.TERM`'s (decision
+//! `PRO.PRC.PROFIT.COMMISSION.TERM`'s and `PRO.PRC.SLIDING.SCALE.TERM`'s (decision
 //! 33).
 
 use prospicio_aggregate::{Layer, LossSensitivePremium};
@@ -43,7 +43,7 @@ pub(crate) fn anchors(commissions: &Grid, loss_ratios: &Grid) -> Result<Vec<(f64
     Ok(c.into_iter().zip(lr).collect())
 }
 
-/// `PRO.SWING(loss, basic, lcm, [minimum], [maximum], [share])`: the
+/// `PRO.PRC.SWING(loss, basic, lcm, [minimum], [maximum], [share])`: the
 /// loss-sensitive premium `clip(basic + lcm × loss, minimum, maximum)` at
 /// each loss, a swing-rated layer's (the loss its ceded loss at the placed
 /// `share`, the amounts at 100%) or a retro plan's. The minimum defaults to
@@ -75,7 +75,7 @@ fn priced(premium: &Grid) -> Result<Layer> {
         .map_err(e)
 }
 
-/// `PRO.SLIDING.SCALE(loss, premium, commissions, loss_ratios)`: the
+/// `PRO.PRC.SLIDING.SCALE(loss, premium, commissions, loss_ratios)`: the
 /// sliding-scale ceding commission, an amount, at each ceded loss: the
 /// commission rate at the loss ratio `loss / premium`, linear between the
 /// anchors and flat beyond the first and last, times the premium.
@@ -88,7 +88,7 @@ pub fn sliding_scale(args: &[Grid]) -> Result<Grid> {
     })
 }
 
-/// `PRO.PROFIT.COMMISSION(loss, premium, share, allowance)`: the profit
+/// `PRO.PRC.PROFIT.COMMISSION(loss, premium, share, allowance)`: the profit
 /// commission at each ceded loss, `share × max(premium × (1 − allowance)
 /// − loss, 0)`.
 pub fn profit_commission(args: &[Grid]) -> Result<Grid> {
@@ -133,7 +133,7 @@ fn by_term(losses: &Grid, over: impl Fn(&[f64]) -> Vec<f64>) -> Result<Grid> {
     Ok(Grid::from_rows(rows))
 }
 
-/// `PRO.PROFIT.COMMISSION.TERM(losses, premium, share, allowance,
+/// `PRO.PRC.PROFIT.COMMISSION.TERM(losses, premium, share, allowance,
 /// [carry_years])`: the profit commission in each year of a term, deficits
 /// carried forward: with `M = premium × (1 − allowance)` and `D` carried
 /// in, a year pays `share × max(M − loss − D, 0)` and carries
@@ -148,7 +148,7 @@ pub fn profit_commission_term(args: &[Grid]) -> Result<Grid> {
     by_term(&args[0], |ceded| layer.profit_commissions_over(ceded))
 }
 
-/// `PRO.SLIDING.SCALE.TERM(losses, premium, commissions, loss_ratios,
+/// `PRO.PRC.SLIDING.SCALE.TERM(losses, premium, commissions, loss_ratios,
 /// [carry], [carry_years])`: the sliding-scale ceding commission in each
 /// year of a term, a year reading the scale at `(loss + carried) /
 /// premium`. A deficit is the loss above the last anchor's loss ratio, a

@@ -1,5 +1,5 @@
-//! Classical credibility (`PRO.CRED.STANDARD`, `PRO.CRED.Z`,
-//! `PRO.BUHLMANN`, `PRO.BUHLMANN.PARAMS`), reached through the catalogue
+//! Classical credibility (`PRO.PRC.CRED.STANDARD`, `PRO.PRC.CRED.Z`,
+//! `PRO.PRC.BUHLMANN`, `PRO.PRC.BUHLMANN.PARAMS`), reached through the catalogue
 //! as Excel reaches it, against R's `actuar` 3.3.7
 //! (`validation/reference/credibility_actuar.csv`): the Bühlmann–Straub
 //! model on Hachemeister's data with the unbiased and the iterative
@@ -41,7 +41,7 @@ fn matches_actuar() {
         let got = if kind == "limited_fluctuation" {
             let p: f64 = field("p").unwrap().parse().unwrap();
             let k: f64 = field("k").unwrap().parse().unwrap();
-            num(call("pro_cred_standard", vec![n(p), n(k)])
+            num(call("pro_prc_cred_standard", vec![n(p), n(k)])
                 .as_scalar()
                 .unwrap())
         } else {
@@ -63,12 +63,12 @@ fn matches_actuar() {
             let group = || row[3].parse::<usize>().unwrap();
             match quantity {
                 "credibility" | "premium" => {
-                    let ex = call("pro_buhlmann", args);
+                    let ex = call("pro_prc_buhlmann", args);
                     assert_eq!((ex.rows, ex.columns), (6, 5), "{:?}", ex.as_scalar());
                     num(ex.get(group(), if quantity == "credibility" { 3 } else { 4 }))
                 }
                 _ => {
-                    let ps = call("pro_buhlmann_params", args);
+                    let ps = call("pro_prc_buhlmann_params", args);
                     let r = match quantity {
                         "collective_mean" => 0,
                         "between_variance" => 1,
@@ -96,7 +96,7 @@ fn standards_table_square_root_rule_and_errors() {
     // A column of p against a row of k: the textbook table, 1,082 at 90%/5%.
     let ps = Grid::from_rows(vec![vec![Value::Number(0.9)], vec![Value::Number(0.95)]]);
     let ks = Grid::from_rows(vec![vec![Value::Number(0.05), Value::Number(0.1)]]);
-    let table = call("pro_cred_standard", vec![ps, ks]);
+    let table = call("pro_prc_cred_standard", vec![ps, ks]);
     assert_eq!((table.rows, table.columns), (2, 2));
     assert!((num(table.get(0, 0)) - 1082.21).abs() < 0.01);
     // Halving k quadruples the standard.
@@ -104,11 +104,11 @@ fn standards_table_square_root_rule_and_errors() {
     // Severity and pure premium standards scale by cv^2 and 1 + cv^2.
     let f = num(table.get(0, 0));
     let sev = call(
-        "pro_cred_standard",
+        "pro_prc_cred_standard",
         vec![n(0.9), n(0.05), t("severity"), n(2.0)],
     );
     let pp = call(
-        "pro_cred_standard",
+        "pro_prc_cred_standard",
         vec![n(0.9), n(0.05), t("pure_premium"), n(2.0)],
     );
     assert!((num(sev.as_scalar().unwrap()) - 4.0 * f).abs() < 1e-9);
@@ -119,22 +119,30 @@ fn standards_table_square_root_rule_and_errors() {
         Value::Number(270.55),
         Value::Number(5000.0),
     ]]);
-    let z = call("pro_cred_z", vec![zs, n(1082.2)]);
+    let z = call("pro_prc_cred_z", vec![zs, n(1082.2)]);
     assert_eq!(num(z.get(0, 0)), 0.0);
     assert!((num(z.get(0, 1)) - 0.5).abs() < 1e-4);
     assert_eq!(num(z.get(0, 2)), 1.0);
 
     let e = |f: &str, a: Vec<Grid>| text(&call(f, a)).to_owned();
-    assert!(e("pro_cred_standard", vec![n(0.9), n(0.05), t("severity")]).contains("cv"));
-    assert!(e("pro_cred_standard", vec![n(0.9), n(0.05), t("loss")]).contains("kind must be"));
-    assert!(e("pro_cred_z", vec![n(1.0), n(0.0)]).contains("positive"));
-    let one = Grid::from_rows(vec![vec![Value::Number(1.0), Value::Number(2.0)]]);
-    assert!(e("pro_buhlmann", vec![one.clone()]).contains("two groups"));
-    let (r, _) = hachemeister();
-    assert!(e("pro_buhlmann", vec![Grid::from_rows(r.clone()), one]).contains("shape of ratios"));
     assert!(
         e(
-            "pro_buhlmann",
+            "pro_prc_cred_standard",
+            vec![n(0.9), n(0.05), t("severity")]
+        )
+        .contains("cv")
+    );
+    assert!(e("pro_prc_cred_standard", vec![n(0.9), n(0.05), t("loss")]).contains("kind must be"));
+    assert!(e("pro_prc_cred_z", vec![n(1.0), n(0.0)]).contains("positive"));
+    let one = Grid::from_rows(vec![vec![Value::Number(1.0), Value::Number(2.0)]]);
+    assert!(e("pro_prc_buhlmann", vec![one.clone()]).contains("two groups"));
+    let (r, _) = hachemeister();
+    assert!(
+        e("pro_prc_buhlmann", vec![Grid::from_rows(r.clone()), one]).contains("shape of ratios")
+    );
+    assert!(
+        e(
+            "pro_prc_buhlmann",
             vec![Grid::from_rows(r), Grid::missing(), t("bayes")]
         )
         .contains("estimator must be")
@@ -148,7 +156,7 @@ fn group_labels() {
         ["CA", "NY", "TX", "FL", "IL"].map(Value::from).to_vec(),
     ]);
     let ex = call(
-        "pro_buhlmann",
+        "pro_prc_buhlmann",
         vec![
             Grid::from_rows(r),
             Grid::from_rows(w),

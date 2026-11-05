@@ -1,10 +1,10 @@
 //! The contract terms, reached through the catalogue as Excel reaches
 //! them, against `aggregate` 1.0.1 at its tolerances:
 //!
-//! * `PRO.SWING`, `PRO.SLIDING.SCALE` and `PRO.PROFIT.COMMISSION` at
+//! * `PRO.PRC.SWING`, `PRO.PRC.SLIDING.SCALE` and `PRO.PRC.PROFIT.COMMISSION` at
 //!   losses through every kink (`contract_terms_aggregate.csv`, written by
 //!   `validation/scripts/aggregate_contract_terms.py`);
-//! * `PRO.LAYER.TERMS`'s expected reinstatement premium on books RI2 and
+//! * `PRO.PRC.LAYER.TERMS`'s expected reinstatement premium on books RI2 and
 //!   RI10 (`reinsurance_aggregate.csv`), and its other rows on their
 //!   definitions.
 
@@ -37,7 +37,7 @@ fn terms_at_a_loss_match_aggregate() {
         let p = params(&row[1]);
         let out = match row[2].as_str() {
             "swing_premium" | "retro_premium" => call(
-                "pro_swing",
+                "pro_prc_swing",
                 vec![
                     n(x),
                     n(p["basic"]),
@@ -52,12 +52,12 @@ fn terms_at_a_loss_match_aggregate() {
                 let c: Vec<f64> = (0..k).map(|i| p[format!("c{i}").as_str()]).collect();
                 let lr: Vec<f64> = (0..k).map(|i| p[format!("lr{i}").as_str()]).collect();
                 call(
-                    "pro_sliding_scale",
+                    "pro_prc_sliding_scale",
                     vec![n(x), n(p["premium"]), Grid::row(&c), Grid::row(&lr)],
                 )
             }
             "profit_commission" => call(
-                "pro_profit_commission",
+                "pro_prc_profit_commission",
                 vec![n(x), n(p["premium"]), n(p["share"]), n(p["allowance"])],
             ),
             _ => continue,
@@ -81,7 +81,7 @@ fn terms_at_a_loss_match_aggregate() {
     assert_eq!(checked, 475);
 }
 
-/// `PRO.LAYER.TERMS` on a book: Poisson `lambda`, a lognormal of mean 100
+/// `PRO.PRC.LAYER.TERMS` on a book: Poisson `lambda`, a lognormal of mean 100
 /// and CV 2 capped at 1,000, the layer 500 xs 100 at a 20% rate on line,
 /// on a step-1 grid of 2^14 points.
 fn book(lambda: f64, rest: Vec<Grid>) -> Grid {
@@ -99,7 +99,7 @@ fn book(lambda: f64, rest: Vec<Grid>) -> Grid {
     args.extend(rest);
     args.resize(15, Grid::missing());
     args.extend([n(1000.0), n(1.0), n(16384.0)]);
-    call("pro_layer_terms", args)
+    call("pro_prc_layer_terms", args)
 }
 
 #[test]
@@ -153,7 +153,7 @@ fn the_rows_follow_their_definitions() {
 #[test]
 fn bad_terms_are_named() {
     let e = call(
-        "pro_sliding_scale",
+        "pro_prc_sliding_scale",
         vec![n(50.0), n(100.0), Grid::row(&[0.3, 0.2]), n(0.6)],
     );
     assert!(

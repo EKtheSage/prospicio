@@ -6,7 +6,7 @@
 //!
 //! The gross loss is atoms in cells, `values` with `probs` (equally
 //! likely when omitted, as simulated years are), so the ledger reads a
-//! `PRO.AGG` grid, a year loss table or a model's simulations alike.
+//! `PRO.CAP.AGG` grid, a year loss table or a model's simulations alike.
 //! Expenses are rows of `label | premium | loss | fixed`; covers a table
 //! with a header row (`name`, `limit`, `attachment`, `share`, `premium`,
 //! `commission`, `profit_share`, `profit_allowance`), each an annual stop
@@ -336,7 +336,7 @@ fn ratios(ledger: &Ledger) -> Grid {
     Grid::from_rows(rows)
 }
 
-/// `PRO.PNL(values, [probs], premium, [expenses], [covers], [face],
+/// `PRO.CAP.PNL(values, [probs], premium, [expenses], [covers], [face],
 /// [output], [levels], [expense_at_mean])`: the book's ledger over the
 /// gross annual losses. `output` is `"sheet"` (the default: every row
 /// with its statistics and the scenario columns at `levels`, 1%, 5%,

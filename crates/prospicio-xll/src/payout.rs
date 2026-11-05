@@ -1,7 +1,7 @@
 //! The time value of money (`docs/design/xll.md`, decision 27; the
 //! Aggregate lane's `time-value.md`): a payment pattern from shares, the
 //! share paid to date or factors to ultimate (a paid chain ladder's
-//! `PRO.CL.CDF`), its discount factor, duration and capital years, and a
+//! `PRO.RES.CL.CDF`), its discount factor, duration and capital years, and a
 //! cost-of-capital price restated over the payout.
 
 use prospicio_pricing::payout::{PaymentPattern, price_over_payout};
@@ -63,7 +63,7 @@ fn rate(grid: &Grid, optional: bool) -> Result<f64> {
     }
 }
 
-/// `PRO.PAYOUT.PATTERN(times, values, [kind], [shift], [rate])`: per
+/// `PRO.PRC.PAYOUT.PATTERN(times, values, [kind], [shift], [rate])`: per
 /// payment time the share paid then, the share paid to date, the share
 /// outstanding and the discount `(1 + rate)^-time` (rate 0 if omitted).
 pub fn pattern_table(args: &[Grid]) -> Result<Grid> {
@@ -86,7 +86,7 @@ pub fn pattern_table(args: &[Grid]) -> Result<Grid> {
     Ok(Grid::from_rows(rows))
 }
 
-/// `PRO.PAYOUT.STATS(times, values, rate, [kind], [shift])`: the present
+/// `PRO.PRC.PAYOUT.STATS(times, values, rate, [kind], [shift])`: the present
 /// value of a unit of ultimate loss, the mean time to payment and the
 /// discounted capital years. A distortion price over the payout is its
 /// one-period premium times the discount factor.
@@ -101,7 +101,7 @@ pub fn stats(args: &[Grid]) -> Result<Grid> {
     ]))
 }
 
-/// `PRO.PAYOUT.PRICE(expected_loss, assets, coc, times, values, rate,
+/// `PRO.PRC.PAYOUT.PRICE(expected_loss, assets, coc, times, values, rate,
 /// [kind], [shift])`: the cost-of-capital price restated over the payout.
 /// The premium solves `P = E[X] d + coc (assets - P) A`, with `d` the
 /// discount factor and `A` the discounted capital years, so capital is

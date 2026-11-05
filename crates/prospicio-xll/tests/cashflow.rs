@@ -1,10 +1,10 @@
-//! A collateralised deal's cash flows on a sheet (`PRO.CASHFLOW`,
+//! A collateralised deal's cash flows on a sheet (`PRO.CAP.CASHFLOW`,
 //! `docs/design/xll.md` decisions 42 and 46), reached through the
 //! catalogue as Excel reaches it:
 //!
 //! * Excel's own worked examples of `XNPV`, `XIRR` and `IRR` (Microsoft's
 //!   function reference) through `prospicio_pricing::returns`, the
-//!   discounting and root search `PRO.CASHFLOW` reports with;
+//!   discounting and root search `PRO.CAP.CASHFLOW` reports with;
 //! * a deal through the terms block equal to the same deal built in
 //!   `prospicio_pricing::cashflow`, to the bit, with every rule set: its
 //!   flows, totals, IRR, MOIC and trace; and the crate's documented
@@ -124,12 +124,12 @@ fn the_crate_s_three_month_deal() {
             commutation.clone(),
         ]
     };
-    let flows = call("pro_cashflow", args(&[0.6, 1.5], "flows"));
+    let flows = call("pro_cap_cashflow", args(&[0.6, 1.5], "flows"));
     assert_eq!(flows.get(0, 0), &Value::from("Month 0"));
     let round = |v: &Value| (num(v) * 1e9).round() / 1e9;
     let got: Vec<f64> = flows.cells[3..].iter().map(round).collect();
     assert_eq!(got, [80.0, -20.0, -20.0, 50.0, -50.0, -50.0]);
-    let sims = call("pro_cashflow", args(&[1.5], "simulations"));
+    let sims = call("pro_cap_cashflow", args(&[1.5], "simulations"));
     assert_eq!(sims.get(0, 3), &Value::from("Funded"));
     assert_eq!(round(sims.get(1, 3)), 100.0);
     assert_eq!(sims.get(1, 9), &Value::Bool(true), "paid before paying in");
@@ -263,13 +263,13 @@ fn a_deal_with_every_rule_is_the_crate_s() {
     let months = expected.months();
     assert_eq!(months, 36);
 
-    let flows = call("pro_cashflow", args("flows", none()));
+    let flows = call("pro_cap_cashflow", args("flows", none()));
     assert_eq!((flows.rows, flows.columns), (6, 36), "{flows:?}");
     for (got, want) in flows.cells[36..].iter().zip(expected.flows()) {
         assert_eq!(num(got), *want);
     }
 
-    let sims = call("pro_cashflow", args("simulations", n(0.08)));
+    let sims = call("pro_cap_cashflow", args("simulations", n(0.08)));
     assert_eq!((sims.rows, sims.columns), (6, 11), "{sims:?}");
     assert_eq!(sims.get(0, 2), &Value::from("NPV at 8%"));
     let irr = expected.irr(&IrrOptions::default()).unwrap();
@@ -308,7 +308,7 @@ fn a_deal_with_every_rule_is_the_crate_s() {
     assert!(expected.funded().iter().any(|f| *f > 0.0));
     assert!(irr.iter().any(|r| r.found));
 
-    let trace = call("pro_cashflow", args("trace", none()));
+    let trace = call("pro_cap_cashflow", args("trace", none()));
     let want = terms.trace(u[0], c[0]).unwrap();
     assert_eq!(trace.get(0, 13), &Value::from("Investor"));
     assert_eq!(trace.rows, 1 + 36 + 1 + 3);
@@ -327,7 +327,7 @@ fn errors() {
     let (terms_grid, patterns, requirement, _, _) = full_deal();
     let run = |terms: Grid, patterns: Grid, requirement: Grid| {
         text(&call(
-            "pro_cashflow",
+            "pro_cap_cashflow",
             vec![n(0.6), terms, patterns, requirement],
         ))
         .to_owned()
@@ -401,7 +401,7 @@ fn errors() {
     );
     assert!(
         text(&call(
-            "pro_cashflow",
+            "pro_cap_cashflow",
             vec![
                 Grid::column(&[0.5, 0.6]),
                 terms_grid,

@@ -81,22 +81,22 @@ fn chain_ladder_matches_the_crate_and_r() {
         .fit(&triangle(&raa()).unwrap(), "values")
         .unwrap();
 
-    let ult = call("pro_cl_ultimate", args(raa(), 2));
+    let ult = call("pro_res_cl_ultimate", args(raa(), 2));
     assert_eq!((ult.rows, ult.columns), (10, 1));
     let ult: Vec<f64> = ult.cells.iter().map(num).collect();
     assert_eq!(ult, fit.ultimate);
 
-    let ldf = call("pro_cl_ldf", args(raa(), 2));
+    let ldf = call("pro_res_cl_ldf", args(raa(), 2));
     assert_eq!((ldf.rows, ldf.columns), (1, 10));
     assert!((num(&ldf.cells[0]) - 2.999359).abs() < 1e-6);
     assert_eq!(num(&ldf.cells[9]), 1.0, "no tail");
 
-    let cdf = call("pro_cl_cdf", args(raa(), 2));
+    let cdf = call("pro_res_cl_cdf", args(raa(), 2));
     assert_eq!(cdf.columns, 10);
     assert!((num(&cdf.cells[0]) - 8.920234).abs() < 1e-6);
 
     // R ChainLadder: sum(MackChainLadder(RAA)$FullTriangle[, 10] - latest).
-    let table = call("pro_cl", args(raa(), 3));
+    let table = call("pro_res_cl", args(raa(), 3));
     assert_eq!((table.rows, table.columns), (12, 5));
     assert_eq!(table.get(0, 4), &Value::from("Reserve"));
     assert_eq!(table.get(11, 0), &Value::from("Total"));
@@ -109,7 +109,7 @@ fn mack_matches_the_crate_and_r() {
     let fit = Mack::default()
         .fit(&triangle(&raa()).unwrap(), "values")
         .unwrap();
-    let table = call("pro_mack", args(raa(), 3));
+    let table = call("pro_res_mack", args(raa(), 3));
     assert_eq!((table.rows, table.columns), (12, 8));
     for i in 0..10 {
         assert_eq!(num(table.get(i + 1, 6)), fit.standard_error[i]);
@@ -129,7 +129,7 @@ fn options_and_labels() {
             .collect(),
     );
     let table = call(
-        "pro_mack",
+        "pro_res_mack",
         vec![
             raa(),
             Value::from("simple").into(),
@@ -139,7 +139,7 @@ fn options_and_labels() {
     );
     assert_eq!(num(table.get(1, 0)), 1981.0);
     let simple_tail = call(
-        "pro_cl_ldf",
+        "pro_res_cl_ldf",
         vec![
             raa(),
             Value::from("Simple").into(),
@@ -149,7 +149,7 @@ fn options_and_labels() {
     assert_eq!(num(&simple_tail.cells[9]), 1.05);
 
     let curve = call(
-        "pro_cl_factors",
+        "pro_res_cl_factors",
         vec![raa(), Grid::missing(), Value::from("exponential").into()],
     );
     assert_eq!(curve.get(10, 0), &Value::from("120-Ult"));
@@ -158,13 +158,16 @@ fn options_and_labels() {
     // #N/A marks an unobserved cell, as blanks do.
     let mut na = raa();
     na.cells[99] = Value::Error(CellError::NA);
-    assert_eq!(call("pro_cl", args(na, 3)), call("pro_cl", args(raa(), 3)));
+    assert_eq!(
+        call("pro_res_cl", args(na, 3)),
+        call("pro_res_cl", args(raa(), 3))
+    );
 }
 
 #[test]
 fn errors_come_back_as_text() {
     let bad = call(
-        "pro_cl",
+        "pro_res_cl",
         vec![
             raa(),
             Value::from("median").into(),
@@ -177,21 +180,21 @@ fn errors_come_back_as_text() {
     let mut hole = raa();
     hole.cells[1] = Value::Empty;
     assert!(
-        text(&call("pro_mack", args(hole, 3)))
+        text(&call("pro_res_mack", args(hole, 3)))
             .contains("row 1, column 3 has a value after a blank")
     );
 
     let mut label = raa();
     label.cells[0] = Value::from("AY");
-    assert!(text(&call("pro_cl_ldf", args(label, 2))).contains("is text"));
+    assert!(text(&call("pro_res_cl_ldf", args(label, 2))).contains("is text"));
 
     let short = Grid::from_rows(vec![vec![Value::Number(1.0)]; 3]);
-    assert!(text(&call("pro_cl_ldf", args(short, 2))).contains("two development columns"));
+    assert!(text(&call("pro_res_cl_ldf", args(short, 2))).contains("two development columns"));
 
     let wrong = Grid::from_rows(vec![vec![Value::Number(1.0)]; 3]);
     assert!(
         text(&call(
-            "pro_cl",
+            "pro_res_cl",
             vec![raa(), Grid::missing(), Grid::missing(), wrong]
         ))
         .contains("10 labels")

@@ -46,15 +46,15 @@ fn link_ratios_and_latest() {
         .iter()
         .filter(|r| r.len() > 1)
         .fold((0.0, 0.0), |(a, b), r| (a + r[1], b + r[0]));
-    let ldf = call("pro_cl_ldf", vec![raa()]);
+    let ldf = call("pro_res_cl_ldf", vec![raa()]);
     assert!((num(&ldf.cells[0]) - num_sum / den_sum).abs() < 1e-12);
 
     let latest = call("pro_tri_latest", vec![raa()]);
     assert_eq!((latest.rows, latest.columns), (10, 1));
     let want: Vec<f64> = RAA.iter().map(|r| *r.last().unwrap()).collect();
     assert_eq!(latest.cells.iter().map(num).collect::<Vec<_>>(), want);
-    // The total of the latest diagonal is PRO.CL's total latest.
-    let cl = call("pro_cl", vec![raa()]);
+    // The total of the latest diagonal is PRO.RES.CL's total latest.
+    let cl = call("pro_res_cl", vec![raa()]);
     assert_eq!(num(cl.get(11, 1)), want.iter().sum::<f64>());
 }
 
