@@ -7,4 +7,4 @@
   and Excel stays usable. Cells with the same inputs share one run, and
   the last 32 results are kept, so a recalculation that changes none of a
   function's inputs answers at once with the same numbers
-  (`docs/design/xll.md` decision 48).
+  (`docs/design/xll.md` decision 48; #748).
