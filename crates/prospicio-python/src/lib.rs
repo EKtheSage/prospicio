@@ -188,11 +188,12 @@ mod prospicio_native {
         PyCompartmentalOneYearFit, PyCompartmentalOneYearFits, PyCompartmentalPriors,
         PyDevelopmentCorrelationTest, PyDevelopmentCurve, PyDevelopmentCurveFit,
         PyDevelopmentExhibit, PyDevelopmentPatterns, PyExpectedLoss, PyExpectedLossFit,
-        PyGlmCandidate, PyIndustryPrior, PyLatestDiagonal, PyLayerSharePrior, PyMack,
-        PyMackBootstrap, PyMackBootstrapFit, PyMackFit, PyMeyers, PyMeyersFit, PyMeyersFits,
-        PyMunichChainLadder, PyMunichFit, PyNewYear, PyOdpBootstrap, PyOdpBootstrapFit,
-        PyOneYearFit, PyPaidIncurredChain, PyPaidIncurredFit, PyPatternPrior, PySelectedUltimates,
-        PyTailBondy, PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle, PyUltimateExhibit,
+        PyGlmCandidate, PyHierarchicalBf, PyHierarchicalBfFit, PyHierarchicalBfProgram,
+        PyIndustryPrior, PyLatestDiagonal, PyLayerSharePrior, PyMack, PyMackBootstrap,
+        PyMackBootstrapFit, PyMackFit, PyMeyers, PyMeyersFit, PyMeyersFits, PyMunichChainLadder,
+        PyMunichFit, PyNewYear, PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit,
+        PyPaidIncurredChain, PyPaidIncurredFit, PyPatternPrior, PySelectedUltimates, PyTailBondy,
+        PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle, PyUltimateExhibit,
         PyUnderwritingBasis, calendar_year_effect, development_correlation, diagonal_backtest,
     };
     #[pymodule_export]

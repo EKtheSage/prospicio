@@ -1,0 +1,237 @@
+"""HierarchicalBf, the hierarchical Bayesian Bornhuetter-Ferguson over programs
+(docs/design/reserving-bayes.md, decision 30).
+
+The model's limits and its density are checked in the Rust crate and in
+validation/tests; these tests check the binding: settings, the fit's fields
+and frames on a small panel of three programs (one of them thin, with two
+origins), that program reserves add up to the joint total, replay by seed,
+the pattern prior and the errors.
+"""
+
+import math
+import warnings
+
+import pytest
+
+from prospicio.distributions import PredictiveDistribution
+from prospicio.reserving import (
+    HierarchicalBf,
+    HierarchicalBfFit,
+    HierarchicalBfProgram,
+    PatternPrior,
+    Triangle,
+)
+
+QUICK = dict(chains=2, tune=300, draws=300, n_sims=600)
+
+# Programs a (four origins), b (three) and c (two, a thin one), on ages 12 to 48.
+PROGRAMS = {
+    "a": {
+        2020: ([60.0, 100.0, 125.0, 135.0], 200.0),
+        2021: ([66.0, 108.0, 133.0], 210.0),
+        2022: ([70.0, 115.0], 215.0),
+        2023: ([72.0], 220.0),
+    },
+    "b": {
+        2021: ([35.0, 60.0, 75.0], 120.0),
+        2022: ([38.0, 64.0], 125.0),
+        2023: ([40.0], 130.0),
+    },
+    "c": {
+        2022: ([22.0, 38.0], 80.0),
+        2023: ([25.0], 85.0),
+    },
+}
+
+
+def panel(programs=PROGRAMS):
+    program, origin, age, paid, premium = [], [], [], [], []
+    for name, origins in programs.items():
+        for year, (cells, prem) in origins.items():
+            for k, value in enumerate(cells):
+                program.append(name)
+                origin.append(year)
+                age.append(12 * (k + 1))
+                paid.append(value)
+                premium.append(prem)
+    return Triangle.from_long(
+        origin, age, {"paid": paid, "premium": premium}, keys={"program": program}
+    )
+
+
+@pytest.fixture(scope="module")
+def tri():
+    return panel()
+
+
+@pytest.fixture(scope="module")
+def fit(tri):
+    model = HierarchicalBf(apriori=0.7, level_cv=0.3, seed=3, **QUICK)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return model.fit(tri, "paid", "premium")
+
+
+def test_settings_and_defaults():
+    m = HierarchicalBf()
+    assert (m.apriori, m.level_cv, m.cv, m.development_sd) == (1.0, None, 0.1, 10.0)
+    assert (m.tau_scale, m.omega_scale, m.process) == (0.3, 0.5, "gamma")
+    assert (m.chains, m.tune, m.draws, m.n_sims, m.seed) == (4, 1000, 1000, 10_000, 0)
+    assert (m.target_accept, m.max_depth, m.pattern_prior) == (0.95, 10, None)
+    m = HierarchicalBf(apriori=0.7, level_cv=0.2, tau_scale=0.1, process="none", seed=9)
+    assert (m.apriori, m.level_cv, m.tau_scale, m.process, m.seed) == (0.7, 0.2, 0.1, "none", 9)
+    assert repr(m).startswith("HierarchicalBf(apriori=0.7, level_cv=0.2, cv=0.1")
+
+
+def test_fit_fields(fit):
+    assert isinstance(fit, HierarchicalBfFit)
+    assert fit.ages == [12, 24, 36, 48]
+    assert fit.scale_per_premium > 0.0
+    assert len(fit.programs) == 3
+    assert all(isinstance(p, HierarchicalBfProgram) for p in fit.programs)
+    assert [p.label for p in fit.programs] == ["a", "b", "c"]
+    assert [p.key for p in fit.programs] == [["a"], ["b"], ["c"]]
+    assert [len(p.origins) for p in fit.programs] == [4, 3, 2]
+
+    for p in fit.programs:
+        n = len(p.origins)
+        for values in (p.exposure, p.latest, p.prior_ultimate, p.expected_ultimate):
+            assert len(values) == n
+        assert len(p.pattern) == 4 and sum(p.pattern) == pytest.approx(1.0)
+        assert all(x > 0.0 for x in p.pattern)
+        assert p.scale > 0.0 and p.loss_ratio > 0.0 and p.own_loss_ratio > 0.0
+        assert math.isfinite(p.shrinkage)
+        assert isinstance(p.reserves, PredictiveDistribution)
+        assert p.reserves.n_sims == 600
+        assert repr(p).startswith(f"HierarchicalBfProgram(label='{p.label}'")
+    thin = fit.programs[2]
+    assert thin.origins == ["2022", "2023"]
+    assert thin.exposure == [80.0, 85.0] and thin.latest == [38.0, 25.0]
+    assert thin.prior_ultimate == pytest.approx([0.7 * 80.0, 0.7 * 85.0])
+    # A program's scale is the pooled scale per premium times its mean premium.
+    assert thin.scale == pytest.approx(fit.scale_per_premium * (80.0 + 85.0) / 2)
+
+    assert repr(fit).startswith("HierarchicalBfFit(programs=3, ages=4, draws=600")
+
+
+def test_reserves_add_up(fit):
+    r = fit.reserves
+    assert isinstance(r, PredictiveDistribution)
+    assert r.dims == ["program", "origin"]
+    assert len(r.components()) == 9
+    assert r.n_sims == 600
+    assert sum(p.reserves.mean() for p in fit.programs) == pytest.approx(
+        r.mean(), rel=1e-9
+    )
+    # Paired by posterior draw: the programs' reserves sum to the total in
+    # every simulation, so the variances add with the covariances.
+    assert sum(len(p.reserves.components()) for p in fit.programs) == 9
+    assert r.mean() > 0.0
+    # The thin program has a reserve past its own last age.
+    assert fit.programs[2].reserves.mean() > 0.0
+
+
+def test_posterior_and_frames(fit):
+    names = fit.parameter_names
+    assert names[:2] == ["log_level", "log_tau"]
+    assert "log_omega" in names
+    draws = fit.draws
+    assert fit.chains == 2
+    assert len(draws) == 600 and all(len(row) == len(names) for row in draws)
+
+    s = fit.summary()
+    assert list(s.columns) == [
+        "parameter", "mean", "sd", "q05", "q50", "q95", "rhat", "ess_bulk", "ess_tail",
+    ]
+    assert list(s["parameter"]) == names
+
+    h = fit.hyperparameters()
+    assert list(h["parameter"]) == ["level", "tau", "omega"]
+    assert (h["mean"] > 0).all() and (h["sd"] > 0).all()
+    assert (h["q05"] > 0).all()
+
+    f = fit.to_frame()
+    assert list(f["program"]) == ["a", "b", "c"]
+    assert list(f["origins"]) == [4, 3, 2]
+    assert list(f.columns) == [
+        "program", "origins", "exposure", "latest", "prior_ultimate",
+        "expected_ultimate", "scale", "loss_ratio", "own_loss_ratio", "shrinkage",
+        "mean", "std_dev",
+    ]
+    assert f["exposure"][2] == pytest.approx(165.0)
+    assert (f["std_dev"] > 0).all()
+    assert f["mean"].sum() == pytest.approx(fit.reserves.mean(), rel=1e-9)
+
+    d = fit.diagnostics
+    assert set(d) == {"max_rhat", "min_ess_bulk", "min_ess_tail", "divergences", "warnings"}
+
+
+def test_replays_by_seed(tri):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        model = HierarchicalBf(seed=5, **QUICK)
+        a = model.fit(tri, "paid", "premium")
+        b = model.fit(tri, "paid", "premium")
+        c = HierarchicalBf(seed=6, **QUICK).fit(tri, "paid", "premium")
+    assert a.draws == b.draws
+    assert a.reserves.mean() == b.reserves.mean()
+    assert a.draws != c.draws
+
+
+def test_one_program_is_a_triangle_with_one_segment():
+    one = panel({"a": PROGRAMS["a"]})
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        fit = HierarchicalBf(seed=1, **QUICK).fit(one, "paid", "premium")
+    assert [p.label for p in fit.programs] == ["a"]
+    assert fit.reserves.n_sims == 600
+
+
+def test_pattern_prior(tri):
+    ages = [12, 24, 36, 48]
+    prior = PatternPrior(ages, [0.4, 0.6, 0.7], [0.3, 0.3, 0.3])
+    model = HierarchicalBf(seed=2, pattern_prior=prior, **QUICK)
+    assert model.pattern_prior is not None
+    assert "pattern_prior=PatternPrior(...)" in repr(model)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        fit = model.fit(tri, "paid", "premium")
+    assert len(fit.programs) == 3
+    wrong = PatternPrior([12, 24], [0.4], [0.3])
+    with pytest.raises(ValueError):
+        HierarchicalBf(pattern_prior=wrong, **QUICK).fit(tri, "paid", "premium")
+
+
+def test_diagnostics_warning(tri):
+    # A run too short to converge fails a threshold: one UserWarning, and the
+    # fit still returns with the warnings listed.
+    short = HierarchicalBf(chains=2, tune=20, draws=20, n_sims=100, seed=1)
+    with pytest.warns(UserWarning, match="HierarchicalBf: the MCMC diagnostics failed"):
+        fit = short.fit(tri, "paid", "premium")
+    assert fit.diagnostics["warnings"]
+
+
+def test_errors(tri):
+    with pytest.raises(ValueError, match="n_sims must be positive"):
+        HierarchicalBf(n_sims=0)
+    with pytest.raises(ValueError, match="process"):
+        HierarchicalBf(process="lognormal")
+    with pytest.raises(OverflowError):
+        HierarchicalBf(seed=-1)
+    for name, value in [("apriori", 0.0), ("cv", 0.0), ("tau_scale", 0.0), ("omega_scale", -1.0)]:
+        with pytest.raises(ValueError):
+            HierarchicalBf(**{name: value}, **QUICK).fit(tri, "paid", "premium")
+    with pytest.raises(ValueError):
+        HierarchicalBf(**QUICK).fit(tri, "paid", "missing")
+    with pytest.raises(ValueError):
+        HierarchicalBf(**QUICK).fit(tri, "missing", "premium")
+
+    # An origin with a gap before its latest cell is refused.
+    gap = Triangle.from_long(
+        [2022, 2022, 2023, 2023, 2023],
+        [12, 36, 12, 24, 36],
+        {"paid": [10.0, 20.0, 11.0, 15.0, 21.0], "premium": [50.0] * 2 + [55.0] * 3},
+        keys={"program": ["a"] * 5},
+    )
+    with pytest.raises(ValueError):
+        HierarchicalBf(**QUICK).fit(gap, "paid", "premium")

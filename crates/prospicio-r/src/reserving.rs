@@ -50,7 +50,8 @@ use prospicio_reserving::bayes::{
 use prospicio_reserving::{
     BayesBf, BayesBfFit as BayesBfInner, BayesBfNormalised,
     BayesBfNormalisedFit as BayesBfNormalisedInner, BayesOdp, BayesOdpFit as BayesOdpInner,
-    Diagnostics, Meyers, MeyersFit as MeyersInner, MeyersModel,
+    Diagnostics, HierarchicalBf, HierarchicalBfFit as HierarchicalBfInner, HierarchicalBfProgram,
+    Meyers, MeyersFit as MeyersInner, MeyersModel,
 };
 
 use prospicio_glm::Glm;
@@ -2303,6 +2304,36 @@ impl Triangle {
         })
     }
 
+    /// The hierarchical Bayesian Bornhuetter-Ferguson of a triangle column
+    /// with a segment per program and each origin's exposure from the
+    /// `exposure` column: `priors` are `apriori`, `cv`, `development_sd`,
+    /// `tau_scale` and `omega_scale`, `level_cv` the coefficient of
+    /// variation of the industry loss ratio's prior (`NULL` for a flat prior
+    /// on its log), `process` error ("gamma" or "none"), `run` is `chains`,
+    /// `tune`, `draws`, `n_sims`, `seed`, `target_accept` and `max_depth`,
+    /// and the pattern prior is optional.
+    #[allow(clippy::too_many_arguments)]
+    fn hierarchical_bf(
+        &self,
+        column: &str,
+        exposure: &str,
+        priors: Vec<f64>,
+        level_cv: Nullable<f64>,
+        process: &str,
+        run: Vec<f64>,
+        pattern_ages: Nullable<Vec<f64>>,
+        pattern_mean: Vec<f64>,
+        pattern_sd: Vec<f64>,
+    ) -> Result<HierarchicalBfFit> {
+        let model = hierarchical_bf_model(&priors, level_cv, process, &run)?;
+        let inner = match pattern_arg(pattern_ages, pattern_mean, pattern_sd)? {
+            Some(p) => model.fit_with_pattern_prior(&self.inner, column, exposure, &p),
+            None => model.fit(&self.inner, column, exposure),
+        }
+        .map_err(to_r)?;
+        Ok(HierarchicalBfFit { inner })
+    }
+
     /// The lifetime view under Mack's bootstrap: each origin's reserve
     /// simulated to the last age with `process` ("gamma", "lognormal",
     /// "residuals", "normal" or "none"), Mack's model averaged as `average`
@@ -4047,6 +4078,49 @@ fn bayes_bf_normalised_model(
     })
 }
 
+/// The `HierarchicalBf` of `hierarchical_bf`: `priors` are `apriori`, `cv`,
+/// `development_sd`, `tau_scale` and `omega_scale`, `run` is `chains`,
+/// `tune`, `draws`, `n_sims`, `seed`, `target_accept` and `max_depth`.
+fn hierarchical_bf_model(
+    priors: &[f64],
+    level_cv: Nullable<f64>,
+    process: &str,
+    run: &[f64],
+) -> Result<HierarchicalBf> {
+    let (
+        &[apriori, cv, development_sd, tau_scale, omega_scale],
+        &[chains, tune, draws, n_sims, seed, ta, md],
+    ) = (priors, run)
+    else {
+        return Err(Error::Other(
+            "hierarchical_bf_model takes 5 priors and 7 run settings".into(),
+        ));
+    };
+    let boot = bootstrap(n_sims, seed, process, SegmentDependence::Independent)?;
+    Ok(HierarchicalBf {
+        apriori,
+        level_cv: match level_cv {
+            Nullable::NotNull(c) => Some(c),
+            Nullable::Null => None,
+        },
+        cv,
+        development_sd,
+        tau_scale,
+        omega_scale,
+        process: boot.process,
+        sampler: BayesSampler {
+            chains: whole(chains, "chains")? as usize,
+            tune: whole(tune, "tune")? as usize,
+            draws: whole(draws, "draws")? as usize,
+            seed: 0,
+            target_accept: ta,
+            max_depth: whole(md, "max_depth")?,
+        },
+        n_sims: boot.n_sims,
+        seed: boot.seed,
+    })
+}
+
 /// The settings of a Bayesian one-year view: `k_threshold`, the `refit`
 /// policy by name (`None` for the model's one-year default), the most refits
 /// (`NULL` for no limit) and the number
@@ -5323,6 +5397,125 @@ impl BayesBfNormalisedFit {
         Ok(Self {
             inner: self.inner.clone(),
         })
+    }
+}
+
+/// A hierarchical Bayesian Bornhuetter-Ferguson over the programs of a
+/// triangle column.
+#[extendr]
+pub(crate) struct HierarchicalBfFit {
+    inner: HierarchicalBfInner,
+}
+
+#[extendr]
+impl HierarchicalBfFit {
+    /// Each program's segment label, joined by " / ", in the triangle's
+    /// order.
+    fn program_labels(&self) -> Vec<String> {
+        self.inner
+            .programs
+            .iter()
+            .map(|p| p.label.to_string())
+            .collect()
+    }
+
+    /// One program as a list: `label`, `key` (its key values), `origins`,
+    /// `exposure`, `latest`, `prior_ultimate`, `scale`, `expected_ultimate`,
+    /// `pattern`, `loss_ratio`, `own_loss_ratio` and `shrinkage`. `index` is
+    /// 1-based.
+    fn program(&self, index: f64) -> Result<List> {
+        let p = self.program_at(index)?;
+        Ok(list!(
+            label = p.label.to_string(),
+            key = p.label.parts().to_vec(),
+            origins = p
+                .origins
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            exposure = p.exposure.clone(),
+            latest = p.latest.clone(),
+            prior_ultimate = p.prior_ultimate.clone(),
+            scale = p.scale,
+            expected_ultimate = p.expected_ultimate.clone(),
+            pattern = p.pattern.clone(),
+            loss_ratio = p.loss_ratio,
+            own_loss_ratio = p.own_loss_ratio,
+            shrinkage = p.shrinkage
+        ))
+    }
+
+    /// The program's part of the joint reserves (`index` is 1-based).
+    fn program_reserves(&self, index: f64) -> Result<PredictiveDistribution> {
+        Ok(PredictiveDistribution {
+            inner: self.program_at(index)?.reserves.clone(),
+        })
+    }
+
+    /// The development ages of every program's pattern, in months.
+    fn ages(&self) -> Vec<f64> {
+        self.inner.ages.iter().map(|&a| f64::from(a)).collect()
+    }
+
+    /// The pooled scale per unit of premium.
+    fn scale_per_premium(&self) -> f64 {
+        self.inner.scale_per_premium
+    }
+
+    /// The joint reserves by program and origin.
+    fn reserves(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.reserves.clone(),
+        }
+    }
+
+    /// `list(max_rhat, min_ess_bulk, min_ess_tail, divergences, warnings)`.
+    fn diagnostics(&self) -> List {
+        let d = &self.inner.diagnostics;
+        list!(
+            max_rhat = d.max_rhat,
+            min_ess_bulk = d.min_ess_bulk,
+            min_ess_tail = d.min_ess_tail,
+            divergences = d.divergences as f64,
+            warnings = d.warnings.clone()
+        )
+    }
+
+    fn parameter_names(&self) -> Vec<String> {
+        self.inner.posterior.names().to_vec()
+    }
+
+    /// Posterior draws, row-major `n_draws x n_parameters`, chain by chain.
+    fn draws(&self) -> Vec<f64> {
+        self.inner.posterior.values().to_vec()
+    }
+
+    fn chains(&self) -> f64 {
+        self.inner.posterior.chains() as f64
+    }
+
+    /// The posterior summary of every sampled parameter.
+    fn summary(&self) -> Result<List> {
+        Ok(summary_list(&self.inner.summary().map_err(to_r)?))
+    }
+
+    /// The posterior summary of the hyperparameters `level`, `tau` and
+    /// `omega` on their natural scale.
+    fn hyperparameters(&self) -> Result<List> {
+        Ok(summary_list(&self.inner.hyperparameters().map_err(to_r)?))
+    }
+}
+
+impl HierarchicalBfFit {
+    fn program_at(&self, index: f64) -> Result<&HierarchicalBfProgram> {
+        let n = self.inner.programs.len();
+        let i = whole(index, "index")? as usize;
+        if i == 0 || i > n {
+            return Err(Error::Other(format!(
+                "program index {i} is outside 1 to {n}"
+            )));
+        }
+        Ok(&self.inner.programs[i - 1])
     }
 }
 
@@ -7407,6 +7600,7 @@ extendr_module! {
     impl BayesBfFit;
     impl BayesBfNormalisedFit;
     impl BayesNewYear;
+    impl HierarchicalBfFit;
     impl IndustryPriorFit;
     impl MackBootstrapFit;
     impl OneYearFit;

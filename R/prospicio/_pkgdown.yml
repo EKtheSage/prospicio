@@ -389,6 +389,8 @@ reference:
       - bayes_odp_fit
       - bayes_bf_fit
       - bayes_bf_normalised_fit
+      - hierarchical_bf_fit
+      - hierarchical_bf_program
       - industry_prior_fit
       - pattern_prior
       - bayes_odp_fits

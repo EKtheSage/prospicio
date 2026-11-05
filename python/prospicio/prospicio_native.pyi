@@ -16505,6 +16505,396 @@ class HawkesFit:
         """
 
 @final
+class HierarchicalBf:
+    """
+    The hierarchical Bayesian Bornhuetter-Ferguson: several programs, one
+    segment of a triangle each, pooled under an industry hyperprior on the
+    loss ratio, with the development pattern partially pooled
+    (``docs/design/reserving-bayes.md``, decision 30).
+    
+    Each origin's cumulative-value increments are the over-dispersed Poisson
+    of ``BayesBfNormalised`` with mean ``U[c, w] * p[c, d]``, the origin's
+    expected ultimate times the share of it that falls at age ``d``. The
+    industry loss ratio ``L`` has a lognormal prior with mean ``apriori`` and
+    coefficient of variation ``level_cv`` (flat on ``log L`` when
+    ``level_cv`` is ``None``, so the programs alone set the level). Program
+    ``c`` has loss ratio ``L * s[c]`` with ``log s[c]`` normal with sd
+    ``tau`` and ``E[s[c]] = 1``, ``tau`` half-normal with scale
+    ``tau_scale``; its origins' expected ultimates are gamma with mean
+    ``L * s[c] * exposure`` and coefficient of variation ``cv``. The shared
+    log pattern ``beta[d]`` is normal with sd ``development_sd`` (or the
+    ``pattern_prior``), and each program's own pattern departs from it by
+    ``omega`` times a standard normal per age, ``omega`` half-normal with
+    scale ``omega_scale``. A thin program's young ages therefore move with
+    its own data, its later ages follow the shared pattern, and its loss
+    ratio is shrunk towards ``L`` by as much as the spread between the
+    programs supports.
+    
+    The scale is plugged in per unit of premium, pooled over the programs
+    (``scale_per_premium``), so a program of two origins, which has no
+    degree of freedom of its own, still has a scale. The panel together must
+    have a degree of freedom. Failed MCMC diagnostics (R-hat above 1.01,
+    bulk or tail ESS below 100 per chain, any divergent transition) do not
+    fail the fit: ``fit`` raises one ``UserWarning`` listing them, and they
+    stay in ``HierarchicalBfFit.diagnostics``. One ``seed`` replays a fit
+    exactly. The one-year view is not available yet.
+    
+    Parameters
+    ----------
+    apriori : float, default 1.0
+        Prior mean of the industry loss ratio ``L``; positive and finite.
+    level_cv : float, optional
+        Coefficient of variation of the lognormal prior on ``L``; ``None``
+        (the default) is flat on ``log L``.
+    cv : float, default 0.1
+        Coefficient of variation of each origin's expected ultimate about
+        its program's level; fixed, finite and positive.
+    development_sd : float, default 10.0
+        Standard deviation of the normal prior on each shared ``beta[d]``;
+        unused with a ``pattern_prior``.
+    tau_scale : float, default 0.3
+        Scale of the half-normal prior on ``tau``, the spread of the
+        programs' log loss ratios (a median spread of about 20%).
+    omega_scale : float, default 0.5
+        Scale of the half-normal prior on ``omega``, the spread of the
+        programs' log share ratios.
+    process : {"gamma", "none"}, default "gamma"
+        Process error on each simulated future increment.
+    chains, tune, draws : int, default 4, 1000, 1000
+        NUTS chains, warm-up draws per chain and kept draws per chain.
+    n_sims : int, default 10000
+        Number of predictive simulations; positive.
+    seed : int, default 0
+        Seed of the chains and of the simulations.
+    target_accept : float, default 0.95
+        Target mean acceptance rate of the step-size adaptation.
+    max_depth : int, default 10
+        Largest NUTS tree depth.
+    pattern_prior : PatternPrior, optional
+        An informative prior on the shared pattern, for example
+        ``IndustryPrior.pattern``; its ages must be the triangle's.
+    
+    Raises
+    ------
+    ValueError
+        If ``n_sims`` is zero or ``process`` is unknown.
+    OverflowError
+        If an integer setting is negative or too large.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import HierarchicalBf, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2021, 2021, 2021, 2022, 2022, 2023, 2022, 2022, 2023],
+    ...     [12, 24, 36, 12, 24, 12, 12, 24, 12],
+    ...     {
+    ...         "paid": [100.0, 150.0, 170.0, 110.0, 172.0, 130.0, 55.0, 80.0, 60.0],
+    ...         "premium": [250.0] * 3 + [270.0] * 2 + [290.0] + [120.0] * 2 + [130.0],
+    ...     },
+    ...     keys={"program": ["a"] * 6 + ["b"] * 3},
+    ... )
+    >>> import warnings
+    >>> warnings.simplefilter("ignore")  # two tiny programs: the sampler is short
+    >>> model = HierarchicalBf(apriori=0.7, level_cv=0.2, chains=2, tune=200, draws=200, n_sims=500, seed=1)
+    >>> fit = model.fit(tri, "paid", "premium")
+    >>> [p.label for p in fit.programs]
+    ['a', 'b']
+    >>> fit.reserves.dims
+    ['program', 'origin']
+    """
+    def __new__(cls, /, apriori: float = 1.0, level_cv: float |None = None, cv: float = 0.1, development_sd: float = 10.0, tau_scale: float = 0.3, omega_scale: float = 0.5, process: str = "gamma", chains: int = 4, tune: int = 1000, draws: int = 1000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10, pattern_prior: PatternPrior |None = None) -> HierarchicalBf: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def apriori(self, /) -> float:
+        """
+        Prior mean of the industry loss ratio.
+        """
+    @property
+    def chains(self, /) -> int:
+        """
+        Number of NUTS chains.
+        """
+    @property
+    def cv(self, /) -> float:
+        """
+        Coefficient of variation of each origin's expected ultimate.
+        """
+    @property
+    def development_sd(self, /) -> float:
+        """
+        Standard deviation of each shared development effect's prior.
+        """
+    @property
+    def draws(self, /) -> int:
+        """
+        Kept draws per chain.
+        """
+    def fit(self, /, triangle: Triangle, column: str, exposure: str) -> HierarchicalBfFit:
+        """
+        Samples the posterior of one loss column of a cumulative triangle
+        with a segment per program, with each origin's exposure from
+        another column, and simulates every program's reserves jointly.
+        Every origin must be observed from the first age up to its latest.
+        A triangle with one segment is one program. Raises one
+        ``UserWarning`` listing the failed diagnostics, if any.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with a segment per program, all on the same ages.
+        column : str
+            The losses to project.
+        exposure : str
+            The exposure column; each origin's latest observed cumulative
+            value is its exposure.
+        
+        Returns
+        -------
+        HierarchicalBfFit
+        
+        Raises
+        ------
+        ValueError
+            If the triangle is not cumulative or has an origin with a gap or
+            without exposure, if a setting is invalid, if the programs
+            together have no degree of freedom, or if a development column
+            or origin sums to too little (the error names it).
+        """
+    @property
+    def level_cv(self, /) -> float |None:
+        """
+        Coefficient of variation of the industry loss ratio's prior, or
+        ``None`` for a flat prior on its log.
+        """
+    @property
+    def max_depth(self, /) -> int:
+        """
+        Largest NUTS tree depth.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        Number of predictive simulations.
+        """
+    @property
+    def omega_scale(self, /) -> float:
+        """
+        Scale of the half-normal prior on ``omega``.
+        """
+    @property
+    def pattern_prior(self, /) -> PatternPrior |None:
+        """
+        The prior on the shared pattern, or ``None`` for the vague
+        ``N(0, development_sd**2)``.
+        """
+    @property
+    def process(self, /) -> str:
+        """
+        Process error: ``"gamma"`` or ``"none"``.
+        """
+    @property
+    def seed(self, /) -> int:
+        """
+        Seed of the chains and of the simulations.
+        """
+    @property
+    def target_accept(self, /) -> float:
+        """
+        Target mean acceptance rate.
+        """
+    @property
+    def tau_scale(self, /) -> float:
+        """
+        Scale of the half-normal prior on ``tau``.
+        """
+    @property
+    def tune(self, /) -> int:
+        """
+        Warm-up draws per chain.
+        """
+
+@final
+class HierarchicalBfFit:
+    """
+    A fitted ``HierarchicalBf``: the posterior of the industry loss ratio
+    ``level``, the spreads ``tau`` and ``omega``, and every program's
+    effects, its MCMC diagnostics, and the joint posterior predictive
+    distribution of every program's reserves by origin (``reserves``, with
+    the triangle's keys and ``"origin"`` as dimensions, paired by posterior
+    draw because the programs share parameters). ``programs`` holds what
+    the fit says about each program.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def ages(self, /) -> list[int]:
+        """
+        The development ages of every program's pattern, in months.
+        """
+    @property
+    def chains(self, /) -> int:
+        """
+        Number of chains.
+        """
+    @property
+    def diagnostics(self, /) -> dict:
+        """
+        MCMC diagnostics: a dict with ``max_rhat``, ``min_ess_bulk``,
+        ``min_ess_tail``, ``divergences`` and ``warnings`` (one message per
+        failed threshold; empty when every threshold holds).
+        """
+    @property
+    def draws(self, /) -> list[list[float]]:
+        """
+        Posterior draws, one row per draw (chain by chain), one column per
+        parameter in the order of ``parameter_names``.
+        """
+    def hyperparameters(self, /) -> Any:
+        """
+        The posterior of the hyperparameters on their natural scale, in the
+        columns of ``summary``: ``level`` (the industry loss ratio), ``tau``
+        (the spread of the programs' loss ratios) and ``omega`` (the spread
+        of their patterns). Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def parameter_names(self, /) -> list[str]:
+        """
+        Parameter names, in the order of the columns of ``draws``:
+        ``log_level``, ``log_tau``, ``z[c]``, ``alpha[c,w]``, ``beta[d]``,
+        ``log_omega`` and ``delta[c,d]``.
+        """
+    @property
+    def programs(self, /) -> list[HierarchicalBfProgram]:
+        """
+        The programs, in the triangle's segment order.
+        
+        Returns
+        -------
+        list of HierarchicalBfProgram
+        """
+    @property
+    def reserves(self, /) -> PredictiveDistribution:
+        """
+        Joint posterior predictive distribution of the reserve (the sum of
+        future incremental values) by program and origin: one component per
+        program and origin, one row per simulation. Each program's part is
+        its ``reserves``.
+        """
+    @property
+    def scale_per_premium(self, /) -> float:
+        """
+        The pooled scale per unit of premium, ``kappa``: a program's scale
+        is ``kappa`` times its mean premium per origin.
+        """
+    def summary(self, /) -> Any:
+        """
+        Posterior summary, one row per sampled parameter: ``parameter``,
+        ``mean``, ``sd``, ``q05``, ``q50``, ``q95``, ``rhat``, ``ess_bulk``
+        and ``ess_tail``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per program: ``program``, ``origins`` (their number),
+        ``exposure``, ``latest``, ``prior_ultimate`` and
+        ``expected_ultimate`` (summed over the origins), ``scale``,
+        ``loss_ratio``, ``own_loss_ratio``, ``shrinkage`` and the ``mean``
+        and ``std_dev`` of the program's posterior predictive reserve.
+        Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+
+@final
+class HierarchicalBfProgram:
+    """
+    One program of a ``HierarchicalBfFit``. Per-origin lists run over the
+    program's origins in order (``origins``).
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def expected_ultimate(self, /) -> list[float]:
+        """
+        The posterior mean of each origin's expected ultimate.
+        """
+    @property
+    def exposure(self, /) -> list[float]:
+        """
+        Exposure per origin: the exposure column's latest observed value.
+        """
+    @property
+    def key(self, /) -> list[str]:
+        """
+        The program's key values, one per key of the triangle.
+        """
+    @property
+    def label(self, /) -> str:
+        """
+        The program's segment label: the key values joined by ``" / "``.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        The latest observed cumulative value of each origin.
+        """
+    @property
+    def loss_ratio(self, /) -> float:
+        """
+        The posterior mean of the program's loss ratio ``L * s``.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each origin.
+        """
+    @property
+    def own_loss_ratio(self, /) -> float:
+        """
+        The loss ratio of the program's own chain ladder (its ultimates over
+        its premium, with the factors pooled over every program past the
+        ages it observes).
+        """
+    @property
+    def pattern(self, /) -> list[float]:
+        """
+        The posterior mean of the program's share at each of the fit's
+        ``ages``; the shares sum to 1.
+        """
+    @property
+    def prior_ultimate(self, /) -> list[float]:
+        """
+        The hyperprior's mean of each origin's expected ultimate,
+        ``apriori * exposure``.
+        """
+    @property
+    def reserves(self, /) -> PredictiveDistribution:
+        """
+        The program's part of the fit's ``reserves``, by origin, paired
+        with it simulation by simulation.
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        The plugged-in scale, ``scale_per_premium`` times the program's mean
+        premium per origin.
+        """
+    @property
+    def shrinkage(self, /) -> float:
+        """
+        How far the program stays from the collective on the log scale: 1
+        keeps its own level and 0 takes the collective's; ``nan`` when its
+        own loss ratio is not positive.
+        """
+
+@final
 class HierarchicalCredibilityFit:
     """
     A fitted Bayesian hierarchical credibility model, from
