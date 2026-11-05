@@ -1,0 +1,1 @@
+* **Update**: [Building and testing the Excel XLL without Excel](/environment/xll-builds.md), branch claude/xll-remove-aliases: the add-in no longer registers hidden old names (macro type 0); they were removed before a release.

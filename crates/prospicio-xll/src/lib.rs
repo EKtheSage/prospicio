@@ -15,7 +15,6 @@
 //! and rename `prospicio_xll.dll` to `prospicio.xll`.
 
 pub mod aggregate;
-pub mod aliases;
 pub mod allocation;
 pub mod bayes;
 pub mod cashflow;
@@ -42,7 +41,6 @@ pub mod triangles;
 #[cfg(windows)]
 mod xll;
 
-pub use aliases::{ALIASES, Alias};
 use sheet::{Grid, Value};
 
 /// One worksheet argument.
@@ -2866,18 +2864,13 @@ pub static FUNCTIONS: &[Function] = &[
     },
 ];
 
-/// Runs the function exported as `symbol` (or an old name's alias of it,
-/// [`ALIASES`]) on `args`, catching a panic so
+/// Runs the function exported as `symbol` on `args`, catching a panic so
 /// that it never unwinds into Excel. An error comes back as a single text
 /// cell starting with `#PROSPICIO!`, which shows the user why.
 ///
 /// Arguments past those given are omitted ones, as Excel passes for an
 /// optional argument left out.
 pub fn call(symbol: &str, mut args: Vec<Grid>) -> Grid {
-    let symbol = ALIASES
-        .iter()
-        .find(|a| a.symbol == symbol)
-        .map_or(symbol, |a| a.target);
     let Some(f) = FUNCTIONS.iter().find(|f| f.symbol == symbol) else {
         return error_cell(&format!("no function {symbol}"));
     };
