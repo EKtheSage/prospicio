@@ -6,7 +6,8 @@
   `PRO.AGG.STATS` is `PRO.CAP.AGG.STATS`), and the old names are gone: a
   formula with one shows `#NAME?`. Severities, EVT tails, triangle
   helpers, `PRO.VERSION` and `PRO.YEARFRACTION` keep their names.
-  `docs/design/xll.md` decision 47 lists every old and new name (#746).
+  `docs/design/xll.md` decision 47 lists every old and new name (#746,
+  #747).
 
 ### Excel
 
