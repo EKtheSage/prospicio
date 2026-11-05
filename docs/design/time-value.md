@@ -459,6 +459,37 @@ frame).
     method. In Python `DealBook.adequacy(assets, cost_of_capital=,
     distortion=)` and in R `book_adequacy()`, each a table of columns.
 
+37. **An accident-period pattern converted to the deal's underwriting year
+    on the single-pattern route** (#722, items (a) to (e) proposed):
+    `monthly_patterns(written, pattern, accident_period="year")` (R
+    `cashflow_patterns_from_annual(..., accident_period = "year")`) reads
+    the payment pattern as an accident-year (or `"quarter"`, `"month"`)
+    pattern, from the start of the period, and returns the paid pattern of
+    the deal's underwriting year from inception, so a chain ladder's
+    pattern is no longer lagged a second time from each accident date.
+    (a) *The conversion is the Reserving lane's*:
+    `SelectedPattern::to_underwriting_basis` (`reserving-v02.md` decisions
+    21 and 25), composed in the bindings, since `prospicio-pricing` and
+    `prospicio-reserving` do not depend on each other; in Rust,
+    `MonthlyPatterns::from_paid` takes the converted pattern with the
+    written one. (b) *The deal's own writing is the basis's*: the
+    increments of `written`, trimmed after the last month that writes, with
+    `policy_months` the policy term, so the earned pattern and the paid
+    pattern describe the same policies (the earned pattern is the
+    accident-date route's, unchanged). (c) *`reading` is decision 25's*:
+    the Weibull by default, the log-logistic or `"ln-linear"` (decision
+    18's rule). (d) *The pattern's times are whole months* (a time in
+    years times 12); another time is an error, as is an unknown
+    `accident_period` or `reading`. (e) *Between and past the pattern's
+    ages* the paid share is linear from 0 to the first age, the latest
+    converted value at or below each month, and the last value past the
+    end, as `DevelopmentPatterns::monthly` fills a draw. Without
+    `accident_period` every result is unchanged. On the sample
+    submission's paid chain ladder the deal pays 15.0% by month 12 and
+    58.6% by month 24, the mean of the fit's draws converted one by one
+    (`knowledge/findings/ils-deal-analysis-monthly-patterns.md`), against
+    7.3% and 39.6% read from each accident date.
+
 ## Conventions left as settings (cash-flow engine)
 
 The user accepted these on 2026-10-22 as built: each stays a setting with
@@ -535,3 +566,12 @@ planned.
   summed; the calendar places a 1 July deal's written premium half in
   each year and each deal's paid loss adds up to its loss
   (`prospicio_pricing::book` tests).
+- An accident-year pattern on the underwriting basis (#722;
+  `test_an_accident_year_pattern_on_the_underwriting_basis` in
+  `python/tests/test_pricing.py` and its R twin in `test-pricing.R`): an
+  accident-year pattern averaged from a Weibull accident-month truth,
+  converted, equals the truth convolved with `UnderwritingBasis()`'s
+  exposure to 1e-6 at months 3 to 120; the paid pattern never falls and
+  the earned pattern is the accident-date route's; the sample
+  submission's chain ladder pays 15.0% and 58.6% by months 12 and 24, the
+  issue's figures for the fit's draws converted one by one.

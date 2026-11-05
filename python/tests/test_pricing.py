@@ -1364,6 +1364,72 @@ def test_monthly_patterns_from_a_payment_pattern():
     assert len(terms.run([0.7])) == 1
 
 
+def test_an_accident_year_pattern_on_the_underwriting_basis():
+    """#722: an accident-year pattern converted to the deal's underwriting
+    year equals the exact convolution of the accident-month truth with the
+    deal's exposure, and pays the sample submission's deal about twice as
+    fast in its first year as the accident-date reading."""
+    import csv
+    import math
+    import pathlib
+
+    from prospicio.reserving import ChainLadder, Triangle, UnderwritingBasis
+
+    # A Weibull accident-month truth (months from the month's start) and the
+    # accident-year pattern it averages to.
+    theta, omega = 18.0, 1.4
+
+    def month(x):
+        return 0.0 if x <= 0 else 1.0 - math.exp(-((x / theta) ** omega))
+
+    years = 20
+    year_pct = [sum(month(12 * k - q) for q in range(12)) / 12 for k in range(1, years + 1)]
+    shares = [year_pct[0]] + [b - a for a, b in zip(year_pct, year_pct[1:])]
+    shares[-1] += 1.0 - sum(shares)
+    pattern = P.PaymentPattern([float(k) for k in range(1, years + 1)], shares)
+    n = 120
+    written = [min((t + 1) / 12, 1.0) for t in range(n)]
+    w, e, paid = P.monthly_patterns(written, pattern, accident_period="year")
+    exposure = UnderwritingBasis().exposure()
+    for age in [3, 6, 12, 18, 24, 36, 60, 120]:
+        truth = sum(x * month(age - t) for t, x in enumerate(exposure))
+        assert paid[age - 1] == pytest.approx(truth, abs=1e-6)
+    assert all(b >= a - 1e-15 for a, b in zip(paid, paid[1:]))
+    # The earned pattern is the accident-date route's.
+    assert e == pytest.approx(P.monthly_patterns(written, pattern)[1], abs=1e-15)
+
+    # The sample submission's paid chain ladder pattern.
+    root = pathlib.Path(__file__).resolve().parents[2] / "examples" / "data" / "submission"
+    with open(root / "triangle.csv") as f:
+        rows = list(csv.DictReader(f))
+    tri = Triangle.from_long(
+        [int(r["accident_year"]) for r in rows],
+        [int(r["development_months"]) for r in rows],
+        {"paid": [float(r["paid"]) for r in rows]},
+    )
+    cdf = list(ChainLadder().fit(tri, "paid").cdf)
+    ages = [12 * (i + 1) for i in range(len(cdf))]
+    chain = P.PaymentPattern.from_development([a / 12 for a in ages], [*[max(1.0, c) for c in cdf[:-1]], 1.0])
+    # The issue's figures: 7.3% and 39.6% paid by months 12 and 24 from the
+    # accident date, 15.0% and 58.6% on the underwriting year (the mean over
+    # a fit's draws converted one by one); 132 months reach the end.
+    written = [min((t + 1) / 12, 1.0) for t in range(132)]
+    accident_date = P.monthly_patterns(written, chain)[2]
+    underwriting = P.monthly_patterns(written, chain, accident_period="year")[2]
+    assert accident_date[11] == pytest.approx(0.0735, abs=5e-4)
+    assert accident_date[23] == pytest.approx(0.3961, abs=5e-4)
+    assert underwriting[11] == pytest.approx(0.1501, abs=5e-4)
+    assert underwriting[23] == pytest.approx(0.5856, abs=5e-4)
+    assert underwriting[131] == pytest.approx(1.0, abs=1e-12)
+
+    with pytest.raises(ValueError, match="accident_period"):
+        P.monthly_patterns(written, chain, accident_period="week")
+    with pytest.raises(ValueError, match="whole, positive months"):
+        P.monthly_patterns(written, P.PaymentPattern([0.5, 1.03], [0.5, 0.5]), accident_period="year")
+    with pytest.raises(ValueError, match="reading"):
+        P.monthly_patterns(written, chain, accident_period="year", reading="spline")
+
+
 def test_reinstatement_premium_in_its_own_price():
     from prospicio.distributions import Sampled
     from prospicio.pricing import price, price_with_reinstatements

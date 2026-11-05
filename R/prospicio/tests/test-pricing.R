@@ -815,6 +815,37 @@ local({
   stopifnot(length(r$funded) == 1)
 })
 
+# An accident-year pattern on the deal's underwriting basis (#722): the
+# converted paid pattern equals the accident-month truth convolved with the
+# deal's exposure.
+local({
+  theta <- 18; omega <- 1.4
+  month <- function(x) ifelse(x <= 0, 0, 1 - exp(-(x / theta)^omega))
+  years <- 20
+  year_pct <- vapply(1:years, function(k) mean(month(12 * k - 0:11)), 0)
+  shares <- diff(c(0, year_pct))
+  shares[years] <- shares[years] + 1 - sum(shares)
+  p <- payment_pattern(as.double(1:years), shares)
+  written <- pmin((1:120) / 12, 1)
+  uy <- cashflow_patterns_from_annual(written, p, accident_period = "year")
+  e <- underwriting_basis()$exposure
+  for (age in c(3, 6, 12, 18, 24, 36, 60, 120)) {
+    truth <- sum(e * month(age - seq_along(e) + 1))
+    stopifnot(abs(uy$paid[age] - truth) < 1e-6)
+  }
+  stopifnot(all(diff(uy$paid) >= -1e-15))
+  stopifnot(max(abs(uy$earned - cashflow_patterns_from_annual(written, p)$earned)) < 1e-15)
+  bad <- function(expr, what) {
+    msg <- tryCatch({ expr; "" }, error = conditionMessage)
+    stopifnot(grepl(what, msg))
+  }
+  bad(cashflow_patterns_from_annual(written, p, accident_period = "week"), "accident_period")
+  bad(cashflow_patterns_from_annual(written, payment_pattern(c(0.5, 1.03), c(0.5, 0.5)),
+                                    accident_period = "year"), "whole, positive months")
+  bad(cashflow_patterns_from_annual(written, p, accident_period = "year", reading = "spline"),
+      "should be one of")
+})
+
 # Cat bonds: triggers, tranches, distortion pricing and basis risk (#570).
 bond <- cat_bond("industry_index", 50, 150, weights = c(0.10, 0.05), principal = 100)
 cb <- cat_bond_apply(bond, list(list(c(800, 400)), list()))

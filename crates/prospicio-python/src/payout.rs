@@ -29,9 +29,20 @@ pub(crate) fn interpolation_arg(s: &str) -> PyResult<Interpolation> {
 ///
 /// The premium written in month ``s`` is written at its start and earned
 /// evenly over the ``policy_months`` months from it. Losses occur as
-/// premium is earned, in the middle of their month, and are paid by
-/// ``pattern``, measured from the accident date and read between its times
-/// by ``interpolation`` (as ``PaymentPattern.paid_by``).
+/// premium is earned, in the middle of their month.
+///
+/// Without ``accident_period`` they are paid by ``pattern`` measured from
+/// the accident date and read between its times by ``interpolation`` (as
+/// ``PaymentPattern.paid_by``). With ``accident_period="year"`` (or
+/// ``"quarter"``, ``"month"``) the pattern is an accident-period pattern,
+/// such as a chain ladder's, measured from the start of each accident
+/// period: the deal is then one underwriting period, written as
+/// ``written`` says over policies of ``policy_months``, and its paid
+/// pattern is the accident-period pattern converted to it (#722), as
+/// ``UnderwritingBasis`` and ``fit.patterns.monthly(basis=...)`` convert,
+/// an annual pattern read at monthly ages by ``reading`` (``"weibull"``,
+/// the default, ``"loglogistic"`` or ``"ln-linear"``). The pattern's times
+/// must then be whole months, and ``interpolation`` is not used.
 ///
 /// Parameters
 /// ----------
@@ -41,6 +52,8 @@ pub(crate) fn interpolation_arg(s: &str) -> PyResult<Interpolation> {
 /// pattern : PaymentPattern
 /// policy_months : int, default 12
 /// interpolation : {"linear", "step", "log-linear"}, default "linear"
+/// accident_period : {"year", "quarter", "month"}, optional
+/// reading : {"weibull", "loglogistic", "ln-linear"}, default "weibull"
 ///
 /// Returns
 /// -------
@@ -54,22 +67,119 @@ pub(crate) fn interpolation_arg(s: &str) -> PyResult<Interpolation> {
 /// >>> w, e, paid = monthly_patterns([1.0] * 60, p)
 /// >>> e[5], e[11], round(paid[59], 12)
 /// (0.5, 1.0, 1.0)
+/// >>> even = [min(1.0, (m + 1) / 12) for m in range(60)]
+/// >>> _, _, uy = monthly_patterns(even, p, accident_period="year")
+/// >>> round(uy[59], 12)
+/// 1.0
 #[pyfunction]
-#[pyo3(signature = (written, pattern, policy_months = 12, interpolation = "linear"))]
+#[pyo3(signature = (written, pattern, policy_months = 12, interpolation = "linear", accident_period = None, reading = "weibull"))]
 pub(crate) fn monthly_patterns(
     written: Vec<f64>,
     pattern: PyRef<'_, PyPaymentPattern>,
     policy_months: usize,
     interpolation: &str,
+    accident_period: Option<&str>,
+    reading: &str,
 ) -> PyResult<(Vec<f64>, Vec<f64>, Vec<f64>)> {
-    let p = MonthlyPatterns::from_annual(
-        written,
-        policy_months,
-        &pattern.inner,
-        interpolation_arg(interpolation)?,
-    )
+    let p = match accident_period {
+        None => MonthlyPatterns::from_annual(
+            written,
+            policy_months,
+            &pattern.inner,
+            interpolation_arg(interpolation)?,
+        ),
+        Some(period) => {
+            let paid = underwriting_paid(
+                &pattern.inner,
+                accident_grain(period)?,
+                &written,
+                policy_months,
+                reading_arg(reading)?,
+            )?;
+            MonthlyPatterns::from_paid(written, policy_months, paid)
+        }
+    }
     .map_err(to_py)?;
     Ok((p.written, p.earned, p.paid))
+}
+
+fn accident_grain(name: &str) -> PyResult<prospicio_reserving::Grain> {
+    use prospicio_reserving::Grain;
+    match name {
+        "year" => Ok(Grain::Year),
+        "quarter" => Ok(Grain::Quarter),
+        "month" => Ok(Grain::Month),
+        other => Err(PyValueError::new_err(format!(
+            "accident_period must be \"year\", \"quarter\" or \"month\", got {other:?}"
+        ))),
+    }
+}
+
+fn reading_arg(name: &str) -> PyResult<prospicio_reserving::AnnualReading> {
+    use prospicio_reserving::{AnnualReading, GrowthCurve};
+    match name {
+        "weibull" => Ok(AnnualReading::Curve(GrowthCurve::Weibull)),
+        "loglogistic" => Ok(AnnualReading::Curve(GrowthCurve::LogLogistic)),
+        "ln-linear" => Ok(AnnualReading::LnLinear),
+        other => Err(PyValueError::new_err(format!(
+            "reading must be \"weibull\", \"loglogistic\" or \"ln-linear\", got {other:?}"
+        ))),
+    }
+}
+
+/// The deal's paid pattern by month from inception when `pattern` is an
+/// accident-period pattern measured from each period's start: the pattern
+/// converted to one underwriting period written as `written` says over
+/// policies of `policy_months` (`SelectedPattern::to_underwriting_basis`),
+/// `paid[t]` its share developed at `t + 1` months (linear from 0 below its
+/// first age, its level past its last).
+fn underwriting_paid(
+    pattern: &PaymentPattern,
+    grain: prospicio_reserving::Grain,
+    written: &[f64],
+    policy_months: usize,
+    reading: prospicio_reserving::AnnualReading,
+) -> PyResult<Vec<f64>> {
+    use prospicio_reserving::{PatternKind, SelectedPattern, UnderwritingBasis};
+    let mut cumulative = 0.0;
+    let mut values = Vec::with_capacity(pattern.times().len());
+    for (&t, &share) in pattern.times().iter().zip(pattern.shares()) {
+        cumulative += share;
+        let months = t * 12.0;
+        if t <= 0.0 || (months - months.round()).abs() > 1e-9 {
+            return Err(PyValueError::new_err(format!(
+                "an accident-period pattern needs times at whole, positive months; {t} years is \
+                 not one"
+            )));
+        }
+        values.push((months.round() as u32, cumulative));
+    }
+    let writing: Vec<f64> = (0..written.len())
+        .map(|t| written[t] - if t == 0 { 0.0 } else { written[t - 1] })
+        .collect();
+    let last = writing.iter().rposition(|&w| w != 0.0).map_or(0, |i| i + 1);
+    let basis = UnderwritingBasis::new(writing[..last.max(1)].to_vec(), policy_months as u32)
+        .with_reading(reading);
+    let uy = SelectedPattern::new(PatternKind::PercentDeveloped, values)
+        .to_underwriting_basis(grain, &basis)
+        .map_err(crate::reserving::err)?;
+    let mut points = uy.values;
+    points.sort_by_key(|v| v.0);
+    let (first_age, first) = points[0];
+    let level = points.last().map_or(1.0, |v| v.1);
+    Ok((1..=written.len() as u32)
+        .map(|age| {
+            if age < first_age {
+                first * f64::from(age) / f64::from(first_age)
+            } else {
+                points
+                    .iter()
+                    .rev()
+                    .find(|v| v.0 <= age)
+                    .map_or(level, |v| v.1)
+            }
+        })
+        .collect())
 }
 
 /// The share of the ultimate loss paid at each time, in years from the

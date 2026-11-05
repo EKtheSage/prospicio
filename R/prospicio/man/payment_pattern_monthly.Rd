@@ -15,7 +15,9 @@ cashflow_patterns_from_annual(
   written,
   pattern,
   policy_months = 12,
-  interpolation = c("linear", "step", "log-linear")
+  interpolation = c("linear", "step", "log-linear"),
+  accident_period = NULL,
+  reading = c("weibull", "loglogistic", "ln-linear")
 )
 }
 \arguments{
@@ -30,6 +32,12 @@ cashflow_patterns_from_annual(
 length is the patterns'.}
 
 \item{policy_months}{The policy term in months.}
+
+\item{accident_period}{\code{NULL} (the pattern runs from the accident date),
+or \code{"year"}, \code{"quarter"} or \code{"month"}.}
+
+\item{reading}{How an accident-period pattern is read at monthly ages:
+\code{"weibull"}, \code{"loglogistic"} or \code{"ln-linear"}.}
 }
 \value{
 \code{payment_pattern_monthly()} a numeric vector;
@@ -53,7 +61,14 @@ written in month \code{s} is written at its start and earned evenly over the
 \code{policy_months} months from it; losses occur as premium is earned, in
 the middle of their month, and are paid by \code{pattern} measured from the
 accident date. All premium written at once is a single policy; written
-evenly over a year, policies written through it.
+evenly over a year, policies written through it. With \code{accident_period = "year"} (or \code{"quarter"}, \code{"month"}) the pattern is an accident-period
+pattern, such as a chain ladder's, measured from the start of each
+accident period: the deal is then one underwriting period written as
+\code{written} says over policies of \code{policy_months}, and its paid pattern is
+the accident-period pattern converted to it (#722), as
+\code{\link[=underwriting_basis]{underwriting_basis()}} and \code{monthly_pattern_draws()} convert, an annual
+pattern read at monthly ages by \code{reading}; the pattern's times must be
+whole months, and \code{interpolation} is not used.
 }
 \examples{
 p <- payment_pattern_from_development(c(1, 2, 3), c(4, 1.25, 1))

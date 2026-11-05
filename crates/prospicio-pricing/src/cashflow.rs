@@ -60,6 +60,26 @@ pub struct MonthlyPatterns {
     pub paid: Vec<f64>,
 }
 
+/// Each month's increment of a cumulative pattern.
+fn increments(v: &[f64]) -> Vec<f64> {
+    (0..v.len())
+        .map(|t| v[t] - if t == 0 { 0.0 } else { v[t - 1] })
+        .collect()
+}
+
+/// The share earned by the end of each month: the premium written in month
+/// `s` earns evenly over the `policy_months` months from it.
+fn earned_from_written(written: &[f64], policy_months: usize) -> Vec<f64> {
+    let dw = increments(written);
+    (0..written.len())
+        .map(|t| {
+            (0..=t)
+                .map(|s| dw[s] * ((t - s + 1) as f64 / policy_months as f64).min(1.0))
+                .sum()
+        })
+        .collect()
+}
+
 impl MonthlyPatterns {
     /// The earned and paid patterns from a written one, a policy term and a
     /// payment pattern by development age (#601). The premium written in
@@ -108,19 +128,7 @@ impl MonthlyPatterns {
             ));
         }
         let n = written.len();
-        let increments = |v: &[f64]| -> Vec<f64> {
-            (0..v.len())
-                .map(|t| v[t] - if t == 0 { 0.0 } else { v[t - 1] })
-                .collect()
-        };
-        let dw = increments(&written);
-        let earned: Vec<f64> = (0..n)
-            .map(|t| {
-                (0..=t)
-                    .map(|s| dw[s] * ((t - s + 1) as f64 / policy_months as f64).min(1.0))
-                    .sum()
-            })
-            .collect();
+        let earned = earned_from_written(&written, policy_months);
         let de = increments(&earned);
         // The share paid of a month's losses after k whole months.
         let lag: Vec<f64> = (0..n)
@@ -130,6 +138,52 @@ impl MonthlyPatterns {
             .map(|t| (0..=t).map(|e| de[e] * lag[t - e]).sum())
             .collect();
         Self::new(written, earned, paid_share)
+    }
+
+    /// The earned pattern from a written one and a policy term, as
+    /// [`from_annual`](Self::from_annual) earns it, with the paid pattern
+    /// given: the cumulative share of the deal's ultimate loss paid by the
+    /// end of each month from inception, of `written`'s length (#722).
+    ///
+    /// This is the route for a payment pattern already on the deal's own
+    /// basis: an accident-year pattern converted to the deal's underwriting
+    /// year, which the Python and R `monthly_patterns(...,
+    /// accident_period=)` do with the reserving crate's
+    /// `SelectedPattern::to_underwriting_basis` and the deal's own writing
+    /// and term. `paid[t]` is that pattern at age `t + 1` months.
+    ///
+    /// ```
+    /// use prospicio_pricing::cashflow::MonthlyPatterns;
+    ///
+    /// // Premium written evenly over the year, 12-month policies, and the
+    /// // underwriting year paid evenly over its first 36 months.
+    /// let written: Vec<f64> = (1..=48).map(|m| (f64::from(m) / 12.0).min(1.0)).collect();
+    /// let paid: Vec<f64> = (1..=48).map(|m| (f64::from(m) / 36.0).min(1.0)).collect();
+    /// let p = MonthlyPatterns::from_paid(written, 12, paid).unwrap();
+    /// assert!((p.earned[23] - 1.0).abs() < 1e-15 && (p.paid[35] - 1.0).abs() < 1e-15);
+    /// ```
+    pub fn from_paid(written: Vec<f64>, policy_months: usize, paid: Vec<f64>) -> Result<Self> {
+        if policy_months == 0 {
+            return Err(Error::InvalidParameter {
+                name: "policy_months",
+                value: 0.0,
+                reason: "must be at least 1",
+            });
+        }
+        if written.is_empty() || written.iter().any(|w| !w.is_finite()) {
+            return Err(Error::Data(
+                "the written pattern must be finite, with at least one month".into(),
+            ));
+        }
+        if paid.len() != written.len() {
+            return Err(Error::Data(format!(
+                "{} paid months for {} written",
+                paid.len(),
+                written.len()
+            )));
+        }
+        let earned = earned_from_written(&written, policy_months);
+        Self::new(written, earned, paid)
     }
 
     /// From the three cumulative patterns, finite and of one length.

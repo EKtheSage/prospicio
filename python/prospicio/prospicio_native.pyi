@@ -37454,7 +37454,7 @@ def moic(released: float, funded: float, opening: float) -> float:
     1.3
     """
 
-def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_months: int = 12, interpolation: str = "linear") -> tuple[list[float], list[float], list[float]]:
+def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_months: int = 12, interpolation: str = "linear", accident_period: str |None = None, reading: str = "weibull") -> tuple[list[float], list[float], list[float]]:
     """
     The monthly written, earned and paid patterns of ``CashflowTerms`` from
     a written pattern, a policy term and a payment pattern by development
@@ -37462,9 +37462,20 @@ def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_m
     
     The premium written in month ``s`` is written at its start and earned
     evenly over the ``policy_months`` months from it. Losses occur as
-    premium is earned, in the middle of their month, and are paid by
-    ``pattern``, measured from the accident date and read between its times
-    by ``interpolation`` (as ``PaymentPattern.paid_by``).
+    premium is earned, in the middle of their month.
+    
+    Without ``accident_period`` they are paid by ``pattern`` measured from
+    the accident date and read between its times by ``interpolation`` (as
+    ``PaymentPattern.paid_by``). With ``accident_period="year"`` (or
+    ``"quarter"``, ``"month"``) the pattern is an accident-period pattern,
+    such as a chain ladder's, measured from the start of each accident
+    period: the deal is then one underwriting period, written as
+    ``written`` says over policies of ``policy_months``, and its paid
+    pattern is the accident-period pattern converted to it (#722), as
+    ``UnderwritingBasis`` and ``fit.patterns.monthly(basis=...)`` convert,
+    an annual pattern read at monthly ages by ``reading`` (``"weibull"``,
+    the default, ``"loglogistic"`` or ``"ln-linear"``). The pattern's times
+    must then be whole months, and ``interpolation`` is not used.
     
     Parameters
     ----------
@@ -37474,6 +37485,8 @@ def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_m
     pattern : PaymentPattern
     policy_months : int, default 12
     interpolation : {"linear", "step", "log-linear"}, default "linear"
+    accident_period : {"year", "quarter", "month"}, optional
+    reading : {"weibull", "loglogistic", "ln-linear"}, default "weibull"
     
     Returns
     -------
@@ -37487,6 +37500,10 @@ def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_m
     >>> w, e, paid = monthly_patterns([1.0] * 60, p)
     >>> e[5], e[11], round(paid[59], 12)
     (0.5, 1.0, 1.0)
+    >>> even = [min(1.0, (m + 1) / 12) for m in range(60)]
+    >>> _, _, uy = monthly_patterns(even, p, accident_period="year")
+    >>> round(uy[59], 12)
+    1.0
     """
 
 def murphy(y: Sequence[float], pred: Sequence[float], family: str = "gaussian", weights: Sequence[float] |None = None, theta: float |None = None, power: float |None = None) -> dict[str, float]:
