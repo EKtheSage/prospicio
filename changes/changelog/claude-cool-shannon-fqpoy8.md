@@ -16,4 +16,4 @@
   `risk_rs.tabular_net_fit` artifact); one head without embeddings is
   `Cann` bit for bit. Python `TabularNet`, `Head`, `TabularNetFit`, R
   `tabular_net_fit()`, `net_head()`, `network_embeddings()`,
-  `embedding_columns()` (#577).
+  `embedding_columns()` (#577, #749).
