@@ -74,6 +74,7 @@ mod bf_normalised;
 mod compartmental;
 mod dual;
 mod excess_prior;
+mod hierarchical_bf;
 mod laplace;
 mod meyers;
 mod moment_match;
@@ -92,6 +93,7 @@ pub use compartmental::{
     MAX_INCURRED_ONLY_KP_SD, Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior, Scale,
 };
 pub use excess_prior::{LAYER_EXPOSURE_COLUMN, LayerSharePrior, ShareDependence};
+pub use hierarchical_bf::{HierarchicalBf, HierarchicalBfFit, HierarchicalBfProgram};
 pub use meyers::{Meyers, MeyersFit, MeyersFits, MeyersModel, MeyersSegment, NewOriginLevel};
 pub use new_year::NewYear;
 pub use odp::{BayesOdp, BayesOdpFit, BayesOdpFits, BayesOdpSegment};

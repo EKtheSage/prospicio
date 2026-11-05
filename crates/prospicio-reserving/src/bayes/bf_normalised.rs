@@ -549,7 +549,7 @@ impl BayesBfNormalised {
 
     /// The chain ladder, the model and the Newton start of one segment.
     #[cfg(test)]
-    fn prepare(
+    pub(super) fn prepare(
         &self,
         segment: &Segment,
         exposure: &[f64],
@@ -1010,7 +1010,7 @@ impl ReserveFit for BayesBfNormalisedFit {
 /// The log posterior on `theta = (u_1..u_n, beta_2..beta_m)`, sampled with
 /// `u_w = alpha_w - log m_w`; `beta_1 = 0` is not a parameter.
 #[derive(Debug, Clone)]
-struct Model {
+pub(super) struct Model {
     n_origins: usize,
     n_dev: usize,
     /// Observed increments: (origin, development position, value).
@@ -1112,7 +1112,13 @@ fn n_cells(n: usize) -> String {
 /// log-linear mean exists, under an informative one the posterior of the
 /// origin's ultimate is a gamma of shape `shape + sum / phi <= 0`, improper.
 /// A finite `cv` below `sqrt(-phi / sum)` makes it proper.
-fn origin_error(origin: &crate::Period, n: usize, sum: f64, shape: f64, phi: f64) -> Error {
+pub(super) fn origin_error(
+    origin: &crate::Period,
+    n: usize,
+    sum: f64,
+    shape: f64,
+    phi: f64,
+) -> Error {
     let cells = n_cells(n);
     let cause = if shape == 0.0 {
         "so no log-linear mean exists under a flat prior (an infinite cv): the model's mean \
@@ -1151,7 +1157,7 @@ fn origin_error(origin: &crate::Period, n: usize, sum: f64, shape: f64, phi: f64
 /// a middle age cannot be dropped, since `max_age` keeps every age up to
 /// one, `Triangle::from_long` fills every age from the first to the last
 /// and the chain ladder then refuses the empty column.
-fn column_error(
+pub(super) fn column_error(
     ages: &[crate::Lag],
     d: usize,
     n: usize,
