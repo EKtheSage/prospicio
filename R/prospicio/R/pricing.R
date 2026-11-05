@@ -1883,7 +1883,15 @@ pattern_values <- function(pattern, rate = 0, t = double()) {
 #' `policy_months` months from it; losses occur as premium is earned, in
 #' the middle of their month, and are paid by `pattern` measured from the
 #' accident date. All premium written at once is a single policy; written
-#' evenly over a year, policies written through it.
+#' evenly over a year, policies written through it. With `accident_period =
+#' "year"` (or `"quarter"`, `"month"`) the pattern is an accident-period
+#' pattern, such as a chain ladder's, measured from the start of each
+#' accident period: the deal is then one underwriting period written as
+#' `written` says over policies of `policy_months`, and its paid pattern is
+#' the accident-period pattern converted to it (#722), as
+#' [underwriting_basis()] and `monthly_pattern_draws()` convert, an annual
+#' pattern read at monthly ages by `reading`; the pattern's times must be
+#' whole months, and `interpolation` is not used.
 #'
 #' @param pattern A [payment_pattern()], by age from the accident date for
 #'   `cashflow_patterns_from_annual()`.
@@ -1892,6 +1900,10 @@ pattern_values <- function(pattern, rate = 0, t = double()) {
 #' @param written The cumulative share written by the end of each month; its
 #'   length is the patterns'.
 #' @param policy_months The policy term in months.
+#' @param accident_period `NULL` (the pattern runs from the accident date),
+#'   or `"year"`, `"quarter"` or `"month"`.
+#' @param reading How an accident-period pattern is read at monthly ages:
+#'   `"weibull"`, `"loglogistic"` or `"ln-linear"`.
 #' @returns `payment_pattern_monthly()` a numeric vector;
 #'   `cashflow_patterns_from_annual()` a list of `written`, `earned` and
 #'   `paid`.
@@ -1915,9 +1927,13 @@ payment_pattern_monthly <- function(pattern, months,
 #' @rdname payment_pattern_monthly
 #' @export
 cashflow_patterns_from_annual <- function(written, pattern, policy_months = 12,
-                                          interpolation = c("linear", "step", "log-linear")) {
+                                          interpolation = c("linear", "step", "log-linear"),
+                                          accident_period = NULL,
+                                          reading = c("weibull", "loglogistic", "ln-linear")) {
   rust_result(pricing_patterns_from_annual(as.double(written), pattern$times, pattern$shares,
-                                           as.double(policy_months), match.arg(interpolation)))
+                                           as.double(policy_months), match.arg(interpolation),
+                                           if (is.null(accident_period)) "" else accident_period,
+                                           match.arg(reading)))
 }
 
 #' Price over a payout

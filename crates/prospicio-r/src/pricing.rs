@@ -1515,7 +1515,11 @@ fn pricing_pattern_monthly(
 }
 
 /// The monthly written, earned and paid patterns from a written pattern, a
-/// policy term and a payment pattern: `list(written, earned, paid)`.
+/// policy term and a payment pattern: `list(written, earned, paid)`. With
+/// `accident_period` `"year"`, `"quarter"` or `"month"` (empty for none) the
+/// pattern is an accident-period pattern converted to the deal's
+/// underwriting period, read at monthly ages by `reading` (#722).
+#[allow(clippy::too_many_arguments)]
 #[extendr]
 fn pricing_patterns_from_annual(
     written: Vec<f64>,
@@ -1523,16 +1527,103 @@ fn pricing_patterns_from_annual(
     shares: &[f64],
     policy_months: f64,
     interpolation: &str,
+    accident_period: &str,
+    reading: &str,
 ) -> Result<List> {
     let p = PaymentPattern::new(times.to_vec(), shares.to_vec()).map_err(to_r)?;
-    let m = MonthlyPatterns::from_annual(
-        written,
-        whole(policy_months, "policy_months")? as usize,
-        &p,
-        interpolation_arg(interpolation)?,
-    )
+    let months = whole(policy_months, "policy_months")? as usize;
+    let m = if accident_period.is_empty() {
+        MonthlyPatterns::from_annual(written, months, &p, interpolation_arg(interpolation)?)
+    } else {
+        let paid = underwriting_paid(
+            &p,
+            accident_grain(accident_period)?,
+            &written,
+            months,
+            reading_arg(reading)?,
+        )?;
+        MonthlyPatterns::from_paid(written, months, paid)
+    }
     .map_err(to_r)?;
     Ok(list!(written = m.written, earned = m.earned, paid = m.paid))
+}
+
+fn accident_grain(name: &str) -> Result<prospicio_reserving::Grain> {
+    use prospicio_reserving::Grain;
+    match name {
+        "year" => Ok(Grain::Year),
+        "quarter" => Ok(Grain::Quarter),
+        "month" => Ok(Grain::Month),
+        other => Err(Error::Other(format!(
+            "accident_period must be \"year\", \"quarter\" or \"month\", got {other:?}"
+        ))),
+    }
+}
+
+fn reading_arg(name: &str) -> Result<prospicio_reserving::AnnualReading> {
+    use prospicio_reserving::{AnnualReading, GrowthCurve};
+    match name {
+        "weibull" => Ok(AnnualReading::Curve(GrowthCurve::Weibull)),
+        "loglogistic" => Ok(AnnualReading::Curve(GrowthCurve::LogLogistic)),
+        "ln-linear" => Ok(AnnualReading::LnLinear),
+        other => Err(Error::Other(format!(
+            "reading must be \"weibull\", \"loglogistic\" or \"ln-linear\", got {other:?}"
+        ))),
+    }
+}
+
+/// The deal's paid pattern by month from inception for an accident-period
+/// `pattern`: converted to one underwriting period written as `written`
+/// says over policies of `policy_months`, `paid[t]` its share at `t + 1`
+/// months (linear from 0 below its first age, its level past its last), as
+/// Python's `monthly_patterns(..., accident_period=)`.
+fn underwriting_paid(
+    pattern: &PaymentPattern,
+    grain: prospicio_reserving::Grain,
+    written: &[f64],
+    policy_months: usize,
+    reading: prospicio_reserving::AnnualReading,
+) -> Result<Vec<f64>> {
+    use prospicio_reserving::{PatternKind, SelectedPattern, UnderwritingBasis};
+    let mut cumulative = 0.0;
+    let mut values = Vec::with_capacity(pattern.times().len());
+    for (&t, &share) in pattern.times().iter().zip(pattern.shares()) {
+        cumulative += share;
+        let months = t * 12.0;
+        if t <= 0.0 || (months - months.round()).abs() > 1e-9 {
+            return Err(Error::Other(format!(
+                "an accident-period pattern needs times at whole, positive months; {t} years is \
+                 not one"
+            )));
+        }
+        values.push((months.round() as u32, cumulative));
+    }
+    let writing: Vec<f64> = (0..written.len())
+        .map(|t| written[t] - if t == 0 { 0.0 } else { written[t - 1] })
+        .collect();
+    let last = writing.iter().rposition(|&w| w != 0.0).map_or(0, |i| i + 1);
+    let basis = UnderwritingBasis::new(writing[..last.max(1)].to_vec(), policy_months as u32)
+        .with_reading(reading);
+    let uy = SelectedPattern::new(PatternKind::PercentDeveloped, values)
+        .to_underwriting_basis(grain, &basis)
+        .map_err(|e| Error::Other(e.to_string()))?;
+    let mut points = uy.values;
+    points.sort_by_key(|v| v.0);
+    let (first_age, first) = points[0];
+    let level = points.last().map_or(1.0, |v| v.1);
+    Ok((1..=written.len() as u32)
+        .map(|age| {
+            if age < first_age {
+                first * f64::from(age) / f64::from(first_age)
+            } else {
+                points
+                    .iter()
+                    .rev()
+                    .find(|v| v.0 <= age)
+                    .map_or(level, |v| v.1)
+            }
+        })
+        .collect())
 }
 
 /// A pattern's discount factor and capital years at `rate`, and the share

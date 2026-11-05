@@ -15,6 +15,9 @@ sources:
   - id: issue
     resource: https://github.com/EKtheSage/prospicio/issues/722
     title: a basis on the single-pattern route of monthly_patterns
+  - id: pricing-test
+    resource: ../python/tests/test_pricing.py
+    title: test_an_accident_year_pattern_on_the_underwriting_basis
 ---
 
 # The monthly patterns of the ILS notebook
@@ -55,7 +58,11 @@ notebook's seed, on Windows.
   every simulation's pattern: 52 s for 2,000 draws, where the notebook's
   whole test takes about 40 s (#717). The notebook uses `monthly_patterns`
   and says that it pays slowly; #722 asks for the conversion of one
-  deterministic pattern. `docs/guides/submission-schema.md` passed
+  deterministic pattern. Since #722, `monthly_patterns(written, chain,
+  accident_period="year")` converts the chain ladder's own pattern with the
+  deal's writing: 15.01% and 58.56% by months 12 and 24, the averaged
+  draws' figures within 0.1 point, checked by
+  `test_an_accident_year_pattern_on_the_underwriting_basis`. `docs/guides/submission-schema.md` passed
   `chain.cdf` to `monthly_patterns` the same way until it paid each
   simulation on its drawn pattern
   ([the submission schema's drawn patterns](submission-schema-pattern-draws.md)).
