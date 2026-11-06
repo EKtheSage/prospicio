@@ -39,3 +39,6 @@ examples/templates/*.quarto_ipynb
 # Source texts kept locally (copyrighted PDFs and Word files; never commit)
 knowledge/references/*.pdf
 knowledge/references/*.docx
+
+# The Schedule P panel a guide fetches at run time: public research data, not redistributed here.
+docs/guides/schedule_p_panel.csv

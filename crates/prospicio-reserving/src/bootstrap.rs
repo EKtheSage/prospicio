@@ -1219,11 +1219,12 @@ pub(crate) fn process_draw(
     match process {
         ProcessDistribution::None => mean,
         ProcessDistribution::Gamma => {
-            if mean == 0.0 || scale == 0.0 {
+            // A mean so small that its shape underflows draws itself.
+            let shape = mean.abs() / scale;
+            if mean == 0.0 || scale == 0.0 || shape == 0.0 {
                 return mean;
             }
-            let gamma = Gamma::new(mean.abs() / scale, scale)
-                .expect("shape and scale are finite and positive");
+            let gamma = Gamma::new(shape, scale).expect("shape and scale are finite and positive");
             mean.signum() * gamma.sample(rng, 1)[0]
         }
     }

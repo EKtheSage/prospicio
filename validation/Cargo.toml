@@ -60,6 +60,10 @@ name = "reserving_bayes_bf_normalised"
 required-features = ["slow-bayes"]
 
 [[test]]
+name = "reserving_bayes_hierarchical_bf"
+required-features = ["slow-bayes"]
+
+[[test]]
 name = "reserving_bayes_excess_prior"
 required-features = ["slow-bayes"]
 

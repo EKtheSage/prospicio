@@ -4,12 +4,13 @@ Each guide's ```python blocks run in order in one namespace, from the guide's
 own folder. A block followed by a ```text block must print exactly that text
 (trailing spaces ignored), so a number in the prose of a guide cannot go stale
 when the library changes. A block whose info string is ``python no-run`` is
-shown but not run.
+shown but not run, except by ``test_recorded_blocks_of_the_industry_prior_guide``.
 """
 
 import contextlib
 import csv
 import io
+import os
 import re
 import time
 from pathlib import Path
@@ -56,12 +57,12 @@ def normalized(text):
     return [line.rstrip() for line in text.rstrip().splitlines()]
 
 
-def run_guide(path):
+def run_guide(path, no_run_too=False):
     """Run a guide's python blocks; return how many ran and how many had their output checked."""
     blocks, lines = fenced_blocks(path.read_text(encoding="utf-8"))
     ns, ran, checked = {}, 0, 0
     for k, (info, code, first, _) in enumerate(blocks):
-        if info != "python":
+        if info != "python" and not (no_run_too and info == "python no-run"):
             continue
         where = f"{path.name}, python block {ran + 1} (line {first})"
         ran += 1
@@ -103,6 +104,18 @@ def test_guides_have_no_em_dash_and_are_listed():
         assert EM_DASH not in path.read_text(encoding="utf-8"), f"{path.name} has an em dash"
     for path in PAGES:
         assert f"({path.name})" in readme, f"{path.name} is not listed in docs/guides/README.md"
+
+
+@pytest.mark.skipif(not os.environ.get("PROSPICIO_GUIDE_FETCH"), reason="fetches Schedule P; set PROSPICIO_GUIDE_FETCH=1")
+def test_recorded_blocks_of_the_industry_prior_guide(monkeypatch):
+    # The guide's `no-run` blocks need `cas-schedule-p[screens]`, which CI does not install, and the panel is
+    # not stored in the repository. This runs them and compares what they print with what the guide records,
+    # on the platform that recorded it (the sampler's digits differ between platforms). The panel is written
+    # beside the guide, where it is gitignored.
+    pytest.importorskip("cas_schedule_p")
+    pytest.importorskip("duckdb")
+    monkeypatch.chdir(GUIDES)
+    run_guide(GUIDES / "reserving-industry-prior.md", no_run_too=True)
 
 
 def test_the_harness_compares_printed_output(tmp_path):

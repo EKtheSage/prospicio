@@ -4479,6 +4479,324 @@ bayes_bf_normalised <- function(triangle, column, exposure, apriori = 1, cv = 0.
   fit
 }
 
+# A named list of one-segment triangles as one triangle with a segment per
+# program, under the key `program`, through each one's long table.
+stack_programs <- function(programs, columns) {
+  if (!length(programs)) stop("no programs: the list is empty", call. = FALSE)
+  nm <- names(programs)
+  if (is.null(nm) || anyNA(nm) || !all(nzchar(nm))) {
+    stop("every program needs a name: triangles must be a named list", call. = FALSE)
+  }
+  if (anyDuplicated(nm)) {
+    stop(sprintf("program name %s is used twice", nm[anyDuplicated(nm)]), call. = FALSE)
+  }
+  columns <- unique(columns)
+  parts <- lapply(seq_along(programs), function(i) {
+    tri <- programs[[i]]
+    if (!S7::S7_inherits(tri, triangle)) {
+      stop(sprintf("program %s is not a triangle", nm[i]), call. = FALSE)
+    }
+    if (tri@shape[["index"]] != 1L) {
+      stop(sprintf("program %s has %d segments; each program is a triangle with one",
+                   nm[i], tri@shape[["index"]]), call. = FALSE)
+    }
+    lacking <- setdiff(columns, tri@columns)
+    if (length(lacking)) {
+      stop(sprintf("program %s has no column %s", nm[i], lacking[1]), call. = FALSE)
+    }
+    if ("program" %in% columns) {
+      stop("a column named program clashes with the key of the stacked triangle",
+           call. = FALSE)
+    }
+    long <- as.data.frame(tri)[c("origin", "development", columns)]
+    long$program <- nm[i]
+    long
+  })
+  first <- programs[[1]]
+  for (i in seq_along(programs)[-1]) {
+    tri <- programs[[i]]
+    if (tri@origin_grain != first@origin_grain || tri@development_grain != first@development_grain ||
+        tri@is_cumulative != first@is_cumulative) {
+      stop(sprintf("program %s differs from the first in its grains or its cumulative state",
+                   nm[i]), call. = FALSE)
+    }
+  }
+  triangle(do.call(rbind, parts), "origin", "development", columns, keys = "program",
+           origin_grain = first@origin_grain, development_grain = first@development_grain,
+           cumulative = first@is_cumulative)
+}
+
+#' Hierarchical Bayesian Bornhuetter-Ferguson over programs
+#'
+#' `bayes_hierarchical_bf()` fits several programs, one segment of a
+#' [triangle] each, pooled under an industry hyperprior on the loss ratio,
+#' with the development pattern partially pooled (decision 30 of
+#' `docs/design/reserving-bayes.md`). Each origin's cumulative-value
+#' increments are the over-dispersed Poisson of [bayes_bf_normalised()] with
+#' mean `U[c, w] * p[c, d]`, the origin's expected ultimate times the share
+#' of it that falls at age `d`. The industry loss ratio `L` has a lognormal
+#' prior with mean `apriori` and coefficient of variation `level_cv` (flat
+#' on `log L` when `level_cv` is `NULL`, so the programs alone set the
+#' level). Program `c` has loss ratio `L * s[c]` with `log s[c]` normal with
+#' sd `tau` and `E[s[c]] = 1`, `tau` half-normal with scale `tau_scale`; its
+#' origins' expected ultimates are gamma with mean `L * s[c] * exposure` and
+#' coefficient of variation `cv`. The shared log pattern `beta[d]` is
+#' normal with sd `development_sd` (or the `pattern_prior`), and each
+#' program's own pattern departs from it by `omega` times a standard normal
+#' per age, `omega` half-normal with scale `omega_scale`. A thin program's
+#' young ages therefore move with its own data, its later ages follow the
+#' shared pattern, and its loss ratio is shrunk towards `L` by as much as
+#' the spread between the programs supports.
+#'
+#' The scale is plugged in per unit of premium, pooled over the programs
+#' (`scale_per_premium`), so a program of two origins, which has no degree
+#' of freedom of its own, still has a scale; the panel together must have a
+#' degree of freedom. Failed MCMC diagnostics (R-hat above 1.01, bulk or
+#' tail ESS below 100 per chain, any divergent transition) do not fail the
+#' fit: `bayes_hierarchical_bf()` raises one [warning()] listing them, and
+#' they stay in the fit's `diagnostics`. One `seed` replays a fit exactly.
+#' The one-year view is not available yet.
+#'
+#' Properties of the fit: `programs` (a named list of
+#' [hierarchical_bf_program], in the triangle's segment order), `ages`,
+#' `scale_per_premium`, `reserves` (the joint [predictive_distribution] by
+#' program and origin, paired by posterior draw), `diagnostics`, `summary`
+#' (every sampled parameter), `hyperparameters` (the posterior of `level`,
+#' the industry loss ratio, `tau`, the spread of the programs' loss ratios,
+#' and `omega`, the spread of their patterns) and `draws`.
+#' `as.data.frame()` gives one row per program: `program`, `origins`,
+#' `exposure`, `latest`, `prior_ultimate` and `expected_ultimate` (summed
+#' over the origins), `scale`, `loss_ratio`, `own_loss_ratio`, `shrinkage`
+#' and the `mean` and `std_dev` of the program's reserve.
+#'
+#' Errors: as [bayes_bf_normalised()]; if the programs together have no
+#' degree of freedom; if falling columns reach `1 / omega_scale` in the
+#' programs' scales, jointly over the programs, or a program's falling columns
+#' exceed its first age, since such a panel has no posterior. For a list of
+#' triangles: an empty list, an unnamed or duplicated name, an entry that is
+#' not a triangle or has several segments or lacks a column, triangles of
+#' different grains or cumulative state, or a column named `program`, which
+#' is the key of the stacked triangle.
+#'
+#' @param triangle A cumulative [triangle] with a segment per program, all
+#'   on the same ages, every origin observed from the first age up to its
+#'   latest. A triangle with one segment is one program. Or a named list of
+#'   triangles, one program each: every one a triangle with one segment, with
+#'   the `column` and the `exposure` and the same grains and cumulative
+#'   state. They are stacked into a triangle with a segment per program under
+#'   the key `program` (any keys they carry are dropped), and the fit equals,
+#'   draw for draw, the fit of the same panel given as one triangle with that
+#'   key. The names label the programs, which run in the sorted order of
+#'   their names, as the segments of a triangle do, not in the list's order.
+#' @param column Name of the loss column to fit.
+#' @param exposure Name of the exposure column; each origin's latest
+#'   observed value is its exposure.
+#' @param apriori Prior mean of the industry loss ratio `L`.
+#' @param level_cv Coefficient of variation of the lognormal prior on `L`,
+#'   or `NULL` for a prior flat on `log L`.
+#' @param cv Coefficient of variation of each origin's expected ultimate
+#'   about its program's level; fixed, finite and positive.
+#' @param development_sd Standard deviation of the normal prior on each
+#'   shared `beta[d]`, centred on 0; ignored with a `pattern_prior`.
+#' @param tau_scale Scale of the half-normal prior on `tau`, the spread of
+#'   the programs' log loss ratios.
+#' @param omega_scale Scale of the half-normal prior on `omega`, the spread
+#'   of the programs' log share ratios.
+#' @param pattern_prior A [pattern_prior()] on the triangle's ages for the
+#'   shared pattern, or `NULL`.
+#' @param process Process error on each simulated future increment:
+#'   `"gamma"` or `"none"` for parameter error only.
+#' @param chains,tune,draws NUTS chains, warm-up draws per chain and kept
+#'   draws per chain.
+#' @param n_sims Number of predictive simulations; positive.
+#' @param seed Seed of the chains and of the simulations, a non-negative
+#'   whole number.
+#' @param target_accept Target mean acceptance rate of the step-size
+#'   adaptation (default 0.99).
+#' @param max_depth Largest NUTS tree depth.
+#' @param ptr A `HierarchicalBfFit` pointer; used internally.
+#' @returns A `hierarchical_bf_fit` object.
+#' @seealso [bayes_bf_normalised()], [industry_prior()].
+#' @export
+#' @examples
+#' long <- data.frame(
+#'   program = c(rep("a", 6), rep("b", 3)),
+#'   year = c(2021, 2021, 2021, 2022, 2022, 2023, 2022, 2022, 2023),
+#'   age = c(12, 24, 36, 12, 24, 12, 12, 24, 12),
+#'   paid = c(100, 150, 170, 110, 172, 130, 55, 80, 60),
+#'   premium = c(250, 250, 250, 270, 270, 290, 120, 120, 130))
+#' tri <- triangle(long, "year", "age", c("paid", "premium"), keys = "program")
+#' fit <- bayes_hierarchical_bf(tri, "paid", "premium", apriori = 0.7, level_cv = 0.2,
+#'                              chains = 2, tune = 200, draws = 200, n_sims = 500, seed = 1)
+#' names(fit@programs)
+#' fit@hyperparameters
+#' mean(fit@reserves)
+hierarchical_bf_fit <- S7::new_class(
+  "hierarchical_bf_fit",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("HierarchicalBfFit"),
+    programs = S7::class_list,
+    ages = S7::new_property(S7::class_integer, getter = function(self) {
+      as.integer(self@ptr$ages())
+    }),
+    scale_per_premium = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$scale_per_premium()
+    }),
+    reserves = predictive_distribution,
+    diagnostics = S7::new_property(S7::class_list, getter = function(self) {
+      self@ptr$diagnostics()
+    }),
+    summary = S7::new_property(S7::class_any, getter = function(self) {
+      as.data.frame(reserving_result(self@ptr$summary(), call = NULL))
+    }),
+    hyperparameters = S7::new_property(S7::class_any, getter = function(self) {
+      as.data.frame(reserving_result(self@ptr$hyperparameters(), call = NULL))
+    }),
+    draws = S7::new_property(S7::class_any, getter = function(self) {
+      nm <- self@ptr$parameter_names()
+      matrix(self@ptr$draws(), ncol = length(nm), byrow = TRUE, dimnames = list(NULL, nm))
+    })
+  ),
+  constructor = function(ptr) {
+    labels <- ptr$program_labels()
+    programs <- lapply(seq_along(labels), function(i) hierarchical_bf_program(ptr, i))
+    names(programs) <- labels
+    S7::new_object(S7::S7_object(), ptr = ptr, programs = programs,
+                   reserves = predictive_distribution(ptr = ptr$reserves()))
+  }
+)
+
+#' One program of a hierarchical Bayesian Bornhuetter-Ferguson fit
+#'
+#' What a [hierarchical_bf_fit] says about one program, from its `programs`.
+#' Per-origin properties run over the program's origins in order.
+#'
+#' Properties: `label` (the segment label, key values joined by " / "),
+#' `key` (the key values), `origins`, `exposure`, `latest` (the latest
+#' observed cumulative value), `prior_ultimate` (`apriori * exposure`),
+#' `scale` (the pooled scale per premium times the program's mean premium
+#' per origin), `expected_ultimate` (the posterior mean of each origin's
+#' expected ultimate), `pattern` (the posterior mean share at each of the
+#' fit's `ages`, summing to 1), `loss_ratio` (the posterior mean of `L *
+#' s`), `own_loss_ratio` (the loss ratio of the program's own chain ladder,
+#' with the factors pooled over every program past the ages it observes),
+#' `shrinkage` (how far the program stays from the collective on the log
+#' scale: 1 keeps its own level and 0 takes the collective's; `NaN` when its
+#' own loss ratio is not positive) and `reserves` (the program's part of the
+#' fit's reserves, by origin, paired with it simulation by simulation).
+#'
+#' @param ptr A `HierarchicalBfFit` pointer; used internally.
+#' @param index The program's position, from 1; used internally.
+#' @returns A `hierarchical_bf_program` object.
+#' @seealso [bayes_hierarchical_bf()].
+#' @export
+hierarchical_bf_program <- S7::new_class(
+  "hierarchical_bf_program",
+  package = "prospicio",
+  properties = list(
+    label = S7::class_character,
+    key = S7::class_character,
+    origins = S7::class_character,
+    exposure = S7::class_double,
+    latest = S7::class_double,
+    prior_ultimate = S7::class_double,
+    scale = S7::class_double,
+    expected_ultimate = S7::class_double,
+    pattern = S7::class_double,
+    loss_ratio = S7::class_double,
+    own_loss_ratio = S7::class_double,
+    shrinkage = S7::class_double,
+    reserves = predictive_distribution
+  ),
+  constructor = function(ptr, index) {
+    p <- reserving_result(ptr$program(as.double(index)), call = NULL)
+    S7::new_object(S7::S7_object(), label = p$label, key = p$key, origins = p$origins,
+                   exposure = p$exposure, latest = p$latest, prior_ultimate = p$prior_ultimate,
+                   scale = p$scale, expected_ultimate = p$expected_ultimate,
+                   pattern = p$pattern, loss_ratio = p$loss_ratio,
+                   own_loss_ratio = p$own_loss_ratio, shrinkage = p$shrinkage,
+                   reserves = predictive_distribution(
+                     ptr = reserving_result(ptr$program_reserves(as.double(index)), call = NULL)))
+  }
+)
+
+#' @rdname hierarchical_bf_fit
+#' @export
+bayes_hierarchical_bf <- function(triangle, column, exposure, apriori = 1, level_cv = NULL,
+                                  cv = 0.1, development_sd = 10, tau_scale = 0.3,
+                                  omega_scale = 0.5, process = c("gamma", "none"), chains = 4,
+                                  tune = 1000, draws = 1000, n_sims = 10000, seed = 0,
+                                  target_accept = 0.99, max_depth = 10, pattern_prior = NULL) {
+  if (is.list(triangle) && !S7::S7_inherits(triangle)) {
+    triangle <- stack_programs(triangle, c(column, exposure))
+  }
+  cols <- exposure_columns(triangle, column, exposure)
+  process <- match.arg(process)
+  pattern <- pattern_prior_args(pattern_prior)
+  priors <- c(single_number(apriori, "apriori"), single_number(cv, "cv"),
+              single_number(development_sd, "development_sd"),
+              single_number(tau_scale, "tau_scale"), single_number(omega_scale, "omega_scale"))
+  run <- c(single_number(chains, "chains"), single_number(tune, "tune"),
+           single_number(draws, "draws"), single_number(n_sims, "n_sims"),
+           single_number(seed, "seed"), single_number(target_accept, "target_accept"),
+           single_number(max_depth, "max_depth"))
+  ptr <- reserving_result(triangle@ptr$hierarchical_bf(
+    cols[1], cols[2], priors, optional_number(level_cv, "level_cv"), process, run,
+    pattern[[1]], pattern[[2]], pattern[[3]]))
+  fit <- hierarchical_bf_fit(ptr = ptr)
+  failed <- fit@diagnostics$warnings
+  if (length(failed)) {
+    warning("bayes_hierarchical_bf: the MCMC diagnostics failed; check them before relying on ",
+            "the fit: ", paste(failed, collapse = "; "), call. = FALSE)
+  }
+  fit
+}
+
+S7::method(as.data.frame, hierarchical_bf_fit) <- function(x, ...) {
+  ps <- x@programs
+  total <- function(g) vapply(ps, function(p) sum(g(p)), 0, USE.NAMES = FALSE)
+  single <- function(g) vapply(ps, g, 0, USE.NAMES = FALSE)
+  data.frame(
+    program = vapply(ps, function(p) p@label, "", USE.NAMES = FALSE),
+    origins = vapply(ps, function(p) length(p@origins), 0L, USE.NAMES = FALSE),
+    exposure = total(function(p) p@exposure),
+    latest = total(function(p) p@latest),
+    prior_ultimate = total(function(p) p@prior_ultimate),
+    expected_ultimate = total(function(p) p@expected_ultimate),
+    scale = single(function(p) p@scale),
+    loss_ratio = single(function(p) p@loss_ratio),
+    own_loss_ratio = single(function(p) p@own_loss_ratio),
+    shrinkage = single(function(p) p@shrinkage),
+    mean = single(function(p) mean(p@reserves)),
+    std_dev = single(function(p) sqrt(variance(p@reserves))),
+    stringsAsFactors = FALSE)
+}
+S7::method(summary, hierarchical_bf_fit) <- function(object, ...) object@summary
+S7::method(print, hierarchical_bf_fit) <- function(x, ...) {
+  r <- x@reserves
+  d <- x@diagnostics
+  cat(sprintf("<hierarchical_bf_fit> %d programs, %d draws in %d chains, %d simulations\n",
+              length(x@programs), nrow(x@draws), as.integer(x@ptr$chains()), as.integer(r@n_sims)))
+  cat(sprintf("diagnostics: max R-hat %s, min bulk ESS %s, min tail ESS %s, %d divergences%s\n",
+              format(d$max_rhat, digits = 4), format(d$min_ess_bulk, digits = 4),
+              format(d$min_ess_tail, digits = 4), as.integer(d$divergences),
+              if (length(d$warnings)) sprintf(", %d warnings", length(d$warnings)) else ""))
+  h <- x@hyperparameters
+  cat(sprintf("posterior mean: level %s, tau %s, omega %s\n",
+              format(h$mean[1], digits = 4), format(h$mean[2], digits = 4),
+              format(h$mean[3], digits = 4)))
+  cat(sprintf("total reserve: posterior mean %s, sd %s\n",
+              format(mean(r), digits = 10), format(sqrt(variance(r)), digits = 10)))
+  invisible(x)
+}
+S7::method(print, hierarchical_bf_program) <- function(x, ...) {
+  cat(sprintf("<hierarchical_bf_program> %s: %d origins, loss ratio %s (own %s), shrinkage %s\n",
+              x@label, length(x@origins), format(x@loss_ratio, digits = 4),
+              format(x@own_loss_ratio, digits = 4), format(x@shrinkage, digits = 4)))
+  invisible(x)
+}
+
 #' One-year view of the Bayesian Bornhuetter-Ferguson
 #'
 #' The claims development result (CDR) over the coming year of

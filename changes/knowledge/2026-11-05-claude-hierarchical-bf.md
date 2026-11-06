@@ -1,0 +1,1 @@
+* **Creation**: [HierarchicalBf's falling columns and sampler scale](/findings/hierarchical-bf.md), from building `reserving-bayes.md` decision 30 (branch claude/hierarchical-bf): a falling column past `1 / omega_scale` in program scales has no posterior, a dense pilot scale biases few programs' sds, and thin programs' raw sds are not always below separate fits'.
