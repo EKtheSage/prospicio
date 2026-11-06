@@ -23,14 +23,20 @@
 //!   premium is earned through the year as it is in a real accident year.
 //!   `conflict` and `fast`: `iid` with rates far from the preset. `season`
 //!   and `seasonq`: `iid` and `earned` with a calendar-quarter factor on
-//!   the paid increments; `season117` and `iid117` value the book three
-//!   months before a year end. `m2y` and `m2q`: model 2's cell-level process
+//!   the paid increments. `season117` and `iid117` value the book at the
+//!   end of the third calendar quarter, where the factors' cumulative
+//!   deviation from flat is 0, and `season114` and `iid114` at the end of
+//!   the second, where it is largest (0.3 of a quarter's payments).
+//!   `m2y` and `m2q`: model 2's cell-level process
 //!   with development effects by development year or by quarterly age,
 //!   log-normal monthly increments; `m2season` is `m2y` with the seasonal
-//!   factor; `m2qo` is `m2y` on 40 quarterly origins.
+//!   factor; `m2qo` is `m2y` on 40 quarterly origins; `m2y114` and
+//!   `m2season114` value `m2y` and `m2season` at the end of the second
+//!   calendar quarter.
 //! * Grains. `aa`, `aq`, `am`: annual origins with annual, quarterly or
 //!   monthly development. `qq`, `qm`: quarterly origins.
-//! * Models. `m1`, `m2`: `Compartmental::new` and `model_2`.
+//! * Models. `m1`, `m2`: `Compartmental::new` and `model_2`. `m1i`: model 1
+//!   with `PaidResponse::Incremental`, a built setting.
 //! * Priors (`priors`). `preset`, `diffuse`, `ratewide`, and for model 2
 //!   `sigmawide`.
 //! * Samplers (`model`). `default`: the model's own. `study`: a shorter run,
@@ -58,7 +64,8 @@ use prospicio_core::StreamRng;
 use prospicio_math::special::norm_quantile;
 use prospicio_prob::{Distribution, KeyValue};
 use prospicio_reserving::bayes::{
-    Compartmental, CompartmentalFit, CompartmentalPriors, Outstanding, PositivePrior, RealPrior,
+    Compartmental, CompartmentalFit, CompartmentalPriors, Outstanding, PaidResponse, PositivePrior,
+    RealPrior,
 };
 use prospicio_reserving::{DevelopmentColumn, Grain, Lag, Long, Month, Period, Triangle};
 
@@ -145,6 +152,7 @@ enum World {
         dev_unit: usize,
         season: bool,
         quarterly_origins: bool,
+        valuation: usize,
     },
 }
 
@@ -190,30 +198,50 @@ impl World {
             "season" => m1(1, BASE, Noise::Iid, false, true, LAST),
             "season117" => m1(1, BASE, Noise::Iid, false, true, LAST - 3),
             "iid117" => m1(1, BASE, Noise::Iid, false, false, LAST - 3),
+            "season114" => m1(1, BASE, Noise::Iid, false, true, LAST - 6),
+            "iid114" => m1(1, BASE, Noise::Iid, false, false, LAST - 6),
             "seasonq" => m1(3, BASE, Noise::Iid, true, true, LAST),
             "m2y" => World::Model2 {
                 stream: 6,
                 dev_unit: 12,
                 season: false,
                 quarterly_origins: false,
+                valuation: LAST,
             },
             "m2q" => World::Model2 {
                 stream: 7,
                 dev_unit: 3,
                 season: false,
                 quarterly_origins: false,
+                valuation: LAST,
             },
             "m2season" => World::Model2 {
                 stream: 6,
                 dev_unit: 12,
                 season: true,
                 quarterly_origins: false,
+                valuation: LAST,
             },
             "m2qo" => World::Model2 {
                 stream: 8,
                 dev_unit: 12,
                 season: false,
                 quarterly_origins: true,
+                valuation: LAST,
+            },
+            "m2y114" => World::Model2 {
+                stream: 6,
+                dev_unit: 12,
+                season: false,
+                quarterly_origins: false,
+                valuation: LAST - 6,
+            },
+            "m2season114" => World::Model2 {
+                stream: 6,
+                dev_unit: 12,
+                season: true,
+                quarterly_origins: false,
+                valuation: LAST - 6,
             },
             other => panic!("unknown world {other}"),
         }
@@ -227,8 +255,7 @@ impl World {
 
     fn valuation(&self) -> usize {
         match *self {
-            World::Model1 { valuation, .. } => valuation,
-            World::Model2 { .. } => LAST,
+            World::Model1 { valuation, .. } | World::Model2 { valuation, .. } => valuation,
         }
     }
 }
@@ -583,6 +610,9 @@ fn model(arm: &Arm, seed: u64) -> Compartmental {
         Compartmental::new(pr)
     };
     m.seed = seed;
+    if arm.model == "m1i" {
+        m.paid_response = PaidResponse::Incremental;
+    }
     match arm.sampler.as_str() {
         "default" => {}
         "study" => {

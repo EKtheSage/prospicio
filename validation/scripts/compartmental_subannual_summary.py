@@ -65,6 +65,7 @@ def summary(path):
         "bias%": f"{100 * bias:.1f}",
         "z_mean": f"{statistics.mean(z):.2f}",
         "z_sd": f"{statistics.pstdev(z):.2f}",
+        "rmse": f"{math.sqrt(statistics.mean((r['mean'] - r['outcome']) ** 2 for r in rows)):.0f}",
         "sd": f"{med(rows, 'sd'):.0f}",
         "secs": f"{med(rows, 'seconds'):.1f}",
         "rhat": f"{med(rows, 'max_rhat'):.3f}",
@@ -123,6 +124,34 @@ def grouped(path):
     )
 
 
+def paired(folder, seasonal, plain):
+    """Book by book, a seasonal arm against the same book without the factor."""
+    a, b = folder / f"{seasonal}.csv", folder / f"{plain}.csv"
+    if not (a.exists() and b.exists()):
+        return
+    _, sr, _ = read(a)
+    _, pr, _ = read(b)
+    by_book = {r["book"]: r for r in pr}
+    both = [(r, by_book[r["book"]]) for r in sr if r["book"] in by_book]
+    if not both:
+        return
+    err = [(s["mean"] - s["outcome"]) / s["sd"] for s, _ in both]
+    err0 = [(p["mean"] - p["outcome"]) / p["sd"] for _, p in both]
+    shift = [(s["mean"] - p["mean"]) / p["mean"] for s, p in both]
+    out = (
+        f"{seasonal} against {plain}: {len(both)} books,"
+        f" mean less outcome {statistics.mean(err):.2f} sd against {statistics.mean(err0):.2f},"
+        f" fitted reserve {100 * statistics.mean(shift):.2f}% (mean absolute"
+        f" {100 * statistics.mean(abs(v) for v in shift):.2f}%),"
+        f" outcome {100 * statistics.mean((s['outcome'] - p['outcome']) / p['outcome'] for s, p in both):.2f}%,"
+        f" sd ratio {statistics.mean(s['sd'] / p['sd'] for s, p in both):.3f}"
+    )
+    for key in ("sigma_pd_mean", "sigma_os_mean"):
+        if key in both[0][0]:
+            out += f", {key[:-5]} ratio {statistics.mean(s[key] / p[key] for s, p in both):.3f}"
+    print(out)
+
+
 def main():
     root = Path(__file__).resolve().parents[2] / "target" / "compartmental-subannual"
     folder = Path(sys.argv[1]) if len(sys.argv) > 1 else root
@@ -141,6 +170,14 @@ def main():
         print("\nMean posterior mean of each scored parameter")
         for line, _, means in results:
             print(line["arm"], " ".join(f"{k} {v:.3f}" for k, v in means))
+    print()
+    for g in ("aa", "aq"):
+        paired(folder, f"season_{g}_m1_preset_study", f"iid_{g}_m1_preset_study")
+    paired(folder, "season117_aq_m1_preset_study", "iid117_aq_m1_preset_study")
+    paired(folder, "season114_aq_m1_preset_study", "iid114_aq_m1_preset_study")
+    paired(folder, "seasonq_qq_m1_preset_study", "earned_qq_m1_preset_study")
+    paired(folder, "m2season_aq_m2_preset_study", "m2y_aq_m2_preset_study")
+    paired(folder, "m2season114_aq_m2_preset_study", "m2y114_aq_m2_preset_study")
     for p in paths:
         if p.stem.startswith("grouped_"):
             grouped(p)
