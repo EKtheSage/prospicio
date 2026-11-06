@@ -18,7 +18,9 @@ use prospicio_reserving::bayes::{
     BayesBfNormalised, BayesOneYear, BayesOneYearFit, HierarchicalBf, HierarchicalBfFit,
     OneYearRefit,
 };
-use prospicio_validation::{stan_triangle, stan_triangle_cut, stan_triangle_of};
+use prospicio_validation::{
+    stan_triangle, stan_triangle_ages, stan_triangle_cut, stan_triangle_of,
+};
 
 fn env_usize(name: &str, default: usize) -> usize {
     std::env::var(name)
@@ -318,6 +320,48 @@ fn pareto_k_with_every_program_cut_to_six_ages() {
                     quantiles(&fit.pareto_k)
                 );
             }
+        }
+    }
+}
+
+/// Item 4, the control for the mechanism: the same programs, changing only
+/// whether one of them stops short of the grid. Two copies of a program at
+/// full length (`genins` and `genins2`), one cut to 6 ages beside the other
+/// at full length, and both cut to 6 ages. If the cause is a program's next
+/// diagonal at ages it has never observed, k is high for the unequal panels
+/// and at the level of the equal ones otherwise. The sampler and seed are
+/// those of `pareto_k_by_panel_and_draws`.
+#[test]
+#[ignore]
+fn pareto_k_when_one_program_stops_short() {
+    let sims = env_usize("HB_SIMS", 60);
+    let panels: [(&str, Vec<(&str, usize)>); 14] = [
+        (
+            "genins 10 + genins 10",
+            vec![("genins", 10), ("genins2", 10)],
+        ),
+        ("genins 10 + genins 6", vec![("genins", 10), ("genins2", 6)]),
+        ("genins 6 + genins 10", vec![("genins", 6), ("genins2", 10)]),
+        ("genins 6 + genins 6", vec![("genins", 6), ("genins2", 6)]),
+        ("raa 10 + raa 10", vec![("raa", 10), ("raa2", 10)]),
+        ("raa 10 + raa 6", vec![("raa", 10), ("raa2", 6)]),
+        ("raa 6 + raa 6", vec![("raa", 6), ("raa2", 6)]),
+        ("genins 10 + raa 10", vec![("genins", 10), ("raa", 10)]),
+        ("genins 10 + raa 6", vec![("genins", 10), ("raa", 6)]),
+        ("genins 6 + raa 10", vec![("genins", 6), ("raa", 10)]),
+        ("genins 6 + raa 6", vec![("genins", 6), ("raa", 6)]),
+        ("evw + genins 10", vec![("evw", 6), ("genins", 10)]),
+        ("evw + genins 6", vec![("evw", 6), ("genins", 6)]),
+        ("evw + genins 7", vec![("evw", 6), ("genins", 7)]),
+    ];
+    for draws in [200, 2000] {
+        for (name, spec) in &panels {
+            let tri = stan_triangle_ages(spec);
+            let fit = run(&tri, draws, sims, 0, OneYearRefit::ReweightOnly);
+            println!(
+                "{name:22} {draws} draws per chain: {}",
+                quantiles(&fit.pareto_k)
+            );
         }
     }
 }

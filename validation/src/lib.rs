@@ -172,7 +172,8 @@ pub fn stan_triangle() -> Triangle {
 }
 
 /// [`stan_triangle`] with only the programs named in `keep` (`evw`, `genins`,
-/// `raa`, and `genins2`, a second copy of GenIns), in the reference case's order.
+/// `raa`, and `genins2` and `raa2`, second copies of GenIns and RAA), in the
+/// reference case's order.
 pub fn stan_triangle_of(keep: &[&str]) -> Triangle {
     stan_triangle_cut(keep, usize::MAX)
 }
@@ -180,6 +181,15 @@ pub fn stan_triangle_of(keep: &[&str]) -> Triangle {
 /// [`stan_triangle_of`] with every program cut to at most its first `ages`
 /// ages.
 pub fn stan_triangle_cut(keep: &[&str], ages_kept: usize) -> Triangle {
+    let spec: Vec<(&str, usize)> = keep.iter().map(|&k| (k, ages_kept)).collect();
+    stan_triangle_ages(&spec)
+}
+
+/// [`stan_triangle_cut`] with a cut of its own for each program: the pairs
+/// `(program, ages)` name the programs kept (as in [`stan_triangle_of`], and
+/// `raa2`, a second copy of RAA) and cut each to at most its first `ages`
+/// ages (EVW has 6 whatever the cut).
+pub fn stan_triangle_ages(spec: &[(&str, usize)]) -> Triangle {
     let evw = triangle_columns("evw2012", &["paid", "prior"]);
     let genins = triangle_columns("genins_premium", &["paid", "premium"]);
     let raa = triangle("raa");
@@ -209,6 +219,14 @@ pub fn stan_triangle_cut(keep: &[&str], ages_kept: usize) -> Triangle {
             10,
             Box::new(|w| 40_000.0 + 2_000.0 * w as f64),
         ),
+        // A second copy of RAA, for diagnostics of the number of programs.
+        (
+            "raa2",
+            &raa,
+            1981,
+            10,
+            Box::new(|w| 40_000.0 + 2_000.0 * w as f64),
+        ),
         // A second copy of GenIns, for diagnostics of the number of programs.
         (
             "genins2",
@@ -218,7 +236,10 @@ pub fn stan_triangle_cut(keep: &[&str], ages_kept: usize) -> Triangle {
             Box::new(|w| genins.get(0, 1, w, 0).expect("premium")),
         ),
     ];
-    for (label, tri, first, ages, prem) in programs.iter().filter(|p| keep.contains(&p.0)) {
+    for (label, tri, first, ages, prem) in programs.iter() {
+        let Some(&(_, ages_kept)) = spec.iter().find(|(name, _)| name == label) else {
+            continue;
+        };
         let [_, _, n_origins, _] = tri.shape();
         for w in 0..n_origins {
             for d in 0..(*ages).min(ages_kept) {

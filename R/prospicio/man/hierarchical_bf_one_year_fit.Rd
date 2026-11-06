@@ -107,10 +107,9 @@ reweighted as they are (as unreliable as their k says), listed in
 k segments refit at most k times this many.}
 
 \item{one_year_sims}{The number of one-year simulations, or \code{NULL} (the
-default) for the model's one-year default: \code{n_sims} for
-\code{bayes_odp_one_year()} and \code{bayes_bf_one_year()}, and \code{n_sims} capped
-at 2,000 for \code{meyers_one_year()}. The lifetime reserves keep \code{n_sims}.
-A smaller count gives the first simulations of a larger one.}
+default) for the model's \code{n_sims}, at most 2,000. The lifetime reserves
+keep \code{n_sims}. A smaller count gives the first simulations of a larger
+one.}
 }
 \value{
 A \code{hierarchical_bf_one_year_fit} object.

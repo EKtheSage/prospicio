@@ -1177,6 +1177,17 @@ impl Model {
 impl Model {
     /// The log posterior, written once over the number type (decision 15).
     fn log_density<S: Scalar>(&self, theta: &[S]) -> S {
+        self.log_density_with(theta, None)
+    }
+
+    /// [`log_density`](Self::log_density) with a year's cells appended to
+    /// the observed ones, in the order [`HierarchicalYear::extended`] puts
+    /// them, so no copy of the model is needed.
+    fn log_density_with<S: Scalar>(
+        &self,
+        theta: &[S],
+        year: Option<(&[ProgramYear], &[f64])>,
+    ) -> S {
         let mut f = S::from_f64(0.0);
         let e = theta[0];
         if !self.level_free {
@@ -1217,6 +1228,14 @@ impl Model {
             for &(w, d, x) in &program.cells {
                 let eta = theta[self.u(program, w)] + program.log_prior[w] + beta[d] - log_sum;
                 f += (eta * x - eta.exp()) / program.phi;
+            }
+            if let Some((programs, values)) = year {
+                let py = &programs[c];
+                for (k, &(w, d)) in py.year.iter().enumerate() {
+                    let x = values[py.first_cell + k];
+                    let eta = theta[self.u(program, w)] + program.log_prior[w] + beta[d] - log_sum;
+                    f += (eta * x - eta.exp()) / program.phi;
+                }
             }
         }
         f
@@ -1263,10 +1282,11 @@ impl HierarchicalBf {
     /// `settings.n_sims` sets their number. A program whose ages stop short
     /// of the panel's grid (EVW at 6 of 10 on the reference panel) has its
     /// next diagonal at ages it has never observed, where only the prior
-    /// speaks, and every simulation of such a panel has a Pareto k above 6
-    /// and is refitted (matching rescues none); on a panel whose programs
-    /// share their ages, k is mostly below 0.7 and the reweighting is close
-    /// to the refits. Each refit is a NUTS run over the panel. Failed
+    /// speaks. On the reference panel every simulation has a Pareto k above
+    /// 6 and is refitted (matching rescues none); a control with copies of
+    /// GenIns and RAA shows that a program stopping short raises k, though
+    /// not to that size. On a panel whose programs share their ages, k is
+    /// mostly below 0.7 and the reweighting is close to the refits. Each refit is a NUTS run over the panel. Failed
     /// diagnostics of the fit do not fail the view; they are in
     /// `fit.diagnostics`.
     ///
@@ -1607,7 +1627,8 @@ impl YearModel for HierarchicalYear<'_> {
             // Moment matching's many calls on the observed triangle.
             self.model.log_density(&sampling)
         } else {
-            self.extended(year).log_density(&sampling)
+            self.model
+                .log_density_with(&sampling, Some((&self.programs, year)))
         }
     }
 }
@@ -2490,7 +2511,18 @@ mod tests {
                 "{got} {direct}"
             );
             // The posterior with the year's cells less the posterior without.
-            let diff = year.extended(&y).log_density(&sampling) - m.log_density(&sampling);
+            let extended = year.extended(&y).log_density(&sampling);
+            // The density with the year added in place is the density of
+            // the extended model, bit for bit.
+            assert_eq!(
+                m.log_density_with(&sampling, Some((&year.programs, &y))),
+                extended
+            );
+            assert_eq!(
+                year.log_posterior(&stored, &y),
+                year.extended(&y).log_density(&m.sampling(&stored))
+            );
+            let diff = extended - m.log_density(&sampling);
             assert!(
                 (diff - direct).abs() < 1e-9 * direct.abs().max(1.0),
                 "{diff} {direct}"
@@ -2565,6 +2597,47 @@ mod tests {
         }
     }
 
+    /// With no `n_sims` in the settings the view runs the model's `n_sims`
+    /// at most `ONE_YEAR_SIMS` times, 2,000, whatever the lifetime count.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_default_number_of_simulations_is_capped_at_two_thousand() {
+        use crate::bayes::one_year::{BayesOneYear, OneYearRefit};
+        let tri = three_programs();
+        let model = HierarchicalBf {
+            sampler: Sampler {
+                tune: 100,
+                draws: 100,
+                chains: 2,
+                ..quick(2).sampler
+            },
+            n_sims: 2_500,
+            ..quick(2)
+        };
+        let settings = BayesOneYear {
+            refit: Some(OneYearRefit::ReweightOnly),
+            ..BayesOneYear::default()
+        };
+        let view = model
+            .one_year(&tri, "values", "premium", &settings)
+            .unwrap();
+        assert_eq!(HierarchicalBf::ONE_YEAR_SIMS, 2_000);
+        assert_eq!(view.cdr.n_sims(), 2_000);
+        assert_eq!(view.pareto_k.len(), 2_000);
+        // The lifetime reserves keep the model's count.
+        assert_eq!(view.fit.reserves.n_sims(), 2_500);
+        // A count in the settings is used as it is, above the cap too.
+        let more = BayesOneYear {
+            n_sims: Some(2_100),
+            ..settings
+        };
+        let view = model.one_year(&tri, "values", "premium", &more).unwrap();
+        assert_eq!(view.cdr.n_sims(), 2_100);
+    }
+
     fn year_of_start<'a>(
         model: &'a HierarchicalBf,
         tri: &Triangle,
@@ -2604,7 +2677,7 @@ mod tests {
             }
             y
         };
-        let closing_b = |scale_a: f64| {
+        let closing_bc = |scale_a: f64| {
             let y = expected(&mean, scale_a);
             let log_w: Vec<f64> = (0..s)
                 .map(|d| year.year_log_likelihood(posterior.draw(d), &y))
@@ -2625,13 +2698,15 @@ mod tests {
             }
             closing
         };
-        let (low, high) = (closing_b(0.8), closing_b(1.25));
+        let (low, high) = (closing_bc(0.8), closing_bc(1.25));
         println!("closing reserve of b and c, a's year at 0.8 and 1.25 times: {low:?} {high:?}");
         // Higher losses in a raise the industry level and so b's and c's
-        // reserves; independent programs would leave them unchanged.
+        // reserves; independent programs would leave them unchanged. Measured
+        // (seed 5, release): the ratio high / low is 1.083 for b and 1.131
+        // for c, so the bound of 1.04 is under half of the smaller excess.
         for k in 0..2 {
             assert!(
-                high[k] > 1.01 * low[k],
+                high[k] > 1.04 * low[k],
                 "program {}: {low:?} {high:?}",
                 k + 1
             );

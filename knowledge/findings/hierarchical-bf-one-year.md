@@ -1,7 +1,7 @@
 ---
 type: Finding
-title: HierarchicalBf's one-year view is right under refits, and its reweighting fails where a program's next diagonal falls at ages it never observed
-description: The refit-only mean of the claims development result is zero (z -0.03 over 1,100 simulations) and the year's likelihood is the model's; the reference panel's Pareto k above 6 comes from EVW's cells at ages it has never observed, and on programs with the same ages k is mostly below 0.7 and reweighting is within 0.05 sd of a refit at 1,000 draws.
+title: HierarchicalBf's one-year view is right under refits, and its reweighting fails on panels whose programs stop at different ages
+description: The refit-only mean of the claims development result is zero (z -0.03 over 1,100 simulations) and the year's likelihood is the model's; the reference panel's Pareto k above 6 goes with EVW stopping at 6 of 10 ages, and a control with copies of GenIns and RAA shows k rising when one program stops short of the grid, though not to EVW's size; on programs with the same ages k is mostly below 0.7 and reweighting is within 0.05 sd of a refit at 1,000 draws.
 tags: [reserving, bayesian, hierarchical, one-year, psis, moment-matching]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-11-06T12:00:00Z }
@@ -25,7 +25,8 @@ premium; 2 chains of 200 warm-up and 200 kept draws unless stated, release
 build, 16 threads, another job sharing the machine). The tests are the
 ignored ones of `validation/tests/reserving_bayes_hierarchical_bf_one_year.rs`
 (`refit_only_mean_of_the_cdr`, `pareto_k_by_panel_and_draws`,
-`pareto_k_with_every_program_cut_to_six_ages`, `reweighting_against_refits`,
+`pareto_k_with_every_program_cut_to_six_ages`,
+`pareto_k_when_one_program_stops_short`, `reweighting_against_refits`,
 `scales_and_diagnostics_by_panel`) and the conformance sweep. None of them
 runs in a pull request's CI jobs, so the finding is not marked verified.
 
@@ -69,18 +70,52 @@ at 2,000 draws per chain:
 | EVW and GenIns cut to 6 ages | 0.49 | 0.29 |
 
 (`BayesBfNormalised` on each triangle alone: 0.08, 0.67, 0.46 at 200 draws.)
-Every panel with EVW and another program is flagged, and cutting the other
-programs to EVW's six ages brings k back to the single programs' level with
-the same origins and cells. The reference panel's grid has 10 ages and EVW
+Every panel with EVW and another program is flagged. Cutting every program
+to 6 ages gives median k of 0.47 and 0.49 for the three programs and for EVW
+with GenIns, but it also removes cells and shrinks the panel, so by itself it
+does not show the cause. The reference panel's grid has 10 ages and EVW
 stops at 6, so the next diagonal of EVW's older origins falls at ages 7 to
 10, where its shares are held by the prior alone (the deviations of an
-unobserved age). A simulated cell there is the first information on a
-diffuse quantity and the year's likelihood is sharp, so the weights
-concentrate on a few draws. This is the explanation the measurements
-support, not a separate test of the weights themselves. The fits are sound
-(2,000 draws: rhat at most 1.01, at most 3 divergences
-in any panel), and matching, an affine move of the draws,
-cannot repair a diffuse prior-only direction.
+unobserved age).
+
+*A control.* `pareto_k_when_one_program_stops_short` changes only whether a
+program stops short of the grid, with the same data otherwise (a second copy
+of GenIns or of RAA stands in for the other program). Median k and the share
+of 60 simulations above 0.7, seed 0:
+
+| panel (ages kept) | 200 draws: median k, share above 0.7 | 2,000 draws |
+|---|---|---|
+| GenIns 10 + GenIns 10 | 0.65, 0.45 | 0.49, 0.10 |
+| GenIns 10 + GenIns 6 | 1.06, 0.82 | 0.78, 0.62 |
+| GenIns 6 + GenIns 10 | 1.03, 0.85 | 0.66, 0.40 |
+| GenIns 6 + GenIns 6 | 0.34, 0.12 | 0.31, 0.05 |
+| RAA 10 + RAA 10 | 0.50, 0.18 | 0.34, 0.05 |
+| RAA 10 + RAA 6 | 0.71, 0.50 | 0.47, 0.25 |
+| RAA 6 + RAA 6 | 0.26, 0.03 | 0.21, 0.00 |
+| GenIns 10 + RAA 10 | 0.52, 0.27 | 0.41, 0.03 |
+| GenIns 10 + RAA 6 | 0.96, 0.85 | 0.66, 0.40 |
+| GenIns 6 + RAA 10 | 0.80, 0.60 | 0.56, 0.28 |
+| GenIns 6 + RAA 6 | 0.29, 0.05 | 0.21, 0.00 |
+| EVW 6 + GenIns 10 | 46, 1.00 | 30, 1.00 |
+| EVW 6 + GenIns 7 | 1.10, 0.85 | 0.75, 0.52 |
+| EVW 6 + GenIns 6 | 0.49, 0.07 | 0.29, 0.02 |
+
+Two equal programs at full length are at the level of the single ones, and so
+are both cut to 6 ages (the cut alone does not raise k, and lowers it). A
+program that stops at 6 beside one at 10 raises the median k by 0.2 to 0.4
+and the flagged share from 0.18 to 0.50 for RAA, from 0.45 to 0.82 for
+GenIns, and from 0.27 to 0.85 for GenIns with RAA (at 200 draws; the
+2,000-draw column shows the same ordering). The control supports the stated
+cause: a program whose next diagonal falls at ages it has not observed
+raises k, even when the data are copies of one another. It does not explain
+the size. EVW beside GenIns has a median k of 46 (30 at 2,000 draws),
+against at most 1.06 for any of the copies, and EVW with GenIns cut to 7
+ages, one age short, has a median of 1.10 but a maximum of 54. What else
+about EVW makes the weights so concentrated (its premium is the prior
+ultimates, and its cells are the smallest of the three) is not tested. That
+matching cannot repair a diffuse prior-only direction is a conjecture: no
+test isolates it. The fits are sound (2,000 draws: rhat at most 1.01, at
+most 3 divergences in any panel).
 
 **Reweighting where k is low.** On the programs alone and on the stacked
 panels cut to 6 ages, the root mean square gap between a reweighted and a
@@ -100,8 +135,11 @@ total is dominated by EVW, so this says little about GenIns and RAA. The
 opening reserve is the posterior mean of the lifetime reserve to within z
 2.0 at three seeds.
 
-**Conformance.** The full panel keeps its loose entry
-(`HIERARCHICAL_REFITS`, no bound changed). A second entry on the three
+**Conformance.** The full panel's entry (`HIERARCHICAL_REFITS`) has check
+1's mean-z bound at 25 where the other entries have 5 or 6, set from three
+seeds (observed mean z up to 11.8); a reweighted total biased by 0.12 sd of
+the total passes it, so the entry is a regression guard and not a
+conformance pass. The conformance evidence is the second entry, on the three
 programs cut to 6 ages at 2 chains of 1,000 draws has the other models'
 bounds (`HIERARCHICAL_CUT_REFITS`: unflagged gap 0.08, flagged gap 0.25, mean
 z and opening z 6.0). Over seeds 0 to 5 the mean z is -0.60 (sd 1.13, |z| at

@@ -4845,6 +4845,10 @@ S7::method(print, hierarchical_bf_program) <- function(x, ...) {
 #'
 #' @inheritParams hierarchical_bf_fit
 #' @inheritParams bayes_one_year_fit
+#' @param one_year_sims The number of one-year simulations, or `NULL` (the
+#'   default) for the model's `n_sims`, at most 2,000. The lifetime reserves
+#'   keep `n_sims`. A smaller count gives the first simulations of a larger
+#'   one.
 #' @param ptr A `HierarchicalBfOneYearFit` pointer; used internally.
 #' @returns A `hierarchical_bf_one_year_fit` object.
 #' @seealso [bayes_hierarchical_bf()], [bayes_bf_normalised_one_year()].

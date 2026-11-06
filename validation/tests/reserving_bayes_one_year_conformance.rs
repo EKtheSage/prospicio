@@ -65,9 +65,11 @@
 //! so EVW's next diagonal falls at ages it has never observed (prior-only
 //! shares), every simulation is flagged (Pareto k from 6 to 57), matching
 //! rescues none and the reweighting is poor. `HIERARCHICAL_REFITS` keeps the
-//! loose bounds measured over seeds 0 to 2: check 1's bound 25 against 5 and
-//! a flagged gap below 2.5 sd (mean z up to 11.8 and flagged gap up to 1.10,
-//! where the mean plus 4 sd is 20.3 and 2.31). On the same programs cut to
+//! loose bounds measured over seeds 0 to 2: check 1's mean-z bound 25 for
+//! this entry alone (5 or 6 elsewhere) and a flagged gap below 2.5 sd (mean
+//! z up to 11.8 and flagged gap up to 1.10, where the mean plus 4 sd is 20.3
+//! and 2.31). A total biased by 0.12 sd passes that bound, so this entry is a
+//! regression guard and not a conformance pass. On the same programs cut to
 //! 6 ages, where no program has such a cell, only 0 to 6 of 40 simulations
 //! are flagged at 2 chains of 1,000 draws and the bounds are the other
 //! models' (`HIERARCHICAL_CUT_REFITS`, seeds 0 to 5: mean z within 2.6,
@@ -186,8 +188,8 @@ const COMPARTMENTAL_2_REFITS: Refits = Refits {
 };
 /// `HierarchicalBf` on the Stan reference case, whose refit samples the whole
 /// panel of 72 parameters. Every simulation is flagged (Pareto k from 6 to
-/// 57 at seed 0, because EVW's next diagonal falls at ages it has never
-/// observed) and matching rescues none, so nothing is unflagged and
+/// 57 at seed 0; EVW stops at 6 of 10 ages, see the finding) and matching
+/// rescues none, so nothing is unflagged and
 /// `matches` is false; reweighting alone is poor, which the bounds record
 /// (over seeds 0 to 2: the reweighted total's mean z 4.3 to 11.8, mean + 4 sd
 /// 20.3; the gap to a refit of a flagged simulation 0.08 to 1.10 sd of the
@@ -202,8 +204,9 @@ const HIERARCHICAL_REFITS: Refits = Refits {
     replay: 20,
 };
 /// `HierarchicalBf` on the same programs cut to their first six ages, so that
-/// no program has a next diagonal at an age it has never observed (the cause
-/// of the full panel's Pareto k above 6, `knowledge/findings/hierarchical-bf-one-year.md`).
+/// no program has a next diagonal at an age it has never observed (which
+/// goes with the full panel's Pareto k above 6,
+/// `knowledge/findings/hierarchical-bf-one-year.md`).
 /// Over seeds 0 to 5 at 2 chains of 1,000 warm-up and 1,000 kept draws (the
 /// refit's own sampling noise is most of the gap: 0.09 at 200 draws): 0 to 6
 /// of 40 simulations flagged; mean z -0.60 (sd 1.13, |z| at most 2.58),

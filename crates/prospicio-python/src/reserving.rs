@@ -13887,8 +13887,8 @@ impl PyHierarchicalBf {
     ///     As in ``BayesOdp.one_year``.
     /// n_sims : int, optional
     ///     The number of one-year simulations; by default this model's
-    ///     ``n_sims``. A smaller count gives the first simulations of a
-    ///     larger one.
+    ///     ``n_sims``, at most 2,000. A smaller count gives the first
+    ///     simulations of a larger one.
     ///
     /// Returns
     /// -------

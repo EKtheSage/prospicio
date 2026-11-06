@@ -388,7 +388,7 @@ def test_one_year_replays_by_seed_and_takes_dicts(tri, view):
         again = model.one_year(tri, "paid", "premium", n_sims=500)
         named = model.one_year(programs_by_name(), "paid", "premium", n_sims=500)
         smaller = model.one_year(tri, "paid", "premium", n_sims=100)
-        # The default number of simulations is the model's own, at most 2,000.
+        # The default number of simulations is the model's own; the cap of 2,000 is tested below.
         default = model.one_year(tri, "paid", "premium", refit="reweight_only")
     assert again.pareto_k == view.pareto_k
     assert again.cdr.draw_matrix() == view.cdr.draw_matrix()
@@ -396,6 +396,21 @@ def test_one_year_replays_by_seed_and_takes_dicts(tri, view):
     # A smaller count is the first simulations of a larger one.
     assert smaller.pareto_k == view.pareto_k[:100]
     assert default.cdr.n_sims == 600 and default.refitted == [] and default.moment_matched == []
+
+
+def test_one_year_default_count_is_capped_at_two_thousand(tri):
+    # The model's n_sims is above the cap: the view runs 2,000, the lifetime
+    # reserves keep 2,500, and an n_sims argument is used as it is.
+    model = HierarchicalBf(
+        apriori=0.7, level_cv=0.3, seed=3, chains=2, tune=100, draws=100, n_sims=2500
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        capped = model.one_year(tri, "paid", "premium", refit="reweight_only")
+        more = model.one_year(tri, "paid", "premium", refit="reweight_only", n_sims=2100)
+    assert capped.cdr.n_sims == 2000 and len(capped.pareto_k) == 2000
+    assert capped.fit.reserves.n_sims == 2500
+    assert more.cdr.n_sims == 2100
 
 
 def test_one_year_settings_and_errors(tri):

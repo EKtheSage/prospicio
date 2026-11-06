@@ -4028,7 +4028,7 @@ with one `omega`, (C1), (D2). What building it changed or measured:
   and 8.2 against zero; the opening reserve is the lifetime reserve's
   posterior mean within |z| 2.0. A fit takes about 5.1 s and a refit about
   1.2 s a simulation (40 simulations in 55 s with the fit).
-* **The view is right; the flags come from ages a program never observed**
+* **The view is right; the flags go with a program that stops short of the grid**
   (`knowledge/findings/hierarchical-bf-one-year.md`, tests in
   `validation/tests/reserving_bayes_hierarchical_bf_one_year.rs`). The mean
   of the claims development result under refits only (the default here) is
@@ -4044,14 +4044,24 @@ with one `omega`, (C1), (D2). What building it changed or measured:
   own mean and `phi_c` (`the_extended_data_are_the_opening_cells_and_the_year_and_the_year_is_drawn_from_the_draw`).
   k is low for each program alone (median 0.11, 0.46, 0.34) and for GenIns
   with RAA (0.52), and above 3 for every panel with EVW and another program
-  (9 to 46 at 200 draws, 3 to 30 at 2,000): the reference panel's grid has
+  (9 to 46 at 200 draws, 3 to 30 at 2,000). The reference panel's grid has
   10 ages and EVW stops at 6, so the next diagonal of its older origins falls
   at ages where only the prior speaks. Cutting every program to 6 ages gives
-  median k 0.47 (0.40 at 2,000 draws) for the same three programs, and
-  the reweighted total is then within 0.06 to 0.10 sd of a refit at 200 draws
-  and 0.04 at 1,000. A panel whose programs stop at different ages gets the
-  expensive view; refusing it, warning, or leaving those ages out of the
-  year is open for the user.
+  median k 0.47 (0.40 at 2,000 draws), but that also removes cells, so it
+  does not isolate the cause. A control (the ignored test
+  `pareto_k_when_one_program_stops_short`, 60 simulations, seed 0, the
+  finding's table) changes only whether a program stops short, using copies
+  of GenIns and RAA: two programs at full length have median k 0.65 and 0.50
+  (200 draws), both cut to 6 ages 0.34 and 0.26, and one at 6 beside one at
+  10 1.06 and 0.71, with the share above 0.7 rising from 0.45 to 0.82 for
+  GenIns and from 0.18 to 0.50 for RAA. So stopping short raises k, which
+  supports the cause, but only to about 1, against 46 for EVW beside
+  GenIns; what else makes EVW's weights so concentrated is not tested, and
+  that matching cannot repair a diffuse prior-only direction is a
+  conjecture. On the programs cut to 6 ages the reweighted total is within
+  0.06 to 0.10 sd of a refit at 200 draws and 0.04 at 1,000. A panel whose
+  programs stop at different ages gets the expensive view; refusing it,
+  warning, or leaving those ages out of the year is open for the user.
 * **The default fallback stays `MomentMatchThenRefit`.** Matching is
   cheap and rescues nothing on the reference panel, so it refits every
   simulation; `light_refit` and `no_light_refit` are ignored (a refit
@@ -4066,8 +4076,11 @@ with one `omega`, (C1), (D2). What building it changed or measured:
   The validation half has two entries, both under `RISK_RS_FULL_BAYES` (a
   fit takes about 5.1 s, not the 2 s open decision 26 asks for). The
   reference panel keeps `HIERARCHICAL_REFITS` (20 simulations, `matches`
-  false, bounds from three seeds: check 1's z below 25 against 5, the flagged
-  gap below 2.5 sd, opening z below 6; no bound loosened); its looseness is
+  false, bounds from three seeds). Its check 1 bound on the mean z is 25 for
+  this entry alone (the other entries use 5 or 6), the flagged gap bound is
+  2.5 sd and the opening z bound 6; a reweighted total biased by 0.12 sd
+  passes the bound on the mean, so this entry is a regression guard and not
+  a conformance pass. Its looseness is
   the finding above, not a defect of the engine, and it takes about 5.5
   minutes a seed. The same programs cut to 6 ages, at 2 chains of 1,000
   draws (the refit's sampling noise is most of the gap at 200), have the
