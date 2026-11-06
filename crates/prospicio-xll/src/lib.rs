@@ -28,6 +28,7 @@ pub mod experience;
 pub mod exposure;
 pub mod fitting;
 pub mod glm;
+pub mod jobs;
 pub mod odp_glm;
 pub mod payout;
 pub mod pnl;
