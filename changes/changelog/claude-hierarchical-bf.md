@@ -7,4 +7,4 @@
   partially pooled and the ODP scale is pooled per unit of premium. The fit
   gives each program's reserves, loss ratio and shrinkage, the
   hyperparameters' posterior and one joint distribution of all reserves
-  (#599).
+  (#599, #757).
