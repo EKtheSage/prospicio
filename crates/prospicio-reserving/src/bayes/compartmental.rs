@@ -7,6 +7,8 @@
 //! effects on each cell (model 2).
 
 mod backtest;
+#[cfg(test)]
+mod subannual_study;
 mod year;
 
 pub use backtest::CompartmentalCandidate;
@@ -3184,6 +3186,8 @@ impl Model {
                 dev_labels.push(data.age(k).to_string());
             }
         }
+        #[cfg(test)]
+        subannual_study::regroup(&mut dev_level, &mut dev_labels, data);
         let times: Vec<f64> = (0..data.n_ages).map(|k| data.grain.time(k)).collect();
         let log_normal = response.log_normal();
         let obs =

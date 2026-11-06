@@ -11,7 +11,8 @@ one-year view, decision 11) built, with the defaults the user decided on
 user's decisions of 2026-10-19, and its one-year view over segments
 (`Compartmental::one_year_segments`, decision 8) built after it; PRs G
 and H (paid and incurred, and one response alone, decision 12) built;
-PR I (unequal origin and development grain, decision 13) built; PR D not
+PR I (unequal origin and development grain, decision 13) built, with a
+study of sub-annual fits proposed as decision 14; PR D not
 yet · Lane:
 Reserving, with the Models lane for `prospicio-bayes` · Depends on:
 `reserving-bayes.md` (decisions 2, 5, 10, 11, 13 and 15, and open decision
@@ -1788,7 +1789,7 @@ user confirmed time in years the same day, "for now": how to fit
 quarterly or monthly data well (rate priors that suit sub-annual
 development, grouping development effects by year, seasonality, and
 a calibration check on sub-annual books) is open, the lane's Next
-item `[compartmental-subannual]`. Built in
+item `[compartmental-subannual]` (studied in decision 14). Built in
 Rust, Python and R on `claude/compartmental-grain`, stacked on PR H. The
 choices:
 
@@ -1876,6 +1877,407 @@ choices:
   central differences, the prior check, a fit, segments, the backtest and
   the one-year conformance on a quarterly triangle. The results are in
   `knowledge/findings/compartmental-grain.md`.
+
+### 14. Fitting sub-annual data (study, `[compartmental-subannual]`)
+
+Status: **Proposed** (2026-11-05). A study and nothing built: the fit, its
+defaults and the public API are as decision 13 left them, and every choice
+below is the user's (open decisions 9 to 13). The harness is
+`validation/tests/reserving_compartmental_subannual.rs` (ignored panels, run
+by hand), the grouped form is test-only code in
+`crates/prospicio-reserving/src/bayes/compartmental/subannual_study.rs` (the
+module and its one call in `Model::build` are both `#[cfg(test)]`, so it exists
+only in that crate's own test build and no validation test links it), and
+`validation/scripts/compartmental_subannual_summary.py` prints every table
+here from the CSVs. The full tables and the commands are in
+`knowledge/findings/compartmental-subannual.md`.
+
+**The study.** A book is simulated once, every month to 120 months, and each
+grain reads the same book, so an annual cell is the monthly cell at month 12.
+Book `b` of a world is `StreamRng::new(20261105, stream * 10,000 + b)`, its
+fit seed `1,000 + b`. Unless stated, a panel has 50 books. Panels use a
+shorter sampler than the default (500 warm-up and 500 draws a chain, target
+acceptance 0.9 for model 1 and 0.99 for model 2, 4,000 simulations), which
+leaves divergences in most model 1 fits (43 to 48 of 50 books in the
+`iid` and `persist` arms on annual origins, counts in the sampler table and
+below); the books fitted with the default sampler too, 1 to 5 an arm, are in the
+sampler table. Times are 4 threads,
+beside other heavy work for part of the run. The worlds:
+
+* `iid`: model 1 exactly, ten annual origins, independent normal noise on
+  every cumulative cell, whatever the grain. This is the model's own world.
+* `persist`: the same means, with noise as real payments have it: independent
+  monthly payment noise that stays in cumulative paid, and an AR(1) on
+  outstanding (0.95 a month). The settings are `PERSIST_PHI = 25` (the
+  payment noise's variance is 25 times the month's mean payment, an sd of about
+  2% of a 60,000 ultimate at month 120) and `PERSIST_RHO = 0.95`, chosen by hand
+  and fitted to no book; every `persist` result below is at these values.
+* `earned`: 40 quarterly origins, each model 1 exactly; an annual origin is
+  the sum of its four, so its premium is earned through the year.
+* `m2y`, `m2q`: model 2's process on annual origins with log-normal monthly
+  increments and development effects that move by development year or by
+  quarter. `m2qo` is `m2y` on 40 quarterly origins, and `m2seasonq` is `m2qo` with the
+  seasonal factor below.
+* `fast` (`k_er` 8, `k_p` 2.5), `conflict` (company 337's 1.75 and 0.43):
+  `iid` with rates far from the preset.
+* `season`: a calendar-quarter factor (1.3, 1, 0.7, 1) on the paid increments.
+
+**Calibration of the total reserve** (coverage of the 90% interval, with a
+binomial standard error of about 4 points at 50 books; Meyers' D of the
+ultimate percentile, whose 5% critical value is 19.2 at 50 books; RMSE of the
+mean against the outcome; median sd):
+
+| World | Model | Grain | Cells | Books | Coverage | D (critical) | RMSE | sd |
+|---|---|---|---:|---:|---:|---:|---:|---:|
+| `iid` | model 1 | aa | 110 | 50 | 84 | 12.1 (19.2) | 2,853 | 2,636 |
+| `iid` | model 1 | aq | 440 | 50 | 82 | 12.4 (19.2) | 2,103 | 1,949 |
+| `iid` | model 1 | am | 1,320 | 50 | 84 | 5.5 (19.2) | 1,716 | 1,707 |
+| `persist` | model 1 | aa | 110 | 50 | 88 | 10.7 (19.2) | 1,623 | 1,762 |
+| `persist` | model 1 | aq | 440 | 50 | 70 | 16.3 (19.2) | 1,903 | 1,271 |
+| `persist` | model 1 | am | 1,320 | 50 | 56 | 19.1 (19.2) | 2,033 | 1,069 |
+| `persist` | model 1, incremental | aa | 110 | 50 | 98 | 28.1 (19.2) | 1,510 | 3,356 |
+| `persist` | model 1, incremental | aq | 440 | 50 | 100 | 19.9 (19.2) | 2,151 | 3,564 |
+| `persist` | model 1, incremental | am | 1,320 | 50 | 100 | 11.0 (19.2) | 2,731 | 3,605 |
+| `earned` | model 1 | aa | 110 | 50 | 100 | 39.9 (19.2) | 7,423 | 9,961 |
+| `earned` | model 1 | aq | 440 | 50 | 98 | 23.9 (19.2) | 4,058 | 5,758 |
+| `earned` | model 1 | am | 1,320 | 50 | 92 | 37.4 (19.2) | 4,860 | 4,728 |
+| `earned` | model 1 | qq | 1,640 | 50 | 92 | 17.8 (19.2) | 2,007 | 2,293 |
+| `earned` | model 1 | qm | 4,920 | 20 | 95 | 21.9 (30.4) | 1,586 | 1,964 |
+| `m2y` | model 2 | aa | 110 | 50 | 86 | 13.8 (19.2) | 5,527 | 5,478 |
+| `m2y` | model 2 | aq | 440 | 50 | 88 | 18.1 (19.2) | 4,882 | 4,362 |
+| `m2y` | model 2 | am | 1,320 | 20 | 80 | 35.3 (30.4) | 5,259 | 4,135 |
+| `m2q` | model 2 | aa | 110 | 50 | 96 | 7.8 (19.2) | 5,761 | 5,893 |
+| `m2q` | model 2 | aq | 440 | 50 | 82 | 11.2 (19.2) | 5,156 | 4,378 |
+| `m2qo` | model 2 | qq | 1,640 | 20 | 80 | 16.7 (30.4) | 2,960 | 3,032 |
+
+* In its own world the model is equally calibrated at every grain, and finer
+  cells are real information: the sd falls from 2,636 to 1,707 and the RMSE
+  with it. Coverage is 82 to 84, about two standard errors under 90 at every
+  grain alike, and D passes. One thing that does not depend on the grain may
+  be part of that gap (an inference, not tested): `tau_RRF`, true 0.2, has
+  posterior means of 0.10 to 0.18 and is covered in 64% to 86% of books, since
+  the preset's half-t of scale 0.1 pulls it down.
+* **Finer cells buy no accuracy when the noise persists, and the interval
+  narrows anyway.** On `persist` the sd falls from 1,762 to 1,069, the RMSE
+  rises from 1,623 to 2,033, and coverage falls from 88 to 56, at `PERSIST_PHI`
+  25 and `PERSIST_RHO` 0.95 (the fall depends on them; other values were not
+  run). The cumulative likelihood counts each cell's noise as new information,
+  which suggests why the interval narrows: twelve cells a year of one persistent
+  error are not twelve observations (an inference; the likelihood was not changed
+  to test it). The parameters show the symptom too: `k_p`'s 90% interval holds the truth in 80% of books annually,
+  18% monthly. The grain code is not at fault: the likelihood is the paper's,
+  and on annual Schedule P triangles the same model's intervals were already
+  too narrow (`meyers-calibration-compartmental.md`).
+* **Annual origins with earned premium are the larger misfit, at every
+  grain.** The model starts all exposure at `t = 0`. On `earned` the annual
+  fits fail D at all three grains and put `k_er` at 1.92, 1.22 and 1.11
+  against a true 3.32, and `k_p` near it: 45 of 50 monthly fits have draws
+  with `k_er <= k_p`, so the rate-swap warning fires. The sd is wide enough to
+  hide it (coverage 92 to 100) but the reserve's error is 2 to 3.7 times that
+  of the same book on quarterly origins, which are the model's world again
+  (D 17.8 against a critical 19.2, coverage 92, RMSE 2,007, `k_er` 3.30; with
+  monthly development, on 20 books, D 21.9 against 30.4, coverage 95, RMSE
+  1,586). These are short-sampler results; the default sampler ran on 3
+  quarterly-origin books and on no annual-origin `earned` book. Finer
+  development does not fix the annual-origin fits. Finer origins do, in this
+  world, but that comparison changes more than the start of exposure: the
+  quarterly fit has 40 origins against 10, so the effects' variance is estimated
+  from four times as many, and an annual origin's curve is a mixture of four
+  curves with different effects. That the single start at `t = 0` is the cause is
+  an inference; it was not tested.
+* **Model 2's reserve is calibrated at each grain it can reach.** Incremental
+  paid has the noise right. On the same books `m2y` moves from 86 to 88 and
+  `m2q` from 96 to 82 between annual and quarterly (D passes in all four; 82 is
+  two standard errors under 90). Its absolute coverage is not a clean test: the
+  world's development effects are about three scales into the preset's half-t
+  tail (`tau_dev` 1 against a scale of 0.3), so read grains against each other.
+  On the same first 20 books annual, quarterly and monthly `m2y` are alike
+  (coverage 80 at each, mean 0.41, 0.49 and 0.55 sd above the outcome, RMSE
+  5,417, 5,549 and 5,259), so the monthly panel's failing D (35.3, on books that
+  run high at every grain: 23.0 and 29.5 on the same 20) is those books, not the
+  grain. `m2qo` passes D on quarterly origins (20 books).
+* **A cell's noise changes with the grain under incremental paid**, by about
+  `sqrt(n)` for `n` months, and the preset's `log σ` prior (median 0.2, sd 0.2
+  on the log) is fixed. The true `sigma_pd` of 0.088 annually sits 4 prior sds
+  low and only 8% of annual `m2y` books cover it; at quarterly grain 92% do. A
+  wider `log σ` prior (sd 1) changes the reserve little (coverage 85 against
+  80, RMSE 5,515 against 5,549, the same 20 books).
+
+**Sampler.** The panels' median per fit, and the default sampler on a few
+books of the same arms (the default's own settings, decision 5):
+
+| Arm | Cells | Sampler | Books | Seconds | R-hat | Share above 1.01 | Bulk ESS | Books with divergences |
+|---|---:|---|---:|---:|---:|---:|---:|---:|
+| model 1, aa | 110 | study | 50 | 2 | 1.017 | 90% | 184 | 46 |
+| model 1, aa | 110 | default | 5 | 8 | 1.007 | 20% | 637 | 0 |
+| model 1, aq | 440 | study | 50 | 7 | 1.022 | 90% | 178 | 45 |
+| model 1, aq | 440 | default | 5 | 32 | 1.007 | 0% | 782 | 0 |
+| model 1, am | 1,320 | study | 50 | 33 | 1.020 | 90% | 198 | 43 |
+| model 1, am | 1,320 | default | 5 | 163 | 1.005 | 0% | 908 | 0 |
+| model 1, qq | 1,640 | study | 50 | 34 | 1.056 | 100% | 63 | 27 |
+| model 1, qq | 1,640 | default | 3 | 195 | 1.008 | 33% | 308 | 0 |
+| model 1, qm | 4,920 | study | 20 | 149 | 1.039 | 100% | 94 | 8 |
+| model 2, aa | 110 | study | 50 | 6 | 1.024 | 92% | 151 | 0 |
+| model 2, aa | 110 | default | 5 | 52 | 1.001 | 0% | 2744 | 0 |
+| model 2, aq | 440 | study | 50 | 32 | 1.034 | 100% | 99 | 0 |
+| model 2, aq | 440 | default | 3 | 255 | 1.003 | 0% | 1302 | 0 |
+| model 2, am | 1,320 | study | 20 | 128 | 1.037 | 100% | 119 | 0 |
+| model 2, am | 1,320 | default | 1 | 2,850 | 1.542 | 100% | 7 | 0 |
+| model 2, qq | 1,640 | study | 20 | 91 | 1.066 | 100% | 63 | 0 |
+
+Under the default sampler model 1 converges on every arm measured: R-hat at
+most 1.011, no divergence, bulk ESS at least 204. Decision 13's 32 s at 440
+cells is reproduced (32 s), and the time grows a little faster than the cells:
+8, 32, 163 and 195 s at 110, 440, 1,320 and 1,640 cells, about the power 1.2.
+Model 2 takes 52 s, 255 s and 2,850 s at 110, 440 and 1,320 cells, the last
+steps at about the square of the cells, with 541 parameters. The panels' R-hat
+of 1.02 to 1.06 is the short run's: on the same books the default sampler moves
+the reserve's mean by at most 0.045 sd and, on every converged arm, its sd by
+under 1%, so the panels' reserves stand, and their parameter coverage carries
+the short run's noise. The short run's divergences are not rare. Of 50 books, 46, 45 and 43 of the `iid` fits
+(annual, quarterly and monthly development), 48, 45 and 34 of the `persist` fits,
+50 and 48 of the `earned` fits on annual origins at quarterly and monthly
+development and 27 of the quarterly-origin `earned` fits have at least one
+divergence (8 of 20 on `earned` `qm`); the median `iid` or `persist` fit has 2 to
+3 and the worst 357. Model 2's short fits have none. The default sampler had none in
+its 18 model 1 fits. Its rows rest on 5, 5, 5, 3, 5, 3 and 1 books (the sampler
+table's Books column), 27 fits in all, too few for a rate, so the claim that the
+short run's reserves stand rests on those 27 fits' mean differences. The short run does leave strays: on `iid` monthly one
+book of 50 has R-hat 1.60 and 357 divergences. How the short run's trouble grows
+with cells and parameters shows in its share of fits with R-hat above 1.05: 4
+of 50 at 110 cells and 5 of 50 at 1,320 for model 1 on annual origins, 28 of 50
+on quarterly origins (80 more effects); for model 2 5 of 50, 19 of 50 and 8 of
+20 at 110, 440 and 1,320 cells, and 11 of 20 on `m2qo`. Model 2's default
+sampler is enough on 110 and 440 cells (R-hat at most 1.007, ESS at least 861).
+On monthly `m2y` book 0 stays at R-hat 1.62 under the short run and 1.54 after
+the default's 48 minutes, with ESS 7 and 1,322 warnings, yet its reserve moves
+0.005 sd between the two runs: the trouble is in the rates' parameters, not the
+total. It is the one monthly book run at the default. Quarterly
+origins cost about the same cells for cells (`earned`, 1,640 cells: 34 s short,
+195 s default; model 2 `m2qo`: 91 s short, not run at the default), and
+monthly development on quarterly origins (4,920 cells) took 149 s short.
+
+**Zero increments.** Model 2 refuses a paid increment of 0 (decision 2's
+log-normal), and they come with the grain. With a Poisson number of payments
+spread over `m2y`'s pattern (test `zero_cells`, 200 books), 2,000 payments an
+origin leave an empty cell in 64% of annual books and in every quarterly and
+monthly one (`zero_cells.csv`: 128, 200 and 200 of 200); at 10,000 payments still 90% of quarterly books and every monthly
+one. Model 2 on monthly data needs a large book or a floor on the cells, which
+`reserving-calibration.md` already lists as later work.
+
+**Choices.**
+
+* **Rate priors (open decision 9).** The preset stays sensible, and the finer
+  the grain the less it matters. Its prior predictive (test `prior_bands`, a
+  premium of 100,000) puts paid at 0.3% to 0.8% of premium at month 1, 2.5% to
+  5.9% at month 3 and 18% to 40% at month 12, outstanding at 10% to 22% at
+  month 1: wide enough that nothing in the first months is absurd, since the
+  rates are per year on every grain (decision 13). An alternative, `ratewide`
+  (log sd 1 on both rates in place of 0.1), gives paid of 4.6% to 57% at month
+  12. By fit:
+
+  All rows are the same first 20 books of their world, so that a preset row and
+  a `ratewide` row compare like for like (the preset's 50-book `iid` rows are in
+  the calibration table; `iid` monthly has no `ratewide` arm). The standard error
+  of a coverage at 20 books is 7 points.
+
+  | World | Grain | Prior | `k_er` (truth) | `k_er` covered | Reserve coverage | RMSE | sd |
+  |---|---|---|---:|---:|---:|---:|---:|
+  | `iid` | aa | preset | 3.29 (3.32) | 95% | 80 | 3,037 | 2,589 |
+  | `iid` | aa | ratewide | 3.40 (3.32) | 85% | 85 | 2,990 | 2,567 |
+  | `iid` | aq | preset | 3.33 (3.32) | 85% | 90 | 2,105 | 1,919 |
+  | `iid` | aq | ratewide | 3.34 (3.32) | 85% | 95 | 2,073 | 1,920 |
+  | `iid` | am | preset | 3.32 (3.32) | 90% | 90 | 1,537 | 1,693 |
+  | `conflict` | aa | preset | 1.78 (1.75) | 90% | 85 | 3,456 | 3,314 |
+  | `conflict` | aa | ratewide | 1.76 (1.75) | 95% | 90 | 3,733 | 3,380 |
+  | `conflict` | aq | preset | 1.76 (1.75) | 85% | 95 | 2,100 | 2,463 |
+  | `conflict` | aq | ratewide | 1.76 (1.75) | 90% | 95 | 2,133 | 2,508 |
+  | `conflict` | am | preset | 1.76 (1.75) | 80% | 90 | 1,788 | 1,992 |
+  | `conflict` | am | ratewide | 1.76 (1.75) | 85% | 90 | 1,807 | 1,966 |
+  | `fast` | aa | preset | 5.20 (8.0) | 0% | 90 | 2,386 | 2,024 |
+  | `fast` | aa | ratewide | 11.66 (8.0) | 100% | 85 | 2,216 | 1,933 |
+  | `fast` | aq | preset | 7.73 (8.0) | 65% | 90 | 1,712 | 1,641 |
+  | `fast` | aq | ratewide | 8.04 (8.0) | 100% | 90 | 1,706 | 1,635 |
+  | `fast` | am | preset | 7.93 (8.0) | 85% | 95 | 1,416 | 1,551 |
+  | `fast` | am | ratewide | 8.01 (8.0) | 90% | 95 | 1,414 | 1,553 |
+
+  On these 20 `iid` books the preset's D at quarterly development is 31.4
+  against a critical 30.4 (12.4 on all 50), so D on 20 books is noisy.
+
+  Where the truth is at the preset (`iid`) or five prior sds off it
+  (`conflict`) the two priors give the same reserve, even on annual cells, as
+  decision 2 found on company 337 (on the same 20 `iid` books the coverage is
+  80, 90 and 90 under the preset against 85 and 95 under `ratewide`, within
+  the 7-point standard error). Only `fast`, a first year resolved inside
+  twelve months, breaks the preset: annually it pins `k_er` at 5.2 against 8
+  (no book covers it) and overstates a small reserve by 19%, the wide prior 13%
+  (its `k_er` is 11.7 and loose, since annual cells cannot resolve it);
+  quarterly and monthly cells pull the preset to the truth (7.73, 7.93). So
+  finer cells fix what the preset gets wrong. What the wide prior costs: 5 of
+  20 annual `fast` fits have rate-swap draws, none under the preset.
+  Model 2 takes the same prior with a catch: a rate's effects sit on the
+  scale of its prior's sd, so `ratewide` also widens the origin and development
+  effects on the rates tenfold. On `m2y` quarterly and the same 20 books the
+  reserve is no different (coverage 90 against 80, RMSE 5,564 against 5,549).
+
+  * (a) Keep the preset as it is, and say in the help that it is per year on
+    every grain and that a line with a first year much faster or slower than
+    `k_er` 3 needs its own. Costs a sentence. *Recommended*: nothing measured
+    breaks that a required `priors` argument does not already let a user fix.
+  * (b) Add a wide preset for sub-annual data (`ratewide`). No measured gain
+    on the reserve; on `fast` it fixes the rates' coverage at quarterly grain
+    (65 to 100). Costs a constructor in three languages, and a user must
+    choose.
+  * (c) Rates per period of the grain. Rejected by decision 13 and nothing here
+    argues against that: the same book has the same rates at every grain, which
+    is what made this study's comparison possible.
+
+* **Model 2's development effects (open decision 10).** One level per age (as
+  built) against levels grouped by development year, the same density with
+  its age-to-level map changed (`grouped_against_per_age`, short sampler; the
+  per-age column reproduces the panels' fits to the digit):
+
+  | World, grain | Form | Parameters | Books | Seconds | R-hat | Bulk ESS | Coverage | D | sd | elpd_loo |
+  |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+  | `m2y`, aq | per age | 221 | 30 | 22 | 1.032 | 105 | 87 | 29.5 | 4,324 | 1,930.8 |
+  | `m2y`, aq | by year | 101 | 30 | 21 | 1.035 | 110 | 87 | 24.3 | 4,311 | 1,952.2 |
+  | `m2q`, aq | per age | 221 | 30 | 34 | 1.029 | 120 | 83 | 12.4 | 4,371 | 1,918.4 |
+  | `m2q`, aq | by year | 101 | 30 | 9 | 1.014 | 225 | 97 | 8.9 | 6,933 | 1,557.3 |
+  | `m2season`, aq | per age | 221 | 20 | 28 | 1.059 | 67 | 80 | 28.9 | 4,789 | 1,910.2 |
+  | `m2season`, aq | by year | 101 | 20 | 22 | 1.038 | 93 | 95 | 17.8 | 5,941 | 1,840.4 |
+  | `m2y`, am | per age | 541 | 10 | 126 | 1.048 | 114 | 80 | 45.6 | 4,484 | 6,131.9 |
+  | `m2y`, am | by year | 101 | 10 | 89 | 1.038 | 101 | 70 | 48.5 | 4,322 | 6,199.2 |
+
+  * (a) Keep one level per age. Quarterly it costs nothing where effects are
+    by year (reserve within 0.1 sd of grouped, elpd 21 worse) and it is right
+    where they are not. Monthly the
+    fit is as calibrated as annually on 20 books, but it takes 48 minutes at
+    the default sampler, against 4 quarterly, 8 of 20 fits have R-hat above
+    1.05 at the short length, and book 0 stays at 1.54 at the default. Levels by
+    year on 10 books take 89 s against 126 s short,
+    with R-hat at most 1.07 against 1.62, elpd 67 better in 10 of 10 and the
+    reserve within 0.14 sd.
+  * (b) A setting for the width of a level (per age, or by development year),
+    per age by default. About twenty lines and an index the model already has,
+    plus a setting in Python and R; `CompartmentalPriors` is untouched, and the
+    one-year view needs a test on grouped levels. Grouped is badly wrong when
+    effects do move within a year (elpd 361 worse in 30 of 30 books, sd 59%
+    wider), so it is a choice to make with LOO, not a default. *Recommended.*
+    Monthly it is also the cheaper and better-mixing form when effects do move
+    by year.
+  * (c) By development year by default on sub-annual grains. Fixes monthly
+    without the user knowing. Changes every existing sub-annual model 2 fit, and
+    loses `m2q`'s structure silently; on annual origins that all start in January it
+    also gives up what per-age levels do for seasonality (next item).
+
+* **Seasonality (open decision 11).** A seasonal payment factor as strong as
+  1.3 and 0.7, on the same books with and without it (20 books a pair; the
+  factor also raises mean future paid by about 3% in this world, since
+  early-year quarters weigh more):
+
+  | Pair | Valuation | Mean less outcome, sd (without the factor) | Reserve sd ratio | `sigma_pd` ratio | Coverage | D (critical) |
+  |---|---|---:|---:|---:|---:|---:|
+  | model 1, aa | year end | -0.51 (-0.28) | 1.02 | 1.00 | 80 | 35.1 (30.4) |
+  | model 1, aq | year end | -0.67 (-0.23) | 1.54 | 1.62 | 90 | 38.0 (30.4) |
+  | model 1, aq | end of Q3 | -0.32 (-0.31) | 1.50 | 1.64 | 95 | 22.7 (30.4) |
+  | model 1, aq | end of Q2 | 0.27 (-0.33) | 1.47 | 1.64 | 95 | 16.6 (30.4) |
+  | model 1, qq | year end | -0.94 (-0.25) | 1.17 | 1.22 | 90 | 58.7 (30.4) |
+  | model 2, aq | year end | 0.41 (0.49) | 1.06 | 1.00 | 80 | 28.9 (30.4) |
+  | model 2, aq | end of Q2 | 0.18 (0.04) | 0.99 | 1.01 | 75 | 22.6 (30.4) |
+  | model 2, qq | year end | -0.74 (0.27) | 1.26 | 1.60 | 95 | 43.9 (30.4) |
+
+  The worst case first. Model 1 on quarterly origins at year end has its mean
+  0.94 sd under the outcome (0.25 without the factor) and D of 58.7 against a
+  critical 30.4. D also fails at year end for model 1 on annual origins, with
+  annual and quarterly development (35.1 and 38.0), and for model 2 on quarterly
+  origins (43.9; mean 0.74 sd under the outcome against 0.27 over, a shift of
+  1.01 sd). It passes at the end of Q2 and Q3 (16.6 to 22.7) and for model 2 on
+  annual origins (28.9 and 22.6). Coverage holds at 75 to 95 because the sd
+  widens, so the error lies in the centre. Model 1 without a term reads the
+  wiggle as noise: `sigma_pd` rises 62% and the reserve's sd by up to 54% (2%
+  with annual development). At mid-year, where paid runs 0.3 of a quarter's
+  payments ahead of the trend and the cumulative likelihood's latest paid
+  carries that into the reserve, the mean moves 0.6 sd against the plain book's.
+  Model 2's per-age levels absorb the season on annual origins only in this
+  study's layout: every annual origin starts in January, so calendar quarter and
+  age are the same thing there (`sigma_pd` unmoved, mean within 0.14 sd of the
+  plain book's). That is an artifact of the layout, and real earned books do not
+  have it. With origins starting in all four quarters (`m2seasonq`, `m2qo` with
+  the factor, 20 books) the levels cannot absorb the season: `sigma_pd` rises
+  60%, the sd 26% and D is 43.9. Levels by development year lose 70 of elpd on
+  the annual-origin seasonal book in 20 of 20 books and the sd widens 24%. Model
+  1's annual fit shows no sign of the season in its noise (`sigma_pd` ratio
+  1.00); it bends `k_er` instead (2.87 against 3.32, covered in no book of 20).
+
+  * (a) No term, and say in the help that model 1 reads a season as noise (the
+    interval widens and the mean can sit nearly 1 sd off) and that model 2's
+    per-age levels do not absorb it unless every origin starts in the same
+    calendar quarter. Costs a sentence. Leaves the errors above. *Recommended
+    for now, a closer call than it first looked*: the measured damage is large
+    on a strong season (D fails at year end in four of the five pairs) and on
+    quarterly origins nothing else can take the season up, but coverage holds
+    (75 to 95), this world's 30% season is large, no real sub-annual book in
+    the repo shows how strong seasonality is, and a term is untested (about a
+    PR). If the user's lines are seasonal on the order of this study's, (b) comes
+    before the other builds here.
+  * (b) A calendar-quarter factor on the paid increments, shared by all origins
+    and ages: three free log factors summing to 0, each with a tight normal
+    prior, and a calendar index per cell. Worth building if a real book needs
+    it, for model 1 and for quarterly origins above all, where nothing else can
+    take it up. Under cumulative paid the mean is a running sum of factored
+    increments, so the closed form no longer gives a cell directly; that and the
+    predictive's calendar periods are the cost, about a PR. Not prototyped here.
+  * (c) A smooth periodic term. More to choose, and four quarters do not need it.
+
+* **What a sub-annual fit promises (open decision 12).** On `persist` model 1
+  with paid as increments, a built setting (`PaidResponse::Incremental`), keeps
+  its interval as the grain falls (sd 3,356, 3,564 and 3,605), too wide where
+  cumulative is too narrow (coverage 98 to 100; D 28.1, 19.9 and 11.0, the first
+  two failing because the percentiles bunch in the middle). Its error is better
+  annually and worse monthly (RMSE 1,510, 2,151 and 2,731 against 1,623, 1,903
+  and 2,033), so on this world annual cells are the most accurate input for
+  either form.
+
+  * (a) Say in the help and the guide that under cumulative paid the interval
+    narrows with the grain (right where the noise is independent, as in `iid`,
+    too narrow where it persists, as in `persist`) and what incremental paid
+    trades: it keeps the interval, but 1.3 to 2 times too wide, with a worse RMSE
+    at quarterly and monthly grain and a failing D annually in this world, so the
+    help names the trade-off and does not pick a form. Costs a paragraph.
+    *Recommended*, with (b).
+  * (b) Add a warning to a fit with cumulative paid on a sub-annual grain, worded
+    as a prompt to check the residuals (it also fires on a calibrated `iid`
+    fit, since the data do not say which world they are in). A few lines, in the
+    place of the rate-swap warning. No measured cost.
+  * (c) Serially correlated residuals on the cumulative cells, the AR(1) of
+    open decision 8. The real fix for narrow intervals, but a model of its own
+    that needs a Stan reference, and not tested here.
+  * (d) Make incremental the default on sub-annual grains. Changes existing
+    fits, and its intervals are too wide by a factor of 1.3 to 2 (the sd of the
+    standardised errors is 0.48 to 0.75 against 1).
+
+* **Earned exposure (open decision 13, not in the original item).** Annual
+  origins are the worst measured case and no choice above touches them.
+
+  * (a) Say in the help that sub-annual development on annual origins fits an
+    exposure the model does not have, and use quarterly origins where the data
+    allow. Costs a paragraph. *Recommended.*
+  * (b) A setting that spreads the origin's exposure over its period: the closed
+    form integrated over the earning period, which stays closed (a uniform
+    mixture of exponentials). A PR, with a Stan program of its own. Worth it if
+    annual-origin sub-annual fits matter more than quarterly-origin ones; it
+    would help annual triangles too, since `earned` fails D at annual grain.
+
+**What was not run.** Panels of 50 on the costliest arms: `m2y` monthly, `m2qo` and `earned`
+on quarterly origins with monthly development have 20 books each, and every
+default-sampler arm a few books (model 2 monthly one, `m2qo` and `earned` `qm`
+none). The rate and seasonal arms (`m2seasonq` too) have 20 books, as the tables say. Levels by
+development year ran only under the short sampler, on annual origins. Not
+run at all: monthly origins, semiannual grains, the one-year view and the
+backtest on these books, paid and incurred or one response alone, prototypes of
+a seasonal term, of correlated residuals or of earned exposure, and a Stan
+reference for any arm. No real sub-annual triangle exists in the
+repo, so all of this is simulated.
 
 ## Risks
 
@@ -1979,3 +2381,43 @@ are settings from PR B on (decision 1).
    and calendar shocks each as a later PR on request; (b) plan them now.
    *Recommended: (a)*: none has a reference we can rerun yet, and each is
    a model of its own.
+
+Open since 2026-11-05 (decision 14, from a study on simulated books; none
+decided yet):
+
+9. **Sub-annual rate priors.** (a) Keep the preset, per year on every grain,
+   and say so in the help; (b) add a wide preset (`ratewide`, log sd 1 on both
+   rates); (c) rates per period. *Recommended: (a)*: on the same 20 books the
+   reserve's coverage differed by at most 5 points and its RMSE by at most 8%
+   between the two priors, and finer cells correct the preset where it was
+   wrong.
+10. **Model 2's development levels.** (a) One level per age, as built; (b) a
+    setting for levels by development year, per age by default; (c) by year by
+    default on sub-annual grains. *Recommended: (b)*: by year is right, and at
+    monthly grain cheaper (89 s against 126 s on 10 books), when effects move by
+    year and badly wrong when they do not (elpd 361 worse), so it is a choice to
+    make with LOO.
+11. **Seasonality.** (a) No term, documented; (b) a calendar-quarter factor on
+    the paid increments, three free log factors; (c) a smooth periodic term.
+    *Recommended: (a) for now, a closer call than first stated*: on a strong
+    season (30%) the mean is up to 0.94 sd low and D fails at year end in four
+    of five pairs (58.7 for model 1 on quarterly origins, 43.9 for model 2 on
+    quarterly origins); only model 2 on annual origins that all start in
+    January is spared, by that layout. Coverage holds (75 to 95) and no real
+    book shows how strong seasonality is, so (a) with the help sentence, and (b)
+    first among the builds if the user's lines are seasonal.
+12. **What a sub-annual fit promises.** (a) Document that cumulative paid
+    narrows the interval with the grain and what incremental paid trades; (b)
+    add a warning to such a fit; (c) correlated residuals (open decision 8's
+    AR(1)); (d) incremental paid by default on sub-annual grains. *Recommended:
+    (a) and (b)*: at the study's persistent noise (`PERSIST_PHI` 25,
+    `PERSIST_RHO` 0.95) coverage fell from 88 to 56 with no gain in accuracy,
+    and incremental paid is no cure (1.3 to 2 times too wide, a worse RMSE at
+    quarterly and monthly grain, D failing annually), so the help states the
+    trade-off and picks no form; (c) is the real fix and a model of its own.
+13. **Earned exposure** (not in the original item). (a) Document that annual
+    origins misfit under earned premium and use quarterly origins where the data
+    allow; (b) a setting that spreads an origin's exposure over its period, which
+    keeps a closed form. *Recommended: (a)*, and (b) if annual origins on
+    sub-annual development matter: they fail D at every grain and quarterly
+    origins of the same books pass.
