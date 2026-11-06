@@ -13513,6 +13513,25 @@ fn stack_programs(programs: &Bound<'_, PyDict>, columns: &[&str]) -> PyResult<Tr
     .map_err(err)
 }
 
+/// The triangle of `HierarchicalBf.fit` and `.one_year`: a `Triangle` with
+/// a segment per program, or a dict of program name to one-segment
+/// `Triangle`, stacked.
+fn programs_triangle(
+    triangle: &Bound<'_, PyAny>,
+    column: &str,
+    exposure: &str,
+) -> PyResult<Triangle> {
+    if let Ok(programs) = triangle.cast::<PyDict>() {
+        stack_programs(programs, &[column, exposure])
+    } else if let Ok(t) = triangle.extract::<PyRef<'_, PyTriangle>>() {
+        Ok(t.inner.clone())
+    } else {
+        Err(PyTypeError::new_err(
+            "triangle must be a Triangle or a dict of program name to Triangle",
+        ))
+    }
+}
+
 /// The hierarchical Bayesian Bornhuetter-Ferguson: several programs, one
 /// segment of a triangle each, pooled under an industry hyperprior on the
 /// loss ratio, with the development pattern partially pooled
@@ -13826,15 +13845,7 @@ impl PyHierarchicalBf {
         column: &str,
         exposure: &str,
     ) -> PyResult<PyHierarchicalBfFit> {
-        let tri = if let Ok(programs) = triangle.cast::<PyDict>() {
-            stack_programs(programs, &[column, exposure])?
-        } else if let Ok(t) = triangle.extract::<PyRef<'_, PyTriangle>>() {
-            t.inner.clone()
-        } else {
-            return Err(PyTypeError::new_err(
-                "triangle must be a Triangle or a dict of program name to Triangle",
-            ));
-        };
+        let tri = programs_triangle(triangle, column, exposure)?;
         let (model, prior) = (&self.inner, &self.pattern_prior);
         let inner = py
             .detach(|| match prior {
@@ -13844,6 +13855,108 @@ impl PyHierarchicalBf {
             .map_err(err)?;
         warn_diagnostics(py, "HierarchicalBf", &inner.diagnostics.warnings)?;
         Ok(PyHierarchicalBfFit { inner })
+    }
+
+    /// The one-year view of the fit over every program at once: the
+    /// claims development result of each program and origin over the
+    /// coming year, by importance reweighting of the posterior by the
+    /// year's cells, as ``BayesBfNormalised.one_year`` does for one
+    /// triangle (``docs/design/reserving-bayes.md``, decision 30). It is
+    /// one view over the stacked programs and not one per program, because
+    /// a program's next diagonal moves the industry level, the spreads and
+    /// the shared pattern, and through them the other programs' closing
+    /// reserves. A refit of a flagged simulation samples the whole panel.
+    /// Raises ``UserWarning`` for the fit's failed diagnostics, for refits
+    /// whose diagnostics failed, and for simulations left unrefitted by
+    /// ``max_refits``.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle or dict of str to Triangle
+    ///     As in ``fit``.
+    /// column : str
+    ///     The losses to project.
+    /// exposure : str
+    ///     The exposure column.
+    /// k_threshold : float, default 0.7
+    ///     The Pareto ``k`` above which a simulation's importance weights
+    ///     are not trusted.
+    /// refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
+    ///     What happens to a flagged simulation, as in ``BayesOdp.one_year``.
+    /// max_refits : int, optional
+    ///     As in ``BayesOdp.one_year``.
+    /// n_sims : int, optional
+    ///     The number of one-year simulations; by default this model's
+    ///     ``n_sims``, at most 2,000. A smaller count gives the first
+    ///     simulations of a larger one.
+    ///
+    /// Returns
+    /// -------
+    /// HierarchicalBfOneYearFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As ``fit``; if ``k_threshold`` is NaN or ``refit`` is unknown.
+    /// TypeError
+    ///     As ``fit``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reserving import HierarchicalBf, Triangle
+    /// >>> tri = Triangle.from_long(
+    /// ...     [2021, 2021, 2021, 2022, 2022, 2023, 2022, 2022, 2023],
+    /// ...     [12, 24, 36, 12, 24, 12, 12, 24, 12],
+    /// ...     {
+    /// ...         "paid": [100.0, 150.0, 170.0, 110.0, 172.0, 130.0, 55.0, 80.0, 60.0],
+    /// ...         "premium": [250.0] * 3 + [270.0] * 2 + [290.0] + [120.0] * 2 + [130.0],
+    /// ...     },
+    /// ...     keys={"program": ["a"] * 6 + ["b"] * 3},
+    /// ... )
+    /// >>> import warnings
+    /// >>> warnings.simplefilter("ignore")  # two tiny programs: the sampler is short
+    /// >>> model = HierarchicalBf(apriori=0.7, level_cv=0.2, chains=2, tune=200, draws=200, n_sims=500, seed=1)
+    /// >>> view = model.one_year(tri, "paid", "premium", refit="reweight_only")
+    /// >>> view.program
+    /// ['a', 'a', 'a', 'b', 'b']
+    /// >>> view.cdr.dims
+    /// ['program', 'origin']
+    /// >>> len(view.pareto_k)
+    /// 500
+    #[pyo3(signature = (triangle, column, exposure, k_threshold = 0.7, refit = "moment_match_then_refit", max_refits = None, n_sims = None))]
+    #[allow(clippy::too_many_arguments)]
+    fn one_year(
+        &self,
+        py: Python<'_>,
+        triangle: &Bound<'_, PyAny>,
+        column: &str,
+        exposure: &str,
+        k_threshold: f64,
+        refit: &str,
+        max_refits: Option<usize>,
+        n_sims: Option<usize>,
+    ) -> PyResult<PyHierarchicalBfOneYearFit> {
+        let settings = one_year_settings(k_threshold, Some(refit), max_refits, n_sims)?;
+        let tri = programs_triangle(triangle, column, exposure)?;
+        let (model, prior) = (&self.inner, &self.pattern_prior);
+        let inner = py
+            .detach(|| match prior {
+                Some(p) => model.one_year_with_pattern_prior(&tri, column, exposure, &settings, p),
+                None => model.one_year(&tri, column, exposure, &settings),
+            })
+            .map_err(err)?;
+        warn_diagnostics(py, "HierarchicalBf", &inner.fit.diagnostics.warnings)?;
+        warn_refits(
+            py,
+            "HierarchicalBf",
+            &[(
+                String::new(),
+                inner.refitted.len(),
+                inner.refit_warnings,
+                inner.unrefitted.len(),
+            )],
+        )?;
+        Ok(PyHierarchicalBfOneYearFit { inner })
     }
 
     fn __repr__(&self) -> String {
@@ -14173,6 +14286,255 @@ impl PyHierarchicalBfProgram {
             self.inner.shrinkage,
         )
     }
+}
+
+/// The one-year view of a ``HierarchicalBf`` over every program at once,
+/// from ``HierarchicalBf.one_year``: the lifetime fit, the opening reserve,
+/// the claims development result over the coming year and how reliable each
+/// simulation's importance reweighting was.
+///
+/// It is one view over the stacked programs, not one per program, because
+/// a program's next diagonal moves the industry level, the spreads and the
+/// shared pattern, and through them the other programs' closing reserves.
+/// ``cdr`` is the joint distribution of the claims development result by
+/// program and origin (the triangle's keys and ``"origin"`` as dimensions),
+/// the opening reserve less the year's payment and the posterior mean
+/// reserve after the year, so a negative value is an adverse development
+/// and ``cdr.aggregate(["program"])`` is each program's result with the
+/// dependence between programs kept. Per-origin lists run over every
+/// program's origins in turn, program by program, like the components of
+/// ``cdr``. ``pareto_k`` has one Pareto ``k`` per simulation;
+/// ``flagged_share`` is the share above ``k_threshold``, whether or not
+/// they were refitted, ``refitted`` lists the simulations refitted with
+/// NUTS and ``moment_matched`` those moment matching rescued.
+#[pyclass(
+    name = "HierarchicalBfOneYearFit",
+    module = "prospicio.reserving",
+    frozen
+)]
+pub(crate) struct PyHierarchicalBfOneYearFit {
+    inner: BayesOneYearFit<HierarchicalBfFit>,
+}
+
+#[pymethods]
+impl PyHierarchicalBfOneYearFit {
+    /// The model fitted to the observed triangle, with its posterior and
+    /// lifetime reserves, as ``HierarchicalBf.fit`` gives it.
+    ///
+    /// Returns
+    /// -------
+    /// HierarchicalBfFit
+    #[getter]
+    fn fit(&self) -> PyHierarchicalBfFit {
+        PyHierarchicalBfFit {
+            inner: self.inner.fit.clone(),
+        }
+    }
+
+    /// The program of each per-origin value and CDR component: the
+    /// segment label, repeated over its origins.
+    #[getter]
+    fn program(&self) -> Vec<String> {
+        self.inner
+            .fit
+            .programs
+            .iter()
+            .flat_map(|p| std::iter::repeat_n(p.label.to_string(), p.origins.len()))
+            .collect()
+    }
+
+    /// Origin period of each per-origin value and CDR component.
+    #[getter]
+    fn origins(&self) -> Vec<String> {
+        self.inner
+            .fit
+            .programs
+            .iter()
+            .flat_map(|p| p.origins.iter().map(ToString::to_string))
+            .collect()
+    }
+
+    /// Latest observed value per program and origin.
+    #[getter]
+    fn latest(&self) -> Vec<f64> {
+        self.inner
+            .fit
+            .programs
+            .iter()
+            .flat_map(|p| p.latest.iter().copied())
+            .collect()
+    }
+
+    /// The latest value plus the opening reserve, per program and origin.
+    #[getter]
+    fn opening_ultimate(&self) -> Vec<f64> {
+        self.inner.opening_ultimate.clone()
+    }
+
+    /// Each origin's posterior mean reserve on the observed triangle: the
+    /// mean over the posterior draws of the expected future increments.
+    #[getter]
+    fn opening_reserve(&self) -> Vec<f64> {
+        self.inner.opening_reserve.clone()
+    }
+
+    /// Joint distribution of the claims development result by program and
+    /// origin: one component per program and origin, one row per
+    /// simulation.
+    #[getter]
+    fn cdr(&self) -> PyPredictiveDistribution {
+        PyPredictiveDistribution {
+            inner: self.inner.cdr.clone(),
+        }
+    }
+
+    /// Each simulation's Pareto ``k``, in the order of the simulations
+    /// (``inf`` when too few weights differ to fit the tail).
+    #[getter]
+    fn pareto_k(&self) -> Vec<f64> {
+        self.inner.pareto_k.clone()
+    }
+
+    /// The simulations refitted with NUTS, in order (0-based).
+    #[getter]
+    fn refitted(&self) -> Vec<usize> {
+        self.inner.refitted.clone()
+    }
+
+    /// The simulations moment matching rescued (their ``k`` brought to at
+    /// most ``k_threshold``), in order (0-based); empty unless ``refit``
+    /// was ``"moment_match_then_refit"``, when each flagged simulation is
+    /// in this, in ``refitted`` or in ``unrefitted``.
+    #[getter]
+    fn moment_matched(&self) -> Vec<usize> {
+        self.inner.moment_matched.clone()
+    }
+
+    /// The simulations due for a refit beyond ``max_refits``, reweighted
+    /// instead, in order (0-based); empty without ``max_refits``.
+    #[getter]
+    fn unrefitted(&self) -> Vec<usize> {
+        self.inner.unrefitted.clone()
+    }
+
+    /// How many of the refits had a diagnostic warning (R-hat, ESS or a
+    /// divergence).
+    #[getter]
+    fn refit_warnings(&self) -> usize {
+        self.inner.refit_warnings
+    }
+
+    /// The Pareto ``k`` above which a simulation is flagged.
+    #[getter]
+    fn k_threshold(&self) -> f64 {
+        self.inner.k_threshold
+    }
+
+    /// The share of simulations whose ``k`` is above ``k_threshold`` (or
+    /// NaN), whether or not they were refitted.
+    #[getter]
+    fn flagged_share(&self) -> f64 {
+        self.inner.flagged_share()
+    }
+
+    /// One row per program and origin: ``program``, ``origin``, ``latest``,
+    /// ``opening_ultimate``, ``opening_reserve`` and the ``cdr_mean`` and
+    /// ``cdr_std_dev`` of the claims development result. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let moments = column_moments(&self.inner.cdr);
+        let out = PyDict::new(py);
+        out.set_item("program", self.program())?;
+        out.set_item("origin", self.origins())?;
+        out.set_item("latest", self.latest())?;
+        out.set_item("opening_ultimate", self.inner.opening_ultimate.clone())?;
+        out.set_item("opening_reserve", self.inner.opening_reserve.clone())?;
+        out.set_item("cdr_mean", moments.iter().map(|m| m.0).collect::<Vec<_>>())?;
+        out.set_item(
+            "cdr_std_dev",
+            moments.iter().map(|m| m.1).collect::<Vec<_>>(),
+        )?;
+        py.import("pandas")?.call_method1("DataFrame", (out,))
+    }
+
+    /// One row per program: the ``latest`` value, ``opening_ultimate`` and
+    /// ``opening_reserve`` summed over its origins, and the ``cdr_mean``
+    /// and ``cdr_std_dev`` of the program's claims development result (its
+    /// origins' sum), with the ``flagged_share`` of the whole view. Needs
+    /// pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn totals_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let fit = &self.inner;
+        let mut first = 0;
+        let (mut latest, mut ultimate, mut reserve) = (vec![], vec![], vec![]);
+        for p in &fit.fit.programs {
+            let n = p.origins.len();
+            latest.push(p.latest.iter().sum::<f64>());
+            ultimate.push(fit.opening_ultimate[first..first + n].iter().sum::<f64>());
+            reserve.push(fit.opening_reserve[first..first + n].iter().sum::<f64>());
+            first += n;
+        }
+        let totals = fit
+            .cdr
+            .aggregate(&["program"])
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let moments = column_moments(&totals);
+        let out = PyDict::new(py);
+        out.set_item(
+            "program",
+            fit.fit
+                .programs
+                .iter()
+                .map(|p| p.label.to_string())
+                .collect::<Vec<_>>(),
+        )?;
+        out.set_item("latest", latest)?;
+        out.set_item("opening_ultimate", ultimate)?;
+        out.set_item("opening_reserve", reserve)?;
+        out.set_item("cdr_mean", moments.iter().map(|m| m.0).collect::<Vec<_>>())?;
+        out.set_item(
+            "cdr_std_dev",
+            moments.iter().map(|m| m.1).collect::<Vec<_>>(),
+        )?;
+        out.set_item(
+            "flagged_share",
+            vec![fit.flagged_share(); fit.fit.programs.len()],
+        )?;
+        py.import("pandas")?.call_method1("DataFrame", (out,))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "HierarchicalBfOneYearFit(programs={}, origins={}, n_sims={}, flagged_share={:?}, \
+             refitted={})",
+            self.inner.fit.programs.len(),
+            self.inner.opening_reserve.len(),
+            self.inner.cdr.n_sims(),
+            self.inner.flagged_share(),
+            self.inner.refitted.len(),
+        )
+    }
+}
+
+/// The mean and standard deviation (the population one, as a simulated
+/// distribution's) of each component of `d`.
+fn column_moments(d: &prospicio_prob::PredictiveDistribution) -> Vec<(f64, f64)> {
+    let n = d.n_components();
+    let rows = d.n_sims() as f64;
+    (0..n)
+        .map(|j| {
+            let column = d.draw_matrix().iter().skip(j).step_by(n);
+            let mean = column.clone().sum::<f64>() / rows;
+            let var = column.map(|x| (x - mean).powi(2)).sum::<f64>() / rows;
+            (mean, var.sqrt())
+        })
+        .collect()
 }
 
 /// The prior of a layer's expected ultimate for ``BayesBfNormalised``, from

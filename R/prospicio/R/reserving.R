@@ -4555,7 +4555,7 @@ stack_programs <- function(programs, columns) {
 #' tail ESS below 100 per chain, any divergent transition) do not fail the
 #' fit: `bayes_hierarchical_bf()` raises one [warning()] listing them, and
 #' they stay in the fit's `diagnostics`. One `seed` replays a fit exactly.
-#' The one-year view is not available yet.
+#' The one-year view is [bayes_hierarchical_bf_one_year()].
 #'
 #' Properties of the fit: `programs` (a named list of
 #' [hierarchical_bf_program], in the triangle's segment order), `ages`,
@@ -4794,6 +4794,183 @@ S7::method(print, hierarchical_bf_program) <- function(x, ...) {
   cat(sprintf("<hierarchical_bf_program> %s: %d origins, loss ratio %s (own %s), shrinkage %s\n",
               x@label, length(x@origins), format(x@loss_ratio, digits = 4),
               format(x@own_loss_ratio, digits = 4), format(x@shrinkage, digits = 4)))
+  invisible(x)
+}
+
+#' One-year view of the hierarchical Bayesian Bornhuetter-Ferguson
+#'
+#' The claims development result (CDR) over the coming year of
+#' [bayes_hierarchical_bf()] for every program at once, by Pareto smoothed
+#' importance sampling of the posterior (decisions 17 and 30 of
+#' `docs/design/reserving-bayes.md`), as [bayes_bf_normalised_one_year()]
+#' does for one triangle. `bayes_hierarchical_bf_one_year()` fits the
+#' posterior and the lifetime reserves as [bayes_hierarchical_bf()] does with
+#' the same settings. Each simulation draws the year's increments of every
+#' program from a posterior draw with `process` error, reweights every
+#' posterior draw by the year's quasi likelihood (the scales, the priors and
+#' the prior ultimates unchanged), and takes each origin's CDR as its
+#' posterior mean reserve at the opening less its payment in the year and its
+#' weighted posterior mean reserve after it; a simulation whose Pareto k is
+#' above `k_threshold` is moment-matched and, if that cannot rescue it,
+#' refitted with NUTS, as `refit` says. A refit samples the whole panel.
+#'
+#' It is one view over the stacked programs and not one per program, because
+#' a program's next diagonal moves the industry level `L`, the spreads `tau`
+#' and `omega` and the shared pattern, and through them the other programs'
+#' closing reserves. The CDR is one joint [predictive_distribution] with
+#' dimensions `program` and `origin`, so a program's CDR is
+#' `aggregate(view@cdr, "program")` and the dependence between programs is
+#' kept.
+#'
+#' Failed MCMC diagnostics of the fit raise one [warning()] listing them, and
+#' refits that failed theirs raise another.
+#'
+#' Properties: `fit` (the [hierarchical_bf_fit]), per origin, program by
+#' program, `program`, `origins`, `latest`, `opening_ultimate` and
+#' `opening_reserve` (the posterior mean reserve on the observed triangle),
+#' `cdr` (a negative value is an adverse development, and
+#' `-quantile(view@cdr, 0.005)` is the one-year loss at 99.5%), `pareto_k`
+#' (one per simulation, `Inf` when too few weights differ to fit the tail),
+#' `refitted` (the simulations refitted with NUTS, 1-based),
+#' `moment_matched` (the simulations moment matching rescued, 1-based),
+#' `unrefitted` (the simulations due for a refit beyond `max_refits`,
+#' reweighted instead, 1-based), `refit_warnings`, `k_threshold` and
+#' `flagged_share`. `as.data.frame()` has one row per program and origin:
+#' `program`, `origin`, `latest`, `opening_ultimate`, `opening_reserve`, and
+#' the `cdr_mean` and `cdr_std_dev` of the CDR.
+#'
+#' Errors: as [bayes_hierarchical_bf()]; a `k_threshold` that is `NaN`.
+#'
+#' This is Python's `HierarchicalBf.one_year()`.
+#'
+#' @inheritParams hierarchical_bf_fit
+#' @inheritParams bayes_one_year_fit
+#' @param one_year_sims The number of one-year simulations, or `NULL` (the
+#'   default) for the model's `n_sims`, at most 2,000. The lifetime reserves
+#'   keep `n_sims`. A smaller count gives the first simulations of a larger
+#'   one.
+#' @param ptr A `HierarchicalBfOneYearFit` pointer; used internally.
+#' @returns A `hierarchical_bf_one_year_fit` object.
+#' @seealso [bayes_hierarchical_bf()], [bayes_bf_normalised_one_year()].
+#' @export
+#' @examples
+#' long <- data.frame(
+#'   program = c(rep("a", 6), rep("b", 3)),
+#'   year = c(2021, 2021, 2021, 2022, 2022, 2023, 2022, 2022, 2023),
+#'   age = c(12, 24, 36, 12, 24, 12, 12, 24, 12),
+#'   paid = c(100, 150, 170, 110, 172, 130, 55, 80, 60),
+#'   premium = c(250, 250, 250, 270, 270, 290, 120, 120, 130))
+#' tri <- triangle(long, "year", "age", c("paid", "premium"), keys = "program")
+#' view <- bayes_hierarchical_bf_one_year(tri, "paid", "premium", apriori = 0.7,
+#'                                        level_cv = 0.2, chains = 2, tune = 200, draws = 200,
+#'                                        n_sims = 500, seed = 1, refit = "reweight_only")
+#' view@flagged_share
+#' sqrt(variance(aggregate(view@cdr, "program")))
+#' as.data.frame(view)
+hierarchical_bf_one_year_fit <- S7::new_class(
+  "hierarchical_bf_one_year_fit",
+  package = "prospicio",
+  properties = local({
+    ints <- function(f) {
+      S7::new_property(S7::class_integer, getter = function(self) as.integer(f(self)))
+    }
+    list(
+      ptr = S7::new_S3_class("HierarchicalBfOneYearFit"),
+      fit = hierarchical_bf_fit,
+      program = S7::new_property(S7::class_character, getter = function(self) {
+        rep(names(self@fit@programs), vapply(self@fit@programs, function(p) length(p@origins), 0L))
+      }),
+      origins = S7::new_property(S7::class_character, getter = function(self) {
+        unlist(lapply(self@fit@programs, function(p) p@origins), use.names = FALSE)
+      }),
+      latest = S7::new_property(S7::class_double, getter = function(self) {
+        unlist(lapply(self@fit@programs, function(p) p@latest), use.names = FALSE)
+      }),
+      opening_ultimate = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$opening_ultimate()
+      }),
+      opening_reserve = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$opening_reserve()
+      }),
+      cdr = predictive_distribution,
+      pareto_k = S7::new_property(S7::class_double, getter = function(self) self@ptr$pareto_k()),
+      refitted = ints(function(self) self@ptr$refitted()),
+      moment_matched = ints(function(self) self@ptr$moment_matched()),
+      unrefitted = ints(function(self) self@ptr$unrefitted()),
+      refit_warnings = ints(function(self) self@ptr$refit_warnings()),
+      k_threshold = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$k_threshold()
+      }),
+      flagged_share = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$flagged_share()
+      })
+    )
+  }),
+  constructor = function(ptr) {
+    S7::new_object(S7::S7_object(), ptr = ptr, fit = hierarchical_bf_fit(ptr = ptr$fit()),
+                   cdr = predictive_distribution(ptr = ptr$cdr()))
+  }
+)
+
+#' @rdname hierarchical_bf_one_year_fit
+#' @export
+bayes_hierarchical_bf_one_year <- function(triangle, column, exposure, apriori = 1,
+                                           level_cv = NULL, cv = 0.1, development_sd = 10,
+                                           tau_scale = 0.3, omega_scale = 0.5,
+                                           process = c("gamma", "none"), chains = 4,
+                                           tune = 1000, draws = 1000, n_sims = 10000, seed = 0,
+                                           target_accept = 0.99, max_depth = 10,
+                                           pattern_prior = NULL, k_threshold = 0.7,
+                                           refit = c("moment_match_then_refit", "refit_flagged",
+                                                     "reweight_only", "refit_all"),
+                                           max_refits = NULL, one_year_sims = NULL) {
+  if (is.list(triangle) && !S7::S7_inherits(triangle)) {
+    triangle <- stack_programs(triangle, c(column, exposure))
+  }
+  cols <- exposure_columns(triangle, column, exposure)
+  process <- match.arg(process)
+  refit <- match.arg(refit)
+  pattern <- pattern_prior_args(pattern_prior)
+  priors <- c(single_number(apriori, "apriori"), single_number(cv, "cv"),
+              single_number(development_sd, "development_sd"),
+              single_number(tau_scale, "tau_scale"), single_number(omega_scale, "omega_scale"))
+  run <- c(single_number(chains, "chains"), single_number(tune, "tune"),
+           single_number(draws, "draws"), single_number(n_sims, "n_sims"),
+           single_number(seed, "seed"), single_number(target_accept, "target_accept"),
+           single_number(max_depth, "max_depth"))
+  ptr <- reserving_result(triangle@ptr$hierarchical_bf_one_year(
+    cols[1], cols[2], priors, optional_number(level_cv, "level_cv"), process, run,
+    single_number(k_threshold, "k_threshold"), refit, max_refits_arg(max_refits),
+    optional_number(one_year_sims, "one_year_sims"), pattern[[1]], pattern[[2]], pattern[[3]]))
+  view <- hierarchical_bf_one_year_fit(ptr = ptr)
+  failed <- view@fit@diagnostics$warnings
+  if (length(failed)) {
+    warning("bayes_hierarchical_bf_one_year: the MCMC diagnostics failed; check them before ",
+            "relying on the fit: ", paste(failed, collapse = "; "), call. = FALSE)
+  }
+  warn_refits("bayes_hierarchical_bf_one_year", "", length(view@refitted), view@refit_warnings,
+              length(view@unrefitted))
+  view
+}
+
+S7::method(as.data.frame, hierarchical_bf_one_year_fit) <- function(x, ...) {
+  draws <- draw_matrix(x@cdr)
+  centre <- colMeans(draws)
+  data.frame(
+    program = x@program, origin = x@origins, latest = x@latest,
+    opening_ultimate = x@opening_ultimate, opening_reserve = x@opening_reserve,
+    cdr_mean = unname(centre),
+    cdr_std_dev = unname(sqrt(colMeans(sweep(draws, 2, centre)^2))),
+    stringsAsFactors = FALSE)
+}
+S7::method(print, hierarchical_bf_one_year_fit) <- function(x, ...) {
+  cat(sprintf("<hierarchical_bf_one_year_fit> %d programs, %d origins, %d simulations\n",
+              length(x@fit@programs), length(x@origins), as.integer(x@cdr@n_sims)))
+  cat(sprintf("flagged share %s, %d moment-matched, %d refitted\n",
+              format(x@flagged_share, digits = 4), length(x@moment_matched), length(x@refitted)))
+  cat(sprintf("opening reserve %s, CDR mean %s, sd %s\n",
+              format(sum(x@opening_reserve), digits = 10), format(mean(x@cdr), digits = 6),
+              format(sqrt(variance(x@cdr)), digits = 6)))
   invisible(x)
 }
 

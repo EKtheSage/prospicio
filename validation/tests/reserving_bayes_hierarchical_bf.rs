@@ -2,8 +2,10 @@
 //! `docs/design/reserving-bayes.md`, decision 30, "Validation plan").
 //!
 //! Item 1 (one program and a tight hyperprior reduce to `BayesBfNormalised`)
-//! and item 5 (the one-year conformance suite) are unit tests of the model's
-//! file. This file holds items 2, 3, 4 and 6:
+//! and the one-year conformance suite are unit tests of the model's file and
+//! `reserving_bayes_one_year_conformance.rs`. This file holds items 2, 3, 4
+//! and 6, and the one-year limit of item 1 (the PR 17 check that the one-year
+//! view of one program with a tight hyperprior is `BayesBfNormalised`'s):
 //!
 //! * Item 2, shrinkage as Buhlmann-Straub: twenty simulated programs of
 //!   fully developed squares, one shared pattern (`omega_scale` 1e-6), a
@@ -48,7 +50,7 @@ use prospicio_math::special::{digamma, gamma_inc, trigamma};
 use prospicio_prob::Distribution;
 use prospicio_reserving::bayes::{BayesBfNormalised, HierarchicalBf, HierarchicalBfFit};
 use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, Period, Triangle};
-use prospicio_validation::{check, full_bayes, reference, triangle as dataset, triangle_columns};
+use prospicio_validation::{check, full_bayes, reference, stan_triangle, triangle as dataset};
 use rayon::prelude::*;
 
 // ---------------------------------------------------------------------
@@ -971,15 +973,8 @@ fn stan_model(seed: u64) -> HierarchicalBf {
     }
 }
 
-/// The three programs of the reference case, in the segment order of their
-/// labels: EVW's triangle with its prior ultimates as premium cut to its
-/// first six ages (all ten origins), GenIns with premium, and RAA with a
-/// premium of 40,000 in 1981 rising by 2,000 a year.
-/// Validation item 1's fits on RAA with a synthetic premium: one program, a
-/// tight hyperprior and spreads near 0 give `BayesBfNormalised`'s reserves,
-/// in total and by origin, within `0.1 s` and 10% (GenIns is a unit test).
-#[test]
-fn a_tight_hyperprior_reduces_to_the_normalised_fit_on_raa() {
+/// RAA with a synthetic premium of 40,000 in 1981 rising by 2,000 a year.
+fn raa_with_premium() -> Triangle {
     let raa = dataset("raa");
     let [_, _, n_origins, n_ages] = raa.shape();
     let (mut origin, mut age, mut paid, mut premium) = (vec![], vec![], vec![], vec![]);
@@ -993,7 +988,7 @@ fn a_tight_hyperprior_reduces_to_the_normalised_fit_on_raa() {
             }
         }
     }
-    let tri = Triangle::from_long(&Long {
+    Triangle::from_long(&Long {
         keys: &[],
         origin: &origin,
         development: DevelopmentColumn::Age(&age),
@@ -1002,7 +997,19 @@ fn a_tight_hyperprior_reduces_to_the_normalised_fit_on_raa() {
         development_grain: Grain::Year,
         cumulative: true,
     })
-    .expect("a triangle");
+    .expect("a triangle")
+}
+
+/// The three programs of the reference case, in the segment order of their
+/// labels: EVW's triangle with its prior ultimates as premium cut to its
+/// first six ages (all ten origins), GenIns with premium, and RAA with a
+/// premium of 40,000 in 1981 rising by 2,000 a year.
+/// Validation item 1's fits on RAA with a synthetic premium: one program, a
+/// tight hyperprior and spreads near 0 give `BayesBfNormalised`'s reserves,
+/// in total and by origin, within `0.1 s` and 10% (GenIns is a unit test).
+#[test]
+fn a_tight_hyperprior_reduces_to_the_normalised_fit_on_raa() {
+    let tri = raa_with_premium();
     let hierarchical = HierarchicalBf {
         apriori: 0.5,
         level_cv: Some(1e-6),
@@ -1060,61 +1067,83 @@ fn a_tight_hyperprior_reduces_to_the_normalised_fit_on_raa() {
     }
 }
 
-fn stan_triangle() -> Triangle {
-    let evw = triangle_columns("evw2012", &["paid", "prior"]);
-    let genins = triangle_columns("genins_premium", &["paid", "premium"]);
-    let raa = dataset("raa");
-    let (mut key, mut origin, mut age, mut paid, mut premium) =
-        (vec![], vec![], vec![], vec![], vec![]);
-    // (label, triangle, first origin year, ages kept, premium of origin w)
-    type Premium<'a> = Box<dyn Fn(usize) -> f64 + 'a>;
-    let programs: Vec<(&str, &Triangle, i32, usize, Premium)> = vec![
-        (
-            "evw",
-            &evw,
-            2001,
-            6,
-            Box::new(|w| evw.get(0, 1, w, 0).expect("prior")),
-        ),
-        (
-            "genins",
-            &genins,
-            2001,
-            10,
-            Box::new(|w| genins.get(0, 1, w, 0).expect("premium")),
-        ),
-        (
-            "raa",
-            &raa,
-            1981,
-            10,
-            Box::new(|w| 40_000.0 + 2_000.0 * w as f64),
-        ),
-    ];
-    for (label, tri, first, ages, prem) in &programs {
-        let [_, _, n_origins, _] = tri.shape();
-        for w in 0..n_origins {
-            for d in 0..*ages {
-                if let Some(v) = tri.get(0, 0, w, d) {
-                    key.push(*label);
-                    origin.push(Month::january(first + w as i32));
-                    age.push(tri.development()[d]);
-                    paid.push(v);
-                    premium.push(prem(w));
-                }
-            }
+/// Validation item 5's limit: the one-year view of one program with a tight
+/// hyperprior and spreads near 0 is `BayesBfNormalised`'s, both reweighting
+/// only so that refit noise stays out: the opening reserves and the
+/// claims development result's total and origins' means within `0.1 s` and
+/// its sds within 10%.
+#[test]
+fn a_tight_hyperprior_reduces_the_one_year_view_to_the_normalised_one() {
+    use prospicio_reserving::bayes::{BayesOneYear, OneYearRefit};
+    let tri = raa_with_premium();
+    let settings = BayesOneYear {
+        refit: Some(OneYearRefit::ReweightOnly),
+        n_sims: Some(4_000),
+        ..BayesOneYear::default()
+    };
+    let hierarchical = HierarchicalBf {
+        apriori: 0.5,
+        level_cv: Some(1e-6),
+        cv: 0.2,
+        tau_scale: 1e-6,
+        omega_scale: 1e-6,
+        n_sims: 8_000,
+        seed: 31,
+        ..HierarchicalBf::default()
+    }
+    .one_year(&tri, "paid", "premium", &settings)
+    .expect("a view");
+    let normalised = BayesBfNormalised {
+        apriori: 0.5,
+        cv: 0.2,
+        n_sims: 8_000,
+        seed: 32,
+        ..BayesBfNormalised::default()
+    }
+    .one_year(&tri, "paid", "premium", &settings)
+    .expect("a view");
+    let (a, b) = (&hierarchical.cdr, &normalised.cdr);
+    let total_sd = b.std_dev();
+    assert!(
+        (a.mean() - b.mean()).abs() < 0.1 * total_sd,
+        "total CDR means {} {}",
+        a.mean(),
+        b.mean()
+    );
+    assert!(
+        (a.std_dev() / total_sd - 1.0).abs() < 0.1,
+        "total CDR sds {} {total_sd}",
+        a.std_dev()
+    );
+    let total = |v: &[f64]| v.iter().sum::<f64>();
+    assert!(
+        (total(&hierarchical.opening_reserve) - total(&normalised.opening_reserve)).abs()
+            < 0.1 * total_sd,
+        "opening reserves {} {}",
+        total(&hierarchical.opening_reserve),
+        total(&normalised.opening_reserve)
+    );
+    let (wa, wb) = (a.n_components(), b.n_components());
+    assert_eq!(wa, wb);
+    let (da, db) = (a.draw_matrix(), b.draw_matrix());
+    for w in 0..wa {
+        let x: Vec<f64> = da.chunks_exact(wa).map(|row| row[w]).collect();
+        let y: Vec<f64> = db.chunks_exact(wb).map(|row| row[w]).collect();
+        if sd(&y) > 0.0 {
+            assert!(
+                (mean(&x) - mean(&y)).abs() < 0.1 * sd(&y),
+                "origin {w}: CDR means {} {}",
+                mean(&x),
+                mean(&y)
+            );
+            assert!(
+                (sd(&x) / sd(&y) - 1.0).abs() < 0.1,
+                "origin {w}: CDR sds {} {}",
+                sd(&x),
+                sd(&y)
+            );
         }
     }
-    Triangle::from_long(&Long {
-        keys: &[("program", &key)],
-        origin: &origin,
-        development: DevelopmentColumn::Age(&age),
-        values: &[("paid", &paid), ("premium", &premium)],
-        origin_grain: Grain::Year,
-        development_grain: Grain::Year,
-        cumulative: true,
-    })
-    .expect("a triangle")
 }
 
 fn stan_fit(seed: u64) -> HierarchicalBfFit {

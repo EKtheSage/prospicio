@@ -4,7 +4,7 @@
 //! too many NUTS refits for a unit test. [`conform`] runs on every model
 //! with a one-year view (`BayesOdp` on RAA and GenIns, `BayesBf` and
 //! `BayesBfNormalised` on GenIns
-//! with premium, Meyers' CRC and CSR on group 353's paid and CAY on
+//! with premium, `HierarchicalBf` on the three-program Stan panel, Meyers' CRC and CSR on group 353's paid and CAY on
 //! its incurred, decision 19, and the compartmental models 1 and 2 on
 //! company 337, decision 20); a new Bayesian model's one-year view is added to
 //! [`every_model_conforms`] before it ships (AGENTS.md, "Checks"). The
@@ -59,6 +59,24 @@
 //! (AGENTS.md, "Checks"). Meyers' and the compartmental views get their
 //! `n_sims` explicitly: by default their `one_year` runs at most 2,000.
 //!
+//! `HierarchicalBf` (the three-program Stan reference panel, decision 30)
+//! joins them under `RISK_RS_FULL_BAYES` in two entries. On the panel as the
+//! reference case has it, EVW stops at 6 ages while GenIns and RAA have 10,
+//! so EVW's next diagonal falls at ages it has never observed (prior-only
+//! shares), every simulation is flagged (Pareto k from 6 to 57), matching
+//! rescues none and the reweighting is poor. `HIERARCHICAL_REFITS` keeps the
+//! loose bounds measured over seeds 0 to 2: check 1's mean-z bound 25 for
+//! this entry alone (5 or 6 elsewhere) and a flagged gap below 2.5 sd (mean
+//! z up to 11.8 and flagged gap up to 1.10, where the mean plus 4 sd is 20.3
+//! and 2.31). A total biased by 0.12 sd passes that bound, so this entry is a
+//! regression guard and not a conformance pass. On the same programs cut to
+//! 6 ages, where no program has such a cell, only 0 to 6 of 40 simulations
+//! are flagged at 2 chains of 1,000 draws and the bounds are the other
+//! models' (`HIERARCHICAL_CUT_REFITS`, seeds 0 to 5: mean z within 2.6,
+//! opening z within 2.6, unflagged gap 0.045 with sd 0.007 and largest
+//! 0.055, flagged gap largest 0.115). The full entry takes about 5.5 minutes
+//! a seed, the cut one about 4.
+//!
 //! Every bound is at least the largest model's mean (or mean offset) plus
 //! 4 seed-to-seed sds over seeds 0 to 19 (largest: mean z 4.40, opening z
 //! 4.75, both GenIns under `BayesOdp`; gaps 0.071, `BayesBf`, and 0.455,
@@ -72,7 +90,8 @@
 //! reserving_bayes_one_year_conformance -- --ignored seed_sweep
 //! --nocapture`; `SWEEP_MEYERS_ONLY=1` runs Meyers' models alone,
 //! `SWEEP_COMPARTMENTAL_ONLY=1` the compartmental models,
-//! `SWEEP_BF_NORMALISED_ONLY=1` `BayesBfNormalised`).
+//! `SWEEP_BF_NORMALISED_ONLY=1` `BayesBfNormalised`,
+//! `SWEEP_HIERARCHICAL_ONLY=1` `HierarchicalBf`).
 
 use std::sync::OnceLock;
 use std::time::Instant;
@@ -81,11 +100,13 @@ use prospicio_bayes::nuts::Sampler;
 use prospicio_prob::{Distribution, PredictiveDistribution};
 use prospicio_reserving::bayes::{
     BayesBf, BayesBfFit, BayesBfNormalised, BayesBfNormalisedFit, BayesOdp, BayesOdpFit,
-    BayesOneYear, BayesOneYearFit, Compartmental, CompartmentalFit, CompartmentalPriors, Meyers,
-    MeyersFit, MeyersModel, OneYearRefit, Outstanding,
+    BayesOneYear, BayesOneYearFit, Compartmental, CompartmentalFit, CompartmentalPriors,
+    HierarchicalBf, HierarchicalBfFit, Meyers, MeyersFit, MeyersModel, OneYearRefit, Outstanding,
 };
 use prospicio_reserving::{DevelopmentColumn, Grain, Lag, Long, Month, Triangle};
-use prospicio_validation::{full_bayes, triangle, triangle_columns};
+use prospicio_validation::{
+    full_bayes, stan_triangle, stan_triangle_cut, triangle, triangle_columns,
+};
 
 /// The simulations of the mean check.
 const SIMS: usize = 10_000;
@@ -100,6 +121,8 @@ struct Refits {
     sims: usize,
     gaps: (f64, f64),
     matches: bool,
+    /// The bound on check 1's z of the reweighted total's mean.
+    mean: f64,
     opening: f64,
     replay: usize,
 }
@@ -108,6 +131,7 @@ const REFITS: Refits = Refits {
     sims: 300,
     gaps: (0.08, 0.5),
     matches: true,
+    mean: 5.0,
     opening: 5.0,
     replay: 300,
 };
@@ -119,6 +143,7 @@ const BF_NORMALISED_REFITS: Refits = Refits {
     sims: 300,
     gaps: (0.09, 0.5),
     matches: true,
+    mean: 5.0,
     opening: 5.0,
     replay: 300,
 };
@@ -132,6 +157,7 @@ const MEYERS_REFITS: Refits = Refits {
     sims: 60,
     gaps: (0.08, 0.65),
     matches: true,
+    mean: 5.0,
     opening: 5.0,
     replay: 20,
 };
@@ -148,6 +174,7 @@ const COMPARTMENTAL_REFITS: Refits = Refits {
     sims: 30,
     gaps: (0.08, 0.45),
     matches: true,
+    mean: 5.0,
     opening: 7.0,
     replay: 30,
 };
@@ -155,8 +182,46 @@ const COMPARTMENTAL_2_REFITS: Refits = Refits {
     sims: 6,
     gaps: (0.08, 0.9),
     matches: false,
+    mean: 5.0,
     opening: 7.0,
     replay: 6,
+};
+/// `HierarchicalBf` on the Stan reference case, whose refit samples the whole
+/// panel of 72 parameters. Every simulation is flagged (Pareto k from 6 to
+/// 57 at seed 0; EVW stops at 6 of 10 ages, see the finding) and matching
+/// rescues none, so nothing is unflagged and
+/// `matches` is false; reweighting alone is poor, which the bounds record
+/// (over seeds 0 to 2: the reweighted total's mean z 4.3 to 11.8, mean + 4 sd
+/// 20.3; the gap to a refit of a flagged simulation 0.08 to 1.10 sd of the
+/// total, mean + 4 sd 2.31; opening z at most 2.0 in absolute value), and
+/// every simulation is refitted by the default.
+const HIERARCHICAL_REFITS: Refits = Refits {
+    sims: 20,
+    gaps: (0.08, 2.5),
+    matches: false,
+    mean: 25.0,
+    opening: 6.0,
+    replay: 20,
+};
+/// `HierarchicalBf` on the same programs cut to their first six ages, so that
+/// no program has a next diagonal at an age it has never observed (which
+/// goes with the full panel's Pareto k above 6,
+/// `knowledge/findings/hierarchical-bf-one-year.md`).
+/// Over seeds 0 to 5 at 2 chains of 1,000 warm-up and 1,000 kept draws (the
+/// refit's own sampling noise is most of the gap: 0.09 at 200 draws): 0 to 6
+/// of 40 simulations flagged; mean z -0.60 (sd 1.13, |z| at most 2.58),
+/// mean + 4 sd 5.1 in absolute value; opening z -0.31 (sd 1.15, |z| at most
+/// 2.59), 4.9; unflagged gap 0.045 (sd 0.007), mean + 4 sd 0.074; flagged
+/// gap 0.063 (sd 0.037, largest 0.115), 0.209. Matching rescued some of the
+/// flagged simulations on most seeds and none on seeds with no flagged one, so
+/// `matches` is false.
+const HIERARCHICAL_CUT_REFITS: Refits = Refits {
+    sims: 40,
+    gaps: (0.08, 0.25),
+    matches: false,
+    mean: 6.0,
+    opening: 6.0,
+    replay: 20,
 };
 /// Fewest unflagged simulations whose gap is checked.
 const MIN_UNFLAGGED: usize = 10;
@@ -210,6 +275,7 @@ fn conform<F: Sync + Send>(
         sims: refit_sims,
         gaps,
         matches,
+        mean: mean_bound,
         opening: opening_bound,
         replay,
     } = refits;
@@ -219,7 +285,10 @@ fn conform<F: Sync + Send>(
     let full = run(SIMS, seed, only);
     let total = totals(&full.cdr);
     let mean_z = mean(&total) / (sd(&total) / (SIMS as f64).sqrt());
-    assert!(!strict || mean_z.abs() < 5.0, "{name}: mean z {mean_z}");
+    assert!(
+        !strict || mean_z.abs() < mean_bound,
+        "{name}: mean z {mean_z}"
+    );
     // 2. The opening reserve is the lifetime reserve's posterior mean.
     let lifetime = reserves(&full.fit).total();
     let opening: f64 = full.opening_reserve.iter().sum();
@@ -617,6 +686,120 @@ fn compartmental(tri: &Triangle, two: bool) -> Box<Run<'_, CompartmentalFit>> {
     })
 }
 
+/// Three fully developed 4 x 4 squares, programs `a`, `b` and `c` (the
+/// squares of `square()` at three sizes), for `HierarchicalBf`'s year
+/// without cells.
+fn closed_programs() -> Triangle {
+    let rows: [[f64; 4]; 4] = [
+        [357.0, 1124.0, 1735.0, 2218.0],
+        [352.0, 1236.0, 2170.0, 3353.0],
+        [290.0, 1292.0, 2219.0, 3235.0],
+        [310.0, 1418.0, 2195.0, 3757.0],
+    ];
+    let (mut key, mut origin, mut ages) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut paid, mut premium) = (Vec::new(), Vec::new());
+    for (name, scale) in [("a", 1.0), ("b", 1.5), ("c", 0.4)] {
+        for (k, row) in rows.iter().enumerate() {
+            for (d, &v) in row.iter().enumerate() {
+                key.push(name);
+                origin.push(Month::january(2001 + k as i32));
+                ages.push(12 * (d as u32 + 1));
+                paid.push(scale * v);
+                premium.push(scale * (5000.0 + 500.0 * k as f64));
+            }
+        }
+    }
+    Triangle::from_long(&Long {
+        keys: &[("program", &key)],
+        origin: &origin,
+        development: DevelopmentColumn::Age(&ages),
+        values: &[("paid", &paid), ("premium", &premium)],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Year,
+        cumulative: true,
+    })
+    .unwrap()
+}
+
+/// `HierarchicalBf` on `tri`, a triangle with a segment per program and
+/// columns `paid` and `premium`, with the settings of its Stan reference
+/// case (`reserving_bayes_hierarchical_bf.rs`) and the sampler of
+/// 2 chains of 200 warm-up and 200 kept draws.
+fn hierarchical(tri: &Triangle) -> Box<Run<'_, HierarchicalBfFit>> {
+    hierarchical_with(tri, 200)
+}
+
+/// [`hierarchical`] with `draws` warm-up and kept draws on each of 2 chains.
+fn hierarchical_with(tri: &Triangle, draws: usize) -> Box<Run<'_, HierarchicalBfFit>> {
+    Box::new(move |n_sims, seed, refit| {
+        HierarchicalBf {
+            apriori: 0.7,
+            level_cv: Some(0.5),
+            tau_scale: 0.5,
+            sampler: Sampler {
+                chains: 2,
+                tune: draws,
+                draws,
+                ..HierarchicalBf::default().sampler
+            },
+            n_sims,
+            seed,
+            ..HierarchicalBf::default()
+        }
+        .one_year(
+            tri,
+            "paid",
+            "premium",
+            &BayesOneYear {
+                n_sims: Some(n_sims),
+                ..settings(refit)
+            },
+        )
+        .unwrap()
+    })
+}
+
+/// `HierarchicalBf` on the Stan reference panel, and on three closed squares
+/// for check 6. Every simulation of the panel is flagged and matching rescues
+/// none, so every simulation is refitted (about 1.2 s each).
+fn hierarchical_measured(seed: u64, strict: bool) -> (&'static str, Measured) {
+    let hierarchical_reserves: fn(&HierarchicalBfFit) -> &PredictiveDistribution = |f| &f.reserves;
+    let (panel, closed_panel) = (stan_triangle(), closed_programs());
+    (
+        "HierarchicalBf",
+        conform(
+            "HierarchicalBf",
+            &*hierarchical(&panel),
+            Some(&*hierarchical(&closed_panel)),
+            hierarchical_reserves,
+            HIERARCHICAL_REFITS,
+            seed,
+            strict,
+        ),
+    )
+}
+
+/// `HierarchicalBf` on the Stan reference programs cut to six ages.
+fn hierarchical_cut_measured(seed: u64, strict: bool) -> (&'static str, Measured) {
+    let hierarchical_reserves: fn(&HierarchicalBfFit) -> &PredictiveDistribution = |f| &f.reserves;
+    let (panel, closed_panel) = (
+        stan_triangle_cut(&["evw", "genins", "raa"], 6),
+        closed_programs(),
+    );
+    (
+        "HierarchicalBf 6 ages",
+        conform(
+            "HierarchicalBf 6 ages",
+            &*hierarchical_with(&panel, 1000),
+            Some(&*hierarchical(&closed_panel)),
+            hierarchical_reserves,
+            HIERARCHICAL_CUT_REFITS,
+            seed,
+            strict,
+        ),
+    )
+}
+
 /// Runs the suite on every model at `seed`.
 fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
     let (raa, genins, premium, closed) = (
@@ -637,7 +820,15 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
     let compartmental_only = !strict && std::env::var("SWEEP_COMPARTMENTAL_ONLY").is_ok();
     // SWEEP_BF_NORMALISED_ONLY (the sweep): BayesBfNormalised alone.
     let bf_normalised_only = !strict && std::env::var("SWEEP_BF_NORMALISED_ONLY").is_ok();
+    let hierarchical_only = !strict && std::env::var("SWEEP_HIERARCHICAL_ONLY").is_ok();
     let mut out = Vec::new();
+    if hierarchical_only {
+        if std::env::var("SWEEP_HIERARCHICAL_ONLY").as_deref() != Ok("cut") {
+            out.push(hierarchical_measured(seed, strict));
+        }
+        out.push(hierarchical_cut_measured(seed, strict));
+        return out;
+    }
     if !(meyers_only || compartmental_only || bf_normalised_only) {
         out.push((
             "BayesOdp RAA",
@@ -759,6 +950,11 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
             strict,
         );
         out.push((name, measured));
+    }
+    // Over 5 s a fit and a refit a simulation: the full gate only.
+    if !(compartmental_only || strict && !full_bayes()) {
+        out.push(hierarchical_measured(seed, strict));
+        out.push(hierarchical_cut_measured(seed, strict));
     }
     out
 }

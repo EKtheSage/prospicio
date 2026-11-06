@@ -221,3 +221,55 @@ expect_error_like(go(list(a = by_name$a, q = quarterly)), "program q differs")
 incremental <- triangle(data.frame(year = 2022, age = c(12, 24), paid = c(1, 2), premium = 9),
                         "year", "age", c("paid", "premium"), cumulative = FALSE)
 expect_error_like(go(list(a = by_name$a, i = incremental)), "program i differs")
+
+# The one-year view, bayes_hierarchical_bf_one_year(): one view over the
+# stacked programs. A few simulations with the reweighting only (the refits of
+# a whole panel are the Rust suite's).
+yq <- list(chains = 2, tune = 200, draws = 200, n_sims = 400, one_year_sims = 40,
+           refit = "reweight_only")
+vrun <- with_warnings(do.call(bayes_hierarchical_bf_one_year,
+  c(list(tri, "paid", "premium", apriori = 0.7, level_cv = 0.3, seed = 5), yq)))
+view <- vrun$value
+n_cells <- 4 + 3 + 2
+stopifnot(
+  S7::S7_inherits(view, hierarchical_bf_one_year_fit),
+  S7::S7_inherits(view@fit, hierarchical_bf_fit),
+  identical(view@program, c(rep("a", 4), rep("b", 3), rep("c", 2))),
+  identical(view@origins, c("2020", "2021", "2022", "2023", "2021", "2022", "2023", "2022", "2023")),
+  length(view@latest) == n_cells, length(view@opening_ultimate) == n_cells,
+  length(view@opening_reserve) == n_cells,
+  S7::S7_inherits(view@cdr, predictive_distribution), view@cdr@n_sims == 40,
+  identical(view@cdr@dims, c("program", "origin")),
+  length(view@pareto_k) == 40, length(view@refitted) == 0, length(view@moment_matched) == 0,
+  view@k_threshold == 0.7, view@flagged_share >= 0, view@flagged_share <= 1
+)
+near(view@opening_ultimate, view@latest + view@opening_reserve, 1e-9)
+# By program, the CDR aggregates to the program's rows.
+by_program <- aggregate(view@cdr, "program")
+stopifnot(S7::S7_inherits(by_program, predictive_distribution),
+          identical(by_program@dims, "program"))
+
+frame <- as.data.frame(view)
+stopifnot(nrow(frame) == n_cells,
+          identical(names(frame), c("program", "origin", "latest", "opening_ultimate",
+                                    "opening_reserve", "cdr_mean", "cdr_std_dev")),
+          identical(frame$program, view@program), all(frame$cdr_std_dev >= 0), sum(frame$cdr_std_dev > 0) == n_cells - 1)
+
+# A seed replays; the list form of named triangles is the stacked panel.
+again <- suppressWarnings(do.call(bayes_hierarchical_bf_one_year,
+  c(list(tri, "paid", "premium", apriori = 0.7, level_cv = 0.3, seed = 5), yq)))
+stopifnot(identical(draw_matrix(again@cdr), draw_matrix(view@cdr)),
+          identical(again@pareto_k, view@pareto_k))
+listed <- suppressWarnings(do.call(bayes_hierarchical_bf_one_year,
+  c(list(by_name, "paid", "premium", apriori = 0.7, level_cv = 0.3, seed = 5), yq)))
+stopifnot(identical(draw_matrix(listed@cdr), draw_matrix(view@cdr)))
+
+# Fewer simulations than the fit's; the view prints.
+out <- capture.output(print(view))
+stopifnot(any(grepl("hierarchical_bf_one_year_fit", out, fixed = TRUE)))
+
+# Errors.
+expect_error_like(bayes_hierarchical_bf_one_year(tri, "paid", "premium", refit = "sometimes"),
+                  "should be one of")
+expect_error_like(do.call(bayes_hierarchical_bf_one_year,
+  c(list(tri, "paid", "premium", k_threshold = NaN), yq)), "k_threshold")

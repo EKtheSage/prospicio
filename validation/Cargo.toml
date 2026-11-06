@@ -162,3 +162,7 @@ required-features = ["slow-bayes"]
 [[test]]
 name = "reserving_bayes_pattern_draws"
 required-features = ["slow-bayes"]
+
+[[test]]
+name = "reserving_bayes_hierarchical_bf_one_year"
+required-features = ["slow-bayes"]

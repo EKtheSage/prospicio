@@ -2334,6 +2334,39 @@ impl Triangle {
         Ok(HierarchicalBfFit { inner })
     }
 
+    /// The one-year view of `bayes_hierarchical_bf` over every program at
+    /// once, by PSIS reweighting: the arguments of `hierarchical_bf`, then
+    /// `k_threshold`, `refit` ("moment_match_then_refit", "refit_flagged",
+    /// "reweight_only" or "refit_all"), `max_refits` and `one_year_sims`.
+    #[allow(clippy::too_many_arguments)]
+    fn hierarchical_bf_one_year(
+        &self,
+        column: &str,
+        exposure: &str,
+        priors: Vec<f64>,
+        level_cv: Nullable<f64>,
+        process: &str,
+        run: Vec<f64>,
+        k_threshold: f64,
+        refit: &str,
+        max_refits: Nullable<f64>,
+        one_year_sims: Nullable<f64>,
+        pattern_ages: Nullable<Vec<f64>>,
+        pattern_mean: Vec<f64>,
+        pattern_sd: Vec<f64>,
+    ) -> Result<HierarchicalBfOneYearFit> {
+        let model = hierarchical_bf_model(&priors, level_cv, process, &run)?;
+        let settings = one_year_settings(k_threshold, Some(refit), max_refits, one_year_sims)?;
+        let inner = match pattern_arg(pattern_ages, pattern_mean, pattern_sd)? {
+            Some(p) => {
+                model.one_year_with_pattern_prior(&self.inner, column, exposure, &settings, &p)
+            }
+            None => model.one_year(&self.inner, column, exposure, &settings),
+        }
+        .map_err(to_r)?;
+        Ok(HierarchicalBfOneYearFit { inner })
+    }
+
     /// The lifetime view under Mack's bootstrap: each origin's reserve
     /// simulated to the last age with `process` ("gamma", "lognormal",
     /// "residuals", "normal" or "none"), Mack's model averaged as `average`
@@ -5519,6 +5552,86 @@ impl HierarchicalBfFit {
     }
 }
 
+/// The one-year view of a hierarchical Bayesian Bornhuetter-Ferguson over
+/// every program: the lifetime fit, the opening reserve, the claims
+/// development result by program and origin and each simulation's Pareto k.
+#[extendr]
+pub(crate) struct HierarchicalBfOneYearFit {
+    inner: BayesOneYearInner<HierarchicalBfInner>,
+}
+
+#[extendr]
+impl HierarchicalBfOneYearFit {
+    /// The lifetime fit, as `bayes_hierarchical_bf` gives it.
+    fn fit(&self) -> HierarchicalBfFit {
+        HierarchicalBfFit {
+            inner: self.inner.fit.clone(),
+        }
+    }
+
+    /// The latest value plus the opening reserve, per program and origin.
+    fn opening_ultimate(&self) -> Vec<f64> {
+        self.inner.opening_ultimate.clone()
+    }
+
+    /// Each origin's posterior mean reserve on the observed triangle, per
+    /// program and origin.
+    fn opening_reserve(&self) -> Vec<f64> {
+        self.inner.opening_reserve.clone()
+    }
+
+    /// The joint claims development result by program and origin.
+    fn cdr(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.cdr.clone(),
+        }
+    }
+
+    fn pareto_k(&self) -> Vec<f64> {
+        self.inner.pareto_k.clone()
+    }
+
+    /// The simulations refitted with NUTS, 1-based.
+    fn refitted(&self) -> Vec<f64> {
+        self.inner
+            .refitted
+            .iter()
+            .map(|&i| (i + 1) as f64)
+            .collect()
+    }
+
+    /// The simulations moment matching rescued, 1-based.
+    fn moment_matched(&self) -> Vec<f64> {
+        self.inner
+            .moment_matched
+            .iter()
+            .map(|&i| (i + 1) as f64)
+            .collect()
+    }
+
+    /// The simulations due for a refit beyond `max_refits`, reweighted
+    /// instead, 1-based.
+    fn unrefitted(&self) -> Vec<f64> {
+        self.inner
+            .unrefitted
+            .iter()
+            .map(|&i| (i + 1) as f64)
+            .collect()
+    }
+
+    fn refit_warnings(&self) -> f64 {
+        self.inner.refit_warnings as f64
+    }
+
+    fn k_threshold(&self) -> f64 {
+        self.inner.k_threshold
+    }
+
+    fn flagged_share(&self) -> f64 {
+        self.inner.flagged_share()
+    }
+}
+
 /// A Bayesian Bornhuetter-Ferguson of a single-segment triangle column.
 #[extendr]
 pub(crate) struct BayesBfFit {
@@ -7601,6 +7714,7 @@ extendr_module! {
     impl BayesBfNormalisedFit;
     impl BayesNewYear;
     impl HierarchicalBfFit;
+    impl HierarchicalBfOneYearFit;
     impl IndustryPriorFit;
     impl MackBootstrapFit;
     impl OneYearFit;
