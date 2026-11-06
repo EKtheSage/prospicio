@@ -161,6 +161,69 @@ pub fn triangle_columns(name: &str, columns: &[&str]) -> Triangle {
     load_triangle(name, &pairs)
 }
 
+/// The three programs of the hierarchical Bornhuetter-Ferguson's reference
+/// case (`docs/design/reserving-bayes.md`, decision 30, validation item 4), a
+/// triangle with a segment per program under the key `program`, columns
+/// `paid` and `premium`: EVW's triangle with its prior ultimates as premium
+/// cut to its first six ages (all ten origins), GenIns with premium, and RAA
+/// with a premium of 40,000 in 1981 rising by 2,000 a year.
+pub fn stan_triangle() -> Triangle {
+    let evw = triangle_columns("evw2012", &["paid", "prior"]);
+    let genins = triangle_columns("genins_premium", &["paid", "premium"]);
+    let raa = triangle("raa");
+    let (mut key, mut origin, mut age, mut paid, mut premium) =
+        (vec![], vec![], vec![], vec![], vec![]);
+    // (label, triangle, first origin year, ages kept, premium of origin w)
+    type Premium<'a> = Box<dyn Fn(usize) -> f64 + 'a>;
+    let programs: Vec<(&str, &Triangle, i32, usize, Premium)> = vec![
+        (
+            "evw",
+            &evw,
+            2001,
+            6,
+            Box::new(|w| evw.get(0, 1, w, 0).expect("prior")),
+        ),
+        (
+            "genins",
+            &genins,
+            2001,
+            10,
+            Box::new(|w| genins.get(0, 1, w, 0).expect("premium")),
+        ),
+        (
+            "raa",
+            &raa,
+            1981,
+            10,
+            Box::new(|w| 40_000.0 + 2_000.0 * w as f64),
+        ),
+    ];
+    for (label, tri, first, ages, prem) in &programs {
+        let [_, _, n_origins, _] = tri.shape();
+        for w in 0..n_origins {
+            for d in 0..*ages {
+                if let Some(v) = tri.get(0, 0, w, d) {
+                    key.push(*label);
+                    origin.push(Month::january(first + w as i32));
+                    age.push(tri.development()[d]);
+                    paid.push(v);
+                    premium.push(prem(w));
+                }
+            }
+        }
+    }
+    Triangle::from_long(&Long {
+        keys: &[("program", &key)],
+        origin: &origin,
+        development: DevelopmentColumn::Age(&age),
+        values: &[("paid", &paid), ("premium", &premium)],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Year,
+        cumulative: true,
+    })
+    .expect("a triangle")
+}
+
 /// The triangle of `data/<name>.csv` with each `(file column, measure)`
 /// of `columns` as a measure column.
 fn load_triangle(name: &str, columns: &[(&str, &str)]) -> Triangle {

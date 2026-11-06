@@ -16728,6 +16728,75 @@ class HierarchicalBf:
         """
         Scale of the half-normal prior on ``omega``.
         """
+    def one_year(self, /, triangle: Any, column: str, exposure: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", max_refits: int | None = None, n_sims: int | None = None) -> HierarchicalBfOneYearFit:
+        """
+        The one-year view of the fit over every program at once: the
+        claims development result of each program and origin over the
+        coming year, by importance reweighting of the posterior by the
+        year's cells, as ``BayesBfNormalised.one_year`` does for one
+        triangle (``docs/design/reserving-bayes.md``, decision 30). It is
+        one view over the stacked programs and not one per program, because
+        a program's next diagonal moves the industry level, the spreads and
+        the shared pattern, and through them the other programs' closing
+        reserves. A refit of a flagged simulation samples the whole panel.
+        Raises ``UserWarning`` for the fit's failed diagnostics, for refits
+        whose diagnostics failed, and for simulations left unrefitted by
+        ``max_refits``.
+
+        Parameters
+        ----------
+        triangle : Triangle or dict of str to Triangle
+            As in ``fit``.
+        column : str
+            The losses to project.
+        exposure : str
+            The exposure column.
+        k_threshold : float, default 0.7
+            The Pareto ``k`` above which a simulation's importance weights
+            are not trusted.
+        refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
+            What happens to a flagged simulation, as in ``BayesOdp.one_year``.
+        max_refits : int, optional
+            As in ``BayesOdp.one_year``.
+        n_sims : int, optional
+            The number of one-year simulations; by default this model's
+            ``n_sims``. A smaller count gives the first simulations of a
+            larger one.
+
+        Returns
+        -------
+        HierarchicalBfOneYearFit
+
+        Raises
+        ------
+        ValueError
+            As ``fit``; if ``k_threshold`` is NaN or ``refit`` is unknown.
+        TypeError
+            As ``fit``.
+
+        Examples
+        --------
+        >>> from prospicio.reserving import HierarchicalBf, Triangle
+        >>> tri = Triangle.from_long(
+        ...     [2021, 2021, 2021, 2022, 2022, 2023, 2022, 2022, 2023],
+        ...     [12, 24, 36, 12, 24, 12, 12, 24, 12],
+        ...     {
+        ...         "paid": [100.0, 150.0, 170.0, 110.0, 172.0, 130.0, 55.0, 80.0, 60.0],
+        ...         "premium": [250.0] * 3 + [270.0] * 2 + [290.0] + [120.0] * 2 + [130.0],
+        ...     },
+        ...     keys={"program": ["a"] * 6 + ["b"] * 3},
+        ... )
+        >>> import warnings
+        >>> warnings.simplefilter("ignore")  # two tiny programs: the sampler is short
+        >>> model = HierarchicalBf(apriori=0.7, level_cv=0.2, chains=2, tune=200, draws=200, n_sims=500, seed=1)
+        >>> view = model.one_year(tri, "paid", "premium", refit="reweight_only")
+        >>> view.program
+        ['a', 'a', 'a', 'b', 'b', 'b']
+        >>> view.cdr.dims
+        ['program', 'origin']
+        >>> len(view.pareto_k)
+        500
+        """
     @property
     def pattern_prior(self, /) -> PatternPrior |None:
         """
@@ -16858,6 +16927,139 @@ class HierarchicalBfFit:
         Returns
         -------
         pandas.DataFrame
+        """
+
+@final
+class HierarchicalBfOneYearFit:
+    """
+    The one-year view of a ``HierarchicalBf`` over every program at once,
+    from ``HierarchicalBf.one_year``: the lifetime fit, the opening reserve,
+    the claims development result over the coming year and how reliable each
+    simulation's importance reweighting was.
+
+    It is one view over the stacked programs, not one per program, because
+    a program's next diagonal moves the industry level, the spreads and the
+    shared pattern, and through them the other programs' closing reserves.
+    ``cdr`` is the joint distribution of the claims development result by
+    program and origin (the triangle's keys and ``"origin"`` as dimensions),
+    the opening reserve less the year's payment and the posterior mean
+    reserve after the year, so a negative value is an adverse development
+    and ``cdr.aggregate(["program"])`` is each program's result with the
+    dependence between programs kept. Per-origin lists run over every
+    program's origins in turn, program by program, like the components of
+    ``cdr``. ``pareto_k`` has one Pareto ``k`` per simulation;
+    ``flagged_share`` is the share above ``k_threshold``, whether or not
+    they were refitted, ``refitted`` lists the simulations refitted with
+    NUTS and ``moment_matched`` those moment matching rescued.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def cdr(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the claims development result by program and
+        origin: one component per program and origin, one row per
+        simulation.
+        """
+    @property
+    def fit(self, /) -> HierarchicalBfFit:
+        """
+        The model fitted to the observed triangle, with its posterior and
+        lifetime reserves, as ``HierarchicalBf.fit`` gives it.
+
+        Returns
+        -------
+        HierarchicalBfFit
+        """
+    @property
+    def flagged_share(self, /) -> float:
+        """
+        The share of simulations whose ``k`` is above ``k_threshold`` (or
+        NaN), whether or not they were refitted.
+        """
+    @property
+    def k_threshold(self, /) -> float:
+        """
+        The Pareto ``k`` above which a simulation is flagged.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        Latest observed value per program and origin.
+        """
+    @property
+    def moment_matched(self, /) -> list[int]:
+        """
+        The simulations moment matching rescued (their ``k`` brought to at
+        most ``k_threshold``), in order (0-based); empty unless ``refit``
+        was ``"moment_match_then_refit"``, when each flagged simulation is
+        in this, in ``refitted`` or in ``unrefitted``.
+        """
+    @property
+    def opening_reserve(self, /) -> list[float]:
+        """
+        Each origin's posterior mean reserve on the observed triangle: the
+        mean over the posterior draws of the expected future increments.
+        """
+    @property
+    def opening_ultimate(self, /) -> list[float]:
+        """
+        The latest value plus the opening reserve, per program and origin.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value and CDR component.
+        """
+    @property
+    def pareto_k(self, /) -> list[float]:
+        """
+        Each simulation's Pareto ``k``, in the order of the simulations
+        (``inf`` when too few weights differ to fit the tail).
+        """
+    @property
+    def program(self, /) -> list[str]:
+        """
+        The program of each per-origin value and CDR component: the
+        segment label, repeated over its origins.
+        """
+    @property
+    def refit_warnings(self, /) -> int:
+        """
+        How many of the refits had a diagnostic warning (R-hat, ESS or a
+        divergence).
+        """
+    @property
+    def refitted(self, /) -> list[int]:
+        """
+        The simulations refitted with NUTS, in order (0-based).
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per program and origin: ``program``, ``origin``, ``latest``,
+        ``opening_ultimate``, ``opening_reserve`` and the ``cdr_mean`` and
+        ``cdr_std_dev`` of the claims development result. Needs pandas.
+
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per program: the ``latest`` value, ``opening_ultimate`` and
+        ``opening_reserve`` summed over its origins, and the ``cdr_mean``
+        and ``cdr_std_dev`` of the program's claims development result (its
+        origins' sum), with the ``flagged_share`` of the whole view. Needs
+        pandas.
+
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def unrefitted(self, /) -> list[int]:
+        """
+        The simulations due for a refit beyond ``max_refits``, reweighted
+        instead, in order (0-based); empty without ``max_refits``.
         """
 
 @final

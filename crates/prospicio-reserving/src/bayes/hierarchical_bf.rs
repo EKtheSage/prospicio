@@ -11,8 +11,9 @@ use prospicio_prob::{ComponentKey, InputHasher, KeyValue, PredictiveDistribution
 use super::bf_normalised::{column_error, origin_error};
 use super::dual::{CHUNK, gradient};
 use super::laplace::{Posterior, Whitened};
+use super::one_year::{self, BayesOneYear, BayesOneYearFit, YearModel};
 use super::scalar::Scalar;
-use super::{Diagnostics, Stream, derive_seed, pilot_seed};
+use super::{Diagnostics, Stream, derive_seed, one_year_seed, pilot_seed};
 use crate::bootstrap::{ProcessDistribution, prepare, process_draw};
 use crate::error::{Error, Result};
 use crate::expected_loss::origin_exposure;
@@ -268,6 +269,17 @@ impl HierarchicalBf {
     ) -> Result<HierarchicalBfFit> {
         self.validate()?;
         let panel = self.prepare(triangle, column, exposure, pattern)?;
+        self.fit_panel(triangle, column, exposure, &panel)
+    }
+
+    /// The fit of a prepared `panel`.
+    fn fit_panel(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        exposure: &str,
+        panel: &Panel,
+    ) -> Result<HierarchicalBfFit> {
         let model = &panel.model;
         let (posterior, diagnostics) = self.sample(
             model,
@@ -275,25 +287,9 @@ impl HierarchicalBf {
             derive_seed(self.seed, Stream::Chains),
         )?;
 
-        let mut dims = triangle.key_names().to_vec();
-        dims.push("origin".to_string());
-        let components: Vec<ComponentKey> = panel
-            .labels
-            .iter()
-            .zip(&panel.origins)
-            .flat_map(|(label, origins)| {
-                origins.iter().map(move |&origin| {
-                    let mut key: ComponentKey = label
-                        .parts()
-                        .iter()
-                        .map(|part| KeyValue::from(part.as_str()))
-                        .collect();
-                    key.push(origin.into());
-                    key
-                })
-            })
-            .collect();
-        let provenance = self.provenance(column, exposure, &panel);
+        let dims = Self::dims(triangle);
+        let components = panel.components();
+        let provenance = self.provenance(column, exposure, panel);
         let process = self.process;
         let reserves = posterior.predictive(
             dims,
@@ -304,15 +300,23 @@ impl HierarchicalBf {
             |theta, rng: &mut StreamRng, row| model.simulate(theta, process, rng, row),
         )?;
 
-        let programs = self.programs(&panel, &posterior, &reserves, &provenance)?;
+        let programs = self.programs(panel, &posterior, &reserves, &provenance)?;
         Ok(HierarchicalBfFit {
             programs,
-            ages: panel.ages,
+            ages: panel.ages.clone(),
             scale_per_premium: panel.kappa,
             posterior,
             diagnostics,
             reserves,
         })
+    }
+
+    /// The dimensions of a joint distribution over every program's
+    /// origins: the triangle's keys and `origin`.
+    fn dims(triangle: &Triangle) -> Vec<String> {
+        let mut dims = triangle.key_names().to_vec();
+        dims.push("origin".to_string());
+        dims
     }
 
     /// Each program's posterior summaries and its slice of the joint
@@ -997,6 +1001,28 @@ struct Panel {
     pattern: Option<PatternPrior>,
 }
 
+impl Panel {
+    /// The key of each program's origins, program by program: the label's
+    /// parts and the origin.
+    fn components(&self) -> Vec<ComponentKey> {
+        self.labels
+            .iter()
+            .zip(&self.origins)
+            .flat_map(|(label, origins)| {
+                origins.iter().map(move |&origin| {
+                    let mut key: ComponentKey = label
+                        .parts()
+                        .iter()
+                        .map(|part| KeyValue::from(part.as_str()))
+                        .collect();
+                    key.push(origin.into());
+                    key
+                })
+            })
+            .collect()
+    }
+}
+
 /// One program in the model.
 #[derive(Debug, Clone)]
 struct Program {
@@ -1100,6 +1126,19 @@ impl Model {
         natural
     }
 
+    /// The sampling scale from a draw as stored: the inverse of
+    /// [`natural`](Self::natural).
+    fn sampling(&self, theta: &[f64]) -> Vec<f64> {
+        let mut sampling = theta.to_vec();
+        sampling[0] = (theta[0] - self.level_mean) / self.level_sd;
+        for program in &self.programs {
+            for (w, l) in program.log_prior.iter().enumerate() {
+                sampling[self.u(program, w)] -= l;
+            }
+        }
+        sampling
+    }
+
     /// `log p_cd` at every position, from the stored or the sampling scale
     /// (the pattern block is the same).
     fn log_shares(&self, theta: &[f64], c: usize) -> Vec<f64> {
@@ -1194,6 +1233,378 @@ impl Posterior for Model {
 
     fn log_posterior(&self, theta: &[f64], grad: &mut [f64]) -> f64 {
         gradient::<CHUNK>(theta, grad, |x| self.log_density(x))
+    }
+}
+
+impl HierarchicalBf {
+    /// The most one-year simulations [`one_year`](Self::one_year) runs by
+    /// default (`BayesOneYear::n_sims` `None`): 2,000, against the 10,000 of
+    /// the lifetime view, as Meyers' and the compartmental models', since
+    /// every simulation costs a refit of the whole panel (about 1.2 s each
+    /// at 2 chains of 200 warm-up and 200 kept draws on the three-program
+    /// reference panel, release, 16 threads).
+    pub const ONE_YEAR_SIMS: usize = 2_000;
+
+    /// The one-year view of the fit over every program at once
+    /// (`reserving-bayes.md`, decisions 17 and 30): the claims development
+    /// result of each program and origin over the coming year, by
+    /// reweighting the posterior by the year's cells as
+    /// [`BayesOdp::one_year`](super::BayesOdp::one_year) does, with the
+    /// flagged simulations moment-matched and then refitted as `settings`
+    /// says. It is one view over the stacked programs and not one per
+    /// program, because a program's next diagonal moves the industry level,
+    /// the spreads and the shared pattern, and through them the other
+    /// programs' closing reserves. `settings.light_refit` and
+    /// `no_light_refit` are ignored: a refit samples the whole panel as
+    /// [`fit`](Self::fit) does.
+    ///
+    /// The view uses the fit's own sampler and seed. It runs at most
+    /// [`ONE_YEAR_SIMS`](Self::ONE_YEAR_SIMS) simulations unless
+    /// `settings.n_sims` sets their number: a year's diagonals of every
+    /// program move the whole posterior (every simulation of the
+    /// measured panel has a Pareto k above 6 and matching rescues none), so
+    /// each simulation costs a NUTS refit of the panel. Failed diagnostics of the fit do not fail the view;
+    /// they are in `fit.diagnostics`.
+    ///
+    /// ```
+    /// use prospicio_bayes::nuts::Sampler;
+    /// use prospicio_reserving::bayes::{BayesOneYear, HierarchicalBf};
+    /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
+    /// use prospicio_prob::Distribution;
+    ///
+    /// let program = ["a", "a", "a", "a", "a", "a", "b", "b", "b"];
+    /// let origin = [2021, 2021, 2021, 2022, 2022, 2023, 2022, 2022, 2023].map(Month::january);
+    /// let tri = Triangle::from_long(&Long {
+    ///     keys: &[("program", &program)],
+    ///     origin: &origin,
+    ///     development: DevelopmentColumn::Age(&[12, 24, 36, 12, 24, 12, 12, 24, 12]),
+    ///     values: &[
+    ///         ("paid", &[100.0, 150.0, 170.0, 110.0, 172.0, 130.0, 55.0, 80.0, 60.0]),
+    ///         ("premium", &[250.0, 250.0, 250.0, 270.0, 270.0, 290.0, 120.0, 120.0, 130.0]),
+    ///     ],
+    ///     origin_grain: Grain::Year,
+    ///     development_grain: Grain::Year,
+    ///     cumulative: true,
+    /// })?;
+    /// let model = HierarchicalBf {
+    ///     apriori: 0.7,
+    ///     level_cv: Some(0.2),
+    ///     sampler: Sampler { tune: 200, draws: 200, chains: 2, ..Sampler::default() },
+    ///     n_sims: 500,
+    ///     ..HierarchicalBf::default()
+    /// };
+    /// let view = model.one_year(&tri, "paid", "premium", &BayesOneYear::default())?;
+    /// // One component per program and origin, 5 in all.
+    /// assert_eq!(view.cdr.dims(), ["program", "origin"]);
+    /// assert_eq!(view.cdr.n_components(), 5);
+    /// // A program's total is the sum of its origins.
+    /// let totals = view.cdr.aggregate(&["program"])?;
+    /// assert_eq!(totals.n_components(), 2);
+    /// assert!(view.cdr.std_dev() > 0.0);
+    /// # Ok::<(), prospicio_reserving::Error>(())
+    /// ```
+    pub fn one_year(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        exposure: &str,
+        settings: &BayesOneYear,
+    ) -> Result<BayesOneYearFit<HierarchicalBfFit>> {
+        self.one_year_with(triangle, column, exposure, settings, None)
+    }
+
+    /// [`one_year`](Self::one_year) under a pattern prior, as
+    /// [`fit_with_pattern_prior`](Self::fit_with_pattern_prior): the
+    /// reweighting and any refit keep the prior.
+    pub fn one_year_with_pattern_prior(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        exposure: &str,
+        settings: &BayesOneYear,
+        prior: &PatternPrior,
+    ) -> Result<BayesOneYearFit<HierarchicalBfFit>> {
+        self.one_year_with(triangle, column, exposure, settings, Some(prior))
+    }
+
+    fn one_year_with(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        exposure: &str,
+        settings: &BayesOneYear,
+        pattern: Option<&PatternPrior>,
+    ) -> Result<BayesOneYearFit<HierarchicalBfFit>> {
+        self.validate()?;
+        settings.validate()?;
+        let panel = self.prepare(triangle, column, exposure, pattern)?;
+        let fit = self.fit_panel(triangle, column, exposure, &panel)?;
+        let segments = triangle.segments(column)?;
+        let start = panel.model.sampling(&fit.posterior.mean());
+        let year = HierarchicalYear::new(self, &panel.model, triangle, &segments, start);
+        let n_sims = settings.sims(self.n_sims.min(Self::ONE_YEAR_SIMS));
+        let draws = one_year::simulate(
+            &year,
+            &fit.posterior,
+            settings,
+            n_sims,
+            one_year_seed(derive_seed(self.seed, Stream::Predictive)),
+        )?;
+        let mut provenance = self.provenance(column, exposure, &panel);
+        provenance.model = "hierarchical_bf_one_year".into();
+        let provenance = one_year::provenance(provenance, settings, n_sims);
+        let cdr = PredictiveDistribution::from_draws(
+            Self::dims(triangle),
+            panel.components(),
+            draws.cdr,
+            provenance,
+        )?;
+        let latest: Vec<f64> = panel.latest.iter().flatten().copied().collect();
+        Ok(BayesOneYearFit {
+            opening_ultimate: latest
+                .iter()
+                .zip(&draws.opening)
+                .map(|(l, r)| l + r)
+                .collect(),
+            opening_reserve: draws.opening,
+            fit,
+            cdr,
+            pareto_k: draws.pareto_k,
+            refitted: draws.refitted,
+            moment_matched: draws.moment_matched,
+            unrefitted: draws.unrefitted,
+            refit_warnings: draws.refit_warnings,
+            k_threshold: settings.k_threshold,
+            approximate: None,
+        })
+    }
+}
+
+/// The one-year view of a [`HierarchicalBf`] over every program
+/// ([`HierarchicalBf::one_year`]): the lifetime fit, the opening reserve,
+/// the claims development result and how reliable each simulation's
+/// reweighting was, as for the other Bayesian models. Per-origin lists
+/// (`opening_reserve`, `opening_ultimate`) run over every program's
+/// origins in turn, program by program, as the components of
+/// [`cdr`](BayesOneYearFit::cdr) and of the fit's joint
+/// [`reserves`](HierarchicalBfFit::reserves) do. A program's claims
+/// development result is the sum of its origins' components,
+/// `cdr.aggregate(&["program"])`.
+impl BayesOneYearFit<HierarchicalBfFit> {
+    /// The share of simulations whose Pareto `k` is above the threshold
+    /// (or NaN), whether or not they were refitted.
+    pub fn flagged_share(&self) -> f64 {
+        one_year::flagged_share(&self.pareto_k, self.k_threshold)
+    }
+}
+
+/// The coming year of one program: its cells by position among the year's
+/// values, and the cells that remain before and after it.
+#[derive(Debug, Clone)]
+struct ProgramYear {
+    /// The position of the program's first cell among the year's values.
+    first_cell: usize,
+    /// The year's cells, `(origin, position)`, in origin and then
+    /// development order.
+    year: Vec<(usize, usize)>,
+    /// The cells after the latest diagonal: the opening reserve.
+    future: Vec<(usize, usize)>,
+    /// The cells after the year: the closing reserve.
+    after: Vec<(usize, usize)>,
+}
+
+/// A fitted [`HierarchicalBf`] as the one-year view sees it
+/// ([`YearModel`], decisions 17 and 30): one model over every program's
+/// origins, program by program. The draws are stored as `(log L, log tau,
+/// z, alpha, beta, log omega, delta)`, an affine map of the sampling scale
+/// (`log L` is `level_mean + level_sd e` and `alpha` is `u` shifted by
+/// `log(apriori P)`), so the log posterior needs a constant Jacobian only,
+/// which a ratio of densities cancels, and moment matching moves
+/// unconstrained values. Every shared effect and every program's
+/// deviations (including those of ages it never observes) are in the draw,
+/// so a cell's mean is read from it alone; `L`, `tau` and `z` enter the
+/// prior only and travel with the draw. A refit starts at the opening
+/// posterior mean moved to the sampling scale, and the plugged-in scales
+/// `phi_c` stay at their opening values.
+struct HierarchicalYear<'a> {
+    bf: &'a HierarchicalBf,
+    model: &'a Model,
+    /// The opening posterior mean on the sampling scale.
+    start: Vec<f64>,
+    programs: Vec<ProgramYear>,
+    n_year: usize,
+}
+
+impl<'a> HierarchicalYear<'a> {
+    fn new(
+        bf: &'a HierarchicalBf,
+        model: &'a Model,
+        triangle: &Triangle,
+        segments: &[Segment],
+        start: Vec<f64>,
+    ) -> Self {
+        let nd = model.n_dev;
+        let mut n_year = 0;
+        let programs = model
+            .programs
+            .iter()
+            .zip(segments)
+            .map(|(program, segment)| {
+                let valuation = |w: usize, d: usize| {
+                    triangle.valuation_of(w + segment.origin_offset, d + segment.dev_offset)
+                };
+                let latest = &program.latest;
+                let opening = latest
+                    .iter()
+                    .enumerate()
+                    .map(|(w, &d)| valuation(w, d))
+                    .max()
+                    .expect("a program has an origin");
+                let closing = opening.add_months(12);
+                // Where each origin stands after the year: its cells
+                // valued by then, if any is valued after the opening (no
+                // tail, as `OdpYear`). The grid, not the segment, bounds
+                // the ages: a thin program carries the later ones too.
+                let last: Vec<usize> = latest
+                    .iter()
+                    .enumerate()
+                    .map(|(w, &d)| {
+                        let last = (d + 1..nd)
+                            .take_while(|&e| valuation(w, e) <= closing)
+                            .last()
+                            .unwrap_or(d);
+                        if (d + 1..=last).any(|e| valuation(w, e) > opening) {
+                            last
+                        } else {
+                            d
+                        }
+                    })
+                    .collect();
+                let between = |from: &dyn Fn(usize) -> usize, to: &dyn Fn(usize) -> usize| {
+                    (0..latest.len())
+                        .flat_map(|w| (from(w) + 1..=to(w)).map(move |d| (w, d)))
+                        .collect::<Vec<_>>()
+                };
+                let year = between(&|w| latest[w], &|w| last[w]);
+                let first_cell = n_year;
+                n_year += year.len();
+                ProgramYear {
+                    first_cell,
+                    year,
+                    future: between(&|w| latest[w], &|_| nd - 1),
+                    after: between(&|w| last[w], &|_| nd - 1),
+                }
+            })
+            .collect();
+        Self {
+            bf,
+            model,
+            start,
+            programs,
+            n_year,
+        }
+    }
+
+    /// The sum of `exp(eta)` over each program's `cells`, by origin.
+    fn expected(
+        &self,
+        theta: &[f64],
+        cells: impl Fn(&ProgramYear) -> &[(usize, usize)],
+        reserve: &mut [f64],
+    ) {
+        reserve.fill(0.0);
+        for (c, (program, year)) in self.model.programs.iter().zip(&self.programs).enumerate() {
+            let log_share = self.model.log_shares(theta, c);
+            for &(w, d) in cells(year) {
+                reserve[program.first + w] +=
+                    (theta[self.model.u(program, w)] + log_share[d]).exp();
+            }
+        }
+    }
+
+    /// The model with the year's cells added to the observed ones.
+    fn extended(&self, year: &[f64]) -> Model {
+        let mut extended = self.model.clone();
+        for (program, py) in extended.programs.iter_mut().zip(&self.programs) {
+            for (k, &(w, d)) in py.year.iter().enumerate() {
+                program.cells.push((w, d, year[py.first_cell + k]));
+            }
+        }
+        extended
+    }
+}
+
+impl YearModel for HierarchicalYear<'_> {
+    fn n_origins(&self) -> usize {
+        self.model.n_origins
+    }
+
+    fn n_year(&self) -> usize {
+        self.n_year
+    }
+
+    fn draw_year(&self, theta: &[f64], rng: &mut StreamRng, year: &mut [f64]) {
+        for (c, (program, py)) in self.model.programs.iter().zip(&self.programs).enumerate() {
+            let log_share = self.model.log_shares(theta, c);
+            for (k, &(w, d)) in py.year.iter().enumerate() {
+                let mu = (theta[self.model.u(program, w)] + log_share[d]).exp();
+                year[py.first_cell + k] = process_draw(self.bf.process, program.phi, mu, rng);
+            }
+        }
+    }
+
+    fn year_log_likelihood(&self, theta: &[f64], year: &[f64]) -> f64 {
+        let mut total = 0.0;
+        for (c, (program, py)) in self.model.programs.iter().zip(&self.programs).enumerate() {
+            let log_share = self.model.log_shares(theta, c);
+            let mut part = 0.0;
+            for (k, &(w, d)) in py.year.iter().enumerate() {
+                let eta = theta[self.model.u(program, w)] + log_share[d];
+                part += year[py.first_cell + k] * eta - eta.exp();
+            }
+            total += part / program.phi;
+        }
+        total
+    }
+
+    fn paid(&self, year: &[f64], paid: &mut [f64]) {
+        paid.fill(0.0);
+        for (program, py) in self.model.programs.iter().zip(&self.programs) {
+            for (k, &(w, _)) in py.year.iter().enumerate() {
+                paid[program.first + w] += year[py.first_cell + k];
+            }
+        }
+    }
+
+    fn opening(&self, theta: &[f64], reserve: &mut [f64]) {
+        self.expected(theta, |p| &p.future, reserve);
+    }
+
+    fn closing(&self, theta: &[f64], _year: &[f64], reserve: &mut [f64]) {
+        self.expected(theta, |p| &p.after, reserve);
+    }
+
+    fn closing_uses_year(&self) -> bool {
+        false
+    }
+
+    /// Sampled as [`HierarchicalBf::fit`] samples: the pilot, the diagonal
+    /// scale below 8 programs and the fit's `target_accept`.
+    fn refit(&self, year: &[f64], seed: u64) -> Result<(PosteriorDraws, bool)> {
+        let (posterior, diagnostics) =
+            self.bf
+                .sample(&self.extended(year), self.start.clone(), seed)?;
+        Ok((posterior, !diagnostics.warnings.is_empty()))
+    }
+
+    fn log_posterior(&self, theta: &[f64], year: &[f64]) -> f64 {
+        let sampling = self.model.sampling(theta);
+        if year.is_empty() {
+            // Moment matching's many calls on the observed triangle.
+            self.model.log_density(&sampling)
+        } else {
+            self.extended(year).log_density(&sampling)
+        }
     }
 }
 
@@ -1911,6 +2322,194 @@ mod tests {
                 y.mean()
             );
             assert!((x.std_dev() / y.std_dev() - 1.0).abs() < 0.1, "origin {w}");
+        }
+    }
+
+    /// The year of a prepared panel and its fit.
+    fn year_of<'a>(
+        model: &'a HierarchicalBf,
+        tri: &Triangle,
+        panel: &'a Panel,
+        fit: &HierarchicalBfFit,
+    ) -> HierarchicalYear<'a> {
+        let segments = tri.segments("values").unwrap();
+        HierarchicalYear::new(
+            model,
+            &panel.model,
+            tri,
+            &segments,
+            panel.model.sampling(&fit.posterior.mean()),
+        )
+    }
+
+    /// Three programs of three origins each, every origin at the last age:
+    /// a year without cells.
+    fn closed_programs() -> Triangle {
+        panel(&[
+            (
+                "a",
+                2020,
+                &[
+                    &[100.0, 160.0, 185.0],
+                    &[110.0, 170.0, 201.0],
+                    &[95.0, 158.0, 186.0],
+                ],
+                &[250.0, 260.0, 240.0],
+            ),
+            (
+                "b",
+                2020,
+                &[
+                    &[210.0, 330.0, 395.0],
+                    &[190.0, 320.0, 380.0],
+                    &[240.0, 372.0, 430.0],
+                ],
+                &[400.0, 420.0, 450.0],
+            ),
+            (
+                "c",
+                2020,
+                &[
+                    &[42.0, 70.0, 83.0],
+                    &[50.0, 77.0, 91.0],
+                    &[39.0, 66.0, 80.0],
+                ],
+                &[90.0, 100.0, 95.0],
+            ),
+        ])
+    }
+
+    #[test]
+    fn the_stored_scale_is_the_sampling_scale_moved() {
+        for level_cv in [Some(0.3), None] {
+            let p = prepared(
+                &three_programs(),
+                &HierarchicalBf {
+                    level_cv,
+                    ..quick(1)
+                },
+            );
+            let theta = near(&p.start, 3, 0.4);
+            let stored = p.model.natural(&theta);
+            let back = p.model.sampling(&stored);
+            for (a, b) in theta.iter().zip(&back) {
+                assert!((a - b).abs() < 1e-12, "{a} {b}");
+            }
+            // The density of the stored draw is the sampling scale's.
+            let mut grad = vec![0.0; theta.len()];
+            let direct = p.model.log_posterior(&theta, &mut grad);
+            assert!((p.model.log_density(&back) - direct).abs() < 1e-9 * direct.abs().max(1.0));
+        }
+    }
+
+    #[test]
+    fn the_year_is_each_programs_next_diagonal() {
+        let tri = three_programs();
+        let model = quick(1);
+        let panel = prepared(&tri, &model);
+        let segments = tri.segments("values").unwrap();
+        let year =
+            HierarchicalYear::new(&model, &panel.model, &tri, &segments, panel.start.clone());
+        // Program a (four origins, ages to 48), b (to 36), c (to 24), on a
+        // grid of four ages: the next age of each origin that has one.
+        let years: Vec<_> = year.programs.iter().map(|p| p.year.clone()).collect();
+        assert_eq!(years[0], [(1, 3), (2, 2), (3, 1)]);
+        assert_eq!(years[1], [(0, 3), (1, 2), (2, 1)]);
+        assert_eq!(years[2], [(0, 2), (1, 1)]);
+        assert_eq!(year.n_year(), 8);
+        // The cells to come: a thin program carries the grid's late ages.
+        assert_eq!(year.programs[2].future.len(), 2 + 3);
+        assert_eq!(year.programs[2].after.len(), 3);
+        assert_eq!(year.programs[1].first_cell, 3);
+        assert_eq!(year.programs[2].first_cell, 6);
+    }
+
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_one_year_view_conforms() {
+        let model = HierarchicalBf {
+            n_sims: 400,
+            ..quick(6)
+        };
+        let open = three_programs();
+        let closed = closed_programs();
+        let open_panel = prepared(&open, &model);
+        let closed_panel = prepared(&closed, &model);
+        let open_fit = model.fit(&open, "values", "premium").unwrap();
+        let closed_fit = model.fit(&closed, "values", "premium").unwrap();
+        crate::bayes::one_year::conformance::check(
+            "HierarchicalBf",
+            &year_of(&model, &open, &open_panel, &open_fit),
+            &open_fit.posterior,
+            &year_of(&model, &closed, &closed_panel, &closed_fit),
+            &closed_fit.posterior,
+        );
+    }
+
+    /// A program's next diagonal moves the other programs' closing
+    /// reserves: the pooling reaches the view, which a view per program
+    /// would miss (decision 30).
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn one_programs_diagonal_moves_anothers_closing_reserve() {
+        let tri = three_programs();
+        let model = quick(5);
+        let panel = prepared(&tri, &model);
+        let fit = model.fit(&tri, "values", "premium").unwrap();
+        let year = year_of(&model, &tri, &panel, &fit);
+        let posterior = &fit.posterior;
+        let s = posterior.n_draws();
+        // The year at the posterior mean cells, then program a's cells
+        // scaled by `factor`.
+        let mean = posterior.mean();
+        let expected = |theta: &[f64], scale_a: f64| {
+            let mut y = vec![0.0; year.n_year()];
+            for (c, (program, py)) in panel.model.programs.iter().zip(&year.programs).enumerate() {
+                let log_share = panel.model.log_shares(theta, c);
+                for (k, &(w, d)) in py.year.iter().enumerate() {
+                    let mu = (theta[panel.model.u(program, w)] + log_share[d]).exp();
+                    y[py.first_cell + k] = mu * if c == 0 { scale_a } else { 1.0 };
+                }
+            }
+            y
+        };
+        let closing_b = |scale_a: f64| {
+            let y = expected(&mean, scale_a);
+            let log_w: Vec<f64> = (0..s)
+                .map(|d| year.year_log_likelihood(posterior.draw(d), &y))
+                .collect();
+            let top = log_w.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let w: Vec<f64> = log_w.iter().map(|l| (l - top).exp()).collect();
+            let total: f64 = w.iter().sum();
+            let ess = total * total / w.iter().map(|x| x * x).sum::<f64>();
+            println!("ess {ess}");
+            assert!(ess > 20.0, "ess {ess}");
+            let mut row = vec![0.0; year.n_origins()];
+            let mut closing = vec![0.0; 2];
+            for (d, &wd) in w.iter().enumerate() {
+                year.closing(posterior.draw(d), &y, &mut row);
+                // Program b's origins are positions 4 to 6.
+                closing[0] += wd * row[4..7].iter().sum::<f64>() / total;
+                closing[1] += wd * row[7..9].iter().sum::<f64>() / total;
+            }
+            closing
+        };
+        let (low, high) = (closing_b(0.8), closing_b(1.25));
+        println!("closing reserve of b and c, a's year at 0.8 and 1.25 times: {low:?} {high:?}");
+        // Higher losses in a raise the industry level and so b's and c's
+        // reserves; independent programs would leave them unchanged.
+        for k in 0..2 {
+            assert!(
+                high[k] > 1.01 * low[k],
+                "program {}: {low:?} {high:?}",
+                k + 1
+            );
         }
     }
 }

@@ -17,6 +17,7 @@ from prospicio.distributions import PredictiveDistribution
 from prospicio.reserving import (
     HierarchicalBf,
     HierarchicalBfFit,
+    HierarchicalBfOneYearFit,
     HierarchicalBfProgram,
     PatternPrior,
     Triangle,
@@ -312,3 +313,121 @@ def test_named_triangle_errors():
     )
     with pytest.raises(ValueError, match='program "i" differs'):
         fit({"a": one["a"], "i": incremental})
+
+
+# --- the one-year view (decision 30, PR 17) -----------------------------------
+
+
+@pytest.fixture(scope="module")
+def view(tri):
+    model = HierarchicalBf(apriori=0.7, level_cv=0.3, seed=3, **QUICK)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return model.one_year(tri, "paid", "premium", n_sims=500)
+
+
+def test_one_year_fields(view, fit):
+    assert isinstance(view, HierarchicalBfOneYearFit)
+    assert isinstance(view.fit, HierarchicalBfFit)
+    # The view's fit is the model's own fit, draw for draw.
+    assert view.fit.draws == fit.draws
+    assert view.program == ["a"] * 4 + ["b"] * 3 + ["c"] * 2
+    assert view.origins == ["2020", "2021", "2022", "2023", "2021", "2022", "2023", "2022", "2023"]
+    assert view.latest == [135.0, 133.0, 115.0, 72.0, 75.0, 64.0, 40.0, 38.0, 25.0]
+    assert len(view.opening_reserve) == len(view.opening_ultimate) == 9
+    for latest, ultimate, reserve in zip(view.latest, view.opening_ultimate, view.opening_reserve):
+        assert ultimate == pytest.approx(latest + reserve)
+    assert view.cdr.dims == ["program", "origin"]
+    assert view.cdr.n_sims == 500 and len(view.pareto_k) == 500
+    assert len(view.cdr.components()) == 9
+    assert 0.0 <= view.flagged_share <= 1.0
+    assert view.k_threshold == 0.7
+    assert set(view.refitted) <= set(range(500))
+    assert set(view.moment_matched) <= set(range(500))
+    assert view.unrefitted == [] and view.refit_warnings >= 0
+    assert repr(view).startswith("HierarchicalBfOneYearFit(programs=3, origins=9, n_sims=500")
+
+
+def test_one_year_is_narrower_than_the_lifetime_view(view):
+    # The oldest origin of program a is at its last age: no cell, no change.
+    assert view.cdr.marginal(("a", "2020")).variance() == 0.0
+    assert view.opening_reserve[0] == 0.0
+    assert view.cdr.variance() < view.fit.reserves.variance()
+    # The opening reserve is the posterior mean of the lifetime reserve.
+    assert sum(view.opening_reserve) == pytest.approx(view.fit.reserves.mean(), rel=0.05)
+
+
+def test_one_year_frames(view):
+    f = view.to_frame()
+    assert list(f.columns) == [
+        "program", "origin", "latest", "opening_ultimate", "opening_reserve",
+        "cdr_mean", "cdr_std_dev",
+    ]  # fmt: skip
+    assert len(f) == 9 and list(f["program"]) == view.program
+    t = view.totals_frame()
+    assert list(t["program"]) == ["a", "b", "c"]
+    assert list(t.columns[:3]) == ["program", "latest", "opening_ultimate"]
+    # A program's total is the sum of its origins.
+    assert list(t["opening_reserve"]) == pytest.approx(
+        [sum(view.opening_reserve[:4]), sum(view.opening_reserve[4:7]), sum(view.opening_reserve[7:])]
+    )
+    assert list(t["cdr_mean"]) == pytest.approx(
+        [f["cdr_mean"][:4].sum(), f["cdr_mean"][4:7].sum(), f["cdr_mean"][7:].sum()]
+    )
+    by_program = view.cdr.aggregate(["program"])
+    assert by_program.components() == [("a",), ("b",), ("c",)]
+    assert list(t["cdr_std_dev"]) == pytest.approx(
+        [by_program.marginal((k,)).variance() ** 0.5 for k in ("a", "b", "c")]
+    )  # fmt: skip
+
+
+def test_one_year_replays_by_seed_and_takes_dicts(tri, view):
+    model = HierarchicalBf(apriori=0.7, level_cv=0.3, seed=3, **QUICK)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        again = model.one_year(tri, "paid", "premium", n_sims=500)
+        named = model.one_year(programs_by_name(), "paid", "premium", n_sims=500)
+        smaller = model.one_year(tri, "paid", "premium", n_sims=100)
+        # The default number of simulations is the model's own, at most 2,000.
+        default = model.one_year(tri, "paid", "premium", refit="reweight_only")
+    assert again.pareto_k == view.pareto_k
+    assert again.cdr.draw_matrix() == view.cdr.draw_matrix()
+    assert named.cdr.draw_matrix() == view.cdr.draw_matrix()
+    # A smaller count is the first simulations of a larger one.
+    assert smaller.pareto_k == view.pareto_k[:100]
+    assert default.cdr.n_sims == 600 and default.refitted == [] and default.moment_matched == []
+
+
+def test_one_year_settings_and_errors(tri):
+    model = HierarchicalBf(apriori=0.7, level_cv=0.3, seed=3, **QUICK)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        reweighted = model.one_year(tri, "paid", "premium", n_sims=200, refit="reweight_only")
+        budget = model.one_year(
+            tri, "paid", "premium", n_sims=200, refit="refit_flagged", max_refits=0
+        )
+    assert reweighted.refitted == [] and reweighted.moment_matched == []
+    # No refit within a budget of 0: every flagged simulation is left unrefitted.
+    assert budget.refitted == []
+    assert len(budget.unrefitted) == round(budget.flagged_share * 200)
+    with pytest.raises(ValueError, match="refit"):
+        model.one_year(tri, "paid", "premium", refit="nonsense")
+    with pytest.raises(ValueError, match="k_threshold"):
+        model.one_year(tri, "paid", "premium", k_threshold=float("nan"))
+    with pytest.raises(ValueError, match="n_sims"):
+        model.one_year(tri, "paid", "premium", n_sims=0)
+    with pytest.raises(ValueError, match="missing"):
+        model.one_year(tri, "paid", "missing", n_sims=10)
+    with pytest.raises(TypeError, match="Triangle"):
+        model.one_year(5, "paid", "premium")
+
+
+def test_a_refit_samples_the_whole_panel(tri):
+    model = HierarchicalBf(
+        apriori=0.7, level_cv=0.3, seed=3, chains=2, tune=150, draws=150, n_sims=100
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        every = model.one_year(tri, "paid", "premium", n_sims=3, refit="refit_all")
+    assert every.refitted == [0, 1, 2]
+    assert every.cdr.n_sims == 3

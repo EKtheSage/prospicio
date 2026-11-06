@@ -2688,6 +2688,8 @@ Triangle$bayes_bf_normalised_one_year <- function(column, exposure, priors, proc
 
 Triangle$hierarchical_bf <- function(column, exposure, priors, level_cv, process, run, pattern_ages, pattern_mean, pattern_sd) .Call(wrap__Triangle__hierarchical_bf, self, column, exposure, priors, level_cv, process, run, pattern_ages, pattern_mean, pattern_sd)
 
+Triangle$hierarchical_bf_one_year <- function(column, exposure, priors, level_cv, process, run, k_threshold, refit, max_refits, one_year_sims, pattern_ages, pattern_mean, pattern_sd) .Call(wrap__Triangle__hierarchical_bf_one_year, self, column, exposure, priors, level_cv, process, run, k_threshold, refit, max_refits, one_year_sims, pattern_ages, pattern_mean, pattern_sd)
+
 Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, excl, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, excl, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf)
 
 Triangle$odp_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, excl, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman, ldf, bootstrap_ldf) .Call(wrap__Triangle__odp_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, excl, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman, ldf, bootstrap_ldf)
@@ -3816,6 +3818,36 @@ HierarchicalBfFit$hyperparameters <- function() .Call(wrap__HierarchicalBfFit__h
 
 #' @export
 `[[.HierarchicalBfFit` <- `$.HierarchicalBfFit`
+
+HierarchicalBfOneYearFit <- new.env(parent = emptyenv())
+
+HierarchicalBfOneYearFit$fit <- function() .Call(wrap__HierarchicalBfOneYearFit__fit, self)
+
+HierarchicalBfOneYearFit$opening_ultimate <- function() .Call(wrap__HierarchicalBfOneYearFit__opening_ultimate, self)
+
+HierarchicalBfOneYearFit$opening_reserve <- function() .Call(wrap__HierarchicalBfOneYearFit__opening_reserve, self)
+
+HierarchicalBfOneYearFit$cdr <- function() .Call(wrap__HierarchicalBfOneYearFit__cdr, self)
+
+HierarchicalBfOneYearFit$pareto_k <- function() .Call(wrap__HierarchicalBfOneYearFit__pareto_k, self)
+
+HierarchicalBfOneYearFit$refitted <- function() .Call(wrap__HierarchicalBfOneYearFit__refitted, self)
+
+HierarchicalBfOneYearFit$moment_matched <- function() .Call(wrap__HierarchicalBfOneYearFit__moment_matched, self)
+
+HierarchicalBfOneYearFit$unrefitted <- function() .Call(wrap__HierarchicalBfOneYearFit__unrefitted, self)
+
+HierarchicalBfOneYearFit$refit_warnings <- function() .Call(wrap__HierarchicalBfOneYearFit__refit_warnings, self)
+
+HierarchicalBfOneYearFit$k_threshold <- function() .Call(wrap__HierarchicalBfOneYearFit__k_threshold, self)
+
+HierarchicalBfOneYearFit$flagged_share <- function() .Call(wrap__HierarchicalBfOneYearFit__flagged_share, self)
+
+#' @export
+`$.HierarchicalBfOneYearFit` <- function (self, name) { func <- HierarchicalBfOneYearFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.HierarchicalBfOneYearFit` <- `$.HierarchicalBfOneYearFit`
 
 IndustryPriorFit <- new.env(parent = emptyenv())
 

@@ -115,7 +115,7 @@ degree of freedom. Failed MCMC diagnostics (R-hat above 1.01, bulk or
 tail ESS below 100 per chain, any divergent transition) do not fail the
 fit: \code{bayes_hierarchical_bf()} raises one \code{\link[=warning]{warning()}} listing them, and
 they stay in the fit's \code{diagnostics}. One \code{seed} replays a fit exactly.
-The one-year view is not available yet.
+The one-year view is \code{\link[=bayes_hierarchical_bf_one_year]{bayes_hierarchical_bf_one_year()}}.
 
 Properties of the fit: \code{programs} (a named list of
 \link{hierarchical_bf_program}, in the triangle's segment order), \code{ages},
