@@ -102,8 +102,11 @@ try:  # The neural networks, behind the native build's default `nn` feature.
         AttentionCannFit,
         Cann,
         CannFit,
+        Head,
         OnnxModel,
         OnnxPredictor,
+        TabularNet,
+        TabularNetFit,
         TokenAttention,
     )
 except ImportError:  # pragma: no cover - a build without `nn`
@@ -117,6 +120,9 @@ else:
         "TokenAttention",
         "OnnxModel",
         "OnnxPredictor",
+        "Head",
+        "TabularNet",
+        "TabularNetFit",
     ]
 
 __all__ = [

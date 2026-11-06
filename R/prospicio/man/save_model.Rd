@@ -11,7 +11,7 @@ load_model(file)
 }
 \arguments{
 \item{model}{A \code{glm_model}, \code{gam_model}, \code{elastic_net_model},
-\code{cann_model} or \code{attention_cann_model}.}
+\code{cann_model}, \code{attention_cann_model} or \code{tabular_net_model}.}
 
 \item{file}{Path of the RDS file.}
 }

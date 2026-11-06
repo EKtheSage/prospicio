@@ -2,17 +2,24 @@
 //! add-in entry points Excel calls (`xlAutoOpen` and the others) and one
 //! exported function per entry of [`FUNCTIONS`].
 //!
-//! Every function is registered with arguments and result of type `Q`
-//! (an XLOPER12 holding values, never a reference) and as thread safe
-//! (`$`), so Excel recalculates them on all its threads. A result is
-//! allocated here and marked `xlbitDLLFree`; Excel hands it back to
-//! [`xlAutoFree12`] once it has copied it.
+//! Every function is registered with arguments of type `Q` (an XLOPER12
+//! holding values, never a reference). Most return a `Q` too and are
+//! thread safe (`$`), so Excel recalculates them on all its threads; their
+//! result is allocated here and marked `xlbitDLLFree`, and Excel hands it
+//! back to [`xlAutoFree12`] once it has copied it.
+//!
+//! The functions that simulate or sample ([`jobs::ASYNC`]) are
+//! asynchronous (`docs/design/xll.md`, decision 48): registered as `>`
+//! (no result) with a last argument `X`, the handle Excel waits on. They
+//! return at once; the run goes on a thread of its own, and its result
+//! reaches Excel through `xlAsyncReturn`, which Excel copies before it
+//! returns, so it is freed here and not marked.
 
 use std::ffi::c_void;
 use std::sync::OnceLock;
 
 use crate::sheet::{CellError, Grid, Value};
-use crate::{ADDIN_NAME, FUNCTIONS, Function, call};
+use crate::{ADDIN_NAME, FUNCTIONS, Function, call, jobs};
 
 const XLTYPE_NUM: u32 = 0x0001;
 const XLTYPE_STR: u32 = 0x0002;
@@ -22,6 +29,8 @@ const XLTYPE_MULTI: u32 = 0x0040;
 const XLTYPE_MISSING: u32 = 0x0080;
 const XLTYPE_NIL: u32 = 0x0100;
 const XLTYPE_INT: u32 = 0x0800;
+/// An asynchronous call's handle (`xltypeStr | xltypeInt`).
+const XLTYPE_BIGDATA: u32 = XLTYPE_STR | XLTYPE_INT;
 const XLBIT_DLL_FREE: u32 = 0x4000;
 
 const XLERR_NULL: i32 = 0;
@@ -35,6 +44,7 @@ const XLERR_NA: i32 = 42;
 const XL_SPECIAL: i32 = 0x4000;
 const XL_FREE: i32 = XL_SPECIAL;
 const XL_GET_NAME: i32 = 9 | XL_SPECIAL;
+const XL_ASYNC_RETURN: i32 = 16 | XL_SPECIAL;
 const XLF_REGISTER: i32 = 149;
 const XLRET_SUCCESS: i32 = 0;
 
@@ -270,6 +280,51 @@ type MdCallBack12 = unsafe extern "system" fn(i32, i32, *const *mut XlOper, *mut
 unsafe extern "system" {
     fn GetModuleHandleW(name: *const u16) -> *mut c_void;
     fn GetProcAddress(module: *mut c_void, name: *const u8) -> *mut c_void;
+    fn GetModuleHandleExW(flags: u32, name: *const u16, module: *mut *mut c_void) -> i32;
+}
+
+/// Keeps the add-in loaded until Excel exits, from the first asynchronous
+/// call on: a run on its own thread must not outlive the code it runs,
+/// which unloading the add-in (File > Options > Add-ins) would free.
+fn pin() {
+    static PINNED: OnceLock<()> = OnceLock::new();
+    PINNED.get_or_init(|| unsafe {
+        const FROM_ADDRESS: u32 = 0x4;
+        const PIN: u32 = 0x1;
+        let mut module = std::ptr::null_mut();
+        GetModuleHandleExW(FROM_ADDRESS | PIN, pin as *const u16, &mut module);
+    });
+}
+
+/// The handle of one asynchronous call, copied as Excel asks, to answer
+/// later from another thread.
+struct AsyncHandle(XlOper);
+
+// SAFETY: the handle is an opaque value Excel reads back; Excel allows
+// `xlAsyncReturn`, and only it, from any thread.
+unsafe impl Send for AsyncHandle {}
+
+impl AsyncHandle {
+    /// # Safety
+    /// `x` is null or the `X` argument Excel passed to this call.
+    unsafe fn copy(x: *const XlOper) -> Self {
+        if x.is_null() {
+            return Self(XlOper::missing());
+        }
+        Self(unsafe { *x })
+    }
+
+    /// Hands `grid` to Excel for this call. If Excel dropped the call (an
+    /// interrupted recalculation), it refuses the handle and nothing
+    /// happens; the result is kept in [`jobs`] for the next one.
+    fn deliver(self, grid: &Grid) {
+        if self.0.xltype & 0x0FFF != XLTYPE_BIGDATA {
+            return;
+        }
+        let mut args = [self.0, XlOper::from_grid(grid)];
+        excel(XL_ASYNC_RETURN, &mut args);
+        unsafe { free_owned(&args[1]) };
+    }
 }
 
 /// Excel's `MdCallBack12`, exported by the Excel process that loaded us.
@@ -300,7 +355,13 @@ fn excel_free(mut x: XlOper) {
 /// Registers `f` with Excel under the add-in's path `dll`.
 fn register(dll: &XlOper, f: &Function) -> bool {
     // Type text: the result, then each argument, all `Q`; `$` thread safe.
-    let types = format!("Q{}$", "Q".repeat(f.args.len()));
+    // An asynchronous function returns nothing (`>`) and takes the handle
+    // Excel waits on last (`X`).
+    let types = if jobs::ASYNC.contains(&f.symbol) {
+        format!(">{}X", "Q".repeat(f.args.len()))
+    } else {
+        format!("Q{}$", "Q".repeat(f.args.len()))
+    };
     let arg_names = f.args.iter().map(|a| a.name).collect::<Vec<_>>().join(",");
     let mut args = vec![
         *dll,
@@ -394,7 +455,25 @@ macro_rules! udf {
     };
 }
 
-// One line per export; tests/catalogue.rs checks each against FUNCTIONS.
+/// Exports `$symbol` as an asynchronous function: the arguments, then the
+/// handle; the run is handed to [`jobs::submit`] and answered through
+/// [`AsyncHandle::deliver`].
+macro_rules! udf_async {
+    ($symbol:ident $(, $arg:ident)*) => {
+        /// # Safety
+        /// Called by Excel with valid XLOPER12 arguments and its handle.
+        #[unsafe(no_mangle)]
+        pub unsafe extern "system" fn $symbol($($arg: *const XlOper,)* handle: *const XlOper) {
+            let args = vec![$(unsafe { read_grid($arg) }),*];
+            let handle = unsafe { AsyncHandle::copy(handle) };
+            pin();
+            jobs::submit(stringify!($symbol), args, Box::new(move |grid| handle.deliver(&grid)));
+        }
+    };
+}
+
+// One line per export; tests/catalogue.rs checks each against FUNCTIONS,
+// and that `udf_async!` exports exactly `jobs::ASYNC`.
 #[rustfmt::skip]
 mod exports {
     use super::*;
@@ -407,14 +486,14 @@ mod exports {
     udf!(pro_res_cl_reserve, triangle, average, tail, selected, kind, weight, pattern_ages);
     udf!(pro_res_cl_factors, triangle, average, tail, selected, kind, weight, sigma, pattern_ages);
     udf!(pro_res_mack, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
-    udf!(pro_res_odp, triangle, sims, seed, percentiles, tail, process, origins, average);
-    udf!(pro_res_odp_sims, triangle, sims, seed, tail, process, origins, average);
-    udf!(pro_res_mack_boot, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
-    udf!(pro_res_mack_boot_sims, triangle, sims, seed, average, tail, process, origins, sigma);
+    udf_async!(pro_res_odp, triangle, sims, seed, percentiles, tail, process, origins, average);
+    udf_async!(pro_res_odp_sims, triangle, sims, seed, tail, process, origins, average);
+    udf_async!(pro_res_mack_boot, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
+    udf_async!(pro_res_mack_boot_sims, triangle, sims, seed, average, tail, process, origins, sigma);
     udf!(pro_res_mack_cdr, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
     udf!(pro_res_mack_cdr_years, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
-    udf!(pro_res_odp_cdr, triangle, sims, seed, percentiles, tail, process, origins, average);
-    udf!(pro_res_mack_boot_cdr, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
+    udf_async!(pro_res_odp_cdr, triangle, sims, seed, percentiles, tail, process, origins, average);
+    udf_async!(pro_res_mack_boot_cdr, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
     udf!(pro_res_el, triangle, exposure, apriori, average, tail, origins, selected, kind, weight, pattern_ages);
     udf!(pro_res_bf, triangle, exposure, apriori, average, tail, origins, selected, kind, weight, pattern_ages);
     udf!(pro_res_benktander, triangle, exposure, apriori, iterations, average, tail, origins, selected, kind, weight, pattern_ages);
@@ -478,8 +557,8 @@ mod exports {
     udf!(pro_cap_agg_cover, count_mean, dispersion, family, p1, p2, p3, limits, retentions, shares, occ_limits, occ_attachments, occ_shares, subject, step, points);
     udf!(pro_prc_tower_price, count_mean, dispersion, family, p1, p2, p3, limit, attachment, limits, attachments, shares, agg_deductibles, agg_limits, cover_limit, cover_retention, distortion, parameter, step, points);
     udf!(pro_cap_agg_pml, count_mean, dispersion, family, p1, p2, p3, return_periods, step, points);
-    udf!(pro_res_bayes_odp, triangle, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins);
-    udf!(pro_res_bayes_bf, triangle, exposure, apriori, cv, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins, common_cv);
+    udf_async!(pro_res_bayes_odp, triangle, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins);
+    udf_async!(pro_res_bayes_bf, triangle, exposure, apriori, cv, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins, common_cv);
     udf!(pro_sev_fit, losses, family, output, t, truncation, thresholds, censored, weights, upper);
     udf!(pro_sev_fit_grouped, bounds, counts, family, method, output);
     udf!(pro_sev_fit_lev, sizes, lev, family, weights, output);
@@ -494,7 +573,7 @@ mod exports {
     udf!(pro_cap_distortion_price, values, probs, family, parameter, r0);
     udf!(pro_cap_distortion_calibrate, values, probs, premium, families, r0);
     udf!(pro_cap_copula_cdf, points, family, parameter, nu);
-    udf!(pro_cap_copula_sim, family, parameter, sims, dim, seed, nu);
+    udf_async!(pro_cap_copula_sim, family, parameter, sims, dim, seed, nu);
     udf!(pro_cap_iman_conover, draws, correlation, seed, dof, shuffle);
     udf!(pro_prc_swing, loss, basic, lcm, minimum, maximum, share);
     udf!(pro_prc_profit_commission_term, losses, premium, share, allowance, carry_years);
