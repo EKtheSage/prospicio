@@ -1,0 +1,1 @@
+* **Creation**: [Compartmental on simulated sub-annual books](/findings/compartmental-subannual.md), branch claude/compartmental-subannual: calibrated at every grain in its own world; under persistent noise model 1's coverage falls from 88 to 56 with the grain; annual origins with earned premium fail at every grain and quarterly origins pass; the rate preset stays sensible.
