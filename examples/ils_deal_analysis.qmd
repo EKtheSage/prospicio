@@ -103,7 +103,7 @@ cat(sprintf("estimated 2026 subject premium %s; triangle origins %s to %s, %d ag
 
 ## 2. Historical exhibits and a backtest
 
-The **paid chain ladder** gives the cedant's payment pattern, which the cash-flow step needs. The **loss ratio by accident year** at its latest age, on on-level premium, shows the level and the spread to compare with the prior.
+The **paid chain ladder** gives the cedant's payment pattern, a check on the pattern the model fits in section 4. The **loss ratio by accident year** at its latest age, on on-level premium, shows the level and the spread to compare with the prior.
 
 ```{r}
 #| label: exhibits
@@ -450,11 +450,11 @@ One table of the results, as a plain printout of the quantities above. `docs/gui
 
 ```{r}
 #| label: report
-report <- data.frame(item = c("2026 loss ratio, mean (cv)", "industry prior m (cv)", "ceded premium",
-                              "payment pattern, mean time to payment", "backtest sampler warnings",
+report <- data.frame(item = c("2026 loss ratio, mean (cv)", "industry prior apriori (cv, common cv)", "ceded premium",
+                              "chain ladder pattern, mean time to payment", "backtest sampler warnings",
                               "monitoring: realised CDR percentile", "monitoring: deal paid at month 24, percentile"),
                      value = c(sprintf("%.1f%% (%.0f%%)", 100 * mean(LR), 100 * sd_pop(LR) / mean(LR)),
-                               sprintf("%.1f%% (%.0f%%)", 100 * M_PRIOR, 100 * CV_PRIOR), money(CEDED_PREMIUM),
+                               sprintf("%.1f%% (%.0f%%, %.0f%%)", 100 * M_PRIOR, 100 * CV_PRIOR, 100 * COMMON_CV), money(CEDED_PREMIUM),
                                sprintf("%.2f years", duration), as.character(nrow(backtest@warnings)),
                                sprintf("%.0f%%", 100 * percentile), sprintf("%.0f%%", 100 * ave$percentile[24])))
 for (name in names(deals)) {

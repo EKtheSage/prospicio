@@ -611,7 +611,8 @@ def test_ils_deal_analysis(monkeypatch, capsys):
     # with a pattern for each simulation.
     prior = ns["prior"]
     assert prior.report["n_companies_used"] == 12 and prior.report["warnings"] == []
-    assert 0.2 < ns["M_PRIOR"] < 0.9 and 0.0 < ns["CV_PRIOR"] < 0.5 and 0.0 < ns["COMMON_CV"] < 0.5
+    assert ns["M_PRIOR"] == pytest.approx(0.48, abs=0.05)
+    assert ns["CV_PRIOR"] == pytest.approx(0.12, abs=0.04) and ns["COMMON_CV"] == pytest.approx(0.125, abs=0.05)
     assert prior.pattern.ages == list(range(12, 120, 12))
     assert len(ns["LR"]) == n and len(ns["paid_draws"]) == n
     assert ns["year_2026"].origin == "2026"
