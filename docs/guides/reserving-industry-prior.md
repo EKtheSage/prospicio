@@ -359,8 +359,9 @@ The table says three things, and the last matters most.
   fixed tail removes all uncertainty about the development after 48 months, and
   the cover at 120 months is 0.38 to 0.61. Even to 48 months, with no tail in
   the way, it is 0.50 to 0.79, and the prior does not improve on the vague model.
-  The model has no calendar-year effect, a likely cause. Widen the tail by hand (section 7), and read `knowledge/findings/industry-prior-thin-programs.md`
-  for the details.
+  The model has no calendar-year effect, a likely cause. Widen the tail by hand
+  (section 7), and read `knowledge/findings/industry-prior-thin-programs.md` for
+  the details.
 
 So the prior's value on a four-origin program is a stable answer, not a better
 interval. It keeps a weak triangle from producing a wild ultimate. It does not
