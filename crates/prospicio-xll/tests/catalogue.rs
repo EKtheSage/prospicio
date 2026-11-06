@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 
+use prospicio_xll::jobs::ASYNC;
 use prospicio_xll::sheet::Grid;
 use prospicio_xll::{COMMON, COMMON_PREFIXES, FUNCTIONS, GROUP_CATEGORIES, call};
 
@@ -49,28 +50,37 @@ fn every_symbol_dispatches() {
 #[test]
 fn exports_match_the_catalogue() {
     let src = include_str!("../src/xll.rs");
-    let exports: Vec<(String, usize)> = src
+    let exports: Vec<(String, usize, bool)> = src
         .lines()
         .filter_map(|l| {
-            l.trim()
-                .strip_prefix("udf!(")?
-                .strip_suffix(");")
-                .map(str::to_owned)
+            let l = l.trim();
+            let (inner, is_async) = match l.strip_prefix("udf!(") {
+                Some(rest) => (rest, false),
+                None => (l.strip_prefix("udf_async!(")?, true),
+            };
+            Some((inner.strip_suffix(");")?.to_owned(), is_async))
         })
-        .map(|inner| {
+        .map(|(inner, is_async)| {
             let parts: Vec<&str> = inner.split(',').map(str::trim).collect();
-            (parts[0].to_owned(), parts.len() - 1)
+            (parts[0].to_owned(), parts.len() - 1, is_async)
         })
         .collect();
     assert_eq!(exports.len(), FUNCTIONS.len(), "one export per function");
     for f in FUNCTIONS {
-        let found = exports.iter().find(|(s, _)| s == f.symbol);
+        let found = exports.iter().find(|(s, _, _)| s == f.symbol);
         assert_eq!(
             found.map(|e| e.1),
             Some(f.args.len()),
             "{} ({})",
             f.name,
             f.symbol
+        );
+        // Asynchronous exactly when listed in `jobs::ASYNC` (decision 48).
+        assert_eq!(
+            found.map(|e| e.2),
+            Some(ASYNC.contains(&f.symbol)),
+            "{} async",
+            f.name
         );
     }
 }

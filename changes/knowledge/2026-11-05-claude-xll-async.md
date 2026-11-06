@@ -1,0 +1,2 @@
+* **Creation**: [Excel's asynchronous worksheet functions, as Excel-DNA implements them](/references/excel-async-udfs.md), branch claude/xll-async: the type text `>`, the arguments and `X`, the handle as xltypeBigData, xlAsyncReturn (16400) from any thread with a dropped handle refused, xlEventRegister (16401), macro type 0 hidden; not yet confirmed in Excel.
+* **Update**: [Building and testing the Excel XLL without Excel](/environment/xll-builds.md), branch claude/xll-async: Excel-DNA registers a hidden function with macro type 0 too.
