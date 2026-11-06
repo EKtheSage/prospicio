@@ -38,7 +38,7 @@ pip install "cas-schedule-p[screens]==2026.6.13"
 Monograph 8's appendix. The block below reads their accident years 1988 to 1997
 from the package's table and writes one CSV for four lines. Each company has
 the full 10 x 10 square. The later diagonals are what happened next, so the
-guide keeps them apart until section 6. The columns have the names of the CAS
+guide keeps them apart until it scores a fit. The columns have the names of the CAS
 loss reserve database files.
 
 ```python no-run
@@ -323,7 +323,7 @@ for line in ("wc", "ca", "pa", "ol"):
         at_48.append(sum(inside(d[k], p) for _, d, _, p, _ in rows) / len(rows))
     print(f"{line:4} {len(rows):6d} {skipped:4d}  {rmses[0]:.3f}  {rmses[1]:.3f}  {rmses[2]:.3f}     "
           f"{at_120[0]:.2f}   {at_120[1]:.2f}         {at_48[0]:.2f}   {at_48[1]:.2f}")
-print("paid at 120 months over paid at 48, by company: the prior's tail, then the 10th and 90th percentiles")
+print("paid at 120 months over paid at 48, by company: the tail of the first company's prior, then the 10th and 90th percentiles")
 for line, (tail, f) in factors.items():
     print(f"{line:4} {tail:.3f}   {f[len(f) // 10]:.3f}  {f[9 * len(f) // 10]:.3f}")
 ```
@@ -335,7 +335,7 @@ wc       48    2  0.141  0.158  0.135     0.42   0.38         0.71   0.73
 ca       44    6  0.220  0.266  0.197     0.61   0.59         0.64   0.64
 pa       48    2  0.085  0.085  0.088     0.48   0.42         0.58   0.50
 ol       43    7  0.276  1.842  0.287     0.51   0.40         0.79   0.74
-paid at 120 months over paid at 48, by company: the prior's tail, then the 10th and 90th percentiles
+paid at 120 months over paid at 48, by company: the tail of the first company's prior, then the 10th and 90th percentiles
 wc   1.155   1.068  1.308
 ca   1.118   1.051  1.290
 pa   1.083   1.028  1.170
@@ -349,7 +349,7 @@ The table says three things, and the last matters most.
   long way on other liability, where a few thin triangles send the vague model's
   ultimates far off. Those few posteriors run away, so that one number moves with
   the smallest change: the R twin of this table prints 2.4 where this one prints
-  1.8. On personal auto, the stable line, nothing changes.
+  1.8. On personal auto, the stable line, the prior is a little worse.
 * **Against the plain chain ladder, the gain is small.** The prior is a little
   better on workers' compensation and commercial auto and a little worse on
   personal auto and other liability. All three methods share the tail factor,
