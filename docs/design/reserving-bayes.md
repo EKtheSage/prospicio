@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built; PR 9 (one generic one-year view, `BayesBf`'s) built; PR 13 (`BayesBfNormalised`) built; PR 14 (the light refit of the compartmental one-year view, decision 24, #394) built, its default open decision 17; PR 15 (the common share multiplier of `BayesBfNormalised`, decision 25, #518) built; decision 26 (`BayesBfNormalised`'s error for a column or origin that sums to zero or less, #610) built, its decision 18 (`Triangle::max_age`, #667) decided by the user on 2026-10-28 and built; decision 28 (a new underwriting year's loss ratio from `BayesBfNormalised` and Meyers' models, #598) built, its open decision 19 awaiting the user; decision 27 (the unsupported settings as `NotSupported`, #580) built; decision 29 (an industry prior from other companies' triangles, with a pattern prior for `BayesBfNormalised`, #604) built, its open decisions 20 to 25 awaiting the user; decision 30 (a hierarchical BF over programs, #599) proposed, its pooling structure open decision 26 decided by the user on 2026-11-04 as recommended** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS, with the Python and R bindings (`BayesOdp.one_year` and `one_year_segments`, `bayes_odp_one_year()` and `bayes_odp_one_year_segments()`; decision 13). PR 9 is built on `claude/bayes-one-year-generic`, stacked on the Models-lane PR #273 that made `prospicio_bayes::elpd::psis` public (decision 17, open decisions 12 to 14 decided by the user on 2026-10-15): one interface every Bayesian model's one-year view implements, the view written once over it, a conformance suite run on every implementor, `BayesOdp` moved onto it bit for bit, `BayesBf::one_year` with its Python and R bindings (`BayesBf.one_year`, `bayes_bf_one_year()`; decision 13), and moment matching before refitting (decision 18, the opt-in `MomentMatchThenRefit`, in Rust, Python and R). PR 10 is built on `claude/bayes-one-year-meyers`, stacked on PR 9 and the CI slow-tests PR #279 (decision 19, the user's decisions of 2026-10-15 on open decisions 12 and 14): moment matching is the default fallback of the one-year view, and `Meyers` (CRC, CSR and CAY) has the one-year view through `YearModel`, with `one_year_segments`, in Rust, Python and R. PR 11 is built on `claude/bayes-one-year-compartmental`, stacked on PR 10 (decision 20): `Compartmental` (models 1 and 2) has the one-year view through `YearModel`, and every model's view takes a refit budget (`max_refits`), in Rust, Python and R; the user decided open decision 15 on 2026-10-16: model 1's view moment-matches by default, model 2's reweights only with a warning that it is approximate, both run at most 2,000 one-year simulations by default, and pull requests run model 1 of the compartmental one-year validation only. `Compartmental::one_year_segments` is built on `claude/compartmental-one-year-segments` (`reserving-compartmental.md` decision 8, "Built (one-year view over segments)"), in Rust, Python and R. PR 13 is built on `claude/bayes-bf-normalised` (decision 23, #410, the user's decision of 2026-10-21): `BayesBfNormalised`, the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate, beside `BayesBf` (unchanged at EVW parity), with its one-year view through `YearModel` (a fifth implementor, in the conformance suite's pull-request smoke run) and the Python and R bindings (`BayesBfNormalised`, `bayes_bf_normalised()`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built; PR 9 (one generic one-year view, `BayesBf`'s) built; PR 13 (`BayesBfNormalised`) built; PR 14 (the light refit of the compartmental one-year view, decision 24, #394) built, its default open decision 17; PR 15 (the common share multiplier of `BayesBfNormalised`, decision 25, #518) built; decision 26 (`BayesBfNormalised`'s error for a column or origin that sums to zero or less, #610) built, its decision 18 (`Triangle::max_age`, #667) decided by the user on 2026-10-28 and built; decision 28 (a new underwriting year's loss ratio from `BayesBfNormalised` and Meyers' models, #598) built, its open decision 19 awaiting the user; decision 27 (the unsupported settings as `NotSupported`, #580) built; decision 29 (an industry prior from other companies' triangles, with a pattern prior for `BayesBfNormalised`, #604) built, its open decisions 20 to 25 awaiting the user; decision 30 (a hierarchical BF over programs, #599) built as PR 16, its pooling structure open decision 26 decided by the user on 2026-11-04 as recommended, its one-year view (PR 17) still to come** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS, with the Python and R bindings (`BayesOdp.one_year` and `one_year_segments`, `bayes_odp_one_year()` and `bayes_odp_one_year_segments()`; decision 13). PR 9 is built on `claude/bayes-one-year-generic`, stacked on the Models-lane PR #273 that made `prospicio_bayes::elpd::psis` public (decision 17, open decisions 12 to 14 decided by the user on 2026-10-15): one interface every Bayesian model's one-year view implements, the view written once over it, a conformance suite run on every implementor, `BayesOdp` moved onto it bit for bit, `BayesBf::one_year` with its Python and R bindings (`BayesBf.one_year`, `bayes_bf_one_year()`; decision 13), and moment matching before refitting (decision 18, the opt-in `MomentMatchThenRefit`, in Rust, Python and R). PR 10 is built on `claude/bayes-one-year-meyers`, stacked on PR 9 and the CI slow-tests PR #279 (decision 19, the user's decisions of 2026-10-15 on open decisions 12 and 14): moment matching is the default fallback of the one-year view, and `Meyers` (CRC, CSR and CAY) has the one-year view through `YearModel`, with `one_year_segments`, in Rust, Python and R. PR 11 is built on `claude/bayes-one-year-compartmental`, stacked on PR 10 (decision 20): `Compartmental` (models 1 and 2) has the one-year view through `YearModel`, and every model's view takes a refit budget (`max_refits`), in Rust, Python and R; the user decided open decision 15 on 2026-10-16: model 1's view moment-matches by default, model 2's reweights only with a warning that it is approximate, both run at most 2,000 one-year simulations by default, and pull requests run model 1 of the compartmental one-year validation only. `Compartmental::one_year_segments` is built on `claude/compartmental-one-year-segments` (`reserving-compartmental.md` decision 8, "Built (one-year view over segments)"), in Rust, Python and R. PR 13 is built on `claude/bayes-bf-normalised` (decision 23, #410, the user's decision of 2026-10-21): `BayesBfNormalised`, the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate, beside `BayesBf` (unchanged at EVW parity), with its one-year view through `YearModel` (a fifth implementor, in the conformance suite's pull-request smoke run) and the Python and R bindings (`BayesBfNormalised`, `bayes_bf_normalised()`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -54,7 +54,7 @@ together, as in `reserving-v02.md` decision 7.
 | 13 | `claude/bayes-bf-normalised` | `BayesBfNormalised`: the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate (decision 23, #410); in Rust, Python and R | `main` |
 | 14 | `claude/gm2-one-year-accuracy` | `BayesOneYear::light_refit`: a warm-started, shorter sampler for the refits of `Compartmental`'s one-year view, model 2's within 0.03 sd of full refits (decision 24, #394); in Rust, Python and R | `main` |
 | 15 | `claude/excess-share-common` | `BayesBfNormalised::common_cv`: one multiplier common to all origins' prior ultimates, for the excess-layer BF prior (decision 25, #518); in Rust, Python and R | PR 13 |
-| 16 | `claude/hierarchical-bf` | `HierarchicalBf`: several programs pooled under an industry hyperprior on the loss ratio, the pattern partially pooled (decision 30, #599; proposed, after open decision 26); in Rust, Python and R | PR 13 |
+| 16 | `claude/hierarchical-bf` | `HierarchicalBf`: several programs pooled under an industry hyperprior on the loss ratio, the pattern partially pooled (decision 30, #599); in Rust, Python and R | PR 13 |
 | 17 | `claude/hierarchical-bf-one-year` | `HierarchicalBf::one_year` through `YearModel` over the stacked programs (decision 30) | PR 16 |
 | later | | the paid-incurred `Ipi` | PR 5 |
 
@@ -3589,9 +3589,10 @@ density without a pattern prior is unchanged.
 
 ### 30. A hierarchical Bornhuetter-Ferguson over programs with an industry hyperprior (issue #599)
 
-Status: **Proposed** (2026-11-02), branch `claude/hierarchical-bf-note`,
-issue #599. Nothing is built; the pooling structure is the user's decision
-(open decision 26). The numbers follow decisions 27 (#580), 28 (#598) and 29 (#604), and
+Status: **Built, PR 16** (proposed 2026-11-02, built 2026-11-05 on
+`claude/hierarchical-bf`), issue #599; the one-year view is PR 17. The
+user decided the pooling structure on 2026-11-04 (open decision 26). "As
+built" below records where the build changed this note. The numbers follow decisions 27 (#580), 28 (#598) and 29 (#604), and
 open decisions 19 to 25 (#598 and #604).
 
 **Why.** Programs written through managing general agents often have two
@@ -3679,7 +3680,8 @@ strong-prior mode that `BayesBfNormalised` uses does not carry over: the
 mode of a hierarchy sits at `tau = 0`. The gradient is the generic
 `Scalar` density (decision 15; at 162 parameters six chunked passes of 32
 tangents), checked against finite differences; a hand-written gradient
-only if profiling asks for it.
+only if profiling asks for it. As built, the pilot's scale is diagonal
+below 8 programs ("As built").
 
 **The plug-in scale.** A program with two origins has three cells and
 three parameters of its own chain ladder (two ultimates and one factor),
@@ -3700,18 +3702,18 @@ a program's latest are informed only by their prior, so the program's
 shares there are the shared pattern's, widened by `omega`. They are
 parameters of the posterior, carried with each draw (decision 20's rule
 for effects with no observed cell), so the reserve's predictive and the
-one-year view read the same draw. Every age's shared `beta_d` must be
-observed by at least one program or held by an informative pattern prior:
-an age that no program observes under the vague `development_sd` prior is
-an error (`Error::Bayes`), as decision 23's propriety conditions are.
+one-year view read the same draw. Every age's shared `beta_d` is
+observed by at least one program, since the grid is the triangle's own and
+its longest program observes every age.
 
 **Columns and origins that sum to zero or less** (decisions 23 and 26).
 The column rule applies to the pooled column: under (B1) and (B2) an age
 whose increments, summed over every program, are zero or less is an
 `Error::Bayes` with decision 26's message. A single program's column that
-sums to zero or less is not an error under (B2): its deviation
-`delta_cd` is held by its prior, so the program's share there is pulled
-to the shared pattern instead of to 0. Under (B3) the rule is per
+sums to zero or less is not an error under (B2) while its fall is small
+beside its scale: the deviation `delta_cd` is held by its prior, so the
+program's share there is pulled to the shared pattern instead of to 0. A
+fall past the bound in "As built" has no posterior and is an error. Under (B3) the rule is per
 program, as in `BayesBfNormalised`. The origin rule stays per origin
 with the program's own scale: an origin whose increments sum to
 `-phi_c / cv^2` or less is an error, as in decision 23. Under (D2), a
@@ -3731,8 +3733,8 @@ parameters that decision 22 (item 3) names, not the pairing of independent
 fits that it rejects. The `Triangle` with a segment per program is the
 input (as `fit_segments` and `IndustryPrior::from_segments`), with the
 column and an exposure column; Python `HierarchicalBf`, R
-`bayes_hierarchical_bf()` take the same, or a list of named triangles and
-premiums that the binding stacks into segments.
+`bayes_hierarchical_bf()` take the same, or named triangles, each with the
+column and the exposure column, that the binding stacks into segments.
 
 **The one-year view** is one `YearModel` (decision 17) over all programs
 stacked: its origins are every program's origins, program by program, so
@@ -3898,6 +3900,90 @@ The issue's three checks and the conformance suite, in
    at a vague `apriori`, and its mean is closer to the simulation's truth
    on average over panels.
 
+#### As built (PR 16)
+
+Built on `claude/hierarchical-bf` as open decision 26 chose: (A1), (B2)
+with one `omega`, (C1), (D2). What building it changed or measured:
+
+* **Falling columns bound the posterior.** The note's "held by its prior"
+  above was wrong for a column far below zero. A program's falling column
+  gains `|S_cd| / phi_c` per unit of `omega delta_cd` in the log
+  likelihood, and that product costs only `1 / omega_scale` per unit in
+  the priors of `omega` and `delta_cd` together, since the two can grow at
+  once. Both are linear, so a large enough fall has no posterior. One
+  `omega` scales every deviation, so the bound is joint across programs:
+  the root of the sum of `(S_cd / phi_c)^2` over falling columns must stay
+  below `1 / omega_scale`, and at or past it `prepare` returns an
+  `Error::Bayes` naming the program and age and `omega_scale`. The growth
+  along a ray is that norm when a program's first age covers its falls, so
+  falls larger than the first age are refused as well.
+* **The age rule of "Ages a program never observes" cannot fire.** The grid
+  is the triangle's, and its longest program observes every age, so no
+  branch exists for it. A pattern prior of the wrong length is an error.
+* **The sampler.** The note's dense pilot scale misread the funnel of a
+  few programs: on the three-program Stan case 20 of 24 seeds warned, with
+  39 divergences, and EVW's loss ratio sd was 9% below Stan's. Below 8
+  programs the main run now takes only the pilot's variances
+  (`Whitened::from_draws_diagonal`); from 8 programs it takes the full
+  covariance, which is better there (10 programs warned on 1 of 10 panels
+  against 7 of 10, 20 programs on 0 of 10 against 5 of 10; the crossover
+  is interpolated). The pilot has at most 500 warm-up draws and a fifth of
+  `tune` kept. `target_accept` defaults to 0.99. On the Stan case that gives
+  0 divergences and 1 of 24 seeds warned, on R-hat 1.0104.
+* **Cost.** A five-program fit takes about 2 s, ten programs about 7 s and
+  twenty about 42 s (three fits at once on 16 threads). `target_accept`
+  0.95 about halves the last two (3.9 s, 17.4 s) and stays open to the
+  user. Fits of twenty programs under load vary widely: 83 s mean in the
+  smoke run, 299 s mean and 1,411 s at most in the full study, with many
+  fits sharing the machine. The three-program Stan case takes about 25 s
+  at 10,000 simulations, so it is not under decision 26's 2 s for the
+  smoke set at those settings; PR 17 decides on a smaller one.
+* **Item 1** holds as written. The unit test sets `log tau` and `log
+  omega` to -800, where both underflow to 0, and compares the densities
+  (`one_program_at_zero_spreads_is_the_normalised_model`).
+* **Item 2** is checked against `credibility_premiums` at the model's own
+  structure parameters, since `HierarchicalCredibility` estimates the within
+  variance that this model fixes. The note's 0.1 sd and 0.05 are not met.
+  Over seeds 1 to 6 the gaps are at most 0.156 sd in the means (tolerance
+  0.25), 0.058 in `Z` (0.10) and 0.0195 in the slope (0.03). Against
+  `HierarchicalCredibility` itself the gaps are at most 0.41 sd and 0.13
+  in the slope, guarded at 0.6 and 0.2.
+* **Item 3** passes. Over 100 panels the 90% intervals of `L`, `tau` and
+  `omega` cover 85, 89 and 90 at 5 programs and 88, 95 and 88 at 20, and
+  every rank chi-square has p above 0.18. There was 1 divergence in all.
+  29 of the 100 five-program fits and 11 of the twenty-program fits warn,
+  mostly R-hat or ESS of `log_tau` just past the limit. Pull requests run
+  five panels of each, which guards the sampler and cannot test coverage.
+* **Item 4** is claimed: CmdStan 2.39.0 ran here with RTools 4.5. The
+  reference pools 8 runs of 4 chains of 10,000 draws (320,000 draws, each
+  run's R-hat at most 1.0008), since one run's noise (2.4% on EVW's ratio
+  sd) took up the tolerance. Over 24 seeds the worst errors, with the
+  tolerances set from them, are: means 0.080 sd (0.12), sds 9.0% (14%),
+  EVW's heavy-tailed sds 19.6% (30%), median and lower quantiles 0.062 sd
+  (0.10), upper quantiles 0.172 sd (0.26), and EVW's and the totals' upper
+  quantiles 0.621 sd (0.9). The mean signed sd error of the other rows is
+  within 0.009 on every seed and bounded at 0.03, so a 5% bias there fails;
+  on the heavy-tailed rows its spread across seeds (sd 0.091) allows only a
+  bound of 0.28, so one seed cannot detect a 10% bias there, and the sweep
+  of 24 seeds (mean -0.037) is the evidence for them. The flat hyperprior
+  and the pattern prior are not run through Stan: the flat case is checked
+  by a density written out by hand on the natural scale.
+* **Item 6** failed as written and is restated. The raw reserve sd is below
+  the separate fits' in only 62 of 120 programs, because a separate fit of
+  three origins has one degree of freedom and its own scale ranges from
+  0.035 to 17.8, against a pooled one. Per unit of the root of each fit's
+  scale the hierarchical sd is lower in 111 to 116 of 120 (a mean ratio of
+  0.77 to 0.80; the test asks for 80% and below 0.9), and the error of the
+  mean is 0.66 to 0.75 of the separate fits' (the test asks for below
+  0.85). `BayesBfNormalised` refuses programs of two origins, so the
+  comparison uses three.
+* **The bindings** take a triangle with a segment per program or named
+  triangles (a Python dict, an R named list), each of one segment and with
+  the column and the exposure column, stacked on a `program` key. Labels
+  are the names in sorted order, as a triangle's segments are, not the
+  given order; a stacked fit equals the same panel as one triangle draw for
+  draw.
+
 #### Dependencies
 
 On `prospicio-bayes` (the Models lane), all public today:
@@ -3916,14 +4002,14 @@ hyperprior and the pattern prior; the model does not wait on it.
 
 * PR 16 (`claude/hierarchical-bf`): the model, the fit and the
   validation items 1 to 4 and 6, in Rust, Python (`HierarchicalBf`) and R
-  (`bayes_hierarchical_bf()`), after the user decides open decision 26.
+  (`bayes_hierarchical_bf()`). Built.
 * PR 17 (`claude/hierarchical-bf-one-year`): the one-year view through
   `YearModel` with the conformance suite (item 5), in Rust, Python and R.
 
 **Risks.** Sampling: hierarchical funnels on thin panels, which the
 non-centred parameterisation and the pilot whitening address and the
-recovery study measures. Cost: a fit is a few times a
-`BayesBfNormalised` fit per program, about seconds for ten programs; the
+recovery study measures. Cost: about 7 s for ten programs and 42 s for
+twenty as built; the
 one-year view refits the whole panel, so its refits cost more than a
 single triangle's and moment matching matters more. Identification:
 `omega` and `tau` trade off when a program's young ages are slow (it
