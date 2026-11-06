@@ -26,7 +26,7 @@ it unchanged. Two things it adds that the bootstraps cannot:
 
 Out of scope here, kept for later notes: compartmental reserving (Gesmann
 and Morris 2020), hierarchical growth curves across companies (Guszcza
-2008; Zhang, Dukic and Guszcza 2012; decision 30 proposes a hierarchical
+2008; Zhang, Dukic and Guszcza 2012; decision 30 builds a hierarchical
 Bornhuetter-Ferguson over programs instead, #599), joint models across lines with
 shared parameters or copulas (Zhang and Dukic 2013; Meyers 2019, ch. 8),
 and claim-level reserving (v0.8, parked).
@@ -3800,9 +3800,9 @@ is the model above: (A1), (B2) with one `omega`, (C1) and (D2).
   every program observes every age, which defeats the use case.
 
 The shared mean `beta_d` takes the vague `N(0, development_sd^2)` of
-decision 23 by default; when #732 merges, its `PatternPrior` (a mean and
-sd per log share ratio from industry triangles) can replace it, which is
-what makes ages no program observes usable.
+decision 23 by default; #732's `PatternPrior` (a mean and sd per log share
+ratio from industry triangles) can replace it, on the programs' ages. As
+built it cannot reach past the longest program's last age.
 
 **(C) The prior on the between-program spread `tau`** (and on `omega`).
 
@@ -3917,9 +3917,11 @@ with one `omega`, (C1), (D2). What building it changed or measured:
   `Error::Bayes` naming the program and age and `omega_scale`. The growth
   along a ray is that norm when a program's first age covers its falls, so
   falls larger than the first age are refused as well.
-* **The age rule of "Ages a program never observes" cannot fire.** The grid
-  is the triangle's, and its longest program observes every age, so no
-  branch exists for it. A pattern prior of the wrong length is an error.
+* **No age can go unobserved by every program.** The grid is the programs'
+  ages from the first to the last, so the error the note proposed has no
+  case and no branch. A program that stops earlier still carries its
+  prior-only `delta_cd` there. A pattern prior must have the programs' ages,
+  and one of the wrong length is an error.
 * **The sampler.** The note's dense pilot scale misread the funnel of a
   few programs: on the three-program Stan case 20 of 24 seeds warned, with
   39 divergences, and EVW's loss ratio sd was 9% below Stan's. Below 8
@@ -3928,7 +3930,7 @@ with one `omega`, (C1), (D2). What building it changed or measured:
   covariance, which is better there (10 programs warned on 1 of 10 panels
   against 7 of 10, 20 programs on 0 of 10 against 5 of 10; the crossover
   is interpolated). The pilot has at most 500 warm-up draws and a fifth of
-  `tune` kept. `target_accept` defaults to 0.99. On the Stan case that gives
+  `tune` kept, at least 100. `target_accept` defaults to 0.99. On the Stan case that gives
   0 divergences and 1 of 24 seeds warned, on R-hat 1.0104.
 * **Cost.** A five-program fit takes about 2 s, ten programs about 7 s and
   twenty about 42 s (three fits at once on 16 threads). `target_accept`
@@ -3938,9 +3940,10 @@ with one `omega`, (C1), (D2). What building it changed or measured:
   fits sharing the machine. The three-program Stan case takes about 25 s
   at 10,000 simulations, so it is not under decision 26's 2 s for the
   smoke set at those settings; PR 17 decides on a smaller one.
-* **Item 1** holds as written. The unit test sets `log tau` and `log
-  omega` to -800, where both underflow to 0, and compares the densities
-  (`one_program_at_zero_spreads_is_the_normalised_model`).
+* **Item 1** holds. The unit test sets `log tau` and `log omega` to -800,
+  where both underflow to 0, and compares the densities
+  (`one_program_at_zero_spreads_is_the_normalised_model`). The fits on
+  GenIns and RAA set `tau_scale` and `omega_scale` to 1e-6, not to 0.
 * **Item 2** is checked against `credibility_premiums` at the model's own
   structure parameters, since `HierarchicalCredibility` estimates the within
   variance that this model fixes. The note's 0.1 sd and 0.05 are not met.

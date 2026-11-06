@@ -35,7 +35,8 @@ sees the funnels of `tau` and `omega` and its covariance scales the main run
 badly: 20 of 24 seeds warned and EVW's loss ratio sd was 9% below Stan's
 (2.7 standard errors). Variances alone, a short pilot and `target_accept`
 0.99 gave 1 of 24 and agreed with Stan within its noise. Centred forms and
-longer pilots were worse. From about 10 programs the dense scale is better.
+longer pilots were worse. The dense scale is better at 10 and 20 programs, so
+it applies from 8, a crossover interpolated between 5 and 10.
 `Meyers` and `Compartmental` use the dense scale and were not tested.
 
 **Thin programs do not always get narrower in raw amounts.** A separate fit

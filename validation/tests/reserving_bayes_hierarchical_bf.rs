@@ -875,7 +875,8 @@ fn thin_panel(index: usize, separate: &BayesBfNormalised) -> Thin {
 /// ranged within a factor of 20, and the separate fit's reserve sd followed
 /// it. The sds are therefore compared both raw (reported: the hierarchical
 /// fit's is below in about half of the programs) and per root scale, which is
-/// what the data's information fixes (asserted: below in every program). The
+/// what the data's information fixes (asserted: below in at least 80% of the
+/// programs). The
 /// mean is asserted to be closer to the true expected reserve on average.
 ///
 /// Measured over four groups of 40 panels (offsets 0, 40, 80 and 120; the
@@ -974,6 +975,91 @@ fn stan_model(seed: u64) -> HierarchicalBf {
 /// labels: EVW's triangle with its prior ultimates as premium cut to its
 /// first six ages (all ten origins), GenIns with premium, and RAA with a
 /// premium of 40,000 in 1981 rising by 2,000 a year.
+/// Validation item 1's fits on RAA with a synthetic premium: one program, a
+/// tight hyperprior and spreads near 0 give `BayesBfNormalised`'s reserves,
+/// in total and by origin, within `0.1 s` and 10% (GenIns is a unit test).
+#[test]
+fn a_tight_hyperprior_reduces_to_the_normalised_fit_on_raa() {
+    let raa = dataset("raa");
+    let [_, _, n_origins, n_ages] = raa.shape();
+    let (mut origin, mut age, mut paid, mut premium) = (vec![], vec![], vec![], vec![]);
+    for w in 0..n_origins {
+        for d in 0..n_ages {
+            if let Some(v) = raa.get(0, 0, w, d) {
+                origin.push(Month::january(1981 + w as i32));
+                age.push(raa.development()[d]);
+                paid.push(v);
+                premium.push(40_000.0 + 2_000.0 * w as f64);
+            }
+        }
+    }
+    let tri = Triangle::from_long(&Long {
+        keys: &[],
+        origin: &origin,
+        development: DevelopmentColumn::Age(&age),
+        values: &[("paid", &paid), ("premium", &premium)],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Year,
+        cumulative: true,
+    })
+    .expect("a triangle");
+    let hierarchical = HierarchicalBf {
+        apriori: 0.5,
+        level_cv: Some(1e-6),
+        cv: 0.2,
+        tau_scale: 1e-6,
+        omega_scale: 1e-6,
+        n_sims: 8_000,
+        seed: 21,
+        ..HierarchicalBf::default()
+    }
+    .fit(&tri, "paid", "premium")
+    .expect("a fit");
+    let normalised = BayesBfNormalised {
+        apriori: 0.5,
+        cv: 0.2,
+        n_sims: 8_000,
+        seed: 22,
+        ..BayesBfNormalised::default()
+    }
+    .fit(&tri, "paid", "premium")
+    .expect("a fit");
+    let (a, b) = (&hierarchical.reserves, &normalised.reserves);
+    let total_sd = b.std_dev();
+    assert!(
+        (a.mean() - b.mean()).abs() < 0.1 * total_sd,
+        "total means {} {}",
+        a.mean(),
+        b.mean()
+    );
+    assert!(
+        (a.std_dev() / total_sd - 1.0).abs() < 0.1,
+        "total sds {} {total_sd}",
+        a.std_dev()
+    );
+    let (wa, wb) = (a.n_components(), b.n_components());
+    assert_eq!(wa, wb);
+    let (da, db) = (a.draw_matrix(), b.draw_matrix());
+    for w in 0..wa {
+        let x: Vec<f64> = da.chunks_exact(wa).map(|row| row[w]).collect();
+        let y: Vec<f64> = db.chunks_exact(wb).map(|row| row[w]).collect();
+        if sd(&y) > 0.0 {
+            assert!(
+                (mean(&x) - mean(&y)).abs() < 0.1 * sd(&y),
+                "component {w}: {} {}",
+                mean(&x),
+                mean(&y)
+            );
+            assert!(
+                (sd(&x) / sd(&y) - 1.0).abs() < 0.1,
+                "component {w}: {} {}",
+                sd(&x),
+                sd(&y)
+            );
+        }
+    }
+}
+
 fn stan_triangle() -> Triangle {
     let evw = triangle_columns("evw2012", &["paid", "prior"]);
     let genins = triangle_columns("genins_premium", &["paid", "premium"]);
@@ -1142,7 +1228,7 @@ fn stan_value(fit: &HierarchicalBfFit, q: &str, arg: &str) -> Option<f64> {
 /// `0.10 s`, the 95% within `0.26 s` (`0.9 s` for EVW's reserves and the
 /// totals). Over seeds 0 to 23 (`seed_sweep`) the largest errors were
 /// `0.080 s`, 9% (19.6%), `0.062 s`, `0.172 s` and `0.621 s`, so each
-/// tolerance is at least 1.5 times its family's worst (measured). Seed 0
+/// tolerance is at least 1.45 times its family's worst (measured). Seed 0
 /// passes every row, at most `0.048 s`, 3.1% (9.3%), `0.085 s` (`0.135 s`)
 /// of them.
 ///

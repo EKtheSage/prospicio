@@ -247,8 +247,8 @@ impl HierarchicalBf {
     /// each `beta_d ~ N(prior.mean_d, prior.sd_d^2)` (decision 29), for
     /// example the industry pattern of an
     /// [`IndustryPrior`](crate::IndustryPrior). The prior's ages must be
-    /// the programs' ages from the first to the last, and it may hold an
-    /// age that no program observes. `development_sd` is then unused.
+    /// the programs' ages from the first to the last. `development_sd` is
+    /// then unused.
     pub fn fit_with_pattern_prior(
         &self,
         triangle: &Triangle,
@@ -1860,7 +1860,8 @@ mod tests {
         ignore = "samples with NUTS; needs --features slow-tests"
     )]
     fn a_tight_hyperprior_with_no_spread_reproduces_the_normalised_fit() {
-        // Validation item 1's fits, on GenIns with premium.
+        // Validation item 1's fits, on GenIns with premium (RAA is in the
+        // validation file).
         let tri = genins();
         let sampler = Sampler {
             tune: 500,

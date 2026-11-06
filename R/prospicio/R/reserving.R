@@ -4504,6 +4504,10 @@ stack_programs <- function(programs, columns) {
     if (length(lacking)) {
       stop(sprintf("program %s has no column %s", nm[i], lacking[1]), call. = FALSE)
     }
+    if ("program" %in% columns) {
+      stop("a column named program clashes with the key of the stacked triangle",
+           call. = FALSE)
+    }
     long <- as.data.frame(tri)[c("origin", "development", columns)]
     long$program <- nm[i]
     long
@@ -4566,10 +4570,13 @@ stack_programs <- function(programs, columns) {
 #' and the `mean` and `std_dev` of the program's reserve.
 #'
 #' Errors: as [bayes_bf_normalised()]; if the programs together have no
-#' degree of freedom, or an age is observed by no program under the vague
-#' pattern prior. For a list of triangles: an empty list, an unnamed or
-#' duplicated name, an entry that is not a triangle or has several segments
-#' or lacks a column, or triangles of different grains or cumulative state.
+#' degree of freedom; if falling columns reach `1 / omega_scale` in the
+#' programs' scales, jointly over the programs, or a program's falling columns
+#' exceed its first age, since such a panel has no posterior. For a list of
+#' triangles: an empty list, an unnamed or duplicated name, an entry that is
+#' not a triangle or has several segments or lacks a column, triangles of
+#' different grains or cumulative state, or a column named `program`, which
+#' is the key of the stacked triangle.
 #'
 #' @param triangle A cumulative [triangle] with a segment per program, all
 #'   on the same ages, every origin observed from the first age up to its

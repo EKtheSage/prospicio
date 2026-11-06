@@ -13444,6 +13444,9 @@ fn stack_programs(programs: &Bound<'_, PyDict>, columns: &[&str]) -> PyResult<Tr
     if programs.is_empty() {
         return Err(PyValueError::new_err("no programs: the dict is empty"));
     }
+    let mut columns = columns.to_vec();
+    columns.dedup();
+    let columns = &columns[..];
     let mut names: Vec<String> = Vec::new();
     let (mut origin, mut development) = (Vec::new(), Vec::new());
     let mut values: Vec<(String, Vec<f64>)> = columns
@@ -13575,12 +13578,15 @@ fn stack_programs(programs: &Bound<'_, PyDict>, columns: &[&str]) -> PyResult<Tr
 ///     Largest NUTS tree depth.
 /// pattern_prior : PatternPrior, optional
 ///     An informative prior on the shared pattern, for example
-///     ``IndustryPrior.pattern``; its ages must be the triangle's.
+///     ``IndustryPrior.pattern``; its ages must be the programs' ages.
 ///
 /// Raises
 /// ------
 /// ValueError
-///     If ``n_sims`` is zero or ``process`` is unknown.
+///     If ``n_sims`` is zero or ``process`` is unknown. ``fit`` raises it
+///     when falling columns reach ``1 / omega_scale`` in the programs'
+///     scales, jointly over the programs, or when a program's falling
+///     columns exceed its first age: such a panel has no posterior.
 /// OverflowError
 ///     If an integer setting is negative or too large.
 ///
@@ -15002,7 +15008,7 @@ impl PyIndustryPrior {
     }
 
     /// ``self.model(model).fit(triangle, column, exposure)``: the pattern
-    /// prior's ages must be the triangle's (``at_age`` cuts it). Raises
+    /// prior's ages must be the programs' ages (``at_age`` cuts it). Raises
     /// one ``UserWarning`` listing the failed diagnostics, if any.
     ///
     /// Parameters

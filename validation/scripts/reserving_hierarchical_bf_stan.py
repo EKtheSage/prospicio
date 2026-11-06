@@ -70,7 +70,7 @@ OMEGA_SCALE = 0.5
 # spread of HierarchicalBf's defaults (4 x 1,000 draws, target_accept 0.99)
 # against this pooled reference over seeds 0 to 23 (the ignored test
 # seed_sweep in validation/tests/reserving_bayes_hierarchical_bf.rs), each at
-# least 1.5 times the largest error measured in its family (errors in units of
+# least 1.45 times the largest error measured in its family (errors in units of
 # s for means and quantiles, relative for sds):
 #   means 0.080 s (EVW's reserve; 0.064 s for a hyperparameter), so 0.12 s;
 #   sds 0.090 (EVW's share at age 10, never observed; 0.079 for GenIns'), so

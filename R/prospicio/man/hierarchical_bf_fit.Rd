@@ -130,10 +130,13 @@ over the origins), \code{scale}, \code{loss_ratio}, \code{own_loss_ratio}, \code
 and the \code{mean} and \code{std_dev} of the program's reserve.
 
 Errors: as \code{\link[=bayes_bf_normalised]{bayes_bf_normalised()}}; if the programs together have no
-degree of freedom, or an age is observed by no program under the vague
-pattern prior. For a list of triangles: an empty list, an unnamed or
-duplicated name, an entry that is not a triangle or has several segments
-or lacks a column, or triangles of different grains or cumulative state.
+degree of freedom; if falling columns reach \code{1 / omega_scale} in the
+programs' scales, jointly over the programs, or a program's falling columns
+exceed its first age, since such a panel has no posterior. For a list of
+triangles: an empty list, an unnamed or duplicated name, an entry that is
+not a triangle or has several segments or lacks a column, triangles of
+different grains or cumulative state, or a column named \code{program}, which
+is the key of the stacked triangle.
 }
 \examples{
 long <- data.frame(
