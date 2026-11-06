@@ -8,7 +8,6 @@
 
 - [compartmental-subannual] fitting `Compartmental` well to quarterly or monthly data (rate priors for sub-annual development, development effects grouped by year, seasonality, a calibration check on sub-annual books; `reserving-compartmental.md` decision 13, the user's note of 2026-10-22)
 - [compartmental-subannual] the user's choices on fitting `Compartmental` to quarterly or monthly data, then building what is chosen: rate priors, development levels by year, seasonality, what a sub-annual fit promises and earned exposure (`reserving-compartmental.md` decision 14 and open decisions 9 to 13; the calibration study is done, `knowledge/findings/compartmental-subannual.md`)
-- [hierarchical-bf-one-year] #599, the one-year view of `HierarchicalBf` through `YearModel` over the stacked programs, with the conformance suite (`reserving-bayes.md` decision 30, PR 17)
 
 ## Done
 
