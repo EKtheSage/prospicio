@@ -99,7 +99,8 @@ pub use backtest::{
 #[cfg(feature = "bayes")]
 pub use bayes::{
     BayesBf, BayesBfFit, BayesBfNormalised, BayesBfNormalisedFit, BayesOdp, BayesOdpFit,
-    LayerSharePrior, Meyers, MeyersFit, MeyersModel, ShareDependence,
+    HierarchicalBf, HierarchicalBfFit, HierarchicalBfProgram, LayerSharePrior, Meyers, MeyersFit,
+    MeyersModel, ShareDependence,
 };
 pub use benchmark_curve::{BenchmarkCurve, BenchmarkCurveFit};
 pub use berquist_sherman::{

@@ -210,6 +210,18 @@ impl<'a, P: Posterior + ?Sized> Whitened<'a, P> {
     /// its dense metric, `n / (n + 5) S + 1e-3 (5 / (n + 5)) I` for `n`
     /// draws.
     pub(crate) fn from_draws(model: &'a P, draws: &PosteriorDraws) -> Result<Self> {
+        Self::from_draws_with(model, draws, false)
+    }
+
+    /// [`from_draws`](Self::from_draws) with only the pilot's variances
+    /// (a diagonal scale), for a posterior whose pilot covariance is
+    /// dominated by a funnel's tail excursions and so misleads the dense
+    /// scale where the neck is narrow.
+    pub(crate) fn from_draws_diagonal(model: &'a P, draws: &PosteriorDraws) -> Result<Self> {
+        Self::from_draws_with(model, draws, true)
+    }
+
+    fn from_draws_with(model: &'a P, draws: &PosteriorDraws, diagonal: bool) -> Result<Self> {
         let p = model.dim();
         let n = draws.n_draws();
         let mean = draws.mean();
@@ -225,7 +237,11 @@ impl<'a, P: Posterior + ?Sized> Whitened<'a, P> {
         let (n, w) = (n as f64, n as f64 / (n as f64 + 5.0));
         for i in 0..p {
             for j in 0..=i {
-                let v = w * cov[i * p + j] / (n - 1.0);
+                let v = if diagonal && i != j {
+                    0.0
+                } else {
+                    w * cov[i * p + j] / (n - 1.0)
+                };
                 cov[i * p + j] = v;
                 cov[j * p + i] = v;
             }
