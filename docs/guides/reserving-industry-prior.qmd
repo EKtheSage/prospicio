@@ -1,0 +1,356 @@
+---
+title: "An industry prior for a thin program, from Schedule P"
+subtitle: "R version, with the prospicio R package"
+format:
+  html:
+    toc: true
+    code-tools: true
+    embed-resources: true
+execute:
+  warning: false
+  output: false
+---
+
+A program with three or four years of data cannot set its own development
+pattern or its own loss ratio. The Bayesian Bornhuetter-Ferguson
+(`bayes_bf_normalised()`) can carry that outside view, but it needs numbers: an
+expected loss ratio, how far a company's level strays from it, how far an
+origin strays from its company, and a view of the pattern. `industry_prior()`
+estimates these numbers from other companies' triangles of the same line (#604,
+decision 29 of `docs/design/reserving-bayes.md`).
+
+This is the R twin of the Python guide
+[`reserving-industry-prior.md`](reserving-industry-prior.md), with the same
+sections and checks. No data ship with the library. The guide builds a prior
+from Schedule P triangles, fits a thin program with it, and then tests the
+prior on every company of the panel.
+
+**How the numbers here are checked.** CI
+(`R/prospicio/tests/test-guides.R`) runs each `{r}` chunk on the two companies
+of `validation/data/schedule_p_comauto_sample.csv`, and the chunk must print
+exactly the text under it. The chunks that need the fetched panel are shown as
+plain `r` blocks, because CI does not have the panel. Their output was recorded
+on Windows. The sampler's digits can differ on another platform.
+
+## 1. Fetch one panel of triangles
+
+The Schedule P data are public research data from the CAS and NAIC, and they
+are not in this repository. The `cas-schedule-p` package is a Python package.
+Section 1 of the Python guide writes `schedule_p_panel.csv`, with the columns
+`line`, `GRCODE`, `AccidentYear`, `DevelopmentLag`, `CumPaidLoss_C` and
+`EarnedPremNet_C`: 50 companies in each of four lines, accident years 1988 to
+1997, each company's full 10 x 10 square. Any CSV with these columns works. The
+later diagonals are what happened next, so the guide keeps them apart until it scores a fit.
+
+## 2. From rows to one triangle and one premium vector per company
+
+`industry_prior()` takes one triangle per company and one premium per origin.
+The functions below build them from rows of that layout. `known()` cuts a
+company's square to what was known at the end of 1997, the upper triangle, and
+its `first_origin` and `last_age` cut it further, for a thin program. The chunk
+runs on the two commercial auto companies in the repository, which have the
+same columns.
+
+```{r}
+library(prospicio)
+
+VALUATION <- 1997
+
+read_companies <- function(path, line = NULL) {
+  rows <- read.csv(path, comment.char = "#")
+  if (!is.null(line)) rows <- rows[rows$line == line, ]
+  rows <- data.frame(code = rows$GRCODE, origin = rows$AccidentYear, age = 12 * rows$DevelopmentLag,
+                     paid = rows$CumPaidLoss_C, premium = rows$EarnedPremNet_C)
+  split(rows, rows$code)
+}
+
+known <- function(rows, first_origin = 0, last_age = 120) {
+  rows[rows$origin + rows$age %/% 12 - 1 <= VALUATION & rows$origin >= first_origin & rows$age <= last_age, ]
+}
+
+as_triangle <- function(rows) triangle(rows, "origin", "age", c("paid", "premium"))
+
+premiums <- function(rows) {
+  first <- rows[!duplicated(rows$origin), ]
+  first$premium[order(first$origin)]
+}
+
+company_prior <- function(companies, ...) {
+  rows <- lapply(companies, known)
+  industry_prior(unname(lapply(rows, as_triangle)), "paid", premiums = unname(lapply(rows, premiums)), ...)
+}
+
+# The sample, found from the repository root (CI) or from docs/guides (Quarto).
+find_sample <- function(dir = getwd()) {
+  repeat {
+    path <- file.path(dir, "validation", "data", "schedule_p_comauto_sample.csv")
+    if (file.exists(path)) return(path)
+    parent <- dirname(dir)
+    if (identical(parent, dir)) stop("validation/data/schedule_p_comauto_sample.csv not found", call. = FALSE)
+    dir <- parent
+  }
+}
+
+sample <- read_companies(find_sample())
+two <- company_prior(sample)
+cat(sprintf("apriori %.4f, between cv %.4f, cv %.4f\n", two@apriori, two@between_cv, two@cv))
+cat(sprintf("companies used %d, origins used %d\n", two@report$n_companies_used, two@report$n_origins_used))
+cat(two@report$warnings[1], "\n")
+```
+
+```text
+apriori 0.6043, between cv 0.2586, cv 0.2179
+companies used 2, origins used 16
+only 2 companies: the between-company cv rests on 1 degrees of freedom (its relative standard error is about 71%); a prior from at least 10 is more reliable
+```
+
+A prior from two companies is only a check that the rows are read correctly,
+and the report says so. `min_companies` (10 by default) sets when that warning
+appears. It leaves the numbers alone.
+
+## 3. The prior for workers' compensation
+
+The same function on the 50 companies of the fetched panel:
+
+```r
+companies <- read_companies("schedule_p_panel.csv", "wc")
+prior <- company_prior(companies)
+cat(sprintf("apriori %.4f (se %.4f)\n", prior@apriori, prior@apriori_se))
+cat(sprintf("between cv %.4f, within cv %.4f, process cv %.4f\n", prior@between_cv, prior@within_cv, prior@process_cv))
+cat(sprintf("companies used %d, origins used %d, warnings %d\n", prior@report$n_companies_used,
+            prior@report$n_origins_used, length(prior@report$warnings)))
+cat("age      ", sprintf("%5d", as.integer(prior@pattern@ages)), "\n")
+cat("developed", sprintf("%5.3f", prior@percent_developed), "\n")
+cat("sd of the log share ratios from 24 months:", sprintf("%.2f", prior@pattern@sd), "\n")
+```
+
+```text
+apriori 0.6385 (se 0.0193)
+between cv 0.1890, within cv 0.2927, process cv 0.1697
+companies used 50, origins used 450, warnings 0
+age          12    24    36    48    60    72    84    96   108   120
+developed 0.282 0.603 0.769 0.864 0.915 0.947 0.967 0.983 0.993 1.000
+sd of the log share ratios from 24 months: 0.31 0.47 0.65 0.74 0.74 0.74 1.02 1.20 1.07
+```
+
+Each number has a place in the model:
+
+* `apriori` is the mean over the companies of their mean ultimate loss ratio,
+  each from the company's own chain ladder with no tail. The triangles' last
+  age counts as ultimate.
+* `between_cv` is the spread of a company's level about `apriori`. It becomes
+  the model's `common_cv`, one error shared by all of a program's origins.
+* `within_cv` is the spread of an origin about its company's level. It becomes
+  the model's `cv`.
+* `pattern` is a normal prior on each age's log share ratio, with the mean and
+  sd over companies. The sd is large at the old ages, where each company's own
+  estimate rests on few origins, so the prior leans on the industry little
+  there.
+
+## 4. What the settings change
+
+```r
+cat("setting                 apriori  between  cv      origins\n")
+settings <- list("default" = list(), "min_developed=0" = list(min_developed = 0),
+                 "min_developed=0.9" = list(min_developed = 0.9),
+                 "subtract_process=TRUE" = list(subtract_process = TRUE))
+for (name in names(settings)) {
+  p <- do.call(company_prior, c(list(companies), settings[[name]]))
+  cat(sprintf("%-23s %.4f   %.4f   %.4f  %d\n", name, p@apriori, p@between_cv, p@cv, p@report$n_origins_used))
+}
+```
+
+```text
+setting                 apriori  between  cv      origins
+default                 0.6385   0.1890   0.2927  450
+min_developed=0         0.6382   0.2022   0.2936  500
+min_developed=0.9       0.6895   0.1887   0.2604  300
+subtract_process=TRUE   0.6385   0.1890   0.2385  450
+```
+
+* `min_developed` is the share of the ultimate an origin must have reached to
+  count in the loss ratios. A young origin's ultimate is mostly the chain
+  ladder's projection, and its error would pass for spread between origins. At
+  0.9 only the old origins count, and the level moves to those years' loss
+  ratios.
+* `subtract_process` takes the chain ladder's ODP process error out of `cv`,
+  since the model's likelihood adds it back. It is off by default because the
+  Pearson scale of a chain ladder on Schedule P also carries misfit. On every
+  incurred line of the panel it explains more than the whole within spread, and
+  the subtraction would pin each origin to its company's level
+  (`knowledge/findings/industry-prior-calibration-panel.md`). On workers'
+  compensation paid it leaves a usable `cv`.
+* `min_companies` only sets the warning.
+
+## 5. A thin program
+
+Take the company of median premium out of the panel and keep only its four
+latest accident years: 1994 to 1997 at the end of 1997, ten cells, ages to 48
+months. The prior comes from the other 49 companies.
+
+The program is younger than the panel, and the pattern prior's ages must be the
+triangle's. `industry_prior_at_age(prior, 48)` moves the prior to development
+to 48 months: `apriori` becomes the loss ratio developed to 48 months, the
+pattern keeps the ages to 48 and `tail_factor` is the factor from 48 months to
+ultimate. **The model does not apply the tail**: multiply its results by the
+factor yourself. The chunk below shows the cut on the two companies.
+
+```{r}
+young <- industry_prior_at_age(two, 48)
+cat(sprintf("apriori %.4f to ultimate, %.4f to 48 months\n", two@apriori, young@apriori))
+cat(sprintf("ages %s, tail factor %.4f\n", paste(young@pattern@ages, collapse = ", "), young@tail_factor))
+cat(tail(young@report$warnings, 1), "\n")
+```
+
+```text
+apriori 0.6043 to ultimate, 0.5171 to 48 months
+ages 12, 24, 36, 48, tail factor 1.1686
+a prior for development to 48 months: 14.4% of the ultimate develops after it, outside the model; multiply the fit's ultimates by the tail factor 1.1686
+```
+
+The fit, beside a vague `bayes_bf_normalised()` (a flat prior on each origin,
+`cv = Inf`, which is the Bayesian chain ladder) and the chain ladder. All three
+use the same tail factor.
+
+```r
+SAMPLER <- list(chains = 4, tune = 500, draws = 500, n_sims = 2000)
+FIRST_ORIGIN <- 1994
+THIN_AGE <- 48
+
+ultimates <- function(companies, code) {
+  prior <- industry_prior_at_age(company_prior(companies[names(companies) != code]), THIN_AGE)
+  rows <- companies[[code]]
+  rows <- rows[rows$origin >= FIRST_ORIGIN, ]
+  latest <- sum(rows$paid[rows$origin + rows$age %/% 12 - 1 == VALUATION])
+  thin <- as_triangle(known(rows, FIRST_ORIGIN, THIN_AGE))
+  seed <- as.numeric(code)
+  fits <- list(
+    prior = do.call(bayes_bf_industry, c(list(thin, "paid", "premium", prior, seed = seed), SAMPLER)),
+    vague = do.call(bayes_bf_normalised, c(list(thin, "paid", "premium", cv = Inf, seed = seed), SAMPLER)))
+  list(chain = latest + sum(chain_ladder(thin, "paid")@reserve),
+       draws = lapply(fits, function(f) sort(latest + total(f@reserves)@draws)),
+       tail = prior@tail_factor, paid_48 = sum(rows$paid[rows$age == THIN_AGE]),
+       paid_120 = sum(rows$paid[rows$age == 120]))
+}
+
+by_premium <- names(companies)[order(vapply(companies, function(r) sum(premiums(known(r))), 0))]
+held_out <- by_premium[length(by_premium) %/% 2 + 1]
+u <- ultimates(companies, held_out)
+cat(sprintf("company %s, accident years 1994 to 1997, ultimate paid in thousands, tail factor %.4f\n", held_out, u$tail))
+cat(sprintf("chain ladder       %9s\n", format(round(u$tail * u$chain), big.mark = ",")))
+for (name in names(u$draws)) {
+  d <- u$draws[[name]]
+  n <- length(d)
+  cat(sprintf("%-18s %9s   90%% interval %s to %s\n", name, format(round(u$tail * mean(d)), big.mark = ","),
+              format(round(u$tail * d[n %/% 20 + 1]), big.mark = ","),
+              format(round(u$tail * d[(19 * n) %/% 20 + 1]), big.mark = ",")))
+}
+cat(sprintf("paid at 120 months %9s\n", format(round(u$paid_120), big.mark = ",")))
+```
+
+```text
+company 1066, accident years 1994 to 1997, ultimate paid in thousands, tail factor 1.1572
+chain ladder          35,518
+prior                 35,258   90% interval 33,746 to 37,030
+vague                 35,547   90% interval 33,878 to 37,516
+paid at 120 months    32,968
+```
+
+One company shows how to run the method and proves nothing about it. The next
+section tests it on all of them.
+
+## 6. Does it help? Every company in turn
+
+The panel holds the outcomes, so the prior can be tested. The chunk below
+repeats section 5 for each company of each line, always with the prior from the
+other 49, and scores the three ultimates against the paid at 120 months. The
+error is relative to that outcome. A company is skipped when the model refuses
+its thin triangle: a column of one or two cells whose increments sum to zero or
+less has no share to estimate, and the error says so.
+
+```r
+study <- function(line) {
+  companies <- read_companies("schedule_p_panel.csv", line)
+  rows <- lapply(names(companies), function(code) tryCatch(ultimates(companies, code), error = function(e) NULL))
+  list(rows = Filter(Negate(is.null), rows), skipped = sum(vapply(rows, is.null, TRUE)))
+}
+rmse <- function(e) sqrt(mean(e^2))
+inside <- function(d, x) d[length(d) %/% 20 + 1] <= x && x <= d[(19 * length(d)) %/% 20 + 1]
+
+cat("                  rmse of the ultimate    90% cover at 120    90% cover at 48\n")
+cat("line scored skip  chain  vague  prior     vague  prior        vague  prior\n")
+factors <- list()
+for (line in c("wc", "ca", "pa", "ol")) {
+  s <- study(line)
+  r <- s$rows
+  field <- function(f) vapply(r, f, 0)
+  o <- field(function(x) x$paid_120)
+  factors[[line]] <- list(tail = r[[1]]$tail, f = sort(o / field(function(x) x$paid_48)))
+  ult <- function(k) field(function(x) x$tail * mean(x$draws[[k]]))
+  at_120 <- function(k) mean(vapply(r, function(x) inside(x$tail * x$draws[[k]], x$paid_120), TRUE))
+  at_48 <- function(k) mean(vapply(r, function(x) inside(x$draws[[k]], x$paid_48), TRUE))
+  cat(sprintf("%-4s %6d %4d  %.3f  %.3f  %.3f     %.2f   %.2f         %.2f   %.2f\n", line, length(r), s$skipped,
+              rmse(field(function(x) x$tail * x$chain) / o - 1), rmse(ult("vague") / o - 1), rmse(ult("prior") / o - 1),
+              at_120("vague"), at_120("prior"), at_48("vague"), at_48("prior")))
+}
+cat("paid at 120 months over paid at 48, by company: the tail of the first company's prior, then the 10th and 90th percentiles\n")
+for (line in names(factors)) {
+  f <- factors[[line]]$f
+  cat(sprintf("%-4s %.3f   %.3f  %.3f\n", line, factors[[line]]$tail, f[length(f) %/% 10 + 1], f[(9 * length(f)) %/% 10 + 1]))
+}
+```
+
+```text
+                  rmse of the ultimate    90% cover at 120    90% cover at 48
+line scored skip  chain  vague  prior     vague  prior        vague  prior
+wc       48    2  0.141  0.153  0.135     0.42   0.38         0.71   0.73
+ca       44    6  0.220  0.266  0.197     0.61   0.59         0.64   0.64
+pa       48    2  0.085  0.085  0.088     0.48   0.42         0.58   0.50
+ol       43    7  0.276  2.426  0.287     0.51   0.40         0.79   0.74
+paid at 120 months over paid at 48, by company: the tail of the first company's prior, then the 10th and 90th percentiles
+wc   1.155   1.068  1.308
+ca   1.118   1.051  1.290
+pa   1.083   1.028  1.170
+ol   1.335   1.074  1.813
+```
+
+The table says three things, and the last matters most.
+
+* **Against the vague model, the prior helps where a thin triangle is weak.**
+  The error falls on workers' compensation and commercial auto, and it falls a
+  long way on other liability, where a few thin triangles send the vague model's
+  ultimates far off. Those few posteriors run away, so that one number moves with
+  the smallest change: the Python guide's table prints 1.8 where this one prints
+  2.4. On personal auto, the stable line, the prior is a little worse.
+* **Against the plain chain ladder, the gain is small.** The prior is a little
+  better on workers' compensation and commercial auto and a little worse on
+  personal auto and other liability. All three methods share the tail factor,
+  and the second table shows why that limits them: one factor stands for a
+  spread of companies from well below it to well above it.
+* **The intervals are too narrow. Do not read them as 90%.** Multiplying by a
+  fixed tail removes all uncertainty about the development after 48 months, and
+  the cover at 120 months is 0.38 to 0.61. Even to 48 months, with no tail in
+  the way, it is 0.50 to 0.79, and the prior does not improve on the vague model.
+  The model has no calendar-year effect, a likely cause. Widen the tail by hand
+  (section 7), and read `knowledge/findings/industry-prior-thin-programs.md` for
+  the details.
+
+So the prior's value on a four-origin program is a stable answer, not a better
+interval. It keeps a weak triangle from producing a wild ultimate. It does not
+replace judgment about the tail. The sampler here is short, so a few fits warn
+of an R-hat just above 1.01. A real analysis would use the default sampler.
+
+## 7. Using it
+
+* Build the prior on the same basis as the program: the same line, paid with
+  paid and incurred with incurred, and premium on the same footing.
+* A program as old as the panel needs no cut: `bayes_bf_industry(triangle,
+  "paid", "premium", prior)`. `bayes_bf_industry_one_year()` gives the one-year
+  view under the same prior.
+* `industry_prior_at_age()` keeps the cvs and does not add the spread of the
+  percent developed. `percent_developed_sd` holds that spread: use it to widen
+  the tail by hand, as section 6 shows you must.
+* A model that pools the programs themselves, in place of fixing a prior from
+  outside, is #599.
+* `examples/ils_deal_analysis.qmd` uses this prior on a deal, with synthetic
+  peers so that it runs without the fetch.

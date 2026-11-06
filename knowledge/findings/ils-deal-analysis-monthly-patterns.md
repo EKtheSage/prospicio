@@ -22,6 +22,8 @@ sources:
 
 # The monthly patterns of the ILS notebook
 
+Update of 2026-11-05: the notebook now pays each simulation on `year_2026.patterns` on the underwriting basis (#730), so it no longer calls `monthly_patterns`. The facts below stand for that function.
+
 Found while replacing the notebook's hand-written monthly patterns with
 `monthly_patterns` (#601), for the `[ils-workaround-table]` item. The
 numbers are for the flat structure at `PROSPICIO_EXAMPLE_SIMS=2000` and the

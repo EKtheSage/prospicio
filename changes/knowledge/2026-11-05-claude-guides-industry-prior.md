@@ -1,0 +1,1 @@
+* **Creation**: [Thin programs under the industry prior](/findings/industry-prior-thin-programs.md), branch claude/guides-industry-prior: every company of four Schedule P lines held out in turn; the prior steadies a weak triangle, gains little on the chain ladder, and its intervals are too narrow. Peers must share the program's pattern, and `new_year` has no trend.

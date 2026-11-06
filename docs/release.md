@@ -123,7 +123,7 @@ survival models stay parked. #599's pooling structure is the recommended one
 | Aggregate | | #722 (an accident-year payment pattern on the underwriting basis in `monthly_patterns`) |
 | Models | #577 (tabular networks with categorical embeddings and multi-task heads) | |
 | Excel | parity with the Python and R bindings in batches (#742) | |
-| Guides | #730 (an industry prior from a user-fetched Schedule P line, replacing the ILS notebook's hard-coded prior) | `[guides-current-next]` for the methods 0.0.8 added |
+| Guides | Done: #730 (an industry prior from a user-fetched Schedule P line, replacing the ILS notebook's hard-coded prior) | `[guides-current-next]` for the methods 0.0.8 added |
 | Shared | #576 (a WASM JavaScript package; its npm name is the user's), #579 (one large file split per PR) | |
 
 Probability has no open item. Parked: #553 (IFRS 17, `P4`), claim-level

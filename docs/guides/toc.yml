@@ -46,6 +46,7 @@
     - guide: reserving-meyers
     - guide: reserving-compartmental
     - guide: reserving-excess-layers
+    - guide: reserving-industry-prior
     - notebook: one_year_view
 
 - section: Pricing
