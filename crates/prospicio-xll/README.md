@@ -38,6 +38,13 @@ Ctrl+Alt+F9 to recalculate.
   attachments down.
 - **Simulations** take `sims` (default 10,000, at most 1,000,000) and
   `seed` (default 0). The same seed gives the same table.
+- **Long runs don't block Excel:** the bootstraps, the Bayesian fits and
+  `PRO.CAP.COPULA.SIM` run in the background. Their cell shows
+  `#GETTING_DATA` until the result arrives, and you can keep working.
+  Cells with the same inputs share one run, and a recalculation that
+  changes none of a function's inputs answers at once from the result
+  kept. Editing while a run goes on interrupts the recalculation but not
+  the run: the next recalculation picks up its result.
 - **No duplicates of Excel:** use Excel's own `NPV`, `XNPV`, `IRR` and
   `XIRR` for cash flows in cells.
 
