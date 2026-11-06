@@ -4,7 +4,10 @@
 
 use prospicio_models::{Fitted, Model};
 use prospicio_nn::onnx::{OnnxModel, OnnxPredictor, OnnxTensor, OutputScale};
-use prospicio_nn::{AttentionCann, AttentionCannFit, Cann, CannFit, EarlyStopping, TokenAttention};
+use prospicio_nn::{
+    AttentionCann, AttentionCannFit, Cann, CannFit, EarlyStopping, Head, TabularNet, TabularNetFit,
+    Target, TokenAttention,
+};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -836,6 +839,474 @@ impl PyOnnxPredictor {
             "OnnxPredictor(family={:?}, inputs={:?})",
             self.inner.family.name(),
             self.inner.bindings
+        )
+    }
+}
+
+/// One output of a ``TabularNet``: a family, its link and its weight in the
+/// training loss.
+///
+/// Parameters
+/// ----------
+/// name : str
+/// family : {"poisson", "gamma", "tweedie", "gaussian"}
+/// link : str, optional
+///     Log for the Poisson, gamma and Tweedie, identity for the Gaussian:
+///     the only links supported, and the defaults.
+/// loss_weight : float, default 1.0
+///     The head's weight in the loss, the sum of each head's weighted mean
+///     deviance times its loss weight.
+/// power : float, optional
+///     The Tweedie power.
+#[pyclass(name = "Head", module = "prospicio.models", frozen, from_py_object)]
+#[derive(Clone)]
+pub(crate) struct PyHead {
+    inner: Head,
+}
+
+#[pymethods]
+impl PyHead {
+    #[new]
+    #[pyo3(signature = (name, family, link = None, loss_weight = 1.0, power = None))]
+    fn new(
+        name: &str,
+        family: &str,
+        link: Option<&str>,
+        loss_weight: f64,
+        power: Option<f64>,
+    ) -> PyResult<Self> {
+        let f = self::family(family, None, power)?;
+        let l = network_link(link, f)?;
+        Ok(Self {
+            inner: Head::new(name, f).link(l).loss_weight(loss_weight),
+        })
+    }
+
+    #[getter]
+    fn name(&self) -> &str {
+        &self.inner.name
+    }
+
+    #[getter]
+    fn family(&self) -> &'static str {
+        self.inner.family.name()
+    }
+
+    #[getter]
+    fn loss_weight(&self) -> f64 {
+        self.inner.loss_weight
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Head({:?}, {:?}, link={:?}, loss_weight={})",
+            self.inner.name,
+            self.inner.family.name(),
+            link_name(self.inner.link),
+            self.inner.loss_weight
+        )
+    }
+}
+
+/// A tabular network: rating factors entered as learned embeddings, a
+/// shared body of hidden ReLU layers, and one or more heads, each a linear
+/// output that starts at zero on its own offset (a GLM's linear predictor
+/// or the log exposure), ``eta_h = offset_h + out_h(body(x, e(f1), ...))``.
+///
+/// A factor named in ``embeddings`` is read from its indicator columns in
+/// the design (``region[B]``, ...; a row with none set is the reference
+/// level) and enters as a vector of the given dimensions in place of them.
+/// Training minimizes the sum over heads of each head's weighted mean
+/// deviance times its loss weight, by Adam on mini-batches, on the CPU in
+/// ``float64``, reproducible from ``seed``. One head and no embeddings is
+/// ``Cann``, bit for bit.
+///
+/// Parameters
+/// ----------
+/// heads : list of Head
+/// embeddings : dict of str to int, optional
+///     Each embedded factor and its dimensions, in order.
+/// references : dict of str to str, optional
+///     The reference level's label of an embedded factor, for
+///     ``embeddings()``; ``"(reference)"`` otherwise.
+/// hidden : list of int, default [16, 8]
+/// epochs : int, default 200
+/// batch_size : int, default 64
+/// learning_rate : float, default 1e-3
+/// seed : int, default 0
+/// validation_share : float, optional
+///     Turns on early stopping on the summed loss, as for ``Cann``.
+/// patience : int, default 10
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import Design, Head, TabularNet
+/// >>> d = Design([[0.0, 1.0, 2.0, 3.0] * 5, [0.0, 1.0] * 10], ["x", "g[b]"])
+/// >>> counts = [0.0, 1.0, 0.0, 2.0] * 5
+/// >>> sev = [0.0, 3.0, 0.0, 2.5] * 5
+/// >>> spec = TabularNet([Head("freq", "poisson"), Head("sev", "gamma")],
+/// ...                   embeddings={"g": 2}, hidden=[4], epochs=3)
+/// >>> fit = spec.fit_heads(d, [counts, sev], weights=[None, counts])
+/// >>> fit.head_names
+/// ['freq', 'sev']
+/// >>> len(fit.embeddings("g")["levels"])
+/// 2
+#[pyclass(name = "TabularNet", module = "prospicio.models", frozen)]
+pub(crate) struct PyTabularNet {
+    inner: TabularNet,
+}
+
+#[pymethods]
+impl PyTabularNet {
+    #[new]
+    #[pyo3(signature = (heads, embeddings = None, references = None, hidden = None, epochs = 200, batch_size = 64, learning_rate = 1e-3, seed = 0, validation_share = None, patience = 10))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        heads: Vec<PyHead>,
+        embeddings: Option<&Bound<'_, pyo3::types::PyDict>>,
+        references: Option<std::collections::HashMap<String, String>>,
+        hidden: Option<Vec<usize>>,
+        epochs: usize,
+        batch_size: usize,
+        learning_rate: f64,
+        seed: u64,
+        validation_share: Option<f64>,
+        patience: usize,
+    ) -> PyResult<Self> {
+        let mut inner = TabularNet::new();
+        if let Some(e) = embeddings {
+            for (factor, dim) in e.iter() {
+                inner = inner.embedding(&factor.extract::<String>()?, dim.extract::<usize>()?);
+            }
+        }
+        let references = references.unwrap_or_default();
+        for (factor, level) in &references {
+            if !inner.embeddings.iter().any(|e| &e.factor == factor) {
+                return Err(PyValueError::new_err(format!(
+                    "references names {factor:?}, which is not an embedded factor"
+                )));
+            }
+            inner = inner.reference(factor, level);
+        }
+        for h in heads {
+            inner = inner.head(h.inner);
+        }
+        if let Some(h) = hidden {
+            inner.hidden = h;
+        }
+        inner.epochs = epochs;
+        inner.batch_size = batch_size;
+        inner.learning_rate = learning_rate;
+        inner.seed = seed;
+        inner.early_stopping = early_stopping(validation_share, patience);
+        Ok(Self { inner })
+    }
+
+    /// Fits a one-head network on ``y`` with the design's offset and
+    /// weights.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    ///
+    /// Returns
+    /// -------
+    /// TabularNetFit
+    fn fit(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+    ) -> PyResult<PyTabularNetFit> {
+        let (spec, d) = (&self.inner, &design.inner);
+        let inner = py.detach(|| spec.fit(d, &y)).map_err(to_py)?;
+        Ok(PyTabularNetFit { inner })
+    }
+
+    /// Fits every head at once, one response per head in the heads' order.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// ys : list of list of float
+    /// weights : list of (list of float or None), optional
+    ///     Each head's prior weights (claim counts for a severity head); the
+    ///     design's where ``None``. A row with weight 0 does not enter the
+    ///     head's loss, and its response is not read.
+    /// offsets : list of (list of float or None), optional
+    ///     Each head's offset (a GLM's linear predictor, the log exposure);
+    ///     the design's where ``None``.
+    ///
+    /// Returns
+    /// -------
+    /// TabularNetFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the number of responses is not the number of heads, an
+    ///     embedded factor has no indicator columns, a setting is out of
+    ///     range, or a response with a positive weight is out of its
+    ///     family's range.
+    #[pyo3(signature = (design, ys, weights = None, offsets = None))]
+    fn fit_heads(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        ys: Vec<Vec<f64>>,
+        weights: Option<Vec<Option<Vec<f64>>>>,
+        offsets: Option<Vec<Option<Vec<f64>>>>,
+    ) -> PyResult<PyTabularNetFit> {
+        let k = ys.len();
+        let weights = weights.unwrap_or_else(|| vec![None; k]);
+        let offsets = offsets.unwrap_or_else(|| vec![None; k]);
+        if weights.len() != k || offsets.len() != k {
+            return Err(PyValueError::new_err(format!(
+                "{k} responses, {} weights and {} offsets: give one of each per head",
+                weights.len(),
+                offsets.len()
+            )));
+        }
+        let (spec, d) = (&self.inner, &design.inner);
+        let inner = py
+            .detach(|| {
+                let targets: Vec<Target<'_>> = ys
+                    .iter()
+                    .zip(&weights)
+                    .zip(&offsets)
+                    .map(|((y, w), o)| Target {
+                        y,
+                        weights: w.as_deref(),
+                        offset: o.as_deref(),
+                    })
+                    .collect();
+                spec.fit_heads(d, &targets)
+            })
+            .map_err(to_py)?;
+        Ok(PyTabularNetFit { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TabularNet(heads={:?}, embeddings={:?}, hidden={:?}, epochs={})",
+            self.inner
+                .heads
+                .iter()
+                .map(|h| h.name.as_str())
+                .collect::<Vec<_>>(),
+            self.inner
+                .embeddings
+                .iter()
+                .map(|e| (e.factor.as_str(), e.dim))
+                .collect::<Vec<_>>(),
+            self.inner.hidden,
+            self.inner.epochs
+        )
+    }
+}
+
+/// A fitted tabular network, from ``TabularNet.fit`` or ``fit_heads``.
+#[pyclass(name = "TabularNetFit", module = "prospicio.models", frozen)]
+pub(crate) struct PyTabularNetFit {
+    inner: TabularNetFit,
+}
+
+impl PyTabularNetFit {
+    fn head(&self, head: &Bound<'_, PyAny>) -> PyResult<usize> {
+        if let Ok(name) = head.extract::<String>() {
+            return self.inner.head_index(&name).map_err(to_py);
+        }
+        let k: usize = head.extract()?;
+        if k >= self.inner.spec().heads.len() {
+            return Err(PyValueError::new_err(format!(
+                "head {k}: the network has {} heads",
+                self.inner.spec().heads.len()
+            )));
+        }
+        Ok(k)
+    }
+}
+
+#[pymethods]
+impl PyTabularNetFit {
+    /// The fit as a JSON artifact; ``from_json`` reads it back exactly and
+    /// pickling uses it too.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// TabularNetFit
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: TabularNetFit::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.borrow().inner.to_json(),)))
+    }
+
+    /// Hash of the training data (design, and each head's response,
+    /// weights and offset).
+    #[getter]
+    fn input_hash(&self) -> &str {
+        self.inner.input_hash()
+    }
+
+    /// The heads' names, in order.
+    #[getter]
+    fn head_names(&self) -> Vec<String> {
+        self.inner
+            .head_names()
+            .into_iter()
+            .map(String::from)
+            .collect()
+    }
+
+    /// Expected response of one head for each row of ``design``.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///     The training design's columns.
+    /// head : int or str, default 0
+    /// offset : list of float, optional
+    ///     The head's offset; the design's if not given.
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (design, head = None, offset = None))]
+    fn predict(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        head: Option<&Bound<'_, PyAny>>,
+        offset: Option<Vec<f64>>,
+    ) -> PyResult<Vec<f64>> {
+        let k = match head {
+            Some(h) => self.head(h)?,
+            None => 0,
+        };
+        let (fit, d) = (&self.inner, &design.inner);
+        py.detach(|| fit.predict_head(k, d, offset.as_deref()))
+            .map_err(to_py)
+    }
+
+    /// Each head's correction to its linear predictor, per row: a list per
+    /// head.
+    fn corrections(&self, py: Python<'_>, design: PyRef<'_, PyDesign>) -> PyResult<Vec<Vec<f64>>> {
+        let (fit, d) = (&self.inner, &design.inner);
+        py.detach(|| fit.corrections(d)).map_err(to_py)
+    }
+
+    /// The embedding of ``factor``: a dict with ``levels`` (the reference
+    /// first, then the design's order), ``columns`` (``factor:e1``, ...)
+    /// and ``values``, a list per level.
+    ///
+    /// Parameters
+    /// ----------
+    /// factor : str
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    fn embeddings<'py>(
+        &self,
+        py: Python<'py>,
+        factor: &str,
+    ) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        let t = self.inner.embeddings(factor).map_err(to_py)?;
+        let out = pyo3::types::PyDict::new(py);
+        out.set_item("factor", &t.factor)?;
+        out.set_item("levels", &t.levels)?;
+        out.set_item("columns", t.column_names())?;
+        let values: Vec<Vec<f64>> = (0..t.levels.len()).map(|k| t.level(k).to_vec()).collect();
+        out.set_item("values", values)?;
+        Ok(out)
+    }
+
+    /// ``design`` with each embedded factor's indicator columns replaced by
+    /// its embedding coordinates (``factor:e1``, ...), for a GLM.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///
+    /// Returns
+    /// -------
+    /// Design
+    fn embedding_design(&self, design: PyRef<'_, PyDesign>) -> PyResult<PyDesign> {
+        Ok(PyDesign {
+            inner: self.inner.embedding_design(&design.inner).map_err(to_py)?,
+        })
+    }
+
+    /// Joint predictive distribution of the first head across the rows
+    /// (process draws around its means, as ``CannFit``'s).
+    fn predict_distribution(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        n_sims: usize,
+        seed: u64,
+    ) -> PyResult<PyPredictiveDistribution> {
+        let (fit, d) = (&self.inner, &design.inner);
+        let inner = py
+            .detach(|| fit.predict_distribution(d, n_sims, seed))
+            .map_err(to_py)?;
+        Ok(PyPredictiveDistribution { inner })
+    }
+
+    /// Fitted means of one head on the training rows.
+    #[pyo3(signature = (head = None))]
+    fn fitted(&self, head: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<f64>> {
+        let k = match head {
+            Some(h) => self.head(h)?,
+            None => 0,
+        };
+        Ok(self.inner.fitted_head(k).to_vec())
+    }
+
+    /// Each head's dispersion: 1 for the Poisson, otherwise Pearson's
+    /// estimate on the rows with a positive weight.
+    #[getter]
+    fn dispersions(&self) -> Vec<f64> {
+        self.inner.dispersions().to_vec()
+    }
+
+    /// With early stopping, the epoch (from 1) whose network was kept.
+    #[getter]
+    fn best_epoch(&self) -> Option<usize> {
+        self.inner.best_epoch()
+    }
+
+    /// With early stopping, the validation loss after each epoch.
+    #[getter]
+    fn validation_history(&self) -> Vec<f64> {
+        self.inner.validation_history().to_vec()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TabularNetFit(heads={:?}, n={})",
+            self.inner.head_names(),
+            self.inner.fitted_head(0).len()
         )
     }
 }

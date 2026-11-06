@@ -2,17 +2,24 @@
 //! add-in entry points Excel calls (`xlAutoOpen` and the others) and one
 //! exported function per entry of [`FUNCTIONS`].
 //!
-//! Every function is registered with arguments and result of type `Q`
-//! (an XLOPER12 holding values, never a reference) and as thread safe
-//! (`$`), so Excel recalculates them on all its threads. A result is
-//! allocated here and marked `xlbitDLLFree`; Excel hands it back to
-//! [`xlAutoFree12`] once it has copied it.
+//! Every function is registered with arguments of type `Q` (an XLOPER12
+//! holding values, never a reference). Most return a `Q` too and are
+//! thread safe (`$`), so Excel recalculates them on all its threads; their
+//! result is allocated here and marked `xlbitDLLFree`, and Excel hands it
+//! back to [`xlAutoFree12`] once it has copied it.
+//!
+//! The functions that simulate or sample ([`jobs::ASYNC`]) are
+//! asynchronous (`docs/design/xll.md`, decision 48): registered as `>`
+//! (no result) with a last argument `X`, the handle Excel waits on. They
+//! return at once; the run goes on a thread of its own, and its result
+//! reaches Excel through `xlAsyncReturn`, which Excel copies before it
+//! returns, so it is freed here and not marked.
 
 use std::ffi::c_void;
 use std::sync::OnceLock;
 
 use crate::sheet::{CellError, Grid, Value};
-use crate::{ADDIN_NAME, ALIASES, FUNCTIONS, Function, call};
+use crate::{ADDIN_NAME, FUNCTIONS, Function, call, jobs};
 
 const XLTYPE_NUM: u32 = 0x0001;
 const XLTYPE_STR: u32 = 0x0002;
@@ -22,6 +29,8 @@ const XLTYPE_MULTI: u32 = 0x0040;
 const XLTYPE_MISSING: u32 = 0x0080;
 const XLTYPE_NIL: u32 = 0x0100;
 const XLTYPE_INT: u32 = 0x0800;
+/// An asynchronous call's handle (`xltypeStr | xltypeInt`).
+const XLTYPE_BIGDATA: u32 = XLTYPE_STR | XLTYPE_INT;
 const XLBIT_DLL_FREE: u32 = 0x4000;
 
 const XLERR_NULL: i32 = 0;
@@ -35,6 +44,7 @@ const XLERR_NA: i32 = 42;
 const XL_SPECIAL: i32 = 0x4000;
 const XL_FREE: i32 = XL_SPECIAL;
 const XL_GET_NAME: i32 = 9 | XL_SPECIAL;
+const XL_ASYNC_RETURN: i32 = 16 | XL_SPECIAL;
 const XLF_REGISTER: i32 = 149;
 const XLRET_SUCCESS: i32 = 0;
 
@@ -270,6 +280,51 @@ type MdCallBack12 = unsafe extern "system" fn(i32, i32, *const *mut XlOper, *mut
 unsafe extern "system" {
     fn GetModuleHandleW(name: *const u16) -> *mut c_void;
     fn GetProcAddress(module: *mut c_void, name: *const u8) -> *mut c_void;
+    fn GetModuleHandleExW(flags: u32, name: *const u16, module: *mut *mut c_void) -> i32;
+}
+
+/// Keeps the add-in loaded until Excel exits, from the first asynchronous
+/// call on: a run on its own thread must not outlive the code it runs,
+/// which unloading the add-in (File > Options > Add-ins) would free.
+fn pin() {
+    static PINNED: OnceLock<()> = OnceLock::new();
+    PINNED.get_or_init(|| unsafe {
+        const FROM_ADDRESS: u32 = 0x4;
+        const PIN: u32 = 0x1;
+        let mut module = std::ptr::null_mut();
+        GetModuleHandleExW(FROM_ADDRESS | PIN, pin as *const u16, &mut module);
+    });
+}
+
+/// The handle of one asynchronous call, copied as Excel asks, to answer
+/// later from another thread.
+struct AsyncHandle(XlOper);
+
+// SAFETY: the handle is an opaque value Excel reads back; Excel allows
+// `xlAsyncReturn`, and only it, from any thread.
+unsafe impl Send for AsyncHandle {}
+
+impl AsyncHandle {
+    /// # Safety
+    /// `x` is null or the `X` argument Excel passed to this call.
+    unsafe fn copy(x: *const XlOper) -> Self {
+        if x.is_null() {
+            return Self(XlOper::missing());
+        }
+        Self(unsafe { *x })
+    }
+
+    /// Hands `grid` to Excel for this call. If Excel dropped the call (an
+    /// interrupted recalculation), it refuses the handle and nothing
+    /// happens; the result is kept in [`jobs`] for the next one.
+    fn deliver(self, grid: &Grid) {
+        if self.0.xltype & 0x0FFF != XLTYPE_BIGDATA {
+            return;
+        }
+        let mut args = [self.0, XlOper::from_grid(grid)];
+        excel(XL_ASYNC_RETURN, &mut args);
+        unsafe { free_owned(&args[1]) };
+    }
 }
 
 /// Excel's `MdCallBack12`, exported by the Excel process that loaded us.
@@ -297,37 +352,28 @@ fn excel_free(mut x: XlOper) {
     excel(XL_FREE, std::slice::from_mut(&mut x));
 }
 
-/// How a name is registered: listed in the Insert Function dialog, or
-/// hidden (an old name, still calculating; `docs/design/xll.md`, decision 47).
-#[derive(Clone, Copy, PartialEq)]
-enum Listing {
-    Listed,
-    Hidden,
-}
-
-/// Registers `f` with Excel under the add-in's path `dll`, as `name`
-/// exported as `symbol`.
-fn register(dll: &XlOper, symbol: &str, name: &str, f: &Function, listing: Listing) -> bool {
+/// Registers `f` with Excel under the add-in's path `dll`.
+fn register(dll: &XlOper, f: &Function) -> bool {
     // Type text: the result, then each argument, all `Q`; `$` thread safe.
-    let types = format!("Q{}$", "Q".repeat(f.args.len()));
-    let arg_names = f.args.iter().map(|a| a.name).collect::<Vec<_>>().join(",");
-    // xlfRegister's macro type: 1 a worksheet function listed in the
-    // Insert Function dialog, 0 one that calculates but is not listed.
-    let (macro_type, help) = match listing {
-        Listing::Listed => (1, f.help.to_owned()),
-        Listing::Hidden => (0, renamed_help(f)),
+    // An asynchronous function returns nothing (`>`) and takes the handle
+    // Excel waits on last (`X`).
+    let types = if jobs::ASYNC.contains(&f.symbol) {
+        format!(">{}X", "Q".repeat(f.args.len()))
+    } else {
+        format!("Q{}$", "Q".repeat(f.args.len()))
     };
+    let arg_names = f.args.iter().map(|a| a.name).collect::<Vec<_>>().join(",");
     let mut args = vec![
         *dll,
-        XlOper::str(symbol),
+        XlOper::str(f.symbol),
         XlOper::str(&types),
-        XlOper::str(name),
+        XlOper::str(f.name),
         XlOper::str(&arg_names),
-        XlOper::int(macro_type),
+        XlOper::int(1),
         XlOper::str(f.category()),
         XlOper::str(""),
         XlOper::str(""),
-        XlOper::str(&help),
+        XlOper::str(f.help),
     ];
     // The Insert Function dialog drops the last two characters of the last
     // argument's help, a long-standing Excel quirk; pad it.
@@ -353,29 +399,14 @@ fn register(dll: &XlOper, symbol: &str, name: &str, f: &Function, listing: Listi
     }
 }
 
-/// An old name's help: where the function went, then as much of its help
-/// as fits in xlfRegister's 255 characters.
-fn renamed_help(f: &Function) -> String {
-    format!("Renamed {}. {}", f.name, f.help)
-        .chars()
-        .take(255)
-        .collect()
-}
-
-/// Called by Excel when the add-in loads: registers every function, then
-/// the old names (hidden).
+/// Called by Excel when the add-in loads: registers every function.
 #[unsafe(no_mangle)]
 pub extern "system" fn xlAutoOpen() -> i32 {
     let Some(dll) = excel(XL_GET_NAME, &mut []) else {
         return 0;
     };
     for f in FUNCTIONS {
-        register(&dll, f.symbol, f.name, f, Listing::Listed);
-    }
-    for a in ALIASES {
-        if let Some(f) = FUNCTIONS.iter().find(|f| f.symbol == a.target) {
-            register(&dll, a.symbol, a.name, f, Listing::Hidden);
-        }
+        register(&dll, f);
     }
     excel_free(dll);
     1
@@ -424,7 +455,25 @@ macro_rules! udf {
     };
 }
 
-// One line per export; tests/catalogue.rs checks each against FUNCTIONS.
+/// Exports `$symbol` as an asynchronous function: the arguments, then the
+/// handle; the run is handed to [`jobs::submit`] and answered through
+/// [`AsyncHandle::deliver`].
+macro_rules! udf_async {
+    ($symbol:ident $(, $arg:ident)*) => {
+        /// # Safety
+        /// Called by Excel with valid XLOPER12 arguments and its handle.
+        #[unsafe(no_mangle)]
+        pub unsafe extern "system" fn $symbol($($arg: *const XlOper,)* handle: *const XlOper) {
+            let args = vec![$(unsafe { read_grid($arg) }),*];
+            let handle = unsafe { AsyncHandle::copy(handle) };
+            pin();
+            jobs::submit(stringify!($symbol), args, Box::new(move |grid| handle.deliver(&grid)));
+        }
+    };
+}
+
+// One line per export; tests/catalogue.rs checks each against FUNCTIONS,
+// and that `udf_async!` exports exactly `jobs::ASYNC`.
 #[rustfmt::skip]
 mod exports {
     use super::*;
@@ -437,14 +486,14 @@ mod exports {
     udf!(pro_res_cl_reserve, triangle, average, tail, selected, kind, weight, pattern_ages);
     udf!(pro_res_cl_factors, triangle, average, tail, selected, kind, weight, sigma, pattern_ages);
     udf!(pro_res_mack, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
-    udf!(pro_res_odp, triangle, sims, seed, percentiles, tail, process, origins, average);
-    udf!(pro_res_odp_sims, triangle, sims, seed, tail, process, origins, average);
-    udf!(pro_res_mack_boot, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
-    udf!(pro_res_mack_boot_sims, triangle, sims, seed, average, tail, process, origins, sigma);
+    udf_async!(pro_res_odp, triangle, sims, seed, percentiles, tail, process, origins, average);
+    udf_async!(pro_res_odp_sims, triangle, sims, seed, tail, process, origins, average);
+    udf_async!(pro_res_mack_boot, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
+    udf_async!(pro_res_mack_boot_sims, triangle, sims, seed, average, tail, process, origins, sigma);
     udf!(pro_res_mack_cdr, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
     udf!(pro_res_mack_cdr_years, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
-    udf!(pro_res_odp_cdr, triangle, sims, seed, percentiles, tail, process, origins, average);
-    udf!(pro_res_mack_boot_cdr, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
+    udf_async!(pro_res_odp_cdr, triangle, sims, seed, percentiles, tail, process, origins, average);
+    udf_async!(pro_res_mack_boot_cdr, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
     udf!(pro_res_el, triangle, exposure, apriori, average, tail, origins, selected, kind, weight, pattern_ages);
     udf!(pro_res_bf, triangle, exposure, apriori, average, tail, origins, selected, kind, weight, pattern_ages);
     udf!(pro_res_benktander, triangle, exposure, apriori, iterations, average, tail, origins, selected, kind, weight, pattern_ages);
@@ -508,8 +557,8 @@ mod exports {
     udf!(pro_cap_agg_cover, count_mean, dispersion, family, p1, p2, p3, limits, retentions, shares, occ_limits, occ_attachments, occ_shares, subject, step, points);
     udf!(pro_prc_tower_price, count_mean, dispersion, family, p1, p2, p3, limit, attachment, limits, attachments, shares, agg_deductibles, agg_limits, cover_limit, cover_retention, distortion, parameter, step, points);
     udf!(pro_cap_agg_pml, count_mean, dispersion, family, p1, p2, p3, return_periods, step, points);
-    udf!(pro_res_bayes_odp, triangle, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins);
-    udf!(pro_res_bayes_bf, triangle, exposure, apriori, cv, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins, common_cv);
+    udf_async!(pro_res_bayes_odp, triangle, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins);
+    udf_async!(pro_res_bayes_bf, triangle, exposure, apriori, cv, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins, common_cv);
     udf!(pro_sev_fit, losses, family, output, t, truncation, thresholds, censored, weights, upper);
     udf!(pro_sev_fit_grouped, bounds, counts, family, method, output);
     udf!(pro_sev_fit_lev, sizes, lev, family, weights, output);
@@ -524,7 +573,7 @@ mod exports {
     udf!(pro_cap_distortion_price, values, probs, family, parameter, r0);
     udf!(pro_cap_distortion_calibrate, values, probs, premium, families, r0);
     udf!(pro_cap_copula_cdf, points, family, parameter, nu);
-    udf!(pro_cap_copula_sim, family, parameter, sims, dim, seed, nu);
+    udf_async!(pro_cap_copula_sim, family, parameter, sims, dim, seed, nu);
     udf!(pro_cap_iman_conover, draws, correlation, seed, dof, shuffle);
     udf!(pro_prc_swing, loss, basic, lcm, minimum, maximum, share);
     udf!(pro_prc_profit_commission_term, losses, premium, share, allowance, carry_years);
@@ -543,110 +592,4 @@ mod exports {
     udf!(pro_cap_elt_oep, rates, means, sd_independent, sd_correlated, exposures, return_periods, amounts);
     udf!(pro_cap_allocate, draws, family, parameter, method, r0);
     udf!(pro_cap_allocate_total, draws, total, method, measure, level);
-}
-
-// The old names (`crate::ALIASES`), one line each with the arguments of the
-// function they now run; tests/catalogue.rs checks them. Removed in 0.0.10.
-#[rustfmt::skip]
-mod alias_exports {
-    use super::*;
-
-    udf!(pro_cl, triangle, average, tail, origins, selected, kind, weight, pattern_ages);
-    udf!(pro_cl_cdf, triangle, average, tail, selected, kind, weight, pattern_ages);
-    udf!(pro_cl_factors, triangle, average, tail, selected, kind, weight, sigma, pattern_ages);
-    udf!(pro_cl_ldf, triangle, average, tail, selected, kind, weight, pattern_ages);
-    udf!(pro_cl_reserve, triangle, average, tail, selected, kind, weight, pattern_ages);
-    udf!(pro_cl_ultimate, triangle, average, tail, selected, kind, weight, pattern_ages);
-    udf!(pro_mack, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
-    udf!(pro_mack_cdr, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
-    udf!(pro_mack_cdr_years, triangle, average, tail, origins, selected, kind, weight, sigma, pattern_ages);
-    udf!(pro_mack_boot, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
-    udf!(pro_mack_boot_cdr, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
-    udf!(pro_mack_boot_sims, triangle, sims, seed, average, tail, process, origins, sigma);
-    udf!(pro_odp, triangle, sims, seed, percentiles, tail, process, origins, average);
-    udf!(pro_odp_cdr, triangle, sims, seed, percentiles, tail, process, origins, average);
-    udf!(pro_odp_sims, triangle, sims, seed, tail, process, origins, average);
-    udf!(pro_odp_glm, triangle, origins);
-    udf!(pro_odp_glm_params, triangle, origins);
-    udf!(pro_odp_glm_residuals, triangle, by, origins);
-    udf!(pro_el, triangle, exposure, apriori, average, tail, origins, selected, kind, weight, pattern_ages);
-    udf!(pro_bf, triangle, exposure, apriori, average, tail, origins, selected, kind, weight, pattern_ages);
-    udf!(pro_benktander, triangle, exposure, apriori, iterations, average, tail, origins, selected, kind, weight, pattern_ages);
-    udf!(pro_capecod, triangle, exposure, trend, decay, average, tail, origins, selected, kind, weight, pattern_ages);
-    udf!(pro_clark, triangle, exposure, curve, max_age, origins);
-    udf!(pro_clark_params, triangle, exposure, curve, max_age);
-    udf!(pro_bayes_odp, triangle, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins);
-    udf!(pro_bayes_bf, triangle, exposure, apriori, cv, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins, common_cv);
-    udf!(pro_diag_cl, origins, ages, latest, pattern, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
-    udf!(pro_diag_el, origins, ages, latest, exposure, apriori, pattern, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
-    udf!(pro_diag_bf, origins, ages, latest, exposure, apriori, pattern, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
-    udf!(pro_diag_benktander, origins, ages, latest, exposure, apriori, pattern, iterations, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
-    udf!(pro_diag_capecod, origins, ages, latest, exposure, pattern, trend, decay, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
-    udf!(pro_pattern_average, pattern_ages, pattern, pattern_origin, grain, kind);
-    udf!(pro_avgdate, from, to, period, term, basis);
-    udf!(pro_onlevel, effective, changes, from, to, period, term, applies, given);
-    udf!(pro_ratelevel, effective, changes, from, to, period, term, applies, given);
-    udf!(pro_trend_fit, times, values, kind);
-    udf!(pro_trended_present, prior_indicated, prior_implemented, trend);
-    udf!(pro_lr_experience, earned_premium, losses, on_level, premium_trend, development, loss_trend, lae);
-    udf!(pro_pp_experience, exposure, losses, development, loss_trend, lae);
-    udf!(pro_indicated_change, loss_ratio, variable, profit, fixed_ratio);
-    udf!(pro_indicated_rate, pure_premium, variable, profit, fixed_per_exposure);
-    udf!(pro_permissible_lr, variable, profit, fixed_ratio);
-    udf!(pro_expenses, ratios, fixed_shares);
-    udf!(pro_cred_standard, p, k, kind, cv);
-    udf!(pro_cred_z, n, standard);
-    udf!(pro_cred_weighted, estimate, credibility, complement);
-    udf!(pro_buhlmann, ratios, weights, estimator, groups);
-    udf!(pro_buhlmann_params, ratios, weights, estimator);
-    udf!(pro_glm, data, response, terms, family, link, exposure, weights, p);
-    udf!(pro_glm_predict, data, response, terms, newdata, family, link, exposure, weights, p);
-    udf!(pro_glm_relativities, data, response, terms, family, link, exposure, weights, p, level);
-    udf!(pro_lev, limit, family, p1, p2, p3);
-    udf!(pro_layer, limit, attachment, family, p1, p2, p3);
-    udf!(pro_layer_cv, limit, attachment, family, p1, p2, p3);
-    udf!(pro_layer_var, limit, attachment, family, p1, p2, p3);
-    udf!(pro_ilf, limit, basic_limit, family, p1, p2, p3);
-    udf!(pro_ler, deductible, family, p1, p2, p3);
-    udf!(pro_exposure_curve, x, curve, p1, p2, p3);
-    udf!(pro_exposure_share, limit, attachment, mpl, curve, p1, p2, p3);
-    udf!(pro_exposure_quantile, p, curve, p1, p2, p3);
-    udf!(pro_exposure_stats, curve, p1, p2, p3);
-    udf!(pro_swissre_c, rate);
-    udf!(pro_swissre_c_layer, limit, attachment, mpl, share);
-    udf!(pro_profile, sums_insured, expected_losses, limit, attachment, curve, p1, p2, p3, lower, upper, spread, retention, lines);
-    udf!(pro_burningcost, accident, amounts, limits, attachments, years, premiums, development, trend, trend_to, threshold, agg_deductible, agg_limit);
-    udf!(pro_pareto_extrapolate, from_limit, from_attachment, to_limit, to_attachment, alpha, truncation);
-    udf!(pro_pareto_alpha, limit1, attachment1, loss1, limit2, attachment2, loss2, truncation);
-    udf!(pro_pareto_alpha_freqlayer, threshold, frequency, limit, attachment, loss, truncation);
-    udf!(pro_pareto_alpha_freqs, threshold1, frequency1, threshold2, frequency2, truncation);
-    udf!(pro_quote, expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, quoted);
-    udf!(pro_layer_terms, count_mean, dispersion, family, p1, p2, p3, layer_limit, layer_attachment, premium, reinstatements, commissions, loss_ratios, profit_share, profit_allowance, share, policy_limit, step, points);
-    udf!(pro_profit_commission, loss, premium, share, allowance);
-    udf!(pro_profit_commission_term, losses, premium, share, allowance, carry_years);
-    udf!(pro_sliding_scale, loss, premium, commissions, loss_ratios);
-    udf!(pro_sliding_scale_term, losses, premium, commissions, loss_ratios, carry, carry_years);
-    udf!(pro_swing, loss, basic, lcm, minimum, maximum, share);
-    udf!(pro_tower_price, count_mean, dispersion, family, p1, p2, p3, limit, attachment, limits, attachments, shares, agg_deductibles, agg_limits, cover_limit, cover_retention, distortion, parameter, step, points);
-    udf!(pro_payout_pattern, times, values, kind, shift, rate);
-    udf!(pro_payout_stats, times, values, rate, kind, shift);
-    udf!(pro_payout_price, expected_loss, assets, coc, times, values, rate, kind, shift);
-    udf!(pro_agg_stats, count_mean, dispersion, family, p1, p2, p3, limit, attachment, probabilities, step, points);
-    udf!(pro_agg_layers, count_mean, dispersion, family, p1, p2, p3, limits, attachments, shares, step, points);
-    udf!(pro_agg_cover, count_mean, dispersion, family, p1, p2, p3, limits, retentions, shares, occ_limits, occ_attachments, occ_shares, subject, step, points);
-    udf!(pro_agg_pml, count_mean, dispersion, family, p1, p2, p3, return_periods, step, points);
-    udf!(pro_elt_stats, rates, means, sd_independent, sd_correlated, exposures);
-    udf!(pro_elt_oep, rates, means, sd_independent, sd_correlated, exposures, return_periods, amounts);
-    udf!(pro_ylt_stats, years, losses, n_years, probabilities, quantile, times, hours, negative);
-    udf!(pro_ylt_oep, years, losses, return_periods, amounts, n_years, quantile, times, hours, negative);
-    udf!(pro_copula_cdf, points, family, parameter, nu);
-    udf!(pro_copula_sim, family, parameter, sims, dim, seed, nu);
-    udf!(pro_iman_conover, draws, correlation, seed, dof, shuffle);
-    udf!(pro_allocate, draws, family, parameter, method, r0);
-    udf!(pro_allocate_total, draws, total, method, measure, level);
-    udf!(pro_distortion, s, family, parameter, r0);
-    udf!(pro_distortion_price, values, probs, family, parameter, r0);
-    udf!(pro_distortion_calibrate, values, probs, premium, families, r0);
-    udf!(pro_pnl, values, probs, premium, expenses, covers, face, output, levels, expense_at_mean);
-    udf!(pro_cashflow, u, terms, patterns, requirement, commission, output, rate, commutation_requirement);
 }

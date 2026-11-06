@@ -203,3 +203,77 @@ def test_onnx_predictor_binds_design_columns_and_draws():
         OnnxPredictor(model, "gamma", inputs, scale="mean", link="log")
     with pytest.raises(ValueError):
         OnnxPredictor(model, "gamma", inputs, scale="probability")
+
+
+def test_tabular_net_one_head_is_the_cann_and_two_heads_share_a_body():
+    from prospicio.models import Head, TabularNet, TabularNetFit
+
+    x, y = poisson_counts(300, 4)
+    base = math.log(sum(y) / len(y))
+    d = Design([x], ["x"], offset=[base] * len(x))
+    cann = Cann("poisson", hidden=[8], epochs=20, learning_rate=1e-2, seed=2).fit(d, y)
+    tab = TabularNet([Head("freq", "poisson")], hidden=[8], epochs=20, learning_rate=1e-2, seed=2)
+    assert tab.fit(d, y).fitted() == cann.fitted  # bit for bit
+
+    # A factor of 12 levels whose effect follows a hidden position, counts
+    # and, where there are claims, their mean gamma severity.
+    rng = random.Random(7)
+    n, levels = 3000, 12
+    position = [2 * k / (levels - 1) - 1 for k in range(levels)]
+    lev = [rng.randrange(levels) for _ in range(n)]
+    z = [rng.uniform(-1, 1) for _ in range(n)]
+    cols = [[1.0 if v == k else 0.0 for v in lev] for k in range(1, levels)]
+    names = ["z"] + [f"brand[B{k}]" for k in range(1, levels)]
+    design = Design([z] + cols, names)
+    counts, sev = [], []
+    for v, zi in zip(lev, z):
+        lam = math.exp(-1.0 + 0.8 * position[v] + 0.3 * zi)
+        k, p = 0, math.exp(-lam)
+        u, c = rng.random(), p
+        while u > c:
+            k += 1
+            p *= lam / k
+            c += p
+        counts.append(float(k))
+        s = math.exp(1.0 + position[v] ** 2)
+        sev.append(sum(rng.gammavariate(2.0, s / 2.0) for _ in range(k)) / k if k else 0.0)
+    spec = TabularNet(
+        [Head("freq", "poisson"), Head("sev", "gamma", loss_weight=0.5)],
+        embeddings={"brand": 1},
+        references={"brand": "B0"},
+        hidden=[16, 8],
+        epochs=25,
+        batch_size=128,
+        learning_rate=1e-2,
+        seed=3,
+    )
+    fit = spec.fit_heads(design, [counts, sev], weights=[None, counts])
+    assert fit.head_names == ["freq", "sev"]
+    e = fit.embeddings("brand")
+    assert e["levels"][0] == "B0" and len(e["levels"]) == levels
+    assert e["columns"] == ["brand:e1"]
+    v = [row[0] for row in e["values"]]
+    mv, mp = sum(v) / levels, sum(position) / levels
+    cov = sum((a - mv) * (b - mp) for a, b in zip(v, position))
+    r = cov / math.sqrt(sum((a - mv) ** 2 for a in v) * sum((b - mp) ** 2 for b in position))
+    assert abs(r) > 0.9
+    assert fit.predict(design, head="sev") == fit.fitted("sev")
+    assert fit.predict(design, head=1) == fit.fitted(1)
+    assert fit.dispersions[0] == 1.0 and fit.dispersions[1] > 0
+    g = fit.embedding_design(design)
+    assert g.names == ["z", "brand:e1"]
+    back = pickle.loads(pickle.dumps(fit))
+    assert isinstance(back, TabularNetFit)
+    assert back.predict(design, head="sev") == fit.predict(design, head="sev")
+    assert TabularNetFit.from_json(fit.to_json()).to_json() == fit.to_json()
+
+    with pytest.raises(ValueError, match="no head named"):
+        fit.predict(design, head="pure_premium")
+    with pytest.raises(ValueError, match="colour"):
+        TabularNet([Head("f", "poisson")], embeddings={"colour": 2}).fit(design, counts)
+    with pytest.raises(ValueError, match="not an embedded factor"):
+        TabularNet([Head("f", "poisson")], references={"brand": "B0"})
+    with pytest.raises(ValueError, match="fit_heads"):
+        spec.fit(design, counts)
+    with pytest.raises(ValueError, match="range"):
+        TabularNet([Head("s", "gamma")]).fit(design, sev)

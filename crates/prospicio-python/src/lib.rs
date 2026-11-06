@@ -128,8 +128,8 @@ mod prospicio_native {
     #[cfg(feature = "nn")]
     #[pymodule_export]
     use super::nn::{
-        PyAttentionCann, PyAttentionCannFit, PyCann, PyCannFit, PyOnnxModel, PyOnnxPredictor,
-        PyTokenAttention,
+        PyAttentionCann, PyAttentionCannFit, PyCann, PyCannFit, PyHead, PyOnnxModel,
+        PyOnnxPredictor, PyTabularNet, PyTabularNetFit, PyTokenAttention,
     };
     #[pymodule_export]
     use super::normal::{PyNormal, PyOgive};

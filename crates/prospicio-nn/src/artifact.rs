@@ -20,10 +20,12 @@ use prospicio_models::artifact::{
 use serde_json::{Map, Value, json};
 
 use crate::attention::{AttentionCann, AttentionCannFit, TokenNet};
+use crate::tabular::{Embedding, FactorLayout, Head, Layout, TabNet, TabularNet, TabularNetFit};
 use crate::{Cann, CannFit, Cpu, EarlyStopping, Net, Scaling, seeded};
 
 const CANN_FORMAT: &str = "risk_rs.cann_fit";
 const ATTENTION_FORMAT: &str = "risk_rs.attention_cann_fit";
+const TABULAR_FORMAT: &str = "risk_rs.tabular_net_fit";
 /// The newest version this build reads, for both formats.
 const FORMAT_VERSION: u64 = 1;
 
@@ -211,6 +213,178 @@ impl AttentionCannFit {
     }
 }
 
+impl TabularNetFit {
+    /// The fit as a JSON artifact; [`from_json`](Self::from_json) reads it
+    /// back exactly.
+    ///
+    /// ```
+    /// use prospicio_models::{Design, Family, Fitted, Model};
+    /// use prospicio_nn::{Head, TabularNet, TabularNetFit};
+    ///
+    /// let d = Design::new(
+    ///     vec!["x".into(), "g[b]".into()],
+    ///     vec![vec![0.0, 1.0, 2.0, 3.0], vec![0.0, 1.0, 0.0, 1.0]],
+    /// )
+    /// .unwrap();
+    /// let mut spec = TabularNet::new()
+    ///     .embedding("g", 2)
+    ///     .hidden(&[4])
+    ///     .head(Head::new("freq", Family::Poisson));
+    /// spec.epochs = 5;
+    /// let fit = spec.fit(&d, &[1.0, 2.0, 2.0, 5.0]).unwrap();
+    /// let back = TabularNetFit::from_json(&fit.to_json()).unwrap();
+    /// assert_eq!(back.predict(&d).unwrap(), fit.predict(&d).unwrap());
+    /// assert_eq!(back.to_json(), fit.to_json());
+    /// ```
+    pub fn to_json(&self) -> String {
+        let s = &self.spec;
+        let doc = json!({
+            "format": TABULAR_FORMAT,
+            "format_version": FORMAT_VERSION,
+            "provenance": nn_provenance("tabular_net", &self.input_hash),
+            "spec": {
+                "embeddings": s.embeddings.iter().map(|e| json!({
+                    "factor": e.factor, "dim": e.dim, "reference": e.reference,
+                })).collect::<Vec<_>>(),
+                "hidden": s.hidden,
+                "heads": s.heads.iter().map(|h| json!({
+                    "name": h.name,
+                    "family": family_json(h.family),
+                    "link": link_json(h.link),
+                    "loss_weight": num(h.loss_weight),
+                })).collect::<Vec<_>>(),
+                "epochs": s.epochs,
+                "batch_size": s.batch_size,
+                "learning_rate": num(s.learning_rate),
+                "seed": s.seed,
+                "early_stopping": early_stopping_json(s.early_stopping),
+            },
+            "names": self.names,
+            "layout": {
+                "numeric": self.layout.numeric,
+                "factors": self.layout.factors.iter().map(|f| json!({
+                    "name": f.name, "dim": f.dim, "columns": f.columns, "levels": f.levels,
+                })).collect::<Vec<_>>(),
+            },
+            "scaling": scaling_json(&self.scaling),
+            "parameters": parameters_json(&self.net),
+            "best_epoch": self.best_epoch,
+            "validation_history": nums(&self.validation_history),
+            "dispersion": nums(&self.dispersion),
+            "fitted": self.fitted.iter().map(|f| nums(f)).collect::<Vec<_>>(),
+        });
+        serde_json::to_string(&doc).expect("a JSON value always serializes")
+    }
+
+    /// Reads an artifact written by [`to_json`](Self::to_json). Fails on
+    /// another format, a newer version, or weights that do not fit the
+    /// spec.
+    pub fn from_json(text: &str) -> Result<Self> {
+        let doc = parse(text, TABULAR_FORMAT, FORMAT_VERSION)?;
+        let top = object(&doc, "artifact")?;
+        let spec = object(field(top, "spec")?, "spec")?;
+        let list = |o: &Map<String, Value>, key: &str| -> Result<Vec<Value>> {
+            Ok(field(o, key)?.as_array().ok_or_else(|| bad(key))?.clone())
+        };
+        let embeddings = list(spec, "embeddings")?
+            .iter()
+            .map(|v| {
+                let o = object(v, "embeddings")?;
+                Ok(Embedding {
+                    factor: string(o, "factor")?,
+                    dim: uint(o, "dim")? as usize,
+                    reference: match field(o, "reference")? {
+                        Value::Null => None,
+                        v => Some(v.as_str().ok_or_else(|| bad("reference"))?.to_string()),
+                    },
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let heads = list(spec, "heads")?
+            .iter()
+            .map(|v| {
+                let o = object(v, "heads")?;
+                Ok(Head {
+                    name: string(o, "name")?,
+                    family: family_from(object(field(o, "family")?, "family")?)?,
+                    link: link_from(object(field(o, "link")?, "link")?)?,
+                    loss_weight: float(field(o, "loss_weight")?, "loss_weight")?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let spec = TabularNet {
+            embeddings,
+            hidden: usizes(spec, "hidden")?,
+            heads,
+            epochs: uint(spec, "epochs")? as usize,
+            batch_size: uint(spec, "batch_size")? as usize,
+            learning_rate: float(field(spec, "learning_rate")?, "learning_rate")?,
+            seed: uint(spec, "seed")?,
+            early_stopping: early_stopping_from(field(spec, "early_stopping")?)?,
+        };
+        let names = strings(top, "names")?;
+        let lay = object(field(top, "layout")?, "layout")?;
+        let factors = list(lay, "factors")?
+            .iter()
+            .map(|v| {
+                let o = object(v, "factors")?;
+                Ok(FactorLayout {
+                    name: string(o, "name")?,
+                    dim: uint(o, "dim")? as usize,
+                    columns: usizes(o, "columns")?,
+                    levels: strings(o, "levels")?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let layout = Layout {
+            numeric: usizes(lay, "numeric")?,
+            factors,
+        };
+        if layout
+            .numeric
+            .iter()
+            .chain(layout.factors.iter().flat_map(|f| &f.columns))
+            .any(|&j| j >= names.len())
+        {
+            return Err(bad("layout"));
+        }
+        let fitted = list(top, "fitted")?
+            .iter()
+            .map(|v| {
+                v.as_array()
+                    .ok_or_else(|| bad("fitted"))?
+                    .iter()
+                    .map(|x| float(x, "fitted"))
+                    .collect::<Result<Vec<f64>>>()
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let dispersion = floats(top, "dispersion")?;
+        if fitted.len() != spec.heads.len() || dispersion.len() != spec.heads.len() {
+            return Err(bad("heads"));
+        }
+        let device = Default::default();
+        let net = seeded::<Cpu, _>(&device, 0, || {
+            TabNet::new(&layout, &spec.hidden, spec.heads.len(), &device)
+        });
+        Ok(Self {
+            net: load(net, top)?,
+            scaling: scaling_from(top, names.len())?,
+            names,
+            layout,
+            spec,
+            best_epoch: optional_uint(top, "best_epoch")?,
+            validation_history: floats(top, "validation_history")?,
+            dispersion,
+            fitted,
+            input_hash: input_hash(top)?,
+        })
+    }
+}
+
+fn string(o: &Map<String, Value>, key: &str) -> Result<String> {
+    Ok(field(o, key)?.as_str().ok_or_else(|| bad(key))?.to_string())
+}
+
 fn nn_provenance(model: &str, hash: &str) -> Value {
     provenance(model, "prospicio-nn", env!("CARGO_PKG_VERSION"), hash)
 }
@@ -296,6 +470,17 @@ impl ModuleVisitor<Cpu> for Collect {
                 .expect("the CPU backend holds f64"),
         });
     }
+}
+
+/// Every float parameter in visiting order: its path, shape and values.
+#[cfg(test)]
+pub(crate) fn parameter_list<M: Module<Cpu>>(net: &M) -> Vec<(String, Vec<usize>, Vec<f64>)> {
+    let mut c = Collect::default();
+    net.visit(&mut c);
+    c.out
+        .into_iter()
+        .map(|w| (w.path, w.shape, w.values))
+        .collect()
 }
 
 fn parameters_json<M: Module<Cpu>>(net: &M) -> Value {
@@ -495,5 +680,48 @@ mod tests {
         let mut doc: Value = serde_json::from_str(&text).unwrap();
         doc["parameters"].as_array_mut().unwrap().pop();
         assert!(CannFit::from_json(&doc.to_string()).is_err());
+    }
+
+    #[test]
+    fn a_tabular_net_with_two_heads_round_trips() {
+        use crate::{Head, TabularNet, TabularNetFit, Target};
+        let (d, y) = data();
+        let sev: Vec<f64> = y.iter().map(|v| v + 1.0).collect();
+        let w: Vec<f64> = (0..40).map(|i| f64::from(u8::from(i % 4 != 0))).collect();
+        let mut spec = TabularNet::new()
+            .embedding("region", 2)
+            .reference("region", "A")
+            .hidden(&[5, 3])
+            .head(Head::new("freq", Family::Poisson))
+            .head(Head::new("sev", Family::Gamma).loss_weight(0.5));
+        spec.epochs = 12;
+        spec.batch_size = 8;
+        spec.early_stopping = Some(EarlyStopping {
+            validation_share: 0.25,
+            patience: 3,
+        });
+        let fit = spec
+            .fit_heads(&d, &[Target::new(&y), Target::new(&sev).weights(&w)])
+            .unwrap();
+        let text = fit.to_json();
+        let back = TabularNetFit::from_json(&text).unwrap();
+        assert_eq!(back.to_json(), text);
+        assert_eq!(back.spec(), fit.spec());
+        for h in 0..2 {
+            assert_eq!(
+                back.predict_head(h, &d, None).unwrap(),
+                fit.predict_head(h, &d, None).unwrap()
+            );
+        }
+        assert_eq!(
+            back.embeddings("region").unwrap(),
+            fit.embeddings("region").unwrap()
+        );
+        assert_eq!(back.embeddings("region").unwrap().levels, ["A", "B", "C"]);
+        assert_eq!(back.best_epoch(), fit.best_epoch());
+        assert!(CannFit::from_json(&text).is_err());
+        let mut doc: Value = serde_json::from_str(&text).unwrap();
+        doc["layout"]["factors"][0]["levels"] = json!(["A", "B"]);
+        assert!(TabularNetFit::from_json(&doc.to_string()).is_err());
     }
 }

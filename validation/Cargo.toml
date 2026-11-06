@@ -20,6 +20,8 @@ prospicio-core.workspace = true
 prospicio-glm.workspace = true
 prospicio-math.workspace = true
 prospicio-models.workspace = true
+# The tabular networks' freMTPL2 run (fremtpl2.rs); without the ONNX import.
+prospicio-nn = { path = "../crates/prospicio-nn", default-features = false }
 prospicio-pricing.workspace = true
 prospicio-prob = { workspace = true, features = ["arrow"] }
 rayon.workspace = true

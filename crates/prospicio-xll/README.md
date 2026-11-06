@@ -38,6 +38,13 @@ Ctrl+Alt+F9 to recalculate.
   attachments down.
 - **Simulations** take `sims` (default 10,000, at most 1,000,000) and
   `seed` (default 0). The same seed gives the same table.
+- **Long runs don't block Excel:** the bootstraps, the Bayesian fits and
+  `PRO.CAP.COPULA.SIM` run in the background. Their cell shows
+  `#GETTING_DATA` until the result arrives, and you can keep working.
+  Cells with the same inputs share one run, and a recalculation that
+  changes none of a function's inputs answers at once from the result
+  kept. Editing while a run goes on interrupts the recalculation but not
+  the run: the next recalculation picks up its result.
 - **No duplicates of Excel:** use Excel's own `NPV`, `XNPV`, `IRR` and
   `XIRR` for cash flows in cells.
 
@@ -53,11 +60,12 @@ group's functions as you type:
 | `PRO.CAP.` | Capital: aggregate and cat losses, risk measures, allocation, the P&L | `PRO.CAP.AGG.STATS`, `PRO.CAP.ALLOCATE` |
 | `PRO.SEV.`, `PRO.EVT.`, `PRO.TRI.` and two others | Common: severities, tails, triangle helpers | `PRO.SEV.FIT`, `PRO.TRI.LATEST` |
 
-**Older workbooks:** until 0.0.9 the functions had no group (`PRO.MACK`,
-`PRO.ILF`). Those names still calculate through 0.0.9, but Insert Function
-no longer lists them. 0.0.10 removes them: replace each old name with its
-new one (Ctrl+H, the table in `docs/design/xll.md`, decision 47). The new
-name is the old one with `RES.`, `PRC.` or `CAP.` after `PRO.`.
+**Older workbooks:** before 0.0.9 the functions had no group (`PRO.MACK`,
+`PRO.ILF`), and those names now show `#NAME?`. Replace each with its new
+name (Ctrl+H, Find what `PRO.MACK(`, Replace with `PRO.RES.MACK(`): the
+new name is the old one with `RES.`, `PRC.` or `CAP.` after `PRO.`, as
+the tables below show. `docs/design/xll.md`, decision 47, lists every
+pair.
 
 ## Start here
 

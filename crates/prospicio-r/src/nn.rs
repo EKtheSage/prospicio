@@ -6,7 +6,10 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_models::{Family, Fitted, Link, Model};
 use prospicio_nn::onnx::{OnnxModel, OnnxPredictor, OnnxTensor, OutputScale};
-use prospicio_nn::{AttentionCann, AttentionCannFit, Cann, CannFit, EarlyStopping};
+use prospicio_nn::{
+    AttentionCann, AttentionCannFit, Cann, CannFit, EarlyStopping, Head, TabularNet, TabularNetFit,
+    Target,
+};
 
 use crate::distributions::PredictiveDistribution;
 use crate::models::{design, family, link};
@@ -426,6 +429,205 @@ impl OnnxPredictorModel {
     }
 }
 
+/// A fitted tabular network.
+#[extendr]
+pub(crate) struct TabularNetModel {
+    inner: TabularNetFit,
+}
+
+/// Each element of `list` as a numeric vector; an empty one means the
+/// design's (weights or offset).
+fn vectors(list: List, what: &str) -> Result<Vec<Vec<f64>>> {
+    list.values()
+        .map(|v| {
+            if v.is_null() {
+                return Ok(Vec::new());
+            }
+            v.as_real_vector()
+                .ok_or_else(|| Error::Other(format!("each of {what} must be numeric or NULL")))
+        })
+        .collect()
+}
+
+/// Fits a tabular network to the design `x` (column-major, columns
+/// `names`), one response per head in `ys`, with each head's weights and
+/// offset (empty for the design's).
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn tabular_net_fit_design(
+    x: &[f64],
+    names: Vec<String>,
+    offset: &[f64],
+    weights: &[f64],
+    embed_factors: Vec<String>,
+    embed_dims: &[f64],
+    embed_references: Vec<String>,
+    head_names: Vec<String>,
+    head_families: Vec<String>,
+    head_links: Vec<String>,
+    head_powers: &[f64],
+    head_loss_weights: &[f64],
+    ys: List,
+    head_weights: List,
+    head_offsets: List,
+    hidden: &[f64],
+    epochs: f64,
+    batch_size: f64,
+    learning_rate: f64,
+    seed: f64,
+    validation_share: f64,
+    patience: f64,
+) -> Result<TabularNetModel> {
+    let mut spec = TabularNet::new();
+    for (k, factor) in embed_factors.iter().enumerate() {
+        spec = spec.embedding(factor, whole(embed_dims[k], "embeddings")? as usize);
+        if let Some(r) = embed_references.get(k).filter(|r| !r.is_empty()) {
+            spec = spec.reference(factor, r);
+        }
+    }
+    for (k, name) in head_names.iter().enumerate() {
+        let f = family(&head_families[k], f64::NAN, head_powers[k])?;
+        let l = network_link(&head_links[k], f)?;
+        spec = spec.head(Head::new(name, f).link(l).loss_weight(head_loss_weights[k]));
+    }
+    spec.hidden = counts(hidden, "hidden")?;
+    spec.epochs = whole(epochs, "epochs")? as usize;
+    spec.batch_size = whole(batch_size, "batch_size")? as usize;
+    spec.learning_rate = learning_rate;
+    spec.seed = whole(seed, "seed")?;
+    spec.early_stopping = early_stopping(validation_share, patience)?;
+    let d = design(x, names, offset, weights)?;
+    let (ys, ws, os) = (
+        vectors(ys, "the responses")?,
+        vectors(head_weights, "the weights")?,
+        vectors(head_offsets, "the offsets")?,
+    );
+    let targets: Vec<Target<'_>> = (0..ys.len())
+        .map(|k| Target {
+            y: &ys[k],
+            weights: ws.get(k).filter(|w| !w.is_empty()).map(Vec::as_slice),
+            offset: os.get(k).filter(|o| !o.is_empty()).map(Vec::as_slice),
+        })
+        .collect();
+    let inner = spec.fit_heads(&d, &targets).map_err(to_r)?;
+    Ok(TabularNetModel { inner })
+}
+
+#[extendr]
+impl TabularNetModel {
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    fn from_json(text: &str) -> Result<Self> {
+        Ok(Self {
+            inner: TabularNetFit::from_json(text).map_err(to_r)?,
+        })
+    }
+
+    fn input_hash(&self) -> String {
+        self.inner.input_hash().to_string()
+    }
+
+    fn head_names(&self) -> Vec<String> {
+        self.inner
+            .head_names()
+            .into_iter()
+            .map(String::from)
+            .collect()
+    }
+
+    fn factors(&self) -> Vec<String> {
+        self.inner
+            .spec()
+            .embeddings
+            .iter()
+            .map(|e| e.factor.clone())
+            .collect()
+    }
+
+    /// The fitted means of head `head` (from 0).
+    fn fitted(&self, head: f64) -> Result<Vec<f64>> {
+        let k = self.head(head)?;
+        Ok(self.inner.fitted_head(k).to_vec())
+    }
+
+    fn dispersions(&self) -> Vec<f64> {
+        self.inner.dispersions().to_vec()
+    }
+
+    /// NA without early stopping.
+    fn best_epoch(&self) -> f64 {
+        self.inner.best_epoch().map_or(f64::NAN, |e| e as f64)
+    }
+
+    fn validation_history(&self) -> Vec<f64> {
+        self.inner.validation_history().to_vec()
+    }
+
+    fn predict(
+        &self,
+        x: &[f64],
+        names: Vec<String>,
+        head: f64,
+        offset: &[f64],
+    ) -> Result<Vec<f64>> {
+        let k = self.head(head)?;
+        let d = design(x, names, &[], &[])?;
+        let offset = (!offset.is_empty()).then_some(offset);
+        self.inner.predict_head(k, &d, offset).map_err(to_r)
+    }
+
+    fn corrections(&self, x: &[f64], names: Vec<String>) -> Result<List> {
+        let d = design(x, names, &[], &[])?;
+        let c = self.inner.corrections(&d).map_err(to_r)?;
+        Ok(List::from_values(c))
+    }
+
+    /// The embedding of `factor`: its levels, column names, dimensions and
+    /// values row-major by level.
+    fn embeddings(&self, factor: &str) -> Result<List> {
+        let t = self.inner.embeddings(factor).map_err(to_r)?;
+        Ok(list!(
+            levels = t.levels.clone(),
+            columns = t.column_names(),
+            dim = t.dim as f64,
+            values = t.values
+        ))
+    }
+
+    fn predict_distribution(
+        &self,
+        x: &[f64],
+        names: Vec<String>,
+        offset: &[f64],
+        weights: &[f64],
+        n_sims: f64,
+        seed: f64,
+    ) -> Result<PredictiveDistribution> {
+        let d = design(x, names, offset, weights)?;
+        let inner = self
+            .inner
+            .predict_distribution(&d, whole(n_sims, "n_sims")? as usize, whole(seed, "seed")?)
+            .map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+}
+
+impl TabularNetModel {
+    fn head(&self, head: f64) -> Result<usize> {
+        let k = whole(head, "head")? as usize;
+        if k >= self.inner.spec().heads.len() {
+            return Err(Error::Other(format!(
+                "head {}: the network has {} heads",
+                k + 1,
+                self.inner.spec().heads.len()
+            )));
+        }
+        Ok(k)
+    }
+}
+
 extendr_module! {
     mod nn;
     fn cann_fit_design;
@@ -437,4 +639,6 @@ extendr_module! {
     impl OnnxNet;
     fn onnx_predictor_rust;
     impl OnnxPredictorModel;
+    fn tabular_net_fit_design;
+    impl TabularNetModel;
 }

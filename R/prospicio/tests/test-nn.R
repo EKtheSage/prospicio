@@ -108,4 +108,45 @@ bad <- nd
 bad$region[1] <- 0.5
 stopifnot(fails(predict(net, bad)))
 stopifnot(fails(onnx_predictor(e, "gamma", list(x_num = "a"), scale = "mean", link = "log")))
+# Tabular networks (#577): one head without embeddings is the CANN bit for
+# bit; two heads share a body; a factor enters as an embedding.
+set.seed(11)
+td <- data.frame(x = runif(300, -2, 2))
+td$y <- rpois(300, exp(1 - td$x^2))
+off <- rep(log(mean(td$y)), 300)
+c1 <- cann_fit(y ~ x, td, offset = off, hidden = 8, epochs = 15, learning_rate = 0.01, seed = 2)
+t1 <- tabular_net_fit(y ~ x, td, offset = off, hidden = 8, epochs = 15, learning_rate = 0.01,
+                      seed = 2)
+stopifnot(identical(c1@fitted, t1@fitted$y), identical(t1@heads, "y"))
+n <- 3000
+pos <- seq(-1, 1, length.out = 12)
+bd <- data.frame(z = runif(n, -1, 1), brand = factor(sample(paste0("B", 0:11), n, TRUE),
+                                                     levels = paste0("B", 0:11)))
+p <- pos[as.integer(bd$brand)]
+bd$claims <- rpois(n, exp(-1 + 0.8 * p + 0.3 * bd$z))
+bd$sev <- ifelse(bd$claims > 0, rgamma(n, 2 * pmax(bd$claims, 1),
+                                       2 * pmax(bd$claims, 1) / exp(1 + p^2)), 0)
+m <- tabular_net_fit(~ z + brand, bd, embeddings = c(brand = 1),
+                     heads = list(net_head("freq"), net_head("sev", "gamma", loss_weight = 0.5)),
+                     responses = list(sev = list(y = bd$sev, weights = bd$claims),
+                                      freq = bd$claims),
+                     epochs = 25, batch_size = 128, learning_rate = 0.01, seed = 3)
+stopifnot(identical(m@heads, c("freq", "sev")), m@dispersions[["freq"]] == 1)
+e <- network_embeddings(m, "brand")
+stopifnot(identical(e$level[1], "B0"), nrow(e) == 12, identical(names(e), c("level", "brand_e1")))
+stopifnot(abs(cor(e$brand_e1, pos)) > 0.9)
+stopifnot(identical(predict(m, bd, head = "sev"), m@fitted$sev))
+stopifnot(identical(predict(m, bd, head = 2), m@fitted$sev))
+g <- embedding_columns(m, bd[1:5, ])
+stopifnot(identical(names(g), c("z", "claims", "sev", "brand_e1")))
+stopifnot(identical(g$brand_e1, e$brand_e1[match(as.character(bd$brand[1:5]), e$level)]))
+f <- tempfile(fileext = ".rds")
+save_model(m, f)
+m2 <- load_model(f)
+stopifnot(identical(predict(m2, bd, head = "sev"), predict(m, bd, head = "sev")))
+stopifnot(fails(predict(m, bd, head = "pure")))
+stopifnot(fails(tabular_net_fit(~ z + brand, bd, heads = list(net_head("a"), net_head("b")),
+                                responses = list(a = bd$claims))))
+stopifnot(fails(tabular_net_fit(claims ~ z, bd, embeddings = c(colour = 2))))
+cat("test-nn tabular: ok\n")
 cat("test-nn: ok\n")

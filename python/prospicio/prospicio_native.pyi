@@ -16505,6 +16505,34 @@ class HawkesFit:
         """
 
 @final
+class Head:
+    """
+    One output of a ``TabularNet``: a family, its link and its weight in the
+    training loss.
+    
+    Parameters
+    ----------
+    name : str
+    family : {"poisson", "gamma", "tweedie", "gaussian"}
+    link : str, optional
+        Log for the Poisson, gamma and Tweedie, identity for the Gaussian:
+        the only links supported, and the defaults.
+    loss_weight : float, default 1.0
+        The head's weight in the loss, the sum of each head's weighted mean
+        deviance times its loss weight.
+    power : float, optional
+        The Tweedie power.
+    """
+    def __new__(cls, /, name: str, family: str, link: str |None = None, loss_weight: float = 1.0, power: float |None = None) -> Head: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def family(self, /) -> str: ...
+    @property
+    def loss_weight(self, /) -> float: ...
+    @property
+    def name(self, /) -> str: ...
+
+@final
 class HierarchicalBf:
     """
     The hierarchical Bayesian Bornhuetter-Ferguson: several programs, one
@@ -30923,6 +30951,212 @@ class StudentTCopula:
         Returns
         -------
         list of list of float
+        """
+
+@final
+class TabularNet:
+    """
+    A tabular network: rating factors entered as learned embeddings, a
+    shared body of hidden ReLU layers, and one or more heads, each a linear
+    output that starts at zero on its own offset (a GLM's linear predictor
+    or the log exposure), ``eta_h = offset_h + out_h(body(x, e(f1), ...))``.
+    
+    A factor named in ``embeddings`` is read from its indicator columns in
+    the design (``region[B]``, ...; a row with none set is the reference
+    level) and enters as a vector of the given dimensions in place of them.
+    Training minimizes the sum over heads of each head's weighted mean
+    deviance times its loss weight, by Adam on mini-batches, on the CPU in
+    ``float64``, reproducible from ``seed``. One head and no embeddings is
+    ``Cann``, bit for bit.
+    
+    Parameters
+    ----------
+    heads : list of Head
+    embeddings : dict of str to int, optional
+        Each embedded factor and its dimensions, in order.
+    references : dict of str to str, optional
+        The reference level's label of an embedded factor, for
+        ``embeddings()``; ``"(reference)"`` otherwise.
+    hidden : list of int, default [16, 8]
+    epochs : int, default 200
+    batch_size : int, default 64
+    learning_rate : float, default 1e-3
+    seed : int, default 0
+    validation_share : float, optional
+        Turns on early stopping on the summed loss, as for ``Cann``.
+    patience : int, default 10
+    
+    Examples
+    --------
+    >>> from prospicio.models import Design, Head, TabularNet
+    >>> d = Design([[0.0, 1.0, 2.0, 3.0] * 5, [0.0, 1.0] * 10], ["x", "g[b]"])
+    >>> counts = [0.0, 1.0, 0.0, 2.0] * 5
+    >>> sev = [0.0, 3.0, 0.0, 2.5] * 5
+    >>> spec = TabularNet([Head("freq", "poisson"), Head("sev", "gamma")],
+    ...                   embeddings={"g": 2}, hidden=[4], epochs=3)
+    >>> fit = spec.fit_heads(d, [counts, sev], weights=[None, counts])
+    >>> fit.head_names
+    ['freq', 'sev']
+    >>> len(fit.embeddings("g")["levels"])
+    2
+    """
+    def __new__(cls, /, heads: Sequence[Head], embeddings: dict |None = None, references: dict[str, str] |None = None, hidden: Sequence[int] |None = None, epochs: int = 200, batch_size: int = 64, learning_rate: float = 1e-3, seed: int = 0, validation_share: float |None = None, patience: int = 10) -> TabularNet: ...
+    def __repr__(self, /) -> str: ...
+    def fit(self, /, design: Design, y: Sequence[float]) -> TabularNetFit:
+        """
+        Fits a one-head network on ``y`` with the design's offset and
+        weights.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        
+        Returns
+        -------
+        TabularNetFit
+        """
+    def fit_heads(self, /, design: Design, ys: Sequence[Sequence[float]], weights: Sequence[Sequence[float] |None] |None = None, offsets: Sequence[Sequence[float] |None] |None = None) -> TabularNetFit:
+        """
+        Fits every head at once, one response per head in the heads' order.
+        
+        Parameters
+        ----------
+        design : Design
+        ys : list of list of float
+        weights : list of (list of float or None), optional
+            Each head's prior weights (claim counts for a severity head); the
+            design's where ``None``. A row with weight 0 does not enter the
+            head's loss, and its response is not read.
+        offsets : list of (list of float or None), optional
+            Each head's offset (a GLM's linear predictor, the log exposure);
+            the design's where ``None``.
+        
+        Returns
+        -------
+        TabularNetFit
+        
+        Raises
+        ------
+        ValueError
+            If the number of responses is not the number of heads, an
+            embedded factor has no indicator columns, a setting is out of
+            range, or a response with a positive weight is out of its
+            family's range.
+        """
+
+@final
+class TabularNetFit:
+    """
+    A fitted tabular network, from ``TabularNet.fit`` or ``fit_heads``.
+    """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def best_epoch(self, /) -> int |None:
+        """
+        With early stopping, the epoch (from 1) whose network was kept.
+        """
+    def corrections(self, /, design: Design) -> list[list[float]]:
+        """
+        Each head's correction to its linear predictor, per row: a list per
+        head.
+        """
+    @property
+    def dispersions(self, /) -> list[float]:
+        """
+        Each head's dispersion: 1 for the Poisson, otherwise Pearson's
+        estimate on the rows with a positive weight.
+        """
+    def embedding_design(self, /, design: Design) -> Design:
+        """
+        ``design`` with each embedded factor's indicator columns replaced by
+        its embedding coordinates (``factor:e1``, ...), for a GLM.
+        
+        Parameters
+        ----------
+        design : Design
+        
+        Returns
+        -------
+        Design
+        """
+    def embeddings(self, /, factor: str) -> dict:
+        """
+        The embedding of ``factor``: a dict with ``levels`` (the reference
+        first, then the design's order), ``columns`` (``factor:e1``, ...)
+        and ``values``, a list per level.
+        
+        Parameters
+        ----------
+        factor : str
+        
+        Returns
+        -------
+        dict
+        """
+    def fitted(self, /, head: Any |None = None) -> list[float]:
+        """
+        Fitted means of one head on the training rows.
+        """
+    @staticmethod
+    def from_json(text: str) -> TabularNetFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        TabularNetFit
+        """
+    @property
+    def head_names(self, /) -> list[str]:
+        """
+        The heads' names, in order.
+        """
+    @property
+    def input_hash(self, /) -> str:
+        """
+        Hash of the training data (design, and each head's response,
+        weights and offset).
+        """
+    def predict(self, /, design: Design, head: Any |None = None, offset: Sequence[float] |None = None) -> list[float]:
+        """
+        Expected response of one head for each row of ``design``.
+        
+        Parameters
+        ----------
+        design : Design
+            The training design's columns.
+        head : int or str, default 0
+        offset : list of float, optional
+            The head's offset; the design's if not given.
+        
+        Returns
+        -------
+        list of float
+        """
+    def predict_distribution(self, /, design: Design, n_sims: int, seed: int) -> PredictiveDistribution:
+        """
+        Joint predictive distribution of the first head across the rows
+        (process draws around its means, as ``CannFit``'s).
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a JSON artifact; ``from_json`` reads it back exactly and
+        pickling uses it too.
+        
+        Returns
+        -------
+        str
+        """
+    @property
+    def validation_history(self, /) -> list[float]:
+        """
+        With early stopping, the validation loss after each epoch.
         """
 
 @final

@@ -349,7 +349,7 @@ robust_vcov <- function(object, type = c("HC0", "HC1"), cluster = NULL) {
 #' training data, so [robust_vcov()] needs the original fit.
 #'
 #' @param model A `glm_model`, `gam_model`, `elastic_net_model`,
-#'   `cann_model` or `attention_cann_model`.
+#'   `cann_model`, `attention_cann_model` or `tabular_net_model`.
 #' @param file Path of the RDS file.
 #' @returns `save_model()`: `file`, invisibly. `load_model()`: a model of
 #'   the class saved.
@@ -367,7 +367,9 @@ save_model <- function(model, file) {
     else if (S7::S7_inherits(model, elastic_net_model)) "elastic_net_model"
     else if (S7::S7_inherits(model, cann_model)) "cann_model"
     else if (S7::S7_inherits(model, attention_cann_model)) "attention_cann_model"
-    else stop("model must be a glm_model, gam_model, elastic_net_model, cann_model or attention_cann_model")
+    else if (S7::S7_inherits(model, tabular_net_model)) "tabular_net_model"
+    else stop(paste("model must be a glm_model, gam_model, elastic_net_model, cann_model,",
+                    "attention_cann_model or tabular_net_model"))
   saveRDS(list(format = paste0("prospicio.", kind), artifact = model@ptr$to_json(),
                terms = model@terms, xlevels = model@xlevels), file)
   invisible(file)
@@ -391,6 +393,10 @@ load_model <- function(file) {
                                         terms = x$terms, xlevels = x$xlevels),
     prospicio.attention_cann_model = attention_cann_model(
       ptr = rust_result(AttentionCannModel$from_json(x$artifact)),
+      terms = x$terms, xlevels = x$xlevels
+    ),
+    prospicio.tabular_net_model = tabular_net_model(
+      ptr = rust_result(TabularNetModel$from_json(x$artifact)),
       terms = x$terms, xlevels = x$xlevels
     ),
     stop("not a model saved by save_model()")

@@ -1401,6 +1401,83 @@ P-spline expectiles at `lambda = 5` on its own basis and penalty to 1e-8.
   cross-validation) is not built, and its basis is reproduced from its
   design matrix, not rebuilt.
 
+## Tabular networks with embeddings and several heads (#577)
+
+Status: built; items (a) to (g) proposed for the user's acceptance.
+
+`prospicio_nn::tabular::TabularNet` is a feed-forward network on a
+`Design` in which the factors named by `embedding(factor, dim)` enter as
+learned vectors (entity embeddings; Wüthrich and Merz, *Statistical
+Foundations of Actuarial Learning*, section 7.4; Schelldorfer and
+Wüthrich's freMTPL2 tutorial, 2019) instead of as their indicator columns,
+and whose shared body of hidden ReLU layers feeds one or more `Head`s:
+
+```text
+eta_h = offset_h + out_h(body(x, e(f1), e(f2), ...)),    mu_h = g_h^-1(eta_h)
+```
+
+`fit_heads(design, targets)` takes one `Target` per head (its response and,
+where they differ from the design's, its prior weights and offset), and
+training minimises `sum_h lambda_h D_h`, each head's weighted mean deviance
+times its loss weight, by Adam on mini-batches of rows, as `Cann`.
+`TabularNet` implements `Model` for one head, and `TabularNetFit`
+implements `Fitted` for the first head, with `predict_head`, `corrections`,
+`embeddings(factor)` (an `EmbeddingTable`, a vector per level),
+`embedding_design` (the design with each factor's indicator columns
+replaced by its coordinates, for a GLM), per-head dispersions and the
+artifact format (`risk_rs.tabular_net_fit`, version 1). Python
+`TabularNet`, `Head`, `TabularNetFit` in `prospicio.models`; R
+`tabular_net_fit()`, `net_head()`, `network_embeddings()`,
+`embedding_columns()`, with `save_model()`.
+
+Checks: one head and no embeddings gives `Cann`'s fit bit for bit, with
+and without early stopping, in Rust, Python and R; the forward pass is
+recomputed by hand from the weights to 1e-12; on a seeded book with a
+20-level factor driven by a hidden position, two heads (Poisson counts on
+the log exposure, gamma severities weighted by the counts) recover both
+rates within a third of their spread, and a one-dimensional embedding
+orders the levels by the position (correlation above 0.9); embeddings beat
+the indicator columns on held-out data there; and on freMTPL2 (every fifth
+policy held out, both networks starting at the GLM fitted on the rest) the
+embeddings of VehBrand and Region give a test mean deviance of 0.316367
+against 0.317186 for the one-hot CANN and 0.319120 for the GLM (seed 1;
+0.316193 and 0.316843 at seed 2), in the `fremtpl2` job.
+
+- (a) *Factors are read from the design's indicator columns*
+  `factor[level]`, as the attention CANN's tokens, so the bindings' coding
+  (and a reference level) is unchanged; a row with no indicator set is the
+  reference level, which has its own vector, and a row with two set, or a
+  value other than 0 or 1, is an error.
+- (b) *Embeddings start uniform on (-0.05, 0.05)*, Keras' default as the
+  tutorial uses, and the output layers at zero, so every head starts at
+  its offset (the GLM) as the CANN does.
+- (c) *The loss is the sum of each head's weighted mean deviance times its
+  loss weight* (1 by default), each head's mean over the batch's rows as
+  the CANN's; a loss weight of exactly 1 is not multiplied in, so one head
+  is the CANN's arithmetic.
+- (d) *Each head has its own prior weights and offset*; a row with weight 0
+  does not enter the head's loss and its response is not read (a
+  severity head on a policy without claims), so a placeholder such as 0
+  is accepted where the family could not take it.
+- (e) *Early stopping scores the summed loss* on the held-out rows, each
+  head's weighted mean deviance over the rows it weights, times its loss
+  weight.
+- (f) *A head's dispersion is Pearson's on the rows with a positive
+  weight*, `sum w (y - mu)^2 / V(mu) / n_+`, which is the CANN's when every
+  weight is positive.
+- (g) *The embeddings reach a GLM as numeric columns*: in Rust and Python
+  through `embedding_design` (`factor:e1`, ... in place of the factor's
+  indicator columns), in R through `embedding_columns()`, which replaces
+  the factor in a data frame by `factor_e1`, ... for `glm_fit()`'s
+  formula.
+
+The issue's ONNX check (a PyTorch twin exported and run through
+`OnnxPredictor`) is replaced by the forward pass recomputed by hand, since
+PyTorch is not in the test environments. On freMTPL2 the comparison uses
+the tutorial's network features (VehPower as a number): on the GLM's own
+design, with VehPower a factor, the embeddings were not better than the
+indicators (0.317480 against 0.317189 after 15 epochs).
+
 ## Decisions
 
 - **Burn for neural networks** (replaces PyTorch-only, `architecture.md`).

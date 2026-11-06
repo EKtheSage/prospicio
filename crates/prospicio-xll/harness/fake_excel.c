@@ -10,6 +10,8 @@
  * Exits non-zero when a registration or a check fails. */
 #include <windows.h>
 #include <math.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <wchar.h>
@@ -25,6 +27,9 @@
 #define xlFree 0x4000
 #define xlGetName (9 | 0x4000)
 #define xlfRegister 149
+#define xltypeBool 0x0004
+#define xltypeBigData (xltypeStr | xltypeInt)
+#define xlAsyncReturn (16 | 0x4000)
 
 typedef struct xloper12 {
     union {
@@ -68,8 +73,52 @@ typedef XLOPER12 *(*Fn3)(XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn5)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn6)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef void (*Free12)(XLOPER12 *);
+/* Asynchronous exports (xll.md, decision 48): AFnN takes N worksheet
+ * arguments, then Excel's handle, and returns nothing. */
+typedef void (*AFn7)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
+typedef void (*AFn8)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
+typedef void (*AFn9)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
+typedef void (*AFn10)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
+typedef void (*AFn14)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 
-static int registered = 0, hidden = 0, failures = 0;
+static int registered = 0, async_registered = 0, failures = 0;
+
+/* The one asynchronous call outstanding: its handle's token, and the copy
+ * of the result xlAsyncReturn delivered (from the add-in's own thread). */
+static volatile LONG async_token = 0;
+static XLOPER12 *volatile async_result = NULL;
+static volatile LONG async_bad = 0;
+
+/* A deep copy of a value Excel would copy out of xlAsyncReturn: the add-in
+ * frees its own as soon as the call returns. */
+static XLOPER12 copy_value(const XLOPER12 *x) {
+    XLOPER12 c = *x;
+    c.xltype = x->xltype & 0x0FFF;
+    if (c.xltype == xltypeStr) {
+        size_t n = (size_t)x->val.str[0] + 1;
+        c.val.str = malloc(n * sizeof(wchar_t));
+        memcpy(c.val.str, x->val.str, n * sizeof(wchar_t));
+    } else if (c.xltype == xltypeMulti) {
+        size_t n = (size_t)x->val.array.rows * (size_t)x->val.array.columns;
+        c.val.array.lparray = malloc(n * sizeof(XLOPER12));
+        for (size_t i = 0; i < n; i++) c.val.array.lparray[i] = copy_value(&x->val.array.lparray[i]);
+    }
+    return c;
+}
+
+static void free_value(XLOPER12 *x) {
+    if (x->xltype == xltypeStr) free(x->val.str);
+    if (x->xltype == xltypeMulti) {
+        size_t n = (size_t)x->val.array.rows * (size_t)x->val.array.columns;
+        for (size_t i = 0; i < n; i++) free_value(&x->val.array.lparray[i]);
+        free(x->val.array.lparray);
+    }
+}
+
+static void free_copy(XLOPER12 *x) {
+    free_value(x);
+    free(x);
+}
 static wchar_t dll_name[] = L"\x0F" L"C:\\prospicio.xll";
 
 static void narrow(const wchar_t *s, char *out, size_t cap) {
@@ -86,6 +135,23 @@ __declspec(dllexport) int __stdcall MdCallBack12(int xlfn, int count, XLOPER12 *
         return 0;
     }
     if (xlfn == xlFree) return 0;
+    if (xlfn == xlAsyncReturn) {
+        /* The handle back, as Excel gave it, and a result the add-in still
+         * owns (not marked xlbitDLLFree). */
+        int ok = count == 2 && args[0]->xltype == xltypeBigData &&
+                 (LONG)(intptr_t)args[0]->val.array.lparray == async_token && async_token != 0 &&
+                 !(args[1]->xltype & xlbitDLLFree);
+        if (!ok) {
+            InterlockedIncrement(&async_bad);
+            return 0;
+        }
+        XLOPER12 *c = malloc(sizeof(XLOPER12));
+        *c = copy_value(args[1]);
+        InterlockedExchangePointer((PVOID volatile *)&async_result, c);
+        res->xltype = xltypeBool;
+        res->val.xbool = 1;
+        return 0;
+    }
     if (xlfn == xlfRegister) {
         char proc[256], types[256], name[256], argnames[256];
         narrow(args[1]->val.str, proc, sizeof proc);
@@ -99,13 +165,33 @@ __declspec(dllexport) int __stdcall MdCallBack12(int xlfn, int count, XLOPER12 *
                ok ? "ok" : "BAD");
         if (!ok) failures++;
         registered++;
-        /* Macro type 0: an old name, calculating but not listed (xll.md, decision 47). */
-        if (args[5]->val.w == 0) hidden++;
+        if (types[0] == '>' && types[strlen(types) - 1] == 'X') async_registered++;
         res->xltype = xltypeNum;
         res->val.num = registered;
         return 0;
     }
     return 1;
+}
+
+/* A fresh handle for the next asynchronous call. */
+static XLOPER12 *new_handle(void) {
+    static XLOPER12 h;
+    static LONG next = 0;
+    InterlockedExchangePointer((PVOID volatile *)&async_result, NULL);
+    async_token = InterlockedIncrement(&next);
+    h.xltype = xltypeBigData;
+    h.val.array.lparray = (XLOPER12 *)(intptr_t)async_token;
+    h.val.array.rows = 0;
+    return &h;
+}
+
+/* Waits for xlAsyncReturn, as Excel does while the cell shows
+ * #GETTING_DATA; NULL after two minutes. */
+static XLOPER12 *await_async(void) {
+    for (int i = 0; i < 120000 && !async_result; i++) Sleep(1);
+    XLOPER12 *r = async_result;
+    async_token = 0;
+    return r;
 }
 
 static void print_value(const XLOPER12 *x) {
@@ -118,7 +204,7 @@ static void print_value(const XLOPER12 *x) {
     }
 }
 
-static void print_result(const char *label, XLOPER12 *x) {
+static void print_table(const char *label, const XLOPER12 *x) {
     printf("%s:\n", label);
     if ((x->xltype & 0x0FFF) == xltypeMulti) {
         for (int r = 0; r < x->val.array.rows; r++) {
@@ -130,6 +216,10 @@ static void print_result(const char *label, XLOPER12 *x) {
         print_value(x);
         printf("\n");
     }
+}
+
+static void print_result(const char *label, XLOPER12 *x) {
+    print_table(label, x);
     if (!(x->xltype & xlbitDLLFree)) {
         printf("  result not marked xlbitDLLFree\n");
         failures++;
@@ -164,8 +254,9 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and fourteen functions and 98 old names registered", registered == 212);
-    check("the 98 old names registered hidden", hidden == 98);
+    check("one hundred and fourteen functions registered", registered == 114);
+    check("nine of them asynchronous (xll.md, decision 48)", async_registered == 9);
+    check("no old name is exported (xll.md, decision 47)", GetProcAddress(xll, "pro_mack") == NULL);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -235,14 +326,6 @@ int main(int argc, char **argv) {
     check("total reserve 52135.228 (R ChainLadder)", fabs(total[3].val.num - 52135.2282612101) < 1e-6);
     check("total Mack SE 26880.740 (R ChainLadder)", fabs(total[6].val.num - 26880.7403298914) < 1e-6);
     free12(m);
-
-    /* An old name still calculates: PRO.MACK runs PRO.RES.MACK. */
-    Fn9 old_mack = (Fn9)GetProcAddress(xll, "pro_mack");
-    XLOPER12 *om = old_mack ? old_mack(&tri, &missing, &missing, &missing, &missing, &missing, &missing,
-                                       &missing, &missing) : NULL;
-    check("the old name PRO.MACK gives PRO.RES.MACK's total reserve",
-          om && (om->xltype & 0xFFF) == xltypeMulti && fabs(om->val.array.lparray[11 * 8 + 3].val.num - 52135.2282612101) < 1e-6);
-    if (om) free12(om);
 
     /* Mack's rule for the last sigma: R's MackChainLadder(est.sigma = "Mack"). */
     static wchar_t mack_s[] = L"\x04" L"mack";
@@ -322,24 +405,44 @@ int main(int argc, char **argv) {
     seed.xltype = xltypeNum;
     seed.val.num = 1;
     DWORD t0 = GetTickCount();
-    XLOPER12 *o = ((Fn8)GetProcAddress(xll, "pro_res_odp"))(&tri, &sims, &seed, &missing, &missing, &missing, &missing,
-                                                       &missing);
+    AFn8 odp = (AFn8)GetProcAddress(xll, "pro_res_odp");
+    odp(&tri, &sims, &seed, &missing, &missing, &missing, &missing, &missing, new_handle());
+    DWORD returned = GetTickCount() - t0;
+    XLOPER12 *o = await_async();
     DWORD ms = GetTickCount() - t0;
-    print_result("PRO.RES.ODP(RAA, 20000, 1)", o);
+    check("PRO.RES.ODP returns before its result (asynchronous)", returned < ms || ms < 2);
+    check("PRO.RES.ODP answers through xlAsyncReturn", o != NULL && async_bad == 0);
+    if (!o) return 1;
+    print_table("PRO.RES.ODP(RAA, 20000, 1)", o);
     printf("  (%lu ms)\n", ms);
     check("ODP table is 12 x 9", (o->xltype & 0xFFF) == xltypeMulti && o->val.array.rows == 12 &&
                                      o->val.array.columns == 9);
     XLOPER12 *ot = &o->val.array.lparray[11 * 9];
     check("ODP total mean 53842 +- 589 (R BootChainLadder)", fabs(ot[2].val.num - 53842.27) < 589.4);
     check("ODP total SD 18965 +- 484 (R BootChainLadder)", fabs(ot[3].val.num - 18965.35) < 483.9);
-    free12(o);
+
+    /* The same inputs again, as a second cell or the next recalculation:
+     * answered from the kept result, the same numbers at once. */
+    t0 = GetTickCount();
+    odp(&tri, &sims, &seed, &missing, &missing, &missing, &missing, &missing, new_handle());
+    XLOPER12 *o2 = await_async();
+    DWORD again = GetTickCount() - t0;
+    printf("  again: %lu ms\n", again);
+    check("the same inputs again give the kept result",
+          o2 && (o2->xltype & 0xFFF) == xltypeMulti && o2->val.array.lparray[11 * 9 + 3].val.num == ot[3].val.num);
+    check("the kept result comes back within 100 ms", again < 100);
+    if (o2) free_copy(o2);
+    free_copy(o);
 
     /* The draws: 100000 rows of 11 cells and a header, allocated by the
      * XLL and freed by xlAutoFree12. */
     sims.val.num = 100000;
     t0 = GetTickCount();
-    XLOPER12 *d = ((Fn7)GetProcAddress(xll, "pro_res_odp_sims"))(&tri, &sims, &seed, &missing, &missing, &missing, &missing);
+    ((AFn7)GetProcAddress(xll, "pro_res_odp_sims"))(&tri, &sims, &seed, &missing, &missing, &missing, &missing,
+                                                     new_handle());
+    XLOPER12 *d = await_async();
     ms = GetTickCount() - t0;
+    if (!d) return 1;
     printf("PRO.RES.ODP.SIMS(RAA, 100000, 1): %d x %d (%lu ms)\n", d->val.array.rows, d->val.array.columns, ms);
     check("draws are 100001 x 11", (d->xltype & 0xFFF) == xltypeMulti && d->val.array.rows == 100001 &&
                                        d->val.array.columns == 11);
@@ -349,21 +452,23 @@ int main(int argc, char **argv) {
     double sum = 0;
     for (int r = 1; r <= 100000; r++) sum += d->val.array.lparray[r * 11 + 10].val.num;
     check("mean total within R's tolerance of 53842", fabs(sum / 100000 - 53842.27) < 589.4);
-    free12(d);
+    free_copy(d);
 
     /* Mack's bootstrap: 20000 simulations; the total SD reconciles with
      * Mack's sqrt(process^2 + 0.981 parameter^2) = 26845 (R ChainLadder's
      * risks), within five Monte Carlo standard errors (about 1000). */
     sims.val.num = 20000;
-    XLOPER12 *mb = ((Fn9)GetProcAddress(xll, "pro_res_mack_boot"))(&tri, &sims, &seed, &missing, &missing, &missing,
-                                                               &missing, &missing, &missing);
-    print_result("PRO.RES.MACK.BOOT(RAA, 20000, 1)", mb);
+    ((AFn9)GetProcAddress(xll, "pro_res_mack_boot"))(&tri, &sims, &seed, &missing, &missing, &missing, &missing,
+                                                       &missing, &missing, new_handle());
+    XLOPER12 *mb = await_async();
+    if (!mb) return 1;
+    print_table("PRO.RES.MACK.BOOT(RAA, 20000, 1)", mb);
     check("Mack bootstrap table is 12 x 9", (mb->xltype & 0xFFF) == xltypeMulti && mb->val.array.rows == 12 &&
                                                 mb->val.array.columns == 9);
     XLOPER12 *mt = &mb->val.array.lparray[11 * 9];
     check("Mack bootstrap total SD 26845 +- 1000 (Mack, R ChainLadder)", fabs(mt[3].val.num - 26845) < 1000);
     check("Mack bootstrap total mean 52135 +- 950 (chain ladder)", fabs(mt[2].val.num - 52135.23) < 950);
-    free12(mb);
+    free_copy(mb);
 
     /* Bornhuetter-Ferguson on RAA with a flat exposure of 20000 and a
      * priori 1: the oldest origin's ultimate is its latest, and the total
@@ -421,11 +526,13 @@ int main(int argc, char **argv) {
           fabs(cd->val.array.lparray[11 * 4 + 2].val.num - 25166.3025264382) < 1e-6);
     free12(cd);
     sims.val.num = 2000;
-    XLOPER12 *oc = ((Fn8)GetProcAddress(xll, "pro_res_odp_cdr"))(&tri, &sims, &seed, &missing, &missing, &missing,
-                                                             &missing, &missing);
+    ((AFn8)GetProcAddress(xll, "pro_res_odp_cdr"))(&tri, &sims, &seed, &missing, &missing, &missing, &missing,
+                                                    &missing, new_handle());
+    XLOPER12 *oc = await_async();
+    if (!oc) return 1;
     check("ODP one-year table is 12 x 8", (oc->xltype & 0xFFF) == xltypeMulti && oc->val.array.rows == 12 &&
                                               oc->val.array.columns == 8);
-    free12(oc);
+    free_copy(oc);
 
     /* Clark's LDF method on RAA, log-logistic to infinity: total reserve
      * 111006.63 (R ChainLadder's ClarkLDF run to convergence, 1e-5). */
@@ -594,14 +701,16 @@ int main(int argc, char **argv) {
     XLOPER12 diag;
     diag.xltype = xltypeStr;
     diag.val.str = diag_s;
-    XLOPER12 *bd = ((Fn10)GetProcAddress(xll, "pro_res_bayes_odp"))(&tri, &diag, &missing, &missing, &missing,
-                                                                 &missing, &missing, &missing, &missing, &missing);
+    ((AFn10)GetProcAddress(xll, "pro_res_bayes_odp"))(&tri, &diag, &missing, &missing, &missing, &missing,
+                                                       &missing, &missing, &missing, &missing, new_handle());
+    XLOPER12 *bd = await_async();
+    if (!bd) return 1;
     int bd_ok = (bd->xltype & 0xFFF) == xltypeMulti && bd->val.array.columns == 2 &&
                 (bd->val.array.lparray[1].xltype & 0xFFF) == xltypeNum;
     double rhat = bd_ok ? bd->val.array.lparray[1].val.num : 99;
     printf("PRO.RES.BAYES.ODP(RAA, \"diagnostics\"): max R-hat %.4f\n", rhat);
     check("PRO.RES.BAYES.ODP samples RAA with R-hat under 1.01", bd_ok && rhat < 1.01);
-    free12(bd);
+    free_copy(bd);
 
     /* The Bayesian BF on RAA with a flat premium of 40,000 and an a priori
      * loss ratio of 0.6: the diagnostics again, on worker threads. */
@@ -616,15 +725,17 @@ int main(int argc, char **argv) {
     bf_prem.val.array.columns = 1;
     bf_lr.xltype = xltypeNum;
     bf_lr.val.num = 0.6;
-    XLOPER12 *bb = ((Fn14)GetProcAddress(xll, "pro_res_bayes_bf"))(&tri, &bf_prem, &bf_lr, &missing, &diag, &missing,
-                                                                &missing, &missing, &missing, &missing, &missing,
-                                                                &missing, &missing, &missing);
+    ((AFn14)GetProcAddress(xll, "pro_res_bayes_bf"))(&tri, &bf_prem, &bf_lr, &missing, &diag, &missing, &missing,
+                                                      &missing, &missing, &missing, &missing, &missing, &missing,
+                                                      &missing, new_handle());
+    XLOPER12 *bb = await_async();
+    if (!bb) return 1;
     int bb_ok = (bb->xltype & 0xFFF) == xltypeMulti && bb->val.array.columns == 2 &&
                 (bb->val.array.lparray[1].xltype & 0xFFF) == xltypeNum;
     double bf_rhat = bb_ok ? bb->val.array.lparray[1].val.num : 99;
     printf("PRO.RES.BAYES.BF(RAA, premium, 0.6, , \"diagnostics\"): max R-hat %.4f\n", bf_rhat);
     check("PRO.RES.BAYES.BF samples RAA with R-hat under 1.01", bb_ok && bf_rhat < 1.01);
-    free12(bb);
+    free_copy(bb);
 
     /* A lognormal fitted to a column of losses: meanlog is the mean of the
      * logs, in the params table's second row. */

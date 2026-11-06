@@ -290,6 +290,11 @@ reference:
       - attention_cann_fit
       - attention_cann_model
       - network_correction
+      - tabular_net_fit
+      - tabular_net_model
+      - net_head
+      - network_embeddings
+      - embedding_columns
       - attention_weights
       - onnx_model
       - onnx_model_class
