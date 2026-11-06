@@ -60,14 +60,20 @@
 //! `n_sims` explicitly: by default their `one_year` runs at most 2,000.
 //!
 //! `HierarchicalBf` (the three-program Stan reference panel, decision 30)
-//! joins them under `RISK_RS_FULL_BAYES`: a fit takes about 5 s, over the
-//! 2 s that open decision 26 asks of a pull request's smoke set. Every
-//! simulation of its panel is flagged (Pareto k from 6 to 57) and matching
-//! rescues none, so its checks are `HIERARCHICAL_REFITS`: no unflagged
-//! simulation, `matches` false, check 1's bound on the reweighted total's mean
-//! 25 against 5, and a flagged gap below 2.5 sd (measured over seeds 0 to 2:
-//! mean z up to 11.8, flagged gap up to 1.10; mean + 4 sd 20.3 and 2.31). The
-//! full entry takes about 5.5 minutes a seed.
+//! joins them under `RISK_RS_FULL_BAYES` in two entries. On the panel as the
+//! reference case has it, EVW stops at 6 ages while GenIns and RAA have 10,
+//! so EVW's next diagonal falls at ages it has never observed (prior-only
+//! shares), every simulation is flagged (Pareto k from 6 to 57), matching
+//! rescues none and the reweighting is poor. `HIERARCHICAL_REFITS` keeps the
+//! loose bounds measured over seeds 0 to 2: check 1's bound 25 against 5 and
+//! a flagged gap below 2.5 sd (mean z up to 11.8 and flagged gap up to 1.10,
+//! where the mean plus 4 sd is 20.3 and 2.31). On the same programs cut to
+//! 6 ages, where no program has such a cell, only 0 to 6 of 40 simulations
+//! are flagged at 2 chains of 1,000 draws and the bounds are the other
+//! models' (`HIERARCHICAL_CUT_REFITS`, seeds 0 to 5: mean z within 2.6,
+//! opening z within 2.6, unflagged gap 0.045 with sd 0.007 and largest
+//! 0.055, flagged gap largest 0.115). The full entry takes about 5.5 minutes
+//! a seed, the cut one about 4.
 //!
 //! Every bound is at least the largest model's mean (or mean offset) plus
 //! 4 seed-to-seed sds over seeds 0 to 19 (largest: mean z 4.40, opening z
@@ -96,7 +102,9 @@ use prospicio_reserving::bayes::{
     HierarchicalBf, HierarchicalBfFit, Meyers, MeyersFit, MeyersModel, OneYearRefit, Outstanding,
 };
 use prospicio_reserving::{DevelopmentColumn, Grain, Lag, Long, Month, Triangle};
-use prospicio_validation::{full_bayes, stan_triangle, triangle, triangle_columns};
+use prospicio_validation::{
+    full_bayes, stan_triangle, stan_triangle_cut, triangle, triangle_columns,
+};
 
 /// The simulations of the mean check.
 const SIMS: usize = 10_000;
@@ -178,7 +186,8 @@ const COMPARTMENTAL_2_REFITS: Refits = Refits {
 };
 /// `HierarchicalBf` on the Stan reference case, whose refit samples the whole
 /// panel of 72 parameters. Every simulation is flagged (Pareto k from 6 to
-/// 57 at seed 0) and matching rescues none, so nothing is unflagged and
+/// 57 at seed 0, because EVW's next diagonal falls at ages it has never
+/// observed) and matching rescues none, so nothing is unflagged and
 /// `matches` is false; reweighting alone is poor, which the bounds record
 /// (over seeds 0 to 2: the reweighted total's mean z 4.3 to 11.8, mean + 4 sd
 /// 20.3; the gap to a refit of a flagged simulation 0.08 to 1.10 sd of the
@@ -189,6 +198,25 @@ const HIERARCHICAL_REFITS: Refits = Refits {
     gaps: (0.08, 2.5),
     matches: false,
     mean: 25.0,
+    opening: 6.0,
+    replay: 20,
+};
+/// `HierarchicalBf` on the same programs cut to their first six ages, so that
+/// no program has a next diagonal at an age it has never observed (the cause
+/// of the full panel's Pareto k above 6, `knowledge/findings/hierarchical-bf-one-year.md`).
+/// Over seeds 0 to 5 at 2 chains of 1,000 warm-up and 1,000 kept draws (the
+/// refit's own sampling noise is most of the gap: 0.09 at 200 draws): 0 to 6
+/// of 40 simulations flagged; mean z -0.60 (sd 1.13, |z| at most 2.58),
+/// mean + 4 sd 5.1 in absolute value; opening z -0.31 (sd 1.15, |z| at most
+/// 2.59), 4.9; unflagged gap 0.045 (sd 0.007), mean + 4 sd 0.074; flagged
+/// gap 0.063 (sd 0.037, largest 0.115), 0.209. Matching rescued some of the
+/// flagged simulations on most seeds and none on seeds with no flagged one, so
+/// `matches` is false.
+const HIERARCHICAL_CUT_REFITS: Refits = Refits {
+    sims: 40,
+    gaps: (0.08, 0.25),
+    matches: false,
+    mean: 6.0,
     opening: 6.0,
     replay: 20,
 };
@@ -695,6 +723,11 @@ fn closed_programs() -> Triangle {
 /// case (`reserving_bayes_hierarchical_bf.rs`) and the sampler of
 /// 2 chains of 200 warm-up and 200 kept draws.
 fn hierarchical(tri: &Triangle) -> Box<Run<'_, HierarchicalBfFit>> {
+    hierarchical_with(tri, 200)
+}
+
+/// [`hierarchical`] with `draws` warm-up and kept draws on each of 2 chains.
+fn hierarchical_with(tri: &Triangle, draws: usize) -> Box<Run<'_, HierarchicalBfFit>> {
     Box::new(move |n_sims, seed, refit| {
         HierarchicalBf {
             apriori: 0.7,
@@ -702,8 +735,8 @@ fn hierarchical(tri: &Triangle) -> Box<Run<'_, HierarchicalBfFit>> {
             tau_scale: 0.5,
             sampler: Sampler {
                 chains: 2,
-                tune: 200,
-                draws: 200,
+                tune: draws,
+                draws,
                 ..HierarchicalBf::default().sampler
             },
             n_sims,
@@ -743,6 +776,27 @@ fn hierarchical_measured(seed: u64, strict: bool) -> (&'static str, Measured) {
     )
 }
 
+/// `HierarchicalBf` on the Stan reference programs cut to six ages.
+fn hierarchical_cut_measured(seed: u64, strict: bool) -> (&'static str, Measured) {
+    let hierarchical_reserves: fn(&HierarchicalBfFit) -> &PredictiveDistribution = |f| &f.reserves;
+    let (panel, closed_panel) = (
+        stan_triangle_cut(&["evw", "genins", "raa"], 6),
+        closed_programs(),
+    );
+    (
+        "HierarchicalBf 6 ages",
+        conform(
+            "HierarchicalBf 6 ages",
+            &*hierarchical_with(&panel, 1000),
+            Some(&*hierarchical(&closed_panel)),
+            hierarchical_reserves,
+            HIERARCHICAL_CUT_REFITS,
+            seed,
+            strict,
+        ),
+    )
+}
+
 /// Runs the suite on every model at `seed`.
 fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
     let (raa, genins, premium, closed) = (
@@ -766,7 +820,10 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
     let hierarchical_only = !strict && std::env::var("SWEEP_HIERARCHICAL_ONLY").is_ok();
     let mut out = Vec::new();
     if hierarchical_only {
-        out.push(hierarchical_measured(seed, strict));
+        if std::env::var("SWEEP_HIERARCHICAL_ONLY").as_deref() != Ok("cut") {
+            out.push(hierarchical_measured(seed, strict));
+        }
+        out.push(hierarchical_cut_measured(seed, strict));
         return out;
     }
     if !(meyers_only || compartmental_only || bf_normalised_only) {
@@ -894,6 +951,7 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
     // Over 5 s a fit and a refit a simulation: the full gate only.
     if !(compartmental_only || strict && !full_bayes()) {
         out.push(hierarchical_measured(seed, strict));
+        out.push(hierarchical_cut_measured(seed, strict));
     }
     out
 }

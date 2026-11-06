@@ -1260,11 +1260,15 @@ impl HierarchicalBf {
     ///
     /// The view uses the fit's own sampler and seed. It runs at most
     /// [`ONE_YEAR_SIMS`](Self::ONE_YEAR_SIMS) simulations unless
-    /// `settings.n_sims` sets their number: a year's diagonals of every
-    /// program move the whole posterior (every simulation of the
-    /// measured panel has a Pareto k above 6 and matching rescues none), so
-    /// each simulation costs a NUTS refit of the panel. Failed diagnostics of the fit do not fail the view;
-    /// they are in `fit.diagnostics`.
+    /// `settings.n_sims` sets their number. A program whose ages stop short
+    /// of the panel's grid (EVW at 6 of 10 on the reference panel) has its
+    /// next diagonal at ages it has never observed, where only the prior
+    /// speaks, and every simulation of such a panel has a Pareto k above 6
+    /// and is refitted (matching rescues none); on a panel whose programs
+    /// share their ages, k is mostly below 0.7 and the reweighting is close
+    /// to the refits. Each refit is a NUTS run over the panel. Failed
+    /// diagnostics of the fit do not fail the view; they are in
+    /// `fit.diagnostics`.
     ///
     /// ```
     /// use prospicio_bayes::nuts::Sampler;
@@ -2447,6 +2451,127 @@ mod tests {
             &year_of(&model, &closed, &closed_panel, &closed_fit),
             &closed_fit.posterior,
         );
+    }
+
+    /// The year's likelihood is the model's stated one for the year's cells:
+    /// each program's own `phi_c`, the mean `exp(alpha) p_d` with `p` the
+    /// program's softmax of `beta + omega delta`, and no other term that
+    /// depends on the draw (computed here from the formulas alone, and as
+    /// the difference of the posterior with and without the year's cells).
+    #[test]
+    fn the_year_likelihood_is_the_stated_likelihood_of_the_year() {
+        let tri = three_programs();
+        let model = quick(1);
+        let panel = prepared(&tri, &model);
+        let year = year_of_start(&model, &tri, &panel);
+        let m = &panel.model;
+        let y: Vec<f64> = (0..year.n_year())
+            .map(|k| 20.0 + 7.0 * (k % 4) as f64 + k as f64)
+            .collect();
+        for k in 0..6 {
+            let sampling = near(&panel.start, k, 0.4);
+            let stored = m.natural(&sampling);
+            let omega = stored[m.log_omega()].exp();
+            let mut direct = 0.0;
+            for (c, (program, py)) in m.programs.iter().zip(&year.programs).enumerate() {
+                let mut b = vec![0.0; m.n_dev];
+                for d in 1..m.n_dev {
+                    b[d] = stored[m.beta(d)] + omega * stored[m.delta(c, d)];
+                }
+                let sum: f64 = b.iter().map(|x| x.exp()).sum();
+                for (j, &(w, d)) in py.year.iter().enumerate() {
+                    let mu = stored[m.u(program, w)].exp() * b[d].exp() / sum;
+                    direct += (y[py.first_cell + j] * mu.ln() - mu) / program.phi;
+                }
+            }
+            let got = year.year_log_likelihood(&stored, &y);
+            assert!(
+                (got - direct).abs() < 1e-10 * direct.abs().max(1.0),
+                "{got} {direct}"
+            );
+            // The posterior with the year's cells less the posterior without.
+            let diff = year.extended(&y).log_density(&sampling) - m.log_density(&sampling);
+            assert!(
+                (diff - direct).abs() < 1e-9 * direct.abs().max(1.0),
+                "{diff} {direct}"
+            );
+        }
+    }
+
+    /// A refit's data are the opening data plus exactly the simulated year,
+    /// and the year is drawn from the draw's own mean and its program's
+    /// `phi_c` (mean `mu`, variance `phi mu`).
+    #[test]
+    fn the_extended_data_are_the_opening_cells_and_the_year_and_the_year_is_drawn_from_the_draw() {
+        let tri = three_programs();
+        let model = quick(1);
+        let panel = prepared(&tri, &model);
+        let year = year_of_start(&model, &tri, &panel);
+        let m = &panel.model;
+        let y: Vec<f64> = (0..year.n_year()).map(|k| 10.0 + k as f64).collect();
+        let extended = year.extended(&y);
+        for ((base, ext), py) in m
+            .programs
+            .iter()
+            .zip(&extended.programs)
+            .zip(&year.programs)
+        {
+            assert_eq!(ext.cells.len(), base.cells.len() + py.year.len());
+            assert_eq!(ext.cells[..base.cells.len()], base.cells[..]);
+            for (j, &(w, d)) in py.year.iter().enumerate() {
+                assert_eq!(
+                    ext.cells[base.cells.len() + j],
+                    (w, d, y[py.first_cell + j])
+                );
+                assert!(!base.cells.iter().any(|&(bw, bd, _)| (bw, bd) == (w, d)));
+            }
+            assert_eq!(ext.phi, base.phi);
+        }
+        let stored = m.natural(&near(&panel.start, 2, 0.3));
+        let omega = stored[m.log_omega()].exp();
+        let n = 40_000;
+        let mut rng = StreamRng::new(3, 0);
+        let mut sum = vec![0.0; year.n_year()];
+        let mut square = vec![0.0; year.n_year()];
+        let mut row = vec![0.0; year.n_year()];
+        for _ in 0..n {
+            year.draw_year(&stored, &mut rng, &mut row);
+            for (j, x) in row.iter().enumerate() {
+                sum[j] += x;
+                square[j] += x * x;
+            }
+        }
+        for (c, (program, py)) in m.programs.iter().zip(&year.programs).enumerate() {
+            let mut b = vec![0.0; m.n_dev];
+            for d in 1..m.n_dev {
+                b[d] = stored[m.beta(d)] + omega * stored[m.delta(c, d)];
+            }
+            let total: f64 = b.iter().map(|x| x.exp()).sum();
+            for (j, &(w, d)) in py.year.iter().enumerate() {
+                let mu = stored[m.u(program, w)].exp() * b[d].exp() / total;
+                let k = py.first_cell + j;
+                let mean = sum[k] / n as f64;
+                let var = square[k] / n as f64 - mean * mean;
+                assert!(
+                    (mean / mu - 1.0).abs() < 0.03,
+                    "program {c} cell {j}: {mean} {mu}"
+                );
+                assert!(
+                    (var / (program.phi * mu) - 1.0).abs() < 0.08,
+                    "program {c} cell {j}: {var} {}",
+                    program.phi * mu
+                );
+            }
+        }
+    }
+
+    fn year_of_start<'a>(
+        model: &'a HierarchicalBf,
+        tri: &Triangle,
+        panel: &'a Panel,
+    ) -> HierarchicalYear<'a> {
+        let segments = tri.segments("values").unwrap();
+        HierarchicalYear::new(model, &panel.model, tri, &segments, panel.start.clone())
     }
 
     /// A program's next diagonal moves the other programs' closing

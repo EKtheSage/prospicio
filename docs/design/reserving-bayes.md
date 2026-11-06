@@ -4028,6 +4028,30 @@ with one `omega`, (C1), (D2). What building it changed or measured:
   and 8.2 against zero; the opening reserve is the lifetime reserve's
   posterior mean within |z| 2.0. A fit takes about 5.1 s and a refit about
   1.2 s a simulation (40 simulations in 55 s with the fit).
+* **The view is right; the flags come from ages a program never observed**
+  (`knowledge/findings/hierarchical-bf-one-year.md`, tests in
+  `validation/tests/reserving_bayes_hierarchical_bf_one_year.rs`). The mean
+  of the claims development result under refits only (the default here) is
+  zero: over 1,100 simulations on four seeds (the ignored test
+  `refit_only_mean_of_the_cdr`) the total's mean is -72,000 with standard
+  error 2.82 million, z -0.03 (0.03 sd of the total; EVW z 0.00, GenIns
+  -1.15, RAA 0.76; the reweighted view's bias, 0.12 sd, is four times that
+  standard error). The year's likelihood is the model's stated one, checked
+  from the formulas alone and as the difference of the posterior with and
+  without the year (unit test
+  `the_year_likelihood_is_the_stated_likelihood_of_the_year`), and a refit's
+  data are the opening cells plus exactly the year, drawn from the draw's
+  own mean and `phi_c` (`the_extended_data_are_the_opening_cells_and_the_year_and_the_year_is_drawn_from_the_draw`).
+  k is low for each program alone (median 0.11, 0.46, 0.34) and for GenIns
+  with RAA (0.52), and above 3 for every panel with EVW and another program
+  (9 to 46 at 200 draws, 3 to 30 at 2,000): the reference panel's grid has
+  10 ages and EVW stops at 6, so the next diagonal of its older origins falls
+  at ages where only the prior speaks. Cutting every program to 6 ages gives
+  median k 0.47 (0.40 at 2,000 draws) for the same three programs, and
+  the reweighted total is then within 0.06 to 0.10 sd of a refit at 200 draws
+  and 0.04 at 1,000. A panel whose programs stop at different ages gets the
+  expensive view; refusing it, warning, or leaving those ages out of the
+  year is open for the user.
 * **The default fallback stays `MomentMatchThenRefit`.** Matching is
   cheap and rescues nothing on the reference panel, so it refits every
   simulation; `light_refit` and `no_light_refit` are ignored (a refit
@@ -4038,14 +4062,20 @@ with one `omega`, (C1), (D2). What building it changed or measured:
   hours. A warm-started, shorter refit is the follow-up if the user wants the
   default view cheaper.
 * **Conformance.** The unit half (`one_year::conformance::check` on the
-  three programs and on a year without cells) and the validation half
-  (`HIERARCHICAL_REFITS`: 20 simulations, `matches` false, bounds from three
-  seeds: check 1's z below 25 against 5 for the other models, the flagged gap
-  below 2.5 sd, opening z below 6) pass. Check 1 is looser because the
-  reweighting is poor here, which is the finding above and not a defect of
-  the engine. The entry runs under `RISK_RS_FULL_BAYES` only: a fit takes
-  about 5.1 s, not the 2 s open decision 26 asks for, and the entry takes
-  about 5.5 minutes a seed.
+  three programs and on a year without cells) and the validation half pass.
+  The validation half has two entries, both under `RISK_RS_FULL_BAYES` (a
+  fit takes about 5.1 s, not the 2 s open decision 26 asks for). The
+  reference panel keeps `HIERARCHICAL_REFITS` (20 simulations, `matches`
+  false, bounds from three seeds: check 1's z below 25 against 5, the flagged
+  gap below 2.5 sd, opening z below 6; no bound loosened); its looseness is
+  the finding above, not a defect of the engine, and it takes about 5.5
+  minutes a seed. The same programs cut to 6 ages, at 2 chains of 1,000
+  draws (the refit's sampling noise is most of the gap at 200), have the
+  other models' bounds (`HIERARCHICAL_CUT_REFITS`: 40 simulations, unflagged
+  gap 0.08, flagged gap 0.25, z of check 1 and of the opening reserve below
+  6; over seeds 0 to 5: mean z -0.60 with sd 1.13, opening z -0.31 with sd
+  1.15, unflagged gap 0.045 with largest 0.055, flagged gap at most 0.115,
+  0 to 6 of 40 flagged), in about 4 minutes a seed.
 * **Cross-program dependence.** A unit test scales program a's year by 0.8
   and by 1.25 at the posterior mean cells, and program b's and c's closing
   reserves move in step: a higher year in one program raises the industry

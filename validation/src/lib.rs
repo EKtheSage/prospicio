@@ -168,6 +168,18 @@ pub fn triangle_columns(name: &str, columns: &[&str]) -> Triangle {
 /// cut to its first six ages (all ten origins), GenIns with premium, and RAA
 /// with a premium of 40,000 in 1981 rising by 2,000 a year.
 pub fn stan_triangle() -> Triangle {
+    stan_triangle_of(&["evw", "genins", "raa"])
+}
+
+/// [`stan_triangle`] with only the programs named in `keep` (`evw`, `genins`,
+/// `raa`, and `genins2`, a second copy of GenIns), in the reference case's order.
+pub fn stan_triangle_of(keep: &[&str]) -> Triangle {
+    stan_triangle_cut(keep, usize::MAX)
+}
+
+/// [`stan_triangle_of`] with every program cut to at most its first `ages`
+/// ages.
+pub fn stan_triangle_cut(keep: &[&str], ages_kept: usize) -> Triangle {
     let evw = triangle_columns("evw2012", &["paid", "prior"]);
     let genins = triangle_columns("genins_premium", &["paid", "premium"]);
     let raa = triangle("raa");
@@ -197,11 +209,19 @@ pub fn stan_triangle() -> Triangle {
             10,
             Box::new(|w| 40_000.0 + 2_000.0 * w as f64),
         ),
+        // A second copy of GenIns, for diagnostics of the number of programs.
+        (
+            "genins2",
+            &genins,
+            2001,
+            10,
+            Box::new(|w| genins.get(0, 1, w, 0).expect("premium")),
+        ),
     ];
-    for (label, tri, first, ages, prem) in &programs {
+    for (label, tri, first, ages, prem) in programs.iter().filter(|p| keep.contains(&p.0)) {
         let [_, _, n_origins, _] = tri.shape();
         for w in 0..n_origins {
-            for d in 0..*ages {
+            for d in 0..(*ages).min(ages_kept) {
                 if let Some(v) = tri.get(0, 0, w, d) {
                     key.push(*label);
                     origin.push(Month::january(first + w as i32));
