@@ -606,11 +606,16 @@ def test_ils_deal_analysis(monkeypatch, capsys):
     assert "inputs used below" in out
     n = ns["N_SIMS"]
 
-    # The industry prior is a positive level and cv, and the 2026 draws have the mean and cv the cell targets.
-    assert 0.2 < ns["M_PRIOR"] < 0.9 and 0.0 < ns["CV_PRIOR"] < 0.5
-    assert len(ns["LR"]) == n
-    assert sum(ns["LR"]) / n == pytest.approx(ns["MU_2026"], rel=0.03)
-    assert ns["sd"](ns["LR"]) / ns["mean"](ns["LR"]) == pytest.approx(ns["CV_2026"], rel=0.10)
+    # The industry prior from the peers' triangles (#604): every company used, no warning, and the level and the
+    # spreads the generator put in. The 2026 draws come from the fit (#598): the cedant's level, about the prior,
+    # with a pattern for each simulation.
+    prior = ns["prior"]
+    assert prior.report["n_companies_used"] == 12 and prior.report["warnings"] == []
+    assert 0.2 < ns["M_PRIOR"] < 0.9 and 0.0 < ns["CV_PRIOR"] < 0.5 and 0.0 < ns["COMMON_CV"] < 0.5
+    assert prior.pattern.ages == list(range(12, 120, 12))
+    assert len(ns["LR"]) == n and len(ns["paid_draws"]) == n
+    assert ns["year_2026"].origin == "2026"
+    assert 0.3 < ns["mean"](ns["LR"]) < 0.7 and 0.03 < ns["sd"](ns["LR"]) / ns["mean"](ns["LR"]) < 0.4
 
     # The fit: every year has a positive ultimate, and the pattern is a distribution over the ages.
     assert all(m > 0 for m in ns["post_mean"].values())
@@ -651,10 +656,12 @@ def test_ils_deal_analysis(monkeypatch, capsys):
     posted = flat["funded"][i] + flat["opening"][i]
     assert flat["moic"][i] == pytest.approx(1 + sum(flat["flows"][i]) / posted, rel=1e-9)
 
-    # The monthly patterns (#601): a year written evenly, each policy earning over twelve months, losses paid later.
+    # The monthly patterns (#601, #722): a year written evenly through each month, each policy earning over twelve
+    # months, losses paid later, each simulation on its own row (#600) with the terms holding the rows' mean.
     written, earned, paid = ns["written"], ns["earned"], ns["paid"]
     assert written[11] == pytest.approx(1.0) and earned[23] == pytest.approx(1.0)
-    assert earned[11] == pytest.approx(13 / 24)  # each month written at its start: (1 + 2 + ... + 12) / 144
+    assert earned[11] == pytest.approx(0.5)
+    assert all(row[-1] == pytest.approx(paid[-1]) for row in ns["paid_draws"][:20])
     assert all(a <= b + 1e-12 for a, b in zip(earned, earned[1:])) and earned[23:] == pytest.approx([1.0] * (len(earned) - 23))
     assert all(a <= b + 1e-12 for a, b in zip(paid, paid[1:])) and all(p <= e + 1e-12 for p, e in zip(paid, earned))
 
@@ -672,5 +679,5 @@ def test_ils_deal_analysis(monkeypatch, capsys):
     for gap, issue in zip(range(1, 9), range(598, 606)):
         assert re.search(rf"\| G{gap} \|.*\| #{issue} \|", text), gap
     # Each closed issue's row says so: the notebook uses the fix or keeps the workaround with its reason.
-    for gap in (3, 4, 5, 6, 8):
+    for gap in (1, 3, 4, 5, 6, 7, 8):
         assert re.search(rf"\| G{gap} \|[^|]*\| closed;", text), gap

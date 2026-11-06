@@ -16,8 +16,8 @@ The fund asks about the return to its investors. What return does the deal give,
 
 1. read a submission and build the cedant's loss triangle,
 2. show the historical exhibits and test how well a Bayesian model forecasts the cedant's history,
-3. state an industry prior as an explicit input, and fit the cedant's ultimates against it,
-4. draw the 2026 loss ratio, and apply the reinsurance structure, the collateral and the cash flows to it,
+3. estimate an industry prior from peer triangles, and fit the cedant's ultimates against it,
+4. draw the 2026 loss ratio from the fit, and apply the reinsurance structure, the collateral and the cash flows to it,
 5. read the investor's IRR, MOIC and downside from the simulations, and compare two structures,
 6. after binding, compare the next diagonal of actual losses with the one-year forecast.
 
@@ -141,37 +141,48 @@ print(backtest@mean, row.names = FALSE)
 if (nrow(backtest@warnings)) print(backtest@warnings)
 ```
 
-## 3. The industry prior as an explicit input
+## 3. The industry prior
 
-The analyst writes a prior for the ultimate loss ratio, with a stated strength, as a **prior mean `m` and coefficient of variation `cv`**. `prospicio` estimates them from several programs with `hierarchical_credibility()` (Buhlmann-Straub with a normal prior on the collective mean).
+`industry_prior()` estimates an outside view of the line from other companies' triangles of the same line (#604): the mean ultimate loss ratio (`apriori`), how far a company's level strays from it (`between_cv`), how far an origin strays from its company (`cv`), and a prior on the development pattern. [`reserving-industry-prior.qmd`](../docs/guides/reserving-industry-prior.qmd) builds one from a Schedule P line, and tests it on held-out companies.
 
-The peer programs below are **synthetic** (#599, #604). A fixed low-discrepancy sequence draws them, so that this document has the numbers of the notebook. There are twelve programs with eight years of loss ratios and premium weights. The method is real. The collective mean and the distribution of the expected loss ratio of a program give `m` and `cv`. The prior on the collective mean (`collective_mean = c(0.50, 0.10)`) is the analyst's judgment about the line.
+The peer triangles below are **synthetic**, so that the document runs without the fetch. A fixed low-discrepancy sequence draws them, so that this document has the numbers of the notebook. There are twelve companies with nine accident years at nine ages (the ages of the fit in section 4, since the pattern prior's ages must be the triangle's). Each has its own level, its own pattern and noise in each cell. With real data, replace `peers` with the companies' triangles and premiums. The method is the same.
 
 ```{r}
 #| label: prior
 N_PEERS <- 12
-N_PEER_YEARS <- 8
-peer_mean <- 0.48 + 0.06 * normal(0:(N_PEERS - 1))
-peer_weight <- t(sapply(0:(N_PEERS - 1), function(i) 0.5 + 1.5 * uniform(100 + i * N_PEER_YEARS + 0:(N_PEER_YEARS - 1))))
-peer_ratio <- t(sapply(0:(N_PEERS - 1), function(i) {
-  j <- 0:(N_PEER_YEARS - 1)
-  peer_mean[i + 1] + 0.08 / sqrt(peer_weight[i + 1, j + 1]) * normal(1000 + i * N_PEER_YEARS + j)
-}))
+PEER_AGES <- 12 * 1:9
+PEER_SHARES <- c(0.38, 0.33, 0.16, 0.07, 0.03, 0.015, 0.008, 0.004, 0.003)  # the line's incremental pattern
 
-industry <- do.call(hierarchical_credibility,
-                    c(list(peer_ratio, peer_weight, collective_mean = c(0.50, 0.10), seed = SEED), SAMPLER))
-# The risk premiums of all groups pooled: the distribution of a program's expected loss ratio in this market.
-pooled <- as.numeric(draw_matrix(credibility_predictive(industry, n_sims = 2000, seed = SEED)))
-M_PRIOR <- mean(pooled)
-CV_PRIOR <- sd_pop(pooled) / M_PRIOR
-cat(sprintf("collective mean %.3f; a program's expected loss ratio: mean %.3f, sd %.3f, cv %.3f\n",
-            industry$collective_mean, M_PRIOR, sd_pop(pooled), CV_PRIOR))
-cat(sprintf("inputs used below: m = %.3f, cv = %.3f\n", M_PRIOR, CV_PRIOR))
+# One company: a level, a pattern, an origin effect and noise in each cell, from the fixed sequence.
+peer <- function(i) {
+  level <- 0.48 + 0.06 * normal(i)
+  shares <- PEER_SHARES * exp(0.10 * normal(50 + 9 * i + 0:8))
+  shares <- shares / sum(shares)
+  premium <- 1e8 * (0.5 + 1.5 * uniform(500 + 9 * i + 0:8))
+  rows <- do.call(rbind, lapply(0:8, function(w) {
+    ratio <- level * (1 + 0.12 * normal(1000 + 9 * i + w))
+    d <- 0:(8 - w)
+    cells <- premium[w + 1] * ratio * shares[d + 1] * exp(0.05 * normal(2000 + 81 * i + 9 * w + d))
+    data.frame(origin = 2016 + w, age = PEER_AGES[d + 1], paid = cumsum(cells))
+  }))
+  list(triangle = triangle(rows, "origin", "age", "paid"), premium = premium)
+}
+
+peers <- lapply(0:(N_PEERS - 1), peer)
+prior <- industry_prior(lapply(peers, `[[`, "triangle"), "paid", premiums = lapply(peers, `[[`, "premium"))
+M_PRIOR <- prior@apriori
+CV_PRIOR <- prior@cv
+COMMON_CV <- prior@common_cv
+cat(sprintf("%d companies, %d origins; warnings: %s\n", prior@report$n_companies_used, prior@report$n_origins_used,
+            if (length(prior@report$warnings)) paste(prior@report$warnings, collapse = "; ") else "none"))
+cat(sprintf("inputs used below: apriori %.3f (se %.3f), cv %.3f, common cv %.3f\n",
+            M_PRIOR, prior@apriori_se, CV_PRIOR, COMMON_CV))
+cat("prior percent developed:", paste(sprintf("%.0f%%", 100 * prior@percent_developed), collapse = ", "), "\n")
 ```
 
 ## 4. The cedant's ultimates against that prior
 
-`bayes_bf_normalised()` is the Bayesian Bornhuetter-Ferguson with the prior on the **expected ultimate** of each accident year. `apriori` is the expected ultimate loss ratio, and `cv` sets how firmly the model holds it. The model fits the **paid** triangle on on-level premium, so that its pattern is the payment pattern that the cash flows need.
+`bayes_bf_normalised()` is the Bayesian Bornhuetter-Ferguson with the prior on the **expected ultimate** of each accident year. `apriori` is the expected ultimate loss ratio, `cv` sets how firmly the model holds each year to the cedant's level, and `common_cv` sets how far that level may stray from `apriori`, one error shared by all the years. The pattern prior takes the place of a vague prior on the shares. `bayes_bf_industry()` fits it under the prior of section 3. The model fits the **paid** triangle on on-level premium, so that its pattern is the payment pattern that the cash flows need.
 
 The model has no tail beyond the last age. The chunk drops the oldest age for three reasons:
 
@@ -185,9 +196,8 @@ fit_rows <- tri_rows[tri_rows$development_months <= 108, ]
 build <- function(rows) triangle(rows, "accident_year", "development_months", c("paid", "onlevel"))
 newest <- !duplicated(fit_rows$accident_year, fromLast = TRUE)
 latest_fit <- setNames(fit_rows$paid[newest], fit_rows$accident_year[newest])
-fit <- do.call(bayes_bf_normalised,
-               c(list(build(fit_rows), "paid", "onlevel", apriori = M_PRIOR, cv = CV_PRIOR, n_sims = N_SIMS,
-                      seed = SEED), SAMPLER))
+fit <- do.call(bayes_bf_industry,
+               c(list(build(fit_rows), "paid", "onlevel", prior, n_sims = N_SIMS, seed = SEED), SAMPLER))
 
 origins <- as.integer(fit@origins)
 exposure <- setNames(fit@exposure, origins)
@@ -207,29 +217,18 @@ cat("sampler diagnostics: max R-hat", format(fit@diagnostics$max_rhat), "\n")
 
 ## 5. The 2026 loss ratio
 
-The model forecasts the cells of the years in the triangle. Section 4 reads a loss ratio for each simulation with `loss_ratio_draws()`: latest paid plus the reserve of that simulation, divided by premium (#602). For 2026, a new accident year, the chunk below uses a **lognormal** (#598).
+The model forecasts the cells of the years in the triangle. Section 4 reads a loss ratio for each simulation with `loss_ratio_draws()`: latest paid plus the reserve of that simulation, divided by premium (#602). For 2026, a year that is not in the triangle, `bayes_new_year()` draws the posterior predictive (#598). Each simulation takes a posterior draw of the cedant's level (the common multiplier), draws the year's expected ultimate about it with the prior's `cv`, and adds process error. The draws are paired row by row with the pattern of the same posterior draw, which section 7 uses.
 
-The mean of the lognormal is the average of the posterior mean ultimate loss ratios of the last five years. Loss ratios increase over the ten years and the model has no trend, so older years would understate 2026. The coefficient of variation combines three parts:
-
-* the spread of the means of those five years,
-* the average posterior cv of one year,
-* the cv of the industry prior, as the uncertainty about the level in 2026.
-
-The lognormal is a substitute for a predictive distribution.
+Without `common_cv` the new year would be the prior itself, whatever the triangle says. With it, the level is the cedant's own, pooled over all the years. **The model has no trend.** The chunk prints the mean of the last five years beside the forecast: loss ratios have increased over the ten years, so a level pooled over all of them can understate 2026. The returns in section 8 rest on this forecast, so they flatter the deal by that gap, and a reviewer should challenge it.
 
 ```{r}
 #| label: loss-ratio
+year_2026 <- bayes_new_year(fit, P_2026, n_sims = N_SIMS, seed = SEED)
+LR <- as.vector(draw_matrix(year_2026@loss_ratio))  # the 2026 ultimate loss ratio, one per simulation
 RECENT <- as.character(tail(origins, 5))
-MU_2026 <- mean(post_mean[RECENT])
-CV_BETWEEN <- sd_pop(post_mean[RECENT]) / MU_2026
-CV_WITHIN <- sqrt(mean(post_cv[RECENT]^2))
-CV_LEVEL <- CV_PRIOR
-CV_2026 <- sqrt(CV_BETWEEN^2 + CV_WITHIN^2 + CV_LEVEL^2)
-sigma <- sqrt(log(1 + CV_2026^2))
-mu <- log(MU_2026) - sigma^2 / 2
-LR <- exp(mu + sigma * normal(10000 + 0:(N_SIMS - 1)))  # the 2026 ultimate loss ratio, one per simulation
-cat(sprintf("2026 loss ratio: mean %.3f (target %.3f), cv %.3f (between years %.3f, within a year %.3f, level %.3f)\n",
-            mean(LR), MU_2026, sd_pop(LR) / mean(LR), CV_BETWEEN, CV_WITHIN, CV_LEVEL))
+MU_RECENT <- mean(post_mean[RECENT])
+cat(sprintf("%s loss ratio: mean %.3f, cv %.3f; the last five years' posterior mean %.3f, the prior %.3f\n",
+            year_2026@origin, mean(LR), sd_pop(LR) / mean(LR), MU_RECENT, M_PRIOR))
 cat("percentiles 5, 50, 95:", paste(sprintf("%.3f", sort(LR)[floor(N_SIMS * c(0.05, 0.5, 0.95)) + 1]), collapse = ", "), "\n")
 ```
 
@@ -276,8 +275,8 @@ cat("ceded premium", money(CEDED_PREMIUM), "\n")
 
 The money moves monthly. The parts:
 
-* **Payment pattern.** The factors of the paid chain ladder give the share of the ultimate loss paid by each age. `cashflow_terms()` takes cumulative *monthly* shares. `cashflow_patterns_from_annual()` makes the written, earned and paid shares from the annual pattern (#601): the losses occur as the premium earns, and each month's losses are paid on the pattern from their accident date, read linearly between its ages. The chain ladder's pattern is an *accident-year* pattern, measured from the start of the year, so reading it from each accident date pays somewhat slowly: 7% of the ultimate by month 12. The exact route converts the pattern to an underwriting year (`monthly_pattern_draws(fit, 120, basis = underwriting_basis())`, as many months as the converted pattern needs to reach 1), which pays 15% by month 12 and moves the median IRR by about 2 points; it reads every simulation's pattern, and the conversion of one pattern is #722. All simulations use the same pattern on purpose: the loss ratios `LR` are lognormal draws around the fit, and they are not paired row by row with its simulations. When the losses come from the same fit, `monthly_pattern_draws()` gives a monthly pattern for each simulation, and `cashflow_run(paid_patterns =)` pays each simulation on its own (#673).
-* **Premium.** The cedant writes premium evenly over 2026 and collects it as written. Each policy earns over twelve months, so a year of policies written evenly earns over 24 months and is fully earned after that. (Before `cashflow_patterns_from_annual()`, a hand-written formula here let the earned share fall after month 24, which inflated the unearned premium, the collateral and the capital called: at 2,000 simulations the flat structure's median IRR was 18% where it is 40% now.)
+* **Payment pattern.** Each simulation pays on its own pattern (#600, #673). `monthly_pattern_draws(year_2026, 120, basis = underwriting_basis())` reads the pattern of each simulation's posterior draw, paired row by row with `LR`, month by month for a year of policies written evenly through 2026, each earning over twelve months (#722). The rows run for as many months as the converted patterns need to reach 1, though the deal commutes at month 60. `cashflow_run(paid_patterns =)` pays each simulation on its row. The terms' own paid pattern, the mean of the rows, is what `deal_ave()` compares with in section 10.
+* **Premium.** The cedant writes premium evenly over 2026 and collects it as written. Each policy earns over twelve months, so a year of policies written evenly earns over 24 months and is fully earned after that. The written and earned shares are on the same basis as the paid rows.
 * **Collateral.** The trust must hold 30% of the unearned premium plus 125% of the outstanding loss (the ultimate loss of the deal less paid to date).
 * **Yield, expenses and commutation.** The trust earns 3% a year, and expenses are 0.5% a year of the requirement. At month 60 the deal commutes.
 
@@ -287,13 +286,15 @@ The cash-flow engine takes the ultimate loss ratio of the **deal** in each simul
 #| label: cashflows
 T_MONTHS <- 60
 pattern <- payment_pattern_from_development(AGES / 12, c(pmax(1, CDF[-length(CDF)]), 1))
-# Premium written evenly over 2026, each policy earning over twelve months; losses paid from their accident date.
-patterns <- cashflow_patterns_from_annual(pmin(1, seq_len(T_MONTHS) / 12), pattern)
-written <- patterns$written
-earned <- patterns$earned
-paid <- patterns$paid
+MONTHS <- 120  # the rows run until the last converted pattern reaches 1
+# Premium written evenly over 2026, each policy earning over twelve months; each simulation paid on its own row.
+basis <- underwriting_basis()
+paid_draws <- monthly_pattern_draws(year_2026, MONTHS, basis = basis)
+written <- pmin(1, seq_len(MONTHS) / 12)
+earned <- pmin(1, cumsum(c(basis$exposure, rep(0, MONTHS - length(basis$exposure)))))
+paid <- colMeans(paid_draws)
 duration <- sum(pattern$times * pattern$shares)
-cat(sprintf("payment pattern: mean time to payment %.2f years; paid by month 12, 24, 60: %.1f%%, %.1f%%, %.1f%%\n",
+cat(sprintf("chain ladder pattern: mean time to payment %.2f years; mean of the drawn patterns, paid by month 12, 24, 60: %.1f%%, %.1f%%, %.1f%%\n",
             duration, 100 * paid[12], 100 * paid[24], 100 * paid[60]))
 
 requirement <- cashflow_requirement(c("unearned-premium" = 0.30, outstanding = 1.25))
@@ -311,7 +312,7 @@ run_structure <- function(u, commission) {
   opening <- numeric(length(u))
   for (g in names(groups)) {
     index <- groups[[g]]
-    out <- cashflow_run(make_terms(as.numeric(g)), u[index])
+    out <- cashflow_run(make_terms(as.numeric(g)), u[index], paid_patterns = paid_draws[index, , drop = FALSE])
     flows[index, ] <- out$flows
     funded[index] <- out$funded
     opening[index] <- out$opening
@@ -416,8 +417,8 @@ opening_rows <- fit_rows[valuation_year(fit_rows) < last, ]
 newest_open <- !duplicated(opening_rows$accident_year, fromLast = TRUE)
 paid_open <- setNames(opening_rows$paid[newest_open], opening_rows$accident_year[newest_open])
 
-view <- do.call(bayes_bf_normalised_one_year,
-                c(list(build(opening_rows), "paid", "onlevel", apriori = M_PRIOR, cv = CV_PRIOR, n_sims = N_ONE_YEAR,
+view <- do.call(bayes_bf_industry_one_year,
+                c(list(build(opening_rows), "paid", "onlevel", prior, n_sims = N_ONE_YEAR,
                        seed = SEED, one_year_sims = N_ONE_YEAR), SAMPLER))
 cdr <- total(view@cdr)@draws
 
@@ -473,11 +474,11 @@ The table lists each step that works around a gap in `prospicio`, with the issue
 
 | Ref | Step in this document | Status | Issue |
 |---|---|---|---|
-| G1 | the lognormal for 2026 in section 5 | open | #598 |
-| G2 | the synthetic peers in section 3 | open | #599 |
-| G3 | one payment pattern for all simulations in section 7 | closed; kept, because the 2026 loss ratios are not the fit's simulations (section 7 names the fix) | #600 |
-| G4 | the monthly patterns in section 7 | closed; `cashflow_patterns_from_annual()` used, which also corrects the earned pattern; paid is read from the accident date (section 7, #722) | #601 |
+| G1 | the 2026 loss ratio in section 5 | closed; `bayes_new_year()` used, which has no trend (section 5 prints the gap) | #598 |
+| G2 | one program fitted under a fixed prior in sections 3 and 4, not several pooled | open | #599 |
+| G3 | one payment pattern for all simulations in section 7 | closed; each simulation pays on its own pattern, `monthly_pattern_draws(year_2026, ...)` | #600 |
+| G4 | the monthly patterns in section 7 | closed; `monthly_pattern_draws()` on the underwriting basis used (section 7, #722) | #601 |
 | G5 | the loss ratio draws in section 4 | closed; `loss_ratio_draws()` used | #602 |
 | G6 | the deal's paid against its simulations in section 10 | closed; `deal_ave()` used | #603 |
-| G7 | the prior inputs in section 3 | open | #604 |
+| G7 | the prior inputs in section 3 | closed; `industry_prior()` used, on synthetic peers so that the document needs no fetch | #604 |
 | G8 | the printout in section 11 | closed; the report tables and templates of `submission-schema.md` | #605 |

@@ -122,6 +122,7 @@ Read in order; each page builds on the one before it.
 | [`reserving-compartmental.md`](reserving-compartmental.md) | Gesmann and Morris' hierarchical compartmental models 1 and 2 on company 337: paid and outstanding as two compartments with reporting and payment rates, the prior predictive check, both fits with the paper's printed posteriors beside prospicio's, the fitted development and test diagonal, the reserve against the outcome, why their elpd_loo values do not compare, and the one-year view |
 | [`reserving-friedland.md`](reserving-friedland.md) | Friedland's *Estimating Unpaid Claims Using Basic Techniques* (CAS) reproduced on its own data: age-to-age averages and selected factors, the development, expected claims, Bornhuetter-Ferguson, Benktander and Cape Cod techniques on U.S. Industry Auto and XYZ Insurer, and the book's reasonableness checks, with its printed ultimates and IBNR beside prospicio's and the rounding conventions that explain every difference |
 | [`reserving-taylor-mcguire.md`](reserving-taylor-mcguire.md) | CAS Monograph 3 (Taylor and McGuire) reproduced: the chain ladder as an over-dispersed Poisson GLM, its prediction error by the delta method and the parametric bootstrap, residual diagnostics and heat maps, and the reduced models with accident-year and development-year curves and interactions, with the monograph's printed numbers beside prospicio's |
+| [`reserving-industry-prior.md`](reserving-industry-prior.md) | An industry prior for a thin program from a Schedule P line fetched at run time: one triangle per company, `IndustryPrior` and its report, what `min_developed` and `subtract_process` change, a four-origin program with `at_age` and the tail outside the model, and every company of four lines held out in turn: the prior steadies a weak triangle, gains little on the chain ladder, and its intervals are too narrow |
 | [`reserving-excess-layers.md`](reserving-excess-layers.md) | Excess-layer loss development: why a layer develops slowly and its own triangle is sparse, layer factors from the ground-up triangle and a severity (scale shift, Pareto shape drift) with Bloom and Patrik's, Pinto and Gogol's and Bear's printed factors beside prospicio's, the derived pattern in the chain ladder, Mack, BF and Cape Cod, credibility blending with the layer's own development, and a BF prior from the layer share, Bayesian with `LayerSharePrior` |
 
 ## R versions
@@ -157,6 +158,7 @@ twins in [`examples/`](../../examples/README.md):
 | [`pir-risk-measures.qmd`](pir-risk-measures.qmd) | `pir-risk-measures.md` |
 | [`reserving-compartmental.qmd`](reserving-compartmental.qmd) | `reserving-compartmental.md` |
 | [`reserving-excess-layers.qmd`](reserving-excess-layers.qmd) | `reserving-excess-layers.md` |
+| [`reserving-industry-prior.qmd`](reserving-industry-prior.qmd) | `reserving-industry-prior.md` |
 | [`cat-0-overview.qmd`](cat-0-overview.qmd) | `cat-0-overview.md` |
 | [`cat-1-loss-tables.qmd`](cat-1-loss-tables.qmd) | `cat-1-loss-tables.md` |
 | [`cat-2-risk-metrics.qmd`](cat-2-risk-metrics.qmd) | `cat-2-risk-metrics.md` |
