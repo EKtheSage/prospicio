@@ -447,27 +447,47 @@ fn buhlmann_straub(seed: u64, verbose: bool) -> Shrinkage {
 
 /// Item 2's checks. Against `credibility_premiums` at the sampled model's
 /// own structure (its fixed within variance, each draw of `tau^2`) the
-/// shrinkage is Buhlmann-Straub's: over seeds 1 to 6 the pooled slope is
-/// within 0.013 of the mean credibility factor, each program's posterior mean
-/// within 0.19 sd and its `Z` within 0.072; the tolerances are 0.03, 0.25 sd
-/// and 0.10, at least 1.3 times the largest. The note proposed 0.1 sd and
-/// 0.05; 0.1 sd was exceeded on three seeds (the programs' `Z` is a ratio of
-/// two small numbers) and is not claimed.
+/// shrinkage is Buhlmann-Straub's: over seeds 1 to 6 (the sampler's defaults,
+/// target accept 0.99, no divergence and no warning; measured) the pooled
+/// slope is within 0.0195 of the mean credibility factor, each program's
+/// posterior mean within 0.156 sd and its `Z` within 0.058; the tolerances are
+/// 0.03, 0.25 sd and 0.10, at least 1.5 times the largest. The note proposed
+/// 0.1 sd and 0.05; 0.1 sd was exceeded on three seeds (the programs' `Z` is a
+/// ratio of two small numbers) and is not claimed.
 ///
 /// Against `HierarchicalCredibility`'s own posterior (the note's check) the
 /// agreement is looser, because it estimates the within variance from the 80
 /// degrees of freedom of the data (0.0076 to 0.0113 over the seeds) where this
-/// model fixes it at the log gamma's 0.01005: `Z` differs by up to 0.15 and
-/// the means by up to 0.40 sd, so those are only guarded (0.6 sd, 0.2).
+/// model fixes it at the log gamma's 0.01005: `Z` differs by up to 0.15, the
+/// means by up to 0.41 sd and the pooled slope by up to 0.13 (measured), so
+/// those are only guarded (0.6 sd, 0.2).
+///
+/// A pull request checks seed 1; `RISK_RS_FULL_BAYES` checks all six.
 #[test]
 fn shrinkage_is_buhlmann_straub() {
-    let s = buhlmann_straub(1, true);
-    assert_eq!(s.divergences, 0);
-    assert!(s.mean_gap < 0.25, "mean gap {} sd", s.mean_gap);
-    assert!(s.z_gap < 0.10, "Z gap {}", s.z_gap);
-    assert!(s.slope_gap < 0.03, "pooled slope gap {}", s.slope_gap);
-    assert!(s.hc_mean_gap < 0.6, "gap to HC {} sd", s.hc_mean_gap);
-    assert!(s.hc_slope_gap < 0.2, "slope gap to HC {}", s.hc_slope_gap);
+    // Seed 1 in a pull request, all six under `RISK_RS_FULL_BAYES`.
+    let seeds = if full_bayes() { 1..=6 } else { 1..=1 };
+    for seed in seeds {
+        let s = buhlmann_straub(seed, seed == 1);
+        assert_eq!(s.divergences, 0, "seed {seed}");
+        assert!(s.mean_gap < 0.25, "seed {seed}: mean gap {} sd", s.mean_gap);
+        assert!(s.z_gap < 0.10, "seed {seed}: Z gap {}", s.z_gap);
+        assert!(
+            s.slope_gap < 0.03,
+            "seed {seed}: pooled slope gap {}",
+            s.slope_gap
+        );
+        assert!(
+            s.hc_mean_gap < 0.6,
+            "seed {seed}: gap to HC {} sd",
+            s.hc_mean_gap
+        );
+        assert!(
+            s.hc_slope_gap < 0.2,
+            "seed {seed}: slope gap to HC {}",
+            s.hc_slope_gap
+        );
+    }
 }
 
 /// The seed variation behind item 2's tolerances (`--ignored --nocapture`).
@@ -676,13 +696,16 @@ fn assert_recovery(study: &Study, programs: usize) {
 /// with R-hat below 1.05; five panels cannot test coverage), and the
 /// 100-panel study of each under `RISK_RS_FULL_BAYES`.
 ///
-/// Recorded run (default seeds `10_000 * programs + index`): 5 programs, the
-/// 90% interval covered `L` 83, `tau` 87 and `omega` 89 times in 100, the
-/// rank chi-squares were 14.2, 12.8 and 7.4 (p 0.12, 0.17, 0.60), 174
-/// divergent transitions in 100 fits and 55 fits with a sampler warning
-/// (mostly `log_tau`); 20 programs, 89, 93 and 88, chi-squares 10.6, 4.4 and
-/// 7.8 (p 0.30, 0.88, 0.55), no divergent transition and 5 fits with a
-/// warning.
+/// Recorded run (measured, default seeds `10_000 * programs + index`, the
+/// defaults with target accept 0.99): 5 programs, the 90% interval covered
+/// `L` 85, `tau` 89 and `omega` 90 times in 100, the rank chi-squares were
+/// 6.4, 12.6 and 7.4 (p 0.70, 0.18, 0.60), 1 divergent transition in 100 fits
+/// and 29 fits with a sampler warning (mostly `log_tau`); 20 programs, 88, 95
+/// and 88, chi-squares 10.6, 11.6 and 7.6 (p 0.30, 0.24, 0.58), no divergent
+/// transition and 11 fits with a warning (`log_tau` and, in a few, `z`). The
+/// five panels of the pull request's run had no divergence and one fit with a
+/// warning (R-hat 1.011 on two coordinates) among the 5-program panels, none
+/// among the 20-program panels.
 #[test]
 fn recovery_of_the_hyperparameters() {
     let n = if full_bayes() { 100 } else { 5 };
@@ -692,8 +715,9 @@ fn recovery_of_the_hyperparameters() {
             assert_recovery(&study, programs);
         } else {
             // The sampler's thresholds are strict for tau of five programs
-            // (R-hat 1.01 to 1.02 and a divergence in 4 of 5 fits): the
-            // smoke run guards against a failed sampler, not a marginal one.
+            // (29 of 100 fits warned, all R-hat or ESS marginally past the
+            // limit): the smoke run guards against a failed sampler, not a
+            // marginal one.
             assert!(
                 study.max_rhat < 1.05,
                 "{programs} programs: R-hat {}",
@@ -705,7 +729,7 @@ fn recovery_of_the_hyperparameters() {
                 study.min_ess
             );
             assert!(
-                study.divergences <= n * 5,
+                study.divergences <= 2,
                 "{programs} programs: {} divergences",
                 study.divergences
             );
@@ -853,6 +877,14 @@ fn thin_panel(index: usize, separate: &BayesBfNormalised) -> Thin {
 /// fit's is below in about half of the programs) and per root scale, which is
 /// what the data's information fixes (asserted: below in every program). The
 /// mean is asserted to be closer to the true expected reserve on average.
+///
+/// Measured over four groups of 40 panels (offsets 0, 40, 80 and 120; the
+/// defaults with target accept 0.99): per root scale the hierarchical sd was
+/// below in 111 to 116 of 120 programs (asserted: 80%), the sd ratio averaged
+/// 0.773 to 0.795 (asserted: below 0.9; largest ratio 1.08 to 1.22), the mean
+/// was closer to the truth in 80 to 84 programs, and the mean absolute error
+/// was 0.0229 to 0.0269 of the premium against 0.0327 to 0.0383 for the
+/// separate fits (ratio 0.66 to 0.75; asserted: below 0.85).
 fn thin_programs(n: usize, offset: usize) {
     let separate = BayesBfNormalised {
         apriori: 1.0,
@@ -1094,39 +1126,90 @@ fn stan_value(fit: &HierarchicalBfFit, q: &str, arg: &str) -> Option<f64> {
     })
 }
 
-/// The same model in Stan (CmdStan 2.39.0, `reference/reserving_hierarchical_bf_stan.csv`,
-/// 4 chains of 10,000 draws, no divergence, R-hat at most 1.0005): the
-/// plugged-in scales (rel 1e-9, so the formula `phi_c = kappa Pbar_c` is the
-/// runner's), the hyperparameters, each program's loss ratio and shares (the
-/// shares of EVW's ages 7 to 10, which it never observes, among them) and the
-/// reserves by origin and program and in total. Our side runs the defaults
-/// (4 chains of 1,000 draws, 10,000 simulations, seed 0). With `s` Stan's
-/// posterior sd: means within `0.25 s`, sds within 25% (70% for EVW's loss
-/// ratio and reserves and the totals, whose tail is heavy), reserve
-/// percentiles within `0.8 s`. Over seeds 0 to 23 (`seed_sweep`) the largest
-/// errors were `0.116 s`, 14% (45%) and `0.40 s`, so the tolerances are at
-/// least 1.5 times them. Seed 0 passes every row.
+/// The same model in Stan (CmdStan 2.39.0, `reference/reserving_hierarchical_bf_stan.csv`):
+/// the plugged-in scales (rel 1e-9, so the formula `phi_c = kappa Pbar_c` is
+/// the runner's), the hyperparameters, each program's loss ratio and shares
+/// (the shares of EVW's ages 7 to 10, which it never observes, among them)
+/// and the reserves by origin and program and in total. The reference pools 8
+/// Stan runs of 4 chains of 10,000 draws (seeds 20261105 to 20261112, no
+/// divergence but one in 320,000 draws, R-hat at most 1.0008 in each), so
+/// that its own Monte Carlo error is not spent from the tolerances. Our side
+/// runs the defaults (4 chains of 1,000 draws, 10,000 simulations, seed 0).
 ///
-/// The defaults do not pass the sampler's thresholds on this case for most
-/// seeds (20 of 24 had a warning: R-hat 1.01 to 1.02 on `log_omega`,
-/// `log_tau` or `z`, bulk ESS 357 to 495, up to 7 divergent transitions in
-/// 4,000), so only gross failures are asserted: R-hat below 1.05, ESS above
-/// 100 and at most 1% divergent transitions.
+/// With `s` Stan's posterior sd the tolerances are means within `0.12 s`,
+/// sds within 14% (30% for EVW's loss ratio and reserves and the totals,
+/// whose tail is heavy), the 5% and 50% percentiles of the reserves within
+/// `0.10 s`, the 95% within `0.26 s` (`0.9 s` for EVW's reserves and the
+/// totals). Over seeds 0 to 23 (`seed_sweep`) the largest errors were
+/// `0.080 s`, 9% (19.6%), `0.062 s`, `0.172 s` and `0.621 s`, so each
+/// tolerance is at least 1.5 times its family's worst (measured). Seed 0
+/// passes every row, at most `0.048 s`, 3.1% (9.3%), `0.085 s` (`0.135 s`)
+/// of them.
+///
+/// A row-by-row tolerance cannot see a bias of 10% in the sds (the worst
+/// sd error of a single row is 9%), so the mean signed relative error of the
+/// sds is asserted as well: over the sds that are not heavy-tailed (the
+/// hyperparameters, shares, GenIns' and RAA's loss ratios and reserves) it
+/// was within `0.009` of zero on every seed and is bounded by `0.03`, which
+/// catches a 10% (and a 5%) bias; over the heavy-tailed sds (EVW's loss
+/// ratio and reserves and the totals) it averaged -0.037 (standard
+/// deviation 0.091 from seed to seed, from -0.160 to 0.187) and is bounded
+/// by `0.28`, which catches only a bias of about 30%.
+///
+/// The sampler's defaults now pass the thresholds on this case: over seeds 0
+/// to 23 no seed had a divergent transition, the largest R-hat was 1.0104 and
+/// the smallest bulk and tail ESS were 673 and 602. One seed in 24 had a
+/// warning (seed 0, the test's own: R-hat 1.0104 on `alpha[1,3]`, just above
+/// the threshold of 1.01), so the test asserts no divergence, R-hat below
+/// 1.02 and ESS above 400 (the warning's own limit, 100 a chain), not an
+/// empty list of warnings.
 #[test]
 fn stan_parity() {
     let fit = stan_fit(0);
     let d = &fit.diagnostics;
-    assert!(d.max_rhat < 1.05, "{d:?}");
-    assert!(d.min_ess_bulk > 100.0 && d.min_ess_tail > 100.0, "{d:?}");
-    assert!(d.divergences <= 40, "{d:?}");
+    assert_eq!(d.divergences, 0, "{d:?}");
+    assert!(d.max_rhat < 1.02, "{d:?}");
+    assert!(d.min_ess_bulk > 400.0 && d.min_ess_tail > 400.0, "{d:?}");
     let cases = reference("reserving_hierarchical_bf_stan.csv");
     check(&cases, |case| {
         stan_value(&fit, case.get("quantity"), case.get("arg"))
     });
+    let (light, heavy) = sd_bias(&fit, &cases);
+    eprintln!(
+        "mean signed relative sd error: {light:.4} (not heavy-tailed), {heavy:.4} (heavy-tailed)"
+    );
+    assert!(light.abs() < 0.03, "sd bias {light}");
+    assert!(
+        heavy.abs() < 0.28,
+        "sd bias of the heavy-tailed sds {heavy}"
+    );
+}
+
+/// The mean over the reference's sd rows of `got / expected - 1`, for the rows
+/// that are not heavy-tailed and for those that are (EVW's loss ratio and
+/// reserves and the totals).
+fn sd_bias(fit: &HierarchicalBfFit, cases: &[prospicio_validation::Case]) -> (f64, f64) {
+    let (mut light, mut heavy) = (vec![], vec![]);
+    for case in cases {
+        let (q, arg) = (case.get("quantity"), case.get("arg"));
+        if !q.ends_with("_sd") {
+            continue;
+        }
+        let expected = case.number("expected").expect("expected");
+        if expected == 0.0 {
+            continue;
+        }
+        let got = stan_value(fit, q, arg).expect("a row");
+        let error = got / expected - 1.0;
+        let is_heavy = (q == "ratio_sd" && arg == "evw")
+            || (q == "reserve_sd" && (arg.starts_with("evw") || arg == "total"));
+        if is_heavy { &mut heavy } else { &mut light }.push(error);
+    }
+    (mean(&light), mean(&heavy))
 }
 
 /// The seed variation behind the parity tolerances: every reference row for
-/// seeds `0..HBF_SEEDS` (default 20), written to `target/hbf_sweep.csv`
+/// seeds `0..HBF_SEEDS` (default 24), written to `target/hbf_sweep.csv`
 /// (`seed,quantity,arg,got,expected,abs_tol,rel_tol`). Run in release:
 /// `cargo test --release -p prospicio-validation --features slow-bayes --test
 /// reserving_bayes_hierarchical_bf seed_sweep -- --ignored --nocapture`.
@@ -1136,14 +1219,28 @@ fn seed_sweep() {
     let seeds: u64 = std::env::var("HBF_SEEDS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(20);
+        .unwrap_or(24);
     let cases = reference("reserving_hierarchical_bf_stan.csv");
+    let mut diagnostics = String::from(
+        "seed,divergences,max_rhat,min_ess_bulk,min_ess_tail,warnings
+",
+    );
     let mut out = String::from(
         "seed,quantity,arg,got,expected,abs_tol,rel_tol,warnings
 ",
     );
     for seed in 0..seeds {
         let fit = stan_fit(seed);
+        let d = &fit.diagnostics;
+        diagnostics.push_str(&format!(
+            "{seed},{},{},{},{},{}
+",
+            d.divergences,
+            d.max_rhat,
+            d.min_ess_bulk,
+            d.min_ess_tail,
+            d.warnings.len()
+        ));
         for case in &cases {
             let (q, arg) = (case.get("quantity"), case.get("arg"));
             let got = stan_value(&fit, q, arg).expect("a row");
@@ -1159,5 +1256,10 @@ fn seed_sweep() {
     }
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/hbf_sweep.csv");
     std::fs::write(&path, out).expect("writes the sweep");
+    std::fs::write(
+        path.with_file_name("hbf_sweep_diagnostics.csv"),
+        diagnostics,
+    )
+    .expect("writes the diagnostics");
     eprintln!("wrote {}", path.display());
 }

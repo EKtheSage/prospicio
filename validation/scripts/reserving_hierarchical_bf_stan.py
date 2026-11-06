@@ -50,11 +50,14 @@ ROOT = Path(__file__).resolve().parents[2]
 STAN = ROOT / "validation/scripts/stan/hierarchical_bf.stan"
 OUT = ROOT / "validation/reference/reserving_hierarchical_bf_stan.csv"
 SEED = 20261105
+POOLED_SEEDS = 8  # seeds SEED .. SEED + 7, pooled
 CHAINS = 4
 WARMUP = 2000
 DRAWS = 10000
 ADAPT_DELTA = 0.99
 EXACT = 1e-9
+# Divergent transitions allowed in one run of 40,000 draws (seed 20261110 has 1).
+MAX_DIVERGENCES = 2
 
 APRIORI = 0.7
 LEVEL_CV = 0.5
@@ -63,20 +66,27 @@ DEVELOPMENT_SD = 10.0
 TAU_SCALE = 0.5
 OMEGA_SCALE = 0.5
 
-# Tolerances, with s the reference posterior sd: (means abs x s, sds relative,
-# reserve quantiles abs x s), and the relative tolerance of the sds that
-# involve EVW's unobserved ages (its loss ratio, its reserves and the totals:
-# a heavy tail). Set from the seed-to-seed spread of HierarchicalBf's defaults
-# (4 x 1,000 draws) against this reference over seeds 0 to 23 (the ignored test
+# Tolerances, with s the reference posterior sd. Set from the seed-to-seed
+# spread of HierarchicalBf's defaults (4 x 1,000 draws, target_accept 0.99)
+# against this pooled reference over seeds 0 to 23 (the ignored test
 # seed_sweep in validation/tests/reserving_bayes_hierarchical_bf.rs), each at
-# least 1.5 times the largest error measured in its family:
-#   means 0.116 s (omega), sds 0.139 (EVW's share at age 10; 0.113 for a
-#   hyperparameter), quantiles 0.40 s (the 95% of EVW's 2006 reserve, whose
-#   draws are heavy-tailed; 0.09 s elsewhere), heavy-tailed sds 0.455 (EVW's
-#   loss ratio; biased low by 0.10 on average, as a sd of a heavy tail is
-#   from 4,000 correlated draws).
-TOLERANCES = (0.25, 0.25, 0.8)
-HEAVY_SD = 0.7
+# least 1.5 times the largest error measured in its family (errors in units of
+# s for means and quantiles, relative for sds):
+#   means 0.080 s (EVW's reserve; 0.064 s for a hyperparameter), so 0.12 s;
+#   sds 0.090 (EVW's share at age 10, never observed; 0.079 for GenIns'), so
+#   0.14; the sds that involve EVW's unobserved ages (its loss ratio, its
+#   reserves and the totals: a heavy tail) 0.196, so 0.30; the 5% and 50%
+#   percentiles of the reserves 0.062 s, so 0.10 s; the 95% percentile 0.172 s
+#   (RAA 1982), so 0.26 s, and of EVW's reserves and the totals 0.621 s, so
+#   0.9 s.
+# The sds of the heavy tail are biased low by 0.04 on average over the seeds
+# (a sd of a heavy tail from 4,000 correlated draws); the test also asserts the
+# mean signed error of the sds, which a row-by-row tolerance cannot.
+MEAN_TOL = 0.12
+SD_REL = 0.14
+HEAVY_SD = 0.30
+QUANTILE_TOL = {"q05": 0.10, "q50": 0.10, "q95": 0.26}
+HEAVY_Q95_TOL = 0.9
 
 
 def program(name):
@@ -194,35 +204,51 @@ def main():
     cmdstan = "CmdStan " + CMDSTAN.name.removeprefix("cmdstan-")
     source = (
         f"{cmdstan} via cmdstanpy {cmdstanpy.__version__}: hierarchical_bf.stan sha256 {sha[:16]}"
-        f" seed {SEED} {CHAINS}x{DRAWS} draws ({WARMUP} warm-up) metric dense_e adapt_delta {ADAPT_DELTA}"
+        f" seeds {SEED} to {SEED + POOLED_SEEDS - 1} pooled, {CHAINS}x{DRAWS} draws each ({WARMUP} warm-up) metric dense_e adapt_delta {ADAPT_DELTA}"
     )
-    fit = model.sample(
-        data=data,
-        chains=CHAINS,
-        iter_warmup=WARMUP,
-        iter_sampling=DRAWS,
-        seed=SEED,
-        metric="dense_e",
-        adapt_delta=ADAPT_DELTA,
-        inits=inits,
-        show_progress=False,
-    )
-    summary = fit.summary()
-    rhat_col = [c for c in summary.columns if c.lower().startswith("r_hat")][0]
-    checked = ["level", "tau", "omega"] + [f"ratio[{k}]" for k in range(1, len(programs) + 1)]
-    checked += [f"reserve[{k}]" for k in range(1, offset + 1)]
-    worst = summary.loc[checked, rhat_col].max()
-    divergences = int(fit.method_variables()["divergent__"].sum())
-    print(f"kappa {kappa:.6f} phi {phi} max R-hat {worst:.5f} divergences {divergences}")
-    assert worst <= 1.005, f"R-hat {worst} above 1.005"
-    assert divergences == 0, f"{divergences} divergent transitions"
+    fits = []
+    total_divergences = 0
+    for k in range(POOLED_SEEDS):
+        one = model.sample(
+            data=data,
+            chains=CHAINS,
+            iter_warmup=WARMUP,
+            iter_sampling=DRAWS,
+            seed=SEED + k,
+            metric="dense_e",
+            adapt_delta=ADAPT_DELTA,
+            inits=inits,
+            show_progress=False,
+        )
+        summary = one.summary()
+        rhat_col = [c for c in summary.columns if c.lower().startswith("r_hat")][0]
+        checked = ["level", "tau", "omega"] + [f"ratio[{j}]" for j in range(1, len(programs) + 1)]
+        checked += [f"reserve[{j}]" for j in range(1, offset + 1)]
+        worst = summary.loc[checked, rhat_col].max()
+        divergences = int(one.method_variables()["divergent__"].sum())
+        print(f"seed {SEED + k}: kappa {kappa:.6f} max R-hat {worst:.5f} divergences {divergences}", flush=True)
+        assert worst <= 1.005, f"R-hat {worst} above 1.005"
+        total_divergences += divergences
+        assert divergences <= MAX_DIVERGENCES, f"{divergences} divergent transitions"
+        fits.append(one)
+
+    print(f"{total_divergences} divergent transitions in {POOLED_SEEDS * CHAINS * DRAWS} pooled draws")
+
+    class Pooled:
+        """The draws of the seeds' runs one after the other."""
+
+        @staticmethod
+        def stan_variable(name):
+            return np.concatenate([f.stan_variable(name) for f in fits], axis=0)
+
+    fit = Pooled()
 
     params = (
         f"apriori={APRIORI:g};level_cv={LEVEL_CV:g};cv={CV:g};development_sd={DEVELOPMENT_SD:g};"
         f"tau_scale={TAU_SCALE:g};omega_scale={OMEGA_SCALE:g}"
     )
     rows = []
-    mean_tol, sd_rel, quantile_tol = TOLERANCES
+    mean_tol, sd_rel = MEAN_TOL, SD_REL
 
     def row(quantity, arg, expected, abs_tol, rel_tol):
         rows.append(
@@ -262,19 +288,21 @@ def main():
             row("reserve_mean", arg, s["mean"], mean_tol * s["sd"], 0.0)
             row("reserve_sd", arg, s["sd"], 0.0, HEAVY_SD if label == "evw" else sd_rel)
             for q in ["q05", "q50", "q95"]:
-                row(f"reserve_{q}", arg, s[q], quantile_tol * s["sd"], 0.0)
+                tol = HEAVY_Q95_TOL if q == "q95" and label == "evw" else QUANTILE_TOL[q]
+                row(f"reserve_{q}", arg, s[q], tol * s["sd"], 0.0)
     s = summarise(fit.stan_variable("total"))
     row("reserve_mean", "total", s["mean"], mean_tol * s["sd"], 0.0)
     row("reserve_sd", "total", s["sd"], 0.0, HEAVY_SD)
     for q in ["q05", "q50", "q95"]:
-        row(f"reserve_{q}", "total", s[q], quantile_tol * s["sd"], 0.0)
+        tol = HEAVY_Q95_TOL if q == "q95" else QUANTILE_TOL[q]
+        row(f"reserve_{q}", "total", s[q], tol * s["sd"], 0.0)
 
     header = [
         f"# Generated by validation/scripts/reserving_hierarchical_bf_stan.py with {cmdstan}, cmdstanpy {cmdstanpy.__version__},",
         f"# pandas {pd.__version__} and numpy {np.__version__}. Model validation/scripts/stan/hierarchical_bf.stan (sha256 {sha}).",
-        f"# Seed {SEED}; {CHAINS} chains of {WARMUP} warm-up and {DRAWS} kept draws; metric dense_e; adapt_delta {ADAPT_DELTA}; Gamma process.",
+        f"# Seeds {SEED} to {SEED + POOLED_SEEDS - 1} pooled ({POOLED_SEEDS} runs of {CHAINS} chains with {WARMUP} warm-up and {DRAWS} kept draws each); metric dense_e; adapt_delta {ADAPT_DELTA}; Gamma process.",
         "# Programs evw (EVW cut to six ages), genins and raa; scale and kappa are the plug-ins (rel_tol 1e-9). With s the reference",
-        f"# posterior sd: means abs_tol {mean_tol} s, sds rel_tol {sd_rel} ({HEAVY_SD} for EVW's loss ratio and reserves and the totals), reserve quantiles abs_tol {quantile_tol} s (TOLERANCES in the script).",
+        f"# posterior sd: means abs_tol {mean_tol} s, sds rel_tol {sd_rel} ({HEAVY_SD} for EVW's loss ratio and reserves and the totals), reserve quantiles abs_tol {QUANTILE_TOL['q05']} s (5%, 50%), {QUANTILE_TOL['q95']} s (95%; {HEAVY_Q95_TOL} s for EVW's reserves and the totals); see the script.",
         "# arg: a hyperparameter, a program, program:age, program:origin year or program:total; an exact 0 reserve has no spread.",
         "dataset,method,params,quantity,arg,expected,abs_tol,rel_tol,source",
     ]

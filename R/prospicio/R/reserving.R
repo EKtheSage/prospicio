@@ -4479,6 +4479,49 @@ bayes_bf_normalised <- function(triangle, column, exposure, apriori = 1, cv = 0.
   fit
 }
 
+# A named list of one-segment triangles as one triangle with a segment per
+# program, under the key `program`, through each one's long table.
+stack_programs <- function(programs, columns) {
+  if (!length(programs)) stop("no programs: the list is empty", call. = FALSE)
+  nm <- names(programs)
+  if (is.null(nm) || anyNA(nm) || !all(nzchar(nm))) {
+    stop("every program needs a name: triangles must be a named list", call. = FALSE)
+  }
+  if (anyDuplicated(nm)) {
+    stop(sprintf("program name %s is used twice", nm[anyDuplicated(nm)]), call. = FALSE)
+  }
+  columns <- unique(columns)
+  parts <- lapply(seq_along(programs), function(i) {
+    tri <- programs[[i]]
+    if (!S7::S7_inherits(tri, triangle)) {
+      stop(sprintf("program %s is not a triangle", nm[i]), call. = FALSE)
+    }
+    if (tri@shape[["index"]] != 1L) {
+      stop(sprintf("program %s has %d segments; each program is a triangle with one",
+                   nm[i], tri@shape[["index"]]), call. = FALSE)
+    }
+    lacking <- setdiff(columns, tri@columns)
+    if (length(lacking)) {
+      stop(sprintf("program %s has no column %s", nm[i], lacking[1]), call. = FALSE)
+    }
+    long <- as.data.frame(tri)[c("origin", "development", columns)]
+    long$program <- nm[i]
+    long
+  })
+  first <- programs[[1]]
+  for (i in seq_along(programs)[-1]) {
+    tri <- programs[[i]]
+    if (tri@origin_grain != first@origin_grain || tri@development_grain != first@development_grain ||
+        tri@is_cumulative != first@is_cumulative) {
+      stop(sprintf("program %s differs from the first in its grains or its cumulative state",
+                   nm[i]), call. = FALSE)
+    }
+  }
+  triangle(do.call(rbind, parts), "origin", "development", columns, keys = "program",
+           origin_grain = first@origin_grain, development_grain = first@development_grain,
+           cumulative = first@is_cumulative)
+}
+
 #' Hierarchical Bayesian Bornhuetter-Ferguson over programs
 #'
 #' `bayes_hierarchical_bf()` fits several programs, one segment of a
@@ -4524,11 +4567,20 @@ bayes_bf_normalised <- function(triangle, column, exposure, apriori = 1, cv = 0.
 #'
 #' Errors: as [bayes_bf_normalised()]; if the programs together have no
 #' degree of freedom, or an age is observed by no program under the vague
-#' pattern prior.
+#' pattern prior. For a list of triangles: an empty list, an unnamed or
+#' duplicated name, an entry that is not a triangle or has several segments
+#' or lacks a column, or triangles of different grains or cumulative state.
 #'
 #' @param triangle A cumulative [triangle] with a segment per program, all
 #'   on the same ages, every origin observed from the first age up to its
-#'   latest. A triangle with one segment is one program.
+#'   latest. A triangle with one segment is one program. Or a named list of
+#'   triangles, one program each: every one a triangle with one segment, with
+#'   the `column` and the `exposure` and the same grains and cumulative
+#'   state. They are stacked into a triangle with a segment per program under
+#'   the key `program` (any keys they carry are dropped), and the fit equals,
+#'   draw for draw, the fit of the same panel given as one triangle with that
+#'   key. The names label the programs, which run in the sorted order of
+#'   their names, as the segments of a triangle do, not in the list's order.
 #' @param column Name of the loss column to fit.
 #' @param exposure Name of the exposure column; each origin's latest
 #'   observed value is its exposure.
@@ -4553,7 +4605,7 @@ bayes_bf_normalised <- function(triangle, column, exposure, apriori = 1, cv = 0.
 #' @param seed Seed of the chains and of the simulations, a non-negative
 #'   whole number.
 #' @param target_accept Target mean acceptance rate of the step-size
-#'   adaptation.
+#'   adaptation (default 0.99).
 #' @param max_depth Largest NUTS tree depth.
 #' @param ptr A `HierarchicalBfFit` pointer; used internally.
 #' @returns A `hierarchical_bf_fit` object.
@@ -4668,7 +4720,10 @@ bayes_hierarchical_bf <- function(triangle, column, exposure, apriori = 1, level
                                   cv = 0.1, development_sd = 10, tau_scale = 0.3,
                                   omega_scale = 0.5, process = c("gamma", "none"), chains = 4,
                                   tune = 1000, draws = 1000, n_sims = 10000, seed = 0,
-                                  target_accept = 0.95, max_depth = 10, pattern_prior = NULL) {
+                                  target_accept = 0.99, max_depth = 10, pattern_prior = NULL) {
+  if (is.list(triangle) && !S7::S7_inherits(triangle)) {
+    triangle <- stack_programs(triangle, c(column, exposure))
+  }
   cols <- exposure_columns(triangle, column, exposure)
   process <- match.arg(process)
   pattern <- pattern_prior_args(pattern_prior)

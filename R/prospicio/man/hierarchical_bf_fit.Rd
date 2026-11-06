@@ -23,7 +23,7 @@ bayes_hierarchical_bf(
   draws = 1000,
   n_sims = 10000,
   seed = 0,
-  target_accept = 0.95,
+  target_accept = 0.99,
   max_depth = 10,
   pattern_prior = NULL
 )
@@ -33,7 +33,14 @@ bayes_hierarchical_bf(
 
 \item{triangle}{A cumulative \link{triangle} with a segment per program, all
 on the same ages, every origin observed from the first age up to its
-latest. A triangle with one segment is one program.}
+latest. A triangle with one segment is one program. Or a named list of
+triangles, one program each: every one a triangle with one segment, with
+the \code{column} and the \code{exposure} and the same grains and cumulative
+state. They are stacked into a triangle with a segment per program under
+the key \code{program} (any keys they carry are dropped), and the fit equals,
+draw for draw, the fit of the same panel given as one triangle with that
+key. The names label the programs, which run in the sorted order of
+their names, as the segments of a triangle do, not in the list's order.}
 
 \item{column}{Name of the loss column to fit.}
 
@@ -69,7 +76,7 @@ draws per chain.}
 whole number.}
 
 \item{target_accept}{Target mean acceptance rate of the step-size
-adaptation.}
+adaptation (default 0.99).}
 
 \item{max_depth}{Largest NUTS tree depth.}
 
@@ -124,7 +131,9 @@ and the \code{mean} and \code{std_dev} of the program's reserve.
 
 Errors: as \code{\link[=bayes_bf_normalised]{bayes_bf_normalised()}}; if the programs together have no
 degree of freedom, or an age is observed by no program under the vague
-pattern prior.
+pattern prior. For a list of triangles: an empty list, an unnamed or
+duplicated name, an entry that is not a triangle or has several segments
+or lacks a column, or triangles of different grains or cumulative state.
 }
 \examples{
 long <- data.frame(

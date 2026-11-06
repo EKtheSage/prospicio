@@ -16566,7 +16566,7 @@ class HierarchicalBf:
         Number of predictive simulations; positive.
     seed : int, default 0
         Seed of the chains and of the simulations.
-    target_accept : float, default 0.95
+    target_accept : float, default 0.99
         Target mean acceptance rate of the step-size adaptation.
     max_depth : int, default 10
         Largest NUTS tree depth.
@@ -16602,7 +16602,7 @@ class HierarchicalBf:
     >>> fit.reserves.dims
     ['program', 'origin']
     """
-    def __new__(cls, /, apriori: float = 1.0, level_cv: float |None = None, cv: float = 0.1, development_sd: float = 10.0, tau_scale: float = 0.3, omega_scale: float = 0.5, process: str = "gamma", chains: int = 4, tune: int = 1000, draws: int = 1000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10, pattern_prior: PatternPrior |None = None) -> HierarchicalBf: ...
+    def __new__(cls, /, apriori: float = 1.0, level_cv: float |None = None, cv: float = 0.1, development_sd: float = 10.0, tau_scale: float = 0.3, omega_scale: float = 0.5, process: str = "gamma", chains: int = 4, tune: int = 1000, draws: int = 1000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.99, max_depth: int = 10, pattern_prior: PatternPrior |None = None) -> HierarchicalBf: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -16629,7 +16629,7 @@ class HierarchicalBf:
         """
         Kept draws per chain.
         """
-    def fit(self, /, triangle: Triangle, column: str, exposure: str) -> HierarchicalBfFit:
+    def fit(self, /, triangle: Any, column: str, exposure: str) -> HierarchicalBfFit:
         """
         Samples the posterior of one loss column of a cumulative triangle
         with a segment per program, with each origin's exposure from
@@ -16638,10 +16638,21 @@ class HierarchicalBf:
         A triangle with one segment is one program. Raises one
         ``UserWarning`` listing the failed diagnostics, if any.
         
+        Instead of one triangle, ``triangle`` may be a dict of program name
+        to a ``Triangle`` with one segment. The dict is stacked into a
+        triangle with a segment per program under the key ``"program"``
+        (any keys the triangles carry are dropped). The names label the
+        programs, which run in the sorted order of their names, as the
+        segments of a triangle do, not in the dict's order. The triangles
+        must all have the two columns, the same grains and the same
+        cumulative state. The fit is then the same, draw for draw, as the
+        fit of the same panel given as one triangle with that key.
+        
         Parameters
         ----------
-        triangle : Triangle
-            Cumulative, with a segment per program, all on the same ages.
+        triangle : Triangle or dict of str to Triangle
+            Cumulative, with a segment per program, all on the same ages; or
+            the programs by name, each a triangle with one segment.
         column : str
             The losses to project.
         exposure : str
@@ -16658,7 +16669,12 @@ class HierarchicalBf:
             If the triangle is not cumulative or has an origin with a gap or
             without exposure, if a setting is invalid, if the programs
             together have no degree of freedom, or if a development column
-            or origin sums to too little (the error names it).
+            or origin sums to too little (the error names it). For a dict:
+            if it is empty, a name is empty, a triangle has several
+            segments or lacks a column, or the grains or cumulative state
+            differ.
+        TypeError
+            If a dict's key is not a string or its value not a ``Triangle``.
         """
     @property
     def level_cv(self, /) -> float |None:

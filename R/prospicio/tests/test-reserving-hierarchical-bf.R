@@ -94,6 +94,16 @@ stopifnot(S7::S7_inherits(r, predictive_distribution), r@n_sims == 600,
           identical(r@dims, c("program", "origin")))
 near(sum(vapply(fit@programs, function(p) mean(p@reserves), 0)), mean(r), 1e-9)
 stopifnot(mean(r) > 0)
+# Paired by posterior draw: each program's draws are the joint draws' columns
+# for that program, simulation by simulation.
+joint <- draw_matrix(r)
+stopifnot(nrow(joint) == 600, ncol(joint) == nrow(r@keys))
+for (label in names(fit@programs)) {
+  own <- draw_matrix(fit@programs[[label]]@reserves)
+  columns <- which(r@keys[[1]] == label)
+  stopifnot(length(columns) == length(fit@programs[[label]]@origins),
+            identical(unname(joint[, columns]), unname(own)))
+}
 
 # The posterior and its frames.
 nm <- fit@ptr$parameter_names()
@@ -163,3 +173,51 @@ for (arg in c("apriori", "cv", "tau_scale", "omega_scale")) {
   }, error = conditionMessage)
   if (is.null(msg)) stop(sprintf("%s = 0 should fail", arg), call. = FALSE)
 }
+
+# A program whose column falls by many of its scales has no posterior: the error
+# names the program and omega_scale.
+falling <- list(
+  a = programs$a,
+  b = list(`2021` = list(c(100, 20), 100), `2022` = list(100, 100))
+)
+expect_error_like(bayes_hierarchical_bf(panel(falling), "paid", "premium", chains = 2,
+                                        tune = 100, draws = 100, n_sims = 100),
+                  "b at 24 months")
+expect_error_like(bayes_hierarchical_bf(panel(falling), "paid", "premium", chains = 2,
+                                        tune = 100, draws = 100, n_sims = 100),
+                  "omega_scale")
+
+# The default acceptance rate is the Rust model's.
+stopifnot(formals(bayes_hierarchical_bf)$target_accept == 0.99)
+
+# A named list of triangles, one program each, equals the panel with a program
+# key, draw for draw, whatever the list's order.
+by_name <- setNames(lapply(names(programs), function(n) panel(programs[n])), names(programs))
+settings <- list(seed = 4, chains = 2, tune = 300, draws = 300, n_sims = 600)
+whole <- do.call(quiet, c(list(tri, "paid", "premium"), settings))
+stacked <- do.call(quiet, c(list(by_name, "paid", "premium"), settings))
+flipped <- do.call(quiet, c(list(rev(by_name), "paid", "premium"), settings))
+stopifnot(identical(names(stacked@programs), c("a", "b", "c")),
+          identical(stacked@draws, whole@draws),
+          identical(draw_matrix(stacked@reserves), draw_matrix(whole@reserves)),
+          identical(names(flipped@programs), c("a", "b", "c")),
+          identical(flipped@draws, whole@draws))
+
+# Errors of the list form.
+go <- function(x, column = "paid") {
+  bayes_hierarchical_bf(x, column, "premium", chains = 2, tune = 100, draws = 100, n_sims = 100)
+}
+expect_error_like(go(list()), "no programs")
+expect_error_like(go(unname(by_name)), "needs a name")
+expect_error_like(go(setNames(by_name[1:2], c("a", ""))), "needs a name")
+expect_error_like(go(setNames(by_name[1:2], c("a", "a"))), "used twice")
+expect_error_like(go(list(a = by_name$a, b = 3)), "program b is not a triangle")
+expect_error_like(go(list(x = tri, b = by_name$b)), "program x has 3 segments")
+expect_error_like(go(by_name, "missing"), "program a has no column missing")
+quarterly <- triangle(data.frame(year = 2022, age = c(3, 6), paid = c(1, 2), premium = 9),
+                      "year", "age", c("paid", "premium"), origin_grain = "Q",
+                      development_grain = "Q")
+expect_error_like(go(list(a = by_name$a, q = quarterly)), "program q differs")
+incremental <- triangle(data.frame(year = 2022, age = c(12, 24), paid = c(1, 2), premium = 9),
+                        "year", "age", c("paid", "premium"), cumulative = FALSE)
+expect_error_like(go(list(a = by_name$a, i = incremental)), "program i differs")

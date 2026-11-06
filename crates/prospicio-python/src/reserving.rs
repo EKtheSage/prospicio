@@ -13437,6 +13437,79 @@ impl PyBayesBfNormalisedFit {
     }
 }
 
+/// The programs of a dict of name to one-segment `Triangle`, stacked into
+/// one triangle with a segment per program under the key `program`, through
+/// each triangle's long table (`HierarchicalBf.fit`).
+fn stack_programs(programs: &Bound<'_, PyDict>, columns: &[&str]) -> PyResult<Triangle> {
+    if programs.is_empty() {
+        return Err(PyValueError::new_err("no programs: the dict is empty"));
+    }
+    let mut names: Vec<String> = Vec::new();
+    let (mut origin, mut development) = (Vec::new(), Vec::new());
+    let mut values: Vec<(String, Vec<f64>)> = columns
+        .iter()
+        .map(|c| (c.to_string(), Vec::new()))
+        .collect();
+    let mut first: Option<(Grain, Grain, bool)> = None;
+    for (key, value) in programs.iter() {
+        let name: String = key
+            .extract()
+            .map_err(|_| PyTypeError::new_err("program names must be strings"))?;
+        if name.is_empty() {
+            return Err(PyValueError::new_err("a program has an empty name"));
+        }
+        let t = value
+            .extract::<PyRef<'_, PyTriangle>>()
+            .map_err(|_| PyTypeError::new_err(format!("program {name:?} is not a Triangle")))?;
+        let t = &t.inner;
+        if t.shape()[0] != 1 {
+            return Err(PyValueError::new_err(format!(
+                "program {name:?} has {} segments; each program is a triangle with one",
+                t.shape()[0]
+            )));
+        }
+        for c in columns {
+            t.column_position(c).map_err(|_| {
+                PyValueError::new_err(format!("program {name:?} has no column {c:?}"))
+            })?;
+        }
+        let shape = (t.origin_grain(), t.development_grain(), t.is_cumulative());
+        if *first.get_or_insert(shape) != shape {
+            return Err(PyValueError::new_err(format!(
+                "program {name:?} differs from the first in its grains or its cumulative state"
+            )));
+        }
+        let long = t.to_long();
+        names.extend(std::iter::repeat_n(name, long.origin.len()));
+        origin.extend(long.origin);
+        development.extend(long.development);
+        for (column, out) in columns.iter().zip(&mut values) {
+            let (_, v) = long
+                .values
+                .iter()
+                .find(|(n, _)| n == column)
+                .expect("checked");
+            out.1.extend_from_slice(v);
+        }
+    }
+    let (origin_grain, development_grain, cumulative) = first.expect("not empty");
+    let labels: Vec<&str> = names.iter().map(String::as_str).collect();
+    let values: Vec<(&str, &[f64])> = values
+        .iter()
+        .map(|(n, v)| (n.as_str(), v.as_slice()))
+        .collect();
+    Triangle::from_long(&Long {
+        keys: &[("program", &labels)],
+        origin: &origin,
+        development: DevelopmentColumn::Age(&development),
+        values: &values,
+        origin_grain,
+        development_grain,
+        cumulative,
+    })
+    .map_err(err)
+}
+
 /// The hierarchical Bayesian Bornhuetter-Ferguson: several programs, one
 /// segment of a triangle each, pooled under an industry hyperprior on the
 /// loss ratio, with the development pattern partially pooled
@@ -13496,7 +13569,7 @@ impl PyBayesBfNormalisedFit {
 ///     Number of predictive simulations; positive.
 /// seed : int, default 0
 ///     Seed of the chains and of the simulations.
-/// target_accept : float, default 0.95
+/// target_accept : float, default 0.99
 ///     Target mean acceptance rate of the step-size adaptation.
 /// max_depth : int, default 10
 ///     Largest NUTS tree depth.
@@ -13553,7 +13626,7 @@ impl PyHierarchicalBf {
         draws = 1000,
         n_sims = 10_000,
         seed = 0,
-        target_accept = 0.95,
+        target_accept = 0.99,
         max_depth = 10,
         pattern_prior = None,
     ))]
@@ -13703,10 +13776,21 @@ impl PyHierarchicalBf {
     /// A triangle with one segment is one program. Raises one
     /// ``UserWarning`` listing the failed diagnostics, if any.
     ///
+    /// Instead of one triangle, ``triangle`` may be a dict of program name
+    /// to a ``Triangle`` with one segment. The dict is stacked into a
+    /// triangle with a segment per program under the key ``"program"``
+    /// (any keys the triangles carry are dropped). The names label the
+    /// programs, which run in the sorted order of their names, as the
+    /// segments of a triangle do, not in the dict's order. The triangles
+    /// must all have the two columns, the same grains and the same
+    /// cumulative state. The fit is then the same, draw for draw, as the
+    /// fit of the same panel given as one triangle with that key.
+    ///
     /// Parameters
     /// ----------
-    /// triangle : Triangle
-    ///     Cumulative, with a segment per program, all on the same ages.
+    /// triangle : Triangle or dict of str to Triangle
+    ///     Cumulative, with a segment per program, all on the same ages; or
+    ///     the programs by name, each a triangle with one segment.
     /// column : str
     ///     The losses to project.
     /// exposure : str
@@ -13723,19 +13807,33 @@ impl PyHierarchicalBf {
     ///     If the triangle is not cumulative or has an origin with a gap or
     ///     without exposure, if a setting is invalid, if the programs
     ///     together have no degree of freedom, or if a development column
-    ///     or origin sums to too little (the error names it).
+    ///     or origin sums to too little (the error names it). For a dict:
+    ///     if it is empty, a name is empty, a triangle has several
+    ///     segments or lacks a column, or the grains or cumulative state
+    ///     differ.
+    /// TypeError
+    ///     If a dict's key is not a string or its value not a ``Triangle``.
     fn fit(
         &self,
         py: Python<'_>,
-        triangle: PyRef<'_, PyTriangle>,
+        triangle: &Bound<'_, PyAny>,
         column: &str,
         exposure: &str,
     ) -> PyResult<PyHierarchicalBfFit> {
-        let (model, tri, prior) = (&self.inner, &triangle.inner, &self.pattern_prior);
+        let tri = if let Ok(programs) = triangle.cast::<PyDict>() {
+            stack_programs(programs, &[column, exposure])?
+        } else if let Ok(t) = triangle.extract::<PyRef<'_, PyTriangle>>() {
+            t.inner.clone()
+        } else {
+            return Err(PyTypeError::new_err(
+                "triangle must be a Triangle or a dict of program name to Triangle",
+            ));
+        };
+        let (model, prior) = (&self.inner, &self.pattern_prior);
         let inner = py
             .detach(|| match prior {
-                Some(p) => model.fit_with_pattern_prior(tri, column, exposure, p),
-                None => model.fit(tri, column, exposure),
+                Some(p) => model.fit_with_pattern_prior(&tri, column, exposure, p),
+                None => model.fit(&tri, column, exposure),
             })
             .map_err(err)?;
         warn_diagnostics(py, "HierarchicalBf", &inner.diagnostics.warnings)?;

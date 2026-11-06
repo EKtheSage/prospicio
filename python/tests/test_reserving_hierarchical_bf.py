@@ -59,6 +59,11 @@ def panel(programs=PROGRAMS):
     )
 
 
+def programs_by_name(programs=PROGRAMS):
+    """Each program as a triangle of its own, as the dict form takes them."""
+    return {name: panel({name: origins}) for name, origins in programs.items()}
+
+
 @pytest.fixture(scope="module")
 def tri():
     return panel()
@@ -77,7 +82,7 @@ def test_settings_and_defaults():
     assert (m.apriori, m.level_cv, m.cv, m.development_sd) == (1.0, None, 0.1, 10.0)
     assert (m.tau_scale, m.omega_scale, m.process) == (0.3, 0.5, "gamma")
     assert (m.chains, m.tune, m.draws, m.n_sims, m.seed) == (4, 1000, 1000, 10_000, 0)
-    assert (m.target_accept, m.max_depth, m.pattern_prior) == (0.95, 10, None)
+    assert (m.target_accept, m.max_depth, m.pattern_prior) == (0.99, 10, None)
     m = HierarchicalBf(apriori=0.7, level_cv=0.2, tau_scale=0.1, process="none", seed=9)
     assert (m.apriori, m.level_cv, m.tau_scale, m.process, m.seed) == (0.7, 0.2, 0.1, "none", 9)
     assert repr(m).startswith("HierarchicalBf(apriori=0.7, level_cv=0.2, cv=0.1")
@@ -123,9 +128,17 @@ def test_reserves_add_up(fit):
     assert sum(p.reserves.mean() for p in fit.programs) == pytest.approx(
         r.mean(), rel=1e-9
     )
-    # Paired by posterior draw: the programs' reserves sum to the total in
-    # every simulation, so the variances add with the covariances.
-    assert sum(len(p.reserves.components()) for p in fit.programs) == 9
+    # Paired by posterior draw: each program's draws are the joint draws'
+    # columns for that program, simulation by simulation.
+    joint = r.draw_matrix()
+    keys = [tuple(k) for k in r.components()]
+    for p in fit.programs:
+        columns = [j for j, k in enumerate(keys) if k[0] == p.label]
+        assert len(columns) == len(p.origins)
+        own = p.reserves.draw_matrix()
+        assert len(own) == len(joint) == 600
+        for row_own, row_joint in zip(own, joint):
+            assert row_own == [row_joint[j] for j in columns]
     assert r.mean() > 0.0
     # The thin program has a reserve past its own last age.
     assert fit.programs[2].reserves.mean() > 0.0
@@ -235,3 +248,67 @@ def test_errors(tri):
     )
     with pytest.raises(ValueError):
         HierarchicalBf(**QUICK).fit(gap, "paid", "premium")
+
+
+def test_falling_column_names_the_program_and_omega_scale():
+    # Program b's second column falls by many of its scales (the chain
+    # ladders of the other program fit almost exactly), which no posterior
+    # supports at omega_scale 0.5.
+    healthy = PROGRAMS["a"]
+    falling = {2021: ([100.0, 20.0], 100.0), 2022: ([100.0], 100.0)}
+    tri = panel({"a": healthy, "b": falling})
+    with pytest.raises(ValueError) as e:
+        HierarchicalBf(**QUICK).fit(tri, "paid", "premium")
+    assert "program b at 24 months" in str(e.value)
+    assert "omega_scale" in str(e.value)
+
+
+def test_named_triangles_equal_the_panel_with_a_program_key(tri):
+    model = HierarchicalBf(seed=4, **QUICK)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        stacked = model.fit(programs_by_name(), "paid", "premium")
+        whole = model.fit(tri, "paid", "premium")
+    assert stacked.draws == whole.draws
+    assert stacked.reserves.draw_matrix() == whole.reserves.draw_matrix()
+    assert [p.label for p in stacked.programs] == ["a", "b", "c"]
+    # The programs run in sorted order of their names, not the dict's.
+    backwards = dict(reversed(list(programs_by_name().items())))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        flipped = model.fit(backwards, "paid", "premium")
+    assert [p.label for p in flipped.programs] == ["a", "b", "c"]
+    assert flipped.draws == whole.draws
+
+
+def test_named_triangle_errors():
+    fit = lambda programs, **kw: HierarchicalBf(**QUICK).fit(  # noqa: E731
+        programs, kw.get("column", "paid"), "premium"
+    )
+    one = programs_by_name()
+    with pytest.raises(ValueError, match="no programs"):
+        fit({})
+    with pytest.raises(ValueError, match="empty name"):
+        fit({"": one["a"], "b": one["b"]})
+    with pytest.raises(TypeError, match="program names"):
+        fit({1: one["a"], "b": one["b"]})
+    with pytest.raises(TypeError, match="not a Triangle"):
+        fit({"a": one["a"], "b": 3})
+    with pytest.raises(TypeError, match="Triangle or a dict"):
+        fit([one["a"], one["b"]])
+    with pytest.raises(ValueError, match='program "x" has 3 segments'):
+        fit({"x": panel(), "b": one["b"]})
+    with pytest.raises(ValueError, match='program "a" has no column "missing"'):
+        fit(one, column="missing")
+    quarterly = Triangle.from_long(
+        [2022, 2022], [3, 6], {"paid": [1.0, 2.0], "premium": [9.0, 9.0]},
+        origin_grain="Q", development_grain="Q",
+    )
+    with pytest.raises(ValueError, match='program "q" differs'):
+        fit({"a": one["a"], "q": quarterly})
+    incremental = Triangle.from_long(
+        [2022, 2022], [12, 24], {"paid": [1.0, 2.0], "premium": [9.0, 9.0]},
+        cumulative=False,
+    )
+    with pytest.raises(ValueError, match='program "i" differs'):
+        fit({"a": one["a"], "i": incremental})
