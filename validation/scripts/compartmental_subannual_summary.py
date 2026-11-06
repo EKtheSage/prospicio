@@ -217,6 +217,7 @@ def main():
     paired(folder, "season114_aq_m1_preset_study", "iid114_aq_m1_preset_study")
     paired(folder, "seasonq_qq_m1_preset_study", "earned_qq_m1_preset_study")
     paired(folder, "m2season_aq_m2_preset_study", "m2y_aq_m2_preset_study")
+    paired(folder, "m2seasonq_qq_m2_preset_study", "m2qo_qq_m2_preset_study")
     paired(folder, "m2season114_aq_m2_preset_study", "m2y114_aq_m2_preset_study")
     for p in paths:
         if p.stem.startswith("grouped_"):

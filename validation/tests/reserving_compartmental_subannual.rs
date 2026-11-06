@@ -30,7 +30,8 @@
 //!   `m2y` and `m2q`: model 2's cell-level process
 //!   with development effects by development year or by quarterly age,
 //!   log-normal monthly increments; `m2season` is `m2y` with the seasonal
-//!   factor; `m2qo` is `m2y` on 40 quarterly origins; `m2y114` and
+//!   factor; `m2qo` is `m2y` on 40 quarterly origins and `m2seasonq` is
+//!   `m2qo` with the seasonal factor; `m2y114` and
 //!   `m2season114` value `m2y` and `m2season` at the end of the second
 //!   calendar quarter.
 //! * Grains. `aa`, `aq`, `am`: annual origins with annual, quarterly or
@@ -226,6 +227,15 @@ impl World {
                 stream: 8,
                 dev_unit: 12,
                 season: false,
+                quarterly_origins: true,
+                valuation: LAST,
+            },
+            // `m2qo` with the seasonal factor: origins start in all four
+            // calendar quarters, so the season is not the age.
+            "m2seasonq" => World::Model2 {
+                stream: 8,
+                dev_unit: 12,
+                season: true,
                 quarterly_origins: true,
                 valuation: LAST,
             },
