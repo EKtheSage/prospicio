@@ -153,6 +153,8 @@
 "resample::uniform_int" = "unbound on 2026-10-28 (seed); review"
 
 [python.prospicio_nn]
+"Embedding" = "a spec item: TabularNet(embeddings={factor: dim}, references=) builds it"
+"EmbeddingTable" = "a result type: TabularNetFit.embeddings returns its fields as a dict"
 "onnx::OnnxInput" = "unbound on 2026-10-28 (seed); review"
 
 [python.prospicio_pricing]
@@ -402,6 +404,8 @@
 "resample::uniform_int" = "unbound on 2026-10-28 (seed); review"
 
 [r.prospicio_nn]
+"Embedding" = "a spec item: tabular_net_fit(embeddings = c(factor = dim)) builds it, the reference from the factor's levels"
+"EmbeddingTable" = "a result type: network_embeddings() returns it as a data frame"
 "TokenAttention" = "unbound on 2026-10-28 (seed); review"
 "onnx::OnnxInput" = "unbound on 2026-10-28 (seed); review"
 
