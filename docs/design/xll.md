@@ -162,7 +162,8 @@ real Excel.
    `xlAutoOpen`/`xlAutoFree12`) is a few hundred lines in `src/xll.rs`.
    Everything else (`sheet`, `reserving`, the `FUNCTIONS` catalogue) is
    portable Rust tested on any host.
-4. **Values in, values out, thread safe.** Every argument and result is
+4. **Values in, values out, thread safe** (the simulations and MCMC fits
+   asynchronous instead, decision 48). Every argument and result is
    type `Q` (values, never a reference) and every function is registered
    thread safe (`$`); no function reads the sheet or keeps state. Results
    are allocated per call and freed in `xlAutoFree12`.
@@ -1150,6 +1151,60 @@ real Excel.
     | `PRO.DISTORTION.CALIBRATE` | `PRO.CAP.DISTORTION.CALIBRATE` | Capital |
     | `PRO.PNL` | `PRO.CAP.PNL` | Capital |
     | `PRO.CASHFLOW` | `PRO.CAP.CASHFLOW` | Capital |
+48. **Simulations and MCMC run asynchronously** (user, 2026-11-05, "work
+    on the async functions"). Every function with a `sims` argument and
+    every MCMC fit (`jobs::ASYNC`: `PRO.RES.ODP`, `.ODP.SIMS`, `.ODP.CDR`,
+    `.MACK.BOOT`, `.MACK.BOOT.SIMS`, `.MACK.BOOT.CDR`, `.BAYES.ODP`,
+    `.BAYES.BF` and `PRO.CAP.COPULA.SIM`) is an Excel 2010 asynchronous
+    function: registered as `>` (no result) with its `Q` arguments and a
+    last `X`, the handle Excel waits on, and not thread safe (`$`), since
+    the call only starts the run. It returns at once; the cell shows
+    `#GETTING_DATA` while the run goes on a thread of its own, and the
+    result reaches Excel through `xlAsyncReturn`, the one callback Excel
+    takes from any thread. A new function that simulates or samples joins
+    the list, and `tests/catalogue.rs` fails when an export and the list
+    disagree.
+    - **One run per inputs.** `jobs::submit` keys a call on its function
+      and every argument (each number written exactly): a call joins the
+      run of the same inputs already going, so a sheet of cells that
+      differ only in their view waits on one run; and the last 32 results
+      (at most 4 million cells together) are kept, so a recalculation
+      that changes nothing upstream answers at once (about a millisecond
+      in the fake Excel, against 0.2 s for 20,000 ODP simulations). Each
+      function is a pure function of its inputs and seed (decisions 14
+      and 21), so a kept result is what a rerun gives: no number changes.
+      The Bayesian fits stay kept as well (decision 21), so a fit's three
+      views still sample once between them.
+    - **An interrupted recalculation loses nothing.** Typing while Excel
+      waits interrupts the recalculation and Excel drops its handles. The
+      run goes on and its result is kept, so the next recalculation
+      answers from it; delivering to a dropped handle is refused by Excel
+      and ignored. So the add-in registers no calculation events. A run is
+      not cancelled: one already going runs to its end (at most about
+      10 s for a bootstrap's 1,000,000 simulations, decision 14).
+    - **The add-in stays loaded.** From the first asynchronous call it is
+      pinned (`GetModuleHandleExW` with `GET_MODULE_HANDLE_EX_FLAG_PIN`)
+      until Excel exits, so removing it in the Add-ins dialog cannot free
+      code that a run is still executing.
+    - **Memory.** A result handed to `xlAsyncReturn` is not marked
+      `xlbitDLLFree`: Excel copies it during the call, and the add-in
+      frees it as soon as the call returns.
+    - **Fit handles are not needed yet.** A handle (a cell holding a name
+      for a fit that other functions read) was the other half of the
+      plan. With runs shared and results kept, cells that read one fit
+      already sample once, so a handle would add a kind of value the
+      sheet has never had (decision 4) for no saving. It stays open for
+      a model whose results do not fit one function's views.
+    - **Sources.** Microsoft's C API pages were not reachable from the
+      cloud session, so the constants (`xlAsyncReturn` = 16 | xlSpecial,
+      `xltypeBigData` = xltypeStr | xltypeInt) and the type text (`>`,
+      the arguments, `X`) come from Excel-DNA's source
+      (`knowledge/references/excel-async-udfs.md`). The fake Excel checks
+      the protocol as Excel-DNA reads it: nine asynchronous registrations,
+      the call returning before its result, the handle coming back with a
+      result not marked `xlbitDLLFree`, and the same inputs answered from
+      the kept result. To confirm in Excel 365: `#GETTING_DATA` and then
+      the result, and an edit during a long run.
 
 ## Parity plan
 
