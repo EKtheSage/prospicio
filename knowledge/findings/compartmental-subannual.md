@@ -77,7 +77,10 @@ quarterly and monthly development; `qq`, `qm` quarterly origins.[^harness][^summ
 
 * **In its own world** (`iid`) model 1 covers about the same at every grain
   (84, 82, 84; about two standard errors under 90) and D passes, while the sd
-  and the RMSE fall together.[^harness][^summary]
+  and the RMSE fall together.[^harness][^summary] `tau_RRF`, true 0.2, has
+  posterior means of 0.10 to 0.18 and is covered in 64% to 86% of books at every
+  grain: the preset's half-t of scale 0.1 pulls it down, which may be part of
+  the gap (an inference, not tested).
 * **Persistent noise** (`persist`): the sd falls from 1,762 to 1,069, the RMSE
   rises from 1,623 to 2,033 and coverage falls from 88 to 56; `k_p`'s central
   90% holds the truth in 80% of books annually and 18% monthly. Model 1 with
@@ -127,14 +130,19 @@ cells is reproduced (32 s), and the time grows a little faster than the cells:
 Model 2 takes 52 s, 255 s and 2,850 s at 110, 440 and 1,320 cells, the last
 steps at about the square of the cells, with 541 parameters. The panels' R-hat
 of 1.02 to 1.06 is the short run's: on the same books the default sampler moves
-the reserve's mean by at most 0.045 sd and its sd by under 1%, so the panels'
-reserves stand, and their parameter coverage carries the short run's noise.
-The short run does leave strays: on `iid` monthly one book of 50 has R-hat 1.60
-and 357 divergences. Model 2's default sampler is enough on 110 and 440 cells
-(R-hat at most 1.007, ESS at least 861). On monthly `m2y` one book of 20 (book
-0) stays at R-hat 1.62 under the short run and 1.54 after the default's 48
-minutes, with ESS 7 and 1,322 warnings, yet its reserve moves 0.005 sd between
-the two runs: the trouble is in the rates' parameters, not the total. Quarterly
+the reserve's mean by at most 0.045 sd and, on every converged arm, its sd by
+under 1%, so the panels' reserves stand, and their parameter coverage carries
+the short run's noise. The short run does leave strays: on `iid` monthly one
+book of 50 has R-hat 1.60 and 357 divergences. How the short run's trouble grows
+with cells and parameters shows in its share of fits with R-hat above 1.05: 4
+of 50 at 110 cells and 4 of 50 at 1,320 for model 1 on annual origins, 28 of 50
+on quarterly origins (80 more effects); for model 2 5 of 50, 19 of 50 and 8 of
+20 at 110, 440 and 1,320 cells, and 11 of 20 on `m2qo`. Model 2's default
+sampler is enough on 110 and 440 cells (R-hat at most 1.007, ESS at least 861).
+On monthly `m2y` book 0 stays at R-hat 1.62 under the short run and 1.54 after
+the default's 48 minutes, with ESS 7 and 1,322 warnings, yet its reserve moves
+0.005 sd between the two runs: the trouble is in the rates' parameters, not the
+total. It is the one monthly book run at the default. Quarterly
 origins cost about the same cells for cells (`earned`, 1,640 cells: 34 s short,
 195 s default; model 2 `m2qo`: 91 s short, not run at the default), and
 monthly development on quarterly origins (4,920 cells) took 149 s short.
@@ -253,4 +261,6 @@ uv run --no-project python validation/scripts/compartmental_subannual_summary.py
 ```
 
 The tests `prior_bands` and `zero_cells` run the same way. The summary script
-prints every arm in the directory; 50 books unless a table says otherwise.
+prints every arm in the directory, the default-sampler pairs and the R-hat
+shares; 50 books unless a table says otherwise. Comparisons on "the same first
+20 books" are its output under `SUBANNUAL_SUMMARY_BOOKS=20`.

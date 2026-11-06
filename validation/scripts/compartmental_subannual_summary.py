@@ -8,13 +8,18 @@ error, the Kolmogorov-Smirnov D of the ultimate percentile against the uniform
 with its 5% critical value (1.36 / sqrt(n), Meyers' test), the mean reserve
 against the outcome, the sd, and the sampler's diagnostics. A second table has
 each scored parameter's coverage of the central 90%. `grouped_*.csv` gets a
-table of its own, each book's per-age fit against its grouped fit.
+table of its own, each book's per-age fit against its grouped fit. Then each
+arm's default-sampler fits against the same books' short ones, and the share of
+fits with R-hat above 1.05.
 
 Run: uv run --no-project python validation/scripts/compartmental_subannual_summary.py
+With SUBANNUAL_SUMMARY_BOOKS=20 every arm is read on its books 0 to 19 only, so
+that arms of different sizes compare on the same books.
 """
 
 import csv
 import math
+import os
 import statistics
 import sys
 from pathlib import Path
@@ -37,6 +42,9 @@ def read(path):
             errors += 1
         elif len(row) == len(head):
             good.append({k: float(v) for k, v in zip(head, row)})
+    cap = os.environ.get("SUBANNUAL_SUMMARY_BOOKS")
+    if cap:
+        good = [r for r in good if r["book"] < int(cap)]
     return head, good, errors
 
 
@@ -152,6 +160,38 @@ def paired(folder, seasonal, plain):
     print(out)
 
 
+def default_against_study(folder):
+    """Each arm's default-sampler fits against the same books' short fits."""
+    print("\nDefault sampler against the short one on the same books")
+    for path in sorted(folder.glob("*_default.csv")):
+        short = path.with_name(path.name.replace("_default.csv", "_study.csv"))
+        if not short.exists():
+            continue
+        _, default, _ = read(path)
+        _, study, _ = read(short)
+        by_book = {r["book"]: r for r in study}
+        pairs = [(r, by_book[r["book"]]) for r in default if r["book"] in by_book]
+        if pairs:
+            print(
+                f"{path.stem}: {len(pairs)} books,"
+                f" largest mean difference {max(abs(d['mean'] - q['mean']) / d['sd'] for d, q in pairs):.3f} sd,"
+                f" sd ratio {statistics.mean(q['sd'] / d['sd'] for d, q in pairs):.3f},"
+                f" largest R-hat {max(d['max_rhat'] for d, _ in pairs):.4f}"
+                f" (short {max(q['max_rhat'] for _, q in pairs):.4f}),"
+                f" least ESS {min(d['ess_bulk'] for d, _ in pairs):.0f}"
+            )
+    print("\nShort fits with R-hat above 1.05")
+    for path in sorted(folder.glob("*_study.csv")):
+        _, rows, _ = read(path)
+        if rows:
+            high = sum(r["max_rhat"] > 1.05 for r in rows)
+            top = max(rows, key=lambda r: r["max_rhat"])
+            print(
+                f"{path.stem}: {high} of {len(rows)}, largest {top['max_rhat']:.3f}"
+                f" with {top['divergences']:.0f} divergences (book {top['book']:.0f})"
+            )
+
+
 def main():
     root = Path(__file__).resolve().parents[2] / "target" / "compartmental-subannual"
     folder = Path(sys.argv[1]) if len(sys.argv) > 1 else root
@@ -181,6 +221,7 @@ def main():
     for p in paths:
         if p.stem.startswith("grouped_"):
             grouped(p)
+    default_against_study(folder)
 
 
 if __name__ == "__main__":
