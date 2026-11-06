@@ -29,6 +29,15 @@ const HALF_NORMAL_MEDIAN: f64 = 0.674_489_750_196_081_7;
 /// 1: only a start, the column rule has already passed.
 const FLAT_FACTOR: f64 = 1.001;
 
+/// The pilot run has at most this many warm-up draws and a fifth as many
+/// kept draws (at least `MIN_PILOT_DRAWS`): only their variances are used.
+const MAX_PILOT_TUNE: usize = 500;
+
+/// From this many programs the pilot's full covariance scales the main run;
+/// below it only the pilot's variances do (the hyperparameters of a few
+/// programs have a funnel that a dense scale fitted on a pilot misreads).
+const DENSE_FROM_PROGRAMS: usize = 8;
+
 /// The fewest draws of a pilot run, as [`Meyers`](super::Meyers).
 const MIN_PILOT_DRAWS: usize = 100;
 
@@ -133,7 +142,7 @@ impl Default for HierarchicalBf {
     /// `apriori` 1, a flat `level_cv`, `cv` 0.1, `development_sd` 10,
     /// `tau_scale` 0.3 (a median spread of about 20% between programs'
     /// loss ratios), `omega_scale` 0.5, Gamma process error, four chains
-    /// of 1,000 warm-up and 1,000 kept draws with target acceptance 0.95,
+    /// of 1,000 warm-up and 1,000 kept draws with target acceptance 0.99,
     /// 10,000 simulations, seed 0.
     fn default() -> Self {
         Self {
@@ -145,7 +154,7 @@ impl Default for HierarchicalBf {
             omega_scale: 0.5,
             process: ProcessDistribution::Gamma,
             sampler: Sampler {
-                target_accept: 0.95,
+                target_accept: 0.99,
                 ..Sampler::default()
             },
             n_sims: 10_000,
@@ -186,7 +195,9 @@ pub struct HierarchicalBfProgram {
     /// (L s_c)`, `own` the log of [`own_loss_ratio`](Self::own_loss_ratio)
     /// and `mu` the posterior mean of `log L - tau^2 / 2`. 1 keeps the
     /// program's own level and 0 takes the collective's; NaN when its own
-    /// loss ratio is not positive.
+    /// loss ratio is not positive. It is a ratio of two estimates, not a
+    /// credibility factor, so it can fall outside 0 to 1, as it does for a
+    /// program near the collective or moved by its pattern's deviation.
     pub shrinkage: f64,
     /// The program's part of [`HierarchicalBfFit::reserves`], by origin,
     /// paired with it simulation by simulation.
@@ -396,12 +407,17 @@ impl HierarchicalBf {
             &vec![0.0; p],
             Sampler {
                 seed: pilot_seed(chains),
-                draws: self.sampler.tune.max(MIN_PILOT_DRAWS),
+                tune: self.sampler.tune.min(MAX_PILOT_TUNE),
+                draws: (self.sampler.tune / 5).max(MIN_PILOT_DRAWS),
                 ..self.sampler
             },
         )?;
         let pilot = pilot.transform(model.names(), |z| rough.theta(z))?;
-        let whitened = Whitened::from_draws(model, &pilot)?;
+        let whitened = if model.programs.len() < DENSE_FROM_PROGRAMS {
+            Whitened::from_draws_diagonal(model, &pilot)?
+        } else {
+            Whitened::from_draws(model, &pilot)?
+        };
         let draws = sample(
             &whitened,
             &vec![0.0; p],
@@ -511,6 +527,14 @@ impl HierarchicalBf {
                         prior.ages
                     )));
                 }
+                if prior.mean.len() != nd - 1 || prior.sd.len() != nd - 1 {
+                    return Err(Error::Bayes(format!(
+                        "the pattern prior has {} means and {} sds for {} log share ratios",
+                        prior.mean.len(),
+                        prior.sd.len(),
+                        nd - 1
+                    )));
+                }
                 (
                     prior.mean.clone(),
                     prior.sd.iter().map(|s| s.powi(-2)).collect(),
@@ -592,7 +616,9 @@ impl HierarchicalBf {
         }
 
         // The column rule, on the pooled column: a single program's column
-        // that sums to zero or less is held by its deviation's prior.
+        // that sums to zero or less is held by its deviation's prior, up to
+        // the bound below. The longest program observes every age of the
+        // grid, so every pooled column has cells.
         let mut column_sum = vec![0.0; nd];
         let mut column_n = vec![0; nd];
         for p in &data {
@@ -602,16 +628,7 @@ impl HierarchicalBf {
             }
         }
         for d in 0..nd {
-            if column_n[d] == 0 {
-                if pattern.is_none() {
-                    return Err(Error::Bayes(format!(
-                        "development age {} months: no program observes it, and the vague prior \
-                         on the shared pattern cannot hold it. Give an informative pattern \
-                         prior with fit_with_pattern_prior",
-                        ages[d]
-                    )));
-                }
-            } else if column_sum[d].is_nan() || column_sum[d] <= 0.0 {
+            if column_sum[d].is_nan() || column_sum[d] <= 0.0 {
                 let alone = data.len() == 1;
                 return Err(
                     match column_error(&ages, d, column_n[d], column_sum[d], None, &[], alone) {
@@ -624,11 +641,52 @@ impl HierarchicalBf {
             }
         }
 
+        // A falling column gains `|S_cd| / phi_c` per unit that `omega
+        // delta_cd` falls, and the deviations' priors charge at most `1 /
+        // omega_scale` per unit of `|omega delta|` over every program
+        // together, so past that bound the posterior has no finite mass
+        // (`omega` runs away; decision 30, "Columns and origins").
+        let mut falling = Vec::new();
+        let mut squared = 0.0;
+        for (c, (p, m)) in data.iter().zip(&mean_premium).enumerate() {
+            let phi = kappa * m;
+            let mut column = vec![0.0; nd];
+            for &(_, d, x) in &p.observed.cells {
+                column[d] += x;
+            }
+            let fall: f64 = column[1..].iter().filter(|s| **s < 0.0).sum();
+            if column[0] + fall < 0.0 {
+                return Err(Error::Bayes(format!(
+                    "{}: its falling columns sum to {fall} and its first age to {}, so its \
+                     pattern has no finite posterior. Correct the program's data or leave it out",
+                    name(c),
+                    column[0]
+                )));
+            }
+            for (d, s) in column.iter().enumerate() {
+                if *s < 0.0 {
+                    squared += (s / phi).powi(2);
+                    falling.push(format!("{} at {} months: {s}", name(c), ages[d]));
+                }
+            }
+        }
+        if squared.sqrt() * self.omega_scale >= 1.0 {
+            return Err(Error::Bayes(format!(
+                "the columns that fall ({}) come to {} in units of each program's scale, at or \
+                 past 1 / omega_scale = {}: the posterior has no finite mass, as the programs' \
+                 deviations would grow without bound. Correct those columns, or reduce \
+                 omega_scale",
+                falling.join("; "),
+                squared.sqrt(),
+                1.0 / self.omega_scale
+            )));
+        }
+
         let pooled = pooled_factors(&data, nd);
         let log_apriori = self.apriori.ln();
         let (level_mean, level_sd, level_free) = match self.level_cv {
             Some(c) => {
-                let variance = c.mul_add(c, 1.0).ln();
+                let variance = (c * c).ln_1p();
                 (log_apriori - 0.5 * variance, variance.sqrt(), false)
             }
             None => (log_apriori, 1.0, true),
@@ -1471,7 +1529,12 @@ mod tests {
             ),
             ("c", 2021, rows, &[90.0, 100.0]),
         ]);
-        prepared(&tri, &quick(1));
+        // These chain ladders fit almost exactly, so the fall is many scales.
+        let held = HierarchicalBf {
+            omega_scale: 1e-3,
+            ..quick(1)
+        };
+        prepared(&tri, &held);
         // The last column falls in the only program that reaches it.
         let tri = panel(&[
             (
@@ -1486,6 +1549,168 @@ mod tests {
         let message = error.to_string();
         assert!(message.contains("summed over every program"), "{message}");
         assert!(message.contains("36 months"), "{message}");
+    }
+
+    #[test]
+    fn falling_columns_past_the_bound_have_no_posterior() {
+        // Two programs of two origins add nothing to the scale, so `a` sets
+        // kappa and each fall can be placed in units of its program's scale.
+        let healthy: Book = (
+            "a",
+            2020,
+            &[
+                &[100.0, 160.0, 185.0, 196.0],
+                &[110.0, 170.0, 201.0],
+                &[95.0, 158.0],
+                &[120.0],
+            ],
+            &[250.0, 260.0, 240.0, 280.0],
+        );
+        let model = quick(1);
+        let kappa = prepared(&panel(&[healthy]), &model).kappa;
+        let premium = [100.0, 100.0];
+        let fall = |units: f64| [100.0, 100.0 - units * kappa * 100.0];
+        let at = |units: f64| fall(units);
+
+        // 1.5 scales alone is inside 1 / omega_scale = 2.
+        let one = at(1.5);
+        let rows: &[&[f64]] = &[&one, &[100.0]];
+        let inside = panel(&[healthy, ("b", 2021, rows, &premium)]);
+        prepared(&inside, &model);
+
+        // 2.5 scales alone is past it, and names the program and the age.
+        let one = at(2.5);
+        let rows: &[&[f64]] = &[&one, &[100.0]];
+        let past = panel(&[healthy, ("b", 2021, rows, &premium)]);
+        let message = model
+            .fit(&past, "values", "premium")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("program b at 24 months"), "{message}");
+        assert!(message.contains("omega_scale"), "{message}");
+
+        // Falls inside the bound one at a time are past it together: one
+        // omega scales every program's deviations.
+        let one = at(1.5);
+        let rows: &[&[f64]] = &[&one, &[100.0]];
+        let together = panel(&[
+            healthy,
+            ("b", 2021, rows, &premium),
+            ("c", 2021, rows, &premium),
+        ]);
+        let message = model
+            .fit(&together, "values", "premium")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("program c at 24 months"), "{message}");
+
+        // A tighter prior on the deviations holds them.
+        let tight = HierarchicalBf {
+            omega_scale: 0.1,
+            ..quick(1)
+        };
+        prepared(&together, &tight);
+    }
+
+    #[test]
+    fn falls_larger_than_the_first_age_are_an_error() {
+        let healthy: Book = (
+            "a",
+            2020,
+            &[&[1000.0, 1600.0, 1850.0], &[1100.0, 1700.0], &[950.0]],
+            &[2500.0, 2600.0, 2400.0],
+        );
+        let rows: &[&[f64]] = &[&[10.0, -10.0, -30.0], &[5.0]];
+        let tri = panel(&[healthy, ("b", 2021, rows, &[100.0, 100.0])]);
+        let wide = HierarchicalBf {
+            cv: 1e-3,
+            omega_scale: 1e-6,
+            ..quick(1)
+        };
+        let message = wide.fit(&tri, "values", "premium").unwrap_err().to_string();
+        assert!(message.contains("program b"), "{message}");
+        assert!(message.contains("first age"), "{message}");
+    }
+
+    #[test]
+    fn a_pattern_prior_of_the_wrong_length_is_an_error() {
+        let tri = three_programs();
+        let prior = PatternPrior {
+            ages: vec![12, 24, 36, 48],
+            mean: vec![0.0],
+            sd: vec![1.0, 1.0, 1.0],
+        };
+        let error = quick(1).fit_with_pattern_prior(&tri, "values", "premium", &prior);
+        let message = error.unwrap_err().to_string();
+        assert!(message.contains("1 means and 3 sds"), "{message}");
+    }
+
+    /// The log posterior from the note, on the natural scale, with the
+    /// gamma's density in full.
+    fn by_hand(m: &Model, theta: &[f64]) -> f64 {
+        let natural = m.natural(theta);
+        let (log_level, log_tau) = (natural[0], theta[1]);
+        let log_omega = theta[m.log_omega()];
+        let (tau, omega) = (log_tau.exp(), log_omega.exp());
+        let mut f = log_tau - 0.5 * m.tau_precision * tau * tau;
+        f += log_omega - 0.5 * m.omega_precision * omega * omega;
+        if !m.level_free {
+            f -= 0.5 * ((log_level - m.level_mean) / m.level_sd).powi(2);
+        }
+        for d in 1..m.n_dev {
+            let gap = theta[m.beta(d)] - m.development_mean[d - 1];
+            f -= 0.5 * m.development_precision[d - 1] * gap * gap;
+        }
+        let k = m.shape;
+        for (c, program) in m.programs.iter().enumerate() {
+            let z = theta[m.z(c)];
+            f -= 0.5 * z * z;
+            let s = (tau * z - 0.5 * tau * tau).exp();
+            let mut weight = vec![1.0; m.n_dev];
+            for d in 1..m.n_dev {
+                let delta = theta[m.delta(c, d)];
+                f -= 0.5 * delta * delta;
+                weight[d] = (theta[m.beta(d)] + omega * delta).exp();
+            }
+            let total: f64 = weight.iter().sum();
+            for (w, log_prior) in program.log_prior.iter().enumerate() {
+                let premium = (log_prior - m.log_apriori).exp();
+                let mean = log_level.exp() * s * premium;
+                let ultimate = natural[m.u(program, w)].exp();
+                // Gamma(k, mean k^-1) on U, with the Jacobian dU / d alpha.
+                f += k * (k / mean).ln() + (k - 1.0) * ultimate.ln() - k * ultimate / mean
+                    + ultimate.ln();
+            }
+            for &(w, d, x) in &program.cells {
+                let cell = natural[m.u(program, w)].exp() * weight[d] / total;
+                f += (x * cell.ln() - cell) / program.phi;
+            }
+        }
+        f
+    }
+
+    #[test]
+    fn the_density_is_the_notes_on_the_natural_scale() {
+        // Every term away from the corners, flat and informative: differences
+        // between points, since each form drops its own constants.
+        let tri = three_programs();
+        for level_cv in [None, Some(0.3)] {
+            let model = HierarchicalBf {
+                level_cv,
+                ..quick(1)
+            };
+            let panel = prepared(&tri, &model);
+            let m = &panel.model;
+            let base = near(&panel.start, 0, 0.3);
+            let mut gradient = vec![0.0; m.dim()];
+            let at_base = m.log_posterior(&base, &mut gradient);
+            for k in 1..6 {
+                let point = near(&panel.start, k, 0.3);
+                let f = m.log_posterior(&point, &mut gradient) - at_base;
+                let g = by_hand(m, &point) - by_hand(m, &base);
+                assert!((f - g).abs() < 1e-8 * (1.0 + g.abs()), "{f} against {g}");
+            }
+        }
     }
 
     #[test]
@@ -1584,6 +1809,19 @@ mod tests {
         assert!(hyper.iter().all(|h| h.mean > 0.0));
         let summed: f64 = fit.programs.iter().map(|p| p.reserves.mean()).sum();
         assert!((summed - fit.reserves.mean()).abs() < 1e-6 * summed);
+        // Each program's draws are the joint draws' own columns, simulation
+        // by simulation, which sums of means alone would not show.
+        let width = fit.reserves.n_components();
+        let joint = fit.reserves.draw_matrix();
+        let mut first = 0;
+        for program in &fit.programs {
+            let own = program.reserves.n_components();
+            for (i, row) in program.reserves.draw_matrix().chunks_exact(own).enumerate() {
+                assert_eq!(row, &joint[i * width + first..i * width + first + own]);
+            }
+            first += own;
+        }
+        assert_eq!(first, width);
         for program in &fit.programs {
             let total: f64 = program.pattern.iter().sum();
             assert!((total - 1.0).abs() < 1e-9);
@@ -1596,6 +1834,24 @@ mod tests {
         let summary = fit.summary().unwrap();
         let late = summary.iter().find(|s| s.name == "delta[3,4]").unwrap();
         assert!((late.sd - 1.0).abs() < 0.15, "{}", late.sd);
+    }
+
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn a_very_tight_hyperprior_keeps_its_variance() {
+        // cv^2 is below the rounding of 1 + cv^2, so the variance needs ln_1p.
+        let model = HierarchicalBf {
+            level_cv: Some(1e-9),
+            ..quick(3)
+        };
+        let panel = prepared(&three_programs(), &model);
+        assert!((panel.model.level_sd - 1e-9).abs() < 1e-15);
+        let fit = model.fit(&three_programs(), "values", "premium").unwrap();
+        let level = &fit.hyperparameters().unwrap()[0];
+        assert!((level.mean - 0.7).abs() < 1e-6, "{}", level.mean);
     }
 
     #[test]
