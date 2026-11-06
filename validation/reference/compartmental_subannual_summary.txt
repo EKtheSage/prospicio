@@ -1,0 +1,254 @@
+arm	n	err	cells	cover90	se	D	Dcrit	bias%	z_mean	z_sd	rmse	sd	secs	rhat	rhat>1.01	ess	div_books	div_med	swaps
+conflict_aa_m1_preset_study	20	0	110	85	7	14.4	30.4	0.3	0.16	1.08	3456	3314	1.3	1.021	90	209	18	1	0
+conflict_aa_m1_ratewide_study	20	0	110	90	7	23.2	30.4	1.0	0.47	1.07	3733	3380	1.4	1.021	95	195	15	1	0
+conflict_am_m1_preset_study	20	0	1320	90	7	17.3	30.4	0.1	0.05	0.89	1788	1992	23.5	1.023	100	172	17	2	0
+conflict_am_m1_ratewide_study	20	0	1320	90	7	19.7	30.4	0.2	0.11	0.91	1807	1966	22.5	1.029	100	149	19	4	0
+conflict_aq_m1_preset_study	20	0	440	95	7	15.1	30.4	0.1	0.03	0.85	2100	2463	5.3	1.016	90	237	13	2	0
+conflict_aq_m1_ratewide_study	20	0	440	95	7	19.8	30.4	0.3	0.16	0.84	2133	2508	5.4	1.020	95	215	18	2	0
+earned_aa_m1_preset_study	50	0	110	100	4	39.9	19.2	-5.6	-0.59	0.46	7423	9961	0.6	1.007	18	706	4	0	0
+earned_am_m1_preset_study	50	0	1320	92	4	37.4	19.2	-3.4	-0.75	0.71	4860	4728	11.4	1.020	94	195	48	7	45
+earned_aq_m1_preset_study	50	0	440	98	4	23.9	19.2	1.6	0.25	0.65	4058	5758	3.1	1.017	88	215	50	4	0
+earned_qm_m1_preset_study	20	0	4920	95	7	21.9	30.4	-0.3	-0.16	0.79	1586	1964	149.1	1.039	100	94	8	0	0
+earned_qq_m1_preset_default	3	0	1640	100	17	47.5	78.5	-0.7	-0.34	0.54	1483	2292	195.4	1.008	33	308	0	0	0
+earned_qq_m1_preset_study	50	0	1640	92	4	17.8	19.2	-0.4	-0.20	0.84	2007	2293	34.1	1.056	100	63	27	1	0
+fast_aa_m1_preset_study	20	0	110	90	7	29.6	30.4	19.1	0.46	1.08	2386	2024	2.0	1.034	95	124	20	8	0
+fast_aa_m1_ratewide_study	20	0	110	85	7	25.9	30.4	13.3	0.25	1.13	2216	1933	2.0	1.026	100	161	19	7	5
+fast_am_m1_preset_study	20	0	1320	95	7	10.7	30.4	5.6	0.07	0.91	1416	1551	37.2	1.018	90	230	12	1	0
+fast_am_m1_ratewide_study	20	0	1320	95	7	11.2	30.4	5.9	0.08	0.91	1414	1553	35.5	1.018	100	210	16	2	0
+fast_aq_m1_preset_study	20	0	440	90	7	14.7	30.4	5.8	0.02	1.04	1712	1641	8.4	1.022	95	187	20	3	0
+fast_aq_m1_ratewide_study	20	0	440	90	7	14.8	30.4	7.3	0.10	1.03	1706	1635	7.6	1.023	95	183	19	4	0
+iid114_aq_m1_preset_study	20	0	400	75	7	22.9	30.4	-0.6	-0.33	1.28	3253	2478	5.2	1.017	95	211	15	3	0
+iid117_aq_m1_preset_study	20	0	420	85	7	30.8	30.4	-0.7	-0.31	1.12	2581	2176	5.5	1.021	95	194	17	2	0
+iid_aa_m1_preset_default	5	0	110	80	13	28.9	60.8	-0.9	-0.18	1.20	3133	2716	8.4	1.007	20	637	0	0	0
+iid_aa_m1_preset_study	50	0	110	84	4	12.1	19.2	-0.0	-0.07	1.11	2853	2636	1.9	1.017	90	184	46	3	0
+iid_aa_m1_ratewide_study	20	0	110	85	7	22.5	30.4	-0.2	-0.07	1.18	2990	2567	1.6	1.025	100	165	20	3	0
+iid_am_m1_preset_default	5	0	1320	100	13	28.9	60.8	-0.6	-0.27	0.78	1415	1688	163.3	1.005	0	908	0	0	0
+iid_am_m1_preset_study	50	0	1320	84	4	5.5	19.2	0.1	0.03	1.01	1716	1707	33.1	1.020	90	198	43	3	0
+iid_aq_m1_preset_default	5	0	440	80	13	40.4	60.8	-1.0	-0.38	1.06	2343	1918	31.7	1.007	0	782	0	0	0
+iid_aq_m1_preset_study	50	0	440	82	4	12.4	19.2	-0.0	-0.03	1.08	2103	1949	6.6	1.022	90	178	45	2	0
+iid_aq_m1_ratewide_study	20	0	440	95	7	28.7	30.4	-0.4	-0.17	1.04	2073	1920	6.0	1.022	100	193	14	2	0
+m2q_aa_m2_preset_study	50	0	110	96	4	7.8	19.2	1.1	0.04	0.95	5761	5893	13.4	1.029	92	130	0	0	0
+m2q_aq_m2_preset_study	50	0	440	82	4	11.2	19.2	1.0	0.07	1.16	5156	4378	52.8	1.029	100	121	0	0	0
+m2qo_qq_m2_preset_study	20	0	1640	80	7	16.7	30.4	0.8	0.27	0.96	2960	3032	91.4	1.066	100	63	0	0	0
+m2season114_aq_m2_preset_study	20	0	400	75	7	22.6	30.4	1.6	0.18	1.20	8271	6462	25.9	1.047	100	78	0	0	0
+m2season_aq_m2_preset_study	20	0	440	80	7	28.9	30.4	2.8	0.41	1.16	5950	4789	29.9	1.059	100	67	0	0	0
+m2seasonq_qq_m2_preset_study	20	0	1640	95	7	43.9	30.4	-2.6	-0.74	0.71	3891	3685	91.1	1.061	100	57	0	0	0
+m2y114_aq_m2_preset_study	20	0	400	75	7	16.8	30.4	0.7	0.04	1.21	8210	6508	20.8	1.042	95	92	0	0	0
+m2y_aa_m2_preset_default	5	0	110	80	13	34.6	60.8	2.1	0.21	0.70	4893	5776	52.2	1.001	0	2744	0	0	0
+m2y_aa_m2_preset_study	50	0	110	86	4	13.8	19.2	1.7	0.18	0.94	5527	5478	5.8	1.024	92	151	0	0	0
+m2y_am_m2_preset_default	1	0	1320	100	30	89.0	136.0	7.6	1.18	0.00	6375	5386	2850.0	1.542	100	7	0	0	0
+m2y_am_m2_preset_study	20	0	1320	80	7	35.3	30.4	3.3	0.55	1.16	5259	4135	128.0	1.037	100	119	0	0	0
+m2y_aq_m2_preset_default	3	0	440	67	17	67.2	78.5	5.4	0.86	0.53	5163	5136	255.2	1.003	0	1302	0	0	0
+m2y_aq_m2_preset_study	50	0	440	88	4	18.1	19.2	1.5	0.20	1.06	4882	4362	32.3	1.034	100	99	0	0	0
+m2y_aq_m2_ratewide_study	20	0	440	90	7	30.9	30.4	3.4	0.50	1.02	5564	4695	30.1	1.052	100	68	3	0	0
+m2y_aq_m2_sigmawide_study	20	0	440	85	7	28.1	30.4	3.0	0.48	1.10	5515	4554	24.0	1.044	100	69	0	0	0
+persist_aa_m1_preset_study	50	0	110	88	4	10.7	19.2	-0.2	-0.06	0.94	1623	1762	2.7	1.021	96	158	48	3	0
+persist_aa_m1i_preset_study	50	0	110	98	4	28.1	19.2	-0.6	-0.15	0.48	1510	3356	0.7	1.012	60	286	12	0	0
+persist_am_m1_preset_study	50	0	1320	56	4	19.1	19.2	-0.1	-0.02	1.95	2033	1069	101.3	1.021	96	199	34	2	0
+persist_am_m1i_preset_study	50	0	1320	100	4	11.0	19.2	-0.4	-0.08	0.75	2731	3605	5.7	1.010	50	366	37	2	0
+persist_aq_m1_preset_study	50	0	440	70	4	16.3	19.2	-0.1	-0.03	1.51	1903	1271	13.1	1.018	84	206	45	2	0
+persist_aq_m1i_preset_study	50	0	440	100	4	19.9	19.2	-0.5	-0.11	0.60	2151	3564	1.6	1.007	16	508	28	1	0
+season114_aq_m1_preset_study	20	0	400	95	7	16.6	30.4	1.0	0.27	0.92	3539	3649	3.6	1.018	80	254	13	2	0
+season117_aq_m1_preset_study	20	0	420	95	7	22.7	30.4	-1.0	-0.32	0.84	3008	3333	3.4	1.018	80	273	15	2	0
+season_aa_m1_preset_study	20	0	110	80	7	35.1	30.4	-1.6	-0.51	1.14	3232	2661	1.4	1.019	85	192	19	2	0
+season_aq_m1_preset_study	20	0	440	90	7	38.0	30.4	-2.5	-0.67	0.73	3015	3006	3.9	1.020	100	212	17	2	0
+seasonq_qq_m1_preset_study	20	0	1640	90	7	58.7	30.4	-2.4	-0.94	0.70	3169	2676	29.8	1.060	100	62	7	0	0
+
+Coverage of the central 90% of each scored parameter, % of books
+conflict_aa_m1_preset_study k_er 90 k_p 95 b_RLR 85 b_RRF 95 tau_RLR 95 tau_RRF 75 rho 95 sigma_os 90 sigma_pd 95
+conflict_aa_m1_ratewide_study k_er 95 k_p 95 b_RLR 85 b_RRF 95 tau_RLR 90 tau_RRF 75 rho 100 sigma_os 85 sigma_pd 90
+conflict_am_m1_preset_study k_er 80 k_p 90 b_RLR 85 b_RRF 80 tau_RLR 90 tau_RRF 85 rho 90 sigma_os 75 sigma_pd 100
+conflict_am_m1_ratewide_study k_er 85 k_p 90 b_RLR 85 b_RRF 85 tau_RLR 95 tau_RRF 85 rho 90 sigma_os 80 sigma_pd 100
+conflict_aq_m1_preset_study k_er 85 k_p 90 b_RLR 80 b_RRF 80 tau_RLR 85 tau_RRF 75 rho 90 sigma_os 95 sigma_pd 95
+conflict_aq_m1_ratewide_study k_er 90 k_p 90 b_RLR 85 b_RRF 80 tau_RLR 95 tau_RRF 80 rho 90 sigma_os 90 sigma_pd 95
+earned_aa_m1_preset_study k_er 0 k_p 36 b_RLR 28 b_RRF 16 tau_RLR 6 tau_RRF 52 rho 100 sigma_os 80 sigma_pd 0
+earned_am_m1_preset_study k_er 0 k_p 0 b_RLR 0 b_RRF 0 tau_RLR 76 tau_RRF 42 rho 100 sigma_os 0 sigma_pd 0
+earned_aq_m1_preset_study k_er 0 k_p 0 b_RLR 0 b_RRF 0 tau_RLR 50 tau_RRF 40 rho 100 sigma_os 0 sigma_pd 0
+earned_qm_m1_preset_study k_er 75 k_p 70 b_RLR 80 b_RRF 90 tau_RLR 75 tau_RRF 85 rho 90 sigma_os 95 sigma_pd 85
+earned_qq_m1_preset_default k_er 100 k_p 100 b_RLR 33 b_RRF 100 tau_RLR 67 tau_RRF 67 rho 100 sigma_os 67 sigma_pd 100
+earned_qq_m1_preset_study k_er 86 k_p 86 b_RLR 68 b_RRF 92 tau_RLR 88 tau_RRF 76 rho 92 sigma_os 94 sigma_pd 92
+fast_aa_m1_preset_study k_er 0 k_p 0 b_RLR 85 b_RRF 95 tau_RLR 85 tau_RRF 80 rho 100 sigma_os 95 sigma_pd 75
+fast_aa_m1_ratewide_study k_er 100 k_p 95 b_RLR 90 b_RRF 90 tau_RLR 90 tau_RRF 90 rho 100 sigma_os 95 sigma_pd 95
+fast_am_m1_preset_study k_er 85 k_p 75 b_RLR 80 b_RRF 100 tau_RLR 75 tau_RRF 85 rho 95 sigma_os 90 sigma_pd 85
+fast_am_m1_ratewide_study k_er 90 k_p 85 b_RLR 80 b_RRF 85 tau_RLR 75 tau_RRF 85 rho 95 sigma_os 90 sigma_pd 90
+fast_aq_m1_preset_study k_er 65 k_p 75 b_RLR 90 b_RRF 95 tau_RLR 85 tau_RRF 75 rho 100 sigma_os 95 sigma_pd 90
+fast_aq_m1_ratewide_study k_er 100 k_p 100 b_RLR 75 b_RRF 95 tau_RLR 80 tau_RRF 65 rho 100 sigma_os 95 sigma_pd 95
+iid114_aq_m1_preset_study k_er 90 k_p 90 b_RLR 85 b_RRF 75 tau_RLR 90 tau_RRF 75 rho 95 sigma_os 90 sigma_pd 85
+iid117_aq_m1_preset_study k_er 95 k_p 90 b_RLR 85 b_RRF 90 tau_RLR 90 tau_RRF 75 rho 90 sigma_os 90 sigma_pd 80
+iid_aa_m1_preset_default k_er 100 k_p 100 b_RLR 100 b_RRF 60 tau_RLR 60 tau_RRF 60 rho 100 sigma_os 100 sigma_pd 80
+iid_aa_m1_preset_study k_er 90 k_p 80 b_RLR 96 b_RRF 86 tau_RLR 92 tau_RRF 64 rho 100 sigma_os 88 sigma_pd 86
+iid_aa_m1_ratewide_study k_er 85 k_p 80 b_RLR 85 b_RRF 80 tau_RLR 85 tau_RRF 65 rho 100 sigma_os 90 sigma_pd 95
+iid_am_m1_preset_default k_er 100 k_p 80 b_RLR 100 b_RRF 80 tau_RLR 80 tau_RRF 80 rho 100 sigma_os 100 sigma_pd 80
+iid_am_m1_preset_study k_er 88 k_p 92 b_RLR 94 b_RRF 82 tau_RLR 92 tau_RRF 86 rho 86 sigma_os 90 sigma_pd 86
+iid_aq_m1_preset_default k_er 80 k_p 80 b_RLR 80 b_RRF 60 tau_RLR 60 tau_RRF 80 rho 100 sigma_os 80 sigma_pd 80
+iid_aq_m1_preset_study k_er 90 k_p 92 b_RLR 94 b_RRF 82 tau_RLR 94 tau_RRF 80 rho 94 sigma_os 94 sigma_pd 88
+iid_aq_m1_ratewide_study k_er 85 k_p 90 b_RLR 85 b_RRF 80 tau_RLR 85 tau_RRF 80 rho 95 sigma_os 85 sigma_pd 85
+m2q_aa_m2_preset_study b_ker 98 b_kp 82 b_RLR 90 b_RRF 80 tau_RLR 96 tau_RRF 98 tau_dev_kp 68 sigma_os 32 sigma_pd 4
+m2q_aq_m2_preset_study b_ker 92 b_kp 82 b_RLR 94 b_RRF 86 tau_RLR 86 tau_RRF 98 tau_dev_kp 90 sigma_os 76 sigma_pd 82
+m2qo_qq_m2_preset_study b_ker 70 b_kp 75 b_RLR 50 b_RRF 50 tau_RLR 95 tau_RRF 100 tau_dev_kp 55 sigma_os 85 sigma_pd 80
+m2season114_aq_m2_preset_study b_ker 55 b_kp 70 b_RLR 65 b_RRF 95 tau_RLR 85 tau_RRF 95 tau_dev_kp 50 sigma_os 95 sigma_pd 100
+m2season_aq_m2_preset_study b_ker 55 b_kp 50 b_RLR 65 b_RRF 90 tau_RLR 95 tau_RRF 100 tau_dev_kp 50 sigma_os 80 sigma_pd 100
+m2seasonq_qq_m2_preset_study b_ker 65 b_kp 75 b_RLR 50 b_RRF 35 tau_RLR 95 tau_RRF 100 tau_dev_kp 55 sigma_os 85 sigma_pd 0
+m2y114_aq_m2_preset_study b_ker 55 b_kp 60 b_RLR 65 b_RRF 55 tau_RLR 85 tau_RRF 95 tau_dev_kp 40 sigma_os 95 sigma_pd 100
+m2y_aa_m2_preset_default b_ker 100 b_kp 80 b_RLR 80 b_RRF 100 tau_RLR 80 tau_RRF 100 tau_dev_kp 80 sigma_os 20 sigma_pd 20
+m2y_aa_m2_preset_study b_ker 88 b_kp 72 b_RLR 94 b_RRF 88 tau_RLR 94 tau_RRF 100 tau_dev_kp 76 sigma_os 50 sigma_pd 8
+m2y_am_m2_preset_default b_ker 0 b_kp 0 b_RLR 100 b_RRF 0 tau_RLR 0 tau_RRF 100 tau_dev_kp 100 sigma_os 100 sigma_pd 100
+m2y_am_m2_preset_study b_ker 30 b_kp 35 b_RLR 50 b_RRF 15 tau_RLR 90 tau_RRF 100 tau_dev_kp 30 sigma_os 95 sigma_pd 95
+m2y_aq_m2_preset_default b_ker 67 b_kp 33 b_RLR 67 b_RRF 100 tau_RLR 67 tau_RRF 100 tau_dev_kp 67 sigma_os 67 sigma_pd 100
+m2y_aq_m2_preset_study b_ker 64 b_kp 52 b_RLR 64 b_RRF 58 tau_RLR 92 tau_RRF 100 tau_dev_kp 48 sigma_os 82 sigma_pd 92
+m2y_aq_m2_ratewide_study b_ker 0 b_kp 0 b_RLR 60 b_RRF 65 tau_RLR 95 tau_RRF 95 tau_dev_kp 0 sigma_os 100 sigma_pd 100
+m2y_aq_m2_sigmawide_study b_ker 55 b_kp 50 b_RLR 65 b_RRF 55 tau_RLR 95 tau_RRF 100 tau_dev_kp 45 sigma_os 100 sigma_pd 100
+persist_aa_m1_preset_study k_er 86 k_p 80 b_RLR 80 b_RRF 80 tau_RLR 92 tau_RRF 86 rho 98
+persist_aa_m1i_preset_study k_er 86 k_p 86 b_RLR 82 b_RRF 98 tau_RLR 92 tau_RRF 86 rho 98
+persist_am_m1_preset_study k_er 36 k_p 18 b_RLR 76 b_RRF 66 tau_RLR 86 tau_RRF 26 rho 56
+persist_am_m1i_preset_study k_er 32 k_p 24 b_RLR 80 b_RRF 48 tau_RLR 88 tau_RRF 44 rho 64
+persist_aq_m1_preset_study k_er 66 k_p 48 b_RLR 76 b_RRF 72 tau_RLR 90 tau_RRF 36 rho 66
+persist_aq_m1i_preset_study k_er 68 k_p 56 b_RLR 82 b_RRF 76 tau_RLR 88 tau_RRF 66 rho 70
+season114_aq_m1_preset_study k_er 90 k_p 95 b_RLR 85 b_RRF 80 tau_RLR 85 tau_RRF 80 rho 95 sigma_os 90 sigma_pd 0
+season117_aq_m1_preset_study k_er 90 k_p 100 b_RLR 90 b_RRF 95 tau_RLR 90 tau_RRF 70 rho 95 sigma_os 90 sigma_pd 0
+season_aa_m1_preset_study k_er 0 k_p 80 b_RLR 90 b_RRF 75 tau_RLR 90 tau_RRF 55 rho 100 sigma_os 90 sigma_pd 90
+season_aq_m1_preset_study k_er 90 k_p 95 b_RLR 85 b_RRF 90 tau_RLR 90 tau_RRF 75 rho 100 sigma_os 85 sigma_pd 0
+seasonq_qq_m1_preset_study k_er 85 k_p 80 b_RLR 70 b_RRF 90 tau_RLR 80 tau_RRF 90 rho 100 sigma_os 95 sigma_pd 0
+
+Mean posterior mean of each scored parameter
+conflict_aa_m1_preset_study k_er 1.781 k_p 0.427 b_RLR 1.413 b_RRF -1.299 tau_RLR 0.362 tau_RRF 0.138 rho 0.273 sigma_os 1542.566 sigma_pd 503.549
+conflict_aa_m1_ratewide_study k_er 1.764 k_p 0.427 b_RLR 1.419 b_RRF -1.294 tau_RLR 0.362 tau_RRF 0.136 rho 0.269 sigma_os 1543.301 sigma_pd 501.254
+conflict_am_m1_preset_study k_er 1.756 k_p 0.429 b_RLR 1.434 b_RRF -1.353 tau_RLR 0.363 tau_RRF 0.188 rho 0.212 sigma_os 1520.154 sigma_pd 498.359
+conflict_am_m1_ratewide_study k_er 1.756 k_p 0.429 b_RLR 1.440 b_RRF -1.351 tau_RLR 0.368 tau_RRF 0.189 rho 0.208 sigma_os 1519.755 sigma_pd 498.302
+conflict_aq_m1_preset_study k_er 1.759 k_p 0.429 b_RLR 1.437 b_RRF -1.354 tau_RLR 0.362 tau_RRF 0.171 rho 0.253 sigma_os 1529.844 sigma_pd 505.681
+conflict_aq_m1_ratewide_study k_er 1.756 k_p 0.429 b_RLR 1.436 b_RRF -1.349 tau_RLR 0.364 tau_RRF 0.170 rho 0.250 sigma_os 1530.084 sigma_pd 505.503
+earned_aa_m1_preset_study k_er 1.924 k_p 0.766 b_RLR 1.346 b_RRF -1.735 tau_RLR 0.196 tau_RRF 0.082 rho 0.062 sigma_os 1703.076 sigma_pd 2576.648
+earned_am_m1_preset_study k_er 1.106 k_p 0.980 b_RLR 2.059 b_RRF -3.151 tau_RLR 0.306 tau_RRF 0.083 rho 0.275 sigma_os 4678.354 sigma_pd 1343.729
+earned_aq_m1_preset_study k_er 1.215 k_p 0.901 b_RLR 1.602 b_RRF -2.149 tau_RLR 0.260 tau_RRF 0.078 rho 0.108 sigma_os 5134.358 sigma_pd 1408.651
+earned_qm_m1_preset_study k_er 3.305 k_p 0.820 b_RLR 1.013 b_RRF -1.018 tau_RLR 0.384 tau_RRF 0.177 rho 0.355 sigma_os 750.118 sigma_pd 249.160
+earned_qq_m1_preset_default k_er 3.284 k_p 0.821 b_RLR 0.981 b_RRF -1.032 tau_RLR 0.356 tau_RRF 0.138 rho 0.547 sigma_os 761.433 sigma_pd 247.414
+earned_qq_m1_preset_study k_er 3.295 k_p 0.821 b_RLR 1.019 b_RRF -1.033 tau_RLR 0.385 tau_RRF 0.146 rho 0.450 sigma_os 753.747 sigma_pd 250.884
+fast_aa_m1_preset_study k_er 5.199 k_p 2.821 b_RLR 0.791 b_RRF -0.707 tau_RLR 0.372 tau_RRF 0.089 rho 0.119 sigma_os 1463.616 sigma_pd 545.898
+fast_aa_m1_ratewide_study k_er 11.665 k_p 2.503 b_RLR 0.779 b_RRF -0.694 tau_RLR 0.373 tau_RRF 0.094 rho 0.112 sigma_os 1464.614 sigma_pd 517.107
+fast_am_m1_preset_study k_er 7.934 k_p 2.506 b_RLR 0.933 b_RRF -1.002 tau_RLR 0.346 tau_RRF 0.160 rho 0.339 sigma_os 1496.863 sigma_pd 501.435
+fast_am_m1_ratewide_study k_er 8.014 k_p 2.497 b_RLR 0.917 b_RRF -0.969 tau_RLR 0.346 tau_RRF 0.161 rho 0.338 sigma_os 1496.745 sigma_pd 501.115
+fast_aq_m1_preset_study k_er 7.733 k_p 2.530 b_RLR 0.967 b_RRF -1.075 tau_RLR 0.358 tau_RRF 0.131 rho 0.250 sigma_os 1492.238 sigma_pd 506.954
+fast_aq_m1_ratewide_study k_er 8.035 k_p 2.497 b_RLR 0.923 b_RRF -0.969 tau_RLR 0.362 tau_RRF 0.131 rho 0.257 sigma_os 1491.654 sigma_pd 504.859
+iid114_aq_m1_preset_study k_er 3.334 k_p 0.817 b_RLR 0.965 b_RRF -0.967 tau_RLR 0.376 tau_RRF 0.149 rho 0.230 sigma_os 1514.899 sigma_pd 511.775
+iid117_aq_m1_preset_study k_er 3.329 k_p 0.818 b_RLR 0.971 b_RRF -0.975 tau_RLR 0.378 tau_RRF 0.149 rho 0.238 sigma_os 1514.260 sigma_pd 511.352
+iid_aa_m1_preset_default k_er 3.234 k_p 0.825 b_RLR 1.024 b_RRF -1.002 tau_RLR 0.463 tau_RRF 0.100 rho 0.154 sigma_os 1617.505 sigma_pd 525.822
+iid_aa_m1_preset_study k_er 3.249 k_p 0.826 b_RLR 0.987 b_RRF -1.047 tau_RLR 0.380 tau_RRF 0.103 rho 0.216 sigma_os 1521.957 sigma_pd 529.757
+iid_aa_m1_ratewide_study k_er 3.400 k_p 0.812 b_RLR 0.947 b_RRF -0.930 tau_RLR 0.389 tau_RRF 0.106 rho 0.197 sigma_os 1510.676 sigma_pd 517.319
+iid_am_m1_preset_default k_er 3.305 k_p 0.819 b_RLR 1.025 b_RRF -0.989 tau_RLR 0.432 tau_RRF 0.167 rho 0.414 sigma_os 1499.015 sigma_pd 499.033
+iid_am_m1_preset_study k_er 3.313 k_p 0.819 b_RLR 0.973 b_RRF -1.011 tau_RLR 0.375 tau_RRF 0.178 rho 0.228 sigma_os 1493.901 sigma_pd 504.088
+iid_aq_m1_preset_default k_er 3.306 k_p 0.819 b_RLR 1.018 b_RRF -0.983 tau_RLR 0.447 tau_RRF 0.165 rho 0.213 sigma_os 1547.818 sigma_pd 503.193
+iid_aq_m1_preset_study k_er 3.312 k_p 0.820 b_RLR 0.976 b_RRF -1.017 tau_RLR 0.375 tau_RRF 0.153 rho 0.243 sigma_os 1511.621 sigma_pd 507.706
+iid_aq_m1_ratewide_study k_er 3.340 k_p 0.817 b_RLR 0.964 b_RRF -0.960 tau_RLR 0.378 tau_RRF 0.154 rho 0.259 sigma_os 1518.125 sigma_pd 510.152
+m2q_aa_m2_preset_study b_ker -0.047 b_kp -1.688 b_RLR 0.914 b_RRF -0.464 tau_RLR 0.413 tau_RRF 0.294 tau_dev_kp 0.779 sigma_os 0.130 sigma_pd 0.127
+m2q_aq_m2_preset_study b_ker 0.465 b_kp -1.736 b_RLR 1.011 b_RRF -1.183 tau_RLR 0.472 tau_RRF 0.250 tau_dev_kp 0.948 sigma_os 0.107 sigma_pd 0.180
+m2qo_qq_m2_preset_study b_ker 0.677 b_kp -2.032 b_RLR 0.981 b_RRF -1.213 tau_RLR 0.429 tau_RRF 0.178 tau_dev_kp 0.931 sigma_os 0.102 sigma_pd 0.179
+m2season114_aq_m2_preset_study b_ker 0.017 b_kp -1.694 b_RLR 1.039 b_RRF -1.167 tau_RLR 0.468 tau_RRF 0.303 tau_dev_kp 0.818 sigma_os 0.105 sigma_pd 0.179
+m2season_aq_m2_preset_study b_ker -0.036 b_kp -1.639 b_RLR 1.074 b_RRF -1.286 tau_RLR 0.463 tau_RRF 0.301 tau_dev_kp 0.823 sigma_os 0.105 sigma_pd 0.179
+m2seasonq_qq_m2_preset_study b_ker 0.605 b_kp -2.020 b_RLR 1.002 b_RRF -1.555 tau_RLR 0.424 tau_RRF 0.132 tau_dev_kp 0.927 sigma_os 0.102 sigma_pd 0.286
+m2y114_aq_m2_preset_study b_ker -0.006 b_kp -1.679 b_RLR 1.054 b_RRF -1.185 tau_RLR 0.468 tau_RRF 0.309 tau_dev_kp 0.824 sigma_os 0.105 sigma_pd 0.178
+m2y_aa_m2_preset_default b_ker 0.303 b_kp -1.658 b_RLR 1.052 b_RRF -1.033 tau_RLR 0.397 tau_RRF 0.295 tau_dev_kp 0.837 sigma_os 0.129 sigma_pd 0.119
+m2y_aa_m2_preset_study b_ker 0.008 b_kp -1.592 b_RLR 0.858 b_RRF -0.989 tau_RLR 0.381 tau_RRF 0.293 tau_dev_kp 0.809 sigma_os 0.123 sigma_pd 0.118
+m2y_am_m2_preset_default b_ker -3.712 b_kp -0.837 b_RLR 1.209 b_RRF -2.588 tau_RLR 0.745 tau_RRF 0.306 tau_dev_kp 0.299 sigma_os 0.105 sigma_pd 0.290
+m2y_am_m2_preset_study b_ker -0.166 b_kp -1.621 b_RLR 1.097 b_RRF -1.539 tau_RLR 0.482 tau_RRF 0.287 tau_dev_kp 0.823 sigma_os 0.101 sigma_pd 0.299
+m2y_aq_m2_preset_default b_ker 0.335 b_kp -1.547 b_RLR 1.334 b_RRF -1.254 tau_RLR 0.590 tau_RRF 0.314 tau_dev_kp 0.924 sigma_os 0.108 sigma_pd 0.176
+m2y_aq_m2_preset_study b_ker 0.223 b_kp -1.613 b_RLR 1.033 b_RRF -1.273 tau_RLR 0.458 tau_RRF 0.307 tau_dev_kp 0.865 sigma_os 0.106 sigma_pd 0.179
+m2y_aq_m2_ratewide_study b_ker 0.029 b_kp -0.177 b_RLR 1.041 b_RRF -1.194 tau_RLR 0.455 tau_RRF 0.301 tau_dev_kp 0.085 sigma_os 0.104 sigma_pd 0.178
+m2y_aq_m2_sigmawide_study b_ker -0.053 b_kp -1.632 b_RLR 1.072 b_RRF -1.202 tau_RLR 0.468 tau_RRF 0.307 tau_dev_kp 0.833 sigma_os 0.100 sigma_pd 0.177
+persist_aa_m1_preset_study k_er 3.282 k_p 0.823 b_RLR 0.981 b_RRF -1.006 tau_RLR 0.378 tau_RRF 0.186 rho 0.263
+persist_aa_m1i_preset_study k_er 3.280 k_p 0.825 b_RLR 0.990 b_RRF -1.036 tau_RLR 0.377 tau_RRF 0.162 rho 0.228
+persist_am_m1_preset_study k_er 3.313 k_p 0.819 b_RLR 0.970 b_RRF -0.982 tau_RLR 0.391 tau_RRF 0.335 rho 0.009
+persist_am_m1i_preset_study k_er 3.308 k_p 0.821 b_RLR 0.979 b_RRF -1.005 tau_RLR 0.389 tau_RRF 0.295 rho 0.010
+persist_aq_m1_preset_study k_er 3.309 k_p 0.820 b_RLR 0.972 b_RRF -0.988 tau_RLR 0.387 tau_RRF 0.312 rho 0.053
+persist_aq_m1i_preset_study k_er 3.301 k_p 0.822 b_RLR 0.985 b_RRF -1.017 tau_RLR 0.386 tau_RRF 0.273 rho 0.053
+season114_aq_m1_preset_study k_er 3.342 k_p 0.815 b_RLR 0.958 b_RRF -0.951 tau_RLR 0.377 tau_RRF 0.148 rho 0.247 sigma_os 1515.901 sigma_pd 836.577
+season117_aq_m1_preset_study k_er 3.342 k_p 0.815 b_RLR 0.954 b_RRF -0.977 tau_RLR 0.379 tau_RRF 0.142 rho 0.227 sigma_os 1513.381 sigma_pd 833.741
+season_aa_m1_preset_study k_er 2.865 k_p 0.830 b_RLR 0.972 b_RRF -1.016 tau_RLR 0.388 tau_RRF 0.106 rho 0.191 sigma_os 1526.272 sigma_pd 518.065
+season_aq_m1_preset_study k_er 3.342 k_p 0.815 b_RLR 0.957 b_RRF -0.991 tau_RLR 0.381 tau_RRF 0.143 rho 0.220 sigma_os 1518.069 sigma_pd 823.662
+seasonq_qq_m1_preset_study k_er 3.301 k_p 0.820 b_RLR 1.017 b_RRF -1.054 tau_RLR 0.380 tau_RRF 0.180 rho 0.438 sigma_os 752.188 sigma_pd 306.624
+
+season_aa_m1_preset_study against iid_aa_m1_preset_study: 20 books, mean less outcome -0.51 sd against -0.28, fitted reserve 2.38% (mean absolute 2.38%), outcome 3.18%, sd ratio 1.022, sigma_pd ratio 1.003, sigma_os ratio 1.011
+season_aq_m1_preset_study against iid_aq_m1_preset_study: 20 books, mean less outcome -0.67 sd against -0.23, fitted reserve 1.16% (mean absolute 1.35%), outcome 3.18%, sd ratio 1.541, sigma_pd ratio 1.619, sigma_os ratio 1.000
+season117_aq_m1_preset_study against iid117_aq_m1_preset_study: 20 books, mean less outcome -0.32 sd against -0.31, fitted reserve 2.26% (mean absolute 2.26%), outcome 2.62%, sd ratio 1.504, sigma_pd ratio 1.635, sigma_os ratio 0.999
+season114_aq_m1_preset_study against iid114_aq_m1_preset_study: 20 books, mean less outcome 0.27 sd against -0.33, fitted reserve -1.28% (mean absolute 1.34%), outcome -2.87%, sd ratio 1.466, sigma_pd ratio 1.640, sigma_os ratio 1.001
+seasonq_qq_m1_preset_study against earned_qq_m1_preset_study: 20 books, mean less outcome -0.94 sd against -0.25, fitted reserve 0.91% (mean absolute 0.91%), outcome 2.83%, sd ratio 1.168, sigma_pd ratio 1.222, sigma_os ratio 1.001
+m2season_aq_m2_preset_study against m2y_aq_m2_preset_study: 20 books, mean less outcome 0.41 sd against 0.49, fitted reserve 2.70% (mean absolute 2.70%), outcome 3.02%, sd ratio 1.057, sigma_pd ratio 1.003, sigma_os ratio 1.000
+m2seasonq_qq_m2_preset_study against m2qo_qq_m2_preset_study: 20 books, mean less outcome -0.74 sd against 0.27, fitted reserve -0.59% (mean absolute 0.61%), outcome 2.86%, sd ratio 1.265, sigma_pd ratio 1.604, sigma_os ratio 1.001
+m2season114_aq_m2_preset_study against m2y114_aq_m2_preset_study: 20 books, mean less outcome 0.18 sd against 0.04, fitted reserve -2.45% (mean absolute 2.45%), outcome -3.25%, sd ratio 0.992, sigma_pd ratio 1.006, sigma_os ratio 1.000
+
+grouped_m2q_aq: 30 books
+  per_age: dim 221 secs 33.6 rhat 1.029 rhat>1.01 100% ess 120 div_books 0 cover90 83 D 12.4 sd 4371 mean 76783 elpd 1918.4
+  grouped: dim 101 secs 9.2 rhat 1.014 rhat>1.01 77% ess 225 div_books 0 cover90 97 D 8.9 sd 6933 mean 77487 elpd 1557.3
+  grouped less per_age: reserve 0.19 sd on average (mean absolute 0.58), elpd -361.1, better in 0 of 30
+
+grouped_m2season_aq: 20 books
+  per_age: dim 221 secs 27.7 rhat 1.059 rhat>1.01 100% ess 67 div_books 0 cover90 80 D 28.9 sd 4789 mean 82808 elpd 1910.2
+  grouped: dim 101 secs 22.1 rhat 1.038 rhat>1.01 100% ess 93 div_books 0 cover90 95 D 17.8 sd 5941 mean 81202 elpd 1840.4
+  grouped less per_age: reserve -0.35 sd on average (mean absolute 0.36), elpd -69.8, better in 0 of 20
+
+grouped_m2y_am: 10 books
+  per_age: dim 541 secs 126.2 rhat 1.048 rhat>1.01 100% ess 114 div_books 0 cover90 80 D 45.6 sd 4484 mean 81694 elpd 6131.9
+  grouped: dim 101 secs 88.8 rhat 1.038 rhat>1.01 100% ess 101 div_books 0 cover90 70 D 48.5 sd 4322 mean 81784 elpd 6199.2
+  grouped less per_age: reserve 0.03 sd on average (mean absolute 0.14), elpd 67.3, better in 10 of 10
+
+grouped_m2y_aq: 30 books
+  per_age: dim 221 secs 21.7 rhat 1.032 rhat>1.01 100% ess 105 div_books 0 cover90 87 D 29.5 sd 4324 mean 77988 elpd 1930.8
+  grouped: dim 101 secs 21.1 rhat 1.035 rhat>1.01 100% ess 110 div_books 1 cover90 87 D 24.3 sd 4311 mean 77718 elpd 1952.2
+  grouped less per_age: reserve -0.07 sd on average (mean absolute 0.10), elpd 21.4, better in 30 of 30
+
+Default sampler against the short one on the same books
+earned_qq_m1_preset_default: 3 books, largest mean difference 0.038 sd, sd ratio 1.003, largest R-hat 1.0107 (short 1.1036), least ESS 204
+iid_aa_m1_preset_default: 5 books, largest mean difference 0.028 sd, sd ratio 1.007, largest R-hat 1.0114 (short 1.0356), least ESS 466
+iid_am_m1_preset_default: 5 books, largest mean difference 0.027 sd, sd ratio 1.008, largest R-hat 1.0075 (short 1.1167), least ESS 813
+iid_aq_m1_preset_default: 5 books, largest mean difference 0.045 sd, sd ratio 0.992, largest R-hat 1.0087 (short 1.0379), least ESS 738
+m2y_aa_m2_preset_default: 5 books, largest mean difference 0.043 sd, sd ratio 1.001, largest R-hat 1.0022 (short 1.0279), least ESS 2482
+m2y_am_m2_preset_default: 1 books, largest mean difference 0.005 sd, sd ratio 0.980, largest R-hat 1.5416 (short 1.6155), least ESS 7
+m2y_aq_m2_preset_default: 3 books, largest mean difference 0.023 sd, sd ratio 1.000, largest R-hat 1.0068 (short 1.1178), least ESS 861
+
+Short fits with R-hat above 1.05
+conflict_aa_m1_preset_study: 0 of 20, largest 1.045 with 1 divergences (book 5)
+conflict_aa_m1_ratewide_study: 0 of 20, largest 1.049 with 6 divergences (book 18)
+conflict_am_m1_preset_study: 2 of 20, largest 1.081 with 23 divergences (book 4)
+conflict_am_m1_ratewide_study: 4 of 20, largest 1.374 with 119 divergences (book 5)
+conflict_aq_m1_preset_study: 0 of 20, largest 1.048 with 17 divergences (book 2)
+conflict_aq_m1_ratewide_study: 0 of 20, largest 1.048 with 19 divergences (book 3)
+earned_aa_m1_preset_study: 0 of 50, largest 1.023 with 0 divergences (book 6)
+earned_am_m1_preset_study: 5 of 50, largest 1.107 with 22 divergences (book 27)
+earned_aq_m1_preset_study: 2 of 50, largest 1.187 with 43 divergences (book 36)
+earned_qm_m1_preset_study: 5 of 20, largest 1.097 with 0 divergences (book 6)
+earned_qq_m1_preset_study: 28 of 50, largest 1.172 with 3 divergences (book 13)
+fast_aa_m1_preset_study: 5 of 20, largest 1.201 with 73 divergences (book 10)
+fast_aa_m1_ratewide_study: 3 of 20, largest 1.385 with 237 divergences (book 8)
+fast_am_m1_preset_study: 1 of 20, largest 1.051 with 15 divergences (book 12)
+fast_am_m1_ratewide_study: 3 of 20, largest 1.065 with 1 divergences (book 6)
+fast_aq_m1_preset_study: 0 of 20, largest 1.042 with 4 divergences (book 13)
+fast_aq_m1_ratewide_study: 2 of 20, largest 1.555 with 228 divergences (book 4)
+iid114_aq_m1_preset_study: 0 of 20, largest 1.045 with 5 divergences (book 8)
+iid117_aq_m1_preset_study: 1 of 20, largest 1.057 with 2 divergences (book 2)
+iid_aa_m1_preset_study: 4 of 50, largest 1.105 with 35 divergences (book 49)
+iid_aa_m1_ratewide_study: 3 of 20, largest 1.067 with 67 divergences (book 3)
+iid_am_m1_preset_study: 5 of 50, largest 1.599 with 357 divergences (book 31)
+iid_aq_m1_preset_study: 4 of 50, largest 1.403 with 218 divergences (book 39)
+iid_aq_m1_ratewide_study: 0 of 20, largest 1.046 with 26 divergences (book 1)
+m2q_aa_m2_preset_study: 10 of 50, largest 1.170 with 0 divergences (book 39)
+m2q_aq_m2_preset_study: 10 of 50, largest 1.108 with 0 divergences (book 38)
+m2qo_qq_m2_preset_study: 11 of 20, largest 1.216 with 0 divergences (book 13)
+m2season114_aq_m2_preset_study: 9 of 20, largest 1.171 with 0 divergences (book 5)
+m2season_aq_m2_preset_study: 12 of 20, largest 1.134 with 0 divergences (book 8)
+m2seasonq_qq_m2_preset_study: 11 of 20, largest 1.126 with 0 divergences (book 13)
+m2y114_aq_m2_preset_study: 9 of 20, largest 1.242 with 0 divergences (book 16)
+m2y_aa_m2_preset_study: 5 of 50, largest 1.106 with 0 divergences (book 34)
+m2y_am_m2_preset_study: 8 of 20, largest 1.616 with 0 divergences (book 0)
+m2y_aq_m2_preset_study: 19 of 50, largest 1.183 with 0 divergences (book 35)
+m2y_aq_m2_ratewide_study: 13 of 20, largest 1.256 with 0 divergences (book 0)
+m2y_aq_m2_sigmawide_study: 8 of 20, largest 1.151 with 0 divergences (book 16)
+persist_aa_m1_preset_study: 6 of 50, largest 1.108 with 1 divergences (book 3)
+persist_aa_m1i_preset_study: 0 of 50, largest 1.033 with 0 divergences (book 2)
+persist_am_m1_preset_study: 5 of 50, largest 1.373 with 141 divergences (book 4)
+persist_am_m1i_preset_study: 0 of 50, largest 1.033 with 31 divergences (book 35)
+persist_aq_m1_preset_study: 2 of 50, largest 1.562 with 153 divergences (book 39)
+persist_aq_m1i_preset_study: 0 of 50, largest 1.014 with 1 divergences (book 31)
+season114_aq_m1_preset_study: 1 of 20, largest 1.094 with 82 divergences (book 17)
+season117_aq_m1_preset_study: 0 of 20, largest 1.039 with 0 divergences (book 10)
+season_aa_m1_preset_study: 1 of 20, largest 1.314 with 137 divergences (book 9)
+season_aq_m1_preset_study: 2 of 20, largest 1.084 with 35 divergences (book 11)
+seasonq_qq_m1_preset_study: 14 of 20, largest 1.110 with 0 divergences (book 0)
