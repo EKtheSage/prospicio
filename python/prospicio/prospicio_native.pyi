@@ -16728,7 +16728,7 @@ class HierarchicalBf:
         """
         Scale of the half-normal prior on ``omega``.
         """
-    def one_year(self, /, triangle: Any, column: str, exposure: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", max_refits: int | None = None, n_sims: int | None = None) -> HierarchicalBfOneYearFit:
+    def one_year(self, /, triangle: Any, column: str, exposure: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", max_refits: int |None = None, n_sims: int |None = None) -> HierarchicalBfOneYearFit:
         """
         The one-year view of the fit over every program at once: the
         claims development result of each program and origin over the
@@ -16742,7 +16742,7 @@ class HierarchicalBf:
         Raises ``UserWarning`` for the fit's failed diagnostics, for refits
         whose diagnostics failed, and for simulations left unrefitted by
         ``max_refits``.
-
+        
         Parameters
         ----------
         triangle : Triangle or dict of str to Triangle
@@ -16762,18 +16762,18 @@ class HierarchicalBf:
             The number of one-year simulations; by default this model's
             ``n_sims``, at most 2,000. A smaller count gives the first
             simulations of a larger one.
-
+        
         Returns
         -------
         HierarchicalBfOneYearFit
-
+        
         Raises
         ------
         ValueError
             As ``fit``; if ``k_threshold`` is NaN or ``refit`` is unknown.
         TypeError
             As ``fit``.
-
+        
         Examples
         --------
         >>> from prospicio.reserving import HierarchicalBf, Triangle
@@ -16791,7 +16791,7 @@ class HierarchicalBf:
         >>> model = HierarchicalBf(apriori=0.7, level_cv=0.2, chains=2, tune=200, draws=200, n_sims=500, seed=1)
         >>> view = model.one_year(tri, "paid", "premium", refit="reweight_only")
         >>> view.program
-        ['a', 'a', 'a', 'b', 'b', 'b']
+        ['a', 'a', 'a', 'b', 'b']
         >>> view.cdr.dims
         ['program', 'origin']
         >>> len(view.pareto_k)
@@ -16936,7 +16936,7 @@ class HierarchicalBfOneYearFit:
     from ``HierarchicalBf.one_year``: the lifetime fit, the opening reserve,
     the claims development result over the coming year and how reliable each
     simulation's importance reweighting was.
-
+    
     It is one view over the stacked programs, not one per program, because
     a program's next diagonal moves the industry level, the spreads and the
     shared pattern, and through them the other programs' closing reserves.
@@ -16965,7 +16965,7 @@ class HierarchicalBfOneYearFit:
         """
         The model fitted to the observed triangle, with its posterior and
         lifetime reserves, as ``HierarchicalBf.fit`` gives it.
-
+        
         Returns
         -------
         HierarchicalBfFit
@@ -17038,7 +17038,7 @@ class HierarchicalBfOneYearFit:
         One row per program and origin: ``program``, ``origin``, ``latest``,
         ``opening_ultimate``, ``opening_reserve`` and the ``cdr_mean`` and
         ``cdr_std_dev`` of the claims development result. Needs pandas.
-
+        
         Returns
         -------
         pandas.DataFrame
@@ -17050,7 +17050,7 @@ class HierarchicalBfOneYearFit:
         and ``cdr_std_dev`` of the program's claims development result (its
         origins' sum), with the ``flagged_share`` of the whole view. Needs
         pandas.
-
+        
         Returns
         -------
         pandas.DataFrame

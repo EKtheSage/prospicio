@@ -13918,7 +13918,7 @@ impl PyHierarchicalBf {
     /// >>> model = HierarchicalBf(apriori=0.7, level_cv=0.2, chains=2, tune=200, draws=200, n_sims=500, seed=1)
     /// >>> view = model.one_year(tri, "paid", "premium", refit="reweight_only")
     /// >>> view.program
-    /// ['a', 'a', 'a', 'b', 'b', 'b']
+    /// ['a', 'a', 'a', 'b', 'b']
     /// >>> view.cdr.dims
     /// ['program', 'origin']
     /// >>> len(view.pareto_k)
