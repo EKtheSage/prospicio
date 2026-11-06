@@ -190,7 +190,7 @@ real Excel.
 
 10. **The prefix is `PRO.`** (user, 2026-10-15): short to type. Every
     function keeps it, since renaming breaks saved workbooks. Decision 47
-    adds a group after it, and keeps the old names working for a release.
+    adds a group after it, and the old names are gone in 0.0.9.
 11. **Errors stay text** (user, 2026-10-15): `#PROSPICIO! <reason>`, which
     says why; `ISERROR` does not see it (test with `LEFT(x, 11) =
     "#PROSPICIO!"`).
@@ -1030,23 +1030,22 @@ real Excel.
     `PRO.` decides the category (`Function::category`), and
     `tests/catalogue.rs` fails on a name in no group.
 
-    **Old names stay for one release, hidden.** Every renamed function is
-    also registered under its old name (`src/aliases.rs`) with
-    xlfRegister's macro type 0: it calculates on a sheet, but the Insert
-    Function dialog does not list it, and its help starts "Renamed
-    `<new name>`". A workbook saved before the rename keeps calculating
-    through 0.0.9; 0.0.10 removes the old names, after which a formula
-    still using one shows `#NAME?` and a find-and-replace from the table
-    below fixes it. Whether Excel's autocomplete also leaves the hidden
-    names out is to be confirmed in Excel 365.
+    **The old names are removed at once** (user, 2026-11-05). #746 first
+    kept every old name registered, hidden from Insert Function, for one
+    release; the user chose to drop them in 0.0.9 instead, before the
+    add-in has users beyond its testers. A formula with an old name shows
+    `#NAME?`; the new name is the old one with `RES.`, `PRC.` or `CAP.`
+    after `PRO.`, and the table below is the find-and-replace list
+    (`tests/catalogue.rs` checks that it covers every grouped function).
 
     **The add-in is built with link-time optimization.** Simulations,
     MCMC and models stay on the sheet (user, 2026-11-05), so the add-in
     stays one file holding every engine, and its size is not a reason to
     leave a function out. `cargo xtask xll` builds with `lto = "fat"`
     and one codegen unit, which drops unused code across crates: 16.3 MB
-    to 14.0 MB on the GNU target (2026-11-05; 16.2 MB on `main` before
-    the old names were added), for a few more minutes of release build.
+    to 14.0 MB on the GNU target (2026-11-05, with the old names; 16.2
+    MB without LTO and without them), for a few more minutes of release
+    build.
     The wrappers are 5% of the code; the rest is the engines
     (`rustfft`'s scalar, SSE and AVX kernels 16%, the Bayesian stack with
     the GLMs and the thread pool about 17%, `prospicio-reserving` 12%).

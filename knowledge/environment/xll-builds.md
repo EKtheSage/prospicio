@@ -47,8 +47,8 @@ sources:
   Microsoft's xlfRegister table as remembered; `learn.microsoft.com` was
   not reachable from the cloud session on 2026-11-05, and Excel 365 has
   not yet confirmed it, nor whether formula autocomplete also leaves a
-  macro type 0 name out. The add-in registers its old names that way
-  (`src/aliases.rs`, xll.md decision 47).
+  macro type 0 name out. The add-in registered its old names that way
+  in #746 and dropped them before a release (xll.md decision 47).
 * An XLL finds Excel through `GetProcAddress(GetModuleHandle(NULL),
   "MdCallBack12")`, so any host executable that exports `MdCallBack12`
   can load and drive it. `harness/fake_excel.c` does that: built with

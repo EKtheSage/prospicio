@@ -53,11 +53,12 @@ group's functions as you type:
 | `PRO.CAP.` | Capital: aggregate and cat losses, risk measures, allocation, the P&L | `PRO.CAP.AGG.STATS`, `PRO.CAP.ALLOCATE` |
 | `PRO.SEV.`, `PRO.EVT.`, `PRO.TRI.` and two others | Common: severities, tails, triangle helpers | `PRO.SEV.FIT`, `PRO.TRI.LATEST` |
 
-**Older workbooks:** until 0.0.9 the functions had no group (`PRO.MACK`,
-`PRO.ILF`). Those names still calculate through 0.0.9, but Insert Function
-no longer lists them. 0.0.10 removes them: replace each old name with its
-new one (Ctrl+H, the table in `docs/design/xll.md`, decision 47). The new
-name is the old one with `RES.`, `PRC.` or `CAP.` after `PRO.`.
+**Older workbooks:** before 0.0.9 the functions had no group (`PRO.MACK`,
+`PRO.ILF`), and those names now show `#NAME?`. Replace each with its new
+name (Ctrl+H, Find what `PRO.MACK(`, Replace with `PRO.RES.MACK(`): the
+new name is the old one with `RES.`, `PRC.` or `CAP.` after `PRO.`, as
+the tables below show. `docs/design/xll.md`, decision 47, lists every
+pair.
 
 ## Start here
 

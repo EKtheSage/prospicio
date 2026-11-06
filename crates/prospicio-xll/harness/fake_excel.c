@@ -69,7 +69,7 @@ typedef XLOPER12 *(*Fn5)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER1
 typedef XLOPER12 *(*Fn6)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef void (*Free12)(XLOPER12 *);
 
-static int registered = 0, hidden = 0, failures = 0;
+static int registered = 0, failures = 0;
 static wchar_t dll_name[] = L"\x0F" L"C:\\prospicio.xll";
 
 static void narrow(const wchar_t *s, char *out, size_t cap) {
@@ -99,8 +99,6 @@ __declspec(dllexport) int __stdcall MdCallBack12(int xlfn, int count, XLOPER12 *
                ok ? "ok" : "BAD");
         if (!ok) failures++;
         registered++;
-        /* Macro type 0: an old name, calculating but not listed (xll.md, decision 47). */
-        if (args[5]->val.w == 0) hidden++;
         res->xltype = xltypeNum;
         res->val.num = registered;
         return 0;
@@ -164,8 +162,8 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and fourteen functions and 98 old names registered", registered == 212);
-    check("the 98 old names registered hidden", hidden == 98);
+    check("one hundred and fourteen functions registered", registered == 114);
+    check("no old name is exported (xll.md, decision 47)", GetProcAddress(xll, "pro_mack") == NULL);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -235,14 +233,6 @@ int main(int argc, char **argv) {
     check("total reserve 52135.228 (R ChainLadder)", fabs(total[3].val.num - 52135.2282612101) < 1e-6);
     check("total Mack SE 26880.740 (R ChainLadder)", fabs(total[6].val.num - 26880.7403298914) < 1e-6);
     free12(m);
-
-    /* An old name still calculates: PRO.MACK runs PRO.RES.MACK. */
-    Fn9 old_mack = (Fn9)GetProcAddress(xll, "pro_mack");
-    XLOPER12 *om = old_mack ? old_mack(&tri, &missing, &missing, &missing, &missing, &missing, &missing,
-                                       &missing, &missing) : NULL;
-    check("the old name PRO.MACK gives PRO.RES.MACK's total reserve",
-          om && (om->xltype & 0xFFF) == xltypeMulti && fabs(om->val.array.lparray[11 * 8 + 3].val.num - 52135.2282612101) < 1e-6);
-    if (om) free12(om);
 
     /* Mack's rule for the last sigma: R's MackChainLadder(est.sigma = "Mack"). */
     static wchar_t mack_s[] = L"\x04" L"mack";
