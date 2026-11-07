@@ -41,13 +41,13 @@ use pyo3::types::{
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
 use prospicio_reserving::bayes::{
     BayesBf, BayesBfFit, BayesBfNormalised, BayesBfNormalisedFit, BayesOdpFits, BayesOdpSegment,
-    BayesOneYear, BayesOneYearFit, BayesOneYearFits, BayesOneYearSegment, Compartmental,
-    CompartmentalCandidate, CompartmentalFit, CompartmentalFits, CompartmentalLikelihood,
-    CompartmentalOneYearFits, CompartmentalPriors, CompartmentalSegment, CompartmentalStart,
-    DevelopmentLevels, Fitted, HalfPrior, HierarchicalBf, HierarchicalBfFit, HierarchicalBfProgram,
-    LayerSharePrior, LightRefit, MeyersFits, MeyersSegment, NewOriginLevel, NewYear, OneYearRefit,
-    Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
-    ShareDependence,
+    BayesOneYear, BayesOneYearFit, BayesOneYearFits, BayesOneYearSegment,
+    CUMULATIVE_SUB_ANNUAL_WARNING, Compartmental, CompartmentalCandidate, CompartmentalFit,
+    CompartmentalFits, CompartmentalLikelihood, CompartmentalOneYearFits, CompartmentalPriors,
+    CompartmentalSegment, CompartmentalStart, DevelopmentLevels, Fitted, HalfPrior, HierarchicalBf,
+    HierarchicalBfFit, HierarchicalBfProgram, LayerSharePrior, LightRefit, MeyersFits,
+    MeyersSegment, NewOriginLevel, NewYear, OneYearRefit, Outstanding, PaidResponse, PositivePrior,
+    RateOrder, RealPrior, Scale as CompartmentalScale, ShareDependence,
 };
 use prospicio_reserving::{
     Backtest, BayesOdp, BayesOdpFit, Diagnostics, GlmCandidate, Meyers, MeyersFit, MeyersModel,
@@ -10873,6 +10873,25 @@ fn warn_diagnostics(py: Python<'_>, model: &str, warnings: &[String]) -> PyResul
     PyErr::warn(py, category.as_any(), &message, 1)
 }
 
+/// `Compartmental`'s warnings: the warning of cumulative paid on cells finer
+/// than a year fires on healthy fits too, so it comes as a ``UserWarning`` of
+/// its own and not as a failed diagnostic.
+fn warn_compartmental(py: Python<'_>, warnings: &[String]) -> PyResult<()> {
+    let (notes, failed): (Vec<String>, Vec<String>) = warnings
+        .iter()
+        .cloned()
+        .partition(|w| w.contains(CUMULATIVE_SUB_ANNUAL_WARNING));
+    warn_diagnostics(py, "Compartmental", &failed)?;
+    if notes.is_empty() {
+        return Ok(());
+    }
+    let message = format!("Compartmental: {}", notes.join("; "));
+    let message =
+        std::ffi::CString::new(message).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let category = py.get_type::<pyo3::exceptions::PyUserWarning>();
+    PyErr::warn(py, category.as_any(), &message, 1)
+}
+
 /// MCMC diagnostics as a dict, as ``BayesOdpFit.diagnostics``.
 fn diagnostics_dict<'py>(py: Python<'py>, d: &Diagnostics) -> PyResult<Bound<'py, PyDict>> {
     let out = PyDict::new(py);
@@ -17515,20 +17534,24 @@ const STARTS: [(&str, CompartmentalStart); 2] = [
 ///   ``"by_year"``, a choice to make with ``loo``. Where effects move by
 ///   year, by-year levels agree with per-age ones on the reserve (0.10 sd
 ///   apart on average in the study), win elpd in 30 of 30 quarterly books and
-///   on monthly cells fit faster with better mixing; where effects move
-///   within a year they lose 361 of elpd in 30 of 30 books and widen the
-///   reserve's sd by 59%.
+///   on 10 monthly books under a short sampler took 89 s against 126 s (rough
+///   times) with a worst R-hat of 1.07 against 1.62, though a median bulk ESS
+///   of 101 against 114; where effects move within a year they lose 361 of
+///   elpd in 30 of 30 books and widen the reserve's sd by 59%.
 /// * Seasonality: there is no seasonal term. Model 1 reads a season as noise
 ///   (the interval widens, by up to 54% in the sd for a 30% season, and the
 ///   mean can sit nearly 1 sd off the outcome), and model 2's per-age levels
 ///   do not absorb a season unless every origin starts in the same calendar
 ///   quarter. A calendar-quarter factor is not built.
 /// * Cumulative paid: the interval narrows as the cells get finer, right where
-///   the noise of the cells is independent and too narrow where it persists
-///   (in the study's world with persistent payment noise the 90% interval
-///   covered 88%, 70% and 56% at annual, quarterly and monthly cells, with no
-///   gain in accuracy). A fit with cumulative paid on cells finer than a year
-///   therefore warns, asking you to check the residuals; it also warns when
+///   the noise of the cells is independent and too narrow where it persists.
+///   In the study's world with persistent payment noise, at one persistence
+///   chosen by hand and fitted to no book (``PERSIST_PHI`` 25, ``PERSIST_RHO``
+///   0.95; a smaller fall is expected with less, untested), the 90% interval
+///   covered 88%, 70% and 56% at annual, quarterly and monthly cells and the
+///   RMSE rose from 1,623 to 2,033. A fit with cumulative paid on cells finer
+///   than a year therefore warns, asking you to check the residuals; it also
+///   warns when
 ///   the fit is calibrated, since the data do not say which world they are
 ///   in. ``paid_response="incremental"`` keeps the interval but, in that
 ///   world, ran 1.3 to 2 times too wide, with a worse RMSE at quarterly and
@@ -17936,7 +17959,7 @@ impl PyCompartmental {
         let inner = py
             .detach(|| model.fit(tri, paid, os, premium))
             .map_err(err)?;
-        warn_diagnostics(py, "Compartmental", &inner.diagnostics.warnings)?;
+        warn_compartmental(py, &inner.diagnostics.warnings)?;
         Ok(PyCompartmentalFit { inner })
     }
 
@@ -18020,7 +18043,7 @@ impl PyCompartmental {
             .detach(|| model.fit_segments(tri, paid, os, premium))
             .map_err(err)?;
         let warnings = segment_warnings(&inner.segments, |s| &s.fit.diagnostics);
-        warn_diagnostics(py, "Compartmental", &warnings)?;
+        warn_compartmental(py, &warnings)?;
         Ok(PyCompartmentalFits { inner })
     }
 
@@ -18174,7 +18197,7 @@ impl PyCompartmental {
         let inner = py
             .detach(|| model.one_year(tri, paid, os, premium, &settings))
             .map_err(err)?;
-        warn_diagnostics(py, "Compartmental", &inner.fit.diagnostics.warnings)?;
+        warn_compartmental(py, &inner.fit.diagnostics.warnings)?;
         warn_refits(
             py,
             "Compartmental",
@@ -18299,7 +18322,7 @@ impl PyCompartmental {
             .detach(|| model.one_year_segments(tri, paid, os, premium, &settings))
             .map_err(err)?;
         let warnings = segment_warnings(&inner.segments, |s| &s.fit.fit.diagnostics);
-        warn_diagnostics(py, "Compartmental", &warnings)?;
+        warn_compartmental(py, &warnings)?;
         warn_refits(py, "Compartmental", &segment_refits(&inner.segments))?;
         if let Some(message) = &inner.approximate {
             let message = std::ffi::CString::new(format!("Compartmental: {message}"))

@@ -25,6 +25,7 @@ from prospicio.reserving import (
     CompartmentalPriors,
     NotSupportedError,
     Triangle,
+    diagonal_backtest,
 )
 
 VALIDATION = Path(__file__).resolve().parents[2] / "validation"
@@ -682,8 +683,14 @@ def test_unequal_grain():
     )
     assert (q.origin_grain, q.development_grain) == ("Y", "Q")
     model = Compartmental(GM, **QUICK)
-    with pytest.warns(UserWarning, match="cumulative paid is fitted on Q"):
+    with pytest.warns(UserWarning, match="cumulative paid is fitted on Q") as caught:
         fit = model.fit(q, "paid", "premium", outstanding="outstanding")
+    # It is a prompt, not a failed diagnostic: a warning of its own.
+    notes = [str(w.message) for w in caught if "cumulative paid" in str(w.message)]
+    assert len(notes) == 1
+    assert notes[0].startswith("Compartmental: cumulative paid is fitted on Q")
+    assert "MCMC diagnostics failed" not in notes[0]
+    assert any("cumulative paid" in w for w in fit.diagnostics["warnings"])
     assert fit.origins == [str(y) for y in range(2011, 2021)]
     assert fit.population_origins == []
     ages = sorted({age for _, age in fit.paid.components()})
@@ -699,6 +706,16 @@ def test_unequal_grain():
     paths = model.prior_predictive(q, "premium", n_sims=100)
     assert len(paths["paid"].components()) == 10 * 40
     assert paths["paid"].components()[39] == ("2011", 120)
+    # The prior check draws the levels the fit has.
+    per_age = Compartmental.model_2(GM2, seed=4).prior_predictive(q, "premium", n_sims=50)
+    by_year = Compartmental.model_2(GM2, seed=4, development_levels="by_year").prior_predictive(
+        q, "premium", n_sims=50
+    )
+    assert per_age["paid"].draw_matrix() != by_year["paid"].draw_matrix()
+    # A backtest's fits carry the warning too.
+    candidate = model.candidate(q, "paid", "premium", outstanding="outstanding")
+    backtest = diagonal_backtest(q, "paid", {"c": candidate}, 1, n_sims=100, seed=1)
+    assert sum("cumulative paid is fitted on Q" in w[2] for w in backtest.warnings) == 1
     # Levels by development year: an error for model 1, which has no development
     # effects to group. (Model 2 needs positive responses, which this triangle,
     # simulated from model 1, lacks; the Rust tests fit it on a quarterly book.)

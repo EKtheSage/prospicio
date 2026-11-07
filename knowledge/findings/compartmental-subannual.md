@@ -317,7 +317,8 @@ The user accepted the recommendations of open decisions 9 to 13 on 2026-11-06
 CI runs the debug unit tests of the levels (the count of years, their
 independence of the origin's calendar month, one shared effect for a year no
 cell observes, the gradient against central differences, a cell's parameters
-following its level in the one-year view, the error for model 1) and of the
+following its level in the one-year view, the error for model 1, the prior
+predictive drawing the fit's levels) and of the
 warning (it fires for cumulative paid on quarterly cells and not for
 incremental paid or at annual grain), and the `bayes` job runs the release
 tests (the one-year conformance with levels by year, annual identity of the

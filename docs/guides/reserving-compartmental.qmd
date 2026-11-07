@@ -906,8 +906,9 @@ the library keeps to them.
 - Model 2's development levels: `development_levels = "per_age"` or `"by_year"` (model 2 only). One level for each
   age is the default. Choose by LOO. Where effects move by year, by-year levels
   gave the same reserve (0.10 sd apart on average) and won elpd in 30 of 30
-  quarterly books, and on monthly cells fit faster with better mixing. Where
-  effects move within a year, they lost 361 of elpd in 30 of 30 books and
+  quarterly books, and on 10 monthly books under a short sampler took 89 s
+  against 126 s (rough times) with a worst R-hat of 1.07 against 1.62, though a
+  median bulk ESS of 101 against 114. Where effects move within a year, they lost 361 of elpd in 30 of 30 books and
   widened the reserve's sd by 59%. A year is counted from each origin's own
   start (ages 1 to 12 months, 13 to 24 and so on). At annual grain the two
   settings are the same model, and model 1 has no development effects to group.
@@ -917,8 +918,10 @@ the library keeps to them.
   calendar quarter. A calendar-quarter factor is not built.
 - Cumulative paid: its interval narrows as the cells get finer. That is right
   where the noise of the cells is independent, and too narrow where it persists
-  from cell to cell (in the study the 90% interval covered 88%, 70% and 56% at
-  annual, quarterly and monthly cells, with no gain in accuracy). A fit with
+  from cell to cell. In the study, at one persistence chosen by hand and fitted
+  to no book (`PERSIST_PHI` 25, `PERSIST_RHO` 0.95; a smaller fall is expected
+  with less, untested), the 90% interval covered 88%, 70% and 56% at annual,
+  quarterly and monthly cells and the RMSE rose from 1,623 to 2,033. A fit with
   cumulative paid on cells finer than a year therefore warns, asking you to
   check the residuals, and it warns on a calibrated fit too, since the data do
   not say which world they are in. Incremental paid keeps the interval but, in

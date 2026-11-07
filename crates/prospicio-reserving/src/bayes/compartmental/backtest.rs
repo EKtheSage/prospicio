@@ -66,6 +66,8 @@ type Outstandings = BTreeMap<(usize, usize), f64>;
 ///   paid less its latest, which is how the fit's reserves are made. The
 ///   fit's diagnostics come back in [`CellForecast::diagnostics`] and
 ///   [`Backtest::diagnostics`], and a fit with warnings is still scored.
+///   That includes the warning of cumulative paid on cells finer than a
+///   year, which comes once with each split's fit.
 ///   A held-out triangle is smaller than the whole: check a backtest's
 ///   fits with [`Compartmental::fit`] on the same training cells before
 ///   relying on its scores.
@@ -419,9 +421,12 @@ impl CompartmentalCandidate {
                 model.dim()
             )));
         }
-        let (posterior, _, diagnostics) = self
+        let (posterior, _, mut diagnostics) = self
             .model
             .sample(&model, derive_seed(seed, Stream::Chains))?;
+        if let Some(warning) = super::cumulative_sub_annual_warning(model.response, data.grain) {
+            diagnostics.warnings.push(warning);
+        }
         let fit = Arc::new(TrainFit {
             train: train.to_vec(),
             seed,
@@ -1271,8 +1276,18 @@ mod tests {
         let c = candidate(quick(5), &tri);
         let paid = diagonal_backtest(&cells, &[&c.clone()], 1, 300, 5, 0.9).unwrap();
         assert_eq!((paid.scored_rows()[0].len(), paid.excluded()[0]), (4, 1));
+        // The fit's warning of cumulative paid on quarterly cells comes with
+        // the backtest's fits too, as it does with `fit`.
+        let warned = |bt: &Backtest| {
+            bt.warnings()
+                .iter()
+                .filter(|(.., w)| w.starts_with(super::super::CUMULATIVE_SUB_ANNUAL_WARNING))
+                .count()
+        };
+        assert_eq!(warned(&paid), 1);
         let os = c.outstanding_backtest(&cells, 1, 300, 5, 0.9).unwrap();
         assert_eq!(os.scored_rows()[0].len(), 4);
+        assert_eq!(warned(&os), 1);
     }
 
     /// The backtest's closed forms for an age with no cell of its own in an

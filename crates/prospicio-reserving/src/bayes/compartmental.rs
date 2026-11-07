@@ -187,11 +187,13 @@ pub enum RateOrder {
 /// development effect in the priors.
 ///
 /// The width is a modelling choice to make with `loo` on the data, not a
-/// default to leave alone. On simulated books (decision 14): where the
-/// effects move by development year, levels by year agree with one level per
-/// age on the reserve (within 0.10 sd on average) and win elpd in 30 of 30
-/// quarterly books, and on monthly cells they fit in 89 s against 126 s with
-/// better mixing; where the effects move within a year, levels by year lose
+/// default to leave alone. On simulated books (decision 14; the study's
+/// regrouping of the levels, under a short sampler): where the effects move
+/// by development year, levels by year agree with one level per age on the
+/// reserve (within 0.10 sd on average) and win elpd in 30 of 30 quarterly
+/// books, and on 10 monthly books they took 89 s against 126 s (rough times)
+/// with a worst R-hat of 1.07 against 1.62, though a median bulk ESS of 101
+/// against 114; where the effects move within a year, levels by year lose
 /// 361 of elpd in 30 of 30 quarterly books and widen the sd by 59%. Neither
 /// is right for every book, so [`PerAge`](Self::PerAge) is the default, as
 /// built. With annual development the two are the same model.
@@ -756,10 +758,12 @@ fn draw_half(prior: HalfPrior, rng: &mut StreamRng) -> f64 {
 ///   the development effects, [`DevelopmentLevels::ByYear`] each development
 ///   year. Choose with `loo` on the data: where effects move by year, by-year
 ///   levels agree with per-age ones on the reserve (0.10 sd apart on average
-///   in the study), win elpd (30 of 30 quarterly books) and on monthly cells
-///   fit faster with better mixing; where effects move within a year they lose
-///   361 of elpd in 30 of 30 books and widen the reserve's sd by 59%. At
-///   annual grain the two are the same fit.
+///   in the study), win elpd (30 of 30 quarterly books) and on 10 monthly
+///   books under a short sampler took 89 s against 126 s (rough times) with a
+///   worst R-hat of 1.07 against 1.62, though a median bulk ESS of 101 against
+///   114; where effects move within a year they lose 361 of elpd in 30 of 30
+///   books and widen the reserve's sd by 59%. At annual grain the two are the
+///   same fit.
 /// * **Seasonality.** There is no seasonal term. Model 1 reads a season as
 ///   noise (the interval widens, by up to 54% in the sd for a 30% season, and
 ///   the mean can sit nearly 1 sd off the outcome), and model 2's per-age
@@ -768,9 +772,12 @@ fn draw_half(prior: HalfPrior, rng: &mut StreamRng) -> f64 {
 ///   among the builds if your lines are seasonal.
 /// * **Cumulative paid.** Under [`PaidResponse::Cumulative`] the interval
 ///   narrows as the cells get finer: right where the noise of the cells is
-///   independent, too narrow where it persists (in the study's world with
-///   persistent payment noise the 90% interval covered 88%, 70% and 56% at
-///   annual, quarterly and monthly cells, with no gain in accuracy). A fit
+///   independent, too narrow where it persists. In the study's world with
+///   persistent payment noise, at one persistence chosen by hand and fitted
+///   to no book (`PERSIST_PHI` 25, `PERSIST_RHO` 0.95; a smaller fall is
+///   expected with less, untested), the 90% interval covered 88%, 70% and 56%
+///   at annual, quarterly and monthly cells and the RMSE rose from 1,623 to
+///   2,033. A fit
 ///   with cumulative paid on cells finer than a year therefore carries a
 ///   warning that asks you to check the residuals; it also fires on a fit
 ///   that is calibrated, since the data do not say which world they are in.
@@ -1679,7 +1686,11 @@ impl Compartmental {
     /// alone (Gesmann and Morris, sec. 3.4): a check of a prior set before
     /// fitting. Each simulation draws the intercepts, the effect sds, the
     /// correlation and each origin's effects, and with development effects
-    /// in the priors each age's effects (shared by the origins); with
+    /// in the priors the effects of each level of
+    /// [`development_levels`](Self::development_levels), as the fit has them
+    /// (shared by the origins; each age its own under
+    /// [`DevelopmentLevels::PerAge`], the ages of a development year one
+    /// under [`DevelopmentLevels::ByYear`]); with
     /// effects by cell and incremental paid, the cumulative paid path is
     /// the sum of the cells' mean increments. The paths are means, without
     /// the likelihood's noise: the preset's prior on `log σ` is effectively
@@ -1722,6 +1733,14 @@ impl Compartmental {
         let na = grain.square_ages(n);
         let ages: Vec<Lag> = (0..na).map(|k| grain.age(k)).collect();
         let times: Vec<f64> = (0..na).map(|k| grain.time(k)).collect();
+        // Each age's development level, as in the fit. Groups rise with the
+        // age and skip none, since the square's ages are consecutive.
+        let levels: Vec<usize> = ages
+            .iter()
+            .enumerate()
+            .map(|(k, &a)| self.development_levels.group(a, k))
+            .collect();
+        let n_levels = levels.last().map_or(0, |l| l + 1);
         let pr = self.priors;
         let ordered = self.rate_order == RateOrder::Ordered;
         let cellwise = pr.rates_vary() || pr.development_effect_sd.iter().any(Option::is_some);
@@ -1738,6 +1757,10 @@ impl Compartmental {
             .param("rate_order", format!("{:?}", self.rate_order))
             .param("priors", format!("{pr:?}"))
             .param("paid_response", format!("{:?}", self.paid_response))
+            .param(
+                "development_levels",
+                format!("{:?}", self.development_levels),
+            )
             .param("premium", premium)
             .version("prospicio-reserving", env!("CARGO_PKG_VERSION"));
         let both = PredictiveDistribution::simulate(
@@ -1793,7 +1816,7 @@ impl Compartmental {
                 let tau_dev = pr
                     .development_effect_sd
                     .map(|p| p.map(|h| draw_half(h, rng)));
-                let dev: Vec<[f64; 4]> = (0..na)
+                let dev: Vec<[f64; 4]> = (0..n_levels)
                     .map(|_| tau_dev.map(|t| t.map_or(0.0, |t| t * normal(rng))))
                     .collect();
                 let medians = [(m_er, s_er), (m_p, s_p), (m_rlr, s_rlr), (m_rrf, s_rrf)];
@@ -1809,7 +1832,7 @@ impl Compartmental {
                     let mut cum = 0.0;
                     for (k, &t) in times.iter().enumerate() {
                         let [ker, kp, rlr, rrf] = [0, 1, 2, 3].map(|p| {
-                            medians[p].0 * (medians[p].1 * (b[p] + u[p] + dev[k][p])).exp()
+                            medians[p].0 * (medians[p].1 * (b[p] + u[p] + dev[levels[k]][p])).exp()
                         });
                         let (os, pd) = one_os(ker, kp, t);
                         let base = rlr * premiums[i];
@@ -2054,14 +2077,21 @@ impl Compartmental {
     }
 }
 
+/// How the warning of cumulative paid on cells finer than a year starts. It
+/// sits among a fit's [`Diagnostics::warnings`] but is no failed diagnostic,
+/// so the bindings use this to word it apart from the sampler's: a segment's
+/// label can come before it.
+pub const CUMULATIVE_SUB_ANNUAL_WARNING: &str = "cumulative paid is fitted on ";
+
 /// The warning of a fit with cumulative paid on cells finer than a year
 /// (decision 14, open decision 12 (b)), or `None`. The data do not say
 /// whether payment noise persists from cell to cell, so it is a prompt to
 /// look at the residuals and not a finding: it fires on a calibrated fit too.
+/// It starts with [`CUMULATIVE_SUB_ANNUAL_WARNING`].
 fn cumulative_sub_annual_warning(response: Response, grain: SquareGrain) -> Option<String> {
     (response.paid && !response.incremental && grain.development.months() < 12).then(|| {
         format!(
-            "cumulative paid is fitted on {} development cells, whose noise the likelihood counts as independent between cells; where payment noise persists from cell to cell the interval narrows as the cells get finer with no gain in accuracy (on simulated books the 90% interval covered 88%, 70% and 56% at annual, quarterly and monthly cells), and where it does not the fit is as calibrated as at any grain. Check the residuals; incremental paid keeps the interval but ran 1.3 to 2 times too wide there (decision 14)",
+            "{CUMULATIVE_SUB_ANNUAL_WARNING}{} development cells, whose noise the likelihood counts as independent between cells; where payment noise persists from cell to cell the interval narrows as the cells get finer (on simulated books, at one persistence chosen by hand, PERSIST_PHI 25 and PERSIST_RHO 0.95, the 90% interval covered 88%, 70% and 56% at annual, quarterly and monthly cells and the RMSE rose from 1,623 to 2,033; a smaller fall is expected with less persistence, untested), and where it does not the fit is as calibrated as at any grain. Check the residuals; incremental paid keeps the interval but ran 1.3 to 2 times too wide there (decision 14)",
             grain.development
         )
     })
@@ -7042,10 +7072,69 @@ mod tests {
         // Per age, and model 2 by year, are supported.
         preset().check_supported().unwrap();
         by_year(preset_2()).check_supported().unwrap();
-        // The prior check does not need the setting and runs.
+        // Model 1 has no effects to group, so the prior check still runs.
         by_year(preset())
             .prior_predictive(&tri, "premium", 5)
             .unwrap();
+    }
+
+    /// The prior check draws the levels the fit has: under levels by year
+    /// the four quarters of a development year share one effect, so a step
+    /// within the year moves far less than one between years, and far less
+    /// than the same step per age. At annual grain the two settings are one
+    /// model and give the same draws, and the provenance names the setting.
+    #[test]
+    fn the_prior_check_draws_the_fits_levels() {
+        let model = |levels| Compartmental {
+            development_levels: levels,
+            ..preset_2()
+        };
+        let tri = quarterly_triangle(false);
+        let paths = |levels| {
+            model(levels)
+                .prior_predictive(&tri, "premium", 2_000)
+                .unwrap()
+        };
+        // The sd over the simulations of the log step from age index `k` to
+        // `k + 1` of the oldest origin's outstanding.
+        let step_sd = |p: &CompartmentalPaths, k: usize| {
+            let n = p.outstanding.n_components();
+            let steps: Vec<f64> = p
+                .outstanding
+                .draw_matrix()
+                .chunks_exact(n)
+                .map(|row| (row[k + 1] / row[k]).ln())
+                .collect();
+            let mean = steps.iter().sum::<f64>() / steps.len() as f64;
+            (steps.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / steps.len() as f64).sqrt()
+        };
+        let (per_age, by_year) = (
+            paths(DevelopmentLevels::PerAge),
+            paths(DevelopmentLevels::ByYear),
+        );
+        // Indices 0 to 3 are the first year's quarters, 4 the next year's.
+        let (within, across) = (step_sd(&by_year, 1), step_sd(&by_year, 3));
+        assert!(within < 0.5 * across, "{within} {across}");
+        assert!(within < 0.5 * step_sd(&per_age, 1));
+        let levels = |p: &CompartmentalPaths| {
+            let params = &p.paid.provenance().parameters;
+            let found = params.iter().find(|(k, _)| k == "development_levels");
+            found.unwrap().1.clone()
+        };
+        assert_ne!(levels(&per_age), levels(&by_year));
+        let annual = triangle(true);
+        let draws = |levels| {
+            model(levels)
+                .prior_predictive(&annual, "premium", 50)
+                .unwrap()
+                .paid
+                .draw_matrix()
+                .to_vec()
+        };
+        assert_eq!(
+            draws(DevelopmentLevels::PerAge),
+            draws(DevelopmentLevels::ByYear)
+        );
     }
 
     /// The warning of cumulative paid on cells finer than a year: on

@@ -11,8 +11,8 @@ one-year view, decision 11) built, with the defaults the user decided on
 user's decisions of 2026-10-19, and its one-year view over segments
 (`Compartmental::one_year_segments`, decision 8) built after it; PRs G
 and H (paid and incurred, and one response alone, decision 12) built;
-PR I (unequal origin and development grain, decision 13) built, with a
-study of sub-annual fits proposed as decision 14; PR D not
+PR I (unequal origin and development grain, decision 13) built, and the
+study of sub-annual fits decided and built as decision 14; PR D not
 yet · Lane:
 Reserving, with the Models lane for `prospicio-bayes` · Depends on:
 `reserving-bayes.md` (decisions 2, 5, 10, 11, 13 and 15, and open decision
@@ -2166,8 +2166,9 @@ one. Model 2 on monthly data needs a large book or a floor on the cells, which
     one-year view needs a test on grouped levels. Grouped is badly wrong when
     effects do move within a year (elpd 361 worse in 30 of 30 books, sd 59%
     wider), so it is a choice to make with LOO, not a default. *Recommended.*
-    Monthly it is also the cheaper and better-mixing form when effects do move
-    by year.
+    Monthly it is also the cheaper form when effects do move by year, with a
+    lower worst R-hat (1.07 against 1.62) though no better median bulk ESS (101
+    against 114), on 10 short-sampler books with rough times.
   * (c) By development year by default on sub-annual grains. Fixes monthly
     without the user knowing. Changes every existing sub-annual model 2 fit, and
     loses `m2q`'s structure silently; on annual origins that all start in January it
@@ -2295,10 +2296,13 @@ recommended ones, and what each became:
   `Compartmental.model_2` and the R `compartmental*` functions. `PerAge` is the
   default and is today's behaviour bit for bit. It reaches the fit, segments,
   the one-year view and its segments, the diagonal backtest and its
-  candidates, and the prior predictive (which reads priors and draws no
-  levels, so it takes none). It is an error with priors that have no
+  candidates, and the prior predictive, which draws one effect for each
+  level as the fit has them, so its paths under `ByYear` describe the model
+  fitted, and records the setting in its provenance (R
+  `compartmental_prior_predictive(development_levels =)`). It is an error with priors that have no
   development effects (model 1): `Error::NotSupported`, raised when the fit,
-  the view or the backtest asks for it. At annual grain the two settings are
+  the view or the backtest asks for it (the prior check, with no effects to
+  group, runs). At annual grain the two settings are
   the same model, and a test checks that the fits are identical at a fixed
   seed.
 * **A year (10b).** A development year is `y = (age_months - 1) / 12`, counted
@@ -2317,11 +2321,17 @@ recommended ones, and what each became:
   the cumulative interval narrows with the grain and what incremental paid
   trades, and pick no form. A fit with cumulative paid on a development grain
   finer than a year carries a warning, in the place of the rate-swap warning
-  (`cumulative_sub_annual_warning`, pushed in `fit_streams`): it asks for a
+  (`cumulative_sub_annual_warning`, pushed in `fit_streams` and in the
+  backtest candidate's training fit, so it is in `Backtest::warnings` once for
+  each split): it asks for a
   look at the residuals and does not say the fit is wrong, and it fires on a
   calibrated fit too, since the data do not say which world they are in. It
-  reaches Python as the same `UserWarning` as the other diagnostics and R as a
-  `warning()`. Correlated residuals (12c) and incremental by default (12d) are
+  stays in `Diagnostics::warnings`, but Python and R word it apart from the
+  failed diagnostics: a `UserWarning` or `warning()` of its own, without the
+  "MCMC diagnostics failed" prefix. The rate-swap and prior-share entries keep
+  that prefix, since they point at a problem in the fit. The bindings find it
+  by `CUMULATIVE_SUB_ANNUAL_WARNING`. Its figures are at the hand-chosen
+  persistence, which it names. Correlated residuals (12c) and incremental by default (12d) are
   not built.
 * **Earned exposure (13a).** The help says sub-annual development on annual
   origins fits an exposure the model does not have, so use quarterly origins,
@@ -2505,7 +2515,8 @@ built". Items 11(b) and 13(b) are recorded as not built. Opened 2026-11-05
     add a warning to such a fit; (c) correlated residuals (open decision 8's
     AR(1)); (d) incremental paid by default on sub-annual grains. *Recommended:
     (a) and (b)*: at the study's persistent noise (`PERSIST_PHI` 25,
-    `PERSIST_RHO` 0.95) coverage fell from 88 to 56 with no gain in accuracy,
+    `PERSIST_RHO` 0.95) coverage fell from 88 to 56 and the RMSE rose from
+    1,623 to 2,033,
     and incremental paid is no cure (1.3 to 2 times too wide, a worse RMSE at
     quarterly and monthly grain, D failing annually), so the help states the
     trade-off and picks no form; (c) is the real fix and a model of its own.

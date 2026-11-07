@@ -212,21 +212,25 @@ preset's \code{k_er} of about 3 needs priors of its own.
 \item Development levels (model 2): \code{development_levels = "per_age"} or
 \code{"by_year"}, a choice to make with \code{\link[=bayes_loo]{bayes_loo()}}. Where effects move by
 year, by-year levels agree with per-age ones on the reserve (0.10 sd apart
-on average in the study), win elpd in 30 of 30 quarterly books and on
-monthly cells fit faster with better mixing; where effects move within a
-year they lose 361 of elpd in 30 of 30 books and widen the reserve's sd by
-59\%.
+on average in the study), win elpd in 30 of 30 quarterly books and on 10
+monthly books under a short sampler took 89 s against 126 s (rough times)
+with a worst R-hat of 1.07 against 1.62, though a median bulk ESS of 101
+against 114; where effects move within a year they lose 361 of elpd in 30
+of 30 books and widen the reserve's sd by 59\%.
 \item Seasonality: there is no seasonal term. Model 1 reads a season as noise
 (the interval widens, by up to 54\% in the sd for a 30\% season, and the mean
 can sit nearly 1 sd off the outcome), and model 2's per-age levels do not
 absorb a season unless every origin starts in the same calendar quarter. A
 calendar-quarter factor is not built.
 \item Cumulative paid: the interval narrows as the cells get finer, right where
-the noise of the cells is independent and too narrow where it persists (in
-the study's world with persistent payment noise the 90\% interval covered
-88\%, 70\% and 56\% at annual, quarterly and monthly cells, with no gain in
-accuracy). A fit with cumulative paid on cells finer than a year therefore
-warns, asking you to check the residuals; it also warns when the fit is
+the noise of the cells is independent and too narrow where it persists. In
+the study's world with persistent payment noise, at one persistence chosen
+by hand and fitted to no book (\code{PERSIST_PHI} 25, \code{PERSIST_RHO} 0.95; a
+smaller fall is expected with less, untested), the 90\% interval covered
+88\%, 70\% and 56\% at annual, quarterly and monthly cells and the RMSE rose
+from 1,623 to 2,033. A fit with cumulative paid on cells finer than a year
+therefore warns, asking you to check the residuals; it also warns when the
+fit is
 calibrated, since the data do not say which world they are in.
 \code{paid_response = "incremental"} keeps the interval but, in that world, ran
 1.3 to 2 times too wide, with a worse RMSE at quarterly and monthly grain
