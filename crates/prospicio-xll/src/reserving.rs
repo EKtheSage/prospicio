@@ -188,8 +188,9 @@ pub fn average(grid: &Grid) -> Result<Development> {
 }
 
 /// The `tail` argument: omitted for none, a number for a constant factor
-/// to ultimate at the oldest age, or "exponential", "inverse_power" or
-/// "bondy" for a fitted tail.
+/// to ultimate at the oldest age, or "exponential", "inverse_power",
+/// "bondy" or "log-linear" (R ChainLadder's `tail = TRUE` rule) for a
+/// fitted tail.
 pub fn tail(grid: &Grid) -> Result<Tail> {
     match grid.as_scalar() {
         Some(v) if v.is_blank() => Ok(Tail::default()),
@@ -208,9 +209,10 @@ pub fn tail(grid: &Grid) -> Result<Tail> {
                 ..TailCurve::default()
             })),
             "bondy" => Ok(Tail::from(TailBondy::default())),
+            "log_linear" | "loglinear" => Ok(Tail::LogLinear),
             other => Err(format!(
-                "tail must be a factor or \"exponential\", \"inverse_power\" or \"bondy\", \
-                 got {other:?}"
+                "tail must be a factor or \"exponential\", \"inverse_power\", \"bondy\" or \
+                 \"log-linear\", got {other:?}"
             )),
         },
         _ => Err("tail must be a single number or text value".into()),

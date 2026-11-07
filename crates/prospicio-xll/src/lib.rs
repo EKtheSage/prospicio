@@ -30,6 +30,7 @@ pub mod fitting;
 pub mod glm;
 pub mod jobs;
 pub mod odp_glm;
+pub mod paid_incurred;
 pub mod payout;
 pub mod pnl;
 pub mod pricing;
@@ -147,7 +148,59 @@ const ODP_AVERAGE: Arg = Arg {
 };
 const TAIL: Arg = Arg {
     name: "tail",
-    help: "A tail factor to ultimate, or \"exponential\", \"inverse_power\" or \"bondy\"; omitted for none",
+    help: "A tail factor to ultimate, or \"exponential\", \"inverse_power\", \"bondy\" or \"log-linear\" (R's tail = TRUE); omitted for none",
+};
+const PAID: Arg = Arg {
+    name: "paid",
+    help: "Cumulative paid: one row per origin (oldest first), one column per age; blank where unobserved",
+};
+const INCURRED: Arg = Arg {
+    name: "incurred",
+    help: "Cumulative incurred, the same size as paid and observed at the same cells",
+};
+const MUNICH_SIGMA: Arg = Arg {
+    name: "sigma",
+    help: "How Mack's last sigma is filled in: \"log-linear\" (default) or \"mack\"; or two cells, paid then incurred",
+};
+const TAIL_PAID: Arg = Arg {
+    name: "tail_paid",
+    help: "The paid tail: a factor, or \"log-linear\" (R's tailP = TRUE), \"exponential\", \"inverse_power\" or \"bondy\"; omitted for none",
+};
+const TAIL_INCURRED: Arg = Arg {
+    name: "tail_incurred",
+    help: "The incurred tail, as tail_paid",
+};
+const PIC_SIGMA: Arg = Arg {
+    name: "sigma",
+    help: "Paid standard deviations, one per development period; omitted to estimate them",
+};
+const PIC_TAU: Arg = Arg {
+    name: "tau",
+    help: "Incurred standard deviations, one per development period but the last; omitted to estimate them",
+};
+const PIC_EXTRAPOLATION: Arg = Arg {
+    name: "extrapolation",
+    help: "How the last estimated sigma and tau are filled in: \"log-linear\" (default, R's) or \"mack\"",
+};
+const PIC_CONVENTION: Arg = Arg {
+    name: "convention",
+    help: "\"model\" (default, the model's posterior) or \"r\" (R ChainLadder's PaidIncurredChain exactly)",
+};
+const PHI_MEAN: Arg = Arg {
+    name: "phi_mean",
+    help: "Prior means of the paid log link parameters, one per development period; omitted for non-informative",
+};
+const PHI_SD: Arg = Arg {
+    name: "phi_sd",
+    help: "Their prior standard deviations, given with phi_mean",
+};
+const PSI_MEAN: Arg = Arg {
+    name: "psi_mean",
+    help: "Prior means of the incurred log link parameters, one per development period but the last; omitted for non-informative",
+};
+const PSI_SD: Arg = Arg {
+    name: "psi_sd",
+    help: "Their prior standard deviations, given with psi_mean",
 };
 const ORIGINS: Arg = Arg {
     name: "origins",
@@ -919,6 +972,64 @@ pub static FUNCTIONS: &[Function] = &[
         help: "The ODP GLM's residuals: a row per observed increment (actual, fitted, Pearson, deviance, leverage, standardized), or grouped by origin, development or calendar period.",
         args: &[TRIANGLE, RESIDUALS_BY, ORIGINS],
         run: odp_glm::residuals,
+    },
+    Function {
+        symbol: "pro_res_munich",
+        name: "PRO.RES.MUNICH",
+        help: "Munich chain ladder exhibit: latest paid, incurred and P/I, Munich ultimates and P/I, paid reserve, incurred IBNR and the separate chain ladders per origin, with a total.",
+        args: &[
+            PAID,
+            INCURRED,
+            MUNICH_SIGMA,
+            TAIL_PAID,
+            TAIL_INCURRED,
+            ORIGINS,
+        ],
+        run: paid_incurred::summary,
+    },
+    Function {
+        symbol: "pro_res_munich_params",
+        name: "PRO.RES.MUNICH.PARAMS",
+        help: "The Munich chain ladder's parameters by development period (q, q^-1, rho, each column's factor and sigma), then lambda paid and incurred with their residual counts.",
+        args: &[PAID, INCURRED, MUNICH_SIGMA, TAIL_PAID, TAIL_INCURRED],
+        run: paid_incurred::params,
+    },
+    Function {
+        symbol: "pro_res_pic",
+        name: "PRO.RES.PIC",
+        help: "Merz and Wuthrich's paid-incurred chain: latest paid and incurred, weight on incurred, ultimate, reserve, SE and CV per origin, with a total.",
+        args: &[
+            PAID,
+            INCURRED,
+            PIC_SIGMA,
+            PIC_TAU,
+            PIC_EXTRAPOLATION,
+            PIC_CONVENTION,
+            PHI_MEAN,
+            PHI_SD,
+            PSI_MEAN,
+            PSI_SD,
+            ORIGINS,
+        ],
+        run: paid_incurred::summary_pic,
+    },
+    Function {
+        symbol: "pro_res_pic_params",
+        name: "PRO.RES.PIC.PARAMS",
+        help: "The paid-incurred chain's parameters by development period: sigma and tau, and the posterior mean and SD of Phi and Psi.",
+        args: &[
+            PAID,
+            INCURRED,
+            PIC_SIGMA,
+            PIC_TAU,
+            PIC_EXTRAPOLATION,
+            PIC_CONVENTION,
+            PHI_MEAN,
+            PHI_SD,
+            PSI_MEAN,
+            PSI_SD,
+        ],
+        run: paid_incurred::params_pic,
     },
     Function {
         symbol: "pro_tri_incremental",

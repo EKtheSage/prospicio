@@ -423,6 +423,64 @@ og["K5"] = ArrayFormula("K5:U60", f"=PRO.RES.ODP.GLM.RESIDUALS({TRI},,{ORI})")
 for col in "ABCDEFGHIJKLMNOPQRSTU":
     og.column_dimensions[col].width = 12
 
+# Paid and incurred together (decision 49): the Munich chain ladder on
+# Quarg and Mack's MCL triangles and the paid-incurred chain on USAA.
+def paid_incurred(name):
+    path = Path(__file__).resolve().parents[3] / "validation" / "data" / f"{name}.csv"
+    rows = {}
+    with open(path, newline="") as f:
+        for r in csv.DictReader(line for line in f if not line.startswith("#")):
+            rows.setdefault(int(r["origin"]), []).append((float(r["paid"]), float(r["incurred"])))
+    return rows
+
+pi = wb.create_sheet("Paid and incurred")
+pi["A1"] = "prospicio XLL test: paid and incurred together (MCL, Quarg and Mack 2004; USAA)"; pi["A1"].font = Font(bold=True, size=13)
+pi["A2"] = "The Munich chain ladder with Mack's sigma, as R's summary(MunichChainLadder(MCLpaid, MCLincurred)); the PIC as R's PaidIncurredChain (convention \"r\")."
+pi["A2"].font = note
+def lay_out(rows, top, left, pick):
+    for r, (year, cells) in enumerate(sorted(rows.items())):
+        pi.cell(row=top + r, column=left, value=year).font = bold
+        for c, x in enumerate(cells):
+            pi.cell(row=top + r, column=left + 1 + c, value=pick(x)).fill = inp
+mcl = paid_incurred("mcl")
+pi["A4"] = "MCL paid"; pi["A4"].font = bold
+lay_out(mcl, 5, 1, lambda x: x[0])
+pi["J4"] = "MCL incurred"; pi["J4"].font = bold
+lay_out(mcl, 5, 10, lambda x: x[1])
+MP, MI, MO = "$B$5:$H$11", "$K$5:$Q$11", "$A$5:$A$11"
+pi["A13"] = "Munich chain ladder"; pi["A13"].font = bold
+pi["A14"] = ArrayFormula("A14:K22", f'=PRO.RES.MUNICH({MP},{MI},"mack",,,{MO})')
+pi["A24"] = "Its parameters"; pi["A24"].font = bold
+pi["A25"] = ArrayFormula("A25:I34", f'=PRO.RES.MUNICH.PARAMS({MP},{MI},"mack")')
+usaa = paid_incurred("usaa")
+pi["A37"] = "USAA paid"; pi["A37"].font = bold
+lay_out(usaa, 38, 1, lambda x: x[0])
+pi["M37"] = "USAA incurred"; pi["M37"].font = bold
+lay_out(usaa, 38, 13, lambda x: x[1])
+UP, UI, UO = "$B$38:$K$47", "$N$38:$W$47", "$A$38:$A$47"
+pi["A50"] = "Paid-incurred chain"; pi["A50"].font = bold
+pi["A51"] = ArrayFormula("A51:H62", f'=PRO.RES.PIC({UP},{UI},,,,"r",,,,,{UO})')
+pi["A64"] = "Its parameters"; pi["A64"].font = bold
+pi["A65"] = ArrayFormula("A65:G75", f'=PRO.RES.PIC.PARAMS({UP},{UI},,,,"r")')
+pi["M13"] = "Check against R ChainLadder 0.2.21"; pi["M13"].font = bold
+for h, col in zip(["Check", "prospicio", "Expected", "Match"], "MNOP"):
+    pi[f"{col}14"] = h; pi[f"{col}14"].font = bold
+for i, (label, formula, want, tol) in enumerate([
+    ("Munich total paid ultimate", "=E22", 32121.4969949898, 1e-6),
+    ("Munich total incurred ultimate", "=F22", 32719.5125010429, 1e-6),
+    ("Munich total P/I", "=G22", 0.981722970168516, 1e-9),
+    ("Lambda paid", "=B33", 0.63602146642514212, 1e-9),
+    ("Lambda incurred", "=B34", 0.43618713201203274, 1e-9),
+    ("PIC total reserve (USAA)", "=F62", 1596953.5820021117, 1e-3),
+    ("PIC total SE (USAA)", "=G62", 110976.85223893161, 1e-3),
+]):
+    r = 15 + i
+    pi[f"M{r}"] = label; pi[f"N{r}"] = formula; pi[f"O{r}"] = want
+    pi[f"P{r}"] = f"=ABS(N{r}-O{r})<{tol}"
+pi.column_dimensions["M"].width = 30
+for col in "ABCDEFGHIJKL":
+    pi.column_dimensions[col].width = 13
+
 # Triangle helpers on the RAA sheet's triangle.
 th = wb.create_sheet("Triangle helpers")
 th["A1"] = "prospicio XLL test: triangle helpers on RAA"; th["A1"].font = Font(bold=True, size=13)
