@@ -11,8 +11,8 @@ one-year view, decision 11) built, with the defaults the user decided on
 user's decisions of 2026-10-19, and its one-year view over segments
 (`Compartmental::one_year_segments`, decision 8) built after it; PRs G
 and H (paid and incurred, and one response alone, decision 12) built;
-PR I (unequal origin and development grain, decision 13) built, with a
-study of sub-annual fits proposed as decision 14; PR D not
+PR I (unequal origin and development grain, decision 13) built, and the
+study of sub-annual fits decided and built as decision 14; PR D not
 yet · Lane:
 Reserving, with the Models lane for `prospicio-bayes` · Depends on:
 `reserving-bayes.md` (decisions 2, 5, 10, 11, 13 and 15, and open decision
@@ -1880,14 +1880,17 @@ choices:
 
 ### 14. Fitting sub-annual data (study, `[compartmental-subannual]`)
 
-Status: **Proposed** (2026-11-05). A study and nothing built: the fit, its
-defaults and the public API are as decision 13 left them, and every choice
-below is the user's (open decisions 9 to 13). The harness is
+Status: **Decided** (2026-11-06; the user accepted the recommendations of
+open decisions 9 to 13, "As built" below). The study of 2026-11-05 came first,
+and what it recommended is built as a setting for model 2's development levels,
+a warning and help text; the fit's defaults are as decision 13 left them. The
+harness is
 `validation/tests/reserving_compartmental_subannual.rs` (ignored panels, run
-by hand), the grouped form is test-only code in
+by hand), the study's code is in
 `crates/prospicio-reserving/src/bayes/compartmental/subannual_study.rs` (the
-module and its one call in `Model::build` are both `#[cfg(test)]`, so it exists
-only in that crate's own test build and no validation test links it), and
+module that held the grouped form was `#[cfg(test)]` when the study ran; the
+grouped form is now the public `DevelopmentLevels::ByYear` and the module
+keeps only the study's panels), and
 `validation/scripts/compartmental_subannual_summary.py` prints every table
 here from the CSVs. The full tables and the commands are in
 `knowledge/findings/compartmental-subannual.md`.
@@ -2163,8 +2166,9 @@ one. Model 2 on monthly data needs a large book or a floor on the cells, which
     one-year view needs a test on grouped levels. Grouped is badly wrong when
     effects do move within a year (elpd 361 worse in 30 of 30 books, sd 59%
     wider), so it is a choice to make with LOO, not a default. *Recommended.*
-    Monthly it is also the cheaper and better-mixing form when effects do move
-    by year.
+    Monthly it is also the cheaper form when effects do move by year, with a
+    lower worst R-hat (1.07 against 1.62) though no better median bulk ESS (101
+    against 114), on 10 short-sampler books with rough times.
   * (c) By development year by default on sub-annual grains. Fixes monthly
     without the user knowing. Changes every existing sub-annual model 2 fit, and
     loses `m2q`'s structure silently; on annual origins that all start in January it
@@ -2279,6 +2283,104 @@ a seasonal term, of correlated residuals or of earned exposure, and a Stan
 reference for any arm. No real sub-annual triangle exists in the
 repo, so all of this is simulated.
 
+**As built** (2026-11-06, branch `claude/compartmental-subannual-settings`;
+Rust, Python and R). The user's choices for open decisions 9 to 13 are the
+recommended ones, and what each became:
+
+* **Rate priors (9a).** The preset stays, per year on every grain. The help
+  says so, and that a line whose first year runs much faster or slower than
+  `k_er` of about 3 needs priors of its own. No code.
+* **Levels by development year (10b).** `DevelopmentLevels::{PerAge, ByYear}`
+  on `Compartmental::development_levels`; Python and R
+  `development_levels = "per_age" | "by_year"` on `Compartmental`,
+  `Compartmental.model_2` and the R `compartmental*` functions. `PerAge` is the
+  default and is today's behaviour bit for bit. It reaches the fit, segments,
+  the one-year view and its segments, the diagonal backtest and its
+  candidates, and the prior predictive, which draws one effect for each
+  level as the fit has them, so its paths under `ByYear` describe the model
+  fitted, and records the setting in its provenance (R
+  `compartmental_prior_predictive(development_levels =)`). It is an error with priors that have no
+  development effects (model 1): `Error::NotSupported`, raised when the fit,
+  the view or the backtest asks for it (the prior check, with no effects to
+  group, runs). At annual grain the two settings are
+  the same model, and a test checks that the fits are identical at a fixed
+  seed.
+* **A year (10b).** A development year is `y = (age_months - 1) / 12`, counted
+  from each origin's own start, not by calendar month, so ages 1 to 12 are
+  year 0, 13 to 24 year 1, and so on. It applies on every grain, a semiannual
+  one too. A level exists when some observed cell has an age in that year; its
+  name is the year's first age in the square. An age in an observed year with
+  no cell of its own (a held-out age, a cell not yet observed) takes the year's
+  level. A year with no observed cell at all draws one new effect per
+  simulation, shared by its ages.
+* **Seasonality (11a).** No term. The help says model 1 reads a season as
+  noise and model 2's per-age levels do not absorb it unless every origin
+  starts in the same calendar quarter. The calendar-quarter factor (11b) is
+  **not built**, and is first among the builds if a user's lines are seasonal.
+* **What a sub-annual fit promises (12a and b).** The help and the guide say
+  the cumulative interval narrows with the grain and what incremental paid
+  trades, and pick no form. A fit with cumulative paid on a development grain
+  finer than a year carries a warning, in the place of the rate-swap warning
+  (`cumulative_sub_annual_warning`, pushed in `fit_streams` and in the
+  backtest candidate's training fit, so it is in `Backtest::warnings` once for
+  each split): it asks for a
+  look at the residuals and does not say the fit is wrong, and it fires on a
+  calibrated fit too, since the data do not say which world they are in. It
+  stays in `Diagnostics::warnings`, but Python and R word it apart from the
+  failed diagnostics: a `UserWarning` or `warning()` of its own, without the
+  "MCMC diagnostics failed" prefix. The rate-swap and prior-share entries keep
+  that prefix, since they point at a problem in the fit. The bindings find it
+  by `CUMULATIVE_SUB_ANNUAL_WARNING`. Its figures are at the hand-chosen
+  persistence, which it names. Correlated residuals (12c) and incremental by default (12d) are
+  not built.
+* **Earned exposure (13a).** The help says sub-annual development on annual
+  origins fits an exposure the model does not have, so use quarterly origins,
+  and keeps its claims to what the study showed (quarterly origins passed
+  narrowly, on a short sampler). The exposure-spread setting (13b) is **not
+  built**.
+
+*What building it found, which the study did not.*
+
+* **The predictive.** The study said the grouped form and the built form
+  "differ in nothing else". The density is unchanged, but the study's regroup
+  drew the effect of an age with no observed cell once for each age, whereas
+  the built predictive draws it once for each year, so the ages of one year
+  share it. That is the model the setting names, and the draws of the cells a
+  year has not observed differ from the study's. The study's panels were not
+  rerun; `grouped_against_per_age` runs both settings through the public
+  setting and keeps working.
+* **A bug in the one-year view.** `Parameters::at` indexed the development
+  effects by age, which is right for one level per age and silently wrong for
+  levels by year. It now goes through the cell's level, and a unit test pins
+  it. `embed` (observed theta to the full vector) was rewritten to visit each
+  full level once. Neither mattered before, because no setting could group
+  levels outside the test build.
+* **The conformance suite on a year that opens a level.** On a triangle whose
+  newest development year is observed by no origin in training and opens in
+  the coming year, the Pareto k of the reweighted simulations is large (median
+  7.6 against 1.8 per age, on cells with an 8% wobble) and `gpd_fit` returned a
+  NaN k for 18 of 200 simulations on the low-noise synthetic data. With a 30%
+  wobble the median k is 1.7 and none is NaN. The conformance check's replay
+  comparison of `pareto_k` is now NaN-aware (equal bits), since `assert_eq`
+  fails on NaN. A NaN k out of the shared smoothing code is odd and is not
+  chased here.
+* **The backtest.** The generic rule that excludes held-out rows whose age no
+  training row has still applies, so levels by year score the same rows as
+  per-age ones (4 scored and 1 excluded on the quarterly test triangle). A
+  per-age model 2 backtest on that triangle cannot be fitted at all: it has 111
+  parameters against 110 cells.
+* **Tests.** Unit tests: the levels by year count the years, the year does
+  not depend on the origin's calendar month, annual grain is the same model,
+  a year with no cell shares one new effect, model 1 is an error, the
+  warning (and its absence at annual grain), the cell parameters follow the
+  level, a held-out age takes its year's effect, the gradient against
+  central differences with levels by year. Slow ones: the one-year view's
+  conformance with levels by year (with and without a year that opens a
+  level), the identical annual fit, a quarterly fit, the backtest. The
+  validation conformance file has no entry for it: its bounds are measured
+  on annual company 337, where the two settings are the same model, and a
+  quarterly book would need bounds of its own, swept over seeds.
+
 ## Risks
 
 * **Prior-data conflict.** On company 337 the data already overrule the
@@ -2382,8 +2484,10 @@ are settings from PR B on (decision 1).
    *Recommended: (a)*: none has a reference we can rerun yet, and each is
    a model of its own.
 
-Open since 2026-11-05 (decision 14, from a study on simulated books; none
-decided yet):
+Decided 2026-11-06 by the user: items 9 to 13, each as recommended ((a) for 9,
+11 and 13; (b) for 10; (a) and (b) for 12), built under decision 14's "As
+built". Items 11(b) and 13(b) are recorded as not built. Opened 2026-11-05
+(decision 14, from a study on simulated books):
 
 9. **Sub-annual rate priors.** (a) Keep the preset, per year on every grain,
    and say so in the help; (b) add a wide preset (`ratewide`, log sd 1 on both
@@ -2411,7 +2515,8 @@ decided yet):
     add a warning to such a fit; (c) correlated residuals (open decision 8's
     AR(1)); (d) incremental paid by default on sub-annual grains. *Recommended:
     (a) and (b)*: at the study's persistent noise (`PERSIST_PHI` 25,
-    `PERSIST_RHO` 0.95) coverage fell from 88 to 56 with no gain in accuracy,
+    `PERSIST_RHO` 0.95) coverage fell from 88 to 56 and the RMSE rose from
+    1,623 to 2,033,
     and incremental paid is no cure (1.3 to 2 times too wide, a worse RMSE at
     quarterly and monthly grain, D failing annually), so the help states the
     trade-off and picks no form; (c) is the real fix and a model of its own.

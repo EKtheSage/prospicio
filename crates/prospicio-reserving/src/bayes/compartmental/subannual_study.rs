@@ -1,10 +1,12 @@
-//! Test-only: model 2's development effects grouped by development year
-//! against one level per age (`docs/design/reserving-compartmental.md`
-//! decision 14, `knowledge/findings/compartmental-subannual.md`). The
-//! grouped form is the built density with its age-to-level map changed, so
-//! the two arms differ in nothing else. Nothing here exists outside a test
-//! build; `Model::build` calls [`regroup`], which does nothing unless
-//! [`grouped`] has set a width on this thread.
+//! Test-only: model 2's development effects by development year against one
+//! level per age (`docs/design/reserving-compartmental.md` decision 14,
+//! `knowledge/findings/compartmental-subannual.md`). The by-year form is the
+//! built setting [`DevelopmentLevels::ByYear`], so the two arms differ in
+//! that setting alone. The study's panels ran the density with its
+//! age-to-level map changed and the predictive per age; the built setting
+//! shares a year's effect in the predictive too, so a rerun can differ from
+//! the recorded `grouped` rows in the reserve (not in the density, `loo` or
+//! the sampler).
 //!
 //! The books come from `validation/tests/reserving_compartmental_subannual.rs`
 //! (`export_books`), so that they are the panels' own:
@@ -23,7 +25,6 @@
 //! `target/compartmental-subannual/grouped_<books>.csv`, a book already there
 //! skipped.
 
-use std::cell::Cell;
 use std::fmt::Write as _;
 use std::fs::OpenOptions;
 use std::io::Write as _;
@@ -33,43 +34,9 @@ use prospicio_bayes::nuts::Sampler;
 use prospicio_core::{Grain, Lag, Month};
 use prospicio_prob::Distribution;
 
-use super::{Compartmental, CompartmentalFit, CompartmentalPriors, Data, Outstanding};
+use super::{Compartmental, CompartmentalFit, CompartmentalPriors, DevelopmentLevels, Outstanding};
 use crate::triangle::Long;
 use crate::{DevelopmentColumn, Triangle};
-
-thread_local! {
-    /// The months in a development level, when grouping.
-    static GROUP_MONTHS: Cell<Option<u32>> = const { Cell::new(None) };
-}
-
-/// Runs `f` with development levels `months` wide on this thread.
-fn grouped<T>(months: u32, f: impl FnOnce() -> T) -> T {
-    GROUP_MONTHS.with(|g| g.set(Some(months)));
-    let out = f();
-    GROUP_MONTHS.with(|g| g.set(None));
-    out
-}
-
-/// Merges the development levels into groups of [`GROUP_MONTHS`], each
-/// named by its first age; an age with no observed cell keeps no level.
-pub(super) fn regroup(dev_level: &mut [Option<usize>], labels: &mut Vec<String>, data: &Data) {
-    let Some(months) = GROUP_MONTHS.with(Cell::get) else {
-        return;
-    };
-    let mut groups: Vec<u32> = Vec::new();
-    labels.clear();
-    for (k, level) in dev_level.iter_mut().enumerate() {
-        if level.is_none() {
-            continue;
-        }
-        let group = (data.age(k) - 1) / months;
-        if groups.last() != Some(&group) {
-            groups.push(group);
-            labels.push(data.age(k).to_string());
-        }
-        *level = Some(groups.len() - 1);
-    }
-}
 
 struct Book {
     triangle: Triangle,
@@ -127,9 +94,10 @@ fn read_book(path: &std::path::Path) -> Book {
     }
 }
 
-fn model(seed: u64) -> Compartmental {
+fn model(seed: u64, levels: DevelopmentLevels) -> Compartmental {
     let mut m = Compartmental::model_2(CompartmentalPriors::gesmann_morris_2());
     m.seed = seed;
+    m.development_levels = levels;
     if std::env::var("SUBANNUAL_SAMPLER").as_deref() != Ok("default") {
         m.sampler = Sampler {
             tune: 500,
@@ -142,8 +110,8 @@ fn model(seed: u64) -> Compartmental {
     m
 }
 
-fn fit(book: &Book, seed: u64) -> CompartmentalFit {
-    model(seed)
+fn fit(book: &Book, seed: u64, levels: DevelopmentLevels) -> CompartmentalFit {
+    model(seed, levels)
         .fit(
             &book.triangle,
             "paid",
@@ -213,10 +181,10 @@ fn grouped_against_per_age() {
         for b in (0..books).filter(|b| !seen.contains(b)) {
             let book = read_book(format!("{dir}/books/{name}_{b}.csv").as_ref());
             let start = Instant::now();
-            let per_age = fit(&book, 1000 + b);
+            let per_age = fit(&book, 1000 + b, DevelopmentLevels::PerAge);
             let per_age_secs = start.elapsed().as_secs_f64();
             let start = Instant::now();
-            let by_year = grouped(12, || fit(&book, 1000 + b));
+            let by_year = fit(&book, 1000 + b, DevelopmentLevels::ByYear);
             let by_year_secs = start.elapsed().as_secs_f64();
             let text = line("per_age", b, &book, &per_age, per_age_secs)
                 + &line("grouped", b, &book, &by_year, by_year_secs);
@@ -225,51 +193,4 @@ fn grouped_against_per_age() {
             file.write_all(text.as_bytes()).unwrap();
         }
     }
-}
-
-/// Grouped levels: ages share a level by development year, and the density
-/// has that many fewer effects.
-#[test]
-fn the_ages_of_a_year_share_a_level() {
-    use crate::bayes::compartmental::{Model, RateOrder};
-    use crate::bayes::laplace::Posterior as _;
-    let (mut origin, mut ages, mut v) = (vec![], vec![], vec![]);
-    for o in 0..3 {
-        for k in 1..=(12 - 4 * o) {
-            origin.push(Month::january(2011 + o));
-            ages.push(3 * k as Lag);
-            v.push(100.0 + f64::from(k) + 10.0 * f64::from(o));
-        }
-    }
-    let premium = vec![1000.0; v.len()];
-    let tri = Triangle::from_long(&Long {
-        keys: &[],
-        origin: &origin,
-        development: DevelopmentColumn::Age(&ages),
-        values: &[("paid", &v), ("outstanding", &v), ("premium", &premium)],
-        origin_grain: Grain::Year,
-        development_grain: Grain::Quarter,
-        cumulative: true,
-    })
-    .unwrap();
-    let m = Compartmental::model_2(CompartmentalPriors::gesmann_morris_2());
-    let data = Data::new(
-        &tri,
-        "paid",
-        Outstanding::Column("outstanding"),
-        "premium",
-        m.fitted,
-    )
-    .unwrap();
-    let ordered = m.rate_order == RateOrder::Ordered;
-    let per_age = Model::new(&data, m.priors, ordered, m.response()).unwrap();
-    let by_year = grouped(12, || {
-        Model::new(&data, m.priors, ordered, m.response()).unwrap()
-    });
-    assert_eq!(per_age.n_dev_levels(), 12);
-    assert_eq!(by_year.n_dev_levels(), 3);
-    assert_eq!(by_year.dev_level[3], Some(0));
-    assert_eq!(by_year.dev_level[4], Some(1));
-    assert_eq!(by_year.dev_labels, ["3", "15", "27"]);
-    assert_eq!(per_age.dim() - by_year.dim(), 4 * 9);
 }

@@ -117,6 +117,14 @@ expect_error_like(compartmental(tri, "paid", "premium", gm, outstanding = "incur
 expect_error_like(compartmental(tri, "paid", "premium", gm, incurred = "incurred",
                                 rate_order = "sorted"),
                   "'arg' should be one of")
+# Levels by development year: a name checked, and an error with priors that have
+# no development effects (model 1).
+expect_error_like(compartmental(tri, "paid", "premium", gm, incurred = "incurred",
+                                development_levels = "by_decade"),
+                  "'arg' should be one of")
+expect_error_like(compartmental(tri, "paid", "premium", gm, incurred = "incurred",
+                                development_levels = "by_year"),
+                  "development_levels ByYear")
 bad_eta <- gm
 bad_eta$lkj_eta <- 0
 expect_error_like(compartmental(tri, "paid", "premium", bad_eta, incurred = "incurred"), "lkj_eta")
@@ -494,7 +502,23 @@ stopifnot(nrow(sim) == 220)
 qtri <- triangle(sim, "origin", "development", c("paid", "outstanding", "premium"),
                  origin_grain = "Y", development_grain = "Q")
 stopifnot(qtri@origin_grain == "Y", qtri@development_grain == "Q")
-qfit <- compartmental(qtri, "paid", "premium", gm, outstanding = "outstanding", n_sims = 2000)
+qrun <- with_warnings(compartmental(qtri, "paid", "premium", gm, outstanding = "outstanding",
+                                    n_sims = 2000))
+qfit <- qrun$value
+# Cumulative paid on cells finer than a year warns, once, and asks for a look
+# at the residuals, as a prompt and not as a failed diagnostic.
+stopifnot(
+  sum(grepl("cumulative paid is fitted on Q", qrun$warnings)) == 1,
+  sum(startsWith(qrun$warnings, "compartmental: cumulative paid is fitted on Q")) == 1
+)
+# A segment's entry joins its warnings, and the two still come apart.
+joined <- with_warnings(prospicio:::compartmental_warnings(
+  "f", c("low ESS; cumulative paid is fitted on Q cells; so on (decision 14); swaps", ""),
+  c("a: ", "b: ")))
+stopifnot(identical(joined$warnings, c(
+  paste0("f: the MCMC diagnostics failed; check them before relying on the fit: ",
+         "a: low ESS; swaps"),
+  "f: a: cumulative paid is fitted on Q cells; so on (decision 14)")))
 qages <- qfit@paid@keys$age
 stopifnot(
   identical(qfit@origins, as.character(2011:2020)),
@@ -507,3 +531,14 @@ stopifnot(
 near(mean(qfit@reserves), 74873, 0.02)
 qpaths <- compartmental_prior_predictive(qtri, "premium", gm, n_sims = 100)
 stopifnot(nrow(qpaths$paid@keys) == 10 * 40)
+# The prior check draws the levels the fit has.
+qper_age <- compartmental_prior_predictive(qtri, "premium", gm2, n_sims = 50, seed = 4)
+qby_year <- compartmental_prior_predictive(qtri, "premium", gm2, n_sims = 50, seed = 4,
+                                           development_levels = "by_year")
+stopifnot(!identical(draw_matrix(qper_age$paid), draw_matrix(qby_year$paid)))
+# A backtest's fits carry the warning too.
+qcand <- compartmental_candidate(qtri, "paid", "premium", gm, outstanding = "outstanding",
+                                 chains = 2, tune = 300, draws = 300)
+qbt <- suppressWarnings(diagonal_backtest(qtri, "paid", list(c = qcand), 1, n_sims = 100,
+                                          seed = 1))
+stopifnot(sum(grepl("cumulative paid is fitted on Q", qbt@warnings$message)) == 1)

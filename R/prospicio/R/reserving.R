@@ -7048,6 +7048,51 @@ compartmental_prior_values <- function(priors, call) {
 #' `cell_rate_swaps` is the share of draws and observed cells with
 #' `k_er <= k_p` (`NA` when the rates are shared).
 #'
+#' Fitting sub-annual data. Quarterly or monthly development cells are
+#' allowed. What follows is from a study on simulated books (design note
+#' decision 14, `knowledge/findings/compartmental-subannual.md`); no real
+#' sub-annual triangle was available.
+#'
+#' * Rate priors: the rates are per year on every grain, and the paper's
+#'   presets are kept as they are. Finer cells pull the preset towards the
+#'   truth; a line whose first year runs much faster or slower than the
+#'   preset's `k_er` of about 3 needs priors of its own.
+#' * Development levels (model 2): `development_levels = "per_age"` or
+#'   `"by_year"`, a choice to make with [bayes_loo()]. Where effects move by
+#'   year, by-year levels agree with per-age ones on the reserve (0.10 sd apart
+#'   on average in the study), win elpd in 30 of 30 quarterly books and on 10
+#'   monthly books under a short sampler took 89 s against 126 s (rough times)
+#'   with a worst R-hat of 1.07 against 1.62, though a median bulk ESS of 101
+#'   against 114; where effects move within a year they lose 361 of elpd in 30
+#'   of 30 books and widen the reserve's sd by 59%.
+#' * Seasonality: there is no seasonal term. Model 1 reads a season as noise
+#'   (the interval widens, by up to 54% in the sd for a 30% season, and the mean
+#'   can sit nearly 1 sd off the outcome), and model 2's per-age levels do not
+#'   absorb a season unless every origin starts in the same calendar quarter. A
+#'   calendar-quarter factor is not built.
+#' * Cumulative paid: the interval narrows as the cells get finer, right where
+#'   the noise of the cells is independent and too narrow where it persists. In
+#'   the study's world with persistent payment noise, at one persistence chosen
+#'   by hand and fitted to no book (`PERSIST_PHI` 25, `PERSIST_RHO` 0.95; a
+#'   smaller fall is expected with less, untested), the 90% interval covered
+#'   88%, 70% and 56% at annual, quarterly and monthly cells and the RMSE rose
+#'   from 1,623 to 2,033. A fit with cumulative paid on cells finer than a year
+#'   therefore warns, asking you to check the residuals; it also warns when the
+#'   fit is
+#'   calibrated, since the data do not say which world they are in.
+#'   `paid_response = "incremental"` keeps the interval but, in that world, ran
+#'   1.3 to 2 times too wide, with a worse RMSE at quarterly and monthly grain
+#'   and a failing Meyers' D at annual grain. Neither is chosen for you.
+#' * Earned exposure: all of an origin's exposure starts at age 0, so
+#'   sub-annual development of annual origins fits an exposure the model does
+#'   not have; use quarterly origins where the data allow. On simulated books
+#'   with earned premium annual origins failed Meyers' D at annual, quarterly
+#'   and monthly development, and quarterly origins of the same books passed
+#'   narrowly (17.8 against a critical 19.2, on a short sampler, with 3 books at
+#'   the default sampler); that comparison also changes the number of origins
+#'   and the effects' variance. A setting that spreads the exposure over the
+#'   origin's period is not built.
+#'
 #' Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS below 100
 #' per chain, any divergent transition) and rate swaps do not fail the fit:
 #' `compartmental()` raises one [warning()] listing them, and they stay in
@@ -7113,6 +7158,12 @@ compartmental_prior_values <- function(priors, call) {
 #'   replaces outstanding as the second response, as above), `"paid_only"` or
 #'   `"incurred_only"` (one response alone, with `rate_order = "ordered"`).
 #' @param rate_order `"free"` or `"ordered"`, as above.
+#' @param development_levels The width of a development level, for priors with
+#'   development effects (model 2): `"per_age"` (the default), one level for each age,
+#'   or `"by_year"`, one for each development year (counted from the origin's start:
+#'   ages 1 to 12 months, 13 to 24 and so on). Choose with [bayes_loo()]; see
+#'   "Fitting sub-annual data" in [compartmental()]. The same fit at annual grain. An error for
+#'   `"by_year"` with priors that have no development effects (model 1).
 #' @param start Where the pilot run starts: `"data"`, a least-squares fit
 #'   of the population curve (the prior centre if that fit fails, and under
 #'   one response if its log posterior is below the prior centre's), or
@@ -7229,7 +7280,8 @@ compartmental <- function(triangle, paid, premium, priors, outstanding = NULL, i
                           paid_response = c("cumulative", "incremental"),
                           fitted = c("paid_and_outstanding", "paid_and_incurred", "paid_only",
                                      "incurred_only"),
-                          rate_order = c("free", "ordered"), start = c("data", "prior_centre"),
+                          rate_order = c("free", "ordered"),
+  development_levels = c("per_age", "by_year"), start = c("data", "prior_centre"),
                           chains = 4, tune = 1000, draws = 2000, n_sims = 10000, seed = 0,
                           target_accept = 0.99, max_depth = 10) {
   call <- sys.call()
@@ -7237,18 +7289,33 @@ compartmental <- function(triangle, paid, premium, priors, outstanding = NULL, i
   inputs <- compartmental_inputs(triangle, paid, premium, priors, outstanding, incurred, call,
                                  fitted)
   settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
-                fitted, match.arg(rate_order), match.arg(start))
+                fitted, match.arg(rate_order), match.arg(development_levels), match.arg(start))
   ptr <- reserving_result(triangle@ptr$compartmental(
     paid, inputs$os, inputs$from, premium, inputs$p$values, inputs$p$families,
     settings, compartmental_run(chains, tune, draws, n_sims, seed, target_accept, max_depth)),
     call = call)
   fit <- compartmental_fit(ptr = ptr)
-  failed <- fit@diagnostics$warnings
-  if (length(failed)) {
-    warning("compartmental: the MCMC diagnostics failed; check them before relying on the fit: ",
-            paste(failed, collapse = "; "), call. = FALSE)
-  }
+  compartmental_warnings("compartmental", fit@diagnostics$warnings)
   fit
+}
+
+# A fit's warnings. The warning of cumulative paid on cells finer than a year
+# fires on healthy fits too, so it comes apart from the failed diagnostics,
+# whether as an entry of its own or inside a segment's joined entry. `labels`
+# name the segments.
+compartmental_warnings <- function(fn, warnings, labels = "") {
+  note <- "cumulative paid is fitted on .*?\\(decision 14\\)"
+  labels <- rep_len(labels, length(warnings))
+  notes <- regmatches(warnings, regexpr(note, warnings, perl = TRUE))
+  noted <- grepl(note, warnings, perl = TRUE)
+  failed <- sub("^; ", "", gsub(paste0("(; )?", note), "", warnings, perl = TRUE))
+  if (any(failed != "")) {
+    warning(fn, ": the MCMC diagnostics failed; check them before relying on the fit: ",
+            paste0(labels[failed != ""], failed[failed != ""], collapse = "; "), call. = FALSE)
+  }
+  if (length(notes)) {
+    warning(fn, ": ", paste0(labels[noted], notes, collapse = "; "), call. = FALSE)
+  }
 }
 
 # The checked inputs shared by compartmental() and compartmental_candidate():
@@ -7296,6 +7363,7 @@ compartmental_second_column <- function(outstanding, incurred, fitted) {
 #' @export
 compartmental_model_2 <- function(triangle, paid, premium, priors, outstanding = NULL,
                                   incurred = NULL, rate_order = c("free", "ordered"),
+  development_levels = c("per_age", "by_year"),
                                   start = c("data", "prior_centre"), chains = 4, tune = 2000,
                                   draws = 8000, n_sims = 10000, seed = 0, target_accept = 0.999,
                                   max_depth = 10) {
@@ -7306,7 +7374,8 @@ compartmental_model_2 <- function(triangle, paid, premium, priors, outstanding =
   }
   compartmental(triangle, paid, premium, priors, outstanding = outstanding, incurred = incurred,
                 likelihood = "lognormal", scale = "loss_ratio", paid_response = "incremental",
-                rate_order = match.arg(rate_order), start = match.arg(start), chains = chains,
+                rate_order = match.arg(rate_order),
+                development_levels = match.arg(development_levels), start = match.arg(start), chains = chains,
                 tune = tune, draws = draws, n_sims = n_sims, seed = seed,
                 target_accept = target_accept, max_depth = max_depth)
 }
@@ -7439,6 +7508,7 @@ compartmental_segments <- function(triangle, paid, premium, priors, outstanding 
                                    fitted = c("paid_and_outstanding", "paid_and_incurred",
                                               "paid_only", "incurred_only"),
                                    rate_order = c("free", "ordered"),
+  development_levels = c("per_age", "by_year"),
                                    start = c("data", "prior_centre"), chains = 4, tune = 1000,
                                    draws = 2000, n_sims = 10000, seed = 0, target_accept = 0.99,
                                    max_depth = 10,
@@ -7462,7 +7532,7 @@ compartmental_segments <- function(triangle, paid, premium, priors, outstanding 
   fitted <- match.arg(fitted)
   os <- compartmental_second_column(outstanding, incurred, fitted)
   settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
-                fitted, match.arg(rate_order), match.arg(start))
+                fitted, match.arg(rate_order), match.arg(development_levels), match.arg(start))
   dependence <- match.arg(dependence)
   ptr <- reserving_result(triangle@ptr$compartmental_segments(
     paid, os, if (is.null(incurred)) "column" else "incurred", premium, p$values, p$families,
@@ -7470,18 +7540,14 @@ compartmental_segments <- function(triangle, paid, premium, priors, outstanding 
     dependence, spearman_arg(spearman)), call = call)
   fit <- compartmental_fits(ptr = ptr)
   d <- fit@diagnostics
-  failed <- d$warnings != ""
-  if (any(failed)) {
-    keys <- setdiff(names(d), c("max_rhat", "min_ess_bulk", "min_ess_tail", "divergences",
-                                "warnings"))
-    label <- if (length(keys)) {
-      paste0(do.call(paste, c(unname(as.list(d[failed, keys, drop = FALSE])), sep = " / ")), ": ")
-    } else {
-      ""
-    }
-    warning("compartmental_segments: the MCMC diagnostics failed; check them before relying on ",
-            "the fit: ", paste0(label, d$warnings[failed], collapse = "; "), call. = FALSE)
+  keys <- setdiff(names(d), c("max_rhat", "min_ess_bulk", "min_ess_tail", "divergences",
+                              "warnings"))
+  labels <- if (length(keys)) {
+    paste0(do.call(paste, c(unname(as.list(d[, keys, drop = FALSE])), sep = " / ")), ": ")
+  } else {
+    ""
   }
+  compartmental_warnings("compartmental_segments", d$warnings, labels)
   fit
 }
 
@@ -7494,8 +7560,10 @@ compartmental_segments <- function(triangle, paid, premium, priors, outstanding 
 #' effect sds, the correlation and each origin's effects. The paths are
 #' means, without the likelihood's noise, which under the preset's
 #' effectively flat prior on `log sigma` would swamp them. With
-#' development effects in the priors, each simulation also draws each age's
-#' effects (shared by the origins), and with effects by cell and
+#' development effects in the priors, each simulation also draws each
+#' development level's effects, as the fit has them (shared by the origins:
+#' each age its own under `development_levels = "per_age"`, the ages of a
+#' development year one under `"by_year"`), and with effects by cell and
 #' `paid_response = "incremental"` the cumulative paid path is the sum of
 #' the cells' mean increments. Under `rate_order = "ordered"` the rates are
 #' drawn from their priors restricted to `k_er > k_p`. The seed is derived from `seed`, as the fit's
@@ -7508,6 +7576,8 @@ compartmental_segments <- function(triangle, paid, premium, priors, outstanding 
 #' @param n_sims Number of paths; positive.
 #' @param paid_response `"cumulative"` or `"incremental"`, as in the fit to
 #'   be checked; it matters only with effects by cell.
+#' @param development_levels `"per_age"` or `"by_year"`, as in the fit to be
+#'   checked; it matters only with development effects in the priors.
 #' @returns A list of two [predictive_distribution]s, `outstanding` and
 #'   `paid`, each with dimensions `origin` and `age` (months).
 #' @seealso [compartmental()], [gesmann_morris_priors()],
@@ -7524,7 +7594,8 @@ compartmental_segments <- function(triangle, paid, premium, priors, outstanding 
 compartmental_prior_predictive <- function(triangle, premium, priors,
                                            rate_order = c("free", "ordered"), n_sims = 1000,
                                            seed = 0,
-                                           paid_response = c("cumulative", "incremental")) {
+                                           paid_response = c("cumulative", "incremental"),
+                                           development_levels = c("per_age", "by_year")) {
   call <- sys.call()
   check_triangle(triangle)
   if (!is.character(premium) || length(premium) != 1 || is.na(premium)) {
@@ -7536,7 +7607,7 @@ compartmental_prior_predictive <- function(triangle, premium, priors,
   }
   p <- compartmental_prior_values(priors, call)
   settings <- c("normal", "amount", match.arg(paid_response), "paid_and_outstanding",
-                match.arg(rate_order), "data")
+                match.arg(rate_order), match.arg(development_levels), "data")
   out <- reserving_result(triangle@ptr$compartmental_prior_predictive(
     premium, p$values, p$families, settings,
     compartmental_run(4, 1000, 2000, n_sims, seed, 0.99, 10)), call = call)
@@ -7736,6 +7807,7 @@ compartmental_one_year <- function(triangle, paid, premium, priors, outstanding 
                                    scale = c("amount", "loss_ratio"),
                                    paid_response = c("cumulative", "incremental"),
                                    rate_order = c("free", "ordered"),
+  development_levels = c("per_age", "by_year"),
                                    start = c("data", "prior_centre"), chains = 4, tune = 1000,
                                    draws = 2000, n_sims = 10000, seed = 0,
                                    target_accept = 0.99, max_depth = 10, k_threshold = 0.7,
@@ -7765,7 +7837,8 @@ compartmental_one_year <- function(triangle, paid, premium, priors, outstanding 
                  if (is.null(incurred)) "outstanding" else "incurred"), call. = FALSE)
   }
   settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
-                "paid_and_outstanding", match.arg(rate_order), match.arg(start))
+                "paid_and_outstanding", match.arg(rate_order), match.arg(development_levels),
+                match.arg(start))
   if (!is.null(refit)) {
     refit <- match.arg(refit, c("moment_match_then_refit", "refit_flagged", "reweight_only",
                                 "refit_all"))
@@ -7777,11 +7850,7 @@ compartmental_one_year <- function(triangle, paid, premium, priors, outstanding 
     optional_number(one_year_sims, "one_year_sims"), light_refit_arg(light_refit)),
     call = call)
   view <- compartmental_one_year_fit(ptr = ptr)
-  failed <- view@fit@diagnostics$warnings
-  if (length(failed)) {
-    warning("compartmental_one_year: the MCMC diagnostics failed; check them before relying ",
-            "on the fit: ", paste(failed, collapse = "; "), call. = FALSE)
-  }
+  compartmental_warnings("compartmental_one_year", view@fit@diagnostics$warnings)
   warn_refits("compartmental_one_year", "", length(view@refitted), view@refit_warnings,
               length(view@unrefitted))
   if (!is.null(view@approximate)) {
@@ -7794,6 +7863,7 @@ compartmental_one_year <- function(triangle, paid, premium, priors, outstanding 
 #' @export
 compartmental_model_2_one_year <- function(triangle, paid, premium, priors, outstanding = NULL,
                                            incurred = NULL, rate_order = c("free", "ordered"),
+  development_levels = c("per_age", "by_year"),
                                            start = c("data", "prior_centre"), chains = 4,
                                            tune = 2000, draws = 8000, n_sims = 10000, seed = 0,
                                            target_accept = 0.999, max_depth = 10,
@@ -7808,6 +7878,7 @@ compartmental_model_2_one_year <- function(triangle, paid, premium, priors, outs
   compartmental_one_year(triangle, paid, premium, priors, outstanding = outstanding,
                          incurred = incurred, likelihood = "lognormal", scale = "loss_ratio",
                          paid_response = "incremental", rate_order = match.arg(rate_order),
+                development_levels = match.arg(development_levels),
                          start = match.arg(start), chains = chains, tune = tune, draws = draws,
                          n_sims = n_sims, seed = seed, target_accept = target_accept,
                          max_depth = max_depth, k_threshold = k_threshold,
@@ -7895,6 +7966,7 @@ compartmental_one_year_segments <- function(triangle, paid, premium, priors, out
                                             scale = c("amount", "loss_ratio"),
                                             paid_response = c("cumulative", "incremental"),
                                             rate_order = c("free", "ordered"),
+  development_levels = c("per_age", "by_year"),
                                             start = c("data", "prior_centre"), chains = 4,
                                             tune = 1000, draws = 2000, n_sims = 10000, seed = 0,
                                             target_accept = 0.99, max_depth = 10,
@@ -7927,7 +7999,8 @@ compartmental_one_year_segments <- function(triangle, paid, premium, priors, out
                  if (is.null(incurred)) "outstanding" else "incurred"), call. = FALSE)
   }
   settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
-                "paid_and_outstanding", match.arg(rate_order), match.arg(start))
+                "paid_and_outstanding", match.arg(rate_order), match.arg(development_levels),
+                match.arg(start))
   dependence <- match.arg(dependence)
   if (!is.null(refit)) {
     refit <- match.arg(refit, c("moment_match_then_refit", "refit_flagged", "reweight_only",
@@ -7949,12 +8022,7 @@ compartmental_one_year_segments <- function(triangle, paid, premium, priors, out
   } else {
     rep("", nrow(d))
   }
-  failed <- d$warnings != ""
-  if (any(failed)) {
-    warning("compartmental_one_year_segments: the MCMC diagnostics failed; check them before ",
-            "relying on the fit: ", paste0(labels[failed], d$warnings[failed], collapse = "; "),
-            call. = FALSE)
-  }
+  compartmental_warnings("compartmental_one_year_segments", d$warnings, labels)
   counts <- view@ptr$refit_counts()
   warn_refits("compartmental_one_year_segments", labels, counts$refits, counts$warned,
               counts$unrefitted)
@@ -8236,12 +8304,14 @@ compartmental_candidate <- function(triangle, paid, premium, priors, outstanding
                                     scale = c("amount", "loss_ratio"),
                                     paid_response = c("cumulative", "incremental"),
                                     rate_order = c("free", "ordered"),
+  development_levels = c("per_age", "by_year"),
                                     start = c("data", "prior_centre"), chains = 4, tune = 1000,
                                     draws = 2000, target_accept = 0.99, max_depth = 10) {
   call <- sys.call()
   inputs <- compartmental_inputs(triangle, paid, premium, priors, outstanding, incurred, call)
   settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
-                "paid_and_outstanding", match.arg(rate_order), match.arg(start))
+                "paid_and_outstanding", match.arg(rate_order), match.arg(development_levels),
+                match.arg(start))
   ptr <- reserving_result(triangle@ptr$compartmental_candidate(
     paid, inputs$os, inputs$from, premium, inputs$p$values, inputs$p$families, settings,
     compartmental_run(chains, tune, draws, 1, 0, target_accept, max_depth)), call = call)
@@ -8252,6 +8322,7 @@ compartmental_candidate <- function(triangle, paid, premium, priors, outstanding
 #' @export
 compartmental_model_2_candidate <- function(triangle, paid, premium, priors, outstanding = NULL,
                                             incurred = NULL, rate_order = c("free", "ordered"),
+  development_levels = c("per_age", "by_year"),
                                             start = c("data", "prior_centre"), chains = 4,
                                             tune = 2000, draws = 8000, target_accept = 0.999,
                                             max_depth = 10) {
@@ -8263,6 +8334,7 @@ compartmental_model_2_candidate <- function(triangle, paid, premium, priors, out
   compartmental_candidate(triangle, paid, premium, priors, outstanding = outstanding,
                           incurred = incurred, likelihood = "lognormal", scale = "loss_ratio",
                           paid_response = "incremental", rate_order = match.arg(rate_order),
+                development_levels = match.arg(development_levels),
                           start = match.arg(start), chains = chains, tune = tune, draws = draws,
                           target_accept = target_accept, max_depth = max_depth)
 }

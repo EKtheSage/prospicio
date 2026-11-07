@@ -41,13 +41,13 @@ use pyo3::types::{
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
 use prospicio_reserving::bayes::{
     BayesBf, BayesBfFit, BayesBfNormalised, BayesBfNormalisedFit, BayesOdpFits, BayesOdpSegment,
-    BayesOneYear, BayesOneYearFit, BayesOneYearFits, BayesOneYearSegment, Compartmental,
-    CompartmentalCandidate, CompartmentalFit, CompartmentalFits, CompartmentalLikelihood,
-    CompartmentalOneYearFits, CompartmentalPriors, CompartmentalSegment, CompartmentalStart,
-    Fitted, HalfPrior, HierarchicalBf, HierarchicalBfFit, HierarchicalBfProgram, LayerSharePrior,
-    LightRefit, MeyersFits, MeyersSegment, NewOriginLevel, NewYear, OneYearRefit, Outstanding,
-    PaidResponse, PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
-    ShareDependence,
+    BayesOneYear, BayesOneYearFit, BayesOneYearFits, BayesOneYearSegment,
+    CUMULATIVE_SUB_ANNUAL_WARNING, Compartmental, CompartmentalCandidate, CompartmentalFit,
+    CompartmentalFits, CompartmentalLikelihood, CompartmentalOneYearFits, CompartmentalPriors,
+    CompartmentalSegment, CompartmentalStart, DevelopmentLevels, Fitted, HalfPrior, HierarchicalBf,
+    HierarchicalBfFit, HierarchicalBfProgram, LayerSharePrior, LightRefit, MeyersFits,
+    MeyersSegment, NewOriginLevel, NewYear, OneYearRefit, Outstanding, PaidResponse, PositivePrior,
+    RateOrder, RealPrior, Scale as CompartmentalScale, ShareDependence,
 };
 use prospicio_reserving::{
     Backtest, BayesOdp, BayesOdpFit, Diagnostics, GlmCandidate, Meyers, MeyersFit, MeyersModel,
@@ -10873,6 +10873,25 @@ fn warn_diagnostics(py: Python<'_>, model: &str, warnings: &[String]) -> PyResul
     PyErr::warn(py, category.as_any(), &message, 1)
 }
 
+/// `Compartmental`'s warnings: the warning of cumulative paid on cells finer
+/// than a year fires on healthy fits too, so it comes as a ``UserWarning`` of
+/// its own and not as a failed diagnostic.
+fn warn_compartmental(py: Python<'_>, warnings: &[String]) -> PyResult<()> {
+    let (notes, failed): (Vec<String>, Vec<String>) = warnings
+        .iter()
+        .cloned()
+        .partition(|w| w.contains(CUMULATIVE_SUB_ANNUAL_WARNING));
+    warn_diagnostics(py, "Compartmental", &failed)?;
+    if notes.is_empty() {
+        return Ok(());
+    }
+    let message = format!("Compartmental: {}", notes.join("; "));
+    let message =
+        std::ffi::CString::new(message).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let category = py.get_type::<pyo3::exceptions::PyUserWarning>();
+    PyErr::warn(py, category.as_any(), &message, 1)
+}
+
 /// MCMC diagnostics as a dict, as ``BayesOdpFit.diagnostics``.
 fn diagnostics_dict<'py>(py: Python<'py>, d: &Diagnostics) -> PyResult<Bound<'py, PyDict>> {
     let out = PyDict::new(py);
@@ -17411,6 +17430,10 @@ const FITTED: [(&str, Fitted); 4] = [
 ];
 const RATE_ORDERS: [(&str, RateOrder); 2] =
     [("free", RateOrder::Free), ("ordered", RateOrder::Ordered)];
+const DEVELOPMENT_LEVELS: [(&str, DevelopmentLevels); 2] = [
+    ("per_age", DevelopmentLevels::PerAge),
+    ("by_year", DevelopmentLevels::ByYear),
+];
 const STARTS: [(&str, CompartmentalStart); 2] = [
     ("data", CompartmentalStart::Data),
     ("prior_centre", CompartmentalStart::PriorCentre),
@@ -17496,6 +17519,54 @@ const STARTS: [(&str, CompartmentalStart); 2] = [
 /// ``CompartmentalFit.cell_rate_swaps`` reports the share of draws and
 /// cells with ``k_er <= k_p``.
 ///
+/// Fitting sub-annual data
+/// -----------------------
+/// Quarterly or monthly development cells are allowed. What follows is from
+/// a study on simulated books (design note decision 14,
+/// ``knowledge/findings/compartmental-subannual.md``); no real sub-annual
+/// triangle was available.
+///
+/// * Rate priors: the rates are per year on every grain, and the paper's
+///   presets are kept as they are. Finer cells pull the preset towards the
+///   truth; a line whose first year runs much faster or slower than the
+///   preset's ``k_er`` of about 3 needs priors of its own.
+/// * Development levels (model 2): ``development_levels="per_age"`` or
+///   ``"by_year"``, a choice to make with ``loo``. Where effects move by
+///   year, by-year levels agree with per-age ones on the reserve (0.10 sd
+///   apart on average in the study), win elpd in 30 of 30 quarterly books and
+///   on 10 monthly books under a short sampler took 89 s against 126 s (rough
+///   times) with a worst R-hat of 1.07 against 1.62, though a median bulk ESS
+///   of 101 against 114; where effects move within a year they lose 361 of
+///   elpd in 30 of 30 books and widen the reserve's sd by 59%.
+/// * Seasonality: there is no seasonal term. Model 1 reads a season as noise
+///   (the interval widens, by up to 54% in the sd for a 30% season, and the
+///   mean can sit nearly 1 sd off the outcome), and model 2's per-age levels
+///   do not absorb a season unless every origin starts in the same calendar
+///   quarter. A calendar-quarter factor is not built.
+/// * Cumulative paid: the interval narrows as the cells get finer, right where
+///   the noise of the cells is independent and too narrow where it persists.
+///   In the study's world with persistent payment noise, at one persistence
+///   chosen by hand and fitted to no book (``PERSIST_PHI`` 25, ``PERSIST_RHO``
+///   0.95; a smaller fall is expected with less, untested), the 90% interval
+///   covered 88%, 70% and 56% at annual, quarterly and monthly cells and the
+///   RMSE rose from 1,623 to 2,033. A fit with cumulative paid on cells finer
+///   than a year therefore warns, asking you to check the residuals; it also
+///   warns when
+///   the fit is calibrated, since the data do not say which world they are
+///   in. ``paid_response="incremental"`` keeps the interval but, in that
+///   world, ran 1.3 to 2 times too wide, with a worse RMSE at quarterly and
+///   monthly grain and a failing Meyers' D at annual grain. Neither is chosen
+///   for you.
+/// * Earned exposure: all of an origin's exposure starts at age 0, so
+///   sub-annual development of annual origins fits an exposure the model does
+///   not have; use quarterly origins where the data allow. On simulated books
+///   with earned premium annual origins failed Meyers' D at annual, quarterly
+///   and monthly development, and quarterly origins of the same books passed
+///   narrowly (17.8 against a critical 19.2, on a short sampler, with 3 books
+///   at the default sampler); that comparison also changes the number of
+///   origins and the effects' variance. A setting that spreads the exposure
+///   over the origin's period is not built.
+///
 /// Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS below 100
 /// per chain, any divergent transition) and rate swaps do not fail the
 /// fit: ``fit`` raises one ``UserWarning`` listing them, and they stay in
@@ -17521,6 +17592,14 @@ const STARTS: [(&str, CompartmentalStart); 2] = [
 ///     ``"incurred_only"`` (one response alone, with ``rate_order="ordered"``).
 /// rate_order : str
 ///     ``"free"`` or ``"ordered"``, as above.
+/// development_levels : str
+///     The width of a development level, for priors with development
+///     effects (model 2): ``"per_age"`` (default), one level for each age, or
+///     ``"by_year"``, one for each development year (counted from the
+///     origin's start: ages 1 to 12 months, 13 to 24 and so on). Choose with
+///     ``loo``; see "Fitting sub-annual data" above. The same fit at annual
+///     grain. ``ValueError`` for ``"by_year"`` with priors that have no
+///     development effects (model 1).
 /// start : str
 ///     Where the pilot run starts: ``"data"``, a least-squares fit of the
 ///     population curve (the prior centre if that fit fails, and under one
@@ -17579,6 +17658,7 @@ impl PyCompartmental {
         paid_response = "cumulative",
         fitted = "paid_and_outstanding",
         rate_order = "free",
+        development_levels = "per_age",
         start = "data",
         chains = 4,
         tune = 1000,
@@ -17598,6 +17678,7 @@ impl PyCompartmental {
         paid_response: &str,
         fitted: &str,
         rate_order: &str,
+        development_levels: &str,
         start: &str,
         chains: usize,
         tune: usize,
@@ -17619,6 +17700,11 @@ impl PyCompartmental {
             paid_response: named("paid_response", paid_response, &PAID_RESPONSES)?,
             fitted: named("fitted", fitted, &FITTED)?,
             rate_order: named("rate_order", rate_order, &RATE_ORDERS)?,
+            development_levels: named(
+                "development_levels",
+                development_levels,
+                &DEVELOPMENT_LEVELS,
+            )?,
             start: named("start", start, &STARTS)?,
             sampler: BayesSampler {
                 chains,
@@ -17664,6 +17750,7 @@ impl PyCompartmental {
         priors,
         *,
         rate_order = "free",
+        development_levels = "per_age",
         start = "data",
         chains = 4,
         tune = 2000,
@@ -17679,6 +17766,7 @@ impl PyCompartmental {
     fn model_2(
         priors: PyRef<'_, PyCompartmentalPriors>,
         rate_order: &str,
+        development_levels: &str,
         start: &str,
         chains: usize,
         tune: usize,
@@ -17697,6 +17785,7 @@ impl PyCompartmental {
             "incremental",
             "paid_and_outstanding",
             rate_order,
+            development_levels,
             start,
             chains,
             tune,
@@ -17746,6 +17835,12 @@ impl PyCompartmental {
     #[getter]
     fn rate_order(&self) -> &'static str {
         name_of(self.inner.rate_order, &RATE_ORDERS)
+    }
+
+    /// The width of a development level: ``"per_age"`` or ``"by_year"``.
+    #[getter]
+    fn development_levels(&self) -> &'static str {
+        name_of(self.inner.development_levels, &DEVELOPMENT_LEVELS)
     }
 
     /// Where the pilot run starts: ``"data"`` or ``"prior_centre"``.
@@ -17864,7 +17959,7 @@ impl PyCompartmental {
         let inner = py
             .detach(|| model.fit(tri, paid, os, premium))
             .map_err(err)?;
-        warn_diagnostics(py, "Compartmental", &inner.diagnostics.warnings)?;
+        warn_compartmental(py, &inner.diagnostics.warnings)?;
         Ok(PyCompartmentalFit { inner })
     }
 
@@ -17948,7 +18043,7 @@ impl PyCompartmental {
             .detach(|| model.fit_segments(tri, paid, os, premium))
             .map_err(err)?;
         let warnings = segment_warnings(&inner.segments, |s| &s.fit.diagnostics);
-        warn_diagnostics(py, "Compartmental", &warnings)?;
+        warn_compartmental(py, &warnings)?;
         Ok(PyCompartmentalFits { inner })
     }
 
@@ -18102,7 +18197,7 @@ impl PyCompartmental {
         let inner = py
             .detach(|| model.one_year(tri, paid, os, premium, &settings))
             .map_err(err)?;
-        warn_diagnostics(py, "Compartmental", &inner.fit.diagnostics.warnings)?;
+        warn_compartmental(py, &inner.fit.diagnostics.warnings)?;
         warn_refits(
             py,
             "Compartmental",
@@ -18227,7 +18322,7 @@ impl PyCompartmental {
             .detach(|| model.one_year_segments(tri, paid, os, premium, &settings))
             .map_err(err)?;
         let warnings = segment_warnings(&inner.segments, |s| &s.fit.fit.diagnostics);
-        warn_diagnostics(py, "Compartmental", &warnings)?;
+        warn_compartmental(py, &warnings)?;
         warn_refits(py, "Compartmental", &segment_refits(&inner.segments))?;
         if let Some(message) = &inner.approximate {
             let message = std::ffi::CString::new(format!("Compartmental: {message}"))
@@ -18350,12 +18445,14 @@ impl PyCompartmental {
         let (m, s) = (&self.inner, &self.inner.sampler);
         format!(
             "Compartmental(likelihood={:?}, scale={:?}, paid_response={:?}, fitted={:?}, \
-             rate_order={:?}, start={:?}, chains={}, tune={}, draws={}, n_sims={}, seed={})",
+             rate_order={:?}, development_levels={:?}, start={:?}, chains={}, tune={}, \
+             draws={}, n_sims={}, seed={})",
             name_of(m.likelihood, &LIKELIHOODS),
             name_of(m.scale, &SCALES),
             name_of(m.paid_response, &PAID_RESPONSES),
             name_of(m.fitted, &FITTED),
             name_of(m.rate_order, &RATE_ORDERS),
+            name_of(m.development_levels, &DEVELOPMENT_LEVELS),
             name_of(m.start, &STARTS),
             s.chains,
             s.tune,

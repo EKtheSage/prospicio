@@ -11,7 +11,8 @@ compartmental_prior_predictive(
   rate_order = c("free", "ordered"),
   n_sims = 1000,
   seed = 0,
-  paid_response = c("cumulative", "incremental")
+  paid_response = c("cumulative", "incremental"),
+  development_levels = c("per_age", "by_year")
 )
 }
 \arguments{
@@ -31,6 +32,9 @@ whole number.}
 
 \item{paid_response}{\code{"cumulative"} or \code{"incremental"}, as in the fit to
 be checked; it matters only with effects by cell.}
+
+\item{development_levels}{\code{"per_age"} or \code{"by_year"}, as in the fit to be
+checked; it matters only with development effects in the priors.}
 }
 \value{
 A list of two \link{predictive_distribution}s, \code{outstanding} and
@@ -44,8 +48,10 @@ premium column at each age of the square, drawn from the priors alone
 effect sds, the correlation and each origin's effects. The paths are
 means, without the likelihood's noise, which under the preset's
 effectively flat prior on \verb{log sigma} would swamp them. With
-development effects in the priors, each simulation also draws each age's
-effects (shared by the origins), and with effects by cell and
+development effects in the priors, each simulation also draws each
+development level's effects, as the fit has them (shared by the origins:
+each age its own under \code{development_levels = "per_age"}, the ages of a
+development year one under \code{"by_year"}), and with effects by cell and
 \code{paid_response = "incremental"} the cumulative paid path is the sum of
 the cells' mean increments. Under \code{rate_order = "ordered"} the rates are
 drawn from their priors restricted to \code{k_er > k_p}. The seed is derived from \code{seed}, as the fit's

@@ -66,6 +66,8 @@ type Outstandings = BTreeMap<(usize, usize), f64>;
 ///   paid less its latest, which is how the fit's reserves are made. The
 ///   fit's diagnostics come back in [`CellForecast::diagnostics`] and
 ///   [`Backtest::diagnostics`], and a fit with warnings is still scored.
+///   That includes the warning of cumulative paid on cells finer than a
+///   year, which comes once with each split's fit.
 ///   A held-out triangle is smaller than the whole: check a backtest's
 ///   fits with [`Compartmental::fit`] on the same training cells before
 ///   relying on its scores.
@@ -419,9 +421,12 @@ impl CompartmentalCandidate {
                 model.dim()
             )));
         }
-        let (posterior, _, diagnostics) = self
+        let (posterior, _, mut diagnostics) = self
             .model
             .sample(&model, derive_seed(seed, Stream::Chains))?;
+        if let Some(warning) = super::cumulative_sub_annual_warning(model.response, data.grain) {
+            diagnostics.warnings.push(warning);
+        }
         let fit = Arc::new(TrainFit {
             train: train.to_vec(),
             seed,
@@ -872,7 +877,7 @@ mod tests {
     use super::super::tests::{
         INCURRED, PAID, PREMIUM, incurred, model, model_2, model_incurred, points, quick, triangle,
     };
-    use super::super::{Compartmental, CompartmentalPriors, Fitted, Response};
+    use super::super::{Compartmental, CompartmentalPriors, DevelopmentLevels, Fitted, Response};
     use super::*;
     use crate::backtest::diagonal_backtest;
     use crate::triangle::Long;
@@ -1271,8 +1276,74 @@ mod tests {
         let c = candidate(quick(5), &tri);
         let paid = diagonal_backtest(&cells, &[&c.clone()], 1, 300, 5, 0.9).unwrap();
         assert_eq!((paid.scored_rows()[0].len(), paid.excluded()[0]), (4, 1));
+        // The fit's warning of cumulative paid on quarterly cells comes with
+        // the backtest's fits too, as it does with `fit`.
+        let warned = |bt: &Backtest| {
+            bt.warnings()
+                .iter()
+                .filter(|(.., w)| w.starts_with(super::super::CUMULATIVE_SUB_ANNUAL_WARNING))
+                .count()
+        };
+        assert_eq!(warned(&paid), 1);
         let os = c.outstanding_backtest(&cells, 1, 300, 5, 0.9).unwrap();
         assert_eq!(os.scored_rows()[0].len(), 4);
+        assert_eq!(warned(&os), 1);
+    }
+
+    /// The backtest's closed forms for an age with no cell of its own in an
+    /// observed development year: none per age, the year's effect by year.
+    #[test]
+    fn a_held_out_age_takes_its_years_effect() {
+        use super::super::tests::{levels_model, shaped};
+        let origins: Vec<(Month, Lag)> = (0..4)
+            .map(|w| (Month::january(1988 + w), 12 * (5 - w as Lag)))
+            .collect();
+        let tri = shaped(Grain::Year, Grain::Quarter, &origins, 3, &[9]);
+        let nat: Vec<f64> = (0..400).map(|i| 0.01 * f64::from(i)).collect();
+        let per_age = levels_model(&tri, DevelopmentLevels::PerAge);
+        let by_year = levels_model(&tri, DevelopmentLevels::ByYear);
+        // Age 9 months is index 2.
+        assert_eq!(per_age.dev_multiplier_at(&nat, 2), None);
+        let shared = by_year.dev_multiplier_at(&nat, 2);
+        assert!(shared.is_some());
+        assert_eq!(shared, by_year.dev_multiplier_at(&nat, 0));
+        assert_eq!(shared, by_year.dev_multiplier_at(&nat, 3));
+        assert_ne!(shared, by_year.dev_multiplier_at(&nat, 4));
+    }
+
+    /// The diagonal backtest with levels by development year fits and
+    /// scores: the generic rule still excludes a held-out age that no
+    /// training row has (1988 at 60 months), and model 1, with no
+    /// development levels, is refused. (Model 2 with a level for each of 20
+    /// ages has more parameters than this triangle's 110 training cells,
+    /// which is why only levels by year are fitted here.)
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_backtest_by_development_year() {
+        let tri = super::super::tests::quarterly_triangle(false);
+        let cells = TriangleFrame::new(&tri, "paid", None).unwrap();
+        let m = Compartmental {
+            development_levels: DevelopmentLevels::ByYear,
+            sampler: quick(5).sampler,
+            n_sims: 300,
+            seed: 5,
+            ..Compartmental::model_2(CompartmentalPriors::gesmann_morris_2())
+        };
+        let c = candidate(m, &tri);
+        let bt = diagonal_backtest(&cells, &[&c], 1, 300, 5, 0.9).unwrap();
+        assert_eq!((bt.scored_rows()[0].len(), bt.excluded()[0]), (4, 1));
+        for metric in 0..METRICS.len() {
+            assert!(bt.mean(0, metric).is_finite(), "{metric}");
+        }
+        let m1 = Compartmental {
+            development_levels: DevelopmentLevels::ByYear,
+            ..quick(5)
+        };
+        let err = diagonal_backtest(&cells, &[&candidate(m1, &tri)], 1, 300, 5, 0.9);
+        assert!(err.is_err());
     }
 
     /// Fitting on every observed row and forecasting the rest of the frame

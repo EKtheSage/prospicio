@@ -87,10 +87,11 @@ pub use crate::diagnostics::Diagnostics;
 pub use bf::{BayesBf, BayesBfFit};
 pub use bf_normalised::{BayesBfNormalised, BayesBfNormalisedFit};
 pub use compartmental::{
-    Compartmental, CompartmentalCandidate, CompartmentalFit, CompartmentalFits,
-    CompartmentalLikelihood, CompartmentalLoo, CompartmentalOneYearFits, CompartmentalPaths,
-    CompartmentalPriors, CompartmentalSegment, CompartmentalStart, Fitted, HalfPrior,
-    MAX_INCURRED_ONLY_KP_SD, Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior, Scale,
+    CUMULATIVE_SUB_ANNUAL_WARNING, Compartmental, CompartmentalCandidate, CompartmentalFit,
+    CompartmentalFits, CompartmentalLikelihood, CompartmentalLoo, CompartmentalOneYearFits,
+    CompartmentalPaths, CompartmentalPriors, CompartmentalSegment, CompartmentalStart,
+    DevelopmentLevels, Fitted, HalfPrior, MAX_INCURRED_ONLY_KP_SD, Outstanding, PaidResponse,
+    PositivePrior, RateOrder, RealPrior, Scale,
 };
 pub use excess_prior::{LAYER_EXPOSURE_COLUMN, LayerSharePrior, ShareDependence};
 pub use hierarchical_bf::{HierarchicalBf, HierarchicalBfFit, HierarchicalBfProgram};

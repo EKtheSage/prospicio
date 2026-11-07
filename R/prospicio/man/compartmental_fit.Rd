@@ -20,6 +20,7 @@ compartmental(
   paid_response = c("cumulative", "incremental"),
   fitted = c("paid_and_outstanding", "paid_and_incurred", "paid_only", "incurred_only"),
   rate_order = c("free", "ordered"),
+  development_levels = c("per_age", "by_year"),
   start = c("data", "prior_centre"),
   chains = 4,
   tune = 1000,
@@ -38,6 +39,7 @@ compartmental_model_2(
   outstanding = NULL,
   incurred = NULL,
   rate_order = c("free", "ordered"),
+  development_levels = c("per_age", "by_year"),
   start = c("data", "prior_centre"),
   chains = 4,
   tune = 2000,
@@ -80,6 +82,13 @@ replaces outstanding as the second response, as above), \code{"paid_only"} or
 \code{"incurred_only"} (one response alone, with \code{rate_order = "ordered"}).}
 
 \item{rate_order}{\code{"free"} or \code{"ordered"}, as above.}
+
+\item{development_levels}{The width of a development level, for priors with
+development effects (model 2): \code{"per_age"} (the default), one level for each age,
+or \code{"by_year"}, one for each development year (counted from the origin's start:
+ages 1 to 12 months, 13 to 24 and so on). Choose with \code{\link[=bayes_loo]{bayes_loo()}}; see
+"Fitting sub-annual data" in \code{\link[=compartmental]{compartmental()}}. The same fit at annual grain. An error for
+\code{"by_year"} with priors that have no development effects (model 1).}
 
 \item{start}{Where the pilot run starts: \code{"data"}, a least-squares fit
 of the population curve (the prior centre if that fit fails, and under
@@ -190,6 +199,52 @@ posterior draw has population rates with \code{k_er <= k_p};
 priors restricted to \code{k_er > k_p}. With effects on the rates, the fit's
 \code{cell_rate_swaps} is the share of draws and observed cells with
 \code{k_er <= k_p} (\code{NA} when the rates are shared).
+
+Fitting sub-annual data. Quarterly or monthly development cells are
+allowed. What follows is from a study on simulated books (design note
+decision 14, \code{knowledge/findings/compartmental-subannual.md}); no real
+sub-annual triangle was available.
+\itemize{
+\item Rate priors: the rates are per year on every grain, and the paper's
+presets are kept as they are. Finer cells pull the preset towards the
+truth; a line whose first year runs much faster or slower than the
+preset's \code{k_er} of about 3 needs priors of its own.
+\item Development levels (model 2): \code{development_levels = "per_age"} or
+\code{"by_year"}, a choice to make with \code{\link[=bayes_loo]{bayes_loo()}}. Where effects move by
+year, by-year levels agree with per-age ones on the reserve (0.10 sd apart
+on average in the study), win elpd in 30 of 30 quarterly books and on 10
+monthly books under a short sampler took 89 s against 126 s (rough times)
+with a worst R-hat of 1.07 against 1.62, though a median bulk ESS of 101
+against 114; where effects move within a year they lose 361 of elpd in 30
+of 30 books and widen the reserve's sd by 59\%.
+\item Seasonality: there is no seasonal term. Model 1 reads a season as noise
+(the interval widens, by up to 54\% in the sd for a 30\% season, and the mean
+can sit nearly 1 sd off the outcome), and model 2's per-age levels do not
+absorb a season unless every origin starts in the same calendar quarter. A
+calendar-quarter factor is not built.
+\item Cumulative paid: the interval narrows as the cells get finer, right where
+the noise of the cells is independent and too narrow where it persists. In
+the study's world with persistent payment noise, at one persistence chosen
+by hand and fitted to no book (\code{PERSIST_PHI} 25, \code{PERSIST_RHO} 0.95; a
+smaller fall is expected with less, untested), the 90\% interval covered
+88\%, 70\% and 56\% at annual, quarterly and monthly cells and the RMSE rose
+from 1,623 to 2,033. A fit with cumulative paid on cells finer than a year
+therefore warns, asking you to check the residuals; it also warns when the
+fit is
+calibrated, since the data do not say which world they are in.
+\code{paid_response = "incremental"} keeps the interval but, in that world, ran
+1.3 to 2 times too wide, with a worse RMSE at quarterly and monthly grain
+and a failing Meyers' D at annual grain. Neither is chosen for you.
+\item Earned exposure: all of an origin's exposure starts at age 0, so
+sub-annual development of annual origins fits an exposure the model does
+not have; use quarterly origins where the data allow. On simulated books
+with earned premium annual origins failed Meyers' D at annual, quarterly
+and monthly development, and quarterly origins of the same books passed
+narrowly (17.8 against a critical 19.2, on a short sampler, with 3 books at
+the default sampler); that comparison also changes the number of origins
+and the effects' variance. A setting that spreads the exposure over the
+origin's period is not built.
+}
 
 Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS below 100
 per chain, any divergent transition) and rate swaps do not fail the fit:
