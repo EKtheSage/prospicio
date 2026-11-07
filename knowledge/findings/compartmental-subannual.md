@@ -11,7 +11,7 @@ sources:
     title: The worlds, the panels (ignored), prior_bands, zero_cells and export_books
   - id: grouped
     resource: ../crates/prospicio-reserving/src/bayes/compartmental/subannual_study.rs
-    title: The test-only grouped development levels and grouped_against_per_age (ignored)
+    title: The study's grouped_against_per_age (ignored), now through the public DevelopmentLevels setting
   - id: summary
     resource: ../validation/scripts/compartmental_subannual_summary.py
     title: Prints the tables from the panels' CSVs
@@ -37,7 +37,9 @@ sources:
 Run on 2026-11-05 and 06 (Windows, release build, 4 threads a fit, two fits at
 a time, other heavy work on the machine for part of the run, so times are
 rough). Not marked verified: no CI job runs the panels, only three cheap
-checks of the books and one of the grouped levels. `target/` is not committed: the raw results are about 60 CSVs (50 MB) there,
+checks of the books. The settings built from them (see "What was decided and
+built") have unit tests that CI runs, listed there; the numbers in the tables
+are still the panels' own. `target/` is not committed: the raw results are about 60 CSVs (50 MB) there,
 and the tables below are the summary script's output on them, kept in
 `validation/reference/` (see Reproducing). NUTS draws at a
 fixed seed differ by platform, so the last digits are this machine's. The
@@ -236,9 +238,14 @@ different (coverage 90 against 80, RMSE 5,564 against 5,549).
 | `m2y`, am | per age | 541 | 10 | 126 | 1.048 | 114 | 80 | 45.6 | 4,484 | 6,131.9 |
 | `m2y`, am | by year | 101 | 10 | 89 | 1.038 | 101 | 70 | 48.5 | 4,322 | 6,199.2 |
 
-The by-year form is the built density with its age-to-level map changed, so
-the two forms differ in nothing else, and its per-age fits reproduce the
-panels' to the digit.[^grouped] Where effects move by year the reserves agree
+The by-year form has the density of the per-age form with its age-to-level
+map changed, and its per-age fits reproduce the panels' to the digit.[^grouped]
+The study's regrouping, though, drew the effect of an age with no observed cell
+once for each age, as the per-age form does, whereas the built setting
+(`DevelopmentLevels::ByYear`) draws it once for each year, so the ages of one
+year share it in the predictive. The fits' posteriors are the same and the
+predictive draws of unobserved cells differ; the panels were not rerun, so the
+table below is the study's regrouping. Where effects move by year the reserves agree
 (mean absolute difference 0.10 sd) and by-year wins elpd in 30 of 30 books;
 where they move by quarter it loses 361 of elpd in 30 of 30 and the sd is 59%
 wider; on the seasonal book it loses 70 in 20 of 20. On 10 monthly books it
@@ -288,13 +295,52 @@ increments refuses: at 500 payments an origin 99% annually and every book on
 quarterly and monthly cells; at 2,000, 64% annually and every quarterly and monthly book; at
 10,000, 15%, 90% and 100% (annual, quarterly, monthly).[^harness]
 
+## What was decided and built
+
+The user accepted the recommendations of open decisions 9 to 13 on 2026-11-06
+(design note, decision 14, "As built").[^design]
+
+* Rate priors: the preset, per year on every grain, said in the help.
+* Levels: `DevelopmentLevels::{PerAge, ByYear}`, `PerAge` by default and
+  unchanged. A year is `(age_months - 1) / 12` counted from each origin's own
+  start, so it does not depend on the calendar month an origin starts in, on
+  every grain. At annual grain the two settings are the same model. Model 1
+  with `ByYear` is an error.
+* Seasonality: no term; the help says what the study found. The calendar-quarter
+  factor is not built.
+* A warning on a fit with cumulative paid on a development grain finer than a
+  year, asking for a look at the residuals, on calibrated fits too. Incremental
+  paid is not made the default. Correlated residuals are not built.
+* Earned exposure: the help says to use quarterly origins; the setting that
+  spreads the exposure over the origin's period is not built.
+
+CI runs the debug unit tests of the levels (the count of years, their
+independence of the origin's calendar month, one shared effect for a year no
+cell observes, the gradient against central differences, a cell's parameters
+following its level in the one-year view, the error for model 1) and of the
+warning (it fires for cumulative paid on quarterly cells and not for
+incremental paid or at annual grain), and the `bayes` job runs the release
+tests (the one-year conformance with levels by year, annual identity of the
+two settings at a fixed seed, a quarterly fit, the diagonal backtest). None of
+the study's numbers is among them.
+
+Building it found two things the study did not. `Parameters::at` in the
+one-year view indexed development effects by age, which is wrong for levels
+by year and was fixed. And on a triangle whose newest development year opens
+in the coming year, the Pareto k of the reweighted simulations is large and
+`gpd_fit` returned NaN for 18 of 200 simulations on low-noise data (none with a
+30% wobble); the conformance check's replay comparison is now NaN-aware.
+Neither affected the study's numbers, which ran the per-age form and the
+test-only regrouping outside the one-year view.
+
 ## Not run
 
 Panels of 50 on the costliest arms: `m2y` monthly, `m2qo` and `earned`
 on quarterly origins with monthly development have 20 books each, and every
 default-sampler arm a few books (model 2 monthly one, `m2qo` and `earned` `qm`
 none). The rate and seasonal arms (`m2seasonq` too) have 20 books, as the tables say. Levels by
-development year ran only under the short sampler, on annual origins. Not
+development year ran only under the short sampler, on annual origins (the
+built setting has been run on one quarterly triangle, in the unit tests). Not
 run at all: monthly origins, semiannual grains, the one-year view and the
 backtest on these books, paid and incurred or one response alone, prototypes of
 a seasonal term, of correlated residuals or of earned exposure, and a Stan

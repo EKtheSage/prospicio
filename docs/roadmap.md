@@ -337,6 +337,15 @@ what it is aiming for by v1.0.
     view over the next twelve months of calendar time; at parity with the
     same model in Stan on a triangle simulated with known parameters,
     whose posterior holds them; in Rust, Python and R.
+  - Sub-annual fits of `Compartmental` (`reserving-compartmental.md`
+    decision 14, the user's decision of 2026-11-06): model 2's development
+    levels by development year as a setting
+    (`DevelopmentLevels::ByYear`; Python `development_levels="by_year"`, R
+    `development_levels = "by_year"`; one level for each age by default, as
+    before), a warning on a fit with cumulative paid on cells finer than a
+    year that asks for a look at the residuals, and the help on rate priors,
+    seasonality (no term), what a sub-annual fit promises and earned
+    exposure; in Rust, Python and R.
   - The one-year view of `BayesOdp` by Pareto smoothed importance
     sampling (`reserving-bayes.md` PR 8, decision 16): each simulated
     year reweights the posterior draws, and a simulation whose Pareto

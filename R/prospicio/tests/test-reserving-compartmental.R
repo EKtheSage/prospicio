@@ -117,6 +117,14 @@ expect_error_like(compartmental(tri, "paid", "premium", gm, outstanding = "incur
 expect_error_like(compartmental(tri, "paid", "premium", gm, incurred = "incurred",
                                 rate_order = "sorted"),
                   "'arg' should be one of")
+# Levels by development year: a name checked, and an error with priors that have
+# no development effects (model 1).
+expect_error_like(compartmental(tri, "paid", "premium", gm, incurred = "incurred",
+                                development_levels = "by_decade"),
+                  "'arg' should be one of")
+expect_error_like(compartmental(tri, "paid", "premium", gm, incurred = "incurred",
+                                development_levels = "by_year"),
+                  "development_levels ByYear")
 bad_eta <- gm
 bad_eta$lkj_eta <- 0
 expect_error_like(compartmental(tri, "paid", "premium", bad_eta, incurred = "incurred"), "lkj_eta")
@@ -494,7 +502,12 @@ stopifnot(nrow(sim) == 220)
 qtri <- triangle(sim, "origin", "development", c("paid", "outstanding", "premium"),
                  origin_grain = "Y", development_grain = "Q")
 stopifnot(qtri@origin_grain == "Y", qtri@development_grain == "Q")
-qfit <- compartmental(qtri, "paid", "premium", gm, outstanding = "outstanding", n_sims = 2000)
+qrun <- with_warnings(compartmental(qtri, "paid", "premium", gm, outstanding = "outstanding",
+                                    n_sims = 2000))
+qfit <- qrun$value
+# Cumulative paid on cells finer than a year warns, once, and asks for a look
+# at the residuals.
+stopifnot(sum(grepl("cumulative paid is fitted on Q", qrun$warnings)) == 1)
 qages <- qfit@paid@keys$age
 stopifnot(
   identical(qfit@origins, as.character(2011:2020)),

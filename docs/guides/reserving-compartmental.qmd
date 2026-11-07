@@ -891,3 +891,45 @@ one-year view. `compartmental_candidate()` puts the model in
 `diagonal_backtest()` next to the other Bayesian models.
 `compartmental_outstanding_backtest()` scores the held-out outstanding
 diagonals as well as the paid diagonals.
+
+## 11. Quarterly and monthly cells
+
+The model allows development cells finer than a year, with origins a whole
+multiple of them (annual origins with quarterly development, say), and the
+rates stay per year on every grain. A study on simulated books (design note
+decision 14; no real sub-annual triangle was available) found these things, and
+the library keeps to them.
+
+- Rate priors: the paper's presets are kept as they are. A line whose first year
+  runs much faster or slower than the preset's `k_er` of about 3 needs priors of
+  its own.
+- Model 2's development levels: `development_levels = "per_age"` or `"by_year"` (model 2 only). One level for each
+  age is the default. Choose by LOO. Where effects move by year, by-year levels
+  gave the same reserve (0.10 sd apart on average) and won elpd in 30 of 30
+  quarterly books, and on monthly cells fit faster with better mixing. Where
+  effects move within a year, they lost 361 of elpd in 30 of 30 books and
+  widened the reserve's sd by 59%. A year is counted from each origin's own
+  start (ages 1 to 12 months, 13 to 24 and so on). At annual grain the two
+  settings are the same model, and model 1 has no development effects to group.
+- Seasonality: there is no seasonal term. Model 1 reads a season as noise (the
+  sd up to 54% wider for a 30% season, the mean up to 0.94 sd off), and model 2's
+  per-age levels do not absorb a season unless every origin starts in the same
+  calendar quarter. A calendar-quarter factor is not built.
+- Cumulative paid: its interval narrows as the cells get finer. That is right
+  where the noise of the cells is independent, and too narrow where it persists
+  from cell to cell (in the study the 90% interval covered 88%, 70% and 56% at
+  annual, quarterly and monthly cells, with no gain in accuracy). A fit with
+  cumulative paid on cells finer than a year therefore warns, asking you to
+  check the residuals, and it warns on a calibrated fit too, since the data do
+  not say which world they are in. Incremental paid keeps the interval but, in
+  the study's persistent-noise world, ran 1.3 to 2 times too wide, with a worse
+  RMSE at quarterly and monthly grain and a failing Meyers' D at annual grain.
+  The library picks neither form for you.
+- Earned exposure: all of an origin's exposure starts at age 0, so quarterly
+  development of annual origins fits an exposure the model does not have. Use
+  quarterly origins where the data allow. On simulated books with earned
+  premium, annual origins failed Meyers' D at annual, quarterly and monthly
+  development, and quarterly origins of the same books passed narrowly (17.8
+  against a critical 19.2, on a short sampler, with 3 books at the default
+  sampler). That comparison also changes the number of origins. A setting that
+  spreads the exposure over the origin's period is not built.

@@ -21,6 +21,7 @@ compartmental_one_year(
   scale = c("amount", "loss_ratio"),
   paid_response = c("cumulative", "incremental"),
   rate_order = c("free", "ordered"),
+  development_levels = c("per_age", "by_year"),
   start = c("data", "prior_centre"),
   chains = 4,
   tune = 1000,
@@ -44,6 +45,7 @@ compartmental_model_2_one_year(
   outstanding = NULL,
   incurred = NULL,
   rate_order = c("free", "ordered"),
+  development_levels = c("per_age", "by_year"),
   start = c("data", "prior_centre"),
   chains = 4,
   tune = 2000,
@@ -72,6 +74,7 @@ compartmental_one_year_segments(
   scale = c("amount", "loss_ratio"),
   paid_response = c("cumulative", "incremental"),
   rate_order = c("free", "ordered"),
+  development_levels = c("per_age", "by_year"),
   start = c("data", "prior_centre"),
   chains = 4,
   tune = 1000,
@@ -118,6 +121,13 @@ amounts over the origin's premium (model 2).}
 2).}
 
 \item{rate_order}{\code{"free"} or \code{"ordered"}, as above.}
+
+\item{development_levels}{The width of a development level, for priors with
+development effects (model 2): \code{"per_age"} (the default), one level for each age,
+or \code{"by_year"}, one for each development year (counted from the origin's start:
+ages 1 to 12 months, 13 to 24 and so on). Choose with \code{\link[=bayes_loo]{bayes_loo()}}; see
+"Fitting sub-annual data" in \code{\link[=compartmental]{compartmental()}}. The same fit at annual grain. An error for
+\code{"by_year"} with priors that have no development effects (model 1).}
 
 \item{start}{Where the pilot run starts: \code{"data"}, a least-squares fit
 of the population curve (the prior centre if that fit fails, and under

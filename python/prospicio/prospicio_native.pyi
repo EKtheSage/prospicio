@@ -7745,6 +7745,50 @@ class Compartmental:
     ``CompartmentalFit.cell_rate_swaps`` reports the share of draws and
     cells with ``k_er <= k_p``.
     
+    Fitting sub-annual data
+    -----------------------
+    Quarterly or monthly development cells are allowed. What follows is from
+    a study on simulated books (design note decision 14,
+    ``knowledge/findings/compartmental-subannual.md``); no real sub-annual
+    triangle was available.
+    
+    * Rate priors: the rates are per year on every grain, and the paper's
+      presets are kept as they are. Finer cells pull the preset towards the
+      truth; a line whose first year runs much faster or slower than the
+      preset's ``k_er`` of about 3 needs priors of its own.
+    * Development levels (model 2): ``development_levels="per_age"`` or
+      ``"by_year"``, a choice to make with ``loo``. Where effects move by
+      year, by-year levels agree with per-age ones on the reserve (0.10 sd
+      apart on average in the study), win elpd in 30 of 30 quarterly books and
+      on monthly cells fit faster with better mixing; where effects move
+      within a year they lose 361 of elpd in 30 of 30 books and widen the
+      reserve's sd by 59%.
+    * Seasonality: there is no seasonal term. Model 1 reads a season as noise
+      (the interval widens, by up to 54% in the sd for a 30% season, and the
+      mean can sit nearly 1 sd off the outcome), and model 2's per-age levels
+      do not absorb a season unless every origin starts in the same calendar
+      quarter. A calendar-quarter factor is not built.
+    * Cumulative paid: the interval narrows as the cells get finer, right where
+      the noise of the cells is independent and too narrow where it persists
+      (in the study's world with persistent payment noise the 90% interval
+      covered 88%, 70% and 56% at annual, quarterly and monthly cells, with no
+      gain in accuracy). A fit with cumulative paid on cells finer than a year
+      therefore warns, asking you to check the residuals; it also warns when
+      the fit is calibrated, since the data do not say which world they are
+      in. ``paid_response="incremental"`` keeps the interval but, in that
+      world, ran 1.3 to 2 times too wide, with a worse RMSE at quarterly and
+      monthly grain and a failing Meyers' D at annual grain. Neither is chosen
+      for you.
+    * Earned exposure: all of an origin's exposure starts at age 0, so
+      sub-annual development of annual origins fits an exposure the model does
+      not have; use quarterly origins where the data allow. On simulated books
+      with earned premium annual origins failed Meyers' D at annual, quarterly
+      and monthly development, and quarterly origins of the same books passed
+      narrowly (17.8 against a critical 19.2, on a short sampler, with 3 books
+      at the default sampler); that comparison also changes the number of
+      origins and the effects' variance. A setting that spreads the exposure
+      over the origin's period is not built.
+    
     Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS below 100
     per chain, any divergent transition) and rate swaps do not fail the
     fit: ``fit`` raises one ``UserWarning`` listing them, and they stay in
@@ -7770,6 +7814,14 @@ class Compartmental:
         ``"incurred_only"`` (one response alone, with ``rate_order="ordered"``).
     rate_order : str
         ``"free"`` or ``"ordered"``, as above.
+    development_levels : str
+        The width of a development level, for priors with development
+        effects (model 2): ``"per_age"`` (default), one level for each age, or
+        ``"by_year"``, one for each development year (counted from the
+        origin's start: ages 1 to 12 months, 13 to 24 and so on). Choose with
+        ``loo``; see "Fitting sub-annual data" above. The same fit at annual
+        grain. ``ValueError`` for ``"by_year"`` with priors that have no
+        development effects (model 1).
     start : str
         Where the pilot run starts: ``"data"``, a least-squares fit of the
         population curve (the prior centre if that fit fails, and under one
@@ -7813,7 +7865,7 @@ class Compartmental:
     >>> fit.reserves.dims, fit.parameter_names[0]
     (['origin'], 'k_er')
     """
-    def __new__(cls, /, priors: CompartmentalPriors, *, likelihood: str = "normal", scale: str = "amount", paid_response: str = "cumulative", fitted: str = "paid_and_outstanding", rate_order: str = "free", start: str = "data", chains: int = 4, tune: int = 1000, draws: int = 2000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.99, max_depth: int = 10, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> Compartmental: ...
+    def __new__(cls, /, priors: CompartmentalPriors, *, likelihood: str = "normal", scale: str = "amount", paid_response: str = "cumulative", fitted: str = "paid_and_outstanding", rate_order: str = "free", development_levels: str = "per_age", start: str = "data", chains: int = 4, tune: int = 1000, draws: int = 2000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.99, max_depth: int = 10, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> Compartmental: ...
     def __repr__(self, /) -> str: ...
     def candidate(self, /, triangle: Triangle, paid: str, premium: str, *, outstanding: str |None = None, incurred: str |None = None) -> CompartmentalCandidate:
         """
@@ -7865,6 +7917,11 @@ class Compartmental:
         How ``fit_segments`` joins the segments: ``"independent"`` or
         ``"rank_correlation"`` (``"synchronized"`` is refused by
         ``fit_segments``). ``fit`` ignores it.
+        """
+    @property
+    def development_levels(self, /) -> str:
+        """
+        The width of a development level: ``"per_age"`` or ``"by_year"``.
         """
     @property
     def draws(self, /) -> int:
@@ -7995,7 +8052,7 @@ class Compartmental:
         Largest NUTS tree depth.
         """
     @staticmethod
-    def model_2(priors: CompartmentalPriors, *, rate_order: str = "free", start: str = "data", chains: int = 4, tune: int = 2000, draws: int = 8000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.999, max_depth: int = 10, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> Compartmental:
+    def model_2(priors: CompartmentalPriors, *, rate_order: str = "free", development_levels: str = "per_age", start: str = "data", chains: int = 4, tune: int = 2000, draws: int = 8000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.999, max_depth: int = 10, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> Compartmental:
         """
         Gesmann and Morris' model 2 with ``priors`` (the paper's are
         ``CompartmentalPriors.gesmann_morris_2()``): the log-normal

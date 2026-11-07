@@ -1238,7 +1238,15 @@ pub(crate) mod conformance {
             .unwrap()
             .install(|| simulate(model, posterior, &only, 200, 5).unwrap());
         assert_eq!(one.cdr, view.cdr[..200 * no], "{name}: replay");
-        assert_eq!(one.pareto_k, view.pareto_k[..200], "{name}: replay");
+        // A degenerate set of weights can leave a `k` that is NaN; the replay
+        // reproduces it, and NaN is not equal to itself.
+        assert!(
+            one.pareto_k
+                .iter()
+                .zip(&view.pareto_k[..200])
+                .all(|(a, b)| a.to_bits() == b.to_bits()),
+            "{name}: replay"
+        );
         let other = simulate(model, posterior, &only, 200, 6).unwrap();
         assert_ne!(other.cdr, one.cdr, "{name}: another seed");
 

@@ -872,7 +872,7 @@ mod tests {
     use super::super::tests::{
         INCURRED, PAID, PREMIUM, incurred, model, model_2, model_incurred, points, quick, triangle,
     };
-    use super::super::{Compartmental, CompartmentalPriors, Fitted, Response};
+    use super::super::{Compartmental, CompartmentalPriors, DevelopmentLevels, Fitted, Response};
     use super::*;
     use crate::backtest::diagonal_backtest;
     use crate::triangle::Long;
@@ -1273,6 +1273,62 @@ mod tests {
         assert_eq!((paid.scored_rows()[0].len(), paid.excluded()[0]), (4, 1));
         let os = c.outstanding_backtest(&cells, 1, 300, 5, 0.9).unwrap();
         assert_eq!(os.scored_rows()[0].len(), 4);
+    }
+
+    /// The backtest's closed forms for an age with no cell of its own in an
+    /// observed development year: none per age, the year's effect by year.
+    #[test]
+    fn a_held_out_age_takes_its_years_effect() {
+        use super::super::tests::{levels_model, shaped};
+        let origins: Vec<(Month, Lag)> = (0..4)
+            .map(|w| (Month::january(1988 + w), 12 * (5 - w as Lag)))
+            .collect();
+        let tri = shaped(Grain::Year, Grain::Quarter, &origins, 3, &[9]);
+        let nat: Vec<f64> = (0..400).map(|i| 0.01 * f64::from(i)).collect();
+        let per_age = levels_model(&tri, DevelopmentLevels::PerAge);
+        let by_year = levels_model(&tri, DevelopmentLevels::ByYear);
+        // Age 9 months is index 2.
+        assert_eq!(per_age.dev_multiplier_at(&nat, 2), None);
+        let shared = by_year.dev_multiplier_at(&nat, 2);
+        assert!(shared.is_some());
+        assert_eq!(shared, by_year.dev_multiplier_at(&nat, 0));
+        assert_eq!(shared, by_year.dev_multiplier_at(&nat, 3));
+        assert_ne!(shared, by_year.dev_multiplier_at(&nat, 4));
+    }
+
+    /// The diagonal backtest with levels by development year fits and
+    /// scores: the generic rule still excludes a held-out age that no
+    /// training row has (1988 at 60 months), and model 1, with no
+    /// development levels, is refused. (Model 2 with a level for each of 20
+    /// ages has more parameters than this triangle's 110 training cells,
+    /// which is why only levels by year are fitted here.)
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_backtest_by_development_year() {
+        let tri = super::super::tests::quarterly_triangle(false);
+        let cells = TriangleFrame::new(&tri, "paid", None).unwrap();
+        let m = Compartmental {
+            development_levels: DevelopmentLevels::ByYear,
+            sampler: quick(5).sampler,
+            n_sims: 300,
+            seed: 5,
+            ..Compartmental::model_2(CompartmentalPriors::gesmann_morris_2())
+        };
+        let c = candidate(m, &tri);
+        let bt = diagonal_backtest(&cells, &[&c], 1, 300, 5, 0.9).unwrap();
+        assert_eq!((bt.scored_rows()[0].len(), bt.excluded()[0]), (4, 1));
+        for metric in 0..METRICS.len() {
+            assert!(bt.mean(0, metric).is_finite(), "{metric}");
+        }
+        let m1 = Compartmental {
+            development_levels: DevelopmentLevels::ByYear,
+            ..quick(5)
+        };
+        let err = diagonal_backtest(&cells, &[&candidate(m1, &tri)], 1, 300, 5, 0.9);
+        assert!(err.is_err());
     }
 
     /// Fitting on every observed row and forecasting the rest of the frame

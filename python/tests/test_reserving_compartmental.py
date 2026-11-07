@@ -127,6 +127,7 @@ def test_settings_and_defaults():
     assert (m.likelihood, m.scale, m.paid_response, m.fitted) == (
         "normal", "amount", "cumulative", "paid_and_outstanding")
     assert (m.rate_order, m.start) == ("free", "data")
+    assert m.development_levels == "per_age"
     assert (m.chains, m.tune, m.draws, m.n_sims, m.seed) == (4, 1000, 2000, 10_000, 0)
     assert (m.target_accept, m.max_depth) == (0.99, 10)
     m = Compartmental(GM, rate_order="Ordered", start="prior_centre", seed=3, chains=2)
@@ -135,6 +136,13 @@ def test_settings_and_defaults():
     assert 'rate_order="ordered"' in repr(m)
     with pytest.raises(ValueError, match="unknown rate_order"):
         Compartmental(GM, rate_order="sorted")
+    by_year = Compartmental(GM2, development_levels="By_Year")
+    assert by_year.development_levels == "by_year"
+    assert 'development_levels="by_year"' in repr(by_year)
+    assert Compartmental.model_2(GM2, development_levels="by_year").development_levels == "by_year"
+    assert Compartmental.model_2(GM2).development_levels == "per_age"
+    with pytest.raises(ValueError, match="unknown development_levels"):
+        Compartmental(GM2, development_levels="by_decade")
     with pytest.raises(ValueError, match="unknown fitted"):
         Compartmental(GM, fitted="everything")
     with pytest.raises(ValueError, match="n_sims must be positive"):
@@ -674,7 +682,8 @@ def test_unequal_grain():
     )
     assert (q.origin_grain, q.development_grain) == ("Y", "Q")
     model = Compartmental(GM, **QUICK)
-    fit = model.fit(q, "paid", "premium", outstanding="outstanding")
+    with pytest.warns(UserWarning, match="cumulative paid is fitted on Q"):
+        fit = model.fit(q, "paid", "premium", outstanding="outstanding")
     assert fit.origins == [str(y) for y in range(2011, 2021)]
     assert fit.population_origins == []
     ages = sorted({age for _, age in fit.paid.components()})
@@ -690,3 +699,10 @@ def test_unequal_grain():
     paths = model.prior_predictive(q, "premium", n_sims=100)
     assert len(paths["paid"].components()) == 10 * 40
     assert paths["paid"].components()[39] == ("2011", 120)
+    # Levels by development year: an error for model 1, which has no development
+    # effects to group. (Model 2 needs positive responses, which this triangle,
+    # simulated from model 1, lacks; the Rust tests fit it on a quarterly book.)
+    with pytest.raises(NotSupportedError, match="development_levels ByYear"):
+        Compartmental(GM, development_levels="by_year", **QUICK).fit(
+            q, "paid", "premium", outstanding="outstanding")
+

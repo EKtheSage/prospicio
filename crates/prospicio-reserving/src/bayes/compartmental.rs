@@ -181,6 +181,44 @@ pub enum RateOrder {
     Ordered,
 }
 
+/// How wide a development level is in a model with development effects
+/// (model 2; `docs/design/reserving-compartmental.md` decision 14 and open
+/// decision 10). A level is one effect on each of the parameters that has a
+/// development effect in the priors.
+///
+/// The width is a modelling choice to make with `loo` on the data, not a
+/// default to leave alone. On simulated books (decision 14): where the
+/// effects move by development year, levels by year agree with one level per
+/// age on the reserve (within 0.10 sd on average) and win elpd in 30 of 30
+/// quarterly books, and on monthly cells they fit in 89 s against 126 s with
+/// better mixing; where the effects move within a year, levels by year lose
+/// 361 of elpd in 30 of 30 quarterly books and widen the sd by 59%. Neither
+/// is right for every book, so [`PerAge`](Self::PerAge) is the default, as
+/// built. With annual development the two are the same model.
+///
+/// A development year is counted from each origin's own start, not by
+/// calendar: the development year of an age of `a` months is
+/// `(a - 1) / 12` (0-based), so ages 1 to 12 are the first year, 13 to 24
+/// the second, whatever month the origin starts in, and an age such as 15
+/// months (quarterly development) is in the second year. A year is a level
+/// only when some observed cell has an age in it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DevelopmentLevels {
+    /// One level for each age of the square: the model as built on every
+    /// grain, and bit for bit the fit this crate gave before the setting
+    /// existed.
+    #[default]
+    PerAge,
+    /// One level for each development year: the ages of a year share their
+    /// effect in the density (a fit and its `loo`) and in the predictive,
+    /// where an age with no observed cell in an observed year takes that
+    /// year's effect and a year with no observed cell takes one new effect
+    /// for all its ages. At the annual grain this is [`PerAge`](Self::PerAge).
+    /// An [`Error::NotSupported`] under priors with no development effects
+    /// (model 1), which have no levels to group.
+    ByYear,
+}
+
 /// Where the sampler's pilot run starts (decision 5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CompartmentalStart {
@@ -702,6 +740,53 @@ fn draw_half(prior: HalfPrior, rng: &mut StreamRng) -> f64 {
 /// (the default), paid and incurred, or one of them alone, which needs
 /// [`RateOrder::Ordered`] (decision 12).
 ///
+/// # Fitting sub-annual data
+///
+/// Quarterly or monthly development cells are allowed (decision 13). What a
+/// study on simulated books found (decision 14; no real sub-annual triangle
+/// is in the repository, so every number below is from simulation) is in
+/// `knowledge/findings/compartmental-subannual.md`.
+///
+/// * **Rate priors.** The rates are per year on every grain, so the paper's
+///   presets are kept as they are. Finer cells pull the preset towards the
+///   truth; a line whose first year runs much faster or slower than the
+///   preset's `k_er` of about 3 needs priors of its own.
+/// * **Development levels** ([`development_levels`](Self::development_levels),
+///   model 2). [`DevelopmentLevels::PerAge`] gives each age its own level of
+///   the development effects, [`DevelopmentLevels::ByYear`] each development
+///   year. Choose with `loo` on the data: where effects move by year, by-year
+///   levels agree with per-age ones on the reserve (0.10 sd apart on average
+///   in the study), win elpd (30 of 30 quarterly books) and on monthly cells
+///   fit faster with better mixing; where effects move within a year they lose
+///   361 of elpd in 30 of 30 books and widen the reserve's sd by 59%. At
+///   annual grain the two are the same fit.
+/// * **Seasonality.** There is no seasonal term. Model 1 reads a season as
+///   noise (the interval widens, by up to 54% in the sd for a 30% season, and
+///   the mean can sit nearly 1 sd off the outcome), and model 2's per-age
+///   levels do not absorb a season unless every origin starts in the same
+///   calendar quarter. A calendar-quarter factor is not built; it comes first
+///   among the builds if your lines are seasonal.
+/// * **Cumulative paid.** Under [`PaidResponse::Cumulative`] the interval
+///   narrows as the cells get finer: right where the noise of the cells is
+///   independent, too narrow where it persists (in the study's world with
+///   persistent payment noise the 90% interval covered 88%, 70% and 56% at
+///   annual, quarterly and monthly cells, with no gain in accuracy). A fit
+///   with cumulative paid on cells finer than a year therefore carries a
+///   warning that asks you to check the residuals; it also fires on a fit
+///   that is calibrated, since the data do not say which world they are in.
+///   [`PaidResponse::Incremental`] keeps the interval but, in that world, ran
+///   1.3 to 2 times too wide, with a worse RMSE at quarterly and monthly
+///   grain and a failing Meyers' D at annual grain. Neither is chosen for you.
+/// * **Earned exposure.** All of an origin's exposure starts at age 0, so
+///   sub-annual development of annual origins fits an exposure the model
+///   does not have; use quarterly origins where the data allow. On simulated
+///   books with earned premium annual origins failed Meyers' D at annual,
+///   quarterly and monthly development, and quarterly origins of the same
+///   books passed narrowly (17.8 against a critical 19.2, on the short
+///   sampler, with 3 books at the default sampler); that comparison also
+///   changes the number of origins and the effects' variance. A setting that
+///   spreads the exposure over the origin's period is not built.
+///
 /// ```
 /// use prospicio_bayes::nuts::Sampler;
 /// use prospicio_reserving::bayes::{Compartmental, CompartmentalPriors, Outstanding};
@@ -776,6 +861,11 @@ pub struct Compartmental {
     pub fitted: Fitted,
     /// How the rates are kept apart.
     pub rate_order: RateOrder,
+    /// How wide a development level is (model 2's development effects; an
+    /// [`Error::NotSupported`] under priors with none,
+    /// [`check_supported`](Self::check_supported)). A modelling choice to
+    /// make with `loo`: see [`DevelopmentLevels`].
+    pub development_levels: DevelopmentLevels,
     /// Where the pilot run starts.
     pub start: CompartmentalStart,
     /// NUTS settings. Its `seed` is not used: the chains take a seed derived
@@ -818,6 +908,7 @@ impl Compartmental {
             paid_response: PaidResponse::Cumulative,
             fitted: Fitted::PaidAndOutstanding,
             rate_order: RateOrder::Free,
+            development_levels: DevelopmentLevels::PerAge,
             start: CompartmentalStart::Data,
             sampler: Sampler {
                 target_accept: 0.99,
@@ -863,7 +954,9 @@ impl Compartmental {
     /// Failed diagnostics
     /// do not fail the fit: they are warnings in
     /// [`CompartmentalFit::diagnostics`], as is any posterior draw with
-    /// `k_er <= k_p` under [`RateOrder::Free`].
+    /// `k_er <= k_p` under [`RateOrder::Free`] and cumulative paid on
+    /// development cells finer than a year (a prompt to check the residuals,
+    /// see "Fitting sub-annual data" on [`Compartmental`]).
     pub fn fit(
         &self,
         triangle: &Triangle,
@@ -924,6 +1017,9 @@ impl Compartmental {
                  rate swap; check the rate priors, or set rate_order to Ordered",
                 posterior.n_draws()
             ));
+        }
+        if let Some(warning) = cumulative_sub_annual_warning(model.response, data.grain) {
+            diagnostics.warnings.push(warning);
         }
         if self.fitted == Fitted::IncurredOnly {
             if let Some(share) = payment_rate_prior_share(&posterior, self.priors) {
@@ -1808,6 +1904,7 @@ impl Compartmental {
             incurred: matches!(self.fitted, Fitted::PaidAndIncurred | Fitted::IncurredOnly),
             paid: self.fitted != Fitted::IncurredOnly,
             second: self.fitted != Fitted::PaidOnly,
+            levels: self.development_levels,
         }
     }
 
@@ -1830,6 +1927,23 @@ impl Compartmental {
             Fitted::PaidOnly => Some("fitting paid alone (Fitted::PaidOnly)"),
             Fitted::IncurredOnly => Some("fitting incurred alone (Fitted::IncurredOnly)"),
         };
+        if self.development_levels == DevelopmentLevels::ByYear
+            && self
+                .priors
+                .development_effect_sd
+                .iter()
+                .all(Option::is_none)
+        {
+            return Err(Error::NotSupported {
+                setting: "development_levels ByYear",
+                method: "priors with no development effects (model 1)",
+                reason: "levels by development year group the development effects, and these \
+                         priors have none: model 1's rates are shared by every origin and \
+                         age, so there is no level to widen. Use a model with development \
+                         effects (model 2, CompartmentalPriors::gesmann_morris_2), or keep \
+                         development_levels PerAge",
+            });
+        }
         if let Some(what) = one
             && self.rate_order == RateOrder::Free
         {
@@ -1882,6 +1996,12 @@ impl Compartmental {
     fn model_name(&self) -> &'static str {
         let response = self.response();
         let hierarchy = self.priors.hierarchy();
+        // The width of a level is a setting of the model, not a different
+        // model: model 2 with levels by year is still model 2.
+        let response = Response {
+            levels: DevelopmentLevels::PerAge,
+            ..response
+        };
         if response == Response::MODEL_1 && hierarchy == Hierarchy::Model1 {
             "compartmental_gm1"
         } else if response == Response::MODEL_2 && hierarchy == Hierarchy::Model2 {
@@ -1907,6 +2027,10 @@ impl Compartmental {
             .param("paid_response", format!("{:?}", self.paid_response))
             .param("fitted", format!("{:?}", self.fitted))
             .param("rate_order", format!("{:?}", self.rate_order))
+            .param(
+                "development_levels",
+                format!("{:?}", self.development_levels),
+            )
             .param("start", format!("{:?}", self.start))
             .param("chains", s.chains)
             .param("tune", s.tune)
@@ -1928,6 +2052,19 @@ impl Compartmental {
             .version("prospicio-reserving", env!("CARGO_PKG_VERSION"))
             .input_hash(hasher.finish())
     }
+}
+
+/// The warning of a fit with cumulative paid on cells finer than a year
+/// (decision 14, open decision 12 (b)), or `None`. The data do not say
+/// whether payment noise persists from cell to cell, so it is a prompt to
+/// look at the residuals and not a finding: it fires on a calibrated fit too.
+fn cumulative_sub_annual_warning(response: Response, grain: SquareGrain) -> Option<String> {
+    (response.paid && !response.incremental && grain.development.months() < 12).then(|| {
+        format!(
+            "cumulative paid is fitted on {} development cells, whose noise the likelihood counts as independent between cells; where payment noise persists from cell to cell the interval narrows as the cells get finer with no gain in accuracy (on simulated books the 90% interval covered 88%, 70% and 56% at annual, quarterly and monthly cells), and where it does not the fit is as calibrated as at any grain. Check the residuals; incremental paid keeps the interval but ran 1.3 to 2 times too wide there (decision 14)",
+            grain.development
+        )
+    })
 }
 
 fn outstanding_name<'a>(outstanding: Outstanding<'a>) -> &'a str {
@@ -2852,6 +2989,19 @@ struct Response {
     /// The second response's cells are fitted (all but
     /// [`Fitted::PaidOnly`]).
     second: bool,
+    /// How wide a development level is.
+    levels: DevelopmentLevels,
+}
+
+impl DevelopmentLevels {
+    /// The group of the age index `k`, of `age` months: the index itself, or
+    /// the 0-based development year `(age - 1) / 12`.
+    fn group(self, age: Lag, k: usize) -> usize {
+        match self {
+            Self::PerAge => k,
+            Self::ByYear => ((age - 1) / 12) as usize,
+        }
+    }
 }
 
 impl Response {
@@ -2863,6 +3013,7 @@ impl Response {
         incurred: false,
         paid: true,
         second: true,
+        levels: DevelopmentLevels::PerAge,
     };
     /// Their model 2: log-normal on loss ratios, incremental paid.
     const MODEL_2: Self = Self {
@@ -2872,6 +3023,7 @@ impl Response {
         incurred: false,
         paid: true,
         second: true,
+        levels: DevelopmentLevels::PerAge,
     };
 
     fn log_normal(self) -> bool {
@@ -3090,7 +3242,11 @@ struct Model {
     /// Each age index's development level (position among the ages with an
     /// observed cell), if any.
     dev_level: Vec<Option<usize>>,
-    /// The age in months of each development level, for the names.
+    /// The group of each age index, observed or not: the age itself with a
+    /// level for each age, the development year with levels by year
+    /// ([`DevelopmentLevels`]); ages of a group share one effect.
+    dev_group: Vec<usize>,
+    /// The first age in months of each development level, for the names.
     dev_labels: Vec<String>,
     /// Development time of each age index of the square, in years.
     times: Vec<f64>,
@@ -3178,16 +3334,29 @@ impl Model {
             .iter()
             .map(|&i| data.origins[i].to_string())
             .collect();
+        // The development levels: one for each age with an observed cell,
+        // or for each development year with one (decision 14). An age with
+        // no cell of its own in an observed year takes the year's level.
+        let dev_group: Vec<usize> = (0..data.n_ages)
+            .map(|k| response.levels.group(data.age(k), k))
+            .collect();
+        let n_groups = dev_group.iter().max().map_or(0, |g| g + 1);
+        let mut group_has = vec![false; n_groups];
+        for (k, &g) in dev_group.iter().enumerate() {
+            group_has[g] |= has_age[k];
+        }
         let mut dev_level = vec![None; data.n_ages];
         let mut dev_labels = Vec::new();
-        for k in 0..data.n_ages {
-            if has_age[k] {
-                dev_level[k] = Some(dev_labels.len());
-                dev_labels.push(data.age(k).to_string());
+        let mut level_of_group: Vec<Option<usize>> = vec![None; n_groups];
+        for (k, &g) in dev_group.iter().enumerate() {
+            if group_has[g] {
+                let level = *level_of_group[g].get_or_insert_with(|| {
+                    dev_labels.push(data.age(k).to_string());
+                    dev_labels.len() - 1
+                });
+                dev_level[k] = Some(level);
             }
         }
-        #[cfg(test)]
-        subannual_study::regroup(&mut dev_level, &mut dev_labels, data);
         let times: Vec<f64> = (0..data.n_ages).map(|k| data.grain.time(k)).collect();
         let log_normal = response.log_normal();
         let obs =
@@ -3284,6 +3453,7 @@ impl Model {
             level_origin,
             labels,
             dev_level,
+            dev_group,
             dev_labels,
             times,
             n_observed,
@@ -3852,15 +4022,21 @@ impl Model {
     ) -> Vec<[f64; 4]> {
         let lay = &self.layout;
         let ms = self.priors.positive().map(lognormal);
+        // The ages of one group with no level share one new effect (a group
+        // is one age under `PerAge`, so each is drawn once, in order).
+        let mut new_effect: Vec<[Option<f64>; 4]> = vec![[None; 4]; self.dev_group.len()];
         self.dev_level
             .iter()
-            .map(|level| {
+            .zip(&self.dev_group)
+            .map(|(level, &group)| {
                 let mut out = [1.0; 4];
                 for p in 0..4 {
                     if let (Some(first), Some(tau)) = (lay.nat_dev[p], lay.nat_tau_dev[p]) {
                         let v = match level {
                             Some(d) => nat[first + d],
-                            None => unobserved(nat[tau]),
+                            None => {
+                                *new_effect[group][p].get_or_insert_with(|| unobserved(nat[tau]))
+                            }
                         };
                         out[p] = (ms[p].1 * v).exp();
                     }
@@ -4431,7 +4607,7 @@ mod tests {
         )
     }
 
-    fn preset_2() -> Compartmental {
+    pub(super) fn preset_2() -> Compartmental {
         Compartmental::model_2(CompartmentalPriors::gesmann_morris_2())
     }
 
@@ -6093,6 +6269,7 @@ mod tests {
                             incurred: false,
                             paid: true,
                             second: true,
+                            levels: DevelopmentLevels::PerAge,
                         };
                         let priors = if two {
                             CompartmentalPriors::gesmann_morris_2()
@@ -6401,17 +6578,29 @@ mod tests {
     /// [`quarterly_triangle`] once for each of `names`, with a key `lob`
     /// unless `names` is `[""]`.
     pub(super) fn quarterly_lines(names: &[&str], closed: bool) -> Triangle {
+        quarterly_lines_with(names, closed, Lag::MAX, 0.08)
+    }
+
+    /// [`quarterly_lines`] with no cell after age `last_age` months, so the
+    /// oldest origins stop short of the square's last development year, and
+    /// a wobble of up to `amplitude` on each cell.
+    pub(super) fn quarterly_lines_with(
+        names: &[&str],
+        closed: bool,
+        last_age: Lag,
+        amplitude: f64,
+    ) -> Triangle {
         let (mut lob, mut origin, mut ages) = (vec![], vec![], vec![]);
         let (mut paid, mut inc, mut prem) = (vec![], vec![], vec![]);
         for (w, name) in (0..5usize).flat_map(|w| names.iter().map(move |n| (w, *n))) {
             let rlr = 0.75 + 0.03 * (w as f64).sin();
             let rrf = 0.8 + 0.02 * (2.0 * w as f64).cos();
-            let n_ages = if closed { 20 } else { 4 * (5 - w) };
+            let n_ages = (if closed { 20 } else { 4 * (5 - w) }).min((last_age / 3) as usize);
             let (mut p, mut before) = (0.0, 0.0);
             for d in 0..n_ages {
                 let age = 3 * (d as Lag + 1);
                 let (os, pd) = one_os(1.8, 0.45, f64::from(age) / 12.0);
-                let wobble = |j: usize| 1.0 + 0.08 * ((7 * w + 3 * d + j) as f64).sin();
+                let wobble = |j: usize| 1.0 + amplitude * ((7 * w + 3 * d + j) as f64).sin();
                 // The wobble on each increment, so every increment is
                 // positive.
                 p += PREMIUM[w] * rlr * rrf * (pd - before) * wobble(0);
@@ -6585,6 +6774,15 @@ mod tests {
                 Response::MODEL_2,
                 5,
             ),
+            // Levels by development year: 5 levels of 4 ages each.
+            (
+                CompartmentalPriors::gesmann_morris_2(),
+                Response {
+                    levels: DevelopmentLevels::ByYear,
+                    ..Response::MODEL_2
+                },
+                5,
+            ),
         ] {
             for ordered in [false, true] {
                 let response = Response {
@@ -6597,6 +6795,282 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A triangle on the given grains with `origins` (start month, last
+    /// observed age in months), every age from `first` to it observed except
+    /// those in `skip`, with positive cumulative paid and outstanding and a
+    /// premium of 1,000.
+    pub(super) fn shaped(
+        origin_grain: Grain,
+        development_grain: Grain,
+        origins: &[(Month, Lag)],
+        first: Lag,
+        skip: &[Lag],
+    ) -> Triangle {
+        let step = development_grain.months();
+        let (mut origin, mut ages) = (vec![], vec![]);
+        let (mut paid, mut os, mut prem) = (vec![], vec![], vec![]);
+        for &(start, last) in origins {
+            for age in (first..=last).step_by(step as usize) {
+                if skip.contains(&age) {
+                    continue;
+                }
+                let a = f64::from(age);
+                origin.push(start);
+                ages.push(age);
+                paid.push(100.0 * (1.0 - (-a / 30.0).exp()) + 1.0);
+                os.push(80.0 * (-a / 40.0).exp() + 5.0);
+                prem.push(1000.0);
+            }
+        }
+        Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("paid", &paid), ("os", &os), ("premium", &prem)],
+            origin_grain,
+            development_grain,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    /// Model 2's density on `tri` with cumulative log-normal paid (so that
+    /// a triangle with missing ages is readable) and the given levels.
+    pub(super) fn levels_model(tri: &Triangle, levels: DevelopmentLevels) -> Model {
+        levels_model_on(
+            tri,
+            Outstanding::Column("os"),
+            Fitted::PaidAndOutstanding,
+            levels,
+        )
+    }
+
+    /// [`levels_model`] with the second response named.
+    fn levels_model_on(
+        tri: &Triangle,
+        outstanding: Outstanding<'_>,
+        fitted: Fitted,
+        levels: DevelopmentLevels,
+    ) -> Model {
+        let data = Data::new(tri, "paid", outstanding, "premium", fitted).unwrap();
+        let response = Response {
+            incremental: false,
+            incurred: fitted == Fitted::PaidAndIncurred,
+            levels,
+            ..Response::MODEL_2
+        };
+        Model::new(
+            &data,
+            CompartmentalPriors::gesmann_morris_2(),
+            false,
+            response,
+        )
+        .unwrap()
+    }
+
+    /// The development year of an age is `(age - 1) / 12`, from the
+    /// origin's own start: levels by year have one level per year with an
+    /// observed cell on the quarterly, monthly and semiannual grains, their
+    /// ages share it, and the density has 4 effects fewer per level fewer.
+    #[test]
+    fn levels_by_year_count_the_development_years() {
+        use DevelopmentLevels::{ByYear, PerAge};
+        // Quarterly development, annual origins: 5 years of 4 ages.
+        let tri = quarterly_triangle(false);
+        let on = |levels| levels_model_on(&tri, incurred(), Fitted::PaidAndIncurred, levels);
+        let (per_age, by_year) = (on(PerAge), on(ByYear));
+        assert_eq!((per_age.n_dev_levels(), by_year.n_dev_levels()), (20, 5));
+        assert_eq!(by_year.dev_labels, ["3", "15", "27", "39", "51"]);
+        assert_eq!(by_year.dev_level[3], Some(0), "age 12 is in the first year");
+        assert_eq!(
+            by_year.dev_level[4],
+            Some(1),
+            "age 15 is in the second year"
+        );
+        assert_eq!(by_year.dev_level[19], Some(4));
+        assert_eq!(per_age.dim() - by_year.dim(), 4 * 15);
+        // Monthly development, annual origins: 24 ages, 2 years.
+        let tri = shaped(
+            Grain::Year,
+            Grain::Month,
+            &[(Month::january(1990), 24), (Month::january(1991), 12)],
+            1,
+            &[],
+        );
+        let (per_age, by_year) = (levels_model(&tri, PerAge), levels_model(&tri, ByYear));
+        assert_eq!((per_age.n_dev_levels(), by_year.n_dev_levels()), (24, 2));
+        assert_eq!(by_year.dev_labels, ["1", "13"]);
+        assert_eq!(by_year.dev_level[11], Some(0));
+        assert_eq!(by_year.dev_level[12], Some(1));
+        // Semiannual development: ages 6 and 12, then 18 and 24.
+        let tri = shaped(
+            Grain::Year,
+            Grain::Semester,
+            &[(Month::january(1990), 24), (Month::january(1991), 12)],
+            6,
+            &[],
+        );
+        let by_year = levels_model(&tri, ByYear);
+        assert_eq!(by_year.dev_labels, ["6", "18"]);
+        assert_eq!(by_year.dev_level, [Some(0), Some(0), Some(1), Some(1)]);
+    }
+
+    /// A year counts from each origin's start and not by calendar: the same
+    /// monthly square of quarterly origins starting in January or in April
+    /// has the same development levels.
+    #[test]
+    fn a_development_year_does_not_depend_on_the_calendar_month_of_the_origin() {
+        let starts = |first_month: u32| -> Vec<(Month, Lag)> {
+            (0..8u32)
+                .map(|q| {
+                    let months = 3 * q + first_month - 1;
+                    (
+                        Month::new(2000 + (months / 12) as i32, (months % 12 + 1) as u8).unwrap(),
+                        3 * (8 - q),
+                    )
+                })
+                .collect()
+        };
+        let model = |first_month: u32| {
+            let tri = shaped(Grain::Quarter, Grain::Month, &starts(first_month), 1, &[]);
+            levels_model(&tri, DevelopmentLevels::ByYear)
+        };
+        let (january, april) = (model(1), model(4));
+        assert_eq!(january.n_dev_levels(), 2);
+        assert_eq!(january.dev_labels, ["1", "13"]);
+        assert_eq!(january.dev_labels, april.dev_labels);
+        assert_eq!(january.dev_level, april.dev_level);
+        assert_eq!(january.dev_level[12], Some(1), "age 13 is the second year");
+    }
+
+    /// At the annual grain the two widths are the same model: the same
+    /// levels, parameters and density.
+    #[test]
+    fn at_the_annual_grain_the_widths_are_the_same_model() {
+        let (per_age, by_year) = (
+            model_with(
+                CompartmentalPriors::gesmann_morris_2(),
+                false,
+                Response::MODEL_2,
+            ),
+            model_with(
+                CompartmentalPriors::gesmann_morris_2(),
+                false,
+                Response {
+                    levels: DevelopmentLevels::ByYear,
+                    ..Response::MODEL_2
+                },
+            ),
+        );
+        assert_eq!(per_age.dev_level, by_year.dev_level);
+        assert_eq!(per_age.dev_labels, by_year.dev_labels);
+        assert_eq!(per_age.dim(), by_year.dim());
+        for x in points(&per_age).iter().step_by(3) {
+            let (mut g1, mut g2) = (vec![0.0; x.len()], vec![0.0; x.len()]);
+            let f1 = per_age.log_posterior(x, &mut g1);
+            let f2 = by_year.log_posterior(x, &mut g2);
+            assert_eq!((f1, g1), (f2, g2));
+        }
+    }
+
+    /// Ages with no observed cell: a year with none takes one new effect
+    /// for all its ages (not one per age), and an age with no cell of its
+    /// own in an observed year takes the year's level.
+    #[test]
+    fn a_year_without_a_cell_shares_one_new_effect() {
+        use DevelopmentLevels::{ByYear, PerAge};
+        // Annual origins, quarterly development, ages 15 and later only,
+        // and no cell at age 21 (in the second year with 15, 18 and 24).
+        let origins: Vec<(Month, Lag)> = (0..4)
+            .map(|w| (Month::january(1988 + w), 12 * (5 - w as Lag)))
+            .collect();
+        let tri = shaped(Grain::Year, Grain::Quarter, &origins, 15, &[21]);
+        let (per_age, by_year) = (levels_model(&tri, PerAge), levels_model(&tri, ByYear));
+        // Ages 3 to 12 (indices 0 to 3) have no cell in either.
+        assert!(per_age.dev_level[..4].iter().all(Option::is_none));
+        assert!(by_year.dev_level[..4].iter().all(Option::is_none));
+        // The unobserved age 21 (index 6): none per age, the year's level
+        // by year.
+        assert_eq!(per_age.dev_level[6], None);
+        assert_eq!(by_year.dev_level[6], by_year.dev_level[4]);
+        assert_eq!(by_year.n_dev_levels(), 4);
+        assert_eq!(per_age.n_dev_levels(), 16 - 1);
+        // The multipliers of a draw: count the new effects asked for.
+        let nat: Vec<f64> = (0..per_age.names().len())
+            .map(|i| 0.01 * i as f64)
+            .collect();
+        let asked = |m: &Model| {
+            let mut calls = 0;
+            let mult = m.dev_multipliers_with(&nat, |_| {
+                calls += 1;
+                0.5 * f64::from(calls)
+            });
+            (calls, mult)
+        };
+        let (n_per_age, mult_per_age) = asked(&per_age);
+        let (n_by_year, mult_by_year) = asked(&by_year);
+        // 4 effects (k_er, k_p, RLR, RRF): one new draw for each of the 5
+        // ages without a level per age (3, 6, 9, 12 and 21), one for the
+        // one year without a level by year.
+        assert_eq!((n_per_age, n_by_year), (4 * 5, 4));
+        assert!(mult_by_year[..4].windows(2).all(|w| w[0] == w[1]));
+        assert!(mult_per_age[..4].windows(2).all(|w| w[0] != w[1]));
+        // Age 21 takes the level of its year, as ages 15 and 18 do.
+        assert_eq!(mult_by_year[6], mult_by_year[4]);
+        assert_eq!(mult_by_year[5], mult_by_year[4]);
+    }
+
+    /// Levels by year are refused where the priors have no development
+    /// effects (model 1), when the setting is checked and before any data
+    /// are read; model 2 takes them.
+    #[test]
+    fn levels_by_year_need_development_effects() {
+        let by_year = |m: Compartmental| Compartmental {
+            development_levels: DevelopmentLevels::ByYear,
+            ..m
+        };
+        let err = by_year(preset()).check_supported().unwrap_err();
+        assert!(
+            matches!(&err, Error::NotSupported { setting, .. } if setting.contains("development_levels")),
+            "{err:?}"
+        );
+        let tri = quarterly_triangle(false);
+        let fit = by_year(preset()).fit(&tri, "paid", incurred(), "premium");
+        assert!(matches!(fit, Err(Error::NotSupported { .. })));
+        // Per age, and model 2 by year, are supported.
+        preset().check_supported().unwrap();
+        by_year(preset_2()).check_supported().unwrap();
+        // The prior check does not need the setting and runs.
+        by_year(preset())
+            .prior_predictive(&tri, "premium", 5)
+            .unwrap();
+    }
+
+    /// The warning of cumulative paid on cells finer than a year: on
+    /// quarterly, monthly and semiannual development, not on annual, not
+    /// under incremental paid, not when paid is not fitted.
+    #[test]
+    fn cumulative_paid_on_sub_annual_cells_warns() {
+        let grain = |d| SquareGrain::new(Grain::Year, d).unwrap();
+        let cumulative = Response::MODEL_1;
+        let incremental = Response::MODEL_2;
+        for d in [Grain::Quarter, Grain::Month, Grain::Semester] {
+            let w = cumulative_sub_annual_warning(cumulative, grain(d)).unwrap();
+            assert!(
+                w.contains("cumulative paid") && w.contains("Check the residuals"),
+                "{w}"
+            );
+            assert!(!w.contains("wrong"), "{w}");
+            assert!(cumulative_sub_annual_warning(incremental, grain(d)).is_none());
+        }
+        assert!(cumulative_sub_annual_warning(cumulative, grain(Grain::Year)).is_none());
+        let no_paid = Response {
+            paid: false,
+            ..cumulative
+        };
+        assert!(cumulative_sub_annual_warning(no_paid, grain(Grain::Quarter)).is_none());
     }
 
     /// The prior predictive check on the quarterly triangle draws the
@@ -6650,6 +7124,21 @@ mod tests {
         assert_eq!(ages.first(), Some(&15));
         assert_eq!(ages.last(), Some(&60));
         assert_eq!(fit.paid.components().len(), 4 + 8 + 12 + 16);
+        // Cumulative paid on quarterly cells warns, once, and the warning
+        // says to check and does not call the fit wrong.
+        let cumulative_warnings: Vec<&String> = fit
+            .diagnostics
+            .warnings
+            .iter()
+            .filter(|w| w.contains("cumulative paid is fitted on"))
+            .collect();
+        assert_eq!(
+            cumulative_warnings.len(),
+            1,
+            "{:?}",
+            fit.diagnostics.warnings
+        );
+        assert!(cumulative_warnings[0].contains("fitted on Q development"));
         // 1988 is at the square's last age.
         let r = fit
             .reserves
@@ -6709,6 +7198,151 @@ mod tests {
                 &quarterly_triangle(true),
                 0,
                 2 * 4 * 4,
+            );
+        }
+    }
+
+    /// The one-year conformance suite on model 2 with levels by development
+    /// year, on the quarterly triangle. In the first, every year has an
+    /// observed cell, so no level is added. In the second the oldest origin
+    /// stops at 48 months, so its coming year (51 to 60 months) opens the
+    /// fifth development year: one new level, 4 effects added to each draw
+    /// (against 16 for the four ages under levels per age), and the year's
+    /// cells (5 origins, 4 quarters, paid and incurred) fall in observed
+    /// years and in the new one.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_one_year_view_by_development_year_conforms() {
+        let by_year = || Compartmental {
+            fitted: Fitted::PaidAndIncurred,
+            development_levels: DevelopmentLevels::ByYear,
+            ..preset_2()
+        };
+        one_year_conformance_on(
+            "compartmental model 2 by year quarterly",
+            by_year(),
+            &quarterly_triangle(false),
+            &quarterly_triangle(true),
+            0,
+            2 * 4 * 4,
+        );
+        one_year_conformance_on(
+            "compartmental model 2 by year, a year opens a level",
+            by_year(),
+            &quarterly_lines_with(&[""], false, 48, 0.3),
+            &quarterly_triangle(true),
+            4,
+            5 * 4 * 2,
+        );
+    }
+
+    /// At the annual grain levels by year are the model itself: the same
+    /// posterior and the same reserves draw for draw at one seed.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn at_the_annual_grain_the_widths_fit_identically() {
+        let tri = triangle(true);
+        let fit = |levels| {
+            Compartmental {
+                sampler: Sampler {
+                    chains: 2,
+                    tune: 60,
+                    draws: 60,
+                    target_accept: 0.9,
+                    ..preset_2().sampler
+                },
+                n_sims: 200,
+                seed: 6,
+                development_levels: levels,
+                ..preset_2()
+            }
+            .fit(&tri, "paid", incurred(), "premium")
+            .unwrap()
+        };
+        let (per_age, by_year) = (
+            fit(DevelopmentLevels::PerAge),
+            fit(DevelopmentLevels::ByYear),
+        );
+        assert_eq!(per_age.posterior.values(), by_year.posterior.values());
+        assert_eq!(per_age.posterior.names(), by_year.posterior.names());
+        assert_eq!(
+            per_age.reserves.draw_matrix(),
+            by_year.reserves.draw_matrix()
+        );
+        assert_eq!(per_age.paid.draw_matrix(), by_year.paid.draw_matrix());
+        assert_eq!(
+            per_age.loo().unwrap().loo.estimate.elpd,
+            by_year.loo().unwrap().loo.estimate.elpd
+        );
+        // The warning is not there at the annual grain, whichever the paid.
+        let cumulative = quick(3).fit(&tri, "paid", incurred(), "premium").unwrap();
+        for fit in [&per_age, &by_year, &cumulative] {
+            assert!(
+                !fit.diagnostics
+                    .warnings
+                    .iter()
+                    .any(|w| w.contains("cumulative paid is fitted")),
+                "{:?}",
+                fit.diagnostics.warnings
+            );
+        }
+    }
+
+    /// Model 2 with levels by year on the quarterly triangle: a fit with
+    /// fewer parameters than per age (5 levels of 4 effects, not 20), each
+    /// level named by its first age, future cells to 60 months, and no
+    /// warning about cumulative paid (model 2 fits increments).
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn model_2_by_development_year_fits_the_quarterly_triangle() {
+        let tri = quarterly_triangle(false);
+        let fit = |levels| {
+            Compartmental {
+                fitted: Fitted::PaidAndIncurred,
+                development_levels: levels,
+                sampler: Sampler {
+                    chains: 2,
+                    tune: 60,
+                    draws: 60,
+                    target_accept: 0.9,
+                    ..preset_2().sampler
+                },
+                n_sims: 200,
+                seed: 4,
+                ..preset_2()
+            }
+            .fit(&tri, "paid", incurred(), "premium")
+            .unwrap()
+        };
+        let (per_age, by_year) = (
+            fit(DevelopmentLevels::PerAge),
+            fit(DevelopmentLevels::ByYear),
+        );
+        assert_eq!(per_age.posterior.dim() - by_year.posterior.dim(), 4 * 15);
+        let names = by_year.posterior.names();
+        assert!(names.iter().any(|n| n == "dev_ker[15]"), "{names:?}");
+        assert!(!names.iter().any(|n| n == "dev_ker[18]"));
+        assert_eq!(by_year.paid.components().len(), 4 + 8 + 12 + 16);
+        let total = by_year.reserves.total().mean();
+        assert!(total.is_finite() && total > 0.0, "{total}");
+        assert!(by_year.loo().unwrap().loo.estimate.elpd.is_finite());
+        for fit in [&per_age, &by_year] {
+            assert!(
+                !fit.diagnostics
+                    .warnings
+                    .iter()
+                    .any(|w| w.contains("cumulative paid is fitted")),
+                "{:?}",
+                fit.diagnostics.warnings
             );
         }
     }

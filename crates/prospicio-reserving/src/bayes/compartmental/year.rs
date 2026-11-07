@@ -81,13 +81,21 @@ struct Parameters {
     b: [f64; 4],
     u: [Vec<f64>; 4],
     v: [Vec<f64>; 4],
+    /// The development level of each age index (levels by year share one
+    /// among the ages of a year, `DevelopmentLevels`).
+    level: Vec<usize>,
     ms: [(f64, f64); 4],
 }
 
 impl Parameters {
     fn at(&self, origin: usize, k: usize) -> [f64; 4] {
         std::array::from_fn(|p| {
-            let v = self.v[p].get(k).copied().unwrap_or(0.0);
+            let v = self
+                .level
+                .get(k)
+                .and_then(|&d| self.v[p].get(d))
+                .copied()
+                .unwrap_or(0.0);
             ((self.b[p] + self.u[p][origin] + v) * self.ms[p].1).exp() * self.ms[p].0
         })
     }
@@ -330,6 +338,12 @@ impl<'a> CompartmentalYear<'a> {
             ],
             u,
             v,
+            level: self
+                .full
+                .dev_level
+                .iter()
+                .map(|l| l.expect("the full model has every age"))
+                .collect(),
             ms: self.full.priors.positive().map(lognormal),
         }
     }
@@ -468,9 +482,15 @@ fn embed(observed: &Model, full: &Model, theta: &[f64], rng: &mut StreamRng) -> 
     }
     for p in 0..4 {
         if let (Some(zf), Some(zo)) = (lf.z_dev[p], lo.z_dev[p]) {
+            // One entry for each level of `full`, taken from any age that has
+            // it: under levels by year an observed year's ages share the
+            // observed level, and a year without one takes one new normal.
+            let mut done = vec![false; full.n_dev_levels()];
             for (k, level) in full.dev_level.iter().enumerate() {
                 let d = level.expect("the full model has every age");
-                x[zf + d] = observed.dev_level[k].map_or_else(&mut normal, |o| theta[zo + o]);
+                if !std::mem::replace(&mut done[d], true) {
+                    x[zf + d] = observed.dev_level[k].map_or_else(&mut normal, |o| theta[zo + o]);
+                }
             }
         }
     }
@@ -653,5 +673,45 @@ impl YearModel for CompartmentalYear<'_> {
                 }
             };
         if f.is_finite() { f } else { f64::NAN }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::tests::{incurred, points, preset_2, quarterly_triangle};
+    use super::super::{DevelopmentLevels, Fitted};
+    use super::*;
+
+    /// A cell's parameters follow its development level and not its age:
+    /// under levels by year the four quarters of a development year have
+    /// the same parameters, and the years differ; per age every age does.
+    #[test]
+    fn a_cells_parameters_follow_its_development_level() {
+        let tri = quarterly_triangle(false);
+        for (levels, same_year) in [
+            (DevelopmentLevels::ByYear, true),
+            (DevelopmentLevels::PerAge, false),
+        ] {
+            let m = Compartmental {
+                fitted: Fitted::PaidAndIncurred,
+                development_levels: levels,
+                ..preset_2()
+            };
+            let data = Data::new(&tri, "paid", incurred(), "premium", m.fitted).unwrap();
+            let year = CompartmentalYear::new(&m, &data).unwrap();
+            let theta = &points(&year.full)[3];
+            let p = year.parameters(theta);
+            for origin in [0, 2] {
+                // Ages 15, 18, 21 and 24 months are the second year.
+                let second: Vec<[f64; 4]> = (4..8).map(|k| p.at(origin, k)).collect();
+                assert_eq!(
+                    second.windows(2).all(|w| w[0] == w[1]),
+                    same_year,
+                    "{levels:?}"
+                );
+                assert_ne!(p.at(origin, 3), p.at(origin, 4), "{levels:?}: year 1 and 2");
+                assert_ne!(p.at(origin, 7), p.at(origin, 8), "{levels:?}: year 2 and 3");
+            }
+        }
     }
 }

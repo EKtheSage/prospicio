@@ -119,7 +119,7 @@ survival models stay parked. #599's pooling structure is the recommended one
 
 | Lane | New work | Small items |
 |---|---|---|
-| Reserving | #599: `HierarchicalBf` with the recommended pooling (a non-centred lognormal program effect, one partially pooled pattern, half-normal spread priors, the ODP scale pooled per unit of premium), then its one-year view; Compartmental at a sub-annual grain (`[compartmental-subannual]`) | |
+| Reserving | #599: `HierarchicalBf` with the recommended pooling (a non-centred lognormal program effect, one partially pooled pattern, half-normal spread priors, the ODP scale pooled per unit of premium), then its one-year view; Compartmental at a sub-annual grain (`[compartmental-subannual]`, built on 2026-11-06) | |
 | Aggregate | | #722 (an accident-year payment pattern on the underwriting basis in `monthly_patterns`) |
 | Models | #577 (tabular networks with categorical embeddings and multi-task heads) | |
 | Excel | parity with the Python and R bindings in batches (#742) | |

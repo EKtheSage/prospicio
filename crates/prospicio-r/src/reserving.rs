@@ -43,9 +43,10 @@ use prospicio_reserving::bayes::{
     BayesOneYearSegment, Compartmental, CompartmentalCandidate,
     CompartmentalFit as CompartmentalInner, CompartmentalFits as CompartmentalFitsInner,
     CompartmentalLikelihood, CompartmentalOneYearFits as CompartmentalOneYearFitsInner,
-    CompartmentalPriors, CompartmentalSegment, CompartmentalStart, Fitted, HalfPrior, LightRefit,
-    MeyersFits as MeyersFitsInner, MeyersSegment, NewOriginLevel, NewYear, OneYearRefit,
-    Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
+    CompartmentalPriors, CompartmentalSegment, CompartmentalStart, DevelopmentLevels, Fitted,
+    HalfPrior, LightRefit, MeyersFits as MeyersFitsInner, MeyersSegment, NewOriginLevel, NewYear,
+    OneYearRefit, Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior,
+    Scale as CompartmentalScale,
 };
 use prospicio_reserving::{
     BayesBf, BayesBfFit as BayesBfInner, BayesBfNormalised,
@@ -6026,8 +6027,17 @@ fn compartmental_settings(
     run: &[f64],
     dependence: SegmentDependence,
 ) -> Result<Compartmental> {
-    let [likelihood, scale, paid_response, fitted, rate_order, start] = settings else {
-        return Err(Error::Other("settings must hold 6 names".into()));
+    let [
+        likelihood,
+        scale,
+        paid_response,
+        fitted,
+        rate_order,
+        development_levels,
+        start,
+    ] = settings
+    else {
+        return Err(Error::Other("settings must hold 7 names".into()));
     };
     let &[chains, tune, draws, n_sims, seed, target_accept, max_depth] = run else {
         return Err(Error::Other("run must hold 7 numbers".into()));
@@ -6070,6 +6080,11 @@ fn compartmental_settings(
         "ordered" => RateOrder::Ordered,
         v => return bad("rate_order", v, "\"free\" or \"ordered\""),
     };
+    let development_levels = match development_levels.as_str() {
+        "per_age" => DevelopmentLevels::PerAge,
+        "by_year" => DevelopmentLevels::ByYear,
+        v => return bad("development_levels", v, "\"per_age\" or \"by_year\""),
+    };
     let start = match start.as_str() {
         "data" => CompartmentalStart::Data,
         "prior_centre" => CompartmentalStart::PriorCentre,
@@ -6086,6 +6101,7 @@ fn compartmental_settings(
         paid_response,
         fitted,
         rate_order,
+        development_levels,
         start,
         sampler: BayesSampler {
             chains: whole(chains, "chains")? as usize,
