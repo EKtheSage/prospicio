@@ -1425,6 +1425,55 @@ real Excel.
       P-spline cases, read off the sheet functions to the reference's own
       tolerances.
 
+56. **The coverage check** (#742 batch 4). `validation/scripts/check_bindings.py`
+    reports, beside Python and R, the public items the add-in reaches
+    (its `excel bound` column, report only). On 2026-11-08, with batches 1
+    to 3: 261 of 922 items (28%) against Python's 716 (78%) and R's 667
+    (72%); 455 items are bound in Python or R and not in Excel. The count
+    is by name, so it overstates the gap: a sheet function that returns a
+    fit's numbers reaches its type without naming it (`CapeCodFit`,
+    `DisposalFit`, `UlaeEstimate`, the experience-rating types under
+    `PRO.PRC.BURNINGCOST`). Sorted by whether a function has a sheet form:
+    - **Left out, as decided**: what Excel already does (`npv_rows`,
+      `irr_rows`, `leverage`, decision 46); fitted-model objects kept
+      between calls (decision 4): networks and ONNX, GAMs, GLMMs, MARS,
+      the double GLM, Bayesian GLMs, GLMMs and stacking, vines and their
+      selection, the P&L ledger's programs and stacks, the deal book;
+      Bayesian reserving other than the ODP chain ladder and the
+      Bornhuetter-Ferguson (decision 21: Meyers, compartmental, the
+      hierarchical BF, the one-year views by MCMC); resampling splits and
+      Sobol sequences, which are not worksheet results.
+    - **Candidates, each a column or table in and a table out** (the
+      user's choice, below):
+      1. *Model validation* on columns of actual and predicted:
+         Gini and normalized Gini, lift, double lift, the loss-ratio
+         chart, ROC, actual versus expected by period, pinball loss,
+         CRPS, the PIT histogram, VIF, the balance correction, isotonic
+         calibration and Murphy's decomposition, conformal intervals,
+         target encoding, nested F and likelihood-ratio tests.
+      2. *Reserving diagnostics*: Mack's calendar-year and
+         development-correlation tests, the diagonal backtest of the
+         chain ladder, and the excess-layer methods (`layer_share`,
+         `layer_exposure`, `layer_at_shift`, the benchmark curve).
+      3. *Joint reserves across lines*: the ODP and Mack bootstraps over
+         several triangles stacked (as `PRO.RES.INDUSTRY.PRIOR` reads
+         companies) with synchronized residuals or a rank correlation.
+      4. *Ruin and approximations*: Pollaczeck-Khinchine, finite-horizon
+         ruin, Wiener-Hopf and renewal counts; the moment approximations
+         to an aggregate; layer loss picks; the grid recommendation.
+      5. *Risk measures on simulations*: entropic, Esscher, weighted and
+         window TVaR, the risk ratios (Sortino, Omega), worst-case VaR by
+         rearrangement, and more count families (zero-modified,
+         logarithmic, mixed Poisson).
+      6. *Pricing, more*: the natural allocation of a portfolio's price,
+         the reinsurance frontier, cat bond tranches, casualty ILF and ELF
+         rating, bonus-malus systems, premium principles, Hachemeister
+         credibility, tower matching to PML references, pricing bounds
+         and the distortion envelope, the experience-rating currency and
+         index clauses.
+      7. *Fits on a table, as `PRO.PRC.GLM`*: the elastic net, the
+         Tweedie profile likelihood.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and
@@ -1489,7 +1538,8 @@ order, one small PR each, those already done struck through:
     ULAE~~ (decision 53); then ~~the Bayesian additions (a new year's loss
     ratio, the industry prior)~~ (decision 54), ~~the
     0.0.8 Models fits (zero-inflated and hurdle counts, quantile and
-    expectile regression)~~ (decision 55), and what a coverage check finds.
+    expectile regression)~~ (decision 55), ~~a coverage check~~ (decision
+    56), then the groups the user chooses from it.
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),
