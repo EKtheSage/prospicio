@@ -1368,6 +1368,32 @@ real Excel.
       IV (classical, Kittel, Conger and Nolibos at 60/40 and 70/30 with
       their three forms), and rows by accident year summing to the total.
 
+54. **The Bayesian additions** (#742 batch 2; `reserving-bayes.md`
+    decisions 27 to 29, #598 and #604). `PRO.RES.BAYES.BF` gains three
+    arguments at its end. `new_premium` with `output` `"new_year"` gives
+    the next origin's loss ratio and ultimate from the fit
+    (`BayesBfNormalisedFit::new_year`): a row each, with the mean, SD and
+    the percentiles, under a header naming the year. `pattern_mean` and
+    `pattern_sd` give a prior on the percents developed (`PatternPrior`,
+    `fit_with_pattern_prior`), one value per age under the triangle's
+    columns with the first left blank, or one fewer; both or neither, and
+    they are part of the kept fit's key. `PRO.RES.INDUSTRY.PRIOR` is
+    `IndustryPrior`: several companies' triangles stacked in one range,
+    a column of labels with each company's rows together, and a column of
+    premiums; `output` `"summary"` (the apriori and its SE, the CVs
+    between and within companies, the process CV, the tail, the counts
+    used), `"pattern"` (the pattern's mean and SD by age, as percents
+    developed too, the first age blank) or `"report"` (the companies and
+    origins left out, and warnings). A sheet chains the summary and the
+    pattern into `PRO.RES.BAYES.BF`'s `apriori`, `cv`, `common_cv`,
+    `pattern_mean` and `pattern_sd`, as the Python and R bindings do.
+    - **Meyers' new year left out**: Meyers' models have no sheet form
+      (decision 21).
+    - **Parity.** `tests/bayes_priors.rs`: each output equal to the
+      library's on the same inputs and seed (the new year on GenIns, a
+      pattern prior, the industry prior on a generated panel of twelve
+      companies, at an age and with the process variance subtracted).
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and
@@ -1428,8 +1454,9 @@ order, one small PR each, those already done struck through:
     chain ladder and the paid-incurred chain~~ (decision 49), ~~development
     curves over every age~~ (decision 50), ~~Friedland's exhibits and the weighted
     selection of ultimates~~ (decision 51), ~~the methods on claim counts and
-    Berquist-Sherman~~ (decision 52), salvage and subrogation, ALAE and ULAE; then the
-    Bayesian additions (a new year's loss ratio, the industry prior), the
+    Berquist-Sherman~~ (decision 52), ~~salvage and subrogation, ALAE and
+    ULAE~~ (decision 53); then ~~the Bayesian additions (a new year's loss
+    ratio, the industry prior)~~ (decision 54), the
     0.0.8 Models fits (zero-inflated and hurdle counts, quantile and
     expectile regression), and what a coverage check finds.
 

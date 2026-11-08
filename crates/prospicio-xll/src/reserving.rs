@@ -593,7 +593,7 @@ pub(crate) fn process(grid: &Grid) -> Result<ProcessDistribution> {
 }
 
 /// A percentile's column heading: "P99.5" for 0.995.
-fn percentile_label(p: f64) -> String {
+pub(crate) fn percentile_label(p: f64) -> String {
     let pct = format!("{:.4}", p * 100.0);
     format!("P{}", pct.trim_end_matches('0').trim_end_matches('.'))
 }

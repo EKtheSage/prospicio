@@ -10,7 +10,7 @@ This lane wraps other lanes' crates and changes none of them
 
 - [excel-confirm-groups] in Excel 365: the four categories in Insert Function
 - [excel-confirm-async] in Excel 365: `#GETTING_DATA` then the result for the bootstraps and Bayesian fits, and an edit during a long run (decision 48)
-- [excel-parity-742] #742: batches 2 to 4 (batch 1 is done)
+- [excel-parity-742] #742: batches 3 and 4 (batches 1 and 2 are done)
 - [excel-more-functions] further functions as the user asks, each in its group
 - [code-signing-certificate] a code-signing certificate is the user's to buy
 
@@ -76,3 +76,4 @@ This lane wraps other lanes' crates and changes none of them
 - Friedland's development exhibit and the weighted selection of ultimates (`PRO.RES.DEV.EXHIBIT`, `PRO.RES.SELECT`: Friedland chapters 7 and 15 to the printed digits, chainladder-python `VotingChainladder` parity; decision 51, #742 batch 1)
 - the methods on claim counts and the Berquist-Sherman adjustments (`PRO.RES.FREQSEV`, `.FREQSEV.TRENDED`, `.DISPOSAL`, `.CASE.OS`, `.TREND.BY.AGE`, `.BS.CASE`, `.BS.SETTLEMENT`, `.BS`: Friedland chapters 11 to 13 to the printed digits, both adjustments at the library's `BerquistSherman`; decision 52, #742 batch 1)
 - recoveries, ALAE and ULAE (`PRO.RES.RATIO`: Friedland's ratio approach, multiplicative or additive; `PRO.RES.ULAE`: classical, Kittel, Conger and Nolibos; Friedland chapters 14, 16 and 17 to the printed digits; decision 53, #742 batch 1)
+- the Bayesian additions (`PRO.RES.BAYES.BF`'s new year and pattern prior, `PRO.RES.INDUSTRY.PRIOR`: each output at the library's; decision 54, #742 batch 2)
