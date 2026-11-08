@@ -354,7 +354,7 @@ fn page(text: &str, section: &str) -> String {
                 continue;
             }
         }
-        body.push_str(line);
+        body.push_str(&fence_info(line));
         body.push('\n');
     }
     let quote = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
@@ -364,6 +364,23 @@ fn page(text: &str, section: &str) -> String {
         quote(section),
         body.trim_start()
     )
+}
+
+/// An opening fence whose info string is several bare words, as the guides'
+/// `python no-run`, written as pandoc attributes (`{.python .no-run}`):
+/// pandoc's Markdown reader takes a bare info string of one word only and
+/// reads the block as a paragraph otherwise. The guides keep the bare form,
+/// which `python/tests/test_guides.py` reads.
+fn fence_info(line: &str) -> std::borrow::Cow<'_, str> {
+    let Some(info) = line.strip_prefix("```") else {
+        return line.into();
+    };
+    let words: Vec<&str> = info.split_whitespace().collect();
+    if words.len() < 2 || info.starts_with('{') || info.starts_with('`') {
+        return line.into();
+    }
+    let classes: Vec<String> = words.iter().map(|w| format!(".{w}")).collect();
+    format!("```{{{}}}", classes.join(" ")).into()
 }
 
 /// The files in `dir` with extension `ext`, sorted by name.
@@ -961,7 +978,9 @@ fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{TocPage, TocSection, check_toc, parse_toc, r_articles_block, staged_name};
+    use super::{
+        TocPage, TocSection, check_toc, fence_info, page, parse_toc, r_articles_block, staged_name,
+    };
 
     const TOC: &str = "# comment
 - section: One
@@ -1041,6 +1060,20 @@ mod tests {
       - articles/a
       - articles/n
 "
+        );
+    }
+
+    #[test]
+    fn a_fence_of_several_words_becomes_pandoc_attributes() {
+        assert_eq!(fence_info("```python no-run"), "```{.python .no-run}");
+        assert_eq!(fence_info("```python"), "```python");
+        assert_eq!(fence_info("```"), "```");
+        assert_eq!(fence_info("```{r, eval = FALSE}"), "```{r, eval = FALSE}");
+        assert_eq!(fence_info("print(1)"), "print(1)");
+        let staged = page("# T\n\n```python no-run\nx = 1\n```\n", "S");
+        assert!(
+            staged.contains("```{.python .no-run}\nx = 1\n```\n"),
+            "{staged}"
         );
     }
 }

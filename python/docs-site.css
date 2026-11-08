@@ -286,3 +286,42 @@ table.table td {
   padding: 0.55rem 0.75rem;
   line-height: 1.5;
 }
+
+/* Landing link and navigation toggle, added to the navbar by the script in
+   great-docs.yml. The toggle shows only where the sidebar is beside the text
+   (Quarto's lg breakpoint); below it, Quarto's own menu button opens it. */
+.p-landing,
+.p-sidebar-toggle {
+  font: 500 0.875rem/1 var(--p-font);
+  color: var(--p-muted);
+  text-decoration: none;
+  margin-right: 1rem;
+  white-space: nowrap;
+}
+
+.p-landing:hover,
+.p-sidebar-toggle:hover {
+  color: var(--p-accent);
+}
+
+.p-sidebar-toggle {
+  display: none;
+  background: transparent;
+  border: 1px solid var(--p-rule);
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+}
+
+@media (min-width: 992px) {
+  .p-sidebar-toggle {
+    display: inline-block;
+  }
+
+  html.p-sidebar-hidden #quarto-sidebar {
+    display: none !important;
+  }
+
+  html.p-sidebar-hidden #quarto-content > main.content {
+    grid-column: page-start / body-content-end;
+  }
+}

@@ -53,29 +53,7 @@ and checks the code.
 | A PML or return-period curve | A severity through the points | `fit_pml_curve` | The curve is the only information on size |
 | A small number of losses | Exposure first, experience as a check, an alpha from outside | `Pareto.fit` (`censored`), `fit_pml_curve` | An alpha fitted to few losses changes much |
 
-## 1. Words you need first
-
-- **Large loss**: a claim above the **reporting threshold** (here 1). The cedant lists each large loss.
-- **As-if**: a historical loss restated to the prospective year. You trend it to the future price level and
-  develop it to ultimate. Then you measure it against the contract that you price (its retention and limit, with
-  any indexation). This guide starts from as-if losses. `LargeLossExperience` and `PreparedLosses` make them
-  (section 2, Preparing raw losses). `prepare` applies currency, development (IBNER) and trend.
-  `burning_cost` applies the index clause.
-- **Burning cost**: the average annual loss that a layer pays on the as-if history. It is the pure premium of
-  the layer from experience.
-- **Pierce**: a loss pierces a layer when it is larger than the attachment. Only the losses that pierce a layer
-  give information about it.
-- **Exposure curve** `G(x)`: the share of the expected loss of a risk below the fraction `x` of its maximum
-  possible loss (**MPL**, the sum insured or policy limit). A loss divided by the MPL is its
-  **destruction rate**. The share of the expected loss of a risk in a layer is
-  `G(top / MPL) - G(attachment / MPL)`.
-- **ILF and LER**: the ILF (increased limits factor) is the limited expected value (LEV) of a severity at a
-  limit, divided by the LEV at a basic limit. The loss elimination ratio is the LEV at a deductible divided by the mean.
-- **Local Pareto alpha**: how fast the number of losses above a threshold decreases as the threshold increases.
-  A higher alpha is a lighter tail.
-- **Working layer**: a layer that losses hit often. A **higher layer** is a layer that losses hit seldom.
-
-## 2. Experience rating
+## 1. Experience rating
 
 ### What it is
 
@@ -197,7 +175,7 @@ The `truncation` argument of `Pareto.fit` and `alpha_between_layers` caps the ta
 
 **Use it when** these conditions are true:
 
-- The layer has sufficient piercing losses for a stable burning cost (section 5 gives a number for this).
+- The layer has sufficient piercing losses for a stable burning cost (section 4 gives a number for this).
 - The portfolio is stable, or you restated it to the portfolio of today.
 - The as-if work is complete: trend, development of open claims, and indexation of retention and limit.
   `PreparedLosses` does those steps (the next subsection), from the rate, pattern and clause that you give it.
@@ -222,7 +200,7 @@ inputs (the next subsection):
 - for an index clause, the index ratios.
 
 The threshold `t` is a modelling choice, and the Pareto must fit above it. Sources can report from different
-thresholds, or policy limits can cap some losses. If so, tell the fit (section 7). Three steps of the as-if work
+thresholds, or policy limits can cap some losses. If so, tell the fit (section 6). Three steps of the as-if work
 are easy to miss:
 
 - **Exposure volume.** The average for each year above assumes a book of the same size each year, as this
@@ -372,7 +350,7 @@ limited reinstatements, gives an error.
 - The proposed side is the as-if layer loss before development by year (1.544 in 2024 against 1.574
   developed), without the index clause.
 
-## 3. Exposure rating: property
+## 2. Exposure rating: property
 
 ### What it is
 
@@ -388,10 +366,10 @@ commission, or one that includes catastrophe years, gives an incorrect value for
 
 Per-risk exposure rating prices a layer that each risk triggers alone. It does not price a catastrophe
 (per-event) layer, where one event hits many risks at the same time. For that layer, use a catastrophe model or
-the PML method of section 6.
+the PML method of section 5.
 
 In prospicio the profile is `RiskProfile` and the curve is `Mbbefd` or `TabulatedCurve`. This example has four
-bands with a 55% loss ratio, and the four layers of section 2.
+bands with a 55% loss ratio, and the four layers of section 1.
 
 ```python
 SUMS_INSURED = [2.0, 5.0, 10.0, 20.0]
@@ -575,7 +553,7 @@ against 0.675 gross.
 
 `TabulatedCurve(x, g)` takes a table of `(x, G(x))` from `(0, 0)` to `(1, 1)`. The table must be concave, and the
 curve interpolates linearly. The table must have small steps near zero, because the mean destruction rate is
-the first chord `x1 / G(x1)`. Its layer shares are piecewise linear approximations (section 4 measures the
+the first chord `x1 / G(x1)`. Its layer shares are piecewise linear approximations (section 3 measures the
 difference).
 
 **Pitfalls**:
@@ -587,7 +565,7 @@ difference).
   that pierce a layer.
 - The sum insured of a band is its MPL. Thus use the MPL when a risk cannot lose its full value.
 
-## 4. Exposure rating: casualty
+## 3. Exposure rating: casualty
 
 ### What it is
 
@@ -704,7 +682,7 @@ Legal cost (ALAE), trend and jurisdiction are choices that you put into the seve
 ground-up severity changes the answer more than any other input (the ILF above is 2.561 or 1.531). Thus run two
 or three severities and report the range.
 
-## 5. Credibility of the experience, layer by layer
+## 4. Credibility of the experience, layer by layer
 
 ### What it is
 
@@ -825,9 +803,9 @@ treaty year. Here its output is the loss ratio that exposure rating needs. Assum
 5 xs 5 at 0.742 against 0.675.
 
 It is not a layer tool, because it needs a panel. The large losses of one cedant are too few to supply it. Thus
-the limited fluctuation weights of section 5 are a usual choice for the weight of the own experience of a layer.
+the limited fluctuation weights of section 4 are a usual choice for the weight of the own experience of a layer.
 
-## 6. Reaching layers above the data
+## 5. Reaching layers above the data
 
 ### What it is
 
@@ -935,15 +913,15 @@ fits:
 - **The tail above the highest reference is an assumption**: the alpha of the unlimited layer, or
   `default_alpha` (here 2.0).
 
-## 7. When data are thin
+## 6. When data are thin
 
 With a small number of large losses, do these steps in this order:
 
 1. **Start from exposure** if there is a profile, and give the range of `c`.
-2. **Use the experience as a check and a small adjustment**, with the credibility of section 5. A low `Z` is a
+2. **Use the experience as a check and a small adjustment**, with the credibility of section 4. A low `Z` is a
    fact about the data.
 3. **Take the alpha from outside the sample.** Use your own benchmark for the line, the lower layers, or the
-   alpha from the exposure curve or tower (section 6).
+   alpha from the exposure curve or tower (section 5).
 4. **Use all the information in the losses.** A loss that a policy limit caps tells you only that it was at
    least that large (`Pareto.fit(..., censored=...)`). Losses reported above different thresholds go in
    `reporting_thresholds`.
@@ -991,3 +969,25 @@ large amount.
 - [`reserving-excess-layers.md`](reserving-excess-layers.md): development factors for an excess layer.
 - `docs/design/pareto.md`, `docs/design/credibility.md` and `docs/design/aggregate.md`: the design of each
   method.
+
+## Appendix: terms
+
+- **Large loss**: a claim above the **reporting threshold** (here 1). The cedant lists each large loss.
+- **As-if**: a historical loss restated to the prospective year. You trend it to the future price level and
+  develop it to ultimate. Then you measure it against the contract that you price (its retention and limit, with
+  any indexation). This guide starts from as-if losses. `LargeLossExperience` and `PreparedLosses` make them
+  (section 1, Preparing raw losses). `prepare` applies currency, development (IBNER) and trend.
+  `burning_cost` applies the index clause.
+- **Burning cost**: the average annual loss that a layer pays on the as-if history. It is the pure premium of
+  the layer from experience.
+- **Pierce**: a loss pierces a layer when it is larger than the attachment. Only the losses that pierce a layer
+  give information about it.
+- **Exposure curve** `G(x)`: the share of the expected loss of a risk below the fraction `x` of its maximum
+  possible loss (**MPL**, the sum insured or policy limit). A loss divided by the MPL is its
+  **destruction rate**. The share of the expected loss of a risk in a layer is
+  `G(top / MPL) - G(attachment / MPL)`.
+- **ILF and LER**: the ILF (increased limits factor) is the limited expected value (LEV) of a severity at a
+  limit, divided by the LEV at a basic limit. The loss elimination ratio is the LEV at a deductible divided by the mean.
+- **Local Pareto alpha**: how fast the number of losses above a threshold decreases as the threshold increases.
+  A higher alpha is a lighter tail.
+- **Working layer**: a layer that losses hit often. A **higher layer** is a layer that losses hit seldom.
