@@ -334,6 +334,10 @@ labelled in `companies`, with their premiums; chain its summary into
 | `PRO.PRC.GLM(data, response, terms, [family], [link], [exposure], [weights], [p])` | A GLM on a table: coefficients with SEs, and fit statistics |
 | `PRO.PRC.GLM.PREDICT(data, response, terms, newdata, ...)` | The fitted mean on each new row |
 | `PRO.PRC.GLM.RELATIVITIES(data, response, terms, ..., [level])` | Relativities of a log-link GLM, with confidence intervals |
+| `PRO.PRC.COUNTS(data, response, terms, [model], [count], [zero_terms], [zero_link], [exposure], [weights])` | A zero-inflated or hurdle Poisson or negative binomial model: both parts' coefficients, theta, AIC, BIC and Vuong's test |
+| `PRO.PRC.COUNTS.PREDICT(data, response, terms, newdata, ..., [output], [max_count])` | Each new row's mean, P(0), or probabilities of 0 to `max_count` |
+| `PRO.PRC.QUANTREG(data, response, terms, tau, [method], [weights], [bandwidth])` | Linear quantile (quantreg's `rq`) or expectile regression at one or more tau |
+| `PRO.PRC.QUANTREG.PREDICT(data, response, terms, tau, newdata, ..., [rearrange])` | Each new row's fitted quantiles or expectiles, a column per tau |
 
 - Dates (`effective`, `from`, `to`, `times`) are Excel dates or year
   fractions (`2011.5` is 1 July 2011). A period is `[from, to)`, so
@@ -347,6 +351,16 @@ labelled in `companies`, with their premiums; chain its summary into
   `"unbiased"` (default) or `"iterative"`.
 - The GLM functions are for modest tables. Fit rating plans on full
   policy data in Python or R.
+- `PRO.PRC.COUNTS`: `model` is `"zero_inflated"` (default) or
+  `"hurdle"`, `count` `"poisson"` (default) or `"negative_binomial"`.
+  `zero_terms` defaults to `terms`; `1` gives the zero part an intercept
+  alone. A hurdle's zero part models P(count > 0), as pscl's. Vuong's
+  test compares with the plain GLM on `terms`; a positive statistic
+  favours the two-part model.
+- `PRO.PRC.QUANTREG`: `tau` is one value or a row of them, each tau two
+  columns (estimate and SE). `method` `"expectile"` fits asymmetric least
+  squares; `bandwidth` (`"hall_sheather"` or `"bofinger"`) is for
+  quantiles only.
 
 ### Treaty terms, the quote and the payout
 

@@ -1482,6 +1482,66 @@ gl.column_dimensions["F"].width = 24
 for col in "GHIJKLNOPQR":
     gl.column_dimensions[col].width = 13
 
+# Zero-inflated and hurdle counts on pscl's biochemists, and quantile and
+# expectile regression on Engel's food expenditure (decision 55), against
+# validation/reference/zero_counts_pscl.csv and quantile_expectile_r.csv.
+zq = wb.create_sheet("Counts and quantiles")
+zq["A1"] = "prospicio XLL test: zero-inflated and hurdle counts, quantile and expectile regression (PRO.PRC.COUNTS, .QUANTREG)"; zq["A1"].font = Font(bold=True, size=13)
+zq["A2"] = "915 biochemists (pscl's bioChemists) in A:F; Engel's 235 households in H:I."; zq["A2"].font = note
+with open(REF / "data" / "biochemists.csv") as f:
+    bio = list(csv.reader(f))
+for r, row in enumerate(bio):
+    for c, v in enumerate(row):
+        cell = zq.cell(row=3 + r, column=1 + c, value=v if r == 0 else float(v))
+        if r == 0:
+            cell.font = bold
+        else:
+            cell.fill = inp
+BIO = f"$A$3:$F${2 + len(bio)}"
+with open(REF / "data" / "engel.csv") as f:
+    engel = list(csv.reader(f))
+for r, row in enumerate(engel):
+    for c, v in enumerate(row):
+        cell = zq.cell(row=3 + r, column=8 + c, value=v if r == 0 else float(v))
+        if r == 0:
+            cell.font = bold
+        else:
+            cell.fill = inp
+ENGEL = f"$H$3:$I${2 + len(engel)}"
+TERMS = '{"fem","mar","kid5","phd","ment"}'
+zq["K3"] = "Zero-inflated negative binomial"; zq["K3"].font = bold
+zq["K4"] = ArrayFormula("K4:R29", f'=PRO.PRC.COUNTS({BIO},"art",{TERMS},,"negative_binomial")')
+zq["T3"] = "Hurdle negative binomial, zero part on kid5 and ment, cloglog"; zq["T3"].font = bold
+zq["T4"] = ArrayFormula("T4:AA26", f'=PRO.PRC.COUNTS({BIO},"art",{TERMS},"hurdle","negative_binomial",{{"kid5","ment"}},"cloglog")')
+zq["K33"] = "P(0) to P(4) of the first five biochemists, ZINB"; zq["K33"].font = bold
+zq["K34"] = ArrayFormula("K34:O39", f'=PRO.PRC.COUNTS.PREDICT({BIO},"art",{TERMS},$A$3:$F$8,,"negative_binomial",,,,,"probabilities",4)')
+zq["K42"] = "Engel: quantiles 0.1, 0.5, 0.9"; zq["K42"].font = bold
+zq["K43"] = ArrayFormula("K43:R49", f'=PRO.PRC.QUANTREG({ENGEL},"foodexp","income",{{0.1,0.5,0.9}})')
+zq["T42"] = "Engel: expectiles 0.1, 0.5, 0.9"; zq["T42"].font = bold
+zq["T43"] = ArrayFormula("T43:AA48", f'=PRO.PRC.QUANTREG({ENGEL},"foodexp","income",{{0.1,0.5,0.9}},"expectile")')
+zq["K51"] = "Fitted quantiles of the first five households, rearranged"; zq["K51"].font = bold
+zq["K52"] = ArrayFormula("K52:M56", f'=PRO.PRC.QUANTREG.PREDICT({ENGEL},"foodexp","income",{{0.9,0.1,0.5}},$H$3:$I$8,,,,TRUE)')
+zq["K59"] = "Checks against R"; zq["K59"].font = bold
+def ref_rows(name):
+    with open(REF / "reference" / name) as f:
+        return [r for r in csv.DictReader(l for l in f if not l.startswith("#"))]
+pscl = {(r["case"], r["quantity"], r["arg"]): float(r["expected"]) for r in ref_rows("zero_counts_pscl.csv")}
+qr = {(r["case"], r["quantity"], r["arg"]): float(r["expected"]) for r in ref_rows("quantile_expectile_r.csv")}
+checks = [
+    ("ZINB count fem (pscl)", "N6", pscl[("bio_zinb", "coef", "count_fem")]),
+    ("ZINB theta (pscl)", 'INDEX(L4:L29,MATCH("Theta",K4:K29,0))', pscl[("bio_zinb", "theta", "")]),
+    ("ZINB log-likelihood (pscl)", 'INDEX(L4:L29,MATCH("Log-likelihood",K4:K29,0))', pscl[("bio_zinb", "loglik", "")]),
+    ("Hurdle zero ment (pscl)", "W13", pscl[("bio_hnb_cloglog", "coef", "zero_ment")]),
+    ("Quantile 0.9 income (quantreg)", "Q45", qr[("engel_0.9", "coef", "income")]),
+    ("Quantile 0.9 income SE (quantreg)", "R45", qr[("engel_0.9", "se", "income")]),
+    ("Expectile 0.5 income (expectreg)", "X45", qr[("engel_0.5", "ecoef", "income")]),
+]
+for i, (label, cell, want) in enumerate(checks):
+    row = 60 + i
+    zq[f"K{row}"] = label; zq[f"L{row}"] = f"={cell}"; zq[f"M{row}"] = want
+    zq[f"N{row}"] = f"=ABS(L{row}-M{row})<1e-6*MAX(1,ABS(M{row}))"
+zq.column_dimensions["K"].width = 30
+
 # A collateralised deal through PRO.CAP.CASHFLOW.
 cf = wb.create_sheet("Cash flows")
 cf["A1"] = "prospicio XLL test: a collateralised deal's cash flows (PRO.CAP.CASHFLOW)"; cf["A1"].font = Font(bold=True, size=13)

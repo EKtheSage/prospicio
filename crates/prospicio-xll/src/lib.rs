@@ -40,6 +40,7 @@ pub mod pnl;
 pub mod pricing;
 pub mod quote;
 pub mod ratemaking;
+pub mod regression;
 pub mod reserving;
 pub mod sheet;
 pub mod terms;
@@ -474,6 +475,38 @@ const PROBABILITY: Arg = Arg {
     help: "Probability or probabilities, between 0 and 1: a number or a range",
 };
 
+const COUNTS_RESPONSE: Arg = Arg {
+    name: "response",
+    help: "The name of the column of counts, whole numbers from 0",
+};
+const COUNTS_MODEL: Arg = Arg {
+    name: "model",
+    help: "\"zero_inflated\" (default) or \"hurdle\"",
+};
+const COUNTS_COUNT: Arg = Arg {
+    name: "count",
+    help: "The count part: \"poisson\" (default) or \"negative_binomial\" (theta estimated)",
+};
+const COUNTS_ZERO_TERMS: Arg = Arg {
+    name: "zero_terms",
+    help: "The zero part's predictors as terms reads them; the count part's if omitted, 1 for an intercept alone",
+};
+const COUNTS_ZERO_LINK: Arg = Arg {
+    name: "zero_link",
+    help: "The zero part's link: \"logit\" (default), \"probit\" or \"cloglog\"",
+};
+const QUANTREG_TAU: Arg = Arg {
+    name: "tau",
+    help: "The quantile or expectile, such as 0.9, or a row or column of them",
+};
+const QUANTREG_METHOD: Arg = Arg {
+    name: "method",
+    help: "\"quantile\" (default; quantreg's rq) or \"expectile\" (asymmetric least squares)",
+};
+const QUANTREG_BANDWIDTH: Arg = Arg {
+    name: "bandwidth",
+    help: "The quantile's kernel standard errors' bandwidth: \"hall_sheather\" (default) or \"bofinger\"",
+};
 const GLM_DATA: Arg = Arg {
     name: "data",
     help: "The table: a header row of column names, then one row per observation; text columns are factors",
@@ -3202,6 +3235,90 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: glm::relativities,
+    },
+    Function {
+        symbol: "pro_prc_counts",
+        name: "PRO.PRC.COUNTS",
+        help: "A zero-inflated or hurdle Poisson or negative binomial model fitted to a table of counts: each part's coefficients with SE, z and p-value, then theta, log-likelihood, AIC and BIC.",
+        args: &[
+            GLM_DATA,
+            COUNTS_RESPONSE,
+            GLM_TERMS,
+            COUNTS_MODEL,
+            COUNTS_COUNT,
+            COUNTS_ZERO_TERMS,
+            COUNTS_ZERO_LINK,
+            GLM_EXPOSURE,
+            GLM_WEIGHTS,
+        ],
+        run: regression::two_part,
+    },
+    Function {
+        symbol: "pro_prc_counts_predict",
+        name: "PRO.PRC.COUNTS.PREDICT",
+        help: "Each row of newdata's expected count, probability of a zero, or probabilities of 0 to max_count under a zero-inflated or hurdle model fitted to data.",
+        args: &[
+            GLM_DATA,
+            COUNTS_RESPONSE,
+            GLM_TERMS,
+            Arg {
+                name: "newdata",
+                help: "The rows to predict: a header row with the same column names (the exposure's too, when one is named), then one row each",
+            },
+            COUNTS_MODEL,
+            COUNTS_COUNT,
+            COUNTS_ZERO_TERMS,
+            COUNTS_ZERO_LINK,
+            GLM_EXPOSURE,
+            GLM_WEIGHTS,
+            Arg {
+                name: "output",
+                help: "\"mean\" (default), \"zero\" for P(0), or \"probabilities\" for P(0) to P(max_count) under a header of the counts",
+            },
+            Arg {
+                name: "max_count",
+                help: "The largest count whose probability \"probabilities\" gives, 10 if omitted",
+            },
+        ],
+        run: regression::two_part_predict,
+    },
+    Function {
+        symbol: "pro_prc_quantreg",
+        name: "PRO.PRC.QUANTREG",
+        help: "A linear quantile or expectile regression fitted to a table at one or more tau: each coefficient's estimate and SE per tau, then the objective and iterations.",
+        args: &[
+            GLM_DATA,
+            GLM_RESPONSE,
+            GLM_TERMS,
+            QUANTREG_TAU,
+            QUANTREG_METHOD,
+            GLM_WEIGHTS,
+            QUANTREG_BANDWIDTH,
+        ],
+        run: regression::linear,
+    },
+    Function {
+        symbol: "pro_prc_quantreg_predict",
+        name: "PRO.PRC.QUANTREG.PREDICT",
+        help: "Each row of newdata's fitted quantile or expectile, a column per tau, under a linear quantile or expectile regression fitted to data.",
+        args: &[
+            GLM_DATA,
+            GLM_RESPONSE,
+            GLM_TERMS,
+            QUANTREG_TAU,
+            Arg {
+                name: "newdata",
+                help: "The rows to predict: a header row with the same column names, then one row each",
+            },
+            QUANTREG_METHOD,
+            GLM_WEIGHTS,
+            QUANTREG_BANDWIDTH,
+            Arg {
+                name: "rearrange",
+                help: "TRUE to sort the taus and each row's values so the quantiles do not cross; FALSE if omitted",
+            },
+        ],
+        run: regression::linear_predict,
     },
     Function {
         symbol: "pro_cap_cashflow",

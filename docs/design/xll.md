@@ -1394,6 +1394,37 @@ real Excel.
       pattern prior, the industry prior on a generated panel of twelve
       companies, at an age and with the process variance subtracted).
 
+55. **Zero-inflated and hurdle counts, quantile and expectile regression**
+    (#742 batch 3; #548 and #550, `models.md`). Beside `PRO.PRC.GLM`,
+    on the same table arguments (decision 41), refitted on every call.
+    `PRO.PRC.COUNTS` is `ZeroInflated` or `Hurdle` (`model`), Poisson or
+    negative binomial (`count`), with the zero part's own predictors
+    (`zero_terms`: the count part's if omitted, `1` for an intercept
+    alone, as pscl's `y ~ x | 1`) and link (logit, probit, cloglog), the
+    exposure an offset on the count part: each part's coefficients with
+    SE, z and p-value, then theta, the log-likelihood, AIC and BIC, and
+    Vuong's test against the plain Poisson or negative binomial GLM on
+    the count terms (raw, AIC- and BIC-corrected, pscl's `vuong`), left
+    out with prior weights, which the test ignores.
+    `PRO.PRC.COUNTS.PREDICT` gives each new row's mean, P(0), or the
+    probabilities of 0 to `max_count`. `PRO.PRC.QUANTREG` is
+    `QuantileRegression` (`method` `"quantile"`, quantreg's `rq` with
+    kernel standard errors under Hall and Sheather's or Bofinger's
+    bandwidth) or `ExpectileRegression` (`"expectile"`), at one or more
+    `tau` side by side; `PRO.PRC.QUANTREG.PREDICT` gives a column per
+    tau, `rearrange` sorting them so the quantiles do not cross.
+    - **Left out**: the P-spline expectile (it needs a GAM's basis and
+      penalty, which a sheet does not build), the bootstrap covariance of
+      quantile regression, and the two-part model's predictive draws.
+    - **Parity.** `tests/regression.rs`: every value of
+      `validation/reference/zero_counts_pscl.csv` (pscl 1.5.9 on the
+      biochemists and a seeded loss book: coefficients, SEs, theta,
+      log-likelihood, AIC, BIC, means, P(0), probabilities and Vuong's
+      statistics; 545 values) and of `quantile_expectile_r.csv` (quantreg
+      5.97 and expectreg 0.54 on Engel's data and a weighted book) but the
+      P-spline cases, read off the sheet functions to the reference's own
+      tolerances.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and
@@ -1456,9 +1487,9 @@ order, one small PR each, those already done struck through:
     selection of ultimates~~ (decision 51), ~~the methods on claim counts and
     Berquist-Sherman~~ (decision 52), ~~salvage and subrogation, ALAE and
     ULAE~~ (decision 53); then ~~the Bayesian additions (a new year's loss
-    ratio, the industry prior)~~ (decision 54), the
+    ratio, the industry prior)~~ (decision 54), ~~the
     0.0.8 Models fits (zero-inflated and hurdle counts, quantile and
-    expectile regression), and what a coverage check finds.
+    expectile regression)~~ (decision 55), and what a coverage check finds.
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),

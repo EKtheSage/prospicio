@@ -258,7 +258,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and thirty-three functions registered", registered == 133);
+    check("one hundred and thirty-seven functions registered", registered == 137);
     check("nine of them asynchronous (xll.md, decision 48)", async_registered == 9);
     check("no old name is exported (xll.md, decision 47)", GetProcAddress(xll, "pro_mack") == NULL);
 
@@ -1090,6 +1090,15 @@ int main(int argc, char **argv) {
                                                       gl_rel->val.array.rows == 4 &&
                                                       gl_rel->val.array.lparray[2 * 5 + 2].val.num == 1);
     free12(gl_rel);
+    /* The median regression of claims on age (PRO.PRC.QUANTREG): an
+     * estimate and an SE per coefficient at tau 0.5. */
+    XLOPER12 qr_tau = {.xltype = xltypeNum}, qr_age = gl_cells[0];
+    qr_tau.val.num = 0.5;
+    XLOPER12 *qr_fit = ((Fn7)GetProcAddress(xll, "pro_prc_quantreg"))(&gl_data, &gl_resp, &qr_age, &qr_tau,
+                                                                     &missing, &missing, &missing);
+    print_result("PRO.PRC.QUANTREG(table, \"claims\", \"age\", 0.5)", qr_fit);
+    check("PRO.PRC.QUANTREG has four columns", (qr_fit->xltype & 0xFFF) == xltypeMulti && qr_fit->val.array.columns == 4);
+    free12(qr_fit);
 
     /* A three-month deal through PRO.CAP.CASHFLOW: premium 100 at once, earned
      * and paid evenly, collateral the reserve, commuting at the
