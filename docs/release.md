@@ -131,10 +131,15 @@ survival models stay parked. #599's pooling structure is the recommended one
 | Models | #577 (tabular networks with categorical embeddings and multi-task heads) | |
 | Excel | parity with the Python and R bindings in batches (#742) | |
 | Guides | Done: #730 (an industry prior from a user-fetched Schedule P line, replacing the ILS notebook's hard-coded prior) | `[guides-current-next]` for the methods 0.0.8 added |
-| Shared | #576 (a WASM JavaScript package; its npm name is the user's), #579 (one large file split per PR) | |
+| Shared | #579 (one large file split per PR) | |
 
 Probability has no open item. Parked: #553 (IFRS 17, `P4`), claim-level
-reserving and the survival models.
+reserving, the survival models and #576 (the WASM JavaScript package; the
+user's decision of 2026-11-07: the XLL already reaches Excel users, and a
+browser package needs more enterprise work to deploy, such as security
+review and user groups on Azure; no future release requires it). The crates
+stay WASM-compatible: the `wasm32-unknown-unknown` check in `AGENTS.md` is
+unchanged.
 
 **0.1.0** (the user's decision of 2026-11-07, planned; the release after
 0.0.9): parity with Python `aggregate` 2.1.0 (released 2026-11-07), except
