@@ -149,7 +149,8 @@ The `...` is the chain ladder's options: `[average], [tail], [origins],
 | `PRO.RES.RATIO(numerator, denominator, ultimate_claims, [average], [tail], [selected], [kind], [factors], [ultimate_ratios], [origins], [output])` | Friedland's ratio approach for salvage and subrogation or ALAE: the ratio developed to ultimate (multiplicative or additive) and applied to ultimate claims |
 | `PRO.RES.ULAE(paid_ulae, paid, case_outstanding, ibnr, [technique], [ratio], [weights], [reported], [closed], [pure_ibnr], [unclosed], [ultimate], [output])` | Unpaid ULAE by the classical technique, Kittel's refinement or Conger and Nolibos' generalized approach |
 | `PRO.RES.BAYES.ODP(triangle, [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins])` | Bayesian ODP chain ladder by MCMC: reserves, posterior or diagnostics |
-| `PRO.RES.BAYES.BF(triangle, exposure, apriori, [cv], [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins], [common_cv])` | Bayesian Bornhuetter–Ferguson by MCMC: reserves, ultimates, posterior or diagnostics |
+| `PRO.RES.BAYES.BF(triangle, exposure, apriori, [cv], [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins], [common_cv], [new_premium], [pattern_mean], [pattern_sd])` | Bayesian Bornhuetter–Ferguson by MCMC: reserves, ultimates, posterior, diagnostics or a new year's loss ratio |
+| `PRO.RES.INDUSTRY.PRIOR(triangles, companies, premiums, [min_developed], [subtract_process], [age], [output])` | The industry prior from several companies' triangles: the apriori and its CVs, the pattern's mean and SD by age, or a report |
 
 ### A latest diagonal (bordereau)
 
@@ -256,7 +257,14 @@ the first. In `PRO.RES.BAYES.BF`, each origin's ultimate has a gamma prior
 with mean `apriori × exposure` and CV `cv` (default 0.1). A small `cv`
 approaches `PRO.RES.BF`, and `"flat"` gives `PRO.RES.BAYES.ODP`. `common_cv` adds
 a shared error in the a priori loss ratio. The last eight fits are kept,
-so the different outputs of one fit sample only once.
+so the different outputs of one fit sample only once. `output`
+`"new_year"` with `new_premium` gives the next origin's loss ratio and
+ultimate. `pattern_mean` and `pattern_sd` put a prior on the percents
+developed, one per column with the first blank. `PRO.RES.INDUSTRY.PRIOR`
+takes the companies' triangles stacked, each company's rows together and
+labelled in `companies`, with their premiums; chain its summary into
+`apriori`, `cv` and `common_cv`, and its pattern's percents developed into
+`pattern_mean` and `pattern_sd`.
 
 ## Pricing (`PRO.PRC.`)
 

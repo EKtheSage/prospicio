@@ -122,6 +122,7 @@ const ADDED_AFTER_THE_RENAME: &[&str] = &[
     "PRO.RES.BS",
     "PRO.RES.RATIO",
     "PRO.RES.ULAE",
+    "PRO.RES.INDUSTRY.PRIOR",
 ];
 
 /// The table of old and new names in `docs/design/xll.md` (decision 47),

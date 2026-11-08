@@ -2452,7 +2452,7 @@ pub static FUNCTIONS: &[Function] = &[
             },
             Arg {
                 name: "output",
-                help: "\"reserves\" (default), \"ultimates\" (prior and posterior), \"params\" (posterior with R-hat and ESS) or \"diagnostics\"",
+                help: "\"reserves\" (default), \"ultimates\", \"params\", \"diagnostics\" or \"new_year\" (a new year's predictive loss ratio and ultimate)",
             },
             Arg {
                 name: "draws",
@@ -2475,8 +2475,56 @@ pub static FUNCTIONS: &[Function] = &[
                 name: "common_cv",
                 help: "CV of one multiplier common to all origins' prior ultimates (omitted for none); needs a numeric cv",
             },
+            Arg {
+                name: "new_premium",
+                help: "The premium of a new underwriting year, for output \"new_year\" (its predictive loss ratio and ultimate)",
+            },
+            Arg {
+                name: "pattern_mean",
+                help: "Prior mean of the log share ratio to the first age, one cell per triangle column (first blank): PRO.RES.INDUSTRY.PRIOR's pattern",
+            },
+            Arg {
+                name: "pattern_sd",
+                help: "Its prior SD, as pattern_mean; with both, prior_sd is unused",
+            },
         ],
         run: bayes::bayes_bf,
+    },
+    Function {
+        symbol: "pro_res_industry_prior",
+        name: "PRO.RES.INDUSTRY.PRIOR",
+        help: "An industry prior for PRO.RES.BAYES.BF from other companies' triangles: the mean loss ratio, its CVs between and within companies, and a pattern prior.",
+        args: &[
+            Arg {
+                name: "triangles",
+                help: "The companies' cumulative triangles stacked: a row per origin, each company's rows together, oldest first",
+            },
+            Arg {
+                name: "companies",
+                help: "A company label per row of triangles",
+            },
+            Arg {
+                name: "premiums",
+                help: "The premium of each row's origin",
+            },
+            Arg {
+                name: "min_developed",
+                help: "Smallest share developed, by the industry pattern, for an origin's loss ratio to count (0.5 if omitted)",
+            },
+            Arg {
+                name: "subtract_process",
+                help: "TRUE: the CV less each company's ODP process error; FALSE (default): the realised spread",
+            },
+            Arg {
+                name: "age",
+                help: "The prior for a triangle that stops at this age (months): loss ratio and pattern to it; omitted for ultimate",
+            },
+            Arg {
+                name: "output",
+                help: "\"summary\" (default: apriori, CV, common CV, ...), \"pattern\" (prior by age) or \"report\" (exclusions, warnings)",
+            },
+        ],
+        run: bayes::industry_prior,
     },
     Function {
         symbol: "pro_sev_fit",

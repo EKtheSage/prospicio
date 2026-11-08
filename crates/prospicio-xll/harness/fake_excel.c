@@ -82,6 +82,7 @@ typedef void (*AFn7)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
 typedef void (*AFn8)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef void (*AFn9)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef void (*AFn10)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
+typedef void (*AFn17)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef void (*AFn14)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 
 static int registered = 0, async_registered = 0, failures = 0;
@@ -257,7 +258,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and thirty-two functions registered", registered == 132);
+    check("one hundred and thirty-three functions registered", registered == 133);
     check("nine of them asynchronous (xll.md, decision 48)", async_registered == 9);
     check("no old name is exported (xll.md, decision 47)", GetProcAddress(xll, "pro_mack") == NULL);
 
@@ -826,9 +827,9 @@ int main(int argc, char **argv) {
     bf_prem.val.array.columns = 1;
     bf_lr.xltype = xltypeNum;
     bf_lr.val.num = 0.6;
-    ((AFn14)GetProcAddress(xll, "pro_res_bayes_bf"))(&tri, &bf_prem, &bf_lr, &missing, &diag, &missing, &missing,
+    ((AFn17)GetProcAddress(xll, "pro_res_bayes_bf"))(&tri, &bf_prem, &bf_lr, &missing, &diag, &missing, &missing,
                                                       &missing, &missing, &missing, &missing, &missing, &missing,
-                                                      &missing, new_handle());
+                                                      &missing, &missing, &missing, &missing, new_handle());
     XLOPER12 *bb = await_async();
     if (!bb) return 1;
     int bb_ok = (bb->xltype & 0xFFF) == xltypeMulti && bb->val.array.columns == 2 &&

@@ -11,6 +11,7 @@ which is how Excel itself saves a spilling formula.
 """
 
 import csv
+import math
 import datetime
 import re
 import sys
@@ -1206,6 +1207,50 @@ for row in by.iter_rows(min_row=51, max_row=61, min_col=5, max_col=9):
 for row in by.iter_rows(min_row=65, max_row=75, min_col=2, max_col=9):
     for c in row:
         c.number_format = "0.000" if c.column == 5 else "#,##0"
+# A new underwriting year from the Bayesian BF (decision 54), and an
+# industry prior from a panel of companies chained into it.
+by["A78"] = "A new underwriting year at a premium of 12,000,000 (output \"new_year\")"; by["A78"].font = bold
+by["A79"] = ArrayFormula("A79:G81", "=PRO.RES.BAYES.BF(" + bfargs.format(out='"new_year"') + ",,12000000)")
+by["I79"] = "Mean LR within 0.5 of the prior"; by["I80"] = "=ABS(B80-'Expected loss'!$O$3)<0.5"
+
+ip = wb.create_sheet("Industry prior")
+ip["A1"] = "prospicio XLL test: an industry prior from twelve companies, chained into the Bayesian BF on GenIns"; ip["A1"].font = Font(bold=True, size=13)
+ip["A2"] = "The companies are made up (patterns and loss ratios that differ by company); stack Schedule P triangles the same way."
+ip["A2"].font = note
+for h, col in zip(["Company", "Premium"], "AB"):
+    ip[f"{col}4"] = h; ip[f"{col}4"].font = bold
+for d in range(10):
+    ip.cell(row=4, column=3 + d, value=12 * (d + 1)).font = bold
+base = [0.30, 0.20, 0.14, 0.10, 0.08, 0.06, 0.05, 0.04, 0.02, 0.01]
+r = 5
+for c in range(12):
+    shift = 0.15 * math.sin(c * 1.7)
+    shares = [s * math.exp(shift * d / 9) for d, s in enumerate(base)]
+    total = sum(shares)
+    lr = 0.7 * (1 + 0.12 * math.cos(c * 2.3))
+    premium = 5_000_000 + 400_000 * c
+    for o in range(10):
+        ult = premium * lr * (1 + 0.08 * math.sin(o + 3 * c))
+        ip.cell(row=r, column=1, value=f"Co {c + 1}").fill = inp
+        ip.cell(row=r, column=2, value=premium).fill = inp
+        cum = 0
+        for d in range(10 - o):
+            cum += ult * shares[d] / total
+            ip.cell(row=r, column=3 + d, value=round(cum)).fill = inp
+        r += 1
+last = r - 1
+PT, PC, PP = f"$C$5:$L${last}", f"$A$5:$A${last}", f"$B$5:$B${last}"
+ip["N4"] = "Industry prior (PRO.RES.INDUSTRY.PRIOR)"; ip["N4"].font = bold
+ip["N5"] = ArrayFormula("N5:O15", f"=PRO.RES.INDUSTRY.PRIOR({PT},{PC},{PP})")
+ip["Q4"] = "Its pattern prior"; ip["Q4"].font = bold
+ip["Q5"] = ArrayFormula("Q5:U15", f'=PRO.RES.INDUSTRY.PRIOR({PT},{PC},{PP},,,,"pattern")')
+ip["N18"] = "The Bayesian BF on GenIns under it (apriori, CV, common CV and pattern chained)"; ip["N18"].font = bold
+chained = (EG + "," + EP + ",$O$5,$O$7,{out},500,4,1,2000,,,," + EO + ",$O$8,,TRANSPOSE($R$7:$R$15),TRANSPOSE($S$7:$S$15)")
+ip["N19"] = ArrayFormula("N19:O26", "=PRO.RES.BAYES.BF(" + chained.format(out='"diagnostics"') + ")")
+ip["N28"] = "Check"; ip["N28"].font = bold
+ip["N29"] = "Twelve companies used"; ip["O29"] = "=O14=12"
+ip["N30"] = "R-hat under 1.01"; ip["O30"] = "=O19<1.01"
+ip.column_dimensions["N"].width = 22
 # The twelve functions the sheets above leave out, each beside a check.
 ly["A70"] = "Distribution and survival functions (lognormal mean 50,000, CV 3)"; ly["A70"].font = bold
 for h, col in zip(["x", "CDF", "Survival", "Sum is 1"], "ABCD"):
