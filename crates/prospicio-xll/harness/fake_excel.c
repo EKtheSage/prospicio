@@ -59,6 +59,9 @@ typedef XLOPER12 *(*Fn15)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER
 typedef XLOPER12 *(*Fn14)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                            XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                            XLOPER12 *, XLOPER12 *);
+typedef XLOPER12 *(*Fn13)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                          XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                          XLOPER12 *);
 typedef XLOPER12 *(*Fn11)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                            XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn10)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
@@ -254,7 +257,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and thirty functions registered", registered == 130);
+    check("one hundred and thirty-two functions registered", registered == 132);
     check("nine of them asynchronous (xll.md, decision 48)", async_registered == 9);
     check("no old name is exported (xll.md, decision 47)", GetProcAddress(xll, "pro_mack") == NULL);
 
@@ -580,6 +583,23 @@ int main(int argc, char **argv) {
           (tb->xltype & 0xFFF) == xltypeMulti && tb->val.array.rows == 12 && tb->val.array.columns == 4 &&
               fabs(tb->val.array.lparray[1 * 4 + 1].val.num - 0.027390486681106774) < 1e-12);
     free12(tb);
+
+    /* Unpaid ULAE (xll.md, decision 53): the classical technique, 5% on
+     * half of a case outstanding of 100 and all of an IBNR of 50 is 5. */
+    XLOPER12 u_paid_ulae, u_paid, u_case, u_ibnr, u_ratio;
+    u_paid_ulae.xltype = u_paid.xltype = u_case.xltype = u_ibnr.xltype = u_ratio.xltype = xltypeNum;
+    u_paid_ulae.val.num = 1.0;
+    u_paid.val.num = 20.0;
+    u_case.val.num = 100.0;
+    u_ibnr.val.num = 50.0;
+    u_ratio.val.num = 0.05;
+    XLOPER12 *ul = ((Fn13)GetProcAddress(xll, "pro_res_ulae"))(&u_paid_ulae, &u_paid, &u_case, &u_ibnr, &missing,
+                                                              &u_ratio, &missing, &missing, &missing, &missing,
+                                                              &missing, &missing, &missing);
+    check("PRO.RES.ULAE classical: 5% of half the case and all the IBNR is 5",
+          (ul->xltype & 0xFFF) == xltypeMulti && ul->val.array.rows == 3 && ul->val.array.columns == 2 &&
+              fabs(ul->val.array.lparray[2 * 2 + 1].val.num - 5.0) < 1e-12);
+    free12(ul);
 
     /* Development curves (xll.md, decision 50): the exponential on RAA,
      * R's R-squared 0.8499 and tail 1.00944 (lm on log(f - 1)). */

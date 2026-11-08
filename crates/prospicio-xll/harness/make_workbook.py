@@ -656,6 +656,65 @@ cc.column_dimensions["U"].width = 36
 for col in "ABCDEFGHIJKLMNOPQRST":
     cc.column_dimensions[col].width = 12
 
+# Recoveries, ALAE and ULAE (decision 53): Friedland, chapters 14 and 17.
+rx = wb.create_sheet("Recoveries and ULAE")
+rx["A1"] = "prospicio XLL test: salvage and subrogation by the ratio approach, and unpaid ULAE (Friedland, chapters 14 and 17)"; rx["A1"].font = Font(bold=True, size=13)
+rx["A2"] = "Ultimate claims are the mean of the reported and paid chain ladders on the book's printed factors to ultimate."
+rx["A2"].font = note
+pd_rows = {}
+with open(Path(__file__).resolve().parents[3] / "validation" / "data" / "friedland_auto_physical_damage.csv", newline="") as f:
+    for r in csv.DictReader(f):
+        pd_rows.setdefault(int(r["origin"]), []).append({k: float(v) for k, v in r.items()})
+def pd_block(column, top, left, title):
+    rx.cell(row=top - 1, column=left, value=title).font = bold
+    for i, (year, cells) in enumerate(sorted(pd_rows.items())):
+        rx.cell(row=top + i, column=left, value=year).font = bold
+        for c, x in enumerate(cells):
+            rx.cell(row=top + i, column=left + 1 + c, value=x[column]).fill = inp
+pd_block("received_ss", 5, 1, "Received salvage and subrogation")
+pd_block("paid", 5, 14, "Paid claims")
+pd_block("reported", 19, 1, "Reported claims")
+SS, PDP, PDR, PDO = "$B$5:$L$15", "$O$5:$Y$15", "$B$19:$L$29", "$A$5:$A$15"
+rx["A31"] = "Factors to ultimate (printed)"; rx["A31"].font = bold
+for k, (a, b, c) in enumerate(zip([1.115, 1.001, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                                  [1.279, 1.005, 1.001, 1, 1, 1, 1, 1, 1, 1, 1],
+                                  [1.499, 1.009, 1, 1, 1, 1, 1, 1, 1, 1, 1])):
+    for r, v in ((32, a), (33, b), (34, c)):
+        rx.cell(row=r, column=2 + k, value=v).fill = inp
+rx["A32"] = "Reported"; rx["A33"] = "Paid"; rx["A34"] = "S&S ratio"
+rx["A36"] = "Claims"; rx["B36"] = "Reported CL"; rx["C36"] = "Paid CL"; rx["D36"] = "Selected"; rx["E36"] = "Ratio"
+for c in "ABCDE":
+    rx[f"{c}36"].font = bold
+rx["B37"] = ArrayFormula("B37:B47", f'=PRO.RES.CL.ULTIMATE({PDR},,,$B$32:$L$32,"cdf")')
+rx["C37"] = ArrayFormula("C37:C47", f'=PRO.RES.CL.ULTIMATE({PDP},,,$B$33:$L$33,"cdf")')
+for i in range(11):
+    rx[f"A{37 + i}"] = f"=A{5 + i}"
+    rx[f"D{37 + i}"] = f"=(B{37 + i}+C{37 + i})/2"
+rx["E47"] = 0.345; rx["E47"].fill = inp
+rx["G36"] = "Ratio approach (PRO.RES.RATIO)"; rx["G36"].font = bold
+rx["G37"] = ArrayFormula("G37:N49", f'=PRO.RES.RATIO({SS},{PDP},D37:D47,,,$B$34:$L$34,"cdf",,E37:E47,{PDO})')
+rx["A52"] = "XYZ Insurer ULAE by calendar year"; rx["A52"].font = bold
+for k, (m, p) in enumerate(zip([14.352e6, 15.321e6, 16.870e6, 17.112e6, 17.331e6], [333e6, 358e6, 334e6, 347e6, 391e6])):
+    rx.cell(row=53, column=2 + k, value=m).fill = inp
+    rx.cell(row=54, column=2 + k, value=p).fill = inp
+rx["A53"] = "Paid ULAE"; rx["A54"] = "Paid claims"
+rx["A56"] = "Classical technique at 4.5% (PRO.RES.ULAE)"; rx["A56"].font = bold
+rx["A57"] = ArrayFormula("A57:B59", "=PRO.RES.ULAE(B53:F53,B54:F54,603000000,316000000,,0.045)")
+rx["P52"] = "Check against Friedland"; rx["P52"].font = bold
+for h, col in zip(["Check", "prospicio", "Expected", "Match"], "PQRS"):
+    rx[f"{col}53"] = h; rx[f"{col}53"].font = bold
+for i, (label, formula, want, tol) in enumerate([
+    ("S&S total ultimate", "=M49", 44934, 2),
+    ("S&S total recoverable", "=N49", 3054, 2),
+    ("ULAE classical", "=B59", 27787500, 1e-6),
+]):
+    r = 54 + i
+    rx[f"P{r}"] = label; rx[f"Q{r}"] = formula; rx[f"R{r}"] = want
+    rx[f"S{r}"] = f"=ABS(Q{r}-R{r})<{tol}"
+rx.column_dimensions["P"].width = 26
+for col in "ABCDEFGHIJKLMNO":
+    rx.column_dimensions[col].width = 12
+
 # Triangle helpers on the RAA sheet's triangle.
 th = wb.create_sheet("Triangle helpers")
 th["A1"] = "prospicio XLL test: triangle helpers on RAA"; th["A1"].font = Font(bold=True, size=13)

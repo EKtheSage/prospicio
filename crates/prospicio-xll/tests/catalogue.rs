@@ -120,6 +120,8 @@ const ADDED_AFTER_THE_RENAME: &[&str] = &[
     "PRO.RES.BS.CASE",
     "PRO.RES.BS.SETTLEMENT",
     "PRO.RES.BS",
+    "PRO.RES.RATIO",
+    "PRO.RES.ULAE",
 ];
 
 /// The table of old and new names in `docs/design/xll.md` (decision 47),
