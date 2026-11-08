@@ -16,6 +16,8 @@ R/prospicio/src/*.so
 
 # Rendered docs sites (cargo xtask docs); publishing is not set up yet
 python/great-docs/
+# Quarto's cache of the guides that run on the site (docs/guides/README.md)
+python/_freeze/
 R/prospicio/docs/
 # The R twins of the guides and examples, staged as articles by `cargo xtask r`
 R/prospicio/vignettes/articles/
@@ -42,3 +44,4 @@ knowledge/references/*.docx
 
 # The Schedule P panel a guide fetches at run time: public research data, not redistributed here.
 docs/guides/schedule_p_panel.csv
+Rplots.pdf

@@ -1,5 +1,7 @@
 # Claim size, layers, limits and deductibles: Bahnemann's *Distributions for Actuaries* reproduced
 
+<!-- site: execute -->
+
 CAS Monograph 2, *Distributions for Actuaries* by David Bahnemann (2015), is the
 CAS textbook on the probability behind pricing. It covers the size of a claim,
 the number of claims, the total of a year, and the effect of policy limits,
@@ -280,6 +282,23 @@ minimum. The solver stopped early. The true minimum, 0.614, is at
 the 5% limit of 7.815. For the gamma of P2.16, the same search gives the
 printed answer.
 
+The chi-square is one number. Each band's count beside the two fits shows where
+they differ:
+
+```python
+import matplotlib.pyplot as plt
+
+bands = ["0-1k", "1-1.5k", "1.5-2k", "2-2.5k", "2.5-3k", "3k+"]
+fits = {"gamma, Ex 2.7": g, "lognormal, least chi-square": Lognormal(mu, abs(sigma))}
+fig, ax = plt.subplots()
+ax.bar(bands, OBSERVED, color="0.75", label="observed claims")
+for name, sev in fits.items():
+    ax.plot(bands, [200 * q for q in cell_probs(sev, CUTS)], marker="o", label=name)
+ax.set_ylabel("claims in the band")
+ax.set_title("Ex 2.6: 200 claims by size band, and two fitted distributions")
+ax.legend()
+```
+
 Ex 2.9 fits the shifted Pareto to a heavier sample by the limited-mean
 distance, with α fixed at 6. With the printed parameters, prospicio gives the
 values of Table 2.4:
@@ -403,6 +422,29 @@ P2.43 mu                                 book       9.4951   prospicio       9.4
 P2.43 sigma                              book       1.0842   prospicio       1.0842
 ```
 
+Ex 2.11 band by band, the claims observed beside the expected counts:
+
+```python
+import pandas as pd
+from great_tables import GT
+
+ex_2_11 = pd.DataFrame({
+    "band": ["1k to 5k", "5k to 10k", "10k to 25k", "25k to 50k", "50k to 75k", "75k to 100k",
+             "100k to 125k", "125k to 150k", "150k to 175k", "175k to 200k", "at the 200k limit"],
+    "observed": [367, 112, 118, 65, 36, 13, 10, 8, 6, 4, 31],
+    "book": [360, 122, 121, 63, 27, 16, 10, 7, 5, 4, 34],
+    "prospicio": [770 * q for q in cell_probs(fitted, [1000, 5000, 10000, 25000, 50000, 75000,
+                                                       100000, 125000, 150000, 175000, 200000,
+                                                       math.inf])],
+})
+(GT(ex_2_11, rowname_col="band")
+ .tab_header("Ex 2.11: 770 claims above a 1,000 deductible, censored at 200,000",
+             "Expected counts of the lognormal fitted by minimum chi-square")
+ .tab_spanner("expected", ["book", "prospicio"])
+ .fmt_number("prospicio", decimals=1)
+ .fmt_integer(["observed", "book"]))
+```
+
 With individual claims, prospicio's `fit_severity` does the same job by
 maximum likelihood. Each claim is conditional on a value above its own
 reporting threshold (`reporting_thresholds`, the truncation). A claim at a
@@ -446,6 +488,34 @@ errors. The other two fits describe the claims that an insurer with this
 deductible and limit sees, with a much thinner tail. The first two fits are
 close because only a few percent of claims reach the limit. The deductible
 hides more than half of the population, and it causes the error.
+
+The histogram shows the same on a log scale: the 20,000 ground-up claims, which
+the insurer never sees, the recorded ones between the deductible and the limit,
+and each fit's expected count in each bin:
+
+```python
+edges = [10 ** (k / 10) for k in range(0, 71)]          # 1 to 10,000,000, ten bins a decade
+fits = {}
+for label, kw in [
+    ("fit ignoring both", {}),
+    ("fit with both", {"censored": at_limit, "reporting_thresholds": [1000.0] * len(kept)}),
+]:
+    fit = fit_severity("lognormal", recorded, **kw)
+    fits[label] = Lognormal(fit.parameters["meanlog"], fit.parameters["sdlog"])
+fig, ax = plt.subplots()
+ax.hist(ground_up, bins=edges, color="0.82", label="ground-up")
+ax.hist(recorded, bins=edges, color="0.55", label="recorded")
+for label, sev in fits.items():
+    expected = [20_000 * (sev.cdf(b) - sev.cdf(a)) for a, b in zip(edges, edges[1:])]
+    ax.stairs(expected, edges, linewidth=2, label=label)
+ax.axvline(1000.0, color="0.4", linestyle=":")
+ax.axvline(200_000.0, color="0.4", linestyle=":")
+ax.set_xscale("log")
+ax.set_xlabel("claim size (dotted: the deductible and the limit)")
+ax.set_ylabel("claims in the bin")
+ax.set_title("Ex 2.11: only the corrected fit follows the population")
+ax.legend(loc="upper left")
+```
 
 ## 5. Inflation and claim size
 
