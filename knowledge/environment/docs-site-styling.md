@@ -91,6 +91,9 @@ Found on 2026-11-07 and 2026-11-08 with great-docs as installed in
   fails there and prints its traceback into that cell, and the build stops
   with "Extra data: line 2 column 1". The hook in
   `docs/guides/site/figures.py` binds what it uses as default arguments.
+  The run leaves Quarto's cache in `python/_freeze/` (gitignored); while
+  that directory exists great-docs turns `freeze` on, so a later local
+  build shows the cached output of an executed guide until it is deleted.
 * **Figures that follow the mode.** One inline SVG per figure, with
   matplotlib's colours replaced by the site's CSS variables
   (`var(--p-ink)`, `var(--p-series-1)` and so on), follows the light and

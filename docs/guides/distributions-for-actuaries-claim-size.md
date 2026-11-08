@@ -497,25 +497,24 @@ and each fit's expected count in each bin:
 edges = [10 ** (k / 10) for k in range(0, 71)]          # 1 to 10,000,000, ten bins a decade
 fits = {}
 for label, kw in [
-    ("ignoring both", {}),
-    ("truncation and censoring", {"censored": at_limit,
-                                  "reporting_thresholds": [1000.0] * len(kept)}),
+    ("fit ignoring both", {}),
+    ("fit with both", {"censored": at_limit, "reporting_thresholds": [1000.0] * len(kept)}),
 ]:
     fit = fit_severity("lognormal", recorded, **kw)
     fits[label] = Lognormal(fit.parameters["meanlog"], fit.parameters["sdlog"])
 fig, ax = plt.subplots()
-ax.hist(ground_up, bins=edges, color="0.82", label="ground-up claims")
-ax.hist(recorded, bins=edges, color="0.55", label="recorded claims")
+ax.hist(ground_up, bins=edges, color="0.82", label="ground-up")
+ax.hist(recorded, bins=edges, color="0.55", label="recorded")
 for label, sev in fits.items():
     expected = [20_000 * (sev.cdf(b) - sev.cdf(a)) for a, b in zip(edges, edges[1:])]
-    ax.stairs(expected, edges, linewidth=2, label=f"lognormal, {label}")
+    ax.stairs(expected, edges, linewidth=2, label=label)
 ax.axvline(1000.0, color="0.4", linestyle=":")
 ax.axvline(200_000.0, color="0.4", linestyle=":")
 ax.set_xscale("log")
 ax.set_xlabel("claim size (dotted: the deductible and the limit)")
 ax.set_ylabel("claims in the bin")
 ax.set_title("Ex 2.11: only the corrected fit follows the population")
-ax.legend(loc="upper right")
+ax.legend(loc="upper left")
 ```
 
 ## 5. Inflation and claim size
