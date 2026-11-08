@@ -603,6 +603,10 @@ mod exports {
     udf!(pro_prc_glm, data, response, terms, family, link, exposure, weights, p);
     udf!(pro_prc_glm_predict, data, response, terms, newdata, family, link, exposure, weights, p);
     udf!(pro_prc_glm_relativities, data, response, terms, family, link, exposure, weights, p, level);
+    udf!(pro_prc_counts, data, response, terms, model, count, zero_terms, zero_link, exposure, weights);
+    udf!(pro_prc_counts_predict, data, response, terms, newdata, model, count, zero_terms, zero_link, exposure, weights, output, max_count);
+    udf!(pro_prc_quantreg, data, response, terms, tau, method, weights, bandwidth);
+    udf!(pro_prc_quantreg_predict, data, response, terms, tau, newdata, method, weights, bandwidth, rearrange);
     udf!(pro_cap_cashflow, u, terms, patterns, requirement, commission, output, rate, commutation_requirement);
     udf!(pro_cap_pnl, values, probs, premium, expenses, covers, face, output, levels, expense_at_mean);
     udf!(pro_cap_ylt_stats, years, losses, n_years, probabilities, quantile, times, hours, negative);

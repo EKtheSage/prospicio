@@ -123,6 +123,10 @@ const ADDED_AFTER_THE_RENAME: &[&str] = &[
     "PRO.RES.RATIO",
     "PRO.RES.ULAE",
     "PRO.RES.INDUSTRY.PRIOR",
+    "PRO.PRC.COUNTS",
+    "PRO.PRC.COUNTS.PREDICT",
+    "PRO.PRC.QUANTREG",
+    "PRO.PRC.QUANTREG.PREDICT",
 ];
 
 /// The table of old and new names in `docs/design/xll.md` (decision 47),

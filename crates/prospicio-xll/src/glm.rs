@@ -24,13 +24,13 @@ const MAX_ROWS: usize = 1_048_576;
 
 /// A table argument: its column names (the header row) and each column's
 /// cells, with blank rows at the end dropped.
-struct Table {
+pub(crate) struct Table {
     names: Vec<String>,
     columns: Vec<Vec<Value>>,
 }
 
 impl Table {
-    fn new(grid: &Grid, what: &str) -> Result<Self> {
+    pub(crate) fn new(grid: &Grid, what: &str) -> Result<Self> {
         if grid.rows < 2 {
             return Err(format!(
                 "{what} needs a header row of column names and at least one row of values"
@@ -64,6 +64,11 @@ impl Table {
         Ok(Self { names, columns })
     }
 
+    /// The number of rows of values.
+    pub(crate) fn rows(&self) -> usize {
+        self.columns.first().map_or(0, Vec::len)
+    }
+
     fn index(&self, name: &str, what: &str) -> Result<usize> {
         self.names
             .iter()
@@ -72,7 +77,7 @@ impl Table {
     }
 
     /// The column `name` as numbers: every cell a number.
-    fn numbers(&self, name: &str, what: &str) -> Result<Vec<f64>> {
+    pub(crate) fn numbers(&self, name: &str, what: &str) -> Result<Vec<f64>> {
         let j = self.index(name, what)?;
         self.columns[j]
             .iter()
@@ -150,7 +155,7 @@ fn shown(v: &Value) -> String {
 
 /// One predictor: a column, a factor with its reference level, or the
 /// interaction of two columns.
-enum Predictor {
+pub(crate) enum Predictor {
     /// Numeric when every cell is a number, else a factor whose reference
     /// is the first level in sorted order.
     Auto(String),
@@ -172,7 +177,7 @@ impl Predictor {
 /// The `terms` argument: a row or column of predictor names, each a
 /// column of `data` (`age`), a factor with its reference level
 /// (`region=A`) or an interaction (`age:region`).
-fn predictors(grid: &Grid) -> Result<Vec<Predictor>> {
+pub(crate) fn predictors(grid: &Grid) -> Result<Vec<Predictor>> {
     if grid.rows != 1 && grid.columns != 1 {
         return Err("terms must be a row or a column of column names".into());
     }
@@ -321,7 +326,7 @@ fn frame(table: &Table, predictors: &[Predictor], what: &str) -> Result<Frame> {
 }
 
 /// An optional column-name argument.
-fn column_name(grid: &Grid, name: &str) -> Result<Option<String>> {
+pub(crate) fn column_name(grid: &Grid, name: &str) -> Result<Option<String>> {
     match grid.as_scalar() {
         Some(v) if v.is_blank() => Ok(None),
         Some(Value::Text(s)) => Ok(Some(s.trim().to_owned())),
@@ -331,7 +336,7 @@ fn column_name(grid: &Grid, name: &str) -> Result<Option<String>> {
 
 /// The design of `table` under `coding`, with ln(exposure) as offset
 /// when an exposure column is named.
-fn design(
+pub(crate) fn design(
     coding: &Coding,
     table: &Table,
     predictors: &[Predictor],
@@ -358,6 +363,24 @@ fn design(
     }
 }
 
+/// The coding of `predictors` on `table`, with an intercept.
+pub(crate) fn coding(table: &Table, predictors: &[Predictor]) -> Result<Coding> {
+    let mut terms = Terms::new().intercept();
+    for p in predictors {
+        terms = match p {
+            Predictor::Auto(n) => match table.column(n, false, "data")? {
+                Column::Numeric(_) => terms.numeric(n),
+                Column::Categorical(_) => terms.factor(n),
+            },
+            Predictor::Factor { name, reference } => terms.factor_with_reference(name, reference),
+            Predictor::Interaction(a, b) => terms.interaction(a, b),
+        };
+    }
+    terms
+        .fit(&frame(table, predictors, "data")?)
+        .map_err(|e| e.to_string())
+}
+
 /// The model arguments at `args[0..8]`: `data, response, terms, [family],
 /// [link], [exposure], [weights], [p]`, fitted.
 fn fit(args: &[Grid]) -> Result<Fit> {
@@ -372,20 +395,7 @@ fn fit(args: &[Grid]) -> Result<Fit> {
     if exposure.is_some() && link != Link::Log {
         return Err("exposure is an offset ln(exposure) on the log link: use link \"log\", or give the exposure as weights".into());
     }
-    let mut terms = Terms::new().intercept();
-    for p in &predictors {
-        terms = match p {
-            Predictor::Auto(n) => match table.column(n, false, "data")? {
-                Column::Numeric(_) => terms.numeric(n),
-                Column::Categorical(_) => terms.factor(n),
-            },
-            Predictor::Factor { name, reference } => terms.factor_with_reference(name, reference),
-            Predictor::Interaction(a, b) => terms.interaction(a, b),
-        };
-    }
-    let coding = terms
-        .fit(&frame(&table, &predictors, "data")?)
-        .map_err(|e| e.to_string())?;
+    let coding = coding(&table, &predictors)?;
     let mut d = design(&coding, &table, &predictors, exposure.as_deref(), "data")?;
     if let Some(w) = &weights {
         d = d
@@ -409,7 +419,7 @@ fn fit(args: &[Grid]) -> Result<Fit> {
 /// A design column's term and level: `region[B]` is `region`, `B`; `age`
 /// is `age` and blank; an interaction such as `age:region[B]` is the
 /// whole name and blank.
-fn term_level(name: &str) -> (Value, Value) {
+pub(crate) fn term_level(name: &str) -> (Value, Value) {
     match name.split_once('[') {
         Some((term, rest)) if !name.contains(':') => (
             Value::from(term),
