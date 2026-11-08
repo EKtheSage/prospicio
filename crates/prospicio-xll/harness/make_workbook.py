@@ -1542,6 +1542,26 @@ for i, (label, cell, want) in enumerate(checks):
     zq[f"N{row}"] = f"=ABS(L{row}-M{row})<1e-6*MAX(1,ABS(M{row}))"
 zq.column_dimensions["K"].width = 30
 
+# Mack's assumption tests and the diagonal backtest on RAA (decision 57),
+# against R ChainLadder 0.2.21 (validation/reference/reserving_assumptions_r.csv).
+dg = wb.create_sheet("Diagnostics")
+dg["A1"] = "prospicio XLL test: Mack's tests and the diagonal backtest on RAA (PRO.RES.CY.TEST, .DEVCOR.TEST, .BACKTEST)"; dg["A1"].font = Font(bold=True, size=13)
+dg["A3"] = "Calendar-year effects (cyEffTest)"; dg["A3"].font = bold
+dg["A4"] = ArrayFormula("A4:B10", f"=PRO.RES.CY.TEST({TRI})")
+dg["D3"] = "By diagonal"; dg["D3"].font = bold
+dg["D4"] = ArrayFormula("D4:K12", f'=PRO.RES.CY.TEST({TRI},,"diagonals",{ORI})')
+dg["A14"] = "Correlated development factors (dfCorTest)"; dg["A14"].font = bold
+dg["A15"] = ArrayFormula("A15:B20", f"=PRO.RES.DEVCOR.TEST({TRI})")
+dg["D14"] = "By pair of links"; dg["D14"].font = bold
+dg["D15"] = ArrayFormula("D15:G23", f'=PRO.RES.DEVCOR.TEST({TRI},,"pairs")')
+dg["A26"] = "Backtest on the latest 4 diagonals: ODP and gamma GLMs, 500 draws, seed 11"; dg["A26"].font = bold
+dg["A27"] = ArrayFormula("A27:G29", f'=PRO.RES.BACKTEST({TRI},{{"odp","gamma"}},4,500,11)')
+dg["A31"] = ArrayFormula("A31:I39", f'=PRO.RES.BACKTEST({TRI},{{"odp","gamma"}},4,500,11,,"diagonals",{ORI})')
+dg["A42"] = "Checks against R ChainLadder 0.2.21"; dg["A42"].font = bold
+dg["A43"] = "Z"; dg["B43"] = "=B4"; dg["C43"] = 14; dg["D43"] = "=B43=C43"
+dg["A44"] = "T"; dg["B44"] = "=B15"; dg["C44"] = 0.069557823129251725; dg["D44"] = "=ABS(B44-C44)<1e-12"
+dg.column_dimensions["A"].width = 24
+
 # A collateralised deal through PRO.CAP.CASHFLOW.
 cf = wb.create_sheet("Cash flows")
 cf["A1"] = "prospicio XLL test: a collateralised deal's cash flows (PRO.CAP.CASHFLOW)"; cf["A1"].font = Font(bold=True, size=13)

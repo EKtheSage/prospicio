@@ -127,6 +127,9 @@ const ADDED_AFTER_THE_RENAME: &[&str] = &[
     "PRO.PRC.COUNTS.PREDICT",
     "PRO.PRC.QUANTREG",
     "PRO.PRC.QUANTREG.PREDICT",
+    "PRO.RES.CY.TEST",
+    "PRO.RES.DEVCOR.TEST",
+    "PRO.RES.BACKTEST",
 ];
 
 /// The table of old and new names in `docs/design/xll.md` (decision 47),
