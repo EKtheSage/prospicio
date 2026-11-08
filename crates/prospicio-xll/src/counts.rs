@@ -24,7 +24,7 @@ type Rows = Vec<Vec<Option<f64>>>;
 /// Several sheet triangles observed at the same cells, as one triangle
 /// with a measure per name; `per_origin` adds measures with one value per
 /// origin on every observed cell of its row (an exposure).
-fn measures(parts: &[(&str, &Grid)], per_origin: &[(&str, &[f64])]) -> Result<Triangle> {
+pub(crate) fn measures(parts: &[(&str, &Grid)], per_origin: &[(&str, &[f64])]) -> Result<Triangle> {
     let (first_name, first) = parts[0];
     let mut longs = Vec::new();
     for (name, grid) in parts {

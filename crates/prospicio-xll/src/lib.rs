@@ -27,6 +27,7 @@ pub mod diagonal;
 pub mod distortions;
 pub mod evt;
 pub mod exhibits;
+pub mod expenses;
 pub mod experience;
 pub mod exposure;
 pub mod fitting;
@@ -1392,6 +1393,112 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: counts::bs_both,
+    },
+    Function {
+        symbol: "pro_res_ratio",
+        name: "PRO.RES.RATIO",
+        help: "Friedland's ratio approach (salvage and subrogation, ALAE): a ratio of two triangles developed to ultimate and applied to ultimate claims; the table per origin, or its factors or ratios.",
+        args: &[
+            Arg {
+                name: "numerator",
+                help: "Cumulative numerator (received recoveries, paid ALAE): one row per origin, one column per age",
+            },
+            Arg {
+                name: "denominator",
+                help: "Cumulative denominator (paid claims) at the same cells",
+            },
+            Arg {
+                name: "ultimate_claims",
+                help: "Ultimate claims per origin, from any method",
+            },
+            Arg {
+                name: "average",
+                help: "How the ratio's link ratios are averaged: simple (default here), volume, ... or a row as in PRO.RES.CL",
+            },
+            Arg {
+                name: "tail",
+                help: "A tail factor (multiplicative) or the addition past the oldest age (additive); none if omitted",
+            },
+            Arg {
+                name: "selected",
+                help: "Selected factors or differences, one cell per triangle column; a blank keeps the average",
+            },
+            KIND,
+            Arg {
+                name: "factors",
+                help: "\"multiplicative\" (default) or \"additive\" (Wiser's differences, for small early ratios)",
+            },
+            Arg {
+                name: "ultimate_ratios",
+                help: "Per origin, a selected ultimate ratio replacing the projected one; blank cells keep it",
+            },
+            ORIGINS,
+            Arg {
+                name: "output",
+                help: "\"ultimate\" (default), \"factors\" or \"ratios\"",
+            },
+        ],
+        run: expenses::ratio,
+    },
+    Function {
+        symbol: "pro_res_ulae",
+        name: "PRO.RES.ULAE",
+        help: "Unpaid ULAE (Friedland ch. 17): paid ULAE over a claims basis by calendar year, the ratio applied to what remains; classical, Kittel or Conger and Nolibos.",
+        args: &[
+            Arg {
+                name: "paid_ulae",
+                help: "Paid ULAE by calendar year",
+            },
+            Arg {
+                name: "paid",
+                help: "Paid claims by calendar year (expected paid for Mango and Allen)",
+            },
+            Arg {
+                name: "case_outstanding",
+                help: "Case outstanding at the valuation date: one total, or one per accident year",
+            },
+            Arg {
+                name: "ibnr",
+                help: "Total IBNR at the valuation date, as case_outstanding",
+            },
+            Arg {
+                name: "technique",
+                help: "\"classical\" (default), \"kittel\" or \"conger_nolibos\"",
+            },
+            Arg {
+                name: "ratio",
+                help: "The selected ULAE ratio; the ratio of the totals if omitted",
+            },
+            Arg {
+                name: "weights",
+                help: "Classical: the share spent opening a claim (0.5). Conger and Nolibos: U1 and U2, or U1, U2 and U3",
+            },
+            Arg {
+                name: "reported",
+                help: "By calendar year: incurred claims (Kittel) or the ultimate of claims reported (Conger and Nolibos, R)",
+            },
+            Arg {
+                name: "closed",
+                help: "By calendar year: the ultimate of claims closed (Conger and Nolibos, C), when U3 is not 0",
+            },
+            Arg {
+                name: "pure_ibnr",
+                help: "IBNR on claims not yet reported, as case_outstanding; needed by Conger and Nolibos when U1 is not 0",
+            },
+            Arg {
+                name: "unclosed",
+                help: "Ultimate of claims not yet closed, as case_outstanding, when U3 is not 0",
+            },
+            Arg {
+                name: "ultimate",
+                help: "Ultimate claims by accident year, for Conger and Nolibos' three total forms",
+            },
+            Arg {
+                name: "output",
+                help: "\"summary\" (default), \"years\" (basis and ratio by calendar year) or \"rows\" (unpaid by row)",
+            },
+        ],
+        run: expenses::ulae,
     },
     Function {
         symbol: "pro_tri_incremental",

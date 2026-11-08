@@ -146,6 +146,8 @@ The `...` is the chain ladder's options: `[average], [tail], [origins],
 | `PRO.RES.BS.CASE(incurred, paid, open, trend, [max_age], [output])` | Berquist-Sherman case adequacy adjustment: the adjusted incurred triangle |
 | `PRO.RES.BS.SETTLEMENT(paid, closed, ultimate_counts, [rates], [interpolation], [output])` | Berquist-Sherman settlement rate adjustment: the adjusted paid or closed count triangle |
 | `PRO.RES.BS(incurred, paid, reported_counts, closed, ultimate_counts, trend, [max_age], [rates], [interpolation], [output])` | Both adjustments: the adjusted incurred, paid or closed count triangle |
+| `PRO.RES.RATIO(numerator, denominator, ultimate_claims, [average], [tail], [selected], [kind], [factors], [ultimate_ratios], [origins], [output])` | Friedland's ratio approach for salvage and subrogation or ALAE: the ratio developed to ultimate (multiplicative or additive) and applied to ultimate claims |
+| `PRO.RES.ULAE(paid_ulae, paid, case_outstanding, ibnr, [technique], [ratio], [weights], [reported], [closed], [pure_ibnr], [unclosed], [ultimate], [output])` | Unpaid ULAE by the classical technique, Kittel's refinement or Conger and Nolibos' generalized approach |
 | `PRO.RES.BAYES.ODP(triangle, [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins])` | Bayesian ODP chain ladder by MCMC: reserves, posterior or diagnostics |
 | `PRO.RES.BAYES.BF(triangle, exposure, apriori, [cv], [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins], [common_cv])` | Bayesian Bornhuetter–Ferguson by MCMC: reserves, ultimates, posterior or diagnostics |
 

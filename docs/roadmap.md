@@ -730,7 +730,7 @@ what it is aiming for by v1.0.
   indication); the burning cost; aggregate distributions and layer
   statistics; the Bayesian ODP chain ladder by MCMC; the Munich chain
   ladder and the paid-incurred chain; development curves over every age; Friedland's development exhibit and
-  the weighted selection of ultimates; the methods on claim counts and the Berquist-Sherman adjustments; the occurrence and
+  the weighted selection of ultimates; the methods on claim counts and the Berquist-Sherman adjustments; recoveries, ALAE and ULAE; the occurrence and
   aggregate PML curves; aggregate covers on the annual total; towers
   priced on a grid; severity fits to large losses (body and Pareto
   families, with reporting thresholds and censoring); EVT threshold

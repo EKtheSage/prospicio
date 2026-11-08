@@ -1339,6 +1339,35 @@ real Excel.
       both adjustments cell by cell against the library's
       `BerquistSherman`.
 
+53. **Recoveries, ALAE and ULAE on a sheet** (#742 batch 1, #558;
+    Friedland's chapters 14, 16 and 17). `PRO.RES.RATIO` is
+    `RatioDevelopment`: the ratio of two triangles (received salvage and
+    subrogation over paid claims, paid ALAE over paid claims) developed to
+    ultimate and applied to the ultimate claims a sheet already has from
+    any method. Multiplicative factors take the chain ladder's arguments
+    (average, tail, selected, kind); `factors` `"additive"` develops by
+    differences after Wiser, `selected` then holding differences and
+    `tail` the addition past the oldest age. The average is the simple one
+    when omitted, as Friedland's: a ratio's size is no weight.
+    `ultimate_ratios` replaces the projection where given (her 0.345 for
+    2008). `PRO.RES.ULAE` is `Ulae`: the classical technique (`weights` the
+    share spent opening, 0.5), Kittel's refinement and Conger and Nolibos'
+    generalized approach (`weights` U1, U2 and U3), the ratio the totals'
+    unless one is selected, applied to one row of totals or a row per
+    accident year; with ultimate claims, Conger and Nolibos' three total
+    forms. Mango and Allen's refinement is the classical technique on
+    expected paid claims and needs no function of its own.
+    - **Recoveries with the claims methods.** Developing reported or
+      received recoveries on their own is the chain ladder
+      (`PRO.RES.CL`), and a recovery triangle runs through it as
+      negative increments; only the ratio approach is new here.
+    - **Parity.** `tests/expenses.rs`: chapter 14 Exhibit I (salvage and
+      subrogation) and chapter 16 Exhibit I (ALAE, multiplicative and
+      additive) to the printed digits, their ultimate claims chained from
+      `PRO.RES.CL.ULTIMATE` as a sheet does; chapter 17 Exhibits I, II and
+      IV (classical, Kittel, Conger and Nolibos at 60/40 and 70/30 with
+      their three forms), and rows by accident year summing to the total.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and
