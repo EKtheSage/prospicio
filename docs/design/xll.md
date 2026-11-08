@@ -1473,6 +1473,9 @@ real Excel.
          index clauses.
       7. *Fits on a table, as `PRO.PRC.GLM`*: the elastic net, the
          Tweedie profile likelihood.
+    - **The user's choice** (2026-11-08): group 2, the reserving
+      diagnostics, one PR; the other six groups stay off the sheet until
+      asked for.
 
 ## Parity plan
 
@@ -1539,7 +1542,7 @@ order, one small PR each, those already done struck through:
     ratio, the industry prior)~~ (decision 54), ~~the
     0.0.8 Models fits (zero-inflated and hurdle counts, quantile and
     expectile regression)~~ (decision 55), ~~a coverage check~~ (decision
-    56), then the groups the user chooses from it.
+    56), then the reserving diagnostics, the group the user chose from it.
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),

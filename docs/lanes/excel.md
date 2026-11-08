@@ -10,7 +10,7 @@ This lane wraps other lanes' crates and changes none of them
 
 - [excel-confirm-groups] in Excel 365: the four categories in Insert Function
 - [excel-confirm-async] in Excel 365: `#GETTING_DATA` then the result for the bootstraps and Bayesian fits, and an edit during a long run (decision 48)
-- [excel-parity-742] #742: the groups the user chooses from the coverage check (`xll.md` decision 56; batches 1 to 4 are done)
+- [excel-parity-742] #742: the reserving diagnostics, the group the user chose from the coverage check (`xll.md` decision 56; batches 1 to 4 are done)
 - [excel-more-functions] further functions as the user asks, each in its group
 - [code-signing-certificate] a code-signing certificate is the user's to buy
 
