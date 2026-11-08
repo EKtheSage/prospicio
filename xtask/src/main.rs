@@ -781,22 +781,9 @@ fn docs(opts: Options) -> Result {
     Ok(())
 }
 
-const INDEX: &str = r#"<!doctype html>
-<html lang="en">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>prospicio docs</title>
-<style>
-  body { font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }
-</style>
-<h1>prospicio</h1>
-<p>Actuarial modeling on a Rust core. One kernel, documented for each front end.</p>
-<ul>
-  <li><a href="python/index.html">Python</a> (great-docs, with the guides and worked examples)</li>
-  <li><a href="r/index.html">R</a> (pkgdown, with the guides and worked examples)</li>
-  <li><a href="rust/prospicio_prob/index.html">Rust crates</a> (rustdoc)</li>
-</ul>
-"#;
+/// The landing page at the site's root, linking the three sites. Its look
+/// is shared with python/docs-site.css and R/prospicio/pkgdown/extra.css.
+const INDEX: &str = include_str!("../site/index.html");
 
 /// Directory of the pandoc bundled with Quarto: `<quarto bin>/tools` on
 /// Windows, `<quarto bin>/tools/<arch>` on Linux and macOS.
