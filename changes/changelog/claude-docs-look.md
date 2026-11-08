@@ -4,4 +4,4 @@
   sites link back to it, and the Python site has a button that hides the
   left navigation. The guides' `no-run` code blocks render as code on the
   Python site (they showed as paragraphs), and the definitions that opened
-  seven guides moved to an appendix at the end.
+  seven guides moved to an appendix at the end (#797).
