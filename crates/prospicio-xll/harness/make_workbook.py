@@ -423,6 +423,33 @@ og["K5"] = ArrayFormula("K5:U60", f"=PRO.RES.ODP.GLM.RESIDUALS({TRI},,{ORI})")
 for col in "ABCDEFGHIJKLMNOPQRSTU":
     og.column_dimensions[col].width = 12
 
+# Friedland's development exhibit and a selection of ultimates (decision
+# 51) on the RAA sheet's triangle.
+fx = wb.create_sheet("Exhibits")
+fx["A1"] = "prospicio XLL test: Friedland's development exhibit and a weighted selection of ultimates on RAA"; fx["A1"].font = Font(bold=True, size=13)
+fx["A2"] = "The selection: the chain ladder for the six oldest years, half chain ladder and half BF (ELR 0.65 on a premium of 25,000) for the next two, BF for the two youngest."
+fx["A2"].font = note
+fx["A4"] = "Development exhibit (volume-weighted selection)"; fx["A4"].font = bold
+fx["A5"] = ArrayFormula("A5:K14", f"=PRO.RES.DEV.EXHIBIT({TRI})")
+fx["A17"] = "Premium"; fx["B17"] = "CL"; fx["C17"] = "BF"; fx["D17"] = "W CL"; fx["E17"] = "W BF"
+for c in "ABCDE":
+    fx[f"{c}17"].font = bold
+for i in range(10):
+    r = 18 + i
+    fx[f"A{r}"] = 25000; fx[f"A{r}"].fill = inp
+    w = 1.0 if i < 6 else (0.5 if i < 8 else 0.0)
+    fx[f"D{r}"] = w; fx[f"E{r}"] = 1 - w
+    fx[f"D{r}"].fill = inp; fx[f"E{r}"].fill = inp
+fx["B18"] = ArrayFormula("B18:B27", f"=PRO.RES.CL.ULTIMATE({TRI})")
+fx["C18"] = ArrayFormula("C18:C27", f"=INDEX(PRO.RES.BF({TRI},A18:A27,0.65),SEQUENCE(10,1,2),4)")
+fx["G17"] = "Selected"; fx["G17"].font = bold
+fx["G18"] = ArrayFormula("G18:K29", f'=PRO.RES.SELECT(B18:C27,D18:E27,,,,{ORI},{{"CL","BF"}})')
+fx["A31"] = "Check: selected = SUMPRODUCT of the weights"; fx["A31"].font = bold
+fx["A32"] = "=I29"; fx["B32"] = "=SUMPRODUCT(B18:B27,D18:D27)+SUMPRODUCT(C18:C27,E18:E27)"
+fx["C32"] = "=ABS(A32-B32)<1E-6"
+for col in "ABCDEFGHIJK":
+    fx.column_dimensions[col].width = 13
+
 # Development curves over every age (decision 50) on the RAA sheet's
 # triangle, and the chain ladder on the fitted pattern.
 dc = wb.create_sheet("Development curves")

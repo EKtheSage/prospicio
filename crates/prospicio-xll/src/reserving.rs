@@ -346,7 +346,7 @@ pub(crate) fn pattern_kind(kind: &Grid) -> Result<PatternKind> {
 
 /// The development options of a chain-ladder function; `selected_args`
 /// are `selected`, `kind`, `weight` and `pattern_ages`.
-fn development_with(
+pub(crate) fn development_with(
     average_arg: &Grid,
     selected_args: [&Grid; 4],
     sigma_arg: &Grid,

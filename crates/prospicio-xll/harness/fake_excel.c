@@ -254,7 +254,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and twenty functions registered", registered == 120);
+    check("one hundred and twenty-two functions registered", registered == 122);
     check("nine of them asynchronous (xll.md, decision 48)", async_registered == 9);
     check("no old name is exported (xll.md, decision 47)", GetProcAddress(xll, "pro_mack") == NULL);
 
@@ -549,6 +549,28 @@ int main(int argc, char **argv) {
           (og->xltype & 0xFFF) == xltypeMulti && og->val.array.rows == 12 && og->val.array.columns == 8 &&
               fabs(og->val.array.lparray[11 * 8 + 3].val.num - 52135.2283) < 0.01);
     free12(og);
+
+    /* Friedland's development exhibit and the selection of ultimates
+     * (xll.md, decision 51): the selected 12-24 factor is RAA's volume
+     * average 2.99936; one method weighted 1 is its own ultimate. */
+    XLOPER12 *dx = ((Fn7)GetProcAddress(xll, "pro_res_dev_exhibit"))(&tri, &missing, &missing, &missing, &missing,
+                                                                     &missing, &missing);
+    check("PRO.RES.DEV.EXHIBIT on RAA is 10 x 11, selected 12-24 2.99936",
+          (dx->xltype & 0xFFF) == xltypeMulti && dx->val.array.rows == 10 && dx->val.array.columns == 11 &&
+              fabs(dx->val.array.lparray[7 * 11 + 1].val.num - 2.99935865) < 1e-6);
+    free12(dx);
+    XLOPER12 *cu = ((Fn7)GetProcAddress(xll, "pro_res_cl_ultimate"))(&tri, &missing, &missing, &missing, &missing,
+                                                                     &missing, &missing);
+    XLOPER12 w_one;
+    w_one.xltype = xltypeNum;
+    w_one.val.num = 1.0;
+    XLOPER12 *se = ((Fn7)GetProcAddress(xll, "pro_res_select"))(cu, &w_one, &missing, &missing, &missing, &missing,
+                                                                &missing);
+    check("PRO.RES.SELECT of one method is its ultimate",
+          (se->xltype & 0xFFF) == xltypeMulti && se->val.array.rows == 12 && se->val.array.columns == 3 &&
+              se->val.array.lparray[1 * 3 + 1].val.num == cu->val.array.lparray[0].val.num);
+    free12(se);
+    free12(cu);
 
     /* Development curves (xll.md, decision 50): the exponential on RAA,
      * R's R-squared 0.8499 and tail 1.00944 (lm on log(f - 1)). */

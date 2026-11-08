@@ -25,6 +25,7 @@ pub mod curves;
 pub mod diagonal;
 pub mod distortions;
 pub mod evt;
+pub mod exhibits;
 pub mod experience;
 pub mod exposure;
 pub mod fitting;
@@ -304,6 +305,30 @@ const CDR_PERCENTILES: Arg = Arg {
 const CLARK_EXPOSURE: Arg = Arg {
     name: "exposure",
     help: "Premium per origin for Clark's Cape Cod; omitted for Clark's LDF method",
+};
+const ULTIMATES: Arg = Arg {
+    name: "ultimates",
+    help: "Each method's ultimates: a column per method, a row per origin; blank where a method does not project",
+};
+const METHOD_WEIGHTS: Arg = Arg {
+    name: "weights",
+    help: "A weight per method for every origin (a row), per origin and method (a table like ultimates), or with ages a table: age from which a row holds, then a weight per method",
+};
+const ORIGIN_AGES: Arg = Arg {
+    name: "ages",
+    help: "Each origin's age in months at the valuation date, for weights by age",
+};
+const REPORTED: Arg = Arg {
+    name: "reported",
+    help: "Reported claims to date, one per origin, for IBNR; omitted for none",
+};
+const PAID_TO_DATE: Arg = Arg {
+    name: "paid",
+    help: "Paid claims to date, one per origin, for the unpaid; omitted for none",
+};
+const METHOD_NAMES: Arg = Arg {
+    name: "methods",
+    help: "A name per column of ultimates, for the weight columns; omitted for Method 1, 2, ...",
 };
 const CURVE_SHAPE: Arg = Arg {
     name: "shape",
@@ -993,6 +1018,36 @@ pub static FUNCTIONS: &[Function] = &[
         help: "The ODP GLM's residuals: a row per observed increment (actual, fitted, Pearson, deviance, leverage, standardized), or grouped by origin, development or calendar period.",
         args: &[TRIANGLE, RESIDUALS_BY, ORIGINS],
         run: odp_glm::residuals,
+    },
+    Function {
+        symbol: "pro_res_dev_exhibit",
+        name: "PRO.RES.DEV.EXHIBIT",
+        help: "Friedland's development exhibit: six averages of the link ratios, then the selected factors, CDF and percent developed, a column per link and the tail.",
+        args: &[
+            TRIANGLE,
+            AVERAGE,
+            TAIL,
+            SELECTED,
+            KIND,
+            WEIGHT,
+            SELECTED_AGES,
+        ],
+        run: exhibits::development,
+    },
+    Function {
+        symbol: "pro_res_select",
+        name: "PRO.RES.SELECT",
+        help: "The selected ultimate per origin, weighting the methods' ultimates by origin or by age: ultimate, IBNR, unpaid and each method's weight, with a total.",
+        args: &[
+            ULTIMATES,
+            METHOD_WEIGHTS,
+            ORIGIN_AGES,
+            REPORTED,
+            PAID_TO_DATE,
+            ORIGINS,
+            METHOD_NAMES,
+        ],
+        run: exhibits::select,
     },
     Function {
         symbol: "pro_res_curve",
