@@ -10,7 +10,6 @@ This lane wraps other lanes' crates and changes none of them
 
 - [excel-confirm-groups] in Excel 365: the four categories in Insert Function
 - [excel-confirm-async] in Excel 365: `#GETTING_DATA` then the result for the bootstraps and Bayesian fits, and an edit during a long run (decision 48)
-- [excel-parity-742] #742: the rest of the reserving diagnostics (the excess-layer pattern and the benchmark curve), the group the user chose from the coverage check (`xll.md` decision 56)
 - [excel-more-functions] further functions as the user asks, each in its group
 - [code-signing-certificate] a code-signing certificate is the user's to buy
 
@@ -80,3 +79,4 @@ This lane wraps other lanes' crates and changes none of them
 - zero-inflated and hurdle counts, quantile and expectile regression (`PRO.PRC.COUNTS`, `.COUNTS.PREDICT`, `PRO.PRC.QUANTREG`, `.QUANTREG.PREDICT`: pscl, quantreg and expectreg parity; decision 55, #742 batch 3)
 - the coverage check (`check_bindings.py`'s Excel column: 261 of 922 items; the gap sorted into what stays off a sheet and seven candidate groups; decision 56, #742 batch 4)
 - Mack's assumption tests and the diagonal backtest (`PRO.RES.CY.TEST`, `.DEVCOR.TEST`, `.BACKTEST`: R ChainLadder and chainladder-python parity; decision 57, #742)
+- excess-layer development and the benchmark curve (`PRO.RES.EXCESS.PATTERN`, `.EXCESS.SHAPE`, `.BENCHMARK.CURVE`: Pinto and Gogol's printed factors and scipy parity; decision 58, #742), which completes #742

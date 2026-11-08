@@ -1545,7 +1545,7 @@ zq.column_dimensions["K"].width = 30
 # Mack's assumption tests and the diagonal backtest on RAA (decision 57),
 # against R ChainLadder 0.2.21 (validation/reference/reserving_assumptions_r.csv).
 dg = wb.create_sheet("Diagnostics")
-dg["A1"] = "prospicio XLL test: Mack's tests and the diagonal backtest on RAA (PRO.RES.CY.TEST, .DEVCOR.TEST, .BACKTEST)"; dg["A1"].font = Font(bold=True, size=13)
+dg["A1"] = "prospicio XLL test: Mack's tests, the diagonal backtest, excess-layer development and the benchmark curve (PRO.RES.CY.TEST, .DEVCOR.TEST, .BACKTEST, .EXCESS.PATTERN, .EXCESS.SHAPE, .BENCHMARK.CURVE)"; dg["A1"].font = Font(bold=True, size=13)
 dg["A3"] = "Calendar-year effects (cyEffTest)"; dg["A3"].font = bold
 dg["A4"] = ArrayFormula("A4:B10", f"=PRO.RES.CY.TEST({TRI})")
 dg["D3"] = "By diagonal"; dg["D3"].font = bold
@@ -1561,6 +1561,27 @@ dg["A42"] = "Checks against R ChainLadder 0.2.21"; dg["A42"].font = bold
 dg["A43"] = "Z"; dg["B43"] = "=B4"; dg["C43"] = 14; dg["D43"] = "=B43=C43"
 dg["A44"] = "T"; dg["B44"] = "=B15"; dg["C44"] = 0.069557823129251725; dg["D44"] = "=ABS(B44-C44)<1e-12"
 dg.column_dimensions["A"].width = 24
+
+# Excess-layer development and the benchmark curve (decision 58).
+dg["A47"] = "An excess layer's development: 50,000 xs 25,000 on RAA, a lognormal(9, 1.5) ultimate severity, the scale shift"; dg["A47"].font = bold
+dg["A48"] = ArrayFormula("A48:E59", f'=PRO.RES.EXCESS.PATTERN({TRI},25000,50000,"lognormal",9,1.5)')
+dg["A61"] = "Pinto and Gogol's shape drift (p. 247): the base develops by 2.5, the shape from 1.75 to 1.25"; dg["A61"].font = bold
+dg["A62"] = 1; dg["B62"] = 2.5; dg["D62"] = 1.75; dg["E62"] = 1.25
+for c in ("A62", "B62", "D62", "E62"):
+    dg[c].fill = inp
+dg["A63"] = ArrayFormula("A63:E66", "=PRO.RES.EXCESS.SHAPE(A62:B62,100000,,25000,D62:E62,1.25,25000)")
+dg["A68"] = "A log-logistic curve through a benchmark pattern"; dg["A68"].font = bold
+for i, (a, p) in enumerate(zip(range(12, 121, 12), [0.18, 0.47, 0.66, 0.78, 0.855, 0.90, 0.93, 0.951, 0.965, 0.975])):
+    dg.cell(row=69, column=1 + i, value=a).fill = inp
+    dg.cell(row=70, column=1 + i, value=p).fill = inp
+dg["A72"] = ArrayFormula("A72:E86", "=PRO.RES.BENCHMARK.CURVE(A69:J69,A70:J70)")
+dg["A88"] = "Percents developed at 18, 30 and 240 months"; dg["A88"].font = bold
+dg["A89"] = ArrayFormula("A89:C89", '=PRO.RES.BENCHMARK.CURVE(A69:J69,A70:J70,,,,,,{18,30,240},"pattern")')
+dg["A91"] = "Checks"; dg["A91"].font = bold
+dg["A92"] = "Pinto and Gogol 5.0"; dg["B92"] = "=C64"; dg["C92"] = 5; dg["D92"] = "=ABS(B92-C92)<1e-12"
+dg["A93"] = "scipy omega"; dg["B93"] = '=INDEX(B72:B86,MATCH("Omega",A72:A86,0))'; dg["C93"] = 2.09195678319105; dg["D93"] = "=ABS(B93/C93-1)<1e-7"
+dg["A94"] = "scipy theta"; dg["B94"] = '=INDEX(B72:B86,MATCH("Theta",A72:A86,0))'; dg["C94"] = 25.5547370205669; dg["D94"] = "=ABS(B94/C94-1)<1e-7"
+dg["A95"] = "Layer develops faster"; dg["B95"] = "=C49>B49"; dg["D95"] = "=B95"
 
 # A collateralised deal through PRO.CAP.CASHFLOW.
 cf = wb.create_sheet("Cash flows")

@@ -64,9 +64,14 @@ fn every_reserving_function_runs_on_raa() {
     let reserving = FUNCTIONS
         .iter()
         // Functions of a triangle alone; the expected-loss methods also need
-        // an exposure (tests/expected_loss.rs).
+        // an exposure (tests/expected_loss.rs), the excess-layer patterns a
+        // layer (tests/layers.rs).
         .filter(|f| f.args.first().is_some_and(|a| a.name == "triangle"))
-        .filter(|f| f.args.iter().all(|a| a.name != "exposure"));
+        .filter(|f| {
+            f.args
+                .iter()
+                .all(|a| a.name != "exposure" && a.name != "attachment")
+        });
     for f in reserving {
         let out = call(f.symbol, args(raa(), f.args.len() - 1));
         if let Some(Value::Text(s)) = out.as_scalar() {

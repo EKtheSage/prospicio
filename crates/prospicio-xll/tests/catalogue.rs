@@ -130,6 +130,9 @@ const ADDED_AFTER_THE_RENAME: &[&str] = &[
     "PRO.RES.CY.TEST",
     "PRO.RES.DEVCOR.TEST",
     "PRO.RES.BACKTEST",
+    "PRO.RES.EXCESS.PATTERN",
+    "PRO.RES.EXCESS.SHAPE",
+    "PRO.RES.BENCHMARK.CURVE",
 ];
 
 /// The table of old and new names in `docs/design/xll.md` (decision 47),

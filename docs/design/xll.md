@@ -1504,6 +1504,36 @@ real Excel.
       `_python.csv` (chainladder-python), read off the sheet; the
       backtest's every score equal to the library's on RAA.
 
+58. **Reserving diagnostics, part 2** (#742, the rest of the group chosen
+    in decision 56). `PRO.RES.EXCESS.PATTERN` is
+    `ExcessPattern::from_ground_up` under the scale shift: a layer's
+    development derived from a ground-up incurred triangle and an
+    ultimate severity (any `PRO.SEV.CDF` family), the claims at each age
+    the ultimate ones divided by the ground-up factor to ultimate, with
+    a count triangle optional, a ground-up tail, and a per-claim cap on
+    the triangle (`scale_shift_capped`). `PRO.RES.EXCESS.SHAPE` is Pinto
+    and Gogol's shape drift (`SeverityByMaturity::pareto_shape`): the
+    Pareto shape above a threshold moves from one value per column to an
+    ultimate one, the triangle holding the counts above the threshold or
+    the losses in a base layer. Both give a table by age (ground-up and
+    layer factors, the layer's factor to ultimate, the shift, a tail row)
+    or, with `output`, the layer's age-to-age factors with its tail as a
+    row ready for `selected`, or its factors to ultimate.
+    `PRO.RES.BENCHMARK.CURVE` is `BenchmarkCurve::fit`: a log-logistic
+    or Weibull growth curve through a benchmark pattern (percents
+    developed or factors to ultimate) by weighted least squares, with a
+    maximum age and ages measured from the average date of loss; the fit
+    table with omega, theta and the sum of squares, or the fitted
+    pattern at any ages as a row.
+    - **Left out**: severities by maturity given as a table per age
+      (`SeverityByMaturity::by_age`), and the paid basis; ask if a sheet
+      needs them.
+    - **Parity.** `tests/layers.rs`: both excess functions equal to the
+      library on RAA (with a tail, a cap and counts), Pinto and Gogol's
+      5.0 (p. 247, from losses and from counts) and 10^0.3 (Appendix B);
+      the benchmark curve at scipy's `least_squares` omega, theta and
+      sum of squares in three settings.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and
@@ -1570,8 +1600,8 @@ order, one small PR each, those already done struck through:
     0.0.8 Models fits (zero-inflated and hurdle counts, quantile and
     expectile regression)~~ (decision 55), ~~a coverage check~~ (decision
     56), then the reserving diagnostics, the group the user chose from it:
-    ~~Mack's tests and the backtest~~ (decision 57), the excess-layer
-    pattern and the benchmark curve.
+    ~~Mack's tests and the backtest~~ (decision 57), ~~the excess-layer
+    pattern and the benchmark curve~~ (decision 58).
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),

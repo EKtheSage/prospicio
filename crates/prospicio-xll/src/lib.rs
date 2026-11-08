@@ -34,6 +34,7 @@ pub mod exposure;
 pub mod fitting;
 pub mod glm;
 pub mod jobs;
+pub mod layers;
 pub mod odp_glm;
 pub mod paid_incurred;
 pub mod payout;
@@ -507,6 +508,18 @@ const QUANTREG_METHOD: Arg = Arg {
 const QUANTREG_BANDWIDTH: Arg = Arg {
     name: "bandwidth",
     help: "The quantile's kernel standard errors' bandwidth: \"hall_sheather\" (default) or \"bofinger\"",
+};
+const EXCESS_ATTACHMENT: Arg = Arg {
+    name: "attachment",
+    help: "The layer's attachment",
+};
+const EXCESS_LIMIT: Arg = Arg {
+    name: "limit",
+    help: "The layer's limit; unlimited if omitted",
+};
+const EXCESS_OUTPUT: Arg = Arg {
+    name: "output",
+    help: "\"summary\" (default), \"ldf\" (the layer's age-to-age factors and tail, a row for selected) or \"cdf\" (factors to ultimate)",
 };
 const GLM_DATA: Arg = Arg {
     name: "data",
@@ -1539,6 +1552,132 @@ pub static FUNCTIONS: &[Function] = &[
             ORIGINS,
         ],
         run: diagnostics::backtest,
+    },
+    Function {
+        symbol: "pro_res_excess_pattern",
+        name: "PRO.RES.EXCESS.PATTERN",
+        help: "An excess layer's development factors derived from a ground-up incurred triangle and the ultimate severity by the scale shift, with claim counts optional.",
+        args: &[
+            Arg {
+                name: "triangle",
+                help: "Cumulative ground-up incurred losses, one row per origin, one column per age",
+            },
+            EXCESS_ATTACHMENT,
+            EXCESS_LIMIT,
+            Arg {
+                name: "family",
+                help: "The ultimate severity's family, as PRO.SEV.CDF's, trended to the origins' level",
+            },
+            Arg {
+                name: "p1",
+                help: "The severity's first parameter",
+            },
+            Arg {
+                name: "p2",
+                help: "The severity's second parameter",
+            },
+            Arg {
+                name: "p3",
+                help: "The severity's third parameter, for the families that take one",
+            },
+            Arg {
+                name: "counts",
+                help: "Reported claim counts on the same cells; without them counts are taken as complete at every age",
+            },
+            Arg {
+                name: "tail",
+                help: "The ground-up tail factor; 1 if omitted",
+            },
+            Arg {
+                name: "cap",
+                help: "The per-claim limit the ground-up triangle is capped at; uncapped if omitted",
+            },
+            EXCESS_OUTPUT,
+        ],
+        run: layers::scale_shift,
+    },
+    Function {
+        symbol: "pro_res_excess_shape",
+        name: "PRO.RES.EXCESS.SHAPE",
+        help: "An excess layer's development by Pinto and Gogol's shape drift: the Pareto shape above a threshold moving with maturity, from counts or a base layer's losses.",
+        args: &[
+            Arg {
+                name: "triangle",
+                help: "Cumulative counts above the threshold, or losses in the base layer, one row per origin",
+            },
+            EXCESS_ATTACHMENT,
+            EXCESS_LIMIT,
+            Arg {
+                name: "threshold",
+                help: "The Pareto tail's lower bound; the layer attaches at or above it",
+            },
+            Arg {
+                name: "alphas",
+                help: "The Pareto shape at each age, one per triangle column",
+            },
+            Arg {
+                name: "ultimate_alpha",
+                help: "The shape of the fully developed claims",
+            },
+            Arg {
+                name: "base",
+                help: "\"counts\" (default) when the triangle holds the counts above the threshold, or the attachment of the base layer whose losses it holds",
+            },
+            Arg {
+                name: "base_limit",
+                help: "The base layer's limit; unlimited if omitted",
+            },
+            Arg {
+                name: "tail",
+                help: "The base development's tail factor; 1 if omitted",
+            },
+            EXCESS_OUTPUT,
+        ],
+        run: layers::shape_drift,
+    },
+    Function {
+        symbol: "pro_res_benchmark_curve",
+        name: "PRO.RES.BENCHMARK.CURVE",
+        help: "A log-logistic or Weibull growth curve fitted to a benchmark pattern by weighted least squares: the fit, or the pattern at any ages with a tail.",
+        args: &[
+            Arg {
+                name: "ages",
+                help: "The benchmark's ages in months",
+            },
+            Arg {
+                name: "values",
+                help: "The benchmark at those ages, as kind says",
+            },
+            Arg {
+                name: "kind",
+                help: "\"percent\" (default) for percents developed or \"cdf\" for factors to ultimate",
+            },
+            Arg {
+                name: "curve",
+                help: "\"loglogistic\" (default) or \"weibull\"",
+            },
+            Arg {
+                name: "weights",
+                help: "A weight per age for the least squares; 1 if omitted",
+            },
+            Arg {
+                name: "max_age",
+                help: "The age in months at which development stops; never if omitted",
+            },
+            Arg {
+                name: "origin_width",
+                help: "Measure ages from the average date of loss of origin periods this many months wide (12 for accident years); from the period's start if omitted",
+            },
+            Arg {
+                name: "at_ages",
+                help: "The ages at which \"pattern\" and \"cdf\" give the curve; the benchmark's if omitted",
+            },
+            Arg {
+                name: "output",
+                help: "\"fit\" (default), \"pattern\" (percents developed, a row) or \"cdf\" (factors to ultimate, a row)",
+            },
+        ],
+        run: layers::benchmark_curve,
     },
     Function {
         symbol: "pro_res_ulae",

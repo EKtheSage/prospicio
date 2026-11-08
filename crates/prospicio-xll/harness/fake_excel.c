@@ -259,7 +259,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and forty functions registered", registered == 140);
+    check("one hundred and forty-three functions registered", registered == 143);
     check("nine of them asynchronous (xll.md, decision 48)", async_registered == 9);
     check("no old name is exported (xll.md, decision 47)", GetProcAddress(xll, "pro_mack") == NULL);
 
@@ -592,6 +592,36 @@ int main(int argc, char **argv) {
     check("PRO.RES.CY.TEST on RAA gives Z = 14",
           (cy->xltype & 0xFFF) == xltypeMulti && cy->val.array.lparray[1].val.num == 14);
     free12(cy);
+
+    /* Pinto and Gogol's shape drift (xll.md, decision 58): the losses
+     * excess of 25,000 develop by 2.5 while the Pareto shape moves from
+     * 1.75 to 1.25, so those excess of 100,000 develop by 2.5 (4)^0.5 = 5. */
+    XLOPER12 pg_cells[2], pg, pg_att, pg_k, pg_q, pg_qu;
+    pg_cells[0].xltype = pg_cells[1].xltype = xltypeNum;
+    pg_cells[0].val.num = 1.0;
+    pg_cells[1].val.num = 2.5;
+    pg.xltype = xltypeMulti;
+    pg.val.array.lparray = pg_cells;
+    pg.val.array.rows = 1;
+    pg.val.array.columns = 2;
+    XLOPER12 pq_cells[2];
+    pq_cells[0].xltype = pq_cells[1].xltype = xltypeNum;
+    pq_cells[0].val.num = 1.75;
+    pq_cells[1].val.num = 1.25;
+    pg_q.xltype = xltypeMulti;
+    pg_q.val.array.lparray = pq_cells;
+    pg_q.val.array.rows = 1;
+    pg_q.val.array.columns = 2;
+    pg_att.xltype = pg_k.xltype = pg_qu.xltype = xltypeNum;
+    pg_att.val.num = 100000.0;
+    pg_k.val.num = 25000.0;
+    pg_qu.val.num = 1.25;
+    XLOPER12 *pgo = ((Fn10)GetProcAddress(xll, "pro_res_excess_shape"))(&pg, &pg_att, &missing, &pg_k, &pg_q, &pg_qu,
+                                                                       &pg_k, &missing, &missing, &missing);
+    check("PRO.RES.EXCESS.SHAPE gives Pinto and Gogol's 5.0",
+          (pgo->xltype & 0xFFF) == xltypeMulti && pgo->val.array.rows == 4 && pgo->val.array.columns == 5 &&
+              fabs(pgo->val.array.lparray[1 * 5 + 2].val.num - 5.0) < 1e-12);
+    free12(pgo);
 
     /* Unpaid ULAE (xll.md, decision 53): the classical technique, 5% on
      * half of a case outstanding of 100 and all of an IBNR of 50 is 5. */
