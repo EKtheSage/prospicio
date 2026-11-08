@@ -6,6 +6,13 @@
 
 ## Next
 
+- #768 re-pin the aggregate parity references to aggregate 2.1.0 (0.1.0, first; Probability for its files)
+- #771 the extended distortion calibration set (aggregate 2.1.0 parity, 0.1.0)
+- #772 disappearing deductible, `y xs d1 to d2 disappearing` (aggregate 2.1.0 parity, 0.1.0)
+- #773 OEP of a program, net or ceded (aggregate 2.1.0 parity, 0.1.0)
+- #776 dyadic lattice bucket rule and a lattice grid warning for discrete books (aggregate 2.1.0 parity, 0.1.0)
+- #777 event loss tables: shared-event roll-up across units and unit tags (aggregate 2.1.0 parity, 0.1.0)
+- #778 a validation verdict on aggregates (aggregate 2.1.0 parity, 0.1.0)
 
 ## Done
 
