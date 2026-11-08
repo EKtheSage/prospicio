@@ -1206,6 +1206,39 @@ real Excel.
       the kept result. To confirm in Excel 365: `#GETTING_DATA` and then
       the result, and an edit during a long run.
 
+49. **Paid and incurred together on a sheet** (#742 batch 1, user,
+    2026-11-07, "work on 742"). The Munich chain ladder
+    (`PRO.RES.MUNICH`, `.MUNICH.PARAMS`) and Merz and Wüthrich's
+    paid-incurred chain (`PRO.RES.PIC`, `.PIC.PARAMS`) take two triangle
+    arguments, `paid` and `incurred`, laid out as every triangle is and
+    observed at the same cells (an error names a difference in size or
+    cells), rather than one range with two values per cell, which a sheet
+    does not have.
+    - **Settings as R and Python name them.** The Munich `sigma` is one
+      setting for both columns or two cells, paid then incurred (R's
+      `est.sigmaP` and `est.sigmaI`); `tail_paid` and `tail_incurred`
+      read as `tail` does. `tail` gains `"log-linear"`, R ChainLadder's
+      `tail = TRUE` rule (`Tail::LogLinear`), which the Munich parity
+      cases need and the chain ladder and Mack now take as well. The PIC
+      takes every setting of `PaidIncurredChain`: `sigma` and `tau` as
+      rows (estimated when omitted), `extrapolation`, `convention`
+      (`"model"`, the default, or `"r"`), and the priors as a mean and an
+      SD row per side, given together or not at all.
+    - **Views.** Each method has an exhibit by origin with a total and a
+      `.PARAMS` table by development period: the Munich ratios `q` and
+      `q^-1`, their `rho`, each column's factor and sigma (the tail's on
+      the last period) and the two `lambda`s with their residual counts;
+      the PIC's `sigma`, `tau` and the posterior mean and SD of `Phi` and
+      `Psi`. Neither simulates, so both are ordinary functions.
+    - **Parity.** `tests/paid_incurred.rs` runs the crate's cases through
+      the catalogue: R ChainLadder's `MunichChainLadder` in its three arms
+      (Mack's sigma, constant tails, log-linear tails; 176 values) and
+      chainladder-python's `MunichAdjustment` (110), R's printed totals,
+      R's `PaidIncurredChain` on USAA and Dahms (192, `convention "r"`)
+      and Merz and Wüthrich's printed Hertig reserves. The fake Excel
+      checks R's total Munich paid ultimate on MCL through the C API, and
+      the test workbook's MCL sheet sets both methods beside R's figures.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and
@@ -1261,6 +1294,15 @@ order, one small PR each, those already done struck through:
    diagonal projected with a selected pattern by the chain ladder and
    the expected-loss methods, patterns averaged over origin periods,
    origins past the pattern's end~~ (decision 39).
+10. Parity with the Python and R bindings (#742, user, 2026-11-04 and
+    2026-11-07), one PR each: the 0.0.8 reserving methods, ~~the Munich
+    chain ladder and the paid-incurred chain~~ (decision 49), development
+    curves over every age, Friedland's exhibits and the weighted
+    selection of ultimates, the methods on claim counts and
+    Berquist-Sherman, salvage and subrogation, ALAE and ULAE; then the
+    Bayesian additions (a new year's loss ratio, the industry prior), the
+    0.0.8 Models fits (zero-inflated and hurdle counts, quantile and
+    expectile regression), and what a coverage check finds.
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),
@@ -1270,7 +1312,7 @@ an XLL function (decision 4: no state) does not hold.
 
 ## Open (for the user)
 
-- **Next functions:** the parity plan's nine groups are done; further
+- **Next functions:** #742's batches (parity plan, group 10); further
   functions as the user asks (nested
   Archimedean copulas and vines, and the expected multi-year commission
   on the grid, are the nearest left out).

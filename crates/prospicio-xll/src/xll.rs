@@ -509,6 +509,10 @@ mod exports {
     udf!(pro_res_odp_glm, triangle, origins);
     udf!(pro_res_odp_glm_params, triangle, origins);
     udf!(pro_res_odp_glm_residuals, triangle, by, origins);
+    udf!(pro_res_munich, paid, incurred, sigma, tail_paid, tail_incurred, origins);
+    udf!(pro_res_munich_params, paid, incurred, sigma, tail_paid, tail_incurred);
+    udf!(pro_res_pic, paid, incurred, sigma, tau, extrapolation, convention, phi_mean, phi_sd, psi_mean, psi_sd, origins);
+    udf!(pro_res_pic_params, paid, incurred, sigma, tau, extrapolation, convention, phi_mean, phi_sd, psi_mean, psi_sd);
     udf!(pro_tri_incremental, triangle);
     udf!(pro_tri_cumulative, triangle);
     udf!(pro_tri_linkratios, triangle);

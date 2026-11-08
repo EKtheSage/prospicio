@@ -101,10 +101,20 @@ fn every_function_has_a_group() {
     }
 }
 
+/// Grouped functions added after the rename of decision 47, so with no old
+/// name in its table.
+const ADDED_AFTER_THE_RENAME: &[&str] = &[
+    "PRO.RES.MUNICH",
+    "PRO.RES.MUNICH.PARAMS",
+    "PRO.RES.PIC",
+    "PRO.RES.PIC.PARAMS",
+];
+
 /// The table of old and new names in `docs/design/xll.md` (decision 47),
 /// which a user's find-and-replace reads: every new name is in the
 /// catalogue, its old name is it without the group, no old name is still a
-/// name, and every grouped function is in the table.
+/// name, and every grouped function is in the table but those added after
+/// the rename, which never had a name without a group.
 #[test]
 fn the_design_note_lists_every_rename() {
     let note = include_str!("../../../docs/design/xll.md");
@@ -130,7 +140,7 @@ fn the_design_note_lists_every_rename() {
     }
     let mut grouped: Vec<&str> = FUNCTIONS
         .iter()
-        .filter(|f| f.category() != COMMON)
+        .filter(|f| f.category() != COMMON && !ADDED_AFTER_THE_RENAME.contains(&f.name))
         .map(|f| f.name)
         .collect();
     let mut listed: Vec<&str> = rows.iter().map(|(_, new)| new.as_str()).collect();
