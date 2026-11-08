@@ -20,6 +20,43 @@ include_in_header:
       <link rel="preconnect" href="https://fonts.googleapis.com">
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&display=swap">
+      <script>
+      // A link back to the landing page (one level above this site in
+      // target/docs-site), and a button that hides the left navigation on a
+      // wide screen; the choice is kept in localStorage. Styles in
+      // docs-site.css, "Landing link and navigation toggle".
+      (() => {
+        const KEY = "prospicio-sidebar-hidden";
+        const root = document.documentElement;
+        try { if (localStorage.getItem(KEY) === "1") root.classList.add("p-sidebar-hidden"); } catch (e) {}
+        document.addEventListener("DOMContentLoaded", () => {
+          const brand = document.querySelector(".navbar-brand");
+          if (!brand) return;
+          const landing = document.createElement("a");
+          landing.className = "p-landing";
+          landing.href = new URL("../index.html", brand.href).href;
+          landing.textContent = "← prospicio";
+          landing.title = "prospicio home: Python, R and Rust docs";
+          brand.before(landing);
+          if (!document.getElementById("quarto-sidebar")) return;
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "p-sidebar-toggle";
+          const label = () => {
+            const hidden = root.classList.contains("p-sidebar-hidden");
+            button.setAttribute("aria-pressed", String(hidden));
+            button.textContent = hidden ? "Show navigation" : "Hide navigation";
+          };
+          button.addEventListener("click", () => {
+            root.classList.toggle("p-sidebar-hidden");
+            try { localStorage.setItem(KEY, root.classList.contains("p-sidebar-hidden") ? "1" : "0"); } catch (e) {}
+            label();
+          });
+          label();
+          landing.after(button);
+        });
+      })();
+      </script>
 # The guides (docs/guides) and the notebooks (examples/), executed, staged by
 # `cargo xtask python`, which writes this directory before the build.
 user_guide: ../target/user-guide

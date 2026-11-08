@@ -68,3 +68,17 @@ Found on 2026-11-07 and 2026-11-08 with great-docs as installed in
   list their rules; read the selectors from great-docs' `great-docs.scss`
   in the venv instead. The real build is checked from the `docs-site`
   artifact of CI's `docs` job.
+* **Fences of several words.** The guides mark code that CI does not run
+  with the info string `python no-run`. Pandoc's Markdown reader takes a
+  bare info string of one word only, so on the Python site such a block
+  was a paragraph (curly quotes and all) until `cargo xtask python` began
+  staging it as `{.python .no-run}` (`fence_info` in `xtask/src/main.rs`).
+  The source keeps the bare form, which `python/tests/test_guides.py` reads.
+* **No navbar or sidebar settings in great-docs.** great-docs writes the
+  Quarto navbar itself and strips the sidebar's section toggles; nothing in
+  `great-docs.yml` adds a navbar link or hides the sidebar. The script in
+  `include_in_header` adds the link back to the landing page (resolved
+  from `.navbar-brand`'s href, so it works at any depth) and a button that
+  hides `#quarto-sidebar` and widens `main.content` to `page-start`, kept
+  in `localStorage` under `prospicio-sidebar-hidden`. On the R site,
+  `navbar: components:` in `_pkgdown.yml` takes a relative `href`.

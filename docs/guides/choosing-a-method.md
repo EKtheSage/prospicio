@@ -651,7 +651,7 @@ share. A per-risk excess of loss on the retained part is a second stage
   distortion risk measure (here 99% TVaR). The result has `.margin`, `.capital`
   and `.assets`, which the example above uses.
 
-**More detail.** [What a reinsurance price is](reinsurance-price.md), section 5.
+**More detail.** [What a reinsurance price is](reinsurance-price.md), section 4.
 
 ## 6. Aggregate stop loss, adverse development and loss portfolio covers
 
@@ -1030,7 +1030,7 @@ sees only the price.
   brokerage). Or price the contract standalone with `price` first.
 
 **More detail.** [Risk loads and distortions](risk-loads-and-distortions.md),
-[What a reinsurance price is](reinsurance-price.md), section 7.
+[What a reinsurance price is](reinsurance-price.md), section 6.
 
 ## See also
 

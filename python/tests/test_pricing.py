@@ -459,7 +459,7 @@ def test_price_on_a_grid_matches_its_draws():
 
 
 def test_quote_reproduces_the_reinsurance_price_guide():
-    """docs/guides/reinsurance-price.md, sections 2, 3 and 8 (#197)."""
+    """docs/guides/reinsurance-price.md, sections 1, 2 and 7 (#197)."""
     from prospicio.distributions import Grid, Pareto, Poisson
     from prospicio.pricing import Quote, price
     from prospicio.reinsurance import Layer, Tower
