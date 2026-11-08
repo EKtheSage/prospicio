@@ -357,7 +357,7 @@ def test_one_year_fields(view, fit):
     assert repr(view).startswith("HierarchicalBfOneYearFit(programs=3, origins=9, n_sims=500")
 
 
-def test_one_year_is_narrower_than_the_lifetime_view(view):
+def test_one_year_is_within_a_gross_bound_of_the_lifetime_view(view):
     # The oldest origin of program a is at its last age: no cell, no change.
     assert view.cdr.marginal(("a", "2020")).variance() == 0.0
     assert view.opening_reserve[0] == 0.0
@@ -366,8 +366,9 @@ def test_one_year_is_narrower_than_the_lifetime_view(view):
     # 0.88) over 24 seeds, and one seed (14) put the one-year variance above the
     # lifetime one by 0.2%; on aarch64 the fixture's seed gave 1.40 (#762, #782). A
     # strict "<" is therefore a coin flip near its edge, so the check is a gross
-    # bound: a one-year view as wide as twice the lifetime one is wrong. The exact
-    # claim is tested on the reference panels in validation/tests.
+    # bound: a one-year view as wide as twice the lifetime one is wrong. This is a
+    # gross sanity bound only; nothing in the suite tests that the year is narrower
+    # than the lifetime (a single fit of this size cannot decide it).
     assert view.cdr.variance() < 2.0 * view.fit.reserves.variance()
     # The opening reserve is the posterior mean of the lifetime reserve.
     assert sum(view.opening_reserve) == pytest.approx(view.fit.reserves.mean(), rel=0.05)
