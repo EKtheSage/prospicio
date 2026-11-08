@@ -44,3 +44,4 @@ knowledge/references/*.docx
 
 # The Schedule P panel a guide fetches at run time: public research data, not redistributed here.
 docs/guides/schedule_p_panel.csv
+Rplots.pdf

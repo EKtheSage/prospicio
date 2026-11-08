@@ -436,6 +436,68 @@ fn executed(text: &str, guides: &Path) -> String {
     out
 }
 
+/// An R twin that holds `EXECUTE_MARK` as the body of an article that runs:
+/// a hidden first chunk runs the chunks from the repository's root, as
+/// `R/prospicio/tests/test-guides.R` does, and loads
+/// `docs/guides/site/figures.R`, which draws ggplot2 figures in the site's
+/// colours for both modes; the `text` block after a chunk, which that test
+/// checks against the chunk's output, is left out because the chunk's own
+/// output is shown.
+fn executed_r(text: &str, root: &Path) -> String {
+    let dir = root.to_string_lossy().replace('\\', "/");
+    // The YAML header stays first, where `article` looks for the title.
+    let (header, text) = match text.strip_prefix("---").and_then(|r| r.split_once("\n---")) {
+        Some((h, rest)) => {
+            let rest = rest.split_once('\n').map_or("", |x| x.1);
+            (format!("---{h}\n---\n"), rest)
+        }
+        None => (String::new(), text),
+    };
+    let mut out = format!(
+        "{header}```{{r, include = FALSE}}\nknitr::opts_knit$set(root.dir = \"{dir}\")\n\
+         source(\"{dir}/docs/guides/site/figures.R\")\n```\n\n"
+    );
+    let mut lines = text.lines().peekable();
+    let mut after_chunk = false;
+    while let Some(line) = lines.next() {
+        if line.trim() == EXECUTE_MARK {
+            continue;
+        }
+        let Some(info) = line.strip_prefix("```") else {
+            if !line.trim().is_empty() {
+                after_chunk = false;
+            }
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        };
+        let info = info.trim();
+        if info == "text" && after_chunk {
+            for l in lines.by_ref() {
+                if l.starts_with("```") {
+                    break;
+                }
+            }
+            if lines.peek().is_some_and(|l| l.trim().is_empty()) {
+                lines.next();
+            }
+            after_chunk = false;
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+        for l in lines.by_ref() {
+            out.push_str(l);
+            out.push('\n');
+            if l.starts_with("```") {
+                break;
+            }
+        }
+        after_chunk = info.starts_with("{r") && !info.contains("eval = FALSE");
+    }
+    out
+}
+
 /// An opening fence whose info string is several bare words, as the guides'
 /// `python no-run`, written as pandoc attributes (`{.python .no-run}`):
 /// pandoc's Markdown reader takes a bare info string of one word only and
@@ -722,6 +784,11 @@ fn stage_r_articles() -> Result {
             text = text
                 .replace(up, &format!("]({GITHUB_BLOB}"))
                 .replace(&format!("]({SITE}"), "](../../");
+            let marked = text.lines().any(|l| l.trim() == EXECUTE_MARK);
+            if marked {
+                text = executed_r(&text, &root);
+            }
+            let run = run || marked;
             let name = file_stem(source);
             let rel = source
                 .strip_prefix(&root)
@@ -1049,8 +1116,8 @@ fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        TocPage, TocSection, check_toc, executed, fence_info, page, parse_toc, r_articles_block,
-        staged_name,
+        TocPage, TocSection, article, check_toc, executed, executed_r, fence_info, page, parse_toc,
+        r_articles_block, staged_name,
     };
 
     const TOC: &str = "# comment
@@ -1164,5 +1231,29 @@ mod tests {
             "{out}"
         );
         assert!(out.contains("```bash\npip install x\n```"), "{out}");
+    }
+
+    #[test]
+    fn an_executed_r_twin_runs_from_the_root_and_drops_the_checked_output() {
+        let twin = "---\ntitle: \"T\"\n---\n\n<!-- site: execute -->\n\nProse.\n\n```{r}\nprint(1)\n```\n\n```text\n[1] 1\n```\n\nMore.\n\n```{r, eval = FALSE}\nslow()\n```\n\n```text\nrecorded\n```\n";
+        let out = executed_r(twin, std::path::Path::new("C:\\repo"));
+        assert!(
+            out.starts_with(
+                "---\ntitle: \"T\"\n---\n```{r, include = FALSE}\n\
+                 knitr::opts_knit$set(root.dir = \"C:/repo\")\n\
+                 source(\"C:/repo/docs/guides/site/figures.R\")\n```\n"
+            ),
+            "{out}"
+        );
+        assert!(!out.contains("<!-- site: execute -->"), "{out}");
+        assert!(out.contains("```{r}\nprint(1)\n```\n\nMore."), "{out}");
+        assert!(!out.contains("[1] 1"), "{out}");
+        assert!(
+            out.contains("slow()\n```\n\n```text\nrecorded\n```"),
+            "{out}"
+        );
+        let page = article(&out, "docs/guides/t.qmd", "t", true);
+        assert!(page.starts_with("---\ntitle: \"T\"\n---"), "{page}");
+        assert!(page.contains("knitr::opts_knit$set(root.dir"), "{page}");
     }
 }

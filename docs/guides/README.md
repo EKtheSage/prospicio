@@ -207,15 +207,20 @@ numbers: a fit against the data, a distribution, values by band or by year.
 Keep a printed comparison where CI must check the number (book against
 prospicio).
 
-- A guide that draws them holds the line `<!-- site: execute -->`. The Python
-  site then runs its `python` blocks (`cargo xtask python`) and shows their
-  output in place of the checked `text` blocks. The other guides are shown
-  as written.
+- A guide that draws them holds the line `<!-- site: execute -->`, and so
+  does its R twin. The Python site then runs the guide's `python` blocks
+  (`cargo xtask python`) and the R site the twin's chunks (`cargo xtask r`),
+  and each shows their output in place of the checked `text` blocks. The
+  other guides are shown as written.
 - Draw with plain matplotlib, at most three series a panel. Leave the colours
   at their defaults, and use greys (`color="0.75"`) for data in the
   background. `docs/guides/site/figures.py` maps the colours to the site's
   light and dark modes. Do not call `plt.show()`.
-- Lay out a table with great_tables (`GT`) on a pandas DataFrame, with a
-  title and the units.
+- In the R twin, draw with plain ggplot2 and print the plot. Leave the
+  colours at their defaults and use greys (`"grey75"`) for data in the
+  background; `docs/guides/site/figures.R` maps them to the R site's modes.
+- Lay out a table with great_tables (`GT`) on a pandas DataFrame, or gt
+  (`gt()`) on a data frame in R, with a title and the units.
 - Draw every figure from values the guide computes. CI runs the code under
-  `python/tests/test_guides.py`, so a figure cannot fail silently.
+  `python/tests/test_guides.py` and `R/prospicio/tests/test-guides.R`, so a
+  figure cannot fail silently.
