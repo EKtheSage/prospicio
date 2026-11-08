@@ -232,7 +232,7 @@ they differ:
 
 ```{r}
 #| label: ex26-figure
-library(ggplot2)
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
 bands <- factor(c("0-1k", "1-1.5k", "1.5-2k", "2-2.5k", "2.5-3k", "3k+"),
                 levels = c("0-1k", "1-1.5k", "1.5-2k", "2-2.5k", "2.5-3k", "3k+"))
 least <- min_chi_square(function(m, s) lognormal(m, abs(s)), c(7.2, 0.5))$par

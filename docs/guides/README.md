@@ -219,6 +219,8 @@ prospicio).
 - In the R twin, draw with plain ggplot2 and print the plot. Leave the
   colours at their defaults and use greys (`"grey75"`) for data in the
   background; `docs/guides/site/figures.R` maps them to the R site's modes.
+  Attach ggplot2 with `library(ggplot2, exclude = "layer")`: its `layer()`
+  would mask prospicio's.
 - Lay out a table with great_tables (`GT`) on a pandas DataFrame, or gt
   (`gt()`) on a data frame in R, with a title and the units.
 - Draw every figure from values the guide computes. CI runs the code under
