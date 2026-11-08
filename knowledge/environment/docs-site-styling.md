@@ -107,3 +107,16 @@ Found on 2026-11-07 and 2026-11-08 with great-docs as installed in
   --virtual-time-budget=6000 --screenshot=<file> <url>`; great-docs reads its
   mode from `localStorage["great-docs-theme"]`, which a page on the same
   origin can set before it loads the guide in an iframe.
+* **ggplot2 in the R twins.** `library(ggplot2)` after `library(prospicio)`
+  masks prospicio's `layer()` (ggplot2 exports a `layer()` too; no other
+  export of ggplot2 or gt clashes), and a later chunk then fails with
+  "`data` must be a <data.frame>"; attach it with
+  `library(ggplot2, exclude = "layer")`. Under `scale_x_log10()`,
+  `geom_histogram(breaks = )` takes the edges in data units, not log10
+  units. svglite quotes the face inside a single-quoted style attribute
+  (`font-family: "Liberation Sans";`), so a rewrite of the face must take
+  the quotes with it.
+* **pkgdown's mode in a screenshot.** The R site's mode is the
+  `data-bs-theme` attribute on `<html>`; a copy of the page with a script
+  that sets it (and moves the element to check into `main`, since headless
+  Edge does not scroll to it) shows either mode.
