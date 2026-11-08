@@ -12,6 +12,14 @@ changelog:
   enabled: false
 site:
   html-math-method: katex
+  # The look shared with the R site and the landing page (fonts, colours,
+  # tables that wrap); see the comment at the top of the file.
+  css: docs-site.css
+include_in_header:
+  - text: |
+      <link rel="preconnect" href="https://fonts.googleapis.com">
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&display=swap">
 # The guides (docs/guides) and the notebooks (examples/), executed, staged by
 # `cargo xtask python`, which writes this directory before the build.
 user_guide: ../target/user-guide
