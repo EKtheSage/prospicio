@@ -517,6 +517,14 @@ mod exports {
     udf!(pro_res_munich_params, paid, incurred, sigma, tail_paid, tail_incurred);
     udf!(pro_res_pic, paid, incurred, sigma, tau, extrapolation, convention, phi_mean, phi_sd, psi_mean, psi_sd, origins);
     udf!(pro_res_pic_params, paid, incurred, sigma, tau, extrapolation, convention, phi_mean, phi_sd, psi_mean, psi_sd);
+    udf!(pro_res_freqsev, amounts, counts, ultimate_counts, average, tail, selected, kind, origins);
+    udf!(pro_res_freqsev_trended, amounts, counts, exposure, frequency, severity, base, frequency_trend, severity_trend, exposure_factors, frequency_factors, severity_factors, origins);
+    udf!(pro_res_disposal, closed, paid, ultimate_counts, rates, severities, tail_severity_from, trend, base, factors, origins, output);
+    udf!(pro_res_case_os, paid, incurred, paid_on_case, case_on_case, paid_to_ultimate, origins, output);
+    udf!(pro_res_trend_by_age, amounts, counts);
+    udf!(pro_res_bs_case, incurred, paid, open, trend, max_age, output);
+    udf!(pro_res_bs_settlement, paid, closed, ultimate_counts, rates, interpolation, output);
+    udf!(pro_res_bs, incurred, paid, reported_counts, closed, ultimate_counts, trend, max_age, rates, interpolation, output);
     udf!(pro_tri_incremental, triangle);
     udf!(pro_tri_cumulative, triangle);
     udf!(pro_tri_linkratios, triangle);

@@ -112,6 +112,14 @@ const ADDED_AFTER_THE_RENAME: &[&str] = &[
     "PRO.RES.MUNICH.PARAMS",
     "PRO.RES.PIC",
     "PRO.RES.PIC.PARAMS",
+    "PRO.RES.FREQSEV",
+    "PRO.RES.FREQSEV.TRENDED",
+    "PRO.RES.DISPOSAL",
+    "PRO.RES.CASE.OS",
+    "PRO.RES.TREND.BY.AGE",
+    "PRO.RES.BS.CASE",
+    "PRO.RES.BS.SETTLEMENT",
+    "PRO.RES.BS",
 ];
 
 /// The table of old and new names in `docs/design/xll.md` (decision 47),

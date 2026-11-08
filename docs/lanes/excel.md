@@ -10,7 +10,7 @@ This lane wraps other lanes' crates and changes none of them
 
 - [excel-confirm-groups] in Excel 365: the four categories in Insert Function
 - [excel-confirm-async] in Excel 365: `#GETTING_DATA` then the result for the bootstraps and Bayesian fits, and an edit during a long run (decision 48)
-- [excel-parity-742] #742: the rest of batch 1 (claim counts and Berquist-Sherman, salvage and subrogation, ALAE and ULAE), then batches 2 to 4
+- [excel-parity-742] #742: the rest of batch 1 (salvage and subrogation, ALAE and ULAE), then batches 2 to 4
 - [excel-more-functions] further functions as the user asks, each in its group
 - [code-signing-certificate] a code-signing certificate is the user's to buy
 
@@ -74,3 +74,4 @@ This lane wraps other lanes' crates and changes none of them
 - paid and incurred together (`PRO.RES.MUNICH`, `.MUNICH.PARAMS`, `PRO.RES.PIC`, `.PIC.PARAMS`; R `MunichChainLadder` and `PaidIncurredChain` and chainladder-python `MunichAdjustment` parity; `tail` takes `"log-linear"`; decision 49, #742 batch 1)
 - development curves over every age (`PRO.RES.CURVE`, `.CURVE.STATS`: six shapes, R `lm` and `nls` parity, chained into `PRO.RES.CL` at chainladder-python `TailCurve` parity; decision 50, #742 batch 1)
 - Friedland's development exhibit and the weighted selection of ultimates (`PRO.RES.DEV.EXHIBIT`, `PRO.RES.SELECT`: Friedland chapters 7 and 15 to the printed digits, chainladder-python `VotingChainladder` parity; decision 51, #742 batch 1)
+- the methods on claim counts and the Berquist-Sherman adjustments (`PRO.RES.FREQSEV`, `.FREQSEV.TRENDED`, `.DISPOSAL`, `.CASE.OS`, `.TREND.BY.AGE`, `.BS.CASE`, `.BS.SETTLEMENT`, `.BS`: Friedland chapters 11 to 13 to the printed digits, both adjustments at the library's `BerquistSherman`; decision 52, #742 batch 1)

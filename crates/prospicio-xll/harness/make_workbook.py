@@ -534,6 +534,128 @@ pi.column_dimensions["M"].width = 30
 for col in "ABCDEFGHIJKL":
     pi.column_dimensions[col].width = 13
 
+# Methods on claim counts (decision 52): Friedland, chapters 11 to 13, on
+# Berquist and Sherman's medical malpractice data, U.S. Industry Auto and
+# XYZ Insurer (accident years 2001 to 2008, where its counts start).
+def counts_data(name, first, last, max_age):
+    path = Path(__file__).resolve().parents[3] / "validation" / "data" / f"{name}.csv"
+    rows = {}
+    with open(path, newline="") as f:
+        for r in csv.DictReader(line for line in f if not line.startswith("#")):
+            o, a = int(r["origin"]), int(r["development"])
+            if first <= o <= last and a <= max_age:
+                rows.setdefault(o, []).append({k: float(v) for k, v in r.items()})
+    return rows
+
+cc = wb.create_sheet("Claim counts")
+cc["A1"] = "prospicio XLL test: methods on claim counts and the Berquist-Sherman adjustments (Friedland, chapters 11 to 13)"; cc["A1"].font = Font(bold=True, size=13)
+cc["A2"] = "Inputs shaded; checks against Friedland's printed exhibits at the right of each block."
+cc["A2"].font = note
+def block(rows, top, left, column, title):
+    cc.cell(row=top - 1, column=left, value=title).font = bold
+    for r, (year, cells) in enumerate(sorted(rows.items())):
+        cc.cell(row=top + r, column=left, value=year).font = bold
+        for c, x in enumerate(cells):
+            v = column(x) if callable(column) else x[column]
+            cc.cell(row=top + r, column=left + 1 + c, value=v).fill = inp
+def ref(top, left, rows, cols):
+    from openpyxl.utils import get_column_letter as L
+    return f"${L(left)}${top}:${L(left + cols - 1)}${top + rows - 1}"
+checks = []
+
+# Berquist and Sherman's medical malpractice data (chapter 13, Exhibit I).
+mm = counts_data("berqsherm_medmal", 1969, 1976, 96)
+block(mm, 5, 1, "incurred", "Medical malpractice incurred")
+block(mm, 5, 11, "paid", "Paid")
+block(mm, 15, 1, lambda x: x["reported"] - x["closed"], "Open counts (reported less closed)")
+MI, MP, MOPEN = ref(5, 2, 8, 8), ref(5, 12, 8, 8), ref(15, 2, 8, 8)
+cc["A25"] = "Case adequacy adjustment at 15% (PRO.RES.BS.CASE)"; cc["A25"].font = bold
+cc["A26"] = ArrayFormula("A26:H33", f"=PRO.RES.BS.CASE({MI},{MP},{MOPEN},0.15)")
+cc["K25"] = "Average case outstanding"; cc["K25"].font = bold
+cc["K26"] = ArrayFormula("K26:R33", f'=PRO.RES.BS.CASE({MI},{MP},{MOPEN},0.15,,"average_case")')
+cc["A36"] = "Its trend by age (PRO.RES.TREND.BY.AGE)"; cc["A36"].font = bold
+cc["A37"] = ArrayFormula("A37:D46", "=PRO.RES.TREND.BY.AGE(K26:R33)")
+checks += [
+    ("Adjusted 1969 at 12", "=A26", 3793504, 0.5),
+    ("Adjusted 1970 at 72", "=F27", 33362729, 0.5),
+    ("Average case trend at 12 (15.6%)", "=ROUND(B38,3)", 0.156, 1e-9),
+    ("Average case trend at 48 (34.2%)", "=ROUND(B41,3)", 0.342, 1e-9),
+]
+
+# U.S. Industry Auto (chapter 12, Exhibit I): case outstanding development
+# on the book's rounded ratios.
+ua = counts_data("friedland_us_auto", 1998, 2007, 120)
+block(ua, 50, 1, "paid", "U.S. Industry Auto paid ($000)")
+block(ua, 50, 13, "reported", "Reported")
+UP, UR, UO = ref(50, 2, 10, 10), ref(50, 14, 10, 10), "$A$50:$A$59"
+cc["A62"] = "Ratios (24 to 120 months)"; cc["A62"].font = bold
+cc["A63"] = "Paid on case"; cc["A64"] = "Case on case"
+for k, (p, q) in enumerate(zip([0.833, 0.701, 0.714, 0.714, 0.653, 0.631, 0.553, 0.437, 0.524],
+                               [0.526, 0.566, 0.528, 0.486, 0.511, 0.555, 0.632, 0.674, 0.580])):
+    cc.cell(row=63, column=3 + k, value=p).fill = inp
+    cc.cell(row=64, column=3 + k, value=q).fill = inp
+cc["A66"] = "Case outstanding development, 1.10 paid to ultimate (PRO.RES.CASE.OS)"; cc["A66"].font = bold
+cc["A67"] = ArrayFormula("A67:F78", f"=PRO.RES.CASE.OS({UP},{UR},B63:K63,B64:K64,1.1,{UO})")
+cc["H66"] = "Selected by the latest 3 (output paid_on_case)"; cc["H66"].font = bold
+cc["H67"] = ArrayFormula("H67:Q67", f'=PRO.RES.CASE.OS({UP},{UR},"latest 3","latest 3",1.1,,"paid_on_case")')
+checks += [
+    ("Case outstanding total ultimate", "=D78", 567757738, 2),
+    ("Case outstanding total IBNR", "=E78", 24276151, 2),
+    ("Paid on case at 24, latest 3", "=ROUND(I67,3)", 0.833, 1e-9),
+]
+
+# XYZ Insurer, 2001 to 2008 (chapter 11, Exhibits IV and VI).
+xy = counts_data("friedland_xyz", 2001, 2008, 96)
+block(xy, 82, 1, "closed_counts", "XYZ closed counts")
+block(xy, 82, 11, "paid", "XYZ paid ($000)")
+block(xy, 92, 1, "reported_counts", "XYZ reported counts")
+block(xy, 92, 11, "reported", "XYZ reported ($000)")
+XC, XP, XN, XR, XO = ref(82, 2, 8, 8), ref(82, 12, 8, 8), ref(92, 2, 8, 8), ref(92, 12, 8, 8), "$A$82:$A$89"
+cc["U81"] = "Ultimate counts"; cc["V81"] = "Tort factor"; cc["W81"] = "Premium"; cc["X81"] = "On-level"
+for c in "UVWX":
+    cc[f"{c}81"].font = bold
+reported = [1455, 1554, 1629, 2258, 2390, 1657, 1264, 1036]
+cdf = [1.000, 1.000, 1.001, 1.002, 1.005, 1.013, 1.035, 1.131]
+for k, year in enumerate(sorted(xy)):
+    r = 82 + k
+    cc[f"U{r}"] = reported[k] * cdf[k]
+    cc[f"V{r}"] = 0.670 if k < 5 else (0.750 if k == 5 else 1.0)
+    cc[f"W{r}"] = xy[year][-1]["premium"]
+    cc[f"X{r}"] = 0.8 if year == 2007 else 1.0
+    for c in "UVWX":
+        cc[f"{c}{r}"].fill = inp
+cc["A101"] = "Disposal rates as the book rounds them"; cc["A101"].font = bold
+for k, v in enumerate([0.244, 0.572, 0.704, 0.814, 0.910, 0.952, 0.982, 0.994]):
+    cc.cell(row=102, column=2 + k, value=v).fill = inp
+cc["A104"] = "Disposal rate method, 5% trend to 2008 (PRO.RES.DISPOSAL)"; cc["A104"].font = bold
+cc["A105"] = ArrayFormula("A105:E114", f'=PRO.RES.DISPOSAL({XC},{XP},U82:U89,B102:I102,"latest 2",84,0.05,2008,V82:V89,{XO})')
+cc["H104"] = "Frequency-severity approach 2 (PRO.RES.FREQSEV.TRENDED)"; cc["H104"].font = bold
+cc["H105"] = ArrayFormula("H105:N114", f"=PRO.RES.FREQSEV.TRENDED({XR},{XN},W82:W89,0.0236,26.72,2008,-0.015,0.05,X82:X89,,,{XO})")
+checks += [
+    ("Disposal total ultimate", "=D114", 385676, 6),
+    ("Approach 2, 2008 ultimate", "=M113", 30140.26, 0.5),
+    ("Approach 2, 2008 IBNR", "=N113", 11508.26, 0.5),
+]
+cc["A117"] = "Settlement rate adjustment of XYZ paid on the ultimate counts (PRO.RES.BS.SETTLEMENT)"; cc["A117"].font = bold
+cc["A118"] = ArrayFormula("A118:H125", f"=PRO.RES.BS.SETTLEMENT({XP},{XC},U82:U89)")
+cc["K117"] = "Both adjustments, 5% to 84 months (PRO.RES.BS)"; cc["K117"].font = bold
+cc["K118"] = ArrayFormula("K118:R125", f"=PRO.RES.BS({XR},{XP},{XN},{XC},U82:U89,0.05,84)")
+checks += [
+    ("Settlement keeps the latest paid (2001)", "=H118", "=S82", 1e-9),
+    ("Both keep the latest reported (2001)", "=R118", "=S92", 1e-9),
+]
+
+cc["U4"] = "Check against Friedland"; cc["U4"].font = bold
+for h, col in zip(["Check", "prospicio", "Expected", "Match"], "UVWX"):
+    cc[f"{col}5"] = h; cc[f"{col}5"].font = bold
+for i, (label, formula, want, tol) in enumerate(checks):
+    r = 6 + i
+    cc[f"U{r}"] = label; cc[f"V{r}"] = formula; cc[f"W{r}"] = want
+    cc[f"X{r}"] = f"=ABS(V{r}-W{r})<{tol}"
+cc.column_dimensions["U"].width = 36
+for col in "ABCDEFGHIJKLMNOPQRST":
+    cc.column_dimensions[col].width = 12
+
 # Triangle helpers on the RAA sheet's triangle.
 th = wb.create_sheet("Triangle helpers")
 th["A1"] = "prospicio XLL test: triangle helpers on RAA"; th["A1"].font = Font(bold=True, size=13)
