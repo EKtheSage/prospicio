@@ -64,6 +64,13 @@ Do these once, before the first release.
    use. Adding yourself as a required reviewer on each (*Settings →
    Environments*) makes every publish wait for your approval.
 
+## Version plan
+
+After 0.0.9 comes 0.1.0, then 0.2.0, and so on up to 0.9.0. The 0.9 line is
+the release candidates: 0.9.0, then 0.9.1 and later patches as needed. Then
+1.0. Before 1.0 a minor bump may break the API; a patch bump stays
+compatible. The scope of each version is the user's decision (see below).
+
 ## Scope of the next release
 
 What goes into a release is the user's decision. The chosen issues and PRs
@@ -128,6 +135,22 @@ survival models stay parked. #599's pooling structure is the recommended one
 
 Probability has no open item. Parked: #553 (IFRS 17, `P4`), claim-level
 reserving and the survival models.
+
+**0.1.0** (the user's decision of 2026-11-07, planned; the release after
+0.0.9): parity with Python `aggregate` 2.1.0 (released 2026-11-07), except
+the characteristic-function engine, and the 0.0.9 leftovers the user moves
+here. Milestone 0.1.0. #768 goes first: the other items check their numbers
+against its references.
+
+| Lane | New work | Small items |
+|---|---|---|
+| Aggregate (Probability for its files) | #768 (re-pin the parity references to aggregate 2.1.0, and settle three open checks) | |
+| Probability | #769 (Tsallis distortion), #770 (Gini index of a distortion, `from_gini`) | #774 (refuse invalid discrete inputs, breaking), #775 (Tweedie parameter conversions) |
+| Aggregate | #772 (disappearing deductible), #773 (OEP of a program, net or ceded), #777 (event loss tables across units), #778 (a validation verdict), #776 (lattice bucket rule and warning) | #771 (the extended distortion calibration set) |
+
+**0.2.0** (planned): the characteristic-function engine, #779, the laws that
+need it, #780, and an event loss table as a compound severity, #781.
+Milestone 0.2.0.
 
 ## Each release
 

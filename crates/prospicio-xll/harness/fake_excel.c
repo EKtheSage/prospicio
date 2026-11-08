@@ -254,7 +254,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and fourteen functions registered", registered == 114);
+    check("one hundred and eighteen functions registered", registered == 118);
     check("nine of them asynchronous (xll.md, decision 48)", async_registered == 9);
     check("no old name is exported (xll.md, decision 47)", GetProcAddress(xll, "pro_mack") == NULL);
 
@@ -549,6 +549,46 @@ int main(int argc, char **argv) {
           (og->xltype & 0xFFF) == xltypeMulti && og->val.array.rows == 12 && og->val.array.columns == 8 &&
               fabs(og->val.array.lparray[11 * 8 + 3].val.num - 52135.2283) < 0.01);
     free12(og);
+
+    /* Paid and incurred together (xll.md, decision 49) on Quarg and Mack's
+     * MCL triangles: the Munich chain ladder with Mack's sigma, R's printed
+     * total paid ultimate 32121.497, and the paid-incurred chain's table. */
+    static const double MCL_P[7][7] = {{576, 1804, 1970, 2024, 2074, 2102, 2131}, {866, 1948, 2162, 2232, 2284, 2348},
+                                       {1412, 3758, 4252, 4416, 4494}, {2286, 5292, 5724, 5850}, {1868, 3778, 4648},
+                                       {1442, 4010}, {2044}};
+    static const double MCL_I[7][7] = {{978, 2104, 2134, 2144, 2174, 2182, 2174}, {1844, 2552, 2466, 2480, 2508, 2454},
+                                       {2904, 4354, 4698, 4600, 4644}, {3502, 5958, 6070, 6142}, {2812, 4882, 4852},
+                                       {2642, 4406}, {5022}};
+    XLOPER12 mp_cells[49], mi_cells[49], mp, mi;
+    for (int r = 0; r < 7; r++)
+        for (int c = 0; c < 7; c++) {
+            XLOPER12 *p = &mp_cells[r * 7 + c], *q = &mi_cells[r * 7 + c];
+            if (c < 7 - r) {
+                p->xltype = q->xltype = xltypeNum;
+                p->val.num = MCL_P[r][c];
+                q->val.num = MCL_I[r][c];
+            } else {
+                p->xltype = q->xltype = xltypeNil;
+            }
+        }
+    mp.xltype = mi.xltype = xltypeMulti;
+    mp.val.array.lparray = mp_cells;
+    mi.val.array.lparray = mi_cells;
+    mp.val.array.rows = mi.val.array.rows = 7;
+    mp.val.array.columns = mi.val.array.columns = 7;
+    /* Mack's sigma rule, the string `rule` above. */
+    XLOPER12 *mu = ((Fn6)GetProcAddress(xll, "pro_res_munich"))(&mp, &mi, &rule, &missing, &missing, &missing);
+    print_result("PRO.RES.MUNICH(MCL paid, MCL incurred, \"mack\")", mu);
+    check("PRO.RES.MUNICH total paid ultimate is R's 32121.497",
+          (mu->xltype & 0xFFF) == xltypeMulti && mu->val.array.rows == 9 && mu->val.array.columns == 11 &&
+              fabs(mu->val.array.lparray[8 * 11 + 4].val.num - 32121.4969949898) < 1e-6);
+    free12(mu);
+    XLOPER12 *pic = ((Fn11)GetProcAddress(xll, "pro_res_pic"))(&mp, &mi, &missing, &missing, &missing, &missing,
+                                                              &missing, &missing, &missing, &missing, &missing);
+    check("PRO.RES.PIC on MCL is 9 x 8, the oldest origin with no reserve",
+          (pic->xltype & 0xFFF) == xltypeMulti && pic->val.array.rows == 9 && pic->val.array.columns == 8 &&
+              pic->val.array.lparray[1 * 8 + 5].val.num == 0.0);
+    free12(pic);
 
     /* Triangle helpers: incremental and back is the triangle again. */
     typedef XLOPER12 *(*Fn1)(XLOPER12 *);

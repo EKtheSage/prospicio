@@ -130,6 +130,10 @@ The `...` is the chain ladder's options: `[average], [tail], [origins],
 | `PRO.RES.ODP.GLM(triangle, [origins])` | The ODP model as a quasi-Poisson GLM: reserve, SEs, RMSEP and CV per origin |
 | `PRO.RES.ODP.GLM.PARAMS(triangle, [origins])` | Its coefficients, SEs and dispersion |
 | `PRO.RES.ODP.GLM.RESIDUALS(triangle, [by], [origins])` | Its residuals by cell, or grouped by `"origin"`, `"development"` or `"calendar"` |
+| `PRO.RES.MUNICH(paid, incurred, [sigma], [tail_paid], [tail_incurred], [origins])` | Munich chain ladder: paid and incurred developed together; latest and ultimate P/I, paid reserve, incurred IBNR and the separate chain ladders |
+| `PRO.RES.MUNICH.PARAMS(paid, incurred, [sigma], [tail_paid], [tail_incurred])` | Its `q`, `rho`, factors and sigmas by period, and the two `lambda`s |
+| `PRO.RES.PIC(paid, incurred, [sigma], [tau], [extrapolation], [convention], [phi_mean], [phi_sd], [psi_mean], [psi_sd], [origins])` | Merz and Wüthrich's paid-incurred chain: one ultimate from both, its weight on incurred, reserve, SE and CV |
+| `PRO.RES.PIC.PARAMS(paid, incurred, ...)` | Its `sigma`, `tau` and the posterior of `Phi` and `Psi` by period |
 | `PRO.RES.BAYES.ODP(triangle, [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins])` | Bayesian ODP chain ladder by MCMC: reserves, posterior or diagnostics |
 | `PRO.RES.BAYES.BF(triangle, exposure, apriori, [cv], [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins], [common_cv])` | Bayesian Bornhuetter–Ferguson by MCMC: reserves, ultimates, posterior or diagnostics |
 
@@ -167,7 +171,16 @@ These are common functions, without a group, since pricing reads triangles too.
   The ODP bootstrap functions take the same row as their last argument,
   with the kind `"volume"` or blank.
 - `tail`: omit for none, a factor such as `1.05`, or `"exponential"`,
-  `"inverse_power"` or `"bondy"`.
+  `"inverse_power"`, `"bondy"` or `"log-linear"` (R ChainLadder's
+  `tail = TRUE`).
+- `paid`, `incurred`: the Munich chain ladder and the paid-incurred chain
+  take two triangles of the same size, observed at the same cells. The
+  Munich `sigma` is one setting or two cells, paid then incurred. The PIC
+  estimates `sigma` and `tau` unless you give a row of them (one per
+  period, and one fewer for `tau`); its priors are non-informative unless
+  you give a mean and an SD row for a side; `convention` `"r"` reproduces
+  R ChainLadder's `PaidIncurredChain` exactly, the default `"model"` is
+  the model's own posterior (about 0.5% apart on USAA).
 - `origins`: labels for the first column (1, 2, ... if omitted).
 - `selected`, `kind`, `weight`, `pattern_ages`: your own factors.
   `selected` is a row with a cell per column (a blank keeps the
