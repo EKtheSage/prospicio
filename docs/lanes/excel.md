@@ -10,7 +10,7 @@ This lane wraps other lanes' crates and changes none of them
 
 - [excel-confirm-groups] in Excel 365: the four categories in Insert Function
 - [excel-confirm-async] in Excel 365: `#GETTING_DATA` then the result for the bootstraps and Bayesian fits, and an edit during a long run (decision 48)
-- [excel-parity-742] #742: the rest of batch 1 (development curves, Friedland's exhibits and the weighted ultimates, claim counts and Berquist-Sherman, salvage and subrogation, ALAE and ULAE), then batches 2 to 4
+- [excel-parity-742] #742: the rest of batch 1 (Friedland's exhibits and the weighted ultimates, claim counts and Berquist-Sherman, salvage and subrogation, ALAE and ULAE), then batches 2 to 4
 - [excel-more-functions] further functions as the user asks, each in its group
 - [code-signing-certificate] a code-signing certificate is the user's to buy
 
@@ -72,3 +72,4 @@ This lane wraps other lanes' crates and changes none of them
 - [excel-remove-aliases] the 98 old names removed in 0.0.9 rather than 0.0.10 (branch `claude/xll-remove-aliases`, user 2026-11-05): a formula with one shows `#NAME?`; decision 47's table is the find-and-replace list, checked against the catalogue
 - [excel-async] decision 48 (branch `claude/xll-async`, user 2026-11-05): the nine functions that simulate or sample (the bootstraps, their draws and one-year views, the Bayesian ODP and BF, `PRO.CAP.COPULA.SIM`) are Excel asynchronous functions answered through `xlAsyncReturn`; one run per inputs, the last 32 results kept, an interrupted recalculation loses no run; the add-in pinned from the first asynchronous call; fit handles left open as not needed
 - paid and incurred together (`PRO.RES.MUNICH`, `.MUNICH.PARAMS`, `PRO.RES.PIC`, `.PIC.PARAMS`; R `MunichChainLadder` and `PaidIncurredChain` and chainladder-python `MunichAdjustment` parity; `tail` takes `"log-linear"`; decision 49, #742 batch 1)
+- development curves over every age (`PRO.RES.CURVE`, `.CURVE.STATS`: six shapes, R `lm` and `nls` parity, chained into `PRO.RES.CL` at chainladder-python `TailCurve` parity; decision 50, #742 batch 1)

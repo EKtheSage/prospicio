@@ -254,7 +254,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and eighteen functions registered", registered == 118);
+    check("one hundred and twenty functions registered", registered == 120);
     check("nine of them asynchronous (xll.md, decision 48)", async_registered == 9);
     check("no old name is exported (xll.md, decision 47)", GetProcAddress(xll, "pro_mack") == NULL);
 
@@ -549,6 +549,16 @@ int main(int argc, char **argv) {
           (og->xltype & 0xFFF) == xltypeMulti && og->val.array.rows == 12 && og->val.array.columns == 8 &&
               fabs(og->val.array.lparray[11 * 8 + 3].val.num - 52135.2283) < 0.01);
     free12(og);
+
+    /* Development curves (xll.md, decision 50): the exponential on RAA,
+     * R's R-squared 0.8499 and tail 1.00944 (lm on log(f - 1)). */
+    XLOPER12 *cs = ((Fn5)GetProcAddress(xll, "pro_res_curve_stats"))(&tri, &missing, &missing, &missing, &missing);
+    print_result("PRO.RES.CURVE.STATS(RAA)", cs);
+    check("PRO.RES.CURVE.STATS on RAA is 7 x 10, the exponential at R's fit",
+          (cs->xltype & 0xFFF) == xltypeMulti && cs->val.array.rows == 7 && cs->val.array.columns == 10 &&
+              fabs(cs->val.array.lparray[1 * 10 + 7].val.num - 0.849904565202755) < 1e-9 &&
+              fabs(cs->val.array.lparray[1 * 10 + 9].val.num - 1.00943575158123) < 1e-9);
+    free12(cs);
 
     /* Paid and incurred together (xll.md, decision 49) on Quarg and Mack's
      * MCL triangles: the Munich chain ladder with Mack's sigma, R's printed

@@ -235,7 +235,7 @@ pub(crate) fn origin_labels(grid: &Grid, n: usize) -> Result<Vec<Value>> {
 
 /// Labels of each development link, "12-24" and on, then the tail's
 /// "120-Ult", in development periods of 12.
-fn link_labels(ages: usize) -> Vec<Value> {
+pub(crate) fn link_labels(ages: usize) -> Vec<Value> {
     (1..=ages)
         .map(|k| {
             let to = if k == ages {

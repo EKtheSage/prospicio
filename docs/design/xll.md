@@ -1239,6 +1239,34 @@ real Excel.
       checks R's total Munich paid ultimate on MCL through the C API, and
       the test workbook's MCL sheet sets both methods beside R's figures.
 
+50. **Development curves on a sheet** (#742 batch 1). `PRO.RES.CURVE`
+    fits one shape of `DevelopmentCurve` (the exponential, inverse power,
+    Hoerl, Sherman, or Clark's log-logistic or Weibull growth curve) to
+    the triangle's factors under `average`, and gives per link the
+    observed, fitted and selected factor, the residual and whether the
+    link entered the fit, then the curve's tail over `tail_periods` (100,
+    as chainladder-python's `TailCurve`). `PRO.RES.CURVE.STATS` fits
+    every shape (or those named) to the same factors: parameters, points,
+    sum of squares, R-squared and adjusted R-squared on the factor scale,
+    and tail, one row each; a shape that cannot be fitted shows why in
+    its row rather than failing the table, since the table is for
+    choosing among them.
+    - **Ages in months**, as `pattern_ages` (decision 40) and the Python
+      binding's `fit_period` and `keep_observed_until` take them.
+    - **No curve argument on the chain ladder.** The fitted pattern
+      reaches `PRO.RES.CL`, Mack and the bootstraps as their `selected`
+      factors and `tail`, cells the user can see and change, rather than
+      through a new argument on every chain-ladder function. Selected
+      factors carry no parameter error (`reserving-v02.md` decision 12),
+      as the curve's selected pattern does in Rust.
+    - **Parity.** `tests/curves.rs`: R's `lm` and `nls` fits of the six
+      shapes on RAA and GenIns (parameters, fitted factors, sum of
+      squares, R-squared, tail), and chainladder-python's `TailCurve`
+      attached at 60 months, reproduced by chaining `PRO.RES.CURVE` into
+      `PRO.RES.CL` (ultimates and reserves, to 1e-6). The fake Excel
+      checks the RAA comparison through the C API, and the test
+      workbook's curves sheet chains the two as a user would.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and
@@ -1296,8 +1324,8 @@ order, one small PR each, those already done struck through:
    origins past the pattern's end~~ (decision 39).
 10. Parity with the Python and R bindings (#742, user, 2026-11-04 and
     2026-11-07), one PR each: the 0.0.8 reserving methods, ~~the Munich
-    chain ladder and the paid-incurred chain~~ (decision 49), development
-    curves over every age, Friedland's exhibits and the weighted
+    chain ladder and the paid-incurred chain~~ (decision 49), ~~development
+    curves over every age~~ (decision 50), Friedland's exhibits and the weighted
     selection of ultimates, the methods on claim counts and
     Berquist-Sherman, salvage and subrogation, ALAE and ULAE; then the
     Bayesian additions (a new year's loss ratio, the industry prior), the

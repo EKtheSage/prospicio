@@ -130,6 +130,8 @@ The `...` is the chain ladder's options: `[average], [tail], [origins],
 | `PRO.RES.ODP.GLM(triangle, [origins])` | The ODP model as a quasi-Poisson GLM: reserve, SEs, RMSEP and CV per origin |
 | `PRO.RES.ODP.GLM.PARAMS(triangle, [origins])` | Its coefficients, SEs and dispersion |
 | `PRO.RES.ODP.GLM.RESIDUALS(triangle, [by], [origins])` | Its residuals by cell, or grouped by `"origin"`, `"development"` or `"calendar"` |
+| `PRO.RES.CURVE(triangle, [shape], [average], [fit_period], [keep_observed_until], [tail_periods])` | A development curve fitted over every age: observed, fitted and selected factor per link, and the curve's tail |
+| `PRO.RES.CURVE.STATS(triangle, [shapes], [average], [fit_period], [tail_periods])` | The shapes compared: parameters, sum of squares, R-squared, adjusted R-squared and tail |
 | `PRO.RES.MUNICH(paid, incurred, [sigma], [tail_paid], [tail_incurred], [origins])` | Munich chain ladder: paid and incurred developed together; latest and ultimate P/I, paid reserve, incurred IBNR and the separate chain ladders |
 | `PRO.RES.MUNICH.PARAMS(paid, incurred, [sigma], [tail_paid], [tail_incurred])` | Its `q`, `rho`, factors and sigmas by period, and the two `lambda`s |
 | `PRO.RES.PIC(paid, incurred, [sigma], [tau], [extrapolation], [convention], [phi_mean], [phi_sd], [psi_mean], [psi_sd], [origins])` | Merz and Wüthrich's paid-incurred chain: one ultimate from both, its weight on incurred, reserve, SE and CV |
@@ -173,6 +175,13 @@ These are common functions, without a group, since pricing reads triangles too.
 - `tail`: omit for none, a factor such as `1.05`, or `"exponential"`,
   `"inverse_power"`, `"bondy"` or `"log-linear"` (R ChainLadder's
   `tail = TRUE`).
+- `shape`: a development curve, `"exponential"` (default),
+  `"inverse_power"`, `"hoerl"`, `"sherman"`, `"loglogistic"` or
+  `"weibull"`. `fit_period` is one or two ages in months (the first fitted,
+  the age the fit stops before); `keep_observed_until` keeps the observed
+  factors before an age in months. To develop on the curve, pass its
+  `Selected` factors (all but the last) as `PRO.RES.CL`'s `selected`, with
+  `TRANSPOSE` if they are a column, and its last as `tail`.
 - `paid`, `incurred`: the Munich chain ladder and the paid-incurred chain
   take two triangles of the same size, observed at the same cells. The
   Munich `sigma` is one setting or two cells, paid then incurred. The PIC
