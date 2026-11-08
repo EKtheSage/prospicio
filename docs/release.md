@@ -133,6 +133,12 @@ survival models stay parked. #599's pooling structure is the recommended one
 | Guides | Done: #730 (an industry prior from a user-fetched Schedule P line, replacing the ILS notebook's hard-coded prior) | `[guides-current-next]` for the methods 0.0.8 added |
 | Shared | #579 (one large file split per PR) | |
 
+Status on 2026-11-08: the release PR sets 0.0.9, and every 0.0.9 item is
+done. #599 (`HierarchicalBf`, #757, and its one-year view, #758), Compartmental
+at a sub-annual grain (#759, #763), #722 (#745), #577 (#749), #742 (closed
+with its PRs #784 to #796), #730 (#756) and #579 (closed with #750 to #755,
+#765 to #767, #793 and #794). #576 is parked (#787).
+
 Probability has no open item. Parked: #553 (IFRS 17, `P4`), claim-level
 reserving, the survival models and #576 (the WASM JavaScript package; the
 user's decision of 2026-11-07: the XLL already reaches Excel users, and a
@@ -146,10 +152,16 @@ unchanged.
 the characteristic-function engine, and the 0.0.9 leftovers the user moves
 here. Milestone 0.1.0. #768 goes first: the other items check their numbers
 against its references.
+On 2026-11-08 the user moved two 0.0.9 leftovers here: #782 (Models: a NaN
+Pareto k from `gpd_fit` in the one-year view) and #762 (Reserving: the cost
+and usability decisions on `HierarchicalBf`'s one-year view). Both now carry
+milestone 0.1.0.
 
 | Lane | New work | Small items |
 |---|---|---|
 | Aggregate (Probability for its files) | #768 (re-pin the parity references to aggregate 2.1.0, and settle three open checks) | |
+| Reserving | #762 (the cost and usability decisions on `HierarchicalBf`'s one-year view; moved from 0.0.9 on 2026-11-08) | |
+| Models | #782 (a NaN Pareto k from `gpd_fit` in the one-year view; moved from 0.0.9 on 2026-11-08) | |
 | Probability | #769 (Tsallis distortion), #770 (Gini index of a distortion, `from_gini`) | #774 (refuse invalid discrete inputs, breaking), #775 (Tweedie parameter conversions) |
 | Aggregate | #772 (disappearing deductible), #773 (OEP of a program, net or ceded), #777 (event loss tables across units), #778 (a validation verdict), #776 (lattice bucket rule and warning) | #771 (the extended distortion calibration set) |
 

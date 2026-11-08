@@ -1,1 +1,0 @@
-* **Creation**: [Styling the great-docs and pkgdown sites](/environment/docs-site-styling.md), from the docs site restyle (branch claude/docs-site-style): great-docs sets tables to `width: max-content`, so prose tables never wrapped; where each site takes its stylesheet, fonts and dark mode.

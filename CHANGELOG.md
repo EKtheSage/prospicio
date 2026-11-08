@@ -7,6 +7,131 @@ under "Unreleased" until then.
 
 ## Unreleased
 
+## 0.0.9 (2026-11-08)
+
+### Breaking changes
+
+- Excel: every function's name now carries its group, `PRO.RES.` for
+  reserving, `PRO.PRC.` for pricing and `PRO.CAP.` for capital
+  (`PRO.MACK` is `PRO.RES.MACK`, `PRO.ILF` is `PRO.PRC.ILF`,
+  `PRO.AGG.STATS` is `PRO.CAP.AGG.STATS`), and the old names are gone: a
+  formula with one shows `#NAME?`. Severities, EVT tails, triangle
+  helpers, `PRO.VERSION` and `PRO.YEARFRACTION` keep their names.
+  `docs/design/xll.md` decision 47 lists every old and new name (#746,
+  #747).
+
+### Reserving
+
+- `Compartmental` on quarterly or monthly data: model 2's development levels can be one for each development year instead of one for each age (`DevelopmentLevels::ByYear`; Python and R `development_levels="by_year"`), with one level for each age as the default and unchanged, and the prior predictive draws the same levels (R `compartmental_prior_predictive(development_levels =)`); a fit with cumulative paid on cells finer than a year warns, in the backtest's fits too, as a prompt to check the residuals and not as a failed diagnostic; the help covers the rate priors, seasonality, what a sub-annual fit promises and earned exposure. Fixes the one-year view of a model with grouped development effects, which indexed them by age (#759, #763).
+- `HierarchicalBf.one_year()` (R `bayes_hierarchical_bf_one_year()`, Rust
+  `HierarchicalBf::one_year`): the claims development result over the coming
+  year of every program and origin at once, as one joint distribution with
+  dimensions `program` and `origin`, by Pareto smoothed importance sampling
+  with moment matching and NUTS refits of the whole panel. A program's next
+  diagonal moves the others' closing reserves, so it is one view and not one
+  per program. On the reference panel every simulation needs a refit, so it
+  runs at most 2,000 simulations by default (#599, #758).
+- `HierarchicalBf` (R `bayes_hierarchical_bf()`): a Bornhuetter-Ferguson over
+  several programs, one segment of a triangle each, or named triangles in
+  Python and R. An industry hyperprior anchors the loss ratio, programs are
+  shrunk towards it by a sampled spread, the development pattern is
+  partially pooled and the ODP scale is pooled per unit of premium. The fit
+  gives each program's reserves, loss ratio and shrinkage, the
+  hyperparameters' posterior and one joint distribution of all reserves
+  (#599, #757).
+
+### Pricing
+
+- `monthly_patterns(..., accident_period="year")` (R
+  `cashflow_patterns_from_annual(..., accident_period = "year")`) reads an
+  accident-year, quarter or month payment pattern from the start of its
+  period and converts it to the deal's underwriting year with the deal's
+  own writing and policy term, with `reading=` as on `UnderwritingBasis`;
+  `MonthlyPatterns::from_paid` takes such a converted paid pattern in Rust
+  (#722, #745).
+
+### Models
+
+- Tabular networks with learned embeddings of rating factors and several
+  claim heads on a shared body: `prospicio_nn::TabularNet` with `Head`,
+  `Target` and `TabularNetFit` (`embeddings`, `embedding_design`, the
+  `risk_rs.tabular_net_fit` artifact); one head without embeddings is
+  `Cann` bit for bit. Python `TabularNet`, `Head`, `TabularNetFit`, R
+  `tabular_net_fit()`, `net_head()`, `network_embeddings()`,
+  `embedding_columns()` (#577, #749).
+
+### Guides
+
+- The Python and R docs sites share one look (the Jost face, a cool grey
+  ground, a cobalt accent, light and dark modes), the guides' tables wrap
+  to the text column instead of scrolling sideways, the R site has a home
+  page, and the landing page shows the RAA triangle and the same Mack call
+  in Python, R and Rust (#792).
+- `docs/guides/reserving-industry-prior.md` and its R twin: an industry prior from a Schedule P line fetched at run time, fitted to a thin program and tested on every company of four lines held out in turn (#730).
+- `examples/ils_deal_analysis.ipynb` and its R twin build the prior with `IndustryPrior` from synthetic peer triangles in place of the credibility estimate, draw the 2026 loss ratio with `new_year` in place of a lognormal, and pay each simulation on its own pattern (#730).
+
+### Excel
+
+- The bootstraps (`PRO.RES.ODP`, `PRO.RES.MACK.BOOT` and their `.SIMS` and
+  `.CDR`), the Bayesian fits (`PRO.RES.BAYES.ODP`, `PRO.RES.BAYES.BF`) and
+  `PRO.CAP.COPULA.SIM` run in the background as Excel asynchronous
+  functions: their cell shows `#GETTING_DATA` until the result arrives,
+  and Excel stays usable. Cells with the same inputs share one run, and
+  the last 32 results are kept, so a recalculation that changes none of a
+  function's inputs answers at once with the same numbers
+  (`docs/design/xll.md` decision 48; #748).
+- `PRO.RES.BAYES.BF` gives a new year's loss ratio and ultimate
+  (`output` `"new_year"`, `new_premium`) and takes a prior on the
+  development pattern (`pattern_mean`, `pattern_sd`), and
+  `PRO.RES.INDUSTRY.PRIOR` builds the industry prior from several
+  companies' triangles (`docs/design/xll.md` decision 54; #742).
+- The methods on claim counts: `PRO.RES.FREQSEV` and
+  `PRO.RES.FREQSEV.TRENDED` (frequency-severity, Friedland's approaches #1
+  and #2), `PRO.RES.DISPOSAL` (the disposal rate method),
+  `PRO.RES.CASE.OS` (case outstanding development) and
+  `PRO.RES.TREND.BY.AGE`; and the Berquist-Sherman adjustments
+  `PRO.RES.BS.CASE`, `PRO.RES.BS.SETTLEMENT` and `PRO.RES.BS`, which give
+  the adjusted triangles (`docs/design/xll.md` decision 52; #742).
+- `PRO.RES.CURVE` and `PRO.RES.CURVE.STATS`: development curves fitted
+  over every age (exponential, inverse power, Hoerl, Sherman, and Clark's
+  log-logistic and Weibull), with fit statistics to choose a shape; the
+  fitted factors and tail go on to `PRO.RES.CL` as `selected` and `tail`
+  (`docs/design/xll.md` decision 50; #742).
+- `PRO.RES.CY.TEST` and `PRO.RES.DEVCOR.TEST` run Mack's tests for
+  calendar-year effects and correlated development factors, and
+  `PRO.RES.BACKTEST` scores GLM reserving models on held-out calendar
+  diagonals (`docs/design/xll.md` decision 57; #742).
+- `PRO.RES.EXCESS.PATTERN` and `PRO.RES.EXCESS.SHAPE` derive an excess
+  layer's development from a ground-up triangle, by the scale shift on
+  an ultimate severity or by Pinto and Gogol's Pareto shape drift, and
+  `PRO.RES.BENCHMARK.CURVE` fits a log-logistic or Weibull curve to a
+  benchmark pattern (`docs/design/xll.md` decision 58; #742).
+- `PRO.RES.DEV.EXHIBIT`: Friedland's development exhibit (six averages of
+  the link ratios, the selected factors, CDF and percent developed), and
+  `PRO.RES.SELECT`: the selected ultimate per origin as a weighting of
+  several methods' ultimates, by origin or by age, with IBNR and unpaid
+  (`docs/design/xll.md` decision 51; #742).
+- `PRO.RES.RATIO`: Friedland's ratio approach for salvage and subrogation
+  and ALAE (the ratio to paid claims developed by factors or by
+  differences and applied to ultimate claims), and `PRO.RES.ULAE`: unpaid
+  ULAE by the classical technique, Kittel's refinement or Conger and
+  Nolibos' generalized approach (`docs/design/xll.md` decision 53; #742).
+- Each group of functions is a category of its own in Insert Function
+  ("Prospicio - Reserving", "- Pricing", "- Capital", "- Common") (#746).
+- The add-in is built with link-time optimization: 14.0 MB in place of
+  16.3 MB (#746).
+- `PRO.RES.MUNICH` and `PRO.RES.MUNICH.PARAMS`: the Munich chain ladder on
+  a paid and an incurred triangle, and `PRO.RES.PIC` and
+  `PRO.RES.PIC.PARAMS`: Merz and Wüthrich's paid-incurred chain, each at
+  parity with R ChainLadder (and chainladder-python for Munich). Every
+  `tail` argument also takes `"log-linear"`, R's `tail = TRUE`
+  (`docs/design/xll.md` decision 49; #742).
+- `PRO.PRC.COUNTS` and `PRO.PRC.COUNTS.PREDICT` fit zero-inflated and
+  hurdle Poisson or negative binomial models to a table (with Vuong's
+  test against the plain GLM), and `PRO.PRC.QUANTREG` and
+  `PRO.PRC.QUANTREG.PREDICT` linear quantile and expectile regression at
+  one or more tau (`docs/design/xll.md` decision 55; #742).
+
 ## 0.0.8 (2026-11-04)
 
 ### Breaking changes
