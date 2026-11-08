@@ -220,3 +220,69 @@ body.quarto-dark #toc-title {
 .nav-link.active {
   text-decoration-color: var(--p-accent);
 }
+
+/* great-docs marks these with !important or stronger selectors; the shared
+   look needs the same weight here. */
+h1, h2, h3, .h1, .h2, .h3 {
+  font-weight: 600 !important;
+}
+
+h1.title, .title.h1 {
+  font-weight: 700 !important;
+}
+
+nav#TOC ul > li > a.active,
+nav#TOC ul > li > ul > li > a.active,
+.sidebar nav[role="doc-toc"] ul > li > a.active {
+  color: var(--p-accent) !important;
+  border-left-color: var(--p-accent) !important;
+}
+
+nav#TOC #toc-title,
+#toc-title {
+  text-transform: none !important;
+  color: var(--p-ink) !important;
+  font-size: 1rem;
+}
+
+body.quarto-dark a.sidebar-item-text.sidebar-link.text-start > span,
+body.quarto-light a.sidebar-item-text.sidebar-link.text-start > span {
+  color: var(--p-muted);
+}
+
+/* White strips great-docs paints in light mode: the footer, the phone's
+   title bar and the table scroll hints. */
+.nav-footer,
+nav.quarto-secondary-nav {
+  background-color: var(--p-bg) !important;
+  border-color: var(--p-rule);
+}
+
+nav.quarto-secondary-nav .quarto-page-breadcrumbs,
+nav.quarto-secondary-nav h1 {
+  color: var(--p-ink);
+}
+
+.gd-table-scroll-left {
+  background: linear-gradient(to right, var(--p-bg), transparent);
+}
+
+.gd-table-scroll-right {
+  background: linear-gradient(to left, var(--p-bg), transparent);
+}
+
+/* Tables with rules between rows only, as on the R site. */
+.gd-table-scroll > table,
+table.table {
+  border: 0;
+}
+
+table.table th,
+table.table td {
+  border-left: 0 !important;
+  border-right: 0 !important;
+  border-top: 0;
+  border-bottom: 1px solid var(--p-rule);
+  padding: 0.55rem 0.75rem;
+  line-height: 1.5;
+}

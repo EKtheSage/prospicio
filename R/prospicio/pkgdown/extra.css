@@ -15,6 +15,8 @@ html[data-bs-theme="light"] {
   --p-accent: #1f2de6;
   --p-accent-ink: #ffffff;
   --p-rule: #d3d7de;
+  --bs-body-color-rgb: 11, 12, 14;
+  --bs-emphasis-color-rgb: 11, 12, 14;
 }
 
 html[data-bs-theme="dark"] {
@@ -25,6 +27,8 @@ html[data-bs-theme="dark"] {
   --p-accent: #8f97ff;
   --p-accent-ink: #0b0c0e;
   --p-rule: #2c3038;
+  --bs-body-color-rgb: 233, 235, 239;
+  --bs-emphasis-color-rgb: 233, 235, 239;
 }
 
 [data-bs-theme] {
@@ -105,6 +109,8 @@ a:hover {
 
 /* Code on a tone step instead of a border. */
 pre,
+[data-bs-theme] pre,
+[data-bs-theme] :not(pre) > code,
 div.sourceCode,
 pre.sourceCode {
   background-color: var(--p-surface);
@@ -133,8 +139,7 @@ main table,
   --bs-table-border-color: var(--p-rule);
 }
 
-main .table-responsive,
-main div:has(> table) {
+main .table-responsive {
   overflow-x: auto;
 }
 
@@ -156,4 +161,30 @@ main table td, main table th {
   --bs-dropdown-link-active-bg: var(--p-accent);
   --bs-dropdown-link-active-color: var(--p-accent-ink);
   border-radius: 0;
+}
+
+/* The current page: the accent and an underline in the bar, a rule in the
+   page's contents, as on the Python site; no grey pills. */
+.navbar .nav-item.active > .nav-link,
+.navbar .nav-link.active {
+  background: transparent !important;
+  color: var(--p-accent);
+  text-decoration: underline 2px var(--p-accent);
+  text-underline-offset: 0.4em;
+}
+
+.navbar .nav-link {
+  font-weight: 500;
+}
+
+nav#toc .nav-link {
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  color: var(--p-muted);
+}
+
+nav#toc .nav-link.active {
+  background: none !important;
+  color: var(--p-accent);
+  border-left-color: var(--p-accent);
 }
