@@ -1,0 +1,222 @@
+/* The look shared by prospicio's three docs sites: this Python site
+   (great-docs), the R site (R/prospicio/pkgdown/extra.css) and the landing
+   page (xtask/site/index.html). The tokens below are repeated in each of
+   those files; change all three together. great-docs copies this file into
+   the build and lists it after its own theme, so these rules win. */
+
+:root,
+html.quarto-light,
+body.quarto-light {
+  --p-font: "Jost", "Segoe UI", system-ui, sans-serif;
+  --p-bg: #eef0f3;
+  --p-surface: #e2e5ea;
+  --p-ink: #0b0c0e;
+  --p-muted: #4f5662;
+  --p-accent: #1f2de6;
+  --p-accent-ink: #ffffff;
+  --p-rule: #d3d7de;
+}
+
+html.quarto-dark,
+body.quarto-dark {
+  --p-bg: #101216;
+  --p-surface: #1b1e24;
+  --p-ink: #e9ebef;
+  --p-muted: #a6acb7;
+  --p-accent: #8f97ff;
+  --p-accent-ink: #0b0c0e;
+  --p-rule: #2c3038;
+}
+
+/* great-docs' own variables, in both modes, so its components follow the
+   tokens. */
+:root,
+html.quarto-light,
+body.quarto-light,
+html.quarto-dark,
+body.quarto-dark {
+  --gd-bg-primary: var(--p-bg);
+  --gd-bg-secondary: var(--p-bg);
+  --gd-bg-tertiary: var(--p-surface);
+  --gd-text-primary: var(--p-ink);
+  --gd-text-secondary: var(--p-ink);
+  --gd-text-muted: var(--p-muted);
+  --gd-border-color: var(--p-rule);
+  --gd-border-light: var(--p-rule);
+  --gd-link-color: var(--p-accent);
+  --gd-code-bg: var(--p-surface);
+  --gd-code-color: var(--p-ink);
+  --gd-blockquote-bg: var(--p-surface);
+  --gd-sidebar-bg: var(--p-bg);
+  --gd-navbar-bg: var(--p-bg);
+  --gd-navbar-text: var(--p-ink);
+  --gd-footer-text: var(--p-muted);
+  --gd-active-link: var(--p-accent);
+  --gd-citation-color: var(--p-accent);
+  --gd-accent: var(--p-accent);
+}
+
+/* Bootstrap's own variables, so components follow the tokens. */
+body {
+  --bs-body-font-family: var(--p-font);
+  --bs-body-bg: var(--p-bg);
+  --bs-body-color: var(--p-ink);
+  --bs-emphasis-color: var(--p-ink);
+  --bs-secondary-color: var(--p-muted);
+  --bs-link-color: var(--p-accent);
+  --bs-link-color-rgb: 31, 45, 230;
+  --bs-link-hover-color: var(--p-ink);
+  --bs-border-color: var(--p-rule);
+  --gd-accent: var(--p-accent);
+  background-color: var(--p-bg);
+  color: var(--p-ink);
+  font-family: var(--p-font);
+  font-size: 1.0625rem;
+}
+
+body.quarto-dark {
+  --bs-link-color-rgb: 143, 151, 255;
+}
+
+/* great-docs names Open Sans and Inter on many elements; one face here. */
+p, li, dd, dt, td, th, h1, h2, h3, h4, h5, h6,
+#toc-title, #toc-function-reference, .nav-link, .table,
+.navbar-title, #quarto-sidebar .sidebar-item-text,
+a.sidebar-item-text.sidebar-link.text-start > span,
+#TOC, .sidebar nav[role="doc-toc"] {
+  font-family: var(--p-font);
+}
+
+h1, h2, h3, h4, h5, h6, .title {
+  color: var(--p-ink);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+h1.title, .title.h1 {
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+a {
+  color: var(--p-accent);
+  text-underline-offset: 0.18em;
+}
+
+a:hover {
+  color: var(--p-ink);
+}
+
+/* The bar: the page's ground, the wordmark plain, no boxes. */
+#quarto-header,
+#quarto-header .navbar {
+  background-color: var(--p-bg) !important;
+  border-bottom: 0;
+  box-shadow: none;
+}
+
+#quarto-header .navbar .nav-link,
+#quarto-header .navbar .navbar-title,
+#quarto-header .navbar .menu-text {
+  color: var(--p-ink);
+}
+
+#quarto-header .navbar .nav-link.active {
+  color: var(--p-accent);
+}
+
+.navbar-title {
+  border: 0;
+  padding-left: 0;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* Sidebar and table of contents on the ground, separated by space. */
+#quarto-sidebar,
+body.quarto-light #quarto-sidebar.gd-sidebar-float,
+body.quarto-dark #quarto-sidebar.gd-sidebar-float,
+#quarto-sidebar.gd-sidebar-float .sidebar-menu-container {
+  background: var(--p-bg);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+a.sidebar-item-text.sidebar-link.text-start > span {
+  color: var(--p-muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+#quarto-sidebar a.sidebar-item-text.sidebar-link.active,
+#quarto-sidebar a.sidebar-item-text.sidebar-link.active span {
+  color: var(--p-accent);
+  font-weight: 600;
+}
+
+/* Code on a tone step instead of a border. */
+div.sourceCode,
+pre.sourceCode,
+.cell-output pre {
+  background-color: var(--p-surface);
+  border: 0;
+  border-radius: 0;
+}
+
+code,
+body.quarto-light :not(pre) > code,
+body.quarto-dark :not(pre) > code {
+  color: var(--p-ink);
+  background-color: var(--p-surface);
+}
+
+pre code,
+div.sourceCode code {
+  background-color: transparent;
+}
+
+/* Tables: great-docs sets every table to its widest row on one line
+   (width: max-content), so prose tables ran to 1,600 to 1,800 px and
+   scrolled. They now wrap to the text column; a table whose cells cannot
+   wrap (long code, many columns of numbers) is still wider than the column
+   and keeps the scroll box. */
+.gd-table-scroll > table {
+  width: 100%;
+}
+
+.table,
+table:not(.gt_table) {
+  --bs-table-bg: transparent;
+  --bs-table-color: var(--p-ink);
+  --bs-table-border-color: var(--p-rule);
+}
+
+.table > thead > tr > th {
+  font-weight: 600;
+}
+
+.table td, .table th {
+  vertical-align: top;
+}
+
+/* The page's table of contents: sentence case, the accent for the place. */
+#toc-title,
+body.quarto-dark #toc-title {
+  color: var(--p-ink);
+  text-transform: none;
+  font-size: 1rem;
+}
+
+.sidebar nav[role="doc-toc"] ul > li > a.active,
+.sidebar nav[role="doc-toc"] ul > li > ul > li > a.active {
+  color: var(--p-accent);
+  border-left-color: var(--p-accent);
+}
+
+.sidebar nav[role="doc-toc"] ul > li > a {
+  color: var(--p-muted);
+}
+
+.nav-link.active {
+  text-decoration-color: var(--p-accent);
+}

@@ -4,6 +4,14 @@
 url: ~
 template:
   bootstrap: 5
+  # The look is shared with the Python site and the landing page:
+  # pkgdown/extra.css holds the colours and the rest; here Bootstrap gets the
+  # face and the accent, and a light and dark switch as the Python site has.
+  light-switch: true
+  bslib:
+    primary: "#1f2de6"
+    base_font: {google: "Jost"}
+    heading_font: {google: "Jost"}
 reference:
   - title: Distributions
     contents:

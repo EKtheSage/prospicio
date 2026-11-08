@@ -1,0 +1,159 @@
+/* The look shared by prospicio's three docs sites: this R site (pkgdown),
+   the Python site (python/docs-site.css) and the landing page
+   (xtask/site/index.html). The tokens below are repeated in each of those
+   files; change all three together. pkgdown loads this file after
+   Bootstrap. The face, ground, ink and accent are also given to bslib in
+   _pkgdown.yml so that Bootstrap's own components start from them. */
+
+:root,
+html[data-bs-theme="light"] {
+  --p-font: "Jost", "Segoe UI", system-ui, sans-serif;
+  --p-bg: #eef0f3;
+  --p-surface: #e2e5ea;
+  --p-ink: #0b0c0e;
+  --p-muted: #4f5662;
+  --p-accent: #1f2de6;
+  --p-accent-ink: #ffffff;
+  --p-rule: #d3d7de;
+}
+
+html[data-bs-theme="dark"] {
+  --p-bg: #101216;
+  --p-surface: #1b1e24;
+  --p-ink: #e9ebef;
+  --p-muted: #a6acb7;
+  --p-accent: #8f97ff;
+  --p-accent-ink: #0b0c0e;
+  --p-rule: #2c3038;
+}
+
+[data-bs-theme] {
+  --bs-body-font-family: var(--p-font);
+  --bs-body-bg: var(--p-bg);
+  --bs-body-color: var(--p-ink);
+  --bs-emphasis-color: var(--p-ink);
+  --bs-secondary-color: var(--p-muted);
+  --bs-link-color: var(--p-accent);
+  --bs-link-hover-color: var(--p-ink);
+  --bs-border-color: var(--p-rule);
+  --bs-tertiary-bg: var(--p-surface);
+}
+
+html[data-bs-theme="light"] [data-bs-theme], html[data-bs-theme="light"] { --bs-link-color-rgb: 31, 45, 230; }
+html[data-bs-theme="dark"] [data-bs-theme], html[data-bs-theme="dark"] { --bs-link-color-rgb: 143, 151, 255; }
+
+body {
+  background-color: var(--p-bg);
+  color: var(--p-ink);
+  font-family: var(--p-font);
+  font-size: 1.0625rem;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: var(--p-ink);
+  font-family: var(--p-font);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.page-header h1, h1.title {
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+a {
+  color: var(--p-accent);
+  text-underline-offset: 0.18em;
+}
+
+a:hover {
+  color: var(--p-ink);
+}
+
+/* The bar: the page's ground, the wordmark plain, as on the Python site. */
+.navbar,
+.navbar.bg-light,
+.navbar.bg-body-tertiary,
+.navbar[data-bs-theme] {
+  background-color: var(--p-bg) !important;
+  box-shadow: none;
+  border-bottom: 0;
+}
+
+.navbar .navbar-brand {
+  color: var(--p-ink);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.navbar .nav-link {
+  color: var(--p-ink);
+}
+
+.navbar .nav-link.active,
+.navbar .nav-item.active > .nav-link {
+  color: var(--p-accent);
+}
+
+.navbar .form-control,
+.navbar input[type="search"] {
+  background-color: var(--p-surface);
+  border-color: transparent;
+  border-radius: 0;
+  color: var(--p-ink);
+}
+
+/* Code on a tone step instead of a border. */
+pre,
+div.sourceCode,
+pre.sourceCode {
+  background-color: var(--p-surface);
+  border: 0;
+  border-radius: 0;
+}
+
+code {
+  color: var(--p-ink);
+}
+
+/* The footer: no rule, the muted ink. */
+footer {
+  border-top: 0;
+  color: var(--p-muted);
+}
+
+/* Tables wrap to the text column; one whose cells cannot wrap still
+   scrolls inside its own box rather than widening the page. */
+.section table,
+main table,
+.contents table {
+  width: 100%;
+  --bs-table-bg: transparent;
+  --bs-table-color: var(--p-ink);
+  --bs-table-border-color: var(--p-rule);
+}
+
+main .table-responsive,
+main div:has(> table) {
+  overflow-x: auto;
+}
+
+main table td, main table th {
+  vertical-align: top;
+}
+
+/* The open menu's link: the accent, no box behind it. */
+.navbar .nav-link.show,
+.navbar .dropdown-toggle.show,
+.navbar .nav-link:focus:not(:focus-visible) {
+  background-color: transparent;
+}
+
+.dropdown-menu {
+  --bs-dropdown-bg: var(--p-bg);
+  --bs-dropdown-link-color: var(--p-ink);
+  --bs-dropdown-link-hover-bg: var(--p-surface);
+  --bs-dropdown-link-active-bg: var(--p-accent);
+  --bs-dropdown-link-active-color: var(--p-accent-ink);
+  border-radius: 0;
+}
