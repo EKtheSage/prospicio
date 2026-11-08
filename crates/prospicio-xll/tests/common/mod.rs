@@ -225,3 +225,52 @@ pub fn fails(symbol: &str, args: Vec<Grid>) -> String {
 pub fn row(values: &[f64]) -> Grid {
     Grid::from_rows(vec![values.iter().map(|&x| Value::Number(x)).collect()])
 }
+
+/// One column of `validation/data/<name>.csv` as a sheet triangle, only the
+/// origins `first` to `last` and the ages up to `max_age`; and each kept
+/// origin's value of the column at its latest age (an exposure that does
+/// not develop).
+pub fn data_window(
+    name: &str,
+    column: &str,
+    first: i32,
+    last: i32,
+    max_age: u32,
+) -> (Grid, Vec<f64>) {
+    let text = validation(&format!("data/{name}.csv"));
+    let mut lines = text.lines().filter(|l| !l.starts_with('#'));
+    let header: Vec<&str> = lines.next().unwrap().split(',').collect();
+    let c = header
+        .iter()
+        .position(|h| *h == column)
+        .unwrap_or_else(|| panic!("{name} has no column {column}"));
+    let mut rows: BTreeMap<i32, Vec<f64>> = BTreeMap::new();
+    for line in lines {
+        let f: Vec<&str> = line.split(',').collect();
+        let (origin, age): (i32, u32) = (f[0].parse().unwrap(), f[1].parse().unwrap());
+        if (first..=last).contains(&origin) && age <= max_age {
+            rows.entry(origin).or_default().push(f[c].parse().unwrap());
+        }
+    }
+    let ages = rows.values().map(Vec::len).max().unwrap();
+    let grid = Grid::from_rows(
+        rows.values()
+            .map(|r| {
+                (0..ages)
+                    .map(|c| r.get(c).map_or(Value::Empty, |&x| Value::Number(x)))
+                    .collect()
+            })
+            .collect(),
+    );
+    let latest = rows.values().map(|r| *r.last().unwrap()).collect();
+    (grid, latest)
+}
+
+/// A cell of a result as a number, `None` when blank.
+pub fn cell(g: &Grid, r: usize, c: usize) -> Option<f64> {
+    match g.get(r, c) {
+        Value::Number(x) => Some(*x),
+        Value::Empty => None,
+        other => panic!("({r}, {c}): expected a number or a blank, got {other:?}"),
+    }
+}

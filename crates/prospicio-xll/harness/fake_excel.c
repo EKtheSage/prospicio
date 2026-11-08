@@ -254,7 +254,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and twenty-two functions registered", registered == 122);
+    check("one hundred and thirty functions registered", registered == 130);
     check("nine of them asynchronous (xll.md, decision 48)", async_registered == 9);
     check("no old name is exported (xll.md, decision 47)", GetProcAddress(xll, "pro_mack") == NULL);
 
@@ -571,6 +571,15 @@ int main(int argc, char **argv) {
               se->val.array.lparray[1 * 3 + 1].val.num == cu->val.array.lparray[0].val.num);
     free12(se);
     free12(cu);
+
+    /* Methods on claim counts (xll.md, decision 52): the exponential trend
+     * across RAA's origins at 12 months, 2.739% a year (least squares on
+     * the logarithms, Excel's LOGEST). */
+    XLOPER12 *tb = ((Fn2)GetProcAddress(xll, "pro_res_trend_by_age"))(&tri, &missing);
+    check("PRO.RES.TREND.BY.AGE on RAA is 12 x 4, 2.739% at 12 months",
+          (tb->xltype & 0xFFF) == xltypeMulti && tb->val.array.rows == 12 && tb->val.array.columns == 4 &&
+              fabs(tb->val.array.lparray[1 * 4 + 1].val.num - 0.027390486681106774) < 1e-12);
+    free12(tb);
 
     /* Development curves (xll.md, decision 50): the exponential on RAA,
      * R's R-squared 0.8499 and tail 1.00944 (lm on log(f - 1)). */

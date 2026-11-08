@@ -138,6 +138,14 @@ The `...` is the chain ladder's options: `[average], [tail], [origins],
 | `PRO.RES.MUNICH.PARAMS(paid, incurred, [sigma], [tail_paid], [tail_incurred])` | Its `q`, `rho`, factors and sigmas by period, and the two `lambda`s |
 | `PRO.RES.PIC(paid, incurred, [sigma], [tau], [extrapolation], [convention], [phi_mean], [phi_sd], [psi_mean], [psi_sd], [origins])` | Merz and Wüthrich's paid-incurred chain: one ultimate from both, its weight on incurred, reserve, SE and CV |
 | `PRO.RES.PIC.PARAMS(paid, incurred, ...)` | Its `sigma`, `tau` and the posterior of `Phi` and `Psi` by period |
+| `PRO.RES.FREQSEV(amounts, counts, ultimate_counts, [average], [tail], [selected], [kind], [origins])` | Frequency-severity (Friedland's approach #1): ultimate counts times the severity developed by the chain ladder |
+| `PRO.RES.FREQSEV.TRENDED(amounts, counts, exposure, frequency, severity, [base], [frequency_trend], [severity_trend], [exposure_factors], [frequency_factors], [severity_factors], [origins])` | Frequency-severity (approach #2): exposure times a trended frequency, times a trended severity |
+| `PRO.RES.DISPOSAL(closed, paid, ultimate_counts, [rates], [severities], [tail_severity_from], [trend], [base], [factors], [origins], [output])` | The disposal rate method: ultimate and unpaid per origin, or the selections and projected squares |
+| `PRO.RES.CASE.OS(paid, incurred, [paid_on_case], [case_on_case], [paid_to_ultimate], [origins], [output])` | Case outstanding development: ultimate, IBNR and unpaid per origin, or the ratios and projected squares |
+| `PRO.RES.TREND.BY.AGE(amounts, [counts])` | The exponential trend across origins at each age of a severity triangle, and pooled: rate, R-squared, points |
+| `PRO.RES.BS.CASE(incurred, paid, open, trend, [max_age], [output])` | Berquist-Sherman case adequacy adjustment: the adjusted incurred triangle |
+| `PRO.RES.BS.SETTLEMENT(paid, closed, ultimate_counts, [rates], [interpolation], [output])` | Berquist-Sherman settlement rate adjustment: the adjusted paid or closed count triangle |
+| `PRO.RES.BS(incurred, paid, reported_counts, closed, ultimate_counts, trend, [max_age], [rates], [interpolation], [output])` | Both adjustments: the adjusted incurred, paid or closed count triangle |
 | `PRO.RES.BAYES.ODP(triangle, [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins])` | Bayesian ODP chain ladder by MCMC: reserves, posterior or diagnostics |
 | `PRO.RES.BAYES.BF(triangle, exposure, apriori, [cv], [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins], [common_cv])` | Bayesian Bornhuetter–Ferguson by MCMC: reserves, ultimates, posterior or diagnostics |
 
@@ -184,6 +192,14 @@ These are common functions, without a group, since pricing reads triangles too.
   is the age from which its row holds (`{12,0,1;48,1,0}`: the second
   method before 48 months, the first from then on). Each origin's
   weights must sum to 1.
+- `rates`, `severities`, `paid_on_case`, `case_on_case`: how the claim
+  count methods select at each age. Blank for the average of every
+  origin, a number `n` or `"latest n"` for the latest `n`, `"medial n"`
+  (one dropped each side) or `"medial nxk"`, `"diagonal"` for the latest
+  diagonal's (the settlement adjustment's default), or a row of values
+  under the triangle's columns. `base` names an origin by its label in
+  `origins`; `ultimate_counts` is a column, one per origin, such as
+  `PRO.RES.CL.ULTIMATE` on a count triangle gives.
 - `shape`: a development curve, `"exponential"` (default),
   `"inverse_power"`, `"hoerl"`, `"sherman"`, `"loglogistic"` or
   `"weibull"`. `fit_period` is one or two ages in months (the first fitted,

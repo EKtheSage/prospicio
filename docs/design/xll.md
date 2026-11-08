@@ -1294,6 +1294,51 @@ real Excel.
       ultimates taken from `PRO.RES.CL.ULTIMATE`, `PRO.RES.BF` and
       `PRO.RES.CAPECOD` as a sheet chains them.
 
+52. **Methods on claim counts and the Berquist-Sherman adjustments on a
+    sheet** (#742 batch 1; Friedland's chapters 11 to 13). Eight
+    functions over the library's types. `PRO.RES.FREQSEV` is
+    frequency-severity's approach #1: the ultimate counts given per origin
+    (a sheet gets them from `PRO.RES.CL.ULTIMATE` on the count triangles,
+    and averages two projections itself), the severities (amounts over
+    counts, cell by cell) developed by the chain ladder with its usual
+    arguments. `PRO.RES.FREQSEV.TRENDED` is approach #2: exposure times a
+    frequency, times a severity, each selected at a base origin and
+    trended, with per-origin factors for anything else (on-level, tort
+    reform). `PRO.RES.DISPOSAL` is the disposal rate method and
+    `PRO.RES.CASE.OS` case outstanding development; each gives its table
+    per origin, or with `output` the selections (a row under the
+    triangle's columns) and the projected squares. `PRO.RES.TREND.BY.AGE`
+    is the exponential trend across origins at each age and pooled
+    (Excel's `LOGEST` at every age at once). `PRO.RES.BS.CASE`,
+    `PRO.RES.BS.SETTLEMENT` and `PRO.RES.BS` give the adjusted triangles,
+    laid out as the input, to feed `PRO.RES.CL` and the rest.
+    - **One selection argument.** The ratios and rates are selected by
+      one argument shared by every function here: blank for the average
+      of every origin, a number `n` or `"latest n"`, `"medial n"` or
+      `"medial nxk"`, `"diagonal"` (Berquist and Sherman's latest
+      diagonal, the settlement adjustment's default), or a row of values
+      under the triangle's columns, as `selected` reads it.
+    - **Origins by label.** A base origin is named by its label in
+      `origins` (or its row number when `origins` is omitted), as a user
+      reads it on the sheet.
+    - **Open counts on the sheet.** The case adjustment takes open counts
+      as a triangle (reported less closed is a subtraction); both
+      adjustments together take reported and closed counts, as the
+      library needs them to restate the open counts.
+    - **Left out.** The case development factor of approach #2
+      (reported over paid factors to ultimate, Friedland's Exhibit III)
+      is a formula; the trend fitted to paid over closed
+      (`CaseTrend::Fitted`) is `PRO.RES.TREND.BY.AGE(paid, closed)` and
+      its pooled rate given as the trend.
+    - **Parity.** `tests/counts.rs`: Friedland's chapter 11 Exhibits II,
+      IV and VI on XYZ Insurer from 2001 (a sheet triangle is observed
+      from its first column, and XYZ's counts start in 2001), chapter 12
+      Exhibit I (U.S. Industry Auto), chapter 13 Exhibits I and II
+      (Berquist and Sherman's medical malpractice and automobile bodily
+      injury), to the printed digits within the rounding of the data;
+      both adjustments cell by cell against the library's
+      `BerquistSherman`.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and
@@ -1353,8 +1398,8 @@ order, one small PR each, those already done struck through:
     2026-11-07), one PR each: the 0.0.8 reserving methods, ~~the Munich
     chain ladder and the paid-incurred chain~~ (decision 49), ~~development
     curves over every age~~ (decision 50), ~~Friedland's exhibits and the weighted
-    selection of ultimates~~ (decision 51), the methods on claim counts and
-    Berquist-Sherman, salvage and subrogation, ALAE and ULAE; then the
+    selection of ultimates~~ (decision 51), ~~the methods on claim counts and
+    Berquist-Sherman~~ (decision 52), salvage and subrogation, ALAE and ULAE; then the
     Bayesian additions (a new year's loss ratio, the industry prior), the
     0.0.8 Models fits (zero-inflated and hurdle counts, quantile and
     expectile regression), and what a coverage check finds.

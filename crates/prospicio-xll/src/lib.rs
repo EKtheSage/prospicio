@@ -20,6 +20,7 @@ pub mod bayes;
 pub mod cashflow;
 pub mod cat;
 pub mod copulas;
+pub mod counts;
 pub mod credibility;
 pub mod curves;
 pub mod diagonal;
@@ -1127,6 +1128,270 @@ pub static FUNCTIONS: &[Function] = &[
             PSI_SD,
         ],
         run: paid_incurred::params_pic,
+    },
+    Function {
+        symbol: "pro_res_freqsev",
+        name: "PRO.RES.FREQSEV",
+        help: "Frequency-severity (Friedland approach 1): ultimate counts times the severity developed by the chain ladder; latest, severities, ultimate and reserve per origin, with a total.",
+        args: &[
+            Arg {
+                name: "amounts",
+                help: "Cumulative claim amounts (reported or paid): one row per origin, one column per age",
+            },
+            Arg {
+                name: "counts",
+                help: "Cumulative claim counts at the same cells as amounts (reported counts for reported amounts)",
+            },
+            Arg {
+                name: "ultimate_counts",
+                help: "Ultimate claim counts, one per origin (from PRO.RES.CL.ULTIMATE on the count triangles)",
+            },
+            AVERAGE,
+            TAIL,
+            SELECTED,
+            KIND,
+            ORIGINS,
+        ],
+        run: counts::frequency_severity,
+    },
+    Function {
+        symbol: "pro_res_freqsev_trended",
+        name: "PRO.RES.FREQSEV.TRENDED",
+        help: "Frequency-severity (Friedland approach 2): exposure times a trended frequency, times a trended severity; latest, severities, ultimate and reserve per origin, with a total.",
+        args: &[
+            Arg {
+                name: "amounts",
+                help: "Cumulative claim amounts (reported or paid): one row per origin, one column per age",
+            },
+            Arg {
+                name: "counts",
+                help: "Cumulative claim counts at the same cells as amounts (reported counts for reported amounts)",
+            },
+            Arg {
+                name: "exposure",
+                help: "Exposure per origin (latest earned premium, payroll), a row or column",
+            },
+            Arg {
+                name: "frequency",
+                help: "Selected frequency per unit of exposure at the base origin's level",
+            },
+            Arg {
+                name: "severity",
+                help: "Selected severity at the base origin's level",
+            },
+            Arg {
+                name: "base",
+                help: "The origin the selections are at: one of origins (or its row number); the latest if omitted",
+            },
+            Arg {
+                name: "frequency_trend",
+                help: "Annual claim count trend, 0 if omitted",
+            },
+            Arg {
+                name: "severity_trend",
+                help: "Annual severity trend, 0 if omitted",
+            },
+            Arg {
+                name: "exposure_factors",
+                help: "Per origin, factors that bring exposure to the base level (on-level factors); none if omitted",
+            },
+            Arg {
+                name: "frequency_factors",
+                help: "Per origin, factors that bring frequency to the base level besides the trend; none if omitted",
+            },
+            Arg {
+                name: "severity_factors",
+                help: "Per origin, factors that bring severity to the base level besides the trend (tort reform); none if omitted",
+            },
+            ORIGINS,
+        ],
+        run: counts::frequency_severity_trended,
+    },
+    Function {
+        symbol: "pro_res_disposal",
+        name: "PRO.RES.DISPOSAL",
+        help: "Disposal rate method: closed counts projected by selected disposal rates, times trended incremental severities; the table per origin, or the selections and projected squares.",
+        args: &[
+            Arg {
+                name: "closed",
+                help: "Cumulative closed claim counts: one row per origin, one column per age",
+            },
+            PAID,
+            Arg {
+                name: "ultimate_counts",
+                help: "Ultimate claim counts, one per origin (from PRO.RES.CL.ULTIMATE on the count triangles)",
+            },
+            Arg {
+                name: "rates",
+                help: "Disposal rates: blank: average of all origins; n or \"latest n\"; \"medial n\" or \"medial nxk\"; \"diagonal\"; or a row of values, one per triangle column",
+            },
+            Arg {
+                name: "severities",
+                help: "Incremental severities at the base level: blank: average of all origins; n or \"latest n\"; \"medial n\" or \"medial nxk\"; \"diagonal\"; or a row of values, one per triangle column",
+            },
+            Arg {
+                name: "tail_severity_from",
+                help: "From this age on, the pooled severity of those ages (Friedland's trended tail severity); omitted for none",
+            },
+            Arg {
+                name: "trend",
+                help: "Annual severity trend, 0 if omitted",
+            },
+            Arg {
+                name: "base",
+                help: "The origin whose cost level severities are selected at: one of origins; the latest if omitted",
+            },
+            Arg {
+                name: "factors",
+                help: "Per origin, factors that bring severity to the base level besides the trend (tort reform); none if omitted",
+            },
+            ORIGINS,
+            Arg {
+                name: "output",
+                help: "\"ultimate\" (default), \"rates\", \"severities\", \"counts\" or \"payments\"",
+            },
+        ],
+        run: counts::disposal,
+    },
+    Function {
+        symbol: "pro_res_case_os",
+        name: "PRO.RES.CASE.OS",
+        help: "Case outstanding development (Friedland ch. 12): payments and case outstanding projected from the case by selected ratios; the table per origin, or the ratios and squares.",
+        args: &[
+            PAID,
+            INCURRED,
+            Arg {
+                name: "paid_on_case",
+                help: "Incremental paid over prior case: blank: average of all origins; n or \"latest n\"; \"medial n\" or \"medial nxk\"; \"diagonal\"; or a row of values, one per triangle column",
+            },
+            Arg {
+                name: "case_on_case",
+                help: "Case over prior case: blank: average of all origins; n or \"latest n\"; \"medial n\" or \"medial nxk\"; \"diagonal\"; or a row of values, one per triangle column",
+            },
+            Arg {
+                name: "paid_to_ultimate",
+                help: "Paid to ultimate over the last case outstanding, 1 if omitted",
+            },
+            ORIGINS,
+            Arg {
+                name: "output",
+                help: "\"ultimate\" (default), \"paid_on_case\", \"case_on_case\", \"case\" or \"payments\"",
+            },
+        ],
+        run: counts::case_outstanding,
+    },
+    Function {
+        symbol: "pro_res_trend_by_age",
+        name: "PRO.RES.TREND.BY.AGE",
+        help: "Exponential trend across origins at each age of a severity triangle (or amounts over counts), then pooled over every age: rate, R-squared and points.",
+        args: &[
+            Arg {
+                name: "amounts",
+                help: "A triangle of severities, or of amounts with counts",
+            },
+            Arg {
+                name: "counts",
+                help: "Counts at the same cells, to divide amounts by; omitted when amounts are severities",
+            },
+        ],
+        run: counts::trend_by_age_table,
+    },
+    Function {
+        symbol: "pro_res_bs_case",
+        name: "PRO.RES.BS.CASE",
+        help: "Berquist-Sherman case adequacy adjustment: the adjusted incurred triangle, the latest average case trended back times open counts plus paid.",
+        args: &[
+            INCURRED,
+            PAID,
+            Arg {
+                name: "open",
+                help: "Open claim counts at the same cells (reported less closed)",
+            },
+            Arg {
+                name: "trend",
+                help: "Annual severity trend (0.05 for 5%), or \"average_case\" to fit it to the average case",
+            },
+            Arg {
+                name: "max_age",
+                help: "The oldest age adjusted, in months; every age if omitted",
+            },
+            Arg {
+                name: "output",
+                help: "\"adjusted\" (default) or \"average_case\" (the observed average case outstanding)",
+            },
+        ],
+        run: counts::bs_case,
+    },
+    Function {
+        symbol: "pro_res_bs_settlement",
+        name: "PRO.RES.BS.SETTLEMENT",
+        help: "Berquist-Sherman settlement rate adjustment: the adjusted paid (or closed count) triangle at the selected disposal rates.",
+        args: &[
+            PAID,
+            Arg {
+                name: "closed",
+                help: "Cumulative closed claim counts: one row per origin, one column per age",
+            },
+            Arg {
+                name: "ultimate_counts",
+                help: "Ultimate claim counts, one per origin (from PRO.RES.CL.ULTIMATE on the count triangles)",
+            },
+            Arg {
+                name: "rates",
+                help: "Disposal rates: the latest diagonal's if omitted; or a selection as in PRO.RES.DISPOSAL",
+            },
+            Arg {
+                name: "interpolation",
+                help: "How paid is read between closed counts: \"exponential\" (default) or \"linear\"",
+            },
+            Arg {
+                name: "output",
+                help: "\"paid\" (default) or \"closed\"",
+            },
+        ],
+        run: counts::bs_settlement,
+    },
+    Function {
+        symbol: "pro_res_bs",
+        name: "PRO.RES.BS",
+        help: "Both Berquist-Sherman adjustments: incurred from the adjusted average case on adjusted open counts, paid and closed from the settlement adjustment.",
+        args: &[
+            INCURRED,
+            PAID,
+            Arg {
+                name: "reported_counts",
+                help: "Cumulative reported claim counts at the same cells",
+            },
+            Arg {
+                name: "closed",
+                help: "Cumulative closed claim counts: one row per origin, one column per age",
+            },
+            Arg {
+                name: "ultimate_counts",
+                help: "Ultimate claim counts, one per origin (from PRO.RES.CL.ULTIMATE on the count triangles)",
+            },
+            Arg {
+                name: "trend",
+                help: "Annual severity trend (0.05 for 5%), or \"average_case\" to fit it to the average case",
+            },
+            Arg {
+                name: "max_age",
+                help: "The oldest age the case adjustment adjusts, in months; every age if omitted",
+            },
+            Arg {
+                name: "rates",
+                help: "Disposal rates: the latest diagonal's if omitted; or a selection as in PRO.RES.DISPOSAL",
+            },
+            Arg {
+                name: "interpolation",
+                help: "How paid is read between closed counts: \"exponential\" (default) or \"linear\"",
+            },
+            Arg {
+                name: "output",
+                help: "\"incurred\" (default), \"paid\" or \"closed\"",
+            },
+        ],
+        run: counts::bs_both,
     },
     Function {
         symbol: "pro_tri_incremental",
