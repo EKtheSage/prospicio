@@ -414,9 +414,9 @@ steps <- do.call(rbind, lapply(names(shown), function(label) {
 }))
 ggplot() +
   geom_histogram(aes(size, fill = "ground-up"), data = data.frame(size = ground_up),
-                 breaks = (0:70) / 10) +
+                 breaks = edges) +
   geom_histogram(aes(size, fill = "recorded"), data = data.frame(size = recorded),
-                 breaks = (0:70) / 10) +
+                 breaks = edges) +
   geom_step(aes(size, claims, colour = fit), data = steps, linewidth = 0.8) +
   geom_vline(xintercept = c(1000, 200000), colour = "grey40", linetype = "dotted") +
   scale_x_log10(labels = scales::label_comma()) +
