@@ -19,6 +19,11 @@ under "Unreleased" until then.
   helpers, `PRO.VERSION` and `PRO.YEARFRACTION` keep their names.
   `docs/design/xll.md` decision 47 lists every old and new name (#746,
   #747).
+- Rust: `prospicio_reserving::Compartmental` has the public field
+  `development_levels: DevelopmentLevels`, so a struct literal of
+  `Compartmental` needs it; build one with `Compartmental::model_1` or
+  `Compartmental::model_2` and set the field, or add
+  `development_levels: DevelopmentLevels::PerAge` to the literal (#763).
 
 ### Reserving
 
