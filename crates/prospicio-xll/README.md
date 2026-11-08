@@ -130,6 +130,8 @@ The `...` is the chain ladder's options: `[average], [tail], [origins],
 | `PRO.RES.ODP.GLM(triangle, [origins])` | The ODP model as a quasi-Poisson GLM: reserve, SEs, RMSEP and CV per origin |
 | `PRO.RES.ODP.GLM.PARAMS(triangle, [origins])` | Its coefficients, SEs and dispersion |
 | `PRO.RES.ODP.GLM.RESIDUALS(triangle, [by], [origins])` | Its residuals by cell, or grouped by `"origin"`, `"development"` or `"calendar"` |
+| `PRO.RES.DEV.EXHIBIT(triangle, [average], [tail], [selected], [kind], [weight], [pattern_ages])` | Friedland's development exhibit: six averages of the link ratios, then the selected factors, CDF and percent developed |
+| `PRO.RES.SELECT(ultimates, weights, [ages], [reported], [paid], [origins], [methods])` | The selected ultimate per origin, weighting several methods' ultimates by origin or by age, with IBNR and unpaid |
 | `PRO.RES.CURVE(triangle, [shape], [average], [fit_period], [keep_observed_until], [tail_periods])` | A development curve fitted over every age: observed, fitted and selected factor per link, and the curve's tail |
 | `PRO.RES.CURVE.STATS(triangle, [shapes], [average], [fit_period], [tail_periods])` | The shapes compared: parameters, sum of squares, R-squared, adjusted R-squared and tail |
 | `PRO.RES.MUNICH(paid, incurred, [sigma], [tail_paid], [tail_incurred], [origins])` | Munich chain ladder: paid and incurred developed together; latest and ultimate P/I, paid reserve, incurred IBNR and the separate chain ladders |
@@ -175,6 +177,13 @@ These are common functions, without a group, since pricing reads triangles too.
 - `tail`: omit for none, a factor such as `1.05`, or `"exponential"`,
   `"inverse_power"`, `"bondy"` or `"log-linear"` (R ChainLadder's
   `tail = TRUE`).
+- `ultimates`, `weights`: `PRO.RES.SELECT` takes the methods' ultimates
+  side by side (a column each, blank where one does not project) and
+  either a row of weights for every origin, a table of weights like
+  `ultimates`, or, with each origin's `ages`, a table whose first column
+  is the age from which its row holds (`{12,0,1;48,1,0}`: the second
+  method before 48 months, the first from then on). Each origin's
+  weights must sum to 1.
 - `shape`: a development curve, `"exponential"` (default),
   `"inverse_power"`, `"hoerl"`, `"sherman"`, `"loglogistic"` or
   `"weibull"`. `fit_period` is one or two ages in months (the first fitted,

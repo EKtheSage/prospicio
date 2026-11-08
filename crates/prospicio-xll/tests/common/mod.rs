@@ -165,3 +165,63 @@ pub fn reference(name: &str) -> Vec<Vec<String>> {
         .map(|l| l.split(',').map(str::to_owned).collect())
         .collect()
 }
+
+/// One column of `validation/data/<name>.csv` (origin, development, then
+/// columns) as a sheet triangle, and the origin years as a column.
+pub fn data_triangle(name: &str, column: &str) -> (Grid, Grid) {
+    let text = validation(&format!("data/{name}.csv"));
+    let mut lines = text.lines().filter(|l| !l.starts_with('#'));
+    let header: Vec<&str> = lines.next().unwrap().split(',').collect();
+    let c = header
+        .iter()
+        .position(|h| *h == column)
+        .unwrap_or_else(|| panic!("{name} has no column {column}"));
+    let mut rows: BTreeMap<i32, Vec<f64>> = BTreeMap::new();
+    for line in lines {
+        let f: Vec<&str> = line.split(',').collect();
+        rows.entry(f[0].parse().unwrap())
+            .or_default()
+            .push(f[c].parse().unwrap());
+    }
+    let ages = rows.values().map(Vec::len).max().unwrap();
+    let grid = Grid::from_rows(
+        rows.values()
+            .map(|r| {
+                (0..ages)
+                    .map(|c| r.get(c).map_or(Value::Empty, |&x| Value::Number(x)))
+                    .collect()
+            })
+            .collect(),
+    );
+    let labels: Vec<f64> = rows.keys().map(|&y| f64::from(y)).collect();
+    (grid, Grid::column(&labels))
+}
+
+/// The column of a result table headed `name`.
+pub fn column_of(table: &Grid, name: &str) -> usize {
+    (0..table.columns)
+        .find(|&c| *table.get(0, c) == Value::from(name))
+        .unwrap_or_else(|| panic!("no column {name}"))
+}
+
+/// A call through the catalogue that must succeed.
+pub fn ok(symbol: &str, args: Vec<Grid>) -> Grid {
+    let g = prospicio_xll::call(symbol, args);
+    if let Some(Value::Text(s)) = g.as_scalar() {
+        assert!(!s.starts_with("#PROSPICIO!"), "{symbol}: {s}");
+    }
+    g
+}
+
+/// A call through the catalogue that must fail: its message.
+pub fn fails(symbol: &str, args: Vec<Grid>) -> String {
+    match prospicio_xll::call(symbol, args).as_scalar() {
+        Some(Value::Text(s)) if s.starts_with("#PROSPICIO!") => s.clone(),
+        other => panic!("{symbol}: expected an error, got {other:?}"),
+    }
+}
+
+/// A row of numbers.
+pub fn row(values: &[f64]) -> Grid {
+    Grid::from_rows(vec![values.iter().map(|&x| Value::Number(x)).collect()])
+}

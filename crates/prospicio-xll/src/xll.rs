@@ -509,6 +509,8 @@ mod exports {
     udf!(pro_res_odp_glm, triangle, origins);
     udf!(pro_res_odp_glm_params, triangle, origins);
     udf!(pro_res_odp_glm_residuals, triangle, by, origins);
+    udf!(pro_res_dev_exhibit, triangle, average, tail, selected, kind, weight, pattern_ages);
+    udf!(pro_res_select, ultimates, weights, ages, reported, paid, origins, methods);
     udf!(pro_res_curve, triangle, shape, average, fit_period, keep_observed_until, tail_periods);
     udf!(pro_res_curve_stats, triangle, shapes, average, fit_period, tail_periods);
     udf!(pro_res_munich, paid, incurred, sigma, tail_paid, tail_incurred, origins);

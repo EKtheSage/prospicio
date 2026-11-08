@@ -1267,6 +1267,33 @@ real Excel.
       checks the RAA comparison through the C API, and the test
       workbook's curves sheet chains the two as a user would.
 
+51. **Friedland's exhibits and the selection of ultimates on a sheet**
+    (#742 batch 1). `PRO.RES.DEV.EXHIBIT` is `DevelopmentExhibit` with
+    Friedland's six averages (simple latest 5 and 3, medial latest 5x1,
+    volume latest 5 and 3, geometric latest 4) and the chain ladder's
+    selection under the usual arguments (average, tail, selected
+    factors): her chapter 7 parts 3 and 4, a row per average and then the
+    selected factors, CDF and percent developed, a column per link. The
+    triangle and its link ratios are already on the sheet
+    (`PRO.TRI.LINKRATIOS`), so parts 1 and 2 are not repeated.
+    `PRO.RES.SELECT` is `UltimateExhibit::select`: the methods'
+    ultimates side by side, weights by origin (a row for all, or a table)
+    or by age (with each origin's age, a table of the age from which a
+    row holds), refused unless each origin's weights sum to 1 and no
+    weight falls on a method that does not project there.
+    - **Not a SUMPRODUCT.** Decision 46 leaves out what Excel does; the
+      selection is kept because it checks the weights, applies them by
+      age and gives the IBNR and unpaid in one table, as
+      `VotingChainladder` does. The per-method summary (ultimate less
+      reported or paid) is a subtraction and has no function.
+    - **Parity.** `tests/exhibits.rs`: Friedland's chapter 7 Exhibit I
+      (U.S. Industry Auto) averages, CDFs and percents to the printed
+      digits; chapter 15 Exhibit I (XYZ Insurer) selected ultimates,
+      IBNR and totals by origin and by age; chainladder-python's
+      `VotingChainladder` on GenIns in three weightings, its methods'
+      ultimates taken from `PRO.RES.CL.ULTIMATE`, `PRO.RES.BF` and
+      `PRO.RES.CAPECOD` as a sheet chains them.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and
@@ -1325,8 +1352,8 @@ order, one small PR each, those already done struck through:
 10. Parity with the Python and R bindings (#742, user, 2026-11-04 and
     2026-11-07), one PR each: the 0.0.8 reserving methods, ~~the Munich
     chain ladder and the paid-incurred chain~~ (decision 49), ~~development
-    curves over every age~~ (decision 50), Friedland's exhibits and the weighted
-    selection of ultimates, the methods on claim counts and
+    curves over every age~~ (decision 50), ~~Friedland's exhibits and the weighted
+    selection of ultimates~~ (decision 51), the methods on claim counts and
     Berquist-Sherman, salvage and subrogation, ALAE and ULAE; then the
     Bayesian additions (a new year's loss ratio, the industry prior), the
     0.0.8 Models fits (zero-inflated and hurdle counts, quantile and
