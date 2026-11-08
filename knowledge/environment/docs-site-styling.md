@@ -82,3 +82,25 @@ Found on 2026-11-07 and 2026-11-08 with great-docs as installed in
   hides `#quarto-sidebar` and widens `main.content` to `page-start`, kept
   in `localStorage` under `prospicio-sidebar-hidden`. On the R site,
   `navbar: components:` in `_pkgdown.yml` takes a relative `href`.
+* **Guides that run on the Python site.** A guide with the line
+  `<!-- site: execute -->` is staged as a Quarto document (`executed` in
+  `xtask/src/main.rs`) and run by great-docs' Quarto build with the
+  `python3` Jupyter kernel of `python/.venv`. Quarto's last cell runs
+  `%reset` and then prints a JSON line that Quarto parses; an IPython
+  `post_run_cell` or `post_execute` hook that reads the cleared namespace
+  fails there and prints its traceback into that cell, and the build stops
+  with "Extra data: line 2 column 1". The hook in
+  `docs/guides/site/figures.py` binds what it uses as default arguments.
+* **Figures that follow the mode.** One inline SVG per figure, with
+  matplotlib's colours replaced by the site's CSS variables
+  (`var(--p-ink)`, `var(--p-series-1)` and so on), follows the light and
+  dark modes and the switch between them without a second image; Quarto's
+  `renderings: [light, dark]` would need two drawings in each cell. Greys
+  become `color-mix()` of the ink, so `"0.75"` stays a light grey in either
+  mode.
+* **Screenshots while the Browser pane is hidden.** A hidden pane paints
+  nothing. Headless Edge takes one:
+  `msedge --headless=new --user-data-dir=<new dir> --window-size=1200,900
+  --virtual-time-budget=6000 --screenshot=<file> <url>`; great-docs reads its
+  mode from `localStorage["great-docs-theme"]`, which a page on the same
+  origin can set before it loads the guide in an iframe.

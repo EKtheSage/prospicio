@@ -308,7 +308,12 @@ fn stage_user_guide(uv: &dyn Fn() -> Command) -> Result {
                     text =
                         text.replace(&format!("](../../examples/{s}.ipynb"), &format!("]({s}.md"));
                 }
-                write(&target, &page(&text, &section.title))?;
+                if text.lines().any(|l| l.trim() == EXECUTE_MARK) {
+                    let text = executed(&text, &root.join("docs/guides"));
+                    write(&target.with_extension("qmd"), &page(&text, &section.title))?;
+                } else {
+                    write(&target, &page(&text, &section.title))?;
+                }
                 continue;
             }
             // nbconvert runs the kernel in the notebook's directory, as Jupyter does.
@@ -364,6 +369,71 @@ fn page(text: &str, section: &str) -> String {
         quote(section),
         body.trim_start()
     )
+}
+
+/// A guide that holds this line on its own runs when the Python site is
+/// built, so that its figures and tables are drawn: it is staged as a Quarto
+/// document whose `python` blocks are cells (see `executed`).
+const EXECUTE_MARK: &str = "<!-- site: execute -->";
+
+/// A guide as a Quarto document that runs on the site: each `python` block
+/// becomes a cell, a `python no-run` block a cell that is shown and not run,
+/// and the `text` block after a cell, which `python/tests/test_guides.py`
+/// checks against the block's output, is left out because the cell's own
+/// output is shown. A hidden first cell runs the guide from docs/guides, as
+/// the test does, and loads `docs/guides/site/figures.py`, which draws the
+/// figures in the site's colours for both modes.
+fn executed(text: &str, guides: &Path) -> String {
+    let dir = guides.to_string_lossy().replace('\\', "/");
+    let mut out = format!(
+        "```{{python}}\n#| include: false\nimport os\nos.chdir(r\"{dir}\")\n\
+         exec(open(\"site/figures.py\", encoding=\"utf-8\").read())\n```\n\n"
+    );
+    let mut lines = text.lines().peekable();
+    let mut after_cell = false;
+    while let Some(line) = lines.next() {
+        if line.trim() == EXECUTE_MARK {
+            continue;
+        }
+        let Some(info) = line.strip_prefix("```") else {
+            if !line.trim().is_empty() {
+                after_cell = false;
+            }
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        };
+        let info = info.trim();
+        if info == "text" && after_cell {
+            // Skip the checked output and the blank line after it.
+            for l in lines.by_ref() {
+                if l.starts_with("```") {
+                    break;
+                }
+            }
+            if lines.peek().is_some_and(|l| l.trim().is_empty()) {
+                lines.next();
+            }
+            after_cell = false;
+            continue;
+        }
+        let head = match info {
+            "python" => "```{python}".to_owned(),
+            "python no-run" => "```{python}\n#| eval: false".to_owned(),
+            _ => fence_info(line).into_owned(),
+        };
+        out.push_str(&head);
+        out.push('\n');
+        for l in lines.by_ref() {
+            out.push_str(l);
+            out.push('\n');
+            if l.starts_with("```") {
+                break;
+            }
+        }
+        after_cell = info == "python";
+    }
+    out
 }
 
 /// An opening fence whose info string is several bare words, as the guides'
@@ -979,7 +1049,8 @@ fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        TocPage, TocSection, check_toc, fence_info, page, parse_toc, r_articles_block, staged_name,
+        TocPage, TocSection, check_toc, executed, fence_info, page, parse_toc, r_articles_block,
+        staged_name,
     };
 
     const TOC: &str = "# comment
@@ -1075,5 +1146,23 @@ mod tests {
             staged.contains("```{.python .no-run}\nx = 1\n```\n"),
             "{staged}"
         );
+    }
+
+    #[test]
+    fn an_executed_guide_has_cells_and_drops_the_checked_output() {
+        let guide = "# T\n\n<!-- site: execute -->\n\nProse.\n\n```python\nprint(1)\n```\n\n```text\n1\n```\n\nMore.\n\n```python no-run\nslow()\n```\n\n```text\nrecorded\n```\n\n```bash\npip install x\n```\n";
+        let out = executed(guide, std::path::Path::new("C:\\g"));
+        assert!(
+            out.starts_with("```{python}\n#| include: false\nimport os\nos.chdir(r\"C:/g\")\n"),
+            "{out}"
+        );
+        assert!(!out.contains("<!-- site: execute -->"), "{out}");
+        assert!(out.contains("```{python}\nprint(1)\n```\n\nMore."), "{out}");
+        assert!(!out.contains("```text\n1\n```"), "{out}");
+        assert!(
+            out.contains("```{python}\n#| eval: false\nslow()\n```\n\n```text\nrecorded\n```"),
+            "{out}"
+        );
+        assert!(out.contains("```bash\npip install x\n```"), "{out}");
     }
 }

@@ -199,3 +199,23 @@ A guide tells what prospicio does and how to use it.
 - Do not change code blocks or the output blocks that the test harnesses check.
 
 An optional local check is `ste-lint.py` from the user's `asd-ste100` skill. CI does not run it.
+
+## Figures and tables
+
+Show a result as a figure or a formatted table when a reader compares many
+numbers: a fit against the data, a distribution, values by band or by year.
+Keep a printed comparison where CI must check the number (book against
+prospicio).
+
+- A guide that draws them holds the line `<!-- site: execute -->`. The Python
+  site then runs its `python` blocks (`cargo xtask python`) and shows their
+  output in place of the checked `text` blocks. The other guides are shown
+  as written.
+- Draw with plain matplotlib, at most three series a panel. Leave the colours
+  at their defaults, and use greys (`color="0.75"`) for data in the
+  background. `docs/guides/site/figures.py` maps the colours to the site's
+  light and dark modes. Do not call `plt.show()`.
+- Lay out a table with great_tables (`GT`) on a pandas DataFrame, with a
+  title and the units.
+- Draw every figure from values the guide computes. CI runs the code under
+  `python/tests/test_guides.py`, so a figure cannot fail silently.
