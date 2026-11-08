@@ -52,8 +52,8 @@ fn summary(rows: Vec<(&str, Value)>) -> Grid {
 /// calendar-year effects (R ChainLadder's `cyEffTest`), at `ci` (0.95 if
 /// omitted). `output` `"summary"` (default) gives Z, its mean and variance,
 /// the interval and whether Z lies in it; `"diagonals"` a row per calendar
-/// diagonal with its small and large link ratios, Z, n, m, E[Z] and
-/// Var[Z].
+/// diagonal with its small and large link ratios, Z, n, m, `E[Z]` and
+/// `Var[Z]`.
 pub fn calendar_year(args: &[Grid]) -> Result<Grid> {
     let tri = triangle(&args[0])?;
     let test = calendar_year_effect(&tri, COLUMN, ci(&args[1], CALENDAR_YEAR_CI)?).map_err(err)?;
