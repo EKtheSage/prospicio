@@ -729,7 +729,7 @@ what it is aiming for by v1.0.
   classical credibility; ratemaking (rate level, trend and the
   indication); the burning cost; aggregate distributions and layer
   statistics; the Bayesian ODP chain ladder by MCMC; the Munich chain
-  ladder and the paid-incurred chain; the occurrence and
+  ladder and the paid-incurred chain; development curves over every age; the occurrence and
   aggregate PML curves; aggregate covers on the annual total; towers
   priced on a grid; severity fits to large losses (body and Pareto
   families, with reporting thresholds and censoring); EVT threshold

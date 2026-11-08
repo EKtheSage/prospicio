@@ -423,6 +423,32 @@ og["K5"] = ArrayFormula("K5:U60", f"=PRO.RES.ODP.GLM.RESIDUALS({TRI},,{ORI})")
 for col in "ABCDEFGHIJKLMNOPQRSTU":
     og.column_dimensions[col].width = 12
 
+# Development curves over every age (decision 50) on the RAA sheet's
+# triangle, and the chain ladder on the fitted pattern.
+dc = wb.create_sheet("Development curves")
+dc["A1"] = "prospicio XLL test: development curves fitted over every age on RAA"; dc["A1"].font = Font(bold=True, size=13)
+dc["A2"] = "Shapes compared, then Sherman's curve with the observed factors kept before 60 months, and the chain ladder on its selected factors and tail."
+dc["A2"].font = note
+dc["A4"] = "Every shape"; dc["A4"].font = bold
+dc["A5"] = ArrayFormula("A5:J11", f"=PRO.RES.CURVE.STATS({TRI})")
+dc["A14"] = "Sherman, observed before 60 months"; dc["A14"].font = bold
+dc["A15"] = ArrayFormula("A15:F25", f'=PRO.RES.CURVE({TRI},"sherman",,,60)')
+dc["H14"] = "Chain ladder on the curve (selected = F16:F24, tail = F25)"; dc["H14"].font = bold
+dc["H15"] = ArrayFormula("H15:L26", f"=PRO.RES.CL({TRI},,$F$25,{ORI},TRANSPOSE($F$16:$F$24))")
+dc["A28"] = "Check against R (lm on log(f - 1), nls)"; dc["A28"].font = bold
+for h, col in zip(["Check", "prospicio", "Expected", "Match"], "ABCD"):
+    dc[f"{col}29"] = h; dc[f"{col}29"].font = bold
+for i, (label, formula, want, tol) in enumerate([
+    ("Exponential R-squared", "=H6", 0.849904565202755, 1e-9),
+    ("Exponential tail (100 periods)", "=J6", 1.00943575158123, 1e-9),
+]):
+    r = 30 + i
+    dc[f"A{r}"] = label; dc[f"B{r}"] = formula; dc[f"C{r}"] = want
+    dc[f"D{r}"] = f"=ABS(B{r}-C{r})<{tol}"
+dc.column_dimensions["A"].width = 30
+for col in "BCDEFGHIJKL":
+    dc.column_dimensions[col].width = 13
+
 # Paid and incurred together (decision 49): the Munich chain ladder on
 # Quarg and Mack's MCL triangles and the paid-incurred chain on USAA.
 def paid_incurred(name):

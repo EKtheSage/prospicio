@@ -21,6 +21,7 @@ pub mod cashflow;
 pub mod cat;
 pub mod copulas;
 pub mod credibility;
+pub mod curves;
 pub mod diagonal;
 pub mod distortions;
 pub mod evt;
@@ -303,6 +304,26 @@ const CDR_PERCENTILES: Arg = Arg {
 const CLARK_EXPOSURE: Arg = Arg {
     name: "exposure",
     help: "Premium per origin for Clark's Cape Cod; omitted for Clark's LDF method",
+};
+const CURVE_SHAPE: Arg = Arg {
+    name: "shape",
+    help: "\"exponential\" (default), \"inverse_power\", \"hoerl\", \"sherman\", \"loglogistic\" or \"weibull\"",
+};
+const CURVE_SHAPES: Arg = Arg {
+    name: "shapes",
+    help: "Shapes to compare, a row or column of names as in PRO.RES.CURVE; omitted for all six",
+};
+const FIT_PERIOD: Arg = Arg {
+    name: "fit_period",
+    help: "Ages fitted, in months: the first and the age the fit stops before, either blank for open; omitted for every age",
+};
+const KEEP_OBSERVED_UNTIL: Arg = Arg {
+    name: "keep_observed_until",
+    help: "Age in months before which the observed factors are kept; omitted to use the curve at every age",
+};
+const TAIL_PERIODS: Arg = Arg {
+    name: "tail_periods",
+    help: "Periods past the oldest age the curve runs on for its tail; 100 if omitted, 0 for none",
 };
 const CURVE: Arg = Arg {
     name: "curve",
@@ -972,6 +993,27 @@ pub static FUNCTIONS: &[Function] = &[
         help: "The ODP GLM's residuals: a row per observed increment (actual, fitted, Pearson, deviance, leverage, standardized), or grouped by origin, development or calendar period.",
         args: &[TRIANGLE, RESIDUALS_BY, ORIGINS],
         run: odp_glm::residuals,
+    },
+    Function {
+        symbol: "pro_res_curve",
+        name: "PRO.RES.CURVE",
+        help: "A development curve fitted over every age: per link the observed, fitted and selected factor, the residual and whether it was fitted, then the curve's tail.",
+        args: &[
+            TRIANGLE,
+            CURVE_SHAPE,
+            AVERAGE,
+            FIT_PERIOD,
+            KEEP_OBSERVED_UNTIL,
+            TAIL_PERIODS,
+        ],
+        run: curves::curve,
+    },
+    Function {
+        symbol: "pro_res_curve_stats",
+        name: "PRO.RES.CURVE.STATS",
+        help: "Development curves compared: per shape its parameters, points, sum of squares, R-squared and adjusted R-squared, and tail.",
+        args: &[TRIANGLE, CURVE_SHAPES, AVERAGE, FIT_PERIOD, TAIL_PERIODS],
+        run: curves::stats,
     },
     Function {
         symbol: "pro_res_munich",
