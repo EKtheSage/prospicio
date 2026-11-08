@@ -1477,6 +1477,33 @@ real Excel.
       diagnostics, one PR; the other six groups stay off the sheet until
       asked for.
 
+57. **Reserving diagnostics, part 1** (#742, the group the user chose
+    from decision 56). `PRO.RES.CY.TEST` is Mack's test for
+    calendar-year effects and `PRO.RES.DEVCOR.TEST` his test for
+    correlation between adjacent development factors
+    (`calendar_year_effect`, `development_correlation`; R ChainLadder's
+    `cyEffTest` and `dfCorTest`), at R's confidence levels when omitted
+    (0.95 and 0.5): the statistic, its moments, the interval and whether
+    the assumption is rejected (`TRUE` when it is), or with `output` the
+    table by calendar diagonal or by pair of links. A diagonal is labelled
+    by the calendar year of its later cells when `origins` starts with a
+    year. `PRO.RES.BACKTEST` is `diagonal_backtest`: GLMs with origin and
+    development factors on the incremental cells (`"odp"`, the default,
+    `"poisson"`, `"gamma"`, one or several side by side) forecast each of
+    the latest `diagonals` from the earlier ones with joint draws from a
+    seed, scored by CRPS, the interval's coverage, actual over expected,
+    the total's CRPS, the log density and the total's percentile; each
+    metric's mean per model, or a row per model and diagonal with the
+    cells left out of scoring. It runs on the calling thread: a GLM per
+    diagonal and a thousand draws take well under a second.
+    - **Left out**: the Bayesian models in the backtest (`BayesOdp`,
+      Meyers' and the compartmental models, decision 21).
+    - **Parity.** `tests/diagnostics.rs`: every value of
+      `validation/reference/reserving_assumptions_r.csv` (R ChainLadder
+      0.2.21 on RAA, GenIns and ABC at two confidence levels each) and
+      `_python.csv` (chainladder-python), read off the sheet; the
+      backtest's every score equal to the library's on RAA.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and
@@ -1542,7 +1569,9 @@ order, one small PR each, those already done struck through:
     ratio, the industry prior)~~ (decision 54), ~~the
     0.0.8 Models fits (zero-inflated and hurdle counts, quantile and
     expectile regression)~~ (decision 55), ~~a coverage check~~ (decision
-    56), then the reserving diagnostics, the group the user chose from it.
+    56), then the reserving diagnostics, the group the user chose from it:
+    ~~Mack's tests and the backtest~~ (decision 57), the excess-layer
+    pattern and the benchmark curve.
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),

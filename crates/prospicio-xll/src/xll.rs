@@ -526,6 +526,9 @@ mod exports {
     udf!(pro_res_bs_settlement, paid, closed, ultimate_counts, rates, interpolation, output);
     udf!(pro_res_bs, incurred, paid, reported_counts, closed, ultimate_counts, trend, max_age, rates, interpolation, output);
     udf!(pro_res_ratio, numerator, denominator, ultimate_claims, average, tail, selected, kind, factors, ultimate_ratios, origins, output);
+    udf!(pro_res_cy_test, triangle, ci, output, origins);
+    udf!(pro_res_devcor_test, triangle, ci, output);
+    udf!(pro_res_backtest, triangle, models, diagonals, sims, seed, interval, output, origins);
     udf!(pro_res_ulae, paid_ulae, paid, case_outstanding, ibnr, technique, ratio, weights, reported, closed, pure_ibnr, unclosed, ultimate, output);
     udf!(pro_tri_incremental, triangle);
     udf!(pro_tri_cumulative, triangle);

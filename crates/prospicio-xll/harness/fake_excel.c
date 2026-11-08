@@ -73,6 +73,7 @@ typedef XLOPER12 *(*Fn8)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER1
 typedef XLOPER12 *(*Fn7)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                          XLOPER12 *);
 typedef XLOPER12 *(*Fn3)(XLOPER12 *, XLOPER12 *, XLOPER12 *);
+typedef XLOPER12 *(*Fn4)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn5)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn6)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef void (*Free12)(XLOPER12 *);
@@ -258,7 +259,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and thirty-seven functions registered", registered == 137);
+    check("one hundred and forty functions registered", registered == 140);
     check("nine of them asynchronous (xll.md, decision 48)", async_registered == 9);
     check("no old name is exported (xll.md, decision 47)", GetProcAddress(xll, "pro_mack") == NULL);
 
@@ -585,6 +586,13 @@ int main(int argc, char **argv) {
               fabs(tb->val.array.lparray[1 * 4 + 1].val.num - 0.027390486681106774) < 1e-12);
     free12(tb);
 
+    /* Mack's calendar-year test on RAA (xll.md, decision 57): Z = 14, as R
+     * ChainLadder's cyEffTest. */
+    XLOPER12 *cy = ((Fn4)GetProcAddress(xll, "pro_res_cy_test"))(&tri, &missing, &missing, &missing);
+    check("PRO.RES.CY.TEST on RAA gives Z = 14",
+          (cy->xltype & 0xFFF) == xltypeMulti && cy->val.array.lparray[1].val.num == 14);
+    free12(cy);
+
     /* Unpaid ULAE (xll.md, decision 53): the classical technique, 5% on
      * half of a case outstanding of 100 and all of an IBNR of 50 is 5. */
     XLOPER12 u_paid_ulae, u_paid, u_case, u_ibnr, u_ratio;
@@ -729,7 +737,6 @@ int main(int argc, char **argv) {
     free12(yf);
 
     /* Werner and Modlin, ch. 8: LR 65%, V 25%, Q 10%, F 6.5% is +10%. */
-    typedef XLOPER12 *(*Fn4)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
     XLOPER12 lr, vv, qq, ff;
     lr.xltype = vv.xltype = qq.xltype = ff.xltype = xltypeNum;
     lr.val.num = 0.65;

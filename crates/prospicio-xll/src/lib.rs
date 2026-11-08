@@ -23,6 +23,7 @@ pub mod copulas;
 pub mod counts;
 pub mod credibility;
 pub mod curves;
+pub mod diagnostics;
 pub mod diagonal;
 pub mod distortions;
 pub mod evt;
@@ -1472,6 +1473,72 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: expenses::ratio,
+    },
+    Function {
+        symbol: "pro_res_cy_test",
+        name: "PRO.RES.CY.TEST",
+        help: "Mack's test for calendar-year effects (ChainLadder's cyEffTest): Z, its mean, variance and interval, or a row per calendar diagonal.",
+        args: &[
+            TRIANGLE,
+            Arg {
+                name: "ci",
+                help: "The interval's confidence level, 0.95 if omitted",
+            },
+            Arg {
+                name: "output",
+                help: "\"summary\" (default) or \"diagonals\"",
+            },
+            ORIGINS,
+        ],
+        run: diagnostics::calendar_year,
+    },
+    Function {
+        symbol: "pro_res_devcor_test",
+        name: "PRO.RES.DEVCOR.TEST",
+        help: "Mack's test for correlation between adjacent development factors (ChainLadder's dfCorTest): T, its variance and interval, or a row per pair of links.",
+        args: &[
+            TRIANGLE,
+            Arg {
+                name: "ci",
+                help: "The interval's confidence level, 0.5 if omitted (Mack's)",
+            },
+            Arg {
+                name: "output",
+                help: "\"summary\" (default) or \"pairs\"",
+            },
+        ],
+        run: diagnostics::development_factors,
+    },
+    Function {
+        symbol: "pro_res_backtest",
+        name: "PRO.RES.BACKTEST",
+        help: "Backtest on held-out calendar diagonals: each model forecasts each of the latest diagonals from the earlier ones; CRPS, coverage, actual over expected and the total's percentile.",
+        args: &[
+            TRIANGLE,
+            Arg {
+                name: "models",
+                help: "GLMs on the incremental cells with origin and development factors: \"odp\" (default), \"poisson\" or \"gamma\", one or several",
+            },
+            Arg {
+                name: "diagonals",
+                help: "How many of the latest calendar diagonals to hold out, one at a time; 3 if omitted",
+            },
+            Arg {
+                name: "sims",
+                help: "Joint draws per forecast, 1000 if omitted",
+            },
+            SEED,
+            Arg {
+                name: "interval",
+                help: "The central interval whose coverage is scored, 0.9 if omitted",
+            },
+            Arg {
+                name: "output",
+                help: "\"summary\" (default: each metric's mean per model) or \"diagonals\" (a row per model and diagonal)",
+            },
+            ORIGINS,
+        ],
+        run: diagnostics::backtest,
     },
     Function {
         symbol: "pro_res_ulae",
