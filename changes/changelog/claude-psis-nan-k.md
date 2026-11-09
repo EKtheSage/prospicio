@@ -6,4 +6,4 @@
   infinite k and the raw weights, as a tail too short to fit already did.
   Before, the NaN k also set every tail weight to the largest one. In the
   one-year views those simulations are now moment-matched before they are
-  refitted (#782).
+  refitted (#782, #814).
