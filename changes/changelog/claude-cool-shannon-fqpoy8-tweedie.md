@@ -8,4 +8,4 @@
   (`from_compound`), with the accessors `cv`, `severity_mean`,
   `severity_cv` and `p0`; Python `Tweedie.from_cv`, `.cv` and the others,
   R `tweedie_from_cv()`, `tweedie_from_cv_dispersion()`,
-  `tweedie_from_compound()` and `@cv` (#775).
+  `tweedie_from_compound()` and `@cv` (#775, #813).
