@@ -760,6 +760,42 @@ Each item is sized to one small PR unless stated. "Needs first" lists the valida
 
 ---
 
+## Follow-up issues
+
+Filed on 2026-11-09 under the tracking issue [#822](https://github.com/EKtheSage/prospicio/issues/822). Each is one small change with its evidence, the test it needs first and its risk.
+
+| Issue | Priority | Area | Subject | Report section |
+|---|---|---|---|---|
+| [#823](https://github.com/EKtheSage/prospicio/issues/823) | P1 | CI | Check generated files on pull requests without rendering both docs sites | 6.3 B1, H1 |
+| [#824](https://github.com/EKtheSage/prospicio/issues/824) | P1 | CI | Bayesian parity tests in three shards | 6.3 B3, H3 |
+| [#825](https://github.com/EKtheSage/prospicio/issues/825) | P2 | CI | One integration-test binary per crate, after a measured comparison | 6.3 B2, H2 |
+| [#826](https://github.com/EKtheSage/prospicio/issues/826) | P2 | CI | Test durations for pytest and R; the pytest slowdown | 6.3 B4, H5 |
+| [#827](https://github.com/EKtheSage/prospicio/issues/827) | P3 | CI | Fast checks job, `xll.yml` filter, `DESCRIPTION` version check, wheel cache | 6.3 B6 |
+| [#828](https://github.com/EKtheSage/prospicio/issues/828) | P2 | CI | The repository is public: platform coverage and the cost notes | 6.3 B7 |
+| [#829](https://github.com/EKtheSage/prospicio/issues/829) | P2 | Shared | `rust-version` 1.85 is not built; seven ignored advisories | 7 D1 |
+| [#830](https://github.com/EKtheSage/prospicio/issues/830) | P1 | Aggregate | `from_history` sums in `HashMap` order | 10.1 C1 |
+| [#831](https://github.com/EKtheSage/prospicio/issues/831) | P1 | Models | NaN replicates bias PPC p-values and LOO-PIT | 10.1 C2, C7 |
+| [#832](https://github.com/EKtheSage/prospicio/issues/832) | P2 | Shared | Errors instead of panics or allocation aborts (ONNX, empty slices, dense sizes, XLL grid) | 10.1 C3 to C6 |
+| [#833](https://github.com/EKtheSage/prospicio/issues/833) | P1 | Models | Boosting dispersion model differs between R and Python | 5.1 |
+| [#834](https://github.com/EKtheSage/prospicio/issues/834) | P1 | Shared | Option names on the core enums; seven front-end divergences | 5.1, H6 |
+| [#835](https://github.com/EKtheSage/prospicio/issues/835) | P2 | Excel | Default GLM link differs from Python and R | 5.1 |
+| [#836](https://github.com/EKtheSage/prospicio/issues/836) | P1 | Shared | Generate `extendr-wrappers.R` and check it | H7 |
+| [#837](https://github.com/EKtheSage/prospicio/issues/837) | P2 | Models | Parity test, then Rust kernels, for the explanation tools | 5.1, M1 |
+| [#838](https://github.com/EKtheSage/prospicio/issues/838) | P2 | Shared | Logic duplicated in the Python and R bindings into the core | 5.1, M2 |
+| [#839](https://github.com/EKtheSage/prospicio/issues/839) | P2 | Reserving, Aggregate | Two earning conventions and two "log-linear" readings | 5.1 |
+| [#840](https://github.com/EKtheSage/prospicio/issues/840) | P2 | Shared | Frozen files for every artifact format version | 10.2, S4 |
+| [#841](https://github.com/EKtheSage/prospicio/issues/841) | P2 | Reserving | Seed-pinned refactor guards on Linux for the Bayesian models | 10.2, S3 |
+| [#842](https://github.com/EKtheSage/prospicio/issues/842) | P3 | Reserving | `psis_loo` and sampler drivers shared by six models (blocked by #841) | 5.2, H10 |
+| [#843](https://github.com/EKtheSage/prospicio/issues/843) | P3 | Shared | Small numeric helpers written once | 5.2, H9 |
+| [#844](https://github.com/EKtheSage/prospicio/issues/844) | P2 | Shared | Reference files tied to their generators | 10.2, M4 |
+| [#845](https://github.com/EKtheSage/prospicio/issues/845) | P2 | Shared | R test runner and shared test helpers | 10.2, M5 |
+| [#846](https://github.com/EKtheSage/prospicio/issues/846) | P1 | Shared | Lane Done lists out of agent-loaded files | H8 |
+| [#847](https://github.com/EKtheSage/prospicio/issues/847) | P3 | Shared | GIL held in twelve Python entry points | 10.2 |
+
+Findings with no issue (typed errors, the `RISK_RS_*` rename, the 21.8k-line binding file, platform-independent `exp`/`ln`, buffer exchange, a `prospicio-bayes` split) are listed in #822.
+
+---
+
 ## Unresolved questions and uninspected areas
 
 | Area | State |
