@@ -13,57 +13,49 @@ execute:
 
 <!-- site: execute -->
 
-The renewal starts when the catastrophe model results of the cedents arrive. A
-cat model does not give a distribution. It gives tables: a list of possible
-events, or a long run of simulated years. This page explains the tables and
-reads the book of Larkspur Re into prospicio. Then it checks that two views of
-the same cedent agree. The story, the files and the notation are on
-[the overview](cat-0-overview.qmd).
+The renewal starts when the cedents' cat model results arrive. A cat model
+gives tables, not a distribution: a list of possible events, or a long run of
+simulated years. This page reads the Larkspur Re book into prospicio and
+checks that two views of one cedent agree. The story, the files and the
+notation are on [the overview](cat-0-overview.qmd).
 
 This is the R twin of the Python guide
-[`cat-1-loss-tables.md`](cat-1-loss-tables.md). It has the same sections, files
-and numbers. Under each R chunk is the text that it prints, and
-`R/prospicio/tests/test-guides.R` requires each chunk to print exactly that
-text. One difference: R counts rows from 1, so the ELT rows in section 4 are
-one higher than on the Python page.
+[`cat-1-loss-tables.md`](cat-1-loss-tables.md), with the same sections, files
+and numbers. `R/prospicio/tests/test-guides.R` requires each chunk to print the
+text under it. R counts rows from 1, so the ELT rows in section 4 are one
+higher than on the Python page.
 
 ## 1. The words
 
-A **trial** is one simulated year. A cat model runs many trials (here 2,000).
-Every result on later pages is a statement about these trials: an average, a
-share, a high percentile. Other names for a trial are year and simulation. From
-page 2, the track uses **year**.
+A **trial** is one simulated year; a cat model runs many (here 2,000). Other
+names are year and simulation. From page 2, the track says **year**.
 
-An **event** is one instance of a peril in the catalog of the model: one
-windstorm, one earthquake. In a trial, events come at given times and cause
-given losses. A model can give one event as several **pieces**: rows a few
-hours apart whose losses add up to the loss of the event. An **occurrence** is
-what a contract counts as one loss: the pieces, and sometimes several events,
-that its hours clause joins (page 3). Every page keeps these three terms
-separate.
+An **event** is one instance of a peril in the model's catalog: one windstorm,
+one earthquake. A model can give one event as several **pieces**: rows a few
+hours apart whose losses add up to the event's loss. An **occurrence** is what
+a contract counts as one loss: the pieces, and sometimes several events, that
+its hours clause joins (page 3). Every page keeps these three terms separate.
 
-A **YELT** (year event loss table) lists every event loss in every trial. It
-has one row per loss: the trial, the event, its time and its cost. It is the
-most detailed table, and most pages use it.
+A **YELT** (year event loss table) has one row per event loss: the trial, the
+event, its time and its cost. It is the most detailed table, and most pages use
+it.
 
-A **YLT** (year loss table) keeps only one number per trial, the annual total.
-It is sufficient for aggregate covers and annual risk measures. It is not
-sufficient for a layer that applies to each event, because it has no events.
-The prospicio reader for the two tables is `read_ylt`. With a slot column, it
-keeps each event.
+A **YLT** (year loss table) keeps one number per trial, the annual total. It is
+enough for aggregate covers and annual risk measures, but not for a layer that
+applies to each event, because it has no events. `read_ylt` reads both tables.
+With a slot column, it keeps each event.
 
 An **ELT** (event loss table) does not simulate. It lists each possible event
-once, with an annual rate and a loss distribution. The sum of the rates is the
+once, with an annual rate and a loss distribution. The rates add up to the
 expected number of events in a year.
 
-**Secondary uncertainty** is the spread of the loss of an event around its
-mean, when the event occurs. A storm with a given track and strength still
-causes a range of losses, because the damage to buildings varies. An ELT gives
-it as standard deviations. A YELT contains it implicitly, because each row is
-one draw.
+**Secondary uncertainty** is the spread of an event's loss around its mean,
+when it occurs: building damage varies, even for a storm of given track and
+strength. An ELT gives it as standard deviations. A YELT holds it implicitly:
+each row is one draw.
 
 The **AAL** (average annual loss) is the expected loss in a year. On an ELT it
-is a sum over events of each rate times its mean loss:
+is a sum over events of rate times mean loss:
 
 ```
 AAL = sum over events i of  rate_i * mean_i
@@ -75,18 +67,17 @@ On a YELT or YLT it is the average of the annual totals over the `N` trials:
 AAL = (1 / N) * sum over trials t of  total_t
 ```
 
-The two values agree only up to simulation error. Section 4 measures this
-error.
+The two agree up to simulation error (section 4).
 
 ## 2. Reading a YELT
 
-The YELT of Larkspur is `examples/data/cat_book_yelt.csv`, and
-`examples/data/make_cat_book.py` writes it. Each row is the loss of one cedent
-from one event (or one piece of an event) in one trial. Its columns are `year`,
-`slot`, `event_id`, `day`, `hour`, `peril`, `region`, `cedent` and `loss`. The
-`slot` is the order of the event in its year, and it is the same for every
-cedent that the event hit. Losses are in millions of Varland crowns, and some
-trials have no events (for example the first trial).
+The Larkspur YELT is `examples/data/cat_book_yelt.csv`, written by
+`examples/data/make_cat_book.py`. Each row is the loss of one cedent from one
+event (or piece) in one trial, with columns `year`, `slot`, `event_id`, `day`,
+`hour`, `peril`, `region`, `cedent` and `loss`. The `slot` is the order of the
+event in its year, the same for every cedent that the event hit. Losses are in
+millions of Varland crowns. Some trials have no events (the first, for
+example).
 
 `read_ylt()` reads such a file into an `event_set`, the prospicio container for
 years of losses. It keeps the named columns as labels, so you can split later
@@ -128,20 +119,18 @@ mean annual loss, all cedents: 45.204
 `read_ylt()` checks the file when it reads it. It refuses the file if:
 
 - a loss is negative, infinite or missing. Losses are positive on every page
-  of this track. If a file writes losses as negative numbers (money that goes
-  out), flip their sign before you read it (#593). `ceded()` reads a negative
-  loss as a loss below the attachment and gives no warning.
+  of this track. If a file writes losses as negative numbers (money out), flip
+  their sign first (#593). `ceded()` reads a negative loss as a loss below the
+  attachment, with no warning.
 - a year is less than 1. Years count from 1. The largest year sets the number
-  of trials, unless `n_years =` gives a different number.
-- two rows have the same year, slot and labels. This usually means a
-  duplicated row. One event that hits all three cedents has three rows with
-  the same slot, so the labels must include `cedent` to make these rows
-  different. Alternatively, `unique_by =` names the labels that make a row
-  unique.
-- a label has a value that is not in `expected =`, if you give `expected =`.
+  of trials, unless `n_years =` says otherwise.
+- two rows have the same year, slot and labels, usually a duplicated row. One
+  event that hits all three cedents has three rows with the same slot, so the
+  labels must include `cedent`. Or `unique_by =` names the labels that make a
+  row unique.
+- a label value is not in `expected =`, if you give it.
 
-The last check finds an incorrect peril code before the code becomes a fifth
-peril without a warning:
+The last check stops a wrong peril code from becoming a silent fifth peril:
 
 ```{r}
 refused <- tryCatch(
@@ -156,16 +145,15 @@ cat(strsplit(refused, "\n")[[1]][1], "\n")
 invalid data: row 18: peril "CS" is not one of ["WS", "EQ", "FL"]
 ```
 
-The hash is a fingerprint of the bytes of the file. Results from the event set
-record it, so you can trace a number to the exact table that it came from. The
-page prints only the first characters, because the full hash changes if a
-checkout changes the line endings.
+The hash fingerprints the file's bytes, so a result traces to its table. The
+page prints only the first characters, because a checkout that changes line
+endings changes the full hash.
 
 **Tiling and resampling.** A model can give 2,000 years when a capital model
 runs 10,000 trials. `n_sims =` extends the table. With `expand = "tile"` (the
-default), the 2,000 years repeat in order, so the mean does not change. With
-`expand = "resample"`, each trial selects a year at random, with a seed, so the
-mean changes a little:
+default), the 2,000 years repeat in order, so the mean is unchanged. With
+`expand = "resample"`, each trial draws a year at random (seeded), so the
+mean moves a little:
 
 ```{r}
 tiled <- read_ylt(yelt_path, year = "year", loss = "loss", slot = "slot", labels = labels,
@@ -181,25 +169,19 @@ tiled:     10000 trials, mean 45.204
 resampled: 10000 trials, mean 44.184
 ```
 
-Neither method adds information. Tiling is the choice when the trials must
-align one for one with the trials of another model. Resampling is useful when a
-whole multiple is not possible. Two warnings apply to both methods.
-
-First, neither method lets you read a return period beyond the original 2,000
-years. The 10,000-trial table contains only the original years, so its
-"5,000-year loss" is the worst of the 2,000. Second, the extended trials are
-copies, not independent years. A standard error from the 10,000 trials as
-independent years is too small by a factor of about `sqrt(5)`. So tail
-estimates look more precise than they are.
+Neither adds information. Tile when the trials must align with another
+model's trials; resample when a whole multiple is not possible. Both have two
+limits. The "5,000-year loss" of the 10,000-trial table is the worst of the
+original 2,000 years. And the extra trials are copies, so a standard error that
+treats them as independent is too small by about `sqrt(5)`.
 
 ## 3. Times and one cedent
 
-Most pages need the losses of one cedent with the time of each loss. The hours
-clause and reinstatements pro rata as to time use this time. The track builds
-these event sets with a short helper (#594). The helper reads the YELT once and
-keeps the rows of one cedent. It changes `day` and `hour` into a fraction of
-the year and labels each loss with its peril. Each page that needs the helper
-contains the same code.
+Most pages need one cedent's losses with their times (the hours clause and
+reinstatements pro rata as to time use them). A short helper builds these event
+sets (#594): it keeps one cedent's rows, turns `day` and `hour` into a fraction
+of the year and labels each loss with its peril. Each page that needs it holds
+the same code.
 
 The chunk reads the times back with `event_times()` on every year and checks
 that each loss has a time (#596).
@@ -239,7 +221,7 @@ Alder's AAL from the YELT: 16.778
 An event set built this way has no file hash, because `events_from_years()` did
 not read the file.
 
-The events of Alder come in seasons. The figure counts them by month and peril:
+Alder's events come in seasons. The figure counts them by month and peril:
 
 ```{r}
 #| label: alder-months-figure
@@ -261,21 +243,19 @@ ggplot(by_month, aes(month, losses, group = peril)) +
 
 ## 4. An ELT, and reconciling it with the YELT
 
-The cat model of Alder also gives an ELT,
-`examples/data/cat_book_elt_alder.csv`. It has one row per event with its rate,
-mean, two standard deviations and exposure. The **exposure** is the maximum
-cost of the event to Alder: the insured value in the footprint of the event.
-The two standard deviations give the secondary uncertainty. The **independent
-part** is meant to vary separately at each location or cedent that the event
-hits. The **correlated part** is meant to move together across them.
+Alder's cat model also gives an ELT,
+`examples/data/cat_book_elt_alder.csv`. It has one row per event: rate,
+mean, two standard deviations and exposure. The **exposure** is the event's
+maximum cost to Alder: the insured value in its footprint. The two standard
+deviations give the secondary uncertainty. The **independent part** varies
+separately at each location or cedent that the event hits. The **correlated
+part** moves together across them.
 
-In prospicio `event_loss_table()` takes these five columns. When an event
-occurs, its loss has a beta distribution between 0 and the exposure. This
-bounded shape can have skew in either direction. It has the mean of the row.
-Its standard deviation is the sum of the two standard deviations (the standard
-deviations add, not the variances). The `rate` of the table is the expected
-number of events in a year, and `expected_annual_loss` is the AAL formula of
-section 1.
+`event_loss_table()` takes these five columns. When an event occurs, its loss
+has a beta distribution on 0 to the exposure, with the row's mean and a
+standard deviation equal to the sum of the two (they add, not the variances).
+The table's `rate` is the expected number of events in a year, and
+`expected_annual_loss` is the AAL formula of section 1.
 
 ```{r}
 rows <- utils::read.csv(find_data("cat_book_elt_alder.csv"))
@@ -292,10 +272,9 @@ events a year: 2.3365
 AAL: 16.056
 ```
 
-`simulate_elt()` changes the ELT into trials. In each year, it draws a Poisson
-number of events. It selects each event in proportion to its rate and gives
-each event a beta loss. It also returns the row of each loss (rows count from 1
-in R).
+`simulate_elt()` turns the ELT into trials: each year has a Poisson number of
+events, each chosen in proportion to its rate and given a beta loss. It also
+returns the row of each loss (rows count from 1 in R).
 
 ```{r}
 sim <- simulate_elt(elt, 2000, seed = 7)
@@ -312,12 +291,9 @@ simulated mean over 2,000 years: 16.851
 year 2: losses [0.02, 5.24, 4.89] from rows [289, 280, 238]
 ```
 
-So there are three estimates of the AAL of Alder. They are the exact sum of the
-ELT, the average of the YELT and the average of a new simulation from the ELT.
-The two averages each come from 2,000 trials. So each average differs from the
-true value by about one standard error. The standard error is the standard
-deviation of the annual loss divided by the square root of the number of
-trials:
+Alder's AAL has three estimates: the exact sum of the ELT, the YELT average
+and the average of a new ELT simulation. Each average differs from the true
+value by about one standard error:
 
 ```
 SE = sd(total_t) / sqrt(N)
@@ -325,32 +301,50 @@ SE = sd(total_t) / sqrt(N)
 
 ```{r}
 se <- sqrt(variance(alder_totals)) / sqrt(n_years)
-cat(sprintf("ELT exact AAL        %.3f\n", elt$expected_annual_loss))
-cat(sprintf("YELT average         %.3f\n", mean(alder_totals)))
-cat(sprintf("ELT simulated mean   %.3f\n", mean(total(simulated))))
-cat(sprintf("standard error, 2,000 years  %.2f\n", se))
+cat(sprintf("standard error, 2,000 years: %.2f\n", se))
 ```
 
 ```text
-ELT exact AAL        16.056
-YELT average         16.778
-ELT simulated mean   16.851
-standard error, 2,000 years  0.79
+standard error, 2,000 years: 0.79
 ```
 
-The figure and the table show the same three estimates. The bars are one
-standard error wide on each side of the two averages:
+The table gives each estimate and its gap to the exact AAL. The figure shows
+the two averages with bars one standard error wide on each side:
 
 ```{r}
-#| label: aal-estimates-figure
+#| label: aal-estimates-table
+library(gt)
 estimates <- c("ELT exact" = elt$expected_annual_loss,
                "YELT average" = mean(alder_totals),
                "ELT simulated" = mean(total(simulated)))
+exact <- estimates[["ELT exact"]]
+reconcile <- data.frame(
+  estimate = names(estimates),
+  aal = unname(estimates),
+  gap = unname(estimates) - exact,
+  gap_se = (unname(estimates) - exact) / se
+)
+gt(reconcile, rowname_col = "estimate") |>
+  tab_header("AAL of Alder: three estimates", "Millions of Varland crowns") |>
+  cols_label(aal = "AAL", gap = "gap to the ELT exact", gap_se = "gap in standard errors") |>
+  fmt_number(columns = c(aal, gap), decimals = 3) |>
+  fmt_number(columns = gap_se, decimals = 2)
+```
+
+```text
+                  AAL  gap to the ELT exact  gap in standard errors
+ELT exact      16.056                 0.000                    0.00
+YELT average   16.778                 0.723                    0.92
+ELT simulated  16.851                 0.795                    1.01
+```
+
+```{r}
+#| label: aal-estimates-figure
 averages <- data.frame(estimate = factor(c("YELT average", "ELT simulated"),
                                          levels = c("YELT average", "ELT simulated")),
                        aal = unname(estimates[c("YELT average", "ELT simulated")]))
 ggplot(averages, aes(aal, estimate)) +
-  geom_vline(xintercept = estimates[["ELT exact"]], colour = "grey75") +
+  geom_vline(xintercept = exact, colour = "grey75") +
   geom_pointrange(aes(xmin = aal - se, xmax = aal + se, colour = estimate),
                   orientation = "y") +
   labs(x = "average annual loss of Alder (millions of Varland crowns)", y = NULL,
@@ -358,42 +352,21 @@ ggplot(averages, aes(aal, estimate)) +
   theme(legend.position = "none")
 ```
 
-```{r}
-#| label: aal-estimates-table
-library(gt)
-reconcile <- data.frame(
-  estimate = names(estimates),
-  aal = unname(estimates),
-  gap = unname(estimates) - estimates[["ELT exact"]],
-  gap_se = (unname(estimates) - estimates[["ELT exact"]]) / se
-)
-gt(reconcile, rowname_col = "estimate") |>
-  tab_header("AAL of Alder: three estimates",
-             "Millions of Varland crowns; one standard error is the 2,000-year value") |>
-  cols_label(aal = "AAL", gap = "gap to the ELT exact", gap_se = "gap in standard errors") |>
-  fmt_number(columns = c(aal, gap), decimals = 3) |>
-  fmt_number(columns = gap_se, decimals = 2)
-```
+The estimates agree within about one standard error, and cannot agree better:
+cat losses are very skewed, so a few large years move the average. Check that
+differences are this size, not zero.
 
-The three estimates agree to within about one standard error. You cannot expect
-a better agreement. Catastrophe losses are very skewed, so a few large years
-move the average, and a sample of 2,000 years does not fix the AAL to the first
-decimal. To reconcile tables, check that the differences are of this size, not
-that they are zero.
-
-This book has one built-in difference. The script that wrote the YELT removes
-each loss below 0.05 (a cedent that an event almost missed), as many vendor
-extracts do. The ELT keeps every event. This removal makes the AAL of the YELT
-slightly lower than the AAL of the ELT, by much less than one standard error
-here.
+One difference is built in. The script that wrote the YELT removes each loss
+below 0.05 (a cedent that an event almost missed), as many vendor extracts do.
+The ELT keeps every event. So the YELT's AAL is lower than the ELT's by a
+small amount on average. Here that amount is much smaller than the sampling
+error, so the YELT's average still comes out above the exact AAL.
 
 ## In Python
 
 The Python guide (`cat-1-loss-tables.md`) runs the same steps with `read_ylt`,
 `EventLossTable`, `EventLossTable.simulate`, `EventSet.from_years(times=)` and
 `with_labels`.
-
-The next page changes these trials into exceedance curves and risk measures.
 
 ## Further reading
 

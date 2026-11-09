@@ -1021,10 +1021,11 @@ were already `Portfolio::premium_bounds` (`docs/design/risk.md`).
   (monotone chain) exact. Each vertex's `TVaR` comes from tail masses and
   tail means summed from the top, located by bisection: `O(n log n)`.
 - The curve ends at `p → 1`, `(max X, max Y)`: `TVaR_1` prices `X` at its
-  maximum. `aggregate` stops at the last breakpoint below 1 and keeps the
-  first vertex where `TVaR_p(X)` saturates, so where `X`'s top atom is
-  larger than `Y`'s its upper bound is too low (52 where 64 is attained,
-  for InsCo's X3 with both capped at 65 and `P = 65`). Where `TVaR_p(X)`
+  maximum. `aggregate` before 1.52 stopped at the last breakpoint below 1
+  and kept the first vertex where `TVaR_p(X)` saturates, so where `X`'s top
+  atom is larger than `Y`'s its upper bound was too low (52 where 64 is
+  attained, for InsCo's X3 with both capped at 65 and `P = 65`); 2.1.0
+  includes the limit and agrees (#768). Where `TVaR_p(X)`
   ties, the lower hull takes the lowest `Y` and the upper the highest.
 - `distortion_envelope`: `g(s)` of a BiTVaR is the price of a Bernoulli
   risk with `P(1) = s`, since its `TVaR_p` is `min(1, s / (1 − p))`. So the
@@ -1645,6 +1646,35 @@ on a sum-insured basis or one that reads the order of events is refused*,
 since the OEP of an occurrence needs a function of its loss alone; (c) *any
 count*, where `aggregate` requires a Poisson one; (d) *no Excel function*:
 `PRO.CAP.AGG.PML` takes no tower, and a tower on a sheet is a later item.
+
+### The disappearing deductible (#772)
+
+`aggregate` 2.1.0's `y xs d1 to d2 disappearing` has a retention that falls
+from `d1` to 0 as the loss rises from `d1` to `d2`: a loss `x` pays
+`min(x - r(x), y)`, nothing up to `d1`, `k (x - d1)` with `k = d2 / (d2 -
+d1)` up to `d2`, and `x` above. `Layer::disappearing(d2)` applies it per
+occurrence, on events and on the grid (`Tower::on_grid` maps each grid
+point as for the franchise), and `Layer::occurrence_moments(severity)`
+gives the first three raw moments of the recovery exactly, for the
+ordinary, franchise and disappearing forms, from the severity's layer
+moments: the payment is `k A + B` with `A` the layer `d2 - d1 xs d1` and `B`
+the layer `y - d2 xs d2` (or `k` times the layer `y/k xs d1` when `y <= d2`),
+and `B > 0` only when `A` is full, so the cross moments are exact; a
+franchise is `d 1{X >= d} + B`. Checked against `aggregate`'s analytic
+severity moments (`validation/scripts/aggregate_disappearing.py`).
+
+Proposed for the user's acceptance: (a) *the limit is the largest payment*,
+as `aggregate` has it, so a limit at or below `d2` is reached on the ramp;
+(b) *`d2` equal to the attachment is refused*, since that is the franchise,
+which stays its own builder; (c) *the moments are unconditional*, per
+ground-up occurrence: `aggregate`'s layered severity is conditional on
+reaching the attachment, and the docs say to divide by `P(X > d1)` (its
+franchise at a limit below the deductible pays the limit on every claim
+that reaches it, 30 for `30 xs 50 franchise`); (d) *a franchise is paid at
+a loss equal to the attachment* (`x >= d`, #591) where `aggregate` pays above
+it (`x > d`), which differs only on an atom at the attachment, such as a
+grid point; unchanged here; (e) *JSON format version 10* is stamped only
+when a layer has a disappearing deductible.
 
 ### A per-risk layer with an event limit, inuring to a cat cover (#585)
 

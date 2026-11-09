@@ -25,7 +25,7 @@
 //! 1e-9`), on `2^16` to `2^24` points with `T` at three quarters of the
 //! grid; for waits on a lattice that `T` is a multiple of, the step is the
 //! lattice's and the reading at `T` takes the whole last cell. With that
-//! grid the counts match `aggregate` 1.0.1 (`validation/tests/aggregate.rs`).
+//! grid the counts match `aggregate` 2.1.0 (`validation/tests/aggregate.rs`).
 
 use prospicio_core::{Error, Result};
 use prospicio_prob::Distribution;

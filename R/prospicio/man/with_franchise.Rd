@@ -2,11 +2,17 @@
 % Please edit documentation in R/reinsurance.R
 \name{with_franchise}
 \alias{with_franchise}
+\alias{with_disappearing}
+\alias{occurrence_moments}
 \alias{with_nth_event}
 \alias{with_top_and_drop}
 \title{Franchise, nth-event and top-and-drop covers}
 \usage{
 with_franchise(layer)
+
+with_disappearing(layer, end)
+
+occurrence_moments(layer, severity)
 
 with_nth_event(layer, n, threshold)
 
@@ -14,6 +20,11 @@ with_top_and_drop(layer, underlying, attachment)
 }
 \arguments{
 \item{layer}{An \link{xol_layer}.}
+
+\item{end}{Where a disappearing deductible's retention reaches 0, above
+the attachment.}
+
+\item{severity}{A severity distribution, such as \code{\link[=lognormal]{lognormal()}}.}
 
 \item{n}{The first event covered, at least 1.}
 
@@ -35,6 +46,16 @@ Three catastrophe structures on a layer:
 \item \code{with_franchise()}: a franchise deductible. An occurrence at or above
 the attachment is paid from the ground up, \code{min(x, limit)}, and one
 below it pays nothing. On the loss basis only.
+\item \code{with_disappearing()}: a disappearing deductible, \code{aggregate}'s \verb{y xs d1 to d2 disappearing}. The retention falls linearly from the
+attachment \code{d1} to 0 as the loss rises from \code{d1} to \code{end}: a loss pays
+nothing up to \code{d1}, \code{k (x - d1)} with \code{k = end / (end - d1)} up to
+\code{end} and the whole loss above, each capped at the limit. On the loss
+basis only.
+\item \code{occurrence_moments()}: the first three raw moments of one
+occurrence's recovery at 100\% for a ground-up \code{severity}, exact for an
+ordinary, franchise or disappearing deductible. Divide by the
+severity's survival at the attachment for a loss that reaches the
+layer, as \code{aggregate} reports a layered severity.
 \item \code{with_nth_event()}: only the \code{n}-th and later events of a year whose
 loss to the layer exceeds \code{threshold} are covered; earlier ones, and
 events at or below the threshold, cede nothing. Events count in the
@@ -54,6 +75,10 @@ tower to an \link{event_set}.
 \examples{
 f <- with_franchise(xol_layer("F", 20, 5))
 ceded_by_event(f, c(4, 5, 12, 30))
+d <- with_disappearing(xol_layer("D", 300, 50), 100)
+ceded_by_event(d, c(40, 75, 250, 400))
+x <- lognormal_from_mean_cv(100, 1)
+occurrence_moments(d, x)[1] / survival(x, 50) # aggregate's 112.608
 second <- with_nth_event(xol_layer("2nd", 10, 5), 2, 5)
 ceded_by_event(second, c(12, 3, 9, 20))
 lower <- xol_layer("lower", 10, 10, aggregate_limit = 20)

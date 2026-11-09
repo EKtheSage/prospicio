@@ -369,6 +369,21 @@ impl XolLayer {
         self.map(|l| l.franchise())
     }
 
+    fn with_disappearing(&self, end: f64) -> Result<Self> {
+        self.map(|l| l.disappearing(end))
+    }
+
+    /// `NA` when there is none.
+    fn disappearing(&self) -> f64 {
+        self.inner.disappearing.unwrap_or(f64::NAN)
+    }
+
+    /// `c(E[g], E[g^2], E[g^3])` of one occurrence's recovery at 100%.
+    fn occurrence_moments(&self, severity: Robj) -> Result<Vec<f64>> {
+        let sev = crate::distributions::severity_from_robj(&severity)?;
+        Ok(self.inner.occurrence_moments(&sev).map_err(to_r)?.to_vec())
+    }
+
     fn with_nth_event(&self, n: f64, threshold: f64) -> Result<Self> {
         let n = u32::try_from(whole(n, "n")?).map_err(|_| Error::Other("n is too large".into()))?;
         self.map(|l| l.nth_event(n, threshold))

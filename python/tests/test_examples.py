@@ -325,7 +325,9 @@ def test_reinsurance_pricing(monkeypatch, capsys):
     assert worst("mean")["diff"] < 1e-7 and worst("sd")["diff"] < 1e-7  # "far inside" 1e-6
     assert worst("quantile")["diff"] == 0
     assert worst("share quantile")["diff"] == 0.5  # "at most half a bucket"
-    assert worst("share sd")["name"] == "50% of 1500 xs 1000 sd"
+    # The share's SD and CV differ from aggregate's by the same amount to two digits (7.4e-6); which is
+    # the larger moved between aggregate 1.0.1 and 2.1.0.
+    assert worst("share sd")["name"] in ("50% of 1500 xs 1000 sd", "50% of 1500 xs 1000 cv")
     assert worst("skew")["name"] == "50% of 1500 xs 1000 skew"
     share_skews = [r["diff"] for r in independent if r["cls"] == "skew" and "%" in r["name"]]
     # The quantiles of the shared grid: how far the cdf is from a tie at each one compared.
@@ -341,9 +343,14 @@ def test_reinsurance_pricing(monkeypatch, capsys):
     # (down to 5e-7, a third of the smallest seen) so another platform's noise does not fail it.
     assert 5e-7 < abs(ns["whole"] / central - 1) < 2.5e-6
     quoted = ns["quoted"]  # aggregate's quoted skew against its density's, largest difference first
-    for (example, quantity), _ in quoted[:4]:
-        # "the density's rounding deficit (`1 - sum(p)`, of order 1e-15 to 1e-14)"
-        assert 1e-16 < agg[example, quantity.replace("_skew", "_density_deficit")] < 1e-13, (example, quantity)
+    # "a deficit of 1e-12 or less counts as rounding and stays out, so the quoted skew equals the density's to
+    # about 1e-11, except where the grid drops real tail mass: the stop loss at 2,800 ... a deficit of 5.7e-10"
+    deficit = {k: agg[k[0], k[1].replace("_skew", "_density_deficit")] for k, _ in quoted
+               if (k[0], k[1].replace("_skew", "_density_deficit")) in agg}
+    assert [k for k, _ in quoted[:2]] == [("agg_limit_reinst", "agglimit2800_ceded_skew"),
+                                          ("agg_limit_reinst", "gross_skew")]
+    assert all(deficit[k] > 1e-12 for k, _ in quoted[:2])
+    assert all(abs(d) < 1e-10 for _, d in quoted[2:])
     assert_says(
         text,
         f"at none of those compared is the cdf within {sci(tie)} of a tie",
@@ -359,6 +366,7 @@ def test_reinsurance_pricing(monkeypatch, capsys):
         f"({ns['POINTS'] * bs1:,.0f} for a bucket of {bs1:g})",
         "the layer 250 xs 250 differs by about 2e-6",
         f"differs again, by up to {sci(quoted[0][1])}",
+        f"(`normalize=False`, a deficit of {sci(deficit[quoted[0][0]])})",
         f"The worst difference observed, {sci(worst('skew')['diff'])}, is the 50% stop-loss share",
     )
 

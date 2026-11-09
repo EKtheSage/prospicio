@@ -1,4 +1,4 @@
-"""Reference values for eventual ruin with renewal claims, from `aggregate` 1.0.1.
+"""Reference values for eventual ruin with renewal claims, from `aggregate` 2.1.0.
 
 `Aggregate.wiener_hopf(rho)`: the chance of eventual ruin when the waits
 between claims follow any law (Sparre Andersen), by the cepstral
@@ -6,12 +6,13 @@ Wiener-Hopf factorization of the claim walk `X - cW`, with the premium
 rate `c = (1 + rho) E[X] / E[W]`. Severities on a step of 1/32 over 2^16
 points; psi on the same grid.
 
-    uv run --python 3.12 --with aggregate==1.0.1 \
+    uv run --python 3.13 --with aggregate==2.1.0 \
         python validation/scripts/aggregate_wiener_hopf.py
 
 writes validation/reference/wiener_hopf_aggregate.csv.
 """
 
+import aggregate
 from pathlib import Path
 
 from aggregate import build
@@ -23,7 +24,7 @@ CASES = {
     'heavy': 'sev lognorm 10 cv 1 wait gamma 0.5',
 }
 BS, LOG2 = 1 / 32, 16
-SOURCE = 'aggregate 1.0.1'
+SOURCE = f'aggregate {aggregate.__version__}'
 
 ref = Path(__file__).resolve().parents[1] / 'reference'
 rows = []

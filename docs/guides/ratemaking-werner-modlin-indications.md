@@ -4,45 +4,43 @@
 
 This guide is the second part of the Werner and Modlin series. The first part,
 [`ratemaking-werner-modlin.md`](ratemaking-werner-modlin.md), shows the steps
-of *Basic Ratemaking* (5th edition, CAS, 2016) one at a time. These steps are
-the parallelogram method, premium and loss trend, loss development, expenses
-and the permissible loss ratio, and credibility.
-
-This guide runs the book's three worked overall indications end to end in
-prospicio:
+of *Basic Ratemaking* (5th edition, CAS, 2016) one at a time. This part runs
+the book's three overall indications end to end, then chapter 11's increased
+limits and deductibles:
 
 - Appendix A: auto property damage, by the loss ratio method.
 - Appendix B: homeowners, by the pure premium method.
 - Appendix C: medical malpractice, by the loss ratio method with a net trend.
 
-Then it reproduces chapter 11's increased limits and deductibles.
-
-The book's exhibits are the authors', and the text here is new. Each block
-prints the book's numbers next to prospicio's, and money is in dollars. Where
-the book rounds a cell before the next step, the code applies the same
-rounding by hand (`half_up`) and says so.
-`knowledge/references/werner-modlin-ratemaking.md` lists the rounding rules,
-and `validation/tests/pricing.rs` is the parity suite of the library.
+The book's exhibits are the authors', and the text here is new. Each table
+sets the book's numbers beside prospicio's, and money is in dollars. Where the
+book rounds a cell before the next step, the code does the same by hand
+(`half_up`); `knowledge/references/werner-modlin-ratemaking.md` lists the
+rules and `validation/tests/pricing.rs` is the parity suite.
 
 ## 1. The factors, recomputed
 
-The indications use the factors that the first guide derives. This block
-recomputes them in one place and rounds them to four places, as the exhibits
-print them. For Appendix A, it recomputes four sets of factors:
+This block recomputes the first guide's factors and rounds them to four
+places, as the exhibits print them. Appendix A needs four sets:
 
-- the on-level factors, from the book's printed cumulative rate level indices
+- on-level factors, from the book's cumulative rate level indices
 - the two-step premium trend
-- the development factors: the straight average of link ratios without the
-  highest and lowest, `ChainLadder(average="simple", drop_high=1,
-  drop_low=1)`. The code rounds the selection to four places before it chains
-  it to ultimate, as section 4 of the first guide explains.
+- development factors: the straight average of link ratios without the
+  highest and lowest (`ChainLadder(average="simple", drop_high=1,
+  drop_low=1)`), rounded to four places before it is chained to ultimate, as
+  section 4 of the first guide explains
 - the two-step loss trend
 
-For Appendix C, it recomputes the on-level factors and the net trend (8.9%
-over trend lengths that the book rounds to two places).
+Appendix C needs the on-level factors and the net trend (8.9% over trend
+lengths that the book rounds to two places). Each pair of rows is prospicio,
+then the book. The columns run from the oldest year to the newest (A: 2011 to
+2015, C: 2010 to 2014).
 
 ```python
 from decimal import Decimal, ROUND_HALF_UP
+
+import pandas as pd
+from great_tables import GT
 
 from prospicio.credibility import LimitedFluctuation
 from prospicio.pricing import (
@@ -66,6 +64,52 @@ def half_up(x, dp):
 
 def calendar(year):
     return Period.calendar(float(year), float(year + 1))
+
+
+def row(item, ours, d, book, bd=None, alt=None, ad=None):
+    """One line of a comparison: prospicio at d decimals, the book at bd, an optional unrounded value at ad."""
+    return (item, ours, d, book, d if bd is None else bd, float("nan") if alt is None else alt, d if ad is None else ad)
+
+
+def compare(rows, title, subtitle, alt=None):
+    """A table of prospicio against the book; `alt` names an extra column for an unrounded value."""
+    frame = pd.DataFrame({"item": [r[0] for r in rows], "prospicio": [r[1] for r in rows],
+                          "book": [r[3] for r in rows], "alt": [r[5] for r in rows]})
+    table = GT(frame if alt else frame.drop(columns="alt"), rowname_col="item").tab_header(title, subtitle)
+    for k, (_, _, d, _, bd, _, ad) in enumerate(rows):
+        table = table.fmt_number("prospicio", rows=[k], decimals=d).fmt_number("book", rows=[k], decimals=bd)
+        if alt:
+            table = table.fmt_number("alt", rows=[k], decimals=ad)
+    return table.sub_missing(missing_text="").cols_label(alt=alt) if alt else table
+
+
+def year_table(years, fit, book, total, title, subtitle, total_decimals):
+    """Premium, losses and loss ratio by year with a total row, prospicio beside the book."""
+    n = len(years)
+    frame = pd.DataFrame({
+        "year": [str(y) for y in years] + ["total"],
+        "premium": [*fit.projected_premium_by_year, fit.projected_premium],
+        "book_premium": [*book[0], total[0]],
+        "losses": [*fit.projected_losses_by_year, fit.projected_losses],
+        "book_losses": [*book[1], total[1]],
+        "ratio": [*(100 * x for x in fit.loss_ratio_by_year), 100 * fit.loss_ratio],
+        "book_ratio": [*book[2], total[2]],
+    })
+    by_year = list(range(n))
+    return (GT(frame, rowname_col="year")
+            .tab_header(title, subtitle)
+            .fmt_number(["premium", "losses"], rows=by_year, decimals=0)
+            .fmt_number("premium", rows=[n], decimals=total_decimals)
+            .fmt_number("losses", rows=[n], decimals=0)
+            .fmt_integer(["book_premium", "book_losses"])
+            .fmt_number("ratio", rows=by_year, decimals=1)
+            .fmt_number("ratio", rows=[n], decimals=2)
+            .fmt_number("book_ratio", decimals=1)
+            .tab_spanner("premium", ["premium", "book_premium"])
+            .tab_spanner("losses", ["losses", "book_losses"])
+            .tab_spanner("loss ratio (%)", ["ratio", "book_ratio"])
+            .cols_label(premium="prospicio", book_premium="book", losses="prospicio", book_losses="book",
+                        ratio="prospicio", book_ratio="book"))
 
 
 # Appendix A, Current Rate Level: six-month policies, the book's cumulative indices.
@@ -119,33 +163,40 @@ book = {
     "C net trend": "1.7902 1.6439 1.5095 1.3862 1.2729",
 }
 ours = dict(zip(book, [a_on_level, a_premium_trend, a_development, a_loss_trend, c_on_level, c_net_trend]))
+rows = []
 for name, values in ours.items():
-    row = " ".join(f"{v:.4f}" for v in values)
-    print(f"{name:16s} {row}  {'same as the book' if row == book[name] else 'book ' + book[name]}")
+    rows += [(name, *values), (name + ", book", *map(float, book[name].split()))]
+factors = pd.DataFrame(rows, columns=["factor", *[f"y{k}" for k in range(1, 6)]])
+(GT(factors, rowname_col="factor")
+ .tab_header("The indications' factors, recomputed", "Rounded to four places; each pair is prospicio, then the book")
+ .fmt_number([f"y{k}" for k in range(1, 6)], decimals=4)
+ .cols_label(**{f"y{k}": f"year {k}" for k in range(1, 6)}))
 ```
 
 ```text
-A on-level       1.2161 1.2176 1.1311 1.0892 1.0991  same as the book
-A premium trend  1.1342 1.1116 1.0879 1.0663 1.0452  same as the book
-A development    1.0000 0.9799 1.0003 1.0282 1.0966  same as the book
-A loss trend     0.9912 0.9962 1.0012 1.0062 1.0113  same as the book
-C on-level       1.2029 1.2058 1.2724 1.3018 1.2391  same as the book
-C net trend      1.7902 1.6439 1.5095 1.3862 1.2729  same as the book
+                       year 1  year 2  year 3  year 4  year 5
+A on-level             1.2161  1.2176  1.1311  1.0892  1.0991
+A on-level, book       1.2161  1.2176  1.1311  1.0892  1.0991
+A premium trend        1.1342  1.1116  1.0879  1.0663  1.0452
+A premium trend, book  1.1342  1.1116  1.0879  1.0663  1.0452
+A development          1.0000  0.9799  1.0003  1.0282  1.0966
+A development, book    1.0000  0.9799  1.0003  1.0282  1.0966
+A loss trend           0.9912  0.9962  1.0012  1.0062  1.0113
+A loss trend, book     0.9912  0.9962  1.0012  1.0062  1.0113
+C on-level             1.2029  1.2058  1.2724  1.3018  1.2391
+C on-level, book       1.2029  1.2058  1.2724  1.3018  1.2391
+C net trend            1.7902  1.6439  1.5095  1.3862  1.2729
+C net trend, book      1.7902  1.6439  1.5095  1.3862  1.2729
 ```
-
-Each row agrees digit for digit with the column of the indication exhibit that
-it feeds.
 
 ## 2. Appendix A: auto property damage by the loss ratio method
 
-Appendix A's indication (LR Indication exhibit) combines the factors for five
-calendar-accident years of private passenger auto property damage. It brings
-earned premium to the current rate level and trends it. It develops and trends
-the reported losses and paid ALAE and loads them for ULAE. The indicated loss
-ratio is the ratio of the totals. `LossRatioExperience` takes each factor as a
-list with one value for each year, or as one number for all years. The factors
-come from section 1. The ULAE factor of 1.143 comes from the appendix's ULAE
-Ratio exhibit:
+Appendix A (LR Indication exhibit) covers five accident years of private
+passenger auto property damage. Premium goes to the current rate level and is
+trended. Reported losses and paid ALAE are developed, trended and loaded for
+ULAE (factor 1.143, from the ULAE Ratio exhibit). The indicated loss ratio is
+the ratio of the totals. `LossRatioExperience` takes each factor as a list
+with one value per year, or one number for all years:
 
 ```python
 a = LossRatioExperience(
@@ -157,41 +208,33 @@ a = LossRatioExperience(
     loss_trend=a_loss_trend,
     lae_factor=1.143,
 )
-book_premium = [1_548_088, 1_562_608, 1_575_741, 1_591_109, 1_605_706]
-book_losses = [970_359, 967_578, 955_974, 971_450, 1_011_357]
-book_ratio = [62.7, 61.9, 60.7, 61.1, 63.0]
-for k, year in enumerate(range(2011, 2016)):
-    print(f"{year}  premium {a.projected_premium_by_year[k]:12,.0f} (book {book_premium[k]:,})"
-          f"  losses {a.projected_losses_by_year[k]:10,.0f} (book {book_losses[k]:,})"
-          f"  ratio {100 * a.loss_ratio_by_year[k]:.1f}% (book {book_ratio[k]}%)")
-rounded_rows = sum(half_up(x, 0) for x in a.projected_premium_by_year)
-print(f"total premium {a.projected_premium:,.2f}, sum of rounded rows {rounded_rows:,.0f} (book 7,883,252)")
-print(f"total losses {a.projected_losses:,.0f} (book 4,876,718)"
-      f"  loss and LAE ratio {100 * a.loss_ratio:.2f}% (book 61.9%)")
+year_table(range(2011, 2016), a,
+           ([1_548_088, 1_562_608, 1_575_741, 1_591_109, 1_605_706],
+            [970_359, 967_578, 955_974, 971_450, 1_011_357], [62.7, 61.9, 60.7, 61.1, 63.0]),
+           (7_883_252, 4_876_718, 61.9),
+           "Appendix A: auto property damage, loss ratio method",
+           "Projected premium and losses in dollars (losses include ALAE and ULAE)", 2)
 ```
 
 ```text
-2011  premium    1,548,088 (book 1,548,088)  losses    970,359 (book 970,359)  ratio 62.7% (book 62.7%)
-2012  premium    1,562,608 (book 1,562,608)  losses    967,578 (book 967,578)  ratio 61.9% (book 61.9%)
-2013  premium    1,575,741 (book 1,575,741)  losses    955,974 (book 955,974)  ratio 60.7% (book 60.7%)
-2014  premium    1,591,109 (book 1,591,109)  losses    971,450 (book 971,450)  ratio 61.1% (book 61.1%)
-2015  premium    1,605,706 (book 1,605,706)  losses  1,011,357 (book 1,011,357)  ratio 63.0% (book 63.0%)
-total premium 7,883,253.19, sum of rounded rows 7,883,252 (book 7,883,252)
-total losses 4,876,718 (book 4,876,718)  loss and LAE ratio 61.86% (book 61.9%)
+          prospicio       book  prospicio       book  prospicio  book
+2011      1,548,088  1,548,088    970,359    970,359       62.7  62.7
+2012      1,562,608  1,562,608    967,578    967,578       61.9  61.9
+2013      1,575,741  1,575,741    955,974    955,974       60.7  60.7
+2014      1,591,109  1,591,109    971,450    971,450       61.1  61.1
+2015      1,605,706  1,605,706  1,011,357  1,011,357       63.0  63.0
+total  7,883,253.19  7,883,252  4,876,718  4,876,718      61.86  61.9
 ```
 
-Each row agrees to the dollar. The book's total premium is the sum of its
-rounded rows, a dollar below the exact total.
+The book's total premium is the sum of its rounded rows, a dollar below the
+exact total.
 
-The Expense exhibit divides five selected expense ratios into fixed and
-variable parts by their fixed shares:
-
-- general 6.3% and other acquisition 8.5%, each 75% fixed
-- licenses and fees 0.2%, all fixed
-- commission and brokerage 11.2% and taxes 2.1%, all variable
-
-The book rounds each part to a tenth before it adds the parts. The indicated
-change follows from the selected 61.9% loss and LAE ratio:
+The Expense exhibit splits five selected expense ratios into fixed and
+variable parts: general 6.3% and other acquisition 8.5% (each 75% fixed),
+licenses and fees 0.2% (all fixed), commission and brokerage 11.2% and taxes
+2.1% (all variable). The book rounds each part to a tenth before it adds the
+parts. The indicated change follows from the selected 61.9% loss and LAE
+ratio:
 
 ```python
 ratios = [0.063, 0.085, 0.002, 0.112, 0.021]
@@ -200,57 +243,60 @@ parts = [premium_based_expenses([r], [s]) for r, s in zip(ratios, shares)]
 fixed = sum(half_up(100 * f, 1) for f, _ in parts)
 variable = sum(half_up(100 * v, 1) for _, v in parts)
 exact = premium_based_expenses(ratios, shares)
-print(f"fixed {fixed:.1f}% (book 11.3%)  variable {variable:.1f}% (book 17.0%)"
-      f"  unrounded {100 * exact[0]:.2f}% and {100 * exact[1]:.2f}%")
 pa = Provisions(variable / 100, 0.05)
 change = pa.loss_ratio_change(0.619, fixed / 100)
-print(f"variable permissible loss ratio {100 * pa.variable_permissible_loss_ratio:.1f}% (book 78.0%)")
-print(f"indicated change {100 * change:.2f}% (book -6.2%);"
-      f" from the unrounded loss ratio {100 * pa.loss_ratio_change(a.loss_ratio, fixed / 100):.2f}%")
+compare([
+    row("fixed expense (%)", fixed, 1, 11.3, alt=100 * exact[0], ad=2),
+    row("variable expense (%)", variable, 1, 17.0, alt=100 * exact[1], ad=2),
+    row("variable permissible loss ratio (%)", 100 * pa.variable_permissible_loss_ratio, 1, 78.0),
+    row("indicated change (%)", 100 * change, 2, -6.2, bd=1,
+        alt=100 * pa.loss_ratio_change(a.loss_ratio, fixed / 100), ad=2),
+], "Appendix A: expenses and the indicated change",
+   "Percent; unrounded: before the parts are rounded, and from the unrounded loss ratio", alt="unrounded")
 ```
 
 ```text
-fixed 11.3% (book 11.3%)  variable 17.0% (book 17.0%)  unrounded 11.30% and 17.00%
-variable permissible loss ratio 78.0% (book 78.0%)
-indicated change -6.15% (book -6.2%); from the unrounded loss ratio -6.20%
+                                     prospicio  book  unrounded
+fixed expense (%)                         11.3  11.3      11.30
+variable expense (%)                      17.0  17.0      17.00
+variable permissible loss ratio (%)       78.0  78.0           
+indicated change (%)                     -6.15  -6.2      -6.20
 ```
 
-The book calculates the change from the selected, rounded 61.9%. From the
-exact 61.86%, the change is -6.20%, which prints as the same figure.
+The book starts from the rounded 61.9%. The exact 61.86% gives the same tenth.
 
-The Credibility exhibit counts 3,612 claims against the standard of 1,082, so
-the indication is fully credible. The exhibit still calculates the complement,
-trended present rates. Last time the indication was 13.2% and the insurer took
-5.0%. The net trend is the 0.5% loss trend over the 2.0% premium trend, for
-one year:
+With 3,612 claims against a standard of 1,082, the indication is fully
+credible. The exhibit still computes the complement, trended present rates
+(last indication 13.2%, rate taken 5.0%, net trend 0.5% loss over 2.0%
+premium, one year):
 
 ```python
 za = LimitedFluctuation(0.90, 0.05).credibility(3_612, 1_082)
 complement = trended_present_rates(0.132, 0.05, 1.005 / 1.02)
 final = credibility_weighted(half_up(change, 3), za, complement)
-print(f"Z {za:.3f} (book 100.0%)  complement {100 * complement:.2f}% (book 6.2%)"
-      f"  credibility-weighted {100 * final:.1f}% (book -6.2%)")
+compare([
+    row("credibility Z", za, 3, 1.0),
+    row("complement (%)", 100 * complement, 2, 6.2, bd=1),
+    row("credibility-weighted change (%)", 100 * final, 1, -6.2),
+], "Appendix A: credibility", "Z is a fraction; the rest in percent")
 ```
 
 ```text
-Z 1.000 (book 100.0%)  complement 6.22% (book 6.2%)  credibility-weighted -6.2% (book -6.2%)
+                                 prospicio   book
+credibility Z                        1.000  1.000
+complement (%)                        6.22    6.2
+credibility-weighted change (%)       -6.2   -6.2
 ```
 
 ## 3. Appendix B: homeowners by the pure premium method
 
-Appendix B prices homeowners per exposure in four parts:
-
-1. `PurePremiumExperience` develops and trends the non-catastrophe losses,
-   loads them for ULAE and divides them by earned exposures.
-2. Catastrophes enter separately, as a non-modelled load and a modelled load.
-   The non-modelled load comes from a long history of catastrophe losses to
-   amount of insurance. The modelled load comes from a hurricane model.
-3. The net cost of reinsurance and the fixed expenses are amounts per
-   exposure.
-4. The rate is the fundamental insurance equation with variable expense and
-   profit.
-
-The development and trend factors are the exhibit's printed values:
+Appendix B prices homeowners per exposure. `PurePremiumExperience` develops and
+trends the non-catastrophe losses, loads them for ULAE and divides them by
+earned exposures. Catastrophes enter separately, as a non-modelled load (from
+a long history of catastrophe losses to amount of insurance) and a modelled
+load (from a hurricane model). Reinsurance and fixed expenses are amounts per
+exposure, and the rate follows from the fundamental insurance equation. The
+development and trend factors are the exhibit's printed values:
 
 ```python
 b = PurePremiumExperience(
@@ -260,86 +306,84 @@ b = PurePremiumExperience(
     loss_trend=[1.1939, 1.1705, 1.1476, 1.1251, 1.1030],
     lae_factor=1.012,
 )
-book_losses = [6_236_412, 5_717_511, 4_802_025, 5_859_265, 7_727_993]
-book_pp = [488.75, 447.87, 375.01, 456.54, 576.24]
-for k, year in enumerate(range(2011, 2016)):
-    print(f"{year}  losses {b.projected_losses_by_year[k]:11,.0f} (book {book_losses[k]:,})"
-          f"  pure premium {b.pure_premium_by_year[k]:.2f} (book {book_pp[k]:.2f})")
-print(f"total {b.projected_losses:,.0f} (book 30,343,206)  pure premium {b.pure_premium:.2f} (book 469.88)")
+exposures_b = [12_760, 12_766, 12_805, 12_834, 13_411]
+frame_b = pd.DataFrame({
+    "year": [str(y) for y in range(2011, 2016)] + ["total"],
+    "exposures": [*exposures_b, sum(exposures_b)],
+    "losses": [*b.projected_losses_by_year, b.projected_losses],
+    "book_losses": [6_236_412, 5_717_511, 4_802_025, 5_859_265, 7_727_993, 30_343_206],
+    "pure_premium": [*b.pure_premium_by_year, b.pure_premium],
+    "book_pp": [488.75, 447.87, 375.01, 456.54, 576.24, 469.88],
+})
+(GT(frame_b, rowname_col="year")
+ .tab_header("Appendix B: homeowners non-catastrophe pure premium",
+             "Projected losses in dollars, pure premium in dollars per exposure")
+ .fmt_integer(["exposures", "losses", "book_losses"])
+ .fmt_number(["pure_premium", "book_pp"], decimals=2)
+ .tab_spanner("losses", ["losses", "book_losses"])
+ .tab_spanner("pure premium", ["pure_premium", "book_pp"])
+ .cols_label(losses="prospicio", book_losses="book", pure_premium="prospicio", book_pp="book"))
 ```
 
 ```text
-2011  losses   6,236,412 (book 6,236,412)  pure premium 488.75 (book 488.75)
-2012  losses   5,717,511 (book 5,717,511)  pure premium 447.87 (book 447.87)
-2013  losses   4,802,025 (book 4,802,025)  pure premium 375.01 (book 375.01)
-2014  losses   5,859,265 (book 5,859,265)  pure premium 456.54 (book 456.54)
-2015  losses   7,727,993 (book 7,727,993)  pure premium 576.24 (book 576.24)
-total 30,343,206 (book 30,343,206)  pure premium 469.88 (book 469.88)
-```
-
-The table sets the five years side by side:
-
-```python
-import pandas as pd
-from great_tables import GT
-
-ex_b = pd.DataFrame({
-    "year": [str(y) for y in range(2011, 2016)],
-    "exposures": [12_760, 12_766, 12_805, 12_834, 13_411],
-    "losses": b.projected_losses_by_year,
-    "pure premium": b.pure_premium_by_year,
-})
-(GT(ex_b, rowname_col="year")
- .tab_header("Appendix B: homeowners non-catastrophe pure premium by year",
-             "Projected losses in dollars, pure premium in dollars per exposure")
- .fmt_integer(["exposures", "losses"])
- .fmt_number("pure premium", decimals=2))
+       exposures   prospicio        book  prospicio    book
+2011      12,760   6,236,412   6,236,412     488.75  488.75
+2012      12,766   5,717,511   5,717,511     447.87  447.87
+2013      12,805   4,802,025   4,802,025     375.01  375.01
+2014      12,834   5,859,265   5,859,265     456.54  456.54
+2015      13,411   7,727,993   7,727,993     576.24  576.24
+total     64,576  30,343,206  30,343,206     469.88  469.88
 ```
 
 The credibility is 683 claims against 1,082. The book rounds it to 79.5%
-before it weights with the regional pure premium of $585.75. The reinsurance
-cost is the projected net cost of $214,575 divided by the projected exposures.
-These are the latest exposures grown 1% a year for two years, rounded to whole
-exposures. The code trends the fixed expense of $72.79 per exposure at 3.4% a
-year for two years and rounds the factor to four places:
+before it weights with the regional pure premium of $585.75. Reinsurance is
+the net cost of $214,575 over the exposures grown 1% a year for two years,
+rounded to whole exposures. The fixed expense of $72.79 trends at 3.4% a year
+for two years, with the factor rounded to four places:
 
 ```python
 zb = LimitedFluctuation(0.90, 0.05).credibility(683, 1_082)
 weighted = credibility_weighted(469.88, half_up(zb, 3), 585.75)
-print(f"Z {zb:.4f} (book 79.5%)  weighted {weighted:.2f} (book 493.63);"
-      f" with the unrounded Z {credibility_weighted(b.pure_premium, zb, 585.75):.2f}")
 reinsurance = 214_575 / half_up(13_411 * trend_factor(0.01, 2.0), 0)
 fixed_pp = 72.79 * half_up(trend_factor(0.034, 2.0), 4)
-print(f"reinsurance per exposure {reinsurance:.2f} (book 15.68)  fixed expense {fixed_pp:.2f} (book 77.83)")
 total_pp = weighted + 29.11 + 74.57  # non-modelled and modelled catastrophe loads, as printed
 pb = Provisions(0.138, 0.05)
 rate = pb.pure_premium_rate(half_up(total_pp, 2) + half_up(reinsurance, 2), half_up(fixed_pp, 2))
-print(f"total pure premium {total_pp:.2f} (book 597.31)"
-      f"  variable permissible {100 * pb.variable_permissible_loss_ratio:.1f}% (book 81.2%)")
-print(f"indicated rate {rate:.2f} (book 850.76)")
+compare([
+    row("credibility Z", zb, 4, 0.795, bd=3),
+    row("weighted pure premium", weighted, 2, 493.63, alt=credibility_weighted(b.pure_premium, zb, 585.75)),
+    row("reinsurance per exposure", reinsurance, 2, 15.68),
+    row("fixed expense per exposure", fixed_pp, 2, 77.83),
+    row("total pure premium", total_pp, 2, 597.31),
+    row("variable permissible loss ratio (%)", 100 * pb.variable_permissible_loss_ratio, 1, 81.2),
+    row("indicated rate", rate, 2, 850.76),
+], "Appendix B: from the pure premium to the indicated rate",
+   "Dollars per exposure unless marked; unrounded: the weighting with the unrounded Z", alt="unrounded")
 ```
 
 ```text
-Z 0.7945 (book 79.5%)  weighted 493.63 (book 493.63); with the unrounded Z 493.69
-reinsurance per exposure 15.68 (book 15.68)  fixed expense 77.83 (book 77.83)
-total pure premium 597.31 (book 597.31)  variable permissible 81.2% (book 81.2%)
-indicated rate 850.76 (book 850.76)
+                                     prospicio    book  unrounded
+credibility Z                           0.7945   0.795           
+weighted pure premium                   493.63  493.63     493.69
+reinsurance per exposure                 15.68   15.68           
+fixed expense per exposure               77.83   77.83           
+total pure premium                      597.31  597.31           
+variable permissible loss ratio (%)       81.2    81.2           
+indicated rate                          850.76  850.76
 ```
 
-The code takes the $29.11 non-modelled catastrophe load as printed. The
-appendix's Non-Modeled Cat exhibit rounds its ratios to three places at each
-step, and the unrounded chain gives $29.28. The $74.57 modelled load comes
-from a hurricane model, not from the book's data, so the code also takes it as
-printed.
+The code takes the $29.11 non-modelled catastrophe load as printed: the
+Non-Modeled Cat exhibit rounds its ratios to three places at each step, and
+the unrounded chain gives $29.28. The $74.57 modelled load comes from a
+hurricane model, not from the book's data, so the code takes it as printed too.
 
 ## 4. Appendix C: medical malpractice with a net trend
 
-Appendix C uses a small, long-tailed book of occurrence policies. The inputs
-are ultimate losses and ALAE, premium at current rate level and one net trend
-of 8.9%. The appendix develops the losses by several methods, and the code
-takes the selected ultimates. The net trend applies to losses, with no
-separate premium trend. ULAE is part of the expenses, so the losses have no
-LAE factor:
+Appendix C is a small, long-tailed book of occurrence policies. The inputs are
+the selected ultimate losses and ALAE (the appendix develops them by several
+methods), premium at current rate level and one net trend of 8.9%. The net
+trend applies to losses, with no separate premium trend. ULAE is part of the
+expenses, so the losses have no LAE factor:
 
 ```python
 c = LossRatioExperience(
@@ -348,28 +392,25 @@ c = LossRatioExperience(
     on_level_factor=c_on_level,
     loss_trend=c_net_trend,
 )
-book_premium = [17_928_820, 17_477_520, 18_376_572, 19_311_689, 22_632_277]
-book_losses = [20_897_900, 18_413_053, 9_495_310, 25_304_794, 29_749_511]
-book_ratio = [116.6, 105.4, 51.7, 131.0, 131.4]
-for k, year in enumerate(range(2010, 2015)):
-    print(f"{year}  premium {c.projected_premium_by_year[k]:11,.0f} (book {book_premium[k]:,})"
-          f"  losses {c.projected_losses_by_year[k]:11,.0f} (book {book_losses[k]:,})"
-          f"  ratio {100 * c.loss_ratio_by_year[k]:.1f}% (book {book_ratio[k]}%)")
-print(f"totals {c.projected_premium:,.0f} (book 95,726,878) and {c.projected_losses:,.0f}"
-      f" (book 103,860,568): {100 * c.loss_ratio:.2f}% (book 108.5%)")
+year_table(range(2010, 2015), c,
+           ([17_928_820, 17_477_520, 18_376_572, 19_311_689, 22_632_277],
+            [20_897_900, 18_413_053, 9_495_310, 25_304_794, 29_749_511], [116.6, 105.4, 51.7, 131.0, 131.4]),
+           (95_726_878, 103_860_568, 108.5),
+           "Appendix C: medical malpractice, loss ratio method with a net trend",
+           "Projected premium and losses in dollars (losses include ALAE)", 0)
 ```
 
 ```text
-2010  premium  17,928,820 (book 17,928,820)  losses  20,897,900 (book 20,897,900)  ratio 116.6% (book 116.6%)
-2011  premium  17,477,520 (book 17,477,520)  losses  18,413,053 (book 18,413,053)  ratio 105.4% (book 105.4%)
-2012  premium  18,376,572 (book 18,376,572)  losses   9,495,310 (book 9,495,310)  ratio 51.7% (book 51.7%)
-2013  premium  19,311,689 (book 19,311,689)  losses  25,304,794 (book 25,304,794)  ratio 131.0% (book 131.0%)
-2014  premium  22,632,277 (book 22,632,277)  losses  29,749,511 (book 29,749,511)  ratio 131.4% (book 131.4%)
-totals 95,726,878 (book 95,726,878) and 103,860,568 (book 103,860,568): 108.50% (book 108.5%)
+        prospicio        book    prospicio         book  prospicio   book
+2010   17,928,820  17,928,820   20,897,900   20,897,900      116.6  116.6
+2011   17,477,520  17,477,520   18,413,053   18,413,053      105.4  105.4
+2012   18,376,572  18,376,572    9,495,310    9,495,310       51.7   51.7
+2013   19,311,689  19,311,689   25,304,794   25,304,794      131.0  131.0
+2014   22,632,277  22,632,277   29,749,511   29,749,511      131.4  131.4
+total  95,726,878  95,726,878  103,860,568  103,860,568     108.50  108.5
 ```
 
-The five years differ much. The total is 108.5%. The ratio of 2012 is 51.7%,
-far below it, and those of 2013 and 2014 are above 130%.
+
 
 ```python
 import matplotlib.pyplot as plt
@@ -387,8 +428,8 @@ ax.legend()
 
 All expenses are variable here: general 6.4%, other acquisition 2.6%, taxes,
 licenses and fees 2.1%, commission and brokerage 21.2%, and ULAE 2.4%. The
-underwriting profit provision is -5%, because the investment income expected
-in this long-tailed line covers the target return. The credibility standard is
+underwriting profit provision is -5%, because the investment income of this
+long-tailed line covers the target return. The credibility standard is
 stricter than Appendix A's: within 7.5% with 95% probability, 683 claims. The
 complement is the countrywide indication of +18.5%. The book rounds the
 indication and the credibility to a tenth of a percent before it weights them:
@@ -399,39 +440,46 @@ pc = Provisions(variable, -0.05)
 indicated = pc.loss_ratio_change(1.085)
 lfc = LimitedFluctuation(0.95, 0.075)
 zc = lfc.credibility(283, round(lfc.frequency_standard()))
-print(f"expenses {100 * variable:.1f}% (book 34.7%)  permissible {100 * pc.permissible_loss_ratio():.1f}% (book 70.3%)")
-print(f"indicated {100 * indicated:.2f}% (book 54.3%)  standard {lfc.frequency_standard():.2f} (book 683)"
-      f"  Z {100 * zc:.2f}% (book 64.4%)")
 weighted = credibility_weighted(half_up(indicated, 3), half_up(zc, 3), 0.185)
-print(f"credibility-weighted {100 * weighted:.2f}% (book 41.6%);"
-      f" unrounded {100 * credibility_weighted(indicated, zc, 0.185):.2f}%")
+compare([
+    row("expenses (%)", 100 * variable, 1, 34.7),
+    row("permissible loss ratio (%)", 100 * pc.permissible_loss_ratio(), 1, 70.3),
+    row("indicated change (%)", 100 * indicated, 2, 54.3, bd=1),
+    row("credibility standard (claims)", lfc.frequency_standard(), 2, 683, bd=0),
+    row("credibility Z (%)", 100 * zc, 2, 64.4, bd=1),
+    row("credibility-weighted change (%)", 100 * weighted, 2, 41.6, bd=1,
+        alt=100 * credibility_weighted(indicated, zc, 0.185)),
+], "Appendix C: from the loss ratio to the credibility-weighted change",
+   "Percent unless marked; unrounded: the weighting without the rounding", alt="unrounded")
 ```
 
 ```text
-expenses 34.7% (book 34.7%)  permissible 70.3% (book 70.3%)
-indicated 54.34% (book 54.3%)  standard 682.93 (book 683)  Z 64.37% (book 64.4%)
-credibility-weighted 41.56% (book 41.6%); unrounded 41.57%
+                                 prospicio  book  unrounded
+expenses (%)                          34.7  34.7           
+permissible loss ratio (%)            70.3  70.3           
+indicated change (%)                 54.34  54.3           
+credibility standard (claims)       682.93   683           
+credibility Z (%)                    64.37  64.4           
+credibility-weighted change (%)      41.56  41.6      41.57
 ```
 
-The selected loss and ALAE ratio of 108.5% is the rounded total above. The
-book's exhibits use 2010 to 2014 as the experience period. Its earned premium
-table also lists 2008 with the same figure as 2014 (18,265,093). This is
-probably a copy error, and it does not enter the indication.
+The selected loss and ALAE ratio, 108.5%, is the rounded total above. The
+book's earned premium table also lists 2008 with the same figure as 2014
+(18,265,093), probably a copy error outside the indication.
 
 ## 5. Increased limits and deductibles
 
 Chapter 11 prices limits and deductibles from a size-of-loss table. The
 increased limit factor (ILF) is the limited average severity (LAS) at the
-limit divided by the LAS at the basic limit. The loss elimination ratio (LER)
-of a deductible is the share of losses below the deductible. For a fitted or
-assumed severity, `prospicio.pricing.ilf` and `loss_elimination_ratio`
-calculate both exactly (see
-[`distributions-for-actuaries-claim-size.md`](distributions-for-actuaries-claim-size.md)).
+limit over the LAS at the basic limit. The loss elimination ratio (LER) of a
+deductible is the share of losses below it. For a fitted or assumed severity,
+`prospicio.pricing.ilf` and `loss_elimination_ratio` calculate both exactly
+(see [`distributions-for-actuaries-claim-size.md`](distributions-for-actuaries-claim-size.md)).
 
-The book's tables give only claim counts and loss totals for each size band.
-`SizeOfLoss` reads such a table as a severity. It puts the claims of each band
-at the band's average, so its limited expected value is exact at each band
-edge. `ilf`, `loss_elimination_ratio` and the layer functions take it as any
+The book's tables give claim counts and loss totals for each size band.
+`SizeOfLoss` reads such a table as a severity. It puts each band's claims at
+the band's average, so its limited expected value is exact at each band edge,
+and `ilf`, `loss_elimination_ratio` and the layer functions take it as any
 other severity. `censored_las` applies the censored method of Table 11.6, with
 one table for each policy limit:
 
@@ -442,9 +490,6 @@ from prospicio.pricing import censored_las, ilf, loss_elimination_ratio
 # Table 11.3: 5,000 uncensored claims, (count, losses) by band up to 100K, 250K, 500K, 1M.
 table = SizeOfLoss([0, 100e3, 250e3, 500e3, 1e6], [2_324, 1_923, 680, 73],
                    [117_629_223, 307_599_929, 222_793_514, 43_047_470])
-las_100, las_250 = table.lev(100e3), table.lev(250e3)
-print(f"LAS(100K) {las_100:,.0f} (book 77,046)  LAS(250K) {las_250:,.0f} (book 122,696)"
-      f"  ILF {ilf(table, 250e3, 100e3):.2f} (book 1.59)")
 
 # Table 11.6: the same claims censored at policy limits of 100K, 250K and 500K.
 by_limit = [
@@ -454,26 +499,39 @@ by_limit = [
 ]
 layers = censored_las(by_limit)
 l1, l2, l3 = (half_up(layer["severity"], 0) for layer in layers)  # the book adds rounded layers
-print(f"censored: layers {l1:,.0f} + {l2:,.0f} + {l3:,.0f} (book 77,046 + 44,575 + 15,213)")
-print(f"  LAS(250K) {l1 + l2:,.0f} (book 121,621)  LAS(500K) {l1 + l2 + l3:,.0f} (book 136,834)"
-      f"  unrounded {layers[1]['las']:,.1f} and {layers[2]['las']:,.1f}")
 
 # Table 11.8: loss elimination ratio of a 250 deductible, ground-up homeowners losses.
 # Only the edge at 250 matters; the other edges are chosen to hold each band's average.
 homeowners = SizeOfLoss([0, 100, 250, 500, 1_000, float("inf")], [3_200, 1_225, 1_187, 1_845, 2_543],
                         [240_365, 207_588, 463_954, 1_551_938, 11_140_545])
-print(f"LER(250) {loss_elimination_ratio(homeowners, 250):.3f} (book 0.135)")
+compare([
+    row("uncensored LAS(100K)", table.lev(100e3), 0, 77_046),
+    row("uncensored LAS(250K)", table.lev(250e3), 0, 122_696),
+    row("ILF at 250K", ilf(table, 250e3, 100e3), 2, 1.59),
+    row("censored layer 1", l1, 0, 77_046),
+    row("censored layer 2", l2, 0, 44_575),
+    row("censored layer 3", l3, 0, 15_213),
+    row("censored LAS(250K)", l1 + l2, 0, 121_621, alt=layers[1]["las"], ad=1),
+    row("censored LAS(500K)", l1 + l2 + l3, 0, 136_834, alt=layers[2]["las"], ad=1),
+    row("LER of a 250 deductible", loss_elimination_ratio(homeowners, 250), 3, 0.135),
+], "Chapter 11: increased limits and a deductible",
+   "Dollars, except the factor and the ratio; unrounded: the layers added without rounding", alt="unrounded")
 ```
 
 ```text
-LAS(100K) 77,046 (book 77,046)  LAS(250K) 122,696 (book 122,696)  ILF 1.59 (book 1.59)
-censored: layers 77,046 + 44,575 + 15,213 (book 77,046 + 44,575 + 15,213)
-  LAS(250K) 121,621 (book 121,621)  LAS(500K) 136,834 (book 136,834)  unrounded 121,620.5 and 136,833.0
-LER(250) 0.135 (book 0.135)
+                         prospicio     book  unrounded
+uncensored LAS(100K)        77,046   77,046           
+uncensored LAS(250K)       122,696  122,696           
+ILF at 250K                   1.59     1.59           
+censored layer 1            77,046   77,046           
+censored layer 2            44,575   44,575           
+censored layer 3            15,213   15,213           
+censored LAS(250K)         121,621  121,621  121,620.5
+censored LAS(500K)         136,834  136,834  136,833.0
+LER of a 250 deductible      0.135    0.135
 ```
 
-The figure shows the ILF by limit against the basic limit of 100K. The
-censored method gives a slightly lower factor at 250K and 500K.
+
 
 ```python
 limits = [100, 250, 500, 1000]
@@ -489,15 +547,14 @@ ax.legend()
 ```
 
 The censored method builds each layer only from policies whose limit is at
-least the top of the layer. It scales the layer by the share of those
-policies' claims that reach the layer. As the book's numbers show, the method
-gives a lower LAS(250K) than the uncensored table.
+least the top of the layer, and scales the layer by the share of those
+policies' claims that reach it. It gives a slightly lower factor at 250K and
+500K than the uncensored table.
 
 ## Where the book's printed numbers differ from exact arithmetic
 
-Each difference between a printed figure and prospicio's exact value comes
-from the book's rounding of a cell before the next step. When the code applies
-that rounding, as above, it reproduces each printed figure:
+Each difference comes from the book rounding a cell before the next step. With
+that rounding, as above, the code reproduces each printed figure:
 
 | Where | Book | Exact | Cause |
 |---|---|---|---|
