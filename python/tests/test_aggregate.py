@@ -467,7 +467,7 @@ def test_grid_sizing():
     from prospicio.aggregate import fft_auto, recommend_grid, round_bucket
     from prospicio.distributions import Gamma, Pareto, Poisson
 
-    # aggregate 1.0.1's round_bucket rungs.
+    # aggregate 2.1.0's round_bucket rungs.
     assert [round_bucket(x) for x in (1.1, 2.5, 5.5, 2412.0, 0.3, 1e-21)] == [
         2.0, 4.0, 8.0, 4000.0, 0.5, 2.0**-69,
     ]
@@ -495,7 +495,7 @@ def test_grid_audit():
     )
     from prospicio.distributions import Gamma, Lognormal, PolicyLimits, Poisson
 
-    # aggregate 1.2.0's sharpen on "100 claims 1000 xs 0 sev lognorm 100 cv 1.5
+    # aggregate 2.1.0's sharpen on "100 claims 1000 xs 0 sev lognorm 100 cv 1.5
     # poisson" from bs 1, log2 13: it moves to bs 4.
     capped = PolicyLimits(Lognormal.from_mean_cv(100.0, 1.5), [1000.0], [1.0])
     a = audit_grid(Poisson(100.0), capped, step=1.0, log2=13)
@@ -531,7 +531,7 @@ def test_occurrence_pml():
     from prospicio.distributions import Lognormal, NegativeBinomial, Poisson
 
     sev = Lognormal.from_mean_cv(100.0, 2.0)
-    # aggregate 1.0.1's oep on "agg O 2 claims sev lognorm 100 cv 2 poisson".
+    # aggregate 2.1.0's oep on "agg O 2 claims sev lognorm 100 cv 2 poisson".
     for p, loss, rp in [(0.1, 348.934754485, 9.491222), (0.001, 2906.643201, 999.499917)]:
         pml = occurrence_pml(Poisson(2.0), sev, p)
         assert pml.loss == pytest.approx(loss, rel=1e-9)
@@ -553,7 +553,7 @@ def test_compound_moments_and_approximations():
     from prospicio.distributions import Gamma, Pareto, Poisson
 
     m = compound_moments(Poisson(10.0), Gamma.from_mean_cv(50.0, 0.7))
-    # aggregate 1.0.1 on "agg B 10 claims sev gamma 50 cv 0.7 poisson".
+    # aggregate 2.1.0 on "agg B 10 claims sev gamma 50 cv 0.7 poisson".
     assert m.mean == pytest.approx(500.0, rel=1e-12)
     assert m.cv == pytest.approx(0.38600518131237566, rel=1e-12)
     assert m.skew == pytest.approx(0.5129464825493272, rel=1e-12)
@@ -584,7 +584,7 @@ def test_layer_statistics_and_prices_by_view():
     sev, _ = Grid.rounding(Lognormal.from_mean_cv(100.0, 2.0), 1.0, 1001)
     n = Poisson(2.0)
     s = occurrence_layer_statistics(n, sev, 1.0, 500.0, 100.0)
-    # aggregate 1.0.1, reins_stats_df (validation/scripts/aggregate_reinsurance.py)
+    # aggregate 2.1.0, reins_stats_df (validation/scripts/aggregate_reinsurance.py)
     assert s.pr_attach == pytest.approx(0.261655626646, rel=1e-10)
     assert s.count.mean == pytest.approx(2.0 * s.pr_attach, rel=1e-14)
     assert s.loss_on_line == pytest.approx(0.151169062665, rel=1e-9)
@@ -608,7 +608,7 @@ def test_eventual_ruin():
     from prospicio.aggregate import eventual_ruin
     from prospicio.distributions import Grid
 
-    # Claims of 1, 2 or 3; aggregate 1.0.1's pollaczeck_khinchine at rho 0.1.
+    # Claims of 1, 2 or 3; aggregate 2.1.0's pollaczeck_khinchine at rho 0.1.
     sev = Grid(1.0, [0.0, 0.5, 0.3, 0.2] + [0.0] * 1020)
     ruin = eventual_ruin(sev, rho=0.1)
     assert ruin.u[:3] == [0.0, 1.0, 2.0]
@@ -662,7 +662,7 @@ def test_wiener_hopf():
     from prospicio.aggregate import wiener_hopf
     from prospicio.distributions import Gamma, Grid
 
-    # Claims of 1, 2 or 3 after gamma waits (shape 2); aggregate 1.0.1's
+    # Claims of 1, 2 or 3 after gamma waits (shape 2); aggregate 2.1.0's
     # wiener_hopf at rho 0.1 on the same grid.
     sev = Grid(1.0, [0.0, 0.5, 0.3, 0.2] + [0.0] * 1020)
     ruin = wiener_hopf(sev, Gamma(2.0, 1.0), rho=0.1)
@@ -683,7 +683,7 @@ def test_clash():
     from prospicio.aggregate import Clash, JointGrid, fft_bivariate
     from prospicio.distributions import Grid, NegativeBinomial, Poisson
 
-    # aggregate 1.0.1: clash C 2 3 1 claims dsev [1 2] [.5 .5] dsev [1] poisson,
+    # aggregate 2.1.0: clash C 2 3 1 claims dsev [1 2] [.5 .5] dsev [1] poisson,
     # bs 1 and log2 (7, 7) on each axis.
     clash = Clash(2.0, 3.0, 1.0)
     assert (clash.neither, clash.events) == (6.0, 12.0)
@@ -718,7 +718,7 @@ def test_layer_loss_picks():
     sev, _ = Grid.rounding(Gamma.from_mean_cv(100.0, 1.5), 1.0, 1 << 14)
     picked = layer_loss_picks(sev, [100, 500, 1000], [480, 420, 60], claims=10)
     assert not picked.straight_bottom
-    # aggregate 1.0.1's Aggregate.picks at loss 200 (picks_aggregate.csv).
+    # aggregate 2.1.0's Aggregate.picks at loss 200 (picks_aggregate.csv).
     assert picked.severity.probs[200] == pytest.approx(0.0008386073686922624, abs=1e-12)
     layers = picked.to_dict()
     assert layers["top"] == [100.0, 500.0, 1000.0]
@@ -747,7 +747,7 @@ def test_stage_cession_and_aggregate_cover_statistics():
     c = occurrence_cession_statistics(n, sev, layers)
     occ = Tower([Layer("a", 100.0, 100.0), Layer("b", 200.0, 200.0)]).on_grid(n, sev, 1 << 14)
     total = occ.stage_ceded[0]
-    # aggregate 1.0.1's reins_stats_df and reins_price_df.
+    # aggregate 2.1.0's reins_stats_df and reins_price_df.
     assert c.aggregate.mean == pytest.approx(67.33279562141576, rel=1e-9)
     price = occ.price(Distortion.proportional_hazard(0.7))
     assert price.stages[0].premium == pytest.approx(111.0007062267948, rel=2e-8)
@@ -842,7 +842,7 @@ def test_ledger():
     from prospicio.aggregate import Group, Ledger, Leg
     from prospicio.distributions import Grid
 
-    # The P&L design note's example 2 against aggregate 1.0.1's PnL.
+    # The P&L design note's example 2 against aggregate 2.1.0's PnL.
     x, p = [0.0, 10.0, 20.0, 50.0], [0.4, 0.3, 0.2, 0.1]
     gross = Group(
         "Gross", "sell",
@@ -886,7 +886,7 @@ def test_ledger():
 def test_ledger_ratios_and_stack():
     from prospicio.aggregate import Group, Ledger, Leg, stack
 
-    # The P&L design note's examples 2, 2b and 2c against aggregate 1.0.1.
+    # The P&L design note's examples 2, 2b and 2c against aggregate 2.1.0.
     x, p = [0.0, 10.0, 20.0, 50.0], [0.4, 0.3, 0.2, 0.1]
     gross = Group(
         "Gross", "sell",
@@ -932,7 +932,7 @@ def test_book_builders():
     from prospicio.distributions import Grid
     from prospicio.reinsurance import Layer, Tower
 
-    # The P&L design note's examples 3a, 3b and 6 against aggregate 1.0.1.
+    # The P&L design note's examples 3a, 3b and 6 against aggregate 2.1.0.
     gross = ([2, 3, 4, 5, 6, 8], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])
     high = Layer.stop_loss("High", 3.0, 5.0).with_deposit_premium(1.0).with_ceding_commission(0.1)
     low = Layer.stop_loss("Low", 2.0, 3.0).with_deposit_premium(0.5)
@@ -970,7 +970,7 @@ def test_book_occurrence_covers():
     from prospicio.distributions import Grid, Poisson
     from prospicio.reinsurance import Layer, Tower
 
-    # The P&L design note's example 4 against aggregate 1.0.1: gross margin
+    # The P&L design note's example 4 against aggregate 2.1.0: gross margin
     # 14.2, the occurrence cover's recovery 0.8 and margin -0.7, net 13.5.
     sev = Grid(1.0, [0.0, 0.5, 0.3, 0.0, 0.2])
     occ = Tower([Layer("occ 2 xs 2", 2.0, 2.0).with_deposit_premium(2.0).with_ceding_commission(0.25)])
@@ -1001,7 +1001,7 @@ def test_book_variable_terms_and_program():
     from prospicio.aggregate import Book, Expense, pnl_program, round_premium, size_premium
     from prospicio.reinsurance import Layer, LossSensitivePremium, Tower
 
-    # aggregate 1.0.1: a 3 xs 5 cover with a sliding scale, or a profit
+    # aggregate 2.1.0: a 3 xs 5 cover with a sliding scale, or a profit
     # commission, on example 1's book.
     gross = ([2, 3, 4, 5, 6, 8], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])
     book = Book("V", 10.0, [Expense("premium", 0.1)])
@@ -1040,7 +1040,7 @@ def test_book_reinstatements():
     from prospicio.distributions import Grid, Poisson
     from prospicio.reinsurance import Layer, Tower
 
-    # aggregate 1.0.1: an occurrence cover 2 xs 2 with one reinstatement at
+    # aggregate 2.1.0: an occurrence cover 2 xs 2 with one reinstatement at
     # 100% on example 4's book; the premium D + h(R) varies with the year.
     sev = Grid(1.0, [0.0, 0.5, 0.3, 0.0, 0.2])
     occ = Tower([Layer("occ 2 xs 2", 2.0, 2.0, premium=2.0, reinstatement_rates=[1.0])])
@@ -1059,7 +1059,7 @@ def test_book_reinstatements():
 def test_pnl_program_rates_and_stated_premium():
     from prospicio.aggregate import pnl_program, pnl_program_stated
 
-    # aggregate 1.0.1's premium_style='rate' on the design note's engine.
+    # aggregate 2.1.0's premium_style='rate' on the design note's engine.
     p = pnl_program(405.97794085441933, 0.9, 0.25, [
         dict(ceded_loss=86.78504710067914, share=1.0, combined_ratio=0.6),
         dict(ceded_loss=8.144345556686755, share=1.0, combined_ratio=0.5, aggregate=True)])
@@ -1094,7 +1094,7 @@ def test_stitched_occurrence_peel():
     from prospicio.distributions import Grid, Poisson
     from prospicio.reinsurance import Layer, Tower
 
-    # aggregate 1.0.1's stitched peel: two occurrence layers, top down.
+    # aggregate 2.1.0's stitched peel: two occurrence layers, top down.
     sev = Grid(1.0, [0.0, 0.4, 0.3, 0.0, 0.2, 0.0, 0.1])
     occ = Tower([Layer("occ 1 xs 1", 1.0, 1.0).with_deposit_premium(1.0),
                  Layer("occ 2 xs 2", 2.0, 2.0).with_deposit_premium(1.0).with_ceding_commission(0.2)])

@@ -145,7 +145,7 @@ stopifnot(identical(rank(cp_m[, 1] + cp_m[, 2]), rank(cp_u[, 1])), identical(ran
 stopifnot(abs(group_spearman(cp_r, "seg")["a", "b"] - 0.68) < 0.03)
 stopifnot(inherits(try(reorder_groups_by_copula(cp, "seg", archimedean_copula("clayton", 1, dim = 3), 1), silent = TRUE), "try-error"))
 
-# FFT grid sizing (aggregate 1.0.1: round_bucket rungs; bs 1/16 on this book).
+# FFT grid sizing (aggregate 2.1.0: round_bucket rungs; bs 1/16 on this book).
 stopifnot(identical(round_bucket(c(1.1, 2.5, 5.5, 2412, 0.3)), c(2, 4, 8, 4000, 0.5)))
 g <- recommend_grid(poisson_count(10), gamma_distribution(1 / 0.49, 50 * 0.49))
 stopifnot(g$step == 0.0625, g$points == 65536, g$method == "moments")
@@ -155,7 +155,7 @@ agg <- compound_auto(poisson_count(10), gamma_distribution(1 / 0.49, 50 * 0.49))
 stopifnot(agg@report$aliasing_error < 1e-12, agg@report$sizing$points == 65536)
 stopifnot(abs(mean(agg) / 500 - 1) < 1e-6)
 
-# The grid audit against aggregate 1.2.0's sharpen: from bs 1, log2 13 the
+# The grid audit against aggregate 2.1.0's sharpen: from bs 1, log2 13 the
 # capped lognormal moves to bs 4; from 0.5, 2^10 the gamma book grows to 11.
 capped <- policy_limits_distribution(lognormal_from_mean_cv(100, 1.5), 1000, 1)
 a <- audit_grid(poisson_count(100), capped, step = 1, log2 = 13)
@@ -432,7 +432,7 @@ back <- tower_from_json(txt)
 stopifnot(identical(tower_to_json(back), txt), identical(back@layer_names, tw@layer_names))
 stopifnot(inherits(try(tower_from_json("{}"), silent = TRUE), "try-error"))
 
-# The occurrence PML against aggregate 1.0.1's oep on
+# The occurrence PML against aggregate 2.1.0's oep on
 # "agg O 2 claims sev lognorm 100 cv 2 poisson".
 sev <- lognormal_from_mean_cv(100, 2)
 pml <- occurrence_pml(poisson_count(2), sev, c(0.1, 0.001))
@@ -443,7 +443,7 @@ stopifnot(abs(occurrence_exceedance(nb, sev, occurrence_pml(nb, sev, 0.05)$loss)
 stopifnot(inherits(try(occurrence_pml(poisson_count(0.1), sev, 0.2), silent = TRUE), "try-error"))
 stopifnot(mean(annual_maxima(simulate_events(poisson_count(2), sev, 2000, seed = 1))) > 0)
 
-# Compound moments and approximations against aggregate 1.0.1 on
+# Compound moments and approximations against aggregate 2.1.0 on
 # "agg B 10 claims sev gamma 50 cv 0.7 poisson".
 g <- gamma_distribution(1 / 0.49, 50 * 0.49)
 m <- compound_moments(poisson_count(10), g)
@@ -473,7 +473,7 @@ stopifnot(abs(approximation_cdf(wh_fit, approximation_quantile(wh_fit, 0.9)) - 0
 lt <- layer_third_moment(gamma_distribution(1, 2), c(3, Inf), 0)
 stopifnot(abs(lt[1] / (48 * (1 - exp(-1.5) * (1 + 1.5 + 1.5^2 / 2))) - 1) < 1e-10, abs(lt[2] / 48 - 1) < 1e-10)
 
-# Layer statistics and prices by view against aggregate 1.0.1 on
+# Layer statistics and prices by view against aggregate 2.1.0 on
 # "agg C 2 claims 1000 xs 0 sev lognorm 100 cv 2 occurrence net of 500 xs 100 poisson".
 sev <- discretize(lognormal_from_mean_cv(100, 2), 1, 1001, "rounding")
 s <- occurrence_layer_statistics(poisson_count(2), sev, limit = 500, attachment = 100)
@@ -489,7 +489,7 @@ stopifnot(identical(p$view, c("gross", "occ", "net")),
           abs(p$premium / c(297.443189953534, 139.358753189474, 164.315772212950) - 1) < 2e-8)
 stopifnot(inherits(try(occurrence_layer_statistics(poisson_count(2), sev, 500, 100, share = 0),
                        silent = TRUE), "try-error"))
-# Eventual ruin: claims of 1, 2 or 3 at rho 0.1, against aggregate 1.0.1.
+# Eventual ruin: claims of 1, 2 or 3 at rho 0.1, against aggregate 2.1.0.
 sev3 <- grid_distribution(1, c(0, 0.5, 0.3, 0.2, numeric(1020)))
 ruin <- eventual_ruin(sev3, rho = 0.1, p = c(0.1, 1e-300))
 stopifnot(abs(ruin$psi$psi[ruin$psi$u == 10] - 0.15362022867039649) < 1e-12)
@@ -515,12 +515,12 @@ stopifnot(fin$psi[21, 60] < exp(-1 / 3) / 1.5, fin$psi[21, 60] > exp(-1 / 3) / 1
 stopifnot(inherits(try(finite_horizon_ruin(gexp, 1.5, 3), silent = TRUE), "try-error"))
 stopifnot(inherits(try(finite_horizon_ruin(gexp, 1.51, 3, rate = 1), silent = TRUE), "try-error"))
 # Wiener-Hopf: the same claims after gamma waits (shape 2), against
-# aggregate 1.0.1's wiener_hopf at rho 0.1.
+# aggregate 2.1.0's wiener_hopf at rho 0.1.
 wh <- wiener_hopf(sev3, gamma_distribution(2, 1), rho = 0.1, p = 0.01)
 stopifnot(abs(wh$psi$psi[wh$psi$u == 10] - 0.1973674584712206) < 1e-10, wh$capital == 31)
 stopifnot(abs(wh$premium_rate - 1.1 * 1.7 / 2) < 1e-12, wh$mean_step < 0)
 stopifnot(inherits(try(wiener_hopf(sev3, gamma_distribution(2, 1), rho = 0), silent = TRUE), "try-error"))
-# Clash against aggregate 1.0.1: clash C 2 3 1 claims dsev [1 2] [.5 .5]
+# Clash against aggregate 2.1.0: clash C 2 3 1 claims dsev [1 2] [.5 .5]
 # dsev [1] poisson, bs 1 and log2 (7, 7).
 clash <- clash_model(2, 3, 1)
 stopifnot(clash$neither == 6, clash$events == 12, clash$trigger_a == 0.25)
@@ -537,14 +537,14 @@ same <- fft_bivariate(poisson_count(12), sev2, steps = c(1, 1), points = 128)
 stopifnot(abs(same$covariance - joint$covariance) < 1e-12)
 stopifnot(inherits(try(clash_model(1, 1, 0), silent = TRUE), "try-error"))
 stopifnot(inherits(try(clash_aggregate(clash, poisson_count(2), ca, cb, 8), silent = TRUE), "try-error"))
-# Layer loss picks against aggregate 1.0.1's Aggregate.picks.
+# Layer loss picks against aggregate 2.1.0's Aggregate.picks.
 gsev <- discretize(gamma_from_mean_cv(100, 1.5), step = 1, points = 2^14, method = "rounding")
 picked <- layer_loss_picks(gsev, c(100, 500, 1000), c(480, 420, 60), claims = 10)
 stopifnot(!picked$straight_bottom, abs(picked$severity@probs[201] - 0.0008386073686922624) < 1e-12)
 stopifnot(max(abs(10 * picked$layers$target - c(480, 420, 60))) < 1e-12)
 stopifnot(layer_loss_picks(gsev, c(100, 500, 1000), c(700, 250, 50), claims = 10)$straight_bottom)
 stopifnot(inherits(try(layer_loss_picks(gsev, 100.5, 10), silent = TRUE), "try-error"))
-# Total cession of a stage and an aggregate cover, against aggregate 1.0.1
+# Total cession of a stage and an aggregate cover, against aggregate 2.1.0
 # (book T of validation/scripts/aggregate_reinsurance.py).
 gt <- discretize(gamma_from_mean_cv(50, 1.5), step = 1, points = 1001, method = "rounding")
 ct <- occurrence_cession_statistics(poisson_count(5), gt, limits = c(100, 200), attachments = c(100, 200))
@@ -605,7 +605,7 @@ cj <- fft_bivariate(poisson_count(3), cs$density, cs$steps, points = 64)
 stopifnot(cj$correlation > 0,
           inherits(try(copula_severity(ca, cb, t_copula(matrix(c(1, 0.5, 0.5, 1), 2), 4)),
                        silent = TRUE), "try-error"))
-# The P&L ledger: the design note's example 2 against aggregate 1.0.1's PnL.
+# The P&L ledger: the design note's example 2 against aggregate 2.1.0's PnL.
 gross <- pnl_group("Gross", "sell",
   list(pnl_leg("Premium", function(x) pmin(pmax(5 + 1.1 * x, 12), 40), kind = "premium")),
   list(pnl_leg("Loss", identity, kind = "loss"), pnl_leg("LAE", function(x) 0.05 * x)))
@@ -627,7 +627,7 @@ one <- pnl_ledger(grid_distribution(1, c(0.5, 0, 0.5)),
 stopifnot(identical(ledger_sheet(one)$label, c("P", "L", "Total")), is.null(ledger_sheet(one)$step))
 stopifnot(inherits(try(pnl_leg("L", 1, kind = "bogus"), silent = TRUE), "try-error"))
 
-# Rebucketed legs, the ratio exhibit and the stack (aggregate 1.0.1).
+# Rebucketed legs, the ratio exhibit and the stack (aggregate 2.1.0).
 local({
   src <- list(c(0, 10, 20, 50), c(0.4, 0.3, 0.2, 0.1))
   gross <- pnl_group("Gross", "sell",
@@ -655,7 +655,7 @@ local({
   stopifnot(inherits(try(ledger_stack(list(a = b), list(c("x", "a", "nope"))), silent = TRUE), "try-error"))
 })
 
-# The book builders over annual covers (aggregate 1.0.1's pnl and xpnl).
+# The book builders over annual covers (aggregate 2.1.0's pnl and xpnl).
 local({
   gross <- list(c(2, 3, 4, 5, 6, 8), c(0.25, 0.3, 0.09, 0.2, 0.12, 0.04))
   high <- with_ceding_commission(with_deposit_premium(aggregate_stop_loss("High", 3, 5), 1), 0.1)
@@ -680,7 +680,7 @@ local({
   stopifnot(inherits(try(book_ledger(book, gross, NULL, "peel-top-down"), silent = TRUE), "try-error"))
 })
 
-# Occurrence covers on the joint gross and ceded loss (aggregate 1.0.1's
+# Occurrence covers on the joint gross and ceded loss (aggregate 2.1.0's
 # example 4): net 13.5, the cover's recovery 0.8.
 local({
   sev <- grid_distribution(1, c(0, 0.5, 0.3, 0, 0.2))
@@ -700,7 +700,7 @@ local({
   stopifnot("Net of occurrence" %in% ledger_sheet(w)$step)
 })
 
-# Variable terms as legs, retro and pnl_program's ladder (aggregate 1.0.1).
+# Variable terms as legs, retro and pnl_program's ladder (aggregate 2.1.0).
 local({
   gross <- list(c(2, 3, 4, 5, 6, 8), c(0.25, 0.3, 0.09, 0.2, 0.12, 0.04))
   book <- pnl_book("V", 10, list(pnl_expense("premium", 0.1)))
@@ -718,7 +718,7 @@ local({
   stopifnot(identical(round_premium(c(146.5, 16.285)), c(146, 16.29)), size_premium(499.885, 0.7) == 714)
 })
 
-# Reinstatement premiums on the joint (aggregate 1.0.1): D + h(R) varies.
+# Reinstatement premiums on the joint (aggregate 2.1.0): D + h(R) varies.
 local({
   sev <- grid_distribution(1, c(0, 0.5, 0.3, 0, 0.2))
   occ <- reinsurance_tower(list(xol_layer("occ 2 xs 2", 2, 2, premium = 2, reinstatement_rates = 1)))
@@ -729,7 +729,7 @@ local({
   stopifnot(abs(mean(ledger_result(book_occurrence_ledger(book, joint, occ))) - 12.323104) < 1e-6)
 })
 
-# pnl_program's rates and an engine's stated premium (aggregate 1.0.1).
+# pnl_program's rates and an engine's stated premium (aggregate 2.1.0).
 local({
   p <- pnl_program(405.97794085441933, 0.9, 0.25, data.frame(
     ceded_loss = c(86.78504710067914, 8.144345556686755), share = 1, combined_ratio = c(0.6, 0.5),
@@ -754,7 +754,7 @@ local({
   stopifnot(abs(mean(ledger_result(m)) - mean(ledger_result(c1))) < 1e-12)
 })
 
-# The stitched peel of several occurrence layers (aggregate 1.0.1).
+# The stitched peel of several occurrence layers (aggregate 2.1.0).
 local({
   sev <- grid_distribution(1, c(0, 0.4, 0.3, 0, 0.2, 0, 0.1))
   occ <- reinsurance_tower(list(

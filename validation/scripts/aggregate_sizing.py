@@ -1,9 +1,9 @@
 """Regenerate validation/reference/sizing_aggregate.csv.
 
-    python3.12 -m venv agg && agg/bin/pip install aggregate==1.0.1
+    python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0
     agg/bin/python validation/scripts/aggregate_sizing.py
 
-FFT grid sizing against Mildenhall's `aggregate` 1.0.1:
+FFT grid sizing against Mildenhall's `aggregate` 2.1.0:
 
 - `round_bucket`: aggregate's own docstring cases and their reciprocals,
   exact.

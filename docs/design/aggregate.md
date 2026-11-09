@@ -1021,10 +1021,11 @@ were already `Portfolio::premium_bounds` (`docs/design/risk.md`).
   (monotone chain) exact. Each vertex's `TVaR` comes from tail masses and
   tail means summed from the top, located by bisection: `O(n log n)`.
 - The curve ends at `p → 1`, `(max X, max Y)`: `TVaR_1` prices `X` at its
-  maximum. `aggregate` stops at the last breakpoint below 1 and keeps the
-  first vertex where `TVaR_p(X)` saturates, so where `X`'s top atom is
-  larger than `Y`'s its upper bound is too low (52 where 64 is attained,
-  for InsCo's X3 with both capped at 65 and `P = 65`). Where `TVaR_p(X)`
+  maximum. `aggregate` before 1.52 stopped at the last breakpoint below 1
+  and kept the first vertex where `TVaR_p(X)` saturates, so where `X`'s top
+  atom is larger than `Y`'s its upper bound was too low (52 where 64 is
+  attained, for InsCo's X3 with both capped at 65 and `P = 65`); 2.1.0
+  includes the limit and agrees (#768). Where `TVaR_p(X)`
   ties, the lower hull takes the lowest `Y` and the upper the highest.
 - `distortion_envelope`: `g(s)` of a BiTVaR is the price of a Bernoulli
   risk with `P(1) = s`, since its `TVaR_p` is `min(1, s / (1 − p))`. So the

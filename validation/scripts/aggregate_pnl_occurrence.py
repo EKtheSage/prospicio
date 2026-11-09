@@ -1,5 +1,5 @@
 """Reference values for the P&L ledger of occurrence covers on the joint
-(gross, ceded) source, from `aggregate` 1.0.1 (docs/design/pnl.md, PR 5).
+(gross, ceded) source, from `aggregate` 2.1.0 (docs/design/pnl.md, PR 5).
 
 - `ex4`, `ex4c`: example 4, a book with an occurrence cover 2 xs 2
   (deposit 2, a 25% ceding commission) on a Poisson count, walked and
@@ -9,7 +9,7 @@
   peeled top down;
 - `joint`: the joint (gross, ceded) density of example 4, cell by cell.
 
-    uv run --python 3.12 --with aggregate==1.0.1 \
+    uv run --python 3.13 --with aggregate==2.1.0 \
         python validation/scripts/aggregate_pnl_occurrence.py
 
 writes validation/reference/pnl_occurrence_aggregate.csv and
@@ -17,12 +17,13 @@ validation/reference/pnl_occurrence_sources.csv (each walk's joint source
 with the probabilities PnL uses; the consolidated faces are built from it).
 """
 
+import aggregate
 from pathlib import Path
 
 import numpy as np
 from aggregate import build
 
-SOURCE = 'aggregate 1.0.1'
+SOURCE = f'aggregate {aggregate.__version__}'
 ref = Path(__file__).resolve().parents[1] / 'reference'
 
 A = 'agg ExOcc 2 claims dsev [1 2 4] [.5 .3 .2]'

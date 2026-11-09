@@ -27,6 +27,22 @@ API reference. Against prospicio 0.0.3 as seen in
 A name search of the stub finds what exists; absence in the stub is the
 evidence for a gap, so each gap below is a claim for the owning lane to confirm.
 
+# Re-pinned to aggregate 2.1.0 (#768, 2026-11-09)
+
+Every parity reference in `validation/reference/*_aggregate.csv` is now made
+by `aggregate` 2.1.0 (released 2026-11-07), and every script pins
+`aggregate==2.1.0`. The numbers matched above are unchanged in 2.1.0. Three
+reference values moved, each a fix in `aggregate` toward prospicio's value
+(the quoted skewness, `PricingBounds`' limit `p -> 1`, `Bounds`' lower
+envelope): [the re-pin finding](../findings/aggregate-2-1-repin.md). The
+2.1.0 features prospicio lacks are the 0.1.0 issues: the Tsallis distortion
+(#769), the Gini index and `from_gini` (#770), the extended calibration set
+(#771), the disappearing deductible (#772), the OEP of a program (#773),
+refusing invalid discrete inputs (#774), Tweedie conversions (#775), the
+dyadic lattice rule (#776), event loss tables across units (#777) and the
+validation verdict (#778); the characteristic-function engine (#779, #780)
+and an event loss table as a severity (#781) wait for 0.2.0.
+
 # Matched (checked by running, in the guide)
 
 The Twenty Minutes session reproduces to the digit: the casualty book, a
