@@ -356,6 +356,9 @@ def test_named_counts_and_tvar_threshold():
 
     # aggregate 1.0.1's fixed, bernoulli and geometric (aggregate_counts.py)
     assert Count.fixed(3).pmf(3) == 1.0
+    assert Count.fixed(3.0).pmf(3) == 1.0
+    with pytest.raises(ValueError, match="whole"):
+        Count.fixed(2.5)
     assert Count.bernoulli(0.3).pmf(1) == pytest.approx(0.3, abs=1e-15)
     assert Count.geometric(3.0).pmf(1) == pytest.approx(0.1875, abs=1e-15)
     with pytest.raises(ValueError):
@@ -401,8 +404,14 @@ def test_discrete():
     assert t["p"][0] == pytest.approx(0.001)
     assert t["var"][0] == 1.0 and t["period"][0] == 1000.0
     # Values equal to the last bit are one atom; zero masses drop out.
-    d = Discrete([3.1, 3.0999999999999996, -2.0, 9.0], [1, 1, 2, 0])
+    d = Discrete([3.1, 3.0999999999999996, -2.0, 9.0], [1, 1, 2, 0], normalize=True)
     assert len(d) == 2 and d.probs == [0.5, 0.5]
+    # aggregate 2.1.0's rule for dsev: the probabilities sum to 1 within 1e-5.
+    assert sum(Discrete([1.0, 2.0], [0.5, 0.499991]).probs) == pytest.approx(1.0, abs=1e-15)
+    with pytest.raises(ValueError, match="0.98"):
+        Discrete([1.0, 2.0], [0.5, 0.48])
+    with pytest.raises(ValueError, match="sum to 4"):
+        Discrete([3.1, -2.0], [2, 2])
     assert Discrete([-4.5], [1.0]).skewness() is None
     with pytest.raises(ValueError):
         Discrete([1.0], [0.0])

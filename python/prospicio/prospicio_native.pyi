@@ -9663,13 +9663,15 @@ class Count:
         Count
         """
     @staticmethod
-    def fixed(n: int) -> Count:
+    def fixed(n: float) -> Count:
         """
         A fixed count, ``N = n``, ``aggregate``'s ``fixed``.
         
         Parameters
         ----------
-        n : int
+        n : int or float
+            A whole number of claims; ``2.5`` is refused, as ``aggregate``
+            2.1.0 refuses a fractional fixed count.
         
         Returns
         -------
@@ -11164,8 +11166,10 @@ class Discrete:
     irregular support.
     
     Values may repeat and come in any order: equal values (to ``1e-12``) are
-    merged, zero probabilities dropped, and the probabilities rescaled to
-    sum to 1. Quantiles and TVaR follow ``aggregate`` exactly; ``tvar`` is
+    merged and zero probabilities dropped. The probabilities must sum to 1
+    within ``1e-5`` (``aggregate`` 2.1.0's rule for ``dsev``); pass
+    ``normalize=True`` to rescale weights or counts of any positive total.
+    Quantiles and TVaR follow ``aggregate`` exactly; ``tvar`` is
     the upper tail even when the values are a payoff, whose adverse tail is
     the low one.
     
@@ -11173,13 +11177,16 @@ class Discrete:
     ----------
     values : list of float
     probs : list of float
-        Non-negative, with a positive total.
+        Non-negative, summing to 1 within ``1e-5``.
+    normalize : bool, default False
+        Divide ``probs`` by their sum first.
     
     Raises
     ------
     ValueError
         If the lengths differ, a value is not finite, a probability is
-        negative or none is positive.
+        negative or none is positive, or (without ``normalize``) the
+        probabilities sum to more than ``1e-5`` away from 1.
     
     Examples
     --------
@@ -11192,7 +11199,7 @@ class Discrete:
     5.242424
     """
     def __len__(self, /) -> int: ...
-    def __new__(cls, /, values: Sequence[float], probs: Sequence[float]) -> Discrete: ...
+    def __new__(cls, /, values: Sequence[float], probs: Sequence[float], normalize: bool = False) -> Discrete: ...
     def __repr__(self, /) -> str: ...
     def cdf(self, /, x: float) -> float:
         """
