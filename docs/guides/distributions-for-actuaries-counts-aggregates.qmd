@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 This is the R twin of the Python guide
 [`distributions-for-actuaries-counts-aggregates.md`](distributions-for-actuaries-counts-aggregates.md).
 It recomputes the worked examples and problem answers of chapters 3 and 4 and
@@ -156,6 +158,24 @@ P3.12  pmf   book  [0.9070, 0.0864, 0.0062, 0.0004]
 P3.13  Var, Poisson 0.75                 book       0.7500   prospicio       0.7500
        Var, two-point mixture            book       0.8175   prospicio       0.8175
        Var, exponential mixture          book       1.3125   prospicio       1.3125
+```
+
+The mixed count has more zeros and a longer tail than the Poisson with the same
+mean:
+
+```{r}
+#| label: mixed-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+mixed_pmf <- data.frame(n = 0:5, p = mixed)
+ggplot() +
+  geom_col(aes(n, p, fill = "Poisson, mean 0.51"),
+           data = data.frame(n = 0:5, p = pmf(poisson_count(m), 0:5))) +
+  geom_line(aes(n, p, colour = "mixed Poisson, Ex 3.4"), data = mixed_pmf) +
+  geom_point(aes(n, p, colour = "mixed Poisson, Ex 3.4"), data = mixed_pmf) +
+  scale_fill_manual(values = c("Poisson, mean 0.51" = "grey75")) +
+  labs(x = "number of claims N", y = "probability", fill = NULL, colour = NULL,
+       title = "Ex 3.4: the mixture against the Poisson with the same mean") +
+  theme(legend.position = "top")
 ```
 
 ## 4. The negative binomial and contagion
@@ -318,6 +338,33 @@ P4.13: mean 6,000, sd 5,196, skewness 1.5877
   shifted gamma  book  [0.0263, 0.3362, 0.7782, 0.9356, 0.9953] 
                  ours  [0.0263, 0.3362, 0.7782, 0.9356, 0.9953] 
   shifted lognormal    [0.0586, 0.3139, 0.7790, 0.9402, 0.9951] 
+```
+
+The curves show the same for Tables 4.3 and 4.4. The normal leaves the exact
+curve at both ends. The shifted gamma stays on it except near zero:
+
+```{r}
+#| label: approximations-figure
+curves <- do.call(rbind, lapply(cases[1:2], function(cs) {
+  freq <- poisson_count(cs[[3]]); sev <- gamma_distribution(cs[[4]], cs[[5]])
+  mo <- compound_moments(freq, sev)
+  xs <- (mo[["mean"]] + 4.5 * sqrt(mo[["variance"]])) * (0:40) / 40
+  approx <- function(kind) sapply(xs, function(s) approximation_cdf(moment_approximation(freq, sev, kind), s))
+  data.frame(case = sprintf("%s: skewness %.1f", cs[[1]], mo[["skew"]]),
+             s = rep(xs, 3), cdf = c(sapply(xs, poisson_gamma_cdf, lam = cs[[3]], shape = cs[[4]],
+                                            scale = cs[[5]], terms = 60),
+                                     approx("normal"), approx("shifted_gamma")),
+             curve = rep(c("exact", "normal", "shifted gamma"), each = length(xs)))
+}))
+curves$curve <- factor(curves$curve, levels = c("exact", "normal", "shifted gamma"))
+ggplot(curves, aes(s, cdf, colour = curve, linewidth = curve)) +
+  geom_line() +
+  facet_wrap(~case, scales = "free_x") +
+  scale_colour_manual(values = c(exact = "grey75", normal = "#F8766D", "shifted gamma" = "#00BFC4")) +
+  scale_linewidth_manual(values = c(exact = 2.5, normal = 0.7, "shifted gamma" = 0.7)) +
+  labs(x = "total claims s", y = "F(s)", colour = NULL, linewidth = NULL,
+       title = "Tables 4.3 and 4.4: the exact distribution and two approximations") +
+  theme(legend.position = "top")
 ```
 
 ## 7. Recursion and Fourier inversion

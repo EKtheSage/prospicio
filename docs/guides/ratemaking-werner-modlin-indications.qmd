@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 This guide is the second part of the Werner and Modlin series. The first part,
 [`ratemaking-werner-modlin.qmd`](ratemaking-werner-modlin.qmd), shows the
 steps of *Basic Ratemaking* (5th edition, CAS, 2016) one at a time. These
@@ -289,6 +291,25 @@ cat(sprintf("total %s (book 30,343,206)  pure premium %.2f (book 469.88)\n",
 total 30,343,206 (book 30,343,206)  pure premium 469.88 (book 469.88)
 ```
 
+The table sets the five years side by side:
+
+```{r}
+#| label: appendix-b-table
+library(gt)
+ex_b <- data.frame(
+  year = as.character(2011:2015),
+  exposures = c(12760, 12766, 12805, 12834, 13411),
+  losses = b$by_year$projected_losses,
+  pure_premium = b$by_year$pure_premium
+)
+gt(ex_b, rowname_col = "year") |>
+  tab_header("Appendix B: homeowners non-catastrophe pure premium by year",
+             "Projected losses in dollars, pure premium in dollars per exposure") |>
+  cols_label(pure_premium = "pure premium") |>
+  fmt_integer(columns = c(exposures, losses)) |>
+  fmt_number(columns = pure_premium, decimals = 2)
+```
+
 The credibility is 683 claims against 1,082. The book rounds it to 79.5%
 before it weights with the regional pure premium of $585.75. The reinsurance
 cost is the projected net cost of $214,575 divided by the projected exposures.
@@ -362,6 +383,23 @@ cat(sprintf("totals %s (book 95,726,878) and %s (book 103,860,568): %.2f%% (book
 2013  premium  19,311,689 (book 19,311,689)  losses  25,304,794 (book 25,304,794)  ratio 131.0% (book 131.0%)
 2014  premium  22,632,277 (book 22,632,277)  losses  29,749,511 (book 29,749,511)  ratio 131.4% (book 131.4%)
 totals 95,726,878 (book 95,726,878) and 103,860,568 (book 103,860,568): 108.50% (book 108.5%)
+```
+
+The five years differ much. The total is 108.5%. The ratio of 2012 is 51.7%,
+far below it, and those of 2013 and 2014 are above 130%.
+
+```{r}
+#| label: appendix-c-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+fig_c <- data.frame(year = factor(2010:2014), ratio = 100 * cc$by_year$loss_ratio)
+ggplot(fig_c, aes(year, ratio)) +
+  geom_col(aes(fill = "loss and ALAE ratio by year")) +
+  geom_hline(aes(yintercept = 100 * cc$loss_ratio, linetype = "total, all five years"),
+             colour = "grey50") +
+  labs(x = "accident year", y = "projected loss and ALAE ratio (%)", fill = NULL, linetype = NULL,
+       title = "Appendix C: projected loss ratio by year") +
+  coord_cartesian(ylim = c(0, 160)) +
+  theme(legend.position = "top")
 ```
 
 All expenses are variable here: general 6.4%, other acquisition 2.6%, taxes,
@@ -449,6 +487,26 @@ LAS(100K) 77,046 (book 77,046)  LAS(250K) 122,696 (book 122,696)  ILF 1.59 (book
 censored: layers 77,046 + 44,575 + 15,213 (book 77,046 + 44,575 + 15,213)
   LAS(250K) 121,621 (book 121,621)  LAS(500K) 136,834 (book 136,834)  unrounded 121,620.5 and 136,833.0
 LER(250) 0.135 (book 0.135)
+```
+
+The figure shows the ILF by limit against the basic limit of 100K. The
+censored method gives a slightly lower factor at 250K and 500K.
+
+```{r}
+#| label: ilf-figure
+limits <- c(100, 250, 500, 1000)
+fig_ilf <- rbind(
+  data.frame(limit = limits, ilf = sapply(limits, function(m) ilf(table, 1e3 * m, 100e3)),
+             method = "uncensored table (Table 11.3)"),
+  data.frame(limit = limits[1:3], ilf = layers$las / layers$las[1],
+             method = "censored method (Table 11.6)")
+)
+ggplot(fig_ilf, aes(limit, ilf, colour = method)) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 2) +
+  labs(x = "policy limit (thousands of dollars)", y = "increased limit factor", colour = NULL,
+       title = "Increased limit factors, basic limit 100K") +
+  theme(legend.position = "top")
 ```
 
 The censored method builds each layer only from policies whose limit is at

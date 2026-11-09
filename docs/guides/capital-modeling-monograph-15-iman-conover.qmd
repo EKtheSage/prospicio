@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 CAS Monograph 15 is *Introduction to Capital Modeling and Portfolio
 Management* (John Major and Stephen Mildenhall, 2026). Its chapter 8 covers
 four advanced topics: parameter uncertainty, the Iman-Conover method to
@@ -247,6 +249,33 @@ GL-Property          0.752   0.773   0.791        0.778   0.787   0.795
 Gaussian Spearman (6/pi) asin(r/2): -0.288 0.000 0.786 
 ```
 
+```{r}
+#| label: figure-achieved
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+ranges <- do.call(rbind, lapply(1:3, function(k) {
+  do.call(rbind, lapply(1:2, function(kind) {
+    v <- runs[, k, kind]
+    data.frame(pair = NAMES[k], kind = c("Pearson", "Spearman")[kind], mean = mean(v),
+               lo = quantile(v, 0.05), hi = quantile(v, 0.95))
+  }))
+}))
+ranges$pair <- factor(ranges$pair, levels = rev(NAMES))
+targets <- data.frame(pair = factor(NAMES, levels = rev(NAMES)),
+                      target = sapply(PAIRS, function(p) TARGET[p[1], p[2]]))
+targets$spearman <- 6 / pi * asin(targets$target / 2)
+ggplot(ranges, aes(y = pair)) +
+  geom_point(aes(x = target, shape = "target (Pearson)"), data = targets, colour = "grey75", size = 5) +
+  geom_point(aes(x = spearman, shape = "Gaussian Spearman of the target"), data = targets,
+             colour = "grey40", size = 5) +
+  geom_linerange(aes(xmin = lo, xmax = hi, colour = kind), position = position_dodge(width = 0.4),
+                 linewidth = 1) +
+  geom_point(aes(x = mean, colour = kind), position = position_dodge(width = 0.4)) +
+  scale_shape_manual(values = c("target (Pearson)" = 124, "Gaussian Spearman of the target" = 124)) +
+  labs(x = "achieved correlation (mean and 90% range of 100 samples)", y = NULL,
+       colour = NULL, shape = NULL, title = "Achieved against target correlation") +
+  theme(legend.position = "top")
+```
+
 Every value of Table 8.3 is inside these 90% ranges. So the monograph's sample
 and the prospicio sample agree as far as a sample of 1,000 can show. Two
 results are not sampling error:
@@ -436,6 +465,18 @@ for (name in names(spread)) {
 ```text
 Iman-Conover   GL-Property Spearman: mean 0.787, sd 0.0052
 normal copula  GL-Property Spearman: mean 0.787, sd 0.0142
+```
+
+```{r}
+#| label: figure-copula
+ggplot(data.frame(rho = unlist(spread), method = rep(names(spread), each = 100)),
+       aes(rho, fill = method)) +
+  geom_histogram(breaks = seq(0.74, 0.83, length.out = 29), alpha = 0.6, position = "identity") +
+  geom_vline(xintercept = 6 / pi * asin(0.4), colour = "grey75", linewidth = 1) +
+  labs(x = "GL-Property Spearman correlation of one sample (grey line: 0.786)",
+       y = "samples out of 100", fill = NULL,
+       title = "Iman-Conover varies less than the normal copula") +
+  theme(legend.position = "top")
 ```
 
 Both methods centre on the Gaussian rank correlation of about 0.786. The
@@ -652,6 +693,25 @@ for (l in layers(insco, wang)) {
   65  35  0.1  0.174  0.089  0.012  0.015  0.047    0.132  0.165  0.529
 ```
 
+```{r}
+#| label: table-layers
+library(gt)
+wang_layers <- do.call(rbind, lapply(layers(insco, wang), function(l) {
+  data.frame(layer = sprintf("%.0f to %.0f", l$x, l$x + l$dx), S = l$S, gS = l$g,
+             iota = l$iota, mA = l$margin[1], mB = l$margin[2], mC = l$margin[3],
+             qA = l$capital[1], qB = l$capital[2], qC = l$capital[3])
+}))
+gt(wang_layers, rowname_col = "layer") |>
+  tab_header(title = "Table 8.10: InsCo's layers under the Wang distortion",
+             subtitle = "Margin and capital per unit of layer width; the bottom layer has no iota") |>
+  tab_spanner("margin", c(mA, mB, mC)) |>
+  tab_spanner("capital", c(qA, qB, qC)) |>
+  cols_label(gS = "g(S)", mA = "A", mB = "B", mC = "C", qA = "A", qB = "B", qC = "C") |>
+  fmt_number(S, decimals = 1) |>
+  fmt_number(c(gS, iota, mA, mB, mC, qA, qB, qC), decimals = 3) |>
+  sub_missing(missing_text = "-")
+```
+
 These values are Table 8.10 (with `g(S)` from Table 8.9), per unit of layer
 width, and agree with it to the printed digits. The code keeps `alpha S` and
 `beta g(S)`, the columns of Tables 8.8 and 8.9, for section 10. Losses in
@@ -760,6 +820,18 @@ cat("natural CCoC    ", sprintf("%.3f", natural), sprintf("%.3f", sum(natural)),
 ```text
 Bodoff with CCoC 14.803 19.794 18.968 53.565 
 natural CCoC     13.739 18.522 21.304 53.565 
+```
+
+```{r}
+#| label: figure-bodoff
+premiums <- data.frame(unit = rep(c("A", "B", "C"), 2),
+                       method = rep(c("Bodoff with CCoC", "natural CCoC"), each = 3),
+                       premium = c(bodoff_premium, natural))
+ggplot(premiums, aes(unit, premium, fill = method)) +
+  geom_col(position = "dodge") +
+  labs(x = "unit", y = "premium (assets of 100)", fill = NULL,
+       title = "Premium by unit: the same total of 53.565") +
+  theme(legend.position = "top")
 ```
 
 The totals are the same 53.565, but the splits differ. Bodoff's shares are the

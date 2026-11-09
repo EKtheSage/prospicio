@@ -1,5 +1,7 @@
 # Property catastrophe 3: writing Larkspur's contracts in code
 
+<!-- site: execute -->
+
 A catastrophe treaty is a function. It takes a year of event losses of the
 cedent and returns what the reinsurer pays. The contract terms set the shape of
 that function. They set how the pieces of one storm add up, where each loss
@@ -226,6 +228,30 @@ must be in time order, because the last occurrences get only the remainder of
 the limit. The years of the book are in time order: the file lists the pieces
 of each year by `slot`, which is chronological.
 
+The figure shows the same year. The first bar of each event is what the layer
+pays at 100%. The second bar is the annual limit that is left after that event.
+The first loss is below the attachment point, so the layer pays nothing. The
+last loss gets only the 6 that remain of the limit.
+
+```python
+import matplotlib.pyplot as plt
+
+paid = [r / line for r in cat_1.ceded_by_event(year)]
+remaining, left = [], cat_1.aggregate_limit
+for p in paid:
+    left -= p
+    remaining.append(max(left, 0.0))
+x = range(len(year))
+fig, ax = plt.subplots()
+ax.bar([i - 0.2 for i in x], paid, width=0.4, label="paid by the layer (100%)")
+ax.bar([i + 0.2 for i in x], remaining, width=0.4, label="annual limit left")
+ax.set_xticks(list(x), [f"loss {v:.0f}" for v in year])
+ax.set_xlabel("occurrence, in time order")
+ax.set_ylabel("amount at 100% (millions)")
+ax.set_title("alder_cat_1, 40 xs 30: the annual limit runs out")
+ax.legend()
+```
+
 ## 4. Corran's quota share: an event limit and an annual limit
 
 A plain quota share cedes a fixed share of every loss. A cat quota share
@@ -362,6 +388,37 @@ alder_cat_2  expected loss  0.4163  premium  1.000  loss ratio 0.416
 bracken_cat  expected loss  0.6847  premium  1.750  loss ratio 0.391
 bracken_agg  expected loss  0.1621  premium  0.450  loss ratio 0.360
 corran_qs    expected loss  1.2025  premium  3.000  loss ratio 0.401
+```
+
+The table and the figure show the five contracts side by side.
+
+```python
+import pandas as pd
+from great_tables import GT
+
+rows = []
+for name, c in CONTRACTS.items():
+    layer = LAYERS[name]
+    rows.append({"contract": name, "expected loss": ceded_mean(layer, subject(c)), "premium": layer.premium})
+contracts = pd.DataFrame(rows)
+contracts["loss ratio"] = contracts["expected loss"] / contracts["premium"]
+(GT(contracts, rowname_col="contract")
+ .tab_header("Larkspur's five contracts on the 2,000 simulated years",
+             "Amounts in millions, on Larkspur's line, before reinstatement premium and commissions")
+ .fmt_number(["expected loss", "premium"], decimals=3)
+ .fmt_number("loss ratio", decimals=3))
+```
+
+```python
+fig, ax = plt.subplots()
+y = range(len(contracts))
+ax.barh([i + 0.2 for i in y], contracts["premium"], height=0.4, color="0.75", label="premium")
+ax.barh([i - 0.2 for i in y], contracts["expected loss"], height=0.4, label="expected loss")
+ax.set_yticks(list(y), contracts["contract"])
+ax.invert_yaxis()
+ax.set_xlabel("millions, on Larkspur's line")
+ax.set_title("Expected loss against premium, by contract")
+ax.legend()
 ```
 
 ## 7. The contract year

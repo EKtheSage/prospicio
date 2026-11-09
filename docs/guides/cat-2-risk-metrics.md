@@ -1,5 +1,7 @@
 # Property catastrophe 2: how bad can Alder's year get?
 
+<!-- site: execute -->
+
 Page 1 changed the files of Larkspur Re into simulated years. Before Larkspur
 quotes the layers of Alder Mutual, its underwriter wants to know about the bad
 years of Alder:
@@ -205,6 +207,25 @@ x    70: AEP 0.0535  OEP 0.0345  OEP return period  29.0 years
 x   110: AEP 0.0235  OEP 0.0190  OEP return period  52.6 years
 ```
 
+The three points above are on a curve. The figure draws the two curves for the
+whole range of amounts. The gap between them is the part of the tail that many
+events make, and one event does not.
+
+```python
+import matplotlib.pyplot as plt
+
+xs = np.linspace(5, 150, 60)
+totals_arr, maxima_arr = np.array(total.draws), np.array(largest.draws)
+fig, ax = plt.subplots()
+ax.plot(xs, [(totals_arr > x).mean() for x in xs], label="AEP (year total)")
+ax.plot(xs, [(maxima_arr > x).mean() for x in xs], label="OEP (largest event)")
+ax.set_yscale("log")
+ax.set_xlabel("loss x (millions of crowns)")
+ax.set_ylabel("probability of a loss above x in a year")
+ax.set_title("Alder: aggregate and occurrence exceedance, 2,000 years")
+ax.legend()
+```
+
 ## 5. Does the simulation agree with the event table?
 
 The event loss table (ELT) of Alder gives each catalog event a rate and a loss
@@ -268,6 +289,26 @@ ELT 100-year occurrence loss: 147.94
 occurrences 4238, joining two or more catalog events 87, of which above 30: 9
 ```
 
+The next figure shows the same check for all amounts. Up to about 90, the grey
+line of the raw maxima is below the ELT line, and the grouped line follows the
+ELT line. Above 90, both simulated lines are above the ELT line, and only a few
+years lie behind each point (about 40 years at 110). This is the effect of the
+joined occurrences in section 5, and of sampling error.
+
+```python
+xs = np.linspace(20, 130, 45)
+grouped_arr = np.array(largest_grouped.draws)
+fig, ax = plt.subplots()
+ax.plot(xs, [(maxima_arr > x).mean() for x in xs], color="0.75", label="simulated, raw maxima")
+ax.plot(xs, [(grouped_arr > x).mean() for x in xs], label="simulated, grouped by 72 hours")
+ax.plot(xs, [elt.oep(float(x)) for x in xs], label="ELT, closed form")
+ax.set_yscale("log")
+ax.set_xlabel("loss x (millions of crowns)")
+ax.set_ylabel("OEP(x)")
+ax.set_title("Alder: occurrence exceedance from the years and from the ELT")
+ax.legend()
+```
+
 At 30 and 70, the grouped shares are well within one standard error of the ELT.
 At 110, the difference of 0.0035 is a little more than one standard error. The
 nine joined occurrences above 30 move the share in the same direction. Both
@@ -294,6 +335,22 @@ for rp in (10, 50, 100, 250):
  50    125.246    120.464       103.432
 100    176.824    163.418       147.938
 250    232.741    223.450       199.470
+```
+
+```python
+import pandas as pd
+from great_tables import GT
+
+rps = [10, 50, 100, 250]
+pml = pd.DataFrame({
+    "return period": rps,
+    "AEP loss": [Sampled(total.draws).var(1 - 1 / rp) for rp in rps],
+    "OEP loss": [Sampled(largest_grouped.draws).var(1 - 1 / rp) for rp in rps],
+    "ELT OEP loss": [elt.occurrence_pml(1 / rp) for rp in rps],
+})
+(GT(pml, rowname_col="return period")
+ .tab_header("Alder: loss at a return period", "Millions of crowns; simulated losses use the inverted-cdf rule")
+ .fmt_number(["AEP loss", "OEP loss", "ELT OEP loss"], decimals=1))
 ```
 
 In the far tail, the simulated OEP losses are above the OEP losses of the ELT,

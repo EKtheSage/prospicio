@@ -1,5 +1,7 @@
 # Capital adequacy and the natural allocation: CAS Monograph 15, chapters 3 and 4
 
+<!-- site: execute -->
+
 CAS Monograph 15 is *Introduction to Capital Modeling and Portfolio
 Management* (John Major and Stephen Mildenhall, 2026). It builds its theory on
 one small company, InsCo, and prints every step as a table. This guide follows
@@ -330,6 +332,26 @@ print(f"{'':12s} total {layer_loss:13.3f} {layer_premium:8.3f}   (book 46.6, 53.
              total        46.600   53.565   (book 46.6, 53.565)
 ```
 
+The layer sum is easier to read as a picture. Each bar pair is one layer. The
+grey bar is its expected loss, and the other bar is its premium under CCoC:
+
+```python
+import matplotlib.pyplot as plt
+
+labels = [f"{xs[j]:.0f} to {xs[j + 1]:.0f}" for j in range(len(widths))]
+pos = range(len(widths))
+fig, ax = plt.subplots()
+ax.bar([i - 0.2 for i in pos], [s * w for s, w in zip(survival, widths)], width=0.4,
+       color="0.75", label="expected loss")
+ax.bar([i + 0.2 for i in pos], [ccoc.g(s) * w for s, w in zip(survival, widths)], width=0.4,
+       label="premium under CCoC 15%")
+ax.set_xticks(list(pos), labels)
+ax.set_xlabel("layer of the total loss (monograph units)")
+ax.set_ylabel("expected loss or premium (monograph units)")
+ax.set_title("Table 4.4: the premium exceeds the loss most in the top layer")
+ax.legend()
+```
+
 Under CCoC, every layer earns the same 15% on its capital. Thus this layer sum
 gives the premium of the pentagon. The top layer is 35 wide and the total
 reaches it one year in ten. It has 7.609 of premium for 3.5 of expected loss.
@@ -444,6 +466,25 @@ ph    rho     0.7205 (book 0.7205)  premium 53.565
 wang  lambda  0.3427 (book 0.3427)  premium 53.565
 dual  beta    1.5952 (book 1.5951)  premium 53.565
 tvar  p       0.2713 (book 0.2713)  premium 53.565
+```
+
+Each family is a function `g(s)` that lifts the survival probability `s`. The
+grey line is `g(s) = s`, which gives the expected loss with no margin. Each
+curve lies above it, so each one charges margin. The curves cross, because
+each family is calibrated to the same premium of 53.565 for the book:
+
+```python
+grid = [i / 100 for i in range(101)]
+panels = [("ccoc", "ph", "wang"), ("dual", "tvar")]
+fig, axes = plt.subplots(1, 2, sharey=True, figsize=(7.0, 3.6))
+for ax, group in zip(axes, panels):
+    ax.plot(grid, grid, color="0.75", label="no margin")
+    for f in group:
+        ax.plot(grid, [distortions[f].g(s) for s in grid], label=f)
+    ax.set_xlabel("survival probability s")
+    ax.legend()
+axes[0].set_ylabel("distorted probability g(s)")
+fig.suptitle("The five calibrated distortions (Table 4.5)", x=0.01, ha="left")
 ```
 
 All five charge the same 53.565 for the book. They differ in where they put
@@ -563,6 +604,26 @@ for u, unit, book in zip(UNITS, priced.allocated, BOOK_ISA):
 A    16   2.261  13.739  0.339  0.049  0.150   book (16, 2.261, 13.739, 0.339, 0.049)
 B    20   1.478  18.522  0.222  0.032  0.150   book (20, 1.478, 18.522, 0.222, 0.032)
 C    64  42.696  21.304  6.404  0.919  0.150   book (64, 42.696, 21.304, 6.404, 0.919)
+```
+
+Side by side, the two allocations show how the choice of distortion moves the
+premium between units:
+
+```python
+import pandas as pd
+from great_tables import GT
+
+compare = pd.DataFrame({
+    "unit": UNITS,
+    "expected loss": insco.expected(),
+    "CCoC": [u.premium for u in priced.allocated],
+    "Wang": [u.premium for u in wang.allocated],
+})
+(GT(compare, rowname_col="unit")
+ .tab_header("Premium by unit at a 15% return (monograph units)",
+             "Natural allocation under CCoC and under the Wang distortion")
+ .tab_spanner("premium", ["CCoC", "Wang"])
+ .fmt_number(["expected loss", "CCoC", "Wang"], decimals=2))
 ```
 
 Unit C takes 91.9% of the margin, against 85.0% under Wang. Under the industry

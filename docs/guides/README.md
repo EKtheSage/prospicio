@@ -221,6 +221,9 @@ prospicio).
   background; `docs/guides/site/figures.R` maps them to the R site's modes.
   Attach ggplot2 with `library(ggplot2, exclude = "layer")`: its `layer()`
   would mask prospicio's.
+- An executed R twin calls `library(prospicio)` itself. The site renders it
+  as an article on its own, with nothing attached; `test-guides.R` checks
+  the line.
 - Lay out a table with great_tables (`GT`) on a pandas DataFrame, or gt
   (`gt()`) on a data frame in R, with a title and the units.
 - Draw every figure from values the guide computes. CI runs the code under

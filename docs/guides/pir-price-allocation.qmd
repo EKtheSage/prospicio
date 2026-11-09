@@ -10,6 +10,8 @@ execute:
   warning: false
   output: false
 ---
+
+<!-- site: execute -->
 Part III of Stephen Mildenhall and John Major's *Pricing Insurance Risk: Theory
 and Practice* (Wiley, 2022), chapters 12 to 15, asks one question. An insurer
 prices its whole portfolio: how do you split that price over the units of the
@@ -301,6 +303,21 @@ premium [6.2048, 45.1838] 51.3887  (book 6.2048, 45.1838, 51.3887)
 The grouped table is Table 15.3 of the book (at a total of 10, the average of
 `X1` is 9.6667 and the average of `X2` is 0.3333). The premiums are those of
 Table 15.4 to four decimals.
+
+```{r}
+#| label: e258-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+kappas <- data.frame(
+  total = factor(sprintf("%.0f", rep(adjusted@totals, 2)), levels = sprintf("%.0f", adjusted@totals)),
+  unit = rep(c("X1", "X2"), each = length(adjusted@totals)),
+  kappa = c(portfolio_kappa(adjusted, "X1"), portfolio_kappa(adjusted, "X2"))
+)
+ggplot(kappas, aes(total, kappa, fill = unit)) +
+  geom_col() +
+  labs(x = "total loss of the portfolio", y = "average loss of the unit given the total", fill = NULL,
+       title = "Example 258: the units' average losses add up to each total") +
+  theme(legend.position = "top")
+```
 
 ### When totals tie: the natural allocation set
 
@@ -628,12 +645,50 @@ lifted natural        22.0749   8.6615   0.875  0.520   22.0749, 8.6615
 linear natural        18.4568  12.2796   1.046  0.367   18.4568, 12.2796
 ```
 
+```{r}
+#| label: summary-table
+library(gt)
+summary_table <- data.frame(
+  method = vapply(TABLE_1531, function(row) row[[1]], ""),
+  Hu = vapply(TABLE_1531, function(row) row[[2]][1], 0),
+  EQ = vapply(TABLE_1531, function(row) row[[2]][2], 0)
+)
+summary_table$LR_Hu <- el[1] / summary_table$Hu
+summary_table$LR_EQ <- el[2] / summary_table$EQ
+gt(summary_table, rowname_col = "method") |>
+  tab_header("Table 15.31: premium and loss ratio by unit and method",
+             "Premium in currency units; loss ratio on the limited loss") |>
+  tab_spanner("premium", columns = c(Hu, EQ)) |>
+  tab_spanner("loss ratio", columns = c(LR_Hu, LR_EQ)) |>
+  cols_label(LR_Hu = "LR Hu", LR_EQ = "LR EQ") |>
+  fmt_number(columns = c(Hu, EQ), decimals = 2) |>
+  fmt_number(columns = c(LR_Hu, LR_EQ), decimals = 3)
+```
+
 The loss ratios are on the limited loss, as in Table 15.31 of the book. The
 expected value, covariance and PLC premiums give almost the same loss ratio to
 the two perils. The lifted allocation charges the rarer, more volatile
 earthquake a loss ratio of 0.52. The cap misleads the linear allocation. The
 book concludes that no single answer is correct, and it prefers the lifted
 allocation.
+
+```{r}
+#| label: summary-figure
+methods <- vapply(TABLE_1531, function(row) row[[1]], "")
+by_method <- data.frame(
+  method = factor(rep(methods, 4), levels = methods),
+  unit = rep(rep(c("Hu", "EQ"), each = length(methods)), 2),
+  measure = rep(c("premium", "loss ratio on the limited loss"), each = 2 * length(methods)),
+  value = c(summary_table$Hu, summary_table$EQ, summary_table$LR_Hu, summary_table$LR_EQ)
+)
+by_method$unit <- factor(by_method$unit, levels = c("Hu", "EQ"))
+by_method$measure <- factor(by_method$measure, levels = c("premium", "loss ratio on the limited loss"))
+ggplot(by_method, aes(method, value, fill = unit)) +
+  geom_col(position = "dodge") +
+  facet_wrap(~ measure, scales = "free_y") +
+  labs(x = NULL, y = NULL, fill = NULL, title = "Table 15.31: premium and loss ratio by unit and method") +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1), legend.position = "top")
+```
 
 ## 7. Pricing bounds, and stand-alone against diversified
 

@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 Part I of Stephen Mildenhall and John Major's *Pricing Insurance Risk: Theory
 and Practice* (Wiley, 2022) is chapters 3 to 7. It measures risk before it
 prices risk, and it covers four topics:
@@ -211,6 +213,31 @@ mu = 19.005 reproduces the table's severity column (a median of 179 million).
 Thus the table is correct and the printed mu is not. Build the severity from
 its mean and sigma.
 
+The figure shows the table's main columns. The aggregate VaR and the occurrence
+PML move together as the return period grows:
+
+```{r}
+#| label: fig-pml
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+years <- as.numeric(rownames(BOOK_43))
+probs <- 1 - 1 / years
+pml <- rbind(
+  data.frame(years, loss = quantile(hurricane, probs), series = "severity VaR"),
+  data.frame(years, loss = sapply(years, function(y) occurrence_pml(poisson_count(RATE), hurricane, 1 / y)$loss),
+             series = "occurrence PML"),
+  data.frame(years, loss = quantile(annual, probs), series = "aggregate VaR")
+)
+pml$series <- factor(pml$series, levels = c("severity VaR", "occurrence PML", "aggregate VaR"))
+ggplot(pml, aes(years, loss, colour = series, group = series)) +
+  geom_line() +
+  geom_point() +
+  scale_colour_manual(values = c("grey75", scales::hue_pal()(2))) +
+  scale_x_log10() + scale_y_log10() +
+  labs(x = "return period (years)", y = "loss (USD millions)", colour = NULL,
+       title = "Example 54: hurricane losses by return period") +
+  theme(legend.position = "top")
+```
+
 The occurrence PML is always below the aggregate VaR. At long return periods
 the two are close, because a bad hurricane year is one bad hurricane. For the
 same reason, the quick estimate from the severity alone is good in the tail and
@@ -255,6 +282,23 @@ p 0.9  : 2 VaR(X1)  4.605  VaR(X1 + X2)  3.890  difference   0.7155  (book 0.715
 p 0.95 : 2 VaR(X1)  5.991  VaR(X1 + X2)  4.744  difference   1.2476  (book 1.248)
 p 0.99 : 2 VaR(X1)  9.210  VaR(X1 + X2)  6.638  difference   2.5720  (book 2.572)
 p 0.999: 2 VaR(X1) 13.816  VaR(X1 + X2)  9.233  difference   4.5821  (book 4.582)
+```
+
+The figure shows the gap. The line for twice the exponential VaR crosses the
+line for the gamma VaR near p = 0.7:
+
+```{r}
+#| label: fig-subadditive
+grid <- seq(0.5, 0.999, length.out = 60)
+gap <- rbind(
+  data.frame(p = grid, var = 2 * quantile(one, grid), series = "2 VaR(X1)"),
+  data.frame(p = grid, var = quantile(two, grid), series = "VaR(X1 + X2)")
+)
+ggplot(gap, aes(p, var, colour = series)) +
+  geom_line() +
+  labs(x = "probability level p", y = "VaR", colour = NULL,
+       title = "Table 4.4: VaR of a sum against the sum of VaRs") +
+  theme(legend.position = "top")
 ```
 
 The differences agree with Table 4.4 to the four significant figures that it
@@ -761,6 +805,28 @@ cat(sprintf("drop in slope at s = 1/4, times 1/4: %.4f  (book 1/12, the weight o
 g at 0.01, 1/4, 1/2, 1: [0.1, 0.5, 0.6667, 1]
 slope at s = 1, the weight on the mean: 0.6667  (book 2/3)
 drop in slope at s = 1/4, times 1/4: 0.0833  (book 1/12, the weight on TVaR 0.75)
+```
+
+The figure shows the three functions. The minimum follows the PH below
+s = 1/4 and the CCoC above it:
+
+```{r}
+#| label: fig-distortions
+ccoc <- distortion("ccoc", 0.5)
+sgrid <- seq(0, 1, length.out = 201)
+curves <- rbind(
+  data.frame(s = sgrid, g = sgrid, curve = "no distortion, g(s) = s"),
+  data.frame(s = sgrid, g = distortion_g(ph, sgrid), curve = "PH, rho 0.5"),
+  data.frame(s = sgrid, g = distortion_g(ccoc, sgrid), curve = "CCoC, 50%"),
+  data.frame(s = sgrid, g = g(sgrid), curve = "minimum of the two")
+)
+curves$curve <- factor(curves$curve, levels = unique(curves$curve))
+ggplot(curves, aes(s, g, colour = curve)) +
+  geom_line() +
+  scale_colour_manual(values = c("grey75", scales::hue_pal()(3))) +
+  labs(x = "survival probability s", y = "distorted probability g(s)", colour = NULL,
+       title = "Example 176: the minimum of two distortions") +
+  theme(legend.position = "top")
 ```
 
 `distortion("ccoc", r)` takes the cost of capital r, so

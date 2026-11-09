@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 Mark Goldburd, Anand Khare, Dan Tevet and Dmitriy Guller wrote *Generalized
 Linear Models for Insurance Rating* (CAS Monograph 5, second edition, 2025
 revision). It is the CAS text on how to build a classification rating plan
@@ -217,6 +219,29 @@ and +0.41. With 155 claims, the fit estimates none of the three sharply. The
 monograph makes a related point: a GLM gives the data full credibility and
 reports the uncertainty only in the standard errors (section 2.10).
 
+The figure shows the fit against the base A. Each point is a log relativity
+with its 95% interval. The diamond is the true value:
+
+```{r}
+#| label: region-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+fit_a <- glm_fit(claims ~ age + region + offset(log(exposure)), with_base("A"), family = "poisson")
+region_fit <- data.frame(region = paste("region", c("B", "C", "D")),
+                         estimate = fit_a@coefficients[-(1:2)],
+                         half = 1.96 * fit_a@std_errors[-(1:2)],
+                         truth = log(true_r[c("B", "C", "D")]))
+ggplot(region_fit, aes(region)) +
+  geom_hline(yintercept = 0, colour = "grey75") +
+  geom_pointrange(aes(y = estimate, ymin = estimate - half, ymax = estimate + half,
+                      colour = "estimate with 95% interval"),
+                  position = position_nudge(x = -0.06)) +
+  geom_point(aes(y = truth, colour = "true value"), shape = 18, size = 3,
+             position = position_nudge(x = 0.06)) +
+  labs(x = NULL, y = "log relativity against region A", colour = NULL,
+       title = "Region relativities: every interval covers the truth and zero") +
+  theme(legend.position = "top")
+```
+
 ## 3. Offsets and weights (sections 2.5 and 2.6)
 
 An offset is a predictor with a coefficient fixed at 1. It is a part of the
@@ -325,7 +350,23 @@ inverse_gaussian AIC   8196.7, skewness of deviance residuals +0.05
 
 The gamma leaves right-skewed residuals. The inverse Gaussian gives nearly
 symmetric residuals and the lower AIC. This is the pattern of Figures 16 and 17
-in the monograph. A severity row that averages several claims carries the claim
+in the monograph. The histograms show the two sets of residuals on one scale:
+
+```{r}
+#| label: residual-figure
+residual_sets <- do.call(rbind, lapply(c("gamma", "inverse_gaussian"), function(family) {
+  fit <- glm_fit(ig ~ age + region, d, family = family, link = "log")
+  r <- residuals(fit, type = "deviance")
+  data.frame(family = sprintf("%s: skewness %+.2f", family, skewness(r)),
+             residual = r / sqrt(mean(r^2)))
+}))
+ggplot(residual_sets, aes(residual)) +
+  geom_histogram(bins = 30) +
+  facet_wrap(~family) +
+  labs(x = "deviance residual (sd units)", y = "policies")
+```
+
+A severity row that averages several claims carries the claim
 count as its weight (section 2.5). The `avg_sev` column averages `n_sev` claims.
 Its true region factors are 1.2, 0.8 and 1.5. A weighted gamma fit recovers
 them:
@@ -386,6 +427,18 @@ p 1.5: log-likelihood   -1433.4 at phi    89.9
 p 1.6: log-likelihood   -1452.3 at phi    61.1
 p 1.7: log-likelihood   -1479.2 at phi    44.2
 estimated p 1.314 (95% interval 1.264 to 1.371), phi 200.1
+```
+
+The table lists the profile:
+
+```{r}
+#| label: profile-table
+library(gt)
+gt(data.frame(p = prof$power, loglik = prof$log_likelihood, phi = prof$dispersion), rowname_col = "p") |>
+  tab_header("Tweedie profile likelihood by power",
+             "Pure premium on age and region, exposure as weight") |>
+  cols_label(loglik = "log-likelihood", phi = "dispersion phi") |>
+  fmt_number(columns = c(loglik, phi), decimals = 1)
 ```
 
 The profile peaks near the true value of 4/3, which lies inside the interval of

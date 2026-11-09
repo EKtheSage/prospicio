@@ -1,5 +1,7 @@
 # Property catastrophe 4: stacked covers, and who keeps what
 
+<!-- site: execute -->
+
 A cedent seldom buys one layer. It buys a program: several layers on the same
 losses, sometimes behind a quota share, sometimes with a peril excluded. A
 reinsurer seldom writes all of a layer. It signs a line, a share of each
@@ -181,6 +183,24 @@ sum of the two            34.841
 TVaR 99 of the program    33.983
 ```
 
+The same numbers as a table:
+
+```python
+import pandas as pd
+from great_tables import GT
+
+additivity = pd.DataFrame({
+    "measure": ["alder_cat_1", "alder_cat_2", "sum of the two", "the program"],
+    "mean": [c1.mean(), c2.mean(), c1.mean() + c2.mean(), both.mean()],
+    "tvar_99": [c1.tvar(0.99), c2.tvar(0.99), c1.tvar(0.99) + c2.tvar(0.99), both.tvar(0.99)],
+})
+(GT(additivity, rowname_col="measure")
+ .tab_header("Larkspur's ceded loss: the mean adds, the TVaR does not",
+             "Millions a year, 2,000 simulated years")
+ .cols_label(mean="mean", tvar_99="TVaR 99%")
+ .fmt_number(["mean", "tvar_99"], decimals=3))
+```
+
 The gap, 0.858, is a small diversification credit inside the program of one
 cedent. Across cedents and perils it is much larger. Page 7
 ([`cat-7-portfolio.md`](cat-7-portfolio.md)) measures it on the whole book.
@@ -351,6 +371,25 @@ EQ  gross   2.4733   ceded  0.2800
 FL  gross   3.0416   ceded  0.0759
 CS  gross   1.3489   ceded  0.0000
 ceded, all perils: 1.2385
+```
+
+The figure shows the same split:
+
+```python
+import matplotlib.pyplot as plt
+
+perils = ["WS", "EQ", "FL", "CS"]
+xs = range(len(perils))
+fig, ax = plt.subplots()
+ax.bar([x - 0.2 for x in xs], [by_peril.marginal(["gross", p]).mean() for p in perils],
+       width=0.4, color="0.75", label="gross")
+ax.bar([x + 0.2 for x in xs], [by_peril.marginal(["ceded", p]).mean() for p in perils],
+       width=0.4, label="ceded to Larkspur")
+ax.set_xticks(list(xs), perils)
+ax.set_xlabel("peril (WS windstorm, EQ earthquake, FL flood, CS convective storm)")
+ax.set_ylabel("mean loss a year (millions)")
+ax.set_title("Alder's program by peril: gross and ceded loss")
+ax.legend()
 ```
 
 Windstorm drives the program. No convective storm occurrence of Alder reaches

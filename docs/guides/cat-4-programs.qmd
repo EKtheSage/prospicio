@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 A cedent seldom buys one layer. It buys a program: several layers on the same
 losses, sometimes behind a quota share, sometimes with a peril excluded. A
 reinsurer seldom writes all of a layer. It signs a line, a share of each
@@ -46,6 +48,10 @@ from a row of the contracts file. `subject()` applies the peril scope and the
 hours clause of the contract. `ceded_of()` reads the ceded loss of one layer
 from the result of a tower. (prospicio already uses the name `ceded` for a
 function on the losses of one year.)
+
+```{r}
+library(prospicio)
+```
 
 ```{r}
 # The data files, found from the repository root (CI) or from docs/guides (Quarto).
@@ -195,6 +201,23 @@ TVaR 99 alder_cat_1       13.843
 TVaR 99 alder_cat_2       20.998
 sum of the two            34.841
 TVaR 99 of the program    33.983
+```
+
+The same numbers as a table:
+
+```{r}
+#| label: additivity-table
+library(gt)
+additivity <- data.frame(
+  measure = c("alder_cat_1", "alder_cat_2", "sum of the two", "the program"),
+  mean = c(mean(c1), mean(c2), mean(c1) + mean(c2), mean(both)),
+  tvar_99 = c(TVaR(c1, 0.99), TVaR(c2, 0.99), TVaR(c1, 0.99) + TVaR(c2, 0.99), TVaR(both, 0.99))
+)
+gt(additivity, rowname_col = "measure") |>
+  tab_header("Larkspur's ceded loss: the mean adds, the TVaR does not",
+             "Millions a year, 2,000 simulated years") |>
+  cols_label(mean = "mean", tvar_99 = "TVaR 99%") |>
+  fmt_number(columns = c(mean, tvar_99), decimals = 3)
 ```
 
 The gap, 0.858, is a small diversification credit inside the program of one
@@ -378,6 +401,28 @@ EQ  gross   2.4733   ceded  0.2800
 FL  gross   3.0416   ceded  0.0759
 CS  gross   1.3489   ceded  0.0000
 ceded, all perils: 1.2385
+```
+
+The figure shows the same split:
+
+```{r}
+#| label: peril-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+perils <- c("WS", "EQ", "FL", "CS")
+split <- data.frame(
+  peril = factor(rep(perils, 2), levels = perils),
+  measure = factor(rep(c("gross", "ceded to Larkspur"), each = 4),
+                  levels = c("gross", "ceded to Larkspur")),
+  mean = c(vapply(perils, function(p) mean(marginal(by_peril, list(kind = "gross", peril = p))), numeric(1)),
+           vapply(perils, function(p) mean(marginal(by_peril, list(kind = "ceded", peril = p))), numeric(1)))
+)
+ggplot(split, aes(peril, mean, fill = measure)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  scale_fill_manual(values = c("gross" = "grey75", "ceded to Larkspur" = scales::hue_pal()(1))) +
+  labs(x = "peril (WS windstorm, EQ earthquake, FL flood, CS convective storm)",
+       y = "mean loss a year (millions)", fill = NULL,
+       title = "Alder's program by peril: gross and ceded loss") +
+  theme(legend.position = "top")
 ```
 
 Windstorm drives the program. No convective storm occurrence of Alder reaches

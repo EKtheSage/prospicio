@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 Page 1 changed the files of Larkspur Re into simulated years. Before Larkspur
 quotes the layers of Alder Mutual, its underwriter wants to know about the bad
 years of Alder:
@@ -38,6 +40,10 @@ helper as page 1. The helper keeps the time in the year of each loss, which the
 hours clause in section 5 needs. The tests run the guides from the repository
 root, and Quarto renders them from `docs/guides/`. So `find_data()` looks for
 `examples/data/` in the working directory and in its parent directories.
+
+```{r}
+library(prospicio)
+```
 
 ```{r}
 find_data <- function(name, dir = getwd()) {
@@ -221,6 +227,26 @@ x    70: AEP 0.0535  OEP 0.0345  OEP return period  29.0 years
 x   110: AEP 0.0235  OEP 0.0190  OEP return period  52.6 years
 ```
 
+The three points above are on a curve. The figure draws the two curves for the
+whole range of amounts. The gap between them is the part of the tail that many
+events make, and one event does not.
+
+```{r}
+#| label: aep-oep-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+xs <- seq(5, 150, length.out = 60)
+curves <- rbind(
+  data.frame(x = xs, p = sapply(xs, function(x) mean(total_loss > x)), curve = "AEP (year total)"),
+  data.frame(x = xs, p = sapply(xs, function(x) mean(largest > x)), curve = "OEP (largest event)")
+)
+ggplot(curves, aes(x, p, colour = curve)) +
+  geom_line(linewidth = 0.8) +
+  scale_y_log10() +
+  labs(x = "loss x (millions of crowns)", y = "probability of a loss above x in a year",
+       colour = NULL, title = "Alder: aggregate and occurrence exceedance, 2,000 years") +
+  theme(legend.position = "top")
+```
+
 ## 5. Does the simulation agree with the event table?
 
 The event loss table (ELT) of Alder gives each catalog event a rate and a loss
@@ -287,6 +313,32 @@ ELT 100-year occurrence loss: 147.94
 occurrences 4238, joining two or more catalog events 87, of which above 30: 9
 ```
 
+The next figure shows the same check for all amounts. Up to about 90, the grey
+line of the raw maxima is below the ELT line, and the grouped line follows the
+ELT line. Above 90, both simulated lines are above the ELT line, and only a few
+years lie behind each point (about 40 years at 110). This is the effect of the
+joined occurrences in section 5, and of sampling error.
+
+```{r}
+#| label: oep-check-figure
+xs <- seq(20, 130, length.out = 45)
+oep_curves <- rbind(
+  data.frame(x = xs, p = sapply(xs, function(x) mean(largest > x)), curve = "simulated, raw maxima"),
+  data.frame(x = xs, p = sapply(xs, function(x) mean(largest_grouped > x)),
+             curve = "simulated, grouped by 72 hours"),
+  data.frame(x = xs, p = sapply(xs, function(x) elt_oep(elt, x)$oep), curve = "ELT, closed form")
+)
+ggplot(oep_curves, aes(x, p, colour = curve)) +
+  geom_line(linewidth = 0.8) +
+  scale_colour_manual(values = c("simulated, raw maxima" = "grey75",
+                                 "simulated, grouped by 72 hours" = "#F8766D",
+                                 "ELT, closed form" = "#00BA38")) +
+  scale_y_log10() +
+  labs(x = "loss x (millions of crowns)", y = "OEP(x)", colour = NULL,
+       title = "Alder: occurrence exceedance from the years and from the ELT") +
+  theme(legend.position = "top")
+```
+
 At 30 and 70, the grouped shares are well within one standard error of the ELT.
 At 110, the difference of 0.0035 is a little more than one standard error. The
 nine joined occurrences above 30 move the share in the same direction. Both
@@ -315,6 +367,23 @@ for (rp in c(10, 50, 100, 250)) {
  50    125.246    120.464       103.432
 100    176.824    163.418       147.938
 250    232.741    223.450       199.470
+```
+
+```{r}
+#| label: pml-table
+library(gt)
+rps <- c(10, 50, 100, 250)
+pml <- data.frame(
+  `return period` = rps,
+  `AEP loss` = sapply(rps, function(rp) VaR(sampled(total_loss), 1 - 1 / rp)),
+  `OEP loss` = sapply(rps, function(rp) VaR(sampled(largest_grouped), 1 - 1 / rp)),
+  `ELT OEP loss` = sapply(rps, function(rp) elt_occurrence_pml(elt, 1 / rp)),
+  check.names = FALSE
+)
+gt(pml, rowname_col = "return period") |>
+  tab_header("Alder: loss at a return period",
+             "Millions of crowns; simulated losses use the inverted-cdf rule") |>
+  fmt_number(columns = c(`AEP loss`, `OEP loss`, `ELT OEP loss`), decimals = 1)
 ```
 
 In the far tail, the simulated OEP losses are above the OEP losses of the ELT,

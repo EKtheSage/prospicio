@@ -1,5 +1,7 @@
 # Choosing and fitting severity and frequency
 
+<!-- site: execute -->
+
 ## Use this guide when
 
 You have claim counts and claim sizes, from a cedant or from your own book. You
@@ -533,6 +535,20 @@ differ by more than 2 percent, because most claims are in the body. But the
 largest losses are much larger than the quantiles of the fit. A small distance
 alone does not show that the tail is correct.
 
+```python
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+ax.plot([0.1, 20], [0.1, 20], color="0.75", label="perfect fit")
+ax.plot(gof["x"], gof["model_quantile"], label="lognormal fit")
+ax.set_xscale("log")
+ax.set_yscale("log")
+ax.set_xlabel("observed loss (millions)")
+ax.set_ylabel("quantile of the fit (millions)")
+ax.set_title("Q-Q plot of the body fit: the largest observed losses exceed the fit")
+ax.legend()
+```
+
 The window fit also cuts the sample at 1 and puts both cuts in the likelihood.
 This removes the mix of body and tail. The estimate (-2.21 and 1.33) has more
 noise, because the window from 0.1 to 1 shows only part of the shape of the
@@ -624,6 +640,44 @@ Hill alpha for the k largest: [(20, 2.3), (40, 2.05), (80, 2.02), (156, 1.76), (
     3     21           0.135   0.144
     5      5           0.032   0.058
     8      4           0.026   0.025
+```
+
+```python
+import pandas as pd
+from great_tables import GT
+
+us = [0.25, 0.5, 1.0, 2.0, 3.0, 5.0]
+counts = [sum(1 for x in losses if x >= u) for u in us]
+alphas = [Pareto.fit([x for x in losses if x >= u], u).alpha for u in us]
+errs = [a / math.sqrt(n) for a, n in zip(alphas, counts)]
+by_threshold = pd.DataFrame({"threshold": us, "losses": counts, "alpha": alphas, "std err": errs})
+(GT(by_threshold, rowname_col="threshold")
+ .tab_header("Pareto alpha by threshold", "Synthetic losses, true alpha 1.8 above 1")
+ .fmt_number(["alpha", "std err"], decimals=2)
+ .fmt_integer("losses"))
+```
+
+```python
+mex = mean_excess(losses, [0.5, 1, 2, 3, 5])
+ks = [20, 40, 80, 156, 300]
+fig, axes = plt.subplots(1, 3, figsize=(10, 3.4))
+axes[0].errorbar(us, alphas, yerr=errs, marker="o", capsize=3, label="fitted alpha")
+axes[0].hlines(1.8, 1.0, 5.0, color="0.75", label="true alpha above 1")
+axes[0].set_xlabel("threshold (millions)")
+axes[0].set_ylabel("alpha")
+axes[0].set_title("Alpha by threshold")
+axes[0].legend()
+axes[1].plot([u for u, e, n in mex], [e for u, e, n in mex], marker="o")
+axes[1].set_xlabel("threshold (millions)")
+axes[1].set_ylabel("mean excess (millions)")
+axes[1].set_title("Mean excess")
+axes[2].axhline(1.8, color="0.75", label="true alpha above 1")
+axes[2].plot(ks, [1 / h for h in hill(losses, ks)], marker="o", label="Hill alpha")
+axes[2].set_xlabel("number of largest losses k")
+axes[2].set_ylabel("Hill alpha")
+axes[2].set_title("Hill estimate")
+axes[2].legend()
+fig.tight_layout()
 ```
 
 In this synthetic example, the correct threshold is 1, because the truth has

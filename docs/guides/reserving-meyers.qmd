@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 Glenn Meyers' *Stochastic Loss Reserving Using Bayesian MCMC Models* (CAS
 Monograph 8, 2nd edition, 2019) asks a plain question of a reserving model.
 Suppose an actuary used the model on many real triangles. Would the outcomes
@@ -193,6 +195,29 @@ cat(sprintf("ODP paid  estimate book 39,193 ours %s | std error book 1,389 ours 
 ODP paid  estimate book 39,193 ours 39,231 | std error book 1,389 ours 1,410 | percentile book 73.91 ours 72.73
 ```
 
+The figure shows the two predictive distributions of the paid total, and the
+outcome in the lower triangle. Mack's log-normal is smooth. The bootstrap
+draws are right-skewed. The outcome falls above the middle of both.
+
+```{r}
+#| label: fig-odp-mack
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+
+s2 <- log(1 + (se / ult)^2)
+grid <- seq(min(odp_total), max(odp_total), length.out = 300)
+mack_curve <- data.frame(total = grid, density = dlnorm(grid, log(ult) - s2 / 2, sqrt(s2)))
+ggplot() +
+  geom_histogram(aes(total, after_stat(density), fill = "ODP bootstrap, 10,000 draws"),
+                 data = data.frame(total = odp_total), bins = 60) +
+  geom_line(aes(total, density, colour = "Mack's log-normal"), data = mack_curve, linewidth = 0.8) +
+  geom_vline(aes(xintercept = outcome[["paid"]], linetype = "outcome at 120 months")) +
+  scale_fill_manual(values = c("ODP bootstrap, 10,000 draws" = "grey75")) +
+  scale_linetype_manual(values = c("outcome at 120 months" = "dashed")) +
+  labs(x = "total paid at 120 months", y = "density", fill = NULL, colour = NULL, linetype = NULL,
+       title = "Predicted distribution of the paid total, and the outcome") +
+  theme(legend.position = "top")
+```
+
 This model is simulated, but it has no NUTS sampler. Thus the last-bit
 rounding of a platform stays in the last bit, and the printed digits are the
 same on every platform. Over seeds 0 to 19, the estimate has a mean of 39,197
@@ -259,6 +284,29 @@ n =  50: critical value 136 / sqrt(n) = 19.2
 n = 200: critical value 136 / sqrt(n) = 9.6
 right model:            D =  5.6
 too light in the tails: D = 15.0
+```
+
+The p-p plot of the same two samples shows the shape of the failure. The grey
+band is the 5% limit for 200 triangles, 9.6 points on each side of the
+diagonal. The model that is too light in the tails leaves the band at both ends.
+
+```{r}
+#| label: fig-pp
+band <- 136 / sqrt(200)
+expected <- 100 * seq_len(200) / 201
+pp <- rbind(
+  data.frame(expected = expected, observed = sort(100 * pnorm(z)), model = "right model"),
+  data.frame(expected = expected, observed = sort(100 * pnorm(1.5 * z)),
+             model = "too light in the tails"))
+ggplot() +
+  geom_ribbon(aes(x, ymin = lo, ymax = hi, fill = "5% KS band"),
+              data = data.frame(x = c(0, 100), lo = c(-band, 100 - band), hi = c(band, 100 + band))) +
+  geom_line(aes(expected, observed, colour = model), data = pp, linewidth = 0.8) +
+  scale_fill_manual(values = c("5% KS band" = "grey85")) +
+  coord_cartesian(xlim = c(0, 100), ylim = c(0, 100)) +
+  labs(x = "expected percentile under uniformity", y = "sorted percentile of the outcome",
+       fill = NULL, colour = NULL, title = "p-p plot of 200 simulated outcomes") +
+  theme(legend.position = "top")
 ```
 
 The critical values 19.2 for 50 triangles and 9.6 for 200 are on every p-p
@@ -744,6 +792,27 @@ cat(sprintf("CDR IQR / lifetime reserve IQR between 0.6 and 0.95: %s\n",
 warnings 0, one-year simulations 1,000
 share flagged (Pareto k above 0.7) above 95%: True
 CDR IQR / lifetime reserve IQR between 0.6 and 0.95: True
+```
+
+The figure compares the two sets of draws, each as a density. The CDR is a
+change in the expected ultimate, so it centres near 0. The reserve centres on
+the expected unpaid amount. The CDR is the narrower of the two. The plot
+leaves out the extreme 0.5% of each side.
+
+```{r}
+#| label: fig-cdr
+limits <- quantile(c(cdr, lifetime), c(0.005, 0.995), names = FALSE)
+bins <- seq(limits[1], limits[2], length.out = 51)
+inside <- function(x) x[x >= limits[1] & x <= limits[2]]
+ggplot() +
+  geom_histogram(aes(total, after_stat(density), fill = "lifetime reserve"),
+                 data = data.frame(total = inside(lifetime)), breaks = bins) +
+  geom_freqpoly(aes(total, after_stat(density), colour = "one-year CDR (quick view)"),
+                data = data.frame(total = inside(cdr)), breaks = bins, linewidth = 0.8) +
+  scale_fill_manual(values = c("lifetime reserve" = "grey75")) +
+  labs(x = "total over the origins", y = "density", fill = NULL, colour = NULL,
+       title = "Lifetime reserve and one-year claims development result, CRC paid") +
+  theme(legend.position = "top")
 ```
 
 On Windows at seed 0, this chunk gives 99% flagged. The CDR sd is 1,970 against

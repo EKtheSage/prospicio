@@ -1,5 +1,7 @@
 # Property catastrophe 7: Larkspur's whole book
 
+<!-- site: execute -->
+
 The earlier pages of this track price one contract at a time. A reinsurer
 holds more than one contract. Larkspur Re holds five, on three cedents, and the
 same windstorm can hit all of them in the same year. This page adds the five
@@ -222,6 +224,24 @@ corran_qs     16.363   13.216    12.609
 sum of contributions 55.096
 ```
 
+The figure shows the three views of each deal side by side.
+
+```python
+import matplotlib.pyplot as plt
+
+x = range(len(book.names))
+fig, ax = plt.subplots()
+ax.bar([i - 0.27 for i in x], alloc.standalone, width=0.27, color="0.75", label="alone")
+ax.bar(list(x), [dist["contribution"][d]["TVaR 99"] for d in book.names], width=0.27,
+       label="contribution (Euler)")
+ax.bar([i + 0.27 for i in x], [dist["marginal"][d]["TVaR 99"] for d in book.names], width=0.27,
+       label="marginal")
+ax.set_xticks(list(x), book.names, rotation=15)
+ax.set_ylabel("TVaR 99 of the loss (premium units)")
+ax.set_title("Tail of the book: alone, in the book, and removed from it")
+ax.legend()
+```
+
 Read the table one row at a time.
 
 - `alder_cat_2` is the high Alder layer. Alone, its TVaR is the largest of the
@@ -318,6 +338,24 @@ book            8.000   7.487    7.998
 premium saved by diversification 1.613
 ```
 
+```python
+import pandas as pd
+from great_tables import GT
+
+prices = pd.DataFrame({
+    "deal": book.names,
+    "charged": [charged[d] for d in book.names],
+    "kept": [kept[d] for d in book.names],
+    "in book": [ab.premium for ab in pp.allocated],
+    "alone": [al.premium for al in pp.standalone],
+})
+(GT(prices, rowname_col="deal")
+ .tab_header("Premium by deal: charged, kept and needed",
+             "Premium units; needed = cost of capital 10% on TVaR 99 capital")
+ .tab_spanner("needed", ["in book", "alone"])
+ .fmt_number(["charged", "kept", "in book", "alone"], decimals=3))
+```
+
 Alone, `alder_cat_1` needs the 2.007 of page 6. In the book it needs less. The
 book charges 8.000, near the 7.998 that a 10% return on TVaR capital needs. But
 it keeps less: 7.487, after the reinstatement premium comes in and the ceding
@@ -359,6 +397,19 @@ bracken_agg   0.162   0.193       0.165    0.450
 corran_qs     1.202  12.609       2.239    3.000
 ```
 
+```python
+marginal_p = [(dist["marginal"][d]["Mean"] + r * dist["marginal"][d]["TVaR 99"]) / (1 + r)
+              for d in book.names]
+fig, ax = plt.subplots()
+ax.bar([i - 0.2 for i in x], [charged[d] for d in book.names], width=0.4, color="0.75",
+       label="charged")
+ax.bar([i + 0.2 for i in x], marginal_p, width=0.4, label="marginal price")
+ax.set_xticks(list(x), book.names, rotation=15)
+ax.set_ylabel("premium (premium units)")
+ax.set_title("Charged premium against the marginal price of each deal")
+ax.legend()
+```
+
 The marginal price is lower than the allocated price for every deal, because
 the marginal TVaR of each deal is at most its Euler contribution. TVaR is
 subadditive, so a new deal raises the TVaR of the book by no more than the
@@ -392,6 +443,23 @@ bracken_cat    1.161    7.552   15.4%
 bracken_agg    0.288   -0.188    none
 corran_qs      1.048   10.216   10.3%
 book           4.198   46.859    9.0%
+```
+
+```python
+all_deals = [*book.names, "total"]
+returns = pd.DataFrame({
+    "deal": [*book.names, "book"],
+    "margin": [rows[d, "margin"][0] for d in all_deals],
+    "capital": [a - rows[d, "premium"][0] for d, a in zip(book.names, alloc.allocated)]
+               + [alloc.total - rows["total", "premium"][0]],
+})
+returns["return"] = [m / c if c > 0 else float("nan")
+                     for m, c in zip(returns["margin"], returns["capital"])]
+(GT(returns, rowname_col="deal")
+ .tab_header("Return on allocated capital", "Premium units; return = margin / capital")
+ .fmt_number(["margin", "capital"], decimals=3)
+ .fmt_percent("return", decimals=1)
+ .sub_missing("return", missing_text="none"))
 ```
 
 Against a 10% target, `alder_cat_2` is the weak contract. It uses more than a

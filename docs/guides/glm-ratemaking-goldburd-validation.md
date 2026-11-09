@@ -1,5 +1,7 @@
 # GLMs for insurance rating, part 2: refinement and validation (Goldburd, Khare, Tevet and Guller)
 
+<!-- site: execute -->
+
 This is the second part of a guide to *Generalized Linear Models for Insurance
 Rating* (CAS Monograph 5, second edition, 2025 revision). The authors are
 Goldburd, Khare, Tevet and Guller. The guide uses the prospicio Python API. The
@@ -106,6 +108,27 @@ age band   mean age  binned partial residual  fitted b*age  true 0.8 sin(age/8),
 56.8-62.9      59.7                    1.216         0.724  +0.716
 63.0-71.4      67.6                    1.117         0.820  +0.640
 71.5-79.9      76.1                    0.603         0.922  -0.088
+```
+
+The binned points show the shape. Plot them against the fitted straight line
+and the true effect:
+
+```python
+import matplotlib.pyplot as plt
+
+bins = [order[k * n // 8:(k + 1) * n // 8] for k in range(8)]
+wsum = [sum(diag["working_weights"][i] for i in idx) for idx in bins]
+bin_age = [sum(data["age"][i] * diag["working_weights"][i] for i in idx) / w for idx, w in zip(bins, wsum)]
+bin_pr = [sum(partial[i] * diag["working_weights"][i] for i in idx) / w for idx, w in zip(bins, wsum)]
+grid = [18 + 0.5 * j for j in range(125)]
+fig, ax = plt.subplots()
+ax.plot(grid, [b_age * a for a in grid], label="fitted straight line, b x age")
+ax.plot(grid, [0.8 * math.sin(a / 8) - true_c for a in grid], label="true effect, 0.8 sin(age / 8), centred")
+ax.scatter(bin_age, bin_pr, color="0.4", label="binned partial residual")
+ax.set_xlabel("age (years)")
+ax.set_ylabel("partial residual (log scale)")
+ax.set_title("Partial residuals of wavy_claims against age: a line misses the wave")
+ax.legend(loc="upper left")
 ```
 
 The fitted line rises gently. The binned partial residuals start high, fall to a
@@ -439,6 +462,41 @@ double lift, band average over overall average:
   actual    0.48 0.65 1.32 0.75 1.82
 loss ratio (actual / current premium): 0.42 0.54 1.10 0.62 1.57
 Gini on the test set: current 0.121, proposed 0.256
+```
+
+The table lays out the three charts by band, and the figure draws the double
+lift chart:
+
+```python
+import pandas as pd
+from great_tables import GT
+
+lift_bands = pd.DataFrame({
+    "band": list(range(1, 6)),
+    "current": [b["b_relativity"] for b in dl],
+    "proposed": [b["a_relativity"] for b in dl],
+    "actual": [b["actual_relativity"] for b in dl],
+    "loss_ratio": [b["loss_ratio"] for b in lr],
+})
+(GT(lift_bands, rowname_col="band")
+ .tab_header("Double lift and loss ratio, 120 test policies in 5 bands",
+             "Relativities to the overall average; loss ratio = actual / current premium")
+ .tab_spanner("relativity", ["current", "proposed", "actual"])
+ .cols_label(loss_ratio="loss ratio")
+ .fmt_number(["current", "proposed", "actual", "loss_ratio"], decimals=2))
+```
+
+```python
+fig, ax = plt.subplots()
+ax.plot(lift_bands["band"], lift_bands["actual"], color="0.4", marker="o", label="actual")
+ax.plot(lift_bands["band"], lift_bands["current"], marker="o", label="current plan")
+ax.plot(lift_bands["band"], lift_bands["proposed"], marker="o", label="proposed model")
+ax.axhline(1.0, color="0.75", linestyle=":")
+ax.set_xlabel("band (sorted by proposed / current prediction)")
+ax.set_ylabel("relative claim frequency (overall = 1)")
+ax.set_xticks(lift_bands["band"])
+ax.set_title("Double lift chart: the actuals follow the proposed model")
+ax.legend(loc="upper left")
 ```
 
 In the double lift chart, the actuals run with the proposed model in both end

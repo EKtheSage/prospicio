@@ -1,5 +1,7 @@
 # prospicio for aggregate users: the twenty-minute tour
 
+<!-- site: execute -->
+
 Use this guide if you already work with Stephen Mildenhall's Python package
 [`aggregate`](https://aggregate.readthedocs.io/) and want to see the same work
 in prospicio. Use it also if you are new to both and want to learn the
@@ -63,6 +65,19 @@ pmf(1) 0.066667 = 1/15, pmf(15) 0.00082305 = 1/1215
 cdf(5) 0.465021
 ```
 
+The figure shows the whole distribution of the total. Every bar is an exact
+probability.
+
+```python
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+ax.bar(range(1, 16), eg1.probs[1:16])
+ax.set_xlabel("total of the year (claim units)")
+ax.set_ylabel("probability")
+ax.set_title("Eg1: the total of 1 to 5 claims of size 1 to 3")
+```
+
 The probability of the smallest outcome is one claim of size one, `1/5 * 1/3`.
 The probability of the largest outcome is five claims of size three,
 `1/5 * (1/3)^5`. The grid returns both exactly. The method is exact for a
@@ -106,6 +121,23 @@ print({p: round(q) for p, q in quantiles.items()})
 claim mean 98.137
 annual mean 24534.1, sd 2561.7
 {0.01: 18954, 0.5: 24449, 0.99: 30862, 0.999: 33170}
+```
+
+The figure shows the distribution of the annual total. The dotted lines mark
+the four quantiles.
+
+```python
+fig, ax = plt.subplots()
+probs = casualty.probs
+ax.plot(range(15_000, 36_001), probs[15_000:36_001])
+for p, q in quantiles.items():
+    ax.axvline(q, color="0.5", linestyle=":")
+    height = 0.05 if p == 0.5 else 0.35
+    ax.text(q, height, f" {p:.1%}", transform=ax.get_xaxis_transform(), color="0.4")
+ax.xaxis.set_major_formatter("{x:,.0f}")
+ax.set_xlabel("annual loss")
+ax.set_ylabel("probability per unit of loss")
+ax.set_title("The casualty book: distribution of the annual total")
 ```
 
 For comparison, `aggregate` 1.2.0 prints a mean claim of 98.137, an annual mean
@@ -207,6 +239,21 @@ print(f"{'99.5% VaR':12s} {poisson.quantile(0.995):10,.0f} {mixed.quantile(0.995
                 Poisson  mixed gamma
 agg CV            0.165        0.433
 99.5% VaR        14,456       23,914
+```
+
+The figure shows the same two distributions. The mixed count has the same mean
+and a much longer right tail.
+
+```python
+fig, ax = plt.subplots()
+xs = range(0, 40_001)
+ax.plot(xs, poisson.probs[:40_001], label="Poisson")
+ax.plot(xs, mixed.probs[:40_001], label="mixed gamma")
+ax.xaxis.set_major_formatter("{x:,.0f}")
+ax.set_xlabel("annual loss")
+ax.set_ylabel("probability per unit of loss")
+ax.set_title("Poisson against mixed gamma count: same mean, longer tail")
+ax.legend()
 ```
 
 `aggregate` prints a CV of 0.165 against 0.433 and a 99.5% of 14,456 against

@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 A catastrophe treaty is a function. It takes a year of event losses of the
 cedent and returns what the reinsurer pays. The contract terms set the shape of
 that function. They set how the pieces of one storm add up, where each loss
@@ -272,6 +274,28 @@ must be in time order, because the last occurrences get only the remainder of
 the limit. The years of the book are in time order: the file lists the pieces
 of each year by `slot`, which is chronological.
 
+The figure shows the same year. The first bar of each event is what the layer
+pays at 100%. The second bar is the annual limit that is left after that event.
+The first loss is below the attachment point, so the layer pays nothing. The
+last loss gets only the 6 that remain of the limit.
+
+```{r}
+#| label: limit-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+paid <- ceded_by_event(cat_1, year) / line
+remaining <- pmax(cat_1@aggregate_limit - cumsum(paid), 0)
+occurrences <- factor(paste("loss", year), levels = paste("loss", year))
+bars <- data.frame(occurrence = rep(occurrences, 2),
+                   what = factor(rep(c("paid by the layer (100%)", "annual limit left"), each = length(year)),
+                                 levels = c("paid by the layer (100%)", "annual limit left")),
+                   amount = c(paid, remaining))
+ggplot(bars, aes(occurrence, amount, fill = what)) +
+  geom_col(position = "dodge") +
+  labs(x = "occurrence, in time order", y = "amount at 100% (millions)", fill = NULL,
+       title = "alder_cat_1, 40 xs 30: the annual limit runs out") +
+  theme(legend.position = "top")
+```
+
 ## 4. Corran's quota share: an event limit and an annual limit
 
 A plain quota share cedes a fixed share of every loss. A cat quota share
@@ -417,6 +441,38 @@ alder_cat_2  expected loss  0.4163  premium  1.000  loss ratio 0.416
 bracken_cat  expected loss  0.6847  premium  1.750  loss ratio 0.391
 bracken_agg  expected loss  0.1621  premium  0.450  loss ratio 0.360
 corran_qs    expected loss  1.2025  premium  3.000  loss ratio 0.401
+```
+
+The table and the figure show the five contracts side by side.
+
+```{r}
+#| label: contracts-table
+library(gt)
+contracts <- do.call(rbind, lapply(rownames(CONTRACTS), function(name) {
+  l <- LAYERS[[name]]
+  data.frame(contract = name,
+             expected_loss = ceded_mean(l, subject(CONTRACTS[name, ])), premium = l@premium)
+}))
+contracts$loss_ratio <- contracts$expected_loss / contracts$premium
+gt(contracts, rowname_col = "contract") |>
+  tab_header("Larkspur's five contracts on the 2,000 simulated years",
+             "Amounts in millions, on Larkspur's line, before reinstatement premium and commissions") |>
+  cols_label(expected_loss = "expected loss", loss_ratio = "loss ratio") |>
+  fmt_number(columns = everything(), decimals = 3)
+```
+
+```{r}
+#| label: contracts-figure
+shown <- data.frame(contract = factor(rep(contracts$contract, 2), levels = rev(contracts$contract)),
+                    what = factor(rep(c("premium", "expected loss"), each = nrow(contracts)),
+                                  levels = c("premium", "expected loss")),
+                    amount = c(contracts$premium, contracts$expected_loss))
+ggplot(shown, aes(amount, contract)) +
+  geom_col(aes(fill = what), position = position_dodge2(reverse = TRUE)) +
+  scale_fill_manual(values = c("premium" = "grey75", "expected loss" = scales::hue_pal()(2)[1])) +
+  labs(x = "millions, on Larkspur's line", y = NULL, fill = NULL,
+       title = "Expected loss against premium, by contract") +
+  theme(legend.position = "top")
 ```
 
 ## 7. The contract year

@@ -1,5 +1,7 @@
 # Stochastic loss reserving with Bayesian MCMC: CAS Monograph 8 reproduced
 
+<!-- site: execute -->
+
 Glenn Meyers' *Stochastic Loss Reserving Using Bayesian MCMC Models* (CAS
 Monograph 8, 2nd edition, 2019) asks a plain question of a reserving model.
 Suppose an actuary used the model on many real triangles. Would the outcomes
@@ -151,6 +153,26 @@ print(f"ODP paid  estimate book 39,193 ours {odp_total.mean():,.0f} | std error 
 ODP paid  estimate book 39,193 ours 39,231 | std error book 1,389 ours 1,410 | percentile book 73.91 ours 72.73
 ```
 
+The figure shows the two predictive distributions of the paid total, and the
+outcome in the lower triangle. Mack's log-normal is smooth. The bootstrap
+draws are right-skewed. The outcome falls above the middle of both.
+
+```python
+import matplotlib.pyplot as plt
+
+s2 = math.log(1 + (mack.total_standard_error / mack.total_ultimate) ** 2)
+x = np.linspace(odp_total.min(), odp_total.max(), 300)
+density = np.exp(-(np.log(x) - math.log(mack.total_ultimate) + s2 / 2) ** 2 / (2 * s2)) / (x * math.sqrt(2 * math.pi * s2))
+fig, ax = plt.subplots()
+ax.hist(odp_total, bins=60, density=True, color="0.75", label="ODP bootstrap, 10,000 draws")
+ax.plot(x, density, label="Mack's log-normal")
+ax.axvline(outcome["paid"], color="black", linestyle="--", label="outcome at 120 months")
+ax.set_xlabel("total paid at 120 months")
+ax.set_ylabel("density")
+ax.set_title("Predicted distribution of the paid total, and the outcome")
+ax.legend()
+```
+
 This model is simulated, but it has no NUTS sampler. Thus the last-bit
 rounding of a platform stays in the last bit, and the printed digits are the
 same on every platform. Over seeds 0 to 19, the estimate has a mean of 39,197
@@ -216,6 +238,25 @@ n =  50: critical value 136 / sqrt(n) = 19.2
 n = 200: critical value 136 / sqrt(n) = 9.6
 right model:            D =  5.6
 too light in the tails: D = 15.0
+```
+
+The p-p plot of the same two samples shows the shape of the failure. The grey
+band is the 5% limit for 200 triangles, 9.6 points on each side of the
+diagonal. The model that is too light in the tails leaves the band at both ends.
+
+```python
+fig, ax = plt.subplots()
+expected = 100 * np.arange(1, 201) / 201
+band = 136 / math.sqrt(200)
+ax.fill_between([0, 100], [-band, 100 - band], [band, 100 + band], color="0.85", label="5% KS band")
+ax.plot(expected, np.sort(normal_cdf(z)), label="right model")
+ax.plot(expected, np.sort(normal_cdf(1.5 * z)), label="too light in the tails")
+ax.set_xlim(0, 100)
+ax.set_ylim(0, 100)
+ax.set_xlabel("expected percentile under uniformity")
+ax.set_ylabel("sorted percentile of the outcome")
+ax.set_title("p-p plot of 200 simulated outcomes")
+ax.legend()
 ```
 
 The critical values 19.2 for 50 triangles and 9.6 for 200 are on every p-p
@@ -683,6 +724,23 @@ print(f"CDR IQR / lifetime reserve IQR between 0.6 and 0.95: {0.6 < ratio < 0.95
 warnings 0, one-year simulations 1,000
 share flagged (Pareto k above 0.7) above 95%: True
 CDR IQR / lifetime reserve IQR between 0.6 and 0.95: True
+```
+
+The figure compares the two sets of draws, each as a density. The CDR is a
+change in the expected ultimate, so it centres near 0. The reserve centres on
+the expected unpaid amount. The CDR is the narrower of the two. The plot
+leaves out the extreme 0.5% of each side.
+
+```python
+fig, ax = plt.subplots()
+both = np.concatenate([cdr, lifetime])
+bins = np.linspace(*np.percentile(both, [0.5, 99.5]), 50)
+ax.hist(lifetime, bins=bins, density=True, color="0.75", label="lifetime reserve")
+ax.hist(cdr, bins=bins, density=True, histtype="step", linewidth=2, label="one-year CDR (quick view)")
+ax.set_xlabel("total over the origins")
+ax.set_ylabel("density")
+ax.set_title("Lifetime reserve and one-year claims development result, CRC paid")
+ax.legend()
 ```
 
 On Windows at seed 0, this block gives 99% flagged. The CDR sd is 1,970 against

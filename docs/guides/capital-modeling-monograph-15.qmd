@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 CAS Monograph 15 is *Introduction to Capital Modeling and Portfolio
 Management* (John Major and Stephen Mildenhall, 2026). It shows how an insurer
 prices its risk and splits the price over its business units. The method uses
@@ -113,6 +115,22 @@ At a total of 40, the expected losses are 10 for A, 24 for B and 6 for C.
 This is the row of Table 9.4. The conditional expectations always add up to the
 total. Thus a split of the price by them never creates or loses money.
 
+The figure shows `kappa` for each unit at each total:
+
+```{r}
+#| label: kappa-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+kappas <- do.call(rbind, lapply(c("A", "B", "C"), function(unit) {
+  data.frame(total = insco@totals, kappa = portfolio_kappa(insco, unit), unit = paste("unit", unit))
+}))
+ggplot(kappas, aes(total, kappa, colour = unit)) +
+  geom_line(linewidth = 0.8) +
+  geom_point() +
+  labs(x = "total loss of the book", y = "expected loss of the unit at that total",
+       colour = NULL, title = "InsCo: each unit's conditional expectation, kappa, by total") +
+  theme(legend.position = "top")
+```
+
 ## 2. The capital standard
 
 A price needs a capital standard: the assets that stand behind the book.
@@ -186,6 +204,28 @@ The values agree. The CCoC parameter has a different meaning in each program.
 `aggregate` builds the CCoC distortion from a risk discount
 `d = 0.15 / 1.15`, and prospicio builds it from the cost of capital `r = 0.15`.
 `distortion("ccoc", 0.15)` is the same function.
+
+Each distortion is a curve `g(s)`. The figure draws the five curves that the
+calibration found. The grey line is `g(s) = s`, which gives no risk load. The
+price of a distortion rises with the area between its curve and this line:
+
+```{r}
+#| label: distortion-figure
+s_grid <- seq(0, 1, length.out = 101)
+curves <- do.call(rbind, lapply(FAMILIES, function(family) {
+  data.frame(s = s_grid, g = sapply(s_grid, function(x) distortion_g(distortions[[family]], x)),
+             family = family,
+             panel = ifelse(family %in% c("ccoc", "ph", "wang"),
+                            "Distortions fitted to InsCo (1 of 2)",
+                            "Distortions fitted to InsCo (2 of 2)"))
+}))
+ggplot(curves, aes(s, g)) +
+  geom_abline(slope = 1, intercept = 0, colour = "grey75") +
+  geom_line(aes(colour = family), linewidth = 0.8) +
+  facet_wrap(~ panel) +
+  labs(x = "probability of exceedance, s", y = "distorted probability, g(s)", colour = NULL) +
+  theme(legend.position = "top")
+```
 
 ## 4. The price and its allocation to units
 
@@ -262,6 +302,21 @@ All fifteen premiums match to the three decimals printed. The pattern across
 the rows is the important result. CCoC prices unit C at 21.3 and unit B at
 18.5. TVaR prices B at 20.4 and C at 19.4.
 
+The table shows the same premiums by unit:
+
+```{r}
+#| label: premium-table
+library(gt)
+by_family <- do.call(rbind, lapply(FAMILIES, function(family) {
+  u <- units_only(natural_price(insco, distortions[[family]], assets = 100))
+  data.frame(distortion = family, A = u$premium[1], B = u$premium[2], C = u$premium[3])
+}))
+gt(by_family, rowname_col = "distortion") |>
+  tab_header("InsCo: premium by unit under five distortions",
+             "Money in the units of the example; the expected losses are 13.4, 18.3 and 14.9") |>
+  fmt_number(columns = c(A, B, C), decimals = 3)
+```
+
 TVaR charges only for the units' losses in the worst years. In those years,
 B's 20 is a larger share of the total than its average share. CCoC charges for
 the volume of capital that each unit uses, and C uses 64 of the 100. Neither
@@ -300,6 +355,18 @@ ph      6.481 (book  7.074)   5.597 (book  6.565)  34.356 (book 32.796)
 wang    8.411 (book  8.411)   8.691 (book  8.691)  29.333 (book 29.333)
 dual    8.873 (book  8.873)   9.143 (book  9.143)  28.419 (book 28.419)
 tvar    9.034 (book  9.034)   9.247 (book  9.247)  28.154 (book 28.154)
+```
+
+```{r}
+#| label: capital-table
+lifted <- do.call(rbind, lapply(FAMILIES, function(family) {
+  u <- units_only(natural_price(insco, distortions[[family]], assets = 100, allocation = "lifted"))
+  data.frame(distortion = family, A = u$capital[1], B = u$capital[2], C = u$capital[3])
+}))
+gt(lifted, rowname_col = "distortion") |>
+  tab_header("InsCo: capital by unit, lifted allocation",
+             "Money in the units of the example; the assets are 100") |>
+  fmt_number(columns = c(A, B, C), decimals = 3)
 ```
 
 Wang, dual power and TVaR agree with the monograph to three decimals. **CCoC

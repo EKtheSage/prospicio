@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 This is the second part of the guide to CAS Monograph 16, *From GLMs to
 Comprehensive Insurance Pricing: Techniques and Challenges*. The authors are
 Chalk, Deacon, Guillen and Martinelli (2025). It is the R twin of the Python guide
@@ -466,6 +468,21 @@ region       0.008     0.003
 noise        0.000    -0.000
 ```
 
+```{r}
+#| label: fig-importance
+library(ggplot2, exclude = "layer")
+imp_df <- data.frame(
+  feature = factor(rep(features, 2), levels = features[order(mean_loss$GLM[features])]),
+  model = rep(c("GLM", "GBM"), each = length(features)),
+  loss = c(unlist(mean_loss$GLM[features]), unlist(mean_loss$GBM[features]))
+)
+ggplot(imp_df, aes(loss, feature, fill = model)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  labs(x = "loss of pseudo-R2 when the feature is shuffled", y = NULL, fill = NULL,
+       title = "Permutation importance, mean over the seven held-out folds") +
+  theme(legend.position = "top")
+```
+
 The two models agree on which features are important and approximately on their
 order. The GBM gives the noise feature almost no importance, although it can
 use it. With the monograph's treatment of nonlinear effects and of make, our
@@ -522,6 +539,23 @@ age 60: GLM 1.00  GBM 1.02  true (low power) 0.98
 age 75: GLM 1.18  GBM 1.09  true (low power) 1.07
 ```
 
+```{r}
+#| label: fig-partial
+pd_df <- rbind(
+  data.frame(age = ages, rel = true_age / true_age[4], series = "truth, low power"),
+  data.frame(age = ages, rel = pd_mean$GLM / pd_mean$GLM[4], series = "GLM"),
+  data.frame(age = ages, rel = pd_mean$GBM / pd_mean$GBM[4], series = "GBM")
+)
+is_truth <- pd_df$series == "truth, low power"
+ggplot(pd_df, aes(age, rel, colour = series)) +
+  geom_line(data = pd_df[is_truth, ], colour = "grey75", linewidth = 1.5) +
+  geom_line(data = pd_df[!is_truth, ]) +
+  geom_point(data = pd_df[!is_truth, ]) +
+  labs(x = "driver age (years)", y = "partial dependence relative to age 40", colour = NULL,
+       title = "Young-driver effect: the GLM overstates it without the interaction") +
+  theme(legend.position = "top")
+```
+
 Section 9.3 gives a caution: a partial dependence is an average over the
 portfolio. The young-driver figures of both models mix high-power cars, where
 the effect is stronger, with the other cars. The GLM figure is higher. Without
@@ -573,6 +607,16 @@ age      x power    0.0051
 age      x log_te   0.0012
 veh_age  x noise    0.0006
 GLM cv pseudo-R2 0.055, with a young-driver high-power term 0.058
+```
+
+```{r}
+#| label: tab-screen
+library(gt)
+top <- data.frame(pair = paste(screen$a, "x", screen$b), strength = screen$strength)[1:6, ]
+gt(top, rowname_col = "pair") |>
+  tab_header("Interaction screen of the boosting model",
+             "Strength of each pair of features, mean over seven folds (pseudo-R2 units)") |>
+  fmt_number(columns = strength, decimals = 4)
 ```
 
 Age and power come first, which is the planted interaction, and the GLM

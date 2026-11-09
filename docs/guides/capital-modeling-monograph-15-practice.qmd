@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 CAS Monograph 15 is *Introduction to Capital Modeling and Portfolio
 Management* (John Major and Stephen Mildenhall, 2026). Its chapters 1, 2 and 7
 describe the system around the mathematics. They give the purpose and
@@ -101,6 +103,21 @@ skewness     0.281   0.269   1.603   1.420
 plan          13.9    18.7    19.6    52.2 
 ```
 
+Table 2.1 as a formatted table:
+
+```{r}
+#| label: table-2-1
+library(gt)
+sim <- data.frame(
+  outcome = c(as.character(1:10), "expected"),
+  rbind(ROWS, round(sapply(dists[1:3], mean), 1)),
+  Total = c(totals, round(mean(dists[[4]]), 1))
+)
+gt(sim, rowname_col = "outcome") |>
+  tab_header("InsCo: ten equally likely outcomes", "Loss by unit, in money units") |>
+  fmt_number(columns = c(A, B, C, Total), decimals = 1)
+```
+
 The means and CVs are the values of Table 2.1 (13.4, 18.3, 14.9 and 46.6, and
 0.453, 0.412, 1.324 and 0.455). Table 2.1 does not print the skewness. The
 skewness shows how much of unit C's risk is in one or two years. The
@@ -172,6 +189,20 @@ The loss ratio and leverage columns follow Table 1.1. Unit A has a 95% loss
 ratio, with premium 1.7 times its capital. Unit C has a 72% loss ratio, with
 premium 0.7 times its capital. A's loss exceeds its premium in six years of
 ten, and C's in two.
+
+```{r}
+#| label: fig-units
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+by_unit <- data.frame(
+  unit = rep(priced$unit, 2),
+  measure = rep(c("Leverage: premium to capital (ratio)", "Return on capital (%)"), each = 3),
+  value = c(priced$premium_to_capital, 100 * priced$return_on_capital)
+)
+ggplot(by_unit, aes(unit, value)) +
+  geom_col() +
+  facet_wrap(~measure, scales = "free_y") +
+  labs(x = "unit", y = NULL, title = "InsCo under the Wang distortion at a 15% return")
+```
 
 The return column does not follow Table 1.1. On InsCo the volatile unit earns
 the most, 20.2%. Table 1.1 describes market economics for very different
@@ -283,6 +314,22 @@ Tables 2.3 and 2.4. In outcome 10, the loss of 100 takes all the assets.
 InsCo pays the policyholders in full, and the income statement shows a loss of
 48.4. The shareholders' 27.8 cannot absorb this loss. Thus the bondholders
 also lose their 20.6 of principal and coupon.
+
+```{r}
+#| label: fig-claimants
+claimants <- data.frame(
+  event = rep(1:10, 2),
+  claimant = rep(c("equity, ending value", "bond, amount paid"), each = 10),
+  value = c(equity_end, bond_paid)
+)
+ggplot(claimants, aes(event, value, colour = claimant)) +
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(breaks = 1:10) +
+  labs(x = "outcome, sorted by total loss", y = "money units", colour = NULL,
+       title = "What each claimant receives in the ten outcomes") +
+  theme(legend.position = "top")
+```
 
 The ten statements together answer the questions that a capital model must
 answer for each claimant:

@@ -1,5 +1,7 @@
 # Building and judging a capital model: CAS Monograph 15, chapters 1, 2 and 7
 
+<!-- site: execute -->
+
 CAS Monograph 15 is *Introduction to Capital Modeling and Portfolio
 Management* (John Major and Stephen Mildenhall, 2026). Its chapters 1, 2 and 7
 describe the system around the mathematics. They give the purpose and
@@ -83,6 +85,21 @@ skewness     0.281   0.269   1.603   1.420
 plan          13.9    18.7    19.6    52.2
 ```
 
+Table 2.1 as a formatted table:
+
+```python
+import pandas as pd
+from great_tables import GT
+
+sim = pd.DataFrame(ROWS + [[round(d.mean(), 1) for d in dists[:3]]],
+                   columns=["A", "B", "C"])
+sim["Total"] = totals + [round(dists[3].mean(), 1)]
+sim.insert(0, "outcome", [str(k) for k in range(1, 11)] + ["expected"])
+(GT(sim, rowname_col="outcome")
+ .tab_header("InsCo: ten equally likely outcomes", "Loss by unit, in money units")
+ .fmt_number(["A", "B", "C", "Total"], decimals=1))
+```
+
 The means and CVs are the values of Table 2.1 (13.4, 18.3, 14.9 and 46.6, and
 0.453, 0.412, 1.324 and 0.455). Table 2.1 does not print the skewness. The
 skewness shows how much of unit C's risk is in one or two years. The
@@ -148,6 +165,22 @@ The loss ratio and leverage columns follow Table 1.1. Unit A has a 95% loss
 ratio, with premium 1.7 times its capital. Unit C has a 72% loss ratio, with
 premium 0.7 times its capital. A's loss exceeds its premium in six years of
 ten, and C's in two.
+
+```python
+import matplotlib.pyplot as plt
+
+fig, axes = plt.subplots(1, 2, figsize=(8, 3.5), layout="constrained")
+units = list(insco.units)
+axes[0].bar(units, [u.premium_to_capital for u in priced.allocated])
+axes[0].set_ylabel("premium to capital (ratio)")
+axes[0].set_xlabel("unit")
+axes[0].set_title("Leverage by unit")
+axes[1].bar(units, [100 * u.return_on_capital for u in priced.allocated])
+axes[1].set_ylabel("return on capital (%)")
+axes[1].set_xlabel("unit")
+axes[1].set_title("Return by unit")
+fig.suptitle("InsCo under the Wang distortion at a 15% return")
+```
 
 The return column does not follow Table 1.1. On InsCo the volatile unit earns
 the most, 20.2%. Table 1.1 describes market economics for very different
@@ -262,6 +295,18 @@ Tables 2.3 and 2.4. In outcome 10, the loss of 100 takes all the assets.
 InsCo pays the policyholders in full, and the income statement shows a loss of
 48.4. The shareholders' 27.8 cannot absorb this loss. Thus the bondholders
 also lose their 20.6 of principal and coupon.
+
+```python
+fig, ax = plt.subplots()
+events = list(range(1, 11))
+ax.plot(events, equity_end, marker="o", label="equity, ending value")
+ax.plot(events, bond_paid, marker="s", label="bond, amount paid")
+ax.set_xticks(events)
+ax.set_xlabel("outcome, sorted by total loss")
+ax.set_ylabel("money units")
+ax.set_title("What each claimant receives in the ten outcomes")
+ax.legend()
+```
 
 The ten statements together answer the questions that a capital model must
 answer for each claimant:

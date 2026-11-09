@@ -1,5 +1,7 @@
 # Claim counts and aggregate claims: Bahnemann's *Distributions for Actuaries* reproduced
 
+<!-- site: execute -->
+
 This is the second of two guides that recompute the worked examples and problem
 answers of CAS Monograph 2, *Distributions for Actuaries* by David Bahnemann
 (2015), with prospicio. The first guide,
@@ -158,6 +160,22 @@ Ex 3.5  pmf           book  [0.8, 0.16, 0.032, 0.0064, 0.0013, 0.0003]
                       ours  [0.8, 0.16, 0.032, 0.0064, 0.0013, 0.0003]
         geometric           [0.8, 0.16, 0.032, 0.0064, 0.0013, 0.0003]
         Var[N]                           book       0.3125   prospicio       0.3125
+```
+
+The mixed count has more zeros and a longer tail than the Poisson with the same
+mean:
+
+```python
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+ax.bar(range(6), [Poisson(mean).pmf(n) for n in range(6)], color="0.75",
+       label="Poisson, mean 0.51")
+ax.plot(range(6), mixed, marker="o", label="mixed Poisson, Ex 3.4")
+ax.set_xlabel("number of claims N")
+ax.set_ylabel("probability")
+ax.set_title("Ex 3.4: the mixture against the Poisson with the same mean")
+ax.legend()
 ```
 
 When the rates follow a gamma distribution, the mixed count is a negative
@@ -411,6 +429,25 @@ P4.13: mean 6,000, sd 5,196, skewness 1.5877
   shifted gamma  book  [0.0263, 0.3362, 0.7782, 0.9356, 0.9953]
                  ours  [0.0263, 0.3362, 0.7782, 0.9356, 0.9953]
   shifted lognormal    [0.0586, 0.3139, 0.779, 0.9402, 0.9951]
+```
+
+The curves show the same for Tables 4.3 and 4.4. The normal leaves the exact
+curve at both ends. The shifted gamma stays on it except near zero:
+
+```python
+fig, axes = plt.subplots(1, 2, figsize=(8.0, 3.6), sharey=True)
+for ax, (name, _, lam, shape, scale, *_rest) in zip(axes, cases[:2]):
+    m = compound_moments(Poisson(lam), Gamma(shape, scale))
+    top = m.mean + 4.5 * m.variance ** 0.5
+    xs = [top * i / 40 for i in range(41)]
+    ax.plot(xs, [poisson_gamma_cdf(x, lam, shape, scale, terms=60) for x in xs],
+            color="0.75", linewidth=4, label="exact")
+    ax.plot(xs, [m.approximate("normal").cdf(x) for x in xs], label="normal")
+    ax.plot(xs, [m.approximate("shifted_gamma").cdf(x) for x in xs], label="shifted gamma")
+    ax.set_title(f"{name}: skewness {m.skew:.1f}")
+    ax.set_xlabel("total claims s")
+axes[0].set_ylabel("F(s)")
+axes[0].legend()
 ```
 
 The shifted gamma is accurate to two or three units in the fourth decimal above

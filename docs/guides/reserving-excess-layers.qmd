@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 A reinsurer that writes an excess layer must develop the losses above an
 attachment. A primary insurer that reserves a high deductible or an excess
 policy must do the same. These losses develop much more slowly than the
@@ -63,6 +65,10 @@ enter it. The design note shows this with its own calculation (not from a
 source). It uses a lognormal severity with log-sd 1.5 and mean 65,000 at
 ultimate, every claim 1.3 times its earlier value, and fixed counts. The
 ground-up factor is 1.3, and the higher the layer, the larger the layer factor.
+
+```{r}
+library(prospicio)
+```
 
 ```{r}
 ultimate <- lognormal(log(65000) - 1.5^2 / 2, 1.5)  # mean 65,000
@@ -504,6 +510,24 @@ working factors   2.180 1.431 1.236 1.124 1.064 1.026 1.013 1.006 1.006 tail 1.0
 to ultimate at 12 months: ground-up 3.00, high 6.27, working 4.91
 ```
 
+```{r}
+#| label: excess-factors-by-age
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+link_ages <- ages[-length(ages)]
+factors <- rbind(
+  data.frame(age = link_ages, series = "ground-up", factor = p@ground_up_ldf),
+  data.frame(age = link_ages, series = "working layer", factor = derived$working@layer_ldf),
+  data.frame(age = link_ages, series = "high layer", factor = derived$high@layer_ldf))
+ggplot(factors, aes(age, factor, colour = series)) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 2) +
+  scale_y_log10(breaks = c(1, 1.5, 2, 2.5)) +
+  scale_x_continuous(breaks = link_ages) +
+  labs(x = "age at the start of the link (months)", y = "age-to-age factor (log scale)",
+       colour = NULL, title = "The higher the layer, the slower it develops") +
+  theme(legend.position = "top")
+```
+
 The shifts are the book's own shifts (the ground-up factors to ultimate, tail
 included), recovered from the triangle. At 12 months, the high layer has more
 than twice as far to develop as the ground-up losses.
@@ -549,6 +573,24 @@ origin  chain ladder        BF      true
 2024             0   490,530   161,796
 total      3,060,390 3,888,113 4,006,410
 Mack reserve 587,966, standard error 210,007
+```
+
+```{r}
+#| label: excess-high-ultimates
+by_year <- rbind(
+  data.frame(year = years, method = "chain ladder", ultimate = cl@ultimate / 1e3),
+  data.frame(year = years, method = "Bornhuetter-Ferguson", ultimate = bf@ultimate / 1e3))
+ggplot() +
+  geom_col(aes(year, ultimate, fill = "true ultimate"),
+           data = data.frame(year = years, ultimate = truth$high / 1e3)) +
+  geom_line(aes(year, ultimate, colour = method), data = by_year, linewidth = 0.8) +
+  geom_point(aes(year, ultimate, colour = method), data = by_year, size = 2) +
+  scale_fill_manual(values = c("true ultimate" = "grey75")) +
+  scale_x_continuous(breaks = years) +
+  labs(x = "accident year", y = "ultimate loss in the high layer (thousands)",
+       fill = NULL, colour = NULL,
+       title = "The BF fills the immature years that the chain ladder leaves empty") +
+  theme(legend.position = "top")
 ```
 
 Even with the correct pattern, the chain ladder does not see unreported
@@ -665,6 +707,26 @@ working  own chain ladder    100      -0.3%   13.1%
 working  derived pattern     100      -2.0%    8.1%
 working  blend, k = 20       100      -1.2%    9.9%
 working  BF, derived         100      -0.6%    4.4%
+```
+
+```{r}
+#| label: excess-study-table
+library(gt)
+study <- do.call(rbind, lapply(names(runs), function(key) {
+  v <- runs[[key]]
+  ok <- v[!is.na(v[, "error"]), "error"]
+  mean_truth <- mean(v[, "truth"])
+  parts <- strsplit(key, "|", fixed = TRUE)[[1]]
+  data.frame(layer = parts[1], method = parts[2], runs = length(ok),
+             mean_error = 100 * mean(ok) / mean_truth,
+             rmse = 100 * sqrt(sum(ok^2) / length(ok)) / mean_truth)
+}))
+gt(study, rowname_col = "method", groupname_col = "layer") |>
+  tab_header("Error of the total ultimate over 100 simulated books",
+             "Percent of the mean true ultimate") |>
+  cols_label(mean_error = "mean error", rmse = "RMSE") |>
+  fmt_number(columns = c(mean_error, rmse), decimals = 1) |>
+  fmt_integer(columns = runs)
 ```
 
 The own chain ladder fails on seven of the hundred high-layer books. Where it

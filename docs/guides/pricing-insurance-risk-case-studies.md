@@ -1,5 +1,7 @@
 # Pricing Insurance Risk: the case studies in prospicio
 
+<!-- site: execute -->
+
 Stephen Mildenhall and John Major's book *Pricing Insurance Risk* (Wiley, 2022)
 applies one method to a small number of portfolios, its case studies. The method
 has four steps:
@@ -268,6 +270,25 @@ dual       5.49    9.72    143.91
 tvar       6.47    8.74    149.64
 ```
 
+The figure shows the margins of the two units under each distortion:
+
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+
+x = np.arange(len(FAMILIES))
+fig, ax = plt.subplots()
+for k, (unit, shift) in enumerate([("NonCat", -0.2), ("Cat", 0.2)]):
+    margins = [cnc_p[f].allocated[k].premium - cnc_p[f].allocated[k].loss for f in FAMILIES]
+    ax.bar(x + shift, margins, width=0.4, label=unit)
+ax.axhline(0, color="0.75")
+ax.set_xticks(x, FAMILIES)
+ax.set_xlabel("distortion")
+ax.set_ylabel("margin (premium minus expected loss)")
+ax.set_title("Cat/Non-Cat: the margin of each unit, by distortion")
+ax.legend()
+```
+
 Under the CCoC a unit pays `v` times its expected loss, plus `d` times its share
 of the assets in the outcomes at or above the assets. The NonCat share there,
 71.34, is below its mean of 80. When the book is at its 99.9% quantile, the
@@ -350,6 +371,22 @@ ph      115.15   107.55    7.60
 wang    115.15   108.79    6.36
 dual    115.15   110.13    5.02
 tvar    115.15   110.88    4.27
+```
+
+```python
+import pandas as pd
+from great_tables import GT
+
+saving = pd.DataFrame({
+    "distortion": FAMILIES,
+    "gross P": [cnc_p[f].total.premium for f in FAMILIES],
+    "net P": [cnc_net_p[f].total.premium for f in FAMILIES],
+})
+saving["saving"] = saving["gross P"] - saving["net P"]
+(GT(saving, rowname_col="distortion")
+ .tab_header("Cat/Non-Cat: premium of the book gross and net of the cover",
+             "Each distortion at its gross calibration, 10% return, p = 99.9%")
+ .fmt_number(["gross P", "net P", "saving"], decimals=2))
 ```
 
 Under the CCoC the premium of the book decreases by 9.25, four times the
@@ -474,6 +511,18 @@ wang    121.555 (121.555)   131.708 (131.708)   253.263 (253.263)
 dual    148.268 (148.268)    92.982 ( 92.982)   241.250 (241.250)
 tvar    155.421 (155.421)    83.301 ( 83.301)   238.722 (238.722)
 largest difference in a premium: 0.0012
+```
+
+```python
+fig, ax = plt.subplots()
+x = np.arange(len(FAMILIES))
+ax.bar(x - 0.2, [hs_p[f].allocated[1].premium for f in FAMILIES], width=0.4, label="gross")
+ax.bar(x + 0.2, [hs_net_p[f].allocated[1].premium for f in FAMILIES], width=0.4, label="net of the cover")
+ax.set_xticks(x, FAMILIES)
+ax.set_xlabel("distortion")
+ax.set_ylabel("premium of Hu")
+ax.set_title("Hurricane/SCS: the premium of Hu, gross and net of 372.4 xs 40.25")
+ax.legend()
 ```
 
 The net book also agrees to within 0.0012. The cover removes a third of the

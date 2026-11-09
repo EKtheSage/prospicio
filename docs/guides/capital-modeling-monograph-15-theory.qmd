@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 CAS Monograph 15 is *Introduction to Capital Modeling and Portfolio
 Management* (John Major and Stephen Mildenhall, 2026). It builds its theory on
 one small company, InsCo, and prints every step as a table. This guide follows
@@ -359,6 +361,28 @@ cat(sprintf("%12s total %13.3f %8.3f   (book 46.6, 53.565)\n", "", sum(s_layer *
              total        46.600   53.565   (book 46.6, 53.565)
 ```
 
+The layer sum is easier to read as a picture. Each bar pair is one layer. The
+grey bar is its expected loss, and the other bar is its premium under CCoC:
+
+```{r}
+#| label: layer-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+layer_names <- sprintf("%.0f to %.0f", xs[-length(xs)], xs[-1])
+layer_bars <- data.frame(
+  layer = factor(rep(layer_names, 2), levels = layer_names),
+  what = rep(c("expected loss", "premium under CCoC 15%"), each = length(widths)),
+  value = c(s_layer * widths, g_layer * widths)
+)
+ggplot(layer_bars, aes(layer, value, fill = what)) +
+  geom_col(position = "dodge", width = 0.8) +
+  scale_fill_manual(values = c("expected loss" = "grey75",
+                               "premium under CCoC 15%" = scales::hue_pal()(1))) +
+  labs(x = "layer of the total loss (monograph units)",
+       y = "expected loss or premium (monograph units)", fill = NULL,
+       title = "Table 4.4: the premium exceeds the loss most in the top layer") +
+  theme(legend.position = "top")
+```
+
 Under CCoC, every layer earns the same 15% on its capital. Thus this layer sum
 gives the premium of the pentagon. The top layer is 35 wide and the total
 reaches it one year in ten. It has 7.609 of premium for 3.5 of expected loss.
@@ -474,6 +498,27 @@ ph    rho     0.7205 (book 0.7205)  premium 53.565
 wang  lambda  0.3427 (book 0.3427)  premium 53.565
 dual  beta    1.5952 (book 1.5951)  premium 53.565
 tvar  p       0.2713 (book 0.2713)  premium 53.565
+```
+
+Each family is a function `g(s)` that lifts the survival probability `s`. The
+grey line is `g(s) = s`, which gives the expected loss with no margin. Each
+curve lies above it, so each one charges margin. The curves cross, because
+each family is calibrated to the same premium of 53.565 for the book:
+
+```{r}
+#| label: distortion-figure
+grid <- (0:100) / 100
+curves <- do.call(rbind, lapply(FAMILIES, function(f) {
+  data.frame(panel = if (f %in% c("ccoc", "ph", "wang")) "ccoc, ph, wang" else "dual, tvar",
+             family = f, s = grid, g = distortion_g(distortions[[f]], grid))
+}))
+ggplot(curves, aes(s, g)) +
+  geom_abline(slope = 1, intercept = 0, colour = "grey75") +
+  geom_line(aes(colour = family), linewidth = 0.8) +
+  facet_wrap(~panel) +
+  labs(x = "survival probability s", y = "distorted probability g(s)", colour = NULL,
+       title = "The five calibrated distortions (Table 4.5; grey: no margin)") +
+  theme(legend.position = "top")
 ```
 
 All five charge the same 53.565 for the book. They differ in where they put
@@ -607,6 +652,26 @@ for (i in 1:3) {
 A    16   2.261  13.739  0.339  0.049  0.150   book (16, 2.261, 13.739, 0.339, 0.049)
 B    20   1.478  18.522  0.222  0.032  0.150   book (20, 1.478, 18.522, 0.222, 0.032)
 C    64  42.696  21.304  6.404  0.919  0.150   book (64, 42.696, 21.304, 6.404, 0.919)
+```
+
+Side by side, the two allocations show how the choice of distortion moves the
+premium between units:
+
+```{r}
+#| label: allocation-table
+library(gt)
+compare <- data.frame(
+  unit = UNITS,
+  expected_loss = insco@expected,
+  CCoC = units_only(priced)$premium,
+  Wang = wang_units$premium
+)
+gt(compare, rowname_col = "unit") |>
+  tab_header("Premium by unit at a 15% return (monograph units)",
+             "Natural allocation under CCoC and under the Wang distortion") |>
+  cols_label(expected_loss = "expected loss") |>
+  tab_spanner("premium", columns = c(CCoC, Wang)) |>
+  fmt_number(columns = c(expected_loss, CCoC, Wang), decimals = 2)
 ```
 
 Unit C takes 91.9% of the margin, against 85.0% under Wang. Under the industry

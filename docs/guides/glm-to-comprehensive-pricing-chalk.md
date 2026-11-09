@@ -1,5 +1,7 @@
 # Beyond the GLM: CAS Monograph 16 with prospicio
 
+<!-- site: execute -->
+
 CAS Monograph 16 is *From GLMs to Comprehensive Insurance Pricing: Techniques
 and Challenges* (Alan Chalk, David Deacon, Montserrat Guillen and Max
 Martinelli, 2025). It starts where the GLM monograph of Goldburd and others
@@ -541,6 +543,24 @@ print("kept:", kept)
 kept: [20, 23, 26, 29, 32, 62, 65, 77]
 ```
 
+The cross-validation curve shows how the lasso chooses. The score is the mean
+validation deviance at each penalty, with its standard error. The two chosen
+penalties are marked:
+
+```python
+import matplotlib.pyplot as plt
+
+x = np.log10(cvp.lams)
+fig, ax = plt.subplots()
+ax.errorbar(x, cvp.mean, yerr=cvp.se, color="0.75", capsize=2, label="mean validation deviance")
+ax.axvline(np.log10(cvp.lam_min), linestyle="--", label=f"lam_min ({best.df} steps)")
+ax.axvline(np.log10(cvp.lam_1se), linestyle=":", label=f"lam_1se ({simple.df} steps)")
+ax.set_xlabel("log10 of the penalty lam")
+ax.set_ylabel("deviance on the validation fold")
+ax.set_title("Cross-validation of the lasso on 20 age steps")
+ax.legend()
+```
+
 The next block compares three fits with the truth by age. The true frequency at
 an age is the exposure-weighted average of the true frequencies of the policies
 at that age. The three fits are:
@@ -582,6 +602,20 @@ age 50: truth 0.207  lasso 0.207  relaxed 0.200  GAM 0.195
 age 65: truth 0.215  lasso 0.236  relaxed 0.239  GAM 0.228
 age 80: truth 0.256  lasso 0.239  relaxed 0.253  GAM 0.249
 GAM effective degrees of freedom 5.7
+```
+
+The curves show the same result:
+
+```python
+fig, ax = plt.subplots()
+ax.plot(grid, true_by_age, color="0.75", linewidth=3, label="truth")
+ax.plot(grid, lasso_curve, label="lasso at lam_min")
+ax.plot(grid, relaxed_curve, label="relaxed lasso")
+ax.plot(grid, gam_curve, label="GAM")
+ax.set_xlabel("driver age (years)")
+ax.set_ylabel("claims per policy year")
+ax.set_title("Claim frequency by age: truth and three fits")
+ax.legend()
 ```
 
 All three fits find the young-driver slope and the rise after 60 with no

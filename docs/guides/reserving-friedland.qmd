@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 Jacqueline Friedland's *Estimating Unpaid Claims Using Basic Techniques*
 (Casualty Actuarial Society, version 3, 2010) is the CAS syllabus text on
 reserving. It applies each technique to the same few data sets, so the results
@@ -216,6 +218,35 @@ Each factor row equals the related row of chapter 7, Exhibit I, sheet 1,
 part 3, to the three printed decimals. The 12-24 factor is at the left and the
 108-120 factor is at the right. The paid averages on sheet 2 agree in the same
 way.
+
+The figure shows the link ratios behind these averages. Each grey line is one
+accident year. The coloured line is the latest-3 average.
+
+```{r}
+#| label: link-ratio-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+link <- do.call(rbind, lapply(seq_along(US_REPORTED), function(i) {
+  row <- US_REPORTED[[i]]
+  n <- length(row) - 1
+  if (n < 1) return(NULL)
+  data.frame(year = US_YEARS[i], age = 12 * seq_len(n),
+             pct = 100 * (row[-1] / row[-length(row)] - 1))
+}))
+selected <- data.frame(age = 12 * seq_along(fits[["volume, latest 3"]]@ldf),
+                       pct = 100 * (fits[["volume, latest 3"]]@ldf - 1),
+                       what = "volume, latest 3")
+ggplot() +
+  geom_line(aes(age, pct, group = year, linetype = "one accident year"), data = link,
+            colour = "grey75") +
+  geom_line(aes(age, pct, colour = what), data = selected) +
+  geom_point(aes(age, pct, colour = what), data = selected, size = 2) +
+  scale_y_log10() +
+  scale_x_continuous(breaks = selected$age) +
+  labs(x = "age at the start of the link, months", y = "link ratio minus 1, % (log scale)",
+       colour = NULL, linetype = NULL,
+       title = "U.S. Industry Auto, reported: link ratios and the latest-3 average") +
+  theme(legend.position = "top")
+```
 
 The book uses two conventions here, and prospicio follows both:
 
@@ -770,6 +801,26 @@ B-F, paid                 27    27     73    73
 Cape Cod                  27    27     73    73
 ```
 
+```{r}
+#| label: summary-table
+library(gt)
+summary_table <- data.frame(
+  method = names(book_billions),
+  ibnr_book = vapply(book_billions, `[`, 0, 1),
+  ibnr_ours = vapply(fits, function(f) unpaid(f@ultimate)[1] / 1e6, 0),
+  total_book = vapply(book_billions, `[`, 0, 2),
+  total_ours = vapply(fits, function(f) unpaid(f@ultimate)[2] / 1e6, 0)
+)
+gt(summary_table, rowname_col = "method") |>
+  tab_header("U.S. Industry Auto: unpaid claims by method", "$ billions") |>
+  tab_spanner("IBNR", columns = c(ibnr_book, ibnr_ours)) |>
+  tab_spanner("total unpaid", columns = c(total_book, total_ours)) |>
+  cols_label(ibnr_book = "book", ibnr_ours = "prospicio",
+             total_book = "book", total_ours = "prospicio") |>
+  fmt_integer(columns = c(ibnr_book, total_book)) |>
+  fmt_number(columns = c(ibnr_ours, total_ours), decimals = 1)
+```
+
 All twelve figures agree. The spread across methods is small, about 4% of the
 unpaid estimate. This is the expected result for a whole industry.
 
@@ -804,6 +855,28 @@ year  avg dev   book  dev rep dev paid       EC   BF rep  BF paid       CC
 2006    60.6%  60.6%    54.3%    67.0%    65.8%    56.1%    66.2%    54.6%
 2007   100.8% 100.8%    76.8%   124.8%    63.8%    72.4%    73.1%    69.4%
 2008   128.2% 128.2%    99.4%   156.9%    82.5%    89.1%    85.9%    82.0%
+```
+
+The figure draws the claim ratios of the table.
+
+```{r}
+#| label: ratio-figure
+ratio <- do.call(rbind, lapply(names(methods), function(name) {
+  data.frame(year = XYZ_YEARS, method = name,
+             pct = 100 * methods[[name]]@ultimate / XYZ_PREMIUM)
+}))
+background <- c("EC", "BF rep", "BF paid")
+ggplot() +
+  geom_line(aes(year, pct, group = method, linetype = "EC, BF rep, BF paid"),
+            data = ratio[ratio$method %in% background, ], colour = "grey75") +
+  geom_line(aes(year, pct, colour = method), data = ratio[!ratio$method %in% background, ]) +
+  geom_point(aes(year, pct, colour = method), data = ratio[!ratio$method %in% background, ],
+             size = 2) +
+  scale_x_continuous(breaks = XYZ_YEARS) +
+  labs(x = "accident year", y = "ultimate claim ratio, % of premium",
+       colour = NULL, linetype = NULL,
+       title = "XYZ Insurer: claim ratio by accident year and method") +
+  theme(legend.position = "top")
 ```
 
 The average-of-development column equals the book's to the tenth of a percent.

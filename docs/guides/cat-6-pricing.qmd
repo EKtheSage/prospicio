@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 The earlier pages of this track made annual ceded losses from the year event
 loss table of Larkspur Re. This page makes a price from the ceded losses of one
 contract. The story, the files and the notation are on
@@ -170,6 +172,26 @@ The Wang price is lower, and the return that it implies on the TVaR capital is
 under 5%. The two rules answer different questions. Use the rule that matches
 the calibration of your capital model, and use the other as a check.
 
+The figure shows the years with a ceded loss, and where each number falls.
+
+```{r}
+#| label: fig-loss-years
+library(ggplot2, exclude = "layer")
+
+prices <- data.frame(
+  price = c("expected loss", "Wang 0.3 premium", "cost of capital premium"),
+  value = c(p$expected_loss, pw$premium, p$premium)
+)
+ggplot() +
+  geom_histogram(aes(x, fill = "years with a ceded loss"), data = data.frame(x = loss@draws[loss@draws > 0]),
+                 bins = 24) +
+  geom_vline(aes(xintercept = value, colour = price), data = prices) +
+  scale_fill_manual(values = c("years with a ceded loss" = "grey75")) +
+  labs(x = "annual ceded loss at Larkspur's share", y = "years of 2,000", fill = NULL, colour = NULL,
+       title = "Alder 40 xs 30: the 230 years with a loss, and three prices") +
+  theme(legend.position = "top")
+```
+
 ## 4. From risk premium to a quote
 
 The premium above is the risk premium. With expenses `e` and brokerage `b` as
@@ -269,6 +291,24 @@ r = 0.15: premium 2.5212
 r = 0.20: premium 2.9930
 ```
 
+```{r}
+#| label: fig-premium-by-r
+rs <- (2:25) / 100
+by_r <- rbind(
+  data.frame(r = rs, premium = (p$expected_loss + rs * p$assets) / (1 + rs),
+             rule = "price (premium helps pay the tail)"),
+  data.frame(r = rs, premium = p$expected_loss + rs * (p$assets - p$expected_loss),
+             rule = "shortcut EL + r (TVaR - EL)")
+)
+ggplot(by_r, aes(r, premium, colour = rule)) +
+  geom_line(linewidth = 0.8) +
+  geom_hline(aes(yintercept = lay@premium, linetype = "contract premium"), colour = "grey75") +
+  scale_linetype_manual(values = c("contract premium" = "dotted")) +
+  labs(x = "cost of capital r", y = "premium at Larkspur's share", colour = NULL, linetype = NULL,
+       title = "The premium rises with r, and less than the shortcut says") +
+  theme(legend.position = "top")
+```
+
 **Hours clause.** Without the 72 hour clause, the pieces of a split windstorm
 or convective storm are separate occurrences. Each piece has its own retention.
 
@@ -327,6 +367,22 @@ cat(sprintf("return on capital %.4f against a target of 0.10\n", m$return_on_cap
 quoted premium 1.8000, risk premium 1.5300
 loss ratio 0.457, margin 0.7070
 return on capital 0.0574 against a target of 0.10
+```
+
+```{r}
+#| label: tbl-build-up
+library(gt)
+
+build_up <- data.frame(
+  item = c("risk premium", "expenses", "brokerage", "quoted premium", "rate on line"),
+  technical = c(q$risk_premium, q$expenses, q$brokerage, q$premium, q$rate_on_line),
+  market = c(m$risk_premium, m$expenses, m$brokerage, m$premium, m$rate_on_line)
+)
+gt(build_up, rowname_col = "item") |>
+  tab_header("Alder 40 xs 30: the technical quote and the market quote",
+             "Premium at Larkspur's share; the rate on line is premium over limit") |>
+  tab_spanner("quote", columns = c(technical, market)) |>
+  fmt_number(columns = c(technical, market), decimals = 4)
 ```
 
 At the market price, `alder_cat_1` earns much less than the 10% target on its

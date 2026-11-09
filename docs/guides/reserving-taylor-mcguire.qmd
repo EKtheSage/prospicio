@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 CAS Monograph 3 is *Stochastic Loss Reserving Using Generalized Linear Models*
 (Greg Taylor and Gráinne McGuire, 2016). It shows that the chain ladder is a
 generalized linear model (GLM). It uses this fact to put a prediction error on
@@ -290,6 +292,25 @@ parameter  12,465
 total if the years were independent  10,275  (book 10,275)
 ```
 
+The next table lays out the same result by accident year. It splits the
+RMSEP into its process and parameter parts:
+
+```{r}
+#| label: table-5-4
+library(gt)
+table_5_4 <- data.frame(
+  year = pe$origin, forecast = pe$reserve, process_se = pe$process_se,
+  parameter_se = pe$parameter_se, rmsep = pe$rmsep, cvp = 100 * pe$cv
+)
+gt(table_5_4, rowname_col = "year") |>
+  tab_header("Table 5-4: reserve and prediction error by accident year",
+             "Money in the units of the triangle; CVP in percent") |>
+  tab_spanner("standard error", columns = c(process_se, parameter_se)) |>
+  cols_label(process_se = "process", parameter_se = "parameter", rmsep = "RMSEP", cvp = "CVP %") |>
+  fmt_integer(columns = c(forecast, process_se, parameter_se, rmsep)) |>
+  fmt_number(columns = cvp, decimals = 1)
+```
+
 The monograph adds the MSEPs of the accident years as if the years were
 independent. This gives 10,275 instead of 14,076, and prospicio gives the same
 value. The difference is the positive correlation between years. The years
@@ -404,6 +425,23 @@ Mack total                 373,346  RMSEP  10,939
 Mack by year 39 44 410 850 1364 1959 2308 3179 9192
 ```
 
+```{r}
+#| label: total-reserve-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+grid <- data.frame(x = seq(280000, 470000, length.out = 300))
+grid$mack <- stats::dnorm(grid$x, mk@total_reserve, mk@total_standard_error)
+grid$glm <- stats::dnorm(grid$x, cc@total_reserve, pe$rmsep[K])
+ggplot() +
+  geom_histogram(aes(x = boot_total, y = after_stat(density), fill = "ODP bootstrap draws"),
+                 bins = 60) +
+  geom_line(aes(x, mack, colour = "normal, Mack SE"), data = grid) +
+  geom_line(aes(x, glm, colour = "normal, GLM RMSEP"), data = grid) +
+  scale_fill_manual(values = c("ODP bootstrap draws" = "grey75")) +
+  scale_x_continuous(labels = scales::comma) +
+  labs(x = "total reserve (units of the triangle)", y = "density", fill = NULL, colour = NULL,
+       title = "Total reserve: the bootstrap is wider than Mack's error")
+```
+
 The scale of the ODP bootstrap is the same Pearson `phi`. Its total RMSEP is
 near the RMSEP of the parametric bootstrap. The total standard error of Mack is
 approximately a quarter lower. Its spread across years is also very different:
@@ -440,6 +478,22 @@ by development year 1 to 8, spread (sd) of the residuals
 1.42 1.68 0.94 0.67 0.91 0.86 0.75 0.49
 by calendar year 1988 to 1997, mean residual
 -0.38 -0.13 -0.40 +0.56 +0.42 -0.43 +0.23 -0.27 -0.26 +0.32
+```
+
+```{r}
+#| label: residual-figure
+panels <- rbind(
+  data.frame(panel = "Spread by development year", x = 1:8, y = dev$sd[1:8]),
+  data.frame(panel = "Mean by calendar year", x = 1988:1997, y = cal$mean)
+)
+panels$panel <- factor(panels$panel, levels = unique(panels$panel))
+ggplot(panels, aes(x, y)) +
+  geom_col(fill = "grey75") +
+  facet_wrap(~panel, scales = "free") +
+  scale_x_continuous(breaks = function(lim) seq(ceiling(lim[1]), floor(lim[2]), by = 2)) +
+  labs(x = "year (development, left; calendar, right)",
+       y = "standardized residual (sd, left; mean, right)",
+       title = "Standardized deviance residuals")
 ```
 
 The spreads are sample standard deviations, with divisor `n - 1`. Two cells

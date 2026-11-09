@@ -1,5 +1,7 @@
 # Pricing Insurance Risk, Part II: portfolio pricing in prospicio
 
+<!-- site: execute -->
+
 Part II of Mildenhall and Major's *Pricing Insurance Risk: Theory and Practice*
 (Wiley, 2022) is chapters 8 to 11. It prices a whole portfolio in two ways:
 
@@ -282,6 +284,26 @@ The delta columns show the book's main point:
 The formula of a principle sets its view of diversification. The data does not
 change that view.
 
+Table 9.2 as a table, with the units of the premium. The principles sit in the
+order of the net total, from the lowest premium to the highest:
+
+```python
+from great_tables import GT
+import pandas as pd
+
+table_92 = pd.DataFrame(
+    [(name.replace("_", " "), *values) for name, values in BOOK_92.items()],
+    columns=["principle", "loading", "A", "B net", "B", "net", "total"],
+).sort_values("net")
+(GT(table_92, rowname_col="principle")
+ .tab_header("Table 9.2: Tame premiums by principle, each calibrated to the CCoC total",
+             "Currency units; the loading is the parameter of the principle")
+ .tab_spanner("units", ["A", "B net", "B"])
+ .tab_spanner("totals", ["net", "total"])
+ .fmt_number("loading", decimals=3)
+ .fmt_number(["A", "B net", "B", "net", "total"], decimals=2))
+```
+
 Two principles are sensitive to how the code makes the net B grid of Tame. The
 exponential and Esscher premiums weight an outcome x by exp(t x). On a grid
 that goes to 1,024, the factor exp(0.08 x) is approximately 1e35 at the top.
@@ -472,6 +494,25 @@ unit of premium, so their return is also low. The return on capital increases
 with s. Only the CCoC distortion, a straight line from (0, d) to (1, 1), earns
 the same return on every layer. For this reason it is "constant".
 
+The figure shows the return on capital of a layer against its exceedance
+probability s:
+
+```python
+import matplotlib.pyplot as plt
+
+grid_s = [10 ** (-3 + 2.99 * i / 99) for i in range(100)]
+fig, ax = plt.subplots()
+for label, dist in (("PH, rho 0.5", Distortion.proportional_hazard(0.5)),
+                    ("PH, rho 0.7", Distortion.proportional_hazard(0.7)),
+                    ("CCoC, 10%", Distortion.ccoc(0.10))):
+    ax.plot(grid_s, [(dist.g(s) - s) / (1 - dist.g(s)) for s in grid_s], label=label)
+ax.set_xscale("log")
+ax.set_xlabel("exceedance probability s of the layer")
+ax.set_ylabel("return on capital of the layer")
+ax.set_title("Return on capital by layer")
+ax.legend()
+```
+
 The Simple Discrete Example of Part I shows the capped premium as a function of
 the assets. In Tables 11.1 and 11.3, the PH with rho 0.5 prices the uncapped
 loss at 51.156 and the loss capped at 80 at 42.828:
@@ -566,6 +607,26 @@ zero, which is the rate on line of the most remote layer. `mass` reports it.
 Only the point at s = 0.03 moves (0.0673 to 0.0713). The Blend is not
 calibrated, so it is the same distortion in both cases.
 
+The figure draws the six distortions of the Tame book. The grey line is
+g(s) = s, which prices a layer at its expected loss. The distance above it is
+the margin:
+
+```python
+tame_g = {**fitted["Tame"], "blend": blend}
+fig, axes = plt.subplots(2, 3, sharex=True, sharey=True, figsize=(7.0, 4.6))
+points = [i / 100 for i in range(101)]
+for ax, (name, dist) in zip(axes.flat, tame_g.items()):
+    ax.plot(points, points, color="0.75")
+    ax.plot(points, [dist.g(s) for s in points])
+    ax.set_title(name)
+for ax in axes[1]:
+    ax.set_xlabel("exceedance probability s")
+for ax in axes[:, 0]:
+    ax.set_ylabel("g(s)")
+fig.suptitle("The six distortions of the Tame book")
+fig.tight_layout()
+```
+
 ## 7. Pricing each unit with the five distortions
 
 Tables 11.7 and 11.8 price each unit stand-alone with each calibrated
@@ -640,6 +701,22 @@ the TVaR charges 31.15, and Non-Cat goes the other way. The net book costs
 105.9 under the CCoC and 110.9 under TVaR. Thus the value of the Cat cover to
 the insurer (gross minus net premium) is from 9.3 to 4.3. The value depends on
 the distortion that the capital providers use.
+
+The figure shows both points for Cat/Non-Cat, with the premiums of Table 11.8:
+
+```python
+cnc_names = list(BOOK_118)
+fig, (left, right) = plt.subplots(1, 2, sharex=True, figsize=(7.0, 3.6))
+left.bar(cnc_names, [BOOK_118[n][0] for n in cnc_names])
+left.set_title("Cat alone")
+left.set_ylabel("premium (currency units)")
+right.bar(cnc_names, [BOOK_118[n][3] - BOOK_118[n][6] for n in cnc_names])
+right.set_title("Value of the Cat cover")
+right.set_ylabel("gross less net premium (currency units)")
+for ax in (left, right):
+    ax.set_xlabel("distortion")
+fig.tight_layout()
+```
 
 Exercise 200 asks what reinsurance price is attractive. There is no answer
 until you choose the distortion. The Blend is not calibrated, and it charges

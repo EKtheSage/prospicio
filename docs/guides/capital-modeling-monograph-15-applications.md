@@ -1,5 +1,7 @@
 # Applications and the choice of a distortion: CAS Monograph 15, chapters 5 and 6
 
+<!-- site: execute -->
+
 CAS Monograph 15 is *Introduction to Capital Modeling and Portfolio
 Management* (John Major and Stephen Mildenhall, 2026). Its chapters 5 and 6
 apply the natural allocation to the InsCo example. They judge units against a
@@ -83,6 +85,29 @@ A    13.9  14.109  -0.209   -41.8%     -1.43%   book -0.209 -41.8% -1.43%
 B    18.7  18.637   0.063    15.6%      0.33%   book 0.063 15.6% 0.33%
 C    19.6  20.819  -1.219   -25.9%     -4.45%   book -1.219 -25.9% -4.45%
 book total: excess -1.365 (book -1.365), -24.4% of plan margin (book -24.4%)
+```
+
+The same results as a table:
+
+```python
+import pandas as pd
+from great_tables import GT
+
+perf = pd.DataFrame({
+    "unit": UNITS,
+    "plan": PLAN,
+    "wang": [u.premium for u in required.allocated],
+    "excess": [plan - u.premium for plan, u in zip(PLAN, required.allocated)],
+    "of_plan": [(plan - u.premium) / (plan - u.loss) for plan, u in zip(PLAN, required.allocated)],
+    "lr": [u.loss / u.premium - u.loss / plan for plan, u in zip(PLAN, required.allocated)],
+})
+(GT(perf, rowname_col="unit")
+ .tab_header("Table 5.2: plan premium against the required premium under Wang",
+             "Premium in currency units; excess = plan less Wang")
+ .cols_label(plan="plan premium", wang="Wang premium", excess="excess premium",
+             of_plan="excess, % of plan margin", lr="excess loss ratio")
+ .fmt_number(["plan", "wang", "excess"], decimals=3)
+ .fmt_percent(["of_plan", "lr"], decimals=1))
 ```
 
 Only the plan for unit B covers its target, by 0.063. Unit C has most of the
@@ -434,6 +459,27 @@ B   17.466     18.349      20.412   20.412
 C   19.255     19.371      21.304   22.098
 ```
 
+The figure shows the same ranges. The grey bar is the range of all
+distortions. The coloured bar is the range of the five. The dot is the plan:
+
+```python
+import matplotlib.pyplot as plt
+
+bounds = insco.premium_bounds(target, assets=100)
+fig, ax = plt.subplots()
+for y, b in enumerate(bounds):
+    five = [by_family[f][y] for f in FAMILIES]
+    ax.plot([b["lower"], b["upper"]], [y, y], color="0.75", linewidth=10, solid_capstyle="butt",
+            label="all distortions" if y == 0 else None)
+    ax.plot([min(five), max(five)], [y, y], color="C0", linewidth=4, solid_capstyle="butt",
+            label="the five" if y == 0 else None)
+    ax.plot(PLAN[y], y, "o", color="C1", label="plan" if y == 0 else None)
+ax.set_yticks(range(len(UNITS)), [f"unit {u}" for u in UNITS])
+ax.set_xlabel("premium (currency units)")
+ax.set_title(f"Range of the premium of each unit at a total premium of {target:.3f}")
+ax.legend()
+```
+
 The five representatives cover most of the range of each unit, but not all of
 it. The highest possible premium for unit B is the TVaR premium. But a
 distortion outside the five can price unit A as low as 13.098. The monograph
@@ -476,6 +522,21 @@ plan   13.900            96.4%  18.700            97.9%  19.600            76.0%
 A: cheapest ccoc, plan meets at least one distortion: True
 B: cheapest ph, plan meets at least one distortion: True
 C: cheapest tvar, plan meets at least one distortion: True
+```
+
+The figure shows each unit's premium by distortion against its plan:
+
+```python
+fig, axes = plt.subplots(1, 3, figsize=(7.0, 3.4))
+for i, ax in enumerate(axes):
+    ax.plot(FAMILIES, [by_family[f][i] for f in FAMILIES], "o", color="C0", label="required")
+    ax.axhline(PLAN[i], color="C1", label="plan")
+    ax.set_title(f"Unit {UNITS[i]}")
+    ax.tick_params(axis="x", labelrotation=45)
+axes[0].set_ylabel("premium (currency units)")
+axes[1].legend(loc="upper left")
+fig.suptitle("Required premium by distortion, against the plan")
+fig.tight_layout()
 ```
 
 The dual power premium for unit C is 20.32158 here. The monograph prints the
@@ -533,6 +594,19 @@ ph    cover worth 6.662, loss ratio 53%, buy at 6.5: True
 wang  cover worth 6.087, loss ratio 58%, buy at 6.5: False
 dual  cover worth 5.415, loss ratio 65%, buy at 6.5: False
 tvar  cover worth 4.803, loss ratio 73%, buy at 6.5: False
+```
+
+The figure shows the same values against the quoted premium:
+
+```python
+worth = [split.price(distortions[f], assets=100).allocated[1].premium for f in FAMILIES]
+fig, ax = plt.subplots()
+ax.bar(FAMILIES, worth, color="C0", label="value of the cover")
+ax.axhline(6.5, color="C1", label="quoted premium")
+ax.set_xlabel("distortion")
+ax.set_ylabel("premium (currency units)")
+ax.set_title("Value of the stop loss to InsCo by distortion")
+ax.legend()
 ```
 
 With the CCoC or PH, InsCo buys the cover at 6.5. With Wang, the dual power or

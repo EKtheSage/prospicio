@@ -1,5 +1,7 @@
 # Stochastic loss reserving with GLMs: Taylor and McGuire reproduced
 
+<!-- site: execute -->
+
 CAS Monograph 3 is *Stochastic Loss Reserving Using Generalized Linear Models*
 (Greg Taylor and Gráinne McGuire, 2016). It shows that the chain ladder is a
 generalized linear model (GLM). It uses this fact to put a prediction error on
@@ -274,6 +276,31 @@ parameter  12,465
 total if the years were independent  10,275  (book 10,275)
 ```
 
+The next table lays out the same result by accident year. It splits the
+RMSEP into its process and parameter parts:
+
+```python
+import pandas as pd
+from great_tables import GT
+
+table_5_4 = pd.DataFrame({
+    "year": pe["origin"][1:],
+    "forecast": pe["reserve"][1:],
+    "process_se": pe["process_se"][1:],
+    "parameter_se": pe["parameter_se"][1:],
+    "rmsep": pe["rmsep"][1:],
+    "cvp": [100 * c for c in pe["cv"][1:]],
+})
+(GT(table_5_4, rowname_col="year")
+ .tab_header("Table 5-4: reserve and prediction error by accident year",
+             "Money in the units of the triangle; CVP in percent")
+ .tab_spanner("standard error", ["process_se", "parameter_se"])
+ .cols_label(forecast="forecast", process_se="process", parameter_se="parameter",
+             rmsep="RMSEP", cvp="CVP %")
+ .fmt_integer(["forecast", "process_se", "parameter_se", "rmsep"])
+ .fmt_number("cvp", decimals=1))
+```
+
 The monograph adds the MSEPs of the accident years as if the years were
 independent. This gives 10,275 instead of 14,076, and prospicio gives the same
 value. The difference is the positive correlation between years. The years
@@ -387,6 +414,29 @@ Mack total                 373,346  RMSEP  10,939
 Mack by year [39, 44, 410, 850, 1364, 1959, 2308, 3179, 9192]
 ```
 
+```python
+import matplotlib.pyplot as plt
+
+total_boot = boot.sum(axis=0)
+grid = np.linspace(280_000, 470_000, 300)
+
+
+def normal_pdf(x, mean, sd):
+    return np.exp(-0.5 * ((x - mean) / sd) ** 2) / (sd * math.sqrt(2 * math.pi))
+
+
+fig, ax = plt.subplots()
+ax.hist(total_boot, bins=60, density=True, color="0.75", label="ODP bootstrap draws")
+ax.plot(grid, normal_pdf(grid, mack.total_reserve, mack.total_standard_error), label="normal, Mack SE")
+ax.plot(grid, normal_pdf(grid, cc.total_reserve, pe["rmsep"][-1]), label="normal, GLM RMSEP")
+ax.set_xticks(range(300_000, 500_000, 50_000))
+ax.xaxis.set_major_formatter(lambda x, _: f"{x:,.0f}")
+ax.set_xlabel("total reserve (units of the triangle)")
+ax.set_ylabel("density")
+ax.set_title("Total reserve: the bootstrap is wider than Mack's error")
+ax.legend()
+```
+
 The scale of the ODP bootstrap is the same Pearson `phi`. Its total RMSEP is
 near the RMSEP of the parametric bootstrap. The total standard error of Mack is
 approximately a quarter lower. Its spread across years is also very different:
@@ -423,6 +473,21 @@ by development year 1 to 8, spread (sd) of the residuals
 1.42 1.68 0.94 0.67 0.91 0.86 0.75 0.49
 by calendar year 1988 to 1997, mean residual
 -0.38 -0.13 -0.40 +0.56 +0.42 -0.43 +0.23 -0.27 -0.26 +0.32
+```
+
+```python
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9, 3.5))
+ax1.bar(range(1, 9), dev["sd"][:8], color="0.75")
+ax1.axhline(1.0, color="0.4", linestyle=":")
+ax1.set_xlabel("development year")
+ax1.set_ylabel("sd of standardized residuals")
+ax1.set_title("Spread by development year")
+ax2.bar(range(1988, 1998), cal["mean"], color="0.75")
+ax2.axhline(0.0, color="0.4")
+ax2.set_xlabel("calendar year")
+ax2.set_ylabel("mean standardized residual")
+ax2.set_title("Mean by calendar year")
+fig.tight_layout()
 ```
 
 The spreads are sample standard deviations, with divisor `n - 1`. Two cells

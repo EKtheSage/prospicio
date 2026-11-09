@@ -1,5 +1,7 @@
 # Aggregate distributions: FFT, Panjer, simulation or moments
 
+<!-- site: execute -->
+
 Use this guide when you need the distribution of the total loss of a year (the
 **aggregate loss**). The same applies to what one reinsurance contract pays out
 of it. The guide helps you choose how to compute it. prospicio has four engines:
@@ -112,6 +114,29 @@ lognormal          99%:  27.11   99.5%:  32.92
 shifted_gamma      99%:  30.63   99.5%:  37.50
 shifted_lognormal  99%:  27.59   99.5%:  34.16
 FFT                99%:  25.81   99.5%:  31.56
+```
+
+The same numbers as a table, with the error of each fit against the FFT:
+
+```python
+import pandas as pd
+from great_tables import GT
+
+rows = []
+for kind in ["normal", "gamma", "lognormal", "shifted_gamma", "shifted_lognormal"]:
+    fit = m.approximate(kind)
+    rows.append({"fit": kind, "q99": fit.quantile(0.99), "q995": fit.quantile(0.995),
+                 "err99": fit.quantile(0.99) / annual.quantile(0.99) - 1,
+                 "err995": fit.quantile(0.995) / annual.quantile(0.995) - 1})
+rows.append({"fit": "FFT", "q99": annual.quantile(0.99), "q995": annual.quantile(0.995),
+             "err99": 0.0, "err995": 0.0})
+(GT(pd.DataFrame(rows), rowname_col="fit")
+ .tab_header("Moment fits against the FFT", "Annual loss at two quantiles, running book")
+ .tab_spanner("annual loss (money units)", ["q99", "q995"])
+ .tab_spanner("error against the FFT", ["err99", "err995"])
+ .cols_label(q99="99%", q995="99.5%", err99="99%", err995="99.5%")
+ .fmt_number(["q99", "q995"], decimals=2)
+ .fmt_percent(["err99", "err995"], decimals=1))
 ```
 
 **Use moments** for the mean and spread of a year. Examples are a quick load, a
@@ -509,6 +534,26 @@ Ten times the years cut the error about threefold, not tenfold. A tail quantile
 is the noisiest number there is. At 10,000 years its spread (1.42) is several
 percent of its value, and the spread of the mean (0.047) is under one percent.
 
+The FFT density and the simulated histogram show the same shape. The
+histogram uses the first of the ten runs of 100,000 years:
+
+```python
+import matplotlib.pyplot as plt
+
+draws = [row[0] for row in runs[0].draw_matrix()]
+xs = [annual.step * i for i in range(len(annual.probs))]
+density = [p / annual.step for p in annual.probs]
+fig, ax = plt.subplots()
+ax.hist(draws, bins=[0.5 * i for i in range(81)], density=True, color="0.75",
+        label="simulation, 100,000 years")
+ax.plot(xs, density, label="FFT")
+ax.set_xlim(0, 40)
+ax.set_xlabel("annual loss (money units)")
+ax.set_ylabel("density")
+ax.set_title("Annual loss of the running book: FFT against simulation")
+ax.legend()
+```
+
 A standard error from the sample variance, as in section 6, assumes that the
 simulated quantity has a finite variance. For a severity like the Pareto of
 section 3.5 with `alpha` 1.5, the variance is infinite. The error bar then
@@ -758,6 +803,26 @@ curve for stop loss, aggregate limits and capital on the total of the year. The
 occurrence return period is the average time between occurrences above the
 loss. It differs from the annual return period (100) because a year can hold
 more than one occurrence.
+
+The two curves as a figure. For a Poisson count, the OEP is
+`1 - exp(-6 (1 - F(x)))`, with `F` the severity cdf:
+
+```python
+import math
+
+grid = [0.25 * i for i in range(1, 161)]
+oep = [1 - math.exp(-6.0 * (1 - sev.cdf(x))) for x in grid]
+aep = [1 - annual.cdf(x) for x in grid]
+fig, ax = plt.subplots()
+ax.plot(grid, aep, label="annual aggregate (total of the year)")
+ax.plot(grid, oep, label="occurrence (largest claim of the year)")
+ax.set_yscale("log")
+ax.set_ylim(1e-3, 1)
+ax.set_xlabel("loss (money units)")
+ax.set_ylabel("probability of exceeding the loss")
+ax.set_title("Exceedance probability: occurrence against annual aggregate")
+ax.legend()
+```
 
 The OEP is closed form for the counts that prospicio accepts (Poisson, negative
 binomial, binomial and a `Count`). A more variable count makes a year with at

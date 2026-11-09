@@ -12,10 +12,14 @@ import csv
 import io
 import os
 import re
+import sys
 import time
 from pathlib import Path
 
 import pytest
+
+# The guides draw figures; draw them off screen, as the docs site does.
+os.environ.setdefault("MPLBACKEND", "Agg")
 
 GUIDES = Path(__file__).resolve().parents[2] / "docs" / "guides"
 # Pages of prose with no code to run (still checked for em dashes and listing).
@@ -93,6 +97,10 @@ def test_guide_runs_and_prints_what_it_shows(path, monkeypatch):
     start = time.perf_counter()
     ran, checked = run_guide(path)
     elapsed = time.perf_counter() - start
+    # A guide's figures stay open after it runs; close them so they do not pile up
+    # across the guides of one pytest process.
+    if "matplotlib.pyplot" in sys.modules:
+        sys.modules["matplotlib.pyplot"].close("all")
     assert ran > 0, f"{path.name} has no python block"
     assert checked > 0, f"{path.name} has no python block followed by the text it prints"
     assert elapsed < SECONDS_PER_GUIDE, f"{path.name} took {elapsed:.1f} s, over {SECONDS_PER_GUIDE:.0f} s"

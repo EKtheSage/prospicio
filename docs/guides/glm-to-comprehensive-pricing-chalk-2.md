@@ -1,5 +1,7 @@
 # Beyond the GLM, part 2: correlated features, two stages and black boxes
 
+<!-- site: execute -->
+
 This is the second part of the guide to CAS Monograph 16, *From GLMs to
 Comprehensive Insurance Pricing: Techniques and Challenges*. The authors are
 Chalk, Deacon, Guillen and Martinelli (2025). The first part,
@@ -507,6 +509,20 @@ region       0.008     0.003
 noise        0.000    -0.000
 ```
 
+```python
+import matplotlib.pyplot as plt
+
+order = sorted(features, key=lambda x: mean_loss["GLM"][x])
+ypos = np.arange(len(order))
+fig, ax = plt.subplots()
+ax.barh(ypos + 0.2, [mean_loss["GLM"][x] for x in order], height=0.4, label="GLM")
+ax.barh(ypos - 0.2, [mean_loss["GBM"][x] for x in order], height=0.4, label="GBM")
+ax.set_yticks(ypos, order)
+ax.set_xlabel("loss of pseudo-R2 when the feature is shuffled")
+ax.set_title("Permutation importance, mean over the seven held-out folds")
+ax.legend()
+```
+
 The two models agree on which features are important and approximately on their
 order. The GBM gives the noise feature almost no importance, although it can
 use it. With the monograph's treatment of nonlinear effects and of make, our
@@ -560,6 +576,17 @@ age 60: GLM 1.00  GBM 1.02  true (low power) 0.98
 age 75: GLM 1.18  GBM 1.09  true (low power) 1.07
 ```
 
+```python
+fig, ax = plt.subplots()
+ax.plot(ages, true_age / true_age[3], color="0.75", linewidth=3, label="truth, low power")
+ax.plot(ages, pd_rel["GLM"], marker="o", label="GLM")
+ax.plot(ages, pd_rel["GBM"], marker="o", label="GBM")
+ax.set_xlabel("driver age (years)")
+ax.set_ylabel("partial dependence relative to age 40")
+ax.set_title("Young-driver effect: the GLM overstates it without the interaction")
+ax.legend()
+```
+
 Section 9.3 gives a caution: a partial dependence is an average over the
 portfolio. The young-driver figures of both models mix high-power cars, where
 the effect is stronger, with the other cars. The GLM figure is higher. Without
@@ -606,6 +633,17 @@ age      x power    0.0051
 age      x log_te   0.0012
 veh_age  x noise    0.0006
 GLM cv pseudo-R2 0.055, with a young-driver high-power term 0.058
+```
+
+```python
+import pandas as pd
+from great_tables import GT
+
+top = pd.DataFrame([{"pair": f"{r['a']} x {r['b']}", "strength": r["strength"]} for r in screen.table()[:6]])
+(GT(top, rowname_col="pair")
+ .tab_header("Interaction screen of the boosting model",
+             "Strength of each pair of features, mean over seven folds (pseudo-R2 units)")
+ .fmt_number("strength", decimals=4))
 ```
 
 Age and power come first, which is the planted interaction, and the GLM
