@@ -74,6 +74,19 @@ under "Unreleased" until then.
   in Python, R and Rust (#792).
 - `docs/guides/reserving-industry-prior.md` and its R twin: an industry prior from a Schedule P line fetched at run time, fitted to a thin program and tested on every company of four lines held out in turn (#730).
 - `examples/ils_deal_analysis.ipynb` and its R twin build the prior with `IndustryPrior` from synthetic peer triangles in place of the credibility estimate, draw the 2026 loss ratio with `new_year` in place of a lognormal, and pay each simulation on its own pattern (#730).
+- The landing page is plainer and says where the name comes from (Latin,
+  "I look ahead") and how that is the actuary's work; the Python and R
+  sites link back to it, and the Python site has a button that hides the
+  left navigation. The guides' `no-run` code blocks render as code on the
+  Python site (they showed as paragraphs), and the definitions that opened
+  seven guides moved to an appendix at the end (#797).
+- Guides can run on the Python and R docs sites and show figures and
+  formatted tables (matplotlib and great_tables, ggplot2 and gt) that follow
+  the light and dark modes.
+  The claim-size guide (Bahnemann) is the first: observed claims by band
+  against the fitted gamma and lognormal, the ground-up and recorded claims
+  against the fits with and without the deductible and limit, and the
+  expected counts of Ex 2.11 as a table (#798).
 
 ### Excel
 

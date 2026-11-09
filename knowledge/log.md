@@ -2,6 +2,9 @@
 
 ## 2026-11-08
 
+* **Update**: [Styling the great-docs and pkgdown sites](/environment/docs-site-styling.md), from the landing page and navigation PR (branch claude/docs-look): pandoc reads a fence such as `python no-run` (two bare words) as a paragraph, so staging writes it as `{.python .no-run}`; great-docs has no setting to hide the sidebar or to add a navbar link, so a script in `include_in_header` adds both; pkgdown's `navbar: components:` takes a relative `href` and rebases it on the site root.
+* **Update**: [Styling the great-docs and pkgdown sites](/environment/docs-site-styling.md), from the figures pilot (branch claude/guides-figures): Quarto's closing `%reset` breaks an IPython hook that reads the guide's namespace ("Extra data: line 2 column 1"); inline SVG with the site's CSS variables follows the mode; headless Edge screenshots the site while the Browser pane is hidden; in the R twins ggplot2's `layer()` masks prospicio's, histogram breaks under a log scale are in data units, and svglite quotes the face.
+* **Update**: [HierarchicalBf one-year view](/findings/hierarchical-bf-one-year.md), from the aarch64 test failures (branch claude/hbf-arm-tests): on a QUICK fit the one-year to lifetime variance ratio is 0.70 to 1.00 over 24 x86_64 seeds, 1.40 on aarch64 where a NaN Pareto k also appears (#782); the Python tests compare NaN by bits and bound the ratio by 2.
 * **Creation**: [Styling the great-docs and pkgdown sites](/environment/docs-site-styling.md), from the docs site restyle (branch claude/docs-site-style): great-docs sets tables to `width: max-content`, so prose tables never wrapped; where each site takes its stylesheet, fonts and dark mode.
 
 ## 2026-11-06
