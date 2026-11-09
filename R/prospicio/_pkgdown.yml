@@ -274,6 +274,8 @@ reference:
       - distortion_mass
       - distortion_mixture
       - calibrate_distortion
+      - calibrate_distortions
+      - distortion_from_gini
       - risk_measure
       - allocate
       - capital_allocation
