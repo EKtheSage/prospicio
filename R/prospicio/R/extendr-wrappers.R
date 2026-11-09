@@ -1778,11 +1778,25 @@ TweedieDist$new <- function(mean, dispersion, power) .Call(wrap__TweedieDist__ne
 
 TweedieDist$from_poisson_gamma <- function(lambda, shape, scale) .Call(wrap__TweedieDist__from_poisson_gamma, lambda, shape, scale)
 
+TweedieDist$from_cv <- function(power, mean, cv) .Call(wrap__TweedieDist__from_cv, power, mean, cv)
+
+TweedieDist$from_cv_dispersion <- function(mean, cv, dispersion) .Call(wrap__TweedieDist__from_cv_dispersion, mean, cv, dispersion)
+
+TweedieDist$from_compound <- function(frequency, severity_mean, severity_cv) .Call(wrap__TweedieDist__from_compound, frequency, severity_mean, severity_cv)
+
 TweedieDist$dispersion <- function() .Call(wrap__TweedieDist__dispersion, self)
 
 TweedieDist$power <- function() .Call(wrap__TweedieDist__power, self)
 
 TweedieDist$lambda <- function() .Call(wrap__TweedieDist__lambda, self)
+
+TweedieDist$cv <- function() .Call(wrap__TweedieDist__cv, self)
+
+TweedieDist$severity_mean <- function() .Call(wrap__TweedieDist__severity_mean, self)
+
+TweedieDist$severity_cv <- function() .Call(wrap__TweedieDist__severity_cv, self)
+
+TweedieDist$p0 <- function() .Call(wrap__TweedieDist__p0, self)
 
 TweedieDist$severity <- function() .Call(wrap__TweedieDist__severity, self)
 

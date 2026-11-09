@@ -427,9 +427,15 @@ gamma_from_mean_dispersion <- function(mean, dispersion) {
 #' `dispersion * mean^power`, a point mass `exp(-lambda)` at 0 and a
 #' continuous density above it. It is a Poisson number of gamma losses, the
 #' GLM family for pure premium; `tweedie_from_poisson_gamma()` builds it
-#' from those. Properties: `d@mean_param`, `d@dispersion`, `d@power`,
-#' `d@lambda` (expected number of losses) and `d@severity` (a
-#' [gamma_distribution]).
+#' from those. `tweedie_from_cv()` takes the power, mean and coefficient of
+#' variation, `tweedie_from_cv_dispersion()` the mean, coefficient of
+#' variation and dispersion (the power then follows), and
+#' `tweedie_from_compound()` a Poisson count's mean with a gamma severity's
+#' mean and coefficient of variation, as `aggregate` 2.1.0's
+#' `TweedieConversion`. Properties: `d@mean_param`, `d@dispersion`,
+#' `d@power`, `d@lambda` (expected number of losses), `d@severity` (a
+#' [gamma_distribution]), `d@cv`, `d@severity_mean`, `d@severity_cv` and
+#' `d@p0` (`exp(-lambda)`, the probability of no loss).
 #'
 #' Supports the same operations as [pareto], plus [log_density()].
 #'
@@ -442,6 +448,8 @@ gamma_from_mean_dispersion <- function(mean, dispersion) {
 #' y <- tweedie(500, 40, 1.6)
 #' cdf(y, 0) - exp(-y@lambda)
 #' log_density(y, c(100, 500))
+#' tweedie_from_cv(1.5, 100, 0.5)@dispersion # 2.5
+#' tweedie_from_compound(10, 10, 1) # power 1.5, dispersion 2
 tweedie <- S7::new_class(
   "tweedie",
   parent = distribution,
@@ -454,7 +462,11 @@ tweedie <- S7::new_class(
     lambda = S7::new_property(S7::class_double, getter = function(self) self@ptr$lambda()),
     severity = S7::new_property(S7::class_any, getter = function(self) {
       gamma_distribution(ptr = self@ptr$severity())
-    })
+    }),
+    cv = S7::new_property(S7::class_double, getter = function(self) self@ptr$cv()),
+    severity_mean = S7::new_property(S7::class_double, getter = function(self) self@ptr$severity_mean()),
+    severity_cv = S7::new_property(S7::class_double, getter = function(self) self@ptr$severity_cv()),
+    p0 = S7::new_property(S7::class_double, getter = function(self) self@ptr$p0())
   ),
   constructor = function(mean, dispersion, power, ptr = NULL) {
     if (is.null(ptr)) {
@@ -470,6 +482,32 @@ tweedie <- S7::new_class(
 #' @export
 tweedie_from_poisson_gamma <- function(lambda, shape, scale) {
   tweedie(ptr = rust_result(TweedieDist$from_poisson_gamma(as.double(lambda), as.double(shape), as.double(scale))))
+}
+
+#' @rdname tweedie
+#' @param cv The Tweedie's coefficient of variation (not the severity's).
+#' @export
+tweedie_from_cv <- function(power, mean, cv) {
+  tweedie(ptr = rust_result(TweedieDist$from_cv(as.double(power), as.double(mean), as.double(cv))))
+}
+
+#' @rdname tweedie
+#' @export
+tweedie_from_cv_dispersion <- function(mean, cv, dispersion) {
+  tweedie(ptr = rust_result(TweedieDist$from_cv_dispersion(
+    as.double(mean), as.double(cv), as.double(dispersion)
+  )))
+}
+
+#' @rdname tweedie
+#' @param frequency Expected number of losses of a Poisson count.
+#' @param severity_mean,severity_cv The gamma severity's mean and
+#'   coefficient of variation.
+#' @export
+tweedie_from_compound <- function(frequency, severity_mean, severity_cv) {
+  tweedie(ptr = rust_result(TweedieDist$from_compound(
+    as.double(frequency), as.double(severity_mean), as.double(severity_cv)
+  )))
 }
 
 #' Weibull distribution
