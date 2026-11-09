@@ -4823,7 +4823,11 @@ S7::method(print, hierarchical_bf_program) <- function(x, ...) {
 #' kept.
 #'
 #' Failed MCMC diagnostics of the fit raise one [warning()] listing them, and
-#' refits that failed theirs raise another.
+#' refits that failed theirs raise another. A panel whose programs stop at
+#' different ages raises one more, naming the programs whose next diagonal
+#' falls at development ages they have never observed: only the prior speaks
+#' there, so nearly every simulation is flagged and refitted and the view is
+#' expensive (or, with `refit = "reweight_only"`, approximate; `warnings`).
 #'
 #' Properties: `fit` (the [hierarchical_bf_fit]), per origin, program by
 #' program, `program`, `origins`, `latest`, `opening_ultimate` and
@@ -4834,8 +4838,10 @@ S7::method(print, hierarchical_bf_program) <- function(x, ...) {
 #' `refitted` (the simulations refitted with NUTS, 1-based),
 #' `moment_matched` (the simulations moment matching rescued, 1-based),
 #' `unrefitted` (the simulations due for a refit beyond `max_refits`,
-#' reweighted instead, 1-based), `refit_warnings`, `k_threshold` and
-#' `flagged_share`. `as.data.frame()` has one row per program and origin:
+#' reweighted instead, 1-based), `refit_warnings`, `k_threshold`,
+#' `flagged_share` and `warnings` (what else the view warns of, one string
+#' each, empty when the programs share their ages). `as.data.frame()` has one
+#' row per program and origin:
 #' `program`, `origin`, `latest`, `opening_ultimate`, `opening_reserve`, and
 #' the `cdr_mean` and `cdr_std_dev` of the CDR.
 #'
@@ -4849,6 +4855,16 @@ S7::method(print, hierarchical_bf_program) <- function(x, ...) {
 #'   default) for the model's `n_sims`, at most 2,000. The lifetime reserves
 #'   keep `n_sims`. A smaller count gives the first simulations of a larger
 #'   one.
+#' @param light_refit The sampler of the refits: a shorter, warm-started
+#'   NUTS run instead of the fit's own. `NULL` (the default) is the model's
+#'   own when `refit` is left at its default, the light refit of `TRUE`
+#'   below, and the fit's sampler, with its pilot run, when `refit` is given.
+#'   `TRUE` takes 4 chains of 150 warm-up and 250 kept draws,
+#'   `c(chains, tune, draws)` its own, and `FALSE` turns a default light
+#'   refit off. Each refit scales its sampler by the opening posterior and
+#'   starts at its mean, with no pilot run, and warns when its closing
+#'   reserve has R-hat above 1.05, fewer than 100 effective draws or a
+#'   divergence.
 #' @param ptr A `HierarchicalBfOneYearFit` pointer; used internally.
 #' @returns A `hierarchical_bf_one_year_fit` object.
 #' @seealso [bayes_hierarchical_bf()], [bayes_bf_normalised_one_year()].
@@ -4903,6 +4919,9 @@ hierarchical_bf_one_year_fit <- S7::new_class(
       }),
       flagged_share = S7::new_property(S7::class_double, getter = function(self) {
         self@ptr$flagged_share()
+      }),
+      warnings = S7::new_property(S7::class_character, getter = function(self) {
+        self@ptr$warnings()
       })
     )
   }),
@@ -4923,13 +4942,16 @@ bayes_hierarchical_bf_one_year <- function(triangle, column, exposure, apriori =
                                            pattern_prior = NULL, k_threshold = 0.7,
                                            refit = c("moment_match_then_refit", "refit_flagged",
                                                      "reweight_only", "refit_all"),
-                                           max_refits = NULL, one_year_sims = NULL) {
+                                           max_refits = NULL, one_year_sims = NULL,
+                                           light_refit = NULL) {
   if (is.list(triangle) && !S7::S7_inherits(triangle)) {
     triangle <- stack_programs(triangle, c(column, exposure))
   }
   cols <- exposure_columns(triangle, column, exposure)
   process <- match.arg(process)
-  refit <- match.arg(refit)
+  # Left at its default, `refit` goes as NULL, so the model's default
+  # sampler of the refits applies (a refit mode given keeps the fit's own).
+  refit <- if (missing(refit)) NULL else match.arg(refit)
   pattern <- pattern_prior_args(pattern_prior)
   priors <- c(single_number(apriori, "apriori"), single_number(cv, "cv"),
               single_number(development_sd, "development_sd"),
@@ -4941,7 +4963,8 @@ bayes_hierarchical_bf_one_year <- function(triangle, column, exposure, apriori =
   ptr <- reserving_result(triangle@ptr$hierarchical_bf_one_year(
     cols[1], cols[2], priors, optional_number(level_cv, "level_cv"), process, run,
     single_number(k_threshold, "k_threshold"), refit, max_refits_arg(max_refits),
-    optional_number(one_year_sims, "one_year_sims"), pattern[[1]], pattern[[2]], pattern[[3]]))
+    optional_number(one_year_sims, "one_year_sims"), pattern[[1]], pattern[[2]], pattern[[3]],
+    light_refit_arg(light_refit)))
   view <- hierarchical_bf_one_year_fit(ptr = ptr)
   failed <- view@fit@diagnostics$warnings
   if (length(failed)) {
@@ -4950,6 +4973,9 @@ bayes_hierarchical_bf_one_year <- function(triangle, column, exposure, apriori =
   }
   warn_refits("bayes_hierarchical_bf_one_year", "", length(view@refitted), view@refit_warnings,
               length(view@unrefitted))
+  for (message in view@warnings) {
+    warning("bayes_hierarchical_bf_one_year: ", message, call. = FALSE)
+  }
   view
 }
 

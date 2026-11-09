@@ -16789,7 +16789,7 @@ class HierarchicalBf:
         """
         Scale of the half-normal prior on ``omega``.
         """
-    def one_year(self, /, triangle: Any, column: str, exposure: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", max_refits: int |None = None, n_sims: int |None = None) -> HierarchicalBfOneYearFit:
+    def one_year(self, /, triangle: Any, column: str, exposure: str, k_threshold: float = 0.7, refit: str |None = None, max_refits: int |None = None, n_sims: int |None = None, light_refit: Any |None = None) -> HierarchicalBfOneYearFit:
         """
         The one-year view of the fit over every program at once: the
         claims development result of each program and origin over the
@@ -16801,8 +16801,12 @@ class HierarchicalBf:
         the shared pattern, and through them the other programs' closing
         reserves. A refit of a flagged simulation samples the whole panel.
         Raises ``UserWarning`` for the fit's failed diagnostics, for refits
-        whose diagnostics failed, and for simulations left unrefitted by
-        ``max_refits``.
+        whose diagnostics failed, for simulations left unrefitted by
+        ``max_refits``, and for each of the view's ``warnings``: programs
+        whose next diagonal falls at development ages they have never
+        observed, which make the view expensive (nearly every simulation is
+        flagged and refitted) or, with ``refit="reweight_only"``,
+        approximate.
         
         Parameters
         ----------
@@ -16815,14 +16819,27 @@ class HierarchicalBf:
         k_threshold : float, default 0.7
             The Pareto ``k`` above which a simulation's importance weights
             are not trusted.
-        refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
+        refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, optional
             What happens to a flagged simulation, as in ``BayesOdp.one_year``.
+            ``None`` (the default) is ``"moment_match_then_refit"`` with the
+            model's default sampler of the refits (``light_refit``).
         max_refits : int, optional
             As in ``BayesOdp.one_year``.
         n_sims : int, optional
             The number of one-year simulations; by default this model's
             ``n_sims``, at most 2,000. A smaller count gives the first
             simulations of a larger one.
+        light_refit : bool or tuple, optional
+            The sampler of the refits: a shorter, warm-started NUTS run
+            instead of the fit's own. ``None`` (the default) is the model's
+            own when ``refit`` is ``None``, the light refit of ``True`` below,
+            and the fit's sampler, with its pilot run, when ``refit`` is given.
+            ``True`` takes 4 chains of 150 warm-up and 250 kept draws, a
+            tuple ``(chains, tune, draws)`` its own, and ``False`` turns a default
+            light refit off. Each refit scales its sampler by the opening
+            posterior and starts at its mean, with no pilot run, and warns when
+            its closing reserve has R-hat above 1.05, fewer than 100 effective
+            draws or a divergence.
         
         Returns
         -------
@@ -17121,6 +17138,15 @@ class HierarchicalBfOneYearFit:
         """
         The simulations due for a refit beyond ``max_refits``, reweighted
         instead, in order (0-based); empty without ``max_refits``.
+        """
+    @property
+    def warnings(self, /) -> list[str]:
+        """
+        What else the view warns of, one message each (``one_year`` raises
+        each as a ``UserWarning``): the programs whose next diagonal falls at
+        development ages they have never observed, which make the view
+        expensive (or, reweighting only, approximate). Empty when the
+        programs share their ages.
         """
 
 @final

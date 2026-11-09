@@ -11310,11 +11310,11 @@ fn one_year_settings(
     })
 }
 
-/// A compartmental one-year view's ``light_refit``: ``None`` for the
-/// model's default (model 2's light refit), ``False`` to turn it off,
-/// ``True`` for [`LightRefit::default`] (4 chains of 150 warm-up and 250 kept
-/// draws), or ``(chains, tune, draws)``. Returns the sampler and whether the
-/// default is turned off.
+/// A compartmental or hierarchical one-year view's ``light_refit``:
+/// ``None`` for the model's default (model 2's light refit), ``False`` to
+/// turn it off, ``True`` for [`LightRefit::default`] (4 chains of 150
+/// warm-up and 250 kept draws), or ``(chains, tune, draws)``. Returns the
+/// sampler and whether the default is turned off.
 fn light_refit_arg(light_refit: Option<&Bound<'_, PyAny>>) -> PyResult<(Option<LightRefit>, bool)> {
     let Some(arg) = light_refit else {
         return Ok((None, false));
@@ -13886,8 +13886,12 @@ impl PyHierarchicalBf {
     /// the shared pattern, and through them the other programs' closing
     /// reserves. A refit of a flagged simulation samples the whole panel.
     /// Raises ``UserWarning`` for the fit's failed diagnostics, for refits
-    /// whose diagnostics failed, and for simulations left unrefitted by
-    /// ``max_refits``.
+    /// whose diagnostics failed, for simulations left unrefitted by
+    /// ``max_refits``, and for each of the view's ``warnings``: programs
+    /// whose next diagonal falls at development ages they have never
+    /// observed, which make the view expensive (nearly every simulation is
+    /// flagged and refitted) or, with ``refit="reweight_only"``,
+    /// approximate.
     ///
     /// Parameters
     /// ----------
@@ -13900,14 +13904,27 @@ impl PyHierarchicalBf {
     /// k_threshold : float, default 0.7
     ///     The Pareto ``k`` above which a simulation's importance weights
     ///     are not trusted.
-    /// refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
+    /// refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, optional
     ///     What happens to a flagged simulation, as in ``BayesOdp.one_year``.
+    ///     ``None`` (the default) is ``"moment_match_then_refit"`` with the
+    ///     model's default sampler of the refits (``light_refit``).
     /// max_refits : int, optional
     ///     As in ``BayesOdp.one_year``.
     /// n_sims : int, optional
     ///     The number of one-year simulations; by default this model's
     ///     ``n_sims``, at most 2,000. A smaller count gives the first
     ///     simulations of a larger one.
+    /// light_refit : bool or tuple, optional
+    ///     The sampler of the refits: a shorter, warm-started NUTS run
+    ///     instead of the fit's own. ``None`` (the default) is the model's
+    ///     own when ``refit`` is ``None``, the light refit of ``True`` below,
+    ///     and the fit's sampler, with its pilot run, when ``refit`` is given.
+    ///     ``True`` takes 4 chains of 150 warm-up and 250 kept draws, a
+    ///     tuple ``(chains, tune, draws)`` its own, and ``False`` turns a default
+    ///     light refit off. Each refit scales its sampler by the opening
+    ///     posterior and starts at its mean, with no pilot run, and warns when
+    ///     its closing reserve has R-hat above 1.05, fewer than 100 effective
+    ///     draws or a divergence.
     ///
     /// Returns
     /// -------
@@ -13942,7 +13959,7 @@ impl PyHierarchicalBf {
     /// ['program', 'origin']
     /// >>> len(view.pareto_k)
     /// 500
-    #[pyo3(signature = (triangle, column, exposure, k_threshold = 0.7, refit = "moment_match_then_refit", max_refits = None, n_sims = None))]
+    #[pyo3(signature = (triangle, column, exposure, k_threshold = 0.7, refit = None, max_refits = None, n_sims = None, light_refit = None))]
     #[allow(clippy::too_many_arguments)]
     fn one_year(
         &self,
@@ -13951,11 +13968,13 @@ impl PyHierarchicalBf {
         column: &str,
         exposure: &str,
         k_threshold: f64,
-        refit: &str,
+        refit: Option<&str>,
         max_refits: Option<usize>,
         n_sims: Option<usize>,
+        light_refit: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyHierarchicalBfOneYearFit> {
-        let settings = one_year_settings(k_threshold, Some(refit), max_refits, n_sims)?;
+        let mut settings = one_year_settings(k_threshold, refit, max_refits, n_sims)?;
+        (settings.light_refit, settings.no_light_refit) = light_refit_arg(light_refit)?;
         let tri = programs_triangle(triangle, column, exposure)?;
         let (model, prior) = (&self.inner, &self.pattern_prior);
         let inner = py
@@ -13975,6 +13994,12 @@ impl PyHierarchicalBf {
                 inner.unrefitted.len(),
             )],
         )?;
+        for message in &inner.warnings {
+            let message = std::ffi::CString::new(format!("HierarchicalBf: {message}"))
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+            let category = py.get_type::<pyo3::exceptions::PyUserWarning>();
+            PyErr::warn(py, category.as_any(), &message, 1)?;
+        }
         Ok(PyHierarchicalBfOneYearFit { inner })
     }
 
@@ -14454,6 +14479,16 @@ impl PyHierarchicalBfOneYearFit {
     #[getter]
     fn flagged_share(&self) -> f64 {
         self.inner.flagged_share()
+    }
+
+    /// What else the view warns of, one message each (``one_year`` raises
+    /// each as a ``UserWarning``): the programs whose next diagonal falls at
+    /// development ages they have never observed, which make the view
+    /// expensive (or, reweighting only, approximate). Empty when the
+    /// programs share their ages.
+    #[getter]
+    fn warnings(&self) -> Vec<String> {
+        self.inner.warnings.clone()
     }
 
     /// One row per program and origin: ``program``, ``origin``, ``latest``,
