@@ -18751,6 +18751,43 @@ class LatestDiagonal:
         """
 
 @final
+class LatticeBucket:
+    """
+    The bucket ``lattice_bucket`` chose for a discrete severity.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def lattice(self, /) -> tuple[float, float] |None:
+        """
+        ``(step, residual)`` of the atoms' dyadic lattice, or ``None``.
+        """
+    @property
+    def log2(self, /) -> int:
+        """
+        ``2**log2`` points hold the extent at ``step``.
+        """
+    @property
+    def log2_required(self, /) -> int |None:
+        """
+        The ``log2`` the lattice would need, when the given one is too small.
+        """
+    @property
+    def on_lattice(self, /) -> bool:
+        """
+        Whether every atom is a multiple of ``step``.
+        """
+    @property
+    def step(self, /) -> float:
+        """
+        The bucket size.
+        """
+    @property
+    def warning(self, /) -> str |None:
+        """
+        ``aggregate``'s ``LatticeGridWarning`` text, or ``None``.
+        """
+
+@final
 class Layer:
     """
     A per-occurrence excess-of-loss layer: ``limit`` xs ``attachment`` on each
@@ -36792,6 +36829,19 @@ def double_lift(y: Sequence[float], pred_a: Sequence[float], pred_b: Sequence[fl
         ``actual_relativity``, ``a_relativity`` and ``b_relativity`` per band.
     """
 
+def dyadic_lattice_step(atoms: Sequence[float], depth: int = 16) -> tuple[float, float] |None:
+    """
+    The dyadic step of the lattice the ``atoms`` lie on, ``aggregate``
+    2.1.0's ``_dyadic_lattice_step``: ``(step, residual)``, or ``None`` when
+    there is none within ``depth`` binary levels (decimal atoms such as 0.1).
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import dyadic_lattice_step
+    >>> dyadic_lattice_step([3.0, 6.0, 9.0]), dyadic_lattice_step([0.1, 0.2])
+    ((3.0, 0.0), None)
+    """
+
 def elpd_loo(log_lik: Sequence[Sequence[float]], r_eff: Sequence[float] |None = None) -> Elpd:
     """
     Leave-one-out cross-validation by Pareto-smoothed importance sampling
@@ -37897,6 +37947,44 @@ def ks_uniform(values: Sequence[float]) -> float:
     Returns
     -------
     float
+    """
+
+def lattice_bucket(atoms: Sequence[float], extent: float, log2: int) -> LatticeBucket:
+    """
+    A bucket for a compound distribution of a discrete severity on
+    ``atoms`` covering ``extent`` within ``2**log2`` points, ``aggregate``
+    2.1.0's lattice rule: the first lattice candidate that fits, so every
+    atom sits on a grid point, or a coarser bucket with a warning naming the
+    ``log2`` the lattice needs.
+    
+    Parameters
+    ----------
+    atoms : list of float
+    extent : float
+    log2 : int
+    
+    Returns
+    -------
+    LatticeBucket
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import lattice_bucket
+    >>> b = lattice_bucket([1000.0, 3000.0, 7000.0], 300_000.0, 8)
+    >>> b.step, b.on_lattice, b.log2_required
+    (2000.0, False, 9)
+    """
+
+def lattice_candidates(h: float) -> list[float]:
+    """
+    The buckets tried for a lattice step ``h``: the largest nice bucket
+    dividing it, then ``h``, ``aggregate`` 2.1.0's ``_lattice_candidates``.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import lattice_candidates
+    >>> lattice_candidates(3.0), lattice_candidates(0.75)
+    ([1.0, 3.0], [0.25, 0.75])
     """
 
 def layer_at_shift(ultimate: Any, layer: Any, shift: float) -> float:

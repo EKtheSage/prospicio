@@ -2635,6 +2635,31 @@ fn importance_sampling_matches_the_fft_tail_with_a_smaller_error() {
     assert!((is.mean() - exact.mean()).abs() < 4.0 * is.standard_error_mean(50).unwrap());
 }
 
+/// The dyadic lattice of a discrete severity and the buckets tried on it,
+/// against `aggregate` 2.1.0's `_dyadic_lattice_step` and
+/// `_lattice_candidates` (#776, `validation/scripts/aggregate_lattice.py`).
+#[test]
+fn lattice_matches_aggregate() {
+    use prospicio_aggregate::{dyadic_lattice_step, lattice_candidates};
+    check(&reference("lattice_aggregate.csv"), |c| {
+        let atoms: Vec<f64> = fields(c)["atoms"]
+            .split('|')
+            .map(|a| a.parse().unwrap())
+            .collect();
+        let lattice = dyadic_lattice_step(&atoms, 16);
+        match c.get("quantity") {
+            "none" => Some(if lattice.is_none() { 1.0 } else { 0.0 }),
+            "step" => lattice.map(|l| l.0),
+            "residual" => lattice.map(|l| l.1),
+            "candidate" => {
+                let i = c.number("arg")? as usize;
+                lattice_candidates(lattice?.0).get(i).copied()
+            }
+            _ => None,
+        }
+    });
+}
+
 /// The occurrence PML of a program, net or ceded, against `aggregate`
 /// 2.1.0's `oep` (#773, `validation/scripts/aggregate_program_oep.py`): the
 /// loss, the gross survival at the right end of the view's flat stretch and

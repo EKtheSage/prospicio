@@ -1622,6 +1622,27 @@ Decisions:
   being a function of each occurrence, works everywhere.
 - (e) *JSON format version 9* is stamped only when a layer has one of them.
 
+### The dyadic lattice bucket rule (#776)
+
+`aggregate` 2.1.0 sizes a book with a discrete severity on its atoms'
+lattice: `_dyadic_lattice_step` finds the dyadic step the atoms are
+multiples of (powers of two from the largest atom down 16 levels, a
+tolerance of `1e-12` of the largest atom, the step the gcd of the
+multiples), `_lattice_candidates` tries the largest nice bucket dividing it
+first and the step itself second, and when neither fits the `log2` given
+it uses a coarser bucket and warns (`LatticeGridWarning`) with the `log2`
+needed. `dyadic_lattice_step`, `lattice_candidates` and
+`lattice_bucket(atoms, extent, log2)` port the rule; the two functions
+match `aggregate` on 16 atom sets (`validation/scripts/aggregate_lattice.py`).
+
+Proposed for the user's acceptance: (a) *`lattice_bucket` takes the extent
+from the caller* (for example [`recommend_grid`]'s), since prospicio has
+no discrete severity type to size; (b) *the warning is a field* of the
+result rather than a raised warning; (c) *the compound and tower grid
+builders do not warn*: they take a severity already on a grid
+([`Grid`]), so its atoms are on its lattice by construction, and a user who
+places atoms on a grid asks `lattice_bucket` first.
+
 ### The occurrence PML of a program, net or ceded (#773)
 
 `aggregate` 2.1.0's `oep` on an aggregate with an `occurrence ceded to` or

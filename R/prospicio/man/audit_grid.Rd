@@ -2,6 +2,9 @@
 % Please edit documentation in R/aggregate.R
 \name{audit_grid}
 \alias{audit_grid}
+\alias{dyadic_lattice_step}
+\alias{lattice_candidates}
+\alias{lattice_bucket}
 \alias{audit_portfolio_grid}
 \alias{recommend_portfolio_grid}
 \title{Grids for several units, and the grid audit}
@@ -18,6 +21,12 @@ audit_grid(
   log2_cap = 20,
   log2_floor = 8
 )
+
+dyadic_lattice_step(atoms, depth = 16)
+
+lattice_candidates(h)
+
+lattice_bucket(atoms, extent, log2)
 
 audit_portfolio_grid(
   units,
@@ -56,6 +65,14 @@ the most points the recommended grid may use.}
 
 \item{log2_floor}{The half-size row is tried only above it.}
 
+\item{atoms}{A discrete severity's values.}
+
+\item{depth}{Binary levels searched below the largest atom.}
+
+\item{h}{A lattice step.}
+
+\item{extent}{The span the grid must cover.}
+
 \item{units}{A list of units, each \code{list(frequency, severity)}.}
 
 \item{p, p_star}{As \code{\link[=recommend_grid]{recommend_grid()}}.}
@@ -89,11 +106,20 @@ twice the points is tried only when nothing smaller meets the target.
 \code{audit_portfolio_grid()} does the same for a sum of units: the severity
 terms score the claim-weighted mixture of the units' severities, the
 aggregate terms the total.
+
+\code{dyadic_lattice_step()}, \code{lattice_candidates()} and \code{lattice_bucket()} are
+\code{aggregate} 2.1.0's lattice rule for a discrete severity: the dyadic step
+the atoms lie on (\code{c(step, residual)}, \code{NULL} without one), the buckets
+tried for it (the largest nice one dividing it, then the step), and the
+first that holds \code{extent} within \code{2^log2} points, or a coarser bucket with
+a \code{warning} naming the \code{log2_required}.
 }
 \examples{
 a <- audit_grid(poisson_count(50), gamma_distribution(4, 2.5), step = 0.5, log2 = 10)
 c(a$step, a$log2)
 a$reason
+dyadic_lattice_step(c(3, 6, 9))
+lattice_bucket(c(1000, 3000, 7000), 300000, 8)$warning
 units <- list(list(poisson_count(10), gamma_distribution(2, 50)),
               list(poisson_count(2), gamma_distribution(0.5, 1000)))
 recommend_portfolio_grid(units, log2 = 12)$points

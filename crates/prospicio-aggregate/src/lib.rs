@@ -82,8 +82,9 @@ pub use ruin::{
     pollaczeck_khinchine, wiener_hopf,
 };
 pub use sizing::{
-    AuditSettings, GridAudit, GridCell, GridSize, ScoreTerms, Sizing, SizingMethod, audit_grid,
-    audit_portfolio_grid, fft_auto, recommend_grid, recommend_portfolio_grid, round_bucket,
+    AuditSettings, GridAudit, GridCell, GridSize, LatticeBucket, ScoreTerms, Sizing, SizingMethod,
+    audit_grid, audit_portfolio_grid, dyadic_lattice_step, fft_auto, lattice_bucket,
+    lattice_candidates, recommend_grid, recommend_portfolio_grid, round_bucket,
 };
 pub use trials::TrialStatistics;
 pub use ylt::YearLossTable;

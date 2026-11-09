@@ -107,6 +107,13 @@ round_bucket <- function(bs) rust_result(round_bucket_rust(as.double(bs)))
 #' terms score the claim-weighted mixture of the units' severities, the
 #' aggregate terms the total.
 #'
+#' `dyadic_lattice_step()`, `lattice_candidates()` and `lattice_bucket()` are
+#' `aggregate` 2.1.0's lattice rule for a discrete severity: the dyadic step
+#' the atoms lie on (`c(step, residual)`, `NULL` without one), the buckets
+#' tried for it (the largest nice one dividing it, then the step), and the
+#' first that holds `extent` within `2^log2` points, or a coarser bucket with
+#' a `warning` naming the `log2_required`.
+#'
 #' @param units A list of units, each `list(frequency, severity)`.
 #' @param frequency A claim count.
 #' @param severity Any severity but a [sampled] distribution.
@@ -121,6 +128,10 @@ round_bucket <- function(bs) rust_result(round_bucket_rust(as.double(bs)))
 #' @param max_doublings Steps doubled or halved at most this many times each way.
 #' @param log2_cap `log2` never grows past it.
 #' @param log2_floor The half-size row is tried only above it.
+#' @param atoms A discrete severity's values.
+#' @param depth Binary levels searched below the largest atom.
+#' @param h A lattice step.
+#' @param extent The span the grid must cover.
 #' @returns `recommend_portfolio_grid()`: a list as [recommend_grid()]'s.
 #'   `audit_grid()` and `audit_portfolio_grid()`: a list with `cells` (a
 #'   data frame, the center first: `d_step` and `d_log2`, the moves from the
@@ -134,6 +145,8 @@ round_bucket <- function(bs) rust_result(round_bucket_rust(as.double(bs)))
 #' a <- audit_grid(poisson_count(50), gamma_distribution(4, 2.5), step = 0.5, log2 = 10)
 #' c(a$step, a$log2)
 #' a$reason
+#' dyadic_lattice_step(c(3, 6, 9))
+#' lattice_bucket(c(1000, 3000, 7000), 300000, 8)$warning
 #' units <- list(list(poisson_count(10), gamma_distribution(2, 50)),
 #'               list(poisson_count(2), gamma_distribution(0.5, 1000)))
 #' recommend_portfolio_grid(units, log2 = 12)$points
@@ -143,6 +156,26 @@ audit_grid <- function(frequency, severity, step = NULL, log2 = NULL, eps = 1e-4
   settings <- as.double(c(eps, power, good_enough, max_doublings, log2_cap, log2_floor))
   audit_result(rust_result(audit_grid_rust(frequency@ptr, severity@ptr, null_nan(step),
                                            null_nan(log2), settings)))
+}
+
+#' @rdname audit_grid
+#' @export
+dyadic_lattice_step <- function(atoms, depth = 16) {
+  r <- rust_result(dyadic_lattice_step_rust(as.double(atoms), as.double(depth)))
+  if (is.null(r)) NULL else stats::setNames(r, c("step", "residual"))
+}
+
+#' @rdname audit_grid
+#' @export
+lattice_candidates <- function(h) lattice_candidates_rust(as.double(h))
+
+#' @rdname audit_grid
+#' @export
+lattice_bucket <- function(atoms, extent, log2) {
+  r <- rust_result(lattice_bucket_rust(as.double(atoms), as.double(extent), as.double(log2)))
+  if (!length(r$lattice)) r$lattice <- NULL else r$lattice <- stats::setNames(r$lattice, c("step", "residual"))
+  if (!nzchar(r$warning)) r$warning <- NULL
+  r
 }
 
 #' @rdname audit_grid
