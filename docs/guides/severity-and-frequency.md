@@ -27,36 +27,7 @@ large claims) sets the price of the upper layers.
 | Few observations in some rating cells | Bayesian GLM with a prior on the relativities | `BayesGlm(..., prior_sd=)` | The prior keeps thin cells near the base. The draws carry the uncertainty |
 | Few large losses | An alpha from the market or a larger book, priced at several alphas | `Pareto(t, alpha)` at each alpha (section 7.3) | The data alone cannot set the alpha |
 
-## 1. Words you need first
-
-- **Frequency** and **severity**: the number of claims in a period, and the
-  size of one claim. Together they make the **collective model**: the annual
-  loss is the sum of a random number of random sizes.
-- **Attritional** and **large** losses: the many small claims that are stable
-  from year to year, and the few large claims that cause the volatility. The
-  **threshold** separates them.
-- **Dispersion**: for a claim count, its variance divided by its mean. A
-  Poisson count has dispersion 1. **Over-dispersion** is a value above 1. Counts
-  of all claims in a book often have it (weather, or a good or bad year for the
-  whole book). Counts of large losses above a high threshold are often near
-  Poisson. Test the dispersion. Do not assume it.
-- In a GLM, the dispersion `phi` scales the variance function, `Var = phi *
-  V(mu)`. For a Poisson, `phi` is the variance over the mean. For a gamma, it
-  is `1 / shape`, the squared coefficient of variation.
-- **Local Pareto alpha**: how fast the probability of a loss above a size
-  decreases as the size increases. With alpha 2, a size two times larger has a
-  quarter of the frequency. A low alpha is a heavy tail. The market quotes
-  tails as alphas.
-- **Censored**: a loss known only to be at least some amount, because a policy
-  limit capped it. **Reporting threshold**: a loss is in the data only if it is
-  more than this amount (**left truncation**).
-- **Layer** `limit xs attachment`: the part of a loss between the attachment
-  and attachment plus limit. `5 xs 5` pays the part of a loss between 5 and 10.
-
-Money is in millions of a synthetic currency. Layers are priced **per claim**
-unless the text says per large loss.
-
-### Before you fit
+## 1. Before you fit
 
 Each fit below assumes that the claims are already on the basis of the
 contract that you price. This preparation is most of the work, and a fit
@@ -88,7 +59,7 @@ cannot correct it. Do these steps:
    the IBNR factor of each year, read at the mid-point of the year:
    `pattern.at(valuation - (year + 0.5))`. See
    [`experience-and-exposure-rating.md`](experience-and-exposure-rating.md),
-   section 2.
+   section 1.
 4. **On-level** the counts to the current exposure before you calculate their
    mean and dispersion (section 3.1).
 5. For working layers, keep the **empirical** distribution (the claims) with
@@ -96,6 +67,9 @@ cannot correct it. Do these steps:
    (section 5).
 
 ## 2. The running example
+
+Money is in millions of a synthetic currency. Layers are priced **per claim**
+unless the text says per large loss.
 
 The data is synthetic, so you can compare each fit with the truth. A real
 analysis does not have the truth. Claims have a lognormal body below 1 (98
@@ -1076,3 +1050,29 @@ each alpha a weight from your belief.
   these models start from.
 - [`reinsurance-price.md`](reinsurance-price.md): what a reinsurance price is,
   end to end.
+
+## Appendix: terms
+
+- **Frequency** and **severity**: the number of claims in a period, and the
+  size of one claim. Together they make the **collective model**: the annual
+  loss is the sum of a random number of random sizes.
+- **Attritional** and **large** losses: the many small claims that are stable
+  from year to year, and the few large claims that cause the volatility. The
+  **threshold** separates them.
+- **Dispersion**: for a claim count, its variance divided by its mean. A
+  Poisson count has dispersion 1. **Over-dispersion** is a value above 1. Counts
+  of all claims in a book often have it (weather, or a good or bad year for the
+  whole book). Counts of large losses above a high threshold are often near
+  Poisson. Test the dispersion. Do not assume it.
+- In a GLM, the dispersion `phi` scales the variance function, `Var = phi *
+  V(mu)`. For a Poisson, `phi` is the variance over the mean. For a gamma, it
+  is `1 / shape`, the squared coefficient of variation.
+- **Local Pareto alpha**: how fast the probability of a loss above a size
+  decreases as the size increases. With alpha 2, a size two times larger has a
+  quarter of the frequency. A low alpha is a heavy tail. The market quotes
+  tails as alphas.
+- **Censored**: a loss known only to be at least some amount, because a policy
+  limit capped it. **Reporting threshold**: a loss is in the data only if it is
+  more than this amount (**left truncation**).
+- **Layer** `limit xs attachment`: the part of a loss between the attachment
+  and attachment plus limit. `5 xs 5` pays the part of a loss between 5 and 10.

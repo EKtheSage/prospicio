@@ -68,3 +68,55 @@ Found on 2026-11-07 and 2026-11-08 with great-docs as installed in
   list their rules; read the selectors from great-docs' `great-docs.scss`
   in the venv instead. The real build is checked from the `docs-site`
   artifact of CI's `docs` job.
+* **Fences of several words.** The guides mark code that CI does not run
+  with the info string `python no-run`. Pandoc's Markdown reader takes a
+  bare info string of one word only, so on the Python site such a block
+  was a paragraph (curly quotes and all) until `cargo xtask python` began
+  staging it as `{.python .no-run}` (`fence_info` in `xtask/src/main.rs`).
+  The source keeps the bare form, which `python/tests/test_guides.py` reads.
+* **No navbar or sidebar settings in great-docs.** great-docs writes the
+  Quarto navbar itself and strips the sidebar's section toggles; nothing in
+  `great-docs.yml` adds a navbar link or hides the sidebar. The script in
+  `include_in_header` adds the link back to the landing page (resolved
+  from `.navbar-brand`'s href, so it works at any depth) and a button that
+  hides `#quarto-sidebar` and widens `main.content` to `page-start`, kept
+  in `localStorage` under `prospicio-sidebar-hidden`. On the R site,
+  `navbar: components:` in `_pkgdown.yml` takes a relative `href`.
+* **Guides that run on the Python site.** A guide with the line
+  `<!-- site: execute -->` is staged as a Quarto document (`executed` in
+  `xtask/src/main.rs`) and run by great-docs' Quarto build with the
+  `python3` Jupyter kernel of `python/.venv`. Quarto's last cell runs
+  `%reset` and then prints a JSON line that Quarto parses; an IPython
+  `post_run_cell` or `post_execute` hook that reads the cleared namespace
+  fails there and prints its traceback into that cell, and the build stops
+  with "Extra data: line 2 column 1". The hook in
+  `docs/guides/site/figures.py` binds what it uses as default arguments.
+  The run leaves Quarto's cache in `python/_freeze/` (gitignored); while
+  that directory exists great-docs turns `freeze` on, so a later local
+  build shows the cached output of an executed guide until it is deleted.
+* **Figures that follow the mode.** One inline SVG per figure, with
+  matplotlib's colours replaced by the site's CSS variables
+  (`var(--p-ink)`, `var(--p-series-1)` and so on), follows the light and
+  dark modes and the switch between them without a second image; Quarto's
+  `renderings: [light, dark]` would need two drawings in each cell. Greys
+  become `color-mix()` of the ink, so `"0.75"` stays a light grey in either
+  mode.
+* **Screenshots while the Browser pane is hidden.** A hidden pane paints
+  nothing. Headless Edge takes one:
+  `msedge --headless=new --user-data-dir=<new dir> --window-size=1200,900
+  --virtual-time-budget=6000 --screenshot=<file> <url>`; great-docs reads its
+  mode from `localStorage["great-docs-theme"]`, which a page on the same
+  origin can set before it loads the guide in an iframe.
+* **ggplot2 in the R twins.** `library(ggplot2)` after `library(prospicio)`
+  masks prospicio's `layer()` (ggplot2 exports a `layer()` too; no other
+  export of ggplot2 or gt clashes), and a later chunk then fails with
+  "`data` must be a <data.frame>"; attach it with
+  `library(ggplot2, exclude = "layer")`. Under `scale_x_log10()`,
+  `geom_histogram(breaks = )` takes the edges in data units, not log10
+  units. svglite quotes the face inside a single-quoted style attribute
+  (`font-family: "Liberation Sans";`), so a rewrite of the face must take
+  the quotes with it.
+* **pkgdown's mode in a screenshot.** The R site's mode is the
+  `data-bs-theme` attribute on `<html>`; a copy of the page with a script
+  that sets it (and moves the element to check into `main`, since headless
+  Edge does not scroll to it) shows either mode.

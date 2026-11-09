@@ -15,6 +15,18 @@ template:
     primary: "#1f2de6"
     base_font: {google: "Jost"}
     heading_font: {google: "Jost"}
+# A link back to the landing page that lists the Python, R and Rust docs
+# (xtask/site/index.html, one level above this site in target/docs-site).
+# pkgdown rebases a relative href onto the site root on every page.
+navbar:
+  structure:
+    left: [landing, intro, reference, articles, tutorials, news]
+    right: [search, github, lightswitch]
+  components:
+    landing:
+      text: "← prospicio"
+      href: ../index.html
+      aria-label: "prospicio home: Python, R and Rust docs"
 reference:
   - title: Distributions
     contents:

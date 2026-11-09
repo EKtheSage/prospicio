@@ -286,3 +286,102 @@ table.table td {
   padding: 0.55rem 0.75rem;
   line-height: 1.5;
 }
+
+/* Landing link and navigation toggle, added to the navbar by the script in
+   great-docs.yml. The toggle shows only where the sidebar is beside the text
+   (Quarto's lg breakpoint); below it, Quarto's own menu button opens it. */
+.p-landing,
+.p-sidebar-toggle {
+  font: 500 0.875rem/1 var(--p-font);
+  color: var(--p-muted);
+  text-decoration: none;
+  margin-right: 1rem;
+  white-space: nowrap;
+}
+
+.p-landing:hover,
+.p-sidebar-toggle:hover {
+  color: var(--p-accent);
+}
+
+.p-sidebar-toggle {
+  display: none;
+  background: transparent;
+  border: 1px solid var(--p-rule);
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+}
+
+@media (min-width: 992px) {
+  .p-sidebar-toggle {
+    display: inline-block;
+  }
+
+  html.p-sidebar-hidden #quarto-sidebar {
+    display: none !important;
+  }
+
+  html.p-sidebar-hidden #quarto-content > main.content {
+    grid-column: page-start / body-content-end;
+  }
+}
+
+/* Figures and tables of the guides that run on the site
+   (docs/guides/site/figures.py). The figures are inline SVG whose colours
+   are these variables, so they follow the mode. The series are three hues
+   checked for colour-vision separation on each ground; a figure uses at
+   most three. */
+:root,
+html.quarto-light,
+body.quarto-light {
+  --p-series-1: #1f2de6;
+  --p-series-2: #eb6834;
+  --p-series-3: #1baf7a;
+}
+
+html.quarto-dark,
+body.quarto-dark {
+  --p-series-1: #7a83ff;
+  --p-series-2: #d95926;
+  --p-series-3: #199e70;
+}
+
+figure.p-figure {
+  margin: 1.25rem 0 1.75rem;
+}
+
+figure.p-figure svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* great_tables writes its own colours on the table; the page's win. */
+.gt_table,
+.gt_table th,
+.gt_table td,
+.gt_heading,
+.gt_title,
+.gt_subtitle,
+.gt_col_headings,
+.gt_col_heading,
+.gt_column_spanner,
+.gt_table_body,
+.gt_row,
+.gt_sourcenotes,
+.gt_sourcenote,
+.gt_footnotes,
+.gt_footnote,
+.gt_stub,
+.gt_group_heading {
+  background-color: transparent !important;
+  color: var(--p-ink) !important;
+  border-color: var(--p-rule) !important;
+  font-family: var(--p-font) !important;
+}
+
+.gt_col_heading,
+.gt_subtitle,
+.gt_sourcenote {
+  color: var(--p-muted) !important;
+}

@@ -199,3 +199,30 @@ A guide tells what prospicio does and how to use it.
 - Do not change code blocks or the output blocks that the test harnesses check.
 
 An optional local check is `ste-lint.py` from the user's `asd-ste100` skill. CI does not run it.
+
+## Figures and tables
+
+Show a result as a figure or a formatted table when a reader compares many
+numbers: a fit against the data, a distribution, values by band or by year.
+Keep a printed comparison where CI must check the number (book against
+prospicio).
+
+- A guide that draws them holds the line `<!-- site: execute -->`, and so
+  does its R twin. The Python site then runs the guide's `python` blocks
+  (`cargo xtask python`) and the R site the twin's chunks (`cargo xtask r`),
+  and each shows their output in place of the checked `text` blocks. The
+  other guides are shown as written.
+- Draw with plain matplotlib, at most three series a panel. Leave the colours
+  at their defaults, and use greys (`color="0.75"`) for data in the
+  background. `docs/guides/site/figures.py` maps the colours to the site's
+  light and dark modes. Do not call `plt.show()`.
+- In the R twin, draw with plain ggplot2 and print the plot. Leave the
+  colours at their defaults and use greys (`"grey75"`) for data in the
+  background; `docs/guides/site/figures.R` maps them to the R site's modes.
+  Attach ggplot2 with `library(ggplot2, exclude = "layer")`: its `layer()`
+  would mask prospicio's.
+- Lay out a table with great_tables (`GT`) on a pandas DataFrame, or gt
+  (`gt()`) on a data frame in R, with a title and the units.
+- Draw every figure from values the guide computes. CI runs the code under
+  `python/tests/test_guides.py` and `R/prospicio/tests/test-guides.R`, so a
+  figure cannot fail silently.

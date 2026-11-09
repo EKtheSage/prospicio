@@ -33,41 +33,16 @@ For the 5x5 layer of the running example (all money in millions):
 
 | Output | Value | Where |
 |---|---|---|
-| Expected loss | 0.586 | section 2 |
-| Capital held (99% TVaR standard) | 6.54 | section 2 |
-| Risk premium: expected loss plus a 10% return on capital | 1.240 | section 2 |
-| Technical premium: the risk premium after 3% expenses and 10% brokerage | 1.425 | section 3 |
-| Rate on line, multiple, loss ratio of the technical premium | 28.5%, 2.43, 41.1% | section 3 |
-| With a paid reinstatement: deposit plus expected reinstatement premium | 1.282 + 0.143 | section 3 |
-| Technical premium inside a book: unrelated, and at correlation 0.5 | 0.768, 1.089 | section 9 |
-| A soft and a hard market quote | 1.10, 1.70 | section 8 |
+| Expected loss | 0.586 | section 1 |
+| Capital held (99% TVaR standard) | 6.54 | section 1 |
+| Risk premium: expected loss plus a 10% return on capital | 1.240 | section 1 |
+| Technical premium: the risk premium after 3% expenses and 10% brokerage | 1.425 | section 2 |
+| Rate on line, multiple, loss ratio of the technical premium | 28.5%, 2.43, 41.1% | section 2 |
+| With a paid reinstatement: deposit plus expected reinstatement premium | 1.282 + 0.143 | section 2 |
+| Technical premium inside a book: unrelated, and at correlation 0.5 | 0.768, 1.089 | section 8 |
+| A soft and a hard market quote | 1.10, 1.70 | section 7 |
 
-## 1. Words you need first
-
-- **Cedant**: the insurer that buys reinsurance. **Treaty**: a reinsurance
-  contract that covers a whole book, not one policy. **Program**: all the
-  layers a cedant buys together.
-- **Layer**: the slice of each loss that one excess of loss contract pays. We
-  write it as limit x attachment. **5x5** pays the part of a loss between 5 and
-  10, and **2x3** pays the part between 3 and 5.
-- **Attachment**: the loss size where the layer starts to pay. **Limit**: the
-  most the layer pays for one loss. **Exhaustion**: a loss that uses the whole
-  limit (for 5x5, any loss of 10 or more).
-- **Reinstatement**: the limit restored after a loss uses it, so the layer can
-  pay again in the same year. The **annual limit** is the most the layer pays
-  in a year.
-- **Capital**: the reinsurer's own money that it holds in addition to the
-  premium, so it can pay in a bad year. **Assets**: premium plus capital.
-- **Cost of capital**: the return the reinsurer wants on that capital, here 10%
-  a year.
-- **Loss on line**: expected loss divided by limit, the pure cost of each unit
-  of cover. **Rate on line**: premium divided by limit, the price of each unit
-  of cover.
-- **Retrocession**: reinsurance that a reinsurer buys for itself.
-
-Section 11 has the full glossary.
-
-## 2. What is priced
+## 1. What is priced
 
 A primary insurer prices a policy: one risk, one year, and a rating plan that
 turns rating variables into a premium. A reinsurer prices a **contract** on a
@@ -181,7 +156,7 @@ reinsurer supplies the other 6.5 as capital and wants 10% on it, which is the
 margin of 0.65. Each method in this guide gets these five numbers for a
 contract.
 
-## 3. An excess of loss layer
+## 2. An excess of loss layer
 
 An **excess of loss** (XoL) layer pays the part of each loss between its
 attachment and attachment plus limit. Start with its shape: how often a loss
@@ -293,7 +268,7 @@ capital (`Distortion.ccoc`) prices a loss as (expected loss + r × assets) / (1
 layer can pay in a year as its assets. For this layer that is the annual limit
 of 10, a different capital standard from the 99% TVaR above. `price` takes the
 99% TVaR standard directly. The full-limit formula agrees with
-`TowerGrids.price`, and `price` agrees with the pentagon of section 2:
+`TowerGrids.price`, and `price` agrees with the pentagon of section 1:
 
 ```python
 by_hand = (expected_loss + RETURN * mid.aggregate_limit) / (1 + RETURN)
@@ -379,7 +354,7 @@ real discount, because it decreases the capital that the reinsurer needs. The
 rest of the guide uses the free reinstatement, so each quote is the whole
 premium for the layer.
 
-## 4. Where the layer sits
+## 3. Where the layer sits
 
 Price three layers of the same program:
 
@@ -438,7 +413,7 @@ The columns of the table:
   loss: the money behind each unit of pure cost.
 - **price** is the technical premium, the distortion's risk premium grossed up
   for expenses and brokerage. The multiple and the rate on line use this price,
-  so the 5x5 row agrees with section 3.
+  so the 5x5 row agrees with section 2.
 - **return** is the margin over the 99% TVaR capital at that price.
 - **at 10%** is the multiple from a rule that charges exactly 10% on the
   capital of each layer.
@@ -467,7 +442,7 @@ The multiple gives the loading for risk. Thus a loss ratio alone cannot price a
 layer: two layers with the same expected loss have different prices when one
 of them is a 1-in-100 event.
 
-## 5. Quota share
+## 4. Quota share
 
 A **quota share** takes a fixed share of the premium and losses of each policy.
 The reinsurer pays the cedant a **ceding commission** for its acquisition
@@ -552,7 +527,7 @@ gives margin to the cedant. The cedant can compare this number with its own
 acquisition cost to decide if the reinsurance is a good deal. For a long-tail
 line, the ceding commission also depends strongly on the investment income that
 the reinsurer earns before it pays claims. This one-year example does not
-include that income (section 10 restates a price over a payout).
+include that income (section 9 restates a price over a payout).
 
 ### Sliding scales and profit commissions
 
@@ -659,7 +634,7 @@ reinsurer can give part of it back to the cedant. The size of the saving
 depends on the loss-ratio distribution. A model with more parameter and reserve
 risk than this one gives a different spread.
 
-## 6. How price follows the risk profile
+## 5. How price follows the risk profile
 
 A primary rating plan puts a risk profile into rating variables. A reinsurer
 has no rating plan at policy level. The profile goes into the **loss model**,
@@ -714,7 +689,7 @@ the first four.
 - **cedant quality**: underwriting and claims handling. A reinsurer judges
   these outside the model and puts them in its parameters and loads.
 
-The code prices the same program with the pricing rule of section 4. It
+The code prices the same program with the pricing rule of section 3. It
 compares the base book with four variants:
 
 1. 25% more large losses.
@@ -789,7 +764,7 @@ half in the working layer and more than doubles in the top layer. Thus the
 cedant's loss ratio is only the first question: a book with the same frequency
 and a different tail is a different risk.
 
-## 7. Stand-alone and as part of a book
+## 6. Stand-alone and as part of a book
 
 The sections above price each contract alone. A reinsurer holds a portfolio,
 and the capital a contract needs depends on the other contracts. When the
@@ -865,7 +840,7 @@ Two cautions apply:
 - A Gaussian copula has no tail dependence. Even at a correlation of 0.5, it
   understates how often both parts have their worst years together.
 
-## 8. Hard and soft markets
+## 7. Hard and soft markets
 
 In a **hard market**, reinsurers charge more for the same cover and offer less
 of it: less limit, higher attachments, fewer free reinstatements, and stricter
@@ -885,7 +860,7 @@ market. Assume that the reinsurer's expected loss has not changed, so the
 difference is all price of risk.
 
 The cedant pays the quote, so the reinsurer's risk premium is the quote less
-expenses and brokerage. `Quote.at` restates the technical quote of section 3
+expenses and brokerage. `Quote.at` restates the technical quote of section 2
 at a quoted premium. It keeps the expected loss and assets, and the risk
 premium is the remainder after the loads. For each quote, the code gives two
 results:
@@ -978,7 +953,7 @@ These factors change the price of risk:
   reinsurer earns on premium and reserves until it pays claims, which permits a
   lower underwriting margin. The larger effect depends on the payout and on the
   return asked over the rate. This guide's one-year model has no investment
-  income. Section 10 restates the price over a payout, with investment income
+  income. Section 9 restates the price over a payout, with investment income
   as the discount on losses and capital held for longer.
 - **retrocession cost**: when the reinsurers' own reinsurance costs more, they
   increase their prices.
@@ -987,14 +962,14 @@ These factors change the expected loss: loss trend, the cedant's own loss
 experience and reserve development, and new views of the tail. They change the
 technical price in all markets.
 
-## 9. What the reinsurer decides
+## 8. What the reinsurer decides
 
 The decision needs two technical prices:
 
-- the **stand-alone technical price** (section 3): the reference price for a
+- the **stand-alone technical price** (section 2): the reference price for a
   reinsurer with no other business, or for a contract with no diversification
   benefit.
-- the **technical price in a book** (section 7): the cost of the contract in
+- the **technical price in a book** (section 6): the cost of the contract in
   the reinsurer's current portfolio. It is grossed up for expenses and
   brokerage like the stand-alone price.
 
@@ -1033,7 +1008,7 @@ above all three. For each submission, a reinsurer selects one action:
   reinstatement) if different terms meet the price.
 - **decline** in all other cases.
 
-## 10. What the model leaves out
+## 9. What the model leaves out
 
 The example is small on purpose. Each item below changes a real price in the
 direction given:
@@ -1078,7 +1053,7 @@ share of the ultimate loss paid in each year). It discounts the losses at the
 given rate, which is how investment income enters. It holds the capital while
 losses are outstanding, so it charges capital for more than one year. The cost
 of capital is then a return over the discount rate. Give it the rule of the
-one-year price: here the 99% TVaR price of section 3 at a 10% cost of capital.
+one-year price: here the 99% TVaR price of section 2 at a 10% cost of capital.
 Assume that the 5x5 layer pays 40% of its losses in the first year, then 30%,
 20% and 10%, and that money earns 3%:
 
@@ -1115,7 +1090,7 @@ Three things changed together:
 - the reinsurer holds capital for longer.
 - the losses are discounted.
 - 10% over a 3% rate gives investors 13% in total, against 10% at the zero
-  rate of section 3.
+  rate of section 2.
 
 Take them one at a time:
 
@@ -1130,26 +1105,30 @@ payout pattern, the discount rate and the return over it decide which effect is
 larger. `PaymentPattern.from_development` gives a payout pattern, for example
 from a paid chain ladder.
 
-## 11. Glossary and further reading
+## 10. Glossary and further reading
 
 **Annual aggregate deductible**: the part of the year's layer losses that the
-cedant keeps before the layer pays. **Annual aggregate limit**: the most a
-layer pays in a year. **Assets**: premium plus capital. **Attachment**: the
-loss size above which an excess of loss layer pays. **Attritional losses**: the
-frequent small losses below the large-loss threshold. **Capital**: the
-reinsurer's own money held for a contract. **Capital years**: how long the
+cedant keeps before the layer pays. **Annual aggregate limit** (**annual
+limit**): the most a layer pays in a year. **Assets**: premium plus capital.
+**Attachment**: the loss size above which an excess of loss layer pays.
+**Attritional losses**: the frequent small losses below the large-loss
+threshold. **Capital**: the reinsurer's own money that it holds in addition to
+the premium, so it can pay in a bad year. **Capital years**: how long the
 capital is held over a payout, in discounted years, with the capital running
 off as losses are paid. **Cedant**: the insurer that buys reinsurance.
 **Ceding commission**: what the reinsurer pays the cedant on a quota share.
-**Cost of capital**: the return the reinsurer asks on its capital (over a
-payout, a return over the discount rate). **Deposit premium**: the premium paid
-at inception, before any reinstatement premium. **Discount factor**: the
-present value of one unit of ultimate loss paid on the payment pattern.
-**Distortion**: a reweighting of probabilities that prices a loss by its tail.
-**Exhaustion**: a loss that uses a layer's whole limit. **Hard market**: prices
-up and less cover for the same risk. **Layer**: the slice of each loss that one
-contract pays, written limit x attachment. **Loss on line**: expected loss
-divided by limit. **Multiple**: premium divided by expected loss. **Natural
+**Cost of capital**: the return the reinsurer asks on its capital, here 10% a
+year (over a payout, a return over the discount rate). **Deposit premium**: the
+premium paid at inception, before any reinstatement premium. **Discount
+factor**: the present value of one unit of ultimate loss paid on the payment
+pattern. **Distortion**: a reweighting of probabilities that prices a loss by
+its tail. **Exhaustion**: a loss that uses a layer's whole limit (for 5x5, any
+loss of 10 or more). **Hard market**: prices up and less cover for the same
+risk. **Layer**: the slice of each loss that one excess of loss contract pays,
+written limit x attachment. **5x5** pays the part of a loss between 5 and 10,
+and **2x3** pays the part between 3 and 5. **Limit**: the most the layer pays
+for one loss. **Loss on line**: expected loss divided by limit, the pure cost of
+each unit of cover. **Multiple**: premium divided by expected loss. **Natural
 allocation**: a split of a portfolio's capital and price among its parts that
 adds up exactly. **Payback**: limit divided by premium, the inverse of the rate
 on line. **Payment pattern**: the share of the ultimate loss paid in each year.
@@ -1158,8 +1137,9 @@ identities. **Price of risk**: the loading the market puts on risk, as a return
 on capital or a distortion parameter. **Profit commission**: a share of the
 reinsurer's profit returned to the cedant. **Program**: all the layers a cedant
 buys together. **Quota share**: reinsurance of a fixed share of each policy.
-**Rate on line (ROL)**: premium divided by limit. **Reinstatement**: a layer's
-limit restored after a loss, free or for a **reinstatement premium**.
+**Rate on line (ROL)**: premium divided by limit, the price of each unit of
+cover. **Reinstatement**: a layer's limit restored after a loss uses it, so the
+layer can pay again in the same year, free or for a **reinstatement premium**.
 **Retrocession**: reinsurance bought by a reinsurer. **Risk premium**: expected
 loss plus margin, before expenses and brokerage. **Sliding scale**: a ceding
 commission that decreases as the loss ratio increases. **Soft market**: prices
@@ -1168,8 +1148,8 @@ no diversification benefit. **Subject premium**: the cedant's premium that the
 reinsurance applies to. **Technical commission**: the ceding commission that
 the reinsurer's model supports. **Technical premium**: the price that the
 reinsurer's model supports, after expenses and brokerage. **Treaty**: a
-reinsurance contract that covers a whole book. **TVaR**: the average of the
-worst outcomes beyond a probability level.
+reinsurance contract that covers a whole book, not one policy. **TVaR**: the
+average of the worst outcomes beyond a probability level.
 
 Further reading, by question:
 
@@ -1178,8 +1158,8 @@ Further reading, by question:
 - Werner and Modlin, *Basic Ratemaking* (CAS): the trend and development work
   that experience rating of a layer uses.
 - Mildenhall and Major, *Pricing Insurance Risk: Theory and Practice* (Wiley,
-  2022): the pentagon, distortions and the natural allocation of sections 2, 4
-  and 7.
+  2022): the pentagon, distortions and the natural allocation of sections 1, 3
+  and 6.
 - The notebook [`examples/reinsurance_pricing.ipynb`](../../examples/reinsurance_pricing.ipynb)
   prices six contracts and checks them against Mildenhall's `aggregate`.
 

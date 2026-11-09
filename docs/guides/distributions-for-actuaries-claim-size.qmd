@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 This is the R twin of the Python guide
 [`distributions-for-actuaries-claim-size.md`](distributions-for-actuaries-claim-size.md).
 It recomputes the worked examples and problem answers of chapters 2, 5 and 6 of
@@ -225,6 +227,29 @@ P2.16  gamma by min chi-square: a        book       4.7432   prospicio       4.7
 P2.16  b                                 book       337.31   prospicio       337.31
 ```
 
+The chi-square is one number. Each band's count beside the two fits shows where
+they differ:
+
+```{r}
+#| label: ex26-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+bands <- factor(c("0-1k", "1-1.5k", "1.5-2k", "2-2.5k", "2.5-3k", "3k+"),
+                levels = c("0-1k", "1-1.5k", "1.5-2k", "2-2.5k", "2.5-3k", "3k+"))
+least <- min_chi_square(function(m, s) lognormal(m, abs(s)), c(7.2, 0.5))$par
+two_fits <- list("gamma, Ex 2.7" = g, "lognormal, least chi-square" = lognormal(least[1], abs(least[2])))
+expected <- do.call(rbind, lapply(names(two_fits), function(name) {
+  data.frame(band = bands, fit = name, claims = 200 * cell_probs(two_fits[[name]], CUTS))
+}))
+ggplot(expected, aes(band, claims)) +
+  geom_col(aes(fill = "observed claims"), data = data.frame(band = bands, claims = OBSERVED)) +
+  geom_line(aes(colour = fit, group = fit), linewidth = 0.8) +
+  geom_point(aes(colour = fit), size = 2) +
+  scale_fill_manual(values = c("observed claims" = "grey75")) +
+  labs(x = NULL, y = "claims in the band", fill = NULL, colour = NULL,
+       title = "Ex 2.6: 200 claims by size band, and two fitted distributions") +
+  theme(legend.position = "top")
+```
+
 Ex 2.9's shifted Pareto, α held at 6:
 
 ```{r}
@@ -320,6 +345,27 @@ P2.43 mu                                 book       9.4951   prospicio       9.4
 P2.43 sigma                              book       1.0842   prospicio       1.0842
 ```
 
+Ex 2.11 band by band, the claims observed beside the expected counts:
+
+```{r}
+#| label: ex211-table
+library(gt)
+ex_2_11 <- data.frame(
+  band = c("1k to 5k", "5k to 10k", "10k to 25k", "25k to 50k", "50k to 75k", "75k to 100k",
+           "100k to 125k", "125k to 150k", "150k to 175k", "175k to 200k", "at the 200k limit"),
+  observed = c(367, 112, 118, 65, 36, 13, 10, 8, 6, 4, 31),
+  book = c(360, 122, 121, 63, 27, 16, 10, 7, 5, 4, 34),
+  prospicio = 770 * cell_probs(fitted, c(1000, 5000, 10000, 25000, 50000, 75000, 100000,
+                                         125000, 150000, 175000, 200000, Inf))
+)
+gt(ex_2_11, rowname_col = "band") |>
+  tab_header("Ex 2.11: 770 claims above a 1,000 deductible, censored at 200,000",
+             "Expected counts of the lognormal fitted by minimum chi-square") |>
+  tab_spanner("expected", columns = c(book, prospicio)) |>
+  fmt_number(columns = prospicio, decimals = 1) |>
+  fmt_integer(columns = c(observed, book))
+```
+
 `severity_fit()` fits individual claims by maximum likelihood. The deductible is
 a reporting threshold and the limit is censoring. The 20,000 draws are the same
 as in the Python guide (both guides share the generator):
@@ -350,6 +396,35 @@ for (label in names(fits)) {
 ignoring both             mu  8.94 (se 0.01)  sigma 1.46
 censoring only            mu  8.96 (se 0.02)  sigma 1.52
 truncation and censoring  mu  6.76 (se 0.15)  sigma 2.67
+```
+
+The histogram shows the same on a log scale: the 20,000 ground-up claims, which
+the insurer never sees, the recorded ones between the deductible and the limit,
+and each fit's expected count in each bin:
+
+```{r}
+#| label: fit-figure
+edges <- 10^((0:70) / 10)                               # 1 to 10,000,000, ten bins a decade
+shown <- list("fit ignoring both" = fits[["ignoring both"]],
+              "fit with both" = fits[["truncation and censoring"]])
+steps <- do.call(rbind, lapply(names(shown), function(label) {
+  p <- shown[[label]]$parameters
+  counts <- 20000 * diff(cdf(lognormal(p[["meanlog"]], p[["sdlog"]]), edges))
+  data.frame(fit = label, size = edges, claims = c(counts, counts[length(counts)]))
+}))
+ggplot() +
+  geom_histogram(aes(size, fill = "ground-up"), data = data.frame(size = ground_up),
+                 breaks = edges) +
+  geom_histogram(aes(size, fill = "recorded"), data = data.frame(size = recorded),
+                 breaks = edges) +
+  geom_step(aes(size, claims, colour = fit), data = steps, linewidth = 0.8) +
+  geom_vline(xintercept = c(1000, 200000), colour = "grey40", linetype = "dotted") +
+  scale_x_log10(labels = scales::label_comma()) +
+  scale_fill_manual(values = c("ground-up" = "grey82", "recorded" = "grey55")) +
+  labs(x = "claim size (dotted: the deductible and the limit)", y = "claims in the bin",
+       fill = NULL, colour = NULL,
+       title = "Ex 2.11: only the corrected fit follows the population") +
+  theme(legend.position = "top")
 ```
 
 ## 5. Inflation and claim size

@@ -162,3 +162,5 @@ means and 10% in their sds, both under `ReweightOnly`.
 **Open.** A panel whose programs stop at different ages gets the expensive
 view. Whether to refuse it, warn, or leave the ages beyond a program's last
 out of its year is the user's decision and is not taken here.
+
+**Short-sampler spread (2026-11-08).** On the Python test's three-program panel (QUICK settings: 2 chains, 300 tune, 300 draws, 500 simulations) the one-year variance of the total divided by the lifetime variance was 0.70 to 1.00 over 24 seeds on x86_64 (mean 0.88, sd 0.084), so one seed in 24 had the one-year view the wider; no seed gave a NaN Pareto k there. On aarch64 (Linux, the release workflow) the default seed gave 1.40 and a NaN k, #782. A single fit of this size cannot decide that the year is narrower than the lifetime; the Python test bounds the ratio by 2 and compares the replay by bits.

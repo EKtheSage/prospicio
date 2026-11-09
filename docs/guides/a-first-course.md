@@ -19,40 +19,7 @@ The page has three parts:
 
 The links go to the long guides for more detail. Money is in millions of a
 synthetic currency, and all examples are synthetic.
-
-## Words you need first
-
-- **Loss distribution**: the list of what a cover can pay in a year, with the
-  probability of each amount. Its **mean** is the expected loss. Its
-  **coefficient of variation** (CV) is the standard deviation divided by the mean.
-- **VaR** (value at risk) at 99%: the loss that only 1% of years exceed.
-- **TVaR** (tail value at risk) at 99%: the average loss in the worst 1% of
-  years. It is never smaller than the VaR at the same level.
-- **Assets**: the money available to pay claims. A **capital standard** sets the
-  amount, for example assets equal to the 99% TVaR of the loss. A company cannot
-  pay more than its assets. In a year with a larger loss, it defaults and the
-  policyholders bear the rest (**limited liability**).
-- **Premium** and **margin**: the premium pays part of the assets. The margin is
-  the premium minus the expected loss. It is the reward of the owners.
-- **Capital**: the rest of the assets, which the owners supply. Capital is assets
-  minus premium. **Cost of capital**: the return that the owners want on it, here
-  10% a year.
-- **Distortion**: a rule that prices a loss. It gives the bad outcomes more
-  weight than their probability (section 5).
-- **Allocation**: a split of the premium or capital of a book between its units.
-- **Cedant**: an insurer that buys reinsurance.
-- **Layer**: the part of each loss that an excess of loss contract pays, written
-  limit x attachment. The layer 10x5 pays the part of each loss between 5 and 15.
-  Another name for the attachment is the retention.
-- **Risk premium**: the expected loss plus the margin for capital.
-  **Technical premium**: the risk premium plus expenses and brokerage.
-  **Rate on line**: the premium of a layer divided by its limit.
-- **On-level premium**: past premium at the rates of today. **IBNR**: claims
-  incurred but not yet reported. A **censored** claim is a claim that a policy
-  limit caps. You know only that its true size is at least the cap.
-
-[Section 1 of the price guide](reinsurance-price.md) has the other reinsurance
-words.
+The appendix at the end defines the terms.
 
 ## Part 1. The ideas
 
@@ -598,7 +565,7 @@ deductions:
 1. the risk premium of the reinsurer.
 2. 2% expenses.
 3. 1.5% brokerage
-   ([section 5 of the price guide](reinsurance-price.md#5-quota-share)).
+   ([section 4 of the price guide](reinsurance-price.md#4-quota-share)).
 
 A **sliding scale** pays more commission when the ceded loss ratio is low, and
 less when it is high. Here the scale gives an expected commission equal to the
@@ -768,7 +735,7 @@ Other inputs also change the answer. A higher cost of capital for the cedant,
 or a TVaR standard that gives more value to the tail, makes the excess of loss
 better. Do the comparison again with your own numbers. Do not use this result
 again for a different cedant.
-[What the reinsurer decides](reinsurance-price.md#9-what-the-reinsurer-decides)
+[What the reinsurer decides](reinsurance-price.md#8-what-the-reinsurer-decides)
 shows the same contract from the other side.
 
 ## Part 3. The checklist
@@ -921,3 +888,37 @@ Replace these three simplifications in the template:
   small book through the library.
   [A submission evaluation](../../examples/submission_evaluation.ipynb) runs a
   reinsurance submission from start to end.
+
+## Appendix: terms
+
+- **Loss distribution**: the list of what a cover can pay in a year, with the
+  probability of each amount. Its **mean** is the expected loss. Its
+  **coefficient of variation** (CV) is the standard deviation divided by the mean.
+- **VaR** (value at risk) at 99%: the loss that only 1% of years exceed.
+- **TVaR** (tail value at risk) at 99%: the average loss in the worst 1% of
+  years. It is never smaller than the VaR at the same level.
+- **Assets**: the money available to pay claims. A **capital standard** sets the
+  amount, for example assets equal to the 99% TVaR of the loss. A company cannot
+  pay more than its assets. In a year with a larger loss, it defaults and the
+  policyholders bear the rest (**limited liability**).
+- **Premium** and **margin**: the premium pays part of the assets. The margin is
+  the premium minus the expected loss. It is the reward of the owners.
+- **Capital**: the rest of the assets, which the owners supply. Capital is assets
+  minus premium. **Cost of capital**: the return that the owners want on it, here
+  10% a year.
+- **Distortion**: a rule that prices a loss. It gives the bad outcomes more
+  weight than their probability (section 5).
+- **Allocation**: a split of the premium or capital of a book between its units.
+- **Cedant**: an insurer that buys reinsurance.
+- **Layer**: the part of each loss that an excess of loss contract pays, written
+  limit x attachment. The layer 10x5 pays the part of each loss between 5 and 15.
+  Another name for the attachment is the retention.
+- **Risk premium**: the expected loss plus the margin for capital.
+  **Technical premium**: the risk premium plus expenses and brokerage.
+  **Rate on line**: the premium of a layer divided by its limit.
+- **On-level premium**: past premium at the rates of today. **IBNR**: claims
+  incurred but not yet reported. A **censored** claim is a claim that a policy
+  limit caps. You know only that its true size is at least the cap.
+
+[The glossary of the price guide](reinsurance-price.md#10-glossary-and-further-reading) has the other
+reinsurance words.

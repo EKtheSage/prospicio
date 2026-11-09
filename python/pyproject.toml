@@ -39,13 +39,19 @@ dev = [
     # Engines behind prospicio.boosting; the CPU-only XGBoost wheel is
     # 6 MB where the full one bundles 200+ MB of GPU libraries.
     "lightgbm",
-    # The notebook tests run the chart cells under the Agg backend.
+    # The notebook tests run the chart cells under the Agg backend; the
+    # guides draw figures with matplotlib and tables with great_tables.
     "matplotlib",
+    "great-tables",
     "xgboost-cpu ; sys_platform == 'linux'",
     "xgboost ; sys_platform != 'linux'",
 ]
 docs = [
     "great-docs>=0.17 ; python_full_version >= '3.11'",
+    # The guides that run on the site (docs/guides/site/figures.py).
+    "great-tables",
+    "matplotlib",
+    "pandas",
 ]
 # Jupyter and charts for the notebooks in examples/:
 # `uv run --project python --group examples jupyter lab` from the repository root.

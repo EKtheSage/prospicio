@@ -14,22 +14,14 @@
    change all three together. */
 :root {
   --p-font: "Jost", "Segoe UI", system-ui, sans-serif;
-  --p-code: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; /* taste-skill-ignore: code blocks only */
   --p-bg: #eef0f3;
   --p-surface: #e2e5ea;
   --p-ink: #0b0c0e;
   --p-muted: #4f5662;
   --p-accent: #1f2de6;
-  --p-accent-ink: #ffffff;
   --p-panel: #ffffff;
-  --p-forecast: #1f2de6;
-  --step-small: 0.875rem;
-  --step-body: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem);
-  --step-lead: clamp(1.25rem, 1.1rem + 0.7vw, 1.625rem);
-  --step-head: clamp(2rem, 1.3rem + 2.6vw, 3.5rem);
-  --step-display: clamp(2.75rem, 1.2rem + 4.4vw, 4.75rem);
-  --margin: clamp(20px, 3.4vw, 48px);
-  --step: 14px;
+  --p-rule: #d3d7de;
+  --margin: clamp(20px, 4vw, 56px);
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -39,140 +31,55 @@
     --p-ink: #e9ebef;
     --p-muted: #a6acb7;
     --p-accent: #8f97ff;
-    --p-accent-ink: #0b0c0e;
-    --p-panel: #101216;
-    --p-forecast: #8f97ff;
+    --p-panel: #15181d;
+    --p-rule: #2c3038;
   }
 }
 * { box-sizing: border-box; }
-html { background: var(--p-bg); }
-body { margin: 0; background: var(--p-bg); color: var(--p-ink); font: 400 var(--step-body)/1.5 var(--p-font); }
+body { margin: 0; background: var(--p-bg); color: var(--p-ink); font: 400 1.0625rem/1.55 var(--p-font); }
 a { color: inherit; }
 :focus-visible { outline: 3px solid var(--p-accent); outline-offset: 3px; }
-footer :focus-visible, .shelf :focus-visible { outline-color: var(--p-accent-ink); }
+.wrap { max-width: 68rem; margin: 0 auto; padding: 0 var(--margin); }
 
-/* One shape: a step, cut from the loss triangle's staircase. */
-.cut { clip-path: polygon(0 var(--s), var(--s) var(--s), var(--s) 0, 100% 0, 100% 100%, 0 100%); }
-
-header.bar { display: flex; align-items: center; justify-content: space-between; gap: 24px;
-  padding: 26px var(--margin) 0; font-size: var(--step-small); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 24px 0; }
 .word { font-weight: 700; font-size: 1.25rem; letter-spacing: -0.02em; text-decoration: none; }
-header nav { display: flex; gap: clamp(16px, 2.4vw, 32px); font-size: 0.9375rem; }
-header nav a { text-decoration: none; padding: 6px 0; }
+header nav { display: flex; gap: 24px; font-size: 0.9375rem; }
+header nav a { text-decoration: none; }
 header nav a:hover { color: var(--p-accent); }
 
-.hero { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px; padding: 0 0 0 var(--margin); }
-.hero-text { grid-column: 1 / 7; grid-row: 1; padding-top: clamp(64px, 11vh, 140px); max-width: 44rem; position: relative; z-index: 1; }
-h1, .same h2 { text-wrap: balance; }
-h1 { font-size: var(--step-display); line-height: 0.98; letter-spacing: -0.035em; font-weight: 700; margin: 0; }
-.lead { font-size: var(--step-lead); line-height: 1.35; margin: 36px 0 0; max-width: 34ch; text-wrap: pretty; }
-.docs { display: flex; flex-wrap: wrap; gap: 12px; margin: 40px 0 0; padding: 0; list-style: none; }
-.docs a { display: inline-flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 26px;
-  background: var(--p-ink); color: var(--p-bg); text-decoration: none; font-weight: 500; font-size: 1.0625rem;
-  transition: transform 160ms ease, background-color 160ms ease; }
-.docs a:hover, .docs a:focus-visible { transform: translateY(-2px); background: var(--p-accent); color: var(--p-accent-ink); }
-.docs a:focus-visible { outline: 3px solid var(--p-ink); outline-offset: 3px; }
-.docs a:active { transform: translateY(0); }
-.docs a .k { font-weight: 400; opacity: 0.85; }
+.intro { padding: clamp(40px, 8vh, 88px) 0 40px; max-width: 42rem; }
+h1 { font-size: clamp(2.5rem, 1.6rem + 3vw, 3.75rem); line-height: 1; letter-spacing: -0.03em; margin: 0; }
+.gloss { margin: 12px 0 0; color: var(--p-muted); font-size: 1.25rem; }
+.gloss i { color: var(--p-ink); }
+.intro p.lead { margin: 28px 0 0; font-size: 1.1875rem; text-wrap: pretty; }
+.docs { display: flex; flex-wrap: wrap; gap: 12px; margin: 32px 0 0; padding: 0; list-style: none; }
+.docs a { display: inline-block; padding: 12px 22px; border: 1px solid var(--p-ink); text-decoration: none; font-weight: 500; }
+.docs a:hover { background: var(--p-ink); color: var(--p-bg); }
 
-.stage { --s: clamp(28px, 2.6vw, 40px); grid-column: 6 / -1; grid-row: 1; align-self: start; margin-top: clamp(240px, 33vh, 310px);
-  background: var(--p-accent); padding: var(--s) clamp(16px, 1.8vw, 28px) clamp(24px, 2.4vw, 36px) clamp(24px, 2.4vw, 36px); }
-.stage .panel { overflow-x: auto; }
-
-.tri { --s: 0px; width: 100%; background: var(--p-panel); border-collapse: collapse; font-size: var(--step-small);
-  font-variant-numeric: tabular-nums; color: var(--p-ink); }
-.tri caption { caption-side: top; text-align: left; padding: 16px 10px 12px; background: var(--p-panel); font-weight: 500; }
-.tri th, .tri td { padding: 6px clamp(4px, 0.4vw, 8px); text-align: right; white-space: nowrap; }
-.tri thead th { color: var(--p-muted); font-weight: 500; }
+figure { margin: 0 0 72px; }
+.panel { overflow-x: auto; background: var(--p-panel); border: 1px solid var(--p-rule); }
+.tri { width: 100%; border-collapse: collapse; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+.tri caption { display: none; }
+.tri th, .tri td { padding: 6px 8px; text-align: right; white-space: nowrap; }
+.tri thead th { color: var(--p-muted); font-weight: 500; border-bottom: 1px solid var(--p-rule); }
 .tri tbody th, .tri tfoot th { text-align: left; font-weight: 500; }
-.tri td.f { color: var(--p-forecast); font-weight: 500; font-style: italic; }
-.tri td.r { background: var(--p-surface); font-weight: 600; }
-.tri tbody tr:nth-child(odd) { background: color-mix(in srgb, var(--p-surface) 45%, transparent); }
+.tri td.f { color: var(--p-accent); }
+.tri td.r { border-left: 1px solid var(--p-rule); font-weight: 600; }
+.tri tfoot th, .tri tfoot td { border-top: 1px solid var(--p-rule); }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.tri tfoot th, .tri tfoot td { padding-top: 12px; padding-bottom: 14px; }
+figcaption { margin-top: 12px; color: var(--p-muted); font-size: 0.9375rem; max-width: 48rem; }
+figcaption .k { color: var(--p-accent); }
 
-section.same { padding: clamp(120px, 14vw, 200px) var(--margin) clamp(96px, 9vw, 128px);
-  display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(32px, 5vw, 80px); align-items: center; }
-.same h2 { font-size: var(--step-head); line-height: 1; letter-spacing: -0.03em; margin: 0 0 32px; font-weight: 700; }
-.langs { border: 0; margin: 0; padding: 0; display: grid; gap: 4px; }
-.langs legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.langs input { position: absolute; opacity: 0; }
-.langs label { font-size: clamp(1.75rem, 1.1rem + 1.6vw, 2.5rem); line-height: 1.2; letter-spacing: -0.03em; color: var(--p-muted);
-  cursor: pointer; display: flex; align-items: center; gap: 18px; transition: color 160ms ease; }
-.langs label::before { content: ""; width: 0.42em; height: 0.42em; background: transparent; flex: none;
-  clip-path: polygon(0 50%, 50% 50%, 50% 0, 100% 0, 100% 100%, 0 100%); transition: background-color 160ms ease; }
-.langs label:hover { color: var(--p-ink); }
-.langs input:checked + label { color: var(--p-ink); font-weight: 600; }
-.langs input:checked + label::before { background: var(--p-accent); }
-.langs input:focus-visible + label { outline: 3px solid var(--p-accent); outline-offset: 4px; }
-.fact { margin: 36px 0 0; max-width: 34ch; }
-.fact a { color: var(--p-accent); font-weight: 500; }
-
-.shelf { --s: clamp(48px, 6vw, 96px); position: relative; background: var(--p-accent); min-height: 460px;
-  display: flex; align-items: center; padding: calc(var(--s) + 8px) clamp(20px, 3vw, 44px) clamp(28px, 3vw, 44px); }
-.code { margin: 0; width: 100%; background: #0b0c0e; color: #e9ebef; font-size: 0.9375rem; }
-.code pre { margin: 0; padding: 26px 24px 18px; overflow-x: auto; font: 0.9375rem/1.6 var(--p-code); }
-.code figcaption { padding: 14px 24px 18px; background: #1b1e24; color: #c6cbf9; }
-.code figcaption code { font: 500 0.9375rem/1.4 var(--p-code); }
-.same .code { display: none; }
-.same:has(#lang-python:checked) .code-python,
-.same:has(#lang-r:checked) .code-r,
-.same:has(#lang-rust:checked) .code-rust { display: block; animation: swap 300ms ease both; }
-@supports not selector(:has(*)) { .same .code { display: block; margin-bottom: 12px; } }
-
-footer { background: var(--p-accent); color: var(--p-accent-ink); padding: clamp(48px, 5vw, 72px) var(--margin) 32px; }
-.blocks { display: flex; align-items: flex-end; gap: 4px; height: 34svh; min-height: 200px; max-height: 360px; }
-.blocks span { flex: 1; height: var(--h); background: var(--p-accent-ink); color: var(--p-accent);
-  display: flex; align-items: flex-end; justify-content: center; font-weight: 700; line-height: 0.8;
-  font-size: clamp(2.5rem, 8vw, 8.5rem); padding-bottom: 0.06em; overflow: hidden; }
-.legal { margin: 40px 0 0; font-size: 0.9375rem; }
-.legal a { margin-left: 12px; text-underline-offset: 0.2em; }
-
-@keyframes rise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
-@keyframes shutter { from { clip-path: inset(100% 0 0 0); } to { clip-path: inset(0 0 0 0); } }
-@keyframes settle { from { transform: scale(1.06); } to { transform: none; } }
-@keyframes swap { from { opacity: 0; } to { opacity: 1; } }
-.hero h1 { animation: rise 700ms cubic-bezier(.2,.7,.2,1) both; }
-.hero .lead { animation: rise 700ms 80ms cubic-bezier(.2,.7,.2,1) both; }
-.hero .docs li { animation: rise 700ms cubic-bezier(.2,.7,.2,1) both; }
-.hero .docs li:nth-child(1) { animation-delay: 160ms; }
-.hero .docs li:nth-child(2) { animation-delay: 230ms; }
-.hero .docs li:nth-child(3) { animation-delay: 300ms; }
-.stage-wrap { animation: shutter 1100ms 200ms cubic-bezier(.7,0,.2,1) both; }
-.stage .panel .tri { transform-origin: 0 0; animation: settle 1300ms 200ms cubic-bezier(.2,.7,.2,1) both; }
-.reveal { opacity: 1; }
-.js .reveal { opacity: 0; transform: translateY(24px); transition: opacity 700ms ease, transform 700ms cubic-bezier(.2,.7,.2,1); }
-.js .reveal.in { opacity: 1; transform: none; }
-.js .reveal:nth-child(2) { transition-delay: 80ms; }
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; transition: none !important; }
-  .js .reveal { opacity: 1; transform: none; }
-}
-
-@media (max-width: 860px) {
-  header nav { gap: 18px; }
-  .hero { display: block; padding: 0 var(--margin); }
-  .hero-text { padding-top: 56px; }
-  h1 { font-size: clamp(2.5rem, 10vw, 3.5rem); }
-  .lead { font-size: 1.125rem; margin-top: 24px; }
-  .stage { margin: 48px calc(-1 * var(--margin)) 0; --s: 24px; padding: var(--s) 16px 24px 16px; }
-  .code pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.8125rem; }
-  section.same { grid-template-columns: minmax(0, 1fr); }
-  .langs { display: flex; gap: 24px; overflow-x: auto; }
-  .langs label { font-size: 1.75rem; }
-}
+footer { border-top: 1px solid var(--p-rule); padding: 24px 0 40px; color: var(--p-muted); font-size: 0.9375rem; }
+footer a { margin-left: 12px; }
 @media (max-width: 600px) {
   .tri thead th:nth-child(n+2):nth-child(-n+6), .tri tbody td:nth-child(n+2):nth-child(-n+6) { display: none; }
-  .tri tfoot th { text-align: left; }
-  .same h2 { font-size: 2rem; }
-  .shelf { min-height: 0; }
-  .blocks { height: 22svh; min-height: 120px; }
-  .blocks span { font-size: clamp(1.5rem, 9vw, 3rem); }
 }
 </style>
 </head>
 <body>
-<header class="bar">
+<div class="wrap">
+<header>
   <a class="word" href="./">prospicio</a>
   <nav aria-label="Documentation">
     <a href="python/index.html">Python</a>
@@ -183,19 +90,19 @@ footer { background: var(--p-accent); color: var(--p-accent-ink); padding: clamp
 </header>
 
 <main>
-<section class="hero" aria-labelledby="title">
-  <div class="hero-text">
-    <h1 id="title">Actuarial modeling on a Rust core</h1>
-    <p class="lead">Reserving, pricing and aggregate loss, with the same numbers in Python, R and Rust.</p>
-    <ul class="docs" aria-label="Documentation">
-      <li><a href="python/index.html">Python docs</a></li>
-      <li><a href="r/index.html">R docs</a></li>
-      <li><a href="rust/prospicio/index.html">Rust crates</a></li>
-    </ul>
-  </div>
-  <div class="stage cut" aria-hidden="false">
-    <div class="stage-wrap">
-      <div class="panel" data-ui>
+<section class="intro" aria-labelledby="title">
+  <h1 id="title">prospicio</h1>
+  <p class="gloss">Latin, <i>I look ahead</i>.</p>
+  <p class="lead">An actuary works from what is known toward what is not: the claims of past years that are still open, the losses of a year not yet written, the bad years that capital has to survive. prospicio is a library for that work, with one Rust core under Python and R.</p>
+  <ul class="docs" aria-label="Documentation">
+    <li><a href="python/index.html">Python docs</a></li>
+    <li><a href="r/index.html">R docs</a></li>
+    <li><a href="rust/prospicio/index.html">Rust crates</a></li>
+  </ul>
+</section>
+
+<figure>
+<div class="panel">
 <table class="tri">
 <caption>RAA, cumulative paid in thousands, rounded. In blue italics, the chain ladder's forecast.</caption>
 <thead><tr><th scope="col">Year</th><th scope="col">12</th><th scope="col">24</th><th scope="col">36</th><th scope="col">48</th><th scope="col">60</th><th scope="col">72</th><th scope="col">84</th><th scope="col">96</th><th scope="col">108</th><th scope="col">120</th><th scope="col">Reserve</th></tr></thead>
@@ -213,64 +120,12 @@ footer { background: var(--p-accent); color: var(--p-accent-ink); padding: clamp
 </tbody>
 <tfoot><tr><th scope="row" colspan="11">Total reserve</th><td class="r">52,135</td></tr></tfoot>
 </table>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="same" aria-labelledby="same-title">
-  <div>
-    <h2 id="same-title" class="reveal">One kernel, three languages</h2>
-    <fieldset class="langs reveal">
-      <legend>Show the code in</legend>
-      <input type="radio" name="lang" id="lang-python" value="python" checked><label for="lang-python">Python</label>
-      <input type="radio" name="lang" id="lang-r" value="r"><label for="lang-r">R</label>
-      <input type="radio" name="lang" id="lang-rust" value="rust"><label for="lang-rust">Rust</label>
-    </fieldset>
-    <p class="fact reveal">Mack on the RAA triangle: a reserve of 52,135 with a standard error of 26,881, whichever you call. <a href="https://github.com/EKtheSage/prospicio/blob/main/validation/data/raa.csv">raa.csv</a></p>
-  </div>
-  <div class="shelf cut reveal">
-<figure class="code code-python" data-ui>
-<pre><code>from prospicio.reserving import Mack, Triangle
-
-tri = Triangle.read_csv(&quot;raa.csv&quot;, &quot;origin&quot;, &quot;development&quot;, comment=&quot;#&quot;)
-fit = Mack().fit(tri, &quot;value&quot;)
-print(round(fit.total_reserve), round(fit.total_standard_error))</code></pre>
-<figcaption><code>52135 26881</code></figcaption>
+</div>
+<figcaption>RAA, cumulative paid in thousands: what is known at the valuation date, and <span class="k">in blue, the chain ladder looking ahead</span>.</figcaption>
 </figure>
-<figure class="code code-r" data-ui>
-<pre><code>library(prospicio)
-tri &lt;- read_triangle(&quot;raa.csv&quot;, &quot;origin&quot;, &quot;development&quot;, comment = &quot;#&quot;)
-fit &lt;- mack(tri)
-print(c(fit@total_reserve, fit@total_standard_error))</code></pre>
-<figcaption><code>[1] 52135.23 26880.74</code></figcaption>
-</figure>
-<figure class="code code-rust" data-ui>
-<pre><code>// Cargo.toml: prospicio = { version = &quot;0.0.9&quot;, features = [&quot;io&quot;] }
-use prospicio::reserving::{FileLayout, Mack, Triangle};
-
-fn main() {
-    let layout = FileLayout::long(&quot;origin&quot;, &quot;development&quot;, [&quot;value&quot;]).comment(Some(b&#x27;#&#x27;));
-    let tri = Triangle::read_csv(&quot;raa.csv&quot;, &amp;layout).unwrap();
-    let fit = Mack::default().fit(&amp;tri, &quot;value&quot;).unwrap();
-    println!(&quot;{:.0} {:.0}&quot;, fit.chain_ladder.total_reserve(), fit.total_standard_error);
-}</code></pre>
-<figcaption><code>52135 26881</code></figcaption>
-</figure>
-  </div>
-</section>
 </main>
 
-<footer>
-  <div class="blocks" aria-hidden="true"><span style="--h:70%">p</span><span style="--h:73%">r</span><span style="--h:77%">o</span><span style="--h:81%">s</span><span style="--h:85%">p</span><span style="--h:88%">i</span><span style="--h:92%">c</span><span style="--h:96%">i</span><span style="--h:100%">o</span></div>
-  <p class="legal">MIT or Apache-2.0. Pre-alpha: the API will change before v1.0. <a href="https://github.com/EKtheSage/prospicio">Source on GitHub</a></p>
-</footer>
-<script>
-document.documentElement.classList.add("js");
-const seen = new IntersectionObserver((entries) => {
-  for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); seen.unobserve(e.target); }
-}, { threshold: 0.15 });
-document.querySelectorAll(".reveal").forEach((el) => seen.observe(el));
-</script>
+<footer>MIT or Apache-2.0. Pre-alpha: the API will change before v1.0. <a href="https://github.com/EKtheSage/prospicio">Source on GitHub</a></footer>
+</div>
 </body>
 </html>
