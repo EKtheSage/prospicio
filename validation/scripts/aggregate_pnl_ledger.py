@@ -1,4 +1,4 @@
-"""Reference values for the P&L ledger kernel, from `aggregate` 1.0.1.
+"""Reference values for the P&L ledger kernel, from `aggregate` 2.1.0.
 
 `aggregate`'s `PnL` built by hand from `Leg` and `Group` over a
 one-dimensional source (docs/design/pnl.md, PR 2): every row's moments and
@@ -13,19 +13,20 @@ scenario (kappa) columns (`economic_df`), each row's own quantiles
   3 xs 5 bought for 1, on example 1's source;
 - `tiers`: three groups with a tier subtotal and a net-of block.
 
-    uv run --python 3.12 --with aggregate==1.0.1 \
+    uv run --python 3.13 --with aggregate==2.1.0 \
         python validation/scripts/aggregate_pnl_ledger.py
 
 writes validation/reference/pnl_ledger_aggregate.csv and the sources to
 validation/reference/pnl_ledger_sources.csv.
 """
 
+import aggregate
 from pathlib import Path
 
 import numpy as np
 from aggregate import Group, Leg, PnL, build
 
-SOURCE = 'aggregate 1.0.1'
+SOURCE = f'aggregate {aggregate.__version__}'
 ref = Path(__file__).resolve().parents[1] / 'reference'
 
 a = build('agg PnLSource 2 claims dsev [1 2 4] [.5 .3 .2] fixed', log2=6, bs=1, update=True)

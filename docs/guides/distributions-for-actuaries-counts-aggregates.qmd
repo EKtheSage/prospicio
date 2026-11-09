@@ -17,9 +17,9 @@ This is the R twin of the Python guide
 [`distributions-for-actuaries-counts-aggregates.md`](distributions-for-actuaries-counts-aggregates.md).
 It recomputes the worked examples and problem answers of chapters 3 and 4 and
 the aggregate limits of section 6.4 of CAS Monograph 2, *Distributions for
-Actuaries* by David Bahnemann (2015). The sections, examples and numbers are the
-same, because the R package runs the same Rust code. Read the Python guide for
-the discussion of each result. The companion R guide,
+Actuaries* by David Bahnemann (2015). The sections and numbers are the same,
+because the R package runs the same Rust code. Read the Python guide for the
+discussion of each result. The companion R guide,
 [`distributions-for-actuaries-claim-size.qmd`](distributions-for-actuaries-claim-size.qmd),
 covers chapters 2, 5 and 6. `R/prospicio/tests/test-guides.R` requires each
 chunk to print exactly the text under it.
@@ -36,16 +36,25 @@ chunk to print exactly the text under it.
 | method of moments | `negative_binomial_count_from_mean_variance(m, v)` |
 | any count on 0, 1, 2, ... | `empirical_count(probs)` |
 
+`compare()` builds the book-against-prospicio tables below.
+
 ```{r}
 #| label: setup
 library(prospicio)
+library(gt)
 
 num <- function(x, digits = 0) formatC(x, format = "f", digits = digits, big.mark = ",")
-show <- function(label, book, ours, digits = 4) {
-  cat(sprintf("%-40s book %12s   prospicio %12s\n", label, num(book, digits), num(ours, digits)))
-}
-vec <- function(x, digits = 4) {
-  paste0("[", paste(formatC(round(x, digits), format = "f", digits = digits), collapse = ", "), "]")
+row <- function(label, book, ours, digits = 4) list(label = label, book = book, ours = ours, digits = digits)
+compare <- function(rows, title, subtitle = NULL) {
+  frame <- data.frame(row = vapply(rows, function(r) r$label, ""),
+                      book = vapply(rows, function(r) r$book, 0),
+                      prospicio = vapply(rows, function(r) r$ours, 0))
+  digits <- vapply(rows, function(r) r$digits, 0)
+  table <- gt(frame, rowname_col = "row") |> tab_header(title, subtitle)
+  for (d in unique(digits)) {
+    table <- fmt_number(table, columns = c(book, prospicio), rows = which(digits == d), decimals = d)
+  }
+  table
 }
 chi_square <- function(observed, probs) {
   e <- sum(observed) * probs
@@ -57,56 +66,75 @@ chi_square <- function(observed, probs) {
 
 ```{r}
 #| label: poisson
-show("Ex 3.1  30 days, Pr{N = 0}", 0.9138, pmf(binomial_count(30, 0.003), 0))
-show("        30 days, Pr{N = 1}", 0.0825, pmf(binomial_count(30, 0.003), 1))
-show("        365 days, Pr{N = 2}", 0.2009, pmf(binomial_count(365, 0.003), 2))
+rows <- list(row("Ex 3.1, 30 days, Pr{N = 0}", 0.9138, pmf(binomial_count(30, 0.003), 0)),
+             row("Ex 3.1, 30 days, Pr{N = 1}", 0.0825, pmf(binomial_count(30, 0.003), 1)),
+             row("Ex 3.1, 365 days, Pr{N = 2}", 0.2009, pmf(binomial_count(365, 0.003), 2)))
 for (case in list(list(1.0, c(0.9608, 0.0384, 0.0008)), list(1.5, c(0.9418, 0.0565, 0.0017)))) {
   for (n in 0:2) {
-    show(sprintf("Ex 3.2  %.1f years, Pr{N = %d}", case[[1]], n), case[[2]][n + 1],
-         pmf(poisson_count(0.04 * case[[1]]), n))
+    rows <- c(rows, list(row(sprintf("Ex 3.2, %.1f years, Pr{N = %d}", case[[1]], n), case[[2]][n + 1],
+                             pmf(poisson_count(0.04 * case[[1]]), n))))
   }
 }
-cat("P3.4   Pr{N = 2}   book ", vec(c(0.0012, 0.0069, 0.0164)), "\n")
-cat("                   ours ", vec(sapply(c(6, 15, 24), function(m) pmf(poisson_count(0.10 * m / 12), 2))), "\n")
-
-policies <- c(868, 118, 11, 2, 1)
-lam <- sum((0:4) * policies) / sum(policies)
-p <- poisson_count(lam)
-show("Ex 3.3  rate", 0.15, lam, 2)
-cat("        pmf   book ", vec(c(0.8607, 0.1291, 0.0097, 0.0005)), "\n")
-cat("              ours ", vec(pmf(p, 0:3)), "\n")
-show("        chi-square", 2.43, chi_square(c(868, 118, 14), c(pmf(p, 0), pmf(p, 1), 1 - cdf(p, 1))), 2)
-show("Ex 3.8  Pr{N >= 5}, 100 x 0.035", 0.2746, 1 - cdf(poisson_count(3.5), 4))
-for (case in list(c(2.5, 0.7576), c(6.25, 0.1303), c(2.0, 0.8571), c(4.0, 0.4335))) {
-  show(sprintf("P3.3   Pr{N <= 3}, rate %s", format(case[1])), case[2], cdf(poisson_count(case[1]), 3))
+for (case in list(c(6, 0.0012), c(15, 0.0069), c(24, 0.0164))) {
+  rows <- c(rows, list(row(sprintf("P3.4, %d months, Pr{N = 2}", case[1]), case[2],
+                           pmf(poisson_count(0.10 * case[1] / 12), 2))))
 }
-show("P3.30  Pr{N >= 6}, 20 cars x 0.30", 0.5543, 1 - cdf(poisson_count(6), 5))
-show("P3.31  policies with a claim, of 8,000", 624, 8000 * (1 - pmf(poisson_count(650 / 8000), 0)), 0)
+compare(rows, "Ex 3.1, Ex 3.2 and P3.4: binomial and Poisson probabilities")
 ```
 
 ```text
-Ex 3.1  30 days, Pr{N = 0}               book       0.9138   prospicio       0.9138
-        30 days, Pr{N = 1}               book       0.0825   prospicio       0.0825
-        365 days, Pr{N = 2}              book       0.2009   prospicio       0.2009
-Ex 3.2  1.0 years, Pr{N = 0}             book       0.9608   prospicio       0.9608
-Ex 3.2  1.0 years, Pr{N = 1}             book       0.0384   prospicio       0.0384
-Ex 3.2  1.0 years, Pr{N = 2}             book       0.0008   prospicio       0.0008
-Ex 3.2  1.5 years, Pr{N = 0}             book       0.9418   prospicio       0.9418
-Ex 3.2  1.5 years, Pr{N = 1}             book       0.0565   prospicio       0.0565
-Ex 3.2  1.5 years, Pr{N = 2}             book       0.0017   prospicio       0.0017
-P3.4   Pr{N = 2}   book  [0.0012, 0.0069, 0.0164] 
-                   ours  [0.0012, 0.0069, 0.0164] 
-Ex 3.3  rate                             book         0.15   prospicio         0.15
-        pmf   book  [0.8607, 0.1291, 0.0097, 0.0005] 
-              ours  [0.8607, 0.1291, 0.0097, 0.0005] 
-        chi-square                       book         2.43   prospicio         2.45
-Ex 3.8  Pr{N >= 5}, 100 x 0.035          book       0.2746   prospicio       0.2746
-P3.3   Pr{N <= 3}, rate 2.5              book       0.7576   prospicio       0.7576
-P3.3   Pr{N <= 3}, rate 6.25             book       0.1303   prospicio       0.1303
-P3.3   Pr{N <= 3}, rate 2                book       0.8571   prospicio       0.8571
-P3.3   Pr{N <= 3}, rate 4                book       0.4335   prospicio       0.4335
-P3.30  Pr{N >= 6}, 20 cars x 0.30        book       0.5543   prospicio       0.5543
-P3.31  policies with a claim, of 8,000   book          624   prospicio          624
+                                book  prospicio
+Ex 3.1, 30 days, Pr{N = 0}    0.9138     0.9138
+Ex 3.1, 30 days, Pr{N = 1}    0.0825     0.0825
+Ex 3.1, 365 days, Pr{N = 2}   0.2009     0.2009
+Ex 3.2, 1.0 years, Pr{N = 0}  0.9608     0.9608
+Ex 3.2, 1.0 years, Pr{N = 1}  0.0384     0.0384
+Ex 3.2, 1.0 years, Pr{N = 2}  0.0008     0.0008
+Ex 3.2, 1.5 years, Pr{N = 0}  0.9418     0.9418
+Ex 3.2, 1.5 years, Pr{N = 1}  0.0565     0.0565
+Ex 3.2, 1.5 years, Pr{N = 2}  0.0017     0.0017
+P3.4, 6 months, Pr{N = 2}     0.0012     0.0012
+P3.4, 15 months, Pr{N = 2}    0.0069     0.0069
+P3.4, 24 months, Pr{N = 2}    0.0164     0.0164
+```
+
+```{r}
+#| label: poisson-fit
+policies <- c(868, 118, 11, 2, 1)
+lam <- sum((0:4) * policies) / sum(policies)
+p <- poisson_count(lam)
+rows <- list(row("Ex 3.3, rate", 0.15, lam, 2))
+for (k in 0:3) {
+  rows <- c(rows, list(row(sprintf("Ex 3.3, Pr{N = %d}", k), c(0.8607, 0.1291, 0.0097, 0.0005)[k + 1], pmf(p, k))))
+}
+rows <- c(rows, list(
+  row("Ex 3.3, chi-square", 2.43, chi_square(c(868, 118, 14), c(pmf(p, 0), pmf(p, 1), 1 - cdf(p, 1))), 2),
+  row("Ex 3.8, Pr{N >= 5}, 100 x 0.035", 0.2746, 1 - cdf(poisson_count(3.5), 4))))
+for (case in list(c(2.5, 0.7576), c(6.25, 0.1303), c(2.0, 0.8571), c(4.0, 0.4335))) {
+  rows <- c(rows, list(row(sprintf("P3.3, Pr{N <= 3}, rate %s", format(case[1], nsmall = 1)), case[2],
+                           cdf(poisson_count(case[1]), 3))))
+}
+rows <- c(rows, list(
+  row("P3.30, Pr{N >= 6}, 20 cars x 0.30", 0.5543, 1 - cdf(poisson_count(6), 5)),
+  row("P3.31, policies with a claim, of 8,000", 624, 8000 * (1 - pmf(poisson_count(650 / 8000), 0)), 0)))
+compare(rows, "Ex 3.3, Ex 3.8, P3.3, P3.30 and P3.31: fitting and using a Poisson")
+```
+
+```text
+                                          book  prospicio
+Ex 3.3, rate                              0.15       0.15
+Ex 3.3, Pr{N = 0}                       0.8607     0.8607
+Ex 3.3, Pr{N = 1}                       0.1291     0.1291
+Ex 3.3, Pr{N = 2}                       0.0097     0.0097
+Ex 3.3, Pr{N = 3}                       0.0005     0.0005
+Ex 3.3, chi-square                        2.43       2.45
+Ex 3.8, Pr{N >= 5}, 100 x 0.035         0.2746     0.2746
+P3.3, Pr{N <= 3}, rate 2.5              0.7576     0.7576
+P3.3, Pr{N <= 3}, rate 6.25             0.1303     0.1303
+P3.3, Pr{N <= 3}, rate 2.0              0.8571     0.8571
+P3.3, Pr{N <= 3}, rate 4.0              0.4335     0.4335
+P3.30, Pr{N >= 6}, 20 cars x 0.30       0.5543     0.5543
+P3.31, policies with a claim, of 8,000     624        624
 ```
 
 ## 3. Parameter uncertainty: mixed Poissons
@@ -117,51 +145,33 @@ rates <- c(0.10, 0.35, 0.70, 1.40); weights <- c(0.20, 0.40, 0.30, 0.10)
 mixed <- sapply(0:5, function(n) sum(weights * sapply(rates, function(r) pmf(poisson_count(r), n))))
 m <- sum(weights * rates)
 v <- m + sum(weights * rates^2) - m^2
-cat("Ex 3.4  mixed pmf     book ", vec(c(0.6365, 0.2556, 0.0788, 0.0218, 0.0056, 0.0013)), "\n")
-cat("                      ours ", vec(mixed), "\n")
-cat("        Poisson 0.51  book ", vec(c(0.6005, 0.3063, 0.0781, 0.0133, 0.0017, 0.0002)), "\n")
-cat("                      ours ", vec(pmf(poisson_count(m), 0:5)), "\n")
-show("        Var[N]", 0.6439, v)
 geo <- mixed_poisson_count(0.25, 1, "gamma")
-cat("Ex 3.5  pmf           book ", vec(c(0.8, 0.16, 0.032, 0.0064, 0.0013, 0.0003)), "\n")
-cat("                      ours ", vec(pmf(geo, 0:5)), "\n")
-cat("        geometric          ", vec(pmf(geometric_count(0.25), 0:5)), "\n")
-show("        Var[N]", 0.3125, variance(geo))
-
-nb <- negative_binomial_count(2, 1)
-show("P3.11  mean", 2, mean(nb), 0)
-show("       variance", 4, variance(nb), 0)
-show("       Pr{N <= 3}", 0.8125, cdf(nb, 3))
-nb <- negative_binomial_count_from_mean_variance(0.100, 0.100 + 0.005)
-cat("P3.12  pmf   book ", vec(c(0.9070, 0.0864, 0.0062, 0.0004)), "\n")
-cat("             ours ", vec(pmf(nb, 0:3)), "\n")
-show("P3.13  Var, Poisson 0.75", 0.7500, variance(poisson_count(0.75)))
-show("       Var, two-point mixture", 0.8175, 0.75 + (0.75 * 0.6^2 + 0.25 * 1.2^2 - 0.75^2))
-show("       Var, exponential mixture", 1.3125, variance(mixed_poisson_count(0.75, 1)))
+pmf_table <- data.frame(
+  n = sprintf("N = %d", 0:5),
+  mixed_book = c(0.6365, 0.2556, 0.0788, 0.0218, 0.0056, 0.0013), mixed = mixed,
+  poisson_book = c(0.6005, 0.3063, 0.0781, 0.0133, 0.0017, 0.0002), poisson = pmf(poisson_count(m), 0:5),
+  geo_book = c(0.8, 0.16, 0.032, 0.0064, 0.0013, 0.0003), geo_mixed = pmf(geo, 0:5),
+  geo = pmf(geometric_count(0.25), 0:5)
+)
+gt(pmf_table, rowname_col = "n") |>
+  tab_header("Ex 3.4 and Ex 3.5: probability of N claims") |>
+  tab_spanner("Ex 3.4, mixed Poisson", columns = c(mixed_book, mixed)) |>
+  tab_spanner("Ex 3.4, Poisson with mean 0.51", columns = c(poisson_book, poisson)) |>
+  tab_spanner("Ex 3.5, exponential mixing", columns = c(geo_book, geo_mixed, geo)) |>
+  fmt_number(columns = -n, decimals = 4) |>
+  cols_label(mixed_book = "book", mixed = "prospicio", poisson_book = "book", poisson = "prospicio",
+             geo_book = "book", geo_mixed = "prospicio", geo = "geometric")
 ```
 
 ```text
-Ex 3.4  mixed pmf     book  [0.6365, 0.2556, 0.0788, 0.0218, 0.0056, 0.0013] 
-                      ours  [0.6365, 0.2556, 0.0788, 0.0218, 0.0056, 0.0013] 
-        Poisson 0.51  book  [0.6005, 0.3063, 0.0781, 0.0133, 0.0017, 0.0002] 
-                      ours  [0.6005, 0.3063, 0.0781, 0.0133, 0.0017, 0.0002] 
-        Var[N]                           book       0.6439   prospicio       0.6439
-Ex 3.5  pmf           book  [0.8000, 0.1600, 0.0320, 0.0064, 0.0013, 0.0003] 
-                      ours  [0.8000, 0.1600, 0.0320, 0.0064, 0.0013, 0.0003] 
-        geometric           [0.8000, 0.1600, 0.0320, 0.0064, 0.0013, 0.0003] 
-        Var[N]                           book       0.3125   prospicio       0.3125
-P3.11  mean                              book            2   prospicio            2
-       variance                          book            4   prospicio            4
-       Pr{N <= 3}                        book       0.8125   prospicio       0.8125
-P3.12  pmf   book  [0.9070, 0.0864, 0.0062, 0.0004] 
-             ours  [0.9070, 0.0864, 0.0062, 0.0004] 
-P3.13  Var, Poisson 0.75                 book       0.7500   prospicio       0.7500
-       Var, two-point mixture            book       0.8175   prospicio       0.8175
-       Var, exponential mixture          book       1.3125   prospicio       1.3125
+         book  prospicio    book  prospicio    book  prospicio  geometric
+N = 0  0.6365     0.6365  0.6005     0.6005  0.8000     0.8000     0.8000
+N = 1  0.2556     0.2556  0.3063     0.3063  0.1600     0.1600     0.1600
+N = 2  0.0788     0.0788  0.0781     0.0781  0.0320     0.0320     0.0320
+N = 3  0.0218     0.0218  0.0133     0.0133  0.0064     0.0064     0.0064
+N = 4  0.0056     0.0056  0.0017     0.0017  0.0013     0.0013     0.0013
+N = 5  0.0013     0.0013  0.0002     0.0002  0.0003     0.0003     0.0003
 ```
-
-The mixed count has more zeros and a longer tail than the Poisson with the same
-mean:
 
 ```{r}
 #| label: mixed-figure
@@ -178,6 +188,41 @@ ggplot() +
   theme(legend.position = "top")
 ```
 
+```{r}
+#| label: gamma-mixtures
+nb <- negative_binomial_count(2, 1)
+rows <- list(row("Ex 3.4, Var[N]", 0.6439, v),
+             row("Ex 3.5, Var[N]", 0.3125, variance(geo)),
+             row("P3.11, mean", 2, mean(nb), 0),
+             row("P3.11, variance", 4, variance(nb), 0),
+             row("P3.11, Pr{N <= 3}", 0.8125, cdf(nb, 3)))
+nb <- negative_binomial_count_from_mean_variance(0.100, 0.100 + 0.005)
+for (n in 0:3) {
+  rows <- c(rows, list(row(sprintf("P3.12, Pr{N = %d}", n), c(0.9070, 0.0864, 0.0062, 0.0004)[n + 1], pmf(nb, n))))
+}
+rows <- c(rows, list(
+  row("P3.13, Var, Poisson 0.75", 0.7500, variance(poisson_count(0.75))),
+  row("P3.13, Var, two-point mixture", 0.8175, 0.75 + (0.75 * 0.6^2 + 0.25 * 1.2^2 - 0.75^2)),
+  row("P3.13, Var, exponential mixture", 1.3125, variance(mixed_poisson_count(0.75, 1)))))
+compare(rows, "Ex 3.4, Ex 3.5 and P3.11 to P3.13: variances and gamma mixtures")
+```
+
+```text
+                                   book  prospicio
+Ex 3.4, Var[N]                   0.6439     0.6439
+Ex 3.5, Var[N]                   0.3125     0.3125
+P3.11, mean                           2          2
+P3.11, variance                       4          4
+P3.11, Pr{N <= 3}                0.8125     0.8125
+P3.12, Pr{N = 0}                 0.9070     0.9070
+P3.12, Pr{N = 1}                 0.0864     0.0864
+P3.12, Pr{N = 2}                 0.0062     0.0062
+P3.12, Pr{N = 3}                 0.0004     0.0004
+P3.13, Var, Poisson 0.75         0.7500     0.7500
+P3.13, Var, two-point mixture    0.8175     0.8175
+P3.13, Var, exponential mixture  1.3125     1.3125
+```
+
 ## 4. The negative binomial and contagion
 
 ```{r}
@@ -187,46 +232,67 @@ nb_moments <- function(counts) {
   m1 <- sum(k * counts) / sum(counts)
   c(m1, sum(k^2 * counts) / sum(counts) - m1^2)
 }
+rows <- list()
 for (case in list(list("Ex 3.6", c(4429, 528, 39, 3, 1), c(0.1238, 2.44285, 0.7753)),
                   list("P3.15", c(8956, 907, 120, 15, 2), c(0.1200, 0.685714, 0.3288)))) {
   mv <- nb_moments(case[[2]])
   nb <- negative_binomial_count_from_mean_variance(mv[1], mv[2])
   probs <- c(pmf(nb, 0:2), 1 - cdf(nb, 2))
   observed <- c(case[[2]][1:3], sum(case[[2]][-(1:3)]))
-  show(paste(case[[1]], "mean"), case[[3]][1], mv[1])
-  show(paste(case[[1]], "alpha = r"), case[[3]][2], nb@r, 5)
-  show(paste(case[[1]], "chi-square"), case[[3]][3], chi_square(observed, probs))
+  rows <- c(rows, list(row(paste0(case[[1]], ", mean"), case[[3]][1], mv[1]),
+                       row(paste0(case[[1]], ", alpha = r"), case[[3]][2], nb@r, 5),
+                       row(paste0(case[[1]], ", chi-square"), case[[3]][3], chi_square(observed, probs))))
+  if (case[[1]] == "Ex 3.6") {
+    for (k in 0:3) {
+      rows <- c(rows, list(row(sprintf("Ex 3.6, Pr{N = %d}", k), c(0.8862, 0.1044, 0.0087, 0.0006)[k + 1],
+                               pmf(nb, k))))
+    }
+  }
 }
-mv <- nb_moments(c(4429, 528, 39, 3, 1))
-cat("Ex 3.6 pmf   book ", vec(c(0.8862, 0.1044, 0.0087, 0.0006)), "\n")
-cat("             ours ", vec(pmf(negative_binomial_count_from_mean_variance(mv[1], mv[2]), 0:3)), "\n")
+compare(rows, "Ex 3.6 and P3.15: negative binomials fitted by moments")
+```
 
+```text
+                       book  prospicio
+Ex 3.6, mean         0.1238     0.1238
+Ex 3.6, alpha = r   2.44285    2.44302
+Ex 3.6, chi-square   0.7753     0.6464
+Ex 3.6, Pr{N = 0}    0.8862     0.8862
+Ex 3.6, Pr{N = 1}    0.1044     0.1044
+Ex 3.6, Pr{N = 2}    0.0087     0.0087
+Ex 3.6, Pr{N = 3}    0.0006     0.0006
+P3.15, mean          0.1200     0.1200
+P3.15, alpha = r    0.68571    0.68571
+P3.15, chi-square    0.3288     0.3288
+```
+
+```{r}
+#| label: contagion
 nb <- claim_count(1, 1 + 0.2 * 1)
-cat("P3.28  pmf   book ", vec(c(0.4019, 0.3349, 0.1674, 0.0651, 0.0217, 0.0065)), "\n")
-cat("             ours ", vec(pmf(nb, 0:5)), "\n")
 contagion <- function(counts) {
   m <- sum(sapply(counts, mean)); v <- sum(sapply(counts, variance))
   (v - m) / m^2
 }
-show("Ex 3.9  20 policies, nu 0.15, gamma 0.4", 0.020,
-     contagion(rep(list(claim_count(0.15, 1 + 0.4 * 0.15)), 20)), 3)
-show("P3.29  three lines", 0.1000,
-     contagion(list(claim_count(10, 1 + 0.35 * 10), claim_count(25, 1 + 0.20 * 25), poisson_count(5))))
+book <- c(0.4019, 0.3349, 0.1674, 0.0651, 0.0217, 0.0065)
+rows <- lapply(0:5, function(n) row(sprintf("P3.28, Pr{N = %d}", n), book[n + 1], pmf(nb, n)))
+rows <- c(rows, list(
+  row("Ex 3.9, contagion, 20 policies, nu 0.15, gamma 0.4", 0.020,
+      contagion(rep(list(claim_count(0.15, 1 + 0.4 * 0.15)), 20)), 3),
+  row("P3.29, contagion, three lines", 0.1000,
+      contagion(list(claim_count(10, 1 + 0.35 * 10), claim_count(25, 1 + 0.20 * 25), poisson_count(5))))))
+compare(rows, "P3.28, Ex 3.9 and P3.29: contagion")
 ```
 
 ```text
-Ex 3.6 mean                              book       0.1238   prospicio       0.1238
-Ex 3.6 alpha = r                         book      2.44285   prospicio      2.44302
-Ex 3.6 chi-square                        book       0.7753   prospicio       0.6464
-P3.15 mean                               book       0.1200   prospicio       0.1200
-P3.15 alpha = r                          book      0.68571   prospicio      0.68571
-P3.15 chi-square                         book       0.3288   prospicio       0.3288
-Ex 3.6 pmf   book  [0.8862, 0.1044, 0.0087, 0.0006] 
-             ours  [0.8862, 0.1044, 0.0087, 0.0006] 
-P3.28  pmf   book  [0.4019, 0.3349, 0.1674, 0.0651, 0.0217, 0.0065] 
-             ours  [0.4019, 0.3349, 0.1674, 0.0651, 0.0217, 0.0065] 
-Ex 3.9  20 policies, nu 0.15, gamma 0.4  book        0.020   prospicio        0.020
-P3.29  three lines                       book       0.1000   prospicio       0.1000
+                                                      book  prospicio
+P3.28, Pr{N = 0}                                    0.4019     0.4019
+P3.28, Pr{N = 1}                                    0.3349     0.3349
+P3.28, Pr{N = 2}                                    0.1674     0.1674
+P3.28, Pr{N = 3}                                    0.0651     0.0651
+P3.28, Pr{N = 4}                                    0.0217     0.0217
+P3.28, Pr{N = 5}                                    0.0065     0.0065
+Ex 3.9, contagion, 20 policies, nu 0.15, gamma 0.4   0.020      0.020
+P3.29, contagion, three lines                       0.1000     0.1000
 ```
 
 ## 5. Aggregate claims and their moments
@@ -239,19 +305,50 @@ probability of a total of `k` steps is `probs[k + 1]`.
 #| label: aggregate
 agg <- compound_distribution(empirical_count(c(0.6, 0.3, 0.1)),
                              grid_distribution(100, c(0, 0.4, 0.5, 0.1)), 16, method = "fft")
-cat("Ex 4.1  F_S   book ", vec(c(0.6, 0.72, 0.886, 0.956, 0.989, 0.999, 1.0)), "\n")
-cat("              ours ", vec(cdf(agg, 100 * (0:6))), "\n")
-show("        E[S]", 85, mean(agg), 0)
-show("        Var[S]", 15055, variance(agg), 0)
+book <- c(0.6, 0.72, 0.886, 0.956, 0.989, 0.999, 1.0)
+rows <- lapply(0:6, function(k) row(sprintf("Ex 4.1, F_S(%d)", 100 * k), book[k + 1], cdf(agg, 100 * k)))
+rows <- c(rows, list(row("Ex 4.1, E[S]", 85, mean(agg), 0), row("Ex 4.1, Var[S]", 15055, variance(agg), 0)))
+compare(rows, "Ex 4.1: a small discrete aggregate")
+```
+
+```text
+                    book  prospicio
+Ex 4.1, F_S(0)    0.6000     0.6000
+Ex 4.1, F_S(100)  0.7200     0.7200
+Ex 4.1, F_S(200)  0.8860     0.8860
+Ex 4.1, F_S(300)  0.9560     0.9560
+Ex 4.1, F_S(400)  0.9890     0.9890
+Ex 4.1, F_S(500)  0.9990     0.9990
+Ex 4.1, F_S(600)  1.0000     1.0000
+Ex 4.1, E[S]          85         85
+Ex 4.1, Var[S]    15,055     15,055
+```
+
+```{r}
+#| label: aggregate-p41
 agg <- compound_distribution(empirical_count(c(0.20, 0.40, 0.25, 0.15)),
                              grid_distribution(500, c(0, 0.1, 0.4, 0.3, 0.2)), 16, method = "fft")
-cat("P4.1   F_S   book ", vec(c(0.2, 0.24, 0.4025, 0.5427, 0.6795, 0.758, 0.8418, 0.9047, 0.9507)), "\n")
-cat("             ours ", vec(cdf(agg, 500 * (0:8))), "\n")
+book <- c(0.2, 0.24, 0.4025, 0.5427, 0.6795, 0.758, 0.8418, 0.9047, 0.9507)
+compare(lapply(0:8, function(k) row(sprintf("P4.1, F_S(%s)", num(500 * k)), book[k + 1], cdf(agg, 500 * k))),
+        "P4.1: the aggregate distribution")
+```
 
+```text
+                    book  prospicio
+P4.1, F_S(0)      0.2000     0.2000
+P4.1, F_S(500)    0.2400     0.2400
+P4.1, F_S(1,000)  0.4025     0.4025
+P4.1, F_S(1,500)  0.5427     0.5427
+P4.1, F_S(2,000)  0.6795     0.6795
+P4.1, F_S(2,500)  0.7580     0.7580
+P4.1, F_S(3,000)  0.8418     0.8418
+P4.1, F_S(3,500)  0.9047     0.9047
+P4.1, F_S(4,000)  0.9507     0.9507
+```
+
+```{r}
+#| label: aggregate-ex42
 m <- compound_moments(poisson_count(2.5), gamma_distribution(3, 400))
-show("Ex 4.2  E[S]", 3000, m[["mean"]], 0)
-show("        Var[S]", 4800000, m[["variance"]], 0)
-show("        skewness", 0.9129, m[["skew"]])
 poisson_gamma_cdf <- function(s, lam, shape, scale, terms = 400) {
   n <- poisson_count(lam)
   if (s <= 0) return(pmf(n, 0))
@@ -259,22 +356,30 @@ poisson_gamma_cdf <- function(s, lam, shape, scale, terms = 400) {
   pmf(n, 0) + sum(pmf(n, k) * sapply(k, function(j) cdf(gamma_distribution(shape * j, scale), s)))
 }
 S <- c(0, 500, 1000, 2000, 3000, 4000, 6000, 8000, 10000)
-cat("        F(s)  book ", vec(c(0.0821, 0.1096, 0.1867, 0.3755, 0.5613, 0.7152, 0.9013, 0.9723, 0.9934)), "\n")
-cat("              ours ", vec(sapply(S, poisson_gamma_cdf, lam = 2.5, shape = 3, scale = 400)), "\n")
+book <- c(0.0821, 0.1096, 0.1867, 0.3755, 0.5613, 0.7152, 0.9013, 0.9723, 0.9934)
+rows <- list(row("Ex 4.2, E[S]", 3000, m[["mean"]], 0),
+             row("Ex 4.2, Var[S]", 4800000, m[["variance"]], 0),
+             row("Ex 4.2, skewness", 0.9129, m[["skew"]]))
+rows <- c(rows, lapply(seq_along(S), function(i) {
+  row(sprintf("Ex 4.2, F(%s)", num(S[i])), book[i], poisson_gamma_cdf(S[i], 2.5, 3, 400))
+}))
+compare(rows, "Ex 4.2 and Table 4.1: Poisson 2.5 with gamma (3; 400) claims")
 ```
 
 ```text
-Ex 4.1  F_S   book  [0.6000, 0.7200, 0.8860, 0.9560, 0.9890, 0.9990, 1.0000] 
-              ours  [0.6000, 0.7200, 0.8860, 0.9560, 0.9890, 0.9990, 1.0000] 
-        E[S]                             book           85   prospicio           85
-        Var[S]                           book       15,055   prospicio       15,055
-P4.1   F_S   book  [0.2000, 0.2400, 0.4025, 0.5427, 0.6795, 0.7580, 0.8418, 0.9047, 0.9507] 
-             ours  [0.2000, 0.2400, 0.4025, 0.5427, 0.6795, 0.7580, 0.8418, 0.9047, 0.9507] 
-Ex 4.2  E[S]                             book        3,000   prospicio        3,000
-        Var[S]                           book    4,800,000   prospicio    4,800,000
-        skewness                         book       0.9129   prospicio       0.9129
-        F(s)  book  [0.0821, 0.1096, 0.1867, 0.3755, 0.5613, 0.7152, 0.9013, 0.9723, 0.9934] 
-              ours  [0.0821, 0.1096, 0.1867, 0.3755, 0.5613, 0.7152, 0.9013, 0.9723, 0.9934] 
+                        book  prospicio
+Ex 4.2, E[S]           3,000      3,000
+Ex 4.2, Var[S]     4,800,000  4,800,000
+Ex 4.2, skewness      0.9129     0.9129
+Ex 4.2, F(0)          0.0821     0.0821
+Ex 4.2, F(500)        0.1096     0.1096
+Ex 4.2, F(1,000)      0.1867     0.1867
+Ex 4.2, F(2,000)      0.3755     0.3755
+Ex 4.2, F(3,000)      0.5613     0.5613
+Ex 4.2, F(4,000)      0.7152     0.7152
+Ex 4.2, F(6,000)      0.9013     0.9013
+Ex 4.2, F(8,000)      0.9723     0.9723
+Ex 4.2, F(10,000)     0.9934     0.9934
 ```
 
 ## 6. Approximations by matching moments
@@ -292,56 +397,66 @@ cases <- list(
        c(0.0003, 0.3420, 0.7774, 0.9349, 0.9954), c(0.1241, 0.2819, 0.7181, 0.9584, 1.0000),
        c(0.0263, 0.3362, 0.7782, 0.9356, 0.9953))
 )
-for (cs in cases) {
-  freq <- poisson_count(cs[[3]]); sev <- gamma_distribution(cs[[4]], cs[[5]]); S <- cs[[6]]
-  m <- compound_moments(freq, sev)
-  approx <- function(kind) sapply(S, function(s) approximation_cdf(moment_approximation(freq, sev, kind), s))
-  exact <- sapply(S, poisson_gamma_cdf, lam = cs[[3]], shape = cs[[4]], scale = cs[[5]])
-  cat(sprintf("%s: mean %s, sd %s, skewness %.4f\n", cs[[1]], num(m[["mean"]]),
-              num(sqrt(m[["variance"]])), m[["skew"]]))
-  first <- function(x) {
-    paste0("[", paste(c(formatC(round(x[1], cs[[2]]), format = "f", digits = cs[[2]]),
-                        formatC(round(x[-1], 4), format = "f", digits = 4)), collapse = ", "), "]")
-  }
-  cat("  exact          book ", first(cs[[7]]), "\n")
-  cat("                 ours ", first(exact), "\n")
-  cat("  normal         book ", vec(cs[[8]]), "\n")
-  cat("                 ours ", vec(approx("normal")), "\n")
-  cat("  shifted gamma  book ", vec(cs[[9]]), "\n")
-  cat("                 ours ", vec(approx("shifted_gamma")), "\n")
-  cat("  shifted lognormal   ", vec(approx("shifted_lognormal")), "\n")
-}
+moment_frame <- do.call(rbind, lapply(cases, function(cs) {
+  m <- compound_moments(poisson_count(cs[[3]]), gamma_distribution(cs[[4]], cs[[5]]))
+  data.frame(case = cs[[1]], mean = m[["mean"]], sd = sqrt(m[["variance"]]), skewness = m[["skew"]])
+}))
+gt(moment_frame, rowname_col = "case") |>
+  tab_header("Tables 4.3, 4.4 and P4.13: the aggregate's moments") |>
+  fmt_number(columns = c(mean, sd), decimals = 0) |>
+  fmt_number(columns = skewness, decimals = 4)
 ```
 
 ```text
-Table 4.3: mean 3,000, sd 2,191, skewness 0.9129
-  exact          book  [0.0821, 0.3755, 0.7152, 0.9013, 0.9723] 
-                 ours  [0.0821, 0.3755, 0.7152, 0.9013, 0.9723] 
-  normal         book  [0.0855, 0.3240, 0.6760, 0.9145, 0.9888] 
-                 ours  [0.0855, 0.3240, 0.6760, 0.9145, 0.9888] 
-  shifted gamma  book  [0.0459, 0.3680, 0.7185, 0.9038, 0.9724] 
-                 ours  [0.0459, 0.3680, 0.7185, 0.9038, 0.9724] 
-  shifted lognormal    [0.0497, 0.3609, 0.7197, 0.9064, 0.9729] 
-Table 4.4: mean 3,000, sd 4,347, skewness 2.8293
-  exact          book  [0.00005, 0.5922, 0.8401, 0.9294, 0.9846] 
-                 ours  [0.00005, 0.5922, 0.8401, 0.9294, 0.9846] 
-  normal         book  [0.2451, 0.4090, 0.7549, 0.9463, 0.9997] 
-                 ours  [0.2451, 0.4090, 0.7549, 0.9463, 0.9997] 
-  shifted gamma  book  [0.1228, 0.5886, 0.8402, 0.9298, 0.9847] 
-                 ours  [0.1228, 0.5886, 0.8402, 0.9298, 0.9847] 
-  shifted lognormal    [0.2182, 0.5234, 0.8341, 0.9364, 0.9874] 
-P4.13: mean 6,000, sd 5,196, skewness 1.5877
-  exact          book  [0.0003, 0.3420, 0.7774, 0.9349, 0.9954] 
-                 ours  [0.0003, 0.3420, 0.7774, 0.9349, 0.9954] 
-  normal         book  [0.1241, 0.2819, 0.7181, 0.9584, 1.0000] 
-                 ours  [0.1241, 0.2819, 0.7181, 0.9584, 1.0000] 
-  shifted gamma  book  [0.0263, 0.3362, 0.7782, 0.9356, 0.9953] 
-                 ours  [0.0263, 0.3362, 0.7782, 0.9356, 0.9953] 
-  shifted lognormal    [0.0586, 0.3139, 0.7790, 0.9402, 0.9951] 
+            mean     sd  skewness
+Table 4.3  3,000  2,191    0.9129
+Table 4.4  3,000  4,347    2.8293
+P4.13      6,000  5,196    1.5877
 ```
 
-The curves show the same for Tables 4.3 and 4.4. The normal leaves the exact
-curve at both ends. The shifted gamma stays on it except near zero:
+```{r}
+#| label: approximations-table
+approx_frame <- do.call(rbind, lapply(cases, function(cs) {
+  freq <- poisson_count(cs[[3]]); sev <- gamma_distribution(cs[[4]], cs[[5]]); S <- cs[[6]]
+  approx <- function(kind) sapply(S, function(s) approximation_cdf(moment_approximation(freq, sev, kind), s))
+  data.frame(case = sprintf("%s, s = %s", cs[[1]], num(S)),
+             exact_book = cs[[7]],
+             exact = sapply(S, poisson_gamma_cdf, lam = cs[[3]], shape = cs[[4]], scale = cs[[5]]),
+             normal_book = cs[[8]], normal = approx("normal"),
+             sgamma_book = cs[[9]], sgamma = approx("shifted_gamma"),
+             slognormal = approx("shifted_lognormal"))
+}))
+gt(approx_frame, rowname_col = "case") |>
+  tab_header("F(s) by the exact series and three approximations") |>
+  tab_spanner("exact series", columns = c(exact_book, exact)) |>
+  tab_spanner("normal approximation", columns = c(normal_book, normal)) |>
+  tab_spanner("shifted gamma", columns = c(sgamma_book, sgamma)) |>
+  fmt_number(columns = -case, decimals = 4) |>
+  fmt_number(columns = c(exact_book, exact), rows = 6, decimals = 5) |>   # Table 4.4 at s = 0
+  cols_label(exact_book = "book", exact = "prospicio", normal_book = "book", normal = "prospicio",
+             sgamma_book = "book", sgamma = "prospicio", slognormal = "shifted lognormal")
+```
+
+```text
+                          book  prospicio    book  prospicio    book  prospicio  shifted lognormal
+Table 4.3, s = 0        0.0821     0.0821  0.0855     0.0855  0.0459     0.0459             0.0497
+Table 4.3, s = 2,000    0.3755     0.3755  0.3240     0.3240  0.3680     0.3680             0.3609
+Table 4.3, s = 4,000    0.7152     0.7152  0.6760     0.6760  0.7185     0.7185             0.7197
+Table 4.3, s = 6,000    0.9013     0.9013  0.9145     0.9145  0.9038     0.9038             0.9064
+Table 4.3, s = 8,000    0.9723     0.9723  0.9888     0.9888  0.9724     0.9724             0.9729
+Table 4.4, s = 0       0.00005    0.00005  0.2451     0.2451  0.1228     0.1228             0.2182
+Table 4.4, s = 2,000    0.5922     0.5922  0.4090     0.4090  0.5886     0.5886             0.5234
+Table 4.4, s = 6,000    0.8401     0.8401  0.7549     0.7549  0.8402     0.8402             0.8341
+Table 4.4, s = 10,000   0.9294     0.9294  0.9463     0.9463  0.9298     0.9298             0.9364
+Table 4.4, s = 18,000   0.9846     0.9846  0.9997     0.9997  0.9847     0.9847             0.9874
+P4.13, s = 0            0.0003     0.0003  0.1241     0.1241  0.0263     0.0263             0.0586
+P4.13, s = 3,000        0.3420     0.3420  0.2819     0.2819  0.3362     0.3362             0.3139
+P4.13, s = 9,000        0.7774     0.7774  0.7181     0.7181  0.7782     0.7782             0.7790
+P4.13, s = 15,000       0.9349     0.9349  0.9584     0.9584  0.9356     0.9356             0.9402
+P4.13, s = 27,000       0.9954     0.9954  1.0000     1.0000  0.9953     0.9953             0.9951
+```
+
+The curves show Tables 4.3 and 4.4:
 
 ```{r}
 #| label: approximations-figure
@@ -372,59 +487,143 @@ ggplot(curves, aes(s, cdf, colour = curve, linewidth = curve)) +
 ```{r}
 #| label: recursion
 agg <- compound_distribution(poisson_count(1.75), grid_distribution(1000, c(0, 0.20, 0.40, 0.20, 0.15, 0.05)), 64)
-cat("Ex 4.4  f_S   book ", vec(c(0.1738, 0.0608, 0.1323, 0.1046, 0.117, 0.0932, 0.0786, 0.0641)), "\n")
-cat("              ours ", vec(agg@probs[1:8]), "\n")
-cat("        F_S at 9,000, 12,000, 16,000  book ", vec(c(0.9121, 0.9729, 0.9955)), "\n")
-cat("                                      ours ", vec(cdf(agg, c(9000, 12000, 16000))), "\n")
+book <- c(0.1738, 0.0608, 0.1323, 0.1046, 0.117, 0.0932, 0.0786, 0.0641)
+rows <- lapply(0:7, function(k) row(sprintf("Ex 4.4, f_S(%s)", num(1000 * k)), book[k + 1], agg@probs[k + 1]))
+rows <- c(rows, lapply(list(c(9000, 0.9121), c(12000, 0.9729), c(16000, 0.9955)), function(x) {
+  row(sprintf("Ex 4.4, F_S(%s)", num(x[1])), x[2], cdf(agg, x[1]))
+}))
+compare(rows, "Ex 4.4: Panjer's recursion, a Poisson 1.75")
+```
 
+```text
+                       book  prospicio
+Ex 4.4, f_S(0)       0.1738     0.1738
+Ex 4.4, f_S(1,000)   0.0608     0.0608
+Ex 4.4, f_S(2,000)   0.1323     0.1323
+Ex 4.4, f_S(3,000)   0.1046     0.1046
+Ex 4.4, f_S(4,000)   0.1170     0.1170
+Ex 4.4, f_S(5,000)   0.0932     0.0932
+Ex 4.4, f_S(6,000)   0.0786     0.0786
+Ex 4.4, f_S(7,000)   0.0641     0.0641
+Ex 4.4, F_S(9,000)   0.9121     0.9121
+Ex 4.4, F_S(12,000)  0.9729     0.9729
+Ex 4.4, F_S(16,000)  0.9955     0.9955
+```
+
+```{r}
+#| label: midpoint
 S <- c(500, 1000, 2000, 4000, 6000, 10000)
+ex_45 <- list()
 for (case in list(list(100, c(0.1158, 0.1956, 0.3852, 0.7218, 0.9042, 0.9937)),
                   list(20, c(0.1108, 0.1885, 0.3775, 0.7165, 0.9019, 0.9935)))) {
   h <- case[[1]]
   grid <- discretize(gamma_distribution(3, 400), h, 6000 / h + 1, "rounding")
   agg <- compound_distribution(poisson_count(2.5), grid, 30000 / h)
+  ex_45[[as.character(h)]] <- list(book = case[[2]], ours = cdf(agg, S))
   cat(sprintf("Ex 4.5  step %3.0f  grid mean %s  variance %s\n", h, num(mean(grid), 2), num(variance(grid))))
-  cat("        F_S  book ", vec(case[[2]]), "\n")
-  cat("             ours ", vec(cdf(agg, S)), "\n")
 }
-agg <- compound_distribution(poisson_count(1.35), grid_distribution(500, c(0, 0.1, 0.4, 0.3, 0.2)), 64)
-cat("P4.16   F_S  book ", vec(c(0.2592, 0.2942, 0.4366, 0.5606, 0.6838, 0.8306, 0.9223, 0.967, 0.9872)), "\n")
-cat("             ours ", vec(cdf(agg, c(0, 500, 1000, 1500, 2000, 3000, 4000, 5000, 6000))), "\n")
-
-grid <- discretize(gamma_distribution(3, 400), 1, 20001, "local_moment")
-agg <- compound_distribution(poisson_count(2.5), grid, 2^16, method = "fft")
-S <- c(500, 1000, 2000, 3000, 4000, 6000, 8000, 10000)
-cat("Ex 4.7  Heckman-Meyers  book ", vec(c(0.1094, 0.1869, 0.3757, 0.5614, 0.7151, 0.9011, 0.9722, 0.9934)), "\n")
-cat("        exact series         ", vec(sapply(S, poisson_gamma_cdf, lam = 2.5, shape = 3, scale = 400)), "\n")
-cat("        FFT                  ", vec(cdf(agg, S)), "\n")
-cat(sprintf("        aliasing error below 1e-12: %s\n", agg@report$aliasing_error < 1e-12))
-
-size <- gamma_distribution(2.5, 500)
-show("Ex 4.8  E[X; 2,000]", 1147, lev(size, 2000), 0)
-show("        mass at the limit", 0.1562, survival(size, 2000))
-show("        jump in F_S at 2,000", 0.0552, pmf(poisson_count(1.308), 1) * survival(size, 2000))
 ```
 
 ```text
-Ex 4.4  f_S   book  [0.1738, 0.0608, 0.1323, 0.1046, 0.1170, 0.0932, 0.0786, 0.0641] 
-              ours  [0.1738, 0.0608, 0.1323, 0.1046, 0.1170, 0.0932, 0.0786, 0.0641] 
-        F_S at 9,000, 12,000, 16,000  book  [0.9121, 0.9729, 0.9955] 
-                                      ours  [0.9121, 0.9729, 0.9955] 
 Ex 4.5  step 100  grid mean 1,199.98  variance 480,642
-        F_S  book  [0.1158, 0.1956, 0.3852, 0.7218, 0.9042, 0.9937] 
-             ours  [0.1158, 0.1956, 0.3852, 0.7218, 0.9042, 0.9937] 
 Ex 4.5  step  20  grid mean 1,199.98  variance 479,846
-        F_S  book  [0.1108, 0.1885, 0.3775, 0.7165, 0.9019, 0.9935] 
-             ours  [0.1108, 0.1885, 0.3775, 0.7165, 0.9019, 0.9935] 
-P4.16   F_S  book  [0.2592, 0.2942, 0.4366, 0.5606, 0.6838, 0.8306, 0.9223, 0.9670, 0.9872] 
-             ours  [0.2592, 0.2942, 0.4366, 0.5606, 0.6838, 0.8306, 0.9223, 0.9670, 0.9872] 
-Ex 4.7  Heckman-Meyers  book  [0.1094, 0.1869, 0.3757, 0.5614, 0.7151, 0.9011, 0.9722, 0.9934] 
-        exact series          [0.1096, 0.1867, 0.3755, 0.5613, 0.7152, 0.9013, 0.9723, 0.9934] 
-        FFT                   [0.1096, 0.1868, 0.3756, 0.5614, 0.7152, 0.9014, 0.9723, 0.9934] 
-        aliasing error below 1e-12: TRUE
-Ex 4.8  E[X; 2,000]                      book        1,147   prospicio        1,147
-        mass at the limit                book       0.1562   prospicio       0.1562
-        jump in F_S at 2,000             book       0.0552   prospicio       0.0552
+```
+
+```{r}
+#| label: midpoint-table
+ex_45_frame <- data.frame(s = sprintf("F_S(%s)", num(S)),
+                          book_100 = ex_45[["100"]]$book, ours_100 = ex_45[["100"]]$ours,
+                          book_20 = ex_45[["20"]]$book, ours_20 = ex_45[["20"]]$ours)
+gt(ex_45_frame, rowname_col = "s") |>
+  tab_header("Ex 4.5: Panjer's recursion on the midpoint grid") |>
+  tab_spanner("step 100", columns = c(book_100, ours_100)) |>
+  tab_spanner("step 20", columns = c(book_20, ours_20)) |>
+  fmt_number(columns = -s, decimals = 4) |>
+  cols_label(book_100 = "book", ours_100 = "prospicio", book_20 = "book", ours_20 = "prospicio")
+```
+
+```text
+               book  prospicio    book  prospicio
+F_S(500)     0.1158     0.1158  0.1108     0.1108
+F_S(1,000)   0.1956     0.1956  0.1885     0.1885
+F_S(2,000)   0.3852     0.3852  0.3775     0.3775
+F_S(4,000)   0.7218     0.7218  0.7165     0.7165
+F_S(6,000)   0.9042     0.9042  0.9019     0.9019
+F_S(10,000)  0.9937     0.9937  0.9935     0.9935
+```
+
+```{r}
+#| label: p416
+agg <- compound_distribution(poisson_count(1.35), grid_distribution(500, c(0, 0.1, 0.4, 0.3, 0.2)), 64)
+book <- c(0.2592, 0.2942, 0.4366, 0.5606, 0.6838, 0.8306, 0.9223, 0.967, 0.9872)
+at <- c(0, 500, 1000, 1500, 2000, 3000, 4000, 5000, 6000)
+compare(lapply(1:9, function(i) row(sprintf("P4.16, F_S(%s)", num(at[i])), book[i], cdf(agg, at[i]))),
+        "P4.16: Panjer's recursion, a Poisson 1.35")
+```
+
+```text
+                     book  prospicio
+P4.16, F_S(0)      0.2592     0.2592
+P4.16, F_S(500)    0.2942     0.2942
+P4.16, F_S(1,000)  0.4366     0.4366
+P4.16, F_S(1,500)  0.5606     0.5606
+P4.16, F_S(2,000)  0.6838     0.6838
+P4.16, F_S(3,000)  0.8306     0.8306
+P4.16, F_S(4,000)  0.9223     0.9223
+P4.16, F_S(5,000)  0.9670     0.9670
+P4.16, F_S(6,000)  0.9872     0.9872
+```
+
+```{r}
+#| label: fft
+grid <- discretize(gamma_distribution(3, 400), 1, 20001, "local_moment")
+agg <- compound_distribution(poisson_count(2.5), grid, 2^16, method = "fft")
+S <- c(500, 1000, 2000, 3000, 4000, 6000, 8000, 10000)
+cat(sprintf("Ex 4.7  aliasing error below 1e-12: %s\n", agg@report$aliasing_error < 1e-12))
+```
+
+```text
+Ex 4.7  aliasing error below 1e-12: TRUE
+```
+
+```{r}
+#| label: fft-table
+ex_47 <- data.frame(s = sprintf("F_S(%s)", num(S)),
+                    book = c(0.1094, 0.1869, 0.3757, 0.5614, 0.7151, 0.9011, 0.9722, 0.9934),
+                    exact = sapply(S, poisson_gamma_cdf, lam = 2.5, shape = 3, scale = 400),
+                    fft = cdf(agg, S))
+gt(ex_47, rowname_col = "s") |>
+  tab_header("Ex 4.7: Heckman and Meyers against the exact series and the FFT") |>
+  fmt_number(columns = -s, decimals = 4) |>
+  cols_label(exact = "exact series", fft = "FFT, prospicio")
+```
+
+```text
+               book  exact series  FFT, prospicio
+F_S(500)     0.1094        0.1096          0.1096
+F_S(1,000)   0.1869        0.1867          0.1868
+F_S(2,000)   0.3757        0.3755          0.3756
+F_S(3,000)   0.5614        0.5613          0.5614
+F_S(4,000)   0.7151        0.7152          0.7152
+F_S(6,000)   0.9011        0.9013          0.9014
+F_S(8,000)   0.9722        0.9723          0.9723
+F_S(10,000)  0.9934        0.9934          0.9934
+```
+
+```{r}
+#| label: limit
+size <- gamma_distribution(2.5, 500)
+compare(list(row("Ex 4.8, E[X; 2,000]", 1147, lev(size, 2000), 0),
+             row("Ex 4.8, mass at the limit", 0.1562, survival(size, 2000)),
+             row("Ex 4.8, jump in F_S at 2,000", 0.0552, pmf(poisson_count(1.308), 1) * survival(size, 2000))),
+        "Ex 4.8: a per-claim limit of 2,000")
+```
+
+```text
+                                book  prospicio
+Ex 4.8, E[X; 2,000]            1,147      1,147
+Ex 4.8, mass at the limit     0.1562     0.1562
+Ex 4.8, jump in F_S at 2,000  0.0552     0.0552
 ```
 
 ## 8. Simulation
@@ -456,14 +655,26 @@ scale and shift) of `moment_approximation()`.
 size <- lognormal(7.6, 2.4)
 count <- claim_count(1.2, 1 + 0.1 * 1.2)
 basic <- mean(count) * lev(size, 500e3)
-show("Ex 6.6  E[S], 500K per claim", 26092, basic, 0)
-show("        E[S], 2M per claim", 34006, mean(count) * lev(size, 2e6), 0)
 h <- 250
 capped_2m <- discretize(size, h, 2e6 / h + 1, "local_moment")
 m <- compound_moments(count, capped_2m)
-show("        sd of S, 2M per claim", 151311, sqrt(m[["variance"]]), 0)
-show("        skewness", 9.4728, m[["skew"]])
+compare(list(row("Ex 6.6, E[S], 500K per claim", 26092, basic, 0),
+             row("Ex 6.6, E[S], 2M per claim", 34006, mean(count) * lev(size, 2e6), 0),
+             row("Ex 6.6, sd of S, 2M per claim", 151311, sqrt(m[["variance"]]), 0),
+             row("Ex 6.6, skewness, 2M per claim", 9.4728, m[["skew"]])),
+        "Ex 6.6: lognormal (7.6; 2.4) claims, 1.2 expected claims, contagion 0.1")
+```
 
+```text
+                                   book  prospicio
+Ex 6.6, E[S], 500K per claim     26,092     26,091
+Ex 6.6, E[S], 2M per claim       34,006     34,006
+Ex 6.6, sd of S, 2M per claim   151,311    151,312
+Ex 6.6, skewness, 2M per claim   9.4728     9.4728
+```
+
+```{r}
+#| label: removed
 shifted_gamma_excess <- function(severity, L) {
   a <- moment_approximation(count, severity, "shifted_gamma")$parameters
   stop_loss(gamma_distribution(a[["shape"]], a[["scale"]]), L - a[["shift"]])
@@ -471,21 +682,21 @@ shifted_gamma_excess <- function(severity, L) {
 sg <- shifted_gamma_excess(capped_2m, 3e6)
 agg <- compound_distribution(count, capped_2m, 2^16, method = "fft")
 exact <- stop_loss(agg, 3e6)
-show("Ex 6.6  removed by a 3M aggregate limit", 91, sg, 0)
-cat(sprintf("        the same by FFT, exactly: %s\n", num(exact)))
-show("        I(2M, 3M), shifted gamma", 1.2998, (m[["mean"]] - sg) / basic)
-cat(sprintf("        I(2M, 3M), exact: %.4f\n", (m[["mean"]] - exact) / basic))
+removed <- data.frame(row = c("removed by a 3M aggregate limit", "I(2M, 3M)"),
+                      book = c(91, 1.2998),
+                      shifted = c(sg, (m[["mean"]] - sg) / basic),
+                      exact = c(exact, (m[["mean"]] - exact) / basic))
+gt(removed, rowname_col = "row") |>
+  tab_header("Ex 6.6: a 3M aggregate limit on 2M claims") |>
+  fmt_number(columns = -row, rows = 1, decimals = 0) |>
+  fmt_number(columns = -row, rows = 2, decimals = 4) |>
+  cols_label(shifted = "shifted gamma", exact = "exact, FFT")
 ```
 
 ```text
-Ex 6.6  E[S], 500K per claim             book       26,092   prospicio       26,091
-        E[S], 2M per claim               book       34,006   prospicio       34,006
-        sd of S, 2M per claim            book      151,311   prospicio      151,312
-        skewness                         book       9.4728   prospicio       9.4728
-Ex 6.6  removed by a 3M aggregate limit  book           91   prospicio           91
-        the same by FFT, exactly: 8
-        I(2M, 3M), shifted gamma         book       1.2998   prospicio       1.2999
-        I(2M, 3M), exact: 1.3031
+                                   book  shifted gamma  exact, FFT
+removed by a 3M aggregate limit      91             91           8
+I(2M, 3M)                        1.2998         1.2999      1.3031
 ```
 
 ```{r}
@@ -496,48 +707,68 @@ book <- list(
   list(3e6, c(3e6, 5e6), c(35421, 35781)),
   list(5e6, 5e6, 37428)
 )
-cat(sprintf("%9s %9s %8s %9s %8s\n", "per claim", "aggregate", "book", "sh. gamma", "exact"))
+pieces <- list()
 exact_at <- list()
-for (row in book) {
-  l <- row[[1]]
+for (entry in book) {
+  l <- entry[[1]]
   grid <- discretize(size, h, l / h + 1, "local_moment")
   moments <- compound_moments(count, grid)
   agg <- compound_distribution(count, grid, 2^16, method = "fft")
-  for (j in seq_along(row[[2]])) {
-    L <- row[[2]][j]
-    sg <- moments[["mean"]] - shifted_gamma_excess(grid, L)
-    cat(sprintf("%8.0fM %8.0fM %8s %9s %8s\n", l / 1e6, L / 1e6, num(row[[3]][j]), num(sg), num(lev(agg, L))))
+  for (j in seq_along(entry[[2]])) {
+    L <- entry[[2]][j]
+    pieces[[length(pieces) + 1]] <- data.frame(
+      limits = sprintf("%.0fM per claim, %.0fM aggregate", l / 1e6, L / 1e6),
+      book = entry[[3]][j], shifted = moments[["mean"]] - shifted_gamma_excess(grid, L), exact = lev(agg, L))
   }
   exact_at[[as.character(l)]] <- c(at_l = lev(agg, l), unlimited = mean(agg))
 }
-for (case in list(c(1e6, 0.0209), c(2e6, 0.0142), c(3e6, 0.0112), c(5e6, 0.0081))) {
+gt(do.call(rbind, pieces), rowname_col = "limits") |>
+  tab_header("Table 6.4: E[S] by per-claim and aggregate limit") |>
+  fmt_number(columns = -limits, decimals = 0) |>
+  cols_label(shifted = "shifted gamma", exact = "exact, FFT")
+```
+
+```text
+                              book  shifted gamma  exact, FFT
+1M per claim, 1M aggregate  29,702         29,702      30,133
+1M per claim, 2M aggregate  30,306         30,306      30,334
+1M per claim, 3M aggregate  30,333         30,333      30,335
+1M per claim, 5M aggregate  30,335         30,335      30,335
+2M per claim, 2M aggregate  33,524         33,523      33,910
+2M per claim, 3M aggregate  33,915         33,915      33,999
+2M per claim, 5M aggregate  34,002         34,002      34,006
+3M per claim, 3M aggregate  35,421         35,420      35,762
+3M per claim, 5M aggregate  35,781         35,780      35,819
+5M per claim, 5M aggregate  37,428         37,427      37,703
+```
+
+```{r}
+#| label: p611
+p611 <- list(c(1e6, 0.0209), c(2e6, 0.0142), c(3e6, 0.0112), c(5e6, 0.0081))
+compare(lapply(p611, function(case) {
   e <- exact_at[[as.character(case[1])]]
-  cat(sprintf("P6.11  aggregate limit = per-claim limit %.0fM: share removed, book %.4f, exact %.4f\n",
-              case[1] / 1e6, case[2], 1 - e[["at_l"]] / e[["unlimited"]]))
-}
+  row(sprintf("P6.11, %.0fM per claim and aggregate", case[1] / 1e6), case[2], 1 - e[["at_l"]] / e[["unlimited"]])
+}), "P6.11: share of the loss an aggregate limit removes")
+```
+
+```text
+                                     book  prospicio
+P6.11, 1M per claim and aggregate  0.0209     0.0066
+P6.11, 2M per claim and aggregate  0.0142     0.0028
+P6.11, 3M per claim and aggregate  0.0112     0.0016
+P6.11, 5M per claim and aggregate  0.0081     0.0008
+```
+
+```{r}
+#| label: p612
 e <- exact_at[["1e+06"]]
-show("P6.12  premium, 1M per claim, v = 25%", 40447, e[["unlimited"]] / 0.75, 0)
+cat(sprintf("P6.12  premium, 1M per claim, v = 25%%: book 40,447, prospicio %s\n", num(e[["unlimited"]] / 0.75)))
 cat(sprintf("P6.12  credit for a 1M aggregate limit: book 844, exact %s\n",
             num((e[["unlimited"]] - e[["at_l"]]) / 0.75)))
 ```
 
 ```text
-per claim aggregate     book sh. gamma    exact
-       1M        1M   29,702    29,702   30,133
-       1M        2M   30,306    30,306   30,334
-       1M        3M   30,333    30,333   30,335
-       1M        5M   30,335    30,335   30,335
-       2M        2M   33,524    33,523   33,910
-       2M        3M   33,915    33,915   33,999
-       2M        5M   34,002    34,002   34,006
-       3M        3M   35,421    35,420   35,762
-       3M        5M   35,781    35,780   35,819
-       5M        5M   37,428    37,427   37,703
-P6.11  aggregate limit = per-claim limit 1M: share removed, book 0.0209, exact 0.0066
-P6.11  aggregate limit = per-claim limit 2M: share removed, book 0.0142, exact 0.0028
-P6.11  aggregate limit = per-claim limit 3M: share removed, book 0.0112, exact 0.0016
-P6.11  aggregate limit = per-claim limit 5M: share removed, book 0.0081, exact 0.0008
-P6.12  premium, 1M per claim, v = 25%    book       40,447   prospicio       40,446
+P6.12  premium, 1M per claim, v = 25%: book 40,447, prospicio 40,446
 P6.12  credit for a 1M aggregate limit: book 844, exact 269
 ```
 

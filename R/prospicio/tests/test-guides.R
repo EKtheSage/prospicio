@@ -3,7 +3,9 @@
 # Each guide's ```{r} chunks run in order in one environment. A chunk followed
 # by a ```text block (only blank lines between) must print exactly that text,
 # trailing spaces ignored, so a number in a guide cannot go stale when the
-# bindings change. The R twin of python/tests/test_guides.py. CI runs the R
+# bindings change. A gt table a chunk shows prints as its column labels and
+# formatted cells (`gt_text`), so a table's numbers are checked the same way.
+# The R twin of python/tests/test_guides.py. CI runs the R
 # tests from the repository root; run from elsewhere (an installed package's
 # check) without the repository above, it skips.
 suppressMessages(library(prospicio))
@@ -50,6 +52,36 @@ normalized <- function(x) {
 
 is_r_chunk <- function(info) grepl("^\\{r[ ,}]", info)
 
+# A gt table as text: the column labels, then each row's formatted cells, the
+# stub left-aligned and the other columns right-aligned, two spaces apart.
+# The site shows the table; this text is what the guide's text block checks.
+gt_text <- function(tbl) {
+  body <- as.data.frame(gt::extract_body(tbl, output = "grid"), check.names = FALSE)
+  boxhead <- tbl[["_boxhead"]]
+  stub <- names(body) == "::rowname::"
+  labels <- vapply(names(body), function(v) {
+    if (v == "::rowname::") return("")
+    paste(as.character(boxhead$column_label[[match(v, boxhead$var)]]), collapse = "")
+  }, "")
+  cells <- rbind(labels, as.matrix(body))
+  cells[is.na(cells)] <- ""
+  width <- apply(nchar(cells, type = "width"), 2, max)
+  for (j in seq_len(ncol(cells))) {
+    cells[, j] <- formatC(cells[, j], width = if (stub[j]) -width[j] else width[j])
+  }
+  unname(apply(cells, 1, paste, collapse = "  "))
+}
+
+# Run a chunk's code as knitr shows it: each visible value printed, a gt
+# table as its text.
+run_chunk <- function(code, env) {
+  for (e in parse(text = code)) {
+    v <- withVisible(eval(e, env))
+    if (!v$visible) next
+    if (inherits(v$value, "gt_tbl")) cat(gt_text(v$value), sep = "\n") else print(v$value)
+  }
+}
+
 run_guide <- function(path) {
   lines <- readLines(path, encoding = "UTF-8", warn = FALSE)
   stopifnot(!any(grepl("\u2014", lines))) # no em dash
@@ -63,8 +95,7 @@ run_guide <- function(path) {
     ran <- ran + 1
     where <- sprintf("%s, R chunk %d (line %d)", basename(path), ran, b$first)
     out <- tryCatch(
-      utils::capture.output(source(exprs = parse(text = b$code), local = env,
-                                   echo = FALSE, print.eval = TRUE)),
+      utils::capture.output(run_chunk(b$code, env)),
       error = function(e) stop(where, " raised: ", conditionMessage(e), call. = FALSE)
     )
     if (k < length(blocks) && blocks[[k + 1]]$info == "text") {
@@ -95,6 +126,14 @@ local({
   err <- tryCatch({ run_guide(tmp); NULL }, error = function(e) conditionMessage(e))
   unlink(tmp)
   stopifnot(!is.null(err), grepl("R chunk 2 (line 10)", err, fixed = TRUE))
+})
+
+# A gt table is checked by its column labels and formatted cells.
+local({
+  df <- data.frame(unit = c("A", "B"), loss = c(1234.5, -2), check.names = FALSE)
+  tbl <- gt::fmt_number(gt::gt(df, rowname_col = "unit"), columns = "loss", decimals = 1)
+  stopifnot(identical(gt_text(gt::cols_label(tbl, loss = "loss, $")),
+                      c("   loss, $", "A  1,234.5", "B     -2.0")))
 })
 
 guides <- find_guides()

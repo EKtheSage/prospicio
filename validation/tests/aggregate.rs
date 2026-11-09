@@ -212,7 +212,7 @@ fn reserve_and_tower_feed_capital_end_to_end() {
     assert!(portfolio.distortion(&tvar) > independent.distortion(&tvar));
 }
 
-/// FFT grid sizing against `aggregate` 1.0.1: its `round_bucket` exactly,
+/// FFT grid sizing against `aggregate` 2.1.0: its `round_bucket` exactly,
 /// and on five books sized with no bucket given, the exact mean and
 /// aggregate's quantiles within two of its buckets
 /// (`validation/scripts/aggregate_sizing.py`).
@@ -269,7 +269,7 @@ fn grid_sizing_matches_aggregate() {
     });
 }
 
-/// The grid audit against `aggregate` 1.2.0's `sharpen` (#317), its
+/// The grid audit against `aggregate` 2.1.0's `sharpen` (#317), its
 /// `sharpen_df` printed by `validation/scripts/aggregate_sharpen.py`. Cells
 /// that hold all the mass score to aggregate's digits and the same cell is
 /// selected; cells that lose mass off the grid score differently (they are
@@ -332,7 +332,7 @@ fn grid_audit_matches_aggregate_sharpen() {
 }
 
 /// A mixing variable shared across severity components, against `aggregate`
-/// 1.2.0 (#316, `validation/scripts/aggregate_common_shock.py`): its
+/// 2.1.0 (#316, `validation/scripts/aggregate_common_shock.py`): its
 /// `agg [10 20] claims sev [gamma lognorm] ... mixed gamma 0.3` applies one
 /// mixed count to the claim-weighted mixture of the severities, which is
 /// `fft` of a `MixedPoisson` on a `Mixture`. Mixed one component at a time
@@ -399,7 +399,7 @@ fn shared_mixing_matches_aggregate() {
 }
 
 /// Swing and retro premiums, sliding-scale and profit commissions against
-/// `aggregate` 1.0.1's `contract_terms` at losses through every kink
+/// `aggregate` 2.1.0's `contract_terms` at losses through every kink
 /// (`validation/scripts/aggregate_contract_terms.py`).
 #[test]
 fn contract_terms_match_aggregate() {
@@ -459,7 +459,7 @@ fn contract_terms_match_aggregate() {
     });
 }
 
-/// The occurrence PML against `aggregate` 1.0.1's `oep` on three Poisson
+/// The occurrence PML against `aggregate` 2.1.0's `oep` on three Poisson
 /// books: the loss, the severity's exceedance and the occurrence return
 /// period at eight annual probabilities, at `1e-10`
 /// (`validation/scripts/aggregate_oep.py`).
@@ -517,7 +517,7 @@ fn simulated_maxima_match_the_occurrence_exceedance() {
     }
 }
 
-/// Compound mean, cv and skewness against `aggregate` 1.0.1's analytic
+/// Compound mean, cv and skewness against `aggregate` 2.1.0's analytic
 /// statistics, and the five moment approximations against its own fitting
 /// code on those moments, on five books (`validation/scripts/aggregate_moments.py`).
 #[test]
@@ -1076,7 +1076,7 @@ fn clash_matches_aggregate() {
 }
 
 /// Two lines whose losses in an event are coupled by a copula, against
-/// `aggregate` 1.0.1's copula `bivariate` (`validation/scripts/
+/// `aggregate` 2.1.0's copula `bivariate` (`validation/scripts/
 /// aggregate_bivariate_copula.py`): Gumbel and Clayton with Kendall's tau
 /// 0.4 and a Gaussian with rho 0.5, each under a Poisson and a gamma-mixed
 /// count, with the triggered gamma and lognormal of the clash case.
@@ -2281,6 +2281,34 @@ fn pnl_reinstatements_match_aggregate() {
             .unwrap(),
     ])
     .unwrap();
+    // Annual terms on the occurrence layer, as aggregate's AnnualLayerTerms
+    // (aggregate 2.1.0, #768): the recovery min(max(R - aad, 0), agglimit).
+    let annual = |aad: Option<f64>, agg_limit: Option<f64>| {
+        // Named as aggregate names the step: the layer and its DecL clause.
+        let mut name = "occ 2 xs 2".to_string();
+        if let Some(d) = aad {
+            name += &format!(" aad {d}");
+        }
+        if let Some(m) = agg_limit {
+            name += &format!(" agglimit {m}");
+        }
+        let mut l = Layer::xol(&name, 2.0, 2.0)
+            .unwrap()
+            .deposit_premium(2.0)
+            .unwrap();
+        if let Some(d) = aad {
+            l = l.aggregate_deductible(d).unwrap();
+        }
+        if let Some(m) = agg_limit {
+            l = l.aggregate_limit(m).unwrap();
+        }
+        Tower::new(vec![l]).unwrap()
+    };
+    let (aad, lim, both) = (
+        annual(Some(1.0), None),
+        annual(None, Some(3.0)),
+        annual(Some(1.0), Some(3.0)),
+    );
     let book = Book::new("R", 20.0).expense(Expense::premium(0.1));
     let build = |t: &Tower, a: Option<&Tower>, face| book.occurrence_ledger(&joint, t, a, face);
     let ledgers: std::collections::HashMap<&str, Ledger> = [
@@ -2296,6 +2324,12 @@ fn pnl_reinstatements_match_aggregate() {
         ("r0c", build(&none, None, Face::Consolidated)),
         ("r2", build(&two, Some(&agg), Face::Walk)),
         ("r2c", build(&two, Some(&agg), Face::Consolidated)),
+        ("a1", build(&aad, None, Face::Walk)),
+        ("a1c", build(&aad, None, Face::Consolidated)),
+        ("l3", build(&lim, None, Face::Walk)),
+        ("l3c", build(&lim, None, Face::Consolidated)),
+        ("al", build(&both, None, Face::Walk)),
+        ("alc", build(&both, None, Face::Consolidated)),
     ]
     .into_iter()
     .map(|(k, l)| (k, l.unwrap()))
