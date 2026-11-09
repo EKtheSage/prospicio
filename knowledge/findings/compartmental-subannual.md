@@ -331,6 +331,22 @@ by year and was fixed. And on a triangle whose newest development year opens
 in the coming year, the Pareto k of the reweighted simulations is large and
 `gpd_fit` returned NaN for 18 of 200 simulations on low-noise data (none with a
 30% wobble); the conformance check's replay comparison is now NaN-aware.
+#782 found the cause by dumping those log ratios (the triangle of
+`the_one_year_view_by_development_year_conforms` with an 8% wobble, model 2
+by development year, 2 chains of 100 and 100). They were not ties: the 200
+log ratios spanned thousands of units (the smallest -6,900 to -23,000 after
+shifting the largest to 0), so the 41st largest, the tail's cutoff, sat at
+-1,400 to -7,700, and `exp` underflowed to 0 there and for 16 to 37 of the
+40 tail ratios. With a quarter or more of the exceedances 0, Zhang and
+Stephens' grid divided by a zero quartile. The NaN k also set every tail
+weight to the largest one (`NaN.min(0.0)` is 0). `psis` now gives such a
+tail an infinite k and the raw weights; across the conformance check's
+views every one of the 181 NaN values became infinite and no other k
+moved. In the default view of 200 simulations 18 have an infinite k, all
+flagged as before. Model 2's default (`RefitFlagged` with the light refit)
+refits them as it did; under `MomentMatchThenRefit` the 18 now reach
+moment matching, which rescues none of them (nor any of the other 182
+flagged), and they are refitted.
 Neither affected the study's numbers, which ran the per-age form and the
 test-only regrouping outside the one-year view.
 

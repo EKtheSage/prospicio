@@ -1,10 +1,10 @@
 """Regenerate validation/reference/clash_aggregate.csv.
 
-    python3.12 -m venv agg && agg/bin/pip install aggregate==1.0.1
+    python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0
     agg/bin/python validation/scripts/aggregate_clash.py
 
 Clash, two lines hit by one count of events, against Mildenhall's
-`aggregate` 1.0.1 (`clash NAME na nb nc claims <A> <B> <freq>`, a
+`aggregate` 2.1.0 (`clash NAME na nb nc claims <A> <B> <freq>`, a
 `BivariateAggregate` with independent triggers). Line A loses a gamma
 (mean 10, cv 1.5) when hit and line B a lognormal (mean 5, cv 0.5);
 2 events a year hit A only, 3 B only and 1 both, so 6 hit neither and 12

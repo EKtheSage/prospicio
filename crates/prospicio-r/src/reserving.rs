@@ -2338,7 +2338,9 @@ impl Triangle {
     /// The one-year view of `bayes_hierarchical_bf` over every program at
     /// once, by PSIS reweighting: the arguments of `hierarchical_bf`, then
     /// `k_threshold`, `refit` ("moment_match_then_refit", "refit_flagged",
-    /// "reweight_only" or "refit_all"), `max_refits` and `one_year_sims`.
+    /// "reweight_only" or "refit_all", or `NULL` for the model's default),
+    /// `max_refits`, `one_year_sims`, the
+    /// pattern prior and `light_refit` (as `light_refit_arg` reads it).
     #[allow(clippy::too_many_arguments)]
     fn hierarchical_bf_one_year(
         &self,
@@ -2349,15 +2351,21 @@ impl Triangle {
         process: &str,
         run: Vec<f64>,
         k_threshold: f64,
-        refit: &str,
+        refit: Nullable<String>,
         max_refits: Nullable<f64>,
         one_year_sims: Nullable<f64>,
         pattern_ages: Nullable<Vec<f64>>,
         pattern_mean: Vec<f64>,
         pattern_sd: Vec<f64>,
+        light_refit: Nullable<Vec<f64>>,
     ) -> Result<HierarchicalBfOneYearFit> {
         let model = hierarchical_bf_model(&priors, level_cv, process, &run)?;
-        let settings = one_year_settings(k_threshold, Some(refit), max_refits, one_year_sims)?;
+        let refit = match &refit {
+            Nullable::NotNull(r) => Some(r.as_str()),
+            Nullable::Null => None,
+        };
+        let mut settings = one_year_settings(k_threshold, refit, max_refits, one_year_sims)?;
+        (settings.light_refit, settings.no_light_refit) = light_refit_arg(light_refit)?;
         let inner = match pattern_arg(pattern_ages, pattern_mean, pattern_sd)? {
             Some(p) => {
                 model.one_year_with_pattern_prior(&self.inner, column, exposure, &settings, &p)
@@ -4196,11 +4204,12 @@ fn one_year_settings(
     })
 }
 
-/// A compartmental one-year view's `light_refit`: `NULL` for the model's
-/// default (model 2's light refit), the vector `0` to turn it off (the R
-/// wrapper sends it for `FALSE`), an empty vector for [`LightRefit::default`]
-/// (4 chains of 150 warm-up and 250 kept draws), or `c(chains, tune,
-/// draws)`. Returns the sampler and whether the default is turned off.
+/// A compartmental or hierarchical one-year view's `light_refit`: `NULL`
+/// for the model's default (model 2's light refit), the vector `0` to turn
+/// it off (the R wrapper sends it for `FALSE`), an empty vector for
+/// [`LightRefit::default`] (4 chains of 150 warm-up and 250 kept draws), or
+/// `c(chains, tune, draws)`. Returns the sampler and whether the default is
+/// turned off.
 fn light_refit_arg(light_refit: Nullable<Vec<f64>>) -> Result<(Option<LightRefit>, bool)> {
     match light_refit {
         Nullable::Null => Ok((None, false)),
@@ -5630,6 +5639,12 @@ impl HierarchicalBfOneYearFit {
 
     fn flagged_share(&self) -> f64 {
         self.inner.flagged_share()
+    }
+
+    /// What else the view warns of, one message each: the programs whose
+    /// next diagonal falls at development ages they have never observed.
+    fn warnings(&self) -> Vec<String> {
+        self.inner.warnings.clone()
     }
 }
 

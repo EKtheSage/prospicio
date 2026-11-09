@@ -14,7 +14,7 @@ stopifnot(inherits(try(distortion("proportional_hazard", 1.5), silent = TRUE), "
 stopifnot(inherits(try(distortion("variance", 1), silent = TRUE), "try-error"))
 
 # More families, on Monograph 15's InsCo totals (assets 100, 15% cost of
-# capital); calibration matches aggregate 1.0.1's parameters.
+# capital); calibration matches aggregate 2.1.0's parameters.
 insco <- sampled(c(22, 28, 36, 40, 40, 40, 40, 55, 65, 100))
 insco_p <- (46.6 + 15) / 1.15
 ccoc <- distortion("ccoc", 0.15)

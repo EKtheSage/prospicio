@@ -53,6 +53,205 @@ pub fn round_bucket(bs: f64) -> Result<f64> {
     Ok(2f64.powi(-(n.log2().floor() as i32)))
 }
 
+/// The dyadic step of the lattice the `atoms` lie on, `aggregate` 2.1.0's
+/// `_dyadic_lattice_step`: with `M` the largest `|x|`, the powers of two
+/// `2^-r` are searched from the coarsest at or below `M` down to `2^-depth
+/// M`, and at the first where every atom is within `1e-12 M` of a multiple,
+/// the step is the greatest common divisor of the multiples times `2^-r`.
+/// Returns `(step, residual)`, the residual the largest distance of an
+/// atom from its lattice point; `(1, 0)` when every atom is 0; `None` with
+/// no atom, an atom not finite, or no dyadic lattice within `depth` levels
+/// (decimal atoms such as 0.1 have none). The lattice is linear, 0
+/// included.
+///
+/// ```
+/// use prospicio_aggregate::dyadic_lattice_step;
+///
+/// assert_eq!(dyadic_lattice_step(&[3.0, 6.0, 9.0], 16), Some((3.0, 0.0)));
+/// assert_eq!(dyadic_lattice_step(&[0.75, 1.5], 16), Some((0.75, 0.0)));
+/// assert_eq!(dyadic_lattice_step(&[1.0, 2.5], 16), Some((0.5, 0.0)));
+/// assert_eq!(dyadic_lattice_step(&[0.1, 0.2], 16), None);
+/// ```
+pub fn dyadic_lattice_step(atoms: &[f64], depth: u32) -> Option<(f64, f64)> {
+    if atoms.is_empty() || atoms.iter().any(|x| !x.is_finite()) {
+        return None;
+    }
+    let m = atoms.iter().fold(0.0f64, |a, x| a.max(x.abs()));
+    if m == 0.0 {
+        return Some((1.0, 0.0));
+    }
+    let tol = 1e-12 * m;
+    let e = m.log2().floor() as i32;
+    let r_hi = ((depth as f64 - m.log2()).floor() as i32).min(52 - e);
+    for r in -e..=r_hi {
+        let scale = 2f64.powi(r);
+        let scaled: Vec<f64> = atoms.iter().map(|x| x * scale).collect();
+        if scaled.iter().all(|v| (v - v.round()).abs() <= tol * scale) {
+            let g = scaled
+                .iter()
+                .map(|v| v.round().abs() as u64)
+                .fold(0u64, gcd);
+            let step = g as f64 / scale;
+            let residual = atoms
+                .iter()
+                .zip(&scaled)
+                .fold(0.0f64, |a, (x, v)| a.max((x - v.round() / scale).abs()));
+            return Some((step, residual));
+        }
+    }
+    None
+}
+
+fn gcd(a: u64, b: u64) -> u64 {
+    if b == 0 { a } else { gcd(b, a % b) }
+}
+
+/// The buckets [`lattice_bucket`] tries for a lattice step `h`, in order,
+/// `aggregate` 2.1.0's `_lattice_candidates`: the largest "nice" bucket
+/// dividing `h` (a power of two `2^-s` for a step `n / 2^s` with `n` odd;
+/// for a whole step the largest `{1, 2, 4, 5, 8} × 10^k` dividing it), then
+/// `h` itself when that differs. The nice bucket is preferred, the exact
+/// step used only when the nice one would need a larger grid.
+///
+/// ```
+/// use prospicio_aggregate::lattice_candidates;
+///
+/// assert_eq!(lattice_candidates(3.0), [1.0, 3.0]);
+/// assert_eq!(lattice_candidates(0.75), [0.25, 0.75]);
+/// assert_eq!(lattice_candidates(1000.0), [1000.0]);
+/// ```
+pub fn lattice_candidates(h: f64) -> Vec<f64> {
+    let nice = if h.fract() != 0.0 {
+        // h = n / 2^s with n odd: the power of two 2^-s.
+        let mut den = 1.0;
+        while (h * den).fract() != 0.0 && den < 2f64.powi(60) {
+            den *= 2.0;
+        }
+        1.0 / den
+    } else {
+        let n = h as u64;
+        let mut best = 1u64;
+        let mut k = 1u64;
+        while k <= n {
+            for rung in [1u64, 2, 4, 5, 8] {
+                let v = rung * k;
+                if v <= n && n % v == 0 && v > best {
+                    best = v;
+                }
+            }
+            k = k.saturating_mul(10);
+            if k == 0 {
+                break;
+            }
+        }
+        best as f64
+    };
+    if nice == h { vec![h] } else { vec![nice, h] }
+}
+
+/// The bucket [`lattice_bucket`] chose for a discrete severity.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LatticeBucket {
+    /// The bucket size.
+    pub step: f64,
+    /// `2^log2` points hold the extent at `step`.
+    pub log2: u32,
+    /// The atoms' dyadic lattice step and residual, when they have one.
+    pub lattice: Option<(f64, f64)>,
+    /// Whether every atom is a multiple of `step`.
+    pub on_lattice: bool,
+    /// The `log2` the lattice would need at its finest candidate, when
+    /// `log2` was too small to hold it.
+    pub log2_required: Option<u32>,
+    /// Set when the atoms have a lattice the grid misses: `aggregate`'s
+    /// `LatticeGridWarning` text.
+    pub warning: Option<String>,
+}
+
+/// A bucket for a compound distribution of a discrete severity on the
+/// `atoms`, covering `extent` within `2^log2` points, `aggregate` 2.1.0's
+/// lattice rule: when the atoms lie on a [`dyadic_lattice_step`], the
+/// first of its [`lattice_candidates`] whose grid holds the extent within
+/// `2^log2` points, so every atom sits on a grid point and the
+/// discretization is exact; when none fits, [`round_bucket`]`(extent /
+/// (2^log2 - 1))` with a warning naming the `log2` needed (`aggregate`'s
+/// `LatticeGridWarning`); without a lattice, that bucket and no warning.
+///
+/// ```
+/// use prospicio_aggregate::lattice_bucket;
+///
+/// // aggregate: dsev [1000 3000 7000] fits on bs 1000 at log2 9, not 8.
+/// let b = lattice_bucket(&[1000.0, 3000.0, 7000.0], 300_000.0, 9).unwrap();
+/// assert_eq!((b.step, b.on_lattice, b.warning.is_none()), (1000.0, true, true));
+/// let tight = lattice_bucket(&[1000.0, 3000.0, 7000.0], 300_000.0, 8).unwrap();
+/// assert_eq!((tight.step, tight.on_lattice, tight.log2_required), (2000.0, false, Some(9)));
+/// assert!(tight.warning.unwrap().contains("log2 >= 9"));
+/// ```
+pub fn lattice_bucket(atoms: &[f64], extent: f64, log2: u32) -> Result<LatticeBucket> {
+    if !(1..=30).contains(&log2) {
+        return Err(Error::InvalidParameter {
+            name: "log2",
+            value: f64::from(log2),
+            reason: "must be in 1..=30",
+        });
+    }
+    if !(extent.is_finite() && extent > 0.0) {
+        return Err(Error::InvalidParameter {
+            name: "extent",
+            value: extent,
+            reason: "must be finite and positive",
+        });
+    }
+    let depth = log2.max(16);
+    let lattice = dyadic_lattice_step(atoms, depth);
+    let on = |step: f64| {
+        atoms
+            .iter()
+            .all(|x| ((x / step) - (x / step).round()).abs() <= 1e-12 * (x / step).abs().max(1.0))
+    };
+    if let Some((h, _)) = lattice {
+        for c in lattice_candidates(h) {
+            let need = need_log2(extent, c).max(1);
+            if need <= log2 {
+                return Ok(LatticeBucket {
+                    step: c,
+                    log2: need,
+                    lattice,
+                    on_lattice: true,
+                    log2_required: None,
+                    warning: None,
+                });
+            }
+        }
+    }
+    let step = round_bucket(extent / ((1u64 << log2) - 1) as f64)?;
+    let step_log2 = need_log2(extent, step).clamp(1, log2);
+    let on_lattice = on(step);
+    let (log2_required, warning) = match lattice {
+        Some((h, _)) if !on_lattice => {
+            let finest = *lattice_candidates(h).last().unwrap_or(&h);
+            let need = need_log2(extent, finest);
+            (
+                Some(need),
+                Some(format!(
+                    "the severity atoms are on the lattice of step {h} and the grid needs log2 >= \
+                     {need} at bs {finest}; log2 {log2} was given, so bs {step} is used and the \
+                     atoms do not sit on the grid"
+                )),
+            )
+        }
+        _ => (None, None),
+    };
+    Ok(LatticeBucket {
+        step,
+        log2: step_log2,
+        lattice,
+        on_lattice,
+        log2_required,
+        warning,
+    })
+}
+
 /// What sized the grid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SizingMethod {
@@ -67,7 +266,7 @@ pub enum SizingMethod {
 }
 
 /// The settings [`recommend_grid`] sizes with; the defaults are
-/// `aggregate` 1.0.1's.
+/// `aggregate`'s (1.0.1 to 2.1.0, unchanged).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Sizing {
     /// The grid has at most `2^log2` points. Default 16.
@@ -116,7 +315,7 @@ pub struct GridSize {
 }
 
 /// A 0-based grid for the compound distribution of `frequency` claims of
-/// `severity`, as `aggregate` 1.0.1 sizes one when no bucket is given.
+/// `severity`, as `aggregate` (1.0.1 to 2.1.0) sizes one when no bucket is given.
 ///
 /// 1. The aggregate mean `E[N] E[X]` and variance
 ///    `E[N] Var X + Var N E[X]²`; the moment extent is the larger of the
@@ -413,8 +612,8 @@ fn finish(
     })
 }
 
-/// The settings of [`audit_grid`]; the defaults are `aggregate` 1.2.0's
-/// `sharpen`.
+/// The settings of [`audit_grid`]; the defaults are `aggregate`'s
+/// `sharpen` (1.2.0 to 2.1.0, unchanged).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AuditSettings {
     /// The validation tolerance: a relative moment error of `eps` on a
@@ -612,7 +811,7 @@ fn aggregate_terms(t: &mut ScoreTerms, agg: &Grid, exact: (f64, f64, f64), eps: 
 }
 
 /// Audits the grid `(step, 2^log2)` for `frequency` claims of `severity`,
-/// as `aggregate` 1.2.0's `sharpen` does (#317).
+/// as `aggregate`'s `sharpen` does (1.2.0 to 2.1.0; #317).
 ///
 /// Each cell discretizes the severity by rounding on its step and number
 /// of points, runs [`fft`], and is scored by six moment errors: the
@@ -983,7 +1182,7 @@ mod tests {
 
     #[test]
     fn round_bucket_matches_aggregate_rungs() {
-        // aggregate 1.0.1's docstring cases.
+        // aggregate's docstring cases (1.0.1 to 2.1.0).
         for (x, want) in [
             (1.0, 1.0),
             (1.1, 2.0),

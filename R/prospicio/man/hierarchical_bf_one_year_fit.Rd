@@ -29,7 +29,8 @@ bayes_hierarchical_bf_one_year(
   k_threshold = 0.7,
   refit = c("moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"),
   max_refits = NULL,
-  one_year_sims = NULL
+  one_year_sims = NULL,
+  light_refit = NULL
 )
 }
 \arguments{
@@ -110,6 +111,17 @@ k segments refit at most k times this many.}
 default) for the model's \code{n_sims}, at most 2,000. The lifetime reserves
 keep \code{n_sims}. A smaller count gives the first simulations of a larger
 one.}
+
+\item{light_refit}{The sampler of the refits: a shorter, warm-started
+NUTS run instead of the fit's own. \code{NULL} (the default) is the model's
+own when \code{refit} is left at its default, the light refit of \code{TRUE}
+below, and the fit's sampler, with its pilot run, when \code{refit} is given.
+\code{TRUE} takes 4 chains of 150 warm-up and 250 kept draws,
+\code{c(chains, tune, draws)} its own, and \code{FALSE} turns a default light
+refit off. Each refit scales its sampler by the opening posterior and
+starts at its mean, with no pilot run, and warns when its closing
+reserve has R-hat above 1.05, fewer than 100 effective draws or a
+divergence.}
 }
 \value{
 A \code{hierarchical_bf_one_year_fit} object.
@@ -140,7 +152,11 @@ dimensions \code{program} and \code{origin}, so a program's CDR is
 kept.
 
 Failed MCMC diagnostics of the fit raise one \code{\link[=warning]{warning()}} listing them, and
-refits that failed theirs raise another.
+refits that failed theirs raise another. A panel whose programs stop at
+different ages raises one more, naming the programs whose next diagonal
+falls at development ages they have never observed: only the prior speaks
+there, so nearly every simulation is flagged and refitted and the view is
+expensive (or, with \code{refit = "reweight_only"}, approximate; \code{warnings}).
 
 Properties: \code{fit} (the \link{hierarchical_bf_fit}), per origin, program by
 program, \code{program}, \code{origins}, \code{latest}, \code{opening_ultimate} and
@@ -151,8 +167,10 @@ program, \code{program}, \code{origins}, \code{latest}, \code{opening_ultimate} 
 \code{refitted} (the simulations refitted with NUTS, 1-based),
 \code{moment_matched} (the simulations moment matching rescued, 1-based),
 \code{unrefitted} (the simulations due for a refit beyond \code{max_refits},
-reweighted instead, 1-based), \code{refit_warnings}, \code{k_threshold} and
-\code{flagged_share}. \code{as.data.frame()} has one row per program and origin:
+reweighted instead, 1-based), \code{refit_warnings}, \code{k_threshold},
+\code{flagged_share} and \code{warnings} (what else the view warns of, one string
+each, empty when the programs share their ages). \code{as.data.frame()} has one
+row per program and origin:
 \code{program}, \code{origin}, \code{latest}, \code{opening_ultimate}, \code{opening_reserve}, and
 the \code{cdr_mean} and \code{cdr_std_dev} of the CDR.
 

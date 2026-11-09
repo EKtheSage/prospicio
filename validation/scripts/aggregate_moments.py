@@ -1,10 +1,10 @@
 """Regenerate validation/reference/moments_aggregate.csv.
 
-    python3.12 -m venv agg && agg/bin/pip install aggregate==1.0.1
+    python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0
     agg/bin/python validation/scripts/aggregate_moments.py
 
 Compound moments to third order and the moment approximations against
-Mildenhall's `aggregate` 1.0.1:
+Mildenhall's `aggregate` 2.1.0:
 
 - the compound mean, cv and skewness, exactly at 30 digits by mpmath from
   the count's cumulants and the severity's raw moments, at `1e-12`. They

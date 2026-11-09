@@ -16795,7 +16795,7 @@ class HierarchicalBf:
         """
         Scale of the half-normal prior on ``omega``.
         """
-    def one_year(self, /, triangle: Any, column: str, exposure: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", max_refits: int |None = None, n_sims: int |None = None) -> HierarchicalBfOneYearFit:
+    def one_year(self, /, triangle: Any, column: str, exposure: str, k_threshold: float = 0.7, refit: str |None = None, max_refits: int |None = None, n_sims: int |None = None, light_refit: Any |None = None) -> HierarchicalBfOneYearFit:
         """
         The one-year view of the fit over every program at once: the
         claims development result of each program and origin over the
@@ -16807,8 +16807,12 @@ class HierarchicalBf:
         the shared pattern, and through them the other programs' closing
         reserves. A refit of a flagged simulation samples the whole panel.
         Raises ``UserWarning`` for the fit's failed diagnostics, for refits
-        whose diagnostics failed, and for simulations left unrefitted by
-        ``max_refits``.
+        whose diagnostics failed, for simulations left unrefitted by
+        ``max_refits``, and for each of the view's ``warnings``: programs
+        whose next diagonal falls at development ages they have never
+        observed, which make the view expensive (nearly every simulation is
+        flagged and refitted) or, with ``refit="reweight_only"``,
+        approximate.
         
         Parameters
         ----------
@@ -16821,14 +16825,27 @@ class HierarchicalBf:
         k_threshold : float, default 0.7
             The Pareto ``k`` above which a simulation's importance weights
             are not trusted.
-        refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
+        refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, optional
             What happens to a flagged simulation, as in ``BayesOdp.one_year``.
+            ``None`` (the default) is ``"moment_match_then_refit"`` with the
+            model's default sampler of the refits (``light_refit``).
         max_refits : int, optional
             As in ``BayesOdp.one_year``.
         n_sims : int, optional
             The number of one-year simulations; by default this model's
             ``n_sims``, at most 2,000. A smaller count gives the first
             simulations of a larger one.
+        light_refit : bool or tuple, optional
+            The sampler of the refits: a shorter, warm-started NUTS run
+            instead of the fit's own. ``None`` (the default) is the model's
+            own when ``refit`` is ``None``, the light refit of ``True`` below,
+            and the fit's sampler, with its pilot run, when ``refit`` is given.
+            ``True`` takes 4 chains of 150 warm-up and 250 kept draws, a
+            tuple ``(chains, tune, draws)`` its own, and ``False`` turns a default
+            light refit off. Each refit scales its sampler by the opening
+            posterior and starts at its mean, with no pilot run, and warns when
+            its closing reserve has R-hat above 1.05, fewer than 100 effective
+            draws or a divergence.
         
         Returns
         -------
@@ -17127,6 +17144,15 @@ class HierarchicalBfOneYearFit:
         """
         The simulations due for a refit beyond ``max_refits``, reweighted
         instead, in order (0-based); empty without ``max_refits``.
+        """
+    @property
+    def warnings(self, /) -> list[str]:
+        """
+        What else the view warns of, one message each (``one_year`` raises
+        each as a ``UserWarning``): the programs whose next diagonal falls at
+        development ages they have never observed, which make the view
+        expensive (or, reweighting only, approximate). Empty when the
+        programs share their ages.
         """
 
 @final
@@ -18731,6 +18757,43 @@ class LatestDiagonal:
         """
 
 @final
+class LatticeBucket:
+    """
+    The bucket ``lattice_bucket`` chose for a discrete severity.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def lattice(self, /) -> tuple[float, float] |None:
+        """
+        ``(step, residual)`` of the atoms' dyadic lattice, or ``None``.
+        """
+    @property
+    def log2(self, /) -> int:
+        """
+        ``2**log2`` points hold the extent at ``step``.
+        """
+    @property
+    def log2_required(self, /) -> int |None:
+        """
+        The ``log2`` the lattice would need, when the given one is too small.
+        """
+    @property
+    def on_lattice(self, /) -> bool:
+        """
+        Whether every atom is a multiple of ``step``.
+        """
+    @property
+    def step(self, /) -> float:
+        """
+        The bucket size.
+        """
+    @property
+    def warning(self, /) -> str |None:
+        """
+        ``aggregate``'s ``LatticeGridWarning`` text, or ``None``.
+        """
+
+@final
 class Layer:
     """
     A per-occurrence excess-of-loss layer: ``limit`` xs ``attachment`` on each
@@ -18969,6 +19032,12 @@ class Layer:
         The deductions as ``(label, basis, value, inside_nmbf)``.
         """
     @property
+    def disappearing(self, /) -> float |None:
+        """
+        The end of a disappearing deductible (``with_disappearing``), or
+        ``None``.
+        """
+    @property
     def drop_down(self, /) -> tuple[str, float] |None:
         """
         A top-and-drop cover as ``(underlying, attachment)``, or ``None``.
@@ -19019,6 +19088,33 @@ class Layer:
     def nth_event(self, /) -> tuple[int, float] |None:
         """
         An nth-event cover as ``(n, threshold)``, or ``None``.
+        """
+    def occurrence_moments(self, /, severity: Any) -> list[float]:
+        """
+        The first three raw moments of one occurrence's recovery at 100%,
+        before annual terms, for a ground-up loss with distribution
+        ``severity``, exact for an ordinary, franchise or disappearing
+        deductible on the loss basis. Divide by ``1 - severity.cdf(attachment)``
+        for the moments of a loss that reaches the layer, as ``aggregate``
+        reports a layered severity.
+        
+        Parameters
+        ----------
+        severity : a severity distribution
+        
+        Returns
+        -------
+        list of float
+            ``[E[g], E[g**2], E[g**3]]``.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Lognormal
+        >>> from prospicio.reinsurance import Layer
+        >>> x = Lognormal.from_mean_cv(100.0, 1.0)
+        >>> m = Layer("D", 300.0, 50.0).with_disappearing(100.0).occurrence_moments(x)
+        >>> round(m[0] / (1 - x.cdf(50.0)), 6)
+        112.607961
         """
     @property
     def premium(self, /) -> float:
@@ -19393,6 +19489,31 @@ class Layer:
         >>> from prospicio.reinsurance import Layer
         >>> Layer("5x5", 5e6, 5e6, share=0.4).with_deposit_premium(1e6).premium
         400000.0
+        """
+    def with_disappearing(self, /, end: float) -> Layer:
+        """
+        The same layer with a disappearing deductible, ``aggregate``'s
+        ``y xs d1 to d2 disappearing``: the retention falls linearly from the
+        attachment ``d1`` to 0 as the loss rises from ``d1`` to ``end``, so a
+        loss pays nothing up to ``d1``, ``k (x - d1)`` with
+        ``k = end / (end - d1)`` up to ``end`` and the whole loss above, each
+        capped at the limit. On the loss basis only; not with a franchise or
+        a top-and-drop cover.
+        
+        Parameters
+        ----------
+        end : float
+            Above the attachment.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> Layer("D", 300.0, 50.0).with_disappearing(100.0).ceded_by_event([40.0, 75.0, 250.0, 400.0])
+        [0.0, 50.0, 250.0, 300.0]
         """
     def with_franchise(self, /) -> Layer:
         """
@@ -36767,6 +36888,19 @@ def double_lift(y: Sequence[float], pred_a: Sequence[float], pred_b: Sequence[fl
         ``actual_relativity``, ``a_relativity`` and ``b_relativity`` per band.
     """
 
+def dyadic_lattice_step(atoms: Sequence[float], depth: int = 16) -> tuple[float, float] |None:
+    """
+    The dyadic step of the lattice the ``atoms`` lie on, ``aggregate``
+    2.1.0's ``_dyadic_lattice_step``: ``(step, residual)``, or ``None`` when
+    there is none within ``depth`` binary levels (decimal atoms such as 0.1).
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import dyadic_lattice_step
+    >>> dyadic_lattice_step([3.0, 6.0, 9.0]), dyadic_lattice_step([0.1, 0.2])
+    ((3.0, 0.0), None)
+    """
+
 def elpd_loo(log_lik: Sequence[Sequence[float]], r_eff: Sequence[float] |None = None) -> Elpd:
     """
     Leave-one-out cross-validation by Pareto-smoothed importance sampling
@@ -37874,6 +38008,44 @@ def ks_uniform(values: Sequence[float]) -> float:
     float
     """
 
+def lattice_bucket(atoms: Sequence[float], extent: float, log2: int) -> LatticeBucket:
+    """
+    A bucket for a compound distribution of a discrete severity on
+    ``atoms`` covering ``extent`` within ``2**log2`` points, ``aggregate``
+    2.1.0's lattice rule: the first lattice candidate that fits, so every
+    atom sits on a grid point, or a coarser bucket with a warning naming the
+    ``log2`` the lattice needs.
+    
+    Parameters
+    ----------
+    atoms : list of float
+    extent : float
+    log2 : int
+    
+    Returns
+    -------
+    LatticeBucket
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import lattice_bucket
+    >>> b = lattice_bucket([1000.0, 3000.0, 7000.0], 300_000.0, 8)
+    >>> b.step, b.on_lattice, b.log2_required
+    (2000.0, False, 9)
+    """
+
+def lattice_candidates(h: float) -> list[float]:
+    """
+    The buckets tried for a lattice step ``h``: the largest nice bucket
+    dividing it, then ``h``, ``aggregate`` 2.1.0's ``_lattice_candidates``.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import lattice_candidates
+    >>> lattice_candidates(3.0), lattice_candidates(0.75)
+    ([1.0, 3.0], [0.25, 0.75])
+    """
+
 def layer_at_shift(ultimate: Any, layer: Any, shift: float) -> float:
     """
     The expected loss to the layer of one claim at the maturity whose
@@ -38619,7 +38791,7 @@ def occurrence_cession_statistics(frequency: Any, severity: Grid, layers: Sequen
     3.0
     """
 
-def occurrence_exceedance(frequency: Any, severity: Any, x: float) -> float:
+def occurrence_exceedance(frequency: Any, severity: Any, x: float, tower: Tower |None = None, view: str = "ceded") -> float:
     """
     The chance that the year's largest occurrence exceeds ``x``,
     ``1 - G_N(F(x))`` with ``G_N`` the count's generating function: the
@@ -38630,6 +38802,12 @@ def occurrence_exceedance(frequency: Any, severity: Any, x: float) -> float:
     frequency : a claim count
     severity : a severity
     x : float
+        A loss of the view.
+    tower : Tower, optional
+        An occurrence program; with it the curve is of ``view``.
+    view : str, default "ceded"
+        ``"gross"``, ``"ceded"`` (the tower's total ceded loss of an
+        occurrence, before annual terms) or ``"net"``.
     
     Returns
     -------
@@ -38688,11 +38866,17 @@ def occurrence_layer_statistics(frequency: Any, severity: Grid, share: float, li
     (0.3, 0.9, 1.2)
     """
 
-def occurrence_pml(frequency: Any, severity: Any, p: float) -> OccurrencePml:
+def occurrence_pml(frequency: Any, severity: Any, p: float, tower: Tower |None = None, view: str = "ceded") -> OccurrencePml:
     """
     The occurrence PML at an annual probability ``p``: the loss whose
     occurrence exceedance is ``p``, for any claim count (the Python package
-    ``aggregate``'s ``oep`` covers Poisson counts).
+    ``aggregate``'s ``oep`` covers Poisson counts). With an occurrence
+    program ``tower`` it is the PML of the ceded or net loss, the program's
+    function of the gross PML, as ``aggregate`` 2.1.0's ``oep`` on an
+    ``occurrence ceded to`` or ``net of`` clause; annual terms do not enter.
+    Where the view is flat (a layer placed in full, for the net) its
+    ``severity_survival`` is the gross survival at the end of that stretch,
+    so the achieved probability falls below ``p``.
     
     Parameters
     ----------
@@ -38700,6 +38884,10 @@ def occurrence_pml(frequency: Any, severity: Any, p: float) -> OccurrencePml:
     severity : a severity
     p : float
         In ``(0, 1 - P(N = 0))``.
+    tower : Tower, optional
+        An occurrence program on the loss basis.
+    view : str, default "ceded"
+        ``"gross"``, ``"ceded"`` or ``"net"``, with ``tower``.
     
     Returns
     -------

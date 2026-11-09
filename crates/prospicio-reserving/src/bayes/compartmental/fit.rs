@@ -845,6 +845,7 @@ impl Compartmental {
             refit_warnings: draws.refit_warnings,
             k_threshold: settings.k_threshold,
             approximate,
+            warnings: Vec::new(),
         })
     }
 

@@ -310,6 +310,37 @@ fn audit_grid_rust(
     Ok(grid_audit_list(&a))
 }
 
+/// `c(step, residual)` of the atoms' dyadic lattice, or NULL.
+#[extendr]
+fn dyadic_lattice_step_rust(atoms: &[f64], depth: f64) -> Result<Robj> {
+    let depth = whole(depth, "depth")? as u32;
+    Ok(
+        match prospicio_aggregate::dyadic_lattice_step(atoms, depth) {
+            Some((s, r)) => Robj::from(vec![s, r]),
+            None => Robj::from(()),
+        },
+    )
+}
+
+#[extendr]
+fn lattice_candidates_rust(h: f64) -> Vec<f64> {
+    prospicio_aggregate::lattice_candidates(h)
+}
+
+#[extendr]
+fn lattice_bucket_rust(atoms: &[f64], extent: f64, log2: f64) -> Result<List> {
+    let log2 = whole(log2, "log2")? as u32;
+    let b = prospicio_aggregate::lattice_bucket(atoms, extent, log2).map_err(to_r)?;
+    Ok(list!(
+        step = b.step,
+        log2 = b.log2,
+        lattice = b.lattice.map(|(s, r)| vec![s, r]).unwrap_or_default(),
+        on_lattice = b.on_lattice,
+        log2_required = b.log2_required.map_or(f64::NAN, f64::from),
+        warning = b.warning.unwrap_or_default()
+    ))
+}
+
 /// The same audit for a sum of independent units.
 #[extendr]
 fn audit_portfolio_grid_rust(
@@ -957,24 +988,75 @@ fn ylt_file_hash_rust(path: &str) -> Result<String> {
     Ok(prospicio_aggregate::ylt::hash_bytes(&bytes))
 }
 
-/// The occurrence exceedance `1 − G_N(F(x))` at each `x`.
+/// The program's tower and view, or `None` for the gross curve.
+fn program(
+    tower: &Robj,
+    view: &str,
+) -> Result<
+    Option<(
+        prospicio_aggregate::Tower,
+        prospicio_aggregate::OccurrenceView,
+    )>,
+> {
+    if tower.is_null() {
+        return Ok(None);
+    }
+    let t = <&crate::reinsurance::ReinsuranceTower>::try_from(tower)
+        .map_err(|_| Error::Other("expected a reinsurance_tower".into()))?;
+    let view = prospicio_aggregate::OccurrenceView::from_name(view).map_err(to_r)?;
+    Ok(Some((t.inner.clone(), view)))
+}
+
+/// The occurrence exceedance `1 − G_N(F(x))` at each `x`, of a program's
+/// ceded or net loss with a tower.
 #[extendr]
-fn occurrence_exceedance_rust(frequency: Robj, severity: Robj, x: &[f64]) -> Result<Vec<f64>> {
+fn occurrence_exceedance_rust(
+    frequency: Robj,
+    severity: Robj,
+    x: &[f64],
+    tower: Robj,
+    view: &str,
+) -> Result<Vec<f64>> {
     let n = AnyCount::from_robj(&frequency)?;
     let sev = severity_from_robj(&severity)?;
-    Ok(x.iter()
-        .map(|&x| prospicio_aggregate::occurrence_exceedance(n.as_counting(), &sev, x))
-        .collect())
+    match program(&tower, view)? {
+        None => Ok(x
+            .iter()
+            .map(|&x| prospicio_aggregate::occurrence_exceedance(n.as_counting(), &sev, x))
+            .collect()),
+        Some((t, v)) => x
+            .iter()
+            .map(|&x| {
+                prospicio_aggregate::program_occurrence_exceedance(n.as_counting(), &sev, &t, v, x)
+                    .map_err(to_r)
+            })
+            .collect(),
+    }
 }
 
 /// The occurrence PML at each annual probability, as columns.
 #[extendr]
-fn occurrence_pml_rust(frequency: Robj, severity: Robj, p: &[f64]) -> Result<List> {
+fn occurrence_pml_rust(
+    frequency: Robj,
+    severity: Robj,
+    p: &[f64],
+    tower: Robj,
+    view: &str,
+) -> Result<List> {
     let n = AnyCount::from_robj(&frequency)?;
     let sev = severity_from_robj(&severity)?;
+    let prog = program(&tower, view)?;
     let pmls = p
         .iter()
-        .map(|&p| prospicio_aggregate::occurrence_pml(n.as_counting(), &sev, p).map_err(to_r))
+        .map(|&p| {
+            match &prog {
+                None => prospicio_aggregate::occurrence_pml(n.as_counting(), &sev, p),
+                Some((t, v)) => {
+                    prospicio_aggregate::program_occurrence_pml(n.as_counting(), &sev, t, *v, p)
+                }
+            }
+            .map_err(to_r)
+        })
         .collect::<Result<Vec<_>>>()?;
     let column = |f: fn(&prospicio_aggregate::OccurrencePml) -> f64| -> Vec<f64> {
         pmls.iter().map(f).collect()
@@ -1611,6 +1693,9 @@ extendr_module! {
     fn recommend_grid_rust;
     fn recommend_portfolio_grid_rust;
     fn audit_grid_rust;
+    fn dyadic_lattice_step_rust;
+    fn lattice_candidates_rust;
+    fn lattice_bucket_rust;
     fn audit_portfolio_grid_rust;
     fn round_bucket_rust;
     fn occurrence_exceedance_rust;

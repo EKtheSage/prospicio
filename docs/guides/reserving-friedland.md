@@ -3,35 +3,29 @@
 <!-- site: execute -->
 
 Jacqueline Friedland's *Estimating Unpaid Claims Using Basic Techniques*
-(Casualty Actuarial Society, version 3, 2010) is the CAS syllabus text on
-reserving. It applies each technique to the same few data sets, so the results
-of one chapter feed the next. The development factors of chapter 7 become the
-reporting pattern of chapters 9 and 10. The expected claims of chapter 8 become
-the prior of chapter 9. This guide follows that path in prospicio with the
-book's data, and prints the book's figures next to prospicio's.
+(Casualty Actuarial Society, version 3, 2010) applies each technique to the
+same data sets, so each chapter feeds the next: the chapter 7 factors become
+the reporting pattern of chapters 9 and 10, and the chapter 8 expected claims
+become the prior of chapter 9. The tables put the book's figures next to
+prospicio's.
 
-The text and exhibits are Friedland's. This guide explains them in new words
-and recomputes the numbers. Exhibit numbers are the book's. They restart in
-every chapter, so "Exhibit II" always comes with its chapter. Money is in
-thousands of dollars, as in the exhibits. For the choice between methods on
-your own data, read [`reserving-methods.md`](reserving-methods.md).
+Exhibit numbers restart in every chapter. Money is in thousands of dollars. To
+choose a method for your own data, read [`reserving-methods.md`](reserving-methods.md).
 
 ## 1. The two data sets
 
-Chapters 7 to 10 of the book use two examples.
-
-- **U.S. Industry Auto**: reported and paid claims of the whole U.S. private
-  passenger auto industry, with earned premium. The accident years are 1998 to
-  2007, valued at December 31, 2007. The data is large and stable, so every
-  method should agree.
+- **U.S. Industry Auto**: reported and paid claims and earned premium of the
+  whole U.S. private passenger auto industry, accident years 1998 to 2007,
+  valued at December 31, 2007. The data is large and stable, so the methods
+  should agree.
 - **XYZ Insurer, Auto BI**: the bodily injury book of a small insurer, accident
-  years 1998 to 2008, valued at December 31, 2008. Its case reserving, its
-  settlement speed and a tort reform all changed. Thus the methods disagree,
-  which is the purpose of the example. The data has only calendar years 2000
-  to 2008, so the two oldest rows start at 36 and 24 months.
+  years 1998 to 2008, valued at December 31, 2008. Its case reserving,
+  settlement speed and a tort reform all changed, so the methods disagree. The
+  data has only calendar years 2000 to 2008, so the two oldest rows start at 36
+  and 24 months.
 
-The triangles come from chapter 7, Exhibits I and II (sheets 1 and 2). The
-premiums come from chapter 8, Exhibits II and III:
+The triangles are from chapter 7, Exhibits I and II (sheets 1 and 2), the
+premiums from chapter 8, Exhibits II and III:
 
 ```python
 from prospicio.reserving import (
@@ -136,24 +130,20 @@ origin
 2000         15676.0  18749.0  21900.0  27144.0  29488.0
 ```
 
-The XYZ rows for 1998 and 1999 start with unobserved cells (`NaN`). prospicio
-keeps them as missing, not zero, so they do not enter any factor.
+The XYZ rows for 1998 and 1999 start with unobserved cells (`NaN`). They stay
+missing, not zero, so no factor uses them.
 
 ## 2. The development technique (chapter 7)
 
 ### Age-to-age factors and their averages
 
-The development technique starts from the link ratios. A link ratio is a cell
-divided by the cell before it in the same row. Friedland shows several averages
-of each column side by side and selects one factor for each age. Her averages
-use only the **latest** few accident years:
+A link ratio is a cell divided by the cell before it in the same row.
+Friedland averages the **latest** few accident years of each column and selects
+one factor for each age: simple averages of the latest 5 and 3, a medial
+average of the latest 5 (without the highest and lowest), volume-weighted
+averages of the latest 5 and 3, and a geometric average of the latest 4.
 
-- simple averages of the latest 5 and 3
-- a medial average of the latest 5, without the highest and lowest
-- volume-weighted averages of the latest 5 and 3
-- a geometric average of the latest 4.
-
-Each of them is an option of `ChainLadder`:
+`ChainLadder` takes each as an option:
 
 - `average=` selects the mean (`"volume"`, `"simple"`, `"regression"` or
   `"geometric"`).
@@ -162,10 +152,12 @@ Each of them is an option of `ChainLadder`:
 - `drop_high=` and `drop_low=` remove the highest and lowest of those. A medial
   average is a simple average with one of each removed.
 
-The `n_links` of a fit gives the number of link ratios in the average of each
-factor:
+`n_links` counts the link ratios in each factor's average:
 
 ```python
+import pandas as pd
+from great_tables import GT
+
 AVERAGES = {
     "simple, latest 5": ChainLadder(average="simple", n_periods=5),
     "simple, latest 3": ChainLadder(average="simple", n_periods=3),
@@ -175,28 +167,29 @@ AVERAGES = {
     "geometric, latest 4": ChainLadder(average="geometric", n_periods=4),
 }
 fits = {name: method.fit(us, "reported") for name, method in AVERAGES.items()}
-for name, fit in fits.items():
-    print(f"{name:20s}", " ".join(f"{f:.3f}" for f in fit.ldf))
-print(f"{'n_links, medial 5x1':20s}", " ".join(f"{n:5d}" for n in fits["medial, latest 5x1"].n_links))
+LINKS = [f"{a}-{a + 12}" for a in us.development[:-1]]
+rows = [[name, *fit.ldf] for name, fit in fits.items()]
+rows.append(["links in the medial average", *fits["medial, latest 5x1"].n_links])
+factors = pd.DataFrame(rows, columns=["average", *LINKS])
+(GT(factors, rowname_col="average")
+ .tab_header("U.S. Industry Auto, reported: age-to-age factors", "Months; the last row counts the link ratios in the medial average")
+ .fmt_number(LINKS, rows=list(range(6)), decimals=3)
+ .fmt_integer(LINKS, rows=[6]))
 ```
 
 ```text
-simple, latest 5     1.168 1.058 1.027 1.011 1.004 1.003 1.002 1.001 1.000
-simple, latest 3     1.164 1.056 1.027 1.012 1.005 1.003 1.002 1.001 1.000
-medial, latest 5x1   1.165 1.057 1.027 1.010 1.004 1.003 1.002 1.001 1.000
-volume, latest 5     1.168 1.058 1.027 1.011 1.004 1.003 1.002 1.001 1.000
-volume, latest 3     1.164 1.056 1.027 1.012 1.005 1.003 1.002 1.001 1.000
-geometric, latest 4  1.164 1.057 1.027 1.011 1.004 1.003 1.002 1.001 1.000
-n_links, medial 5x1      3     3     3     3     3     2     1     2     1
+                             12-24  24-36  36-48  48-60  60-72  72-84  84-96  96-108  108-120
+simple, latest 5             1.168  1.058  1.027  1.011  1.004  1.003  1.002   1.001    1.000
+simple, latest 3             1.164  1.056  1.027  1.012  1.005  1.003  1.002   1.001    1.000
+medial, latest 5x1           1.165  1.057  1.027  1.010  1.004  1.003  1.002   1.001    1.000
+volume, latest 5             1.168  1.058  1.027  1.011  1.004  1.003  1.002   1.001    1.000
+volume, latest 3             1.164  1.056  1.027  1.012  1.005  1.003  1.002   1.001    1.000
+geometric, latest 4          1.164  1.057  1.027  1.011  1.004  1.003  1.002   1.001    1.000
+links in the medial average      3      3      3      3      3      2      1       2        1
 ```
 
-Each factor row equals the related row of chapter 7, Exhibit I, sheet 1,
-part 3, to the three printed decimals. The 12-24 factor is at the left and the
-108-120 factor is at the right. The paid averages on sheet 2 agree in the same
-way.
-
-The figure shows the link ratios behind these averages. Each grey line is one
-accident year. The coloured line is the latest-3 average.
+Each factor row equals the book's chapter 7, Exhibit I, sheet 1, part 3, to
+three decimals. The paid averages on sheet 2 agree.
 
 ```python
 import matplotlib.pyplot as plt
@@ -217,45 +210,49 @@ ax.set_title("U.S. Industry Auto, reported: link ratios and the latest-3 average
 ax.legend()
 ```
 
-The book uses two conventions here, and prospicio follows both:
+prospicio follows the book's two conventions:
 
 - When fewer years exist, "latest 5" uses all of them.
-- The medial average of two values is their simple average. The medial average
-  of one value is the value itself. prospicio skips a drop that leaves no link
-  ratio.
+- The medial average of two values is their simple average, and of one value
+  the value itself. prospicio skips a drop that leaves no link ratio.
 
-The last line shows this. Of the five link ratios at 12-24, 3 remain. Of the
-four at 72-84, 2 remain, and of the three at 84-96, 1 remains. The two at
-96-108 and the one at 108-120 all remain.
+In the last row of the first table, 3 of the five link ratios at 12-24 remain,
+2 of the four at 72-84 and 1 of the three at 84-96. The two at 96-108 and the
+one at 108-120 all remain.
 
-The book does not use the all-year averages. This block compares them with
-the latest-3 average:
+The book does not use all-year averages. This table compares them with the
+latest-3 average:
 
 ```python
-print("volume, latest 3 ", " ".join(f"{f:.3f}" for f in ChainLadder(n_periods=3).fit(us, "reported").ldf))
-print("volume, all years", " ".join(f"{f:.3f}" for f in ChainLadder().fit(us, "reported").ldf))
-print("simple, all years", " ".join(f"{f:.3f}" for f in ChainLadder(average="simple").fit(us, "reported").ldf))
+RECENT = {
+    "volume, latest 3": ChainLadder(n_periods=3),
+    "volume, all years": ChainLadder(),
+    "simple, all years": ChainLadder(average="simple"),
+}
+recent = pd.DataFrame([[name, *m.fit(us, "reported").ldf] for name, m in RECENT.items()],
+                      columns=["average", *LINKS])
+(GT(recent, rowname_col="average")
+ .tab_header("U.S. Industry Auto, reported: latest 3 against all years", "Age-to-age factors, months")
+ .fmt_number(LINKS, decimals=3))
 ```
 
 ```text
-volume, latest 3  1.164 1.056 1.027 1.012 1.005 1.003 1.002 1.001 1.000
-volume, all years 1.175 1.058 1.027 1.011 1.004 1.003 1.002 1.001 1.000
-simple, all years 1.175 1.058 1.027 1.011 1.004 1.003 1.002 1.001 1.000
+                   12-24  24-36  36-48  48-60  60-72  72-84  84-96  96-108  108-120
+volume, latest 3   1.164  1.056  1.027  1.012  1.005  1.003  1.002   1.001    1.000
+volume, all years  1.175  1.058  1.027  1.011  1.004  1.003  1.002   1.001    1.000
+simple, all years  1.175  1.058  1.027  1.011  1.004  1.003  1.002   1.001    1.000
 ```
 
-The first line is the book's volume-weighted latest-3 average again. The
-all-year factor at 12-24 (1.175) is much higher than the book's selection of
-1.164. The cause is that the early accident years developed more in their first
-year.
+The all-year factor at 12-24 (1.175) is higher than the book's 1.164 because
+the early accident years developed more in their first year.
 
 ### Selected factors, factors to ultimate, and rounding
 
-For U.S. Industry Auto, Friedland selects the latest-3 averages, rounded to
-three decimals. She uses no tail for reported claims and a tail of 1.002 for
-paid claims. The product of the selected factors is the factor to ultimate
-(CDF). She also rounds the CDF to three decimals before she multiplies it into
-the latest diagonal. In prospicio, give the selected factors as a pattern with
-`ldf=` and `ldf_kind="ldf"`, and a constant tail with `tail=`:
+Friedland selects the latest-3 averages rounded to three decimals, with no
+reported tail and a paid tail of 1.002. Their product is the factor to ultimate
+(CDF), which she rounds to three decimals before she applies it to the latest
+diagonal. Pass the factors as `ldf=` with `ldf_kind="ldf"`, and the tail as
+`tail=`:
 
 ```python
 AGES = us.development
@@ -263,25 +260,49 @@ SEL_REPORTED = [1.164, 1.056, 1.027, 1.012, 1.005, 1.003, 1.002, 1.001, 1.000]
 SEL_PAID = [1.702, 1.186, 1.091, 1.044, 1.019, 1.009, 1.005, 1.002, 1.002]
 dev_r = ChainLadder(ldf=dict(zip(AGES, SEL_REPORTED)), ldf_kind="ldf").fit(us, "reported")
 dev_p = ChainLadder(ldf=dict(zip(AGES, SEL_PAID)), ldf_kind="ldf", tail=1.002).fit(us, "paid")
-print("reported CDF", " ".join(f"{c:.5f}" for c in dev_r.cdf))
-print("paid CDF    ", " ".join(f"{c:.5f}" for c in dev_p.cdf))
-print(f"total ultimate: reported {sum(dev_r.ultimate):,.0f} (book 569,172,456)")
-print(f"                paid     {sum(dev_p.ultimate):,.0f} (book 572,041,099)")
+cdfs = pd.DataFrame([["reported", *dev_r.cdf], ["paid", *dev_p.cdf]], columns=["claims", *map(str, AGES)])
+(GT(cdfs, rowname_col="claims")
+ .tab_header("U.S. Industry Auto: factors to ultimate from the selected factors", "CDF by age in months")
+ .fmt_number([str(a) for a in AGES], decimals=5))
 ```
 
 ```text
-reported CDF 1.29163 1.10964 1.05080 1.02317 1.01104 1.00601 1.00300 1.00100 1.00000 1.00000
-paid CDF     2.39003 1.40425 1.18402 1.08526 1.03952 1.02014 1.01104 1.00601 1.00400 1.00200
-total ultimate: reported 569,136,323 (book 569,172,456)
-                paid     572,052,982 (book 572,041,099)
+               12       24       36       48       60       72       84       96      108      120
+reported  1.29163  1.10964  1.05080  1.02317  1.01104  1.00601  1.00300  1.00100  1.00000  1.00000
+paid      2.39003  1.40425  1.18402  1.08526  1.03952  1.02014  1.01104  1.00601  1.00400  1.00200
 ```
 
-The totals differ from the book by 36,133 and 11,883 (thousands). The cause is
-the rounding of the CDF. The product of the reported factors from 12 months is
-1.29163, but the book prints and uses 1.292. To reproduce the book, give its
-rounded CDFs as the pattern, with `ldf_kind="cdf"`. A pattern that reaches the
-oldest age with no `tail=` keeps its last value as the tail. Thus the paid CDF
-of 1.002 at 120 months is the tail:
+The totals differ from the book's:
+
+```python
+def vs_book(items, title, subtitle=None):
+    """prospicio against the book; items are (measure, prospicio, book or None, decimals)."""
+    frame = pd.DataFrame({
+        "measure": [i[0] for i in items],
+        "prospicio": [i[1] for i in items],
+        "book": [i[2] for i in items],
+        "difference": [None if i[2] is None else i[1] - i[2] for i in items],
+    })
+    table = GT(frame, rowname_col="measure").tab_header(title, subtitle)
+    for k, item in enumerate(items):
+        table = table.fmt_number(["prospicio", "book", "difference"], rows=[k], decimals=item[3])
+    return table.sub_missing(missing_text="")
+
+
+vs_book([("reported", sum(dev_r.ultimate), 569172456, 0), ("paid", sum(dev_p.ultimate), 572041099, 0)],
+        "U.S. Industry Auto: total ultimate from the unrounded CDFs", "Thousands of dollars")
+```
+
+```text
+            prospicio         book  difference
+reported  569,136,323  569,172,456     -36,133
+paid      572,052,982  572,041,099      11,883
+```
+
+The cause is the rounding of the CDF: the reported factors multiply to 1.29163
+from 12 months, but the book uses 1.292. Pass the book's rounded CDFs with
+`ldf_kind="cdf"`. A pattern that reaches the oldest age with no `tail=` keeps
+its last value as the tail, so the paid CDF of 1.002 at 120 months is the tail:
 
 ```python
 CDF_REPORTED = [1.292, 1.110, 1.051, 1.023, 1.011, 1.006, 1.003, 1.001, 1.000, 1.000]
@@ -300,15 +321,36 @@ BOOK_DEV = {  # chapter 7, Exhibit I, sheet 3, columns (7) and (8)
     "paid": [47739475, 51204536, 54860424, 56493084, 58963359,
              58167880, 58345519, 59963673, 61223522, 65079626],
 }
-print(f"{'year':>4s} {'reported':>12s} {'book':>12s} {'paid':>12s} {'book':>12s}")
-for y, a, b, c, d in zip(US_YEARS, dev_r.ultimate, BOOK_DEV["reported"], dev_p.ultimate, BOOK_DEV["paid"]):
-    print(f"{y:4d} {a:12,.0f} {b:12,} {c:12,.0f} {d:12,}")
-print(f"{'all':>4s} {sum(dev_r.ultimate):12,.0f} {569172456:12,} {sum(dev_p.ultimate):12,.0f} {572041099:12,}")
+
+
+def compare(years, columns, title, subtitle=None, ratio=None):
+    """prospicio's ultimates beside the book's; columns: name -> (ultimates, book, book total)."""
+    frame = pd.DataFrame({"year": [*map(str, years), "all"]})
+    if ratio is not None:
+        frame["ratio"] = [*ratio, None]
+    pairs = {}
+    for name, (ultimate, book, total) in columns.items():
+        frame[name] = [*ultimate, sum(ultimate)]
+        frame[f"{name} (book)"] = [*book, total]
+        pairs[name] = [name, f"{name} (book)"]
+    values = [c for p in pairs.values() for c in p]
+    table = GT(frame, rowname_col="year").tab_header(title, subtitle).fmt_integer(values)
+    if ratio is not None:
+        table = table.fmt_number("ratio", decimals=3).cols_label(ratio="expected claim ratio")
+    for name, cols in pairs.items():
+        table = table.tab_spanner(name, cols)
+    labels = {c: ("book" if c.endswith("(book)") else "prospicio") for c in values}
+    return table.cols_label(**labels).sub_missing(missing_text="")
+
+
+compare(US_YEARS, {"reported": (dev_r.ultimate, BOOK_DEV["reported"], 569172456),
+                   "paid": (dev_p.ultimate, BOOK_DEV["paid"], 572041099)},
+        "U.S. Industry Auto: ultimate by accident year", "Development technique, thousands of dollars")
 ```
 
 ```text
 paid tail 1.002
-year     reported         book         paid         book
+        prospicio         book    prospicio         book
 1998   47,742,304   47,742,304   47,739,475   47,739,475
 1999   51,185,767   51,185,767   51,204,536   51,204,536
 2000   54,892,767   54,892,767   54,860,424   54,860,424
@@ -319,18 +361,13 @@ year     reported         book         paid         book
 2005   59,682,517   59,682,517   59,963,673   59,963,673
 2006   60,651,886   60,651,886   61,223,522   61,223,522
 2007   63,118,803   63,118,803   65,079,626   65,079,626
- all  569,172,456  569,172,456  572,041,099  572,041,099
+all   569,172,456  569,172,456  572,041,099  572,041,099
 ```
 
-Each ultimate now equals sheet 3 to the thousand dollars. The unpaid claim
-estimate follows sheet 4 of the book:
-
-- IBNR is ultimate less reported claims.
-- The total unpaid is ultimate less paid claims, which is IBNR plus case
-  outstanding.
-
-prospicio's `reserve` is ultimate less the latest value of the column. On the
-reported triangle it is IBNR, and on the paid triangle it is the total unpaid:
+Each ultimate now equals sheet 3. On sheet 4, IBNR is ultimate less reported
+claims and total unpaid is ultimate less paid claims. prospicio's `reserve` is
+ultimate less the latest value of the fitted column: IBNR on the reported
+triangle, total unpaid on the paid one:
 
 ```python
 def unpaid(ultimate, tri=us):
@@ -339,25 +376,28 @@ def unpaid(ultimate, tri=us):
     return sum(ultimate) - reported, sum(ultimate) - paid
 
 
+items = []
 for name, fit, book in [("reported", dev_r, (25690869, 71122088)), ("paid", dev_p, (28559512, 73990731))]:
     ibnr, total = unpaid(fit.ultimate)
-    print(f"{name:8s} IBNR {ibnr:11,.0f} (book {book[0]:11,})  total unpaid {total:11,.0f} (book {book[1]:11,})")
-print(f"paid reserve = total unpaid: {dev_p.total_reserve:,.0f}")
+    items += [(f"{name}: IBNR", ibnr, book[0], 0), (f"{name}: total unpaid", total, book[1], 0)]
+items.append(("paid: reserve", dev_p.total_reserve, 73990731, 0))
+vs_book(items, "U.S. Industry Auto: unpaid claims, development technique", "Thousands of dollars")
 ```
 
 ```text
-reported IBNR  25,690,869 (book  25,690,869)  total unpaid  71,122,088 (book  71,122,088)
-paid     IBNR  28,559,512 (book  28,559,512)  total unpaid  73,990,731 (book  73,990,731)
-paid reserve = total unpaid: 73,990,731
+                         prospicio        book  difference
+reported: IBNR          25,690,869  25,690,869           0
+reported: total unpaid  71,122,088  71,122,088           0
+paid: IBNR              28,559,512  28,559,512           0
+paid: total unpaid      73,990,731  73,990,731           0
+paid: reserve           73,990,731  73,990,731           0
 ```
 
 ### The tail factor
 
-Friedland's tail of 1.002 for paid claims is a judgment. It sets the paid
-development after 120 months equal to the reported claims still open at that
-age (the reported pattern is at 1.000). prospicio can also extrapolate a tail
-from the factors. On this triangle, a fitted exponential curve gives a factor
-near hers:
+Friedland's paid tail of 1.002 is a judgment: it sets the paid development
+after 120 months equal to the claims still open in the reported pattern (at
+1.000). A fitted exponential curve gives a factor near hers:
 
 ```python
 curve = ChainLadder(tail=TailCurve()).fit(us, "paid")
@@ -368,32 +408,35 @@ print(f"fitted tail {curve.tail:.4f}, book's selection 1.002")
 fitted tail 1.0011, book's selection 1.002
 ```
 
-The early factors pull a curve fitted to all ages. Thus use the curve
-as a second opinion beside a benchmark such as the reported pattern, as the
-book does. Do not use it as the answer.
+The early factors pull a curve fitted to all ages. Use it as a second opinion
+beside a benchmark, as the book does, not as the answer.
 
 ### XYZ Insurer: unstable factors and a pattern below 1
 
 For XYZ, Friedland selects the volume-weighted average of the latest 2 years at
-every age. She uses no reported tail and a paid tail of 1.010. `n_periods=2`
-gives her selected factors (chapter 7, Exhibit II, sheets 1 and 2, part 4):
+every age, with no reported tail and a paid tail of 1.010. `n_periods=2` gives
+her selected factors (chapter 7, Exhibit II, sheets 1 and 2, part 4):
 
 ```python
-for column in ("reported", "paid"):
-    print(f"{column:8s}", " ".join(f"{f:.3f}" for f in ChainLadder(n_periods=2).fit(xyz, column).ldf))
+XYZ_LINKS = [f"{a}-{a + 12}" for a in xyz.development[:-1]]
+xfactors = pd.DataFrame([[column, *ChainLadder(n_periods=2).fit(xyz, column).ldf] for column in ("reported", "paid")],
+                        columns=["claims", *XYZ_LINKS])
+(GT(xfactors, rowname_col="claims")
+ .tab_header("XYZ Insurer: volume-weighted factors, latest 2 years", "Age-to-age factors, months")
+ .fmt_number(XYZ_LINKS, decimals=3))
 ```
 
 ```text
-reported 1.687 1.265 1.102 1.020 1.050 1.010 1.011 1.000 0.993 0.999
-paid     3.349 2.079 1.574 1.316 1.203 1.136 1.059 1.022 1.017 1.004
+          12-24  24-36  36-48  48-60  60-72  72-84  84-96  96-108  108-120  120-132
+reported  1.687  1.265  1.102  1.020  1.050  1.010  1.011   1.000    0.993    0.999
+paid      3.349  2.079  1.574  1.316  1.203  1.136  1.059   1.022    1.017    1.004
 ```
 
-The book prints the same reported and paid factors. Reported claims fall after
-96 months, because the insurer set case reserves too high and then released
-them. Thus the reported CDFs at 96 and 108 months are 0.992, less than 1. A
-selected pattern with `ldf_kind="cdf"` needs only positive CDFs, in any order.
-Thus the book's rounded CDFs go in directly, for reported claims as well as
-for paid claims:
+The book prints the same factors. Reported claims fall after 96 months
+because the insurer set case reserves too high and then released them, so the
+reported CDFs at 96 and 108 months are 0.992, below 1. A pattern with
+`ldf_kind="cdf"` accepts any positive CDFs, so the book's rounded CDFs go in
+directly:
 
 ```python
 XYZ_AGES = xyz.development
@@ -406,59 +449,45 @@ BOOK_XDEV = {  # chapter 7, Exhibit II, sheet 3, columns (7) and (8)
     "reported": [15822, 25082, 36948, 38487, 48313, 44950, 74787, 76661, 58370, 47979, 47530],
     "paid": [15980, 25164, 37922, 40600, 49592, 49858, 80537, 80333, 72108, 77941, 74995],
 }
-
-
-def compare(years, columns, width=8):
-    """Print prospicio's ultimates beside the book's; columns: name -> (ultimates, book, book total)."""
-    print("year " + " ".join(f"{n:>{width}s} {'book':>{width}s}" for n in columns))
-    for i, y in enumerate(years):
-        print(f"{y:4d} " + " ".join(f"{u[i]:{width},.0f} {b[i]:{width},}" for u, b, _ in columns.values()))
-    print(" all " + " ".join(f"{sum(u):{width},.0f} {t:{width},}" for u, _, t in columns.values()))
-
-
 compare(XYZ_YEARS, {"reported": (xdev_r.ultimate, BOOK_XDEV["reported"], 514929),
-                    "paid": (xdev_p.ultimate, BOOK_XDEV["paid"], 605030)})
+                    "paid": (xdev_p.ultimate, BOOK_XDEV["paid"], 605030)},
+        "XYZ Insurer: ultimate by accident year", "Development technique, thousands of dollars")
 ```
 
 ```text
-year reported     book     paid     book
-1998   15,822   15,822   15,980   15,980
-1999   25,082   25,082   25,164   25,164
-2000   36,948   36,948   37,922   37,922
-2001   38,488   38,487   40,599   40,600
-2002   48,314   48,313   49,592   49,592
-2003   44,950   44,950   49,858   49,858
-2004   74,786   74,787   80,537   80,537
-2005   76,661   76,661   80,332   80,333
-2006   58,370   58,370   72,108   72,108
-2007   47,979   47,979   77,941   77,941
-2008   47,530   47,530   74,995   74,995
- all  514,929  514,929  605,028  605,030
+      prospicio     book  prospicio     book
+1998     15,822   15,822     15,980   15,980
+1999     25,082   25,082     25,164   25,164
+2000     36,948   36,948     37,922   37,922
+2001     38,488   38,487     40,599   40,600
+2002     48,314   48,313     49,592   49,592
+2003     44,950   44,950     49,858   49,858
+2004     74,786   74,787     80,537   80,537
+2005     76,661   76,661     80,332   80,333
+2006     58,370   58,370     72,108   72,108
+2007     47,979   47,979     77,941   77,941
+2008     47,530   47,530     74,995   74,995
+all     514,929  514,929    605,028  605,030
 ```
 
-The reported total equals the book's 514,929, and the paid total is 2 less than
-605,030. Some single years differ by 1, in both directions (reported 2001, 2002
-and 2004, paid 2001 and 2005). The cause is the rounding of the data, not the
-method. The book's spreadsheet holds claims with decimals and prints them in
-whole thousands.
+The reported total equals the book's. The paid total is 2 less, and some single
+years differ by 1 either way (reported 2001, 2002 and 2004, paid 2001 and
+2005). The cause is the book's data, not the method: its spreadsheet holds
+claims with decimals and prints whole thousands. For example, 38,798 times
+0.992 is 38,487.6, which rounds to 38,488, but 38,797.5 (printed as 38,798)
+gives the book's 38,487. Section 3 shows the same effect in a column total.
 
-For example, 38,798 times 0.992 is 38,487.6, which rounds to 38,488. But a
-latest value of 38,797.5 (printed as 38,798) gives the book's 38,487. Section 3
-shows the same effect in a printed column total.
-
-The two projections differ for the latest years (paid 74,995 against reported
-47,530 for 2008). The faster settlement increases the paid factors, and the
-stronger case reserves increase the reported factors. The book returns to this
-in chapter 13.
+For the latest years the projections differ: faster settlement raises the paid
+factors, and stronger case reserves raise the reported ones. The book returns
+to this in chapter 13.
 
 ## 3. The expected claims technique (chapter 8)
 
-The expected claims technique ignores the claims to date. The ultimate is an
-expected claim ratio times earned premium. For U.S. Industry Auto, Friedland
-selects 75% for 1998 to 2002 and 65% for 2003 to 2007 (chapter 8, Exhibit II,
-sheet 1). When the ratio changes by year, give `apriori` as a dict keyed by
-year, with one ratio for each origin. The premium stays in the exposure column.
-Section 4 of [`reserving-methods.md`](reserving-methods.md) explains this:
+The ultimate is an expected claim ratio times earned premium; the claims to
+date are ignored. For U.S. Industry Auto, Friedland selects 75% for 1998 to
+2002 and 65% for 2003 to 2007 (chapter 8, Exhibit II, sheet 1). A ratio that
+changes by year is `apriori` as a dict keyed by year; the premium stays in the
+exposure column (see section 4 of [`reserving-methods.md`](reserving-methods.md)):
 
 ```python
 US_RATIO = [0.75] * 5 + [0.65] * 5
@@ -466,25 +495,26 @@ us = triangle(US_YEARS, {"reported": US_REPORTED, "paid": US_PAID}, {"premium": 
 US_APRIORI = dict(zip(US_YEARS, US_RATIO))
 ec = ExpectedLoss(apriori=US_APRIORI).fit(us, "reported", "premium")
 ibnr, total = unpaid(ec.ultimate)
-print(f"expected claims {sum(ec.ultimate):,.0f} (book 569,281,839)")
-print(f"IBNR {ibnr:,.0f} (book 25,800,252), total unpaid {total:,.0f} (book 71,231,471)")
-print("IBNR 2000:", f"{ec.reserve[2]:,.0f} (book -3,156,946)")
+vs_book([("expected claims", sum(ec.ultimate), 569281839, 0), ("IBNR", ibnr, 25800252, 0),
+         ("total unpaid", total, 71231471, 0), ("IBNR 2000", ec.reserve[2], -3156946, 0)],
+        "U.S. Industry Auto: expected claims technique", "Thousands of dollars")
 ```
 
 ```text
-expected claims 569,281,839 (book 569,281,839)
-IBNR 25,800,252 (book 25,800,252), total unpaid 71,231,471 (book 71,231,471)
-IBNR 2000: -3,156,946 (book -3,156,946)
+                   prospicio         book  difference
+expected claims  569,281,839  569,281,839           0
+IBNR              25,800,252   25,800,252           0
+total unpaid      71,231,471   71,231,471           0
+IBNR 2000         -3,156,946   -3,156,946           0
 ```
 
-All three totals equal sheet 2 of the book. The expected claims method can give
-negative IBNR, as in 2000. In that year, the 75% ratio is less than the claims
-already reported. The book keeps such values to show the weakness of the method
-on mature years.
+All figures equal sheet 2. IBNR is negative for 2000, where the 75% ratio is
+below the reported claims. The book keeps such values to show the method's
+weakness on mature years.
 
-For XYZ, the selected ratios come from a long adjustment for trend, rate
-changes and tort reform (chapter 8, Exhibit III, sheet 2). This guide uses them
-as printed in sheet 1, column (11):
+For XYZ, the ratios come from a long adjustment for trend, rate changes and
+tort reform (chapter 8, Exhibit III, sheet 2). This guide takes them from sheet
+1, column (11):
 
 ```python
 XYZ_RATIO = [0.783] * 6 + [0.871, 0.783, 0.658, 0.638, 0.825]
@@ -493,26 +523,27 @@ xyz = triangle(XYZ_YEARS, {"reported": XYZ_REPORTED, "paid": XYZ_PAID},
 XYZ_APRIORI = dict(zip(XYZ_YEARS, XYZ_RATIO))
 xec = ExpectedLoss(apriori=XYZ_APRIORI).fit(xyz, "reported", "premium")
 ibnr, total = unpaid(xec.ultimate, xyz)
-print(f"expected claims {sum(xec.ultimate):,.0f} (book 561,516)")
-print(f"IBNR {ibnr:,.0f} (book 111,890), total unpaid {total:,.0f} (book 230,887)")
+vs_book([("expected claims", sum(xec.ultimate), 561516, 0), ("IBNR", ibnr, 111890, 0),
+         ("total unpaid", total, 230887, 0)],
+        "XYZ Insurer: expected claims technique", "Thousands of dollars")
 ```
 
 ```text
-expected claims 561,516 (book 561,516)
-IBNR 111,890 (book 111,890), total unpaid 230,889 (book 230,887)
+                 prospicio     book  difference
+expected claims    561,516  561,516           0
+IBNR               111,890  111,890           0
+total unpaid       230,889  230,887           2
 ```
 
-The expected claims and the IBNR agree. The total unpaid is 2 more than the
-book's because it subtracts paid claims. The book's paid total at December 31,
-2008 is 330,629, but its eleven printed paid values add to 330,627. This is the
-clearest evidence that the exhibits hold claims with decimals and print them
-rounded.
+The total unpaid is 2 more than the book's. The book's paid total at December
+31, 2008 is 330,629, but its eleven printed paid values add to 330,627 (the
+exhibits hold claims with decimals). The other rows agree.
 
 ## 4. The Bornhuetter-Ferguson technique (chapter 9)
 
-Bornhuetter-Ferguson (BF) keeps the claims to date. It adds expected claims
-times the unreported (or unpaid) share, `1 - 1 / CDF`. With the expected claims
-of chapter 8 and the rounded CDFs of chapter 7, prospicio reproduces chapter 9,
+Bornhuetter-Ferguson (BF) keeps the claims to date and adds expected claims
+times the unreported (or unpaid) share, `1 - 1 / CDF`. With chapter 8's
+expected claims and chapter 7's rounded CDFs, prospicio reproduces chapter 9,
 Exhibit I:
 
 ```python
@@ -527,32 +558,44 @@ bf = {
     for col in ("reported", "paid")
 }
 BOOK_BF_US_TOTAL = {"reported": 569091348, "paid": 570568198}
-compare(US_YEARS, {col: (bf[col].ultimate, BOOK_BF_US[col], BOOK_BF_US_TOTAL[col]) for col in bf}, width=11)
-for col, book in [("reported", (25609761, 71040980)), ("paid", (27086611, 72517830))]:
-    ibnr, total = unpaid(bf[col].ultimate)
-    print(f"{col:8s} IBNR {ibnr:11,.0f} (book {book[0]:11,})  total unpaid {total:11,.0f} (book {book[1]:11,})")
+compare(US_YEARS, {col: (bf[col].ultimate, BOOK_BF_US[col], BOOK_BF_US_TOTAL[col]) for col in bf},
+        "U.S. Industry Auto: Bornhuetter-Ferguson ultimate by accident year", "Thousands of dollars")
 ```
 
 ```text
-year    reported        book        paid        book
-1998  47,742,304  47,742,304  47,746,843  47,746,843
-1999  51,185,767  51,185,767  51,205,350  51,205,350
-2000  54,889,558  54,889,558  54,841,461  54,841,461
-2001  56,462,300  56,462,300  56,470,405  56,470,405
-2002  58,947,116  58,947,116  58,972,346  58,972,346
-2003  58,178,105  58,178,105  58,096,743  58,096,743
-2004  58,317,678  58,317,678  58,447,423  58,447,423
-2005  59,754,938  59,754,938  60,151,912  60,151,912
-2006  60,778,247  60,778,247  61,425,942  61,425,942
-2007  62,835,336  62,835,336  63,209,774  63,209,774
- all 569,091,348 569,091,348 570,568,198 570,568,198
-reported IBNR  25,609,761 (book  25,609,761)  total unpaid  71,040,980 (book  71,040,980)
-paid     IBNR  27,086,611 (book  27,086,611)  total unpaid  72,517,830 (book  72,517,830)
+        prospicio         book    prospicio         book
+1998   47,742,304   47,742,304   47,746,843   47,746,843
+1999   51,185,767   51,185,767   51,205,350   51,205,350
+2000   54,889,558   54,889,558   54,841,461   54,841,461
+2001   56,462,300   56,462,300   56,470,405   56,470,405
+2002   58,947,116   58,947,116   58,972,346   58,972,346
+2003   58,178,105   58,178,105   58,096,743   58,096,743
+2004   58,317,678   58,317,678   58,447,423   58,447,423
+2005   59,754,938   59,754,938   60,151,912   60,151,912
+2006   60,778,247   60,778,247   61,425,942   61,425,942
+2007   62,835,336   62,835,336   63,209,774   63,209,774
+all   569,091,348  569,091,348  570,568,198  570,568,198
+```
+
+```python
+items = []
+for col, book in [("reported", (25609761, 71040980)), ("paid", (27086611, 72517830))]:
+    ibnr, total = unpaid(bf[col].ultimate)
+    items += [(f"{col}: IBNR", ibnr, book[0], 0), (f"{col}: total unpaid", total, book[1], 0)]
+vs_book(items, "U.S. Industry Auto: unpaid claims, Bornhuetter-Ferguson", "Thousands of dollars")
+```
+
+```text
+                         prospicio        book  difference
+reported: IBNR          25,609,761  25,609,761           0
+reported: total unpaid  71,040,980  71,040,980           0
+paid: IBNR              27,086,611  27,086,611           0
+paid: total unpaid      72,517,830  72,517,830           0
 ```
 
 All figures agree. For XYZ, the book adds one convention: chapter 9, Exhibit II
-**caps the CDFs at a minimum of 1.00**. Thus a year with a CDF below 1 gets no
-negative unreported claims. The capped pattern is a valid `ldf_kind="cdf"`:
+**caps the CDFs at a minimum of 1.00**, so a year with a CDF below 1 gets no
+negative unreported claims:
 
 ```python
 capped = [max(c, 1.0) for c in CDF_XYZ_REPORTED]
@@ -566,52 +609,63 @@ xbf = {
     for col in ("reported", "paid")
 }
 BOOK_BF_XYZ_TOTAL = {"reported": 513207, "paid": 554471}
-compare(XYZ_YEARS, {col: (xbf[col].ultimate, BOOK_BF_XYZ[col], BOOK_BF_XYZ_TOTAL[col]) for col in xbf})
+compare(XYZ_YEARS, {col: (xbf[col].ultimate, BOOK_BF_XYZ[col], BOOK_BF_XYZ_TOTAL[col]) for col in xbf},
+        "XYZ Insurer: Bornhuetter-Ferguson ultimate by accident year", "Thousands of dollars")
 ```
 
 ```text
-year reported     book     paid     book
-1998   15,822   15,822   15,977   15,977
-1999   25,107   25,107   25,158   25,158
-2000   37,246   37,246   37,841   37,841
-2001   38,798   38,798   40,525   40,525
-2002   48,312   48,312   49,417   49,417
-2003   45,068   45,068   50,768   50,768
-2004   75,492   75,492   82,593   82,593
-2005   79,129   79,129   94,301   94,301
-2006   60,404   60,404   71,205   71,205
-2007   45,221   45,221   45,636   45,636
-2008   42,607   42,607   41,049   41,049
- all  513,207  513,207  554,469  554,471
+      prospicio     book  prospicio     book
+1998     15,822   15,822     15,977   15,977
+1999     25,107   25,107     25,158   25,158
+2000     37,246   37,246     37,841   37,841
+2001     38,798   38,798     40,525   40,525
+2002     48,312   48,312     49,417   49,417
+2003     45,068   45,068     50,768   50,768
+2004     75,492   75,492     82,593   82,593
+2005     79,129   79,129     94,301   94,301
+2006     60,404   60,404     71,205   71,205
+2007     45,221   45,221     45,636   45,636
+2008     42,607   42,607     41,049   41,049
+all     513,207  513,207    554,469  554,471
 ```
 
-Every year agrees for both columns. The paid total is 2 less than the book's
-554,471. The book's total is also 2 more than the sum of its own eleven paid
-rows. The spreadsheet adds unrounded values, as in section 2.
+Every year agrees. The paid total is 2 less than the book's 554,471, which is
+itself 2 more than the sum of the book's eleven paid rows (unrounded values, as
+in section 2).
 
 ## 5. The Benktander technique (chapter 9)
 
-Benktander's method applies Bornhuetter-Ferguson two times. The first BF
-ultimate becomes the expected claims of the second. The book shows the method
-only on its synthetic "changing conditions" scenarios (chapter 9, Exhibits V
-and VI). Thus this guide checks the formula of Exhibit V, column (11): reported
-claims plus the BF ultimate times the percentage unreported. With the book's
-printed U.S. Industry BF ultimates as input, the formula checks prospicio's
-`Benktander(n_iters=2)`:
+Benktander's method applies BF twice: the first BF ultimate becomes the
+expected claims of the second. The book shows it only on synthetic "changing
+conditions" scenarios (chapter 9, Exhibits V and VI), so this guide checks the
+formula of Exhibit V, column (11), reported claims plus the BF ultimate times
+the percentage unreported, on the book's U.S. Industry BF ultimates.
+`Benktander(n_iters=2)` matches it:
 
 ```python
 gb = Benktander(apriori=US_APRIORI, n_iters=2, ldf=US_CDF["reported"], ldf_kind="cdf").fit(us, "reported", "premium")
 latest = us.latest_diagonal()[0][us.columns.index("reported")]
 cdf_by_year = CDF_REPORTED[::-1]  # the oldest year has the oldest age
 by_hand = [r + (1 - 1 / c) * u for r, c, u in zip(latest, cdf_by_year, BOOK_BF_US["reported"])]
-print(f"{'year':>4s} {'prospicio':>11s} {'formula':>11s} {'dev':>11s} {'BF':>11s}")
-for y, a, b, d, f in zip(US_YEARS, gb.ultimate, by_hand, BOOK_DEV["reported"], BOOK_BF_US["reported"]):
-    print(f"{y:4d} {a:11,.0f} {b:11,.0f} {d:11,} {f:11,}")
 print("largest difference under 0.5:", max(abs(a - b) for a, b in zip(gb.ultimate, by_hand)) < 0.5)
 ```
 
 ```text
-year   prospicio     formula         dev          BF
+largest difference under 0.5: True
+```
+
+```python
+benktander = pd.DataFrame({
+    "year": [str(y) for y in US_YEARS], "prospicio": gb.ultimate, "formula": by_hand,
+    "dev": BOOK_DEV["reported"], "BF": BOOK_BF_US["reported"],
+})
+(GT(benktander, rowname_col="year")
+ .tab_header("U.S. Industry Auto: Benktander ultimate, reported", "Thousands of dollars; dev and BF are the book's ultimates")
+ .fmt_integer(["prospicio", "formula", "dev", "BF"]))
+```
+
+```text
+       prospicio     formula         dev          BF
 1998  47,742,304  47,742,304  47,742,304  47,742,304
 1999  51,185,767  51,185,767  51,185,767  51,185,767
 2000  54,892,764  54,892,764  54,892,767  54,889,558
@@ -622,56 +676,51 @@ year   prospicio     formula         dev          BF
 2005  59,686,031  59,686,031  59,682,517  59,754,938
 2006  60,664,409  60,664,409  60,651,886  60,778,247
 2007  63,054,738  63,054,738  63,118,803  62,835,336
-largest difference under 0.5: True
 ```
 
-The two columns agree in every year, within the rounding of the printed BF
-ultimates. Each Benktander ultimate is between the BF ultimate and the
-development ultimate. It is nearer to development where the year is mature.
-The book describes the method as a credibility weighting that always gives more
-weight to development than BF does.
+The columns agree in every year, within the rounding of the printed BF
+ultimates. Each Benktander ultimate lies between the BF and the development
+ultimate, nearer development for mature years: the book calls the method a
+credibility weighting that always weights development more than BF does.
 
 ## 6. The Cape Cod technique (chapter 10)
 
-Cape Cod is Bornhuetter-Ferguson with an expected claim ratio from the data.
-The ratio is reported claims divided by "used-up" premium, which is the premium
-times the percentage reported. For U.S. Industry Auto (chapter 10, Exhibit I):
+Cape Cod is BF with an expected claim ratio from the data: reported claims
+divided by "used-up" premium (premium times the percentage reported). For U.S.
+Industry Auto (chapter 10, Exhibit I):
 
 ```python
 cc = CapeCod(ldf=US_CDF["reported"], ldf_kind="cdf").fit(us, "reported", "premium")
-print(f"expected claim ratio {cc.apriori[0]:.5f} (book prints 69.5%)")
-print(f"ultimate {sum(cc.ultimate):,.0f} (book 570,800,677)")
 ibnr, total = unpaid(cc.ultimate)
-print(f"IBNR {ibnr:,.0f} (book 27,319,090), total unpaid {total:,.0f} (book 72,750,309)")
 flat = BornhuetterFerguson(apriori=0.695, ldf=US_CDF["reported"], ldf_kind="cdf").fit(us, "reported", "premium")
-print(f"BF at exactly 69.5%: ultimate {sum(flat.ultimate):,.0f}")
+vs_book([("expected claim ratio", cc.apriori[0], 0.695, 5), ("ultimate", sum(cc.ultimate), 570800677, 0),
+         ("IBNR", ibnr, 27319090, 0), ("total unpaid", total, 72750309, 0),
+         ("ultimate, BF at exactly 69.5%", sum(flat.ultimate), None, 0)],
+        "U.S. Industry Auto: Cape Cod", "Thousands of dollars; the book prints the ratio as 69.5%")
 ```
 
 ```text
-expected claim ratio 0.69544 (book prints 69.5%)
-ultimate 570,800,677 (book 570,800,677)
-IBNR 27,319,090 (book 27,319,090), total unpaid 72,750,309 (book 72,750,309)
-BF at exactly 69.5%: ultimate 570,783,246
+                                 prospicio         book  difference
+expected claim ratio               0.69544      0.69500     0.00044
+ultimate                       570,800,677  570,800,677           0
+IBNR                            27,319,090   27,319,090           0
+total unpaid                    72,750,309   72,750,309           0
+ultimate, BF at exactly 69.5%  570,783,246                         
 ```
 
-The totals agree to the unit. The book prints the ratio as 69.5%, but its
-spreadsheet holds 69.544%. The last line shows the effect: at exactly 69.5%,
-the ultimate is 17,431 lower.
+The totals agree to the unit. The book's spreadsheet holds a ratio of 69.544%,
+not the printed 69.5%; at exactly 69.5% the ultimate is 17,431 lower.
 
 For XYZ (chapter 10, Exhibit II), Friedland first puts every year on the 2008
-basis:
-
-- premium at current rate levels (column (4), typed below)
-- claims trended at 3.425% a year to 2008 and adjusted for the tort reform
-  (column (8)).
+basis: premium at current rate levels (column (4), typed below), and claims
+trended at 3.425% a year to 2008 and adjusted for the tort reform (column (8)).
 
 The ratio of adjusted reported claims to used-up on-level premium is 70.8%.
-Each year's expected claim ratio is that ratio, taken back to the cost level,
-tort environment and rate level of the year. prospicio's `CapeCod(trend=...)`
-applies a trend of this type, with the ratio of the latest origin as the
-reference. The code applies the tort factor and the rate level by hand. It
-estimates the ratio on the adjusted claims, then gives each year's ratio on the actual premium to a BF
-fit on the actual claims:
+Each year's ratio is that ratio taken back to the year's cost level, tort
+environment and rate level. `CapeCod(trend=...)` applies such a trend, with the
+latest origin as reference. The code applies the tort factor and rate level by
+hand, estimates the ratio on the adjusted claims, then gives each year's ratio
+on the actual premium to a BF fit on the actual claims:
 
 ```python
 ON_LEVEL_PREMIUM = [19783, 30548, 42784, 46606, 55911, 60204, 80411, 97258, 68850, 49950, 47797]
@@ -684,42 +733,40 @@ print(f"adjusted expected claim ratio {ratio.apriori[-1]:.4f} (book 70.8%)")
 cc_expected = [a * p / t for a, p, t in zip(ratio.apriori, ON_LEVEL_PREMIUM, TORT)]
 cc_ratio = {y: e / p for y, e, p in zip(XYZ_YEARS, cc_expected, XYZ_PREMIUM)}
 xcc = BornhuetterFerguson(apriori=cc_ratio, ldf=XYZ_CDF["reported"], ldf_kind="cdf").fit(xyz, "reported", "premium")
-print("unadjusted ratios", " ".join(f"{r:.3f}" for r in cc_ratio.values()))
 BOOK_CC_XYZ = [15822, 25107, 37246, 38798, 48313, 45062, 74754, 77931, 58759, 43307, 39201]
-compare(XYZ_YEARS, {"Cape Cod": (xcc.ultimate, BOOK_CC_XYZ, 504300)})
+compare(XYZ_YEARS, {"Cape Cod": (xcc.ultimate, BOOK_CC_XYZ, 504300)},
+        "XYZ Insurer: Cape Cod ultimate by accident year",
+        "Thousands of dollars; the ratio is on the actual premium", ratio=list(cc_ratio.values()))
 ```
 
 ```text
 adjusted expected claim ratio 0.7078 (book 70.8%)
-unadjusted ratios 0.746 0.757 0.767 0.778 0.789 0.777 0.747 0.672 0.565 0.547 0.708
-year Cape Cod     book
-1998   15,822   15,822
-1999   25,107   25,107
-2000   37,246   37,246
-2001   38,798   38,798
-2002   48,313   48,313
-2003   45,063   45,062
-2004   74,754   74,754
-2005   77,931   77,931
-2006   58,759   58,759
-2007   43,307   43,307
-2008   39,201   39,201
- all  504,300  504,300
+      expected claim ratio  prospicio     book
+1998                 0.746     15,822   15,822
+1999                 0.757     25,107   25,107
+2000                 0.767     37,246   37,246
+2001                 0.778     38,798   38,798
+2002                 0.789     48,313   48,313
+2003                 0.777     45,063   45,062
+2004                 0.747     74,754   74,754
+2005                 0.672     77,931   77,931
+2006                 0.565     58,759   58,759
+2007                 0.547     43,307   43,307
+2008                 0.708     39,201   39,201
+all                           504,300  504,300
 ```
 
-The adjusted ratio, the unadjusted ratios by year and the total ultimate of
-504,300 all agree. The unadjusted ratios are column (15) of the book: 74.6%,
-75.7%, ... 70.8%. The 2003 value is 1 more, again from the rounding of the
-printed data. The tort factor must multiply the claims, not divide the premium.
-The ratio is a ratio of sums, so the two methods differ when the years have
-different factors.
+The adjusted ratio, the ratios by year (column (15): 74.6%, 75.7%, ... 70.8%)
+and the total of 504,300 all agree. The 2003 ultimate is 1 more than the
+book's, from the rounding of the printed data. The tort factor must multiply
+the claims, not divide the premium: the ratio is a ratio of sums, so the two
+differ when the factors differ by year.
 
 ## 7. Reasonableness checks (chapters 8 and 15)
 
-The last step of the book is to examine the results outside the frame that made
-them. It looks at claim ratios, severities, and how much the methods agree. For U.S.
-Industry Auto, chapter 15 gives the unpaid claims of each method in billions of
-dollars. The fits from the sections above give the same table:
+The book's last step checks the results against claim ratios, severities and
+agreement between methods. Chapter 15 gives the unpaid claims of each method
+for U.S. Industry Auto in billions of dollars. The fits above reproduce them:
 
 ```python
 book_billions = {  # chapter 15, IBNR and total unpaid, $ billions
@@ -728,26 +775,6 @@ book_billions = {  # chapter 15, IBNR and total unpaid, $ billions
     "B-F, paid": (27, 73), "Cape Cod": (27, 73),
 }
 fits = [dev_r, dev_p, ec, bf["reported"], bf["paid"], cc]
-print(f"{'method':22s} {'IBNR':>5s} {'book':>5s} {'total':>6s} {'book':>5s}")
-for (name, book), fit in zip(book_billions.items(), fits):
-    ibnr, total = unpaid(fit.ultimate)
-    print(f"{name:22s} {ibnr / 1e6:5.0f} {book[0]:5d} {total / 1e6:6.0f} {book[1]:5d}")
-```
-
-```text
-method                  IBNR  book  total  book
-Development, reported     26    26     71    71
-Development, paid         29    29     74    74
-Expected claims           26    26     71    71
-B-F, reported             26    26     71    71
-B-F, paid                 27    27     73    73
-Cape Cod                  27    27     73    73
-```
-
-```python
-import pandas as pd
-from great_tables import GT
-
 summary = pd.DataFrame({
     "method": list(book_billions),
     "IBNR, book": [b[0] for b in book_billions.values()],
@@ -765,13 +792,22 @@ summary = pd.DataFrame({
  .fmt_number(["IBNR, prospicio", "total, prospicio"], decimals=1))
 ```
 
-All twelve figures agree. The spread across methods is small, about 4% of the
-unpaid estimate. This is the expected result for a whole industry.
+```text
+                       book  prospicio  book  prospicio
+Development, reported    26       25.7    71       71.1
+Development, paid        29       28.6    74       74.0
+Expected claims          26       25.8    71       71.2
+B-F, reported            26       25.6    71       71.0
+B-F, paid                27       27.1    73       72.5
+Cape Cod                 27       27.3    73       72.8
+```
+
+All twelve figures agree. The spread across methods is about 4% of the unpaid
+estimate.
 
 For XYZ the methods disagree, and the claim ratios show why. Chapter 8,
 Exhibit III, sheet 1, column (10) prints the claim ratio of the average of the
-reported and paid development ultimates. The table shows it beside the claim
-ratio of each method:
+reported and paid development ultimates, shown here beside each method's:
 
 ```python
 BOOK_AVG_RATIO = [79.5, 79.8, 83.2, 79.1, 80.0, 68.5, 78.2, 56.8, 60.6, 100.8, 128.2]
@@ -779,29 +815,34 @@ methods = {
     "dev rep": xdev_r, "dev paid": xdev_p, "EC": xec,
     "BF rep": xbf["reported"], "BF paid": xbf["paid"], "CC": xcc,
 }
-print("year  avg dev   book " + " ".join(f"{n:>8s}" for n in methods))
-for i, y in enumerate(XYZ_YEARS):
-    avg = (xdev_r.ultimate[i] + xdev_p.ultimate[i]) / 2 / XYZ_PREMIUM[i]
-    print(f"{y:4d} {100 * avg:7.1f}% {BOOK_AVG_RATIO[i]:5.1f}% "
-          + " ".join(f"{100 * f.ultimate[i] / XYZ_PREMIUM[i]:7.1f}%" for f in methods.values()))
+ratios = pd.DataFrame({
+    "year": [str(y) for y in XYZ_YEARS],
+    "avg dev": [(xdev_r.ultimate[i] + xdev_p.ultimate[i]) / 2 / p for i, p in enumerate(XYZ_PREMIUM)],
+    "book": [r / 100 for r in BOOK_AVG_RATIO],
+    **{name: [u / p for u, p in zip(f.ultimate, XYZ_PREMIUM)] for name, f in methods.items()},
+})
+(GT(ratios, rowname_col="year")
+ .tab_header("XYZ Insurer: ultimate claim ratio by method", "Percent of premium")
+ .tab_spanner("average of the two development ultimates", ["avg dev", "book"])
+ .tab_spanner("each method", list(methods))
+ .cols_label(**{"avg dev": "prospicio"})
+ .fmt_percent(list(ratios.columns[1:]), decimals=1))
 ```
 
 ```text
-year  avg dev   book  dev rep dev paid       EC   BF rep  BF paid       CC
-1998    79.5%  79.5%    79.1%    79.9%    78.3%    79.1%    79.9%    79.1%
-1999    79.8%  79.8%    79.6%    79.9%    78.3%    79.7%    79.9%    79.7%
-2000    83.2%  83.2%    82.1%    84.3%    78.3%    82.8%    84.1%    82.8%
-2001    79.1%  79.1%    77.0%    81.2%    78.3%    77.6%    81.0%    77.6%
-2002    80.0%  80.0%    79.0%    81.1%    78.3%    79.0%    80.8%    79.0%
-2003    68.5%  68.5%    65.0%    72.1%    78.3%    65.2%    73.4%    65.1%
-2004    78.2%  78.2%    75.3%    81.1%    87.1%    76.0%    83.2%    75.3%
-2005    56.8%  56.8%    55.5%    58.1%    78.3%    57.3%    68.3%    56.4%
-2006    60.6%  60.6%    54.3%    67.0%    65.8%    56.1%    66.2%    54.6%
-2007   100.8% 100.8%    76.8%   124.8%    63.8%    72.4%    73.1%    69.4%
-2008   128.2% 128.2%    99.4%   156.9%    82.5%    89.1%    85.9%    82.0%
+      prospicio    book  dev rep  dev paid     EC  BF rep  BF paid     CC
+1998      79.5%   79.5%    79.1%     79.9%  78.3%   79.1%    79.9%  79.1%
+1999      79.8%   79.8%    79.6%     79.9%  78.3%   79.7%    79.9%  79.7%
+2000      83.2%   83.2%    82.1%     84.3%  78.3%   82.8%    84.1%  82.8%
+2001      79.1%   79.1%    77.0%     81.2%  78.3%   77.6%    81.0%  77.6%
+2002      80.0%   80.0%    79.0%     81.1%  78.3%   79.0%    80.8%  79.0%
+2003      68.5%   68.5%    65.0%     72.1%  78.3%   65.2%    73.4%  65.1%
+2004      78.2%   78.2%    75.3%     81.1%  87.1%   76.0%    83.2%  75.3%
+2005      56.8%   56.8%    55.5%     58.1%  78.3%   57.3%    68.3%  56.4%
+2006      60.6%   60.6%    54.3%     67.0%  65.8%   56.1%    66.2%  54.6%
+2007     100.8%  100.8%    76.8%    124.8%  63.8%   72.4%    73.1%  69.4%
+2008     128.2%  128.2%    99.4%    156.9%  82.5%   89.1%    85.9%  82.0%
 ```
-
-The figure draws the claim ratios of the table.
 
 ```python
 fig, ax = plt.subplots()
@@ -818,16 +859,14 @@ ax.set_title("XYZ Insurer: claim ratio by accident year and method")
 ax.legend()
 ```
 
-The average-of-development column equals the book's to the tenth of a percent.
-The development ratios for 2007 and 2008 are very different from all earlier
-years (77% and 99% reported, 125% and 157% paid). The expected claims, BF and
-Cape Cod methods keep these years near the history.
+The development average equals the book's to the tenth of a percent. For 2007
+and 2008 the development ratios are far above earlier years; expected claims,
+BF and Cape Cod keep them near the history.
 
-Chapter 15 also divides ultimates by ultimate claim counts (severity). It
-divides IBNR plus case by the open and unreported counts. With a counts
-triangle, these are one-line divisions of `fit.ultimate` and `fit.reserve`. The
-book's conclusion for XYZ uses the Berquist-Sherman adjusted projections of
-chapter 13.
+Chapter 15 also divides ultimates by claim counts (severity), and IBNR plus
+case by open and unreported counts: with a counts triangle these are one-line
+divisions of `fit.ultimate` and `fit.reserve`. The book's conclusion for XYZ
+uses chapter 13's Berquist-Sherman projections.
 
 ## See also
 
