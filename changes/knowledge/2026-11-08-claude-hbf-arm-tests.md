@@ -1,1 +1,0 @@
-* **Update**: [HierarchicalBf one-year view](/findings/hierarchical-bf-one-year.md), from the aarch64 test failures (branch claude/hbf-arm-tests): on a QUICK fit the one-year to lifetime variance ratio is 0.70 to 1.00 over 24 x86_64 seeds, 1.40 on aarch64 where a NaN Pareto k also appears (#782); the Python tests compare NaN by bits and bound the ratio by 2.
