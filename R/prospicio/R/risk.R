@@ -14,6 +14,7 @@ NULL
 #' | `"dual_power"` | `1 - (1 - s)^beta` | `beta >= 1` |
 #' | `"exponential"` | `(1 - exp(-k s)) / (1 - exp(-k))` | `k > 0` |
 #' | `"ccoc"` | `min(1, d + (1 - d) s)`, `d = r / (1 + r)` | `0 <= r` |
+#' | `"tsallis"` | `(alpha s - s^alpha) / (alpha - 1)`, `s (1 - log s)` at `alpha = 1` | `alpha > 0` |
 #' | `"bitvar"` | `(1 - w) TVaR_p0 + w TVaR_p1` | `c(p0, p1, w)` |
 #' | `"weighted_tvar"` | `sum(w_i min(s / (1 - p_i), 1))` | the levels `p_i`; `weights` the `w_i` |
 #' | `"capped_linear"` | `min(1, r0 + slope s)` | `slope`, with `r0` |
@@ -25,6 +26,9 @@ NULL
 #' `"ccoc"` is the constant cost of capital: the price of a loss `X` backed
 #' by assets `max X` is `(E[X] + r max X) / (1 + r)`. It and the kinds with
 #' `r0 > 0` put a probability mass on the largest outcome ([distortion_mass()]).
+#' `"tsallis"`, the Beta(alpha, 1) mixture of TVaRs, prices at the mean plus
+#' the cumulative residual Tsallis entropy of order `alpha` (`aggregate`
+#' 2.1.0); `alpha = 2` is `dual_power(2)`.
 #' See also [distortion_mixture()], [distortion_minimum()],
 #' [distortion_convex()] and [calibrate_distortion()].
 #'
@@ -40,7 +44,9 @@ NULL
 #'   them (for example `c(rho = 0.7)`, or `c(r0 = 0.1, slope = 2)`; empty for
 #'   weighted TVaR, mixtures, minimums and convex envelopes), and
 #'   `parameter`, the one parameter of a family with one (`NA` for a family
-#'   with several or none). Use it with [risk_measure()] and [allocate()].
+#'   with several or none), and `gini`, the Gini index `2 * integral(g) - 1`
+#'   (0 for the mean, 1 for the maximum; see [distortion_from_gini()]). Use
+#'   it with [risk_measure()] and [allocate()].
 #' @export
 #' @examples
 #' d <- distortion("wang", 0.5)
@@ -48,6 +54,7 @@ NULL
 #' d@parameter
 #' risk_measure(sampled(c(10, 20, 30, 40, 50)), d)
 #' distortion_g(distortion("dual_power", 2), 0.3)
+#' distortion("tsallis", 3)@gini # 1 / (3 + 1)
 #' risk_measure(sampled(c(1, 2, 3, 4)), distortion("ccoc", 0.25)) # (2.5 + 0.25 * 4) / 1.25
 distortion <- S7::new_class(
   "distortion",
@@ -69,11 +76,12 @@ distortion <- S7::new_class(
         p <- self@parameters
         if (length(p) == 1) unname(p) else NA_real_
       }
-    )
+    ),
+    gini = S7::new_property(S7::class_double, getter = function(self) self@ptr$gini())
   ),
   constructor = function(kind = c(
                            "tvar", "wang", "proportional_hazard", "dual_power", "exponential",
-                           "ccoc", "bitvar", "weighted_tvar", "capped_linear",
+                           "ccoc", "tsallis", "bitvar", "weighted_tvar", "capped_linear",
                            "capped_log_linear", "lep", "linear_yield", "beta"
                          ),
                          param, weights = NULL, r0 = 0, ptr = NULL) {
@@ -137,7 +145,7 @@ distortion_convex <- function(s, g) {
 #' families by bisection to full precision.
 #'
 #' @param family One of `"ccoc"`, `"proportional_hazard"` (`"ph"`),
-#'   `"wang"`, `"dual_power"` (`"dual"`), `"tvar"`, `"exponential"`,
+#'   `"wang"`, `"tsallis"`, `"dual_power"` (`"dual"`), `"tvar"`, `"exponential"`,
 #'   `"capped_linear"`, `"capped_log_linear"`, `"lep"` and `"linear_yield"`.
 #' @param x A [sampled], [grid_distribution] or [predictive_distribution]
 #'   (its total).
@@ -155,6 +163,69 @@ calibrate_distortion <- function(family, x, premium, assets = NULL, r0 = 0) {
   distortion(ptr = rust_result(RiskDistortion$calibrate(
     family, x@ptr, as.double(premium), a, as.double(r0)
   )))
+}
+
+#' Calibrate a set of distortion families to a price
+#'
+#' Each family's member whose risk measure of `x` (capped at `assets` when
+#' given) equals `premium`, as `aggregate`'s `calibrate_distortions`: by
+#' default CCoC, PH, Wang, dual and TVaR; with `extended = TRUE` also
+#' Tsallis, between Wang and dual (`aggregate` 2.1.0's extended set).
+#'
+#' @inheritParams calibrate_distortion
+#' @param extended Add `"tsallis"` to the five standard families.
+#' @param families Family names instead (not with `extended`).
+#' @returns A named list of [distortion] objects, by family in order.
+#' @export
+#' @examples
+#' x <- sampled(c(22, 28, 36, 40, 40, 40, 40, 55, 65, 100))
+#' ds <- calibrate_distortions(x, (46.6 + 15) / 1.15, extended = TRUE)
+#' names(ds)
+#' ds$tsallis@parameter # 3.069
+calibrate_distortions <- function(x, premium, assets = NULL, extended = FALSE, families = NULL) {
+  if (!is.null(families) && isTRUE(extended)) {
+    stop("give families or extended = TRUE, not both", call. = FALSE)
+  }
+  if (is.null(families)) {
+    families <- if (isTRUE(extended)) {
+      c("ccoc", "ph", "wang", "tsallis", "dual", "tvar")
+    } else {
+      c("ccoc", "ph", "wang", "dual", "tvar")
+    }
+  }
+  a <- if (is.null(assets)) Inf else as.double(assets)
+  ptrs <- rust_result(RiskDistortion$calibrate_all(
+    as.character(families), x@ptr, as.double(premium), a
+  ))
+  lapply(ptrs, function(p) distortion(ptr = p))
+}
+
+#' The distortion with a given Gini index
+#'
+#' The member of a one-parameter family whose Gini index
+#' `2 * integral(g) - 1` is `gini`, as `aggregate`'s `Distortion.from_gini`.
+#' The members of different families with one index price a uniform loss
+#' alike, at `(1 + gini) / 2`.
+#'
+#' | `family` | parameter from `G` |
+#' |---|---|
+#' | `"ccoc"` | `r = G / (1 - G)` |
+#' | `"ph"` | `rho = (1 - G) / (1 + G)` |
+#' | `"wang"` | `lambda = sqrt(2) qnorm((1 + G) / 2)` |
+#' | `"tsallis"` | `alpha = 1 / G - 1` |
+#' | `"dual"` | `beta = (1 + G) / (1 - G)` |
+#' | `"tvar"` | `p = G` |
+#' | `"exp"` | solved by bisection |
+#'
+#' @param family One of the families in the table.
+#' @param gini In `(0, 1)`: 0 is the mean, 1 the maximum.
+#' @returns A [distortion]; its `gini` property is the index.
+#' @export
+#' @examples
+#' distortion_from_gini("tsallis", 0.25)@parameter # 3
+#' distortion_from_gini("ph", 0.25)@parameter # 0.6
+distortion_from_gini <- function(family, gini) {
+  distortion(ptr = rust_result(RiskDistortion$from_gini(family, as.double(gini))))
 }
 
 #' Distortion mass, inverse and dual

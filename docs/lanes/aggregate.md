@@ -7,7 +7,6 @@
 ## Next
 
 - #768 re-pin the aggregate parity references to aggregate 2.1.0 (0.1.0, first; Probability for its files)
-- #771 the extended distortion calibration set (aggregate 2.1.0 parity, 0.1.0)
 - #772 disappearing deductible, `y xs d1 to d2 disappearing` (aggregate 2.1.0 parity, 0.1.0)
 - #773 OEP of a program, net or ceded (aggregate 2.1.0 parity, 0.1.0)
 - #776 dyadic lattice bucket rule and a lattice grid warning for discrete books (aggregate 2.1.0 parity, 0.1.0)
@@ -96,3 +95,4 @@
 - [split-pnl-builders] #579, `prospicio-aggregate/src/pnl/builders.rs` (2034 lines) split with no behaviour change: its unit tests moved to `pnl/builders/tests.rs`, leaving 1727 lines; the same 215 unit tests of the crate pass
 - [split-natural] #579, `prospicio-pricing/src/natural.rs` (2,042 lines) split with no behaviour change: its unit tests moved to `natural/tests.rs`, leaving 1,740 lines; the same 167 unit tests pass
 - [split-reinsurance] #579, `prospicio-aggregate/src/reinsurance.rs` (4,765 lines) split with no behaviour change: the layer (`reinsurance/layer.rs`), its contract terms (`terms.rs`), the tower (`tower.rs`) and the unit tests (`tests.rs`), re-exported from `reinsurance.rs`, which keeps the shared helpers (307 lines); nine private methods made `pub(super)` for their sibling modules; the same 215 unit tests and 122 doctests pass, rustdoc's item list is unchanged and the WASM check passes
+- #771 the extended distortion calibration set (branch `claude/cool-shannon-fqpoy8-distortions`): `Family::EXTENDED`, `aggregate` 2.1.0's set with Tsallis between Wang and dual, and `distortion::calibrate_all` for any set; InsCo's extended calibration within `aggregate`'s premium error; Python and R `calibrate_distortions(..., extended=, families=)`, Excel `PRO.CAP.DISTORTION.CALIBRATE` with `families` `"extended"`

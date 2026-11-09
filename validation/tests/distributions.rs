@@ -703,6 +703,64 @@ fn distortions_match_aggregate() {
     });
 }
 
+/// The Tsallis distortion, the Gini index of every family, `from_gini` and
+/// the extended calibration set against `aggregate` 2.1.0 (#769, #770, #771;
+/// `validation/scripts/aggregate_distortion_gini.py`).
+#[test]
+fn tsallis_and_gini_match_aggregate() {
+    use prospicio_prob::Distortion;
+    use prospicio_prob::distortion::{Family, calibrate_all};
+    let x = [22.0, 28.0, 36.0, 40.0, 55.0, 65.0, 100.0];
+    let p = [0.1, 0.1, 0.1, 0.4, 0.1, 0.1, 0.1];
+    let family = |name: &str| match name {
+        "ccoc" => Some(Family::Ccoc),
+        "ph" => Some(Family::ProportionalHazard),
+        "wang" => Some(Family::Wang),
+        "tsallis" => Some(Family::Tsallis),
+        "dual" => Some(Family::DualPower),
+        "tvar" => Some(Family::Tvar),
+        _ => None,
+    };
+    let premium = 53.565217391304344;
+    let extended = calibrate_all(&Family::EXTENDED, &x, &p, premium).unwrap();
+    let cases = reference("distortion_gini_aggregate.csv");
+    check(&cases, |c| {
+        let arg = c.number("arg")?;
+        let q = c.get("quantity");
+        let v = |k: &str| c.param("params", k);
+        match c.get("distribution") {
+            "g" => Some(Distortion::tsallis(v("alpha")).ok()?.g(arg)),
+            "gini" => {
+                let d = match q {
+                    "tvar" => Distortion::tvar(v("p")),
+                    "wang" => Distortion::wang(v("lambda")),
+                    "ph" => Distortion::proportional_hazard(v("rho")),
+                    "dual" => Distortion::dual_power(v("beta")),
+                    "ccoc" => Distortion::ccoc(v("r")),
+                    "tsallis" => Distortion::tsallis(v("alpha")),
+                    "bitvar" => Distortion::bitvar(v("p0"), v("p1"), v("w")),
+                    "clin" => Distortion::capped_linear(v("r0"), v("slope")),
+                    "cll" => Distortion::capped_log_linear(v("r0"), v("b")),
+                    "lep" => Distortion::lep(v("r0"), v("r")),
+                    "ly" => Distortion::linear_yield(v("r0"), v("r")),
+                    "beta" => Distortion::beta(v("a"), v("b")),
+                    _ => return None,
+                };
+                Some(d.ok()?.gini())
+            }
+            "from_gini" => Distortion::from_gini(family(q)?, arg).ok()?.parameter(),
+            "insco_extended_price" => Some(family(q)?.with(arg).ok()?.apply_discrete(&x, &p)),
+            "insco_extended" => {
+                let i = Family::EXTENDED
+                    .iter()
+                    .position(|f| Some(*f) == family(q))?;
+                extended[i].parameter()
+            }
+            _ => None,
+        }
+    });
+}
+
 #[test]
 fn counts_match_aggregate() {
     use prospicio_prob::count_families::{

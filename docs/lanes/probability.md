@@ -7,8 +7,6 @@
 ## Next
 
 - #768 re-pin the aggregate parity references to aggregate 2.1.0 (0.1.0, first; the Aggregate lane leads, Probability for its files)
-- #769 Tsallis distortion (aggregate 2.1.0 parity, 0.1.0)
-- #770 Gini index of every distortion and `Distortion::from_gini` (aggregate 2.1.0 parity, 0.1.0)
 - #774 refuse invalid discrete inputs, breaking (aggregate 2.1.0 parity, 0.1.0)
 - #775 Tweedie parameter conversions (aggregate 2.1.0 parity, 0.1.0)
 
@@ -39,3 +37,4 @@
 - #566 importance sampling of the tail, estimator side (branch `claude/cool-shannon-fqpoy8`): `weighted::WeightedSample`, self-normalised mean, VaR and TVaR of weighted draws with batch-means standard errors, mean weight and effective sample size, equal to `Sampled` under equal weights; Python `WeightedSample`, R `weighted_tail()`
 - [vine-fit-decisions] #568 the decisions of "Pair copulas fitted to data" (items (a) to (f)) and "R-vines and fitting vines" (items (g) to (k)) in `risk.md` accepted by the user on 2026-10-29 as built
 - [mvn-qmc-decisions] #565 the decisions of "Sobol points and the multivariate normal in any dimension" (items (a) to (e)) in `risk.md` accepted by the user on 2026-10-29 as built
+- #769 #770 the Tsallis distortion and the Gini index (branch `claude/cool-shannon-fqpoy8-distortions`, `risk.md` "The Tsallis distortion, the Gini index and the extended calibration set", items (a) to (d) proposed): `Distortion::tsallis` (the Beta(alpha, 1) mixture of TVaRs, `g` in `aggregate`'s stable form, `1 - g` by series near 1, calibrated through its Gini index), `Distortion::gini` for every family (closed forms, adaptive Gauss-Legendre for `Lep`, `LinearYield` and `Minimum`) and `Distortion::from_gini` for the one-parameter families (`aggregate`'s six and the exponential); `aggregate` 2.1.0 parity on 113 values (`validation/scripts/aggregate_distortion_gini.py`); Python `Distortion.tsallis`, `.gini`, `Distortion.from_gini`, R `distortion("tsallis", )`, `@gini`, `distortion_from_gini()`, Excel `"tsallis"` in the `PRO.CAP.DISTORTION` functions

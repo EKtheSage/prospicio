@@ -6,7 +6,7 @@
 \usage{
 distortion(
   kind = c("tvar", "wang", "proportional_hazard", "dual_power", "exponential", "ccoc",
-    "bitvar", "weighted_tvar", "capped_linear", "capped_log_linear", "lep",
+    "tsallis", "bitvar", "weighted_tvar", "capped_linear", "capped_log_linear", "lep",
     "linear_yield", "beta"),
   param,
   weights = NULL,
@@ -33,7 +33,9 @@ A \code{distortion} object with \code{kind} and \code{param} properties, and
 them (for example \code{c(rho = 0.7)}, or \code{c(r0 = 0.1, slope = 2)}; empty for
 weighted TVaR, mixtures, minimums and convex envelopes), and
 \code{parameter}, the one parameter of a family with one (\code{NA} for a family
-with several or none). Use it with \code{\link[=risk_measure]{risk_measure()}} and \code{\link[=allocate]{allocate()}}.
+with several or none), and \code{gini}, the Gini index \code{2 * integral(g) - 1}
+(0 for the mean, 1 for the maximum; see \code{\link[=distortion_from_gini]{distortion_from_gini()}}). Use
+it with \code{\link[=risk_measure]{risk_measure()}} and \code{\link[=allocate]{allocate()}}.
 }
 \description{
 A concave distortion \code{g} of the survival function, giving the coherent
@@ -48,6 +50,7 @@ risk measure \verb{rho(X) = integral of g(S(x)) dx}.
    \code{"dual_power"} \tab \code{1 - (1 - s)^beta} \tab \code{beta >= 1} \cr
    \code{"exponential"} \tab \verb{(1 - exp(-k s)) / (1 - exp(-k))} \tab \code{k > 0} \cr
    \code{"ccoc"} \tab \verb{min(1, d + (1 - d) s)}, \code{d = r / (1 + r)} \tab \code{0 <= r} \cr
+   \code{"tsallis"} \tab \verb{(alpha s - s^alpha) / (alpha - 1)}, \verb{s (1 - log s)} at \code{alpha = 1} \tab \code{alpha > 0} \cr
    \code{"bitvar"} \tab \verb{(1 - w) TVaR_p0 + w TVaR_p1} \tab \code{c(p0, p1, w)} \cr
    \code{"weighted_tvar"} \tab \verb{sum(w_i min(s / (1 - p_i), 1))} \tab the levels \code{p_i}; \code{weights} the \code{w_i} \cr
    \code{"capped_linear"} \tab \verb{min(1, r0 + slope s)} \tab \code{slope}, with \code{r0} \cr
@@ -61,6 +64,9 @@ risk measure \verb{rho(X) = integral of g(S(x)) dx}.
 \code{"ccoc"} is the constant cost of capital: the price of a loss \code{X} backed
 by assets \verb{max X} is \verb{(E[X] + r max X) / (1 + r)}. It and the kinds with
 \code{r0 > 0} put a probability mass on the largest outcome (\code{\link[=distortion_mass]{distortion_mass()}}).
+\code{"tsallis"}, the Beta(alpha, 1) mixture of TVaRs, prices at the mean plus
+the cumulative residual Tsallis entropy of order \code{alpha} (\code{aggregate}
+2.1.0); \code{alpha = 2} is \code{dual_power(2)}.
 See also \code{\link[=distortion_mixture]{distortion_mixture()}}, \code{\link[=distortion_minimum]{distortion_minimum()}},
 \code{\link[=distortion_convex]{distortion_convex()}} and \code{\link[=calibrate_distortion]{calibrate_distortion()}}.
 }
@@ -70,5 +76,6 @@ d@parameters
 d@parameter
 risk_measure(sampled(c(10, 20, 30, 40, 50)), d)
 distortion_g(distortion("dual_power", 2), 0.3)
+distortion("tsallis", 3)@gini # 1 / (3 + 1)
 risk_measure(sampled(c(1, 2, 3, 4)), distortion("ccoc", 0.25)) # (2.5 + 0.25 * 4) / 1.25
 }

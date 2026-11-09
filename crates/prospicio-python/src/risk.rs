@@ -27,7 +27,7 @@ use crate::to_py;
 ///
 /// Make one with ``Distortion.tvar``, ``Distortion.wang``,
 /// ``Distortion.proportional_hazard``, ``Distortion.dual_power``,
-/// ``Distortion.exponential``, ``Distortion.ccoc`` (constant cost of
+/// ``Distortion.exponential``, ``Distortion.tsallis``, ``Distortion.ccoc`` (constant cost of
 /// capital), ``Distortion.bitvar``, ``Distortion.weighted_tvar``,
 /// ``Distortion.capped_linear``, ``Distortion.capped_log_linear``,
 /// ``Distortion.lep``, ``Distortion.linear_yield``, ``Distortion.beta``,
@@ -134,6 +134,63 @@ impl PyDistortion {
     fn exponential(k: f64) -> PyResult<Self> {
         Ok(Self {
             inner: Distortion::exponential(k).map_err(to_py)?,
+        })
+    }
+
+    /// Tsallis distortion of order ``alpha``, the Beta(alpha, 1) mixture of
+    /// TVaRs: ``g(s) = (alpha s - s**alpha) / (alpha - 1)``, and
+    /// ``s (1 - log s)`` at ``alpha = 1``. Its price is the mean plus the
+    /// cumulative residual Tsallis entropy of order ``alpha``; ``alpha = 2``
+    /// is ``dual_power(2)`` and the Gini index is ``1 / (alpha + 1)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// alpha : float
+    ///     Positive; the mean as ``alpha -> inf``, the maximum as ``alpha -> 0``.
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.risk import Distortion
+    /// >>> round(Distortion.tsallis(2.0).g(0.3), 12), Distortion.tsallis(3.0).gini
+    /// (0.51, 0.25)
+    #[staticmethod]
+    fn tsallis(alpha: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Distortion::tsallis(alpha).map_err(to_py)?,
+        })
+    }
+
+    /// The member of a one-parameter family with Gini index ``gini``.
+    ///
+    /// Parameters
+    /// ----------
+    /// family : str
+    ///     ``"ccoc"``, ``"ph"``, ``"wang"``, ``"tsallis"``, ``"dual"``,
+    ///     ``"tvar"`` or ``"exp"``.
+    /// gini : float
+    ///     In ``(0, 1)``: 0 is the mean and 1 the maximum.
+    ///
+    /// Returns
+    /// -------
+    /// Distortion
+    ///     The members of the families with one index price a uniform loss
+    ///     alike, at ``(1 + gini) / 2``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.risk import Distortion
+    /// >>> Distortion.from_gini("tsallis", 0.25)
+    /// Distortion.tsallis(3.0)
+    /// >>> round(Distortion.from_gini("ph", 0.25).parameter, 12)
+    /// 0.6
+    #[staticmethod]
+    fn from_gini(family: &str, gini: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Distortion::from_gini(family_from(family, 0.0)?, gini).map_err(to_py)?,
         })
     }
 
@@ -381,6 +438,20 @@ impl PyDistortion {
         self.inner.g_dual(s)
     }
 
+    /// The Gini index ``2 * integral of g - 1``: 0 for the mean and 1 for the
+    /// maximum, and the level of the TVaR that prices a uniform loss as this
+    /// distortion does (``aggregate``'s ``gini``).
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.risk import Distortion
+    /// >>> Distortion.tvar(0.9).gini, round(Distortion.proportional_hazard(0.5).gini, 12)
+    /// (0.9, 0.333333333333)
+    #[getter]
+    fn gini(&self) -> f64 {
+        self.inner.gini()
+    }
+
     /// The probability mass on the largest outcome, ``g(0+)``.
     #[getter]
     fn mass(&self) -> f64 {
@@ -487,6 +558,7 @@ fn repr(d: &Distortion) -> String {
         Distortion::DualPower(b) => format!("Distortion.dual_power({b:?})"),
         Distortion::Exponential(k) => format!("Distortion.exponential({k:?})"),
         Distortion::Ccoc(r) => format!("Distortion.ccoc({r:?})"),
+        Distortion::Tsallis(a) => format!("Distortion.tsallis({a:?})"),
         Distortion::BiTvar { p0, p1, w } => format!("Distortion.bitvar({p0:?}, {p1:?}, {w:?})"),
         Distortion::WeightedTvar { ps, wts } => {
             format!("Distortion.weighted_tvar({ps:?}, {wts:?})")
@@ -549,8 +621,8 @@ pub(crate) fn discrete_of(
 /// Parameters
 /// ----------
 /// family : str
-///     ``"ccoc"``, ``"ph"``, ``"wang"``, ``"dual"``, ``"tvar"``, ``"exp"``,
-///     ``"clin"``, ``"cll"``, ``"lep"`` or ``"ly"``.
+///     ``"ccoc"``, ``"ph"``, ``"wang"``, ``"tsallis"``, ``"dual"``, ``"tvar"``,
+///     ``"exp"``, ``"clin"``, ``"cll"``, ``"lep"`` or ``"ly"``.
 /// dist : Sampled, Grid or PredictiveDistribution
 ///     A predictive distribution is priced on its total.
 /// premium : float
@@ -589,11 +661,81 @@ pub(crate) fn calibrate(
     })
 }
 
+/// Each family's member whose price of ``dist`` is ``premium``, as
+/// ``aggregate``'s ``calibrate_distortions``.
+///
+/// Parameters
+/// ----------
+/// dist : Sampled, Grid or PredictiveDistribution
+///     A predictive distribution is priced on its total.
+/// premium : float
+///     The target price, strictly between the (capped) mean and maximum.
+/// assets : float, optional
+///     Price the loss capped at the assets, ``min(X, assets)``.
+/// extended : bool, default False
+///     The extended set, with ``"tsallis"`` between ``"wang"`` and
+///     ``"dual"`` (``aggregate``'s ``extended=True``); the default is CCoC,
+///     PH, Wang, dual and TVaR.
+/// families : list of str, optional
+///     Families by name instead (not with ``extended``).
+///
+/// Returns
+/// -------
+/// dict of str to Distortion
+///     By family name, in order.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import Sampled
+/// >>> from prospicio.risk import calibrate_distortions
+/// >>> x = Sampled([22, 28, 36, 40, 40, 40, 40, 55, 65, 100])
+/// >>> premium = (46.6 + 0.15 * 100) / 1.15
+/// >>> ds = calibrate_distortions(x, premium, extended=True)
+/// >>> list(ds)
+/// ['ccoc', 'ph', 'wang', 'tsallis', 'dual', 'tvar']
+/// >>> round(ds["tsallis"].parameter, 6)
+/// 3.069093
+#[pyfunction]
+#[pyo3(signature = (dist, premium, assets=None, extended=false, families=None))]
+pub(crate) fn calibrate_distortions<'py>(
+    py: Python<'py>,
+    dist: &Bound<'py, PyAny>,
+    premium: f64,
+    assets: Option<f64>,
+    extended: bool,
+    families: Option<Vec<String>>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let set: Vec<Family> = match (families, extended) {
+        (Some(_), true) => {
+            return Err(PyValueError::new_err(
+                "give families or extended=True, not both: extended is ccoc, ph, wang, tsallis, \
+                 dual and tvar",
+            ));
+        }
+        (Some(names), false) => names
+            .iter()
+            .map(|n| family_from(n, 0.0))
+            .collect::<PyResult<_>>()?,
+        (None, true) => Family::EXTENDED.to_vec(),
+        (None, false) => Family::STANDARD.to_vec(),
+    };
+    let (x, p) = discrete_of(dist, assets)?;
+    let out = pyo3::types::PyDict::new(py);
+    for (f, d) in set
+        .iter()
+        .zip(prospicio_prob::distortion::calibrate_all(&set, &x, &p, premium).map_err(to_py)?)
+    {
+        out.set_item(f.name(), PyDistortion { inner: d })?;
+    }
+    Ok(out)
+}
+
 pub(crate) fn family_from(name: &str, r0: f64) -> PyResult<Family> {
     Ok(match name {
         "ccoc" => Family::Ccoc,
         "ph" | "proportional_hazard" => Family::ProportionalHazard,
         "wang" => Family::Wang,
+        "tsallis" => Family::Tsallis,
         "dual" | "dual_power" => Family::DualPower,
         "tvar" => Family::Tvar,
         "exp" | "exponential" => Family::Exponential,

@@ -441,3 +441,21 @@ stopifnot(inherits(try(rvine_copula(matrix(c(2, 3, 4, 1, 4, 3, 2, 0, 4, 3, 0, 0,
                                     list(list(g, g, g), list(g, g))), silent = TRUE), "try-error"))
 stopifnot(length(fit_vine_copula(u, trunc_level = 1)$pairs) == 1)
 cat("R-vine tests passed\n")
+
+# The Tsallis distortion, the Gini index, from_gini and the extended
+# calibration set, against aggregate 2.1.0
+# (validation/scripts/aggregate_distortion_gini.py).
+t3 <- distortion("tsallis", 3)
+stopifnot(t3@kind == "tsallis", abs(t3@gini - 0.25) < 1e-15, distortion_mass(t3) == 0)
+stopifnot(abs(distortion_g(distortion("tsallis", 2), 0.3) - 0.51) < 1e-15)
+stopifnot(abs(distortion("wang", 0.4)@gini - 0.22270258921047836) < 1e-14)
+stopifnot(abs(distortion("lep", 0.2, r0 = 0.02)@gini - 0.13494649355556843) < 1e-11)
+stopifnot(abs(distortion_from_gini("ph", 0.25)@parameter - 0.6) < 1e-12)
+stopifnot(abs(distortion_from_gini("tsallis", 0.25)@parameter - 3) < 1e-12)
+stopifnot(inherits(try(distortion_from_gini("lep", 0.3), silent = TRUE), "try-error"))
+insco <- sampled(c(22, 28, 36, 40, 40, 40, 40, 55, 65, 100))
+ds <- calibrate_distortions(insco, (46.6 + 15) / 1.15, extended = TRUE)
+stopifnot(identical(names(ds), c("ccoc", "ph", "wang", "tsallis", "dual", "tvar")))
+stopifnot(abs(ds$tsallis@parameter - 3.069093409430775) < 1e-8)
+stopifnot(identical(names(calibrate_distortions(insco, (46.6 + 15) / 1.15)),
+                    c("ccoc", "ph", "wang", "dual", "tvar")))

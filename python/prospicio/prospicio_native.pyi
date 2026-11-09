@@ -11536,7 +11536,7 @@ class Distortion:
     
     Make one with ``Distortion.tvar``, ``Distortion.wang``,
     ``Distortion.proportional_hazard``, ``Distortion.dual_power``,
-    ``Distortion.exponential``, ``Distortion.ccoc`` (constant cost of
+    ``Distortion.exponential``, ``Distortion.tsallis``, ``Distortion.ccoc`` (constant cost of
     capital), ``Distortion.bitvar``, ``Distortion.weighted_tvar``,
     ``Distortion.capped_linear``, ``Distortion.capped_log_linear``,
     ``Distortion.lep``, ``Distortion.linear_yield``, ``Distortion.beta``,
@@ -11691,6 +11691,33 @@ class Distortion:
         The family, as its constructor is named, for example
         ``"proportional_hazard"`` or ``"capped_linear"``.
         """
+    @staticmethod
+    def from_gini(family: str, gini: float) -> Distortion:
+        """
+        The member of a one-parameter family with Gini index ``gini``.
+        
+        Parameters
+        ----------
+        family : str
+            ``"ccoc"``, ``"ph"``, ``"wang"``, ``"tsallis"``, ``"dual"``,
+            ``"tvar"`` or ``"exp"``.
+        gini : float
+            In ``(0, 1)``: 0 is the mean and 1 the maximum.
+        
+        Returns
+        -------
+        Distortion
+            The members of the families with one index price a uniform loss
+            alike, at ``(1 + gini) / 2``.
+        
+        Examples
+        --------
+        >>> from prospicio.risk import Distortion
+        >>> Distortion.from_gini("tsallis", 0.25)
+        Distortion.tsallis(3.0)
+        >>> round(Distortion.from_gini("ph", 0.25).parameter, 12)
+        0.6
+        """
     def g(self, /, s: float) -> float:
         """
         The distortion ``g(s)`` of a survival probability ``s``.
@@ -11726,6 +11753,19 @@ class Distortion:
         Returns
         -------
         float
+        """
+    @property
+    def gini(self, /) -> float:
+        """
+        The Gini index ``2 * integral of g - 1``: 0 for the mean and 1 for the
+        maximum, and the level of the TVaR that prices a uniform loss as this
+        distortion does (``aggregate``'s ``gini``).
+        
+        Examples
+        --------
+        >>> from prospicio.risk import Distortion
+        >>> Distortion.tvar(0.9).gini, round(Distortion.proportional_hazard(0.5).gini, 12)
+        (0.9, 0.333333333333)
         """
     @staticmethod
     def lep(r0: float, r: float) -> Distortion:
@@ -11844,6 +11884,30 @@ class Distortion:
         Returns
         -------
         Distortion
+        """
+    @staticmethod
+    def tsallis(alpha: float) -> Distortion:
+        """
+        Tsallis distortion of order ``alpha``, the Beta(alpha, 1) mixture of
+        TVaRs: ``g(s) = (alpha s - s**alpha) / (alpha - 1)``, and
+        ``s (1 - log s)`` at ``alpha = 1``. Its price is the mean plus the
+        cumulative residual Tsallis entropy of order ``alpha``; ``alpha = 2``
+        is ``dual_power(2)`` and the Gini index is ``1 / (alpha + 1)``.
+        
+        Parameters
+        ----------
+        alpha : float
+            Positive; the mean as ``alpha -> inf``, the maximum as ``alpha -> 0``.
+        
+        Returns
+        -------
+        Distortion
+        
+        Examples
+        --------
+        >>> from prospicio.risk import Distortion
+        >>> round(Distortion.tsallis(2.0).g(0.3), 12), Distortion.tsallis(3.0).gini
+        (0.51, 0.25)
         """
     @staticmethod
     def tvar(p: float) -> Distortion:
@@ -35881,8 +35945,8 @@ def calibrate(family: str, dist: Any, premium: float, assets: float |None = None
     Parameters
     ----------
     family : str
-        ``"ccoc"``, ``"ph"``, ``"wang"``, ``"dual"``, ``"tvar"``, ``"exp"``,
-        ``"clin"``, ``"cll"``, ``"lep"`` or ``"ly"``.
+        ``"ccoc"``, ``"ph"``, ``"wang"``, ``"tsallis"``, ``"dual"``, ``"tvar"``,
+        ``"exp"``, ``"clin"``, ``"cll"``, ``"lep"`` or ``"ly"``.
     dist : Sampled, Grid or PredictiveDistribution
         A predictive distribution is priced on its total.
     premium : float
@@ -35922,6 +35986,44 @@ def calibrate_classical(principle: str, dist: Any, premium: float, q: float = 2.
     Returns
     -------
     float
+    """
+
+def calibrate_distortions(dist: Any, premium: float, assets: float |None = None, extended: bool = False, families: Sequence[str] |None = None) -> dict:
+    """
+    Each family's member whose price of ``dist`` is ``premium``, as
+    ``aggregate``'s ``calibrate_distortions``.
+    
+    Parameters
+    ----------
+    dist : Sampled, Grid or PredictiveDistribution
+        A predictive distribution is priced on its total.
+    premium : float
+        The target price, strictly between the (capped) mean and maximum.
+    assets : float, optional
+        Price the loss capped at the assets, ``min(X, assets)``.
+    extended : bool, default False
+        The extended set, with ``"tsallis"`` between ``"wang"`` and
+        ``"dual"`` (``aggregate``'s ``extended=True``); the default is CCoC,
+        PH, Wang, dual and TVaR.
+    families : list of str, optional
+        Families by name instead (not with ``extended``).
+    
+    Returns
+    -------
+    dict of str to Distortion
+        By family name, in order.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Sampled
+    >>> from prospicio.risk import calibrate_distortions
+    >>> x = Sampled([22, 28, 36, 40, 40, 40, 40, 55, 65, 100])
+    >>> premium = (46.6 + 0.15 * 100) / 1.15
+    >>> ds = calibrate_distortions(x, premium, extended=True)
+    >>> list(ds)
+    ['ccoc', 'ph', 'wang', 'tsallis', 'dual', 'tvar']
+    >>> round(ds["tsallis"].parameter, 6)
+    3.069093
     """
 
 def capital(pd: PredictiveDistribution, distortion: Distortion, method: str = "euler") -> Allocation:

@@ -8,7 +8,7 @@ calibrate_distortion(family, x, premium, assets = NULL, r0 = 0)
 }
 \arguments{
 \item{family}{One of \code{"ccoc"}, \code{"proportional_hazard"} (\code{"ph"}),
-\code{"wang"}, \code{"dual_power"} (\code{"dual"}), \code{"tvar"}, \code{"exponential"},
+\code{"wang"}, \code{"tsallis"}, \code{"dual_power"} (\code{"dual"}), \code{"tvar"}, \code{"exponential"},
 \code{"capped_linear"}, \code{"capped_log_linear"}, \code{"lep"} and \code{"linear_yield"}.}
 
 \item{x}{A \link{sampled}, \link{grid_distribution} or \link{predictive_distribution}

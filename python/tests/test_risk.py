@@ -740,3 +740,31 @@ def test_r_vines_and_vine_fits_match_pyvinecopulib():
         RVineCopula([[2, 4, 4, 4], [3, 3, 3, 0], [4, 2, 0, 0], [1, 0, 0, 0]], [[g, g, g], [g, g]])
     with pytest.raises(ValueError):
         r.edge(2, 0)
+
+
+def test_tsallis_gini_and_extended_calibration():
+    # aggregate 2.1.0 (validation/scripts/aggregate_distortion_gini.py).
+    from prospicio.risk import calibrate_distortions
+
+    t = Distortion.tsallis(3.0)
+    assert t.family == "tsallis" and t.parameters == {"alpha": 3.0} and t.mass == 0.0
+    assert t.gini == pytest.approx(0.25, abs=1e-15)
+    assert Distortion.tsallis(2.0).g(0.3) == pytest.approx(0.51, abs=1e-15)
+    assert Distortion.tsallis(0.5).g(0.01) == pytest.approx(0.19, abs=1e-15)  # 2 sqrt(s) - s
+    assert repr(t) == "Distortion.tsallis(3.0)"
+    assert Distortion.wang(0.4).gini == pytest.approx(0.22270258921047836, abs=1e-14)
+    assert Distortion.lep(0.02, 0.2).gini == pytest.approx(0.13494649355556843, abs=1e-11)
+    assert Distortion.from_gini("ph", 0.25).parameter == pytest.approx(0.6, rel=1e-12)
+    assert Distortion.from_gini("ccoc", 0.25).parameter == pytest.approx(1 / 3, rel=1e-12)
+    assert repr(Distortion.from_gini("tsallis", 0.25)) == "Distortion.tsallis(3.0)"
+    with pytest.raises(ValueError, match="r0"):
+        Distortion.from_gini("lep", 0.3)
+    x = Sampled([22, 28, 36, 40, 40, 40, 40, 55, 65, 100])
+    premium = (46.6 + 0.15 * 100) / 1.15
+    ds = calibrate_distortions(x, premium, extended=True)
+    assert list(ds) == ["ccoc", "ph", "wang", "tsallis", "dual", "tvar"]
+    assert ds["tsallis"].parameter == pytest.approx(3.069093409430775, abs=1e-8)
+    assert list(calibrate_distortions(x, premium)) == ["ccoc", "ph", "wang", "dual", "tvar"]
+    assert list(calibrate_distortions(x, premium, families=["tsallis"])) == ["tsallis"]
+    with pytest.raises(ValueError, match="not both"):
+        calibrate_distortions(x, premium, extended=True, families=["ph"])

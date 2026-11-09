@@ -12,7 +12,7 @@ use crate::sheet::{Grid, Value};
 
 type Result<T> = std::result::Result<T, String>;
 
-const NAMES: &str = "\"ccoc\", \"ph\", \"wang\", \"dual\", \"tvar\", \"exp\", \"bitvar\", \
+const NAMES: &str = "\"ccoc\", \"ph\", \"wang\", \"tsallis\", \"dual\", \"tvar\", \"exp\", \"bitvar\", \
 \"beta\", \"wtdtvar\", or with r0 \"clin\", \"cll\", \"lep\" or \"ly\"";
 
 /// A family by `aggregate`'s short name (or its long one); the capped
@@ -37,6 +37,7 @@ fn family(name: &str, r0_arg: &Grid) -> Result<Family> {
         "ccoc" => none(Family::Ccoc),
         "ph" | "proportional_hazard" => none(Family::ProportionalHazard),
         "wang" => none(Family::Wang),
+        "tsallis" => none(Family::Tsallis),
         "dual" | "dual_power" => none(Family::DualPower),
         "tvar" => none(Family::Tvar),
         "exp" | "exponential" => none(Family::Exponential),
@@ -217,13 +218,19 @@ pub fn price(args: &[Grid]) -> Result<Grid> {
 /// `PRO.CAP.DISTORTION.CALIBRATE(values, [probs], premium, [families], [r0])`:
 /// the member of each family whose price of the outcomes is `premium`,
 /// for the five standard families (CCoC, PH, Wang, dual, TVaR) unless
-/// `families` names others. To price a loss backed by assets `a`, give
+/// `families` names others or is `"extended"` (the five with Tsallis
+/// between Wang and dual, `aggregate` 2.1.0's extended set). To price a loss backed by assets `a`, give
 /// the outcomes capped at `a`.
 pub fn calibrate_families(args: &[Grid]) -> Result<Grid> {
     let (x, p) = outcomes(&args[0], &args[1])?;
     let premium = scalar(&args[2], "premium")?;
+    let extended = matches!(args[3].as_scalar(), Some(Value::Text(t)) if t.trim().eq_ignore_ascii_case("extended"));
     let names: Vec<String> = if args[3].is_blank() {
         ["ccoc", "ph", "wang", "dual", "tvar"]
+            .map(String::from)
+            .to_vec()
+    } else if extended {
+        ["ccoc", "ph", "wang", "tsallis", "dual", "tvar"]
             .map(String::from)
             .to_vec()
     } else {
