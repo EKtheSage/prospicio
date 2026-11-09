@@ -2,7 +2,7 @@
 
 - Rust: `prospicio_reserving::bayes::BayesOneYearFit` has the public field
   `warnings: Vec<String>`, so a struct literal of it needs the field (add
-  `warnings: Vec::new()`) and an exhaustive pattern needs `..` (#762).
+  `warnings: Vec::new()`) and an exhaustive pattern needs `..` (#762, #821).
 
 ### Reserving
 
@@ -17,4 +17,4 @@
   `bayes_hierarchical_bf_one_year(light_refit =)`. A panel whose programs
   stop at different ages now warns, naming the programs whose next diagonal
   falls at ages they never observed (`BayesOneYearFit::warnings`; Python
-  `UserWarning` and `warnings`, R `warning()` and `warnings`) (#762).
+  `UserWarning` and `warnings`, R `warning()` and `warnings`) (#762, #821).
