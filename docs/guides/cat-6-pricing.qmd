@@ -13,37 +13,28 @@ execute:
 
 <!-- site: execute -->
 
-The earlier pages of this track made annual ceded losses from the year event
-loss table of Larkspur Re. This page makes a price from the ceded losses of one
-contract. The story, the files and the notation are on
-[the overview](cat-0-overview.qmd). The contract is `alder_cat_1`, the 30%
-line of Larkspur on the first cat layer of Alder Mutual: 40 xs 30 with one
-reinstatement at 100%. Its terms come from
-`examples/data/cat_book_contracts.csv`, as on every page.
+This page prices the ceded losses of one contract. The story, the files and
+the notation are on [the overview](cat-0-overview.qmd). The contract is
+`alder_cat_1`, the 30% line of Larkspur on the first cat layer of Alder
+Mutual: 40 xs 30 with one reinstatement at 100%. Its terms come from
+`examples/data/cat_book_contracts.csv`.
 
 This is the R twin of the Python guide [`cat-6-pricing.md`](cat-6-pricing.md),
-with the same sections, files and numbers. The text under each R chunk is what
-the chunk prints. `R/prospicio/tests/test-guides.R` checks that each chunk
-prints exactly that text, the same text as the Python guide.
+with the same sections and numbers. The text under each R chunk is what the
+chunk prints or shows as a table.
+`R/prospicio/tests/test-guides.R` checks it.
 
-A price has three parts. The expected loss pays the claims on average. A risk
-load, the margin above the expected loss
-([risk loads and distortions](risk-loads-and-distortions.md)), pays for the
-capital behind the bad years. The price adds expenses and brokerage to these
-two parts. The sections below build each part. Then they show what the
-reinstatement premium does to the price, how sensitive the price is, and
-whether the market rate on line is sufficient.
+A price has three parts: the expected loss, a risk load
+([risk loads and distortions](risk-loads-and-distortions.md)) for the capital
+behind the bad years, and expenses with brokerage.
 
 ## 1. The contract's ceded losses
 
-The helper `cedent_events()` is the same on every page of the track. It reads
-the YELT for one cedent and keeps the time in the year and the peril of each
-loss. The code builds the layer from the row of the contract. The upfront
-premium of Larkspur is the rate on line times the limit times its share.
-
-The tests run the guides from the repository root, and Quarto renders them from
-`docs/guides/`. Thus `find_data()` looks for `examples/data/` upwards from the
-working directory.
+The helper `cedent_events()` is the same on every page of the track. The
+upfront premium of Larkspur is the rate on line times the limit times its
+share. `find_data()` looks for `examples/data/` upwards from the working
+directory, because the tests run from the repository root and Quarto from
+`docs/guides/`.
 
 ```{r}
 library(prospicio)
@@ -108,71 +99,91 @@ expected ceded loss 0.8230, loss ratio 0.457
 years with a ceded loss 230 of 2000
 ```
 
-The loss ratio matches the table in page 3, section 6. Most years cost the
-layer nothing, and a few cost it the whole line. Because of this shape, the
-risk load matters more than the expected loss for a cat layer.
+The loss ratio matches page 3, section 6. Most years cost the layer nothing,
+and a few cost it the whole line. Thus the risk load matters more than the
+expected loss.
 
 ## 2. Cost of capital
 
-Larkspur holds assets `A` against the bad years of the layer. The premium `P`
-is part of the assets, and the capital `K = A - P` is the rest. [A first course](a-first-course.qmd)
-and [what a reinsurance price is](reinsurance-price.md), a Python guide, explain the idea. With a cost of
-capital `r`, the margin `P - EL` must equal `r K`. Solve for `P`:
+Larkspur holds assets `A` against the bad years. The premium `P` is part of
+the assets, and the capital is `K = A - P`
+([a first course](a-first-course.qmd),
+[what a reinsurance price is](reinsurance-price.md), a Python guide). With a
+cost of capital `r`, the margin `P - EL` must equal `r K`. Solve for `P`:
 
 ```
 P = (EL + r A) / (1 + r),    K = A - P
 ```
 
-Here the assets are the TVaR at 99% of the ceded loss: the mean of the worst 1%
-of years. Note the convention. A common shortcut is `EL + r (TVaR - EL)`, which
-charges for capital as if the premium does not help pay the tail. The `risk_loaded_price()`
-function of prospicio counts the premium as part of the assets. Thus the
-capital and the price are both a little lower.
+The assets are the TVaR at 99% of the ceded loss: the mean of the worst 1% of
+years. A common shortcut is `EL + r (TVaR - EL)`. It charges for capital as if
+the premium does not help pay the tail. `risk_loaded_price()` counts the
+premium as part of the assets, so the capital and the price are both a little
+lower.
 
 ```{r}
+library(gt)
+
 p <- risk_loaded_price(X, distortion("tvar", 0.99), cost_of_capital = 0.10)
-cat(sprintf("expected loss %.4f\n", p$expected_loss))
-cat(sprintf("assets (TVaR 99) %.4f\n", p$assets))
-cat(sprintf("premium %.4f, capital %.4f\n", p$premium, p$capital))
-cat(sprintf("margin %.4f, return on capital %.4f\n", p$margin, p$return_on_capital))
-cat(sprintf("by the formula %.4f\n", (p$expected_loss + 0.10 * p$assets) / 1.10))
-cat(sprintf("shortcut EL + r (TVaR - EL) %.4f\n", p$expected_loss + 0.10 * (p$assets - p$expected_loss)))
+cost <- data.frame(
+  item = c("expected loss", "assets (TVaR 99)", "premium", "capital", "margin",
+           "return on capital", "premium by the formula",
+           "shortcut EL + r (TVaR - EL)"),
+  value = c(p$expected_loss, p$assets, p$premium, p$capital, p$margin,
+            p$return_on_capital, (p$expected_loss + 0.10 * p$assets) / 1.10,
+            p$expected_loss + 0.10 * (p$assets - p$expected_loss))
+)
+gt(cost, rowname_col = "item") |>
+  tab_header("Alder 40 xs 30: the cost of capital price at r = 10%",
+             "At Larkspur's share") |>
+  fmt_number(columns = value, decimals = 4)
 ```
 
 ```text
-expected loss 0.8230
-assets (TVaR 99) 13.8428
-premium 2.0066, capital 11.8362
-margin 1.1836, return on capital 0.1000
-by the formula 2.0066
-shortcut EL + r (TVaR - EL) 2.1250
+                               value
+expected loss                 0.8230
+assets (TVaR 99)             13.8428
+premium                       2.0066
+capital                      11.8362
+margin                        1.1836
+return on capital             0.1000
+premium by the formula        2.0066
+shortcut EL + r (TVaR - EL)   2.1250
 ```
 
 ## 3. A distortion price
 
 A pricing distortion gives more weight to the years in the tail. The premium is
-the expected loss under the new weights, and the return on the same capital
-follows from the price.
-[Risk loads and distortions](risk-loads-and-distortions.md) compares the
-families, and [portfolio pricing](pir-portfolio-pricing.qmd) gives the theory. This section
-uses the Wang transform with a parameter of 0.3.
+the expected loss under the new weights. [Risk loads and
+distortions](risk-loads-and-distortions.md) compares the families, and
+[portfolio pricing](pir-portfolio-pricing.qmd) gives the theory. Here the
+distortion is the Wang transform with a parameter of 0.3.
 
 ```{r}
 pw <- risk_loaded_price(X, distortion("tvar", 0.99), distortion = distortion("wang", 0.3))
-cat(sprintf("Wang 0.3 premium %.4f, capital %.4f\n", pw$premium, pw$capital))
-cat(sprintf("return on capital %.4f\n", pw$return_on_capital))
+rules <- data.frame(
+  rule = c("cost of capital, TVaR 99", "Wang 0.3"),
+  premium = c(p$premium, pw$premium),
+  capital = c(p$capital, pw$capital),
+  `return on capital` = c(p$return_on_capital, pw$return_on_capital),
+  check.names = FALSE
+)
+gt(rules, rowname_col = "rule") |>
+  tab_header("Alder 40 xs 30: two pricing rules", "At Larkspur's share") |>
+  fmt_number(columns = c("premium", "capital", "return on capital"), decimals = 4)
 ```
 
 ```text
-Wang 0.3 premium 1.4225, capital 12.4204
-return on capital 0.0483
+                          premium  capital  return on capital
+cost of capital, TVaR 99   2.0066  11.8362             0.1000
+Wang 0.3                   1.4225  12.4204             0.0483
 ```
 
-The Wang price is lower, and the return that it implies on the TVaR capital is
-under 5%. The two rules answer different questions. Use the rule that matches
-the calibration of your capital model, and use the other as a check.
+The Wang price is lower and implies under 5% on the TVaR capital. The two
+rules answer different questions: use the one that matches your capital model,
+and the other as a check.
 
-The figure shows the years with a ceded loss, and where each number falls.
+The figure shows the years with a ceded loss, and where each price falls.
 
 ```{r}
 #| label: fig-loss-years
@@ -197,38 +208,32 @@ ggplot() +
 The premium above is the risk premium. With expenses `e` and brokerage `b` as
 fractions of the quoted premium `Q`, `Q = P / (1 - e - b)`
 ([what a reinsurance price is](reinsurance-price.md), "The technical
-premium"). `technical_quote()` does this calculation. It also reports the rate on
-line against the limit at the share of Larkspur.
+premium"). `technical_quote()` does this and reports the rate on line at the
+share of Larkspur.
 
 ```{r}
 q <- technical_quote(p, expenses = 0.05, brokerage = 0.10, limit = lay@limit * lay@share)
 cat(sprintf("technical premium %.4f, rate on line %.4f\n", q$premium, q$rate_on_line))
-cat(sprintf("expenses %.4f, brokerage %.4f, risk premium %.4f\n", q$expenses, q$brokerage, q$risk_premium))
-cat(sprintf("contract rate on line %.2f, premium %.4f\n", as.numeric(c1$rate_on_line), lay@premium))
 ```
 
 ```text
 technical premium 2.3607, rate on line 0.1967
-expenses 0.1180, brokerage 0.2361, risk premium 2.0066
-contract rate on line 0.15, premium 1.8000
 ```
 
 The technical rate on line is above the 15% in the contract. Section 7 shows
-what the price of the contract earns.
+the build-up.
 
 ## 5. The reinstatement premium inside the price
 
-When the layer pays a loss, the cedent buys the limit back. With one
-reinstatement at 100%, the cedent pays the upfront premium again in proportion
-to the limit used. Thus the reinsurer collects more than the upfront premium in
-exactly the years when it pays claims.
+When the layer pays a loss, the cedent buys the limit back: with one
+reinstatement at 100%, it pays the upfront premium again in proportion to the
+limit used. Thus the reinsurer collects more exactly when it pays claims.
 
-**Expected value.** The reinstatement premium of each year is the upfront
-premium times a factor that depends only on the losses. The factor is the share
-of the limit used, times the rate. Thus its expected value is `f P` for a fixed
-`f`. Suppose that the risk premium `R` must come from the upfront premium and
-the expected reinstatement premium together. Then `P (1 + f) = R`, and
-`P = R / (1 + f)` in closed form.
+**Expected value.** The reinstatement premium of a year is the upfront premium
+times a factor that depends only on the losses (the share of the limit used,
+times the rate). Its expected value is `f P` for a fixed `f`. If the risk
+premium `R` must come from the upfront premium and the expected reinstatement
+premium together, then `P (1 + f) = R`, so `P = R / (1 + f)`.
 
 ```{r}
 f <- mean(rip) / lay@premium
@@ -242,16 +247,15 @@ upfront premium for a risk premium of 2.0066: 1.8805
 ```
 
 **In the tail.** Under TVaR, the expected value is not sufficient. The
-reinstatement premium of year `t` is `P g_t`, where `g_t` depends only on the
-losses of that year. It comes in the years with losses, so it also lowers the
-tail of the net outcome `X_t - P g_t`. The assets then depend on `P`, and the
-upfront premium solves `P = price(X - P g)`, one equation in one unknown.
-Sundt (1991) and Mata (2000) study premiums with reinstatements in this way.
+reinstatement premium of year `t` is `P g_t`, where `g_t` depends only on that
+year's losses. It comes in the years with losses, so it lowers the tail of the
+net outcome `X_t - P g_t`. The assets then depend on `P`, and the upfront
+premium solves `P = price(X - P g)`, one equation in one unknown (Sundt 1991,
+Mata 2000).
 
 `price_with_reinstatements` finds the root (#587). The price of the net outcome
-falls as `P` increases. Thus `price(X - P g) - P` changes sign once between 0
-and the price without reinstatement premium, and the call finds that root by
-bisection.
+falls as `P` increases, so `price(X - P g) - P` changes sign once between 0 and
+the price without reinstatement premium. The call finds that root by bisection.
 
 ```{r}
 g <- rip@draws / lay@premium  # reinstatement premium per unit of upfront premium
@@ -266,29 +270,35 @@ quoted with 5% expenses and 10% brokerage 2.0495
 ```
 
 Counting the reinstatement premium in the tail lowers the upfront premium more
-than the expected value alone does. The difference is the capital that the
-reinstatement premium saves in the worst years.
+than the expected value alone does: it saves capital in the worst years.
 
 ## 6. Sensitivity
 
-A price is only as firm as its inputs. This section loops over three of them:
-the cost of capital, the hours clause and the timing of the season.
+Three inputs: the cost of capital, the hours clause and the timing of the
+season.
 
 **Cost of capital.** The assets do not change with `r`, but the premium is
-concave in `r`. `P = (EL + r A) / (1 + r)` increases by less with each step.
+concave in `r`: `P = (EL + r A) / (1 + r)` increases by less with each step.
 
 ```{r}
-for (r in c(0.05, 0.10, 0.15, 0.20)) {
-  cat(sprintf("r = %.2f: premium %.4f\n", r,
-              risk_loaded_price(X, distortion("tvar", 0.99), cost_of_capital = r)$premium))
-}
+rates <- c(0.05, 0.10, 0.15, 0.20)
+by_rate <- data.frame(
+  r = sprintf("%.2f", rates),
+  premium = sapply(rates, function(r) {
+    risk_loaded_price(X, distortion("tvar", 0.99), cost_of_capital = r)$premium
+  })
+)
+gt(by_rate, rowname_col = "r") |>
+  tab_header("Alder 40 xs 30: the premium by cost of capital", "At Larkspur's share") |>
+  fmt_number(columns = premium, decimals = 4)
 ```
 
 ```text
-r = 0.05: premium 1.4430
-r = 0.10: premium 2.0066
-r = 0.15: premium 2.5212
-r = 0.20: premium 2.9930
+      premium
+0.05   1.4430
+0.10   2.0066
+0.15   2.5212
+0.20   2.9930
 ```
 
 ```{r}
@@ -310,69 +320,74 @@ ggplot(by_r, aes(r, premium, colour = rule)) +
 ```
 
 **Hours clause.** Without the 72 hour clause, the pieces of a split windstorm
-or convective storm are separate occurrences. Each piece has its own retention.
+or convective storm are separate occurrences, each with its own retention.
 
 ```{r}
 loss_raw <- ceded_and_rip(lay, raw)$loss
-for (case in list(list("72 hours", loss), list("no clause", loss_raw))) {
-  pr <- risk_loaded_price(sampled(case[[2]]@draws), distortion("tvar", 0.99), cost_of_capital = 0.10)
-  cat(sprintf("%9s: expected loss %.4f, assets %.4f, premium %.4f\n", case[[1]],
-              pr$expected_loss, pr$assets, pr$premium))
-}
+prices <- lapply(list(`72 hours` = loss, `no clause` = loss_raw), function(ls) {
+  risk_loaded_price(sampled(ls@draws), distortion("tvar", 0.99), cost_of_capital = 0.10)
+})
+clause <- data.frame(
+  clause = names(prices),
+  `expected loss` = sapply(prices, function(x) x$expected_loss),
+  assets = sapply(prices, function(x) x$assets),
+  premium = sapply(prices, function(x) x$premium),
+  check.names = FALSE, row.names = NULL
+)
+gt(clause, rowname_col = "clause") |>
+  tab_header("Alder 40 xs 30: with and without the hours clause", "At Larkspur's share") |>
+  fmt_number(columns = c("expected loss", "assets", "premium"), decimals = 4)
 ```
 
 ```text
- 72 hours: expected loss 0.8230, assets 13.8428, premium 2.0066
-no clause: expected loss 0.7778, assets 15.4227, premium 2.1092
+           expected loss   assets  premium
+72 hours          0.8230  13.8428   2.0066
+no clause         0.7778  15.4227   2.1092
 ```
 
-The clause increases the expected loss, because the pieces of a storm add up
-before the retention applies. It decreases the tail. Without the clause, a
-storm in two large pieces can take the full limit two times in one year. It
-takes it once from the limit and once from the reinstatement. Grouped, the same
-storm is one occurrence and takes one limit. On this book the tail effect is
-larger, and the price without the clause is higher.
+The clause raises the expected loss, because the pieces of a storm add up
+before the retention applies. It lowers the tail: without it, a storm in two
+large pieces can take the limit twice in one year (limit and reinstatement),
+and grouped it takes one limit. On this book the tail effect is larger, so the
+price without the clause is higher.
 
 **Season.** A reinstatement pro rata as to time charges only for the part of
 the year left. Most windstorms of Alder (nine in ten in the generator) arrive
-between day 213 and day 305. Thus the cedent pays much less to reinstate, and
-`f` falls.
+between day 213 and day 305, so the cedent pays much less to reinstate and `f`
+falls.
 
 ```{r}
 rip_time <- ceded_and_rip(xl_layer(c1, pro_rata_time = TRUE), grouped)$rip
 f_time <- mean(rip_time) / lay@premium
-cat(sprintf("f pro rata as to amount %.5f, as to time %.5f\n", f, f_time))
-cat(sprintf("upfront premium (expected value) %.4f against %.4f\n", p$premium / (1 + f), p$premium / (1 + f_time)))
+season <- data.frame(
+  reinstatement = c("pro rata as to amount", "pro rata as to time"),
+  f = c(f, f_time),
+  `upfront premium` = c(p$premium / (1 + f), p$premium / (1 + f_time)),
+  check.names = FALSE
+)
+gt(season, rowname_col = "reinstatement") |>
+  tab_header("Alder 40 xs 30: the reinstatement terms",
+             "Upfront premium by expected value, at Larkspur's share") |>
+  fmt_number(columns = f, decimals = 5) |>
+  fmt_number(columns = "upfront premium", decimals = 4)
 ```
 
 ```text
-f pro rata as to amount 0.06705, as to time 0.02484
-upfront premium (expected value) 1.8805 against 1.9580
+                             f  upfront premium
+pro rata as to amount  0.06705           1.8805
+pro rata as to time    0.02484           1.9580
 ```
 
 ## 7. Is the market price adequate?
 
 The rate on line of the contract is 15%, a premium of 1.8 at the share of
-Larkspur. `implied_quote()` reads a quoted premium backwards. It takes off expenses
-and brokerage, and it reports the margin and the return on the same capital.
-
-```{r}
-m <- implied_quote(q, lay@premium)
-cat(sprintf("quoted premium %.4f, risk premium %.4f\n", m$premium, m$risk_premium))
-cat(sprintf("loss ratio %.3f, margin %.4f\n", m$loss_ratio, m$margin))
-cat(sprintf("return on capital %.4f against a target of 0.10\n", m$return_on_capital))
-```
-
-```text
-quoted premium 1.8000, risk premium 1.5300
-loss ratio 0.457, margin 0.7070
-return on capital 0.0574 against a target of 0.10
-```
+Larkspur. `implied_quote()` reads a quoted premium backwards: it takes off
+expenses and brokerage, and reports the margin and the return on the same
+capital.
 
 ```{r}
 #| label: tbl-build-up
-library(gt)
-
+m <- implied_quote(q, lay@premium)
 build_up <- data.frame(
   item = c("risk premium", "expenses", "brokerage", "quoted premium", "rate on line"),
   technical = c(q$risk_premium, q$expenses, q$brokerage, q$premium, q$rate_on_line),
@@ -385,12 +400,30 @@ gt(build_up, rowname_col = "item") |>
   fmt_number(columns = c(technical, market), decimals = 4)
 ```
 
+```text
+                technical  market
+risk premium       2.0066  1.5300
+expenses           0.1180  0.0900
+brokerage          0.2361  0.1800
+quoted premium     2.3607  1.8000
+rate on line       0.1967  0.1500
+```
+
+```{r}
+cat(sprintf("loss ratio %.3f, margin %.4f\n", m$loss_ratio, m$margin))
+cat(sprintf("return on capital %.4f against a target of 0.10\n", m$return_on_capital))
+```
+
+```text
+loss ratio 0.457, margin 0.7070
+return on capital 0.0574 against a target of 0.10
+```
+
 At the market price, `alder_cat_1` earns much less than the 10% target on its
-stand-alone capital. The reinstatement premium does not close the gap. With the
-reinstatement premium in the tail, the upfront premium of section 5, 1.7421, is
-a risk premium. With expenses and brokerage it is 2.0495, still above the 1.8
-charged. What remains is the diversification in the book of Larkspur, which
-page 7 measures.
+stand-alone capital. The reinstatement premium does not close the gap: for the
+same risk premium, the upfront premium of section 5 is 1.7421, and 2.0495 with
+expenses and brokerage, still above the 1.8 charged. What remains is the
+diversification in the book of Larkspur, which page 7 measures.
 
 ## In Python
 

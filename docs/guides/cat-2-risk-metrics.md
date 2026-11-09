@@ -11,16 +11,14 @@ years of Alder:
 - Does the simulation agree with the event table of the vendor?
 - How often does a loss reach the first layer of Alder?
 
-This page answers these questions in that order. The story, the files and the
-notation are on [the overview](cat-0-overview.md). Money is in millions of
-Varland crowns.
+The story, the files and the notation are on [the overview](cat-0-overview.md).
+Money is in millions of Varland crowns.
 
 ## 1. Alder's simulated years
 
-Each page of the track runs on its own. So this page builds the simulated years
-of Alder Mutual again from the year event loss table (YELT), with the same
-helper as page 1. The helper keeps the time in the year of each loss, which the
-hours clause in section 5 needs.
+This page builds the simulated years of Alder Mutual again from the year event
+loss table (YELT), with the helper of page 1. The helper keeps the time of each
+loss, which the hours clause in section 5 needs.
 
 ```python
 import csv
@@ -82,9 +80,8 @@ The **expected loss** (`EL`, here the AAL) is the mean of the annual totals.
 is the mean of the total over the worst `1 - p` of years.
 
 On 2,000 simulated years, a quantile is an order statistic, and the definition
-sets which one. Hyndman and Fan (1996) list nine definitions of a sample
-quantile. prospicio gives two of them through the `quantile=` option of
-`statistics` and the `method` of `Sampled.var`:
+sets which one. Hyndman and Fan (1996) list nine definitions. prospicio gives two, through the `quantile=`
+option of `statistics` and the `method` of `Sampled.var`:
 
 - `"inverted_cdf"` (the default, their type 1): the smallest draw whose
   empirical cdf reaches `p`. At `N = 2000` and `p = 0.99` that is the 1,980th
@@ -93,8 +90,7 @@ quantile. prospicio gives two of them through the `quantile=` option of
   neighbouring draws.
 
 Some reports use a third rule: the `k`-th largest year, with
-`k = floor((1 - p) N)`. Then only `k - 1` years are above it. The block below
-reads this year from the sorted draws (#582).
+`k = floor((1 - p) N)`, so only `k - 1` years are above it (#582).
 
 ```python
 total = alder.totals().total()
@@ -116,13 +112,13 @@ np.quantile (linear)    176.836
 statistics, linear      176.836
 ```
 
-TVaR has the same choice of rule. The exact `Sampled.tvar` gives each year a
+TVaR has the same choice. The exact `Sampled.tvar` gives each year a
 mass of `1 / N` (as does the default `tvar="exact"` of `statistics`). It splits
 one year when `(1 - p) N` is not a whole number. At `N = 2000`, every round
-level (99%, 99.5%, 99.6%, 99.8%) gives a whole number of years. So the exact
-TVaR is the mean of the worst `k` whole years, and the two differ only at a
-level such as 99.33%. `tvar="linear"` integrates the interpolated quantile and
-gives a lower value.
+level (99%, 99.5%, 99.6%, 99.8%) gives a whole number of years, so the exact
+TVaR is the mean of the worst `k` years (the two differ only at a level such
+as 99.33%). `tvar="linear"` integrates the interpolated quantile and gives a
+lower value.
 
 ```python
 print(f"Sampled.tvar (exact)      {Sampled(d).tvar(0.99):.3f}")
@@ -144,13 +140,13 @@ Percentile 99   176.824
 TVaR 99         255.969
 ```
 
-Always write the rule next to each VaR that you report. On 2,000 years, the
-rules here differ by about 1.2, or 0.7%.
+Name the rule with each VaR that you report: here the rules differ by about 1.2,
+or 0.7%.
 
 ## 3. A band of bad years
 
-Some capital and retro work needs the mean loss between two levels, for example
-between the 50-year and 100-year points. This **window TVaR** comes from two
+Capital and retro work sometimes needs the mean loss between two levels, for
+example the 50-year and 100-year points. This **window TVaR** comes from two
 ordinary TVaRs (#583). The worst `1 - p0` of years are the window plus the
 worst `1 - p1`, so:
 
@@ -158,8 +154,8 @@ worst `1 - p1`, so:
 window(p0, p1) = ((1 - p0) TVaR(p0) - (1 - p1) TVaR(p1)) / (p1 - p0)
 ```
 
-When the two levels give whole numbers of years, the window TVaR is exactly the
-mean of the years with ranks between them.
+For whole numbers of years, this is the mean of the years ranked between the
+two levels.
 
 ```python
 p0, p1 = 0.98, 0.99
@@ -175,41 +171,50 @@ mean of years ranked 21 to 40 from the top: 151.818
 
 ## 4. One large event or many: two exceedance curves
 
-A year can be bad for a cedent in two ways: one very large event, or many
-medium events. Cat pricing keeps the two cases separate.
+A year can be bad in two ways: one very large event, or many medium events.
 
 - The **aggregate exceedance probability** (AEP) of an amount `x` is the
   chance that the year's **total** loss is above `x`.
 - The **occurrence exceedance probability** (OEP) of `x` is the chance that
   the year's **largest single** loss is above `x`.
 
-On simulated years, both are counts: the share of years with a total (or a
-maximum) above `x`. The **return period** of `x` is `1 / p`. So a loss with a
-1% annual probability of exceedance is "the 100-year loss". The AEP is always
-at least the OEP, because the total of a year is at least its largest loss.
+On simulated years, both are shares of years. The **return period** of `x` is
+`1 / p`, so a loss with a 1% annual probability is "the 100-year loss". The AEP
+is at least the OEP, because a year's total is at least its largest loss.
 
-An occurrence layer, for example a 40 xs 30 cat XoL, pays per event. So you
-read its attachment from the OEP. An aggregate cover, for example a stop loss,
-uses the AEP. `EventSet.totals()` gives the total of each year, and
-`EventSet.maxima()` gives the largest loss of each year.
+An occurrence layer, for example a 40 xs 30 cat XoL, pays per event, so read it
+from the OEP. An aggregate cover, for example a stop loss, uses the AEP.
+`EventSet.totals()` gives the total of each year, and `EventSet.maxima()` gives the largest loss of each year.
 
 ```python
+import pandas as pd
+from great_tables import GT
+
 largest = alder.maxima().total()
-for x in (30.0, 70.0, 110.0):
-    aep = sum(v > x for v in total.draws) / N_YEARS
-    oep = sum(v > x for v in largest.draws) / N_YEARS
-    print(f"x {x:5.0f}: AEP {aep:.4f}  OEP {oep:.4f}  OEP return period {1 / oep:5.1f} years")
+levels = [30.0, 70.0, 110.0]
+aep = [sum(v > x for v in total.draws) / N_YEARS for x in levels]
+oep = [sum(v > x for v in largest.draws) / N_YEARS for x in levels]
+curve = pd.DataFrame({
+    "x": [int(x) for x in levels],
+    "AEP": aep,
+    "OEP": oep,
+    "OEP return period": [1 / p for p in oep],
+})
+(GT(curve, rowname_col="x")
+ .tab_header("Alder: exceedance probabilities", "x in millions of crowns; return period in years")
+ .fmt_number(["AEP", "OEP"], decimals=4)
+ .fmt_number("OEP return period", decimals=1))
 ```
 
 ```text
-x    30: AEP 0.1465  OEP 0.1070  OEP return period   9.3 years
-x    70: AEP 0.0535  OEP 0.0345  OEP return period  29.0 years
-x   110: AEP 0.0235  OEP 0.0190  OEP return period  52.6 years
+        AEP     OEP  OEP return period
+30   0.1465  0.1070                9.3
+70   0.0535  0.0345               29.0
+110  0.0235  0.0190               52.6
 ```
 
-The three points above are on a curve. The figure draws the two curves for the
-whole range of amounts. The gap between them is the part of the tail that many
-events make, and one event does not.
+The figure draws both curves for all amounts. The gap is the part of the
+tail that many events make and one event does not.
 
 ```python
 import matplotlib.pyplot as plt
@@ -236,27 +241,37 @@ OEP(x) = 1 - exp(-sum_i rate_i * P(X_i > x))
 ```
 
 `EventLossTable.oep` calculates it exactly, and `occurrence_pml` inverts it.
-The simulated years should agree with it up to sampling error. With 2,000 years
-and an exceedance probability `p`, the standard error of the simulated share is
+The simulated shares should agree with it up to a standard error of
 `sqrt(p (1 - p) / 2000)`.
 
 The YELT gives some windstorms and convective storms in pieces a few hours
 apart, but the ELT counts each event once. An **occurrence** is what a contract
-counts as one loss. On this track, it is all the pieces in the 72 hours that
-start at the first piece (page 3 explains the hours clause). Raw maxima see
-single pieces, so they understate the OEP. Grouping by 72 hours joins the
-pieces again. But it can also join two different catalog events in the same
-window, and this increases the grouped OEP.
+counts as one loss: here, all pieces in the 72 hours from the first piece (page
+3 explains the hours clause). Raw maxima see single pieces and understate the
+OEP. Grouping by 72 hours joins the pieces again, but it can also join two
+different catalog events in the same window, which raises the grouped OEP.
 
 ```python
 grouped = alder.grouped(72.0)
 largest_grouped = grouped.maxima().total()
-print("    x    ELT    raw  grouped  s.e.")
-for x in (30.0, 70.0, 110.0):
-    raw = sum(v > x for v in largest.draws) / N_YEARS
-    grp = sum(v > x for v in largest_grouped.draws) / N_YEARS
-    se = math.sqrt(elt.oep(x) * (1 - elt.oep(x)) / N_YEARS)
-    print(f"{x:5.0f} {elt.oep(x):.4f} {raw:.4f}  {grp:.4f}  {se:.4f}")
+check = pd.DataFrame({"x": [int(x) for x in levels]})
+check["ELT"] = [elt.oep(x) for x in levels]
+check["raw"] = oep
+check["grouped"] = [sum(v > x for v in largest_grouped.draws) / N_YEARS for x in levels]
+check["s.e."] = [math.sqrt(p * (1 - p) / N_YEARS) for p in check["ELT"]]
+(GT(check, rowname_col="x")
+ .tab_header("Alder: occurrence exceedance, simulated and from the ELT", "x in millions of crowns")
+ .fmt_number(["ELT", "raw", "grouped", "s.e."], decimals=4))
+```
+
+```text
+        ELT     raw  grouped    s.e.
+30   0.1136  0.1070   0.1150  0.0071
+70   0.0374  0.0345   0.0375  0.0042
+110  0.0180  0.0190   0.0215  0.0030
+```
+
+```python
 print(f"ELT 100-year occurrence loss: {elt.occurrence_pml(0.01):.2f}")
 
 by_year = [[] for _ in range(N_YEARS)]
@@ -281,19 +296,14 @@ print(f"occurrences {windows}, joining two or more catalog events {joined}, of w
 ```
 
 ```text
-    x    ELT    raw  grouped  s.e.
-   30 0.1136 0.1070  0.1150  0.0071
-   70 0.0374 0.0345  0.0375  0.0042
-  110 0.0180 0.0190  0.0215  0.0030
 ELT 100-year occurrence loss: 147.94
 occurrences 4238, joining two or more catalog events 87, of which above 30: 9
 ```
 
-The next figure shows the same check for all amounts. Up to about 90, the grey
-line of the raw maxima is below the ELT line, and the grouped line follows the
-ELT line. Above 90, both simulated lines are above the ELT line, and only a few
-years lie behind each point (about 40 years at 110). This is the effect of the
-joined occurrences in section 5, and of sampling error.
+The figure shows the same check for all amounts. Up to about 90, the raw maxima
+(grey) are below the ELT line and the grouped line follows it. Above 90, both
+simulated lines are above it, and few years lie behind each point (about 40 at
+110): joined occurrences and sampling error.
 
 ```python
 xs = np.linspace(20, 130, 45)
@@ -310,37 +320,19 @@ ax.legend()
 ```
 
 At 30 and 70, the grouped shares are well within one standard error of the ELT.
-At 110, the difference of 0.0035 is a little more than one standard error. The
-nine joined occurrences above 30 move the share in the same direction. Both
-effects are real. The hours clause pays on the joined occurrence. So use the
-grouped curve to price a contract, although it is not the curve of the ELT.
+At 110, the difference of 0.0035 is a little more than one. The nine joined
+occurrences above 30 push the share the same way. The hours clause pays on the
+joined occurrence, so price a contract on the grouped curve, although it is not
+the curve of the ELT.
 
 ## 6. Losses at a return period
 
-In the opposite direction, the curves give the loss at a return period. The
-aggregate probable maximum loss (PML) comes from the totals, and the occurrence
-PML comes from the maxima. Underwriters call both "PML", so always say which
-one. Each is a VaR of section 2, here with the default inverted-cdf rule.
+The curves also give the loss at a return period. The aggregate probable
+maximum loss (PML) comes from the totals, and the occurrence PML from the
+maxima. Underwriters call both "PML", so say which one. Each is a VaR of
+section 2, here with the inverted-cdf rule.
 
 ```python
-print(" RP   AEP loss   OEP loss  ELT OEP loss")
-for rp in (10, 50, 100, 250):
-    p = 1 - 1 / rp
-    print(f"{rp:3d} {Sampled(total.draws).var(p):10.3f} {Sampled(largest_grouped.draws).var(p):10.3f} {elt.occurrence_pml(1 / rp):13.3f}")
-```
-
-```text
- RP   AEP loss   OEP loss  ELT OEP loss
- 10     42.244     33.971        33.648
- 50    125.246    120.464       103.432
-100    176.824    163.418       147.938
-250    232.741    223.450       199.470
-```
-
-```python
-import pandas as pd
-from great_tables import GT
-
 rps = [10, 50, 100, 250]
 pml = pd.DataFrame({
     "return period": rps,
@@ -350,14 +342,21 @@ pml = pd.DataFrame({
 })
 (GT(pml, rowname_col="return period")
  .tab_header("Alder: loss at a return period", "Millions of crowns; simulated losses use the inverted-cdf rule")
- .fmt_number(["AEP loss", "OEP loss", "ELT OEP loss"], decimals=1))
+ .fmt_number(["AEP loss", "OEP loss", "ELT OEP loss"], decimals=3))
 ```
 
-In the far tail, the simulated OEP losses are above the OEP losses of the ELT,
-for the two reasons of section 5. At the 250-year point, only eight of the
-2,000 years are beyond the estimate, so the sampling error is large. Also, the
-hours clause joins occurrences, and this increases the losses. More years do
-not remove this increase.
+```text
+     AEP loss  OEP loss  ELT OEP loss
+10     42.244    33.971        33.648
+50    125.246   120.464       103.432
+100   176.824   163.418       147.938
+250   232.741   223.450       199.470
+```
+
+In the far tail, the simulated OEP losses are above those of the ELT, for the
+reasons of section 5. At 250 years, only eight of the 2,000 years are beyond
+the estimate, so the sampling error is large. The hours clause also joins
+occurrences, and more years do not remove that increase.
 
 ## 7. How often is Alder's first layer touched, and used up?
 
@@ -368,17 +367,16 @@ For a layer `l xs a`, an underwriter asks two questions:
 - **Exhaustion probability**: what is the probability that one loss uses all
   of the limit? Per occurrence, it is `P(X >= a + l)`.
 
-The strict and inclusive comparisons are important on simulated years, where a
-loss can be exactly on a boundary. Each probability has a per-occurrence
-version and an annual version. With a Poisson count of `lambda` occurrences a
-year, the annual probability of at least one loss above `a` is
-`1 - exp(-lambda P(X > a))`. This is the OEP at `a` again.
+Each has a per-occurrence and an annual version. The strict and inclusive
+comparisons matter because a simulated loss can sit exactly on a boundary. With
+a Poisson count of `lambda` occurrences a year, the annual probability of a loss
+above `a` is `1 - exp(-lambda P(X > a))`, the OEP at `a`.
 
 On a severity grid, `occurrence_layer_statistics` gives all of these values
-exactly. [aggregate-distributions.md](aggregate-distributions.md) shows how to
-make grids. Here the grid is the empirical distribution of the grouped
-occurrences of Alder, each rounded up to the next half crown. The count is
-Poisson at their simulated rate. The terms come from `cat_book_contracts.csv`.
+exactly ([aggregate-distributions.md](aggregate-distributions.md) shows how to
+make grids). Here the grid is the empirical distribution of Alder's grouped
+occurrences, each rounded up to the next half crown, with a Poisson count at
+their simulated rate. The terms come from `cat_book_contracts.csv`.
 
 ```python
 c = CONTRACTS["alder_cat_1"]
@@ -399,47 +397,53 @@ alder_cat_1: 40 xs 30, 2.119 occurrences a year
 grid:   P(attach) 0.0569  P(exhaust) 0.0184  P(layer hit in a year) 0.1135
 ```
 
-On the simulated years, the counts are short (#581). Per occurrence, count the
-grouped losses. Per year, read the grouped maxima. The ELT also gives the
-per-occurrence values, from its OEP formula inverted:
+On the simulated years (#581), count the grouped losses per occurrence and read
+the grouped maxima per year. The ELT gives per-occurrence values from its
+inverted OEP formula:
 `P(X > x) = -ln(1 - OEP(x)) / rate`.
 
 ```python
 elt_attach = -math.log(1 - elt.oep(a)) / elt.rate
 elt_exhaust = -math.log(1 - elt.oep(a + l)) / elt.rate
-print(f"trials, per occurrence: P(attach) {sum(x > a for x in occ) / len(occ):.4f}  P(exhaust) {sum(x >= a + l for x in occ) / len(occ):.4f}")
-print(f"trials, per year:       P(attach) {sum(x > a for x in largest_grouped.draws) / N_YEARS:.4f}  P(exhaust) {sum(x >= a + l for x in largest_grouped.draws) / N_YEARS:.4f}")
-print(f"ELT, per occurrence:    P(attach) {elt_attach:.4f}  P(exhaust) {elt_exhaust:.4f}")
-print(f"ELT, per {lam:.3f} occ.:    P(attach) {elt_attach * elt.rate / lam:.4f}  P(exhaust) {elt_exhaust * elt.rate / lam:.4f}")
-print(f"ELT, per year:          P(attach) {elt.oep(a):.4f}  P(exhaust) {elt.oep(a + l):.4f}")
+rescale = elt.rate / lam
+odds = pd.DataFrame({
+    "basis": ["trials, per occurrence", "trials, per year", "ELT, per occurrence",
+              f"ELT, per {lam:.3f} occurrences", "ELT, per year"],
+    "P(attach)": [sum(x > a for x in occ) / len(occ), sum(x > a for x in largest_grouped.draws) / N_YEARS,
+                  elt_attach, elt_attach * rescale, elt.oep(a)],
+    "P(exhaust)": [sum(x >= a + l for x in occ) / len(occ), sum(x >= a + l for x in largest_grouped.draws) / N_YEARS,
+                   elt_exhaust, elt_exhaust * rescale, elt.oep(a + l)],
+})
+(GT(odds, rowname_col="basis")
+ .tab_header("Alder cat 1: attachment and exhaustion probabilities")
+ .fmt_number(["P(attach)", "P(exhaust)"], decimals=4))
 ```
 
 ```text
-trials, per occurrence: P(attach) 0.0569  P(exhaust) 0.0179
-trials, per year:       P(attach) 0.1150  P(exhaust) 0.0375
-ELT, per occurrence:    P(attach) 0.0516  P(exhaust) 0.0163
-ELT, per 2.119 occ.:    P(attach) 0.0569  P(exhaust) 0.0180
-ELT, per year:          P(attach) 0.1136  P(exhaust) 0.0374
+                            P(attach)  P(exhaust)
+trials, per occurrence         0.0569      0.0179
+trials, per year               0.1150      0.0375
+ELT, per occurrence            0.0516      0.0163
+ELT, per 2.119 occurrences     0.0569      0.0180
+ELT, per year                  0.1136      0.0374
 ```
 
-The per-occurrence probabilities look different, but they agree. The ELT counts
+The per-occurrence rows differ, but they agree at the same count. The ELT counts
 2.3365 events a year. The grouped trials count 2.119 occurrences (the hours
-clause joins pieces, and the YELT has no pieces below its 0.05 floor). At the
-same count, the probabilities of the ELT agree with the probabilities of the
-trials. The annual probabilities need no rescale, which is one reason to
-compare annual values.
+clause joins pieces, and the YELT has no pieces below its 0.05 floor). The
+annual rows need no rescale.
 
 The exhaustion probability of the grid is a little higher than that of the
-trials. The cause is that rounding up to the next half crown moves a few losses
-just below 70 to 70. Here, "exhausted" means that one occurrence used all of
-the limit. The annual limit is the limit plus its one reinstatement, 80 at
-100%. To use all of it, the layer losses of one year must add up to 80, from
-any number of occurrences, which is rarer. Page 3 runs the layer itself.
+trials, because rounding up to the next half crown moves a few losses just
+below 70 to 70. "Exhausted" here means that one occurrence used all of the
+limit. The annual limit is the limit plus its one reinstatement, 80 at 100%.
+Using all of it needs layer losses of 80 in one year, from any number of
+occurrences, which is rarer. Page 3 runs the layer itself.
 
 ## 8. From one cedent to the book
 
-Larkspur writes all three cedents. So its tail is the tail of their sum, and
-the share of each cedent in that tail is less than its stand-alone TVaR.
+Larkspur writes all three cedents, so its tail is the tail of their sum, and
+each cedent's share of that tail is less than its stand-alone TVaR.
 [Page 7](cat-7-portfolio.md) measures this on the contracts of Larkspur and
 allocates capital from it.
 

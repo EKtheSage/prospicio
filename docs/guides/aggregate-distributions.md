@@ -2,17 +2,14 @@
 
 <!-- site: execute -->
 
-Use this guide when you need the distribution of the total loss of a year (the
-**aggregate loss**). The same applies to what one reinsurance contract pays out
-of it. The guide helps you choose how to compute it. prospicio has four engines:
-closed-form **moments**, **FFT** (fast Fourier transform on a grid),
-**Panjer**'s recursion and **Monte Carlo simulation**. They answer overlapping
-questions at different costs, and each fails in its own way. This guide says
-which engine to use, how to size and check it, and the exact calls.
-
-The guide is for an actuary who knows frequency and severity from primary
-pricing and is new to reinsurance pricing. Money is in millions. The code next
-to each number prints it, and CI runs the code again.
+Use this guide to compute the distribution of the total loss of a year (the
+**aggregate loss**), or of what one reinsurance contract pays out of it.
+prospicio has four engines: closed-form **moments**, **FFT** (fast Fourier
+transform on a grid), **Panjer**'s recursion and **Monte Carlo simulation**.
+Each fails in its own way. The guide says which engine to use, how to size and
+check it, and the exact calls. It is for an actuary who knows frequency and
+severity from primary pricing and is new to reinsurance pricing. Money is in
+millions. CI runs the code and checks every printed number.
 
 ## The decision table
 
@@ -41,10 +38,10 @@ and read the report either way.**
 
 ## 1. The running book
 
-The running book is synthetic. It has six claims a year on average (Poisson) and
+The running book is synthetic: six claims a year on average (Poisson) and
 lognormal claim sizes with mean 1 and coefficient of variation 2. We want the
 annual distribution and the price of a per-occurrence layer of 5 xs 5 (a limit
-of 5 above an attachment of 5). The first call sizes a grid and runs the FFT.
+of 5 above an attachment of 5).
 
 ```python
 from prospicio.aggregate import (
@@ -70,13 +67,11 @@ mean 5.9999, sd 5.4683
 99%: 25.81, 99.5%: 31.56
 ```
 
-`fft_auto(freq, sev, 12)` uses at most `2**12` points. The default is `2**16`,
-which gives a finer step. We use 12 to keep the examples quick. The 99% value is
-the annual loss exceeded with probability 1%.
+The `12` caps the grid at `2**12` points (default `2**16`, a finer step).
 
-The layer has a closed form. For a Poisson count, the expected annual loss is
-the expected claim count times the layer mean of the severity.
-`CollectiveModel` gives it, and the guide compares every engine below with it.
+For a Poisson count the expected annual loss to a layer is the expected claim
+count times the layer mean of the severity. `CollectiveModel` gives this closed
+form, and later sections compare every engine with it.
 
 ```python
 model = CollectiveModel(freq, sev)
@@ -92,31 +87,18 @@ standard deviation: 1.3018
 
 ## 2. Moments: when closed form is enough
 
-`compound_moments` returns the mean, variance, skewness and third cumulant of
-the year. It uses the cumulants of the count and the first three moments of the
-severity. It has no grid and no sampling error. `.approximate(kind)` fits a
-distribution to those moments.
+`compound_moments` gives the mean, variance, skewness and third cumulant of the
+year in closed form, with no grid and no sampling error. `.approximate(kind)`
+fits a distribution to them.
 
 ```python
 m = compound_moments(freq, sev)
 print(f"mean {m.mean:.3f}, cv {m.cv:.4f}, skew {m.skew:.4f}")
-for kind in ["normal", "gamma", "lognormal", "shifted_gamma", "shifted_lognormal"]:
-    fit = m.approximate(kind)
-    print(f"{kind:18s} 99%: {fit.quantile(0.99):6.2f}   99.5%: {fit.quantile(0.995):6.2f}")
-print(f"{'FFT':18s} 99%: {annual.quantile(0.99):6.2f}   99.5%: {annual.quantile(0.995):6.2f}")
 ```
 
 ```text
 mean 6.000, cv 0.9129, skew 4.5644
-normal             99%:  18.74   99.5%:  20.11
-gamma              99%:  25.24   99.5%:  28.82
-lognormal          99%:  27.11   99.5%:  32.92
-shifted_gamma      99%:  30.63   99.5%:  37.50
-shifted_lognormal  99%:  27.59   99.5%:  34.16
-FFT                99%:  25.81   99.5%:  31.56
 ```
-
-The same numbers as a table, with the error of each fit against the FFT:
 
 ```python
 import pandas as pd
@@ -139,36 +121,37 @@ rows.append({"fit": "FFT", "q99": annual.quantile(0.99), "q995": annual.quantile
  .fmt_percent(["err99", "err995"], decimals=1))
 ```
 
-**Use moments** for the mean and spread of a year. Examples are a quick load, a
-check on a grid or a simulation, and the input to a rule that needs only a
-standard deviation.
+```text
+                     99%  99.5%     99%   99.5%
+normal             18.74  20.11  -27.4%  -36.3%
+gamma              25.24  28.82   -2.2%   -8.7%
+lognormal          27.11  32.92    5.0%    4.3%
+shifted_gamma      30.63  37.50   18.6%   18.8%
+shifted_lognormal  27.59  34.16    6.9%    8.2%
+FFT                25.81  31.56    0.0%    0.0%
+```
 
-**Do not use the fitted distributions for capital or layer prices.** A fit
-matches three numbers and says nothing else about the shape. At 99% the normal
-is far too light (18.74 against 25.81 from the FFT). The gamma is a little
-light. The lognormal, shifted lognormal and shifted gamma are too heavy, the
-last by almost a fifth. No family is right at both quantiles.
+**Use moments** for the mean and spread of a year: a quick load, a check on a
+grid or a simulation, or the input to a rule that needs only a standard
+deviation. **Do not use the fits for capital or layer prices.** A fit matches
+three numbers and says nothing else about the shape, and no family is right at
+both quantiles.
 
-**Data needed**: any count, and a severity with a finite third moment. The
-shifted fits also need positive skewness. A heavy tail has no third moment, and
-the call refuses it (section 3.5).
+**Data needed**: any count, and a severity with a finite third moment (a heavy
+tail has none, section 3.5). The shifted fits also need positive skewness.
 
 ## 3. FFT: the default engine
 
 An FFT turns the convolution of `N` severities into a product in the Fourier
-domain. So the whole distribution of `S` costs about `n log n` for an `n`-point
-grid. It works for any count with a probability generating function (Poisson,
-negative binomial, binomial and every `Count` family) and for large counts.
-
-It is **exact for the discretized problem**. The approximations are the
-discretization of the severity, the finite length of the grid, and aliasing.
-This section shows how to measure them.
+domain, so the whole distribution costs about `n log n` for an `n`-point grid.
+It works for any count with a probability generating function and for large
+counts. It is **exact for the discretized problem**; the approximations are
+the discretization, the finite grid and aliasing.
 
 ### 3.1 Let the library size the grid
 
-`recommend_grid` picks the step and the number of points from the count and the
-severity, as the Python package `aggregate` does. `fft_auto` sizes the grid the
-same way and then runs the FFT. The step is on a ladder of values
+`recommend_grid` sizes the grid as the Python package `aggregate` does, and
+`fft_auto` sizes it so, then runs the FFT. The step is on a ladder of values
 (`round_bucket`).
 
 ```python
@@ -184,17 +167,16 @@ extent 167.9, grid reaches 256.0
 ```
 
 - `extent` is how far the grid must reach. `step` is `extent` over the points,
-  rounded up the ladder, so the grid reaches at least that far.
-- `method` says what set the extent. `"moments"` is a lognormal or gamma fitted
-  to the mean and variance of the year. `"single_big_jump"` is one big claim on
-  top of a typical year, which governs heavy tails.
-- `tail_estimate` is roughly the probability beyond the grid from one claim
-  alone. It should be tiny. If it is not, increase `log2`.
+  rounded up the ladder.
+- `method` says what set the extent: `"moments"` (a lognormal or gamma fitted to
+  the mean and variance of the year) or `"single_big_jump"` (one big claim on
+  top of a typical year, which governs heavy tails).
+- `tail_estimate` is roughly the probability beyond the grid from one claim.
+  If it is not tiny, increase `log2`.
 
 ### 3.2 Read the report every time
 
-`fft` and `panjer` return the grid and a `CompoundReport`. Read the report in
-this order:
+`fft` and `panjer` also return a `CompoundReport`. Read it in this order:
 
 | Field | Meaning | Act when |
 |---|---|---|
@@ -203,8 +185,7 @@ this order:
 | `mean_error()` | Grid mean minus `E[N] E[X]` on the severity grid | Not tiny: lost tail or aliasing |
 | `points` | Length of the result | Shorter than you meant |
 
-A grid that is too short shows at once. The code runs the same book at the same
-step on 128 to 4096 points:
+A grid that is too short shows at once (same book and step):
 
 ```python
 def tiny(x):
@@ -212,35 +193,36 @@ def tiny(x):
     return f"{x:.1e}" if x >= 1e-10 else "<1e-10"
 
 
+rows = []
 for n in (128, 256, 512, 1024, 4096):
     g, disc = Grid.local_moment(sev, 0.0625, n)
     a, r = fft(freq, g, n)
-    print(f"{n:5d} points  tail_mass {r.tail_mass:.1e}  aliasing {tiny(r.aliasing_error)}"
-          f"  mean error {r.mean_error():+.1e}  grid mean {a.mean():.3f}")
+    rows.append({"points": f"{n:,}", "tail_mass": f"{r.tail_mass:.1e}", "aliasing": tiny(r.aliasing_error),
+                 "mean_error": f"{r.mean_error():+.1e}", "grid_mean": a.mean()})
+(GT(pd.DataFrame(rows), rowname_col="points")
+ .tab_header("The report of a growing grid", "Same book and step 0.0625; the exact mean is 6")
+ .cols_label(tail_mass="tail mass", aliasing="aliasing", mean_error="mean error", grid_mean="grid mean")
+ .fmt_number("grid_mean", decimals=3))
 ```
 
 ```text
-  128 points  tail_mass 2.4e-01  aliasing 4.5e-04  mean error -8.4e-01  grid mean 4.763
-  256 points  tail_mass 4.6e-02  aliasing 1.3e-05  mean error -1.9e-01  grid mean 5.674
-  512 points  tail_mass 4.8e-03  aliasing 1.1e-07  mean error -2.5e-02  grid mean 5.940
- 1024 points  tail_mass 4.0e-04  aliasing 6.7e-10  mean error -2.3e-03  grid mean 5.991
- 4096 points  tail_mass 1.9e-06  aliasing <1e-10  mean error -1.1e-05  grid mean 6.000
+       tail mass  aliasing  mean error  grid mean
+128      2.4e-01   4.5e-04    -8.4e-01      4.763
+256      4.6e-02   1.3e-05    -1.9e-01      5.674
+512      4.8e-03   1.1e-07    -2.5e-02      5.940
+1,024    4.0e-04   6.7e-10    -2.3e-03      5.991
+4,096    1.9e-06    <1e-10    -1.1e-05      6.000
 ```
 
-At 128 points the grid reaches only 8. Nearly a quarter of the probability lies
-beyond it, and the grid mean is far under 6. Aliasing and tail mass both fall as
-the grid grows, so look at both. Read `aliasing_error` first. When aliasing is
-large, wrapped mass sits inside the grid, and `tail_mass` understates the truth.
-
-A pass on the aliasing rule is not sufficient either. The 1024-point row has
-aliasing 6.7e-10 and still 4.0e-4 of probability beyond the grid. That is too
-much for a 99.9% quantile. Both tests must pass for the tail you need.
+Read `aliasing_error` first: when it is large, wrapped mass sits inside the
+grid and `tail_mass` understates the truth. Passing it is not enough: the
+1024-point row has aliasing 6.7e-10 and still 4.0e-4 of probability beyond the
+grid, too much for a 99.9% quantile. Both tests must pass.
 
 ### 3.3 Choosing the discretizer
 
-When you choose the grid yourself, three discretizers turn a continuous
-severity into grid probabilities. Each returns the grid and a
-`DiscretizationReport`.
+When you choose the grid, three discretizers turn a continuous severity into
+grid probabilities. Each returns the grid and a `DiscretizationReport`.
 
 | Call | What it does | Use for |
 |---|---|---|
@@ -248,73 +230,80 @@ severity into grid probabilities. Each returns the grid and a
 | `Grid.rounding(sev, h, n)` | Moves each loss to the nearest point | Matching the reports of `aggregate`. Fine at a small step. `fft_auto` uses it |
 | `Grid.lower(sev, h, n)` | Moves the mass of each cell to its left end | A stochastic lower bound: it understates every loss, layer and quantile, so never use it for a price |
 
-The code runs the same book at three steps (the exact 5 xs 5 value is 0.43812):
+The same book at three steps (exact mean 6, exact 5 xs 5 value 0.43812):
 
 ```python
 tower = Tower([Layer("5x5", 5.0, 5.0)])
-print("step   discretizer   gross mean   5x5 layer   99% quantile")
+rows = []
 for step, n in ((1.0, 128), (0.25, 512), (0.0625, 2048)):
     for name in ("rounding", "lower", "local_moment"):
         g, _ = getattr(Grid, name)(sev, step, n)
         grids = tower.on_grid(freq, g, n)
-        print(f"{step:<6} {name:<13} {grids.gross.mean():10.4f} {grids.ceded[0].mean():11.4f}"
-              f" {grids.gross.quantile(0.99):12.2f}")
+        rows.append({"step": f"{step}", "discretizer": name, "gross": grids.gross.mean(),
+                     "layer": grids.ceded[0].mean(), "q99": grids.gross.quantile(0.99)})
+(GT(pd.DataFrame(rows), rowname_col="step", groupname_col=None)
+ .tab_header("Three discretizers at three steps", "Gross mean, 5 xs 5 layer mean and 99% quantile, money units")
+ .cols_label(discretizer="discretizer", gross="gross mean", layer="5x5 layer", q99="99% quantile")
+ .fmt_number(["gross", "layer"], decimals=4)
+ .fmt_number("q99", decimals=2))
 ```
 
 ```text
-step   discretizer   gross mean   5x5 layer   99% quantile
-1.0    rounding          5.5738      0.4360        25.00
-1.0    lower             3.7553      0.3783        23.00
-1.0    local_moment      5.9987      0.4381        26.00
-0.25   rounding          5.9775      0.4380        25.75
-0.25   lower             5.2739      0.4224        24.75
-0.25   local_moment      5.9987      0.4381        25.75
-0.0625 rounding          5.9987      0.4381        25.81
-0.0625 lower             5.8111      0.4341        25.56
-0.0625 local_moment      5.9987      0.4381        25.81
+         discretizer  gross mean  5x5 layer  99% quantile
+1.0         rounding      5.5738     0.4360         25.00
+1.0            lower      3.7553     0.3783         23.00
+1.0     local_moment      5.9987     0.4381         26.00
+0.25        rounding      5.9775     0.4380         25.75
+0.25           lower      5.2739     0.4224         24.75
+0.25    local_moment      5.9987     0.4381         25.75
+0.0625      rounding      5.9987     0.4381         25.81
+0.0625         lower      5.8111     0.4341         25.56
+0.0625  local_moment      5.9987     0.4381         25.81
 ```
 
-`local_moment` has the mean right at every step. Its shortfall below 6 is the
+`local_moment` has the mean right at every step; its shortfall below 6 is the
 tail beyond the last grid point. `lower` is a true lower bound and converges
-slowly. Quantiles move with the step, because a grid quantile is a grid point.
+slowly. A grid quantile is a grid point, so quantiles move with the step.
 
-`local_moment` keeps the mean, not the variance. The split of mass between two
-points adds a little spread. So at a coarse step its quantiles and stop-loss
-premiums are a little high (26.00 at step 1.0 against 25.81 at the finest
-step). Before you price a stop loss or quote a tail number, make the step small
-enough that the halving check below is stable.
+`local_moment` keeps the mean, not the variance: splitting mass between two
+points adds spread. At a coarse step its quantiles and stop-loss premiums are a
+little high (26.00 at step 1.0 against 25.81 at the finest). Before you price a
+stop loss or quote a tail number, pass the halving check below.
 
 ### 3.4 Is the step fine enough? Halve it
 
 The library reports only the discretization error of the mean. To check the
-step:
-
-1. Halve the step.
-2. Double the points.
-3. See whether your number moves.
+step, halve it, double the points and see if your number moves.
 
 ```python
-prev = None
+rows, prev = [], None
 for step, n in ((0.25, 512), (0.125, 1024), (0.0625, 2048), (0.03125, 4096)):
     g, _ = Grid.local_moment(sev, step, n)
     a, r = fft(freq, g, n)
     q = a.quantile(0.995)
-    tag = "" if prev is None else f"  change {q - prev:+.3f}"
-    print(f"step {step:<8} 99.5% {q:7.4f}  stop-loss at 30: {a.stop_loss(30.0):.5f}{tag}")
+    rows.append({"step": f"{step}", "q995": q, "change": None if prev is None else q - prev,
+                 "stop_loss": a.stop_loss(30.0)})
     prev = q
+(GT(pd.DataFrame(rows), rowname_col="step")
+ .tab_header("Halving the step", "99.5% quantile and the stop-loss premium at 30, money units")
+ .cols_label(q995="99.5%", change="change", stop_loss="stop loss at 30")
+ .fmt_number("q995", decimals=4)
+ .fmt_number("change", decimals=3, force_sign=True)
+ .fmt_number("stop_loss", decimals=5)
+ .sub_missing(missing_text=""))
 ```
 
 ```text
-step 0.25     99.5% 31.5000  stop-loss at 30: 0.06879
-step 0.125    99.5% 31.6250  stop-loss at 30: 0.06877  change +0.125
-step 0.0625   99.5% 31.5625  stop-loss at 30: 0.06877  change -0.062
-step 0.03125  99.5% 31.5938  stop-loss at 30: 0.06877  change +0.031
+           99.5%  change  stop loss at 30
+0.25     31.5000                  0.06879
+0.125    31.6250  +0.125          0.06877
+0.0625   31.5625  -0.062          0.06877
+0.03125  31.5938  +0.031          0.06877
 ```
 
 A quantile moves one step at a time, so also judge a smooth number (a stop-loss
-premium, a layer mean). Here the quantile stays within one step of its
-neighbours. The stop-loss premium is stable to four digits from the first
-halving.
+premium, a layer mean). Here the quantile stays within one step, and the
+premium is stable to four digits from the first halving.
 
 ### 3.5 Heavy tails
 
@@ -338,10 +327,10 @@ GridSize(step=1.0, points=4096, method="single_big_jump", tail_estimate=8.092194
 tail mass 8.1e-06, aliasing <1e-10
 ```
 
-A power-law tail never ends, so some mass is always beyond the grid. The report
-says how much. If it is too much for the quantile you need, increase `log2` or
-truncate the severity (`Pareto` takes a truncation point). With `alpha` below 1
-the mean is infinite, and the sizing refuses:
+A power-law tail never ends, so some mass is always beyond the grid. If the
+report shows too much, increase `log2` or truncate the severity (`Pareto` takes
+a truncation point). With `alpha` below 1 the mean is infinite and the sizing
+refuses:
 
 ```python
 try:
@@ -354,45 +343,53 @@ except ValueError as e:
 invalid parameter severity = inf: the aggregate mean must be finite and positive; choose the step by hand
 ```
 
-A real book with such a tail has a policy limit. Apply it as in section 3.7.
+A real book with such a tail has a policy limit (section 3.7).
 
 ### 3.6 Claims that cluster: a mixed Poisson count
 
-The running book assumes that claims arrive independently at a known rate. One
-event can cause many claims (contagion), or the rate itself can be uncertain
-from year to year. Then the count is more variable than a Poisson. A **mixed
-Poisson** count multiplies the rate by a random factor of mean 1.
-`Count.mixed_poisson(mean, cv)` with the default gamma mixing is the negative
-binomial. FFT takes it directly:
+One event can cause many claims (contagion), or the claim rate can be uncertain
+from year to year, so the count is more variable than a Poisson. A **mixed
+Poisson** count multiplies the rate by a random factor of mean 1; with the
+default gamma mixing, `Count.mixed_poisson(mean, cv)` is the negative binomial.
+FFT takes it directly:
 
 ```python
 mixed = Count.mixed_poisson(6.0, 0.5)  # rate factor with cv 0.5
 mixed_annual, mixed_report, _ = fft_auto(mixed, sev, 12)
-print(f"count variance: Poisson {freq.variance():.1f}, mixed {mixed.variance():.1f}")
-for label, a in (("Poisson", annual), ("mixed Poisson", mixed_annual)):
-    print(f"{label:14s} mean {a.mean():.3f}  99%: {a.quantile(0.99):6.2f}  99.5%: {a.quantile(0.995):6.2f}")
 print(f"tail mass {mixed_report.tail_mass:.1e}, aliasing {tiny(mixed_report.aliasing_error)}")
 ```
 
 ```text
-count variance: Poisson 6.0, mixed 15.0
-Poisson        mean 6.000  99%:  25.81  99.5%:  31.56
-mixed Poisson  mean 6.000  99%:  28.56  99.5%:  34.44
 tail mass 1.9e-06, aliasing <1e-10
 ```
 
-The mean is the same, and the 99.5% is 34.44 against 31.56. If your claim counts
-vary more from year to year than a Poisson allows, this is the cheapest way to
-model that. Claim sizes are still independent of each other and of the count.
-Dependence between the size and the number of claims needs simulation or a
-scenario.
+```python
+rows = [{"count": label, "var": c.variance(), "mean": a.mean(),
+         "q99": a.quantile(0.99), "q995": a.quantile(0.995)}
+        for label, c, a in (("Poisson", freq, annual), ("mixed Poisson", mixed, mixed_annual))]
+(GT(pd.DataFrame(rows), rowname_col="count")
+ .tab_header("Poisson against a mixed Poisson count", "Same mean count of 6; annual loss in money units")
+ .cols_label(var="count variance", mean="annual mean", q99="99%", q995="99.5%")
+ .fmt_number("var", decimals=1)
+ .fmt_number(["mean"], decimals=3)
+ .fmt_number(["q99", "q995"], decimals=2))
+```
+
+```text
+               count variance  annual mean    99%  99.5%
+Poisson                   6.0        6.000  25.81  31.56
+mixed Poisson            15.0        6.000  28.56  34.44
+```
+
+The mean is the same, and the 99.5% is higher. Claim sizes are still
+independent of each other and of the count. Dependence between size and number
+needs simulation or a scenario.
 
 ### 3.7 A policy limit or deductible on each claim
 
-`fft_auto` sizes its grid for the severity it gets. To cap each claim at a
-policy limit (or take off a deductible), discretize the unlimited severity
-yourself. Then apply the term with `Grid.map`, which keeps the mean exactly.
-Here the code caps each claim at 10:
+`fft_auto` sizes its grid for the severity it gets. To cap each claim (or take
+off a deductible), discretize the unlimited severity yourself, then apply the
+term with `Grid.map`, which keeps the mean exactly. Here the cap is 10:
 
 ```python
 g, _ = Grid.local_moment(sev, 0.0625, 4096)
@@ -408,18 +405,15 @@ limited claim mean: grid 0.9527, exact 0.9527, on points True
 annual mean 5.7162, 99.5% 21.81, tail mass <1e-10
 ```
 
-The limited mean of the grid equals the limited expected value of the severity
-(`sev.lev(10.0)`). The limit pulls the 99.5% down from 31.56 to 21.81. Put the
-limit on a grid point (here 10 is a multiple of the step). Then `on_points` is
-`True`, and the shape, not only the mean, is exact. A deductible is
-`lambda x: max(x - d, 0.0)`.
+The grid's limited mean equals `sev.lev(10.0)`, and the cap pulls the 99.5% from 31.56 to 21.81.
+Put the limit on a grid point (here 10 is a multiple of the step): then `on_points` is `True` and the shape,
+not only the mean, is exact. A deductible is `lambda x: max(x - d, 0.0)`.
 
 ## 4. Panjer: the exact check
 
 Panjer's recursion computes the aggregate probabilities one point at a time. It
-is exact for the discretized problem and has no aliasing. Each point sums over
-all the points below it. So its work grows with the square of the grid length,
-against `n log n` for the FFT.
+is exact for the discretized problem and has no aliasing. Its work grows with
+the square of the grid length, against `n log n` for the FFT.
 
 ```python
 g, _ = Grid.local_moment(sev, 0.0625, 4096)
@@ -440,9 +434,8 @@ aliasing error: Panjer 0.0, FFT <1e-10
 **Do not use it** for large counts or long grids. It needs a count from the
 families of the recursion: Poisson, negative binomial, binomial, and their
 zero-modified and zero-truncated versions (`Count.zero_truncated`). It refuses
-mixed Poisson counts and the Neyman type A, and points to FFT. It also fails for
-a large Poisson mean, because the probability of a zero year, `exp(-mean)`,
-underflows:
+mixed Poisson counts and the Neyman type A. It fails for a large Poisson mean
+because the probability of a zero year, `exp(-mean)`, underflows:
 
 ```python
 panjer(Poisson(745.0), g, 4096)
@@ -472,16 +465,15 @@ FFT on the same grid: tail_mass 0.998
 fft_auto: step 0.03125, points 65536, mean 800.0, tail mass 1.7e-07
 ```
 
-The fourth line repeats the lesson of section 3.2. With 800 claims a year the
-annual mean is 800, far past a grid that reaches 256. `fft` ran with no error,
-and a `tail_mass` near 1 is the only warning. `fft_auto` sizes the grid for
-this book.
+With 800 claims a year the annual mean is 800, far past a grid that reaches 256.
+`fft` ran with no error: a `tail_mass` near 1 is the only warning (section 3.2).
+`fft_auto` sizes the grid for this book.
 
 ## 5. Simulation
 
-Monte Carlo draws many years: a claim count, then that many claim sizes.
-`simulate_events` keeps the individual losses of every year in an `EventSet`.
-So you can apply per-loss terms (layers, sums insured, dates) afterwards.
+`simulate_events` draws many years (a claim count, then that many sizes) and
+keeps the individual losses in an `EventSet`, so per-loss terms (layers, sums
+insured, dates) apply afterwards.
 
 ```python
 events = simulate_events(freq, sev, 20_000, 1)
@@ -497,45 +489,44 @@ mean 5.960 (exact 6), 99.5% quantile 30.57 (FFT 31.56)
 ```
 
 **Use simulation** when the answer depends on the order, timing or identity of
-losses, or for several results at once (section 6). Also use it when no grid
-can hold the problem. One example is the event loss table of a catastrophe model
-(`EventLossTable` turns it into simulated years). Another is a severity that is
-only simulated losses.
-
-**Do not use it** for a tail quantile of a single book when FFT applies. The
-error is large and shrinks slowly.
+losses, or for several results at once (section 6), or when no grid can hold
+the problem: a catastrophe model's event loss table (`EventLossTable`) or a
+severity that exists only as simulated losses. **Do not use it** for a tail
+quantile of a single book when FFT applies: the error is large and shrinks
+slowly.
 
 ### 5.1 Sampling error and seeds
 
-A simulated number is random. Its error shrinks with the square root of the
-number of years. The code runs ten seeds at two sizes. It shows the spread of
-the 99.5% quantile and of the mean. Each is the average over the seeds, plus or
-minus the standard deviation across them:
+A simulated number is random, and its error shrinks with the square root of the
+years. Ten seeds at two sizes, as average and standard deviation across seeds:
 
 ```python
 import statistics
 
+rows = []
 for n in (10_000, 100_000):
     runs = [simulate_events(freq, sev, n, seed).totals() for seed in range(1, 11)]
     qs = [t.quantile(0.995) for t in runs]
     ms = [t.mean() for t in runs]
-    print(f"{n:7d} years: 99.5% {statistics.mean(qs):.2f} +/- {statistics.stdev(qs):.2f},"
-          f"  mean {statistics.mean(ms):.3f} +/- {statistics.stdev(ms):.3f}")
-print(f"FFT: {annual.quantile(0.995):.2f}")
+    rows.append({"years": f"{n:,}", "q": statistics.mean(qs), "q_sd": statistics.stdev(qs),
+                 "m": statistics.mean(ms), "m_sd": statistics.stdev(ms)})
+(GT(pd.DataFrame(rows), rowname_col="years")
+ .tab_header("Sampling error over ten seeds", f"The FFT gives {annual.quantile(0.995):.2f} for the 99.5% quantile and 6 for the mean")
+ .tab_spanner("99.5% quantile", ["q", "q_sd"])
+ .tab_spanner("mean", ["m", "m_sd"])
+ .cols_label(q="average", q_sd="sd", m="average", m_sd="sd")
+ .fmt_number(["q", "q_sd"], decimals=2)
+ .fmt_number(["m", "m_sd"], decimals=3))
 ```
 
 ```text
-  10000 years: 99.5% 31.55 +/- 1.42,  mean 6.001 +/- 0.047
- 100000 years: 99.5% 31.68 +/- 0.51,  mean 6.004 +/- 0.016
-FFT: 31.56
+         average    sd  average     sd
+10,000     31.55  1.42    6.001  0.047
+100,000    31.68  0.51    6.004  0.016
 ```
 
 Ten times the years cut the error about threefold, not tenfold. A tail quantile
-is the noisiest number there is. At 10,000 years its spread (1.42) is several
-percent of its value, and the spread of the mean (0.047) is under one percent.
-
-The FFT density and the simulated histogram show the same shape. The
-histogram uses the first of the ten runs of 100,000 years:
+is the noisiest number there is.
 
 ```python
 import matplotlib.pyplot as plt
@@ -554,15 +545,13 @@ ax.set_title("Annual loss of the running book: FFT against simulation")
 ax.legend()
 ```
 
-A standard error from the sample variance, as in section 6, assumes that the
-simulated quantity has a finite variance. For a severity like the Pareto of
-section 3.5 with `alpha` 1.5, the variance is infinite. The error bar then
-understates the noise, and the mean settles slowly. Prefer the grid there.
+A standard error from the sample variance (section 6) assumes a finite
+variance. For the Pareto of section 3.5 the variance is infinite, the error bar
+understates the noise and the mean settles slowly. Prefer the grid there.
 
-The **seed** fixes the draws. The same seed gives the same years for any number
-of threads (`docs/design/aggregate.md`, tested in the Rust crate). Each year has
-its own stream, so you can replay year `i` alone. Record the seed with every
-result.
+The **seed** fixes the draws, for any number of threads
+(`docs/design/aggregate.md`, tested in the Rust crate). Each year has its own
+stream, so you can replay year `i` alone. Record the seed with every result.
 
 ```python
 a = simulate_events(freq, sev, 1000, 5)
@@ -581,34 +570,28 @@ True 5
 pricing object. Other sources of years:
 
 - `RiskProfile.simulate` draws years from a property risk profile (section 6.2).
-- `EventLossTable.simulate` draws years from the event loss table of a
-  catastrophe model. It returns the years with the row in the table of each
-  loss.
+- `EventLossTable.simulate` draws years from a catastrophe model's event loss
+  table and returns the row of each loss.
 - `EventSet.from_years` loads a list of losses for each year.
 - `EventSet.from_long` loads one row for each loss with its year, the form of a
   year loss table.
 
-A year loss table lists only the years with a loss. So give `from_long` the
-`n_years` that you simulated, including the years with no loss. If you do not,
-every frequency and loss cost comes out too high.
+A year loss table lists only the years with a loss. Give `from_long` the full
+`n_years`, including the years with no loss, or every frequency and loss cost
+comes out too high.
 
 ## 6. What each treaty pays
 
-A contract pays out of the losses of the year. Two engines compute the
-distribution of the payout: `Tower.on_grid` (exact FFT) and `Tower.apply`
-(simulation).
+Two engines compute what a contract pays: `Tower.on_grid` (exact FFT) and
+`Tower.apply` (simulation).
 
 ### 6.1 Exactly on the grid
 
-`Tower.on_grid(freq, severity_grid, points)` does these steps:
-
-1. It applies the per-occurrence recovery of each layer to the severity grid.
-2. It compounds the result with the same count.
-3. It applies the annual terms (annual deductible and limit, reinstatements,
-   corridor) and the share to the annual total.
-
-It returns gross, the ceded loss of each layer and, where net is one compound
-total, net. There is no sampling error.
+`Tower.on_grid(freq, severity_grid, points)` applies each layer's
+per-occurrence recovery to the severity grid, compounds the result with the
+same count, then applies the annual terms (annual deductible and limit,
+reinstatements, corridor) and the share to the annual total. It returns gross,
+each layer's ceded loss and, where it is one compound total, net.
 
 ```python
 program = Tower([
@@ -618,8 +601,23 @@ program = Tower([
 ])
 g, _ = Grid.local_moment(sev, 0.0625, 4096)
 grids = program.on_grid(freq, g, 4096)
-for name, ceded in zip(program.layer_names, grids.ceded):
-    print(f"{name:6s} mean {ceded.mean():.4f}  99% {ceded.quantile(0.99):.3f}")
+rows = [{"layer": name, "mean": ceded.mean(), "q99": ceded.quantile(0.99)}
+        for name, ceded in zip(program.layer_names, grids.ceded)]
+(GT(pd.DataFrame(rows), rowname_col="layer")
+ .tab_header("Ceded loss by layer, on the grid", "Mean and 99% quantile of the annual ceded loss, money units")
+ .cols_label(mean="mean", q99="99%")
+ .fmt_number("mean", decimals=4)
+ .fmt_number("q99", decimals=3))
+```
+
+```text
+         mean    99%
+5x5    0.4377  5.000
+10x10  0.1956  8.562
+QS     1.5000  6.453
+```
+
+```python
 print("net available:", grids.net is not None, " on points:", grids.on_points)
 plain = Tower([Layer("5x5", 5.0, 5.0)]).on_grid(freq, g, 4096)
 stop_loss_last = Tower.inuring([[Layer("5x5", 5.0, 5.0)], [Layer.stop_loss("SL", 10.0, 10.0)]])
@@ -628,44 +626,45 @@ print("net without annual terms:", plain.net is not None,
 ```
 
 ```text
-5x5    mean 0.4377  99% 5.000
-10x10  mean 0.1956  99% 8.562
-QS     mean 1.5000  99% 6.453
 net available: False  on points: True
 net without annual terms: True  net with a stop loss last: True
 ```
 
-`net` is `None` because the 5x5 has an annual limit (from the reinstatement).
-Net would then depend on several annual totals at once. Net exists when no
-layer has annual terms, or when the last stage is a single aggregate cover such
-as a stop loss. The last line shows this. `on_points` says whether every value
-fell on a grid point. When it is `False`, means are still exact, but shapes
-smear by up to one step.
+`net` is `None` because the 5x5 has an annual limit (from the reinstatement),
+so net would depend on several annual totals at once. Net exists when no layer
+has annual terms, or when the last stage is a single aggregate cover such as a
+stop loss. `on_points` says whether every value fell on a grid point; if not,
+means are still exact but shapes smear by up to one step.
 
-The code runs the same tower by simulation, to show that the two engines agree:
+The same tower by simulation:
 
 ```python
 sim = program.apply(simulate_events(freq, sev, 100_000, 3))
+rows = []
 for name, ceded in zip(program.layer_names, grids.ceded):
     s = sim.marginal(("ceded", name))
-    print(f"{name:6s} grid {ceded.mean():.4f}   simulated {s.mean():.4f}"
-          f" +/- {s.variance() ** 0.5 / len(s) ** 0.5:.4f}")
+    rows.append({"layer": name, "grid": ceded.mean(), "sim": s.mean(),
+                 "se": s.variance() ** 0.5 / len(s) ** 0.5})
+(GT(pd.DataFrame(rows), rowname_col="layer")
+ .tab_header("Expected ceded loss: grid against simulation", "Money units, 100,000 simulated years")
+ .cols_label(grid="grid", sim="simulated", se="standard error")
+ .fmt_number(["grid", "sim", "se"], decimals=4))
 ```
 
 ```text
-5x5    grid 0.4377   simulated 0.4360 +/- 0.0041
-10x10  grid 0.1956   simulated 0.1952 +/- 0.0038
-QS     grid 1.5000   simulated 1.4985 +/- 0.0044
+         grid  simulated  standard error
+5x5    0.4377     0.4360          0.0041
+10x10  0.1956     0.1952          0.0038
+QS     1.5000     1.4985          0.0044
 ```
 
 Publish the grid answer, which has no noise. Simulation is the check.
 
 ### 6.2 What forces simulation
 
-A compound distribution has no record of which loss came first, when it
-happened, or how big the insured risk was. Terms that need those facts cannot
-run on the grid. `on_grid` refuses the first three "No" rows below with an
-error. The last "No" row is a limit of the method, not an error.
+A compound distribution does not record which loss came first, when it
+happened or how big the insured risk was, so terms that need those facts cannot
+run on the grid. `on_grid` refuses the first three "No" rows with an error.
 
 | Contract term | On the grid? | Why |
 |---|---|---|
@@ -678,8 +677,6 @@ error. The last "No" row is a limit of the method, not an error.
 | Reinstatement premium pro rata as to time | No | Needs the date of each loss |
 | Surplus treaty | No | Cedes a share set by the sum insured of each risk |
 | Joint distribution across layers or lines | No (a limit, not an error) | A grid is one marginal distribution |
-
-The refusals, in the words of the library:
 
 ```python
 timed = Layer("5x5", 5.0, 5.0, premium=1.0, reinstatement_rates=[1.0], pro_rata_time=True)
@@ -700,41 +697,44 @@ surplus: invalid data: layer "surplus" is a surplus treaty, which works risk by 
 annual terms inuring: invalid parameter layers = 0: annual terms in a stage that inures to a later one depend on event order; use Tower::apply on simulated events
 ```
 
-Three recipes follow, one for each reason.
-
-**Dates (pro rata as to time).** This reinstatement premium charges less when
-the layer uses its limit late in the year. So each loss needs a date.
-`with_uniform_times()` draws sorted uniform times.
-`with_seasonal_times(weights)` follows a season such as a hurricane year.
+**Dates (pro rata as to time).** This reinstatement premium is lower when the
+layer uses its limit late in the year, so each loss needs a date.
+`with_uniform_times()` draws sorted uniform times; `with_seasonal_times(weights)`
+follows a season such as a hurricane year.
 
 ```python
 events = simulate_events(freq, sev, 20_000, 3).with_uniform_times()
 by_amount = Layer("5x5", 5.0, 5.0, premium=1.0, reinstatement_rates=[1.0])
-for label, layer in (("pro rata as to amount", by_amount), ("pro rata as to time", timed)):
+rows = []
+for label, layer in (("as to amount, simulated", by_amount), ("as to time, simulated", timed)):
     result = Tower([layer]).apply(events)
     paid = result.marginal(("reinstatement_premium", "5x5"))
-    se = paid.variance() ** 0.5 / len(paid) ** 0.5
-    print(f"{label:22s} expected reinstatement premium {paid.mean():.4f} +/- {se:.4f}")
+    rows.append({"basis": label, "premium": paid.mean(), "se": paid.variance() ** 0.5 / len(paid) ** 0.5})
 grid_amount = Tower([by_amount]).on_grid(freq, g, 4096).expected_reinstatement_premium[0]
-print(f"as to amount on the grid: {grid_amount:.4f}")
+rows.append({"basis": "as to amount, on the grid", "premium": grid_amount, "se": None})
+(GT(pd.DataFrame(rows), rowname_col="basis")
+ .tab_header("Expected reinstatement premium", "Money units; layer 5 xs 5 with one reinstatement at 100%")
+ .cols_label(premium="premium", se="standard error")
+ .fmt_number(["premium", "se"], decimals=4)
+ .sub_missing(missing_text=""))
 ```
 
 ```text
-pro rata as to amount  expected reinstatement premium 0.0870 +/- 0.0018
-pro rata as to time    expected reinstatement premium 0.0440 +/- 0.0010
-as to amount on the grid: 0.0844
+                           premium  standard error
+as to amount, simulated     0.0870          0.0018
+as to time, simulated       0.0440          0.0010
+as to amount, on the grid   0.0844                
 ```
 
-Pro rata as to time roughly halves the premium here, because an exhausting loss
-arrives on average half way through the year. The by-amount premium on the grid
-is within two standard errors of the simulated one.
+Pro rata as to time roughly halves the premium, because an exhausting loss
+arrives on average half way through the year. The grid value is within two
+standard errors of the simulated by-amount premium.
 
-**Sums insured (surplus).** A surplus treaty cedes a share of each loss, and the
-sum insured of the risk hit sets that share. So each event must carry a sum
-insured. `RiskProfile.simulate` draws losses from a property risk profile (bands
-of sum insured, each with an exposure curve) and attaches the sums insured. Here
-the surplus inures to a per-risk excess of loss that has a reinstatement, so
-both reasons apply at once.
+**Sums insured (surplus).** A surplus treaty cedes a share set by the sum
+insured of the risk hit, so each event must carry one. `RiskProfile.simulate`
+draws losses from a property risk profile (bands of sum insured, each with an
+exposure curve) and attaches the sums insured. Here the surplus inures to a
+per-risk excess of loss with a reinstatement, so two reasons apply at once.
 
 ```python
 profile = RiskProfile([1e6, 5e6, 20e6], [800, 120, 20], Mbbefd.swiss_re(3.0),
@@ -744,44 +744,62 @@ treaty = Tower.inuring([
     [Layer("3x2", 3e6, 2e6, reinstatements=1)],
 ])
 result = treaty.apply(profile.simulate(20_000, 5))
-for name, exact in (("surplus", profile.expected_surplus_loss(2e6, 4.0)),
-                    ("3x2", profile.expected_layer_loss(3e6, 2e6, 2e6, 4.0))):
-    print(f"{name:8s} simulated {result.marginal(('ceded', name)).mean():12,.0f}"
-          f"   exposure-rated {exact:12,.0f}")
+rows = [{"layer": name, "sim": result.marginal(("ceded", name)).mean(), "exact": exact}
+        for name, exact in (("surplus", profile.expected_surplus_loss(2e6, 4.0)),
+                            ("3x2", profile.expected_layer_loss(3e6, 2e6, 2e6, 4.0)))]
+(GT(pd.DataFrame(rows), rowname_col="layer")
+ .tab_header("Expected ceded loss: simulation against exposure rating", "Money units")
+ .cols_label(sim="simulated", exact="exposure-rated")
+ .fmt_integer(["sim", "exact"]))
 ```
 
 ```text
-surplus  simulated    1,259,913   exposure-rated    1,260,000
-3x2      simulated      118,875   exposure-rated      117,525
+         simulated  exposure-rated
+surplus  1,259,913       1,260,000
+3x2        118,875         117,525
 ```
 
-The exposure curves of the profile give an independent expected value to check
-the simulation (see the guide on experience and exposure rating).
+The profile's exposure curves give an independent expected value (see
+[Experience and exposure rating](experience-and-exposure-rating.md)).
 
-**Joint results.** `Tower.apply` returns one joint distribution. So gross, every
-layer and net agree year by year (gross = ceded + net in every simulated year).
-For the 99% of the sum of two layers, or for dependence between lines, you need
-joint draws, so simulate. To tie lines together with a copula or a rank
-correlation, see section 8 of
+**Joint results.** `Tower.apply` returns one joint distribution, so gross, every
+layer and net agree year by year (gross = ceded + net). The 99% of the sum of
+two layers, or dependence between lines, needs joint draws. To tie lines
+together with a copula or a rank correlation, see section 8 of
 [Choosing a method](choosing-a-method.md#8-capital-risk-measures-and-allocation)
 (`GaussianCopula`, `iman_conover`, `PredictiveDistribution`). Reserves across
 lines use `SegmentDependence` ([Reserving methods](reserving-methods.md)).
 
 ## 7. The occurrence view
 
-Many covers pay per occurrence. A catastrophe layer pays on each event, not on
-the sum of the year. For these covers the relevant curve is the **occurrence
-exceedance probability** (OEP): the probability that the *largest* loss of the
-year exceeds `x`. It is `1 - G_N(F(x))`, with `G_N` the generating function of
-the count. The **annual aggregate** curve is the probability that the *total*
+Many covers pay per occurrence: a catastrophe layer pays on each event, not on
+the sum of the year. Their curve is the **occurrence exceedance
+probability** (OEP): the probability that the *largest* loss of the year
+exceeds `x`. It is `1 - G_N(F(x))`, with `G_N` the generating function of the
+count. The **annual aggregate** curve is the probability that the *total*
 exceeds `x`. The **occurrence PML** (probable maximum loss) at annual
 probability `p` is the loss whose OEP is `p`.
 
 ```python
+rows = []
 for p in (0.1, 0.01):
     o = occurrence_pml(freq, sev, p)
-    print(f"p {p}: occurrence PML {o.loss:6.2f} (return period {o.annual_return_period:.0f} years),"
-          f"  annual aggregate {annual.quantile(1 - p):6.2f}")
+    rows.append({"p": f"{p}", "pml": o.loss, "rp": o.annual_return_period,
+                 "agg": annual.quantile(1 - p)})
+(GT(pd.DataFrame(rows), rowname_col="p")
+ .tab_header("Occurrence PML against the annual aggregate", "Money units, at annual exceedance probability p")
+ .cols_label(pml="occurrence PML", rp="return period (years)", agg="annual aggregate")
+ .fmt_number(["pml", "agg"], decimals=2)
+ .fmt_integer("rp"))
+```
+
+```text
+      occurrence PML  return period (years)  annual aggregate
+0.1             6.48                     10             11.94
+0.01           18.49                    100             25.81
+```
+
+```python
 print(f"occurrence return period of the 1% loss: {o.occurrence_return_period:.1f} years")
 print(f"P(largest claim > 5): {occurrence_exceedance(freq, sev, 5.0):.4f},"
       f" with the mixed Poisson count of 4.6: {occurrence_exceedance(mixed, sev, 5.0):.4f}")
@@ -789,8 +807,6 @@ print(f"simulated 1% occurrence PML: {simulate_events(freq, sev, 100_000, 3).max
 ```
 
 ```text
-p 0.1: occurrence PML   6.48 (return period 10 years),  annual aggregate  11.94
-p 0.01: occurrence PML  18.49 (return period 100 years),  annual aggregate  25.81
 occurrence return period of the 1% loss: 99.5 years
 P(largest claim > 5): 0.1573, with the mixed Poisson count of 4.6: 0.1543
 simulated 1% occurrence PML: 18.54
@@ -798,14 +814,12 @@ simulated 1% occurrence PML: 18.54
 
 The 1-in-100 annual aggregate is well above the 1-in-100 occurrence, because
 several claims add up. Use the occurrence curve for per-occurrence covers
-(catastrophe, per-risk layers) and to size a single loss. Use the aggregate
-curve for stop loss, aggregate limits and capital on the total of the year. The
-occurrence return period is the average time between occurrences above the
-loss. It differs from the annual return period (100) because a year can hold
-more than one occurrence.
+(catastrophe, per-risk layers), the aggregate curve for stop loss, aggregate
+limits and capital. The occurrence return period is not 100 because a year can
+hold more than one occurrence.
 
-The two curves as a figure. For a Poisson count, the OEP is
-`1 - exp(-6 (1 - F(x)))`, with `F` the severity cdf:
+For a Poisson count the OEP is `1 - exp(-6 (1 - F(x)))`, with `F` the severity
+cdf:
 
 ```python
 import math
@@ -824,43 +838,44 @@ ax.set_title("Exceedance probability: occurrence against annual aggregate")
 ax.legend()
 ```
 
-The OEP is closed form for the counts that prospicio accepts (Poisson, negative
-binomial, binomial and a `Count`). A more variable count makes a year with at
-least one claim above 5 slightly *less* likely (0.1543 against 0.1573 for the
-same mean). The reason is that more years have few or no claims. The same count
-makes the aggregate tail fatter (section 3.6). A simulation gives the same curve
-from `EventSet.maxima()` (the largest loss of each year), as the last line
-shows.
+The OEP is closed form for every count prospicio accepts. A more variable count
+makes a year with at least one claim above 5 slightly *less* likely (0.1543
+against 0.1573 for the same mean), because more years have few or no claims,
+yet it makes the aggregate tail fatter (section 3.6). A simulation gives the
+same curve from `EventSet.maxima()` (the largest loss of each year).
 
 `occurrence_layer_statistics` answers the layer questions in one call:
 
-- how often a claim reaches the layer
-- how often a claim exhausts the layer
-- the probability of any loss to the layer in a year
-- the loss on line of the layer
-- the moments of the excess claim count, of the layer severity given a loss,
-  and of the annual ceded loss
-
 ```python
 st = occurrence_layer_statistics(freq, g, 1.0, 5.0, 5.0)  # share, limit, attachment
-print(f"P(claim reaches layer) {st.pr_attach:.4f}, P(exhausts) {st.pr_detach:.4f},"
-      f" P(loss in a year) {st.pr_loss:.4f}")
-print(f"loss on line {st.loss_on_line:.4f}, expected excess claims {st.count.mean:.4f}")
-print(f"mean layer loss per loss to the layer {st.severity.mean:.3f}")
-print(f"annual ceded: mean {st.aggregate.mean:.4f}, cv {st.aggregate.cv:.3f}, skew {st.aggregate.skew:.3f}")
+rows = [("P(claim reaches layer)", st.pr_attach, 4), ("P(claim exhausts layer)", st.pr_detach, 4),
+        ("P(loss in a year)", st.pr_loss, 4), ("loss on line", st.loss_on_line, 4),
+        ("expected excess claims", st.count.mean, 4), ("mean layer loss per excess claim", st.severity.mean, 3),
+        ("annual ceded: mean", st.aggregate.mean, 4), ("annual ceded: cv", st.aggregate.cv, 3),
+        ("annual ceded: skew", st.aggregate.skew, 3)]
+df = pd.DataFrame({"statistic": [r[0] for r in rows], "value": [r[1] for r in rows]})
+tbl = GT(df, rowname_col="statistic").tab_header("The 5 xs 5 layer in one call", "occurrence_layer_statistics")
+for d in (3, 4):
+    tbl = tbl.fmt_number("value", rows=[i for i, r in enumerate(rows) if r[2] == d], decimals=d)
+tbl
 ```
 
 ```text
-P(claim reaches layer) 0.0282, P(exhausts) 0.0072, P(loss in a year) 0.1557
-loss on line 0.0876, expected excess claims 0.1692
-mean layer loss per loss to the layer 2.589
-annual ceded: mean 0.4381, cv 2.972, skew 3.383
+                                   value
+P(claim reaches layer)            0.0282
+P(claim exhausts layer)           0.0072
+P(loss in a year)                 0.1557
+loss on line                      0.0876
+expected excess claims            0.1692
+mean layer loss per excess claim   2.589
+annual ceded: mean                0.4381
+annual ceded: cv                   2.972
+annual ceded: skew                 3.383
 ```
 
 The annual mean matches the `CollectiveModel` value in section 1. `pr_loss` is
 the OEP at the attachment: 0.1573 from `occurrence_exceedance` on the continuous
-severity, and 0.1557 on the grid. It answers the question of a cedant: "how
-often will it hit?".
+severity, 0.1557 on the grid.
 
 ## 8. Which method for which job
 
@@ -872,10 +887,9 @@ often will it hit?".
 | Reporting a result others must reproduce | FFT, with its report stored beside it | Deterministic. If you simulate, record the seed and `n_sims` |
 | Sizing a catastrophe or per-risk limit | `occurrence_pml`, `occurrence_layer_statistics` | The occurrence curve, not the annual total |
 
-A grid gives both capital measures directly. TVaR at `p` is the mean of the
-worst `1 - p` of years: the `p` quantile plus `E[(S - q)+] / (1 - p)`. Solvency
-II asks for the 99.5% VaR. The Swiss Solvency Test asks for the 99% TVaR
-(expected shortfall):
+A grid gives both capital measures. TVaR at `p` is the mean of the worst
+`1 - p` of years: the `p` quantile plus `E[(S - q)+] / (1 - p)`. Solvency II
+asks for the 99.5% VaR, the Swiss Solvency Test for the 99% TVaR:
 
 ```python
 print(f"99.5% VaR {annual.quantile(0.995):.2f}, 99.5% TVaR {annual.tvar(0.995):.2f},"
@@ -886,32 +900,25 @@ print(f"99.5% VaR {annual.quantile(0.995):.2f}, 99.5% TVaR {annual.tvar(0.995):.
 99.5% VaR 31.56, 99.5% TVaR 43.83, 99% TVaR 36.06
 ```
 
-TVaR reaches further into the tail than a VaR at the same level. So the
-`tail_mass` of the grid must be small beside `1 - p`, with a margin. Run the
-halving check (section 3.4) on the TVaR itself.
+TVaR reaches further into the tail than a VaR, so `tail_mass` must be small
+beside `1 - p`. Run the halving check (section 3.4) on the TVaR itself.
 
 ## 9. Pitfalls
 
-- **Reading `tail_mass` before `aliasing_error`.** With large aliasing, the
-  wrapped mass hides in the grid and `tail_mass` looks small.
+- **Reading `tail_mass` before `aliasing_error`.** Large aliasing hides wrapped
+  mass in the grid, so `tail_mass` looks small.
 - **A grid too short for the book, with no error.** `fft` computes on the grid
   you give it (section 4, 800 claims). Use `fft_auto` or check the report.
-- **A `lower` grid for a price.** It is a lower bound by construction.
-- **Trusting a quantile to the step.** A grid quantile is a grid point. Halve the
-  step and judge a smooth number as well.
-- **Moment fits in the tail.** They match three numbers and no more (section 2).
-- **Comparing simulations on different seeds.** One run is one draw from a noisy
-  estimator. Keep the seed fixed when you compare two versions of a treaty, so
-  the years differ only by the change you made.
-- **Pricing a per-occurrence layer on the OEP.** The OEP gives the probability
-  of a loss to the layer. The annual loss comes from the compound.
-- **Adding layer grids.** You can add means. You cannot get the distribution of
-  the sum from the layer grids, because the layers share the same losses. Use
-  `Tower.apply`.
+- **Comparing simulations on different seeds.** Keep the seed fixed when you
+  compare two versions of a treaty, so the years differ only by your change.
+- **Pricing a per-occurrence layer on the OEP.** The OEP gives the probability of
+  a loss to the layer. The annual loss comes from the compound.
+- **Adding layer grids.** You can add means, but not get the distribution of the
+  sum, because the layers share the same losses. Use `Tower.apply`.
 
 ## See also
 
-- [Choosing a method](choosing-a-method.md): the map of which method fits which reinsurance question.
+- [Choosing a method](choosing-a-method.md): which method fits which reinsurance question.
 - [Risk loads and distortions](risk-loads-and-distortions.md): pricing the distributions this guide produces.
 - [Experience and exposure rating](experience-and-exposure-rating.md): where the severity and the risk profile come from.
 - [Severity and frequency](severity-and-frequency.md): choosing and fitting the inputs.
@@ -921,18 +928,17 @@ halving check (section 3.4) on the TVaR itself.
 
 ## Appendix: terms
 
-- **Frequency** is the number of claims in a year. **Severity** is the size of
-  one claim. The **aggregate loss** is their sum `S = X_1 + ... + X_N`. Claim
-  sizes are independent of each other and of `N`.
+- **Frequency** is the number of claims in a year, **severity** the size of one
+  claim. The **aggregate loss** is their sum `S = X_1 + ... + X_N`, with claim
+  sizes independent of each other and of `N`.
 - **Per-occurrence** terms apply to each claim (an excess layer pays the part
-  of each claim between its attachment and attachment plus limit). **Annual**
-  terms apply to the total of the year (an annual deductible, an annual limit,
-  a stop loss).
+  between its attachment and attachment plus limit). **Annual** terms apply to
+  the total of the year (an annual deductible or limit, a stop loss).
 - **Grid**: a distribution held as probabilities at `0, h, 2h, ...`, with
   **step** (bucket) `h`. FFT and Panjer **discretize** a continuous severity
   onto a grid, and that is their approximation.
 - **Aliasing**: an FFT is circular, so probability beyond the end of its buffer
   wraps onto the start. **Tail mass** is the probability beyond the last grid
-  point. The grid puts it on that point. The library measures both.
+  point, which the grid puts on that point.
 - **Seed**: the number that fixes the random draws of a simulation, so you can
   repeat a run.

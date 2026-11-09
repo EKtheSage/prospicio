@@ -13,26 +13,17 @@ execute:
 
 <!-- site: execute -->
 
-A treaty moves more money than its claims. The cedent pays a premium. It can
-pay again to restore a used limit, and it gets some of the premium back as
-commission. A broker takes a fee, and collateral in a trust earns interest.
-Each of these flows changes what the reinsurer keeps. Some of them depend on
+A treaty moves more money than its claims: premium, reinstatement premium,
+commission, brokerage and interest on collateral. Some of these flows depend on
 the losses, so they change the shape of the result, not only its mean.
 
-This page follows the book of Larkspur Re from the earlier pages of the track.
-It prices each flow on the same 2,000 simulated years. It covers:
-
-1. Reinstatement premium, as to amount and as to time.
-2. Ceding commission, profit commission, sliding scale and brokerage on
-   Corran's quota share, read as deal ratios.
-3. A no-claims bonus, over one year and over several.
-4. The reinsurer's P&L ledger of Bracken's aggregate cover.
+This page prices each flow on the same 2,000 simulated years of the Larkspur Re
+book.
 
 This is the R twin of the Python guide
 [`cat-5-beyond-loss.md`](cat-5-beyond-loss.md), with the same sections, files
-and numbers. The text under each R chunk is what the chunk prints.
-`R/prospicio/tests/test-guides.R` checks that each chunk prints exactly that
-text, the same text as the Python guide.
+and numbers. `R/prospicio/tests/test-guides.R` checks that each chunk prints
+the text under it.
 
 Money is in millions of Varland crowns. The story, the files and the notation
 are on [the overview](cat-0-overview.qmd).
@@ -40,39 +31,30 @@ are on [the overview](cat-0-overview.qmd).
 ## 1. Words
 
 [What a reinsurance price is](reinsurance-price.md) (a Python guide) explains
-reinstatements, commissions and sliding scales for any layer. The list below
-sets the words. The rest of the page shows what is particular to cat business:
-the season, and the shape of a cat loss distribution.
+these terms for any layer. This page adds the cat-specific part: the season and
+the loss shape.
 
-- **Reinstatement premium**: what the cedent pays to restore the limit that a
-  loss used. The layer can then pay again in the same year. The contract
-  sets it as a rate of the upfront premium for each full limit restored.
+- **Reinstatement premium**: what the cedent pays to restore a used limit, so
+  the layer can pay again in the same year. The contract sets it as a rate of
+  the upfront premium for each full limit restored.
 - **Pro rata as to amount**: the cedent pays for the share of the limit
   restored. **Pro rata as to time** also scales each restoration by the share
   of the year still to run at the time of the loss.
-- **Ceding commission**: a share of the premium that the reinsurer pays back
-  to the cedent for its acquisition and handling costs. A **sliding scale**
-  makes that share depend on the loss ratio of the year.
-- **Profit commission**: a share of the profit on the treaty that the
-  reinsurer pays back to the cedent. The profit is after an allowance for the
-  costs and margin of the reinsurer.
-- **Brokerage**: the fee of the broker, a share of the premium. It comes off
-  what the reinsurer receives.
-- **Deal ratios**: each amount over the premium, year by year: the loss ratio,
-  each deduction, the combined ratio and the margin left.
+- **Ceding commission**: a share of the premium paid back to the cedent for its
+  costs. A **sliding scale** makes that share depend on the loss ratio.
+- **Profit commission**: a share of the treaty's profit paid back to the
+  cedent, after an allowance for the reinsurer's costs and margin.
+- **Brokerage**: the broker's fee, a share of the premium.
+- **Deal ratios**: each amount over the premium, year by year.
 
 ## 2. The book
 
-The helper below rebuilds the years of one cedent from the YELT, with times
-and peril labels. It makes an `xol_layer()` from a row of the contracts file,
-and it applies the hours clause (`hours_clause()`) where the contract has one.
-It is the same helper as on the other pages, with one addition:
-`contract_layer()` passes extra settings (here `pro_rata_time`) to the layer.
+The helper is that of the other pages, except that `contract_layer()` passes
+extra settings (here `pro_rata_time`) to the layer.
 
-The tests run the guides from the repository root, and Quarto renders them
-from `docs/guides/`. Thus `find_data()` looks for `examples/data/` upwards
-from the working directory. The code reads every column as text, as the `csv`
-module of the Python guide does.
+The tests run from the repository root and Quarto from `docs/guides/`, so
+`find_data()` looks for `examples/data/` upwards from the working directory.
+The code reads every column as text, as Python's `csv` module does.
 
 ```{r}
 library(prospicio)
@@ -155,16 +137,15 @@ corran_qs quota_share premium 3.0
 bracken_agg aggregate_xl premium 0.45
 ```
 
-Each premium is the premium of Larkspur for its own share. For the excess
-covers it is rate on line times limit times share. For the quota share it is
-the ceded share of the catastrophe premium of Corran.
+Premium is Larkspur's share: rate on line times limit times share for the
+excess covers, the ceded share of Corran's catastrophe premium for the quota
+share.
 
 ## 3. Reinstatement premium
 
-**Intuition.** `alder_cat_1` is 40 xs 30 with one reinstatement at 100%. After
-a loss uses part of the limit, the cedent pays to restore it. It pays the same
-share of the upfront premium as the share of the limit that it restores. The
-contract restores only one limit, so the layer pays at most 80 a year at 100%.
+**Intuition.** `alder_cat_1` is 40 xs 30 with one reinstatement at 100%. The
+cedent pays the same share of the upfront premium as the share of the limit
+restored. The layer pays at most 80 a year at 100%.
 
 **Formula.** With `P` the upfront premium, `l` the limit, `r_j` the rate of
 reinstatement `j` and `Y` the layer loss of the year at 100%:
@@ -173,16 +154,15 @@ reinstatement `j` and `Y` the layer loss of the year at 100%:
 RIP = P * sum over j of r_j * min(max(Y - (j - 1) * l, 0), l) / l
 ```
 
-for the reinstatements that the contract has. As to time, the formula also
-multiplies each restored piece by `1 - t`. Here `t` is the share of the year
-gone at the time of its loss.
+over the contract's reinstatements. As to time, each restored piece is also
+multiplied by `1 - t`, where `t` is the share of the year gone at its loss.
 
 **By hand.** Two losses of 45 and 65 put 15 and then 35 into the layer. The
-contract restores all of the first, but only 25 more of the second, because
-there is only one limit of 40. As to amount that is 40/40 of the premium, 1.8.
-Suppose that the losses occur a quarter and three quarters of the way through
-the year. As to time then gives (15 x 0.75 + 25 x 0.25) / 40 x 1.8 = 0.7875.
-`reinstatement_premium()` does this calculation for the losses of one year.
+contract restores all of the first but only 25 of the second (one limit of 40):
+40/40 of the premium, 1.8, as to amount. If the losses fall a quarter and three
+quarters of the way through the year, as to time gives
+(15 x 0.75 + 25 x 0.25) / 40 x 1.8 = 0.7875, which `reinstatement_premium()`
+computes for the losses of one year.
 
 ```{r}
 alder_c <- CONTRACTS[["alder_cat_1"]]
@@ -198,72 +178,84 @@ as to time:   0.7875
 ```
 
 **On the book.** The tower's result carries a `reinstatement_premium`
-component next to the ceded loss. Over the 2,000 years:
+component next to the ceded loss.
 
 ```{r}
+#| label: tbl-book-flows
+library(gt)
+
 alder <- subject(alder_c)
-amount_res <- apply_tower(reinsurance_tower(list(by_amount)), alder)
-time_res <- apply_tower(reinsurance_tower(list(by_time)), alder)
-rp_amount <- mean_of(amount_res, "reinstatement_premium", "alder_cat_1")
-rp_time <- mean_of(time_res, "reinstatement_premium", "alder_cat_1")
-say("expected ceded loss:", py(mean_of(amount_res, "ceded", "alder_cat_1"), 4))
-say("expected reinstatement premium, as to amount:", py(rp_amount, 4))
-say("expected reinstatement premium, as to time:  ", py(rp_time, 4))
-say("as to time is lower by", py(1 - rp_time / rp_amount, 3))
-say("as to amount, over the upfront premium:", py(rp_amount / by_amount@premium, 5))
+basis <- list("as to amount" = by_amount, "as to time" = by_time)
+res <- lapply(basis, function(layer) apply_tower(reinsurance_tower(list(layer)), alder))
+rip <- sapply(res, mean_of, "reinstatement_premium", "alder_cat_1")
+book <- data.frame(
+  basis = names(basis),
+  ceded = sapply(res, mean_of, "ceded", "alder_cat_1"),
+  rip = rip,
+  ratio = rip / by_amount@premium,
+  change = c(NA, rip[["as to time"]] / rip[["as to amount"]] - 1)
+)
+gt(book, rowname_col = "basis") |>
+  tab_header("alder_cat_1: expected flows per year over 2,000 years",
+             "Millions of crowns; the ratio is over the upfront premium") |>
+  cols_label(ceded = "ceded loss", rip = "reinstatement premium", ratio = "premium ratio",
+             change = "change vs amount") |>
+  fmt_number(columns = c(ceded, rip), decimals = 4) |>
+  fmt_number(columns = ratio, decimals = 5) |>
+  fmt_number(columns = change, decimals = 3) |>
+  sub_missing(missing_text = "")
 ```
 
 ```text
-expected ceded loss: 0.823
-expected reinstatement premium, as to amount: 0.1207
-expected reinstatement premium, as to time:   0.0447
-as to time is lower by 0.629
-as to amount, over the upfront premium: 0.06705
+              ceded loss  reinstatement premium  premium ratio  change vs amount
+as to amount      0.8230                 0.1207        0.06705
+as to time        0.8230                 0.0447        0.02484            -0.629
 ```
 
-As to time collects about 63% less because of the season. The table below
-splits the occurrences that reach the layer by the quarter of the year in which
-they occur. `events()` and
-`event_times()` read the occurrences of one year.
+As to time collects 63% less because of the season. By quarter (`events()` and
+`event_times()` read the occurrences of one year):
 
 ```{r}
+#| label: tbl-quarters
 hits <- unlist(lapply(seq_len(N_YEARS), function(i) {
   event_times(alder, i)[events(alder, i) > 30]
 }))
-say("occurrences that reach the layer:", length(hits))
-say("quarter  occurrences  mean share of the year left")
-for (k in 0:3) {
+quarters <- do.call(rbind, lapply(0:3, function(k) {
   left <- 1 - hits[hits >= k / 4 & hits < (k + 1) / 4]
-  cat(sprintf("Q%d       %11d  %27.3f\n", k + 1L, length(left), mean(left)))
-}
+  data.frame(quarter = paste0("Q", k + 1L), n = length(left), left = mean(left))
+}))
+quarters <- rbind(quarters, data.frame(quarter = "All", n = length(hits), left = mean(1 - hits)))
+gt(quarters, rowname_col = "quarter") |>
+  tab_header(paste(length(hits), "occurrences reach alder_cat_1, by quarter of the year")) |>
+  cols_label(n = "occurrences", left = "mean share of the year left") |>
+  fmt_integer(columns = n) |>
+  fmt_number(columns = left, decimals = 3)
 ```
 
 ```text
-occurrences that reach the layer: 241
-quarter  occurrences  mean share of the year left
-Q1                22                        0.843
-Q2                37                        0.622
-Q3               114                        0.340
-Q4                68                        0.190
+     occurrences  mean share of the year left
+Q1            22                        0.843
+Q2            37                        0.622
+Q3           114                        0.340
+Q4            68                        0.190
+All          241                        0.387
 ```
 
-182 of the 241 occurrences come in the second half of the year. The large
-losses of Alder are mostly windstorms, and the generator puts nine in ten
-windstorms between day 213 and day 305. A loss then restores limit for only the
-few months left, and as to time the cedent pays only for those months. A peril
-spread evenly over the year would show a smaller gap. Use the basis of the
-treaty wording. For a seasonal peril the difference is material.
+182 of the 241 occurrences come in the second half of the year. Alder's large
+losses are mostly windstorms, and nine in ten fall between day 213 and day 305.
+A late loss restores limit for only a few months, so as to time the cedent pays
+only for those months. Use the basis of the treaty wording.
 
-The reinstatement premium of each year is proportional to the upfront premium.
-Thus the expected ratio, 0.06705 here as to amount, does not depend on the
-premium charged. Page 6 uses this fact to price a layer that counts on it.
-Reinstatement premiums carry no ceding commission.
+The reinstatement premium is proportional to the upfront premium, so the
+expected ratio (0.06705 as to amount) does not depend on the premium charged.
+Page 6 uses this to price a layer. Reinstatement premiums carry no ceding
+commission.
 
 ## 4. Commissions and brokerage on the quota share
 
 `corran_qs` cedes 10% of each Corran occurrence up to an event limit of 150
-and an annual limit of 300. Its premium is 10% of the catastrophe premium of
-Corran. The contract pays a flat ceding commission of 25%.
+and an annual limit of 300, for 10% of Corran's catastrophe premium. The
+contract pays a flat ceding commission of 25%.
 
 **Formulas**, all as shares of the premium `P` with ceded loss `C`:
 
@@ -273,78 +265,65 @@ Corran. The contract pays a flat ceding commission of 25%.
 - brokerage `BK = b`
 - combined ratio `C/P + CC + PC + BK`, margin `1 - combined ratio`
 
-Here the profit commission returns 20% of the profit after an allowance of
-35%: the 25% ceding commission plus 10% for the costs of Larkspur. Brokerage is
-2%, a typical level for a proportional treaty, where the premium is large
-against the risk. The excess cover in section 6 pays 10%, nearer to what
-excess of loss business pays. `deal_ratios()` gives every ratio in every year. The
-means are below.
+Both sets of terms pay 2% brokerage (the excess cover in section 6 pays 10%).
+
+- **Flat commission plus profit commission.** The profit commission returns
+  20% of the profit after an allowance of 35%: the 25% ceding commission plus
+  10% for the costs of Larkspur.
+- **Sliding scale.** The commission is 30% at a loss ratio of 30% or less, 20%
+  at 50% or more, and a straight line between. `with_sliding_scale()` takes the
+  commissions and the loss ratios as two vectors and replaces the flat
+  commission.
+
+`deal_ratios()` gives every ratio in every year. The table shows the means.
 
 ```{r}
+#| label: tbl-quota-share-means
 q <- CONTRACTS[["corran_qs"]]
 corran <- subject(q)
 
-ratio_means <- function(layer) {
+ratio_values <- function(layer) {
   tower <- reinsurance_tower(list(layer))
   ratios <- deal_ratios(tower, apply_tower(tower, corran), layer@name)
-  for (k in ratios@keys$ratio) {
-    cat(sprintf("%-18s%8.4f\n", k, round(mean(marginal(ratios, k)), 4)))
-  }
+  keys <- ratios@keys$ratio
+  setNames(sapply(keys, function(k) mean(marginal(ratios, k))), keys)
 }
 
 qs_terms <- with_brokerage(with_profit_commission(contract_layer(q), 0.2, 0.35), 0.02)
-ratio_means(qs_terms)
+qs_slide <- with_brokerage(with_sliding_scale(contract_layer(q), c(0.30, 0.20), c(0.30, 0.50)), 0.02)
+qs_means <- data.frame(ratio = names(ratio_values(qs_terms)))
+qs_means$`flat + profit commission` <- ratio_values(qs_terms)[qs_means$ratio]
+qs_means$`sliding scale` <- ratio_values(qs_slide)[qs_means$ratio]
+gt(qs_means, rowname_col = "ratio") |>
+  tab_header("Corran quota share: mean ratios under two commission terms",
+             "Shares of premium; brokerage 2%") |>
+  fmt_number(columns = c(`flat + profit commission`, `sliding scale`), decimals = 4) |>
+  sub_missing(missing_text = "")
 ```
 
 ```text
-loss_ratio          0.4008
-ceding_commission   0.2500
-profit_commission   0.0838
-brokerage           0.0200
-total_deductions    0.3538
-combined_ratio      0.7547
-nmbf                0.2453
-margin              0.2453
+                   flat + profit commission  sliding scale
+loss_ratio                           0.4008         0.4008
+ceding_commission                    0.2500         0.2748
+profit_commission                    0.0838
+brokerage                            0.0200         0.0200
+total_deductions                     0.3538         0.2948
+combined_ratio                       0.7547         0.6957
+nmbf                                 0.2453         0.3043
+margin                               0.2453         0.3043
 ```
 
 The expected loss ratio is 40%, but the profit commission is worth 8.4% of
-premium, not 20% of (65% - 40%) = 5%. The difference comes from the shape. In
-a quiet year the loss ratio is far below 40% and the commission is large. In a
-bad year the commission is zero and cannot go negative. The reinsurer gives
-away part of the good years and keeps all of the bad ones. A margin from the
-expected loss ratio alone does not show this.
+premium, not 20% of (65% - 40%) = 5%: the commission is large in a quiet year
+and zero, never negative, in a bad one. The reinsurer gives away part of the
+good years and keeps all of the bad ones. Likewise the scale reads 25% at a
+loss ratio of 40%, yet its mean commission is 27.5%, because most years are
+below the mean and earn the top of the scale. A margin from the expected loss
+ratio alone misses this. `nmbf` (net margin before fees) equals the margin
+here: no deduction is outside it.
 
-`nmbf` (net margin before fees) equals the margin here, because no deduction
-is outside it.
-
-**A sliding scale instead.** A sliding scale moves the commission against the
-loss ratio. Here it is 30% at a loss ratio of 30% or less, 20% at 50% or more,
-and a straight line between. `with_sliding_scale()` takes the commissions and
-the loss ratios as two vectors. It replaces the flat commission, so you can add
-it to the layer of the contract as it is.
-
-```{r}
-qs_slide <- with_brokerage(with_sliding_scale(contract_layer(q), c(0.30, 0.20), c(0.30, 0.50)), 0.02)
-ratio_means(qs_slide)
-```
-
-```text
-loss_ratio          0.4008
-ceding_commission   0.2748
-brokerage           0.0200
-total_deductions    0.2948
-combined_ratio      0.6957
-nmbf                0.3043
-margin              0.3043
-```
-
-At the expected loss ratio of 40% the scale reads 25%, but the mean commission
-is 27.5%. The same shape causes this: most years are below the mean and earn
-the top of the scale.
-
-The commission against the loss ratio shows why. The left panel draws the
-three terms. The right panel shows how the loss ratio of Corran falls over the
-2,000 years, up to 150% (6% of the years are above and not shown):
+Commission by loss ratio, and the loss ratio of Corran over the 2,000 years (up
+to 150%; 6% of the years are above):
 
 ```{r}
 #| label: fig-commission-by-loss-ratio
@@ -377,38 +356,16 @@ ggplot(data.frame(lr = 100 * qs_lr), aes(lr)) +
        title = "Loss ratio of Corran (up to 150%)")
 ```
 
-The same means sit side by side in a table:
-
-```{r}
-#| label: tbl-quota-share-means
-library(gt)
-
-ratio_values <- function(layer) {
-  tower <- reinsurance_tower(list(layer))
-  ratios <- deal_ratios(tower, apply_tower(tower, corran), layer@name)
-  keys <- ratios@keys$ratio
-  setNames(sapply(keys, function(k) mean(marginal(ratios, k))), keys)
-}
-qs_means <- data.frame(ratio = names(ratio_values(qs_terms)))
-qs_means$`flat + profit commission` <- ratio_values(qs_terms)[qs_means$ratio]
-qs_means$`sliding scale` <- ratio_values(qs_slide)[qs_means$ratio]
-gt(qs_means, rowname_col = "ratio") |>
-  tab_header("Corran quota share: mean ratios under two commission terms",
-             "Shares of premium; brokerage 2%") |>
-  fmt_number(columns = c(`flat + profit commission`, `sliding scale`), decimals = 4)
-```
-
 A layer with paid reinstatements cannot take a profit commission or a sliding
-scale. On this book they go on the quota share and the aggregate cover.
+scale, so here they go on the quota share and the aggregate cover.
 
 ## 5. A no-claims bonus
 
 A no-claims bonus returns a share of the premium when the cover pays nothing in
-the year. `with_no_claims_bonus(layer, share, years, threshold)` sets it: the
-share of the premium returned, the contract years it looks back over, and the
-most ceded loss that still earns it (0, a year with no claim, by default). Here
-the bonus is 10% of the premium on `bracken_agg`, the aggregate cover on the
-convective storm and flood losses of Bracken:
+the year. `with_no_claims_bonus(layer, share, years, threshold)` sets the share
+returned, the years it looks back over, and the most ceded loss that still earns
+it (default 0). Here it is 10% on `bracken_agg`, the aggregate cover on
+Bracken's convective storm and flood losses:
 
 ```{r}
 b <- CONTRACTS[["bracken_agg"]]
@@ -430,16 +387,16 @@ chance of a year with no claim: 0.9675
 mean no-claims bonus:           0.0967
 ```
 
-The mean bonus is 10% times the chance of a year with no claim, 0.09675; the
-two lines differ only in how that rounds. The bonus reads the ceded loss on
-its own, so a layer can carry it beside a sliding scale or a profit
-commission. Deal ratios count it as a deduction inside NMBF.
+The mean bonus is 10% times that chance, 0.09675 (the figures differ only in
+rounding). The bonus reads the ceded loss alone, so a layer can carry it beside
+a sliding scale or a profit commission. Deal ratios count it as a deduction
+inside NMBF.
 
-A bonus can also look back over several contract years: it is paid only in a
-year whose last `years` years together ceded at most the threshold. That needs
-the paths of a term, so `apply_tower_term()` applies the tower year by year,
-and `apply_tower()` refuses it. Over a term of two years, each path made of two
-of the 2,000 simulated years, a bonus that looks back two years:
+A bonus can look back over several contract years: it is paid only if the last
+`years` years together ceded at most the threshold. That needs
+the paths of a term, so `apply_tower_term()` applies the tower year by year
+(`apply_tower()` refuses it). Here a term is two of the 2,000 simulated years,
+and the bonus looks back two years:
 
 ```{r}
 full <- no_claims_bonus_for(ncb, 0)
@@ -456,53 +413,56 @@ year 1: bonus paid on 0.9710 of the paths
 year 2: bonus paid on 0.9360 of the paths
 ```
 
-The first year looks back to the start of the term only, so it pays as often
-as a one-year bonus on the same 1,000 simulated years (0.9710 here, against
-0.9675 on all 2,000). The second year pays only when both years were free of
-claims, about the square of that chance, since the years are independent.
+Year 1 looks back only to the start of the term, so it pays about as often as
+a one-year bonus (0.9675 above). Year 2 needs two clean years: about the square
+of that chance, since the years are independent.
 
 ## 6. The reinsurer's ledger of the aggregate cover
 
-A P&L ledger shows each flow as a row, signed from the side of the reinsurer,
-and gives the distribution of each row. `deal_ledger()` builds it for one layer
-over a distribution of annual gross losses. Here the source is the 2,000
-annual totals of convective storm and flood of Bracken, each equally likely.
-The cover pays 10% brokerage. `ledger_sheet()` names the rows and
-`ledger_row()` gives the distribution of each one.
+A P&L ledger shows each flow as a row, signed from the reinsurer's side, with
+the distribution of each row. `deal_ledger()` builds it for one layer over a
+distribution of annual gross losses: here Bracken's 2,000 annual totals of
+convective storm and flood, each equally likely. The cover pays 10% brokerage.
+`ledger_sheet()` names the rows and `ledger_row()` gives the distribution of
+each one.
 
 ```{r}
+#| label: tbl-ledger
 totals <- total(total(bracken_cs_fl))@draws
 agg_cover <- with_brokerage(contract_layer(b), 0.10)
 ledger <- deal_ledger(reinsurance_tower(list(agg_cover)),
                       list(totals, rep(1, length(totals))), "bracken_agg")
-for (row in ledger_sheet(ledger)$row) {
-  cat(sprintf("%-18s%8.4f\n", row, mean(ledger_row(ledger, row))))
-}
+rows <- ledger_sheet(ledger)$row
+gt(data.frame(row = rows, mean = sapply(rows, function(r) mean(ledger_row(ledger, r)))),
+   rowname_col = "row") |>
+  tab_header("Bracken aggregate cover: mean of each ledger row",
+             "Millions of crowns per year, signed from the reinsurer's side") |>
+  fmt_number(columns = mean, decimals = 4)
 ```
 
 ```text
-Premium             0.4500
-Loss               -0.1621
-Brokerage          -0.0450
-total obligation   -0.2071
-result              0.2429
+                     mean
+Premium            0.4500
+Loss              -0.1621
+Brokerage         -0.0450
+total obligation  -0.2071
+result             0.2429
 ```
 
-The premium is fixed, but the loss and the result are not. `ledger_sheet()`
-shows each row in the scenario columns, from the bad year to the good one.
-`ledger_card()` gives the standard deviation and percentiles of each side.
+Only the premium is fixed. `ledger_sheet()` shows each row in the scenario
+columns, from the bad year to the good one; `ledger_card()` gives the standard
+deviation and percentiles of each side.
 
-The ledger applies the tower to an annual loss, so it suits annual covers:
-quota shares and aggregate excess layers. It refuses a layer with paid
-reinstatements. For the occurrence excess layers, read the flows from the
-result of the tower, as in section 3.
+The ledger applies the tower to an annual loss, so it suits quota shares and
+aggregate excess layers. It refuses a layer with paid reinstatements: for
+occurrence layers, read the flows from the tower's result, as in section 3.
 
 ## Collateral
 
 A collateralised reinsurer holds the limit in a trust. This changes the return
-on a deal but not its expected loss. The monthly cash-flow engine of the
-library (`cashflow_terms()`, `cashflow_run()`, and `deal_run()` with its
-`cashflows` and `terms` arguments) models it.
+on a deal, not its expected loss. The monthly cash-flow engine
+(`cashflow_terms()`, `cashflow_run()`, and `deal_run()` with its `cashflows` and
+`terms` arguments) models it.
 
 ## In Python
 

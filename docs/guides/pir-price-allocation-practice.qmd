@@ -14,41 +14,30 @@ execute:
 <!-- site: execute -->
 
 This guide continues
-[Price allocation in *Pricing Insurance Risk*](pir-price-allocation.md). That
-guide runs the small examples of chapters 12 to 15 of Mildenhall and Major's
-*Pricing Insurance Risk* (Wiley, 2022). This guide applies the methods to a
-realistic book, the Cat/Non-Cat case study. Section 2 allocates it by the
-classical recipes of chapter 13 (Table 13.3). Section 3 allocates it by the
-natural allocation and Bodoff's percentile layer of capital of chapter 15
-(Tables 15.36 and 15.39). Section 4 is the chapter 19 test of whether a
-reinsurance cover is worth buying, which is also an allocation question.
-
-The guide puts each number that the book prints next to the number from
-prospicio, and explains the book in new words.
+[Price allocation in *Pricing Insurance Risk*](pir-price-allocation.md) on a
+realistic book, the Cat/Non-Cat case study of Mildenhall and Major's *Pricing
+Insurance Risk* (Wiley, 2022). Section 2 allocates it by the classical recipes
+of chapter 13 (Table 13.3). Section 3 uses the natural allocation and Bodoff's
+percentile layer of capital of chapter 15 (Tables 15.36 and 15.39). Section 4
+is the chapter 19 test of whether a reinsurance cover is worth buying. Each
+number that the book prints is shown next to the number from prospicio.
 [Pricing Insurance Risk: the case studies](pricing-insurance-risk-case-studies.md)
-compares the case studies with `aggregate` 0.30.1, the package that made the
-exhibits of the book. This guide compares the gross Cat/Non-Cat book with the
-printed tables of the book.
-
+compares the same case studies with `aggregate` 0.30.1.
 
 This is the R twin of the Python guide
 [`pir-price-allocation-practice.md`](pir-price-allocation-practice.md), with the
-same sections, examples and numbers. The R package calls the same Rust code as
-the Python package, so each number below is equal to the number in the Python
-guide. The text that each R chunk prints is under the chunk.
-`R/prospicio/tests/test-guides.R` runs the chunks in order and requires each
-chunk to print exactly that text.
+same sections, examples and numbers. The R package calls the same Rust code, so
+each number equals the one in the Python guide. The text under each R chunk is
+what it prints; `R/prospicio/tests/test-guides.R` runs the chunks in order and
+requires that output.
 
 ## 1. The book and its capital standard
 
-Cat/Non-Cat has two independent units with a total mean of 100. Non-Cat is a
-gamma with mean 80 and CV 0.15, and Cat is a lognormal with mean 20 and CV 1. As
-in the case studies guide, the code does these steps:
-
-1. It puts each unit on the grid of `aggregate` (a step of 1/64, 2^16 points).
-2. It combines the units by FFT.
-3. It sets the assets to the 99.9% quantile of the total.
-4. It calibrates five distortions to a 10% return on capital:
+Cat/Non-Cat has two independent units with a total mean of 100: Non-Cat is a
+gamma (mean 80, CV 0.15) and Cat is a lognormal (mean 20, CV 1). As in the case
+studies guide, the code puts each unit on the grid of `aggregate` (step 1/64,
+2^16 points), combines the units by FFT, sets the assets to the 99.9% quantile
+of the total and calibrates five distortions to a 10% return on capital:
 
 ```{r}
 #| label: setup
@@ -81,15 +70,15 @@ assets 267.20  (book 267.2)
 expected loss within the assets: Cat 19.96, Non-Cat 79.99  (book 19.96, 79.99)
 ```
 
-The calibration on the capped total is the shortcut that the case studies guide
-explains. It gives the same parameters as a calibration on the full portfolio.
+Calibrating on the capped total gives the same parameters as on the full
+portfolio.
 
 ## 2. Allocated CCoC pricing (Table 13.3)
 
 Chapter 13 allocates the 267.2 of assets to the units and charges a 10% return
 on the capital of each unit. The margin of a unit is `0.1 / 1.1` times its
-assets minus its expected loss. The result depends on the asset allocation, and
-the chapter uses nine methods:
+assets minus its expected loss, so the result depends on the asset allocation.
+The chapter uses nine methods:
 
 - **expected loss**: assets in proportion to expected loss.
 - **scaled VaR, TVaR and EPD**: the stand-alone VaR, TVaR or EPD-based assets of
@@ -102,8 +91,7 @@ the chapter uses nine methods:
 - **covariance**: `k` such that `E[X] + k Var(X)` is 267.2. Unit `i` gets
   `E[X_i] + k Cov(X_i, X)`.
 
-The grids have `quantile()`, `TVaR()` and `stop_loss()`, so each recipe is a few
-lines. Where a recipe must find a level, it uses a bisection:
+A recipe that must find a level uses a bisection:
 
 ```{r}
 #| label: classical
@@ -145,44 +133,56 @@ ASSETS <- list(
   "covariance" = sapply(units, function(g) mean(g) + k * variance(g))
 )
 BOOK_133 <- list( # Table 13.3, gross margin: (Cat, Non-Cat)
-  "expected loss" = "(3.04, 12.17)", "scaled EPD" = "(15.68, -0.471)", "scaled TVaR" = "(12.85, 2.36)",
-  "scaled VaR" = "(12.82, 2.38)", "equal risk EPD" = "(13.33, 1.87)", "equal risk TVaR" = "(11.78, 3.42)",
-  "equal risk VaR" = "(11.74, 3.47)", "coTVaR" = "(14.84, 0.37)", "covariance" = "(11.18, 4.03)"
+  "expected loss" = c(3.04, 12.17), "scaled EPD" = c(15.68, -0.471), "scaled TVaR" = c(12.85, 2.36),
+  "scaled VaR" = c(12.82, 2.38), "equal risk EPD" = c(13.33, 1.87), "equal risk TVaR" = c(11.78, 3.42),
+  "equal risk VaR" = c(11.74, 3.47), "coTVaR" = c(14.84, 0.37), "covariance" = c(11.18, 4.03)
 )
-d <- 0.1 / 1.1
-cat(sprintf("%-16s %10s %8s %9s   book margins\n", "", "Cat assets", "Cat M", "NonCat M"))
-for (method in names(ASSETS)) {
-  assets <- ASSETS[[method]]
-  margin <- d * (assets - loss)
-  cat(sprintf("%-16s %10.2f %8.3f %9.3f   %s\n", method, assets[1], margin[1], margin[2], BOOK_133[[method]]))
-}
 cat(sprintf("levels: TVaR %.4f, equal risk VaR %.4f, equal risk TVaR %.4f\n", p_tvar, p_var, p_eq_tvar))
 ```
 
 ```text
-                 Cat assets    Cat M  NonCat M   book margins
-expected loss         53.36    3.036    12.169   (3.04, 12.17)
-scaled EPD           192.38   15.675    -0.470   (15.68, -0.471)
-scaled TVaR          161.25   12.845     2.361   (12.85, 2.36)
-scaled VaR           160.98   12.821     2.385   (12.82, 2.38)
-equal risk EPD       166.64   13.335     1.870   (13.33, 1.87)
-equal risk TVaR      149.59   11.785     3.420   (11.78, 3.42)
-equal risk VaR       149.06   11.737     3.470   (11.74, 3.47)
-coTVaR               183.15   14.835     0.370   (14.84, 0.37)
-covariance           142.93   11.179     4.026   (11.18, 4.03)
 levels: TVaR 0.9970, equal risk VaR 0.9977, equal risk TVaR 0.9931
 ```
 
-Sixteen of the eighteen margins match the book to the digits that it prints. The
-other two are the scaled TVaR and scaled EPD margins of Cat: 12.845 and 15.675
-against the printed 12.85 and 15.68. Both are within 0.005 of the printed value,
-on the rounding boundary. The Non-Cat margins (2.36 and -0.47) and the totals
-match, so the allocation is the same. A small difference in the level that the
-code finds for the TVaR or EPD of the total can move them by that amount.
+```{r}
+#| label: table-133
+library(gt)
+d <- 0.1 / 1.1
+table_133 <- do.call(rbind, lapply(names(ASSETS), function(method) {
+  assets <- ASSETS[[method]]
+  margin <- d * (assets - loss)
+  data.frame(recipe = method, assets = assets[1], cat = margin[1], cat_book = BOOK_133[[method]][1],
+             noncat = margin[2], noncat_book = BOOK_133[[method]][2])
+}))
+gt(table_133, rowname_col = "recipe") |>
+  tab_header("Table 13.3: allocated CCoC margins",
+             "Margin of each unit, prospicio and the book; currency units") |>
+  tab_spanner("Cat margin", columns = c(cat, cat_book)) |>
+  tab_spanner("Non-Cat margin", columns = c(noncat, noncat_book)) |>
+  cols_label(assets = "Cat assets", cat = "prospicio", cat_book = "book",
+             noncat = "prospicio", noncat_book = "book") |>
+  fmt_number(columns = assets, decimals = 2) |>
+  fmt_number(columns = c(cat, noncat), decimals = 3) |>
+  fmt_number(columns = c(cat_book, noncat_book), decimals = 3, drop_trailing_zeros = TRUE)
+```
 
-The next figure shows the margins of the table. Each bar is the margin that one
-recipe gives to a unit. The two bars of a recipe add up to 15.2, the same total
-margin for every recipe:
+```text
+                 Cat assets  prospicio   book  prospicio    book
+expected loss         53.36      3.036   3.04     12.169   12.17
+scaled EPD           192.38     15.675  15.68     -0.470  -0.471
+scaled TVaR          161.25     12.845  12.85      2.361    2.36
+scaled VaR           160.98     12.821  12.82      2.385    2.38
+equal risk EPD       166.64     13.335  13.33      1.870    1.87
+equal risk TVaR      149.59     11.785  11.78      3.420    3.42
+equal risk VaR       149.06     11.737  11.74      3.470    3.47
+coTVaR               183.15     14.835  14.84      0.370    0.37
+covariance           142.93     11.179  11.18      4.026    4.03
+```
+
+Sixteen of the eighteen margins match the book to the digits that it prints.
+The other two, Cat's scaled TVaR and scaled EPD margins, are within 0.005 of the
+printed value, on the rounding boundary. The two bars of a recipe add up to
+15.2:
 
 ```{r}
 #| label: margins-figure
@@ -200,20 +200,17 @@ ggplot(margins, aes(margin, method, fill = unit)) +
   theme(legend.position = "top")
 ```
 
-The table shows the critique of chapter 13 in numbers. The same premium of 115.2
-gives Cat a margin from 3.04 to 15.68 and Non-Cat a margin from 12.17 to -0.47.
-Only the recipe that allocates the assets causes this difference. The recipes
-that look at the tail (scaled EPD, coTVaR) give Non-Cat almost no margin,
-because Cat causes the 99.9% outcomes. The expected loss recipe ignores risk.
-Each recipe charges every unit the same 10% return, and the natural allocation
-does not.
+The same premium of 115.2 gives Cat a margin from 3.04 to 15.68, and only the
+asset allocation causes the difference. The recipes that look at the tail
+(scaled EPD, coTVaR) leave Non-Cat almost no margin, because Cat causes the
+99.9% outcomes. The expected loss recipe ignores risk. Each recipe charges every
+unit the same 10% return; the natural allocation does not.
 
 ## 3. The natural allocation of the case study (Tables 15.36 and 15.39)
 
 Chapter 15 prices the same book with the five distortions, each calibrated to
 the same total premium, and uses the lifted natural allocation. Table 15.36
-prints the premiums and capital by unit. Table 15.39 prints the assets, with
-Bodoff's percentile layer of capital (PLC) next to them:
+prints the premiums and capital by unit, and Table 15.39 the assets:
 
 ```{r}
 #| label: lifted
@@ -224,29 +221,6 @@ BOOK_1536 <- list( # lifted: Cat premium, Cat capital, Cat assets, Non-Cat asset
   dual = c(29.68, 89.01, 118.7, 148.5),
   tvar = c(28.69, 88.87, 117.6, 149.6)
 )
-cat(sprintf("%-5s %15s %17s %17s %17s\n", "", "Cat P", "Cat Q", "Cat assets", "NonCat assets"))
-for (family in FAMILIES) {
-  u <- natural_price(book, dists[[family]], p = 0.999, allocation = "lifted")
-  got <- c(u$premium[1], u$capital[1], u$assets[1], u$assets[2])
-  cat(sprintf("%-5s %s\n", family, paste(sprintf("%7.2f (%6.2f)", got, BOOK_1536[[family]]), collapse = " ")))
-}
-plc <- bodoff_allocation(book, p = 0.999)
-cat(sprintf("PLC   assets Cat %.2f (113.2), Non-Cat %.2f (154.0)\n", plc[1], plc[2]))
-```
-
-```text
-                Cat P             Cat Q        Cat assets     NonCat assets
-ccoc    39.72 ( 47.04)  197.63 (270.80)  237.35 (317.80)   29.85 (-50.62)
-ph      32.89 ( 32.89)  103.25 (103.20)  136.14 (136.10)  131.06 (131.10)
-wang    31.26 ( 31.26)   92.18 ( 92.20)  123.44 (123.50)  143.76 (143.70)
-dual    29.68 ( 29.68)   89.01 ( 89.01)  118.69 (118.70)  148.52 (148.50)
-tvar    28.69 ( 28.69)   88.87 ( 88.87)  117.56 (117.60)  149.64 (149.60)
-PLC   assets Cat 113.17 (113.2), Non-Cat 154.03 (154.0)
-```
-
-```{r}
-#| label: lifted-table
-library(gt)
 rows <- lapply(FAMILIES, function(family) {
   u <- natural_price(book, dists[[family]], p = 0.999, allocation = "lifted")
   got <- c(u$premium[1], u$capital[1], u$assets[1], u$assets[2])
@@ -265,7 +239,29 @@ gt(lifted, rowname_col = "distortion") |>
   tab_spanner("Non-Cat assets", columns = c(n, n_book)) |>
   cols_label(p = "prospicio", p_book = "book", q = "prospicio", q_book = "book",
              a = "prospicio", a_book = "book", n = "prospicio", n_book = "book") |>
-  fmt_number(columns = -distortion, decimals = 1)
+  fmt_number(columns = c(p, q, a, n), decimals = 2) |>
+  fmt_number(columns = c(p_book, q_book, a_book, n_book), decimals = 2, drop_trailing_zeros = TRUE)
+```
+
+```text
+      prospicio   book  prospicio   book  prospicio   book  prospicio    book
+ccoc      39.72  47.04     197.63  270.8     237.35  317.8      29.85  -50.62
+ph        32.89  32.89     103.25  103.2     136.14  136.1     131.06   131.1
+wang      31.26  31.26      92.18   92.2     123.44  123.5     143.76   143.7
+dual      29.68  29.68      89.01  89.01     118.69  118.7     148.52   148.5
+tvar      28.69  28.69      88.87  88.87     117.56  117.6     149.64   149.6
+```
+
+Bodoff's percentile layer of capital (PLC) allocates assets too:
+
+```{r}
+#| label: plc
+plc <- bodoff_allocation(book, p = 0.999)
+cat(sprintf("PLC   assets Cat %.2f (113.2), Non-Cat %.2f (154.0)\n", plc[1], plc[2]))
+```
+
+```text
+PLC   assets Cat 113.17 (113.2), Non-Cat 154.03 (154.0)
 ```
 
 ```{r}
@@ -284,21 +280,18 @@ ggplot(assets_by_unit, aes(method, assets, fill = unit)) +
   theme(legend.position = "top")
 ```
 
-For PH, Wang, the dual power and TVaR, the premiums, capital and assets agree
-with the book within 0.06, and Bodoff's PLC assets also agree. The Wang capital
-is 92.18 against 92.20, with equal premiums. This guide could not find the cause
-of this difference of 0.02, which is small next to the spread between
-distortions. The PH row agrees with the book and **not** with `aggregate`
-0.30.1, which gives Cat a capital of 103.52 (see the case studies guide, section
-7). The PH capital of the book, 103.2, is the 103.25 of prospicio.
+For PH, Wang, the dual power and TVaR, prospicio agrees with the book within
+0.06, and so do Bodoff's PLC assets. The 0.02 gap in the Wang capital (92.18
+against 92.20) is small next to the spread between distortions, and its cause is
+unknown. The PH row agrees with the book and **not** with `aggregate` 0.30.1
+(Cat capital 103.52; case studies guide, section 7).
 
-**The CCoC row does not agree.** The book prints a Cat premium of 47.04 and
-Non-Cat assets of -50.62. prospicio returns 39.72 and 29.85, and `aggregate`
-0.30.1 returns 40.51 for the Cat premium. The row of the book cannot be a
-natural allocation of the CCoC distortion. Under the CCoC each outcome gets a
-weight of at least `1 / 1.1` of its probability (the worst outcome gets the
-remainder). So each natural allocation charges each unit at least `1 / 1.1` of
-its expected loss within the assets:
+**The CCoC row does not agree.** `aggregate` 0.30.1 returns 40.51 for the Cat
+premium, against 39.72 from prospicio and 47.04 in the book. The row of the book
+cannot be a natural allocation of the CCoC distortion. Under the CCoC each
+outcome gets a weight of at least `1 / 1.1` of its probability (the worst
+outcome gets the remainder). So each unit pays at least `1 / 1.1` of its
+expected loss within the assets:
 
 ```{r}
 #| label: floor
@@ -313,12 +306,10 @@ lowest possible Non-Cat premium under the CCoC: 72.72
 prospicio 75.43; book 68.11
 ```
 
-The Non-Cat premium of the book, 115.15 minus 47.04, is 68.11, a loss ratio of
-117% that the text of the book discusses. This premium is below the floor of
-72.72. So a version of the lifted calculation that does not keep all weights
-non-negative produced the CCoC row of Table 15.36. The most probable cause is
-how that version shared the mass of the distortion at the worst outcome on the
-grid.
+The Non-Cat premium of the book (115.15 minus 47.04, a loss ratio of 117%) is
+below the floor. So the CCoC row of Table 15.36 came from a lifted calculation
+that does not keep all weights non-negative, most probably in how it shared the
+mass at the worst outcome.
 
 The lifted capital of the CCoC is the quantity that
 [CAS Monograph 15 reproduced](capital-modeling-monograph-15.md#5-capital-by-unit-if-you-must)
@@ -326,64 +317,63 @@ found to change between versions of `aggregate`. The book is a third version. As
 in that guide, use the premiums of the linear allocation for the CCoC (Cat 35.95
 and Non-Cat 79.20, which `aggregate` 0.30.1 matches).
 
-The main result of the table stays the same. The Cat premium decreases from the
-CCoC to TVaR. Along that order, the distortion moves its weight from the worst
-outcome to the whole upper half of the distribution. The Cat assets decrease
-from 136 under PH to 118 under TVaR, and PLC gives Cat less again (113.2). PLC
-weights layers by objective probability, so it is the least sensitive to the
-tail of all methods, as section 15.4.4 observes.
+The main result stays: the Cat premium falls from the CCoC to TVaR, as the
+distortion moves its weight from the worst outcome to the upper half of the
+distribution. PLC weights layers by objective probability, so it is the least
+sensitive to the tail of all methods (section 15.4.4).
 
-The natural allocation depends on the distortion. How much can that choice move
-the Cat premium? `premium_bounds()` gives the lowest and highest premium of each
-unit under the linear allocation. The range covers **every** distortion that
-prices the capped total at the same premium (section 7 of the companion guide
-explains the method). All five distortions here have the same total of 115.15,
-so one range applies to all of them. The linear Cat premium of each distortion
-is in that range:
+How much can the choice of distortion move the Cat premium? `premium_bounds()`
+gives the lowest and highest premium of each unit under the linear allocation,
+over **every** distortion that prices the capped total at the same premium
+(section 7 of the companion guide). All five distortions here have the total
+115.15, so one range applies to all. The linear premium of each lies in it:
 
 ```{r}
 #| label: bounds
 total <- tail(natural_price(book, dists$ph, p = 0.999)$premium, 1)
 b <- premium_bounds(book, total, assets = a)
-cat(sprintf("%s: %.2f to %.2f
-", b$unit, b$lower, b$upper), sep = "")
-for (family in FAMILIES) {
-  linear <- natural_price(book, dists[[family]], p = 0.999, allocation = "linear")$premium[1]
-  cat(sprintf("%-5s linear Cat premium %.2f
-", family, linear))
-}
+linear <- t(sapply(FAMILIES, function(family)
+  natural_price(book, dists[[family]], p = 0.999, allocation = "linear")$premium[1:2]))
+bounds_table <- data.frame(
+  distortion = c("lowest possible", FAMILIES, "highest possible"),
+  cat = c(b$lower[b$unit == "Cat"], linear[, 1], b$upper[b$unit == "Cat"]),
+  noncat = c(b$lower[b$unit == "NonCat"], linear[, 2], b$upper[b$unit == "NonCat"])
+)
+gt(bounds_table, rowname_col = "distortion") |>
+  tab_header("Linear premiums and their bounds",
+             "By unit; the bounds hold for every distortion with total premium 115.15") |>
+  cols_label(cat = "Cat", noncat = "Non-Cat") |>
+  fmt_number(columns = c(cat, noncat), decimals = 2)
 ```
 
 ```text
-Cat: 28.69 to 35.95
-NonCat: 79.20 to 86.46
-ccoc  linear Cat premium 35.95
-ph    linear Cat premium 32.79
-wang  linear Cat premium 31.25
-dual  linear Cat premium 29.68
-tvar  linear Cat premium 28.69
+                    Cat  Non-Cat
+lowest possible   28.69    79.20
+ccoc              35.95    79.20
+ph                32.79    82.36
+wang              31.25    83.90
+dual              29.68    85.48
+tvar              28.69    86.46
+highest possible  35.95    86.46
 ```
 
-The CCoC and TVaR are at the two ends of the range, as in the small book of the
-companion guide. The CCoC puts all its spare weight on the worst outcome, which
-loads Cat, the unit that causes the worst outcomes. TVaR spreads the weight over
-the upper tail. The range for Cat, 28.69 to 35.95, is the freedom that the
-choice of distortion gives.
+The CCoC and TVaR sit at the two ends, as in the small book of the companion
+guide. The CCoC puts its spare weight on the worst outcome, which loads Cat, the
+unit that causes it. TVaR spreads the weight over the upper tail.
 
 ## 4. Is a reinsurance cover worth buying? (chapter 19)
 
-Chapter 19 asks a question. An insurer prices with a spectral risk measure:
-should it buy a cover with cash flows `C` at a premium `P`? The direct test (the
-book's "A/B" method) prices the book gross and net and compares the saving with
-`P`. Two shortcuts allocate instead. They price `C` as a unit of the gross book,
-or as a unit of the net book. They are first-order approximations of the direct
-test, and their results are slightly different from it.
+An insurer prices with a spectral risk measure. Should it buy a cover with cash
+flows `C` at a premium `P`? The direct test (the book's "A/B" method) prices the
+book gross and net and compares the saving with `P`. Two shortcuts price `C` as
+a unit of the gross book or of the net book. They are first-order
+approximations, so their results differ slightly from the direct test.
 
 Example 302 puts an aggregate cover of 2.5 excess of 7 on `X1` of the Simple
-Discrete Example. In that example, `X1` takes 0, 8 or 10 and `X2` takes 0, 1 or 90.
-Example 302 prices with the proportional hazard `g(s) = s^0.5`. The gross
-allocation uses a three-unit portfolio. Its units are `X1` net of the cover, the
-cover and `X2`, and they add up to the gross loss:
+Discrete Example, where `X1` takes 0, 8 or 10 and `X2` takes 0, 1 or 90. It
+prices with the proportional hazard `g(s) = s^0.5`. The gross allocation uses a
+three-unit portfolio: `X1` net of the cover, the cover and `X2`, which add up to
+the gross loss:
 
 ```{r}
 #| label: gross
@@ -393,24 +383,33 @@ OUT$ceded <- pmin(pmax(OUT$x1 - 7, 0), 2.5)
 PROBS <- as.vector(outer(c(0.5, 0.25, 0.25), c(0.5, 0.25, 0.25)))
 gross <- capital_portfolio(cbind(`X1 net` = OUT$x1 - OUT$ceded, ceded = OUT$ceded, X2 = OUT$x2), probs = PROBS)
 g <- natural_price(gross, ph)
-cat(sprintf("gross premium %.4f (book 51.1560); ceded, allocated gross %.4f (book 1.2613)\n", g$premium[4], g$premium[2]))
 net_price <- function(t) {
   natural_price(capital_portfolio(cbind(net = OUT$x1 + OUT$x2 - t * OUT$ceded), probs = PROBS), ph)$premium[2]
 }
 net <- net_price(1)
-cat(sprintf("net premium %.4f (book 49.8986); A/B saving %.4f (book 1.2574)\n", net, g$premium[4] - net))
+example_302 <- data.frame(
+  measure = c("gross premium", "ceded, allocated gross", "net premium", "A/B saving"),
+  prospicio = c(g$premium[4], g$premium[2], net, g$premium[4] - net),
+  book = c(51.1560, 1.2613, 49.8986, 1.2574)
+)
+gt(example_302, rowname_col = "measure") |>
+  tab_header("Example 302: the cover 2.5 xs 7 under the proportional hazard") |>
+  fmt_number(columns = c(prospicio, book), decimals = 4)
 ```
 
 ```text
-gross premium 51.1560 (book 51.1560); ceded, allocated gross 1.2613 (book 1.2613)
-net premium 49.8986 (book 49.8986); A/B saving 1.2574 (book 1.2574)
+                        prospicio     book
+gross premium             51.1560  51.1560
+ceded, allocated gross     1.2613   1.2613
+net premium               49.8986  49.8986
+A/B saving                 1.2574   1.2574
 ```
 
-The net allocation prices `C` with the weights of the **net** book. Those
-weights depend only on the order of the net outcomes. The cover changes that
-order: 10 + 0 (net 7.5) now ranks below 8 + 1 (net 8). `capital_portfolio()`
+The net allocation prices `C` with the weights of the **net** book, which depend
+only on the order of the net outcomes. The cover changes that order: 10 + 0 (net
+7.5) now ranks below 8 + 1 (net 8). `capital_portfolio()`
 sorts outcomes by its own total. So the code adds the cover as a unit scaled
-down by a very small factor, which keeps the net order and the weights. Then it
+down by a very small factor, which keeps the net order and the weights, and
 scales the allocation of the cover back up:
 
 ```{r}
@@ -425,27 +424,33 @@ cat(sprintf("ceded, allocated net %.4f (book 1.2497)\n", ceded_net))
 ceded, allocated net 1.2497 (book 1.2497)
 ```
 
-The three reservation prices are 1.2613, 1.2574 and 1.2497. Below about 1.25 the
-cover is worth buying on all tests, and above about 1.26 it is worth buying on
-no test. Between these prices the answer depends on the method. The book then
-lets the insurer buy a share `t` of the cover for `t P`. At an intermediate
-premium the best share is neither 0 nor 1 but 2/3, where the two net outcomes
-that change places tie:
+Below about 1.25 the cover is worth buying on all tests, and above about 1.26 on
+none. Between these prices the answer depends on the method. The book then lets
+the insurer buy a share `t` of the cover for `t P`. At an intermediate premium
+the best share is neither 0 nor 1 but 2/3, where the two net outcomes that
+change places tie:
 
 ```{r}
 #| label: share
-for (premium in c(1.2497, 1.2574, 1.2613)) {
-  shares <- (0:30) / 30
+shares <- (0:30) / 30
+rows <- lapply(c(1.2497, 1.2574, 1.2613), function(premium) {
   cost <- sapply(shares, function(t) net_price(t) + t * premium)
   best <- which.min(cost)
-  cat(sprintf("cover premium %s: cheapest share %.3f, total cost %.4f\n", format(premium), shares[best], cost[best]))
-}
+  data.frame(premium = format(premium), share = shares[best], cost = cost[best])
+})
+gt(do.call(rbind, rows), rowname_col = "premium") |>
+  tab_header("Example 302: the cheapest share of the cover",
+             "By cover premium; cost = net premium + share x premium") |>
+  cols_label(share = "cheapest share", cost = "total cost") |>
+  fmt_number(columns = share, decimals = 3) |>
+  fmt_number(columns = cost, decimals = 4)
 ```
 
 ```text
-cover premium 1.2497: cheapest share 1.000, total cost 51.1483
-cover premium 1.2574: cheapest share 0.667, total cost 51.1534
-cover premium 1.2613: cheapest share 0.000, total cost 51.1560
+        cheapest share  total cost
+1.2497           1.000     51.1483
+1.2574           0.667     51.1534
+1.2613           0.000     51.1560
 ```
 
 ```{r}
@@ -466,7 +471,6 @@ ggplot(curves, aes(share, extra, colour = premium)) +
   theme(legend.position = "top")
 ```
 
-At the lowest premium the full cover is best, and at the highest premium no
-cover is best. At the A/B premium a share of 2/3 has the lowest cost, as Figure
-19.1 of the book shows. With many covers the direct test needs every
-combination. The book suggests a search that uses the allocations as gradients.
+This is Figure 19.1 of the book. With many covers the direct test needs every
+combination; the book suggests a search that uses the allocations as
+gradients.

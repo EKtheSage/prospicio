@@ -13,45 +13,31 @@ execute:
 
 <!-- site: execute -->
 Part III of Stephen Mildenhall and John Major's *Pricing Insurance Risk: Theory
-and Practice* (Wiley, 2022), chapters 12 to 15, asks one question. An insurer
-prices its whole portfolio: how do you split that price over the units of the
-portfolio? Chapter 12 gives the classical answers, which allocate capital first
-and then price the capital. Chapter 13 applies them. Chapter 14 builds the
-book's own answer, the **natural allocation** of a spectral risk measure.
-Chapter 15 calculates it on small discrete examples, compares it with Bodoff's
-percentile layer of capital, and applies it to the case studies.
+and Practice* (Wiley, 2022), chapters 12 to 15, asks how to split a portfolio's
+price over its units. Chapter 12 gives the classical answers, which allocate
+capital first and then price it. Chapter 14 builds the book's own answer, the
+**natural allocation** of a spectral risk measure. Chapter 15 works it on small
+discrete examples and compares it with Bodoff's percentile layer of capital.
 
-This guide runs the small numerical examples of the book in prospicio. It prints
-the value from the book next to the value from prospicio. The text and exhibits
-are the authors'. This guide explains the methods in new words and calculates
-the numbers again. Exercise, example and table numbers are those of the book.
+This guide runs the book's small examples in prospicio, with the book's values
+beside prospicio's. Exercise, example and table numbers are the book's.
 
-The companion guide
-[Price allocation in practice](pir-price-allocation-practice.md) runs the
-case-study tables of chapters 13 and 15 and the reinsurance evaluation of
-chapter 19.
-[Pricing Insurance Risk: the case studies](pricing-insurance-risk-case-studies.md)
-compares the case studies of the book with `aggregate` 0.30.1. If the words
-distortion, CCoC or pentagon are new, read
-[CAS Monograph 15 reproduced](capital-modeling-monograph-15.md) first.
+New to distortions, CCoC or the pentagon? Read
+[CAS Monograph 15 reproduced](capital-modeling-monograph-15.md) first. The case
+studies are in [Price allocation in practice](pir-price-allocation-practice.md).
 
-
-This is the R twin of the Python guide
-[`pir-price-allocation.md`](pir-price-allocation.md), with the same sections,
-examples and numbers. The R package calls the same Rust code as the Python
-package, so each number below is equal to the number in the Python guide. The
-text that each R chunk prints is under the chunk.
-`R/prospicio/tests/test-guides.R` runs the chunks in order and requires each
-chunk to print exactly that text.
+This is the R twin of [`pir-price-allocation.md`](pir-price-allocation.md), with
+the same sections and numbers. `R/prospicio/tests/test-guides.R` requires each
+chunk to print exactly the text under it.
 
 ## 1. The Simple Discrete Example
 
-Most of chapter 12 uses the Simple Discrete Example of the book (its section
-2.4.1). It has two independent units. `X1` takes 0, 8 or 10, and `X2` takes 0, 1
-or 90, each with probabilities 1/2, 1/4 and 1/4. The probabilities of the nine
-joint outcomes are multiples of 1/16, so sixteen equally likely rows give the
-portfolio exactly. This is important because the allocation functions of the R
-package work on equally likely simulations, a `predictive_distribution()`:
+Most of chapter 12 uses the Simple Discrete Example (section 2.4.1): two
+independent units, `X1` on 0, 8 and 10 and `X2` on 0, 1 and 90, each with
+probabilities 1/2, 1/4 and 1/4. The nine joint outcomes have probabilities in
+multiples of 1/16, so sixteen equally likely rows give the portfolio exactly.
+The allocation functions need such equally likely simulations, a
+`predictive_distribution()`:
 
 ```{r}
 #| label: setup
@@ -75,126 +61,175 @@ cat("totals", pylist(discrete@totals), "\n")
 totals [0.0, 1.0, 8.0, 9.0, 10.0, 11.0, 90.0, 98.0, 100.0] 
 ```
 
-The expected losses are 4.5, 22.75 and 27.25. `X2` is the dangerous unit: one
-year in four it loses 90.
+`X2` is the dangerous unit: one year in four it loses 90.
 
 ## 2. The classical recipes (chapter 12)
 
-Chapter 12 starts from allocated constant cost of capital (CCoC) pricing. Each
-unit gets some capital, each unit pays the same return on its capital, and the
-premium follows. Exercise 203 shows the arithmetic. Three units each have an
-expected loss of 100 and capital of 40, 80 and 200. At a 12% cost of capital,
-their premiums are 104.8, 109.6 and 124.0. The result depends on the capital
-allocation, and the chapter examines the recipes that actuaries used in the
-1990s and 2000s.
+Chapter 12 starts from allocated constant cost of capital (CCoC) pricing: each
+unit gets capital and pays the same return on it. In Exercise 203 three units
+have an expected loss of 100 and capital of 40, 80 and 200. At 12% their
+premiums are 104.8, 109.6 and 124.0. The premium depends on the capital
+allocation, so the chapter examines the common recipes.
 
-On the Simple Discrete Example, the chapter allocates two amounts: the TVaR of
-the total at 75%, which is 94.5, and a premium of 80.
+The chapter allocates two amounts: the TVaR of the total at 75% (94.5) and a
+premium of 80. `capital_allocation()` takes a distortion (here TVaR) and a method:
 
-`capital_allocation()` takes a distortion (here TVaR) and a method:
-
-- `"euler"` is the co-measure. For TVaR this is the coTVaR: the average loss of
-  each unit in the years where the total is in its worst quarter.
-- `"marginal"` is Merton and Perold's saving when you remove the unit.
-- `"shapley"` is the Shapley value of the game whose cost is the TVaR of each
+- `"euler"`: the co-measure. For TVaR it is the coTVaR, each unit's average
+  loss in the worst quarter of years.
+- `"marginal"`: Merton and Perold's saving when the unit is removed.
+- `"shapley"`: the Shapley value of the game whose cost is the TVaR of each
   sub-portfolio.
-- `"proportional"` is the stand-alone measures, scaled to the total.
+- `"proportional"`: the stand-alone measures, scaled to the total.
 
 ```{r}
 #| label: tvar75
-BOOK <- list(euler = "4.5, 90", marginal = "4.5, 84.5", shapley = "7.25, 87.25", proportional = "-, -")
 tvar75 <- distortion("tvar", 0.75)
 cat(sprintf("TVaR 75%% of the total: %g  (book 94.5)\n", capital_allocation(sims, tvar75)$total))
-for (method in names(BOOK)) {
-  a <- capital_allocation(sims, tvar75, method)$by_component
-  cat(sprintf("%-12s X1 %6.2f  X2 %6.2f   book %s\n", method, a$allocated[1], a$allocated[2], BOOK[[method]]))
-}
-cat(sprintf("stand-alone  X1 %6.2f  X2 %6.2f   book 10, 90\n", a$standalone[1], a$standalone[2]))
 ```
 
 ```text
 TVaR 75% of the total: 94.5  (book 94.5)
-euler        X1   4.50  X2  90.00   book 4.5, 90
-marginal     X1   4.50  X2  84.50   book 4.5, 84.5
-shapley      X1   7.25  X2  87.25   book 7.25, 87.25
-proportional X1   9.45  X2  85.05   book -, -
-stand-alone  X1  10.00  X2  90.00   book 10, 90
 ```
 
-These are Tables 12.5 and 12.8. The marginal method gives 4.5 and 84.5, which
-add up to 89, not 94.5. No single unit causes the remaining 5.5, so the method
-gives it to no unit. The coTVaR gives `X1` exactly its expected loss of 4.5, so
-a price on that basis gives `X1` no margin. In the worst quarter of years `X2`
-loses 90 each time, and the loss of `X1` there is not larger than usual. Shapley
-averages the stand-alone and marginal views and gives 7.25 to `X1`.
+Tables 12.5 and 12.8, with the book's values under prospicio's:
 
-The second half of Exercise 211 allocates a premium of 80. The book finds the
-TVaR level that prices the total at 80, 0.6975. `calibrate_portfolio()` finds
-the same level, and the remaining values follow:
+```{r}
+#| label: tvar75-table
+library(gt)
+pair_table <- function(frame, decimals) {
+  # prospicio's rows, each followed by the book's row, named "x, book"
+  book <- grepl(", book$", frame[[1]])
+  table <- gt(frame, rowname_col = names(frame)[1])
+  for (column in names(decimals)) {
+    table <- table |>
+      fmt_number(columns = column, rows = which(!book), decimals = decimals[[column]], use_seps = FALSE) |>
+      fmt_number(columns = column, rows = which(book), decimals = decimals[[column]],
+                 drop_trailing_zeros = TRUE, use_seps = FALSE)
+  }
+  sub_missing(table, missing_text = "")
+}
+labels <- character()
+rows <- list()
+add <- function(label, ...) {
+  labels <<- c(labels, label)
+  rows[[length(rows) + 1]] <<- as.numeric(c(...))
+}
+frame_of <- function(columns) {
+  frame <- data.frame(labels, do.call(rbind, rows), stringsAsFactors = FALSE)
+  setNames(frame, columns)
+}
+BOOK_12 <- list(euler = c(4.5, 90), marginal = c(4.5, 84.5), shapley = c(7.25, 87.25))
+for (method in c("euler", "marginal", "shapley", "proportional")) {
+  a <- capital_allocation(sims, tvar75, method)$by_component
+  add(method, a$allocated)
+  if (!is.null(BOOK_12[[method]])) add(paste0(method, ", book"), BOOK_12[[method]])
+}
+add("stand-alone", a$standalone)
+add("stand-alone, book", 10, 90)
+pair_table(frame_of(c("method", "X1", "X2")), c(X1 = 2, X2 = 2)) |>
+  tab_header("Tables 12.5 and 12.8: the TVaR 75% of the total (94.5) by unit", "Currency units")
+```
+
+```text
+                      X1     X2
+euler               4.50  90.00
+euler, book          4.5     90
+marginal            4.50  84.50
+marginal, book       4.5   84.5
+shapley             7.25  87.25
+shapley, book       7.25  87.25
+proportional        9.45  85.05
+stand-alone        10.00  90.00
+stand-alone, book     10     90
+```
+
+The marginal amounts add up to 89, not 94.5: no single unit causes the last
+5.5, so the method gives it to no unit. The coTVaR gives `X1` only its expected
+loss of 4.5, so `X1` gets no margin: in the worst quarter of years `X2` loses 90
+and `X1` loses no more than usual. Shapley averages the stand-alone and marginal
+views.
+
+Exercise 211 also allocates a premium of 80. `calibrate_portfolio()` finds the
+TVaR level that prices the total at 80:
 
 ```{r}
 #| label: p80
 d80 <- calibrate_portfolio(discrete, "tvar", premium = 80)
 cat(sprintf("TVaR level pricing the total at 80: %.4f  (book 0.6975)\n", d80@parameters[["p"]]))
-BOOK_80 <- list(marginal = "(5.46, 70.35)", shapley = "(7.55, 72.45)")
-for (method in names(BOOK_80)) {
-  a <- capital_allocation(sims, d80, method)$by_component
-  cat(sprintf("%-12s X1 %6.2f  X2 %6.2f   book %s\n", method, a$allocated[1], a$allocated[2], BOOK_80[[method]]))
+BOOK_80 <- list(`stand-alone` = c(9.65, 74.54), marginal = c(5.46, 70.35), shapley = c(7.55, 72.45))
+MEANS <- c(4.5, 22.75)
+RATIOS_BOOK <- list(shapley = c(0.596, 0.314), haircut = c(0.563, 0.316))
+labels <- character()
+rows <- list()
+add_split <- function(label, got, book, ratios) {
+  add(label, got, if (ratios) MEANS / got else c(NA, NA))
+  add(paste0(label, ", book"), book, if (is.null(RATIOS_BOOK[[label]])) c(NA, NA) else RATIOS_BOOK[[label]])
 }
-cat(sprintf("stand-alone  X1 %6.2f  X2 %6.2f   book (9.65, 74.54)\n", a$standalone[1], a$standalone[2]))
-sh <- capital_allocation(sims, d80, "shapley")$by_component$allocated
-cat(sprintf("Shapley loss ratios: X1 %.1f%%, X2 %.1f%%  (book 59.6%%, 31.4%%)\n", 100 * 4.5 / sh[1], 100 * 22.75 / sh[2]))
+a <- capital_allocation(sims, d80, "shapley")$by_component
+add_split("stand-alone", a$standalone, BOOK_80[["stand-alone"]], FALSE)
+add_split("marginal", capital_allocation(sims, d80, "marginal")$by_component$allocated, BOOK_80$marginal, TRUE)
+add_split("shapley", a$allocated, BOOK_80$shapley, TRUE)
 ```
 
 ```text
 TVaR level pricing the total at 80: 0.6975  (book 0.6975)
-marginal     X1   5.46  X2  70.35   book (5.46, 70.35)
-shapley      X1   7.55  X2  72.45   book (7.55, 72.45)
-stand-alone  X1   9.65  X2  74.54   book (9.65, 74.54)
-Shapley loss ratios: X1 59.6%, X2 31.4%  (book 59.6%, 31.4%)
 ```
 
-The haircut and equal risk allocations (Exercises 205 and 206) use TVaR as an
-auxiliary measure of each unit alone. The haircut splits the 80 in proportion to
-the stand-alone TVaRs at 75%, 10 and 90. The equal risk allocation finds one
-level `p` at which the two stand-alone TVaRs add up to 80. This prices each unit
-as if the two units were comonotonic. The code calculates both from `TVaR()` on
-`sampled()`, with a bisection for the level `p`:
+Exercises 205 and 206 use each unit's stand-alone TVaR. The haircut splits the
+80 in proportion to the TVaRs at 75% (10 and 90). The equal risk allocation
+finds the level `p` at which the stand-alone TVaRs add up to 80, which prices
+each unit as if the two were comonotonic. A bisection finds `p`:
 
 ```{r}
 #| label: haircut
 t75 <- c(TVaR(x1, 0.75), TVaR(x2, 0.75))
-haircut <- 80 * t75 / sum(t75)
-cat(sprintf("haircut     X1 %6.2f  X2 %6.2f   book 8, 72; loss ratios %.4f, %.4f (book 56.3%%, 31.6%%)\n",
-            haircut[1], haircut[2], 4.5 / haircut[1], 22.75 / haircut[2]))
+add_split("haircut", 80 * t75 / sum(t75), c(8, 72), TRUE)
 lo <- 0.5
 hi <- 0.75
 for (i in 1:60) { # bisection on the level p
   p <- (lo + hi) / 2
   if (TVaR(x1, p) + TVaR(x2, p) > 80) hi <- p else lo <- p
 }
-cat(sprintf("equal risk  X1 %6.2f  X2 %6.2f   book 9.56, 70.44; level %.4f (book 0.6796)\n",
-            TVaR(x1, p), TVaR(x2, p), p))
+add_split("equal risk", c(TVaR(x1, p), TVaR(x2, p)), c(9.56, 70.44), TRUE)
+cat(sprintf("equal risk level %.4f (book 0.6796)\n", p))
 ```
 
 ```text
-haircut     X1   8.00  X2  72.00   book 8, 72; loss ratios 0.5625, 0.3160 (book 56.3%, 31.6%)
-equal risk  X1   9.56  X2  70.44   book 9.56, 70.44; level 0.6796 (book 0.6796)
+equal risk level 0.6796 (book 0.6796)
 ```
 
-Both match. The loss ratios show the difficulty of the classical recipes. The
-recipes split the same premium of 80 between `X1` and `X2` as 8 and 72, 9.56 and
-70.44, or 7.55 and 72.45. They do not tell which split is correct.
+```{r}
+#| label: split80-table
+pair_table(frame_of(c("method", "X1", "X2", "LR X1", "LR X2")), c(X1 = 2, X2 = 2, `LR X1` = 4, `LR X2` = 4)) |>
+  tab_header("Exercises 205, 206 and 211: a premium of 80 split five ways",
+             "Currency units; LR is the expected loss over the allocated premium")
+```
+
+```text
+                     X1     X2   LR X1   LR X2
+stand-alone        9.65  74.54                
+stand-alone, book  9.65  74.54                
+marginal           5.46  70.35  0.8249  0.3234
+marginal, book     5.46  70.35                
+shapley            7.55  72.45  0.5957  0.3140
+shapley, book      7.55  72.45   0.596   0.314
+haircut            8.00  72.00  0.5625  0.3160
+haircut, book         8     72   0.563   0.316
+equal risk         9.56  70.44  0.4707  0.3230
+equal risk, book   9.56  70.44                
+```
+
+Every row matches. The recipes split the same 80 as 8 and 72, 9.56 and 70.44, or
+7.55 and 72.45, and nothing says which split is correct.
 
 ### The covariance allocation: two definitions
 
-Exercise 217 allocates the premium of 80 by Kalkbrener's method, with the
-standard deviation as the auxiliary measure. Each unit gets its expected loss
-plus a share of the margin `80 - 27.25` in proportion to its covariance with the
-total. The `"covariance"` method of prospicio uses a different formula,
-`rho(S) Cov(X_j, S) / Var(S)`. It spreads the whole measure, expected loss
-included, by covariance. The covariance shares are the same, so the code
-calculates the book's version from them:
+Exercise 217 uses Kalkbrener's method with the standard deviation as auxiliary
+measure: each unit gets its expected loss plus a share of the margin
+`80 - 27.25` in proportion to its covariance with the total. prospicio's
+`"covariance"` method spreads the whole measure, expected loss included, by
+`rho(S) Cov(X_j, S) / Var(S)`. The covariance shares are the same, so the
+book's version follows from them:
 
 ```{r}
 #| label: covariance
@@ -212,20 +247,18 @@ mean plus covariance    X1   5.216  X2  74.784   book 5.216, 74.784
 loss ratios 0.863, 0.304  (book 0.863, 0.304)
 ```
 
-The two definitions give very different results here, because `X1` has almost no
-correlation with the total (a covariance of 20.75 against a variance of 1,528).
-When the method spreads all of 80 by covariance, `X1` gets 1.09, a quarter of
-its expected loss. No insurer charges that price. The book's form, which
-Exercise 217 uses, keeps the expected loss and allocates only the margin.
+`X1` is almost uncorrelated with the total (covariance 20.75, variance 1,528),
+so spreading all of 80 by covariance gives it 1.09, a quarter of its expected
+loss. No insurer charges that. The book's form keeps the expected loss and
+allocates only the margin.
 
 ### Equal priority in default
 
-Section 12.3 shows how an insurer pays when it cannot pay all claims. Under
-equal priority, each claim gets the same fraction of the amount owed. Exercise
-219 has assets of 1,200 against liabilities of 800, 600 and 400. A one-scenario
-`capital_portfolio()` priced with those assets reports the recovery of each line
-(its `loss` column is the payment under equal priority). `priority_ladder()`
-puts the equal rule next to the senior and junior rules:
+Section 12.3: when an insurer cannot pay all claims, equal priority pays each
+the same fraction of what is owed. Exercise 219 has assets of 1,200 against
+liabilities of 800, 600 and 400. A one-scenario `capital_portfolio()` reports
+each line's recovery as its `loss`, and `priority_ladder()` adds the senior and
+junior rules:
 
 ```{r}
 #| label: priority
@@ -241,37 +274,31 @@ equal priority: [533.3, 400.0, 266.7]  (book 533, 400, 267)
 A senior, equal, junior: 800.0 533.3 200.0
 ```
 
-Each line gets two thirds. The junior column shows the rule that equal priority
-replaces. If A ranked behind B and C, A would get the 200 that B and C leave.
+Each line gets two thirds. Ranked behind B and C, A would get only 200.
 
 ## 3. The natural allocation, layer by layer (chapter 14)
 
-Chapter 14 changes the order of the argument. It does not allocate capital
-first. It prices the portfolio with a spectral risk measure (a distortion `g`
-applied to the survival function of the total) and allocates the premium
-directly. The steps are:
+Chapter 14 prices the portfolio with a spectral risk measure (a distortion `g`
+of the survival function `S` of the total) and then allocates the premium:
 
-1. Sort the outcomes by the **total** loss. The distortion changes the objective
-   probability of each total into a risk-adjusted probability. The weight of
-   total `x_k` is `g(S(x_k-)) - g(S(x_k))`, where `S` is the survival function.
-   Bad totals get more weight than their probability, and good totals get less.
-   The weights still add up to 1, and the premium is the expected total under
-   these weights.
-2. Calculate the premium of a unit as its expected loss under the **same**
-   weights. The weights depend only on the total, so a unit needs only its
-   average loss at each total, `kappa_i(x) = E[X_i | X = x]`. The `kappa` values
-   add up to the total, so the unit premiums add up to the portfolio premium.
-3. Read the result as layers. The insurer uses the layer of assets between two
-   consecutive totals when the total reaches it. The premium for the layer is
-   `g(S)` times its width, against an expected loss of `S` times its width. Each
-   unit pays for the layer in proportion to its expected contribution to the
-   losses that reach the layer. Each layer has its own return on capital, and
-   the average return of a unit depends on the layers that it uses. Allocated
-   CCoC pricing does the opposite: it fixes one return and allocates capital.
+1. Sort the outcomes by the **total** loss. Each total `x_k` gets the weight
+   `g(S(x_k-)) - g(S(x_k))`: more than its probability if the total is bad, less
+   if it is good. The weights add up to 1, and the premium is the expected total
+   under them.
+2. A unit's premium is its expected loss under the **same** weights. They depend
+   only on the total, so a unit needs only its average loss at each total,
+   `kappa_i(x) = E[X_i | X = x]`. The `kappa` values add up to the total, so the
+   unit premiums add up to the portfolio premium.
+3. Read the result as layers. A layer of assets between two consecutive totals
+   costs `g(S)` times its width, against an expected loss of `S` times its
+   width. Each unit pays in proportion to its expected contribution to the losses
+   that reach the layer. A unit's return depends on the layers it uses.
+   Allocated CCoC pricing does the opposite: one return, allocated capital.
 
-Example 258 runs the algorithm on an adjusted Simple Discrete Example. In it,
-`X1` takes 9 instead of 8, so the total 10 has two causes (9 + 1 and 10 + 0).
-The distortion is the proportional hazard `g(s) = s^0.5`:
+Example 258 runs the algorithm on an adjusted Simple Discrete Example: `X1`
+takes 9 instead of 8, so the total 10 has two causes (9 + 1 and 10 + 0). The
+distortion is the proportional hazard `g(s) = s^0.5`. At a total of 10 the
+averages are 9.6667 for `X1` and 0.3333 for `X2`:
 
 ```{r}
 #| label: e258
@@ -279,30 +306,42 @@ ADJ <- expand.grid(X2 = c(0, 1, 90), X1 = c(0, 9, 10))[, c("X1", "X2")]
 ADJ_PROBS <- as.vector(outer(c(0.5, 0.25, 0.25), c(0.5, 0.25, 0.25)))
 adjusted <- capital_portfolio(as.matrix(ADJ), probs = ADJ_PROBS)
 ph <- distortion("proportional_hazard", 0.5)
-cat("total  prob    kappa1  kappa2\n")
-cat(sprintf("%5.0f  %.4f  %6.4f  %6.4f\n", adjusted@totals, adjusted@probs,
-            portfolio_kappa(adjusted, "X1"), portfolio_kappa(adjusted, "X2")), sep = "")
+kappas_table <- data.frame(
+  total = sprintf("%.0f", adjusted@totals),
+  prob = adjusted@probs,
+  kappa1 = portfolio_kappa(adjusted, "X1"),
+  kappa2 = portfolio_kappa(adjusted, "X2")
+)
+gt(kappas_table, rowname_col = "total") |>
+  tab_header("Table 15.3: the units' average losses given the total", "Example 258, by total loss of the portfolio") |>
+  fmt_number("prob", decimals = 4) |>
+  fmt_number(c("kappa1", "kappa2"), decimals = 4, use_seps = FALSE)
+```
+
+```text
+       prob   kappa1   kappa2
+0    0.2500   0.0000   0.0000
+1    0.1250   0.0000   1.0000
+9    0.1250   9.0000   0.0000
+10   0.1875   9.6667   0.3333
+11   0.0625  10.0000   1.0000
+90   0.1250   0.0000  90.0000
+99   0.0625   9.0000  90.0000
+100  0.0625  10.0000  90.0000
+```
+
+The premiums are those of Table 15.4 to four decimals:
+
+```{r}
+#| label: e258-premium
 priced <- natural_price(adjusted, ph, assets = 100)
 cat("premium", pylist(priced$premium[1:2], "%.4f"), sprintf("%.4f", priced$premium[3]),
     " (book 6.2048, 45.1838, 51.3887)\n")
 ```
 
 ```text
-total  prob    kappa1  kappa2
-    0  0.2500  0.0000  0.0000
-    1  0.1250  0.0000  1.0000
-    9  0.1250  9.0000  0.0000
-   10  0.1875  9.6667  0.3333
-   11  0.0625  10.0000  1.0000
-   90  0.1250  0.0000  90.0000
-   99  0.0625  9.0000  90.0000
-  100  0.0625  10.0000  90.0000
 premium [6.2048, 45.1838] 51.3887  (book 6.2048, 45.1838, 51.3887)
 ```
-
-The grouped table is Table 15.3 of the book (at a total of 10, the average of
-`X1` is 9.6667 and the average of `X2` is 0.3333). The premiums are those of
-Table 15.4 to four decimals.
 
 ```{r}
 #| label: e258-figure
@@ -321,16 +360,12 @@ ggplot(kappas, aes(total, kappa, fill = unit)) +
 
 ### When totals tie: the natural allocation set
 
-The `kappa` average is a choice. When two outcomes have the same total, the
-distortion has no reason to rank one above the other. Each order of the tied
-outcomes gives a valid allocation. The set of these allocations is the **natural
-allocation set**, and the `kappa` average (the **linear natural allocation**) is
-in it.
-
-Example 259 gives the two extreme orders of the tie at 10: `X1` gets 6.2085 or
-6.2009. Exercise 260 does the same for TVaR at 65%: `X1` gets 6.1429 or 6.2500,
-and `X2` gets 64.5714 or 64.4643. The code calculates the linear allocation,
-which is between the extremes:
+When outcomes tie on the total, the distortion cannot rank them, and each order
+gives a valid allocation. These form the **natural allocation set**, and the
+`kappa` average (the **linear natural allocation**) is in it. Example 259 gives the extreme orders of the tie at 10:
+`X1` gets 6.2085 or 6.2009. Exercise 260 does the same for TVaR at 65%: `X1` gets
+6.1429 or 6.2500 and `X2` 64.5714 or 64.4643. The linear allocation lies
+between:
 
 ```{r}
 #| label: tvar65
@@ -345,69 +380,74 @@ TVaR 65%: X1 6.2143 (book range 6.1429 to 6.2500), X2 64.5000 (book range 64.464
 
 ## 4. Limited assets: the linear and lifted allocations
 
-With assets `a` below the largest loss, the insurer pays `X ∧ a`. Under equal
-priority, unit `i` gets `X_i a / X` when the total is more than `a`. All default
-outcomes then have the same capped total `a`. This is a tie of the type above,
-so the natural allocation of the capped total is not unique. Chapter 14 selects
-two members of the set:
+With assets `a` below the largest loss, the insurer pays `X ∧ a`, and under
+equal priority unit `i` gets `X_i a / X` when the total exceeds `a`. All default
+outcomes share the capped total `a`: a tie, so the natural allocation is not
+unique. Chapter 14 selects two members:
 
-- The **linear** allocation treats all default outcomes the same. It splits the
-  weight of the default event by the expected share of each unit in the payments
-  in default.
-- The **lifted** allocation ranks the default outcomes by the uncapped total
-  `X`, as if the distortion could see how bad each default is. The worst
-  defaults get the most weight. This allocation measures the size of default,
-  which is important to policyholders and regulators.
+- **Linear**: all default outcomes count alike. The default event's weight is
+  split by each unit's expected share of the payments in default.
+- **Lifted**: default outcomes are ranked by the uncapped total `X`, so the worst
+  defaults get the most weight. It measures the size of default.
 
 `natural_price()` takes `allocation = "linear"` or `"lifted"`. Example 235 has
-ten equally likely outcomes, assets of 10 and TVaR at 80%. Four of the ten
-totals are more than 10:
+ten equally likely outcomes, assets of 10 and TVaR at 80%. Four totals exceed
+10:
 
 ```{r}
 #| label: e235
 e235 <- capital_portfolio(cbind(X1 = c(1, 2, 3, 4, 5, 6, 7, 8, 12, 10), X2 = c(1, 2, 3, 4, 5, 9, 8, 12, 13, 20)))
 tvar80 <- distortion("tvar", 0.8)
+cases <- data.frame()
 for (allocation in c("lifted", "linear")) {
-  book <- if (allocation == "lifted") "4.067, 5.933" else "4.3, 5.7"
+  book <- if (allocation == "lifted") c(4.067, 5.933) else c(4.3, 5.7)
   for (assets in c(10, 10 - 1e-9)) {
     got <- natural_price(e235, tvar80, assets = assets, allocation = allocation)$premium
-    cat(sprintf("%-6s assets %12.9f: X1 %.4f  X2 %.4f   book %s\n", allocation, assets, got[1], got[2], book))
+    cases <- rbind(cases, data.frame(case = sprintf("%s, assets %s", allocation, if (assets == 10) "10" else "10 - 1e-9"),
+                                     X1 = got[1], X2 = got[2], `book X1` = book[1], `book X2` = book[2],
+                                     check.names = FALSE))
   }
 }
+gt(cases, rowname_col = "case") |>
+  tab_header("Example 235: premium by unit, TVaR 80%", "Ten equally likely outcomes; currency units") |>
+  fmt_number(c("X1", "X2"), decimals = 4, use_seps = FALSE) |>
+  fmt_number(c("book X1", "book X2"), decimals = 3, drop_trailing_zeros = TRUE, use_seps = FALSE)
 ```
 
 ```text
-lifted assets 10.000000000: X1 4.0667  X2 5.9333   book 4.067, 5.933
-lifted assets  9.999999999: X1 4.0667  X2 5.9333   book 4.067, 5.933
-linear assets 10.000000000: X1 4.1600  X2 5.8400   book 4.3, 5.7
-linear assets  9.999999999: X1 4.3000  X2 5.7000   book 4.3, 5.7
+                              X1      X2  book X1  book X2
+lifted, assets 10         4.0667  5.9333    4.067    5.933
+lifted, assets 10 - 1e-9  4.0667  5.9333    4.067    5.933
+linear, assets 10         4.1600  5.8400      4.3      5.7
+linear, assets 10 - 1e-9  4.3000  5.7000      4.3      5.7
 ```
 
-The lifted allocation agrees with the book at assets of 10. It gives more to
-`X2` (5.933), because `X2` dominates the two worst outcomes. The linear
-allocation agrees with the book only when the assets are slightly below 10. The
-cause is one outcome whose total is exactly 10, the asset level.
+The lifted allocation agrees with the book at assets of 10 and gives more to
+`X2`, which dominates the two worst outcomes. The linear allocation agrees only
+slightly below 10, because one outcome totals exactly 10, the asset level.
 
-The book's linear allocation puts this outcome in the default outcomes, because
-its capped total is equal to `a`. prospicio follows `aggregate` 1.0.1: it pays
-an outcome at exactly the asset level in full and splits the default weight only
-over outcomes above `a`. Both allocations are members of the natural allocation
-set and give the same total price. They split the total differently only when
-the asset level is a possible total with positive probability. On a fine grid
-the atom at `a` is very small, and so is the difference.
+The book counts an outcome at exactly the asset level as a default. prospicio
+follows `aggregate` 1.0.1: it pays that outcome in full and splits the default
+weight over outcomes above `a`. The total price is the same. Assets of
+`a - 1e-9` give the book's linear numbers.
 
-On the small examples of the book, assets of `a - 1e-9` give the book's linear
-numbers.
-
-Example 263 prices the adjusted Simple Discrete Example with assets of 80, so
-three outcomes default. Example 272 has two independent units priced at several
-asset levels (its Table 15.20):
+Example 263 prices the adjusted example with assets of 80, so three outcomes
+default:
 
 ```{r}
 #| label: e272
 got <- natural_price(adjusted, ph, assets = 80, allocation = "lifted")
 cat(sprintf("assets 80, lifted: loss %.4f, %.4f  premium %.4f, %.4f\n", got$loss[1], got$loss[2], got$premium[1], got$premium[2]))
 cat("            book: loss 4.5170, 19.2955  premium 5.5260, 37.4307\n")
+```
+
+```text
+assets 80, lifted: loss 4.5170, 19.2955  premium 5.5260, 37.4307
+            book: loss 4.5170, 19.2955  premium 5.5260, 37.4307
+```
+
+```{r}
+#| label: e272-table
 TWO <- expand.grid(X2 = c(0, 10, 40), X1 = c(0, 10, 20))[, c("X1", "X2")]
 two <- capital_portfolio(as.matrix(TWO), probs = ADJ_PROBS)
 ph87 <- distortion("proportional_hazard", 0.87)
@@ -419,83 +459,99 @@ BOOK_1520 <- rbind( # assets: lifted X1, X2, linear X1, X2, total
   `50` = c(7.7361, 13.7880, 7.6846, 13.8395, 21.5241),
   `60` = c(8.0348, 14.3855, 8.0348, 14.3855, 22.4203)
 )
-cat("  a  lifted X1        X2  linear X1        X2     total\n")
 largest <- 0
+premiums <- NULL
 for (a in as.double(rownames(BOOK_1520))) {
   lifted <- natural_price(two, ph87, assets = a, allocation = "lifted")$premium
   linear <- natural_price(two, ph87, assets = a - 1e-9, allocation = "linear")$premium
   got <- c(lifted[1:2], linear[1:2], lifted[3])
   largest <- max(largest, abs(got - BOOK_1520[as.character(a), ]))
-  cat(sprintf("%3d  %s\n", a, paste(sprintf("%8.4f", got), collapse = "  ")))
+  premiums <- rbind(premiums, got)
 }
+columns <- c("lifted X1", "lifted X2", "linear X1", "linear X2", "total")
+table_1520 <- setNames(data.frame(assets = rownames(BOOK_1520), premiums, row.names = NULL), c("assets", columns))
+gt(table_1520, rowname_col = "assets") |>
+  tab_header("Table 15.20: premium by unit and assets", "Example 272, proportional hazard 0.87") |>
+  fmt_number(columns, decimals = 4, use_seps = FALSE)
+```
+
+```text
+    lifted X1  lifted X2  linear X1  linear X2    total
+10     3.5622     4.2236     3.6983     4.0875   7.7858
+20     5.9672     7.2901     6.2183     7.0390  13.2573
+30     6.8419    10.0505     6.8350    10.0574  16.8924
+40     7.2890    12.5971     7.0972    12.7889  19.8861
+50     7.7361    13.7880     7.6846    13.8395  21.5241
+60     8.0348    14.3855     8.0348    14.3855  22.4203
+```
+
+```{r}
+#| label: e272-gap
 cat(sprintf("largest gap to the book's thirty numbers: %s\n", sub("e-0", "e-0", sprintf("%.1e", largest))))
 ```
 
 ```text
-assets 80, lifted: loss 4.5170, 19.2955  premium 5.5260, 37.4307
-            book: loss 4.5170, 19.2955  premium 5.5260, 37.4307
-  a  lifted X1        X2  linear X1        X2     total
- 10    3.5622    4.2236    3.6983    4.0875    7.7858
- 20    5.9672    7.2901    6.2183    7.0390   13.2573
- 30    6.8419   10.0505    6.8350   10.0574   16.8924
- 40    7.2890   12.5971    7.0972   12.7889   19.8861
- 50    7.7361   13.7880    7.6846   13.8395   21.5241
- 60    8.0348   14.3855    8.0348   14.3855   22.4203
 largest gap to the book's thirty numbers: 4.6e-05
 ```
 
-All thirty numbers of Table 15.20 match to four decimals. Where the two
-allocations differ, the lifted allocation puts more on `X2` at assets of 20 and 30.
-There, the loss of 40 of `X2` makes the worst defaults. At assets of 50 only
-the outcome of 60 defaults, and at 60 no outcome defaults, so there the two
-allocations agree.
+Example 272 prices two independent units at several asset levels (Table
+15.20). All thirty numbers match to four decimals. The lifted allocation puts
+more on `X2` at assets of 20 and 30, where `X2`'s loss of 40 makes the worst
+defaults. At 60 nothing defaults, so the two agree.
 
 ## 5. Margin and capital by unit (section 15.2)
 
 The layer view gives each unit a margin and a capital in each layer of assets.
-The margin is the premium density minus the expected loss density. In each
-layer, capital and margin have the ratio that the distortion sets for that
-layer, `(1 - g(S)) / (g(S) - S)`. The capital of a unit is the sum over layers,
-and its return is its margin divided by its capital. The `capital` column of
-`natural_price()` on the lifted allocation is this sum (section 15.2.5, Tables
-15.14 and 15.15):
+Margin is premium density minus expected loss density, and in each layer capital
+and margin keep the ratio the distortion sets, `(1 - g(S)) / (g(S) - S)`. A
+unit's capital is the sum over layers, and its return is margin over capital. The
+`capital` column of `natural_price()` on the lifted allocation gives this sum
+(section 15.2.5, Tables 15.14 and 15.15):
 
 ```{r}
 #| label: funding
-cat("assets  margin X1  margin X2  capital X1  capital X2  return X1  return X2\n")
+FUNDING_BOOK <- list( # margins, capitals and returns of X1, X2 as the book prints them
+  `100` = c(1.4548, 22.4338, 3.5274, 45.0839, 0.4124, 0.4976),
+  `80` = c(1.0089, 18.1353, NA, NA, 0.4151, 0.5239),
+  `11` = c(-0.5423, 2.4365, NA, NA, NA, NA)
+)
+labels <- character()
+rows <- list()
 for (a in c(100, 80, 11)) {
   u <- natural_price(adjusted, ph, assets = a, allocation = "lifted")
   m <- u$premium - u$loss
-  cat(sprintf("%6d  %9.4f  %9.4f  %10.4f  %10.4f  %9.4f  %9.4f\n", a, m[1], m[2], u$capital[1], u$capital[2],
-              m[1] / u$capital[1], m[2] / u$capital[2]))
+  add(sprintf("assets %g", a), m[1], m[2], u$capital[1], u$capital[2], m[1] / u$capital[1], m[2] / u$capital[2])
+  add(sprintf("assets %g, book", a), FUNDING_BOOK[[as.character(a)]])
 }
-cat("book: a = 100 margins 1.4548, 22.4338, capital 3.5274, 45.0839, returns 41.24%, 49.76%;\n")
-cat("      a = 80 margins 1.0089, 18.1353, returns 41.51%, 52.39%; a = 11 margins -0.5423, 2.4365\n")
+columns <- c("assets", "margin X1", "margin X2", "capital X1", "capital X2", "return X1", "return X2")
+pair_table(frame_of(columns), setNames(rep(4, 6), columns[-1])) |>
+  tab_header("Tables 15.14 and 15.15: margin, capital and return by unit",
+             "Lifted allocation; return is margin over capital")
 ```
 
 ```text
-assets  margin X1  margin X2  capital X1  capital X2  return X1  return X2
-   100     1.4548    22.4338      3.5274     45.0839     0.4124     0.4976
-    80     1.0089    18.1353      2.4305     34.6128     0.4151     0.5239
-    11    -0.5423     2.4365     -0.6720      3.2153     0.8070     0.7578
-book: a = 100 margins 1.4548, 22.4338, capital 3.5274, 45.0839, returns 41.24%, 49.76%;
-      a = 80 margins 1.0089, 18.1353, returns 41.51%, 52.39%; a = 11 margins -0.5423, 2.4365
+                  margin X1  margin X2  capital X1  capital X2  return X1  return X2
+assets 100           1.4548    22.4338      3.5274     45.0839     0.4124     0.4976
+assets 100, book     1.4548    22.4338      3.5274     45.0839     0.4124     0.4976
+assets 80            1.0089    18.1353      2.4305     34.6128     0.4151     0.5239
+assets 80, book      1.0089    18.1353                             0.4151     0.5239
+assets 11           -0.5423     2.4365     -0.6720      3.2153     0.8070     0.7578
+assets 11, book     -0.5423     2.4365                                              
 ```
 
-All values that the book prints match. With assets of 11, `X1` has a negative
-margin. Default is so probable that `X2` takes payments from `X1` most of the
-time, and `X1` must get compensation because it shares its recoveries. The
-returns are different for each unit (41% against 50% at full assets), because
-`X2` uses the expensive high layers that `X1` uses very little.
+Every value the book prints matches. At assets of 11, `X1` has a negative
+margin: default is so likely that `X2` takes payments from `X1` most of the time,
+and `X1` is paid for sharing its recoveries. Returns differ by unit (41% against
+50% at full assets) because `X2` uses the expensive high layers.
 
 ## 6. Bodoff's percentile layer of capital (section 15.3)
 
-Bodoff (2007) also allocates capital layer by layer, but by **objective**
-probabilities. The units share each layer of assets in proportion to their
-expected share of the losses that reach it. Section 15.3 runs his Thought
-Experiment 1: a hurricane that costs 99 with probability 0.2 and an independent
-earthquake that costs 100 with probability 0.05. The assets are 100, with equal
-priority and a 10% cost of capital.
+Bodoff (2007) also allocates capital layer by layer, but with **objective**
+probabilities: the units share each layer in proportion to their expected share
+of the losses that reach it. His Thought Experiment 1 (section 15.3): a
+hurricane that costs 99 with probability 0.2 and an independent earthquake that
+costs 100 with probability 0.05. Assets are 100, equal priority, 10% cost of
+capital.
 
 ```{r}
 #| label: bodoff
@@ -505,111 +561,122 @@ ccoc <- distortion("ccoc", 0.1)
 lifted <- natural_price(bodoff_book, ccoc, assets = 100, allocation = "lifted")
 el <- lifted$loss[1:2]
 epd <- epd_ratio(bodoff_book, 100)
-cat(sprintf("limited loss %.4f, %.4f, total %.4f  (book 19.3075, 4.5025, 23.8100)\n", el[1], el[2], lifted$loss[3]))
-cat(sprintf("EPD ratio %.4f, %.4f, total %.4f  (book 0.0249, 0.0995, 0.0399)\n", epd$units[1], epd$units[2], epd$total))
 plc_assets <- bodoff_allocation(bodoff_book, assets = 100)
 shared <- plc_assets - el
-cat(sprintf("PLC assets %.4f, %.4f; shared liability %.4f, %.4f  (book 61.2191, 14.9709)\n",
-            plc_assets[1], plc_assets[2], shared[1], shared[2]))
+labels <- character()
+rows <- list()
+add("limited loss", el, lifted$loss[3])
+add("limited loss, book", 19.3075, 4.5025, 23.81)
+add("EPD ratio", epd$units, epd$total)
+add("EPD ratio, book", 0.0249, 0.0995, 0.0399)
+add("PLC assets", plc_assets, NA)
+add("shared liability", shared, NA)
+add("shared liability, book", 61.2191, 14.9709, NA)
+pair_table(frame_of(c("measure", "Hu", "EQ", "total")), c(Hu = 4, EQ = 4, total = 4)) |>
+  tab_header("Bodoff's Thought Experiment 1", "Assets 100; PLC assets are Bodoff's shares of the assets")
 ```
 
 ```text
-limited loss 19.3075, 4.5025, total 23.8100  (book 19.3075, 4.5025, 23.8100)
-EPD ratio 0.0249, 0.0995, total 0.0399  (book 0.0249, 0.0995, 0.0399)
-PLC assets 80.5266, 19.4734; shared liability 61.2191, 14.9709  (book 61.2191, 14.9709)
+                             Hu       EQ    total
+limited loss            19.3075   4.5025  23.8100
+limited loss, book      19.3075   4.5025    23.81
+EPD ratio                0.0249   0.0995   0.0399
+EPD ratio, book          0.0249   0.0995   0.0399
+PLC assets              80.5266  19.4734         
+shared liability        61.2191  14.9709         
+shared liability, book  61.2191  14.9709         
 ```
 
-`bodoff_allocation()` returns the share of the assets for each unit. The share
-minus the expected loss is what the book calls the shared liability (Table
-15.22). PLC gives no price. To get a price, the book splits the shared liability
-of each unit into margin and capital at the 10% return. The margin is then
-`0.1 / 1.1` of it (Table 15.24). The natural allocation prices with the CCoC
-distortion and allocates the premium (Tables 15.27, 15.29 and 15.30):
+`bodoff_allocation()` returns each unit's share of the assets; the share minus
+the expected loss is the shared liability (Table 15.22). PLC gives no price. The
+book splits each shared liability into margin and capital at the 10% return, so
+the margin is `0.1 / 1.1` of it (Table 15.24). The natural allocation instead
+prices the total with the CCoC distortion and allocates the premium (Tables
+15.27, 15.29 and 15.30). The linear allocation uses assets of `a - 1e-9`
+(section 4: the earthquake alone totals exactly 100):
 
 ```{r}
 #| label: plc
 d <- 0.1 / 1.1
 plc_premium <- el + d * shared
-cat(sprintf("PLC premium     %8.4f %8.4f   book 24.8729, 5.8635\n", plc_premium[1], plc_premium[2]))
 linear <- natural_price(bodoff_book, ccoc, assets = 100 - 1e-9, allocation = "linear")
-for (name in c("lifted", "linear")) {
-  pr <- if (name == "lifted") lifted else linear
-  book <- if (name == "lifted") "22.0749, 8.6615; capital 27.6739, 41.5898" else "18.4568, 12.2796; capital -8.5070, 77.7707"
-  cat(sprintf("%-6s premium %8.4f %8.4f  capital %8.4f %8.4f   book %s\n", name, pr$premium[1], pr$premium[2],
-              pr$capital[1], pr$capital[2], book))
-}
-cat(sprintf("total premium %.4f  (book 30.7364)\n", lifted$premium[3]))
+labels <- character()
+rows <- list()
+add("PLC", plc_premium, sum(plc_premium), NA, NA)
+add("PLC, book", 24.8729, 5.8635, NA, NA, NA)
+add("lifted", lifted$premium[1:2], lifted$premium[3], lifted$capital[1:2])
+add("lifted, book", 22.0749, 8.6615, 30.7364, 27.6739, 41.5898)
+add("linear", linear$premium[1:2], linear$premium[3], linear$capital[1:2])
+add("linear, book", 18.4568, 12.2796, NA, -8.5070, 77.7707)
+columns <- c("method", "P Hu", "P EQ", "P total", "Q Hu", "Q EQ")
+pair_table(frame_of(columns), setNames(rep(4, 5), columns[-1])) |>
+  tab_header("Tables 15.27, 15.29 and 15.30: premium and capital by unit", "P is premium, Q is capital")
 ```
 
 ```text
-PLC premium      24.8729   5.8635   book 24.8729, 5.8635
-lifted premium  22.0749   8.6615  capital  27.6739  41.5898   book 22.0749, 8.6615; capital 27.6739, 41.5898
-linear premium  18.4568  12.2796  capital  -8.5070  77.7707   book 18.4568, 12.2796; capital -8.5070, 77.7707
-total premium 30.7364  (book 30.7364)
+                 P Hu     P EQ  P total     Q Hu     Q EQ
+PLC           24.8729   5.8635  30.7364                  
+PLC, book     24.8729   5.8635                           
+lifted        22.0749   8.6615  30.7364  27.6739  41.5898
+lifted, book  22.0749   8.6615  30.7364  27.6739  41.5898
+linear        18.4568  12.2796  30.7364  -8.5070  77.7707
+linear, book  18.4568  12.2796            -8.507  77.7707
 ```
 
-The linear allocation uses assets of `a - 1e-9`, for the reason in section 4
-(the earthquake alone totals exactly 100). The three answers are very different.
 PLC charges the earthquake 5.86, close to its share of the expected loss. The
-lifted allocation charges 8.66: the CCoC distortion puts a weight of 0.1 on the
-worst outcome, and the earthquake is half of that outcome.
+lifted allocation charges 8.66: the CCoC distortion puts weight 0.1 on the worst
+outcome, and the earthquake is half of it. The linear allocation charges 12.28
+and gives the hurricane a **negative** margin: it merges the earthquake-only
+year (total 100) and the year with both events into one default event of weight
+0.1364, which the earthquake dominates. The lifted allocation avoids this by
+seeing through the cap, as PLC does.
 
-The linear allocation charges 12.28 and gives the hurricane a **negative**
-margin. It puts the earthquake-only year (total 100, all earthquake) and the
-year with both events into one default event of weight 0.1364. The earthquake
-dominates that event. Bodoff designed PLC to prevent this problem, and the
-lifted allocation prevents it because it sees through the cap.
-
-The book repeats the calculation with a proportional hazard and a Wang transform
-calibrated to the same total (Exercises 276 to 278). The book prints the
-parameters 0.82156 and 0.209615. Calibrated here to the CCoC premium, they are
-0.821554 and 0.209615. The allocations below use the printed parameters:
+Exercises 276 to 278 repeat this with a proportional hazard and a Wang transform
+calibrated to the same total. The book prints the parameters 0.82156 and
+0.209615; calibrated to the CCoC premium here they are 0.821554 and 0.209615. The
+allocations use the printed ones:
 
 ```{r}
 #| label: ph_wang
-for (family in c("ph", "wang")) {
-  book_parameter <- if (family == "ph") "0.82156" else "0.209615"
-  found <- calibrate_portfolio(bodoff_book, family, assets = 100, premium = lifted$premium[3])
-  cat(sprintf("%s: calibrated %.6f (book %s)\n", family, found@parameters[[1]], book_parameter))
-}
-BOOK_276 <- list(
-  ph = list(distortion("proportional_hazard", 0.82156), c(23.3342, 7.4020, 40.0416, 29.2223), c(23.0517, 7.6844)),
-  wang = list(distortion("wang", 0.209615), c(24.0282, 6.7082, 46.8427, 22.4209), c(23.9277, 6.8087))
+BOOK_276 <- list( # printed parameter, distortion, lifted P and Q by unit, linear P by unit
+  ph = list(0.82156, distortion("proportional_hazard", 0.82156), c(23.3342, 7.4020, 40.0416, 29.2223), c(23.0517, 7.6844)),
+  wang = list(0.209615, distortion("wang", 0.209615), c(24.0282, 6.7082, 46.8427, 22.4209), c(23.9277, 6.8087))
 )
+labels <- character()
+rows <- list()
 for (family in names(BOOK_276)) {
   b <- BOOK_276[[family]]
-  li <- natural_price(bodoff_book, b[[1]], assets = 100, allocation = "lifted")
-  ln <- natural_price(bodoff_book, b[[1]], assets = 100 - 1e-9, allocation = "linear")
-  cat(sprintf("%-4s lifted P %.4f %.4f Q %.4f %.4f  linear P %.4f %.4f\n", family, li$premium[1], li$premium[2],
-              li$capital[1], li$capital[2], ln$premium[1], ln$premium[2]))
-  cat(sprintf("     book   P %.4f %.4f Q %.4f %.4f  linear P %.4f %.4f\n", b[[2]][1], b[[2]][2], b[[2]][3], b[[2]][4],
-              b[[3]][1], b[[3]][2]))
+  found <- calibrate_portfolio(bodoff_book, family, assets = 100, premium = lifted$premium[3])
+  li <- natural_price(bodoff_book, b[[2]], assets = 100, allocation = "lifted")
+  ln <- natural_price(bodoff_book, b[[2]], assets = 100 - 1e-9, allocation = "linear")
+  add(family, found@parameters[[1]], li$premium[1:2], li$capital[1:2], ln$premium[1:2])
+  add(paste0(family, ", book"), b[[1]], b[[3]], b[[4]])
 }
+columns <- c("family", "parameter", "P Hu", "P EQ", "Q Hu", "Q EQ", "linear P Hu", "linear P EQ")
+pair_table(frame_of(columns), c(parameter = 6, setNames(rep(4, 6), columns[3:8]))) |>
+  tab_header("Exercises 276 to 278: proportional hazard and Wang, calibrated to the CCoC premium",
+             "Parameter calibrated here; P is premium, Q is capital; lifted unless marked linear")
 ```
 
 ```text
-ph: calibrated 0.821554 (book 0.82156)
-wang: calibrated 0.209615 (book 0.209615)
-ph   lifted P 23.3342 7.4020 Q 40.0416 29.2223  linear P 23.0517 7.6844
-     book   P 23.3342 7.4020 Q 40.0416 29.2223  linear P 23.0517 7.6844
-wang lifted P 24.0282 6.7082 Q 46.8427 22.4209  linear P 23.9277 6.8087
-     book   P 24.0282 6.7082 Q 46.8427 22.4209  linear P 23.9277 6.8087
+            parameter     P Hu    P EQ     Q Hu     Q EQ  linear P Hu  linear P EQ
+ph           0.821554  23.3342  7.4020  40.0416  29.2223      23.0517       7.6844
+ph, book      0.82156  23.3342   7.402  40.0416  29.2223      23.0517       7.6844
+wang         0.209615  24.0282  6.7082  46.8427  22.4209      23.9277       6.8087
+wang, book   0.209615  24.0282  6.7082  46.8427  22.4209      23.9277       6.8087
 ```
 
-All printed values match to the fourth decimal. The only difference is the PH
-parameter, in its sixth digit. At the printed 0.82156 the total premium is
-30.7361, the total that the book prints for PH. So the book calibrated its
-parameter slightly off the CCoC premium of 30.7364, or rounded 0.821554 up.
+All values match to the fourth decimal, except the PH parameter in its sixth
+digit. At the printed 0.82156 the total premium is 30.7361, the PH total the book
+prints, so the book calibrated slightly off 30.7364 or rounded 0.821554 up.
 
 ### The summary table
 
-Table 15.31 shows five methods side by side. Two more methods are classical. The
-expected value premium is in proportion to the limited expected loss. The
-variance-covariance premium is the expected loss plus the margin, split by the
-covariance of each unit with the total. For this premium the book uses the
-covariances of the **unlimited** losses, and
-`capital_allocation(..., "covariance")` on the uncapped outcomes gives those
-shares:
+Table 15.31 compares five methods. Two are classical: the expected value premium
+(proportional to the limited expected loss) and the variance-covariance premium
+(expected loss plus the margin split by each unit's covariance with the total).
+The book uses the covariances of the **unlimited** losses, which
+`capital_allocation(..., "covariance")` on the uncapped outcomes gives:
 
 ```{r}
 #| label: summary
@@ -623,63 +690,52 @@ uncapped <- predictive_distribution(
 cov <- capital_allocation(uncapped, ccoc, "covariance")
 var_cov <- el + margin * cov$by_component$allocated / cov$total
 TABLE_1531 <- list(
-  list("expected value", expected_value, "24.9241, 5.8123"),
-  list("variance/covariance", var_cov, "24.6236, 6.1128"),
-  list("Bodoff PLC", plc_premium, "24.8729, 5.8635"),
-  list("lifted natural", lifted$premium[1:2], "22.0749, 8.6615"),
-  list("linear natural", linear$premium[1:2], "18.4568, 12.2796")
+  list("expected value", expected_value, c(24.9241, 5.8123)),
+  list("variance/covariance", var_cov, c(24.6236, 6.1128)),
+  list("Bodoff PLC", plc_premium, c(24.8729, 5.8635)),
+  list("lifted natural", lifted$premium[1:2], c(22.0749, 8.6615)),
+  list("linear natural", linear$premium[1:2], c(18.4568, 12.2796))
 )
-cat(sprintf("%-20s %8s %8s  %6s %6s   book\n", "", "Hu", "EQ", "LR Hu", "LR EQ"))
+labels <- character()
+rows <- list()
 for (row in TABLE_1531) {
-  got <- row[[2]]
-  cat(sprintf("%-20s %8.4f %8.4f  %6.3f %6.3f   %s\n", row[[1]], got[1], got[2], el[1] / got[1], el[2] / got[2], row[[3]]))
+  add(row[[1]], row[[2]], el[1] / row[[2]][1], el[2] / row[[2]][2])
+  add(paste0(row[[1]], ", book"), row[[3]], NA, NA)
 }
+pair_table(frame_of(c("method", "Hu", "EQ", "LR Hu", "LR EQ")), c(Hu = 4, EQ = 4, `LR Hu` = 3, `LR EQ` = 3)) |>
+  tab_header("Table 15.31: premium and loss ratio by unit and method",
+             "Premium in currency units; loss ratio on the limited loss")
 ```
 
 ```text
-                           Hu       EQ   LR Hu  LR EQ   book
-expected value        24.9241   5.8123   0.775  0.775   24.9241, 5.8123
-variance/covariance   24.6236   6.1128   0.784  0.737   24.6236, 6.1128
-Bodoff PLC            24.8729   5.8635   0.776  0.768   24.8729, 5.8635
-lifted natural        22.0749   8.6615   0.875  0.520   22.0749, 8.6615
-linear natural        18.4568  12.2796   1.046  0.367   18.4568, 12.2796
+                                Hu       EQ  LR Hu  LR EQ
+expected value             24.9241   5.8123  0.775  0.775
+expected value, book       24.9241   5.8123              
+variance/covariance        24.6236   6.1128  0.784  0.737
+variance/covariance, book  24.6236   6.1128              
+Bodoff PLC                 24.8729   5.8635  0.776  0.768
+Bodoff PLC, book           24.8729   5.8635              
+lifted natural             22.0749   8.6615  0.875  0.520
+lifted natural, book       22.0749   8.6615              
+linear natural             18.4568  12.2796  1.046  0.367
+linear natural, book       18.4568  12.2796              
 ```
 
-```{r}
-#| label: summary-table
-library(gt)
-summary_table <- data.frame(
-  method = vapply(TABLE_1531, function(row) row[[1]], ""),
-  Hu = vapply(TABLE_1531, function(row) row[[2]][1], 0),
-  EQ = vapply(TABLE_1531, function(row) row[[2]][2], 0)
-)
-summary_table$LR_Hu <- el[1] / summary_table$Hu
-summary_table$LR_EQ <- el[2] / summary_table$EQ
-gt(summary_table, rowname_col = "method") |>
-  tab_header("Table 15.31: premium and loss ratio by unit and method",
-             "Premium in currency units; loss ratio on the limited loss") |>
-  tab_spanner("premium", columns = c(Hu, EQ)) |>
-  tab_spanner("loss ratio", columns = c(LR_Hu, LR_EQ)) |>
-  cols_label(LR_Hu = "LR Hu", LR_EQ = "LR EQ") |>
-  fmt_number(columns = c(Hu, EQ), decimals = 2) |>
-  fmt_number(columns = c(LR_Hu, LR_EQ), decimals = 3)
-```
-
-The loss ratios are on the limited loss, as in Table 15.31 of the book. The
-expected value, covariance and PLC premiums give almost the same loss ratio to
-the two perils. The lifted allocation charges the rarer, more volatile
-earthquake a loss ratio of 0.52. The cap misleads the linear allocation. The
-book concludes that no single answer is correct, and it prefers the lifted
-allocation.
+The expected value, covariance and PLC premiums give the two perils almost the
+same loss ratio. The lifted allocation charges the rarer, more volatile
+earthquake a loss ratio of 0.52, and the cap misleads the linear allocation. The
+book prefers the lifted allocation but says no single answer is correct.
 
 ```{r}
 #| label: summary-figure
 methods <- vapply(TABLE_1531, function(row) row[[1]], "")
+hu <- vapply(TABLE_1531, function(row) row[[2]][1], 0)
+eq <- vapply(TABLE_1531, function(row) row[[2]][2], 0)
 by_method <- data.frame(
   method = factor(rep(methods, 4), levels = methods),
   unit = rep(rep(c("Hu", "EQ"), each = length(methods)), 2),
   measure = rep(c("premium", "loss ratio on the limited loss"), each = 2 * length(methods)),
-  value = c(summary_table$Hu, summary_table$EQ, summary_table$LR_Hu, summary_table$LR_EQ)
+  value = c(hu, eq, el[1] / hu, el[2] / eq)
 )
 by_method$unit <- factor(by_method$unit, levels = c("Hu", "EQ"))
 by_method$measure <- factor(by_method$measure, levels = c("premium", "loss ratio on the limited loss"))
@@ -692,11 +748,10 @@ ggplot(by_method, aes(method, value, fill = unit)) +
 
 ## 7. Pricing bounds, and stand-alone against diversified
 
-The natural allocation depends on the distortion. `premium_bounds()` shows how
-much that choice can move a unit. It gives the lowest and highest premium of
-each unit under the linear allocation. The range covers **every** distortion
-that prices the capped total at the same premium. The extremes are BiTVaRs,
-found exactly (section 11.2.3 and Remark 262 of the book refer to this):
+The natural allocation depends on the distortion. `premium_bounds()` gives each
+unit's lowest and highest premium under the linear allocation over **every**
+distortion that prices the capped total at the same premium. The extremes are
+BiTVaRs, found exactly (section 11.2.3 and Remark 262):
 
 ```{r}
 #| label: bounds
@@ -709,40 +764,39 @@ Hu: 18.4568 to 24.9241
 EQ: 5.8123 to 12.2796
 ```
 
-The earthquake premium can be any value from 5.81 (the expected value premium of
-Table 15.31) to 12.28 (the linear CCoC premium). On this book the CCoC
-distortion, which puts all its extra weight on the worst outcome, is itself an
-extreme. All methods in the summary table are in the range. A split outside the
-bounds cannot come from a spectral risk measure that prices the whole book at
-30.7364.
+The earthquake premium can be anything from 5.81 (the expected value premium) to
+12.28 (the linear CCoC premium, itself an extreme because it puts all its extra
+weight on the worst outcome). Every method in the summary table is in the range.
+A split outside it cannot come from a spectral risk measure that prices the book
+at 30.7364.
 
-The book also compares the diversification benefit: each unit priced alone, at
-its own capital standard, against the book priced as one portfolio.
-`price_stand_alone()` does this at a VaR standard:
+The diversification benefit: each unit priced alone at its own capital standard,
+against the book as one portfolio.
+`price_stand_alone()` uses a VaR standard:
 
 ```{r}
 #| label: alone
 alone <- price_stand_alone(bodoff_book, ccoc, 0.99)
-for (u in c("Hu", "EQ")) {
-  r <- alone[alone$unit == u, ]
-  cat(sprintf("%s alone: assets %.0f, premium %.4f\n", u, r$assets, r$premium))
-}
-cat(sprintf("sum of the parts %.4f; together %.4f\n", alone$premium[alone$unit == "sum"], alone$premium[alone$unit == "total"]))
+at <- match(c("Hu", "EQ", "sum", "total"), alone$unit)
+alone_table <- data.frame(case = c("Hu alone", "EQ alone", "sum of the parts", "together"),
+                          assets = alone$assets[at], premium = alone$premium[at])
+gt(alone_table, rowname_col = "case") |>
+  tab_header("Hurricane and earthquake priced alone and together", "CCoC 10%, VaR 99% standard; currency units") |>
+  fmt_number("assets", decimals = 0, use_seps = FALSE) |>
+  fmt_number("premium", decimals = 4, use_seps = FALSE)
 ```
 
 ```text
-Hu alone: assets 99, premium 27.0000
-EQ alone: assets 100, premium 13.6364
-sum of the parts 40.6364; together 30.7364
+                  assets  premium
+Hu alone              99  27.0000
+EQ alone             100  13.6364
+sum of the parts     199  40.6364
+together             100  30.7364
 ```
 
-Alone, each peril needs almost a full limit of assets, 99 and 100, and charges
-for it. Together, assets of 100 support both perils, and the premium decreases
-from 40.64 to 30.74. The natural allocation shares that saving between the
-units.
+Alone, each peril needs almost a full limit of assets. Together, assets of 100
+support both and the premium falls from 40.64 to 30.74. The natural allocation
+shares that saving between the units.
 
-Where to go next:
-[Price allocation in practice](pir-price-allocation-practice.md) for the
-case-study tables of chapters 13 and 15 and the ceded reinsurance evaluation of
-chapter 19. [Risk loads and distortions](risk-loads-and-distortions.md) for how
-to select a distortion.
+Next: [Price allocation in practice](pir-price-allocation-practice.md) and
+[Risk loads and distortions](risk-loads-and-distortions.md).

@@ -3,28 +3,25 @@
 <!-- site: execute -->
 
 This track follows one reinsurer through one renewal of property catastrophe
-business. It starts from the loss tables of a vendor model and ends with a
-priced portfolio and its capital. Each page takes one step. It explains the
-idea, gives the formula if there is one, and runs it in prospicio on the same
-small book.
+business, from the loss tables of a vendor model to a priced portfolio and its
+capital. Each page takes one step and runs it in prospicio on the same small
+book.
 
 ## Who it is for
 
-The track is for an analyst who knows what a layer and a reinstatement are. The
-analyst now works with simulated catastrophe losses: a year event loss table
-from a cat model, some treaties and a request for a price. If the terms layer,
-rate on line or cost of capital are new to you, read
-[a first course](a-first-course.md) first. Then read
+The track is for an analyst who knows what a layer and a reinstatement are and
+now works with simulated catastrophe losses: a year event loss table, some
+treaties and a request for a price. If layer, rate on line or cost of capital
+are new to you, read [a first course](a-first-course.md) first, then
 [what a reinsurance price is](reinsurance-price.md).
 
-The pages work on simulated years (trials). For an exact method on a grid, a
-page links to [aggregate distributions](aggregate-distributions.md) and does
-not repeat the method. That guide also covers event sets in general.
+The pages work on simulated years (trials). For an exact method on a grid, see
+[aggregate distributions](aggregate-distributions.md), which also covers event
+sets in general.
 
 ## The pages
 
-Each page takes the next step of the renewal at Larkspur and uses the page
-before it. Each page also runs on its own.
+Each page uses the one before it and also runs on its own.
 
 1. [What the cat model hands over](cat-1-loss-tables.md): the three loss
    tables (YELT, YLT and ELT), secondary uncertainty, how to read a YELT,
@@ -54,8 +51,6 @@ premium of page 5.
 
 ## Notation
 
-Every page uses the same symbols.
-
 | Symbol | Meaning |
 |---|---|
 | `l xs a` | a layer of limit `l` above an attachment `a` |
@@ -72,9 +67,9 @@ Every page uses the same symbols.
 
 ## The story
 
-Larkspur Re is a fictional reinsurer. It writes property catastrophe cover for
-three fictional insurers in the fictional country of Varland. Varland has three
-regions: the coast, the plains and the range.
+Larkspur Re, a fictional reinsurer, writes property catastrophe cover for three
+fictional insurers in Varland. Varland has three regions: the coast, the plains
+and the range.
 
 - **Alder Mutual** (`alder`) writes mostly on the coast.
 - **Bracken Insurance** (`bracken`) writes mostly on the plains.
@@ -90,28 +85,27 @@ Four perils hit Varland:
 Money is in millions of Varland crowns, a synthetic currency. All names and
 numbers in the book are fictional.
 
-Some market terms occur on many pages. The **subject premium** of a cedent is
-the premium of the business that the reinsurance protects. Its **cat premium**
-is the part of the subject premium for catastrophe risk. The **signed line** of
-a reinsurer is the share of a layer that it takes. Other reinsurers take the
-remainder.
+Market terms used on many pages:
 
-The **rate on line** (RoL) is the premium of an excess layer divided by its
-limit. A **deal** is one contract as Larkspur wrote it: the premium, losses and
-other flows of its line, year by year.
+- **Subject premium**: the premium of the business that the reinsurance
+  protects. The **cat premium** is its part for catastrophe risk.
+- **Signed line**: the share of a layer that a reinsurer takes. Other
+  reinsurers take the remainder.
+- **Rate on line** (RoL): the premium of an excess layer divided by its limit.
+- **Deal**: one contract as Larkspur wrote it. The premium, losses and other
+  flows of its line, year by year.
 
 A windstorm on the coast hits all three cedents at the same time, so their
 losses move together. A convective storm outbreak often comes into the loss
 table as two or three pieces, one or two days apart. The hours clause (page 3)
-decides if these pieces count as one loss or as several. This decision changes
-what each treaty pays.
+decides if these pieces count as one loss or as several, which changes what
+each treaty pays.
 
 ## The files
 
 The book is in four CSV files in `examples/data/`. The script
-`examples/data/make_cat_book.py` writes them from a fixed seed, so each run
-gives the same bytes. A test checks that the committed files match the output
-of the script.
+`examples/data/make_cat_book.py` writes them from a fixed seed, and a test
+checks that the committed files match its output.
 
 | File | One row per |
 |---|---|
@@ -120,24 +114,25 @@ of the script.
 | `cat_book_cedents.csv` | cedent: home region, subject premium, catastrophe premium |
 | `cat_book_contracts.csv` | contract Larkspur Re writes this year, with all its terms |
 
-The year event loss table (YELT) holds 2,000 simulated years. Each row has
-these fields: year, `slot` (the place of the event in the year), event, day,
-hour, peril, region, cedent and loss. A year with no loss to any cedent has no
-rows. The event loss table (ELT) gives the annual rate of each event and the
-mean loss to Alder with its spread. A cat model gives its results in this form
-before it simulates years. Page 1 explains the two tables and checks that they
-agree.
+The year event loss table (YELT) holds 2,000 simulated years. Its fields are
+year, `slot` (the place of the event in the year), event, day, hour, peril,
+region, cedent and loss. A year with no loss has no rows. The event loss table
+(ELT) gives the annual rate of each event and the mean loss to Alder with its
+spread. Page 1 explains the two tables and checks that they agree.
 
-The pages read every contract term from `cat_book_contracts.csv`. The code
-types no term. To try a different case, change the script and run it again.
+The pages read every contract term from `cat_book_contracts.csv`. To try a
+different case, change the script and run it again.
 
 ### The cedents and the contracts
 
-This block prints the two small tables with only the `csv` module of Python.
-The guides run from `docs/guides/`, so the data is two folders up.
+The block reads the two small files with only the `csv` module. The guides run
+from `docs/guides/`, so the data is two folders up.
 
 ```python
 import csv
+
+import pandas as pd
+from great_tables import GT
 
 DATA = "../../examples/data/"
 
@@ -150,126 +145,116 @@ def read(name):
 cedents = read("cat_book_cedents.csv")
 contracts = read("cat_book_contracts.csv")
 
-print(f"{'cedent':<8} {'name':<18} {'home':<7} {'subject':>8} {'cat':>6}")
-for c in cedents:
-    print(
-        f"{c['cedent']:<8} {c['name']:<18} {c['home_region']:<7} "
-        f"{float(c['subject_premium']):>8.1f} {float(c['cat_premium']):>6.1f}"
-    )
-print()
-print(f"{'contract':<12} {'kind':<14} {'perils':<6} {'terms':<26} {'share':>5}  extra")
-for k in contracts:
-    num = lambda key: float(k[key]) if k[key] else 0.0
-    if k["kind"] == "occurrence_xl":
-        terms = f"{num('limit'):g} xs {num('attachment'):g}"
-        extra = (
-            f"{k['reinstatements']} reinst. at {num('reinstatement_rate'):.0%}, "
-            f"RoL {num('rate_on_line'):.2f}, {k['hours']} h"
-        )
-    elif k["kind"] == "aggregate_xl":
-        terms = f"agg {num('aggregate_limit'):g} xs {num('aggregate_deductible'):g}"
-        extra = f"RoL {num('rate_on_line'):.2f} on the aggregate limit"
-    else:
-        terms = f"event {num('limit'):g}, annual {num('aggregate_limit'):g}"
-        extra = f"ceding commission {num('ceding_commission'):.0%}, {k['hours']} h"
-    print(f"{k['contract']:<12} {k['kind']:<14} {k['perils']:<6} {terms:<26} {num('share'):>5.0%}  {extra}")
+cedent_table = pd.DataFrame({
+    "cedent": [c["cedent"] for c in cedents],
+    "name": [c["name"] for c in cedents],
+    "home": [c["home_region"] for c in cedents],
+    "subject premium": [float(c["subject_premium"]) for c in cedents],
+    "cat premium": [float(c["cat_premium"]) for c in cedents],
+})
+(GT(cedent_table, rowname_col="cedent")
+ .tab_header("The three cedents", "Premiums in millions of Varland crowns")
+ .fmt_number(["subject premium", "cat premium"], decimals=1))
 ```
 
 ```text
-cedent   name               home     subject    cat
-alder    Alder Mutual       coast      420.0   40.0
-bracken  Bracken Insurance  plains     310.0   36.0
-corran   Corran General     range      260.0   30.0
-
-contract     kind           perils terms                      share  extra
-alder_cat_1  occurrence_xl  all    40 xs 30                     30%  1 reinst. at 100%, RoL 0.15, 72 h
-alder_cat_2  occurrence_xl  all    100 xs 70                    20%  1 reinst. at 100%, RoL 0.05, 72 h
-bracken_cat  occurrence_xl  all    50 xs 25                     25%  2 reinst. at 100%, RoL 0.14, 72 h
-bracken_agg  aggregate_xl   CS+FL  agg 30 xs 40                 25%  RoL 0.06 on the aggregate limit
-corran_qs    quota_share    all    event 150, annual 300        10%  ceding commission 25%, 72 h
+                      name    home  subject premium  cat premium
+alder         Alder Mutual   coast            420.0         40.0
+bracken  Bracken Insurance  plains            310.0         36.0
+corran      Corran General   range            260.0         30.0
 ```
 
-The amounts are on a 100% basis. On an excess of loss contract, `share` is the
-signed line of Larkspur Re. On the quota share, `share` is the cession. So
-Larkspur Re takes 30% of the first layer of Alder, which pays the part of each
-occurrence between 30 and 70. The aggregate cover of Bracken applies only to
-convective storm and flood. It pays the part of the annual total loss from
-these perils between 40 and 70.
-
-The quota share cedes 10% of the losses of Corran, with a maximum of 150 for
-one event and 300 for the year. It pays Corran a 25% ceding commission on the
-ceded premium.
-
-The same terms as a table:
-
 ```python
-import pandas as pd
-from great_tables import GT
-
-def money(key, k):
+def num(key, k):
     return float(k[key]) if k[key] else float("nan")
+
+
+def term(k, occurrence, aggregate):
+    return num(aggregate if k["kind"] == "aggregate_xl" else occurrence, k)
+
 
 terms_table = pd.DataFrame({
     "contract": [k["contract"] for k in contracts],
     "kind": [k["kind"] for k in contracts],
     "perils": [k["perils"] for k in contracts],
-    "limit": [money("aggregate_limit" if k["kind"] == "aggregate_xl" else "limit", k) for k in contracts],
-    "attachment": [money("aggregate_deductible" if k["kind"] == "aggregate_xl" else "attachment", k) for k in contracts],
-    "share": [float(k["share"]) for k in contracts],
-    "rate on line": [money("rate_on_line", k) for k in contracts],
+    "limit": [term(k, "limit", "aggregate_limit") for k in contracts],
+    "attachment": [term(k, "attachment", "aggregate_deductible") for k in contracts],
+    "annual limit": [num("aggregate_limit", k) if k["kind"] == "quota_share" else float("nan")
+                     for k in contracts],
+    "share": [num("share", k) for k in contracts],
+    "reinstatements": [num("reinstatements", k) for k in contracts],
+    "reinst. rate": [num("reinstatement_rate", k) for k in contracts],
+    "rate on line": [num("rate_on_line", k) for k in contracts],
+    "ceding commission": [num("ceding_commission", k) for k in contracts],
+    "hours": [num("hours", k) for k in contracts],
 })
 (GT(terms_table, rowname_col="contract")
  .tab_header("Larkspur Re's five contracts",
              "Limits and attachments in millions of Varland crowns, 100% basis")
- .fmt_number(["limit", "attachment"], decimals=0)
- .fmt_percent("share", decimals=0)
+ .fmt_number(["limit", "attachment", "annual limit", "reinstatements", "hours"], decimals=0)
+ .fmt_percent(["share", "reinst. rate", "ceding commission"], decimals=0)
  .fmt_number("rate on line", decimals=2)
  .sub_missing(missing_text=""))
 ```
 
-### The year event loss table at a glance
+```text
+                      kind  perils  limit  attachment  annual limit  share  reinstatements  reinst. rate  rate on line  ceding commission  hours
+alder_cat_1  occurrence_xl     all     40          30                  30%               1          100%          0.15                        72
+alder_cat_2  occurrence_xl     all    100          70                  20%               1          100%          0.05                        72
+bracken_cat  occurrence_xl     all     50          25                  25%               2          100%          0.14                        72
+bracken_agg   aggregate_xl   CS+FL     30          40                  25%                                        0.06
+corran_qs      quota_share     all    150           0           300    10%                                                            25%     72
+```
 
-The next block also uses only `csv`. It counts the rows of the YELT and the
-simulated years with a loss. Then it splits the mean annual loss by peril and
-cedent.
+The amounts are on a 100% basis. On an excess of loss contract, `share` is the
+signed line of Larkspur Re. On the quota share, `share` is the cession, and
+`limit` is the maximum for one event. The aggregate cover of Bracken applies
+only to convective storm and flood. Its `limit` and `attachment` are the
+aggregate limit and deductible. The quota share also pays Corran a 25% ceding
+commission on the ceded premium.
+
+### The year event loss table at a glance
 
 ```python
 yelt = read("cat_book_yelt.csv")
 years = {int(r["year"]) for r in yelt}
 print(f"rows {len(yelt):,}, years with a loss {len(years):,} of 2,000")
 print(f"first year with a loss {min(years)}, last {max(years)}")
-
-perils = ["WS", "EQ", "FL", "CS"]
-names = [c["cedent"] for c in cedents]
-total = {(p, n): 0.0 for p in perils for n in names}
-for r in yelt:
-    total[(r["peril"], r["cedent"])] += float(r["loss"])
-print()
-print("mean annual loss by peril and cedent")
-print(f"{'peril':<6}" + "".join(f"{n:>9}" for n in names) + f"{'all':>9}")
-for p in perils:
-    row = [total[(p, n)] / 2000 for n in names]
-    print(f"{p:<6}" + "".join(f"{v:>9.3f}" for v in row) + f"{sum(row):>9.3f}")
-col = [sum(total[(p, n)] for p in perils) / 2000 for n in names]
-print(f"{'all':<6}" + "".join(f"{v:>9.3f}" for v in col) + f"{sum(col):>9.3f}")
 ```
 
 ```text
 rows 16,432, years with a loss 1,820 of 2,000
 first year with a loss 2, last 2000
-
-mean annual loss by peril and cedent
-peril     alder  bracken   corran      all
-WS        9.915    6.163    5.575   21.652
-EQ        2.473    2.050    4.371    8.894
-FL        3.042    3.999    1.997    9.038
-CS        1.349    3.165    1.106    5.620
-all      16.778   15.376   13.049   45.204
 ```
 
-Two figures show the same table. The first compares the cedents by peril. The
-second shows the annual loss of all cedents together, for the years with a
-loss.
+The mean annual loss splits by peril and cedent.
+
+```python
+perils = ["WS", "EQ", "FL", "CS"]
+names = [c["cedent"] for c in cedents]
+total = {(p, n): 0.0 for p in perils for n in names}
+for r in yelt:
+    total[(r["peril"], r["cedent"])] += float(r["loss"])
+mean_loss = pd.DataFrame({n: [total[(p, n)] / 2000 for p in perils] for n in names},
+                         index=perils)
+mean_loss["all"] = mean_loss.sum(axis=1)
+mean_loss.loc["all"] = mean_loss.sum()
+(GT(mean_loss.rename_axis("peril").reset_index(), rowname_col="peril")
+ .tab_header("Mean annual loss by peril and cedent", "Millions of Varland crowns")
+ .fmt_number(decimals=3))
+```
+
+```text
+      alder  bracken  corran     all
+WS    9.915    6.163   5.575  21.652
+EQ    2.473    2.050   4.371   8.894
+FL    3.042    3.999   1.997   9.038
+CS    1.349    3.165   1.106   5.620
+all  16.778   15.376  13.049  45.204
+```
+
+Two figures: the cedents by peril, then the annual loss of all cedents
+together for the years with a loss.
 
 ```python
 import matplotlib.pyplot as plt
@@ -305,18 +290,15 @@ ax.legend()
 
 The mean annual loss over all years is the average annual loss (AAL, defined on
 [page 1](cat-1-loss-tables.md)). Windstorm is the largest peril for every
-cedent, also for Corran in the range. The cause is that a coastal storm is the
-largest event in the catalog. The home region shows in the second peril: flood
-and convective storm for Bracken on the plains, and earthquake for Corran in
-the range.
+cedent, also for Corran in the range, because a coastal storm is the largest
+event in the catalog. The home region shows in the second peril: flood and
+convective storm for Bracken, earthquake for Corran.
 
-In 180 of the 2,000 years, no event hits a cedent. Year 1 is one of these
-years, so the file starts at year 2. A year with no row is still a year of the
-simulation. So every average on these pages divides by the 2,000 simulated
-years.
+In 180 years no event hits a cedent. Year 1 is one of them, so the file starts
+at year 2. A year with no row is still a year, so every average on these pages
+divides by 2,000.
 
-Each page has an R twin (the same file name with `.qmd`) with the same sections
-and numbers.
+Each page has an R twin (same name, `.qmd`) with the same numbers.
 
 ## Further reading
 
