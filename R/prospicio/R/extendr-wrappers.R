@@ -110,9 +110,9 @@ clash_aggregate_rust <- function(counts, frequency, a, b, points_a, points_b) .C
 
 layer_loss_picks_rust <- function(severity, attachments, picks, claims) .Call(wrap__layer_loss_picks_rust, severity, attachments, picks, claims)
 
-occurrence_exceedance_rust <- function(frequency, severity, x) .Call(wrap__occurrence_exceedance_rust, frequency, severity, x)
+occurrence_exceedance_rust <- function(frequency, severity, x, tower, view) .Call(wrap__occurrence_exceedance_rust, frequency, severity, x, tower, view)
 
-occurrence_pml_rust <- function(frequency, severity, p) .Call(wrap__occurrence_pml_rust, frequency, severity, p)
+occurrence_pml_rust <- function(frequency, severity, p, tower, view) .Call(wrap__occurrence_pml_rust, frequency, severity, p, tower, view)
 
 ylt_file_hash_rust <- function(path) .Call(wrap__ylt_file_hash_rust, path)
 

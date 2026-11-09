@@ -9,7 +9,6 @@
 - #768 re-pin the aggregate parity references to aggregate 2.1.0 (0.1.0, first; Probability for its files)
 - #771 the extended distortion calibration set (aggregate 2.1.0 parity, 0.1.0)
 - #772 disappearing deductible, `y xs d1 to d2 disappearing` (aggregate 2.1.0 parity, 0.1.0)
-- #773 OEP of a program, net or ceded (aggregate 2.1.0 parity, 0.1.0)
 - #776 dyadic lattice bucket rule and a lattice grid warning for discrete books (aggregate 2.1.0 parity, 0.1.0)
 - #777 event loss tables: shared-event roll-up across units and unit tags (aggregate 2.1.0 parity, 0.1.0)
 - #778 a validation verdict on aggregates (aggregate 2.1.0 parity, 0.1.0)
@@ -96,3 +95,4 @@
 - [split-pnl-builders] #579, `prospicio-aggregate/src/pnl/builders.rs` (2034 lines) split with no behaviour change: its unit tests moved to `pnl/builders/tests.rs`, leaving 1727 lines; the same 215 unit tests of the crate pass
 - [split-natural] #579, `prospicio-pricing/src/natural.rs` (2,042 lines) split with no behaviour change: its unit tests moved to `natural/tests.rs`, leaving 1,740 lines; the same 167 unit tests pass
 - [split-reinsurance] #579, `prospicio-aggregate/src/reinsurance.rs` (4,765 lines) split with no behaviour change: the layer (`reinsurance/layer.rs`), its contract terms (`terms.rs`), the tower (`tower.rs`) and the unit tests (`tests.rs`), re-exported from `reinsurance.rs`, which keeps the shared helpers (307 lines); nine private methods made `pub(super)` for their sibling modules; the same 215 unit tests and 122 doctests pass, rustdoc's item list is unchanged and the WASM check passes
+- #773 the occurrence PML of a program, net or ceded (`aggregate.md`, "The occurrence PML of a program, net or ceded", items (a) to (d) proposed; branch `claude/cool-shannon-fqpoy8-program-oep`): `pml::program_occurrence_pml` and `program_occurrence_exceedance` with `OccurrenceView`, any count, the program's function of the gross PML with the survival at a flat stretch's right end, and `Tower::occurrence_ceded`, a program's ceded loss of one occurrence without annual terms; `aggregate` 2.1.0's `oep` matched on 216 values (`validation/scripts/aggregate_program_oep.py`); Python and R `occurrence_pml` and `occurrence_exceedance` with `tower` and `view`
