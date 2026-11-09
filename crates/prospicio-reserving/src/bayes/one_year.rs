@@ -234,8 +234,9 @@ impl BayesOneYear {
     fn refits(&self, k: f64) -> bool {
         match self.mode() {
             OneYearRefit::ReweightOnly => false,
-            // A NaN k is flagged, and an infinite one (too few draws to fit the
-            // tail) is above any finite threshold.
+            // An infinite k (a tail `psis` cannot fit) is above any finite
+            // threshold; a NaN one, which `psis` no longer returns (#782),
+            // would be flagged too.
             OneYearRefit::RefitFlagged | OneYearRefit::MomentMatchThenRefit => {
                 flagged(k, self.k_threshold)
             }
@@ -463,9 +464,10 @@ pub(crate) fn simulate<M: YearModel>(
             let mut closing = vec![0.0; no];
             let flagged = !uninformative && settings.refits(k);
             // Under `MomentMatchThenRefit` a flagged simulation is
-            // moment-matched first; one it cannot bring to the threshold
-            // (or with a NaN k̂) is refitted on the seed the other settings
-            // use.
+            // moment-matched first; one it cannot bring to the threshold is
+            // refitted on the seed the other settings use. An infinite k̂ is
+            // matched too (any finite k̂ improves on it); a NaN one, which
+            // `psis` no longer returns (#782), would go straight to a refit.
             let rescued = match &matching {
                 Some(opening) if flagged && !k.is_nan() => {
                     moment_match::moment_match(
@@ -830,7 +832,9 @@ pub struct BayesOneYearFit<F = super::BayesOdpFit> {
     pub cdr: PredictiveDistribution,
     /// Each simulation's Pareto `k̂`, in the order of the simulations; 0
     /// when the year has no cells (a fully developed triangle), whose
-    /// simulations are never refitted.
+    /// simulations are never refitted; infinite when `psis` cannot fit the
+    /// tail (too few draws, or a tail that underflows or ties at its
+    /// cutoff), never NaN.
     pub pareto_k: Vec<f64>,
     /// The simulations refitted with NUTS, in order.
     pub refitted: Vec<usize>,
@@ -903,8 +907,8 @@ impl<F: ReserveFit> BayesOneYearFit<F> {
 }
 
 /// Whether a simulation with Pareto `k` is flagged: above `threshold`, or
-/// NaN. An infinite `k` (too few draws to fit the tail) is above any
-/// finite threshold.
+/// NaN. An infinite `k` (a tail `psis` cannot fit) is above any finite
+/// threshold. `psis` never returns a NaN `k` (#782); the test is a guard.
 fn flagged(k: f64, threshold: f64) -> bool {
     k.is_nan() || k > threshold
 }
@@ -1238,8 +1242,13 @@ pub(crate) mod conformance {
             .unwrap()
             .install(|| simulate(model, posterior, &only, 200, 5).unwrap());
         assert_eq!(one.cdr, view.cdr[..200 * no], "{name}: replay");
-        // A degenerate set of weights can leave a `k` that is NaN; the replay
-        // reproduces it, and NaN is not equal to itself.
+        // `psis` gives an infinite k̂ for a tail it cannot fit and never a
+        // NaN one (#782), so the view reports a diagnostic for every
+        // simulation. The replay is compared by bits all the same.
+        assert!(
+            view.pareto_k.iter().all(|k| !k.is_nan()),
+            "{name}: a NaN Pareto k"
+        );
         assert!(
             one.pareto_k
                 .iter()
