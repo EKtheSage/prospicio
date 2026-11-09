@@ -4098,6 +4098,107 @@ with one `omega`, (C1), (D2). What building it changed or measured:
   under `ReweightOnly`, agrees in the total CDR and each origin's mean within
   0.1 sd and in their sds within 10%.
 
+#### As built (PR 18, #762)
+
+Issue #762 asked what the one-year view costs and how to make it cheaper.
+The user decided its four items on 2026-11-09 (open decisions 27 to 30).
+
+* **A light refit, the default.** `HierarchicalBf::one_year` takes
+  `BayesOneYear::light_refit` as `Compartmental` does (decision 24): no
+  pilot run, the sampler scaled by the opening posterior's draws on the
+  sampling scale (their variances below `DENSE_FROM_PROGRAMS` = 8
+  programs, their covariance from 8, as the fit's main run), started at
+  their mean, with the light refit's chains, warm-up and draws, and a
+  warning judged on the closing reserve's R-hat (above 1.05), effective
+  draws (under 100) and divergences. `HierarchicalBf::LIGHT_REFIT_BY_DEFAULT`
+  is `true`: with no refit mode chosen (`refit` `None`), no `light_refit`
+  and `no_light_refit` unset, the refits use `LightRefit::default` (4 chains
+  of 150 warm-up and 250 kept draws). As for `Compartmental`, a refit mode
+  chosen keeps the fit's own sampler unless a light refit is given, so the
+  conformance entries and the ignored measurements, which choose their mode
+  and sampler, still compare against full refits. Python's `refit` now
+  defaults to `None` (still `"moment_match_then_refit"`), and R sends
+  `NULL` when `refit` is left at its default. The provenance records the
+  light refit as `light_refit=4x150+250`; a view that reweights only
+  records none. `ONE_YEAR_SIMS` stays 2,000.
+* **Measured against full refits** (the ignored test
+  `light_refit_against_full_refits`, the reference panel at the default
+  sampler, every simulation refitted with `RefitAll`, the same years in both
+  views, 40 simulations at each of seeds 0 and 1, release, 16 threads). In
+  sd of the full refits' total claims development result:
+
+  | seed | total rms | total mean | total sd ratio | EVW rms | GenIns rms | RAA rms | light s a refit | full s a refit | light refits warned |
+  |---|---|---|---|---|---|---|---|---|---|
+  | 0 | 0.004 | +0.001 | 0.999 | 0.004 | 0.001 | 0.000 | 1.5 | 13.3 | 0 of 40 |
+  | 1 | 0.004 | +0.001 | 0.999 | 0.003 | 0.001 | 0.000 | 0.8 | 12.4 | 0 of 40 |
+
+  In each program's own sd the rms gap is 0.003 to 0.004 for EVW, 0.037
+  to 0.042 for GenIns and 0.026 for RAA, with sd ratios 0.994 to 1.008.
+  The fit alone takes 20 to 23 s; the light view of 40 simulations 53 to
+  84 s with the fit, the full one 515 to 556 s. The gap is far inside the
+  user's target of about 0.05 sd, so the light refit is the default; at
+  2,000 simulations the default view costs about 30 to 50 minutes where
+  the fit's own sampler cost about 7 hours.
+* **Programs that stop at different ages warn.** The view's new
+  `BayesOneYearFit::warnings` (one message each, empty for the other
+  models) names each program whose next diagonal has a cell past the last
+  age it observed, with the last age it observed and the furthest age of
+  its next diagonal (on the reference panel, EVW). Under a refit mode the message says nearly every
+  simulation is flagged and refitted over the whole panel and the view is
+  expensive; under `ReweightOnly` that its weights are unreliable and the
+  view approximate. The view runs as before; nothing is refused and no
+  ages are dropped. A program that is merely young (fewer origins than the
+  grid) warns too, since its next age is informed by the prior alone.
+  Python raises each message as a `UserWarning` prefixed `HierarchicalBf: `
+  and has `HierarchicalBfOneYearFit.warnings`; R raises each with
+  `warning()` prefixed `bayes_hierarchical_bf_one_year: ` and has the
+  `warnings` property. `warnings` is a new public field of
+  `BayesOneYearFit`, so a struct literal of it needs the field (breaking
+  for such code).
+* **`target_accept` stays 0.99, measured for the user** (the ignored test
+  `target_accept_sweep` in `validation/tests/reserving_bayes_hierarchical_bf.rs`;
+  one fit per value, panel and seed at the default sampler otherwise,
+  release, 16 threads; open decision 30):
+
+  | target_accept | panel | divergences (mean) | max R-hat (worst) | warned fits | fit s (mean) | loss-ratio sd / Stan - 1 (EVW, GenIns, RAA; mean) |
+  |---|---|---|---|---|---|---|
+  | 0.9 | reference | 4.40 | 1.0102 | 10 of 10 | 9.7 | -0.087, -0.001, +0.000 |
+  | 0.9 | genins+raa | 90.00 | 1.1483 | 10 of 10 | 1.3 | n/a |
+  | 0.9 | all cut to 6 | 1.40 | 1.0159 | 8 of 10 | 2.8 | n/a |
+  | 0.9 | recovery 5 | 0.00 | 1.0099 | 0 of 10 | 2.1 | n/a |
+  | 0.9 | recovery 10 | 0.30 | 1.0115 | 3 of 10 | 3.0 | n/a |
+  | 0.9 | recovery 20 | 0.00 | 1.0096 | 0 of 10 | 16.5 | n/a |
+  | 0.95 | reference | 0.20 | 1.0070 | 2 of 10 | 10.4 | -0.055, -0.006, -0.005 |
+  | 0.95 | genins+raa | 33.40 | 1.0505 | 10 of 10 | 1.4 | n/a |
+  | 0.95 | all cut to 6 | 0.20 | 1.0122 | 3 of 10 | 3.8 | n/a |
+  | 0.95 | recovery 5 | 0.00 | 1.0135 | 2 of 10 | 1.6 | n/a |
+  | 0.95 | recovery 10 | 0.00 | 1.0071 | 0 of 10 | 3.8 | n/a |
+  | 0.95 | recovery 20 | 0.00 | 1.0165 | 1 of 10 | 17.4 | n/a |
+  | 0.99 | reference | 0.00 | 1.0104 | 1 of 10 | 21.7 | -0.010, -0.003, -0.007 |
+  | 0.99 | genins+raa | 3.30 | 1.0276 | 10 of 10 | 2.4 | n/a |
+  | 0.99 | all cut to 6 | 0.00 | 1.0118 | 1 of 10 | 8.3 | n/a |
+  | 0.99 | recovery 5 | 0.00 | 1.0152 | 4 of 10 | 3.2 | n/a |
+  | 0.99 | recovery 10 | 0.00 | 1.0103 | 1 of 10 | 7.1 | n/a |
+  | 0.99 | recovery 20 | 0.00 | 1.0067 | 0 of 10 | 36.4 | n/a |
+
+  Ten seeds (0 to 9) per cell, nothing else running. At 0.99 the reference
+  panel has no divergences and its EVW loss-ratio sd is closest to Stan's
+  (-1.0% against -5.5% at 0.95 and -8.7% at 0.9); GenIns with RAA diverges
+  and warns at every value (fewest divergences at 0.99); a fit takes about
+  twice as long at 0.99 as at 0.95 (21.7 s against 10.4 s on the reference
+  panel, 36.4 s against 17.4 s on 20 programs). The recovery panels have
+  almost no divergences at any value; their warnings are a divergence or two or R-hat
+  just above 1.01 (at most 1.017), not low ESS. A three-seed run gave the same picture.
+
+* **Tests.** Unit tests: the warning's programs and both wordings, the
+  resolution of the refits' sampler at both values of the default, bad
+  light refits as errors, and (under `slow-tests`) a light refit against a
+  long full refit on one year (closing reserve mean within 0.3 sd, sd
+  within 25%, score of mean zero) and in the view (`RefitAll`, the same
+  flags and k as full refits, replay by seed). Python and R check the
+  default's provenance, a chosen mode without one, replay, errors and the
+  warning's text and category.
+
 #### Dependencies
 
 On `prospicio-bayes` (the Models lane), all public today:
@@ -4121,6 +4222,9 @@ hyperprior and the pattern prior; the model does not wait on it.
   `YearModel` with the conformance suite (item 5), in Rust, Python
   (`HierarchicalBf.one_year`) and R (`bayes_hierarchical_bf_one_year()`).
   Built.
+* PR 18 (`claude/hierarchical-bf-one-year-cost`, #762): the light refit as
+  the view's default, the warning of programs that stop at different ages,
+  and the `target_accept` sweep, in Rust, Python and R. Built.
 
 **Risks.** Sampling: hierarchical funnels on thin panels, which the
 non-centred parameterisation and the pilot whitening address and the
@@ -4503,4 +4607,28 @@ are settled.
     a few thin programs from inventing a large spread; and a scale per
     unit of premium is the only one that both pools the degrees of
     freedom and respects programs of different sizes.
-
+27. **A light refit for the hierarchical one-year view.** Raised by #762,
+    item 1. Decided by the user on 2026-11-09: build a warm-started,
+    shorter refit as `Compartmental`'s (decision 24: no pilot run, the
+    sampler scaled by the opening posterior's draws, started at their mean,
+    a warning judged on the closing reserve). Built in PR 18.
+28. **Whether the light refit is the hierarchical view's default.** Raised
+    by #762, item 2. Decided by the user on 2026-11-09: the default once it
+    is within about 0.05 sd of full refits on the reference panel (EVW,
+    GenIns, RAA), with `ONE_YEAR_SIMS` kept at 2,000; otherwise not, with a
+    report. Built in PR 18: within 0.004 sd (rms) of the total at seeds 0
+    and 1 (40 simulations each), so it is the default
+    (`HierarchicalBf::LIGHT_REFIT_BY_DEFAULT`), applied as `Compartmental`'s
+    only when no refit mode is chosen.
+29. **Panels whose programs stop at different ages.** Raised by PR 17
+    (refuse, warn, or leave the ages past a program's last out of its
+    year) and #762, item 3. Decided by the user on 2026-11-09: warn, naming
+    the programs and saying the view is expensive, and run the view as
+    before, neither refusing nor dropping ages. Built in PR 18 as
+    `BayesOneYearFit::warnings`, raised in Python and R as the views raise
+    `approximate` (worded as approximate rather than expensive when the
+    view reweights only).
+30. **The hierarchical model's `target_accept`.** Raised by #762, item 4.
+    The user decided on 2026-11-09 to keep 0.99 and to see a sweep of 0.9,
+    0.95 and 0.99 over more panels first. The sweep is under "As built
+    (PR 18, #762)" above. *Awaiting the user.*

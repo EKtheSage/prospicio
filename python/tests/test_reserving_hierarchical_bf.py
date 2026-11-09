@@ -464,3 +464,77 @@ def test_a_refit_samples_the_whole_panel(tri):
         every = model.one_year(tri, "paid", "premium", n_sims=3, refit="refit_all")
     assert every.refitted == [0, 1, 2]
     assert every.cdr.n_sims == 3
+
+
+# --- the light refit and the warning of programs stopping short (#762) --------
+
+
+def test_a_light_refit_reaches_the_view(tri):
+    model = HierarchicalBf(
+        apriori=0.7, level_cv=0.3, seed=3, chains=2, tune=150, draws=150, n_sims=100
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        light = model.one_year(
+            tri, "paid", "premium", n_sims=3, refit="refit_all", light_refit=(2, 60, 60)
+        )
+        again = model.one_year(
+            tri, "paid", "premium", n_sims=3, refit="refit_all", light_refit=(2, 60, 60)
+        )
+        off = model.one_year(tri, "paid", "premium", n_sims=3, refit="refit_all", light_refit=False)
+        # The default refits with the light refit (#762); a refit mode chosen
+        # keeps the fit's own sampler unless a light refit is given.
+        default = model.one_year(tri, "paid", "premium", n_sims=3)
+        chosen = model.one_year(tri, "paid", "premium", n_sims=3, refit="refit_all")
+        # A view that reweights only records no sampler, even when one is given.
+        reweighted = model.one_year(
+            tri, "paid", "premium", n_sims=3, refit="reweight_only", light_refit=True
+        )
+    assert light.refitted == [0, 1, 2]
+    assert "expensive" in light.warnings[0] and "approximate" not in light.warnings[0]
+    assert bits(light.cdr.draw_matrix()) == bits(again.cdr.draw_matrix())
+    assert dict(light.cdr.provenance()["parameters"])["light_refit"] == "2x60+60"
+    assert "light_refit" not in dict(off.cdr.provenance()["parameters"])
+    assert dict(default.cdr.provenance()["parameters"])["light_refit"] == "4x150+250"
+    assert "light_refit" not in dict(chosen.cdr.provenance()["parameters"])
+    assert "light_refit" not in dict(reweighted.cdr.provenance()["parameters"])
+    for bad in [(0, 60, 60), (2, 0, 60), (2, 60, 1)]:
+        with pytest.raises(ValueError, match="light_refit"):
+            model.one_year(tri, "paid", "premium", n_sims=3, light_refit=bad)
+    with pytest.raises(ValueError, match="light_refit"):
+        model.one_year(tri, "paid", "premium", n_sims=3, light_refit="fast")
+
+
+def test_programs_stopping_short_warn(tri):
+    model = HierarchicalBf(
+        apriori=0.7, level_cv=0.3, seed=3, chains=2, tune=150, draws=150, n_sims=50
+    )
+    # Programs b and c stop at 36 and 24 months, short of a's 48: their next
+    # diagonals fall at ages they never observed, which the view warns of.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        ragged = model.one_year(tri, "paid", "premium", refit="reweight_only")
+    assert len(ragged.warnings) == 1
+    message = ragged.warnings[0]
+    assert "b (observed to age 36, its next diagonal to 48)" in message
+    assert "c (observed to age 24, its next diagonal to 36)" in message
+    assert "a (" not in message
+    # Reweighting only, the view is cheap but approximate; refitting, it is
+    # expensive.
+    assert "approximate" in message and "expensive" not in message
+    assert any(
+        issubclass(w.category, UserWarning) and str(w.message) == f"HierarchicalBf: {message}"
+        for w in caught
+    )
+    # Programs that share their ages do not warn.
+    shared = panel(
+        {
+            "a": {2021: ([60.0, 100.0, 125.0], 200.0), 2022: ([66.0, 108.0], 210.0), 2023: ([70.0], 215.0)},
+            "b": {2021: ([35.0, 60.0, 75.0], 120.0), 2022: ([38.0, 64.0], 125.0), 2023: ([40.0], 130.0)},
+        }
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        even = model.one_year(shared, "paid", "premium", refit="reweight_only")
+    assert even.warnings == []
+    assert not any("never observed" in str(w.message) for w in caught)

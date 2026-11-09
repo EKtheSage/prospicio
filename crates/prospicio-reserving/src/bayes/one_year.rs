@@ -128,18 +128,27 @@ pub struct BayesOneYear {
     /// whatever the count, so a smaller count gives the first simulations of
     /// a larger one.
     pub n_sims: Option<usize>,
-    /// A shorter NUTS sampler for the refits of `Compartmental` (open
-    /// decision 17, `docs/design/reserving-bayes.md` decision 24): `Some`
-    /// warm-starts each refit from the opening posterior and samples it with
-    /// these settings. `None` (the default) is the model's own default: the
-    /// light refit of [`LightRefit::default`] for model 2 (the user's
-    /// decision of 2026-10-21), the fit's own sampler for model 1 (which
-    /// moment matches and rarely refits). The other models ignore it.
+    /// A shorter NUTS sampler for the refits of `Compartmental` and
+    /// `HierarchicalBf` (open decision 17, `docs/design/reserving-bayes.md`
+    /// decisions 24 and 30): `Some` warm-starts each refit from the opening
+    /// posterior and samples it with these settings. `None` (the default)
+    /// is the model's own default: the light refit of
+    /// [`LightRefit::default`] for `Compartmental` model 2 (the user's
+    /// decision of 2026-10-21) and for `HierarchicalBf` (the user's decision
+    /// of 2026-11-09,
+    /// [`HierarchicalBf::LIGHT_REFIT_BY_DEFAULT`](super::HierarchicalBf::LIGHT_REFIT_BY_DEFAULT)),
+    /// the fit's own sampler for model 1 (which moment matches and rarely
+    /// refits).
+    /// A model's default light refit applies only when `refit` is `None`:
+    /// a refit mode chosen keeps the fit's own sampler unless this is `Some`.
+    /// The other models ignore it.
     pub light_refit: Option<LightRefit>,
-    /// Turn off the model's default light refit (`Compartmental` model 2):
-    /// the view then reweights only, with the warning that it is
-    /// approximate, unless `refit` says to refit, which uses the fit's own
-    /// sampler. Ignored when `light_refit` is `Some`. Default `false`.
+    /// Turn off the model's default light refit (`Compartmental` model 2
+    /// and `HierarchicalBf`): the
+    /// refits then use the fit's own sampler, and `Compartmental` model 2
+    /// reweights only, with the warning that it is approximate, unless
+    /// `refit` says to refit. Ignored when `light_refit` is `Some`. Default
+    /// `false`.
     pub no_light_refit: bool,
 }
 
@@ -642,6 +651,7 @@ pub(crate) fn assemble<F: ReserveFit>(
         refit_warnings: year.refit_warnings,
         k_threshold: settings.k_threshold,
         approximate: None,
+        warnings: Vec::new(),
     })
 }
 
@@ -856,6 +866,11 @@ pub struct BayesOneYearFit<F = super::BayesOdpFit> {
     /// then reweights its flagged simulations only (`Compartmental` with
     /// development effects, model 2, decision 20). Python and R warn with it.
     pub approximate: Option<String>,
+    /// What else the view warns of, one message each, empty for most views:
+    /// `HierarchicalBf` names here the programs whose next diagonal falls at
+    /// ages they have never observed, which make the view expensive
+    /// (decision 30). Python and R warn with each.
+    pub warnings: Vec<String>,
 }
 
 impl<F: ReserveFit> BayesOneYearFit<F> {
@@ -1064,8 +1079,9 @@ pub(crate) fn provenance(
 }
 
 /// [`provenance`] with the light refit's sampler, for a model that uses
-/// [`BayesOneYear::light_refit`] (only `Compartmental`, decision 24): the
-/// other models ignore the setting and do not record it.
+/// [`BayesOneYear::light_refit`] (`Compartmental`, decision 24, and
+/// `HierarchicalBf`, decision 30): the other models ignore the setting and
+/// do not record it.
 pub(crate) fn provenance_with_light_refit(
     provenance: Provenance,
     settings: &BayesOneYear,
