@@ -23,8 +23,8 @@ Part II of Mildenhall and Major's *Pricing Insurance Risk: Theory and Practice*
   loss capped at the assets, which is a spectral risk measure (SRM). The book
   calibrates five representative distortions to one target and compares them.
 
-This guide runs those chapters in prospicio and prints the book's numbers
-beside the prospicio numbers.
+This guide runs those chapters in prospicio and puts the book's numbers beside
+prospicio's.
 
 The book's text belongs to the authors, and this guide explains it in new
 words. Exhibit numbers are the book's. Related guides:
@@ -35,8 +35,7 @@ words. Exhibit numbers are the book's. Related guides:
   III of the book): [the case studies guide](pricing-insurance-risk-case-studies.md)
   and [CAS Monograph 15 reproduced](capital-modeling-monograph-15.md).
 
-In this guide, the code always prices a unit on its own (stand-alone) or prices
-the total as a whole.
+The code prices a unit on its own (stand-alone) or the total as a whole.
 
 This is the R twin of the Python guide [`pir-portfolio-pricing.md`](pir-portfolio-pricing.md).
 It has the same sections, examples and numbers. The R package calls the same
@@ -115,24 +114,42 @@ means: B net 49.084 (book 49.08), Cat net 17.786 (book 17.79)
 ```
 
 The attachments and limits of the covers come from the quantiles of the gross
-units. The 80% and 99% quantiles of B are 56.17 and 69.08. The 90% and 99.5%
-quantiles of Cat are 41.11 and 120.75. `map_grid()` makes the net unit exactly on
-the grid. `tower_on_grid()` gives the same distribution by FFT. It sets
-the FFT round-off (approximately 1e-19 where the probability must be zero) to
-zero, and section 3 shows why this is important.
+units: the 80% and 99% quantiles of B (56.17, 69.08) and the 90% and 99.5%
+quantiles of Cat (41.11, 120.75). `map_grid()` makes the net unit exactly on the
+grid. `tower_on_grid()` gives the same distribution by FFT and sets the FFT
+round-off (about 1e-19 where the probability must be zero) to zero. Section 3
+shows why that matters.
 
 ## 2. The portfolio CCoC price
 
 Chapter 8 gives the classical portfolio price, and every practice chapter uses
-it as the benchmark. This price holds assets at the VaR of the total and
-charges a constant cost of capital on the capital. With a 10% return, the
-premium is P = v E[min(X, a)] + d a, where v = 1 / 1.1 and d = 1 - v. The
-insurance pentagon then gives the margin, capital, loss ratio and leverage.
+it as the benchmark. The price holds assets at the VaR of the total and charges
+a constant cost of capital on the capital. With a 10% return, the premium is
+P = v E[min(X, a)] + d a, where v = 1 / 1.1 and d = 1 - v. The insurance
+pentagon then gives the margin, capital, loss ratio and leverage.
 
-Table 7.2 prints the result for each book, gross and net. Table 9.11 compares
-the total with the sum of the units priced stand-alone, each at its own VaR:
+Table 7.2 prints the result for each book, gross and net. The book's leverage
+is premium to capital (`premium_to_capital` in `natural_price()`). The loss is
+the expected loss within the assets, so it includes the effect of default:
+Cat/Non-Cat gross has a loss of 99.95, not 100. All 24 figures agree:
 
 ```{r}
+#| label: table-72
+library(gt)
+
+# A table whose rows alternate prospicio and the book: prospicio at fixed decimals, the book as printed.
+pair_table <- function(frame, decimals) {
+  own_rows <- seq(1, nrow(frame), by = 2)
+  book_rows <- seq(2, nrow(frame), by = 2)
+  table <- gt(frame, rowname_col = names(frame)[1])
+  for (column in names(decimals)) {
+    table <- table |>
+      fmt_number(columns = all_of(column), rows = own_rows, decimals = decimals[[column]], use_seps = FALSE) |>
+      fmt_number(columns = all_of(column), rows = book_rows, decimals = 4, drop_trailing_zeros = TRUE, use_seps = FALSE)
+  }
+  sub_missing(table, missing_text = "")
+}
+
 ccoc <- distortion("ccoc", 0.10)
 BOOK_72 <- list( # Table 7.2: loss, margin, premium, capital, assets, leverage
   c(100.00, 3.42, 103.4, 34.23, 137.7, 3.02),
@@ -146,44 +163,48 @@ BOOKS <- list(
   list(name = "Cat/Non-Cat", view = "gross", book = cnc, p = 0.999),
   list(name = "Cat/Non-Cat", view = "net", book = cnc_net, p = 0.999)
 )
+BOOK_NAMES <- sapply(BOOKS, function(b) paste(b$name, b$view))
+interleave <- function(mine, book) as.vector(rbind(mine, paste0(mine, ", book")))
 total_row <- function(prices) prices[prices$unit == "total", ]
-cat(sprintf("%19s %7s %7s %8s %8s %7s %6s\n", "", "loss", "margin", "premium", "capital", "assets", "P/Q"))
+COLUMNS_72 <- c("loss", "margin", "premium", "capital", "assets", "P/Q")
+rows <- list()
 for (k in seq_along(BOOKS)) {
   b <- BOOKS[[k]]
   t <- total_row(natural_price(b$book, ccoc, p = b$p))
-  cat(sprintf("%-11s %-5s   %7.2f %7.2f %8.2f %8.2f %7.2f %6.3f\n", b$name, b$view, t$loss, t$margin,
-              t$premium, t$capital, t$assets, t$premium_to_capital))
-  cat(sprintf("%19s %s   (book)\n", "", paste(sprintf("%7s", pyfloat(BOOK_72[[k]])), collapse = " ")))
+  rows[[2 * k - 1]] <- c(t$loss, t$margin, t$premium, t$capital, t$assets, t$premium_to_capital)
+  rows[[2 * k]] <- BOOK_72[[k]]
 }
+table_72 <- data.frame(book = interleave(BOOK_NAMES), do.call(rbind, rows), check.names = FALSE)
+names(table_72)[-1] <- COLUMNS_72
+pair_table(table_72, c(setNames(rep(2, 5), COLUMNS_72[1:5]), `P/Q` = 3)) |>
+  tab_header("Table 7.2: the portfolio CCoC price", "Currency units; P/Q is premium over capital")
 ```
 
 ```text
-                       loss  margin  premium  capital  assets    P/Q
-Tame        gross    100.00    3.42   103.42    34.23  137.66  3.021
-                      100.0    3.42   103.4   34.23   137.7    3.02   (book)
-Tame        net       99.08    2.46   101.55    24.64  126.19  4.121
-                      99.08    2.46   101.5   24.64   126.2    4.12   (book)
-Cat/Non-Cat gross     99.95   15.21   115.15   152.05  267.20  0.757
-                      99.95   15.21   115.2   152.1   267.2   0.757   (book)
-Cat/Non-Cat net       97.73    8.17   105.90    81.68  187.58  1.297
-                      97.73    8.17   105.9   81.68   187.6     1.3   (book)
+                           loss  margin  premium  capital  assets    P/Q
+Tame gross               100.00    3.42   103.42    34.23  137.66  3.021
+Tame gross, book            100    3.42    103.4    34.23   137.7   3.02
+Tame net                  99.08    2.46   101.55    24.64  126.19  4.121
+Tame net, book            99.08    2.46    101.5    24.64   126.2   4.12
+Cat/Non-Cat gross         99.95   15.21   115.15   152.05  267.20  0.757
+Cat/Non-Cat gross, book   99.95   15.21    115.2    152.1   267.2  0.757
+Cat/Non-Cat net           97.73    8.17   105.90    81.68  187.58  1.297
+Cat/Non-Cat net, book     97.73    8.17    105.9    81.68   187.6    1.3
 ```
 
-All 24 figures agree. The book's leverage is premium to capital, which is the
-`premium_to_capital` column of `natural_price()`. The loss is the expected loss within the
-assets, so it includes the effect of default. For example, Cat/Non-Cat gross
-has a loss of 99.95, not 100.
-
 Stand-alone, each unit holds its own 99.99% or 99.9% VaR. The units together
-need more capital than the book (Tables 9.12, 9.13 and 9.11):
+need more capital than the book (Tables 9.12, 9.13 and 9.11). B and Cat are net
+of their cover in the net rows. P is premium and Q is capital:
 
 ```{r}
+#| label: table-sa
 BOOK_SA <- list( # Tables 9.12, 9.13: stand-alone premium and capital by unit; Table 9.11's sums
   list(c(51.89, 52.98), c(18.88, 29.82), 104.9, 48.69),
   list(c(51.89, 50.98), c(18.88, 18.91), 102.9, 37.79),
   list(c(34.98, 83.84), c(150.3, 38.41), 118.8, 188.7),
   list(c(25.72, 83.84), c(79.92, 38.41), 109.6, 118.3)
 )
+rows <- list()
 for (k in seq_along(BOOKS)) {
   b <- BOOKS[[k]]
   sa <- price_stand_alone(b$book, ccoc, b$p)
@@ -191,31 +212,40 @@ for (k in seq_along(BOOKS)) {
   s <- sa[sa$unit == "sum", ]
   t <- sa[sa$unit == "total", ]
   bk <- BOOK_SA[[k]]
-  cat(sprintf("%-11s %-5s by unit P/Q %s\n", b$name, b$view,
-              paste(sprintf("%.2f/%.2f (%s/%s)", units$premium, units$capital, pyfloat(bk[[1]]), pyfloat(bk[[2]])),
-                    collapse = ", ")))
-  cat(sprintf("%17s sum P %6.2f (%s), total %6.2f; sum Q %6.2f (%s), total %6.2f; premium %+.1f%%, capital %+.1f%%\n",
-              "", s$premium, pyfloat(bk[[3]]), t$premium, s$capital, pyfloat(bk[[4]]), t$capital,
-              100 * (t$premium / s$premium - 1), 100 * (t$capital / s$capital - 1)))
+  rows[[2 * k - 1]] <- c(units$premium[1], units$capital[1], units$premium[2], units$capital[2],
+                         s$premium, t$premium, t$premium / s$premium - 1,
+                         s$capital, t$capital, t$capital / s$capital - 1)
+  rows[[2 * k]] <- c(bk[[1]][1], bk[[2]][1], bk[[1]][2], bk[[2]][2], bk[[3]], NA, NA, bk[[4]], NA, NA)
 }
+table_sa <- data.frame(book = interleave(BOOK_NAMES), do.call(rbind, rows))
+names(table_sa)[-1] <- c("p1", "q1", "p2", "q2", "sum_p", "total_p", "saved_p", "sum_q", "total_q", "saved_q")
+pair_table(table_sa, setNames(rep(2, 8), c("p1", "q1", "p2", "q2", "sum_p", "total_p", "sum_q", "total_q"))) |>
+  fmt_percent(columns = c("saved_p", "saved_q"), rows = seq(1, nrow(table_sa), by = 2), decimals = 1) |>
+  tab_header("Tables 9.12, 9.13 and 9.11: stand-alone against pooled",
+             "Units A, B (Tame) and Cat, Non-Cat (Cat/Non-Cat); currency units") |>
+  tab_spanner("unit 1", columns = c("p1", "q1")) |>
+  tab_spanner("unit 2", columns = c("p2", "q2")) |>
+  tab_spanner("premium", columns = c("sum_p", "total_p", "saved_p")) |>
+  tab_spanner("capital", columns = c("sum_q", "total_q", "saved_q")) |>
+  cols_label(p1 = "P", q1 = "Q", p2 = "P", q2 = "Q", sum_p = "sum of units", total_p = "total",
+             saved_p = "pooling saves", sum_q = "sum of units", total_q = "total", saved_q = "pooling saves")
 ```
 
 ```text
-Tame        gross by unit P/Q 51.89/18.88 (51.89/18.88), 52.98/29.82 (52.98/29.82)
-                  sum P 104.87 (104.9), total 103.42; sum Q  48.69 (48.69), total  34.23; premium -1.4%, capital -29.7%
-Tame        net   by unit P/Q 51.89/18.88 (51.89/18.88), 50.98/18.92 (50.98/18.91)
-                  sum P 102.86 (102.9), total 101.55; sum Q  37.79 (37.79), total  24.64; premium -1.3%, capital -34.8%
-Cat/Non-Cat gross by unit P/Q 34.98/150.31 (34.98/150.3), 83.84/38.41 (83.84/38.41)
-                  sum P 118.81 (118.8), total 115.15; sum Q 188.72 (188.7), total 152.05; premium -3.1%, capital -19.4%
-Cat/Non-Cat net   by unit P/Q 25.72/79.92 (25.72/79.92), 83.84/38.41 (83.84/38.41)
-                  sum P 109.56 (109.6), total 105.90; sum Q 118.33 (118.3), total  81.68; premium -3.3%, capital -31.0%
+                             P       Q      P      Q  sum of units   total  pooling saves  sum of units   total  pooling saves
+Tame gross               51.89   18.88  52.98  29.82        104.87  103.42          -1.4%         48.69   34.23         -29.7%
+Tame gross, book         51.89   18.88  52.98  29.82         104.9                                48.69
+Tame net                 51.89   18.88  50.98  18.92        102.86  101.55          -1.3%         37.79   24.64         -34.8%
+Tame net, book           51.89   18.88  50.98  18.91         102.9                                37.79
+Cat/Non-Cat gross        34.98  150.31  83.84  38.41        118.81  115.15          -3.1%        188.72  152.05         -19.4%
+Cat/Non-Cat gross, book  34.98   150.3  83.84  38.41         118.8                                188.7
+Cat/Non-Cat net          25.72   79.92  83.84  38.41        109.56  105.90          -3.3%        118.33   81.68         -31.0%
+Cat/Non-Cat net, book    25.72   79.92  83.84  38.41         109.6                                118.3
 ```
 
-These are the book's figures, with the diversification that Table 9.11
-reports. The pool of the Tame units saves 1.4% of premium and 29.7% of capital.
-The pool of Cat with Non-Cat saves 3.0% and 19.4%. Premium decreases less than
-capital, because most of the premium is expected loss, and pooling does not
-change the expected loss. The thin tails of Tame give the most diversification.
+Premium falls less than capital, because most of the premium is expected loss
+and pooling does not change the expected loss. The thin tails of Tame give the
+most diversification.
 
 ## 3. Classical premium principles
 
@@ -229,9 +259,14 @@ Section 9.1 applies ten of them to the case studies in two steps:
 
 prospicio has all of them as `classical_premium(x, principle, loading)`, and
 `calibrate_classical()` finds a loading. The book's Fischer principle uses the
-power 2, which is the prospicio default:
+power 2, which is the prospicio default.
+
+Table 9.2 lists the Tame premiums, sorted by the net total from the lowest
+premium to the highest. Beside each loading is the book's. The last column is
+the largest gap to the book's premiums in that row:
 
 ```{r}
+#| label: table-92
 PRINCIPLES <- c("expected_value", "variance", "esscher", "exponential", "semi_variance",
                 "var", "dutch", "standard_deviation", "fischer")
 BOOK_92 <- list( # Table 9.2, Tame: loading; A, B net, B gross, total net, total gross
@@ -246,89 +281,92 @@ BOOK_92 <- list( # Table 9.2, Tame: loading; A, B net, B gross, total net, total
   fischer = c(0.523, 51.897, 51.149, 52.881, 101.907, 103.423)
 )
 
-classical_table <- function(gross_total, grids, target, book_values) {
-  largest <- 0
-  for (principle in names(book_values)) {
+# Each principle's loading and premiums on the grids, with the book's loading and the largest gap.
+classical_frame <- function(gross_total, grids, labels, target, book_values) {
+  rows <- lapply(names(book_values), function(principle) {
     book <- book_values[[principle]]
     t <- calibrate_classical(gross_total, principle, target)
     got <- sapply(grids, function(g) classical_premium(g, principle, t))
-    largest <- max(largest, abs(got - book[-1]))
-    cat(sprintf("%-18s %5.3f (%5.3f) %s\n", principle, t, book[1], paste(sprintf("%8.3f", got), collapse = " ")))
-  }
-  cat(sprintf("largest difference from the book: %.3f\n", largest))
+    c(t, book[1], got, max(abs(got - book[-1])))
+  })
+  frame <- data.frame(principle = gsub("_", " ", names(book_values)), do.call(rbind, rows), check.names = FALSE)
+  names(frame)[-1] <- c("loading", "book loading", labels, "gap")
+  frame[order(frame$net), ]
+}
+
+classical_gt <- function(frame, title, subtitle, spanned) {
+  table <- gt(frame, rowname_col = "principle") |>
+    tab_header(title, subtitle) |>
+    tab_spanner("calibrated loading", columns = c("loading", "book loading")) |>
+    fmt_number(columns = everything(), decimals = 3) |>
+    cols_label(loading = "prospicio", `book loading` = "book")
+  for (label in names(spanned)) table <- tab_spanner(table, label, columns = spanned[[label]])
+  table
 }
 
 tame_target <- total_row(natural_price(tame, ccoc, p = 0.9999))$premium
 tame_total <- total_grid(tame)
 tame_net_total <- total_grid(tame_net)
-cat(sprintf("%18s loading         %8s %8s %8s %8s %8s\n", "", "A", "B net", "B", "net", "total"))
-classical_table(tame_total, list(a_unit, b_net, b_unit, tame_net_total, tame_total), tame_target, BOOK_92)
+tame_92 <- classical_frame(tame_total, list(a_unit, b_net, b_unit, tame_net_total, tame_total),
+                           c("A", "B net", "B", "net", "total"), tame_target, BOOK_92)
+classical_gt(tame_92, "Table 9.2: Tame premiums by principle, each calibrated to the CCoC total",
+             "Currency units; the loading is the parameter of the principle",
+             list(units = c("A", "B net", "B"), totals = c("net", "total")))
 ```
 
 ```text
-                   loading                A    B net        B      net    total
-expected_value     0.034 (0.034)   51.712   50.764   51.712  102.476  103.423
-variance           0.042 (0.042)   51.053   50.619   52.370  101.672  103.423
-esscher            0.041 (0.041)   51.034   50.468   52.389  101.502  103.423
-exponential        0.080 (0.080)   51.028   50.419   52.395  101.447  103.423
-semi_variance      0.080 (0.080)   51.051   50.330   52.425  101.411  103.423
-var                0.659 (0.659)   51.906   52.750   52.750  102.672  103.422
-dutch              0.953 (0.953)   51.899   51.498   52.846  102.096  103.423
-standard_deviation 0.380 (0.380)   51.899   51.376   52.848  102.060  103.423
-fischer            0.523 (0.523)   51.897   51.149   52.881  101.906  103.423
-largest difference from the book: 0.001
+                    prospicio   book       A   B net       B      net    total    gap
+semi variance           0.080  0.080  51.051  50.330  52.425  101.411  103.423  0.000
+exponential             0.080  0.080  51.028  50.419  52.395  101.447  103.423  0.001
+esscher                 0.041  0.041  51.034  50.468  52.389  101.502  103.423  0.001
+variance                0.042  0.042  51.053  50.619  52.370  101.672  103.423  0.001
+fischer                 0.523  0.523  51.897  51.149  52.881  101.906  103.423  0.001
+standard deviation      0.380  0.380  51.899  51.376  52.848  102.060  103.423  0.001
+dutch                   0.953  0.953  51.899  51.498  52.846  102.096  103.423  0.000
+expected value          0.034  0.034  51.712  50.764  51.712  102.476  103.423  0.001
+var                     0.659  0.659  51.906  52.750  52.750  102.672  103.422  0.000
 ```
 
-Every loading and premium in Table 9.2 agrees to the third decimal. The largest
-difference, 0.001, is rounding. Table 9.3 also agrees. It subtracts the premium
-of the total from the sum of the stand-alone premiums.
+Every loading and premium agrees to the third decimal. The largest gap, 0.001,
+is rounding.
 
-Table 9.2 as a table, with the units of the premium. The principles sit in the
-order of the net total, from the lowest premium to the highest:
-
-```{r}
-#| label: table-92
-library(gt)
-table_92 <- data.frame(
-  principle = sub("_", " ", names(BOOK_92)),
-  do.call(rbind, BOOK_92)
-)
-names(table_92)[2:7] <- c("loading", "A", "B net", "B", "net", "total")
-table_92 <- table_92[order(table_92$net), ]
-gt(table_92, rowname_col = "principle") |>
-  tab_header("Table 9.2: Tame premiums by principle, each calibrated to the CCoC total",
-             "Currency units; the loading is the parameter of the principle") |>
-  tab_spanner("units", columns = c(A, `B net`, B)) |>
-  tab_spanner("totals", columns = c(net, total)) |>
-  fmt_number(columns = loading, decimals = 3) |>
-  fmt_number(columns = c(A, `B net`, B, net, total), decimals = 2)
-```
+Table 9.3 subtracts the premium of the total from the sum of the stand-alone
+premiums (SoP). The book prints the gross SoP for every principle but
+expected value:
 
 ```{r}
-cat(sprintf("%18s %9s %7s %8s %7s\n", "", "SoP gross", "delta", "SoP net", "delta"))
-for (principle in PRINCIPLES) {
+#| label: table-93
+BOOK_93 <- c(variance = 103.423, esscher = 103.423, exponential = 103.423, semi_variance = 103.477,
+             var = 104.656, dutch = 104.745, standard_deviation = 104.747, fischer = 104.778)
+rows <- lapply(PRINCIPLES, function(principle) {
   t <- calibrate_classical(tame_total, principle, tame_target)
   sop <- classical_premium(a_unit, principle, t) + classical_premium(b_unit, principle, t)
   sop_net <- classical_premium(a_unit, principle, t) + classical_premium(b_net, principle, t)
   net <- classical_premium(tame_net_total, principle, t)
-  cat(sprintf("%-18s %9.3f %7.3f %8.3f %7.3f\n", principle, sop, sop - tame_target, sop_net, sop_net - net))
-}
-cat("book SoP gross: variance, Esscher, exponential 103.423; semivariance 103.477; VaR 104.656;",
-    "Dutch 104.745; standard deviation 104.747; Fischer 104.778\n")
+  c(sop, sop - tame_target, unname(BOOK_93[principle]), sop_net, sop_net - net)
+})
+table_93 <- data.frame(principle = gsub("_", " ", PRINCIPLES), do.call(rbind, rows))
+names(table_93)[-1] <- c("sop", "delta", "book", "sop_net", "delta_net")
+gt(table_93, rowname_col = "principle") |>
+  tab_header("Table 9.3: stand-alone sum less the pooled premium", "Tame; currency units") |>
+  tab_spanner("gross", columns = c("sop", "delta", "book")) |>
+  tab_spanner("net", columns = c("sop_net", "delta_net")) |>
+  fmt_number(columns = everything(), decimals = 3) |>
+  sub_missing(missing_text = "") |>
+  cols_label(sop = "SoP", delta = "delta", book = "book SoP", sop_net = "SoP", delta_net = "delta")
 ```
 
 ```text
-                   SoP gross   delta  SoP net   delta
-expected_value       103.423   0.000  102.476   0.000
-variance             103.423   0.000  101.672   0.000
-esscher              103.423   0.000  101.502   0.000
-exponential          103.423   0.000  101.447   0.000
-semi_variance        103.477   0.054  101.381  -0.030
-var                  104.656   1.233  104.656   1.984
-dutch                104.745   1.322  103.397   1.301
-standard_deviation   104.747   1.324  103.275   1.214
-fischer              104.778   1.355  103.046   1.140
-book SoP gross: variance, Esscher, exponential 103.423; semivariance 103.477; VaR 104.656; Dutch 104.745; standard deviation 104.747; Fischer 104.778
+                        SoP  delta  book SoP      SoP   delta
+expected value      103.423  0.000            102.476   0.000
+variance            103.423  0.000   103.423  101.672   0.000
+esscher             103.423  0.000   103.423  101.502   0.000
+exponential         103.423  0.000   103.423  101.447   0.000
+semi variance       103.477  0.054   103.477  101.381  -0.030
+var                 104.656  1.233   104.656  104.656   1.984
+dutch               104.745  1.322   104.745  103.397   1.301
+standard deviation  104.747  1.324   104.747  103.275   1.214
+fischer             104.778  1.355   104.778  103.046   1.140
 ```
 
 The delta columns show the book's main point:
@@ -340,16 +378,14 @@ The delta columns show the book's main point:
 - The semivariance is neither. Its delta changes sign between gross and net
   (0.054 and -0.029 in the book).
 
-The formula of a principle sets its view of diversification. The data does not
-change that view.
+The formula of a principle sets its view of diversification, not the data.
 
 Two principles are sensitive to how the code makes the net B grid of Tame. The
 exponential and Esscher premiums weight an outcome x by exp(t x). On a grid
-that goes to 1,024, the factor exp(0.08 x) is approximately 1e35 at the top.
-Thus a round-off of 1e-19 from an FFT at the top of the grid would give a
-premium of hundreds. `tower_on_grid()` sets probabilities below machine epsilon
-to zero, as `remove_fuzz` in `aggregate` does. Thus its net grid gives the same
-price as the exact grid:
+that goes to 1,024, exp(0.08 x) is approximately 1e35 at the top, so an FFT
+round-off of 1e-19 there would give a premium of hundreds. `tower_on_grid()` sets probabilities below machine
+epsilon to zero, as `remove_fuzz` in `aggregate` does. Thus its net grid gives
+the same price as the exact grid:
 
 ```{r}
 cover <- reinsurance_tower(list(aggregate_stop_loss("B", 12.91, 56.17)))
@@ -372,9 +408,10 @@ To clean a grid from a different source (for example, your own FFT) in the
 same way, use `remove_fuzz()` before you price with these two principles.
 
 On Cat/Non-Cat, the principles give very different results (Tables 9.5 and
-9.6). The columns are Cat net, Cat gross, Non-Cat, total net and total gross:
+9.6):
 
 ```{r}
+#| label: table-95
 BOOK_95 <- list( # Table 9.5, Cat/Non-Cat: loading; Cat net, Cat, Non-Cat, total net, total gross
   expected_value = c(0.152, 20.480, 23.030, 92.121, 112.601, 115.151),
   var = c(0.818, 30.109, 30.109, 90.734, 113.391, 115.141),
@@ -387,36 +424,54 @@ BOOK_95 <- list( # Table 9.5, Cat/Non-Cat: loading; Cat net, Cat, Non-Cat, total
 cnc_target <- total_row(natural_price(cnc, ccoc, p = 0.999))$premium
 cnc_total <- total_grid(cnc)
 cnc_net_total <- total_grid(cnc_net)
-cat(sprintf("%18s loading         %8s %8s %8s %8s %8s\n", "", "Cat net", "Cat", "Non-Cat", "net", "total"))
-classical_table(cnc_total, list(cat_net, cat_unit, non_cat, cnc_net_total, cnc_total), cnc_target, BOOK_95)
+cnc_95 <- classical_frame(cnc_total, list(cat_net, cat_unit, non_cat, cnc_net_total, cnc_total),
+                          c("Cat net", "Cat", "Non-Cat", "net", "total"), cnc_target, BOOK_95)
+classical_gt(cnc_95, "Tables 9.5 and 9.6: Cat/Non-Cat premiums by principle, each calibrated to the CCoC total",
+             "Currency units; the loading is the parameter of the principle",
+             list(units = c("Cat net", "Cat", "Non-Cat"), totals = c("net", "total")))
 ```
 
 ```text
-                   loading          Cat net      Cat  Non-Cat      net    total
-expected_value     0.152 (0.152)   20.480   23.030   92.121  112.601  115.151
-var                0.818 (0.818)   30.109   30.109   90.734  113.391  115.141
-variance           0.028 (0.028)   22.572   31.139   84.012  106.584  115.151
-dutch              1.859 (1.859)   27.170   32.000   88.882  110.638  115.151
-semi_variance      0.040 (0.040)   22.512   32.782   83.091  105.193  115.151
-standard_deviation 0.650 (0.650)   26.301   32.991   87.797  109.331  115.151
-fischer            0.776 (0.776)   26.248   33.916   86.843  108.380  115.151
-largest difference from the book: 0.003
+                    prospicio   book  Cat net     Cat  Non-Cat      net    total    gap
+semi variance           0.040  0.040   22.512  32.782   83.091  105.193  115.151  0.003
+variance                0.028  0.028   22.572  31.139   84.012  106.584  115.151  0.002
+fischer                 0.776  0.776   26.248  33.916   86.843  108.380  115.151  0.002
+standard deviation      0.650  0.650   26.301  32.991   87.797  109.331  115.151  0.001
+dutch                   1.859  1.859   27.170  32.000   88.882  110.638  115.151  0.000
+expected value          0.152  0.152   20.480  23.030   92.121  112.601  115.151  0.000
+var                     0.818  0.818   30.109  30.109   90.734  113.391  115.141  0.000
 ```
 
-Seven principles agree to within 0.003. This is the size of difference that two
-different truncations of a lognormal tail give. The Esscher and exponential
-principles do not agree, and you should not expect them to agree:
+Seven principles agree to within 0.003, the size of difference that two
+truncations of a lognormal tail give. The Esscher and exponential principles do
+not agree, and you should not expect them to:
 
 ```{r}
+#| label: table-exp
 BOOK_EXP <- list(esscher = c(0.011, 23.575, 35.944, 81.561, 105.054),
                  exponential = c(0.014, 24.760, 39.697, 81.059, 105.619))
+rows <- list()
 for (principle in names(BOOK_EXP)) {
-  book <- BOOK_EXP[[principle]]
   t <- calibrate_classical(cnc_total, principle, cnc_target)
   got <- sapply(list(cat_net, cat_unit, non_cat, cnc_net_total), function(g) classical_premium(g, principle, t))
-  cat(sprintf("%-11s %.4f (%s) %s\n", principle, t, pyfloat(book[1]),
-              paste(sprintf("%7.3f (%7.3f)", got, book[-1]), collapse = " ")))
+  rows[[length(rows) + 1]] <- c(t, got)
+  rows[[length(rows) + 1]] <- BOOK_EXP[[principle]]
 }
+table_exp <- data.frame(principle = interleave(names(BOOK_EXP)), do.call(rbind, rows), check.names = FALSE)
+names(table_exp)[-1] <- c("loading", "Cat net", "Cat", "Non-Cat", "net")
+pair_table(table_exp, c(loading = 4, `Cat net` = 3, Cat = 3, `Non-Cat` = 3, net = 3)) |>
+  tab_header("Esscher and exponential premiums on Cat/Non-Cat", "Currency units; the book's values are as printed")
+```
+
+```text
+                   loading  Cat net     Cat  Non-Cat      net
+esscher             0.0103   22.760  33.639   81.512  104.272
+esscher, book        0.011   23.575  35.944   81.561  105.054
+exponential         0.0138   22.820  34.139   81.012  103.832
+exponential, book    0.014    24.76  39.697   81.059  105.619
+```
+
+```{r}
 lower <- cat_unit@probs[seq_len(POINTS / 2)]
 top_half <- grid_distribution(STEP, lower / sum(lower))
 cat(sprintf("exponential premium of Cat at loading 0.014: grid to 1,024 %.3f, grid to 512 %.3f\n",
@@ -424,38 +479,39 @@ cat(sprintf("exponential premium of Cat at loading 0.014: grid to 1,024 %.3f, gr
 ```
 
 ```text
-esscher     0.0103 (0.011)  22.760 ( 23.575)  33.639 ( 35.944)  81.512 ( 81.561) 104.272 (105.054)
-exponential 0.0138 (0.014)  22.820 ( 24.760)  34.139 ( 39.697)  81.012 ( 81.059) 103.832 (105.619)
 exponential premium of Cat at loading 0.014: grid to 1,024 35.497, grid to 512 25.189
 ```
 
 A lognormal has no exponential moment: E[exp(t X)] is infinite for every t > 0.
-Thus both premiums are artifacts of the point where the grid stops. When the
-grid stops at 512, not 1,024, the Cat premium moves by several units. The book
-makes the same point for the Hurricane/SCS case, and it does not apply these
-principles there. On Cat/Non-Cat, its numbers are what its grid gave. Do not
-use these two principles for a loss without a light tail.
+Both premiums are artifacts of the point where the grid stops. When the grid
+stops at 512, not 1,024, the Cat premium moves by several units. The book does
+not apply these principles to the Hurricane/SCS case for this reason. Do not
+use them for a loss without a light tail.
 
 ## 4. Ruin theory and the natural scale of a market
 
 Section 9.3 uses the Pollaczeck-Khinchine formula for the probability of
 eventual ruin of a compound Poisson surplus process. In prospicio this is
-`eventual_ruin()` and its `capital_interpolated`. The example is a liability line with lognormal claims of mean
-50,000 and CV 10, limited at 1M, 5M or 10M.
+`eventual_ruin()` and its `capital_interpolated`. The example is a liability
+line with lognormal claims of mean 50,000 and CV 10, limited at 1M, 5M or 10M.
 
 With a margin r on expected loss, the formula gives the starting surplus u at
 which eventual ruin has probability p. The annual margin, n r E[X] for n claims
 a year, must pay a cost of capital delta on that surplus. Thus a market needs
 at least n = delta u / (r E[X]) claims a year (Eq. (9.2)). Table 9.15
-tabulates n with delta = 0.1:
+tabulates n with delta = 0.1. The last three columns are the book's n over
+prospicio's:
 
 ```{r}
+#| label: table-915
 claim <- lognormal_from_mean_cv(50000, 10)
 BOOK_915 <- list( # Table 9.15: limit -> p -> n at r = 0.05, 0.1, 0.25
   list(limit = 1e6, book = list(`0.01` = c(10172, 2655, 476.1), `0.1` = c(5021, 1294, 224.5))),
   list(limit = 1e7, book = list(`0.01` = c(33610, 9087, 1765), `0.1` = c(16384, 4324, 793.6)))
 )
 RUIN_P <- c(0.01, 0.1)
+rows <- list()
+cases <- character()
 for (row in BOOK_915) {
   limit <- row$limit
   # 10,000 steps up to the limit; the claim's mass above the limit lands on it
@@ -466,48 +522,55 @@ for (row in BOOK_915) {
   })
   for (i in seq_along(RUIN_P)) {
     book <- row$book[[i]]
-    cat(sprintf("limit %10s p %4s: n %s   book %s   ratio %s
-", formatC(limit, format = "d", big.mark = ","),
-                as.character(RUIN_P[i]), paste(sprintf("%8.1f", counts[i, ]), collapse = " "),
-                paste(sprintf("%8s", as.character(book)), collapse = " "),
-                paste(sprintf("%.2f", book / counts[i, ]), collapse = " ")))
+    cases <- c(cases, sprintf("%s, p %s", formatC(limit, format = "d", big.mark = ","), RUIN_P[i]))
+    rows[[length(rows) + 1]] <- c(counts[i, ], book, book / counts[i, ])
   }
 }
+table_915 <- data.frame(case = cases, do.call(rbind, rows))
+names(table_915)[-1] <- c("n1", "n2", "n3", "b1", "b2", "b3", "x1", "x2", "x3")
+gt(table_915, rowname_col = "case") |>
+  tab_header("Table 9.15: claims a year a market needs", "By limit and ruin probability p, at margins r = 5%, 10%, 25%") |>
+  tab_spanner("prospicio", columns = c("n1", "n2", "n3")) |>
+  tab_spanner("book", columns = c("b1", "b2", "b3")) |>
+  tab_spanner("book / prospicio", columns = c("x1", "x2", "x3")) |>
+  fmt_number(columns = c("n1", "n2", "n3"), decimals = 1, use_seps = FALSE) |>
+  fmt_number(columns = c("b1", "b2", "b3"), decimals = 1, drop_trailing_zeros = TRUE, use_seps = FALSE) |>
+  fmt_number(columns = c("x1", "x2", "x3"), decimals = 2) |>
+  cols_label(n1 = "5%", n2 = "10%", n3 = "25%", b1 = "5%", b2 = "10%", b3 = "25%", x1 = "5%", x2 = "10%", x3 = "25%")
 ```
 
 ```text
-limit  1,000,000 p 0.01: n   1019.0    266.0     47.7   book    10172     2655    476.1   ratio 9.98 9.98 9.98
-limit  1,000,000 p  0.1: n    503.0    129.7     22.5   book     5021     1294    224.5   ratio 9.98 9.98 9.99
-limit 10,000,000 p 0.01: n   3362.0    909.0    176.5   book    33610     9087     1765   ratio 10.00 10.00 10.00
-limit 10,000,000 p  0.1: n   1639.0    432.5     79.4   book    16384     4324    793.6   ratio 10.00 10.00 10.00
+                        5%    10%    25%     5%   10%    25%     5%    10%    25%
+1,000,000, p 0.01   1019.0  266.0   47.7  10172  2655  476.1   9.98   9.98   9.98
+1,000,000, p 0.1     503.0  129.7   22.5   5021  1294  224.5   9.98   9.98   9.99
+10,000,000, p 0.01  3362.0  909.0  176.5  33610  9087   1765  10.00  10.00  10.00
+10,000,000, p 0.1   1639.0  432.5   79.4  16384  4324  793.6  10.00  10.00  10.00
 ```
 
-The counts are a constant factor of 10 below the counts in Table 9.15, at every
-limit, probability and margin. The book's table is exactly u / (r E[X]), which
-is Eq. (9.2) with delta = 1. Thus the table appears to leave out the cost of
-capital of 0.1 that its caption gives. The example in the text has the same
-factor. It gives 39,776 claims, approximately 800,000 policies, for a 1M limit
-at p = 0.01 and r = 0.025.
-
-Trust the ratio of the two columns. The factor is the same in every cell. Thus
-the book's conclusions about how the scale changes with the limit, the margin
-and the ruin probability are correct. (The grid causes the remaining 0.2%.)
+Every prospicio count is one tenth of the book's. The book's table is
+u / (r E[X]), which is Eq. (9.2) with delta = 1, so it seems to leave out the
+cost of capital of 0.1 that its caption gives. The example in the text has the
+same factor: 39,776 claims, approximately 800,000 policies, for a 1M limit at
+p = 0.01 and r = 0.025. The factor is the same in every cell, so the book's
+conclusions about how the scale changes with the limit, the margin and the ruin
+probability are correct. (The grid causes the remaining 0.2%.)
 
 ## 5. The modern view: a price for each layer of assets
 
 Chapter 10 starts from the layer. The risk that losses consume the l-th unit of
 assets is a Bernoulli with probability s = S(l). A market prices this risk at
-g(s), where g is a distortion. The sum over the layers gives the premium for a loss X with
-assets a: the integral of g(S(x)) from 0 to a. This is the SRM of the capped
-loss X ^ a.
+g(s), where g is a distortion. The sum over the layers gives the premium for a
+loss X with assets a: the integral of g(S(x)) from 0 to a. This is the SRM of
+the capped loss X ^ a.
 
 A Bernoulli layer has expected loss s, premium g(s), margin g(s) - s and
 capital 1 - g(s). Thus its loss ratio is s / g(s), its return on capital is
 (g(s) - s) / (1 - g(s)), and its premium leverage is g(s) / (1 - g(s)).
 Exercise 142 tabulates these for the proportional hazard distortions s^rho
-(Table 10.3):
+(Table 10.3). The last column is the largest gap to the book's table:
 
 ```{r}
+#| label: table-103
 BOOK_103 <- list( # Table 10.3 at s = 0.01, 0.1, 0.5: loss ratio, risk return, premium leverage
   `0.4` = list(c(0.0631, 0.2512, 0.6598), c(0.1765, 0.4953, 1.0649), c(0.1883, 0.6614, 3.1298)),
   `0.5` = list(c(0.1000, 0.3162, 0.7071), c(0.1000, 0.3162, 0.7071), c(0.1111, 0.4625, 2.4142)),
@@ -515,20 +578,29 @@ BOOK_103 <- list( # Table 10.3 at s = 0.01, 0.1, 0.5: loss ratio, risk return, p
   `0.9` = list(c(0.6310, 0.7943, 0.9330), c(0.0059, 0.0296, 0.0773), c(0.0161, 0.1440, 1.1546))
 )
 S <- c(0.01, 0.1, 0.5)
-for (rho in names(BOOK_103)) {
+rows <- lapply(names(BOOK_103), function(rho) {
   gs <- distortion_g(distortion("proportional_hazard", as.numeric(rho)), S)
   stats <- list(S / gs, (gs - S) / (1 - gs), gs / (1 - gs))
-  worst <- max(abs(unlist(stats) - unlist(BOOK_103[[rho]])))
-  cat(sprintf("rho %s: loss ratio %s, return %s, leverage %s  largest difference %.4f\n", rho,
-              pylist(round(stats[[1]], 4)), pylist(round(stats[[2]], 4)), pylist(round(stats[[3]], 4)), worst))
-}
+  c(unlist(stats), max(abs(unlist(stats) - unlist(BOOK_103[[rho]]))))
+})
+names_103 <- paste0(rep(c("lr", "roc", "lev"), each = 3), 1:3)
+table_103 <- data.frame(rho = paste("rho", names(BOOK_103)), do.call(rbind, rows))
+names(table_103)[-1] <- c(names_103, "gap")
+gt(table_103, rowname_col = "rho") |>
+  tab_header("Table 10.3: Bernoulli layers under the proportional hazard", "At s = 0.01, 0.1 and 0.5") |>
+  tab_spanner("loss ratio", columns = names_103[1:3]) |>
+  tab_spanner("return on capital", columns = names_103[4:6]) |>
+  tab_spanner("premium leverage", columns = names_103[7:9]) |>
+  fmt_number(columns = everything(), decimals = 4) |>
+  cols_label(.list = setNames(as.list(paste("s =", rep(S, 3))), names_103))
 ```
 
 ```text
-rho 0.4: loss ratio [0.0631, 0.2512, 0.6598], return [0.1765, 0.4953, 1.0649], leverage [0.1883, 0.6614, 3.1298]  largest difference 0.0000
-rho 0.5: loss ratio [0.1, 0.3162, 0.7071], return [0.1, 0.3162, 0.7071], leverage [0.1111, 0.4625, 2.4142]  largest difference 0.0000
-rho 0.7: loss ratio [0.2512, 0.5012, 0.8123], return [0.031, 0.1243, 0.3006], leverage [0.0415, 0.2493, 1.6013]  largest difference 0.0000
-rho 0.9: loss ratio [0.631, 0.7943, 0.933], return [0.0059, 0.0296, 0.0773], leverage [0.0161, 0.144, 1.1546]  largest difference 0.0000
+         s = 0.01  s = 0.1  s = 0.5  s = 0.01  s = 0.1  s = 0.5  s = 0.01  s = 0.1  s = 0.5     gap
+rho 0.4    0.0631   0.2512   0.6598    0.1765   0.4953   1.0649    0.1883   0.6614   3.1298  0.0000
+rho 0.5    0.1000   0.3162   0.7071    0.1000   0.3162   0.7071    0.1111   0.4625   2.4142  0.0000
+rho 0.7    0.2512   0.5012   0.8123    0.0310   0.1243   0.3006    0.0415   0.2493   1.6013  0.0000
+rho 0.9    0.6310   0.7943   0.9330    0.0059   0.0296   0.0773    0.0161   0.1440   1.1546  0.0000
 ```
 
 Table 10.3 agrees in every cell.
@@ -569,34 +641,39 @@ the assets. In Tables 11.1 and 11.3, the PH with rho 0.5 prices the uncapped
 loss at 51.156 and the loss capped at 80 at 42.828:
 
 ```{r}
+#| label: table-cap
 OUTCOMES <- c(0, 1, 8, 9, 10, 11, 90, 98, 100)
 SIXTEENTHS <- c(4, 2, 2, 1, 2, 1, 2, 1, 1)
 draws <- rep(OUTCOMES, SIXTEENTHS)
 ph <- distortion("proportional_hazard", 0.5)
-cat("assets   E[X ^ a]   PH premium   margin   capital\n")
-for (a in c(10, 50, 80, 90, 100)) {
+rows <- lapply(c(10, 50, 80, 90, 100), function(a) {
   capped <- sampled(pmin(draws, a))
   premium <- risk_measure(capped, ph)
-  cat(sprintf("%6d %10.3f %12.3f %8.3f %9.3f\n", a, mean(capped), premium, premium - mean(capped), a - premium))
-}
-cat("book: a = 80 premium 42.828 (Table 11.3); a = 100 premium 51.156 (Table 11.1)\n")
+  book <- c(`80` = 42.828, `100` = 51.156)[as.character(a)]
+  c(mean(capped), premium, unname(book), premium - mean(capped), a - premium)
+})
+table_cap <- data.frame(assets = c("10", "50", "80", "90", "100"), do.call(rbind, rows))
+names(table_cap)[-1] <- c("mean", "premium", "book", "margin", "capital")
+gt(table_cap, rowname_col = "assets") |>
+  tab_header("Premium of the loss capped at the assets", "PH with rho 0.5 on the Simple Discrete Example") |>
+  fmt_number(columns = everything(), decimals = 3) |>
+  sub_missing(missing_text = "") |>
+  cols_label(mean = "E[X ^ a]", premium = "PH premium", book = "book premium")
 ```
 
 ```text
-assets   E[X ^ a]   PH premium   margin   capital
-    10      6.062        7.769    1.706     2.231
-    50     16.125       27.828   11.703    22.172
-    80     23.625       42.828   19.203    37.172
-    90     26.125       47.828   21.703    42.172
-   100     27.250       51.156   23.906    48.844
-book: a = 80 premium 42.828 (Table 11.3); a = 100 premium 51.156 (Table 11.1)
+     E[X ^ a]  PH premium  book premium  margin  capital
+10      6.062       7.769                 1.706    2.231
+50     16.125      27.828                11.703   22.172
+80     23.625      42.828        42.828  19.203   37.172
+90     26.125      47.828                21.703   42.172
+100    27.250      51.156        51.156  23.906   48.844
 ```
 
-Premium funds most of the low layers. With assets of 10, the premium is 7.8 and
-the capital is 2.2, because losses consume those layers in most outcomes. From
-11 to 90, losses consume each added unit of assets only in the 25% of outcomes
-above 11. Each such unit adds g(0.25) = 0.5 of premium and 0.5 of capital. The
-top layers add mostly capital.
+Premium funds most of the low layers, because losses consume them in most
+outcomes. From 11 to 90, losses consume each added unit of assets only in the
+25% of outcomes above 11, so each unit adds g(0.25) = 0.5 of premium and 0.5 of
+capital. The top layers add mostly capital.
 
 ## 6. Calibrating the five distortions
 
@@ -607,21 +684,29 @@ linear and built from layer costs of capital. Table 11.5 prints the calibrated
 parameters:
 
 ```{r}
+#| label: table-115
 FAMILIES <- c("ccoc", "ph", "wang", "dual", "tvar")
 BOOK_115 <- list(Tame = c(0.10, 0.683, 0.375, 1.576, 0.227), `Cat/Non-Cat` = c(0.10, 0.596, 0.611, 2.463, 0.482))
 fitted <- list()
+rows <- list()
 for (b in list(list(name = "Tame", book = tame, p = 0.9999), list(name = "Cat/Non-Cat", book = cnc, p = 0.999))) {
   fitted[[b$name]] <- sapply(FAMILIES, function(f) calibrate_portfolio(b$book, f, p = b$p, return_on_capital = 0.10),
                              simplify = FALSE)
-  values <- sapply(fitted[[b$name]], function(d) d@param[1])
-  cat(sprintf("%-11s %s\n", b$name, paste(sprintf("%s %.3f (%s)", FAMILIES, values, pyfloat(BOOK_115[[b$name]])),
-                                          collapse = "  ")))
+  rows[[length(rows) + 1]] <- unname(sapply(fitted[[b$name]], function(d) d@param[1]))
+  rows[[length(rows) + 1]] <- BOOK_115[[b$name]]
 }
+table_115 <- data.frame(book = interleave(names(BOOK_115)), do.call(rbind, rows))
+names(table_115)[-1] <- FAMILIES
+pair_table(table_115, setNames(rep(3, 5), FAMILIES)) |>
+  tab_header("Table 11.5: calibrated parameters", "Each family calibrated to the gross CCoC premium")
 ```
 
 ```text
-Tame        ccoc 0.100 (0.1)  ph 0.683 (0.683)  wang 0.375 (0.375)  dual 1.576 (1.576)  tvar 0.227 (0.227)
-Cat/Non-Cat ccoc 0.100 (0.1)  ph 0.596 (0.596)  wang 0.611 (0.611)  dual 2.463 (2.463)  tvar 0.482 (0.482)
+                    ccoc     ph   wang   dual   tvar
+Tame               0.100  0.683  0.375  1.576  0.227
+Tame, book           0.1  0.683  0.375  1.576  0.227
+Cat/Non-Cat        0.100  0.596  0.611  2.463  0.482
+Cat/Non-Cat, book    0.1  0.596  0.611  2.463  0.482
 ```
 
 All ten parameters agree. `calibrate_portfolio()` returns a `distortion()`.
@@ -642,30 +727,48 @@ nu at some exceedance probabilities s. The values go from 2% for the most
 remote layers to 10% at s = 0.2. At each of these points g(s) =
 (s + nu) / (1 + nu), and the Blend interpolates between the points.
 `distortion_convex()` builds the smallest concave distortion through such
-points.
-The book's point at s = 0.03 is below the line through its neighbours, so the
-concave version lifts it a small amount:
+points. The book's point at s = 0.03 is below the line through its neighbours,
+so the concave version lifts it a small amount:
 
 ```{r}
+#| label: table-blend
 LAYER_S <- c(0.0, 0.01, 0.03, 0.05, 0.10, 0.20)
 LAYER_NU <- c(0.02, 0.03, 0.04, 0.06, 0.08, 0.10)
 specified <- (LAYER_S + LAYER_NU) / (1 + LAYER_NU)
 blend <- distortion_convex(c(LAYER_S, 1), c(specified, 1))
-cat("g at the specified s:", pylist(round(distortion_g(blend, LAYER_S), 4)),
-    " mass at zero", pyfloat(round(distortion_mass(blend), 4)), "\n")
-cat("specified           :", pylist(round(specified, 4)), "\n")
+table_blend <- data.frame(s = as.character(LAYER_S), nu = LAYER_NU, specified = specified,
+                          blend = distortion_g(blend, LAYER_S))
+gt(table_blend, rowname_col = "s") |>
+  tab_header("Table 11.6: the Blend through layer costs of capital", "g(s) at the specified points") |>
+  fmt_percent(columns = "nu", decimals = 0) |>
+  fmt_number(columns = c("specified", "blend"), decimals = 4) |>
+  cols_label(nu = "cost of capital", specified = "specified g", blend = "Blend g")
 ```
 
 ```text
-g at the specified s: [0.0, 0.0388, 0.0713, 0.1038, 0.1667, 0.2727]  mass at zero 0.0196
-specified           : [0.0196, 0.0388, 0.0673, 0.1038, 0.1667, 0.2727]
+      cost of capital  specified g  Blend g
+0                  2%       0.0196   0.0000
+0.01               3%       0.0388   0.0388
+0.03               4%       0.0673   0.0713
+0.05               6%       0.1038   0.1038
+0.1                8%       0.1667   0.1667
+0.2               10%       0.2727   0.2727
 ```
 
 At s = 0 a distortion is 0 by definition. The specified 0.0196 is the mass at
-zero, which is the rate on line of the most remote layer. `distortion_mass()`
-reports it.
-Only the point at s = 0.03 moves (0.0673 to 0.0713). The Blend is not
-calibrated, so it is the same distortion in both cases.
+zero (the rate on line of the most remote layer), which `distortion_mass()`
+reports. Only the point at s = 0.03 moves. The Blend is not calibrated, so it
+is the same distortion in both cases.
+
+```{r}
+#| label: blend-mass
+cat("mass at zero of the Blend:", pyfloat(round(distortion_mass(blend), 4)), "
+")
+```
+
+```text
+mass at zero of the Blend: 0.0196
+```
 
 The figure draws the six distortions of the Tame book. The grey line is
 g(s) = s, which prices a layer at its expected loss. The distance above it is
@@ -690,10 +793,12 @@ ggplot(curves, aes(s, g)) +
 
 Tables 11.7 and 11.8 price each unit stand-alone with each calibrated
 distortion, at its own VaR. They also price the book total, gross and net. The
-code compares the premiums. The tables also print margin, loss ratio, capital,
-return and leverage, which the pentagon derives from the premiums:
+tables also print margin, loss ratio, capital, return and leverage, which the
+pentagon derives from the premiums, so the code compares the premiums only.
+The last column is the largest relative gap to the book in the row:
 
 ```{r}
+#| label: table-117
 BOOK_117 <- list( # Table 11.7 (Tame) premiums: A, B, SoP, total; net B, net SoP, net total
   ccoc = c(51.89, 52.98, 104.9, 103.4, 50.98, 102.9, 101.5),
   ph = c(51.90, 52.89, 104.8, 103.4, 50.91, 102.8, 101.8),
@@ -711,57 +816,78 @@ BOOK_118 <- list( # Table 11.8 (Cat/Non-Cat) premiums: Cat, Non-Cat, SoP, total;
   blend = c(26.43, 82.39, 108.8, 106.8, 21.17, 103.6, 101.8)
 )
 
-by_unit <- function(gross, net, p, distortions, book_values, reinsured) {
-  largest <- 0
+by_unit <- function(gross, net, p, distortions, book_values, reinsured, labels, title) {
+  rows <- list()
   for (name in names(distortions)) {
     g <- price_stand_alone(gross, distortions[[name]], p)
     n <- price_stand_alone(net, distortions[[name]], p)
     got <- c(g$premium[1:2], g$premium[g$unit == "sum"], g$premium[g$unit == "total"],
              n$premium[reinsured], n$premium[n$unit == "sum"], n$premium[n$unit == "total"])
     book <- book_values[[name]]
-    largest <- max(largest, abs(got / book - 1))
-    cat(sprintf("%-5s %s   book %s\n", name, paste(sprintf("%7.2f", got), collapse = " "),
-                paste(pyfloat(book), collapse = " ")))
+    rows[[length(rows) + 1]] <- c(got, max(abs(got / book - 1)))
+    rows[[length(rows) + 1]] <- c(book, NA)
   }
-  cat(sprintf("largest relative difference from the book: %.2f%%\n", 100 * largest))
+  frame <- data.frame(distortion = interleave(names(distortions)), do.call(rbind, rows), check.names = FALSE)
+  names(frame)[-1] <- c(labels, "gap")
+  pair_table(frame, setNames(rep(2, length(labels)), labels)) |>
+    fmt_percent(columns = "gap", rows = seq(1, nrow(frame), by = 2), decimals = 2) |>
+    tab_header(title, "Premiums in currency units") |>
+    tab_spanner("gross", columns = labels[1:4]) |>
+    tab_spanner("net", columns = labels[5:7])
 }
 
-cat("Tame:   A       B     SoP   total   B net SoP net net total\n")
-by_unit(tame, tame_net, 0.9999, c(fitted$Tame, list(blend = blend)), BOOK_117, reinsured = 2)
-cat("Cat/Non-Cat: Cat Non-Cat SoP  total  Cat net SoP net net total\n")
-by_unit(cnc, cnc_net, 0.999, c(fitted$`Cat/Non-Cat`, list(blend = blend)), BOOK_118, reinsured = 1)
+by_unit(tame, tame_net, 0.9999, c(fitted$Tame, list(blend = blend)), BOOK_117, 2,
+        c("A", "B", "SoP", "total", "B net", "SoP net", "net total"), "Table 11.7: Tame premiums by distortion")
 ```
 
 ```text
-Tame:   A       B     SoP   total   B net SoP net net total
-ccoc    51.89   52.98  104.87  103.42   50.98  102.86  101.55   book 51.89 52.98 104.9 103.4 50.98 102.9 101.5
-ph      51.90   52.89  104.79  103.42   50.91  102.80  101.85   book 51.9 52.89 104.8 103.4 50.91 102.8 101.8
-wang    51.90   52.86  104.76  103.42   51.17  103.07  101.99   book 51.9 52.86 104.8 103.4 51.17 103.1 102.0
-dual    51.90   52.83  104.73  103.42   51.44  103.34  102.11   book 51.9 52.83 104.7 103.4 51.44 103.3 102.1
-tvar    51.90   52.81  104.71  103.42   51.62  103.53  102.24   book 51.9 52.81 104.7 103.4 51.63 103.5 102.2
-blend   51.05   51.62  102.67  101.89   50.03  101.08  100.53   book 51.05 51.62 102.7 101.9 50.03 101.1 100.5
-largest relative difference from the book: 0.05%
-Cat/Non-Cat: Cat Non-Cat SoP  total  Cat net SoP net net total
-ccoc    34.98   83.84  118.81  115.15   25.72  109.56  105.90   book 34.98 83.84 118.8 115.2 25.72 109.6 105.9
-ph      33.75   86.36  120.11  115.15   25.11  111.47  107.55   book 33.75 86.36 120.1 115.2 25.11 111.5 107.6
-wang    32.82   87.50  120.32  115.15   25.68  113.18  108.79   book 32.82 87.5 120.3 115.2 25.68 113.2 108.8
-dual    31.83   88.59  120.42  115.15   26.57  115.16  110.13   book 31.83 88.59 120.4 115.2 26.57 115.2 110.1
-tvar    31.15   89.17  120.32  115.15   26.88  116.05  110.88   book 31.15 89.17 120.3 115.2 26.88 116.0 110.9
-blend   26.43   82.39  108.82  106.76   21.17  103.56  101.82   book 26.43 82.39 108.8 106.8 21.17 103.6 101.8
-largest relative difference from the book: 0.04%
+                 A      B     SoP   total  B net  SoP net  net total    gap
+ccoc         51.89  52.98  104.87  103.42  50.98   102.86     101.55  0.05%
+ccoc, book   51.89  52.98   104.9   103.4  50.98    102.9      101.5
+ph           51.90  52.89  104.79  103.42  50.91   102.80     101.85  0.05%
+ph, book      51.9  52.89   104.8   103.4  50.91    102.8      101.8
+wang         51.90  52.86  104.76  103.42  51.17   103.07     101.99  0.04%
+wang, book    51.9  52.86   104.8   103.4  51.17    103.1        102
+dual         51.90  52.83  104.73  103.42  51.44   103.34     102.11  0.04%
+dual, book    51.9  52.83   104.7   103.4  51.44    103.3      102.1
+tvar         51.90  52.81  104.71  103.42  51.62   103.53     102.24  0.04%
+tvar, book    51.9  52.81   104.7   103.4  51.63    103.5      102.2
+blend        51.05  51.62  102.67  101.89  50.03   101.08     100.53  0.03%
+blend, book  51.05  51.62   102.7   101.9  50.03    101.1      100.5
 ```
 
-Every premium in both tables agrees with the four significant figures of the
-book, to within one in the last digit. For example, the PH net total is 101.85
-against a printed 101.8, and the TVaR net B is 51.62 against 51.63.
+```{r}
+#| label: table-118
+by_unit(cnc, cnc_net, 0.999, c(fitted$`Cat/Non-Cat`, list(blend = blend)), BOOK_118, 1,
+        c("Cat", "Non-Cat", "SoP", "total", "Cat net", "SoP net", "net total"),
+        "Table 11.8: Cat/Non-Cat premiums by distortion")
+```
 
-Read across the rows. All five calibrated distortions charge the gross book the
-same 103.4 or 115.2, by construction. But they disagree about the units alone
-and about the net book. In Cat/Non-Cat, the CCoC charges Cat alone 34.98 and
-the TVaR charges 31.15, and Non-Cat goes the other way. The net book costs
-105.9 under the CCoC and 110.9 under TVaR. Thus the value of the Cat cover to
-the insurer (gross minus net premium) is from 9.3 to 4.3. The value depends on
-the distortion that the capital providers use.
+```text
+               Cat  Non-Cat     SoP   total  Cat net  SoP net  net total    gap
+ccoc         34.98    83.84  118.81  115.15    25.72   109.56     105.90  0.04%
+ccoc, book   34.98    83.84   118.8   115.2    25.72    109.6      105.9
+ph           33.75    86.36  120.11  115.15    25.11   111.47     107.55  0.04%
+ph, book     33.75    86.36   120.1   115.2    25.11    111.5      107.6
+wang         32.82    87.50  120.32  115.15    25.68   113.18     108.79  0.04%
+wang, book   32.82     87.5   120.3   115.2    25.68    113.2      108.8
+dual         31.83    88.59  120.42  115.15    26.57   115.16     110.13  0.04%
+dual, book   31.83    88.59   120.4   115.2    26.57    115.2      110.1
+tvar         31.15    89.17  120.32  115.15    26.88   116.05     110.88  0.04%
+tvar, book   31.15    89.17   120.3   115.2    26.88      116      110.9
+blend        26.43    82.39  108.82  106.76    21.17   103.56     101.82  0.04%
+blend, book  26.43    82.39   108.8   106.8    21.17    103.6      101.8
+```
+
+Every premium agrees with the book's four significant figures, to within one in
+the last digit.
+
+All five calibrated distortions charge the gross book the same 103.4 or 115.2,
+by construction. They disagree about the units alone and about the net book. In
+Cat/Non-Cat, the CCoC charges Cat alone 34.98 and the TVaR 31.15, and Non-Cat
+goes the other way. The net book costs 105.9 under the CCoC and 110.9 under
+TVaR, so the Cat cover (gross minus net premium) is worth 9.3 or 4.3. The value
+depends on the distortion that the capital providers use.
 
 The figure shows both points for Cat/Non-Cat, with the premiums of Table 11.8:
 
