@@ -5,4 +5,4 @@
   `Validation` (`passes`, the failures by `aggregate`'s names `SEV_MEAN` to
   `AGG_SKEW`, `ALIASING` and `DEFECTIVE`, the six moment terms, the
   convolution residual and the mass beyond the grid); Python
-  `validate_grid` and `Validation`, R `validate_grid()` (#778).
+  `validate_grid` and `Validation`, R `validate_grid()` (#778, #820).
