@@ -20,4 +20,4 @@
   `aggregate` 2.1.0's extended set that adds Tsallis
   (`distortion::calibrate_all`, `Family::EXTENDED`; Python and R
   `calibrate_distortions(..., extended=)`, Excel
-  `PRO.CAP.DISTORTION.CALIBRATE` with `families` `"extended"`) (#771).
+  `PRO.CAP.DISTORTION.CALIBRATE` with `families` `"extended"`) (#771, #812).
