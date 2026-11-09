@@ -82,6 +82,8 @@ recommend_grid_rust <- function(frequency, severity, log2, p, p_star) .Call(wrap
 
 recommend_portfolio_grid_rust <- function(frequencies, severities, log2, p, p_star) .Call(wrap__recommend_portfolio_grid_rust, frequencies, severities, log2, p, p_star)
 
+validate_grid_rust <- function(frequency, severity, step, points, eps) .Call(wrap__validate_grid_rust, frequency, severity, step, points, eps)
+
 audit_grid_rust <- function(frequency, severity, step, log2, settings) .Call(wrap__audit_grid_rust, frequency, severity, step, log2, settings)
 
 audit_portfolio_grid_rust <- function(frequencies, severities, step, log2, settings) .Call(wrap__audit_portfolio_grid_rust, frequencies, severities, step, log2, settings)

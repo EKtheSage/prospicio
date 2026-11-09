@@ -1964,3 +1964,19 @@ def test_importance_sampling_of_the_tail():
         simulate_events_weighted(freq, sev, 10, 1, tail_threshold=20.0, tail_share=1.0)
     with pytest.raises(ValueError):
         WeightedSample([1.0, 2.0], [0.0, 0.0])
+
+
+def test_validate_grid_matches_aggregate():
+    """The verdict on a grid against aggregate 2.1.0's valid (#778,
+    validation/scripts/aggregate_validation.py)."""
+    from prospicio.aggregate import validate_grid
+    from prospicio.distributions import Gamma
+
+    n, x = Poisson(50.0), Gamma.from_mean_cv(10.0, 0.5)
+    fine = validate_grid(n, x, 0.5, 2**11)
+    assert fine.passes and fine.flags == [] and fine.description == "not unreasonable"
+    assert all(t is None or t <= 1.0 for t in fine.terms.values())
+    coarse = validate_grid(n, x, 4.0, 2**9)
+    assert coarse.flags == ["SEV_MEAN", "SEV_CV", "SEV_SKEW", "AGG_MEAN", "AGG_CV"]
+    short = validate_grid(n, x, 0.25, 2**10)
+    assert short.flags == ["AGG_MEAN", "AGG_CV", "AGG_SKEW", "DEFECTIVE"] and short.tail_mass > 1e-4

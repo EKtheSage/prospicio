@@ -2600,3 +2600,43 @@ fn importance_sampling_matches_the_fft_tail_with_a_smaller_error() {
     }
     assert!((is.mean() - exact.mean()).abs() < 4.0 * is.standard_error_mean(50).unwrap());
 }
+
+/// The verdict on a compound distribution on a grid against `aggregate`
+/// 2.1.0's `valid` (#778, `validation/scripts/aggregate_validation.py`):
+/// each flag set or not, and `passes`.
+#[test]
+fn validation_verdict_matches_aggregate() {
+    use prospicio_aggregate::{VALIDATION_EPS, validate_grid};
+    use prospicio_prob::{Dist, Gamma, Lognormal, PolicyLimits, SeverityDist};
+    check(&reference("validation_aggregate.csv"), |c| {
+        let f = fields(c);
+        let n = Poisson::new(c.param("params", "n")).ok()?;
+        let (bs, log2) = (c.param("params", "bs"), c.param("params", "log2") as u32);
+        let mean = c.param("params", "mean");
+        let cv = c.param("params", "cv");
+        let v = match f["severity"] {
+            "gamma" => validate_grid(
+                &n,
+                &Gamma::from_mean_cv(mean, cv).ok()?,
+                bs,
+                1 << log2,
+                VALIDATION_EPS,
+            ),
+            "lognormal" => {
+                let ln =
+                    SeverityDist::try_from(Dist::from(Lognormal::from_mean_cv(mean, cv).ok()?))
+                        .ok()?;
+                let capped =
+                    PolicyLimits::new(ln, vec![c.param("params", "cap")], vec![1.0]).ok()?;
+                validate_grid(&n, &capped, bs, 1 << log2, VALIDATION_EPS)
+            }
+            _ => return None,
+        }
+        .ok()?;
+        let on = match c.get("quantity") {
+            "passes" => v.passes(),
+            flag => v.flags.iter().any(|x| x.name() == flag),
+        };
+        Some(if on { 1.0 } else { 0.0 })
+    });
+}

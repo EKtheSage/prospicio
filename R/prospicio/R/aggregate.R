@@ -107,6 +107,12 @@ round_bucket <- function(bs) rust_result(round_bucket_rust(as.double(bs)))
 #' terms score the claim-weighted mixture of the units' severities, the
 #' aggregate terms the total.
 #'
+#' `validate_grid()` is the verdict on one grid, `aggregate` 2.1.0's `valid`:
+#' the six terms above 1 fail as `SEV_MEAN` to `AGG_SKEW`, `ALIASING` when the
+#' aggregate's mean differs from `E[N]` times the discretized severity's by
+#' more than `1e-5` with no mass beyond the grid, and `DEFECTIVE` when more
+#' than `1e-4` lies beyond it. A pass says the grid is "not unreasonable".
+#'
 #' @param units A list of units, each `list(frequency, severity)`.
 #' @param frequency A claim count.
 #' @param severity Any severity but a [sampled] distribution.
@@ -121,6 +127,7 @@ round_bucket <- function(bs) rust_result(round_bucket_rust(as.double(bs)))
 #' @param max_doublings Steps doubled or halved at most this many times each way.
 #' @param log2_cap `log2` never grows past it.
 #' @param log2_floor The half-size row is tried only above it.
+#' @param points The number of points of the grid `validate_grid()` checks.
 #' @returns `recommend_portfolio_grid()`: a list as [recommend_grid()]'s.
 #'   `audit_grid()` and `audit_portfolio_grid()`: a list with `cells` (a
 #'   data frame, the center first: `d_step` and `d_log2`, the moves from the
@@ -129,11 +136,15 @@ round_bucket <- function(bs) rust_result(round_bucket_rust(as.double(bs)))
 #'   `aliasing_error`, `defective`, `selected`, `note`), `selected` (the
 #'   chosen row), `step`, `log2` and `score` of the chosen cell, `probed`
 #'   (`FALSE` when the center met the target), `grew` and `reason`.
+#'   `validate_grid()`: a list with `passes`, `flags` (the failures by
+#'   `aggregate`'s names), `description`, `terms` (the six, `NaN` when
+#'   skipped), `convolution_residual` and `tail_mass`.
 #' @export
 #' @examples
 #' a <- audit_grid(poisson_count(50), gamma_distribution(4, 2.5), step = 0.5, log2 = 10)
 #' c(a$step, a$log2)
 #' a$reason
+#' validate_grid(poisson_count(50), gamma_distribution(4, 2.5), 0.25, 2^10)$flags
 #' units <- list(list(poisson_count(10), gamma_distribution(2, 50)),
 #'               list(poisson_count(2), gamma_distribution(0.5, 1000)))
 #' recommend_portfolio_grid(units, log2 = 12)$points
@@ -143,6 +154,13 @@ audit_grid <- function(frequency, severity, step = NULL, log2 = NULL, eps = 1e-4
   settings <- as.double(c(eps, power, good_enough, max_doublings, log2_cap, log2_floor))
   audit_result(rust_result(audit_grid_rust(frequency@ptr, severity@ptr, null_nan(step),
                                            null_nan(log2), settings)))
+}
+
+#' @rdname audit_grid
+#' @export
+validate_grid <- function(frequency, severity, step, points, eps = 1e-4) {
+  rust_result(validate_grid_rust(frequency@ptr, severity@ptr, as.double(step), as.double(points),
+                                 as.double(eps)))
 }
 
 #' @rdname audit_grid

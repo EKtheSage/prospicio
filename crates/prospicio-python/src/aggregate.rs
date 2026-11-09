@@ -4139,3 +4139,111 @@ pub(crate) fn simulate_events_weighted(
         .map_err(to_py)?;
     Ok((PyEventSet { inner }, w))
 }
+
+/// The verdict on a compound distribution on a grid, from ``validate_grid``:
+/// ``aggregate`` 2.1.0's ``valid`` and ``Validation``.
+#[pyclass(name = "Validation", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyValidation {
+    inner: prospicio_aggregate::Validation,
+}
+
+#[pymethods]
+impl PyValidation {
+    /// Whether no failure is set (``aggregate``'s ``Validation.passes``).
+    #[getter]
+    fn passes(&self) -> bool {
+        self.inner.passes()
+    }
+
+    /// The failures by ``aggregate``'s names (``"SEV_MEAN"``, ``"AGG_CV"``,
+    /// ``"ALIASING"``, ``"DEFECTIVE"`` and the others); empty on a pass.
+    #[getter]
+    fn flags(&self) -> Vec<&'static str> {
+        self.inner.flags.iter().map(|f| f.name()).collect()
+    }
+
+    /// The six moment errors in units of their tolerance (above 1 fails),
+    /// by name; ``None`` for a term not scored.
+    #[getter]
+    fn terms(&self) -> std::collections::BTreeMap<&'static str, Option<f64>> {
+        let t = &self.inner.terms;
+        [
+            ("severity_mean", t.severity_mean),
+            ("severity_cv", t.severity_cv),
+            ("severity_skew", t.severity_skew),
+            ("aggregate_mean", t.aggregate_mean),
+            ("aggregate_cv", t.aggregate_cv),
+            ("aggregate_skew", t.aggregate_skew),
+        ]
+        .into_iter()
+        .collect()
+    }
+
+    /// ``|E[A] - E[N] E[X_grid]| / |E[N] E[X_grid]|``.
+    #[getter]
+    fn convolution_residual(&self) -> f64 {
+        self.inner.convolution_residual
+    }
+
+    /// The aggregate mass beyond the grid.
+    #[getter]
+    fn tail_mass(&self) -> f64 {
+        self.inner.tail_mass
+    }
+
+    /// "not unreasonable", or the failures.
+    #[getter]
+    fn description(&self) -> String {
+        self.inner.description()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Validation({})", self.inner.description())
+    }
+}
+
+/// The verdict on the compound distribution of ``frequency`` claims of
+/// ``severity`` on the grid ``(step, points)``, as ``aggregate`` 2.1.0's
+/// ``valid``: the severity discretized by rounding and compounded by
+/// ``fft``; the severity's and the aggregate's mean, cv and skewness
+/// against their exact values at ``eps``, ``10 eps`` and ``100 eps``; the
+/// convolution residual (``ALIASING`` above ``1e-5`` with no mass beyond
+/// the grid) and the mass beyond the grid (``DEFECTIVE`` above ``1e-4``).
+/// A pass says the grid is "not unreasonable"; a failure, that it is
+/// suspect. ``audit_grid`` searches for a better grid.
+///
+/// Parameters
+/// ----------
+/// frequency : a claim count
+/// severity : a severity
+/// step : float
+/// points : int
+/// eps : float, default 1e-4
+///
+/// Returns
+/// -------
+/// Validation
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import validate_grid
+/// >>> from prospicio.distributions import Gamma, Poisson
+/// >>> validate_grid(Poisson(50.0), Gamma.from_mean_cv(10.0, 0.5), 0.5, 2**11).passes
+/// True
+/// >>> validate_grid(Poisson(50.0), Gamma.from_mean_cv(10.0, 0.5), 0.25, 2**10).flags
+/// ['AGG_MEAN', 'AGG_CV', 'AGG_SKEW', 'DEFECTIVE']
+#[pyfunction]
+#[pyo3(signature = (frequency, severity, step, points, eps = 1e-4))]
+pub(crate) fn validate_grid(
+    frequency: &Bound<'_, PyAny>,
+    severity: &Bound<'_, PyAny>,
+    step: f64,
+    points: usize,
+    eps: f64,
+) -> PyResult<PyValidation> {
+    let n = AnyCount::extract(frequency)?;
+    let sev = crate::distributions::extract_severity(severity)?;
+    let inner = prospicio_aggregate::validate_grid(n.as_counting(), &sev, step, points, eps)
+        .map_err(to_py)?;
+    Ok(PyValidation { inner })
+}

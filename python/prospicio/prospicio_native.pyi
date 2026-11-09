@@ -34899,6 +34899,46 @@ class UnderwritingBasis:
         """
 
 @final
+class Validation:
+    """
+    The verdict on a compound distribution on a grid, from ``validate_grid``:
+    ``aggregate`` 2.1.0's ``valid`` and ``Validation``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def convolution_residual(self, /) -> float:
+        """
+        ``|E[A] - E[N] E[X_grid]| / |E[N] E[X_grid]|``.
+        """
+    @property
+    def description(self, /) -> str:
+        """
+        "not unreasonable", or the failures.
+        """
+    @property
+    def flags(self, /) -> list[str]:
+        """
+        The failures by ``aggregate``'s names (``"SEV_MEAN"``, ``"AGG_CV"``,
+        ``"ALIASING"``, ``"DEFECTIVE"`` and the others); empty on a pass.
+        """
+    @property
+    def passes(self, /) -> bool:
+        """
+        Whether no failure is set (``aggregate``'s ``Validation.passes``).
+        """
+    @property
+    def tail_mass(self, /) -> float:
+        """
+        The aggregate mass beyond the grid.
+        """
+    @property
+    def terms(self, /) -> dict[str, float |None]:
+        """
+        The six moment errors in units of their tolerance (above 1 fails),
+        by name; ``None`` for a term not scored.
+        """
+
+@final
 class Valuation:
     """
     A bound deal's terms with its actual state at a valuation month, from
@@ -40395,6 +40435,40 @@ def ulae_kittel(paid_ulae: Sequence[float], paid: Sequence[float], incurred: Seq
     Returns
     -------
     UlaeEstimate
+    """
+
+def validate_grid(frequency: Any, severity: Any, step: float, points: int, eps: float = 1e-4) -> Validation:
+    """
+    The verdict on the compound distribution of ``frequency`` claims of
+    ``severity`` on the grid ``(step, points)``, as ``aggregate`` 2.1.0's
+    ``valid``: the severity discretized by rounding and compounded by
+    ``fft``; the severity's and the aggregate's mean, cv and skewness
+    against their exact values at ``eps``, ``10 eps`` and ``100 eps``; the
+    convolution residual (``ALIASING`` above ``1e-5`` with no mass beyond
+    the grid) and the mass beyond the grid (``DEFECTIVE`` above ``1e-4``).
+    A pass says the grid is "not unreasonable"; a failure, that it is
+    suspect. ``audit_grid`` searches for a better grid.
+    
+    Parameters
+    ----------
+    frequency : a claim count
+    severity : a severity
+    step : float
+    points : int
+    eps : float, default 1e-4
+    
+    Returns
+    -------
+    Validation
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import validate_grid
+    >>> from prospicio.distributions import Gamma, Poisson
+    >>> validate_grid(Poisson(50.0), Gamma.from_mean_cv(10.0, 0.5), 0.5, 2**11).passes
+    True
+    >>> validate_grid(Poisson(50.0), Gamma.from_mean_cv(10.0, 0.5), 0.25, 2**10).flags
+    ['AGG_MEAN', 'AGG_CV', 'AGG_SKEW', 'DEFECTIVE']
     """
 
 def vif(design: Design) -> list[float]:

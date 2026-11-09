@@ -1621,6 +1621,31 @@ Decisions:
   being a function of each occurrence, works everywhere.
 - (e) *JSON format version 9* is stamped only when a layer has one of them.
 
+### A validation verdict on a grid (#778)
+
+`aggregate` 2.1.0 reports on every built aggregate a `Validation` flag set
+and `Validation.passes`, and warns (`ValidationWarning`) when it fails.
+`validate_grid(frequency, severity, step, points, eps)` gives the same
+verdict for a compound distribution on a grid: [`audit_grid`]'s six moment
+terms (the severity's and the aggregate's mean, cv and skewness against
+their exact values, at `eps`, `10 eps` and `100 eps`) set `SEV_MEAN` to
+`AGG_SKEW`; `ALIASING` is the convolution residual `|E[A] − E[N] E[X_grid]|`
+over `E[N] E[X_grid]` above `1e-5` with no mass beyond the grid; `DEFECTIVE`
+is more than `1e-4` beyond it. Checked on six books against `aggregate`'s
+`valid` (`validation/scripts/aggregate_validation.py`), whose verdicts sit
+well away from the tolerances.
+
+Proposed for the user's acceptance: (a) *a function of its own, not a field
+of every compound result*: `fft` and the tower grids take a severity
+already on a grid and never see the exact one, so the verdict is asked
+for with the severity, as [`audit_grid`] is; (b) *no warning is raised*:
+the result carries `passes`, the flags and a description, and the bindings
+return it, where `aggregate` warns once per failing build; (c) *the
+reinsured view, `INFEASIBLE`, `TRUNCATION` and `ANALYTIC_UNDEFINED` are not
+built*: a view of a tower is checked by the tower's own exact layer moments
+(#772's `occurrence_moments`), and the others belong to `aggregate`'s
+sizing and characteristic-function engine (0.2.0).
+
 ### A per-risk layer with an event limit, inuring to a cat cover (#585)
 
 Status: built; items (a) to (d) proposed by the Aggregate lane and accepted

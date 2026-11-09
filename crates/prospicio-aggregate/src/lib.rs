@@ -79,8 +79,9 @@ pub use ruin::{
     pollaczeck_khinchine, wiener_hopf,
 };
 pub use sizing::{
-    AuditSettings, GridAudit, GridCell, GridSize, ScoreTerms, Sizing, SizingMethod, audit_grid,
-    audit_portfolio_grid, fft_auto, recommend_grid, recommend_portfolio_grid, round_bucket,
+    AuditSettings, GridAudit, GridCell, GridSize, ScoreTerms, Sizing, SizingMethod, VALIDATION_EPS,
+    Validation, ValidationFlag, audit_grid, audit_portfolio_grid, fft_auto, recommend_grid,
+    recommend_portfolio_grid, round_bucket, validate_grid,
 };
 pub use trials::TrialStatistics;
 pub use ylt::YearLossTable;

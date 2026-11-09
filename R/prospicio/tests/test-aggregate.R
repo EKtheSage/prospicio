@@ -1094,3 +1094,12 @@ book <- merge_event_sets(a, b)
 stopifnot(identical(events(book, 1), c(20, 10, 2)))
 stopifnot(identical(events(hours_clause(book, 72), 1), c(30, 2)))
 stopifnot(inherits(try(ceded_events(tw, ev, "nope"), silent = TRUE), "try-error"))
+
+# The verdict on a grid against aggregate 2.1.0's valid (#778,
+# validation/scripts/aggregate_validation.py).
+v_gam <- gamma_distribution(4, 2.5)
+stopifnot(validate_grid(poisson_count(50), v_gam, 0.5, 2^11)$passes)
+stopifnot(identical(validate_grid(poisson_count(50), v_gam, 4, 2^9)$flags,
+                    c("SEV_MEAN", "SEV_CV", "SEV_SKEW", "AGG_MEAN", "AGG_CV")))
+stopifnot(identical(validate_grid(poisson_count(50), v_gam, 0.25, 2^10)$flags,
+                    c("AGG_MEAN", "AGG_CV", "AGG_SKEW", "DEFECTIVE")))
