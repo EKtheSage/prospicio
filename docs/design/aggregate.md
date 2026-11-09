@@ -1622,6 +1622,35 @@ Decisions:
   being a function of each occurrence, works everywhere.
 - (e) *JSON format version 9* is stamped only when a layer has one of them.
 
+### The disappearing deductible (#772)
+
+`aggregate` 2.1.0's `y xs d1 to d2 disappearing` has a retention that falls
+from `d1` to 0 as the loss rises from `d1` to `d2`: a loss `x` pays
+`min(x - r(x), y)`, nothing up to `d1`, `k (x - d1)` with `k = d2 / (d2 -
+d1)` up to `d2`, and `x` above. `Layer::disappearing(d2)` applies it per
+occurrence, on events and on the grid (`Tower::on_grid` maps each grid
+point as for the franchise), and `Layer::occurrence_moments(severity)`
+gives the first three raw moments of the recovery exactly, for the
+ordinary, franchise and disappearing forms, from the severity's layer
+moments: the payment is `k A + B` with `A` the layer `d2 - d1 xs d1` and `B`
+the layer `y - d2 xs d2` (or `k` times the layer `y/k xs d1` when `y <= d2`),
+and `B > 0` only when `A` is full, so the cross moments are exact; a
+franchise is `d 1{X >= d} + B`. Checked against `aggregate`'s analytic
+severity moments (`validation/scripts/aggregate_disappearing.py`).
+
+Proposed for the user's acceptance: (a) *the limit is the largest payment*,
+as `aggregate` has it, so a limit at or below `d2` is reached on the ramp;
+(b) *`d2` equal to the attachment is refused*, since that is the franchise,
+which stays its own builder; (c) *the moments are unconditional*, per
+ground-up occurrence: `aggregate`'s layered severity is conditional on
+reaching the attachment, and the docs say to divide by `P(X > d1)` (its
+franchise at a limit below the deductible pays the limit on every claim
+that reaches it, 30 for `30 xs 50 franchise`); (d) *a franchise is paid at
+a loss equal to the attachment* (`x >= d`, #591) where `aggregate` pays above
+it (`x > d`), which differs only on an atom at the attachment, such as a
+grid point; unchanged here; (e) *JSON format version 10* is stamped only
+when a layer has a disappearing deductible.
+
 ### A per-risk layer with an event limit, inuring to a cat cover (#585)
 
 Status: built; items (a) to (d) proposed by the Aggregate lane and accepted

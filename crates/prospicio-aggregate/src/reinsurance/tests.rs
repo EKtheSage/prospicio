@@ -1307,6 +1307,103 @@ fn a_franchise_pays_from_the_ground_up() {
 }
 
 #[test]
+fn a_disappearing_deductible_ramps_to_the_whole_loss() {
+    let d = Layer::xol("D", 300.0, 50.0)
+        .unwrap()
+        .disappearing(100.0)
+        .unwrap();
+    assert_eq!(d.recovery(50.0), 0.0);
+    assert_eq!(d.recovery(60.0), 20.0); // k = 2
+    assert_eq!(d.recovery(100.0), 100.0);
+    assert_eq!(d.recovery(150.0), 150.0);
+    assert_eq!(d.recovery(1000.0), 300.0);
+    // A limit reached on the ramp: 60 at a loss of 80.
+    let low = Layer::xol("L", 60.0, 50.0)
+        .unwrap()
+        .disappearing(100.0)
+        .unwrap();
+    assert_eq!(low.recovery(80.0), 60.0);
+    // On the grid, each point's recovery: k = 2 on (1, 2], then the loss.
+    let sev = prospicio_prob::Grid::new(1.0, vec![0.0, 0.2, 0.3, 0.3, 0.2]).unwrap();
+    let tower = Tower::new(vec![
+        Layer::xol("D", 10.0, 1.0)
+            .unwrap()
+            .disappearing(2.0)
+            .unwrap(),
+    ])
+    .unwrap();
+    let g = tower
+        .on_grid(&Poisson::new(1.0).unwrap(), &sev, 64)
+        .unwrap();
+    // 0.3 × 2 + 0.3 × 3 + 0.2 × 4: the ramp ends at the grid point 2.
+    assert!((g.ceded[0].mean() - 2.3).abs() < 1e-9);
+    // The grid's mean approaches the exact one.
+    let x = Lognormal::from_mean_cv(100.0, 1.0).unwrap();
+    let exact = d.occurrence_moments(&x).unwrap()[0];
+    let (fine, _) = prospicio_prob::Grid::local_moment(&x, 0.25, 1 << 14).unwrap();
+    let g = Tower::new(vec![d.clone()])
+        .unwrap()
+        .on_grid(&Poisson::new(2.0).unwrap(), &fine, 1 << 14)
+        .unwrap();
+    assert!((g.ceded[0].mean() / (2.0 * exact) - 1.0).abs() < 1e-4);
+    assert!(
+        Layer::xol("D", 10.0, 5.0)
+            .unwrap()
+            .disappearing(5.0)
+            .is_err()
+    );
+    assert!(
+        Layer::surplus("S", 1.0, 2.0)
+            .unwrap()
+            .disappearing(3.0)
+            .is_err()
+    );
+    assert!(d.clone().franchise().is_err());
+    assert!(
+        Layer::xol("F", 10.0, 5.0)
+            .unwrap()
+            .franchise()
+            .unwrap()
+            .disappearing(9.0)
+            .is_err()
+    );
+}
+
+#[test]
+fn occurrence_moments_agree_with_simulated_occurrences() {
+    // The closed forms against the mean of many occurrences' recoveries.
+    let x = Lognormal::from_mean_cv(100.0, 1.0).unwrap();
+    let mut rng = prospicio_core::StreamRng::new(11, 0);
+    let draws = x.sample(&mut rng, 400_000);
+    for layer in [
+        Layer::xol("O", 300.0, 50.0).unwrap(),
+        Layer::xol("F", 300.0, 50.0).unwrap().franchise().unwrap(),
+        Layer::xol("D", 300.0, 50.0)
+            .unwrap()
+            .disappearing(100.0)
+            .unwrap(),
+        Layer::xol("d", 60.0, 50.0)
+            .unwrap()
+            .disappearing(100.0)
+            .unwrap(),
+    ] {
+        let m = layer.occurrence_moments(&x).unwrap();
+        for k in 1..=3 {
+            let n = draws.len() as f64;
+            let r: Vec<f64> = draws.iter().map(|&v| layer.recovery(v).powi(k)).collect();
+            let mean = r.iter().sum::<f64>() / n;
+            let sd = (r.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n).sqrt();
+            let want = m[k as usize - 1];
+            assert!(
+                (mean - want).abs() < 5.0 * sd / n.sqrt(),
+                "{} {k}: {mean} vs {want}",
+                layer.name
+            );
+        }
+    }
+}
+
+#[test]
 fn an_nth_event_cover_skips_the_first_qualifying_events() {
     let l = Layer::xol("2nd", 10.0, 5.0)
         .unwrap()

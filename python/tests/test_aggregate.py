@@ -1964,3 +1964,21 @@ def test_importance_sampling_of_the_tail():
         simulate_events_weighted(freq, sev, 10, 1, tail_threshold=20.0, tail_share=1.0)
     with pytest.raises(ValueError):
         WeightedSample([1.0, 2.0], [0.0, 0.0])
+
+
+def test_disappearing_deductible_matches_aggregate():
+    """The disappearing deductible against aggregate 2.1.0 (#772,
+    validation/scripts/aggregate_disappearing.py)."""
+    d = Layer("D", 300.0, 50.0).with_disappearing(100.0)
+    assert d.disappearing == 100.0 and Layer("D", 300.0, 50.0).disappearing is None
+    assert d.ceded_by_event([40.0, 75.0, 100.0, 250.0, 400.0]) == [0.0, 50.0, 100.0, 250.0, 300.0]
+    x = Lognormal.from_mean_cv(100.0, 1.0)
+    m = d.occurrence_moments(x)
+    s = 1.0 - x.cdf(50.0)
+    # aggregate's analytic moments of a claim that exceeds 50.
+    for got, want in zip(m, [112.60796090891441, 19738.084272995242, 4255116.441430608]):
+        assert got / s == pytest.approx(want, rel=1e-9)
+    f = Layer("F", 30.0, 50.0).with_franchise().occurrence_moments(x)
+    assert f[0] / s == pytest.approx(30.0, rel=1e-12)
+    with pytest.raises(ValueError):
+        Layer("D", 300.0, 50.0).with_disappearing(50.0)
