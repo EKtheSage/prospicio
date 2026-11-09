@@ -9,8 +9,8 @@
 - `HierarchicalBf`'s one-year view refits with a warm-started light refit
   by default (no pilot run, the sampler scaled by the opening posterior, 4
   chains of 150 warm-up and 250 kept draws), within 0.004 sd of full
-  refits in the total on the reference panel at about a tenth of their
-  cost; `BayesOneYear::light_refit` sets another, and a refit mode chosen
+  refits in the total on the reference panel (and 0.042 sd of each
+  program's own) at about a tenth of their cost; `BayesOneYear::light_refit` sets another, and a refit mode chosen
   keeps the fit's own sampler as for `Compartmental`. Python
   `HierarchicalBf.one_year(light_refit=)` (its `refit` now defaults to
   `None`, still moment matching then refitting) and R

@@ -225,3 +225,4 @@ as long at 0.99 as at 0.95 (21.7 s against 10.4 s on the reference panel,
 36.4 s against 17.4 s on 20 programs). The recovery panels have almost no
 divergences at any value; their warnings are a divergence or two or R-hat
 just above 1.01 (at most 1.017), not low ESS. A three-seed run gave the same picture.
+On this table the user kept 0.99 as the default on 2026-11-09.
