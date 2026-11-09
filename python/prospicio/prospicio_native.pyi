@@ -34311,9 +34311,88 @@ class Tweedie:
         float
         """
     @property
+    def cv(self, /) -> float:
+        """
+        Coefficient of variation ``sqrt(phi) * mu**(p/2 - 1)``.
+        """
+    @property
     def dispersion(self, /) -> float:
         """
         Dispersion ``phi``.
+        """
+    @staticmethod
+    def from_compound(frequency: float, severity_mean: float, severity_cv: float) -> Tweedie:
+        """
+        The Tweedie equal to a Poisson number of losses with mean
+        ``frequency`` and a gamma severity with mean ``severity_mean`` and
+        coefficient of variation ``severity_cv``, as ``aggregate``'s
+        ``TweedieConversion.from_compound``.
+        
+        Parameters
+        ----------
+        frequency : float
+        severity_mean : float
+        severity_cv : float
+        
+        Returns
+        -------
+        Tweedie
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Tweedie
+        >>> y = Tweedie.from_compound(10.0, 10.0, 1.0)
+        >>> round(y.power, 12), round(y.dispersion, 12)
+        (1.5, 2.0)
+        """
+    @staticmethod
+    def from_cv(power: float, mean: float, cv: float) -> Tweedie:
+        """
+        The Tweedie with power ``power``, mean ``mean`` and coefficient of
+        variation ``cv`` (of the Tweedie, not of its severity): dispersion
+        ``cv**2 * mean**(2 - power)``, as ``aggregate``'s
+        ``TweedieConversion.from_cv``.
+        
+        Parameters
+        ----------
+        power : float
+            In ``(1, 2)``.
+        mean : float
+        cv : float
+        
+        Returns
+        -------
+        Tweedie
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Tweedie
+        >>> round(Tweedie.from_cv(1.5, 100.0, 0.5).dispersion, 12)
+        2.5
+        """
+    @staticmethod
+    def from_cv_dispersion(mean: float, cv: float, dispersion: float) -> Tweedie:
+        """
+        The Tweedie with mean ``mean``, coefficient of variation ``cv`` and
+        dispersion ``dispersion``: the power ``2 + log(cv**2 / dispersion) /
+        log(mean)``, which must lie in ``(1, 2)``.
+        
+        Parameters
+        ----------
+        mean : float
+            Not 1.
+        cv : float
+        dispersion : float
+        
+        Returns
+        -------
+        Tweedie
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Tweedie
+        >>> round(Tweedie.from_cv_dispersion(100.0, 0.5, 2.5).power, 12)
+        1.5
         """
     @staticmethod
     def from_poisson_gamma(lambda_: float, shape: float, scale: float) -> Tweedie:
@@ -34426,6 +34505,11 @@ class Tweedie:
         float
         """
     @property
+    def p0(self, /) -> float:
+        """
+        Probability of no loss, ``exp(-lambda_)``.
+        """
+    @property
     def power(self, /) -> float:
         """
         Power ``p``.
@@ -34467,6 +34551,16 @@ class Tweedie:
     def severity(self, /) -> Gamma:
         """
         The gamma distribution of each loss.
+        """
+    @property
+    def severity_cv(self, /) -> float:
+        """
+        Coefficient of variation of each gamma loss.
+        """
+    @property
+    def severity_mean(self, /) -> float:
+        """
+        Mean of each gamma loss, ``mu / lambda_``.
         """
     def std(self, /) -> float:
         """

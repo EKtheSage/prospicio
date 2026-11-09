@@ -468,6 +468,23 @@ severity_class!(TweedieDist {
         Ok(Self { inner })
     }
 
+    fn from_cv(power: f64, mean: f64, cv: f64) -> Result<Self> {
+        let inner = prospicio_prob::Tweedie::from_cv(power, mean, cv).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn from_cv_dispersion(mean: f64, cv: f64, dispersion: f64) -> Result<Self> {
+        let inner =
+            prospicio_prob::Tweedie::from_cv_dispersion(mean, cv, dispersion).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn from_compound(frequency: f64, severity_mean: f64, severity_cv: f64) -> Result<Self> {
+        let inner = prospicio_prob::Tweedie::from_compound(frequency, severity_mean, severity_cv)
+            .map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
     fn dispersion(&self) -> f64 {
         self.inner.dispersion()
     }
@@ -478,6 +495,22 @@ severity_class!(TweedieDist {
 
     fn lambda(&self) -> f64 {
         self.inner.lambda()
+    }
+
+    fn cv(&self) -> f64 {
+        self.inner.cv()
+    }
+
+    fn severity_mean(&self) -> f64 {
+        self.inner.severity_mean()
+    }
+
+    fn severity_cv(&self) -> f64 {
+        self.inner.severity_cv()
+    }
+
+    fn p0(&self) -> f64 {
+        self.inner.p0()
     }
 
     fn severity(&self) -> GammaDist {

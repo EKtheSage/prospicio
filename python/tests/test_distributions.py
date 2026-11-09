@@ -526,3 +526,26 @@ def test_size_of_loss_table():
     assert round(loss_elimination_ratio(h, 250), 3) == 0.135
     with pytest.raises(ValueError):
         SizeOfLoss([0, 10, 20], [1, 1], [11, 15])
+
+
+def test_tweedie_conversions_match_aggregate():
+    # aggregate 2.1.0's TweedieConversion (validation/scripts/aggregate_tweedie.py):
+    # tweedie 1.5 100 2 = tweedie 1.5 100 cv 0.447214 = tweedie 10 claims sev gamma 10 cv 1.
+    from prospicio.distributions import Tweedie
+
+    a = Tweedie(100.0, 2.0, 1.5)
+    b = Tweedie.from_cv(1.5, 100.0, 0.447213595499958)
+    c = Tweedie.from_compound(10.0, 10.0, 1.0)
+    d = Tweedie.from_cv_dispersion(100.0, a.cv, 2.0)
+    for y in (a, b, c, d):
+        assert y.power == pytest.approx(1.5, rel=1e-13)
+        assert y.dispersion == pytest.approx(2.0, rel=1e-13)
+        assert y.cv == pytest.approx(0.447213595499958, rel=1e-13)
+        assert y.lambda_ == pytest.approx(10.0, rel=1e-13)
+        assert y.severity_mean == pytest.approx(10.0, rel=1e-13)
+        assert y.severity_cv == pytest.approx(1.0, rel=1e-13)
+        assert y.p0 == pytest.approx(4.5399929762484854e-05, rel=1e-12)
+    with pytest.raises(ValueError, match="power"):
+        Tweedie.from_cv_dispersion(100.0, 0.5, 0.1)
+    with pytest.raises(ValueError, match="power"):
+        Tweedie.from_cv(2.5, 100.0, 0.5)
