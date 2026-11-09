@@ -1352,6 +1352,69 @@ fn aggregate_elt_values(
     ))
 }
 
+/// Event loss tables of several units: the rolled columns, each unit's
+/// columns, the units, events and the count of shared events.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn aggregate_elt_units(
+    event: Vec<String>,
+    unit: Vec<String>,
+    rate: &[f64],
+    mean: &[f64],
+    sd_independent: &[f64],
+    sd_correlated: &[f64],
+    exposure: &[f64],
+) -> Result<List> {
+    let ev: Vec<&str> = event.iter().map(String::as_str).collect();
+    let un: Vec<&str> = unit.iter().map(String::as_str).collect();
+    let t = prospicio_aggregate::UnitEventLossTables::new(
+        &ev,
+        &un,
+        rate,
+        mean,
+        sd_independent,
+        sd_correlated,
+        exposure,
+    )
+    .map_err(to_r)?;
+    let cols = |c: [Vec<f64>; 5]| {
+        let [rate, mean, sdi, sdc, exposure] = c;
+        list!(
+            rate = rate,
+            mean = mean,
+            sd_independent = sdi,
+            sd_correlated = sdc,
+            exposure = exposure
+        )
+    };
+    let mut per_unit = Vec::new();
+    for u in t.units() {
+        let (_, c) = t.unit_columns(u).map_err(to_r)?;
+        per_unit.push(Robj::from(cols(c)));
+    }
+    Ok(list!(
+        units = t.units().to_vec(),
+        events = t.events().to_vec(),
+        shared_events = t.shared_events() as f64,
+        rolled = cols(t.rolled_columns()),
+        unit_columns = List::from_values(per_unit)
+    ))
+}
+
+/// The first three raw moments of one event's loss given that it occurs.
+#[extendr]
+fn aggregate_elt_severity_moments(
+    rate: &[f64],
+    mean: &[f64],
+    sd_independent: &[f64],
+    sd_correlated: &[f64],
+    exposure: &[f64],
+) -> Result<Vec<f64>> {
+    Ok(elt(rate, mean, sd_independent, sd_correlated, exposure)?
+        .severity_moments()
+        .to_vec())
+}
+
 /// Simulated years from an event loss table: `list(events, ids)`, with
 /// `ids` a list per year of each loss's event row, from 1.
 #[extendr]
@@ -1643,6 +1706,8 @@ extendr_module! {
     impl EventSet;
     impl Timeline;
     fn aggregate_elt_values;
+    fn aggregate_elt_units;
+    fn aggregate_elt_severity_moments;
     fn aggregate_elt_simulate;
 }
 

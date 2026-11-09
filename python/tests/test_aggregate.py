@@ -1966,6 +1966,27 @@ def test_importance_sampling_of_the_tail():
         WeightedSample([1.0, 2.0], [0.0, 0.0])
 
 
+def test_unit_event_loss_tables_match_aggregate():
+    """Event loss tables of several units that share events against
+    aggregate 2.1.0 (#777, validation/scripts/aggregate_elt_units.py)."""
+    from prospicio.aggregate import UnitEventLossTables
+
+    rows = [("A", 1, 0.01, 800, 2000, 200, 100), ("A", 2, 0.05, 200, 500, 0, 0),
+            ("A", 4, 0.002, 1500, 5000, 300, 300), ("B", 1, 0.01, 300, 1000, 50, 40),
+            ("B", 3, 0.02, 100, 400, 30, 0), ("B", 4, 0.002, 600, 2000, 100, 50)]
+    t = UnitEventLossTables([str(r[1]) for r in rows], [r[0] for r in rows],
+                            [r[2] for r in rows], [r[3] for r in rows], [r[5] for r in rows],
+                            [r[6] for r in rows], [r[4] for r in rows])
+    assert t.units == ["A", "B"] and t.shared_events == 2 and t.events == ["1", "2", "4", "3"]
+    rolled = t.rolled()
+    assert rolled.rate == pytest.approx(0.082, rel=1e-12)
+    assert rolled.severity_moments()[0] == pytest.approx(331.7073170731707, rel=1e-10)
+    assert t.unit("A").severity_moments()[1] == pytest.approx(234193.54838709682, rel=1e-10)
+    with pytest.raises(ValueError, match="rate"):
+        UnitEventLossTables(["1", "1"], ["A", "B"], [0.01, 0.02], [1.0, 1.0], [0.0, 0.0],
+                            [0.0, 0.0], [2.0, 2.0])
+
+
 def test_lattice_bucket_matches_aggregate():
     """The dyadic lattice rule against aggregate 2.1.0 (#776)."""
     from prospicio.aggregate import dyadic_lattice_step, lattice_bucket, lattice_candidates

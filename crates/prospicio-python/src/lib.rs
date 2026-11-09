@@ -54,11 +54,12 @@ mod prospicio_native {
         PyApproximation, PyBivariateReport, PyClash, PyCompoundMoments, PyCompoundReport,
         PyEventLossTable, PyEventSet, PyExposure, PyFiniteRuin, PyGridAudit, PyGridSize, PyHawkes,
         PyHawkesFit, PyJointGrid, PyLatticeBucket, PyOccurrencePml, PyPicks, PyRenewalRuin, PyRuin,
-        PyTimeline, audit_grid, audit_portfolio_grid, compound_moments, dyadic_lattice_step,
-        eventual_ruin, fft, fft_auto, fft_bivariate, finite_horizon_ruin, lattice_bucket,
-        lattice_candidates, layer_loss_picks, occurrence_exceedance, occurrence_pml, panjer,
-        recommend_grid, recommend_portfolio_grid, round_bucket, simulate_events,
-        simulate_events_weighted, wiener_hopf, year_correlation_for_ratio, ylt_hash,
+        PyTimeline, PyUnitEventLossTables, audit_grid, audit_portfolio_grid, compound_moments,
+        dyadic_lattice_step, eventual_ruin, fft, fft_auto, fft_bivariate, finite_horizon_ruin,
+        lattice_bucket, lattice_candidates, layer_loss_picks, occurrence_exceedance,
+        occurrence_pml, panjer, recommend_grid, recommend_portfolio_grid, round_bucket,
+        simulate_events, simulate_events_weighted, wiener_hopf, year_correlation_for_ratio,
+        ylt_hash,
     };
     #[pymodule_export]
     use super::bonus_malus::PyBonusMalus;

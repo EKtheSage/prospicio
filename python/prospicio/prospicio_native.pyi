@@ -12630,6 +12630,12 @@ class EventLossTable:
         """
         The mean number of events a year, the rates' sum.
         """
+    def severity_moments(self, /) -> list[float]:
+        """
+        The first three raw moments of one event's loss given that it
+        occurs, ``[E X, E X**2, E X**3]``; the annual cumulants are ``rate``
+        times them.
+        """
     def simulate(self, /, n_years: int, seed: int = 0) -> tuple[EventSet, list[list[int]]]:
         """
         Simulated years of events, with each loss's event (row index).
@@ -35017,6 +35023,59 @@ class UnderwritingBasis:
     def writing(self, /) -> list[float]:
         """
         The writing shares by month, as given.
+        """
+
+@final
+class UnitEventLossTables:
+    """
+    Event loss tables of several units that share events, ``aggregate``
+    2.1.0's ``elt unit A [...] elt unit B [...]``: one row per event and
+    unit, an event on several units one occurrence. ``rolled()`` is the
+    portfolio's table, each event's rows rolled up as ``aggregate`` does by
+    default (the event's rate, which its rows must share; the means,
+    exposures and correlated standard deviations summed, the independent
+    ones in quadrature); ``unit(name)`` is one unit's own table.
+    
+    Parameters
+    ----------
+    event, unit : list of str
+        Each row's event identifier and unit tag.
+    rate, mean, sd_independent, sd_correlated, exposure : list of float
+        As for ``EventLossTable``.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import UnitEventLossTables
+    >>> t = UnitEventLossTables(["1", "2", "1", "3"], ["A", "A", "B", "B"],
+    ...                         [0.01, 0.05, 0.01, 0.02], [800.0, 200.0, 300.0, 100.0],
+    ...                         [200.0, 0.0, 50.0, 30.0], [100.0, 0.0, 40.0, 0.0],
+    ...                         [2000.0, 500.0, 1000.0, 400.0])
+    >>> t.units, t.shared_events, round(t.rolled().rate, 12)
+    (['A', 'B'], 1, 0.08)
+    """
+    def __new__(cls, /, event: Sequence[str], unit: Sequence[str], rate: Sequence[float], mean: Sequence[float], sd_independent: Sequence[float], sd_correlated: Sequence[float], exposure: Sequence[float]) -> UnitEventLossTables: ...
+    @property
+    def events(self, /) -> list[str]:
+        """
+        The events' identifiers, in order of first appearance.
+        """
+    def rolled(self, /) -> EventLossTable:
+        """
+        The portfolio's table, one row per event, its units' rows rolled up.
+        """
+    @property
+    def shared_events(self, /) -> int:
+        """
+        The number of events with rows on two or more units.
+        """
+    def unit(self, /, name: str) -> EventLossTable:
+        """
+        One unit's table.
+        """
+    @property
+    def units(self, /) -> list[str]:
+        """
+        The units' tags, in order of first appearance.
         """
 
 @final
