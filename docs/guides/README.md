@@ -31,7 +31,9 @@ sections.
 Every guide's code is tested. `python/tests/test_guides.py` runs each guide's
 ```` ```python ```` blocks in order in one namespace, and when a block is
 followed by a ```` ```text ```` block, requires the block to print exactly that
-text, so a number in a guide cannot go stale when the library changes. A block
+text, so a number in a guide cannot go stale when the library changes. A
+great_tables table on a block's last line prints as its column labels and
+formatted cells, so a table's numbers are checked the same way. A block
 marked ```` ```python no-run ```` is shown but not run. To run the tests:
 
 ```sh
@@ -204,8 +206,9 @@ An optional local check is `ste-lint.py` from the user's `asd-ste100` skill. CI 
 
 Show a result as a figure or a formatted table when a reader compares many
 numbers: a fit against the data, a distribution, values by band or by year.
-Keep a printed comparison where CI must check the number (book against
-prospicio).
+Print a single number or a short sentence; show three or more rows of numbers
+as a table. A book-against-prospicio comparison is a table with a `book` and a
+`prospicio` column.
 
 - A guide that draws them holds the line `<!-- site: execute -->`, and so
   does its R twin. The Python site then runs the guide's `python` blocks
@@ -225,7 +228,13 @@ prospicio).
   as an article on its own, with nothing attached; `test-guides.R` checks
   the line.
 - Lay out a table with great_tables (`GT`) on a pandas DataFrame, or gt
-  (`gt()`) on a data frame in R, with a title and the units.
+  (`gt()`) on a data frame in R, with a title and the units. Make the table
+  the block's last expression (the chunk's last value in R) and follow the
+  block with a `text` block: the tests print the table as its column labels
+  and formatted cells (the stub left-aligned, the other columns
+  right-aligned, two spaces apart) and compare that text, so every number in
+  the table is checked. Format the numbers (`fmt_number`) to the digits the
+  reader needs; those are the digits CI checks.
 - Draw every figure from values the guide computes. CI runs the code under
   `python/tests/test_guides.py` and `R/prospicio/tests/test-guides.R`, so a
   figure cannot fail silently.

@@ -352,6 +352,13 @@ impl PyLayer {
         self.inner.franchise
     }
 
+    /// The end of a disappearing deductible (``with_disappearing``), or
+    /// ``None``.
+    #[getter]
+    fn disappearing(&self) -> Option<f64> {
+        self.inner.disappearing
+    }
+
     /// An nth-event cover as ``(n, threshold)``, or ``None``.
     #[getter]
     fn nth_event(&self) -> Option<(u32, f64)> {
@@ -382,6 +389,61 @@ impl PyLayer {
     /// [0.0, 5.0, 12.0, 20.0]
     fn with_franchise(&self) -> PyResult<Self> {
         self.map(|l| l.franchise())
+    }
+
+    /// The same layer with a disappearing deductible, ``aggregate``'s
+    /// ``y xs d1 to d2 disappearing``: the retention falls linearly from the
+    /// attachment ``d1`` to 0 as the loss rises from ``d1`` to ``end``, so a
+    /// loss pays nothing up to ``d1``, ``k (x - d1)`` with
+    /// ``k = end / (end - d1)`` up to ``end`` and the whole loss above, each
+    /// capped at the limit. On the loss basis only; not with a franchise or
+    /// a top-and-drop cover.
+    ///
+    /// Parameters
+    /// ----------
+    /// end : float
+    ///     Above the attachment.
+    ///
+    /// Returns
+    /// -------
+    /// Layer
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reinsurance import Layer
+    /// >>> Layer("D", 300.0, 50.0).with_disappearing(100.0).ceded_by_event([40.0, 75.0, 250.0, 400.0])
+    /// [0.0, 50.0, 250.0, 300.0]
+    fn with_disappearing(&self, end: f64) -> PyResult<Self> {
+        self.map(|l| l.disappearing(end))
+    }
+
+    /// The first three raw moments of one occurrence's recovery at 100%,
+    /// before annual terms, for a ground-up loss with distribution
+    /// ``severity``, exact for an ordinary, franchise or disappearing
+    /// deductible on the loss basis. Divide by ``1 - severity.cdf(attachment)``
+    /// for the moments of a loss that reaches the layer, as ``aggregate``
+    /// reports a layered severity.
+    ///
+    /// Parameters
+    /// ----------
+    /// severity : a severity distribution
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    ///     ``[E[g], E[g**2], E[g**3]]``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Lognormal
+    /// >>> from prospicio.reinsurance import Layer
+    /// >>> x = Lognormal.from_mean_cv(100.0, 1.0)
+    /// >>> m = Layer("D", 300.0, 50.0).with_disappearing(100.0).occurrence_moments(x)
+    /// >>> round(m[0] / (1 - x.cdf(50.0)), 6)
+    /// 112.607961
+    fn occurrence_moments(&self, severity: &Bound<'_, PyAny>) -> PyResult<Vec<f64>> {
+        let sev = crate::distributions::extract_severity(severity)?;
+        Ok(self.inner.occurrence_moments(&sev).map_err(to_py)?.to_vec())
     }
 
     /// The same layer as an nth-event cover: only the ``n``-th and later

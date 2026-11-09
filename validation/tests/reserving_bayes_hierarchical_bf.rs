@@ -529,8 +529,8 @@ struct Recovery {
 }
 
 /// A panel of `programs` programs of three to ten origins on five ages, its
-/// truth drawn from the hyperprior of the fit, and the fit.
-fn recovery_panel(programs: usize, index: usize) -> Recovery {
+/// truth drawn from the hyperprior of the fit, and the model that fits it.
+fn recovery_setup(programs: usize, index: usize) -> (Truth, Triangle, HierarchicalBf) {
     let seed = 10_000 * programs as u64 + index as u64;
     let mut rng = Rng::new(seed);
     let variance = (1.0 + LEVEL_CV * LEVEL_CV).ln();
@@ -564,9 +564,15 @@ fn recovery_panel(programs: usize, index: usize) -> Recovery {
         seed,
         ..HierarchicalBf::default()
     };
+    (truth, whole(&panel), model)
+}
+
+/// A recovery panel ([`recovery_setup`]) and its fit.
+fn recovery_panel(programs: usize, index: usize) -> Recovery {
+    let (truth, tri, model) = recovery_setup(programs, index);
     let start = Instant::now();
     let fit = model
-        .fit(&whole(&panel), "paid", "premium")
+        .fit(&tri, "paid", "premium")
         .unwrap_or_else(|e| panic!("panel {programs}/{index} {truth:?}: {e}"));
     let seconds = start.elapsed().as_secs_f64();
     if !fit.diagnostics.warnings.is_empty() {
@@ -1376,5 +1382,159 @@ fn seed_sweep() {
         diagnostics,
     )
     .expect("writes the diagnostics");
+    eprintln!("wrote {}", path.display());
+}
+
+// ---------------------------------------------------------------------
+// The sampler's target acceptance (issue #762, item 4)
+// ---------------------------------------------------------------------
+
+/// A sweep of the sampler's `target_accept` (default 0.99) over panels, for
+/// the user's decision on #762 (measured, not asserted). For each value of
+/// `HBF_TARGET_ACCEPTS` (comma-separated, default `0.9,0.95,0.99`), each
+/// panel and each seed of `0..HBF_SWEEP_SEEDS` (default 4), one fit at the
+/// default sampler otherwise: its divergences, R-hat, whether it warned and
+/// its wall time; on the reference panel also the gap of the three
+/// programs' loss-ratio sds to the Stan reference (`ratio_sd` rows of
+/// `reserving_hierarchical_bf_stan.csv`). The panels are the Stan reference
+/// (EVW cut to six ages, GenIns, RAA), GenIns and RAA alone (programs on
+/// the same ages), all three cut to six ages, and recovery panels of item 3
+/// with `HBF_SWEEP_PROGRAMS` programs (comma-separated, default `5,10,20`;
+/// diagonal scale below 8 programs, dense from 8). Prints one
+/// row per value and panel (means over seeds, worst R-hat) and writes every
+/// fit to `target/hbf_target_accept.csv`. Run in release:
+/// `cargo test --release -p prospicio-validation --features slow-bayes --test
+/// reserving_bayes_hierarchical_bf target_accept_sweep -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn target_accept_sweep() {
+    let accepts: Vec<f64> = std::env::var("HBF_TARGET_ACCEPTS")
+        .unwrap_or_else(|_| "0.9,0.95,0.99".into())
+        .split(',')
+        .map(|s| s.trim().parse().expect("a target acceptance"))
+        .collect();
+    let seeds: u64 = std::env::var("HBF_SWEEP_SEEDS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(4);
+    let cases = reference("reserving_hierarchical_bf_stan.csv");
+    let ratio_sd: Vec<(String, f64)> = cases
+        .iter()
+        .filter(|c| c.get("quantity") == "ratio_sd")
+        .map(|c| {
+            (
+                c.get("arg").to_string(),
+                c.number("expected").expect("expected"),
+            )
+        })
+        .collect();
+    // (name, triangle, model at seed, compared with Stan)
+    type Panel = (
+        &'static str,
+        Triangle,
+        Box<dyn Fn(u64) -> HierarchicalBf>,
+        bool,
+    );
+    let recovery = |programs: usize| -> (Triangle, HierarchicalBf) {
+        let (_, tri, model) = recovery_setup(programs, 0);
+        (tri, model)
+    };
+    let programs: Vec<usize> = std::env::var("HBF_SWEEP_PROGRAMS")
+        .unwrap_or_else(|_| "5,10,20".into())
+        .split(',')
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.trim().parse().expect("a number of programs"))
+        .collect();
+    let mut panels: Vec<Panel> = vec![
+        ("reference", stan_triangle(), Box::new(stan_model), true),
+        (
+            "genins+raa",
+            prospicio_validation::stan_triangle_of(&["genins", "raa"]),
+            Box::new(stan_model),
+            false,
+        ),
+        (
+            "all cut to 6",
+            prospicio_validation::stan_triangle_cut(&["evw", "genins", "raa"], 6),
+            Box::new(stan_model),
+            false,
+        ),
+    ];
+    for &n in &programs {
+        let (tri, m) = recovery(n);
+        let name: &'static str = Box::leak(format!("recovery {n}").into_boxed_str());
+        panels.push((
+            name,
+            tri,
+            Box::new(move |seed| HierarchicalBf { seed, ..m.clone() }),
+            false,
+        ));
+    }
+    let mut csv = String::from(
+        "target_accept,panel,seed,divergences,max_rhat,min_ess_bulk,min_ess_tail,warned,seconds,ratio_sd_gaps\n",
+    );
+    println!(
+        "| target_accept | panel | divergences (mean) | max R-hat (worst) | warned | fit s (mean) | loss-ratio sd / Stan - 1 (evw, genins, raa; mean) |"
+    );
+    println!("|---|---|---|---|---|---|---|");
+    for &accept in &accepts {
+        for (name, tri, model, stan) in &panels {
+            let (mut div, mut rhat, mut warned, mut secs) = (0.0, 0.0_f64, 0, 0.0);
+            let mut gaps = vec![0.0; ratio_sd.len()];
+            for seed in 0..seeds {
+                let mut m = model(seed);
+                m.sampler.target_accept = accept;
+                m.n_sims = 100;
+                let start = Instant::now();
+                let fit = m.fit(tri, "paid", "premium").expect("fits");
+                let s = start.elapsed().as_secs_f64();
+                let d = &fit.diagnostics;
+                let row_gaps: Vec<f64> = if *stan {
+                    ratio_sd
+                        .iter()
+                        .map(|(arg, expected)| {
+                            stan_value(&fit, "ratio_sd", arg).expect("a row") / expected - 1.0
+                        })
+                        .collect()
+                } else {
+                    vec![]
+                };
+                for (g, r) in gaps.iter_mut().zip(&row_gaps) {
+                    *g += r / seeds as f64;
+                }
+                div += d.divergences as f64 / seeds as f64;
+                rhat = rhat.max(d.max_rhat);
+                warned += usize::from(!d.warnings.is_empty());
+                secs += s / seeds as f64;
+                csv.push_str(&format!(
+                    "{accept},{name},{seed},{},{},{},{},{},{s:.2},{}\n",
+                    d.divergences,
+                    d.max_rhat,
+                    d.min_ess_bulk,
+                    d.min_ess_tail,
+                    !d.warnings.is_empty(),
+                    row_gaps
+                        .iter()
+                        .map(|g| format!("{g:.4}"))
+                        .collect::<Vec<_>>()
+                        .join(";")
+                ));
+            }
+            let gap_text = if *stan {
+                gaps.iter()
+                    .map(|g| format!("{g:+.3}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            } else {
+                "n/a".into()
+            };
+            println!(
+                "| {accept} | {name} | {div:.2} | {rhat:.4} | {warned} of {seeds} | {secs:.1} | {gap_text} |"
+            );
+        }
+    }
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/hbf_target_accept.csv");
+    std::fs::write(&path, csv).expect("writes the sweep");
     eprintln!("wrote {}", path.display());
 }

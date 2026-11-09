@@ -116,6 +116,52 @@ impl Tower {
             .collect()
     }
 
+    /// The tower's total ceded loss for one occurrence of `loss` on the
+    /// loss basis, before any annual terms: each stage sees the loss net of
+    /// the earlier stages, and each layer cedes its share of its
+    /// per-occurrence recovery. This is the program's ceded function `g` of
+    /// an occurrence that [`pml::program_occurrence_pml`](crate::pml::program_occurrence_pml)
+    /// reads; annual terms (aggregate deductibles and limits, reinstatements)
+    /// do not enter, since they act on a year's losses, not one occurrence.
+    /// Fails for a layer on a sum-insured basis or one that needs a year's
+    /// events in order.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{Layer, Tower};
+    ///
+    /// let t = Tower::new(vec![
+    ///     Layer::xol("A", 50.0, 50.0).unwrap(),
+    ///     Layer::xol("B", 100.0, 100.0).unwrap().share(0.5).unwrap(),
+    /// ])
+    /// .unwrap();
+    /// assert_eq!(t.occurrence_ceded(160.0).unwrap(), 50.0 + 30.0);
+    /// ```
+    pub fn occurrence_ceded(&self, loss: f64) -> Result<f64> {
+        if let Some(l) = self
+            .layers
+            .iter()
+            .find(|l| l.basis != Basis::Loss || l.needs_event_order())
+        {
+            return Err(Error::Data(format!(
+                "layer {:?}: an occurrence's ceded loss needs a layer on the loss basis that reads \
+                 no order of events",
+                l.name
+            )));
+        }
+        let (mut seen, mut total, mut stage, mut stage_ceded) = (loss, 0.0, 0usize, 0.0);
+        for (l, &s) in self.layers.iter().zip(&self.stages) {
+            if s != stage {
+                seen -= stage_ceded;
+                stage_ceded = 0.0;
+                stage = s;
+            }
+            let c = l.share * l.recovery(seen);
+            stage_ceded += c;
+            total += c;
+        }
+        Ok(total)
+    }
+
     /// [`ceded`](Self::ceded), refusing a loss that is negative or not
     /// finite (#593).
     pub fn try_ceded(&self, losses: &[f64]) -> Result<Vec<f64>> {

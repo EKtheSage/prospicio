@@ -1,10 +1,10 @@
 """Regenerate validation/reference/bivariate_copula_aggregate.csv.
 
-    python3.12 -m venv agg && agg/bin/pip install aggregate==1.0.1
+    python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0
     agg/bin/python validation/scripts/aggregate_bivariate_copula.py
 
 Two lines hit by one count of events, with the losses of an event that
-hits both coupled by a copula, against Mildenhall's `aggregate` 1.0.1
+hits both coupled by a copula, against Mildenhall's `aggregate` 2.1.0
 (`bivariate NAME 12 claims agg A dfreq [0 1] [1-pA pA] sev ... agg B ...
 copula KIND P <freq>`). Each event hits line A with probability 1/4 and
 loses a gamma (mean 10, cv 1.5), and B with probability 1/3 and loses a

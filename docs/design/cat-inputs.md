@@ -215,6 +215,29 @@ Bindings: Python `prospicio.aggregate.EventLossTable`,
     `hawkes_event_set()`, `hawkes_moments()`, `hawkes_log_likelihood()`
     and `hawkes_fit()`.
 
+### Event loss tables of several units (#777)
+
+`aggregate` 2.1.0 reads `elt unit A [...] elt unit B [...]`, one row per
+event and unit, and treats an event on several units as one occurrence.
+`UnitEventLossTables` takes the same long table (event identifier, unit
+tag, rate, mean, independent and correlated standard deviations,
+exposure): `rolled()` is the portfolio's `EventLossTable` with each shared
+event's rows rolled up as `aggregate` does by default
+(`[ELT-Shared-Event-Rollup]`: the event's rate, which its rows must share
+to `1e-12`; means, exposures and correlated standard deviations summed;
+independent ones in quadrature), `unit(name)` each unit's own table, and
+`EventLossTable::severity_moments` the event severity's first three raw
+moments. Checked against `aggregate`'s analytic moments (by `eltq`) on two
+tables of two and three units (`validation/scripts/aggregate_elt_units.py`).
+
+Proposed for the user's acceptance: (a) *the roll-up is the only rule*:
+`aggregate`'s Burke one-factor copula across a shared event's units is
+pended there and not built here; (b) *a unit's view is its own table*, not
+the rolled one conditioned on the unit; (c) *rates that disagree within an
+event are an error*, never averaged; (d) *simulated years carry no unit
+split*: the rolled table simulates as any `EventLossTable`, and splitting
+each simulated event loss among units needs the joint model of (a).
+
 ## Validation
 
 - Each row's beta has the row's mean and standard deviation (unit test).

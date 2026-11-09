@@ -1,10 +1,10 @@
 """Regenerate validation/reference/mixing_aggregate.csv.
 
-    python3 -m venv agg && agg/bin/pip install aggregate==1.2.0
+    python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0
     agg/bin/python validation/scripts/aggregate_mixing.py
 
 The beta and Sichel mixed Poisson counts against Mildenhall's `aggregate`
-1.2.0, as `validation/scripts/aggregate_counts.py` does for the gamma and
+2.1.0, as `validation/scripts/aggregate_counts.py` does for the gamma and
 inverse Gaussian: each count is an aggregate with a unit severity
 (`dsev [1]`), so its distribution is the count's, and the script records
 P(N = k) for k = 0..59 on a grid of 1024 points with bucket 1. `params`

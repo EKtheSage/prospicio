@@ -1,9 +1,9 @@
 """Regenerate validation/reference/picks_aggregate.csv.
 
-    python3.12 -m venv agg && agg/bin/pip install aggregate==1.0.1
+    python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0
     agg/bin/python validation/scripts/aggregate_picks.py
 
-Layer loss picks against Mildenhall's `aggregate` 1.0.1
+Layer loss picks against Mildenhall's `aggregate` 2.1.0
 (`Aggregate.picks(attachments, layer_loss_picks)`, which returns the
 adjusted severity's probabilities): a gamma severity with mean 100 and cv
 1.5 on a step of 1 with 2^14 points, 10 expected claims, layers 100, 400 xs

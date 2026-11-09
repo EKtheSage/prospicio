@@ -6,7 +6,6 @@
 
 ## Next
 
-- #768 re-pin the aggregate parity references to aggregate 2.1.0 (0.1.0, first; the Aggregate lane leads, Probability for its files)
 - #774 refuse invalid discrete inputs, breaking (aggregate 2.1.0 parity, 0.1.0)
 - #775 Tweedie parameter conversions (aggregate 2.1.0 parity, 0.1.0)
 
@@ -38,3 +37,4 @@
 - [vine-fit-decisions] #568 the decisions of "Pair copulas fitted to data" (items (a) to (f)) and "R-vines and fitting vines" (items (g) to (k)) in `risk.md` accepted by the user on 2026-10-29 as built
 - [mvn-qmc-decisions] #565 the decisions of "Sobol points and the multivariate normal in any dimension" (items (a) to (e)) in `risk.md` accepted by the user on 2026-10-29 as built
 - #769 #770 the Tsallis distortion and the Gini index (branch `claude/cool-shannon-fqpoy8-distortions`, `risk.md` "The Tsallis distortion, the Gini index and the extended calibration set", items (a) to (d) proposed): `Distortion::tsallis` (the Beta(alpha, 1) mixture of TVaRs, `g` in `aggregate`'s stable form, `1 - g` by series near 1, calibrated through its Gini index), `Distortion::gini` for every family (closed forms, adaptive Gauss-Legendre for `Lep`, `LinearYield` and `Minimum`) and `Distortion::from_gini` for the one-parameter families (`aggregate`'s six and the exponential); `aggregate` 2.1.0 parity on 113 values (`validation/scripts/aggregate_distortion_gini.py`); Python `Distortion.tsallis`, `.gini`, `Distortion.from_gini`, R `distortion("tsallis", )`, `@gini`, `distortion_from_gini()`, Excel `"tsallis"` in the `PRO.CAP.DISTORTION` functions
+- #768 the parity references re-pinned to `aggregate` 2.1.0 (branch `claude/cool-shannon-fqpoy8-aggregate-2.1`): every `validation/scripts/aggregate_*.py` run under and pinned to `aggregate==2.1.0`, its source column read from the package; nearly every value unchanged to round-off, and the three that moved are fixes in `aggregate` toward prospicio's (its quoted skewness is its density's, 8.1e-5 off before; `PricingBounds` keeps `p -> 1`, 64 not 52, and the envelope below the top atom, three new levels matched to 1e-12; `Bounds`' lower envelope), so the layer skewness tolerances fall from 5e-7 and 1e-5 to 1e-8; the open checks settled: the P&L books annual `aad` and `agglimit` on an occurrence cover as `aggregate` 2.1.0 does (six cases, 990 rows, 1e-12), far-tail layer moments within 3.3e-9, `Layer::franchise` already bound; `knowledge/findings/aggregate-2-1-repin.md`, the coverage map and the guide for `aggregate` users updated

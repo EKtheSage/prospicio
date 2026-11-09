@@ -107,6 +107,20 @@ round_bucket <- function(bs) rust_result(round_bucket_rust(as.double(bs)))
 #' terms score the claim-weighted mixture of the units' severities, the
 #' aggregate terms the total.
 #'
+#' `validate_grid()` is the verdict on one grid, `aggregate` 2.1.0's `valid`:
+#' the six terms above 1 fail as `SEV_MEAN` to `AGG_SKEW`, `ALIASING` when the
+#' aggregate's mean differs from `E[N]` times the discretized severity's by
+#' more than `1e-5` with no mass beyond the grid, and `DEFECTIVE` when more
+#' than `1e-4` lies beyond it. A pass says the grid is "not unreasonable".
+#'
+
+#' `dyadic_lattice_step()`, `lattice_candidates()` and `lattice_bucket()` are
+#' `aggregate` 2.1.0's lattice rule for a discrete severity: the dyadic step
+#' the atoms lie on (`c(step, residual)`, `NULL` without one), the buckets
+#' tried for it (the largest nice one dividing it, then the step), and the
+#' first that holds `extent` within `2^log2` points, or a coarser bucket with
+#' a `warning` naming the `log2_required`.
+#'
 #' @param units A list of units, each `list(frequency, severity)`.
 #' @param frequency A claim count.
 #' @param severity Any severity but a [sampled] distribution.
@@ -121,6 +135,12 @@ round_bucket <- function(bs) rust_result(round_bucket_rust(as.double(bs)))
 #' @param max_doublings Steps doubled or halved at most this many times each way.
 #' @param log2_cap `log2` never grows past it.
 #' @param log2_floor The half-size row is tried only above it.
+#' @param points The number of points of the grid `validate_grid()` checks.
+
+#' @param atoms A discrete severity's values.
+#' @param depth Binary levels searched below the largest atom.
+#' @param h A lattice step.
+#' @param extent The span the grid must cover.
 #' @returns `recommend_portfolio_grid()`: a list as [recommend_grid()]'s.
 #'   `audit_grid()` and `audit_portfolio_grid()`: a list with `cells` (a
 #'   data frame, the center first: `d_step` and `d_log2`, the moves from the
@@ -129,11 +149,18 @@ round_bucket <- function(bs) rust_result(round_bucket_rust(as.double(bs)))
 #'   `aliasing_error`, `defective`, `selected`, `note`), `selected` (the
 #'   chosen row), `step`, `log2` and `score` of the chosen cell, `probed`
 #'   (`FALSE` when the center met the target), `grew` and `reason`.
+#'   `validate_grid()`: a list with `passes`, `flags` (the failures by
+#'   `aggregate`'s names), `description`, `terms` (the six, `NaN` when
+#'   skipped), `convolution_residual` and `tail_mass`.
 #' @export
 #' @examples
 #' a <- audit_grid(poisson_count(50), gamma_distribution(4, 2.5), step = 0.5, log2 = 10)
 #' c(a$step, a$log2)
 #' a$reason
+#' validate_grid(poisson_count(50), gamma_distribution(4, 2.5), 0.25, 2^10)$flags
+
+#' dyadic_lattice_step(c(3, 6, 9))
+#' lattice_bucket(c(1000, 3000, 7000), 300000, 8)$warning
 #' units <- list(list(poisson_count(10), gamma_distribution(2, 50)),
 #'               list(poisson_count(2), gamma_distribution(0.5, 1000)))
 #' recommend_portfolio_grid(units, log2 = 12)$points
@@ -143,6 +170,34 @@ audit_grid <- function(frequency, severity, step = NULL, log2 = NULL, eps = 1e-4
   settings <- as.double(c(eps, power, good_enough, max_doublings, log2_cap, log2_floor))
   audit_result(rust_result(audit_grid_rust(frequency@ptr, severity@ptr, null_nan(step),
                                            null_nan(log2), settings)))
+}
+
+#' @rdname audit_grid
+#' @export
+validate_grid <- function(frequency, severity, step, points, eps = 1e-4) {
+  rust_result(validate_grid_rust(frequency@ptr, severity@ptr, as.double(step), as.double(points),
+                                 as.double(eps)))
+}
+
+#' @rdname audit_grid
+#' @export
+
+dyadic_lattice_step <- function(atoms, depth = 16) {
+  r <- rust_result(dyadic_lattice_step_rust(as.double(atoms), as.double(depth)))
+  if (is.null(r)) NULL else stats::setNames(r, c("step", "residual"))
+}
+
+#' @rdname audit_grid
+#' @export
+lattice_candidates <- function(h) lattice_candidates_rust(as.double(h))
+
+#' @rdname audit_grid
+#' @export
+lattice_bucket <- function(atoms, extent, log2) {
+  r <- rust_result(lattice_bucket_rust(as.double(atoms), as.double(extent), as.double(log2)))
+  if (!length(r$lattice)) r$lattice <- NULL else r$lattice <- stats::setNames(r$lattice, c("step", "residual"))
+  if (!nzchar(r$warning)) r$warning <- NULL
+  r
 }
 
 #' @rdname audit_grid
@@ -248,11 +303,22 @@ simulate_events_weighted <- function(frequency, severity, n_sims, seed, count = 
 #' Poisson counts). `annual_maxima()` is each simulated year's largest loss,
 #' whose survival function is the simulated OEP curve.
 #'
+#' With an occurrence program `tower`, both are of the program's `view` of
+#' an occurrence: `"ceded"`, the tower's total ceded loss before annual
+#' terms, or `"net"`, as `aggregate` 2.1.0's `oep` on an `occurrence ceded
+#' to` or `net of` clause. The PML is the program's function of the gross
+#' PML; where the view is flat (a layer placed in full, for the net),
+#' `severity_survival` is the gross survival at the end of that stretch and
+#' the achieved probability falls below `p`.
+#'
 #' @param frequency A claim count, as for [simulate_events()].
 #' @param severity A severity, as for [simulate_events()].
 #' @param x Losses.
 #' @param p Annual probabilities in `(0, 1 - P(N = 0))`.
 #' @param events An `event_set`.
+#' @param tower Optional [reinsurance_tower()], an occurrence program on the
+#'   loss basis.
+#' @param view `"ceded"` (default), `"net"` or `"gross"`, with `tower`.
 #' @returns `occurrence_exceedance()`: probabilities. `occurrence_pml()`: a
 #'   data frame with `probability`, `loss`, `severity_survival`,
 #'   `occurrence_return_period` (`1 / (E[N] S(loss))`, which can be shorter
@@ -263,16 +329,22 @@ simulate_events_weighted <- function(frequency, severity, n_sims, seed, count = 
 #' sev <- lognormal_from_mean_cv(100, 2)
 #' occurrence_pml(poisson_count(2), sev, c(0.1, 0.01, 0.001))
 #' occurrence_exceedance(negative_binomial_count(1.5, 2), sev, c(500, 1000))
+#' tower <- reinsurance_tower(list(xol_layer("L", 400, 100)))
+#' occurrence_pml(poisson_count(2), sev, c(0.1, 0.01), tower = tower, view = "net")
 #' ev <- simulate_events(poisson_count(2), sev, 10000, seed = 1)
 #' mean(annual_maxima(ev))
-occurrence_pml <- function(frequency, severity, p) {
-  as.data.frame(rust_result(occurrence_pml_rust(frequency@ptr, severity@ptr, as.double(p))))
+occurrence_pml <- function(frequency, severity, p, tower = NULL, view = "ceded") {
+  as.data.frame(rust_result(occurrence_pml_rust(
+    frequency@ptr, severity@ptr, as.double(p), if (is.null(tower)) NULL else tower@ptr, view
+  )))
 }
 
 #' @rdname occurrence_pml
 #' @export
-occurrence_exceedance <- function(frequency, severity, x) {
-  rust_result(occurrence_exceedance_rust(frequency@ptr, severity@ptr, as.double(x)))
+occurrence_exceedance <- function(frequency, severity, x, tower = NULL, view = "ceded") {
+  rust_result(occurrence_exceedance_rust(
+    frequency@ptr, severity@ptr, as.double(x), if (is.null(tower)) NULL else tower@ptr, view
+  ))
 }
 
 #' @rdname occurrence_pml
@@ -1330,6 +1402,16 @@ label_columns <- function(labels) {
 #' when that is 0. A row whose standard deviation no beta on its exposure can
 #' have is an error naming the row.
 #'
+#' `unit_event_loss_tables()` reads a long table of several units that share
+#' events, one row per event and unit (`aggregate` 2.1.0's `elt unit A [...]
+#' elt unit B [...]`): an event on several units is one occurrence. Its
+#' `rolled` is the portfolio's `event_loss_table`, each event's rows rolled
+#' up as `aggregate` does by default (the event's rate, which its rows must
+#' share; the means, exposures and correlated standard deviations summed,
+#' the independent ones in quadrature), and `units` one `event_loss_table`
+#' per unit, by tag. `elt_severity_moments()` gives the first three raw
+#' moments of one event's loss given that it occurs.
+#'
 #' `elt_oep()` gives the occurrence exceedance probability
 #' `1 - exp(-sum(rate * P(L > x)))` and the annual exceedance frequency;
 #' `elt_occurrence_pml()` the loss at an annual probability; `simulate_elt()`
@@ -1338,6 +1420,7 @@ label_columns <- function(labels) {
 #' @param rate,mean,sd_independent,sd_correlated,exposure The table's
 #'   columns, one value per event.
 #' @param elt An `event_loss_table`.
+#' @param event,unit Each row's event identifier and unit tag.
 #' @param x Losses.
 #' @param p Annual probabilities.
 #' @param n_years The number of years to simulate.
@@ -1358,6 +1441,12 @@ label_columns <- function(labels) {
 #' elt_occurrence_pml(elt, 0.01)
 #' sim <- simulate_elt(elt, 1000, seed = 1)
 #' sim$events@n_sims
+#' tabs <- unit_event_loss_tables(c("1", "2", "1", "3"), c("A", "A", "B", "B"),
+#'                                rate = c(0.01, 0.05, 0.01, 0.02), mean = c(800, 200, 300, 100),
+#'                                sd_independent = c(200, 0, 50, 30), sd_correlated = c(100, 0, 40, 0),
+#'                                exposure = c(2000, 500, 1000, 400))
+#' tabs$rolled$rate # event 1 counted once
+#' elt_severity_moments(tabs$units$B)
 event_loss_table <- function(rate, mean, sd_independent, sd_correlated, exposure) {
   cols <- list(rate = as.double(rate), mean = as.double(mean),
                sd_independent = as.double(sd_independent),
@@ -1365,6 +1454,28 @@ event_loss_table <- function(rate, mean, sd_independent, sd_correlated, exposure
   v <- rust_result(do.call(aggregate_elt_values, c(cols, list(x = double(), p = double()))))
   structure(list(columns = cols, rate = v$rate, expected_annual_loss = v$expected_annual_loss),
             class = "event_loss_table")
+}
+
+#' @rdname event_loss_table
+#' @export
+unit_event_loss_tables <- function(event, unit, rate, mean, sd_independent, sd_correlated,
+                                   exposure) {
+  r <- rust_result(aggregate_elt_units(
+    as.character(event), as.character(unit), as.double(rate), as.double(mean),
+    as.double(sd_independent), as.double(sd_correlated), as.double(exposure)
+  ))
+  make <- function(cols) do.call(event_loss_table, cols)
+  units <- stats::setNames(lapply(r$unit_columns, make), r$units)
+  list(rolled = make(r$rolled), units = units, events = r$events,
+       shared_events = r$shared_events)
+}
+
+#' @rdname event_loss_table
+#' @export
+elt_severity_moments <- function(elt) {
+  cols <- elt$columns
+  rust_result(aggregate_elt_severity_moments(cols$rate, cols$mean, cols$sd_independent,
+                                             cols$sd_correlated, cols$exposure))
 }
 
 #' @rdname event_loss_table

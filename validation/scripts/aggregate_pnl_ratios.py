@@ -1,5 +1,5 @@
 """Reference values for rebucketed legs, the ratio exhibit and the stack of
-P&L ledgers, from `aggregate` 1.0.1 (docs/design/pnl.md, PR 3).
+P&L ledgers, from `aggregate` 2.1.0 (docs/design/pnl.md, PR 3).
 
 - `ex2b`: a seller with consideration 20 and the loss `1.03 x` rebucketed
   on a step of 4: the sheet, each row's own quantiles (the rebucketed one
@@ -9,19 +9,20 @@ P&L ledgers, from `aggregate` 1.0.1 (docs/design/pnl.md, PR 3).
   fallback);
 - `stack_marginal_pnls` of examples 2b and 2c with their difference.
 
-    uv run --python 3.12 --with aggregate==1.0.1 \
+    uv run --python 3.13 --with aggregate==2.1.0 \
         python validation/scripts/aggregate_pnl_ratios.py
 
 writes validation/reference/pnl_ratios_aggregate.csv; the sources are in
 validation/reference/pnl_ledger_sources.csv (aggregate_pnl_ledger.py).
 """
 
+import aggregate
 from pathlib import Path
 
 import numpy as np
 from aggregate import Group, Leg, PnL, build, stack_marginal_pnls
 
-SOURCE = 'aggregate 1.0.1'
+SOURCE = f'aggregate {aggregate.__version__}'
 ref = Path(__file__).resolve().parents[1] / 'reference'
 
 a = build('agg PnLSource 2 claims dsev [1 2 4] [.5 .3 .2] fixed', log2=6, bs=1, update=True)

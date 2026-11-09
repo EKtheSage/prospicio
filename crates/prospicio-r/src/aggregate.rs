@@ -310,6 +310,74 @@ fn audit_grid_rust(
     Ok(grid_audit_list(&a))
 }
 
+/// The verdict on a compound distribution on a grid (`aggregate`'s `valid`).
+#[extendr]
+fn validate_grid_rust(
+    frequency: Robj,
+    severity: Robj,
+    step: f64,
+    points: f64,
+    eps: f64,
+) -> Result<List> {
+    let n = AnyCount::from_robj(&frequency)?;
+    let sev = severity_from_robj(&severity)?;
+    let points = whole(points, "points")? as usize;
+    let v = prospicio_aggregate::validate_grid(n.as_counting(), &sev, step, points, eps)
+        .map_err(to_r)?;
+    let t = &v.terms;
+    let terms: Vec<f64> = [
+        t.severity_mean,
+        t.severity_cv,
+        t.severity_skew,
+        t.aggregate_mean,
+        t.aggregate_cv,
+        t.aggregate_skew,
+    ]
+    .iter()
+    .map(|x| x.unwrap_or(f64::NAN))
+    .collect();
+    let flags: Vec<&str> = v.flags.iter().map(|f| f.name()).collect();
+    Ok(list!(
+        passes = v.passes(),
+        flags = flags,
+        description = v.description(),
+        terms = terms,
+        convolution_residual = v.convolution_residual,
+        tail_mass = v.tail_mass
+    ))
+}
+
+/// `c(step, residual)` of the atoms' dyadic lattice, or NULL.
+#[extendr]
+fn dyadic_lattice_step_rust(atoms: &[f64], depth: f64) -> Result<Robj> {
+    let depth = whole(depth, "depth")? as u32;
+    Ok(
+        match prospicio_aggregate::dyadic_lattice_step(atoms, depth) {
+            Some((s, r)) => Robj::from(vec![s, r]),
+            None => Robj::from(()),
+        },
+    )
+}
+
+#[extendr]
+fn lattice_candidates_rust(h: f64) -> Vec<f64> {
+    prospicio_aggregate::lattice_candidates(h)
+}
+
+#[extendr]
+fn lattice_bucket_rust(atoms: &[f64], extent: f64, log2: f64) -> Result<List> {
+    let log2 = whole(log2, "log2")? as u32;
+    let b = prospicio_aggregate::lattice_bucket(atoms, extent, log2).map_err(to_r)?;
+    Ok(list!(
+        step = b.step,
+        log2 = b.log2,
+        lattice = b.lattice.map(|(s, r)| vec![s, r]).unwrap_or_default(),
+        on_lattice = b.on_lattice,
+        log2_required = b.log2_required.map_or(f64::NAN, f64::from),
+        warning = b.warning.unwrap_or_default()
+    ))
+}
+
 /// The same audit for a sum of independent units.
 #[extendr]
 fn audit_portfolio_grid_rust(
@@ -957,24 +1025,75 @@ fn ylt_file_hash_rust(path: &str) -> Result<String> {
     Ok(prospicio_aggregate::ylt::hash_bytes(&bytes))
 }
 
-/// The occurrence exceedance `1 − G_N(F(x))` at each `x`.
+/// The program's tower and view, or `None` for the gross curve.
+fn program(
+    tower: &Robj,
+    view: &str,
+) -> Result<
+    Option<(
+        prospicio_aggregate::Tower,
+        prospicio_aggregate::OccurrenceView,
+    )>,
+> {
+    if tower.is_null() {
+        return Ok(None);
+    }
+    let t = <&crate::reinsurance::ReinsuranceTower>::try_from(tower)
+        .map_err(|_| Error::Other("expected a reinsurance_tower".into()))?;
+    let view = prospicio_aggregate::OccurrenceView::from_name(view).map_err(to_r)?;
+    Ok(Some((t.inner.clone(), view)))
+}
+
+/// The occurrence exceedance `1 − G_N(F(x))` at each `x`, of a program's
+/// ceded or net loss with a tower.
 #[extendr]
-fn occurrence_exceedance_rust(frequency: Robj, severity: Robj, x: &[f64]) -> Result<Vec<f64>> {
+fn occurrence_exceedance_rust(
+    frequency: Robj,
+    severity: Robj,
+    x: &[f64],
+    tower: Robj,
+    view: &str,
+) -> Result<Vec<f64>> {
     let n = AnyCount::from_robj(&frequency)?;
     let sev = severity_from_robj(&severity)?;
-    Ok(x.iter()
-        .map(|&x| prospicio_aggregate::occurrence_exceedance(n.as_counting(), &sev, x))
-        .collect())
+    match program(&tower, view)? {
+        None => Ok(x
+            .iter()
+            .map(|&x| prospicio_aggregate::occurrence_exceedance(n.as_counting(), &sev, x))
+            .collect()),
+        Some((t, v)) => x
+            .iter()
+            .map(|&x| {
+                prospicio_aggregate::program_occurrence_exceedance(n.as_counting(), &sev, &t, v, x)
+                    .map_err(to_r)
+            })
+            .collect(),
+    }
 }
 
 /// The occurrence PML at each annual probability, as columns.
 #[extendr]
-fn occurrence_pml_rust(frequency: Robj, severity: Robj, p: &[f64]) -> Result<List> {
+fn occurrence_pml_rust(
+    frequency: Robj,
+    severity: Robj,
+    p: &[f64],
+    tower: Robj,
+    view: &str,
+) -> Result<List> {
     let n = AnyCount::from_robj(&frequency)?;
     let sev = severity_from_robj(&severity)?;
+    let prog = program(&tower, view)?;
     let pmls = p
         .iter()
-        .map(|&p| prospicio_aggregate::occurrence_pml(n.as_counting(), &sev, p).map_err(to_r))
+        .map(|&p| {
+            match &prog {
+                None => prospicio_aggregate::occurrence_pml(n.as_counting(), &sev, p),
+                Some((t, v)) => {
+                    prospicio_aggregate::program_occurrence_pml(n.as_counting(), &sev, t, *v, p)
+                }
+            }
+            .map_err(to_r)
+        })
         .collect::<Result<Vec<_>>>()?;
     let column = |f: fn(&prospicio_aggregate::OccurrencePml) -> f64| -> Vec<f64> {
         pmls.iter().map(f).collect()
@@ -1270,6 +1389,69 @@ fn aggregate_elt_values(
     ))
 }
 
+/// Event loss tables of several units: the rolled columns, each unit's
+/// columns, the units, events and the count of shared events.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn aggregate_elt_units(
+    event: Vec<String>,
+    unit: Vec<String>,
+    rate: &[f64],
+    mean: &[f64],
+    sd_independent: &[f64],
+    sd_correlated: &[f64],
+    exposure: &[f64],
+) -> Result<List> {
+    let ev: Vec<&str> = event.iter().map(String::as_str).collect();
+    let un: Vec<&str> = unit.iter().map(String::as_str).collect();
+    let t = prospicio_aggregate::UnitEventLossTables::new(
+        &ev,
+        &un,
+        rate,
+        mean,
+        sd_independent,
+        sd_correlated,
+        exposure,
+    )
+    .map_err(to_r)?;
+    let cols = |c: [Vec<f64>; 5]| {
+        let [rate, mean, sdi, sdc, exposure] = c;
+        list!(
+            rate = rate,
+            mean = mean,
+            sd_independent = sdi,
+            sd_correlated = sdc,
+            exposure = exposure
+        )
+    };
+    let mut per_unit = Vec::new();
+    for u in t.units() {
+        let (_, c) = t.unit_columns(u).map_err(to_r)?;
+        per_unit.push(Robj::from(cols(c)));
+    }
+    Ok(list!(
+        units = t.units().to_vec(),
+        events = t.events().to_vec(),
+        shared_events = t.shared_events() as f64,
+        rolled = cols(t.rolled_columns()),
+        unit_columns = List::from_values(per_unit)
+    ))
+}
+
+/// The first three raw moments of one event's loss given that it occurs.
+#[extendr]
+fn aggregate_elt_severity_moments(
+    rate: &[f64],
+    mean: &[f64],
+    sd_independent: &[f64],
+    sd_correlated: &[f64],
+    exposure: &[f64],
+) -> Result<Vec<f64>> {
+    Ok(elt(rate, mean, sd_independent, sd_correlated, exposure)?
+        .severity_moments()
+        .to_vec())
+}
+
 /// Simulated years from an event loss table: `list(events, ids)`, with
 /// `ids` a list per year of each loss's event row, from 1.
 #[extendr]
@@ -1548,6 +1730,11 @@ extendr_module! {
     fn recommend_grid_rust;
     fn recommend_portfolio_grid_rust;
     fn audit_grid_rust;
+    fn validate_grid_rust;
+
+    fn dyadic_lattice_step_rust;
+    fn lattice_candidates_rust;
+    fn lattice_bucket_rust;
     fn audit_portfolio_grid_rust;
     fn round_bucket_rust;
     fn occurrence_exceedance_rust;
@@ -1558,6 +1745,8 @@ extendr_module! {
     impl EventSet;
     impl Timeline;
     fn aggregate_elt_values;
+    fn aggregate_elt_units;
+    fn aggregate_elt_severity_moments;
     fn aggregate_elt_simulate;
 }
 

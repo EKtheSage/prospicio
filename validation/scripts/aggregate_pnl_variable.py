@@ -1,5 +1,5 @@
 """Reference values for variable terms in the P&L ledger and for
-`pnl_program`'s premium ladder, from `aggregate` 1.0.1
+`pnl_program`'s premium ladder, from `aggregate` 2.1.0
 (docs/design/pnl.md, PR 6a).
 
 - `swing`, `slide`, `pc`, `corr` (and `...c`, the consolidated face): an
@@ -13,19 +13,20 @@
   losses) read off aggregate's engines and the premium and deposits it
   writes.
 
-    uv run --python 3.12 --with aggregate==1.0.1 \
+    uv run --python 3.13 --with aggregate==2.1.0 \
         python validation/scripts/aggregate_pnl_variable.py
 
 writes validation/reference/pnl_variable_aggregate.csv.
 """
 
+import aggregate
 from pathlib import Path
 
 import numpy as np
 from aggregate import build
 from aggregate._program import _pnl_technical, _require_program
 
-SOURCE = 'aggregate 1.0.1'
+SOURCE = f'aggregate {aggregate.__version__}'
 ref = Path(__file__).resolve().parents[1] / 'reference'
 
 A = 'agg ExVar 2 claims dsev [1 2 4] [.5 .3 .2] fixed'

@@ -3,12 +3,16 @@
 Each guide's ```python blocks run in order in one namespace, from the guide's
 own folder. A block followed by a ```text block must print exactly that text
 (trailing spaces ignored), so a number in the prose of a guide cannot go stale
-when the library changes. A block whose info string is ``python no-run`` is
+when the library changes. A great_tables ``GT`` on a block's last line prints
+as its column labels and formatted cells (``gt_text``), so a table's numbers are
+checked the same way. A block whose info string is ``python no-run`` is
 shown but not run, except by ``test_recorded_blocks_of_the_industry_prior_guide``.
 """
 
+import ast
 import contextlib
 import csv
+import html
 import io
 import os
 import re
@@ -57,6 +61,40 @@ def expected_output(blocks, lines, k):
     return blocks[k + 1][1] if all(not line.strip() for line in between) else None
 
 
+def gt_text(table):
+    """A great_tables table as text: the column labels, then each row's formatted cells.
+
+    The stub is left-aligned and the other columns right-aligned, two spaces apart.
+    The site shows the table; this text is what the guide's text block checks.
+    """
+    built = table._build_data(context="html")
+    body = built._body.body
+    stub = [c.var for c in built._boxhead if c.type.name == "stub"]
+    shown = [c for c in built._boxhead if c.type.name == "default"]
+    columns = [(v, True, "") for v in stub] + [(c.var, False, str(c.column_label)) for c in shown]
+    rows = [[label for _, _, label in columns]]
+    for i in range(len(body)):
+        rows.append([html.unescape(str(body[v].iloc[i])).replace("−", "-") for v, _, _ in columns])
+    widths = [max(len(r[j]) for r in rows) for j in range(len(columns))]
+    return "\n".join(
+        "  ".join(cell.ljust(w) if left else cell.rjust(w) for cell, w, (_, left, _) in zip(r, widths, columns))
+        for r in rows
+    )
+
+
+def run_block(code, ns, filename):
+    """Run a block as the docs site shows it: a table on its last line prints as its text."""
+    tree = ast.parse(code, filename)
+    last = tree.body[-1] if tree.body and isinstance(tree.body[-1], ast.Expr) else None
+    if last is not None:
+        tree.body = tree.body[:-1]
+    exec(compile(tree, filename, "exec"), ns)
+    if last is not None:
+        value = eval(compile(ast.Expression(last.value), filename, "eval"), ns)
+        if type(value).__name__ == "GT":
+            print(gt_text(value))
+
+
 def normalized(text):
     return [line.rstrip() for line in text.rstrip().splitlines()]
 
@@ -73,7 +111,7 @@ def run_guide(path, no_run_too=False):
         out = io.StringIO()
         try:
             with contextlib.redirect_stdout(out):
-                exec(compile(code, f"{path.name}:{first}", "exec"), ns)
+                run_block(code, ns, f"{path.name}:{first}")
         except Exception as e:  # report which block of which guide failed
             pytest.fail(f"{where} raised {type(e).__name__}: {e}")
         want = expected_output(blocks, lines, k)
@@ -85,6 +123,20 @@ def run_guide(path, no_run_too=False):
                 f"--- guide\n" + "\n".join(want) + "\n--- printed\n" + "\n".join(got)
             )
     return ran, checked
+
+
+def test_a_table_prints_its_labels_and_formatted_cells(capsys):
+    great_tables = pytest.importorskip("great_tables")
+    import pandas as pd
+
+    ns = {"GT": great_tables.GT, "pd": pd}
+    run_block(
+        'df = pd.DataFrame({"unit": ["A", "B"], "loss": [1234.5, -2.0]})\n'
+        'GT(df, rowname_col="unit").fmt_number("loss", decimals=1).cols_label(loss="loss, $")',
+        ns,
+        "table",
+    )
+    assert capsys.readouterr().out.splitlines() == ["   loss, $", "A  1,234.5", "B     -2.0"]
 
 
 def test_there_are_guides():

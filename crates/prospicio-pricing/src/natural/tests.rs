@@ -156,7 +156,7 @@ fn pentagon_solves_any_determined_triple() {
 
 #[test]
 fn premium_bounds_match_aggregate() {
-    // aggregate 1.0.1 AllocationBounds on InsCo, to its printed digits.
+    // aggregate 2.1.0 AllocationBounds on InsCo (1.0.1 the same), to its printed digits.
     let port = insco();
     let b = port.premium_bounds(53.565217391304344, 100.0).unwrap();
     let want = [

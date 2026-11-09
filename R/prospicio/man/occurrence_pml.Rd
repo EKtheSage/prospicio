@@ -6,9 +6,9 @@
 \alias{annual_maxima}
 \title{The occurrence exceedance (OEP) curve and occurrence PMLs}
 \usage{
-occurrence_pml(frequency, severity, p)
+occurrence_pml(frequency, severity, p, tower = NULL, view = "ceded")
 
-occurrence_exceedance(frequency, severity, x)
+occurrence_exceedance(frequency, severity, x, tower = NULL, view = "ceded")
 
 annual_maxima(events)
 }
@@ -18,6 +18,11 @@ annual_maxima(events)
 \item{severity}{A severity, as for \code{\link[=simulate_events]{simulate_events()}}.}
 
 \item{p}{Annual probabilities in \verb{(0, 1 - P(N = 0))}.}
+
+\item{tower}{Optional \code{\link[=reinsurance_tower]{reinsurance_tower()}}, an occurrence program on the
+loss basis.}
+
+\item{view}{\code{"ceded"} (default), \code{"net"} or \code{"gross"}, with \code{tower}.}
 
 \item{x}{Losses.}
 
@@ -39,10 +44,20 @@ inverts it: the loss whose occurrence exceedance is the annual probability
 Poisson counts). \code{annual_maxima()} is each simulated year's largest loss,
 whose survival function is the simulated OEP curve.
 }
+\details{
+With an occurrence program \code{tower}, both are of the program's \code{view} of
+an occurrence: \code{"ceded"}, the tower's total ceded loss before annual
+terms, or \code{"net"}, as \code{aggregate} 2.1.0's \code{oep} on an \verb{occurrence ceded to} or \verb{net of} clause. The PML is the program's function of the gross
+PML; where the view is flat (a layer placed in full, for the net),
+\code{severity_survival} is the gross survival at the end of that stretch and
+the achieved probability falls below \code{p}.
+}
 \examples{
 sev <- lognormal_from_mean_cv(100, 2)
 occurrence_pml(poisson_count(2), sev, c(0.1, 0.01, 0.001))
 occurrence_exceedance(negative_binomial_count(1.5, 2), sev, c(500, 1000))
+tower <- reinsurance_tower(list(xol_layer("L", 400, 100)))
+occurrence_pml(poisson_count(2), sev, c(0.1, 0.01), tower = tower, view = "net")
 ev <- simulate_events(poisson_count(2), sev, 10000, seed = 1)
 mean(annual_maxima(ev))
 }
