@@ -254,7 +254,7 @@ def test_natural_allocation_on_insco():
     assert port.totals == [22, 28, 36, 40, 55, 65, 100]
     assert port.assets(0.85) == 65
     assert port.kappa("C")[-1] == 64
-    # aggregate 1.0.1: CCoC at 15% and assets 100.
+    # aggregate 2.1.0: CCoC at 15% and assets 100.
     p = port.price(Distortion.ccoc(0.15), assets=100)
     assert p.total.premium == pytest.approx(53.565217391304344, abs=1e-12)
     assert [u.assets for u in p.allocated] == pytest.approx([16, 20, 64], abs=1e-12)
@@ -353,7 +353,7 @@ def test_priority_ladder():
     from prospicio.distributions import Grid
     from prospicio.pricing import Portfolio
 
-    # Pricing Insurance Risk's Discrete case; aggregate 1.0.1's
+    # Pricing Insurance Risk's Discrete case; aggregate 2.1.0's
     # priority_epd_df at assets 90.
     x1 = Grid(1.0, [0.5] + [0.0] * 7 + [0.25, 0.0, 0.25])
     x2 = Grid(1.0, [0.5, 0.25] + [0.0] * 88 + [0.25])
@@ -395,7 +395,7 @@ def test_pricing_bounds_and_envelope():
     pb = PricingBounds(x, {"X3": y}, assets=65)
     assert pb.premium_range == pytest.approx((43.1, 65.0))
     # At P = max X only TVaRs at 0.8 or above price X; TVaR_1 gives max Y
-    # (aggregate 1.0.1's PricingBounds misses it and says 52).
+    # (aggregate 1.0.1's PricingBounds missed it and said 52; 2.1.0 gives 64).
     b = pb.bounds(65.0)[0]
     assert b["risk"] == "X3" and b["upper"] == pytest.approx(64.0)
     g = b["upper_distortion"]
@@ -404,7 +404,7 @@ def test_pricing_bounds_and_envelope():
     with pytest.raises(ValueError):
         pb.bounds(30.0)
     lower, upper = distortion_envelope(x, 53.565217391304344, [0.1, 0.5])
-    # aggregate 1.0.1's PricingBounds against Bernoulli risks.
+    # aggregate 2.1.0's PricingBounds against Bernoulli risks.
     assert lower == pytest.approx([0.1372282608695652, 0.5652173913043478], abs=1e-12)
     assert upper[0] == pytest.approx(0.217391304347826, abs=1e-12)
 
@@ -412,7 +412,7 @@ def test_pricing_bounds_and_envelope():
 def test_tvar_threshold_on_a_portfolio():
     from prospicio.pricing import Portfolio
 
-    # aggregate 1.0.1, Portfolio.tvar_threshold(0.9, 'lower') on PIR's Discrete case
+    # aggregate 2.1.0, Portfolio.tvar_threshold(0.9, 'lower') on PIR's Discrete case
     x1, x2, w = [0, 8, 10], [0, 1, 90], [0.5, 0.25, 0.25]
     rows = [[a, b] for a in x1 for b in x2]
     probs = [p * q for p in w for q in w]
@@ -424,7 +424,7 @@ def test_stand_alone_and_comonotonic_allocation():
     from prospicio.pricing import Portfolio
     from prospicio.risk import Distortion
 
-    # aggregate 1.0.1 on PIR's Discrete case (aggregate_natural.py)
+    # aggregate 2.1.0 on PIR's Discrete case (aggregate_natural.py)
     x1, x2, w = [0, 8, 10], [0, 1, 90], [0.5, 0.25, 0.25]
     rows = [[a, b] for a in x1 for b in x2]
     probs = [p * q for p in w for q in w]
