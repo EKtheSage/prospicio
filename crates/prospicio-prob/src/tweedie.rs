@@ -97,6 +97,101 @@ impl Tweedie {
         Self::new(mean, dispersion, power)
     }
 
+    /// The Tweedie with power `p` in `(1, 2)`, mean `μ > 0` and coefficient
+    /// of variation `cv > 0` (of the Tweedie, not of its severity):
+    /// dispersion `φ = cv² μ^(2-p)`, from `(cv μ)² = φ μ^p`, `aggregate`'s
+    /// `TweedieConversion.from_cv`.
+    ///
+    /// ```
+    /// use prospicio_prob::{Distribution, Tweedie};
+    ///
+    /// let y = Tweedie::from_cv(1.5, 100.0, 0.5).unwrap();
+    /// assert!((y.dispersion() - 2.5).abs() < 1e-12);
+    /// assert!((y.cv() - 0.5).abs() < 1e-15);
+    /// assert!((y.std_dev() / y.mean() - 0.5).abs() < 1e-15);
+    /// ```
+    pub fn from_cv(power: f64, mean: f64, cv: f64) -> Result<Self> {
+        positive("mean", mean)?;
+        positive("cv", cv)?;
+        Self::new(mean, cv * cv * mean.powf(2.0 - power), power)
+    }
+
+    /// The Tweedie with mean `μ > 0`, coefficient of variation `cv > 0` and
+    /// dispersion `φ > 0`: the power that makes `φ μ^p = (cv μ)²`,
+    /// `p = 2 + ln(cv² / φ) / ln μ`. Fails unless that power lies in
+    /// `(1, 2)`, which needs `μ ≠ 1` and `cv² / φ` between `μ^-1` and 1 (for
+    /// `μ > 1`).
+    ///
+    /// ```
+    /// use prospicio_prob::Tweedie;
+    ///
+    /// let y = Tweedie::from_cv_dispersion(100.0, 0.5, 2.5).unwrap();
+    /// assert!((y.power() - 1.5).abs() < 1e-14);
+    /// assert!(Tweedie::from_cv_dispersion(100.0, 0.5, 0.1).is_err());
+    /// ```
+    pub fn from_cv_dispersion(mean: f64, cv: f64, dispersion: f64) -> Result<Self> {
+        positive("mean", mean)?;
+        positive("cv", cv)?;
+        positive("dispersion", dispersion)?;
+        if mean == 1.0 {
+            return Err(Error::InvalidParameter {
+                name: "mean",
+                value: mean,
+                reason: "must not be 1: the variance is the dispersion at every power",
+            });
+        }
+        let power = 2.0 + (cv * cv / dispersion).ln() / mean.ln();
+        if !(power > 1.0 && power < 2.0) {
+            return Err(Error::InvalidParameter {
+                name: "power",
+                value: power,
+                reason: "implied by the mean, cv and dispersion, must be in (1, 2)",
+            });
+        }
+        Self::new(mean, dispersion, power)
+    }
+
+    /// The Tweedie equal to a Poisson number of losses with mean
+    /// `frequency` and a gamma severity with mean `severity_mean` and
+    /// coefficient of variation `severity_cv`: shape `α = 1 / cv²`, power
+    /// `(α + 2) / (α + 1)`, `aggregate`'s `TweedieConversion.from_compound`.
+    ///
+    /// ```
+    /// use prospicio_prob::Tweedie;
+    ///
+    /// // aggregate: tweedie 10 claims sev gamma 10 cv 1 = tweedie 1.5 100 2.
+    /// let y = Tweedie::from_compound(10.0, 10.0, 1.0).unwrap();
+    /// assert!((y.power() - 1.5).abs() < 1e-15);
+    /// assert!((y.dispersion() - 2.0).abs() < 1e-12);
+    /// ```
+    pub fn from_compound(frequency: f64, severity_mean: f64, severity_cv: f64) -> Result<Self> {
+        positive("severity_mean", severity_mean)?;
+        positive("severity_cv", severity_cv)?;
+        let shape = 1.0 / (severity_cv * severity_cv);
+        Self::from_poisson_gamma(frequency, shape, severity_mean / shape)
+    }
+
+    /// The coefficient of variation `√φ μ^(p/2 - 1)`.
+    pub fn cv(&self) -> f64 {
+        self.dispersion.sqrt() * self.mean.powf(self.power / 2.0 - 1.0)
+    }
+
+    /// The mean of each gamma loss, `μ / λ`.
+    pub fn severity_mean(&self) -> f64 {
+        self.mean / self.lambda
+    }
+
+    /// The coefficient of variation of each gamma loss, `α^(-1/2)` with
+    /// `α = (2 - p) / (p - 1)`.
+    pub fn severity_cv(&self) -> f64 {
+        ((self.power - 1.0) / (2.0 - self.power)).sqrt()
+    }
+
+    /// The probability of no loss, `e^(-λ)`.
+    pub fn p0(&self) -> f64 {
+        (-self.lambda).exp()
+    }
+
     /// Mean `μ`.
     pub fn mean_param(&self) -> f64 {
         self.mean

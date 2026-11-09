@@ -565,6 +565,112 @@ severity_class!(PyTweedie {
         Ok(Self { inner })
     }
 
+    /// The Tweedie with power ``power``, mean ``mean`` and coefficient of
+    /// variation ``cv`` (of the Tweedie, not of its severity): dispersion
+    /// ``cv**2 * mean**(2 - power)``, as ``aggregate``'s
+    /// ``TweedieConversion.from_cv``.
+    ///
+    /// Parameters
+    /// ----------
+    /// power : float
+    ///     In ``(1, 2)``.
+    /// mean : float
+    /// cv : float
+    ///
+    /// Returns
+    /// -------
+    /// Tweedie
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Tweedie
+    /// >>> round(Tweedie.from_cv(1.5, 100.0, 0.5).dispersion, 12)
+    /// 2.5
+    #[staticmethod]
+    fn from_cv(power: f64, mean: f64, cv: f64) -> PyResult<Self> {
+        let inner = prospicio_prob::Tweedie::from_cv(power, mean, cv).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// The Tweedie with mean ``mean``, coefficient of variation ``cv`` and
+    /// dispersion ``dispersion``: the power ``2 + log(cv**2 / dispersion) /
+    /// log(mean)``, which must lie in ``(1, 2)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// mean : float
+    ///     Not 1.
+    /// cv : float
+    /// dispersion : float
+    ///
+    /// Returns
+    /// -------
+    /// Tweedie
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Tweedie
+    /// >>> round(Tweedie.from_cv_dispersion(100.0, 0.5, 2.5).power, 12)
+    /// 1.5
+    #[staticmethod]
+    fn from_cv_dispersion(mean: f64, cv: f64, dispersion: f64) -> PyResult<Self> {
+        let inner =
+            prospicio_prob::Tweedie::from_cv_dispersion(mean, cv, dispersion).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// The Tweedie equal to a Poisson number of losses with mean
+    /// ``frequency`` and a gamma severity with mean ``severity_mean`` and
+    /// coefficient of variation ``severity_cv``, as ``aggregate``'s
+    /// ``TweedieConversion.from_compound``.
+    ///
+    /// Parameters
+    /// ----------
+    /// frequency : float
+    /// severity_mean : float
+    /// severity_cv : float
+    ///
+    /// Returns
+    /// -------
+    /// Tweedie
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Tweedie
+    /// >>> y = Tweedie.from_compound(10.0, 10.0, 1.0)
+    /// >>> round(y.power, 12), round(y.dispersion, 12)
+    /// (1.5, 2.0)
+    #[staticmethod]
+    fn from_compound(frequency: f64, severity_mean: f64, severity_cv: f64) -> PyResult<Self> {
+        let inner = prospicio_prob::Tweedie::from_compound(frequency, severity_mean, severity_cv)
+            .map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Coefficient of variation ``sqrt(phi) * mu**(p/2 - 1)``.
+    #[getter]
+    fn cv(&self) -> f64 {
+        self.inner.cv()
+    }
+
+    /// Mean of each gamma loss, ``mu / lambda_``.
+    #[getter]
+    fn severity_mean(&self) -> f64 {
+        self.inner.severity_mean()
+    }
+
+    /// Coefficient of variation of each gamma loss.
+    #[getter]
+    fn severity_cv(&self) -> f64 {
+        self.inner.severity_cv()
+    }
+
+    /// Probability of no loss, ``exp(-lambda_)``.
+    #[getter]
+    fn p0(&self) -> f64 {
+        self.inner.p0()
+    }
+
     /// Dispersion ``phi``.
     #[getter]
     fn dispersion(&self) -> f64 {

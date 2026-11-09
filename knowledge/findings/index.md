@@ -1,6 +1,7 @@
 # Findings
 
 * [The Tsallis distortion and the Gini index against aggregate 2.1.0](tsallis-gini-parity.md) - Tsallis's g in aggregate's stable form and its complement by series near s = 1, every family's Gini closed form or by quadrature (the exponential's as coth(k/2) - 2/k), from_gini, and the extended calibration (InsCo's Tsallis alpha 3.0691) at parity with aggregate 2.1.0 on 113 values (#769, #770, #771).
+* [Tweedie conversions against aggregate 2.1.0](tweedie-conversions.md) - one Tweedie law from its dispersion, its cv or a Poisson-gamma compound matches TweedieConversion to 1e-13; the power implied by a mean, cv and dispersion is 2 + ln(cv^2 / phi) / ln(mean), refused at a mean of 1 (#775).
 * [The validation verdict against aggregate 2.1.0](validation-verdict.md) - aggregate's valid is the grid audit's six moment terms at their bounds, a convolution residual (ALIASING) and a deficit test (DEFECTIVE); validate_grid agrees flag by flag on six books (#778).
 * [Event loss tables across units against aggregate 2.1.0](elt-units.md) - a shared event is one occurrence at its rate, its units' rows rolled up (sums, independent sds in quadrature); rate and severity moments match aggregate with eltq to 1e-10, rolled and unit by unit (#777).
 * [The dyadic lattice rule against aggregate 2.1.0](dyadic-lattice.md) - a discrete severity's lattice is searched 16 binary levels below the largest atom at 1e-12 of it, the gcd of the multiples is the step and the largest nice bucket dividing it is preferred; matched on 16 atom sets (#776).

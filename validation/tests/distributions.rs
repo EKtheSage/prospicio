@@ -761,6 +761,38 @@ fn tsallis_and_gini_match_aggregate() {
     });
 }
 
+/// The Tweedie conversions against `aggregate` 2.1.0's `TweedieConversion`
+/// (#775, `validation/scripts/aggregate_tweedie.py`); each law is also
+/// rebuilt from its mean, cv and dispersion by `from_cv_dispersion`.
+#[test]
+fn tweedie_conversions_match_aggregate() {
+    use prospicio_prob::Tweedie;
+    let cases = reference("tweedie_aggregate.csv");
+    check(&cases, |c| {
+        let v = |k: &str| c.param("params", k);
+        let t = match c.get("distribution") {
+            "from_dispersion" => Tweedie::new(v("mean"), v("dispersion"), v("p")),
+            "from_cv" => Tweedie::from_cv(v("p"), v("mean"), v("cv")),
+            "from_compound" => Tweedie::from_compound(v("frequency"), v("sev_m"), v("sev_cv")),
+            _ => return None,
+        }
+        .ok()?;
+        let back = Tweedie::from_cv_dispersion(t.mean_param(), t.cv(), t.dispersion()).ok()?;
+        assert!((back.power() / t.power() - 1.0).abs() < 1e-12, "{c:?}");
+        Some(match c.get("quantity") {
+            "p" => t.power(),
+            "mean" => t.mean_param(),
+            "dispersion" => t.dispersion(),
+            "cv" => t.cv(),
+            "frequency" => t.lambda(),
+            "sev_m" => t.severity_mean(),
+            "sev_cv" => t.severity_cv(),
+            "p0" => t.p0(),
+            _ => return None,
+        })
+    });
+}
+
 #[test]
 fn counts_match_aggregate() {
     use prospicio_prob::count_families::{

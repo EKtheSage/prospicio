@@ -3,11 +3,20 @@
 \name{tweedie}
 \alias{tweedie}
 \alias{tweedie_from_poisson_gamma}
+\alias{tweedie_from_cv}
+\alias{tweedie_from_cv_dispersion}
+\alias{tweedie_from_compound}
 \title{Tweedie distribution}
 \usage{
 tweedie(mean, dispersion, power, ptr = NULL)
 
 tweedie_from_poisson_gamma(lambda, shape, scale)
+
+tweedie_from_cv(power, mean, cv)
+
+tweedie_from_cv_dispersion(mean, cv, dispersion)
+
+tweedie_from_compound(frequency, severity_mean, severity_cv)
 }
 \arguments{
 \item{mean}{Mean; finite and positive.}
@@ -19,6 +28,13 @@ tweedie_from_poisson_gamma(lambda, shape, scale)
 \item{lambda}{Expected number of losses; finite and positive.}
 
 \item{shape, scale}{Gamma shape and scale of each loss.}
+
+\item{cv}{The Tweedie's coefficient of variation (not the severity's).}
+
+\item{frequency}{Expected number of losses of a Poisson count.}
+
+\item{severity_mean, severity_cv}{The gamma severity's mean and
+coefficient of variation.}
 }
 \value{
 A \code{tweedie} object, which inherits from \link{distribution}.
@@ -28,9 +44,15 @@ Mean \code{mean}, dispersion \code{dispersion} and power \verb{1 < power < 2}: v
 \code{dispersion * mean^power}, a point mass \code{exp(-lambda)} at 0 and a
 continuous density above it. It is a Poisson number of gamma losses, the
 GLM family for pure premium; \code{tweedie_from_poisson_gamma()} builds it
-from those. Properties: \code{d@mean_param}, \code{d@dispersion}, \code{d@power},
-\code{d@lambda} (expected number of losses) and \code{d@severity} (a
-\link{gamma_distribution}).
+from those. \code{tweedie_from_cv()} takes the power, mean and coefficient of
+variation, \code{tweedie_from_cv_dispersion()} the mean, coefficient of
+variation and dispersion (the power then follows), and
+\code{tweedie_from_compound()} a Poisson count's mean with a gamma severity's
+mean and coefficient of variation, as \code{aggregate} 2.1.0's
+\code{TweedieConversion}. Properties: \code{d@mean_param}, \code{d@dispersion},
+\code{d@power}, \code{d@lambda} (expected number of losses), \code{d@severity} (a
+\link{gamma_distribution}), \code{d@cv}, \code{d@severity_mean}, \code{d@severity_cv} and
+\code{d@p0} (\code{exp(-lambda)}, the probability of no loss).
 }
 \details{
 Supports the same operations as \link{pareto}, plus \code{\link[=log_density]{log_density()}}.
@@ -39,4 +61,6 @@ Supports the same operations as \link{pareto}, plus \code{\link[=log_density]{lo
 y <- tweedie(500, 40, 1.6)
 cdf(y, 0) - exp(-y@lambda)
 log_density(y, c(100, 500))
+tweedie_from_cv(1.5, 100, 0.5)@dispersion # 2.5
+tweedie_from_compound(10, 10, 1) # power 1.5, dispersion 2
 }
