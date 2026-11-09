@@ -5,4 +5,4 @@
   the portfolio's table rolled up by event and each unit's own table, and
   `EventLossTable::severity_moments`; Python `UnitEventLossTables` and
   `EventLossTable.severity_moments`, R `unit_event_loss_tables()` and
-  `elt_severity_moments()` (#777).
+  `elt_severity_moments()` (#777, #819).
