@@ -1966,6 +1966,32 @@ def test_importance_sampling_of_the_tail():
         WeightedSample([1.0, 2.0], [0.0, 0.0])
 
 
+def test_program_occurrence_pml_matches_aggregate():
+    """The occurrence PML of a program, net or ceded, against aggregate
+    2.1.0's oep (#773, validation/scripts/aggregate_program_oep.py)."""
+    from prospicio.aggregate import occurrence_exceedance, occurrence_pml
+
+    sev = Lognormal.from_mean_cv(100.0, 2.0)
+    n = Poisson(3.0)
+    tower = Tower([Layer("A", 200.0, 100.0, share=0.5), Layer("B", 500.0, 400.0)])
+    net = occurrence_pml(n, sev, 0.01, tower=tower, view="net")
+    assert net.loss == pytest.approx(794.3949760012904, rel=1e-9)
+    assert net.severity_survival == pytest.approx(0.003350111951167142, rel=1e-9)
+    # A flat stretch of the net: 300 from a gross loss of 400 to 900.
+    flat = occurrence_pml(n, sev, 0.05, tower=tower, view="net")
+    assert flat.loss == pytest.approx(300.0, rel=1e-12)
+    assert flat.severity_survival == pytest.approx(0.008984021041399205, rel=1e-9)
+    ceded = occurrence_pml(n, sev, 0.05, tower=tower, view="ceded")
+    assert ceded.loss == pytest.approx(356.6271501319309, rel=1e-9)
+    # Above the program's top the ceded loss is 600 and nothing exceeds it.
+    assert occurrence_pml(n, sev, 0.01, tower=tower).loss == pytest.approx(600.0)
+    assert occurrence_exceedance(n, sev, 356.6271501319309, tower=tower) == pytest.approx(0.05, rel=1e-9)
+    gross = occurrence_pml(n, sev, 0.01)
+    assert occurrence_pml(n, sev, 0.01, tower=tower, view="gross").loss == gross.loss
+    with pytest.raises(ValueError, match="view"):
+        occurrence_pml(n, sev, 0.01, tower=tower, view="retained")
+
+
 def test_disappearing_deductible_matches_aggregate():
     """The disappearing deductible against aggregate 2.1.0 (#772,
     validation/scripts/aggregate_disappearing.py)."""

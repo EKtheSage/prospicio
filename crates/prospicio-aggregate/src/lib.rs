@@ -68,7 +68,10 @@ pub use monte_carlo::{
 pub use panjer::panjer;
 pub use per_risk::{PerRiskInuring, per_risk_inuring};
 pub use picks::{PickedLayer, Picks, layer_loss_picks};
-pub use pml::{OccurrencePml, occurrence_exceedance, occurrence_pml};
+pub use pml::{
+    OccurrencePml, OccurrenceView, occurrence_exceedance, occurrence_pml,
+    program_occurrence_exceedance, program_occurrence_pml,
+};
 pub use reinsurance::{
     Basis, CarryForward, Commission, Corridor, Layer, LimitAllocation, LossSensitivePremium,
     NoClaimsBonus, ProfitCommission, Tower,

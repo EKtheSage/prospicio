@@ -1095,6 +1095,17 @@ stopifnot(identical(events(book, 1), c(20, 10, 2)))
 stopifnot(identical(events(hours_clause(book, 72), 1), c(30, 2)))
 stopifnot(inherits(try(ceded_events(tw, ev, "nope"), silent = TRUE), "try-error"))
 
+# The occurrence PML of a program, net or ceded, against aggregate 2.1.0's
+# oep (#773, validation/scripts/aggregate_program_oep.py).
+prog <- reinsurance_tower(list(xol_layer("A", 200, 100, share = 0.5), xol_layer("B", 500, 400)))
+sev_oep <- lognormal_from_mean_cv(100, 2)
+net_oep <- occurrence_pml(poisson_count(3), sev_oep, c(0.05, 0.01), tower = prog, view = "net")
+stopifnot(abs(net_oep$loss / c(300, 794.3949760012904) - 1) < 1e-9)
+stopifnot(abs(net_oep$severity_survival / c(0.008984021041399205, 0.003350111951167142) - 1) < 1e-9)
+ced_oep <- occurrence_pml(poisson_count(3), sev_oep, 0.05, tower = prog)
+stopifnot(abs(ced_oep$loss / 356.6271501319309 - 1) < 1e-9)
+stopifnot(abs(occurrence_exceedance(poisson_count(3), sev_oep, 356.6271501319309, tower = prog) / 0.05 - 1) < 1e-9)
+
 # The disappearing deductible against aggregate 2.1.0 (#772,
 # validation/scripts/aggregate_disappearing.py).
 dd <- with_disappearing(xol_layer("D", 300, 50), 100)

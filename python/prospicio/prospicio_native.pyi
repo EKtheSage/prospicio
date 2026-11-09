@@ -38618,7 +38618,7 @@ def occurrence_cession_statistics(frequency: Any, severity: Grid, layers: Sequen
     3.0
     """
 
-def occurrence_exceedance(frequency: Any, severity: Any, x: float) -> float:
+def occurrence_exceedance(frequency: Any, severity: Any, x: float, tower: Tower |None = None, view: str = "ceded") -> float:
     """
     The chance that the year's largest occurrence exceeds ``x``,
     ``1 - G_N(F(x))`` with ``G_N`` the count's generating function: the
@@ -38629,6 +38629,12 @@ def occurrence_exceedance(frequency: Any, severity: Any, x: float) -> float:
     frequency : a claim count
     severity : a severity
     x : float
+        A loss of the view.
+    tower : Tower, optional
+        An occurrence program; with it the curve is of ``view``.
+    view : str, default "ceded"
+        ``"gross"``, ``"ceded"`` (the tower's total ceded loss of an
+        occurrence, before annual terms) or ``"net"``.
     
     Returns
     -------
@@ -38687,11 +38693,17 @@ def occurrence_layer_statistics(frequency: Any, severity: Grid, share: float, li
     (0.3, 0.9, 1.2)
     """
 
-def occurrence_pml(frequency: Any, severity: Any, p: float) -> OccurrencePml:
+def occurrence_pml(frequency: Any, severity: Any, p: float, tower: Tower |None = None, view: str = "ceded") -> OccurrencePml:
     """
     The occurrence PML at an annual probability ``p``: the loss whose
     occurrence exceedance is ``p``, for any claim count (the Python package
-    ``aggregate``'s ``oep`` covers Poisson counts).
+    ``aggregate``'s ``oep`` covers Poisson counts). With an occurrence
+    program ``tower`` it is the PML of the ceded or net loss, the program's
+    function of the gross PML, as ``aggregate`` 2.1.0's ``oep`` on an
+    ``occurrence ceded to`` or ``net of`` clause; annual terms do not enter.
+    Where the view is flat (a layer placed in full, for the net) its
+    ``severity_survival`` is the gross survival at the end of that stretch,
+    so the achieved probability falls below ``p``.
     
     Parameters
     ----------
@@ -38699,6 +38711,10 @@ def occurrence_pml(frequency: Any, severity: Any, p: float) -> OccurrencePml:
     severity : a severity
     p : float
         In ``(0, 1 - P(N = 0))``.
+    tower : Tower, optional
+        An occurrence program on the loss basis.
+    view : str, default "ceded"
+        ``"gross"``, ``"ceded"`` or ``"net"``, with ``tower``.
     
     Returns
     -------

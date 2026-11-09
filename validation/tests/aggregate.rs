@@ -2635,6 +2635,41 @@ fn importance_sampling_matches_the_fft_tail_with_a_smaller_error() {
     assert!((is.mean() - exact.mean()).abs() < 4.0 * is.standard_error_mean(50).unwrap());
 }
 
+/// The occurrence PML of a program, net or ceded, against `aggregate`
+/// 2.1.0's `oep` (#773, `validation/scripts/aggregate_program_oep.py`): the
+/// loss, the gross survival at the right end of the view's flat stretch and
+/// the achieved annual probability.
+#[test]
+fn program_oep_matches_aggregate() {
+    use prospicio_aggregate::pml::{OccurrenceView, program_occurrence_pml};
+    use prospicio_aggregate::{Layer, Tower};
+    use prospicio_prob::{Counting, Gamma, Lognormal, Poisson, Severity};
+    let one = Tower::new(vec![Layer::xol("L", 400.0, 100.0).unwrap()]).unwrap();
+    let two = Tower::new(vec![
+        Layer::xol("A", 200.0, 100.0).unwrap().share(0.5).unwrap(),
+        Layer::xol("B", 500.0, 400.0).unwrap(),
+    ])
+    .unwrap();
+    let n = Poisson::new(3.0).unwrap();
+    check(&reference("program_oep_aggregate.csv"), |c| {
+        let f = fields(c);
+        let sev: Box<dyn Severity> = match f["severity"] {
+            "lognormal" => Box::new(Lognormal::from_mean_cv(100.0, 2.0).ok()?),
+            "gamma" => Box::new(Gamma::from_mean_cv(50.0, 1.5).ok()?),
+            _ => return None,
+        };
+        let tower = if f["program"] == "one" { &one } else { &two };
+        let view = OccurrenceView::from_name(f["view"]).ok()?;
+        let pml = program_occurrence_pml(&n, sev.as_ref(), tower, view, c.number("arg")?).ok()?;
+        Some(match c.get("quantity") {
+            "loss" => pml.loss,
+            "S_sev" => pml.severity_survival,
+            "oep" => 1.0 - n.pgf(1.0 - pml.severity_survival),
+            _ => return None,
+        })
+    });
+}
+
 /// Deductibles on a ground-up loss against `aggregate` 2.1.0 (#772,
 /// `validation/scripts/aggregate_disappearing.py`): the first three moments
 /// of one claim's payment under a disappearing, franchise or ordinary

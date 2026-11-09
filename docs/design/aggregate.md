@@ -1622,6 +1622,31 @@ Decisions:
   being a function of each occurrence, works everywhere.
 - (e) *JSON format version 9* is stamped only when a layer has one of them.
 
+### The occurrence PML of a program, net or ceded (#773)
+
+`aggregate` 2.1.0's `oep` on an aggregate with an `occurrence ceded to` or
+`net of` clause gives the PML of the program's view of an occurrence.
+Shares are at most 1 and a stage's layers do not overlap, so the program's
+ceded function `g` of an occurrence is non-decreasing and the largest
+ceded (or net) occurrence of a year is `g` of the largest gross one: the
+PML is `g` of the gross PML. `Tower::occurrence_ceded` is `g`, every stage
+seeing the occurrence net of the earlier stages and annual terms left out
+(they act on a year, not an occurrence); `pml::program_occurrence_pml` and
+`program_occurrence_exceedance` take the tower and an `OccurrenceView`
+(gross, ceded, net), for any claim count. Where `g` (or the net) is flat,
+the view has an atom and `severity_survival` is the gross survival at the
+right end of the flat stretch, found by bisection, so the achieved OEP
+falls below `p`. Checked against `aggregate`'s `oep` on 216 values
+(`validation/scripts/aggregate_program_oep.py`).
+
+Proposed for the user's acceptance: (a) *the bindings extend
+`occurrence_pml` and `occurrence_exceedance`* with `tower` and `view`
+(default `"ceded"` with a tower) instead of adding functions; (b) *a layer
+on a sum-insured basis or one that reads the order of events is refused*,
+since the OEP of an occurrence needs a function of its loss alone; (c) *any
+count*, where `aggregate` requires a Poisson one; (d) *no Excel function*:
+`PRO.CAP.AGG.PML` takes no tower, and a tower on a sheet is a later item.
+
 ### The disappearing deductible (#772)
 
 `aggregate` 2.1.0's `y xs d1 to d2 disappearing` has a retention that falls
