@@ -325,7 +325,9 @@ impl PyCount {
     ///
     /// Parameters
     /// ----------
-    /// n : int
+    /// n : int or float
+    ///     A whole number of claims; ``2.5`` is refused, as ``aggregate``
+    ///     2.1.0 refuses a fractional fixed count.
     ///
     /// Returns
     /// -------
@@ -338,10 +340,15 @@ impl PyCount {
     /// >>> n.mean(), n.variance()
     /// (3.0, 0.0)
     #[staticmethod]
-    fn fixed(n: u64) -> Self {
-        Self {
-            inner: CountDist::Empirical(EmpiricalCount::fixed(n)),
+    fn fixed(n: f64) -> PyResult<Self> {
+        if !(n.is_finite() && n >= 0.0 && n.fract() == 0.0) {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "a fixed count needs a whole, non-negative number of claims, not {n}"
+            )));
         }
+        Ok(Self {
+            inner: CountDist::Empirical(EmpiricalCount::fixed(n as u64)),
+        })
     }
 
     /// A Bernoulli count, one claim with probability ``p`` in ``[0, 1)``,

@@ -1,5 +1,6 @@
 # Findings
 
+* [Discrete inputs aggregate 2.1.0 refuses](discrete-input-checks.md) - dsev probabilities must pass numpy's isclose(sum, 1) (0.99999 builds, 0.99998 does not) and a fixed count must be whole; dfreq sums are not checked by aggregate; Discrete now refuses as dsev does, with Discrete::normalized for weights (#774).
 * [Tweedie conversions against aggregate 2.1.0](tweedie-conversions.md) - one Tweedie law from its dispersion, its cv or a Poisson-gamma compound matches TweedieConversion to 1e-13; the power implied by a mean, cv and dispersion is 2 + ln(cv^2 / phi) / ln(mean), refused at a mean of 1 (#775).
 * [The validation verdict against aggregate 2.1.0](validation-verdict.md) - aggregate's valid is the grid audit's six moment terms at their bounds, a convolution residual (ALIASING) and a deficit test (DEFECTIVE); validate_grid agrees flag by flag on six books (#778).
 * [Event loss tables across units against aggregate 2.1.0](elt-units.md) - a shared event is one occurrence at its rate, its units' rows rolled up (sums, independent sds in quadrature); rate and severity moments match aggregate with eltq to 1e-10, rolled and unit by unit (#777).
