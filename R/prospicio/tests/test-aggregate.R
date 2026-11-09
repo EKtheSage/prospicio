@@ -1094,3 +1094,10 @@ book <- merge_event_sets(a, b)
 stopifnot(identical(events(book, 1), c(20, 10, 2)))
 stopifnot(identical(events(hours_clause(book, 72), 1), c(30, 2)))
 stopifnot(inherits(try(ceded_events(tw, ev, "nope"), silent = TRUE), "try-error"))
+
+# The dyadic lattice rule against aggregate 2.1.0 (#776).
+stopifnot(identical(dyadic_lattice_step(c(3, 6, 9)), c(step = 3, residual = 0)))
+stopifnot(is.null(dyadic_lattice_step(c(0.1, 0.2))))
+stopifnot(identical(lattice_candidates(0.75), c(0.25, 0.75)))
+lb <- lattice_bucket(c(1000, 3000, 7000), 300000, 8)
+stopifnot(lb$step == 2000, !lb$on_lattice, lb$log2_required == 9, grepl("log2 >= 9", lb$warning))

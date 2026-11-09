@@ -310,6 +310,37 @@ fn audit_grid_rust(
     Ok(grid_audit_list(&a))
 }
 
+/// `c(step, residual)` of the atoms' dyadic lattice, or NULL.
+#[extendr]
+fn dyadic_lattice_step_rust(atoms: &[f64], depth: f64) -> Result<Robj> {
+    let depth = whole(depth, "depth")? as u32;
+    Ok(
+        match prospicio_aggregate::dyadic_lattice_step(atoms, depth) {
+            Some((s, r)) => Robj::from(vec![s, r]),
+            None => Robj::from(()),
+        },
+    )
+}
+
+#[extendr]
+fn lattice_candidates_rust(h: f64) -> Vec<f64> {
+    prospicio_aggregate::lattice_candidates(h)
+}
+
+#[extendr]
+fn lattice_bucket_rust(atoms: &[f64], extent: f64, log2: f64) -> Result<List> {
+    let log2 = whole(log2, "log2")? as u32;
+    let b = prospicio_aggregate::lattice_bucket(atoms, extent, log2).map_err(to_r)?;
+    Ok(list!(
+        step = b.step,
+        log2 = b.log2,
+        lattice = b.lattice.map(|(s, r)| vec![s, r]).unwrap_or_default(),
+        on_lattice = b.on_lattice,
+        log2_required = b.log2_required.map_or(f64::NAN, f64::from),
+        warning = b.warning.unwrap_or_default()
+    ))
+}
+
 /// The same audit for a sum of independent units.
 #[extendr]
 fn audit_portfolio_grid_rust(
@@ -1548,6 +1579,9 @@ extendr_module! {
     fn recommend_grid_rust;
     fn recommend_portfolio_grid_rust;
     fn audit_grid_rust;
+    fn dyadic_lattice_step_rust;
+    fn lattice_candidates_rust;
+    fn lattice_bucket_rust;
     fn audit_portfolio_grid_rust;
     fn round_bucket_rust;
     fn occurrence_exceedance_rust;

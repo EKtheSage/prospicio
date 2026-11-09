@@ -4139,3 +4139,112 @@ pub(crate) fn simulate_events_weighted(
         .map_err(to_py)?;
     Ok((PyEventSet { inner }, w))
 }
+
+/// The bucket ``lattice_bucket`` chose for a discrete severity.
+#[pyclass(name = "LatticeBucket", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyLatticeBucket {
+    inner: prospicio_aggregate::LatticeBucket,
+}
+
+#[pymethods]
+impl PyLatticeBucket {
+    /// The bucket size.
+    #[getter]
+    fn step(&self) -> f64 {
+        self.inner.step
+    }
+
+    /// ``2**log2`` points hold the extent at ``step``.
+    #[getter]
+    fn log2(&self) -> u32 {
+        self.inner.log2
+    }
+
+    /// ``(step, residual)`` of the atoms' dyadic lattice, or ``None``.
+    #[getter]
+    fn lattice(&self) -> Option<(f64, f64)> {
+        self.inner.lattice
+    }
+
+    /// Whether every atom is a multiple of ``step``.
+    #[getter]
+    fn on_lattice(&self) -> bool {
+        self.inner.on_lattice
+    }
+
+    /// The ``log2`` the lattice would need, when the given one is too small.
+    #[getter]
+    fn log2_required(&self) -> Option<u32> {
+        self.inner.log2_required
+    }
+
+    /// ``aggregate``'s ``LatticeGridWarning`` text, or ``None``.
+    #[getter]
+    fn warning(&self) -> Option<String> {
+        self.inner.warning.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "LatticeBucket(step={:?}, log2={}, on_lattice={})",
+            self.inner.step, self.inner.log2, self.inner.on_lattice
+        )
+    }
+}
+
+/// The dyadic step of the lattice the ``atoms`` lie on, ``aggregate``
+/// 2.1.0's ``_dyadic_lattice_step``: ``(step, residual)``, or ``None`` when
+/// there is none within ``depth`` binary levels (decimal atoms such as 0.1).
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import dyadic_lattice_step
+/// >>> dyadic_lattice_step([3.0, 6.0, 9.0]), dyadic_lattice_step([0.1, 0.2])
+/// ((3.0, 0.0), None)
+#[pyfunction]
+#[pyo3(signature = (atoms, depth = 16))]
+pub(crate) fn dyadic_lattice_step(atoms: Vec<f64>, depth: u32) -> Option<(f64, f64)> {
+    prospicio_aggregate::dyadic_lattice_step(&atoms, depth)
+}
+
+/// The buckets tried for a lattice step ``h``: the largest nice bucket
+/// dividing it, then ``h``, ``aggregate`` 2.1.0's ``_lattice_candidates``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import lattice_candidates
+/// >>> lattice_candidates(3.0), lattice_candidates(0.75)
+/// ([1.0, 3.0], [0.25, 0.75])
+#[pyfunction]
+pub(crate) fn lattice_candidates(h: f64) -> Vec<f64> {
+    prospicio_aggregate::lattice_candidates(h)
+}
+
+/// A bucket for a compound distribution of a discrete severity on
+/// ``atoms`` covering ``extent`` within ``2**log2`` points, ``aggregate``
+/// 2.1.0's lattice rule: the first lattice candidate that fits, so every
+/// atom sits on a grid point, or a coarser bucket with a warning naming the
+/// ``log2`` the lattice needs.
+///
+/// Parameters
+/// ----------
+/// atoms : list of float
+/// extent : float
+/// log2 : int
+///
+/// Returns
+/// -------
+/// LatticeBucket
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import lattice_bucket
+/// >>> b = lattice_bucket([1000.0, 3000.0, 7000.0], 300_000.0, 8)
+/// >>> b.step, b.on_lattice, b.log2_required
+/// (2000.0, False, 9)
+#[pyfunction]
+pub(crate) fn lattice_bucket(atoms: Vec<f64>, extent: f64, log2: u32) -> PyResult<PyLatticeBucket> {
+    Ok(PyLatticeBucket {
+        inner: prospicio_aggregate::lattice_bucket(&atoms, extent, log2).map_err(to_py)?,
+    })
+}

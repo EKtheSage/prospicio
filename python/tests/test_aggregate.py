@@ -1964,3 +1964,17 @@ def test_importance_sampling_of_the_tail():
         simulate_events_weighted(freq, sev, 10, 1, tail_threshold=20.0, tail_share=1.0)
     with pytest.raises(ValueError):
         WeightedSample([1.0, 2.0], [0.0, 0.0])
+
+
+def test_lattice_bucket_matches_aggregate():
+    """The dyadic lattice rule against aggregate 2.1.0 (#776)."""
+    from prospicio.aggregate import dyadic_lattice_step, lattice_bucket, lattice_candidates
+
+    assert dyadic_lattice_step([3.0, 6.0, 9.0]) == (3.0, 0.0)
+    assert dyadic_lattice_step([0.1, 0.2]) is None
+    assert lattice_candidates(0.75) == [0.25, 0.75]
+    b = lattice_bucket([1000.0, 3000.0, 7000.0], 300_000.0, 9)
+    assert (b.step, b.on_lattice, b.warning) == (1000.0, True, None)
+    tight = lattice_bucket([1000.0, 3000.0, 7000.0], 300_000.0, 8)
+    assert (tight.step, tight.on_lattice, tight.log2_required) == (2000.0, False, 9)
+    assert "log2 >= 9" in tight.warning
