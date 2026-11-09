@@ -116,7 +116,7 @@ for (d in list(lognormal(7, 0.5), pareto(1e5, 1.5), pareto(1e5, 1.5, truncation 
 }
 stopifnot(inherits(try(dist_to_json(custom_distribution(function(x) 1 - exp(-x))), silent = TRUE), "try-error"))
 
-# More claim counts, against aggregate 1.0.1 where it has them.
+# More claim counts, against aggregate 2.1.0 where it has them.
 zt <- zero_truncated_count(poisson_count(2))
 stopifnot(pmf(zt, 0) == 0, abs(mean(zt) - 2 / (1 - exp(-2))) < 1e-12)
 zm <- zero_modified_count(negative_binomial_count(2, 1.5), 0.3)
@@ -133,7 +133,7 @@ b <- compound_distribution(zm, sev, 100, method = "fft")
 stopifnot(max(abs(a@probs - b@probs)) < 1e-12)
 stopifnot(inherits(try(compound_distribution(pig, sev, 100, method = "panjer"), silent = TRUE), "try-error"))
 # The beta and Sichel mixings (validation/scripts/aggregate_mixing.py): the
-# beta by quadrature, the Sichel against aggregate 1.2.0.
+# beta by quadrature, the Sichel against aggregate 2.1.0.
 bm <- mixed_poisson_count(10, 0.3, mixing = "beta", max = 30)
 stopifnot(abs(pmf(bm, 0) - 0.0011358609508610308) < 1e-14, is.null(gig_parameters(bm)))
 sm <- mixed_poisson_count(10, 0.4, mixing = "sichel", shape = 1.5)
@@ -144,7 +144,7 @@ same <- gig_parameters(mixed_poisson_count(10, 0.5, mixing = "sichel", skewness 
 stopifnot(abs(same[["shape"]] / sig[["shape"]] - 1) < 1e-12)
 stopifnot(inherits(try(mixed_poisson_count(10, 0.5, mixing = "sichel"), silent = TRUE), "try-error"))
 
-# Named counts and tvar_threshold against aggregate 1.0.1.
+# Named counts and tvar_threshold against aggregate 2.1.0.
 stopifnot(pmf(fixed_count(3), 3) == 1, abs(pmf(bernoulli_count(0.3), 1) - 0.3) < 1e-15,
           abs(pmf(geometric_count(3), 1) - 0.1875) < 1e-15)
 # Renewal counts: exponential waits are Poisson, waits of 0 or 1 arrive in
@@ -160,7 +160,7 @@ g <- grid_distribution(1, c(0.4, 0.3, 0.2, 0.1))
 t <- tvar_threshold(g, 0.85)
 stopifnot(t < 0.85, abs(TVaR(g, t) - quantile(g, 0.85)) < 1e-12)
 
-# A signed discrete distribution, against aggregate 1.0.1's GridDistribution:
+# A signed discrete distribution, against aggregate 2.1.0's GridDistribution:
 # the P&L design note's example 1, the margin 9 less the loss of two claims.
 m <- discrete_distribution(c(7, 6, 5, 4, 3, 1), c(0.25, 0.3, 0.09, 0.2, 0.12, 0.04))
 stopifnot(identical(m@values, c(1, 3, 4, 5, 6, 7)), abs(mean(m) - 5.2) < 1e-12)

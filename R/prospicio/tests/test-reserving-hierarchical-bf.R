@@ -273,3 +273,54 @@ expect_error_like(bayes_hierarchical_bf_one_year(tri, "paid", "premium", refit =
                   "should be one of")
 expect_error_like(do.call(bayes_hierarchical_bf_one_year,
   c(list(tri, "paid", "premium", k_threshold = NaN), yq)), "k_threshold")
+
+# Programs b and c stop at 36 and 24 months, short of a's 48: their next
+# diagonals fall at ages they never observed, which the view warns of (#762).
+stopifnot(length(view@warnings) == 1,
+          grepl("b (observed to age 36, its next diagonal to 48)", view@warnings, fixed = TRUE),
+          grepl("c (observed to age 24, its next diagonal to 36)", view@warnings, fixed = TRUE),
+          !grepl("a (", view@warnings, fixed = TRUE),
+          # Reweighting only (yq), the view is approximate, not expensive.
+          grepl("approximate", view@warnings, fixed = TRUE),
+          !grepl("expensive", view@warnings, fixed = TRUE),
+          any(vrun$warnings == paste0("bayes_hierarchical_bf_one_year: ", view@warnings)))
+# Programs that share their ages do not warn.
+shared <- panel(list(
+  a = list(`2021` = list(c(60, 100, 125), 200), `2022` = list(c(66, 108), 210),
+           `2023` = list(70, 215)),
+  b = list(`2021` = list(c(35, 60, 75), 120), `2022` = list(c(38, 64), 125),
+           `2023` = list(40, 130))
+))
+even <- with_warnings(do.call(bayes_hierarchical_bf_one_year,
+  c(list(shared, "paid", "premium", apriori = 0.7, level_cv = 0.3, seed = 5), yq)))
+stopifnot(length(even$value@warnings) == 0,
+          !any(grepl("never observed", even$warnings, fixed = TRUE)))
+
+# A light refit reaches the view: every simulation refitted with a shorter,
+# warm-started sampler, recorded in the provenance; a bad one is an error.
+lq <- list(chains = 2, tune = 150, draws = 150, n_sims = 100, one_year_sims = 3,
+           refit = "refit_all")
+light <- suppressWarnings(do.call(bayes_hierarchical_bf_one_year,
+  c(list(tri, "paid", "premium", apriori = 0.7, level_cv = 0.3, seed = 5,
+         light_refit = c(2, 60, 60)), lq)))
+stopifnot(identical(light@refitted, 1:3),
+          grepl("expensive", light@warnings, fixed = TRUE),
+          identical(provenance(light@cdr)$parameters[["light_refit"]], "2x60+60"))
+plain <- suppressWarnings(do.call(bayes_hierarchical_bf_one_year,
+  c(list(tri, "paid", "premium", apriori = 0.7, level_cv = 0.3, seed = 5,
+         light_refit = TRUE), yq)))
+# The default refits with the light refit (#762); a refit mode chosen keeps
+# the fit's own sampler unless a light refit is given.
+dflt <- suppressWarnings(do.call(bayes_hierarchical_bf_one_year,
+  c(list(tri, "paid", "premium", apriori = 0.7, level_cv = 0.3, seed = 5),
+    lq[names(lq) != "refit"])))
+chosen <- suppressWarnings(do.call(bayes_hierarchical_bf_one_year,
+  c(list(tri, "paid", "premium", apriori = 0.7, level_cv = 0.3, seed = 5), lq)))
+stopifnot(identical(provenance(dflt@cdr)$parameters[["light_refit"]], "4x150+250"),
+          is.null(provenance(chosen@cdr)$parameters[["light_refit"]]))
+# A view that reweights only records no sampler.
+stopifnot(is.null(provenance(plain@cdr)$parameters[["light_refit"]]))
+expect_error_like(do.call(bayes_hierarchical_bf_one_year,
+  c(list(tri, "paid", "premium", light_refit = c(0, 60, 60)), lq)), "light_refit")
+expect_error_like(do.call(bayes_hierarchical_bf_one_year,
+  c(list(tri, "paid", "premium", light_refit = "fast"), lq)), "light_refit")

@@ -1,6 +1,6 @@
-"""Print aggregate 1.2.0's shared-mixing aggregate behind `shared_mixing_matches_aggregate`.
+"""Print aggregate 2.1.0's shared-mixing aggregate behind `shared_mixing_matches_aggregate`.
 
-    python3.13 -m venv agg && agg/bin/pip install aggregate==1.2.0
+    python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0
     agg/bin/python validation/scripts/aggregate_common_shock.py
 
 One `Aggregate` with two severity components, 10 gamma claims (mean 10,

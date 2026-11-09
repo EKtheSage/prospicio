@@ -16,7 +16,7 @@ use prospicio_prob::PredictiveDistribution;
 use prospicio_reserving::Triangle;
 use prospicio_reserving::bayes::{
     BayesBfNormalised, BayesOneYear, BayesOneYearFit, HierarchicalBf, HierarchicalBfFit,
-    OneYearRefit,
+    LightRefit, OneYearRefit,
 };
 use prospicio_validation::{
     stan_triangle, stan_triangle_ages, stan_triangle_cut, stan_triangle_of,
@@ -361,6 +361,181 @@ fn pareto_k_when_one_program_stops_short() {
             println!(
                 "{name:22} {draws} draws per chain: {}",
                 quantiles(&fit.pareto_k)
+            );
+        }
+    }
+}
+
+/// The light refits to try: `HB_LIGHT="chains,tune,draws;..."`, default
+/// [`LightRefit::default`] (4 chains of 150 warm-up and 250 kept draws).
+fn light_settings() -> Vec<LightRefit> {
+    let Ok(text) = std::env::var("HB_LIGHT") else {
+        return vec![LightRefit::default()];
+    };
+    text.split(';')
+        .map(|c| {
+            let v: Vec<usize> = c.split(',').map(|x| x.trim().parse().unwrap()).collect();
+            LightRefit {
+                chains: v[0],
+                tune: v[1],
+                draws: v[2],
+            }
+        })
+        .collect()
+}
+
+/// The reference panel's view (the settings of `run`, at the model's default
+/// sampler: 4 chains of 1,000 warm-up and 1,000 kept draws, target
+/// acceptance 0.99), every simulation refitted (`RefitAll`), with `light`
+/// or with the fit's own sampler; and its wall time in seconds.
+fn refit_view(
+    tri: &Triangle,
+    sims: usize,
+    seed: u64,
+    light: Option<LightRefit>,
+) -> (BayesOneYearFit<HierarchicalBfFit>, f64) {
+    let start = std::time::Instant::now();
+    let view = HierarchicalBf {
+        apriori: 0.7,
+        level_cv: Some(0.5),
+        tau_scale: 0.5,
+        n_sims: sims,
+        seed,
+        ..HierarchicalBf::default()
+    }
+    .one_year(
+        tri,
+        "paid",
+        "premium",
+        &BayesOneYear {
+            n_sims: Some(sims),
+            refit: Some(OneYearRefit::RefitAll),
+            light_refit: light,
+            no_light_refit: light.is_none(),
+            ..BayesOneYear::default()
+        },
+    )
+    .unwrap();
+    (view, start.elapsed().as_secs_f64())
+}
+
+/// Each simulation's claims development result by program and in total
+/// (the last column).
+fn by_program_and_total(cdr: &PredictiveDistribution) -> Vec<Vec<f64>> {
+    let programs = cdr.aggregate(&["program"]).unwrap();
+    let n = programs.n_components();
+    programs
+        .draw_matrix()
+        .chunks(n)
+        .map(|row| {
+            let mut row = row.to_vec();
+            row.push(row.iter().sum());
+            row
+        })
+        .collect()
+}
+
+/// Issue #762, item 1: the light refit (`BayesOneYear::light_refit`) against
+/// full refits at the default sampler on the reference panel, simulation by
+/// simulation (every one refitted, `RefitAll`, so each pair has the same
+/// year and differs only in its closing reserve). For each seed of
+/// `HB_SEEDS` and each light refit of `HB_LIGHT`, the first `HB_SIMS`
+/// (default 16) simulations: the gap of the claims development result to the
+/// full refit's in units of the full refits' sd over those simulations, its
+/// rms and mean, for each program and the total, the ratio of the sds, the
+/// refits that warned and the wall times. `HB_CACHE`, a path prefix, keeps
+/// the full refits' values between runs. The target of the user's decision
+/// of 2026-11-09 is within about 0.05 sd of the total. Run in release:
+/// `cargo test --release -p prospicio-validation --features slow-bayes --test
+/// reserving_bayes_hierarchical_bf_one_year light_refit_against_full_refits
+/// -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn light_refit_against_full_refits() {
+    let tri = stan_triangle();
+    let sims = env_usize("HB_SIMS", 16);
+    let lights = light_settings();
+    for seed in seeds() {
+        let cache = std::env::var("HB_CACHE")
+            .ok()
+            .map(|p| std::path::PathBuf::from(format!("{p}.{seed}.{sims}.txt")));
+        let cached: Option<Vec<Vec<f64>>> = cache
+            .as_ref()
+            .and_then(|c| std::fs::read_to_string(c).ok())
+            .map(|text| {
+                text.lines()
+                    .map(|l| l.split(',').map(|v| v.parse().unwrap()).collect())
+                    .collect()
+            });
+        let start = std::time::Instant::now();
+        HierarchicalBf {
+            apriori: 0.7,
+            level_cv: Some(0.5),
+            tau_scale: 0.5,
+            n_sims: sims,
+            seed,
+            ..HierarchicalBf::default()
+        }
+        .fit(&tri, "paid", "premium")
+        .unwrap();
+        println!(
+            "seed {seed}: the fit alone in {:.1} s",
+            start.elapsed().as_secs_f64()
+        );
+        let full = cached.unwrap_or_else(|| {
+            let (view, secs) = refit_view(&tri, sims, seed, None);
+            println!(
+                "seed {seed}: {sims} full refits in {secs:.1} s incl. the fit, warned {}",
+                view.refit_warnings
+            );
+            let rows = by_program_and_total(&view.cdr);
+            if let Some(c) = &cache {
+                let text: Vec<String> = rows
+                    .iter()
+                    .map(|r| {
+                        r.iter()
+                            .map(|v| format!("{v:?}"))
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    })
+                    .collect();
+                std::fs::write(c, text.join("\n")).unwrap();
+            }
+            rows
+        });
+        let columns = full[0].len();
+        let names: Vec<String> = ["evw", "genins", "raa"]
+            .iter()
+            .map(|s| s.to_string())
+            .chain(["total".to_string()])
+            .collect();
+        let column =
+            |rows: &[Vec<f64>], j: usize| -> Vec<f64> { rows.iter().map(|r| r[j]).collect() };
+        let total_sd = sd(&column(&full, columns - 1));
+        for &light in &lights {
+            let (view, secs) = refit_view(&tri, sims, seed, Some(light));
+            let rows = by_program_and_total(&view.cdr);
+            let mut parts = vec![];
+            for j in 0..columns {
+                let (f, l) = (column(&full, j), column(&rows, j));
+                let s = sd(&f);
+                let d: Vec<f64> = l.iter().zip(&f).map(|(a, b)| (a - b) / s).collect();
+                let rms = (d.iter().map(|v| v * v).sum::<f64>() / d.len() as f64).sqrt();
+                let t: Vec<f64> = l.iter().zip(&f).map(|(a, b)| (a - b) / total_sd).collect();
+                let rms_t = (t.iter().map(|v| v * v).sum::<f64>() / t.len() as f64).sqrt();
+                parts.push(format!(
+                    "{} rms {rms:.3} mean {:+.3} sd ratio {:.3} (in the total's sd: rms {rms_t:.3} mean {:+.3})",
+                    names.get(j).map_or("?", String::as_str),
+                    mean(&d),
+                    sd(&l) / s,
+                    mean(&t)
+                ));
+            }
+            println!(
+                "seed {seed}, {light:?}: {sims} light refits in {secs:.1} s incl. the fit, warned \
+                 {}; {}",
+                view.refit_warnings,
+                parts.join("; ")
             );
         }
     }

@@ -6,7 +6,6 @@
 
 ## Next
 
-- #768 re-pin the aggregate parity references to aggregate 2.1.0 (0.1.0, first; the Aggregate lane leads, Probability for its files)
 - #769 Tsallis distortion (aggregate 2.1.0 parity, 0.1.0)
 - #770 Gini index of every distortion and `Distortion::from_gini` (aggregate 2.1.0 parity, 0.1.0)
 - #775 Tweedie parameter conversions (aggregate 2.1.0 parity, 0.1.0)
@@ -39,3 +38,4 @@
 - [vine-fit-decisions] #568 the decisions of "Pair copulas fitted to data" (items (a) to (f)) and "R-vines and fitting vines" (items (g) to (k)) in `risk.md` accepted by the user on 2026-10-29 as built
 - [mvn-qmc-decisions] #565 the decisions of "Sobol points and the multivariate normal in any dimension" (items (a) to (e)) in `risk.md` accepted by the user on 2026-10-29 as built
 - #774 invalid discrete inputs refused, breaking (branch `claude/cool-shannon-fqpoy8-discrete-inputs`): `Discrete::new` refuses probabilities that fail numpy's `isclose(sum, 1)`, as `aggregate` 2.1.0 refuses `dsev`, naming the sum, and `Discrete::normalized` rescales weights on purpose; Python `Discrete(..., normalize=)` and `Count.fixed` refusing a fractional count, R `discrete_distribution(..., normalize =)`; `aggregate` 2.1.0's accept or refuse reproduced on nine sums (`validation/scripts/aggregate_discrete_inputs.py`); `aggregate` does not check `dfreq` sums and `EmpiricalCount` keeps refusing a sum more than 1e-9 from 1
+- #768 the parity references re-pinned to `aggregate` 2.1.0 (branch `claude/cool-shannon-fqpoy8-aggregate-2.1`): every `validation/scripts/aggregate_*.py` run under and pinned to `aggregate==2.1.0`, its source column read from the package; nearly every value unchanged to round-off, and the three that moved are fixes in `aggregate` toward prospicio's (its quoted skewness is its density's, 8.1e-5 off before; `PricingBounds` keeps `p -> 1`, 64 not 52, and the envelope below the top atom, three new levels matched to 1e-12; `Bounds`' lower envelope), so the layer skewness tolerances fall from 5e-7 and 1e-5 to 1e-8; the open checks settled: the P&L books annual `aad` and `agglimit` on an occurrence cover as `aggregate` 2.1.0 does (six cases, 990 rows, 1e-12), far-tail layer moments within 3.3e-9, `Layer::franchise` already bound; `knowledge/findings/aggregate-2-1-repin.md`, the coverage map and the guide for `aggregate` users updated

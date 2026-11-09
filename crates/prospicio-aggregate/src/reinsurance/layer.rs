@@ -98,6 +98,10 @@ pub struct Layer {
     /// is paid from the ground up, up to the limit; see
     /// [`Layer::franchise`].
     pub franchise: bool,
+    /// A disappearing deductible: the retention falls from the attachment
+    /// to 0 as the loss rises from the attachment to this amount; see
+    /// [`Layer::disappearing`].
+    pub disappearing: Option<f64>,
     /// Only the `n`-th and later qualifying events of a year are covered;
     /// see [`Layer::nth_event`].
     pub nth_event: Option<NthEvent>,
@@ -144,6 +148,7 @@ impl Layer {
             brokerage_within_commission_range: false,
             scope: None,
             franchise: false,
+            disappearing: None,
             nth_event: None,
             drop_down: None,
         })
@@ -453,8 +458,119 @@ impl Layer {
                 self.name
             )));
         }
+        if self.disappearing.is_some() {
+            return Err(Error::Data(format!(
+                "layer {:?}: a deductible is franchise or disappearing, not both",
+                self.name
+            )));
+        }
         self.franchise = true;
         Ok(self)
+    }
+
+    /// A disappearing deductible (#772), `aggregate`'s `y xs d1 to d2
+    /// disappearing`: the retention is the attachment `d1` up to a loss of
+    /// `d1`, falls linearly to 0 at a loss of `end` (`d2`), and is 0 above,
+    /// so an occurrence of `x` pays `min(x - r(x), limit)`: nothing up to
+    /// `d1`, `k (x - d1)` with `k = d2 / (d2 - d1)` up to `d2`, the whole
+    /// loss above. The limit is the largest payment, as for the ordinary
+    /// and franchise deductibles. On the loss basis only; not with a
+    /// franchise or a top-and-drop cover.
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    ///
+    /// // 300 xs 50 to 100: the retention falls from 50 to 0 between 50 and 100.
+    /// let d = Layer::xol("D", 300.0, 50.0).unwrap().disappearing(100.0).unwrap();
+    /// assert_eq!(d.ceded_by_event(&[40.0, 75.0, 100.0, 250.0, 400.0]), [0.0, 50.0, 100.0, 250.0, 300.0]);
+    /// ```
+    pub fn disappearing(mut self, end: f64) -> Result<Self> {
+        if self.basis != Basis::Loss {
+            return Err(Error::Data(format!(
+                "layer {:?}: a disappearing deductible is on the loss basis",
+                self.name
+            )));
+        }
+        if self.franchise || self.drop_down.is_some() {
+            return Err(Error::Data(format!(
+                "layer {:?}: a disappearing deductible is not with a franchise or a top-and-drop \
+                 cover",
+                self.name
+            )));
+        }
+        if !(end.is_finite() && end > self.attachment) {
+            return Err(invalid(
+                "end",
+                end,
+                "must be finite and above the attachment (equal is a franchise)",
+            ));
+        }
+        self.disappearing = Some(end);
+        Ok(self)
+    }
+
+    /// The first three raw moments of one occurrence's recovery at 100%,
+    /// before annual terms, for a ground-up loss with distribution
+    /// `severity`: exact from the severity's layer moments, for an
+    /// ordinary, franchise or disappearing deductible on the loss basis.
+    ///
+    /// A disappearing deductible pays `k A + B` with `A` the layer
+    /// `d2 - d1 xs d1`, `k = d2 / (d2 - d1)` and `B` the layer
+    /// `limit - d2 xs d2` (`k` times the layer `limit / k xs d1` when the
+    /// limit is at most `d2`); `B > 0` only when `A` is full, so the cross
+    /// moments are exact. A franchise pays `d 1{X ≥ d} + B` with `B` the
+    /// layer `limit - d xs d`.
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    /// use prospicio_prob::{Lognormal, Severity};
+    ///
+    /// let x = Lognormal::from_mean_cv(100.0, 1.0).unwrap();
+    /// let plain = Layer::xol("L", 300.0, 50.0).unwrap();
+    /// let m = plain.occurrence_moments(&x).unwrap();
+    /// assert!((m[0] - x.layer(300.0, 50.0)).abs() < 1e-12);
+    /// ```
+    pub fn occurrence_moments(&self, severity: &dyn prospicio_prob::Severity) -> Result<[f64; 3]> {
+        if self.basis != Basis::Loss {
+            return Err(Error::Data(format!(
+                "layer {:?}: occurrence moments are on the loss basis",
+                self.name
+            )));
+        }
+        let layer = |limit: f64, attachment: f64| {
+            [
+                severity.layer(limit, attachment),
+                severity.layer_second_moment(limit, attachment),
+                severity.layer_third_moment(limit, attachment),
+            ]
+        };
+        let (d1, l) = (self.attachment, self.limit);
+        if let Some(d2) = self.disappearing {
+            let k = d2 / (d2 - d1);
+            if l <= d2 {
+                let a = layer(l / k, d1);
+                return Ok([k * a[0], k * k * a[1], k * k * k * a[2]]);
+            }
+            let (a, b, w) = (layer(d2 - d1, d1), layer(l - d2, d2), d2 - d1);
+            return Ok([
+                k * a[0] + b[0],
+                k * k * a[1] + 2.0 * k * w * b[0] + b[1],
+                k * k * k * a[2] + 3.0 * k * k * w * w * b[0] + 3.0 * k * w * b[1] + b[2],
+            ]);
+        }
+        if self.franchise {
+            let s = severity.survival(d1);
+            if l <= d1 {
+                return Ok([l * s, l * l * s, l * l * l * s]);
+            }
+            let b = layer(l - d1, d1);
+            return Ok([
+                d1 * s + b[0],
+                d1 * d1 * s + 2.0 * d1 * b[0] + b[1],
+                d1 * d1 * d1 * s + 3.0 * d1 * d1 * b[0] + 3.0 * d1 * b[1] + b[2],
+            ]);
+        }
+        Ok(layer(l, d1))
     }
 
     /// An nth-event cover (#591, [`NthEvent`]): only the `n`-th and later
@@ -502,9 +618,9 @@ impl Layer {
                 self.name
             )));
         }
-        if self.franchise {
+        if self.franchise || self.disappearing.is_some() {
             return Err(Error::Data(format!(
-                "layer {:?}: a franchise deductible cannot drop down",
+                "layer {:?}: a franchise or disappearing deductible cannot drop down",
                 self.name
             )));
         }
@@ -1298,6 +1414,17 @@ impl Layer {
             } else {
                 0.0
             };
+        }
+        if let Some(end) = self.disappearing {
+            let d = self.attachment;
+            let paid = if amount <= d {
+                0.0
+            } else if amount <= end {
+                (amount - d) * (end / (end - d))
+            } else {
+                amount
+            };
+            return paid.min(self.limit * lf);
         }
         (amount - self.attachment).max(0.0).min(self.limit * lf)
     }

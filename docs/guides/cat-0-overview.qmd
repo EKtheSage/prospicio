@@ -14,10 +14,9 @@ execute:
 <!-- site: execute -->
 
 This track follows one reinsurer through one renewal of property catastrophe
-business. It starts from the loss tables of a vendor model and ends with a
-priced portfolio and its capital. Each page takes one step. It explains the
-idea, gives the formula if there is one, and runs it in prospicio on the same
-small book.
+business, from the loss tables of a vendor model to a priced portfolio and its
+capital. Each page takes one step and runs it in prospicio on the same small
+book.
 
 This is the R twin of the Python guide
 [`cat-0-overview.md`](cat-0-overview.md). It has the same sections, files and
@@ -27,21 +26,19 @@ text, which is also the text of the Python guide.
 
 ## Who it is for
 
-The track is for an analyst who knows what a layer and a reinstatement are. The
-analyst now works with simulated catastrophe losses: a year event loss table
-from a cat model, some treaties and a request for a price. If the terms layer,
-rate on line or cost of capital are new to you, read
-[a first course](a-first-course.qmd) first. Then read
+The track is for an analyst who knows what a layer and a reinstatement are and
+now works with simulated catastrophe losses: a year event loss table, some
+treaties and a request for a price. If layer, rate on line or cost of capital
+are new to you, read [a first course](a-first-course.qmd) first, then
 [what a reinsurance price is](reinsurance-price.md).
 
-The pages work on simulated years (trials). For an exact method on a grid, a
-page links to [aggregate distributions](aggregate-distributions.md) and does
-not repeat the method. That guide also covers event sets in general.
+The pages work on simulated years (trials). For an exact method on a grid, see
+[aggregate distributions](aggregate-distributions.md), which also covers event
+sets in general.
 
 ## The pages
 
-Each page takes the next step of the renewal at Larkspur and uses the page
-before it. Each page also runs on its own.
+Each page uses the one before it and also runs on its own.
 
 1. [What the cat model hands over](cat-1-loss-tables.qmd): the three loss
    tables (YELT, YLT and ELT), secondary uncertainty, how to read a YELT,
@@ -71,8 +68,6 @@ premium of page 5.
 
 ## Notation
 
-Every page uses the same symbols.
-
 | Symbol | Meaning |
 |---|---|
 | `l xs a` | a layer of limit `l` above an attachment `a` |
@@ -89,9 +84,9 @@ Every page uses the same symbols.
 
 ## The story
 
-Larkspur Re is a fictional reinsurer. It writes property catastrophe cover for
-three fictional insurers in the fictional country of Varland. Varland has three
-regions: the coast, the plains and the range.
+Larkspur Re, a fictional reinsurer, writes property catastrophe cover for three
+fictional insurers in Varland. Varland has three regions: the coast, the plains
+and the range.
 
 - **Alder Mutual** (`alder`) writes mostly on the coast.
 - **Bracken Insurance** (`bracken`) writes mostly on the plains.
@@ -107,29 +102,28 @@ Four perils hit Varland:
 Money is in millions of Varland crowns, a synthetic currency. All names and
 numbers in the book are fictional.
 
-Some market terms occur on many pages. The **subject premium** of a cedent is
-the premium of the business that the reinsurance protects. Its **cat premium**
-is the part of the subject premium for catastrophe risk. The **signed line** of
-a reinsurer is the share of a layer that it takes. Other reinsurers take the
-remainder.
+Market terms used on many pages:
 
-The **rate on line** (RoL) is the premium of an excess layer divided by its
-limit. A **deal** is one contract as Larkspur wrote it: the premium, losses and
-other flows of its line, year by year.
+- **Subject premium**: the premium of the business that the reinsurance
+  protects. The **cat premium** is its part for catastrophe risk.
+- **Signed line**: the share of a layer that a reinsurer takes. Other
+  reinsurers take the remainder.
+- **Rate on line** (RoL): the premium of an excess layer divided by its limit.
+- **Deal**: one contract as Larkspur wrote it, with the premium, losses and
+  other flows of its line, year by year.
 
 A windstorm on the coast hits all three cedents at the same time, so their
 losses move together. A convective storm outbreak often comes into the loss
 table as two or three pieces, one or two days apart. The hours clause (page 3)
-decides if these pieces count as one loss or as several. This decision changes
-what each treaty pays.
+decides if these pieces count as one loss or as several, which changes what
+each treaty pays.
 
 ## The files
 
 The book is in four CSV files in `examples/data/`. The script
-`examples/data/make_cat_book.py` writes them from a fixed seed, so each run
-gives the same bytes. A test checks that the committed files match the output
-of the script. The Python and R pages read the same files, so their numbers
-agree.
+`examples/data/make_cat_book.py` writes them from a fixed seed, and a test
+checks that the committed files match its output. The Python and R pages read
+the same files.
 
 | File | One row per |
 |---|---|
@@ -138,30 +132,31 @@ agree.
 | `cat_book_cedents.csv` | cedent: home region, subject premium, catastrophe premium |
 | `cat_book_contracts.csv` | contract Larkspur Re writes this year, with all its terms |
 
-The year event loss table (YELT) holds 2,000 simulated years. Each row has
-these fields: year, `slot` (the place of the event in the year), event, day,
-hour, peril, region, cedent and loss. A year with no loss to any cedent has no
-rows. The event loss table (ELT) gives the annual rate of each event and the
-mean loss to Alder with its spread. A cat model gives its results in this form
-before it simulates years. Page 1 explains the two tables and checks that they
-agree.
+The year event loss table (YELT) holds 2,000 simulated years. Its fields are
+year, `slot` (the place of the event in the year), event, day, hour, peril,
+region, cedent and loss. A year with no loss has no rows. The event loss table
+(ELT) gives the annual rate of each event and the mean loss to Alder with its
+spread. A cat model gives its results in this form before it simulates years.
+Page 1 explains the two tables and checks that they agree.
 
-The pages read every contract term from `cat_book_contracts.csv`. The code
-types no term. To try a different case, change the script and run it again.
+The pages read every contract term from `cat_book_contracts.csv`. To try a
+different case, change the script and run it again.
 
 ### The cedents and the contracts
 
-This chunk prints the two small tables with only `read.csv()` from base R. The
+The chunk reads the two small files with only `read.csv()` from base R. The
 tests run the guides from the repository root, and Quarto renders them from
-`docs/guides/`. So a small helper looks for `examples/data/` in the working
-directory and in its parent directories. The chunk reads each column as text,
-as the `csv` module of the Python guide does. An empty term counts as 0.
+`docs/guides/`, so a helper looks for `examples/data/` in the working directory
+and in its parent directories. Every column is read as text, as the `csv`
+module of the Python guide does. An empty term is `NA`.
 
 ```{r}
 library(prospicio)
+library(gt)
 ```
 
 ```{r}
+#| label: cedents-table
 # The data files, found from the repository root (CI) or from docs/guides (Quarto).
 find_data <- function(name, dir = getwd()) {
   repeat {
@@ -179,92 +174,74 @@ read_book <- function(name) {
 cedents <- read_book("cat_book_cedents.csv")
 contracts <- read_book("cat_book_contracts.csv")
 
-cat(sprintf("%-8s %-18s %-7s %8s %6s\n", "cedent", "name", "home", "subject", "cat"))
-for (i in seq_len(nrow(cedents))) {
-  c1 <- cedents[i, ]
-  cat(sprintf("%-8s %-18s %-7s %8.1f %6.1f\n", c1$cedent, c1$name, c1$home_region,
-              as.numeric(c1$subject_premium), as.numeric(c1$cat_premium)))
-}
-cat("\n")
-cat(sprintf("%-12s %-14s %-6s %-26s %5s  extra\n", "contract", "kind", "perils", "terms", "share"))
-pct <- function(x) sprintf("%.0f%%", 100 * x)
-for (i in seq_len(nrow(contracts))) {
-  k <- contracts[i, ]
-  num <- function(key) if (nzchar(k[[key]])) as.numeric(k[[key]]) else 0
-  if (k$kind == "occurrence_xl") {
-    terms <- sprintf("%g xs %g", num("limit"), num("attachment"))
-    extra <- sprintf("%s reinst. at %s, RoL %.2f, %s h", k$reinstatements,
-                     pct(num("reinstatement_rate")), num("rate_on_line"), k$hours)
-  } else if (k$kind == "aggregate_xl") {
-    terms <- sprintf("agg %g xs %g", num("aggregate_limit"), num("aggregate_deductible"))
-    extra <- sprintf("RoL %.2f on the aggregate limit", num("rate_on_line"))
-  } else {
-    terms <- sprintf("event %g, annual %g", num("limit"), num("aggregate_limit"))
-    extra <- sprintf("ceding commission %s, %s h", pct(num("ceding_commission")), k$hours)
-  }
-  cat(sprintf("%-12s %-14s %-6s %-26s %5s  %s\n", k$contract, k$kind, k$perils, terms,
-              pct(num("share")), extra))
-}
+cedent_table <- data.frame(
+  cedent = cedents$cedent,
+  name = cedents$name,
+  home = cedents$home_region,
+  subject_premium = as.numeric(cedents$subject_premium),
+  cat_premium = as.numeric(cedents$cat_premium)
+)
+gt(cedent_table, rowname_col = "cedent") |>
+  tab_header("The three cedents", "Premiums in millions of Varland crowns") |>
+  cols_label(subject_premium = "subject premium", cat_premium = "cat premium") |>
+  fmt_number(columns = c(subject_premium, cat_premium), decimals = 1)
 ```
 
 ```text
-cedent   name               home     subject    cat
-alder    Alder Mutual       coast      420.0   40.0
-bracken  Bracken Insurance  plains     310.0   36.0
-corran   Corran General     range      260.0   30.0
-
-contract     kind           perils terms                      share  extra
-alder_cat_1  occurrence_xl  all    40 xs 30                     30%  1 reinst. at 100%, RoL 0.15, 72 h
-alder_cat_2  occurrence_xl  all    100 xs 70                    20%  1 reinst. at 100%, RoL 0.05, 72 h
-bracken_cat  occurrence_xl  all    50 xs 25                     25%  2 reinst. at 100%, RoL 0.14, 72 h
-bracken_agg  aggregate_xl   CS+FL  agg 30 xs 40                 25%  RoL 0.06 on the aggregate limit
-corran_qs    quota_share    all    event 150, annual 300        10%  ceding commission 25%, 72 h
+                      name    home  subject premium  cat premium
+alder         Alder Mutual   coast            420.0         40.0
+bracken  Bracken Insurance  plains            310.0         36.0
+corran      Corran General   range            260.0         30.0
 ```
-
-The amounts are on a 100% basis. On an excess of loss contract, `share` is the
-signed line of Larkspur Re. On the quota share, `share` is the cession. So
-Larkspur Re takes 30% of the first layer of Alder, which pays the part of each
-occurrence between 30 and 70. The aggregate cover of Bracken applies only to
-convective storm and flood. It pays the part of the annual total loss from
-these perils between 40 and 70.
-
-The quota share cedes 10% of the losses of Corran, with a maximum of 150 for
-one event and 300 for the year. It pays Corran a 25% ceding commission on the
-ceded premium.
-
-The same terms as a table:
 
 ```{r}
 #| label: terms-table
-library(gt)
-num_or_na <- function(key, k) if (nzchar(k[[key]])) as.numeric(k[[key]]) else NA_real_
-is_agg <- contracts$kind == "aggregate_xl"
+num <- function(key) suppressWarnings(as.numeric(contracts[[key]]))
+agg <- contracts$kind == "aggregate_xl"
+qs <- contracts$kind == "quota_share"
 terms_table <- data.frame(
   contract = contracts$contract,
   kind = contracts$kind,
   perils = contracts$perils,
-  limit = sapply(seq_len(nrow(contracts)), function(i)
-    num_or_na(if (is_agg[i]) "aggregate_limit" else "limit", contracts[i, ])),
-  attachment = sapply(seq_len(nrow(contracts)), function(i)
-    num_or_na(if (is_agg[i]) "aggregate_deductible" else "attachment", contracts[i, ])),
-  share = as.numeric(contracts$share),
-  rate_on_line = suppressWarnings(as.numeric(contracts$rate_on_line))
+  limit = ifelse(agg, num("aggregate_limit"), num("limit")),
+  attachment = ifelse(agg, num("aggregate_deductible"), num("attachment")),
+  annual_limit = ifelse(qs, num("aggregate_limit"), NA_real_),
+  share = num("share"),
+  reinstatements = num("reinstatements"),
+  reinstatement_rate = num("reinstatement_rate"),
+  rate_on_line = num("rate_on_line"),
+  ceding_commission = num("ceding_commission"),
+  hours = num("hours")
 )
 gt(terms_table, rowname_col = "contract") |>
   tab_header("Larkspur Re's five contracts",
              "Limits and attachments in millions of Varland crowns, 100% basis") |>
-  cols_label(rate_on_line = "rate on line") |>
-  fmt_number(columns = c(limit, attachment), decimals = 0) |>
-  fmt_percent(columns = share, decimals = 0) |>
+  cols_label(annual_limit = "annual limit", reinstatement_rate = "reinst. rate",
+             rate_on_line = "rate on line", ceding_commission = "ceding commission") |>
+  fmt_number(columns = c(limit, attachment, annual_limit, reinstatements, hours),
+             decimals = 0) |>
+  fmt_percent(columns = c(share, reinstatement_rate, ceding_commission), decimals = 0) |>
   fmt_number(columns = rate_on_line, decimals = 2) |>
   sub_missing(missing_text = "")
 ```
 
-### The year event loss table at a glance
+```text
+                      kind  perils  limit  attachment  annual limit  share  reinstatements  reinst. rate  rate on line  ceding commission  hours
+alder_cat_1  occurrence_xl     all     40          30                  30%               1          100%          0.15                        72
+alder_cat_2  occurrence_xl     all    100          70                  20%               1          100%          0.05                        72
+bracken_cat  occurrence_xl     all     50          25                  25%               2          100%          0.14                        72
+bracken_agg   aggregate_xl   CS+FL     30          40                  25%                                        0.06
+corran_qs      quota_share     all    150           0           300    10%                                                            25%     72
+```
 
-The next chunk also uses only base R. It counts the rows of the YELT and the
-simulated years with a loss. Then it splits the mean annual loss by peril and
-cedent.
+The amounts are on a 100% basis. On an excess of loss contract, `share` is the
+signed line of Larkspur Re. On the quota share, `share` is the cession, and
+`limit` is the maximum for one event. The aggregate cover of Bracken applies
+only to convective storm and flood. Its `limit` and `attachment` are the
+aggregate limit and deductible. The quota share also pays Corran a 25% ceding
+commission on the ceded premium.
+
+### The year event loss table at a glance
 
 ```{r}
 yelt <- utils::read.csv(find_data("cat_book_yelt.csv"))
@@ -272,38 +249,40 @@ years <- unique(yelt$year)
 cat(sprintf("rows %s, years with a loss %s of 2,000\n",
             format(nrow(yelt), big.mark = ","), format(length(years), big.mark = ",")))
 cat(sprintf("first year with a loss %d, last %d\n", min(years), max(years)))
-
-perils <- c("WS", "EQ", "FL", "CS")
-who <- cedents$cedent
-total <- tapply(yelt$loss, list(factor(yelt$peril, perils), factor(yelt$cedent, who)), sum)
-total[is.na(total)] <- 0
-mean_loss <- total / 2000
-cat("\nmean annual loss by peril and cedent\n")
-cat(sprintf("%-6s", "peril"), sprintf("%9s", c(who, "all")), "\n", sep = "")
-for (p in perils) {
-  row <- mean_loss[p, ]
-  cat(sprintf("%-6s", p), sprintf("%9.3f", c(row, sum(row))), "\n", sep = "")
-}
-col <- colSums(mean_loss)
-cat(sprintf("%-6s", "all"), sprintf("%9.3f", c(col, sum(col))), "\n", sep = "")
 ```
 
 ```text
 rows 16,432, years with a loss 1,820 of 2,000
 first year with a loss 2, last 2000
-
-mean annual loss by peril and cedent
-peril     alder  bracken   corran      all
-WS        9.915    6.163    5.575   21.652
-EQ        2.473    2.050    4.371    8.894
-FL        3.042    3.999    1.997    9.038
-CS        1.349    3.165    1.106    5.620
-all      16.778   15.376   13.049   45.204
 ```
 
-Two figures show the same table. The first compares the cedents by peril. The
-second shows the annual loss of all cedents together, for the years with a
-loss.
+The mean annual loss splits by peril and cedent.
+
+```{r}
+#| label: loss-table
+perils <- c("WS", "EQ", "FL", "CS")
+who <- cedents$cedent
+total <- tapply(yelt$loss, list(factor(yelt$peril, perils), factor(yelt$cedent, who)), sum)
+total[is.na(total)] <- 0
+mean_loss <- total / 2000
+loss_table <- cbind(mean_loss, all = rowSums(mean_loss))
+loss_table <- rbind(loss_table, all = colSums(loss_table))
+gt(data.frame(peril = rownames(loss_table), loss_table), rowname_col = "peril") |>
+  tab_header("Mean annual loss by peril and cedent", "Millions of Varland crowns") |>
+  fmt_number(decimals = 3)
+```
+
+```text
+      alder  bracken  corran     all
+WS    9.915    6.163   5.575  21.652
+EQ    2.473    2.050   4.371   8.894
+FL    3.042    3.999   1.997   9.038
+CS    1.349    3.165   1.106   5.620
+all  16.778   15.376  13.049  45.204
+```
+
+Two figures: the cedents by peril, then the annual loss of all cedents
+together for the years with a loss.
 
 ```{r}
 #| label: fig-peril
@@ -331,18 +310,13 @@ ggplot(data.frame(loss = as.numeric(annual)), aes(loss)) +
 
 The mean annual loss over all years is the average annual loss (AAL, defined on
 [page 1](cat-1-loss-tables.qmd)). Windstorm is the largest peril for every
-cedent, also for Corran in the range. The cause is that a coastal storm is the
-largest event in the catalog. The home region shows in the second peril: flood
-and convective storm for Bracken on the plains, and earthquake for Corran in
-the range.
+cedent, also for Corran in the range, because a coastal storm is the largest
+event in the catalog. The home region shows in the second peril: flood and
+convective storm for Bracken, earthquake for Corran.
 
-In 180 of the 2,000 years, no event hits a cedent. Year 1 is one of these
-years, so the file starts at year 2. A year with no row is still a year of the
-simulation. So every average on these pages divides by the 2,000 simulated
-years.
-
-Each page has an R twin (the same file name with `.qmd`) with the same sections
-and numbers.
+In 180 years no event hits a cedent. Year 1 is one of them, so the file starts
+at year 2. A year with no row is still a year, so every average on these pages
+divides by 2,000.
 
 ## Further reading
 

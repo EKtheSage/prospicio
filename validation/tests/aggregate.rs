@@ -212,7 +212,7 @@ fn reserve_and_tower_feed_capital_end_to_end() {
     assert!(portfolio.distortion(&tvar) > independent.distortion(&tvar));
 }
 
-/// FFT grid sizing against `aggregate` 1.0.1: its `round_bucket` exactly,
+/// FFT grid sizing against `aggregate` 2.1.0: its `round_bucket` exactly,
 /// and on five books sized with no bucket given, the exact mean and
 /// aggregate's quantiles within two of its buckets
 /// (`validation/scripts/aggregate_sizing.py`).
@@ -269,7 +269,7 @@ fn grid_sizing_matches_aggregate() {
     });
 }
 
-/// The grid audit against `aggregate` 1.2.0's `sharpen` (#317), its
+/// The grid audit against `aggregate` 2.1.0's `sharpen` (#317), its
 /// `sharpen_df` printed by `validation/scripts/aggregate_sharpen.py`. Cells
 /// that hold all the mass score to aggregate's digits and the same cell is
 /// selected; cells that lose mass off the grid score differently (they are
@@ -332,7 +332,7 @@ fn grid_audit_matches_aggregate_sharpen() {
 }
 
 /// A mixing variable shared across severity components, against `aggregate`
-/// 1.2.0 (#316, `validation/scripts/aggregate_common_shock.py`): its
+/// 2.1.0 (#316, `validation/scripts/aggregate_common_shock.py`): its
 /// `agg [10 20] claims sev [gamma lognorm] ... mixed gamma 0.3` applies one
 /// mixed count to the claim-weighted mixture of the severities, which is
 /// `fft` of a `MixedPoisson` on a `Mixture`. Mixed one component at a time
@@ -399,7 +399,7 @@ fn shared_mixing_matches_aggregate() {
 }
 
 /// Swing and retro premiums, sliding-scale and profit commissions against
-/// `aggregate` 1.0.1's `contract_terms` at losses through every kink
+/// `aggregate` 2.1.0's `contract_terms` at losses through every kink
 /// (`validation/scripts/aggregate_contract_terms.py`).
 #[test]
 fn contract_terms_match_aggregate() {
@@ -459,7 +459,7 @@ fn contract_terms_match_aggregate() {
     });
 }
 
-/// The occurrence PML against `aggregate` 1.0.1's `oep` on three Poisson
+/// The occurrence PML against `aggregate` 2.1.0's `oep` on three Poisson
 /// books: the loss, the severity's exceedance and the occurrence return
 /// period at eight annual probabilities, at `1e-10`
 /// (`validation/scripts/aggregate_oep.py`).
@@ -517,7 +517,7 @@ fn simulated_maxima_match_the_occurrence_exceedance() {
     }
 }
 
-/// Compound mean, cv and skewness against `aggregate` 1.0.1's analytic
+/// Compound mean, cv and skewness against `aggregate` 2.1.0's analytic
 /// statistics, and the five moment approximations against its own fitting
 /// code on those moments, on five books (`validation/scripts/aggregate_moments.py`).
 #[test]
@@ -1076,7 +1076,7 @@ fn clash_matches_aggregate() {
 }
 
 /// Two lines whose losses in an event are coupled by a copula, against
-/// `aggregate` 1.0.1's copula `bivariate` (`validation/scripts/
+/// `aggregate` 2.1.0's copula `bivariate` (`validation/scripts/
 /// aggregate_bivariate_copula.py`): Gumbel and Clayton with Kendall's tau
 /// 0.4 and a Gaussian with rho 0.5, each under a Poisson and a gamma-mixed
 /// count, with the triggered gamma and lognormal of the clash case.
@@ -2281,6 +2281,34 @@ fn pnl_reinstatements_match_aggregate() {
             .unwrap(),
     ])
     .unwrap();
+    // Annual terms on the occurrence layer, as aggregate's AnnualLayerTerms
+    // (aggregate 2.1.0, #768): the recovery min(max(R - aad, 0), agglimit).
+    let annual = |aad: Option<f64>, agg_limit: Option<f64>| {
+        // Named as aggregate names the step: the layer and its DecL clause.
+        let mut name = "occ 2 xs 2".to_string();
+        if let Some(d) = aad {
+            name += &format!(" aad {d}");
+        }
+        if let Some(m) = agg_limit {
+            name += &format!(" agglimit {m}");
+        }
+        let mut l = Layer::xol(&name, 2.0, 2.0)
+            .unwrap()
+            .deposit_premium(2.0)
+            .unwrap();
+        if let Some(d) = aad {
+            l = l.aggregate_deductible(d).unwrap();
+        }
+        if let Some(m) = agg_limit {
+            l = l.aggregate_limit(m).unwrap();
+        }
+        Tower::new(vec![l]).unwrap()
+    };
+    let (aad, lim, both) = (
+        annual(Some(1.0), None),
+        annual(None, Some(3.0)),
+        annual(Some(1.0), Some(3.0)),
+    );
     let book = Book::new("R", 20.0).expense(Expense::premium(0.1));
     let build = |t: &Tower, a: Option<&Tower>, face| book.occurrence_ledger(&joint, t, a, face);
     let ledgers: std::collections::HashMap<&str, Ledger> = [
@@ -2296,6 +2324,12 @@ fn pnl_reinstatements_match_aggregate() {
         ("r0c", build(&none, None, Face::Consolidated)),
         ("r2", build(&two, Some(&agg), Face::Walk)),
         ("r2c", build(&two, Some(&agg), Face::Consolidated)),
+        ("a1", build(&aad, None, Face::Walk)),
+        ("a1c", build(&aad, None, Face::Consolidated)),
+        ("l3", build(&lim, None, Face::Walk)),
+        ("l3c", build(&lim, None, Face::Consolidated)),
+        ("al", build(&both, None, Face::Walk)),
+        ("alc", build(&both, None, Face::Consolidated)),
     ]
     .into_iter()
     .map(|(k, l)| (k, l.unwrap()))
@@ -2599,4 +2633,192 @@ fn importance_sampling_matches_the_fft_tail_with_a_smaller_error() {
         );
     }
     assert!((is.mean() - exact.mean()).abs() < 4.0 * is.standard_error_mean(50).unwrap());
+}
+
+/// The verdict on a compound distribution on a grid against `aggregate`
+/// 2.1.0's `valid` (#778, `validation/scripts/aggregate_validation.py`):
+/// each flag set or not, and `passes`.
+#[test]
+fn validation_verdict_matches_aggregate() {
+    use prospicio_aggregate::{VALIDATION_EPS, validate_grid};
+    use prospicio_prob::{Dist, Gamma, Lognormal, PolicyLimits, SeverityDist};
+    check(&reference("validation_aggregate.csv"), |c| {
+        let f = fields(c);
+        let n = Poisson::new(c.param("params", "n")).ok()?;
+        let (bs, log2) = (c.param("params", "bs"), c.param("params", "log2") as u32);
+        let mean = c.param("params", "mean");
+        let cv = c.param("params", "cv");
+        let v = match f["severity"] {
+            "gamma" => validate_grid(
+                &n,
+                &Gamma::from_mean_cv(mean, cv).ok()?,
+                bs,
+                1 << log2,
+                VALIDATION_EPS,
+            ),
+            "lognormal" => {
+                let ln =
+                    SeverityDist::try_from(Dist::from(Lognormal::from_mean_cv(mean, cv).ok()?))
+                        .ok()?;
+                let capped =
+                    PolicyLimits::new(ln, vec![c.param("params", "cap")], vec![1.0]).ok()?;
+                validate_grid(&n, &capped, bs, 1 << log2, VALIDATION_EPS)
+            }
+            _ => return None,
+        }
+        .ok()?;
+        let on = match c.get("quantity") {
+            "passes" => v.passes(),
+            flag => v.flags.iter().any(|x| x.name() == flag),
+        };
+        Some(if on { 1.0 } else { 0.0 })
+    });
+}
+
+/// Event loss tables of several units that share events against
+/// `aggregate` 2.1.0 (#777, `validation/scripts/aggregate_elt_units.py`):
+/// the rate of events and the event severity's raw moments of the rolled
+/// table and of each unit alone.
+#[test]
+fn elt_units_match_aggregate() {
+    use prospicio_aggregate::UnitEventLossTables;
+    type Rows = &'static [(&'static str, [f64; 6])];
+    // (unit, [event, rate, mean, max, sdi, sdc]), as the script's TABLES.
+    const TWO: Rows = &[
+        ("A", [1.0, 0.01, 800.0, 2000.0, 200.0, 100.0]),
+        ("A", [2.0, 0.05, 200.0, 500.0, 0.0, 0.0]),
+        ("A", [4.0, 0.002, 1500.0, 5000.0, 300.0, 300.0]),
+        ("B", [1.0, 0.01, 300.0, 1000.0, 50.0, 40.0]),
+        ("B", [3.0, 0.02, 100.0, 400.0, 30.0, 0.0]),
+        ("B", [4.0, 0.002, 600.0, 2000.0, 100.0, 50.0]),
+    ];
+    const THREE: Rows = &[
+        ("X", [10.0, 0.1, 50.0, 200.0, 10.0, 5.0]),
+        ("X", [11.0, 0.03, 400.0, 1200.0, 80.0, 60.0]),
+        ("Y", [10.0, 0.1, 20.0, 100.0, 5.0, 5.0]),
+        ("Y", [12.0, 0.004, 900.0, 3000.0, 200.0, 150.0]),
+        ("Z", [10.0, 0.1, 5.0, 50.0, 2.0, 0.0]),
+        ("Z", [11.0, 0.03, 100.0, 600.0, 40.0, 10.0]),
+        ("Z", [12.0, 0.004, 300.0, 1500.0, 90.0, 40.0]),
+    ];
+    let build = |rows: Rows| {
+        let ids: Vec<String> = rows.iter().map(|r| format!("{}", r.1[0])).collect();
+        let col = |j: usize| rows.iter().map(|r| r.1[j]).collect::<Vec<_>>();
+        UnitEventLossTables::new(
+            &ids.iter().map(String::as_str).collect::<Vec<_>>(),
+            &rows.iter().map(|r| r.0).collect::<Vec<_>>(),
+            &col(1),
+            &col(2),
+            &col(4),
+            &col(5),
+            &col(3),
+        )
+        .unwrap()
+    };
+    let (two, three) = (build(TWO), build(THREE));
+    assert_eq!((two.shared_events(), three.shared_events()), (2, 3));
+    check(&reference("elt_units_aggregate.csv"), |c| {
+        let f = fields(c);
+        let t = if f["table"] == "two" { &two } else { &three };
+        let elt = if f["unit"] == "all" {
+            t.rolled()
+        } else {
+            t.unit(f["unit"])
+        }
+        .ok()?;
+        let m = elt.severity_moments();
+        Some(match c.get("quantity") {
+            "rate" => elt.rate(),
+            q => m[q.strip_prefix("ex")?.parse::<usize>().ok()? - 1],
+        })
+    });
+}
+
+/// The dyadic lattice of a discrete severity and the buckets tried on it,
+/// against `aggregate` 2.1.0's `_dyadic_lattice_step` and
+/// `_lattice_candidates` (#776, `validation/scripts/aggregate_lattice.py`).
+#[test]
+fn lattice_matches_aggregate() {
+    use prospicio_aggregate::{dyadic_lattice_step, lattice_candidates};
+    check(&reference("lattice_aggregate.csv"), |c| {
+        let atoms: Vec<f64> = fields(c)["atoms"]
+            .split('|')
+            .map(|a| a.parse().unwrap())
+            .collect();
+        let lattice = dyadic_lattice_step(&atoms, 16);
+        match c.get("quantity") {
+            "none" => Some(if lattice.is_none() { 1.0 } else { 0.0 }),
+            "step" => lattice.map(|l| l.0),
+            "residual" => lattice.map(|l| l.1),
+            "candidate" => {
+                let i = c.number("arg")? as usize;
+                lattice_candidates(lattice?.0).get(i).copied()
+            }
+            _ => None,
+        }
+    });
+}
+
+/// The occurrence PML of a program, net or ceded, against `aggregate`
+/// 2.1.0's `oep` (#773, `validation/scripts/aggregate_program_oep.py`): the
+/// loss, the gross survival at the right end of the view's flat stretch and
+/// the achieved annual probability.
+#[test]
+fn program_oep_matches_aggregate() {
+    use prospicio_aggregate::pml::{OccurrenceView, program_occurrence_pml};
+    use prospicio_aggregate::{Layer, Tower};
+    use prospicio_prob::{Counting, Gamma, Lognormal, Poisson, Severity};
+    let one = Tower::new(vec![Layer::xol("L", 400.0, 100.0).unwrap()]).unwrap();
+    let two = Tower::new(vec![
+        Layer::xol("A", 200.0, 100.0).unwrap().share(0.5).unwrap(),
+        Layer::xol("B", 500.0, 400.0).unwrap(),
+    ])
+    .unwrap();
+    let n = Poisson::new(3.0).unwrap();
+    check(&reference("program_oep_aggregate.csv"), |c| {
+        let f = fields(c);
+        let sev: Box<dyn Severity> = match f["severity"] {
+            "lognormal" => Box::new(Lognormal::from_mean_cv(100.0, 2.0).ok()?),
+            "gamma" => Box::new(Gamma::from_mean_cv(50.0, 1.5).ok()?),
+            _ => return None,
+        };
+        let tower = if f["program"] == "one" { &one } else { &two };
+        let view = OccurrenceView::from_name(f["view"]).ok()?;
+        let pml = program_occurrence_pml(&n, sev.as_ref(), tower, view, c.number("arg")?).ok()?;
+        Some(match c.get("quantity") {
+            "loss" => pml.loss,
+            "S_sev" => pml.severity_survival,
+            "oep" => 1.0 - n.pgf(1.0 - pml.severity_survival),
+            _ => return None,
+        })
+    });
+}
+
+/// Deductibles on a ground-up loss against `aggregate` 2.1.0 (#772,
+/// `validation/scripts/aggregate_disappearing.py`): the first three moments
+/// of one claim's payment under a disappearing, franchise or ordinary
+/// deductible, aggregate's conditional on the loss exceeding the
+/// attachment, prospicio's `Layer::occurrence_moments` over `P(X > d1)`.
+#[test]
+fn deductible_forms_match_aggregate() {
+    use prospicio_aggregate::Layer;
+    use prospicio_prob::{Distribution, Gamma, Lognormal, Severity};
+    check(&reference("disappearing_aggregate.csv"), |c| {
+        let f = fields(c);
+        let (d1, y) = (c.param("params", "d1"), c.param("params", "y"));
+        let sev: Box<dyn Severity> = match f["severity"] {
+            "lognormal" => Box::new(Lognormal::from_mean_cv(100.0, 1.0).ok()?),
+            "gamma" => Box::new(Gamma::from_mean_cv(80.0, 0.6).ok()?),
+            _ => return None,
+        };
+        let layer = Layer::xol("L", y, d1).ok()?;
+        let layer = match f["form"] {
+            "disappearing" => layer.disappearing(c.param("params", "d2")).ok()?,
+            "franchise" => layer.franchise().ok()?,
+            _ => layer,
+        };
+        let m = layer.occurrence_moments(sev.as_ref()).ok()?;
+        let k: usize = c.get("quantity").strip_prefix("ex")?.parse().ok()?;
+        Some(m[k - 1] / sev.survival(d1))
+    });
 }

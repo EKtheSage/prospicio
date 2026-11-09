@@ -187,6 +187,37 @@ impl EventLossTable {
         self.rates.is_empty()
     }
 
+    /// The first three raw moments of the loss of one event given that it
+    /// occurs, the mixture of the rows' losses by rate:
+    /// `Σ rate_e E[X_e^k] / Λ`, exact for the beta rows. The annual
+    /// cumulants are `Λ` times them.
+    pub fn severity_moments(&self) -> [f64; 3] {
+        // A beta on [0, E] with mean m and sd σ: E[X²] = σ² + m², and
+        // E[X³] = E³ a (a + 1)(a + 2) / ((a + b)(a + b + 1)(a + b + 2)).
+        let (mut m1, mut m2, mut m3) = (0.0, 0.0, 0.0);
+        let total = self.rate();
+        for i in 0..self.rates.len() {
+            let (w, m, sd, e) = (
+                self.rates[i] / total,
+                self.means[i],
+                self.sds[i],
+                self.exposures[i],
+            );
+            let third = if sd == 0.0 {
+                m * m * m
+            } else {
+                let (mu, v) = (m / e, (sd / e).powi(2));
+                let k = mu * (1.0 - mu) / v - 1.0;
+                let (a, b) = (mu * k, (1.0 - mu) * k);
+                e * e * e * a * (a + 1.0) * (a + 2.0) / ((a + b) * (a + b + 1.0) * (a + b + 2.0))
+            };
+            m1 += w * m;
+            m2 += w * (sd * sd + m * m);
+            m3 += w * third;
+        }
+        [m1, m2, m3]
+    }
+
     /// `Λ = Σ rate`, the mean number of events a year.
     pub fn rate(&self) -> f64 {
         self.cumulative[self.cumulative.len() - 1]
@@ -290,6 +321,224 @@ impl EventLossTable {
         }
         let set = EventSet::from_years(years, seed)?;
         Ok((set, ids))
+    }
+}
+
+/// One row of [`UnitEventLossTables`]: event, unit, rate, mean, independent
+/// sd, correlated sd, exposure.
+type UnitRow = (usize, usize, f64, f64, f64, f64, f64);
+
+/// Event loss tables of several units that share events (#777), `aggregate`
+/// 2.1.0's `elt unit A [...] elt unit B [...]`: one row per event and
+/// unit, the same event on several units being one physical occurrence.
+///
+/// [`rolled`](Self::rolled) is the portfolio's table, one row per event
+/// with its units' rows rolled up as `aggregate` does by default
+/// (`[ELT-Shared-Event-Rollup]`): the event's rate (its rows must agree to
+/// `1e-12`), the means, exposures and correlated standard deviations
+/// summed, the independent ones in quadrature. [`unit`](Self::unit) is one
+/// unit's own table. A unit's rows for one event must not repeat.
+///
+/// ```
+/// use prospicio_aggregate::cat::UnitEventLossTables;
+///
+/// let t = UnitEventLossTables::new(
+///     &["1", "2", "1", "3"],
+///     &["A", "A", "B", "B"],
+///     &[0.01, 0.05, 0.01, 0.02],
+///     &[800.0, 200.0, 300.0, 100.0],
+///     &[200.0, 0.0, 50.0, 30.0],
+///     &[100.0, 0.0, 40.0, 0.0],
+///     &[2000.0, 500.0, 1000.0, 400.0],
+/// )
+/// .unwrap();
+/// assert_eq!((t.units(), t.shared_events()), (&["A".to_string(), "B".into()][..], 1));
+/// let all = t.rolled().unwrap();
+/// // Event 1 is one occurrence: rate 0.01, not 0.02.
+/// assert!((all.rate() - 0.08).abs() < 1e-15);
+/// assert!((all.expected_annual_loss() - (0.01 * 1100.0 + 0.05 * 200.0 + 0.02 * 100.0)).abs() < 1e-12);
+/// assert!((t.unit("B").unwrap().rate() - 0.03).abs() < 1e-15);
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnitEventLossTables {
+    units: Vec<String>,
+    events: Vec<String>,
+    /// Each row: (event index, unit index, rate, mean, sdi, sdc, exposure).
+    rows: Vec<UnitRow>,
+}
+
+impl UnitEventLossTables {
+    /// From a long table, one row per event and unit: the event's
+    /// identifier, the unit's tag, and the row's rate, mean, independent and
+    /// correlated standard deviations and exposure, as
+    /// [`EventLossTable::new`] takes them. Units and events keep the order of
+    /// their first appearance.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        event_ids: &[&str],
+        units: &[&str],
+        rates: &[f64],
+        means: &[f64],
+        sd_independent: &[f64],
+        sd_correlated: &[f64],
+        exposures: &[f64],
+    ) -> Result<Self> {
+        let n = event_ids.len();
+        for (name, len) in [
+            ("units", units.len()),
+            ("rates", rates.len()),
+            ("means", means.len()),
+            ("sd_independent", sd_independent.len()),
+            ("sd_correlated", sd_correlated.len()),
+            ("exposures", exposures.len()),
+        ] {
+            if len != n {
+                return Err(Error::Data(format!("{len} {name} for {n} event ids")));
+            }
+        }
+        if n == 0 {
+            return Err(Error::Data(
+                "an event loss table needs at least one row".into(),
+            ));
+        }
+        let index = |names: &mut Vec<String>, x: &str| match names.iter().position(|v| v == x) {
+            Some(i) => i,
+            None => {
+                names.push(x.to_string());
+                names.len() - 1
+            }
+        };
+        let (mut unit_names, mut event_names) = (Vec::new(), Vec::new());
+        let mut rows = Vec::with_capacity(n);
+        let mut seen = std::collections::HashSet::new();
+        let mut event_rate: Vec<f64> = Vec::new();
+        for i in 0..n {
+            let e = index(&mut event_names, event_ids[i]);
+            let u = index(&mut unit_names, units[i]);
+            if !seen.insert((e, u)) {
+                return Err(Error::Data(format!(
+                    "event {:?} has two rows for unit {:?}",
+                    event_ids[i], units[i]
+                )));
+            }
+            if e == event_rate.len() {
+                event_rate.push(rates[i]);
+            } else if (rates[i] - event_rate[e]).abs() > 1e-12 * event_rate[e].abs() {
+                return Err(Error::Data(format!(
+                    "event {:?} has rate {} on unit {:?} and {} on its first row; one event has one \
+                     rate",
+                    event_ids[i], rates[i], units[i], event_rate[e]
+                )));
+            }
+            rows.push((
+                e,
+                u,
+                event_rate[e],
+                means[i],
+                sd_independent[i],
+                sd_correlated[i],
+                exposures[i],
+            ));
+        }
+        let t = Self {
+            units: unit_names,
+            events: event_names,
+            rows,
+        };
+        // Each unit's table must be valid on its own (a beta for every row).
+        for u in 0..t.units.len() {
+            t.table_of(|r| r.1 == u)?;
+        }
+        Ok(t)
+    }
+
+    /// The units' tags, in order of first appearance.
+    pub fn units(&self) -> &[String] {
+        &self.units
+    }
+
+    /// The events' identifiers, in order of first appearance.
+    pub fn events(&self) -> &[String] {
+        &self.events
+    }
+
+    /// The number of events with rows on two or more units.
+    pub fn shared_events(&self) -> usize {
+        let mut count = vec![0usize; self.events.len()];
+        for r in &self.rows {
+            count[r.0] += 1;
+        }
+        count.iter().filter(|&&c| c > 1).count()
+    }
+
+    fn table_of(&self, keep: impl Fn(&UnitRow) -> bool) -> Result<EventLossTable> {
+        let rows: Vec<_> = self.rows.iter().filter(|r| keep(r)).collect();
+        EventLossTable::new(
+            &rows.iter().map(|r| r.2).collect::<Vec<_>>(),
+            &rows.iter().map(|r| r.3).collect::<Vec<_>>(),
+            &rows.iter().map(|r| r.4).collect::<Vec<_>>(),
+            &rows.iter().map(|r| r.5).collect::<Vec<_>>(),
+            &rows.iter().map(|r| r.6).collect::<Vec<_>>(),
+        )
+    }
+
+    /// One unit's table.
+    pub fn unit(&self, unit: &str) -> Result<EventLossTable> {
+        let u = self.units.iter().position(|x| x == unit).ok_or_else(|| {
+            Error::Data(format!("no unit {unit:?}; the units are {:?}", self.units))
+        })?;
+        self.table_of(|r| r.1 == u)
+    }
+
+    /// The portfolio's table, one row per event, its units' rows rolled up:
+    /// the event's rate, the means, exposures and correlated standard
+    /// deviations summed, the independent ones in quadrature.
+    pub fn rolled(&self) -> Result<EventLossTable> {
+        let c = self.rolled_columns();
+        EventLossTable::new(&c[0], &c[1], &c[2], &c[3], &c[4])
+    }
+
+    /// The rolled table's columns, one row per event in order of
+    /// [`events`](Self::events): rate, mean, independent and correlated
+    /// standard deviations, exposure.
+    pub fn rolled_columns(&self) -> [Vec<f64>; 5] {
+        let n = self.events.len();
+        let (mut rate, mut mean, mut sdi2, mut sdc, mut exposure) = (
+            vec![0.0; n],
+            vec![0.0; n],
+            vec![0.0; n],
+            vec![0.0; n],
+            vec![0.0; n],
+        );
+        for &(e, _, r, m, si, sc, x) in &self.rows {
+            rate[e] = r;
+            mean[e] += m;
+            sdi2[e] += si * si;
+            sdc[e] += sc;
+            exposure[e] += x;
+        }
+        let sdi: Vec<f64> = sdi2.iter().map(|v| v.sqrt()).collect();
+        [rate, mean, sdi, sdc, exposure]
+    }
+
+    /// One unit's columns, as [`rolled_columns`](Self::rolled_columns), with
+    /// its events' identifiers.
+    pub fn unit_columns(&self, unit: &str) -> Result<(Vec<String>, [Vec<f64>; 5])> {
+        let u = self.units.iter().position(|x| x == unit).ok_or_else(|| {
+            Error::Data(format!("no unit {unit:?}; the units are {:?}", self.units))
+        })?;
+        let rows: Vec<_> = self.rows.iter().filter(|r| r.1 == u).collect();
+        let col = |f: fn(&UnitRow) -> f64| rows.iter().map(|r| f(r)).collect::<Vec<_>>();
+        Ok((
+            rows.iter().map(|r| self.events[r.0].clone()).collect(),
+            [
+                col(|r| r.2),
+                col(|r| r.3),
+                col(|r| r.4),
+                col(|r| r.5),
+                col(|r| r.6),
+            ],
+        ))
     }
 }
 

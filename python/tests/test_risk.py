@@ -75,7 +75,7 @@ def test_more_distortion_families():
 
 
 def test_calibrate_matches_aggregate_on_insco():
-    # aggregate 1.0.1's parameters, to its own calibration tolerance.
+    # aggregate 2.1.0's parameters, to its own calibration tolerance.
     want = {"ph": 0.7204792831878889, "wang": 0.3427309477594301, "dual": 1.5951514670652984}
     for family, param in want.items():
         d = calibrate(family, INSCO, INSCO_P)

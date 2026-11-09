@@ -273,7 +273,7 @@ def test_more_claim_counts():
     assert zt.panjer_ab() == (0.0, 2.0)
     zm = Count.zero_modified(NegativeBinomial(2.0, 1.5), 0.3)
     assert zm.pmf(0) == pytest.approx(0.3)
-    # aggregate 1.0.1's Poisson-inverse Gaussian, mean 10, cv 0.5.
+    # aggregate 2.1.0's Poisson-inverse Gaussian, mean 10, cv 0.5.
     pig = Count.mixed_poisson(10.0, 0.5, mixing="inverse_gaussian")
     assert pig.pmf(0) == pytest.approx(0.0030337404, abs=1e-10)
     assert pig.panjer_ab() is None
@@ -293,7 +293,7 @@ def test_more_claim_counts():
     with pytest.raises(ValueError):
         Count.mixed_poisson(1.0, 0.5, mixing="beta")
     # The beta and Sichel mixings (validation/scripts/aggregate_mixing.py):
-    # the beta by quadrature, the Sichel against aggregate 1.2.0.
+    # the beta by quadrature, the Sichel against aggregate 2.1.0.
     beta = Count.mixed_poisson(10.0, 0.3, mixing="beta", max=30.0)
     assert beta.pmf(0) == pytest.approx(0.0011358609508610308, abs=1e-14)
     assert beta.gig() is None
@@ -354,7 +354,7 @@ def test_added_severities_and_splicing():
 def test_named_counts_and_tvar_threshold():
     from prospicio.distributions import Count, Grid
 
-    # aggregate 1.0.1's fixed, bernoulli and geometric (aggregate_counts.py)
+    # aggregate 2.1.0's fixed, bernoulli and geometric (aggregate_counts.py)
     assert Count.fixed(3).pmf(3) == 1.0
     assert Count.fixed(3.0).pmf(3) == 1.0
     with pytest.raises(ValueError, match="whole"):
@@ -389,7 +389,7 @@ def test_discrete():
     from prospicio.distributions import Discrete
 
     # The P&L design note's example 1: the margin 9 less the loss of two
-    # claims of 1, 2 or 4; aggregate 1.0.1's GridDistribution.
+    # claims of 1, 2 or 4; aggregate 2.1.0's GridDistribution.
     m = Discrete([7, 6, 5, 4, 3, 1], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])
     assert m.values == [1.0, 3.0, 4.0, 5.0, 6.0, 7.0]
     assert m.mean() == pytest.approx(5.2, abs=1e-12)
