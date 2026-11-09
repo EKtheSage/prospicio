@@ -19025,7 +19025,7 @@ class Layer:
         The first three raw moments of one occurrence's recovery at 100%,
         before annual terms, for a ground-up loss with distribution
         ``severity``, exact for an ordinary, franchise or disappearing
-        deductible on the loss basis. Divide by ``severity.survival(attachment)``
+        deductible on the loss basis. Divide by ``1 - severity.cdf(attachment)``
         for the moments of a loss that reaches the layer, as ``aggregate``
         reports a layered severity.
         
@@ -19044,7 +19044,7 @@ class Layer:
         >>> from prospicio.reinsurance import Layer
         >>> x = Lognormal.from_mean_cv(100.0, 1.0)
         >>> m = Layer("D", 300.0, 50.0).with_disappearing(100.0).occurrence_moments(x)
-        >>> round(m[0] / x.survival(50.0), 6)
+        >>> round(m[0] / (1 - x.cdf(50.0)), 6)
         112.607961
         """
     @property
