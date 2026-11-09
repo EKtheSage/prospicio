@@ -1094,3 +1094,13 @@ book <- merge_event_sets(a, b)
 stopifnot(identical(events(book, 1), c(20, 10, 2)))
 stopifnot(identical(events(hours_clause(book, 72), 1), c(30, 2)))
 stopifnot(inherits(try(ceded_events(tw, ev, "nope"), silent = TRUE), "try-error"))
+
+# The disappearing deductible against aggregate 2.1.0 (#772,
+# validation/scripts/aggregate_disappearing.py).
+dd <- with_disappearing(xol_layer("D", 300, 50), 100)
+stopifnot(dd@disappearing == 100, is.na(xol_layer("D", 300, 50)@disappearing))
+stopifnot(identical(ceded_by_event(dd, c(40, 75, 100, 250, 400)), c(0, 50, 100, 250, 300)))
+x_dd <- lognormal_from_mean_cv(100, 1)
+m_dd <- occurrence_moments(dd, x_dd) / survival(x_dd, 50)
+stopifnot(all(abs(m_dd / c(112.60796090891441, 19738.084272995242, 4255116.441430608) - 1) < 1e-9))
+stopifnot(inherits(try(with_disappearing(xol_layer("D", 300, 50), 50), silent = TRUE), "try-error"))

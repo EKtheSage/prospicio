@@ -56,7 +56,8 @@ NULL
 #'   see [with_brokerage()]), and `sees_aggregate_part`, whether the layer cedes from an
 #'   event set's aggregate part ([with_aggregate_part()]: on the loss with
 #'   attachment 0 and no limit, a quota share or a stop loss), and
-#'   `franchise`, `nth_event` and `drop_down` ([with_franchise()]).
+#'   `franchise`, `disappearing` (the end of a disappearing deductible, `NA`
+#'   without one), `nth_event` and `drop_down` ([with_franchise()]).
 #' @seealso [quota_share()] and [aggregate_stop_loss()] for the other contract
 #'   types, which are layers too; [with_loss_corridor()] for a corridor;
 #'   [with_rate_on_line()], [with_ceding_commission()] and
@@ -98,6 +99,7 @@ xol_layer <- S7::new_class(
     allocation = S7::new_property(S7::class_character, getter = function(self) self@ptr$allocation()),
     scope = S7::new_property(S7::class_any, getter = function(self) self@ptr$scope()),
     franchise = S7::new_property(S7::class_logical, getter = function(self) self@ptr$franchise()),
+    disappearing = S7::new_property(S7::class_double, getter = function(self) self@ptr$disappearing()),
     nth_event = S7::new_property(S7::class_double, getter = function(self) {
       p <- self@ptr$nth_event()
       if (length(p)) stats::setNames(p, c("n", "threshold")) else p
@@ -1108,6 +1110,17 @@ with_scope <- function(layer, label, values) {
 #' - `with_franchise()`: a franchise deductible. An occurrence at or above
 #'   the attachment is paid from the ground up, `min(x, limit)`, and one
 #'   below it pays nothing. On the loss basis only.
+#' - `with_disappearing()`: a disappearing deductible, `aggregate`'s `y xs
+#'   d1 to d2 disappearing`. The retention falls linearly from the
+#'   attachment `d1` to 0 as the loss rises from `d1` to `end`: a loss pays
+#'   nothing up to `d1`, `k (x - d1)` with `k = end / (end - d1)` up to
+#'   `end` and the whole loss above, each capped at the limit. On the loss
+#'   basis only.
+#' - `occurrence_moments()`: the first three raw moments of one
+#'   occurrence's recovery at 100% for a ground-up `severity`, exact for an
+#'   ordinary, franchise or disappearing deductible. Divide by the
+#'   severity's survival at the attachment for a loss that reaches the
+#'   layer, as `aggregate` reports a layered severity.
 #' - `with_nth_event()`: only the `n`-th and later events of a year whose
 #'   loss to the layer exceeds `threshold` are covered; earlier ones, and
 #'   events at or below the threshold, cede nothing. Events count in the
@@ -1128,6 +1141,9 @@ with_scope <- function(layer, label, values) {
 #' @param threshold The loss an event must exceed to count.
 #' @param underlying The name of the layer whose exhaustion drops this one.
 #' @param attachment The attachment after the drop, below the layer's own.
+#' @param end Where a disappearing deductible's retention reaches 0, above
+#'   the attachment.
+#' @param severity A severity distribution, such as [lognormal()].
 #' @returns The [xol_layer]; its `franchise`, `nth_event` (`c(n,
 #'   threshold)`) and `drop_down` (`list(underlying, attachment)`)
 #'   properties show the terms.
@@ -1135,6 +1151,10 @@ with_scope <- function(layer, label, values) {
 #' @examples
 #' f <- with_franchise(xol_layer("F", 20, 5))
 #' ceded_by_event(f, c(4, 5, 12, 30))
+#' d <- with_disappearing(xol_layer("D", 300, 50), 100)
+#' ceded_by_event(d, c(40, 75, 250, 400))
+#' x <- lognormal_from_mean_cv(100, 1)
+#' occurrence_moments(d, x)[1] / survival(x, 50) # aggregate's 112.608
 #' second <- with_nth_event(xol_layer("2nd", 10, 5), 2, 5)
 #' ceded_by_event(second, c(12, 3, 9, 20))
 #' lower <- xol_layer("lower", 10, 10, aggregate_limit = 20)
@@ -1143,6 +1163,18 @@ with_scope <- function(layer, label, values) {
 #' events(ceded_events(reinsurance_tower(list(lower, top)), ev, "top"), 1)
 with_franchise <- function(layer) {
   xol_layer(ptr = rust_result(layer@ptr$with_franchise()))
+}
+
+#' @rdname with_franchise
+#' @export
+with_disappearing <- function(layer, end) {
+  xol_layer(ptr = rust_result(layer@ptr$with_disappearing(as.double(end))))
+}
+
+#' @rdname with_franchise
+#' @export
+occurrence_moments <- function(layer, severity) {
+  rust_result(layer@ptr$occurrence_moments(severity@ptr))
 }
 
 #' @rdname with_franchise

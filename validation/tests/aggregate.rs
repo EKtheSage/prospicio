@@ -2600,3 +2600,32 @@ fn importance_sampling_matches_the_fft_tail_with_a_smaller_error() {
     }
     assert!((is.mean() - exact.mean()).abs() < 4.0 * is.standard_error_mean(50).unwrap());
 }
+
+/// Deductibles on a ground-up loss against `aggregate` 2.1.0 (#772,
+/// `validation/scripts/aggregate_disappearing.py`): the first three moments
+/// of one claim's payment under a disappearing, franchise or ordinary
+/// deductible, aggregate's conditional on the loss exceeding the
+/// attachment, prospicio's `Layer::occurrence_moments` over `P(X > d1)`.
+#[test]
+fn deductible_forms_match_aggregate() {
+    use prospicio_aggregate::Layer;
+    use prospicio_prob::{Distribution, Gamma, Lognormal, Severity};
+    check(&reference("disappearing_aggregate.csv"), |c| {
+        let f = fields(c);
+        let (d1, y) = (c.param("params", "d1"), c.param("params", "y"));
+        let sev: Box<dyn Severity> = match f["severity"] {
+            "lognormal" => Box::new(Lognormal::from_mean_cv(100.0, 1.0).ok()?),
+            "gamma" => Box::new(Gamma::from_mean_cv(80.0, 0.6).ok()?),
+            _ => return None,
+        };
+        let layer = Layer::xol("L", y, d1).ok()?;
+        let layer = match f["form"] {
+            "disappearing" => layer.disappearing(c.param("params", "d2")).ok()?,
+            "franchise" => layer.franchise().ok()?,
+            _ => layer,
+        };
+        let m = layer.occurrence_moments(sev.as_ref()).ok()?;
+        let k: usize = c.get("quantity").strip_prefix("ex")?.parse().ok()?;
+        Some(m[k - 1] / sev.survival(d1))
+    });
+}

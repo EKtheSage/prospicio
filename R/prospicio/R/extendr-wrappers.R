@@ -671,6 +671,12 @@ XolLayer$with_scope <- function(label, values) .Call(wrap__XolLayer__with_scope,
 
 XolLayer$with_franchise <- function() .Call(wrap__XolLayer__with_franchise, self)
 
+XolLayer$with_disappearing <- function(end) .Call(wrap__XolLayer__with_disappearing, self, end)
+
+XolLayer$disappearing <- function() .Call(wrap__XolLayer__disappearing, self)
+
+XolLayer$occurrence_moments <- function(severity) .Call(wrap__XolLayer__occurrence_moments, self, severity)
+
 XolLayer$with_nth_event <- function(n, threshold) .Call(wrap__XolLayer__with_nth_event, self, n, threshold)
 
 XolLayer$with_top_and_drop <- function(underlying, attachment) .Call(wrap__XolLayer__with_top_and_drop, self, underlying, attachment)
