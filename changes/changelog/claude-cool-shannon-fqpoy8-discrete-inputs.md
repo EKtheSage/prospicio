@@ -7,4 +7,4 @@
   purpose with `Discrete::normalized`, Python `normalize=True` or R
   `normalize = TRUE`. Python `Count.fixed` takes `3.0` and refuses a
   fractional count such as `2.5` with a `ValueError`, as R
-  `fixed_count()` already did (#774).
+  `fixed_count()` already did (#774, #815).
