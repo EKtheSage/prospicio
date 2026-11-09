@@ -1,9 +1,9 @@
 """Regenerate validation/reference/distortion_aggregate.csv.
 
-    python3.12 -m venv agg && agg/bin/pip install aggregate==1.0.1
+    python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0
     agg/bin/python validation/scripts/aggregate_distortions.py
 
-Mildenhall's `aggregate` package (1.0.1, Python 3.12 or later) is the
+Mildenhall's `aggregate` package (2.1.0, Python 3.13) is the
 reference implementation of the distortions in Mildenhall and Major,
 *Pricing Insurance Risk* (2022), and of CAS Monograph 15 (Major and
 Mildenhall, 2026). Three kinds of row:

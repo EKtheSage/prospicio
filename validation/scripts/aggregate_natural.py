@@ -1,6 +1,6 @@
 """Regenerate validation/reference/natural_aggregate.csv.
 
-    python3.12 -m venv agg && agg/bin/pip install aggregate==1.0.1
+    python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0
     agg/bin/python validation/scripts/aggregate_natural.py
 
 Monograph 15's InsCo example (Major and Mildenhall, 2026): three units
@@ -88,7 +88,7 @@ def priced(case, port, coc, levels, units, rows):
         d = Distortion(name, **{KEYS[name]: param})
         for alloc in ["linear", "lifted"]:
             for a in levels:
-                frame = port.price(a, d, allocation=alloc).df.loc[str(d)]
+                frame = port.price(distortion=d, a=a, allocation=alloc).df.loc[str(d)]
                 params = f"case={case};family={name};param={param!r};assets={a}"
                 for u in units + ["total"]:
                     for col in ["L", "M", "P", "Q", "a"]:

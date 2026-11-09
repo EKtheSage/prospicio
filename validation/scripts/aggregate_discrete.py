@@ -1,4 +1,4 @@
-"""Reference values for a signed discrete distribution, from `aggregate` 1.0.1.
+"""Reference values for a signed discrete distribution, from `aggregate` 2.1.0.
 
 `GridDistribution` on irregular, possibly negative supports, as the P&L
 ledger builds its rows (docs/design/pnl.md, PR 1): the lower and upper
@@ -8,13 +8,14 @@ table. Cases: the results of the design note's examples 1 and 2, a loss
 grid with equal masses (aggregate's k / n branch), a signed sample, and a
 lone atom.
 
-    uv run --python 3.12 --with aggregate==1.0.1 \
+    uv run --python 3.13 --with aggregate==2.1.0 \
         python validation/scripts/aggregate_discrete.py
 
 writes validation/reference/discrete_aggregate.csv and the random case's
 atoms to validation/reference/discrete_aggregate_atoms.csv.
 """
 
+import aggregate
 from pathlib import Path
 
 import numpy as np
@@ -38,7 +39,7 @@ CASES = {
 }
 LEVELS = [0.0, 0.001, 0.01, 0.04, 0.05, 0.1, 0.16, 0.25, 0.36, 0.5, 0.55, 0.75,
           0.9, 0.95, 0.99, 0.999, 1.0]
-SOURCE = 'aggregate 1.0.1'
+SOURCE = f'aggregate {aggregate.__version__}'
 
 ref = Path(__file__).resolve().parents[1] / 'reference'
 rows = []

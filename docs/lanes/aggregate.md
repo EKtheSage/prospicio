@@ -6,7 +6,6 @@
 
 ## Next
 
-- #768 re-pin the aggregate parity references to aggregate 2.1.0 (0.1.0, first; Probability for its files)
 - #771 the extended distortion calibration set (aggregate 2.1.0 parity, 0.1.0)
 - #772 disappearing deductible, `y xs d1 to d2 disappearing` (aggregate 2.1.0 parity, 0.1.0)
 - #773 OEP of a program, net or ceded (aggregate 2.1.0 parity, 0.1.0)
@@ -96,3 +95,4 @@
 - [split-pnl-builders] #579, `prospicio-aggregate/src/pnl/builders.rs` (2034 lines) split with no behaviour change: its unit tests moved to `pnl/builders/tests.rs`, leaving 1727 lines; the same 215 unit tests of the crate pass
 - [split-natural] #579, `prospicio-pricing/src/natural.rs` (2,042 lines) split with no behaviour change: its unit tests moved to `natural/tests.rs`, leaving 1,740 lines; the same 167 unit tests pass
 - [split-reinsurance] #579, `prospicio-aggregate/src/reinsurance.rs` (4,765 lines) split with no behaviour change: the layer (`reinsurance/layer.rs`), its contract terms (`terms.rs`), the tower (`tower.rs`) and the unit tests (`tests.rs`), re-exported from `reinsurance.rs`, which keeps the shared helpers (307 lines); nine private methods made `pub(super)` for their sibling modules; the same 215 unit tests and 122 doctests pass, rustdoc's item list is unchanged and the WASM check passes
+- #768 the parity references re-pinned to `aggregate` 2.1.0 (branch `claude/cool-shannon-fqpoy8-aggregate-2.1`): every `validation/scripts/aggregate_*.py` run under and pinned to `aggregate==2.1.0`, its source column read from the package; nearly every value unchanged to round-off, and the three that moved are fixes in `aggregate` toward prospicio's (its quoted skewness is its density's, 8.1e-5 off before; `PricingBounds` keeps `p -> 1`, 64 not 52, and the envelope below the top atom, three new levels matched to 1e-12; `Bounds`' lower envelope), so the layer skewness tolerances fall from 5e-7 and 1e-5 to 1e-8; the open checks settled: the P&L books annual `aad` and `agglimit` on an occurrence cover as `aggregate` 2.1.0 does (six cases, 990 rows, 1e-12), far-tail layer moments within 3.3e-9, `Layer::franchise` already bound; `knowledge/findings/aggregate-2-1-repin.md`, the coverage map and the guide for `aggregate` users updated

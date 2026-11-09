@@ -380,7 +380,9 @@ sources:
   `TVaR_p(X)`". So where X's top atom is larger than Y's, the `p → 1`
   vertex `(max X, max Y)` is lost and the upper bound is too low: InsCo's
   total and X3 capped at 65, at P = 65, give 52 where `TVaR_1` attains
-  64.[^bounds]
+  64.[^bounds] That is 1.0.1; 1.52 added the limit, and 2.1.0 gives 64,
+  and the exact envelope below X's top atom (#768,
+  `knowledge/findings/aggregate-2.1-repin.md`).
 * `Bounds(x, P)` searches 256 levels (refined near `p*`, found by brentq to
   `xtol = 2^-17`) and an s-grid of 513; its `max_envelope` interpolates
   linearly in s and can exceed the exact envelope by 2.4e-4 at a kink (s =

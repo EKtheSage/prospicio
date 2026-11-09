@@ -5,7 +5,7 @@
 Use this guide if you work with Stephen Mildenhall's package
 [`aggregate`](https://aggregate.readthedocs.io/) and want the same work in
 prospicio. It also teaches the collective risk model to readers new to both. It
-follows the "`aggregate` in Twenty Minutes" session (release 1.2.0) step by
+follows the "`aggregate` in Twenty Minutes" session (release 1.2.0; aggregate 2.1.0 prints the same numbers) step by
 step, with the published numbers beside prospicio's. Where the two differ, the
 cause is a convention.
 
@@ -130,7 +130,7 @@ compare(
         ("99% quantile", quantiles[0.99], 30862, 0),
         ("99.9% quantile", quantiles[0.999], 33169, 0),
     ],
-    "The casualty book against aggregate 1.2.0",
+    "The casualty book against aggregate 1.2.0 and 2.1.0",
     "Claim units",
 )
 ```
@@ -205,7 +205,7 @@ compare(
         ("median", mix.quantile(0.5), 9130, 0),
         ("99% quantile", mix.quantile(0.99), 14423, 0),
     ],
-    "The three-component book against aggregate 1.2.0",
+    "The three-component book against aggregate 1.2.0 and 2.1.0",
     "Claim units",
 )
 ```
@@ -586,7 +586,7 @@ compare(
         ("loss ratio", pentagon.loss_ratio, 0.90915, 5),
         ("premium to capital", pentagon.premium_to_capital, 1.1007, 4),
     ],
-    "The pentagon of the book against aggregate 1.2.0",
+    "The pentagon of the book against aggregate 1.2.0 and 2.1.0",
     "CCoC 10% at the 99.6% quantile; claim units",
 )
 ```
@@ -685,7 +685,7 @@ builds the compound at your step and at doubled and halved steps, scores each
 build by its moment errors against the exact moments, and returns the best sound
 cell as a `GridAudit`. It audits the grid that you give it.
 
-`aggregate` 1.2.0 shares a mixing variable across the severity components of one
+`aggregate` (1.2.0 to 2.1.0) shares a mixing variable across the severity components of one
 `Aggregate` (one mixed count on the claim-weighted mixture) and across the two
 units of a bivariate. It never shares it across the units of a `Portfolio`, whose
 total is the product of their transforms. prospicio supports both: `fft` of a

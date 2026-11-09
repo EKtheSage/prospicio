@@ -1,5 +1,5 @@
 """Reference values for the P&L builders over annual covers, from `aggregate`
-1.0.1 (docs/design/pnl.md, PR 4).
+2.1.0 (docs/design/pnl.md, PR 4).
 
 - `ex3a`, `ex3b`: the walk (`xpnl`) and the consolidated ledger (`pnl`)
   of a book with an aggregate cover 3 xs 5 (deposit 1, a 10% ceding
@@ -16,13 +16,14 @@
 - `derive`: the gross premium that leaves a technical premium after its
   expenses.
 
-    uv run --python 3.12 --with aggregate==1.0.1 \
+    uv run --python 3.13 --with aggregate==2.1.0 \
         python validation/scripts/aggregate_pnl_builders.py
 
 writes validation/reference/pnl_builders_aggregate.csv and
 validation/reference/pnl_builder_sources.csv.
 """
 
+import aggregate
 from pathlib import Path
 
 import numpy as np
@@ -33,7 +34,7 @@ from aggregate._pnl_builders import (
     derive_consideration,
 )
 
-SOURCE = 'aggregate 1.0.1'
+SOURCE = f'aggregate {aggregate.__version__}'
 ref = Path(__file__).resolve().parents[1] / 'reference'
 
 A = 'agg ExGross 2 claims dsev [1 2 4] [.5 .3 .2] fixed'
