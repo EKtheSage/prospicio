@@ -762,7 +762,7 @@ Each item is sized to one small PR unless stated. "Needs first" lists the valida
 
 ## Follow-up issues
 
-Filed on 2026-11-09 under the tracking issue [#822](https://github.com/EKtheSage/prospicio/issues/822). Each is one small change with its evidence, the test it needs first and its risk.
+Filed on 2026-11-09 (#848 to #851 on a later request, to test further CI speed-ups) under the tracking issue [#822](https://github.com/EKtheSage/prospicio/issues/822). Each is one small change with its evidence, the test it needs first and its risk.
 
 | Issue | Priority | Area | Subject | Report section |
 |---|---|---|---|---|
@@ -791,6 +791,10 @@ Filed on 2026-11-09 under the tracking issue [#822](https://github.com/EKtheSage
 | [#845](https://github.com/EKtheSage/prospicio/issues/845) | P2 | Shared | R test runner and shared test helpers | 10.2, M5 |
 | [#846](https://github.com/EKtheSage/prospicio/issues/846) | P1 | Shared | Lane Done lists out of agent-loaded files | H8 |
 | [#847](https://github.com/EKtheSage/prospicio/issues/847) | P3 | Shared | GIL held in twelve Python entry points | 10.2 |
+| [#848](https://github.com/EKtheSage/prospicio/issues/848) | P1 | CI | pytest in parallel on four cores | 6.3 B4 |
+| [#849](https://github.com/EKtheSage/prospicio/issues/849) | P1 | CI | R test files four at a time | 6.2 |
+| [#850](https://github.com/EKtheSage/prospicio/issues/850) | P2 | CI | Guide and notebook tests in their own job leg | 6.2 |
+| [#851](https://github.com/EKtheSage/prospicio/issues/851) | P3 | CI | Test binaries built with line tables only | 6.3 B2 |
 
 Findings with no issue (typed errors, the `RISK_RS_*` rename, the 21.8k-line binding file, platform-independent `exp`/`ln`, buffer exchange, a `prospicio-bayes` split) are listed in #822.
 
