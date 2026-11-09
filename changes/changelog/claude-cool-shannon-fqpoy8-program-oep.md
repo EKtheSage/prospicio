@@ -6,4 +6,4 @@
   `program_occurrence_exceedance` and `Tower::occurrence_ceded` (the
   program's ceded loss of one occurrence, annual terms left out); Python
   `occurrence_pml(..., tower=, view=)` and `occurrence_exceedance(...,
-  tower=, view=)`, R the same arguments (#773).
+  tower=, view=)`, R the same arguments (#773, #817).
