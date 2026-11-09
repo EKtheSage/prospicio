@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 The renewal starts when the catastrophe model results of the cedents arrive. A
 cat model does not give a distribution. It gives tables: a list of possible
 events, or a long run of simulated years. This page explains the tables and
@@ -237,6 +239,26 @@ Alder's AAL from the YELT: 16.778
 An event set built this way has no file hash, because `events_from_years()` did
 not read the file.
 
+The events of Alder come in seasons. The figure counts them by month and peril:
+
+```{r}
+#| label: alder-months-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+alder_rows <- yelt[yelt$cedent == "alder", ]
+alder_rows$month <- pmin(12, floor((alder_rows$day - 1) / (365 / 12)) + 1)
+by_month <- as.data.frame(table(month = alder_rows$month, peril = alder_rows$peril),
+                          responseName = "losses", stringsAsFactors = FALSE)
+by_month$month <- as.integer(by_month$month)
+by_month$peril <- factor(by_month$peril, levels = c("EQ", "CS", "WS", "FL"))
+ggplot(by_month, aes(month, losses, group = peril)) +
+  geom_line(data = by_month[by_month$peril == "EQ", ], colour = "grey75") +
+  geom_line(aes(colour = peril), data = by_month[by_month$peril != "EQ", ]) +
+  geom_point(aes(colour = peril), data = by_month[by_month$peril != "EQ", ]) +
+  scale_x_continuous(breaks = 1:12) +
+  labs(x = "month of the year", y = "losses of Alder in 2,000 trials", colour = NULL,
+       title = "Alder: losses by month and peril in the YELT (EQ in grey)")
+```
+
 ## 4. An ELT, and reconciling it with the YELT
 
 The cat model of Alder also gives an ELT,
@@ -314,6 +336,43 @@ ELT exact AAL        16.056
 YELT average         16.778
 ELT simulated mean   16.851
 standard error, 2,000 years  0.79
+```
+
+The figure and the table show the same three estimates. The bars are one
+standard error wide on each side of the two averages:
+
+```{r}
+#| label: aal-estimates-figure
+estimates <- c("ELT exact" = elt$expected_annual_loss,
+               "YELT average" = mean(alder_totals),
+               "ELT simulated" = mean(total(simulated)))
+averages <- data.frame(estimate = factor(c("YELT average", "ELT simulated"),
+                                         levels = c("YELT average", "ELT simulated")),
+                       aal = unname(estimates[c("YELT average", "ELT simulated")]))
+ggplot(averages, aes(aal, estimate)) +
+  geom_vline(xintercept = estimates[["ELT exact"]], colour = "grey75") +
+  geom_pointrange(aes(xmin = aal - se, xmax = aal + se, colour = estimate),
+                  orientation = "y") +
+  labs(x = "average annual loss of Alder (millions of Varland crowns)", y = NULL,
+       title = "Three estimates of the AAL, with one standard error (grey: ELT exact)") +
+  theme(legend.position = "none")
+```
+
+```{r}
+#| label: aal-estimates-table
+library(gt)
+reconcile <- data.frame(
+  estimate = names(estimates),
+  aal = unname(estimates),
+  gap = unname(estimates) - estimates[["ELT exact"]],
+  gap_se = (unname(estimates) - estimates[["ELT exact"]]) / se
+)
+gt(reconcile, rowname_col = "estimate") |>
+  tab_header("AAL of Alder: three estimates",
+             "Millions of Varland crowns; one standard error is the 2,000-year value") |>
+  cols_label(aal = "AAL", gap = "gap to the ELT exact", gap_se = "gap in standard errors") |>
+  fmt_number(columns = c(aal, gap), decimals = 3) |>
+  fmt_number(columns = gap_se, decimals = 2)
 ```
 
 The three estimates agree to within about one standard error. You cannot expect

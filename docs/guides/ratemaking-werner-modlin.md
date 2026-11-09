@@ -1,5 +1,7 @@
 # Basic ratemaking: Werner and Modlin reproduced
 
+<!-- site: execute -->
+
 Geoff Werner and Claudine Modlin wrote *Basic Ratemaking* (5th edition, CAS,
 2016). It is the CAS study note on the overall rate level indication for
 personal and small commercial lines. Chapters 5 to 8 and 12 build the
@@ -223,6 +225,26 @@ rounds to ten places. The last column is the exact answer. Rounding the index
 at each change moves the factors by up to 0.0002 (the exact 2012 factor is
 1.2175, not 1.2176).
 
+The same factors in a table, with the exact factor beside the book's:
+
+```python
+import pandas as pd
+from great_tables import GT
+
+on_level_a = pd.DataFrame({
+    "year": [str(y) for y in range(2011, 2016)],
+    "book": book_factor,
+    "prospicio": a_on_level,
+    "exact": [exact_chain.rate_level(Period.calendar(float(y), float(y + 1)), 0.5).on_level_factor
+              for y in range(2011, 2016)],
+})
+(GT(on_level_a, rowname_col="year")
+ .tab_header("Appendix A: on-level factors of six-month policies, by calendar year",
+             "Factor from the year's average rate level to the current level")
+ .tab_spanner("on-level factor", ["book", "prospicio", "exact"])
+ .fmt_number(["book", "prospicio", "exact"], decimals=4))
+```
+
 ### Appendix C: annual medical malpractice policies
 
 Appendix C's changes are -7.6% on 10/1/2011, +14.6% on 3/1/2014 and +13.6% on
@@ -317,6 +339,25 @@ for n, pct in book.items():
  4 points  1.947%  (book 1.9%)
 ```
 
+A figure shows the data and two of the fits. The 20-point and 4-point fits
+give the longest and the shortest view of the trend:
+
+```python
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+ax.plot([i / 4 for i in range(len(awp))], awp, "o", color="0.75", label="average written premium")
+for n in (20, 4):
+    fit = TrendFit.exponential([i / 4 for i in range(n)], awp[-n:])
+    start = (len(awp) - n) / 4
+    ax.plot([start + i / 4 for i in range(n)], [fit.fitted(i / 4) for i in range(n)],
+            label=f"latest {n} points: {100 * fit.annual_change:.1f}% a year")
+ax.set_xlabel("years since the first quarter")
+ax.set_ylabel("average written premium, current rates ($)")
+ax.set_title("Premium Trend-1: two exponential fits to 23 quarters")
+ax.legend()
+```
+
 Each fit rounds to the printed tenth. The book selects 2.0%. In Premium
 Trend-3, it first trends the average earned premium at current rate level of
 each calendar year to the latest 115.35. Then it trends at 2.0% a year for two
@@ -399,6 +440,26 @@ arithmetic, rounded links  ['1.50', '1.30', '1.10', '1.02', '1.00']
 book arithmetic            ['1.50', '1.30', '1.10', '1.02', '1.00']
 volume weighted            ['1.50', '1.29', '1.10', '1.02', '1.00']
 book ratio of totals       ['1.50', '1.29', '1.10', '1.02', '1.00']
+```
+
+The link ratios of each age pair and their two averages show how little the
+choice of average matters at most ages:
+
+```python
+import matplotlib.pyplot as plt
+
+steps = ["15-27", "27-39", "39-51", "51-63", "63-75"]
+fig, ax = plt.subplots()
+for j in range(5):
+    ratios = [r[j + 1] / r[j] for r in rows if r[j + 1] == r[j + 1]]
+    ax.plot([j] * len(ratios), ratios, "o", color="0.75", label="link ratios" if j == 0 else None)
+ax.plot([j - 0.1 for j in range(5)], simple.ldf, "o", label="arithmetic average")
+ax.plot([j + 0.1 for j in range(5)], volume.ldf, "s", label="volume-weighted average")
+ax.set_xticks(range(5), steps)
+ax.set_xlabel("development age (months)")
+ax.set_ylabel("link ratio (next age / this age)")
+ax.set_title("Table 6.11: link ratios and their averages")
+ax.legend()
 ```
 
 The book averages link ratios that it first rounds to two places. At 27 to 39
@@ -530,6 +591,28 @@ severity      prosp    0.54   -0.09   -0.21    1.24    2.52    3.31
 pure premium  prosp   -1.19   -1.39   -0.91   -0.07    1.59    1.91
               book     -1.2    -1.4    -0.9    -0.1     1.6     1.9
 linear fit to 20 pure premiums: -0.75 a year (book -0.75)
+```
+
+The three series with their 20-point and 8-point fits show why the choice of
+period matters:
+
+```python
+import matplotlib.pyplot as plt
+
+panels = [("frequency (claims per exposure)", freq), ("severity ($ per claim)", sev),
+          ("pure premium ($ per exposure)", pp)]
+fig, axes = plt.subplots(1, 3, figsize=(10, 3.6))
+for ax, (title, values) in zip(axes, panels):
+    ax.plot([i / 4 for i in range(20)], values, "o", color="0.75", label="quarterly value")
+    for n in (20, 8):
+        fit = TrendFit.exponential([i / 4 for i in range(n)], values[-n:])
+        start = (20 - n) / 4
+        ax.plot([start + i / 4 for i in range(n)], [fit.fitted(i / 4) for i in range(n)],
+                label=f"latest {n} points")
+    ax.set_title(title, fontsize=10)
+    ax.set_xlabel("years since the first quarter")
+axes[0].legend(fontsize=8)
+fig.tight_layout()
 ```
 
 Each fit is within half a unit of the printed tenth. The frequencies must be

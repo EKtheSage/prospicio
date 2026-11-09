@@ -1,5 +1,7 @@
 # Iman-Conover, uncertainty and capital by layer: CAS Monograph 15, chapter 8
 
+<!-- site: execute -->
+
 CAS Monograph 15 is *Introduction to Capital Modeling and Portfolio
 Management* (John Major and Stephen Mildenhall, 2026). Its chapter 8 covers
 four advanced topics: parameter uncertainty, the Iman-Conover method to
@@ -226,6 +228,27 @@ GL-Property          0.752   0.773   0.791        0.778   0.787   0.795
 Gaussian Spearman (6/pi) asin(r/2): [-0.288, 0.0, 0.786]
 ```
 
+```python
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+for k, name in enumerate(NAMES):
+    i, j = PAIRS[k]
+    ax.plot([TARGET[i][j]] * 2, [k - 0.3, k + 0.3], color="0.75", lw=3, label="target (Pearson)" if k == 0 else None)
+    ax.plot([6 / np.pi * np.arcsin(TARGET[i][j] / 2)] * 2, [k - 0.3, k + 0.3], color="0.4", lw=1, ls="--",
+            label="Gaussian Spearman of the target" if k == 0 else None)
+    for off, kind, label in ((-0.1, 0, "Pearson"), (0.1, 1, "Spearman")):
+        v = runs[:, k, kind]
+        ax.hlines(k + off, np.quantile(v, 0.05), np.quantile(v, 0.95), color=f"C{kind}", lw=2,
+                  label=label if k == 0 else None)
+        ax.plot(v.mean(), k + off, "o", color=f"C{kind}")
+ax.set_yticks(range(3), NAMES)
+ax.invert_yaxis()
+ax.set_xlabel("achieved correlation (mean and 90% range of 100 samples)")
+ax.set_title("Achieved against target correlation")
+ax.legend()
+```
+
 Every value of Table 8.3 is inside these 90% ranges. So the monograph's sample
 and the prospicio sample agree as far as a sample of 1,000 can show. Two
 results are not sampling error:
@@ -410,6 +433,18 @@ for name, values in spread.items():
 ```text
 Iman-Conover   GL-Property Spearman: mean 0.787, sd 0.0052
 normal copula  GL-Property Spearman: mean 0.787, sd 0.0142
+```
+
+```python
+fig, ax = plt.subplots()
+bins = np.linspace(0.74, 0.83, 28)
+for name, values in spread.items():
+    ax.hist(values, bins=bins, alpha=0.6, label=name)
+ax.axvline(6 / np.pi * np.arcsin(0.4), color="0.75", lw=2)
+ax.set_xlabel("GL-Property Spearman correlation of one sample (grey line: 0.786)")
+ax.set_ylabel("samples out of 100")
+ax.set_title("Iman-Conover varies less than the normal copula")
+ax.legend()
 ```
 
 Both methods centre on the Gaussian rank correlation of about 0.786. The
@@ -605,6 +640,30 @@ for x, dx, s, g, iota, aS, bG, margin, capital in layers(insco, wang):
   65  35  0.1  0.174  0.089  0.012  0.015  0.047    0.132  0.165  0.529
 ```
 
+```python
+import pandas as pd
+from great_tables import GT
+
+wang_layers = pd.DataFrame(
+    [
+        {"layer": f"{x:.0f} to {x + dx:.0f}", "S": s, "gS": g, "iota": iota,
+         **{f"margin {u}": m for u, m in zip("ABC", margin)},
+         **{f"capital {u}": q for u, q in zip("ABC", capital)}}
+        for x, dx, s, g, iota, _, _, margin, capital in layers(insco, wang)
+    ]
+)
+(GT(wang_layers, rowname_col="layer")
+ .tab_header("Table 8.10: InsCo's layers under the Wang distortion",
+             "Margin and capital per unit of layer width; the bottom layer has no iota")
+ .tab_spanner("margin", ["margin A", "margin B", "margin C"])
+ .tab_spanner("capital", ["capital A", "capital B", "capital C"])
+ .cols_label(gS="g(S)", **{f"{k} {u}": u for k in ("margin", "capital") for u in "ABC"})
+ .fmt_number("S", decimals=1)
+ .fmt_number(["gS", "iota", "margin A", "margin B", "margin C", "capital A", "capital B", "capital C"],
+             decimals=3)
+ .sub_missing(missing_text="-"))
+```
+
 These values are Table 8.10 (with `g(S)` from Table 8.9), per unit of layer
 width, and agree with it to the printed digits. The code keeps `alpha S` and
 `beta g(S)`, the columns of Tables 8.8 and 8.9, for section 10. Losses in
@@ -711,6 +770,19 @@ print("natural CCoC    ", [round(v, 3) for v in natural], round(sum(natural), 3)
 ```text
 Bodoff with CCoC [14.803, 19.794, 18.968] 53.565
 natural CCoC     [13.739, 18.522, 21.304] 53.565
+```
+
+```python
+fig, ax = plt.subplots()
+width = 0.38
+at = np.arange(3)
+ax.bar(at - width / 2, bodoff_premium, width, label="Bodoff with CCoC")
+ax.bar(at + width / 2, natural, width, label="natural CCoC")
+ax.set_xticks(at, ["A", "B", "C"])
+ax.set_xlabel("unit")
+ax.set_ylabel("premium (assets of 100)")
+ax.set_title("Premium by unit: the same total of 53.565")
+ax.legend()
 ```
 
 The totals are the same 53.565, but the splits differ. Bodoff's shares are the

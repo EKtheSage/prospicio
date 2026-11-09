@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 This is the second part of a guide to *Generalized Linear Models for Insurance
 Rating* (CAS Monograph 5, second edition, 2025 revision). The authors are
 Goldburd, Khare, Tevet and Guller. The guide uses the prospicio R package. The first part,
@@ -118,6 +120,30 @@ age band   mean age  binned partial residual  fitted b*age  true 0.8 sin(age/8),
 56.8-62.9      59.7                    1.216         0.724  +0.716
 63.0-71.4      67.6                    1.117         0.820  +0.640
 71.5-79.9      76.1                    0.603         0.922  -0.088
+```
+
+The binned points show the shape. Plot them against the fitted straight line
+and the true effect:
+
+```{r}
+#| label: partial-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+bins <- lapply(0:7, function(k) ord[(k * n %/% 8 + 1):((k + 1) * n %/% 8)])
+binned <- data.frame(
+  age = sapply(bins, function(i) sum(ages[i] * diag$working_weights[i]) / sum(diag$working_weights[i])),
+  pr = sapply(bins, function(i) sum(partial[i] * diag$working_weights[i]) / sum(diag$working_weights[i])),
+  series = "binned partial residual")
+grid <- seq(18, 80, by = 0.5)
+curves <- rbind(
+  data.frame(age = grid, pr = b_age * grid, series = "fitted straight line, b x age"),
+  data.frame(age = grid, pr = 0.8 * sin(grid / 8) - true_c, series = "true effect, 0.8 sin(age / 8), centred"))
+ggplot(curves, aes(age, pr)) +
+  geom_line(aes(colour = series), linewidth = 0.8) +
+  geom_point(data = binned, colour = "grey40", size = 2) +
+  labs(x = "age (years)", y = "partial residual (log scale)", colour = NULL,
+       title = "Partial residuals of wavy_claims against age: a line misses the wave
+(dots: binned partial residual)") +
+  theme(legend.position = "top")
 ```
 
 The fitted line rises gently. The binned partial residuals start high, fall to a
@@ -451,6 +477,37 @@ double lift, band average over overall average:
   actual    0.48 0.65 1.32 0.75 1.82
 loss ratio (actual / current premium): 0.42 0.54 1.10 0.62 1.57
 Gini on the test set: current 0.121, proposed 0.256
+```
+
+The table lays out the three charts by band, and the figure draws the double
+lift chart:
+
+```{r}
+#| label: lift-table
+library(gt)
+lift_bands <- data.frame(band = 1:5, current = dl$b_relativity, proposed = dl$a_relativity,
+                         actual = dl$actual_relativity, loss_ratio = lr$loss_ratio)
+gt(lift_bands, rowname_col = "band") |>
+  tab_header("Double lift and loss ratio, 120 test policies in 5 bands",
+             "Relativities to the overall average; loss ratio = actual / current premium") |>
+  tab_spanner("relativity", columns = c(current, proposed, actual)) |>
+  cols_label(loss_ratio = "loss ratio") |>
+  fmt_number(columns = everything(), decimals = 2)
+```
+
+```{r}
+#| label: lift-figure
+long <- data.frame(band = rep(1:5, 3),
+                   relativity = c(lift_bands$actual, lift_bands$current, lift_bands$proposed),
+                   series = rep(c("actual", "current plan", "proposed model"), each = 5))
+ggplot(long, aes(band, relativity)) +
+  geom_hline(yintercept = 1, colour = "grey75", linetype = "dotted") +
+  geom_line(aes(colour = series), linewidth = 0.8) +
+  geom_point(aes(colour = series), size = 2) +
+  labs(x = "band (sorted by proposed / current prediction)",
+       y = "relative claim frequency (overall = 1)", colour = NULL,
+       title = "Double lift chart: the actuals follow the proposed model") +
+  theme(legend.position = "top")
 ```
 
 In the double lift chart, the actuals run with the proposed model in both end

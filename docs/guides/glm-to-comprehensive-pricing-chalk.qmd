@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 CAS Monograph 16 is *From GLMs to Comprehensive Insurance Pricing: Techniques
 and Challenges* (Alan Chalk, David Deacon, Montserrat Guillen and Max
 Martinelli, 2025). It starts where the GLM monograph of Goldburd and others
@@ -543,6 +545,29 @@ cat("kept:", paste0("[", paste(kept, collapse = ", "), "]"), "\n")
 kept: [20, 23, 26, 29, 32, 62, 65, 77]
 ```
 
+The cross-validation curve shows how the lasso chooses. The score is the mean
+validation deviance at each penalty, with its standard error. The two chosen
+penalties are marked:
+
+```{r}
+#| label: cv-curve-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+cv_curve <- data.frame(loglam = log10(lams), mean = cvp$mean, se = cvp$se)
+marks <- data.frame(
+  loglam = log10(c(cvp$lambda_min, cvp$lambda_1se)),
+  choice = c(sprintf("lam_min (%d steps)", cvp$fit@df[i_min]),
+             sprintf("lam_1se (%d steps)", cvp$fit@df[i_1se])))
+marks$choice <- factor(marks$choice, levels = marks$choice)
+ggplot(cv_curve, aes(loglam, mean)) +
+  geom_errorbar(aes(ymin = mean - se, ymax = mean + se), colour = "grey75", width = 0.04) +
+  geom_line(colour = "grey75") +
+  geom_vline(aes(xintercept = loglam, colour = choice, linetype = choice), data = marks) +
+  labs(x = "log10 of the penalty lambda", y = "deviance on the validation fold",
+       colour = NULL, linetype = NULL,
+       title = "Cross-validation of the lasso on 20 age steps") +
+  theme(legend.position = "top")
+```
+
 The next chunk compares three fits with the truth by age. The true frequency at
 an age is the exposure-weighted average of the true frequencies of the policies
 at that age. The three fits are:
@@ -579,6 +604,26 @@ age 50: truth 0.207  lasso 0.207  relaxed 0.200  GAM 0.195
 age 65: truth 0.215  lasso 0.236  relaxed 0.239  GAM 0.228
 age 80: truth 0.256  lasso 0.239  relaxed 0.253  GAM 0.249
 GAM effective degrees of freedom 5.7
+```
+
+The curves show the same result:
+
+```{r}
+#| label: age-fits-figure
+curves <- rbind(
+  data.frame(age = grid$age, frequency = as.numeric(true_by_age), fit = "truth"),
+  data.frame(age = grid$age, frequency = as.numeric(lasso_curve), fit = "lasso at lam_min"),
+  data.frame(age = grid$age, frequency = as.numeric(relaxed_curve), fit = "relaxed lasso"),
+  data.frame(age = grid$age, frequency = as.numeric(gam_curve), fit = "GAM"))
+curves$fit <- factor(curves$fit, levels = c("truth", "lasso at lam_min", "relaxed lasso", "GAM"))
+ggplot(curves, aes(age, frequency)) +
+  geom_line(aes(colour = fit, linewidth = fit == "truth")) +
+  scale_colour_manual(values = c("truth" = "grey75", "lasso at lam_min" = "#F8766D",
+                                 "relaxed lasso" = "#00BA38", "GAM" = "#619CFF")) +
+  scale_linewidth_manual(values = c("TRUE" = 1.6, "FALSE" = 0.6), guide = "none") +
+  labs(x = "driver age (years)", y = "claims per policy year", colour = NULL,
+       title = "Claim frequency by age: truth and three fits") +
+  theme(legend.position = "top")
 ```
 
 All three fits find the young-driver slope and the rise after 60 with no

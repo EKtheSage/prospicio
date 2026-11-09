@@ -1,5 +1,7 @@
 # Property catastrophe 5: the money around the loss
 
+<!-- site: execute -->
+
 A treaty moves more money than its claims. The cedent pays a premium. It can
 pay again to restore a used limit, and it gets some of the premium back as
 commission. A broker takes a fee, and collateral in a trust earns interest.
@@ -308,6 +310,50 @@ margin              0.3043
 At the expected loss ratio of 40% the scale reads 25%, but the mean commission
 is 27.5%. The same shape causes this: most years are below the mean and earn
 the top of the scale.
+
+The commission against the loss ratio shows why. The left panel draws the
+three terms. The right panel shows how the loss ratio of Corran falls over the
+2,000 years, up to 150% (6% of the years are above and not shown):
+
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+
+lr = np.linspace(0, 1, 101)
+flat = np.full_like(lr, 0.25)
+with_pc = 0.25 + 0.2 * np.maximum(0.65 - lr, 0)
+slide = np.interp(lr, [0.30, 0.50], [0.30, 0.20])
+tower_qs = Tower([qs_terms])
+qs_lr = tower_qs.deal_ratios(tower_qs.apply(corran), "corran_qs").marginal(["loss_ratio"]).draws
+
+fig, (ax, ax2) = plt.subplots(1, 2, figsize=(9, 3.6), layout="constrained")
+ax.plot(100 * lr, 100 * flat, label="flat 25%")
+ax.plot(100 * lr, 100 * with_pc, label="flat 25% + profit commission")
+ax.plot(100 * lr, 100 * slide, label="sliding scale")
+ax.set_xlabel("loss ratio (% of premium)")
+ax.set_ylabel("commission (% of premium)")
+ax.set_title("Commission by loss ratio")
+ax.legend(fontsize=7)
+ax2.hist(100 * np.asarray(qs_lr), bins=30, range=(0, 150), color="0.75")
+ax2.set_xlabel("loss ratio (% of premium)")
+ax2.set_ylabel("simulated years")
+ax2.set_title("Loss ratio of Corran (up to 150%)")
+```
+
+The same means sit side by side in a table:
+
+```python
+import pandas as pd
+from great_tables import GT
+
+qs_means = pd.DataFrame({"flat + profit commission": ratio_means(qs_terms),
+                         "sliding scale": ratio_means(qs_slide)})
+qs_means.index.name = "ratio"
+(GT(qs_means.reset_index(), rowname_col="ratio")
+ .tab_header("Corran quota share: mean ratios under two commission terms",
+             "Shares of premium; brokerage 2%")
+ .fmt_number(["flat + profit commission", "sliding scale"], decimals=4))
+```
 
 A layer with paid reinstatements cannot take a profit commission or a sliding
 scale. On this book they go on the quota share and the aggregate cover.

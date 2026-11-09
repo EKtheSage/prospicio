@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 CAS Monograph 15 is *Introduction to Capital Modeling and Portfolio
 Management* (John Major and Stephen Mildenhall, 2026). Its chapters 5 and 6
 apply the natural allocation to the InsCo example. They judge units against a
@@ -106,6 +108,26 @@ A    13.9  14.109  -0.209   -41.8%     -1.43%   book -0.209 -41.8% -1.43%
 B    18.7  18.637   0.063    15.6%      0.33%   book 0.063 15.6% 0.33%
 C    19.6  20.819  -1.219   -25.9%     -4.45%   book -1.219 -25.9% -4.45%
 book total: excess -1.365 (book -1.365), -24.4% of plan margin (book -24.4%)
+```
+
+The same results as a table:
+
+```{r}
+#| label: perf-table
+library(gt)
+perf <- data.frame(
+  unit = UNITS, plan = PLAN, wang = req_units$premium,
+  excess = PLAN - req_units$premium,
+  of_plan = (PLAN - req_units$premium) / (PLAN - req_units$loss),
+  lr = req_units$loss / req_units$premium - req_units$loss / PLAN
+)
+gt(perf, rowname_col = "unit") |>
+  tab_header("Table 5.2: plan premium against the required premium under Wang",
+             "Premium in currency units; excess = plan less Wang") |>
+  cols_label(plan = "plan premium", wang = "Wang premium", excess = "excess premium",
+             of_plan = "excess, % of plan margin", lr = "excess loss ratio") |>
+  fmt_number(columns = c(plan, wang, excess), decimals = 3) |>
+  fmt_percent(columns = c(of_plan, lr), decimals = 1)
 ```
 
 Only the plan for unit B covers its target, by 0.063. Unit C has most of the
@@ -470,6 +492,27 @@ B   17.466     18.349      20.412   20.412
 C   19.255     19.371      21.304   22.098
 ```
 
+The figure shows the same ranges. The grey bar is the range of all
+distortions. The coloured bar is the range of the five. The dot is the plan:
+
+```{r}
+#| label: bounds-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+ranges <- data.frame(
+  unit = factor(paste("unit", UNITS), levels = paste("unit", UNITS)),
+  lower = bounds$lower, upper = bounds$upper,
+  five_low = apply(by_family, 1, min), five_high = apply(by_family, 1, max), plan = PLAN
+)
+ggplot(ranges, aes(y = unit)) +
+  geom_segment(aes(x = lower, xend = upper, yend = unit), linewidth = 6, colour = "grey75") +
+  geom_segment(aes(x = five_low, xend = five_high, yend = unit, colour = "the five"),
+               linewidth = 2.5) +
+  geom_point(aes(x = plan, colour = "plan"), size = 3) +
+  labs(x = "premium (currency units)", y = NULL, colour = NULL,
+       title = "Range of the premium of each unit (grey: all distortions)") +
+  theme(legend.position = "top")
+```
+
 The five representatives cover most of the range of each unit, but not all of
 it. The highest possible premium for unit B is the TVaR premium. But a
 distortion outside the five can price unit A as low as 13.098. The monograph
@@ -517,6 +560,25 @@ plan   13.900            96.4%  18.700            97.9%  19.600            76.0%
 A: cheapest ccoc, plan meets at least one distortion: True
 B: cheapest ph, plan meets at least one distortion: True
 C: cheapest tvar, plan meets at least one distortion: True
+```
+
+The figure shows each unit's premium by distortion against its plan:
+
+```{r}
+#| label: family-figure
+by_unit <- data.frame(
+  unit = factor(rep(paste("Unit", UNITS), times = length(FAMILIES)), levels = paste("Unit", UNITS)),
+  distortion = factor(rep(FAMILIES, each = 3), levels = FAMILIES),
+  premium = as.vector(by_family)
+)
+plans <- data.frame(unit = factor(paste("Unit", UNITS), levels = paste("Unit", UNITS)), premium = PLAN)
+ggplot(by_unit, aes(distortion, premium)) +
+  geom_point(aes(colour = "required"), size = 2.5) +
+  geom_hline(aes(yintercept = premium, colour = "plan"), data = plans) +
+  facet_wrap(~ unit, scales = "free_y") +
+  labs(x = "distortion", y = "premium (currency units)", colour = NULL,
+       title = "Required premium by distortion, against the plan") +
+  theme(legend.position = "top", axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
 The dual power premium for unit C is 20.32158 here. The monograph prints the
@@ -579,6 +641,25 @@ ph    cover worth 6.662, loss ratio 53%, buy at 6.5: True
 wang  cover worth 6.087, loss ratio 58%, buy at 6.5: False
 dual  cover worth 5.415, loss ratio 65%, buy at 6.5: False
 tvar  cover worth 4.803, loss ratio 73%, buy at 6.5: False
+```
+
+The figure shows the same values against the quoted premium:
+
+```{r}
+#| label: cover-figure
+worth <- data.frame(
+  distortion = factor(FAMILIES, levels = FAMILIES),
+  premium = sapply(FAMILIES, function(f) {
+    re <- units_only(natural_price(split, distortions[[f]], assets = 100))
+    re$premium[re$unit == "ceded"]
+  })
+)
+ggplot(worth, aes(distortion, premium)) +
+  geom_col() +
+  geom_hline(aes(yintercept = 6.5, colour = "quoted premium")) +
+  labs(x = "distortion", y = "premium (currency units)", colour = NULL,
+       title = "Value of the stop loss to InsCo by distortion (bars)") +
+  theme(legend.position = "top")
 ```
 
 With the CCoC or PH, InsCo buys the cover at 6.5. With Wang, the dual power or

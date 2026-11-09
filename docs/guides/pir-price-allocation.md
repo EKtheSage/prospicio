@@ -1,5 +1,7 @@
 # Price allocation in *Pricing Insurance Risk*: classical methods, the natural allocation and Bodoff
 
+<!-- site: execute -->
+
 Part III of Stephen Mildenhall and John Major's *Pricing Insurance Risk: Theory
 and Practice* (Wiley, 2022), chapters 12 to 15, asks one question. An insurer
 prices its whole portfolio: how do you split that price over the units of the
@@ -271,6 +273,20 @@ premium [6.2048, 45.1838] 51.3887  (book 6.2048, 45.1838, 51.3887)
 The grouped table is Table 15.3 of the book (at a total of 10, the average of
 `X1` is 9.6667 and the average of `X2` is 0.3333). The premiums are those of
 Table 15.4 to four decimals.
+
+```python
+import matplotlib.pyplot as plt
+
+labels = [f"{x:.0f}" for x in adjusted.totals]
+k1, k2 = adjusted.kappa("X1"), adjusted.kappa("X2")
+fig, ax = plt.subplots()
+ax.bar(labels, k1, label="X1")
+ax.bar(labels, k2, bottom=k1, label="X2")
+ax.set_xlabel("total loss of the portfolio")
+ax.set_ylabel("average loss of the unit given the total")
+ax.set_title("Example 258: the units' average losses add up to each total")
+ax.legend()
+```
 
 ### When totals tie: the natural allocation set
 
@@ -579,12 +595,53 @@ lifted natural        22.0749   8.6615   0.875  0.520   22.0749, 8.6615
 linear natural        18.4568  12.2796   1.046  0.367   18.4568, 12.2796
 ```
 
+```python
+import pandas as pd
+from great_tables import GT
+
+summary = pd.DataFrame({
+    "method": [name for name, _, _ in TABLE_1531],
+    "Hu": [got[0] for _, got, _ in TABLE_1531],
+    "EQ": [got[1] for _, got, _ in TABLE_1531],
+    "LR Hu": [el[0] / got[0] for _, got, _ in TABLE_1531],
+    "LR EQ": [el[1] / got[1] for _, got, _ in TABLE_1531],
+})
+(GT(summary, rowname_col="method")
+ .tab_header("Table 15.31: premium and loss ratio by unit and method",
+             "Premium in currency units; loss ratio on the limited loss")
+ .tab_spanner("premium", ["Hu", "EQ"])
+ .tab_spanner("loss ratio", ["LR Hu", "LR EQ"])
+ .fmt_number(["Hu", "EQ"], decimals=2)
+ .fmt_number(["LR Hu", "LR EQ"], decimals=3))
+```
+
 The loss ratios are on the limited loss, as in Table 15.31 of the book. The
 expected value, covariance and PLC premiums give almost the same loss ratio to
 the two perils. The lifted allocation charges the rarer, more volatile
 earthquake a loss ratio of 0.52. The cap misleads the linear allocation. The
 book concludes that no single answer is correct, and it prefers the lifted
 allocation.
+
+```python
+import numpy as np
+
+methods = [name for name, _, _ in TABLE_1531]
+x = np.arange(len(methods))
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9.0, 3.8))
+for ax, values, ylabel, title in (
+    (ax1, [got for _, got, _ in TABLE_1531], "premium", "Premium by unit"),
+    (ax2, [(el[0] / got[0], el[1] / got[1]) for _, got, _ in TABLE_1531], "loss ratio on the limited loss",
+     "Loss ratio by unit"),
+):
+    ax.bar(x - 0.2, [v[0] for v in values], width=0.4, label="Hu")
+    ax.bar(x + 0.2, [v[1] for v in values], width=0.4, label="EQ")
+    ax.set_xticks(x)
+    ax.set_xticklabels(methods, rotation=40, ha="right")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+ax1.legend()
+fig.tight_layout()
+```
 
 ## 7. Pricing bounds, and stand-alone against diversified
 

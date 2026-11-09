@@ -1,5 +1,7 @@
 # Risk loads and distortions: when to use which
 
+<!-- site: execute -->
+
 Use this guide when you have the loss distribution of a cover and must turn it
 into a price with a load for risk. The cover can be an excess of loss layer, a
 quota share or a whole book. A primary pricing actuary loads a premium by a
@@ -306,6 +308,23 @@ for name, d in fitted.items():
              dual_power(2.286)     79.5%     21.4%      4.5%      2.3%      0.2%     0.0%
                    tvar(0.527)    100.0%     21.2%      4.2%      2.1%      0.2%     0.0%
             exponential(2.088)     74.0%     21.5%      4.7%      2.4%      0.2%     0.0%
+```
+
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+
+odds = np.logspace(0, 3, 60)                    # 1 in 1 to 1 in 1000
+fig, axes = plt.subplots(1, 2, sharey=True, figsize=(8.0, 3.6))
+for ax, names in zip(axes, [["ccoc", "ph", "wang"], ["dual", "tvar", "exponential"]]):
+    for name in names:
+        ax.plot(odds, [fitted[name].g(1 / n) for n in odds], label=label(fitted[name]))
+    ax.set_xscale("log")
+    ax.set_xlabel("return period of the loss (years)")
+    ax.legend(fontsize=8)
+axes[0].set_ylabel("g(s), the rate on line")
+fig.suptitle("g(s) of six families, each priced to 5x5 = 1.24")
+fig.tight_layout()
 ```
 
 All six price the 5x5 layer at 1.24, because the code calibrates them to that
@@ -660,6 +679,17 @@ print(f"premium saved by writing the lines together: {priced.diversification():.
        cat      9.92    14.86    14.45          49.38            45.30
       book     59.92    68.63    66.09          87.05            61.70
 premium saved by writing the lines together: 2.54
+```
+
+```python
+import pandas as pd
+
+shown = pd.DataFrame({"stand-alone": [x.capital for x in priced.standalone],
+                      "in the book": [x.capital for x in priced.allocated]}, index=LINES)
+ax = shown.plot.bar(rot=0)
+ax.set_xlabel("line")
+ax.set_ylabel("capital (99% TVaR standard)")
+ax.set_title("Capital of each line, alone and in the book")
 ```
 
 The premium and capital in the book add up to the Euler assets above. For

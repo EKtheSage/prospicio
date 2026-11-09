@@ -1,5 +1,7 @@
 # A first course: from premium and losses to a priced book
 
+<!-- site: execute -->
+
 Read this page first. It is for a student or a new analyst who knows what a
 premium and a claim are. It shows how an actuary goes from a table of premium
 and losses to a price, and from prices to decisions. Each idea has a small
@@ -127,6 +129,25 @@ mean claim 0.999, mean year 9.99, sd 5.65
 aliasing error below 1e-12: True, tail mass below 1e-12: True
 ```
 
+The figure shows the distribution of the year. Its right tail is long. The 99%
+VaR is almost three times the mean, and the TVaR is higher still.
+
+```python
+import matplotlib.pyplot as plt
+
+x = [year.step * i for i in range(len(year.probs))]
+fig, ax = plt.subplots()
+ax.plot(x, [q / year.step for q in year.probs], label="aggregate loss of the year")
+ax.axvline(year.mean(), color="0.5", linestyle=":", label="mean")
+ax.axvline(year.quantile(0.99), color="0.3", linestyle="--", label="99% VaR")
+ax.axvline(year.tvar(0.99), color="0.3", linestyle="-.", label="99% TVaR")
+ax.set_xlim(0, 50)
+ax.set_xlabel("loss in the year (millions)")
+ax.set_ylabel("probability density")
+ax.set_title("The aggregate loss: 10 claims a year on average, CV 1.5 each")
+ax.legend(loc="center right")
+```
+
 The mean year is 10 claims times a mean claim of approximately 1. The two checks
 are important. The FFT moves any probability past the end of the grid back to
 the start (**aliasing**). The **tail mass** is the probability that stays past
@@ -187,6 +208,22 @@ g(s) at s = 0.25, 0.5, 0.75: 0.500, 0.707, 0.866
 weights of 4 equally likely outcomes, smallest first: 0.134, 0.159, 0.207, 0.500
 A as 0, 0, 4, 10 by hand: 5.83
 prices: A 5.83, B 20.41, A + B 25.41; A's plus B's 26.24
+```
+
+The figure plots g(s) for two distortions. The grey line is no distortion. The
+proportional hazard curve lies above it everywhere. The TVaR curve rises
+straight to 1 at s = 0.25 and puts all the weight on the worst quarter.
+
+```python
+ss = [i / 200 for i in range(201)]
+fig, ax = plt.subplots()
+ax.plot(ss, ss, color="0.75", label="no distortion, g(s) = s")
+ax.plot(ss, [ph.g(v) for v in ss], label="proportional hazard 0.5")
+ax.plot(ss, [TVAR75.g(v) for v in ss], label="TVaR 75%")
+ax.set_xlabel("s, the probability of a loss above a value")
+ax.set_ylabel("g(s), the distorted probability")
+ax.set_title("A distortion raises the probability of bad outcomes")
+ax.legend()
 ```
 
 The distortion prices a chance of one in four as a chance of one in two
@@ -274,6 +311,25 @@ shapley        6.75  36.75  43.50
 marginal       3.50  33.50  37.00
 stand-alone   10.00  40.00  50.00
 natural PH     5.05  20.36  25.41   (premium, not assets)
+```
+
+The same numbers as a table:
+
+```python
+from pandas import DataFrame
+from great_tables import GT
+
+rows_t = []
+for method in ["euler", "covariance", "shapley", "marginal"]:
+    al = capital(pd, TVAR75, method)
+    rows_t.append((method, al.allocated[0], al.allocated[1], sum(al.allocated)))
+rows_t.append(("stand-alone", al.standalone[0], al.standalone[1], sum(al.standalone)))
+rows_t.append(("natural PH (premium)", natural["premium"][0], natural["premium"][1], natural["premium"][2]))
+alloc = DataFrame(rows_t, columns=["method", "A", "B", "sum"])
+(GT(alloc, rowname_col="method")
+ .tab_header("Allocation of the book's 75% TVaR of assets, 43.50, to units A and B",
+             "Millions; the last row splits the premium, not the assets")
+ .fmt_number(["A", "B", "sum"], decimals=2))
 ```
 
 | Method | The question it answers |

@@ -1,5 +1,7 @@
 # Property catastrophe 1: what the cat model hands over
 
+<!-- site: execute -->
+
 The renewal starts when the catastrophe model results of the cedents arrive. A
 cat model does not give a distribution. It gives tables: a list of possible
 events, or a long run of simulated years. This page explains the tables and
@@ -213,6 +215,28 @@ Alder's AAL from the YELT: 16.778
 An event set built this way has no file hash, because `from_years` did not read
 the file.
 
+The events of Alder come in seasons. The figure counts them by month and peril:
+
+```python
+import matplotlib.pyplot as plt
+
+MONTH_DAYS = 365 / 12
+by_month = {}
+for r in YELT:
+    if r["cedent"] == "alder":
+        month = min(11, int((int(r["day"]) - 1) / MONTH_DAYS))
+        by_month.setdefault(r["peril"], [0] * 12)[month] += 1
+fig, ax = plt.subplots()
+ax.plot(range(1, 13), by_month["EQ"], color="0.75", label="EQ")
+for peril in ["CS", "WS", "FL"]:
+    ax.plot(range(1, 13), by_month[peril], marker="o", label=peril)
+ax.set_xticks(range(1, 13))
+ax.set_xlabel("month of the year")
+ax.set_ylabel("losses of Alder in 2,000 trials")
+ax.set_title("Alder: losses by month and peril in the YELT")
+ax.legend()
+```
+
 ## 4. An ELT, and reconciling it with the YELT
 
 The cat model of Alder also gives an ELT,
@@ -296,6 +320,42 @@ ELT exact AAL        16.056
 YELT average         16.778
 ELT simulated mean   16.851
 standard error, 2,000 years  0.79
+```
+
+The figure and the table show the same three estimates. The bars are one
+standard error wide on each side of the two averages:
+
+```python
+import pandas as pd
+from great_tables import GT
+
+estimates = {
+    "ELT exact": elt.expected_annual_loss,
+    "YELT average": alder_totals.mean(),
+    "ELT simulated": simulated.totals().mean(),
+}
+fig, ax = plt.subplots()
+ax.axvline(elt.expected_annual_loss, color="0.75", label="ELT exact AAL")
+for i, name in enumerate(["YELT average", "ELT simulated"]):
+    ax.errorbar(estimates[name], i, xerr=se, marker="o", capsize=4, label=name)
+ax.set_yticks([0, 1], ["YELT average", "ELT simulated"])
+ax.set_ylim(-0.5, 1.5)
+ax.set_xlabel("average annual loss of Alder (millions of Varland crowns)")
+ax.set_title("Three estimates of the AAL, with one standard error")
+ax.legend()
+```
+
+```python
+reconcile = pd.DataFrame({
+    "estimate": list(estimates),
+    "AAL": list(estimates.values()),
+    "gap to the ELT exact": [v - estimates["ELT exact"] for v in estimates.values()],
+    "gap in standard errors": [(v - estimates["ELT exact"]) / se for v in estimates.values()],
+})
+(GT(reconcile, rowname_col="estimate")
+ .tab_header("AAL of Alder: three estimates", "Millions of Varland crowns; one standard error is the 2,000-year value")
+ .fmt_number(["AAL", "gap to the ELT exact"], decimals=3)
+ .fmt_number("gap in standard errors", decimals=2))
 ```
 
 The three estimates agree to within about one standard error. You cannot expect

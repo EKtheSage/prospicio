@@ -1,5 +1,7 @@
 # Experience rating, exposure rating and blending them
 
+<!-- site: execute -->
+
 An excess of loss layer has two independent sources of evidence for its expected loss:
 
 - **Experience rating**: what the large losses of the cedant cost the layer in the past.
@@ -400,6 +402,25 @@ The expected loss of the full book does not change with `c`, because the premium
 parameter `c` moves loss between small partial losses and total losses. A higher `c` gives fewer total losses
 (a probability of 0.1300 at `c = 2`, 0.0065 at `c = 4`), and thus cheaper higher layers.
 
+The figure shows the curves. Each curve gives the share of the expected loss of a risk that lies below a given
+loss, for a risk with a sum insured of 4. A high `c` rises fast: partial losses carry most of the expected loss.
+A low `c` rises slowly: total losses carry much of it.
+
+```python
+import matplotlib.pyplot as plt
+
+x = [4.0 * i / 40 for i in range(1, 41)]
+fig, ax = plt.subplots()
+for c in (1.5, 2.5, 3.5, 5.0):
+    ax.plot(x, [Mbbefd.swiss_re(c).layer_share(v, 0.0, 4.0) for v in x], color="0.75")
+for c in (2.0, 3.0, 4.0):
+    ax.plot(x, [Mbbefd.swiss_re(c).layer_share(v, 0.0, 4.0) for v in x], label=f"c = {c:g}")
+ax.set_title("Swiss Re exposure curves (grey: c = 1.5, 2.5, 3.5 and 5)")
+ax.set_xlabel("loss limit (sum insured of the risk = 4)")
+ax.set_ylabel("share of the expected loss")
+ax.legend()
+```
+
 ### Choosing the curve
 
 `Mbbefd.swiss_re(c)` is the one-parameter family of Bernegger. The values 1.5, 2, 3 and 4 of `c` are the Swiss
@@ -443,6 +464,37 @@ squared log error: c = 2 0.442, c = 3 0.144, c = 4 0.023, c = 5 0.321
 10 xs 10: burning 0.000, exposure 0.183
 1 xs 1: relative standard error of the burning cost 0.23, log gap at c = 3 0.15
 2 xs 2: relative standard error of the burning cost 0.46, log gap at c = 3 0.35
+```
+
+The figure and the table compare the burning cost of each layer with the exposure value at `c = 3` and `c = 4`.
+
+```python
+import numpy as np
+import pandas as pd
+from great_tables import GT
+
+names = [f"{l:g} xs {a:g}" for l, a in LAYERS]
+by_layer = pd.DataFrame({
+    "layer": names,
+    "burning cost": [burning_cost(l, a) for l, a in LAYERS],
+    "exposure, c = 3": [profile(Mbbefd.swiss_re(3.0)).expected_layer_loss(l, a) for l, a in LAYERS],
+    "exposure, c = 4": [p_best.expected_layer_loss(l, a) for l, a in LAYERS],
+})
+pos = np.arange(len(names))
+fig, ax = plt.subplots()
+for k, col in enumerate(by_layer.columns[1:]):
+    ax.bar(pos + (k - 1) * 0.27, by_layer[col], width=0.27, label=col)
+ax.set_xticks(pos, names)
+ax.set_title("Burning cost against exposure rating, by layer")
+ax.set_xlabel("layer (limit xs attachment)")
+ax.set_ylabel("expected annual loss (monetary units)")
+ax.legend()
+```
+
+```python
+(GT(by_layer, rowname_col="layer")
+ .tab_header("Expected annual loss of each layer", "Burning cost of ten years against the exposure curve")
+ .fmt_number(["burning cost", "exposure, c = 3", "exposure, c = 4"], decimals=3))
 ```
 
 The scan selects `c = 4` (squared log error 0.023 against 0.144 for `c = 3`). The last two lines show whether

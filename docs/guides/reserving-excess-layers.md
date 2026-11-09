@@ -1,5 +1,7 @@
 # Excess-layer loss development: layer factors from the ground-up triangle
 
+<!-- site: execute -->
+
 A reinsurer that writes an excess layer must develop the losses above an
 attachment. A primary insurer that reserves a high deductible or an excess
 policy must do the same. These losses develop much more slowly than the
@@ -465,6 +467,23 @@ working factors   2.180 1.431 1.236 1.124 1.064 1.026 1.013 1.006 1.006 tail 1.0
 to ultimate at 12 months: ground-up 3.00, high 6.27, working 4.91
 ```
 
+```python
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+link_ages = AGES[:-1]
+ax.plot(link_ages, p.ground_up_ldf, marker="o", label="ground-up")
+ax.plot(link_ages, derived["working"].layer_ldf, marker="o", label="working layer")
+ax.plot(link_ages, derived["high"].layer_ldf, marker="o", label="high layer")
+ax.set_yscale("log")
+ax.set_yticks([1.0, 1.5, 2.0, 2.5], ["1.0", "1.5", "2.0", "2.5"])
+ax.set_xticks(link_ages)
+ax.set_xlabel("age at the start of the link (months)")
+ax.set_ylabel("age-to-age factor (log scale)")
+ax.set_title("The higher the layer, the slower it develops")
+ax.legend()
+```
+
 The shifts are the book's own shifts (the ground-up factors to ultimate, tail
 included), recovered from the triangle. At 12 months, the high layer has more
 than twice as far to develop as the ground-up losses.
@@ -510,6 +529,18 @@ origin  chain ladder        BF      true
 2024             0   490,530   161,796
 total      3,060,390 3,888,113 4,006,410
 Mack reserve 587,966, standard error 210,007
+```
+
+```python
+fig, ax = plt.subplots()
+ax.bar(YEARS, [t / 1e3 for t in truth["high"]], color="0.75", label="true ultimate")
+ax.plot(YEARS, [u / 1e3 for u in cl.ultimate], marker="o", label="chain ladder")
+ax.plot(YEARS, [u / 1e3 for u in bf.ultimate], marker="o", label="Bornhuetter-Ferguson")
+ax.set_xticks(YEARS)
+ax.set_xlabel("accident year")
+ax.set_ylabel("ultimate loss in the high layer (thousands)")
+ax.set_title("The BF fills the immature years that the chain ladder leaves empty")
+ax.legend(loc="upper left")
 ```
 
 Even with the correct pattern, the chain ladder does not see unreported
@@ -611,6 +642,24 @@ working  own chain ladder    100      -0.3%   13.1%
 working  derived pattern     100      -2.0%    8.1%
 working  blend, k = 20       100      -1.2%    9.9%
 working  BF, derived         100      -0.6%    4.4%
+```
+
+```python
+import pandas as pd
+from great_tables import GT
+
+study = []
+for (name, label), v in errors.items():
+    ok = [e for e, _ in v if e is not None]
+    mean_truth = sum(t for _, t in v) / len(v)
+    study.append({"layer": name, "method": label, "runs": len(ok),
+                  "mean error": 100 * sum(ok) / len(ok) / mean_truth,
+                  "RMSE": 100 * math.sqrt(sum(e * e for e in ok) / len(ok)) / mean_truth})
+(GT(pd.DataFrame(study), rowname_col="method", groupname_col="layer")
+ .tab_header("Error of the total ultimate over 100 simulated books",
+             "Percent of the mean true ultimate")
+ .fmt_number(["mean error", "RMSE"], decimals=1)
+ .fmt_integer("runs"))
 ```
 
 The own chain ladder fails on seven of the hundred high-layer books. Where it

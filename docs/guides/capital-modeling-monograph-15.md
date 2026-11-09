@@ -1,5 +1,7 @@
 # Capital modeling and portfolio pricing: CAS Monograph 15 reproduced
 
+<!-- site: execute -->
+
 CAS Monograph 15 is *Introduction to Capital Modeling and Portfolio
 Management* (John Major and Stephen Mildenhall, 2026). It shows how an insurer
 prices its risk and splits the price over its business units. The method uses only a
@@ -76,6 +78,20 @@ At a total of 40, the expected losses are 10 for A, 24 for B and 6 for C.
 This is the row of Table 9.4. The conditional expectations always add up to the
 total. Thus a split of the price by them never creates or loses money.
 
+The figure shows `kappa` for each unit at each total:
+
+```python
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+for unit in ("A", "B", "C"):
+    ax.plot(insco.totals, insco.kappa(unit), marker="o", label=f"unit {unit}")
+ax.set_xlabel("total loss of the book")
+ax.set_ylabel("expected loss of the unit at that total")
+ax.set_title("InsCo: each unit's conditional expectation, kappa, by total")
+ax.legend()
+```
+
 ## 2. The capital standard
 
 A price needs a capital standard: the assets that stand behind the book.
@@ -146,6 +162,25 @@ The values agree. The CCoC parameter has a different meaning in each program.
 `d = 0.15 / 1.15`, and prospicio builds it from the cost of capital `r = 0.15`.
 `Distortion.ccoc(0.15)` is the same function.
 
+Each distortion is a curve `g(s)`. The figure draws the five curves that the
+calibration found. The grey line is `g(s) = s`, which gives no risk load. The
+price of a distortion rises with the area between its curve and this line:
+
+```python
+s_grid = [i / 100 for i in range(101)]
+panels = [("ccoc", "ph", "wang"), ("dual", "tvar")]
+fig, axes = plt.subplots(1, 2, figsize=(9.0, 3.6), sharey=True)
+for ax, group in zip(axes, panels):
+    ax.plot(s_grid, s_grid, color="0.75")
+    for family in group:
+        ax.plot(s_grid, [distortions[family].g(x) for x in s_grid], label=family)
+    ax.set_xlabel("probability of exceedance, s")
+    ax.legend()
+axes[0].set_ylabel("distorted probability, g(s)")
+axes[0].set_title("Distortions fitted to InsCo (1 of 2)")
+axes[1].set_title("Distortions fitted to InsCo (2 of 2)")
+```
+
 ## 4. The price and its allocation to units
 
 After calibration, `price` returns the premium of the loss capped at the
@@ -213,6 +248,23 @@ All fifteen premiums match to the three decimals printed. The pattern across
 the rows is the important result. CCoC prices unit C at 21.3 and unit B at
 18.5. TVaR prices B at 20.4 and C at 19.4.
 
+The table shows the same premiums by unit:
+
+```python
+import pandas as pd
+from great_tables import GT
+
+by_family = pd.DataFrame(
+    [[family, *[u.premium for u in insco.price(d, assets=100).allocated]]
+     for family, d in distortions.items()],
+    columns=["distortion", "A", "B", "C"],
+)
+(GT(by_family, rowname_col="distortion")
+ .tab_header("InsCo: premium by unit under five distortions",
+             "Money in the units of the example; the expected losses are 13.4, 18.3 and 14.9")
+ .fmt_number(["A", "B", "C"], decimals=3))
+```
+
 TVaR charges only for the units' losses in the worst years. In those years,
 B's 20 is a larger share of the total than its average share. CCoC charges for
 the volume of capital that each unit uses, and C uses 64 of the 100. Neither
@@ -250,6 +302,18 @@ ph      6.481 (book  7.074)   5.597 (book  6.565)  34.356 (book 32.796)
 wang    8.411 (book  8.411)   8.691 (book  8.691)  29.333 (book 29.333)
 dual    8.873 (book  8.873)   9.143 (book  9.143)  28.419 (book 28.419)
 tvar    9.034 (book  9.034)   9.247 (book  9.247)  28.154 (book 28.154)
+```
+
+```python
+lifted = pd.DataFrame(
+    [[family, *[u.capital for u in insco.price(d, assets=100, allocation="lifted").allocated]]
+     for family, d in distortions.items()],
+    columns=["distortion", "A", "B", "C"],
+)
+(GT(lifted, rowname_col="distortion")
+ .tab_header("InsCo: capital by unit, lifted allocation",
+             "Money in the units of the example; the assets are 100")
+ .fmt_number(["A", "B", "C"], decimals=3))
 ```
 
 Wang, dual power and TVaR agree with the monograph to three decimals. **CCoC

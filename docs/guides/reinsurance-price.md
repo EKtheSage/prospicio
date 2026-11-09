@@ -1,5 +1,7 @@
 # What a reinsurance price is
 
+<!-- site: execute -->
+
 This guide is for an actuary who prices primary insurance and has a loss ratio
 for a reinsurance submission. It answers four questions in brief, then works
 through one example.
@@ -421,6 +423,29 @@ The columns of the table:
 In the code, `price` with a `distortion` prices the layer by the distortion and
 holds its 99% TVaR as assets. Its `return_on_capital` is the return column.
 `price` with a `cost_of_capital` is the 10% rule.
+
+The figure compares the two rules layer by layer:
+
+```python
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+names = [layer.name for layer in LAYERS]
+by_distortion, by_return = [], []
+for grid in tower_grids.ceded:
+    by_distortion.append(Quote.technical(price(grid, TAIL, distortion=price_of_risk),
+                                         expenses=EXPENSES, brokerage=BROKERAGE).multiple)
+    by_return.append(Quote.technical(price(grid, TAIL, cost_of_capital=RETURN),
+                                     expenses=EXPENSES, brokerage=BROKERAGE).multiple)
+xs = range(len(names))
+ax.bar([x - 0.2 for x in xs], by_distortion, width=0.4, label="proportional hazard rule")
+ax.bar([x + 0.2 for x in xs], by_return, width=0.4, label="10% on the 99% TVaR capital")
+ax.set_xticks(list(xs), names)
+ax.set_xlabel("layer (limit x attachment)")
+ax.set_ylabel("price as a multiple of the expected loss")
+ax.set_title("Same program, two pricing rules")
+ax.legend(loc="upper left")
+```
 
 The multiple increases from the working layer to the top layer, with the same
 pricing rule. The cause is the capital behind each unit of expected loss. The
@@ -898,6 +923,21 @@ The expected loss and the layer are the same. The soft quote gives the
 reinsurer about half its 10% target return, and the hard quote gives much more.
 The technical premium is between them. A lower hazard parameter gives a higher
 price of risk.
+
+The figure shows the multiples by layer for the three prices of risk:
+
+```python
+fig, ax = plt.subplots()
+layer_names = [layer.name for layer in LAYERS]
+for label, distortion in [("soft quote", market["soft"]), ("technical premium", price_of_risk),
+                          ("hard quote", market["hard"])]:
+    ax.plot(layer_names, [gross_up(p.premium) / p.loss for p in tower_grids.price(distortion).ceded],
+            marker="o", label=label)
+ax.set_xlabel("layer (limit x attachment)")
+ax.set_ylabel("price as a multiple of the expected loss")
+ax.set_title("Price multiple by layer in three markets")
+ax.legend(loc="upper left")
+```
 
 In this model the hard market costs more on each layer, and most on the top
 layer. This pattern comes from the single parameter of the proportional hazard

@@ -1,5 +1,7 @@
 # Price allocation in practice: the case-study tables and the reinsurance decision
 
+<!-- site: execute -->
+
 This guide continues
 [Price allocation in *Pricing Insurance Risk*](pir-price-allocation.md). That
 guide runs the small examples of chapters 12 to 15 of Mildenhall and Major's
@@ -162,6 +164,29 @@ on the rounding boundary. The Non-Cat margins (2.36 and -0.47) and the totals
 match, so the allocation is the same. A small difference in the level that the
 code finds for the TVaR or EPD of the total can move them by that amount.
 
+The next figure shows the margins of the table. Each bar is the margin that one
+recipe gives to a unit. The two bars of a recipe add up to 15.2, the same total
+margin for every recipe:
+
+```python
+import matplotlib.pyplot as plt
+import pandas as pd
+from great_tables import GT
+
+methods = list(ASSETS)
+margins = {m: [d * (x - l) for x, l in zip(ASSETS[m], loss)] for m in methods}
+fig, ax = plt.subplots(figsize=(7.0, 4.2))
+ys = range(len(methods))
+ax.barh([y - 0.2 for y in ys], [margins[m][0] for m in methods], height=0.4, label="Cat")
+ax.barh([y + 0.2 for y in ys], [margins[m][1] for m in methods], height=0.4, label="Non-Cat")
+ax.axvline(0, color="0.5", linewidth=0.8)
+ax.set_yticks(list(ys), methods)
+ax.invert_yaxis()
+ax.set_xlabel("margin of the unit (premium less expected loss)")
+ax.set_title("Table 13.3: the same total margin, shared by nine recipes")
+ax.legend()
+```
+
 The table shows the critique of chapter 13 in numbers. The same premium of 115.2
 gives Cat a margin from 3.04 to 15.68 and Non-Cat a margin from 12.17 to -0.47.
 Only the recipe that allocates the assets causes this difference. The recipes
@@ -202,6 +227,39 @@ wang    31.26 ( 31.26)   92.18 ( 92.20)  123.44 (123.50)  143.76 (143.70)
 dual    29.68 ( 29.68)   89.01 ( 89.01)  118.69 (118.70)  148.52 (148.50)
 tvar    28.69 ( 28.69)   88.87 ( 88.87)  117.56 (117.60)  149.64 (149.60)
 PLC   assets Cat 113.17 (113.2), Non-Cat 154.03 (154.0)
+```
+
+```python
+rows = []
+for family, dist in dists.items():
+    cat_u, noncat_u = book.price(dist, p=0.999, allocation="lifted").allocated
+    got = (cat_u.premium, cat_u.capital, cat_u.assets, noncat_u.assets)
+    rows.append({"distortion": family, **dict(zip(("p", "q", "a", "n"), got)),
+                 **{k + "_book": v for k, v in zip(("p", "q", "a", "n"), BOOK_1536[family])}})
+lifted = pd.DataFrame(rows)
+(GT(lifted, rowname_col="distortion")
+ .tab_header("Tables 15.36 and 15.39: the lifted natural allocation",
+             "Cat premium, Cat capital, Cat assets and Non-Cat assets, prospicio and the book")
+ .tab_spanner("Cat premium", ["p", "p_book"])
+ .tab_spanner("Cat capital", ["q", "q_book"])
+ .tab_spanner("Cat assets", ["a", "a_book"])
+ .tab_spanner("Non-Cat assets", ["n", "n_book"])
+ .cols_label(**{c: ("book" if c.endswith("_book") else "prospicio") for c in lifted.columns[1:]})
+ .fmt_number(list(lifted.columns[1:]), decimals=1))
+```
+
+```python
+fig, ax = plt.subplots()
+xs = range(len(lifted) + 1)
+labels = list(lifted["distortion"]) + ["PLC"]
+ax.bar([x - 0.2 for x in xs], list(lifted["a"]) + [plc[0]], width=0.4, label="Cat")
+ax.bar([x + 0.2 for x in xs], list(lifted["n"]) + [plc[1]], width=0.4, label="Non-Cat")
+ax.axhline(0, color="0.5", linewidth=0.8)
+ax.set_xticks(list(xs), labels)
+ax.set_xlabel("distortion, and Bodoff's percentile layer of capital (PLC)")
+ax.set_ylabel("assets allocated to the unit")
+ax.set_title("Table 15.39: Cat assets fall from CCoC to PLC")
+ax.legend()
 ```
 
 For PH, Wang, the dual power and TVaR, the premiums, capital and assets agree
@@ -358,6 +416,23 @@ for premium in (1.2497, 1.2574, 1.2613):
 cover premium 1.2497: cheapest share 1.000, total cost 51.1483
 cover premium 1.2574: cheapest share 0.667, total cost 51.1534
 cover premium 1.2613: cheapest share 0.000, total cost 51.1560
+```
+
+```python
+shares = [i / 30 for i in range(31)]
+costs = [Portfolio(["net"], [[x1 + x2 - t * c] for x1, x2, c in OUTCOMES], PROBS)
+         .price(ph).total.premium for t in shares]
+fig, ax = plt.subplots()
+for premium in (1.2497, 1.2574, 1.2613):
+    extra = [cost + t * premium - costs[0] for cost, t in zip(costs, shares)]
+    best = extra.index(min(extra))
+    (line,) = ax.plot(shares, extra, label=f"cover premium {premium}")
+    ax.plot(shares[best], extra[best], "o", color=line.get_color())
+ax.axhline(0, color="0.5", linewidth=0.8)
+ax.set_xlabel("share t of the cover bought")
+ax.set_ylabel("total cost, less the cost with no cover")
+ax.set_title("Example 302: the cheapest share depends on the cover premium")
+ax.legend()
 ```
 
 At the lowest premium the full cover is best, and at the highest premium no

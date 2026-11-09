@@ -1,5 +1,7 @@
 # Property catastrophe: a renewal at Larkspur Re
 
+<!-- site: execute -->
+
 This track follows one reinsurer through one renewal of property catastrophe
 business. It starts from the loss tables of a vendor model and ends with a
 priced portfolio and its capital. Each page takes one step. It explains the
@@ -198,6 +200,33 @@ The quota share cedes 10% of the losses of Corran, with a maximum of 150 for
 one event and 300 for the year. It pays Corran a 25% ceding commission on the
 ceded premium.
 
+The same terms as a table:
+
+```python
+import pandas as pd
+from great_tables import GT
+
+def money(key, k):
+    return float(k[key]) if k[key] else float("nan")
+
+terms_table = pd.DataFrame({
+    "contract": [k["contract"] for k in contracts],
+    "kind": [k["kind"] for k in contracts],
+    "perils": [k["perils"] for k in contracts],
+    "limit": [money("aggregate_limit" if k["kind"] == "aggregate_xl" else "limit", k) for k in contracts],
+    "attachment": [money("aggregate_deductible" if k["kind"] == "aggregate_xl" else "attachment", k) for k in contracts],
+    "share": [float(k["share"]) for k in contracts],
+    "rate on line": [money("rate_on_line", k) for k in contracts],
+})
+(GT(terms_table, rowname_col="contract")
+ .tab_header("Larkspur Re's five contracts",
+             "Limits and attachments in millions of Varland crowns, 100% basis")
+ .fmt_number(["limit", "attachment"], decimals=0)
+ .fmt_percent("share", decimals=0)
+ .fmt_number("rate on line", decimals=2)
+ .sub_missing(missing_text=""))
+```
+
 ### The year event loss table at a glance
 
 The next block also uses only `csv`. It counts the rows of the YELT and the
@@ -236,6 +265,42 @@ EQ        2.473    2.050    4.371    8.894
 FL        3.042    3.999    1.997    9.038
 CS        1.349    3.165    1.106    5.620
 all      16.778   15.376   13.049   45.204
+```
+
+Two figures show the same table. The first compares the cedents by peril. The
+second shows the annual loss of all cedents together, for the years with a
+loss.
+
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+
+fig, ax = plt.subplots()
+width = 0.27
+for i, n in enumerate(names):
+    ax.bar(np.arange(4) + (i - 1) * width, [total[(p, n)] / 2000 for p in perils],
+           width, label=n)
+ax.set_xticks(np.arange(4), perils)
+ax.set_xlabel("peril")
+ax.set_ylabel("mean annual loss (millions of crowns)")
+ax.set_title("Windstorm is the largest peril for every cedent")
+ax.legend(title="cedent")
+```
+
+```python
+annual = {}
+for r in yelt:
+    annual[int(r["year"])] = annual.get(int(r["year"]), 0.0) + float(r["loss"])
+values = np.array(list(annual.values()))
+fig, ax = plt.subplots()
+ax.hist(values, bins=np.logspace(np.log10(values.min()), np.log10(values.max()), 40),
+        color="0.75")
+ax.axvline(values.sum() / 2000, linestyle="--", label="mean over all 2,000 years")
+ax.set_xscale("log")
+ax.set_xlabel("annual loss of the three cedents (millions of crowns)")
+ax.set_ylabel("years")
+ax.set_title("1,820 years with a loss: the annual loss spans four orders of magnitude")
+ax.legend()
 ```
 
 The mean annual loss over all years is the average annual loss (AAL, defined on

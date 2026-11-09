@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 The earlier pages of this track price one contract at a time. A reinsurer
 holds more than one contract. Larkspur Re holds five, on three cedents, and the
 same windstorm can hit all of them in the same year. This page adds the five
@@ -244,6 +246,27 @@ corran_qs     16.363   13.216    12.609
 sum of contributions 55.096
 ```
 
+The figure shows the three views of each deal side by side.
+
+```{r}
+#| label: tail-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+tail_views <- rbind(
+  data.frame(deal = deals, view = "alone", tvar = alloc$by_component$standalone),
+  data.frame(deal = deals, view = "contribution (Euler)", tvar = dist$contribution["TVaR 99", deals]),
+  data.frame(deal = deals, view = "marginal", tvar = dist$marginal["TVaR 99", deals])
+)
+tail_views$deal <- factor(tail_views$deal, levels = deals)
+tail_views$view <- factor(tail_views$view, levels = c("alone", "contribution (Euler)", "marginal"))
+ggplot(tail_views, aes(deal, tvar, fill = view)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  scale_fill_manual(values = c("alone" = "grey75", "contribution (Euler)" = scales::hue_pal()(2)[1],
+                               "marginal" = scales::hue_pal()(2)[2])) +
+  labs(x = NULL, y = "TVaR 99 of the loss (premium units)", fill = NULL,
+       title = "Tail of the book: alone, in the book, and removed from it") +
+  theme(legend.position = "top")
+```
+
 Read the table one row at a time.
 
 - `alder_cat_2` is the high Alder layer. Alone, its TVaR is the largest of the
@@ -347,6 +370,24 @@ book            8.000   7.487    7.998
 premium saved by diversification 1.613
 ```
 
+```{r}
+#| label: prices-table
+library(gt)
+prices <- data.frame(
+  deal = deals,
+  charged = sapply(deals, function(d) item_mean(s_dep, d, "premium")),
+  kept = sapply(deals, kept),
+  in_book = pp$by_component$premium,
+  alone = pp$by_component$standalone_premium
+)
+gt(prices, rowname_col = "deal") |>
+  tab_header("Premium by deal: charged, kept and needed",
+             "Premium units; needed = cost of capital 10% on TVaR 99 capital") |>
+  tab_spanner("needed", columns = c(in_book, alone)) |>
+  cols_label(in_book = "in book") |>
+  fmt_number(columns = c(charged, kept, in_book, alone), decimals = 3)
+```
+
 Alone, `alder_cat_1` needs the 2.007 of page 6. In the book it needs less. The
 book charges 8.000, near the 7.998 that a 10% return on TVaR capital needs. But
 it keeps less: 7.487, after the reinstatement premium comes in and the ceding
@@ -392,6 +433,23 @@ bracken_agg   0.162   0.193       0.165    0.450
 corran_qs     1.202  12.609       2.239    3.000
 ```
 
+```{r}
+#| label: marginal-figure
+marginal_p <- (dist$marginal["Mean", deals] + r * dist$marginal["TVaR 99", deals]) / (1 + r)
+compare <- rbind(
+  data.frame(deal = deals, price = "charged", premium = sapply(deals, function(d) item_mean(s_dep, d, "premium"))),
+  data.frame(deal = deals, price = "marginal price", premium = marginal_p)
+)
+compare$deal <- factor(compare$deal, levels = deals)
+compare$price <- factor(compare$price, levels = c("charged", "marginal price"))
+ggplot(compare, aes(deal, premium, fill = price)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  scale_fill_manual(values = c("charged" = "grey75", "marginal price" = scales::hue_pal()(1))) +
+  labs(x = NULL, y = "premium (premium units)", fill = NULL,
+       title = "Charged premium against the marginal price of each deal") +
+  theme(legend.position = "top")
+```
+
 The marginal price is lower than the allocated price for every deal, because
 the marginal TVaR of each deal is at most its Euler contribution. TVaR is
 subadditive, so a new deal raises the TVaR of the book by no more than the
@@ -431,6 +489,22 @@ bracken_cat    1.161    7.552   15.4%
 bracken_agg    0.288   -0.188    none
 corran_qs      1.048   10.216   10.3%
 book           4.198   46.859    9.0%
+```
+
+```{r}
+#| label: returns-table
+returns <- data.frame(
+  deal = c(deals, "book"),
+  margin = sapply(c(deals, "total"), function(d) item_mean(s, d, "margin")),
+  capital = c(bc$allocated - sapply(deals, function(d) item_mean(s, d, "premium")),
+              alloc$total - item_mean(s, "total", "premium"))
+)
+returns$return <- ifelse(returns$capital > 0, returns$margin / returns$capital, NA_real_)
+gt(returns, rowname_col = "deal") |>
+  tab_header("Return on allocated capital", "Premium units; return = margin / capital") |>
+  fmt_number(columns = c(margin, capital), decimals = 3) |>
+  fmt_percent(columns = return, decimals = 1) |>
+  sub_missing(columns = return, missing_text = "none")
 ```
 
 Against a 10% target, `alder_cat_2` is the weak contract. It uses more than a

@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 Use this guide if you already work with Stephen Mildenhall's Python package
 [`aggregate`](https://aggregate.readthedocs.io/) and want to see the same work
 in prospicio from R. Use it also if you are new to both and want to learn the
@@ -89,6 +91,18 @@ pmf(1) 0.066667 = 1/15, pmf(15) 0.00082305 = 1/1215
 cdf(5) 0.465021
 ```
 
+The figure shows the whole distribution of the total. Every bar is an exact
+probability.
+
+```{r}
+#| label: dice-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+ggplot(data.frame(total = 1:15, probability = eg1@probs[2:16]), aes(total, probability)) +
+  geom_col() +
+  labs(x = "total of the year (claim units)", y = "probability",
+       title = "Eg1: the total of 1 to 5 claims of size 1 to 3")
+```
+
 The probability of the smallest outcome is one claim of size one, `1/5 * 1/3`.
 The probability of the largest outcome is five claims of size three,
 `1/5 * (1/3)^5`. The grid returns both exactly. The method is exact for a
@@ -133,6 +147,25 @@ claim mean 98.137
 annual mean 24534.1, sd 2561.7
  0.01   0.5  0.99 0.999 
 18954 24449 30862 33170 
+```
+
+The figure shows the distribution of the annual total. The dotted lines mark
+the four quantiles.
+
+```{r}
+#| label: casualty-figure
+xs <- 15000:36000
+top <- max(casualty@probs[xs + 1])
+marks <- data.frame(q = quantile(casualty, p), label = sprintf("%.1f%%", 100 * p),
+                    y = ifelse(p == 0.5, 0.05, 0.35) * top)
+ggplot(data.frame(loss = xs, probability = casualty@probs[xs + 1]), aes(loss, probability)) +
+  geom_line() +
+  geom_vline(xintercept = marks$q, colour = "grey50", linetype = "dotted") +
+  geom_text(aes(q, y, label = label), data = marks, hjust = -0.1, colour = "grey40",
+            inherit.aes = FALSE) +
+  scale_x_continuous(labels = scales::label_comma()) +
+  labs(x = "annual loss", y = "probability per unit of loss",
+       title = "The casualty book: distribution of the annual total")
 ```
 
 For comparison, `aggregate` 1.2.0 prints a mean claim of 98.137, an annual mean
@@ -242,6 +275,26 @@ cat(sprintf("%-12s %10s %12s\n", "99.5% VaR",
                 Poisson  mixed gamma
 agg CV            0.165        0.433
 99.5% VaR        14,456       23,914
+```
+
+The figure shows the same two distributions. The mixed count has the same mean
+and a much longer right tail.
+
+```{r}
+#| label: mixed-figure
+xs <- 0:40000
+both <- data.frame(
+  loss = rep(xs, 2),
+  probability = c(poisson@probs[xs + 1], mixed@probs[xs + 1]),
+  count = factor(rep(c("Poisson", "mixed gamma"), each = length(xs)),
+                 levels = c("Poisson", "mixed gamma"))
+)
+ggplot(both, aes(loss, probability, colour = count)) +
+  geom_line() +
+  scale_x_continuous(labels = scales::label_comma()) +
+  labs(x = "annual loss", y = "probability per unit of loss", colour = NULL,
+       title = "Poisson against mixed gamma count: same mean, longer tail") +
+  theme(legend.position = "top")
 ```
 
 `aggregate` prints a CV of 0.165 against 0.433 and a 99.5% of 14,456 against

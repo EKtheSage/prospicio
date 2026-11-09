@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 Stephen Mildenhall and John Major's book *Pricing Insurance Risk* (Wiley, 2022)
 applies one method to a small number of portfolios, its case studies. The method
 has four steps:
@@ -301,6 +303,25 @@ dual       5.49    9.72    143.91
 tvar       6.47    8.74    149.64
 ```
 
+The figure shows the margins of the two units under each distortion:
+
+```{r}
+#| label: margins-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+margins <- do.call(rbind, lapply(FAMILIES, function(f) {
+  r <- cnc_p[[f]]
+  data.frame(distortion = f, unit = c("NonCat", "Cat"), margin = r$premium[1:2] - r$loss[1:2])
+}))
+margins$distortion <- factor(margins$distortion, levels = FAMILIES)
+margins$unit <- factor(margins$unit, levels = c("NonCat", "Cat"))
+ggplot(margins, aes(distortion, margin, fill = unit)) +
+  geom_col(position = "dodge", width = 0.7) +
+  geom_hline(yintercept = 0, colour = "grey75") +
+  labs(x = "distortion", y = "margin (premium minus expected loss)", fill = NULL,
+       title = "Cat/Non-Cat: the margin of each unit, by distortion") +
+  theme(legend.position = "top")
+```
+
 Under the CCoC a unit pays `v` times its expected loss, plus `d` times its share
 of the assets in the outcomes at or above the assets. The NonCat share there,
 71.34, is below its mean of 80. When the book is at its 99.9% quantile, the
@@ -389,6 +410,22 @@ ph      115.15   107.55    7.60
 wang    115.15   108.79    6.36
 dual    115.15   110.13    5.02
 tvar    115.15   110.88    4.27
+```
+
+```{r}
+#| label: saving-table
+library(gt)
+saving <- data.frame(
+  distortion = FAMILIES,
+  gross_P = sapply(FAMILIES, function(f) cnc_p[[f]]$premium[3]),
+  net_P = sapply(FAMILIES, function(f) cnc_net_p[[f]]$premium[3])
+)
+saving$saving <- saving$gross_P - saving$net_P
+gt(saving, rowname_col = "distortion") |>
+  tab_header("Cat/Non-Cat: premium of the book gross and net of the cover",
+             "Each distortion at its gross calibration, 10% return, p = 99.9%") |>
+  cols_label(gross_P = "gross P", net_P = "net P") |>
+  fmt_number(columns = c(gross_P, net_P, saving), decimals = 2)
 ```
 
 Under the CCoC the premium of the book decreases by 9.25, four times the
@@ -517,6 +554,21 @@ wang    121.555 (121.555)   131.708 (131.708)   253.263 (253.263)
 dual    148.268 (148.268)    92.982 ( 92.982)   241.250 (241.250)
 tvar    155.421 (155.421)    83.301 ( 83.301)   238.722 (238.722)
 largest difference in a premium: 0.0012
+```
+
+```{r}
+#| label: hu-figure
+hu_premium <- data.frame(
+  distortion = factor(rep(FAMILIES, 2), levels = FAMILIES),
+  book = rep(c("gross", "net of the cover"), each = length(FAMILIES)),
+  premium = c(sapply(FAMILIES, function(f) hs_p[[f]]$premium[2]),
+              sapply(FAMILIES, function(f) hs_net_p[[f]]$premium[2]))
+)
+ggplot(hu_premium, aes(distortion, premium, fill = book)) +
+  geom_col(position = "dodge", width = 0.7) +
+  labs(x = "distortion", y = "premium of Hu", fill = NULL,
+       title = "Hurricane/SCS: the premium of Hu, gross and net of 372.4 xs 40.25") +
+  theme(legend.position = "top")
 ```
 
 The net book also agrees to within 0.0012. The cover removes a third of the

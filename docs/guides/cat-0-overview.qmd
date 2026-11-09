@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 This track follows one reinsurer through one renewal of property catastrophe
 business. It starts from the loss tables of a vendor model and ends with a
 priced portfolio and its capital. Each page takes one step. It explains the
@@ -156,6 +158,10 @@ directory and in its parent directories. The chunk reads each column as text,
 as the `csv` module of the Python guide does. An empty term counts as 0.
 
 ```{r}
+library(prospicio)
+```
+
+```{r}
 # The data files, found from the repository root (CI) or from docs/guides (Quarto).
 find_data <- function(name, dir = getwd()) {
   repeat {
@@ -226,6 +232,34 @@ The quota share cedes 10% of the losses of Corran, with a maximum of 150 for
 one event and 300 for the year. It pays Corran a 25% ceding commission on the
 ceded premium.
 
+The same terms as a table:
+
+```{r}
+#| label: terms-table
+library(gt)
+num_or_na <- function(key, k) if (nzchar(k[[key]])) as.numeric(k[[key]]) else NA_real_
+is_agg <- contracts$kind == "aggregate_xl"
+terms_table <- data.frame(
+  contract = contracts$contract,
+  kind = contracts$kind,
+  perils = contracts$perils,
+  limit = sapply(seq_len(nrow(contracts)), function(i)
+    num_or_na(if (is_agg[i]) "aggregate_limit" else "limit", contracts[i, ])),
+  attachment = sapply(seq_len(nrow(contracts)), function(i)
+    num_or_na(if (is_agg[i]) "aggregate_deductible" else "attachment", contracts[i, ])),
+  share = as.numeric(contracts$share),
+  rate_on_line = suppressWarnings(as.numeric(contracts$rate_on_line))
+)
+gt(terms_table, rowname_col = "contract") |>
+  tab_header("Larkspur Re's five contracts",
+             "Limits and attachments in millions of Varland crowns, 100% basis") |>
+  cols_label(rate_on_line = "rate on line") |>
+  fmt_number(columns = c(limit, attachment), decimals = 0) |>
+  fmt_percent(columns = share, decimals = 0) |>
+  fmt_number(columns = rate_on_line, decimals = 2) |>
+  sub_missing(missing_text = "")
+```
+
 ### The year event loss table at a glance
 
 The next chunk also uses only base R. It counts the rows of the YELT and the
@@ -265,6 +299,34 @@ EQ        2.473    2.050    4.371    8.894
 FL        3.042    3.999    1.997    9.038
 CS        1.349    3.165    1.106    5.620
 all      16.778   15.376   13.049   45.204
+```
+
+Two figures show the same table. The first compares the cedents by peril. The
+second shows the annual loss of all cedents together, for the years with a
+loss.
+
+```{r}
+#| label: fig-peril
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+by_peril <- as.data.frame(as.table(mean_loss), responseName = "loss")
+names(by_peril)[1:2] <- c("peril", "cedent")
+ggplot(by_peril, aes(peril, loss, fill = cedent)) +
+  geom_col(position = "dodge") +
+  labs(x = "peril", y = "mean annual loss (millions of crowns)", fill = "cedent",
+       title = "Windstorm is the largest peril for every cedent")
+```
+
+```{r}
+#| label: fig-annual
+annual <- tapply(yelt$loss, yelt$year, sum)
+ggplot(data.frame(loss = as.numeric(annual)), aes(loss)) +
+  geom_histogram(bins = 40, fill = "grey75") +
+  geom_vline(aes(xintercept = sum(loss) / 2000, linetype = "mean over all 2,000 years")) +
+  scale_x_log10() +
+  labs(x = "annual loss of the three cedents (millions of crowns)", y = "years",
+       linetype = NULL,
+       title = "1,820 years with a loss: the annual loss spans four orders of magnitude") +
+  theme(legend.position = "top")
 ```
 
 The mean annual loss over all years is the average annual loss (AAL, defined on

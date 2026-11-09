@@ -1,5 +1,7 @@
 # Friedland's basic reserving techniques, reproduced
 
+<!-- site: execute -->
+
 Jacqueline Friedland's *Estimating Unpaid Claims Using Basic Techniques*
 (Casualty Actuarial Society, version 3, 2010) is the CAS syllabus text on
 reserving. It applies each technique to the same few data sets, so the results
@@ -192,6 +194,28 @@ Each factor row equals the related row of chapter 7, Exhibit I, sheet 1,
 part 3, to the three printed decimals. The 12-24 factor is at the left and the
 108-120 factor is at the right. The paid averages on sheet 2 agree in the same
 way.
+
+The figure shows the link ratios behind these averages. Each grey line is one
+accident year. The coloured line is the latest-3 average.
+
+```python
+import matplotlib.pyplot as plt
+
+reported = us.view("reported")
+link = reported.iloc[:, 1:].to_numpy() / reported.iloc[:, :-1].to_numpy()
+ages = [int(a) for a in reported.columns[:-1]]
+fig, ax = plt.subplots()
+for row in link:
+    ax.plot(ages, 100 * (row - 1), color="0.75", linewidth=1)
+ax.plot([], [], color="0.75", label="one accident year")
+ax.plot(ages, [100 * (f - 1) for f in fits["volume, latest 3"].ldf], marker="o", label="volume, latest 3")
+ax.set_yscale("log")
+ax.set_xticks(ages)
+ax.set_xlabel("age at the start of the link, months")
+ax.set_ylabel("link ratio minus 1, % (log scale)")
+ax.set_title("U.S. Industry Auto, reported: link ratios and the latest-3 average")
+ax.legend()
+```
 
 The book uses two conventions here, and prospicio follows both:
 
@@ -720,6 +744,27 @@ B-F, paid                 27    27     73    73
 Cape Cod                  27    27     73    73
 ```
 
+```python
+import pandas as pd
+from great_tables import GT
+
+summary = pd.DataFrame({
+    "method": list(book_billions),
+    "IBNR, book": [b[0] for b in book_billions.values()],
+    "IBNR, prospicio": [unpaid(f.ultimate)[0] / 1e6 for f in fits],
+    "total, book": [b[1] for b in book_billions.values()],
+    "total, prospicio": [unpaid(f.ultimate)[1] / 1e6 for f in fits],
+})
+(GT(summary, rowname_col="method")
+ .tab_header("U.S. Industry Auto: unpaid claims by method", "$ billions")
+ .tab_spanner("IBNR", ["IBNR, book", "IBNR, prospicio"])
+ .tab_spanner("total unpaid", ["total, book", "total, prospicio"])
+ .cols_label(**{"IBNR, book": "book", "IBNR, prospicio": "prospicio",
+                "total, book": "book", "total, prospicio": "prospicio"})
+ .fmt_integer(["IBNR, book", "total, book"])
+ .fmt_number(["IBNR, prospicio", "total, prospicio"], decimals=1))
+```
+
 All twelve figures agree. The spread across methods is small, about 4% of the
 unpaid estimate. This is the expected result for a whole industry.
 
@@ -754,6 +799,23 @@ year  avg dev   book  dev rep dev paid       EC   BF rep  BF paid       CC
 2006    60.6%  60.6%    54.3%    67.0%    65.8%    56.1%    66.2%    54.6%
 2007   100.8% 100.8%    76.8%   124.8%    63.8%    72.4%    73.1%    69.4%
 2008   128.2% 128.2%    99.4%   156.9%    82.5%    89.1%    85.9%    82.0%
+```
+
+The figure draws the claim ratios of the table.
+
+```python
+fig, ax = plt.subplots()
+for name in ["EC", "BF rep", "BF paid"]:
+    ax.plot(XYZ_YEARS, [100 * u / p for u, p in zip(methods[name].ultimate, XYZ_PREMIUM)],
+            color="0.75", linewidth=1)
+ax.plot([], [], color="0.75", label="EC, BF rep, BF paid")
+for name in ["dev rep", "dev paid", "CC"]:
+    ax.plot(XYZ_YEARS, [100 * u / p for u, p in zip(methods[name].ultimate, XYZ_PREMIUM)],
+            marker="o", label=name)
+ax.set_xlabel("accident year")
+ax.set_ylabel("ultimate claim ratio, % of premium")
+ax.set_title("XYZ Insurer: claim ratio by accident year and method")
+ax.legend()
 ```
 
 The average-of-development column equals the book's to the tenth of a percent.

@@ -104,6 +104,12 @@ if (is.null(guides)) {
   files <- list.files(guides, pattern = "\\.qmd$", full.names = TRUE)
   stopifnot(length(files) > 0)
   for (f in files) {
+    # The site renders an executed twin on its own, with nothing attached,
+    # so the twin must attach the package itself (this harness already has).
+    text <- readLines(f, warn = FALSE)
+    if (any(text == "<!-- site: execute -->") && !any(trimws(text) == "library(prospicio)")) {
+      stop(basename(f), " runs on the site but never calls library(prospicio)", call. = FALSE)
+    }
     n <- run_guide(f)
     message(sprintf("%s: %d R chunks ran, %d checked", basename(f), n[["ran"]], n[["checked"]]))
   }

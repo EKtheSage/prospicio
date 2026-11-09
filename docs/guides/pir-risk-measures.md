@@ -1,5 +1,7 @@
 # Pricing Insurance Risk, Part I: risk measures in prospicio
 
+<!-- site: execute -->
+
 Part I of Stephen Mildenhall and John Major's *Pricing Insurance Risk: Theory
 and Practice* (Wiley, 2022) is chapters 3 to 7. It measures risk before it
 prices risk, and it covers four topics:
@@ -187,6 +189,25 @@ mu = 19.005 reproduces the table's severity column (a median of 179 million).
 Thus the table is correct and the printed mu is not. Build the severity from
 its mean and sigma.
 
+The figure shows the table's main columns. The aggregate VaR and the occurrence
+PML move together as the return period grows:
+
+```python
+import matplotlib.pyplot as plt
+
+years = list(BOOK_43)
+probs = [1 - 1 / y for y in years]
+fig, ax = plt.subplots()
+ax.loglog(years, [hurricane.quantile(p) for p in probs], marker="o", color="0.75", label="severity VaR")
+ax.loglog(years, [occurrence_pml(Poisson(RATE), hurricane, 1 / y).loss for y in years], marker="o",
+          label="occurrence PML")
+ax.loglog(years, [annual.quantile(p) for p in probs], marker="o", label="aggregate VaR")
+ax.set_xlabel("return period (years)")
+ax.set_ylabel("loss (USD millions)")
+ax.set_title("Example 54: hurricane losses by return period")
+ax.legend()
+```
+
 The occurrence PML is always below the aggregate VaR. At long return periods
 the two are close, because a bad hurricane year is one bad hurricane. For the
 same reason, the quick estimate from the severity alone is good in the tail and
@@ -231,6 +252,23 @@ p 0.9  : 2 VaR(X1)  4.605  VaR(X1 + X2)  3.890  difference   0.7155  (book 0.715
 p 0.95 : 2 VaR(X1)  5.991  VaR(X1 + X2)  4.744  difference   1.2476  (book 1.248)
 p 0.99 : 2 VaR(X1)  9.210  VaR(X1 + X2)  6.638  difference   2.5720  (book 2.572)
 p 0.999: 2 VaR(X1) 13.816  VaR(X1 + X2)  9.233  difference   4.5821  (book 4.582)
+```
+
+The figure shows the gap. The line for twice the exponential VaR crosses the
+line for the gamma VaR near p = 0.7:
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+
+grid = np.linspace(0.5, 0.999, 60)
+fig, ax = plt.subplots()
+ax.plot(grid, [2 * one.quantile(p) for p in grid], label="2 VaR(X1)")
+ax.plot(grid, [two.quantile(p) for p in grid], label="VaR(X1 + X2)")
+ax.set_xlabel("probability level p")
+ax.set_ylabel("VaR")
+ax.set_title("Table 4.4: VaR of a sum against the sum of VaRs")
+ax.legend()
 ```
 
 The differences agree with Table 4.4 to the four significant figures that it
@@ -726,6 +764,26 @@ print(f"drop in slope at s = 1/4, times 1/4: {0.25 * jump:.4f}  (book 1/12, the 
 g at 0.01, 1/4, 1/2, 1: [0.1, 0.5, 0.6667, 1.0]
 slope at s = 1, the weight on the mean: 0.6667  (book 2/3)
 drop in slope at s = 1/4, times 1/4: 0.0833  (book 1/12, the weight on TVaR 0.75)
+```
+
+The figure shows the three functions. The minimum follows the PH below
+s = 1/4 and the CCoC above it:
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+
+ccoc = Distortion.ccoc(0.5)
+sgrid = np.linspace(0.0, 1.0, 201)
+fig, ax = plt.subplots()
+ax.plot(sgrid, sgrid, color="0.75", label="no distortion, g(s) = s")
+ax.plot(sgrid, [ph.g(v) for v in sgrid], label="PH, rho 0.5")
+ax.plot(sgrid, [ccoc.g(v) for v in sgrid], label="CCoC, 50%")
+ax.plot(sgrid, [mixed.g(v) for v in sgrid], linestyle="--", label="minimum of the two")
+ax.set_xlabel("survival probability s")
+ax.set_ylabel("distorted probability g(s)")
+ax.set_title("Example 176: the minimum of two distortions")
+ax.legend()
 ```
 
 `Distortion.ccoc(r)` takes the cost of capital r, so `ccoc(0.5)` is the book's

@@ -1,5 +1,7 @@
 # Basic ratemaking: Werner and Modlin's worked indications
 
+<!-- site: execute -->
+
 This guide is the second part of the Werner and Modlin series. The first part,
 [`ratemaking-werner-modlin.md`](ratemaking-werner-modlin.md), shows the steps
 of *Basic Ratemaking* (5th edition, CAS, 2016) one at a time. These steps are
@@ -275,6 +277,25 @@ print(f"total {b.projected_losses:,.0f} (book 30,343,206)  pure premium {b.pure_
 total 30,343,206 (book 30,343,206)  pure premium 469.88 (book 469.88)
 ```
 
+The table sets the five years side by side:
+
+```python
+import pandas as pd
+from great_tables import GT
+
+ex_b = pd.DataFrame({
+    "year": [str(y) for y in range(2011, 2016)],
+    "exposures": [12_760, 12_766, 12_805, 12_834, 13_411],
+    "losses": b.projected_losses_by_year,
+    "pure premium": b.pure_premium_by_year,
+})
+(GT(ex_b, rowname_col="year")
+ .tab_header("Appendix B: homeowners non-catastrophe pure premium by year",
+             "Projected losses in dollars, pure premium in dollars per exposure")
+ .fmt_integer(["exposures", "losses"])
+ .fmt_number("pure premium", decimals=2))
+```
+
 The credibility is 683 claims against 1,082. The book rounds it to 79.5%
 before it weights with the regional pure premium of $585.75. The reinsurance
 cost is the projected net cost of $214,575 divided by the projected exposures.
@@ -345,6 +366,23 @@ print(f"totals {c.projected_premium:,.0f} (book 95,726,878) and {c.projected_los
 2013  premium  19,311,689 (book 19,311,689)  losses  25,304,794 (book 25,304,794)  ratio 131.0% (book 131.0%)
 2014  premium  22,632,277 (book 22,632,277)  losses  29,749,511 (book 29,749,511)  ratio 131.4% (book 131.4%)
 totals 95,726,878 (book 95,726,878) and 103,860,568 (book 103,860,568): 108.50% (book 108.5%)
+```
+
+The five years differ much. The total is 108.5%. The ratio of 2012 is 51.7%,
+far below it, and those of 2013 and 2014 are above 130%.
+
+```python
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+ax.bar([str(y) for y in range(2010, 2015)], [100 * r for r in c.loss_ratio_by_year],
+       label="loss and ALAE ratio by year")
+ax.axhline(100 * c.loss_ratio, color="0.5", linestyle="--", label="total, all five years")
+ax.set_xlabel("accident year")
+ax.set_ylabel("projected loss and ALAE ratio (%)")
+ax.set_title("Appendix C: projected loss ratio by year")
+ax.set_ylim(0, 160)
+ax.legend()
 ```
 
 All expenses are variable here: general 6.4%, other acquisition 2.6%, taxes,
@@ -432,6 +470,22 @@ LAS(100K) 77,046 (book 77,046)  LAS(250K) 122,696 (book 122,696)  ILF 1.59 (book
 censored: layers 77,046 + 44,575 + 15,213 (book 77,046 + 44,575 + 15,213)
   LAS(250K) 121,621 (book 121,621)  LAS(500K) 136,834 (book 136,834)  unrounded 121,620.5 and 136,833.0
 LER(250) 0.135 (book 0.135)
+```
+
+The figure shows the ILF by limit against the basic limit of 100K. The
+censored method gives a slightly lower factor at 250K and 500K.
+
+```python
+limits = [100, 250, 500, 1000]
+fig, ax = plt.subplots()
+ax.plot(limits, [ilf(table, 1e3 * m, 100e3) for m in limits], marker="o",
+        label="uncensored table (Table 11.3)")
+ax.plot(limits[:3], [layer["las"] / layers[0]["las"] for layer in layers], marker="o",
+        label="censored method (Table 11.6)")
+ax.set_xlabel("policy limit (thousands of dollars)")
+ax.set_ylabel("increased limit factor")
+ax.set_title("Increased limit factors, basic limit 100K")
+ax.legend()
 ```
 
 The censored method builds each layer only from policies whose limit is at

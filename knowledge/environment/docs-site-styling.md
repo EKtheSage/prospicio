@@ -120,3 +120,23 @@ Found on 2026-11-07 and 2026-11-08 with great-docs as installed in
   `data-bs-theme` attribute on `<html>`; a copy of the page with a script
   that sets it (and moves the element to check into `main`, since headless
   Edge does not scroll to it) shows either mode.
+* **An executed R twin runs alone.** The R test harness attaches
+  prospicio before it runs any twin, but the site renders each twin as its
+  own article, with nothing attached. Four twins never called
+  `library(prospicio)` and so failed only in the site build ("could not find
+  function"). `R/prospicio/tests/test-guides.R` now fails on an executed
+  twin without that line.
+* **A guides-only PR never builds the site.** CI's `docs` job runs only when
+  a PR touches the bindings, `python/`, `R/`, `xtask/` or `ci.yml`, so the
+  first site build of a changed guide is the Pages build on `main`. Before
+  merging guide changes, run `cargo xtask docs --no-tests` locally (about an
+  hour on the local Windows machine) or `cargo xtask r --no-tests` for the R
+  site alone.
+* **matplotlib's backend in the Python harness.** On the local Windows
+  machine, matplotlib in uv's CPython chooses TkAgg, whose Tcl files are not
+  found, so a guide that drew figures failed now and then. The harness sets
+  `MPLBACKEND=Agg` and closes each guide's figures.
+* **Self-timed R twins.** `pir-portfolio-pricing.qmd` prints whether it ran
+  under 15 s. Locally the unchanged twin took 15.8 s on one run and its new
+  figures add about 4.7 s (ggplot2 renders each printed plot). CI's Linux
+  runner passes it.

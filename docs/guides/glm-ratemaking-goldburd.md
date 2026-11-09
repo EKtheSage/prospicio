@@ -1,5 +1,7 @@
 # GLMs for insurance rating: Goldburd, Khare, Tevet and Guller with prospicio
 
+<!-- site: execute -->
+
 Mark Goldburd, Anand Khare, Dan Tevet and Dmitriy Guller wrote *Generalized
 Linear Models for Insurance Rating* (CAS Monograph 5, second edition, 2025
 revision). It is the CAS text on how to build a classification rating plan
@@ -201,6 +203,26 @@ and +0.41. With 155 claims, the fit estimates none of the three sharply. The
 monograph makes a related point: a GLM gives the data full credibility and
 reports the uncertainty only in the standard errors (section 2.10).
 
+The figure shows the fit against the base A. Each point is a log relativity
+with its 95% interval. The diamond is the true value:
+
+```python
+import matplotlib.pyplot as plt
+
+fit_a = poisson.fit(coding("age").design(data, offset=log_e), data["claims"])
+levels = ["B", "C", "D"]
+xs = range(len(levels))
+fig, ax = plt.subplots()
+ax.axhline(0.0, color="0.75")
+ax.errorbar([x - 0.06 for x in xs], fit_a.coefficients[2:], yerr=[1.96 * s for s in fit_a.std_errors[2:]],
+            fmt="o", capsize=4, label="estimate with 95% interval")
+ax.plot([x + 0.06 for x in xs], [math.log(true_r[g]) for g in levels], "D", label="true value")
+ax.set_xticks(list(xs), [f"region {g}" for g in levels])
+ax.set_ylabel("log relativity against region A")
+ax.set_title("Region relativities: every interval covers the truth and zero")
+ax.legend()
+```
+
 ## 3. Offsets and weights (sections 2.5 and 2.6)
 
 An offset is a predictor with a coefficient fixed at 1. It is a part of the
@@ -316,7 +338,21 @@ inverse_gaussian AIC   8196.7, skewness of deviance residuals +0.05
 
 The gamma leaves right-skewed residuals. The inverse Gaussian gives nearly
 symmetric residuals and the lower AIC. This is the pattern of Figures 16 and 17
-in the monograph. A severity row that averages several claims carries the claim
+in the monograph. The histograms show the two sets of residuals on one scale:
+
+```python
+fig, axes = plt.subplots(1, 2, sharey=True, sharex=True)
+for ax, family in zip(axes, ["gamma", "inverse_gaussian"]):
+    fit = Glm(family, "log").fit(sev_design, data["ig"])
+    r = fit.diagnostics(sev_design, data["ig"])["deviance"]
+    sd = (sum(x * x for x in r) / len(r)) ** 0.5
+    ax.hist([x / sd for x in r], bins=30)
+    ax.set_title(f"{family}: skewness {skewness(r):+.2f}")
+    ax.set_xlabel("deviance residual (sd units)")
+axes[0].set_ylabel("policies")
+```
+
+A severity row that averages several claims carries the claim
 count as its weight (section 2.5). The `avg_sev` column averages `n_sev` claims.
 Its true region factors are 1.2, 0.8 and 1.5. A weighted gamma fit recovers
 them:
@@ -383,6 +419,19 @@ p 1.5: log-likelihood   -1433.4 at phi    89.9
 p 1.6: log-likelihood   -1452.3 at phi    61.1
 p 1.7: log-likelihood   -1479.2 at phi    44.2
 estimated p 1.314 (95% interval 1.264 to 1.371), phi 200.1
+```
+
+The table lists the profile:
+
+```python
+import pandas as pd
+from great_tables import GT
+
+profile_table = pd.DataFrame({"p": profile["powers"], "log-likelihood": profile["log_likelihood"],
+                              "dispersion phi": profile["dispersion"]})
+(GT(profile_table, rowname_col="p")
+ .tab_header("Tweedie profile likelihood by power", "Pure premium on age and region, exposure as weight")
+ .fmt_number(["log-likelihood", "dispersion phi"], decimals=1))
 ```
 
 The profile peaks near the true value of 4/3, which lies inside the interval of

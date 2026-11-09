@@ -11,6 +11,8 @@ execute:
   output: false
 ---
 
+<!-- site: execute -->
+
 Part II of Mildenhall and Major's *Pricing Insurance Risk: Theory and Practice*
 (Wiley, 2022) is chapters 8 to 11. It prices a whole portfolio in two ways:
 
@@ -281,6 +283,27 @@ Every loading and premium in Table 9.2 agrees to the third decimal. The largest
 difference, 0.001, is rounding. Table 9.3 also agrees. It subtracts the premium
 of the total from the sum of the stand-alone premiums.
 
+Table 9.2 as a table, with the units of the premium. The principles sit in the
+order of the net total, from the lowest premium to the highest:
+
+```{r}
+#| label: table-92
+library(gt)
+table_92 <- data.frame(
+  principle = sub("_", " ", names(BOOK_92)),
+  do.call(rbind, BOOK_92)
+)
+names(table_92)[2:7] <- c("loading", "A", "B net", "B", "net", "total")
+table_92 <- table_92[order(table_92$net), ]
+gt(table_92, rowname_col = "principle") |>
+  tab_header("Table 9.2: Tame premiums by principle, each calibrated to the CCoC total",
+             "Currency units; the loading is the parameter of the principle") |>
+  tab_spanner("units", columns = c(A, `B net`, B)) |>
+  tab_spanner("totals", columns = c(net, total)) |>
+  fmt_number(columns = loading, decimals = 3) |>
+  fmt_number(columns = c(A, `B net`, B, net, total), decimals = 2)
+```
+
 ```{r}
 cat(sprintf("%18s %9s %7s %8s %7s\n", "", "SoP gross", "delta", "SoP net", "delta"))
 for (principle in PRINCIPLES) {
@@ -516,6 +539,31 @@ unit of premium, so their return is also low. The return on capital increases
 with s. Only the CCoC distortion, a straight line from (0, d) to (1, 1), earns
 the same return on every layer. For this reason it is "constant".
 
+The figure shows the return on capital of a layer against its exceedance
+probability s:
+
+```{r}
+#| label: return-on-capital-figure
+library(ggplot2, exclude = "layer")   # keeps prospicio's layer()
+grid_s <- 10^seq(-3, -0.01, length.out = 100)
+roc <- do.call(rbind, lapply(
+  list("PH, rho 0.5" = distortion("proportional_hazard", 0.5),
+       "PH, rho 0.7" = distortion("proportional_hazard", 0.7),
+       "CCoC, 10%" = distortion("ccoc", 0.10)),
+  function(d) {
+    gs <- distortion_g(d, grid_s)
+    data.frame(s = grid_s, roc = (gs - grid_s) / (1 - gs))
+  }))
+roc$distortion <- factor(rep(c("PH, rho 0.5", "PH, rho 0.7", "CCoC, 10%"), each = length(grid_s)),
+                         levels = c("PH, rho 0.5", "PH, rho 0.7", "CCoC, 10%"))
+ggplot(roc, aes(s, roc, colour = distortion)) +
+  geom_line(linewidth = 0.8) +
+  scale_x_log10() +
+  labs(x = "exceedance probability s of the layer", y = "return on capital of the layer",
+       colour = NULL, title = "Return on capital by layer") +
+  theme(legend.position = "top")
+```
+
 The Simple Discrete Example of Part I shows the capped premium as a function of
 the assets. In Tables 11.1 and 11.3, the PH with rho 0.5 prices the uncapped
 loss at 51.156 and the loss capped at 80 at 42.828:
@@ -619,6 +667,25 @@ reports it.
 Only the point at s = 0.03 moves (0.0673 to 0.0713). The Blend is not
 calibrated, so it is the same distortion in both cases.
 
+The figure draws the six distortions of the Tame book. The grey line is
+g(s) = s, which prices a layer at its expected loss. The distance above it is
+the margin:
+
+```{r}
+#| label: six-distortions-figure
+points <- seq(0, 1, by = 0.01)
+tame_g <- c(fitted$Tame, list(blend = blend))
+curves <- do.call(rbind, lapply(names(tame_g), function(name) {
+  data.frame(distortion = factor(name, levels = names(tame_g)), s = points,
+             g = distortion_g(tame_g[[name]], points))
+}))
+ggplot(curves, aes(s, g)) +
+  geom_abline(intercept = 0, slope = 1, colour = "grey75") +
+  geom_line(linewidth = 0.8) +
+  facet_wrap(~distortion, nrow = 2) +
+  labs(x = "exceedance probability s", y = "g(s)", title = "The six distortions of the Tame book")
+```
+
 ## 7. Pricing each unit with the five distortions
 
 Tables 11.7 and 11.8 price each unit stand-alone with each calibrated
@@ -695,6 +762,23 @@ the TVaR charges 31.15, and Non-Cat goes the other way. The net book costs
 105.9 under the CCoC and 110.9 under TVaR. Thus the value of the Cat cover to
 the insurer (gross minus net premium) is from 9.3 to 4.3. The value depends on
 the distortion that the capital providers use.
+
+The figure shows both points for Cat/Non-Cat, with the premiums of Table 11.8:
+
+```{r}
+#| label: cat-cover-figure
+cover <- data.frame(
+  distortion = factor(rep(names(BOOK_118), 2), levels = names(BOOK_118)),
+  panel = rep(c("Cat alone", "Value of the Cat cover"), each = length(BOOK_118)),
+  value = c(sapply(BOOK_118, `[`, 1), sapply(BOOK_118, function(b) b[4] - b[7]))
+)
+cover$panel <- factor(cover$panel, levels = c("Cat alone", "Value of the Cat cover"))
+ggplot(cover, aes(distortion, value)) +
+  geom_col() +
+  facet_wrap(~panel, scales = "free_y") +
+  labs(x = "distortion", y = "currency units (premium; gross less net premium)",
+       title = "Cat/Non-Cat: Cat alone and the value of the Cat cover")
+```
 
 Exercise 200 asks what reinsurance price is attractive. There is no answer
 until you choose the distortion. The Blend is not calibrated, and it charges

@@ -1,5 +1,7 @@
 # Property catastrophe 6: a price for Alder's first layer
 
+<!-- site: execute -->
+
 The earlier pages of this track made annual ceded losses from the year event
 loss table of Larkspur Re. This page makes a price from the ceded losses of one
 contract. The story, the files and the notation are on
@@ -157,6 +159,22 @@ The Wang price is lower, and the return that it implies on the TVaR capital is
 under 5%. The two rules answer different questions. Use the rule that matches
 the calibration of your capital model, and use the other as a check.
 
+The figure shows the years with a ceded loss, and where each number falls.
+
+```python
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+ax.hist([x for x in loss.draws if x > 0], bins=24, color="0.75", label="years with a ceded loss")
+ax.axvline(p.expected_loss, color="C0", label="expected loss")
+ax.axvline(pw.premium, color="C1", label="Wang 0.3 premium")
+ax.axvline(p.premium, color="C2", label="cost of capital premium")
+ax.set_xlabel("annual ceded loss at Larkspur's share")
+ax.set_ylabel("years of 2,000")
+ax.set_title("Alder 40 xs 30: the 230 years with a loss, and three prices")
+ax.legend()
+```
+
 ## 4. From risk premium to a quote
 
 The premium above is the risk premium. With expenses `e` and brokerage `b` as
@@ -254,6 +272,18 @@ r = 0.15: premium 2.5212
 r = 0.20: premium 2.9930
 ```
 
+```python
+rs = [i / 100 for i in range(2, 26)]
+fig, ax = plt.subplots()
+ax.plot(rs, [(p.expected_loss + r * p.assets) / (1 + r) for r in rs], label="price (premium helps pay the tail)")
+ax.plot(rs, [p.expected_loss + r * (p.assets - p.expected_loss) for r in rs], label="shortcut EL + r (TVaR - EL)")
+ax.axhline(layer.premium, color="0.75", linestyle=":", label="contract premium")
+ax.set_xlabel("cost of capital r")
+ax.set_ylabel("premium at Larkspur's share")
+ax.set_title("The premium rises with r, and less than the shortcut says")
+ax.legend()
+```
+
 **Hours clause.** Without the 72 hour clause, the pieces of a split windstorm
 or convective storm are separate occurrences. Each piece has its own retention.
 
@@ -310,6 +340,22 @@ print(f"return on capital {m.return_on_capital:.4f} against a target of 0.10")
 quoted premium 1.8000, risk premium 1.5300
 loss ratio 0.457, margin 0.7070
 return on capital 0.0574 against a target of 0.10
+```
+
+```python
+from great_tables import GT
+import pandas as pd
+
+build_up = pd.DataFrame({
+    "item": ["risk premium", "expenses", "brokerage", "quoted premium", "rate on line"],
+    "technical": [q.risk_premium, q.expenses, q.brokerage, q.premium, q.rate_on_line],
+    "market": [m.risk_premium, m.expenses, m.brokerage, m.premium, m.rate_on_line],
+})
+(GT(build_up, rowname_col="item")
+ .tab_header("Alder 40 xs 30: the technical quote and the market quote",
+             "Premium at Larkspur's share; the rate on line is premium over limit")
+ .tab_spanner("quote", ["technical", "market"])
+ .fmt_number(["technical", "market"], decimals=4))
 ```
 
 At the market price, `alder_cat_1` earns much less than the 10% target on its

@@ -1,5 +1,7 @@
 # Reserving methods: which one when
 
+<!-- site: execute -->
+
 ## Use this guide when
 
 You have a loss triangle and must select a reserving method in prospicio. The
@@ -652,6 +654,41 @@ neither is wrong. The knowledge note
 records the reconciliation. At the 99.5% level, which a capital model reads,
 the two differ by 100 (1,881 against 1,981).
 
+The figure shows the two distributions of the total reserve. The means agree.
+The Mack bootstrap is wider, and its right tail is longer.
+
+```python
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+bins = list(range(1200, 2300, 25))
+ax.hist(odp.reserves.total().draws, bins=bins, histtype="step", linewidth=2, label="ODP bootstrap")
+ax.hist(mb.reserves.total().draws, bins=bins, histtype="step", linewidth=2, label="Mack bootstrap")
+ax.axvline(mack.total_reserve, color="0.75", linestyle=":")
+ax.set_xlabel("total reserve (thousands; dotted: the Mack reserve)")
+ax.set_ylabel("simulations out of 10,000")
+ax.set_title("Total reserve: the two bootstraps")
+ax.legend()
+```
+
+The next table lays the same numbers side by side.
+
+```python
+import pandas as pd
+from great_tables import GT
+
+compare = pd.DataFrame({
+    "method": ["ODP bootstrap", "Mack bootstrap", "Mack formula"],
+    "mean": [odp.reserves.mean(), mb.reserves.mean(), mack.total_reserve],
+    "std dev": [odp.reserves.variance() ** 0.5, mb.reserves.variance() ** 0.5, mack.total_standard_error],
+    "99.5%": [odp.reserves.quantile(0.995), mb.reserves.quantile(0.995), None],
+})
+(GT(compare, rowname_col="method")
+ .tab_header("Total reserve by method", "Thousands of a synthetic currency")
+ .fmt_number(["mean", "std dev", "99.5%"], decimals=0)
+ .sub_missing(missing_text=""))
+```
+
 Use `MackBootstrap` when your reserving process already reports the standard
 error of Mack and the distribution must agree with it. Use `OdpBootstrap` when
 you want agreement with R `BootChainLadder`, or when a triangle has a negative
@@ -942,6 +979,21 @@ for year in [2022, 2023, 2024]:  # actual over expected, in total and by origin
 2022 total 1.008 | 2019: 1.035 2020: 1.025 2021: 0.951
 2023 total 1.004 | 2019: 0.977 2020: 1.033 2021: 1.041 2022: 0.962
 2024 total 0.994 | 2019: 1.041 2020: 0.994 2021: 0.955 2022: 1.000 2023: 0.974
+```
+
+The figure shows the same ratios by origin.
+
+```python
+fig, ax = plt.subplots()
+ax.axhline(1.0, color="0.75")
+for year in [2022, 2023, 2024]:
+    pairs = backtest(year)
+    ax.plot(list(pairs), [a / f for a, f in pairs.values()], marker="o", label=f"diagonal {year}")
+ax.set_xticks(years[1:-1])
+ax.set_xlabel("accident year")
+ax.set_ylabel("actual over expected")
+ax.set_title("Backtest: actual over expected paid, by origin")
+ax.legend()
 ```
 
 The totals are within 1% of 1, but the origins show more. In each year, the
