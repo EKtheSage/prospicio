@@ -11,7 +11,7 @@ use prospicio_prob::{ComponentKey, InputHasher, KeyValue, PredictiveDistribution
 use super::bf_normalised::{column_error, origin_error};
 use super::dual::{CHUNK, gradient};
 use super::laplace::{Posterior, Whitened};
-use super::one_year::{self, BayesOneYear, BayesOneYearFit, YearModel};
+use super::one_year::{self, BayesOneYear, BayesOneYearFit, LightRefit, OneYearRefit, YearModel};
 use super::scalar::Scalar;
 use super::{Diagnostics, Stream, derive_seed, one_year_seed, pilot_seed};
 use crate::bootstrap::{ProcessDistribution, prepare, process_draw};
@@ -41,6 +41,12 @@ const DENSE_FROM_PROGRAMS: usize = 8;
 
 /// The fewest draws of a pilot run, as [`Meyers`](super::Meyers).
 const MIN_PILOT_DRAWS: usize = 100;
+
+/// The R-hat above which, and the effective draws below which, a light
+/// refit's closing reserve warns (the bounds of `Compartmental`'s, decision
+/// 24).
+const LIGHT_MAX_RHAT: f64 = 1.05;
+const LIGHT_MIN_ESS: f64 = 100.0;
 
 /// The hierarchical Bornhuetter–Ferguson over programs, one segment of a
 /// [`Triangle`] each, all on the triangle's development ages:
@@ -1259,10 +1265,54 @@ impl HierarchicalBf {
     /// The most one-year simulations [`one_year`](Self::one_year) runs by
     /// default (`BayesOneYear::n_sims` `None`): 2,000, against the 10,000 of
     /// the lifetime view, as Meyers' and the compartmental models', since
-    /// every simulation costs a refit of the whole panel (about 1.2 s each
-    /// at 2 chains of 200 warm-up and 200 kept draws on the three-program
-    /// reference panel, release, 16 threads).
+    /// every simulation can cost a refit of the whole panel (on the
+    /// three-program reference panel, release, 16 threads: about 1.5 s each
+    /// with the default light refit, 13 s with the fit's own sampler at its
+    /// defaults and 1.2 s at 2 chains of 200 warm-up and 200 kept draws).
     pub const ONE_YEAR_SIMS: usize = 2_000;
+
+    /// Whether [`one_year`](Self::one_year) refits with the light refit of
+    /// [`LightRefit::default`] when `settings.refit` and
+    /// `settings.light_refit` are `None` and `settings.no_light_refit` is
+    /// `false`: `true`, by the user's decision of 2026-11-09 (issue #762),
+    /// once it was measured within about 0.05 sd of full refits on the
+    /// reference panel. On EVW, GenIns and RAA, at 40 simulations a seed
+    /// with every one refitted, its total claims development result is
+    /// within 0.004 sd (rms) of the full refit's at seeds 0 and 1, at about
+    /// 1.5 s a refit against 13 s for the fit's own sampler (release, 16
+    /// threads); none of its 80 refits warned.
+    pub const LIGHT_REFIT_BY_DEFAULT: bool = true;
+
+    /// `settings` with this model's one-year defaults: the refits' sampler,
+    /// as [`light_refit_of`](Self::light_refit_of) resolves it at
+    /// [`LIGHT_REFIT_BY_DEFAULT`](Self::LIGHT_REFIT_BY_DEFAULT); and the
+    /// number of one-year simulations, the settings' or this model's
+    /// `n_sims` capped at [`ONE_YEAR_SIMS`](Self::ONE_YEAR_SIMS).
+    fn one_year_defaults(&self, settings: &BayesOneYear) -> (BayesOneYear, usize) {
+        let mut resolved = *settings;
+        resolved.light_refit = Self::light_refit_of(settings, Self::LIGHT_REFIT_BY_DEFAULT);
+        (
+            resolved,
+            settings.sims(self.n_sims.min(Self::ONE_YEAR_SIMS)),
+        )
+    }
+
+    /// The refits' sampler under `settings`, as `Compartmental`'s view
+    /// resolves it (decision 24): the `light_refit` given; else, when the
+    /// settings choose no refit mode (`refit` `None`), the light refit of
+    /// [`LightRefit::default`] if `by_default` holds and `no_light_refit` is
+    /// not set; else none, the fit's own sampler. A refit mode the settings
+    /// choose keeps the fit's own sampler unless a light refit is given.
+    /// None when the view reweights only, so that the provenance records
+    /// only a sampler that runs.
+    fn light_refit_of(settings: &BayesOneYear, by_default: bool) -> Option<LightRefit> {
+        if settings.mode() == OneYearRefit::ReweightOnly {
+            return None;
+        }
+        let default = (by_default && settings.refit.is_none() && !settings.no_light_refit)
+            .then(LightRefit::default);
+        settings.light_refit.or(default)
+    }
 
     /// The one-year view of the fit over every program at once
     /// (`reserving-bayes.md`, decisions 17 and 30): the claims development
@@ -1273,11 +1323,19 @@ impl HierarchicalBf {
     /// says. It is one view over the stacked programs and not one per
     /// program, because a program's next diagonal moves the industry level,
     /// the spreads and the shared pattern, and through them the other
-    /// programs' closing reserves. `settings.light_refit` and
-    /// `no_light_refit` are ignored: a refit samples the whole panel as
-    /// [`fit`](Self::fit) does.
+    /// programs' closing reserves. A refit samples the whole panel: as
+    /// [`fit`](Self::fit) does (a pilot run, then the fit's sampler), or,
+    /// with `settings.light_refit`, or by default (the settings choose no
+    /// refit mode and `settings.no_light_refit` is not set; see
+    /// [`LIGHT_REFIT_BY_DEFAULT`](Self::LIGHT_REFIT_BY_DEFAULT)), warm-started
+    /// as `Compartmental`'s light refit (decision 24): no pilot run, the
+    /// sampler scaled by the opening posterior's draws (by their variances
+    /// below 8 programs, their covariance from 8, as the fit's main run) and
+    /// started at their mean, with the light refit's chains, warm-up and
+    /// draws, and a warning judged on the closing reserve's R-hat (above
+    /// 1.05), effective draws (under 100) and divergences.
     ///
-    /// The view uses the fit's own sampler and seed. It runs at most
+    /// The view uses the fit's seed. It runs at most
     /// [`ONE_YEAR_SIMS`](Self::ONE_YEAR_SIMS) simulations unless
     /// `settings.n_sims` sets their number. A program whose ages stop short
     /// of the panel's grid (EVW at 6 of 10 on the reference panel) has its
@@ -1286,8 +1344,13 @@ impl HierarchicalBf {
     /// 6 and is refitted (matching rescues none); a control with copies of
     /// GenIns and RAA shows that a program stopping short raises k, though
     /// not to that size. On a panel whose programs share their ages, k is
-    /// mostly below 0.7 and the reweighting is close to the refits. Each refit is a NUTS run over the panel. Failed
-    /// diagnostics of the fit do not fail the view; they are in
+    /// mostly below 0.7 and the reweighting is close to the refits. Each
+    /// refit is a NUTS run over the panel. The view's
+    /// [`warnings`](BayesOneYearFit::warnings) name the programs whose next
+    /// diagonal falls at ages they have never observed (the user's decision
+    /// of 2026-11-09, issue #762): the view still runs, but is expensive (or,
+    /// reweighting only, approximate).
+    /// Failed diagnostics of the fit do not fail the view; they are in
     /// `fit.diagnostics`.
     ///
     /// ```
@@ -1365,8 +1428,14 @@ impl HierarchicalBf {
         let fit = self.fit_panel(triangle, column, exposure, &panel)?;
         let segments = triangle.segments(column)?;
         let start = panel.model.sampling(&fit.posterior.mean());
-        let year = HierarchicalYear::new(self, &panel.model, triangle, &segments, start);
-        let n_sims = settings.sims(self.n_sims.min(Self::ONE_YEAR_SIMS));
+        let mut year = HierarchicalYear::new(self, &panel.model, triangle, &segments, start);
+        let (settings, n_sims) = self.one_year_defaults(settings);
+        let settings = &settings;
+        year.warm_start(settings.light_refit, &fit.posterior)?;
+        let warnings: Vec<String> = year
+            .unobserved_ages(&panel.labels, &panel.ages, settings.mode())
+            .into_iter()
+            .collect();
         let draws = one_year::simulate(
             &year,
             &fit.posterior,
@@ -1376,7 +1445,7 @@ impl HierarchicalBf {
         )?;
         let mut provenance = self.provenance(column, exposure, &panel);
         provenance.model = "hierarchical_bf_one_year".into();
-        let provenance = one_year::provenance(provenance, settings, n_sims);
+        let provenance = one_year::provenance_with_light_refit(provenance, settings, n_sims);
         let cdr = PredictiveDistribution::from_draws(
             Self::dims(triangle),
             panel.components(),
@@ -1400,6 +1469,7 @@ impl HierarchicalBf {
             refit_warnings: draws.refit_warnings,
             k_threshold: settings.k_threshold,
             approximate: None,
+            warnings,
         })
     }
 }
@@ -1457,6 +1527,9 @@ struct HierarchicalYear<'a> {
     start: Vec<f64>,
     programs: Vec<ProgramYear>,
     n_year: usize,
+    /// A warm-started refit's sampler and the opening draws on the sampling
+    /// scale that scale it ([`warm_start`](Self::warm_start)).
+    light: Option<(LightRefit, PosteriorDraws)>,
 }
 
 impl<'a> HierarchicalYear<'a> {
@@ -1526,7 +1599,66 @@ impl<'a> HierarchicalYear<'a> {
             start,
             programs,
             n_year,
+            light: None,
         }
+    }
+
+    /// Refit as `light` says, when it is `Some`, scaled by `opening`, the
+    /// opening posterior as stored.
+    fn warm_start(&mut self, light: Option<LightRefit>, opening: &PosteriorDraws) -> Result<()> {
+        if let Some(l) = light {
+            let sampled = opening.transform(self.model.names(), |x| self.model.sampling(x))?;
+            self.light = Some((l, sampled));
+        }
+        Ok(())
+    }
+
+    /// The warning of a panel whose programs stop at different ages, or
+    /// `None` (the user's decision of 2026-11-09, issue #762): the programs
+    /// (by `labels`) whose year has a cell at a development age (of `ages`)
+    /// past the last they observe. Only the prior speaks there, so nearly
+    /// every simulation is flagged. Under a refit `mode` the warning says
+    /// that they are refitted over the whole panel and the view is
+    /// expensive; under [`OneYearRefit::ReweightOnly`] that the weights are
+    /// unreliable and the view approximate.
+    fn unobserved_ages(
+        &self,
+        labels: &[Label],
+        ages: &[Lag],
+        mode: OneYearRefit,
+    ) -> Option<String> {
+        let short: Vec<String> = self
+            .model
+            .programs
+            .iter()
+            .zip(&self.programs)
+            .zip(labels)
+            .filter_map(|((program, year), label)| {
+                let last = program.latest.iter().copied().max()?;
+                let next = year.year.iter().map(|&(_, d)| d).max()?;
+                (next > last).then(|| {
+                    format!(
+                        "{label} (observed to age {}, its next diagonal to {})",
+                        ages[last], ages[next]
+                    )
+                })
+            })
+            .collect();
+        (!short.is_empty()).then(|| {
+            let consequence = if mode == OneYearRefit::ReweightOnly {
+                "nearly every one-year simulation is flagged (Pareto k above the threshold), and \
+                 since the view reweights only, its weights are unreliable and the view is \
+                 approximate (a refit mode refits them, at a cost)"
+            } else {
+                "nearly every one-year simulation is flagged and refitted over the whole panel, \
+                 and the view is expensive"
+            };
+            format!(
+                "programs whose next diagonal falls at development ages they have never \
+                 observed: {}. Only the prior speaks for those ages, so {consequence}",
+                short.join("; ")
+            )
+        })
     }
 
     /// The sum of `exp(eta)` over each program's `cells`, by origin.
@@ -1612,13 +1744,58 @@ impl YearModel for HierarchicalYear<'_> {
         false
     }
 
-    /// Sampled as [`HierarchicalBf::fit`] samples: the pilot, the diagonal
-    /// scale below 8 programs and the fit's `target_accept`.
+    /// Sampled as [`HierarchicalBf::fit`] samples (the pilot, the diagonal
+    /// scale below 8 programs and the fit's `target_accept`), or with a
+    /// light refit warm-started from the opening posterior.
     fn refit(&self, year: &[f64], seed: u64) -> Result<(PosteriorDraws, bool)> {
-        let (posterior, diagnostics) =
-            self.bf
-                .sample(&self.extended(year), self.start.clone(), seed)?;
-        Ok((posterior, !diagnostics.warnings.is_empty()))
+        let model = self.extended(year);
+        let Some((light, opening)) = &self.light else {
+            let (posterior, diagnostics) = self.bf.sample(&model, self.start.clone(), seed)?;
+            return Ok((posterior, !diagnostics.warnings.is_empty()));
+        };
+        // Warm start: the opening posterior's draws scale the sampler (no
+        // pilot run), as the fit's main run is scaled by its pilot's, and it
+        // starts at their mean with a shorter adaptation and fewer draws.
+        let whitened = if model.programs.len() < DENSE_FROM_PROGRAMS {
+            Whitened::from_draws_diagonal(&model, opening)?
+        } else {
+            Whitened::from_draws(&model, opening)?
+        };
+        let draws = sample(
+            &whitened,
+            &vec![0.0; model.dim()],
+            Sampler {
+                chains: light.chains,
+                tune: light.tune,
+                draws: light.draws,
+                seed,
+                ..self.bf.sampler
+            },
+        )?;
+        let posterior = draws.transform(model.names(), |z| model.natural(&whitened.theta(z)))?;
+        // As `Compartmental`'s light refit: the warning is about what the
+        // view uses of a refit, its closing reserve (the total over every
+        // program's origins), and the divergences.
+        let n = self.model.n_origins;
+        let reserve = posterior.transform(vec!["closing_reserve".into()], |x| {
+            let mut row = vec![0.0; n];
+            self.closing(x, year, &mut row);
+            vec![row.iter().sum()]
+        })?;
+        let divergent = posterior.divergences().iter().sum::<usize>() > 0;
+        // A run too short to diagnose has no summary, and that warns too.
+        let warned = divergent
+            || reserve.summary().map_or(true, |summary| {
+                summary.iter().any(|s| {
+                    s.rhat.is_nan()
+                        || s.rhat > LIGHT_MAX_RHAT
+                        || s.ess_bulk.is_nan()
+                        || s.ess_bulk < LIGHT_MIN_ESS
+                        || s.ess_tail.is_nan()
+                        || s.ess_tail < LIGHT_MIN_ESS
+                })
+            });
+        Ok((posterior, warned))
     }
 
     fn log_posterior(&self, theta: &[f64], year: &[f64]) -> f64 {
@@ -2711,5 +2888,281 @@ mod tests {
                 k + 1
             );
         }
+    }
+
+    /// A panel whose programs stop at different ages warns (the user's
+    /// decision of 2026-11-09, issue #762): on the three-program panel,
+    /// programs b and c stop short of the grid's 48 months, so their next
+    /// diagonals fall at ages they never observed, and a does not; a panel
+    /// whose programs share their ages, and one with no year, do not warn.
+    #[test]
+    fn programs_stopping_short_of_the_panels_ages_warn() {
+        let model = quick(1);
+        let warning_in = |tri: &Triangle, mode: OneYearRefit| {
+            let panel = prepared(tri, &model);
+            let segments = tri.segments("values").unwrap();
+            HierarchicalYear::new(&model, &panel.model, tri, &segments, panel.start.clone())
+                .unobserved_ages(&panel.labels, &panel.ages, mode)
+        };
+        let warning = |tri: &Triangle| warning_in(tri, OneYearRefit::MomentMatchThenRefit);
+        let reweighted =
+            warning_in(&three_programs(), OneYearRefit::ReweightOnly).expect("b and c stop short");
+        assert!(reweighted.contains("b (observed to age 36"), "{reweighted}");
+        assert!(reweighted.contains("unreliable"), "{reweighted}");
+        assert!(!reweighted.contains("expensive"), "{reweighted}");
+        let ragged = warning(&three_programs()).expect("b and c stop short");
+        assert!(
+            ragged.contains("b (observed to age 36, its next diagonal to 48)"),
+            "{ragged}"
+        );
+        assert!(
+            ragged.contains("c (observed to age 24, its next diagonal to 36)"),
+            "{ragged}"
+        );
+        assert!(!ragged.contains("a ("), "{ragged}");
+        assert!(ragged.contains("expensive"), "{ragged}");
+        let shared = panel(&[
+            (
+                "a",
+                2020,
+                &[&[100.0, 160.0, 185.0], &[110.0, 170.0], &[95.0]],
+                &[250.0, 260.0, 240.0],
+            ),
+            (
+                "b",
+                2020,
+                &[&[210.0, 330.0, 395.0], &[190.0, 320.0], &[240.0]],
+                &[400.0, 420.0, 450.0],
+            ),
+        ]);
+        assert_eq!(warning(&shared), None);
+        assert_eq!(warning(&closed_programs()), None);
+    }
+
+    /// The refits' sampler: a light refit given is used whatever the refit
+    /// mode; the default light refit only with no refit mode chosen and
+    /// when the model's default holds (both values of the default checked);
+    /// none when `no_light_refit` turns the default off, and none when the
+    /// view reweights only; the number of simulations is capped as before.
+    #[test]
+    fn the_light_refit_setting_resolves() {
+        let model = quick(1);
+        let light = LightRefit {
+            chains: 2,
+            tune: 60,
+            draws: 60,
+        };
+        let resolve = |settings: BayesOneYear| model.one_year_defaults(&settings);
+        let default = HierarchicalBf::LIGHT_REFIT_BY_DEFAULT.then(LightRefit::default);
+        assert_eq!(resolve(BayesOneYear::default()).0.light_refit, default);
+        assert_eq!(resolve(BayesOneYear::default()).1, 1_000);
+        for refit in [None, Some(OneYearRefit::RefitAll)] {
+            let given = BayesOneYear {
+                refit,
+                light_refit: Some(light),
+                ..BayesOneYear::default()
+            };
+            assert_eq!(resolve(given).0.light_refit, Some(light));
+        }
+        let off = BayesOneYear {
+            no_light_refit: true,
+            ..BayesOneYear::default()
+        };
+        assert_eq!(resolve(off).0.light_refit, None);
+        let reweight = BayesOneYear {
+            refit: Some(OneYearRefit::ReweightOnly),
+            light_refit: Some(light),
+            ..BayesOneYear::default()
+        };
+        assert_eq!(resolve(reweight).0.light_refit, None);
+        // The default light refit, whatever the constant says.
+        let of = HierarchicalBf::light_refit_of;
+        assert_eq!(
+            of(&BayesOneYear::default(), true),
+            Some(LightRefit::default())
+        );
+        assert_eq!(of(&BayesOneYear::default(), false), None);
+        for refit in [
+            OneYearRefit::RefitAll,
+            OneYearRefit::RefitFlagged,
+            OneYearRefit::MomentMatchThenRefit,
+            OneYearRefit::ReweightOnly,
+        ] {
+            let chosen = BayesOneYear {
+                refit: Some(refit),
+                ..BayesOneYear::default()
+            };
+            assert_eq!(of(&chosen, true), None, "{refit:?}");
+        }
+        let off = BayesOneYear {
+            no_light_refit: true,
+            ..BayesOneYear::default()
+        };
+        assert_eq!(of(&off, true), None);
+    }
+
+    /// A bad light refit is an error before any sampling.
+    #[test]
+    fn a_bad_light_refit_is_an_error() {
+        for bad in [(0, 60, 60), (2, 0, 60), (2, 60, 1)] {
+            let settings = BayesOneYear {
+                light_refit: Some(LightRefit {
+                    chains: bad.0,
+                    tune: bad.1,
+                    draws: bad.2,
+                }),
+                ..BayesOneYear::default()
+            };
+            assert!(matches!(
+                quick(1).one_year(&three_programs(), "values", "premium", &settings),
+                Err(Error::InvalidSetting {
+                    name: "light_refit",
+                    ..
+                })
+            ));
+        }
+    }
+
+    /// A light refit samples the posterior a full refit samples, for one
+    /// year drawn from the fit: the closing reserve's mean within 0.3 sd of
+    /// a long full refit's and its sd within 25%; its draws as stored, with
+    /// a score of mean zero under the year's `log_posterior`; and a light
+    /// refit of 2 draws warns.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn a_light_refit_samples_the_full_refits_posterior() {
+        use crate::bayes::one_year::conformance::{SCORE_Z, score_z_at};
+        let model = quick(5);
+        let tri = three_programs();
+        let panel = prepared(&tri, &model);
+        let fit = model.fit(&tri, "values", "premium").unwrap();
+        let mut year = year_of(&model, &tri, &panel, &fit);
+        let mut cells = vec![0.0; year.n_year()];
+        year.draw_year(
+            fit.posterior.draw(0),
+            &mut StreamRng::new(13, 0),
+            &mut cells,
+        );
+        let reference = HierarchicalBf {
+            sampler: Sampler {
+                chains: 4,
+                tune: 500,
+                draws: 1_000,
+                ..model.sampler
+            },
+            ..model.clone()
+        };
+        let (full, _) = year_of(&reference, &tri, &panel, &fit)
+            .refit(&cells, 21)
+            .unwrap();
+        year.warm_start(Some(LightRefit::default()), &fit.posterior)
+            .unwrap();
+        let (light, _) = year.refit(&cells, 21).unwrap();
+        assert_eq!(light.names(), fit.posterior.names());
+        let reserves = |draws: &PosteriorDraws| -> (f64, f64) {
+            let mut row = vec![0.0; year.n_origins()];
+            let t: Vec<f64> = (0..draws.n_draws())
+                .map(|d| {
+                    year.closing(draws.draw(d), &cells, &mut row);
+                    row.iter().sum()
+                })
+                .collect();
+            let n = t.len() as f64;
+            let mean = t.iter().sum::<f64>() / n;
+            let sd = (t.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n).sqrt();
+            (mean, sd)
+        };
+        let ((mf, sf), (ml, sl)) = (reserves(&full), reserves(&light));
+        assert!(
+            (ml - mf).abs() < 0.3 * sf && (sl / sf - 1.0).abs() < 0.25,
+            "closing reserve {ml} (sd {sl}) light, {mf} (sd {sf}) full"
+        );
+        let z = score_z_at(&year, &light, &cells);
+        let worst = z.iter().copied().fold(0.0, |w: f64, v| w.max(v.abs()));
+        assert!(worst < SCORE_Z, "the light refit's score has mean z {z:?}");
+        let tiny = LightRefit {
+            chains: 1,
+            tune: 1,
+            draws: 2,
+        };
+        year.warm_start(Some(tiny), &fit.posterior).unwrap();
+        let (_, warned) = year.refit(&cells, 21).unwrap();
+        assert!(warned, "a light refit of 2 draws did not warn");
+    }
+
+    /// A light refit in the view refits every simulation `RefitAll` sends
+    /// it, on the same years and `k̂` as the fit's own sampler,
+    /// reproducibly, and is recorded in the provenance; the view's warning
+    /// names the programs that stop short.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn a_light_refit_in_the_view_refits_every_simulation() {
+        let model = HierarchicalBf {
+            n_sims: 4,
+            ..quick(4)
+        };
+        let light = LightRefit {
+            chains: 2,
+            tune: 60,
+            draws: 60,
+        };
+        let with = |light_refit: Option<LightRefit>, no_light_refit: bool| {
+            model
+                .one_year(
+                    &three_programs(),
+                    "values",
+                    "premium",
+                    &BayesOneYear {
+                        refit: Some(OneYearRefit::RefitAll),
+                        light_refit,
+                        no_light_refit,
+                        ..BayesOneYear::default()
+                    },
+                )
+                .unwrap()
+        };
+        let (full, a, b) = (
+            with(None, true),
+            with(Some(light), false),
+            with(Some(light), false),
+        );
+        assert_eq!(a.refitted, [0, 1, 2, 3]);
+        assert_eq!(a.refitted, full.refitted);
+        assert_eq!(a.pareto_k, full.pareto_k);
+        assert_eq!(a.cdr.draw_matrix(), b.cdr.draw_matrix());
+        assert_ne!(a.cdr.draw_matrix(), full.cdr.draw_matrix());
+        let sd = full.cdr.std_dev();
+        let n = full.cdr.n_components();
+        for (x, y) in a
+            .cdr
+            .draw_matrix()
+            .chunks(n)
+            .zip(full.cdr.draw_matrix().chunks(n))
+        {
+            let (x, y): (f64, f64) = (x.iter().sum(), y.iter().sum());
+            assert!(x.is_finite() && (x - y).abs() < 3.0 * sd, "{x} against {y}");
+        }
+        let recorded = |v: &BayesOneYearFit<HierarchicalBfFit>| {
+            v.cdr
+                .provenance()
+                .parameters
+                .iter()
+                .find(|(k, _)| k == "light_refit")
+                .map(|(_, v)| v.clone())
+        };
+        assert_eq!(recorded(&a), Some("2x60+60".into()));
+        assert_eq!(recorded(&full), None);
+        assert_eq!(a.warnings.len(), 1);
+        assert!(
+            a.warnings[0].contains("b (observed to age 36"),
+            "{:?}",
+            a.warnings
+        );
     }
 }

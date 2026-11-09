@@ -1,9 +1,9 @@
 """Regenerate validation/reference/oep_aggregate.csv.
 
-    python3.12 -m venv agg && agg/bin/pip install aggregate==1.0.1
+    python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0
     agg/bin/python validation/scripts/aggregate_oep.py
 
-The occurrence PML (OEP) against Mildenhall's `aggregate` 1.0.1,
+The occurrence PML (OEP) against Mildenhall's `aggregate` 2.1.0,
 `aggregate.utilities.oep`, on Poisson books: at each annual probability
 the loss, the severity's exceedance at it and the occurrence return
 period. `oep` is closed form from the severity (it never reads the

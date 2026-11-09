@@ -2,12 +2,26 @@
 % Please edit documentation in R/aggregate.R
 \name{event_loss_table}
 \alias{event_loss_table}
+\alias{unit_event_loss_tables}
+\alias{elt_severity_moments}
 \alias{elt_oep}
 \alias{elt_occurrence_pml}
 \alias{simulate_elt}
 \title{Event loss table}
 \usage{
 event_loss_table(rate, mean, sd_independent, sd_correlated, exposure)
+
+unit_event_loss_tables(
+  event,
+  unit,
+  rate,
+  mean,
+  sd_independent,
+  sd_correlated,
+  exposure
+)
+
+elt_severity_moments(elt)
 
 elt_oep(elt, x)
 
@@ -18,6 +32,8 @@ simulate_elt(elt, n_years, seed = 0)
 \arguments{
 \item{rate, mean, sd_independent, sd_correlated, exposure}{The table's
 columns, one value per event.}
+
+\item{event, unit}{Each row's event identifier and unit tag.}
 
 \item{elt}{An \code{event_loss_table}.}
 
@@ -49,6 +65,15 @@ when that is 0. A row whose standard deviation no beta on its exposure can
 have is an error naming the row.
 }
 \details{
+\code{unit_event_loss_tables()} reads a long table of several units that share
+events, one row per event and unit (\code{aggregate} 2.1.0's \verb{elt unit A [...] elt unit B [...]}): an event on several units is one occurrence. Its
+\code{rolled} is the portfolio's \code{event_loss_table}, each event's rows rolled
+up as \code{aggregate} does by default (the event's rate, which its rows must
+share; the means, exposures and correlated standard deviations summed,
+the independent ones in quadrature), and \code{units} one \code{event_loss_table}
+per unit, by tag. \code{elt_severity_moments()} gives the first three raw
+moments of one event's loss given that it occurs.
+
 \code{elt_oep()} gives the occurrence exceedance probability
 \code{1 - exp(-sum(rate * P(L > x)))} and the annual exceedance frequency;
 \code{elt_occurrence_pml()} the loss at an annual probability; \code{simulate_elt()}
@@ -63,4 +88,10 @@ elt_oep(elt, c(150, 1000))
 elt_occurrence_pml(elt, 0.01)
 sim <- simulate_elt(elt, 1000, seed = 1)
 sim$events@n_sims
+tabs <- unit_event_loss_tables(c("1", "2", "1", "3"), c("A", "A", "B", "B"),
+                               rate = c(0.01, 0.05, 0.01, 0.02), mean = c(800, 200, 300, 100),
+                               sd_independent = c(200, 0, 50, 30), sd_correlated = c(100, 0, 40, 0),
+                               exposure = c(2000, 500, 1000, 400))
+tabs$rolled$rate # event 1 counted once
+elt_severity_moments(tabs$units$B)
 }

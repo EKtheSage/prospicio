@@ -1,9 +1,9 @@
 """Regenerate validation/reference/reinsurance_aggregate.csv.
 
-    python3.12 -m venv agg && agg/bin/pip install aggregate==1.0.1
+    python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0
     agg/bin/python validation/scripts/aggregate_reinsurance.py
 
-Reinsurance on the grid against Mildenhall's `aggregate` 1.0.1, four books
+Reinsurance on the grid against Mildenhall's `aggregate` 2.1.0, four books
 on a step of 1 with 2^14 points and no renormalization
 (`bs=1, log2=14, normalize=False`):
 
@@ -51,7 +51,8 @@ Tolerances follow what each value is computed from:
 - `agg_*` and `lol`: `aggregate` takes the moments of its FFT density,
   prospicio the cumulants of the same severity grid; they differ by the
   FFT's round-off and aliasing, observed to 1e-9 on the mean and cv and to
-  1.3e-7 on the skewness of a rare layer (skew 18);
+  3.3e-9 on the skewness of a rare layer (skew 18; 1.3e-7 against
+  `aggregate` 1.0.1, whose skewness was not its density's);
 - `P`: the proportional hazard raises the survival to the power 0.7, so
   round-off of 1e-16 in the far tail of an FFT density moves the premium
   by about 1e-8 relative (`aggregate`'s own `1 − cumsum(p)` and its sum
@@ -121,16 +122,18 @@ BOOKS = [
 
 # (abs, rel) tolerances: read from the grid, or the FFT density's moments.
 GRID = (1e-14, 1e-12)
-FFT = {"mean": (0.0, 1e-9), "cv": (0.0, 1e-8), "skew": (0.0, 5e-7)}
+# aggregate 2.1.0 takes the third moment of its density as prospicio does
+# (1.0.1 was 1.4e-7 off on a rare layer): 3.3e-9 observed.
+FFT = {"mean": (0.0, 1e-9), "cv": (0.0, 1e-8), "skew": (0.0, 1e-8)}
 PRICE = {"L": (0.0, 1e-9), "P": (0.0, 2e-8)}
 # The total cession's per-claim moments: aggregate reads them off its ceded
 # severity density, 1.5e-11 (cv) and 2.6e-9 (skew) off the points' moments.
 CEDED_SEV = (0.0, 1e-8)
 # An aggregate cover is read off the annual FFT density: its chances carry
-# its round-off (3e-14 absolute), and a rare cover's shape more (skew 32:
-# 1.4e-6 relative).
+# its round-off (3e-14 absolute). Its shape agrees to 6.3e-11 (cv) and
+# 1.7e-10 (skew 32) under aggregate 2.1.0; 1.0.1's skew was 1.4e-6 off.
 AGG_COVER = {"pr_attach": (1e-12, 0.0), "pr_detach": (1e-12, 0.0), "lol": FFT["mean"],
-             "mean": FFT["mean"], "cv": (0.0, 1e-7), "skew": (0.0, 1e-5)}
+             "mean": FFT["mean"], "cv": (0.0, 1e-9), "skew": (0.0, 1e-8)}
 # A stage with a shared layer: aggregate's smearing of the shared losses
 # and prospicio's differ in the far tail, 2e-8 relative in P.
 SHARED_STAGE_P = (0.0, 1e-7)

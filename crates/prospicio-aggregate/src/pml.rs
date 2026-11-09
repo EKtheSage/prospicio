@@ -19,6 +19,8 @@ use prospicio_core::{Error, Result};
 use prospicio_math::roots::bisect_log;
 use prospicio_prob::{Counting, Distribution};
 
+use crate::reinsurance::Tower;
+
 /// `1 − G_N(F(x))`: the chance that the year's largest occurrence exceeds
 /// `x`.
 ///
@@ -94,6 +96,149 @@ where
     let s = bisect_log(f64::MIN_POSITIVE, 1.0, |s| oep(s) < p);
     let loss = severity.quantile(1.0 - s)?;
     let severity_survival = 1.0 - severity.cdf(loss);
+    Ok(OccurrencePml {
+        probability: p,
+        loss,
+        severity_survival,
+        occurrence_return_period: 1.0 / (frequency.mean() * severity_survival),
+        annual_return_period: 1.0 / p,
+    })
+}
+
+/// Which loss of an occurrence a program's OEP curve is of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OccurrenceView {
+    /// The ground-up loss.
+    Gross,
+    /// The tower's total ceded loss, [`Tower::occurrence_ceded`].
+    Ceded,
+    /// The gross loss less the ceded loss.
+    Net,
+}
+
+impl OccurrenceView {
+    /// The view by name: `"gross"`, `"ceded"` or `"net"`.
+    pub fn from_name(name: &str) -> Result<Self> {
+        match name {
+            "gross" => Ok(Self::Gross),
+            "ceded" => Ok(Self::Ceded),
+            "net" => Ok(Self::Net),
+            other => Err(Error::Data(format!(
+                "view must be \"gross\", \"ceded\" or \"net\", not {other:?}"
+            ))),
+        }
+    }
+
+    fn of(self, tower: &Tower, x: f64) -> Result<f64> {
+        Ok(match self {
+            Self::Gross => x,
+            Self::Ceded => tower.occurrence_ceded(x)?,
+            Self::Net => x - tower.occurrence_ceded(x)?,
+        })
+    }
+}
+
+/// The OEP of a program at a loss `y` of the view: the chance that some
+/// occurrence's ceded (or net) loss exceeds `y`, `1 − G_N(1 − S)` with `S`
+/// the gross survival at the largest gross loss whose view is at most `y`.
+/// The program's ceded and net functions of an occurrence are
+/// non-decreasing (shares at most 1, layers in a stage not overlapping), so
+/// that loss is found by bisection.
+pub fn program_occurrence_exceedance<N, X>(
+    frequency: &N,
+    severity: &X,
+    tower: &Tower,
+    view: OccurrenceView,
+    y: f64,
+) -> Result<f64>
+where
+    N: Counting + ?Sized,
+    X: Distribution + ?Sized,
+{
+    let x = largest_at_most(severity, tower, view, y)?;
+    Ok(1.0 - frequency.pgf(severity.cdf(x)))
+}
+
+/// The largest gross loss whose view is at most `y` (`+inf` when every
+/// loss's is).
+fn largest_at_most<X: Distribution + ?Sized>(
+    severity: &X,
+    tower: &Tower,
+    view: OccurrenceView,
+    y: f64,
+) -> Result<f64> {
+    let g = |x: f64| view.of(tower, x);
+    if g(0.0)? > y {
+        return Ok(-f64::MIN_POSITIVE);
+    }
+    // Double past y, then bisect.
+    let mut hi = severity.quantile(0.5)?.max(1.0);
+    while g(hi)? <= y {
+        hi *= 2.0;
+        if hi > 1e300 {
+            return Ok(f64::INFINITY);
+        }
+    }
+    let (mut lo, mut hi) = (0.0, hi);
+    for _ in 0..200 {
+        let mid = 0.5 * (lo + hi);
+        if mid <= lo || mid >= hi {
+            break;
+        }
+        if g(mid)? <= y {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    Ok(lo)
+}
+
+/// The occurrence PML of a program at an annual probability `p`: the ceded
+/// (or net) loss of the year's largest occurrence, `g(x_p)` with `x_p` the
+/// gross [`occurrence_pml`] and `g` the program's ceded or net function of
+/// an occurrence ([`Tower::occurrence_ceded`]), `aggregate` 2.1.0's `oep` on
+/// an aggregate with an occurrence program. Annual terms do not enter.
+///
+/// Where `g` is flat (a layer placed in full, for the net; below the first
+/// attachment, across a gap or above a finite program, for the ceded) the
+/// view has an atom, and `severity_survival` is the gross survival at the
+/// right end of that stretch, so the achieved OEP, `1 − G_N(1 −
+/// severity_survival)`, falls below `p`, as at a policy limit.
+///
+/// ```
+/// use prospicio_aggregate::pml::{OccurrenceView, occurrence_pml, program_occurrence_pml};
+/// use prospicio_aggregate::{Layer, Tower};
+/// use prospicio_prob::{Lognormal, Poisson};
+///
+/// let (n, x) = (Poisson::new(2.0).unwrap(), Lognormal::from_mean_cv(100.0, 2.0).unwrap());
+/// let t = Tower::new(vec![Layer::xol("L", 400.0, 100.0).unwrap()]).unwrap();
+/// let gross = occurrence_pml(&n, &x, 0.05).unwrap().loss;
+/// let net = program_occurrence_pml(&n, &x, &t, OccurrenceView::Net, 0.05).unwrap();
+/// assert!((net.loss - (gross - (gross - 100.0).clamp(0.0, 400.0))).abs() < 1e-9);
+/// ```
+pub fn program_occurrence_pml<N, X>(
+    frequency: &N,
+    severity: &X,
+    tower: &Tower,
+    view: OccurrenceView,
+    p: f64,
+) -> Result<OccurrencePml>
+where
+    N: Counting + ?Sized,
+    X: Distribution + ?Sized,
+{
+    let gross = occurrence_pml(frequency, severity, p)?;
+    if view == OccurrenceView::Gross {
+        return Ok(gross);
+    }
+    let loss = view.of(tower, gross.loss)?;
+    let right = largest_at_most(severity, tower, view, loss)?.max(gross.loss);
+    let severity_survival = if right.is_infinite() {
+        0.0
+    } else {
+        1.0 - severity.cdf(right)
+    };
     Ok(OccurrencePml {
         probability: p,
         loss,

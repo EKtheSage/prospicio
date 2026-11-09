@@ -1021,10 +1021,11 @@ were already `Portfolio::premium_bounds` (`docs/design/risk.md`).
   (monotone chain) exact. Each vertex's `TVaR` comes from tail masses and
   tail means summed from the top, located by bisection: `O(n log n)`.
 - The curve ends at `p → 1`, `(max X, max Y)`: `TVaR_1` prices `X` at its
-  maximum. `aggregate` stops at the last breakpoint below 1 and keeps the
-  first vertex where `TVaR_p(X)` saturates, so where `X`'s top atom is
-  larger than `Y`'s its upper bound is too low (52 where 64 is attained,
-  for InsCo's X3 with both capped at 65 and `P = 65`). Where `TVaR_p(X)`
+  maximum. `aggregate` before 1.52 stopped at the last breakpoint below 1
+  and kept the first vertex where `TVaR_p(X)` saturates, so where `X`'s top
+  atom is larger than `Y`'s its upper bound was too low (52 where 64 is
+  attained, for InsCo's X3 with both capped at 65 and `P = 65`); 2.1.0
+  includes the limit and agrees (#768). Where `TVaR_p(X)`
   ties, the lower hull takes the lowest `Y` and the upper the highest.
 - `distortion_envelope`: `g(s)` of a BiTVaR is the price of a Bernoulli
   risk with `P(1) = s`, since its `TVaR_p` is `min(1, s / (1 − p))`. So the
@@ -1645,6 +1646,81 @@ reinsured view, `INFEASIBLE`, `TRUNCATION` and `ANALYTIC_UNDEFINED` are not
 built*: a view of a tower is checked by the tower's own exact layer moments
 (#772's `occurrence_moments`), and the others belong to `aggregate`'s
 sizing and characteristic-function engine (0.2.0).
+
+### The dyadic lattice bucket rule (#776)
+
+`aggregate` 2.1.0 sizes a book with a discrete severity on its atoms'
+lattice: `_dyadic_lattice_step` finds the dyadic step the atoms are
+multiples of (powers of two from the largest atom down 16 levels, a
+tolerance of `1e-12` of the largest atom, the step the gcd of the
+multiples), `_lattice_candidates` tries the largest nice bucket dividing it
+first and the step itself second, and when neither fits the `log2` given
+it uses a coarser bucket and warns (`LatticeGridWarning`) with the `log2`
+needed. `dyadic_lattice_step`, `lattice_candidates` and
+`lattice_bucket(atoms, extent, log2)` port the rule; the two functions
+match `aggregate` on 16 atom sets (`validation/scripts/aggregate_lattice.py`).
+
+Proposed for the user's acceptance: (a) *`lattice_bucket` takes the extent
+from the caller* (for example [`recommend_grid`]'s), since prospicio has
+no discrete severity type to size; (b) *the warning is a field* of the
+result rather than a raised warning; (c) *the compound and tower grid
+builders do not warn*: they take a severity already on a grid
+([`Grid`]), so its atoms are on its lattice by construction, and a user who
+places atoms on a grid asks `lattice_bucket` first.
+
+### The occurrence PML of a program, net or ceded (#773)
+
+`aggregate` 2.1.0's `oep` on an aggregate with an `occurrence ceded to` or
+`net of` clause gives the PML of the program's view of an occurrence.
+Shares are at most 1 and a stage's layers do not overlap, so the program's
+ceded function `g` of an occurrence is non-decreasing and the largest
+ceded (or net) occurrence of a year is `g` of the largest gross one: the
+PML is `g` of the gross PML. `Tower::occurrence_ceded` is `g`, every stage
+seeing the occurrence net of the earlier stages and annual terms left out
+(they act on a year, not an occurrence); `pml::program_occurrence_pml` and
+`program_occurrence_exceedance` take the tower and an `OccurrenceView`
+(gross, ceded, net), for any claim count. Where `g` (or the net) is flat,
+the view has an atom and `severity_survival` is the gross survival at the
+right end of the flat stretch, found by bisection, so the achieved OEP
+falls below `p`. Checked against `aggregate`'s `oep` on 216 values
+(`validation/scripts/aggregate_program_oep.py`).
+
+Proposed for the user's acceptance: (a) *the bindings extend
+`occurrence_pml` and `occurrence_exceedance`* with `tower` and `view`
+(default `"ceded"` with a tower) instead of adding functions; (b) *a layer
+on a sum-insured basis or one that reads the order of events is refused*,
+since the OEP of an occurrence needs a function of its loss alone; (c) *any
+count*, where `aggregate` requires a Poisson one; (d) *no Excel function*:
+`PRO.CAP.AGG.PML` takes no tower, and a tower on a sheet is a later item.
+
+### The disappearing deductible (#772)
+
+`aggregate` 2.1.0's `y xs d1 to d2 disappearing` has a retention that falls
+from `d1` to 0 as the loss rises from `d1` to `d2`: a loss `x` pays
+`min(x - r(x), y)`, nothing up to `d1`, `k (x - d1)` with `k = d2 / (d2 -
+d1)` up to `d2`, and `x` above. `Layer::disappearing(d2)` applies it per
+occurrence, on events and on the grid (`Tower::on_grid` maps each grid
+point as for the franchise), and `Layer::occurrence_moments(severity)`
+gives the first three raw moments of the recovery exactly, for the
+ordinary, franchise and disappearing forms, from the severity's layer
+moments: the payment is `k A + B` with `A` the layer `d2 - d1 xs d1` and `B`
+the layer `y - d2 xs d2` (or `k` times the layer `y/k xs d1` when `y <= d2`),
+and `B > 0` only when `A` is full, so the cross moments are exact; a
+franchise is `d 1{X >= d} + B`. Checked against `aggregate`'s analytic
+severity moments (`validation/scripts/aggregate_disappearing.py`).
+
+Proposed for the user's acceptance: (a) *the limit is the largest payment*,
+as `aggregate` has it, so a limit at or below `d2` is reached on the ramp;
+(b) *`d2` equal to the attachment is refused*, since that is the franchise,
+which stays its own builder; (c) *the moments are unconditional*, per
+ground-up occurrence: `aggregate`'s layered severity is conditional on
+reaching the attachment, and the docs say to divide by `P(X > d1)` (its
+franchise at a limit below the deductible pays the limit on every claim
+that reaches it, 30 for `30 xs 50 franchise`); (d) *a franchise is paid at
+a loss equal to the attachment* (`x >= d`, #591) where `aggregate` pays above
+it (`x > d`), which differs only on an atom at the attachment, such as a
+grid point; unchanged here; (e) *JSON format version 10* is stamped only
+when a layer has a disappearing deductible.
 
 ### A per-risk layer with an event limit, inuring to a cat cover (#585)
 

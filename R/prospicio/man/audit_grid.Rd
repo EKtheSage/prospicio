@@ -3,6 +3,9 @@
 \name{audit_grid}
 \alias{audit_grid}
 \alias{validate_grid}
+\alias{dyadic_lattice_step}
+\alias{lattice_candidates}
+\alias{lattice_bucket}
 \alias{audit_portfolio_grid}
 \alias{recommend_portfolio_grid}
 \title{Grids for several units, and the grid audit}
@@ -21,6 +24,12 @@ audit_grid(
 )
 
 validate_grid(frequency, severity, step, points, eps = 1e-04)
+
+dyadic_lattice_step(atoms, depth = 16)
+
+lattice_candidates(h)
+
+lattice_bucket(atoms, extent, log2)
 
 audit_portfolio_grid(
   units,
@@ -60,6 +69,14 @@ the most points the recommended grid may use.}
 \item{log2_floor}{The half-size row is tried only above it.}
 
 \item{points}{The number of points of the grid \code{validate_grid()} checks.}
+
+\item{atoms}{A discrete severity's values.}
+
+\item{depth}{Binary levels searched below the largest atom.}
+
+\item{h}{A lattice step.}
+
+\item{extent}{The span the grid must cover.}
 
 \item{units}{A list of units, each \code{list(frequency, severity)}.}
 
@@ -103,12 +120,21 @@ the six terms above 1 fail as \code{SEV_MEAN} to \code{AGG_SKEW}, \code{ALIASING
 aggregate's mean differs from \code{E[N]} times the discretized severity's by
 more than \code{1e-5} with no mass beyond the grid, and \code{DEFECTIVE} when more
 than \code{1e-4} lies beyond it. A pass says the grid is "not unreasonable".
+
+\code{dyadic_lattice_step()}, \code{lattice_candidates()} and \code{lattice_bucket()} are
+\code{aggregate} 2.1.0's lattice rule for a discrete severity: the dyadic step
+the atoms lie on (\code{c(step, residual)}, \code{NULL} without one), the buckets
+tried for it (the largest nice one dividing it, then the step), and the
+first that holds \code{extent} within \code{2^log2} points, or a coarser bucket with
+a \code{warning} naming the \code{log2_required}.
 }
 \examples{
 a <- audit_grid(poisson_count(50), gamma_distribution(4, 2.5), step = 0.5, log2 = 10)
 c(a$step, a$log2)
 a$reason
 validate_grid(poisson_count(50), gamma_distribution(4, 2.5), 0.25, 2^10)$flags
+dyadic_lattice_step(c(3, 6, 9))
+lattice_bucket(c(1000, 3000, 7000), 300000, 8)$warning
 units <- list(list(poisson_count(10), gamma_distribution(2, 50)),
               list(poisson_count(2), gamma_distribution(0.5, 1000)))
 recommend_portfolio_grid(units, log2 = 12)$points

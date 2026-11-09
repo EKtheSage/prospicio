@@ -1,6 +1,6 @@
-"""Print aggregate 1.2.0's `sharpen` probes behind `grid_audit_matches_aggregate_sharpen`.
+"""Print aggregate 2.1.0's `sharpen` probes behind `grid_audit_matches_aggregate_sharpen`.
 
-    python3.13 -m venv agg && agg/bin/pip install aggregate==1.2.0
+    python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0
     agg/bin/python validation/scripts/aggregate_sharpen.py
 
 Two books, each probed from an explicit center: a capped lognormal from

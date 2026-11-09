@@ -1,0 +1,1 @@
+* **Creation**: [The dyadic lattice rule against aggregate 2.1.0](/findings/dyadic-lattice.md), from #776 (branch claude/cool-shannon-fqpoy8-lattice): the search depth below the largest atom is what makes a lattice meaningful, so 123456 and 7 have none and decimal atoms never do; the nice bucket dividing the step is preferred.

@@ -2,12 +2,10 @@
 
 <!-- site: execute -->
 
-The earlier pages of this track price one contract at a time. A reinsurer
-holds more than one contract. Larkspur Re holds five, on three cedents, and the
-same windstorm can hit all of them in the same year. This page adds the five
-contracts into one book and measures the tail of the book. It splits the
-capital of the book back to the contracts, and it shows which contracts pay for
-their capital.
+Larkspur Re holds five contracts on three cedents, and one windstorm can hit
+all of them in the same year. This page adds the five contracts into one book,
+measures the tail of the book, splits its capital back to the contracts, and
+shows which contracts pay for their capital.
 
 The story, the files and the notation are on
 [the overview](cat-0-overview.md). The page types no number by hand: every
@@ -16,34 +14,31 @@ attachment, limit and share comes from `cat_book_contracts.csv`.
 ## 1. The idea
 
 Each row of the year event loss table belongs to one simulated year, and every
-contract sees the same 2,000 years. Thus the loss of the book in a year is the
-sum of the losses of the five contracts in that year. The dependence that the
-events carry needs no copula and no reordering: one event in the catalog lands
-on several cedents at once.
+contract sees the same 2,000 years. The loss of the book in a year is the sum
+of the losses of the five contracts. The events carry the dependence: one event
+in the catalog lands on several cedents at once. No copula or reordering is
+needed.
 
-That is the only dependence in this book. The script that wrote the book draws
-the loss of each cedent from an event independently. Thus the correlated part
-of secondary uncertainty (page 1) is not correlated across cedents here. A real
-model that shares it would give the book a heavier tail than this page shows.
+That is the only dependence here. The script that wrote the book draws each
+cedent's loss from an event independently, so the correlated part of secondary
+uncertainty (page 1) is not correlated across cedents. A model that shares it
+would give the book a heavier tail.
 
-Three questions follow from that sum.
+Three questions follow from the sum.
 
-- **How bad is the bad year of the book?** A tail measure of the summed loss,
-  here TVaR at 99%: the mean of the worst 1% of years.
-- **Which contracts cause it?** A split of the TVaR of the book back to the
-  contracts. The Euler split gives each contract its mean loss in the years
-  that make the tail of the book. [Price allocation](pir-price-allocation.md) compares it
-  with the other ways to split.
-- **Does each contract pay for the capital it uses?** A price or a return on
-  that allocated capital, against the premium that the contract actually
-  charges.
+- **How bad is the bad year?** TVaR at 99% of the summed loss: the mean of the
+  worst 1% of years.
+- **Which contracts cause it?** The Euler split: each contract's mean loss in
+  the years that make the tail of the book.
+  [Price allocation](pir-price-allocation.md) compares other splits.
+- **Does each contract pay for its capital?** A return on allocated capital,
+  against the premium charged.
 
 ## 2. The book
 
-The block below repeats the reader helpers of the earlier pages, because each
-guide runs on its own. It builds the tower of each contract on its own subject
-loss and wraps each result in a `DealRun`. A `DealBook` aligns the runs by
-year.
+The block repeats the helpers of the earlier pages (each guide runs on its own),
+builds a tower for each contract on its subject loss, and wraps each result in a
+`DealRun`. A `DealBook` aligns the runs by year.
 
 ```python
 import csv
@@ -129,40 +124,49 @@ items: premium, loss, ceding_commission, total_deductions, nmbf, margin
 ```
 
 `book.summary()` gives the mean of every item by deal and for the book, with its
-ratio to the mean premium. The premium is the deposit of each year plus the
-reinstatement premium that the losses of that year pay (section 3). The margin
-is the premium less the loss less the deductions. Only `corran_qs` has a
-deduction, its ceding commission. The data has no expenses of Larkspur, so the
-margin is before them.
+ratio to the mean premium. Premium is the yearly deposit plus the reinstatement
+premium that the year's losses pay (section 3). Margin is premium less loss less
+deductions (only `corran_qs` has any: its ceding commission). The data has no
+expenses of Larkspur, so the margin is before them.
 
 ```python
+import pandas as pd
+from great_tables import GT
+
 s = book.summary()
 rows = {(d, i): (m, r) for d, i, m, r in zip(s["deal"], s["item"], s["mean"], s["ratio"])}
-print(f"{'deal':<12}{'premium':>9}{'loss':>8}{'deduct':>8}{'margin':>8}{'LR':>7}")
-for d in [*book.names, "total"]:
-    print(f"{d:<12}{rows[d, 'premium'][0]:>9.3f}{rows[d, 'loss'][0]:>8.3f}"
-          f"{rows[d, 'total_deductions'][0] + 0.0:>8.3f}{rows[d, 'margin'][0]:>8.3f}{rows[d, 'loss'][1]:>7.3f}")
+deals = [*book.names, "total"]
+result = pd.DataFrame({
+    "deal": deals,
+    "premium": [rows[d, "premium"][0] for d in deals],
+    "loss": [rows[d, "loss"][0] for d in deals],
+    "deduct": [rows[d, "total_deductions"][0] + 0.0 for d in deals],
+    "margin": [rows[d, "margin"][0] for d in deals],
+    "LR": [rows[d, "loss"][1] for d in deals],
+})
+(GT(result, rowname_col="deal")
+ .tab_header("Mean annual result by deal", "Premium units; LR = loss / premium")
+ .fmt_number(["premium", "loss", "deduct", "margin", "LR"], decimals=3))
 ```
 
 ```text
-deal          premium    loss  deduct  margin     LR
-alder_cat_1     1.921   0.823   0.000   1.098  0.428
-alder_cat_2     1.020   0.416   0.000   0.604  0.408
-bracken_cat     1.846   0.685   0.000   1.161  0.371
-bracken_agg     0.450   0.162   0.000   0.288  0.360
-corran_qs       3.000   1.202   0.750   1.048  0.401
-total           8.237   3.289   0.750   4.198  0.399
+             premium   loss  deduct  margin     LR
+alder_cat_1    1.921  0.823   0.000   1.098  0.428
+alder_cat_2    1.020  0.416   0.000   0.604  0.408
+bracken_cat    1.846  0.685   0.000   1.161  0.371
+bracken_agg    0.450  0.162   0.000   0.288  0.360
+corran_qs      3.000  1.202   0.750   1.048  0.401
+total          8.237  3.289   0.750   4.198  0.399
 ```
 
 ## 3. Reinstatement premium in the book
 
 `DealRun.from_tower` adds the reinstatement premium of each year to the deposit
-premium of the layer. The tower computes that premium for the two Alder layers
-and `bracken_cat`, pro rata as to amount. Thus the premium of `alder_cat_1` is
-1.8 in a quiet year and more in a year that reaches the layer.
-`reinstatement_premium=False` keeps the deposit alone, for comparison. The losses do not
-change, so the capital below does not change. Only the premium and the margin
-change.
+premium of the layer. The tower computes it for the two Alder layers and
+`bracken_cat`, pro rata as to amount, so `alder_cat_1` earns 1.8 in a quiet year
+and more in a year that reaches the layer.
+`reinstatement_premium=False` keeps the deposit alone. The losses and the
+capital below do not change; the premium and the margin do.
 
 ```python
 amounts = book.amounts()
@@ -172,17 +176,32 @@ deposit = DealBook([DealRun.from_tower(n, towers[n], results[n], n, reinstatemen
                     for n in book.names])
 s_dep = deposit.summary()
 charged = {d: m for d, i, m in zip(s_dep["deal"], s_dep["item"], s_dep["mean"]) if i == "premium"}
-for d in book.names:
-    print(f"{d:<12} reinstatement premium {rows[d, 'premium'][0] - charged[d]:.4f}")
 ```
 
 ```text
 alder_cat_1 book premium: min 1.800, max 3.600
-alder_cat_1  reinstatement premium 0.1207
-alder_cat_2  reinstatement premium 0.0203
-bracken_cat  reinstatement premium 0.0959
-bracken_agg  reinstatement premium 0.0000
-corran_qs    reinstatement premium 0.0000
+```
+
+```python
+reinstatement = pd.DataFrame({
+    "deal": book.names,
+    "premium": [rows[d, "premium"][0] for d in book.names],
+    "deposit": [charged[d] for d in book.names],
+    "reinstatement": [rows[d, "premium"][0] - charged[d] for d in book.names],
+})
+(GT(reinstatement, rowname_col="deal")
+ .tab_header("Reinstatement premium by deal", "Mean per year, premium units")
+ .fmt_number(["premium", "deposit"], decimals=3)
+ .fmt_number("reinstatement", decimals=4))
+```
+
+```text
+             premium  deposit  reinstatement
+alder_cat_1    1.921    1.800         0.1207
+alder_cat_2    1.020    1.000         0.0203
+bracken_cat    1.846    1.750         0.0959
+bracken_agg    0.450    0.450         0.0000
+corran_qs      3.000    3.000         0.0000
 ```
 
 ## 4. The book's tail
@@ -196,8 +215,8 @@ corran_qs    reinstatement premium 0.0000
 - `"marginal"`: the statistic of the book less the same statistic of the book
   without that deal. It answers "what would we save by not writing this?".
 
-`capital` below gives the stand-alone TVaR of each deal. The table shows it
-in the first column, for comparison.
+`capital` gives the stand-alone TVaR of each deal, the first column of the
+table.
 
 ```python
 dist = book.distribution("loss", [99.0], tvar_levels=[99.0])
@@ -205,26 +224,35 @@ loss = amounts.select("item", ["loss"]).select("deal", book.names)
 alloc = capital(loss, Distortion.tvar(0.99))
 print(f"book: mean {dist['total']['Mean']:.3f}, VaR 99 {dist['total']['Percentile 99']:.3f}, "
       f"TVaR 99 {dist['total']['TVaR 99']:.3f}")
-print(f"{'deal':<12}{'alone':>8}{'contrib':>9}{'marginal':>10}")
-for d, alone in zip(book.names, alloc.standalone):
-    print(f"{d:<12}{alone:>8.3f}{dist['contribution'][d]['TVaR 99']:>9.3f}"
-          f"{dist['marginal'][d]['TVaR 99']:>10.3f}")
 contrib = sum(dist["contribution"][d]["TVaR 99"] for d in book.names)
 print(f"sum of contributions {contrib:.3f}")
 ```
 
 ```text
 book: mean 3.289, VaR 99 46.505, TVaR 99 55.096
-deal           alone  contrib  marginal
-alder_cat_1   13.843   13.195    12.728
-alder_cat_2   20.998   19.026    14.560
-bracken_cat   14.136    9.397     8.840
-bracken_agg    7.500    0.262     0.193
-corran_qs     16.363   13.216    12.609
 sum of contributions 55.096
 ```
 
-The figure shows the three views of each deal side by side.
+```python
+tail = pd.DataFrame({
+    "deal": book.names,
+    "alone": alloc.standalone,
+    "contrib": [dist["contribution"][d]["TVaR 99"] for d in book.names],
+    "marginal": [dist["marginal"][d]["TVaR 99"] for d in book.names],
+})
+(GT(tail, rowname_col="deal")
+ .tab_header("TVaR 99 of the loss by deal", "Premium units")
+ .fmt_number(["alone", "contrib", "marginal"], decimals=3))
+```
+
+```text
+              alone  contrib  marginal
+alder_cat_1  13.843   13.195    12.728
+alder_cat_2  20.998   19.026    14.560
+bracken_cat  14.136    9.397     8.840
+bracken_agg   7.500    0.262     0.193
+corran_qs    16.363   13.216    12.609
+```
 
 ```python
 import matplotlib.pyplot as plt
@@ -242,23 +270,23 @@ ax.set_title("Tail of the book: alone, in the book, and removed from it")
 ax.legend()
 ```
 
-Read the table one row at a time.
+By deal:
 
-- `alder_cat_2` is the high Alder layer. Alone, its TVaR is the largest of the
-  five. It keeps most of that TVaR in the book, because the years that exhaust
-  it are the big coastal windstorms that drive the whole book.
+- `alder_cat_2`, the high Alder layer, has the largest TVaR alone and keeps most
+  of it in the book: the years that exhaust it are the big coastal windstorms
+  that drive the whole book.
 - `bracken_agg` looks risky alone: in its worst 1% of years it pays its whole
-  share of the aggregate limit. These are mostly years of one large flood or
-  storm outbreak on the plains (page 3, section 5). They are not the worst
-  years of the book, so the cover adds little to the tail of the book.
-- Contributions add up to the TVaR of the book. Marginals do not. When you
-  remove one deal, the worst years change, so the marginals add up to less.
+  aggregate limit. Those are mostly years of one large flood or storm outbreak
+  on the plains (page 3, section 5), not the worst of the book, so it adds
+  little to the tail of the book.
+- Contributions add up to the TVaR of the book. Marginals do not: removing a deal
+  changes the worst years.
 
 ## 5. A trap: the total row
 
 `book.amounts()` holds every item for each deal *and* a `"total"` deal. A
-selection on the item alone keeps that total. `capital` then adds it to the
-deals as a sixth contract, and the TVaR of the book doubles.
+selection on the item alone keeps that total, so `capital` adds it to the
+deals as a sixth contract and the TVaR of the book doubles.
 
 ```python
 wrong = capital(amounts.select("item", ["loss"]), Distortion.tvar(0.99))
@@ -287,20 +315,33 @@ diversification = sum over deals i of TVaR(X_i) - TVaR(X_1 + ... + X_5)
 TVaR is subadditive, so this is never negative.
 
 ```python
-print(f"{'deal':<12}{'alone':>8}{'allocated':>11}{'saved':>8}")
-for d, a, b, c in zip(book.names, alloc.standalone, alloc.allocated, alloc.diversification()):
-    print(f"{d:<12}{a:>8.3f}{b:>11.3f}{c:>8.3f}")
+divers = pd.DataFrame({
+    "deal": book.names,
+    "alone": alloc.standalone,
+    "allocated": alloc.allocated,
+    "saved": alloc.diversification(),
+})
+(GT(divers, rowname_col="deal")
+ .tab_header("Capital by deal: alone and in the book",
+             "TVaR 99, premium units; saved = alone - allocated")
+ .fmt_number(["alone", "allocated", "saved"], decimals=3))
+```
+
+```text
+              alone  allocated  saved
+alder_cat_1  13.843     13.195  0.648
+alder_cat_2  20.998     19.026  1.973
+bracken_cat  14.136      9.397  4.738
+bracken_agg   7.500      0.262  7.238
+corran_qs    16.363     13.216  3.147
+```
+
+```python
 print(f"sum alone {sum(alloc.standalone):.3f}, book {alloc.total:.3f}, "
       f"benefit {alloc.diversification_benefit():.3f}")
 ```
 
 ```text
-deal           alone  allocated   saved
-alder_cat_1   13.843     13.195   0.648
-alder_cat_2   20.998     19.026   1.973
-bracken_cat   14.136      9.397   4.738
-bracken_agg    7.500      0.262   7.238
-corran_qs     16.363     13.216   3.147
 sum alone 72.840, book 55.096, benefit 17.744
 ```
 
@@ -308,9 +349,9 @@ sum alone 72.840, book 55.096, benefit 17.744
 
 `price_portfolio` prices the book as page 6, section 2 prices one contract:
 `P = (EL + r A) / (1 + r)`, with the assets `A` now the TVaR of the book. It
-then splits that premium to the deals by the same Euler weights
-([portfolio pricing](pir-portfolio-pricing.md) has the theory). It also prices each deal
-alone. Compare these prices with what Larkspur keeps. That is the premium
+splits that premium to the deals by the same Euler weights
+([portfolio pricing](pir-portfolio-pricing.md) has the theory), and prices each
+deal alone. Compare these prices with what Larkspur keeps: the premium
 charged, plus the expected reinstatement premium of section 3, less the
 deductions (the ceding commission of Corran).
 
@@ -318,61 +359,55 @@ deductions (the ceding commission of Corran).
 pp = price_portfolio(loss, Distortion.tvar(0.99), cost_of_capital=0.10)
 print(f"book: EL {pp.total.expected_loss:.3f}, premium {pp.total.premium:.3f}, "
       f"capital {pp.total.capital:.3f}")
-kept = {d: rows[d, "premium"][0] - rows[d, "total_deductions"][0] for d in [*book.names, "total"]}
-print(f"{'deal':<12}{'charged':>9}{'kept':>8}{'in book':>9}{'alone':>8}")
-for d, ab, al in zip(book.names, pp.allocated, pp.standalone):
-    print(f"{d:<12}{charged[d]:>9.3f}{kept[d]:>8.3f}{ab.premium:>9.3f}{al.premium:>8.3f}")
-print(f"{'book':<12}{charged['total']:>9.3f}{kept['total']:>8.3f}{pp.total.premium:>9.3f}")
 print(f"premium saved by diversification {pp.diversification():.3f}")
+kept = {d: rows[d, "premium"][0] - rows[d, "total_deductions"][0] for d in [*book.names, "total"]}
 ```
 
 ```text
 book: EL 3.289, premium 7.998, capital 47.097
-deal          charged    kept  in book   alone
-alder_cat_1     1.800   1.921    1.948   2.007
-alder_cat_2     1.000   1.020    2.108   2.287
-bracken_cat     1.750   1.846    1.477   1.908
-bracken_agg     0.450   0.450    0.171   0.829
-corran_qs       3.000   2.250    2.295   2.581
-book            8.000   7.487    7.998
 premium saved by diversification 1.613
 ```
 
 ```python
-import pandas as pd
-from great_tables import GT
-
 prices = pd.DataFrame({
-    "deal": book.names,
-    "charged": [charged[d] for d in book.names],
-    "kept": [kept[d] for d in book.names],
-    "in book": [ab.premium for ab in pp.allocated],
-    "alone": [al.premium for al in pp.standalone],
+    "deal": [*book.names, "book"],
+    "charged": [charged[d] for d in [*book.names, "total"]],
+    "kept": [kept[d] for d in [*book.names, "total"]],
+    "in book": [ab.premium for ab in pp.allocated] + [pp.total.premium],
+    "alone": [al.premium for al in pp.standalone] + [None],
 })
 (GT(prices, rowname_col="deal")
  .tab_header("Premium by deal: charged, kept and needed",
              "Premium units; needed = cost of capital 10% on TVaR 99 capital")
  .tab_spanner("needed", ["in book", "alone"])
- .fmt_number(["charged", "kept", "in book", "alone"], decimals=3))
+ .fmt_number(["charged", "kept", "in book", "alone"], decimals=3)
+ .sub_missing("alone", missing_text=""))
 ```
 
-Alone, `alder_cat_1` needs the 2.007 of page 6. In the book it needs less. The
-book charges 8.000, near the 7.998 that a 10% return on TVaR capital needs. But
-it keeps less: 7.487, after the reinstatement premium comes in and the ceding
-commission of Corran goes out. Thus the whole book is below the target, and
-section 9 shows a 9.0% return.
+```text
+             charged   kept  in book  alone
+alder_cat_1    1.800  1.921    1.948  2.007
+alder_cat_2    1.000  1.020    2.108  2.287
+bracken_cat    1.750  1.846    1.477  1.908
+bracken_agg    0.450  0.450    0.171  0.829
+corran_qs      3.000  2.250    2.295  2.581
+book           8.000  7.487    7.998
+```
 
-Both Alder layers keep less than their share, and `alder_cat_2` keeps about
-half of it. The two Bracken contracts keep more than their share. The quota
-share of Corran charges 3.000 but keeps 2.250, a little under its 2.295.
+Alone, `alder_cat_1` needs the 2.007 of page 6. In the book it needs 1.948.
+The book charges 8.000 against the 7.998 that a 10% return on TVaR capital
+needs, but keeps 7.487 after the reinstatement premium comes in and the ceding
+commission of Corran goes out. So the book falls short of the target (section 9:
+a 9.0% return). Both Alder layers keep less than their share, `alder_cat_2`
+about half of it. The Bracken contracts keep more. The quota share of Corran
+keeps 2.250 of 3.000, a little under its 2.295.
 
 ## 8. The marginal price of a new contract
 
 The allocated price shares the price of the book among the deals already
-written. A new contract asks a different question: what must it charge so that
-the return of the book does not fall? Take the extra assets `dA` that it needs
-and its expected loss `EL`. `dA` is its marginal TVaR, the book with it less
-the book without it. With the same convention as above:
+written. A new contract asks what it must charge so that the return of the book
+does not fall. Its extra assets `dA` are its marginal TVaR (the book with it
+less the book without it), and `EL` is its expected loss:
 
     P = EL + r * (dA - P),   so   P = (EL + r * dA) / (1 + r)
 
@@ -381,20 +416,26 @@ from `"marginal"` (#588).
 
 ```python
 r = 0.10
-print(f"{'deal':<12}{'EL':>7}{'dA':>8}{'marginal P':>12}{'charged':>9}")
-for d in book.names:
-    el, da = dist["marginal"][d]["Mean"], dist["marginal"][d]["TVaR 99"]
-    p = (el + r * da) / (1 + r)
-    print(f"{d:<12}{el:>7.3f}{da:>8.3f}{p:>12.3f}{charged[d]:>9.3f}")
+marg = pd.DataFrame({
+    "deal": book.names,
+    "EL": [dist["marginal"][d]["Mean"] for d in book.names],
+    "dA": [dist["marginal"][d]["TVaR 99"] for d in book.names],
+})
+marg["marginal P"] = (marg["EL"] + r * marg["dA"]) / (1 + r)
+marg["charged"] = [charged[d] for d in book.names]
+(GT(marg, rowname_col="deal")
+ .tab_header("Marginal price of each deal as the last one written",
+             "Premium units; P = (EL + r dA) / (1 + r), r = 10%")
+ .fmt_number(["EL", "dA", "marginal P", "charged"], decimals=3))
 ```
 
 ```text
-deal             EL      dA  marginal P  charged
-alder_cat_1   0.823  12.728       1.905    1.800
-alder_cat_2   0.416  14.560       1.702    1.000
-bracken_cat   0.685   8.840       1.426    1.750
-bracken_agg   0.162   0.193       0.165    0.450
-corran_qs     1.202  12.609       2.239    3.000
+                EL      dA  marginal P  charged
+alder_cat_1  0.823  12.728       1.905    1.800
+alder_cat_2  0.416  14.560       1.702    1.000
+bracken_cat  0.685   8.840       1.426    1.750
+bracken_agg  0.162   0.193       0.165    0.450
+corran_qs    1.202  12.609       2.239    3.000
 ```
 
 ```python
@@ -410,40 +451,17 @@ ax.set_title("Charged premium against the marginal price of each deal")
 ax.legend()
 ```
 
-The marginal price is lower than the allocated price for every deal, because
-the marginal TVaR of each deal is at most its Euler contribution. TVaR is
-subadditive, so a new deal raises the TVaR of the book by no more than the
-deal's share of the new book's tail. Price the next contract on its marginal,
-and the TVaR return of the book holds. Price every contract on its marginal,
-and the book falls short.
+Every marginal price is below the allocated price, because a deal's marginal
+TVaR is at most its Euler contribution (TVaR is subadditive). Price the next
+contract on its marginal, and the TVaR return holds. Price every contract on
+its marginal, and the book falls short.
 
 ## 9. A return on allocated capital
 
 A risk-adjusted return on capital (RAROC) sets the margin of each deal against
-the capital allocated to it. Here the capital is the allocated assets less the
-premium of the deal, as above. The margin includes the reinstatement premium of
-section 3. The data has no expense line, so this is a return before the costs
-of Larkspur.
-
-```python
-print(f"{'deal':<12}{'margin':>8}{'capital':>9}{'return':>8}")
-for d, a in zip(book.names, alloc.allocated):
-    margin, premium = rows[d, "margin"][0], rows[d, "premium"][0]
-    ret = f"{margin / (a - premium):.1%}" if a > premium else "none"
-    print(f"{d:<12}{margin:>8.3f}{a - premium:>9.3f}{ret:>8}")
-margin, premium = rows["total", "margin"][0], rows["total", "premium"][0]
-print(f"{'book':<12}{margin:>8.3f}{alloc.total - premium:>9.3f}{margin / (alloc.total - premium):>8.1%}")
-```
-
-```text
-deal          margin  capital  return
-alder_cat_1    1.098   11.274    9.7%
-alder_cat_2    0.604   18.005    3.4%
-bracken_cat    1.161    7.552   15.4%
-bracken_agg    0.288   -0.188    none
-corran_qs      1.048   10.216   10.3%
-book           4.198   46.859    9.0%
-```
+its allocated capital: the allocated assets less the premium of the deal. The
+margin includes the reinstatement premium of section 3, and there is no expense
+line, so the return is before the costs of Larkspur.
 
 ```python
 all_deals = [*book.names, "total"]
@@ -462,26 +480,34 @@ returns["return"] = [m / c if c > 0 else float("nan")
  .sub_missing("return", missing_text="none"))
 ```
 
-Against a 10% target, `alder_cat_2` is the weak contract. It uses more than a
-third of the capital of the book and returns a few percent on it. `bracken_agg`
-has no return to show. Its premium is larger than the assets allocated to it,
-so in this book it needs no shareholder capital. A ratio over a negative
-capital has no meaning.
+```text
+             margin  capital  return
+alder_cat_1   1.098   11.274    9.7%
+alder_cat_2   0.604   18.005    3.4%
+bracken_cat   1.161    7.552   15.4%
+bracken_agg   0.288   -0.188    none
+corran_qs     1.048   10.216   10.3%
+book          4.198   46.859    9.0%
+```
+
+Against a 10% target, `alder_cat_2` is the weak contract: it uses over a third
+of the capital of the book and returns a few percent. `bracken_agg` has no
+return: its premium exceeds the assets allocated to it, so it needs no
+shareholder capital here, and a ratio over negative capital has no meaning.
 
 ## 10. Reproducibility
 
-The VaR of the book above is the default inverted-cdf quantile. Page 2,
-section 2 compares it with the other conventions.
-
-Every number on this page follows from four committed files and one seed.
+The VaR of the book is the default inverted-cdf quantile; page 2, section 2
+compares the other conventions. Every number on this page follows from four
+committed files and one seed.
 
 - `examples/data/make_cat_book.py` writes the files with a fixed seed. A test
   checks that the committed files are what the script writes.
-- No step on this page draws a random number: the book adds the same 2,000
-  years for every contract.
+- No step draws a random number: the book adds the same 2,000 years for every
+  contract.
 - `read_ylt` stamps the event set with a hash of the file that it read, so you
-  can trace a result to its input. The rebuild by `cedent_events` drops that hash,
-  so record it from `read_ylt` once.
+  can trace a result to its input. The rebuild by `cedent_events` drops that
+  hash, so record it from `read_ylt` once.
 
 ```python
 ylt = read_ylt(DATA + "cat_book_yelt.csv", year="year", loss="loss", slot="slot",
@@ -493,8 +519,8 @@ print(ylt.input_hash.split(":")[0], ylt.n_sims)
 blake3 2000
 ```
 
-The page does not print the hash itself. The hash depends on the bytes of the
-file, and a checkout that changes line endings to CRLF gives a different hash.
+The page does not print the hash: it depends on the bytes of the file, and a
+checkout that changes line endings to CRLF gives a different hash.
 
 ## In R
 

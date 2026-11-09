@@ -1823,6 +1823,12 @@ pub(crate) fn simulate_events(
 /// frequency : a claim count
 /// severity : a severity
 /// x : float
+///     A loss of the view.
+/// tower : Tower, optional
+///     An occurrence program; with it the curve is of ``view``.
+/// view : str, default "ceded"
+///     ``"gross"``, ``"ceded"`` (the tower's total ceded loss of an
+///     occurrence, before annual terms) or ``"net"``.
 ///
 /// Returns
 /// -------
@@ -1838,18 +1844,31 @@ pub(crate) fn simulate_events(
 /// >>> abs(oep - (1 - math.exp(-2 * (1 - sev.cdf(500.0))))) < 1e-12
 /// True
 #[pyfunction]
+#[pyo3(signature = (frequency, severity, x, tower=None, view="ceded"))]
 pub(crate) fn occurrence_exceedance(
     frequency: &Bound<'_, PyAny>,
     severity: &Bound<'_, PyAny>,
     x: f64,
+    tower: Option<PyRef<'_, crate::reinsurance::PyTower>>,
+    view: &str,
 ) -> PyResult<f64> {
     let n = AnyCount::extract(frequency)?;
     let sev = extract_severity(severity)?;
-    Ok(prospicio_aggregate::occurrence_exceedance(
-        n.as_counting(),
-        &sev,
-        x,
-    ))
+    match tower {
+        None => Ok(prospicio_aggregate::occurrence_exceedance(
+            n.as_counting(),
+            &sev,
+            x,
+        )),
+        Some(t) => prospicio_aggregate::program_occurrence_exceedance(
+            n.as_counting(),
+            &sev,
+            &t.inner,
+            prospicio_aggregate::OccurrenceView::from_name(view).map_err(to_py)?,
+            x,
+        )
+        .map_err(to_py),
+    }
 }
 
 /// One point of the occurrence PML curve, from ``occurrence_pml``.
@@ -1902,7 +1921,13 @@ impl PyOccurrencePml {
 
 /// The occurrence PML at an annual probability ``p``: the loss whose
 /// occurrence exceedance is ``p``, for any claim count (the Python package
-/// ``aggregate``'s ``oep`` covers Poisson counts).
+/// ``aggregate``'s ``oep`` covers Poisson counts). With an occurrence
+/// program ``tower`` it is the PML of the ceded or net loss, the program's
+/// function of the gross PML, as ``aggregate`` 2.1.0's ``oep`` on an
+/// ``occurrence ceded to`` or ``net of`` clause; annual terms do not enter.
+/// Where the view is flat (a layer placed in full, for the net) its
+/// ``severity_survival`` is the gross survival at the end of that stretch,
+/// so the achieved probability falls below ``p``.
 ///
 /// Parameters
 /// ----------
@@ -1910,6 +1935,10 @@ impl PyOccurrencePml {
 /// severity : a severity
 /// p : float
 ///     In ``(0, 1 - P(N = 0))``.
+/// tower : Tower, optional
+///     An occurrence program on the loss basis.
+/// view : str, default "ceded"
+///     ``"gross"``, ``"ceded"`` or ``"net"``, with ``tower``.
 ///
 /// Returns
 /// -------
@@ -1928,14 +1957,27 @@ impl PyOccurrencePml {
 /// >>> round(pml.loss, 4), pml.annual_return_period
 /// (1171.4979, 100.0)
 #[pyfunction]
+#[pyo3(signature = (frequency, severity, p, tower=None, view="ceded"))]
 pub(crate) fn occurrence_pml(
     frequency: &Bound<'_, PyAny>,
     severity: &Bound<'_, PyAny>,
     p: f64,
+    tower: Option<PyRef<'_, crate::reinsurance::PyTower>>,
+    view: &str,
 ) -> PyResult<PyOccurrencePml> {
     let n = AnyCount::extract(frequency)?;
     let sev = extract_severity(severity)?;
-    let inner = prospicio_aggregate::occurrence_pml(n.as_counting(), &sev, p).map_err(to_py)?;
+    let inner = match tower {
+        None => prospicio_aggregate::occurrence_pml(n.as_counting(), &sev, p),
+        Some(t) => prospicio_aggregate::program_occurrence_pml(
+            n.as_counting(),
+            &sev,
+            &t.inner,
+            prospicio_aggregate::OccurrenceView::from_name(view).map_err(to_py)?,
+            p,
+        ),
+    }
+    .map_err(to_py)?;
     Ok(PyOccurrencePml { inner })
 }
 
@@ -2867,6 +2909,13 @@ pub(crate) struct PyEventLossTable {
 
 #[pymethods]
 impl PyEventLossTable {
+    /// The first three raw moments of one event's loss given that it
+    /// occurs, ``[E X, E X**2, E X**3]``; the annual cumulants are ``rate``
+    /// times them.
+    fn severity_moments(&self) -> Vec<f64> {
+        self.inner.severity_moments().to_vec()
+    }
+
     #[new]
     fn new(
         rate: Vec<f64>,
@@ -4246,4 +4295,204 @@ pub(crate) fn validate_grid(
     let inner = prospicio_aggregate::validate_grid(n.as_counting(), &sev, step, points, eps)
         .map_err(to_py)?;
     Ok(PyValidation { inner })
+}
+
+/// Event loss tables of several units that share events, ``aggregate``
+/// 2.1.0's ``elt unit A [...] elt unit B [...]``: one row per event and
+/// unit, an event on several units one occurrence. ``rolled()`` is the
+/// portfolio's table, each event's rows rolled up as ``aggregate`` does by
+/// default (the event's rate, which its rows must share; the means,
+/// exposures and correlated standard deviations summed, the independent
+/// ones in quadrature); ``unit(name)`` is one unit's own table.
+///
+/// Parameters
+/// ----------
+/// event, unit : list of str
+///     Each row's event identifier and unit tag.
+/// rate, mean, sd_independent, sd_correlated, exposure : list of float
+///     As for ``EventLossTable``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import UnitEventLossTables
+/// >>> t = UnitEventLossTables(["1", "2", "1", "3"], ["A", "A", "B", "B"],
+/// ...                         [0.01, 0.05, 0.01, 0.02], [800.0, 200.0, 300.0, 100.0],
+/// ...                         [200.0, 0.0, 50.0, 30.0], [100.0, 0.0, 40.0, 0.0],
+/// ...                         [2000.0, 500.0, 1000.0, 400.0])
+/// >>> t.units, t.shared_events, round(t.rolled().rate, 12)
+/// (['A', 'B'], 1, 0.08)
+#[pyclass(name = "UnitEventLossTables", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyUnitEventLossTables {
+    inner: prospicio_aggregate::UnitEventLossTables,
+}
+
+#[pymethods]
+impl PyUnitEventLossTables {
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        event: Vec<String>,
+        unit: Vec<String>,
+        rate: Vec<f64>,
+        mean: Vec<f64>,
+        sd_independent: Vec<f64>,
+        sd_correlated: Vec<f64>,
+        exposure: Vec<f64>,
+    ) -> PyResult<Self> {
+        let ev: Vec<&str> = event.iter().map(String::as_str).collect();
+        let un: Vec<&str> = unit.iter().map(String::as_str).collect();
+        Ok(Self {
+            inner: prospicio_aggregate::UnitEventLossTables::new(
+                &ev,
+                &un,
+                &rate,
+                &mean,
+                &sd_independent,
+                &sd_correlated,
+                &exposure,
+            )
+            .map_err(to_py)?,
+        })
+    }
+
+    /// The units' tags, in order of first appearance.
+    #[getter]
+    fn units(&self) -> Vec<String> {
+        self.inner.units().to_vec()
+    }
+
+    /// The events' identifiers, in order of first appearance.
+    #[getter]
+    fn events(&self) -> Vec<String> {
+        self.inner.events().to_vec()
+    }
+
+    /// The number of events with rows on two or more units.
+    #[getter]
+    fn shared_events(&self) -> usize {
+        self.inner.shared_events()
+    }
+
+    /// The portfolio's table, one row per event, its units' rows rolled up.
+    fn rolled(&self) -> PyResult<PyEventLossTable> {
+        Ok(PyEventLossTable {
+            inner: self.inner.rolled().map_err(to_py)?,
+        })
+    }
+
+    /// One unit's table.
+    fn unit(&self, name: &str) -> PyResult<PyEventLossTable> {
+        Ok(PyEventLossTable {
+            inner: self.inner.unit(name).map_err(to_py)?,
+        })
+    }
+}
+
+/// The bucket ``lattice_bucket`` chose for a discrete severity.
+#[pyclass(name = "LatticeBucket", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyLatticeBucket {
+    inner: prospicio_aggregate::LatticeBucket,
+}
+
+#[pymethods]
+impl PyLatticeBucket {
+    /// The bucket size.
+    #[getter]
+    fn step(&self) -> f64 {
+        self.inner.step
+    }
+
+    /// ``2**log2`` points hold the extent at ``step``.
+    #[getter]
+    fn log2(&self) -> u32 {
+        self.inner.log2
+    }
+
+    /// ``(step, residual)`` of the atoms' dyadic lattice, or ``None``.
+    #[getter]
+    fn lattice(&self) -> Option<(f64, f64)> {
+        self.inner.lattice
+    }
+
+    /// Whether every atom is a multiple of ``step``.
+    #[getter]
+    fn on_lattice(&self) -> bool {
+        self.inner.on_lattice
+    }
+
+    /// The ``log2`` the lattice would need, when the given one is too small.
+    #[getter]
+    fn log2_required(&self) -> Option<u32> {
+        self.inner.log2_required
+    }
+
+    /// ``aggregate``'s ``LatticeGridWarning`` text, or ``None``.
+    #[getter]
+    fn warning(&self) -> Option<String> {
+        self.inner.warning.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "LatticeBucket(step={:?}, log2={}, on_lattice={})",
+            self.inner.step, self.inner.log2, self.inner.on_lattice
+        )
+    }
+}
+
+/// The dyadic step of the lattice the ``atoms`` lie on, ``aggregate``
+/// 2.1.0's ``_dyadic_lattice_step``: ``(step, residual)``, or ``None`` when
+/// there is none within ``depth`` binary levels (decimal atoms such as 0.1).
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import dyadic_lattice_step
+/// >>> dyadic_lattice_step([3.0, 6.0, 9.0]), dyadic_lattice_step([0.1, 0.2])
+/// ((3.0, 0.0), None)
+#[pyfunction]
+#[pyo3(signature = (atoms, depth = 16))]
+pub(crate) fn dyadic_lattice_step(atoms: Vec<f64>, depth: u32) -> Option<(f64, f64)> {
+    prospicio_aggregate::dyadic_lattice_step(&atoms, depth)
+}
+
+/// The buckets tried for a lattice step ``h``: the largest nice bucket
+/// dividing it, then ``h``, ``aggregate`` 2.1.0's ``_lattice_candidates``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import lattice_candidates
+/// >>> lattice_candidates(3.0), lattice_candidates(0.75)
+/// ([1.0, 3.0], [0.25, 0.75])
+#[pyfunction]
+pub(crate) fn lattice_candidates(h: f64) -> Vec<f64> {
+    prospicio_aggregate::lattice_candidates(h)
+}
+
+/// A bucket for a compound distribution of a discrete severity on
+/// ``atoms`` covering ``extent`` within ``2**log2`` points, ``aggregate``
+/// 2.1.0's lattice rule: the first lattice candidate that fits, so every
+/// atom sits on a grid point, or a coarser bucket with a warning naming the
+/// ``log2`` the lattice needs.
+///
+/// Parameters
+/// ----------
+/// atoms : list of float
+/// extent : float
+/// log2 : int
+///
+/// Returns
+/// -------
+/// LatticeBucket
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import lattice_bucket
+/// >>> b = lattice_bucket([1000.0, 3000.0, 7000.0], 300_000.0, 8)
+/// >>> b.step, b.on_lattice, b.log2_required
+/// (2000.0, False, 9)
+#[pyfunction]
+pub(crate) fn lattice_bucket(atoms: Vec<f64>, extent: f64, log2: u32) -> PyResult<PyLatticeBucket> {
+    Ok(PyLatticeBucket {
+        inner: prospicio_aggregate::lattice_bucket(&atoms, extent, log2).map_err(to_py)?,
+    })
 }
