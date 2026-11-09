@@ -2867,6 +2867,13 @@ pub(crate) struct PyEventLossTable {
 
 #[pymethods]
 impl PyEventLossTable {
+    /// The first three raw moments of one event's loss given that it
+    /// occurs, ``[E X, E X**2, E X**3]``; the annual cumulants are ``rate``
+    /// times them.
+    fn severity_moments(&self) -> Vec<f64> {
+        self.inner.severity_moments().to_vec()
+    }
+
     #[new]
     fn new(
         rate: Vec<f64>,
@@ -4138,4 +4145,95 @@ pub(crate) fn simulate_events_weighted(
         })
         .map_err(to_py)?;
     Ok((PyEventSet { inner }, w))
+}
+
+/// Event loss tables of several units that share events, ``aggregate``
+/// 2.1.0's ``elt unit A [...] elt unit B [...]``: one row per event and
+/// unit, an event on several units one occurrence. ``rolled()`` is the
+/// portfolio's table, each event's rows rolled up as ``aggregate`` does by
+/// default (the event's rate, which its rows must share; the means,
+/// exposures and correlated standard deviations summed, the independent
+/// ones in quadrature); ``unit(name)`` is one unit's own table.
+///
+/// Parameters
+/// ----------
+/// event, unit : list of str
+///     Each row's event identifier and unit tag.
+/// rate, mean, sd_independent, sd_correlated, exposure : list of float
+///     As for ``EventLossTable``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import UnitEventLossTables
+/// >>> t = UnitEventLossTables(["1", "2", "1", "3"], ["A", "A", "B", "B"],
+/// ...                         [0.01, 0.05, 0.01, 0.02], [800.0, 200.0, 300.0, 100.0],
+/// ...                         [200.0, 0.0, 50.0, 30.0], [100.0, 0.0, 40.0, 0.0],
+/// ...                         [2000.0, 500.0, 1000.0, 400.0])
+/// >>> t.units, t.shared_events, round(t.rolled().rate, 12)
+/// (['A', 'B'], 1, 0.08)
+#[pyclass(name = "UnitEventLossTables", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyUnitEventLossTables {
+    inner: prospicio_aggregate::UnitEventLossTables,
+}
+
+#[pymethods]
+impl PyUnitEventLossTables {
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        event: Vec<String>,
+        unit: Vec<String>,
+        rate: Vec<f64>,
+        mean: Vec<f64>,
+        sd_independent: Vec<f64>,
+        sd_correlated: Vec<f64>,
+        exposure: Vec<f64>,
+    ) -> PyResult<Self> {
+        let ev: Vec<&str> = event.iter().map(String::as_str).collect();
+        let un: Vec<&str> = unit.iter().map(String::as_str).collect();
+        Ok(Self {
+            inner: prospicio_aggregate::UnitEventLossTables::new(
+                &ev,
+                &un,
+                &rate,
+                &mean,
+                &sd_independent,
+                &sd_correlated,
+                &exposure,
+            )
+            .map_err(to_py)?,
+        })
+    }
+
+    /// The units' tags, in order of first appearance.
+    #[getter]
+    fn units(&self) -> Vec<String> {
+        self.inner.units().to_vec()
+    }
+
+    /// The events' identifiers, in order of first appearance.
+    #[getter]
+    fn events(&self) -> Vec<String> {
+        self.inner.events().to_vec()
+    }
+
+    /// The number of events with rows on two or more units.
+    #[getter]
+    fn shared_events(&self) -> usize {
+        self.inner.shared_events()
+    }
+
+    /// The portfolio's table, one row per event, its units' rows rolled up.
+    fn rolled(&self) -> PyResult<PyEventLossTable> {
+        Ok(PyEventLossTable {
+            inner: self.inner.rolled().map_err(to_py)?,
+        })
+    }
+
+    /// One unit's table.
+    fn unit(&self, name: &str) -> PyResult<PyEventLossTable> {
+        Ok(PyEventLossTable {
+            inner: self.inner.unit(name).map_err(to_py)?,
+        })
+    }
 }

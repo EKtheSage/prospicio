@@ -238,6 +238,10 @@ pricing_as_if <- function(ids, accident, amount, threshold, rate, to, factors, v
 
 aggregate_elt_values <- function(rate, mean, sd_independent, sd_correlated, exposure, x, p) .Call(wrap__aggregate_elt_values, rate, mean, sd_independent, sd_correlated, exposure, x, p)
 
+aggregate_elt_units <- function(event, unit, rate, mean, sd_independent, sd_correlated, exposure) .Call(wrap__aggregate_elt_units, event, unit, rate, mean, sd_independent, sd_correlated, exposure)
+
+aggregate_elt_severity_moments <- function(rate, mean, sd_independent, sd_correlated, exposure) .Call(wrap__aggregate_elt_severity_moments, rate, mean, sd_independent, sd_correlated, exposure)
+
 aggregate_elt_simulate <- function(rate, mean, sd_independent, sd_correlated, exposure, n_years, seed) .Call(wrap__aggregate_elt_simulate, rate, mean, sd_independent, sd_correlated, exposure, n_years, seed)
 
 pricing_payment_pattern <- function(times, values, from_development) .Call(wrap__pricing_payment_pattern, times, values, from_development)

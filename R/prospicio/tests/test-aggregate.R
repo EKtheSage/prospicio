@@ -1094,3 +1094,16 @@ book <- merge_event_sets(a, b)
 stopifnot(identical(events(book, 1), c(20, 10, 2)))
 stopifnot(identical(events(hours_clause(book, 72), 1), c(30, 2)))
 stopifnot(inherits(try(ceded_events(tw, ev, "nope"), silent = TRUE), "try-error"))
+
+# Event loss tables of several units that share events against aggregate
+# 2.1.0 (#777, validation/scripts/aggregate_elt_units.py).
+elt_u <- unit_event_loss_tables(c("1", "2", "4", "1", "3", "4"), rep(c("A", "B"), each = 3),
+                                rate = c(0.01, 0.05, 0.002, 0.01, 0.02, 0.002),
+                                mean = c(800, 200, 1500, 300, 100, 600),
+                                sd_independent = c(200, 0, 300, 50, 30, 100),
+                                sd_correlated = c(100, 0, 300, 40, 0, 50),
+                                exposure = c(2000, 500, 5000, 1000, 400, 2000))
+stopifnot(elt_u$shared_events == 2, identical(names(elt_u$units), c("A", "B")))
+stopifnot(abs(elt_u$rolled$rate / 0.082 - 1) < 1e-12)
+stopifnot(abs(elt_severity_moments(elt_u$rolled)[1] / 331.7073170731707 - 1) < 1e-10)
+stopifnot(abs(elt_severity_moments(elt_u$units$A)[2] / 234193.54838709682 - 1) < 1e-10)

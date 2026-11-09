@@ -2600,3 +2600,62 @@ fn importance_sampling_matches_the_fft_tail_with_a_smaller_error() {
     }
     assert!((is.mean() - exact.mean()).abs() < 4.0 * is.standard_error_mean(50).unwrap());
 }
+
+/// Event loss tables of several units that share events against
+/// `aggregate` 2.1.0 (#777, `validation/scripts/aggregate_elt_units.py`):
+/// the rate of events and the event severity's raw moments of the rolled
+/// table and of each unit alone.
+#[test]
+fn elt_units_match_aggregate() {
+    use prospicio_aggregate::UnitEventLossTables;
+    type Rows = &'static [(&'static str, [f64; 6])];
+    // (unit, [event, rate, mean, max, sdi, sdc]), as the script's TABLES.
+    const TWO: Rows = &[
+        ("A", [1.0, 0.01, 800.0, 2000.0, 200.0, 100.0]),
+        ("A", [2.0, 0.05, 200.0, 500.0, 0.0, 0.0]),
+        ("A", [4.0, 0.002, 1500.0, 5000.0, 300.0, 300.0]),
+        ("B", [1.0, 0.01, 300.0, 1000.0, 50.0, 40.0]),
+        ("B", [3.0, 0.02, 100.0, 400.0, 30.0, 0.0]),
+        ("B", [4.0, 0.002, 600.0, 2000.0, 100.0, 50.0]),
+    ];
+    const THREE: Rows = &[
+        ("X", [10.0, 0.1, 50.0, 200.0, 10.0, 5.0]),
+        ("X", [11.0, 0.03, 400.0, 1200.0, 80.0, 60.0]),
+        ("Y", [10.0, 0.1, 20.0, 100.0, 5.0, 5.0]),
+        ("Y", [12.0, 0.004, 900.0, 3000.0, 200.0, 150.0]),
+        ("Z", [10.0, 0.1, 5.0, 50.0, 2.0, 0.0]),
+        ("Z", [11.0, 0.03, 100.0, 600.0, 40.0, 10.0]),
+        ("Z", [12.0, 0.004, 300.0, 1500.0, 90.0, 40.0]),
+    ];
+    let build = |rows: Rows| {
+        let ids: Vec<String> = rows.iter().map(|r| format!("{}", r.1[0])).collect();
+        let col = |j: usize| rows.iter().map(|r| r.1[j]).collect::<Vec<_>>();
+        UnitEventLossTables::new(
+            &ids.iter().map(String::as_str).collect::<Vec<_>>(),
+            &rows.iter().map(|r| r.0).collect::<Vec<_>>(),
+            &col(1),
+            &col(2),
+            &col(4),
+            &col(5),
+            &col(3),
+        )
+        .unwrap()
+    };
+    let (two, three) = (build(TWO), build(THREE));
+    assert_eq!((two.shared_events(), three.shared_events()), (2, 3));
+    check(&reference("elt_units_aggregate.csv"), |c| {
+        let f = fields(c);
+        let t = if f["table"] == "two" { &two } else { &three };
+        let elt = if f["unit"] == "all" {
+            t.rolled()
+        } else {
+            t.unit(f["unit"])
+        }
+        .ok()?;
+        let m = elt.severity_moments();
+        Some(match c.get("quantity") {
+            "rate" => elt.rate(),
+            q => m[q.strip_prefix("ex")?.parse::<usize>().ok()? - 1],
+        })
+    });
+}

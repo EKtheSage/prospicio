@@ -1330,6 +1330,16 @@ label_columns <- function(labels) {
 #' when that is 0. A row whose standard deviation no beta on its exposure can
 #' have is an error naming the row.
 #'
+#' `unit_event_loss_tables()` reads a long table of several units that share
+#' events, one row per event and unit (`aggregate` 2.1.0's `elt unit A [...]
+#' elt unit B [...]`): an event on several units is one occurrence. Its
+#' `rolled` is the portfolio's `event_loss_table`, each event's rows rolled
+#' up as `aggregate` does by default (the event's rate, which its rows must
+#' share; the means, exposures and correlated standard deviations summed,
+#' the independent ones in quadrature), and `units` one `event_loss_table`
+#' per unit, by tag. `elt_severity_moments()` gives the first three raw
+#' moments of one event's loss given that it occurs.
+#'
 #' `elt_oep()` gives the occurrence exceedance probability
 #' `1 - exp(-sum(rate * P(L > x)))` and the annual exceedance frequency;
 #' `elt_occurrence_pml()` the loss at an annual probability; `simulate_elt()`
@@ -1338,6 +1348,7 @@ label_columns <- function(labels) {
 #' @param rate,mean,sd_independent,sd_correlated,exposure The table's
 #'   columns, one value per event.
 #' @param elt An `event_loss_table`.
+#' @param event,unit Each row's event identifier and unit tag.
 #' @param x Losses.
 #' @param p Annual probabilities.
 #' @param n_years The number of years to simulate.
@@ -1358,6 +1369,12 @@ label_columns <- function(labels) {
 #' elt_occurrence_pml(elt, 0.01)
 #' sim <- simulate_elt(elt, 1000, seed = 1)
 #' sim$events@n_sims
+#' tabs <- unit_event_loss_tables(c("1", "2", "1", "3"), c("A", "A", "B", "B"),
+#'                                rate = c(0.01, 0.05, 0.01, 0.02), mean = c(800, 200, 300, 100),
+#'                                sd_independent = c(200, 0, 50, 30), sd_correlated = c(100, 0, 40, 0),
+#'                                exposure = c(2000, 500, 1000, 400))
+#' tabs$rolled$rate # event 1 counted once
+#' elt_severity_moments(tabs$units$B)
 event_loss_table <- function(rate, mean, sd_independent, sd_correlated, exposure) {
   cols <- list(rate = as.double(rate), mean = as.double(mean),
                sd_independent = as.double(sd_independent),
@@ -1365,6 +1382,28 @@ event_loss_table <- function(rate, mean, sd_independent, sd_correlated, exposure
   v <- rust_result(do.call(aggregate_elt_values, c(cols, list(x = double(), p = double()))))
   structure(list(columns = cols, rate = v$rate, expected_annual_loss = v$expected_annual_loss),
             class = "event_loss_table")
+}
+
+#' @rdname event_loss_table
+#' @export
+unit_event_loss_tables <- function(event, unit, rate, mean, sd_independent, sd_correlated,
+                                   exposure) {
+  r <- rust_result(aggregate_elt_units(
+    as.character(event), as.character(unit), as.double(rate), as.double(mean),
+    as.double(sd_independent), as.double(sd_correlated), as.double(exposure)
+  ))
+  make <- function(cols) do.call(event_loss_table, cols)
+  units <- stats::setNames(lapply(r$unit_columns, make), r$units)
+  list(rolled = make(r$rolled), units = units, events = r$events,
+       shared_events = r$shared_events)
+}
+
+#' @rdname event_loss_table
+#' @export
+elt_severity_moments <- function(elt) {
+  cols <- elt$columns
+  rust_result(aggregate_elt_severity_moments(cols$rate, cols$mean, cols$sd_independent,
+                                             cols$sd_correlated, cols$exposure))
 }
 
 #' @rdname event_loss_table
