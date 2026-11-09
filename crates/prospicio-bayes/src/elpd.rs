@@ -295,6 +295,10 @@ fn psis_unchecked(log_r: &[f64], r_eff: f64) -> (Vec<f64>, f64) {
         return (lw, f64::INFINITY);
     }
     let (k, sigma) = gpd_fit(&exceed);
+    // A backstop for a fit that is not finite without a zero quartile: the
+    // grid's weighted mean θ rounding to exactly 0 or overflowing to -inf
+    // (inputs built to hit it; none seen in a model) leaves σ NaN, which
+    // would set every tail weight to the largest (`NaN.min(0.0)` is 0).
     if !k.is_finite() || !sigma.is_finite() {
         return (lw, f64::INFINITY);
     }
