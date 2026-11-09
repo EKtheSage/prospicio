@@ -2,6 +2,7 @@
 % Please edit documentation in R/aggregate.R
 \name{audit_grid}
 \alias{audit_grid}
+\alias{validate_grid}
 \alias{dyadic_lattice_step}
 \alias{lattice_candidates}
 \alias{lattice_bucket}
@@ -21,6 +22,8 @@ audit_grid(
   log2_cap = 20,
   log2_floor = 8
 )
+
+validate_grid(frequency, severity, step, points, eps = 1e-04)
 
 dyadic_lattice_step(atoms, depth = 16)
 
@@ -65,6 +68,8 @@ the most points the recommended grid may use.}
 
 \item{log2_floor}{The half-size row is tried only above it.}
 
+\item{points}{The number of points of the grid \code{validate_grid()} checks.}
+
 \item{atoms}{A discrete severity's values.}
 
 \item{depth}{Binary levels searched below the largest atom.}
@@ -86,6 +91,9 @@ center in doublings, \code{step}, \code{log2}, \code{score}, the six terms
 \code{aliasing_error}, \code{defective}, \code{selected}, \code{note}), \code{selected} (the
 chosen row), \code{step}, \code{log2} and \code{score} of the chosen cell, \code{probed}
 (\code{FALSE} when the center met the target), \code{grew} and \code{reason}.
+\code{validate_grid()}: a list with \code{passes}, \code{flags} (the failures by
+\code{aggregate}'s names), \code{description}, \code{terms} (the six, \code{NaN} when
+skipped), \code{convolution_residual} and \code{tail_mass}.
 }
 \description{
 \code{recommend_portfolio_grid()} sizes one grid for the sum of independent
@@ -107,6 +115,12 @@ twice the points is tried only when nothing smaller meets the target.
 terms score the claim-weighted mixture of the units' severities, the
 aggregate terms the total.
 
+\code{validate_grid()} is the verdict on one grid, \code{aggregate} 2.1.0's \code{valid}:
+the six terms above 1 fail as \code{SEV_MEAN} to \code{AGG_SKEW}, \code{ALIASING} when the
+aggregate's mean differs from \code{E[N]} times the discretized severity's by
+more than \code{1e-5} with no mass beyond the grid, and \code{DEFECTIVE} when more
+than \code{1e-4} lies beyond it. A pass says the grid is "not unreasonable".
+
 \code{dyadic_lattice_step()}, \code{lattice_candidates()} and \code{lattice_bucket()} are
 \code{aggregate} 2.1.0's lattice rule for a discrete severity: the dyadic step
 the atoms lie on (\code{c(step, residual)}, \code{NULL} without one), the buckets
@@ -118,6 +132,7 @@ a \code{warning} naming the \code{log2_required}.
 a <- audit_grid(poisson_count(50), gamma_distribution(4, 2.5), step = 0.5, log2 = 10)
 c(a$step, a$log2)
 a$reason
+validate_grid(poisson_count(50), gamma_distribution(4, 2.5), 0.25, 2^10)$flags
 dyadic_lattice_step(c(3, 6, 9))
 lattice_bucket(c(1000, 3000, 7000), 300000, 8)$warning
 units <- list(list(poisson_count(10), gamma_distribution(2, 50)),

@@ -83,8 +83,9 @@ pub use ruin::{
 };
 pub use sizing::{
     AuditSettings, GridAudit, GridCell, GridSize, LatticeBucket, ScoreTerms, Sizing, SizingMethod,
-    audit_grid, audit_portfolio_grid, dyadic_lattice_step, fft_auto, lattice_bucket,
-    lattice_candidates, recommend_grid, recommend_portfolio_grid, round_bucket,
+    VALIDATION_EPS, Validation, ValidationFlag, audit_grid, audit_portfolio_grid,
+    dyadic_lattice_step, fft_auto, lattice_bucket, lattice_candidates, recommend_grid,
+    recommend_portfolio_grid, round_bucket, validate_grid,
 };
 pub use trials::TrialStatistics;
 pub use ylt::YearLossTable;

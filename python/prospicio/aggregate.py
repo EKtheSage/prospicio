@@ -42,6 +42,9 @@ from .prospicio_native import (
     Ruin,
     Timeline,
     audit_grid,
+    Validation,
+    validate_grid,
+
     LatticeBucket,
     dyadic_lattice_step,
     lattice_bucket,
@@ -83,6 +86,9 @@ __all__ = [
     "round_bucket",
     "GridSize",
     "audit_grid",
+    "Validation",
+    "validate_grid",
+
     "LatticeBucket",
     "dyadic_lattice_step",
     "lattice_bucket",

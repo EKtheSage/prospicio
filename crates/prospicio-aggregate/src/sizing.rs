@@ -878,6 +878,174 @@ where
     })
 }
 
+/// A failure [`validate_grid`] can report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ValidationFlag {
+    /// The discretized severity's mean is more than `eps` from the exact one.
+    SeverityMean,
+    /// Its cv more than `10 eps`.
+    SeverityCv,
+    /// Its skewness more than `100 eps`.
+    SeveritySkew,
+    /// The aggregate's mean more than `eps` from the exact compound mean.
+    AggregateMean,
+    /// Its cv more than `10 eps`.
+    AggregateCv,
+    /// Its skewness more than `100 eps`.
+    AggregateSkew,
+    /// The FFT moved the mean: `|E[A] − E[N] E[X_grid]|` above `1e-5` of
+    /// `E[N] E[X_grid]` with no mass beyond the grid (wrap-around).
+    Aliasing,
+    /// More than `1e-4` of the aggregate lies beyond the grid.
+    Defective,
+}
+
+impl ValidationFlag {
+    /// `aggregate`'s name: `SEV_MEAN`, `SEV_CV`, `SEV_SKEW`, `AGG_MEAN`,
+    /// `AGG_CV`, `AGG_SKEW`, `ALIASING` or `DEFECTIVE`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::SeverityMean => "SEV_MEAN",
+            Self::SeverityCv => "SEV_CV",
+            Self::SeveritySkew => "SEV_SKEW",
+            Self::AggregateMean => "AGG_MEAN",
+            Self::AggregateCv => "AGG_CV",
+            Self::AggregateSkew => "AGG_SKEW",
+            Self::Aliasing => "ALIASING",
+            Self::Defective => "DEFECTIVE",
+        }
+    }
+}
+
+/// The verdict on a compound distribution on a grid, `aggregate` 2.1.0's
+/// `valid` and `Validation`: the failures found, empty when the grid is
+/// "not unreasonable". A pass does not prove the grid right; a failure says
+/// it is suspect.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Validation {
+    /// The failures, in the order of [`ValidationFlag`].
+    pub flags: Vec<ValidationFlag>,
+    /// The six moment errors in units of their tolerance (above 1 fails).
+    pub terms: ScoreTerms,
+    /// `|E[A] − E[N] E[X_grid]| / |E[N] E[X_grid]|`, the error the
+    /// convolution alone added.
+    pub convolution_residual: f64,
+    /// The aggregate mass beyond the grid, lumped onto its last point.
+    pub tail_mass: f64,
+    /// The tolerance the terms were scored with.
+    pub eps: f64,
+}
+
+impl Validation {
+    /// Whether no failure is set, `aggregate`'s `Validation.passes`.
+    pub fn passes(&self) -> bool {
+        self.flags.is_empty()
+    }
+
+    /// One line: "not unreasonable", or the failures by `aggregate`'s names.
+    pub fn description(&self) -> String {
+        if self.passes() {
+            "not unreasonable".into()
+        } else {
+            let names: Vec<&str> = self.flags.iter().map(|f| f.name()).collect();
+            format!("fails {}", names.join(", "))
+        }
+    }
+}
+
+/// The validation tolerance `aggregate` uses, `1e-4`.
+pub const VALIDATION_EPS: f64 = 1e-4;
+
+/// The verdict on the compound distribution of `frequency` claims of
+/// `severity` on the grid `(step, points)`, as `aggregate` 2.1.0's
+/// `valid_aggregate` checks a built `Aggregate`: the severity is
+/// discretized by rounding and compounded by [`fft`], and
+///
+/// - the severity's and the aggregate's mean, cv and skewness on the grid
+///   are compared with their exact values at `eps`, `10 eps` and `100 eps`
+///   relative (absolute for an exact value within `1e-12` of 0, and not at
+///   all for one that is not finite or is 0, a symmetric severity's
+///   skewness);
+/// - `Aliasing` fails when the aggregate's mean differs from `E[N]` times
+///   the discretized severity's mean by more than `1e-5` relative while no
+///   mass lies beyond the grid;
+/// - `Defective` fails when more than `1e-4` lies beyond the grid.
+///
+/// The terms are [`audit_grid`]'s, whose scores match `aggregate`'s
+/// `sharpen`; [`audit_grid`] then searches for a better grid.
+///
+/// ```
+/// use prospicio_aggregate::{VALIDATION_EPS, validate_grid};
+/// use prospicio_prob::{Gamma, Poisson};
+///
+/// let n = Poisson::new(50.0).unwrap();
+/// let x = Gamma::from_mean_cv(10.0, 0.5).unwrap();
+/// // A fine grid passes; a coarse one fails on the severity's shape.
+/// assert!(validate_grid(&n, &x, 0.5, 1 << 11, VALIDATION_EPS).unwrap().passes());
+/// let coarse = validate_grid(&n, &x, 4.0, 1 << 9, VALIDATION_EPS).unwrap();
+/// assert!(!coarse.passes() && coarse.description().starts_with("fails"));
+/// ```
+pub fn validate_grid<N, X>(
+    frequency: &N,
+    severity: &X,
+    step: f64,
+    points: usize,
+    eps: f64,
+) -> Result<Validation>
+where
+    N: Counting + ?Sized,
+    X: Severity,
+{
+    if !(eps.is_finite() && eps > 0.0) {
+        return Err(Error::InvalidParameter {
+            name: "eps",
+            value: eps,
+            reason: "must be finite and positive",
+        });
+    }
+    let exact_sev = exact_raw(severity);
+    let m = compound_moments_from(frequency, exact_sev);
+    let (sev, _) = Grid::rounding(severity, step, points)?;
+    let (agg, report) = fft(frequency, &sev, points)?;
+    let mut terms = ScoreTerms::default();
+    let sev_raw = raw_moments(&sev);
+    severity_terms(&mut terms, sev_raw, exact_sev, eps);
+    aggregate_terms(&mut terms, &agg, m, eps);
+    let predicted = frequency.mean() * sev_raw.0;
+    let convolution_residual = if predicted != 0.0 && predicted.is_finite() {
+        (raw_moments(&agg).0 - predicted).abs() / predicted.abs()
+    } else {
+        f64::NAN
+    };
+    let fails = |t: Option<f64>| t.is_some_and(|u| u.is_nan() || u > 1.0);
+    let mut flags = Vec::new();
+    for (t, f) in [
+        (terms.severity_mean, ValidationFlag::SeverityMean),
+        (terms.severity_cv, ValidationFlag::SeverityCv),
+        (terms.severity_skew, ValidationFlag::SeveritySkew),
+        (terms.aggregate_mean, ValidationFlag::AggregateMean),
+        (terms.aggregate_cv, ValidationFlag::AggregateCv),
+        (terms.aggregate_skew, ValidationFlag::AggregateSkew),
+    ] {
+        if fails(t) {
+            flags.push(f);
+        }
+    }
+    if convolution_residual > 1e-5 && report.tail_mass <= NOISE {
+        flags.push(ValidationFlag::Aliasing);
+    }
+    if report.tail_mass > 1e-4 {
+        flags.push(ValidationFlag::Defective);
+    }
+    Ok(Validation {
+        flags,
+        terms,
+        convolution_residual,
+        tail_mass: report.tail_mass,
+        eps,
+    })
+}
+
 /// The exact compound mean, variance and third cumulant from the
 /// severity's raw moments.
 fn compound_moments_from<N: Counting + ?Sized>(

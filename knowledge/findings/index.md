@@ -1,5 +1,6 @@
 # Findings
 
+* [The validation verdict against aggregate 2.1.0](validation-verdict.md) - aggregate's valid is the grid audit's six moment terms at their bounds, a convolution residual (ALIASING) and a deficit test (DEFECTIVE); validate_grid agrees flag by flag on six books (#778).
 * [Event loss tables across units against aggregate 2.1.0](elt-units.md) - a shared event is one occurrence at its rate, its units' rows rolled up (sums, independent sds in quadrature); rate and severity moments match aggregate with eltq to 1e-10, rolled and unit by unit (#777).
 * [The dyadic lattice rule against aggregate 2.1.0](dyadic-lattice.md) - a discrete severity's lattice is searched 16 binary levels below the largest atom at 1e-12 of it, the gcd of the multiples is the step and the largest nice bucket dividing it is preferred; matched on 16 atom sets (#776).
 * [The occurrence PML of a program against aggregate 2.1.0](program-oep.md) - a program's ceded or net occurrence PML is its function of the gross PML, the survival at a flat stretch read at its right end; 216 values of aggregate's oep matched to 1e-9 (#773).

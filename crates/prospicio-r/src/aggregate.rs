@@ -310,6 +310,43 @@ fn audit_grid_rust(
     Ok(grid_audit_list(&a))
 }
 
+/// The verdict on a compound distribution on a grid (`aggregate`'s `valid`).
+#[extendr]
+fn validate_grid_rust(
+    frequency: Robj,
+    severity: Robj,
+    step: f64,
+    points: f64,
+    eps: f64,
+) -> Result<List> {
+    let n = AnyCount::from_robj(&frequency)?;
+    let sev = severity_from_robj(&severity)?;
+    let points = whole(points, "points")? as usize;
+    let v = prospicio_aggregate::validate_grid(n.as_counting(), &sev, step, points, eps)
+        .map_err(to_r)?;
+    let t = &v.terms;
+    let terms: Vec<f64> = [
+        t.severity_mean,
+        t.severity_cv,
+        t.severity_skew,
+        t.aggregate_mean,
+        t.aggregate_cv,
+        t.aggregate_skew,
+    ]
+    .iter()
+    .map(|x| x.unwrap_or(f64::NAN))
+    .collect();
+    let flags: Vec<&str> = v.flags.iter().map(|f| f.name()).collect();
+    Ok(list!(
+        passes = v.passes(),
+        flags = flags,
+        description = v.description(),
+        terms = terms,
+        convolution_residual = v.convolution_residual,
+        tail_mass = v.tail_mass
+    ))
+}
+
 /// `c(step, residual)` of the atoms' dyadic lattice, or NULL.
 #[extendr]
 fn dyadic_lattice_step_rust(atoms: &[f64], depth: f64) -> Result<Robj> {
@@ -1693,6 +1730,8 @@ extendr_module! {
     fn recommend_grid_rust;
     fn recommend_portfolio_grid_rust;
     fn audit_grid_rust;
+    fn validate_grid_rust;
+
     fn dyadic_lattice_step_rust;
     fn lattice_candidates_rust;
     fn lattice_bucket_rust;

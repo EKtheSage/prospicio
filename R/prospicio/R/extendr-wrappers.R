@@ -82,6 +82,8 @@ recommend_grid_rust <- function(frequency, severity, log2, p, p_star) .Call(wrap
 
 recommend_portfolio_grid_rust <- function(frequencies, severities, log2, p, p_star) .Call(wrap__recommend_portfolio_grid_rust, frequencies, severities, log2, p, p_star)
 
+validate_grid_rust <- function(frequency, severity, step, points, eps) .Call(wrap__validate_grid_rust, frequency, severity, step, points, eps)
+
 dyadic_lattice_step_rust <- function(atoms, depth) .Call(wrap__dyadic_lattice_step_rust, atoms, depth)
 
 lattice_candidates_rust <- function(h) .Call(wrap__lattice_candidates_rust, h)
