@@ -7,4 +7,4 @@
   top atom, and the lower envelope of `Bounds`. The tolerances on layer
   skewness are now 1e-8. The P&L ledger's annual aggregate deductible and
   limit on an occurrence cover are checked against `aggregate` 2.1.0 to
-  1e-12 (#768).
+  1e-12 (#768, #811).
