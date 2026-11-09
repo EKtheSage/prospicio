@@ -82,6 +82,14 @@ recommend_grid_rust <- function(frequency, severity, log2, p, p_star) .Call(wrap
 
 recommend_portfolio_grid_rust <- function(frequencies, severities, log2, p, p_star) .Call(wrap__recommend_portfolio_grid_rust, frequencies, severities, log2, p, p_star)
 
+validate_grid_rust <- function(frequency, severity, step, points, eps) .Call(wrap__validate_grid_rust, frequency, severity, step, points, eps)
+
+dyadic_lattice_step_rust <- function(atoms, depth) .Call(wrap__dyadic_lattice_step_rust, atoms, depth)
+
+lattice_candidates_rust <- function(h) .Call(wrap__lattice_candidates_rust, h)
+
+lattice_bucket_rust <- function(atoms, extent, log2) .Call(wrap__lattice_bucket_rust, atoms, extent, log2)
+
 audit_grid_rust <- function(frequency, severity, step, log2, settings) .Call(wrap__audit_grid_rust, frequency, severity, step, log2, settings)
 
 audit_portfolio_grid_rust <- function(frequencies, severities, step, log2, settings) .Call(wrap__audit_portfolio_grid_rust, frequencies, severities, step, log2, settings)
@@ -110,9 +118,9 @@ clash_aggregate_rust <- function(counts, frequency, a, b, points_a, points_b) .C
 
 layer_loss_picks_rust <- function(severity, attachments, picks, claims) .Call(wrap__layer_loss_picks_rust, severity, attachments, picks, claims)
 
-occurrence_exceedance_rust <- function(frequency, severity, x) .Call(wrap__occurrence_exceedance_rust, frequency, severity, x)
+occurrence_exceedance_rust <- function(frequency, severity, x, tower, view) .Call(wrap__occurrence_exceedance_rust, frequency, severity, x, tower, view)
 
-occurrence_pml_rust <- function(frequency, severity, p) .Call(wrap__occurrence_pml_rust, frequency, severity, p)
+occurrence_pml_rust <- function(frequency, severity, p, tower, view) .Call(wrap__occurrence_pml_rust, frequency, severity, p, tower, view)
 
 ylt_file_hash_rust <- function(path) .Call(wrap__ylt_file_hash_rust, path)
 
@@ -237,6 +245,10 @@ pricing_burning_cost <- function(ids, accident, amount, threshold, rate, to, fac
 pricing_as_if <- function(ids, accident, amount, threshold, rate, to, factors, valuation, dev_ages, dev_factors, dev_per_loss, fx, historical, years, proposed) .Call(wrap__pricing_as_if, ids, accident, amount, threshold, rate, to, factors, valuation, dev_ages, dev_factors, dev_per_loss, fx, historical, years, proposed)
 
 aggregate_elt_values <- function(rate, mean, sd_independent, sd_correlated, exposure, x, p) .Call(wrap__aggregate_elt_values, rate, mean, sd_independent, sd_correlated, exposure, x, p)
+
+aggregate_elt_units <- function(event, unit, rate, mean, sd_independent, sd_correlated, exposure) .Call(wrap__aggregate_elt_units, event, unit, rate, mean, sd_independent, sd_correlated, exposure)
+
+aggregate_elt_severity_moments <- function(rate, mean, sd_independent, sd_correlated, exposure) .Call(wrap__aggregate_elt_severity_moments, rate, mean, sd_independent, sd_correlated, exposure)
 
 aggregate_elt_simulate <- function(rate, mean, sd_independent, sd_correlated, exposure, n_years, seed) .Call(wrap__aggregate_elt_simulate, rate, mean, sd_independent, sd_correlated, exposure, n_years, seed)
 
@@ -670,6 +682,12 @@ XolLayer$scope <- function() .Call(wrap__XolLayer__scope, self)
 XolLayer$with_scope <- function(label, values) .Call(wrap__XolLayer__with_scope, self, label, values)
 
 XolLayer$with_franchise <- function() .Call(wrap__XolLayer__with_franchise, self)
+
+XolLayer$with_disappearing <- function(end) .Call(wrap__XolLayer__with_disappearing, self, end)
+
+XolLayer$disappearing <- function() .Call(wrap__XolLayer__disappearing, self)
+
+XolLayer$occurrence_moments <- function(severity) .Call(wrap__XolLayer__occurrence_moments, self, severity)
 
 XolLayer$with_nth_event <- function(n, threshold) .Call(wrap__XolLayer__with_nth_event, self, n, threshold)
 
@@ -2702,7 +2720,7 @@ Triangle$bayes_bf_normalised_one_year <- function(column, exposure, priors, proc
 
 Triangle$hierarchical_bf <- function(column, exposure, priors, level_cv, process, run, pattern_ages, pattern_mean, pattern_sd) .Call(wrap__Triangle__hierarchical_bf, self, column, exposure, priors, level_cv, process, run, pattern_ages, pattern_mean, pattern_sd)
 
-Triangle$hierarchical_bf_one_year <- function(column, exposure, priors, level_cv, process, run, k_threshold, refit, max_refits, one_year_sims, pattern_ages, pattern_mean, pattern_sd) .Call(wrap__Triangle__hierarchical_bf_one_year, self, column, exposure, priors, level_cv, process, run, k_threshold, refit, max_refits, one_year_sims, pattern_ages, pattern_mean, pattern_sd)
+Triangle$hierarchical_bf_one_year <- function(column, exposure, priors, level_cv, process, run, k_threshold, refit, max_refits, one_year_sims, pattern_ages, pattern_mean, pattern_sd, light_refit) .Call(wrap__Triangle__hierarchical_bf_one_year, self, column, exposure, priors, level_cv, process, run, k_threshold, refit, max_refits, one_year_sims, pattern_ages, pattern_mean, pattern_sd, light_refit)
 
 Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, excl, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, excl, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf)
 
@@ -3856,6 +3874,8 @@ HierarchicalBfOneYearFit$refit_warnings <- function() .Call(wrap__HierarchicalBf
 HierarchicalBfOneYearFit$k_threshold <- function() .Call(wrap__HierarchicalBfOneYearFit__k_threshold, self)
 
 HierarchicalBfOneYearFit$flagged_share <- function() .Call(wrap__HierarchicalBfOneYearFit__flagged_share, self)
+
+HierarchicalBfOneYearFit$warnings <- function() .Call(wrap__HierarchicalBfOneYearFit__warnings, self)
 
 #' @export
 `$.HierarchicalBfOneYearFit` <- function (self, name) { func <- HierarchicalBfOneYearFit[[name]]; environment(func) <- environment(); func }

@@ -226,8 +226,15 @@ pub fn loo(log_lik: &[f64], n: usize, r_eff: Option<&[f64]>) -> Result<Loo> {
 ///   shrunk towards 0.5 as by a prior worth 10 observations (Vehtari et al.,
 ///   2024), and truncated at the largest raw ratio. The other weights are
 ///   the raw (shifted) log ratios.
-/// - When the tail cannot be fitted (`M < 5`, `M ≥ S`, or a tail of ties),
-///   the weights are the raw (shifted) log ratios and `k̂` is infinite.
+/// - When the tail cannot be fitted, the weights are the raw (shifted) log
+///   ratios and `k̂` is infinite, never NaN. That happens when `M < 5` or
+///   `M ≥ S`, and when at least a quarter of the tail's exceedances
+///   `exp(log wᵢ) - exp(cutoff)` are 0, which leaves Zhang and Stephens'
+///   grid no scale (its first quartile is 0). Those zeros are ties at the
+///   cutoff, or ratios so far below the largest (under about `-745` after
+///   the shift) that `exp` underflows to 0: weights that span hundreds of
+///   orders of magnitude, a tail heavier than any finite `k̂` can describe.
+///   A non-finite fit is treated the same way.
 ///
 /// The log ratios must be finite or `-∞` (a weight of zero), with at least
 /// one finite, and `r_eff` finite and positive; anything else, or no
@@ -278,10 +285,23 @@ fn psis_unchecked(log_r: &[f64], r_eff: f64) -> (Vec<f64>, f64) {
     let tail = &order[s - m..];
     let cutoff = lw[order[s - m - 1]];
     let exceed: Vec<f64> = tail.iter().map(|&j| lw[j].exp() - cutoff.exp()).collect();
-    if exceed.iter().all(|&x| x <= 0.0) {
+    // `gpd_fit` scales its grid by the first quartile of the exceedances,
+    // at the 1-based index ⌊M/4 + 1/2⌋; a zero there (ties at the cutoff,
+    // or `exp` underflowing far below the largest ratio) divides by zero
+    // and gives a NaN k̂. The tail cannot be fitted: infinite k̂, raw
+    // weights. This includes a tail whose exceedances are all 0.
+    let quartile = ((m as f64 / 4.0 + 0.5).floor() as usize).max(1);
+    if exceed.iter().filter(|&&x| x <= 0.0).count() >= quartile {
         return (lw, f64::INFINITY);
     }
     let (k, sigma) = gpd_fit(&exceed);
+    // A backstop for a fit that is not finite without a zero quartile: the
+    // grid's weighted mean θ rounding to exactly 0 or overflowing to -inf
+    // (inputs built to hit it; none seen in a model) leaves σ NaN, which
+    // would set every tail weight to the largest (`NaN.min(0.0)` is 0).
+    if !k.is_finite() || !sigma.is_finite() {
+        return (lw, f64::INFINITY);
+    }
     // Replace the tail, in ascending order, by the GPD quantiles at the
     // midpoints (z - 1/2)/M, truncated at the largest raw ratio (0 here).
     for (z, &j) in tail.iter().enumerate() {
@@ -425,6 +445,53 @@ mod tests {
         assert!(psis(&[0.0, f64::INFINITY], 1.0).is_err());
         assert!(psis(&[0.0, 1.0], 0.0).is_err());
         assert!(psis(&[0.0, 1.0], f64::NAN).is_err());
+    }
+
+    /// A NaN k̂ that `psis` once returned (#782): the one-year view of
+    /// `Compartmental` on a quarterly triangle whose newest development
+    /// year opens in the coming year gave log ratios spanning thousands
+    /// of units, so the cutoff of the 40-ratio tail of 200 sat near -2,300
+    /// and `exp` underflowed to 0 for it and for 16 to 37 of the tail. The
+    /// tail's first quartile of exceedances was then 0 and `gpd_fit`'s
+    /// grid divided by it.
+    #[test]
+    fn psis_gives_an_infinite_k_when_the_tail_underflows() {
+        let s = 200;
+        // A tail of 40: three ratios near the largest, 37 that underflow.
+        let mut log_r: Vec<f64> = vec![0.0, -10.0, -60.0];
+        log_r.extend((0..37).map(|i| -800.0 - 40.0 * f64::from(i)));
+        log_r.extend((0..s - 40).map(|i| -2_400.0 - 30.0 * i as f64));
+        let (exceed_zero, quartile) = (37, 10);
+        assert!(exceed_zero >= quartile);
+        let (lw, k) = psis(&log_r, 1.0).unwrap();
+        assert!(k.is_infinite() && k > 0.0, "{k}");
+        // The raw weights, shifted so the largest is 0.
+        assert_eq!(lw, log_r);
+        // The same with the whole vector moved: only differences matter.
+        let moved: Vec<f64> = log_r.iter().map(|v| v + 1_234.5).collect();
+        let (lw, k) = psis(&moved, 1.0).unwrap();
+        assert!(k.is_infinite());
+        assert!(lw.iter().zip(&log_r).all(|(a, b)| (a - b).abs() < 1e-9));
+        // One fewer underflowing ratio than the quartile index still fits:
+        // 9 of 40 exceedances are 0, so the first quartile is positive.
+        let mut fits: Vec<f64> = (0..31).map(|i| -0.1 * f64::from(i)).collect();
+        fits.extend((0..9).map(|i| -800.0 - f64::from(i)));
+        fits.extend((0..s - 40).map(|i| -2_400.0 - i as f64));
+        let (lw, k) = psis(&fits, 1.0).unwrap();
+        assert!(k.is_finite(), "{k}");
+        assert!(lw.iter().all(|w| !w.is_nan()));
+    }
+
+    /// Ties at the cutoff are the other way to a zero first quartile.
+    #[test]
+    fn psis_gives_an_infinite_k_for_a_tail_tied_at_its_cutoff() {
+        // 1,000 ratios, a tail of 95: 50 distinct above 0 and 950 tied at
+        // 0, so 45 of the tail's exceedances are 0 (quartile index 24).
+        let mut log_r = vec![0.0; 950];
+        log_r.extend((1..=50).map(|i| 0.01 * f64::from(i)));
+        let (lw, k) = psis(&log_r, 1.0).unwrap();
+        assert!(k.is_infinite() && k > 0.0, "{k}");
+        assert!(lw.iter().zip(&log_r).all(|(w, r)| *w == r - 0.5));
     }
 
     #[test]

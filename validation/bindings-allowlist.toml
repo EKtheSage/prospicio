@@ -17,6 +17,7 @@
 # added twice makes the file invalid TOML, which fails it too.
 
 [python.prospicio_aggregate]
+"ValidationFlag" = "bound as its name: Validation.flags is a list of strings"
 "Basis" = "unbound on 2026-10-28 (seed); review"
 "CarryForward" = "unbound on 2026-10-28 (seed); review"
 "Corridor" = "unbound on 2026-10-28 (seed); review"
@@ -241,6 +242,8 @@
 "development::cumulative_factors" = "unbound on 2026-10-28 (seed); review"
 
 [r.prospicio_aggregate]
+"Validation" = "a result type: validate_grid() returns its fields as a list"
+"ValidationFlag" = "bound as its name: validate_grid()$flags is a character vector"
 "AggregateLayerStatistics" = "unbound on 2026-10-28 (seed); review"
 "AnnualGrids" = "unbound on 2026-10-28 (seed); review"
 "Basis" = "unbound on 2026-10-28 (seed); review"
@@ -254,6 +257,7 @@
 "LayerStatistics" = "unbound on 2026-10-28 (seed); review"
 "NoClaimsBonus" = "unbound on 2026-10-28 (seed); review"
 "PerRiskInuring" = "a result type: per_risk_inuring() returns its fields as a list"
+"LatticeBucket" = "a result type: lattice_bucket() returns its fields as a list"
 "Picks" = "unbound on 2026-10-28 (seed); review"
 "ProfitCommission" = "unbound on 2026-10-28 (seed); review"
 "RenewalCount" = "unbound on 2026-10-28 (seed); review"

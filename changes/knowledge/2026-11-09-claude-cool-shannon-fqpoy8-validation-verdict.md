@@ -1,0 +1,1 @@
+* **Creation**: [The validation verdict against aggregate 2.1.0](/findings/validation-verdict.md), from #778 (branch claude/cool-shannon-fqpoy8-validation-verdict): aggregate's verdict is the grid audit's six moment terms at their bounds, a convolution residual and a deficit test; six books with verdicts away from the bounds agree flag by flag.

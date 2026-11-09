@@ -589,7 +589,8 @@ what it is aiming for by v1.0.
   Built: a hierarchical Bornhuetter-Ferguson over several programs with
   an industry hyperprior on the loss ratio (#599, `reserving-bayes.md`
   decision 30, PR 16) and its one-year view over all programs at once
-  (PR 17; Rust, Python and R).
+  (PR 17; Rust, Python and R), refitted by default with a warm-started
+  light refit (PR 18, #762).
   Also next: excess-layer loss development (#192,
   `reserving-excess.md`, Accepted 2026-10-21): layer factors derived from a ground-up
   incurred triangle and a severity (PR 1, in Rust: `ExcessPattern::from_ground_up`,

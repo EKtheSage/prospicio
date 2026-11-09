@@ -772,7 +772,7 @@ fn counts_match_aggregate() {
     });
 }
 
-/// The beta and Sichel mixed Poisson counts against `aggregate` 1.2.0's
+/// The beta and Sichel mixed Poisson counts against `aggregate` 2.1.0's
 /// `mixed beta`, `sichel` and `sichel.ig`, and SciPy for `sichel.gamma`,
 /// whose aggregate solve misses its targets, and quadrature for the beta,
 /// whose aggregate pgf is off by up to 1e-8

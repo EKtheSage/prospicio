@@ -1,0 +1,25 @@
+distribution,params,quantity,arg,arg2,expected,abs_tol,rel_tol,source
+deductible,form=disappearing;d1=50.0;d2=100.0;y=300.0;severity=lognormal,ex1,,,112.60796090891441,0.0,1e-9,aggregate 2.1.0
+deductible,form=disappearing;d1=50.0;d2=100.0;y=300.0;severity=lognormal,ex2,,,19738.084272995242,0.0,1e-9,aggregate 2.1.0
+deductible,form=disappearing;d1=50.0;d2=100.0;y=300.0;severity=lognormal,ex3,,,4255116.441430608,0.0,1e-9,aggregate 2.1.0
+deductible,form=disappearing;d1=50.0;d2=100.0;y=30.0;severity=lognormal,ex1,,,27.170220621243594,0.0,1e-9,aggregate 2.1.0
+deductible,form=disappearing;d1=50.0;d2=100.0;y=30.0;severity=lognormal,ex2,,,787.6303348742046,0.0,1e-9,aggregate 2.1.0
+deductible,form=disappearing;d1=50.0;d2=100.0;y=30.0;severity=lognormal,ex3,,,23224.258184716153,0.0,1e-9,aggregate 2.1.0
+deductible,form=disappearing;d1=50.0;d2=100.0;y=inf;severity=lognormal,ex1,,,121.57369252009255,0.0,1e-9,aggregate 2.1.0
+deductible,form=disappearing;d1=50.0;d2=100.0;y=inf;severity=lognormal,ex2,,,28385.657787863674,0.0,1e-9,aggregate 2.1.0
+deductible,form=disappearing;d1=50.0;d2=100.0;y=inf;severity=lognormal,ex3,,,11966596.643349053,0.0,1e-9,aggregate 2.1.0
+deductible,form=disappearing;d1=20.0;d2=250.0;y=150.0;severity=lognormal,ex1,,,72.10787894217839,0.0,1e-9,aggregate 2.1.0
+deductible,form=disappearing;d1=20.0;d2=250.0;y=150.0;severity=lognormal,ex2,,,7760.214408294433,0.0,1e-9,aggregate 2.1.0
+deductible,form=disappearing;d1=20.0;d2=250.0;y=150.0;severity=lognormal,ex3,,,975378.4281267308,0.0,1e-9,aggregate 2.1.0
+deductible,form=disappearing;d1=50.0;d2=100.0;y=300.0;severity=gamma,ex1,,,84.1380811131723,0.0,1e-9,aggregate 2.1.0
+deductible,form=disappearing;d1=50.0;d2=100.0;y=300.0;severity=gamma,ex2,,,10338.961844162826,0.0,1e-9,aggregate 2.1.0
+deductible,form=disappearing;d1=50.0;d2=100.0;y=300.0;severity=gamma,ex3,,,1540457.7032822384,0.0,1e-9,aggregate 2.1.0
+deductible,form=franchise;d1=50.0;d2=None;y=300.0;severity=lognormal,ex1,,,126.2234910251624,0.0,1e-9,aggregate 2.1.0
+deductible,form=franchise;d1=50.0;d2=None;y=300.0;severity=lognormal,ex2,,,21026.02777236792,0.0,1e-9,aggregate 2.1.0
+deductible,form=franchise;d1=50.0;d2=None;y=300.0;severity=lognormal,ex3,,,4362555.114196322,0.0,1e-9,aggregate 2.1.0
+deductible,form=franchise;d1=50.0;d2=None;y=30.0;severity=lognormal,ex1,,,30.0,0.0,1e-9,aggregate 2.1.0
+deductible,form=franchise;d1=50.0;d2=None;y=30.0;severity=lognormal,ex2,,,900.0,0.0,1e-9,aggregate 2.1.0
+deductible,form=franchise;d1=50.0;d2=None;y=30.0;severity=lognormal,ex3,,,27000.000000000004,0.0,1e-9,aggregate 2.1.0
+deductible,form=ordinary;d1=50.0;d2=None;y=300.0;severity=lognormal,ex1,,,78.77570495451316,0.0,1e-9,aggregate 2.1.0
+deductible,form=ordinary;d1=50.0;d2=None;y=300.0;severity=lognormal,ex2,,,12298.662321046986,0.0,1e-9,aggregate 2.1.0
+deductible,form=ordinary;d1=50.0;d2=None;y=300.0;severity=lognormal,ex3,,,2603760.989884011,0.0,1e-9,aggregate 2.1.0
