@@ -6,7 +6,7 @@ user guide of the `aggregate` package (docs 2_x_re_pricing.rst, "Reinsurance
 Pricing"), plus designed extras (the reinstatement schedules, the swing terms,
 the half placements and the risk pricing), marked by comments in this script.
 
-aggregate version: 1.0.1 (the version used for the repo's other references).
+aggregate version: 2.1.0 (the version used for the repo's other references).
 Doc source (the guide was removed from master after 0.22, so read the tag):
   https://github.com/mynl/aggregate/blob/v0.22.0/docs/2_user_guides/2_x_re_pricing.rst
   https://github.com/mynl/aggregate/blob/v0.22.0/docs/2_user_guides/DecL/080_reinsurance.rst
@@ -15,7 +15,7 @@ Doc source (the guide was removed from master after 0.22, so read the tag):
 
 Run (from any directory; the output path does not depend on it):
   uv venv .venv --python 3.13
-  uv pip install --python .venv aggregate==1.0.1
+  uv pip install --python .venv aggregate==2.1.0
   set PYTHONIOENCODING=utf-8
   .venv\\Scripts\\python validation/scripts/aggregate_re_pricing.py
 
@@ -445,7 +445,7 @@ def ex_risk_pricing():
             col = r.distortion_df.loc[name]
             add(ex, f"param_{name}", col["param"], f"{col['param_name']}; calibrated so the premium equals P")
             add(ex, f"error_{name}", col["error"], "aggregate's Newton premium error")
-            add(ex, f"gini_p_{name}", col["gini_p"])
+            add(ex, f"gini_p_{name}", col["gini"], "gini index (gini_p before aggregate 2.0)")
         # premium by each distortion at assets a (independent of calibrating)
         dens = reins_df(a)[{"gross": "p_agg_gross", "ceded": "p_agg_ceded_occ"}[view]]
         aa = float(c["a"])

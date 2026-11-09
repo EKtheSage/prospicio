@@ -1,4 +1,4 @@
-"""Reference values for renewal claim counts, from `aggregate` 1.0.1.
+"""Reference values for renewal claim counts, from `aggregate` 2.1.0.
 
 The count N(T) of a Sparre-Andersen (renewal) process by horizon T, for the
 renewal cases in `aggregate`'s own test suite (`agg/_test_suite.agg`, the
@@ -6,12 +6,13 @@ renewal cases in `aggregate`'s own test suite (`agg/_test_suite.agg`, the
 the wait grid `aggregate` chose is written next to the count, so a test can
 check both the sizing and the count.
 
-    uv run --python 3.12 --with aggregate==1.0.1 \
+    uv run --python 3.13 --with aggregate==2.1.0 \
         python validation/scripts/aggregate_renewal.py
 
 writes validation/reference/renewal_count_aggregate.csv.
 """
 
+import aggregate
 from pathlib import Path
 
 import scipy.stats as ss
@@ -27,7 +28,7 @@ CASES = {
 }
 
 ref = Path(__file__).resolve().parents[1] / 'reference'
-SOURCE = 'aggregate 1.0.1'
+SOURCE = f'aggregate {aggregate.__version__}'
 rows = []
 for case, (years, spec) in CASES.items():
     a = build(f'agg Renewal.{case} {years} years {spec}', update=False)

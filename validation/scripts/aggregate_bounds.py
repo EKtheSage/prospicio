@@ -1,9 +1,9 @@
 """Regenerate validation/reference/bounds_aggregate.csv.
 
-    python3.12 -m venv agg && agg/bin/pip install aggregate==1.0.1
+    python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0
     agg/bin/python validation/scripts/aggregate_bounds.py
 
-Pricing bounds against Mildenhall's `aggregate` 1.0.1
+Pricing bounds against Mildenhall's `aggregate` 2.1.0
 (`aggregate.bounds.PricingBounds` and `Bounds`). The reference risk X is
 Monograph 15's InsCo total (22, 28, 36, 55, 65 and 100 with probability 0.1
 each, 40 with 0.4).
@@ -16,10 +16,11 @@ each, 40 with 0.4).
   `.upper`, `arg` P.
 - `envelope`: the envelope of the distortions pricing X at 53.565 (the
   CCoC price at 15%), as the price range of a Bernoulli risk with
-  `P(1) = s`, from `PricingBounds` (`arg` s). The levels are at or above
-  X's top atom (0.1): below it `aggregate` stops at the last breakpoint
-  under 1 and misses `TVaR_1`, so its upper bound is too low there
-  (prospicio includes the limit).
+  `P(1) = s`, from `PricingBounds` (`arg` s), at levels on both sides of
+  X's top atom (0.1). Below it `aggregate` before 1.52 stopped at the last
+  breakpoint under 1 and missed `TVaR_1`, so its upper bound was too low
+  there (0.043 where 0.148 is attained at s = 0.02); 2.1.0 includes the
+  limit, as prospicio does.
 - `bounds_min` and `bounds_max`: `Bounds(X, 53.565).min_envelope.g(s)` and
   `max_envelope(s)`, `aggregate`'s grid search over 256 levels. Its cloud is
   nearly a subset of the distortions pricing X at P, so the exact envelope
@@ -34,14 +35,14 @@ The hull vertices are exact, so `price` and `envelope` match at `1e-12`
 (relative for prices, absolute for the envelope).
 
 Where X saturates at the cap before Y does (X capped at 65 has a top atom of
-0.2, X3 one of 0.1 at 64), `PricingBounds` keeps the first vertex at the
-saturated price and drops the limit `p → 1`, so its upper bound is too low:
-at P = 65 only TVaRs at levels of 0.8 or more price X at 65, and `TVaR_1`
-prices X3 at 64 where `PricingBounds` says 52. Every price row is also
+0.2, X3 one of 0.1 at 64), `PricingBounds` before 1.52 kept the first vertex
+at the saturated price and dropped the limit `p → 1`, so its upper bound was
+too low: at P = 65 only TVaRs at levels of 0.8 or more price X at 65, and
+`TVaR_1` prices X3 at 64 where 1.0.1 said 52. Every price row is also
 computed by brute force over the BiTVaRs on the curve's vertices with
 `p = 1` included (the extreme points of the set, by `aggregate`'s own
 TVaR); where the two differ the row holds the brute force, and its
-`source` says so.
+`source` says so. Under 2.1.0 no row differs.
 """
 
 import csv
@@ -115,7 +116,8 @@ def main():
                                  repr(float(exact[side])), "0.0", "1e-12",
                                  f"BiTVaRs on the curve's vertices with p = 1, by {SOURCE}'s "
                                  f"TVaR (PricingBounds gives {float(row[side])!r})"])
-    bern = {f"{s}": pd.Series([1 - s, s], index=[0.0, 1.0]) for s in LEVELS}
+    # Levels below X's top atom (0.1) too, where 1.0.1 missed TVaR_1.
+    bern = {f"{s}": pd.Series([1 - s, s], index=[0.0, 1.0]) for s in [0.02, 0.05, 0.08] + LEVELS}
     env = PricingBounds(X, bern).bounds(PREMIUM)
     for (_, s), row in env.iterrows():
         for side in ["lower", "upper"]:

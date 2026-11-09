@@ -1,5 +1,5 @@
 """Reference values for reinstatement premiums in the P&L ledger, from
-`aggregate` 1.0.1 (docs/design/pnl.md, PR 6b).
+`aggregate` 2.1.0 (docs/design/pnl.md, PR 6b).
 
 An occurrence cover 2 xs 2 with a deposit of 2 on example 4's book, over
 the joint of the gross loss and the cover's unlimited annual cession `R`:
@@ -10,13 +10,18 @@ the joint of the gross loss and the cover's unlimited annual cession `R`:
   reinstatement premium;
 - `r2`, `r2c`: one free and one at 50%, a 25% ceding commission, and an
   aggregate cover 3 xs 5 (deposit 0.5) on the net of `A(R)`, walked and
-  consolidated (aggregate refuses to peel a reinstated program).
+  consolidated (aggregate refuses to peel a reinstated program);
+- `a1`, `a1c`, `l3`, `l3c`, `al`, `alc` (added with aggregate 2.1.0, #768):
+  the same cover with an annual aggregate deductible of 1, an aggregate
+  limit of 3, and both, walked and consolidated: the recovery is
+  `min(max(R - aad, 0), agglimit)` on the unlimited annual cession `R`,
+  as aggregate books `AnnualLayerTerms` since 1.9.0.
 
 Every case runs on the same joint as example 4
 (validation/reference/pnl_occurrence_sources.csv, `ex4`); the script
 checks that.
 
-    uv run --python 3.12 --with aggregate==1.0.1 \
+    uv run --python 3.13 --with aggregate==2.1.0 \
         python validation/scripts/aggregate_pnl_reinstatements.py
 
 writes validation/reference/pnl_reinstatements_aggregate.csv.
@@ -25,10 +30,15 @@ writes validation/reference/pnl_reinstatements_aggregate.csv.
 import csv
 from pathlib import Path
 
+import warnings
+
+import aggregate
 import numpy as np
 from aggregate import build
 
-SOURCE = 'aggregate 1.0.1'
+# The joint of example 4 is coarse on purpose (exact atoms); aggregate warns.
+warnings.filterwarnings('ignore', message='coarse occurrence joint')
+SOURCE = f'aggregate {aggregate.__version__}'
 ref = Path(__file__).resolve().parents[1] / 'reference'
 
 B = 'agg ExRe 2 claims dsev [1 2 4] [.5 .3 .2]'
@@ -45,6 +55,11 @@ TWO = (f'{B} {OCC} cede 25% reinstatements 1 free and 1 at 50% poisson '
 # A loss-basis expense on the consolidated face: at each atom's gross loss.
 CASES['r1lc'] = (f'pnl R 20 premium less {B} {OCC} reinstatements 1 at 100% poisson '
                  'less 10% premium expense and 5% loss expense')
+# Annual terms on the occurrence layer (aggregate's AnnualLayerTerms).
+for tag, terms in [('a1', 'aad 1'), ('l3', 'agglimit 3'), ('al', 'aad 1 agglimit 3')]:
+    occ = f'occurrence net of 2 xs 2 {terms} deposit 2'
+    CASES[tag] = f'xpnl R 20 premium less {B} {occ} poisson {EXP}'
+    CASES[tag + 'c'] = f'pnl R 20 premium less {B} {occ} poisson {EXP}'
 CASES['r2'] = f'xpnl R 20 premium less {TWO} {EXP}'
 CASES['r2c'] = f'pnl R 20 premium less {TWO} {EXP}'
 

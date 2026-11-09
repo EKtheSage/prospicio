@@ -1,10 +1,10 @@
 """Regenerate validation/reference/ruin_aggregate.csv.
 
-    python3.12 -m venv agg && agg/bin/pip install aggregate==1.0.1
+    python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0
     agg/bin/python validation/scripts/aggregate_ruin.py
 
 Eventual ruin by the Pollaczeck–Khinchine formula against Mildenhall's
-`aggregate` 1.0.1 (`Aggregate.pollaczeck_khinchine` and the Lundberg
+`aggregate` 2.1.0 (`Aggregate.pollaczeck_khinchine` and the Lundberg
 exponent `eventual_ruin` reports), on two Poisson books (the rate cancels):
 
 - `G`: a gamma severity, mean 50 and cv 1.5, on a step of 1 with 2^16

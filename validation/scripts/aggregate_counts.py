@@ -1,10 +1,10 @@
 """Regenerate validation/reference/counts_aggregate.csv.
 
-    python3.12 -m venv agg && agg/bin/pip install aggregate==1.0.1
+    python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0
     agg/bin/python validation/scripts/aggregate_counts.py
 
 Claim counts beyond the (a, b, 0) class, against Mildenhall's `aggregate`
-1.0.1. Each count is built as an aggregate with a unit severity
+2.1.0. Each count is built as an aggregate with a unit severity
 (`dsev [1]`), so its distribution is the count's; the script records
 P(N = k) for k = 0..39. `params` gives the count in prospicio's terms:
 

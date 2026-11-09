@@ -1,5 +1,5 @@
 """Reference values for the stitched peel of several occurrence layers,
-from `aggregate` 1.0.1 (docs/design/pnl.md, follow-up 7c).
+from `aggregate` 2.1.0 (docs/design/pnl.md, follow-up 7c).
 
 A book of 2 claims (Poisson) of 1, 2, 4 or 6, premium 20, 10% premium
 expense; occurrence covers 1 xs 1 (deposit 1) and 2 xs 2 (deposit 1, a
@@ -16,18 +16,19 @@ conditions each row through the claims, or through the retained aggregate
 once an aggregate cover exists (the gross loss row reads `k01 = -16` on
 `td` and `-11.55` on `bu`), and prospicio does not build it.
 
-    uv run --python 3.12 --with aggregate==1.0.1 \
+    uv run --python 3.13 --with aggregate==2.1.0 \
         python validation/scripts/aggregate_pnl_stitched.py
 
 writes validation/reference/pnl_stitched_aggregate.csv.
 """
 
+import aggregate
 from pathlib import Path
 
 import numpy as np
 from aggregate import build
 
-SOURCE = 'aggregate 1.0.1'
+SOURCE = f'aggregate {aggregate.__version__}'
 ref = Path(__file__).resolve().parents[1] / 'reference'
 
 B = 'agg ExSt 2 claims dsev [1 2 4 6] [.4 .3 .2 .1]'
