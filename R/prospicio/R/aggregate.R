@@ -281,11 +281,22 @@ simulate_events_weighted <- function(frequency, severity, n_sims, seed, count = 
 #' Poisson counts). `annual_maxima()` is each simulated year's largest loss,
 #' whose survival function is the simulated OEP curve.
 #'
+#' With an occurrence program `tower`, both are of the program's `view` of
+#' an occurrence: `"ceded"`, the tower's total ceded loss before annual
+#' terms, or `"net"`, as `aggregate` 2.1.0's `oep` on an `occurrence ceded
+#' to` or `net of` clause. The PML is the program's function of the gross
+#' PML; where the view is flat (a layer placed in full, for the net),
+#' `severity_survival` is the gross survival at the end of that stretch and
+#' the achieved probability falls below `p`.
+#'
 #' @param frequency A claim count, as for [simulate_events()].
 #' @param severity A severity, as for [simulate_events()].
 #' @param x Losses.
 #' @param p Annual probabilities in `(0, 1 - P(N = 0))`.
 #' @param events An `event_set`.
+#' @param tower Optional [reinsurance_tower()], an occurrence program on the
+#'   loss basis.
+#' @param view `"ceded"` (default), `"net"` or `"gross"`, with `tower`.
 #' @returns `occurrence_exceedance()`: probabilities. `occurrence_pml()`: a
 #'   data frame with `probability`, `loss`, `severity_survival`,
 #'   `occurrence_return_period` (`1 / (E[N] S(loss))`, which can be shorter
@@ -296,16 +307,22 @@ simulate_events_weighted <- function(frequency, severity, n_sims, seed, count = 
 #' sev <- lognormal_from_mean_cv(100, 2)
 #' occurrence_pml(poisson_count(2), sev, c(0.1, 0.01, 0.001))
 #' occurrence_exceedance(negative_binomial_count(1.5, 2), sev, c(500, 1000))
+#' tower <- reinsurance_tower(list(xol_layer("L", 400, 100)))
+#' occurrence_pml(poisson_count(2), sev, c(0.1, 0.01), tower = tower, view = "net")
 #' ev <- simulate_events(poisson_count(2), sev, 10000, seed = 1)
 #' mean(annual_maxima(ev))
-occurrence_pml <- function(frequency, severity, p) {
-  as.data.frame(rust_result(occurrence_pml_rust(frequency@ptr, severity@ptr, as.double(p))))
+occurrence_pml <- function(frequency, severity, p, tower = NULL, view = "ceded") {
+  as.data.frame(rust_result(occurrence_pml_rust(
+    frequency@ptr, severity@ptr, as.double(p), if (is.null(tower)) NULL else tower@ptr, view
+  )))
 }
 
 #' @rdname occurrence_pml
 #' @export
-occurrence_exceedance <- function(frequency, severity, x) {
-  rust_result(occurrence_exceedance_rust(frequency@ptr, severity@ptr, as.double(x)))
+occurrence_exceedance <- function(frequency, severity, x, tower = NULL, view = "ceded") {
+  rust_result(occurrence_exceedance_rust(
+    frequency@ptr, severity@ptr, as.double(x), if (is.null(tower)) NULL else tower@ptr, view
+  ))
 }
 
 #' @rdname occurrence_pml

@@ -116,9 +116,9 @@ clash_aggregate_rust <- function(counts, frequency, a, b, points_a, points_b) .C
 
 layer_loss_picks_rust <- function(severity, attachments, picks, claims) .Call(wrap__layer_loss_picks_rust, severity, attachments, picks, claims)
 
-occurrence_exceedance_rust <- function(frequency, severity, x) .Call(wrap__occurrence_exceedance_rust, frequency, severity, x)
+occurrence_exceedance_rust <- function(frequency, severity, x, tower, view) .Call(wrap__occurrence_exceedance_rust, frequency, severity, x, tower, view)
 
-occurrence_pml_rust <- function(frequency, severity, p) .Call(wrap__occurrence_pml_rust, frequency, severity, p)
+occurrence_pml_rust <- function(frequency, severity, p, tower, view) .Call(wrap__occurrence_pml_rust, frequency, severity, p, tower, view)
 
 ylt_file_hash_rust <- function(path) .Call(wrap__ylt_file_hash_rust, path)
 
@@ -676,6 +676,12 @@ XolLayer$scope <- function() .Call(wrap__XolLayer__scope, self)
 XolLayer$with_scope <- function(label, values) .Call(wrap__XolLayer__with_scope, self, label, values)
 
 XolLayer$with_franchise <- function() .Call(wrap__XolLayer__with_franchise, self)
+
+XolLayer$with_disappearing <- function(end) .Call(wrap__XolLayer__with_disappearing, self, end)
+
+XolLayer$disappearing <- function() .Call(wrap__XolLayer__disappearing, self)
+
+XolLayer$occurrence_moments <- function(severity) .Call(wrap__XolLayer__occurrence_moments, self, severity)
 
 XolLayer$with_nth_event <- function(n, threshold) .Call(wrap__XolLayer__with_nth_event, self, n, threshold)
 

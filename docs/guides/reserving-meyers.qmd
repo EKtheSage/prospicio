@@ -14,28 +14,22 @@ execute:
 <!-- site: execute -->
 
 Glenn Meyers' *Stochastic Loss Reserving Using Bayesian MCMC Models* (CAS
-Monograph 8, 2nd edition, 2019) asks a plain question of a reserving model.
-Suppose an actuary used the model on many real triangles. Would the outcomes
-that came in later look like draws from the distributions it predicted? He
-answers the question for Mack's model and the ODP bootstrap, and both fail.
-Then he builds a sequence of Bayesian models, fitted by Markov chain Monte
-Carlo (MCMC). Each model must correct a failure of the model before it.
+Monograph 8, 2nd edition, 2019) asks one question of a reserving model. If an
+actuary used the model on many real triangles, would the outcomes that came in
+later look like draws from its predicted distributions? Mack's model and the
+ODP bootstrap fail this test. Meyers then builds a sequence of Bayesian
+models, fitted by Markov chain Monte Carlo (MCMC). Each model corrects a
+failure of the one before.
 
 This is the R twin of the Python guide
 [`reserving-meyers.md`](reserving-meyers.md), with the same sections, models,
 checks and recorded numbers. It uses the R package (`meyers()`, `bayes_loo()`,
-`meyers_one_year()`, `mack()`, `odp_bootstrap()`). The R package calls the same
-Rust code as the Python package.
-
-This guide explains that sequence and the validation method in new words. It
-recomputes the printed results of the monograph on its illustrative insurer
-with prospicio, and prints the book's value next to prospicio's. The text of
-the monograph is Meyers'. Read it for the argument and the 200-triangle
-results. Table numbers below are the monograph's. Money is in thousands of US
-dollars, as in his tables.
-
-For the choice between reserving methods in general, read
-[`reserving-methods.md`](reserving-methods.md).
+`meyers_one_year()`, `mack()`, `odp_bootstrap()`), which calls the same Rust
+code as the Python package. It recomputes the monograph's printed results on
+its illustrative insurer, with the book's value next to prospicio's. Read the
+monograph for the argument and the 200-triangle results. Table numbers are the
+monograph's. Money is in thousands of US dollars. For the choice between
+reserving methods in general, read [`reserving-methods.md`](reserving-methods.md).
 
 **How the numbers here are checked.** CI (`R/prospicio/tests/test-guides.R`)
 runs every R chunk below that a text block follows. Each such chunk must print
@@ -45,38 +39,35 @@ page, install the R package (`remotes::install_github`, see
 `quarto render docs/guides/reserving-meyers.qmd`.
 
 The Bayesian fits use prospicio's default chains: 4 chains of 1,000 warm-up and
-2,000 kept draws. Each fit takes less than a second in a release build, so CI
-runs all of them, in about 20 seconds for the whole guide. Three facts about
-the fits are important:
+2,000 kept draws. A fit takes less than a second in a release build, so CI runs
+all of them, in about 20 seconds for the guide. Three facts matter:
 
-* A Bayesian result is a Monte Carlo estimate, so a different seed gives a
-  slightly different number. Each comparison states how much a number changes
-  from seed to seed. Refits at seeds 0 to 19 measured this (a recorded study
-  that CI does not run).
-* The exact digits of a NUTS run also depend on the platform. The last bit of
-  `exp` and `ln` is different on Windows and Linux. Thus the paths of the
-  sampler diverge, and the draws are different (prospicio's own seed-pinned
-  test shows this). Thus each checked chunk prints the book's value, a
-  tolerance of a few Monte Carlo errors, and whether prospicio's value is in
-  the tolerance. prospicio's own values from a real run are in the table of
+* A Bayesian result is a Monte Carlo estimate. A different seed gives a
+  slightly different number. Refits at seeds 0 to 19 measured the change (a
+  recorded study that CI does not run; section 8 shows it).
+* The digits of a NUTS run depend on the platform. The last bit of `exp` and
+  `ln` differs on Windows and Linux, so the sampler paths diverge and the draws
+  differ (prospicio's own seed-pinned test shows this). Thus each checked table
+  shows the book's value, a tolerance of a few Monte Carlo errors, and whether
+  prospicio's value is inside it. prospicio's own values from a real run are in
   section 8, in a plain `r` block that the harness skips. **CI does not run
-  that block or the full one-year view, which is also a plain `r` block.**
+  that block or the full one-year view, also a plain `r` block.**
 * The seed-0 values in the prose and in section 8 are from the Python package
-  on Windows (an MSVC build). The R package on Windows uses the GNU toolchain.
-  Its `exp` and `ln` differ again in the last bit, so its seed-0 draws are also
-  different. For example, its CRC paid `logelr` mean is -0.3963 with sd 0.0242,
-  against -0.3958 and 0.0237. Every check prints the same text. Mack, the ODP
-  bootstrap and the KS sample have no sampler paths, so they print the same
+  on Windows (an MSVC build). The R package on Windows uses the GNU toolchain,
+  whose `exp` and `ln` differ again in the last bit, so its seed-0 draws also
+  differ. For example, its CRC paid `logelr` mean is -0.3963 with sd 0.0242,
+  against -0.3958 and 0.0237. Every check shows the same text. Mack, the ODP
+  bootstrap and the KS sample have no sampler paths, so they show the same
   digits as Python.
 
 ## 1. The illustrative insurer
 
 Meyers' example is group 353 in the CAS Loss Reserve Database (his Tables 2.1
-to 2.3). It is Commercial Auto, accident years 1988 to 1997 at 12 to 120
-months, with net earned premium. The database holds the full 10 by 10 square.
-Thus the lower triangle, which was unknown when the insurer set the reserves,
-is known now. This makes his test possible. Fit the model on the upper triangle, then
-find where the actual 120-month total falls in the predicted distribution.
+to 2.3): Commercial Auto, accident years 1988 to 1997 at 12 to 120 months, with
+net earned premium. The database holds the full 10 by 10 square, so the lower
+triangle, unknown when the insurer set its reserves, is known now. That makes
+his test possible: fit the model on the upper triangle, then find where the
+actual 120-month total falls in the predicted distribution.
 
 ```{r}
 library(prospicio)
@@ -92,15 +83,8 @@ find_data <- function(name, dir = getwd()) {
   }
 }
 
-# Python's format specs: ",.0f" (thousands), ".2f", ".4f".
-fmt <- function(x, spec = ",.0f", width = 0) {
-  out <- switch(spec,
-    ",.0f" = formatC(x, format = "f", digits = 0, big.mark = ","),
-    ".1f" = sprintf("%.1f", x),
-    ".2f" = sprintf("%.2f", x),
-    ".4f" = sprintf("%.4f", x))
-  formatC(out, width = width)
-}
+# Python's format spec ",.0f": thousands separators, no decimals.
+fmt <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
 
 square <- utils::read.csv(find_data("clrd_comauto_353.csv"), comment.char = "#")
 # The upper triangle: what was known at the end of 1997.
@@ -126,21 +110,20 @@ paid     latest diagonal 32,601   outcome at 120 months 40,000
 incurred latest diagonal 35,789   outcome at 120 months 40,061
 ```
 
-The premium total of 52,429 and the two outcomes, 40,000 paid and 40,061
-incurred, are the figures in his tables. Incurred here is case incurred (paid
-plus case reserves, without bulk reserves), as in the database.
+The premium and the two outcomes are the figures in his tables. Incurred is
+case incurred (paid plus case reserves, no bulk reserves), as in the database.
 
 ## 2. The starting point: Mack's model and the outcome's percentile
 
 Meyers starts from Mack's distribution-free chain ladder. Mack gives a mean and
-a standard error of the ultimate of each origin and of the total, but no
-distribution. Mack suggests a log-normal, so Meyers fits a log-normal with that
-mean and standard deviation to the total. Then he reads the percentile of the
-outcome (his Table 3.1 for incurred, and Table 4.1 for paid, with the ODP
-bootstrap). One percentile tells little: 86 is not alarming. Section 3 shows
-the important part.
+a standard error of the ultimate, not a distribution. Meyers fits a log-normal
+with that mean and sd to the total and reads the percentile of the outcome
+(Table 3.1 for incurred, Table 4.1 for paid, which adds the ODP bootstrap). One
+percentile tells little: 86 is not alarming. Section 3 shows what matters.
 
 ```{r}
+library(gt)
+
 lognormal_percentile <- function(mean, sd, x) {
   # Percentile of x under the log-normal with this mean and sd.
   s2 <- log(1 + (sd / mean)^2)
@@ -149,55 +132,69 @@ lognormal_percentile <- function(mean, sd, x) {
 
 # Meyers' printed totals: estimate, standard error, percentile.
 BOOK_MACK <- list(incurred = c(38914, 1057, 86.03), paid = c(39177, 1442, 72.02))
-cat(sprintf("%-9s %17s %13s %15s\n", "Mack", "estimate", "std error", "percentile"))
-cat(sprintf("%-9s %8s %8s %6s %6s %7s %7s\n", "", "book", "ours", "book", "ours", "book", "ours"))
+mack_table <- NULL
 for (col in names(BOOK_MACK)) {
   b <- BOOK_MACK[[col]]
   m <- mack(tri, col)
   ult <- sum(m@chain_ladder@ultimate)
   se <- m@total_standard_error
-  ours <- lognormal_percentile(ult, se, outcome[[col]])
-  cat(sprintf("%-9s %8s %8s %6s %6s %7.2f %7.2f\n", col, fmt(b[1]), fmt(ult), fmt(b[2]), fmt(se),
-              b[3], ours))
+  mack_table <- rbind(mack_table, data.frame(
+    triangle = col, est_book = b[1], est_ours = ult, se_book = b[2], se_ours = se,
+    pct_book = b[3], pct_ours = lognormal_percentile(ult, se, outcome[[col]])))
 }
+gt(mack_table, rowname_col = "triangle") |>
+  tab_header("Mack's total ultimate and the outcome's percentile",
+             "Tables 3.1 and 4.1; thousands of dollars") |>
+  tab_spanner("estimate", c(est_book, est_ours)) |>
+  tab_spanner("std error", c(se_book, se_ours)) |>
+  tab_spanner("percentile", c(pct_book, pct_ours)) |>
+  cols_label(est_book = "book", est_ours = "prospicio", se_book = "book", se_ours = "prospicio",
+             pct_book = "book", pct_ours = "prospicio") |>
+  fmt_integer(columns = c(est_book, est_ours, se_book, se_ours)) |>
+  fmt_number(columns = c(pct_book, pct_ours), decimals = 2)
 ```
 
 ```text
-Mack               estimate     std error      percentile
-              book     ours   book   ours    book    ours
-incurred    38,914   38,914  1,057  1,057   86.03   86.06
-paid        39,177   39,177  1,442  1,443   72.02   72.00
+            book  prospicio   book  prospicio   book  prospicio
+incurred  38,914     38,914  1,057      1,057  86.03      86.06
+paid      39,177     39,177  1,442      1,443  72.02      72.00
 ```
 
-Mack's model is deterministic, so this table has no Monte Carlo error. The
-estimates agree to the unit. The paid standard error is 1,442.5 before
-rounding, so prospicio prints 1,443 and the book prints 1,442. The percentiles
-differ by 0.03 and 0.02 points. Both sides use the same log-normal by moments.
-A difference this small comes from the rounding of the inputs or of the normal
-cdf, not from the model.
+Mack's model is deterministic, so the table has no Monte Carlo error. The
+paid standard error is 1,442.5 before rounding, so prospicio shows 1,443 and
+the book 1,442. The percentiles differ by 0.03 and 0.02 points, from rounding
+of the inputs or of the normal cdf.
 
 The ODP bootstrap (England and Verrall) resamples residuals of an
-overdispersed Poisson GLM on the incremental paid values. Meyers ran the
-version in R ChainLadder with 10,000 simulations. This chunk runs prospicio's
-version. It counts the percentile directly from the simulations, as Meyers does
-for every simulated model:
+overdispersed Poisson GLM on incremental paid values. Meyers ran R
+ChainLadder with 10,000 simulations. This chunk runs prospicio's version and
+counts the percentile from the simulations, as Meyers does for every
+simulated model:
 
 ```{r}
 odp <- odp_bootstrap(tri, "paid", n_sims = 10000, seed = 0)
 odp_total <- rowSums(draw_matrix(odp@reserves)) + latest[["paid"]]
 odp_pct <- 100 * mean(odp_total <= outcome[["paid"]])
 pop_sd <- function(x) sqrt(mean((x - mean(x))^2))
-cat(sprintf("ODP paid  estimate book 39,193 ours %s | std error book 1,389 ours %s | percentile book 73.91 ours %.2f\n",
-            fmt(mean(odp_total)), fmt(pop_sd(odp_total)), odp_pct))
+odp_table <- data.frame(
+  measure = c("estimate", "std error", "percentile"),
+  book = c(39193, 1389, 73.91),
+  prospicio = c(mean(odp_total), pop_sd(odp_total), odp_pct))
+gt(odp_table, rowname_col = "measure") |>
+  tab_header("ODP bootstrap, paid total", "10,000 simulations; thousands of dollars") |>
+  fmt_integer(columns = c(book, prospicio), rows = 1:2) |>
+  fmt_number(columns = c(book, prospicio), rows = 3, decimals = 2)
 ```
 
 ```text
-ODP paid  estimate book 39,193 ours 39,231 | std error book 1,389 ours 1,410 | percentile book 73.91 ours 72.73
+              book  prospicio
+estimate    39,193     39,231
+std error    1,389      1,410
+percentile   73.91      72.73
 ```
 
-The figure shows the two predictive distributions of the paid total, and the
-outcome in the lower triangle. Mack's log-normal is smooth. The bootstrap
-draws are right-skewed. The outcome falls above the middle of both.
+The figure shows both predictive distributions of the paid total and the
+outcome in the lower triangle. The outcome falls above the middle of both.
 
 ```{r}
 #| label: fig-odp-mack
@@ -218,49 +215,38 @@ ggplot() +
   theme(legend.position = "top")
 ```
 
-This model is simulated, but it has no NUTS sampler. Thus the last-bit
-rounding of a platform stays in the last bit, and the printed digits are the
-same on every platform. Over seeds 0 to 19, the estimate has a mean of 39,197
-and a standard deviation of 16. The standard error has a mean of 1,393 and an
-sd of 12. The percentile has a mean of 73.78 and an sd of 0.57 points.
-
-Seed 0 is low on all three (about two of those sds). The 20-seed means are
-within 4, 4 and 0.13 of the book. Thus prospicio's bootstrap and Meyers'
-printed run agree within their error. Both programs add process error from a
-gamma with the mean and variance of the ODP (ChainLadder's
-`process.distr = "gamma"`, the default `process = "gamma"` of
-`odp_bootstrap()`). Thus they run the same method on
-different random numbers.
+The bootstrap has no NUTS sampler, so it shows the same digits on every
+platform. Over seeds 0 to 19 (section 8), seed 0 is low on all three measures,
+by about two sds. The 20-seed means are within 4, 4 and 0.13 of the book, so
+the two bootstraps agree within error. Both add process error from a gamma
+with the mean and variance of the ODP (ChainLadder's `process.distr = "gamma"`,
+the default `process = "gamma"` of `odp_bootstrap()`).
 
 ## 3. The validation method: percentiles, p-p plots and the KS test
 
-The main idea of the monograph is a test of reputation, not of one triangle. If
-the predictive distributions of a model are correct, the percentile of each
-outcome is uniform on 0 to 100 across many triangles. Meyers fits each model to
-200 triangles: 50 each of commercial auto, personal auto, workers'
-compensation and other liability. Then he examines whether the 200 percentiles
-are uniform.
+The monograph tests a model's reputation, not one triangle. If a model's
+predictive distributions are correct, the percentile of each outcome is
+uniform on 0 to 100 across many triangles. Meyers fits each model to 200
+triangles (50 each of commercial auto, personal auto, workers' compensation
+and other liability) and tests whether the 200 percentiles are uniform.
 
-* The **p-p plot** puts the sorted percentiles on the vertical axis. The
-  horizontal axis shows their expected values under uniformity,
-  `100 i / (n + 1)`. A good model is on the 45 degree line.
-* The **shape** of a failure gives information. Too many extreme percentiles
-  (an S tilted along the diagonal) mean that the predicted distribution is too
-  light in the tails. Too many middle percentiles (a backward S) mean that it
-  is too heavy. Too many low percentiles mean that the model predicts too high.
-* The **Kolmogorov-Smirnov** (KS) test makes the plot a test. Let `p_i` be the
-  sorted percentiles and `f_i = 100 i / n`. The statistic is
+* The **p-p plot** puts the sorted percentiles against their expected values
+  under uniformity, `100 i / (n + 1)`. A good model lies on the 45 degree line.
+* The **shape** of a failure is informative. Too many extreme percentiles (an
+  S tilted along the diagonal) mean the predicted distribution is too light in
+  the tails. Too many middle percentiles (a backward S) mean it is too heavy.
+  Too many low percentiles mean the model predicts too high.
+* The **Kolmogorov-Smirnov** (KS) test makes the plot a test. With sorted
+  percentiles `p_i` and `f_i = 100 i / n`, the statistic is
   `D = max |p_i - f_i|`. The test rejects uniformity at the 5% level when `D`
-  is more than `136 / sqrt(n)`. On the plot, this limit is a band around the
-  diagonal. A model is "validated" in the sense of the monograph when it stays
-  in the band.
-* He also tried the Anderson-Darling test, which gives more weight to the
-  tails. Almost every model failed it, so he kept KS as the working test.
+  exceeds `136 / sqrt(n)`, a band around the diagonal. A model is "validated"
+  in the monograph's sense when it stays in the band.
+* The Anderson-Darling test weights the tails more. Almost every model failed
+  it, so Meyers kept KS.
 
-The critical values in his figures follow from the formula. A short simulation
-shows what the test sees. One set of percentiles comes from a correct model.
-The other set comes from a model whose predictive distribution is too narrow
-(the outcomes spread 1.5 times wider than predicted):
+A short simulation shows what the test sees. One set of percentiles comes from
+a correct model. The other comes from a model that is too narrow (the outcomes
+spread 1.5 times wider than predicted):
 
 ```{r}
 ks_d <- function(percentiles) {
@@ -286,9 +272,9 @@ right model:            D =  5.6
 too light in the tails: D = 15.0
 ```
 
-The p-p plot of the same two samples shows the shape of the failure. The grey
-band is the 5% limit for 200 triangles, 9.6 points on each side of the
-diagonal. The model that is too light in the tails leaves the band at both ends.
+In the p-p plot of the same samples, the grey band is the 5% limit for 200
+triangles, 9.6 points either side of the diagonal. The model that is too light
+in the tails leaves the band at both ends.
 
 ```{r}
 #| label: fig-pp
@@ -309,16 +295,12 @@ ggplot() +
   theme(legend.position = "top")
 ```
 
-The critical values 19.2 for 50 triangles and 9.6 for 200 are on every p-p
-plot in the monograph. With his panel, he finds two failures that set the
-agenda for the rest of the book:
+On his panel, two failures set the agenda for the rest of the book:
 
 * Mack on **incurred** triangles is too light in the tails (D = 15.4 over the
   200 triangles, against 9.6).
 * Mack and the ODP bootstrap on **paid** triangles predict too high (D of 23.1
   and 24.1, with the percentiles at the low end).
-
-These D statistics are Meyers' results on his 200-triangle panel.
 
 ## 4. The cross classified model (CRC)
 
@@ -334,21 +316,19 @@ with premium as the base:
 * `sigma[d]` decreases with age. Its square is a sum of uniform steps over the
   later ages, because older cells hold more settled claims.
 * For each posterior draw, the predictive distribution of the 120-month value
-  of each origin is a log-normal draw. Thus it includes parameter uncertainty
-  and process uncertainty.
+  of each origin is a log-normal draw. It includes parameter and process
+  uncertainty.
 
-CRC changes three things from Mack. It gives a full distribution instead of two
-moments. It puts a prior on a quantity that an actuary knows (the loss ratio).
-Its variance decreases with age by construction. It keeps the structure of the
-chain ladder: one level for each accident year and one effect for each age. The
-priors are wide on purpose. Meyers treats them as part of the model, not as
-beliefs.
+Against Mack, CRC gives a full distribution instead of two moments, puts a
+prior on a quantity actuaries know (the loss ratio), and has a variance that
+falls with age. It keeps the chain ladder's structure. The priors are wide on
+purpose: Meyers treats them as part of the model, not as beliefs.
 
-prospicio's `meyers()` uses the priors of his published Stan code. They differ in
-detail from the text. The prior sd is 3.162 (`sqrt(10)`), where the text says
-10. Each variance step has a floor of about `1e-5`. The knowledge note
+prospicio's `meyers()` uses the priors of his published Stan code. They differ
+in detail from the text: the prior sd is 3.162 (`sqrt(10)`), where the text says
+10, and each variance step has a floor of about `1e-5`. The knowledge note
 [`meyers-monograph-8.md`](../../knowledge/references/meyers-monograph-8.md)
-lists these differences. The finding
+lists the differences. The finding
 [`meyers-crc-csr-parity.md`](../../knowledge/findings/meyers-crc-csr-parity.md)
 gives the parity with his code at 200 seeds.
 
@@ -371,20 +351,39 @@ outcome_summary <- function(result, column) {
 }
 
 OURS <- list()  # prospicio's values, shown in section 8
+ROWS <- NULL    # the checks of the chunk being run
 
-check <- function(label, book, ours, tol, spec = ",.0f") {
-  # Print the book's value and whether prospicio's is within tol of it.
+check <- function(label, book, ours, tol, places = 0) {
+  # Record the book's value and whether prospicio's is within tol of it.
   OURS[[label]] <<- c(book, ours)
-  cat(sprintf("%-30s book %s  tolerance %s  agrees: %s\n", label, fmt(book, spec, 9),
-              fmt(tol, spec, 7), if (abs(ours - book) <= tol) "True" else "False"))
+  ROWS <<- rbind(ROWS, data.frame(check = label, book = book, tolerance = tol,
+                                  agrees = if (abs(ours - book) <= tol) "yes" else "no",
+                                  places = places))
+}
+
+places_table <- function(frame, columns) {
+  # A table whose rows each have their own decimals (the `places` column).
+  tbl <- gt(frame[names(frame) != "places"], rowname_col = "check")
+  for (p in sort(unique(frame$places))) {
+    tbl <- fmt_number(tbl, columns = all_of(columns), rows = which(frame$places == p), decimals = p)
+  }
+  tbl
+}
+
+check_table <- function(title, subtitle, strip = "") {
+  # Show the checks recorded since the last table, then clear them.
+  frame <- ROWS
+  if (nzchar(strip)) frame$check <- sub(strip, "", frame$check, fixed = TRUE)
+  ROWS <<- NULL
+  tab_header(places_table(frame, c("book", "tolerance")), title, subtitle)
 }
 
 check_parameter <- function(result, label, name, book_mean, book_sd) {
   # Means within 0.15 posterior sd, sds within 15%: the tolerances of prospicio's parity tests.
   s <- result@summary
   row <- s[s$parameter == name, ]
-  check(paste(label, name, "mean"), book_mean, row$mean, 0.15 * book_sd, ".4f")
-  check(paste(label, name, "sd"), book_sd, row$sd, 0.15 * book_sd, ".4f")
+  check(paste(label, name, "mean"), book_mean, row$mean, 0.15 * book_sd, 4)
+  check(paste(label, name, "sd"), book_sd, row$sd, 0.15 * book_sd, 4)
 }
 
 check_outcome <- function(result, label, column, book_est, book_sd, book_pct) {
@@ -393,89 +392,88 @@ check_outcome <- function(result, label, column, book_est, book_sd, book_pct) {
   o <- outcome_summary(result, column)
   check(paste(label, "estimate"), book_est, o[1], 0.01 * book_est)
   check(paste(label, "sd of the total"), book_sd, o[2], 0.5 * book_sd)
-  check(paste(label, "percentile"), book_pct, o[3], 5.0, ".2f")
+  check(paste(label, "percentile"), book_pct, o[3], 5.0, 2)
 }
 
 run <- fit("crc", "paid")
 crc_paid <- run$fit
+run_inc <- fit("crc", "incurred")
+crc_inc <- run_inc$fit
 d <- crc_paid@diagnostics
 cat(sprintf("warnings %d, divergences %d, max R-hat below 1.01: %s, posterior draws %s, simulations %s\n",
             run$warnings, d$divergences, if (d$max_rhat < 1.01) "True" else "False",
             fmt(nrow(crc_paid@draws)), fmt(crc_paid@ultimates@n_sims)))
-book <- list("logelr" = c(-0.3965, 0.0233), "alpha[10]" = c(0.3435, 0.3316),
-             "beta[1]" = c(-1.1999, 0.1156), "sigma[1]" = c(0.2965, 0.1034),
-             "sigma[10]" = c(0.0202, 0.0128))
-for (name in names(book)) check_parameter(crc_paid, "CRC paid", name, book[[name]][1], book[[name]][2])
-```
-
-```text
-warnings 0, divergences 0, max R-hat below 1.01: True, posterior draws 8,000, simulations 10,000
-CRC paid logelr mean           book   -0.3965  tolerance  0.0035  agrees: True
-CRC paid logelr sd             book    0.0233  tolerance  0.0035  agrees: True
-CRC paid alpha[10] mean        book    0.3435  tolerance  0.0497  agrees: True
-CRC paid alpha[10] sd          book    0.3316  tolerance  0.0497  agrees: True
-CRC paid beta[1] mean          book   -1.1999  tolerance  0.0173  agrees: True
-CRC paid beta[1] sd            book    0.1156  tolerance  0.0173  agrees: True
-CRC paid sigma[1] mean         book    0.2965  tolerance  0.0155  agrees: True
-CRC paid sigma[1] sd           book    0.1034  tolerance  0.0155  agrees: True
-CRC paid sigma[10] mean        book    0.0202  tolerance  0.0019  agrees: True
-CRC paid sigma[10] sd          book    0.0128  tolerance  0.0019  agrees: True
-```
-
-The diagnostics come first. prospicio does not stop a fit on bad diagnostics.
-It raises one `warning()` and keeps the diagnostics in `fit@diagnostics`. No
-warning occurred here. The parameters are those of Table 5.1. The text layer of
-the PDF scrambles the columns of that table, so the values here come from the
-rendered page.
-
-The tolerances are those of prospicio's parity tests: 0.15 posterior sd on a
-mean and 15% on an sd. They hold at 200 seeds against Meyers' Stan code. A
-rerun of that code agrees with his printed tables within its own error.
-prospicio's seed-0 values (section 8) are `logelr` -0.3958 (sd 0.0237) against
--0.3965 (0.0233). The `logelr` mean changes by 0.0004 from seed to seed, so the
-difference is the error of the two runs.
-
-The level `alpha[10]` of the youngest year has only one cell, so its sd is
-0.33. The first age's `sigma[1]` is the largest. The next chunk gives the
-predictive distribution and the percentile of the outcome (Tables 5.2 and 5.3):
-
-```{r}
-run_inc <- fit("crc", "incurred")
-crc_inc <- run_inc$fit
-check_outcome(crc_paid, "CRC paid", "paid", 40121, 2487, 51.88)
-check_outcome(crc_inc, "CRC incurred", "incurred", 39147, 1642, 74.75)
 cat("warnings on the incurred fit:", run_inc$warnings, "\n")
 ```
 
 ```text
-CRC paid estimate              book    40,121  tolerance     401  agrees: True
-CRC paid sd of the total       book     2,487  tolerance   1,244  agrees: True
-CRC paid percentile            book     51.88  tolerance    5.00  agrees: True
-CRC incurred estimate          book    39,147  tolerance     391  agrees: True
-CRC incurred sd of the total   book     1,642  tolerance     821  agrees: True
-CRC incurred percentile        book     74.75  tolerance    5.00  agrees: True
+warnings 0, divergences 0, max R-hat below 1.01: True, posterior draws 8,000, simulations 10,000
 warnings on the incurred fit: 0
 ```
 
+prospicio does not stop a fit on bad diagnostics. It raises one `warning()` and
+keeps the diagnostics in `fit@diagnostics`. The table gives the parameters of
+Table 5.1 (the values come from the rendered page, since the PDF's text layer
+scrambles that table). The tolerances are those of prospicio's parity tests,
+which hold at 200 seeds against Meyers' Stan code: 0.15 posterior sd on a mean
+and 15% on an sd. A rerun of that code agrees with his printed tables within
+its own error.
+
+```{r}
+book <- list("logelr" = c(-0.3965, 0.0233), "alpha[10]" = c(0.3435, 0.3316),
+             "beta[1]" = c(-1.1999, 0.1156), "sigma[1]" = c(0.2965, 0.1034),
+             "sigma[10]" = c(0.0202, 0.0128))
+for (name in names(book)) check_parameter(crc_paid, "CRC paid", name, book[[name]][1], book[[name]][2])
+check_table("CRC paid: the posterior against Table 5.1",
+            "Tolerance: 0.15 book sd on a mean and on an sd", strip = "CRC paid ")
+```
+
+```text
+                   book  tolerance  agrees
+logelr mean     -0.3965     0.0035     yes
+logelr sd        0.0233     0.0035     yes
+alpha[10] mean   0.3435     0.0497     yes
+alpha[10] sd     0.3316     0.0497     yes
+beta[1] mean    -1.1999     0.0173     yes
+beta[1] sd       0.1156     0.0173     yes
+sigma[1] mean    0.2965     0.0155     yes
+sigma[1] sd      0.1034     0.0155     yes
+sigma[10] mean   0.0202     0.0019     yes
+sigma[10] sd     0.0128     0.0019     yes
+```
+
+The level `alpha[10]` of the youngest year rests on one cell, so its sd is
+large. Next come the predictive distribution and the percentile of the outcome
+(Tables 5.2 and 5.3):
+
+```{r}
+check_outcome(crc_paid, "CRC paid", "paid", 40121, 2487, 51.88)
+check_outcome(crc_inc, "CRC incurred", "incurred", 39147, 1642, 74.75)
+check_table("CRC: the total at 120 months against Tables 5.2 and 5.3",
+            "Thousands of dollars; tolerance 1% on the estimate, 50% on the sd, 5 points on the percentile")
+```
+
+```text
+                                book  tolerance  agrees
+CRC paid estimate             40,121        401     yes
+CRC paid sd of the total       2,487      1,244     yes
+CRC paid percentile            51.88       5.00     yes
+CRC incurred estimate         39,147        391     yes
+CRC incurred sd of the total   1,642        821     yes
+CRC incurred percentile        74.75       5.00     yes
+```
+
 "Estimate" is the mean total at 120 months, as in Meyers' tables. It includes
-the observed 3,912 (paid) or 3,917 (incurred) of the oldest year. Over seeds 0
-to 19, prospicio's paid estimate has a mean of 40,149 and a seed-to-seed sd of
-37. Its sd has a mean of 2,520 and an sd of 180. The sd of the total depends on
-the one-cell youngest year through a log-normal, so it is heavy-tailed. The
-percentile has a mean of 51.39 (sd 0.81).
+the oldest year's observed 3,912 (paid) or 3,917 (incurred). The sd of the
+total depends on the one-cell youngest year through a log-normal, so it is
+heavy-tailed. On Windows, seed 0 is high on the incurred percentile (76.90, the
+largest of the 20 seeds) and low on the incurred sd (1,541). Meyers' own run is
+also a Monte Carlo estimate, with errors of about the same size. The CmdStan
+rerun of his code gives totals of 40,136 (2,497) and 39,132 (1,616). Within
+these errors, the book and prospicio agree.
 
-The incurred estimate has a mean of 39,124 (sd 27), an sd of 1,599 (sd 44) and
-a percentile of 75.74 (sd 0.66). On Windows, seed 0 is high on the incurred
-percentile (76.90, the largest of the 20 seeds). It is low on the incurred sd
-(1,541). The 20-seed means are one point and 43 from the book's 74.75 and
-1,642.
-
-Meyers' own run is also a Monte Carlo estimate, with errors of about the same
-size. The CmdStan rerun of his code gives totals of 40,136 (2,497) and 39,132
-(1,616). Within these errors, the book and prospicio agree.
-
-On the 200 triangles, CRC is not better than Mack and the ODP. On paid data it
-predicts too high, and on incurred data its tails are too light. Each of the
+On the 200 triangles, CRC is no better than Mack and the ODP: it predicts too
+high on paid data and its tails are too light on incurred data. Each of the
 next two models corrects one of these failures.
 
 ## 5. Checking a model on the data in hand
@@ -484,10 +482,10 @@ The p-p plot measures the reputation of a model. An actuary who sets reserves
 today needs checks on the upper triangle alone. Meyers uses two.
 
 **Standardized residuals.** For a sample of posterior draws, calculate
-`(log C[w, d] - mu[w, d]) / sigma[d]` for every observed cell. Then make box
-plots of them by accident year and by development year. All of his models look
-similar by development year. The accident year plots show the differences. The
-residuals come directly from prospicio's draws:
+`(log C[w, d] - mu[w, d]) / sigma[d]` for every observed cell, then make box
+plots by accident year and by development year. All his models look similar by
+development year. The accident year plots show the differences. The residuals
+come directly from prospicio's draws:
 
 ```{r}
 cells <- data.frame(w = upper$origin - 1988, d = upper$development %/% 12 - 1, value = upper$paid)
@@ -524,49 +522,46 @@ cat(sprintf("CRC paid: largest |median residual| of an accident year %.1f, in %d
 CRC paid: largest |median residual| of an accident year 0.4, in 1993
 ```
 
-No accident year is far from zero. The medians are from about -0.2 to 0.4. On
-Windows at seed 0 they are -0.16, 0.25, -0.17, 0.10, -0.11, 0.36, -0.03, 0.16,
-0.01 and 0.00 for 1988 to 1997. These values are inside the interquartile range
-of a standard normal, as Meyers' box plots for CRC paid show. The largest,
-1993, is the one that CSR changes most (section 6).
+No accident year is far from zero. On Windows at seed 0 the medians are -0.16, 0.25, -0.17, 0.10, -0.11, 0.36, -0.03, 0.16,
+0.01 and 0.00 for 1988 to 1997, inside the interquartile range of a standard
+normal, as in Meyers' box plots for CRC paid. The largest, 1993, is the year
+CSR changes most (section 6).
 
 **Leave-one-out cross-validation.** `elpd_loo` estimates how well the model
 predicts each observed cell when the fit leaves that cell out. It uses Pareto
 smoothed importance sampling of the posterior instead of a refit (Vehtari,
-Gelman and Gabry, the R `loo` package that Meyers uses). A higher value is
-better. It compares only models fitted to the same column (`bayes_loo(fit)`
-returns it, in `$estimates`).
-
-His Table 6.4 compares CRC with the stochastic Cape Cod (SCC), which is CRC
-without accident year levels. SCC is much worse on every measure, and Meyers
-does not use it again.
+Gelman and Gabry, the R `loo` package that Meyers uses). Higher is better. It
+compares only models fitted to the same column (`bayes_loo(fit)` returns it, in
+`$estimates`). His Table 6.4 compares CRC with the stochastic Cape Cod (SCC),
+which is CRC without accident year levels. SCC is much worse on every measure,
+and Meyers does not use it again.
 
 ```{r}
 # elpd_loo within 2, the parity tests' tolerance.
-check("CRC paid elpd_loo", 47.80, bayes_loo(crc_paid)$estimates[["elpd"]], 2.0, ".2f")
-check("CRC incurred elpd_loo", 70.97, bayes_loo(crc_inc)$estimates[["elpd"]], 2.0, ".2f")
+check("CRC paid elpd_loo", 47.80, bayes_loo(crc_paid)$estimates[["elpd"]], 2.0, 2)
+check("CRC incurred elpd_loo", 70.97, bayes_loo(crc_inc)$estimates[["elpd"]], 2.0, 2)
+check_table("CRC: elpd_loo against Table 6.4", "Tolerance 2")
 ```
 
 ```text
-CRC paid elpd_loo              book     47.80  tolerance    2.00  agrees: True
-CRC incurred elpd_loo          book     70.97  tolerance    2.00  agrees: True
+                        book  tolerance  agrees
+CRC paid elpd_loo      47.80       2.00     yes
+CRC incurred elpd_loo  70.97       2.00     yes
 ```
 
-prospicio gives 47.90 and 71.42 at seed 0 on Windows. elpd_loo changes by
-about 0.3 to 0.4 from seed to seed. Over seeds 0 to 19, the paid mean is 48.23
-and the incurred mean is 71.39. The CmdStan rerun of Meyers' code gives 48.04
-and 71.22. Thus a difference of up to about half a point is the error of the
-runs.
+prospicio gives 47.90 and 71.42 at seed 0 on Windows, and elpd_loo moves by
+about 0.3 to 0.4 between seeds. The CmdStan rerun of Meyers' code gives 48.04
+and 71.22, so a difference of up to half a point is run error.
 
 ## 6. The changing settlement rate model (CSR)
 
 CSR keeps CRC, but the development effects shrink toward zero in the later
 accident years. The mean becomes
 `log P[w] + logelr + alpha[w] + beta[d] (1 - gamma)^(w - 1)`, with a
-`normal(0, 0.05)` prior on `gamma`. A positive `gamma` means that claims settle
-faster in the later years. Thus the paid values of a young year are further
-along than the old pattern shows, and the reserve is smaller. With `gamma = 0`
-the model is CRC.
+`normal(0, 0.05)` prior on `gamma`. A positive `gamma` means claims settle
+faster in the later years, so the paid values of a young year are further along
+than the old pattern shows, and the reserve is smaller. With `gamma = 0` the
+model is CRC.
 
 CSR corrects the bias of CRC on paid data. Over the 200 triangles, its paid p-p
 plots are the first to stay in the KS band.
@@ -575,49 +570,43 @@ plots are the first to stay in the KS band.
 run_csr <- fit("csr", "paid")
 csr_paid <- run_csr$fit
 cat("warnings", run_csr$warnings, "\n")
-check_parameter(csr_paid, "CSR paid", "gamma", 0.0446, 0.0282)
-check_parameter(csr_paid, "CSR paid", "logelr", -0.3956, 0.0246)
-check_outcome(csr_paid, "CSR paid", "paid", 37597, 2401, 86.26)
-check("CSR paid elpd_loo", 49.76, bayes_loo(csr_paid)$estimates[["elpd"]], 2.0, ".2f")
 csr_medians <- year_medians(standardized_residuals(csr_paid, gamma = "gamma"))
-cat(sprintf("CSR paid: largest |median residual| of an accident year %.1f (CRC %.1f)
-",
+cat(sprintf("CSR paid: largest |median residual| of an accident year %.1f (CRC %.1f)\n",
             max(abs(csr_medians)), max(abs(crc_medians))))
 ```
 
 ```text
 warnings 0
-CSR paid gamma mean            book    0.0446  tolerance  0.0042  agrees: True
-CSR paid gamma sd              book    0.0282  tolerance  0.0042  agrees: True
-CSR paid logelr mean           book   -0.3956  tolerance  0.0037  agrees: True
-CSR paid logelr sd             book    0.0246  tolerance  0.0037  agrees: True
-CSR paid estimate              book    37,597  tolerance     376  agrees: True
-CSR paid sd of the total       book     2,401  tolerance   1,200  agrees: True
-CSR paid percentile            book     86.26  tolerance    5.00  agrees: True
-CSR paid elpd_loo              book     49.76  tolerance    2.00  agrees: True
 CSR paid: largest |median residual| of an accident year 0.3 (CRC 0.4)
 ```
 
-These are Tables 7.1 to 7.3. On Windows at seed 0, prospicio gives `gamma`
-0.0447 (sd 0.0286), an estimate of 37,612 (sd 2,487), the 85.78th percentile
-and elpd_loo 49.82. Over seeds 0 to 19, the means (and sds) are as follows:
+```{r}
+check_parameter(csr_paid, "CSR paid", "gamma", 0.0446, 0.0282)
+check_parameter(csr_paid, "CSR paid", "logelr", -0.3956, 0.0246)
+check_outcome(csr_paid, "CSR paid", "paid", 37597, 2401, 86.26)
+check("CSR paid elpd_loo", 49.76, bayes_loo(csr_paid)$estimates[["elpd"]], 2.0, 2)
+check_table("CSR paid: the posterior and the total against Tables 7.1 to 7.3",
+            "Thousands of dollars; the tolerances of CRC", strip = "CSR paid ")
+```
 
-* estimate 37,557 (37)
-* sd of the total 2,386 (55)
-* percentile 86.58 (0.68)
-* `gamma` 0.0448 (0.0003)
-* elpd_loo 49.86 (0.37).
+```text
+                    book  tolerance  agrees
+gamma mean        0.0446     0.0042     yes
+gamma sd          0.0282     0.0042     yes
+logelr mean      -0.3956     0.0037     yes
+logelr sd         0.0246     0.0037     yes
+estimate          37,597        376     yes
+sd of the total    2,401      1,200     yes
+percentile         86.26       5.00     yes
+elpd_loo           49.76       2.00     yes
+```
 
-All of them agree with the book within error.
-
-A faster settlement of about 4.5% a year decreases the estimate by about 2,500
-against CRC. It moves the outcome from the 52nd to the 86th percentile. Thus,
-for this insurer, CSR predicts less than the outcome. Over the panel, CRC's paid
-forecasts are too high and CSR's forecasts are in the KS band.
-
-elpd_loo prefers CSR here by about 2, and the accident year residuals are a
-little flatter (his Figure 7.3 against 5.3). Over the 200 triangles, elpd_loo
-prefers CSR for 105.
+A faster settlement of about 4.5% a year lowers the estimate by about 2,500
+against CRC and moves the outcome from the 52nd to the 86th percentile. For
+this insurer, CSR now predicts less than the outcome. elpd_loo prefers CSR
+here by about 2, and the accident year residuals are a little flatter (his
+Figure 7.3 against 5.3). Over the 200 triangles, elpd_loo prefers CSR for 105.
+Over the panel, CRC's paid forecasts are too high and CSR's are in the KS band.
 
 ## 7. The correlated accident year model (CAY)
 
@@ -637,101 +626,99 @@ next year.
 run_cay <- fit("cay", "incurred")
 cay_inc <- run_cay$fit
 cat("warnings", run_cay$warnings, "\n")
-check_parameter(cay_inc, "CAY incurred", "rho", 0.1709, 0.2071)
-check_parameter(cay_inc, "CAY incurred", "logelr", -0.3945, 0.0150)
-check_outcome(cay_inc, "CAY incurred", "incurred", 39193, 1859, 73.24)
-check("CAY incurred elpd_loo", 68.65, bayes_loo(cay_inc)$estimates[["elpd"]], 2.0, ".2f")
 ```
 
 ```text
 warnings 0
-CAY incurred rho mean          book    0.1709  tolerance  0.0311  agrees: True
-CAY incurred rho sd            book    0.2071  tolerance  0.0311  agrees: True
-CAY incurred logelr mean       book   -0.3945  tolerance  0.0022  agrees: True
-CAY incurred logelr sd         book    0.0150  tolerance  0.0022  agrees: True
-CAY incurred estimate          book    39,193  tolerance     392  agrees: True
-CAY incurred sd of the total   book     1,859  tolerance     930  agrees: True
-CAY incurred percentile        book     73.24  tolerance    5.00  agrees: True
-CAY incurred elpd_loo          book     68.65  tolerance    2.00  agrees: True
 ```
 
-These are Tables 8.1 to 8.3. On Windows at seed 0, prospicio gives `rho`
-0.1686 (sd 0.2075), an estimate of 39,178 (sd 1,834), the 74.46th percentile
-and elpd_loo 69.05. Over seeds 0 to 19, the means (and sds) are as follows:
+```{r}
+check_parameter(cay_inc, "CAY incurred", "rho", 0.1709, 0.2071)
+check_parameter(cay_inc, "CAY incurred", "logelr", -0.3945, 0.0150)
+check_outcome(cay_inc, "CAY incurred", "incurred", 39193, 1859, 73.24)
+check("CAY incurred elpd_loo", 68.65, bayes_loo(cay_inc)$estimates[["elpd"]], 2.0, 2)
+check_table("CAY incurred: the posterior and the total against Tables 8.1 to 8.3",
+            "Thousands of dollars; the tolerances of CRC", strip = "CAY incurred ")
+```
 
-* estimate 39,168 (24)
-* sd of the total 1,857 (65)
-* percentile 73.55 (0.68)
-* `rho` 0.1697 (0.0026)
-* elpd_loo 68.79 (0.44).
+```text
+                    book  tolerance  agrees
+rho mean          0.1709     0.0311     yes
+rho sd            0.2071     0.0311     yes
+logelr mean      -0.3945     0.0022     yes
+logelr sd         0.0150     0.0022     yes
+estimate          39,193        392     yes
+sd of the total    1,859        930     yes
+percentile         73.24       5.00     yes
+elpd_loo           68.65       2.00     yes
+```
 
-All of them agree with the book within error.
-
-The posterior of `rho` is wide (sd 0.21). The sd of the total is about 15% more
-than CRC's. elpd_loo prefers CRC on this triangle, as Meyers reports. Over the
-200 triangles, elpd_loo prefers CAY for only 26. But the score on the lower
-triangle (`elpd_test`) prefers it for 121, and its incurred p-p plots are
+The posterior of `rho` is wide (sd 0.21), and the sd of the total is about 15%
+more than CRC's. elpd_loo prefers CRC on this triangle, as Meyers reports.
+Over the 200 triangles, elpd_loo prefers CAY for only 26. But the score on the lower
+triangle (`elpd_test`) prefers CAY for 121, and its incurred p-p plots are
 better. Thus, in his words, the choice of CAY depends on its reputation.
 
 ## 8. The results side by side, and the one-year view
 
-Every check above printed `agrees: True`. This block prints the values behind
-the checks, book beside prospicio. The output under it is a copy from the
-Python guide, from a real run there (Windows x86_64, release build, seed 0).
-The R package on Windows prints different last digits, for the reason given at
-the top. **CI does not run this block**, because on a different platform or
-toolchain the NUTS draws, and thus the last digits, are different:
+Every check above agreed. This block shows the values behind the checks, book
+beside prospicio. The output under it is a copy from the Python guide, from a
+real run there (Windows x86_64, release build, seed 0). The R package on
+Windows shows different last digits, for the reason given at the top. **CI does
+not run this block**, because the NUTS draws, and thus the last digits, differ
+on another platform or toolchain:
 
 ```r
-cat(sprintf("%-30s %9s %10s\n", "", "book", "prospicio"))
-for (label in names(OURS)) {
-  b <- OURS[[label]]
-  spec <- if (abs(b[1]) >= 100) ",.0f" else if (abs(b[1]) >= 10) ".2f" else ".4f"
-  cat(sprintf("%-30s %s %s\n", label, fmt(b[1], spec, 9), fmt(b[2], spec, 10)))
-}
+side_by_side <- data.frame(
+  check = names(OURS),
+  book = sapply(OURS, function(v) v[1]),
+  prospicio = sapply(OURS, function(v) v[2]),
+  row.names = NULL)
+side_by_side$places <- ifelse(abs(side_by_side$book) >= 100, 0, ifelse(abs(side_by_side$book) >= 10, 2, 4))
+places_table(side_by_side, c("book", "prospicio")) |>
+  tab_header("The checks of sections 4 to 7: book against prospicio", "Seed 0; thousands of dollars")
 ```
 
 ```text
-                                    book  prospicio
-CRC paid logelr mean             -0.3965    -0.3958
-CRC paid logelr sd                0.0233     0.0237
-CRC paid alpha[10] mean           0.3435     0.3363
-CRC paid alpha[10] sd             0.3316     0.3326
-CRC paid beta[1] mean            -1.1999    -1.2018
-CRC paid beta[1] sd               0.1156     0.1115
-CRC paid sigma[1] mean            0.2965     0.2938
-CRC paid sigma[1] sd              0.1034     0.1012
-CRC paid sigma[10] mean           0.0202     0.0203
-CRC paid sigma[10] sd             0.0128     0.0129
-CRC paid estimate                 40,121     40,119
-CRC paid sd of the total           2,487      2,538
-CRC paid percentile                51.88      51.98
-CRC incurred estimate             39,147     39,080
-CRC incurred sd of the total       1,642      1,541
-CRC incurred percentile            74.75      76.90
-CRC paid elpd_loo                  47.80      47.90
-CRC incurred elpd_loo              70.97      71.42
-CSR paid gamma mean               0.0446     0.0447
-CSR paid gamma sd                 0.0282     0.0286
-CSR paid logelr mean             -0.3956    -0.3954
-CSR paid logelr sd                0.0246     0.0231
-CSR paid estimate                 37,597     37,612
-CSR paid sd of the total           2,401      2,487
-CSR paid percentile                86.26      85.78
-CSR paid elpd_loo                  49.76      49.82
-CAY incurred rho mean             0.1709     0.1686
-CAY incurred rho sd               0.2071     0.2075
-CAY incurred logelr mean         -0.3945    -0.3947
-CAY incurred logelr sd            0.0150     0.0144
-CAY incurred estimate             39,193     39,178
-CAY incurred sd of the total       1,859      1,834
-CAY incurred percentile            73.24      74.46
-CAY incurred elpd_loo              68.65      69.05
+                                 book  prospicio
+CRC paid logelr mean          -0.3965    -0.3958
+CRC paid logelr sd             0.0233     0.0237
+CRC paid alpha[10] mean        0.3435     0.3363
+CRC paid alpha[10] sd          0.3316     0.3326
+CRC paid beta[1] mean         -1.1999    -1.2018
+CRC paid beta[1] sd            0.1156     0.1115
+CRC paid sigma[1] mean         0.2965     0.2938
+CRC paid sigma[1] sd           0.1034     0.1012
+CRC paid sigma[10] mean        0.0202     0.0203
+CRC paid sigma[10] sd          0.0128     0.0129
+CRC paid estimate              40,121     40,119
+CRC paid sd of the total        2,487      2,538
+CRC paid percentile             51.88      51.98
+CRC incurred estimate          39,147     39,080
+CRC incurred sd of the total    1,642      1,541
+CRC incurred percentile         74.75      76.90
+CRC paid elpd_loo               47.80      47.90
+CRC incurred elpd_loo           70.97      71.42
+CSR paid gamma mean            0.0446     0.0447
+CSR paid gamma sd              0.0282     0.0286
+CSR paid logelr mean          -0.3956    -0.3954
+CSR paid logelr sd             0.0246     0.0231
+CSR paid estimate              37,597     37,612
+CSR paid sd of the total        2,401      2,487
+CSR paid percentile             86.26      85.78
+CSR paid elpd_loo               49.76      49.82
+CAY incurred rho mean          0.1709     0.1686
+CAY incurred rho sd            0.2071     0.2075
+CAY incurred logelr mean      -0.3945    -0.3947
+CAY incurred logelr sd         0.0150     0.0144
+CAY incurred estimate          39,193     39,178
+CAY incurred sd of the total    1,859      1,834
+CAY incurred percentile         73.24      74.46
+CAY incurred elpd_loo           68.65      69.05
 ```
 
-The table shows how much each number changes from seed to seed. The values are
-the mean and sd over refits at seeds 0 to 19 on the same machine. This study is
-also recorded, and CI does not run it.
+The next table gives the mean and (sd) over refits at seeds 0 to 19 on the
+same machine. The study is recorded, and CI does not run it.
 
 | Model | Estimate | sd of the total | Percentile | elpd_loo | Parameter |
 |---|---|---|---|---|---|
@@ -741,32 +728,26 @@ also recorded, and CI does not run it.
 | CSR paid | 37,557 (37) | 2,386 (55) | 86.58 (0.68) | 49.86 (0.37) | `gamma` 0.0448 (0.0003) |
 | CAY incurred | 39,168 (24) | 1,857 (65) | 73.55 (0.68) | 68.79 (0.44) | `rho` 0.1697 (0.0026) |
 
-Every printed number of the book is within the combined Monte Carlo error of
-Meyers' run and prospicio's run. Over 20 seeds:
-
-* The means of the totals are within 28 (CRC paid), 23, 40 and 25 of the book,
-  about one seed-to-seed sd.
-* The percentiles are within 1.0 point.
-* elpd_loo is within 0.5.
-* The sds of the totals agree within 3%. They are the numbers with the most
-  noise. The sd of CRC paid changes by 180 from seed to seed. It has a heavy
-  tail, through the one-cell level of the youngest year and a log-normal.
+Every book number is within the combined Monte Carlo error of Meyers' run and
+prospicio's. Over 20 seeds, the means of the totals are within 28 (CRC paid),
+23, 40 and 25 of the book (about one seed-to-seed sd), the percentiles within
+1.0 point, elpd_loo within 0.5 and the sds of the totals within 3%. The sds are
+the noisiest numbers: the sd of CRC paid changes by 180 from seed to seed,
+because it is heavy-tailed through the one-cell youngest year.
 
 **The one-year view.** Meyers' chapter 11 sets a cost of capital risk margin.
 It compares ultimate and one-year horizons with his own simulation of future
-calendar years.
-
-`meyers_one_year()` gives the claims development result (CDR)
+calendar years. `meyers_one_year()` gives the claims development result (CDR)
 over the next year for CRC, CSR and CAY. Each simulated next diagonal
 reweights the posterior by Pareto smoothed importance sampling. The change in
 the expected ultimate is the CDR.
 
-On group 353, nearly every simulation needs more than a reweighting. The
+On group 353, nearly every simulation needs more than a reweighting (the
 finding [`meyers-one-year.md`](../../knowledge/findings/meyers-one-year.md)
-explains why. Thus the full method moment-matches these simulations and refits
-the remaining ones with NUTS, which takes about a minute. The quick variant
-only reweights. It runs in about a second and is approximate: its CDR draws are
-about 0.2 sd of the total from a refit.
+explains why). The full method moment-matches these simulations and refits the
+rest with NUTS, which takes about a minute. The quick variant only reweights.
+It runs in about a second and is approximate: its CDR draws are about 0.2 sd of
+the total from a refit.
 
 ```{r}
 caught <- 0
@@ -794,10 +775,9 @@ share flagged (Pareto k above 0.7) above 95%: True
 CDR IQR / lifetime reserve IQR between 0.6 and 0.95: True
 ```
 
-The figure compares the two sets of draws, each as a density. The CDR is a
-change in the expected ultimate, so it centres near 0. The reserve centres on
-the expected unpaid amount. The CDR is the narrower of the two. The plot
-leaves out the extreme 0.5% of each side.
+The CDR is a change in the expected ultimate, so it centres near 0. The
+reserve centres on the expected unpaid amount, and the CDR is the narrower. The plot leaves out the extreme
+0.5% of each side.
 
 ```{r}
 #| label: fig-cdr
@@ -815,19 +795,18 @@ ggplot() +
   theme(legend.position = "top")
 ```
 
-On Windows at seed 0, this chunk gives 99% flagged. The CDR sd is 1,970 against
-a lifetime sd of 2,538, a ratio of 0.78. The chunk uses 1,000 one-year
-simulations (`one_year_sims = 1000`) to run quickly, and the default is 2,000. The finding measures the
+On Windows at seed 0, 99% are flagged, and the CDR sd is 1,970 against a
+lifetime sd of 2,538 (ratio 0.78). The chunk uses 1,000 one-year simulations
+(`one_year_sims = 1000`); the default is 2,000. The finding measures the sd
 ratio at 0.77, with a seed-to-seed sd of 0.08.
 
-The check compares interquartile ranges (0.77 here), not sds. With nearly every
-simulation flagged, a few reweighted simulations can carry most of the weight
-and increase the sd of the CDR. Over seeds 0 to 9, the sd ratio was from 0.71
-to 1.13 (more than 1 at two seeds). The IQR ratio stayed between 0.73 and 0.84.
+The check compares interquartile ranges, not sds. With nearly every simulation
+flagged, a few reweighted simulations can carry most of the weight and inflate
+the sd of the CDR. Over seeds 0 to 9, the sd ratio ran from 0.71 to 1.13; the
+IQR ratio stayed between 0.73 and 0.84.
 
-This block gives the full view, with its moment matching and refits. The output
-under it is a copy from the real run of the Python guide on a release build
-(Windows, 16 threads, 62 s). **CI does not run this block**:
+The full view, with moment matching and refits, ran in the Python guide on a
+release build (Windows, 16 threads, 62 s). **CI does not run this block**:
 
 ```r
 caught <- 0
@@ -853,15 +832,15 @@ warnings 1
 ```
 
 The R package's own run of this block on the same machine (GNU build, 4.3
-minutes) printed these results:
+minutes) showed:
 
 * flagged 99%, 1,662 moment-matched and 321 refitted
 * a CDR sd of 2,331 against a lifetime sd of 2,540 (ratio 0.92)
 * one warning.
 
-Its NUTS draws are different from Python's. With nearly every simulation
-flagged, the ratio of the full view is itself a noisy estimate. Thus take the
-ratio as approximately 0.8 to 0.9, not to two digits.
+Its NUTS draws differ from Python's. With nearly every simulation flagged, the
+ratio of the full view is itself a noisy estimate. Take it as approximately 0.8
+to 0.9, not to two digits.
 
 In the Python run, about three quarters of the lifetime uncertainty emerges in
 the first year. This is near the share of the ODP bootstrap on the same

@@ -1823,6 +1823,12 @@ pub(crate) fn simulate_events(
 /// frequency : a claim count
 /// severity : a severity
 /// x : float
+///     A loss of the view.
+/// tower : Tower, optional
+///     An occurrence program; with it the curve is of ``view``.
+/// view : str, default "ceded"
+///     ``"gross"``, ``"ceded"`` (the tower's total ceded loss of an
+///     occurrence, before annual terms) or ``"net"``.
 ///
 /// Returns
 /// -------
@@ -1838,18 +1844,31 @@ pub(crate) fn simulate_events(
 /// >>> abs(oep - (1 - math.exp(-2 * (1 - sev.cdf(500.0))))) < 1e-12
 /// True
 #[pyfunction]
+#[pyo3(signature = (frequency, severity, x, tower=None, view="ceded"))]
 pub(crate) fn occurrence_exceedance(
     frequency: &Bound<'_, PyAny>,
     severity: &Bound<'_, PyAny>,
     x: f64,
+    tower: Option<PyRef<'_, crate::reinsurance::PyTower>>,
+    view: &str,
 ) -> PyResult<f64> {
     let n = AnyCount::extract(frequency)?;
     let sev = extract_severity(severity)?;
-    Ok(prospicio_aggregate::occurrence_exceedance(
-        n.as_counting(),
-        &sev,
-        x,
-    ))
+    match tower {
+        None => Ok(prospicio_aggregate::occurrence_exceedance(
+            n.as_counting(),
+            &sev,
+            x,
+        )),
+        Some(t) => prospicio_aggregate::program_occurrence_exceedance(
+            n.as_counting(),
+            &sev,
+            &t.inner,
+            prospicio_aggregate::OccurrenceView::from_name(view).map_err(to_py)?,
+            x,
+        )
+        .map_err(to_py),
+    }
 }
 
 /// One point of the occurrence PML curve, from ``occurrence_pml``.
@@ -1902,7 +1921,13 @@ impl PyOccurrencePml {
 
 /// The occurrence PML at an annual probability ``p``: the loss whose
 /// occurrence exceedance is ``p``, for any claim count (the Python package
-/// ``aggregate``'s ``oep`` covers Poisson counts).
+/// ``aggregate``'s ``oep`` covers Poisson counts). With an occurrence
+/// program ``tower`` it is the PML of the ceded or net loss, the program's
+/// function of the gross PML, as ``aggregate`` 2.1.0's ``oep`` on an
+/// ``occurrence ceded to`` or ``net of`` clause; annual terms do not enter.
+/// Where the view is flat (a layer placed in full, for the net) its
+/// ``severity_survival`` is the gross survival at the end of that stretch,
+/// so the achieved probability falls below ``p``.
 ///
 /// Parameters
 /// ----------
@@ -1910,6 +1935,10 @@ impl PyOccurrencePml {
 /// severity : a severity
 /// p : float
 ///     In ``(0, 1 - P(N = 0))``.
+/// tower : Tower, optional
+///     An occurrence program on the loss basis.
+/// view : str, default "ceded"
+///     ``"gross"``, ``"ceded"`` or ``"net"``, with ``tower``.
 ///
 /// Returns
 /// -------
@@ -1928,14 +1957,27 @@ impl PyOccurrencePml {
 /// >>> round(pml.loss, 4), pml.annual_return_period
 /// (1171.4979, 100.0)
 #[pyfunction]
+#[pyo3(signature = (frequency, severity, p, tower=None, view="ceded"))]
 pub(crate) fn occurrence_pml(
     frequency: &Bound<'_, PyAny>,
     severity: &Bound<'_, PyAny>,
     p: f64,
+    tower: Option<PyRef<'_, crate::reinsurance::PyTower>>,
+    view: &str,
 ) -> PyResult<PyOccurrencePml> {
     let n = AnyCount::extract(frequency)?;
     let sev = extract_severity(severity)?;
-    let inner = prospicio_aggregate::occurrence_pml(n.as_counting(), &sev, p).map_err(to_py)?;
+    let inner = match tower {
+        None => prospicio_aggregate::occurrence_pml(n.as_counting(), &sev, p),
+        Some(t) => prospicio_aggregate::program_occurrence_pml(
+            n.as_counting(),
+            &sev,
+            &t.inner,
+            prospicio_aggregate::OccurrenceView::from_name(view).map_err(to_py)?,
+            p,
+        ),
+    }
+    .map_err(to_py)?;
     Ok(PyOccurrencePml { inner })
 }
 

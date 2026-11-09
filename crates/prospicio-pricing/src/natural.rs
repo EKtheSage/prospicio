@@ -64,7 +64,7 @@ pub enum Allocation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BottomLayer {
     /// The units' margins there take capital at the limit of the layer
-    /// above, `g'(1) / (1 − g'(1))`, as `aggregate` 1.0.1 and 1.2.0 do.
+    /// above, `g'(1) / (1 − g'(1))`, as `aggregate` 1.0.1 to 2.1.0 do.
     #[default]
     Limit,
     /// No capital, Monograph 15's equation 8.5 as printed.

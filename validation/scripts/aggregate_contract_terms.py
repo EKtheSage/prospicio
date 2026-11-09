@@ -1,9 +1,9 @@
 """Regenerate validation/reference/contract_terms_aggregate.csv.
 
-    python3.12 -m venv agg && agg/bin/pip install aggregate==1.0.1
+    python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0
     agg/bin/python validation/scripts/aggregate_contract_terms.py
 
-Variable-rating contract terms against Mildenhall's `aggregate` 1.0.1
+Variable-rating contract terms against Mildenhall's `aggregate` 2.1.0
 (`aggregate.contract_terms`), as currency amounts for one year's loss:
 
 - `swing_premium`: a swing-rated layer's premium at ceded loss `arg`,

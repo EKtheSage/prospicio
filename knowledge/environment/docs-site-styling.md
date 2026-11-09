@@ -140,3 +140,13 @@ Found on 2026-11-07 and 2026-11-08 with great-docs as installed in
   under 15 s. Locally the unchanged twin took 15.8 s on one run and its new
   figures add about 4.7 s (ggplot2 renders each printed plot). CI's Linux
   runner passes it.
+* **Checked tables.** A guide's great_tables `GT` on a block's last line, or
+  a gt table as an R chunk's last value, prints in the guide tests as its
+  column labels and formatted cells (`gt_text` in both harnesses), so a
+  table's numbers are checked by the `text` block under it while the site
+  shows the live table. Python reads the cells with great_tables'
+  `_build_data("html")` (private in great_tables 1.1.0; HTML-escaped, with
+  U+2212 for minus), R with `gt::extract_body(output = "grid")` (plain text,
+  hidden columns left out). `fmt_scientific` writes `<sup>` markup into the
+  cells, so a guide that needs scientific notation formats the strings
+  itself.

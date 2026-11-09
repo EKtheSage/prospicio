@@ -19000,6 +19000,12 @@ class Layer:
         The deductions as ``(label, basis, value, inside_nmbf)``.
         """
     @property
+    def disappearing(self, /) -> float |None:
+        """
+        The end of a disappearing deductible (``with_disappearing``), or
+        ``None``.
+        """
+    @property
     def drop_down(self, /) -> tuple[str, float] |None:
         """
         A top-and-drop cover as ``(underlying, attachment)``, or ``None``.
@@ -19050,6 +19056,33 @@ class Layer:
     def nth_event(self, /) -> tuple[int, float] |None:
         """
         An nth-event cover as ``(n, threshold)``, or ``None``.
+        """
+    def occurrence_moments(self, /, severity: Any) -> list[float]:
+        """
+        The first three raw moments of one occurrence's recovery at 100%,
+        before annual terms, for a ground-up loss with distribution
+        ``severity``, exact for an ordinary, franchise or disappearing
+        deductible on the loss basis. Divide by ``1 - severity.cdf(attachment)``
+        for the moments of a loss that reaches the layer, as ``aggregate``
+        reports a layered severity.
+        
+        Parameters
+        ----------
+        severity : a severity distribution
+        
+        Returns
+        -------
+        list of float
+            ``[E[g], E[g**2], E[g**3]]``.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Lognormal
+        >>> from prospicio.reinsurance import Layer
+        >>> x = Lognormal.from_mean_cv(100.0, 1.0)
+        >>> m = Layer("D", 300.0, 50.0).with_disappearing(100.0).occurrence_moments(x)
+        >>> round(m[0] / (1 - x.cdf(50.0)), 6)
+        112.607961
         """
     @property
     def premium(self, /) -> float:
@@ -19424,6 +19457,31 @@ class Layer:
         >>> from prospicio.reinsurance import Layer
         >>> Layer("5x5", 5e6, 5e6, share=0.4).with_deposit_premium(1e6).premium
         400000.0
+        """
+    def with_disappearing(self, /, end: float) -> Layer:
+        """
+        The same layer with a disappearing deductible, ``aggregate``'s
+        ``y xs d1 to d2 disappearing``: the retention falls linearly from the
+        attachment ``d1`` to 0 as the loss rises from ``d1`` to ``end``, so a
+        loss pays nothing up to ``d1``, ``k (x - d1)`` with
+        ``k = end / (end - d1)`` up to ``end`` and the whole loss above, each
+        capped at the limit. On the loss basis only; not with a franchise or
+        a top-and-drop cover.
+        
+        Parameters
+        ----------
+        end : float
+            Above the attachment.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> Layer("D", 300.0, 50.0).with_disappearing(100.0).ceded_by_event([40.0, 75.0, 250.0, 400.0])
+        [0.0, 50.0, 250.0, 300.0]
         """
     def with_franchise(self, /) -> Layer:
         """
@@ -38648,7 +38706,7 @@ def occurrence_cession_statistics(frequency: Any, severity: Grid, layers: Sequen
     3.0
     """
 
-def occurrence_exceedance(frequency: Any, severity: Any, x: float) -> float:
+def occurrence_exceedance(frequency: Any, severity: Any, x: float, tower: Tower |None = None, view: str = "ceded") -> float:
     """
     The chance that the year's largest occurrence exceeds ``x``,
     ``1 - G_N(F(x))`` with ``G_N`` the count's generating function: the
@@ -38659,6 +38717,12 @@ def occurrence_exceedance(frequency: Any, severity: Any, x: float) -> float:
     frequency : a claim count
     severity : a severity
     x : float
+        A loss of the view.
+    tower : Tower, optional
+        An occurrence program; with it the curve is of ``view``.
+    view : str, default "ceded"
+        ``"gross"``, ``"ceded"`` (the tower's total ceded loss of an
+        occurrence, before annual terms) or ``"net"``.
     
     Returns
     -------
@@ -38717,11 +38781,17 @@ def occurrence_layer_statistics(frequency: Any, severity: Grid, share: float, li
     (0.3, 0.9, 1.2)
     """
 
-def occurrence_pml(frequency: Any, severity: Any, p: float) -> OccurrencePml:
+def occurrence_pml(frequency: Any, severity: Any, p: float, tower: Tower |None = None, view: str = "ceded") -> OccurrencePml:
     """
     The occurrence PML at an annual probability ``p``: the loss whose
     occurrence exceedance is ``p``, for any claim count (the Python package
-    ``aggregate``'s ``oep`` covers Poisson counts).
+    ``aggregate``'s ``oep`` covers Poisson counts). With an occurrence
+    program ``tower`` it is the PML of the ceded or net loss, the program's
+    function of the gross PML, as ``aggregate`` 2.1.0's ``oep`` on an
+    ``occurrence ceded to`` or ``net of`` clause; annual terms do not enter.
+    Where the view is flat (a layer placed in full, for the net) its
+    ``severity_survival`` is the gross survival at the end of that stretch,
+    so the achieved probability falls below ``p``.
     
     Parameters
     ----------
@@ -38729,6 +38799,10 @@ def occurrence_pml(frequency: Any, severity: Any, p: float) -> OccurrencePml:
     severity : a severity
     p : float
         In ``(0, 1 - P(N = 0))``.
+    tower : Tower, optional
+        An occurrence program on the loss basis.
+    view : str, default "ceded"
+        ``"gross"``, ``"ceded"`` or ``"net"``, with ``tower``.
     
     Returns
     -------

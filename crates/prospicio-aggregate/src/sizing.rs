@@ -266,7 +266,7 @@ pub enum SizingMethod {
 }
 
 /// The settings [`recommend_grid`] sizes with; the defaults are
-/// `aggregate` 1.0.1's.
+/// `aggregate`'s (1.0.1 to 2.1.0, unchanged).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Sizing {
     /// The grid has at most `2^log2` points. Default 16.
@@ -315,7 +315,7 @@ pub struct GridSize {
 }
 
 /// A 0-based grid for the compound distribution of `frequency` claims of
-/// `severity`, as `aggregate` 1.0.1 sizes one when no bucket is given.
+/// `severity`, as `aggregate` (1.0.1 to 2.1.0) sizes one when no bucket is given.
 ///
 /// 1. The aggregate mean `E[N] E[X]` and variance
 ///    `E[N] Var X + Var N E[X]²`; the moment extent is the larger of the
@@ -612,8 +612,8 @@ fn finish(
     })
 }
 
-/// The settings of [`audit_grid`]; the defaults are `aggregate` 1.2.0's
-/// `sharpen`.
+/// The settings of [`audit_grid`]; the defaults are `aggregate`'s
+/// `sharpen` (1.2.0 to 2.1.0, unchanged).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AuditSettings {
     /// The validation tolerance: a relative moment error of `eps` on a
@@ -811,7 +811,7 @@ fn aggregate_terms(t: &mut ScoreTerms, agg: &Grid, exact: (f64, f64, f64), eps: 
 }
 
 /// Audits the grid `(step, 2^log2)` for `frequency` claims of `severity`,
-/// as `aggregate` 1.2.0's `sharpen` does (#317).
+/// as `aggregate`'s `sharpen` does (1.2.0 to 2.1.0; #317).
 ///
 /// Each cell discretizes the severity by rounding on its step and number
 /// of points, runs [`fft`], and is scored by six moment errors: the
@@ -1182,7 +1182,7 @@ mod tests {
 
     #[test]
     fn round_bucket_matches_aggregate_rungs() {
-        // aggregate 1.0.1's docstring cases.
+        // aggregate's docstring cases (1.0.1 to 2.1.0).
         for (x, want) in [
             (1.0, 1.0),
             (1.1, 2.0),
