@@ -229,8 +229,9 @@ P3.13, Var, exponential mixture  1.3125     1.3125
 
 ## 4. The negative binomial and contagion
 
-Ex 3.6 and P3.15 fit a negative binomial by moments to 5,000 and 10,000
-policies. A chi-square test on the cells 0, 1, 2 and 3 or more tests each fit:
+Ex 3.6 and P3.15 fit a negative binomial by moments to 5,000 auto liability and
+10,000 policies. The sample variance exceeds the mean, so a Poisson is too thin.
+A chi-square test on the cells 0, 1, 2 and 3 or more tests each fit:
 
 ```python
 def nb_moments(counts):
@@ -276,7 +277,8 @@ In Ex 3.6, α differs in the fourth decimal because the monograph rounds the
 sample variance to 0.130074 (it is 0.13007356) before it divides by the small
 excess over the mean. The fitted probabilities agree. Its chi-square of 0.7753
 does not reproduce: with the printed probabilities, or with α = 2.44285, the
-statistic is near 0.6 to 0.65.
+statistic is near 0.6 to 0.65, so the printed value probably comes from other
+cells or expected counts.
 
 **Contagion** is the monograph's other route to the negative binomial. If each
 claim makes the next more likely, Var[N] = ν + γν², and a Pólya urn gives
@@ -420,8 +422,8 @@ Actuaries once matched a distribution to the aggregate's mean, variance and,
 where the family allows, skewness. The normal ignores skewness. The shifted gamma
 matches three moments. `CompoundMoments.approximate` offers these and the gamma,
 lognormal, shifted lognormal, normal power and Wilson–Hilferty. Table 4.3 is
-Ex 4.2. Table 4.4 is far more skewed (Poisson 10, gamma 0.05; 6,000). P4.13 has a
-Poisson 8 with gamma (0.2; 3,750):
+Ex 4.2. Table 4.4 is far more skewed (Poisson 10, gamma with shape 0.05 and scale
+6,000). P4.13 has a Poisson 8 with gamma shape 0.2 and scale 3,750:
 
 ```python
 cases = [
@@ -553,7 +555,8 @@ Ex 4.4, F_S(16,000)  0.9955     0.9955
 
 A continuous severity goes on a grid first. The **midpoint** method gives each
 point the probability of its interval (`Grid.rounding`). Ex 4.5 does this to the
-gamma of Ex 4.2 with steps of 100 and 20:
+gamma of Ex 4.2 with steps of 100 and 20. The finer step brings the recursion
+within about 1% of the exact values at small totals, and closer above:
 
 ```python
 S = [500, 1000, 2000, 4000, 6000, 10000]
@@ -659,7 +662,8 @@ F_S(8,000)   0.9722        0.9723          0.9723
 F_S(10,000)  0.9934        0.9934          0.9934
 ```
 
-The FFT is within a unit in the fourth decimal (the grid's half-step).
+The FFT is within a unit in the fourth decimal (the grid's half-step), the same
+accuracy as Heckman and Meyers' method.
 
 A per-claim limit puts a mass in the severity, so the aggregate jumps at
 multiples of the limit. Ex 4.8 caps gamma (2.5; 500) claims at 2,000 under a

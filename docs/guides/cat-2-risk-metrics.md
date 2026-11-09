@@ -320,7 +320,7 @@ ax.legend()
 ```
 
 At 30 and 70, the grouped shares are well within one standard error of the ELT.
-At 110, the difference of 0.0035 is a little more than one. The nine joined
+At 110, the difference of 0.0035 is a little more than one standard error. The nine joined
 occurrences above 30 push the share the same way. The hours clause pays on the
 joined occurrence, so price a contract on the grouped curve, although it is not
 the curve of the ELT.
@@ -431,7 +431,7 @@ ELT, per year                  0.1136      0.0374
 The per-occurrence rows differ, but they agree at the same count. The ELT counts
 2.3365 events a year. The grouped trials count 2.119 occurrences (the hours
 clause joins pieces, and the YELT has no pieces below its 0.05 floor). The
-annual rows need no rescale.
+annual rows need no rescale, which is one reason to compare annual values.
 
 The exhaustion probability of the grid is a little higher than that of the
 trials, because rounding up to the next half crown moves a few losses just

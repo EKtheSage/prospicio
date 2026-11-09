@@ -224,14 +224,16 @@ no clause                    5391         0.7778
 ```
 
 Grouping raises the expected loss by about 6%. Grouping by peril adds a few
-occurrences and barely moves it, so the track prices with the single all-perils
+occurrences (pieces of different perils in the same 72 hours no longer join)
+and barely moves it, so the track prices with the single all-perils
 clause and groups by peril only where it needs the labels.
 
 ## 3. Alder's layers: occurrence excess of loss with reinstatements
 
 An occurrence `x` recovers `min(max(x - a, 0), l)` from a layer `l xs a`.
 Recoveries add up over the year until the annual limit, `l` times one plus the
-reinstatements, is used. Page 5 prices the reinstatements.
+reinstatements, is used. Paid reinstatements cost the cedent more premium; page
+5 prices them.
 
 `ceded_by_event()` shows the order. Take `alder_cat_1` (40 xs 30, 30%, one
 reinstatement, so 80 of annual limit) and four occurrences: one below the
@@ -268,8 +270,9 @@ year: 24.00
 
 Alone, the 95 recovers 40, but only 6 of the annual limit remains: late
 occurrences get what is left, so order matters. The book's years are in time
-order (the file lists pieces by `slot`). In the figure, the 28 pays nothing and
-the 95 gets only the 6 that remain.
+order (the file lists pieces by `slot`). In the figure, the first bar of each
+event is what the layer pays at 100%, and the second is the annual limit left.
+The 28 pays nothing and the 95 gets only the 6 that remain.
 
 ```{r}
 #| label: limit-figure

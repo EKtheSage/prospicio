@@ -24,7 +24,9 @@ covers chapters 3 and 4.
 
 `R/prospicio/tests/test-guides.R` requires each chunk to print exactly the text
 under it (a table prints as its labels and formatted cells). `book` is the
-monograph's printed value, a literal in the code. This guide minimizes with R's
+monograph's printed value, a literal in the code. In tables with one row per
+grid point, each row marked ", book" is the monograph's value under
+prospicio's. This guide minimizes with R's
 `optim()`, the Python guide with SciPy's Nelder–Mead; both find the same minima
 to the printed digits.
 
@@ -41,7 +43,7 @@ to the printed digits.
 
 The monograph's Pareto starts at zero (a Lomax). prospicio's `pareto()` starts at
 a threshold. `limited_second_moment` builds E[X²; l] as `layer_variance +
-layer^2` from a `truncated_distribution()` with no bounds. `book_table()` and
+layer^2` from a `truncated_distribution()` with no bounds. `surv()` is `1 - cdf()`. `book_table()` and
 `grid_table()` are the guide's table helpers.
 
 ```{r}

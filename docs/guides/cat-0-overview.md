@@ -92,8 +92,8 @@ Market terms used on many pages:
 - **Signed line**: the share of a layer that a reinsurer takes. Other
   reinsurers take the remainder.
 - **Rate on line** (RoL): the premium of an excess layer divided by its limit.
-- **Deal**: one contract as Larkspur wrote it. The premium, losses and other
-  flows of its line, year by year.
+- **Deal**: one contract as Larkspur wrote it, with the premium, losses and
+  other flows of its line, year by year.
 
 A windstorm on the coast hits all three cedents at the same time, so their
 losses move together. A convective storm outbreak often comes into the loss
@@ -118,7 +118,8 @@ The year event loss table (YELT) holds 2,000 simulated years. Its fields are
 year, `slot` (the place of the event in the year), event, day, hour, peril,
 region, cedent and loss. A year with no loss has no rows. The event loss table
 (ELT) gives the annual rate of each event and the mean loss to Alder with its
-spread. Page 1 explains the two tables and checks that they agree.
+spread. A cat model gives its results in this form before it simulates years.
+Page 1 explains the two tables and checks that they agree.
 
 The pages read every contract term from `cat_book_contracts.csv`. To try a
 different case, change the script and run it again.

@@ -375,7 +375,7 @@ Total, book  374,992  14,286    3.8
 
 Means and RMSEPs agree with Table 5-5 within simulation noise: with 10,000
 draws a standard deviation has a relative error of about 0.7%. The total RMSEPs
-are 1.0% apart, as two seeds also are. Both are slightly above the delta method.
+are 1.0% apart, which two seeds can also give. Both are slightly above the delta method.
 
 Both sets of means are *above* the chain ladder's forecasts (374,992 in the
 monograph against 373,346). This is not noise: a cell `exp(x' beta)` with

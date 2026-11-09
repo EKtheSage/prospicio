@@ -217,7 +217,7 @@ incurred, case +25%   680   787   790   826   924  1,099  1,245  6,350
 ```
 
 With stable case reserving, the two agree within the case reserve still open at
-84 months (5,939 against 5,853), so paid needs a tail. After the increase, the
+84 months (5,939 against 5,853), so paid may need a tail. After the increase, the
 incurred chain ladder applies the old factors to the stronger cells, and the
 youngest ultimate rises from 1,068 to 1,245. The paid triangle does not show the
 change. When paid and incurred disagree like this, ask the claims department
@@ -477,7 +477,7 @@ for n in [0, 1, 2, 5, 100]:
 100 1540.4
 ```
 
-`n_iters` moves the result between the prior and the data. The default is 1
+`n_iters` moves the result between the prior (1,399) and the data (1,540). The default is 1
 (BF). Use `n_iters=2`, Benktander's own choice, which is near the
 credibility-optimal mix of BF and the chain ladder (Mack 2000). If you want more
 steps, use the chain ladder.
@@ -796,8 +796,9 @@ lifetime  mean 1660  std dev 191
 one-year  mean 2  std dev 130
 ```
 
-The plug-in chain ladder with that tail gives 1,657.5. The one-year standard
-deviation is 130, against 127.2 without a tail (section 7).
+The tail raises the lifetime mean to 1,660 (the plug-in chain ladder with that
+tail gives 1,657.5) and the standard deviation to 191. The one-year mean is
+about zero and its standard deviation is 130, against 127.2 without a tail (section 7).
 
 Pitfall: an estimated tail that the ODP refits on its pseudo factors is
 sometimes exactly 1. The ODP bootstrap with `TailLogLinear` is therefore less

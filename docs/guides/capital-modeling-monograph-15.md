@@ -172,8 +172,9 @@ The CCoC parameter differs in meaning: `aggregate` uses a risk discount
 `d = 0.15 / 1.15`, prospicio the cost of capital `r = 0.15`.
 `Distortion.ccoc(0.15)` is the same function.
 
-The grey line is `g(s) = s`, which gives no risk load. The price rises with
-the area between a curve `g(s)` and this line:
+Each distortion is a curve `g(s)`. The figure draws the five curves that the
+calibration found. The grey line is `g(s) = s`, which gives no risk load. The
+price rises with the area between a curve and this line:
 
 ```python
 s_grid = [i / 100 for i in range(101)]
@@ -310,8 +311,8 @@ tvar, book  9.034  9.247  28.154
 
 Wang, dual power and TVaR agree with the monograph to three decimals. **CCoC
 and PH do not.** For CCoC, prospicio gives the same split as the linear
-allocation. The premiums and margins are the same in both. Only the split of
-capital between units differs.
+allocation. The premiums and margins are the same as the monograph's. Only the split
+of capital between units differs.
 
 The cause is the `aggregate` version. The monograph's code ran on 0.24.0, and
 0.30.1 prints its values. 1.0.1 gives prospicio's, and CI checks prospicio
@@ -436,7 +437,7 @@ WC    1401.1       4.996    6999.7   0.349    1.6e-04
 ```
 
 Table 9.11 prints the same values (41.008 claims for GL, and 4.945 for WC's
-claim mean on its grid). Unit WC drives the tail.
+claim mean on its grid). Unit WC drives the tail, with a thick-tailed severity and a high limit.
 
 Iman-Conover pairs the units' draws so that their rank correlations match a
 target, and leaves each unit's distribution unchanged. Three steps:

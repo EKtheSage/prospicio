@@ -1022,7 +1022,7 @@ Replace these three simplifications in the template:
   each amount. Its **mean** is the expected loss. Its **coefficient of
   variation** (CV) is the standard deviation divided by the mean.
 - **VaR** (value at risk) at 99%: the loss that only 1% of years exceed.
-  **TVaR** (tail value at risk) at 99%: the average loss in the worst 1% of
+- **TVaR** (tail value at risk) at 99%: the average loss in the worst 1% of
   years. It is never smaller than the VaR.
 - **Assets**: the money available to pay claims. A **capital standard** sets the
   amount, for example the 99% TVaR of the loss. In a year with a larger loss,

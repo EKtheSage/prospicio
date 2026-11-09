@@ -118,7 +118,8 @@ plan       13.9   18.7   19.6   52.2
 ```
 
 The means and CVs are the values of Table 2.1, which does not print the
-skewness. The monograph divides by 10, not 9, in the standard deviation, and
+skewness (it shows how much of unit C's risk is in one or two years). The
+monograph divides by 10, not 9, in the standard deviation, and
 `discrete_distribution()` does the same.
 
 The funding equation of section 1.6 is assets = premium plus capital,

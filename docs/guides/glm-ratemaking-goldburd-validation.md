@@ -457,7 +457,9 @@ the two models. The end bands hold the risks on which the models disagree most.
 The loss ratio chart (section 7.2.3) sorts by the proposed model over the
 current premium. If the proposed model improves on the plan, the loss ratios
 rise across the bands. `double_lift` and `loss_ratio_chart` draw both, in bands
-of about equal exposure. The Gini index (section 7.2.4) sorts by predicted rate and plots the cumulative
+of about equal exposure.
+
+The Gini index (section 7.2.4) sorts by predicted rate and plots the cumulative
 share of exposure against the cumulative share of losses (the Lorenz curve); it
 is twice the area between the curve and the diagonal. `gini` computes it with
 exposure and takes ties together. Here the rate depends only on age, so policies
@@ -516,7 +518,7 @@ ax.set_title("Double lift chart: the actuals follow the proposed model")
 ax.legend(loc="upper left")
 ```
 
-In both end bands the actuals run with the proposed model, and the current plan
+In both end bands of the double lift chart the actuals run with the proposed model, and the current plan
 predicts about 1 in every band: where the two models disagree, the proposed
 model was right. The loss ratio chart says the same, with one reversal in the
 120 test policies.

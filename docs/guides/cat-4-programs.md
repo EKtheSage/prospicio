@@ -121,7 +121,8 @@ order.
 
 Both contracts of Alder have a 72 hour clause and cover all perils, so they
 share one subject. `aggregate(["kind"])` adds the layers and leaves four
-components.
+components: the gross loss, the ceded loss, the net loss and the reinstatement
+premium.
 
 ```python
 import pandas as pd

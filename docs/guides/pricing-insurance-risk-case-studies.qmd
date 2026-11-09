@@ -14,7 +14,7 @@ execute:
 <!-- site: execute -->
 
 Stephen Mildenhall and John Major's book *Pricing Insurance Risk* (Wiley, 2022)
-applies one method to four case studies:
+applies one method, in four steps, to four case studies:
 
 1. Build the distribution of the total of a book from its units.
 2. Select a capital standard.
@@ -209,7 +209,8 @@ tvar                0.1953  5.592  28.271  33.864
 tvar, aggregate     0.1953  5.592  28.271  33.864
 ```
 
-The total premium is `27.25 / 1.1 + 100 / 11 = 33.864`. The distortions
+The parameters and all fifteen premiums agree. The total premium is
+`27.25 / 1.1 + 100 / 11 = 33.864`. The distortions
 disagree about X1. The CCoC discounts each unit's expected loss by `v` and adds
 `d` times its share of the assets in the worst outcome. There X1 loses 10 and X2
 loses 90, so X1 pays `4.5 / 1.1 + 10 / 11 = 5.000`. TVaR at 0.195 weights every
@@ -273,7 +274,7 @@ tvar                0.1793  50.896  51.881  102.777
 tvar, aggregate     0.1793  50.896  51.881  102.777
 ```
 
-B, the more volatile unit, pays the larger margin under each distortion. The
+All values agree to the third decimal. B, the more volatile unit, pays the larger margin under each distortion. The
 distortions move A's premium over a range of 0.21 and B's by the same amount the
 other way. Thin, similar tails leave little to disagree about.
 
@@ -330,7 +331,8 @@ tvar                0.4816  86.456  28.695  115.151
 tvar, aggregate     0.4816  86.456  28.695  115.151
 ```
 
-The largest difference is in the CCoC row, and `aggregate` causes it: its linear
+The parameters agree and the premiums agree to within 0.003. The largest
+difference is in the CCoC row, and `aggregate` causes it: its linear
 allocation adds up to 115.149, 0.002 less than the premium it calibrated
 (115.151, which its lifted allocation does reach). The units of prospicio add up
 to the calibrated premium.
@@ -549,7 +551,8 @@ tvar                0.8990  135.756  185.558  321.314
 tvar, aggregate     0.8990  135.756  185.558  321.314
 ```
 
-The remaining difference is again `aggregate`'s CCoC total, below its calibrated
+The parameters agree, and the premiums agree to within 0.0012. This difference
+is again `aggregate`'s CCoC total, below its calibrated
 premium (321.3136 against 321.3140). The annual means are below 70 and 30
 because the grid stops at 131,072. Renormalizing the severity, as `aggregate`
 does, makes Hu lose 0.27 of its mean of 30.
@@ -642,7 +645,8 @@ ggplot(hu_premium, aes(distortion, premium, fill = book)) +
   theme(legend.position = "top")
 ```
 
-The cover removes a third of the hurricane loss (10.1 of 29.7) but only 371 of
+The net book also agrees to within 0.0012. The cover removes a third of the
+hurricane loss (10.1 of 29.7) but only 371 of
 the 2,583 of assets: hurricanes above the top of the cover, 412.65, cause the
 99.9% outcome, and the cedent keeps them. Under the dual power and TVaR, which
 load SCS more, the Hu premium falls by more than half.
@@ -655,7 +659,8 @@ differ between `aggregate` 0.30.1 and prospicio.
 [CAS Monograph 15 reproduced](capital-modeling-monograph-15.md#5-capital-by-unit-if-you-must)
 shows the same difference for InsCo and traces it to a change in `aggregate`
 between 0.30.1 and 1.0.1; prospicio's tests of the natural allocation use 1.0.1.
-Gross Cat/Non-Cat, with P the premium and Q the capital:
+The code below compares the two on the gross Cat/Non-Cat book (P is the premium,
+Q the capital):
 
 ```{r}
 LIFTED_030 <- list( # aggregate 0.30.1, lifted: (P NonCat, Q NonCat, P Cat, Q Cat)

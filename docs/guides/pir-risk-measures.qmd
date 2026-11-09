@@ -321,7 +321,8 @@ gt(sum_table, rowname_col = "p") |>
 
 The differences agree with Table 4.4 to its four significant figures. (In the
 printed table, the difference for the 0.8 row is one line too low, under
-0.999.) In the figure, twice the exponential VaR crosses the gamma VaR near
+0.999. The columns to its left show which value belongs to which row.)
+In the figure, twice the exponential VaR crosses the gamma VaR near
 p = 0.7:
 
 ```{r}

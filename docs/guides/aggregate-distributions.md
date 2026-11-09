@@ -67,7 +67,8 @@ mean 5.9999, sd 5.4683
 99%: 25.81, 99.5%: 31.56
 ```
 
-The `12` caps the grid at `2**12` points (default `2**16`, a finer step).
+The `12` caps the grid at `2**12` points (default `2**16`, a finer step). The 99%
+value is the annual loss exceeded with probability 1%.
 
 For a Poisson count the expected annual loss to a layer is the expected claim
 count times the layer mean of the severity. `CollectiveModel` gives this closed
@@ -591,7 +592,7 @@ Two engines compute what a contract pays: `Tower.on_grid` (exact FFT) and
 per-occurrence recovery to the severity grid, compounds the result with the
 same count, then applies the annual terms (annual deductible and limit,
 reinstatements, corridor) and the share to the annual total. It returns gross,
-each layer's ceded loss and, where it is one compound total, net.
+each layer's ceded loss and, where it is one compound total, net.  There is no sampling error.
 
 ```python
 program = Tower([
@@ -815,7 +816,8 @@ simulated 1% occurrence PML: 18.54
 The 1-in-100 annual aggregate is well above the 1-in-100 occurrence, because
 several claims add up. Use the occurrence curve for per-occurrence covers
 (catastrophe, per-risk layers), the aggregate curve for stop loss, aggregate
-limits and capital. The occurrence return period is not 100 because a year can
+limits and capital. The occurrence return period is the average time between
+occurrences above the loss. It is not 100 because a year can
 hold more than one occurrence.
 
 For a Poisson count the OEP is `1 - exp(-6 (1 - F(x)))`, with `F` the severity
@@ -909,6 +911,10 @@ beside `1 - p`. Run the halving check (section 3.4) on the TVaR itself.
   mass in the grid, so `tail_mass` looks small.
 - **A grid too short for the book, with no error.** `fft` computes on the grid
   you give it (section 4, 800 claims). Use `fft_auto` or check the report.
+- **A `lower` grid for a price.** It is a lower bound by construction.
+- **Trusting a quantile to the step.** A grid quantile is a grid point. Halve the
+  step and judge a smooth number as well.
+- **Moment fits in the tail.** They match three numbers and no more (section 2).
 - **Comparing simulations on different seeds.** Keep the seed fixed when you
   compare two versions of a treaty, so the years differ only by your change.
 - **Pricing a per-occurrence layer on the OEP.** The OEP gives the probability of

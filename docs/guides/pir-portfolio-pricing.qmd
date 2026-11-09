@@ -464,8 +464,9 @@ exponential premium of Cat at loading 0.014: grid to 1,024 35.497, grid to 512 2
 ```
 
 A lognormal has no exponential moment: E[exp(t X)] is infinite for every t > 0,
-so both premiums are artifacts of where the grid stops. The book does not apply
-them to the Hurricane/SCS case for this reason. Do not use them for a loss
+so both premiums are artifacts of where the grid stops (the book's numbers are
+what its grid gave). The book does not apply them to the Hurricane/SCS case for
+this reason. Do not use them for a loss
 without a light tail.
 
 ## 4. Ruin theory and the natural scale of a market

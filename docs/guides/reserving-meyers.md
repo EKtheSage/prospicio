@@ -20,8 +20,7 @@ general, read [`reserving-methods.md`](reserving-methods.md).
 every Python block below that a text block follows. Each such block must print
 exactly that text. The Bayesian fits use prospicio's default chains: 4 chains
 of 1,000 warm-up and 2,000 kept draws. A fit takes less than a second in a
-release build, so CI runs them all. Two
-facts matter:
+release build, so CI runs them all. Two facts matter:
 
 * A Bayesian result is a Monte Carlo estimate. A different seed gives a
   slightly different number. Refits at seeds 0 to 19 measured the change (a
@@ -564,6 +563,7 @@ against CRC and moves the outcome from the 52nd to the 86th percentile. For
 this insurer, CSR now predicts less than the outcome. elpd_loo prefers CSR
 here by about 2, and the accident year residuals are a little flatter (his
 Figure 7.3 against 5.3). Over the 200 triangles, elpd_loo prefers CSR for 105.
+Over the panel, CRC's paid forecasts are too high and CSR's are in the KS band.
 
 ## 7. The correlated accident year model (CAY)
 
@@ -611,7 +611,7 @@ elpd_loo           68.65       2.00     yes
 
 The posterior of `rho` is wide (sd 0.21), and the sd of the total is about 15%
 more than CRC's. elpd_loo prefers CRC on this triangle, as Meyers reports.
-Over the 200 triangles, it prefers CAY for only 26. But the score on the lower
+Over the 200 triangles, elpd_loo prefers CAY for only 26. But the score on the lower
 triangle (`elpd_test`) prefers CAY for 121, and its incurred p-p plots are
 better. Thus, in his words, the choice of CAY depends on its reputation.
 
@@ -721,7 +721,7 @@ CDR IQR / lifetime reserve IQR between 0.6 and 0.95: True
 ```
 
 The CDR is a change in the expected ultimate, so it centres near 0. The
-reserve centres on the expected unpaid amount. The plot leaves out the extreme
+reserve centres on the expected unpaid amount, and the CDR is the narrower. The plot leaves out the extreme
 0.5% of each side.
 
 ```python

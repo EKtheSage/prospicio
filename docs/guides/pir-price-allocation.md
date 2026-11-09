@@ -14,7 +14,8 @@ beside prospicio's. Exercise, example and table numbers are the book's.
 
 New to distortions, CCoC or the pentagon? Read
 [CAS Monograph 15 reproduced](capital-modeling-monograph-15.md) first. The case
-studies are in [Price allocation in practice](pir-price-allocation-practice.md).
+studies of chapters 13 and 15 and the reinsurance evaluation of chapter 19 are in
+[Price allocation in practice](pir-price-allocation-practice.md).
 
 ## 1. The Simple Discrete Example
 
@@ -742,5 +743,7 @@ Alone, each peril needs almost a full limit of assets. Together, assets of 100
 support both and the premium falls from 40.64 to 30.74. The natural allocation
 shares that saving between the units.
 
-Next: [Price allocation in practice](pir-price-allocation-practice.md) and
-[Risk loads and distortions](risk-loads-and-distortions.md).
+Next: [Price allocation in practice](pir-price-allocation-practice.md) for the case
+studies and the reinsurance evaluation, and
+[Risk loads and distortions](risk-loads-and-distortions.md) for how to select a
+distortion.

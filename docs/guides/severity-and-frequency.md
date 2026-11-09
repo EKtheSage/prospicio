@@ -30,7 +30,8 @@ upper layers.
 
 ## 1. Before you fit
 
-A fit cannot correct claims that are not on the basis of the contract you price.
+Each fit below assumes the claims are on the basis of the contract you price,
+and a fit cannot correct this. Do these steps first:
 
 1. **Define the claim** that the contract pays on: per claim or per occurrence
    (an event that aggregates several claims). Decide if expenses (ALAE) add to
@@ -166,7 +167,7 @@ inverse Gaussian: mean 5.20, variance 7.42, P(15 or more) 0.00368
 ```
 
 The gamma row equals the negative binomial of section 3.1. The inverse
-Gaussian has a heavier right tail: choose it when a few bad years are worse
+Gaussian has a heavier right tail than the gamma: choose it when a few bad years are worse
 than a negative binomial permits. With only a mean and a variance, keep the
 negative binomial (25 years cannot show the difference).
 
@@ -746,15 +747,18 @@ it is a judgment from several diagnostics together:
 - **Alpha by threshold.** At 0.5 the body still bends the alpha, and at 0.25
   the small standard error is false precision. From 1 up, the alphas differ by
   about one standard error or less.
-- **Mean excess.** It rises steeply up to 1, where the tail replaces the body.
-  The last points come from 21 and 5 losses.
-- **Hill.** The alpha is flat up to 156 losses and jumps at 300, where body
+- **Mean excess.** It jumps from 0.43 at 0.5 to 1.08 at 1, where the tail
+  replaces the body, then keeps rising. The last points come from 21 and 5
+  losses.
+- **Hill.** The alpha stays between 1.76 and 2.3 up to 156 losses and reaches
+  2.36 at 300, where body
   claims enter. The high values at small `k` are noise (above 1 this example is
   exactly Pareto). With real data the estimate is also biased where the tail is
   not exactly Pareto: look for a flat range, not for its value.
 - **Fit check.** The size table compares the observed share above each size with
-  the fitted Pareto's. They agree from 2 up; the 5 losses above 5 are too few
-  to read.
+  the fitted Pareto's. They agree from 2 up. At 1.5 the data has a few more
+  losses than the Pareto (0.538 against 0.489). The 5 losses above 5 are too
+  few to read.
 
 The rule: **take the lowest threshold above which the alpha is stable, because
 it keeps the most data.** The cedant's reporting threshold and the layers you
@@ -1061,8 +1065,9 @@ the observed burning cost is as good as the splice (section 5) and checks it.
 
 Notes:
 
-- To model only the large losses, use the tail alone, `Pareto.fit(large, 1.0)`,
-  with a count of large losses (section 3).
+- The weights set the share of claims above the join. To model only the large
+  losses, use the tail alone, `Pareto.fit(large, 1.0)`, with a count of large
+  losses (section 3) in place of a count of claims.
 - Any tail of section 7 can replace the Pareto: a `PiecewisePareto`, a
   `GeneralizedPareto`, or a `LogAffinePareto` with parameters from a benchmark.
 - The spliced `Mixture` has the same `layer`, `lev`, `quantile` and `sample` as
@@ -1157,9 +1162,21 @@ the layer at several alphas (section 7.3), weighted by your belief.
 
 - Fit **frequency and severity on the same definition of a claim**: the same
   threshold, trend, development and currency basis.
+- Check the **dispersion** of the counts before you choose Poisson. Take it
+  from a larger book when you have few years.
+- Fit the body and the tail **separately**, and splice them. A single family
+  fitted to all claims gives the wrong price at both ends. Put the cut at the
+  join (and any reporting threshold) in the likelihood of the body.
+- With fewer than about 30 losses above the threshold, anchor the alpha on the
+  market or a larger book, and price at several alphas.
 - Fit the alpha at **several thresholds**, find the flat range, and show the
   layer price at the ends of the alpha's range.
-- Compare a flexible tail with the single Pareto at the layers you price.
+- Give **`censored`** and **`reporting_thresholds`** when the data has them.
+- Develop and trend the large losses before the tail fit: an open claim at its
+  current estimate understates the tail. `LargeLossExperience.prepare` does
+  both.
+- A tail more flexible than the data supports is not more accurate. Compare it
+  with the single Pareto at the layers you price.
 - For the tail fit, keep the losses that the burning cost keeps: those whose
   `amount` times `factor` (in `to_dict()`) is at least
   `PreparedLosses.complete_above`. Then fit their `trended` values.

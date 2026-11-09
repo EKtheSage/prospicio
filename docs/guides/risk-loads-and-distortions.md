@@ -319,8 +319,10 @@ fig.suptitle("g(s) of six families, each priced to 5x5 = 1.24")
 fig.tight_layout()
 ```
 
-Near the 5x5 layer (reached in 19.5% of years, close to one in ten) the families
-agree within a few points, CCoC aside. Away from it they diverge. CCoC has a
+At one in ten, near the 5x5 layer (reached in 19.5% of years), the families
+agree within a few points, CCoC aside. Away from it they diverge: the rate on
+line runs from 53.5% to 100.0% at one in two and from 2.1% to 7.9% at one in a
+hundred. CCoC has a
 floor because it charges every layer for its maximum loss as capital. The other
 floors are zero.
 
@@ -370,7 +372,7 @@ How each distortion weights the tail:
   layers.
 - **Dual power**, **exponential** and **Wang** weight the middle outcomes up and
   the remote ones down. They undercharge remote layers relative to a constant
-  return.
+  return on capital.
 - **Proportional hazard** sits between.
 - **CCoC** prices capital at the full maximum, far above the TVaR of a remote
   layer, so the remote tail is the most expensive part.

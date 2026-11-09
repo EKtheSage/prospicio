@@ -151,6 +151,9 @@ GL          2000.0   0.672       2042.0      0.644     2092.4    0.660
 Property    7000.0   0.465       7017.0      0.454     7117.8    0.467
 ```
 
+The FFT columns are the model. Both samples differ from it by a few percent,
+which is sampling error, not a model difference.
+
 ## 3. The target and the achieved correlation
 
 The target (Table 8.2) has a correlation of -0.3 between Auto and GL, 0.8
@@ -289,11 +292,11 @@ Every value of Table 8.3 is inside these 90% ranges. Two results are not
 sampling error:
 
 - **The rank correlation is the Gaussian rank correlation of the target.**
-    Iman-Conover copies the ranks of reference scores that have exactly the
+  Iman-Conover copies the ranks of reference scores that have exactly the
   target correlation, so Spearman's rho is near `(6/pi) asin(r/2)`, the rank
   correlation of a bivariate normal with correlation `r`.
 - **The linear correlation is less than the target.** Pearson's correlation
-    depends on the marginals: skewed marginals cannot reach a high linear
+  depends on the marginals: skewed marginals cannot reach a high linear
   correlation even when their ranks agree. The maximum is the correlation of
   the two samples sorted together:
 
@@ -745,7 +748,8 @@ gt(wang_layers, rowname_col = "layer") |>
 65 to 100  0.1  0.174  0.089   0.012   0.015  0.047  0.132   0.165  0.529
 ```
 
-These values agree with Table 8.10 (and `g(S)` with Table 8.9) to the printed
+The first three columns are the margin of A, B and C and the last three their
+capital. These values agree with Table 8.10 (and `g(S)` with Table 8.9) to the printed
 digits. The code keeps `alpha S` and `beta g(S)`, the columns of Tables 8.8 and
 8.9, for section 10. Every year pays for the bottom layer, so it needs no
 capital and `iota` is undefined; its unit margins sum to zero (cross-subsidies).

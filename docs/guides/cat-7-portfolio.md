@@ -270,6 +270,8 @@ ax.set_title("Tail of the book: alone, in the book, and removed from it")
 ax.legend()
 ```
 
+By deal:
+
 - `alder_cat_2`, the high Alder layer, has the largest TVaR alone and keeps most
   of it in the book: the years that exhaust it are the big coastal windstorms
   that drive the whole book.
@@ -392,6 +394,7 @@ corran_qs      3.000  2.250    2.295  2.581
 book           8.000  7.487    7.998
 ```
 
+Alone, `alder_cat_1` needs the 2.007 of page 6. In the book it needs 1.948.
 The book charges 8.000 against the 7.998 that a 10% return on TVaR capital
 needs, but keeps 7.487 after the reinstatement premium comes in and the ceding
 commission of Corran goes out. So the book falls short of the target (section 9:

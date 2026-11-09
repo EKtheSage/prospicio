@@ -198,6 +198,8 @@ Alder's AAL from the YELT: 16.778
 An event set built this way has no file hash, because `from_years` did not read
 the file.
 
+Alder's events come in seasons. The figure counts them by month and peril:
+
 ```python
 import matplotlib.pyplot as plt
 
@@ -342,8 +344,9 @@ differences are this size, not zero.
 
 One difference is built in. The script that wrote the YELT removes each loss
 below 0.05 (a cedent that an event almost missed), as many vendor extracts do.
-The ELT keeps every event. So the YELT's AAL is slightly lower than the ELT's,
-by much less than one standard error here.
+The ELT keeps every event. So the YELT's AAL is lower than the ELT's by a
+small amount on average. Here that amount is much smaller than the sampling
+error, so the YELT's average still comes out above the exact AAL.
 
 ## In R
 

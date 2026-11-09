@@ -257,7 +257,8 @@ discrete example the total is zero in 90% of the years, so the smallest 90%
 quantile of the sum is 0. The monograph's failure case (0 for each unit, 10 in
 total) is the algorithm's reading at 0.9, and every definition gives it just
 above 0.9. TVaR adds up exactly in the first example and is less than the sum
-in the second.
+in the second. The two authors disagree on which measure to use. For the rest of the
+monograph, the capital standard sets the assets.
 
 ## 4. Risk analysis: marginal assets
 
@@ -764,7 +765,8 @@ B          18.30  18.52  18.64
 C          14.90  21.30  20.82
 ```
 
-Unit C takes 91.9% of the margin, against 85.0% under Wang. The monograph
+Unit C takes 91.9% of the margin, against 85.0% under Wang. Under the industry
+standard, a thick-tailed unit gets almost all the capital and margin. The monograph
 makes three objections to the industry standard:
 
 1. Capital does not cost the same in every layer (bond spreads fall with

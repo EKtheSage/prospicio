@@ -5,7 +5,9 @@
 CAS Monograph 2, *Distributions for Actuaries* by David Bahnemann (2015), is the
 CAS textbook on the probability behind pricing. This guide follows chapters 2, 5
 and 6 (claim size, excess claims, limits and deductibles) and shows the
-monograph's printed value (`book`) beside prospicio's. Example and problem
+monograph's printed value (`book`) beside prospicio's. In tables with one row
+per grid point, each row marked ", book" is the monograph's value under
+prospicio's. Example and problem
 numbers ("Ex 2.7", "P6.13") are the monograph's. Where the two disagree, the
 guide gives the likely reason. Read the monograph for the derivations. The
 companion guide,
@@ -202,8 +204,10 @@ print(f"alpha {alpha:.6f} (book 3.907288), beta {beta:.3f} (book 397.931)")
 alpha 3.907288 (book 3.907288), beta 397.974 (book 397.931)
 ```
 
-The printed scale is a slip: 618,850 / 1,555 = 397.974, not 397.931. The
-monograph's tables use 397.931, so the next blocks do too. A chi-square test on
+The shape agrees to every printed digit, but the scale does not. The printed
+scale is a slip: (3,036,875 − 1,555²) / 1,555 = 618,850 / 1,555 = 397.974, not
+397.931. The monograph's fitted tail probabilities match prospicio's only with
+397.931, so the next blocks use it. A chi-square test on
 six cells measures the fit:
 
 ```python
@@ -426,7 +430,8 @@ P2.39 sigma    1.4448     1.4448
 ```
 
 Under a deductible, each cell's probability is conditional on a claim above it.
-Ex 2.11 has 770 claims above a 1,000 deductible, censored at 200,000. P2.43
+Ex 2.11 has 770 claims above a 1,000 deductible (added back), censored at
+200,000. P2.43
 keeps only claims up to 50,000. Both are fitted by minimum chi-square, with
 prospicio's `Truncated` giving the conditional distribution:
 
@@ -539,8 +544,8 @@ truncation and censoring  6.76      0.15   2.67
 
 Only the last fit recovers the population within its standard errors. The
 other two describe the recorded claims, with a thinner tail. The deductible,
-which hides more than half of the population, causes the error. Few claims
-reach the limit.
+which hides more than half of the population, causes the error. The first two
+fits are close because few claims reach the limit.
 
 On a log scale: the 20,000 ground-up claims (never seen), the recorded ones, and
 each fit's expected count per bin:
@@ -827,7 +832,7 @@ claims change very little.
 Inflation hits an excess layer harder than the ground-up loss. At a fixed
 attachment, claims below it move into the layer (more excess claims) and claims
 above it grow (a larger excess severity). The layer's loss grows as their
-product. Ex 5.10 to 5.12 use the Pareto (2; 3,000), an attachment of 5,000 and
+product, faster than the inflation rate. Ex 5.10 to 5.12 use the Pareto (2; 3,000), an attachment of 5,000 and
 10% inflation. Ex 5.12 adds 5% growth in the ground-up count:
 
 ```python

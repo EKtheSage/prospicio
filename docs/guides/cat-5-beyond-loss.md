@@ -32,8 +32,10 @@ layer. This page adds the cat-specific part: the season and the loss shape.
 
 ## 2. The book
 
-The helper is that of the other pages, except that `contract_layer` passes
-extra settings (here `pro_rata_time`) to the layer.
+The helper rebuilds one cedent's years from the YELT, with times and peril
+labels, and applies the hours clause where the contract has one. It is the
+helper of the other pages, except that `contract_layer` passes extra settings
+(here `pro_rata_time`) to the layer.
 
 ```python
 import csv
@@ -214,7 +216,9 @@ All          241                        0.387
 182 of the 241 occurrences come in the second half of the year. Alder's large
 losses are mostly windstorms, and nine in ten fall between day 213 and day 305.
 A late loss restores limit for only a few months, so as to time the cedent pays
-only for those months. Use the basis of the treaty wording.
+only for those months. A peril spread evenly over the year would show a
+smaller gap. Use the basis of the treaty wording: for a seasonal peril the
+difference is material.
 
 The reinstatement premium is proportional to the upfront premium, so the
 expected ratio (0.06705 as to amount) does not depend on the premium charged.

@@ -137,7 +137,8 @@ event order.
 
 Both contracts of Alder have a 72 hour clause and cover all perils, so they
 share one subject. `aggregate(res, keep = "kind")` adds the layers and leaves
-four components.
+four components: the gross loss, the ceded loss, the net loss and the
+reinstatement premium.
 
 ```{r}
 #| label: program-table

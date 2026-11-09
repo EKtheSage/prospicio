@@ -307,7 +307,7 @@ prospicio 75.43; book 68.11
 ```
 
 The Non-Cat premium of the book (115.15 minus 47.04, a loss ratio of 117%) is
-below the floor. So the CCoC row of Table 15.36 came from a lifted calculation
+below the floor of 72.72. So the CCoC row of Table 15.36 came from a lifted calculation
 that does not keep all weights non-negative, most probably in how it shared the
 mass at the worst outcome.
 
@@ -424,8 +424,10 @@ cat(sprintf("ceded, allocated net %.4f (book 1.2497)\n", ceded_net))
 ceded, allocated net 1.2497 (book 1.2497)
 ```
 
-Below about 1.25 the cover is worth buying on all tests, and above about 1.26 on
-none. Between these prices the answer depends on the method. The book then lets
+The three reservation prices (the highest cover premium at which a test still
+buys) are 1.2613 for the gross allocation, 1.2574 for the A/B test and 1.2497
+for the net allocation. Below about 1.25 the cover is worth buying on all tests,
+and above about 1.26 on none. Between these prices the answer depends on the method. The book then lets
 the insurer buy a share `t` of the cover for `t P`. At an intermediate premium
 the best share is neither 0 nor 1 but 2/3, where the two net outcomes that
 change places tie:

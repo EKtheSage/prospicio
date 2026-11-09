@@ -160,8 +160,8 @@ expected annual loss 0.5873, loss on line 11.75%
 with one reinstatement (annual limit 10) 0.5863
 ```
 
-The annual limit of 10 lowers the expected loss slightly (the loss on line has
-none): a year with three exhausting losses pays 10, not 15.
+The annual limit of 10 lowers the expected loss slightly (0.5863 against 0.5873
+without it): a year with three exhausting losses pays 10, not 15.
 
 ### The technical premium
 
@@ -711,12 +711,13 @@ heavier tail      +47%   +33%   +78%   +54%  +120%   +77%
 
 A quarter more losses raises each layer's expected loss by a quarter but the
 price by less: with the distortion fixed, a proportional hazard price grows
-roughly as frequency raised to the parameter (the second number above). So the
+roughly as frequency raised to the parameter (1.25 to the power 0.686 is 1.17,
+the price change in the 25% row). So the
 multiple falls for a worse book. A reinsurer does not accept that, and usually
 raises the price of risk too.
 
 Inflation of 5% raises each layer's expected loss by about 9%, near 1.05 raised
-to the power 1.8 (the first number above). With a Pareto tail and fixed limits
+to the power 1.8, or 1.09 (the loss change in the 5% row). With a Pareto tail and fixed limits
 this leverage is the same at each layer; with a lighter tail it grows with the
 attachment.
 

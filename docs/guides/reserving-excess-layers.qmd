@@ -89,14 +89,15 @@ gt(factors, rowname_col = "layer") |>
 7m xs 3m         1.9819        1.982
 ```
 
-The higher the layer, the larger its factor, and its own triangle shows this
-only late.
+The higher the layer, the larger its factor (near 2 on the highest). The
+layer's own triangle shows this only late, so the rest of this guide takes the
+factors from the dense ground-up triangle.
 
 ## 2. Bloom and Patrik's example: the pitfall and the cure
 
 Year One has four claims, reported at 100, 375, 250 and 500 at 12 months.
 Ground-up losses develop by 3.60 from 12 to 24 months and by 1.25 from 24 to
-36 months (the end), so every claim reaches 4.5 times its 12-month value.
+36 months (the end of development), so every claim reaches 4.5 times its 12-month value.
 Years Two and Three have the same claims with 5% inflation a year. The layer
 is all loss above a deductible of 350.
 
@@ -792,9 +793,10 @@ working, blend, k = 20      100            -1.2       9.9
 working, BF, derived        100            -0.6       4.4
 ```
 
-The own chain ladder fails on seven high-layer books, and elsewhere its early
-link ratios of a few claims are very large. The derived pattern cuts the RMSE to
-a fraction of that; it is a little low because an origin with no loss yet in the
+The own chain ladder fails on seven high-layer books. Where it runs, it
+overstates the high layer by a fifth, with an RMSE near the full ultimate,
+because the early link ratios of a few claims are very large. The derived
+pattern cuts the RMSE to a fraction of that on both layers; it is a little low because an origin with no loss yet in the
 layer stays at zero. The BF is best, because it does not multiply the chance
 results of the immature years, but the test favours it: it uses the true loss
 ratio and severity, and a real prior only approximates them.

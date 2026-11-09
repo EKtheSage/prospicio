@@ -31,7 +31,8 @@ reinsure it**: the closed form you validate against disappears once you apply a
 cover. And **an FFT answer is deterministic**: the same inputs give the same
 digits every run.
 
-
+The rest of this guide is the tour. Section 12 collects the DecL clauses in one
+table. Section 13 gives timings and the grid audit.
 
 ## 2. Exact and discrete: the dice
 
@@ -286,7 +287,7 @@ agg CV, book       0.165        0.433
 99.5% VaR, book   14,456       23,914
 ```
 
-Same mean, capital about two-thirds higher.
+The mixed count has the same mean, and its capital is about two-thirds higher.
 
 ```python
 fig, ax = plt.subplots()
@@ -616,7 +617,7 @@ Property  loss   3972.3  premium   3969.3  capital    -30.3
 Casualty  loss   4667.4  premium   5533.8  capital   8664.2
 ```
 
-
+The natural allocation splits premium and capital between the units.
 [Risk loads and distortions](risk-loads-and-distortions.md) explains which
 distortion to choose, how to calibrate it to a quote, and how to allocate.
 

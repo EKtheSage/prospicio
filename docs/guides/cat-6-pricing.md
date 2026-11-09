@@ -14,7 +14,9 @@ behind the bad years, and expenses with brokerage.
 
 ## 1. The contract's ceded losses
 
-The helper `cedent_events` is the same on every page of the track. The upfront
+The helper `cedent_events` is the same on every page of the track. It reads the
+YELT for one cedent and keeps the time in the year and the peril of each loss.
+The upfront
 premium of Larkspur is the rate on line times the limit times its share.
 
 ```python
@@ -203,8 +205,8 @@ print(f"technical premium {q.premium:.4f}, rate on line {q.rate_on_line:.4f}")
 technical premium 2.3607, rate on line 0.1967
 ```
 
-The technical rate on line is above the 15% in the contract. Section 7 shows
-the build-up.
+The technical rate on line is above the 15% in the contract. Section 7 compares
+it with the market price.
 
 ## 5. The reinstatement premium inside the price
 
@@ -257,8 +259,8 @@ than the expected value alone does: it saves capital in the worst years.
 
 ## 6. Sensitivity
 
-Three inputs: the cost of capital, the hours clause and the timing of the
-season.
+This section varies three inputs: the cost of capital, the hours clause and
+the timing of the season.
 
 **Cost of capital.** The assets do not change with `r`, but the premium is
 concave in `r`: `P = (EL + r A) / (1 + r)` increases by less with each step.

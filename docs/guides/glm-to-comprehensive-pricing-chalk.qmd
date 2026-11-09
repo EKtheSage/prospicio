@@ -99,7 +99,7 @@ pseudo-R2 from deviances            0.471     47%
 ```
 
 `family_deviance()` also takes prior weights, for the exposure-weighted version
-of section 3.7.2.
+of section 3.7.2. It multiplies each record's deviance by its exposure, in the model and null deviance.
 
 Two more checks are arithmetic on printed values (Table 3.6 and the rebasing
 factor of section 3.7.4):
@@ -258,7 +258,7 @@ baseline GLM  cv        0.021
 benchmark GBM cv        0.045
 ```
 
-The order is the monograph's: null, GLM, boosting model.
+The order is the monograph's: null, GLM, boosting model well above the GLM. The rest of the monograph closes that gap with models that a pricing team can explain.
 
 ## 2. Penalized regression (chapter 4)
 
@@ -552,8 +552,7 @@ ggplot(cv_curve, aes(loglam, mean)) +
   theme(legend.position = "top")
 ```
 
-The next chunk compares with the truth by age (the exposure-weighted average of
-the policies' true frequencies) the lasso at `lambda_min`, the relaxed lasso
+The next chunk compares three fits with the truth by age (the exposure-weighted average of the policies' true frequencies): the lasso at `lambda_min`, the relaxed lasso
 (the kept steps refitted by an unpenalized `glm_fit()`, section 4.5) and a
 P-spline GAM (`gam_fit()`, which the monograph uses for its spatial second stage
 in chapter 8):
@@ -619,9 +618,7 @@ section 5.2 sees above aircraft age 20), and the relaxed fit removes part of
 that. The monograph prefers steps and hinges because the result is a short
 rating table. A GAM gives a smooth curve, which you tabulate afterwards.
 
-Section 5.8.1 links steps to the fused lasso: a step at each level is a dummy
-at each level with each step the difference between neighbouring dummies, so a
-lasso penalty on steps penalizes the jumps between neighbours.
+Section 5.8.1 links steps to the fused lasso. A step at each level is the same model as a dummy at each level, and each step coefficient is the difference between neighbouring dummies. So a lasso penalty on steps penalizes the jumps between neighbours.
 
 ### 3.3 Monotone effects
 
@@ -758,7 +755,7 @@ from the printed `z` is 3.264). Stump Great Lakes differs for the same reason.
 
 Section 6.7.1's worked sentence multiplies Stump's `z` by 222.22, but Table 6.5
 has 223.75, which gives the printed 3.58: the text is wrong. The table's caption
-also describes AvE upside down (its values are actual over expected).
+also describes AvE as predicted over actual, but its values are actual over expected.
 
 Two smaller checks come from the same chapter: the Bell helicopter example of
 section 6.7.2 (16 per thousand against 4 for the overall mean, against 20 for

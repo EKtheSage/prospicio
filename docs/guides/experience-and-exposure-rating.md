@@ -20,8 +20,7 @@ to reinsurance pricing. It stops at the expected loss. Next: the risk load
 
 The layers here are plain per-risk or per-loss layers: no reinstatements, no annual aggregate limit or
 deductible, no clash cover (one event that hits several risks). Those terms change the expected loss
-([`reinsurance-price.md`](reinsurance-price.md)). `PreparedLosses.burning_cost` accepts them, but not together
-with an index clause.
+([`reinsurance-price.md`](reinsurance-price.md)). `PreparedLosses.burning_cost` accepts towers with those terms, but not together with an index clause.
 
 Money is in millions of a synthetic currency. CI runs and checks the code and every table.
 
@@ -165,6 +164,7 @@ alpha 1.880, 2.8 losses above 1 a year
 severity).layer_mean(limit, attachment)` is the expected loss of any layer. The last column is the synthetic
 model that drew these ten years (three losses a year, alpha 1.6); in practice you do not know it. These ten
 years were lighter than their source, so both estimates are below it, and the gap grows with height.
+The fit counts the loss of exactly 1.00 in 2019, so it sees 28 losses, but 27 pierce 1 xs 1.
 
 A Poisson count and one Pareto alpha are assumptions. Before you price with them, compare the variance of the
 yearly counts with their mean (if larger, use a negative binomial), examine the threshold and make a mean
@@ -527,7 +527,7 @@ burning cost of 1 xs 1 (27 claims) and of 2 xs 2 (9 claims) has a relative stand
 and `c = 3` misses them by 0.15 and 0.35 in log, each within one standard error. So the experience does not
 reject `c = 3`. Use the scan to see whether experience and curve disagree by more than the noise, and keep a
 range of plausible `c` (here 3 to 4). The rest of this guide uses `c = 3`, which is also near the "drawn from"
-column above (a real pricing never knows it).
+column of the first layer table (a real pricing never knows it).
 
 Two calibrations find `c` directly, and each returns the curve and its `c`:
 

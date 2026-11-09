@@ -625,13 +625,14 @@ premium).
 The two contracts price different risks, so do not compare the scale's
 expected commission (32.1%) with the flat technical commission (34.5%):
 
-- With a flat commission, only the ceded loss is at risk.
+- With a flat commission, only the ceded loss is at risk. A 10% return on its
+  capital allows a commission of 34.5%.
 - With the scale, the outgo of the reinsurer is the loss plus a commission that
   decreases as the loss increases. The scale gives part of the loss ratio
   spread back to the cedant, so the tail above the mean and the capital fall.
 
-The scale leaves a margin of 1.32 against the 0.42 needed: its terms price
-above the target.
+The scale leaves a margin of 1.32 against the 0.42 needed. Its terms price
+above the target, so you can raise the commission until the two are equal.
 
 A surplus needs events that have sums insured. `RiskProfile.simulate` makes
 them from the profile of section 2. The exposure-rated `expected_surplus_loss`
@@ -829,8 +830,8 @@ latest              4.97                  5.18
 ```
 
 A bootstrap is a minimum for the uncertainty of an ADC. The triangle cannot
-show whether a 5% tail is right, and this tail makes the expected recovery
-almost three times larger. The cost of the layer depends on the model, so show
+show whether a 5% tail is right, and a 5% tail makes the expected recovery
+almost three times larger (0.65m to 1.82m in the table below). The cost of the layer depends on the model, so show
 it under more than one:
 
 ```python

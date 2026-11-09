@@ -220,7 +220,8 @@ In the last row of the first table, 3 of the five link ratios at 12-24 remain,
 2 of the four at 72-84 and 1 of the three at 84-96. The two at 96-108 and the
 one at 108-120 all remain.
 
-All-year averages, which the book does not use:
+The book does not use all-year averages. This table compares them with the
+latest-3 average:
 
 ```python
 RECENT = {
@@ -534,9 +535,9 @@ IBNR               111,890  111,890           0
 total unpaid       230,889  230,887           2
 ```
 
-The total unpaid is 2 more than the book's because the book's paid total at
-December 31, 2008 is 330,629, but its eleven printed paid values add to
-330,627 (the exhibits hold claims with decimals). The other rows agree.
+The total unpaid is 2 more than the book's. The book's paid total at December
+31, 2008 is 330,629, but its eleven printed paid values add to 330,627 (the
+exhibits hold claims with decimals). The other rows agree.
 
 ## 4. The Bornhuetter-Ferguson technique (chapter 9)
 

@@ -393,7 +393,7 @@ The book selects 2.0%. In Premium Trend-3 it trends each calendar year's
 average earned premium at current rate level to the latest 115.35, then at 2.0%
 a year for two years, from 6/30/2015 (the average written date of the latest 12
 months) to 6/30/2017. The exhibit's footnote prints "06/30/2017 to 06/30/2017",
-a typo.
+a typo: the 2.0 years printed next to it and the text agree with 6/30/2015.
 
 ```python
 ep_crl = [1_364_916.59, 1_405_728.94, 1_448_424.45, 1_492_177.86, 1_536_267.03]
@@ -555,7 +555,7 @@ nan = float("nan")
 total                      14,095  14,095
 ```
 
-Unrounded, the 15-month factor is 2.1879, not 2.19, which gives the total above.
+Unrounded, the 15-month factor is 2.1879, not 2.19, which gives a total of 14,093.7 thousand.
 
 Appendix A's Loss Development exhibit applies the same method to reported
 losses and paid ALAE for accident years 2009 to 2015, with the straight average

@@ -668,7 +668,8 @@ tvar    2.06%   2.74%                  yes
 ```
 
 Wang and the dual power fit the bond, as the monograph's "Dual and Wang, with
-TVaR a distant third" says. PH and the CCoC overprice the bond's risk.
+TVaR a distant third" says. TVaR touches the window only at its top. PH and the
+CCoC overprice the bond's risk.
 
 Section 6.4 takes the other path: no distortion is right, but the range gives
 information. The stop loss of section 3 is worth 7.6 under the CCoC and 4.8
