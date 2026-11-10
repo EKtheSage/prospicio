@@ -9,7 +9,7 @@
 //!   development results as `OdpBootstrap::one_year` and
 //!   `MackBootstrap::one_year` with the chain ladder.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

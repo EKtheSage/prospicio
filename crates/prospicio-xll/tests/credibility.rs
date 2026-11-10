@@ -7,7 +7,7 @@
 //! the limited fluctuation standards, every value at the file's
 //! tolerances.
 
-mod common;
+use crate::common;
 
 use common::{n, num, reference, t, text};
 use prospicio_xll::call;

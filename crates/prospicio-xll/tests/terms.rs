@@ -8,7 +8,7 @@
 //!   RI10 (`reinsurance_aggregate.csv`), and its other rows on their
 //!   definitions.
 
-mod common;
+use crate::common;
 
 use std::collections::HashMap;
 

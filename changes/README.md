@@ -60,7 +60,9 @@ The fold puts each knowledge fragment at the top of its date's section in
 is missing; fragments of one date in file-name order), appends each
 changelog fragment's bullets to the end of the matching section of
 "Unreleased" (creating a missing section at the end), and deletes the
-folded files. Running it twice changes nothing the second time.
+folded files. It also deletes each lane's Next bullets whose id a Done
+bullet repeats (`check_lanes.py`), since a feature PR only appends its Done
+bullet (#853). Running it twice changes nothing the second time.
 
 Only one PR folds at a time. Between releases a session folds only when the
 user asks, in a small PR of its own that contains nothing else; until then,

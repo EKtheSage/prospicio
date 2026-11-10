@@ -6,7 +6,7 @@
 //! indications of Appendices A (loss ratio), B (pure premium) and C (loss
 //! ratio on a net trend), end to end, at the printed digits.
 
-mod common;
+use crate::common;
 
 use common::{n, num, text};
 use prospicio_xll::call;

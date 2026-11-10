@@ -4,7 +4,7 @@
 //! `PRO.RES.CL.CDF`; `PRO.PRC.PAYOUT.PRICE` reducing to the one-period price and
 //! solving its premium equation term by term.
 
-mod common;
+use crate::common;
 
 use common::{n, num, raa, t, text};
 use prospicio_xll::call;

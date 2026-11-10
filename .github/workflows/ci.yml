@@ -536,15 +536,16 @@ jobs:
           RISK_RS_REQUIRE_FREMTPL2: "1"
 
   # The Bayesian (NUTS) tests, in release:
-  # - the parity tests, the [[test]] targets of validation/Cargo.toml that
-  #   require the `slow-bayes` feature, the one place that lists them;
+  # - the parity tests, the files that validation/Cargo.toml's
+  #   [package.metadata.bayes-shards] names, behind the `slow-bayes` feature;
   # - prospicio-reserving's unit tests with its `slow-tests` feature, which
   #   un-ignores the ones that sample with NUTS (about 230 s single-threaded
   #   in debug; about 70 s in release on CI's runner).
-  # They run in three legs at once (#824), each building and running its own
-  # targets: validation/Cargo.toml's [package.metadata.bayes-shards] names
-  # each slow target's leg, and the job fails when a target has no leg or
-  # two. The rust job's debug tests skip or ignore them. On a pull request
+  # They are modules of one test binary, `bayes` (validation/build.rs, #825),
+  # run in three legs at once (#824), each with its modules as test filters:
+  # validation/Cargo.toml's [package.metadata.bayes-shards] names each file's
+  # leg, and the job fails when a name is no file, or is in two legs. The
+  # rust job's debug tests skip or ignore them. On a pull request
   # this job runs only when their inputs change; otherwise its steps are
   # skipped and it passes. A pull request runs the smoke version of the
   # one-year conformance suite and of the Meyers and compartmental one-year
@@ -569,7 +570,7 @@ jobs:
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
-              | grep -qE '^(crates/prospicio-(reserving|bayes|prob|core|math|glm|models)/|Cargo\.(toml|lock)|validation/(Cargo\.toml|src/|data/|scripts/stan/)|validation/(tests|scripts|reference)/.*(bayes|meyers|compartmental)|\.github/workflows/ci\.yml)'; then
+              | grep -qE '^(crates/prospicio-(reserving|bayes|prob|core|math|glm|models)/|Cargo\.(toml|lock)|validation/(Cargo\.toml|build\.rs|src/|data/|scripts/stan/)|validation/(tests|scripts|reference)/.*(bayes|meyers|compartmental)|\.github/workflows/ci\.yml)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -586,7 +587,7 @@ jobs:
       - if: steps.changes.outputs.run == 'true' && (github.event_name != 'push' || steps.cache.outputs.cache-hit != 'true')
         name: Build the Bayesian tests in release
         run: |
-          cargo test --release -p prospicio-validation --features slow-bayes ${{ steps.changes.outputs.tests }} --no-run
+          cargo test --release -p prospicio-validation --features slow-bayes --test bayes --no-run
           if [ "${{ steps.changes.outputs.unit }}" = true ]; then
             cargo test --release -p prospicio-reserving --features slow-tests --lib --no-run
           fi

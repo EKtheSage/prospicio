@@ -250,8 +250,8 @@ fn england_verrall_wuthrich_2012() {
 /// The Monte Carlo error behind the parity tolerances: every reference
 /// row for seeds `0..BF_SEEDS` (default 20), written to
 /// `target/bayes_bf_sweep.csv`. Run in a release build:
-/// `cargo test --release -p prospicio-validation --test reserving_bayes_bf
-/// seed_sweep -- --ignored --nocapture`.
+/// `cargo test --release -p prospicio-validation --features slow-bayes
+/// --test bayes reserving_bayes_bf::seed_sweep -- --ignored --nocapture`.
 #[test]
 #[ignore]
 fn seed_sweep() {

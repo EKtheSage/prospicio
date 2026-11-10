@@ -54,7 +54,7 @@
 //! `cargo test`, with no smoke version. Print the tables with
 //!
 //! ```text
-//! cargo test --release -p prospicio-validation --test reserving_excess_simulation -- --nocapture
+//! cargo test --release -p prospicio-validation --test validation reserving_excess_simulation:: -- --nocapture
 //! ```
 
 use prospicio_core::{Lag, StreamRng};

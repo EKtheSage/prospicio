@@ -9,7 +9,7 @@
 //!   age-to-age factors, factors to ultimate, and a 0.6 blend with the
 //!   estimates.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

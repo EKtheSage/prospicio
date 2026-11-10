@@ -10,7 +10,7 @@
 //! * the ratios against the crate's ledger, equally likely atoms when
 //!   `probs` is omitted, a profit commission, and the errors.
 
-mod common;
+use crate::common;
 
 use common::{n, num, t, text, validation};
 use prospicio_aggregate::pnl::{Book, Expense, Face, Source};

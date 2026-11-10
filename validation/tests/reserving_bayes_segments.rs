@@ -8,8 +8,8 @@
 //! seeds 0 to 69, and every row passes at each of those seeds, using at
 //! most 0.65 of its tolerance. The sweep is the ignored `seed_sweep` test
 //! in a release build: `SWEEP_SEEDS=70 cargo test --release -p
-//! prospicio-validation --test reserving_bayes_segments -- --ignored
-//! seed_sweep --nocapture` (it defaults to 40 seeds from 0;
+//! prospicio-validation --features slow-bayes --test bayes
+//! reserving_bayes_segments::seed_sweep -- --ignored --nocapture` (it defaults to 40 seeds from 0;
 //! `SWEEP_START` moves the first seed, for a check on fresh seeds). All at
 //! the defaults (4 chains of 1,000 draws, 10,000 simulations; the
 //! backtest's 4,000 draws).

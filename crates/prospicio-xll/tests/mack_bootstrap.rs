@@ -7,7 +7,7 @@
 //! ChainLadder's risks with `v` = 0.981 the resampled pool's variance on
 //! RAA, each within five Monte Carlo standard errors.
 
-mod common;
+use crate::common;
 
 use common::{n, num, raa, t, text};
 use prospicio_reserving::MackBootstrap;

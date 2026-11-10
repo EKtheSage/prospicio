@@ -6,7 +6,7 @@
 //! (`validation/tests/reserving_bayes_new_year.rs`,
 //! `reserving_industry_prior.rs`).
 
-mod common;
+use crate::common;
 
 use common::{genins, n, num, t};
 use prospicio_bayes::nuts::Sampler;

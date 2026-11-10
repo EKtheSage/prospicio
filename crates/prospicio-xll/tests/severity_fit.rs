@@ -8,7 +8,7 @@
 //! * a fit's parameters fed to `PRO.SEV.CDF`, the goodness-of-fit table
 //!   and the comparison of the body families.
 
-mod common;
+use crate::common;
 
 use common::{n, num, reference, t, text};
 use prospicio_prob::severity_fit::{Family, fit_severity};

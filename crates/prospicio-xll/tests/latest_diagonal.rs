@@ -15,7 +15,7 @@
 //! Every exhibit is also checked against the same fit made directly with
 //! `prospicio_reserving`, to the bit.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

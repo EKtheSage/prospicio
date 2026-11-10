@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
+# One test binary for the plain tests and one for the Bayesian ones (#825):
+# build.rs makes each file of tests/ a module of one of them.
+autotests = false
 license.workspace = true
 authors.workspace = true
 
@@ -29,10 +32,11 @@ rayon.workspace = true
 serde_json.workspace = true
 
 [package.metadata.bayes-shards]
-# CI's `bayes` job runs the slow Bayesian targets (the [[test]] entries
-# below that require `slow-bayes`) in three legs at once (#824). Each slow
-# target is named in exactly one leg; validation/scripts/bayes_shards.py
-# fails the job otherwise, so a new parity file names its leg here. Legs are
+# The Bayesian parity files: build.rs makes each named here a module of the
+# `bayes` test binary (#825), and CI's `bayes` job runs them in three legs at
+# once (#824), each leg with its modules as test filters. Each file is named
+# in exactly one leg; validation/scripts/bayes_shards.py fails the job
+# otherwise, so a new parity file names its leg here. Legs are
 # balanced by the run times of a pull request's smoke run (the two largest,
 # reserving_compartmental_one_year and reserving_bayes_hierarchical_bf, in
 # legs a and b); `unit-tests` names the leg that also runs
@@ -77,15 +81,14 @@ unit-tests = "c"
 # release when there were six files (thirteen now, with the one-year views'
 # refits, minutes in release), so a plain `cargo test` skips them and CI runs them in release
 # (the `bayes` job of .github/workflows/ci.yml). Run them locally with
-#   cargo test --release -p prospicio-validation --features slow-bayes \
-#     --test 'reserving_bayes*' --test 'reserving_meyers*' \
-#     --test 'reserving_compartmental*'
-# A new Bayesian parity file gets a [[test]] entry below and a leg in
-# [package.metadata.bayes-shards] above: the CI job reads both.
+#   cargo test --release -p prospicio-validation --features slow-bayes --test bayes
+# or one file with its module as a filter, `--test bayes reserving_meyers_cay::`.
+# A new Bayesian parity file gets a leg in [package.metadata.bayes-shards]
+# above, and nothing else: build.rs and the CI job read it.
 # The slowest arms (the Meyers and compartmental one-year views) run a
 # smoke version (Meyers' CRC, compartmental model 1 without its refit
 # comparison) unless RISK_RS_FULL_BAYES is set, as CI's
-# weekly and manual runs set it: prefix the command above with
+# nightly and manual runs set it: prefix the command above with
 # RISK_RS_FULL_BAYES=1 for all of them (prospicio_validation::full_bayes).
 # prospicio-reserving's own NUTS unit tests run in release with
 #   cargo test --release -p prospicio-reserving --features slow-tests --lib
@@ -93,122 +96,23 @@ unit-tests = "c"
 # Bayesian test.
 slow-bayes = ["prospicio-reserving/slow-tests"]
 
+# The test binaries (#825). `validation`: every file of tests/ that a plain
+# `cargo test` runs, each a module (build.rs finds them, so a new file needs
+# no line here). `bayes`: the Bayesian parity files, the names in
+# [package.metadata.bayes-shards], behind `slow-bayes`; among them the
+# 200-triangle calibration study (docs/design/reserving-calibration.md),
+# whose unit tests and wiring checks run in CI's `bayes` job and whose study
+# stays #[ignore]d. `fremtpl2`: the freMTPL2 parity, alone for CI's
+# `fremtpl2` job, which builds it in release.
 [[test]]
-name = "reserving_bayes"
+name = "validation"
+path = "tests/validation.rs"
+
+[[test]]
+name = "bayes"
+path = "tests/bayes.rs"
 required-features = ["slow-bayes"]
 
 [[test]]
-name = "reserving_bayes_bf"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_bayes_bf_normalised"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_bayes_hierarchical_bf"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_bayes_excess_prior"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_bayes_new_year"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_bayes_segments"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_meyers"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_meyers_cay"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_meyers_segments"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_compartmental"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_compartmental_incurred"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_compartmental_one_response"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_compartmental_grain"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_compartmental_subannual"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_compartmental_gm2"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_compartmental_segments"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_bayes_one_year"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_bayes_one_year_conformance"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_bayes_bf_one_year"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_bayes_one_year_moment_match"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_meyers_one_year"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_compartmental_one_year"
-required-features = ["slow-bayes"]
-
-# The 200-triangle calibration study (docs/design/reserving-calibration.md).
-# The entry puts the file in CI's `bayes` job, which runs its unit tests and
-# the wiring checks on group 353 (Mack, the ODP bootstrap and the six
-# Bayesian arm and basis pairs of the default run, Compartmental model 1
-# included, at the study's settings) and on synthetic squares (cut-down NUTS
-# runs, Compartmental's too) and the pin check: 34 tests, about 2 s of wall time in release on
-# 16 threads, since they run in parallel (Compartmental's group 353 check
-# alone about 1.5 s). The study itself stays #[ignore]d and runs
-# by hand only (the file's header): that job passes no `--include-ignored`.
-# The cost: a plain `cargo test` no longer builds the file, so its unit tests
-# run only in the `bayes` job, and a PR that touches only
-# validation/scripts/calibration_panel.py does not trigger that job.
-[[test]]
-name = "reserving_calibration_meyers"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_bayes_loss_ratio_draws"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_bayes_pattern_draws"
-required-features = ["slow-bayes"]
-
-[[test]]
-name = "reserving_bayes_hierarchical_bf_one_year"
-required-features = ["slow-bayes"]
+name = "fremtpl2"
+path = "tests/fremtpl2.rs"

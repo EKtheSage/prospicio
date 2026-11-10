@@ -15,3 +15,6 @@ docs/lanes/done/*.md merge=union
 # The binding allow-list: one entry per line, so concurrent PRs merge by keeping both sides' lines;
 # check_bindings.py fails on a line the union brings back.
 validation/bindings-allowlist.toml merge=union
+# Knowledge indexes: a feature PR only adds entries, so concurrent PRs merge by keeping both sides' lines (#853);
+# check_okf.py fails on an entry listed twice or one whose file is gone.
+knowledge/*/index.md merge=union

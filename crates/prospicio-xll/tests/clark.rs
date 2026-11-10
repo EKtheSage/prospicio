@@ -6,7 +6,7 @@
 //! parameter, every origin's and the total's ultimate, reserve and
 //! standard errors, for both curves and both `max_age` settings.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

@@ -746,7 +746,7 @@ fn recovery_of_the_hyperparameters() {
 }
 
 /// The 100-panel study by hand: `cargo test --release -p prospicio-validation
-/// --features slow-bayes --test reserving_bayes_hierarchical_bf recovery_full
+/// --features slow-bayes --test bayes reserving_bayes_hierarchical_bf::recovery_full
 /// -- --ignored --nocapture`.
 #[test]
 #[ignore]
