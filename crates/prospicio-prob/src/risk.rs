@@ -28,6 +28,7 @@ use crate::distribution::check_probability;
 /// ```
 pub fn var_sorted(sorted: &[f64], p: f64) -> Result<f64> {
     check_probability(p)?;
+    check_draws(sorted)?;
     debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
     Ok(sorted[rank(sorted.len(), p) - 1])
 }
@@ -38,8 +39,8 @@ pub fn var_sorted(sorted: &[f64], p: f64) -> Result<f64> {
 /// When `p * n` is not a whole number the draw at the VaR is counted with
 /// the fractional weight that falls above `p`, so the result is coherent
 /// and moves continuously with `p`. `p = 0` gives the mean and `p = 1` the
-/// largest draw. `sorted` must be non-empty and sorted ascending; this is
-/// checked only in debug builds.
+/// largest draw. `sorted` must be sorted ascending, which is checked only in
+/// debug builds; an empty slice is an error.
 ///
 /// ```
 /// use prospicio_prob::risk::tvar_sorted;
@@ -51,6 +52,7 @@ pub fn var_sorted(sorted: &[f64], p: f64) -> Result<f64> {
 /// ```
 pub fn tvar_sorted(sorted: &[f64], p: f64) -> Result<f64> {
     check_probability(p)?;
+    check_draws(sorted)?;
     debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
     let n = sorted.len();
     if p == 1.0 {
@@ -80,6 +82,7 @@ pub fn tvar_sorted(sorted: &[f64], p: f64) -> Result<f64> {
 /// ```
 pub fn var_linear_sorted(sorted: &[f64], p: f64) -> Result<f64> {
     check_probability(p)?;
+    check_draws(sorted)?;
     debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
     let n = sorted.len();
     let h = p * (n - 1) as f64;
@@ -98,8 +101,8 @@ pub fn var_linear_sorted(sorted: &[f64], p: f64) -> Result<f64> {
 /// quantiles; [`tvar_sorted`] is the exact TVaR of the empirical
 /// distribution. The two differ by a few tenths of a percent in thin tails
 /// and by more on a tail of repeated (tiled) draws. `p = 1` gives the
-/// largest draw. `sorted` must be non-empty and sorted ascending; this is
-/// checked only in debug builds.
+/// largest draw. `sorted` must be sorted ascending, which is checked only in
+/// debug builds; an empty slice is an error.
 ///
 /// ```
 /// use prospicio_prob::risk::tvar_linear_sorted;
@@ -111,6 +114,7 @@ pub fn var_linear_sorted(sorted: &[f64], p: f64) -> Result<f64> {
 /// ```
 pub fn tvar_linear_sorted(sorted: &[f64], p: f64) -> Result<f64> {
     check_probability(p)?;
+    check_draws(sorted)?;
     debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
     let n = sorted.len();
     let top = (n - 1) as f64;
@@ -159,6 +163,7 @@ pub(crate) fn tail_count(n: usize, p: f64) -> usize {
 /// ```
 pub fn var_kth_largest_sorted(sorted: &[f64], p: f64) -> Result<f64> {
     check_probability(p)?;
+    check_draws(sorted)?;
     debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
     let n = sorted.len();
     Ok(sorted[n - tail_count(n, p)])
@@ -188,6 +193,7 @@ pub fn var_kth_largest_sorted(sorted: &[f64], p: f64) -> Result<f64> {
 /// ```
 pub fn tvar_whole_years_sorted(sorted: &[f64], p: f64) -> Result<f64> {
     check_probability(p)?;
+    check_draws(sorted)?;
     debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
     let n = sorted.len();
     let k = tail_count(n, p);
@@ -229,6 +235,7 @@ fn check_window(p_low: f64, p_high: f64) -> Result<()> {
 /// ```
 pub fn window_tvar_sorted(sorted: &[f64], p_low: f64, p_high: f64) -> Result<f64> {
     check_window(p_low, p_high)?;
+    check_draws(sorted)?;
     debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
     let nf = sorted.len() as f64;
     let first = ((p_low * nf).floor() as usize).min(sorted.len() - 1);
@@ -251,6 +258,7 @@ pub fn window_tvar_sorted(sorted: &[f64], p_low: f64, p_high: f64) -> Result<f64
 /// [`tvar_linear_sorted`] at both levels.
 pub fn window_tvar_linear_sorted(sorted: &[f64], p_low: f64, p_high: f64) -> Result<f64> {
     check_window(p_low, p_high)?;
+    check_draws(sorted)?;
     let area = |p: f64| -> Result<f64> {
         Ok(if p == 1.0 {
             0.0
@@ -275,6 +283,7 @@ pub fn window_tvar_linear_sorted(sorted: &[f64], p_low: f64, p_high: f64) -> Res
 /// ```
 pub fn window_tvar_whole_years_sorted(sorted: &[f64], p_low: f64, p_high: f64) -> Result<f64> {
     check_window(p_low, p_high)?;
+    check_draws(sorted)?;
     debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
     let n = sorted.len();
     let count = |p: f64| if p == 0.0 { n } else { n - rank(n, p) };
@@ -542,6 +551,22 @@ fn is_sorted(x: &[f64]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_empty_slice_is_an_error_not_a_panic() {
+        // #832: `rank(0, p)` clamped to `1..=0`, and `n - 1` underflowed.
+        let e: [f64; 0] = [];
+        assert!(var_sorted(&e, 0.5).is_err());
+        assert!(tvar_sorted(&e, 0.5).is_err());
+        assert!(tvar_sorted(&e, 1.0).is_err());
+        assert!(var_linear_sorted(&e, 0.5).is_err());
+        assert!(tvar_linear_sorted(&e, 0.5).is_err());
+        assert!(var_kth_largest_sorted(&e, 0.5).is_err());
+        assert!(tvar_whole_years_sorted(&e, 0.5).is_err());
+        assert!(window_tvar_sorted(&e, 0.5, 0.9).is_err());
+        assert!(window_tvar_linear_sorted(&e, 0.5, 0.9).is_err());
+        assert!(window_tvar_whole_years_sorted(&e, 0.5, 0.9).is_err());
+    }
 
     /// Normal draws at plotting positions: entropic `μ + θσ²/2`, Esscher
     /// `μ + hσ²`.

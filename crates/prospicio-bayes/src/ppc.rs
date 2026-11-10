@@ -57,8 +57,11 @@ impl Statistic {
         }
     }
 
-    /// The statistic of `x`.
+    /// The statistic of `x`; NaN for an empty `x` (#832).
     pub fn of(&self, x: &[f64]) -> f64 {
+        if x.is_empty() {
+            return f64::NAN;
+        }
         let n = x.len() as f64;
         match self {
             Statistic::Mean => x.iter().sum::<f64>() / n,
@@ -369,6 +372,8 @@ mod tests {
         assert!((Statistic::Quantile(0.9).of(&x) - 4.8).abs() < 1e-12);
         assert_eq!(Statistic::ProportionZero.of(&x), 0.4);
         assert_eq!(Statistic::Quantile(0.9).name(), "q0.9");
+        assert!(Statistic::Quantile(0.5).of(&[]).is_nan());
+        assert!(Statistic::Max.of(&[]).is_nan());
         assert!(check(&x, &x, &[Statistic::Quantile(1.5)]).is_err());
         assert!(check(&x, &x[..3], &[Statistic::Mean]).is_err());
     }

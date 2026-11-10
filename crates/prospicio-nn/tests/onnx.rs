@@ -140,3 +140,98 @@ fn a_predictor_binds_design_columns_and_draws() {
     bad[3][0] = 0.5;
     assert!(net.predict(&Design::new(names, bad).unwrap()).is_err());
 }
+
+/// Protobuf by hand: a length-delimited field, a varint field.
+fn field(tag: u32, body: &[u8]) -> Vec<u8> {
+    let mut out = varint(u64::from(tag << 3 | 2));
+    out.extend(varint(body.len() as u64));
+    out.extend_from_slice(body);
+    out
+}
+
+fn int_field(tag: u32, v: u64) -> Vec<u8> {
+    let mut out = varint(u64::from(tag << 3));
+    out.extend(varint(v));
+    out
+}
+
+fn varint(mut v: u64) -> Vec<u8> {
+    let mut out = Vec::new();
+    loop {
+        let byte = (v & 0x7f) as u8;
+        v >>= 7;
+        if v == 0 {
+            out.push(byte);
+            return out;
+        }
+        out.push(byte | 0x80);
+    }
+}
+
+/// A float tensor value info named `name` of shape `dims`.
+fn value_info(name: &str, dims: &[u64]) -> Vec<u8> {
+    let shape: Vec<u8> = dims
+        .iter()
+        .flat_map(|&d| field(1, &int_field(1, d)))
+        .collect();
+    let tensor = [int_field(1, 1), field(2, &shape)].concat();
+    [field(1, name.as_bytes()), field(2, &field(1, &tensor))].concat()
+}
+
+#[test]
+fn a_malformed_file_is_an_error_not_a_panic() {
+    // #832: an initializer declaring dims [2, 2] with 3 floats, on which
+    // onnx-ir 0.21 panics.
+    let floats: Vec<u8> = [1.0f32, 2.0, 3.0]
+        .iter()
+        .flat_map(|x| x.to_le_bytes())
+        .collect();
+    let initializer = [
+        int_field(1, 2),
+        int_field(1, 2),
+        int_field(2, 1),
+        field(4, &floats),
+        field(8, b"w"),
+    ]
+    .concat();
+    let node = [
+        field(1, b"x"),
+        field(1, b"w"),
+        field(2, b"y"),
+        field(4, b"MatMul"),
+    ]
+    .concat();
+    let graph = [
+        field(1, &node),
+        field(2, b"g"),
+        field(5, &initializer),
+        field(11, &value_info("x", &[1, 2])),
+        field(12, &value_info("y", &[1, 2])),
+    ]
+    .concat();
+    let opset = [field(1, b""), int_field(2, 13)].concat();
+    let model = [int_field(1, 8), field(7, &graph), field(8, &opset)].concat();
+    let err = OnnxModel::from_bytes(&model).unwrap_err();
+    assert!(
+        err.to_string().contains("not a readable ONNX model"),
+        "{err}"
+    );
+    assert!(err.to_string().contains("12 bytes"), "{err}");
+
+    // A MatMul node with one input, on which onnx-ir 0.21 panics: the panic
+    // is caught and returned as an error.
+    let node = [field(1, b"x"), field(2, b"y"), field(4, b"MatMul")].concat();
+    let graph = [
+        field(1, &node),
+        field(2, b"g"),
+        field(11, &value_info("x", &[1, 2])),
+        field(12, &value_info("y", &[1, 2])),
+    ]
+    .concat();
+    let model = [int_field(1, 8), field(7, &graph), field(8, &opset)].concat();
+    let err = OnnxModel::from_bytes(&model).unwrap_err();
+    assert!(
+        err.to_string().contains("not a readable ONNX model"),
+        "{err}"
+    );
+}

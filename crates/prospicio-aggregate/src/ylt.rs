@@ -14,6 +14,11 @@ use prospicio_prob::provenance::InputHasher;
 
 use crate::EventSet;
 
+/// The most years a table may number without the rows to go with them:
+/// beyond 2^24 years the largest year may be at most 1,000 times the row
+/// count (#832).
+const MAX_DENSE_YEARS: usize = 1 << 24;
+
 /// How a table's years become a run's simulations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Expansion {
@@ -90,6 +95,16 @@ impl YearLossTable {
             )));
         }
         let n_years = *years.iter().max().expect("years is not empty");
+        // Years with no row are years without a loss, so a table may hold
+        // far fewer rows than years, but sparse trial ids read as years
+        // (2,000,000,000) would ask for one empty list per id (#832).
+        if n_years > MAX_DENSE_YEARS && n_years / 1000 > years.len() {
+            return Err(Error::Data(format!(
+                "the largest year, {n_years}, is far above the {} rows: years must number the \
+                 simulated years from 1, not hold trial ids",
+                years.len()
+            )));
+        }
         Ok(Self {
             years: years.iter().map(|y| y - 1).collect(),
             losses: losses.to_vec(),
@@ -400,6 +415,21 @@ pub fn hash_bytes(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trial_ids_read_as_years_are_refused() {
+        // #832: a year column holding sparse trial ids asked for one list
+        // per id, 48 GB at 2,000,000,000.
+        let err = YearLossTable::new(&[1, 2_000_000_000], &[1.0, 2.0]).unwrap_err();
+        assert!(err.to_string().contains("2000000000"), "{err}");
+        // Many years without a loss are fine within the bound.
+        assert_eq!(
+            YearLossTable::new(&[1, 100_000], &[1.0, 2.0])
+                .unwrap()
+                .n_years(),
+            100_000
+        );
+    }
 
     fn table() -> YearLossTable {
         // Three years, the third with no loss; year 1 has an event hitting

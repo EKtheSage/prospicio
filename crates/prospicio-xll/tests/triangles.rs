@@ -63,3 +63,15 @@ fn a_bad_triangle_is_text() {
     let one = Grid::from_rows(vec![vec![Value::Number(1.0)]]);
     assert!(text(&call("pro_tri_latest", vec![one])).contains("two development columns"));
 }
+
+#[test]
+fn link_ratios_of_one_age_are_an_error() {
+    // One column of values has no link ratios (#832).
+    let one = Grid::from_rows(vec![
+        vec![Value::Number(1.0)],
+        vec![Value::Number(2.0)],
+        vec![Value::Number(3.0)],
+    ]);
+    let out = call("pro_tri_linkratios", vec![one]);
+    assert!(text(&out).starts_with("#PROSPICIO!"), "{out:?}");
+}

@@ -207,9 +207,20 @@ impl OnnxModel {
 
     /// Loads an ONNX model from its bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let graph = OnnxGraphBuilder::new()
-            .parse_bytes(bytes)
-            .map_err(|e| Error::Data(format!("not a readable ONNX model: {e}")))?;
+        // onnx-ir 0.21 panics on some malformed files (an initializer whose
+        // dims do not match its data, a Gemm or MatMul node with the wrong
+        // number of inputs or outputs), so a panic is caught and returned
+        // as an error like a parse failure (#832).
+        let parsed = std::panic::catch_unwind(|| OnnxGraphBuilder::new().parse_bytes(bytes))
+            .map_err(|payload| {
+                let why = payload
+                    .downcast_ref::<String>()
+                    .map(String::as_str)
+                    .or_else(|| payload.downcast_ref::<&str>().copied())
+                    .unwrap_or("the parser panicked");
+                Error::Data(format!("not a readable ONNX model: {why}"))
+            })?;
+        let graph = parsed.map_err(|e| Error::Data(format!("not a readable ONNX model: {e}")))?;
         let inputs = graph
             .inputs
             .iter()
@@ -238,7 +249,14 @@ impl OnnxModel {
             match convert(node) {
                 Ok(Some(step)) => steps.push(step),
                 Ok(None) => {}
-                Err(reason) => unsupported.push(format!("{name} ({reason})")),
+                Err(reason) => match reason.strip_prefix(MALFORMED) {
+                    Some(why) => {
+                        return Err(Error::Data(format!(
+                            "not a readable ONNX model: {name}: {why}"
+                        )));
+                    }
+                    None => unsupported.push(format!("{name} ({reason})")),
+                },
             }
         }
         if !unsupported.is_empty() {
@@ -343,6 +361,10 @@ fn op_name(node: &Node) -> String {
     debug.split('(').next().unwrap_or("?").to_string()
 }
 
+/// The prefix of a conversion error that is a malformed file, not an
+/// operator prospicio does not run.
+const MALFORMED: &str = "malformed: ";
+
 /// An argument's value, as an operand.
 fn operand(a: &Argument) -> std::result::Result<Operand, String> {
     match a.value_source {
@@ -352,6 +374,24 @@ fn operand(a: &Argument) -> std::result::Result<Operand, String> {
             let data = a
                 .value()
                 .ok_or_else(|| format!("the constant {} has no value", a.name))?;
+            // onnx-ir 0.21 builds a constant from its bytes without checking
+            // them against its dims, and reading it then pads or cuts: a
+            // [2, 2] initializer with 3 floats read as [1, 2, 3, 0] (#832).
+            let cells: usize = data.shape.iter().product();
+            if data.bytes.len() != cells * data.dtype.size() {
+                return Err(format!(
+                    "{MALFORMED}a constant {}declares shape {:?} ({cells} values) but holds {} \
+                     bytes of {:?}",
+                    if a.name.is_empty() {
+                        String::new()
+                    } else {
+                        format!("({}) ", a.name)
+                    },
+                    data.shape.to_vec(),
+                    data.bytes.len(),
+                    data.dtype
+                ));
+            }
             let values = data
                 .to_f64_vec()
                 .map_err(|e| format!("the constant {} cannot be read: {e:?}", a.name))?;

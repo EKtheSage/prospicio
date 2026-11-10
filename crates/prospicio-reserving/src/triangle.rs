@@ -287,7 +287,14 @@ impl Triangle {
             .collect();
 
         let shape = [index.len(), columns.len(), n_origins, n_dev];
-        let size = shape.iter().product();
+        let size = checked_size(&shape, n).map_err(|cells| {
+            Error::TooLarge(format!(
+                "origins from {} to {} and ages from {youngest} to {oldest} months make {cells} \
+                 cells for {n} rows; a mistyped origin or valuation spreads the grid this far",
+                origins[0],
+                origins[n_origins - 1]
+            ))
+        })?;
         let mut tri = Self {
             values: vec![0.0; size],
             mask: vec![false; size],
@@ -1319,9 +1326,64 @@ impl Segment {
     }
 }
 
+/// The most cells a long table may ask for whatever its row count: 2^24,
+/// about 150 MB of values and mask.
+const MAX_DENSE_CELLS: usize = 1 << 24;
+
+/// The product of `shape`, or `Err` with it (saturated) when it exceeds both
+/// [`MAX_DENSE_CELLS`] and 1,000 cells for each of the `rows` read (#832).
+/// A real triangle with gaps between origins or ages fits well within
+/// either bound; one mistyped period does not.
+fn checked_size(shape: &[usize], rows: usize) -> std::result::Result<usize, usize> {
+    let cells = shape.iter().fold(1usize, |a, &b| a.saturating_mul(b));
+    if cells > MAX_DENSE_CELLS && cells / 1000 > rows {
+        Err(cells)
+    } else {
+        Ok(cells)
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn a_mistyped_origin_is_refused_before_the_grid_is_allocated() {
+        // #832: one monthly origin typed 9020-01 among the 2020s asked for
+        // about 84,000 x 84,000 cells.
+        let mut origin: Vec<Month> = (1..=12).map(|k| m(2020, k)).collect();
+        origin.push(m(9020, 1));
+        let values = vec![1.0; 13];
+        // Incremental, so the grid runs to the oldest origin's age at the
+        // valuation: 84,001 origins by 84,001 ages.
+        let built = Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Valuation(&origin),
+            values: &[("paid", &values)],
+            origin_grain: Grain::Month,
+            development_grain: Grain::Month,
+            cumulative: false,
+        });
+        let Err(err) = built else {
+            panic!("a 9020 origin built a triangle")
+        };
+        assert!(matches!(err, Error::TooLarge(_)), "{err}");
+        assert!(err.to_string().contains("9020"), "{err}");
+        // Twelve years of months with gaps between origins still build.
+        let origin: Vec<Month> = [2010, 2015, 2021].map(|y| m(y, 1)).to_vec();
+        let t = Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&[1, 1, 1]),
+            values: &[("paid", &[1.0, 2.0, 3.0])],
+            origin_grain: Grain::Month,
+            development_grain: Grain::Month,
+            cumulative: false,
+        })
+        .unwrap();
+        assert_eq!(t.origins().len(), 133);
+    }
 
     /// RAA cumulative triangle (Mack 1993), origins 1981-1990.
     pub(crate) const RAA: [&[f64]; 10] = [

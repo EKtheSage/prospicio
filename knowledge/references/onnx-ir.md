@@ -5,7 +5,7 @@ description: onnx-ir 0.21.0, the parser behind burn-import, reads an ONNX file a
 resource: https://crates.io/crates/onnx-ir
 tags: [onnx, burn, prospicio-nn, import, pytorch]
 status: stable
-verified: { by: process:ci, at: 2026-10-16T12:00:00Z }
+verified: { by: process:ci, at: 2026-11-10T00:00:00Z }
 generated: { by: claude-code/cloud-session, at: 2026-10-16T12:00:00Z }
 sources:
   - id: crate
@@ -42,6 +42,18 @@ sources:
 * The graph holds `Rc` references, so it is neither `Send` nor `Sync`;
   `prospicio_nn::onnx::OnnxModel` copies it at load into its own steps
   and `f64` tensors.[^tests]
+* Some malformed files make the parse panic instead of returning an
+  error: a `MatMul` node without two inputs or a `Gemm` without one output
+  (`phases/node_conversion.rs`), and an initializer whose typed payload
+  cannot be decoded and is neither a scalar nor empty
+  (`proto_conversion.rs`). `OnnxModel::from_bytes` wraps the parse in
+  `catch_unwind` and returns the panic message as `Error::Data` (#832).[^tests]
+* An initializer whose `float_data` holds fewer values than its `dims`
+  is not refused: `TensorDataRef::new` takes the bytes and the shape
+  without comparing them, and the constant then reads as padded (dims
+  `[2, 2]` with three floats as `[1, 2, 3, 0]`). `prospicio_nn::onnx`
+  checks each constant's byte length against its shape and dtype before
+  reading it (#832).[^tests]
 
 [^crate]: onnx-ir 0.21.0 sources
 [^tests]: `crates/prospicio-nn/tests/onnx.rs` and `crates/prospicio-nn/src/onnx.rs`
