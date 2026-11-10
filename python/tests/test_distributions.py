@@ -356,6 +356,9 @@ def test_named_counts_and_tvar_threshold():
 
     # aggregate 2.1.0's fixed, bernoulli and geometric (aggregate_counts.py)
     assert Count.fixed(3).pmf(3) == 1.0
+    assert Count.fixed(3.0).pmf(3) == 1.0
+    with pytest.raises(ValueError, match="whole"):
+        Count.fixed(2.5)
     assert Count.bernoulli(0.3).pmf(1) == pytest.approx(0.3, abs=1e-15)
     assert Count.geometric(3.0).pmf(1) == pytest.approx(0.1875, abs=1e-15)
     with pytest.raises(ValueError):
@@ -401,8 +404,14 @@ def test_discrete():
     assert t["p"][0] == pytest.approx(0.001)
     assert t["var"][0] == 1.0 and t["period"][0] == 1000.0
     # Values equal to the last bit are one atom; zero masses drop out.
-    d = Discrete([3.1, 3.0999999999999996, -2.0, 9.0], [1, 1, 2, 0])
+    d = Discrete([3.1, 3.0999999999999996, -2.0, 9.0], [1, 1, 2, 0], normalize=True)
     assert len(d) == 2 and d.probs == [0.5, 0.5]
+    # aggregate 2.1.0's rule for dsev: the probabilities sum to 1 within 1e-5.
+    assert sum(Discrete([1.0, 2.0], [0.5, 0.499991]).probs) == pytest.approx(1.0, abs=1e-15)
+    with pytest.raises(ValueError, match="0.98"):
+        Discrete([1.0, 2.0], [0.5, 0.48])
+    with pytest.raises(ValueError, match="sum to 4"):
+        Discrete([3.1, -2.0], [2, 2])
     assert Discrete([-4.5], [1.0]).skewness() is None
     with pytest.raises(ValueError):
         Discrete([1.0], [0.0])
@@ -517,3 +526,26 @@ def test_size_of_loss_table():
     assert round(loss_elimination_ratio(h, 250), 3) == 0.135
     with pytest.raises(ValueError):
         SizeOfLoss([0, 10, 20], [1, 1], [11, 15])
+
+
+def test_tweedie_conversions_match_aggregate():
+    # aggregate 2.1.0's TweedieConversion (validation/scripts/aggregate_tweedie.py):
+    # tweedie 1.5 100 2 = tweedie 1.5 100 cv 0.447214 = tweedie 10 claims sev gamma 10 cv 1.
+    from prospicio.distributions import Tweedie
+
+    a = Tweedie(100.0, 2.0, 1.5)
+    b = Tweedie.from_cv(1.5, 100.0, 0.447213595499958)
+    c = Tweedie.from_compound(10.0, 10.0, 1.0)
+    d = Tweedie.from_cv_dispersion(100.0, a.cv, 2.0)
+    for y in (a, b, c, d):
+        assert y.power == pytest.approx(1.5, rel=1e-13)
+        assert y.dispersion == pytest.approx(2.0, rel=1e-13)
+        assert y.cv == pytest.approx(0.447213595499958, rel=1e-13)
+        assert y.lambda_ == pytest.approx(10.0, rel=1e-13)
+        assert y.severity_mean == pytest.approx(10.0, rel=1e-13)
+        assert y.severity_cv == pytest.approx(1.0, rel=1e-13)
+        assert y.p0 == pytest.approx(4.5399929762484854e-05, rel=1e-12)
+    with pytest.raises(ValueError, match="power"):
+        Tweedie.from_cv_dispersion(100.0, 0.5, 0.1)
+    with pytest.raises(ValueError, match="power"):
+        Tweedie.from_cv(2.5, 100.0, 0.5)

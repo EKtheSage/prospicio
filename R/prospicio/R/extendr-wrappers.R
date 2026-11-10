@@ -1965,7 +1965,7 @@ DiscreteDist$cdf <- function(x) .Call(wrap__DiscreteDist__cdf, self, x)
 
 DiscreteDist$mean <- function() .Call(wrap__DiscreteDist__mean, self)
 
-DiscreteDist$new <- function(values, probs) .Call(wrap__DiscreteDist__new, values, probs)
+DiscreteDist$new <- function(values, probs, normalize) .Call(wrap__DiscreteDist__new, values, probs, normalize)
 
 DiscreteDist$pmf <- function(x) .Call(wrap__DiscreteDist__pmf, self, x)
 
@@ -3845,15 +3845,21 @@ RiskDistortion$allocate <- function(pd) .Call(wrap__RiskDistortion__allocate, se
 
 RiskDistortion$calibrate <- function(family, x, premium, assets, r0) .Call(wrap__RiskDistortion__calibrate, family, x, premium, assets, r0)
 
+RiskDistortion$calibrate_all <- function(families, x, premium, assets) .Call(wrap__RiskDistortion__calibrate_all, families, x, premium, assets)
+
 RiskDistortion$capital <- function(pd, method) .Call(wrap__RiskDistortion__capital, self, pd, method)
 
 RiskDistortion$convex <- function(s, g) .Call(wrap__RiskDistortion__convex, s, g)
+
+RiskDistortion$from_gini <- function(family, gini) .Call(wrap__RiskDistortion__from_gini, family, gini)
 
 RiskDistortion$g <- function(s) .Call(wrap__RiskDistortion__g, self, s)
 
 RiskDistortion$g_dual <- function(s) .Call(wrap__RiskDistortion__g_dual, self, s)
 
 RiskDistortion$g_inv <- function(y) .Call(wrap__RiskDistortion__g_inv, self, y)
+
+RiskDistortion$gini <- function() .Call(wrap__RiskDistortion__gini, self)
 
 RiskDistortion$kind <- function() .Call(wrap__RiskDistortion__kind, self)
 
@@ -4305,7 +4311,15 @@ TweedieDist <- new.env(parent = emptyenv())
 
 TweedieDist$cdf <- function(x) .Call(wrap__TweedieDist__cdf, self, x)
 
+TweedieDist$cv <- function() .Call(wrap__TweedieDist__cv, self)
+
 TweedieDist$dispersion <- function() .Call(wrap__TweedieDist__dispersion, self)
+
+TweedieDist$from_compound <- function(frequency, severity_mean, severity_cv) .Call(wrap__TweedieDist__from_compound, frequency, severity_mean, severity_cv)
+
+TweedieDist$from_cv <- function(power, mean, cv) .Call(wrap__TweedieDist__from_cv, power, mean, cv)
+
+TweedieDist$from_cv_dispersion <- function(mean, cv, dispersion) .Call(wrap__TweedieDist__from_cv_dispersion, mean, cv, dispersion)
 
 TweedieDist$from_poisson_gamma <- function(lambda, shape, scale) .Call(wrap__TweedieDist__from_poisson_gamma, lambda, shape, scale)
 
@@ -4325,6 +4339,8 @@ TweedieDist$mean <- function() .Call(wrap__TweedieDist__mean, self)
 
 TweedieDist$new <- function(mean, dispersion, power) .Call(wrap__TweedieDist__new, mean, dispersion, power)
 
+TweedieDist$p0 <- function() .Call(wrap__TweedieDist__p0, self)
+
 TweedieDist$power <- function() .Call(wrap__TweedieDist__power, self)
 
 TweedieDist$quantile <- function(p) .Call(wrap__TweedieDist__quantile, self, p)
@@ -4332,6 +4348,10 @@ TweedieDist$quantile <- function(p) .Call(wrap__TweedieDist__quantile, self, p)
 TweedieDist$sample <- function(n, seed, stream) .Call(wrap__TweedieDist__sample, self, n, seed, stream)
 
 TweedieDist$severity <- function() .Call(wrap__TweedieDist__severity, self)
+
+TweedieDist$severity_cv <- function() .Call(wrap__TweedieDist__severity_cv, self)
+
+TweedieDist$severity_mean <- function() .Call(wrap__TweedieDist__severity_mean, self)
 
 TweedieDist$stop_loss <- function(retention) .Call(wrap__TweedieDist__stop_loss, self, retention)
 

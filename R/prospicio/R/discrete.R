@@ -7,8 +7,9 @@ NULL
 #' P&L (premium less loss less expenses) or any other signed outcome, as the
 #' Python package `aggregate`'s `GridDistribution` on an irregular support.
 #' Values may repeat and come in any order: equal values (to `1e-12`) are
-#' merged, zero probabilities dropped, and the probabilities rescaled to sum
-#' to 1.
+#' merged and zero probabilities dropped. The probabilities must sum to 1
+#' within `1e-5` (`aggregate` 2.1.0's rule for `dsev`); `normalize = TRUE`
+#' rescales weights or counts of any positive total.
 #'
 #' Supports [mean()], [variance()], [cdf()], [survival()], [pmf()],
 #' `quantile()` (the lower quantile), [VaR()] and [TVaR()], following
@@ -20,7 +21,8 @@ NULL
 #' low rows, a loss off the high ones).
 #'
 #' @param values Numeric values.
-#' @param probs Non-negative probabilities with a positive total.
+#' @param probs Non-negative probabilities summing to 1 within `1e-5`.
+#' @param normalize Divide `probs` by their sum first.
 #' @param ptr Internal.
 #' @param dist A `discrete_distribution`.
 #' @param p Probabilities in `[0, 1]`.
@@ -46,8 +48,10 @@ discrete_distribution <- S7::new_class(
     values = S7::new_property(S7::class_double, getter = function(self) self@ptr$values()),
     probs = S7::new_property(S7::class_double, getter = function(self) self@ptr$probs())
   ),
-  constructor = function(values, probs, ptr = NULL) {
-    if (is.null(ptr)) ptr <- rust_result(DiscreteDist$new(as.double(values), as.double(probs)))
+  constructor = function(values, probs, normalize = FALSE, ptr = NULL) {
+    if (is.null(ptr)) {
+      ptr <- rust_result(DiscreteDist$new(as.double(values), as.double(probs), isTRUE(normalize)))
+    }
     S7::new_object(S7::S7_object(), ptr = ptr)
   }
 )

@@ -8,4 +8,3 @@ Finished items are in [done/aggregate.md](done/aggregate.md), which agents read 
 
 ## Next
 
-- #771 the extended distortion calibration set (aggregate 2.1.0 parity, 0.1.0)

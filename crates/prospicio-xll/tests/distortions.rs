@@ -230,6 +230,29 @@ fn calibration_defaults_to_the_standard_five_and_prices_back() {
     }
 }
 
+/// `"extended"` adds Tsallis between Wang and dual, at `aggregate` 2.1.0's
+/// parameter (`validation/reference/distortion_gini_aggregate.csv`).
+#[test]
+fn calibration_extended_adds_tsallis() {
+    let premium = (46.6 + 0.15 * 100.0) / 1.15;
+    let out = call(
+        "pro_cap_distortion_calibrate",
+        vec![
+            Grid::column(&X),
+            Grid::column(&P),
+            n(premium),
+            t("extended"),
+        ],
+    );
+    assert_eq!((out.rows, out.columns), (7, 3));
+    assert_eq!(out.get(4, 0), &Value::from("tsallis"));
+    // aggregate's Newton stops at a premium error of 7e-15 for Tsallis.
+    assert!((num(out.get(4, 1)) - 3.069093409430775).abs() < 1e-8);
+    let g = call("pro_cap_distortion", vec![n(0.3), t("tsallis"), n(2.0)]);
+    // Order 2 is dual(2): 1 - 0.7^2.
+    assert!((num(g.get(0, 0)) - 0.51).abs() < 1e-15);
+}
+
 #[test]
 fn draws_are_equally_likely_and_any_order() {
     // TVaR at 50% of four draws is the mean of the top two.

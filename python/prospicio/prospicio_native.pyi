@@ -9663,13 +9663,15 @@ class Count:
         Count
         """
     @staticmethod
-    def fixed(n: int) -> Count:
+    def fixed(n: float) -> Count:
         """
         A fixed count, ``N = n``, ``aggregate``'s ``fixed``.
         
         Parameters
         ----------
-        n : int
+        n : int or float
+            A whole number of claims; ``2.5`` is refused, as ``aggregate``
+            2.1.0 refuses a fractional fixed count.
         
         Returns
         -------
@@ -11164,8 +11166,10 @@ class Discrete:
     irregular support.
     
     Values may repeat and come in any order: equal values (to ``1e-12``) are
-    merged, zero probabilities dropped, and the probabilities rescaled to
-    sum to 1. Quantiles and TVaR follow ``aggregate`` exactly; ``tvar`` is
+    merged and zero probabilities dropped. The probabilities must sum to 1
+    within ``1e-5`` (``aggregate`` 2.1.0's rule for ``dsev``); pass
+    ``normalize=True`` to rescale weights or counts of any positive total.
+    Quantiles and TVaR follow ``aggregate`` exactly; ``tvar`` is
     the upper tail even when the values are a payoff, whose adverse tail is
     the low one.
     
@@ -11173,13 +11177,16 @@ class Discrete:
     ----------
     values : list of float
     probs : list of float
-        Non-negative, with a positive total.
+        Non-negative, summing to 1 within ``1e-5``.
+    normalize : bool, default False
+        Divide ``probs`` by their sum first.
     
     Raises
     ------
     ValueError
         If the lengths differ, a value is not finite, a probability is
-        negative or none is positive.
+        negative or none is positive, or (without ``normalize``) the
+        probabilities sum to more than ``1e-5`` away from 1.
     
     Examples
     --------
@@ -11192,7 +11199,7 @@ class Discrete:
     5.242424
     """
     def __len__(self, /) -> int: ...
-    def __new__(cls, /, values: Sequence[float], probs: Sequence[float]) -> Discrete: ...
+    def __new__(cls, /, values: Sequence[float], probs: Sequence[float], normalize: bool = False) -> Discrete: ...
     def __repr__(self, /) -> str: ...
     def cdf(self, /, x: float) -> float:
         """
@@ -11536,7 +11543,7 @@ class Distortion:
     
     Make one with ``Distortion.tvar``, ``Distortion.wang``,
     ``Distortion.proportional_hazard``, ``Distortion.dual_power``,
-    ``Distortion.exponential``, ``Distortion.ccoc`` (constant cost of
+    ``Distortion.exponential``, ``Distortion.tsallis``, ``Distortion.ccoc`` (constant cost of
     capital), ``Distortion.bitvar``, ``Distortion.weighted_tvar``,
     ``Distortion.capped_linear``, ``Distortion.capped_log_linear``,
     ``Distortion.lep``, ``Distortion.linear_yield``, ``Distortion.beta``,
@@ -11691,6 +11698,33 @@ class Distortion:
         The family, as its constructor is named, for example
         ``"proportional_hazard"`` or ``"capped_linear"``.
         """
+    @staticmethod
+    def from_gini(family: str, gini: float) -> Distortion:
+        """
+        The member of a one-parameter family with Gini index ``gini``.
+        
+        Parameters
+        ----------
+        family : str
+            ``"ccoc"``, ``"ph"``, ``"wang"``, ``"tsallis"``, ``"dual"``,
+            ``"tvar"`` or ``"exp"``.
+        gini : float
+            In ``(0, 1)``: 0 is the mean and 1 the maximum.
+        
+        Returns
+        -------
+        Distortion
+            The members of the families with one index price a uniform loss
+            alike, at ``(1 + gini) / 2``.
+        
+        Examples
+        --------
+        >>> from prospicio.risk import Distortion
+        >>> Distortion.from_gini("tsallis", 0.25)
+        Distortion.tsallis(3.0)
+        >>> round(Distortion.from_gini("ph", 0.25).parameter, 12)
+        0.6
+        """
     def g(self, /, s: float) -> float:
         """
         The distortion ``g(s)`` of a survival probability ``s``.
@@ -11726,6 +11760,19 @@ class Distortion:
         Returns
         -------
         float
+        """
+    @property
+    def gini(self, /) -> float:
+        """
+        The Gini index ``2 * integral of g - 1``: 0 for the mean and 1 for the
+        maximum, and the level of the TVaR that prices a uniform loss as this
+        distortion does (``aggregate``'s ``gini``).
+        
+        Examples
+        --------
+        >>> from prospicio.risk import Distortion
+        >>> Distortion.tvar(0.9).gini, round(Distortion.proportional_hazard(0.5).gini, 12)
+        (0.9, 0.333333333333)
         """
     @staticmethod
     def lep(r0: float, r: float) -> Distortion:
@@ -11844,6 +11891,30 @@ class Distortion:
         Returns
         -------
         Distortion
+        """
+    @staticmethod
+    def tsallis(alpha: float) -> Distortion:
+        """
+        Tsallis distortion of order ``alpha``, the Beta(alpha, 1) mixture of
+        TVaRs: ``g(s) = (alpha s - s**alpha) / (alpha - 1)``, and
+        ``s (1 - log s)`` at ``alpha = 1``. Its price is the mean plus the
+        cumulative residual Tsallis entropy of order ``alpha``; ``alpha = 2``
+        is ``dual_power(2)`` and the Gini index is ``1 / (alpha + 1)``.
+        
+        Parameters
+        ----------
+        alpha : float
+            Positive; the mean as ``alpha -> inf``, the maximum as ``alpha -> 0``.
+        
+        Returns
+        -------
+        Distortion
+        
+        Examples
+        --------
+        >>> from prospicio.risk import Distortion
+        >>> round(Distortion.tsallis(2.0).g(0.3), 12), Distortion.tsallis(3.0).gini
+        (0.51, 0.25)
         """
     @staticmethod
     def tvar(p: float) -> Distortion:
@@ -34304,9 +34375,88 @@ class Tweedie:
         float
         """
     @property
+    def cv(self, /) -> float:
+        """
+        Coefficient of variation ``sqrt(phi) * mu**(p/2 - 1)``.
+        """
+    @property
     def dispersion(self, /) -> float:
         """
         Dispersion ``phi``.
+        """
+    @staticmethod
+    def from_compound(frequency: float, severity_mean: float, severity_cv: float) -> Tweedie:
+        """
+        The Tweedie equal to a Poisson number of losses with mean
+        ``frequency`` and a gamma severity with mean ``severity_mean`` and
+        coefficient of variation ``severity_cv``, as ``aggregate``'s
+        ``TweedieConversion.from_compound``.
+        
+        Parameters
+        ----------
+        frequency : float
+        severity_mean : float
+        severity_cv : float
+        
+        Returns
+        -------
+        Tweedie
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Tweedie
+        >>> y = Tweedie.from_compound(10.0, 10.0, 1.0)
+        >>> round(y.power, 12), round(y.dispersion, 12)
+        (1.5, 2.0)
+        """
+    @staticmethod
+    def from_cv(power: float, mean: float, cv: float) -> Tweedie:
+        """
+        The Tweedie with power ``power``, mean ``mean`` and coefficient of
+        variation ``cv`` (of the Tweedie, not of its severity): dispersion
+        ``cv**2 * mean**(2 - power)``, as ``aggregate``'s
+        ``TweedieConversion.from_cv``.
+        
+        Parameters
+        ----------
+        power : float
+            In ``(1, 2)``.
+        mean : float
+        cv : float
+        
+        Returns
+        -------
+        Tweedie
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Tweedie
+        >>> round(Tweedie.from_cv(1.5, 100.0, 0.5).dispersion, 12)
+        2.5
+        """
+    @staticmethod
+    def from_cv_dispersion(mean: float, cv: float, dispersion: float) -> Tweedie:
+        """
+        The Tweedie with mean ``mean``, coefficient of variation ``cv`` and
+        dispersion ``dispersion``: the power ``2 + log(cv**2 / dispersion) /
+        log(mean)``, which must lie in ``(1, 2)``.
+        
+        Parameters
+        ----------
+        mean : float
+            Not 1.
+        cv : float
+        dispersion : float
+        
+        Returns
+        -------
+        Tweedie
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Tweedie
+        >>> round(Tweedie.from_cv_dispersion(100.0, 0.5, 2.5).power, 12)
+        1.5
         """
     @staticmethod
     def from_poisson_gamma(lambda_: float, shape: float, scale: float) -> Tweedie:
@@ -34419,6 +34569,11 @@ class Tweedie:
         float
         """
     @property
+    def p0(self, /) -> float:
+        """
+        Probability of no loss, ``exp(-lambda_)``.
+        """
+    @property
     def power(self, /) -> float:
         """
         Power ``p``.
@@ -34460,6 +34615,16 @@ class Tweedie:
     def severity(self, /) -> Gamma:
         """
         The gamma distribution of each loss.
+        """
+    @property
+    def severity_cv(self, /) -> float:
+        """
+        Coefficient of variation of each gamma loss.
+        """
+    @property
+    def severity_mean(self, /) -> float:
+        """
+        Mean of each gamma loss, ``mu / lambda_``.
         """
     def std(self, /) -> float:
         """
@@ -36101,8 +36266,8 @@ def calibrate(family: str, dist: Any, premium: float, assets: float |None = None
     Parameters
     ----------
     family : str
-        ``"ccoc"``, ``"ph"``, ``"wang"``, ``"dual"``, ``"tvar"``, ``"exp"``,
-        ``"clin"``, ``"cll"``, ``"lep"`` or ``"ly"``.
+        ``"ccoc"``, ``"ph"``, ``"wang"``, ``"tsallis"``, ``"dual"``, ``"tvar"``,
+        ``"exp"``, ``"clin"``, ``"cll"``, ``"lep"`` or ``"ly"``.
     dist : Sampled, Grid or PredictiveDistribution
         A predictive distribution is priced on its total.
     premium : float
@@ -36142,6 +36307,44 @@ def calibrate_classical(principle: str, dist: Any, premium: float, q: float = 2.
     Returns
     -------
     float
+    """
+
+def calibrate_distortions(dist: Any, premium: float, assets: float |None = None, extended: bool = False, families: Sequence[str] |None = None) -> dict:
+    """
+    Each family's member whose price of ``dist`` is ``premium``, as
+    ``aggregate``'s ``calibrate_distortions``.
+    
+    Parameters
+    ----------
+    dist : Sampled, Grid or PredictiveDistribution
+        A predictive distribution is priced on its total.
+    premium : float
+        The target price, strictly between the (capped) mean and maximum.
+    assets : float, optional
+        Price the loss capped at the assets, ``min(X, assets)``.
+    extended : bool, default False
+        The extended set, with ``"tsallis"`` between ``"wang"`` and
+        ``"dual"`` (``aggregate``'s ``extended=True``); the default is CCoC,
+        PH, Wang, dual and TVaR.
+    families : list of str, optional
+        Families by name instead (not with ``extended``).
+    
+    Returns
+    -------
+    dict of str to Distortion
+        By family name, in order.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Sampled
+    >>> from prospicio.risk import calibrate_distortions
+    >>> x = Sampled([22, 28, 36, 40, 40, 40, 40, 55, 65, 100])
+    >>> premium = (46.6 + 0.15 * 100) / 1.15
+    >>> ds = calibrate_distortions(x, premium, extended=True)
+    >>> list(ds)
+    ['ccoc', 'ph', 'wang', 'tsallis', 'dual', 'tvar']
+    >>> round(ds["tsallis"].parameter, 6)
+    3.069093
     """
 
 def capital(pd: PredictiveDistribution, distortion: Distortion, method: str = "euler") -> Allocation:
