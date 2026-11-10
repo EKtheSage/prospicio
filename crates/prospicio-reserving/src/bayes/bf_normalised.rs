@@ -3011,7 +3011,7 @@ mod tests {
             n_sims: 100,
             ..quick(841)
         };
-        crate::bayes::pins::check("BayesBfNormalised", 0, || {
+        crate::bayes::pins::check("BayesBfNormalised", 0x6216_9c8e_93ca_4a24, || {
             let fit = model.fit(&genins(), "values", "premium").unwrap();
             crate::bayes::pins::fit_hash(&fit.posterior, &fit.reserves)
         });

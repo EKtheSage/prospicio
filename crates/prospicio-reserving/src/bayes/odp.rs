@@ -2424,7 +2424,7 @@ mod tests {
             seed: 841,
             ..BayesOdp::default()
         };
-        pins::check("BayesOdp", 0, || {
+        pins::check("BayesOdp", 0xcb99_f7d1_8967_223a, || {
             let fit = model.fit(&raa(), "values").unwrap();
             pins::fit_hash(&fit.posterior, &fit.reserves)
         });

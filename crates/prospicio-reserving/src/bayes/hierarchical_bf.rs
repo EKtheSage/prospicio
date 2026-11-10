@@ -3186,7 +3186,7 @@ mod tests {
             n_sims: 100,
             ..quick(841)
         };
-        crate::bayes::pins::check("HierarchicalBf", 0, || {
+        crate::bayes::pins::check("HierarchicalBf", 0xb2df_4618_3823_c08e, || {
             let fit = model.fit(&three_programs(), "values", "premium").unwrap();
             crate::bayes::pins::fit_hash(&fit.posterior, &fit.reserves)
         });

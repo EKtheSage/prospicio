@@ -1701,7 +1701,7 @@ mod tests {
             n_sims: 100,
             ..quick(841)
         };
-        crate::bayes::pins::check("BayesBf", 0, || {
+        crate::bayes::pins::check("BayesBf", 0xc980_8767_c185_78f3, || {
             let fit = model.fit(&genins(), "values", "premium").unwrap();
             crate::bayes::pins::fit_hash(&fit.posterior, &fit.reserves)
         });

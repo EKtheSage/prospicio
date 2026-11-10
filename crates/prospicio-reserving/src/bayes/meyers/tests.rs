@@ -2034,7 +2034,7 @@ fn the_fit_is_pinned_on_linux() {
         n_sims: 100,
         ..quick(MeyersModel::Crc, 841)
     };
-    crate::bayes::pins::check("Meyers", 0, || {
+    crate::bayes::pins::check("Meyers", 0x6d7a_5417_2d5b_35d5, || {
         let fit = model.fit(&comauto(), "paid", "premium").unwrap();
         crate::bayes::pins::fit_hash(&fit.posterior, &fit.reserves)
     });

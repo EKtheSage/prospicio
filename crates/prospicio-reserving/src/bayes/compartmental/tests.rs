@@ -4032,7 +4032,7 @@ fn the_fit_is_pinned_on_linux() {
         n_sims: 100,
         ..quick(841)
     };
-    crate::bayes::pins::check("Compartmental", 0, || {
+    crate::bayes::pins::check("Compartmental", 0x6956_4f17_9431_dcb1, || {
         let fit = model
             .fit(&triangle(true), "paid", incurred(), "premium")
             .unwrap();
