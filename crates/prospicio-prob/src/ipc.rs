@@ -564,7 +564,7 @@ mod tests {
     fn with_schema_meta(batch: &RecordBatch, k: &str, v: Option<&str>) -> RecordBatch {
         let mut meta = batch.schema().metadata().clone();
         match v {
-            Some(v) => meta.insert(k.into(), v.into()),
+            Some(v) => meta.insert(k, v),
             None => meta.remove(k),
         };
         let schema = Schema::new_with_metadata(batch.schema().fields().clone(), meta);

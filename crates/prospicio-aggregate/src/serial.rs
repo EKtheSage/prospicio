@@ -58,7 +58,8 @@
 //! none.
 
 use prospicio_core::{Error, Result};
-use serde_json::{Map, Number, Value, json};
+use prospicio_prob::serial::json::{self, float, num, object, to_f64};
+use serde_json::{Map, Value, json};
 
 use crate::deal::{DealScale, Deduction};
 use crate::pnl::ExpenseBasis;
@@ -167,15 +168,7 @@ impl Tower {
                 )));
             }
         }
-        let version = top
-            .get("format_version")
-            .and_then(Value::as_u64)
-            .ok_or_else(|| Error::Data("format_version is missing".into()))?;
-        if version > FORMAT_VERSION {
-            return Err(Error::Data(format!(
-                "format_version {version} is newer than this build reads ({FORMAT_VERSION})"
-            )));
-        }
+        json::format_version(top, FORMAT_VERSION)?;
         let stages = array(top, "stages")?
             .iter()
             .map(|stage| {
@@ -747,46 +740,10 @@ fn layer_from(m: &Map<String, Value>) -> Result<Layer> {
     Ok(layer)
 }
 
-fn num(x: f64) -> Value {
-    match Number::from_f64(x) {
-        Some(n) => Value::Number(n),
-        None if x.is_nan() => json!("NaN"),
-        None if x > 0.0 => json!("inf"),
-        None => json!("-inf"),
-    }
-}
-
-fn to_f64(v: &Value, name: &str) -> Result<f64> {
-    match v {
-        Value::Number(n) => n.as_f64(),
-        Value::String(s) => match s.as_str() {
-            "NaN" => Some(f64::NAN),
-            "inf" => Some(f64::INFINITY),
-            "-inf" => Some(f64::NEG_INFINITY),
-            _ => None,
-        },
-        _ => None,
-    }
-    .ok_or_else(|| Error::Data(format!("{name} must be a number")))
-}
-
-fn float(m: &Map<String, Value>, name: &str) -> Result<f64> {
-    to_f64(
-        m.get(name)
-            .ok_or_else(|| Error::Data(format!("{name} is missing")))?,
-        name,
-    )
-}
-
 fn array<'a>(m: &'a Map<String, Value>, name: &str) -> Result<&'a Vec<Value>> {
     m.get(name)
         .and_then(Value::as_array)
         .ok_or_else(|| Error::Data(format!("{name} must be a list")))
-}
-
-fn object<'a>(v: &'a Value, what: &str) -> Result<&'a Map<String, Value>> {
-    v.as_object()
-        .ok_or_else(|| Error::Data(format!("the {what} must be a JSON object")))
 }
 
 #[cfg(test)]

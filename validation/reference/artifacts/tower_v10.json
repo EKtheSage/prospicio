@@ -1,0 +1,21 @@
+{
+  "format": "risk_rs.tower",
+  "format_version": 10,
+  "stages": [
+    [
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": "inf",
+        "attachment": 50.0,
+        "basis": "loss",
+        "disappearing": 100.0,
+        "limit": 300.0,
+        "name": "d",
+        "premium": 0.0,
+        "pro_rata_time": false,
+        "reinstatement_rates": [],
+        "share": 1.0
+      }
+    ]
+  ]
+}

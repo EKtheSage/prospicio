@@ -11986,7 +11986,8 @@ class DoubleGlm:
     family : str
         ``"gaussian"``, ``"poisson"``, ``"gamma"`` or ``"tweedie"``.
     link : str, optional
-        The mean's link; the family's canonical link by default.
+        The mean's link; by default the log link for the gamma, inverse
+        Gaussian and Tweedie, the canonical link otherwise.
     power : float, optional
         The Tweedie's power, in (1, 2).
     method : str
@@ -12242,7 +12243,8 @@ class ElasticNet:
     family : str
         As ``Glm``.
     link : str, optional
-        As ``Glm``; the canonical link by default.
+        As ``Glm``: the log link for the gamma, inverse Gaussian and
+        Tweedie, the canonical link otherwise, by default.
     alpha : float, default 1.0
         Mixing between ridge (0) and the lasso (1).
     lam : float, default 0.0
@@ -15208,7 +15210,9 @@ class Glm:
     link : str, optional
         ``"identity"``, ``"log"``, ``"logit"``, ``"probit"``,
         ``"cloglog"``, ``"inverse"``, ``"inverse_squared"`` or ``"power"``
-        (needs ``link_power``); the family's canonical link by default.
+        (needs ``link_power``); the log link for the gamma, inverse Gaussian and Tweedie, and the
+        canonical link otherwise, by default; R's ``glm`` and statsmodels
+        default to the canonical link, so give ``link`` when porting a model.
     dispersion : str or float, optional
         ``"pearson"``, ``"deviance"`` or a fixed value. By default 1 for the
         Poisson, binomial and negative binomial and Pearson's estimate
@@ -26214,8 +26218,8 @@ class OnnxPredictor:
         ``mu = g^-1(offset + output)`` (a CANN's correction, or a network
         trained with an exposure offset).
     link : str, optional
-        The link for ``scale="link"``; the family's canonical link by
-        default.
+        The link for ``scale="link"``; by default the log link for the
+        gamma, inverse Gaussian and Tweedie, the canonical link otherwise.
     dispersion : float, default 1
         The family's dispersion for predictive draws.
     theta, power : float, optional
@@ -27184,7 +27188,7 @@ class PaymentPattern:
         The share paid by time ``t`` in years, read between the pattern's
         times by ``interpolation``: ``"step"`` (each share paid at its
         time), ``"linear"`` (evenly over the period ending at it) or
-        ``"log-linear"`` (the unpaid share falling geometrically).
+        ``"log_linear_unpaid"`` (the unpaid share falling geometrically).
         
         Examples
         --------
@@ -36125,6 +36129,29 @@ def berquist_sherman_adjust(triangle: Triangle, incurred: str, paid: str, report
     Triangle
     """
 
+def bootstrap_rows(n: int, seed: int, stream: int = 0) -> list[int]:
+    """
+    ``n`` row indices drawn from ``range(n)`` with replacement on stream
+    ``stream`` of ``seed``: the bootstrap resample ``Booster`` refits on, the
+    same in Python and R.
+    
+    Parameters
+    ----------
+    n : int
+    seed : int
+    stream : int, default 0
+    
+    Returns
+    -------
+    list of int
+    
+    Examples
+    --------
+    >>> from prospicio.models import bootstrap_rows
+    >>> bootstrap_rows(8, 3)
+    [4, 0, 2, 6, 1, 1, 0, 5]
+    """
+
 def bootstrap_se(dist: Any, percentiles: Sequence[float], *, replicates: int = 200, seed: int = 0, hold_fixed: Any |None = None, tvar_levels: Sequence[float] |None = None, sd_multiples: Sequence[float] |None = None, quantile: str = "inverted_cdf", tvar: str = "exact") -> dict:
     """
     Bootstrap standard errors of every statistic ``statistics`` reports.
@@ -38834,15 +38861,20 @@ def moic(released: float, funded: float, opening: float) -> float:
     1.3
     """
 
-def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_months: int = 12, interpolation: str = "linear", accident_period: str |None = None, reading: str = "weibull") -> tuple[list[float], list[float], list[float]]:
+def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_months: int = 12, interpolation: str = "linear", accident_period: str |None = None, reading: str = "weibull", written_timing: str = "through_month") -> tuple[list[float], list[float], list[float]]:
     """
     The monthly written, earned and paid patterns of ``CashflowTerms`` from
     a written pattern, a policy term and a payment pattern by development
     age.
     
-    The premium written in month ``s`` is written at its start and earned
-    evenly over the ``policy_months`` months from it. Losses occur as
-    premium is earned, in the middle of their month.
+    The premium written in month ``s`` is earned evenly over the
+    ``policy_months`` months from when it is written: through the month
+    by default (``written_timing="through_month"``, half the premium
+    written evenly over a year earned by its end, the parallelogram and the
+    convention of ``UnderwritingBasis``), or at its start
+    (``written_timing="at_start"``, a contract written on its inception
+    date, such as one catastrophe year with ``written`` all 1; #839).
+    Losses occur as premium is earned, in the middle of their month.
     
     Without ``accident_period`` they are paid by ``pattern`` measured from
     the accident date and read between its times by ``interpolation`` (as
@@ -38864,9 +38896,10 @@ def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_m
         is the patterns' (at least the commutation month plus the buffer).
     pattern : PaymentPattern
     policy_months : int, default 12
-    interpolation : {"linear", "step", "log-linear"}, default "linear"
+    interpolation : {"linear", "step", "log_linear_unpaid"}, default "linear"
     accident_period : {"year", "quarter", "month"}, optional
     reading : {"weibull", "loglogistic", "ln-linear"}, default "weibull"
+    written_timing : {"through_month", "at_start"}, default "through_month"
     
     Returns
     -------
@@ -38877,9 +38910,12 @@ def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_m
     --------
     >>> from prospicio.pricing import PaymentPattern, monthly_patterns
     >>> p = PaymentPattern([1.0, 2.0, 3.0], [1 / 3] * 3)
-    >>> w, e, paid = monthly_patterns([1.0] * 60, p)
+    >>> w, e, paid = monthly_patterns([1.0] * 60, p, written_timing="at_start")
     >>> e[5], e[11], round(paid[59], 12)
     (0.5, 1.0, 1.0)
+    >>> even = [min(1.0, (m + 1) / 12) for m in range(60)]
+    >>> round(monthly_patterns(even, p)[1][11], 12)
+    0.5
     >>> even = [min(1.0, (m + 1) / 12) for m in range(60)]
     >>> _, _, uy = monthly_patterns(even, p, accident_period="year")
     >>> round(uy[59], 12)

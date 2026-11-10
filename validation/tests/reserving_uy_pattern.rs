@@ -24,7 +24,7 @@
 //!   `llog+exact`) on the book and the CAS loss reserve database's private
 //!   passenger auto paid pattern.
 
-use prospicio_pricing::cashflow::MonthlyPatterns;
+use prospicio_pricing::cashflow::{MonthlyPatterns, WrittenTiming};
 use prospicio_pricing::payout::{Interpolation, PaymentPattern};
 use prospicio_reserving::{
     AnnualReading, ChainLadder, ChainLadderFit, Development, DevelopmentColumn, Error, Grain,
@@ -324,9 +324,9 @@ fn the_conversion_is_the_cash_flow_engines_paid_pattern() {
         UnderwritingBasis::even(3, 1),
     ] {
         let uy = month.to_underwriting_basis(Grain::Month, &basis).unwrap();
-        // `from_annual` writes each month's premium at its start; written
-        // at an even rate through the month, half of it is written as if
-        // at the start of the next month, so its written increments are
+        // With `WrittenTiming::AtStart` each month's premium is written at
+        // its start; written at an even rate through the month, half of it
+        // is written as if at the start of the next month, so its written increments are
         // the shares spread half and half over two months.
         let total: f64 = basis.writing.iter().sum();
         let n = 120;
@@ -342,10 +342,36 @@ fn the_conversion_is_the_cash_flow_engines_paid_pattern() {
             basis.policy_months as usize,
             &paid,
             Interpolation::Linear,
+            WrittenTiming::AtStart,
         )
         .unwrap();
         for &(a, share) in &uy.values {
             assert_close(share, engine.paid[a as usize - 1], 1e-13, "from_annual");
+        }
+        // Written through the month (#839, the default) the plain written
+        // pattern gives the same paid shares: the two crates' conventions
+        // now agree.
+        let mut plain = vec![0.0; n];
+        let mut cum = 0.0;
+        for (t, slot) in plain.iter_mut().enumerate() {
+            cum += basis.writing.get(t).copied().unwrap_or(0.0) / total;
+            *slot = cum;
+        }
+        let through = MonthlyPatterns::from_annual(
+            plain,
+            basis.policy_months as usize,
+            &paid,
+            Interpolation::Linear,
+            WrittenTiming::ThroughMonth,
+        )
+        .unwrap();
+        for &(a, share) in &uy.values {
+            assert_close(
+                share,
+                through.paid[a as usize - 1],
+                1e-13,
+                "through the month",
+            );
         }
     }
 }

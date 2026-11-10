@@ -148,6 +148,11 @@ pub enum Error {
     /// cannot be opened, a column is missing or a cell cannot be read. The
     /// message names the file line or cell and the column.
     File(String),
+    /// The long table's periods span far more cells than it has rows, as one
+    /// mistyped origin or valuation does (`9020-01` among monthly origins of
+    /// the 2020s): the dense grid it asks for is refused before it is
+    /// allocated (#832). The message names the earliest and latest period.
+    TooLarge(String),
     /// Clark's growth-curve model cannot be fitted to this triangle.
     Clark(String),
     /// A method on claim counts (frequency-severity, disposal rates, case
@@ -299,6 +304,7 @@ impl fmt::Display for Error {
             Self::PatternDraws(why) => write!(f, "pattern draws: {why}"),
             Self::Exhibit(why) => write!(f, "exhibit: {why}"),
             Self::File(why) => write!(f, "reading a triangle: {why}"),
+            Self::TooLarge(why) => write!(f, "triangle too large: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
             Self::Counts(why) => write!(f, "claim counts: {why}"),
             Self::Munich(why) => write!(f, "Munich chain ladder: {why}"),

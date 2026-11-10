@@ -986,6 +986,7 @@ impl PyReinstatementPrice {
 #[pyfunction]
 #[pyo3(signature = (losses, g, assets, *, cost_of_capital = None, distortion = None))]
 pub(crate) fn price_with_reinstatements(
+    py: Python<'_>,
     losses: Vec<f64>,
     g: Vec<f64>,
     assets: PyRef<'_, PyDistortion>,
@@ -993,8 +994,10 @@ pub(crate) fn price_with_reinstatements(
     distortion: Option<PyRef<'_, PyDistortion>>,
 ) -> PyResult<PyReinstatementPrice> {
     let rule = premium_rule(cost_of_capital, distortion)?;
-    let inner =
-        risk_load::price_with_reinstatements(&losses, &g, &rule, &assets.inner).map_err(to_py)?;
+    let standard = &assets.inner;
+    let inner = py
+        .detach(|| risk_load::price_with_reinstatements(&losses, &g, &rule, standard))
+        .map_err(to_py)?;
     Ok(PyReinstatementPrice { inner })
 }
 
@@ -2278,6 +2281,7 @@ impl PyTowerQuote {
     ))]
     #[allow(clippy::too_many_arguments)]
     fn technical(
+        py: Python<'_>,
         tower: PyRef<'_, crate::reinsurance::PyTower>,
         grids: PyRef<'_, crate::reinsurance::PyTowerGrids>,
         assets: PyRef<'_, PyDistortion>,
@@ -2295,15 +2299,19 @@ impl PyTowerQuote {
             .and_then(|l| l.with_premium_tax(premium_tax))
             .and_then(|l| l.with_income_tax(income_tax))
             .map_err(to_py)?;
-        let inner = TowerQuote::technical(
-            &tower.inner,
-            &grids.inner,
-            &rule,
-            &assets.inner,
-            loads,
-            brokerage_on_reinstatements,
-        )
-        .map_err(to_py)?;
+        let (tower, grids, standard) = (&tower.inner, &grids.inner, &assets.inner);
+        let inner = py
+            .detach(|| {
+                TowerQuote::technical(
+                    tower,
+                    grids,
+                    &rule,
+                    standard,
+                    loads,
+                    brokerage_on_reinstatements,
+                )
+            })
+            .map_err(to_py)?;
         Ok(Self { inner })
     }
 

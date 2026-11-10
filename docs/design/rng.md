@@ -145,6 +145,14 @@ large shapes, which made the reserving bootstraps' Gamma process slow.
   `portfolio::tests::join_refuses_a_shared_seed_across_a_sampler_change`,
   `ipc::tests::provenance_without_samplers_reads_as_not_recorded` and
   `validation/tests/predictive.rs`.
+- **2026-11-09, `prospicio_bayes::ppc::loo_pit`**: the uniforms that
+  break ties move from stream 0 of the seed to stream `u64::MAX`
+  (`ppc::TIE_STREAM`). `BayesGlmFit::loo_pit` passes one seed to
+  `replicate`, whose draw `d` uses stream `d`, and to `loo_pit`, so the
+  tie-breaking reused draw 0's stream (#831). A seeded LOO-PIT changes
+  once where the observations tie with replicates (counts); without ties
+  it is unchanged (`validation/tests/models.rs`, `loo_pit_matches_loo`).
+  No sampler and no other result changes.
 
 ## Front ends
 

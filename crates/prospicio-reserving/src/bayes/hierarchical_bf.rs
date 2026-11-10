@@ -2077,7 +2077,13 @@ mod tests {
             },
         )
         .unwrap();
-        let u: Vec<f64> = draws.values().chunks_exact(2).map(|x| x[1].exp()).collect();
+        let u: Vec<f64> = draws
+            .values()
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|x| x[1].exp())
+            .collect();
         let n = u.len() as f64;
         let mean = u.iter().sum::<f64>() / n;
         let second = u.iter().map(|x| x * x).sum::<f64>() / n;

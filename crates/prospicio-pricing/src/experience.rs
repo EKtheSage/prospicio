@@ -456,6 +456,8 @@ impl DevelopmentPattern {
     /// is the volume-weighted chain ladder on the summed triangle.
     ///
     /// Valuations at an age not in `ages` are ignored.
+    /// The claims are summed in the order each first appears in
+    /// `valuations`, so the factors are the same to the bit on every run.
     ///
     /// ```
     /// use prospicio_pricing::experience::{ClaimValuation, DevelopmentPattern};
@@ -482,7 +484,10 @@ impl DevelopmentPattern {
             ages.iter()
                 .position(|&a| (a - age).abs() <= 1e-9 * a.abs().max(1.0))
         };
-        let mut by_claim: HashMap<&str, Vec<Option<f64>>> = HashMap::new();
+        // Rows in the order each claim first appears, so the sums below add
+        // in an order fixed by the input and not by a hasher (#830).
+        let mut index: HashMap<&str, usize> = HashMap::new();
+        let mut rows: Vec<Vec<Option<f64>>> = Vec::new();
         for v in valuations {
             if !(v.amount.is_finite() && v.amount >= 0.0) {
                 return Err(Error::InvalidParameter {
@@ -492,9 +497,11 @@ impl DevelopmentPattern {
                 });
             }
             let Some(k) = slot(v.age) else { continue };
-            let row = by_claim
-                .entry(v.id.as_str())
-                .or_insert_with(|| vec![None; ages.len()]);
+            let i = *index.entry(v.id.as_str()).or_insert_with(|| {
+                rows.push(vec![None; ages.len()]);
+                rows.len() - 1
+            });
+            let row = &mut rows[i];
             if row[k].is_some() {
                 return Err(Error::Data(format!(
                     "claim {} is valued twice at age {}",
@@ -506,7 +513,7 @@ impl DevelopmentPattern {
         let mut links = Vec::with_capacity(ages.len() - 1);
         for k in 0..ages.len() - 1 {
             let (mut from, mut to) = (0.0, 0.0);
-            for row in by_claim.values() {
+            for row in &rows {
                 if let (Some(a), Some(b)) = (row[k], row[k + 1])
                     && a > 0.0
                 {
@@ -1123,6 +1130,40 @@ mod tests {
         let unpaired = [valued("a", 1.0, 1.0), valued("b", 2.0, 2.0)];
         assert!(DevelopmentPattern::from_history(&unpaired, &[1.0, 2.0]).is_err());
         assert!(DevelopmentPattern::from_history(&history, &[1.0]).is_err());
+    }
+
+    #[test]
+    fn history_sums_claims_in_first_seen_order() {
+        // Amounts whose floating-point sum depends on the order of the
+        // additions: 1e16 + 1 rounds back to 1e16, while 1 + 1 + 1e16 does
+        // not. The claims are summed in the order they first appear, so
+        // the factor is the same to the bit in every run (#830).
+        let ids = ["a", "b", "c", "d", "e", "f", "g", "h"];
+        let at_one = [1e16, 1.0, 1.0, 1.0, 0.1, 0.2, 0.3, 1.0];
+        let at_two = [1e16, 3.0, 0.7, 1.1, 0.3, 0.1, 0.2, 7.0];
+        let mut history = Vec::new();
+        for ((id, a), b) in ids.iter().zip(at_one).zip(at_two) {
+            history.push(valued(id, 1.0, a));
+            history.push(valued(id, 2.0, b));
+        }
+        let from = at_one.iter().fold(0.0, |s, x| s + x);
+        let to = at_two.iter().fold(0.0, |s, x| s + x);
+        let expected = to / from;
+        // Each call builds its own index; a hash order would differ
+        // between calls even within one process.
+        for _ in 0..32 {
+            let p = DevelopmentPattern::from_history(&history, &[1.0, 2.0]).unwrap();
+            assert_eq!(p.age_to_age()[0].to_bits(), expected.to_bits());
+        }
+        // The same claims with each claim's rows reversed: first-seen
+        // order of the claims is unchanged, so the factor is too.
+        let mut swapped = Vec::new();
+        for pair in history.chunks(2) {
+            swapped.push(pair[1].clone());
+            swapped.push(pair[0].clone());
+        }
+        let q = DevelopmentPattern::from_history(&swapped, &[1.0, 2.0]).unwrap();
+        assert_eq!(q.age_to_age()[0].to_bits(), expected.to_bits());
     }
 
     #[test]

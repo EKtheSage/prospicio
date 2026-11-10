@@ -311,7 +311,7 @@ impl CatBond {
 
     fn losses(&self, annual: Vec<f64>) -> Result<CatBondLosses> {
         let t = self.term_years;
-        if annual.is_empty() || annual.len() % t != 0 {
+        if annual.is_empty() || !annual.len().is_multiple_of(t) {
             return Err(Error::Data(format!(
                 "{} simulated years are not a whole number of {t}-year terms",
                 annual.len()

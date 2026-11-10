@@ -1,0 +1,22 @@
+{
+  "components": [
+    {
+      "family": "lognormal",
+      "meanlog": 6.7961835033250315,
+      "sdlog": 0.47238072707743883
+    },
+    {
+      "alpha": 2.0,
+      "family": "pareto",
+      "t": 100000.0,
+      "truncation": null
+    }
+  ],
+  "family": "mixture",
+  "format": "risk_rs.distribution",
+  "format_version": 1,
+  "weights": [
+    0.7,
+    0.3
+  ]
+}

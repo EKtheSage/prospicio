@@ -34,7 +34,7 @@ impl BonusMalusR {
     /// `table` row-major, `cols` columns; levels 0-based.
     fn table(start: f64, table: &[f64], cols: f64) -> Result<Self> {
         let cols = level(cols, "cols")?;
-        if cols == 0 || table.len() % cols != 0 {
+        if cols == 0 || !table.len().is_multiple_of(cols) {
             return Err(Error::Other("the table is not a matrix".into()));
         }
         let rows = table

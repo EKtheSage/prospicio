@@ -411,18 +411,17 @@ impl Compartmental {
         if let Some(warning) = cumulative_sub_annual_warning(model.response, data.grain) {
             diagnostics.warnings.push(warning);
         }
-        if self.fitted == Fitted::IncurredOnly {
-            if let Some(share) = payment_rate_prior_share(&posterior, self.priors) {
-                if share > PRIOR_SHARE_WARNING {
-                    diagnostics.warnings.push(format!(
-                        "the posterior sd of log k_p is {:.0}% of its prior's: the incurred \
+        if self.fitted == Fitted::IncurredOnly
+            && let Some(share) = payment_rate_prior_share(&posterior, self.priors)
+            && share > PRIOR_SHARE_WARNING
+        {
+            diagnostics.warnings.push(format!(
+                "the posterior sd of log k_p is {:.0}% of its prior's: the incurred \
                          does not identify the payment rate, so the paid run-off and the \
                          reserve come from the prior on k_p (no paid cell is fitted); use \
                          a prior you believe, or fit paid as well",
-                        100.0 * share
-                    ));
-                }
-            }
+                100.0 * share
+            ));
         }
         let cell_rate_swaps = model.cell_rate_swaps(&posterior);
 

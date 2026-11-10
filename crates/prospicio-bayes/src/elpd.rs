@@ -65,7 +65,7 @@ impl Loo {
 
 /// Checks the matrix shape and returns `(S, N)`.
 fn shape(log_lik: &[f64], n: usize) -> Result<usize> {
-    if n == 0 || log_lik.is_empty() || log_lik.len() % n != 0 {
+    if n == 0 || log_lik.is_empty() || !log_lik.len().is_multiple_of(n) {
         return Err(Error::Data(format!(
             "{} log-likelihood values do not form draws × {n} observations",
             log_lik.len()
@@ -180,12 +180,12 @@ pub fn waic(log_lik: &[f64], n: usize) -> Result<Elpd> {
 /// ```
 pub fn loo(log_lik: &[f64], n: usize, r_eff: Option<&[f64]>) -> Result<Loo> {
     let s = shape(log_lik, n)?;
-    if let Some(r) = r_eff {
-        if r.len() != n || r.iter().any(|v| !(v.is_finite() && *v > 0.0)) {
-            return Err(Error::Data(format!(
-                "r_eff needs {n} finite positive values"
-            )));
-        }
+    if let Some(r) = r_eff
+        && (r.len() != n || r.iter().any(|v| !(v.is_finite() && *v > 0.0)))
+    {
+        return Err(Error::Data(format!(
+            "r_eff needs {n} finite positive values"
+        )));
     }
     let lppd_i = lppd_pointwise(log_lik, n, s);
     let mut pointwise = Vec::with_capacity(n);

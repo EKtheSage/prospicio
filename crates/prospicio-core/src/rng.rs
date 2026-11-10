@@ -57,7 +57,7 @@ impl StreamRng {
 fn expand_seed(seed: u64) -> [u8; 32] {
     let mut state = seed;
     let mut key = [0u8; 32];
-    for chunk in key.chunks_exact_mut(8) {
+    for chunk in key.as_chunks_mut::<8>().0 {
         state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = state;
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);

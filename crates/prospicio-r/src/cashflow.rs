@@ -131,7 +131,7 @@ fn patterns(paid: &[f64], n_patterns: f64, index: &[f64]) -> Result<Option<Patte
         return Ok(None);
     }
     let k = whole(n_patterns, "the number of paid patterns")? as usize;
-    if k == 0 || paid.len() % k != 0 {
+    if k == 0 || !paid.len().is_multiple_of(k) {
         return Err(Error::Other(format!(
             "{} paid values do not split into {k} patterns",
             paid.len()

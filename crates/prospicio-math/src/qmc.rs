@@ -190,7 +190,7 @@ mod tests {
             let p = s.points(1 << 8);
             for d in 0..5 {
                 let mut seen = [false; 256];
-                for row in p.chunks_exact(5) {
+                for row in p.as_chunks::<5>().0 {
                     let k = (row[d] * 256.0) as usize;
                     assert!(!seen[k], "two points in one interval");
                     seen[k] = true;
@@ -217,7 +217,7 @@ mod tests {
         let mut s = Sobol::new(20, Scramble::Lms { seed: 3 }).unwrap();
         let p = s.points(1 << 12);
         for d in 0..20 {
-            let m: f64 = p.chunks_exact(20).map(|r| r[d]).sum::<f64>() / 4096.0;
+            let m: f64 = p.as_chunks::<20>().0.iter().map(|r| r[d]).sum::<f64>() / 4096.0;
             assert!((m - 0.5).abs() < 1e-3, "{d} {m}");
         }
     }

@@ -1,0 +1,67 @@
+{
+  "deals": [
+    {
+      "brokerage_scale": [
+        [
+          0.01,
+          0.5
+        ],
+        [
+          0.03,
+          0.9
+        ]
+      ],
+      "brokerage_within_commission_range": true,
+      "carry": {
+        "credit": true,
+        "deficit": true,
+        "years": 3
+      },
+      "name": "deal",
+      "sections": [
+        "A",
+        "B"
+      ],
+      "sliding_scale": [
+        [
+          0.3,
+          0.5
+        ],
+        [
+          0.1,
+          0.9
+        ]
+      ]
+    }
+  ],
+  "format": "risk_rs.tower",
+  "format_version": 4,
+  "stages": [
+    [
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": "inf",
+        "attachment": 0.0,
+        "basis": "loss",
+        "limit": 50.0,
+        "name": "A",
+        "premium": 100.0,
+        "pro_rata_time": false,
+        "reinstatement_rates": [],
+        "share": 1.0
+      },
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": "inf",
+        "attachment": 50.0,
+        "basis": "loss",
+        "limit": 50.0,
+        "name": "B",
+        "premium": 100.0,
+        "pro_rata_time": false,
+        "reinstatement_rates": [],
+        "share": 1.0
+      }
+    ]
+  ]
+}

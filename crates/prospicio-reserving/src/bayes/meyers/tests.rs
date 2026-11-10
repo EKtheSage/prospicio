@@ -597,7 +597,7 @@ fn each_simulations_pattern_is_its_posterior_draws() {
                 },
             )
             .unwrap();
-        for (i, row) in replay.draw_matrix().chunks_exact(20).enumerate() {
+        for (i, row) in replay.draw_matrix().as_chunks::<20>().0.iter().enumerate() {
             let ultimates = &fit.ultimates.draw_matrix()[i * 10..(i + 1) * 10];
             assert_eq!(&row[..10], ultimates, "{kind:?} simulation {i}");
             assert_eq!(&row[10..], patterns.draw(i), "{kind:?} simulation {i}");
@@ -687,8 +687,10 @@ fn ultimates_and_reserves_by_origin() {
     for (row_u, row_r) in fit
         .ultimates
         .draw_matrix()
-        .chunks_exact(10)
-        .zip(fit.reserves.draw_matrix().chunks_exact(10))
+        .as_chunks::<10>()
+        .0
+        .iter()
+        .zip(fit.reserves.draw_matrix().as_chunks::<10>().0)
     {
         for ((u, r), l) in row_u.iter().zip(row_r).zip(&fit.chain_ladder.latest) {
             assert_eq!(*r, u - l);
@@ -1359,7 +1361,9 @@ fn the_backtest_model_is_the_fit_on_the_train_rows() {
             let x: Vec<f64> = f
                 .distribution
                 .draw_matrix()
-                .chunks_exact(8)
+                .as_chunks::<8>()
+                .0
+                .iter()
                 .map(|r| r[j])
                 .collect();
             let m = x.iter().sum::<f64>() / x.len() as f64;
@@ -1409,7 +1413,9 @@ fn the_next_cell_simulates_as_the_fit() {
         let reserve: Vec<f64> = fit
             .reserves
             .draw_matrix()
-            .chunks_exact(10)
+            .as_chunks::<10>()
+            .0
+            .iter()
             .map(|r| r[1])
             .collect();
         for (a, b) in f.distribution.draw_matrix().iter().zip(&reserve) {
@@ -1442,7 +1448,9 @@ fn an_origin_path_telescopes() {
     let sums: Vec<f64> = f
         .distribution
         .draw_matrix()
-        .chunks_exact(9)
+        .as_chunks::<9>()
+        .0
+        .iter()
         .map(|r| r.iter().sum())
         .collect();
     let fit = Meyers {
