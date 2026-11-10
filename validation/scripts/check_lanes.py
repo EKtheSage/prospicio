@@ -15,10 +15,17 @@ other ways a union merge goes wrong. For each lane:
 - every bullet is one physical line starting with "- " (no wrapped bullets);
 - every Next bullet has an id: its first issue number (`#392`) or, when the
   bullet has no issue number, a leading `[slug]` tag;
-- no Next bullet's id appears in a Done bullet (a Done bullet repeats the id
-  of the Next item it finishes, so a hit is a finished item that is still
-  listed in Next, or one that a union merge brought back);
 - no bullet appears twice in a file.
+
+A Next bullet whose id appears in a Done bullet is an item that is finished
+(a Done bullet repeats the id of the Next item it finishes). A pull request
+that finishes an item only appends its Done bullet and leaves the Next
+bullet alone, so that no two pull requests running at once delete lines
+that a union merge could bring back (#853). Such bullets are listed as
+"finished, to prune at the next fold", not as errors; the fold
+(`fold_changes.py`, one pull request at a time) deletes them, as does
+
+    python validation/scripts/check_lanes.py --prune [docs/lanes]
 """
 
 import pathlib
@@ -89,36 +96,60 @@ def sections_of(path, allowed, errors):
     return sections
 
 
-def check_lane(path):
-    """Check one lane: `path` (Next) and `done/<same name>` (Done)."""
-    errors = []
-    name = path.as_posix()
+def lane_bullets(path, errors):
+    """The Next bullets of `path` and the Done bullets of its done file."""
     done_path = path.parent / "done" / path.name
     nxt = sections_of(path, ("Next",), errors).get("Next", [])
     if done_path.exists():
         done = sections_of(done_path, ("Done",), errors).get("Done", [])
     else:
-        errors.append(f"{name}: no {done_path.as_posix()} for the lane's Done bullets")
+        errors.append(f"{path.as_posix()}: no {done_path.as_posix()} for the lane's Done bullets")
         done = []
-    dname = done_path.as_posix()
+    return nxt, done
+
+
+def check_lane(path):
+    """Check one lane: `path` (Next) and `done/<same name>` (Done)."""
+    errors = []
+    nxt, _ = lane_bullets(path, errors)
+    for no, line in nxt:
+        if next_id(line) is None:
+            errors.append(
+                f"{path.as_posix()}:{no}: Next bullet has no id: start it with [slug] or name an issue (#N)"
+            )
+    return errors
+
+
+def finished(path):
+    """The Next bullets of the lane whose id is in a Done bullet:
+    [(line number, label, Done line number)]."""
+    nxt, done = lane_bullets(path, [])
+    out = []
     for no, line in nxt:
         ident = next_id(line)
         if ident is None:
-            errors.append(f"{name}:{no}: Next bullet has no id: start it with [slug] or name an issue (#N)")
             continue
         label = f"#{ident[1]}" if ident[0] == "issue" else f"[{ident[1]}]"
         for dno, dline in done:
             if done_mentions(dline, ident):
-                errors.append(
-                    f"{name}:{no}: finished item still in Next: {label} appears in the Done bullet "
-                    f"on line {dno} of {dname}; delete the Next bullet"
-                )
+                out.append((no, label, dno))
                 break
-    return errors
+    return out
+
+
+def pruned(path):
+    """The lane file's text without its finished Next bullets, and how many
+    were removed. Newlines are kept as the file has them."""
+    gone = {no for no, _, _ in finished(path)}
+    lines = path.read_bytes().decode("utf-8").splitlines(keepends=True)
+    kept = [line for no, line in enumerate(lines, 1) if no not in gone]
+    return "".join(kept), len(gone)
 
 
 def main(argv):
-    root = pathlib.Path(argv[1] if len(argv) > 1 else "docs/lanes")
+    args = [a for a in argv[1:] if a != "--prune"]
+    prune = len(args) < len(argv) - 1
+    root = pathlib.Path(args[0] if args else "docs/lanes")
     files = sorted(root.glob("*.md"))
     if not files:
         print(f"no lane files under {root}")
@@ -131,7 +162,25 @@ def main(argv):
     if errors:
         print(f"{len(errors)} problem(s) in the lane status files")
         return 1
-    print(f"ok: {len(files)} lane files")
+    if prune:
+        total = 0
+        for f in files:
+            text, n = pruned(f)
+            if n:
+                f.write_bytes(text.encode("utf-8"))
+                total += n
+        print(f"ok: {len(files)} lane files, {total} finished Next bullet(s) pruned")
+        return 0
+    waiting = 0
+    for f in files:
+        for no, label, dno in finished(f):
+            print(
+                f"{f.as_posix()}:{no}: {label} is finished (Done bullet on line {dno} of "
+                f"done/{f.name}), to prune at the next fold; do not start it"
+            )
+            waiting += 1
+    tail = f", {waiting} finished Next bullet(s) to prune at the next fold" if waiting else ""
+    print(f"ok: {len(files)} lane files{tail}")
     return 0
 
 

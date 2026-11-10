@@ -176,7 +176,8 @@ Milestone 0.2.0.
    `R/prospicio/DESCRIPTION` to the new version (the release workflow
    fails when `DESCRIPTION` differs), fold the
    pending change fragments (`python3 validation/scripts/fold_changes.py`,
-   which empties `changes/` into `knowledge/log.md` and `CHANGELOG.md`),
+   which empties `changes/` into `knowledge/log.md` and `CHANGELOG.md`
+   and deletes the lane files' finished Next bullets),
    and move `CHANGELOG.md`'s "Unreleased" items into a section for the new
    version (breaking changes first, each item with its PR number), in a PR.
 2. After it merges, run the **Release** workflow by hand (*Actions →

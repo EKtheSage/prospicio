@@ -10,7 +10,8 @@ ISO `YYYY-MM-DD` headings. On top of that, this bundle's conventions
 `tags`; `generated.by` and `verified[].by` follow the actor convention
 (§7); timestamps are ISO 8601 with an offset; `status` is draft, stable or
 deprecated; every footnote label in the body is a `sources[].id`; and every
-concept is listed in its directory's `index.md`.
+concept is listed in its directory's `index.md`, once, and every entry
+there names an existing file (the indexes merge with git's union driver).
 """
 
 import datetime
@@ -82,6 +83,33 @@ def check_concept(path, meta, body, errors):
             err(f"footnote [^{label}] has no matching sources[].id")
 
 
+INDEX_LINK = re.compile(r"\]\(([^)\s#]+\.md)\)")
+
+
+def check_index(path, body, errors):
+    """An index merges with git's union driver (#853), which keeps both sides'
+    lines: two branches adding the same entry leave it twice, and a line one
+    branch rewrote or dropped next to another branch's addition comes back.
+    So each entry's target is listed once and exists."""
+    seen = {}
+    for no, line in enumerate(body.splitlines(), 1):
+        if not line.startswith("* ["):
+            continue
+        m = INDEX_LINK.search(line)
+        if m is None:
+            continue
+        target = m.group(1)
+        if target in seen:
+            errors.append(
+                f"{path}: {target} is listed twice (lines {seen[target]} and {no} after the frontmatter; "
+                "a union merge keeps both sides' lines: keep one)"
+            )
+        else:
+            seen[target] = no
+        if not (path.parent / target).exists():
+            errors.append(f"{path}: line {no} after the frontmatter links to {target}, which does not exist")
+
+
 def main():
     root = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "knowledge")
     errors = []
@@ -92,6 +120,7 @@ def main():
         if path.name == "index.md":
             if meta is not None and (path.parent != root or set(meta) - {"okf_version"}):
                 errors.append(f"{path}: index.md may carry only okf_version, at the bundle root")
+            check_index(path, body, errors)
             continue
         if path.name == "log.md":
             for heading in re.findall(r"^## (.+)$", body, re.M):
