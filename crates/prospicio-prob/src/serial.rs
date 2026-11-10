@@ -18,7 +18,7 @@
 use std::sync::Arc;
 
 use prospicio_core::{Error, Result};
-use serde_json::{Map, Number, Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::dist::{Dist, SeverityDist};
 use crate::evt::Gpd;
@@ -75,15 +75,7 @@ impl Dist {
                 )));
             }
         }
-        let version = top
-            .get("format_version")
-            .and_then(Value::as_u64)
-            .ok_or_else(|| Error::Data("format_version is missing".into()))?;
-        if version > FORMAT_VERSION {
-            return Err(Error::Data(format!(
-                "format_version {version} is newer than this build reads ({FORMAT_VERSION})"
-            )));
-        }
+        json::format_version(top, FORMAT_VERSION)?;
         from_body(top)
     }
 }
@@ -332,39 +324,8 @@ fn truncation_name(kind: Truncation) -> &'static str {
     }
 }
 
-fn num(x: f64) -> Value {
-    match Number::from_f64(x) {
-        Some(n) => Value::Number(n),
-        None if x.is_nan() => json!("NaN"),
-        None if x > 0.0 => json!("inf"),
-        None => json!("-inf"),
-    }
-}
-
 fn nums(xs: &[f64]) -> Value {
     Value::Array(xs.iter().map(|&x| num(x)).collect())
-}
-
-fn to_f64(v: &Value, name: &str) -> Result<f64> {
-    match v {
-        Value::Number(n) => n.as_f64(),
-        Value::String(s) => match s.as_str() {
-            "NaN" => Some(f64::NAN),
-            "inf" => Some(f64::INFINITY),
-            "-inf" => Some(f64::NEG_INFINITY),
-            _ => None,
-        },
-        _ => None,
-    }
-    .ok_or_else(|| Error::Data(format!("{name} must be a number")))
-}
-
-fn float(m: &Map<String, Value>, name: &str) -> Result<f64> {
-    to_f64(
-        m.get(name)
-            .ok_or_else(|| Error::Data(format!("{name} is missing")))?,
-        name,
-    )
 }
 
 fn optional(m: &Map<String, Value>, name: &str) -> Result<Option<f64>> {
@@ -383,10 +344,73 @@ fn floats(m: &Map<String, Value>, name: &str) -> Result<Vec<f64>> {
         .collect()
 }
 
-fn object<'a>(v: &'a Value, what: &str) -> Result<&'a Map<String, Value>> {
-    v.as_object()
-        .ok_or_else(|| Error::Data(format!("the {what} must be a JSON object")))
+/// Helpers shared by the JSON document formats of this crate and
+/// `prospicio-aggregate` (`risk_rs.distribution`, `risk_rs.tower`): numbers
+/// with non-finite values as the strings `"NaN"`, `"inf"` and `"-inf"`, and
+/// the envelope's version check (#840). Internal: public only for that
+/// crate.
+#[doc(hidden)]
+pub mod json {
+    use prospicio_core::{Error, Result};
+    use serde_json::{Map, Number, Value, json};
+
+    /// `x` as a JSON number, or `"NaN"`, `"inf"` or `"-inf"`.
+    pub fn num(x: f64) -> Value {
+        match Number::from_f64(x) {
+            Some(n) => Value::Number(n),
+            None if x.is_nan() => json!("NaN"),
+            None if x > 0.0 => json!("inf"),
+            None => json!("-inf"),
+        }
+    }
+
+    /// A number written by [`num`]; `name` names it in the error.
+    pub fn to_f64(v: &Value, name: &str) -> Result<f64> {
+        match v {
+            Value::Number(n) => n.as_f64(),
+            Value::String(s) => match s.as_str() {
+                "NaN" => Some(f64::NAN),
+                "inf" => Some(f64::INFINITY),
+                "-inf" => Some(f64::NEG_INFINITY),
+                _ => None,
+            },
+            _ => None,
+        }
+        .ok_or_else(|| Error::Data(format!("{name} must be a number")))
+    }
+
+    /// The number under `name`, which must be present.
+    pub fn float(m: &Map<String, Value>, name: &str) -> Result<f64> {
+        to_f64(
+            m.get(name)
+                .ok_or_else(|| Error::Data(format!("{name} is missing")))?,
+            name,
+        )
+    }
+
+    /// `v` as an object; `what` names it in the error.
+    pub fn object<'a>(v: &'a Value, what: &str) -> Result<&'a Map<String, Value>> {
+        v.as_object()
+            .ok_or_else(|| Error::Data(format!("the {what} must be a JSON object")))
+    }
+
+    /// The envelope's `format_version`, from 1 to `newest`: missing, 0 and
+    /// newer versions are errors, as in `prospicio_models::artifact`.
+    pub fn format_version(top: &Map<String, Value>, newest: u64) -> Result<u64> {
+        let version = top
+            .get("format_version")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| Error::Data("format_version is missing".into()))?;
+        if version == 0 || version > newest {
+            return Err(Error::Data(format!(
+                "format_version {version}; this build reads 1 to {newest}"
+            )));
+        }
+        Ok(version)
+    }
 }
+
+use json::{float, num, object, to_f64};
 
 #[cfg(test)]
 mod tests {
