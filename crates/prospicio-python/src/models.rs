@@ -5535,6 +5535,7 @@ impl PyMarsFit {
 #[pyo3(signature = (x, y, weights = None, max_terms = None, threshold = 0.001, penalty = 2.0, min_span = None, end_span = None, prune = false, family = None, link = None))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn mars(
+    py: Python<'_>,
     x: &Bound<'_, pyo3::types::PyDict>,
     y: Vec<f64>,
     weights: Option<Vec<f64>>,
@@ -5567,8 +5568,8 @@ pub(crate) fn mars(
         return Err(PyValueError::new_err("link needs a family"));
     }
     let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-    let inner = spec
-        .fit(&refs, &columns, &y, weights.as_deref())
+    let inner = py
+        .detach(|| spec.fit(&refs, &columns, &y, weights.as_deref()))
         .map_err(to_py)?;
     Ok(PyMarsFit { inner })
 }
