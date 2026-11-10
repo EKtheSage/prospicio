@@ -2,13 +2,19 @@ name: Release
 
 # Publishes a release to PyPI and crates.io when a version tag is pushed
 # (`git tag v0.0.1 && git push origin v0.0.1`). Run by hand
-# (workflow_dispatch), it builds and tests the wheels and the crates but
-# publishes nothing: a dry run before tagging. The steps, and the one-time
+# (workflow_dispatch) or on its weekly schedule, it builds and tests the
+# wheels and the crates but publishes nothing: a dry run. The steps, and the one-time
 # registry setup, are in docs/release.md.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+  # A weekly dry run (#828): the wheels on Linux x86_64 and aarch64, macOS
+  # and Windows, each tested, the sdist, the crates and semver, so a failure
+  # on a platform CI's pull requests do not build shows before a release.
+  # The publish jobs run only on a tag, so a scheduled run publishes nothing.
+  schedule:
+    - cron: "41 3 * * 0"
 
 permissions:
   contents: read

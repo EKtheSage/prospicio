@@ -181,7 +181,9 @@ Milestone 0.2.0.
    version (breaking changes first, each item with its PR number), in a PR.
 2. After it merges, run the **Release** workflow by hand (*Actions →
    Release → Run workflow* on `main`). Without a tag it builds and tests
-   every wheel, the sdist and the crates, and publishes nothing. Its
+   every wheel, the sdist and the crates, and publishes nothing; it also
+   runs so every week on its own (#828), so the last scheduled run shows
+   whether the wheels still build on every platform. Its
    `semver` job runs `cargo semver-checks check-release --workspace
    --release-type minor` against each crate's last version on crates.io
    (locally: `cargo install cargo-semver-checks --locked`, then the same
@@ -192,8 +194,8 @@ Milestone 0.2.0.
    tag. From 1.0 a break fails the release.
 
    Licences, RustSec advisories and crate sources are checked on every
-   pull request that changes the dependencies and on the weekly run
-   (`cargo deny check`, `deny.toml`). An advisory found by the weekly run
+   pull request that changes the dependencies and on the nightly run
+   (`cargo deny check`, `deny.toml`). An advisory found by the nightly run
    is fixed, or ignored in `deny.toml` with its reason, before a
    release.
 3. Tag the merge commit and push the tag:

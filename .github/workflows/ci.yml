@@ -1,8 +1,10 @@
 name: CI
 
-# Cost: the repo is private, so minutes are billed and Windows counts double.
-# Pull requests run Ubuntu only; Windows runs on the weekly schedule and on
-# demand. A pull request runs the python and r jobs unless it touches only
+# Wait: the repository is public, so its minutes are not billed; the limits
+# below keep a pull request's wait short (#828). Pull requests run Ubuntu
+# only; the full matrix with Windows runs nightly and on demand, so a
+# Windows failure shows within a day (macOS and aarch64 are built by
+# release.yml, whose dry run is nightly). A pull request runs the python and r jobs unless it touches only
 # docs, knowledge, change fragments or lane status (DOCS_ONLY below), and
 # the jobs that run a slow suite in a release build (bayes, fremtpl2) and
 # cargo deny (deny) only when it touches their inputs. A push to main runs the Rust job's checks
@@ -17,19 +19,20 @@ name: CI
 # conformance suite and Meyers' and the compartmental models' one-year
 # views, a PR runs a smoke version (the conformance suite on BayesOdp and
 # BayesBf; Meyers' CRC; compartmental model 1 without its refit
-# comparison); the weekly and manual runs set RISK_RS_FULL_BAYES and run
+# comparison); the nightly and manual runs set RISK_RS_FULL_BAYES and run
 # them all.
 on:
   push:
     branches: [main]
   pull_request:
   schedule:
-    - cron: "17 6 * * 1"
+    # Nightly (#828): the full matrix, Windows included.
+    - cron: "17 6 * * *"
   workflow_dispatch:
 
 # A new push to a pull request's branch cancels that branch's run still in
-# progress. Pushes to main, the weekly run and manual runs each get a group
-# of their own, so a merge never cancels the weekly run.
+# progress. Pushes to main, the nightly run and manual runs each get a group
+# of their own, so a merge never cancels the nightly run.
 concurrency:
   group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -251,7 +254,7 @@ jobs:
       # into a library of its own, and run one test file against it: the
       # full suite already ran on the checkout's install. It compiles the
       # crates again (a few minutes), so a PR runs it only when the
-      # package's build inputs change; the weekly run always does.
+      # package's build inputs change; the nightly run always does.
       - name: Check whether the R build inputs changed
         id: rbuild
         if: steps.plan.outputs.test == 'true'
@@ -278,7 +281,7 @@ jobs:
             -e "source('R/prospicio/tests/test-distributions.R')"
 
   # The R twins of the example notebooks (examples/one_year_view.qmd and
-  # examples/reinsurance_pricing.qmd, #271), on the weekly and manual runs
+  # examples/reinsurance_pricing.qmd, #271), on the nightly and manual runs
   # only (the user's decision of 2026-10-22), Ubuntu only: rendered with
   # Quarto to GitHub markdown at 4,000 simulations, then the notebooks run
   # at the same count and test_examples.py's r_twin tests compare what both
@@ -328,7 +331,7 @@ jobs:
   # without rendering a site,
   # about a quarter of the full build. It renders both sites with
   # `cargo xtask docs --check --no-tests`, uploaded as an artifact, only when
-  # the PR touches the sites' configuration or xtask, and on the weekly and
+  # the PR touches the sites' configuration or xtask, and on the nightly and
   # manual runs. A PR that changes only guides or notebooks skips the job, as
   # before #823: the python and r jobs run every guide's code and check its
   # printed numbers (test_guides.py, test-guides.R), and pages.yml renders
@@ -511,7 +514,7 @@ jobs:
   # this job runs only when their inputs change; otherwise its steps are
   # skipped and it passes. A pull request runs the smoke version of the
   # one-year conformance suite and of the Meyers and compartmental one-year
-  # validation; the weekly and manual runs set RISK_RS_FULL_BAYES and run
+  # validation; the nightly and manual runs set RISK_RS_FULL_BAYES and run
   # all of it (prospicio_validation::full_bayes; the user's decisions of
   # 2026-10-16 and 2026-10-19). On a push to main it only builds the
   # tests, if its cache is missing.
@@ -567,7 +570,7 @@ jobs:
 
   # Licences, RustSec advisories, duplicate versions and sources of the
   # dependency tree (deny.toml, #573). Pull requests run it when they touch
-  # the dependencies or the rules; the weekly and manual runs always do, so
+  # the dependencies or the rules; the nightly and manual runs always do, so
   # a new advisory on an unchanged lock file still shows up.
   deny:
     if: github.event_name != 'push'
