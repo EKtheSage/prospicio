@@ -15,18 +15,25 @@ permissions:
 
 jobs:
   # The tag must name the version in Cargo.toml (workspace.package), which
-  # every crate and the Python package take theirs from.
+  # every crate and the Python package take theirs from, and the R
+  # package's DESCRIPTION must hold the same version (#827).
   version:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check the tag against the workspace version
+      - name: Check the tag and the R package against the workspace version
         shell: bash
         run: |
           version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
           echo "Workspace version: $version"
           if [ "${{ github.ref_type }}" = "tag" ] && [ "${{ github.ref_name }}" != "v$version" ]; then
             echo "::error::Tag ${{ github.ref_name }} does not match the workspace version v$version"
+            exit 1
+          fi
+          r_version=$(sed -n 's/^Version: *//p' R/prospicio/DESCRIPTION)
+          echo "R package version: $r_version"
+          if [ "$r_version" != "$version" ]; then
+            echo "::error::R/prospicio/DESCRIPTION has Version $r_version, the workspace $version"
             exit 1
           fi
 
@@ -48,6 +55,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # The dependencies' builds, kept between the dry run and the tag's run
+      # (#827); a manylinux build runs in a container and reuses less of it.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wheels-${{ matrix.target }}
       - uses: PyO3/maturin-action@v1
         with:
           working-directory: python

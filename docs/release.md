@@ -171,8 +171,10 @@ Milestone 0.2.0.
 
 ## Each release
 
-1. On `main`, set `workspace.package.version` and the `prospicio-*`
-   versions in `[workspace.dependencies]` to the new version, fold the
+1. On `main`, set `workspace.package.version`, the `prospicio-*`
+   versions in `[workspace.dependencies]` and `Version:` in
+   `R/prospicio/DESCRIPTION` to the new version (the release workflow
+   fails when `DESCRIPTION` differs), fold the
    pending change fragments (`python3 validation/scripts/fold_changes.py`,
    which empties `changes/` into `knowledge/log.md` and `CHANGELOG.md`),
    and move `CHANGELOG.md`'s "Unreleased" items into a section for the new
@@ -201,7 +203,8 @@ Milestone 0.2.0.
    git push origin v0.0.2
    ```
 
-   The workflow checks that the tag matches the workspace version, builds
+   The workflow checks that the tag and the R package's `DESCRIPTION`
+   match the workspace version, builds
    and tests again, then publishes to PyPI and crates.io.
 
    The **XLL** workflow builds the Excel add-in for the same tag and

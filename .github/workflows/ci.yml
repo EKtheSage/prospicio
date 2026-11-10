@@ -38,42 +38,78 @@ env:
   # Paths a pull request can change without running the python and r jobs:
   # nothing in them is built or read by the bindings' tests (the guides in
   # docs/guides and the notebooks in examples/ are).
-  DOCS_ONLY: '^(knowledge/|changes/|docs/(lanes|design)/|docs/[^/]+\.md$|[^/]+\.md$|crates/prospicio-xll/|xtask/|\.github/workflows/(xll|release|pages)\.yml$|validation/scripts/(check_okf|check_lanes|check_bindings|test_check_bindings|fold_changes)\.py$|validation/bindings-allowlist\.toml$|deny\.toml$)'
+  DOCS_ONLY: '^(knowledge/|changes/|docs/(lanes|design)/|docs/[^/]+\.md$|[^/]+\.md$|crates/prospicio-xll/|xtask/|\.github/workflows/(xll|release|pages)\.yml$|validation/scripts/(check_okf|check_lanes|test_check_lanes|check_bindings|test_check_bindings|fold_changes|bayes_shards)\.py$|validation/bindings-allowlist\.toml$|deny\.toml$)'
 
 jobs:
-  rust:
+  # The checks every pull request needs, a few seconds in all (#827): the
+  # formatting, the knowledge bundle, the change fragments, the lane status
+  # files and the bindings' coverage. They run whatever the PR touches.
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
+          components: rustfmt
       - run: cargo fmt --all --check
       # The knowledge bundle conforms to OKF v0.2 (knowledge/index.md).
       - run: python3 -m pip install --quiet pyyaml && python3 validation/scripts/check_okf.py knowledge
       # Change fragments (changes/README.md) are valid and fold cleanly.
       - run: python3 validation/scripts/fold_changes.py --self-test && python3 validation/scripts/fold_changes.py --check
       # Lane status files (docs/lanes/*.md) have ids and no resurrected bullets.
-      - run: python3 validation/scripts/check_lanes.py
+      - run: python3 validation/scripts/test_check_lanes.py && python3 validation/scripts/check_lanes.py
       # Public Rust items are bound in Python and R or on the allow-list
       # (validation/bindings-allowlist.toml); prints the coverage table.
       - run: python3 validation/scripts/test_check_bindings.py && python3 validation/scripts/check_bindings.py
+
+  # Clippy, the debug tests, rustdoc and the WASM check. A pull request that
+  # touches only docs, knowledge, change fragments or lane status skips them
+  # (DOCS_ONLY, except the Excel add-in and xtask, which are Rust; #827).
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check whether any Rust input changed
+        id: changes
+        shell: bash
+        run: |
+          rust_free="${DOCS_ONLY//crates\/prospicio-xll\/|/}"
+          rust_free="${rust_free//xtask\/|/}"
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qvE "$rust_free"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Only docs, knowledge, change fragments or lane status changed; skipping the Rust checks."
+          fi
+      - if: steps.changes.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: wasm32-unknown-unknown
+      - if: steps.changes.outputs.run == 'true'
+        uses: Swatinem/rust-cache@v2
       # Default members: pure-Rust crates and the parity suite. The feature
       # lints the Bayesian parity tests too, and turns on
       # prospicio-reserving/slow-tests; `cargo test` skips the parity files
       # and ignores the NUTS unit tests (the bayes job runs both in
       # release). The dev profile is optimized (Cargo.toml), which took the
       # debug tests from about 7 minutes to about 1.
-      - run: cargo clippy --all-targets --features prospicio-validation/slow-bayes -- -D warnings
-      - run: cargo test
+      - if: steps.changes.outputs.run == 'true'
+        run: cargo clippy --all-targets --features prospicio-validation/slow-bayes -- -D warnings
+      - if: steps.changes.outputs.run == 'true'
+        run: cargo test
       # Rustdoc with warnings denied, as the docs job runs it (cargo xtask rust),
       # but on every PR: a crate-only PR does not trigger the docs job.
-      - run: cargo xtask rust
+      - if: steps.changes.outputs.run == 'true'
+        run: cargo xtask rust
       # The crates in the WASM scope (docs/architecture.md, "Open
       # decisions") build for the browser.
-      - run: cargo check --target wasm32-unknown-unknown -p prospicio-core -p prospicio-math -p prospicio-prob -p prospicio-aggregate -p prospicio-pricing -p prospicio-reserving -p prospicio
+      - if: steps.changes.outputs.run == 'true'
+        run: cargo check --target wasm32-unknown-unknown -p prospicio-core -p prospicio-math -p prospicio-prob -p prospicio-aggregate -p prospicio-pricing -p prospicio-reserving -p prospicio
 
   python:
     strategy:
@@ -123,8 +159,10 @@ jobs:
       - if: steps.plan.outputs.build == 'true'
         run: uv sync
         working-directory: python
+      # The slowest tests' times in the log, so a slowdown can be traced to
+      # them (#826).
       - if: steps.plan.outputs.test == 'true'
-        run: uv run pytest tests
+        run: uv run pytest tests --durations=25 --durations-min=5
         working-directory: python
 
   r:
@@ -192,7 +230,18 @@ jobs:
         run: R CMD INSTALL R/prospicio
       - name: Run the R tests
         if: steps.plan.outputs.test == 'true'
-        run: for f in R/prospicio/tests/*.R; do Rscript "$f" || exit 1; done
+        # Each file's time in the log (#826), the slowest listed at the end.
+        run: |
+          times=""
+          for f in R/prospicio/tests/*.R; do
+            start=$(date +%s)
+            Rscript "$f" || exit 1
+            secs=$(( $(date +%s) - start ))
+            echo "$f: ${secs} s"
+            times="$times$secs $f"$'\n'
+          done
+          echo "The slowest R test files:"
+          printf '%s' "$times" | sort -rn | head -10
       # remotes::install_github(subdir = "R/prospicio") and r-universe build
       # a tarball of R/prospicio alone, which carries its Rust sources only
       # because pkgbuild runs bootstrap.R first. Install from such a tarball,
@@ -433,15 +482,22 @@ jobs:
   # - prospicio-reserving's unit tests with its `slow-tests` feature, which
   #   un-ignores the ones that sample with NUTS (about 230 s single-threaded
   #   in debug; about 70 s in release on CI's runner).
-  # The rust job's debug tests skip or ignore them. On a pull request this
-  # job runs only when their inputs change; otherwise its steps are skipped
-  # and it passes. A pull request runs the smoke version of the one-year
-  # conformance suite and of the Meyers and compartmental one-year
+  # They run in three legs at once (#824), each building and running its own
+  # targets: validation/Cargo.toml's [package.metadata.bayes-shards] names
+  # each slow target's leg, and the job fails when a target has no leg or
+  # two. The rust job's debug tests skip or ignore them. On a pull request
+  # this job runs only when their inputs change; otherwise its steps are
+  # skipped and it passes. A pull request runs the smoke version of the
+  # one-year conformance suite and of the Meyers and compartmental one-year
   # validation; the weekly and manual runs set RISK_RS_FULL_BAYES and run
   # all of it (prospicio_validation::full_bayes; the user's decisions of
   # 2026-10-16 and 2026-10-19). On a push to main it only builds the
   # tests, if its cache is missing.
   bayes:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [a, b, c]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -460,8 +516,7 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "No Bayesian inputs changed; skipping the Bayesian parity."
           fi
-          tests=$(python3 -c "import tomllib; t = tomllib.load(open('validation/Cargo.toml', 'rb')); print(' '.join('--test ' + x['name'] for x in t['test'] if 'slow-bayes' in x.get('required-features', [])))")
-          echo "tests=$tests" >> "$GITHUB_OUTPUT"
+          python3 validation/scripts/bayes_shards.py ${{ matrix.shard }} >> "$GITHUB_OUTPUT"
       - if: steps.changes.outputs.run == 'true'
         uses: dtolnay/rust-toolchain@stable
       - if: steps.changes.outputs.run == 'true'
@@ -473,7 +528,9 @@ jobs:
         name: Build the Bayesian tests in release
         run: |
           cargo test --release -p prospicio-validation --features slow-bayes ${{ steps.changes.outputs.tests }} --no-run
-          cargo test --release -p prospicio-reserving --features slow-tests --lib --no-run
+          if [ "${{ steps.changes.outputs.unit }}" = true ]; then
+            cargo test --release -p prospicio-reserving --features slow-tests --lib --no-run
+          fi
       - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
         name: Run the Bayesian parity tests in release
         env:
@@ -482,7 +539,7 @@ jobs:
           echo "RISK_RS_FULL_BAYES=${RISK_RS_FULL_BAYES:-} (empty: the pull request's smoke run)"
           echo "cargo test --release -p prospicio-validation --features slow-bayes ${{ steps.changes.outputs.tests }}"
           cargo test --release -p prospicio-validation --features slow-bayes ${{ steps.changes.outputs.tests }}
-      - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
+      - if: steps.changes.outputs.run == 'true' && github.event_name != 'push' && steps.changes.outputs.unit == 'true'
         name: Run the NUTS unit tests in release
         run: cargo test --release -p prospicio-reserving --features slow-tests --lib
 
