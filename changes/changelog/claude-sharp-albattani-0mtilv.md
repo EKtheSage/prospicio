@@ -9,7 +9,10 @@
   GLM's replicate is NaN where a posterior draw's mean is invalid for the
   family, such as a mean at or below 0 under an identity link), or a
   statistic that is not finite (the sd of one value). The error says how
-  many draws and observations are affected (#831, #852).
+  many draws and observations are affected, and in `check_grouped` the
+  group; a group with fewer observations than its statistic needs (the
+  sd of a group of one) is left out of the grouped result
+  (`Statistic::min_observations`) (#831, #852).
 
 ### Models
 
@@ -28,10 +31,12 @@
 ### Reserving
 
 - `Triangle::from_long` (and every reader built on it) refuses a long
-  table whose periods span a dense grid of more than 2^24 cells and more
-  than 1,000 cells a row, as one mistyped origin such as `9020-01` among
-  monthly origins does, with the new `Error::TooLarge` naming the first
-  and last origin, instead of trying to allocate tens of gigabytes (#832, #852).
+  table whose origins and ages span a grid of more than 2^24 cells in a
+  segment and more than 1,000 cells a row, as one origin far from the
+  others (a mistyped `9020-01` among monthly origins) does, with the new
+  `Error::TooLarge` naming the first and last origin and age, instead of
+  trying to allocate tens of gigabytes; many sparse segments over the same
+  periods are not affected (#832, #852).
   Rust: `prospicio_reserving::Error` has a new variant, so an exhaustive
   `match` on it needs an arm.
 
@@ -53,8 +58,8 @@
 
 ### Models
 
-- `OnnxModel` returns an error, not a Python `PanicException`, for an ONNX
-  file on which its parser panics, and refuses a constant whose data does
+- `OnnxModel` returns an error quoting the parser's reason, not a Python
+  `PanicException`, for an ONNX file on which its parser panics, and refuses a constant whose data does
   not fill its declared shape, which was read padded with zeros (#832, #852).
 
 ### Excel
