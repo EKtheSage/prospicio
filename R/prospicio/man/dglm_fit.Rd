@@ -30,7 +30,8 @@ dglm_model(ptr, terms, xlevels, dterms, dxlevels)
 
 \item{family}{\code{"gaussian"}, \code{"poisson"}, \code{"gamma"} or \code{"tweedie"}.}
 
-\item{link}{The mean's link; the family's canonical link by default.}
+\item{link}{The mean's link; by default the log link for the gamma,
+inverse Gaussian and Tweedie, the canonical link otherwise.}
 
 \item{power}{The Tweedie power, in (1, 2).}
 

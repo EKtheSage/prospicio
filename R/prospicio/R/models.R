@@ -104,7 +104,10 @@ dispersion_args <- function(dispersion) {
 #'   `"negative_binomial"` (needs `theta`) or `"tweedie"` (needs `power`).
 #' @param link `"identity"`, `"log"`, `"logit"`, `"probit"`, `"cloglog"`,
 #'   `"inverse"`, `"inverse_squared"` or `"power"` (needs `link_power`);
-#'   `NULL` for the family's canonical link.
+#'   `NULL` for the log link for the gamma, inverse Gaussian and Tweedie and
+#'   the canonical link otherwise. R's own `glm()` defaults to the canonical
+#'   link (`Gamma()` is the inverse link), so give `link` when porting a
+#'   model from it.
 #' @param offset Optional offset added to any `offset()` terms.
 #' @param weights Optional prior weights.
 #' @param dispersion `NULL` (1 for the Poisson, binomial and negative
@@ -2793,7 +2796,8 @@ S7::method(print, bayes_glmm_model) <- function(x, ...) {
 #' @param dformula The dispersion's one-sided formula, `~ 1` by default.
 #' @param data A data frame.
 #' @param family `"gaussian"`, `"poisson"`, `"gamma"` or `"tweedie"`.
-#' @param link The mean's link; the family's canonical link by default.
+#' @param link The mean's link; by default the log link for the gamma,
+#'   inverse Gaussian and Tweedie, the canonical link otherwise.
 #' @param power The Tweedie power, in (1, 2).
 #' @param method `"ml"` (the default) or `"reml"`.
 #' @param offset,weights Optional offset of the mean (added to any

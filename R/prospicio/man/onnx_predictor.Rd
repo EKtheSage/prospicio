@@ -32,8 +32,8 @@ whole numbers.}
 \item{scale}{\code{"mean"}: the output is the mean. \code{"link"}: the output is on
 the link scale and added to the offset, \code{mu = g^-1(offset + output)}.}
 
-\item{link}{The link for \code{scale = "link"}; \code{NULL} for the family's
-canonical link.}
+\item{link}{The link for \code{scale = "link"}; \code{NULL} for the log link for
+the gamma, inverse Gaussian and Tweedie and the canonical link otherwise.}
 
 \item{dispersion}{The family's dispersion for predictive draws.}
 

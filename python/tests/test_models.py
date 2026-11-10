@@ -71,6 +71,19 @@ def test_quasi_poisson_and_family_parameters():
     assert "tweedie" in repr(Glm("tweedie", "log", power=1.5))
 
 
+def test_the_default_link_is_log_for_the_gamma_inverse_gaussian_and_tweedie():
+    # #835: the same rule as R and Excel; the canonical link otherwise.
+    assert 'link="log"' in repr(Glm("gamma"))
+    assert 'link="log"' in repr(Glm("inverse_gaussian"))
+    assert 'link="log"' in repr(Glm("tweedie", power=1.5))
+    assert 'link="identity"' in repr(Glm("gaussian"))
+    assert 'link="logit"' in repr(Glm("binomial"))
+    coding = Terms().intercept().factor("region").fit(DATA)
+    d = coding.design(DATA)
+    y = [1.0, 2.0, 4.0, 2.5, 1.5, 3.0]
+    assert Glm("gamma").fit(d, y).coefficients == Glm("gamma", "log").fit(d, y).coefficients
+
+
 def test_gam_smooths_a_curve():
     x = [i / 99 for i in range(100)]
     y = [math.sin(6 * v) + 2.0 for v in x]

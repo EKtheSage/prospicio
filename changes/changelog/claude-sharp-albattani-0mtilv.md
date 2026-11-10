@@ -108,3 +108,14 @@
   `k_fold`), so one seed gives the same rows and folds in Python and R. The
   bootstrap refits and dispersion models of both languages change once
   (#833, #852).
+
+### Breaking changes
+
+- Python and R: a GLM of the gamma, inverse Gaussian or Tweedie family
+  given no `link` takes the log link, as Excel's `PRO.PRC.GLM` always did,
+  instead of the canonical link (inverse, inverse squared, `power(1 - p)`);
+  the Gaussian, Poisson, negative binomial and binomial keep theirs. This
+  holds for every model that takes a family and a link (`Glm`, `Gam`,
+  `ElasticNet`, `BayesGlm`, `DoubleGlm`, the networks' `scale="link"`).
+  R's `glm()` and statsmodels default to the canonical link, so give
+  `link` when porting such a model (`Family::default_link`; #835, #852).

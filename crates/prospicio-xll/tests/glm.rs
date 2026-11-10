@@ -381,3 +381,15 @@ fn errors() {
         .contains("header row")
     );
 }
+
+#[test]
+fn a_gamma_glm_with_no_link_takes_the_log_link() {
+    // #835: Family::default_link, the same rule as Python and R.
+    let data = policies();
+    let with_log = glm(&data, "gamma_log");
+    let mut args = vec![data];
+    let mut c = case("gamma_log");
+    c[3] = none(); // the link argument omitted
+    args.extend(c);
+    assert_eq!(call("pro_prc_glm", args), with_log);
+}

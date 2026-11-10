@@ -11986,7 +11986,8 @@ class DoubleGlm:
     family : str
         ``"gaussian"``, ``"poisson"``, ``"gamma"`` or ``"tweedie"``.
     link : str, optional
-        The mean's link; the family's canonical link by default.
+        The mean's link; by default the log link for the gamma, inverse
+        Gaussian and Tweedie, the canonical link otherwise.
     power : float, optional
         The Tweedie's power, in (1, 2).
     method : str
@@ -12242,7 +12243,8 @@ class ElasticNet:
     family : str
         As ``Glm``.
     link : str, optional
-        As ``Glm``; the canonical link by default.
+        As ``Glm``: the log link for the gamma, inverse Gaussian and
+        Tweedie, the canonical link otherwise, by default.
     alpha : float, default 1.0
         Mixing between ridge (0) and the lasso (1).
     lam : float, default 0.0
@@ -15208,7 +15210,9 @@ class Glm:
     link : str, optional
         ``"identity"``, ``"log"``, ``"logit"``, ``"probit"``,
         ``"cloglog"``, ``"inverse"``, ``"inverse_squared"`` or ``"power"``
-        (needs ``link_power``); the family's canonical link by default.
+        (needs ``link_power``); the log link for the gamma, inverse Gaussian and Tweedie, and the
+        canonical link otherwise, by default; R's ``glm`` and statsmodels
+        default to the canonical link, so give ``link`` when porting a model.
     dispersion : str or float, optional
         ``"pearson"``, ``"deviance"`` or a fixed value. By default 1 for the
         Poisson, binomial and negative binomial and Pearson's estimate
@@ -26214,8 +26218,8 @@ class OnnxPredictor:
         ``mu = g^-1(offset + output)`` (a CANN's correction, or a network
         trained with an exposure offset).
     link : str, optional
-        The link for ``scale="link"``; the family's canonical link by
-        default.
+        The link for ``scale="link"``; by default the log link for the
+        gamma, inverse Gaussian and Tweedie, the canonical link otherwise.
     dispersion : float, default 1
         The family's dispersion for predictive draws.
     theta, power : float, optional

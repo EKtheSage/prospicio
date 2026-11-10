@@ -38,10 +38,12 @@ pub(crate) fn family(name: &str, theta: f64, power: f64) -> Result<Family> {
     Ok(f)
 }
 
-/// A link from its name; "" for the family's canonical link.
+/// A link from its name; "" for the family's default link
+/// (`Family::default_link`: log for the gamma, inverse Gaussian and
+/// Tweedie, the canonical link otherwise; #835).
 pub(crate) fn link(name: &str, family: Family, link_power: f64) -> Result<Link> {
     Ok(match name {
-        "" => family.canonical_link(),
+        "" => family.default_link(),
         "identity" => Link::Identity,
         "log" => Link::Log,
         "logit" => Link::Logit,
