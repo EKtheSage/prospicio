@@ -85,7 +85,7 @@ pub const GROUP_CATEGORIES: &[(&str, &str)] = &[
 pub const COMMON: &str = "Prospicio \u{2013} Common";
 
 /// The first words of the names in [`COMMON`].
-pub const COMMON_PREFIXES: &[&str] = &["SEV", "EVT", "TRI", "VERSION", "YEARFRACTION"];
+pub const COMMON_PREFIXES: &[&str] = &["SEV", "EVT", "TRI", "VERSION", "YEARFRACTION", "REVERSE"];
 
 impl Function {
     /// The function's category in Excel's Insert Function dialog.
@@ -2114,6 +2114,26 @@ pub static FUNCTIONS: &[Function] = &[
         run: ratemaking::year_fraction_of,
     },
     Function {
+        symbol: "pro_reverse",
+        name: "PRO.REVERSE",
+        help: "A row or column reversed into a column, padded on top or cut to the last values at a length.",
+        args: &[
+            Arg {
+                name: "row",
+                help: "Numbers: a row or a column",
+            },
+            Arg {
+                name: "length",
+                help: "Rows out: longer pads the top with pad, shorter keeps the last values (default all)",
+            },
+            Arg {
+                name: "pad",
+                help: "The value padded on top (default 1)",
+            },
+        ],
+        run: ratemaking::reverse,
+    },
+    Function {
         symbol: "pro_prc_onlevel",
         name: "PRO.PRC.ONLEVEL",
         help: "On-level factor of each period's premium by the parallelogram method: current over average rate level.",
@@ -2164,6 +2184,50 @@ pub static FUNCTIONS: &[Function] = &[
         run: ratemaking::trend_fit,
     },
     Function {
+        symbol: "pro_prc_trend_factors",
+        name: "PRO.PRC.TREND.FACTORS",
+        help: "Trend factor of each accident year's losses or premium to a treaty period by a calendar-year rate schedule.",
+        args: &[
+            Arg {
+                name: "years",
+                help: "Accident years, one factor each, in order",
+            },
+            Arg {
+                name: "trend_years",
+                help: "The schedule's calendar years; a fully blank row is skipped",
+            },
+            Arg {
+                name: "trend_rates",
+                help: "The schedule's annual rates as decimals, one per calendar year; a year not listed takes the latest year's rate",
+            },
+            Arg {
+                name: "inception",
+                help: "The treaty's inception: a decimal year (2026.0) or an Excel date",
+            },
+            Arg {
+                name: "basis",
+                help: "\"RAD\" (default; losses to inception + 1, premium + 0.5) or \"LOD\" (losses + 0.5, premium at inception)",
+            },
+            Arg {
+                name: "incomplete",
+                help: "TRUE when the latest accident year is incomplete (default FALSE)",
+            },
+            Arg {
+                name: "cutoff",
+                help: "Months complete in an incomplete latest year, 1 to 12 (default 12)",
+            },
+            Arg {
+                name: "kind",
+                help: "\"loss\" (default; from mid-year) or \"premium\" (from the start of the year)",
+            },
+            Arg {
+                name: "output",
+                help: "\"factors\" (default; one column) or \"detail\" (Year, Start, Target, Factor)",
+            },
+        ],
+        run: ratemaking::trend_factors,
+    },
+    Function {
         symbol: "pro_prc_lr_experience",
         name: "PRO.PRC.LR.EXPERIENCE",
         help: "Loss ratio method: each year's projected premium, losses and loss ratio, and the total.",
@@ -2198,6 +2262,22 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: ratemaking::lr_experience,
+    },
+    Function {
+        symbol: "pro_prc_lr_cumulative",
+        name: "PRO.PRC.LR.CUMULATIVE",
+        help: "Running premium-weighted loss ratio: each row's sum of loss ratio x premium over the sum of premium to date (0 with no premium).",
+        args: &[
+            Arg {
+                name: "loss_ratios",
+                help: "Loss ratios: a row or column",
+            },
+            Arg {
+                name: "premiums",
+                help: "Earned premiums, one per loss ratio; a row with both blank adds nothing",
+            },
+        ],
+        run: ratemaking::lr_cumulative,
     },
     Function {
         symbol: "pro_prc_pp_experience",

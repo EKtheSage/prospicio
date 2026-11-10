@@ -208,6 +208,9 @@ what it is aiming for by v1.0.
     layers priced by any distortion (#368).
   - Increased limits and deductibles from size-of-loss tables, with the
     censored layer-by-layer LAS over several policy limits (#338).
+  - Trend factors to a treaty period from a calendar-year rate schedule
+    (`ScheduleTrend`, #801) and the running premium-weighted loss ratio
+    (`cumulative_loss_ratio`, #806).
 - **Next:** nothing planned beyond the open issues in the Aggregate
   lane's milestone (the grid audit, #317, and shared mixing, #316, are
   done).
@@ -752,7 +755,9 @@ what it is aiming for by v1.0.
   `PRO.CAP.`), each group a category in Insert Function, the old names
   removed in 0.0.9, and the add-in built with LTO (decision 47); the
   simulations and MCMC fits asynchronous, one run per inputs and the last
-  results kept (decision 48).
+  results kept (decision 48); trend factors from a calendar-year rate
+  schedule, the running loss ratio and a row reversed (decision 59, #803,
+  #806).
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
      form (`xll.md`, parity plan): all nine groups done (the eighth,

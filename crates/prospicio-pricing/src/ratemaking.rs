@@ -16,9 +16,12 @@
 //!   the current level.
 //! - [`TrendFit`]: exponential and linear trends fitted by least squares,
 //!   and [`trend_factor`].
+//! - [`ScheduleTrend`]: trend factors from accident years to a treaty
+//!   period by a [`RateSchedule`] of annual rates by calendar year.
 //! - [`LossRatioYear`] and [`PurePremiumYear`]: an experience year
 //!   projected to the forecast period, and [`LossRatioExperience`] and
-//!   [`PurePremiumExperience`], the years combined as a ratio of totals.
+//!   [`PurePremiumExperience`], the years combined as a ratio of totals;
+//!   [`cumulative_loss_ratio`], the running premium-weighted loss ratio.
 //! - [`Provisions`]: the variable expense and profit provisions, the
 //!   permissible loss ratio, and the loss ratio and pure premium methods;
 //!   [`premium_based_expenses`] splits expense ratios into fixed and
@@ -454,6 +457,404 @@ fn area(poly: &[(f64, f64)]) -> f64 {
 /// ```
 pub fn trend_factor(rate: f64, years: f64) -> f64 {
     (1.0 + rate).powf(years)
+}
+
+/// The treaty-period basis of [`ScheduleTrend`]: where the target point
+/// sits relative to the inception `i`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TrendBasis {
+    /// Risks attaching: losses trend to `i + 1`, premium to `i + 0.5`.
+    #[default]
+    RisksAttaching,
+    /// Losses occurring: losses trend to `i + 0.5`, premium to `i`.
+    LossesOccurring,
+}
+
+/// What [`ScheduleTrend`] trends: an accident year's losses (from the
+/// middle of the year) or its premium (from the start of the year).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TrendItem {
+    /// Losses, from `y + 0.5` to the losses' target.
+    #[default]
+    Loss,
+    /// Premium, from `y` to the premium's target.
+    Premium,
+}
+
+/// The rate of a calendar year before the first year of a
+/// [`RateSchedule`]. A year in a gap or after the schedule always takes
+/// the latest scheduled year's rate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BeforeSchedule {
+    /// The latest scheduled year's rate, as for gaps and later years.
+    #[default]
+    Latest,
+    /// The earliest scheduled year's rate.
+    Earliest,
+}
+
+/// Annual trend rates by calendar year, for [`ScheduleTrend`].
+///
+/// ```
+/// use prospicio_pricing::ratemaking::RateSchedule;
+///
+/// let s = RateSchedule::new(&[2013, 2012], &[0.05, 0.04]).unwrap();
+/// assert_eq!(s.years(), &[2012, 2013]);
+/// assert_eq!(s.rates(), &[0.04, 0.05]);
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct RateSchedule {
+    years: Vec<i32>,
+    rates: Vec<f64>,
+}
+
+impl RateSchedule {
+    /// One rate per calendar year, in any order; at least one year, no year
+    /// twice, every rate finite and above -1. The schedule is kept sorted
+    /// by year.
+    pub fn new(years: &[i32], rates: &[f64]) -> Result<Self> {
+        if years.len() != rates.len() {
+            return Err(Error::Data(format!(
+                "a rate schedule needs one rate per year, got {} years and {} rates",
+                years.len(),
+                rates.len()
+            )));
+        }
+        if years.is_empty() {
+            return Err(Error::Data("a rate schedule needs a year".into()));
+        }
+        let mut rows: Vec<(i32, f64)> = years.iter().copied().zip(rates.iter().copied()).collect();
+        rows.sort_by_key(|r| r.0);
+        for w in rows.windows(2) {
+            if w[0].0 == w[1].0 {
+                return Err(Error::Data(format!(
+                    "the rate schedule has {} twice",
+                    w[0].0
+                )));
+            }
+        }
+        for &(y, r) in &rows {
+            if !(r.is_finite() && r > -1.0) {
+                return Err(Error::Data(format!(
+                    "the rate of {y} is {r}; a trend rate must be finite and above -1"
+                )));
+            }
+        }
+        Ok(Self {
+            years: rows.iter().map(|r| r.0).collect(),
+            rates: rows.iter().map(|r| r.1).collect(),
+        })
+    }
+
+    /// From two columns as a sheet or data frame holds them: a row with
+    /// both cells missing (NaN) is skipped, a row with one missing is an
+    /// error, and a year must be a whole number.
+    ///
+    /// ```
+    /// use prospicio_pricing::ratemaking::RateSchedule;
+    ///
+    /// let s = RateSchedule::from_columns(&[2012.0, f64::NAN, 2013.0], &[0.04, f64::NAN, 0.05])
+    ///     .unwrap();
+    /// assert_eq!(s.years(), &[2012, 2013]);
+    /// assert!(RateSchedule::from_columns(&[2012.0, 2013.0], &[0.04, f64::NAN]).is_err());
+    /// ```
+    pub fn from_columns(years: &[f64], rates: &[f64]) -> Result<Self> {
+        if years.len() != rates.len() {
+            return Err(Error::Data(format!(
+                "a rate schedule needs one rate per year, got {} years and {} rates",
+                years.len(),
+                rates.len()
+            )));
+        }
+        let mut ys = Vec::with_capacity(years.len());
+        let mut rs = Vec::with_capacity(years.len());
+        for (row, (&y, &r)) in years.iter().zip(rates).enumerate() {
+            match (y.is_nan(), r.is_nan()) {
+                (true, true) => continue,
+                (false, false) => {}
+                _ => {
+                    return Err(Error::Data(format!(
+                        "row {} of the rate schedule has a year or a rate but not both",
+                        row + 1
+                    )));
+                }
+            }
+            ys.push(whole_year(y)?);
+            rs.push(r);
+        }
+        Self::new(&ys, &rs)
+    }
+
+    /// The calendar years, oldest first.
+    pub fn years(&self) -> &[i32] {
+        &self.years
+    }
+
+    /// The rates, in the order of [`RateSchedule::years`].
+    pub fn rates(&self) -> &[f64] {
+        &self.rates
+    }
+
+    /// The rate of calendar year `year`: its own, or the latest scheduled
+    /// year's when it has none (the earliest's before the schedule under
+    /// [`BeforeSchedule::Earliest`]).
+    pub fn rate(&self, year: i32, before: BeforeSchedule) -> f64 {
+        match self.years.binary_search(&year) {
+            Ok(k) => self.rates[k],
+            Err(0) if before == BeforeSchedule::Earliest => self.rates[0],
+            Err(_) => self.rates[self.rates.len() - 1],
+        }
+    }
+}
+
+fn whole_year(y: f64) -> Result<i32> {
+    if y.is_finite() && y.fract() == 0.0 && y.abs() < 1e6 {
+        Ok(y as i32)
+    } else {
+        Err(Error::Data(format!("{y} is not a calendar year")))
+    }
+}
+
+/// Trend factors from accident years to a treaty period by a schedule of
+/// annual rates, one rate per calendar year.
+///
+/// With `i` the inception (a decimal year) and `c` the months complete in
+/// an incomplete latest year, each accident year `y` trends from its start
+/// point to the target point:
+///
+/// | | Loss | Premium |
+/// |---|---|---|
+/// | Target, risks attaching | `i + 1` | `i + 0.5` |
+/// | Target, losses occurring | `i + 0.5` | `i` |
+/// | Start, complete year | `y + 0.5` | `y` |
+/// | Start, incomplete latest year | `y + c/24` | `y + c/24 - 0.5` |
+///
+/// The factor is the product over calendar years `k` of
+/// `(1 + r_k)^overlap_k`, with `overlap_k` the length of `[k, k + 1)`
+/// within `[start, target]`; a start at or after the target gives 1. A
+/// calendar year the schedule does not have takes the latest scheduled
+/// year's rate ([`BeforeSchedule`] for years before it).
+///
+/// The factors can feed `experience::Trend::Factors` or
+/// [`LossRatioYear`]'s `loss_trend` and `premium_trend`.
+///
+/// ```
+/// use prospicio_pricing::ratemaking::{RateSchedule, ScheduleTrend, TrendItem};
+///
+/// let s = RateSchedule::new(&[2024, 2025, 2026], &[0.05, 0.04, 0.04]).unwrap();
+/// // Losses of accident year 2025, risks attaching from 1 January 2026:
+/// // half of 2025, all of 2026 at 4%, to 2027.0.
+/// let rows = ScheduleTrend::new(2026.0).factors(&s, &[2025]).unwrap();
+/// assert!((rows[0].factor - 1.04f64.powf(1.5)).abs() < 1e-14);
+/// // Its premium from 2025.0 to 2026.5, the same length.
+/// let rows = ScheduleTrend::new(2026.0)
+///     .item(TrendItem::Premium)
+///     .factors(&s, &[2025])
+///     .unwrap();
+/// assert!((rows[0].factor - 1.04f64.powf(1.5)).abs() < 1e-14);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScheduleTrend {
+    /// The treaty's inception as a decimal year.
+    pub inception: f64,
+    /// Risks attaching (the default) or losses occurring.
+    pub basis: TrendBasis,
+    /// Losses (the default) or premium.
+    pub item: TrendItem,
+    /// `Some(c)` when the latest accident year has only `c` months complete
+    /// (1 to 12); `None` (the default) when every year is complete.
+    pub cutoff: Option<u32>,
+    /// The rate before the schedule's first year.
+    pub before: BeforeSchedule,
+}
+
+/// One accident year's trend from [`ScheduleTrend::factors`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScheduleTrendRow {
+    /// The accident year.
+    pub year: i32,
+    /// The start point, a decimal year.
+    pub start: f64,
+    /// The target point, a decimal year.
+    pub target: f64,
+    /// The trend factor from the start to the target.
+    pub factor: f64,
+}
+
+impl ScheduleTrend {
+    /// Risks attaching, losses, complete years and the latest rate before
+    /// the schedule, from `inception`.
+    pub fn new(inception: f64) -> Self {
+        Self {
+            inception,
+            basis: TrendBasis::default(),
+            item: TrendItem::default(),
+            cutoff: None,
+            before: BeforeSchedule::default(),
+        }
+    }
+
+    /// The basis.
+    pub fn basis(mut self, basis: TrendBasis) -> Self {
+        self.basis = basis;
+        self
+    }
+
+    /// Losses or premium.
+    pub fn item(mut self, item: TrendItem) -> Self {
+        self.item = item;
+        self
+    }
+
+    /// The latest accident year incomplete, with `months` complete.
+    pub fn incomplete(mut self, months: u32) -> Self {
+        self.cutoff = Some(months);
+        self
+    }
+
+    /// The rate before the schedule's first year.
+    pub fn before(mut self, before: BeforeSchedule) -> Self {
+        self.before = before;
+        self
+    }
+
+    /// The target point.
+    pub fn target(&self) -> f64 {
+        let i = self.inception;
+        match (self.basis, self.item) {
+            (TrendBasis::RisksAttaching, TrendItem::Loss) => i + 1.0,
+            (TrendBasis::RisksAttaching, TrendItem::Premium) => i + 0.5,
+            (TrendBasis::LossesOccurring, TrendItem::Loss) => i + 0.5,
+            (TrendBasis::LossesOccurring, TrendItem::Premium) => i,
+        }
+    }
+
+    /// One row per accident year, in the order given; the latest year (each
+    /// row holding it, if repeated) is the incomplete one under
+    /// [`ScheduleTrend::cutoff`]. The inception must be finite and the
+    /// cutoff 1 to 12.
+    pub fn factors(&self, schedule: &RateSchedule, years: &[i32]) -> Result<Vec<ScheduleTrendRow>> {
+        if !self.inception.is_finite() {
+            return Err(Error::InvalidParameter {
+                name: "inception",
+                value: self.inception,
+                reason: "must be finite",
+            });
+        }
+        if let Some(c) = self.cutoff {
+            if !(1..=12).contains(&c) {
+                return Err(Error::InvalidParameter {
+                    name: "cutoff",
+                    value: f64::from(c),
+                    reason: "must be 1 to 12 months",
+                });
+            }
+        }
+        let target = self.target();
+        let latest = years.iter().copied().max();
+        Ok(years
+            .iter()
+            .map(|&year| {
+                let y = f64::from(year);
+                let start = match (self.cutoff, Some(year) == latest) {
+                    (Some(c), true) => {
+                        let s = y + f64::from(c) / 24.0;
+                        match self.item {
+                            TrendItem::Loss => s,
+                            TrendItem::Premium => s - 0.5,
+                        }
+                    }
+                    _ => match self.item {
+                        TrendItem::Loss => y + 0.5,
+                        TrendItem::Premium => y,
+                    },
+                };
+                ScheduleTrendRow {
+                    year,
+                    start,
+                    target,
+                    factor: schedule_factor(schedule, self.before, start, target),
+                }
+            })
+            .collect())
+    }
+}
+
+fn schedule_factor(
+    schedule: &RateSchedule,
+    before: BeforeSchedule,
+    start: f64,
+    target: f64,
+) -> f64 {
+    if start >= target {
+        return 1.0;
+    }
+    let mut log = 0.0;
+    let mut k = start.floor();
+    while k < target {
+        let overlap = (k + 1.0).min(target) - k.max(start);
+        if overlap > 0.0 {
+            log += overlap * schedule.rate(k as i32, before).ln_1p();
+        }
+        k += 1.0;
+    }
+    log.exp()
+}
+
+/// The running premium-weighted loss ratio: row `k` is
+/// `Σ LR_j EP_j / Σ EP_j` over the first `k` rows, and 0 where the premium
+/// to date is 0.
+///
+/// A row with both values missing (NaN) adds nothing, as a blank row of a
+/// sheet does; a row with one missing is an error, as are premiums that
+/// are negative or not finite and loss ratios that are not finite.
+///
+/// ```
+/// use prospicio_pricing::ratemaking::cumulative_loss_ratio;
+///
+/// let lr = cumulative_loss_ratio(&[0.5, 0.8, 0.6], &[100.0, 300.0, 0.0]).unwrap();
+/// assert_eq!(lr, vec![0.5, 0.725, 0.725]);
+/// assert_eq!(cumulative_loss_ratio(&[0.7], &[0.0]).unwrap(), vec![0.0]);
+/// ```
+pub fn cumulative_loss_ratio(loss_ratios: &[f64], premiums: &[f64]) -> Result<Vec<f64>> {
+    if loss_ratios.len() != premiums.len() {
+        return Err(Error::Data(format!(
+            "one premium per loss ratio is needed, got {} loss ratios and {} premiums",
+            loss_ratios.len(),
+            premiums.len()
+        )));
+    }
+    let (mut losses, mut premium) = (0.0, 0.0);
+    let mut out = Vec::with_capacity(premiums.len());
+    for (row, (&lr, &ep)) in loss_ratios.iter().zip(premiums).enumerate() {
+        match (lr.is_nan(), ep.is_nan()) {
+            (true, true) => {}
+            (false, false) => {
+                if !lr.is_finite() {
+                    return Err(Error::Data(format!(
+                        "the loss ratio of row {} is {lr}",
+                        row + 1
+                    )));
+                }
+                if !(ep.is_finite() && ep >= 0.0) {
+                    return Err(Error::Data(format!(
+                        "the premium of row {} is {ep}; it must be finite and not negative",
+                        row + 1
+                    )));
+                }
+                losses += lr * ep;
+                premium += ep;
+            }
+            _ => {
+                return Err(Error::Data(format!(
+                    "row {} has a loss ratio or a premium but not both",
+                    row + 1
+                )));
+            }
+        }
+        out.push(if premium > 0.0 { losses / premium } else { 0.0 });
+    }
+    Ok(out)
 }
 
 /// The shape of a fitted trend.
@@ -984,5 +1385,220 @@ mod tests {
         assert_eq!(year_fraction(2011, 6, 30).unwrap(), 2011.5);
         assert_eq!(year_fraction(2017, 9, 30).unwrap(), 2017.75);
         assert_eq!(year_fraction(2014, 3, 1).unwrap(), 2014.0 + 2.0 / 12.0);
+    }
+
+    fn ap_schedule() -> RateSchedule {
+        let rates = [
+            4.5, 4.0, 3.5, 3.5, 4.0, 4.5, 5.0, 6.0, 7.0, 6.5, 5.5, 5.0, 4.5, 4.0, 4.0, 4.0,
+        ];
+        let years: Vec<i32> = (2012..2028).collect();
+        let rates: Vec<f64> = rates.iter().map(|r| r / 100.0).collect();
+        RateSchedule::new(&years, &rates).unwrap()
+    }
+
+    const AP_INCEPTION: f64 = 2026.0027397260274;
+
+    fn close(got: f64, want: f64) {
+        assert!(((got - want) / want).abs() < 1e-12, "{got} against {want}");
+    }
+
+    // #801's test vectors: accident years 2012, 2018 and 2025.
+    #[test]
+    fn schedule_trend_reproduces_the_issue_vectors() {
+        use TrendBasis::{LossesOccurring as Lod, RisksAttaching as Rad};
+        use TrendItem::{Loss, Premium};
+        let s = ap_schedule();
+        let years: Vec<i32> = (2012..2026).collect();
+        let cases: [(TrendBasis, TrendItem, Option<u32>, [f64; 3]); 8] = [
+            (
+                Rad,
+                Loss,
+                None,
+                [1.965720460376, 1.549905768665, 1.060710030249],
+            ),
+            (
+                Rad,
+                Premium,
+                None,
+                [1.970440084121, 1.557339412121, 1.060710030249],
+            ),
+            (
+                Lod,
+                Loss,
+                None,
+                [1.927547497255, 1.519807645895, 1.040111758173],
+            ),
+            (
+                Lod,
+                Premium,
+                None,
+                [1.932175469096, 1.527096933018, 1.040111758173],
+            ),
+            (
+                Rad,
+                Loss,
+                Some(6),
+                [1.965720460376, 1.549905768665, 1.071161637407],
+            ),
+            (
+                Rad,
+                Premium,
+                Some(6),
+                [1.970440084121, 1.557339412121, 1.072446776656],
+            ),
+            (
+                Lod,
+                Loss,
+                Some(9),
+                [1.927547497255, 1.519807645895, 1.045223518981],
+            ),
+            (
+                Lod,
+                Premium,
+                Some(9),
+                [1.932175469096, 1.527096933018, 1.045850340865],
+            ),
+        ];
+        for (basis, item, cutoff, want) in cases {
+            let mut t = ScheduleTrend::new(AP_INCEPTION).basis(basis).item(item);
+            t.cutoff = cutoff;
+            let rows = t.factors(&s, &years).unwrap();
+            for (k, w) in [0, 6, 13].into_iter().zip(want) {
+                close(rows[k].factor, w);
+            }
+        }
+        let loss = [
+            1.965720460376,
+            1.885588597245,
+            1.817440068887,
+            1.755980742886,
+            1.692516473093,
+            1.623521668846,
+            1.549905768665,
+            1.469121493285,
+            1.379472004094,
+            1.292248980824,
+            1.219116374789,
+            1.158308611831,
+            1.105787026943,
+            1.060710030249,
+        ];
+        let premium = [
+            1.970440084121,
+            1.885588597245,
+            1.813065958889,
+            1.751754549652,
+            1.692516473093,
+            1.627419685667,
+            1.557339412121,
+            1.483180392496,
+            1.399226785374,
+            1.307688584462,
+            1.227876605128,
+            1.163864080690,
+            1.108441981610,
+            1.060710030249,
+        ];
+        let t = ScheduleTrend::new(AP_INCEPTION);
+        for (row, w) in t.factors(&s, &years).unwrap().iter().zip(loss) {
+            close(row.factor, w);
+        }
+        let t = t.item(Premium);
+        for (row, w) in t.factors(&s, &years).unwrap().iter().zip(premium) {
+            close(row.factor, w);
+        }
+        let at_2026 = ScheduleTrend::new(2026.0)
+            .factors(&s, &[2012, 2025])
+            .unwrap();
+        close(at_2026[0].factor, 1.965509247180);
+        close(at_2026[1].factor, 1.060596058827);
+        let at_2026 = ScheduleTrend::new(2026.0)
+            .item(Premium)
+            .factors(&s, &[2012, 2025])
+            .unwrap();
+        close(at_2026[0].factor, 1.970228363810);
+        close(at_2026[1].factor, 1.060596058827);
+    }
+
+    #[test]
+    fn schedule_trend_extends_the_latest_rate() {
+        let s = RateSchedule::new(&[2012, 2013, 2014], &[0.05, 0.06, 0.07]).unwrap();
+        for item in [TrendItem::Loss, TrendItem::Premium] {
+            let rows = ScheduleTrend::new(2016.0027397260274)
+                .item(item)
+                .factors(&s, &[2008, 2010, 2025])
+                .unwrap();
+            close(rows[0].factor, 1.7281053820990948);
+            close(rows[1].factor, 1.5093941672627256);
+            assert_eq!(rows[2].factor, 1.0);
+        }
+        // Earliest before the schedule: 2010.5 to 2012 at 5%, then the schedule.
+        let rows = ScheduleTrend::new(2016.0)
+            .before(BeforeSchedule::Earliest)
+            .factors(&s, &[2010])
+            .unwrap();
+        let want = 1.05f64.powf(2.5) * 1.06 * 1.07f64.powi(3);
+        close(rows[0].factor, want);
+        // A gap takes the latest rate.
+        let g = RateSchedule::new(&[2010, 2012], &[0.10, 0.02]).unwrap();
+        assert_eq!(g.rate(2011, BeforeSchedule::Latest), 0.02);
+    }
+
+    #[test]
+    fn schedule_trend_detail_and_errors() {
+        let s = ap_schedule();
+        let rows = ScheduleTrend::new(2026.0)
+            .basis(TrendBasis::LossesOccurring)
+            .incomplete(9)
+            .factors(&s, &[2024, 2025])
+            .unwrap();
+        assert_eq!(
+            (rows[0].year, rows[0].start, rows[0].target),
+            (2024, 2024.5, 2026.5)
+        );
+        assert_eq!((rows[1].start, rows[1].target), (2025.375, 2026.5));
+        assert!(
+            ScheduleTrend::new(2026.0)
+                .incomplete(0)
+                .factors(&s, &[2025])
+                .is_err()
+        );
+        assert!(
+            ScheduleTrend::new(2026.0)
+                .incomplete(13)
+                .factors(&s, &[2025])
+                .is_err()
+        );
+        assert!(ScheduleTrend::new(f64::NAN).factors(&s, &[2025]).is_err());
+        assert!(RateSchedule::new(&[], &[]).is_err());
+        assert!(RateSchedule::new(&[2012, 2012], &[0.1, 0.1]).is_err());
+        assert!(RateSchedule::new(&[2012], &[-1.0]).is_err());
+        assert!(RateSchedule::from_columns(&[2012.5], &[0.1]).is_err());
+        assert!(RateSchedule::from_columns(&[f64::NAN, 2012.0], &[0.1, 0.1]).is_err());
+        assert!(RateSchedule::from_columns(&[f64::NAN], &[f64::NAN]).is_err());
+    }
+
+    #[test]
+    fn cumulative_loss_ratio_runs_and_skips_blank_rows() {
+        let lr = cumulative_loss_ratio(
+            &[0.0, 0.6, f64::NAN, 0.9, 0.3],
+            &[0.0, 100.0, f64::NAN, 300.0, 600.0],
+        )
+        .unwrap();
+        let want = [
+            0.0,
+            0.6,
+            0.6,
+            (60.0 + 270.0) / 400.0,
+            (60.0 + 270.0 + 180.0) / 1000.0,
+        ];
+        for (g, w) in lr.iter().zip(want) {
+            assert!((g - w).abs() < 1e-15, "{lr:?}");
+        }
+        assert!(cumulative_loss_ratio(&[0.5], &[]).is_err());
+        assert!(cumulative_loss_ratio(&[0.5, f64::NAN], &[1.0, 2.0]).is_err());
+        assert!(cumulative_loss_ratio(&[0.5], &[-1.0]).is_err());
+        assert!(cumulative_loss_ratio(&[f64::INFINITY], &[1.0]).is_err());
+        assert!(cumulative_loss_ratio(&[], &[]).unwrap().is_empty());
     }
 }

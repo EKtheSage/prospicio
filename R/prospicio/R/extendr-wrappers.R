@@ -340,6 +340,10 @@ rate_level_rust <- function(effective, values, applies_to, levels, kind, start, 
 
 trend_fit_rust <- function(times, values, kind) .Call(wrap__trend_fit_rust, times, values, kind)
 
+schedule_trend_rust <- function(years, trend_years, trend_rates, inception, basis, kind, cutoff, before) .Call(wrap__schedule_trend_rust, years, trend_years, trend_rates, inception, basis, kind, cutoff, before)
+
+cumulative_loss_ratio_rust <- function(loss_ratios, premiums) .Call(wrap__cumulative_loss_ratio_rust, loss_ratios, premiums)
+
 loss_ratio_experience_rust <- function(earned_premium, losses, on_level_factor, premium_trend, development, loss_trend, lae_factor) .Call(wrap__loss_ratio_experience_rust, earned_premium, losses, on_level_factor, premium_trend, development, loss_trend, lae_factor)
 
 pure_premium_experience_rust <- function(exposure, losses, development, loss_trend, lae_factor) .Call(wrap__pure_premium_experience_rust, exposure, losses, development, loss_trend, lae_factor)

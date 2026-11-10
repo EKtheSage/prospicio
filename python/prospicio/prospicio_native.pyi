@@ -36875,6 +36875,35 @@ def crps(draws: Sequence[float], y: float) -> float:
     float
     """
 
+def cumulative_loss_ratio(loss_ratios: Sequence[float |None], premiums: Sequence[float |None]) -> list[float]:
+    """
+    The running premium-weighted loss ratio: entry ``k`` is
+    ``sum(LR_j * EP_j) / sum(EP_j)`` over the first ``k`` rows, and 0 where
+    the premium to date is 0.
+    
+    Parameters
+    ----------
+    loss_ratios, premiums : sequence of float
+        One premium per loss ratio. A row with both ``None`` (or NaN) adds
+        nothing; a row with one is an error.
+    
+    Returns
+    -------
+    list of float
+    
+    Raises
+    ------
+    ValueError
+        On different lengths, a half-blank row, a negative premium or a
+        value that is not finite.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import cumulative_loss_ratio
+    >>> cumulative_loss_ratio([0.5, 0.8, 0.6], [100.0, 300.0, 0.0])
+    [0.5, 0.725, 0.725]
+    """
+
 def deal_ave(actual: Sequence[float], terms: CashflowTerms, u: Sequence[float], *, paid_patterns: Sequence[Sequence[float]] |None = None, pattern_index: Sequence[int] |None = None, levels: Sequence[float] |None = None) -> dict:
     """
     The actual cumulative paid at the end of each month ``0, 1, ...``
@@ -40071,6 +40100,70 @@ def round_premium(premium: float) -> float:
     >>> from prospicio.aggregate import round_premium
     >>> round_premium(714.12), round_premium(16.285)
     (714.0, 16.29)
+    """
+
+def schedule_trend(years: Sequence[int], trend_years: Sequence[float |None], trend_rates: Sequence[float |None], inception: float, *, basis: str = "RAD", kind: str = "loss", cutoff: int |None = None, before: str = "latest") -> dict:
+    """
+    Trend factors from accident years to a treaty period by a schedule of
+    annual rates, one rate per calendar year.
+    
+    With ``i`` the inception and ``c`` the months complete in an incomplete
+    latest year, each accident year ``y`` trends from its start point to the
+    target point:
+    
+    ================================  ============  ==================
+    Point                             Loss          Premium
+    ================================  ============  ==================
+    Target, ``"RAD"``                 ``i + 1``     ``i + 0.5``
+    Target, ``"LOD"``                 ``i + 0.5``   ``i``
+    Start, complete year              ``y + 0.5``   ``y``
+    Start, incomplete latest year     ``y + c/24``  ``y + c/24 - 0.5``
+    ================================  ============  ==================
+    
+    The factor is the product over calendar years ``k`` of
+    ``(1 + r_k) ** overlap_k``, with ``overlap_k`` the length of
+    ``[k, k + 1)`` within ``[start, target]``; a start at or after the
+    target gives 1. A calendar year the schedule does not have takes the
+    latest scheduled year's rate (the earliest's before the schedule with
+    ``before="earliest"``).
+    
+    Parameters
+    ----------
+    years : sequence of int
+        Accident years, one factor each, in the order given.
+    trend_years, trend_rates : sequence of float
+        The schedule, row by row, rates as decimals. A row with both
+        ``None`` (or NaN) is skipped; a row with one is an error.
+    inception : float
+        The treaty's inception as a decimal year.
+    basis : {"RAD", "LOD"}
+        Risks attaching (default) or losses occurring.
+    kind : {"loss", "premium"}
+    cutoff : int, optional
+        The months complete (1 to 12) of the latest accident year when it
+        is incomplete; ``None`` (default) when every year is complete.
+    before : {"latest", "earliest"}
+        The rate before the schedule's first year.
+    
+    Returns
+    -------
+    dict
+        Columns ``year``, ``start``, ``target`` and ``factor``, one entry
+        per accident year (``pandas.DataFrame(result)`` makes a table).
+    
+    Raises
+    ------
+    ValueError
+        On a half-blank schedule row, a year twice in the schedule, a rate
+        at or below -1, or a cutoff outside 1 to 12.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import schedule_trend
+    >>> t = schedule_trend([2024, 2025], [2024, 2025, 2026], [0.05, 0.04, 0.04],
+    ...                    inception=2026.0)
+    >>> [round(f, 6) for f in t["factor"]]
+    [1.10831, 1.060596]
     """
 
 def select_pair(u: Sequence[float], v: Sequence[float], families: Sequence[str] |None = None, criterion: str = "aic", independence_test: float |None = None) -> PairFit:

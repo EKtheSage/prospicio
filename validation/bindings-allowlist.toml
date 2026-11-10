@@ -160,6 +160,7 @@
 
 [python.prospicio_pricing]
 "book::Adequacy" = "a result type: Book.adequacy returns its fields as a dict"
+"ratemaking::ScheduleTrendRow" = "a result type: schedule_trend returns its fields as columns of a dict"
 "book::DealContribution" = "unbound on 2026-10-28 (seed); review"
 "book::Distribution" = "unbound on 2026-10-28 (seed); review"
 "bounds::PriceRange" = "unbound on 2026-10-28 (seed); review"
@@ -415,6 +416,7 @@
 
 [r.prospicio_pricing]
 "book::Adequacy" = "a result type: the book's adequacy() returns its fields as a list"
+"ratemaking::ScheduleTrendRow" = "a result type: schedule_trend() returns its fields as a data frame"
 "book::BookCashflows" = "unbound on 2026-10-28 (seed); review"
 "book::DealContribution" = "unbound on 2026-10-28 (seed); review"
 "book::Distribution" = "unbound on 2026-10-28 (seed); review"

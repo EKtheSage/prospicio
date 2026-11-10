@@ -126,3 +126,58 @@ def test_pure_premium_indication_appendix_b():
     assert round(e.pure_premium, 2) == 469.88
     p = Provisions(0.138, 0.05)
     assert round(p.pure_premium_rate(493.63 + 29.11 + 74.57 + 15.68, 77.83), 2) == 850.76
+
+
+AP_YEARS = list(range(2012, 2028))
+AP_RATES = [r / 100 for r in [4.5, 4.0, 3.5, 3.5, 4.0, 4.5, 5.0, 6.0, 7.0, 6.5, 5.5, 5.0, 4.5, 4.0, 4.0, 4.0]]
+AP_INCEPTION = 2026.0027397260274
+
+
+@pytest.mark.parametrize(
+    "basis, kind, cutoff, want",
+    [
+        ("RAD", "loss", None, [1.965720460376, 1.549905768665, 1.060710030249]),
+        ("RAD", "premium", None, [1.970440084121, 1.557339412121, 1.060710030249]),
+        ("LOD", "loss", None, [1.927547497255, 1.519807645895, 1.040111758173]),
+        ("LOD", "premium", None, [1.932175469096, 1.527096933018, 1.040111758173]),
+        ("RAD", "loss", 6, [1.965720460376, 1.549905768665, 1.071161637407]),
+        ("RAD", "premium", 6, [1.970440084121, 1.557339412121, 1.072446776656]),
+        ("LOD", "loss", 9, [1.927547497255, 1.519807645895, 1.045223518981]),
+        ("LOD", "premium", 9, [1.932175469096, 1.527096933018, 1.045850340865]),
+    ],
+)
+def test_schedule_trend_reproduces_the_ap_vectors(basis, kind, cutoff, want):
+    from prospicio.pricing import schedule_trend
+
+    t = schedule_trend(list(range(2012, 2026)), AP_YEARS, AP_RATES, AP_INCEPTION,
+                       basis=basis, kind=kind, cutoff=cutoff)
+    for k, w in zip([0, 6, 13], want):
+        assert t["factor"][k] == pytest.approx(w, rel=1e-12)
+
+
+def test_schedule_trend_detail_extension_and_errors():
+    from prospicio.pricing import schedule_trend
+
+    t = schedule_trend([2012, 2025], AP_YEARS, AP_RATES, 2026.0)
+    assert list(t) == ["year", "start", "target", "factor"]
+    assert t["start"] == [2012.5, 2025.5] and t["target"] == [2027.0, 2027.0]
+    assert t["factor"] == pytest.approx([1.965509247180, 1.060596058827], rel=1e-12)
+    for kind in ["loss", "premium"]:
+        e = schedule_trend([2008, 2010, 2025], [2012, None, 2013, 2014], [0.05, None, 0.06, 0.07],
+                           2016.0027397260274, kind=kind)
+        assert e["factor"] == pytest.approx([1.7281053820990948, 1.5093941672627256, 1.0], rel=1e-12)
+    with pytest.raises(ValueError, match="not both"):
+        schedule_trend([2012], [2012, 2013], [0.05, None], 2016.0)
+    with pytest.raises(ValueError, match="cutoff"):
+        schedule_trend([2012], [2012], [0.05], 2016.0, cutoff=13)
+    with pytest.raises(ValueError, match="basis"):
+        schedule_trend([2012], [2012], [0.05], 2016.0, basis="XYZ")
+
+
+def test_cumulative_loss_ratio():
+    from prospicio.pricing import cumulative_loss_ratio
+
+    got = cumulative_loss_ratio([0.0, 0.6, None, 0.9, 0.3], [0.0, 100.0, None, 300.0, 600.0])
+    assert got == pytest.approx([0.0, 0.6, 0.6, 0.825, 0.51], abs=1e-15)
+    with pytest.raises(ValueError, match="not both"):
+        cumulative_loss_ratio([0.5, 0.6], [1.0, None])

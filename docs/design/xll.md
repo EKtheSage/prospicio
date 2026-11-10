@@ -1534,6 +1534,35 @@ real Excel.
       the benchmark curve at scipy's `least_squares` omega, theta and
       sum of squares in three settings.
 
+59. **Trend factors from a rate schedule, the running loss ratio and a
+    row reversed** (#803, #806; the AP pricing demo's `LOSS_TREND`,
+    `PREMIUM_TREND`, `CUM_WEIGHTED_LR` and `REVERSE_TRANSPOSE`).
+    `PRO.PRC.TREND.FACTORS(years, trend_years, trend_rates, inception,
+    [basis], [incomplete], [cutoff], [kind], [output])` is `ScheduleTrend`
+    (`ratemaking.md` decision 10): one function with `kind` `"loss"` or
+    `"premium"` in place of AP's two names, since both kinds share the
+    schedule, inception and basis and differ only in their points; the
+    inception a decimal year or an Excel date (on `PRO.YEARFRACTION`'s
+    grid, so 1 January 2026 is 2026.0, not the demo's 2026.0027);
+    `output` `"factors"` (one column aligned with `years`) or `"detail"`
+    (Year, Start, Target, Factor). `PRO.PRC.LR.CUMULATIVE(loss_ratios,
+    premiums)` is `cumulative_loss_ratio` (decision 11 there), one
+    column. `PRO.REVERSE(row, [length], [pad])` is in Common: `length`
+    longer than the row pads the top with `pad` (default 1), shorter
+    keeps the last values, reversed (the demo workbook's formula), blank
+    keeps all; a blank cell is an error, since the workbook's `COUNT`
+    would skip it and shift the rest. It is Excel only: Python and R
+    slice.
+    - **Parity.** `tests/trend_schedule.rs`: #801's eight cases at
+      2012, 2018 and 2025, the full RAD loss column, an Excel-date
+      inception and the extension case with a blank schedule row, to
+      1e-12; #806's reverse vectors (length 10, 3 and blank). The test
+      workbook's Ratemaking sheet holds the same eight cases and the
+      reverse vectors.
+    - **Not yet a test**: the demo's cumulative loss ratios (0.61,
+      0.594705882353, 0.638120662040, ..., 0.637034303676), whose inputs
+      are not in the repository.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and

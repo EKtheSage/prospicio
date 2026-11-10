@@ -1294,6 +1294,52 @@ for k, (d, want) in enumerate([((2013, 6, 30), 2013.5), ((2011, 11, 15), 2011.87
     rm.cell(row=91 + k, column=4, value=f"=B{91 + k}=C{91 + k}")
 rm["B91"] = ArrayFormula("B91:B94", "=PRO.YEARFRACTION(A91:A94)")
 
+# Trend factors by a calendar-year rate schedule (#801, #803): the AP
+# pricing demo's vectors, accident years 2012 to 2025 to a treaty incepting
+# 2026.0027397260274, and the cumulative loss ratio and reverse (#806).
+rm["A97"] = "Trend factors by a calendar-year rate schedule (AP pricing demo, #801)"; rm["A97"].font = bold
+for c, h in enumerate(["Trend year", "Rate", "Accident year"]):
+    rm.cell(row=98, column=1 + c, value=h).font = bold
+for k, r in enumerate([4.5, 4.0, 3.5, 3.5, 4.0, 4.5, 5.0, 6.0, 7.0, 6.5, 5.5, 5.0, 4.5, 4.0, 4.0, 4.0]):
+    rm.cell(row=99 + k, column=1, value=2012 + k).fill = inp
+    rm.cell(row=99 + k, column=2, value=r / 100).fill = inp
+for k in range(14):
+    rm.cell(row=99 + k, column=3, value=2012 + k).fill = inp
+rm["E98"] = "Inception"; rm["F98"] = 2026.0027397260274; rm["F98"].fill = inp
+trend_cases = [
+    ("RAD", "loss", "FALSE", 12, [1.965720460376, 1.549905768665, 1.060710030249]),
+    ("RAD", "premium", "FALSE", 12, [1.970440084121, 1.557339412121, 1.060710030249]),
+    ("LOD", "loss", "FALSE", 12, [1.927547497255, 1.519807645895, 1.040111758173]),
+    ("LOD", "premium", "FALSE", 12, [1.932175469096, 1.527096933018, 1.040111758173]),
+    ("RAD", "loss", "TRUE", 6, [1.965720460376, 1.549905768665, 1.071161637407]),
+    ("RAD", "premium", "TRUE", 6, [1.970440084121, 1.557339412121, 1.072446776656]),
+    ("LOD", "loss", "TRUE", 9, [1.927547497255, 1.519807645895, 1.045223518981]),
+    ("LOD", "premium", "TRUE", 9, [1.932175469096, 1.527096933018, 1.045850340865]),
+]
+from openpyxl.utils import get_column_letter
+for j, (basis, kind, incomplete, cutoff, want) in enumerate(trend_cases):
+    col = get_column_letter(5 + j)
+    rm[f"{col}100"] = f"{basis} {kind}" + (f" cut {cutoff}" if incomplete == "TRUE" else "")
+    rm[f"{col}101"] = ArrayFormula(
+        f"{col}101:{col}114",
+        f'=PRO.PRC.TREND.FACTORS(C99:C112,A99:A114,B99:B114,$F$98,"{basis}",{incomplete},{cutoff},"{kind}")',
+    )
+    checks = ",".join(f"ABS({col}{101 + r}/{w}-1)<1E-12" for r, w in zip([0, 6, 13], want))
+    rm[f"{col}116"] = f"=AND({checks})"
+rm["A116"] = "Each case's 2012, 2018 and 2025 factors against the issue's to 1e-12"
+rm["A118"] = "Cumulative loss ratio and a row reversed (#806)"; rm["A118"].font = bold
+for k, (lr, ep) in enumerate([(0.0, 0.0), (0.6, 100.0), (0.9, 300.0), (0.3, 600.0)]):
+    rm.cell(row=119 + k, column=1, value=lr).fill = inp
+    rm.cell(row=119 + k, column=2, value=ep).fill = inp
+rm["C119"] = ArrayFormula("C119:C122", "=PRO.PRC.LR.CUMULATIVE(A119:A122,B119:B122)")
+rm["D119"] = "=AND(C119=0,C120=0.6,ABS(C121-0.825)<1E-15,ABS(C122-0.51)<1E-15)"
+for k, x in enumerate([0.35, 0.58, 0.74, 0.85, 0.92, 0.96, 0.98, 1.0]):
+    rm.cell(row=124, column=1 + k, value=x).fill = inp
+rm["A126"] = ArrayFormula("A126:A135", "=PRO.REVERSE(A124:H124,10)")
+rm["B126"] = "=AND(A126=1,A127=1,A128=1,A129=0.98,A135=0.35)"
+rm["C126"] = ArrayFormula("C126:C128", "=PRO.REVERSE(A124:H124,3)")
+rm["D126"] = "=AND(C126=1,C127=0.98,C128=0.96)"
+
 cr["A37"] = "Credibility-weighted estimate: Z 0.30 on 200 against 300 (Werner and Modlin, ch. 12: 270)"
 cr["F37"] = ArrayFormula("F37", "=PRO.PRC.CRED.WEIGHTED(200,0.3,300)")
 cr["G37"] = "=ROUND(F37,2)=270"

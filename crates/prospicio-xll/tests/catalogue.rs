@@ -133,6 +133,8 @@ const ADDED_AFTER_THE_RENAME: &[&str] = &[
     "PRO.RES.EXCESS.PATTERN",
     "PRO.RES.EXCESS.SHAPE",
     "PRO.RES.BENCHMARK.CURVE",
+    "PRO.PRC.TREND.FACTORS",
+    "PRO.PRC.LR.CUMULATIVE",
 ];
 
 /// The table of old and new names in `docs/design/xll.md` (decision 47),

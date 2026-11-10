@@ -5,8 +5,9 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_pricing::ratemaking::{
-    Applies, ExpenseCategory, LossRatioExperience, LossRatioYear, Period, Provisions,
-    PurePremiumExperience, PurePremiumYear, RateChange, RateHistory, TrendFit,
+    Applies, BeforeSchedule, ExpenseCategory, LossRatioExperience, LossRatioYear, Period,
+    Provisions, PurePremiumExperience, PurePremiumYear, RateChange, RateHistory, RateSchedule,
+    ScheduleTrend, TrendBasis, TrendFit, TrendItem,
 };
 
 use crate::to_r;
@@ -141,6 +142,73 @@ fn trend_fit_rust(times: &[f64], values: &[f64], kind: &str) -> Result<Vec<f64>>
         fit.r_squared,
         fit.annual_change(),
     ])
+}
+
+/// Trend factors by a calendar-year rate schedule:
+/// `list(year, start, target, factor)`. `cutoff` is 0 for complete years.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn schedule_trend_rust(
+    years: &[i32],
+    trend_years: &[f64],
+    trend_rates: &[f64],
+    inception: f64,
+    basis: &str,
+    kind: &str,
+    cutoff: i32,
+    before: &str,
+) -> Result<List> {
+    let schedule = RateSchedule::from_columns(trend_years, trend_rates).map_err(to_r)?;
+    let basis = match basis {
+        "RAD" => TrendBasis::RisksAttaching,
+        "LOD" => TrendBasis::LossesOccurring,
+        other => {
+            return Err(Error::Other(format!(
+                "basis must be \"RAD\" or \"LOD\", got {other}"
+            )));
+        }
+    };
+    let item = match kind {
+        "loss" => TrendItem::Loss,
+        "premium" => TrendItem::Premium,
+        other => {
+            return Err(Error::Other(format!(
+                "kind must be \"loss\" or \"premium\", got {other}"
+            )));
+        }
+    };
+    let before = match before {
+        "latest" => BeforeSchedule::Latest,
+        "earliest" => BeforeSchedule::Earliest,
+        other => {
+            return Err(Error::Other(format!(
+                "before must be \"latest\" or \"earliest\", got {other}"
+            )));
+        }
+    };
+    let mut trend = ScheduleTrend::new(inception)
+        .basis(basis)
+        .item(item)
+        .before(before);
+    if cutoff != 0 {
+        trend.cutoff = Some(
+            u32::try_from(cutoff)
+                .map_err(|_| Error::Other(format!("cutoff must be 1 to 12, got {cutoff}")))?,
+        );
+    }
+    let rows = trend.factors(&schedule, years).map_err(to_r)?;
+    Ok(list!(
+        year = rows.iter().map(|r| r.year).collect::<Vec<_>>(),
+        start = rows.iter().map(|r| r.start).collect::<Vec<_>>(),
+        target = rows.iter().map(|r| r.target).collect::<Vec<_>>(),
+        factor = rows.iter().map(|r| r.factor).collect::<Vec<_>>()
+    ))
+}
+
+/// The running premium-weighted loss ratio.
+#[extendr]
+fn cumulative_loss_ratio_rust(loss_ratios: &[f64], premiums: &[f64]) -> Result<Vec<f64>> {
+    prospicio_pricing::ratemaking::cumulative_loss_ratio(loss_ratios, premiums).map_err(to_r)
 }
 
 fn same_length(columns: &[&[f64]]) -> Result<usize> {
@@ -279,4 +347,6 @@ extendr_module! {
     fn period_dates;
     fn rate_level_rust;
     fn trend_fit_rust;
+    fn schedule_trend_rust;
+    fn cumulative_loss_ratio_rust;
 }

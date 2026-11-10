@@ -166,8 +166,8 @@ mod prospicio_native {
     #[pymodule_export]
     use super::ratemaking::{
         PyLossRatioExperience, PyPeriod, PyProvisions, PyPurePremiumExperience, PyRateHistory,
-        PyRateLevel, PyTrendFit, credibility_weighted, premium_based_expenses, trend_factor,
-        trended_present_rates, year_fraction,
+        PyRateLevel, PyTrendFit, credibility_weighted, cumulative_loss_ratio,
+        premium_based_expenses, schedule_trend, trend_factor, trended_present_rates, year_fraction,
     };
     #[pymodule_export]
     use super::reinsurance::{
