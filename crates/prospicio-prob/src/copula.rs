@@ -572,14 +572,14 @@ fn check_node(
     seen: &mut Vec<usize>,
 ) -> Result<()> {
     ArchimedeanCopula::new(family, node.theta, 2)?;
-    if let Some(p) = parent {
-        if node.theta < p {
-            return Err(invalid(
-                "theta",
-                node.theta,
-                "a nested copula's theta must be at least its parent's",
-            ));
-        }
+    if let Some(p) = parent
+        && node.theta < p
+    {
+        return Err(invalid(
+            "theta",
+            node.theta,
+            "a nested copula's theta must be at least its parent's",
+        ));
     }
     if node.leaves.len() + node.children.len() < 2 {
         return Err(Error::Data(

@@ -76,3 +76,35 @@
 
 - `Dist::from_json` refuses `format_version` 0, as the model artifacts
   already did (#840, #852).
+
+### Breaking changes
+
+- Building from source needs Rust 1.92 for every crate (`rust-version`
+  in `Cargo.toml`, checked by CI's new `msrv` job). The declared 1.85 was
+  not true: let chains already needed 1.88, and `prospicio-nn` (Burn 0.21)
+  1.92. The R package already asked for 1.92; Python users get wheels
+  (#829, #852).
+
+### Reserving
+
+- The `io` feature reads Excel files with calamine 0.38 (was 0.35), which
+  fixes its CFB/OLE2 parser's panics and unbounded allocations on a
+  malformed legacy `.xls`, and quick-xml's and zip's advisories; the seven
+  ignores in `deny.toml` are gone (#829, #852).
+
+### Distributions and probability
+
+- `PredictiveDistribution`'s Arrow IPC (the `arrow` feature) is on arrow 60
+  (was 59); the file format is unchanged (#829, #852).
+
+### Models
+
+- R's `booster_fit(dispersion_model = TRUE)` no longer gives the dispersion
+  booster the mean's `monotone` and `interaction_constraints`, as Python's
+  never did: they describe the mean, and the dispersion often moves the
+  other way. R dispersion models fitted with constraints change (#833, #852).
+- Both boosting adapters draw their bootstrap rows and the dispersion
+  model's folds from the Rust resampler (the new `bootstrap_rows`, and
+  `k_fold`), so one seed gives the same rows and folds in Python and R. The
+  bootstrap refits and dispersion models of both languages change once
+  (#833, #852).

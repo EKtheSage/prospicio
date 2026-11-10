@@ -250,11 +250,11 @@ fn newton(e: &[f64], w: &mut [f64], support: &mut Vec<usize>, n: usize, k: usize
         if !moved {
             return;
         }
-        if t == t_max {
-            if let Some(a) = blocking {
-                w[support[a]] = 0.0;
-                support.remove(a);
-            }
+        if t == t_max
+            && let Some(a) = blocking
+        {
+            w[support[a]] = 0.0;
+            support.remove(a);
         }
         let s: f64 = w.iter().sum();
         w.iter_mut().for_each(|x| *x /= s);

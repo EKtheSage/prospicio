@@ -835,7 +835,7 @@ fn blend_by_component_rust(
         })
         .collect::<Result<_>>()?;
     let k = refs.len();
-    if k == 0 || weights.len() % k != 0 {
+    if k == 0 || !weights.len().is_multiple_of(k) {
         return Err(Error::Other("weights need one column per model".into()));
     }
     let c = weights.len() / k;

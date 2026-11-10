@@ -268,7 +268,7 @@ impl PosteriorDraws {
                 "draws need at least one chain with one draw".into(),
             ));
         }
-        if len % dim != 0 {
+        if !len.is_multiple_of(dim) {
             return Err(Error::Data(format!(
                 "a chain of {len} values is not whole draws of {dim} variables"
             )));

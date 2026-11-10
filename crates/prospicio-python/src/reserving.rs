@@ -2144,10 +2144,10 @@ pub(crate) fn tail_arg(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Tail> {
     if obj.extract::<PyRef<'_, PyTailLogLinear>>().is_ok() {
         return Ok(Tail::LogLinear);
     }
-    if !obj.is_instance_of::<PyBool>() {
-        if let Ok(factor) = obj.extract::<f64>() {
-            return Ok(factor.into());
-        }
+    if !obj.is_instance_of::<PyBool>()
+        && let Ok(factor) = obj.extract::<f64>()
+    {
+        return Ok(factor.into());
     }
     Err(PyTypeError::new_err(format!(
         "tail must be a number, TailConstant, TailCurve, TailBondy or TailLogLinear, got {}",

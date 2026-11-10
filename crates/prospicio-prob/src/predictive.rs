@@ -151,7 +151,7 @@ impl PredictiveDistribution {
     ) -> Result<Self> {
         validate_keys(&dims, &components)?;
         let n_components = components.len();
-        if draws.is_empty() || draws.len() % n_components != 0 {
+        if draws.is_empty() || !draws.len().is_multiple_of(n_components) {
             return Err(Error::InvalidParameter {
                 name: "draws",
                 value: draws.len() as f64,

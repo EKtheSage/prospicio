@@ -440,7 +440,7 @@ pub fn renewal_count_pmf(
         .into_iter()
         .enumerate()
         .map(|(w, b)| {
-            let c = if w == 0 || (m % 2 == 0 && w == m / 2) {
+            let c = if w == 0 || (m.is_multiple_of(2) && w == m / 2) {
                 1.0
             } else {
                 2.0

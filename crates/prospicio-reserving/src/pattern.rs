@@ -1052,7 +1052,7 @@ impl UnderwritingBasis {
     fn weights_over(&self, s: u32) -> Result<Vec<f64>> {
         let w = self.shares()?;
         let m = self.policy_months;
-        if m % s == 0 {
+        if m.is_multiple_of(s) {
             // A term of r periods of s months earns as the half months at
             // its ends (`[1/2, 1/2]`) spread evenly over r periods, each
             // spread evenly over its s months.

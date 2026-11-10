@@ -725,13 +725,13 @@ impl Model for ExpectileRegression {
         let (x, yy, w) = rows(design, y)?;
         let p = design.n_cols();
         let n = yy.len();
-        if let Some(pen) = &self.penalty {
-            if pen.len() != p * p {
-                return Err(Error::Data(format!(
-                    "the penalty has {} entries for {p} coefficients",
-                    pen.len()
-                )));
-            }
+        if let Some(pen) = &self.penalty
+            && pen.len() != p * p
+        {
+            return Err(Error::Data(format!(
+                "the penalty has {} entries for {p} coefficients",
+                pen.len()
+            )));
         }
         let tau = self.tau;
         let wls = |omega: &[f64]| -> Result<(Vec<f64>, Vec<f64>)> {

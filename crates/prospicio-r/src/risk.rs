@@ -375,7 +375,7 @@ fn bootstrap_se_rust(
         .quantile_method(quantile_method(quantile)?)
         .tvar_method(tvar_method(tvar)?);
     let k = k as usize;
-    if k == 0 || columns.len() % k != 0 {
+    if k == 0 || !columns.len().is_multiple_of(k) {
         return Err(Error::Other(
             "the columns must all have the same length".into(),
         ));
@@ -429,7 +429,7 @@ fn co_statistics_rust(
         }
     };
     let n = driver.len();
-    if n == 0 || items.len() % n != 0 {
+    if n == 0 || !items.len().is_multiple_of(n) {
         return Err(Error::Other(
             "items must have one row per simulation of the driver".into(),
         ));
@@ -603,7 +603,7 @@ fn equal_risk_rust(pd: Robj, total: f64, measure: &str) -> Result<List> {
 fn rearrange_rust(x: &[f64], ncol: f64, rotate: f64, seed: f64, tolerance: f64) -> Result<List> {
     use prospicio_prob::rearrangement::{Start, rearrange};
     let m = ncol as usize;
-    if m == 0 || x.len() % m != 0 {
+    if m == 0 || !x.len().is_multiple_of(m) {
         return Err(Error::Other("x must be a matrix with ncol columns".into()));
     }
     let n = x.len() / m;
@@ -836,7 +836,7 @@ fn vine_fit_rust(
 ) -> Result<List> {
     use prospicio_prob::vine_fit::{VineSelect, fit_vine, select_vine};
     let n = whole(n, "n")? as usize;
-    if n == 0 || data.len() % n != 0 {
+    if n == 0 || !data.len().is_multiple_of(n) {
         return Err(Error::Other("data must be an n x d matrix".into()));
     }
     let d = data.len() / n;

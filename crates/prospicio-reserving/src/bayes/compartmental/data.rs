@@ -53,7 +53,7 @@ impl SquareGrain {
     /// number of development periods.
     pub(super) fn age_index(self, age: Lag) -> Result<usize> {
         let months = self.development.months();
-        if age == 0 || age % months != 0 {
+        if age == 0 || !age.is_multiple_of(months) {
             return Err(Error::Bayes(format!(
                 "development age {age} months is not a whole number of {} periods",
                 self.development

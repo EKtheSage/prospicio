@@ -520,7 +520,7 @@ impl Dates {
 
     fn contains(&self, t: usize) -> bool {
         match self {
-            Dates::Every { months, first } => t >= *first && (t - first) % months == 0,
+            Dates::Every { months, first } => t >= *first && (t - first).is_multiple_of(*months),
             Dates::Months(m) => m.contains(&t),
         }
     }
@@ -912,14 +912,14 @@ impl CashflowTerms {
             )));
         }
         self.funding.dates.check("funding dates")?;
-        if let FundingRule::ObligationIncrease { premium_offset, .. } = self.funding.rule {
-            if !premium_offset.is_finite() {
-                return Err(Error::InvalidParameter {
-                    name: "premium_offset",
-                    value: premium_offset,
-                    reason: "must be finite",
-                });
-            }
+        if let FundingRule::ObligationIncrease { premium_offset, .. } = self.funding.rule
+            && !premium_offset.is_finite()
+        {
+            return Err(Error::InvalidParameter {
+                name: "premium_offset",
+                value: premium_offset,
+                reason: "must be finite",
+            });
         }
         self.collateral_release.check("collateral release")?;
         self.operating.release.check("equity release")?;
@@ -1783,13 +1783,13 @@ impl CashflowTerms {
                 "a valuation at month 0 is inception: the actual state must be empty".into(),
             ));
         }
-        if let Some(f) = &state.flows {
-            if f.len() != v {
-                return Err(Error::Data(format!(
-                    "{} actual flows for a valuation at month {v}; one a month in 0..{v}",
-                    f.len()
-                )));
-            }
+        if let Some(f) = &state.flows
+            && f.len() != v
+        {
+            return Err(Error::Data(format!(
+                "{} actual flows for a valuation at month {v}; one a month in 0..{v}",
+                f.len()
+            )));
         }
         if let Some(a) = self.premium_flow.adjustments.iter().find(|a| a.month < v) {
             return Err(Error::Data(format!(

@@ -41,7 +41,7 @@ impl Grain {
 
     /// Whether every period of `self` is a whole number of `finer` periods.
     pub const fn is_multiple_of(self, finer: Grain) -> bool {
-        self.months() % finer.months() == 0
+        self.months().is_multiple_of(finer.months())
     }
 }
 

@@ -197,14 +197,14 @@ impl BayesOneYear {
                 expected: "a number, the Pareto k above which a simulation is flagged",
             });
         }
-        if let Some(l) = self.light_refit {
-            if l.chains == 0 || l.draws < 2 || l.tune == 0 {
-                return Err(Error::InvalidSetting {
-                    name: "light_refit",
-                    value: 0.0,
-                    expected: "at least one chain, one warm-up draw and two kept draws",
-                });
-            }
+        if let Some(l) = self.light_refit
+            && (l.chains == 0 || l.draws < 2 || l.tune == 0)
+        {
+            return Err(Error::InvalidSetting {
+                name: "light_refit",
+                value: 0.0,
+                expected: "at least one chain, one warm-up draw and two kept draws",
+            });
         }
         if self.n_sims == Some(0) {
             return Err(Error::InvalidSetting {

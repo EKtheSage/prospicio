@@ -806,7 +806,7 @@ impl NaturalPortfolio {
     /// of `units.len()`), with `probs` (empty for equal).
     fn from_rows(units: Vec<String>, x: &[f64], probs: &[f64]) -> Result<Self> {
         let m = units.len();
-        if m == 0 || x.len() % m != 0 {
+        if m == 0 || !x.len().is_multiple_of(m) {
             return Err(Error::Other(
                 "the loss matrix must have one column per unit".into(),
             ));

@@ -117,6 +117,40 @@ jobs:
       - if: steps.changes.outputs.run == 'true'
         run: cargo check --target wasm32-unknown-unknown -p prospicio-core -p prospicio-math -p prospicio-prob -p prospicio-aggregate -p prospicio-pricing -p prospicio-reserving -p prospicio
 
+  # The workspace builds on the rust-version it declares (Cargo.toml,
+  # 1.92), so the manifest cannot drift from the code again (#829). The R
+  # bindings need R installed, so they are checked by the r job instead.
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check whether any Rust input changed
+        id: changes
+        shell: bash
+        run: |
+          rust_free="${DOCS_ONLY//crates\/prospicio-xll\/|/}"
+          rust_free="${rust_free//xtask\/|/}"
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qvE "$rust_free"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^rust-version = "\(.*\)"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
+      - if: steps.changes.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.changes.outputs.version }}
+      - if: steps.changes.outputs.run == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: msrv
+      - if: steps.changes.outputs.run == 'true'
+        run: cargo check --workspace --exclude prospicio-r --all-targets --features prospicio-validation/slow-bayes,prospicio-reserving/io,prospicio-prob/arrow
+
   python:
     strategy:
       fail-fast: false

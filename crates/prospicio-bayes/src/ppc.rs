@@ -155,7 +155,7 @@ impl LooPit {
 /// draw's mean is invalid for the family.
 fn shape(observed: &[f64], replicated: &[f64]) -> Result<usize> {
     let n = observed.len();
-    if n == 0 || replicated.is_empty() || replicated.len() % n != 0 {
+    if n == 0 || replicated.is_empty() || !replicated.len().is_multiple_of(n) {
         return Err(Error::Data(format!(
             "{} replicated values are not a whole number of datasets of {n}",
             replicated.len()

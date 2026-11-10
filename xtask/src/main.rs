@@ -366,11 +366,12 @@ fn page(text: &str, section: &str) -> String {
         if line.starts_with("```") {
             fenced = !fenced;
         }
-        if title.is_none() && !fenced {
-            if let Some(heading) = line.strip_prefix("# ") {
-                title = Some(heading.trim().to_owned());
-                continue;
-            }
+        if title.is_none()
+            && !fenced
+            && let Some(heading) = line.strip_prefix("# ")
+        {
+            title = Some(heading.trim().to_owned());
+            continue;
         }
         body.push_str(&fence_info(line));
         body.push('\n');
@@ -585,11 +586,11 @@ fn r(opts: Options) -> Result {
     ])
     .current_dir(&root);
     // pkgdown needs pandoc; Quarto, which the Python docs need anyway,
-    // bundles one. (No let chain: the MSRV is 1.85.)
-    if env::var_os("RSTUDIO_PANDOC").is_none() {
-        if let Some(pandoc) = quarto_pandoc() {
-            cmd.env("RSTUDIO_PANDOC", pandoc);
-        }
+    // bundles one.
+    if env::var_os("RSTUDIO_PANDOC").is_none()
+        && let Some(pandoc) = quarto_pandoc()
+    {
+        cmd.env("RSTUDIO_PANDOC", pandoc);
     }
     let built = with_generated_articles(&root, &mut cmd);
     built?;

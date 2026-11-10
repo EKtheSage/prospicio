@@ -1283,7 +1283,7 @@ fn run_arms<'a>(triangles: &'a [PanelTriangle], arms: &[ArmBasis]) -> Vec<Record
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| arm.run(triangle)))
                     .unwrap_or_else(|_| Err("the fit panicked".to_string()));
             let n = done.fetch_add(1, Ordering::Relaxed) + 1;
-            if n % step == 0 || n == jobs.len() {
+            if n.is_multiple_of(step) || n == jobs.len() {
                 eprintln!(
                     "progress: {n} of {} fits, {:.0} s",
                     jobs.len(),

@@ -825,14 +825,14 @@ fn check_rate(name: &'static str, rate: f64) -> Result<()> {
 }
 
 fn check_limit(limit: Option<f64>) -> Result<()> {
-    if let Some(l) = limit {
-        if !(l.is_finite() && l > 0.0) {
-            return Err(Error::InvalidParameter {
-                name: "limit",
-                value: l,
-                reason: "must be finite and positive",
-            });
-        }
+    if let Some(l) = limit
+        && !(l.is_finite() && l > 0.0)
+    {
+        return Err(Error::InvalidParameter {
+            name: "limit",
+            value: l,
+            reason: "must be finite and positive",
+        });
     }
     Ok(())
 }

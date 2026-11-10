@@ -321,7 +321,7 @@ impl YearLossTable {
         }
         Ok(match expansion {
             Expansion::Tile => {
-                if n_sims % self.n_years != 0 {
+                if !n_sims.is_multiple_of(self.n_years) {
                     return Err(Error::Data(format!(
                         "tiling {} years into {n_sims} simulations: the simulations must be \
                          a whole multiple of the years, or resample them",
