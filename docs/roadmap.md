@@ -378,7 +378,7 @@ what it is aiming for by v1.0.
     refitted. By the user's decision of 2026-10-16 the view runs at most
     2,000 simulations by default (`BayesOneYear::n_sims` sets the count
     for any model), and CI's pull requests run only CRC of its
-    validation, the weekly and manual runs all of it.
+    validation, the nightly and manual runs all of it.
   - The one-year view of Gesmann and Morris' compartmental models 1 and
     2 (`reserving-bayes.md` PR 11, decision 20; `Compartmental::one_year`,
     in Rust, Python and R): the effects of an origin or age with no

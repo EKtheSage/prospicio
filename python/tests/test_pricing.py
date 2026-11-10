@@ -1347,17 +1347,34 @@ def test_layer_quote_solves_the_deposit_under_a_sliding_scale():
 def test_monthly_patterns_from_a_payment_pattern():
     """Monthly patterns from a pattern by development age (#601)."""
     p = P.PaymentPattern.from_development([1.0, 2.0, 3.0, 5.0], [5.0, 2.0, 1.25, 1.0])
-    for how in ("step", "linear", "log-linear"):
+    for how in ("step", "linear", "log_linear_unpaid"):
         m = p.to_monthly(72, how)
         for k, f in [(1, 0.2), (2, 0.5), (3, 0.8), (5, 1.0)]:
             assert m[12 * k - 1] == pytest.approx(f, abs=1e-12)
         assert all(b >= a - 1e-15 for a, b in zip(m, m[1:]))
     with pytest.raises(ValueError):
         p.to_monthly(12, "cubic")
+    # The reading was renamed for the unpaid share (#839).
+    with pytest.raises(ValueError, match="log_linear_unpaid"):
+        p.to_monthly(12, "log-linear")
     written = [min((t + 1) / 12, 1.0) for t in range(72)]
     w, e, paid = P.monthly_patterns(written, p)
-    assert e[0] == pytest.approx(1 / 144, abs=1e-15)
-    assert e[22] == pytest.approx(1.0, abs=1e-15)
+    # Written through the month (#839): half of month 0's 1/12 earned.
+    assert e[0] == pytest.approx(1 / 288, abs=1e-15)
+    assert e[11] == pytest.approx(0.5, abs=1e-15)
+    assert e[23] == pytest.approx(1.0, abs=1e-15)
+    # The reserving crate's underwriting basis earns the same.
+    from prospicio.reserving import UnderwritingBasis
+
+    exposure = UnderwritingBasis().exposure()
+    cum = [min(1.0, sum(exposure[: m + 1])) for m in range(72)]
+    assert e == pytest.approx(cum, abs=1e-15)
+    # Written at the start of each month: the rule before #839.
+    start = P.monthly_patterns(written, p, written_timing="at_start")[1]
+    assert start[0] == pytest.approx(1 / 144, abs=1e-15)
+    assert start[11] == pytest.approx(78 / 144, abs=1e-15)
+    with pytest.raises(ValueError, match="written_timing"):
+        P.monthly_patterns(written, p, written_timing="midnight")
     terms = P.CashflowTerms(
         100.0, 60, w, e, paid, P.CollateralRequirement({"outstanding": 1.0})
     )
@@ -1410,14 +1427,19 @@ def test_an_accident_year_pattern_on_the_underwriting_basis():
     cdf = list(ChainLadder().fit(tri, "paid").cdf)
     ages = [12 * (i + 1) for i in range(len(cdf))]
     chain = P.PaymentPattern.from_development([a / 12 for a in ages], [*[max(1.0, c) for c in cdf[:-1]], 1.0])
-    # The issue's figures: 7.3% and 39.6% paid by months 12 and 24 from the
-    # accident date, 15.0% and 58.6% on the underwriting year (the mean over
-    # a fit's draws converted one by one); 132 months reach the end.
+    # The issue's figures: 6.5% and 38.1% paid by months 12 and 24 from the
+    # accident date with premium written through each month (7.3% and 39.6%
+    # written at each month's start, the rule before #839), 15.0% and 58.6%
+    # on the underwriting year (the mean over a fit's draws converted one by
+    # one); 132 months reach the end.
     written = [min((t + 1) / 12, 1.0) for t in range(132)]
     accident_date = P.monthly_patterns(written, chain)[2]
+    at_start = P.monthly_patterns(written, chain, written_timing="at_start")[2]
     underwriting = P.monthly_patterns(written, chain, accident_period="year")[2]
-    assert accident_date[11] == pytest.approx(0.0735, abs=5e-4)
-    assert accident_date[23] == pytest.approx(0.3961, abs=5e-4)
+    assert accident_date[11] == pytest.approx(0.0653, abs=5e-4)
+    assert accident_date[23] == pytest.approx(0.3810, abs=5e-4)
+    assert at_start[11] == pytest.approx(0.0735, abs=5e-4)
+    assert at_start[23] == pytest.approx(0.3961, abs=5e-4)
     assert underwriting[11] == pytest.approx(0.1501, abs=5e-4)
     assert underwriting[23] == pytest.approx(0.5856, abs=5e-4)
     assert underwriting[131] == pytest.approx(1.0, abs=1e-12)

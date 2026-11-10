@@ -3835,7 +3835,17 @@ pub fn call(symbol: &str, mut args: Vec<Grid>) -> Grid {
         ));
     }
     args.resize_with(f.args.len(), Grid::missing);
-    match std::panic::catch_unwind(|| (f.run)(&args)) {
+    finish(std::panic::catch_unwind(|| (f.run)(&args)))
+}
+
+/// A function's outcome as the grid Excel receives: an error cell for an
+/// error, a panic or a result with no rows or no columns, which Excel
+/// cannot hold (#832).
+fn finish(outcome: std::thread::Result<Result<Grid, String>>) -> Grid {
+    match outcome {
+        Ok(Ok(grid)) if grid.rows == 0 || grid.columns == 0 => {
+            error_cell("the result is empty (no rows or no columns)")
+        }
         Ok(Ok(grid)) => grid,
         Ok(Err(message)) => error_cell(&message),
         Err(_) => error_cell("internal error (a panic); please report it"),
@@ -3844,4 +3854,27 @@ pub fn call(symbol: &str, mut args: Vec<Grid>) -> Grid {
 
 fn error_cell(message: &str) -> Grid {
     Grid::scalar(Value::Text(format!("#PROSPICIO! {message}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_empty_or_ragged_result_is_an_error_cell() {
+        // #832: Excel reads rows x columns cells from the result.
+        let empty = finish(Ok(Ok(Grid::from_rows(vec![vec![], vec![]]))));
+        assert_eq!(
+            empty.as_scalar(),
+            Some(&Value::Text(
+                "#PROSPICIO! the result is empty (no rows or no columns)".into()
+            ))
+        );
+        let ragged = std::panic::catch_unwind(|| {
+            Grid::from_rows(vec![vec![Value::Empty], vec![Value::Empty, Value::Empty]])
+        });
+        assert!(ragged.is_err());
+        let ok = finish(Ok(Ok(Grid::scalar(Value::Number(1.0)))));
+        assert_eq!(ok.as_scalar(), Some(&Value::Number(1.0)));
+    }
 }

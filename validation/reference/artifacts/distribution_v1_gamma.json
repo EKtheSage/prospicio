@@ -1,0 +1,7 @@
+{
+  "family": "gamma",
+  "format": "risk_rs.distribution",
+  "format_version": 1,
+  "scale": 500.0,
+  "shape": 2.0
+}

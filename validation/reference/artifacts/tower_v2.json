@@ -1,0 +1,42 @@
+{
+  "format": "risk_rs.tower",
+  "format_version": 2,
+  "stages": [
+    [
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": "inf",
+        "attachment": 0.0,
+        "basis": "loss",
+        "limit": "inf",
+        "name": "QS",
+        "premium": 6000000.0,
+        "pro_rata_time": false,
+        "profit_commission": {
+          "allowance": 0.35,
+          "share": 0.15
+        },
+        "profit_commission_carry": {
+          "years": null
+        },
+        "reinstatement_rates": [],
+        "share": 0.3,
+        "sliding_scale": [
+          [
+            0.35,
+            0.55
+          ],
+          [
+            0.2,
+            0.75
+          ]
+        ],
+        "sliding_scale_carry": {
+          "credit": true,
+          "deficit": true,
+          "years": 3
+        }
+      }
+    ]
+  ]
+}

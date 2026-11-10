@@ -7,6 +7,7 @@
 \alias{time_ordered}
 \alias{time_splits}
 \alias{permutation}
+\alias{bootstrap_rows}
 \title{Resampling splits}
 \usage{
 k_fold(n, k, seed)
@@ -18,6 +19,8 @@ time_ordered(periods, n_test)
 time_splits(periods, n_test, window = NULL, horizon = 1, gap = 0, step = 1)
 
 permutation(n, seed, stream = 0)
+
+bootstrap_rows(n, seed, stream = 0)
 }
 \arguments{
 \item{n}{Number of rows.}
@@ -38,12 +41,14 @@ expanding one.}
 \item{horizon, gap, step}{Periods tested, left out before each test window,
 and moved from one split to the next.}
 
-\item{stream}{For \code{permutation()}, the stream of \code{seed} to draw from.}
+\item{stream}{For \code{permutation()} and \code{bootstrap_rows()}, the stream of
+\code{seed} to draw from.}
 }
 \value{
 A list of splits, each \code{list(train, test)} of row numbers;
 \code{permutation()}, the row numbers \code{1:n} shuffled, the shuffle the
-\link{explanations} apply (the same as Python's \code{permutation}, plus one).
+\link{explanations} apply (the same as Python's \code{permutation}, plus one);
+\code{bootstrap_rows()}, \code{n} row numbers drawn from \code{1:n}.
 }
 \description{
 \code{k_fold()} shuffles \code{n} rows with \code{seed} and cuts them into \code{k} folds;
@@ -55,7 +60,10 @@ periods, the last ending at the latest period and each earlier one \code{step}
 periods before the next, and trains on the periods before its test window
 less the \code{gap} just before it, all of them or the latest \code{window}
 (scikit-learn's \code{TimeSeriesSplit} with \code{horizon = step = test_size}).
-\code{permutation()} shuffles \code{1:n} with \code{seed} on stream \code{stream}.
+\code{permutation()} shuffles \code{1:n} with \code{seed} on stream \code{stream};
+\code{bootstrap_rows()} draws \code{n} of \code{1:n} with replacement, the resample
+\code{\link[=booster_fit]{booster_fit()}} refits on (the same as Python's \code{bootstrap_rows}, plus
+one).
 }
 \examples{
 length(k_fold(10, 5, seed = 1))

@@ -28,7 +28,10 @@ glm_fit(
 
 \item{link}{\code{"identity"}, \code{"log"}, \code{"logit"}, \code{"probit"}, \code{"cloglog"},
 \code{"inverse"}, \code{"inverse_squared"} or \code{"power"} (needs \code{link_power});
-\code{NULL} for the family's canonical link.}
+\code{NULL} for the log link for the gamma, inverse Gaussian and Tweedie and
+the canonical link otherwise. R's own \code{glm()} defaults to the canonical
+link (\code{Gamma()} is the inverse link), so give \code{link} when porting a
+model from it.}
 
 \item{offset}{Optional offset added to any \code{offset()} terms.}
 

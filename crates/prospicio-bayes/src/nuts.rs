@@ -268,7 +268,7 @@ impl PosteriorDraws {
                 "draws need at least one chain with one draw".into(),
             ));
         }
-        if len % dim != 0 {
+        if !len.is_multiple_of(dim) {
             return Err(Error::Data(format!(
                 "a chain of {len} values is not whole draws of {dim} variables"
             )));
@@ -636,7 +636,7 @@ where
     // the seed, so chains are independent and replay exactly.
     let mut key_stream = StreamRng::new(s.seed, chain as u64);
     let mut key = [0u8; 32];
-    for chunk in key.chunks_exact_mut(8) {
+    for chunk in key.as_chunks_mut::<8>().0 {
         chunk.copy_from_slice(&key_stream.next_u64().to_le_bytes());
     }
     let mut rng = ChaCha20Rng::from_seed(key);

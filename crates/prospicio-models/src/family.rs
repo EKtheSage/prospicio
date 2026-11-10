@@ -75,6 +75,29 @@ impl Family {
     }
 
     /// The canonical link, where the family's natural parameter is linear.
+    /// The link the Python, R and Excel front ends use when none is given
+    /// (#835): the log link for the gamma, inverse Gaussian and Tweedie,
+    /// whose canonical links (inverse, inverse squared, `power(1 - p)`) can
+    /// give negative means and are not what a rating model wants, and the
+    /// canonical link otherwise (identity for the Gaussian, log for the
+    /// Poisson and negative binomial, logit for the binomial). R's `glm` and
+    /// statsmodels default to the canonical link, so a model ported from
+    /// them without its link differs for those three families.
+    ///
+    /// ```
+    /// use prospicio_models::{Family, Link};
+    ///
+    /// assert_eq!(Family::Gamma.default_link(), Link::Log);
+    /// assert_eq!(Family::Tweedie { power: 1.5 }.default_link(), Link::Log);
+    /// assert_eq!(Family::Binomial.default_link(), Link::Logit);
+    /// ```
+    pub fn default_link(&self) -> Link {
+        match *self {
+            Self::Gamma | Self::InverseGaussian | Self::Tweedie { .. } => Link::Log,
+            _ => self.canonical_link(),
+        }
+    }
+
     pub fn canonical_link(&self) -> Link {
         match *self {
             Self::Gaussian => Link::Identity,

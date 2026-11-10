@@ -1,0 +1,65 @@
+{
+  "format": "risk_rs.tower",
+  "format_version": 9,
+  "stages": [
+    [
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": 20.0,
+        "attachment": 10.0,
+        "basis": "loss",
+        "limit": 10.0,
+        "name": "lower",
+        "premium": 0.0,
+        "pro_rata_time": false,
+        "reinstatement_rates": [],
+        "share": 1.0
+      },
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": "inf",
+        "attachment": 30.0,
+        "basis": "loss",
+        "drop_down": {
+          "attachment": 10.0,
+          "underlying": "lower"
+        },
+        "limit": 10.0,
+        "name": "top",
+        "premium": 0.0,
+        "pro_rata_time": false,
+        "reinstatement_rates": [],
+        "share": 1.0
+      },
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": "inf",
+        "attachment": 2.0,
+        "basis": "loss",
+        "franchise": true,
+        "limit": 5.0,
+        "name": "f",
+        "premium": 0.0,
+        "pro_rata_time": false,
+        "reinstatement_rates": [],
+        "share": 1.0
+      },
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": "inf",
+        "attachment": 5.0,
+        "basis": "loss",
+        "limit": 10.0,
+        "name": "2nd",
+        "nth_event": {
+          "n": 2,
+          "threshold": 5.0
+        },
+        "premium": 0.0,
+        "pro_rata_time": false,
+        "reinstatement_rates": [],
+        "share": 1.0
+      }
+    ]
+  ]
+}

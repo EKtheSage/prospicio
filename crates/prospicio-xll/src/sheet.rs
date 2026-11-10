@@ -89,10 +89,15 @@ impl Grid {
         Self::scalar(Value::Empty)
     }
 
-    /// A grid from rows of equal length.
+    /// A grid from rows of equal length; ragged rows panic in every build,
+    /// since Excel reads `rows x columns` cells from the result (#832). The
+    /// catalogue's `call` turns the panic into an error cell.
     pub fn from_rows(rows: Vec<Vec<Value>>) -> Self {
         let columns = rows.first().map_or(0, Vec::len);
-        debug_assert!(rows.iter().all(|r| r.len() == columns));
+        assert!(
+            rows.iter().all(|r| r.len() == columns),
+            "a worksheet result needs rows of equal length"
+        );
         Self {
             rows: rows.len(),
             columns,

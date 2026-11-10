@@ -333,8 +333,8 @@ onnx_run <- function(model, inputs) {
 #' @param output Which output is the mean (1 for the first).
 #' @param scale `"mean"`: the output is the mean. `"link"`: the output is on
 #'   the link scale and added to the offset, `mu = g^-1(offset + output)`.
-#' @param link The link for `scale = "link"`; `NULL` for the family's
-#'   canonical link.
+#' @param link The link for `scale = "link"`; `NULL` for the log link for
+#'   the gamma, inverse Gaussian and Tweedie and the canonical link otherwise.
 #' @param dispersion The family's dispersion for predictive draws.
 #' @param theta,power The negative binomial's `theta` or the Tweedie power.
 #' @returns An `onnx_predictor`. Use [stats::predict()] and

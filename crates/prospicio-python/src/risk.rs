@@ -1988,12 +1988,15 @@ pub(crate) fn worst_var<'py>(
         .iter()
         .map(extract_severity)
         .collect::<PyResult<Vec<_>>>()?;
-    let refs: Vec<&dyn prospicio_prob::Distribution> = dists
-        .iter()
-        .map(|d| d as &dyn prospicio_prob::Distribution)
-        .collect();
-    let r =
-        prospicio_prob::rearrangement::worst_var(&refs, p, n, start, tolerance).map_err(to_py)?;
+    let r = py
+        .detach(|| {
+            let refs: Vec<&dyn prospicio_prob::Distribution> = dists
+                .iter()
+                .map(|d| d as &dyn prospicio_prob::Distribution)
+                .collect();
+            prospicio_prob::rearrangement::worst_var(&refs, p, n, start, tolerance)
+        })
+        .map_err(to_py)?;
     rearrangement_dict(py, r)
 }
 

@@ -3,9 +3,13 @@ protocol (docs/design/models.md: "Gradient boosting stays an adapter").
 
 The adapter converts a ``Design`` and responses into the engine's inputs,
 calls the engine, and wraps its output in the shared objects: means from
-``predict``, joint draws from ``predict_distribution``. It adds no
-evaluation logic: ``compare``, ``cross_validate`` and the metrics in
-``prospicio.models`` take a ``Booster`` like any other model.
+``predict``, joint draws from ``predict_distribution``. Beyond the engine
+it computes the starting score, the Pearson dispersion, the optional
+cross-fitted dispersion model and the bootstrap refits, with the R adapter
+(``booster_fit()``) doing the same steps on the same rows and folds, drawn
+from the Rust resampler (#833). It adds no evaluation logic: ``compare``,
+``cross_validate`` and the metrics in ``prospicio.models`` take a
+``Booster`` like any other model.
 
 - The design's offset is the engine's starting score (LightGBM
   ``init_score``, XGBoost ``base_margin``), on the link scale: log
@@ -26,7 +30,13 @@ evaluation logic: ``compare``, ``cross_validate`` and the metrics in
   The residuals come from 5-fold cross-fitted means, so a mean model that
   fits the training rows closely does not shrink them.
   ``predict_distribution`` then uses one dispersion per row
-  (``predict_dispersion``), as a double GLM does (Smyth, 1989).
+  (``predict_dispersion``), as a double GLM does (Smyth, 1989). The
+  dispersion booster takes none of ``monotone`` and
+  ``interaction_constraints``: they describe the mean, and the dispersion
+  often moves the other way (larger risks, less dispersion). So a
+  predictive quantile need not be monotone where the mean is. The folds
+  and the bootstrap rows come from ``prospicio.models.k_fold`` and
+  ``bootstrap_rows``, the same as in R.
 - ``family="quantile"`` fits the ``alpha`` quantile instead of the mean
   (LightGBM ``quantile``, XGBoost ``reg:quantileerror``), starting from
   the weighted ``alpha`` quantile of the responses. Score it with
@@ -43,10 +53,9 @@ LightGBM and XGBoost are optional: install the one you use
 (``pip install lightgbm`` or ``pip install xgboost``).
 """
 
-import random
 import re
 
-from .prospicio_native import simulate_from_means
+from .prospicio_native import bootstrap_rows, k_fold, simulate_from_means
 
 __all__ = ["Booster", "BoosterFit", "predict_quantiles"]
 
@@ -246,10 +255,11 @@ class Booster:
             base = _base_score(self.family, y, w, offset)
         model = self._train(x, y, w, offset + base, self.seed, constraints)
         boots = []
-        rng = random.Random(self.seed)
         n = len(y)
         for b in range(self.n_boot):
-            rows = np.array([rng.randrange(n) for _ in range(n)])
+            # Refit b's rows: stream b of the seed, from the Rust resampler,
+            # so R draws the same rows (#833).
+            rows = np.array(bootstrap_rows(n, self.seed, b), dtype=np.intp)
             boots.append(self._train(x[rows], y[rows], w[rows], offset[rows] + base, self.seed + 1 + b,
                                      constraints))
         fit = BoosterFit(self, design.names, model, boots, 1.0, base)
@@ -267,14 +277,13 @@ class Booster:
         import numpy as np
 
         n = len(y)
-        rng = random.Random(self.seed + 7919)
-        folds = np.array([rng.randrange(5) for _ in range(n)])
         mu = np.empty(n)
         link = _OBJECTIVES[self.family][2]
-        for k in range(5):
-            test = folds == k
-            if not test.any():
-                continue
+        # Five folds (fewer for fewer rows) from the Rust resampler, as in R
+        # (#833).
+        for _, test_rows in k_fold(n, min(5, n), self.seed + 7919):
+            test = np.zeros(n, dtype=bool)
+            test[test_rows] = True
             train = ~test
             model = self._train(x[train], y[train], w[train], offset[train] + base, self.seed,
                                 constraints)

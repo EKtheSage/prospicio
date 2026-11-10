@@ -893,7 +893,7 @@ mod tests {
                 );
             }
         }
-        for row in out.chunks_exact(6) {
+        for row in out.as_chunks::<6>().0 {
             for s in [0, 3] {
                 assert_eq!(row[s + 1], 2.0 * row[s] + 1.0);
                 assert_eq!(row[s + 2], -row[s]);
@@ -901,14 +901,14 @@ mod tests {
         }
         for s in [0, 3] {
             let column = |v: &[f64]| {
-                let mut c: Vec<f64> = v.chunks_exact(6).map(|r| r[s]).collect();
+                let mut c: Vec<f64> = v.as_chunks::<6>().0.iter().map(|r| r[s]).collect();
                 c.sort_by(f64::total_cmp);
                 c
             };
             assert_eq!(column(&rows), column(&out));
         }
-        let x: Vec<f64> = out.chunks_exact(6).map(|r| r[0]).collect();
-        let y: Vec<f64> = out.chunks_exact(6).map(|r| r[3]).collect();
+        let x: Vec<f64> = out.as_chunks::<6>().0.iter().map(|r| r[0]).collect();
+        let y: Vec<f64> = out.as_chunks::<6>().0.iter().map(|r| r[3]).collect();
         let rho = {
             let ranks = |v: &[f64]| {
                 let mut idx: Vec<usize> = (0..v.len()).collect();

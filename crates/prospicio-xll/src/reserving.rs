@@ -54,14 +54,14 @@ pub fn triangle_of(grid: &Grid, exposure: Option<&[f64]>, cumulative: bool) -> R
     let mut age: Vec<Lag> = Vec::new();
     let mut values = Vec::new();
     let mut exposures = Vec::new();
-    if let Some(e) = exposure {
-        if e.len() != grid.rows {
-            return Err(format!(
-                "exposure must have {} values, one per triangle row, got {}",
-                grid.rows,
-                e.len()
-            ));
-        }
+    if let Some(e) = exposure
+        && e.len() != grid.rows
+    {
+        return Err(format!(
+            "exposure must have {} values, one per triangle row, got {}",
+            grid.rows,
+            e.len()
+        ));
     }
     for r in 0..grid.rows {
         let mut ended = false;

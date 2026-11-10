@@ -1,8 +1,10 @@
 name: CI
 
-# Cost: the repo is private, so minutes are billed and Windows counts double.
-# Pull requests run Ubuntu only; Windows runs on the weekly schedule and on
-# demand. A pull request runs the python and r jobs unless it touches only
+# Wait: the repository is public, so its minutes are not billed; the limits
+# below keep a pull request's wait short (#828). Pull requests run Ubuntu
+# only; the full matrix with Windows runs nightly and on demand, so a
+# Windows failure shows within a day (macOS and aarch64 are built by
+# release.yml, whose dry run is nightly). A pull request runs the python and r jobs unless it touches only
 # docs, knowledge, change fragments or lane status (DOCS_ONLY below), and
 # the jobs that run a slow suite in a release build (bayes, fremtpl2) and
 # cargo deny (deny) only when it touches their inputs. A push to main runs the Rust job's checks
@@ -17,19 +19,20 @@ name: CI
 # conformance suite and Meyers' and the compartmental models' one-year
 # views, a PR runs a smoke version (the conformance suite on BayesOdp and
 # BayesBf; Meyers' CRC; compartmental model 1 without its refit
-# comparison); the weekly and manual runs set RISK_RS_FULL_BAYES and run
+# comparison); the nightly and manual runs set RISK_RS_FULL_BAYES and run
 # them all.
 on:
   push:
     branches: [main]
   pull_request:
   schedule:
-    - cron: "17 6 * * 1"
+    # Nightly (#828): the full matrix, Windows included.
+    - cron: "17 6 * * *"
   workflow_dispatch:
 
 # A new push to a pull request's branch cancels that branch's run still in
-# progress. Pushes to main, the weekly run and manual runs each get a group
-# of their own, so a merge never cancels the weekly run.
+# progress. Pushes to main, the nightly run and manual runs each get a group
+# of their own, so a merge never cancels the nightly run.
 concurrency:
   group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -38,42 +41,115 @@ env:
   # Paths a pull request can change without running the python and r jobs:
   # nothing in them is built or read by the bindings' tests (the guides in
   # docs/guides and the notebooks in examples/ are).
-  DOCS_ONLY: '^(knowledge/|changes/|docs/(lanes|design)/|docs/[^/]+\.md$|[^/]+\.md$|crates/prospicio-xll/|xtask/|\.github/workflows/(xll|release|pages)\.yml$|validation/scripts/(check_okf|check_lanes|check_bindings|test_check_bindings|fold_changes)\.py$|validation/bindings-allowlist\.toml$|deny\.toml$)'
+  DOCS_ONLY: '^(knowledge/|changes/|docs/(lanes|design)/|docs/[^/]+\.md$|[^/]+\.md$|crates/prospicio-xll/|xtask/|\.github/workflows/(xll|release|pages)\.yml$|validation/scripts/(check_okf|check_lanes|test_check_lanes|check_bindings|test_check_bindings|fold_changes|bayes_shards)\.py$|validation/bindings-allowlist\.toml$|deny\.toml$)'
 
 jobs:
-  rust:
+  # The checks every pull request needs, a few seconds in all (#827): the
+  # formatting, the knowledge bundle, the change fragments, the lane status
+  # files and the bindings' coverage. They run whatever the PR touches.
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
+          components: rustfmt
       - run: cargo fmt --all --check
       # The knowledge bundle conforms to OKF v0.2 (knowledge/index.md).
       - run: python3 -m pip install --quiet pyyaml && python3 validation/scripts/check_okf.py knowledge
       # Change fragments (changes/README.md) are valid and fold cleanly.
       - run: python3 validation/scripts/fold_changes.py --self-test && python3 validation/scripts/fold_changes.py --check
       # Lane status files (docs/lanes/*.md) have ids and no resurrected bullets.
-      - run: python3 validation/scripts/check_lanes.py
+      - run: python3 validation/scripts/test_check_lanes.py && python3 validation/scripts/check_lanes.py
       # Public Rust items are bound in Python and R or on the allow-list
       # (validation/bindings-allowlist.toml); prints the coverage table.
       - run: python3 validation/scripts/test_check_bindings.py && python3 validation/scripts/check_bindings.py
+      # Every slow Bayesian target is in one leg of the bayes job, and every
+      # leg is one its matrix runs (#824).
+      - run: python3 validation/scripts/bayes_shards.py
+
+  # Clippy, the debug tests, rustdoc and the WASM check. A pull request that
+  # touches only docs, knowledge, change fragments or lane status skips them
+  # (DOCS_ONLY, except the Excel add-in and xtask, which are Rust; #827).
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check whether any Rust input changed
+        id: changes
+        shell: bash
+        run: |
+          rust_free="${DOCS_ONLY//crates\/prospicio-xll\/|/}"
+          rust_free="${rust_free//xtask\/|/}"
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qvE "$rust_free"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Only docs, knowledge, change fragments or lane status changed; skipping the Rust checks."
+          fi
+      - if: steps.changes.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: wasm32-unknown-unknown
+      - if: steps.changes.outputs.run == 'true'
+        uses: Swatinem/rust-cache@v2
       # Default members: pure-Rust crates and the parity suite. The feature
       # lints the Bayesian parity tests too, and turns on
       # prospicio-reserving/slow-tests; `cargo test` skips the parity files
       # and ignores the NUTS unit tests (the bayes job runs both in
       # release). The dev profile is optimized (Cargo.toml), which took the
       # debug tests from about 7 minutes to about 1.
-      - run: cargo clippy --all-targets --features prospicio-validation/slow-bayes -- -D warnings
-      - run: cargo test
+      - if: steps.changes.outputs.run == 'true'
+        run: cargo clippy --all-targets --features prospicio-validation/slow-bayes -- -D warnings
+      - if: steps.changes.outputs.run == 'true'
+        run: cargo test
       # Rustdoc with warnings denied, as the docs job runs it (cargo xtask rust),
       # but on every PR: a crate-only PR does not trigger the docs job.
-      - run: cargo xtask rust
+      - if: steps.changes.outputs.run == 'true'
+        run: cargo xtask rust
       # The crates in the WASM scope (docs/architecture.md, "Open
       # decisions") build for the browser.
-      - run: cargo check --target wasm32-unknown-unknown -p prospicio-core -p prospicio-math -p prospicio-prob -p prospicio-aggregate -p prospicio-pricing -p prospicio-reserving -p prospicio
+      - if: steps.changes.outputs.run == 'true'
+        run: cargo check --target wasm32-unknown-unknown -p prospicio-core -p prospicio-math -p prospicio-prob -p prospicio-aggregate -p prospicio-pricing -p prospicio-reserving -p prospicio
+
+  # The workspace builds on the rust-version it declares (Cargo.toml,
+  # 1.92), so the manifest cannot drift from the code again (#829). The R
+  # bindings need R installed, so they are checked by the r job instead.
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check whether any Rust input changed
+        id: changes
+        shell: bash
+        run: |
+          rust_free="${DOCS_ONLY//crates\/prospicio-xll\/|/}"
+          rust_free="${rust_free//xtask\/|/}"
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qvE "$rust_free"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^rust-version = "\(.*\)"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
+      - if: steps.changes.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.changes.outputs.version }}
+      - if: steps.changes.outputs.run == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: msrv
+      - if: steps.changes.outputs.run == 'true'
+        run: cargo check --workspace --exclude prospicio-r --all-targets --features prospicio-validation/slow-bayes,prospicio-reserving/io,prospicio-prob/arrow
 
   python:
     strategy:
@@ -123,8 +199,10 @@ jobs:
       - if: steps.plan.outputs.build == 'true'
         run: uv sync
         working-directory: python
+      # The slowest tests' times in the log, so a slowdown can be traced to
+      # them (#826).
       - if: steps.plan.outputs.test == 'true'
-        run: uv run pytest tests
+        run: uv run pytest tests --durations=25 --durations-min=5
         working-directory: python
 
   r:
@@ -192,14 +270,25 @@ jobs:
         run: R CMD INSTALL R/prospicio
       - name: Run the R tests
         if: steps.plan.outputs.test == 'true'
-        run: for f in R/prospicio/tests/*.R; do Rscript "$f" || exit 1; done
+        # Each file's time in the log (#826), the slowest listed at the end.
+        run: |
+          times=""
+          for f in R/prospicio/tests/*.R; do
+            start=$(date +%s)
+            Rscript "$f" || exit 1
+            secs=$(( $(date +%s) - start ))
+            echo "$f: ${secs} s"
+            times="$times$secs $f"$'\n'
+          done
+          echo "The slowest R test files:"
+          printf '%s' "$times" | sort -rn | head -10
       # remotes::install_github(subdir = "R/prospicio") and r-universe build
       # a tarball of R/prospicio alone, which carries its Rust sources only
       # because pkgbuild runs bootstrap.R first. Install from such a tarball,
       # into a library of its own, and run one test file against it: the
       # full suite already ran on the checkout's install. It compiles the
       # crates again (a few minutes), so a PR runs it only when the
-      # package's build inputs change; the weekly run always does.
+      # package's build inputs change; the nightly run always does.
       - name: Check whether the R build inputs changed
         id: rbuild
         if: steps.plan.outputs.test == 'true'
@@ -226,7 +315,7 @@ jobs:
             -e "source('R/prospicio/tests/test-distributions.R')"
 
   # The R twins of the example notebooks (examples/one_year_view.qmd and
-  # examples/reinsurance_pricing.qmd, #271), on the weekly and manual runs
+  # examples/reinsurance_pricing.qmd, #271), on the nightly and manual runs
   # only (the user's decision of 2026-10-22), Ubuntu only: rendered with
   # Quarto to GitHub markdown at 4,000 simulations, then the notebooks run
   # at the same count and test_examples.py's r_twin tests compare what both
@@ -268,12 +357,21 @@ jobs:
           test -f "$PROSPICIO_R_TWINS/reinsurance_pricing.md"
           uv run pytest tests/test_examples.py -k r_twin -v -rs
 
-  # Builds both bindings through `cargo xtask docs`, which regenerates their
-  # docs, and fails if a committed generated file (the Python stub, R's man/
-  # and NAMESPACE) was stale. The python and r jobs run the test suites, so
-  # this build skips them (`--no-tests`). The rendered sites are uploaded as
-  # an artifact; pages.yml publishes them from main, and its build shares
-  # this job's cache (`shared-key: docs-site`), so it keeps it warm.
+  # Checks that the committed generated files (the Python stub, R's man/,
+  # NAMESPACE and R/extendr-wrappers.R) are current. On a pull request that
+  # touches the bindings it runs `cargo xtask generated --check` (#823): the
+  # extension and stub, roxygen2, the R install with the extendr wrappers,
+  # undoc/codoc and pkgdown's reference index (built as the site builds it),
+  # without rendering a site,
+  # about a quarter of the full build. It renders both sites with
+  # `cargo xtask docs --check --no-tests`, uploaded as an artifact, only when
+  # the PR touches the sites' configuration or xtask, and on the nightly and
+  # manual runs. A PR that changes only guides or notebooks skips the job, as
+  # before #823: the python and r jobs run every guide's code and check its
+  # printed numbers (test_guides.py, test-guides.R), and pages.yml renders
+  # the sites on main, sharing this job's cache (`shared-key: docs-site`), so
+  # a break that only the render shows is found there. Neither mode runs the
+  # test suites.
   #
   # On a pull request it runs only when the PR touches the bindings, their
   # docs config or xtask; otherwise its steps are skipped and it passes.
@@ -290,12 +388,20 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "docs=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
-              | grep -qE '^(crates/prospicio-python/|crates/prospicio-r/|python/|R/|xtask/|\.github/workflows/ci\.yml)'; then
+            echo "render=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          if echo "$changed" | grep -qE '^(crates/prospicio-python/|crates/prospicio-r/|python/|R/|xtask/|\.github/workflows/ci\.yml)'; then
             echo "docs=true" >> "$GITHUB_OUTPUT"
           else
             echo "docs=false" >> "$GITHUB_OUTPUT"
             echo "No bindings or docs inputs changed; skipping the docs build."
+          fi
+          if echo "$changed" | grep -qE '^(xtask/|python/(great-docs\.yml|docs-site\.css)|R/prospicio/(_pkgdown\.yml|pkgdown/))'; then
+            echo "render=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "render=false" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.changes.outputs.docs == 'true'
         uses: dtolnay/rust-toolchain@stable
@@ -305,7 +411,7 @@ jobs:
           shared-key: docs-site
       - if: steps.changes.outputs.docs == 'true'
         uses: astral-sh/setup-uv@v6
-      - if: steps.changes.outputs.docs == 'true'
+      - if: steps.changes.outputs.docs == 'true' && steps.changes.outputs.render == 'true'
         uses: quarto-dev/quarto-actions/setup@v2
       - if: steps.changes.outputs.docs == 'true'
         uses: r-lib/actions/setup-r@v2
@@ -316,9 +422,11 @@ jobs:
         with:
           working-directory: R/prospicio
           extra-packages: any::roxygen2, any::pkgload, any::pkgdown
-      - if: steps.changes.outputs.docs == 'true'
+      - if: steps.changes.outputs.docs == 'true' && steps.changes.outputs.render != 'true'
+        run: cargo xtask generated --check
+      - if: steps.changes.outputs.docs == 'true' && steps.changes.outputs.render == 'true'
         run: cargo xtask docs --check --no-tests
-      - if: steps.changes.outputs.docs == 'true'
+      - if: steps.changes.outputs.docs == 'true' && steps.changes.outputs.render == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: docs-site
@@ -433,15 +541,22 @@ jobs:
   # - prospicio-reserving's unit tests with its `slow-tests` feature, which
   #   un-ignores the ones that sample with NUTS (about 230 s single-threaded
   #   in debug; about 70 s in release on CI's runner).
-  # The rust job's debug tests skip or ignore them. On a pull request this
-  # job runs only when their inputs change; otherwise its steps are skipped
-  # and it passes. A pull request runs the smoke version of the one-year
-  # conformance suite and of the Meyers and compartmental one-year
-  # validation; the weekly and manual runs set RISK_RS_FULL_BAYES and run
+  # They run in three legs at once (#824), each building and running its own
+  # targets: validation/Cargo.toml's [package.metadata.bayes-shards] names
+  # each slow target's leg, and the job fails when a target has no leg or
+  # two. The rust job's debug tests skip or ignore them. On a pull request
+  # this job runs only when their inputs change; otherwise its steps are
+  # skipped and it passes. A pull request runs the smoke version of the
+  # one-year conformance suite and of the Meyers and compartmental one-year
+  # validation; the nightly and manual runs set RISK_RS_FULL_BAYES and run
   # all of it (prospicio_validation::full_bayes; the user's decisions of
   # 2026-10-16 and 2026-10-19). On a push to main it only builds the
   # tests, if its cache is missing.
   bayes:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [a, b, c]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -460,8 +575,7 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "No Bayesian inputs changed; skipping the Bayesian parity."
           fi
-          tests=$(python3 -c "import tomllib; t = tomllib.load(open('validation/Cargo.toml', 'rb')); print(' '.join('--test ' + x['name'] for x in t['test'] if 'slow-bayes' in x.get('required-features', [])))")
-          echo "tests=$tests" >> "$GITHUB_OUTPUT"
+          python3 validation/scripts/bayes_shards.py ${{ matrix.shard }} >> "$GITHUB_OUTPUT"
       - if: steps.changes.outputs.run == 'true'
         uses: dtolnay/rust-toolchain@stable
       - if: steps.changes.outputs.run == 'true'
@@ -473,7 +587,9 @@ jobs:
         name: Build the Bayesian tests in release
         run: |
           cargo test --release -p prospicio-validation --features slow-bayes ${{ steps.changes.outputs.tests }} --no-run
-          cargo test --release -p prospicio-reserving --features slow-tests --lib --no-run
+          if [ "${{ steps.changes.outputs.unit }}" = true ]; then
+            cargo test --release -p prospicio-reserving --features slow-tests --lib --no-run
+          fi
       - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
         name: Run the Bayesian parity tests in release
         env:
@@ -482,13 +598,13 @@ jobs:
           echo "RISK_RS_FULL_BAYES=${RISK_RS_FULL_BAYES:-} (empty: the pull request's smoke run)"
           echo "cargo test --release -p prospicio-validation --features slow-bayes ${{ steps.changes.outputs.tests }}"
           cargo test --release -p prospicio-validation --features slow-bayes ${{ steps.changes.outputs.tests }}
-      - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
+      - if: steps.changes.outputs.run == 'true' && github.event_name != 'push' && steps.changes.outputs.unit == 'true'
         name: Run the NUTS unit tests in release
         run: cargo test --release -p prospicio-reserving --features slow-tests --lib
 
   # Licences, RustSec advisories, duplicate versions and sources of the
   # dependency tree (deny.toml, #573). Pull requests run it when they touch
-  # the dependencies or the rules; the weekly and manual runs always do, so
+  # the dependencies or the rules; the nightly and manual runs always do, so
   # a new advisory on an unchanged lock file still shows up.
   deny:
     if: github.event_name != 'push'

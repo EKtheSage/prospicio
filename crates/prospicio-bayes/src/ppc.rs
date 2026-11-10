@@ -57,8 +57,11 @@ impl Statistic {
         }
     }
 
-    /// The statistic of `x`.
+    /// The statistic of `x`; NaN for an empty `x` (#832).
     pub fn of(&self, x: &[f64]) -> f64 {
+        if x.is_empty() {
+            return f64::NAN;
+        }
         let n = x.len() as f64;
         match self {
             Statistic::Mean => x.iter().sum::<f64>() / n,
@@ -77,6 +80,15 @@ impl Statistic {
                 v[lo] + (h - lo as f64) * (v[hi] - v[lo])
             }
             Statistic::ProportionZero => x.iter().filter(|&&v| v == 0.0).count() as f64 / n,
+        }
+    }
+
+    /// The fewest observations the statistic is defined on: 2 for the
+    /// standard deviation (divisor `n - 1`), 1 for the others.
+    pub fn min_observations(&self) -> usize {
+        match self {
+            Statistic::Sd => 2,
+            _ => 1,
         }
     }
 
@@ -134,16 +146,52 @@ impl LooPit {
 }
 
 /// Checks that `observed` (`n` values) and `replicated` (`S × n`,
-/// row-major) agree in shape, and returns `S`.
+/// row-major) agree in shape and are finite, and returns `S`.
+///
+/// A non-finite replicate is an error, not a value: a NaN is neither above
+/// nor tied with the observed statistic, so counted it would move a p-value
+/// toward 0 and a PIT down while the call still succeeded (#831).
+/// [`crate::glm::BayesGlmFit::replicate`] writes NaN where a posterior
+/// draw's mean is invalid for the family.
 fn shape(observed: &[f64], replicated: &[f64]) -> Result<usize> {
     let n = observed.len();
-    if n == 0 || replicated.is_empty() || replicated.len() % n != 0 {
+    if n == 0 || replicated.is_empty() || !replicated.len().is_multiple_of(n) {
         return Err(Error::Data(format!(
             "{} replicated values are not a whole number of datasets of {n}",
             replicated.len()
         )));
     }
-    Ok(replicated.len() / n)
+    let s = replicated.len() / n;
+    let bad_obs = observed.iter().filter(|v| !v.is_finite()).count();
+    if bad_obs > 0 {
+        return Err(Error::Data(format!(
+            "{bad_obs} of {n} observed values are not finite"
+        )));
+    }
+    let bad = replicated.iter().filter(|v| !v.is_finite()).count();
+    if bad > 0 {
+        let draws = replicated
+            .chunks_exact(n)
+            .filter(|r| r.iter().any(|v| !v.is_finite()))
+            .count();
+        let rows = (0..n)
+            .filter(|&i| (0..s).any(|d| !replicated[d * n + i].is_finite()))
+            .count();
+        let plural = if bad == 1 { "value is" } else { "values are" };
+        let first = replicated
+            .iter()
+            .position(|v| !v.is_finite())
+            .expect("a value is not finite");
+        return Err(Error::Data(format!(
+            "{bad} replicated {plural} not finite, in {draws} of {s} draws and {rows} of {n} \
+             observations (the first at draw {}, observation {}); a replicate is NaN where a \
+             posterior draw's mean is invalid for the family (for example a mean at or below 0 \
+             under an identity or inverse link), so the checks would be biased",
+            first / n,
+            first % n
+        )));
+    }
+    Ok(s)
 }
 
 /// `P(T_rep > T_obs) + P(T_rep = T_obs) / 2`.
@@ -194,6 +242,14 @@ pub fn check_with(
     let n = observed.len();
     let obs = t(observed);
     let rep: Vec<f64> = replicated.chunks_exact(n).map(&t).collect();
+    let bad = rep.iter().filter(|v| !v.is_finite()).count();
+    if !obs.is_finite() || bad > 0 {
+        return Err(Error::Data(format!(
+            "the statistic {name} is not finite on the observed data ({obs}) or on {bad} of {} \
+             replicates; a p-value would be biased",
+            rep.len()
+        )));
+    }
     Ok(StatisticCheck {
         name: name.to_string(),
         observed: obs,
@@ -205,14 +261,16 @@ pub fn check_with(
 /// [`check`] within groups: `groups[i]` is observation `i`'s group (from
 /// 0), and each statistic is checked on each group's observations alone;
 /// names are `<statistic>[<group>]`, statistic by statistic, then group by
-/// group.
+/// group. A group with fewer observations than the statistic needs
+/// ([`Statistic::min_observations`]: the sd of a group of one) has no check
+/// for it and is left out of the result, as an empty group is; any other
+/// non-finite value is an error that names the group (#831).
 pub fn check_grouped(
     observed: &[f64],
     replicated: &[f64],
     groups: &[usize],
     statistics: &[Statistic],
 ) -> Result<Vec<StatisticCheck>> {
-    let s = shape(observed, replicated)?;
     let n = observed.len();
     if groups.len() != n {
         return Err(Error::Data(format!(
@@ -220,6 +278,21 @@ pub fn check_grouped(
             groups.len()
         )));
     }
+    // Name the group of the first non-finite value, if any.
+    let s = shape(observed, replicated).map_err(|e| {
+        let first = observed.iter().position(|v| !v.is_finite()).or_else(|| {
+            replicated
+                .iter()
+                .position(|v| !v.is_finite())
+                .map(|k| k % n)
+        });
+        match first {
+            Some(i) if n > 0 => {
+                Error::Data(format!("{e}; observation {i} is in group {}", groups[i]))
+            }
+            _ => e,
+        }
+    })?;
     let count = groups.iter().max().map_or(0, |g| g + 1);
     let members: Vec<Vec<usize>> = (0..count)
         .map(|g| (0..n).filter(|&i| groups[i] == g).collect())
@@ -228,26 +301,33 @@ pub fn check_grouped(
     for t in statistics {
         t.validate()?;
         for (g, idx) in members.iter().enumerate() {
-            if idx.is_empty() {
+            if idx.len() < t.min_observations() {
                 continue;
             }
             let obs: Vec<f64> = idx.iter().map(|&i| observed[i]).collect();
             let rep: Vec<f64> = (0..s)
                 .flat_map(|d| idx.iter().map(move |&i| replicated[d * n + i]))
                 .collect();
-            let mut c = check_with(&obs, &rep, &t.name(), |x| t.of(x))?;
-            c.name = format!("{}[{g}]", t.name());
+            let name = format!("{}[{g}]", t.name());
+            let c = check_with(&obs, &rep, &name, |x| t.of(x))
+                .map_err(|e| Error::Data(format!("group {g} ({} observations): {e}", idx.len())))?;
             out.push(c);
         }
     }
     Ok(out)
 }
 
+/// The stream of `seed` that [`loo_pit`] draws its tie-breaking uniforms
+/// from: the last one, which the replicates of a model that gives draw `d`
+/// stream `d` of the same seed (as [`crate::glm::BayesGlmFit::replicate`])
+/// never reach (`docs/design/rng.md`; #831).
+pub const TIE_STREAM: u64 = u64::MAX;
+
 /// The leave-one-out PIT of each observation, `Σ_s w̃_is (1{y_rep,si <
 /// y_i} + u_i 1{y_rep,si = y_i})`, with `w̃_is` the normalized
 /// Pareto-smoothed importance weights for leaving `y_i` out (log ratios
-/// `−log p(y_i | θ_s)`, as [`crate::elpd::loo`]) and `u_i` uniform from stream 0 of
-/// `seed`, in observation order (it only matters for ties). `log_lik` is
+/// `−log p(y_i | θ_s)`, as [`crate::elpd::loo`]) and `u_i` uniform from stream
+/// [`TIE_STREAM`] of `seed`, in observation order (it only matters for ties). `log_lik` is
 /// `S × n`, row-major, as `replicated`; `r_eff` each observation's relative
 /// efficiency (1, independent draws, if `None`).
 ///
@@ -283,7 +363,7 @@ pub fn loo_pit(
             r.len()
         )));
     }
-    let mut rng = StreamRng::new(seed, 0);
+    let mut rng = StreamRng::new(seed, TIE_STREAM);
     let mut pit = Vec::with_capacity(n);
     let mut pareto_k = Vec::with_capacity(n);
     for i in 0..n {
@@ -325,8 +405,58 @@ mod tests {
         assert!((Statistic::Quantile(0.9).of(&x) - 4.8).abs() < 1e-12);
         assert_eq!(Statistic::ProportionZero.of(&x), 0.4);
         assert_eq!(Statistic::Quantile(0.9).name(), "q0.9");
+        assert!(Statistic::Quantile(0.5).of(&[]).is_nan());
+        assert!(Statistic::Max.of(&[]).is_nan());
         assert!(check(&x, &x, &[Statistic::Quantile(1.5)]).is_err());
         assert!(check(&x, &x[..3], &[Statistic::Mean]).is_err());
+    }
+
+    #[test]
+    fn non_finite_replicates_are_an_error_not_a_shifted_p_value() {
+        // Three replicates of two observations, one of them NaN (a draw
+        // whose mean was invalid for the family, #831).
+        let y = [1.0, 3.0];
+        let y_rep = [0.0, 2.0, f64::NAN, 4.0, 1.0, 3.0];
+        let err = check(&y, &y_rep, &[Statistic::Mean]).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("1 replicated value"), "{msg}");
+        assert!(msg.contains("1 of 3 draws"), "{msg}");
+        assert!(msg.contains("1 of 2 observations"), "{msg}");
+        assert!(check_with(&y, &y_rep, "mean", |x| x[0]).is_err());
+        assert!(check_grouped(&y, &y_rep, &[0, 1], &[Statistic::Max]).is_err());
+        let ll = [-1.0; 6];
+        assert!(loo_pit(&y, &y_rep, &ll, None, 0).is_err());
+        let inf = [0.0, 2.0, f64::INFINITY, 4.0, 1.0, 3.0];
+        assert!(check(&y, &inf, &[Statistic::Mean]).is_err());
+        // A non-finite observation is an error too.
+        assert!(check(&[1.0, f64::NAN], &[0.0, 2.0], &[Statistic::Mean]).is_err());
+        // A statistic that is not finite on finite data (the sd of one
+        // value) is an error naming it, not a p-value of 0.
+        let err = check(&[1.0], &[0.0, 2.0], &[Statistic::Sd]).unwrap_err();
+        assert!(err.to_string().contains("sd"), "{err}");
+    }
+
+    #[test]
+    fn a_group_too_small_for_its_statistic_is_left_out() {
+        // #831: the sd of a group of one is not defined; the group has no
+        // sd check, while its mean is checked and the other group's sd is.
+        let y = [1.0, 10.0, 2.0];
+        let y_rep = [0.0, 11.0, 4.0, 3.0, 9.0, 1.0];
+        let c = check_grouped(&y, &y_rep, &[0, 1, 0], &[Statistic::Sd, Statistic::Mean]).unwrap();
+        let names: Vec<&str> = c.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["sd[0]", "mean[0]", "mean[1]"]);
+        assert!(c.iter().all(|c| c.p_value.is_finite()));
+        // A non-finite replicate in a group names the group.
+        let bad = [0.0, f64::NAN, 4.0, 3.0, 9.0, 1.0];
+        let err = check_grouped(&y, &bad, &[0, 1, 0], &[Statistic::Mean]).unwrap_err();
+        assert!(err.to_string().contains("1 of 2 draws"), "{err}");
+        assert!(
+            err.to_string().contains("observation 1 is in group 1"),
+            "{err}"
+        );
+        let custom = |x: &[f64]| if x.len() == 1 { f64::NAN } else { x[0] };
+        let err = check_with(&y[1..2], &y_rep[1..2], "first[1]", custom).unwrap_err();
+        assert!(err.to_string().contains("first[1]"), "{err}");
     }
 
     #[test]

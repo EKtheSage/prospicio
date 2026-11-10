@@ -46,8 +46,9 @@ three.}
 \item{n_boot}{Bootstrap refits for parameter uncertainty in
 \code{\link[=predict_distribution]{predict_distribution()}}; 0 gives process noise only.}
 
-\item{seed}{Seeds the engine and the bootstrap resamples; R's own
-generator state is left as it was.}
+\item{seed}{Seeds the engine, the bootstrap resamples (refit \code{b} on
+\code{bootstrap_rows(n, seed, b - 1)}) and the dispersion model's folds; R's
+own generator is not used.}
 
 \item{offset}{Optional offset added to any \code{offset()} terms.}
 
@@ -104,7 +105,13 @@ simulation also uses one refit's means (parameter uncertainty).
 residuals come from 5-fold cross-fitted means, so a mean model that
 fits the training rows closely does not shrink them.
 \code{\link[=predict_distribution]{predict_distribution()}} then uses one dispersion per row
-(\code{\link[=predict_dispersion]{predict_dispersion()}}), as a double GLM does (Smyth, 1989).
+(\code{\link[=predict_dispersion]{predict_dispersion()}}), as a double GLM does (Smyth, 1989). The
+dispersion booster takes none of \code{monotone} and
+\code{interaction_constraints}: they describe the mean, and the dispersion
+often moves the other way (larger risks, less dispersion). So a
+predictive quantile need not be monotone where the mean is. The folds
+and the bootstrap rows come from \code{\link[=k_fold]{k_fold()}} and \code{\link[=bootstrap_rows]{bootstrap_rows()}},
+the same as in Python.
 \item \code{family = "quantile"} fits the \code{alpha} quantile instead of the mean
 (lightgbm \code{quantile}, xgboost \code{reg:quantileerror}), starting from the
 weighted \code{alpha} quantile of the response; it takes no offset. Score it

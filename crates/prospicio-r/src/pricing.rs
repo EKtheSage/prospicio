@@ -806,7 +806,7 @@ impl NaturalPortfolio {
     /// of `units.len()`), with `probs` (empty for equal).
     fn from_rows(units: Vec<String>, x: &[f64], probs: &[f64]) -> Result<Self> {
         let m = units.len();
-        if m == 0 || x.len() % m != 0 {
+        if m == 0 || !x.len().is_multiple_of(m) {
             return Err(Error::Other(
                 "the loss matrix must have one column per unit".into(),
             ));
@@ -1487,13 +1487,24 @@ fn pricing_pattern_unpaid(times: &[f64], shares: &[f64], age: f64) -> Result<Lis
     ))
 }
 
+/// The error for the old name of the unpaid-share reading (#839).
+fn renamed() -> Error {
+    Error::Other(
+        "interpolation \"log-linear\" is now \"log_linear_unpaid\": the unpaid share falls \
+         geometrically, a different curve from the reserving patterns' log-linear reading of \
+         the factors"
+            .into(),
+    )
+}
+
 fn interpolation_arg(s: &str) -> Result<PaidInterpolation> {
     match s {
         "step" => Ok(PaidInterpolation::Step),
         "linear" => Ok(PaidInterpolation::Linear),
-        "log-linear" => Ok(PaidInterpolation::LogLinear),
+        "log_linear_unpaid" => Ok(PaidInterpolation::LogLinearUnpaid),
+        "log-linear" => Err(renamed()),
         other => Err(Error::Other(format!(
-            "unknown interpolation {other:?}; use \"step\", \"linear\" or \"log-linear\""
+            "unknown interpolation {other:?}; use \"step\", \"linear\" or \"log_linear_unpaid\""
         ))),
     }
 }
@@ -1529,11 +1540,27 @@ fn pricing_patterns_from_annual(
     interpolation: &str,
     accident_period: &str,
     reading: &str,
+    written_timing: &str,
 ) -> Result<List> {
     let p = PaymentPattern::new(times.to_vec(), shares.to_vec()).map_err(to_r)?;
     let months = whole(policy_months, "policy_months")? as usize;
+    let timing = match written_timing {
+        "through_month" => prospicio_pricing::cashflow::WrittenTiming::ThroughMonth,
+        "at_start" => prospicio_pricing::cashflow::WrittenTiming::AtStart,
+        other => {
+            return Err(Error::Other(format!(
+                "written_timing must be \"through_month\" or \"at_start\", got {other:?}"
+            )));
+        }
+    };
     let m = if accident_period.is_empty() {
-        MonthlyPatterns::from_annual(written, months, &p, interpolation_arg(interpolation)?)
+        MonthlyPatterns::from_annual(
+            written,
+            months,
+            &p,
+            interpolation_arg(interpolation)?,
+            timing,
+        )
     } else {
         let paid = underwriting_paid(
             &p,
@@ -1542,7 +1569,7 @@ fn pricing_patterns_from_annual(
             months,
             reading_arg(reading)?,
         )?;
-        MonthlyPatterns::from_paid(written, months, paid)
+        MonthlyPatterns::from_paid(written, months, paid, timing)
     }
     .map_err(to_r)?;
     Ok(list!(written = m.written, earned = m.earned, paid = m.paid))

@@ -120,7 +120,7 @@ pub fn npv(flows: &[f64], times: &[f64], rate: f64) -> Result<f64> {
 /// row and one column a time.
 pub fn npv_rows(flows: &[f64], times: &[f64], rate: f64) -> Result<Vec<f64>> {
     check_times(times)?;
-    if flows.len() % times.len() != 0 {
+    if !flows.len().is_multiple_of(times.len()) {
         return Err(Error::Data(format!(
             "{} flows do not fill rows of {} times",
             flows.len(),
@@ -410,7 +410,7 @@ pub fn irr(flows: &[f64], times: &[f64], options: &IrrOptions) -> Result<Irr> {
 pub fn irr_rows(flows: &[f64], times: &[f64], options: &IrrOptions) -> Result<Vec<Irr>> {
     check_times(times)?;
     options.check()?;
-    if flows.len() % times.len() != 0 {
+    if !flows.len().is_multiple_of(times.len()) {
         return Err(Error::Data(format!(
             "{} flows do not fill rows of {} times",
             flows.len(),

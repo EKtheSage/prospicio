@@ -181,6 +181,30 @@ def test_dispersion_model(engine):
     assert plain.predict_dispersion(two) == [plain.dispersion] * 2
 
 
+def test_rows_and_folds_are_the_rust_resamplers():
+    # #833: the bootstrap rows and the dispersion folds come from the Rust
+    # resampler, so R's booster_fit() draws the same (its test pins these,
+    # plus one).
+    from prospicio.models import bootstrap_rows, k_fold
+
+    assert bootstrap_rows(8, 3) == [4, 0, 2, 6, 1, 1, 0, 5]
+    assert [sorted(t) for _, t in k_fold(10, 5, 7919)] == [[2, 3], [7, 9], [4, 8], [0, 6], [1, 5]]
+
+
+def test_the_dispersion_model_takes_no_constraints():
+    # #833: a falling-mean constraint does not bind the dispersion, which
+    # rises with x here (shape 4 below x = 0.5, 1 above).
+    pytest.importorskip("lightgbm")
+    rng = random.Random(5)
+    x = [rng.random() for _ in range(4000)]
+    y = [rng.gammavariate(4.0 if v < 0.5 else 1.0, 1000.0 / (4.0 if v < 0.5 else 1.0)) for v in x]
+    d = Design([x], ["x"], offset=[0.0] * len(x))
+    fit = Booster("gamma", n_rounds=100, learning_rate=0.1, params={"num_leaves": 4},
+                  dispersion_model=True, monotone={"x": -1}).fit(d, y)
+    lo, hi = fit.predict_dispersion(Design([[0.2, 0.8]], ["x"], offset=[0.0, 0.0]))
+    assert hi > 2 * lo
+
+
 def test_dispersion_model_needs_a_dispersion_family():
     with pytest.raises(ValueError):
         Booster("poisson", dispersion_model=True)

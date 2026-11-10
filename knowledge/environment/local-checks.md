@@ -5,6 +5,7 @@ description: What runs locally before a push, what cannot, how to install R and 
 tags: [environment, ci, bindings, r, python]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-06T18:30:00Z }
+updated: { by: claude-code/cloud-session, at: 2026-11-10T00:00:00Z }
 stale_after: 2027-01-05T00:00:00Z
 sources:
   - id: agents
@@ -70,17 +71,17 @@ the code change.
 
 # Also
 
-* `R/prospicio/R/extendr-wrappers.R` is edited by hand for a new or
-  changed extendr function; match the existing line format. To check the
-  edit, install the package and compare the file with
-  `.Call("wrap__make_prospicio_wrappers", use_symbols = TRUE,
-  package_name = "prospicio", PACKAGE = "prospicio")` without its
-  `#'` doc lines (keep `#' @export`): the order is the
-  `extendr_module!` order, impl by impl. The one known difference is
-  the file's `ChainLadderFit$tail <-function()`, missing a space.
-  On Windows (2026-11-02) the generated free functions come in another
-  order than the file's (the `hawkes_*` functions first), so diff only
-  the new impl blocks and insert them by hand at their module place.
+* `R/prospicio/R/extendr-wrappers.R` is generated, not edited by hand
+  (#836, 2026-11-10): `cargo xtask r` and `cargo xtask generated` install
+  the package, call `wrap__make_prospicio_wrappers` and write the file
+  with the doc lines dropped and the free functions and classes sorted by
+  name, so Windows' other function order no longer shows; CI's `docs` job
+  fails when the committed file is stale. Without the full docs toolchain,
+  `cargo xtask generated` needs only uv, R with roxygen2, pkgload and
+  pkgdown. The first regeneration found one drift from the hand-edited
+  file, `ChainLadderFit$tail <-function()` missing a space. In the cloud
+  container `apt-get install r-base-core r-base-dev` gives R 4.3.3 and
+  `install.packages("S7")` the package's one dependency.
 * maturin 1.16.0's `--generate-stubs` on Windows (a uv venv, 2026-11-02)
   writes a stub unlike the committed one: an `__all__` line, blank
   docstring lines without their indentation and a newline escape in a

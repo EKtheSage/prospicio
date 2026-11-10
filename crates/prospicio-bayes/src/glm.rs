@@ -511,6 +511,12 @@ impl BayesGlmFit {
     /// draw `s`'s coefficients and dispersion, then each row's response
     /// from the family, with stream `s` of `seed`. The input of
     /// [`crate::ppc`].
+    ///
+    /// A value is NaN where the draw's mean is invalid for the family (for
+    /// example a mean at or below 0 under an identity or inverse link, which
+    /// a new design can reach) or the family cannot draw at it. The checks
+    /// in [`crate::ppc`] refuse such replicates with an error naming how many
+    /// draws and rows they touch, rather than count them.
     pub fn replicate(&self, design: &Design, seed: u64) -> Result<Vec<f64>> {
         self.check_design(design)?;
         let p = self.names.len();
@@ -561,7 +567,8 @@ impl BayesGlmFit {
     /// on [`replicate`](Self::replicate)'s datasets and the pointwise
     /// log-likelihood, with each observation's relative efficiency from the
     /// chains (as [`loo`](Self::loo)). Counts are randomized over ties with
-    /// stream 0 of `seed`.
+    /// stream [`crate::ppc::TIE_STREAM`] of `seed`, which the replicates
+    /// (streams `0..n_draws`) do not use.
     pub fn loo_pit(&self, design: &Design, y: &[f64], seed: u64) -> Result<crate::ppc::LooPit> {
         self.check_y(design, y)?;
         let ll = self.log_likelihood(design, y)?;
@@ -610,7 +617,8 @@ impl Fitted for BayesGlmFit {
     /// Posterior predictive draws, components keyed `row = 0, 1, …`:
     /// simulation `i` takes a posterior draw (coefficients and dispersion)
     /// chosen by stream `i` of `seed`, shared by every row, then each
-    /// row's response from the family.
+    /// row's response from the family, NaN where the draw's mean is
+    /// invalid for the family (as [`replicate`](Self::replicate)).
     fn predict_distribution(
         &self,
         design: &Design,
@@ -792,6 +800,50 @@ mod tests {
         no_draws.sampler.draws = 1;
         assert!(no_draws.fit(&d, &y).is_err());
         assert!(poisson.fit(&d, &[1.0, -1.0, 0.0, 1.0]).is_err());
+    }
+
+    #[test]
+    fn checks_refuse_replicates_whose_mean_is_invalid() {
+        use crate::ppc::Statistic;
+        // A gamma GLM with the identity link, fitted where the mean is
+        // well above 0, then checked on rows far below the data where some
+        // draws' means fall at or below 0 (#831).
+        let n = 40;
+        let x: Vec<f64> = (0..n).map(|i| (i % 5) as f64 / 4.0).collect();
+        let y: Vec<f64> = x
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (10.0 + 4.0 * v) * [0.9, 1.1, 1.0, 0.95][i % 4])
+            .collect();
+        let d = Design::new(
+            vec!["(Intercept)".into(), "x".into()],
+            vec![vec![1.0; n], x],
+        )
+        .unwrap();
+        let fit = BayesGlm::new(Family::Gamma, Link::Identity)
+            .sampler(small())
+            .fit(&d, &y)
+            .unwrap();
+        assert!(
+            fit.posterior_predictive_check(&d, &y, &[Statistic::Mean], 1)
+                .is_ok()
+        );
+        // At x = -2.5 the posterior mean of mu is about 0, so roughly half
+        // the draws are invalid there.
+        let far = Design::new(
+            vec!["(Intercept)".into(), "x".into()],
+            vec![vec![1.0; 2], vec![0.5, -2.5]],
+        )
+        .unwrap();
+        let reps = fit.replicate(&far, 1).unwrap();
+        assert!(reps.iter().any(|v| v.is_nan()));
+        assert!(reps.iter().any(|v| v.is_finite()));
+        let y_far = [12.0, 1.0];
+        let err = fit
+            .posterior_predictive_check(&far, &y_far, &[Statistic::Mean], 1)
+            .unwrap_err();
+        assert!(err.to_string().contains("1 of 2 observations"), "{err}");
+        assert!(fit.loo_pit(&far, &y_far, 1).is_err());
     }
 
     #[test]

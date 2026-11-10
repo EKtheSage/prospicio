@@ -51,6 +51,8 @@ saveRDS(list(1), mf)
 stopifnot(inherits(try(load_model(mf), silent = TRUE), "try-error"))
 
 g <- glm_fit(age ~ region, d, family = "gamma", link = "log")
+# #835: with no link the gamma takes the log link, as in Python and Excel.
+stopifnot(identical(coef(glm_fit(age ~ region, d, family = "gamma")), coef(g)))
 rg <- stats::glm(age ~ region, d, family = Gamma(link = "log"), control = tight)
 near(coef(g), coef(rg), 1e-8)
 near(g@dispersion, summary(rg)$dispersion, 1e-8)
