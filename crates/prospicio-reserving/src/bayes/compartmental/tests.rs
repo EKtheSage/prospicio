@@ -4013,7 +4013,9 @@ fn the_one_year_view_over_segments_reaches_the_rank_correlation() {
 
 /// Bit-exact on CI's Linux runner (#841; the doc of `bayes::pins` says what to
 /// do when the hash moves): model 1 on company 337 (paid and incurred, 1997's
-/// premium), two chains of 100 warm-up and 50 kept draws, 100 simulations.
+/// premium), two chains of 100 warm-up and 50 kept draws, 100 simulations;
+/// the hash covers the posterior, the reserves and every simulated paid and
+/// outstanding cell.
 #[test]
 #[cfg_attr(
     not(feature = "slow-tests"),
@@ -4034,6 +4036,14 @@ fn the_fit_is_pinned_on_linux() {
         let fit = model
             .fit(&triangle(true), "paid", incurred(), "premium")
             .unwrap();
-        crate::bayes::pins::fit_hash(&fit.posterior, &fit.reserves)
+        // The reserves read only the last paid cell, so the paid and
+        // outstanding cells are hashed too: a swap of two of their draws
+        // must move the hash.
+        let h = crate::bayes::pins::fit_hash(&fit.posterior, &fit.reserves);
+        let h = crate::bayes::pins::bits_hash_from(h, fit.paid.draw_matrix());
+        match &fit.outstanding {
+            Some(o) => crate::bayes::pins::bits_hash_from(h, o.draw_matrix()),
+            None => h,
+        }
     });
 }
