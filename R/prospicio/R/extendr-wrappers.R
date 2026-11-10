@@ -109,6 +109,8 @@ credibility_standards <- function(p, k, cv) .Call(wrap__credibility_standards, p
 
 crps_rust <- function(draws, y) .Call(wrap__crps_rust, draws, y)
 
+cumulative_loss_ratio_rust <- function(loss_ratios, premiums) .Call(wrap__cumulative_loss_ratio_rust, loss_ratios, premiums)
+
 dglm_fit_design <- function(x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method) .Call(wrap__dglm_fit_design, x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method)
 
 disposal_rust <- function(triangle, closed_counts, paid, ultimate, disposal_rates, severities, tail_severity_from, trend, base, factors) .Call(wrap__disposal_rust, triangle, closed_counts, paid, ultimate, disposal_rates, severities, tail_severity_from, trend, base, factors)
@@ -452,6 +454,8 @@ roc_rust <- function(y, score, weights) .Call(wrap__roc_rust, y, score, weights)
 round_bucket_rust <- function(bs) .Call(wrap__round_bucket_rust, bs)
 
 round_premium_rust <- function(premium) .Call(wrap__round_premium_rust, premium)
+
+schedule_trend_rust <- function(years, trend_years, trend_rates, inception, basis, kind, cutoff, before) .Call(wrap__schedule_trend_rust, years, trend_years, trend_rates, inception, basis, kind, cutoff, before)
 
 settlement_rate_rust <- function(triangle, paid, closed_counts, ultimate, disposal_rates, interpolation) .Call(wrap__settlement_rate_rust, triangle, paid, closed_counts, ultimate, disposal_rates, interpolation)
 

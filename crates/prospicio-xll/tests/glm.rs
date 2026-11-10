@@ -14,7 +14,7 @@
 //!   levels, and a chosen base level;
 //! * the errors.
 
-mod common;
+use crate::common;
 
 use common::{n, num, t, text, validation};
 use prospicio_xll::call;

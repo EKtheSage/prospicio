@@ -15,7 +15,7 @@
 //! `RISK_RS_CALIBRATION_PANEL`). Then
 //!
 //! ```text
-//! cargo test --release -p prospicio-validation --test reserving_industry_prior_panel -- --ignored --nocapture
+//! cargo test --release -p prospicio-validation --test validation reserving_industry_prior_panel:: -- --ignored --nocapture
 //! ```
 //!
 //! prints, for each of the four lines (50 companies each) and for paid and

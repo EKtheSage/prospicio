@@ -4,7 +4,7 @@
 //! Pareto 2.4.5 in `validation/reference/pareto_rating_r.csv`, at its
 //! tolerances, truncated cases included.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
+# One test binary, `worksheet` (#825): build.rs makes each file of tests/ a
+# module of it.
+autotests = false
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
@@ -25,3 +28,7 @@ prospicio-pricing.workspace = true
 prospicio-glm.workspace = true
 prospicio-models.workspace = true
 prospicio-math.workspace = true
+
+[[test]]
+name = "worksheet"
+path = "tests/worksheet.rs"

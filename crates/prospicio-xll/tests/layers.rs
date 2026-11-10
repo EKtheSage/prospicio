@@ -5,7 +5,7 @@
 //! `PRO.RES.BENCHMARK.CURVE` at scipy's least-squares fit
 //! (`validation/tests/reserving_benchmark_curve.rs`).
 
-mod common;
+use crate::common;
 
 use common::{fails, n, ok, raa, row, t};
 use prospicio_prob::Lognormal;

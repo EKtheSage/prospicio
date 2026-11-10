@@ -5,7 +5,7 @@
 //! `gen_pareto_r.csv`): every cdf, quantile, layer mean, second moment and
 //! variance, truncated cases included, at the files' tolerances.
 
-mod common;
+use crate::common;
 
 use std::collections::HashMap;
 

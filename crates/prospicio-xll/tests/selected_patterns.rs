@@ -17,7 +17,7 @@
 //!   origins may come in any order), against the crate and the BF formula;
 //! * the errors.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

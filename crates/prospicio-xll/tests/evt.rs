@@ -7,7 +7,7 @@
 //!   threshold, and its VaR and TVaR on their closed forms;
 //! * `PRO.EVT.HILL` on exact Pareto quantiles.
 
-mod common;
+use crate::common;
 
 use common::{n, num, reference, text};
 use prospicio_xll::call;

@@ -19,7 +19,7 @@
 //!   `reins_price_df` (books C, R, S and T, PH 0.7), and annual terms
 //!   against `Tower::on_grid` and the closed-form CCoC price.
 
-mod common;
+use crate::common;
 
 use std::collections::HashMap;
 

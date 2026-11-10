@@ -325,8 +325,10 @@ labelled in `companies`, with their premiums; chain its summary into
 | `PRO.PRC.RATELEVEL(...)`, same arguments | One period's premium by rate level |
 | `PRO.PRC.AVGDATE(from, to, [period], [term], [basis])` | Average written or earned date of each period, for trend lengths |
 | `PRO.PRC.TREND.FIT(times, values, [kind])` | Exponential or linear trend: annual change, intercept, slope, R² |
+| `PRO.PRC.TREND.FACTORS(years, trend_years, trend_rates, inception, [basis], [incomplete], [cutoff], [kind], [output])` | Each accident year's loss or premium trend factor to a treaty period (RAD or LOD) by a calendar-year rate schedule |
 | `PRO.PRC.LR.EXPERIENCE(earned_premium, losses, [on_level], [premium_trend], [development], [loss_trend], [lae])` | Loss ratio method: projected premium, losses and loss ratio by year |
 | `PRO.PRC.PP.EXPERIENCE(exposure, losses, [development], [loss_trend], [lae])` | Pure premium method by year |
+| `PRO.PRC.LR.CUMULATIVE(loss_ratios, premiums)` | Running premium-weighted loss ratio, row by row |
 | `PRO.PRC.INDICATED.CHANGE(loss_ratio, variable, profit, [fixed_ratio])` | Indicated change, loss ratio method |
 | `PRO.PRC.INDICATED.RATE(pure_premium, variable, profit, [fixed_per_exposure])` | Indicated rate, pure premium method |
 | `PRO.PRC.PERMISSIBLE.LR(variable, profit, [fixed_ratio])` | Permissible loss ratio |
@@ -506,6 +508,7 @@ labelled in `companies`, with their premiums; chain its summary into
 |---|---|
 | `PRO.VERSION()` | The add-in's version |
 | `PRO.YEARFRACTION(date)` | An Excel date on Werner and Modlin's half-month grid |
+| `PRO.REVERSE(row, [length], [pad])` | A row or column reversed into a column; a longer `length` pads the top with `pad` (default 1), a shorter one keeps the last values |
 
 ## Build and test
 

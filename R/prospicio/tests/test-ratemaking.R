@@ -62,3 +62,43 @@ stopifnot(round(indicated_rate(493.63 + 29.11 + 74.57 + 15.68, 0.138, 0.05,
 near(premium_based_expenses(c(0.06, 0.10), c(0.5, 0)), c(fixed = 0.03, variable = 0.13), 1e-15)
 near(credibility_weighted(200, 0.3, 300), 270, 1e-14)
 near(200 * (1 + trended_present_rates(0.10, 0.06, trend_factor(0.05, 2))), 228.8207547, 1e-7)
+
+# Trend factors by a calendar-year rate schedule (#801): the AP pricing
+# demo's vectors at 2012, 2018 and 2025, to 1e-12.
+ap_years <- 2012:2027
+ap_rates <- c(4.5, 4.0, 3.5, 3.5, 4.0, 4.5, 5.0, 6.0, 7.0, 6.5, 5.5, 5.0, 4.5, 4.0, 4.0, 4.0) / 100
+ap_inception <- 2026.0027397260274
+rel <- function(a, b) stopifnot(all(abs(a / b - 1) < 1e-12))
+cases <- list(
+  list("RAD", "loss", NULL, c(1.965720460376, 1.549905768665, 1.060710030249)),
+  list("RAD", "premium", NULL, c(1.970440084121, 1.557339412121, 1.060710030249)),
+  list("LOD", "loss", NULL, c(1.927547497255, 1.519807645895, 1.040111758173)),
+  list("LOD", "premium", NULL, c(1.932175469096, 1.527096933018, 1.040111758173)),
+  list("RAD", "loss", 6, c(1.965720460376, 1.549905768665, 1.071161637407)),
+  list("RAD", "premium", 6, c(1.970440084121, 1.557339412121, 1.072446776656)),
+  list("LOD", "loss", 9, c(1.927547497255, 1.519807645895, 1.045223518981)),
+  list("LOD", "premium", 9, c(1.932175469096, 1.527096933018, 1.045850340865))
+)
+for (cs in cases) {
+  t <- schedule_trend(2012:2025, ap_years, ap_rates, ap_inception,
+                      basis = cs[[1]], kind = cs[[2]], cutoff = cs[[3]])
+  rel(t$factor[c(1, 7, 14)], cs[[4]])
+}
+t <- schedule_trend(2012:2025, ap_years, ap_rates, ap_inception)
+stopifnot(identical(names(t), c("year", "start", "target", "factor")), t$start[1] == 2012.5)
+rel(t$factor, c(1.965720460376, 1.885588597245, 1.817440068887, 1.755980742886, 1.692516473093,
+                1.623521668846, 1.549905768665, 1.469121493285, 1.379472004094, 1.292248980824,
+                1.219116374789, 1.158308611831, 1.105787026943, 1.060710030249))
+rel(schedule_trend(c(2012, 2025), ap_years, ap_rates, 2026)$factor, c(1.965509247180, 1.060596058827))
+for (k in c("loss", "premium")) {
+  e <- schedule_trend(c(2008, 2010, 2025), c(2012, NA, 2013, 2014), c(0.05, NA, 0.06, 0.07),
+                      2016.0027397260274, kind = k)
+  rel(e$factor, c(1.7281053820990948, 1.5093941672627256, 1.0))
+}
+stopifnot(inherits(try(schedule_trend(2012, c(2012, 2013), c(0.05, NA), 2016), silent = TRUE), "try-error"))
+stopifnot(inherits(try(schedule_trend(2012, 2012, 0.05, 2016, cutoff = 13), silent = TRUE), "try-error"))
+
+# The running premium-weighted loss ratio (#806).
+near(cumulative_loss_ratio(c(0, 0.6, NA, 0.9, 0.3), c(0, 100, NA, 300, 600)),
+     c(0, 0.6, 0.6, 0.825, 0.51), 1e-15)
+stopifnot(inherits(try(cumulative_loss_ratio(c(0.5, 0.6), c(1, NA)), silent = TRUE), "try-error"))

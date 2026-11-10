@@ -4,7 +4,7 @@
 //! expenses and 10% brokerage) at the guide's printed ratios, the build-up
 //! adding up, and the cover at quoted premiums.
 
-mod common;
+use crate::common;
 
 use common::{n, num, text};
 use prospicio_xll::call;

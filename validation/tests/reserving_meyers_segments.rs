@@ -16,8 +16,8 @@
 //! every fit converged), where 300 normal seeds of 77 rows would reach
 //! about 4.1. Every row passes at each fresh seed. The sweep is the
 //! ignored `seed_sweep` test in a release build: `SWEEP_SEEDS=120 cargo
-//! test --release -p prospicio-validation --test reserving_meyers_segments
-//! -- --ignored seed_sweep --nocapture` (about 40 s a seed; `SWEEP_START`
+//! test --release -p prospicio-validation --features slow-bayes --test bayes
+//! reserving_meyers_segments::seed_sweep -- --ignored --nocapture` (about 40 s a seed; `SWEEP_START`
 //! moves the first seed, `SWEEP_BACKTESTS` keeps only the named
 //! backtests, `SWEEP_CSV` writes every row at every seed). All at
 //! `Meyers`' defaults (4 chains of 1,000 warm-up and 2,000 kept draws,

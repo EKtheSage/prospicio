@@ -6,7 +6,7 @@
 //! `PRO.RES.CY.TEST` and `PRO.RES.DEVCOR.TEST`; the backtest equal to the
 //! library's `diagonal_backtest` on the same models and seed.
 
-mod common;
+use crate::common;
 
 use common::{data_triangle, fails, n, ok, t, validation};
 use prospicio_glm::Glm;

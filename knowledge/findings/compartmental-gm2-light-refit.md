@@ -82,9 +82,9 @@ Commands (release; add `RISK_RS_FULL_BAYES=1` for the gated comparison):
 ```
 LIGHT_CACHE=<prefix> LIGHT_SIMS=32 LIGHT_SEED=1 LIGHT="4,150,250;4,100,150" \
   cargo test --release -p prospicio-validation --features slow-bayes \
-  --test reserving_compartmental_one_year -- --ignored model_2_light_refit --nocapture
+  --test bayes reserving_compartmental_one_year::model_2_light_refit -- --ignored --nocapture
 LIGHT_SIMS=2000 cargo test --release -p prospicio-validation \
-  --features slow-bayes --test reserving_compartmental_one_year \
-  -- --ignored light_runtime --nocapture
+  --features slow-bayes --test bayes \
+  reserving_compartmental_one_year::light_runtime -- --ignored --nocapture
 ```
 

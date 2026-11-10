@@ -11,7 +11,7 @@
 //!   three-month deal;
 //! * the errors.
 
-mod common;
+use crate::common;
 
 use common::{n, num, t, text};
 use prospicio_pricing::cashflow::{

@@ -3,12 +3,13 @@
 //! `docs/design/ratemaking.md`).
 
 use prospicio_pricing::ratemaking::{
-    Applies, ExpenseCategory, LossRatioExperience, LossRatioYear, Period, Provisions,
-    PurePremiumExperience, PurePremiumYear, RateChange, RateHistory, RateLevel, TrendFit,
-    TrendKind,
+    Applies, BeforeSchedule, ExpenseCategory, LossRatioExperience, LossRatioYear, Period,
+    Provisions, PurePremiumExperience, PurePremiumYear, RateChange, RateHistory, RateLevel,
+    RateSchedule, ScheduleTrend, TrendBasis, TrendFit, TrendItem, TrendKind,
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
 use crate::to_py;
 
@@ -940,4 +941,166 @@ pub(crate) fn trended_present_rates(
     trend: f64,
 ) -> f64 {
     prospicio_pricing::ratemaking::trended_present_rates(prior_indicated, prior_implemented, trend)
+}
+
+fn schedule_basis(basis: &str) -> PyResult<TrendBasis> {
+    match basis.to_ascii_uppercase().as_str() {
+        "RAD" => Ok(TrendBasis::RisksAttaching),
+        "LOD" => Ok(TrendBasis::LossesOccurring),
+        _ => Err(PyValueError::new_err(format!(
+            "basis must be \"RAD\" or \"LOD\", got {basis:?}"
+        ))),
+    }
+}
+
+fn schedule_item(kind: &str) -> PyResult<TrendItem> {
+    match kind {
+        "loss" => Ok(TrendItem::Loss),
+        "premium" => Ok(TrendItem::Premium),
+        _ => Err(PyValueError::new_err(format!(
+            "kind must be \"loss\" or \"premium\", got {kind:?}"
+        ))),
+    }
+}
+
+fn schedule_before(before: &str) -> PyResult<BeforeSchedule> {
+    match before {
+        "latest" => Ok(BeforeSchedule::Latest),
+        "earliest" => Ok(BeforeSchedule::Earliest),
+        _ => Err(PyValueError::new_err(format!(
+            "before must be \"latest\" or \"earliest\", got {before:?}"
+        ))),
+    }
+}
+
+fn nan_for_none(values: Vec<Option<f64>>) -> Vec<f64> {
+    values.into_iter().map(|v| v.unwrap_or(f64::NAN)).collect()
+}
+
+/// Trend factors from accident years to a treaty period by a schedule of
+/// annual rates, one rate per calendar year.
+///
+/// With ``i`` the inception and ``c`` the months complete in an incomplete
+/// latest year, each accident year ``y`` trends from its start point to the
+/// target point:
+///
+/// ================================  ============  ==================
+/// Point                             Loss          Premium
+/// ================================  ============  ==================
+/// Target, ``"RAD"``                 ``i + 1``     ``i + 0.5``
+/// Target, ``"LOD"``                 ``i + 0.5``   ``i``
+/// Start, complete year              ``y + 0.5``   ``y``
+/// Start, incomplete latest year     ``y + c/24``  ``y + c/24 - 0.5``
+/// ================================  ============  ==================
+///
+/// The factor is the product over calendar years ``k`` of
+/// ``(1 + r_k) ** overlap_k``, with ``overlap_k`` the length of
+/// ``[k, k + 1)`` within ``[start, target]``; a start at or after the
+/// target gives 1. A calendar year the schedule does not have takes the
+/// latest scheduled year's rate (the earliest's before the schedule with
+/// ``before="earliest"``).
+///
+/// Parameters
+/// ----------
+/// years : sequence of int
+///     Accident years, one factor each, in the order given.
+/// trend_years, trend_rates : sequence of float
+///     The schedule, row by row, rates as decimals. A row with both
+///     ``None`` (or NaN) is skipped; a row with one is an error.
+/// inception : float
+///     The treaty's inception as a decimal year.
+/// basis : {"RAD", "LOD"}
+///     Risks attaching (default) or losses occurring.
+/// kind : {"loss", "premium"}
+/// cutoff : int, optional
+///     The months complete (1 to 12) of the latest accident year when it
+///     is incomplete; ``None`` (default) when every year is complete.
+/// before : {"latest", "earliest"}
+///     The rate before the schedule's first year.
+///
+/// Returns
+/// -------
+/// dict
+///     Columns ``year``, ``start``, ``target`` and ``factor``, one entry
+///     per accident year (``pandas.DataFrame(result)`` makes a table).
+///
+/// Raises
+/// ------
+/// ValueError
+///     On a half-blank schedule row, a year twice in the schedule, a rate
+///     at or below -1, or a cutoff outside 1 to 12.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.pricing import schedule_trend
+/// >>> t = schedule_trend([2024, 2025], [2024, 2025, 2026], [0.05, 0.04, 0.04],
+/// ...                    inception=2026.0)
+/// >>> [round(f, 6) for f in t["factor"]]
+/// [1.10831, 1.060596]
+#[pyfunction]
+#[pyo3(signature = (years, trend_years, trend_rates, inception, *, basis = "RAD", kind = "loss", cutoff = None, before = "latest"))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn schedule_trend<'py>(
+    py: Python<'py>,
+    years: Vec<i32>,
+    trend_years: Vec<Option<f64>>,
+    trend_rates: Vec<Option<f64>>,
+    inception: f64,
+    basis: &str,
+    kind: &str,
+    cutoff: Option<u32>,
+    before: &str,
+) -> PyResult<Bound<'py, PyDict>> {
+    let schedule =
+        RateSchedule::from_columns(&nan_for_none(trend_years), &nan_for_none(trend_rates))
+            .map_err(to_py)?;
+    let mut trend = ScheduleTrend::new(inception)
+        .basis(schedule_basis(basis)?)
+        .item(schedule_item(kind)?)
+        .before(schedule_before(before)?);
+    trend.cutoff = cutoff;
+    let rows = trend.factors(&schedule, &years).map_err(to_py)?;
+    let d = PyDict::new(py);
+    d.set_item("year", rows.iter().map(|r| r.year).collect::<Vec<_>>())?;
+    d.set_item("start", rows.iter().map(|r| r.start).collect::<Vec<_>>())?;
+    d.set_item("target", rows.iter().map(|r| r.target).collect::<Vec<_>>())?;
+    d.set_item("factor", rows.iter().map(|r| r.factor).collect::<Vec<_>>())?;
+    Ok(d)
+}
+
+/// The running premium-weighted loss ratio: entry ``k`` is
+/// ``sum(LR_j * EP_j) / sum(EP_j)`` over the first ``k`` rows, and 0 where
+/// the premium to date is 0.
+///
+/// Parameters
+/// ----------
+/// loss_ratios, premiums : sequence of float
+///     One premium per loss ratio. A row with both ``None`` (or NaN) adds
+///     nothing; a row with one is an error.
+///
+/// Returns
+/// -------
+/// list of float
+///
+/// Raises
+/// ------
+/// ValueError
+///     On different lengths, a half-blank row, a negative premium or a
+///     value that is not finite.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.pricing import cumulative_loss_ratio
+/// >>> cumulative_loss_ratio([0.5, 0.8, 0.6], [100.0, 300.0, 0.0])
+/// [0.5, 0.725, 0.725]
+#[pyfunction]
+pub(crate) fn cumulative_loss_ratio(
+    loss_ratios: Vec<Option<f64>>,
+    premiums: Vec<Option<f64>>,
+) -> PyResult<Vec<f64>> {
+    prospicio_pricing::ratemaking::cumulative_loss_ratio(
+        &nan_for_none(loss_ratios),
+        &nan_for_none(premiums),
+    )
+    .map_err(to_py)
 }

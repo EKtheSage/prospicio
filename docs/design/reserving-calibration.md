@@ -316,7 +316,7 @@ same commands):
 
 ```
 uv run --no-project --with "cas-schedule-p[screens]==2026.6.13" python -I validation/scripts/calibration_panel.py
-cargo test --release -p prospicio-validation --features slow-bayes --test reserving_calibration_meyers -- --ignored --nocapture
+cargo test --release -p prospicio-validation --features slow-bayes --test bayes reserving_calibration_meyers:: -- --ignored --nocapture
 ```
 
 Selection is by environment variables read by the test itself, with

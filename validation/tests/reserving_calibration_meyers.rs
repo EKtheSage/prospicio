@@ -29,7 +29,7 @@
 //!
 //! ```text
 //! uv run --no-project --with "cas-schedule-p[screens]==2026.6.13" python -I validation/scripts/calibration_panel.py
-//! cargo test --release -p prospicio-validation --features slow-bayes --test reserving_calibration_meyers -- --ignored --nocapture
+//! cargo test --release -p prospicio-validation --features slow-bayes --test bayes reserving_calibration_meyers:: -- --ignored --nocapture
 //! ```
 //!
 //! The script writes `target/calibration/panel.csv` (set
@@ -2602,7 +2602,7 @@ mod tests {
     /// `slow-bayes` (its `[[test]]` entry), so CI's `bayes` job runs this in
     /// release, about 2 s. Run with
     /// `cargo test --release -p prospicio-validation --features slow-bayes
-    /// --test reserving_calibration_meyers`.
+    /// --test bayes reserving_calibration_meyers::`.
     #[test]
     fn the_bayesian_arms_reproduce_meyers_on_group_353() {
         let t = group_353();

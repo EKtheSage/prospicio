@@ -6,7 +6,7 @@
 //! (CAS Monograph 2), Ex 2.8, 2.10 and P2.16, as `prospicio_prob`'s own
 //! tests reproduce them.
 
-mod common;
+use crate::common;
 
 use common::{n, num, t, text};
 use prospicio_prob::severity_fit::{Family, fit_severity};

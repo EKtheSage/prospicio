@@ -12,13 +12,14 @@
 
 use prospicio_pricing::ratemaking::{
     Applies, ExpenseCategory, LossRatioExperience, LossRatioYear, Period, Provisions,
-    PurePremiumExperience, PurePremiumYear, RateChange, RateHistory, TrendFit,
-    credibility_weighted, premium_based_expenses, trended_present_rates, year_fraction,
+    PurePremiumExperience, PurePremiumYear, RateChange, RateHistory, RateSchedule, ScheduleTrend,
+    TrendBasis, TrendFit, TrendItem, credibility_weighted, cumulative_loss_ratio,
+    premium_based_expenses, trended_present_rates, year_fraction,
 };
 
 use crate::exposure::broadcast;
 use crate::pricing::{Result, numbers, scalar};
-use crate::sheet::{Grid, Value};
+use crate::sheet::{Grid, Value, position};
 
 /// Serial numbers from here up are Excel dates, below it year fractions.
 const FIRST_SERIAL: f64 = 10_000.0;
@@ -600,6 +601,187 @@ pub fn expenses(args: &[Grid]) -> Result<Grid> {
         vec![Value::from("Fixed"), Value::number(fixed)],
         vec![Value::from("Variable"), Value::number(variable)],
     ]))
+}
+
+/// Each cell as a number, a blank as NaN; anything else is an error.
+fn numbers_or_nan(g: &Grid, name: &str) -> Result<Vec<f64>> {
+    g.cells
+        .iter()
+        .enumerate()
+        .map(|(k, v)| match v {
+            Value::Number(x) => Ok(*x),
+            v if v.is_blank() => Ok(f64::NAN),
+            other => Err(format!(
+                "{name} {} must be a number, got {other:?}",
+                position(k / g.columns, k % g.columns)
+            )),
+        })
+        .collect()
+}
+
+/// A text option: blank for the first choice, else one of `choices`
+/// (case-insensitive), returned as its index.
+fn choice(g: &Grid, name: &str, choices: &[&str]) -> Result<usize> {
+    let list = choices
+        .iter()
+        .map(|c| format!("\"{c}\""))
+        .collect::<Vec<_>>()
+        .join(" or ");
+    match g.as_scalar() {
+        Some(v) if v.is_blank() => Ok(0),
+        Some(Value::Text(s)) => {
+            let s = s.trim();
+            choices
+                .iter()
+                .position(|c| c.eq_ignore_ascii_case(s))
+                .ok_or_else(|| format!("{name} must be {list}, got {s:?}"))
+        }
+        _ => Err(format!("{name} must be {list}")),
+    }
+}
+
+/// Trend factors from accident years to a treaty period by a schedule of
+/// annual rates by calendar year: `PRO.PRC.TREND.FACTORS(years,
+/// trend_years, trend_rates, inception, [basis], [incomplete], [cutoff],
+/// [kind], [output])`. `basis` `"RAD"` (default) or `"LOD"`, `kind`
+/// `"loss"` (default) or `"premium"`, `incomplete` TRUE when the latest
+/// accident year has only `cutoff` months (default 12) complete, `output`
+/// `"factors"` (default, one column aligned with `years`) or `"detail"`
+/// (Year, Start, Target, Factor under a header). The inception is a
+/// decimal year or an Excel date on `PRO.YEARFRACTION`'s grid; a fully
+/// blank schedule row is skipped and a half-blank one is an error.
+pub fn trend_factors(args: &[Grid]) -> Result<Grid> {
+    let years = per_year(&args[0], "years", None)?
+        .into_iter()
+        .map(|y| {
+            if y.fract() == 0.0 && y.abs() < 1e6 {
+                Ok(y as i32)
+            } else {
+                Err(format!("years must be calendar years, got {y}"))
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let (ty, tr) = (&args[1], &args[2]);
+    if ty.cells.len() != tr.cells.len() {
+        return Err(format!(
+            "trend_years and trend_rates must have the same number of cells, got {} and {}",
+            ty.cells.len(),
+            tr.cells.len()
+        ));
+    }
+    let schedule = RateSchedule::from_columns(
+        &numbers_or_nan(ty, "trend_years")?,
+        &numbers_or_nan(tr, "trend_rates")?,
+    )
+    .map_err(|e| e.to_string())?;
+    let inception = date(scalar(&args[3], "inception")?)?;
+    let basis = [TrendBasis::RisksAttaching, TrendBasis::LossesOccurring]
+        [choice(&args[4], "basis", &["RAD", "LOD"])?];
+    let incomplete = match args[5].as_scalar() {
+        Some(v) if v.is_blank() => false,
+        Some(Value::Bool(b)) => *b,
+        _ => return Err("incomplete must be TRUE or FALSE".into()),
+    };
+    let cutoff = if args[6].is_blank() {
+        12.0
+    } else {
+        scalar(&args[6], "cutoff")?
+    };
+    if !(cutoff.fract() == 0.0 && (1.0..=12.0).contains(&cutoff)) {
+        return Err(format!(
+            "cutoff must be a whole number of months from 1 to 12, got {cutoff}"
+        ));
+    }
+    let item =
+        [TrendItem::Loss, TrendItem::Premium][choice(&args[7], "kind", &["loss", "premium"])?];
+    let detail = choice(&args[8], "output", &["factors", "detail"])? == 1;
+    let mut trend = ScheduleTrend::new(inception).basis(basis).item(item);
+    if incomplete {
+        trend = trend.incomplete(cutoff as u32);
+    }
+    let rows = trend
+        .factors(&schedule, &years)
+        .map_err(|e| e.to_string())?;
+    if !detail {
+        return Ok(Grid::column(
+            &rows.iter().map(|r| r.factor).collect::<Vec<_>>(),
+        ));
+    }
+    let mut out = vec![
+        ["Year", "Start", "Target", "Factor"]
+            .map(Value::from)
+            .to_vec(),
+    ];
+    out.extend(rows.iter().map(|r| {
+        vec![
+            Value::Number(f64::from(r.year)),
+            Value::number(r.start),
+            Value::number(r.target),
+            Value::number(r.factor),
+        ]
+    }));
+    Ok(Grid::from_rows(out))
+}
+
+/// The running premium-weighted loss ratio:
+/// `PRO.PRC.LR.CUMULATIVE(loss_ratios, premiums)`, row `k` the sum of
+/// loss ratio times premium over the sum of premium of the first `k` rows,
+/// 0 where the premium to date is 0. One column as long as the inputs; a
+/// row with both cells blank adds nothing, a row with one blank is an
+/// error.
+pub fn lr_cumulative(args: &[Grid]) -> Result<Grid> {
+    let (lr, ep) = (&args[0], &args[1]);
+    if lr.cells.len() != ep.cells.len() {
+        return Err(format!(
+            "loss_ratios and premiums must have the same number of cells, got {} and {}",
+            lr.cells.len(),
+            ep.cells.len()
+        ));
+    }
+    let out = cumulative_loss_ratio(
+        &numbers_or_nan(lr, "loss_ratios")?,
+        &numbers_or_nan(ep, "premiums")?,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(Grid::column(&out))
+}
+
+/// A row or column reversed into a column: `PRO.REVERSE(row, [length],
+/// [pad])`. With `n` values and `length` `T`: `T > n` puts `T - n` copies
+/// of `pad` (default 1) on top; `T < n` keeps the last `T` values; `T`
+/// omitted keeps all `n`. Every cell must hold a number.
+pub fn reverse(args: &[Grid]) -> Result<Grid> {
+    let row = &args[0];
+    if row.rows > 1 && row.columns > 1 {
+        return Err("row must be a single row or column".into());
+    }
+    let values = numbers_or_nan(row, "row")?;
+    if let Some(k) = values.iter().position(|v| v.is_nan()) {
+        return Err(format!(
+            "row {} is blank",
+            position(k / row.columns, k % row.columns)
+        ));
+    }
+    let n = values.len();
+    let length = if args[1].is_blank() {
+        n
+    } else {
+        let t = scalar(&args[1], "length")?;
+        if !(t.fract() == 0.0 && (1.0..=1e6).contains(&t)) {
+            return Err(format!(
+                "length must be a whole number of at least 1, got {t}"
+            ));
+        }
+        t as usize
+    };
+    let pad = if args[2].is_blank() {
+        1.0
+    } else {
+        scalar(&args[2], "pad")?
+    };
+    let mut out = vec![pad; length.saturating_sub(n)];
+    out.extend(values.iter().rev().take(length));
+    Ok(Grid::column(&out))
 }
 
 #[cfg(test)]

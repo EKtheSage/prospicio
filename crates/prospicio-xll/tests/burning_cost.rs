@@ -6,7 +6,7 @@
 //! each year's layer loss to the dollar, its developed loss and loss cost,
 //! and the 12.4% total.
 
-mod common;
+use crate::common;
 
 use common::{n, num, t, text};
 use prospicio_xll::call;

@@ -4,7 +4,7 @@
 //! several years"), and simulated terms against `Tower::apply_aggregate_term`.
 //! `aggregate` has no multi-year term, so there is no outside reference.
 
-mod common;
+use crate::common;
 
 use common::{n, num, t, text};
 use prospicio_aggregate::{Layer, Tower};

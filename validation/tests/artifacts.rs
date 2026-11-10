@@ -14,7 +14,7 @@
 //! A new format version adds a builder to the matching list and runs
 //!
 //! ```sh
-//! cargo test -p prospicio-validation --test artifacts -- --ignored write_missing_artifacts
+//! cargo test -p prospicio-validation --test validation artifacts::write_missing_artifacts -- --ignored
 //! ```
 //!
 //! which writes only the files that do not exist yet. Never delete and

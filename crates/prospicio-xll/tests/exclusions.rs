@@ -8,7 +8,7 @@
 //! (`validation/reference/reserving_averages_r.csv`), at their tolerances;
 //! the ODP bootstrap's exclusions against `prospicio_reserving`'s own.
 
-mod common;
+use crate::common;
 
 use common::{genins, n, num, raa, reference, t, text};
 use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, OdpBootstrap, Triangle};

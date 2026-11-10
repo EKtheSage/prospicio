@@ -1,4 +1,5 @@
-"""Validate and fold change fragments into knowledge/log.md and CHANGELOG.md.
+"""Validate and fold change fragments into knowledge/log.md and CHANGELOG.md,
+and prune finished Next bullets from the lane status files.
 
     python validation/scripts/fold_changes.py --check      # validate, summarise
     python validation/scripts/fold_changes.py              # fold and delete
@@ -8,7 +9,10 @@
 
 Every PR adds its own small files under `changes/` instead of editing the
 two shared files, which conflicted whenever two PRs ran at once. See
-`changes/README.md` for the formats. Standard library only.
+`changes/README.md` for the formats. For the same reason a PR that finishes
+a lane's item only appends its Done bullet, and the fold deletes the Next
+bullets whose id a Done bullet repeats (`check_lanes.py`, #853). Standard
+library only.
 """
 
 import argparse
@@ -18,6 +22,10 @@ import pathlib
 import re
 import sys
 import tempfile
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+import check_lanes  # noqa: E402
 
 EM_DASH = chr(0x2014)
 KINDS = ("Creation", "Update", "Correction", "Deprecation", "Note")
@@ -258,6 +266,19 @@ def plan(root, errors):
         new, names = fold_changelog(old, changelog)
         result["files"][path] = (old, new, crlf)
         result["new_sections"] = names
+    result["pruned"] = 0
+    for path in sorted((root / "docs" / "lanes").glob("*.md")):
+        lane_errors = check_lanes.check_lane(path)
+        if lane_errors:
+            errors.extend(lane_errors)
+            continue
+        new, n = check_lanes.pruned(path)
+        if n:
+            old, crlf = read_text(path)
+            result["files"][path] = (old, new.replace("\r\n", "\n"), crlf)
+            result["pruned"] += n
+    if errors:
+        return None
     return result
 
 
@@ -266,6 +287,7 @@ def summary(result):
         f"{len(result['knowledge'])} knowledge fragment(s)",
         f"{len(result['changelog'])} changelog fragment(s)",
     ]
+    parts.append(f"{result['pruned']} finished lane Next bullet(s)")
     text = ", ".join(parts)
     if result["new_sections"]:
         text += "; new CHANGELOG section(s) will be created: " + ", ".join(result["new_sections"])
@@ -350,11 +372,16 @@ def self_test():
         (k / "2026-10-14-new.md").write_text("* **Note**: a newer date.\n")
         (c / "one.md").write_text("### Pricing\n\n- Pricing two (#3).\n\n### Brand new\n\n- New item (#3).\n")
         (c / "two.md").write_text("### Reserving\n- Reserving two (#4).\n")
+        lanes = root / "docs" / "lanes"
+        (lanes / "done").mkdir(parents=True)
+        (lanes / "test.md").write_text("# Test\n\n## Next\n\n- #5 finished\n- [open] open\n")
+        (lanes / "done" / "test.md").write_text("# Test\n\n## Done\n\n- Did it (#5).\n")
 
         errors = []
         result = plan(root, errors)
         assert not errors, errors
         assert result["new_sections"] == ["Brand new"], result["new_sections"]
+        assert result["pruned"] == 1, result["pruned"]
         run(root, check=False, dry_run=False)
 
         expected_log = """# Bundle history
@@ -410,6 +437,7 @@ Intro.
         assert sorted(p.name for p in k.iterdir()) == [".gitkeep"]
         assert list(c.iterdir()) == []
         assert (root / "changes" / "README.md").exists()
+        assert (lanes / "test.md").read_text() == "# Test\n\n## Next\n\n- [open] open\n", (lanes / "test.md").read_text()
         errors = []
         again = plan(root, errors)
         assert not errors and not again["files"], "second fold must change nothing"

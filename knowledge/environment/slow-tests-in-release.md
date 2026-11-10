@@ -42,7 +42,7 @@ one place: CI's `bayes` job reads it with Python's `tomllib` and passes one
 # Running them
 
 ```
-cargo test --release -p prospicio-validation --features slow-bayes --test 'reserving_bayes*' --test 'reserving_meyers*' --test 'reserving_compartmental*'
+cargo test --release -p prospicio-validation --features slow-bayes --test bayes
 ```
 
 Cargo accepts glob patterns in `--test`. Running the whole package in
