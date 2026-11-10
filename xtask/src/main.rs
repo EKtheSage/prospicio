@@ -12,13 +12,18 @@
 //!   R twins (`.qmd`) of the guides and of the notebooks.
 //! - `rust`: rustdoc for the pure-Rust crates, warnings denied.
 //! - `docs`: all three, collected into one site under `target/docs-site`.
+//! - `generated`: only what writes the committed generated files (the
+//!   Python stub; R's `man/`, `NAMESPACE` and `R/extendr-wrappers.R`), the
+//!   R package's install with its `undoc`/`codoc` check and pkgdown's index
+//!   check, without rendering either site (#823). With `--check`, what a
+//!   pull request runs.
 //! - `xll`: build the 64-bit Excel add-in as `target/xll/prospicio.xll`
 //!   and, when a MinGW compiler (and off Windows, Wine) is found, run the
 //!   fake-Excel smoke test on it (docs/design/xll.md).
 //!
 //! `--check` fails if a build changed a generated file that is committed
-//! (the Python stub, R's `man/` and `NAMESPACE`): someone changed a doc
-//! comment without rebuilding. `--no-tests` skips the bindings' test suites
+//! (the Python stub, R's `man/`, `NAMESPACE` and `R/extendr-wrappers.R`):
+//! someone changed a doc comment or a binding without rebuilding. `--no-tests` skips the bindings' test suites
 //! (CI's `python` and `r` jobs run them; the docs build need not run them
 //! again).
 
@@ -38,6 +43,9 @@ tasks:
   r        install the R package, regenerate man/ and NAMESPACE, test, render its docs
   rust     build rustdoc for the pure-Rust crates
   docs     all of the above, collected into target/docs-site
+  generated  only regenerate the committed generated files (the stub, man/,
+           NAMESPACE, extendr-wrappers.R) and check the R package and
+           pkgdown's index, without rendering the sites
   xll      build the 64-bit Excel add-in as target/xll/prospicio.xll and
            smoke-test it in a fake Excel when MinGW (and Wine) are found
 
@@ -48,7 +56,11 @@ tasks:
 /// Generated files that are committed, per binding: the build must leave
 /// them unchanged under `--check`.
 const PYTHON_GENERATED: &[&str] = &["python/prospicio/prospicio_native.pyi"];
-const R_GENERATED: &[&str] = &["R/prospicio/man", "R/prospicio/NAMESPACE"];
+const R_GENERATED: &[&str] = &[
+    "R/prospicio/man",
+    "R/prospicio/NAMESPACE",
+    "R/prospicio/R/extendr-wrappers.R",
+];
 
 type Result<T = ()> = std::result::Result<T, String>;
 
@@ -68,6 +80,7 @@ fn main() -> ExitCode {
         ["r"] => r(opts),
         ["rust"] => rust(),
         ["docs"] => docs(opts),
+        ["generated"] => generated(opts),
         ["xll"] => xll(),
         [] | ["help"] | ["-h"] | ["--help"] => {
             print!("{USAGE}");
@@ -542,16 +555,12 @@ fn write(path: &Path, text: &str) -> Result {
 
 fn r(opts: Options) -> Result {
     let root = root();
-    let pkg = "R/prospicio";
     // roxygen2 loads the source with pkgload, which tolerates a stale
     // NAMESPACE (say, a renamed export) that `R CMD INSTALL` would reject, so
     // it runs before the install.
     step("r: regenerate man/ and NAMESPACE (roxygen2)");
     rscript(&root, r#"roxygen2::roxygenise("R/prospicio")"#)?;
-    step("r: install");
-    run(Command::new("R")
-        .args(["CMD", "INSTALL", pkg])
-        .current_dir(&root))?;
+    r_install_with_wrappers(&root)?;
     if opts.tests {
         step("r: test");
         let tests = root.join("R/prospicio/tests");
@@ -565,15 +574,7 @@ fn r(opts: Options) -> Result {
             run(Command::new("Rscript").arg(&file).current_dir(&root))?;
         }
     }
-    step("r: check that every export is documented and usage matches code");
-    rscript(
-        &root,
-        concat!(
-            r#"u <- tools::undoc(package = "prospicio"); "#,
-            r#"c <- tools::codoc(package = "prospicio"); "#,
-            r#"if (length(unlist(u)) || length(c)) { print(u); print(c); quit(status = 1) }"#,
-        ),
-    )?;
+    r_doc_check(&root)?;
     step("r: stage the R guides and examples as articles");
     stage_r_articles()?;
     step("r: render the docs site (pkgdown)");
@@ -595,6 +596,195 @@ fn r(opts: Options) -> Result {
     check_r_examples()?;
     if opts.check {
         unchanged(R_GENERATED)?;
+    }
+    Ok(())
+}
+
+/// Installs the R package, then writes `R/extendr-wrappers.R` from the
+/// installed library's own `wrap__make_prospicio_wrappers` (#836). When the
+/// file changes, roxygen2 and the install run again, since the file's
+/// `@export` tags feed `NAMESPACE`.
+fn r_install_with_wrappers(root: &Path) -> Result {
+    let install = || {
+        step("r: install");
+        run(Command::new("R")
+            .args(["CMD", "INSTALL", "R/prospicio"])
+            .current_dir(root))
+    };
+    install()?;
+    step("r: regenerate R/extendr-wrappers.R from the installed library");
+    let raw = root.join("target/extendr-wrappers.raw.R");
+    fs::create_dir_all(root.join("target")).map_err(|e| format!("creating target/: {e}"))?;
+    rscript(
+        root,
+        &format!(
+            concat!(
+                r#"invisible(asNamespace("prospicio")); "#,
+                r#"x <- .Call("wrap__make_prospicio_wrappers", use_symbols = TRUE, "#,
+                r#"package_name = "prospicio", PACKAGE = "prospicio"); "#,
+                r#"writeLines(x, "{}", useBytes = TRUE)"#,
+            ),
+            raw.display().to_string().replace('\\', "/")
+        ),
+    )?;
+    let wrappers = root.join("R/prospicio/R/extendr-wrappers.R");
+    let text = extendr_wrappers(&read(&raw)?)?;
+    let before = fs::read_to_string(&wrappers).unwrap_or_default();
+    if text != before {
+        write(&wrappers, &text)?;
+        step("r: R/extendr-wrappers.R changed: regenerate man/ and NAMESPACE, install again");
+        rscript(root, r#"roxygen2::roxygenise("R/prospicio")"#)?;
+        install()?;
+    }
+    Ok(())
+}
+
+/// One class's chunks in extendr's wrappers: its environment line, its
+/// methods by name and its `$` and `[[` methods.
+type ClassChunks = (String, Vec<(String, String)>, Vec<String>);
+
+/// The committed `R/extendr-wrappers.R` from extendr's generated wrappers:
+/// its doc lines dropped (keeping `@export`), the free functions sorted by
+/// name and the impl blocks (each class's environment, its methods sorted by
+/// name, and its `$` and `[[` methods) sorted by class, so the file is the
+/// same on every platform (on Windows extendr lists the functions in
+/// another order).
+fn extendr_wrappers(raw: &str) -> Result<String> {
+    // Chunks are separated by blank lines; doc lines (`#'`) other than
+    // `@export` are dropped, and so are extendr's own comments and its
+    // `@useDynLib` block, which the header below replaces.
+    let mut chunks: Vec<Vec<String>> = Vec::new();
+    let mut current: Vec<String> = Vec::new();
+    for line in raw.lines() {
+        let line = line.trim_end();
+        if line.is_empty() {
+            if !current.is_empty() {
+                chunks.push(std::mem::take(&mut current));
+            }
+            continue;
+        }
+        if line.starts_with("#'") && line != "#' @export" {
+            continue;
+        }
+        if line.starts_with('#') && !line.starts_with("#'") {
+            continue;
+        }
+        current.push(line.to_string());
+    }
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+    let mut free: Vec<(String, String)> = Vec::new();
+    // Class name -> (environment line, methods by name, S3 methods).
+    let mut classes: std::collections::BTreeMap<String, ClassChunks> =
+        std::collections::BTreeMap::new();
+    for chunk in chunks {
+        let code: Vec<&String> = chunk.iter().filter(|l| *l != "#' @export").collect();
+        let text = chunk.join("\n");
+        let Some(first) = code.first() else { continue };
+        if *first == "NULL" {
+            continue;
+        }
+        if let Some(class) = first.strip_suffix(" <- new.env(parent = emptyenv())") {
+            classes.entry(class.to_string()).or_default().0 = text;
+        } else if let Some(rest) = first
+            .strip_prefix("`$.")
+            .or_else(|| first.strip_prefix("`[[."))
+        {
+            let class = rest.split('`').next().unwrap_or_default().to_string();
+            classes.entry(class).or_default().2.push(text);
+        } else if let Some((lhs, _)) = first.split_once(" <- ") {
+            match lhs.split_once('$') {
+                Some((class, method)) => classes
+                    .entry(class.to_string())
+                    .or_default()
+                    .1
+                    .push((method.to_string(), text)),
+                None => free.push((lhs.to_string(), text)),
+            }
+        } else {
+            return Err(format!("extendr wrappers: cannot read the chunk {text:?}"));
+        }
+    }
+    free.sort();
+    let mut out = String::from(concat!(
+        "# Low-level bindings to crates/prospicio-r, generated by `cargo xtask r`\n",
+        "# (or `cargo xtask generated`) from extendr's `wrap__make_prospicio_wrappers`,\n",
+        "# with the doc lines removed and the functions and classes sorted by name.\n",
+        "# Do not edit by hand. Internal: use the functions in distributions.R,\n",
+        "# aggregate.R, reinsurance.R, reserving.R and risk.R.\n",
+        "\n",
+        "#' @useDynLib prospicio, .registration = TRUE\n",
+        "NULL\n",
+    ));
+    for (_, text) in &free {
+        out.push('\n');
+        out.push_str(text);
+        out.push('\n');
+    }
+    for (class, (env, mut methods, mut s3)) in classes {
+        if env.is_empty() {
+            return Err(format!(
+                "extendr wrappers: methods of {class} without its environment"
+            ));
+        }
+        methods.sort();
+        s3.sort();
+        // `$.X` before `[[.X`, as extendr writes them.
+        s3.sort_by_key(|t| !t.contains("`$."));
+        out.push('\n');
+        out.push_str(&env);
+        out.push('\n');
+        for (_, text) in methods {
+            out.push('\n');
+            out.push_str(&text);
+            out.push('\n');
+        }
+        for text in s3 {
+            out.push('\n');
+            out.push_str(&text);
+            out.push('\n');
+        }
+    }
+    Ok(out)
+}
+
+/// `tools::undoc` and `tools::codoc` on the installed package.
+fn r_doc_check(root: &Path) -> Result {
+    step("r: check that every export is documented and usage matches code");
+    rscript(
+        root,
+        concat!(
+            r#"u <- tools::undoc(package = "prospicio"); "#,
+            r#"c <- tools::codoc(package = "prospicio"); "#,
+            r#"if (length(unlist(u)) || length(c)) { print(u); print(c); quit(status = 1) }"#,
+        ),
+    )
+}
+
+/// The committed generated files and the checks that need no rendered site
+/// (#823): the Python extension and its stub; roxygen2, the install with
+/// the extendr wrappers, `undoc`/`codoc`, and pkgdown's check that every
+/// export is in the reference index. With `--check`, fails if a committed
+/// generated file changed.
+fn generated(opts: Options) -> Result {
+    let root = root();
+    let dir = root.join("python");
+    step("python: build the extension and regenerate its type stubs");
+    run(Command::new("uv").arg("sync").current_dir(&dir))?;
+    run(Command::new("uv")
+        .args(["run", "maturin", "develop", "--uv", "--generate-stubs"])
+        .current_dir(&dir))?;
+    step("r: regenerate man/ and NAMESPACE (roxygen2)");
+    rscript(&root, r#"roxygen2::roxygenise("R/prospicio")"#)?;
+    r_install_with_wrappers(&root)?;
+    r_doc_check(&root)?;
+    step("r: check pkgdown's reference index (every export listed)");
+    rscript(&root, r#"pkgdown::check_pkgdown("R/prospicio")"#)?;
+    if opts.check {
+        let mut all = PYTHON_GENERATED.to_vec();
+        all.extend_from_slice(R_GENERATED);
+        unchanged(&all)?;
     }
     Ok(())
 }
@@ -1255,5 +1445,78 @@ mod tests {
         let page = article(&out, "docs/guides/t.qmd", "t", true);
         assert!(page.starts_with("---\ntitle: \"T\"\n---"), "{page}");
         assert!(page.contains("knitr::opts_knit$set(root.dir"), "{page}");
+    }
+}
+
+#[cfg(test)]
+mod wrapper_tests {
+    use super::extendr_wrappers;
+
+    #[test]
+    fn wrappers_drop_docs_and_sort_functions_and_classes() {
+        let raw = "\
+#' Doc of zeta.
+zeta_rust <- function(x) .Call(wrap__zeta_rust, x)
+
+alpha_rust <- function() .Call(wrap__alpha_rust)
+
+#' @noRd
+mid_rust <- function(y) .Call(wrap__mid_rust, y)
+
+Zed <- new.env(parent = emptyenv())
+
+Zed$b <- function() .Call(wrap__Zed__b, self)
+
+Zed$a <- function() .Call(wrap__Zed__a, self)
+
+#' @export
+`$.Zed` <- function (self, name) { func <- Zed[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.Zed` <- `$.Zed`
+
+#' A class.
+#' @section Methods
+Abc <- new.env(parent = emptyenv())
+
+Abc$new <- function() .Call(wrap__Abc__new)
+
+#' @export
+`$.Abc` <- function (self, name) { func <- Abc[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.Abc` <- `$.Abc`
+";
+        let out = extendr_wrappers(raw).unwrap();
+        let body = out.split("NULL\n").nth(1).unwrap();
+        let firsts: Vec<&str> = body
+            .split("\n\n")
+            .map(|c| c.trim())
+            .filter(|c| !c.is_empty())
+            .map(|c| c.lines().last().unwrap())
+            .collect();
+        assert_eq!(
+            firsts,
+            [
+                "alpha_rust <- function() .Call(wrap__alpha_rust)",
+                "mid_rust <- function(y) .Call(wrap__mid_rust, y)",
+                "zeta_rust <- function(x) .Call(wrap__zeta_rust, x)",
+                "Abc <- new.env(parent = emptyenv())",
+                "Abc$new <- function() .Call(wrap__Abc__new)",
+                "`$.Abc` <- function (self, name) { func <- Abc[[name]]; environment(func) <- environment(); func }",
+                "`[[.Abc` <- `$.Abc`",
+                "Zed <- new.env(parent = emptyenv())",
+                "Zed$a <- function() .Call(wrap__Zed__a, self)",
+                "Zed$b <- function() .Call(wrap__Zed__b, self)",
+                "`$.Zed` <- function (self, name) { func <- Zed[[name]]; environment(func) <- environment(); func }",
+                "`[[.Zed` <- `$.Zed`",
+            ]
+        );
+        assert!(!out.contains("Doc of zeta") && !out.contains("@noRd"));
+        assert_eq!(out.matches("#' @export").count(), 4);
+        // The same input in another order gives the same file.
+        let shuffled = raw.replace("alpha_rust <- function() .Call(wrap__alpha_rust)\n\n", "")
+            + "\nalpha_rust <- function() .Call(wrap__alpha_rust)\n";
+        assert_eq!(extendr_wrappers(&shuffled).unwrap(), out);
     }
 }

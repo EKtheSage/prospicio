@@ -317,15 +317,21 @@ jobs:
           test -f "$PROSPICIO_R_TWINS/reinsurance_pricing.md"
           uv run pytest tests/test_examples.py -k r_twin -v -rs
 
-  # Builds both bindings through `cargo xtask docs`, which regenerates their
-  # docs, and fails if a committed generated file (the Python stub, R's man/
-  # and NAMESPACE) was stale. The python and r jobs run the test suites, so
-  # this build skips them (`--no-tests`). The rendered sites are uploaded as
-  # an artifact; pages.yml publishes them from main, and its build shares
-  # this job's cache (`shared-key: docs-site`), so it keeps it warm.
+  # Checks that the committed generated files (the Python stub, R's man/,
+  # NAMESPACE and R/extendr-wrappers.R) are current. On a pull request that
+  # touches the bindings it runs `cargo xtask generated --check` (#823): the
+  # extension and stub, roxygen2, the R install with the extendr wrappers,
+  # undoc/codoc and pkgdown's reference index, without rendering a site,
+  # about a quarter of the full build. It renders both sites with
+  # `cargo xtask docs --check --no-tests`, uploaded as an artifact, only when
+  # the PR touches the guides, the notebooks, the sites' configuration or
+  # xtask, and on the weekly and manual runs. pages.yml renders them on main
+  # and shares this job's cache (`shared-key: docs-site`). The python and r
+  # jobs run the test suites, so neither mode does.
   #
   # On a pull request it runs only when the PR touches the bindings, their
-  # docs config or xtask; otherwise its steps are skipped and it passes.
+  # docs config, the guides or xtask; otherwise its steps are skipped and it
+  # passes.
   docs:
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
@@ -339,12 +345,20 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "docs=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
-              | grep -qE '^(crates/prospicio-python/|crates/prospicio-r/|python/|R/|xtask/|\.github/workflows/ci\.yml)'; then
+            echo "render=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          if echo "$changed" | grep -qE '^(crates/prospicio-python/|crates/prospicio-r/|python/|R/|xtask/|docs/guides/|examples/|\.github/workflows/ci\.yml)'; then
             echo "docs=true" >> "$GITHUB_OUTPUT"
           else
             echo "docs=false" >> "$GITHUB_OUTPUT"
             echo "No bindings or docs inputs changed; skipping the docs build."
+          fi
+          if echo "$changed" | grep -qE '^(docs/guides/|examples/|xtask/|python/(great-docs\.yml|docs-site\.css)|R/prospicio/(_pkgdown\.yml|pkgdown/))'; then
+            echo "render=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "render=false" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.changes.outputs.docs == 'true'
         uses: dtolnay/rust-toolchain@stable
@@ -354,7 +368,7 @@ jobs:
           shared-key: docs-site
       - if: steps.changes.outputs.docs == 'true'
         uses: astral-sh/setup-uv@v6
-      - if: steps.changes.outputs.docs == 'true'
+      - if: steps.changes.outputs.docs == 'true' && steps.changes.outputs.render == 'true'
         uses: quarto-dev/quarto-actions/setup@v2
       - if: steps.changes.outputs.docs == 'true'
         uses: r-lib/actions/setup-r@v2
@@ -365,9 +379,11 @@ jobs:
         with:
           working-directory: R/prospicio
           extra-packages: any::roxygen2, any::pkgload, any::pkgdown
-      - if: steps.changes.outputs.docs == 'true'
+      - if: steps.changes.outputs.docs == 'true' && steps.changes.outputs.render != 'true'
+        run: cargo xtask generated --check
+      - if: steps.changes.outputs.docs == 'true' && steps.changes.outputs.render == 'true'
         run: cargo xtask docs --check --no-tests
-      - if: steps.changes.outputs.docs == 'true'
+      - if: steps.changes.outputs.docs == 'true' && steps.changes.outputs.render == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: docs-site
