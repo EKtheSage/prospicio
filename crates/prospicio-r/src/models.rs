@@ -81,7 +81,7 @@ pub(crate) fn design(
     weights: &[f64],
 ) -> Result<Design> {
     let p = names.len();
-    if p == 0 || x.len() % p != 0 {
+    if p == 0 || !x.len().is_multiple_of(p) {
         return Err(Error::Other(
             "the design matrix and its names do not match".into(),
         ));
@@ -251,7 +251,7 @@ fn groupings(
     if k == 0 {
         return Ok(Vec::new());
     }
-    if labels.len() % k != 0 || intercepts.len() != k {
+    if !labels.len().is_multiple_of(k) || intercepts.len() != k {
         return Err(Error::Other(
             "the grouping labels do not match the factors".into(),
         ));
@@ -1808,7 +1808,7 @@ fn simulate_from_means_rust(
 ) -> Result<PredictiveDistribution> {
     let f = family(family_name, theta, power)?;
     let n = whole(n_rows, "n_rows")? as usize;
-    if n == 0 || means.len() % n != 0 {
+    if n == 0 || !means.len().is_multiple_of(n) {
         return Err(Error::Other(format!(
             "means has {} values, not a whole number of columns of {n} rows",
             means.len()
@@ -1996,6 +1996,20 @@ fn permutation_rust(n: f64, seed: f64, stream: f64) -> Result<Vec<f64>> {
     .collect())
 }
 
+/// Bootstrap rows of `0..n` (1-based) with replacement on stream `stream` of
+/// `seed`, as Python's `bootstrap_rows` plus one.
+#[extendr]
+fn bootstrap_rows_rust(n: f64, seed: f64, stream: f64) -> Result<Vec<f64>> {
+    Ok(resample::bootstrap_rows(
+        whole(n, "n")? as usize,
+        whole(seed, "seed")?,
+        whole(stream, "stream")?,
+    )
+    .into_iter()
+    .map(|i| i as f64 + 1.0)
+    .collect())
+}
+
 #[extendr]
 fn group_k_fold_rust(groups: Vec<String>, k: f64, seed: f64) -> Result<List> {
     resample::group_k_fold(&groups, whole(k, "k")? as usize, whole(seed, "seed")?)
@@ -2037,7 +2051,7 @@ fn time_splits_rust(
 #[extendr]
 fn mcmc_diagnostics_rust(draws: &[f64], n_chains: f64) -> Result<List> {
     let m = whole(n_chains, "n_chains")? as usize;
-    if m == 0 || draws.len() % m != 0 {
+    if m == 0 || !draws.len().is_multiple_of(m) {
         return Err(Error::Other(
             "draws must be a matrix with one column per chain".into(),
         ));
@@ -2205,7 +2219,7 @@ fn elpd_waic_rust(log_lik: &[f64], n: f64) -> Result<List> {
 
 /// Columns of an `n × k` column-major matrix.
 fn columns(x: &[f64], k: usize) -> Result<Vec<Vec<f64>>> {
-    if k == 0 || x.len() % k != 0 {
+    if k == 0 || !x.len().is_multiple_of(k) {
         return Err(Error::Other(
             "lpd must be a matrix with one column per model".into(),
         ));
@@ -3299,6 +3313,7 @@ extendr_module! {
     fn simulate_from_means_rust;
     fn k_fold_rust;
     fn permutation_rust;
+    fn bootstrap_rows_rust;
     fn target_encode_rust;
     fn mars_rust;
     fn group_k_fold_rust;

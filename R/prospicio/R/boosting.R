@@ -80,18 +80,24 @@ booster_means <- function(spec, model, x, start) {
 # E[w (y - mu)^2 / V(mu)] is each row's dispersion.
 booster_dispersion_fit <- function(spec, x, y, w, off, base, seed) {
   n <- length(y)
-  folds <- with_seed(seed + 7919, sample.int(5, n, replace = TRUE))
+  # Five folds (fewer for fewer rows) from the Rust resampler, the same as
+  # Python's (#833).
+  splits <- k_fold(n, min(5, n), seed = seed + 7919)
   mu <- numeric(n)
-  for (k in 1:5) {
-    test <- folds == k
-    if (!any(test)) next
+  for (split in splits) {
+    test <- seq_len(n) %in% split$test
     m <- booster_train(spec, x[!test, , drop = FALSE], y[!test], w[!test], off[!test] + base, seed)
     mu[test] <- booster_means(spec, m, x[test, , drop = FALSE], off[test] + base)
   }
   z <- w * (y - mu)^2 / booster_variance(spec$family, mu, spec$power)
   z <- pmax(z, 1e-12 * mean(z))
+  # The dispersion model does not take the mean model's monotone or
+  # interaction constraints (#833): those say how the mean moves, and the
+  # dispersion often moves the other way. Python's adapter builds it the same.
   dspec <- spec
   dspec$family <- "gamma"
+  dspec$monotone <- list()
+  dspec$constraints <- list()
   zbase <- log(mean(z))
   list(model = booster_train(dspec, x, z, rep(1, n), rep(zbase, n), seed), base = zbase)
 }
@@ -199,7 +205,13 @@ booster_matrix <- function(x) {
 #'   residuals come from 5-fold cross-fitted means, so a mean model that
 #'   fits the training rows closely does not shrink them.
 #'   [predict_distribution()] then uses one dispersion per row
-#'   ([predict_dispersion()]), as a double GLM does (Smyth, 1989).
+#'   ([predict_dispersion()]), as a double GLM does (Smyth, 1989). The
+#'   dispersion booster takes none of `monotone` and
+#'   `interaction_constraints`: they describe the mean, and the dispersion
+#'   often moves the other way (larger risks, less dispersion). So a
+#'   predictive quantile need not be monotone where the mean is. The folds
+#'   and the bootstrap rows come from [k_fold()] and [bootstrap_rows()],
+#'   the same as in Python.
 #' - `family = "quantile"` fits the `alpha` quantile instead of the mean
 #'   (lightgbm `quantile`, xgboost `reg:quantileerror`), starting from the
 #'   weighted `alpha` quantile of the response; it takes no offset. Score it
@@ -233,8 +245,9 @@ booster_matrix <- function(x) {
 #'   `interaction_constraints` on the features' columns).
 #' @param n_boot Bootstrap refits for parameter uncertainty in
 #'   [predict_distribution()]; 0 gives process noise only.
-#' @param seed Seeds the engine and the bootstrap resamples; R's own
-#'   generator state is left as it was.
+#' @param seed Seeds the engine, the bootstrap resamples (refit `b` on
+#'   `bootstrap_rows(n, seed, b - 1)`) and the dispersion model's folds; R's
+#'   own generator is not used.
 #' @returns A `booster_model` with properties `model` (the engine's
 #'   booster), `boots` (the refits), `base`, `dispersion` (1 for the
 #'   Poisson, otherwise Pearson's estimate `sum(w (y - mu)^2 / V(mu)) / n`,
@@ -310,7 +323,9 @@ booster_fit <- function(formula, data, family = "poisson", engine = c("lightgbm"
                monotone = as.list(monotone),
                constraints = booster_constraints(engine, monotone, interaction_constraints, cols))
   model <- booster_train(spec, x, y, w, off + base, seed)
-  rows <- with_seed(seed, lapply(seq_len(n_boot), function(b) sample.int(n, n, replace = TRUE)))
+  # Refit b's rows: stream b - 1 of the seed, from the Rust resampler, the
+  # same rows as Python's (#833).
+  rows <- lapply(seq_len(n_boot), function(b) bootstrap_rows(n, seed, b - 1))
   boots <- lapply(seq_len(n_boot), function(b) {
     r <- rows[[b]]
     booster_train(spec, x[r, , drop = FALSE], y[r], w[r], off[r] + base, seed + b)

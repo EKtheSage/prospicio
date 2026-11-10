@@ -239,6 +239,7 @@ reference:
       - models.group_k_fold
       - models.time_ordered
       - models.permutation
+      - models.bootstrap_rows
       - models.mcmc_diagnostics
       - models.elpd_loo
       - models.ppc_check

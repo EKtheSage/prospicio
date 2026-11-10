@@ -36125,6 +36125,29 @@ def berquist_sherman_adjust(triangle: Triangle, incurred: str, paid: str, report
     Triangle
     """
 
+def bootstrap_rows(n: int, seed: int, stream: int = 0) -> list[int]:
+    """
+    ``n`` row indices drawn from ``range(n)`` with replacement on stream
+    ``stream`` of ``seed``: the bootstrap resample ``Booster`` refits on, the
+    same in Python and R.
+    
+    Parameters
+    ----------
+    n : int
+    seed : int
+    stream : int, default 0
+    
+    Returns
+    -------
+    list of int
+    
+    Examples
+    --------
+    >>> from prospicio.models import bootstrap_rows
+    >>> bootstrap_rows(8, 3)
+    [4, 0, 2, 6, 1, 1, 0, 5]
+    """
+
 def bootstrap_se(dist: Any, percentiles: Sequence[float], *, replicates: int = 200, seed: int = 0, hold_fixed: Any |None = None, tvar_levels: Sequence[float] |None = None, sd_multiples: Sequence[float] |None = None, quantile: str = "inverted_cdf", tvar: str = "exact") -> dict:
     """
     Bootstrap standard errors of every statistic ``statistics`` reports.

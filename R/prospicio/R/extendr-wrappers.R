@@ -47,6 +47,8 @@ blend_by_component_rust <- function(models, weights, seed) .Call(wrap__blend_by_
 
 blend_rust <- function(models, weights, seed) .Call(wrap__blend_rust, models, weights, seed)
 
+bootstrap_rows_rust <- function(n, seed, stream) .Call(wrap__bootstrap_rows_rust, n, seed, stream)
+
 bootstrap_se_rust <- function(columns, k, fixed, percentiles, tvar_levels, sd_multiples, quantile, tvar, replicates, seed) .Call(wrap__bootstrap_se_rust, columns, k, fixed, percentiles, tvar_levels, sd_multiples, quantile, tvar, replicates, seed)
 
 buhlmann_straub_rust <- function(ratios, weights, nrow, ncol, estimator, tol, max_iter) .Call(wrap__buhlmann_straub_rust, ratios, weights, nrow, ncol, estimator, tol, max_iter)

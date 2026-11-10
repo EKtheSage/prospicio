@@ -2842,6 +2842,31 @@ pub(crate) fn permutation(n: usize, seed: u64, stream: u64) -> Vec<usize> {
     resample::permutation(n, seed, stream)
 }
 
+/// ``n`` row indices drawn from ``range(n)`` with replacement on stream
+/// ``stream`` of ``seed``: the bootstrap resample ``Booster`` refits on, the
+/// same in Python and R.
+///
+/// Parameters
+/// ----------
+/// n : int
+/// seed : int
+/// stream : int, default 0
+///
+/// Returns
+/// -------
+/// list of int
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import bootstrap_rows
+/// >>> bootstrap_rows(8, 3)
+/// [4, 0, 2, 6, 1, 1, 0, 5]
+#[pyfunction]
+#[pyo3(signature = (n, seed, stream = 0))]
+pub(crate) fn bootstrap_rows(n: usize, seed: u64, stream: u64) -> Vec<usize> {
+    resample::bootstrap_rows(n, seed, stream)
+}
+
 /// Grouped ``k``-fold splits: each group's rows stay in one fold.
 ///
 /// Parameters
