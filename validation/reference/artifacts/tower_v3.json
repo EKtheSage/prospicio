@@ -1,0 +1,75 @@
+{
+  "format": "risk_rs.tower",
+  "format_version": 3,
+  "stages": [
+    [
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": 120.0,
+        "attachment": 0.0,
+        "basis": "loss",
+        "brokerage_scale": [
+          [
+            0.01,
+            0.5
+          ],
+          [
+            0.03,
+            0.9
+          ]
+        ],
+        "brokerage_within_commission_range": true,
+        "deductions": [
+          {
+            "basis": "premium",
+            "inside_nmbf": true,
+            "label": "tax",
+            "value": 0.03
+          },
+          {
+            "basis": "loss",
+            "inside_nmbf": true,
+            "label": "tpa",
+            "value": 0.02
+          },
+          {
+            "basis": "fixed",
+            "inside_nmbf": false,
+            "label": "fronting",
+            "value": 1.5
+          }
+        ],
+        "limit": "inf",
+        "name": "QS",
+        "premium": 100.0,
+        "pro_rata_time": false,
+        "reinstatement_rates": [],
+        "scales_before_annual_terms": true,
+        "share": 1.0,
+        "sliding_scale": [
+          [
+            0.3,
+            0.5
+          ],
+          [
+            0.1,
+            0.9
+          ]
+        ]
+      },
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": "inf",
+        "attachment": 50.0,
+        "basis": "loss",
+        "brokerage": 0.1,
+        "limit": 50.0,
+        "name": "XL",
+        "premium": 20.0,
+        "pro_rata_time": false,
+        "reinstatement_rates": [],
+        "share": 1.0
+      }
+    ]
+  ]
+}

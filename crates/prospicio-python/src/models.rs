@@ -42,10 +42,12 @@ pub(crate) fn family(name: &str, theta: Option<f64>, power: Option<f64>) -> PyRe
     Ok(f)
 }
 
-/// A link from its name (`None` for the family's canonical link).
+/// A link from its name (`None` for the family's default link,
+/// `Family::default_link`: log for the gamma, inverse Gaussian and
+/// Tweedie, the canonical link otherwise; #835).
 pub(crate) fn link(name: Option<&str>, family: Family, power: Option<f64>) -> PyResult<Link> {
     Ok(match name {
-        None => family.canonical_link(),
+        None => family.default_link(),
         Some("identity") => Link::Identity,
         Some("log") => Link::Log,
         Some("logit") => Link::Logit,
@@ -554,7 +556,9 @@ impl PyDesign {
 /// link : str, optional
 ///     ``"identity"``, ``"log"``, ``"logit"``, ``"probit"``,
 ///     ``"cloglog"``, ``"inverse"``, ``"inverse_squared"`` or ``"power"``
-///     (needs ``link_power``); the family's canonical link by default.
+///     (needs ``link_power``); the log link for the gamma, inverse Gaussian and Tweedie, and the
+///     canonical link otherwise, by default; R's ``glm`` and statsmodels
+///     default to the canonical link, so give ``link`` when porting a model.
 /// dispersion : str or float, optional
 ///     ``"pearson"``, ``"deviance"`` or a fixed value. By default 1 for the
 ///     Poisson, binomial and negative binomial and Pearson's estimate
@@ -1146,7 +1150,8 @@ impl PyGlmFit {
 /// family : str
 ///     As ``Glm``.
 /// link : str, optional
-///     As ``Glm``; the canonical link by default.
+///     As ``Glm``: the log link for the gamma, inverse Gaussian and
+///     Tweedie, the canonical link otherwise, by default.
 /// alpha : float, default 1.0
 ///     Mixing between ridge (0) and the lasso (1).
 /// lam : float, default 0.0
@@ -2840,6 +2845,31 @@ pub(crate) fn k_fold(n: usize, k: usize, seed: u64) -> PyResult<Vec<(Vec<usize>,
 #[pyo3(signature = (n, seed, stream = 0))]
 pub(crate) fn permutation(n: usize, seed: u64, stream: u64) -> Vec<usize> {
     resample::permutation(n, seed, stream)
+}
+
+/// ``n`` row indices drawn from ``range(n)`` with replacement on stream
+/// ``stream`` of ``seed``: the bootstrap resample ``Booster`` refits on, the
+/// same in Python and R.
+///
+/// Parameters
+/// ----------
+/// n : int
+/// seed : int
+/// stream : int, default 0
+///
+/// Returns
+/// -------
+/// list of int
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import bootstrap_rows
+/// >>> bootstrap_rows(8, 3)
+/// [4, 0, 2, 6, 1, 1, 0, 5]
+#[pyfunction]
+#[pyo3(signature = (n, seed, stream = 0))]
+pub(crate) fn bootstrap_rows(n: usize, seed: u64, stream: u64) -> Vec<usize> {
+    resample::bootstrap_rows(n, seed, stream)
 }
 
 /// Grouped ``k``-fold splits: each group's rows stay in one fold.
@@ -5156,7 +5186,8 @@ impl PyBayesGlmmFit {
 /// family : str
 ///     ``"gaussian"``, ``"poisson"``, ``"gamma"`` or ``"tweedie"``.
 /// link : str, optional
-///     The mean's link; the family's canonical link by default.
+///     The mean's link; by default the log link for the gamma, inverse
+///     Gaussian and Tweedie, the canonical link otherwise.
 /// power : float, optional
 ///     The Tweedie's power, in (1, 2).
 /// method : str
@@ -5535,6 +5566,7 @@ impl PyMarsFit {
 #[pyo3(signature = (x, y, weights = None, max_terms = None, threshold = 0.001, penalty = 2.0, min_span = None, end_span = None, prune = false, family = None, link = None))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn mars(
+    py: Python<'_>,
     x: &Bound<'_, pyo3::types::PyDict>,
     y: Vec<f64>,
     weights: Option<Vec<f64>>,
@@ -5567,8 +5599,8 @@ pub(crate) fn mars(
         return Err(PyValueError::new_err("link needs a family"));
     }
     let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-    let inner = spec
-        .fit(&refs, &columns, &y, weights.as_deref())
+    let inner = py
+        .detach(|| spec.fit(&refs, &columns, &y, weights.as_deref()))
         .map_err(to_py)?;
     Ok(PyMarsFit { inner })
 }

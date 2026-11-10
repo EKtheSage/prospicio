@@ -1819,7 +1819,7 @@ pub(crate) fn exposure(
     n_years: f64,
 ) -> Result<prospicio_aggregate::timeline::Exposure> {
     let n = whole(n_years, "n_years")? as usize;
-    if n == 0 || shares.len() % n != 0 {
+    if n == 0 || !shares.len().is_multiple_of(n) {
         return Err(Error::Other(format!(
             "{} shares do not make {n} rows",
             shares.len()

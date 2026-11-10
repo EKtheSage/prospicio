@@ -469,6 +469,27 @@ pub fn permutation(n: usize, seed: u64, stream: u64) -> Vec<usize> {
     order
 }
 
+/// `n` rows drawn from `0..n` with replacement on stream `stream` of `seed`:
+/// a bootstrap resample, the one the boosting adapters refit on in Python
+/// and R, so both languages draw the same rows (#833). Row `i` is
+/// `floor(u_i n)` for the stream's `i`-th uniform.
+///
+/// ```
+/// use prospicio_models::resample::bootstrap_rows;
+///
+/// let rows = bootstrap_rows(6, 1, 0);
+/// assert_eq!(rows.len(), 6);
+/// assert!(rows.iter().all(|&r| r < 6));
+/// assert_eq!(rows, bootstrap_rows(6, 1, 0));
+/// assert_ne!(rows, bootstrap_rows(6, 1, 1));
+/// ```
+pub fn bootstrap_rows(n: usize, seed: u64, stream: u64) -> Vec<usize> {
+    let mut rng = StreamRng::new(seed, stream);
+    (0..n)
+        .map(|_| ((rng.next_open01() * n as f64) as usize).min(n.saturating_sub(1)))
+        .collect()
+}
+
 /// `0..n` shuffled on stream 0 of `seed`.
 fn shuffled(n: usize, seed: u64) -> Vec<usize> {
     permutation(n, seed, 0)
@@ -504,6 +525,16 @@ fn complement(n: usize, test: Vec<usize>) -> Split {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bootstrap_rows_are_pinned() {
+        // The Python and R boosting tests assert these same rows (#833).
+        assert_eq!(bootstrap_rows(8, 3, 0), PINNED_ROWS);
+        assert!(bootstrap_rows(0, 3, 0).is_empty());
+        assert_eq!(bootstrap_rows(1, 3, 5), [0]);
+    }
+
+    const PINNED_ROWS: [usize; 8] = [4, 0, 2, 6, 1, 1, 0, 5];
 
     #[test]
     fn map_splits_keeps_order_and_the_first_error() {

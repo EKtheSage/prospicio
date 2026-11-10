@@ -745,8 +745,8 @@ impl PyOnnxModel {
 ///     ``mu = g^-1(offset + output)`` (a CANN's correction, or a network
 ///     trained with an exposure offset).
 /// link : str, optional
-///     The link for ``scale="link"``; the family's canonical link by
-///     default.
+///     The link for ``scale="link"``; by default the log link for the
+///     gamma, inverse Gaussian and Tweedie, the canonical link otherwise.
 /// dispersion : float, default 1
 ///     The family's dispersion for predictive draws.
 /// theta, power : float, optional

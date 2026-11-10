@@ -271,15 +271,12 @@ fn family(grid: &Grid, p: &Grid) -> Result<(Family, bool)> {
     Ok((family, quasi))
 }
 
-/// The `link` argument: the log link if omitted, except logit for the
+/// The `link` argument: `Family::default_link` if omitted, the rule of the
+/// Python and R front ends too (#835): the log link, except logit for the
 /// binomial and identity for the gaussian.
 fn link(grid: &Grid, family: Family) -> Result<Link> {
     match text_option(grid, "link")?.as_deref() {
-        None => Ok(match family {
-            Family::Binomial => Link::Logit,
-            Family::Gaussian => Link::Identity,
-            _ => Link::Log,
-        }),
+        None => Ok(family.default_link()),
         Some("log") => Ok(Link::Log),
         Some("identity") => Ok(Link::Identity),
         Some("logit") => Ok(Link::Logit),
@@ -540,19 +537,19 @@ pub fn relativities(args: &[Grid]) -> Result<Grid> {
             continue;
         }
         let (term, level) = term_level(name);
-        if let (Value::Text(t), Value::Text(_)) = (&term, &level) {
-            if !based.contains(t) {
-                if let Some((_, base)) = references.iter().find(|(n, _)| n == t) {
-                    rows.push(vec![
-                        term.clone(),
-                        Value::Text(format!("{base} (base)")),
-                        Value::Number(1.0),
-                        Value::Empty,
-                        Value::Empty,
-                    ]);
-                }
-                based.push(t.clone());
+        if let (Value::Text(t), Value::Text(_)) = (&term, &level)
+            && !based.contains(t)
+        {
+            if let Some((_, base)) = references.iter().find(|(n, _)| n == t) {
+                rows.push(vec![
+                    term.clone(),
+                    Value::Text(format!("{base} (base)")),
+                    Value::Number(1.0),
+                    Value::Empty,
+                    Value::Empty,
+                ]);
             }
+            based.push(t.clone());
         }
         let b = fit.coefficients()[j];
         rows.push(vec![

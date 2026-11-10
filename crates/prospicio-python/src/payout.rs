@@ -2,7 +2,7 @@
 //! over `prospicio_pricing::payout`, and return metrics on simulated cash
 //! flows over `prospicio_pricing::returns` (`docs/design/time-value.md`).
 
-use prospicio_pricing::cashflow::MonthlyPatterns;
+use prospicio_pricing::cashflow::{MonthlyPatterns, WrittenTiming};
 use prospicio_pricing::payout::{self, Interpolation, PaymentPattern, PayoutPrice};
 use prospicio_pricing::returns::{self, IrrOptions, TieredFee, TimeUnit};
 use pyo3::exceptions::PyValueError;
@@ -12,13 +12,23 @@ use crate::pricing::{PyPrice, premium_rule};
 use crate::risk::PyDistortion;
 use crate::to_py;
 
+/// The error for the old name of the unpaid-share reading (#839).
+fn renamed() -> PyErr {
+    PyValueError::new_err(
+        "interpolation \"log-linear\" is now \"log_linear_unpaid\": the unpaid share \
+         falls geometrically, a different curve from the reserving patterns' log-linear \
+         reading of the factors",
+    )
+}
+
 pub(crate) fn interpolation_arg(s: &str) -> PyResult<Interpolation> {
     match s {
         "step" => Ok(Interpolation::Step),
         "linear" => Ok(Interpolation::Linear),
-        "log-linear" => Ok(Interpolation::LogLinear),
+        "log_linear_unpaid" => Ok(Interpolation::LogLinearUnpaid),
+        "log-linear" => Err(renamed()),
         other => Err(PyValueError::new_err(format!(
-            "unknown interpolation {other:?}; use \"step\", \"linear\" or \"log-linear\""
+            "unknown interpolation {other:?}; use \"step\", \"linear\" or \"log_linear_unpaid\""
         ))),
     }
 }
@@ -27,9 +37,14 @@ pub(crate) fn interpolation_arg(s: &str) -> PyResult<Interpolation> {
 /// a written pattern, a policy term and a payment pattern by development
 /// age.
 ///
-/// The premium written in month ``s`` is written at its start and earned
-/// evenly over the ``policy_months`` months from it. Losses occur as
-/// premium is earned, in the middle of their month.
+/// The premium written in month ``s`` is earned evenly over the
+/// ``policy_months`` months from when it is written: through the month
+/// by default (``written_timing="through_month"``, half the premium
+/// written evenly over a year earned by its end, the parallelogram and the
+/// convention of ``UnderwritingBasis``), or at its start
+/// (``written_timing="at_start"``, a contract written on its inception
+/// date, such as one catastrophe year with ``written`` all 1; #839).
+/// Losses occur as premium is earned, in the middle of their month.
 ///
 /// Without ``accident_period`` they are paid by ``pattern`` measured from
 /// the accident date and read between its times by ``interpolation`` (as
@@ -51,9 +66,10 @@ pub(crate) fn interpolation_arg(s: &str) -> PyResult<Interpolation> {
 ///     is the patterns' (at least the commutation month plus the buffer).
 /// pattern : PaymentPattern
 /// policy_months : int, default 12
-/// interpolation : {"linear", "step", "log-linear"}, default "linear"
+/// interpolation : {"linear", "step", "log_linear_unpaid"}, default "linear"
 /// accident_period : {"year", "quarter", "month"}, optional
 /// reading : {"weibull", "loglogistic", "ln-linear"}, default "weibull"
+/// written_timing : {"through_month", "at_start"}, default "through_month"
 ///
 /// Returns
 /// -------
@@ -64,15 +80,18 @@ pub(crate) fn interpolation_arg(s: &str) -> PyResult<Interpolation> {
 /// --------
 /// >>> from prospicio.pricing import PaymentPattern, monthly_patterns
 /// >>> p = PaymentPattern([1.0, 2.0, 3.0], [1 / 3] * 3)
-/// >>> w, e, paid = monthly_patterns([1.0] * 60, p)
+/// >>> w, e, paid = monthly_patterns([1.0] * 60, p, written_timing="at_start")
 /// >>> e[5], e[11], round(paid[59], 12)
 /// (0.5, 1.0, 1.0)
+/// >>> even = [min(1.0, (m + 1) / 12) for m in range(60)]
+/// >>> round(monthly_patterns(even, p)[1][11], 12)
+/// 0.5
 /// >>> even = [min(1.0, (m + 1) / 12) for m in range(60)]
 /// >>> _, _, uy = monthly_patterns(even, p, accident_period="year")
 /// >>> round(uy[59], 12)
 /// 1.0
 #[pyfunction]
-#[pyo3(signature = (written, pattern, policy_months = 12, interpolation = "linear", accident_period = None, reading = "weibull"))]
+#[pyo3(signature = (written, pattern, policy_months = 12, interpolation = "linear", accident_period = None, reading = "weibull", written_timing = "through_month"))]
 pub(crate) fn monthly_patterns(
     written: Vec<f64>,
     pattern: PyRef<'_, PyPaymentPattern>,
@@ -80,13 +99,16 @@ pub(crate) fn monthly_patterns(
     interpolation: &str,
     accident_period: Option<&str>,
     reading: &str,
+    written_timing: &str,
 ) -> PyResult<(Vec<f64>, Vec<f64>, Vec<f64>)> {
+    let timing = written_timing_arg(written_timing)?;
     let p = match accident_period {
         None => MonthlyPatterns::from_annual(
             written,
             policy_months,
             &pattern.inner,
             interpolation_arg(interpolation)?,
+            timing,
         ),
         Some(period) => {
             let paid = underwriting_paid(
@@ -96,11 +118,21 @@ pub(crate) fn monthly_patterns(
                 policy_months,
                 reading_arg(reading)?,
             )?;
-            MonthlyPatterns::from_paid(written, policy_months, paid)
+            MonthlyPatterns::from_paid(written, policy_months, paid, timing)
         }
     }
     .map_err(to_py)?;
     Ok((p.written, p.earned, p.paid))
+}
+
+fn written_timing_arg(name: &str) -> PyResult<WrittenTiming> {
+    match name {
+        "through_month" => Ok(WrittenTiming::ThroughMonth),
+        "at_start" => Ok(WrittenTiming::AtStart),
+        other => Err(PyValueError::new_err(format!(
+            "written_timing must be \"through_month\" or \"at_start\", got {other:?}"
+        ))),
+    }
 }
 
 fn accident_grain(name: &str) -> PyResult<prospicio_reserving::Grain> {
@@ -283,7 +315,7 @@ impl PyPaymentPattern {
     /// The share paid by time ``t`` in years, read between the pattern's
     /// times by ``interpolation``: ``"step"`` (each share paid at its
     /// time), ``"linear"`` (evenly over the period ending at it) or
-    /// ``"log-linear"`` (the unpaid share falling geometrically).
+    /// ``"log_linear_unpaid"`` (the unpaid share falling geometrically).
     ///
     /// Examples
     /// --------

@@ -1090,13 +1090,13 @@ impl Problem<'_> {
             let mut moved = false;
             for _ in 0..50 {
                 let trial: Vec<f64> = v.iter().zip(&step).map(|(a, b)| a + t * b).collect();
-                if let Some(next) = evaluate(&trial) {
-                    if next.g >= state.g - 1e-12 * state.g.abs().max(1.0) {
-                        v = trial;
-                        state = next;
-                        moved = true;
-                        break;
-                    }
+                if let Some(next) = evaluate(&trial)
+                    && next.g >= state.g - 1e-12 * state.g.abs().max(1.0)
+                {
+                    v = trial;
+                    state = next;
+                    moved = true;
+                    break;
                 }
                 t *= 0.5;
             }

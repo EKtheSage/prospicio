@@ -978,9 +978,9 @@ fn sha256_hex(bytes: &[u8]) -> String {
         msg.push(0);
     }
     msg.extend_from_slice(&bits.to_be_bytes());
-    for block in msg.chunks_exact(64) {
+    for block in msg.as_chunks::<64>().0 {
         let mut w = [0u32; 64];
-        for (i, word) in block.chunks_exact(4).enumerate() {
+        for (i, word) in block.as_chunks::<4>().0.iter().enumerate() {
             w[i] = u32::from_be_bytes([word[0], word[1], word[2], word[3]]);
         }
         for i in 16..64 {
@@ -1283,7 +1283,7 @@ fn run_arms<'a>(triangles: &'a [PanelTriangle], arms: &[ArmBasis]) -> Vec<Record
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| arm.run(triangle)))
                     .unwrap_or_else(|_| Err("the fit panicked".to_string()));
             let n = done.fetch_add(1, Ordering::Relaxed) + 1;
-            if n % step == 0 || n == jobs.len() {
+            if n.is_multiple_of(step) || n == jobs.len() {
                 eprintln!(
                     "progress: {n} of {} fits, {:.0} s",
                     jobs.len(),

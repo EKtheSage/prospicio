@@ -135,7 +135,7 @@ pub fn lattice_candidates(h: f64) -> Vec<f64> {
         while k <= n {
             for rung in [1u64, 2, 4, 5, 8] {
                 let v = rung * k;
-                if v <= n && n % v == 0 && v > best {
+                if v <= n && n.is_multiple_of(v) && v > best {
                     best = v;
                 }
             }

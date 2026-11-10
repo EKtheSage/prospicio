@@ -1,0 +1,39 @@
+{
+  "format": "risk_rs.tower",
+  "format_version": 7,
+  "stages": [
+    [
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": "inf",
+        "attachment": 5.0,
+        "basis": "loss",
+        "limit": 10.0,
+        "name": "L",
+        "premium": 0.0,
+        "pro_rata_time": false,
+        "reinstatement_rates": [],
+        "scope": {
+          "label": "peril",
+          "values": [
+            "ws",
+            "fl"
+          ]
+        },
+        "share": 1.0
+      },
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": "inf",
+        "attachment": 20.0,
+        "basis": "loss",
+        "limit": 5.0,
+        "name": "M",
+        "premium": 0.0,
+        "pro_rata_time": false,
+        "reinstatement_rates": [],
+        "share": 1.0
+      }
+    ]
+  ]
+}

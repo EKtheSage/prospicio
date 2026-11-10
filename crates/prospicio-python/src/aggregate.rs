@@ -1415,7 +1415,13 @@ impl PyEventSet {
     /// >>> g.events(0), g.labels(0)
     /// ([15.0, 20.0], {'peril': ['wind', 'flood']})
     #[pyo3(signature = (window_hours, *, labels = "drop", by = None))]
-    fn grouped(&self, window_hours: f64, labels: &str, by: Option<&str>) -> PyResult<Self> {
+    fn grouped(
+        &self,
+        py: Python<'_>,
+        window_hours: f64,
+        labels: &str,
+        by: Option<&str>,
+    ) -> PyResult<Self> {
         use prospicio_aggregate::GroupLabels;
         let rule = match (labels, by) {
             ("drop", None) => GroupLabels::Drop,
@@ -1427,10 +1433,11 @@ impl PyEventSet {
                 )));
             }
         };
-        let inner = match by {
-            Some(dim) => self.inner.grouped_by(dim, window_hours, rule),
-            None => self.inner.grouped_with(window_hours, rule),
-        };
+        let set = &self.inner;
+        let inner = py.detach(|| match by {
+            Some(dim) => set.grouped_by(dim, window_hours, rule),
+            None => set.grouped_with(window_hours, rule),
+        });
         Ok(Self {
             inner: inner.map_err(to_py)?,
         })
@@ -2353,6 +2360,7 @@ impl PyRuin {
                     stop_loss=None))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn eventual_ruin(
+    py: Python<'_>,
     severity: PyRef<'_, PyGrid>,
     rho: Option<f64>,
     loss_ratio: Option<f64>,
@@ -2389,7 +2397,9 @@ pub(crate) fn eventual_ruin(
         }
     };
     let points = points.unwrap_or(severity.inner.len());
-    let inner = prospicio_aggregate::pollaczeck_khinchine(&severity.inner, rho, points, part)
+    let sev = &severity.inner;
+    let inner = py
+        .detach(|| prospicio_aggregate::pollaczeck_khinchine(sev, rho, points, part))
         .map_err(to_py)?;
     Ok(PyRuin { inner })
 }
@@ -2748,6 +2758,7 @@ impl PyRenewalRuin {
 #[pyfunction]
 #[pyo3(signature = (severity, wait, rho=None, *, loss_ratio=None, points=None))]
 pub(crate) fn wiener_hopf(
+    py: Python<'_>,
     severity: PyRef<'_, PyGrid>,
     wait: &Bound<'_, PyAny>,
     rho: Option<f64>,
@@ -2771,8 +2782,10 @@ pub(crate) fn wiener_hopf(
     };
     let wait = crate::distributions::extract_dist(wait)?;
     let points = points.unwrap_or(severity.inner.len());
-    let inner =
-        prospicio_aggregate::wiener_hopf(&severity.inner, &wait, rho, points).map_err(to_py)?;
+    let sev = &severity.inner;
+    let inner = py
+        .detach(|| prospicio_aggregate::wiener_hopf(sev, &wait, rho, points))
+        .map_err(to_py)?;
     Ok(PyRenewalRuin { inner })
 }
 
@@ -3002,8 +3015,14 @@ impl PyEventLossTable {
     /// -------
     /// tuple of (EventSet, list of list of int)
     #[pyo3(signature = (n_years, seed = 0))]
-    fn simulate(&self, n_years: usize, seed: u64) -> PyResult<(PyEventSet, Vec<Vec<usize>>)> {
-        let (inner, ids) = self.inner.simulate(n_years, seed).map_err(to_py)?;
+    fn simulate(
+        &self,
+        py: Python<'_>,
+        n_years: usize,
+        seed: u64,
+    ) -> PyResult<(PyEventSet, Vec<Vec<usize>>)> {
+        let table = &self.inner;
+        let (inner, ids) = py.detach(|| table.simulate(n_years, seed)).map_err(to_py)?;
         Ok((PyEventSet { inner }, ids))
     }
 
@@ -3936,9 +3955,9 @@ impl PyHawkes {
     /// -------
     /// list of float
     #[pyo3(signature = (horizon, seed, stream = 0))]
-    fn simulate(&self, horizon: f64, seed: u64, stream: u64) -> PyResult<Vec<f64>> {
-        self.inner
-            .simulate(&mut prospicio_core::StreamRng::new(seed, stream), horizon)
+    fn simulate(&self, py: Python<'_>, horizon: f64, seed: u64, stream: u64) -> PyResult<Vec<f64>> {
+        let hawkes = &self.inner;
+        py.detach(|| hawkes.simulate(&mut prospicio_core::StreamRng::new(seed, stream), horizon))
             .map_err(to_py)
     }
 

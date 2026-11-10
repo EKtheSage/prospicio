@@ -2136,12 +2136,16 @@ impl PyTower {
     /// [-45.5, 34.5]
     fn deal_ledger(
         &self,
+        py: Python<'_>,
         source: &Bound<'_, PyAny>,
         layer: &str,
     ) -> PyResult<crate::pnl::PyLedger> {
         let source = crate::pnl::source_of(source)?;
+        let tower = &self.inner;
         Ok(crate::pnl::PyLedger {
-            inner: self.inner.deal_ledger(&source, layer).map_err(to_py)?,
+            inner: py
+                .detach(|| tower.deal_ledger(&source, layer))
+                .map_err(to_py)?,
         })
     }
 

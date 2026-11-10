@@ -1,20 +1,24 @@
-"""Check the lane status files, docs/lanes/*.md (AGENTS.md, "Lane status files").
+"""Check the lane status files, docs/lanes/*.md and docs/lanes/done/*.md
+(AGENTS.md, "Lane status files").
 
     python validation/scripts/check_lanes.py [docs/lanes]
 
-The files merge with git's union driver, which keeps both sides' lines, so
-two PRs that delete adjacent lines bring both deleted lines back without a
-conflict. This check catches that and the other ways a union merge goes
-wrong. For each file:
+Each lane has two files: `docs/lanes/<lane>.md`, imported into every agent
+session, with the section `## Next`, and `docs/lanes/done/<lane>.md`, with
+the section `## Done` (#846). Both merge with git's union driver, which
+keeps both sides' lines, so two PRs that delete adjacent lines bring both
+deleted lines back without a conflict. This check catches that and the
+other ways a union merge goes wrong. For each lane:
 
-- it has the sections `## Next` and `## Done` and no `## Now`;
+- the lane file has `## Next` and no `## Done` or `## Now` (a Done bullet
+  goes in the done file), and the done file has `## Done` only;
 - every bullet is one physical line starting with "- " (no wrapped bullets);
 - every Next bullet has an id: its first issue number (`#392`) or, when the
   bullet has no issue number, a leading `[slug]` tag;
 - no Next bullet's id appears in a Done bullet (a Done bullet repeats the id
   of the Next item it finishes, so a hit is a finished item that is still
   listed in Next, or one that a union merge brought back);
-- no bullet appears twice in the file.
+- no bullet appears twice in a file.
 """
 
 import pathlib
@@ -43,8 +47,8 @@ def done_mentions(bullet, ident):
     return re.search(rf"#{value}(?!\d)", bullet) is not None
 
 
-def check_file(path):
-    errors = []
+def sections_of(path, allowed, errors):
+    """The bullets of each section of `path`, checking the bullets' form."""
     name = path.as_posix()
     sections = {}
     current = None
@@ -56,14 +60,17 @@ def check_file(path):
             if current in sections:
                 errors.append(f"{name}:{no}: section '## {current}' appears twice")
             sections.setdefault(current, [])
+            if current == "Now":
+                errors.append(f"{name}: has a '## Now' section; drop it (open PRs are in `gh pr list`)")
+            elif current not in allowed:
+                where = {"Done": "done/" + path.name, "Next": "../" + path.name}.get(current)
+                hint = f" (it belongs in {where})" if where else ""
+                errors.append(
+                    f"{name}:{no}: section '## {current}' does not belong here{hint}; "
+                    f"this file has only {', '.join('## ' + a for a in allowed)}"
+                )
             continue
-        if current is None or not line.strip():
-            continue
-        if current == "Now":
-            continue
-        if current not in ("Next", "Done"):
-            errors.append(f"{name}:{no}: unknown section '## {current}'; use only '## Next' and '## Done'")
-            current = None
+        if current is None or not line.strip() or current not in allowed:
             continue
         if not line.startswith("- "):
             errors.append(f"{name}:{no}: not a bullet: every bullet is one line starting with '- ' (never wrapped)")
@@ -76,13 +83,25 @@ def check_file(path):
         else:
             seen[line] = no
         sections[current].append((no, line))
-    if "Now" in sections:
-        errors.append(f"{name}: has a '## Now' section; drop it (open PRs are in `gh pr list`)")
-    for need in ("Next", "Done"):
+    for need in allowed:
         if need not in sections:
             errors.append(f"{name}: missing the section '## {need}'")
-    done = sections.get("Done", [])
-    for no, line in sections.get("Next", []):
+    return sections
+
+
+def check_lane(path):
+    """Check one lane: `path` (Next) and `done/<same name>` (Done)."""
+    errors = []
+    name = path.as_posix()
+    done_path = path.parent / "done" / path.name
+    nxt = sections_of(path, ("Next",), errors).get("Next", [])
+    if done_path.exists():
+        done = sections_of(done_path, ("Done",), errors).get("Done", [])
+    else:
+        errors.append(f"{name}: no {done_path.as_posix()} for the lane's Done bullets")
+        done = []
+    dname = done_path.as_posix()
+    for no, line in nxt:
         ident = next_id(line)
         if ident is None:
             errors.append(f"{name}:{no}: Next bullet has no id: start it with [slug] or name an issue (#N)")
@@ -92,7 +111,7 @@ def check_file(path):
             if done_mentions(dline, ident):
                 errors.append(
                     f"{name}:{no}: finished item still in Next: {label} appears in the Done bullet "
-                    f"on line {dno}; delete the Next bullet"
+                    f"on line {dno} of {dname}; delete the Next bullet"
                 )
                 break
     return errors
@@ -106,7 +125,7 @@ def main(argv):
         return 1
     errors = []
     for f in files:
-        errors.extend(check_file(f))
+        errors.extend(check_lane(f))
     for e in errors:
         print(e)
     if errors:

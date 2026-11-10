@@ -105,7 +105,7 @@ fn fit() -> &'static MeyersFit {
 fn value(fit: &MeyersFit, case: &Case) -> Option<f64> {
     let arg = case.get("arg");
     // Each simulation's reserves by origin, from 1988.
-    let rows = || fit.reserves.draw_matrix().chunks_exact(10);
+    let rows = || fit.reserves.draw_matrix().as_chunks::<10>().0.iter();
     let reserve = || {
         if arg == "total" {
             fit.reserves.total().clone()

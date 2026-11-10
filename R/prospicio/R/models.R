@@ -104,7 +104,10 @@ dispersion_args <- function(dispersion) {
 #'   `"negative_binomial"` (needs `theta`) or `"tweedie"` (needs `power`).
 #' @param link `"identity"`, `"log"`, `"logit"`, `"probit"`, `"cloglog"`,
 #'   `"inverse"`, `"inverse_squared"` or `"power"` (needs `link_power`);
-#'   `NULL` for the family's canonical link.
+#'   `NULL` for the log link for the gamma, inverse Gaussian and Tweedie and
+#'   the canonical link otherwise. R's own `glm()` defaults to the canonical
+#'   link (`Gamma()` is the inverse link), so give `link` when porting a
+#'   model from it.
 #' @param offset Optional offset added to any `offset()` terms.
 #' @param weights Optional prior weights.
 #' @param dispersion `NULL` (1 for the Poisson, binomial and negative
@@ -1266,7 +1269,10 @@ deviance_score <- function(family, response, theta = NULL, power = NULL, weight_
 #' periods before the next, and trains on the periods before its test window
 #' less the `gap` just before it, all of them or the latest `window`
 #' (scikit-learn's `TimeSeriesSplit` with `horizon = step = test_size`).
-#' `permutation()` shuffles `1:n` with `seed` on stream `stream`.
+#' `permutation()` shuffles `1:n` with `seed` on stream `stream`;
+#' `bootstrap_rows()` draws `n` of `1:n` with replacement, the resample
+#' [booster_fit()] refits on (the same as Python's `bootstrap_rows`, plus
+#' one).
 #'
 #' @param n Number of rows.
 #' @param k Number of folds.
@@ -1274,10 +1280,12 @@ deviance_score <- function(family, response, theta = NULL, power = NULL, weight_
 #' @param groups Group label per row.
 #' @param periods Period per row (whole numbers).
 #' @param n_test Number of final periods to test on.
-#' @param stream For `permutation()`, the stream of `seed` to draw from.
+#' @param stream For `permutation()` and `bootstrap_rows()`, the stream of
+#'   `seed` to draw from.
 #' @returns A list of splits, each `list(train, test)` of row numbers;
 #'   `permutation()`, the row numbers `1:n` shuffled, the shuffle the
-#'   [explanations] apply (the same as Python's `permutation`, plus one).
+#'   [explanations] apply (the same as Python's `permutation`, plus one);
+#'   `bootstrap_rows()`, `n` row numbers drawn from `1:n`.
 #' @name resampling
 #' @examples
 #' length(k_fold(10, 5, seed = 1))
@@ -1440,6 +1448,12 @@ time_splits <- function(periods, n_test, window = NULL, horizon = 1, gap = 0, st
 #' @export
 permutation <- function(n, seed, stream = 0) {
   rust_result(permutation_rust(as.double(n), as.double(seed), as.double(stream)))
+}
+
+#' @rdname resampling
+#' @export
+bootstrap_rows <- function(n, seed, stream = 0) {
+  rust_result(bootstrap_rows_rust(as.double(n), as.double(seed), as.double(stream)))
 }
 
 #' Cross-validation and hyperparameter search
@@ -2782,7 +2796,8 @@ S7::method(print, bayes_glmm_model) <- function(x, ...) {
 #' @param dformula The dispersion's one-sided formula, `~ 1` by default.
 #' @param data A data frame.
 #' @param family `"gaussian"`, `"poisson"`, `"gamma"` or `"tweedie"`.
-#' @param link The mean's link; the family's canonical link by default.
+#' @param link The mean's link; by default the log link for the gamma,
+#'   inverse Gaussian and Tweedie, the canonical link otherwise.
 #' @param power The Tweedie power, in (1, 2).
 #' @param method `"ml"` (the default) or `"reml"`.
 #' @param offset,weights Optional offset of the mean (added to any

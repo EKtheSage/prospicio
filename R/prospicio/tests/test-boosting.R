@@ -132,6 +132,26 @@ for (engine in c("lightgbm", "xgboost")) {
   stopifnot(all(predict_dispersion(plain, two) == plain@dispersion))
 }
 
+# The bootstrap rows and the dispersion folds come from the Rust resampler
+# (#833), the same as Python's (python/tests/test_boosting.py pins these,
+# minus one).
+stopifnot(identical(bootstrap_rows(8, 3), c(5, 1, 3, 7, 2, 2, 1, 6)))
+stopifnot(identical(lapply(k_fold(10, 5, seed = 7919), function(s) sort(s$test)),
+                    list(c(3, 4), c(8, 10), c(5, 9), c(1, 7), c(2, 6))))
+# The dispersion model takes none of the mean's constraints (#833): a
+# falling-mean constraint does not bind the dispersion, which rises with x.
+if (requireNamespace("lightgbm", quietly = TRUE)) {
+  set.seed(5)
+  gd <- data.frame(x = runif(4000))
+  k <- ifelse(gd$x < 0.5, 4, 1)
+  gd$y <- rgamma(4000, shape = k, scale = 1000 / k)
+  g <- booster_fit(y ~ x, gd, family = "gamma", n_rounds = 100, learning_rate = 0.1,
+                   params = list(num_leaves = 4), dispersion_model = TRUE,
+                   monotone = c(x = -1))
+  phi <- predict_dispersion(g, data.frame(x = c(0.2, 0.8)))
+  stopifnot(phi[2] > 2 * phi[1])
+}
+
 # Typed monotone and interaction constraints (#575) on the Chalk portfolio:
 # unconstrained, the partial dependence on experience moves against its
 # trend; constrained, it is monotone on a fine grid, and the typed

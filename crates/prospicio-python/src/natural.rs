@@ -622,6 +622,7 @@ impl PyPortfolio {
     #[allow(clippy::too_many_arguments)]
     fn price(
         &self,
+        py: Python<'_>,
         distortion: PyRef<'_, PyDistortion>,
         assets: Option<f64>,
         p: Option<f64>,
@@ -631,10 +632,10 @@ impl PyPortfolio {
     ) -> PyResult<PyNaturalPrice> {
         let a = self.level(assets, p)?;
         let settings = price_settings(allocation, bottom_layer, atom)?;
+        let (portfolio, g) = (&self.inner, &distortion.inner);
         Ok(PyNaturalPrice {
-            inner: self
-                .inner
-                .price_with(&distortion.inner, a, settings)
+            inner: py
+                .detach(|| portfolio.price_with(g, a, settings))
                 .map_err(to_py)?,
         })
     }
@@ -660,6 +661,7 @@ impl PyPortfolio {
     #[allow(clippy::too_many_arguments)]
     fn calibrate(
         &self,
+        py: Python<'_>,
         family: &str,
         assets: Option<f64>,
         p: Option<f64>,
@@ -680,8 +682,11 @@ impl PyPortfolio {
             }
         };
         let family = family_from(family, r0)?;
+        let portfolio = &self.inner;
         Ok(PyDistortion {
-            inner: self.inner.calibrate(family, a, target).map_err(to_py)?,
+            inner: py
+                .detach(|| portfolio.calibrate(family, a, target))
+                .map_err(to_py)?,
         })
     }
 

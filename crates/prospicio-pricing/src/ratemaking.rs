@@ -741,14 +741,14 @@ impl ScheduleTrend {
                 reason: "must be finite",
             });
         }
-        if let Some(c) = self.cutoff {
-            if !(1..=12).contains(&c) {
-                return Err(Error::InvalidParameter {
-                    name: "cutoff",
-                    value: f64::from(c),
-                    reason: "must be 1 to 12 months",
-                });
-            }
+        if let Some(c) = self.cutoff
+            && !(1..=12).contains(&c)
+        {
+            return Err(Error::InvalidParameter {
+                name: "cutoff",
+                value: f64::from(c),
+                reason: "must be 1 to 12 months",
+            });
         }
         let target = self.target();
         let latest = years.iter().copied().max();

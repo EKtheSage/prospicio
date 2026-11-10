@@ -303,10 +303,10 @@ fn weight_of(obj: &Bound<'_, PyAny>) -> PyResult<PatternWeight> {
     if obj.hasattr("items")? {
         return Ok(PatternWeight::ByAge(age_values(obj, "weight")?));
     }
-    if !obj.is_instance_of::<PyBool>() {
-        if let Ok(w) = obj.extract::<f64>() {
-            return Ok(PatternWeight::All(w));
-        }
+    if !obj.is_instance_of::<PyBool>()
+        && let Ok(w) = obj.extract::<f64>()
+    {
+        return Ok(PatternWeight::All(w));
     }
     Err(PyTypeError::new_err(format!(
         "weight must be a number or a dict from age in months to a number, got {}",

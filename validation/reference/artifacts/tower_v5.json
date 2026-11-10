@@ -1,0 +1,21 @@
+{
+  "cover_basis": "losses_occurring",
+  "format": "risk_rs.tower",
+  "format_version": 5,
+  "stages": [
+    [
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": "inf",
+        "attachment": 5.0,
+        "basis": "loss",
+        "limit": 10.0,
+        "name": "L",
+        "premium": 0.0,
+        "pro_rata_time": false,
+        "reinstatement_rates": [],
+        "share": 1.0
+      }
+    ]
+  ]
+}

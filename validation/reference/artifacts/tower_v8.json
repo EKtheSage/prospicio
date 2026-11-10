@@ -1,0 +1,25 @@
+{
+  "format": "risk_rs.tower",
+  "format_version": 8,
+  "stages": [
+    [
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": "inf",
+        "attachment": 5.0,
+        "basis": "loss",
+        "limit": 10.0,
+        "name": "L",
+        "no_claims_bonus": {
+          "share": 0.2,
+          "threshold": 1.5,
+          "years": 3
+        },
+        "premium": 10.0,
+        "pro_rata_time": false,
+        "reinstatement_rates": [],
+        "share": 1.0
+      }
+    ]
+  ]
+}

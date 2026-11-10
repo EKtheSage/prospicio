@@ -264,7 +264,7 @@ impl EventSet {
     /// ```
     pub fn term_years(&self, n_years: usize) -> Result<Vec<EventSet>> {
         let n_sims = self.n_sims();
-        if n_years == 0 || n_sims % n_years != 0 {
+        if n_years == 0 || !n_sims.is_multiple_of(n_years) {
             return Err(Error::Data(format!(
                 "{n_years} years do not divide {n_sims} simulations"
             )));

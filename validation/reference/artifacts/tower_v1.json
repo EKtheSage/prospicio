@@ -1,0 +1,120 @@
+{
+  "format": "risk_rs.tower",
+  "format_version": 1,
+  "stages": [
+    [
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": "inf",
+        "attachment": 0.0,
+        "basis": "loss",
+        "limit": "inf",
+        "loss_corridor": {
+          "lower": 1000000.0,
+          "retained": 0.5,
+          "upper": 3000000.0
+        },
+        "name": "QS",
+        "premium": 6000000.0,
+        "pro_rata_time": false,
+        "profit_commission": {
+          "allowance": 0.35,
+          "share": 0.15
+        },
+        "reinstatement_rates": [],
+        "share": 0.3,
+        "sliding_scale": [
+          [
+            0.35,
+            0.55
+          ],
+          [
+            0.3,
+            0.6
+          ],
+          [
+            0.2,
+            0.75
+          ]
+        ]
+      },
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": 20000000.0,
+        "attachment": 0.0,
+        "basis": "surplus",
+        "limit": "inf",
+        "lines": 4.0,
+        "name": "surplus",
+        "premium": 0.0,
+        "pro_rata_time": false,
+        "reinstatement_rates": [],
+        "retention": 1000000.0,
+        "share": 1.0
+      }
+    ],
+    [
+      {
+        "aggregate_deductible": 500000.0,
+        "aggregate_limit": 6000000.0,
+        "attachment": 1000000.0,
+        "basis": "loss",
+        "ceding_commission": 0.1,
+        "limit": 2000000.0,
+        "name": "2x1",
+        "premium": 300000.0,
+        "pro_rata_time": true,
+        "reinstatement_rates": [
+          1.0,
+          0.5
+        ],
+        "share": 0.6
+      },
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": 15000000.0,
+        "attachment": 3000000.0,
+        "basis": "loss",
+        "limit": 5000000.0,
+        "name": "free",
+        "premium": 0.0,
+        "pro_rata_time": false,
+        "reinstatement_rates": [],
+        "share": 1.0,
+        "swing": {
+          "basic": 100000.0,
+          "lcm": 1.25,
+          "maximum": 2000000.0,
+          "minimum": 200000.0
+        }
+      },
+      {
+        "aggregate_deductible": 0.0,
+        "aggregate_limit": 20.0,
+        "allocation": "pro_rata",
+        "attachment": 5.0,
+        "basis": "loss",
+        "limit": 10.0,
+        "name": "pro rata",
+        "premium": 0.0,
+        "pro_rata_time": false,
+        "reinstatement_rates": [],
+        "share": 1.0
+      }
+    ],
+    [
+      {
+        "aggregate_deductible": 20000000.0,
+        "aggregate_limit": "inf",
+        "attachment": 0.0,
+        "basis": "loss",
+        "limit": "inf",
+        "name": "SL",
+        "premium": 0.0,
+        "pro_rata_time": false,
+        "reinstatement_rates": [],
+        "share": 1.0
+      }
+    ]
+  ]
+}

@@ -87,14 +87,14 @@ pub fn target_encode(
             });
         }
     }
-    if let Some(e) = exposure {
-        if e.len() != n {
-            return Err(Error::InvalidParameter {
-                name: "exposure",
-                value: e.len() as f64,
-                reason: "must have one value per row",
-            });
-        }
+    if let Some(e) = exposure
+        && e.len() != n
+    {
+        return Err(Error::InvalidParameter {
+            name: "exposure",
+            value: e.len() as f64,
+            reason: "must have one value per row",
+        });
     }
     if !(k.is_finite() && k >= 0.0) {
         return Err(Error::InvalidParameter {

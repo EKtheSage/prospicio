@@ -295,7 +295,11 @@ impl Gpd {
                 let mut pow = 1.0;
                 for k in 3..40 {
                     let k = k as f64;
-                    let sign = if k as u32 % 2 == 0 { 1.0 } else { -1.0 };
+                    let sign = if (k as u32).is_multiple_of(2) {
+                        1.0
+                    } else {
+                        -1.0
+                    };
                     sum += sign * (k - 1.0) * (k - 2.0) / k * pow;
                     pow *= s;
                 }

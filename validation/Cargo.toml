@@ -25,6 +25,52 @@ prospicio-nn = { path = "../crates/prospicio-nn", default-features = false }
 prospicio-pricing.workspace = true
 prospicio-prob = { workspace = true, features = ["arrow"] }
 rayon.workspace = true
+# The frozen artifacts' documents (artifacts.rs).
+serde_json.workspace = true
+
+[package.metadata.bayes-shards]
+# CI's `bayes` job runs the slow Bayesian targets (the [[test]] entries
+# below that require `slow-bayes`) in three legs at once (#824). Each slow
+# target is named in exactly one leg; validation/scripts/bayes_shards.py
+# fails the job otherwise, so a new parity file names its leg here. Legs are
+# balanced by the run times of a pull request's smoke run (the two largest,
+# reserving_compartmental_one_year and reserving_bayes_hierarchical_bf, in
+# legs a and b); `unit-tests` names the leg that also runs
+# prospicio-reserving's NUTS unit tests (`slow-tests`).
+a = [
+    "reserving_compartmental_one_year",
+    "reserving_bayes_one_year_moment_match",
+    "reserving_meyers",
+    "reserving_meyers_cay",
+    "reserving_meyers_segments",
+    "reserving_meyers_one_year",
+    "reserving_calibration_meyers",
+    "reserving_bayes_bf",
+    "reserving_bayes_bf_normalised",
+    "reserving_bayes_bf_one_year",
+    "reserving_bayes_excess_prior",
+    "reserving_bayes_new_year",
+]
+b = [
+    "reserving_bayes_hierarchical_bf",
+    "reserving_bayes_hierarchical_bf_one_year",
+    "reserving_bayes_one_year_conformance",
+    "reserving_bayes",
+    "reserving_bayes_segments",
+    "reserving_bayes_one_year",
+    "reserving_bayes_loss_ratio_draws",
+    "reserving_bayes_pattern_draws",
+]
+c = [
+    "reserving_compartmental",
+    "reserving_compartmental_incurred",
+    "reserving_compartmental_one_response",
+    "reserving_compartmental_grain",
+    "reserving_compartmental_subannual",
+    "reserving_compartmental_gm2",
+    "reserving_compartmental_segments",
+]
+unit-tests = "c"
 
 [features]
 # The Bayesian (NUTS) parity tests: about 220 s in a debug build and 17 s in
@@ -34,8 +80,8 @@ rayon.workspace = true
 #   cargo test --release -p prospicio-validation --features slow-bayes \
 #     --test 'reserving_bayes*' --test 'reserving_meyers*' \
 #     --test 'reserving_compartmental*'
-# A new Bayesian parity file gets a [[test]] entry below, and nothing else:
-# the CI job reads this list.
+# A new Bayesian parity file gets a [[test]] entry below and a leg in
+# [package.metadata.bayes-shards] above: the CI job reads both.
 # The slowest arms (the Meyers and compartmental one-year views) run a
 # smoke version (Meyers' CRC, compartmental model 1 without its refit
 # comparison) unless RISK_RS_FULL_BAYES is set, as CI's
