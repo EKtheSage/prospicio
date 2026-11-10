@@ -2014,3 +2014,28 @@ fn the_one_year_view_runs_at_most_2000_simulations_by_default() {
     assert_eq!(Meyers::default().one_year_sims(&more), 10_000);
     assert_eq!(small.one_year_sims(&more), 10_000);
 }
+
+/// Bit-exact on CI's Linux runner (#841; the doc of `bayes::pins` says what to
+/// do when the hash moves): CRC on group 353's paid triangle, two chains of 100
+/// warm-up and 50 kept draws, 100 simulations.
+#[test]
+#[cfg_attr(
+    not(feature = "slow-tests"),
+    ignore = "samples with NUTS; needs --features slow-tests"
+)]
+fn the_fit_is_pinned_on_linux() {
+    let model = Meyers {
+        sampler: Sampler {
+            chains: 2,
+            tune: 100,
+            draws: 50,
+            ..quick(MeyersModel::Crc, 841).sampler
+        },
+        n_sims: 100,
+        ..quick(MeyersModel::Crc, 841)
+    };
+    crate::bayes::pins::check("Meyers", 0, || {
+        let fit = model.fit(&comauto(), "paid", "premium").unwrap();
+        crate::bayes::pins::fit_hash(&fit.posterior, &fit.reserves)
+    });
+}

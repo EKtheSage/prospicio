@@ -1681,4 +1681,29 @@ mod tests {
             "{e}"
         );
     }
+
+    /// Bit-exact on CI's Linux runner (#841; the doc of `bayes::pins` says what
+    /// to do when the hash moves): GenIns with its premium, a-priori 0.5 with
+    /// cv 0.2, two chains of 100 warm-up and 50 kept draws, 100 simulations.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_fit_is_pinned_on_linux() {
+        let model = BayesBf {
+            sampler: Sampler {
+                chains: 2,
+                tune: 100,
+                draws: 50,
+                ..quick(841).sampler
+            },
+            n_sims: 100,
+            ..quick(841)
+        };
+        crate::bayes::pins::check("BayesBf", 0, || {
+            let fit = model.fit(&genins(), "values", "premium").unwrap();
+            crate::bayes::pins::fit_hash(&fit.posterior, &fit.reserves)
+        });
+    }
 }

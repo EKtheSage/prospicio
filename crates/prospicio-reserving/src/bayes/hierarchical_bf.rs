@@ -3165,4 +3165,30 @@ mod tests {
             a.warnings
         );
     }
+
+    /// Bit-exact on CI's Linux runner (#841; the doc of `bayes::pins` says what
+    /// to do when the hash moves): the three small programs of
+    /// `three_programs`, two chains of 100 warm-up and 50 kept draws, 100
+    /// simulations.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_fit_is_pinned_on_linux() {
+        let model = HierarchicalBf {
+            sampler: Sampler {
+                chains: 2,
+                tune: 100,
+                draws: 50,
+                ..quick(841).sampler
+            },
+            n_sims: 100,
+            ..quick(841)
+        };
+        crate::bayes::pins::check("HierarchicalBf", 0, || {
+            let fit = model.fit(&three_programs(), "values", "premium").unwrap();
+            crate::bayes::pins::fit_hash(&fit.posterior, &fit.reserves)
+        });
+    }
 }

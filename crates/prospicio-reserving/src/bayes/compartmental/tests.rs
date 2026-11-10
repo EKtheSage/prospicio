@@ -4010,3 +4010,30 @@ fn the_one_year_view_over_segments_reaches_the_rank_correlation() {
         assert_eq!(a.pareto_k, b.pareto_k);
     }
 }
+
+/// Bit-exact on CI's Linux runner (#841; the doc of `bayes::pins` says what to
+/// do when the hash moves): model 1 on company 337 (paid and incurred, 1997's
+/// premium), two chains of 100 warm-up and 50 kept draws, 100 simulations.
+#[test]
+#[cfg_attr(
+    not(feature = "slow-tests"),
+    ignore = "samples with NUTS; needs --features slow-tests"
+)]
+fn the_fit_is_pinned_on_linux() {
+    let model = Compartmental {
+        sampler: Sampler {
+            chains: 2,
+            tune: 100,
+            draws: 50,
+            ..quick(841).sampler
+        },
+        n_sims: 100,
+        ..quick(841)
+    };
+    crate::bayes::pins::check("Compartmental", 0, || {
+        let fit = model
+            .fit(&triangle(true), "paid", incurred(), "premium")
+            .unwrap();
+        crate::bayes::pins::fit_hash(&fit.posterior, &fit.reserves)
+    });
+}
