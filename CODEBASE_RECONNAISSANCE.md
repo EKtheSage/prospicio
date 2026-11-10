@@ -795,6 +795,7 @@ Filed on 2026-11-09 (#848 to #851 on a later request, to test further CI speed-u
 | [#849](https://github.com/EKtheSage/prospicio/issues/849) | P1 | CI | R test files four at a time | 6.2 |
 | [#850](https://github.com/EKtheSage/prospicio/issues/850) | P2 | CI | Guide and notebook tests in their own job leg | 6.2 |
 | [#851](https://github.com/EKtheSage/prospicio/issues/851) | P3 | CI | Test binaries built with line tables only | 6.3 B2 |
+| [#853](https://github.com/EKtheSage/prospicio/issues/853) | P1 | Shared | Parallel pull requests conflict in the knowledge indexes, test files and lane files | 4.4 |
 
 Findings with no issue (typed errors, the `RISK_RS_*` rename, the 21.8k-line binding file, platform-independent `exp`/`ln`, buffer exchange, a `prospicio-bayes` split) are listed in #822.
 
