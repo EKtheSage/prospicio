@@ -761,6 +761,20 @@ fn tsallis_and_gini_match_aggregate() {
     });
 }
 
+/// Which discrete probabilities `aggregate` 2.1.0 builds and refuses (#774,
+/// `validation/scripts/aggregate_discrete_inputs.py`): `dsev` sums within
+/// numpy's `isclose` of 1, as `Discrete::new`.
+#[test]
+fn discrete_inputs_are_refused_as_aggregate_refuses_them() {
+    use prospicio_prob::Discrete;
+    check(&reference("discrete_inputs_aggregate.csv"), |c| {
+        let probs = vec![c.param("params", "p1"), c.param("params", "p2")];
+        Some(f64::from(u8::from(
+            Discrete::new(vec![1.0, 2.0], probs).is_ok(),
+        )))
+    });
+}
+
 /// The Tweedie conversions against `aggregate` 2.1.0's `TweedieConversion`
 /// (#775, `validation/scripts/aggregate_tweedie.py`); each law is also
 /// rebuilt from its mean, cv and dispersion by `from_cv_dispersion`.

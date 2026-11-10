@@ -16,9 +16,14 @@ pub(crate) struct DiscreteDist {
 
 #[extendr]
 impl DiscreteDist {
-    fn new(values: &[f64], probs: &[f64]) -> Result<Self> {
+    fn new(values: &[f64], probs: &[f64], normalize: bool) -> Result<Self> {
+        let inner = if normalize {
+            Discrete::normalized(values.to_vec(), probs.to_vec())
+        } else {
+            Discrete::new(values.to_vec(), probs.to_vec())
+        };
         Ok(Self {
-            inner: Discrete::new(values.to_vec(), probs.to_vec()).map_err(to_r)?,
+            inner: inner.map_err(to_r)?,
         })
     }
 

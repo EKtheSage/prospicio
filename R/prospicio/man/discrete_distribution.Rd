@@ -7,7 +7,7 @@
 \alias{return_periods}
 \title{Distribution on finitely many values, of either sign}
 \usage{
-discrete_distribution(values, probs, ptr = NULL)
+discrete_distribution(values, probs, normalize = FALSE, ptr = NULL)
 
 discrete_skewness(dist)
 
@@ -18,7 +18,9 @@ return_periods(dist, periods = NULL)
 \arguments{
 \item{values}{Numeric values.}
 
-\item{probs}{Non-negative probabilities with a positive total.}
+\item{probs}{Non-negative probabilities summing to 1 within \code{1e-5}.}
+
+\item{normalize}{Divide \code{probs} by their sum first.}
 
 \item{ptr}{Internal.}
 
@@ -39,8 +41,9 @@ Probabilities \code{probs} on \code{values}, any sign and any spacing: a row of 
 P&L (premium less loss less expenses) or any other signed outcome, as the
 Python package \code{aggregate}'s \code{GridDistribution} on an irregular support.
 Values may repeat and come in any order: equal values (to \code{1e-12}) are
-merged, zero probabilities dropped, and the probabilities rescaled to sum
-to 1.
+merged and zero probabilities dropped. The probabilities must sum to 1
+within \code{1e-5} (\code{aggregate} 2.1.0's rule for \code{dsev}); \code{normalize = TRUE}
+rescales weights or counts of any positive total.
 }
 \details{
 Supports \code{\link[=mean]{mean()}}, \code{\link[=variance]{variance()}}, \code{\link[=cdf]{cdf()}}, \code{\link[=survival]{survival()}}, \code{\link[=pmf]{pmf()}},

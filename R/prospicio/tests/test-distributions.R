@@ -171,7 +171,11 @@ stopifnot(abs(TVaR(m, 0.01) - 5.242424242424243) < 1e-12, is.na(quantile_upper(m
 stopifnot(abs(cdf(m, 4) - 0.36) < 1e-15, abs(pmf(m, 6) - 0.3) < 1e-15, abs(survival(m, 4) - 0.64) < 1e-15)
 rp <- return_periods(m)
 stopifnot(abs(rp$p[1] - 0.001) < 1e-15, rp$var[1] == 1, rp$period[1] == 1000)
-d <- discrete_distribution(c(3.1, 3.0999999999999996, -2, 9), c(1, 1, 2, 0))
+d <- discrete_distribution(c(3.1, 3.0999999999999996, -2, 9), c(1, 1, 2, 0), normalize = TRUE)
+# aggregate 2.1.0's rule for dsev: the probabilities sum to 1 within 1e-5.
+stopifnot(abs(sum(discrete_distribution(c(1, 2), c(0.5, 0.499991))@probs) - 1) < 1e-15)
+stopifnot(inherits(try(discrete_distribution(c(1, 2), c(0.5, 0.48)), silent = TRUE), "try-error"))
+stopifnot(inherits(try(fixed_count(2.5), silent = TRUE), "try-error"))
 stopifnot(length(d@values) == 2, identical(d@probs, c(0.5, 0.5)), is.na(discrete_skewness(discrete_distribution(-4.5, 1))))
 stopifnot(inherits(try(discrete_distribution(1, 0), silent = TRUE), "try-error"))
 

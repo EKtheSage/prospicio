@@ -73,11 +73,14 @@ impl Discrete {
     /// The distribution putting probability `probs[i]` on `values[i]`.
     /// Values may repeat (and come in any order); equal values (to `1e-12`)
     /// are merged at the smallest of them, and zero probabilities dropped.
-    /// The probabilities are rescaled to sum to 1, unless they already do to
-    /// `1e-12`.
+    /// The probabilities must sum to 1 within `1e-5` (`|sum - 1| ≤ 1e-8 +
+    /// 1e-5`, numpy's `isclose`), as `aggregate` 2.1.0 requires of `dsev`; they are then rescaled to sum to 1, unless they
+    /// already do to `1e-12`. To rescale probabilities that sum to anything
+    /// else (weights or counts), use [`normalized`](Self::normalized).
     ///
     /// Fails if the lengths differ, a value or probability is not finite, a
-    /// probability is negative, or no probability is positive.
+    /// probability is negative, no probability is positive, or the
+    /// probabilities sum to more than `1e-5` away from 1.
     ///
     /// ```
     /// use prospicio_prob::{Discrete, Distribution};
@@ -92,6 +95,25 @@ impl Discrete {
     /// assert_eq!(m.quantile(0.01).unwrap(), 1.0); // the 1-in-100 bad year
     /// ```
     pub fn new(values: Vec<f64>, probs: Vec<f64>) -> Result<Self> {
+        Self::from_atoms(values, probs, false)
+    }
+
+    /// [`new`](Self::new) with the probabilities divided by their sum, so
+    /// weights or counts of any positive total are accepted.
+    ///
+    /// ```
+    /// use prospicio_prob::{Discrete, Distribution};
+    ///
+    /// // Claim counts of 1, 2 and 4 seen 5, 3 and 2 times.
+    /// let d = Discrete::normalized(vec![1.0, 2.0, 4.0], vec![5.0, 3.0, 2.0]).unwrap();
+    /// assert_eq!(d.probs(), &[0.5, 0.3, 0.2]);
+    /// assert!(Discrete::new(vec![1.0, 2.0, 4.0], vec![5.0, 3.0, 2.0]).is_err());
+    /// ```
+    pub fn normalized(values: Vec<f64>, probs: Vec<f64>) -> Result<Self> {
+        Self::from_atoms(values, probs, true)
+    }
+
+    fn from_atoms(values: Vec<f64>, probs: Vec<f64>, rescale: bool) -> Result<Self> {
         if values.len() != probs.len() {
             return Err(Error::Data(format!(
                 "{} values but {} probabilities",
@@ -132,6 +154,13 @@ impl Discrete {
             }
         }
         let total: f64 = merged.iter().map(|a| a.1).sum();
+        // numpy's isclose(total, 1) at its defaults, as aggregate tests it.
+        if !rescale && (total - 1.0).abs() > 1e-8 + 1e-5 {
+            return Err(Error::Data(format!(
+                "probabilities sum to {total}; they must sum to 1 within 1e-5 (rescale weights \
+                 on purpose with Discrete::normalized)"
+            )));
+        }
         // Probabilities already summing to 1 are kept as given, as
         // aggregate keeps them: rescaling them again moves a cumulative 0.1
         // to 0.09999999999999999, across a quantile's jump.
@@ -330,7 +359,7 @@ mod tests {
 
     #[test]
     fn values_are_merged_sorted_and_rescaled() {
-        let d = Discrete::new(
+        let d = Discrete::normalized(
             vec![3.1, -2.0, 3.0999999999999996, 0.0],
             vec![1.0, 2.0, 1.0, 0.0],
         )
@@ -339,6 +368,23 @@ mod tests {
         assert_eq!(d.probs(), &[0.5, 0.5]);
         assert_eq!(d.pmf(3.1), 0.5);
         assert_eq!(d.pmf(0.0), 0.0);
+    }
+
+    #[test]
+    fn probabilities_must_sum_to_one_within_aggregate_s_bound() {
+        // aggregate 2.1.0 builds dsev [1 2] [.5 .499991] and refuses [.5 .48].
+        let d = Discrete::new(vec![1.0, 2.0], vec![0.5, 0.499991]).unwrap();
+        assert!((d.probs().iter().sum::<f64>() - 1.0).abs() < 1e-15);
+        assert!(Discrete::new(vec![1.0, 2.0], vec![0.5, 0.500009]).is_ok());
+        let e = Discrete::new(vec![1.0, 2.0], vec![0.5, 0.48]).unwrap_err();
+        assert!(e.to_string().contains("0.98"), "{e}");
+        assert!(Discrete::new(vec![1.0, 2.0], vec![0.5, 0.49998]).is_err());
+        assert_eq!(
+            Discrete::normalized(vec![1.0, 2.0], vec![0.5, 0.48])
+                .unwrap()
+                .probs()[0],
+            0.5 / 0.98
+        );
     }
 
     #[test]
@@ -361,7 +407,7 @@ mod tests {
 
     #[test]
     fn a_lone_atom_and_bad_input() {
-        let d = Discrete::new(vec![-4.5], vec![2.0]).unwrap();
+        let d = Discrete::normalized(vec![-4.5], vec![2.0]).unwrap();
         assert_eq!(d.tvar(0.3).unwrap(), -4.5);
         assert_eq!(d.skewness(), None);
         assert!(Discrete::new(vec![1.0], vec![0.0]).is_err());

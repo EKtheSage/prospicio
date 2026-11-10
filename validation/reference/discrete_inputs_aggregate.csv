@@ -1,0 +1,10 @@
+distribution,params,quantity,arg,arg2,expected,abs_tol,rel_tol,source
+dsev,p1=0.5;p2=0.5,builds,,,1.0,0.0,0.0,aggregate 2.1.0
+dsev,p1=0.5;p2=0.49999,builds,,,1.0,0.0,0.0,aggregate 2.1.0
+dsev,p1=0.5;p2=0.499991,builds,,,1.0,0.0,0.0,aggregate 2.1.0
+dsev,p1=0.5;p2=0.5000099,builds,,,1.0,0.0,0.0,aggregate 2.1.0
+dsev,p1=0.5;p2=0.500011,builds,,,0.0,0.0,0.0,aggregate 2.1.0
+dsev,p1=0.5;p2=0.49998,builds,,,0.0,0.0,0.0,aggregate 2.1.0
+dsev,p1=0.5;p2=0.48,builds,,,0.0,0.0,0.0,aggregate 2.1.0
+dsev,p1=0.5;p2=0.52,builds,,,0.0,0.0,0.0,aggregate 2.1.0
+dsev,p1=0.5;p2=1.5,builds,,,0.0,0.0,0.0,aggregate 2.1.0

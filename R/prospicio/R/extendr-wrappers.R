@@ -881,7 +881,7 @@ NegativeBinomial$sample <- function(n, seed, stream) .Call(wrap__NegativeBinomia
 
 DiscreteDist <- new.env(parent = emptyenv())
 
-DiscreteDist$new <- function(values, probs) .Call(wrap__DiscreteDist__new, values, probs)
+DiscreteDist$new <- function(values, probs, normalize) .Call(wrap__DiscreteDist__new, values, probs, normalize)
 
 DiscreteDist$values <- function() .Call(wrap__DiscreteDist__values, self)
 
