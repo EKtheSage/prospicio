@@ -1747,14 +1747,18 @@ mod tests {
         // The share of draws below a point is its cdf.
         let point = [0.6, 0.4, 0.7];
         let below = u
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .filter(|row| row.iter().zip(&point).all(|(x, p)| x <= p))
             .count() as f64
             / n as f64;
         assert!((below - c.cdf(&point).unwrap()).abs() < 2e-3, "{below}");
         // The normal scores' correlation.
         let z: Vec<[f64; 3]> = u
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|r| {
                 [
                     norm_quantile(r[0]),

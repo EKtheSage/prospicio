@@ -1920,7 +1920,7 @@ fn model_2_fits_and_predicts_increments() {
         .paid
         .draw_matrix()
         .chunks_exact(n)
-        .zip(fit.reserves.draw_matrix().chunks_exact(10))
+        .zip(fit.reserves.draw_matrix().as_chunks::<10>().0)
     {
         for j in 0..n {
             let (KeyValue::Period(o), KeyValue::Int(age)) = (&keys[j][0], &keys[j][1]) else {
@@ -1953,7 +1953,7 @@ fn the_prior_predictive_paths_of_model_2() {
     // The increments are positive, so cumulative paid grows with age in
     // every draw.
     let draws = paths.paid.draw_matrix();
-    for row in draws.chunks_exact(100) {
+    for row in draws.as_chunks::<100>().0 {
         for i in 0..10 {
             for k in 1..10 {
                 assert!(row[10 * i + k] > row[10 * i + k - 1]);
@@ -2686,7 +2686,7 @@ fn the_prior_check_draws_the_quarterly_square() {
     );
     // Every path starts at 0 and the paid rises along each origin.
     let draws = paths.paid.draw_matrix();
-    for row in draws.chunks_exact(100) {
+    for row in draws.as_chunks::<100>().0 {
         for i in 0..5 {
             let r = &row[i * 20..(i + 1) * 20];
             assert!(r.windows(2).all(|w| w[1] >= w[0]), "{r:?}");
