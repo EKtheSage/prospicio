@@ -4047,3 +4047,41 @@ fn the_fit_is_pinned_on_linux() {
         }
     });
 }
+
+/// PSIS-LOO of the fit in `the_fit_is_pinned_on_linux`, bit for bit (#842): the elpd
+/// with its standard error, the pointwise terms and each cell's Pareto k,
+/// and its outstanding and paid sums.
+/// The Linux hash is still 0: CI's `bayes` job prints the value to pin
+/// as `PIN Compartmental-loo actual 0x...`.
+#[test]
+#[cfg_attr(
+    not(feature = "slow-tests"),
+    ignore = "samples with NUTS; needs --features slow-tests"
+)]
+fn the_loo_is_pinned_on_linux() {
+    let model = Compartmental {
+        sampler: Sampler {
+            chains: 2,
+            tune: 100,
+            draws: 50,
+            ..quick(841).sampler
+        },
+        n_sims: 100,
+        ..quick(841)
+    };
+    crate::bayes::pins::check("Compartmental-loo", 0, || {
+        let fit = model
+            .fit(&triangle(true), "paid", incurred(), "premium")
+            .unwrap();
+        let loo = fit.loo().unwrap();
+        let h = crate::bayes::pins::loo_hash(&loo.loo);
+        crate::bayes::pins::bits_hash_from(
+            h,
+            &[
+                loo.n_outstanding as f64,
+                loo.elpd_outstanding,
+                loo.elpd_paid,
+            ],
+        )
+    });
+}

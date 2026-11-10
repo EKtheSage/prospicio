@@ -16,7 +16,12 @@
 //!
 //! The failing assertion, and every run with `--nocapture`, prints
 //! `PIN <model> actual 0x<16 hex digits>`, the value to paste.
+//!
+//! The PSIS-LOO pins (`PIN <model>-loo`, #842) hash each model's `loo` on
+//! the same fit. Until CI's `bayes` job has printed their Linux values they
+//! expect 0, so that job fails on them and prints the value to paste.
 
+use prospicio_bayes::elpd::Loo;
 use prospicio_bayes::nuts::PosteriorDraws;
 use prospicio_prob::PredictiveDistribution;
 
@@ -38,6 +43,16 @@ pub(crate) fn bits_hash_from(h: u64, values: &[f64]) -> u64 {
 /// The hash of a fit's posterior draws, then its reserve simulations.
 pub(crate) fn fit_hash(posterior: &PosteriorDraws, reserves: &PredictiveDistribution) -> u64 {
     bits_hash_from(bits_hash(posterior.values()), reserves.draw_matrix())
+}
+
+/// The hash of a PSIS-LOO result: the estimate's elpd, standard error,
+/// effective number of parameters, information criterion and pointwise
+/// terms, then each observation's Pareto k and the threshold.
+pub(crate) fn loo_hash(loo: &Loo) -> u64 {
+    let e = &loo.estimate;
+    let h = bits_hash(&[e.elpd, e.se, e.p, e.ic, loo.k_threshold]);
+    let h = bits_hash_from(h, &e.pointwise);
+    bits_hash_from(h, &loo.pareto_k)
 }
 
 /// Whether this build asserts the pinned hashes: CI's `bayes` job, a

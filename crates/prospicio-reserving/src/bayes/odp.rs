@@ -2430,6 +2430,35 @@ mod tests {
         });
     }
 
+    /// PSIS-LOO bit for bit (#842): the elpd with its standard error, the
+    /// pointwise terms and each cell's Pareto k, of a fit with the settings
+    /// of `the_fit_is_pinned_on_linux` on GenIns (RAA has a negative
+    /// increment and no LOO).
+    /// The Linux hash is still 0: CI's `bayes` job prints the value to pin
+    /// as `PIN BayesOdp-loo actual 0x...`.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_loo_is_pinned_on_linux() {
+        let model = BayesOdp {
+            sampler: Sampler {
+                chains: 2,
+                tune: 100,
+                draws: 50,
+                ..Sampler::default()
+            },
+            n_sims: 100,
+            seed: 841,
+            ..BayesOdp::default()
+        };
+        pins::check("BayesOdp-loo", 0, || {
+            let fit = model.fit(&genins(), "values").unwrap();
+            pins::loo_hash(&fit.loo().unwrap())
+        });
+    }
+
     /// Seed-pinned one-year views, bit for bit: a change to the engine
     /// (decision 17) must leave them unchanged. The hashes were captured on
     /// Windows x86_64 (MSVC); another platform's `exp` and `ln` round

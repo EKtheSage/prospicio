@@ -3016,4 +3016,30 @@ mod tests {
             crate::bayes::pins::fit_hash(&fit.posterior, &fit.reserves)
         });
     }
+
+    /// PSIS-LOO of the fit in `the_fit_is_pinned_on_linux`, bit for bit (#842): the elpd
+    /// with its standard error, the pointwise terms and each cell's Pareto k.
+    /// The Linux hash is still 0: CI's `bayes` job prints the value to pin
+    /// as `PIN BayesBfNormalised-loo actual 0x...`.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_loo_is_pinned_on_linux() {
+        let model = BayesBfNormalised {
+            sampler: Sampler {
+                chains: 2,
+                tune: 100,
+                draws: 50,
+                ..quick(841).sampler
+            },
+            n_sims: 100,
+            ..quick(841)
+        };
+        crate::bayes::pins::check("BayesBfNormalised-loo", 0, || {
+            let fit = model.fit(&genins(), "values", "premium").unwrap();
+            crate::bayes::pins::loo_hash(&fit.loo().unwrap())
+        });
+    }
 }
