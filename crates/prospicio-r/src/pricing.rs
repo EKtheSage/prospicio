@@ -1487,13 +1487,24 @@ fn pricing_pattern_unpaid(times: &[f64], shares: &[f64], age: f64) -> Result<Lis
     ))
 }
 
+/// The error for the old name of the unpaid-share reading (#839).
+fn renamed() -> Error {
+    Error::Other(
+        "interpolation \"log-linear\" is now \"log_linear_unpaid\": the unpaid share falls \
+         geometrically, a different curve from the reserving patterns' log-linear reading of \
+         the factors"
+            .into(),
+    )
+}
+
 fn interpolation_arg(s: &str) -> Result<PaidInterpolation> {
     match s {
         "step" => Ok(PaidInterpolation::Step),
         "linear" => Ok(PaidInterpolation::Linear),
-        "log-linear" => Ok(PaidInterpolation::LogLinear),
+        "log_linear_unpaid" => Ok(PaidInterpolation::LogLinearUnpaid),
+        "log-linear" => Err(renamed()),
         other => Err(Error::Other(format!(
-            "unknown interpolation {other:?}; use \"step\", \"linear\" or \"log-linear\""
+            "unknown interpolation {other:?}; use \"step\", \"linear\" or \"log_linear_unpaid\""
         ))),
     }
 }

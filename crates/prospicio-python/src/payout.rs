@@ -12,13 +12,23 @@ use crate::pricing::{PyPrice, premium_rule};
 use crate::risk::PyDistortion;
 use crate::to_py;
 
+/// The error for the old name of the unpaid-share reading (#839).
+fn renamed() -> PyErr {
+    PyValueError::new_err(
+        "interpolation \"log-linear\" is now \"log_linear_unpaid\": the unpaid share \
+         falls geometrically, a different curve from the reserving patterns' log-linear \
+         reading of the factors",
+    )
+}
+
 pub(crate) fn interpolation_arg(s: &str) -> PyResult<Interpolation> {
     match s {
         "step" => Ok(Interpolation::Step),
         "linear" => Ok(Interpolation::Linear),
-        "log-linear" => Ok(Interpolation::LogLinear),
+        "log_linear_unpaid" => Ok(Interpolation::LogLinearUnpaid),
+        "log-linear" => Err(renamed()),
         other => Err(PyValueError::new_err(format!(
-            "unknown interpolation {other:?}; use \"step\", \"linear\" or \"log-linear\""
+            "unknown interpolation {other:?}; use \"step\", \"linear\" or \"log_linear_unpaid\""
         ))),
     }
 }
@@ -51,7 +61,7 @@ pub(crate) fn interpolation_arg(s: &str) -> PyResult<Interpolation> {
 ///     is the patterns' (at least the commutation month plus the buffer).
 /// pattern : PaymentPattern
 /// policy_months : int, default 12
-/// interpolation : {"linear", "step", "log-linear"}, default "linear"
+/// interpolation : {"linear", "step", "log_linear_unpaid"}, default "linear"
 /// accident_period : {"year", "quarter", "month"}, optional
 /// reading : {"weibull", "loglogistic", "ln-linear"}, default "weibull"
 ///
@@ -283,7 +293,7 @@ impl PyPaymentPattern {
     /// The share paid by time ``t`` in years, read between the pattern's
     /// times by ``interpolation``: ``"step"`` (each share paid at its
     /// time), ``"linear"`` (evenly over the period ending at it) or
-    /// ``"log-linear"`` (the unpaid share falling geometrically).
+    /// ``"log_linear_unpaid"`` (the unpaid share falling geometrically).
     ///
     /// Examples
     /// --------

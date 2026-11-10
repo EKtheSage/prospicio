@@ -8,14 +8,14 @@
 payment_pattern_monthly(
   pattern,
   months,
-  interpolation = c("linear", "step", "log-linear")
+  interpolation = c("linear", "step", "log_linear_unpaid")
 )
 
 cashflow_patterns_from_annual(
   written,
   pattern,
   policy_months = 12,
-  interpolation = c("linear", "step", "log-linear"),
+  interpolation = c("linear", "step", "log_linear_unpaid"),
   accident_period = NULL,
   reading = c("weibull", "loglogistic", "ln-linear")
 )
@@ -26,7 +26,7 @@ cashflow_patterns_from_annual(
 
 \item{months}{The number of months.}
 
-\item{interpolation}{\code{"linear"}, \code{"step"} or \code{"log-linear"}.}
+\item{interpolation}{\code{"linear"}, \code{"step"} or \code{"log_linear_unpaid"}.}
 
 \item{written}{The cumulative share written by the end of each month; its
 length is the patterns'.}
@@ -51,7 +51,7 @@ each of \code{months} months, the share paid by \code{(m + 1) / 12} years: at mo
 Between the pattern's times the share paid runs as \code{interpolation} says:
 \code{"step"} (each share paid at its time, as the pattern discounts),
 \code{"linear"} (evenly over the period ending at it, the usual assumption)
-or \code{"log-linear"} (the unpaid share falling geometrically). After the
+or \code{"log_linear_unpaid"} (the unpaid share falling geometrically). After the
 last time all is paid, as the shares, any tail included, sum to 1.
 }
 \details{

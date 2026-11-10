@@ -33,9 +33,12 @@ pub enum Interpolation {
     /// from the previous time (or 0): the usual assumption.
     #[default]
     Linear,
-    /// The share unpaid falls geometrically over each period; linear in a
-    /// period that ends with nothing unpaid.
-    LogLinear,
+    /// The share unpaid falls geometrically over each period (`ln(1 - F)`
+    /// linear in time); linear in a period that ends with nothing unpaid.
+    /// Named for the unpaid share (#839): the reserving crate's log-linear
+    /// reading makes `ln` of the development factor linear in age, another
+    /// curve.
+    LogLinearUnpaid,
 }
 
 /// The share of the ultimate loss paid at each time, in years from the
@@ -241,7 +244,7 @@ impl PaymentPattern {
     /// assert!((p.paid_by(1.5, Interpolation::Linear) - 0.8).abs() < 1e-15);
     /// // Unpaid 1 to 0.4 over the first year falls by sqrt(0.4) in half of it.
     /// let half = 1.0 - 0.4_f64.sqrt();
-    /// assert!((p.paid_by(0.5, Interpolation::LogLinear) - half).abs() < 1e-15);
+    /// assert!((p.paid_by(0.5, Interpolation::LogLinearUnpaid) - half).abs() < 1e-15);
     /// assert_eq!(p.paid_by(2.0, Interpolation::Step), 1.0);
     /// ```
     pub fn paid_by(&self, t: f64, how: Interpolation) -> f64 {
@@ -254,10 +257,10 @@ impl PaymentPattern {
                 return match how {
                     Interpolation::Step => fa,
                     Interpolation::Linear => fa + (fb - fa) * w,
-                    Interpolation::LogLinear if fb < 1.0 => {
+                    Interpolation::LogLinearUnpaid if fb < 1.0 => {
                         1.0 - (1.0 - fa) * ((1.0 - fb) / (1.0 - fa)).powf(w)
                     }
-                    Interpolation::LogLinear => fa + (fb - fa) * w,
+                    Interpolation::LogLinearUnpaid => fa + (fb - fa) * w,
                 };
             }
             a = b;
@@ -529,7 +532,7 @@ mod tests {
         for how in [
             Interpolation::Step,
             Interpolation::Linear,
-            Interpolation::LogLinear,
+            Interpolation::LogLinearUnpaid,
         ] {
             let m = p.to_monthly(72, how).unwrap();
             for (k, f) in [(1, 0.2), (2, 0.5), (3, 0.8), (5, 1.0)] {
@@ -540,7 +543,7 @@ mod tests {
         }
         // Log-linear lies above linear where the unpaid share falls.
         let lin = p.to_monthly(12, Interpolation::Linear).unwrap();
-        let log = p.to_monthly(12, Interpolation::LogLinear).unwrap();
+        let log = p.to_monthly(12, Interpolation::LogLinearUnpaid).unwrap();
         assert!(log[5] > lin[5]);
         assert!(p.to_monthly(0, Interpolation::Linear).is_err());
     }

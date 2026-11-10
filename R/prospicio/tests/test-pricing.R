@@ -802,7 +802,7 @@ local({
 # Monthly patterns from a payment pattern by development age (#601).
 local({
   p <- payment_pattern_from_development(c(1, 2, 3, 5), c(5, 2, 1.25, 1))
-  for (how in c("step", "linear", "log-linear")) {
+  for (how in c("step", "linear", "log_linear_unpaid")) {
     m <- payment_pattern_monthly(p, 72, how)
     stopifnot(max(abs(m[12 * c(1, 2, 3, 5)] - c(0.2, 0.5, 0.8, 1))) < 1e-12)
     stopifnot(all(diff(m) >= -1e-15), m[72] == 1)

@@ -27188,7 +27188,7 @@ class PaymentPattern:
         The share paid by time ``t`` in years, read between the pattern's
         times by ``interpolation``: ``"step"`` (each share paid at its
         time), ``"linear"`` (evenly over the period ending at it) or
-        ``"log-linear"`` (the unpaid share falling geometrically).
+        ``"log_linear_unpaid"`` (the unpaid share falling geometrically).
         
         Examples
         --------
@@ -38891,7 +38891,7 @@ def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_m
         is the patterns' (at least the commutation month plus the buffer).
     pattern : PaymentPattern
     policy_months : int, default 12
-    interpolation : {"linear", "step", "log-linear"}, default "linear"
+    interpolation : {"linear", "step", "log_linear_unpaid"}, default "linear"
     accident_period : {"year", "quarter", "month"}, optional
     reading : {"weibull", "loglogistic", "ln-linear"}, default "weibull"
     

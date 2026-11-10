@@ -1874,7 +1874,7 @@ pattern_values <- function(pattern, rate = 0, t = double()) {
 #' Between the pattern's times the share paid runs as `interpolation` says:
 #' `"step"` (each share paid at its time, as the pattern discounts),
 #' `"linear"` (evenly over the period ending at it, the usual assumption)
-#' or `"log-linear"` (the unpaid share falling geometrically). After the
+#' or `"log_linear_unpaid"` (the unpaid share falling geometrically). After the
 #' last time all is paid, as the shares, any tail included, sum to 1.
 #'
 #' `cashflow_patterns_from_annual()` gives the monthly written, earned and
@@ -1896,7 +1896,7 @@ pattern_values <- function(pattern, rate = 0, t = double()) {
 #' @param pattern A [payment_pattern()], by age from the accident date for
 #'   `cashflow_patterns_from_annual()`.
 #' @param months The number of months.
-#' @param interpolation `"linear"`, `"step"` or `"log-linear"`.
+#' @param interpolation `"linear"`, `"step"` or `"log_linear_unpaid"`.
 #' @param written The cumulative share written by the end of each month; its
 #'   length is the patterns'.
 #' @param policy_months The policy term in months.
@@ -1919,7 +1919,7 @@ pattern_values <- function(pattern, rate = 0, t = double()) {
 #'                         cashflow_requirement(c(outstanding = 1)))
 #' round(cashflow_run(terms, 1.3)$funded, 6)
 payment_pattern_monthly <- function(pattern, months,
-                                    interpolation = c("linear", "step", "log-linear")) {
+                                    interpolation = c("linear", "step", "log_linear_unpaid")) {
   rust_result(pricing_pattern_monthly(pattern$times, pattern$shares, as.double(months),
                                       match.arg(interpolation)))
 }
@@ -1927,7 +1927,7 @@ payment_pattern_monthly <- function(pattern, months,
 #' @rdname payment_pattern_monthly
 #' @export
 cashflow_patterns_from_annual <- function(written, pattern, policy_months = 12,
-                                          interpolation = c("linear", "step", "log-linear"),
+                                          interpolation = c("linear", "step", "log_linear_unpaid"),
                                           accident_period = NULL,
                                           reading = c("weibull", "loglogistic", "ln-linear")) {
   rust_result(pricing_patterns_from_annual(as.double(written), pattern$times, pattern$shares,

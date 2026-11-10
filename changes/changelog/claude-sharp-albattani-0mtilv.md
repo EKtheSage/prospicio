@@ -119,3 +119,12 @@
   `ElasticNet`, `BayesGlm`, `DoubleGlm`, the networks' `scale="link"`).
   R's `glm()` and statsmodels default to the canonical link, so give
   `link` when porting such a model (`Family::default_link`; #835, #852).
+
+### Breaking changes
+
+- Pricing's payment-pattern interpolation `"log-linear"` is now
+  `"log_linear_unpaid"` in Python and R (`Interpolation::LogLinearUnpaid`
+  in Rust): the unpaid share falls geometrically, a different curve from
+  the reserving patterns' log-linear reading of the development factors,
+  which keeps its name. The old name is an error that gives the new one
+  (#839, #852).

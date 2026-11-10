@@ -1347,13 +1347,16 @@ def test_layer_quote_solves_the_deposit_under_a_sliding_scale():
 def test_monthly_patterns_from_a_payment_pattern():
     """Monthly patterns from a pattern by development age (#601)."""
     p = P.PaymentPattern.from_development([1.0, 2.0, 3.0, 5.0], [5.0, 2.0, 1.25, 1.0])
-    for how in ("step", "linear", "log-linear"):
+    for how in ("step", "linear", "log_linear_unpaid"):
         m = p.to_monthly(72, how)
         for k, f in [(1, 0.2), (2, 0.5), (3, 0.8), (5, 1.0)]:
             assert m[12 * k - 1] == pytest.approx(f, abs=1e-12)
         assert all(b >= a - 1e-15 for a, b in zip(m, m[1:]))
     with pytest.raises(ValueError):
         p.to_monthly(12, "cubic")
+    # The reading was renamed for the unpaid share (#839).
+    with pytest.raises(ValueError, match="log_linear_unpaid"):
+        p.to_monthly(12, "log-linear")
     written = [min((t + 1) / 12, 1.0) for t in range(72)]
     w, e, paid = P.monthly_patterns(written, p)
     assert e[0] == pytest.approx(1 / 144, abs=1e-15)
