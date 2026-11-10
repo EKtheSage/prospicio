@@ -217,8 +217,14 @@ impl OnnxModel {
                     .downcast_ref::<String>()
                     .map(String::as_str)
                     .or_else(|| payload.downcast_ref::<&str>().copied())
-                    .unwrap_or("the parser panicked");
-                Error::Data(format!("not a readable ONNX model: {why}"))
+                    .unwrap_or("no message");
+                Error::Data(format!(
+                    "not a readable ONNX model: the ONNX parser (onnx-ir {ONNX_IR}) stopped on it \
+                     with \"{why}\"; either the file is malformed (a node with the wrong \
+                     number of inputs or outputs, an initializer whose data does not match its \
+                     dims), or it is valid ONNX that onnx-ir cannot read, which is worth \
+                     reporting with the file"
+                ))
             })?;
         let graph = parsed.map_err(|e| Error::Data(format!("not a readable ONNX model: {e}")))?;
         let inputs = graph
@@ -360,6 +366,9 @@ fn op_name(node: &Node) -> String {
     let debug = format!("{node:?}");
     debug.split('(').next().unwrap_or("?").to_string()
 }
+
+/// The onnx-ir version the parser messages name.
+const ONNX_IR: &str = "0.21";
 
 /// The prefix of a conversion error that is a malformed file, not an
 /// operator prospicio does not run.

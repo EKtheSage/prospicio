@@ -234,4 +234,9 @@ fn a_malformed_file_is_an_error_not_a_panic() {
         err.to_string().contains("not a readable ONNX model"),
         "{err}"
     );
+    // The parser's own reason is quoted.
+    assert!(
+        err.to_string().contains("MatMul node must have 2 inputs"),
+        "{err}"
+    );
 }

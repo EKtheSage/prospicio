@@ -287,12 +287,15 @@ impl Triangle {
             .collect();
 
         let shape = [index.len(), columns.len(), n_origins, n_dev];
-        let size = checked_size(&shape, n).map_err(|cells| {
+        let size = checked_size(&shape, n).map_err(|span| {
             Error::TooLarge(format!(
-                "origins from {} to {} and ages from {youngest} to {oldest} months make {cells} \
-                 cells for {n} rows; a mistyped origin or valuation spreads the grid this far",
+                "origins from {} to {} ({n_origins} {} periods) and ages from {youngest} to \
+                 {oldest} months ({n_dev} development periods) make {span} cells in each \
+                 segment's grid, for {n} rows in all; check the earliest and latest origin and \
+                 valuation, since one far from the others spreads the grid this far",
                 origins[0],
-                origins[n_origins - 1]
+                origins[n_origins - 1],
+                format!("{:?}", long.origin_grain).to_lowercase(),
             ))
         })?;
         let mut tri = Self {
@@ -1326,21 +1329,23 @@ impl Segment {
     }
 }
 
-/// The most cells a long table may ask for whatever its row count: 2^24,
-/// about 150 MB of values and mask.
+/// The most cells one segment and column's grid (origins by ages) may
+/// span whatever the row count: 2^24, about 150 MB of values and mask.
 const MAX_DENSE_CELLS: usize = 1 << 24;
 
-/// The product of `shape`, or `Err` with it (saturated) when it exceeds both
-/// [`MAX_DENSE_CELLS`] and 1,000 cells for each of the `rows` read (#832).
-/// A real triangle with gaps between origins or ages fits well within
-/// either bound; one mistyped period does not.
-fn checked_size(shape: &[usize], rows: usize) -> std::result::Result<usize, usize> {
-    let cells = shape.iter().fold(1usize, |a, &b| a.saturating_mul(b));
-    if cells > MAX_DENSE_CELLS && cells / 1000 > rows {
-        Err(cells)
-    } else {
-        Ok(cells)
+/// The product of `shape` (segments, columns, origins, ages), or `Err` with
+/// the span of one segment and column's grid, origins by ages, when that
+/// span exceeds both [`MAX_DENSE_CELLS`] and 1,000 cells for each of the
+/// `rows` read (#832). The span is set by the earliest and latest origin
+/// and age, whatever the number of segments, so many sparse segments over
+/// the same periods pass; an origin or valuation far from the others (a
+/// mistyped year) does not.
+fn checked_size(shape: &[usize; 4], rows: usize) -> std::result::Result<usize, usize> {
+    let span = shape[2].saturating_mul(shape[3]);
+    if span > MAX_DENSE_CELLS && span / 1000 > rows {
+        return Err(span);
     }
+    Ok(shape.iter().fold(1usize, |a, &b| a.saturating_mul(b)))
 }
 
 #[cfg(test)]
@@ -1370,6 +1375,15 @@ pub(crate) mod tests {
         };
         assert!(matches!(err, Error::TooLarge(_)), "{err}");
         assert!(err.to_string().contains("9020"), "{err}");
+        // Many sparse segments over the same periods pass: the limit is on
+        // one segment's grid. 100 segments of two rows each over 40 years of
+        // monthly origins and ages are 23 million cells in all (more than
+        // 2^24 and 1,000 a row), each segment's grid 230,400.
+        assert_eq!(checked_size(&[100, 1, 480, 480], 200), Ok(23_040_000));
+        assert_eq!(
+            checked_size(&[1, 1, 84_001, 84_001], 13),
+            Err(84_001 * 84_001)
+        );
         // Twelve years of months with gaps between origins still build.
         let origin: Vec<Month> = [2010, 2015, 2021].map(|y| m(y, 1)).to_vec();
         let t = Triangle::from_long(&Long {

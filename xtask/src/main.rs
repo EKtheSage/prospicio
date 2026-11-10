@@ -729,7 +729,6 @@ fn extendr_wrappers(raw: &str) -> Result<String> {
             ));
         }
         methods.sort();
-        s3.sort();
         // `$.X` before `[[.X`, as extendr writes them.
         s3.sort_by_key(|t| !t.contains("`$."));
         out.push('\n');
@@ -772,15 +771,31 @@ fn generated(opts: Options) -> Result {
     let dir = root.join("python");
     step("python: build the extension and regenerate its type stubs");
     run(Command::new("uv").arg("sync").current_dir(&dir))?;
+    // `--release`, as `cargo xtask python` builds it: the docs job's cache
+    // (shared with pages.yml) holds release builds, so a debug build here
+    // would compile every crate cold.
     run(Command::new("uv")
-        .args(["run", "maturin", "develop", "--uv", "--generate-stubs"])
+        .args([
+            "run",
+            "maturin",
+            "develop",
+            "--uv",
+            "--release",
+            "--generate-stubs",
+        ])
         .current_dir(&dir))?;
     step("r: regenerate man/ and NAMESPACE (roxygen2)");
     rscript(&root, r#"roxygen2::roxygenise("R/prospicio")"#)?;
     r_install_with_wrappers(&root)?;
     r_doc_check(&root)?;
+    // pkgdown's own index builder, the step that failed in the PRs whose new
+    // export was missing from `_pkgdown.yml`; `pkgdown::check_pkgdown()`
+    // would also demand a site `url`, which this site does not set.
     step("r: check pkgdown's reference index (every export listed)");
-    rscript(&root, r#"pkgdown::check_pkgdown("R/prospicio")"#)?;
+    rscript(
+        &root,
+        r#"pkg <- pkgdown::as_pkgdown("R/prospicio"); invisible(pkgdown:::data_reference_index(pkg))"#,
+    )?;
     if opts.check {
         let mut all = PYTHON_GENERATED.to_vec();
         all.extend_from_slice(R_GENERATED);

@@ -61,6 +61,9 @@ jobs:
       # Public Rust items are bound in Python and R or on the allow-list
       # (validation/bindings-allowlist.toml); prints the coverage table.
       - run: python3 validation/scripts/test_check_bindings.py && python3 validation/scripts/check_bindings.py
+      # Every slow Bayesian target is in one leg of the bayes job, and every
+      # leg is one its matrix runs (#824).
+      - run: python3 validation/scripts/bayes_shards.py
 
   # Clippy, the debug tests, rustdoc and the WASM check. A pull request that
   # touches only docs, knowledge, change fragments or lane status skips them
@@ -321,17 +324,20 @@ jobs:
   # NAMESPACE and R/extendr-wrappers.R) are current. On a pull request that
   # touches the bindings it runs `cargo xtask generated --check` (#823): the
   # extension and stub, roxygen2, the R install with the extendr wrappers,
-  # undoc/codoc and pkgdown's reference index, without rendering a site,
+  # undoc/codoc and pkgdown's reference index (built as the site builds it),
+  # without rendering a site,
   # about a quarter of the full build. It renders both sites with
   # `cargo xtask docs --check --no-tests`, uploaded as an artifact, only when
-  # the PR touches the guides, the notebooks, the sites' configuration or
-  # xtask, and on the weekly and manual runs. pages.yml renders them on main
-  # and shares this job's cache (`shared-key: docs-site`). The python and r
-  # jobs run the test suites, so neither mode does.
+  # the PR touches the sites' configuration or xtask, and on the weekly and
+  # manual runs. A PR that changes only guides or notebooks skips the job, as
+  # before #823: the python and r jobs run every guide's code and check its
+  # printed numbers (test_guides.py, test-guides.R), and pages.yml renders
+  # the sites on main, sharing this job's cache (`shared-key: docs-site`), so
+  # a break that only the render shows is found there. Neither mode runs the
+  # test suites.
   #
   # On a pull request it runs only when the PR touches the bindings, their
-  # docs config, the guides or xtask; otherwise its steps are skipped and it
-  # passes.
+  # docs config or xtask; otherwise its steps are skipped and it passes.
   docs:
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
@@ -349,13 +355,13 @@ jobs:
             exit 0
           fi
           changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
-          if echo "$changed" | grep -qE '^(crates/prospicio-python/|crates/prospicio-r/|python/|R/|xtask/|docs/guides/|examples/|\.github/workflows/ci\.yml)'; then
+          if echo "$changed" | grep -qE '^(crates/prospicio-python/|crates/prospicio-r/|python/|R/|xtask/|\.github/workflows/ci\.yml)'; then
             echo "docs=true" >> "$GITHUB_OUTPUT"
           else
             echo "docs=false" >> "$GITHUB_OUTPUT"
             echo "No bindings or docs inputs changed; skipping the docs build."
           fi
-          if echo "$changed" | grep -qE '^(docs/guides/|examples/|xtask/|python/(great-docs\.yml|docs-site\.css)|R/prospicio/(_pkgdown\.yml|pkgdown/))'; then
+          if echo "$changed" | grep -qE '^(xtask/|python/(great-docs\.yml|docs-site\.css)|R/prospicio/(_pkgdown\.yml|pkgdown/))'; then
             echo "render=true" >> "$GITHUB_OUTPUT"
           else
             echo "render=false" >> "$GITHUB_OUTPUT"

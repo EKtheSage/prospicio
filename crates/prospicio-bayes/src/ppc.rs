@@ -83,6 +83,15 @@ impl Statistic {
         }
     }
 
+    /// The fewest observations the statistic is defined on: 2 for the
+    /// standard deviation (divisor `n - 1`), 1 for the others.
+    pub fn min_observations(&self) -> usize {
+        match self {
+            Statistic::Sd => 2,
+            _ => 1,
+        }
+    }
+
     /// `Some` of the probability of a quantile outside `[0, 1]`.
     fn filter_quantile(&self) -> Option<Statistic> {
         match *self {
@@ -169,11 +178,17 @@ fn shape(observed: &[f64], replicated: &[f64]) -> Result<usize> {
             .filter(|&i| (0..s).any(|d| !replicated[d * n + i].is_finite()))
             .count();
         let plural = if bad == 1 { "value is" } else { "values are" };
+        let first = replicated
+            .iter()
+            .position(|v| !v.is_finite())
+            .expect("a value is not finite");
         return Err(Error::Data(format!(
             "{bad} replicated {plural} not finite, in {draws} of {s} draws and {rows} of {n} \
-             observations; a replicate is NaN where a posterior draw's mean is invalid for the \
-             family (for example a mean at or below 0 under an identity or inverse link), so \
-             the checks would be biased"
+             observations (the first at draw {}, observation {}); a replicate is NaN where a \
+             posterior draw's mean is invalid for the family (for example a mean at or below 0 \
+             under an identity or inverse link), so the checks would be biased",
+            first / n,
+            first % n
         )));
     }
     Ok(s)
@@ -246,14 +261,16 @@ pub fn check_with(
 /// [`check`] within groups: `groups[i]` is observation `i`'s group (from
 /// 0), and each statistic is checked on each group's observations alone;
 /// names are `<statistic>[<group>]`, statistic by statistic, then group by
-/// group.
+/// group. A group with fewer observations than the statistic needs
+/// ([`Statistic::min_observations`]: the sd of a group of one) has no check
+/// for it and is left out of the result, as an empty group is; any other
+/// non-finite value is an error that names the group (#831).
 pub fn check_grouped(
     observed: &[f64],
     replicated: &[f64],
     groups: &[usize],
     statistics: &[Statistic],
 ) -> Result<Vec<StatisticCheck>> {
-    let s = shape(observed, replicated)?;
     let n = observed.len();
     if groups.len() != n {
         return Err(Error::Data(format!(
@@ -261,6 +278,21 @@ pub fn check_grouped(
             groups.len()
         )));
     }
+    // Name the group of the first non-finite value, if any.
+    let s = shape(observed, replicated).map_err(|e| {
+        let first = observed.iter().position(|v| !v.is_finite()).or_else(|| {
+            replicated
+                .iter()
+                .position(|v| !v.is_finite())
+                .map(|k| k % n)
+        });
+        match first {
+            Some(i) if n > 0 => {
+                Error::Data(format!("{e}; observation {i} is in group {}", groups[i]))
+            }
+            _ => e,
+        }
+    })?;
     let count = groups.iter().max().map_or(0, |g| g + 1);
     let members: Vec<Vec<usize>> = (0..count)
         .map(|g| (0..n).filter(|&i| groups[i] == g).collect())
@@ -269,15 +301,16 @@ pub fn check_grouped(
     for t in statistics {
         t.validate()?;
         for (g, idx) in members.iter().enumerate() {
-            if idx.is_empty() {
+            if idx.len() < t.min_observations() {
                 continue;
             }
             let obs: Vec<f64> = idx.iter().map(|&i| observed[i]).collect();
             let rep: Vec<f64> = (0..s)
                 .flat_map(|d| idx.iter().map(move |&i| replicated[d * n + i]))
                 .collect();
-            let mut c = check_with(&obs, &rep, &t.name(), |x| t.of(x))?;
-            c.name = format!("{}[{g}]", t.name());
+            let name = format!("{}[{g}]", t.name());
+            let c = check_with(&obs, &rep, &name, |x| t.of(x))
+                .map_err(|e| Error::Data(format!("group {g} ({} observations): {e}", idx.len())))?;
             out.push(c);
         }
     }
@@ -401,6 +434,29 @@ mod tests {
         // value) is an error naming it, not a p-value of 0.
         let err = check(&[1.0], &[0.0, 2.0], &[Statistic::Sd]).unwrap_err();
         assert!(err.to_string().contains("sd"), "{err}");
+    }
+
+    #[test]
+    fn a_group_too_small_for_its_statistic_is_left_out() {
+        // #831: the sd of a group of one is not defined; the group has no
+        // sd check, while its mean is checked and the other group's sd is.
+        let y = [1.0, 10.0, 2.0];
+        let y_rep = [0.0, 11.0, 4.0, 3.0, 9.0, 1.0];
+        let c = check_grouped(&y, &y_rep, &[0, 1, 0], &[Statistic::Sd, Statistic::Mean]).unwrap();
+        let names: Vec<&str> = c.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["sd[0]", "mean[0]", "mean[1]"]);
+        assert!(c.iter().all(|c| c.p_value.is_finite()));
+        // A non-finite replicate in a group names the group.
+        let bad = [0.0, f64::NAN, 4.0, 3.0, 9.0, 1.0];
+        let err = check_grouped(&y, &bad, &[0, 1, 0], &[Statistic::Mean]).unwrap_err();
+        assert!(err.to_string().contains("1 of 2 draws"), "{err}");
+        assert!(
+            err.to_string().contains("observation 1 is in group 1"),
+            "{err}"
+        );
+        let custom = |x: &[f64]| if x.len() == 1 { f64::NAN } else { x[0] };
+        let err = check_with(&y[1..2], &y_rep[1..2], "first[1]", custom).unwrap_err();
+        assert!(err.to_string().contains("first[1]"), "{err}");
     }
 
     #[test]
