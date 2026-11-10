@@ -384,10 +384,10 @@ hours of wall time (the original queues ran 23:14 on 2026-11-05 to 05:49 on
 ```text
 SUBANNUAL_ARMS=persist:am:m1:preset:study SUBANNUAL_BOOKS=50 RAYON_NUM_THREADS=4 \
   cargo test --release -p prospicio-validation --features slow-bayes \
-  --test reserving_compartmental_subannual panel -- --ignored --nocapture
+  --test bayes reserving_compartmental_subannual::panel -- --ignored --nocapture
 SUBANNUAL_EXPORT=m2y:aq SUBANNUAL_BOOKS=30 \
   cargo test --release -p prospicio-validation --features slow-bayes \
-  --test reserving_compartmental_subannual export_books -- --ignored
+  --test bayes reserving_compartmental_subannual::export_books -- --ignored
 SUBANNUAL_GROUPED=m2y_aq SUBANNUAL_BOOKS=30 cargo test --release \
   -p prospicio-reserving --features bayes --lib grouped_against_per_age \
   -- --ignored --nocapture

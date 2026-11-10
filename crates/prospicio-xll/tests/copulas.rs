@@ -5,7 +5,7 @@
 //! uniforms against their copulas' rank correlations and the crate's own
 //! draws, and Iman–Conover against `prospicio_prob`'s.
 
-mod common;
+use crate::common;
 
 use common::{n, num, reference, t, text};
 use prospicio_core::StreamRng;

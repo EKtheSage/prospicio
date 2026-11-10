@@ -5,7 +5,7 @@
 //! loss, a surplus cedes `min(SI - R, lines R) / SI` of each band, and a
 //! per-band curve is each band's own.
 
-mod common;
+use crate::common;
 
 use common::{n, num, t, text};
 use prospicio_pricing::exposure::Mbbefd;

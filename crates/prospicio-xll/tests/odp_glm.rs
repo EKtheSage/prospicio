@@ -5,7 +5,7 @@
 //! tolerances, and Taylor and McGuire's printed prediction errors (CAS
 //! Monograph 3, Table 5-4) and residual diagnostics (Chapter 6).
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

@@ -13,7 +13,7 @@
 //!   divergences), and shorter chains are flagged on the sheet;
 //! * the cache returns the fit a refit gives, and a new seed a new fit.
 
-mod common;
+use crate::common;
 
 use common::{genins, n, num, raa, reference, t, text};
 use prospicio_bayes::nuts::Sampler;

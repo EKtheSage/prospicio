@@ -5,7 +5,7 @@
 //! `quantile_expectile_r.csv`), read off the sheet functions' tables, to
 //! the reference's own tolerances.
 
-mod common;
+use crate::common;
 
 use common::{fails, n, ok, t, validation};
 use prospicio_xll::sheet::{Grid, Value};

@@ -6,7 +6,7 @@
 //! column, so XYZ Insurer is used from accident year 2001 (its counts start
 //! in calendar year 2001).
 
-mod common;
+use crate::common;
 
 use common::{cell, data_window, fails, n, ok, row, t};
 use prospicio_reserving::{

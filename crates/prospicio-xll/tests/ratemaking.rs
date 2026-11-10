@@ -6,7 +6,7 @@
 //! with the books' printed levels), the trend lengths of chapters 5 and 6,
 //! and Table 6.14's exponential trends.
 
-mod common;
+use crate::common;
 
 use common::{n, num, t, text};
 use prospicio_xll::call;

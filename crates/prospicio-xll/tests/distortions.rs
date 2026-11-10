@@ -6,7 +6,7 @@
 //! bi-TVaR, beta and weighted TVaR, and
 //! the price and calibration of Mildenhall and Major's InsCo totals.
 
-mod common;
+use crate::common;
 
 use common::{n, num, reference, t, text};
 use prospicio_xll::call;

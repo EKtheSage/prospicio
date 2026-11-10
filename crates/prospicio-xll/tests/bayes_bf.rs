@@ -10,7 +10,7 @@
 //!   classical reserve;
 //! * the cache returns the fit a refit gives, and errors come back as text.
 
-mod common;
+use crate::common;
 
 use common::{genins, n, num, t, text};
 use prospicio_bayes::nuts::Sampler;

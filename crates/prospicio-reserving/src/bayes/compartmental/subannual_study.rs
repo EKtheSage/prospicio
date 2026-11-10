@@ -14,7 +14,7 @@
 //! ```text
 //! SUBANNUAL_EXPORT=m2y:aq,m2q:aq SUBANNUAL_BOOKS=30 cargo test --release \
 //!   -p prospicio-validation --features slow-bayes \
-//!   --test reserving_compartmental_subannual export_books -- --ignored
+//!   --test bayes reserving_compartmental_subannual::export_books -- --ignored
 //! SUBANNUAL_GROUPED=m2y_aq,m2q_aq SUBANNUAL_BOOKS=30 cargo test --release \
 //!   -p prospicio-reserving --features bayes --lib subannual_study \
 //!   -- --ignored --nocapture

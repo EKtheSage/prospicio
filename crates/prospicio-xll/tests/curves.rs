@@ -6,7 +6,7 @@
 //! `PRO.RES.CURVE`'s selected factors and tail to `PRO.RES.CL`, as a
 //! sheet chains them.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

@@ -242,8 +242,8 @@ fn loo_is_finite_with_a_k_per_cell() {
 /// The seed sweep that sizes the Stan-parity tolerances (decision 10): for
 /// seeds `0..MEYERS_SEEDS` (default 20), every reference row's value,
 /// written to `target/meyers_sweep.csv`. Run in a release build:
-/// `cargo test --release -p prospicio-validation --test reserving_meyers
-/// seed_sweep -- --ignored --nocapture`.
+/// `cargo test --release -p prospicio-validation --features slow-bayes
+/// --test bayes reserving_meyers::seed_sweep -- --ignored --nocapture`.
 #[test]
 #[ignore]
 fn seed_sweep() {

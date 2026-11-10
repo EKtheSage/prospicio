@@ -7,7 +7,7 @@
 //! ```text
 //! SUBANNUAL_ARMS=iid:aq:m1:preset:study SUBANNUAL_BOOKS=50 \
 //!   cargo test --release -p prospicio-validation --features slow-bayes \
-//!   --test reserving_compartmental_subannual panel -- --ignored --nocapture
+//!   --test bayes reserving_compartmental_subannual::panel -- --ignored --nocapture
 //! ```
 //!
 //! One book is simulated once at the finest grain, every month to 120

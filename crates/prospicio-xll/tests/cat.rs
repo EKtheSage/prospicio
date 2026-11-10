@@ -11,7 +11,7 @@
 //!   expected annual loss, OEP and occurrence PMLs;
 //! * the ELT's SD against its simulated years, and the errors.
 
-mod common;
+use crate::common;
 
 use common::{n, num, t, text, validation};
 use prospicio_aggregate::cat::EventLossTable;

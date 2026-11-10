@@ -12,7 +12,7 @@
 //!   risk level;
 //! * the header row, the totals and the errors.
 
-mod common;
+use crate::common;
 
 use common::{n, num, t, text, validation};
 use prospicio_xll::call;

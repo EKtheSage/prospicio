@@ -9,7 +9,7 @@
 //!   the quantile inverse to the MBBEFD's cdf, and a tabulated curve's
 //!   closed forms.
 
-mod common;
+use crate::common;
 
 use common::{n, num, reference, t, text};
 use prospicio_xll::call;

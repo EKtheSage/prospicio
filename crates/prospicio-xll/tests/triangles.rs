@@ -2,7 +2,7 @@
 //! reaches them: incremental and back, link ratios and the latest
 //! diagonal, against the values worked out from RAA itself.
 
-mod common;
+use crate::common;
 
 use common::{RAA, num, raa, text};
 use prospicio_xll::call;

@@ -9,7 +9,7 @@
 //!   each other for every family, and `PRO.SEV.STATS` and `PRO.PRC.LER` on
 //!   closed forms.
 
-mod common;
+use crate::common;
 
 use common::{n, num, reference, t, text};
 use prospicio_xll::call;

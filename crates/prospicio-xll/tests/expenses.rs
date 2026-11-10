@@ -5,7 +5,7 @@
 //! (ULAE). The ultimate claims are chained from `PRO.RES.CL.ULTIMATE` as a
 //! sheet would, on the printed factors to ultimate.
 
-mod common;
+use crate::common;
 
 use common::{cell, data_window, fails, n, ok, row, t};
 use prospicio_xll::sheet::{Grid, Value};

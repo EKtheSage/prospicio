@@ -91,6 +91,17 @@ simulations; its bounds come from a 20-seed sweep at that size),
 `reserving_bayes_one_year_moment_match` 27 s and
 `reserving_compartmental` 23 s.[^local]
 
+* One test binary per crate (#825, 2026-11-10): `validation/tests/` (69
+  files) and `crates/prospicio-xll/tests/` (49) built 105 test binaries,
+  each linking the whole dependency tree. As modules of three binaries
+  (`validation`, `bayes` behind `slow-bayes`, `worksheet`, with
+  `fremtpl2` alone), found by each crate's `build.rs`, the rebuild of the
+  two crates' tests on warm dependencies fell from 318 s to 28 s on the
+  4-core cloud container (debug info off in both runs), with the same 652
+  tests listed and the 186 Bayesian tests in the `bayes` binary split
+  90/45/51 by the three CI legs' module filters. The cost was linking, not
+  code generation.[^local]
+
 [^runs]: CI run and job timings
 [^local]: Local timings of cargo test, cargo nextest and the Bayesian release tests
 [^ci]: CI workflow

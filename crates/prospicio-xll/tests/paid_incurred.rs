@@ -7,7 +7,7 @@
 //! (`validation/reference/reserving_paid_incurred_r.csv`) and the paper's
 //! printed Hertig reserves, the same cases the crate's parity tests use.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

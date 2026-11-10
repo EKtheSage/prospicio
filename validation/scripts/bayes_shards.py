@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""The Bayesian parity tests of one leg of CI's `bayes` job (#824).
+"""The Bayesian parity tests of one leg of CI's `bayes` job (#824, #825).
 
-validation/Cargo.toml lists the slow targets as [[test]] entries that
-require the `slow-bayes` feature, and names each one's leg in
-[package.metadata.bayes-shards]. This script checks that every slow target
-is in exactly one leg, every name in a leg is a slow target and every leg
-is one that ci.yml's `bayes` matrix runs (and the other way round), then prints
-the leg's lines for $GITHUB_OUTPUT:
+The Bayesian parity files are modules of one test binary, `bayes`
+(validation/build.rs makes each name in validation/Cargo.toml's
+[package.metadata.bayes-shards] a module of it). This script checks that
+every name in a leg is a file of validation/tests/ and in one leg only, and
+that the legs are the ones ci.yml's `bayes` matrix runs, then prints the
+leg's lines for $GITHUB_OUTPUT:
 
-    tests=--test a --test b ...
+    tests=--test bayes -- name_a:: name_b:: ...   (the leg's modules as filters)
     unit=true|false        (prospicio-reserving's NUTS unit tests)
 
     python3 validation/scripts/bayes_shards.py a     # one leg
@@ -25,11 +25,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 def legs(manifest=ROOT / "validation" / "Cargo.toml"):
     t = tomllib.loads(manifest.read_text())
-    slow = [
-        x["name"]
-        for x in t.get("test", [])
-        if "slow-bayes" in x.get("required-features", [])
-    ]
+    files = {p.stem for p in (manifest.parent / "tests").glob("*.rs")}
     shards = t["package"]["metadata"]["bayes-shards"]
     unit = shards.get("unit-tests")
     named = {k: v for k, v in shards.items() if k != "unit-tests"}
@@ -37,16 +33,11 @@ def legs(manifest=ROOT / "validation" / "Cargo.toml"):
     seen = {}
     for leg, names in named.items():
         for n in names:
-            if n not in slow:
-                errors.append(f"leg {leg} names {n}, which is not a slow-bayes [[test]]")
+            if n not in files:
+                errors.append(f"leg {leg} names {n}, which is not a file of validation/tests/")
             if n in seen:
                 errors.append(f"{n} is in legs {seen[n]} and {leg}")
             seen[n] = leg
-    for n in slow:
-        if n not in seen:
-            errors.append(
-                f"{n} requires slow-bayes but no leg of [package.metadata.bayes-shards] names it"
-            )
     if unit not in named:
         errors.append(f"unit-tests = {unit!r} is not a leg")
     # The legs CI runs: the `shard:` list of the bayes job's matrix. A leg
@@ -87,7 +78,8 @@ def main():
         if leg not in named:
             print(f"error: no leg {leg!r}; the legs are {', '.join(named)}", file=sys.stderr)
             sys.exit(1)
-        tests = " ".join(f"--test {n}" for n in named[leg])
+        filters = " ".join(f"{n}::" for n in named[leg])
+        tests = f"--test bayes -- {filters}"
         if sys.argv[1:]:
             print(f"tests={tests}")
             print(f"unit={'true' if leg == unit else 'false'}")

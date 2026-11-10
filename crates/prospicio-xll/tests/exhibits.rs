@@ -8,7 +8,7 @@
 //! `PRO.RES.CAPECOD` as a sheet chains them. The same cases as
 //! `validation/tests/reserving_exhibits.rs`.
 
-mod common;
+use crate::common;
 
 use common::{column_of, data_triangle, fails, genins, n, num, ok, reference, row, t};
 use prospicio_xll::sheet::{Grid, Value};

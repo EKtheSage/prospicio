@@ -4,7 +4,7 @@
 //! total chainladder-python 0.10.1 gives in
 //! `validation/reference/reserving_expected_loss_python.csv`.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 
