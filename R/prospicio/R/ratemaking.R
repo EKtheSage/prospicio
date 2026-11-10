@@ -139,6 +139,73 @@ trend_factor <- function(rate, years) {
   (1 + as.double(rate))^as.double(years)
 }
 
+#' Trend factors by a calendar-year rate schedule
+#'
+#' Trends each accident year's losses or premium to a treaty period by a
+#' schedule of annual rates, one rate per calendar year. With `i` the
+#' inception and `c` the months complete in an incomplete latest year, the
+#' target is `i + 1` (losses) or `i + 0.5` (premium) under `"RAD"` and
+#' `i + 0.5` or `i` under `"LOD"`; a complete year `y` starts at `y + 0.5`
+#' (losses) or `y` (premium), an incomplete latest year at `y + c/24` or
+#' `y + c/24 - 0.5`. The factor is the product over calendar years `k` of
+#' `(1 + r_k)^overlap_k`, `overlap_k` the length of `[k, k + 1)` within
+#' `[start, target]`, and 1 when the start is at or after the target. A
+#' calendar year the schedule does not have takes the latest scheduled
+#' year's rate (the earliest's before the schedule with
+#' `before = "earliest"`).
+#'
+#' @param years Accident years, one factor each, in the order given.
+#' @param trend_years,trend_rates The schedule, row by row, rates as
+#'   decimals. A row with both `NA` is skipped; a row with one is an error.
+#' @param inception The treaty's inception as a decimal year.
+#' @param basis `"RAD"` (risks attaching) or `"LOD"` (losses occurring).
+#' @param kind `"loss"` or `"premium"`.
+#' @param cutoff The months complete (1 to 12) of the latest accident year
+#'   when it is incomplete; `NULL` when every year is complete.
+#' @param before The rate before the schedule's first year: `"latest"` or
+#'   `"earliest"`.
+#' @returns A data frame with `year`, `start`, `target` and `factor`.
+#' @export
+#' @examples
+#' schedule_trend(2024:2025, 2024:2026, c(0.05, 0.04, 0.04), inception = 2026)
+schedule_trend <- function(years, trend_years, trend_rates, inception,
+                           basis = c("RAD", "LOD"), kind = c("loss", "premium"),
+                           cutoff = NULL, before = c("latest", "earliest")) {
+  basis <- match.arg(basis)
+  kind <- match.arg(kind)
+  before <- match.arg(before)
+  if (is.null(cutoff)) {
+    cutoff <- 0L
+  } else if (length(cutoff) != 1 || is.na(cutoff) || cutoff < 1 || cutoff > 12 ||
+             cutoff != round(cutoff)) {
+    stop("cutoff must be a whole number of months from 1 to 12, or NULL")
+  }
+  if (anyNA(years) || any(years != round(years))) {
+    stop("years must be whole calendar years")
+  }
+  r <- rust_result(schedule_trend_rust(
+    as.integer(years), as.double(trend_years), as.double(trend_rates),
+    as.double(inception), basis, kind, as.integer(cutoff), before
+  ))
+  data.frame(year = r$year, start = r$start, target = r$target, factor = r$factor)
+}
+
+#' Running premium-weighted loss ratio
+#'
+#' Element `k` is `sum(LR[1:k] * EP[1:k]) / sum(EP[1:k])`, and 0 where the
+#' premium to date is 0.
+#'
+#' @param loss_ratios,premiums One premium per loss ratio. A row with both
+#'   `NA` adds nothing; a row with one is an error, as are a negative
+#'   premium and a value that is not finite.
+#' @returns A numeric vector as long as the inputs.
+#' @export
+#' @examples
+#' cumulative_loss_ratio(c(0.5, 0.8, 0.6), c(100, 300, 0))
+cumulative_loss_ratio <- function(loss_ratios, premiums) {
+  rust_result(cumulative_loss_ratio_rust(as.double(loss_ratios), as.double(premiums)))
+}
+
 #' Experience for the loss ratio and pure premium methods
 #'
 #' Each experience year is projected to the forecast period. For the loss

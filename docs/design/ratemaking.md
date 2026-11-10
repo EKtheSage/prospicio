@@ -105,6 +105,32 @@ current rate level and trend (#179), then the indication itself.
    with `trend_factor`, so it needs no function of its own.
 9. **The profit provision may be negative** (Appendix C's −5% for
    investment income); `Provisions` only requires `V + Q < 1`.
+10. **Trend to a treaty period by a calendar-year rate schedule**
+    (`ScheduleTrend`, `RateSchedule`, #801; the AP pricing demo's rule).
+    One function covers losses and premium (`TrendItem`), on a risks
+    attaching or losses occurring basis (`TrendBasis`). With `i` the
+    inception and `c` the months complete of an incomplete latest year,
+    losses trend from `y + 0.5` (incomplete: `y + c/24`) and premium from
+    `y` (incomplete: `y + c/24 - 0.5`), to `i + 1` and `i + 0.5` under RAD
+    and `i + 0.5` and `i` under LOD. The factor is
+    `exp(Σ_k overlap_k ln(1 + r_k))` over the calendar years `k` the span
+    crosses, and 1 for a start at or after the target. A calendar year
+    the schedule lacks takes the latest scheduled year's rate, before the
+    schedule too unless `BeforeSchedule::Earliest`; a gap takes the
+    latest, not the nearest, as the demo does. `RateSchedule::from_columns`
+    holds the blank-row rule the bindings share: a row blank in both
+    columns is skipped, one blank in one column is an error. The
+    incomplete year is the latest year given (every row holding it). The
+    issue's 8 cases, two full columns, the 2026.0 inception and the
+    extension case are reproduced to 1e-12 in Rust, Python, R and Excel.
+11. **The running premium-weighted loss ratio** (`cumulative_loss_ratio`,
+    #806; the demo's `CUM_WEIGHTED_LR`). Row `k` is
+    `Σ LR_j EP_j / Σ EP_j` over the first `k` rows, 0 while the premium
+    to date is 0, as the demo's `IF(SUM(...)=0, 0, ...)` gives. A row
+    with both values missing adds nothing (a blank row of the sheet does
+    the same in that formula); one missing value, a negative premium or a
+    value that is not finite is an error. The demo's own inputs are not
+    in the repository, so its four printed values are not yet a test.
 
 ## Out of scope
 

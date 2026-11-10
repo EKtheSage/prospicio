@@ -563,11 +563,14 @@ mod exports {
     udf!(pro_prc_buhlmann, ratios, weights, estimator, groups);
     udf!(pro_prc_buhlmann_params, ratios, weights, estimator);
     udf!(pro_yearfraction, date);
+    udf!(pro_reverse, row, length, pad);
     udf!(pro_prc_onlevel, effective, changes, from, to, period, term, applies, given);
     udf!(pro_prc_ratelevel, effective, changes, from, to, period, term, applies, given);
     udf!(pro_prc_avgdate, from, to, period, term, basis);
     udf!(pro_prc_trend_fit, times, values, kind);
+    udf!(pro_prc_trend_factors, years, trend_years, trend_rates, inception, basis, incomplete, cutoff, kind, output);
     udf!(pro_prc_lr_experience, earned_premium, losses, on_level, premium_trend, development, loss_trend, lae);
+    udf!(pro_prc_lr_cumulative, loss_ratios, premiums);
     udf!(pro_prc_pp_experience, exposure, losses, development, loss_trend, lae);
     udf!(pro_prc_indicated_change, loss_ratio, variable, profit, fixed_ratio);
     udf!(pro_prc_indicated_rate, pure_premium, variable, profit, fixed_per_exposure);

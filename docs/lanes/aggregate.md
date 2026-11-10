@@ -7,3 +7,4 @@
 Finished items are in [done/aggregate.md](done/aggregate.md), which agents read when they need the lane's history; it is not imported into every session (#846).
 
 ## Next
+- [ap-lr-cumulative-parity] #806 the four printed cumulative loss ratios of the AP pricing demo as a test, once its `inputs.json` is in the repository

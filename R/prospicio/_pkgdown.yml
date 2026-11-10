@@ -264,7 +264,9 @@ reference:
       - average_written_date
       - rate_level
       - trend_fit
+      - schedule_trend
       - loss_ratio_experience
+      - cumulative_loss_ratio
       - indicated_change
       - premium_based_expenses
   - title: Risk measures

@@ -4,8 +4,8 @@ risk-loaded prices from simulated losses, and the natural allocation of
 Mildenhall and Major (Portfolio, Pentagon) with pricing bounds
 (PricingBounds, distortion_envelope), and ratemaking: premium at
 the current rate level by the parallelogram method (RateHistory) and trend
-(TrendFit, trend_factor) and the overall indication (LossRatioExperience,
-PurePremiumExperience, Provisions), and experience rating from large
+(TrendFit, trend_factor, schedule_trend) and the overall indication
+(LossRatioExperience, PurePremiumExperience, Provisions, cumulative_loss_ratio), and experience rating from large
 losses (LargeLossExperience, DevelopmentPattern, PreparedLosses, BurningCost,
 IndexClause, AsIf), casualty exposure rating over a table of policies
 (CasualtyProfile, IlfTable, ElfTable, CasualtyRating, ParetoAnchor,
@@ -98,6 +98,8 @@ from .prospicio_native import (
     trend_factor,
     trended_present_rates,
     year_fraction,
+    schedule_trend,
+    cumulative_loss_ratio,
 )
 
 __all__ = [
@@ -144,6 +146,8 @@ __all__ = [
     "RateLevel",
     "TrendFit",
     "trend_factor",
+    "schedule_trend",
+    "cumulative_loss_ratio",
     "LossRatioExperience",
     "PurePremiumExperience",
     "Provisions",
