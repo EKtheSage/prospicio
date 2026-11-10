@@ -28,7 +28,7 @@ pub(crate) struct RiskDistortion {
 #[extendr]
 impl RiskDistortion {
     /// `kind` is "tvar", "wang", "proportional_hazard", "dual_power",
-    /// "exponential", "ccoc", "bitvar" (`params` p0, p1, w),
+    /// "exponential", "ccoc", "tsallis", "bitvar" (`params` p0, p1, w),
     /// "weighted_tvar" (`params` the levels, `weights` their weights),
     /// "capped_linear", "capped_log_linear", "lep", "linear_yield" (with
     /// `r0`) or "beta" (`params` a, b).
@@ -48,6 +48,7 @@ impl RiskDistortion {
             "dual_power" => Distortion::dual_power(one()?),
             "exponential" => Distortion::exponential(one()?),
             "ccoc" => Distortion::ccoc(one()?),
+            "tsallis" => Distortion::tsallis(one()?),
             "capped_linear" => Distortion::capped_linear(r0, one()?),
             "capped_log_linear" => Distortion::capped_log_linear(r0, one()?),
             "lep" => Distortion::lep(r0, one()?),
@@ -110,6 +111,37 @@ impl RiskDistortion {
         Ok(Self { inner })
     }
 
+    /// Each family's member whose price of `x` is `premium`, by family
+    /// name in order (`aggregate`'s `calibrate_distortions`).
+    fn calibrate_all(families: Vec<String>, x: Robj, premium: f64, assets: f64) -> Result<List> {
+        let set: Vec<Family> = families
+            .iter()
+            .map(|f| family_from(f, 0.0))
+            .collect::<Result<_>>()?;
+        let (mut v, p) = discrete_of(&x)?;
+        if assets.is_finite() {
+            v.iter_mut().for_each(|x| *x = x.min(assets));
+        }
+        let ds = prospicio_prob::distortion::calibrate_all(&set, &v, &p, premium).map_err(to_r)?;
+        List::from_names_and_values(
+            set.iter().map(|f| f.name()),
+            ds.into_iter()
+                .map(|inner| Robj::from(RiskDistortion { inner })),
+        )
+        .map_err(|e| Error::Other(e.to_string()))
+    }
+
+    /// The member of a one-parameter `family` with Gini index `gini`.
+    fn from_gini(family: &str, gini: f64) -> Result<Self> {
+        let inner = Distortion::from_gini(family_from(family, 0.0)?, gini).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    /// The Gini index `2 ∫ g - 1`.
+    fn gini(&self) -> f64 {
+        self.inner.gini()
+    }
+
     fn kind(&self) -> &'static str {
         self.inner.family()
     }
@@ -125,7 +157,8 @@ impl RiskDistortion {
             | Distortion::ProportionalHazard(a)
             | Distortion::DualPower(a)
             | Distortion::Exponential(a)
-            | Distortion::Ccoc(a) => vec![*a],
+            | Distortion::Ccoc(a)
+            | Distortion::Tsallis(a) => vec![*a],
             Distortion::BiTvar { p0, p1, w } => vec![*p0, *p1, *w],
             Distortion::WeightedTvar { ps, .. } => ps.clone(),
             Distortion::CappedLinear { slope, .. } => vec![*slope],
@@ -222,6 +255,7 @@ pub(crate) fn family_from(name: &str, r0: f64) -> Result<Family> {
         "ccoc" => Family::Ccoc,
         "proportional_hazard" | "ph" => Family::ProportionalHazard,
         "wang" => Family::Wang,
+        "tsallis" => Family::Tsallis,
         "dual_power" | "dual" => Family::DualPower,
         "tvar" => Family::Tvar,
         "exponential" | "exp" => Family::Exponential,

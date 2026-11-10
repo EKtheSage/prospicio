@@ -8,6 +8,7 @@
 //! `docs/design/risk.md`).
 
 use prospicio_core::{Error, Result};
+use prospicio_math::integrate::gauss_legendre;
 use prospicio_math::roots::{bisect, bisect_log};
 use prospicio_math::special::{beta_inc, norm_cdf, norm_quantile};
 
@@ -23,6 +24,7 @@ use crate::distribution::check_probability;
 /// | `ProportionalHazard(ρ)` | `s^ρ` | `ρ` in `(0, 1]` |
 /// | `DualPower(β)` | `1 - (1 - s)^β` | `β >= 1` |
 /// | `Exponential(k)` | `(1 - e^(-k s)) / (1 - e^(-k))` | `k > 0` |
+/// | `Tsallis(α)` | `(α s - s^α) / (α - 1)`, `s (1 - ln s)` at `α = 1` | `α > 0` |
 /// | `Ccoc(r)` | `min(1, δ + ν s)`, `δ = r / (1 + r)`, `ν = 1 - δ` | `r >= 0` |
 /// | `BiTvar { p0, p1, w }` | `(1 - w) TVaR_p0 + w TVaR_p1` | `0 <= p0 <= p1 <= 1`, `w` in `[0, 1]` |
 /// | `WeightedTvar { ps, wts }` | `Σ wᵢ min(s / (1 - pᵢ), 1)` | `ps` ascending in `[0, 1]`, `wts >= 0` summing to 1 |
@@ -41,8 +43,14 @@ use crate::distribution::check_probability;
 /// cost of capital prices the assets. The names and parameters follow
 /// Mildenhall and Major (*Pricing Insurance Risk*, 2022) and the Python
 /// `aggregate` package (`ccoc`, `bitvar`, `wtdtvar`, `clin`, `cll`, `lep`,
-/// `ly`, `beta`, `mixture`, `minimum`); `ProportionalHazard` is `ph` and
-/// `DualPower` is `dual`.
+/// `ly`, `beta`, `mixture`, `minimum`, `tsallis`); `ProportionalHazard` is
+/// `ph` and `DualPower` is `dual`.
+///
+/// `Tsallis(α)` is the Beta(α, 1) mixture of TVaRs: `∫₀¹ min(s / u, 1)
+/// α u^(α-1) du`. Its price is the mean plus the cumulative residual Tsallis
+/// entropy of order `α`, `∫ (S - S^α) / (α - 1) dx`; `α → ∞` is the mean,
+/// `α → 0` the maximum, `α = 2` is `DualPower(2)` and its Gini index is
+/// `1 / (α + 1)` (Mildenhall's `aggregate` 2.1.0).
 ///
 /// Each one-parameter family has a value that gives the mean (`Tvar(0)`,
 /// `Wang(0)`, `ProportionalHazard(1)`, `DualPower(1)`, `Ccoc(0)`, and
@@ -76,6 +84,7 @@ pub enum Distortion {
     DualPower(f64),
     Exponential(f64),
     Ccoc(f64),
+    Tsallis(f64),
     BiTvar { p0: f64, p1: f64, w: f64 },
     WeightedTvar { ps: Vec<f64>, wts: Vec<f64> },
     CappedLinear { r0: f64, slope: f64 },
@@ -126,6 +135,27 @@ impl Distortion {
             return Err(invalid("k", k, "must be finite and positive"));
         }
         Ok(Self::Exponential(k))
+    }
+
+    /// The Tsallis distortion of order `alpha > 0`, the Beta(alpha, 1)
+    /// mixture of TVaRs: `g(s) = (alpha s - s^alpha) / (alpha - 1)`, and
+    /// `s (1 - ln s)` at `alpha = 1`. The larger `alpha`, the closer to the
+    /// mean; its Gini index is `1 / (alpha + 1)`.
+    ///
+    /// ```
+    /// use prospicio_prob::Distortion;
+    ///
+    /// // Order 2 is the dual power transform with beta = 2.
+    /// let t = Distortion::tsallis(2.0).unwrap();
+    /// let d = Distortion::dual_power(2.0).unwrap();
+    /// assert!((t.g(0.3) - d.g(0.3)).abs() < 1e-15);
+    /// assert!((t.gini() - 1.0 / 3.0).abs() < 1e-15);
+    /// ```
+    pub fn tsallis(alpha: f64) -> Result<Self> {
+        if !(alpha.is_finite() && alpha > 0.0) {
+            return Err(invalid("alpha", alpha, "must be finite and positive"));
+        }
+        Ok(Self::Tsallis(alpha))
     }
 
     /// A constant cost of capital `r >= 0`: the price of a loss `X` backed
@@ -335,6 +365,7 @@ impl Distortion {
             Self::DualPower(beta) => -((-s).ln_1p() * beta).exp_m1(),
             Self::Exponential(k) => (-k * s).exp_m1() / (-k).exp_m1(),
             Self::Ccoc(r) => ((r + s) / (1.0 + r)).min(1.0),
+            Self::Tsallis(alpha) => tsallis_g(*alpha, s),
             Self::BiTvar { p0, p1, w } => (1.0 - w) * tvar_g(*p0, s) + w * tvar_g(*p1, s),
             Self::WeightedTvar { ps, wts } => ps
                 .iter()
@@ -394,6 +425,7 @@ impl Distortion {
             Self::DualPower(beta) => t.powf(*beta),
             Self::Exponential(k) => (-k * s).exp() * (-k * t).exp_m1() / (-k).exp_m1(),
             Self::Ccoc(r) => t / (1.0 + r),
+            Self::Tsallis(alpha) => tsallis_complement(*alpha, s),
             Self::CappedLinear { r0, slope } => ((1.0 - r0 - slope) + slope * t).max(0.0),
             Self::CappedLogLinear { r0, b } => (-(r0 + b * (-t).ln_1p()).exp_m1()).max(0.0),
             Self::Lep { r0, r } => {
@@ -424,6 +456,7 @@ impl Distortion {
 
     /// The family, as its constructor is named: `"tvar"`, `"wang"`,
     /// `"proportional_hazard"`, `"dual_power"`, `"exponential"`, `"ccoc"`,
+    /// `"tsallis"`,
     /// `"bitvar"`, `"weighted_tvar"`, `"capped_linear"`,
     /// `"capped_log_linear"`, `"lep"`, `"linear_yield"`, `"beta"`,
     /// `"mixture"`, `"minimum"` or `"convex"`.
@@ -443,6 +476,7 @@ impl Distortion {
             Self::DualPower(_) => "dual_power",
             Self::Exponential(_) => "exponential",
             Self::Ccoc(_) => "ccoc",
+            Self::Tsallis(_) => "tsallis",
             Self::BiTvar { .. } => "bitvar",
             Self::WeightedTvar { .. } => "weighted_tvar",
             Self::CappedLinear { .. } => "capped_linear",
@@ -469,6 +503,7 @@ impl Distortion {
             Self::DualPower(b) => vec![("beta", b)],
             Self::Exponential(k) => vec![("k", k)],
             Self::Ccoc(r) => vec![("r", r)],
+            Self::Tsallis(a) => vec![("alpha", a)],
             Self::BiTvar { p0, p1, w } => vec![("p0", p0), ("p1", p1), ("w", w)],
             Self::CappedLinear { r0, slope } => vec![("r0", r0), ("slope", slope)],
             Self::CappedLogLinear { r0, b } => vec![("r0", r0), ("b", b)],
@@ -493,6 +528,138 @@ impl Distortion {
         match self.parameters().as_slice() {
             [(_, p)] => Some(*p),
             _ => None,
+        }
+    }
+
+    /// The Gini index `2 ∫₀¹ g(s) ds - 1`: twice the area between `g` and
+    /// the diagonal, 0 for the mean and 1 for the maximum. It is the level
+    /// `p` of the TVaR that prices a uniform loss as `g` does, since
+    /// `ρ(U) = ∫₀¹ g = (1 + G) / 2`, and `aggregate` 2.1.0's `gini`.
+    ///
+    /// Closed forms: `Tvar(p)` `p`; `Ccoc(r)` `r / (1 + r)`;
+    /// `ProportionalHazard(ρ)` `(1 - ρ) / (1 + ρ)`; `DualPower(β)`
+    /// `(β - 1) / (β + 1)`; `Wang(λ)` `2 Φ(λ / √2) - 1`; `Tsallis(α)`
+    /// `1 / (α + 1)`; `Exponential`, `Beta`, the capped linear and log-linear
+    /// families, the TVaR mixtures and `Convex` exactly; a mixture the
+    /// weighted sum of its parts'. `Lep`, `LinearYield` and `Minimum` are
+    /// integrated by adaptive Gauss-Legendre quadrature to about 1e-14.
+    ///
+    /// ```
+    /// use prospicio_prob::Distortion;
+    ///
+    /// assert!((Distortion::proportional_hazard(0.5).unwrap().gini() - 1.0 / 3.0).abs() < 1e-15);
+    /// assert_eq!(Distortion::tvar(0.9).unwrap().gini(), 0.9);
+    /// ```
+    pub fn gini(&self) -> f64 {
+        match self {
+            Self::Tvar(p) => *p,
+            Self::Wang(l) => 2.0 * norm_cdf(l / std::f64::consts::SQRT_2) - 1.0,
+            Self::ProportionalHazard(rho) => (1.0 - rho) / (1.0 + rho),
+            Self::DualPower(b) => (b - 1.0) / (b + 1.0),
+            Self::Exponential(k) => {
+                // ∫ g = (1 - (1 - e^-k) / k) / (1 - e^-k), so the index is
+                // coth(k / 2) - 2 / k, which cancels for small k: there its
+                // series k / 6 - k^3 / 360 + k^5 / 15120.
+                if *k < 1e-2 {
+                    let k2 = k * k;
+                    k / 6.0 * (1.0 - k2 / 60.0 * (1.0 - k2 / 42.0))
+                } else {
+                    1.0 / (k / 2.0).tanh() - 2.0 / k
+                }
+            }
+            Self::Ccoc(r) => r / (1.0 + r),
+            Self::Tsallis(a) => 1.0 / (a + 1.0),
+            Self::BiTvar { p0, p1, w } => (1.0 - w) * p0 + w * p1,
+            Self::WeightedTvar { ps, wts } => ps.iter().zip(wts).map(|(p, w)| p * w).sum(),
+            Self::CappedLinear { r0, slope } => {
+                // Linear up to s* = (1 - r0) / slope, then 1.
+                let k = ((1.0 - r0) / slope).min(1.0);
+                let area = r0 * k + slope * k * k / 2.0 + (1.0 - k);
+                2.0 * area - 1.0
+            }
+            Self::CappedLogLinear { r0, b } => {
+                // e^r0 s^b up to s* = e^(-r0 / b), then 1.
+                let k = (-r0 / b).exp().min(1.0);
+                let area = r0.exp() * k.powf(b + 1.0) / (b + 1.0) + (1.0 - k);
+                2.0 * area - 1.0
+            }
+            // ∫ I_s(a, b) ds = 1 - E[Beta(a, b)] = b / (a + b).
+            Self::Beta { a, b } => (b - a) / (a + b),
+            Self::Mixture(parts) => parts.iter().map(|(w, d)| w * d.gini()).sum(),
+            Self::Convex(knots) => {
+                let area: f64 = knots
+                    .windows(2)
+                    .map(|w| (w[1].0 - w[0].0) * (w[0].1 + w[1].1) / 2.0)
+                    .sum();
+                2.0 * area - 1.0
+            }
+            Self::Lep { .. } | Self::LinearYield { .. } | Self::Minimum(_) => {
+                2.0 * integrate_unit(|s| self.g(s)) - 1.0
+            }
+        }
+    }
+
+    /// The member of a one-parameter `family` whose [`gini`](Self::gini)
+    /// is `gini`, in `(0, 1)`: `aggregate` 2.1.0's `Distortion.from_gini`.
+    /// The members of different families with one Gini index price a
+    /// uniform loss alike.
+    ///
+    /// | Family | parameter from `G` |
+    /// |---|---|
+    /// | `Ccoc` | `r = G / (1 - G)` |
+    /// | `ProportionalHazard` | `ρ = (1 - G) / (1 + G)` |
+    /// | `Wang` | `λ = √2 Φ⁻¹((1 + G) / 2)` |
+    /// | `Tsallis` | `α = 1 / G - 1` |
+    /// | `DualPower` | `β = (1 + G) / (1 - G)` |
+    /// | `Tvar` | `p = G` |
+    /// | `Exponential` | solved by bisection |
+    ///
+    /// The families with `r0`, a curve of members at each index, are
+    /// refused, as is a `gini` outside `(0, 1)`.
+    ///
+    /// ```
+    /// use prospicio_prob::distortion::{Distortion, Family};
+    ///
+    /// let w = Distortion::from_gini(Family::Wang, 0.25).unwrap();
+    /// assert!((w.gini() - 0.25).abs() < 1e-14);
+    /// let t = Distortion::from_gini(Family::Tsallis, 0.25).unwrap();
+    /// assert_eq!(t, Distortion::tsallis(3.0).unwrap());
+    /// ```
+    pub fn from_gini(family: Family, gini: f64) -> Result<Self> {
+        if !(gini > 0.0 && gini < 1.0) {
+            return Err(invalid("gini", gini, "must be in the open interval (0, 1)"));
+        }
+        match family {
+            Family::Ccoc => Self::ccoc(gini / (1.0 - gini)),
+            Family::ProportionalHazard => Self::proportional_hazard((1.0 - gini) / (1.0 + gini)),
+            Family::Wang => {
+                Self::wang(std::f64::consts::SQRT_2 * norm_quantile((1.0 + gini) / 2.0))
+            }
+            Family::Tsallis => Self::tsallis(1.0 / gini - 1.0),
+            Family::DualPower => Self::dual_power((1.0 + gini) / (1.0 - gini)),
+            Family::Tvar => Self::tvar(gini),
+            Family::Exponential => {
+                // The index rises with k from 0 (the mean) to 1; double,
+                // then bisect on a log scale.
+                let below = |k: f64| Self::Exponential(k).gini() < gini;
+                let mut hi = 1.0;
+                while below(hi) {
+                    hi *= 2.0;
+                    if hi > 1e300 {
+                        return Err(invalid("gini", gini, "is beyond the exponential family"));
+                    }
+                }
+                Self::exponential(bisect_log((hi * 1e-300).max(f64::MIN_POSITIVE), hi, below))
+            }
+            Family::CappedLinear { .. }
+            | Family::CappedLogLinear { .. }
+            | Family::Lep { .. }
+            | Family::LinearYield { .. } => Err(Error::Data(format!(
+                "from_gini builds a one-parameter family; {} also takes r0, so each Gini index \
+                 has a curve of members. The one-parameter families are ccoc, ph, wang, \
+                 tsallis, dual, tvar and exp",
+                family.name()
+            ))),
         }
     }
 
@@ -546,6 +713,8 @@ impl Distortion {
             }
             Self::Exponential(k) => -k * (-k).exp() / (-k).exp_m1(),
             Self::Ccoc(r) => 1.0 / (1.0 + r),
+            // g'(s) = alpha (1 - s^(alpha-1)) / (alpha - 1), and -ln s at 1.
+            Self::Tsallis(_) => 0.0,
             Self::BiTvar { p0, p1, w } => (1.0 - w) * tvar_slope(*p0) + w * tvar_slope(*p1),
             Self::WeightedTvar { ps, wts } => {
                 ps.iter().zip(wts).map(|(&p, w)| w * tvar_slope(p)).sum()
@@ -705,6 +874,8 @@ pub enum Family {
     Tvar,
     /// [`Distortion::Exponential`]; the parameter is `k`.
     Exponential,
+    /// [`Distortion::Tsallis`]; the parameter is `α`.
+    Tsallis,
     /// [`Distortion::CappedLinear`] with this `r0`; the parameter is the slope.
     CappedLinear { r0: f64 },
     /// [`Distortion::CappedLogLinear`] with this `r0`; the parameter is `b`.
@@ -716,6 +887,19 @@ pub enum Family {
 }
 
 impl Family {
+    /// CCoC, PH, Wang, Tsallis, dual and TVaR: [`Family::STANDARD`] with
+    /// Tsallis between Wang and dual, `aggregate` 2.1.0's
+    /// `EXTENDED_CALIBRATION_DISTORTIONS` (`calibrate_distortions(...,
+    /// extended=True)`).
+    pub const EXTENDED: [Family; 6] = [
+        Family::Ccoc,
+        Family::ProportionalHazard,
+        Family::Wang,
+        Family::Tsallis,
+        Family::DualPower,
+        Family::Tvar,
+    ];
+
     /// CCoC, PH, Wang, dual and TVaR.
     pub const STANDARD: [Family; 5] = [
         Family::Ccoc,
@@ -734,6 +918,7 @@ impl Family {
             Self::DualPower => Distortion::dual_power(param),
             Self::Tvar => Distortion::tvar(param),
             Self::Exponential => Distortion::exponential(param),
+            Self::Tsallis => Distortion::tsallis(param),
             Self::CappedLinear { r0 } => Distortion::capped_linear(r0, param),
             Self::CappedLogLinear { r0 } => Distortion::capped_log_linear(r0, param),
             Self::Lep { r0 } => Distortion::lep(r0, param),
@@ -743,7 +928,7 @@ impl Family {
 
     /// The short name used by Mildenhall and Major and the Python
     /// `aggregate` package: `ccoc`, `ph`, `wang`, `dual`, `tvar`, `exp`,
-    /// `clin`, `cll`, `lep`, `ly`.
+    /// `tsallis`, `clin`, `cll`, `lep`, `ly`.
     pub fn name(self) -> &'static str {
         match self {
             Self::Ccoc => "ccoc",
@@ -752,6 +937,7 @@ impl Family {
             Self::DualPower => "dual",
             Self::Tvar => "tvar",
             Self::Exponential => "exp",
+            Self::Tsallis => "tsallis",
             Self::CappedLinear { .. } => "clin",
             Self::CappedLogLinear { .. } => "cll",
             Self::Lep { .. } => "lep",
@@ -765,6 +951,8 @@ impl Family {
     fn range(self) -> (f64, f64) {
         match self {
             Self::Ccoc | Self::Wang | Self::Exponential => (0.0, f64::INFINITY),
+            // Calibrated on the Gini index 1 / (alpha + 1) instead.
+            Self::Tsallis => (f64::INFINITY, 0.0),
             Self::ProportionalHazard => (1.0, 0.0),
             Self::DualPower => (1.0, f64::INFINITY),
             Self::Tvar => (0.0, 1.0),
@@ -837,6 +1025,24 @@ pub fn calibrate(
     if family == Family::Ccoc {
         return Distortion::ccoc((premium - mean) / (top - premium));
     }
+    if family == Family::Tsallis {
+        // The price rises with the Gini index G = 1 / (alpha + 1), which
+        // runs over (0, 1) from the mean to the maximum.
+        let below = |g: f64| {
+            g <= 0.0
+                || Distortion::tsallis(1.0 / g - 1.0)
+                    .map_or(true, |d| d.apply_discrete(values, probs) < premium)
+        };
+        let g = bisect(0.0, 1.0, below);
+        let d = Distortion::tsallis(1.0 / g - 1.0)?;
+        let got = d.apply_discrete(values, probs);
+        if (got - premium).abs() > 1e-9 * premium.abs().max(1.0) {
+            return Err(Error::Data(format!(
+                "no tsallis distortion gives the premium {premium} (closest {got})"
+            )));
+        }
+        return Ok(d);
+    }
     let price = |x: f64| family.with(x).map(|d| d.apply_discrete(values, probs));
     let (lo, hi) = family.range();
     let below = |x: f64| price(x).map_or(true, |v| v < premium);
@@ -880,6 +1086,62 @@ pub fn calibrate(
     Ok(d)
 }
 
+/// `∫₀¹ f` for a bounded, increasing `f` that may be steep at 0 and have
+/// kinks: dyadic panels toward 0 (`[2^-(k+1), 2^-k]`, down to `2^-60`),
+/// each refined by halving until the 8-point Gauss-Legendre rule agrees
+/// with its two halves to 1e-15.
+fn integrate_unit(f: impl Fn(f64) -> f64) -> f64 {
+    fn panel(f: &impl Fn(f64) -> f64, lo: f64, hi: f64, whole: f64, depth: u32) -> f64 {
+        let mid = 0.5 * (lo + hi);
+        let gl = |a: f64, b: f64| gauss_legendre(|x| Ok::<_, ()>(f(x)), a, b).unwrap_or(0.0);
+        let (left, right) = (gl(lo, mid), gl(mid, hi));
+        if depth >= 40 || (left + right - whole).abs() <= 1e-15 * (hi - lo).max(1e-300) {
+            left + right
+        } else {
+            panel(f, lo, mid, left, depth + 1) + panel(f, mid, hi, right, depth + 1)
+        }
+    }
+    let mut total = 0.0;
+    let mut hi = 1.0;
+    for _ in 0..60 {
+        let lo = hi / 2.0;
+        let whole = gauss_legendre(|x| Ok::<_, ()>(f(x)), lo, hi).unwrap_or(0.0);
+        total += panel(&f, lo, hi, whole, 0);
+        hi = lo;
+    }
+    // The rest, below 2^-60: at most its width times f there.
+    total + hi * f(hi)
+}
+
+/// Each family's member that prices the discrete distribution at
+/// `premium`, in the order given: [`calibrate`] for each. `aggregate`'s
+/// `calibrate_distortions` on [`Family::STANDARD`] (its default set) or
+/// [`Family::EXTENDED`] (`extended=True`, with Tsallis).
+///
+/// ```
+/// use prospicio_prob::distortion::{Family, calibrate_all};
+///
+/// let x = [22.0, 28.0, 36.0, 40.0, 55.0, 65.0, 100.0];
+/// let p = [0.1, 0.1, 0.1, 0.4, 0.1, 0.1, 0.1];
+/// let premium = (46.6 + 0.15 * 100.0) / 1.15;
+/// let all = calibrate_all(&Family::EXTENDED, &x, &p, premium).unwrap();
+/// assert_eq!(all.len(), 6);
+/// for d in &all {
+///     assert!((d.apply_discrete(&x, &p) - premium).abs() < 1e-9);
+/// }
+/// ```
+pub fn calibrate_all(
+    families: &[Family],
+    values: &[f64],
+    probs: &[f64],
+    premium: f64,
+) -> Result<Vec<Distortion>> {
+    families
+        .iter()
+        .map(|&f| calibrate(f, values, probs, premium))
+        .collect()
+}
+
 /// Runs of equal values merged into one value with their total probability.
 fn merge_ties(values: &[f64], probs: &[f64]) -> (Vec<f64>, Vec<f64>) {
     let (mut xs, mut ps): (Vec<f64>, Vec<f64>) = (Vec::new(), Vec::new());
@@ -893,6 +1155,50 @@ fn merge_ties(values: &[f64], probs: &[f64]) -> (Vec<f64>, Vec<f64>) {
         }
     }
     (xs, ps)
+}
+
+/// The Tsallis distortion of order `alpha` at `s` in `(0, 1)`, as
+/// `aggregate`'s `_g_alpha`: `s - t / β` with `β = alpha - 1` and
+/// `t = s^alpha - s = s (e^(β ln s) - 1)`, which does not cancel as
+/// `alpha → 1` and tends to `s alpha / (alpha - 1)` when `s^alpha`
+/// underflows. Where `β ln s` passes 700 (`alpha` near 0 and `s` tiny)
+/// `s^alpha` is far above `s` and `t = e^(alpha ln s) - s` is used.
+fn tsallis_g(alpha: f64, s: f64) -> f64 {
+    let l = s.ln();
+    let beta = alpha - 1.0;
+    if beta == 0.0 {
+        return s * (1.0 - l);
+    }
+    let bl = beta * l;
+    let t = if bl > 700.0 {
+        (alpha * l).exp() - s
+    } else {
+        s * bl.exp_m1()
+    };
+    (s - t / beta).min(1.0)
+}
+
+/// `1 - g(s)` of the Tsallis distortion from `t = 1 - s`. With
+/// `s^alpha = Σ (-1)^k C(alpha, k) t^k`, `1 - g = Σ_{k>=2} c_k t^k` with
+/// `c_k = (-1)^k alpha (alpha - 2) ... (alpha - k + 1) / k!` (the factor
+/// `alpha - 1` cancels), which keeps its relative accuracy as `t → 0`,
+/// where `1 - g ≈ alpha t² / 2`. Away from 1, `1 - g(s)` itself.
+fn tsallis_complement(alpha: f64, s: f64) -> f64 {
+    let t = 1.0 - s;
+    if t >= 0.25 {
+        return 1.0 - tsallis_g(alpha, s);
+    }
+    // c_2 t^2 = alpha t^2 / 2; c_{k+1} = -c_k (alpha - k) t / (k + 1).
+    let mut term = alpha * t * t / 2.0;
+    let mut sum = term;
+    for k in 2..400 {
+        term *= -(alpha - k as f64) * t / (k + 1) as f64;
+        sum += term;
+        if term.abs() <= 1e-17 * sum.abs() {
+            break;
+        }
+    }
+    sum.max(0.0)
 }
 
 fn tvar_g(p: f64, s: f64) -> f64 {
@@ -929,6 +1235,119 @@ fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tsallis_is_continuous_in_alpha_and_keeps_its_complement() {
+        // Through alpha = 1, where the closed form changes.
+        for s in [1e-9, 0.01, 0.3, 0.9] {
+            let at = Distortion::tsallis(1.0).unwrap().g(s);
+            for a in [1.0 - 1e-9, 1.0 + 1e-9] {
+                assert!(
+                    (Distortion::tsallis(a).unwrap().g(s) - at).abs() < 1e-8,
+                    "{s} {a}"
+                );
+            }
+        }
+        // 1 - g(s) near s = 1 against its series to t^4.
+        for a in [0.3, 1.0, 2.5, 40.0] {
+            let d = Distortion::tsallis(a).unwrap();
+            for t in [1e-12, 1e-8, 1e-4] {
+                let s = 1.0 - t;
+                let t = 1.0 - s;
+                let want = a * t * t / 2.0
+                    * (1.0 - (a - 2.0) * t / 3.0 + (a - 2.0) * (a - 3.0) * t * t / 12.0);
+                assert!((d.complement(s) / want - 1.0).abs() < 1e-6, "{a} {t}");
+            }
+            // Away from 1 the two ways agree.
+            for s in [0.1, 0.5, 0.74, 0.76] {
+                assert!((d.complement(s) - (1.0 - d.g(s))).abs() < 1e-13, "{a} {s}");
+            }
+        }
+        // Extreme orders stay in [s, 1].
+        for a in [1e-6, 1e6] {
+            let d = Distortion::tsallis(a).unwrap();
+            for s in [1e-300, 1e-10, 0.5] {
+                let g = d.g(s);
+                assert!(g >= s * (1.0 - 1e-12) && g <= 1.0, "{a} {s} {g}");
+            }
+        }
+        assert!(Distortion::tsallis(0.0).is_err() && Distortion::tsallis(f64::NAN).is_err());
+    }
+
+    #[test]
+    fn gini_closed_forms_agree_with_quadrature() {
+        let all = [
+            Distortion::tvar(0.3).unwrap(),
+            Distortion::wang(0.4).unwrap(),
+            Distortion::proportional_hazard(0.6).unwrap(),
+            Distortion::dual_power(2.5).unwrap(),
+            Distortion::exponential(3.0).unwrap(),
+            Distortion::ccoc(0.15).unwrap(),
+            Distortion::tsallis(0.5).unwrap(),
+            Distortion::tsallis(3.0).unwrap(),
+            Distortion::bitvar(0.2, 0.9, 0.3).unwrap(),
+            Distortion::weighted_tvar(vec![0.1, 0.5, 0.9], vec![0.2, 0.5, 0.3]).unwrap(),
+            Distortion::capped_linear(0.05, 1.4).unwrap(),
+            Distortion::capped_log_linear(0.1, 0.8).unwrap(),
+            Distortion::beta(0.6, 1.5).unwrap(),
+            Distortion::convex(&[(0.1, 0.3), (0.5, 0.8)]).unwrap(),
+            Distortion::mixture(vec![
+                (0.4, Distortion::wang(0.4).unwrap()),
+                (0.6, Distortion::tsallis(2.0).unwrap()),
+            ])
+            .unwrap(),
+        ];
+        for d in &all {
+            // The mass at 0 is a point to the integral.
+            let q = 2.0 * integrate_unit(|s| d.g(s)) - 1.0;
+            assert!((d.gini() - q).abs() < 1e-12, "{d:?}: {} vs {q}", d.gini());
+        }
+        let m = Distortion::minimum(vec![
+            Distortion::tvar(0.5).unwrap(),
+            Distortion::proportional_hazard(0.5).unwrap(),
+        ])
+        .unwrap();
+        // min(2s, 1) is below sqrt(s) up to s = 1/4 and above it after:
+        // area 1/16 + (2/3)(1 - 1/8).
+        let want = 2.0 * (1.0 / 16.0 + (2.0 / 3.0) * (1.0 - 0.125)) - 1.0;
+        assert!((m.gini() - want).abs() < 1e-12, "{} vs {want}", m.gini());
+    }
+
+    #[test]
+    fn from_gini_inverts_gini() {
+        for f in [
+            Family::Ccoc,
+            Family::ProportionalHazard,
+            Family::Wang,
+            Family::Tsallis,
+            Family::DualPower,
+            Family::Tvar,
+            Family::Exponential,
+        ] {
+            for g in [1e-6, 0.1, 0.5, 0.9, 0.999] {
+                let d = Distortion::from_gini(f, g).unwrap();
+                assert!((d.gini() - g).abs() < 1e-12, "{f:?} {g}: {}", d.gini());
+            }
+        }
+        assert!(Distortion::from_gini(Family::Wang, 0.0).is_err());
+        assert!(Distortion::from_gini(Family::Wang, 1.0).is_err());
+        let e = Distortion::from_gini(Family::Lep { r0: 0.1 }, 0.3).unwrap_err();
+        assert!(e.to_string().contains("r0"), "{e}");
+    }
+
+    #[test]
+    fn tsallis_calibrates_through_its_gini() {
+        let x = [22.0, 28.0, 36.0, 40.0, 55.0, 65.0, 100.0];
+        let p = [0.1, 0.1, 0.1, 0.4, 0.1, 0.1, 0.1];
+        for premium in [46.7, 53.5, 90.0, 99.9] {
+            let d = calibrate(Family::Tsallis, &x, &p, premium).unwrap();
+            assert!(
+                (d.apply_discrete(&x, &p) - premium).abs() < 1e-9,
+                "{premium}"
+            );
+        }
+        assert!(calibrate(Family::Tsallis, &x, &p, 46.6).is_err());
+    }
 
     /// On a uniform, `∫₀¹ φ(u) u du = (e^k (k - 1) + 1) / (k (e^k - 1))`.
     #[test]

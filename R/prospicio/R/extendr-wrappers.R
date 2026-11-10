@@ -4267,6 +4267,12 @@ RiskDistortion$convex <- function(s, g) .Call(wrap__RiskDistortion__convex, s, g
 
 RiskDistortion$calibrate <- function(family, x, premium, assets, r0) .Call(wrap__RiskDistortion__calibrate, family, x, premium, assets, r0)
 
+RiskDistortion$calibrate_all <- function(families, x, premium, assets) .Call(wrap__RiskDistortion__calibrate_all, families, x, premium, assets)
+
+RiskDistortion$from_gini <- function(family, gini) .Call(wrap__RiskDistortion__from_gini, family, gini)
+
+RiskDistortion$gini <- function() .Call(wrap__RiskDistortion__gini, self)
+
 RiskDistortion$kind <- function() .Call(wrap__RiskDistortion__kind, self)
 
 RiskDistortion$param <- function() .Call(wrap__RiskDistortion__param, self)

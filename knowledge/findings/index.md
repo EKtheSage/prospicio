@@ -1,5 +1,6 @@
 # Findings
 
+* [The Tsallis distortion and the Gini index against aggregate 2.1.0](tsallis-gini-parity.md) - Tsallis's g in aggregate's stable form and its complement by series near s = 1, every family's Gini closed form or by quadrature (the exponential's as coth(k/2) - 2/k), from_gini, and the extended calibration (InsCo's Tsallis alpha 3.0691) at parity with aggregate 2.1.0 on 113 values (#769, #770, #771).
 * [Discrete inputs aggregate 2.1.0 refuses](discrete-input-checks.md) - dsev probabilities must pass numpy's isclose(sum, 1) (0.99999 builds, 0.99998 does not) and a fixed count must be whole; dfreq sums are not checked by aggregate; Discrete now refuses as dsev does, with Discrete::normalized for weights (#774).
 * [Tweedie conversions against aggregate 2.1.0](tweedie-conversions.md) - one Tweedie law from its dispersion, its cv or a Poisson-gamma compound matches TweedieConversion to 1e-13; the power implied by a mean, cv and dispersion is 2 + ln(cv^2 / phi) / ln(mean), refused at a mean of 1 (#775).
 * [The validation verdict against aggregate 2.1.0](validation-verdict.md) - aggregate's valid is the grid audit's six moment terms at their bounds, a convolution residual (ALIASING) and a deficit test (DEFECTIVE); validate_grid agrees flag by flag on six books (#778).

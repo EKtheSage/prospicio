@@ -433,10 +433,13 @@ labelled in `companies`, with their premiums; chain its summary into
 | `PRO.CAP.IMAN.CONOVER(draws, correlation, [seed], [dof], [shuffle])` | Simulated columns reordered to a rank correlation |
 
 - Distortion families use `aggregate`'s names: `ccoc` (r), `ph` (rho),
-  `wang` (lambda), `dual` (beta), `tvar` (p), `exp` (k), and the capped
+  `wang` (lambda), `tsallis` (alpha), `dual` (beta), `tvar` (p), `exp` (k),
+  and the capped
   `clin`, `cll`, `lep` and `ly`, which take an intercept `r0`. Families
   with several parameters take them as one range: `bitvar` (`p0, p1, w`),
-  `beta` (`a, b`), `wtdtvar` (levels and weights).
+  `beta` (`a, b`), `wtdtvar` (levels and weights). `PRO.CAP.DISTORTION.CALIBRATE`
+  calibrates `ccoc`, `ph`, `wang`, `dual` and `tvar` by default, and adds
+  `tsallis` with `families` `"extended"`.
 - Without `probs`, `values` are equally likely draws, so a column of
   `PRO.RES.ODP.SIMS` prices directly. To price a loss backed by assets `a`,
   cap the outcomes first with `=MIN(range, a)`.

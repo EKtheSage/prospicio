@@ -492,6 +492,41 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   a user takes a severity's quantile of a column themselves; the random
   draw paths of the other copulas and of the severities are unchanged.
 
+### The Tsallis distortion, the Gini index and the extended calibration set (#769, #770, #771)
+
+`aggregate` 2.1.0 added these three; prospicio follows its definitions and
+parameterisation, checked against it in
+`validation/reference/distortion_gini_aggregate.csv`
+(`validation/scripts/aggregate_distortion_gini.py`, 113 rows).
+
+- `Distortion::Tsallis(α)`, `g(s) = (α s − s^α) / (α − 1)` and `s (1 − ln
+  s)` at `α = 1`, the Beta(α, 1) mixture of TVaRs: its price is the mean
+  plus the cumulative residual Tsallis entropy of order `α`. `g` is
+  evaluated as `aggregate`'s `_g_alpha` (`s − s·expm1(β ln s)/β`, no
+  cancellation at `α → 1`), and `1 − g` near `s = 1` by its series in
+  `t = 1 − s`, which keeps the capital per unit of margin accurate there.
+- `Distortion::gini`, `2 ∫ g − 1`, in closed form for every family but
+  `Lep`, `LinearYield` and `Minimum`, which are integrated by adaptive
+  Gauss–Legendre on dyadic panels toward 0 (about 1e-14). The exponential
+  family's is `coth(k/2) − 2/k`, a series for small `k`.
+- `Distortion::from_gini(family, G)` for the one-parameter families:
+  aggregate's six (`ccoc`, `ph`, `wang`, `tsallis`, `dual`, `tvar`) in
+  closed form, and the exponential by bisection.
+- `Family::Tsallis` calibrates through the Gini index, `G = 1/(α + 1)` in
+  `(0, 1)`, since its price falls as `α` grows without bound.
+  `Family::EXTENDED` is `aggregate`'s `EXTENDED_CALIBRATION_DISTORTIONS`
+  (the standard five with Tsallis between Wang and dual), and
+  `distortion::calibrate_all` calibrates a set, `calibrate_distortions` in
+  Python and R, `"extended"` in `PRO.CAP.DISTORTION.CALIBRATE`.
+
+Proposed for the user's acceptance: (a) *the exponential family has a
+`from_gini`*, which `aggregate` (with no exponential family) lacks; (b)
+*the families with `r0` are refused*, as `aggregate` refuses them, since
+each index has a curve of members; (c) *`ccoc`'s parameter is the return
+`r`* (`r = G / (1 − G)`), where `aggregate`'s `from_gini` sets its discount
+`d = G`; (d) *no JSON form* for distortions is added, since none exists
+for the other families.
+
 ## Validation
 
 `validation/tests/distributions.rs` checks distortions against
