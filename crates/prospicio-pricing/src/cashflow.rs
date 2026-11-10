@@ -67,14 +67,37 @@ fn increments(v: &[f64]) -> Vec<f64> {
         .collect()
 }
 
+/// When in its month a month's premium is written, for the earned pattern
+/// of [`MonthlyPatterns::from_annual`] and [`MonthlyPatterns::from_paid`]
+/// (#839).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WrittenTiming {
+    /// Policies written evenly through the month, so a month's writing has
+    /// earned `min((u − ½) / policy_months, 1)` of itself `u` months after
+    /// its start: the parallelogram, and the convention of the reserving
+    /// crate's underwriting basis (`UnderwritingBasis`), so a deal's earned
+    /// and paid patterns rest on one rule. The default.
+    #[default]
+    ThroughMonth,
+    /// The month's premium written at its start, earned
+    /// `min(u / policy_months, 1)`: a contract written on its inception date,
+    /// such as one catastrophe excess-of-loss year (`written` all 1).
+    AtStart,
+}
+
 /// The share earned by the end of each month: the premium written in month
-/// `s` earns evenly over the `policy_months` months from it.
-fn earned_from_written(written: &[f64], policy_months: usize) -> Vec<f64> {
+/// `s` earns evenly over the `policy_months` months from when it is written
+/// in the month, as `timing` says.
+fn earned_from_written(written: &[f64], policy_months: usize, timing: WrittenTiming) -> Vec<f64> {
     let dw = increments(written);
+    let lag = match timing {
+        WrittenTiming::ThroughMonth => 0.5,
+        WrittenTiming::AtStart => 0.0,
+    };
     (0..written.len())
         .map(|t| {
             (0..=t)
-                .map(|s| dw[s] * ((t - s + 1) as f64 / policy_months as f64).min(1.0))
+                .map(|s| dw[s] * (((t - s + 1) as f64 - lag) / policy_months as f64).min(1.0))
                 .sum()
         })
         .collect()
@@ -83,27 +106,38 @@ fn earned_from_written(written: &[f64], policy_months: usize) -> Vec<f64> {
 impl MonthlyPatterns {
     /// The earned and paid patterns from a written one, a policy term and a
     /// payment pattern by development age (#601). The premium written in
-    /// month `s` is written at its start and earned evenly over the
-    /// `policy_months` months from it, so the share earned by the end of
-    /// month `t` is `Σ_s ΔW_s min((t − s + 1) / policy_months, 1)`. Losses
+    /// month `s` is written through the month or at its start (`timing`)
+    /// and earned evenly over the `policy_months` months from then, so the
+    /// share earned by the end of month `t` is
+    /// `Σ_s ΔW_s min((t − s + 1 − ½) / policy_months, 1)` through the month
+    /// (the default, the reserving crate's convention) and
+    /// `Σ_s ΔW_s min((t − s + 1) / policy_months, 1)` at the start. Losses
     /// occur as premium is earned, in the middle of their month, and are
     /// paid by `paid`, measured from the accident date and read between
     /// its times as `how` says ([`PaymentPattern::paid_by`]): the share of
     /// the ultimate loss paid by the end of month `t` is
     /// `Σ_e ΔE_e paid_by((t − e + ½) / 12)`.
     ///
-    /// All premium written at inception (`written` all 1) is a single
-    /// policy; written evenly over a year, policies written through it.
+    /// All premium written at inception (`written` all 1) with
+    /// [`WrittenTiming::AtStart`] is a single contract written on its
+    /// inception date; written evenly over a year through each month,
+    /// policies written through the year.
     ///
     /// ```
-    /// use prospicio_pricing::cashflow::MonthlyPatterns;
+    /// use prospicio_pricing::cashflow::{MonthlyPatterns, WrittenTiming};
     /// use prospicio_pricing::payout::{Interpolation, PaymentPattern};
     ///
-    /// // One annual policy at inception, paid evenly over three years from
-    /// // the accident date.
+    /// // One annual contract written at inception, paid evenly over three
+    /// // years from the accident date.
     /// let paid = PaymentPattern::new(vec![1.0, 2.0, 3.0], vec![1.0 / 3.0; 3]).unwrap();
-    /// let p = MonthlyPatterns::from_annual(vec![1.0; 60], 12, &paid, Interpolation::Linear)
-    ///     .unwrap();
+    /// let p = MonthlyPatterns::from_annual(
+    ///     vec![1.0; 60],
+    ///     12,
+    ///     &paid,
+    ///     Interpolation::Linear,
+    ///     WrittenTiming::AtStart,
+    /// )
+    /// .unwrap();
     /// assert!((p.earned[5] - 0.5).abs() < 1e-15 && p.earned[11] == 1.0);
     /// // Half a month of the first month's losses, over 36 months to pay.
     /// assert!((p.paid[0] - 0.5 / 36.0 / 12.0).abs() < 1e-15);
@@ -114,6 +148,7 @@ impl MonthlyPatterns {
         policy_months: usize,
         paid: &PaymentPattern,
         how: Interpolation,
+        timing: WrittenTiming,
     ) -> Result<Self> {
         if policy_months == 0 {
             return Err(Error::InvalidParameter {
@@ -128,7 +163,7 @@ impl MonthlyPatterns {
             ));
         }
         let n = written.len();
-        let earned = earned_from_written(&written, policy_months);
+        let earned = earned_from_written(&written, policy_months, timing);
         let de = increments(&earned);
         // The share paid of a month's losses after k whole months.
         let lag: Vec<f64> = (0..n)
@@ -152,17 +187,27 @@ impl MonthlyPatterns {
     /// `SelectedPattern::to_underwriting_basis` and the deal's own writing
     /// and term. `paid[t]` is that pattern at age `t + 1` months.
     ///
+    /// The underwriting-year conversion assumes policies written through
+    /// each month, so pair it with [`WrittenTiming::ThroughMonth`].
+    ///
     /// ```
-    /// use prospicio_pricing::cashflow::MonthlyPatterns;
+    /// use prospicio_pricing::cashflow::{MonthlyPatterns, WrittenTiming};
     ///
     /// // Premium written evenly over the year, 12-month policies, and the
     /// // underwriting year paid evenly over its first 36 months.
     /// let written: Vec<f64> = (1..=48).map(|m| (f64::from(m) / 12.0).min(1.0)).collect();
     /// let paid: Vec<f64> = (1..=48).map(|m| (f64::from(m) / 36.0).min(1.0)).collect();
-    /// let p = MonthlyPatterns::from_paid(written, 12, paid).unwrap();
+    /// let p = MonthlyPatterns::from_paid(written, 12, paid, WrittenTiming::ThroughMonth).unwrap();
+    /// // Half the premium earned by the end of the year: the parallelogram.
+    /// assert!((p.earned[11] - 0.5).abs() < 1e-15);
     /// assert!((p.earned[23] - 1.0).abs() < 1e-15 && (p.paid[35] - 1.0).abs() < 1e-15);
     /// ```
-    pub fn from_paid(written: Vec<f64>, policy_months: usize, paid: Vec<f64>) -> Result<Self> {
+    pub fn from_paid(
+        written: Vec<f64>,
+        policy_months: usize,
+        paid: Vec<f64>,
+        timing: WrittenTiming,
+    ) -> Result<Self> {
         if policy_months == 0 {
             return Err(Error::InvalidParameter {
                 name: "policy_months",
@@ -182,7 +227,7 @@ impl MonthlyPatterns {
                 written.len()
             )));
         }
-        let earned = earned_from_written(&written, policy_months);
+        let earned = earned_from_written(&written, policy_months, timing);
         Self::new(written, earned, paid)
     }
 
@@ -3058,14 +3103,33 @@ mod tests {
         let n = 72;
         let written: Vec<f64> = (0..n).map(|t| ((t + 1) as f64 / 12.0).min(1.0)).collect();
         let paid = PaymentPattern::from_development(&[1.0, 2.0, 3.0], &[2.5, 1.25, 1.0]).unwrap();
-        let p = MonthlyPatterns::from_annual(written.clone(), 12, &paid, Interpolation::Linear)
-            .unwrap();
-        // Month 0 writes 1/12, earned 1/12 of it.
-        assert!((p.earned[0] - 1.0 / 144.0).abs() < 1e-15);
-        // Month 11: each month's writing earned (12 - s) / 12 of it.
-        let e11: f64 = (0..12).map(|s| (12 - s) as f64 / 144.0).sum();
-        assert!((p.earned[11] - e11).abs() < 1e-15);
-        assert!((p.earned[22] - 1.0).abs() < 1e-15);
+        let p = MonthlyPatterns::from_annual(
+            written.clone(),
+            12,
+            &paid,
+            Interpolation::Linear,
+            WrittenTiming::ThroughMonth,
+        )
+        .unwrap();
+        // Written through the month (#839): month 0 writes 1/12, earned half
+        // a month's worth of it, 1/24.
+        assert!((p.earned[0] - 1.0 / 288.0).abs() < 1e-15);
+        // Month 11: each month's writing earned (12 - s - 1/2) / 12 of it,
+        // half the year's premium in all: the parallelogram.
+        let e11: f64 = (0..12).map(|s| (11.5 - s as f64) / 144.0).sum();
+        assert!((p.earned[11] - e11).abs() < 1e-15 && (e11 - 0.5).abs() < 1e-15);
+        assert!((p.earned[23] - 1.0).abs() < 1e-15 && p.earned[22] < 1.0);
+        // Written at the start of each month: 78 / 144 by month 11, as before.
+        let at_start = MonthlyPatterns::from_annual(
+            written.clone(),
+            12,
+            &paid,
+            Interpolation::Linear,
+            WrittenTiming::AtStart,
+        )
+        .unwrap();
+        assert!((at_start.earned[11] - 78.0 / 144.0).abs() < 1e-15);
+        assert!((at_start.earned[22] - 1.0).abs() < 1e-15);
         // Paid by a hand sum over the accident months.
         let t = 30;
         let de: Vec<f64> = (0..n)
@@ -3083,6 +3147,15 @@ mod tests {
         let req = Requirement::new(vec![Term::new(Base::Outstanding, 1.0)]);
         let terms = CashflowTerms::new(100.0, 48, p, req).unwrap();
         assert!(terms.run(&[0.7], &[0.0]).is_ok());
-        assert!(MonthlyPatterns::from_annual(written, 0, &paid, Interpolation::Linear).is_err());
+        assert!(
+            MonthlyPatterns::from_annual(
+                written,
+                0,
+                &paid,
+                Interpolation::Linear,
+                WrittenTiming::default()
+            )
+            .is_err()
+        );
     }
 }

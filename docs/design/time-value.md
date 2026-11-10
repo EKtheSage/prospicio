@@ -301,7 +301,8 @@ frame).
     the last time all is paid (the shares, any tail included, sum to 1).
     `MonthlyPatterns::from_annual` builds the engine's three patterns from
     a written one: premium written in month `s` is written at its start
-    and earned evenly over the policy term from it, losses occur with
+    and earned evenly over the policy term from it (through the month by
+    default since decision 38), losses occur with
     earning in the middle of their month and are paid by the pattern from
     the accident date. A single inception and policies written through a
     year are the same call with a different written pattern, so there is
@@ -488,7 +489,29 @@ frame).
     submission's paid chain ladder the deal pays 15.0% by month 12 and
     58.6% by month 24, the mean of the fit's draws converted one by one
     (`knowledge/findings/ils-deal-analysis-monthly-patterns.md`), against
-    7.3% and 39.6% read from each accident date.
+    7.3% and 39.6% read from each accident date (6.5% and 38.1% since
+    decision 38).
+38. **One earning convention, written through the month** (#839, the
+    user's decisions of 2026-11-10): `MonthlyPatterns::from_annual` and
+    `from_paid` earn a month's writing as the reserving crate's
+    underwriting basis does, policies written evenly through the month,
+    so `u` months after the month's start `min((u − ½) / policy_months, 1)`
+    of it is earned (the parallelogram: half a year's even writing earned
+    by its end, against 78/144 = 54.2% under decision 30's rule). Paid and
+    earned patterns on the composed route (decision 37) now rest on one
+    rule; on even writing the earned pattern equals `UnderwritingBasis`'s
+    cumulative exposure to 2e-16. `WrittenTiming::AtStart` (Python and R
+    `written_timing="at_start"`) keeps decision 30's rule for a contract
+    written on its inception date, such as one catastrophe year (`written`
+    all 1), where writing through the month would earn it half a month
+    late. On the sample submission's chain ladder the accident-date route
+    pays 6.5% and 38.1% by months 12 and 24 (7.3% and 39.6% at the start);
+    no guide or notebook takes this route, since the ILS notebook and
+    `submission-schema.md` build their earned pattern from
+    `UnderwritingBasis`, so no printed number moves. Pricing's
+    `Interpolation::LogLinear` is renamed `LogLinearUnpaid` (`ln(1 − F)`
+    linear in time), apart from the reserving crate's log-linear reading
+    of the factors.
 
 ## Conventions left as settings (cash-flow engine)
 

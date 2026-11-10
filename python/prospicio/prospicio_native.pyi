@@ -38861,15 +38861,20 @@ def moic(released: float, funded: float, opening: float) -> float:
     1.3
     """
 
-def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_months: int = 12, interpolation: str = "linear", accident_period: str |None = None, reading: str = "weibull") -> tuple[list[float], list[float], list[float]]:
+def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_months: int = 12, interpolation: str = "linear", accident_period: str |None = None, reading: str = "weibull", written_timing: str = "through_month") -> tuple[list[float], list[float], list[float]]:
     """
     The monthly written, earned and paid patterns of ``CashflowTerms`` from
     a written pattern, a policy term and a payment pattern by development
     age.
     
-    The premium written in month ``s`` is written at its start and earned
-    evenly over the ``policy_months`` months from it. Losses occur as
-    premium is earned, in the middle of their month.
+    The premium written in month ``s`` is earned evenly over the
+    ``policy_months`` months from when it is written: through the month
+    by default (``written_timing="through_month"``, half the premium
+    written evenly over a year earned by its end, the parallelogram and the
+    convention of ``UnderwritingBasis``), or at its start
+    (``written_timing="at_start"``, a contract written on its inception
+    date, such as one catastrophe year with ``written`` all 1; #839).
+    Losses occur as premium is earned, in the middle of their month.
     
     Without ``accident_period`` they are paid by ``pattern`` measured from
     the accident date and read between its times by ``interpolation`` (as
@@ -38894,6 +38899,7 @@ def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_m
     interpolation : {"linear", "step", "log_linear_unpaid"}, default "linear"
     accident_period : {"year", "quarter", "month"}, optional
     reading : {"weibull", "loglogistic", "ln-linear"}, default "weibull"
+    written_timing : {"through_month", "at_start"}, default "through_month"
     
     Returns
     -------
@@ -38904,9 +38910,12 @@ def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_m
     --------
     >>> from prospicio.pricing import PaymentPattern, monthly_patterns
     >>> p = PaymentPattern([1.0, 2.0, 3.0], [1 / 3] * 3)
-    >>> w, e, paid = monthly_patterns([1.0] * 60, p)
+    >>> w, e, paid = monthly_patterns([1.0] * 60, p, written_timing="at_start")
     >>> e[5], e[11], round(paid[59], 12)
     (0.5, 1.0, 1.0)
+    >>> even = [min(1.0, (m + 1) / 12) for m in range(60)]
+    >>> round(monthly_patterns(even, p)[1][11], 12)
+    0.5
     >>> even = [min(1.0, (m + 1) / 12) for m in range(60)]
     >>> _, _, uy = monthly_patterns(even, p, accident_period="year")
     >>> round(uy[59], 12)

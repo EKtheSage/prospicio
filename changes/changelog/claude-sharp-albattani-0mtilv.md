@@ -128,3 +128,15 @@
   the reserving patterns' log-linear reading of the development factors,
   which keeps its name. The old name is an error that gives the new one
   (#839, #852).
+
+### Breaking changes
+
+- Pricing's monthly earned pattern (`MonthlyPatterns::from_annual` and
+  `from_paid`; Python `monthly_patterns`, R `cashflow_patterns_from_annual()`)
+  earns a month's premium as written evenly through the month, the
+  reserving crate's `UnderwritingBasis` convention, instead of at its
+  start: half of a year's even writing is earned by its end (was 54.2%),
+  and the accident-date route pays a little later (6.5% by month 12 on the
+  sample submission, was 7.3%). `written_timing="at_start"`
+  (`WrittenTiming::AtStart`) keeps the old rule for a contract written on
+  its inception date. Rust callers pass the new argument (#839, #852).

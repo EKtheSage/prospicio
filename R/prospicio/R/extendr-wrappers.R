@@ -381,7 +381,7 @@ pricing_pattern_unpaid <- function(times, shares, age) .Call(wrap__pricing_patte
 
 pricing_pattern_values <- function(times, shares, rate, t) .Call(wrap__pricing_pattern_values, times, shares, rate, t)
 
-pricing_patterns_from_annual <- function(written, times, shares, policy_months, interpolation, accident_period, reading) .Call(wrap__pricing_patterns_from_annual, written, times, shares, policy_months, interpolation, accident_period, reading)
+pricing_patterns_from_annual <- function(written, times, shares, policy_months, interpolation, accident_period, reading, written_timing) .Call(wrap__pricing_patterns_from_annual, written, times, shares, policy_months, interpolation, accident_period, reading, written_timing)
 
 pricing_payment_pattern <- function(times, values, from_development) .Call(wrap__pricing_payment_pattern, times, values, from_development)
 

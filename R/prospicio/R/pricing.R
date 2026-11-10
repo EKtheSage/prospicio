@@ -1879,11 +1879,14 @@ pattern_values <- function(pattern, rate = 0, t = double()) {
 #'
 #' `cashflow_patterns_from_annual()` gives the monthly written, earned and
 #' paid patterns of [cashflow_terms()] from a written pattern: the premium
-#' written in month `s` is written at its start and earned evenly over the
-#' `policy_months` months from it; losses occur as premium is earned, in
-#' the middle of their month, and are paid by `pattern` measured from the
-#' accident date. All premium written at once is a single policy; written
-#' evenly over a year, policies written through it. With `accident_period =
+#' written in month `s` is earned evenly over the `policy_months` months
+#' from when it is written, through the month by default
+#' (`written_timing = "through_month"`: half the premium written evenly over
+#' a year earned by its end, the parallelogram and the convention of
+#' [underwriting_basis()]) or at its start (`"at_start"`: a contract written
+#' on its inception date, such as one catastrophe year with `written` all 1;
+#' #839); losses occur as premium is earned, in the middle of their month,
+#' and are paid by `pattern` measured from the accident date. With `accident_period =
 #' "year"` (or `"quarter"`, `"month"`) the pattern is an accident-period
 #' pattern, such as a chain ladder's, measured from the start of each
 #' accident period: the deal is then one underwriting period written as
@@ -1904,6 +1907,8 @@ pattern_values <- function(pattern, rate = 0, t = double()) {
 #'   or `"year"`, `"quarter"` or `"month"`.
 #' @param reading How an accident-period pattern is read at monthly ages:
 #'   `"weibull"`, `"loglogistic"` or `"ln-linear"`.
+#' @param written_timing When in its month a month's premium is written:
+#'   `"through_month"` (the default) or `"at_start"`.
 #' @returns `payment_pattern_monthly()` a numeric vector;
 #'   `cashflow_patterns_from_annual()` a list of `written`, `earned` and
 #'   `paid`.
@@ -1913,7 +1918,7 @@ pattern_values <- function(pattern, rate = 0, t = double()) {
 #' m <- payment_pattern_monthly(p, 36)
 #' m[c(12, 24, 36)]
 #' even <- payment_pattern(c(1, 2, 3), rep(1 / 3, 3))
-#' pats <- cashflow_patterns_from_annual(rep(1, 60), even)
+#' pats <- cashflow_patterns_from_annual(rep(1, 60), even, written_timing = "at_start")
 #' pats$earned[c(6, 12)]
 #' terms <- cashflow_terms(100, 48, pats$written, pats$earned, pats$paid,
 #'                         cashflow_requirement(c(outstanding = 1)))
@@ -1929,11 +1934,12 @@ payment_pattern_monthly <- function(pattern, months,
 cashflow_patterns_from_annual <- function(written, pattern, policy_months = 12,
                                           interpolation = c("linear", "step", "log_linear_unpaid"),
                                           accident_period = NULL,
-                                          reading = c("weibull", "loglogistic", "ln-linear")) {
+                                          reading = c("weibull", "loglogistic", "ln-linear"),
+                                          written_timing = c("through_month", "at_start")) {
   rust_result(pricing_patterns_from_annual(as.double(written), pattern$times, pattern$shares,
                                            as.double(policy_months), match.arg(interpolation),
                                            if (is.null(accident_period)) "" else accident_period,
-                                           match.arg(reading)))
+                                           match.arg(reading), match.arg(written_timing)))
 }
 
 #' Price over a payout

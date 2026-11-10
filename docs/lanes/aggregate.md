@@ -7,4 +7,3 @@
 Finished items are in [done/aggregate.md](done/aggregate.md), which agents read when they need the lane's history; it is not imported into every session (#846).
 
 ## Next
-- [earning-convention] #839, second part: pricing's earned pattern on reserving's convention (policies written evenly through the month, the user's decision of 2026-11-10); one question on a single policy written at inception is open with the user
