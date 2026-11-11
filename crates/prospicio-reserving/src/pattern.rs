@@ -1502,6 +1502,83 @@ impl Blend {
     }
 }
 
+/// An accident-period payment pattern read on a deal's underwriting basis,
+/// as cumulative paid shares at months `1..=written.len()` from the deal's
+/// inception, for `prospicio_pricing::MonthlyPatterns::from_paid` (#722;
+/// one function for the Python and R bindings, #838).
+///
+/// `times` (in years, each a whole number of months) and `shares` are the
+/// payment pattern's points, the shares paid at each time; `grain` is its
+/// accident period; `written` the deal's cumulative written share at the
+/// end of each month, whose increments to the last nonzero one are the
+/// writing of an [`UnderwritingBasis`] with `policy_months`; `reading` how
+/// a pattern of accident periods longer than a month is read at monthly
+/// ages. Before the converted pattern's first age the paid share grows
+/// linearly from 0; between its ages it steps; after its last it stays.
+///
+/// ```
+/// use prospicio_reserving::{AnnualReading, Grain, pattern::underwriting_paid_by_month};
+///
+/// // An accident-month pattern paying 1/12 a month over a year, written
+/// // evenly over the year on 12-month policies: on the underwriting basis
+/// // it pays more slowly, rising month by month.
+/// let times: Vec<f64> = (1..=12).map(|m| f64::from(m) / 12.0).collect();
+/// let written: Vec<f64> = (1..=36).map(|m| (f64::from(m) / 12.0).min(1.0)).collect();
+/// let paid = underwriting_paid_by_month(&times, &[1.0 / 12.0; 12], Grain::Month, &written, 12,
+///     AnnualReading::LnLinear).unwrap();
+/// assert_eq!(paid.len(), 36);
+/// assert!(paid.windows(2).all(|w| w[0] <= w[1]) && paid[11] < 11.0 / 12.0);
+/// assert!(underwriting_paid_by_month(&[0.55], &[1.0], Grain::Month, &written, 1,
+///     AnnualReading::LnLinear).is_err());
+/// ```
+pub fn underwriting_paid_by_month(
+    times: &[f64],
+    shares: &[f64],
+    grain: Grain,
+    written: &[f64],
+    policy_months: u32,
+    reading: AnnualReading,
+) -> Result<Vec<f64>> {
+    let mut cumulative = 0.0;
+    let mut values = Vec::with_capacity(times.len());
+    for (&t, &share) in times.iter().zip(shares) {
+        cumulative += share;
+        let months = t * 12.0;
+        if t <= 0.0 || (months - months.round()).abs() > 1e-9 {
+            return Err(Error::Pattern {
+                age: None,
+                reason: "an accident-period pattern needs times at whole, positive months",
+            });
+        }
+        values.push((months.round() as u32, cumulative));
+    }
+    let writing: Vec<f64> = (0..written.len())
+        .map(|t| written[t] - if t == 0 { 0.0 } else { written[t - 1] })
+        .collect();
+    let last = writing.iter().rposition(|&w| w != 0.0).map_or(0, |i| i + 1);
+    let basis = UnderwritingBasis::new(writing[..last.max(1)].to_vec(), policy_months)
+        .with_reading(reading);
+    let uy = SelectedPattern::new(PatternKind::PercentDeveloped, values)
+        .to_underwriting_basis(grain, &basis)?;
+    let mut points = uy.values;
+    points.sort_by_key(|v| v.0);
+    let (first_age, first) = points[0];
+    let level = points.last().map_or(1.0, |v| v.1);
+    Ok((1..=written.len() as u32)
+        .map(|age| {
+            if age < first_age {
+                first * f64::from(age) / f64::from(first_age)
+            } else {
+                points
+                    .iter()
+                    .rev()
+                    .find(|v| v.0 <= age)
+                    .map_or(level, |v| v.1)
+            }
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

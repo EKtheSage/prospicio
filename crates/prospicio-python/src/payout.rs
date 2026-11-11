@@ -172,46 +172,16 @@ fn underwriting_paid(
     policy_months: usize,
     reading: prospicio_reserving::AnnualReading,
 ) -> PyResult<Vec<f64>> {
-    use prospicio_reserving::{PatternKind, SelectedPattern, UnderwritingBasis};
-    let mut cumulative = 0.0;
-    let mut values = Vec::with_capacity(pattern.times().len());
-    for (&t, &share) in pattern.times().iter().zip(pattern.shares()) {
-        cumulative += share;
-        let months = t * 12.0;
-        if t <= 0.0 || (months - months.round()).abs() > 1e-9 {
-            return Err(PyValueError::new_err(format!(
-                "an accident-period pattern needs times at whole, positive months; {t} years is \
-                 not one"
-            )));
-        }
-        values.push((months.round() as u32, cumulative));
-    }
-    let writing: Vec<f64> = (0..written.len())
-        .map(|t| written[t] - if t == 0 { 0.0 } else { written[t - 1] })
-        .collect();
-    let last = writing.iter().rposition(|&w| w != 0.0).map_or(0, |i| i + 1);
-    let basis = UnderwritingBasis::new(writing[..last.max(1)].to_vec(), policy_months as u32)
-        .with_reading(reading);
-    let uy = SelectedPattern::new(PatternKind::PercentDeveloped, values)
-        .to_underwriting_basis(grain, &basis)
-        .map_err(crate::reserving::err)?;
-    let mut points = uy.values;
-    points.sort_by_key(|v| v.0);
-    let (first_age, first) = points[0];
-    let level = points.last().map_or(1.0, |v| v.1);
-    Ok((1..=written.len() as u32)
-        .map(|age| {
-            if age < first_age {
-                first * f64::from(age) / f64::from(first_age)
-            } else {
-                points
-                    .iter()
-                    .rev()
-                    .find(|v| v.0 <= age)
-                    .map_or(level, |v| v.1)
-            }
-        })
-        .collect())
+    // One function for Python and R (#838).
+    prospicio_reserving::pattern::underwriting_paid_by_month(
+        pattern.times(),
+        pattern.shares(),
+        grain,
+        written,
+        policy_months as u32,
+        reading,
+    )
+    .map_err(crate::reserving::err)
 }
 
 /// The share of the ultimate loss paid at each time, in years from the
