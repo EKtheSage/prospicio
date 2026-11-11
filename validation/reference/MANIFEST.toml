@@ -300,6 +300,11 @@ generators = ["scipy_fit_curves.py"]
 sha256 = "bfaa63419b59566b0e6377df06b5541444d4c48a8d6f0c019d510fbd15a79a89"
 
 [[file]]
+path = "fit_tails_scipy.csv"
+generators = ["scipy_fit_tails.py"]
+sha256 = "c6d6ab9a894b69daac483359eaaf03f01e5c8c8641934c9b4e865202d0c95bee"
+
+[[file]]
 path = "fremtpl2_statsmodels.csv"
 generators = ["statsmodels_fremtpl2.py"]
 sha256 = "8c869df365f9d3f894e144252cb2629d9e0dd0d61f7feb1bc268b3de23e3ca41"
@@ -369,6 +374,11 @@ sha256 = "197fa1aefa808f94e40d9dacc1ae0cd82fa44041a966c472a59f89223425025d"
 path = "isotonic_sklearn.csv"
 generators = ["isotonic_sklearn.py"]
 sha256 = "ee6fc0166239e084c144408bd99dbf32a04327427c2a865bd42d52caf0a54ec5"
+
+[[file]]
+path = "kolmogorov_scipy.csv"
+generators = ["scipy_kolmogorov.py"]
+sha256 = "45f331d896caac8a92d5fd0712e1005a14a301a3a4b5430f40c0df9f8cf295e0"
 
 [[file]]
 path = "lattice_aggregate.csv"
