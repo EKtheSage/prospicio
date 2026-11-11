@@ -855,7 +855,8 @@ exclusion_count <- function(x, arg, null_ok = FALSE) {
 development_args <- function(average, sigma_interpolation, n_periods = NULL, drop_high = 0,
                              drop_low = 0, args = c("n_periods", "drop_high", "drop_low")) {
   list(average = match.arg(average, c("volume", "simple", "regression", "geometric")),
-       sigma = match.arg(sigma_interpolation, c("log-linear", "mack")),
+       sigma = match.arg(option_alias(sigma_interpolation, log_linear_aliases),
+                         c("log-linear", "mack")),
        excl = list(n_periods = exclusion_count(n_periods, args[1], null_ok = TRUE),
                    drop_high = exclusion_count(drop_high, args[2]),
                    drop_low = exclusion_count(drop_low, args[3])))
@@ -950,6 +951,7 @@ ldf_pattern <- function(ldf, ldf_kind, ldf_weight, ldf_origin = NULL, ldf_underw
     return(NULL)
   }
   kinds <- c("ldf", "cdf", "percent_developed")
+  ldf_kind <- option_alias(ldf_kind, pattern_kind_aliases)
   if (is.null(ldf_kind)) {
     stop('ldf needs ldf_kind: "ldf" (age-to-age factors), "cdf" (factors to ultimate) or ',
          '"percent_developed"; age-to-age factors and factors to ultimate cannot be told apart',
@@ -1748,7 +1750,8 @@ munich_chain_ladder <- function(triangle, paid = "paid", incurred = "incurred",
   sigma <- c("log-linear", "mack")
   ptr <- rust_result(triangle@ptr$munich_chain_ladder(
     as.character(paid), as.character(incurred),
-    match.arg(sigma_interpolation_paid, sigma), match.arg(sigma_interpolation_incurred, sigma),
+    match.arg(option_alias(sigma_interpolation_paid, log_linear_aliases), sigma),
+    match.arg(option_alias(sigma_interpolation_incurred, log_linear_aliases), sigma),
     tail_ptr(tail_paid), tail_ptr(tail_incurred)
   ))
   munich_fit(ptr = ptr)
@@ -4487,43 +4490,16 @@ stack_programs <- function(programs, columns) {
   if (is.null(nm) || anyNA(nm) || !all(nzchar(nm))) {
     stop("every program needs a name: triangles must be a named list", call. = FALSE)
   }
-  if (anyDuplicated(nm)) {
-    stop(sprintf("program name %s is used twice", nm[anyDuplicated(nm)]), call. = FALSE)
-  }
-  columns <- unique(columns)
-  parts <- lapply(seq_along(programs), function(i) {
-    tri <- programs[[i]]
-    if (!S7::S7_inherits(tri, triangle)) {
+  for (i in seq_along(programs)) {
+    if (!S7::S7_inherits(programs[[i]], triangle)) {
       stop(sprintf("program %s is not a triangle", nm[i]), call. = FALSE)
     }
-    if (tri@shape[["index"]] != 1L) {
-      stop(sprintf("program %s has %d segments; each program is a triangle with one",
-                   nm[i], tri@shape[["index"]]), call. = FALSE)
-    }
-    lacking <- setdiff(columns, tri@columns)
-    if (length(lacking)) {
-      stop(sprintf("program %s has no column %s", nm[i], lacking[1]), call. = FALSE)
-    }
-    if ("program" %in% columns) {
-      stop("a column named program clashes with the key of the stacked triangle",
-           call. = FALSE)
-    }
-    long <- as.data.frame(tri)[c("origin", "development", columns)]
-    long$program <- nm[i]
-    long
-  })
-  first <- programs[[1]]
-  for (i in seq_along(programs)[-1]) {
-    tri <- programs[[i]]
-    if (tri@origin_grain != first@origin_grain || tri@development_grain != first@development_grain ||
-        tri@is_cumulative != first@is_cumulative) {
-      stop(sprintf("program %s differs from the first in its grains or its cumulative state",
-                   nm[i]), call. = FALSE)
-    }
   }
-  triangle(do.call(rbind, parts), "origin", "development", columns, keys = "program",
-           origin_grain = first@origin_grain, development_grain = first@development_grain,
-           cumulative = first@is_cumulative)
+  # The core's rules (#838), the same in Python: a name used twice, several
+  # segments, a missing column, other grains and a column named program
+  # are errors.
+  triangle(ptr = reserving_result(Triangle$stack(nm, lapply(programs, function(t) t@ptr), "program",
+                                                 as.character(columns))))
 }
 
 #' Hierarchical Bayesian Bornhuetter-Ferguson over programs
@@ -4754,23 +4730,10 @@ bayes_hierarchical_bf <- function(triangle, column, exposure, apriori = 1, level
 }
 
 S7::method(as.data.frame, hierarchical_bf_fit) <- function(x, ...) {
-  ps <- x@programs
-  total <- function(g) vapply(ps, function(p) sum(g(p)), 0, USE.NAMES = FALSE)
-  single <- function(g) vapply(ps, g, 0, USE.NAMES = FALSE)
-  data.frame(
-    program = vapply(ps, function(p) p@label, "", USE.NAMES = FALSE),
-    origins = vapply(ps, function(p) length(p@origins), 0L, USE.NAMES = FALSE),
-    exposure = total(function(p) p@exposure),
-    latest = total(function(p) p@latest),
-    prior_ultimate = total(function(p) p@prior_ultimate),
-    expected_ultimate = total(function(p) p@expected_ultimate),
-    scale = single(function(p) p@scale),
-    loss_ratio = single(function(p) p@loss_ratio),
-    own_loss_ratio = single(function(p) p@own_loss_ratio),
-    shrinkage = single(function(p) p@shrinkage),
-    mean = single(function(p) mean(p@reserves)),
-    std_dev = single(function(p) sqrt(variance(p@reserves))),
-    stringsAsFactors = FALSE)
+  # The core's table (#838), the same in Python; origins is a count.
+  f <- fit_table_frame(x@ptr$totals_table())
+  f$origins <- as.integer(f$origins)
+  f
 }
 S7::method(summary, hierarchical_bf_fit) <- function(object, ...) object@summary
 S7::method(print, hierarchical_bf_fit) <- function(x, ...) {
@@ -4980,14 +4943,8 @@ bayes_hierarchical_bf_one_year <- function(triangle, column, exposure, apriori =
 }
 
 S7::method(as.data.frame, hierarchical_bf_one_year_fit) <- function(x, ...) {
-  draws <- draw_matrix(x@cdr)
-  centre <- colMeans(draws)
-  data.frame(
-    program = x@program, origin = x@origins, latest = x@latest,
-    opening_ultimate = x@opening_ultimate, opening_reserve = x@opening_reserve,
-    cdr_mean = unname(centre),
-    cdr_std_dev = unname(sqrt(colMeans(sweep(draws, 2, centre)^2))),
-    stringsAsFactors = FALSE)
+  # The core's table (#838), the same in Python.
+  fit_table_frame(x@ptr$long_table())
 }
 S7::method(print, hierarchical_bf_one_year_fit) <- function(x, ...) {
   cat(sprintf("<hierarchical_bf_one_year_fit> %d programs, %d origins, %d simulations\n",
@@ -6152,7 +6109,9 @@ paid_incurred_chain <- function(triangle, paid, incurred, sigma = NULL, tau = NU
       stop(sprintf("%s must be the name of one column", arg), call. = FALSE)
     }
   }
-  extrapolation <- match.arg(extrapolation)
+  extrapolation <- match.arg(option_alias(extrapolation,
+                                         c("log-linear" = "loglinear", "log_linear" = "loglinear")),
+                            c("loglinear", "mack"))
   convention <- match.arg(convention)
   for (pair in list(c("phi_mean", "phi_sd"), c("psi_mean", "psi_sd"))) {
     if (is.null(get(pair[1])) != is.null(get(pair[2]))) {
@@ -6284,7 +6243,7 @@ S7::method(print, benchmark_curve_fit) <- function(x, ...) {
 benchmark_curve <- function(pattern, kind = c("percent_developed", "cdf"),
                             curve = c("loglogistic", "weibull"), weights = NULL, max_age = Inf,
                             origin_width = NULL) {
-  kind <- match.arg(kind)
+  kind <- match.arg(option_alias(kind, pattern_kind_aliases), c("percent_developed", "cdf"))
   curve <- match.arg(curve)
   if (!is.numeric(pattern) || is.null(names(pattern))) {
     stop("pattern must be a named numeric vector, the names ages in months", call. = FALSE)

@@ -1279,6 +1279,23 @@ contributions add up to the link-scale prediction.
   base in the bias, with no tree code in prospicio; the values are per
   design column, not per raw feature.
 
+**Cross-language parity (#837, step 1).** Python reimplements what R takes
+from `stats` (type 1 and 7 quantiles, classical scaling by power iteration
+where R calls `cmdscale`), so `validation/reference/explain_parity.csv`
+(`validation/scripts/r_explain_parity.R`: ALEPlot 1.1 for ALE, the
+prediction function itself for partial dependence and ICE) is read by both
+test suites, on a frame whose five-level factor has a negative eigenvalue
+in `-J D^2 J / 2` larger than its second and third positive ones. Both
+languages give ALEPlot's order and effects. The suspected failure, power
+iteration settling on a negative eigenvalue of largest magnitude, did not
+occur: over about 600,000 searched distance matrices (half-L1 distances of
+conditional frequencies, small integer metrics and graph metrics) the
+negative eigenvalue never exceeded 0.69 of the largest positive one, so the
+iteration converges to the leading positive vector
+(`knowledge/findings/explain-parity.md`). Step 2 moves the grid, the
+ordering and the SHAP weights into `prospicio-models` kernels, with an
+eigendecomposition in place of the power iteration.
+
 ## Zero-inflated and hurdle counts (#548)
 
 Status: built; items (a) to (f) accepted by the user on

@@ -88,6 +88,76 @@ fn structure_estimator(estimator: &str, tol: f64, max_iter: f64) -> Result<Struc
     }
 }
 
+/// The square root rule for each `n`, `standard` recycled as R does
+/// (#838: the core's rule, so a NaN `n` gives 0 in R too).
+#[extendr]
+fn partial_credibility_rust(n: &[f64], standard: &[f64]) -> Result<Vec<f64>> {
+    let len = if n.is_empty() || standard.is_empty() {
+        0
+    } else {
+        n.len().max(standard.len())
+    };
+    Ok((0..len)
+        .map(|i| {
+            prospicio_pricing::credibility::partial_credibility(
+                n[i % n.len()],
+                standard[i % standard.len()],
+            )
+        })
+        .collect())
+}
+
+/// Each risk's credibility premium at each row of a design (`x` rows x p,
+/// column-major), from a fit's coefficients (risks x p, column-major), by
+/// the core's `HachemeisterFit::predict` (#838): a rows x risks matrix,
+/// column-major.
+#[extendr]
+fn hachemeister_predict_rust(
+    coefficients: &[f64],
+    risks: f64,
+    x: &[f64],
+    rows: f64,
+) -> Result<Vec<f64>> {
+    let (risks, rows) = (
+        whole(risks, "risks")? as usize,
+        whole(rows, "rows")? as usize,
+    );
+    if risks == 0
+        || rows == 0
+        || !coefficients.len().is_multiple_of(risks)
+        || !x.len().is_multiple_of(rows)
+    {
+        return Err(Error::Other("coefficients and x must be matrices".into()));
+    }
+    let p = coefficients.len() / risks;
+    let row_major = |m: &[f64], nr: usize, nc: usize| -> Vec<Vec<f64>> {
+        (0..nr)
+            .map(|i| (0..nc).map(|j| m[j * nr + i]).collect())
+            .collect()
+    };
+    // Only the coefficients enter the prediction; the fit's other parts
+    // are not kept on the R side.
+    let fit = prospicio_pricing::credibility::HachemeisterFit {
+        collective: vec![0.0; p],
+        coefficients: row_major(coefficients, risks, p),
+        individual: Vec::new(),
+        credibility: Vec::new(),
+        between: Vec::new(),
+        within_variance: f64::NAN,
+        risk_weights: Vec::new(),
+        transition: None,
+        iterations: 0,
+    };
+    let design = row_major(x, rows, x.len() / rows);
+    let mut out = vec![0.0; rows * risks];
+    for (i, row) in design.iter().enumerate() {
+        for (k, v) in fit.predict(row).map_err(to_r)?.into_iter().enumerate() {
+            out[k * rows + i] = v;
+        }
+    }
+    Ok(out)
+}
+
 /// Hachemeister's regression model on a risks x periods matrix and a
 /// periods x p design (both column-major, `weights` empty for equal
 /// weights). Matrices come back column-major; `credibility` holds each
@@ -354,6 +424,8 @@ extendr_module! {
     fn credibility_standards;
     fn buhlmann_straub_rust;
     fn hachemeister_rust;
+    fn partial_credibility_rust;
+    fn hachemeister_predict_rust;
     fn hierarchical_credibility_rust;
     fn credibility_premiums_rust;
     impl HierarchicalCredibilityR;

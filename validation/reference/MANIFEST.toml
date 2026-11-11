@@ -1,0 +1,858 @@
+# The parity reference files, each tied to its generator and its hash (#844).
+# Written by validation/scripts/check_reference_manifest.py; CI fails when a
+# file under validation/reference/ has no entry, an entry has no file, a
+# hash differs or a generator is missing. After regenerating a file, run
+#   python3 validation/scripts/check_reference_manifest.py --update <path>
+# `environment` is what the file itself records about the packages that
+# produced it (its header comment), not a pin.
+
+[[file]]
+path = "ale_aleplot.csv"
+generators = ["r_ale.R"]
+environment = "R version 4.3.3 (2024-02-29), ALEPlot 1.1"
+sha256 = "65a44c3d565e3c5f69cfa87283468d23125014d8ae0befc1c24e84d47afb9fab"
+
+[[file]]
+path = "allocation_numpy.csv"
+generators = ["numpy_allocation.py"]
+sha256 = "c9c0f909eb3394b009547d7a9ee7a139bbd959ea87a1ae1eeb21e738580ccd21"
+
+[[file]]
+path = "artifacts/attention_cann_fit_v1.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "9ccfab0c32237811b0c49567cf60ca8b75a240aee6b88fcb8cac0ae0a1112ae5"
+
+[[file]]
+path = "artifacts/cann_fit_v1.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "072a48a948929f67730646f918f5bac83ad17248e4ef7b1718b6fb37c673a296"
+
+[[file]]
+path = "artifacts/distribution_v1_gamma.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "2823b5b5f1fa54528400408d5fcc3e09ee1751dbce759ac3c502ccb847bbe736"
+
+[[file]]
+path = "artifacts/distribution_v1_mixture.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "0111a8bb6f69f8cb42716ccc1e95e38becb725a78457819132e0bd58f3d5fd8b"
+
+[[file]]
+path = "artifacts/elastic_net_fit_v1.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "e6e90362ce3fe27b0d8ce83b80f54c74fe0adfe366e4f69cf8f939d309bee038"
+
+[[file]]
+path = "artifacts/elastic_net_fit_v2.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "4a7fbd46801589dd7e632f2f56b513a561d8e8956b555f444b3aee1b77aaa1dc"
+
+[[file]]
+path = "artifacts/gam_fit_v1.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "5082533f6828f0e6eb06da7beaeabf9485b3d9bf8e69921cb5ab1cababafcdb9"
+
+[[file]]
+path = "artifacts/gam_fit_v2.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "23e0e3629efe000bfb9edf743aba29264fe25860e6005c3e9275d0a60236de9d"
+
+[[file]]
+path = "artifacts/glm_fit_v1.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "6df7aeaf6dc04af7d5a90b32e5e396affd9ddbf9330954b3328fcf9b68a087e7"
+
+[[file]]
+path = "artifacts/tabular_net_fit_v1.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "6ee36729e297cda0ff8805fe33e6f7d0c75039cbb5d749195170d8f6087538cd"
+
+[[file]]
+path = "artifacts/tower_v1.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "94fde277c98ba59344c0c30ee373f86e8afb36610f21e474ac48e5930ed4cfaa"
+
+[[file]]
+path = "artifacts/tower_v10.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "8d499ad4f5499e20c6e1106a206eb0c4caa58fb463286a1f7a72a31dc77c5c80"
+
+[[file]]
+path = "artifacts/tower_v2.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "7bae295b9c13010545760aaecbb4c517482276ef695935cbcca5d34108de2040"
+
+[[file]]
+path = "artifacts/tower_v3.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "30dfd062cbb008d112365cce86b459b3cc2b3a7c3dba316ea781beca4b533724"
+
+[[file]]
+path = "artifacts/tower_v4.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "e1ee616427f436a3f3bfce6531d1dbbd610bd08cb54070bbc6b24885d4f95abf"
+
+[[file]]
+path = "artifacts/tower_v5.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "883133b131f3056d46a719e096fdb2825d1fd96343550afde5abab5bfdb997f7"
+
+[[file]]
+path = "artifacts/tower_v6.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "c24be61b12a112e55e2c173cc7f876dd132be5ba25662025c234ac555c4f7267"
+
+[[file]]
+path = "artifacts/tower_v7.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "c9d2cfe20fa4f0474127a343bf359ff7f73d8b7dac0ae12484f4bdc6c1520f67"
+
+[[file]]
+path = "artifacts/tower_v8.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "ef4c4d001894a17f17c9df2179eea19c03c01c2dea7a4d02f768d522c0694540"
+
+[[file]]
+path = "artifacts/tower_v9.json"
+generators = ["validation/tests/artifacts.rs (artifacts::write_missing_artifacts)"]
+sha256 = "0e1a8e43f9eed286b0efb7838117dfa6a9dce32b3a94f7e38f8183e515c21914"
+
+[[file]]
+path = "bayes_glm_grid.csv"
+generators = ["bayes_glm_grid.py"]
+sha256 = "998cb7f001c90861d17d4fa02eef12584b682382b71ac658a3fda6648f676d17"
+
+[[file]]
+path = "bivariate_copula_aggregate.csv"
+generators = ["aggregate_bivariate_copula.py"]
+sha256 = "4844ee54095126827323abe2e1e8cb46d2c9a2b73c58a71f11be93b77796ee64"
+
+[[file]]
+path = "bonus_malus_scipy.csv"
+generators = ["bonus_malus_reference.py"]
+sha256 = "4cdfdc7268c59574b7e620f465b609155a59f2879187b8d28cd1eafc3bebbed7"
+
+[[file]]
+path = "bounds_aggregate.csv"
+generators = ["aggregate_bounds.py"]
+sha256 = "86c12902116ddf9fa0df0cfb48cfa4897ca2c16b2f38da066014a0b32ae81953"
+
+[[file]]
+path = "clash_aggregate.csv"
+generators = ["aggregate_clash.py"]
+sha256 = "bd70034dbd34a433b547236c093408306fcc037f4a3fa285b073417cad7c1e96"
+
+[[file]]
+path = "collective_r.csv"
+generators = ["r_collective.R"]
+sha256 = "134b267046ba9bd680170fef6c26db71d86ddeb90b8e0dc6609e12cee8da749c"
+
+[[file]]
+path = "compartmental_subannual_summary.txt"
+generators = ["compartmental_subannual_summary.py"]
+sha256 = "e63aaf3edb62a0b5b04d12542ed1d59ed63affaf408be47a7dd35e1d951de495"
+
+[[file]]
+path = "compartmental_subannual_summary_first20.txt"
+generators = ["compartmental_subannual_summary.py"]
+sha256 = "c79df0b9a8550a180460608b5a74d7def1c9804c1cdbbf2c467a105a1d1026b4"
+
+[[file]]
+path = "compound_convolution.csv"
+generators = ["compound_convolution.py"]
+sha256 = "dbf763f465b61c0a68b579d60036ec1245f3d0731e520b271cb1307e8e73c14d"
+
+[[file]]
+path = "conformal_mapie.csv"
+generators = ["conformal_mapie.py"]
+sha256 = "f8d493cdb7827efe7853093cf23b066b388da0c020ac9765637d0f4d2fc60689"
+
+[[file]]
+path = "contract_terms_aggregate.csv"
+generators = ["aggregate_contract_terms.py"]
+sha256 = "781e06b25f2201523002ca6dce9fe97822422dfd8446c0766b986623da7ef4a2"
+
+[[file]]
+path = "copula_mpmath.csv"
+generators = ["mpmath_copula.py"]
+sha256 = "178579b0743d6e7b5514ed5bd9e4ff76e7cafd612c35b62ed9cd45bdc67b8c62"
+
+[[file]]
+path = "counts_aggregate.csv"
+generators = ["aggregate_counts.py"]
+sha256 = "687a8489a277578f9cbf252babd93be9e92b16306d4b7bf3d46c78a1560c98a6"
+
+[[file]]
+path = "credibility_actuar.csv"
+generators = ["r_credibility.R"]
+sha256 = "cc4eb80ebd92000b15b7e12e5843d4eaf40c5445e22b5818122d568f901ae78a"
+
+[[file]]
+path = "credibility_bayes_grid.csv"
+generators = ["credibility_bayes_grid.py"]
+sha256 = "ffb066939418d933eefd79ddc4af5e80572d9a63d477cb847a1ea48f64b38aa6"
+
+[[file]]
+path = "credibility_hierarchical_actuar.csv"
+generators = ["r_credibility_hierarchical.R"]
+sha256 = "da9e0cab134e3f40237868827d61fee9c9442be3a23c0fad9b9dff7116884015"
+
+[[file]]
+path = "credibility_regression_actuar.csv"
+generators = ["r_credibility_regression.R"]
+sha256 = "64f97f45e8a62b59d29dfe9f553a7c402a213f227d89dce73813273226095091"
+
+[[file]]
+path = "dglm_r.csv"
+generators = ["r_dglm.R"]
+environment = "R version 4.3.3 (2024-02-29), dglm 1.8.6, statmod 1.5.2"
+sha256 = "863017643c1fe8e47eaf4855cb14c9621d80ebd510b54c1e8cfb56cc59352205"
+
+[[file]]
+path = "disappearing_aggregate.csv"
+generators = ["aggregate_disappearing.py"]
+sha256 = "1c02eca7ad4ed9043cb2bbf126fcb4ad01afa42b7a30f52b2f8013fd25312dad"
+
+[[file]]
+path = "discrete_aggregate.csv"
+generators = ["aggregate_discrete.py"]
+sha256 = "27ee56039ff645d46e4f75600f73c22c166dcd0c08c32390f94225397de65992"
+
+[[file]]
+path = "discrete_aggregate_atoms.csv"
+generators = ["aggregate_discrete.py"]
+sha256 = "4d7c0e30140396b68e4e900a29565ec8ce33725fe2e70f2aba74745d651e9a0e"
+
+[[file]]
+path = "discrete_inputs_aggregate.csv"
+generators = ["aggregate_discrete_inputs.py"]
+sha256 = "b903ab771afaf053da07aafb0e86b1923114c7e5257cd5c236c67fb1dabd3639"
+
+[[file]]
+path = "distortion_aggregate.csv"
+generators = ["aggregate_distortions.py"]
+sha256 = "635c2cef246cfdac5bc88c849bd785af1b5bcf657353789ede3a3e1b05054692"
+
+[[file]]
+path = "distortion_gini_aggregate.csv"
+generators = ["aggregate_distortion_gini.py"]
+sha256 = "18ca2eb0ac6a81b5eaf0a85e90966d5404c043881837de1b1c3b2f6a50f14328"
+
+[[file]]
+path = "distortion_mpmath.csv"
+generators = ["mpmath_distortion.py"]
+sha256 = "f4da29f2fc2ab3a34cfefc945d26008b61fec02febd226d1d2efe7335d8cae56"
+
+[[file]]
+path = "distributions_scipy.csv"
+generators = ["scipy_distributions.py"]
+sha256 = "1bd9c8134ab15a36e0103da67210428091649229e33bafafcb80ecf764f0de27"
+
+[[file]]
+path = "elastic_net_cv_glmnet.csv"
+generators = ["r_glmnet.R"]
+sha256 = "9da6e3670505888f2c02640da6a56165c36256ac1a3a5b52518f21325de7b8d0"
+
+[[file]]
+path = "elastic_net_glmnet.csv"
+generators = ["r_glmnet.R"]
+sha256 = "b05cad6f162404ab98bef0f3dfeffcc97d68e3f24ebb709112aee66e26b46994"
+
+[[file]]
+path = "elastic_net_relax_cv_glmnet.csv"
+generators = ["r_glmnet_relax.R"]
+sha256 = "b406eac9485f553ad6a4255816e15938ee3b3e4f8d8303e164a3cf24ad6e7a4c"
+
+[[file]]
+path = "elastic_net_relax_glmnet.csv"
+generators = ["r_glmnet_relax.R"]
+sha256 = "24b81d092cdb62d407adb14850d9bff5a2c083f90e0b4b784e4b492777181ab9"
+
+[[file]]
+path = "elpd_loo.csv"
+generators = ["r_loo.R"]
+sha256 = "7215261f48bf875fceacfd449a08c5f52514092ddd0514db7ad5630816bc23ce"
+
+[[file]]
+path = "elt_units_aggregate.csv"
+generators = ["aggregate_elt_units.py"]
+sha256 = "97bfc9b9dac93cf72def2d7febef78126a91d194a3f518c27090027df0edccec"
+
+[[file]]
+path = "evt_thresholds_r.csv"
+generators = ["r_evt_thresholds.R"]
+sha256 = "85adcdd2f2d1693f969188c1c8571e81fbf3755b339206ff4c5a158531b14708"
+
+[[file]]
+path = "explain_parity.csv"
+generators = ["r_explain_parity.R"]
+environment = "R version 4.3.3 (2024-02-29), ALEPlot 1.1"
+sha256 = "acbccd872fa385297223098d5ebedbd2eb82b72dbe122b52866bc5bdf39b7cb9"
+
+[[file]]
+path = "family_scores_scipy.csv"
+generators = ["scipy_family_scores.py"]
+sha256 = "cbefbeda899917a5ad1afcf8550a16c38a721d0126bb8e27546c15dea92eeaa2"
+
+[[file]]
+path = "fremtpl2_statsmodels.csv"
+generators = ["statsmodels_fremtpl2.py"]
+sha256 = "8c869df365f9d3f894e144252cb2629d9e0dd0d61f7feb1bc268b3de23e3ca41"
+
+[[file]]
+path = "gam_cyclic_mgcv.csv"
+generators = ["r_gam_cyclic.R"]
+sha256 = "5d9c6239a4a8e6e1c64294ac661c33b848b5df8b4bd63163613efdb5a400021c"
+
+[[file]]
+path = "gam_mgcv.csv"
+generators = ["r_gam.R"]
+sha256 = "d0cae88e678bdceb0e7a99ce72970fa0ab87b6844a6a0e3750aba199ad60c1ca"
+
+[[file]]
+path = "gam_monotone_scam.csv"
+generators = ["r_gam_monotone.R"]
+sha256 = "e040474b549511128a770f790b3e3f9e5036c52b426dea4018e441ddf9c71faa"
+
+[[file]]
+path = "gam_tensor_mgcv.csv"
+generators = ["r_gam_tensor.R"]
+sha256 = "1b90283cf62866b55b247982754849b122c2991c9af7d4199478664903cca3dc"
+
+[[file]]
+path = "gen_pareto_r.csv"
+generators = ["r_gen_pareto.R"]
+sha256 = "ffa76784b4a064617c5b5c9a087bfe3b1fb0a23539f488d748b386483949d6aa"
+
+[[file]]
+path = "glm_robust_statsmodels.csv"
+generators = ["statsmodels_glm_robust.py"]
+sha256 = "69bd234efd2e27ea44e1df3a6a914d8d2265d5f37c1625f6bf22b45aa5890de7"
+
+[[file]]
+path = "glm_statsmodels.csv"
+generators = ["statsmodels_glm.py"]
+sha256 = "10bff68370891f2e481545dca6cdee6b5636debfcd35a6eb38cdd2caa22e1d12"
+
+[[file]]
+path = "glmm_r.csv"
+generators = ["r_glmm.R"]
+environment = "R version 4.3.3 (2024-02-29), glmmTMB 1.1.15.2, lme4 2.0.6, TMB 1.9.25"
+sha256 = "f0bdd5cbed0fffd383dd41e0652a11e2421761e4454cd0e84e8136cc31ae1411"
+
+[[file]]
+path = "gpd_mpmath.csv"
+generators = ["mpmath_gpd.py"]
+sha256 = "fa85c80a4fdb5e5b1d0e164f4d6f91feb87db3f577fe3e8657fcbf4b22c3859d"
+
+[[file]]
+path = "grid_mpmath.csv"
+generators = ["mpmath_grid.py"]
+sha256 = "6ea828fb6be4d8b037fc0ebd7411023ca2a21144a31b21c1f5b5a3024af13887"
+
+[[file]]
+path = "hachemeister.csv"
+generators = ["r_credibility.R"]
+sha256 = "831f5f6e1f41fcc7dbdd879db387a274b524a5a58ae055c6ad140d86704b5969"
+
+[[file]]
+path = "hawkes_scipy.csv"
+generators = ["hawkes_scipy.py"]
+sha256 = "197fa1aefa808f94e40d9dacc1ae0cd82fa44041a966c472a59f89223425025d"
+
+[[file]]
+path = "isotonic_sklearn.csv"
+generators = ["isotonic_sklearn.py"]
+sha256 = "ee6fc0166239e084c144408bd99dbf32a04327427c2a865bd42d52caf0a54ec5"
+
+[[file]]
+path = "lattice_aggregate.csv"
+generators = ["aggregate_lattice.py"]
+sha256 = "74793c813df3b6c57426a76eef1dc028d533dd2cee392cf2dccf6aba346b708d"
+
+[[file]]
+path = "layer_moments_mpmath.csv"
+generators = ["mpmath_layer_moments.py"]
+sha256 = "632eb3a91d47172614cda98a1a249f50127640058ea70df40a52b5b85101aeec"
+
+[[file]]
+path = "local_pareto_r.csv"
+generators = ["r_local_pareto.R"]
+sha256 = "3a4e9b1929c0003aecadaceb6632160481fbcacdbc4bc5efa45df7ebca5122eb"
+
+[[file]]
+path = "loo_pit.csv"
+generators = ["r_loo_pit.R"]
+sha256 = "8c54303314595c4d086aff692c433244030c00aaee7e8d4331016d00da3e3730"
+
+[[file]]
+path = "mbbefd_mpmath.csv"
+generators = ["mpmath_mbbefd.py"]
+sha256 = "aebbcebb2ef52e2c77ddde7c76b0e494b435f9c155363348fe751137e47eebe5"
+
+[[file]]
+path = "mcmc_posterior.csv"
+generators = ["r_mcmc_diagnostics.R"]
+sha256 = "ef059c67798d54e4881a642521d7f73b51419b3bd250ce092df8254e64c6e329"
+
+[[file]]
+path = "mixing_aggregate.csv"
+generators = ["aggregate_mixing.py"]
+sha256 = "38dcb9f9420f85b233d0b347844a47a1a7a6d58a25e1de5655c990f9f2516121"
+
+[[file]]
+path = "moments_aggregate.csv"
+generators = ["aggregate_moments.py"]
+sha256 = "0f516705ee242c4b788c8e6e45321fd5315fa2685a8cc09212e2b4c220516e19"
+
+[[file]]
+path = "mvn_mvtnorm.csv"
+generators = ["r_mvn.R"]
+sha256 = "55d69a52b0a5ca2757f4a7a9834485295aa81b99f1a59a70363b73e21778c714"
+
+[[file]]
+path = "natural_aggregate.csv"
+generators = ["aggregate_natural.py"]
+sha256 = "90ed95bf61334898312b690229ccfa9a8c4264eb8acc1216a2ac84e2d99d209a"
+
+[[file]]
+path = "oep_aggregate.csv"
+generators = ["aggregate_oep.py"]
+sha256 = "d090fe8c6b9472f61686c47f64a568c8745a85ac62df101f1509f49193067926"
+
+[[file]]
+path = "onnx_outputs.csv"
+generators = ["onnx_models.py"]
+sha256 = "f50196b22bd22d28875fc8f5a618374ce1fe32a581df2b25cae4bb1d5da53008"
+
+[[file]]
+path = "pareto_fit_r.csv"
+generators = ["r_pareto_fit.R"]
+sha256 = "5e62258a99433742d9d766cf45cba594798234d0148a058c73c7d39708fe6fe2"
+
+[[file]]
+path = "pareto_r.csv"
+generators = ["r_pareto.R"]
+sha256 = "4b71611499f34d26a9e74ebdd64a201f32ca333e801bf84789ebdf8f039893f5"
+
+[[file]]
+path = "pareto_rating_r.csv"
+generators = ["r_pareto_rating.R"]
+sha256 = "1b1e8b6197959d88b476513a44b0d8232fc20bbb93effc204ee9e672f4383ab5"
+
+[[file]]
+path = "picks_aggregate.csv"
+generators = ["aggregate_picks.py"]
+sha256 = "37ab47e2bf4b1139056aa748ab9673374d568b3dc17a7043866ee58a671481ae"
+
+[[file]]
+path = "piecewise_pareto_r.csv"
+generators = ["r_piecewise_pareto.R"]
+sha256 = "d00136bc1967bc51984d1616adc1109ab7befa2ec7401a7fb3400593d1e7a1f2"
+
+[[file]]
+path = "pml_curve_r.csv"
+generators = ["r_pml_curve.R"]
+sha256 = "eed4f2214cdff5d9b63a2521a3d2b420d33d1dabc691cdb2c2d52573a374a54a"
+
+[[file]]
+path = "pnl_builder_sources.csv"
+generators = ["aggregate_pnl_builders.py"]
+sha256 = "77a6af92f1953c5ce231c6c4eea704e70132cfb320ed2afbf19a7a9b0a9534f1"
+
+[[file]]
+path = "pnl_builders_aggregate.csv"
+generators = ["aggregate_pnl_builders.py"]
+sha256 = "ea97d5c4b5f47e7820b38bd644f9f57570fa4c79e5a53e0f7ea8da74851f500b"
+
+[[file]]
+path = "pnl_ledger_aggregate.csv"
+generators = ["aggregate_pnl_ledger.py"]
+sha256 = "fefc2d15a136a33d822e35eaefb2257e3132fbf1235c82b8b2730d6eb560bad7"
+
+[[file]]
+path = "pnl_ledger_sources.csv"
+generators = ["aggregate_pnl_ledger.py"]
+sha256 = "f22e7a9b58afc8391503f94ad2b1fa980a6bcd637cd49dc6b1240ec0cbcc7e17"
+
+[[file]]
+path = "pnl_occurrence_aggregate.csv"
+generators = ["aggregate_pnl_occurrence.py"]
+sha256 = "33046f5d6f828553854e72dc62b65d21b454e88f780f653a6d6e4cc49615d8f2"
+
+[[file]]
+path = "pnl_occurrence_sources.csv"
+generators = ["aggregate_pnl_occurrence.py"]
+sha256 = "bbfa01d75867a36090c66940a89dad20d079746e9f47d7a72a90ad0fb0085f35"
+
+[[file]]
+path = "pnl_ratios_aggregate.csv"
+generators = ["aggregate_pnl_ratios.py"]
+sha256 = "e8c8664f4e2728e5f2d9076e900b321d99b99fd4c90d1e90cfc357b51117ea05"
+
+[[file]]
+path = "pnl_reinstatements_aggregate.csv"
+generators = ["aggregate_pnl_reinstatements.py"]
+sha256 = "e092e4192c94b870398c8ee52d8e57a496acbaf2be934e480829c9233ff46730"
+
+[[file]]
+path = "pnl_stitched_aggregate.csv"
+generators = ["aggregate_pnl_stitched.py"]
+sha256 = "d3aa3e892c321b9b5f9bfb2cdb92925b9589b3540b9c379bc7c20ae7c89a5007"
+
+[[file]]
+path = "pnl_variable_aggregate.csv"
+generators = ["aggregate_pnl_variable.py"]
+sha256 = "64e3746f9f52a0fb610e61594f88b02b5376398217d99b70031838e564ac66de"
+
+[[file]]
+path = "predictive_distribution_v1.arrow"
+generators = ["predictive_ipc.py"]
+sha256 = "1ed04bd041683eb32d3a7002ad99adca8cf4f9d81e9fa43f486a875f90a7f3f5"
+
+[[file]]
+path = "program_oep_aggregate.csv"
+generators = ["aggregate_program_oep.py"]
+sha256 = "63de76d31a40a6459996652131a8ee91fe284e6c7cdecc6662c58965f9228650"
+
+[[file]]
+path = "quantile_expectile_r.csv"
+generators = ["r_quantile_expectile.R"]
+environment = "R version 4.3.3 (2024-02-29), quantreg 5.97, expectreg 0.54"
+sha256 = "cbec0eae96c57c826bf346a051c9ba96ad7c6fcd163db4594b0197adc8be0c3c"
+
+[[file]]
+path = "re_pricing_aggregate.csv"
+generators = ["aggregate_re_pricing.py"]
+sha256 = "f2cb94c5937a97cc6da85ecd710488c197b5574ec6bcedc00ca39b1898ba126f"
+
+[[file]]
+path = "reinsurance_aggregate.csv"
+generators = ["aggregate_reinsurance.py"]
+sha256 = "622e6fd2fd744b2fdb0e319461506520112d276e1dd8ec6decb826879e02dd0a"
+
+[[file]]
+path = "renewal_count_aggregate.csv"
+generators = ["aggregate_renewal.py"]
+sha256 = "5916840da95020d6940b38fcc1d900e351d15baac9984f8dfb4c48161ea83202"
+
+[[file]]
+path = "reserving_assumptions_python.csv"
+generators = ["reserving_assumptions_python.py"]
+environment = "Generated by validation/scripts/reserving_assumptions_python.py with chainladder 0.10.1. The statistics of ValuationCorrelation and DevelopmentCorrelation that match R ChainLadder's."
+sha256 = "22cdc30f6a4d04a31e2b182600c2308aea5f1a72d35efa5817bc8a933acb6873"
+
+[[file]]
+path = "reserving_assumptions_r.csv"
+generators = ["reserving_assumptions_r.R"]
+environment = "Generated by validation/scripts/reserving_assumptions_r.R with R version 4.5.3 (2026-03-11 ucrt), ChainLadder 0.2.21. Mack's calendar-year effect and development-factor correlation tests on every observed link ratio."
+sha256 = "fb40a77b7b7f0e75af4e7b8c16645b4790155672a8cfcaf59388c7a12850e644"
+
+[[file]]
+path = "reserving_averages_python.csv"
+generators = ["reserving_averages_python.py"]
+environment = "Generated by validation/scripts/reserving_averages_python.py with chainladder-python 0.10.1. Development(n_periods, drop_high, drop_low) on raa and genins (value), and Bornhuetter-Ferguson and Cape Cod on clrd_wkcomp. See the script's docstring."
+sha256 = "d2e00e6868d3714452c338cfc62abeaf885390c66b5ac73298955268548f276a"
+
+[[file]]
+path = "reserving_averages_r.csv"
+generators = ["reserving_averages_r.R"]
+environment = "Generated by validation/scripts/reserving_averages_r.R with R 4.5.3, ChainLadder 0.2.21. Mack's model under link-ratio exclusions, as MackChainLadder(weights = W). Mack risks are standard errors (not variances) at ultimate. raa average=volume;n_periods=4;drop_high=1;drop_low=1: R warning: 'loglinear' model to estimate sigma_n doesn't appear appropriate. p-value > 5. est.sigma will be overwritten to 'Mack'. Mack's estimation method will be used instead. raa average=simple;n_periods=4;drop_high=1;drop_low=1: R warning: 'loglinear' model to estimate sigma_n doesn't appear appropriate. p-value > 5. est.sigma will be overwritten to 'Mack'. Mack's estimation method will be used instead. raa average=regression;n_periods=4;drop_high=1;drop_low=1: R warning: 'loglinear' model to estimate sigma_n doesn't appear appropriate. p-value > 5. est.sigma will be overwritten to 'Mack'. Mack's estimation method will be used instead. genins average=volume;n_periods=4;drop_high=1;drop_low=1: R warning: 'loglinear' model to estimate sigma_n doesn't appear appropriate. p-value > 5. est.sigma will be overwritten to 'Mack'. Mack's estimation method will be used instead. genins average=simple;n_periods=4;drop_high=1;drop_low=1: R warning: 'loglinear' model to estimate sigma_n doesn't appear appropriate. p-value > 5. est.sigma will be overwritten to 'Mack'. Mack's estimation method will be used instead. genins average=regression;n_periods=3: R warning: 'loglinear' model to estimate sigma_n doesn't appear appropriate. p-value > 5. est.sigma will be overwritten to 'Mack'. Mack's estimation method will be used instead. genins average=regression;drop_high=1;drop_low=1: R warning: 'loglinear' model to estimate sigma_n doesn't appear appropriate. p-value > 5. est.sigma will be overwritten to 'Mack'. Mack's estimation method will be used instead. genins average=regression;n_periods=5;drop_high=1: R warning: 'loglinear' model to estimate sigma_n doesn't appear appropriate. p-value > 5. est.sigma will be overwritten to 'Mack'. Mack's estimation method will be used instead. genins average=regression;n_periods=4;drop_high=1;drop_low=1: R warning: 'loglinear' model to estimate sigma_n doesn't appear appropriate. p-value > 5. est.sigma will be overwritten to 'Mack'. Mack's estimation method will be used instead."
+sha256 = "94b9ed58ec19485df874a5e99f6126900392614fd3c45f5d97be447c1388af1b"
+
+[[file]]
+path = "reserving_bayes_bf_stan.csv"
+generators = ["reserving_bayes_bf_stan.py"]
+environment = "Generated by validation/scripts/reserving_bayes_bf_stan.py with CmdStan 2.39.0, cmdstanpy 1.3.0, pandas 3.0.6 and numpy 2.5.4. Model validation/scripts/stan/bayes_bf.stan (sha256 2fbbd2cc89ba97cbdb42ce869ebb500be37e3d8e1ee99c902424be78c35a9abb). Seed 20261012; 4 chains of 2000 warm-up and 25000 kept draws; metric dense_e; adapt_delta 0.99; Gamma process. phi is the chain ladder's (rel_tol 1e-9). With s the reference posterior sd: means abs_tol 0.1 s, sds rel_tol 0.15, reserve quantiles abs_tol 0.3 s (TOLERANCES in the script): each at least 4.7 times the Monte Carlo error of BayesBf's defaults over seeds 0 to 199. The oldest origin's reserve is an exact 0. arg: parameter, origin label or total."
+sha256 = "013e1077edadc4ed5b02e2b4c682c9cc73335b98b839fcc0ab9521d2bc50173c"
+
+[[file]]
+path = "reserving_bayes_stan.csv"
+generators = ["reserving_bayes_stan.py"]
+environment = "Generated by validation/scripts/reserving_bayes_stan.py with CmdStan 2.39.0, cmdstanpy 1.3.0, pandas 3.0.6 and numpy 2.5.4. Model validation/scripts/stan/bayes_odp.stan (sha256 c2b4100c52c337069633805cc74ee995f9c9c1c1e7e5266d3e69598396f1d345). Seed 20261012; 4 chains of 2000 warm-up and 25000 kept draws; metric dense_e; adapt_delta 0.99; priors sd 10; Gamma process. phi and c0 are the chain ladder's (rel_tol 1e-9). With s the reference posterior sd: means abs_tol 0.1 s (RAA 0.15 s); sds rel_tol 0.10 (RAA 0.20); reserve quantiles abs_tol 0.3 s (RAA 0.4 s): at least 4 times the Monte Carlo error of BayesOdp's defaults over seeds 0 to 19. The oldest origin's reserve is an exact 0. arg: parameter, origin label or total."
+sha256 = "e4aaafe4ae8fcbad221d37aba9ad1e9578e227028d3b95ede5503a39bc6b2a41"
+
+[[file]]
+path = "reserving_berquist_sherman_python.csv"
+generators = ["reserving_berquist_sherman_python.py"]
+environment = "Generated by validation/scripts/reserving_berquist_sherman_python.py with chainladder-python 0.10.1. Data: validation/data/berqsherm_{auto,medmal}.csv (chainladder-python's berqsherm sample). arg is origin:age for an adjusted cell and the origin for a chain ladder ultimate on an adjusted column."
+sha256 = "40ce1f4b0f33f018dc4c5a14c7870075afbb38d55f7519426d8b7bb4492082f9"
+
+[[file]]
+path = "reserving_bootstrap_exclusions_python.csv"
+generators = ["reserving_bootstrap_exclusions_python.py"]
+environment = "Generated by validation/scripts/reserving_bootstrap_exclusions_python.py with chainladder-python 0.10.1. BootstrapODPSample(n_periods, drop_high, drop_low, hat_adj=False) on raa and genins (value). See the script's docstring."
+sha256 = "fa4bb8589ccb8fe5ffd39864bfb5393729715f151330c59f6eba70c3290a20db"
+
+[[file]]
+path = "reserving_bootstrap_r.csv"
+generators = ["reserving_bootstrap_r.R"]
+environment = "Generated by validation/scripts/reserving_bootstrap_r.R with R 4.5.3, ChainLadder 0.2.21. Stochastic cases: 100000 R simulations; abs_tol = 4 standard errors for 20000 Rust simulations."
+sha256 = "9d7014e773c437469957b88d6a453ec9a7d02346241fc924b0a88869c752faa2"
+
+[[file]]
+path = "reserving_cdr_r.csv"
+generators = ["reserving_cdr_r.R"]
+environment = "Generated by validation/scripts/reserving_cdr_r.R with R 4.4.3, ChainLadder 0.2.21. Triangles from validation/data/{raa,genins,abc,mw2008,mw2014}.csv. Volume-weighted factors, no tail. Standard errors, not mean squared errors. cdr_se arg is origin:k, k the 1-based future calendar year; R's last year (k = number of ages) is past the run-off and zero."
+sha256 = "8bea9acda7fd81a553a17ddf040292396a135d5f770889863ae02fa532855f7f"
+
+[[file]]
+path = "reserving_chainladder_python.csv"
+generators = ["reserving_chainladder_python.py"]
+environment = "Generated by validation/scripts/reserving_chainladder_python.py with chainladder-python 0.10.1. Triangles from validation/data/{raa,genins,abc}.csv. No tail factor. Mack risks are standard errors (not variances) at ultimate. sigma/f_se include the extrapolated last age."
+sha256 = "3302a1ef30c2f1c5b8da2a9dbb09096d897f0395770d874fb4b4ebc5841a6f9d"
+
+[[file]]
+path = "reserving_chainladder_r.csv"
+generators = ["reserving_r.R"]
+environment = "Generated by validation/scripts/reserving_r.R with R 4.5.3, ChainLadder 0.2.21. Triangles from validation/data/{raa,genins,abc}.csv. No tail factor. Mack risks are standard errors (not variances) at ultimate. sigma/f_se include the extrapolated last age."
+sha256 = "335ed2d675f12bdee73299380e141e941755138bd0fd10ead7eaa7f96563d000"
+
+[[file]]
+path = "reserving_clark_python.csv"
+generators = ["reserving_clark_python.py"]
+environment = "Generated by validation/scripts/reserving_clark_python.py with chainladder-python 0.10.1. Ages in months. LDF ultimates are Chainladder on ClarkLDF patterns, which stop at the last age (max_age=120). Cape Cod scale_ is not comparable and is left out (see script)."
+sha256 = "2525f428db7b93ae53c18d8b5d38148bfb18b87604f97c44debd7733ef442521"
+
+[[file]]
+path = "reserving_clark_r.csv"
+generators = ["reserving_clark_r.R"]
+environment = "Generated by validation/scripts/reserving_clark_r.R with R 4.4.3, ChainLadder 0.2.21. Ages in months; adol = TRUE (origin width 12, average date of loss 6 months). reserve is R's FutureValue (ClarkLDF: the truncated LDF applied to the latest value); *_se are standard errors. optim=default is R as shipped; optim=tight runs L-BFGS-B with factr = 1 (see script). Largest relative gap between optim=default and optim=tight, by quantity: omega: 0.00037 theta: 0.0011 sigma2: 0.0001 omega_se: 0.001 theta_se: 0.0039 expected_ultimate: 0.0014 ultimate: 0.00085 reserve: 0.002 process_se: 0.001 parameter_se: 0.0036 standard_error: 0.0027 total_ultimate: 0.00064 total_reserve: 0.0013 total_process_se: 0.00068 total_parameter_se: 0.0029 total_standard_error: 0.0028 elr: 2.6e-05 elr_se: 2e-06 Weibull standard errors (optim=tight) differ from R's shipped d2G/domega2 by up to 0.073 relative."
+sha256 = "6b8398d58376a2de9bbc93f3a9becc8538e90072aaf31a39e4a684bde57c0691"
+
+[[file]]
+path = "reserving_compartmental_gm2_stan.csv"
+generators = ["reserving_compartmental_gm2_stan.py"]
+environment = "Generated by validation/scripts/reserving_compartmental_gm2_stan.py with CmdStan 2.39.0, cmdstanpy 1.3.0, pandas 3.0.6, numpy 2.5.4 and arviz 0.23.4 (elpd_loo). Model validation/scripts/stan/compartmental_gm2.stan (sha256 3aaa2b3999c7ee2312fd9b6dc7b8642ca17008a8feadece81da7bad468dd67ea), Gesmann and Morris' (2020) model 2 reconstructed as the Stan program brms generates from the paper's code (sec. 7.2.3). Data validation/data/clrd_wkcomp_337.csv, company 337, calendar years up to 1996 (90 observations: outstanding and incremental paid loss ratios to direct premium); the 1997 diagonal is the test set. Seed 20261015; 4 chains of 2000 warm-up and 25000 kept draws; adapt_delta 0.999; max_treedepth 15. With s the reference posterior sd: means, test means and reserve quantiles abs_tol a multiple of s, sds rel_tol, elpd_loo abs_tol, each at least 4 times the seed-to-seed sd of our defaults over seeds 0 to 199 (every seed passes); the sds of tau_dev_kp, dev_kp[a] and k_p[o] are dropped as heavy-tailed from seed to seed. Reserves are the incremental paid to age 10 summed; 1997 and development year 10 have no training cell and take new effects from the population in each draw. Test means are the expected outstanding and incremental paid amounts of the 1997 diagonal. gesmann_morris_2020_m2 rows: the paper's printed posterior, looser (0.3 printed sd, 20%)."
+sha256 = "5afd313b2b35c21f5412a65aede6a64344907bbe2d977b96d1af6f8e0aa33d11"
+
+[[file]]
+path = "reserving_compartmental_grain_stan.csv"
+generators = ["reserving_compartmental_grain_stan.py"]
+environment = "Generated by validation/scripts/reserving_compartmental_grain_stan.py with CmdStan 2.39.0, cmdstanpy 1.3.0, pandas 3.0.6, numpy 2.5.4 and arviz 0.23.4 (elpd_loo). Model validation/scripts/stan/compartmental_gm1.stan (sha256 0dc097d555d41833964cf279060a28e2cef23486f55d15461bf05681968deeb8), Gesmann and Morris' (2020) model 1, on validation/data/compartmental_sim_quarterly.csv (sha256 d9c97c9db2626143a8ccc03332fa533331999b8ae9379b32f14c138ba6f9fc49), simulated from that model with known parameters: annual origins 2011-2020, quarterly development, 440 observations, t = development / 12 years (decision 13 of the compartmental design note). Reserves are paid to 120 months less the latest paid, 0 for 2011 (observed at 120 months, decision 5); no test set. Seed 20261022; 4 chains of 2000 warm-up and 25000 kept draws; adapt_delta 0.99; max_treedepth 15. With s the reference posterior sd: means and reserve quantiles abs_tol a multiple of s, sds rel_tol, elpd_loo abs_tol."
+sha256 = "b261eb535f3fb8f860dd87a0a30d1681b317ff2e90a618234ef2dc84f39224b4"
+
+[[file]]
+path = "reserving_compartmental_incurred_stan.csv"
+generators = ["reserving_compartmental_incurred_stan.py"]
+environment = "Generated by validation/scripts/reserving_compartmental_incurred_stan.py with CmdStan 2.39.0, cmdstanpy 1.3.0, pandas 3.0.6, numpy 2.5.4 and arviz 0.23.4 (elpd_loo). Model validation/scripts/stan/compartmental_gm1_incurred.stan (sha256 70f00dc4bc846698dee02b3fc8e34f0f354324cc1df06aa189816b81374abdfc), Gesmann and Morris' (2020) model 1 fitted to paid and incurred (decision 12 of the compartmental design note). Data validation/data/clrd_wkcomp_337.csv, company 337, calendar years up to 1996 (90 observations, incurred and paid, direct premium); the 1997 diagonal is the test set. Seed 20261014; 4 chains of 2000 warm-up and 25000 kept draws; adapt_delta 0.99; max_treedepth 15. With s the reference posterior sd: means, test means and reserve quantiles abs_tol a multiple of s, sds rel_tol, elpd_loo abs_tol, each at least 4 times the seed-to-seed sd of our defaults over seeds 0 to 199 (every seed passes). Reserves are paid to age 10 less the latest paid; 1997 has no training cell and takes a new effect from the population in each draw."
+sha256 = "ad6fb9219035b52050594ae206047fc26f65c6f509ffb845bf42d2329c9f257a"
+
+[[file]]
+path = "reserving_compartmental_one_response_stan.csv"
+generators = ["reserving_compartmental_one_response_stan.py"]
+environment = "Generated by validation/scripts/reserving_compartmental_one_response_stan.py with CmdStan 2.39.0, cmdstanpy 1.3.0, pandas 3.0.6, numpy 2.5.4 and arviz 0.23.4 (elpd_loo). Models validation/scripts/stan/compartmental_gm1_paid_only.stan (sha256 0a3a0ba7d472dfafeca3ca37b5018c0bb4fb5679d106803b642fc898a8aa2594) and compartmental_gm1_incurred_only.stan (sha256 07e0eb8e144c0fd036fc42088f8a9272ddbb6a003c8ea3898a55a87e43481287), Gesmann and Morris' (2020) model 1 fitted to paid alone and to incurred alone with ordered rates (decision 12 of the compartmental design note). Data validation/data/clrd_wkcomp_337.csv, company 337, calendar years up to 1996 (45 observations of the one response, direct premium; the paid column gives each origin's latest paid); the 1997 diagonal is the test set. Seed 20261022; 4 chains of 2000 warm-up and 25000 kept draws; adapt_delta 0.99; max_treedepth 15. With s the reference posterior sd: means, test means and reserve quantiles abs_tol a multiple of s, sds rel_tol, elpd_loo abs_tol. Reserves are paid to age 10 less the latest paid, drawn with the paid sigma under paid only and the mean paid with no noise under incurred only; 1997 has no training cell and takes a new effect from the population in each draw."
+sha256 = "5df5b5d8bd73601ca7ca9f436c06ad1eda9987ba7141176f8e225bb210800181"
+
+[[file]]
+path = "reserving_compartmental_stan.csv"
+generators = ["reserving_compartmental_stan.py"]
+environment = "Generated by validation/scripts/reserving_compartmental_stan.py with CmdStan 2.39.0, cmdstanpy 1.3.0, pandas 3.0.6, numpy 2.5.4 and arviz 0.23.4 (elpd_loo). Model validation/scripts/stan/compartmental_gm1.stan (sha256 3eaa15b8515b0a002fc46d7f5fb2b46eff6a23d2330b27f0b6ad521c0f89f478), Gesmann and Morris' (2020) model 1 reconstructed as the Stan program brms generates from the paper's code (sec. 7.2.2). Data validation/data/clrd_wkcomp_337.csv, company 337, calendar years up to 1996 (90 observations, outstanding = incurred - paid, direct premium); the 1997 diagonal is the test set. Seed 20261014; 4 chains of 2000 warm-up and 25000 kept draws; adapt_delta 0.99; max_treedepth 15. With s the reference posterior sd: means, test means and reserve quantiles abs_tol a multiple of s, sds rel_tol, elpd_loo abs_tol, each at least 4 times the seed-to-seed sd of our defaults over seeds 0 to 199 (every seed passes). Reserves are paid to age 10 less the latest paid; 1997 has no training cell and takes a new effect from the population in each draw. gesmann_morris_2020_m1 rows: the paper's printed posterior, looser (0.2 printed sd, 15%)."
+sha256 = "0caa559ffda551cc7de66533792d9cee685b7a69f66f84484dd7b51d55c5842b"
+
+[[file]]
+path = "reserving_curves_r.csv"
+generators = ["reserving_curves_r.R"]
+environment = "Generated by validation/scripts/reserving_curves_r.R with R 4.5.3, ChainLadder 0.2.21. Volume-weighted factors of validation/data/{raa,genins}.csv. exponential, inverse_power and hoerl: lm on log(f - 1); sherman: nls on f - 1 = a (k + c)^(-b); loglogistic and weibull: nls on f = G(t1) / G(t0), ages in months. nls by the port algorithm, 1000 iterations."
+sha256 = "6b7287885a6967058fba019ea26895e3e851454e081212d330dbb99b04bab617"
+
+[[file]]
+path = "reserving_exhibits_python.csv"
+generators = ["reserving_exhibits_python.py"]
+environment = "Generated by validation/scripts/reserving_exhibits_python.py with chainladder-python 0.10.1. VotingChainladder on validation/data/genins_premium.csv: column paid, exposure the latest diagonal of premium, no tail. reserve is ultimate minus the latest paid (ibnr_)."
+sha256 = "2993c802f2959053b89963b55c9df1420c3f07865137703663988d10d4cb4551"
+
+[[file]]
+path = "reserving_expected_loss_python.csv"
+generators = ["reserving_expected_loss_python.py"]
+environment = "Generated by validation/scripts/reserving_expected_loss_python.py with chainladder-python 0.10.1. Triangles from validation/data/{clrd_wkcomp,genins_premium}.csv: column paid, exposure the latest diagonal of premium. No tail factor. reserve is ultimate minus the latest paid (ibnr_)."
+sha256 = "74c80c3cdac7fb6d9a5f019c58a03d557714f2d026f42ab539343b2df2214814"
+
+[[file]]
+path = "reserving_fit_apply_python.csv"
+generators = ["reserving_fit_apply_python.py"]
+environment = "Generated by validation/scripts/reserving_fit_apply_python.py with chainladder-python 0.10.1. A development fitted on the full triangle and applied to another book or a latest diagonal (fit(source).predict(target)): genins (value) with the chain ladder and tails, clrd_wkcomp (paid, exposure the latest premium) with the expected-loss methods."
+sha256 = "47b5643ee0b6dee44b9f1f30667ebb74ee79b97112de566ab65573234c5584a7"
+
+[[file]]
+path = "reserving_glm_r.csv"
+generators = ["reserving_glm_r.R"]
+environment = "Generated by validation/scripts/reserving_glm_r.R with R 4.3.3 (stats::glm, statmod 1.5.2). Triangles from validation/data/{genins,abc}.csv; RAA is left out (negative increment)."
+sha256 = "ebb0fe84f8bdd881fc33f4796bc21ed33125445ebafa2a735ef23425b685c369"
+
+[[file]]
+path = "reserving_hierarchical_bf_stan.csv"
+generators = ["reserving_hierarchical_bf_stan.py"]
+environment = "Generated by validation/scripts/reserving_hierarchical_bf_stan.py with CmdStan 2.39.0, cmdstanpy 1.3.0, pandas 3.0.6 and numpy 2.5.4. Model validation/scripts/stan/hierarchical_bf.stan (sha256 85f98d776fe7313583ecf9082b8ece597fe92c58f179b1d0d5c90765efcf2177). Seeds 20261105 to 20261112 pooled (8 runs of 4 chains with 2000 warm-up and 10000 kept draws each); metric dense_e; adapt_delta 0.99; Gamma process. Programs evw (EVW cut to six ages), genins and raa; scale and kappa are the plug-ins (rel_tol 1e-9). With s the reference posterior sd: means abs_tol 0.12 s, sds rel_tol 0.14 (0.3 for EVW's loss ratio and reserves and the totals), reserve quantiles abs_tol 0.1 s (5%, 50%), 0.26 s (95%; 0.9 s for EVW's reserves and the totals); see the script. arg: a hyperparameter, a program, program:age, program:origin year or program:total; an exact 0 reserve has no spread."
+sha256 = "583a3b30463af7265c591dad9284b0efc391d9021f21780990f2487883c586ad"
+
+[[file]]
+path = "reserving_latest_diagonal_python.csv"
+generators = ["reserving_latest_diagonal_python.py"]
+environment = "Generated by validation/scripts/reserving_latest_diagonal_python.py with chainladder-python 0.10.1. A latest-diagonal triangle with the full triangle's own volume-weighted pattern through DevelopmentConstant: genins (value) with the chain ladder, clrd_wkcomp (paid, exposure the latest premium) with the expected-loss methods."
+sha256 = "0ef4187e8ca104af67a81315deeabde31404fa2648b292ff74e23db0c3a0d472"
+
+[[file]]
+path = "reserving_meyers_cay_stan.csv"
+generators = ["reserving_meyers_cay_stan.py"]
+environment = "Generated by validation/scripts/reserving_meyers_cay_stan.py with CmdStan 2.39.0, cmdstanpy 1.3.0, pandas 3.0.6, numpy 2.5.4 and arviz 0.23.4 (elpd_loo). Model validation/scripts/stan/meyers_cay.stan (sha256 e8a3f47c73186b6366586d8b3b9f4482a0c95c4121da176cc87952e38e729fa1), a transcription of Meyers' CAY.R (meyers-appendix.zip, CAS). Data validation/data/clrd_comauto_353.csv, column incurred, calendar years up to 1997 (55 cells). Seed 20261013; 4 chains of 2000 warm-up and 25000 kept draws; metric dense_e; adapt_delta 0.99; max_treedepth 12. dataset is the column. With s the reference posterior sd: means and reserve quantiles abs_tol a multiple of s, sds rel_tol, elpd_loo abs_tol, each at least 4 times the Monte Carlo error of Meyers' defaults (4 x 2,000 draws, 10,000 simulations) over seeds 0 to 199; total sds 75% for their heavy tail; no reserve sd row for the youngest origin (its 5/50/95% rows instead); arg 1988-1996 is the sum of those origins' reserves, a/b the correlation of two origins' reserves. meyers_2019_cay rows: Meyers' printed numbers, at least 4 times the combined error of our defaults and his run."
+sha256 = "b5b32fa9ddb27d4bc6351c4999f69b2292f1b097ebd50f2dd4ab7b9ae7a69065"
+
+[[file]]
+path = "reserving_meyers_stan.csv"
+generators = ["reserving_meyers_stan.py"]
+environment = "Generated by validation/scripts/reserving_meyers_stan.py with CmdStan 2.39.0, cmdstanpy 1.3.0, pandas 3.0.6, numpy 2.5.4 and arviz 0.23.4 (elpd_loo). Models validation/scripts/stan/meyers_crc.stan (sha256 d32c0a8f586f231d9cde57bb8f0b7bbf7fd708ffa95631f8e65fe9950db25129) and meyers_csr.stan (sha256 352616d6fb3ac41724a959e5bab4d3892a1b74c589ca4a115dc97e18db16dc11), transcriptions of Meyers' CRC.R and CSR.R (meyers-appendix.zip, CAS). Data validation/data/clrd_comauto_353.csv, calendar years up to 1997 (55 cells). Seed 20261012; 4 chains of 2000 warm-up and 25000 kept draws; metric dense_e; adapt_delta 0.99; max_treedepth 12. dataset is the column. With s the reference posterior sd: means and reserve quantiles abs_tol a multiple of s, sds rel_tol, elpd_loo abs_tol, each at least 4 times the Monte Carlo error of Meyers' defaults (4 x 2,000 draws, 10,000 simulations) over seeds 0 to 199; total sds 50% for their heavy tail; no reserve sd row for the youngest origin (its 5/50/95% rows instead). meyers_2019_* rows: Meyers' printed numbers, at least 4 times the combined error of our defaults and his run."
+sha256 = "a6b6f48b9d22ce9b442841a30cfc200fa6a51a7b0154599a1fb285ac5af15505"
+
+[[file]]
+path = "reserving_munich_python.csv"
+generators = ["reserving_munich_python.py"]
+environment = "Generated by validation/scripts/reserving_munich_python.py with chainladder-python 0.10.1. The Munich chain ladder on the mcl sample."
+sha256 = "e30bcfa1d2c5248a7df669a0ffdd62a0f401f95988954e7393f4b94350aca195"
+
+[[file]]
+path = "reserving_munich_r.csv"
+generators = ["reserving_munich_r.R"]
+environment = "Generated by validation/scripts/reserving_munich_r.R with R version 4.5.3 (2026-03-11 ucrt), ChainLadder 0.2.21. The Munich chain ladder on MCLpaid and MCLincurred."
+sha256 = "5a38453d8d9a0c7c92559e4cbb6060f87bcfb09621f9b362156b9a84f06fd0a2"
+
+[[file]]
+path = "reserving_paid_incurred_r.csv"
+generators = ["reserving_paid_incurred_r.R"]
+environment = "Generated by validation/scripts/reserving_paid_incurred_r.R with R version 4.5.3 (2026-03-11 ucrt), ChainLadder 0.2.21. Merz and Wuthrich (2010) paid-incurred chain, non-informative priors, variances estimated as R does."
+sha256 = "62c69e74960e7d0e39fb9ed243ba69e87f7d5507dd4b5e5afa14c47727069af6"
+
+[[file]]
+path = "reserving_patterns_python.csv"
+generators = ["reserving_patterns_python.py"]
+environment = "Generated by validation/scripts/reserving_patterns_python.py with chainladder-python 0.10.1. Selected patterns through DevelopmentConstant: raa and genins (value) with the chain ladder, clrd_wkcomp (paid, exposure the latest premium) with the expected-loss methods. quantity pattern holds the inputs; see the script's docstring."
+sha256 = "92fed0d781411b000e05677de24be2e26e0bb90a4eca9a2f5b3d58724f8e2f5a"
+
+[[file]]
+path = "reserving_tails_python.csv"
+generators = ["reserving_tails_python.py"]
+environment = "Generated by validation/scripts/reserving_tails_python.py with chainladder-python 0.10.1. Triangles from validation/data/{raa,genins,abc}.csv; volume-weighted factors, log-linear sigma. ldf and cdf run past the oldest age into the tail's factors (projection_period 12). Mack risks are standard errors at ultimate, including the tail."
+sha256 = "da1d65f195f96951e139f3c9b38c9977d9c70bdd5b1243a5fc52d7b94a856c51"
+
+[[file]]
+path = "reserving_tails_r.csv"
+generators = ["reserving_tails_r.R"]
+environment = "Generated by validation/scripts/reserving_tails_r.R with R 4.4.3, ChainLadder 0.2.21. Triangles from validation/data/{raa,genins,abc}.csv. Mack risks are standard errors at ultimate, including the tail. tail = TRUE is R's log-linear rule (tailfactor); the tail's sigma and standard error are extrapolated log-linearly (tail_SE) unless given."
+sha256 = "16bcec88fc6af0ca6f80069a072f524d6eb58d8a4fe385708088fb2529874ee3"
+
+[[file]]
+path = "ruin_aggregate.csv"
+generators = ["aggregate_ruin.py"]
+sha256 = "541bfef0b044e274c1c4418e0b124aa301eb0ad3dfe75e417fd84852736d5141"
+
+[[file]]
+path = "severity_fits_scipy.csv"
+generators = ["scipy_severity_fits.py"]
+sha256 = "3473d9b0ffe75b5c8bb532299f67c925c402378ebfb7d61f41736533f123d047"
+
+[[file]]
+path = "severity_mpmath.csv"
+generators = ["mpmath_severity.py"]
+sha256 = "1c86b24ba4a001de3610db3954d4c4d05dfd47a7edfa332573b94dd3e04a7f63"
+
+[[file]]
+path = "shap_kernel.csv"
+generators = ["shap_kernel.py"]
+environment = "shap 0.54.1, numpy 2.5.4"
+sha256 = "168b936e80276edd1fdab12449c0d7e6c8937c9cf910f324f213a816386c5e82"
+
+[[file]]
+path = "sizing_aggregate.csv"
+generators = ["aggregate_sizing.py"]
+sha256 = "3822cf7792ab5b192712ebf12d5161cae5e79cdf24e0bf69123fb7708ae1d3e4"
+
+[[file]]
+path = "sobol_scipy.csv"
+generators = ["sobol_scipy.py"]
+sha256 = "6f796c0a2158224739ae0385a08539e9861a65244069e877a19ee5cd6346287b"
+
+[[file]]
+path = "special_scipy.csv"
+generators = ["scipy_special.py"]
+sha256 = "9385ad521fe786b8096ab18b85bb4bfe1a69138f571d3a6d631691876892ef3a"
+
+[[file]]
+path = "stacking_grid.csv"
+generators = ["stacking_grid.py"]
+sha256 = "c8901dbcaf0c921cc9c90b654f1c606d1cea405596bb100e721ee2f42544de8a"
+
+[[file]]
+path = "stacking_weights.csv"
+generators = ["stacking_weights.py"]
+sha256 = "1f225b445a538de3c62283be70d49c23a34a7b5661b85a00f0136f41d3838418"
+
+[[file]]
+path = "stan_csv_posterior.csv"
+generators = ["r_stan_csv.R"]
+sha256 = "5495c6bebb808e3ae6f827a05f83bd150cbf9c86d527e6d4e92c904990a01f24"
+
+[[file]]
+path = "third_moments_mpmath.csv"
+generators = ["mpmath_third_moments.py"]
+sha256 = "c6da5df1f2954cd8f3cd05a42c3d814d33140b019786b59add644a446f1254e3"
+
+[[file]]
+path = "time_splits_sklearn.csv"
+generators = ["time_splits_sklearn.py"]
+sha256 = "05de0d5e990933f97e6e28ecb73d73bfc678946b54e34a6915c73ad4e876437a"
+
+[[file]]
+path = "tower_matching_r.csv"
+generators = ["r_tower_matching.R"]
+sha256 = "bc6d9d717646c139d477f5f9361e6359e0ee0c10c2c12d0fffe5555da608a377"
+
+[[file]]
+path = "tweedie_aggregate.csv"
+generators = ["aggregate_tweedie.py"]
+sha256 = "9ada6f48b240fc259d10a35c63225e7372cdf27a4cc5715207755c351713049c"
+
+[[file]]
+path = "tweedie_mpmath.csv"
+generators = ["mpmath_tweedie.py"]
+sha256 = "0a682ba06a768ae59d424980e383cc68048e5d027eb9cb459bd0a60de5c606ce"
+
+[[file]]
+path = "tweedie_profile_statsmodels.csv"
+generators = ["statsmodels_tweedie_profile.py"]
+sha256 = "e93e0a175aaef8bddb27e85f45def9a0d3d3cd498c3648208b5fbdbffb952156"
+
+[[file]]
+path = "validation_aggregate.csv"
+generators = ["aggregate_validation.py"]
+sha256 = "fad9650378a865ba48a3609a6b96dc629b132cb0ce020ca2e65e478d7d5dd1e9"
+
+[[file]]
+path = "vine_fit_pyvinecopulib.csv"
+generators = ["pyvinecopulib_fit.py"]
+sha256 = "ae20b068a74c403aa695a93e831484c120b9b36f99f1b764d8976c2f4d73707e"
+
+[[file]]
+path = "vine_pyvinecopulib.csv"
+generators = ["pyvinecopulib_vines.py"]
+sha256 = "8d254779043d07db430aa83e684ed019706a2e2c3804f34a63405ef083e567c3"
+
+[[file]]
+path = "vine_rvine_data.csv"
+generators = ["pyvinecopulib_rvine.py"]
+sha256 = "73f2db9df853110edb90efdaa0fa9c093c9f701bf147f7f2f68ebed7e2183e27"
+
+[[file]]
+path = "vine_rvine_pyvinecopulib.csv"
+generators = ["pyvinecopulib_rvine.py"]
+sha256 = "4c3cbd152448327c4c0642408a803fbd912c88f7f100bf82e7c473627e7630d7"
+
+[[file]]
+path = "wiener_hopf_aggregate.csv"
+generators = ["aggregate_wiener_hopf.py"]
+sha256 = "700a8df6322c2e25ad6dd2caf350f37889cb1c5f9d98c10021763ce4a75af649"
+
+[[file]]
+path = "zero_counts_pscl.csv"
+generators = ["r_zero_counts.R"]
+environment = "R version 4.3.3 (2024-02-29), pscl 1.5.9, MASS 7.3.60.0.1, numDeriv 2016.8.1.1"
+sha256 = "078b7037358dd8250ecd1da816fa75f11c2b119bf5897d50e3924eda6710285f"

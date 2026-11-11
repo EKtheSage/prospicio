@@ -251,20 +251,7 @@ impl RiskDistortion {
 
 /// A distortion family by name, with the fixed `r0` of those that have one.
 pub(crate) fn family_from(name: &str, r0: f64) -> Result<Family> {
-    Ok(match name {
-        "ccoc" => Family::Ccoc,
-        "proportional_hazard" | "ph" => Family::ProportionalHazard,
-        "wang" => Family::Wang,
-        "tsallis" => Family::Tsallis,
-        "dual_power" | "dual" => Family::DualPower,
-        "tvar" => Family::Tvar,
-        "exponential" | "exp" => Family::Exponential,
-        "capped_linear" | "clin" => Family::CappedLinear { r0 },
-        "capped_log_linear" | "cll" => Family::CappedLogLinear { r0 },
-        "lep" => Family::Lep { r0 },
-        "linear_yield" | "ly" => Family::LinearYield { r0 },
-        other => return Err(Error::Other(format!("unknown distortion family {other:?}"))),
-    })
+    Family::from_name(name, r0).map_err(to_r)
 }
 
 fn distortions_of(parts: &List) -> Result<Vec<Distortion>> {
@@ -615,6 +602,44 @@ fn rearrange_rust(x: &[f64], ncol: f64, rotate: f64, seed: f64, tolerance: f64) 
         (true, true) => Start::AsGiven,
     };
     let r = rearrange(&columns, start, tolerance).map_err(to_r)?;
+    Ok(list!(
+        value = r.value,
+        columns = r.columns.concat(),
+        iterations = r.iterations as f64
+    ))
+}
+
+/// The worst VaR at `p` of the sum of `marginals` (native distributions)
+/// by the core's `rearrangement::worst_var`, with its checks on `p` and `n`
+/// (#838): `list(value, columns, iterations)`.
+#[extendr]
+fn worst_var_rust(
+    marginals: List,
+    p: f64,
+    n: f64,
+    rotate: f64,
+    seed: f64,
+    tolerance: f64,
+) -> Result<List> {
+    use prospicio_prob::rearrangement::{Start, worst_var};
+    if !(n.is_finite() && n >= 0.0 && n.fract() == 0.0) {
+        return Err(Error::Other(format!("n must be a whole number, got {n}")));
+    }
+    let dists = marginals
+        .values()
+        .map(|m| crate::distributions::dist_from_robj(&m))
+        .collect::<Result<Vec<_>>>()?;
+    let refs: Vec<&dyn prospicio_prob::Distribution> = dists
+        .iter()
+        .map(|d| d as &dyn prospicio_prob::Distribution)
+        .collect();
+    let start = match (rotate.is_nan(), seed.is_nan()) {
+        (false, false) => return Err(Error::Other("give rotate or seed, not both".into())),
+        (false, true) => Start::Rotated(rotate as usize),
+        (true, false) => Start::Shuffled(seed as u64),
+        (true, true) => Start::AsGiven,
+    };
+    let r = worst_var(&refs, p, n as usize, start, tolerance).map_err(to_r)?;
     Ok(list!(
         value = r.value,
         columns = r.columns.concat(),
@@ -1426,6 +1451,7 @@ extendr_module! {
     fn haircut_rust;
     fn equal_risk_rust;
     fn rearrange_rust;
+    fn worst_var_rust;
     fn iman_conover_reorder;
     fn gpd_mle;
     fn mean_excess_rust;

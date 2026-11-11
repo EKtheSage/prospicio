@@ -10,3 +10,4 @@ Finished items are in [done/models.md](done/models.md), which agents read when t
 
 - [survival-models] survival models, parked with claim-level reserving by the user on 2026-10-29 until the user has researched how to approach them; no lane works on them until the user picks them up (`docs/design/models.md`)
 - [triangle-design-bridge] The triangle-to-design bridge and the diagonal backtest stay in the Reserving lane
+- [explain-kernels] #837 step 2: the ALE grid, the level ordering (an eigendecomposition in place of Python's power iteration), accumulation and centring, and SHAP's coalitions, weights and permutation sampler as `prospicio-models` kernels on plain vectors, bound in both binding crates, each language keeping only its predict loop; the shared reference unchanged

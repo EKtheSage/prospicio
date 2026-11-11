@@ -103,10 +103,8 @@ fn dot(a: &[f64], b: &[f64]) -> f64 {
 
 /// Type 7 quantile (R's default) of sorted values.
 fn quantile7(sorted: &[f64], p: f64) -> f64 {
-    let h = (sorted.len() - 1) as f64 * p;
-    let lo = h.floor() as usize;
-    let hi = (lo + 1).min(sorted.len() - 1);
-    sorted[lo] + (h - lo as f64) * (sorted[hi] - sorted[lo])
+    // The workspace's one type 7 quantile (#843).
+    prospicio_prob::risk::var_linear_sorted(sorted, p).unwrap_or(f64::NAN)
 }
 
 /// The bandwidth rule of the kernel standard errors, as

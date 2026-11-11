@@ -133,13 +133,13 @@ fn loss_ratio_draws_of(
 }
 
 fn grain(name: &str) -> PyResult<Grain> {
-    match name.to_ascii_uppercase().as_str() {
-        "M" => Ok(Grain::Month),
-        "Q" => Ok(Grain::Quarter),
-        "S" => Ok(Grain::Semester),
-        "Y" => Ok(Grain::Year),
+    match name.trim().to_ascii_lowercase().as_str() {
+        "m" | "month" => Ok(Grain::Month),
+        "q" | "quarter" => Ok(Grain::Quarter),
+        "s" | "semiannual" | "semi-annual" => Ok(Grain::Semester),
+        "y" | "year" => Ok(Grain::Year),
         _ => Err(PyValueError::new_err(format!(
-            "grain must be \"M\", \"Q\", \"S\" or \"Y\", got {name:?}"
+            "grain must be \"M\", \"Q\", \"S\" or \"Y\" (or \"month\", \"quarter\", \"semiannual\", \"year\"), got {name:?}"
         ))),
     }
 }
@@ -167,7 +167,7 @@ fn average_name(a: Average) -> &'static str {
 
 fn sigma_interpolation(name: &str) -> PyResult<SigmaInterpolation> {
     match name {
-        "log-linear" => Ok(SigmaInterpolation::LogLinear),
+        "log-linear" | "loglinear" | "log_linear" => Ok(SigmaInterpolation::LogLinear),
         "mack" => Ok(SigmaInterpolation::Mack),
         _ => Err(PyValueError::new_err(format!(
             "sigma_interpolation must be \"log-linear\" or \"mack\", got {name:?}"
@@ -276,9 +276,9 @@ fn development(
 
 fn pattern_kind(name: &str) -> PyResult<PatternKind> {
     match name {
-        "ldf" => Ok(PatternKind::AgeToAge),
-        "cdf" => Ok(PatternKind::AgeToUltimate),
-        "percent_developed" => Ok(PatternKind::PercentDeveloped),
+        "ldf" | "age-to-age" => Ok(PatternKind::AgeToAge),
+        "cdf" | "age-to-ultimate" => Ok(PatternKind::AgeToUltimate),
+        "percent_developed" | "percent" | "percent developed" => Ok(PatternKind::PercentDeveloped),
         _ => Err(PyValueError::new_err(format!(
             "ldf_kind must be \"ldf\" (age-to-age factors), \"cdf\" (factors to ultimate) \
              or \"percent_developed\", got {name:?}"
@@ -6854,9 +6854,9 @@ impl PyBenchmarkCurve {
         weights: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyBenchmarkCurveFit> {
         let kind = match kind {
-            "percent_developed" => PatternKind::PercentDeveloped,
-            "cdf" => PatternKind::AgeToUltimate,
-            "ldf" => {
+            "percent_developed" | "percent" | "percent developed" => PatternKind::PercentDeveloped,
+            "cdf" | "age-to-ultimate" => PatternKind::AgeToUltimate,
+            "ldf" | "age-to-age" => {
                 return Err(PyValueError::new_err(
                     "kind=\"ldf\": age-to-age factors give no level to fit; give percents \
                      developed or factors to ultimate",
@@ -7994,7 +7994,7 @@ impl PyPaidIncurredChain {
         psi_sd: Option<Vec<f64>>,
     ) -> PyResult<Self> {
         let extrapolation = match extrapolation {
-            "loglinear" => VarianceExtrapolation::LogLinear,
+            "loglinear" | "log-linear" | "log_linear" => VarianceExtrapolation::LogLinear,
             "mack" => VarianceExtrapolation::Mack,
             other => {
                 return Err(PyValueError::new_err(format!(
@@ -13463,73 +13463,19 @@ fn stack_programs(programs: &Bound<'_, PyDict>, columns: &[&str]) -> PyResult<Tr
     if programs.is_empty() {
         return Err(PyValueError::new_err("no programs: the dict is empty"));
     }
-    let mut columns = columns.to_vec();
-    columns.dedup();
-    let columns = &columns[..];
-    let mut names: Vec<String> = Vec::new();
-    let (mut origin, mut development) = (Vec::new(), Vec::new());
-    let mut values: Vec<(String, Vec<f64>)> = columns
-        .iter()
-        .map(|c| (c.to_string(), Vec::new()))
-        .collect();
-    let mut first: Option<(Grain, Grain, bool)> = None;
+    let mut named: Vec<(String, PyRef<'_, PyTriangle>)> = Vec::with_capacity(programs.len());
     for (key, value) in programs.iter() {
         let name: String = key
             .extract()
             .map_err(|_| PyTypeError::new_err("program names must be strings"))?;
-        if name.is_empty() {
-            return Err(PyValueError::new_err("a program has an empty name"));
-        }
         let t = value
             .extract::<PyRef<'_, PyTriangle>>()
             .map_err(|_| PyTypeError::new_err(format!("program {name:?} is not a Triangle")))?;
-        let t = &t.inner;
-        if t.shape()[0] != 1 {
-            return Err(PyValueError::new_err(format!(
-                "program {name:?} has {} segments; each program is a triangle with one",
-                t.shape()[0]
-            )));
-        }
-        for c in columns {
-            t.column_position(c).map_err(|_| {
-                PyValueError::new_err(format!("program {name:?} has no column {c:?}"))
-            })?;
-        }
-        let shape = (t.origin_grain(), t.development_grain(), t.is_cumulative());
-        if *first.get_or_insert(shape) != shape {
-            return Err(PyValueError::new_err(format!(
-                "program {name:?} differs from the first in its grains or its cumulative state"
-            )));
-        }
-        let long = t.to_long();
-        names.extend(std::iter::repeat_n(name, long.origin.len()));
-        origin.extend(long.origin);
-        development.extend(long.development);
-        for (column, out) in columns.iter().zip(&mut values) {
-            let (_, v) = long
-                .values
-                .iter()
-                .find(|(n, _)| n == column)
-                .expect("checked");
-            out.1.extend_from_slice(v);
-        }
+        named.push((name, t));
     }
-    let (origin_grain, development_grain, cumulative) = first.expect("not empty");
-    let labels: Vec<&str> = names.iter().map(String::as_str).collect();
-    let values: Vec<(&str, &[f64])> = values
-        .iter()
-        .map(|(n, v)| (n.as_str(), v.as_slice()))
-        .collect();
-    Triangle::from_long(&Long {
-        keys: &[("program", &labels)],
-        origin: &origin,
-        development: DevelopmentColumn::Age(&development),
-        values: &values,
-        origin_grain,
-        development_grain,
-        cumulative,
-    })
-    .map_err(err)
+    // The core's rules (#838), the same in R.
+    let refs: Vec<(&str, &Triangle)> = named.iter().map(|(n, t)| (n.as_str(), &t.inner)).collect();
+    Triangle::stack(&refs, "program", columns).map_err(err)
 }
 
 /// The triangle of `HierarchicalBf.fit` and `.one_year`: a `Triangle` with
@@ -14164,50 +14110,13 @@ impl PyHierarchicalBfFit {
     /// -------
     /// pandas.DataFrame
     fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        use prospicio_prob::Distribution;
-        let ps = &self.inner.programs;
-        let sum = |g: fn(&HierarchicalBfProgram) -> &Vec<f64>| {
-            ps.iter()
-                .map(|p| g(p).iter().sum::<f64>())
-                .collect::<Vec<f64>>()
-        };
-        let out = PyDict::new(py);
-        out.set_item(
-            "program",
-            ps.iter().map(|p| p.label.to_string()).collect::<Vec<_>>(),
-        )?;
-        out.set_item(
-            "origins",
-            ps.iter().map(|p| p.origins.len()).collect::<Vec<_>>(),
-        )?;
-        out.set_item("exposure", sum(|p| &p.exposure))?;
-        out.set_item("latest", sum(|p| &p.latest))?;
-        out.set_item("prior_ultimate", sum(|p| &p.prior_ultimate))?;
-        out.set_item("expected_ultimate", sum(|p| &p.expected_ultimate))?;
-        out.set_item("scale", ps.iter().map(|p| p.scale).collect::<Vec<_>>())?;
-        out.set_item(
-            "loss_ratio",
-            ps.iter().map(|p| p.loss_ratio).collect::<Vec<_>>(),
-        )?;
-        out.set_item(
-            "own_loss_ratio",
-            ps.iter().map(|p| p.own_loss_ratio).collect::<Vec<_>>(),
-        )?;
-        out.set_item(
-            "shrinkage",
-            ps.iter().map(|p| p.shrinkage).collect::<Vec<_>>(),
-        )?;
-        out.set_item(
-            "mean",
-            ps.iter().map(|p| p.reserves.mean()).collect::<Vec<_>>(),
-        )?;
-        out.set_item(
-            "std_dev",
-            ps.iter()
-                .map(|p| p.reserves.variance().sqrt())
-                .collect::<Vec<_>>(),
-        )?;
-        py.import("pandas")?.call_method1("DataFrame", (out,))
+        // The core's table (#838), the same in R; origins is a count.
+        let frame = table_frame(py, self.inner.totals())?;
+        let origins = frame
+            .get_item("origins")?
+            .call_method1("astype", ("int64",))?;
+        frame.set_item("origins", origins)?;
+        Ok(frame)
     }
 
     fn __repr__(&self) -> String {
@@ -14499,19 +14408,7 @@ impl PyHierarchicalBfOneYearFit {
     /// -------
     /// pandas.DataFrame
     fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let moments = column_moments(&self.inner.cdr);
-        let out = PyDict::new(py);
-        out.set_item("program", self.program())?;
-        out.set_item("origin", self.origins())?;
-        out.set_item("latest", self.latest())?;
-        out.set_item("opening_ultimate", self.inner.opening_ultimate.clone())?;
-        out.set_item("opening_reserve", self.inner.opening_reserve.clone())?;
-        out.set_item("cdr_mean", moments.iter().map(|m| m.0).collect::<Vec<_>>())?;
-        out.set_item(
-            "cdr_std_dev",
-            moments.iter().map(|m| m.1).collect::<Vec<_>>(),
-        )?;
-        py.import("pandas")?.call_method1("DataFrame", (out,))
+        table_frame(py, self.inner.to_long())
     }
 
     /// One row per program: the ``latest`` value, ``opening_ultimate`` and
@@ -14524,43 +14421,7 @@ impl PyHierarchicalBfOneYearFit {
     /// -------
     /// pandas.DataFrame
     fn totals_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let fit = &self.inner;
-        let mut first = 0;
-        let (mut latest, mut ultimate, mut reserve) = (vec![], vec![], vec![]);
-        for p in &fit.fit.programs {
-            let n = p.origins.len();
-            latest.push(p.latest.iter().sum::<f64>());
-            ultimate.push(fit.opening_ultimate[first..first + n].iter().sum::<f64>());
-            reserve.push(fit.opening_reserve[first..first + n].iter().sum::<f64>());
-            first += n;
-        }
-        let totals = fit
-            .cdr
-            .aggregate(&["program"])
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let moments = column_moments(&totals);
-        let out = PyDict::new(py);
-        out.set_item(
-            "program",
-            fit.fit
-                .programs
-                .iter()
-                .map(|p| p.label.to_string())
-                .collect::<Vec<_>>(),
-        )?;
-        out.set_item("latest", latest)?;
-        out.set_item("opening_ultimate", ultimate)?;
-        out.set_item("opening_reserve", reserve)?;
-        out.set_item("cdr_mean", moments.iter().map(|m| m.0).collect::<Vec<_>>())?;
-        out.set_item(
-            "cdr_std_dev",
-            moments.iter().map(|m| m.1).collect::<Vec<_>>(),
-        )?;
-        out.set_item(
-            "flagged_share",
-            vec![fit.flagged_share(); fit.fit.programs.len()],
-        )?;
-        py.import("pandas")?.call_method1("DataFrame", (out,))
+        table_frame(py, self.inner.totals())
     }
 
     fn __repr__(&self) -> String {
@@ -14574,21 +14435,6 @@ impl PyHierarchicalBfOneYearFit {
             self.inner.refitted.len(),
         )
     }
-}
-
-/// The mean and standard deviation (the population one, as a simulated
-/// distribution's) of each component of `d`.
-fn column_moments(d: &prospicio_prob::PredictiveDistribution) -> Vec<(f64, f64)> {
-    let n = d.n_components();
-    let rows = d.n_sims() as f64;
-    (0..n)
-        .map(|j| {
-            let column = d.draw_matrix().iter().skip(j).step_by(n);
-            let mean = column.clone().sum::<f64>() / rows;
-            let var = column.map(|x| (x - mean).powi(2)).sum::<f64>() / rows;
-            (mean, var.sqrt())
-        })
-        .collect()
 }
 
 /// The prior of a layer's expected ultimate for ``BayesBfNormalised``, from
