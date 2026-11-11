@@ -4487,43 +4487,16 @@ stack_programs <- function(programs, columns) {
   if (is.null(nm) || anyNA(nm) || !all(nzchar(nm))) {
     stop("every program needs a name: triangles must be a named list", call. = FALSE)
   }
-  if (anyDuplicated(nm)) {
-    stop(sprintf("program name %s is used twice", nm[anyDuplicated(nm)]), call. = FALSE)
-  }
-  columns <- unique(columns)
-  parts <- lapply(seq_along(programs), function(i) {
-    tri <- programs[[i]]
-    if (!S7::S7_inherits(tri, triangle)) {
+  for (i in seq_along(programs)) {
+    if (!S7::S7_inherits(programs[[i]], triangle)) {
       stop(sprintf("program %s is not a triangle", nm[i]), call. = FALSE)
     }
-    if (tri@shape[["index"]] != 1L) {
-      stop(sprintf("program %s has %d segments; each program is a triangle with one",
-                   nm[i], tri@shape[["index"]]), call. = FALSE)
-    }
-    lacking <- setdiff(columns, tri@columns)
-    if (length(lacking)) {
-      stop(sprintf("program %s has no column %s", nm[i], lacking[1]), call. = FALSE)
-    }
-    if ("program" %in% columns) {
-      stop("a column named program clashes with the key of the stacked triangle",
-           call. = FALSE)
-    }
-    long <- as.data.frame(tri)[c("origin", "development", columns)]
-    long$program <- nm[i]
-    long
-  })
-  first <- programs[[1]]
-  for (i in seq_along(programs)[-1]) {
-    tri <- programs[[i]]
-    if (tri@origin_grain != first@origin_grain || tri@development_grain != first@development_grain ||
-        tri@is_cumulative != first@is_cumulative) {
-      stop(sprintf("program %s differs from the first in its grains or its cumulative state",
-                   nm[i]), call. = FALSE)
-    }
   }
-  triangle(do.call(rbind, parts), "origin", "development", columns, keys = "program",
-           origin_grain = first@origin_grain, development_grain = first@development_grain,
-           cumulative = first@is_cumulative)
+  # The core's rules (#838), the same in Python: a name used twice, several
+  # segments, a missing column, other grains and a column named program
+  # are errors.
+  triangle(ptr = reserving_result(Triangle$stack(nm, lapply(programs, function(t) t@ptr), "program",
+                                                 as.character(columns))))
 }
 
 #' Hierarchical Bayesian Bornhuetter-Ferguson over programs

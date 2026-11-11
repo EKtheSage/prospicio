@@ -1057,6 +1057,29 @@ impl Triangle {
         Ok(inner.into())
     }
 
+    /// One-segment triangles stacked as segments under the key `key`, one
+    /// name each (the core's `Triangle::stack`, #838).
+    fn stack(names: Vec<String>, triangles: List, key: &str, columns: Vec<String>) -> Result<Self> {
+        if names.len() != triangles.len() {
+            return Err(Error::Other("one name per triangle".into()));
+        }
+        let items = triangles
+            .values()
+            .zip(&names)
+            .map(|(t, name)| {
+                <&Triangle>::try_from(&t)
+                    .map(|t| t.inner.clone())
+                    .map_err(|_| Error::Other(format!("{name:?} is not a triangle")))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let refs: Vec<(&str, &TriangleInner)> =
+            names.iter().map(String::as_str).zip(items.iter()).collect();
+        let cols: Vec<&str> = columns.iter().map(String::as_str).collect();
+        Ok(TriangleInner::stack(&refs, key, &cols)
+            .map_err(to_r)?
+            .into())
+    }
+
     /// The ages up to `age` months (a whole number, 0 or more).
     fn max_age(&self, age: i32) -> Result<Self> {
         let age = u32::try_from(age).map_err(|_| Error::Other("`age` must be 0 or more".into()))?;

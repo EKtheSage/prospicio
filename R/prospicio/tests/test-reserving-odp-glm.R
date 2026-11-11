@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # odp_glm(): Taylor and McGuire, CAS Monograph 3, Table 5-4 (issue #333).
 
@@ -150,7 +151,7 @@ within(unname(gamma@coefficients[r_names]), unname(coef(r_gamma$fit)), 1e-7,
 within(gamma@dispersion, summary(r_gamma$fit)$dispersion, 1e-9, "gamma dispersion")
 within(round(gamma@total_reserve), 373466, 0, "the guide's gamma total")
 tweedie <- odp_glm(tri, family = "tweedie", power = 1.5)
-if (requireNamespace("statmod", quietly = TRUE)) {
+if (with_package("statmod")) {
   r_tweedie <- r_reserves(statmod::tweedie(var.power = 1.5, link.power = 0))
   within(tweedie@total_reserve, r_tweedie$total, 1e-4, "Tweedie total against statmod")
 }
