@@ -1047,6 +1047,46 @@ fn fit_curves_rust(
     ))
 }
 
+/// Every fitted family's survival at the losses beside their plotting
+/// positions: `list(loss, empirical, families, curves)`, `curves` a list
+/// of one vector per family in AIC order. `families` empty means all nine.
+#[extendr]
+fn fit_curves_rust(
+    losses: &[f64],
+    threshold: f64,
+    families: Vec<String>,
+    points: f64,
+) -> Result<List> {
+    use prospicio_prob::severity_fit::Family;
+    if !(points >= 0.0 && points.fract() == 0.0) {
+        return Err(Error::Other(format!(
+            "points must be a whole number, got {points}"
+        )));
+    }
+    let families: Vec<Family> = if families.is_empty() {
+        Family::ALL.to_vec()
+    } else {
+        families
+            .iter()
+            .map(|n| Family::from_name(n))
+            .collect::<prospicio_core::Result<_>>()
+            .map_err(to_r)?
+    };
+    let kept: Vec<f64> = losses.iter().copied().filter(|&y| y >= threshold).collect();
+    let n = kept.len();
+    let data = large_losses(&kept, &vec![threshold; n], &[], &[])?;
+    let c = prospicio_prob::severity_fit::fit_curves(&data, threshold, &families, points as usize)
+        .map_err(to_r)?;
+    let names: Vec<&str> = c.curves.iter().map(|(f, _)| f.family().name()).collect();
+    let curves = List::from_values(c.curves.iter().map(|(_, s)| Robj::from(s.clone())));
+    Ok(list!(
+        loss = c.losses,
+        empirical = c.empirical,
+        families = names,
+        curves = curves
+    ))
+}
+
 /// A finite mixture of severities.
 #[extendr]
 pub(crate) struct MixtureDist {
