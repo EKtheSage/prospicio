@@ -9,3 +9,5 @@ Finished items are in [done/probability.md](done/probability.md), which agents r
 ## Next
 - #804 the fit-curves table: every family's conditional survival against the empirical one, families in AIC order (Rust, Python `fit_curves`, R; then the Excel lane's `PRO.SEV.FIT` `"curves"`)
 - #805 the Kolmogorov p-value, tail mean and tail CV on a severity fit's goodness of fit (Rust, Python, R; then the Excel lane's columns)
+
+- [option-names-step-2] #834 step 2: `from_name` and `name` on each user-facing core enum (count distribution, sigma interpolation and tail kind, grain, mixing, pattern kind, family and link, average kind), one enum family per PR, the front ends' match blocks replaced by a call

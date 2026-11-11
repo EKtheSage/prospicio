@@ -293,3 +293,26 @@ fn bad_inputs_are_named() {
     );
     assert!(matches!(out.get(2, 1), Value::Text(s) if s.contains("strictly between")));
 }
+
+/// The family names Python and R take, in any case, with spaces or
+/// hyphens (#834): one vocabulary, `Family::from_name`.
+#[test]
+fn calibration_takes_the_shared_family_names() {
+    let premium = (46.6 + 0.15 * 100.0) / 1.15;
+    let want = call(
+        "pro_cap_distortion_calibrate",
+        vec![Grid::column(&X), Grid::column(&P), n(premium), t("ph")],
+    );
+    for name in ["proportional_hazard", "Proportional Hazard", "proportional-hazard"] {
+        let got = call(
+            "pro_cap_distortion_calibrate",
+            vec![Grid::column(&X), Grid::column(&P), n(premium), t(name)],
+        );
+        assert_eq!(num(got.get(1, 1)), num(want.get(1, 1)), "{name}");
+    }
+    let e = call(
+        "pro_cap_distortion_calibrate",
+        vec![Grid::column(&X), Grid::column(&P), n(premium), t("nope")],
+    );
+    assert!(text(&e).contains("family must be"), "{}", text(&e));
+}

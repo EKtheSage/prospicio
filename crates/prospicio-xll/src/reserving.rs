@@ -209,7 +209,7 @@ pub fn tail(grid: &Grid) -> Result<Tail> {
                 ..TailCurve::default()
             })),
             "bondy" => Ok(Tail::from(TailBondy::default())),
-            "log_linear" | "loglinear" => Ok(Tail::LogLinear),
+            "log_linear" | "loglinear" | "log-linear" => Ok(Tail::LogLinear),
             other => Err(format!(
                 "tail must be a factor or \"exponential\", \"inverse_power\", \"bondy\" or \
                  \"log-linear\", got {other:?}"

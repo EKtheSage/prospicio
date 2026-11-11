@@ -251,20 +251,7 @@ impl RiskDistortion {
 
 /// A distortion family by name, with the fixed `r0` of those that have one.
 pub(crate) fn family_from(name: &str, r0: f64) -> Result<Family> {
-    Ok(match name {
-        "ccoc" => Family::Ccoc,
-        "proportional_hazard" | "ph" => Family::ProportionalHazard,
-        "wang" => Family::Wang,
-        "tsallis" => Family::Tsallis,
-        "dual_power" | "dual" => Family::DualPower,
-        "tvar" => Family::Tvar,
-        "exponential" | "exp" => Family::Exponential,
-        "capped_linear" | "clin" => Family::CappedLinear { r0 },
-        "capped_log_linear" | "cll" => Family::CappedLogLinear { r0 },
-        "lep" => Family::Lep { r0 },
-        "linear_yield" | "ly" => Family::LinearYield { r0 },
-        other => return Err(Error::Other(format!("unknown distortion family {other:?}"))),
-    })
+    Family::from_name(name, r0).map_err(to_r)
 }
 
 fn distortions_of(parts: &List) -> Result<Vec<Distortion>> {

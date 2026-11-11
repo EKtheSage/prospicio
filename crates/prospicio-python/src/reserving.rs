@@ -133,13 +133,13 @@ fn loss_ratio_draws_of(
 }
 
 fn grain(name: &str) -> PyResult<Grain> {
-    match name.to_ascii_uppercase().as_str() {
-        "M" => Ok(Grain::Month),
-        "Q" => Ok(Grain::Quarter),
-        "S" => Ok(Grain::Semester),
-        "Y" => Ok(Grain::Year),
+    match name.trim().to_ascii_lowercase().as_str() {
+        "m" | "month" => Ok(Grain::Month),
+        "q" | "quarter" => Ok(Grain::Quarter),
+        "s" | "semiannual" | "semi-annual" => Ok(Grain::Semester),
+        "y" | "year" => Ok(Grain::Year),
         _ => Err(PyValueError::new_err(format!(
-            "grain must be \"M\", \"Q\", \"S\" or \"Y\", got {name:?}"
+            "grain must be \"M\", \"Q\", \"S\" or \"Y\" (or \"month\", \"quarter\", \"semiannual\", \"year\"), got {name:?}"
         ))),
     }
 }
@@ -167,7 +167,7 @@ fn average_name(a: Average) -> &'static str {
 
 fn sigma_interpolation(name: &str) -> PyResult<SigmaInterpolation> {
     match name {
-        "log-linear" => Ok(SigmaInterpolation::LogLinear),
+        "log-linear" | "loglinear" | "log_linear" => Ok(SigmaInterpolation::LogLinear),
         "mack" => Ok(SigmaInterpolation::Mack),
         _ => Err(PyValueError::new_err(format!(
             "sigma_interpolation must be \"log-linear\" or \"mack\", got {name:?}"
@@ -276,9 +276,9 @@ fn development(
 
 fn pattern_kind(name: &str) -> PyResult<PatternKind> {
     match name {
-        "ldf" => Ok(PatternKind::AgeToAge),
-        "cdf" => Ok(PatternKind::AgeToUltimate),
-        "percent_developed" => Ok(PatternKind::PercentDeveloped),
+        "ldf" | "age-to-age" => Ok(PatternKind::AgeToAge),
+        "cdf" | "age-to-ultimate" => Ok(PatternKind::AgeToUltimate),
+        "percent_developed" | "percent" | "percent developed" => Ok(PatternKind::PercentDeveloped),
         _ => Err(PyValueError::new_err(format!(
             "ldf_kind must be \"ldf\" (age-to-age factors), \"cdf\" (factors to ultimate) \
              or \"percent_developed\", got {name:?}"
@@ -6854,9 +6854,9 @@ impl PyBenchmarkCurve {
         weights: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyBenchmarkCurveFit> {
         let kind = match kind {
-            "percent_developed" => PatternKind::PercentDeveloped,
-            "cdf" => PatternKind::AgeToUltimate,
-            "ldf" => {
+            "percent_developed" | "percent" | "percent developed" => PatternKind::PercentDeveloped,
+            "cdf" | "age-to-ultimate" => PatternKind::AgeToUltimate,
+            "ldf" | "age-to-age" => {
                 return Err(PyValueError::new_err(
                     "kind=\"ldf\": age-to-age factors give no level to fit; give percents \
                      developed or factors to ultimate",
@@ -7994,7 +7994,7 @@ impl PyPaidIncurredChain {
         psi_sd: Option<Vec<f64>>,
     ) -> PyResult<Self> {
         let extrapolation = match extrapolation {
-            "loglinear" => VarianceExtrapolation::LogLinear,
+            "loglinear" | "log-linear" | "log_linear" => VarianceExtrapolation::LogLinear,
             "mack" => VarianceExtrapolation::Mack,
             other => {
                 return Err(PyValueError::new_err(format!(
