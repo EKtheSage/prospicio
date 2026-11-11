@@ -10,6 +10,7 @@ use prospicio_prob::evt::Gpd;
 use prospicio_prob::grouped_fit::{GroupedLosses, GroupedMethod, fit_grouped, fit_lev_distance};
 use prospicio_prob::severity_fit::{
     Family, SeverityFit, compare_fits, fit_curves, fit_severity, goodness_of_fit, rank_by_aic,
+    tail_moments,
 };
 use prospicio_prob::{Dist, FitStatistics, LargeLosses, Pareto, PiecewisePareto, Truncation};
 
@@ -257,6 +258,8 @@ pub fn severity_fit(args: &[Grid]) -> Result<Grid> {
         _ => return Err(OUTPUTS.into()),
     };
     let (data, thresholds) = large_losses(&args[0], &args[5], &args[6], &args[7], &args[8])?;
+    // The tail moments' threshold: the lowest reporting threshold.
+    let lowest = thresholds.iter().copied().fold(f64::INFINITY, f64::min);
     if output == "compare" || output == "curves" {
         if !args[4].is_blank() {
             return Err(format!("{output:?} takes no truncation: leave it blank"));
@@ -270,7 +273,7 @@ pub fn severity_fit(args: &[Grid]) -> Result<Grid> {
         if output == "curves" {
             return curves(&data, &thresholds, families, t, &args[9]);
         }
-        return compare(&data, families, t);
+        return compare(&data, families, t, lowest);
     } else if !args[9].is_blank() {
         return Err("points is taken only by \"curves\"".into());
     }
@@ -279,7 +282,7 @@ pub fn severity_fit(args: &[Grid]) -> Result<Grid> {
         _ => return Err(FAMILIES.into()),
     };
     match output.as_str() {
-        "params" | "parameters" => params(&fit(&family, &data, &args[3], &args[4])?, &data),
+        "params" | "parameters" => params(&fit(&family, &data, &args[3], &args[4])?, &data, lowest),
         "gof" => gof(&fit(&family, &data, &args[3], &args[4])?, &data),
         _ => Err(OUTPUTS.into()),
     }
@@ -311,13 +314,31 @@ fn note(f: &SeverityFit) -> Option<String> {
     None
 }
 
-/// The largest distance between the fit's survival and the product-limit
-/// estimate, or NaN where the fit gives the data no probability.
-fn distance(dist: &Dist, data: &LargeLosses) -> f64 {
-    goodness_of_fit(dist, data).map_or(f64::NAN, |g| g.max_distance)
+/// The KS distance (the largest between the fit's survival and the
+/// product-limit estimate), its classical p-value, and the mean and CV of
+/// the fit above the lowest reporting threshold (decision 62): the cells
+/// after "KS distance". A moment that diverges is the text "inf"; a value
+/// that cannot be computed (no probability on the data) is blank.
+fn fit_cells(dist: &Dist, data: &LargeLosses, lowest: f64) -> [Value; 4] {
+    let (d, p) = goodness_of_fit(dist, data)
+        .map_or((f64::NAN, f64::NAN), |g| (g.max_distance, g.ks_p_value));
+    let (mean, cv) = tail_moments(dist, lowest).map_or((f64::NAN, f64::NAN), |m| (m.mean, m.cv));
+    [Value::number(d), Value::number(p), moment(mean), moment(cv)]
 }
 
-fn params(f: &Fitted, data: &LargeLosses) -> Result<Grid> {
+/// A moment's cell: "inf" where it diverges.
+fn moment(x: f64) -> Value {
+    if x == f64::INFINITY {
+        Value::from("inf")
+    } else {
+        Value::number(x)
+    }
+}
+
+/// The labels of [`fit_cells`].
+const FIT_CELLS: [&str; 4] = ["KS distance", "KS p", "Tail mean", "Tail CV"];
+
+fn params(f: &Fitted, data: &LargeLosses, lowest: f64) -> Result<Grid> {
     let row = |label: &str, x: Value| vec![Value::from(label), x, Value::Empty];
     let mut rows = vec![["Parameter", "Estimate", "SE"].map(Value::from).to_vec()];
     for (name, p, se) in &f.parameters {
@@ -342,7 +363,9 @@ fn params(f: &Fitted, data: &LargeLosses) -> Result<Grid> {
     ));
     rows.push(row("AIC", stat(SeverityFit::aic, FitStatistics::aic)));
     rows.push(row("BIC", stat(SeverityFit::bic, FitStatistics::bic)));
-    rows.push(row("KS distance", Value::number(distance(&f.dist, data))));
+    for (label, v) in FIT_CELLS.into_iter().zip(fit_cells(&f.dist, data, lowest)) {
+        rows.push(row(label, v));
+    }
     rows.push(row(
         "Converged",
         body.map_or(Value::Empty, |b| Value::Bool(b.converged())),
@@ -415,7 +438,12 @@ fn family_list(grid: &Grid) -> Result<Option<Vec<Family>>> {
 /// loss on `max(r, t)`, so with one among the families every reporting
 /// threshold must be at least `t`: then every family's likelihood
 /// conditions each loss on the same threshold and the AICs compare.
-fn compare(data: &LargeLosses, families: Option<Vec<Family>>, t: Option<f64>) -> Result<Grid> {
+fn compare(
+    data: &LargeLosses,
+    families: Option<Vec<Family>>,
+    t: Option<f64>,
+    lowest: f64,
+) -> Result<Grid> {
     let families = families.unwrap_or_else(|| default_families(t));
     let mut fits = compare_fits(data, &families, t).map_err(|e| e.to_string())?;
     if t.is_some() {
@@ -430,6 +458,9 @@ fn compare(data: &LargeLosses, families: Option<Vec<Family>>, t: Option<f64>) ->
         "AIC",
         "BIC",
         "KS distance",
+        "KS p",
+        "Tail mean",
+        "Tail CV",
         "Converged",
         "Note",
     ]
@@ -442,21 +473,14 @@ fn compare(data: &LargeLosses, families: Option<Vec<Family>>, t: Option<f64>) ->
             Ok(f) => {
                 let p = f.parameters();
                 row.extend((0..3).map(|i| p.get(i).map_or(Value::Empty, |&x| Value::number(x))));
-                row.extend(
-                    [
-                        f.log_likelihood(),
-                        f.aic(),
-                        f.bic(),
-                        distance(f.dist(), data),
-                    ]
-                    .map(Value::number),
-                );
+                row.extend([f.log_likelihood(), f.aic(), f.bic()].map(Value::number));
+                row.extend(fit_cells(f.dist(), data, lowest));
                 row.push(Value::Bool(f.converged()));
                 row.push(Value::Text(note(&f).unwrap_or_else(|| "none".into())));
             }
             Err(e) => {
                 row.push(Value::Text(format!("#PROSPICIO! {e}")));
-                row.extend(std::iter::repeat_n(Value::Empty, 8));
+                row.extend(std::iter::repeat_n(Value::Empty, 11));
             }
         }
         rows.push(row);

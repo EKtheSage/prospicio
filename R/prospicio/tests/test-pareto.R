@@ -275,3 +275,14 @@ stopifnot(
 thin <- fit_curves(cy, 1000, "lognormal", points = 3)
 stopifnot(identical(thin$loss, c(1200, 2500, 10000)), identical(names(thin), c("loss", "empirical", "lognormal")))
 stopifnot(inherits(try(fit_curves(cy, 1000, points = 1), silent = TRUE), "try-error"))
+
+# Issue #805: the KS p-value and the tail moments on a goodness of fit.
+kx <- c(100, 300, 350, 700, 950)
+kg <- goodness_of_fit(exponential_distribution(500), kx)
+stopifnot(
+  abs(kg$max_distance - 0.2511883639059736) < 1e-12,
+  abs(kg$ks_p_value - 0.8409019263900253) < 1e-10,
+  abs(kg$tail_mean - 500) < 1e-9, abs(kg$tail_cv - 1) < 1e-9
+)
+kg <- goodness_of_fit(pareto(200, 1.5), kx[-1], reporting_thresholds = rep(200, 4))
+stopifnot(abs(kg$tail_mean - 600) < 1e-9, is.infinite(kg$tail_cv))

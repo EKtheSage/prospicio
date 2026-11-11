@@ -505,6 +505,10 @@ labelled in `companies`, with their premiums; chain its summary into
   those. `"curves"` spills Loss, Empirical (the plotting positions
   `(n - i + 0.5) / n`) and each family's survival conditional on `t` in
   AIC order, for a chart on a log axis; `points` (default 200) thins it.
+  `"compare"` and `"params"` also give the KS distance, its classical
+  p-value (optimistic for a fitted family), and the mean and CV of the
+  fitted severity above the lowest reporting threshold; a moment that
+  diverges is the text `inf`.
   Check the upper Q-Q pairs before trusting a body family in the tail.
 - `PRO.SEV.FIT.GROUPED`: `bounds` has one more cell than `counts`. A
   blank last bound opens the top band.

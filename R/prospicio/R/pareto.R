@@ -1368,13 +1368,21 @@ severity_fit <- function(family, losses, reporting_thresholds = NULL, censored =
 #' a bound from above common to every loss (`truncated_above`), both sides
 #' are conditioned on it too; bounds that differ are refused.
 #'
+#' `ks_p_value` is the classical two-sided Kolmogorov-Smirnov p-value of
+#' `max_distance` among the losses (SciPy's `kstwo`; with one threshold and
+#' no censoring, `ks.test()`'s exact p-value). It is optimistic for a fitted
+#' severity: the parameters were chosen to bring the curve close to these
+#' losses, so the true p-value is smaller. `tail_mean` and `tail_cv` are the
+#' mean and coefficient of variation of `X | X > t`, `t` the lowest
+#' reporting threshold, `Inf` where the moment diverges.
+#'
 #' @param severity A fitted or any other severity.
 #' @inheritParams severity_fit
 #' @inheritParams pareto_fit
 #' @returns `product_limit()`: a data frame with `x`, `at_risk`, `events`,
 #'   `survival`. `goodness_of_fit()`: a list with a data frame `table` (`x`,
-#'   `at_risk`, `survival`, `model_survival`, `model_quantile`) and
-#'   `max_distance`.
+#'   `at_risk`, `survival`, `model_survival`, `model_quantile`),
+#'   `max_distance`, `ks_p_value`, `tail_mean` and `tail_cv`.
 #' @export
 #' @examples
 #' product_limit(c(100, 200, 300, 400))
@@ -1398,7 +1406,10 @@ goodness_of_fit <- function(severity, losses, reporting_thresholds = NULL, censo
   list(
     table = data.frame(x = r$x, at_risk = r$at_risk, survival = r$survival,
                        model_survival = r$model_survival, model_quantile = r$model_quantile),
-    max_distance = r$max_distance
+    max_distance = r$max_distance,
+    ks_p_value = r$ks_p_value,
+    tail_mean = r$tail_mean,
+    tail_cv = r$tail_cv
   )
 }
 

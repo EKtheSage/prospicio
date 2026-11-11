@@ -38196,6 +38196,15 @@ def goodness_of_fit(severity: Any, losses: Sequence[float], reporting_thresholds
     With a bound from above common to every loss, both sides are
     conditioned on it too; bounds that differ are refused.
     
+    ``ks_p_value`` is the classical two-sided Kolmogorov-Smirnov p-value of
+    ``max_distance`` among the losses (SciPy's ``kstwo.sf``; with one
+    threshold and no censoring, ``scipy.stats.kstest``'s). It is optimistic
+    for a fitted severity: the parameters were chosen to bring the curve
+    close to these losses, so the true p-value is smaller. ``tail_mean`` and
+    ``tail_cv`` are the mean and coefficient of variation of ``X | X > t``,
+    ``t`` the lowest reporting threshold, ``math.inf`` where the moment
+    diverges.
+    
     Parameters
     ----------
     severity : a distribution
@@ -38212,7 +38221,8 @@ def goodness_of_fit(severity: Any, losses: Sequence[float], reporting_thresholds
     -------
     dict
         ``x``, ``at_risk``, ``survival``, ``model_survival``,
-        ``model_quantile`` (lists) and ``max_distance`` (float).
+        ``model_quantile`` (lists), ``max_distance``, ``ks_p_value``,
+        ``tail_mean`` and ``tail_cv`` (floats).
     
     Examples
     --------

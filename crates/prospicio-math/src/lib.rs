@@ -6,6 +6,7 @@
 //! instead of writing their own (see `docs/architecture.md`).
 
 pub mod integrate;
+pub mod kolmogorov;
 pub mod linalg;
 pub mod mvn;
 pub mod optimize;

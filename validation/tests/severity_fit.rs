@@ -2,14 +2,17 @@
 //! every family's maximum likelihood fit, each loss conditioned on its
 //! reporting threshold and capped losses censored, on SciPy's own densities
 //! (#800), and the table of every fit's survival against the plotting
-//! positions (`scipy_fit_curves.py`, #804).
+//! positions (`scipy_fit_curves.py`, #804), and each fit's KS p-value and
+//! tail moments with the Kolmogorov distribution itself
+//! (`scipy_fit_tails.py`, `scipy_kolmogorov.py`, #805).
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
 use prospicio_prob::LargeLosses;
 use prospicio_prob::severity_fit::{
-    Family, SeverityFit, fit_curves, fit_severity_with_threshold, thinned_rows,
+    Family, SeverityFit, fit_curves, fit_severity_with_threshold, goodness_of_fit,
+    tail_moments, thinned_rows,
 };
 use prospicio_validation::{check, reference};
 
@@ -142,4 +145,40 @@ fn fit_curves_match_scipy() {
         }
     });
     assert_eq!(rows.len(), 10);
+}
+
+#[test]
+fn the_kolmogorov_distribution_is_scipys() {
+    use prospicio_math::kolmogorov::{kolmogorov_limit_sf, kolmogorov_sf};
+    let cases = reference("kolmogorov_scipy.csv");
+    check(&cases, |c| {
+        let d: f64 = c.get("d").parse().unwrap();
+        Some(match c.get("n") {
+            "inf" => kolmogorov_limit_sf(d),
+            n => kolmogorov_sf(n.parse().unwrap(), d),
+        })
+    });
+}
+
+#[test]
+fn ks_p_values_and_tail_moments_match_scipy() {
+    let plain = &data()["plain"];
+    let mut fits: BTreeMap<String, SeverityFit> = BTreeMap::new();
+    let cases = reference("fit_tails_scipy.csv");
+    check(&cases, |c| {
+        let family = c.get("family");
+        let fit = fits.entry(family.to_owned()).or_insert_with(|| {
+            let f = Family::from_name(family).unwrap();
+            fit_severity_with_threshold(f, plain, f.needs_threshold().then_some(T)).unwrap()
+        });
+        let g = goodness_of_fit(fit.dist(), plain).unwrap();
+        let m = tail_moments(fit.dist(), T).unwrap();
+        Some(match c.get("quantity") {
+            "ks_distance" => g.max_distance,
+            "ks_p_value" => g.ks_p_value,
+            "tail_mean" => m.mean,
+            "tail_cv" => m.cv,
+            q => panic!("unknown quantity {q}"),
+        })
+    });
 }

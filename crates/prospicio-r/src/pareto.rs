@@ -976,7 +976,8 @@ fn product_limit_rust(
 }
 
 /// A severity against the product-limit estimate: `list(x, at_risk,
-/// survival, model_survival, model_quantile, max_distance)`.
+/// survival, model_survival, model_quantile, max_distance, ks_p_value,
+/// tail_mean, tail_cv)`.
 #[extendr]
 fn goodness_of_fit_rust(
     severity: Robj,
@@ -989,13 +990,20 @@ fn goodness_of_fit_rust(
     let dist = crate::distributions::dist_from_robj(&severity)?;
     let data = bounded_above(large_losses(losses, reporting, censored, weights)?, upper)?;
     let g = prospicio_prob::severity_fit::goodness_of_fit(&dist, &data).map_err(to_r)?;
+    // The tail moments' threshold: the lowest reporting threshold.
+    let lowest = reporting.iter().copied().fold(f64::INFINITY, f64::min);
+    let lowest = if lowest.is_finite() { lowest } else { 0.0 };
+    let tail = prospicio_prob::severity_fit::tail_moments(&dist, lowest).map_err(to_r)?;
     Ok(list!(
         x = g.steps.iter().map(|p| p.x).collect::<Vec<_>>(),
         at_risk = g.steps.iter().map(|p| p.at_risk).collect::<Vec<_>>(),
         survival = g.steps.iter().map(|p| p.survival).collect::<Vec<_>>(),
         model_survival = g.model_survival,
         model_quantile = g.model_quantile,
-        max_distance = g.max_distance
+        max_distance = g.max_distance,
+        ks_p_value = g.ks_p_value,
+        tail_mean = tail.mean,
+        tail_cv = tail.cv
     ))
 }
 

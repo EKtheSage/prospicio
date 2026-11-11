@@ -2456,6 +2456,15 @@ pub(crate) fn product_limit(
 /// With a bound from above common to every loss, both sides are
 /// conditioned on it too; bounds that differ are refused.
 ///
+/// ``ks_p_value`` is the classical two-sided Kolmogorov-Smirnov p-value of
+/// ``max_distance`` among the losses (SciPy's ``kstwo.sf``; with one
+/// threshold and no censoring, ``scipy.stats.kstest``'s). It is optimistic
+/// for a fitted severity: the parameters were chosen to bring the curve
+/// close to these losses, so the true p-value is smaller. ``tail_mean`` and
+/// ``tail_cv`` are the mean and coefficient of variation of ``X | X > t``,
+/// ``t`` the lowest reporting threshold, ``math.inf`` where the moment
+/// diverges.
+///
 /// Parameters
 /// ----------
 /// severity : a distribution
@@ -2472,7 +2481,8 @@ pub(crate) fn product_limit(
 /// -------
 /// dict
 ///     ``x``, ``at_risk``, ``survival``, ``model_survival``,
-///     ``model_quantile`` (lists) and ``max_distance`` (float).
+///     ``model_quantile`` (lists), ``max_distance``, ``ks_p_value``,
+///     ``tail_mean`` and ``tail_cv`` (floats).
 ///
 /// Examples
 /// --------
@@ -2497,11 +2507,16 @@ pub(crate) fn goodness_of_fit<'py>(
 ) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
     use pyo3::types::PyDictMethods;
     let dist = crate::distributions::extract_dist(severity)?;
+    // The tail moments' threshold: the lowest reporting threshold.
+    let lowest = reporting_thresholds
+        .as_ref()
+        .map_or(0.0, |r| r.iter().copied().fold(f64::INFINITY, f64::min));
     let data = bounded_above(
         large_losses(losses, reporting_thresholds, censored, weights)?,
         truncated_above,
     )?;
     let g = prospicio_prob::severity_fit::goodness_of_fit(&dist, &data).map_err(to_py)?;
+    let tail = prospicio_prob::severity_fit::tail_moments(&dist, lowest).map_err(to_py)?;
     let d = pyo3::types::PyDict::new(py);
     d.set_item("x", g.steps.iter().map(|s| s.x).collect::<Vec<_>>())?;
     d.set_item(
@@ -2515,6 +2530,9 @@ pub(crate) fn goodness_of_fit<'py>(
     d.set_item("model_survival", g.model_survival)?;
     d.set_item("model_quantile", g.model_quantile)?;
     d.set_item("max_distance", g.max_distance)?;
+    d.set_item("ks_p_value", g.ks_p_value)?;
+    d.set_item("tail_mean", tail.mean)?;
+    d.set_item("tail_cv", tail.cv)?;
     Ok(d)
 }
 

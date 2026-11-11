@@ -343,3 +343,26 @@ def test_issue_804_fit_curves():
     assert abs(thin["empirical"][1] - 3.5 / 6) < 1e-15
     with pytest.raises(ValueError):
         D.fit_curves(y, 1000.0, points=1)
+
+
+def test_issue_805_ks_p_value_and_tail_moments():
+    import math
+
+    import prospicio.distributions as D
+
+    # scipy.stats.kstest(x, expon(scale=500).cdf): 0.25119, p 0.84090.
+    x = [100.0, 300.0, 350.0, 700.0, 950.0]
+    g = D.goodness_of_fit(D.Exponential(500.0), x)
+    assert abs(g["max_distance"] - 0.2511883639059736) < 1e-12
+    assert abs(g["ks_p_value"] - 0.8409019263900253) < 1e-10
+    assert abs(g["tail_mean"] - 500.0) < 1e-9
+    assert abs(g["tail_cv"] - 1.0) < 1e-9
+    # Above a threshold of 200 the exponential is 200 plus itself.
+    y = [300.0, 350.0, 700.0, 950.0]
+    g = D.goodness_of_fit(D.Exponential(500.0), y, [200.0] * 4)
+    assert abs(g["tail_mean"] - 700.0) < 1e-9
+    assert abs(g["tail_cv"] - 500.0 / 700.0) < 1e-9
+    # A Pareto with alpha below 2 has no CV.
+    g = D.goodness_of_fit(D.Pareto(200.0, 1.5), y, [200.0] * 4)
+    assert abs(g["tail_mean"] - 600.0) < 1e-9
+    assert g["tail_cv"] == math.inf
