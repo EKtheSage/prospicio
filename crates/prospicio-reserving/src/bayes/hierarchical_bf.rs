@@ -6,7 +6,9 @@
 
 use prospicio_bayes::nuts::{ParamSummary, PosteriorDraws, Sampler, sample};
 use prospicio_core::StreamRng;
-use prospicio_prob::{ComponentKey, InputHasher, KeyValue, PredictiveDistribution, Provenance};
+use prospicio_prob::{
+    ComponentKey, InputHasher, KeyValue, PredictiveDistribution, Provenance, Sampled,
+};
 
 use super::bf_normalised::{column_error, origin_error};
 use super::dual::{CHUNK, gradient};
@@ -18,6 +20,7 @@ use crate::bootstrap::{ProcessDistribution, prepare, process_draw};
 use crate::error::{Error, Result};
 use crate::expected_loss::origin_exposure;
 use crate::industry_prior::PatternPrior;
+use crate::segments::FitTable;
 use crate::tail::Tail;
 use crate::triangle::{Label, Segment, Triangle};
 use crate::{Lag, Period};
@@ -865,6 +868,116 @@ impl HierarchicalBf {
             .param("exposure", exposure)
             .version("prospicio-reserving", env!("CARGO_PKG_VERSION"))
             .input_hash(panel.input_hash.clone())
+    }
+}
+
+/// The tables of a [`HierarchicalBfFit`] and of its one-year view, which
+/// Python and R built each on their own (#838).
+impl HierarchicalBfFit {
+    /// One row per program, keyed `program`: `origins` (their number),
+    /// `exposure`, `latest`, `prior_ultimate` and `expected_ultimate`
+    /// (summed over the origins), `scale`, `loss_ratio`, `own_loss_ratio`,
+    /// `shrinkage` and the `mean` and `std_dev` of the program's posterior
+    /// predictive reserve.
+    pub fn totals(&self) -> FitTable {
+        let ps = &self.programs;
+        let sum = |g: fn(&HierarchicalBfProgram) -> &[f64]| -> Vec<f64> {
+            ps.iter().map(|p| g(p).iter().sum()).collect()
+        };
+        let each =
+            |g: fn(&HierarchicalBfProgram) -> f64| -> Vec<f64> { ps.iter().map(g).collect() };
+        let reserves: Vec<Sampled> = ps
+            .iter()
+            .map(|p| crate::bootstrap::sums(&p.reserves, 0..p.reserves.n_components()))
+            .collect();
+        let mut table = FitTable {
+            keys: vec![(
+                "program".into(),
+                ps.iter().map(|p| p.label.to_string()).collect(),
+            )],
+            origin: None,
+            age: None,
+            values: vec![
+                ("origins".into(), each(|p| p.origins.len() as f64)),
+                ("exposure".into(), sum(|p| &p.exposure)),
+                ("latest".into(), sum(|p| &p.latest)),
+                ("prior_ultimate".into(), sum(|p| &p.prior_ultimate)),
+                ("expected_ultimate".into(), sum(|p| &p.expected_ultimate)),
+                ("scale".into(), each(|p| p.scale)),
+                ("loss_ratio".into(), each(|p| p.loss_ratio)),
+                ("own_loss_ratio".into(), each(|p| p.own_loss_ratio)),
+                ("shrinkage".into(), each(|p| p.shrinkage)),
+            ],
+        };
+        crate::bootstrap::push_moments(&mut table, "", &reserves);
+        table
+    }
+}
+
+impl BayesOneYearFit<HierarchicalBfFit> {
+    /// One row per program and origin, keyed `program`: `latest`,
+    /// `opening_ultimate`, `opening_reserve` and the `cdr_mean` and
+    /// `cdr_std_dev` of the claims development result.
+    pub fn to_long(&self) -> FitTable {
+        let ps = &self.fit.programs;
+        let mut table = FitTable {
+            keys: vec![(
+                "program".into(),
+                ps.iter()
+                    .flat_map(|p| std::iter::repeat_n(p.label.to_string(), p.origins.len()))
+                    .collect(),
+            )],
+            origin: Some(ps.iter().flat_map(|p| p.origins.iter().copied()).collect()),
+            age: None,
+            values: vec![
+                (
+                    "latest".into(),
+                    ps.iter().flat_map(|p| p.latest.iter().copied()).collect(),
+                ),
+                ("opening_ultimate".into(), self.opening_ultimate.clone()),
+                ("opening_reserve".into(), self.opening_reserve.clone()),
+            ],
+        };
+        crate::bootstrap::push_moments(
+            &mut table,
+            "cdr_",
+            &crate::bootstrap::component_sums(&self.cdr),
+        );
+        table
+    }
+
+    /// One row per program, keyed `program`: `latest`, `opening_ultimate`
+    /// and `opening_reserve` summed over its origins, the view's
+    /// `flagged_share`, and the `cdr_mean` and `cdr_std_dev` of the
+    /// program's claims development result (its origins' sum).
+    pub fn totals(&self) -> FitTable {
+        let ps = &self.fit.programs;
+        let (mut latest, mut ultimate, mut reserve, mut cdr) = (vec![], vec![], vec![], vec![]);
+        let mut first = 0;
+        for p in ps {
+            let n = p.origins.len();
+            latest.push(p.latest.iter().sum::<f64>());
+            ultimate.push(self.opening_ultimate[first..first + n].iter().sum::<f64>());
+            reserve.push(self.opening_reserve[first..first + n].iter().sum::<f64>());
+            cdr.push(crate::bootstrap::sums(&self.cdr, first..first + n));
+            first += n;
+        }
+        let mut table = FitTable {
+            keys: vec![(
+                "program".into(),
+                ps.iter().map(|p| p.label.to_string()).collect(),
+            )],
+            origin: None,
+            age: None,
+            values: vec![
+                ("latest".into(), latest),
+                ("opening_ultimate".into(), ultimate),
+                ("opening_reserve".into(), reserve),
+                ("flagged_share".into(), vec![self.flagged_share(); ps.len()]),
+            ],
+        };
+        crate::bootstrap::push_moments(&mut table, "cdr_", &cdr);
+        table
     }
 }
 

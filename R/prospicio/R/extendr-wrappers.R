@@ -2525,6 +2525,8 @@ HierarchicalBfFit$scale_per_premium <- function() .Call(wrap__HierarchicalBfFit_
 
 HierarchicalBfFit$summary <- function() .Call(wrap__HierarchicalBfFit__summary, self)
 
+HierarchicalBfFit$totals_table <- function() .Call(wrap__HierarchicalBfFit__totals_table, self)
+
 #' @export
 `$.HierarchicalBfFit` <- function (self, name) { func <- HierarchicalBfFit[[name]]; environment(func) <- environment(); func }
 
@@ -2541,6 +2543,8 @@ HierarchicalBfOneYearFit$flagged_share <- function() .Call(wrap__HierarchicalBfO
 
 HierarchicalBfOneYearFit$k_threshold <- function() .Call(wrap__HierarchicalBfOneYearFit__k_threshold, self)
 
+HierarchicalBfOneYearFit$long_table <- function() .Call(wrap__HierarchicalBfOneYearFit__long_table, self)
+
 HierarchicalBfOneYearFit$moment_matched <- function() .Call(wrap__HierarchicalBfOneYearFit__moment_matched, self)
 
 HierarchicalBfOneYearFit$opening_reserve <- function() .Call(wrap__HierarchicalBfOneYearFit__opening_reserve, self)
@@ -2552,6 +2556,8 @@ HierarchicalBfOneYearFit$pareto_k <- function() .Call(wrap__HierarchicalBfOneYea
 HierarchicalBfOneYearFit$refit_warnings <- function() .Call(wrap__HierarchicalBfOneYearFit__refit_warnings, self)
 
 HierarchicalBfOneYearFit$refitted <- function() .Call(wrap__HierarchicalBfOneYearFit__refitted, self)
+
+HierarchicalBfOneYearFit$totals_table <- function() .Call(wrap__HierarchicalBfOneYearFit__totals_table, self)
 
 HierarchicalBfOneYearFit$unrefitted <- function() .Call(wrap__HierarchicalBfOneYearFit__unrefitted, self)
 

@@ -5452,6 +5452,11 @@ pub(crate) struct HierarchicalBfFit {
 
 #[extendr]
 impl HierarchicalBfFit {
+    /// One row per program, the core's table (#838).
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
     /// Each program's segment label, joined by " / ", in the triangle's
     /// order.
     fn program_labels(&self) -> Vec<String> {
@@ -5572,6 +5577,16 @@ pub(crate) struct HierarchicalBfOneYearFit {
 
 #[extendr]
 impl HierarchicalBfOneYearFit {
+    /// One row per program and origin, the core's table (#838).
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    /// One row per program, the core's table (#838).
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
     /// The lifetime fit, as `bayes_hierarchical_bf` gives it.
     fn fit(&self) -> HierarchicalBfFit {
         HierarchicalBfFit {
