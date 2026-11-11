@@ -555,9 +555,10 @@ fn ages_off_the_patterns_grid_are_read_log_linearly() {
         Tail::default(),
     );
     same_cl(&g, &direct.fit_diagonal(&d).unwrap());
-    // "semi-annual" is the same grain, in any case; "half" and
-    // "semester" are not grain words (the user's decision of 2026-10-24).
-    for word in ["semi-annual", "SemiAnnual"] {
+    // "semi-annual" is the same grain, in any case, and so is the letter
+    // Python and R take ("S", #834); "half" and "semester" are not grain
+    // words (the user's decision of 2026-10-24).
+    for word in ["semi-annual", "SemiAnnual", "S", "s"] {
         same_cl(
             &half.clone().grain(word).cl(),
             &direct.fit_diagonal(&d).unwrap(),

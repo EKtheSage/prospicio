@@ -926,6 +926,55 @@ impl Family {
         }
     }
 
+    /// The family named `name`, the one vocabulary of the Python, R and
+    /// Excel front ends (#834): the short name of [`Family::name`] or the
+    /// long one (`proportional_hazard`, `dual_power`, `exponential`,
+    /// `capped_linear`, `capped_log_linear`, `linear_yield`), with case,
+    /// spaces and hyphens ignored. `r0` is the fixed `r0` of `clin`, `cll`,
+    /// `lep` and `ly` and is not read for the others
+    /// ([`Family::needs_r0`]).
+    ///
+    /// ```
+    /// use prospicio_prob::distortion::Family;
+    ///
+    /// assert_eq!(Family::from_name("Proportional Hazard", 0.0).unwrap(), Family::ProportionalHazard);
+    /// assert_eq!(Family::from_name("ly", 0.05).unwrap(), Family::LinearYield { r0: 0.05 });
+    /// assert!(Family::from_name("bitvar", 0.0).is_err());
+    /// ```
+    pub fn from_name(name: &str, r0: f64) -> Result<Self> {
+        let key = name.trim().to_ascii_lowercase().replace([' ', '-'], "_");
+        Ok(match key.as_str() {
+            "ccoc" => Self::Ccoc,
+            "ph" | "proportional_hazard" => Self::ProportionalHazard,
+            "wang" => Self::Wang,
+            "tsallis" => Self::Tsallis,
+            "dual" | "dual_power" => Self::DualPower,
+            "tvar" => Self::Tvar,
+            "exp" | "exponential" => Self::Exponential,
+            "clin" | "capped_linear" => Self::CappedLinear { r0 },
+            "cll" | "capped_log_linear" => Self::CappedLogLinear { r0 },
+            "lep" => Self::Lep { r0 },
+            "ly" | "linear_yield" => Self::LinearYield { r0 },
+            _ => {
+                return Err(Error::Data(format!(
+                    "unknown distortion family {name:?}: one of ccoc, ph, wang, tsallis, dual, \
+                     tvar, exp, clin, cll, lep and ly"
+                )));
+            }
+        })
+    }
+
+    /// Whether the family carries a fixed `r0` (`clin`, `cll`, `lep`, `ly`).
+    pub fn needs_r0(self) -> bool {
+        matches!(
+            self,
+            Self::CappedLinear { .. }
+                | Self::CappedLogLinear { .. }
+                | Self::Lep { .. }
+                | Self::LinearYield { .. }
+        )
+    }
+
     /// The short name used by Mildenhall and Major and the Python
     /// `aggregate` package: `ccoc`, `ph`, `wang`, `dual`, `tvar`, `exp`,
     /// `tsallis`, `clin`, `cll`, `lep`, `ly`.

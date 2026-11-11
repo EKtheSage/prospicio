@@ -1368,9 +1368,15 @@ rearrange <- function(x, rotate = NULL, seed = NULL, tolerance = 1e-6) {
 #' @rdname rearrange
 #' @export
 worst_var <- function(marginals, p, n = 100, rotate = NULL, seed = NULL, tolerance = 1e-6) {
-  probs <- p + (1 - p) * (seq_len(n) - 1) / n
-  x <- vapply(marginals, function(m) quantile(m, probs), numeric(n))
-  rearrange(x, rotate = rotate, seed = seed, tolerance = tolerance)
+  # The core's worst_var, with its checks on p and n (#838).
+  if (!is.list(marginals) || !length(marginals)) {
+    stop("marginals must be a non-empty list of distributions", call. = FALSE)
+  }
+  r <- rust_result(worst_var_rust(lapply(marginals, function(m) m@ptr), as.double(p),
+                                  as.double(n), if (is.null(rotate)) NaN else as.double(rotate),
+                                  if (is.null(seed)) NaN else as.double(seed), as.double(tolerance)))
+  list(value = r$value, columns = matrix(r$columns, ncol = length(marginals)),
+       iterations = r$iterations)
 }
 
 #' Tail diagnostics
