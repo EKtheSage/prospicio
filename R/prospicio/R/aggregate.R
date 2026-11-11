@@ -1258,18 +1258,10 @@ read_ylt <- function(path, year = "year", loss = "value", slot = "slot", time = 
   times <- if (!is.null(time)) {
     as.numeric(df[[time]])
   } else if (!is.null(day)) {
-    d <- as.numeric(df[[day]])
-    h <- if (is.null(hour)) rep(0, length(d)) else as.numeric(df[[hour]])
-    bad <- which(!(d == round(d) & d >= 1 & d <= 365))
-    if (length(bad)) {
-      stop(sprintf("row %d: the day %s is not a whole day from 1 to 365", bad[1], d[bad[1]]),
-           call. = FALSE)
-    }
-    bad <- which(!(h >= 0 & h <= 24))
-    if (length(bad)) {
-      stop(sprintf("row %d: the hour %s is not from 0 to 24", bad[1], h[bad[1]]), call. = FALSE)
-    }
-    ((d - 1) * 24 + h) / 8760
+    # The core's rule (#838), the same in Python: a missing or non-numeric
+    # day or hour is an error naming the row.
+    num <- function(v) suppressWarnings(as.numeric(v))
+    day_hour_times(num(df[[day]]), if (is.null(hour)) NULL else num(df[[hour]]))
   }
   event_set_from_ylt(
     as.numeric(df[[year]]), as.numeric(df[[loss]]),
@@ -1625,4 +1617,23 @@ contract_years <- function(x, start, partial = c("drop", "keep")) {
 #' event_labels(g, 1)
 hours_clause <- function(x, window_hours, labels = "drop", by = NULL) {
   event_set(ptr = rust_result(x@ptr$grouped(as.double(window_hours), labels, by)))
+}
+
+#' Times of loss from days and hours
+#'
+#' Each row's time of loss, the fraction of its year elapsed, from its day
+#' of the year (a whole number from 1 to 365) and hour of the day (0 to 24;
+#' the start of the day without `hours`): `((day - 1) * 24 + hour) / 8760`,
+#' on the 8,760-hour year of the hours clause. This is the rule
+#' [read_ylt()] applies with `day` and `hour`.
+#'
+#' @param days Days of the year.
+#' @param hours Hours of the day, or `NULL`.
+#' @returns A numeric vector of times in `[0, 1]`. A missing, non-numeric
+#'   or out-of-range day or hour is an error naming the row.
+#' @export
+#' @examples
+#' day_hour_times(c(1, 365), c(0, 24))
+day_hour_times <- function(days, hours = NULL) {
+  rust_result(day_hour_times_rust(as.double(days), if (is.null(hours)) double() else as.double(hours)))
 }

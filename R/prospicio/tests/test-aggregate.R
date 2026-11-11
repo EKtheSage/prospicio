@@ -877,6 +877,14 @@ stopifnot(identical(events(dev, 1), c(1, 5)),
           identical(event_times(dev, 1), c(0, (199 * 24 + 6) / 8760)))
 e <- tryCatch(read_ylt(days_path, slot = NULL, time = "day", day = "day"), error = identity)
 stopifnot(grepl("not both", conditionMessage(e)))
+# A day that is not a number is reported with its row, as in Python (#838);
+# R's which() used to drop it.
+writeLines(c("year,day,value", "1,12,5", "1,x,6"), days_path)
+e <- tryCatch(read_ylt(days_path, slot = NULL, day = "day"), error = identity)
+stopifnot(grepl("row 2: the day is missing or not a number", conditionMessage(e)))
+stopifnot(identical(day_hour_times(c(1, 365), c(0, 24)), c(0, 1)))
+e <- tryCatch(day_hour_times(366), error = identity)
+stopifnot(grepl("row 1: the day 366", conditionMessage(e)))
 
 # #483: a reorder's index keeps a class's events with its totals, ties and all.
 n <- 600

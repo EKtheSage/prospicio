@@ -1,0 +1,1 @@
+* **Update**: [Local checks in the cloud container](/environment/local-checks.md), from #845 (branch claude/cool-shannon-fqpoy8-r-runner): the R tests run through validation/scripts/run_r_tests.R, every file and a summary of failures and skips; the optional-package parity blocks never ran in CI before, and the nightly run now installs their packages.
