@@ -1,4 +1,5 @@
 library(prospicio)
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 near <- function(a, b, rel = 1e-10) {
   if (!all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
@@ -26,7 +27,7 @@ d$claims <- rpois(n, ifelse(d$x < 0.5, 0.1, 0.3) * d$exposure)
 f <- claims ~ x + offset(log(exposure))
 
 for (engine in c("lightgbm", "xgboost")) {
-  if (!requireNamespace(engine, quietly = TRUE)) next
+  if (!with_package(engine)) next
   params <- if (engine == "lightgbm") list(num_leaves = 3) else list(max_depth = 2)
   before <- .Random.seed
   m <- booster_fit(f, d, engine = engine, n_rounds = 150, learning_rate = 0.1, params = params)
@@ -42,7 +43,7 @@ for (engine in c("lightgbm", "xgboost")) {
   stopifnot(m@engine == engine, m@dispersion == 1)
 }
 
-if (requireNamespace("lightgbm", quietly = TRUE)) {
+if (with_package("lightgbm")) {
   # The adapter is the engine: the same call by hand gives the same means.
   small <- d[1:500, ]
   m <- booster_fit(f, small, n_rounds = 30, params = list(num_leaves = 4))
@@ -86,7 +87,7 @@ stopifnot(abs(pinball_loss(c(1, 0), c(0, 1), 0.9) - 0.5) < 1e-15)
 stopifnot(inherits(try(booster_fit(y ~ x, data.frame(x = 1, y = 1), family = "quantile"),
                        silent = TRUE), "try-error"))
 for (engine in c("lightgbm", "xgboost")) {
-  if (!requireNamespace(engine, quietly = TRUE)) next
+  if (!with_package(engine)) next
   set.seed(7)
   qd <- data.frame(x = runif(3000))
   qd$y <- 100 + 200 * qd$x * rnorm(3000)
@@ -114,7 +115,7 @@ pd1 <- simulate_from_means("gamma", c(100, 100), 40000, 9, dispersion = c(0.1, 0
 dm <- draw_matrix(pd1)
 stopifnot(abs(var(dm[, 1]) / 1000 - 1) < 0.05, abs(var(dm[, 2]) / 4000 - 1) < 0.05)
 for (engine in c("lightgbm", "xgboost")) {
-  if (!requireNamespace(engine, quietly = TRUE)) next
+  if (!with_package(engine)) next
   set.seed(5)
   gd <- data.frame(x = runif(4000))
   k <- ifelse(gd$x < 0.5, 4, 1)
@@ -140,7 +141,7 @@ stopifnot(identical(lapply(k_fold(10, 5, seed = 7919), function(s) sort(s$test))
                     list(c(3, 4), c(8, 10), c(5, 9), c(1, 7), c(2, 6))))
 # The dispersion model takes none of the mean's constraints (#833): a
 # falling-mean constraint does not bind the dispersion, which rises with x.
-if (requireNamespace("lightgbm", quietly = TRUE)) {
+if (with_package("lightgbm")) {
   set.seed(5)
   gd <- data.frame(x = runif(4000))
   k <- ifelse(gd$x < 0.5, 4, 1)
@@ -161,7 +162,7 @@ cf <- claims ~ age + veh_age + exper + noise + offset(log(exposure))
 egrid <- seq(min(chalk$exper), max(chalk$exper), length.out = 60)
 vgrid <- seq(min(chalk$veh_age), max(chalk$veh_age), length.out = 60)
 for (engine in c("lightgbm", "xgboost")) {
-  if (!requireNamespace(engine, quietly = TRUE)) next
+  if (!with_package(engine)) next
   params <- if (engine == "lightgbm") list(num_leaves = 15) else list(max_depth = 4)
   free <- booster_fit(cf, chalk, engine = engine, n_rounds = 150, params = params, seed = 1)
   stopifnot(!check_monotone(free, chalk, "exper", egrid, direction = 1)$monotone)
@@ -181,7 +182,7 @@ for (engine in c("lightgbm", "xgboost")) {
   by_hand <- booster_fit(cf, chalk, engine = engine, n_rounds = 150, params = c(params, raw), seed = 1)
   stopifnot(identical(predict(cm, chalk[1:500, ]), predict(by_hand, chalk[1:500, ])))
 }
-if (requireNamespace("lightgbm", quietly = TRUE)) {
+if (with_package("lightgbm")) {
   small <- data.frame(y = c(1, 0, 2, 1), si = c(1, 2, 3, 4), region = c("A", "B", "A", "B"),
                       age = c(20, 30, 40, 50))
   err <- function(expr, pattern) {

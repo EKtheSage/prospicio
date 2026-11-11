@@ -270,20 +270,20 @@ jobs:
           for (p in pkgs) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
       - if: steps.plan.outputs.build == 'true'
         run: R CMD INSTALL R/prospicio
+      # The optional parity packages (#845): their blocks skip on pull
+      # requests, with a SKIP line each in the runner's summary, and run on
+      # the nightly and manual runs. install.packages() only warns on
+      # failure, so a package that does not build there is skipped too.
+      - if: steps.plan.outputs.test == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        run: >-
+          Rscript -e "r <- getOption('repos'); if (is.null(r) || r['CRAN'] %in% c('@CRAN@', NA)) { r['CRAN'] <- 'https://cloud.r-project.org'; options(repos = r) };
+          install.packages(c('actuar', 'glmnet', 'statmod', 'ChainLadder', 'dglm', 'posterior', 'loo'))"
       - name: Run the R tests
         if: steps.plan.outputs.test == 'true'
-        # Each file's time in the log (#826), the slowest listed at the end.
-        run: |
-          times=""
-          for f in R/prospicio/tests/*.R; do
-            start=$(date +%s)
-            Rscript "$f" || exit 1
-            secs=$(( $(date +%s) - start ))
-            echo "$f: ${secs} s"
-            times="$times$secs $f"$'\n'
-          done
-          echo "The slowest R test files:"
-          printf '%s' "$times" | sort -rn | head -10
+        # Every file runs, a failure does not stop the others, and the
+        # summary lists the failures, the skipped blocks and the slowest
+        # files (#845, #826).
+        run: Rscript validation/scripts/run_r_tests.R
       # remotes::install_github(subdir = "R/prospicio") and r-universe build
       # a tarball of R/prospicio alone, which carries its Rust sources only
       # because pkgbuild runs bootstrap.R first. Install from such a tarball,
