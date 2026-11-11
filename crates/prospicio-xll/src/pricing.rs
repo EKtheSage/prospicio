@@ -16,8 +16,8 @@ use prospicio_pricing::layer::{
 use prospicio_pricing::layer::{ilf, layer_cv};
 use prospicio_prob::evt::Gpd;
 use prospicio_prob::{
-    Burr, Dist, Distribution, Exponential, Gamma, InverseGamma, InverseGaussian, Loglogistic, Lognormal, Pareto,
-    PiecewisePareto, Severity, SeverityDist, Truncation, Weibull,
+    Burr, Dist, Distribution, Exponential, Gamma, InverseGamma, InverseGaussian, Loglogistic,
+    Lognormal, Pareto, PiecewisePareto, Severity, SeverityDist, Truncation, Weibull,
 };
 
 use crate::sheet::{Grid, Value, position};
@@ -160,7 +160,11 @@ pub(crate) fn severity(family: &Grid, p1: &Grid, p2: &Grid, p3: &Grid) -> Result
             if !p2.is_blank() {
                 return Err("\"exponential\" takes only p1, the mean: leave p2 blank".into());
             }
-            no_p3(Exponential::new(scalar(p1, "p1 (mean)")?).map_err(e)?.into())?
+            no_p3(
+                Exponential::new(scalar(p1, "p1 (mean)")?)
+                    .map_err(e)?
+                    .into(),
+            )?
         }
         "inverse_gamma" => no_p3(
             two()

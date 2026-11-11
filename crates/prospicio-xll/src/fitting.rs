@@ -30,7 +30,6 @@ and \"gen_pareto\", or blank for all of them";
 
 const OUTPUTS: &str = "output must be \"params\", \"gof\" or \"compare\"";
 
-
 /// The losses and, per loss, the reporting threshold, censoring flag,
 /// weight and bound from above, with each loss's reporting threshold. A
 /// row whose loss cell is blank is skipped; the other columns are one value
@@ -437,12 +436,7 @@ fn compare(
                         .into(),
                 );
             }
-            if let Some((y, r)) = data
-                .values()
-                .iter()
-                .zip(thresholds)
-                .find(|(_, r)| **r < t)
-            {
+            if let Some((y, r)) = data.values().iter().zip(thresholds).find(|(_, r)| **r < t) {
                 return Err(format!(
                     "\"compare\" with a t needs every reporting threshold at least t ({t}), so that \
                      every family conditions each loss on the same threshold; the loss {y} has {r}"
@@ -501,7 +495,9 @@ fn compare(
         });
     }
     Ok(Grid::from_rows(
-        std::iter::once(header).chain(rows.into_iter().map(|r| r.1)).collect(),
+        std::iter::once(header)
+            .chain(rows.into_iter().map(|r| r.1))
+            .collect(),
     ))
 }
 
