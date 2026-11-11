@@ -15,6 +15,8 @@ years (Timeline, Exposure), and self-exciting (Hawkes) event times for
 clustered catastrophe years (Hawkes, HawkesFit). Layers and towers are in
 ``prospicio.reinsurance``."""
 
+import math
+
 from .prospicio_native import (
     Approximation,
     BivariateReport,
@@ -75,6 +77,7 @@ from .prospicio_native import (
     wiener_hopf,
     year_correlation_for_ratio,
     ylt_hash,
+    day_hour_times,
 )
 
 __all__ = [
@@ -108,6 +111,7 @@ __all__ = [
     "read_ylt",
     "year_correlation_for_ratio",
     "ylt_hash",
+    "day_hour_times",
     "occurrence_exceedance",
     "occurrence_pml",
     "OccurrencePml",
@@ -154,6 +158,15 @@ def _whole(text, column, row):
     if not value.is_integer():
         raise ValueError(f"row {row}: {column} {text!r} is not a whole number")
     return int(value)
+
+
+def _number_or_nan(v):
+    """A cell as a float, NaN when it is empty or not a number, so that the
+    core's checks name the row."""
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return math.nan
 
 
 def read_ylt(
@@ -277,7 +290,7 @@ def read_ylt(
         years = [int(y) for y in cols[year]]
         slots = [int(s) for s in cols[slot]] if slot is not None else None
         losses = [float(x) for x in cols[loss]]
-        timed_values = {c: [float(v) for v in cols[c]] for c in timed}
+        timed_values = {c: [_number_or_nan(v) for v in cols[c]] for c in timed}
         label_values = {d: [str(v) for v in cols[d]] for d in labels}
     elif file_format == "csv":
         import csv
@@ -295,7 +308,7 @@ def read_ylt(
                 slots.append(_whole(r[slot], slot, row))
             losses.append(float(r[loss]))
             for c in timed:
-                timed_values[c].append(float(r[c]))
+                timed_values[c].append(_number_or_nan(r[c]))
             for d in labels:
                 label_values[d].append(r[d])
     else:
@@ -304,14 +317,8 @@ def read_ylt(
     if time is not None:
         times = timed_values[time]
     elif day is not None:
-        times = []
-        hours = timed_values[hour] if hour is not None else [0.0] * len(years)
-        for row, (d, h) in enumerate(zip(timed_values[day], hours), start=1):
-            if not (d == int(d) and 1 <= d <= 365):
-                raise ValueError(f"row {row}: the day {d} is not a whole day from 1 to 365")
-            if not (0 <= h <= 24):
-                raise ValueError(f"row {row}: the hour {h} is not from 0 to 24")
-            times.append(((d - 1) * 24 + h) / 8760)
+        # The core's rule (#838), the same in R.
+        times = day_hour_times(timed_values[day], timed_values[hour] if hour is not None else None)
     return EventSet.from_ylt(
         years,
         losses,
