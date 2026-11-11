@@ -731,24 +731,7 @@ pub(crate) fn calibrate_distortions<'py>(
 }
 
 pub(crate) fn family_from(name: &str, r0: f64) -> PyResult<Family> {
-    Ok(match name {
-        "ccoc" => Family::Ccoc,
-        "ph" | "proportional_hazard" => Family::ProportionalHazard,
-        "wang" => Family::Wang,
-        "tsallis" => Family::Tsallis,
-        "dual" | "dual_power" => Family::DualPower,
-        "tvar" => Family::Tvar,
-        "exp" | "exponential" => Family::Exponential,
-        "clin" | "capped_linear" => Family::CappedLinear { r0 },
-        "cll" | "capped_log_linear" => Family::CappedLogLinear { r0 },
-        "lep" => Family::Lep { r0 },
-        "ly" | "linear_yield" => Family::LinearYield { r0 },
-        other => {
-            return Err(PyValueError::new_err(format!(
-                "unknown distortion family {other:?}"
-            )));
-        }
-    })
+    Family::from_name(name, r0).map_err(to_py)
 }
 
 /// Allocates a distortion risk measure of the total to the components.
