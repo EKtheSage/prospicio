@@ -2,7 +2,7 @@
 //! (#803, #806), reached through the catalogue as Excel reaches it: the
 //! AP pricing demo's test vectors of #801 and #806.
 
-mod common;
+use crate::common;
 
 use common::{fails, n, num, ok, t, text};
 use prospicio_xll::sheet::{Grid, Value};
