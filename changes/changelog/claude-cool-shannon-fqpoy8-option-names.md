@@ -1,6 +1,6 @@
 ### Bindings
 
-- One vocabulary for option names in Python, R and Excel (#834, step 1).
+- One vocabulary for option names in Python, R and Excel (#834, step 1, #860).
   Each front end now accepts every spelling another one did: `negbin` and
   `negative_binomial` for the zero-inflated and hurdle count part;
   `log-linear`, `loglinear` and `log_linear` for Mack's and the Munich
