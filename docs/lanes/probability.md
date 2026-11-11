@@ -8,4 +8,4 @@ Finished items are in [done/probability.md](done/probability.md), which agents r
 
 ## Next
 
-- [bindings-core-838] #838 items 1, 2, 4 and 5: `Triangle::stack` (an existing `program` column an error, the user's decision of 2026-11-11), `HierarchicalBfFit::to_long` and `totals` in the core, the `read_ylt` day and hour rule in `YearLossTable` (a non-numeric day an error naming the row, the user's decision of 2026-11-11), and `underwriting_paid` as monthly paid shares from `prospicio-reserving`
+- [bindings-core-838] #838 items 2, 4 and 5: `HierarchicalBfFit::to_long` and `totals` in the core, the `read_ylt` day and hour rule in `YearLossTable` (a non-numeric day an error naming the row, the user's decision of 2026-11-11), and `underwriting_paid` as monthly paid shares from `prospicio-reserving`
