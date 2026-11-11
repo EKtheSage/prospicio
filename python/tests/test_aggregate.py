@@ -1439,6 +1439,15 @@ def test_read_ylt_with_times_feeds_an_hours_clause_by_peril(tmp_path):
     days.write_text("year,day,value\n1,366,5\n")
     with pytest.raises(ValueError, match="day 366"):
         read_ylt(days, slot=None, day="day")
+    # A day that is not a number is reported with its row, as in R (#838).
+    days.write_text("year,day,value\n1,12,5\n1,x,6\n")
+    with pytest.raises(ValueError, match="row 2: the day is missing or not a number"):
+        read_ylt(days, slot=None, day="day")
+    from prospicio.aggregate import day_hour_times
+
+    assert day_hour_times([1, 365], [0, 24]) == [0.0, 1.0]
+    with pytest.raises(ValueError, match="row 1: the hour"):
+        day_hour_times([1], [None])
     path.write_text("year,time,value\n1,1.5,5\n")
     with pytest.raises(ValueError, match="fraction of the year"):
         read_ylt(path, slot=None, time="time")

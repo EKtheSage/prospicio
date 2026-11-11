@@ -3504,6 +3504,44 @@ pub fn ylt_hash(data: &[u8]) -> String {
     prospicio_aggregate::ylt::hash_bytes(data)
 }
 
+/// Each row's time of loss from its day of the year (1 to 365) and hour of
+/// the day (0 to 24), ``((day - 1) * 24 + hour) / 8760``, the rule
+/// ``read_ylt(day=, hour=)`` applies (#838). A day or hour that is
+/// ``None`` or NaN is an error naming the row.
+///
+/// Parameters
+/// ----------
+/// days : sequence of float
+/// hours : sequence of float, optional
+///     The start of the day without it.
+///
+/// Returns
+/// -------
+/// list of float
+///
+/// Raises
+/// ------
+/// ValueError
+///     On a missing, non-numeric or out-of-range day or hour, naming the row.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import day_hour_times
+/// >>> day_hour_times([1, 365], [0, 24])
+/// [0.0, 1.0]
+#[pyfunction]
+#[pyo3(signature = (days, hours = None))]
+pub fn day_hour_times(
+    days: Vec<Option<f64>>,
+    hours: Option<Vec<Option<f64>>>,
+) -> PyResult<Vec<f64>> {
+    let nan = |v: Vec<Option<f64>>| -> Vec<f64> {
+        v.into_iter().map(|x| x.unwrap_or(f64::NAN)).collect()
+    };
+    let hours = hours.map(nan);
+    prospicio_aggregate::ylt::day_hour_times(&nan(days), hours.as_deref()).map_err(to_py)
+}
+
 /// Labels from a dict of dimension to values, in the dict's order.
 fn labels_from_dict(labels: &Bound<'_, PyDict>) -> PyResult<Vec<(String, Vec<String>)>> {
     labels

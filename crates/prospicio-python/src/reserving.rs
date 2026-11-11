@@ -13463,73 +13463,19 @@ fn stack_programs(programs: &Bound<'_, PyDict>, columns: &[&str]) -> PyResult<Tr
     if programs.is_empty() {
         return Err(PyValueError::new_err("no programs: the dict is empty"));
     }
-    let mut columns = columns.to_vec();
-    columns.dedup();
-    let columns = &columns[..];
-    let mut names: Vec<String> = Vec::new();
-    let (mut origin, mut development) = (Vec::new(), Vec::new());
-    let mut values: Vec<(String, Vec<f64>)> = columns
-        .iter()
-        .map(|c| (c.to_string(), Vec::new()))
-        .collect();
-    let mut first: Option<(Grain, Grain, bool)> = None;
+    let mut named: Vec<(String, PyRef<'_, PyTriangle>)> = Vec::with_capacity(programs.len());
     for (key, value) in programs.iter() {
         let name: String = key
             .extract()
             .map_err(|_| PyTypeError::new_err("program names must be strings"))?;
-        if name.is_empty() {
-            return Err(PyValueError::new_err("a program has an empty name"));
-        }
         let t = value
             .extract::<PyRef<'_, PyTriangle>>()
             .map_err(|_| PyTypeError::new_err(format!("program {name:?} is not a Triangle")))?;
-        let t = &t.inner;
-        if t.shape()[0] != 1 {
-            return Err(PyValueError::new_err(format!(
-                "program {name:?} has {} segments; each program is a triangle with one",
-                t.shape()[0]
-            )));
-        }
-        for c in columns {
-            t.column_position(c).map_err(|_| {
-                PyValueError::new_err(format!("program {name:?} has no column {c:?}"))
-            })?;
-        }
-        let shape = (t.origin_grain(), t.development_grain(), t.is_cumulative());
-        if *first.get_or_insert(shape) != shape {
-            return Err(PyValueError::new_err(format!(
-                "program {name:?} differs from the first in its grains or its cumulative state"
-            )));
-        }
-        let long = t.to_long();
-        names.extend(std::iter::repeat_n(name, long.origin.len()));
-        origin.extend(long.origin);
-        development.extend(long.development);
-        for (column, out) in columns.iter().zip(&mut values) {
-            let (_, v) = long
-                .values
-                .iter()
-                .find(|(n, _)| n == column)
-                .expect("checked");
-            out.1.extend_from_slice(v);
-        }
+        named.push((name, t));
     }
-    let (origin_grain, development_grain, cumulative) = first.expect("not empty");
-    let labels: Vec<&str> = names.iter().map(String::as_str).collect();
-    let values: Vec<(&str, &[f64])> = values
-        .iter()
-        .map(|(n, v)| (n.as_str(), v.as_slice()))
-        .collect();
-    Triangle::from_long(&Long {
-        keys: &[("program", &labels)],
-        origin: &origin,
-        development: DevelopmentColumn::Age(&development),
-        values: &values,
-        origin_grain,
-        development_grain,
-        cumulative,
-    })
-    .map_err(err)
+    // The core's rules (#838), the same in R.
+    let refs: Vec<(&str, &Triangle)> = named.iter().map(|(n, t)| (n.as_str(), &t.inner)).collect();
+    Triangle::stack(&refs, "program", columns).map_err(err)
 }
 
 /// The triangle of `HierarchicalBf.fit` and `.one_year`: a `Triangle` with
