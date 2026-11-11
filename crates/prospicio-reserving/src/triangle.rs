@@ -359,6 +359,121 @@ impl Triangle {
         }
     }
 
+    /// One-segment triangles stacked as the segments of one triangle, under
+    /// the key `key` with each triangle's name as its value (the programs of
+    /// [`HierarchicalBf`](crate::HierarchicalBf), say), through each one's
+    /// long table: the measure columns `columns` (each kept once), at the
+    /// triangles' common grains and cumulative state.
+    ///
+    /// Errors ([`Error::Stack`]) for no triangles, a name that is empty or
+    /// used twice, a triangle with several segments or without one of the
+    /// columns, grains or cumulative states that differ from the first's,
+    /// and a column named `key` (#838: one rule for Python and R).
+    ///
+    /// ```
+    /// use prospicio_core::{Grain, Lag, Month};
+    /// use prospicio_reserving::{DevelopmentColumn, Long, Triangle};
+    ///
+    /// let one = |v: f64| {
+    ///     let origin = [Month::new(2020, 1).unwrap(); 2];
+    ///     let age: [Lag; 2] = [12, 24];
+    ///     Triangle::from_long(&Long {
+    ///         keys: &[],
+    ///         origin: &origin,
+    ///         development: DevelopmentColumn::Age(&age),
+    ///         values: &[("paid", &[v, 2.0 * v])],
+    ///         origin_grain: Grain::Year,
+    ///         development_grain: Grain::Year,
+    ///         cumulative: true,
+    ///     })
+    ///     .unwrap()
+    /// };
+    /// let (a, b) = (one(100.0), one(50.0));
+    /// let stacked = Triangle::stack(&[("A", &a), ("B", &b)], "program", &["paid"]).unwrap();
+    /// assert_eq!(stacked.shape()[0], 2);
+    /// assert!(Triangle::stack(&[("A", &a), ("A", &b)], "program", &["paid"]).is_err());
+    /// assert!(Triangle::stack(&[("A", &a)], "paid", &["paid"]).is_err());
+    /// ```
+    pub fn stack(triangles: &[(&str, &Triangle)], key: &str, columns: &[&str]) -> Result<Triangle> {
+        let stack = |why: String| Error::Stack(why);
+        if triangles.is_empty() {
+            return Err(stack("no triangles to stack".into()));
+        }
+        let mut cols: Vec<&str> = Vec::with_capacity(columns.len());
+        for c in columns {
+            if !cols.contains(c) {
+                cols.push(c);
+            }
+        }
+        if cols.contains(&key) {
+            return Err(stack(format!(
+                "a column named {key:?} clashes with the key of the stacked triangle"
+            )));
+        }
+        let mut names: Vec<&str> = Vec::new();
+        let (mut origin, mut development) = (Vec::new(), Vec::new());
+        let mut values: Vec<Vec<f64>> = vec![Vec::new(); cols.len()];
+        let mut seen: Vec<&str> = Vec::with_capacity(triangles.len());
+        let (first_name, first) = triangles[0];
+        for &(name, t) in triangles {
+            if name.is_empty() {
+                return Err(stack(format!("a {key} has an empty name")));
+            }
+            if seen.contains(&name) {
+                return Err(stack(format!("{key} name {name:?} is used twice")));
+            }
+            seen.push(name);
+            if t.shape[0] != 1 {
+                return Err(stack(format!(
+                    "{key} {name:?} has {} segments; each {key} is a triangle with one",
+                    t.shape[0]
+                )));
+            }
+            for c in &cols {
+                if t.column_position(c).is_err() {
+                    return Err(stack(format!("{key} {name:?} has no column {c:?}")));
+                }
+            }
+            if (t.origin_grain(), t.development_grain(), t.is_cumulative())
+                != (
+                    first.origin_grain(),
+                    first.development_grain(),
+                    first.is_cumulative(),
+                )
+            {
+                return Err(stack(format!(
+                    "{key} {name:?} differs from {first_name:?} in its grains or its cumulative state"
+                )));
+            }
+            let long = t.to_long();
+            names.extend(std::iter::repeat_n(name, long.origin.len()));
+            origin.extend(long.origin);
+            development.extend(long.development);
+            for (c, out) in cols.iter().zip(&mut values) {
+                let (_, v) = long
+                    .values
+                    .iter()
+                    .find(|(n, _)| n == c)
+                    .expect("checked above");
+                out.extend_from_slice(v);
+            }
+        }
+        let values: Vec<(&str, &[f64])> = cols
+            .iter()
+            .zip(&values)
+            .map(|(c, v)| (*c, v.as_slice()))
+            .collect();
+        Triangle::from_long(&Long {
+            keys: &[(key, &names)],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&development),
+            values: &values,
+            origin_grain: first.origin_grain(),
+            development_grain: first.development_grain(),
+            cumulative: first.is_cumulative(),
+        })
+    }
+
     /// The triangle as a long table: one row per (segment, origin, age) with
     /// at least one observed measure, in axis order, with the segment's key
     /// values as named columns.
