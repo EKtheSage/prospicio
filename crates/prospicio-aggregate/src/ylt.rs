@@ -405,6 +405,60 @@ impl YearLossTable {
 /// assert!(h.starts_with("blake3:"));
 /// assert_ne!(h, prospicio_aggregate::ylt::hash_bytes(b"year,value\n1,6\n"));
 /// ```
+/// Each row's time of loss from its day of the year (a whole number from 1
+/// to 365) and hour of the day (0 to 24; the start of the day without
+/// `hours`): `((day - 1) 24 + hour) / 8760`, on the 8,760-hour year of the
+/// hours clause, for [`YearLossTable::with_times`]. The rule
+/// `read_ylt(day = , hour = )` applies in Python and R (#838). A day or an
+/// hour that is missing or not a number (NaN, as a binding reads one) is an
+/// error naming the row, as is one out of range.
+///
+/// ```
+/// use prospicio_aggregate::ylt::day_hour_times;
+///
+/// assert_eq!(day_hour_times(&[1.0, 366.0 - 1.0], Some(&[0.0, 24.0])).unwrap(), [0.0, 1.0]);
+/// assert!(day_hour_times(&[f64::NAN], None).unwrap_err().to_string().contains("row 1"));
+/// ```
+pub fn day_hour_times(days: &[f64], hours: Option<&[f64]>) -> Result<Vec<f64>> {
+    if let Some(h) = hours
+        && h.len() != days.len()
+    {
+        return Err(Error::Data(format!(
+            "{} hours for {} days",
+            h.len(),
+            days.len()
+        )));
+    }
+    days.iter()
+        .enumerate()
+        .map(|(k, &d)| {
+            let row = k + 1;
+            if d.is_nan() {
+                return Err(Error::Data(format!(
+                    "row {row}: the day is missing or not a number"
+                )));
+            }
+            if !(d.fract() == 0.0 && (1.0..=365.0).contains(&d)) {
+                return Err(Error::Data(format!(
+                    "row {row}: the day {d} is not a whole day from 1 to 365"
+                )));
+            }
+            let h = hours.map_or(0.0, |h| h[k]);
+            if h.is_nan() {
+                return Err(Error::Data(format!(
+                    "row {row}: the hour is missing or not a number"
+                )));
+            }
+            if !(0.0..=24.0).contains(&h) {
+                return Err(Error::Data(format!(
+                    "row {row}: the hour {h} is not from 0 to 24"
+                )));
+            }
+            Ok(((d - 1.0) * 24.0 + h) / 8760.0)
+        })
+        .collect()
+}
+
 pub fn hash_bytes(bytes: &[u8]) -> String {
     InputHasher::new()
         .str("year_loss_table")

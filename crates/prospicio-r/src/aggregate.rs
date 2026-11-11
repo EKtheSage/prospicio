@@ -1706,8 +1706,17 @@ fn hawkes_fit_rust(periods: List, horizon: f64) -> Result<List> {
     ))
 }
 
+/// Each row's time of loss from its day and hour (#838): the core's
+/// `ylt::day_hour_times`; `hours` empty for the start of each day.
+#[extendr]
+fn day_hour_times_rust(days: &[f64], hours: &[f64]) -> Result<Vec<f64>> {
+    let hours = (!hours.is_empty()).then_some(hours);
+    prospicio_aggregate::ylt::day_hour_times(days, hours).map_err(to_r)
+}
+
 extendr_module! {
     mod aggregate;
+    fn day_hour_times_rust;
     fn hawkes_check_rust;
     fn hawkes_moments_rust;
     fn hawkes_simulate_rust;

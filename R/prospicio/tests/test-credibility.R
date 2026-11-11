@@ -1,4 +1,5 @@
 library(prospicio)
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 near <- function(a, b, tol) stopifnot(all(abs(a - b) <= tol * pmax(1, abs(b))))
 
@@ -23,7 +24,7 @@ stopifnot(fi$iterations > 0)
 stopifnot(inherits(try(buhlmann_straub(x), silent = TRUE), "try-error"))
 
 # Against actuar when it is installed (its parity also runs in Rust).
-if (requireNamespace("actuar", quietly = TRUE)) {
+if (with_package("actuar")) {
   data(hachemeister, package = "actuar")
   r <- as.matrix(hachemeister[, 2:13]); ww <- as.matrix(hachemeister[, 14:25])
   ref <- actuar::cm(~state, hachemeister, ratios = ratio.1:ratio.12, weights = weight.1:weight.12)
@@ -48,7 +49,7 @@ h1 <- hachemeister(hx, formula = ~1, adjust_intercept = TRUE)
 near(h1@coefficients[, 1], buhlmann_straub(hx)$premiums, 1e-10)
 stopifnot(inherits(try(hachemeister(hx, formula = ~ I(time * 0 + 2) + time, adjust_intercept = TRUE),
                        silent = TRUE), "try-error"))
-if (requireNamespace("actuar", quietly = TRUE)) {
+if (with_package("actuar")) {
   data(hachemeister, package = "actuar")
   r <- as.matrix(hachemeister[, 2:13]); ww <- as.matrix(hachemeister[, 14:25])
   for (adj in c(FALSE, TRUE)) {
