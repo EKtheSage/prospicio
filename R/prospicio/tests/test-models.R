@@ -966,6 +966,31 @@ cv <- ice(explain_model, xf, "x3", c(-1, 0, 1, 2))
 pdv <- partial_dependence(explain_model, xf, "x3", c(-1, 0, 1, 2))
 znear(cv$mean, pdv$mean, 1e-12)
 stopifnot(all(ice(explain_model, xf, "x3", c(-1, 2), center = TRUE)$curves[, 1] == 0))
+# #837, step 1: ALE (ALEPlot 1.1), partial dependence and ICE on the frame
+# and reference Python's test reads too (validation/scripts/r_explain_parity.R).
+# h's distance matrix has a negative eigenvalue, so its order checks the
+# classical scaling.
+ff <- utils::read.csv(file.path(root, "data", "explain_factor_frame.csv"))
+factor_model <- structure(list(), class = "explain_g")
+predict.explain_g <- function(object, newdata, ...) {
+  h <- as.character(newdata$h)
+  z <- as.character(newdata$z)
+  0.5 * newdata$x + c(p = 0, q = 0.4, r = -0.2, s = 0.9, t = 0.3)[h] +
+    c(u = 0, v = 0.2, w = -0.1, y = 0.5)[z] + 0.3 * newdata$x * (h == "s")
+}
+pref <- utils::read.csv(file.path(root, "reference", "explain_parity.csv"), comment.char = "#",
+                        colClasses = c(value = "character"))
+pwant <- function(tool, feature) pref[pref$tool == tool & pref$feature == feature, ]
+a <- ale(factor_model, ff, "h")
+stopifnot(identical(a$value, pwant("ale", "h")$value), identical(a$value, c("p", "q", "s", "t", "r")))
+znear(a$effect, pwant("ale", "h")$expected, 1e-10, 1e-12)
+a <- ale(factor_model, ff, "x", bins = 10)
+znear(as.double(a$value), as.double(pwant("ale", "x")$value), 1e-12)
+znear(a$effect, pwant("ale", "x")$expected, 1e-10, 1e-12)
+pgrid <- c(-0.5, 0, 0.5, 1)
+znear(partial_dependence(factor_model, ff, "x", pgrid)$mean, pwant("pd", "x")$expected, 1e-12)
+pc <- ice(factor_model, ff, "x", pgrid)
+for (r in c(1, 37, 81)) znear(unname(pc$curves[r, ]), pwant(paste0("ice_row", r), "x")$expected, 1e-12, 1e-15)
 if (requireNamespace("lightgbm", quietly = TRUE)) {
   bd <- data.frame(x = (1:400) / 400, z = ((1:400) * 37 %% 101) / 101)
   bd$y <- as.double(((1:400) * 13) %% 7 < 2 + 3 * bd$x)

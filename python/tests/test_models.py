@@ -1828,3 +1828,54 @@ def test_ice_mean_is_partial_dependence_and_glm_shap_is_closed_form():
         mean = sum(f[name]) / n
         for i in range(5):
             assert s.values[i][j] == pytest.approx(fit.coefficients[j + 1] * (f[name][i] - mean), abs=1e-10)
+
+
+def test_explanations_match_the_shared_reference():
+    """#837, step 1: ALE (ALEPlot 1.1), partial dependence and ICE on
+    validation/data/explain_factor_frame.csv, the reference R's test reads
+    too (validation/scripts/r_explain_parity.R). The factor h's distance
+    matrix has a negative eigenvalue larger than its second and third
+    positive ones, so its order of levels checks the classical scaling."""
+    import csv
+    import pathlib
+
+    from prospicio.models import ale, ice, partial_dependence
+
+    root = pathlib.Path(__file__).resolve().parents[2] / "validation"
+    with open(root / "data" / "explain_factor_frame.csv") as f:
+        rows = list(csv.DictReader(f))
+    frame = {
+        "x": [float(r["x"]) for r in rows],
+        "z": [r["z"] for r in rows],
+        "h": [r["h"] for r in rows],
+    }
+    with open(root / "reference" / "explain_parity.csv") as f:
+        ref = list(csv.DictReader(line for line in f if not line.startswith("#")))
+    h_effect = {"p": 0.0, "q": 0.4, "r": -0.2, "s": 0.9, "t": 0.3}
+    z_effect = {"u": 0.0, "v": 0.2, "w": -0.1, "y": 0.5}
+
+    class Model:
+        def predict(self, f):
+            return [
+                0.5 * x + h_effect[h] + z_effect[z] + 0.3 * x * (h == "s")
+                for x, z, h in zip(f["x"], f["z"], f["h"])
+            ]
+
+    def want(tool, feature):
+        return [r for r in ref if r["tool"] == tool and r["feature"] == feature]
+
+    a = ale(Model(), frame, lambda f: f, "h")
+    w = want("ale", "h")
+    assert a.values == [r["value"] for r in w] == ["p", "q", "s", "t", "r"]
+    assert a.effects == pytest.approx([float(r["expected"]) for r in w], rel=1e-10, abs=1e-12)
+    a = ale(Model(), frame, lambda f: f, "x", bins=10)
+    w = want("ale", "x")
+    assert a.values == pytest.approx([float(r["value"]) for r in w], rel=1e-12)
+    assert a.effects == pytest.approx([float(r["expected"]) for r in w], rel=1e-10, abs=1e-12)
+    grid = [-0.5, 0.0, 0.5, 1.0]
+    pd = partial_dependence(Model(), frame, lambda f: f, "x", grid)
+    assert pd.mean == pytest.approx([float(r["expected"]) for r in want("pd", "x")], rel=1e-12)
+    curves = ice(Model(), frame, lambda f: f, "x", grid)
+    for row in [1, 37, 81]:
+        expected = [float(r["expected"]) for r in want(f"ice_row{row}", "x")]
+        assert curves.curves[row - 1] == pytest.approx(expected, rel=1e-12, abs=1e-15)
