@@ -747,6 +747,16 @@ pub struct GoodnessOfFit {
     /// Kolmogorov–Smirnov distance (its null distribution is not the
     /// classical one once the parameters are fitted or the data truncated).
     pub max_distance: f64,
+    /// The classical two-sided Kolmogorov–Smirnov p-value of
+    /// `max_distance` among `n` losses, `n` the total weight rounded
+    /// (`prospicio_math::kolmogorov::kolmogorov_sf`, SciPy's `kstwo.sf`):
+    /// exact where it holds, so with one threshold and no censoring it is
+    /// `scipy.stats.kstest`'s. It is optimistic for a fit: with the
+    /// parameters estimated from the same losses the distance is smaller
+    /// than under a hypothesis fixed in advance, so the true p-value is
+    /// smaller; with censoring the null distribution is not this one
+    /// either.
+    pub ks_p_value: f64,
 }
 
 /// Compares `dist` with the [`product_limit`] estimate of `data`, each loss
@@ -812,11 +822,13 @@ pub fn goodness_of_fit<D: crate::Distribution + ?Sized>(
         );
         before = st.survival;
     }
+    let n = data.rows().map(|r| r.3).sum::<f64>().round().max(1.0) as usize;
     Ok(GoodnessOfFit {
         steps,
         model_survival,
         model_quantile,
         max_distance,
+        ks_p_value: prospicio_math::kolmogorov::kolmogorov_sf(n, max_distance),
     })
 }
 
@@ -1038,6 +1050,75 @@ pub fn fit_curves(
         losses,
         empirical,
         curves,
+    })
+}
+
+/// The mean and coefficient of variation of `X | X > t`, a fit's tail above
+/// its threshold ([`tail_moments`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TailMoments {
+    /// `t`.
+    pub threshold: f64,
+    /// `E[X | X > t] = t + E[(X − t)₊] / S(t)`; infinite where the mean is.
+    pub mean: f64,
+    /// `sd(X | X > t) / E[X | X > t]`; infinite where the second moment is.
+    pub cv: f64,
+}
+
+/// The mean and CV of `dist` above `t`, from its exact layer moments:
+/// `E[X | X > t] = t + E[(X − t)₊] / S(t)` and
+/// `Var(X | X > t) = E[(X − t)₊²] / S(t) − (E[(X − t)₊] / S(t))²`. A moment
+/// that diverges (a Pareto's with `α ≤ 1` or `α ≤ 2`, a GPD's with
+/// `ξ ≥ 1` or `ξ ≥ 1/2`, a loglogistic's with shape `≤ 1` or `≤ 2`) is
+/// infinite. With a fit's `t` the lowest reporting threshold, these are
+/// the moments of the losses the fit describes.
+///
+/// ```
+/// use prospicio_prob::{Dist, Exponential};
+/// use prospicio_prob::severity_fit::tail_moments;
+///
+/// // Memoryless: above t the exponential is t plus the same exponential.
+/// let d: Dist = Exponential::new(1000.0).unwrap().into();
+/// let m = tail_moments(&d, 500.0).unwrap();
+/// assert!((m.mean - 1500.0).abs() < 1e-9);
+/// assert!((m.cv - 1000.0 / 1500.0).abs() < 1e-12);
+/// ```
+///
+/// # Errors
+///
+/// When `dist` is not a severity or gives no probability above `t`.
+pub fn tail_moments(dist: &Dist, t: f64) -> Result<TailMoments> {
+    let sev = dist.as_severity().ok_or_else(|| {
+        Error::Data(format!(
+            "tail_moments needs a severity, not a {}",
+            dist.family()
+        ))
+    })?;
+    let s = sev.survival(t);
+    if s.is_nan() || s <= 0.0 {
+        return Err(Error::Data(format!(
+            "the distribution gives no probability above {t}"
+        )));
+    }
+    let excess = sev.stop_loss(t) / s;
+    let mean = t + excess;
+    if !mean.is_finite() {
+        return Ok(TailMoments {
+            threshold: t,
+            mean: f64::INFINITY,
+            cv: f64::INFINITY,
+        });
+    }
+    let second = sev.layer_second_moment(f64::INFINITY, t) / s;
+    let cv = if second.is_finite() {
+        (second - excess * excess).max(0.0).sqrt() / mean
+    } else {
+        f64::INFINITY
+    };
+    Ok(TailMoments {
+        threshold: t,
+        mean,
+        cv,
     })
 }
 
@@ -1474,5 +1555,41 @@ mod tests {
             assert!(s.windows(2).all(|w| w[0] >= w[1]));
             assert!(s[0] < 1.0 && s[0] > 0.5);
         }
+    }
+
+    #[test]
+    fn tail_moments_diverge_with_the_family() {
+        use crate::{Burr, Pareto};
+        // A Pareto from 1000 with alpha 1.5: mean 3000 above 1000, no CV.
+        let p: Dist = Pareto::new(1000.0, 1.5).unwrap().into();
+        let m = tail_moments(&p, 1000.0).unwrap();
+        assert!((m.mean - 3000.0).abs() < 1e-9);
+        assert_eq!(m.cv, f64::INFINITY);
+        // Above 2000 a Pareto is a Pareto from 2000: mean 2000 α/(α − 1).
+        let m = tail_moments(&Pareto::new(1000.0, 3.0).unwrap().into(), 2000.0).unwrap();
+        assert!((m.mean - 3000.0).abs() < 1e-9);
+        assert!((m.cv - (1.0f64 / 3.0).sqrt()).abs() < 1e-9);
+        let heavy: Dist = Pareto::new(1000.0, 0.9).unwrap().into();
+        let m = tail_moments(&heavy, 1000.0).unwrap();
+        assert_eq!((m.mean, m.cv), (f64::INFINITY, f64::INFINITY));
+        // A loglogistic with shape 1.5: a mean, no variance.
+        let ll: Dist = Burr::new(1.0, 1.5, 1000.0).unwrap().into();
+        let m = tail_moments(&ll, 500.0).unwrap();
+        assert!(m.mean.is_finite() && m.cv == f64::INFINITY);
+    }
+
+    #[test]
+    fn the_ks_p_value_is_scipys_kstest() {
+        // An exponential with mean 500 against five losses:
+        // scipy.stats.kstest(x, expon(scale=500).cdf).
+        let x = vec![100.0, 300.0, 350.0, 700.0, 950.0];
+        let data = LargeLosses::new(x).unwrap();
+        let g = goodness_of_fit(&Exponential::new(500.0).unwrap(), &data).unwrap();
+        assert!((g.max_distance - 0.2511883639059736).abs() < 1e-12);
+        assert!(
+            (g.ks_p_value - 0.8409019263900253).abs() < 1e-10,
+            "{}",
+            g.ks_p_value
+        );
     }
 }

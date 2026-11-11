@@ -154,6 +154,21 @@ conversion reports the error it introduces.
   points=200)` (a dict of columns, ready for `pandas.DataFrame`) and R
   `fit_curves()` (a data frame) take the losses above one threshold.
   Tested against SciPy's fits (`validation/scripts/scipy_fit_curves.py`).
+- The KS p-value and the tail moments of a fit (decided 2026-11-11, #805):
+  `prospicio_math::kolmogorov::kolmogorov_sf(n, d)` is the two-sided
+  Kolmogorov-Smirnov tail `P(D_n > d)` by SciPy's `kstwo` methods (Simard
+  and L'Ecuyer): Ruben and Gambino's closed forms at the ends, twice
+  Smirnov's exact one-sided tail where it equals or is within double
+  precision of the two-sided one, Durbin's matrix (Marsaglia, Tsang and
+  Wang) in between, and Kolmogorov's limit `kolmogorov_limit_sf(√n d)`
+  where that matrix would pass 401 rows (SciPy uses Pelz and Good's series
+  there; the two agree to about 1e-3). `GoodnessOfFit::ks_p_value` applies it
+  to `max_distance` with `n` the total weight: with one threshold and no
+  censoring this is `scipy.stats.kstest`'s p-value, and it is documented
+  as optimistic for a fitted severity. `tail_moments(dist, t)` gives the
+  mean and CV of `X | X > t` from the exact layer moments, infinite where
+  the moment diverges. Python and R add `ks_p_value`, `tail_mean` and
+  `tail_cv` to `goodness_of_fit`, `t` the lowest reporting threshold.
 - `prospicio_prob::grouped_fit` (#328, third part) fits the same families
   to grouped losses, `GroupedLosses` of counts in size bands
   `(b_k, b_{k+1}]`, without individual amounts (Bahnemann, CAS Monograph

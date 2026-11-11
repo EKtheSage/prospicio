@@ -1637,6 +1637,31 @@ real Excel.
       workbook's Severity fit sheet spills the nine curves of R Pareto's
       example losses and the lognormal's thinned to 5 rows.
 
+62. **KS p, tail mean and tail CV beside the KS distance** (#805, the AP
+    pricing demo's severity ranking). `"compare"` gains the columns
+    "KS p", "Tail mean" and "Tail CV" after "KS distance" (13 columns
+    now), and `"params"` rows of the same names after it. "KS p" is the
+    Probability lane's classical Kolmogorov-Smirnov p-value
+    (`GoodnessOfFit::ks_p_value`, SciPy's `kstwo.sf`); the tail moments are
+    those of `X | X > r`, `r` the lowest reporting threshold
+    (`tail_moments`), the same threshold the goodness of fit conditions on.
+    - **An infinite moment is the text "inf", not a blank.** The requester
+      asked for it, and here the difference matters: a Pareto with alpha
+      at most 2 has a tail mean but no CV, and a blank would read as "not
+      computed". The rest of the add-in keeps decision 3's blank for a
+      non-finite number (`PRO.SEV.STATS` too); "inf" is used only in
+      these two columns, and a value that cannot be computed (no
+      probability on the data) stays blank.
+    - **The p-value is optimistic for a fit**, as the help text says: the
+      parameters were fitted to the same losses. A parametric bootstrap
+      p-value is left for a later option.
+    - **Parity.** `tests/severity_fit.rs`: on #800's 89 losses every
+      family's four cells match SciPy (`kstest` exact, and the moments
+      integrated on the survival scale) at the reference's tolerances, the
+      Pareto's CV is "inf", and `"params"` has the comparison's cells. The
+      test workbook's Severity fit sheet widens its comparison tables and
+      moves the grouped fits right to make room.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and

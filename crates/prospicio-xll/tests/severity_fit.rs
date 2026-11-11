@@ -240,7 +240,7 @@ fn compare_fits_every_body_family() {
         "pro_sev_fit",
         vec![column(&LOSSES), missing(), t("compare")],
     );
-    assert_eq!((out.rows, out.columns), (8, 10));
+    assert_eq!((out.rows, out.columns), (8, 13));
     let names: Vec<&Value> = (1..8).map(|r| out.get(r, 0)).collect();
     assert_eq!(
         names,
@@ -268,9 +268,9 @@ fn compare_fits_every_body_family() {
     // On these Pareto-like losses the Burr runs to its Pareto limit, with
     // the highest likelihood: the note says so.
     assert!(
-        matches!(out.get(6, 9), Value::Text(s) if s.contains("Pareto limit")),
+        matches!(out.get(6, 12), Value::Text(s) if s.contains("Pareto limit")),
         "{:?}",
-        out.get(6, 9)
+        out.get(6, 12)
     );
     assert!(num(out.get(6, 4)) > num(out.get(1, 4)));
 }
@@ -309,7 +309,7 @@ fn compare_with_t_ranks_nine_families_by_aic() {
         ]
     };
     let out = call("pro_sev_fit", args(missing(), n(150_000.0)));
-    assert_eq!((out.rows, out.columns), (10, 10));
+    assert_eq!((out.rows, out.columns), (10, 13));
     let mut names: Vec<String> = (1..10).map(|r| text_cell(out.get(r, 0))).collect();
     for r in 1..10 {
         let family = text_cell(out.get(r, 0));
@@ -326,7 +326,7 @@ fn compare_with_t_ranks_nine_families_by_aic() {
     let row = |name: &str| (1..10).find(|&r| out.get(r, 0) == &Value::from(name)).unwrap();
     assert_eq!(out.get(row("pareto"), 1), &Value::Number(150_000.0));
     assert_eq!(out.get(row("pareto"), 3), &Value::Empty);
-    assert_eq!(out.get(row("pareto"), 9), &Value::from("none"));
+    assert_eq!(out.get(row("pareto"), 12), &Value::from("none"));
     assert_eq!(out.get(row("gen_pareto"), 1), &Value::Number(150_000.0));
     // Riegel's GPD from t and the Lomax conditioned on t reach the same
     // likelihood.
@@ -374,7 +374,7 @@ fn compare_with_t_ranks_nine_families_by_aic() {
         vec![Value::from("exponential")],
     ]);
     let some = call("pro_sev_fit", args(pick, n(150_000.0)));
-    assert_eq!((some.rows, some.columns), (4, 10));
+    assert_eq!((some.rows, some.columns), (4, 13));
     let mut picked: Vec<String> = (1..4).map(|r| text_cell(some.get(r, 0))).collect();
     let ll: Vec<f64> = (1..4).map(|r| num(some.get(r, 5))).collect();
     assert!(ll.windows(2).all(|w| w[0] <= w[1]), "{some:?}");
@@ -395,6 +395,80 @@ fn compare_with_t_ranks_nine_families_by_aic() {
     );
     assert_eq!(body.get(1, 0), &Value::from("gamma"));
     assert_eq!(body.get(2, 0), &Value::from("lomax"));
+}
+
+/// SciPy's value of `quantity` for `family`'s fit to the `plain` losses
+/// (`fit_tails_scipy.csv`), with its absolute and relative tolerances.
+fn scipy_tail(family: &str, quantity: &str) -> (f64, f64, f64) {
+    let r = reference("fit_tails_scipy.csv")
+        .into_iter()
+        .find(|r| r[0] == family && r[1] == quantity)
+        .unwrap_or_else(|| panic!("no {family} {quantity}"));
+    (r[2].parse().unwrap(), r[3].parse().unwrap(), r[4].parse().unwrap())
+}
+
+#[test]
+fn compare_and_params_give_the_ks_p_value_and_tail_moments() {
+    let y = plain_losses();
+    let out = call(
+        "pro_sev_fit",
+        vec![
+            column(&y),
+            missing(),
+            common::t("compare"),
+            n(150_000.0),
+            missing(),
+            n(150_000.0),
+        ],
+    );
+    let header: Vec<String> = (0..13).map(|c| text_cell(out.get(0, c))).collect();
+    assert_eq!(
+        header[7..11],
+        ["KS distance", "KS p", "Tail mean", "Tail CV"].map(String::from)
+    );
+    for r in 1..10 {
+        let family = text_cell(out.get(r, 0));
+        if family == "burr" {
+            continue;
+        }
+        for (c, q) in [(7, "ks_distance"), (8, "ks_p_value"), (9, "tail_mean"), (10, "tail_cv")] {
+            let (want, abs, rel) = scipy_tail(&family, q);
+            match out.get(r, c) {
+                Value::Text(s) if s == "inf" => assert_eq!(want, f64::INFINITY, "{family} {q}"),
+                v => {
+                    let got = num(v);
+                    let err = (got - want).abs();
+                    assert!(err <= abs || err <= rel * want.abs(), "{family} {q}: {got} against {want}");
+                }
+            }
+        }
+    }
+    // A Pareto's alpha below 2: a tail mean, an infinite CV.
+    let pareto = (1..10)
+        .find(|&r| out.get(r, 0) == &Value::from("pareto"))
+        .unwrap();
+    assert_eq!(out.get(pareto, 10), &Value::from("inf"));
+    // "params" has the same cells as rows.
+    let params = call(
+        "pro_sev_fit",
+        vec![
+            column(&y),
+            common::t("pareto"),
+            missing(),
+            n(150_000.0),
+            missing(),
+            n(150_000.0),
+        ],
+    );
+    let cell = |label: &str| {
+        let r = (0..params.rows)
+            .find(|&r| params.get(r, 0) == &Value::from(label))
+            .unwrap();
+        params.get(r, 1).clone()
+    };
+    for (label, c) in [("KS distance", 7), ("KS p", 8), ("Tail mean", 9), ("Tail CV", 10)] {
+        assert_eq!(&cell(label), out.get(pareto, c), "{label}");
+    }
 }
 
 #[test]

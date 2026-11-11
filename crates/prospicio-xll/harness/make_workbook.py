@@ -988,52 +988,52 @@ for i, (y, r, c) in enumerate(zip(losses, reported, capped)):
         sf[f"{col}{4 + i}"].fill = inp
 data = "A4:A17,{fam},{out},{t},,B4:B17,C4:C17"
 sf["E3"] = "Lognormal"; sf["E3"].font = bold
-sf["E4"] = ArrayFormula("E4:G13", "=PRO.SEV.FIT(" + data.format(fam='"lognormal"', out="", t="") + ")")
+sf["E4"] = ArrayFormula("E4:G16", "=PRO.SEV.FIT(" + data.format(fam='"lognormal"', out="", t="") + ")")
 sf["I3"] = "Pareto above 1,000"; sf["I3"].font = bold
-sf["I4"] = ArrayFormula("I4:K13", "=PRO.SEV.FIT(" + data.format(fam='"pareto"', out="", t="1000") + ")")
-sf["E14"] = "The lognormal's 1M xs 1M from the fit's cells"
-sf["I14"] = ArrayFormula("I14", "=PRO.PRC.LAYER(1000000,1000000,\"lognormal\",F5,F6)")
-sf["E16"] = "Body families compared"; sf["E16"].font = bold
-sf["E17"] = ArrayFormula("E17:N24", "=PRO.SEV.FIT(" + data.format(fam="", out='"compare"', t="") + ")")
-sf["E26"] = "Nine families from t = 1,000, ranked by AIC (every loss reported above at least 1,000)"; sf["E26"].font = bold
-sf["E27"] = ArrayFormula("E27:N36", "=PRO.SEV.FIT(" + data.format(fam="", out='"compare"', t="1000") + ")")
+sf["I4"] = ArrayFormula("I4:K16", "=PRO.SEV.FIT(" + data.format(fam='"pareto"', out="", t="1000") + ")")
+sf["E18"] = "The lognormal's 1M xs 1M from the fit's cells"
+sf["I18"] = ArrayFormula("I18", "=PRO.PRC.LAYER(1000000,1000000,\"lognormal\",F5,F6)")
+sf["E20"] = "Body families compared"; sf["E20"].font = bold
+sf["E21"] = ArrayFormula("E21:Q28", "=PRO.SEV.FIT(" + data.format(fam="", out='"compare"', t="") + ")")
+sf["E30"] = "Nine families from t = 1,000, ranked by AIC (every loss reported above at least 1,000)"; sf["E30"].font = bold
+sf["E31"] = ArrayFormula("E31:Q40", "=PRO.SEV.FIT(" + data.format(fam="", out='"compare"', t="1000") + ")")
 sf["A20"] = "Families to rank"; sf["A20"].font = bold
 for i, name in enumerate(["lognormal", "lomax", "gen_pareto"]):
     sf[f"A{21 + i}"] = name; sf[f"A{21 + i}"].fill = inp
-sf["E38"] = "Only the families named in A21:A23, ranked by AIC"; sf["E38"].font = bold
-sf["E39"] = ArrayFormula("E39:N42", "=PRO.SEV.FIT(" + data.format(fam="A21:A23", out='"compare"', t="1000") + ")")
-sf["E44"] = "Lognormal against the product-limit estimate (P-P and Q-Q)"; sf["E44"].font = bold
-sf["E45"] = ArrayFormula("E45:J56", "=PRO.SEV.FIT(" + data.format(fam='"lognormal"', out='"gof"', t="") + ")")
-sf["E58"] = "Every fit's survival from t = 1,000 beside the plotting positions (n - i + 0.5) / n, the capped losses read as exact"; sf["E58"].font = bold
-sf["E59"] = ArrayFormula("E59:O73", '=PRO.SEV.FIT(A4:A17,,"curves",1000,,B4:B17)')
-sf["E75"] = "The lognormal's thinned to 5 rows (points, the tenth argument)"; sf["E75"].font = bold
-sf["E76"] = ArrayFormula("E76:G81", '=PRO.SEV.FIT(A4:A17,"lognormal","curves",1000,,B4:B17,,,,5)')
-sf["P3"] = "Grouped losses (Bahnemann's six bands; the last bound blank: open)"; sf["P3"].font = bold
-sf["P4"] = "From"; sf["Q4"] = "Count"
-for c in ("P4", "Q4"):
+sf["E42"] = "Only the families named in A21:A23, ranked by AIC"; sf["E42"].font = bold
+sf["E43"] = ArrayFormula("E43:Q46", "=PRO.SEV.FIT(" + data.format(fam="A21:A23", out='"compare"', t="1000") + ")")
+sf["E48"] = "Lognormal against the product-limit estimate (P-P and Q-Q)"; sf["E48"].font = bold
+sf["E49"] = ArrayFormula("E49:J60", "=PRO.SEV.FIT(" + data.format(fam='"lognormal"', out='"gof"', t="") + ")")
+sf["E62"] = "Every fit's survival from t = 1,000 beside the plotting positions (n - i + 0.5) / n, the capped losses read as exact"; sf["E62"].font = bold
+sf["E63"] = ArrayFormula("E63:O77", '=PRO.SEV.FIT(A4:A17,,"curves",1000,,B4:B17)')
+sf["E79"] = "The lognormal's thinned to 5 rows (points, the tenth argument)"; sf["E79"].font = bold
+sf["E80"] = ArrayFormula("E80:G85", '=PRO.SEV.FIT(A4:A17,"lognormal","curves",1000,,B4:B17,,,,5)')
+sf["S3"] = "Grouped losses (Bahnemann's six bands; the last bound blank: open)"; sf["S3"].font = bold
+sf["S4"] = "From"; sf["T4"] = "Count"
+for c in ("S4", "T4"):
     sf[c].font = bold
 for i, (b, c) in enumerate(zip([0, 1000, 1500, 2000, 2500, 3000, None], [42, 61, 47, 26, 14, 10, None])):
-    sf[f"P{5 + i}"] = b; sf[f"P{5 + i}"].fill = inp
+    sf[f"S{5 + i}"] = b; sf[f"S{5 + i}"].fill = inp
     if c is not None:
-        sf[f"Q{5 + i}"] = c; sf[f"Q{5 + i}"].fill = inp
-sf["S3"] = "Gamma by minimum chi-square (Bahnemann P2.16: 4.7432, 337.31)"; sf["S3"].font = bold
-sf["S4"] = ArrayFormula("S4:U12", '=PRO.SEV.FIT.GROUPED(P5:P11,Q5:Q10,"gamma","chi_square")')
-sf["S14"] = "Observed and expected per band"; sf["S14"].font = bold
-sf["S15"] = ArrayFormula("S15:V21", '=PRO.SEV.FIT.GROUPED(P5:P11,Q5:Q10,"gamma","chi_square","table")')
-sf["P24"] = "Limited means (Bahnemann Ex 2.10: 1,500 claims under a 300,000 limit)"; sf["P24"].font = bold
-sf["P25"] = "Size"; sf["Q25"] = "E[X; x]"
-for c in ("P25", "Q25"):
+        sf[f"T{5 + i}"] = c; sf[f"T{5 + i}"].fill = inp
+sf["V3"] = "Gamma by minimum chi-square (Bahnemann P2.16: 4.7432, 337.31)"; sf["V3"].font = bold
+sf["V4"] = ArrayFormula("V4:X12", '=PRO.SEV.FIT.GROUPED(S5:S11,T5:T10,"gamma","chi_square")')
+sf["V14"] = "Observed and expected per band"; sf["V14"].font = bold
+sf["V15"] = ArrayFormula("V15:Y21", '=PRO.SEV.FIT.GROUPED(S5:S11,T5:T10,"gamma","chi_square","table")')
+sf["S24"] = "Limited means (Bahnemann Ex 2.10: 1,500 claims under a 300,000 limit)"; sf["S24"].font = bold
+sf["S25"] = "Size"; sf["T25"] = "E[X; x]"
+for c in ("S25", "T25"):
     sf[c].font = bold
 x = [1000, 5000, 10000, 25000, 50000, 100000, 200000, 300000]
 below = [729, 1096, 1208, 1326, 1391, 1440, 1468, 1500]
 total = [225138, 1102272, 1918947, 3752091, 6007543, 9234739, 13100561, 22343455]
 for i, (v, b, t) in enumerate(zip(x, below, total)):
-    sf[f"P{26 + i}"] = v; sf[f"P{26 + i}"].fill = inp
-    sf[f"Q{26 + i}"] = f"=({t}+P{26 + i}*(1500-{b}))/1500"
-sf["S24"] = "Lognormal by minimum distance (6.9852, 2.5850)"; sf["S24"].font = bold
-sf["S25"] = ArrayFormula("S25:T28", '=PRO.SEV.FIT.LEV(P26:P33,Q26:Q33,"lognormal")')
-sf["S30"] = ArrayFormula("S30:U38", '=PRO.SEV.FIT.LEV(P26:P33,Q26:Q33,"lognormal",,"table")')
-for col in "ABCEFGHIJKLMPQSTUV":
+    sf[f"S{26 + i}"] = v; sf[f"S{26 + i}"].fill = inp
+    sf[f"T{26 + i}"] = f"=({t}+S{26 + i}*(1500-{b}))/1500"
+sf["V24"] = "Lognormal by minimum distance (6.9852, 2.5850)"; sf["V24"].font = bold
+sf["V25"] = ArrayFormula("V25:W28", '=PRO.SEV.FIT.LEV(S26:S33,T26:T33,"lognormal")')
+sf["V30"] = ArrayFormula("V30:X38", '=PRO.SEV.FIT.LEV(S26:S33,T26:T33,"lognormal",,"table")')
+for col in "ABCEFGHIJKLMNOPQSTVWXY":
     sf.column_dimensions[col].width = 14
 
 # Extreme value theory on 1,000 exact Burr quantiles (R ismev's test data).

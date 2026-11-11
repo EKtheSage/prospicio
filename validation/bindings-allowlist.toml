@@ -66,6 +66,8 @@
 
 [python.prospicio_math]
 "integrate::gauss_legendre" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
+"kolmogorov::kolmogorov_limit_sf" = "reached through goodness_of_fit's ks_p_value, Kolmogorov's limit for large samples (#805)"
+"kolmogorov::kolmogorov_sf" = "reached through goodness_of_fit's ks_p_value (#805)"
 "linalg::cholesky" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 "linalg::cholesky_inverse" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 "linalg::cholesky_solve" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
@@ -194,6 +196,7 @@
 "severity_fit::compare_fits" = "reached through fit_curves, whose columns are the compared fits in AIC order; each fit is fit_severity with t (#804)"
 "severity_fit::rank_by_aic" = "reached through fit_curves, whose columns come in AIC order (#804)"
 "severity_fit::thinned_rows" = "reached through fit_curves' points (#804)"
+"severity_fit::TailMoments" = "goodness_of_fit returns its mean and CV as tail_mean and tail_cv (#805)"
 "InputHasher" = "unbound on 2026-10-28 (seed); review"
 "LocalParetoApproximation" = "unbound on 2026-10-28 (seed); review"
 "TailRow" = "unbound on 2026-10-28 (seed); review"
@@ -322,6 +325,8 @@
 
 [r.prospicio_math]
 "integrate::gauss_legendre" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
+"kolmogorov::kolmogorov_limit_sf" = "reached through goodness_of_fit's ks_p_value, Kolmogorov's limit for large samples (#805)"
+"kolmogorov::kolmogorov_sf" = "reached through goodness_of_fit's ks_p_value (#805)"
 "linalg::cholesky" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 "linalg::cholesky_inverse" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 "linalg::cholesky_solve" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
@@ -472,6 +477,7 @@
 "severity_fit::compare_fits" = "reached through fit_curves, whose columns are the compared fits in AIC order; each fit is fit_severity with t (#804)"
 "severity_fit::rank_by_aic" = "reached through fit_curves, whose columns come in AIC order (#804)"
 "severity_fit::thinned_rows" = "reached through fit_curves' points (#804)"
+"severity_fit::TailMoments" = "goodness_of_fit returns its mean and CV as tail_mean and tail_cv (#805)"
 "InputHasher" = "unbound on 2026-10-28 (seed); review"
 "LocalParetoApproximation" = "unbound on 2026-10-28 (seed); review"
 "capital::Allocation" = "unbound on 2026-10-28 (seed); review"

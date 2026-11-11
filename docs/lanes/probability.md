@@ -7,4 +7,3 @@
 Finished items are in [done/probability.md](done/probability.md), which agents read when they need the lane's history; it is not imported into every session (#846).
 
 ## Next
-- #805 the Kolmogorov p-value, tail mean and tail CV on a severity fit's goodness of fit (Rust, Python, R; then the Excel lane's columns)
