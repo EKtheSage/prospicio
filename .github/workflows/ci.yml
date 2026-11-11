@@ -160,12 +160,14 @@ jobs:
   # suite's time is a dozen Bayesian and compartmental tests whose NUTS
   # chains already use every core through rayon: four xdist workers on one
   # runner made them three to five times slower (with one rayon thread each,
-  # or with the default), so they run serially on runners of their own,
-  # `slow-1` and `slow-2` (PY_SLOW_1, PY_SLOW_2), and the rest, `tests`, on
-  # four workers with one rayon thread each. `guides` runs the guides and
+  # or with the default), so they run serially with every thread, on
+  # runners of their own (`slow-1` and `slow-2`: PY_SLOW_1, PY_SLOW_2) or at
+  # the end of `tests` (PY_ALONE), whose other files run first on four
+  # workers with one rayon thread each. `guides` runs the guides and
   # notebooks one at a time, since each guide must finish within 30 s
-  # (test_guides.py). Each leg builds the package itself; on a push to main
-  # only the tests leg builds, to fill the cache the others read.
+  # (test_guides.py). The lists balance the legs at about four minutes of
+  # tests each (2026-11-11). Each leg builds the package itself; on a push
+  # to main only the tests leg builds, to fill the cache the others read.
   python:
     strategy:
       fail-fast: false
@@ -176,11 +178,13 @@ jobs:
     env:
       PY_SLOW_1: tests/test_reserving_compartmental.py
       PY_SLOW_2: >-
+        tests/test_reserving_hierarchical_bf.py
+        tests/test_reserving_compartmental_backtest.py
+      PY_ALONE: >-
         tests/test_reserving_compartmental_segments.py
         tests/test_reserving_compartmental_one_year_segments.py
-        tests/test_reserving_compartmental_backtest.py
         tests/test_reserving_pattern_draws.py
-        tests/test_reserving_hierarchical_bf.py
+        tests/test_boosting.py
     defaults:
       run:
         shell: bash
@@ -227,19 +231,20 @@ jobs:
       # tests: four workers (pytest-xdist), each file on one worker so its
       # module fixtures load once, one rayon thread per worker so four
       # workers do not start sixteen threads on four cores (no result
-      # depends on the thread count: one RNG stream per simulation); then the
-      # boosting tests alone, as LightGBM's and XGBoost's threads slow down
-      # beside other processes. The slowest tests' times in the log (#826).
+      # depends on the thread count: one RNG stream per simulation); then
+      # PY_ALONE serially, the NUTS fits and the boosting tests, whose
+      # LightGBM and XGBoost threads also slow down beside other processes.
+      # The slowest tests' times in the log (#826).
       - if: steps.plan.outputs.test == 'true'
         name: Run the ${{ matrix.part }} leg
         run: |
           durations="--durations=25 --durations-min=5"
           case "${{ matrix.part }}" in
             tests)
-              ignore="--ignore=tests/test_guides.py --ignore=tests/test_examples.py --ignore=tests/test_boosting.py"
-              for f in $PY_SLOW_1 $PY_SLOW_2; do ignore="$ignore --ignore=$f"; done
+              ignore="--ignore=tests/test_guides.py --ignore=tests/test_examples.py"
+              for f in $PY_SLOW_1 $PY_SLOW_2 $PY_ALONE; do ignore="$ignore --ignore=$f"; done
               RAYON_NUM_THREADS=1 uv run pytest tests -n 4 --dist loadfile $ignore $durations
-              uv run pytest tests/test_boosting.py $durations ;;
+              uv run pytest $PY_ALONE $durations ;;
             slow-1) uv run pytest $PY_SLOW_1 $durations ;;
             slow-2) uv run pytest $PY_SLOW_2 $durations ;;
             guides) uv run pytest tests/test_guides.py tests/test_examples.py $durations ;;
