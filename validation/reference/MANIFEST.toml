@@ -284,6 +284,12 @@ generators = ["r_evt_thresholds.R"]
 sha256 = "85adcdd2f2d1693f969188c1c8571e81fbf3755b339206ff4c5a158531b14708"
 
 [[file]]
+path = "explain_parity.csv"
+generators = ["r_explain_parity.R"]
+environment = "R version 4.3.3 (2024-02-29), ALEPlot 1.1"
+sha256 = "acbccd872fa385297223098d5ebedbd2eb82b72dbe122b52866bc5bdf39b7cb9"
+
+[[file]]
 path = "family_scores_scipy.csv"
 generators = ["scipy_family_scores.py"]
 sha256 = "cbefbeda899917a5ad1afcf8550a16c38a721d0126bb8e27546c15dea92eeaa2"
