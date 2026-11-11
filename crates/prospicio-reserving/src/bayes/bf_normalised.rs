@@ -3017,11 +3017,11 @@ mod tests {
         });
     }
 
-    /// PSIS-LOO bit for bit (#842), of a fit like `the_fit_is_pinned_on_linux`'s
-    /// with 1,000 draws (2 chains of 500), so that each Pareto tail's length, `min(S/5, 3 sqrt(S / r_eff))`, moves with the draws' relative efficiency: the elpd
-    /// with its standard error, the pointwise terms and each cell's Pareto k.
-    /// The Linux hash is still 0: CI's `bayes` job prints the value to pin
-    /// as `PIN BayesBfNormalised-loo actual 0x...`.
+    /// PSIS-LOO bit for bit (#842), of a fit like
+    /// `the_fit_is_pinned_on_linux`'s with 1,000 draws (2 chains of 500), so
+    /// that each Pareto tail's length, `min(S/5, 3 sqrt(S / r_eff))`, moves
+    /// with the draws' relative efficiency: the elpd with its standard error,
+    /// the pointwise terms and each cell's Pareto k.
     #[test]
     #[cfg_attr(
         not(feature = "slow-tests"),
@@ -3038,7 +3038,7 @@ mod tests {
             n_sims: 100,
             ..quick(841)
         };
-        crate::bayes::pins::check("BayesBfNormalised-loo", 0, || {
+        crate::bayes::pins::check("BayesBfNormalised-loo", 0x7a14_6150_3c78_f40d, || {
             let fit = model.fit(&genins(), "values", "premium").unwrap();
             crate::bayes::pins::loo_hash(&fit.loo().unwrap())
         });

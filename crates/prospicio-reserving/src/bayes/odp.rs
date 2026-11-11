@@ -2432,10 +2432,10 @@ mod tests {
 
     /// PSIS-LOO bit for bit (#842): the elpd with its standard error, the
     /// pointwise terms and each cell's Pareto k, of a fit like
-    /// `the_fit_is_pinned_on_linux`'s on GenIns (RAA has a negative
-    /// increment and no LOO) with 1,000 draws (2 chains of 500), so that each Pareto tail's length, `min(S/5, 3 sqrt(S / r_eff))`, moves with the draws' relative efficiency.
-    /// The Linux hash is still 0: CI's `bayes` job prints the value to pin
-    /// as `PIN BayesOdp-loo actual 0x...`.
+    /// `the_fit_is_pinned_on_linux`'s on GenIns (RAA has a negative increment
+    /// and no LOO) with 1,000 draws (2 chains of 500), so that each Pareto
+    /// tail's length, `min(S/5, 3 sqrt(S / r_eff))`, moves with the draws'
+    /// relative efficiency.
     #[test]
     #[cfg_attr(
         not(feature = "slow-tests"),
@@ -2453,7 +2453,7 @@ mod tests {
             seed: 841,
             ..BayesOdp::default()
         };
-        pins::check("BayesOdp-loo", 0, || {
+        pins::check("BayesOdp-loo", 0xd547_8127_8910_31a0, || {
             let fit = model.fit(&genins(), "values").unwrap();
             pins::loo_hash(&fit.loo().unwrap())
         });
