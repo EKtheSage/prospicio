@@ -323,9 +323,18 @@ jobs:
           for (p in pkgs) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
       - if: steps.plan.outputs.build == 'true'
         run: R CMD INSTALL R/prospicio
+      # The optional parity packages (#845): their blocks skip on pull
+      # requests, with a SKIP line each in the runner's summary, and run on
+      # the nightly and manual runs. install.packages() only warns on
+      # failure, so a package that does not build there is skipped too.
+      - if: steps.plan.outputs.test == 'true' && matrix.part == 'tests' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        run: >-
+          Rscript -e "r <- getOption('repos'); if (is.null(r) || r['CRAN'] %in% c('@CRAN@', NA)) { r['CRAN'] <- 'https://cloud.r-project.org'; options(repos = r) };
+          install.packages(c('actuar', 'glmnet', 'statmod', 'ChainLadder', 'dglm', 'posterior', 'loo'))"
       # validation/scripts/run_r_tests.py runs every file it is given,
-      # prints each one's time and result as it finishes (#826), and the log
-      # of every failed file at the end (#845).
+      # prints each one's time and result as it finishes (#826), and ends
+      # with the log of every failed file, the skipped optional-package
+      # blocks and the slowest files (#845).
       - name: Run the R ${{ matrix.part }} leg
         if: steps.plan.outputs.test == 'true'
         run: |

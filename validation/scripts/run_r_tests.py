@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """Run the R test files, several at a time, and report every failure (#849, #845).
 
-Each file of R/prospicio/tests/ is an independent `Rscript` process run
-from the repository root, so files can run side by side. This runner starts
+Each test file of R/prospicio/tests/ (`test-*.R`; `helper.R` is sourced by
+them) is an independent `Rscript` process run from the repository root, so
+files can run side by side. This runner starts
 up to `--jobs` of them at once, writes each file's output to a log of its
 own, prints the file, its time and PASS or FAIL as each one finishes, and at
 the end lists the slowest files, the lines of any file that start with
-`SKIP` (an optional package that was not installed), and the full log of
-every failed file. It exits non-zero if any file failed, after running all
+`SKIP` (an optional package that was not installed: `with_package()` in
+`R/prospicio/tests/helper.R`), and the full log of every failed file. It exits non-zero if any file failed, after running all
 of them.
 
     python3 validation/scripts/run_r_tests.py                  # every file, one per core
     python3 validation/scripts/run_r_tests.py --jobs 1         # one at a time
     python3 validation/scripts/run_r_tests.py --exclude test-guides.R
     python3 validation/scripts/run_r_tests.py test-guides.R    # named files only
+    python3 validation/scripts/run_r_tests.py reserving        # names containing "reserving"
     python3 validation/scripts/run_r_tests.py --alone test-boosting.R
     python3 validation/scripts/run_r_tests.py --self-test
 
@@ -56,12 +58,20 @@ def plan(names, tests=TESTS, exclude=(), first=(), alone=()):
     """The test files to run as (parallel, alone): the parallel batch in the
     order its files start, `first` (in the order given) then the rest by
     name, and the files of `alone` to run one at a time after it. `names`
-    empty means every file of `tests`. Unknown names are an error."""
-    every = sorted(p.name for p in tests.glob("*.R"))
-    errors = [f"no test file {n} in {tests}" for n in [*names, *exclude, *first, *alone] if n not in every]
+    are file names or fragments of them; empty means every file of `tests`.
+    A name that matches nothing is an error, as is an unknown name in the
+    other lists."""
+    every = sorted(p.name for p in tests.glob("test-*.R"))
+    errors = [f"no test file {n} in {tests}" for n in [*exclude, *first, *alone] if n not in every]
+    picked = []
+    for n in names:
+        hits = [n] if n in every else [f for f in every if n in f]
+        if not hits:
+            errors.append(f"no test file matches {n} in {tests}")
+        picked += [f for f in hits if f not in picked]
     if errors:
         raise SystemExit("\n".join(errors))
-    chosen = [n for n in (names or every) if n not in exclude]
+    chosen = [n for n in (picked or every) if n not in exclude]
     tail = [n for n in alone if n in chosen]
     head = [n for n in first if n in chosen and n not in tail]
     return head + [n for n in sorted(chosen) if n not in head and n not in tail], tail
@@ -111,12 +121,14 @@ def run(order, jobs, tests=TESTS, rscript=None, stream=sys.stdout, alone=()):
     say("\nThe slowest R test files:")
     for name, _, secs, _ in sorted(results, key=lambda r: -r[2])[:10]:
         say(f"{secs:6.0f} s  {name}")
-    skips = [
-        f"{name}: {line.strip()}"
-        for name, _, _, text in sorted(results)
+    # with_package() names its file on the SKIP line; a line printed
+    # twice (a package checked in two blocks) is listed once.
+    skips = list(dict.fromkeys(
+        line.strip()
+        for _, _, _, text in sorted(results)
         for line in text.splitlines()
         if line.startswith("SKIP")
-    ]
+    ))
     if skips:
         say(f"\n{len(skips)} skipped:")
         for s in skips:
@@ -129,6 +141,8 @@ def run(order, jobs, tests=TESTS, rscript=None, stream=sys.stdout, alone=()):
         say(f"\n{len(failed)} of {len(results)} R test files failed: {', '.join(failed)}")
     else:
         say(f"\nAll {len(results)} R test files passed.")
+    if not skips:
+        say("No block was skipped.")
     return failed
 
 
@@ -137,12 +151,13 @@ def self_test():
 
     with tempfile.TemporaryDirectory() as tmp:
         tests = pathlib.Path(tmp)
-        for name in ["test-a.R", "test-b.R", "test-c.R", "test-d.R"]:
+        for name in ["test-a.R", "test-b.R", "test-c.R", "test-d.R", "helper.R"]:
             (tests / name).write_text("")
         assert plan([], tests) == (["test-a.R", "test-b.R", "test-c.R", "test-d.R"], [])
         assert plan([], tests, exclude=["test-b.R"], first=["test-d.R", "test-b.R"]) == (
             ["test-d.R", "test-a.R", "test-c.R"], [])
         assert plan(["test-c.R", "test-a.R"], tests) == (["test-a.R", "test-c.R"], [])
+        assert plan(["-b", "c."], tests) == (["test-b.R", "test-c.R"], [])
         assert plan([], tests, first=["test-c.R"], alone=["test-c.R", "test-a.R"]) == (
             ["test-b.R", "test-d.R"], ["test-c.R", "test-a.R"])
         assert plan(["test-b.R"], tests, alone=["test-a.R"]) == (["test-b.R"], [])
@@ -157,7 +172,7 @@ def self_test():
             "import sys\n"
             "text = open(sys.argv[1]).read()\n"
             "import os\n"
-            "print('SKIP actuar not installed' if 'skip' in text else 'ok')\n"
+            "print('SKIP test-c.R: package actuar is not installed\\n' * 2 if 'skip' in text else 'ok')\n"
             "print('threads', os.environ.get('RAYON_NUM_THREADS'))\n"
             "sys.exit(1 if 'boom' in text else 0)\n"
         )
@@ -182,7 +197,7 @@ def self_test():
         assert failed == ["test-b.R", "test-d.R"], failed
         assert "PASS test-a.R" in text and "FAIL test-b.R" in text, text
         assert "===== test-b.R (exit 1) =====" in text and "===== test-d.R (exit 1) =====" in text, text
-        assert "test-c.R: SKIP actuar not installed" in text, text
+        assert "1 skipped:\n  SKIP test-c.R: package actuar is not installed\n" in text, text
         assert "2 of 4 R test files failed: test-b.R, test-d.R" in text, text
     print("run_r_tests self-test passed")
 

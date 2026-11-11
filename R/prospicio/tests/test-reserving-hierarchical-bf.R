@@ -212,15 +212,19 @@ expect_error_like(go(unname(by_name)), "needs a name")
 expect_error_like(go(setNames(by_name[1:2], c("a", ""))), "needs a name")
 expect_error_like(go(setNames(by_name[1:2], c("a", "a"))), "used twice")
 expect_error_like(go(list(a = by_name$a, b = 3)), "program b is not a triangle")
-expect_error_like(go(list(x = tri, b = by_name$b)), "program x has 3 segments")
-expect_error_like(go(by_name, "missing"), "program a has no column missing")
+expect_error_like(go(list(x = tri, b = by_name$b)), 'program "x" has 3 segments')
+expect_error_like(go(by_name, "missing"), 'program "a" has no column "missing"')
 quarterly <- triangle(data.frame(year = 2022, age = c(3, 6), paid = c(1, 2), premium = 9),
                       "year", "age", c("paid", "premium"), origin_grain = "Q",
                       development_grain = "Q")
-expect_error_like(go(list(a = by_name$a, q = quarterly)), "program q differs")
+expect_error_like(go(list(a = by_name$a, q = quarterly)), 'program "q" differs')
 incremental <- triangle(data.frame(year = 2022, age = c(12, 24), paid = c(1, 2), premium = 9),
                         "year", "age", c("paid", "premium"), cumulative = FALSE)
-expect_error_like(go(list(a = by_name$a, i = incremental)), "program i differs")
+expect_error_like(go(list(a = by_name$a, i = incremental)), 'program "i" differs')
+# A column named program clashes with the stacked key, in R and Python (#838).
+with_program <- triangle(data.frame(year = 2022, age = c(12, 24), paid = c(1, 2), premium = 9,
+                                    program = 1), "year", "age", c("paid", "premium", "program"))
+expect_error_like(go(list(a = with_program, b = by_name$b), "program"), "clashes with the key")
 
 # The one-year view, bayes_hierarchical_bf_one_year(): one view over the
 # stacked programs. A few simulations with the reweighting only (the refits of

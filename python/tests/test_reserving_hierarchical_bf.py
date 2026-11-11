@@ -310,6 +310,9 @@ def test_named_triangle_errors():
         fit({"x": panel(), "b": one["b"]})
     with pytest.raises(ValueError, match='program "a" has no column "missing"'):
         fit(one, column="missing")
+    # A column named program clashes with the stacked key, as in R (#838).
+    with pytest.raises(ValueError, match="clashes with the key"):
+        fit(one, column="program")
     quarterly = Triangle.from_long(
         [2022, 2022], [3, 6], {"paid": [1.0, 2.0], "premium": [9.0, 9.0]},
         origin_grain="Q", development_grain="Q",

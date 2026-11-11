@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # The Munich chain ladder (Quarg and Mack 2004; docs/design/reserving-v02.md,
 # decision 33). The Rust core is checked against R ChainLadder and
@@ -68,7 +69,7 @@ lt <- munich_chain_ladder(mcl, sigma_interpolation_paid = "mack",
 near(lt@ultimate_paid, want("mack;tail=log-linear", "ultimate_paid"))
 
 # Against R ChainLadder itself, when it is installed.
-if (requireNamespace("ChainLadder", quietly = TRUE)) {
+if (with_package("ChainLadder")) {
   r <- suppressWarnings(ChainLadder::MunichChainLadder(
     ChainLadder::MCLpaid, ChainLadder::MCLincurred, est.sigmaP = "Mack", est.sigmaI = "Mack"))
   near(m@ultimate_paid, r$MCLPaid[, 7])
@@ -88,7 +89,7 @@ z <- munich_chain_ladder(triangle(flat, "origin", "development", c("paid", "incu
 stopifnot(identical(z@n_residuals_paid, 20L), identical(z@n_residuals_incurred, 18L))
 near(z@lambda_paid, 0.636021466425142)
 near(z@lambda_incurred, 0.413992067837447)
-if (requireNamespace("ChainLadder", quietly = TRUE)) {
+if (with_package("ChainLadder")) {
   i <- ChainLadder::MCLincurred
   i[1, 6] <- i[1, 5]
   i[2, 6] <- i[2, 5]
