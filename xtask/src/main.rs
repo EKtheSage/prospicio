@@ -563,17 +563,13 @@ fn r(opts: Options) -> Result {
     rscript(&root, r#"roxygen2::roxygenise("R/prospicio")"#)?;
     r_install_with_wrappers(&root)?;
     if opts.tests {
+        // The runner CI's r job uses: every file, one per core, each failure
+        // reported (#849, #845).
         step("r: test");
-        let tests = root.join("R/prospicio/tests");
-        let mut files: Vec<PathBuf> = std::fs::read_dir(&tests)
-            .map_err(|e| format!("cannot read {}: {e}", tests.display()))?
-            .filter_map(|entry| entry.ok().map(|e| e.path()))
-            .filter(|path| path.extension().is_some_and(|ext| ext == "R"))
-            .collect();
-        files.sort();
-        for file in files {
-            run(Command::new("Rscript").arg(&file).current_dir(&root))?;
-        }
+        let python = if cfg!(windows) { "python" } else { "python3" };
+        run(Command::new(python)
+            .arg("validation/scripts/run_r_tests.py")
+            .current_dir(&root))?;
     }
     r_doc_check(&root)?;
     step("r: stage the R guides and examples as articles");

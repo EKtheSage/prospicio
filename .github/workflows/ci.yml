@@ -73,6 +73,11 @@ jobs:
   # (DOCS_ONLY, except the Excel add-in and xtask, which are Rust; #827).
   rust:
     runs-on: ubuntu-latest
+    # Line tables only in the test binaries (#851): panics still name the
+    # file and line, and there is less debug information to write and link.
+    # Local builds keep full debug information (Cargo.toml's dev profile).
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@v4
         with:
@@ -151,11 +156,17 @@ jobs:
       - if: steps.changes.outputs.run == 'true'
         run: cargo check --workspace --exclude prospicio-r --all-targets --features prospicio-validation/slow-bayes,prospicio-reserving/io,prospicio-prob/arrow
 
+  # Two legs (#850): `tests`, the binding tests on four workers (#848), and
+  # `guides`, the guides and notebooks one at a time, since each guide must
+  # finish within 30 s (test_guides.py) and so must not share the cores.
+  # Each leg builds the package itself; on a push to main only the tests
+  # leg builds, to fill the cache both legs read.
   python:
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
+        part: [tests, guides]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -190,26 +201,44 @@ jobs:
           run=${{ steps.changes.outputs.run }}
           push=${{ github.event_name == 'push' }}
           hit=${{ steps.cache.outputs.cache-hit == 'true' }}
-          echo "build=$([ "$run" = true ] && ! { [ "$push" = true ] && [ "$hit" = true ]; } && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          tests=${{ matrix.part == 'tests' }}
+          echo "build=$([ "$run" = true ] && ! { [ "$push" = true ] && { [ "$hit" = true ] || [ "$tests" = false ]; }; } && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "test=$([ "$run" = true ] && [ "$push" = false ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - if: steps.plan.outputs.build == 'true'
         uses: astral-sh/setup-uv@v6
-      - if: steps.plan.outputs.build == 'true'
+      - if: steps.plan.outputs.build == 'true' && matrix.part == 'tests'
         run: cargo clippy -p prospicio-python -- -D warnings
       - if: steps.plan.outputs.build == 'true'
         run: uv sync
         working-directory: python
-      # The slowest tests' times in the log, so a slowdown can be traced to
-      # them (#826).
-      - if: steps.plan.outputs.test == 'true'
-        run: uv run pytest tests --durations=25 --durations-min=5
+      # Four workers (pytest-xdist), each test file on one worker so its
+      # module fixtures load once (#848). One rayon thread per worker, so
+      # four workers do not start sixteen threads on four cores; no result
+      # depends on the thread count (one RNG stream per simulation). The
+      # slowest tests' times in the log, so a slowdown can be traced to them
+      # (#826).
+      - if: steps.plan.outputs.test == 'true' && matrix.part == 'tests'
+        name: Run the binding tests on four workers
+        env:
+          RAYON_NUM_THREADS: "1"
+        run: >-
+          uv run pytest tests -n 4 --dist loadfile
+          --ignore=tests/test_guides.py --ignore=tests/test_examples.py
+          --durations=25 --durations-min=5
+        working-directory: python
+      - if: steps.plan.outputs.test == 'true' && matrix.part == 'guides'
+        name: Run the guides and notebooks
+        run: uv run pytest tests/test_guides.py tests/test_examples.py --durations=25 --durations-min=5
         working-directory: python
 
+  # The same two legs as the python job (#850): `tests`, every file but
+  # the guides, four at a time (#849), and `guides`, tests/test-guides.R.
   r:
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
+        part: [tests, guides]
     runs-on: ${{ matrix.os }}
     # PowerShell (the Windows default) aliases `R` to Invoke-History.
     defaults:
@@ -246,14 +275,15 @@ jobs:
           run=${{ steps.changes.outputs.run }}
           push=${{ github.event_name == 'push' }}
           hit=${{ steps.cache.outputs.cache-hit == 'true' }}
-          echo "build=$([ "$run" = true ] && ! { [ "$push" = true ] && [ "$hit" = true ]; } && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          tests=${{ matrix.part == 'tests' }}
+          echo "build=$([ "$run" = true ] && ! { [ "$push" = true ] && { [ "$hit" = true ] || [ "$tests" = false ]; }; } && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "test=$([ "$run" = true ] && [ "$push" = false ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - if: steps.plan.outputs.build == 'true'
         uses: r-lib/actions/setup-r@v2  # installs Rtools on Windows
         with:
           # Binary packages: lightgbm and xgboost take minutes to compile.
           use-public-rspm: true
-      - if: steps.plan.outputs.build == 'true'
+      - if: steps.plan.outputs.build == 'true' && matrix.part == 'tests'
         run: cargo clippy -p prospicio-r -- -D warnings
       # lightgbm and xgboost are optional engines for booster_fit(). The
       # boosting tests skip a missing engine and install.packages() only
@@ -268,20 +298,24 @@ jobs:
           for (p in pkgs) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
       - if: steps.plan.outputs.build == 'true'
         run: R CMD INSTALL R/prospicio
-      - name: Run the R tests
-        if: steps.plan.outputs.test == 'true'
-        # Each file's time in the log (#826), the slowest listed at the end.
-        run: |
-          times=""
-          for f in R/prospicio/tests/*.R; do
-            start=$(date +%s)
-            Rscript "$f" || exit 1
-            secs=$(( $(date +%s) - start ))
-            echo "$f: ${secs} s"
-            times="$times$secs $f"$'\n'
-          done
-          echo "The slowest R test files:"
-          printf '%s' "$times" | sort -rn | head -10
+      # validation/scripts/run_r_tests.py runs every file, prints each one's
+      # time and result as it finishes (#826), and the log of every failed
+      # file at the end (#845). The slowest files start first, so the
+      # longest does not start last.
+      - name: Run the R tests four at a time
+        if: steps.plan.outputs.test == 'true' && matrix.part == 'tests'
+        env:
+          RAYON_NUM_THREADS: "1"
+        run: >-
+          "$([ "$RUNNER_OS" = Windows ] && echo python || echo python3)" validation/scripts/run_r_tests.py --jobs 4
+          --exclude test-guides.R
+          --first test-reserving-compartmental.R
+          --first test-reserving-compartmental-segments.R
+          --first test-reserving-pattern-draws.R
+      - name: Run the R guides
+        if: steps.plan.outputs.test == 'true' && matrix.part == 'guides'
+        run: >-
+          "$([ "$RUNNER_OS" = Windows ] && echo python || echo python3)" validation/scripts/run_r_tests.py --jobs 1 test-guides.R
       # remotes::install_github(subdir = "R/prospicio") and r-universe build
       # a tarball of R/prospicio alone, which carries its Rust sources only
       # because pkgbuild runs bootstrap.R first. Install from such a tarball,
@@ -291,7 +325,7 @@ jobs:
       # package's build inputs change; the nightly run always does.
       - name: Check whether the R build inputs changed
         id: rbuild
-        if: steps.plan.outputs.test == 'true'
+        if: steps.plan.outputs.test == 'true' && matrix.part == 'tests'
         run: |
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
