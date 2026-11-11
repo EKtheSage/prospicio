@@ -746,6 +746,11 @@ generators = ["aggregate_ruin.py"]
 sha256 = "541bfef0b044e274c1c4418e0b124aa301eb0ad3dfe75e417fd84852736d5141"
 
 [[file]]
+path = "severity_fits_scipy.csv"
+generators = ["scipy_severity_fits.py"]
+sha256 = "3473d9b0ffe75b5c8bb532299f67c925c402378ebfb7d61f41736533f123d047"
+
+[[file]]
 path = "severity_mpmath.csv"
 generators = ["mpmath_severity.py"]
 sha256 = "1c86b24ba4a001de3610db3954d4c4d05dfd47a7edfa332573b94dd3e04a7f63"
