@@ -1,4 +1,5 @@
 library(prospicio)
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 near <- function(a, b, rel = 1e-10) {
   if (!all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
@@ -75,7 +76,7 @@ pf <- elastic_net_fit(y ~ x1 + x2 + x3, e, family = "gaussian", lambda = en@lamb
 stopifnot(coef(pf, lambda = en@lambda[2])[["x3"]] != 0)
 pd <- predict_distribution(zero, e[1:3, ], n_sims = 100, seed = 1)
 stopifnot(S7::S7_inherits(pd, predictive_distribution), is.finite(mean(pd)))
-if (requireNamespace("glmnet", quietly = TRUE)) {
+if (with_package("glmnet")) {
   x <- as.matrix(e[, c("x1", "x2", "x3")])
   gp <- glmnet::glmnet(x, e$claims <- rpois(60, exp(0.2 * e$x1)), family = "poisson",
                        alpha = 1, lambda = c(0.2, 0.05), thresh = 1e-20)
@@ -97,12 +98,19 @@ r <- random_search(4, function() 10^stats::runif(1, -3, 0), e, folds, function(l
   elastic_net_fit(y ~ x1 + x2 + x3, train, family = "gaussian", lambda = lam)
 }, mse, seed = 1)
 stopifnot(nrow(r) == 4)
+# A seeded search leaves the caller's random state as it was (#838).
+set.seed(99)
+before <- .Random.seed
+invisible(random_search(2, function() stats::runif(1), e, folds, function(lam, train) {
+  elastic_net_fit(y ~ x1 + x2 + x3, train, family = "gaussian", lambda = lam)
+}, mse, seed = 1))
+stopifnot(identical(.Random.seed, before))
 fid <- (seq_len(nrow(e)) - 1) %% 5 + 1
 ecv <- elastic_net_cv(y ~ x1 + x2 + x3, e, family = "gaussian", nlambda = 15,
                       lambda_min_ratio = 1e-3, foldid = fid)
 stopifnot(ecv$lambda_1se >= ecv$lambda_min, length(ecv$mean) == 15,
           S7::S7_inherits(ecv$fit, elastic_net_model))
-if (requireNamespace("glmnet", quietly = TRUE)) {
+if (with_package("glmnet")) {
   gcv <- glmnet::cv.glmnet(as.matrix(e[, c("x1", "x2", "x3")]), e$y, lambda = ecv$lambda,
                            foldid = fid, thresh = 1e-20, type.measure = "deviance")
   near(ecv$mean, gcv$cvm, 1e-7)
@@ -159,7 +167,7 @@ stopifnot(identical(time_ordered(c(0, 1, 2, 1, 2, 2), 1)[[1]]$test, c(3, 5, 6)))
 set.seed(1)
 dg <- mcmc_diagnostics(matrix(rnorm(4000), ncol = 4))
 stopifnot(dg[["rhat"]] < 1.01, dg[["ess_bulk"]] > 2000)
-if (requireNamespace("posterior", quietly = TRUE)) {
+if (with_package("posterior")) {
   x <- matrix(rnorm(2000), ncol = 4)
   near(mcmc_diagnostics(x)[["ess_bulk"]], posterior::ess_bulk(x), 1e-10)
 }
@@ -183,7 +191,7 @@ lo <- elpd_loo(lle)
 wa <- elpd_waic(lle)
 stopifnot(which.max(lo$pareto_k) == 21, length(lo$pointwise) == 21)
 near(lo$estimates[["ic"]], -2 * lo$estimates[["elpd"]], 1e-12)
-if (requireNamespace("loo", quietly = TRUE)) {
+if (with_package("loo")) {
   ref <- loo::loo(lle, r_eff = rep(1, 21))
   near(lo$estimates[["elpd"]], ref$estimates["elpd_loo", "Estimate"], 1e-9)
   near(lo$pareto_k, ref$diagnostics$pareto_k, 1e-6)
@@ -555,7 +563,7 @@ dd <- dglm_fit(severity ~ x + urban, ~ urban, sim, family = "gamma", link = "log
 for (nm in names(dd@dispersion_coefficients)) {
   dnear(dd@dispersion_coefficients[[nm]], dwant("gamma_doffset", "ml", "dcoef", nm), 1e-8)
 }
-if (requireNamespace("dglm", quietly = TRUE)) {
+if (with_package("dglm")) {
   live <- dglm::dglm(count ~ x + urban, ~ urban, family = stats::poisson, data = sim,
                      method = "ml", control = dglm::dglm.control(epsilon = 1e-14, maxit = 1000))
   ours <- dglm_fit(count ~ x + urban, ~ urban, sim, family = "poisson", method = "ml")
@@ -737,7 +745,7 @@ msum <- draws_summary(mcmc_draws(arr))
 for (i in which(mref$quantity %in% c("rhat", "ess_bulk", "ess_tail"))) {
   near(msum[[mref$quantity[i]]][msum$variable == mref$variable[i]], mref$expected[i], 1e-10)
 }
-if (requireNamespace("posterior", quietly = TRUE)) {
+if (with_package("posterior")) {
   pd <- posterior::as_draws_array(arr)
   near(draws_summary(pd)$ess_bulk, posterior::summarise_draws(pd, "ess_bulk")$ess_bulk, 1e-10)
   near(draws_summary(posterior::as_draws_df(pd))$rhat,
@@ -966,7 +974,32 @@ cv <- ice(explain_model, xf, "x3", c(-1, 0, 1, 2))
 pdv <- partial_dependence(explain_model, xf, "x3", c(-1, 0, 1, 2))
 znear(cv$mean, pdv$mean, 1e-12)
 stopifnot(all(ice(explain_model, xf, "x3", c(-1, 2), center = TRUE)$curves[, 1] == 0))
-if (requireNamespace("lightgbm", quietly = TRUE)) {
+# #837, step 1: ALE (ALEPlot 1.1), partial dependence and ICE on the frame
+# and reference Python's test reads too (validation/scripts/r_explain_parity.R).
+# h's distance matrix has a negative eigenvalue, so its order checks the
+# classical scaling.
+ff <- utils::read.csv(file.path(root, "data", "explain_factor_frame.csv"))
+factor_model <- structure(list(), class = "explain_g")
+predict.explain_g <- function(object, newdata, ...) {
+  h <- as.character(newdata$h)
+  z <- as.character(newdata$z)
+  0.5 * newdata$x + c(p = 0, q = 0.4, r = -0.2, s = 0.9, t = 0.3)[h] +
+    c(u = 0, v = 0.2, w = -0.1, y = 0.5)[z] + 0.3 * newdata$x * (h == "s")
+}
+pref <- utils::read.csv(file.path(root, "reference", "explain_parity.csv"), comment.char = "#",
+                        colClasses = c(value = "character"))
+pwant <- function(tool, feature) pref[pref$tool == tool & pref$feature == feature, ]
+a <- ale(factor_model, ff, "h")
+stopifnot(identical(a$value, pwant("ale", "h")$value), identical(a$value, c("p", "q", "s", "t", "r")))
+znear(a$effect, pwant("ale", "h")$expected, 1e-10, 1e-12)
+a <- ale(factor_model, ff, "x", bins = 10)
+znear(as.double(a$value), as.double(pwant("ale", "x")$value), 1e-12)
+znear(a$effect, pwant("ale", "x")$expected, 1e-10, 1e-12)
+pgrid <- c(-0.5, 0, 0.5, 1)
+znear(partial_dependence(factor_model, ff, "x", pgrid)$mean, pwant("pd", "x")$expected, 1e-12)
+pc <- ice(factor_model, ff, "x", pgrid)
+for (r in c(1, 37, 81)) znear(unname(pc$curves[r, ]), pwant(paste0("ice_row", r), "x")$expected, 1e-12, 1e-15)
+if (with_package("lightgbm")) {
   bd <- data.frame(x = (1:400) / 400, z = ((1:400) * 37 %% 101) / 101)
   bd$y <- as.double(((1:400) * 13) %% 7 < 2 + 3 * bd$x)
   bm <- booster_fit(y ~ x + z, bd, family = "poisson", n_rounds = 30)

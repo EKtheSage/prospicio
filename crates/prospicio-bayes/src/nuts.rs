@@ -672,11 +672,8 @@ where
 }
 
 fn quantile_sorted(sorted: &[f64], prob: f64) -> f64 {
-    // Linear interpolation (R's type 7).
-    let h = (sorted.len() - 1) as f64 * prob;
-    let lo = h.floor() as usize;
-    let hi = (lo + 1).min(sorted.len() - 1);
-    sorted[lo] + (h - lo as f64) * (sorted[hi] - sorted[lo])
+    // Linear interpolation (R's type 7), the workspace's one copy (#843).
+    prospicio_prob::risk::var_linear_sorted(sorted, prob).unwrap_or(f64::NAN)
 }
 
 #[cfg(test)]

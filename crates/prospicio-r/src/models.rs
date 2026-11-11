@@ -2834,10 +2834,10 @@ fn zero_fit_design(
     use prospicio_glm::zero::{CountDistribution, Hurdle, ZeroInflated};
     let count = match dist {
         "poisson" => CountDistribution::Poisson,
-        "negbin" => CountDistribution::NegativeBinomial,
+        "negbin" | "negative_binomial" => CountDistribution::NegativeBinomial,
         other => {
             return Err(Error::Other(format!(
-                "dist must be poisson or negbin, got {other}"
+                "dist must be poisson or negbin (or negative_binomial), got {other}"
             )));
         }
     };

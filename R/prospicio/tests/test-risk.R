@@ -271,6 +271,11 @@ for (k in list(c(7, 353.8), c(13, 353.6), c(19, 352.9))) {
   stopifnot(abs(worst_var(ra_m, 0.99, n = 40, rotate = k[1])$value - k[2]) < 0.05)
 }
 stopifnot(rearrange(cbind(1:4, 1:4))$value == 5)
+# The core checks p and n (#838).
+for (bad in list(list(p = 1, n = 40), list(p = 0.99, n = 0))) {
+  msg <- tryCatch({ worst_var(ra_m, bad$p, n = bad$n); "" }, error = conditionMessage)
+  stopifnot(grepl("must be", msg))
+}
 
 
 # A results table's statistics: R's quantile(type = 7) and the integral of

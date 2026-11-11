@@ -74,10 +74,8 @@ impl Statistic {
             Statistic::Quantile(p) => {
                 let mut v = x.to_vec();
                 v.sort_by(f64::total_cmp);
-                let h = (v.len() - 1) as f64 * p;
-                let lo = h.floor() as usize;
-                let hi = (lo + 1).min(v.len() - 1);
-                v[lo] + (h - lo as f64) * (v[hi] - v[lo])
+                // The workspace's one type 7 quantile (#843).
+                prospicio_prob::risk::var_linear_sorted(&v, *p).unwrap_or(f64::NAN)
             }
             Statistic::ProportionZero => x.iter().filter(|&&v| v == 0.0).count() as f64 / n,
         }

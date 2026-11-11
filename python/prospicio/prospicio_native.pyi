@@ -37151,6 +37151,35 @@ def cumulative_loss_ratio(loss_ratios: Sequence[float |None], premiums: Sequence
     [0.5, 0.725, 0.725]
     """
 
+def day_hour_times(days: Sequence[float |None], hours: Sequence[float |None] |None = None) -> list[float]:
+    """
+    Each row's time of loss from its day of the year (1 to 365) and hour of
+    the day (0 to 24), ``((day - 1) * 24 + hour) / 8760``, the rule
+    ``read_ylt(day=, hour=)`` applies (#838). A day or hour that is
+    ``None`` or NaN is an error naming the row.
+    
+    Parameters
+    ----------
+    days : sequence of float
+    hours : sequence of float, optional
+        The start of the day without it.
+    
+    Returns
+    -------
+    list of float
+    
+    Raises
+    ------
+    ValueError
+        On a missing, non-numeric or out-of-range day or hour, naming the row.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import day_hour_times
+    >>> day_hour_times([1, 365], [0, 24])
+    [0.0, 1.0]
+    """
+
 def deal_ave(actual: Sequence[float], terms: CashflowTerms, u: Sequence[float], *, paid_patterns: Sequence[Sequence[float]] |None = None, pattern_index: Sequence[int] |None = None, levels: Sequence[float] |None = None) -> dict:
     """
     The actual cumulative paid at the end of each month ``0, 1, ...``

@@ -120,6 +120,7 @@ reference:
       - hawkes_fit
       - event_set_from_long
       - read_ylt
+      - day_hour_times
       - event_loss_table
       - merge_event_sets
       - permute_events
