@@ -111,6 +111,8 @@ crps_rust <- function(draws, y) .Call(wrap__crps_rust, draws, y)
 
 cumulative_loss_ratio_rust <- function(loss_ratios, premiums) .Call(wrap__cumulative_loss_ratio_rust, loss_ratios, premiums)
 
+day_hour_times_rust <- function(days, hours) .Call(wrap__day_hour_times_rust, days, hours)
+
 dglm_fit_design <- function(x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method) .Call(wrap__dglm_fit_design, x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method)
 
 disposal_rust <- function(triangle, closed_counts, paid, ultimate, disposal_rates, severities, tail_severity_from, trend, base, factors) .Call(wrap__disposal_rust, triangle, closed_counts, paid, ultimate, disposal_rates, severities, tail_severity_from, trend, base, factors)
