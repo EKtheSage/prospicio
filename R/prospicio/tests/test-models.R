@@ -97,6 +97,13 @@ r <- random_search(4, function() 10^stats::runif(1, -3, 0), e, folds, function(l
   elastic_net_fit(y ~ x1 + x2 + x3, train, family = "gaussian", lambda = lam)
 }, mse, seed = 1)
 stopifnot(nrow(r) == 4)
+# A seeded search leaves the caller's random state as it was (#838).
+set.seed(99)
+before <- .Random.seed
+invisible(random_search(2, function() stats::runif(1), e, folds, function(lam, train) {
+  elastic_net_fit(y ~ x1 + x2 + x3, train, family = "gaussian", lambda = lam)
+}, mse, seed = 1))
+stopifnot(identical(.Random.seed, before))
 fid <- (seq_len(nrow(e)) - 1) %% 5 + 1
 ecv <- elastic_net_cv(y ~ x1 + x2 + x3, e, family = "gaussian", nlambda = 15,
                       lambda_min_ratio = 1e-3, foldid = fid)

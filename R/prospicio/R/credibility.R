@@ -33,7 +33,8 @@ credibility_standard <- function(p = 0.90, k = 0.05, cv = 0) {
 #' @rdname credibility_standard
 #' @export
 limited_fluctuation_credibility <- function(n, standard) {
-  pmin(1, sqrt(pmax(as.double(n), 0) / as.double(standard)))
+  # The core's square root rule (#838): a NaN n gives 0, as in Python.
+  rust_result(partial_credibility_rust(as.double(n), as.double(standard)))
 }
 
 #' Bühlmann–Straub credibility
@@ -166,8 +167,12 @@ hachemeister_fit <- S7::new_class(
 
 S7::method(predict, hachemeister_fit) <- function(object, newdata, ...) {
   x <- stats::model.matrix(object@terms, stats::model.frame(object@terms, newdata))
-  p <- x %*% t(object@coefficients)
-  dimnames(p) <- list(NULL, rownames(object@coefficients))
+  # The core's HachemeisterFit::predict (#838).
+  b <- object@coefficients
+  p <- matrix(rust_result(hachemeister_predict_rust(as.double(b), as.double(nrow(b)),
+                                                    as.double(x), as.double(nrow(x)))),
+              nrow = nrow(x))
+  dimnames(p) <- list(NULL, rownames(b))
   p
 }
 
