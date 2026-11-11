@@ -20,6 +20,25 @@ rust_result <- function(x, call = sys.call(-1)) {
   x
 }
 
+# The other spellings Python and Excel accept for an option (#834), mapped
+# to the name R uses, so that the three front ends take the same names.
+# `aliases` maps each other spelling to the canonical one; anything else,
+# including match.arg()'s default vector, is returned as it is.
+option_alias <- function(x, aliases) {
+  if (is.character(x) && length(x) == 1 && !is.na(x) && x %in% names(aliases)) {
+    return(aliases[[x]])
+  }
+  x
+}
+
+# Log-linear in its three spellings (#834).
+log_linear_aliases <- c("loglinear" = "log-linear", "log_linear" = "log-linear")
+
+# A selected pattern's kind in Excel's spellings (#834).
+pattern_kind_aliases <- c("percent" = "percent_developed",
+                          "percent developed" = "percent_developed",
+                          "age-to-age" = "ldf", "age-to-ultimate" = "cdf")
+
 #' Abstract parent of every distribution class
 #'
 #' `distribution` cannot be instantiated. Test membership with
@@ -1078,7 +1097,8 @@ mixed_poisson_count <- function(mean, cv,
                                 mixing = c("gamma", "inverse_gaussian", "beta", "sichel",
                                            "sichel_gamma", "sichel_ig"),
                                 shift = 0, max = NULL, shape = NULL, skewness = NULL, f = NULL) {
-  mixing <- match.arg(mixing)
+  mixing <- match.arg(option_alias(mixing, c("ig" = "inverse_gaussian")),
+                      c("gamma", "inverse_gaussian", "beta", "sichel", "sichel_gamma", "sichel_ig"))
   need <- function(v, name) {
     if (is.null(v)) stop(sprintf("mixing \"%s\" needs %s", mixing, name), call. = FALSE)
     as.double(v)

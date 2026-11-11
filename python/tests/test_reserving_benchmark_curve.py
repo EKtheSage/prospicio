@@ -113,7 +113,7 @@ def test_errors():
     with pytest.raises(ValueError, match="no level"):
         BenchmarkCurve().fit(BENCH, kind="ldf")
     with pytest.raises(ValueError, match="kind"):
-        BenchmarkCurve().fit(BENCH, kind="percent")
+        BenchmarkCurve().fit(BENCH, kind="percentage")
     with pytest.raises(ValueError, match="unknown growth curve"):
         BenchmarkCurve(curve="gompertz")
     with pytest.raises(ValueError, match="not an age of the pattern"):
