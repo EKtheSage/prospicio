@@ -28,27 +28,22 @@ fn family(name: &str, r0_arg: &Grid) -> Result<Family> {
             ))
         }
     };
-    match name
-        .trim()
-        .to_ascii_lowercase()
-        .replace([' ', '-'], "_")
-        .as_str()
-    {
-        "ccoc" => none(Family::Ccoc),
-        "ph" | "proportional_hazard" => none(Family::ProportionalHazard),
-        "wang" => none(Family::Wang),
-        "tsallis" => none(Family::Tsallis),
-        "dual" | "dual_power" => none(Family::DualPower),
-        "tvar" => none(Family::Tvar),
-        "exp" | "exponential" => none(Family::Exponential),
-        "clin" | "capped_linear" => Ok(Family::CappedLinear { r0: r0()? }),
-        "cll" | "capped_log_linear" => Ok(Family::CappedLogLinear { r0: r0()? }),
-        "lep" => Ok(Family::Lep { r0: r0()? }),
-        "ly" | "linear_yield" => Ok(Family::LinearYield { r0: r0()? }),
-        "bitvar" | "beta" | "wtdtvar" | "weighted_tvar" => Err(format!(
+    let key = name.trim().to_ascii_lowercase().replace([' ', '-'], "_");
+    if matches!(
+        key.as_str(),
+        "bitvar" | "beta" | "wtdtvar" | "weighted_tvar"
+    ) {
+        return Err(format!(
             "{name:?} has several parameters and is not calibrated; calibrate a one-parameter family"
-        )),
-        other => Err(format!("family must be {NAMES}, got {other:?}")),
+        ));
+    }
+    // One vocabulary with Python and R (#834): Family::from_name.
+    let f = Family::from_name(name, f64::NAN)
+        .map_err(|_| format!("family must be {NAMES}, got {key:?}"))?;
+    if f.needs_r0() {
+        Family::from_name(name, r0()?).map_err(|e| e.to_string())
+    } else {
+        none(f)
     }
 }
 

@@ -8,3 +8,4 @@ Finished items are in [done/probability.md](done/probability.md), which agents r
 
 ## Next
 
+- [option-names-step-2] #834 step 2: `from_name` and `name` on each user-facing core enum (count distribution, sigma interpolation and tail kind, grain, mixing, pattern kind, family and link, average kind), one enum family per PR, the front ends' match blocks replaced by a call
