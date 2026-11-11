@@ -7,7 +7,6 @@
 Finished items are in [done/probability.md](done/probability.md), which agents read when they need the lane's history; it is not imported into every session (#846).
 
 ## Next
-- #804 the fit-curves table: every family's conditional survival against the empirical one, families in AIC order (Rust, Python `fit_curves`, R; then the Excel lane's `PRO.SEV.FIT` `"curves"`)
 - #805 the Kolmogorov p-value, tail mean and tail CV on a severity fit's goodness of fit (Rust, Python, R; then the Excel lane's columns)
 
 - [reference-generators] #844 items 2 and 3: pinned environments for the Python generators (PEP 723 inline metadata or one requirements file per reference package family, so `uv run validation/scripts/<name>.py` rebuilds a reference) and a weekly job, outside the required checks, that reruns the cheap pure-Python generators and compares their output with the committed files within each row's tolerance

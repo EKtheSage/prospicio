@@ -295,6 +295,11 @@ generators = ["scipy_family_scores.py"]
 sha256 = "cbefbeda899917a5ad1afcf8550a16c38a721d0126bb8e27546c15dea92eeaa2"
 
 [[file]]
+path = "fit_curves_scipy.csv"
+generators = ["scipy_fit_curves.py"]
+sha256 = "bfaa63419b59566b0e6377df06b5541444d4c48a8d6f0c019d510fbd15a79a89"
+
+[[file]]
 path = "fremtpl2_statsmodels.csv"
 generators = ["statsmodels_fremtpl2.py"]
 sha256 = "8c869df365f9d3f894e144252cb2629d9e0dd0d61f7feb1bc268b3de23e3ca41"

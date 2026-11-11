@@ -2517,3 +2517,78 @@ pub(crate) fn goodness_of_fit<'py>(
     d.set_item("max_distance", g.max_distance)?;
     Ok(d)
 }
+
+/// Every fitted family's survival beside the data's plotting positions, the
+/// table behind a chart of the fits on a log axis.
+///
+/// The losses at or above ``threshold`` are sorted ascending; ``empirical``
+/// is the plotting position ``(n - i + 0.5) / n`` of the ``i``-th of the
+/// ``n`` (1 the smallest), never 0 at the largest as the product-limit
+/// estimate is. Each family is fitted to those losses, each reported above
+/// ``threshold`` (the Pareto families from it), and its survival
+/// conditional on the threshold, ``S(x) / S(threshold)``, is a column; the
+/// columns are in AIC order, lowest first, and a family that fails to fit
+/// is left out. More than ``points`` losses are thinned to the rows
+/// ``unique(round(linspace(0, n - 1, points)))`` as numpy computes them
+/// (halves rounded to even), keeping the smallest and largest; the plotting
+/// positions still count all ``n``.
+///
+/// Parameters
+/// ----------
+/// losses : list of float
+///     Losses below ``threshold`` are dropped.
+/// threshold : float
+/// families : list of str, optional
+///     Names as for ``fit_severity``; all nine if omitted (lognormal,
+///     gamma, weibull, loglogistic, exponential, burr, lomax, pareto,
+///     gen_pareto).
+/// points : int, default 200
+///     At least 2.
+///
+/// Returns
+/// -------
+/// dict
+///     ``loss`` and ``empirical``, then one list per family in AIC order,
+///     keyed by its name: ready for ``pandas.DataFrame``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import fit_curves
+/// >>> y = [1500.0, 2500.0, 4000.0, 10_000.0, 1200.0, 3100.0, 800.0]
+/// >>> c = fit_curves(y, 1000.0, ["lognormal", "pareto"])
+/// >>> c["loss"][0], round(c["empirical"][0], 4)
+/// (1200.0, 0.9167)
+/// >>> list(c)[:2], sorted(list(c)[2:])
+/// (['loss', 'empirical'], ['lognormal', 'pareto'])
+#[pyfunction]
+#[pyo3(signature = (losses, threshold, families = None, points = 200))]
+pub(crate) fn fit_curves<'py>(
+    py: Python<'py>,
+    losses: Vec<f64>,
+    threshold: f64,
+    families: Option<Vec<String>>,
+    points: usize,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    use prospicio_prob::severity_fit::Family;
+    use pyo3::types::PyDictMethods;
+    let families: Vec<Family> = match families {
+        None => Family::ALL.to_vec(),
+        Some(names) => names
+            .iter()
+            .map(|n| Family::from_name(n))
+            .collect::<prospicio_core::Result<_>>()
+            .map_err(to_py)?,
+    };
+    let kept: Vec<f64> = losses.into_iter().filter(|&y| y >= threshold).collect();
+    let n = kept.len();
+    let data = large_losses(kept, Some(vec![threshold; n]), None, None)?;
+    let c = prospicio_prob::severity_fit::fit_curves(&data, threshold, &families, points)
+        .map_err(to_py)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("loss", c.losses)?;
+    d.set_item("empirical", c.empirical)?;
+    for (fit, s) in c.curves {
+        d.set_item(fit.family().name(), s)?;
+    }
+    Ok(d)
+}

@@ -1402,6 +1402,46 @@ goodness_of_fit <- function(severity, losses, reporting_thresholds = NULL, censo
   )
 }
 
+#' Every fitted family's survival against the data's plotting positions
+#'
+#' `fit_curves()` is the table behind a chart of every fit against the data
+#' on a log axis. The losses at or above `threshold` are sorted ascending;
+#' `empirical` is the plotting position `(n - i + 0.5) / n` of the `i`-th
+#' of the `n` (1 the smallest), never 0 at the largest as the product-limit
+#' estimate is. Each family is fitted to those losses, each reported above
+#' `threshold` (the Pareto families from it, as [severity_fit()] with `t`),
+#' and its survival conditional on the threshold, `S(x) / S(threshold)`, is
+#' a column, the columns in AIC order, lowest first; a family that fails to
+#' fit is left out. More than `points` losses are thinned to the rows
+#' `unique(round(seq(0, n - 1, length.out = points)))` as numpy computes
+#' them (halves rounded to even, as R's `round()` does too), keeping the
+#' smallest and largest; the plotting positions still count all `n`.
+#'
+#' @param losses Numeric vector; losses below `threshold` are dropped.
+#' @param threshold The reporting threshold of every loss, and the Pareto
+#'   families' `t`.
+#' @param families Character vector of family names as for
+#'   [severity_fit()]; `NULL` (default) for all nine: lognormal, gamma,
+#'   weibull, loglogistic, exponential, burr, lomax, pareto, gen_pareto.
+#' @param points The most rows, at least 2 (default 200).
+#' @returns A data frame with `loss`, `empirical`, then one column per
+#'   family in AIC order, named by the family.
+#' @export
+#' @examples
+#' y <- c(1500, 2500, 4000, 10000, 1200, 3100, 800)
+#' fit_curves(y, 1000, c("lognormal", "pareto"))
+fit_curves <- function(losses, threshold, families = NULL, points = 200) {
+  r <- rust_result(fit_curves_rust(
+    as.double(losses), as.double(threshold),
+    if (is.null(families)) character() else as.character(families), as.double(points)
+  ))
+  out <- data.frame(loss = r$loss, empirical = r$empirical)
+  for (k in seq_along(r$families)) {
+    out[[r$families[[k]]]] <- r$curves[[k]]
+  }
+  out
+}
+
 #' Fit a severity to grouped losses
 #'
 #' `grouped_fit()` fits a lognormal, gamma, Weibull, Burr or Lomax severity

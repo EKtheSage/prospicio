@@ -111,6 +111,8 @@ what it is aiming for by v1.0.
   - A severity from a size-of-loss table (`SizeOfLoss`, #338).
   - The loglogistic and exponential fits and the Pareto families scored on
     the body likelihood, for one AIC ranking (#800).
+  - Every fit's survival beside the plotting positions, in AIC order, for
+    a chart on a log axis (`fit_curves`, #804).
 - **Next:** nothing planned; the Guides lane's issues for this lane
   (#328 to #331, #365 to #369, #373 and #375) are closed.
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that

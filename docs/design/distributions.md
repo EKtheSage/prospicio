@@ -131,6 +131,29 @@ conversion reports the error it introduces.
   `fit_statistics(data)`, the same likelihood with AIC and BIC
   (`FitStatistics`) for any fit, truncated ones included. Tested against
   SciPy's own densities (`validation/scripts/scipy_severity_fits.py`).
+- Comparing the fits and the fit-curves table (decided 2026-11-11, #804):
+  `compare_fits(data, families, t)` fits each family (the Pareto families
+  from `t`) and keeps each fit or its error, and `rank_by_aic` sorts them,
+  stably, failures last. Where `fit_severity_with_threshold` only documents
+  the `max(r, t)` rule, `compare_fits` enforces it: with a Pareto family
+  named, every reporting threshold must be at least `t`, and the losses
+  must not be truncated from above. `fit_curves(data, t, families, points)`
+  is the table behind a chart of every fit on a log axis: the losses at or
+  above `t` ascending, the plotting positions `(n − i + 0.5) / n` (never 0
+  at the largest loss, as the product-limit estimate is, so a log axis
+  keeps it), and each family's survival conditional on `t`,
+  `(S(x) − S(U)) / (S(t) − S(U))` with `U` the losses' common bound from
+  above (`S(U) = 0` without one), the families in AIC order and a failed
+  fit left out. It refuses censored or weighted losses, since the plotting
+  positions count each loss once. Thinning to `points` rows takes
+  `thinned_rows(n, points)`, numpy's `unique(round(linspace(0, n − 1,
+  points)))` to the bit: `i · ((n − 1) / (points − 1))`, the last index
+  exactly `n − 1`, halves rounded to even (`f64::round_ties_even`); the
+  plotting positions are still counted among all `n`. Python
+  `prospicio.distributions.fit_curves(losses, threshold, families=None,
+  points=200)` (a dict of columns, ready for `pandas.DataFrame`) and R
+  `fit_curves()` (a data frame) take the losses above one threshold.
+  Tested against SciPy's fits (`validation/scripts/scipy_fit_curves.py`).
 - `prospicio_prob::grouped_fit` (#328, third part) fits the same families
   to grouped losses, `GroupedLosses` of counts in size bands
   `(b_k, b_{k+1}]`, without individual amounts (Bahnemann, CAS Monograph

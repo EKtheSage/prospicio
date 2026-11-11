@@ -1606,6 +1606,37 @@ real Excel.
       The test workbook's Severity fit sheet ranks R Pareto's example
       losses from `t` = 1,000 and a three-name restriction.
 
+61. **`"curves"`: every fit beside the plotting positions** (#804, the AP
+    pricing demo's `AP.FIT_CURVES`; after #802). `PRO.SEV.FIT(losses,
+    [family], "curves", [t], , [thresholds], , , , [points])` spills Loss,
+    Empirical, then one column per family in AIC order: the Probability
+    lane's `fit_curves`, so the losses at or above `t` ascending, the
+    plotting positions `(n − i + 0.5) / n` and each family's survival
+    conditional on `t`, a family that fails to fit left out. `family` and
+    `t` work as in `"compare"` (decision 60): blank `family` is every
+    family `"compare"` fits, a range restricts it, and with `t` blank the
+    body families are conditioned on the lowest reporting threshold.
+    - **`points` is a tenth argument, not `"curves:200"`.** The requester
+      preferred it, and a trailing optional argument moves no other call;
+      blank is 200, and anything but `"curves"` refuses it. More losses
+      than `points` are thinned to numpy's rows (halves to even), the
+      smallest and largest always kept.
+    - **No censoring or weights.** The plotting positions count each loss
+      once, so `"curves"` refuses censored or weighted losses rather than
+      plot them as exact.
+    - **`"compare"` now calls `compare_fits`.** The checks of decision 60
+      (thresholds at least `t`, no `upper` with a Pareto family) moved to
+      the Probability lane, so both outputs share them; the messages now
+      read "fitted only from a threshold t" and "takes no truncation from
+      above".
+    - **Parity.** `tests/severity_fit.rs`: on #800's 89 losses the columns
+      come in `"compare"`'s order, rows 1, 2, 45 and 89 match SciPy's
+      curves to 1e-6 (the gamma at its boundary to 1e-4, the Burr not in
+      SciPy's script), and 10 points keep rows 1, 11, 21, 30, 40, 50, 60,
+      69, 79 and 89 with the plotting positions of all 89. The test
+      workbook's Severity fit sheet spills the nine curves of R Pareto's
+      example losses and the lognormal's thinned to 5 rows.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and

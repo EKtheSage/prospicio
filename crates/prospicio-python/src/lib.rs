@@ -141,7 +141,7 @@ mod prospicio_native {
         PyAffine, PyBeta, PyBinomial, PyBurr, PyCustom, PyExponential, PyGamma,
         PyGeneralizedPareto, PyInverseGamma, PyInverseGaussian, PyLogAffinePareto, PyLoglogistic,
         PyMixture, PyPareto, PyPiecewisePareto, PyPolicyLimits, PySeverityFit, PySizeOfLoss,
-        PyTruncated, PyTweedie, PyWeibull, claim_count, fit_severity, goodness_of_fit,
+        PyTruncated, PyTweedie, PyWeibull, claim_count, fit_curves, fit_severity, goodness_of_fit,
         local_pareto_to_piecewise, product_limit,
     };
     #[pymodule_export]

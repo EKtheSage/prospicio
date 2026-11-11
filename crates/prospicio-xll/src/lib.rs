@@ -2860,7 +2860,7 @@ pub static FUNCTIONS: &[Function] = &[
             },
             Arg {
                 name: "output",
-                help: "\"params\" (default: parameters in PRO.SEV's order, SEs, AIC), \"gof\" (survival and Q-Q at each loss) or \"compare\" (ranked by AIC when t is given)",
+                help: "\"params\" (default: parameters in PRO.SEV's order, SEs, AIC), \"gof\" (survival and Q-Q at each loss), \"compare\" (ranked by AIC when t is given) or \"curves\" (every fit's survival beside the plotting positions)",
             },
             Arg {
                 name: "t",
@@ -2885,6 +2885,10 @@ pub static FUNCTIONS: &[Function] = &[
             Arg {
                 name: "upper",
                 help: "Body families: truncation from above, the most a loss could be and still be kept; one value or one per loss (none if omitted)",
+            },
+            Arg {
+                name: "points",
+                help: "\"curves\": the most rows, the smallest and largest loss always kept (200 if omitted)",
             },
         ],
         run: fitting::severity_fit,

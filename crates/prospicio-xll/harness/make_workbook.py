@@ -1004,6 +1004,10 @@ sf["E38"] = "Only the families named in A21:A23, ranked by AIC"; sf["E38"].font 
 sf["E39"] = ArrayFormula("E39:N42", "=PRO.SEV.FIT(" + data.format(fam="A21:A23", out='"compare"', t="1000") + ")")
 sf["E44"] = "Lognormal against the product-limit estimate (P-P and Q-Q)"; sf["E44"].font = bold
 sf["E45"] = ArrayFormula("E45:J56", "=PRO.SEV.FIT(" + data.format(fam='"lognormal"', out='"gof"', t="") + ")")
+sf["E58"] = "Every fit's survival from t = 1,000 beside the plotting positions (n - i + 0.5) / n, the capped losses read as exact"; sf["E58"].font = bold
+sf["E59"] = ArrayFormula("E59:O73", '=PRO.SEV.FIT(A4:A17,,"curves",1000,,B4:B17)')
+sf["E75"] = "The lognormal's thinned to 5 rows (points, the tenth argument)"; sf["E75"].font = bold
+sf["E76"] = ArrayFormula("E76:G81", '=PRO.SEV.FIT(A4:A17,"lognormal","curves",1000,,B4:B17,,,,5)')
 sf["P3"] = "Grouped losses (Bahnemann's six bands; the last bound blank: open)"; sf["P3"].font = bold
 sf["P4"] = "From"; sf["Q4"] = "Count"
 for c in ("P4", "Q4"):

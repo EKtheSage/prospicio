@@ -419,15 +419,111 @@ fn compare_names_what_it_cannot_rank() {
     let e = with(missing(), n(150_000.0), missing(), missing());
     assert!(e.contains("every reporting threshold at least t"), "{e}");
     let e = with(common::t("pareto"), missing(), n(150_000.0), missing());
-    assert!(e.contains("only from a t"), "{e}");
+    assert!(e.contains("only from a threshold t"), "{e}");
     let e = with(common::t("piecewise_pareto"), n(150_000.0), n(150_000.0), missing());
     assert!(e.contains("a range of the names"), "{e}");
     let e = with(missing(), n(150_000.0), n(150_000.0), n(1e9));
-    assert!(e.contains("takes no upper"), "{e}");
+    assert!(e.contains("takes no truncation from above"), "{e}");
     let mut a = vec![column(&y), missing(), common::t("compare"), missing(), n(1e6)];
     a.push(n(150_000.0));
     let e = call("pro_sev_fit", a);
     assert!(text(&e).contains("takes no truncation"), "{}", text(&e));
+}
+
+/// SciPy's survival of `family` conditional on 150,000 at a row of the
+/// sorted `plain` losses (`fit_curves_scipy.csv`).
+fn scipy_curve(family: &str, row: usize) -> (f64, f64) {
+    let r = reference("fit_curves_scipy.csv")
+        .into_iter()
+        .find(|r| r[0] == family && r[1] == row.to_string())
+        .unwrap_or_else(|| panic!("no {family} row {row}"));
+    (r[3].parse().unwrap(), r[4].parse().unwrap())
+}
+
+#[test]
+fn curves_set_every_fit_beside_the_plotting_positions() {
+    let y = plain_losses();
+    let args = |family: Grid, points: Grid| {
+        vec![
+            column(&y),
+            family,
+            common::t("curves"),
+            n(150_000.0),
+            missing(),
+            n(150_000.0),
+            missing(),
+            missing(),
+            missing(),
+            points,
+        ]
+    };
+    let out = call("pro_sev_fit", args(missing(), missing()));
+    // 89 losses, under 200 points: every loss, and all nine families.
+    assert_eq!((out.rows, out.columns), (90, 11));
+    assert_eq!(out.get(0, 0), &Value::from("Loss"));
+    assert_eq!(out.get(0, 1), &Value::from("Empirical"));
+    // The families in the comparison's order, by AIC.
+    let compare = call(
+        "pro_sev_fit",
+        vec![
+            column(&y),
+            missing(),
+            common::t("compare"),
+            n(150_000.0),
+            missing(),
+            n(150_000.0),
+        ],
+    );
+    for c in 2..11 {
+        assert_eq!(out.get(0, c), compare.get(c - 1, 0));
+    }
+    for row in [1, 2, 45, 89] {
+        let (e, _) = scipy_curve("empirical", row);
+        assert!((num(out.get(row, 1)) - e).abs() < 1e-15);
+        for c in 2..11 {
+            let family = text_cell(out.get(0, c));
+            if family == "burr" {
+                continue;
+            }
+            let (s, tol) = scipy_curve(&family, row);
+            let got = num(out.get(row, c));
+            assert!((got - s).abs() <= tol, "{family} row {row}: {got} against {s}");
+        }
+    }
+    // Thinned to 10 rows: numpy's rows, the plotting positions of all 89.
+    let thin = call("pro_sev_fit", args(common::t("lognormal"), n(10.0)));
+    assert_eq!((thin.rows, thin.columns), (11, 3));
+    let kept = [1, 11, 21, 30, 40, 50, 60, 69, 79, 89];
+    for (k, &row) in kept.iter().enumerate() {
+        assert_eq!(thin.get(k + 1, 0), out.get(row, 0));
+        assert_eq!(thin.get(k + 1, 1), out.get(row, 1));
+    }
+    let e = call("pro_sev_fit", args(missing(), n(1.0)));
+    assert!(text(&e).contains("points must be"), "{}", text(&e));
+    let e = call(
+        "pro_sev_fit",
+        vec![
+            column(&y),
+            common::t("lognormal"),
+            missing(),
+            missing(),
+            missing(),
+            missing(),
+            missing(),
+            missing(),
+            missing(),
+            n(10.0),
+        ],
+    );
+    assert!(text(&e).contains("points is taken only by"), "{}", text(&e));
+    // With t blank, the body families from the lowest reporting threshold.
+    let body = call(
+        "pro_sev_fit",
+        vec![column(&LOSSES), missing(), common::t("curves")],
+    );
+    assert_eq!((body.rows, body.columns), (15, 9));
+    assert_eq!(body.get(1, 0), &Value::Number(1100.0));
+    assert!((num(body.get(1, 1)) - 13.5 / 14.0).abs() < 1e-15);
 }
 
 #[test]

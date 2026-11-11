@@ -820,6 +820,227 @@ pub fn goodness_of_fit<D: crate::Distribution + ?Sized>(
     })
 }
 
+/// Every family in `families` fitted to `data`, in `families`' order, each
+/// with its fit or the reason it failed. A Pareto family
+/// ([`Family::needs_threshold`]) is fitted from `t`; the body families
+/// ignore it. When a Pareto family is named, every reporting threshold must
+/// be at least `t`, so that every likelihood conditions each loss on the
+/// same threshold and the AICs compare ([`fit_severity_with_threshold`]),
+/// and the losses must not be truncated from above.
+/// [`rank_by_aic`] then orders the fits.
+///
+/// ```
+/// use prospicio_prob::LargeLosses;
+/// use prospicio_prob::severity_fit::{Family, compare_fits, rank_by_aic};
+///
+/// let y = vec![1500.0, 2500.0, 4000.0, 10_000.0, 1200.0, 3100.0];
+/// let data = LargeLosses::new(y).unwrap().reporting_thresholds(vec![1000.0; 6]).unwrap();
+/// let mut fits = compare_fits(&data, &Family::ALL, Some(1000.0)).unwrap();
+/// rank_by_aic(&mut fits);
+/// assert_eq!(fits.len(), 9);
+/// let aic: Vec<f64> = fits.iter().filter_map(|(_, f)| f.as_ref().ok().map(|f| f.aic())).collect();
+/// assert!(aic.windows(2).all(|w| w[0] <= w[1]));
+/// ```
+///
+/// # Errors
+///
+/// When a Pareto family is named without `t`, a reporting threshold is
+/// below `t`, or a Pareto family is named for losses truncated from above.
+pub fn compare_fits(
+    data: &LargeLosses,
+    families: &[Family],
+    t: Option<f64>,
+) -> Result<Vec<(Family, Result<SeverityFit>)>> {
+    let pareto = families.iter().find(|f| f.needs_threshold());
+    match (t, pareto) {
+        (None, Some(f)) => {
+            return Err(Error::Data(format!(
+                "{:?} is fitted only from a threshold t",
+                f.name()
+            )));
+        }
+        (Some(_), Some(f)) if data.is_truncated_above() => {
+            return Err(Error::Data(format!(
+                "{:?} takes no truncation from above",
+                f.name()
+            )));
+        }
+        _ => {}
+    }
+    if let (Some(t), Some(_)) = (t, pareto)
+        && let Some((y, r, _, _)) = data.rows().find(|row| row.1 < t)
+    {
+        return Err(Error::Data(format!(
+            "comparing fits from t needs every reporting threshold at least t ({t}), so that \
+             every family conditions each loss on the same threshold; the loss {y} has {r}"
+        )));
+    }
+    Ok(families
+        .iter()
+        .map(|&f| {
+            let fit = fit_severity_with_threshold(f, data, t.filter(|_| f.needs_threshold()));
+            (f, fit)
+        })
+        .collect())
+}
+
+/// Orders [`compare_fits`]' results by AIC, lowest first: a stable sort,
+/// so a tie keeps the given order, and a family that failed to fit goes
+/// last.
+pub fn rank_by_aic(fits: &mut [(Family, Result<SeverityFit>)]) {
+    let aic = |f: &Result<SeverityFit>| f.as_ref().map_or(f64::NAN, SeverityFit::aic);
+    fits.sort_by(|a, b| {
+        let (x, y) = (aic(&a.1), aic(&b.1));
+        match (x.is_nan(), y.is_nan()) {
+            (false, false) => x.total_cmp(&y),
+            (p, q) => p.cmp(&q),
+        }
+    });
+}
+
+/// Each fitted family's survival beside the empirical one at the losses,
+/// for a chart on a log axis ([`fit_curves`]).
+#[derive(Debug, Clone)]
+pub struct FitCurves {
+    /// The losses kept, ascending.
+    pub losses: Vec<f64>,
+    /// The plotting position `(n − i + 0.5) / n` of each kept loss, its rank
+    /// `i` among all `n` losses (1 the smallest), so that the last is not 0
+    /// as the product-limit estimate is.
+    pub empirical: Vec<f64>,
+    /// The fits, ranked by AIC, each with its survival conditional on `t`
+    /// (and on the bound from above, if any) at the kept losses. A family
+    /// that failed to fit is left out.
+    pub curves: Vec<(SeverityFit, Vec<f64>)>,
+}
+
+/// The rows [`fit_curves`] keeps of `n` sorted losses for `points` rows:
+/// `unique(round(linspace(0, n − 1, points)))`, as numpy computes it
+/// (`i · ((n − 1) / (points − 1))`, the last index `n − 1` exactly) and
+/// rounds it (halves to even). The first and last losses are always kept;
+/// with `points ≥ n` every loss is.
+///
+/// ```
+/// use prospicio_prob::severity_fit::thinned_rows;
+///
+/// // 89 losses to 10 rows: 1, 11, 21, 30, 40, 50, 60, 69, 79, 89 counted from 1.
+/// assert_eq!(thinned_rows(89, 10), [0, 10, 20, 29, 39, 49, 59, 68, 78, 88]);
+/// assert_eq!(thinned_rows(3, 200), [0, 1, 2]);
+/// ```
+pub fn thinned_rows(n: usize, points: usize) -> Vec<usize> {
+    if points >= n || n < 2 {
+        return (0..n).collect();
+    }
+    let points = points.max(2);
+    let step = (n - 1) as f64 / (points - 1) as f64;
+    let mut rows: Vec<usize> = (0..points)
+        .map(|i| {
+            if i + 1 == points {
+                n - 1
+            } else {
+                (i as f64 * step).round_ties_even() as usize
+            }
+        })
+        .collect();
+    rows.dedup();
+    rows
+}
+
+/// The losses at or above `t`, ascending, with their plotting positions
+/// `(n − i + 0.5) / n` and each family's survival conditional on `t`,
+/// `S(x) / S(t)`, or `(S(x) − S(U)) / (S(t) − S(U))` with a bound from
+/// above `U` common to every loss: the table behind a chart of every fit
+/// against the data on a log axis. The families are fitted by
+/// [`compare_fits`] from `t` and ranked by AIC; one that fails to fit is
+/// left out. With more losses than `points` the table is thinned to
+/// [`thinned_rows`], the plotting positions still counted among all `n`.
+///
+/// The plotting positions treat every loss as one exact observation, so
+/// censored losses and weights other than 1 are refused.
+///
+/// ```
+/// use prospicio_prob::LargeLosses;
+/// use prospicio_prob::severity_fit::{Family, fit_curves};
+///
+/// let y = vec![1500.0, 2500.0, 4000.0, 10_000.0, 1200.0, 3100.0];
+/// let data = LargeLosses::new(y).unwrap().reporting_thresholds(vec![1000.0; 6]).unwrap();
+/// let c = fit_curves(&data, 1000.0, &[Family::Lognormal, Family::Pareto], 200).unwrap();
+/// assert_eq!(c.losses[0], 1200.0);
+/// assert!((c.empirical[0] - 5.5 / 6.0).abs() < 1e-15);
+/// assert_eq!(c.curves.len(), 2);
+/// ```
+///
+/// # Errors
+///
+/// As [`compare_fits`] (a reporting threshold below `t` with a Pareto
+/// family named); when a loss is censored or weighted, the losses'
+/// bounds from above differ, no loss is at or above `t`, or `points` is
+/// below 2.
+pub fn fit_curves(
+    data: &LargeLosses,
+    t: f64,
+    families: &[Family],
+    points: usize,
+) -> Result<FitCurves> {
+    use crate::Distribution;
+    if points < 2 {
+        return Err(Error::Data(format!(
+            "points must be at least 2 (the smallest and largest loss), got {points}"
+        )));
+    }
+    if data.rows().any(|r| r.2 || r.3 != 1.0) {
+        return Err(Error::Data(
+            "fit_curves takes exact, unweighted losses: the plotting positions count each \
+             loss once"
+                .into(),
+        ));
+    }
+    let bounds = data.upper_bounds();
+    let u = bounds[0];
+    if bounds.iter().any(|&b| b != u) {
+        return Err(Error::Data(
+            "fit_curves needs one bound from above for every loss".into(),
+        ));
+    }
+    let mut fits = compare_fits(data, families, Some(t))?;
+    rank_by_aic(&mut fits);
+    let mut y: Vec<f64> = data.values().iter().copied().filter(|&v| v >= t).collect();
+    if y.is_empty() {
+        return Err(Error::Data(format!("no loss is at or above t ({t})")));
+    }
+    y.sort_by(f64::total_cmp);
+    let n = y.len();
+    let rows = thinned_rows(n, points);
+    let losses: Vec<f64> = rows.iter().map(|&i| y[i]).collect();
+    let empirical = rows
+        .iter()
+        .map(|&i| (n - i) as f64 - 0.5)
+        .map(|k| k / n as f64)
+        .collect();
+    let curves = fits
+        .into_iter()
+        .filter_map(|(_, fit)| fit.ok())
+        .filter_map(|fit| {
+            let d = fit.dist();
+            let s_u = if u.is_finite() { d.survival(u) } else { 0.0 };
+            let mass = d.survival(t) - s_u;
+            if mass.is_nan() || mass <= 0.0 {
+                return None;
+            }
+            let s: Vec<f64> = losses
+                .iter()
+                .map(|&x| (d.survival(x) - s_u) / mass)
+                .collect();
+            Some((fit, s))
+        })
+        .collect();
+    Ok(FitCurves {
+        losses,
+        empirical,
+        curves,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1211,6 +1432,47 @@ mod tests {
         let capped = at_t.truncated_above(vec![1e6; 4]).unwrap();
         for f in [Family::Pareto, Family::GenPareto] {
             assert!(fit_severity_with_threshold(f, &capped, Some(1000.0)).is_err());
+        }
+    }
+
+    #[test]
+    fn thinning_rounds_halves_to_even_as_numpy_does() {
+        // numpy: unique(round(linspace(0, 5, 3))) = [0, 2, 5] (2.5 to 2),
+        // unique(round(linspace(0, 3, 3))) = [0, 2, 3] (1.5 to 2).
+        assert_eq!(thinned_rows(6, 3), [0, 2, 5]);
+        assert_eq!(thinned_rows(4, 3), [0, 2, 3]);
+        assert_eq!(thinned_rows(5, 2), [0, 4]);
+        assert_eq!(thinned_rows(1, 2), [0]);
+        assert_eq!(thinned_rows(10, 10), (0..10).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn fit_curves_refuse_what_the_plotting_positions_cannot_count() {
+        let y = vec![1500.0, 2500.0, 4000.0, 10_000.0, 1200.0, 3100.0];
+        let data = LargeLosses::new(y).unwrap();
+        let at = data.clone().reporting_thresholds(vec![1000.0; 6]).unwrap();
+        let fams = [Family::Lognormal, Family::Pareto];
+        // A reporting threshold below t.
+        assert!(fit_curves(&data, 1000.0, &fams, 200).is_err());
+        assert!(fit_curves(&at, 1000.0, &fams, 1).is_err());
+        let censored = at
+            .clone()
+            .censored(vec![false, false, true, false, false, false])
+            .unwrap();
+        assert!(fit_curves(&censored, 1000.0, &fams, 200).is_err());
+        let weighted = at.clone().weights(vec![2.0; 6]).unwrap();
+        assert!(fit_curves(&weighted, 1000.0, &fams, 200).is_err());
+        // The body families alone need no thresholds at t.
+        let body = fit_curves(&data, 1000.0, &[Family::Gamma, Family::Lognormal], 3).unwrap();
+        // Six losses to three rows: indices 0, 2.5 (to 2, the even) and 5.
+        assert_eq!(body.losses, [1200.0, 2500.0, 10_000.0]);
+        assert_eq!(body.empirical, [5.5 / 6.0, 3.5 / 6.0, 0.5 / 6.0]);
+        // Each curve is 1 at t and falls.
+        let c = fit_curves(&at, 1000.0, &fams, 200).unwrap();
+        assert_eq!(c.curves.len(), 2);
+        for (_, s) in &c.curves {
+            assert!(s.windows(2).all(|w| w[0] >= w[1]));
+            assert!(s[0] < 1.0 && s[0] > 0.5);
         }
     }
 }
