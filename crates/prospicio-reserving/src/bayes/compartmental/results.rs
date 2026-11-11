@@ -5,8 +5,8 @@ use prospicio_bayes::nuts::{ParamSummary, PosteriorDraws};
 use prospicio_core::{Lag, Period};
 use prospicio_prob::{Distribution, KeyValue, PredictiveDistribution, Provenance};
 
-use super::super::Diagnostics;
 use super::super::one_year::{self, BayesOneYearFit, BayesOneYearSegment};
+use super::super::{Diagnostics, psis_loo};
 use super::data::Data;
 #[cfg(doc)]
 use super::fit::Compartmental;
@@ -491,27 +491,7 @@ impl CompartmentalFit {
         for nat in post.values().chunks_exact(post.dim()) {
             model.log_likelihoods(nat, &mut ll);
         }
-        let chains = post.chains();
-        let per_chain = s / chains;
-        let r_eff: Vec<f64> = (0..n)
-            .map(|i| {
-                let by_chain: Vec<Vec<f64>> = (0..chains)
-                    .map(|c| {
-                        (0..per_chain)
-                            .map(|k| ll[(c * per_chain + k) * n + i].exp())
-                            .collect()
-                    })
-                    .collect();
-                let refs: Vec<&[f64]> = by_chain.iter().map(Vec::as_slice).collect();
-                let ess = prospicio_bayes::ess_mean(&refs).unwrap_or(s as f64);
-                if ess.is_finite() && ess > 0.0 {
-                    ess / s as f64
-                } else {
-                    1.0
-                }
-            })
-            .collect();
-        let loo = prospicio_bayes::elpd::loo(&ll, n, Some(&r_eff))?;
+        let loo = psis_loo(&ll, n, post)?;
         let n_os = model.n_outstanding;
         let elpd_outstanding = loo.estimate.pointwise[..n_os].iter().sum();
         let elpd_paid = loo.estimate.pointwise[n_os..].iter().sum();

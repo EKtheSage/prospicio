@@ -12,7 +12,7 @@ use rayon::prelude::*;
 
 use super::laplace::{Posterior, Whitened, mode};
 use super::one_year::{self, BayesOneYear, BayesOneYearFit, OdpCells, OdpYear};
-use super::{Diagnostics, Stream, derive_seed, one_year_seed};
+use super::{Diagnostics, Stream, derive_seed, one_year_seed, psis_loo};
 use crate::bootstrap::{
     ProcessDistribution, component_sums, hash_segment, prepare, process_draw, push_combined,
     push_moments, segment_sums,
@@ -543,7 +543,6 @@ impl BayesBfFit {
             )));
         }
         let n = model.cells.len();
-        let s = self.posterior.n_draws();
         let rows: Vec<Vec<f64>> = self
             .posterior
             .values()
@@ -560,27 +559,7 @@ impl BayesBfFit {
             })
             .collect::<prospicio_core::Result<_>>()?;
         let ll = rows.concat();
-        let chains = self.posterior.chains();
-        let per_chain = s / chains;
-        let r_eff: Vec<f64> = (0..n)
-            .map(|i| {
-                let by_chain: Vec<Vec<f64>> = (0..chains)
-                    .map(|c| {
-                        (0..per_chain)
-                            .map(|k| ll[(c * per_chain + k) * n + i].exp())
-                            .collect()
-                    })
-                    .collect();
-                let refs: Vec<&[f64]> = by_chain.iter().map(Vec::as_slice).collect();
-                let ess = prospicio_bayes::ess_mean(&refs).unwrap_or(s as f64);
-                if ess.is_finite() && ess > 0.0 {
-                    ess / s as f64
-                } else {
-                    1.0
-                }
-            })
-            .collect();
-        Ok(prospicio_bayes::elpd::loo(&ll, n, Some(&r_eff))?)
+        psis_loo(&ll, n, &self.posterior)
     }
 
     /// One row per origin: the chain ladder's `latest`, `ultimate` and
@@ -1704,6 +1683,33 @@ mod tests {
         crate::bayes::pins::check("BayesBf", 0xc980_8767_c185_78f3, || {
             let fit = model.fit(&genins(), "values", "premium").unwrap();
             crate::bayes::pins::fit_hash(&fit.posterior, &fit.reserves)
+        });
+    }
+
+    /// PSIS-LOO bit for bit (#842), of a fit like
+    /// `the_fit_is_pinned_on_linux`'s with 1,000 draws (2 chains of 500), so
+    /// that each Pareto tail's length, `min(S/5, 3 sqrt(S / r_eff))`, moves
+    /// with the draws' relative efficiency: the elpd with its standard error,
+    /// the pointwise terms and each cell's Pareto k.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_loo_is_pinned_on_linux() {
+        let model = BayesBf {
+            sampler: Sampler {
+                chains: 2,
+                tune: 100,
+                draws: 500,
+                ..quick(841).sampler
+            },
+            n_sims: 100,
+            ..quick(841)
+        };
+        crate::bayes::pins::check("BayesBf-loo", 0x2c64_c751_47a3_a867, || {
+            let fit = model.fit(&genins(), "values", "premium").unwrap();
+            crate::bayes::pins::loo_hash(&fit.loo().unwrap())
         });
     }
 }

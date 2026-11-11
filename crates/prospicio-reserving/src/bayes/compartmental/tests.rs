@@ -4047,3 +4047,41 @@ fn the_fit_is_pinned_on_linux() {
         }
     });
 }
+
+/// PSIS-LOO bit for bit (#842), of a fit like `the_fit_is_pinned_on_linux`'s
+/// with 1,000 draws (2 chains of 500), so that each Pareto tail's length,
+/// `min(S/5, 3 sqrt(S / r_eff))`, moves with the draws' relative efficiency:
+/// the elpd with its standard error, the pointwise terms and each cell's Pareto
+/// k, and its outstanding and paid sums.
+#[test]
+#[cfg_attr(
+    not(feature = "slow-tests"),
+    ignore = "samples with NUTS; needs --features slow-tests"
+)]
+fn the_loo_is_pinned_on_linux() {
+    let model = Compartmental {
+        sampler: Sampler {
+            chains: 2,
+            tune: 100,
+            draws: 500,
+            ..quick(841).sampler
+        },
+        n_sims: 100,
+        ..quick(841)
+    };
+    crate::bayes::pins::check("Compartmental-loo", 0xd094_66dd_a724_a264, || {
+        let fit = model
+            .fit(&triangle(true), "paid", incurred(), "premium")
+            .unwrap();
+        let loo = fit.loo().unwrap();
+        let h = crate::bayes::pins::loo_hash(&loo.loo);
+        crate::bayes::pins::bits_hash_from(
+            h,
+            &[
+                loo.n_outstanding as f64,
+                loo.elpd_outstanding,
+                loo.elpd_paid,
+            ],
+        )
+    });
+}

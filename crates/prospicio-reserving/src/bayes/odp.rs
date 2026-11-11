@@ -14,7 +14,7 @@ use super::one_year::{
     self, BayesOneYear, BayesOneYearFit, BayesOneYearFits, BayesOneYearSegment, OdpCells, OdpYear,
     YearDraws,
 };
-use super::{Diagnostics, Stream, derive_seed, one_year_seed};
+use super::{Diagnostics, Stream, derive_seed, one_year_seed, psis_loo};
 use crate::backtest::{CellForecast, TriangleModel};
 use crate::bootstrap::{
     ProcessDistribution, component_sums, hash_segment, origin_keys, pick_segment, prepare,
@@ -1360,7 +1360,6 @@ fn loo(model: &Model, posterior: &PosteriorDraws, chain_ladder: &ChainLadderFit)
         )));
     }
     let n = model.cells.len();
-    let s = posterior.n_draws();
     // Each term integrates the continuous Poisson's normalising
     // constant, so the draws run in parallel; the result does not
     // depend on the threads.
@@ -1379,28 +1378,7 @@ fn loo(model: &Model, posterior: &PosteriorDraws, chain_ladder: &ChainLadderFit)
         })
         .collect::<prospicio_core::Result<_>>()?;
     let ll = rows.concat();
-    let chains = posterior.chains();
-    let per_chain = s / chains;
-    let r_eff: Vec<f64> = (0..n)
-        .map(|i| {
-            let by_chain: Vec<Vec<f64>> = (0..chains)
-                .map(|c| {
-                    (0..per_chain)
-                        .map(|k| ll[(c * per_chain + k) * n + i].exp())
-                        .collect()
-                })
-                .collect();
-            let refs: Vec<&[f64]> = by_chain.iter().map(Vec::as_slice).collect();
-            let ess = prospicio_bayes::ess_mean(&refs).unwrap_or(s as f64);
-            // A constant likelihood: as independent draws.
-            if ess.is_finite() && ess > 0.0 {
-                ess / s as f64
-            } else {
-                1.0
-            }
-        })
-        .collect();
-    Ok(prospicio_bayes::elpd::loo(&ll, n, Some(&r_eff))?)
+    psis_loo(&ll, n, posterior)
 }
 
 #[cfg(test)]
@@ -2427,6 +2405,35 @@ mod tests {
         pins::check("BayesOdp", 0xcb99_f7d1_8967_223a, || {
             let fit = model.fit(&raa(), "values").unwrap();
             pins::fit_hash(&fit.posterior, &fit.reserves)
+        });
+    }
+
+    /// PSIS-LOO bit for bit (#842): the elpd with its standard error, the
+    /// pointwise terms and each cell's Pareto k, of a fit like
+    /// `the_fit_is_pinned_on_linux`'s on GenIns (RAA has a negative increment
+    /// and no LOO) with 1,000 draws (2 chains of 500), so that each Pareto
+    /// tail's length, `min(S/5, 3 sqrt(S / r_eff))`, moves with the draws'
+    /// relative efficiency.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_loo_is_pinned_on_linux() {
+        let model = BayesOdp {
+            sampler: Sampler {
+                chains: 2,
+                tune: 100,
+                draws: 500,
+                ..Sampler::default()
+            },
+            n_sims: 100,
+            seed: 841,
+            ..BayesOdp::default()
+        };
+        pins::check("BayesOdp-loo", 0xd547_8127_8910_31a0, || {
+            let fit = model.fit(&genins(), "values").unwrap();
+            pins::loo_hash(&fit.loo().unwrap())
         });
     }
 

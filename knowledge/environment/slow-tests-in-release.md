@@ -118,20 +118,40 @@ cargo test --release -p prospicio-reserving --features slow-tests --lib
 ```
 
 CI's `bayes` job runs this after the parity tests, and `slow-bayes` turns
-`prospicio-reserving/slow-tests` on, so one flag covers both. A seed-pinned
-test that is platform-specific stays plainly `#[ignore]`d and runs only by
-name with `--ignored`. Since #841 (branch claude/bayes-linux-pins) each of
-the six Bayesian models also has a `the_fit_is_pinned_on_linux` unit test
-under `slow-tests` (`bayes::pins`): a short seeded fit (two chains of 100
+`prospicio-reserving/slow-tests` on, so one flag covers both. A
+seed-pinned test that is platform-specific stays plainly `#[ignore]`d and
+runs only by name with `--ignored`. Measured locally on 2026-10-15
+(Windows, 16 threads): the debug unit tests of
+`prospicio-reserving --features bayes` fell from 61 s to 6.5 s wall, and
+from 233 s to 12 s single-threaded.
+
+Since #841 (branch claude/bayes-linux-pins) each of the six Bayesian
+models also has a `the_fit_is_pinned_on_linux` unit test under
+`slow-tests` (`bayes::pins`): a short seeded fit (two chains of 100
 warm-up and 50 kept draws, 100 simulations) whose posterior draws and
 reserve simulations are hashed with FNV-1a. The hash is asserted only on
 Linux x86_64 in release, CI's `bayes` job; elsewhere the test fits twice
 and checks the two runs agree. Each prints `PIN <model> actual 0x...`, the
 value to paste when a pin moves. On Windows (16 threads, release, two fits
 each) they took 0.01 s (`BayesOdp`, `BayesBf`) to 0.63 s
-(`Compartmental`), all six together 0.81 s. Measured locally on 2026-10-15 (Windows, 16
-threads): the debug unit tests of `prospicio-reserving --features bayes`
-fell from 61 s to 6.5 s wall, and from 233 s to 12 s single-threaded.
+(`Compartmental`), all six together 0.81 s.
+
+Since #842 (branch claude/bayes-loo-pins) the five models with a `loo`
+(all but `HierarchicalBf`) also have `the_loo_is_pinned_on_linux`: a fit
+like the fit pin's (GenIns for `BayesOdp`, since RAA's negative increment
+has no LOO) but on 1,000 draws (two chains of 500), whose PSIS-LOO is
+hashed bit for bit (`pins::loo_hash`: the estimate, the pointwise terms
+and each Pareto k), printing `PIN <model>-loo actual 0x...`. At the fit
+pin's 100 draws every Pareto tail has 20 ratios for any relative
+efficiency up to about 2.25 (the tail is `min(S/5, 3 sqrt(S / r_eff))`),
+so a hash there cannot see a change in `r_eff`; at 1,000 the tail is
+`3 sqrt(S / r_eff)` for any `r_eff` above 0.225, and scaling `r_eff` by
+1.1 moved all five hashes. The five take about 2 s together in release.
+Their Linux hashes were taken from CI on the old code, before the five
+models' copies of the `r_eff` and PSIS-LOO step became one
+`bayes::psis_loo`, which left every hash unchanged. Running every pin with
+`--nocapture` interleaves the lines of tests on parallel threads; add
+`--test-threads=1` to read them.
 
 `prospicio-bayes` has one slow unit test of its own,
 `stacking::tests::pooled_and_adaptive_fits_find_the_better_model` (26 s

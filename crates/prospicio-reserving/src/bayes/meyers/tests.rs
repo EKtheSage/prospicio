@@ -2047,3 +2047,30 @@ fn the_fit_is_pinned_on_linux() {
         crate::bayes::pins::fit_hash(&fit.posterior, &fit.reserves)
     });
 }
+
+/// PSIS-LOO bit for bit (#842), of a fit like `the_fit_is_pinned_on_linux`'s
+/// with 1,000 draws (2 chains of 500), so that each Pareto tail's length,
+/// `min(S/5, 3 sqrt(S / r_eff))`, moves with the draws' relative efficiency:
+/// the elpd with its standard error, the pointwise terms and each cell's Pareto
+/// k.
+#[test]
+#[cfg_attr(
+    not(feature = "slow-tests"),
+    ignore = "samples with NUTS; needs --features slow-tests"
+)]
+fn the_loo_is_pinned_on_linux() {
+    let model = Meyers {
+        sampler: Sampler {
+            chains: 2,
+            tune: 100,
+            draws: 500,
+            ..quick(MeyersModel::Crc, 841).sampler
+        },
+        n_sims: 100,
+        ..quick(MeyersModel::Crc, 841)
+    };
+    crate::bayes::pins::check("Meyers-loo", 0xc7f1_14dd_0fef_a4bd, || {
+        let fit = model.fit(&comauto(), "paid", "premium").unwrap();
+        crate::bayes::pins::loo_hash(&fit.loo().unwrap())
+    });
+}

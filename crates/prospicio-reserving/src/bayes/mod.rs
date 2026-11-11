@@ -104,7 +104,8 @@ pub use one_year::{
     BayesOneYear, BayesOneYearFit, BayesOneYearFits, BayesOneYearSegment, LightRefit, OneYearRefit,
 };
 
-use prospicio_bayes::nuts::ParamSummary;
+use prospicio_bayes::elpd::Loo;
+use prospicio_bayes::nuts::{ParamSummary, PosteriorDraws};
 use prospicio_core::StreamRng;
 
 /// Largest acceptable R-hat.
@@ -217,6 +218,41 @@ pub(crate) fn pilot_seed(chains: u64) -> u64 {
 /// stream `i` of it, and a refit the chains seed that simulation draws.
 pub(crate) fn one_year_seed(predictive: u64) -> u64 {
     StreamRng::new(predictive, u64::MAX).next_u64()
+}
+
+/// PSIS-LOO of a pointwise log-likelihood `ll`, one row of `n` observations
+/// for each of `posterior`'s draws in its order (chain by chain), with each
+/// observation's relative efficiency from the effective sample size of its
+/// likelihood across the chains (#842: the one copy of what each model's
+/// `loo` did).
+pub(crate) fn psis_loo(
+    ll: &[f64],
+    n: usize,
+    posterior: &PosteriorDraws,
+) -> crate::error::Result<Loo> {
+    let s = posterior.n_draws();
+    let chains = posterior.chains();
+    let per_chain = s / chains;
+    let r_eff: Vec<f64> = (0..n)
+        .map(|i| {
+            let by_chain: Vec<Vec<f64>> = (0..chains)
+                .map(|c| {
+                    (0..per_chain)
+                        .map(|k| ll[(c * per_chain + k) * n + i].exp())
+                        .collect()
+                })
+                .collect();
+            let refs: Vec<&[f64]> = by_chain.iter().map(Vec::as_slice).collect();
+            let ess = prospicio_bayes::ess_mean(&refs).unwrap_or(s as f64);
+            // A constant likelihood: as independent draws.
+            if ess.is_finite() && ess > 0.0 {
+                ess / s as f64
+            } else {
+                1.0
+            }
+        })
+        .collect();
+    Ok(prospicio_bayes::elpd::loo(ll, n, Some(&r_eff))?)
 }
 
 /// The error every Bayesian model returns for `SegmentDependence::Synchronized`

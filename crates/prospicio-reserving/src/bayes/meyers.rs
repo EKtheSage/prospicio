@@ -27,7 +27,7 @@ use super::odp::log_mean_exp;
 use super::one_year::{
     self, BayesOneYear, BayesOneYearFit, BayesOneYearFits, BayesOneYearSegment, YearDraws,
 };
-use super::{Diagnostics, Stream, derive_seed, one_year_seed, pilot_seed};
+use super::{Diagnostics, Stream, derive_seed, one_year_seed, pilot_seed, psis_loo};
 use crate::backtest::{CellForecast, TriangleModel};
 use crate::bootstrap::{
     component_sums, hash_segment, origin_keys, pick_segment, push_combined, push_moments,
@@ -1043,26 +1043,5 @@ fn loo(model: &Model, posterior: &PosteriorDraws) -> Result<Loo> {
     for nat in posterior.values().chunks_exact(posterior.dim()) {
         model.log_densities(nat, &mut residuals, &mut ll);
     }
-    let chains = posterior.chains();
-    let per_chain = s / chains;
-    let r_eff: Vec<f64> = (0..n)
-        .map(|i| {
-            let by_chain: Vec<Vec<f64>> = (0..chains)
-                .map(|c| {
-                    (0..per_chain)
-                        .map(|k| ll[(c * per_chain + k) * n + i].exp())
-                        .collect()
-                })
-                .collect();
-            let refs: Vec<&[f64]> = by_chain.iter().map(Vec::as_slice).collect();
-            let ess = prospicio_bayes::ess_mean(&refs).unwrap_or(s as f64);
-            // A constant likelihood: as independent draws.
-            if ess.is_finite() && ess > 0.0 {
-                ess / s as f64
-            } else {
-                1.0
-            }
-        })
-        .collect();
-    Ok(prospicio_bayes::elpd::loo(&ll, n, Some(&r_eff))?)
+    psis_loo(&ll, n, posterior)
 }
