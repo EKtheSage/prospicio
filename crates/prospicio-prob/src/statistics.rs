@@ -1021,6 +1021,55 @@ fn sample_sd(v: &[f64]) -> f64 {
     (v.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / (n - 1.0)).sqrt()
 }
 
+/// Ranks from 1, ties given their average rank, as R's `rank()`. The one
+/// rank rule of the workspace (#843): Spearman's correlation, the rank
+/// tests and rank-normalised diagnostics use it.
+///
+/// ```
+/// use prospicio_prob::statistics::average_ranks;
+///
+/// assert_eq!(average_ranks(&[3.0, 1.0, 3.0, 2.0]), [3.5, 1.0, 3.5, 2.0]);
+/// ```
+pub fn average_ranks(x: &[f64]) -> Vec<f64> {
+    let mut idx: Vec<usize> = (0..x.len()).collect();
+    idx.sort_by(|&a, &b| x[a].total_cmp(&x[b]));
+    let mut ranks = vec![0.0; x.len()];
+    let mut start = 0;
+    while start < idx.len() {
+        let mut end = start + 1;
+        while end < idx.len() && x[idx[end]] == x[idx[start]] {
+            end += 1;
+        }
+        let rank = (start + end + 1) as f64 / 2.0;
+        for &i in &idx[start..end] {
+            ranks[i] = rank;
+        }
+        start = end;
+    }
+    ranks
+}
+
+/// Pearson's correlation of two vectors of one length, NaN when either is
+/// constant (#843: the one copy).
+///
+/// ```
+/// use prospicio_prob::statistics::pearson;
+///
+/// assert!((pearson(&[1.0, 2.0, 3.0], &[2.0, 4.0, 7.0]) - 0.9933992677987828).abs() < 1e-15);
+/// assert!(pearson(&[1.0, 1.0], &[1.0, 2.0]).is_nan());
+/// ```
+pub fn pearson(x: &[f64], y: &[f64]) -> f64 {
+    let n = x.len() as f64;
+    let (mx, my) = (x.iter().sum::<f64>() / n, y.iter().sum::<f64>() / n);
+    let (mut sxy, mut sxx, mut syy) = (0.0, 0.0, 0.0);
+    for (a, b) in x.iter().zip(y) {
+        sxy += (a - mx) * (b - my);
+        sxx += (a - mx) * (a - mx);
+        syy += (b - my) * (b - my);
+    }
+    sxy / (sxx * syy).sqrt()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -191,6 +191,8 @@
 [python.prospicio_prob]
 "FitStatistics" = "the Pareto fits' likelihood reaches Python and R through fit_severity with a t (#800)"
 "severity_fit::fit_severity" = "bound through fit_severity_with_threshold, which takes the body families with t = None (#800)"
+"statistics::average_ranks" = "internal: the one rank rule of the Rust crates (#843); Python has scipy.stats.rankdata"
+"statistics::pearson" = "internal: the one Pearson correlation of the Rust crates (#843); Python has numpy.corrcoef"
 "InputHasher" = "unbound on 2026-10-28 (seed); review"
 "LocalParetoApproximation" = "unbound on 2026-10-28 (seed); review"
 "TailRow" = "unbound on 2026-10-28 (seed); review"
@@ -464,6 +466,8 @@
 [r.prospicio_prob]
 "FitStatistics" = "the Pareto fits' likelihood reaches Python and R through fit_severity with a t (#800)"
 "severity_fit::fit_severity" = "bound through fit_severity_with_threshold, which takes the body families with t = None (#800)"
+"statistics::average_ranks" = "internal: the one rank rule of the Rust crates (#843); R has rank()"
+"statistics::pearson" = "internal: the one Pearson correlation of the Rust crates (#843); R has cor()"
 "InputHasher" = "unbound on 2026-10-28 (seed); review"
 "LocalParetoApproximation" = "unbound on 2026-10-28 (seed); review"
 "capital::Allocation" = "unbound on 2026-10-28 (seed); review"

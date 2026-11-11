@@ -340,42 +340,17 @@ fn z_moments(n: usize) -> (usize, f64, f64) {
     (m, e, var)
 }
 
-/// Average ranks (1-based) of `values`, ties sharing their mean rank.
-fn ranks(values: &[f64]) -> Vec<f64> {
-    let mut order: Vec<usize> = (0..values.len()).collect();
-    order.sort_by(|&a, &b| values[a].total_cmp(&values[b]));
-    let mut out = vec![0.0; values.len()];
-    let mut i = 0;
-    while i < order.len() {
-        let mut j = i;
-        while j + 1 < order.len() && values[order[j + 1]] == values[order[i]] {
-            j += 1;
-        }
-        let rank = (i + j) as f64 / 2.0 + 1.0;
-        for &o in &order[i..=j] {
-            out[o] = rank;
-        }
-        i = j + 1;
-    }
-    out
-}
-
 /// Spearman's rank correlation: Pearson's on average ranks, as R's
 /// `cor(method = "spearman")`. NaN if either column's ranks are all tied.
+/// The ranks and the correlation are `prospicio-prob`'s (#843).
 fn spearman(x: &[f64], y: &[f64]) -> f64 {
-    let (rx, ry) = (ranks(x), ranks(y));
-    let n = rx.len() as f64;
-    let (mx, my) = (rx.iter().sum::<f64>() / n, ry.iter().sum::<f64>() / n);
-    let (mut sxy, mut sxx, mut syy) = (0.0, 0.0, 0.0);
-    for (a, b) in rx.iter().zip(&ry) {
-        sxy += (a - mx) * (b - my);
-        sxx += (a - mx) * (a - mx);
-        syy += (b - my) * (b - my);
-    }
-    if sxx == 0.0 || syy == 0.0 {
+    use prospicio_prob::statistics::{average_ranks, pearson};
+    let (rx, ry) = (average_ranks(x), average_ranks(y));
+    let constant = |r: &[f64]| r.iter().all(|&v| v == r[0]);
+    if rx.is_empty() || constant(&rx) || constant(&ry) {
         f64::NAN
     } else {
-        sxy / (sxx * syy).sqrt()
+        pearson(&rx, &ry)
     }
 }
 
@@ -563,7 +538,10 @@ mod tests {
 
     #[test]
     fn ranks_average_ties_as_r() {
-        assert_eq!(ranks(&[3.0, 1.0, 3.0, 2.0]), vec![3.5, 1.0, 3.5, 2.0]);
+        assert_eq!(
+            prospicio_prob::statistics::average_ranks(&[3.0, 1.0, 3.0, 2.0]),
+            vec![3.5, 1.0, 3.5, 2.0]
+        );
         assert!(spearman(&[1.0, 1.0], &[1.0, 2.0]).is_nan());
         close(spearman(&[1.0, 2.0, 3.0], &[3.0, 2.0, 1.0]), -1.0, 1e-15);
     }

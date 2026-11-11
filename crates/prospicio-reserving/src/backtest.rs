@@ -655,12 +655,8 @@ pub(crate) fn score(f: &CellForecast, y: &[f64], interval: f64) -> Result<[f64; 
 /// Quantile `p` of sorted draws, interpolating between order statistics
 /// (R's type 7).
 fn quantile(sorted: &[f64], p: f64) -> f64 {
-    let h = (sorted.len() - 1) as f64 * p;
-    let (i, frac) = (h.floor() as usize, h - h.floor());
-    match sorted.get(i + 1) {
-        Some(next) => sorted[i] + frac * (next - sorted[i]),
-        None => sorted[i],
-    }
+    // The workspace's one type 7 quantile (#843).
+    prospicio_prob::risk::var_linear_sorted(sorted, p).unwrap_or(f64::NAN)
 }
 
 fn data(message: String) -> Error {
