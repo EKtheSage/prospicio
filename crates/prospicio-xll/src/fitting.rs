@@ -402,8 +402,10 @@ fn body_family(grid: &Grid) -> Result<Family> {
         "family must be \"lognormal\", \"gamma\", \"weibull\", \"burr\" or \"lomax\"";
     match grid.as_scalar() {
         Some(Value::Text(s)) => {
-            Family::from_name(&s.trim().to_ascii_lowercase().replace([' ', '-'], "_"))
-                .map_err(|_| BODY_FAMILIES.into())
+            match Family::from_name(&s.trim().to_ascii_lowercase().replace([' ', '-'], "_")) {
+                Ok(f) if !f.needs_threshold() => Ok(f),
+                _ => Err(BODY_FAMILIES.into()),
+            }
         }
         _ => Err(BODY_FAMILIES.into()),
     }
