@@ -4249,6 +4249,8 @@ Triangle$select <- function(keys, values, columns) .Call(wrap__Triangle__select,
 
 Triangle$shape <- function() .Call(wrap__Triangle__shape, self)
 
+Triangle$stack <- function(names, triangles, key, columns) .Call(wrap__Triangle__stack, names, triangles, key, columns)
+
 Triangle$summary <- function() .Call(wrap__Triangle__summary, self)
 
 Triangle$to_cumulative <- function() .Call(wrap__Triangle__to_cumulative, self)

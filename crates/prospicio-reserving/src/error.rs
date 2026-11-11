@@ -178,6 +178,12 @@ pub enum Error {
     /// ([`IndustryPrior`](crate::IndustryPrior)): too few companies, ages
     /// that differ, or a pattern or spread that cannot be estimated.
     IndustryPrior(String),
+    /// One-segment triangles cannot be stacked as segments of one
+    /// ([`Triangle::stack`](crate::Triangle::stack)): no triangles, a name
+    /// empty or used twice, a triangle with several segments or without a
+    /// column, grains or cumulative states that differ, or a value column
+    /// named as the key.
+    Stack(String),
     /// The claims development result (Merz–Wüthrich) does not apply to
     /// this triangle: its latest values are not on one calendar diagonal.
     /// A setting of the fit that the closed form does not support (a tail,
@@ -312,6 +318,7 @@ impl fmt::Display for Error {
             Self::PaidIncurred(why) => write!(f, "paid-incurred chain: {why}"),
             Self::DevelopmentCurve(why) => write!(f, "development curve: {why}"),
             Self::IndustryPrior(why) => write!(f, "industry prior: {why}"),
+            Self::Stack(why) => write!(f, "{why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
             Self::OneYear {
                 failed,
