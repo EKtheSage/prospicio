@@ -279,3 +279,43 @@ def test_issue_328_grouped_fits_reproduce_bahnemann():
     assert [round(f) for f in lev.fitted] == [648, 2091, 3239, 5410, 7580, 10168, 13069, 14850]
     with pytest.raises(ValueError):
         fit_grouped("lognormal", bounds, counts, "mle")
+
+
+def test_issue_800_loglogistic_exponential_and_the_pareto_families():
+    import math
+
+    import prospicio.distributions as D
+
+    y = [1500.0, 2500.0, 4000.0, 10_000.0, 1200.0, 3300.0]
+    r = [1000.0] * len(y)
+    # The exponential's mean is mean(y) - t with one threshold.
+    e = D.fit_severity("exponential", y, reporting_thresholds=r)
+    assert math.isclose(e.parameters["mean"], sum(y) / len(y) - 1000.0, rel_tol=1e-12)
+    assert isinstance(e.distribution, D.Exponential)
+    assert e.threshold is None
+    # The Pareto from t: alpha = n / sum ln(y/t), t pinned and not counted.
+    p = D.fit_severity("pareto", y, reporting_thresholds=r, t=1000.0)
+    s = sum(math.log(v / 1000.0) for v in y)
+    alpha = len(y) / s
+    assert math.isclose(p.parameters["alpha"], alpha, rel_tol=1e-12)
+    ll = len(y) * math.log(alpha) - (alpha + 1) * s - len(y) * math.log(1000.0)
+    assert math.isclose(p.log_likelihood, ll, rel_tol=1e-12)
+    assert math.isclose(p.aic, 2 - 2 * ll, rel_tol=1e-12)
+    assert p.threshold == 1000.0 and math.isnan(p.standard_errors["t"])
+    # Riegel's generalized Pareto matches the Lomax conditioned on t.
+    g = D.fit_severity("gen_pareto", y, reporting_thresholds=r, t=1000.0)
+    lomax = D.fit_severity("lomax", y, reporting_thresholds=r)
+    assert abs(g.log_likelihood - lomax.log_likelihood) < 1e-5
+    assert isinstance(g.distribution, D.GeneralizedPareto)
+    ll_fit = D.fit_severity("loglogistic", y, reporting_thresholds=r)
+    assert isinstance(ll_fit.distribution, D.Loglogistic)
+    assert set(ll_fit.parameters) == {"shape", "scale"}
+    with pytest.raises(ValueError):
+        D.fit_severity("pareto", y)
+    with pytest.raises(ValueError):
+        D.fit_severity("gamma", y, t=1000.0)
+    # The exponential distribution itself: memoryless layers.
+    x = D.Exponential(2.0)
+    assert math.isclose(x.layer(1.0, 3.0), x.survival(3.0) * x.lev(1.0), rel_tol=1e-14)
+    assert D.from_json(D.to_json(x)).scale == 2.0
+    assert pickle.loads(pickle.dumps(x)).scale == 2.0

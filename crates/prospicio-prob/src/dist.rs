@@ -14,9 +14,9 @@ use crate::distribution::Distribution;
 use crate::evt::Gpd;
 use crate::severity::Severity;
 use crate::{
-    Affine, Beta, Burr, Custom, Gamma, Grid, InverseGamma, InverseGaussian, LogAffinePareto,
-    Loglogistic, Lognormal, Mixture, Pareto, PiecewisePareto, PolicyLimits, Sampled, SizeOfLoss,
-    Truncated, Tweedie, Weibull,
+    Affine, Beta, Burr, Custom, Exponential, Gamma, Grid, InverseGamma, InverseGaussian,
+    LogAffinePareto, Loglogistic, Lognormal, Mixture, Pareto, PiecewisePareto, PolicyLimits,
+    Sampled, SizeOfLoss, Truncated, Tweedie, Weibull,
 };
 
 /// Any native univariate distribution.
@@ -47,6 +47,7 @@ pub enum Dist {
     PiecewisePareto(PiecewisePareto),
     LogAffinePareto(LogAffinePareto),
     GeneralizedPareto(Gpd),
+    Exponential(Exponential),
     Gamma(Gamma),
     Tweedie(Tweedie),
     Weibull(Weibull),
@@ -80,6 +81,7 @@ macro_rules! each {
             Dist::PiecewisePareto($d) => $call,
             Dist::LogAffinePareto($d) => $call,
             Dist::GeneralizedPareto($d) => $call,
+            Dist::Exponential($d) => $call,
             Dist::Gamma($d) => $call,
             Dist::Tweedie($d) => $call,
             Dist::Weibull($d) => $call,
@@ -103,7 +105,7 @@ macro_rules! each {
 impl Dist {
     /// Short name of the family: `"lognormal"`, `"pareto"`,
     /// `"piecewise_pareto"`, `"log_affine_pareto"`, `"generalized_pareto"`,
-    /// `"gamma"`, `"tweedie"`, `"weibull"`, `"loglogistic"`,
+    /// `"exponential"`, `"gamma"`, `"tweedie"`, `"weibull"`, `"loglogistic"`,
     /// `"inverse_gamma"`, `"inverse_gaussian"`, `"burr"`, `"beta"`,
     /// `"truncated"`, `"affine"`, `"mixture"`, `"grid"`, `"size_of_loss"`, `"sampled"` or
     /// `"custom"`.
@@ -114,6 +116,7 @@ impl Dist {
             Self::PiecewisePareto(_) => "piecewise_pareto",
             Self::LogAffinePareto(_) => "log_affine_pareto",
             Self::GeneralizedPareto(_) => "generalized_pareto",
+            Self::Exponential(_) => "exponential",
             Self::Gamma(_) => "gamma",
             Self::Tweedie(_) => "tweedie",
             Self::Weibull(_) => "weibull",
@@ -143,6 +146,7 @@ impl Dist {
             Self::PiecewisePareto(d) => d,
             Self::LogAffinePareto(d) => d,
             Self::GeneralizedPareto(d) => d,
+            Self::Exponential(d) => d,
             Self::Gamma(d) => d,
             Self::Tweedie(d) => d,
             Self::Weibull(d) => d,
@@ -211,6 +215,7 @@ from_family!(
     PiecewisePareto(PiecewisePareto),
     LogAffinePareto(LogAffinePareto),
     GeneralizedPareto(Gpd),
+    Exponential(Exponential),
     Gamma(Gamma),
     Tweedie(Tweedie),
     Weibull(Weibull),
@@ -284,6 +289,7 @@ macro_rules! each_severity {
             Dist::PiecewisePareto($d) => $call,
             Dist::LogAffinePareto($d) => $call,
             Dist::GeneralizedPareto($d) => $call,
+            Dist::Exponential($d) => $call,
             Dist::Gamma($d) => $call,
             Dist::Tweedie($d) => $call,
             Dist::Weibull($d) => $call,
@@ -381,6 +387,7 @@ mod tests {
         vec![
             ln.into(),
             Pareto::new(500.0, 2.5).unwrap().into(),
+            Exponential::new(750.0).unwrap().into(),
             Gamma::new(2.0, 500.0).unwrap().into(),
             Weibull::new(1.5, 1000.0).unwrap().into(),
             Loglogistic::new(4.0, 900.0).unwrap().into(),

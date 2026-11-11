@@ -45,6 +45,7 @@ reference:
       - tweedie
       - weibull_distribution
       - loglogistic_distribution
+      - exponential_distribution
       - inverse_gamma_distribution
       - inverse_gaussian_distribution
       - burr_distribution

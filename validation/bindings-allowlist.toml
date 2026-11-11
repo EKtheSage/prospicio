@@ -188,6 +188,8 @@
 "tower::layer_losses_from_unlimited" = "unbound on 2026-10-28 (seed); review"
 
 [python.prospicio_prob]
+"FitStatistics" = "the Pareto fits' likelihood reaches Python and R through fit_severity with a t (#800)"
+"severity_fit::fit_severity" = "bound through fit_severity_with_threshold, which takes the body families with t = None (#800)"
 "InputHasher" = "unbound on 2026-10-28 (seed); review"
 "LocalParetoApproximation" = "unbound on 2026-10-28 (seed); review"
 "TailRow" = "unbound on 2026-10-28 (seed); review"
@@ -460,6 +462,8 @@
 "tower::layer_losses_from_unlimited" = "unbound on 2026-10-28 (seed); review"
 
 [r.prospicio_prob]
+"FitStatistics" = "the Pareto fits' likelihood reaches Python and R through fit_severity with a t (#800)"
+"severity_fit::fit_severity" = "bound through fit_severity_with_threshold, which takes the body families with t = None (#800)"
 "InputHasher" = "unbound on 2026-10-28 (seed); review"
 "LocalParetoApproximation" = "unbound on 2026-10-28 (seed); review"
 "capital::Allocation" = "unbound on 2026-10-28 (seed); review"

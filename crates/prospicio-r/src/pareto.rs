@@ -524,6 +524,23 @@ severity_class!(TweedieDist {
     }
 });
 
+/// Exponential distribution.
+#[extendr]
+pub(crate) struct ExponentialDist {
+    pub(crate) inner: prospicio_prob::Exponential,
+}
+
+severity_class!(ExponentialDist {
+    fn new(mean: f64) -> Result<Self> {
+        let inner = prospicio_prob::Exponential::new(mean).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn scale(&self) -> f64 {
+        self.inner.mean_param()
+    }
+});
+
 /// Loglogistic distribution.
 #[extendr]
 pub(crate) struct LoglogisticDist {
@@ -812,9 +829,9 @@ fn piecewise_pareto_fit_standard_errors_rust(
         .map_err(to_r)
 }
 
-/// A lognormal, gamma, Weibull or Burr fitted to large losses:
-/// `list(family, ptr, parameters, standard_errors, covariance,
-/// log_likelihood, aic, bic, converged)`, the parameters named.
+/// A severity fitted to large losses: `list(family, ptr, parameters,
+/// standard_errors, covariance, log_likelihood, aic, bic, converged)`, the
+/// parameters named. `t` is the Pareto families' threshold, NaN for none.
 #[extendr]
 fn severity_fit_rust(
     family: &str,
@@ -823,11 +840,13 @@ fn severity_fit_rust(
     censored: &[f64],
     weights: &[f64],
     upper: &[f64],
+    t: f64,
 ) -> Result<List> {
-    use prospicio_prob::severity_fit::{Family, fit_severity};
+    use prospicio_prob::severity_fit::{Family, fit_severity_with_threshold};
     let family = Family::from_name(family).map_err(to_r)?;
     let data = bounded_above(large_losses(losses, reporting, censored, weights)?, upper)?;
-    let fit = fit_severity(family, &data).map_err(to_r)?;
+    let t = (!t.is_nan()).then_some(t);
+    let fit = fit_severity_with_threshold(family, &data, t).map_err(to_r)?;
     let names = family.parameter_names();
     let named = |v: Vec<f64>| -> Result<Robj> {
         let mut r: Robj = v.into();
@@ -836,7 +855,8 @@ fn severity_fit_rust(
     };
     let ptr = crate::distributions::dist_to_robj(fit.dist().clone())?;
     Ok(list!(
-        // The distribution's own family: the Lomax is a Burr.
+        // The distribution's own family: the Lomax is a Burr, the
+        // generalized Pareto a "generalized_pareto".
         family = fit.dist().family(),
         ptr = ptr,
         parameters = named(fit.parameters().to_vec())?,
@@ -1098,6 +1118,7 @@ extendr_module! {
     impl GammaDist;
     impl TweedieDist;
     impl WeibullDist;
+    impl ExponentialDist;
     impl LoglogisticDist;
     impl InverseGammaDist;
     impl InverseGaussianDist;

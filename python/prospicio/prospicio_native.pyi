@@ -14028,6 +14028,220 @@ class Expense:
         """
 
 @final
+class Exponential:
+    """
+    Exponential distribution with mean ``theta``: ``S(x) = exp(-x / theta)``,
+    as SciPy's ``expon(scale=theta)``. Memoryless, so every layer moment is
+    in closed form.
+    
+    Parameters
+    ----------
+    mean : float
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Exponential
+    >>> Exponential(2.0).stop_loss(0.0)
+    2.0
+    """
+    def __getnewargs__(self, /) -> tuple[float]: ...
+    def __new__(cls, /, mean: float) -> Exponential: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        The scale ``theta``, the mean (the rate is ``1 / theta``).
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+
+@final
 class Exposure:
     """
     Each underwriting year's share of a full book's exposure in each
@@ -30970,7 +31184,7 @@ class SeverityFit:
     @property
     def aic(self, /) -> float:
         """
-        Akaike's information criterion.
+        Akaike's information criterion, a pinned ``t`` not counted.
         """
     @property
     def bic(self, /) -> float:
@@ -30986,7 +31200,8 @@ class SeverityFit:
     def covariance(self, /) -> list[list[float]]:
         """
         The parameters' covariance, one row per parameter in the family's
-        order (``meanlog, sdlog``; ``shape, scale``; ``alpha, gamma, scale``).
+        order (``meanlog, sdlog``; ``shape, scale``; ``alpha, gamma, scale``;
+        ``t, alpha``), NaN in the row and column of a pinned ``t``.
         """
     @property
     def distribution(self, /) -> Any:
@@ -31013,6 +31228,11 @@ class SeverityFit:
         """
         Each parameter's standard error, by name; NaN where the observed
         information is singular.
+        """
+    @property
+    def threshold(self, /) -> float |None:
+        """
+        The threshold ``t`` of a Pareto family, ``None`` for a body family.
         """
 
 @final
@@ -37750,19 +37970,28 @@ def fit_references(layers: Sequence[tuple[float, float, float]] = ..., frequenci
     160.0
     """
 
-def fit_severity(family: str, losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None, truncated_above: Sequence[float] |None = None) -> SeverityFit:
+def fit_severity(family: str, losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None, truncated_above: Sequence[float] |None = None, t: float |None = None) -> SeverityFit:
     """
-    Maximum likelihood fit of a lognormal, gamma, Weibull, Burr or Lomax
-    severity to large losses, each conditioned on exceeding its reporting
-    threshold (left truncation), with losses capped by a policy limit
-    censored, and optionally truncated from above (each loss conditioned on
-    not exceeding its bound). The Lomax, ``S(x) = (1 + x / scale) **
-    -alpha`` (Bahnemann's Pareto), is fitted as a :class:`Burr` with
-    ``gamma = 1``.
+    Maximum likelihood fit of a severity to large losses, each conditioned
+    on exceeding its reporting threshold (left truncation), with losses
+    capped by a policy limit censored, and optionally truncated from above
+    (each loss conditioned on not exceeding its bound). The Lomax,
+    ``S(x) = (1 + x / scale) ** -alpha`` (Bahnemann's Pareto), is fitted as a
+    :class:`Burr` with ``gamma = 1``, the loglogistic as the Burr with
+    ``alpha = 1``.
+    
+    ``"pareto"`` (``Pareto(t, alpha)``) and ``"gen_pareto"`` (Riegel's
+    generalized Pareto, a :class:`GeneralizedPareto` at location ``t`` with
+    ``xi = 1 / alpha_tail`` and ``beta = t / alpha_ini``) are fitted from
+    the threshold ``t`` by their own estimators and scored on the same
+    likelihood, ``t`` among the parameters but not counted in the AIC. They
+    condition each loss on ``max(r, t)`` where the body families condition
+    on ``r``: compare their AIC with a body family's only when every
+    reporting threshold is at least ``t``.
     
     Parameters
     ----------
-    family : {"lognormal", "gamma", "weibull", "burr", "lomax"}
+    family : {"lognormal", "gamma", "weibull", "loglogistic", "exponential", "burr", "lomax", "pareto", "gen_pareto"}
     losses : list of float
     reporting_thresholds : list of float, optional
         Per-loss thresholds below which a loss would not have been
@@ -37773,6 +38002,10 @@ def fit_severity(family: str, losses: Sequence[float], reporting_thresholds: Seq
     truncated_above : list of float, optional
         Per-loss bounds from above: a loss is conditioned on not exceeding
         its bound (a study of claims up to 50,000). ``math.inf`` means none.
+        The body families only.
+    t : float, optional
+        The threshold of ``"pareto"`` and ``"gen_pareto"``, required for
+        them and refused for the others.
     
     Returns
     -------

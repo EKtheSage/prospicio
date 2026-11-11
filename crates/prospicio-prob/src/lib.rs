@@ -23,6 +23,7 @@ pub mod dist;
 pub mod distortion;
 pub mod distribution;
 pub mod evt;
+pub mod exponential;
 pub mod gamma;
 pub mod grid;
 pub mod grouped_fit;
@@ -77,11 +78,12 @@ pub use discrete::{Discrete, TailRow};
 pub use dist::{Dist, SeverityDist};
 pub use distortion::{Distortion, Family};
 pub use distribution::Distribution;
+pub use exponential::Exponential;
 pub use gamma::Gamma;
 pub use grid::{Discretization, DiscretizationReport, Grid};
 pub use inverse_gamma::InverseGamma;
 pub use inverse_gaussian::InverseGaussian;
-pub use large_losses::LargeLosses;
+pub use large_losses::{FitStatistics, LargeLosses};
 pub use local_pareto::{
     LocalParetoApproximation, LocalParetoConversion, LogAffinePareto, local_pareto_to_piecewise,
 };

@@ -93,9 +93,10 @@ impl Lognormal {
 /// sampled distribution.
 pub(crate) fn dist_from_robj(obj: &Robj) -> Result<Dist> {
     use crate::pareto::{
-        AffineDist, BetaDist, BurrDist, CustomDist, GammaDist, GeneralizedPareto, InverseGammaDist,
-        InverseGaussianDist, LogAffinePareto, LoglogisticDist, MixtureDist, Pareto,
-        PiecewisePareto, PolicyLimitsDist, SizeOfLossDist, TruncatedDist, TweedieDist, WeibullDist,
+        AffineDist, BetaDist, BurrDist, CustomDist, ExponentialDist, GammaDist, GeneralizedPareto,
+        InverseGammaDist, InverseGaussianDist, LogAffinePareto, LoglogisticDist, MixtureDist,
+        Pareto, PiecewisePareto, PolicyLimitsDist, SizeOfLossDist, TruncatedDist, TweedieDist,
+        WeibullDist,
     };
     if let Ok(d) = <&Lognormal>::try_from(obj) {
         return Ok(d.inner.into());
@@ -125,6 +126,9 @@ pub(crate) fn dist_from_robj(obj: &Robj) -> Result<Dist> {
         return Ok(d.inner.into());
     }
     if let Ok(d) = <&LoglogisticDist>::try_from(obj) {
+        return Ok(d.inner.into());
+    }
+    if let Ok(d) = <&ExponentialDist>::try_from(obj) {
         return Ok(d.inner.into());
     }
     if let Ok(d) = <&InverseGammaDist>::try_from(obj) {
@@ -185,9 +189,10 @@ fn dist_from_json_rust(text: &str) -> Result<List> {
 /// in its class by `Dist::family`.
 pub(crate) fn dist_to_robj(d: Dist) -> Result<Robj> {
     use crate::pareto::{
-        AffineDist, BetaDist, BurrDist, GammaDist, GeneralizedPareto, InverseGammaDist,
-        InverseGaussianDist, LogAffinePareto, LoglogisticDist, MixtureDist, Pareto,
-        PiecewisePareto, PolicyLimitsDist, SizeOfLossDist, TruncatedDist, TweedieDist, WeibullDist,
+        AffineDist, BetaDist, BurrDist, ExponentialDist, GammaDist, GeneralizedPareto,
+        InverseGammaDist, InverseGaussianDist, LogAffinePareto, LoglogisticDist, MixtureDist,
+        Pareto, PiecewisePareto, PolicyLimitsDist, SizeOfLossDist, TruncatedDist, TweedieDist,
+        WeibullDist,
     };
     Ok(match d {
         Dist::Lognormal(inner) => Lognormal { inner }.into(),
@@ -199,6 +204,7 @@ pub(crate) fn dist_to_robj(d: Dist) -> Result<Robj> {
         Dist::Tweedie(inner) => TweedieDist { inner }.into(),
         Dist::Weibull(inner) => WeibullDist { inner }.into(),
         Dist::Loglogistic(inner) => LoglogisticDist { inner }.into(),
+        Dist::Exponential(inner) => ExponentialDist { inner }.into(),
         Dist::InverseGamma(inner) => InverseGammaDist { inner }.into(),
         Dist::InverseGaussian(inner) => InverseGaussianDist { inner }.into(),
         Dist::Burr(inner) => BurrDist { inner }.into(),
@@ -219,7 +225,7 @@ pub(crate) fn dist_to_robj(d: Dist) -> Result<Robj> {
 }
 
 /// The distributions accepted as a severity, for error messages.
-const SEVERITIES: &str = "lognormal, gamma, tweedie, weibull, loglogistic, inverse gamma, \
+const SEVERITIES: &str = "lognormal, exponential, gamma, tweedie, weibull, loglogistic, inverse gamma, \
                           inverse Gaussian, Burr, beta, truncated, policy limits, mixture, grid, \
                           custom, or \
                           a Pareto-family distribution";

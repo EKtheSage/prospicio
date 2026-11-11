@@ -136,7 +136,9 @@ fn fit(family: &str, data: &LargeLosses, t: &Grid, truncation: &Grid) -> Result<
             ))
         }
     };
-    if let Ok(body) = Family::from_name(family) {
+    if let Ok(body) = Family::from_name(family)
+        && !body.needs_threshold()
+    {
         none(t, "t")?;
         none(truncation, "truncation")?;
         let f = fit_severity(body, data).map_err(e)?;

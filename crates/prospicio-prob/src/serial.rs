@@ -24,9 +24,9 @@ use crate::dist::{Dist, SeverityDist};
 use crate::evt::Gpd;
 use crate::sampled::Empirical;
 use crate::{
-    Affine, Beta, Burr, Gamma, Grid, InverseGamma, InverseGaussian, LogAffinePareto, Loglogistic,
-    Lognormal, Mixture, Pareto, PiecewisePareto, PolicyLimits, Sampled, SizeOfLoss, Truncated,
-    Truncation, Tweedie, Weibull,
+    Affine, Beta, Burr, Exponential, Gamma, Grid, InverseGamma, InverseGaussian, LogAffinePareto,
+    Loglogistic, Lognormal, Mixture, Pareto, PiecewisePareto, PolicyLimits, Sampled, SizeOfLoss,
+    Truncated, Truncation, Tweedie, Weibull,
 };
 
 /// Value of the `format` field.
@@ -118,6 +118,7 @@ fn body(d: &Dist) -> Result<Map<String, Value>> {
             put("beta", num(x.beta()));
             put("location", num(x.location()));
         }
+        Dist::Exponential(x) => put("mean", num(x.mean_param())),
         Dist::Gamma(x) => {
             put("shape", num(x.shape()));
             put("scale", num(x.scale()));
@@ -245,6 +246,7 @@ fn from_body(m: &Map<String, Value>) -> Result<Dist> {
         "generalized_pareto" => Gpd::new(f("xi")?, f("beta")?)?
             .shifted(f("location")?)?
             .into(),
+        "exponential" => Exponential::new(f("mean")?)?.into(),
         "gamma" => Gamma::new(f("shape")?, f("scale")?)?.into(),
         "tweedie" => Tweedie::new(f("mean")?, f("dispersion")?, f("power")?)?.into(),
         "weibull" => Weibull::new(f("shape")?, f("scale")?)?.into(),
@@ -437,6 +439,7 @@ mod tests {
                 .into(),
             LogAffinePareto::new(100.0, 1.5, 0.3).unwrap().into(),
             Gpd::new(0.25, 3.0).unwrap().shifted(10.0).unwrap().into(),
+            Exponential::new(750.0).unwrap().into(),
             Gamma::new(2.0, 500.0).unwrap().into(),
             Tweedie::new(1000.0, 2.0, 1.5).unwrap().into(),
             Weibull::new(1.5, 1000.0).unwrap().into(),
