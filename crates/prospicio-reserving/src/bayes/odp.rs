@@ -2431,9 +2431,9 @@ mod tests {
     }
 
     /// PSIS-LOO bit for bit (#842): the elpd with its standard error, the
-    /// pointwise terms and each cell's Pareto k, of a fit with the settings
-    /// of `the_fit_is_pinned_on_linux` on GenIns (RAA has a negative
-    /// increment and no LOO).
+    /// pointwise terms and each cell's Pareto k, of a fit like
+    /// `the_fit_is_pinned_on_linux`'s on GenIns (RAA has a negative
+    /// increment and no LOO) with 1,000 draws (2 chains of 500), so that each Pareto tail's length, `min(S/5, 3 sqrt(S / r_eff))`, moves with the draws' relative efficiency.
     /// The Linux hash is still 0: CI's `bayes` job prints the value to pin
     /// as `PIN BayesOdp-loo actual 0x...`.
     #[test]
@@ -2446,7 +2446,7 @@ mod tests {
             sampler: Sampler {
                 chains: 2,
                 tune: 100,
-                draws: 50,
+                draws: 500,
                 ..Sampler::default()
             },
             n_sims: 100,

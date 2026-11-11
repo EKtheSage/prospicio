@@ -4048,7 +4048,8 @@ fn the_fit_is_pinned_on_linux() {
     });
 }
 
-/// PSIS-LOO of the fit in `the_fit_is_pinned_on_linux`, bit for bit (#842): the elpd
+/// PSIS-LOO bit for bit (#842), of a fit like `the_fit_is_pinned_on_linux`'s
+/// with 1,000 draws (2 chains of 500), so that each Pareto tail's length, `min(S/5, 3 sqrt(S / r_eff))`, moves with the draws' relative efficiency: the elpd
 /// with its standard error, the pointwise terms and each cell's Pareto k,
 /// and its outstanding and paid sums.
 /// The Linux hash is still 0: CI's `bayes` job prints the value to pin
@@ -4063,7 +4064,7 @@ fn the_loo_is_pinned_on_linux() {
         sampler: Sampler {
             chains: 2,
             tune: 100,
-            draws: 50,
+            draws: 500,
             ..quick(841).sampler
         },
         n_sims: 100,
