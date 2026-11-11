@@ -64,6 +64,8 @@ jobs:
       # Public Rust items are bound in Python and R or on the allow-list
       # (validation/bindings-allowlist.toml); prints the coverage table.
       - run: python3 validation/scripts/test_check_bindings.py && python3 validation/scripts/check_bindings.py
+      # Each parity reference file tied to its generator and hash (#844).
+      - run: python3 validation/scripts/check_reference_manifest.py
       # Every slow Bayesian target is in one leg of the bayes job, and every
       # leg is one its matrix runs (#824).
       - run: python3 validation/scripts/bayes_shards.py

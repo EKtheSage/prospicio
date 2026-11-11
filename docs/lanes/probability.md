@@ -8,3 +8,4 @@ Finished items are in [done/probability.md](done/probability.md), which agents r
 
 ## Next
 
+- [reference-generators] #844 items 2 and 3: pinned environments for the Python generators (PEP 723 inline metadata or one requirements file per reference package family, so `uv run validation/scripts/<name>.py` rebuilds a reference) and a weekly job, outside the required checks, that reruns the cheap pure-Python generators and compares their output with the committed files within each row's tolerance
