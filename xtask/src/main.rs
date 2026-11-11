@@ -568,7 +568,7 @@ fn r(opts: Options) -> Result {
         step("r: test");
         let python = if cfg!(windows) { "python" } else { "python3" };
         run(Command::new(python)
-            .arg("validation/scripts/run_r_tests.py")
+            .args(["validation/scripts/run_r_tests.py", "--last", "test-boosting.R"])
             .current_dir(&root))?;
     }
     r_doc_check(&root)?;

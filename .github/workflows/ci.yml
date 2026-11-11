@@ -167,6 +167,11 @@ jobs:
       matrix:
         os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
         part: [tests, guides]
+        # TEMPORARY (measuring #848/#849): one rayon thread against the default.
+        rayon: ["1", "0"]
+        exclude:
+          - part: guides
+            rayon: "1"
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -220,11 +225,12 @@ jobs:
       - if: steps.plan.outputs.test == 'true' && matrix.part == 'tests'
         name: Run the binding tests on four workers
         env:
-          RAYON_NUM_THREADS: "1"
-        run: >-
-          uv run pytest tests -n 4 --dist loadfile
-          --ignore=tests/test_guides.py --ignore=tests/test_examples.py
-          --durations=25 --durations-min=5
+          RAYON_NUM_THREADS: ${{ matrix.rayon }}
+        run: |
+          uv run pytest tests -n 4 --dist loadfile \
+            --ignore=tests/test_guides.py --ignore=tests/test_examples.py --ignore=tests/test_boosting.py \
+            --durations=25 --durations-min=5
+          uv run pytest tests/test_boosting.py --durations=10 --durations-min=5
         working-directory: python
       - if: steps.plan.outputs.test == 'true' && matrix.part == 'guides'
         name: Run the guides and notebooks
@@ -239,6 +245,11 @@ jobs:
       matrix:
         os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
         part: [tests, guides]
+        # TEMPORARY (measuring #848/#849): one rayon thread against the default.
+        rayon: ["1", "0"]
+        exclude:
+          - part: guides
+            rayon: "1"
     runs-on: ${{ matrix.os }}
     # PowerShell (the Windows default) aliases `R` to Invoke-History.
     defaults:
@@ -305,10 +316,10 @@ jobs:
       - name: Run the R tests four at a time
         if: steps.plan.outputs.test == 'true' && matrix.part == 'tests'
         env:
-          RAYON_NUM_THREADS: "1"
+          RAYON_NUM_THREADS: ${{ matrix.rayon }}
         run: >-
           "$([ "$RUNNER_OS" = Windows ] && echo python || echo python3)" validation/scripts/run_r_tests.py --jobs 4
-          --exclude test-guides.R
+          --exclude test-guides.R --last test-boosting.R
           --first test-reserving-compartmental.R
           --first test-reserving-compartmental-segments.R
           --first test-reserving-pattern-draws.R

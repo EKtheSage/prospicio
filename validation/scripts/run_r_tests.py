@@ -14,10 +14,15 @@ of them.
     python3 validation/scripts/run_r_tests.py --jobs 1         # one at a time
     python3 validation/scripts/run_r_tests.py --exclude test-guides.R
     python3 validation/scripts/run_r_tests.py test-guides.R    # named files only
+    python3 validation/scripts/run_r_tests.py --last test-boosting.R
     python3 validation/scripts/run_r_tests.py --self-test
 
 `--first` names files to start before the others: the slowest files, so
 that the longest one does not start last and set the step's time alone.
+`--last` names files to run after the others, one at a time with the
+machine to themselves: the boosting tests, whose LightGBM and XGBoost
+threads (OpenMP) slow down many times over when other processes hold the
+cores.
 CI's r job and `cargo xtask r` both run the tests through this script.
 """
 
@@ -35,17 +40,19 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 TESTS = ROOT / "R" / "prospicio" / "tests"
 
 
-def plan(names, tests=TESTS, exclude=(), first=()):
-    """The test files to run, in the order they start: `first` (in the order
-    given), then the rest by name. `names` empty means every file of
-    `tests`. Unknown names in any list are an error."""
+def plan(names, tests=TESTS, exclude=(), first=(), last=()):
+    """The test files to run as (parallel, alone): the parallel batch in the
+    order its files start, `first` (in the order given) then the rest by
+    name, and the files of `last` to run one at a time after it. `names`
+    empty means every file of `tests`. Unknown names are an error."""
     every = sorted(p.name for p in tests.glob("*.R"))
-    errors = [f"no test file {n} in {tests}" for n in [*names, *exclude, *first] if n not in every]
+    errors = [f"no test file {n} in {tests}" for n in [*names, *exclude, *first, *last] if n not in every]
     if errors:
         raise SystemExit("\n".join(errors))
     chosen = [n for n in (names or every) if n not in exclude]
-    head = [n for n in first if n in chosen]
-    return head + [n for n in sorted(chosen) if n not in head]
+    tail = [n for n in last if n in chosen]
+    head = [n for n in first if n in chosen and n not in tail]
+    return head + [n for n in sorted(chosen) if n not in head and n not in tail], tail
 
 
 def run_one(rscript, name, tests, logs):
@@ -58,23 +65,34 @@ def run_one(rscript, name, tests, logs):
     return name, code, time.monotonic() - start, log
 
 
-def run(order, jobs, tests=TESTS, rscript=None, stream=sys.stdout):
-    """Run `order`, `jobs` at a time; return the names that failed."""
+def run(order, jobs, tests=TESTS, rscript=None, stream=sys.stdout, alone=()):
+    """Run `order`, `jobs` at a time, then `alone` one at a time; return the
+    names that failed."""
     rscript = rscript or shutil.which("Rscript")
     if rscript is None:
         raise SystemExit("Rscript is not on the PATH")
     say = lambda s: print(s, file=stream, flush=True)
-    say(f"Running {len(order)} R test files, {jobs} at a time.")
+    say(f"Running {len(order)} R test files, {jobs} at a time"
+        + (f", then {len(alone)} alone." if alone else "."))
     results = []
+
+    def done(name, code, secs, log):
+        text = log.read_text(encoding="utf-8", errors="replace")
+        results.append((name, code, secs, text))
+        say(f"{'PASS' if code == 0 else 'FAIL'} {name}: {secs:.0f} s")
+
+    start = time.monotonic()
     with tempfile.TemporaryDirectory() as tmp:
         logs = pathlib.Path(tmp)
         with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
             futures = [pool.submit(run_one, rscript, n, tests, logs) for n in order]
             for f in concurrent.futures.as_completed(futures):
-                name, code, secs, log = f.result()
-                text = log.read_text(encoding="utf-8", errors="replace")
-                results.append((name, code, secs, text))
-                say(f"{'PASS' if code == 0 else 'FAIL'} {name}: {secs:.0f} s")
+                done(*f.result())
+        if alone:
+            say(f"Parallel batch: {time.monotonic() - start:.0f} s")
+        for n in alone:
+            done(*run_one(rscript, n, tests, logs))
+    say(f"Total: {time.monotonic() - start:.0f} s")
     say("\nThe slowest R test files:")
     for name, _, secs, _ in sorted(results, key=lambda r: -r[2])[:10]:
         say(f"{secs:6.0f} s  {name}")
@@ -106,10 +124,13 @@ def self_test():
         tests = pathlib.Path(tmp)
         for name in ["test-a.R", "test-b.R", "test-c.R", "test-d.R"]:
             (tests / name).write_text("")
-        assert plan([], tests) == ["test-a.R", "test-b.R", "test-c.R", "test-d.R"]
-        assert plan([], tests, exclude=["test-b.R"], first=["test-d.R", "test-b.R"]) == [
-            "test-d.R", "test-a.R", "test-c.R"]
-        assert plan(["test-c.R", "test-a.R"], tests) == ["test-a.R", "test-c.R"]
+        assert plan([], tests) == (["test-a.R", "test-b.R", "test-c.R", "test-d.R"], [])
+        assert plan([], tests, exclude=["test-b.R"], first=["test-d.R", "test-b.R"]) == (
+            ["test-d.R", "test-a.R", "test-c.R"], [])
+        assert plan(["test-c.R", "test-a.R"], tests) == (["test-a.R", "test-c.R"], [])
+        assert plan([], tests, first=["test-c.R"], last=["test-c.R", "test-a.R"]) == (
+            ["test-b.R", "test-d.R"], ["test-c.R", "test-a.R"])
+        assert plan(["test-b.R"], tests, last=["test-a.R"]) == (["test-b.R"], [])
         try:
             plan(["test-x.R"], tests)
             raise AssertionError("an unknown file must be an error")
@@ -134,7 +155,8 @@ def self_test():
             rscript.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{fake}" "$@"\n')
             rscript.chmod(0o755)
         out = io.StringIO()
-        failed = run(plan([], tests), 2, tests, str(rscript), out)
+        order, alone = plan([], tests, last=["test-d.R"])
+        failed = run(order, 2, tests, str(rscript), out, alone)
         text = out.getvalue()
         assert failed == ["test-b.R", "test-d.R"], failed
         assert "PASS test-a.R" in text and "FAIL test-b.R" in text, text
@@ -150,12 +172,14 @@ def main():
     ap.add_argument("--jobs", "-j", type=int, default=os.cpu_count() or 1)
     ap.add_argument("--exclude", action="append", default=[], metavar="FILE")
     ap.add_argument("--first", action="append", default=[], metavar="FILE")
+    ap.add_argument("--last", action="append", default=[], metavar="FILE")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
     if args.self_test:
         self_test()
         return
-    failed = run(plan(args.files, exclude=args.exclude, first=args.first), max(1, args.jobs))
+    order, alone = plan(args.files, exclude=args.exclude, first=args.first, last=args.last)
+    failed = run(order, max(1, args.jobs), alone=alone)
     sys.exit(1 if failed else 0)
 
 
