@@ -319,3 +319,27 @@ def test_issue_800_loglogistic_exponential_and_the_pareto_families():
     assert math.isclose(x.layer(1.0, 3.0), x.survival(3.0) * x.lev(1.0), rel_tol=1e-14)
     assert D.from_json(D.to_json(x)).scale == 2.0
     assert pickle.loads(pickle.dumps(x)).scale == 2.0
+
+
+def test_issue_804_fit_curves():
+    import prospicio.distributions as D
+
+    y = [1500.0, 2500.0, 4000.0, 10_000.0, 1200.0, 3100.0, 800.0]
+    c = D.fit_curves(y, 1000.0)
+    # 800 is below the threshold: six losses, ascending.
+    assert c["loss"] == [1200.0, 1500.0, 2500.0, 3100.0, 4000.0, 10_000.0]
+    assert abs(c["empirical"][0] - 5.5 / 6) < 1e-15
+    assert abs(c["empirical"][-1] - 0.5 / 6) < 1e-15
+    families = list(c)[2:]
+    assert len(families) == 9
+    # The columns are in AIC order.
+    aic = [D.fit_severity(f, [v for v in y if v >= 1000], [1000.0] * 6,
+                          t=1000.0 if f in ("pareto", "gen_pareto") else None).aic
+           for f in families]
+    assert aic == sorted(aic)
+    # Thinned to three rows; 2.5 rounds to the even 2, as numpy does.
+    thin = D.fit_curves(y, 1000.0, ["lognormal"], points=3)
+    assert thin["loss"] == [1200.0, 2500.0, 10_000.0]
+    assert abs(thin["empirical"][1] - 3.5 / 6) < 1e-15
+    with pytest.raises(ValueError):
+        D.fit_curves(y, 1000.0, points=1)

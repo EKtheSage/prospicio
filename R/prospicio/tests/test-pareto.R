@@ -262,3 +262,16 @@ stopifnot(inherits(fll$distribution, "prospicio::loglogistic_distribution"))
 stopifnot(inherits(try(severity_fit("gamma", py, t = 1000), silent = TRUE), "try-error"))
 ex <- exponential_distribution(2)
 near(layer(ex, 1, 3), survival(ex, 3) * lev(ex, 1))
+
+# Issue #804: every fit's survival beside the plotting positions.
+cy <- c(1500, 2500, 4000, 10000, 1200, 3100, 800)
+fc <- fit_curves(cy, 1000)
+stopifnot(
+  identical(names(fc)[1:2], c("loss", "empirical")),
+  ncol(fc) == 11,
+  identical(fc$loss, c(1200, 1500, 2500, 3100, 4000, 10000)),
+  abs(fc$empirical[1] - 5.5 / 6) < 1e-15
+)
+thin <- fit_curves(cy, 1000, "lognormal", points = 3)
+stopifnot(identical(thin$loss, c(1200, 2500, 10000)), identical(names(thin), c("loss", "empirical", "lognormal")))
+stopifnot(inherits(try(fit_curves(cy, 1000, points = 1), silent = TRUE), "try-error"))

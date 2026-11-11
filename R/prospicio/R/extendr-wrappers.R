@@ -169,6 +169,8 @@ fft_bivariate_rust <- function(frequency, probs, rows, cols, step_a, step_b, poi
 
 finite_horizon_ruin_rust <- function(severity, premium, periods, frequency, rate, sub_periods, points, p) .Call(wrap__finite_horizon_ruin_rust, severity, premium, periods, frequency, rate, sub_periods, points, p)
 
+fit_curves_rust <- function(losses, threshold, families, points) .Call(wrap__fit_curves_rust, losses, threshold, families, points)
+
 frequency_severity_rust <- function(triangle, amounts, counts, ultimate, severity) .Call(wrap__frequency_severity_rust, triangle, amounts, counts, ultimate, severity)
 
 frontier_rust <- function(losses, retentions, limits, kind, assets, rate, pricing, loading, risk, level) .Call(wrap__frontier_rust, losses, retentions, limits, kind, assets, rate, pricing, loading, risk, level)

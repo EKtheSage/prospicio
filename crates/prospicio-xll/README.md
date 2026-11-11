@@ -469,7 +469,7 @@ labelled in `companies`, with their premiums; chain its summary into
 | `PRO.SEV.CDF(x, family, p1, p2, [p3])`, `PRO.SEV.SURVIVAL(...)` | Distribution or survival function at each x |
 | `PRO.SEV.QUANTILE(p, family, p1, p2, [p3])` | Quantile (VaR) at each probability |
 | `PRO.SEV.STATS(family, p1, p2, [p3])` | Mean, SD and CV |
-| `PRO.SEV.FIT(losses, family, [output], [t], [truncation], [thresholds], [censored], [weights], [upper])` | Maximum likelihood fit to large losses, with goodness of fit |
+| `PRO.SEV.FIT(losses, family, [output], [t], [truncation], [thresholds], [censored], [weights], [upper], [points])` | Maximum likelihood fit to large losses, with goodness of fit |
 | `PRO.SEV.FIT.GROUPED(bounds, counts, family, [method], [output])` | A fit to counts in size bands |
 | `PRO.SEV.FIT.LEV(sizes, lev, family, [weights], [output])` | A fit by minimum distance to empirical limited expected values |
 | `PRO.EVT.THRESHOLDS(data, [thresholds])` | Mean excess and GPD shape and scale at each threshold, with SEs |
@@ -502,8 +502,10 @@ labelled in `companies`, with their premiums; chain its summary into
   and every row ranked by AIC, lowest first. Then every reporting
   threshold must be at least `t`, so that each family conditions each
   loss on the same threshold. A range of names in `family` fits only
-  those. Check the upper Q-Q pairs before trusting a body family in the
-  tail.
+  those. `"curves"` spills Loss, Empirical (the plotting positions
+  `(n - i + 0.5) / n`) and each family's survival conditional on `t` in
+  AIC order, for a chart on a log axis; `points` (default 200) thins it.
+  Check the upper Q-Q pairs before trusting a body family in the tail.
 - `PRO.SEV.FIT.GROUPED`: `bounds` has one more cell than `counts`. A
   blank last bound opens the top band.
 - EVT: pick the lowest threshold above which the shape and modified scale
