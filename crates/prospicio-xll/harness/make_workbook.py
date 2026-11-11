@@ -994,9 +994,16 @@ sf["I4"] = ArrayFormula("I4:K13", "=PRO.SEV.FIT(" + data.format(fam='"pareto"', 
 sf["E14"] = "The lognormal's 1M xs 1M from the fit's cells"
 sf["I14"] = ArrayFormula("I14", "=PRO.PRC.LAYER(1000000,1000000,\"lognormal\",F5,F6)")
 sf["E16"] = "Body families compared"; sf["E16"].font = bold
-sf["E17"] = ArrayFormula("E17:N22", "=PRO.SEV.FIT(" + data.format(fam="", out='"compare"', t="") + ")")
-sf["E23"] = "Lognormal against the product-limit estimate (P-P and Q-Q)"; sf["E23"].font = bold
-sf["E24"] = ArrayFormula("E24:J35", "=PRO.SEV.FIT(" + data.format(fam='"lognormal"', out='"gof"', t="") + ")")
+sf["E17"] = ArrayFormula("E17:N24", "=PRO.SEV.FIT(" + data.format(fam="", out='"compare"', t="") + ")")
+sf["E26"] = "Nine families from t = 1,000, ranked by AIC (every loss reported above at least 1,000)"; sf["E26"].font = bold
+sf["E27"] = ArrayFormula("E27:N36", "=PRO.SEV.FIT(" + data.format(fam="", out='"compare"', t="1000") + ")")
+sf["A20"] = "Families to rank"; sf["A20"].font = bold
+for i, name in enumerate(["lognormal", "lomax", "gen_pareto"]):
+    sf[f"A{21 + i}"] = name; sf[f"A{21 + i}"].fill = inp
+sf["E38"] = "Only the families named in A21:A23, ranked by AIC"; sf["E38"].font = bold
+sf["E39"] = ArrayFormula("E39:N42", "=PRO.SEV.FIT(" + data.format(fam="A21:A23", out='"compare"', t="1000") + ")")
+sf["E44"] = "Lognormal against the product-limit estimate (P-P and Q-Q)"; sf["E44"].font = bold
+sf["E45"] = ArrayFormula("E45:J56", "=PRO.SEV.FIT(" + data.format(fam='"lognormal"', out='"gof"', t="") + ")")
 sf["P3"] = "Grouped losses (Bahnemann's six bands; the last bound blank: open)"; sf["P3"].font = bold
 sf["P4"] = "From"; sf["Q4"] = "Count"
 for c in ("P4", "Q4"):

@@ -14,4 +14,3 @@ Finished items are in [done/excel.md](done/excel.md), which agents read when the
 - [excel-confirm-async] in Excel 365: `#GETTING_DATA` then the result for the bootstraps and Bayesian fits, and an edit during a long run (decision 48)
 - [excel-more-functions] further functions as the user asks, each in its group
 - [code-signing-certificate] a code-signing certificate is the user's to buy
-- #802 `PRO.SEV.FIT` `"compare"` with `t`, ranked by AIC, with the loglogistic, exponential and Pareto families, and a range of family names

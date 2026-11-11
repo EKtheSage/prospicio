@@ -1563,6 +1563,49 @@ real Excel.
       0.594705882353, 0.638120662040, ..., 0.637034303676), whose inputs
       are not in the repository.
 
+60. **`"compare"` ranks nine families by AIC from a `t`** (#802, the AP
+    pricing demo's Severity sheet; after #800). `PRO.SEV.FIT` takes
+    `"loglogistic"` and `"exponential"` as body families, and the severity
+    functions take `"exponential"` (`p1` the mean, `p2` and `p3` blank).
+    `"params"` fills Log-likelihood, AIC and BIC for `"pareto"`,
+    `"piecewise_pareto"` and `"gen_pareto"` from the Probability lane's
+    `fit_statistics`: the body fits' likelihood, the given `t` not counted
+    as a parameter. `"compare"` with `t` blank keeps decision 25's table
+    for the body families, now seven, in `Family::ALL`'s fixed order
+    (lognormal, gamma, weibull, loglogistic, exponential, burr, lomax).
+    With a `t` it adds `"pareto"` and `"gen_pareto"` fitted from it and
+    sorts every row by AIC, lowest first: a stable sort, so a tie (the
+    Lomax and Riegel's GPD reach the same likelihood when every threshold
+    is `t`) keeps the fixed order, and a family that fails to fit goes
+    last with its error in the p1 cell. The positional arguments are
+    unchanged, so no other call moves.
+    - **A Pareto family needs every reporting threshold at least `t`.**
+      Its survival is 1 below `t`, so it conditions each loss on
+      `max(r, t)` where a body family conditions on `r`; with a threshold
+      below `t` the two likelihoods are of different data and their AICs
+      do not compare. `"compare"` refuses that case, naming the first loss
+      whose threshold is below `t`, rather than ranking unlike numbers; a
+      user who wants a ranking sets `thresholds` to at least `t`, as the
+      demo does. It also refuses `upper` with a Pareto family, since
+      those are not truncated from above, and still refuses
+      `truncation`. With only body families named, a `t` still ranks the
+      rows and is otherwise unused.
+    - **`family` restricts `"compare"`.** A range of names (blank cells
+      skipped, the same spelling rules as one name) fits only those; the
+      rows are in the fixed order without `t` and ranked with it, so
+      reordering the names changes nothing. `"pareto"` or `"gen_pareto"`
+      without `t` is an error, and `"piecewise_pareto"` is not compared:
+      its thresholds are a row, not the one `t`.
+    - **Parity.** `tests/severity_fit.rs`: on `validation/data/
+      severity_fits.csv`'s 89 losses above 150,000 (#800's stand-in for
+      the requester's losses, which are not in this repository) every
+      row's log-likelihood is SciPy's to 1e-3 (the Burr, which SciPy's
+      script does not fit, excepted), the AIC column is non-decreasing,
+      the nine names are `Family::ALL`, Riegel's GPD and the Lomax agree,
+      and `"params"` for the Pareto families matches the comparison's row.
+      The test workbook's Severity fit sheet ranks R Pareto's example
+      losses from `t` = 1,000 and a three-name restriction.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and
