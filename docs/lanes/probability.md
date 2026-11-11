@@ -8,3 +8,4 @@ Finished items are in [done/probability.md](done/probability.md), which agents r
 
 ## Next
 
+- [numeric-helpers-rest] #843: group 1's Fisher-Yates shuffle as a `StreamRng` method (a `prospicio-core` PR of its own) and the Spearman conversion and indexed reorder in reserving's dependence, then group 2 (`linalg` additions: `mat_mul`, the inverse by unit-vector solves, `cholesky_log_det`, a least-squares line) and group 3 (a fallible `try_bisect` and the 13 hand-written bisections, one site per PR, each keeping its tolerance; `tweedie` onto `golden_section`)
