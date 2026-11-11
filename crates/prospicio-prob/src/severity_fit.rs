@@ -417,7 +417,7 @@ pub fn fit_severity(family: Family, data: &LargeLosses) -> Result<SeverityFit> {
 /// The Pareto is [`Pareto::fit_with_standard_error`] untruncated; the
 /// generalized Pareto is [`Gpd::fit_riegel`], its standard errors from the
 /// observed information in `alpha_ini` and `alpha_tail`. Neither takes a
-/// truncation from above. Every loss must be at least `t`, and the
+/// truncation from above: data with one is an error. Every loss must be at least `t`, and the
 /// likelihood conditions each on `max(r, t)`: compare it with a body fit
 /// only when every reporting threshold is at least `t`.
 ///
@@ -442,6 +442,12 @@ pub fn fit_severity_with_threshold(
     t: Option<f64>,
 ) -> Result<SeverityFit> {
     match (family.needs_threshold(), t) {
+        (true, Some(_)) if data.is_truncated_above() => {
+            return Err(Error::Data(format!(
+                "{} takes no truncation from above",
+                family.name()
+            )));
+        }
         (true, Some(t)) => return fit_from_threshold(family, data, t),
         (true, None) => {
             return Err(Error::Data(format!(
@@ -1200,6 +1206,11 @@ mod tests {
         assert_eq!(Family::ALL.len(), 9);
         for f in Family::ALL {
             assert_eq!(Family::from_name(f.name()).unwrap(), f);
+        }
+        // Neither takes a truncation from above.
+        let capped = at_t.truncated_above(vec![1e6; 4]).unwrap();
+        for f in [Family::Pareto, Family::GenPareto] {
+            assert!(fit_severity_with_threshold(f, &capped, Some(1000.0)).is_err());
         }
     }
 }
