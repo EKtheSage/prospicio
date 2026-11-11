@@ -14,7 +14,7 @@ use super::bf::{PlugIn, input_hasher, push_posterior_ultimate};
 use super::laplace::{Posterior, Whitened, mode};
 use super::new_year::{self, NewYear};
 use super::one_year::{self, BayesOneYear, BayesOneYearFit, OdpCells, OdpYear};
-use super::{Diagnostics, Stream, derive_seed, one_year_seed};
+use super::{Diagnostics, Stream, derive_seed, one_year_seed, psis_loo};
 use crate::bootstrap::{
     ProcessDistribution, component_sums, prepare, process_draw, push_moments, segment_sums,
 };
@@ -903,7 +903,6 @@ impl BayesBfNormalisedFit {
             )));
         }
         let n = model.cells.len();
-        let s = self.posterior.n_draws();
         let rows: Vec<Vec<f64>> = self
             .posterior
             .values()
@@ -921,27 +920,7 @@ impl BayesBfNormalisedFit {
             })
             .collect::<prospicio_core::Result<_>>()?;
         let ll = rows.concat();
-        let chains = self.posterior.chains();
-        let per_chain = s / chains;
-        let r_eff: Vec<f64> = (0..n)
-            .map(|i| {
-                let by_chain: Vec<Vec<f64>> = (0..chains)
-                    .map(|c| {
-                        (0..per_chain)
-                            .map(|k| ll[(c * per_chain + k) * n + i].exp())
-                            .collect()
-                    })
-                    .collect();
-                let refs: Vec<&[f64]> = by_chain.iter().map(Vec::as_slice).collect();
-                let ess = prospicio_bayes::ess_mean(&refs).unwrap_or(s as f64);
-                if ess.is_finite() && ess > 0.0 {
-                    ess / s as f64
-                } else {
-                    1.0
-                }
-            })
-            .collect();
-        Ok(prospicio_bayes::elpd::loo(&ll, n, Some(&r_eff))?)
+        psis_loo(&ll, n, &self.posterior)
     }
 
     /// One row per origin: the chain ladder's `latest`, `ultimate` and
