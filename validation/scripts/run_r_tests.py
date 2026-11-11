@@ -14,15 +14,19 @@ of them.
     python3 validation/scripts/run_r_tests.py --jobs 1         # one at a time
     python3 validation/scripts/run_r_tests.py --exclude test-guides.R
     python3 validation/scripts/run_r_tests.py test-guides.R    # named files only
-    python3 validation/scripts/run_r_tests.py --last test-boosting.R
+    python3 validation/scripts/run_r_tests.py --alone test-boosting.R
     python3 validation/scripts/run_r_tests.py --self-test
 
-`--first` names files to start before the others: the slowest files, so
-that the longest one does not start last and set the step's time alone.
-`--last` names files to run after the others, one at a time with the
-machine to themselves: the boosting tests, whose LightGBM and XGBoost
-threads (OpenMP) slow down many times over when other processes hold the
-cores.
+Files that run side by side get one rayon thread each
+(RAYON_NUM_THREADS=1, unless it is set already), so that four files do not
+start sixteen threads on four cores; no result depends on the thread count
+(one RNG stream per simulation). `--alone` names files to run after the
+others (ALONE below when not given), one at a time with the machine and the default thread count to
+themselves: the Bayesian fits, whose NUTS chains run in parallel and which
+took three times as long at one thread, and the boosting tests, whose
+LightGBM and XGBoost (OpenMP) threads slowed down eightfold beside other
+processes (#849). `--first` names files of the parallel batch to start
+before the others.
 CI's r job and `cargo xtask r` both run the tests through this script.
 """
 
@@ -38,29 +42,37 @@ import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 TESTS = ROOT / "R" / "prospicio" / "tests"
+# The files run alone when --alone is not given (see the module docstring).
+ALONE = [
+    "test-reserving-compartmental.R",
+    "test-reserving-compartmental-segments.R",
+    "test-reserving-pattern-draws.R",
+    "test-reserving-compartmental-one-year-segments.R",
+    "test-boosting.R",
+]
 
 
-def plan(names, tests=TESTS, exclude=(), first=(), last=()):
+def plan(names, tests=TESTS, exclude=(), first=(), alone=()):
     """The test files to run as (parallel, alone): the parallel batch in the
     order its files start, `first` (in the order given) then the rest by
-    name, and the files of `last` to run one at a time after it. `names`
+    name, and the files of `alone` to run one at a time after it. `names`
     empty means every file of `tests`. Unknown names are an error."""
     every = sorted(p.name for p in tests.glob("*.R"))
-    errors = [f"no test file {n} in {tests}" for n in [*names, *exclude, *first, *last] if n not in every]
+    errors = [f"no test file {n} in {tests}" for n in [*names, *exclude, *first, *alone] if n not in every]
     if errors:
         raise SystemExit("\n".join(errors))
     chosen = [n for n in (names or every) if n not in exclude]
-    tail = [n for n in last if n in chosen]
+    tail = [n for n in alone if n in chosen]
     head = [n for n in first if n in chosen and n not in tail]
     return head + [n for n in sorted(chosen) if n not in head and n not in tail], tail
 
 
-def run_one(rscript, name, tests, logs):
+def run_one(rscript, name, tests, logs, env=None):
     log = logs / f"{name}.log"
     start = time.monotonic()
     with open(log, "wb") as out:
         code = subprocess.call(
-            [rscript, str(tests / name)], cwd=ROOT, stdout=out, stderr=subprocess.STDOUT
+            [rscript, str(tests / name)], cwd=ROOT, stdout=out, stderr=subprocess.STDOUT, env=env
         )
     return name, code, time.monotonic() - start, log
 
@@ -84,8 +96,11 @@ def run(order, jobs, tests=TESTS, rscript=None, stream=sys.stdout, alone=()):
     start = time.monotonic()
     with tempfile.TemporaryDirectory() as tmp:
         logs = pathlib.Path(tmp)
+        env = dict(os.environ)
+        if jobs > 1:
+            env.setdefault("RAYON_NUM_THREADS", "1")
         with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
-            futures = [pool.submit(run_one, rscript, n, tests, logs) for n in order]
+            futures = [pool.submit(run_one, rscript, n, tests, logs, env) for n in order]
             for f in concurrent.futures.as_completed(futures):
                 done(*f.result())
         if alone:
@@ -128,9 +143,9 @@ def self_test():
         assert plan([], tests, exclude=["test-b.R"], first=["test-d.R", "test-b.R"]) == (
             ["test-d.R", "test-a.R", "test-c.R"], [])
         assert plan(["test-c.R", "test-a.R"], tests) == (["test-a.R", "test-c.R"], [])
-        assert plan([], tests, first=["test-c.R"], last=["test-c.R", "test-a.R"]) == (
+        assert plan([], tests, first=["test-c.R"], alone=["test-c.R", "test-a.R"]) == (
             ["test-b.R", "test-d.R"], ["test-c.R", "test-a.R"])
-        assert plan(["test-b.R"], tests, last=["test-a.R"]) == (["test-b.R"], [])
+        assert plan(["test-b.R"], tests, alone=["test-a.R"]) == (["test-b.R"], [])
         try:
             plan(["test-x.R"], tests)
             raise AssertionError("an unknown file must be an error")
@@ -141,7 +156,9 @@ def self_test():
         fake.write_text(
             "import sys\n"
             "text = open(sys.argv[1]).read()\n"
+            "import os\n"
             "print('SKIP actuar not installed' if 'skip' in text else 'ok')\n"
+            "print('threads', os.environ.get('RAYON_NUM_THREADS'))\n"
             "sys.exit(1 if 'boom' in text else 0)\n"
         )
         (tests / "test-b.R").write_text("boom")
@@ -155,9 +172,13 @@ def self_test():
             rscript.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{fake}" "$@"\n')
             rscript.chmod(0o755)
         out = io.StringIO()
-        order, alone = plan([], tests, last=["test-d.R"])
+        os.environ.pop("RAYON_NUM_THREADS", None)
+        order, alone = plan([], tests, alone=["test-d.R"])
         failed = run(order, 2, tests, str(rscript), out, alone)
         text = out.getvalue()
+        # A failed file's log is printed: test-b.R ran in the batch, test-d.R alone.
+        assert "===== test-b.R (exit 1) =====\nok\nthreads 1\n" in text, text
+        assert "===== test-d.R (exit 1) =====\nok\nthreads None" in text, text
         assert failed == ["test-b.R", "test-d.R"], failed
         assert "PASS test-a.R" in text and "FAIL test-b.R" in text, text
         assert "===== test-b.R (exit 1) =====" in text and "===== test-d.R (exit 1) =====" in text, text
@@ -172,13 +193,13 @@ def main():
     ap.add_argument("--jobs", "-j", type=int, default=os.cpu_count() or 1)
     ap.add_argument("--exclude", action="append", default=[], metavar="FILE")
     ap.add_argument("--first", action="append", default=[], metavar="FILE")
-    ap.add_argument("--last", action="append", default=[], metavar="FILE")
+    ap.add_argument("--alone", action="append", default=None, metavar="FILE")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
     if args.self_test:
         self_test()
         return
-    order, alone = plan(args.files, exclude=args.exclude, first=args.first, last=args.last)
+    order, alone = plan(args.files, exclude=args.exclude, first=args.first, alone=ALONE if args.alone is None else args.alone)
     failed = run(order, max(1, args.jobs), alone=alone)
     sys.exit(1 if failed else 0)
 

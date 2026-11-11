@@ -5,7 +5,7 @@ description: What runs locally before a push, what cannot, how to install R and 
 tags: [environment, ci, bindings, r, python]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-06T18:30:00Z }
-updated: { by: claude-code/cloud-session, at: 2026-11-10T00:00:00Z }
+updated: { by: claude-code/cloud-session, at: 2026-11-11T00:00:00Z }
 stale_after: 2027-01-05T00:00:00Z
 sources:
   - id: agents
@@ -20,8 +20,11 @@ sources:
 * `cargo xtask python`: builds the extension and runs pytest; its final
   docs render fails because Quarto is not installed (CI's `docs` job
   covers it).
-* `cargo xtask r`: roxygen, install, every `R/prospicio/tests/*.R`; the
-  pkgdown step fails on the network (see
+* `cargo xtask r`: roxygen, install, every `R/prospicio/tests/*.R`
+  through `validation/scripts/run_r_tests.py` (one file per core, the
+  Bayesian and boosting files alone at the end, every failure reported;
+  since #849);
+  the pkgdown step fails on the network (see
   [cloud network](/environment/cloud-network.md)). The "boom" errors in
   its output are expected test errors.
 

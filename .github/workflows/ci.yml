@@ -156,23 +156,31 @@ jobs:
       - if: steps.changes.outputs.run == 'true'
         run: cargo check --workspace --exclude prospicio-r --all-targets --features prospicio-validation/slow-bayes,prospicio-reserving/io,prospicio-prob/arrow
 
-  # Two legs (#850): `tests`, the binding tests on four workers (#848), and
-  # `guides`, the guides and notebooks one at a time, since each guide must
-  # finish within 30 s (test_guides.py) and so must not share the cores.
-  # Each leg builds the package itself; on a push to main only the tests
-  # leg builds, to fill the cache both legs read.
+  # Four legs, each on a runner of its own (#848, #850). Most of the
+  # suite's time is a dozen Bayesian and compartmental tests whose NUTS
+  # chains already use every core through rayon: four xdist workers on one
+  # runner made them three to five times slower (with one rayon thread each,
+  # or with the default), so they run serially on runners of their own,
+  # `slow-1` and `slow-2` (PY_SLOW_1, PY_SLOW_2), and the rest, `tests`, on
+  # four workers with one rayon thread each. `guides` runs the guides and
+  # notebooks one at a time, since each guide must finish within 30 s
+  # (test_guides.py). Each leg builds the package itself; on a push to main
+  # only the tests leg builds, to fill the cache the others read.
   python:
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
-        part: [tests, guides]
-        # TEMPORARY (measuring #848/#849): one rayon thread against the default.
-        rayon: ["1", "0"]
-        exclude:
-          - part: guides
-            rayon: "1"
+        part: [tests, slow-1, slow-2, guides]
     runs-on: ${{ matrix.os }}
+    env:
+      PY_SLOW_1: tests/test_reserving_compartmental.py
+      PY_SLOW_2: >-
+        tests/test_reserving_compartmental_segments.py
+        tests/test_reserving_compartmental_one_year_segments.py
+        tests/test_reserving_compartmental_backtest.py
+        tests/test_reserving_pattern_draws.py
+        tests/test_reserving_hierarchical_bf.py
     defaults:
       run:
         shell: bash
@@ -216,40 +224,41 @@ jobs:
       - if: steps.plan.outputs.build == 'true'
         run: uv sync
         working-directory: python
-      # Four workers (pytest-xdist), each test file on one worker so its
-      # module fixtures load once (#848). One rayon thread per worker, so
-      # four workers do not start sixteen threads on four cores; no result
-      # depends on the thread count (one RNG stream per simulation). The
-      # slowest tests' times in the log, so a slowdown can be traced to them
-      # (#826).
-      - if: steps.plan.outputs.test == 'true' && matrix.part == 'tests'
-        name: Run the binding tests on four workers
-        env:
-          RAYON_NUM_THREADS: ${{ matrix.rayon }}
+      # tests: four workers (pytest-xdist), each file on one worker so its
+      # module fixtures load once, one rayon thread per worker so four
+      # workers do not start sixteen threads on four cores (no result
+      # depends on the thread count: one RNG stream per simulation); then the
+      # boosting tests alone, as LightGBM's and XGBoost's threads slow down
+      # beside other processes. The slowest tests' times in the log (#826).
+      - if: steps.plan.outputs.test == 'true'
+        name: Run the ${{ matrix.part }} leg
         run: |
-          uv run pytest tests -n 4 --dist loadfile \
-            --ignore=tests/test_guides.py --ignore=tests/test_examples.py --ignore=tests/test_boosting.py \
-            --durations=25 --durations-min=5
-          uv run pytest tests/test_boosting.py --durations=10 --durations-min=5
-        working-directory: python
-      - if: steps.plan.outputs.test == 'true' && matrix.part == 'guides'
-        name: Run the guides and notebooks
-        run: uv run pytest tests/test_guides.py tests/test_examples.py --durations=25 --durations-min=5
+          durations="--durations=25 --durations-min=5"
+          case "${{ matrix.part }}" in
+            tests)
+              ignore="--ignore=tests/test_guides.py --ignore=tests/test_examples.py --ignore=tests/test_boosting.py"
+              for f in $PY_SLOW_1 $PY_SLOW_2; do ignore="$ignore --ignore=$f"; done
+              RAYON_NUM_THREADS=1 uv run pytest tests -n 4 --dist loadfile $ignore $durations
+              uv run pytest tests/test_boosting.py $durations ;;
+            slow-1) uv run pytest $PY_SLOW_1 $durations ;;
+            slow-2) uv run pytest $PY_SLOW_2 $durations ;;
+            guides) uv run pytest tests/test_guides.py tests/test_examples.py $durations ;;
+          esac
         working-directory: python
 
-  # The same two legs as the python job (#850): `tests`, every file but
-  # the guides, four at a time (#849), and `guides`, tests/test-guides.R.
+  # Three legs, each on a runner of its own (#849, #850): `slow`, the
+  # compartmental file (about 220 s, the longest), alone; `guides`,
+  # tests/test-guides.R; and `tests`, the rest through
+  # validation/scripts/run_r_tests.py: four files at a time with one rayon
+  # thread each, then the Bayesian files and the boosting tests one at a
+  # time with every thread, since four processes on four cores made them
+  # three to eight times slower.
   r:
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
-        part: [tests, guides]
-        # TEMPORARY (measuring #848/#849): one rayon thread against the default.
-        rayon: ["1", "0"]
-        exclude:
-          - part: guides
-            rayon: "1"
+        part: [tests, slow, guides]
     runs-on: ${{ matrix.os }}
     # PowerShell (the Windows default) aliases `R` to Invoke-History.
     defaults:
@@ -309,24 +318,22 @@ jobs:
           for (p in pkgs) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
       - if: steps.plan.outputs.build == 'true'
         run: R CMD INSTALL R/prospicio
-      # validation/scripts/run_r_tests.py runs every file, prints each one's
-      # time and result as it finishes (#826), and the log of every failed
-      # file at the end (#845). The slowest files start first, so the
-      # longest does not start last.
-      - name: Run the R tests four at a time
-        if: steps.plan.outputs.test == 'true' && matrix.part == 'tests'
-        env:
-          RAYON_NUM_THREADS: ${{ matrix.rayon }}
-        run: >-
-          "$([ "$RUNNER_OS" = Windows ] && echo python || echo python3)" validation/scripts/run_r_tests.py --jobs 4
-          --exclude test-guides.R --last test-boosting.R
-          --first test-reserving-compartmental.R
-          --first test-reserving-compartmental-segments.R
-          --first test-reserving-pattern-draws.R
-      - name: Run the R guides
-        if: steps.plan.outputs.test == 'true' && matrix.part == 'guides'
-        run: >-
-          "$([ "$RUNNER_OS" = Windows ] && echo python || echo python3)" validation/scripts/run_r_tests.py --jobs 1 test-guides.R
+      # validation/scripts/run_r_tests.py runs every file it is given,
+      # prints each one's time and result as it finishes (#826), and the log
+      # of every failed file at the end (#845).
+      - name: Run the R ${{ matrix.part }} leg
+        if: steps.plan.outputs.test == 'true'
+        run: |
+          py=$([ "$RUNNER_OS" = Windows ] && echo python || echo python3)
+          case "${{ matrix.part }}" in
+            tests)
+              # The Bayesian and boosting files run alone after the rest
+              # (run_r_tests.py's ALONE).
+              $py validation/scripts/run_r_tests.py --jobs 4 \
+                --exclude test-guides.R --exclude test-reserving-compartmental.R ;;
+            slow) $py validation/scripts/run_r_tests.py test-reserving-compartmental.R ;;
+            guides) $py validation/scripts/run_r_tests.py test-guides.R ;;
+          esac
       # remotes::install_github(subdir = "R/prospicio") and r-universe build
       # a tarball of R/prospicio alone, which carries its Rust sources only
       # because pkgbuild runs bootstrap.R first. Install from such a tarball,
