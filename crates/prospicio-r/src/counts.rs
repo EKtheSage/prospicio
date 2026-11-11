@@ -58,7 +58,7 @@ impl ClaimCount {
     fn mixed_poisson(mean: f64, cv: f64, mixing: &str, shift: f64, param: f64) -> Result<Self> {
         let mixing = match mixing {
             "gamma" => Mixing::Gamma { cv },
-            "inverse_gaussian" => Mixing::InverseGaussian { cv },
+            "inverse_gaussian" | "ig" => Mixing::InverseGaussian { cv },
             "beta" => Mixing::Beta { cv, max: param },
             "sichel" => Mixing::Sichel { cv, shape: param },
             "sichel_skewness" => Mixing::SichelSkewness {

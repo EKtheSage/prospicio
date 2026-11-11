@@ -83,11 +83,26 @@ impl LimitedFluctuation {
     /// `min(1, √(n / standard))`, the credibility of `n` claims against a
     /// full standard.
     pub fn credibility(&self, n: f64, standard: f64) -> f64 {
-        if n.is_nan() || n <= 0.0 {
-            return 0.0;
-        }
-        (n / standard).sqrt().min(1.0)
+        partial_credibility(n, standard)
     }
+}
+
+/// The square root rule `min(1, sqrt(n / standard))` of
+/// [`LimitedFluctuation::credibility`], without the standard's settings:
+/// 0 for an `n` that is 0, negative or NaN.
+///
+/// ```
+/// use prospicio_pricing::credibility::partial_credibility;
+///
+/// assert_eq!(partial_credibility(270.6, 1082.4), 0.5);
+/// assert_eq!(partial_credibility(f64::NAN, 1082.4), 0.0);
+/// assert_eq!(partial_credibility(5000.0, 1082.4), 1.0);
+/// ```
+pub fn partial_credibility(n: f64, standard: f64) -> f64 {
+    if n.is_nan() || n <= 0.0 {
+        return 0.0;
+    }
+    (n / standard).sqrt().min(1.0)
 }
 
 /// How the between-group variance `a` is estimated.

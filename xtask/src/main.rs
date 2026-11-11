@@ -564,16 +564,10 @@ fn r(opts: Options) -> Result {
     r_install_with_wrappers(&root)?;
     if opts.tests {
         step("r: test");
-        let tests = root.join("R/prospicio/tests");
-        let mut files: Vec<PathBuf> = std::fs::read_dir(&tests)
-            .map_err(|e| format!("cannot read {}: {e}", tests.display()))?
-            .filter_map(|entry| entry.ok().map(|e| e.path()))
-            .filter(|path| path.extension().is_some_and(|ext| ext == "R"))
-            .collect();
-        files.sort();
-        for file in files {
-            run(Command::new("Rscript").arg(&file).current_dir(&root))?;
-        }
+        // Every file, a failure not stopping the others (#845).
+        run(Command::new("Rscript")
+            .arg("validation/scripts/run_r_tests.R")
+            .current_dir(&root))?;
     }
     r_doc_check(&root)?;
     step("r: stage the R guides and examples as articles");

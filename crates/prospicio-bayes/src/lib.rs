@@ -141,22 +141,8 @@ fn pooled(chains: &[Vec<f64>]) -> Vec<f64> {
 fn z_scale(chains: &[Vec<f64>]) -> Vec<Vec<f64>> {
     let all = pooled(chains);
     let s = all.len();
-    let mut order: Vec<usize> = (0..s).collect();
-    order.sort_by(|&a, &b| all[a].total_cmp(&all[b]));
-    let mut rank = vec![0.0; s];
-    let mut i = 0;
-    while i < s {
-        let mut j = i;
-        while j + 1 < s && all[order[j + 1]] == all[order[i]] {
-            j += 1;
-        }
-        // 1-based average rank of the tie group.
-        let r = (i + j) as f64 / 2.0 + 1.0;
-        for &k in &order[i..=j] {
-            rank[k] = r;
-        }
-        i = j + 1;
-    }
+    // Average ranks, the workspace's one rule (#843).
+    let rank = prospicio_prob::statistics::average_ranks(&all);
     let sf = s as f64;
     let z: Vec<f64> = rank
         .iter()
@@ -271,10 +257,8 @@ fn ess_basic(chains: &[Vec<f64>]) -> f64 {
 fn quantile7(x: &[f64], p: f64) -> f64 {
     let mut s = x.to_vec();
     s.sort_by(f64::total_cmp);
-    let h = (s.len() - 1) as f64 * p;
-    let lo = h.floor() as usize;
-    let hi = (lo + 1).min(s.len() - 1);
-    s[lo] + (h - lo as f64) * (s[hi] - s[lo])
+    // The workspace's one type 7 quantile (#843).
+    prospicio_prob::risk::var_linear_sorted(&s, p).unwrap_or(f64::NAN)
 }
 
 #[cfg(test)]

@@ -5,7 +5,7 @@ description: What runs locally before a push, what cannot, how to install R and 
 tags: [environment, ci, bindings, r, python]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-06T18:30:00Z }
-updated: { by: claude-code/cloud-session, at: 2026-11-10T00:00:00Z }
+updated: { by: claude-code/cloud-session, at: 2026-11-11T00:00:00Z }
 stale_after: 2027-01-05T00:00:00Z
 sources:
   - id: agents
@@ -20,10 +20,17 @@ sources:
 * `cargo xtask python`: builds the extension and runs pytest; its final
   docs render fails because Quarto is not installed (CI's `docs` job
   covers it).
-* `cargo xtask r`: roxygen, install, every `R/prospicio/tests/*.R`; the
-  pkgdown step fails on the network (see
+* `cargo xtask r`: roxygen, install, then every R test file through
+  `validation/scripts/run_r_tests.R` (#845), which runs each file in its
+  own process, keeps going after a failure and ends with the failures,
+  the skipped optional-package blocks and the slowest files; the pkgdown
+  step fails on the network (see
   [cloud network](/environment/cloud-network.md)). The "boom" errors in
-  its output are expected test errors.
+  its output are expected test errors. Run some files with
+  `Rscript validation/scripts/run_r_tests.R <name fragment>`. Until #845
+  the parity blocks guarded by actuar, glmnet, statmod, ChainLadder,
+  dglm, posterior or loo never ran in CI, which installed none of them;
+  the nightly run now installs them.
 
 # When the container has no R or uv
 

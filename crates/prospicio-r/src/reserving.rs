@@ -197,13 +197,13 @@ fn monthly_pattern_draws_of(
 }
 
 fn grain(name: &str, arg: &str) -> Result<Grain> {
-    match name {
-        "M" => Ok(Grain::Month),
-        "Q" => Ok(Grain::Quarter),
-        "S" => Ok(Grain::Semester),
-        "Y" => Ok(Grain::Year),
+    match name.trim().to_ascii_lowercase().as_str() {
+        "m" | "month" => Ok(Grain::Month),
+        "q" | "quarter" => Ok(Grain::Quarter),
+        "s" | "semiannual" | "semi-annual" => Ok(Grain::Semester),
+        "y" | "year" => Ok(Grain::Year),
         _ => Err(Error::Other(format!(
-            "{arg} must be \"M\", \"Q\", \"S\" or \"Y\", got \"{name}\""
+            "{arg} must be \"M\", \"Q\", \"S\" or \"Y\" (or \"month\", \"quarter\", \"semiannual\", \"year\"), got \"{name}\""
         ))),
     }
 }
@@ -227,7 +227,7 @@ fn development(
         }
     };
     let sigma_interpolation = match sigma_interpolation {
-        "log-linear" => SigmaInterpolation::LogLinear,
+        "log-linear" | "loglinear" | "log_linear" => SigmaInterpolation::LogLinear,
         "mack" => SigmaInterpolation::Mack,
         _ => {
             return Err(Error::Other(format!(
@@ -1057,6 +1057,29 @@ impl Triangle {
         Ok(inner.into())
     }
 
+    /// One-segment triangles stacked as segments under the key `key`, one
+    /// name each (the core's `Triangle::stack`, #838).
+    fn stack(names: Vec<String>, triangles: List, key: &str, columns: Vec<String>) -> Result<Self> {
+        if names.len() != triangles.len() {
+            return Err(Error::Other("one name per triangle".into()));
+        }
+        let items = triangles
+            .values()
+            .zip(&names)
+            .map(|(t, name)| {
+                <&Triangle>::try_from(&t)
+                    .map(|t| t.inner.clone())
+                    .map_err(|_| Error::Other(format!("{name:?} is not a triangle")))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let refs: Vec<(&str, &TriangleInner)> =
+            names.iter().map(String::as_str).zip(items.iter()).collect();
+        let cols: Vec<&str> = columns.iter().map(String::as_str).collect();
+        Ok(TriangleInner::stack(&refs, key, &cols)
+            .map_err(to_r)?
+            .into())
+    }
+
     /// The ages up to `age` months (a whole number, 0 or more).
     fn max_age(&self, age: i32) -> Result<Self> {
         let age = u32::try_from(age).map_err(|_| Error::Other("`age` must be 0 or more".into()))?;
@@ -1357,7 +1380,7 @@ impl Triangle {
     ) -> Result<MunichFit> {
         let dev = |sigma: &str| -> Result<Development> {
             let sigma_interpolation = match sigma {
-                "log-linear" => SigmaInterpolation::LogLinear,
+                "log-linear" | "loglinear" | "log_linear" => SigmaInterpolation::LogLinear,
                 "mack" => SigmaInterpolation::Mack,
                 _ => {
                     return Err(Error::Other(format!(
@@ -2625,7 +2648,7 @@ impl Triangle {
             Nullable::Null => None,
         };
         let extrapolation = match extrapolation {
-            "loglinear" => VarianceExtrapolation::LogLinear,
+            "loglinear" | "log-linear" | "log_linear" => VarianceExtrapolation::LogLinear,
             "mack" => VarianceExtrapolation::Mack,
             other => {
                 return Err(Error::Other(format!(
@@ -5452,6 +5475,11 @@ pub(crate) struct HierarchicalBfFit {
 
 #[extendr]
 impl HierarchicalBfFit {
+    /// One row per program, the core's table (#838).
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
     /// Each program's segment label, joined by " / ", in the triangle's
     /// order.
     fn program_labels(&self) -> Vec<String> {
@@ -5572,6 +5600,16 @@ pub(crate) struct HierarchicalBfOneYearFit {
 
 #[extendr]
 impl HierarchicalBfOneYearFit {
+    /// One row per program and origin, the core's table (#838).
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    /// One row per program, the core's table (#838).
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
     /// The lifetime fit, as `bayes_hierarchical_bf` gives it.
     fn fit(&self) -> HierarchicalBfFit {
         HierarchicalBfFit {
@@ -7613,8 +7651,8 @@ fn benchmark_curve_rust(
     origin_width: Nullable<f64>,
 ) -> Result<BenchmarkCurveFit> {
     let kind = match kind {
-        "percent_developed" => PatternKind::PercentDeveloped,
-        "cdf" => PatternKind::AgeToUltimate,
+        "percent_developed" | "percent" | "percent developed" => PatternKind::PercentDeveloped,
+        "cdf" | "age-to-ultimate" => PatternKind::AgeToUltimate,
         _ => {
             return Err(Error::Other(format!(
                 "kind must be \"percent_developed\" or \"cdf\", got \"{kind}\""
