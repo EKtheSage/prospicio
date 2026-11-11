@@ -408,9 +408,9 @@ fn family_list(grid: &Grid) -> Result<Option<Vec<Family>>> {
 /// of them `families` names) in `Family::ALL`'s order; with a `t`, the
 /// Pareto families fitted from it too, and every row ranked by AIC, lowest
 /// first, a family that fails to fit last. A Pareto family conditions each
-/// loss on `max(r, t)`, so with a `t` every reporting threshold must be at
-/// least `t`: then every family's likelihood conditions each loss on the
-/// same threshold and the AICs compare.
+/// loss on `max(r, t)`, so with one among the families every reporting
+/// threshold must be at least `t`: then every family's likelihood
+/// conditions each loss on the same threshold and the AICs compare.
 fn compare(
     data: &LargeLosses,
     thresholds: &[f64],
@@ -429,6 +429,7 @@ fn compare(
                 return Err(format!("\"compare\" fits {:?} only from a t", f.name()));
             }
         }
+        Some(_) if !families.iter().any(|f| f.needs_threshold()) => {}
         Some(t) => {
             if data.is_truncated_above() {
                 return Err(

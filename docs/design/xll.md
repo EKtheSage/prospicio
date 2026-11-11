@@ -1579,16 +1579,17 @@ real Excel.
     is `t`) keeps the fixed order, and a family that fails to fit goes
     last with its error in the p1 cell. The positional arguments are
     unchanged, so no other call moves.
-    - **A `t` needs every reporting threshold at least `t`.** A Pareto
-      family's survival is 1 below `t`, so it conditions each loss on
+    - **A Pareto family needs every reporting threshold at least `t`.**
+      Its survival is 1 below `t`, so it conditions each loss on
       `max(r, t)` where a body family conditions on `r`; with a threshold
       below `t` the two likelihoods are of different data and their AICs
       do not compare. `"compare"` refuses that case, naming the first loss
       whose threshold is below `t`, rather than ranking unlike numbers; a
       user who wants a ranking sets `thresholds` to at least `t`, as the
-      demo does. It also refuses `upper` with a `t`, since the Pareto
-      families are not truncated from above, and still refuses
-      `truncation`.
+      demo does. It also refuses `upper` with a Pareto family, since
+      those are not truncated from above, and still refuses
+      `truncation`. With only body families named, a `t` still ranks the
+      rows and is otherwise unused.
     - **`family` restricts `"compare"`.** A range of names (blank cells
       skipped, the same spelling rules as one name) fits only those; the
       rows are in the fixed order without `t` and ranked with it, so
