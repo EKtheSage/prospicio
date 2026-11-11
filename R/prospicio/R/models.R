@@ -1516,7 +1516,14 @@ grid_search <- function(candidates, data, splits, fit, score) {
 #' @rdname tuning
 #' @export
 random_search <- function(n, draw, data, splits, fit, score, seed = NULL) {
-  if (!is.null(seed)) set.seed(seed)
+  if (!is.null(seed)) {
+    # Seed the search without changing the caller's random state (#838).
+    had <- exists(".Random.seed", envir = globalenv(), inherits = FALSE)
+    if (had) old <- get(".Random.seed", envir = globalenv(), inherits = FALSE)
+    on.exit(if (had) assign(".Random.seed", old, envir = globalenv())
+            else rm(".Random.seed", envir = globalenv()), add = TRUE)
+    set.seed(seed)
+  }
   grid_search(lapply(seq_len(n), function(i) draw()), data, splits, fit, score)
 }
 

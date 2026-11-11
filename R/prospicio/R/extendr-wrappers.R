@@ -199,6 +199,8 @@ grouped_fit_rust <- function(family, bounds, counts, method) .Call(wrap__grouped
 
 grouped_goodness_of_fit_rust <- function(severity, bounds, counts) .Call(wrap__grouped_goodness_of_fit_rust, severity, bounds, counts)
 
+hachemeister_predict_rust <- function(coefficients, risks, x, rows) .Call(wrap__hachemeister_predict_rust, coefficients, risks, x, rows)
+
 hachemeister_rust <- function(ratios, weights, nrow, ncol, design, p, estimator, adjust_intercept, tol, max_iter) .Call(wrap__hachemeister_rust, ratios, weights, nrow, ncol, design, p, estimator, adjust_intercept, tol, max_iter)
 
 haircut_rust <- function(pd, total, measure, level) .Call(wrap__haircut_rust, pd, total, measure, level)
@@ -304,6 +306,8 @@ pair_select_rust <- function(u, v, families, criterion, independence_test) .Call
 pareto_anchor_rust <- function(threshold, losses, censored) .Call(wrap__pareto_anchor_rust, threshold, losses, censored)
 
 pareto_fit_standard_error_rust <- function(losses, t, reporting, censored, weights, truncation_at) .Call(wrap__pareto_fit_standard_error_rust, losses, t, reporting, censored, weights, truncation_at)
+
+partial_credibility_rust <- function(n, standard) .Call(wrap__partial_credibility_rust, n, standard)
 
 pattern_prior_rust <- function(ages, values, sd, from_shares) .Call(wrap__pattern_prior_rust, ages, values, sd, from_shares)
 
@@ -514,6 +518,8 @@ weighted_tail_rust <- function(values, weights, p, batches) .Call(wrap__weighted
 wiener_hopf_rust <- function(severity, wait, rho, points, p) .Call(wrap__wiener_hopf_rust, severity, wait, rho, points, p)
 
 window_tvar_weighted_rust <- function(values, probs, p_low, p_high) .Call(wrap__window_tvar_weighted_rust, values, probs, p_low, p_high)
+
+worst_var_rust <- function(marginals, p, n, rotate, seed, tolerance) .Call(wrap__worst_var_rust, marginals, p, n, rotate, seed, tolerance)
 
 year_correlation_for_ratio_rust <- function(n_years, ratio) .Call(wrap__year_correlation_for_ratio_rust, n_years, ratio)
 
@@ -2561,6 +2567,8 @@ HierarchicalBfFit$scale_per_premium <- function() .Call(wrap__HierarchicalBfFit_
 
 HierarchicalBfFit$summary <- function() .Call(wrap__HierarchicalBfFit__summary, self)
 
+HierarchicalBfFit$totals_table <- function() .Call(wrap__HierarchicalBfFit__totals_table, self)
+
 #' @export
 `$.HierarchicalBfFit` <- function (self, name) { func <- HierarchicalBfFit[[name]]; environment(func) <- environment(); func }
 
@@ -2577,6 +2585,8 @@ HierarchicalBfOneYearFit$flagged_share <- function() .Call(wrap__HierarchicalBfO
 
 HierarchicalBfOneYearFit$k_threshold <- function() .Call(wrap__HierarchicalBfOneYearFit__k_threshold, self)
 
+HierarchicalBfOneYearFit$long_table <- function() .Call(wrap__HierarchicalBfOneYearFit__long_table, self)
+
 HierarchicalBfOneYearFit$moment_matched <- function() .Call(wrap__HierarchicalBfOneYearFit__moment_matched, self)
 
 HierarchicalBfOneYearFit$opening_reserve <- function() .Call(wrap__HierarchicalBfOneYearFit__opening_reserve, self)
@@ -2588,6 +2598,8 @@ HierarchicalBfOneYearFit$pareto_k <- function() .Call(wrap__HierarchicalBfOneYea
 HierarchicalBfOneYearFit$refit_warnings <- function() .Call(wrap__HierarchicalBfOneYearFit__refit_warnings, self)
 
 HierarchicalBfOneYearFit$refitted <- function() .Call(wrap__HierarchicalBfOneYearFit__refitted, self)
+
+HierarchicalBfOneYearFit$totals_table <- function() .Call(wrap__HierarchicalBfOneYearFit__totals_table, self)
 
 HierarchicalBfOneYearFit$unrefitted <- function() .Call(wrap__HierarchicalBfOneYearFit__unrefitted, self)
 

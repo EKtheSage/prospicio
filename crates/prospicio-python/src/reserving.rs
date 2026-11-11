@@ -14110,50 +14110,13 @@ impl PyHierarchicalBfFit {
     /// -------
     /// pandas.DataFrame
     fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        use prospicio_prob::Distribution;
-        let ps = &self.inner.programs;
-        let sum = |g: fn(&HierarchicalBfProgram) -> &Vec<f64>| {
-            ps.iter()
-                .map(|p| g(p).iter().sum::<f64>())
-                .collect::<Vec<f64>>()
-        };
-        let out = PyDict::new(py);
-        out.set_item(
-            "program",
-            ps.iter().map(|p| p.label.to_string()).collect::<Vec<_>>(),
-        )?;
-        out.set_item(
-            "origins",
-            ps.iter().map(|p| p.origins.len()).collect::<Vec<_>>(),
-        )?;
-        out.set_item("exposure", sum(|p| &p.exposure))?;
-        out.set_item("latest", sum(|p| &p.latest))?;
-        out.set_item("prior_ultimate", sum(|p| &p.prior_ultimate))?;
-        out.set_item("expected_ultimate", sum(|p| &p.expected_ultimate))?;
-        out.set_item("scale", ps.iter().map(|p| p.scale).collect::<Vec<_>>())?;
-        out.set_item(
-            "loss_ratio",
-            ps.iter().map(|p| p.loss_ratio).collect::<Vec<_>>(),
-        )?;
-        out.set_item(
-            "own_loss_ratio",
-            ps.iter().map(|p| p.own_loss_ratio).collect::<Vec<_>>(),
-        )?;
-        out.set_item(
-            "shrinkage",
-            ps.iter().map(|p| p.shrinkage).collect::<Vec<_>>(),
-        )?;
-        out.set_item(
-            "mean",
-            ps.iter().map(|p| p.reserves.mean()).collect::<Vec<_>>(),
-        )?;
-        out.set_item(
-            "std_dev",
-            ps.iter()
-                .map(|p| p.reserves.variance().sqrt())
-                .collect::<Vec<_>>(),
-        )?;
-        py.import("pandas")?.call_method1("DataFrame", (out,))
+        // The core's table (#838), the same in R; origins is a count.
+        let frame = table_frame(py, self.inner.totals())?;
+        let origins = frame
+            .get_item("origins")?
+            .call_method1("astype", ("int64",))?;
+        frame.set_item("origins", origins)?;
+        Ok(frame)
     }
 
     fn __repr__(&self) -> String {
@@ -14445,19 +14408,7 @@ impl PyHierarchicalBfOneYearFit {
     /// -------
     /// pandas.DataFrame
     fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let moments = column_moments(&self.inner.cdr);
-        let out = PyDict::new(py);
-        out.set_item("program", self.program())?;
-        out.set_item("origin", self.origins())?;
-        out.set_item("latest", self.latest())?;
-        out.set_item("opening_ultimate", self.inner.opening_ultimate.clone())?;
-        out.set_item("opening_reserve", self.inner.opening_reserve.clone())?;
-        out.set_item("cdr_mean", moments.iter().map(|m| m.0).collect::<Vec<_>>())?;
-        out.set_item(
-            "cdr_std_dev",
-            moments.iter().map(|m| m.1).collect::<Vec<_>>(),
-        )?;
-        py.import("pandas")?.call_method1("DataFrame", (out,))
+        table_frame(py, self.inner.to_long())
     }
 
     /// One row per program: the ``latest`` value, ``opening_ultimate`` and
@@ -14470,43 +14421,7 @@ impl PyHierarchicalBfOneYearFit {
     /// -------
     /// pandas.DataFrame
     fn totals_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let fit = &self.inner;
-        let mut first = 0;
-        let (mut latest, mut ultimate, mut reserve) = (vec![], vec![], vec![]);
-        for p in &fit.fit.programs {
-            let n = p.origins.len();
-            latest.push(p.latest.iter().sum::<f64>());
-            ultimate.push(fit.opening_ultimate[first..first + n].iter().sum::<f64>());
-            reserve.push(fit.opening_reserve[first..first + n].iter().sum::<f64>());
-            first += n;
-        }
-        let totals = fit
-            .cdr
-            .aggregate(&["program"])
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let moments = column_moments(&totals);
-        let out = PyDict::new(py);
-        out.set_item(
-            "program",
-            fit.fit
-                .programs
-                .iter()
-                .map(|p| p.label.to_string())
-                .collect::<Vec<_>>(),
-        )?;
-        out.set_item("latest", latest)?;
-        out.set_item("opening_ultimate", ultimate)?;
-        out.set_item("opening_reserve", reserve)?;
-        out.set_item("cdr_mean", moments.iter().map(|m| m.0).collect::<Vec<_>>())?;
-        out.set_item(
-            "cdr_std_dev",
-            moments.iter().map(|m| m.1).collect::<Vec<_>>(),
-        )?;
-        out.set_item(
-            "flagged_share",
-            vec![fit.flagged_share(); fit.fit.programs.len()],
-        )?;
-        py.import("pandas")?.call_method1("DataFrame", (out,))
+        table_frame(py, self.inner.totals())
     }
 
     fn __repr__(&self) -> String {
@@ -14520,21 +14435,6 @@ impl PyHierarchicalBfOneYearFit {
             self.inner.refitted.len(),
         )
     }
-}
-
-/// The mean and standard deviation (the population one, as a simulated
-/// distribution's) of each component of `d`.
-fn column_moments(d: &prospicio_prob::PredictiveDistribution) -> Vec<(f64, f64)> {
-    let n = d.n_components();
-    let rows = d.n_sims() as f64;
-    (0..n)
-        .map(|j| {
-            let column = d.draw_matrix().iter().skip(j).step_by(n);
-            let mean = column.clone().sum::<f64>() / rows;
-            let var = column.map(|x| (x - mean).powi(2)).sum::<f64>() / rows;
-            (mean, var.sqrt())
-        })
-        .collect()
 }
 
 /// The prior of a layer's expected ultimate for ``BayesBfNormalised``, from

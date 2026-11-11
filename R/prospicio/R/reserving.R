@@ -4730,23 +4730,10 @@ bayes_hierarchical_bf <- function(triangle, column, exposure, apriori = 1, level
 }
 
 S7::method(as.data.frame, hierarchical_bf_fit) <- function(x, ...) {
-  ps <- x@programs
-  total <- function(g) vapply(ps, function(p) sum(g(p)), 0, USE.NAMES = FALSE)
-  single <- function(g) vapply(ps, g, 0, USE.NAMES = FALSE)
-  data.frame(
-    program = vapply(ps, function(p) p@label, "", USE.NAMES = FALSE),
-    origins = vapply(ps, function(p) length(p@origins), 0L, USE.NAMES = FALSE),
-    exposure = total(function(p) p@exposure),
-    latest = total(function(p) p@latest),
-    prior_ultimate = total(function(p) p@prior_ultimate),
-    expected_ultimate = total(function(p) p@expected_ultimate),
-    scale = single(function(p) p@scale),
-    loss_ratio = single(function(p) p@loss_ratio),
-    own_loss_ratio = single(function(p) p@own_loss_ratio),
-    shrinkage = single(function(p) p@shrinkage),
-    mean = single(function(p) mean(p@reserves)),
-    std_dev = single(function(p) sqrt(variance(p@reserves))),
-    stringsAsFactors = FALSE)
+  # The core's table (#838), the same in Python; origins is a count.
+  f <- fit_table_frame(x@ptr$totals_table())
+  f$origins <- as.integer(f$origins)
+  f
 }
 S7::method(summary, hierarchical_bf_fit) <- function(object, ...) object@summary
 S7::method(print, hierarchical_bf_fit) <- function(x, ...) {
@@ -4956,14 +4943,8 @@ bayes_hierarchical_bf_one_year <- function(triangle, column, exposure, apriori =
 }
 
 S7::method(as.data.frame, hierarchical_bf_one_year_fit) <- function(x, ...) {
-  draws <- draw_matrix(x@cdr)
-  centre <- colMeans(draws)
-  data.frame(
-    program = x@program, origin = x@origins, latest = x@latest,
-    opening_ultimate = x@opening_ultimate, opening_reserve = x@opening_reserve,
-    cdr_mean = unname(centre),
-    cdr_std_dev = unname(sqrt(colMeans(sweep(draws, 2, centre)^2))),
-    stringsAsFactors = FALSE)
+  # The core's table (#838), the same in Python.
+  fit_table_frame(x@ptr$long_table())
 }
 S7::method(print, hierarchical_bf_one_year_fit) <- function(x, ...) {
   cat(sprintf("<hierarchical_bf_one_year_fit> %d programs, %d origins, %d simulations\n",
