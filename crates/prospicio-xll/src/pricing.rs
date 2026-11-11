@@ -16,7 +16,7 @@ use prospicio_pricing::layer::{
 use prospicio_pricing::layer::{ilf, layer_cv};
 use prospicio_prob::evt::Gpd;
 use prospicio_prob::{
-    Burr, Dist, Distribution, Gamma, InverseGamma, InverseGaussian, Loglogistic, Lognormal, Pareto,
+    Burr, Dist, Distribution, Exponential, Gamma, InverseGamma, InverseGaussian, Loglogistic, Lognormal, Pareto,
     PiecewisePareto, Severity, SeverityDist, Truncation, Weibull,
 };
 
@@ -36,7 +36,7 @@ pub(crate) fn scalar(grid: &Grid, name: &str) -> Result<f64> {
 /// The families `family` names, and what `p1`, `p2` and `p3` are for each.
 pub const FAMILIES: &str = "pareto (t, alpha, [truncation]), lognormal (meanlog, sdlog), \
 lognormal_cv (mean, cv), gamma (shape, scale), gamma_cv (mean, cv), weibull (shape, scale), \
-loglogistic (shape, scale), inverse_gamma (shape, scale), inverse_gaussian (mean, shape), \
+loglogistic (shape, scale), exponential (mean), inverse_gamma (shape, scale), inverse_gaussian (mean, shape), \
 burr (alpha, gamma, scale), lomax (alpha, scale), gpd (xi, beta), piecewise_pareto (thresholds, alphas, \
 [truncation, [\"lp\" or \"wd\"]]), gen_pareto (t, alpha_ini, alpha_tail)";
 
@@ -156,6 +156,12 @@ pub(crate) fn severity(family: &Grid, p1: &Grid, p2: &Grid, p3: &Grid) -> Result
                 .and_then(|(k, t)| Loglogistic::new(k, t).map_err(e))?
                 .into(),
         )?,
+        "exponential" => {
+            if !p2.is_blank() {
+                return Err("\"exponential\" takes only p1, the mean: leave p2 blank".into());
+            }
+            no_p3(Exponential::new(scalar(p1, "p1 (mean)")?).map_err(e)?.into())?
+        }
         "inverse_gamma" => no_p3(
             two()
                 .and_then(|(k, t)| InverseGamma::new(k, t).map_err(e))?

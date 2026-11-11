@@ -482,6 +482,7 @@ labelled in `companies`, with their premiums; chain its summary into
   - `"gamma"` (shape, scale) and `"gamma_cv"` (mean, CV)
   - `"weibull"`, `"loglogistic"` and `"inverse_gamma"` (shape, scale)
   - `"inverse_gaussian"` (mean, shape)
+  - `"exponential"` (mean; `p2` blank)
   - `"burr"` (alpha, gamma, scale)
   - `"lomax"` (alpha, scale), Bahnemann's Pareto
   - `"gpd"` (xi, beta)
@@ -489,13 +490,20 @@ labelled in `companies`, with their premiums; chain its summary into
     optional truncation)
   - `"gen_pareto"` (t, alpha_ini, alpha_tail)
 - `PRO.SEV.FIT`: `family` is a body family (`lognormal`, `gamma`,
-  `weibull`, `burr`, `lomax`) fitted by maximum likelihood, or a Pareto
-  family fitted from the threshold `t`. `censored` is TRUE where a policy
-  limit capped the loss, and `upper` caps the losses kept. `output` is
-  `"params"` (default; the parameters line up with `p1`, `p2`, `p3`, so
-  they feed `PRO.PRC.LAYER` directly), `"gof"` (P-P and Q-Q pairs) or
-  `"compare"` (all five body families side by side, `family` left blank).
-  Check the upper Q-Q pairs before trusting a body family in the tail.
+  `weibull`, `loglogistic`, `exponential`, `burr`, `lomax`) fitted by
+  maximum likelihood, or a Pareto family fitted from the threshold `t`.
+  `censored` is TRUE where a policy limit capped the loss, and `upper`
+  caps the losses kept. `output` is `"params"` (default; the parameters
+  line up with `p1`, `p2`, `p3`, so they feed `PRO.PRC.LAYER` directly,
+  and the log-likelihood, AIC and BIC are on the same terms for every
+  family), `"gof"`
+  (P-P and Q-Q pairs) or `"compare"`: the seven body families side by
+  side with `t` blank; with a `t`, `pareto` and `gen_pareto` from it too
+  and every row ranked by AIC, lowest first. Then every reporting
+  threshold must be at least `t`, so that each family conditions each
+  loss on the same threshold. A range of names in `family` fits only
+  those. Check the upper Q-Q pairs before trusting a body family in the
+  tail.
 - `PRO.SEV.FIT.GROUPED`: `bounds` has one more cell than `counts`. A
   blank last bound opens the top band.
 - EVT: pick the lowest threshold above which the shape and modified scale
