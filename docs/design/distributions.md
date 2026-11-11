@@ -111,6 +111,26 @@ conversion reports the error it introduces.
   survival without truncation, a truncated risk set, and Weibull draws
   reported above 0, 200 or 500 and capped at 4,000 within 0.02 of the
   truth, with the Q-Q column within 10% where the risk set is large.
+- More families for one AIC ranking (decided 2026-11-11, #800):
+  `Family::Loglogistic` (the Burr with `α` pinned at 1, a `Dist::Loglogistic`),
+  `Family::Exponential` (a new `Exponential` distribution with closed-form
+  layer moments by memorylessness, in `Dist` and its JSON as
+  `{"family": "exponential", "mean": θ}`; its truncated, censored maximum is
+  `Σ w (y − r) / Σ_uncensored w`), and the Pareto families fitted from a
+  threshold `t`, `Family::Pareto` (`t`, `alpha`) and `Family::GenPareto`
+  (`t`, `alpha_ini`, `alpha_tail`, Riegel's form), through
+  `fit_severity_with_threshold(family, data, t)`. They come back as the
+  same `SeverityFit`, scored on the body likelihood, `t` pinned: its
+  standard error and covariance entries are NaN and it is not counted in
+  AIC or BIC (`Family::estimated_parameters`). Their survival is 1 below
+  `t`, so they condition each loss on `max(r, t)`: documented rather than
+  enforced, since a comparison is valid exactly when every reporting
+  threshold is at least `t`. `Family::ALL` lists the nine in a
+  comparison's order; the grouped and limited-mean fits refuse the two
+  Pareto families. `Pareto`, `PiecewisePareto` and `Gpd` gain
+  `fit_statistics(data)`, the same likelihood with AIC and BIC
+  (`FitStatistics`) for any fit, truncated ones included. Tested against
+  SciPy's own densities (`validation/scripts/scipy_severity_fits.py`).
 - `prospicio_prob::grouped_fit` (#328, third part) fits the same families
   to grouped losses, `GroupedLosses` of counts in size bands
   `(b_k, b_{k+1}]`, without individual amounts (Bahnemann, CAS Monograph

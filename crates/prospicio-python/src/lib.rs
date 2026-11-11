@@ -138,11 +138,11 @@ mod prospicio_native {
     use super::odp_glm::{PyOdpGlm, PyOdpGlmFit};
     #[pymodule_export]
     use super::pareto::{
-        PyAffine, PyBeta, PyBinomial, PyBurr, PyCustom, PyGamma, PyGeneralizedPareto,
-        PyInverseGamma, PyInverseGaussian, PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto,
-        PyPiecewisePareto, PyPolicyLimits, PySeverityFit, PySizeOfLoss, PyTruncated, PyTweedie,
-        PyWeibull, claim_count, fit_severity, goodness_of_fit, local_pareto_to_piecewise,
-        product_limit,
+        PyAffine, PyBeta, PyBinomial, PyBurr, PyCustom, PyExponential, PyGamma,
+        PyGeneralizedPareto, PyInverseGamma, PyInverseGaussian, PyLogAffinePareto, PyLoglogistic,
+        PyMixture, PyPareto, PyPiecewisePareto, PyPolicyLimits, PySeverityFit, PySizeOfLoss,
+        PyTruncated, PyTweedie, PyWeibull, claim_count, fit_severity, goodness_of_fit,
+        local_pareto_to_piecewise, product_limit,
     };
     #[pymodule_export]
     use super::payout::{

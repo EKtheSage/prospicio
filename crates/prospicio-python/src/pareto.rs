@@ -770,6 +770,46 @@ severity_class!(PyWeibull {
     }
 });
 
+/// Exponential distribution with mean ``theta``: ``S(x) = exp(-x / theta)``,
+/// as SciPy's ``expon(scale=theta)``. Memoryless, so every layer moment is
+/// in closed form.
+///
+/// Parameters
+/// ----------
+/// mean : float
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import Exponential
+/// >>> Exponential(2.0).stop_loss(0.0)
+/// 2.0
+#[pyclass(name = "Exponential", module = "prospicio.distributions", frozen)]
+pub(crate) struct PyExponential {
+    pub(crate) inner: prospicio_prob::Exponential,
+}
+
+severity_class!(PyExponential {
+    #[new]
+    fn new(mean: f64) -> PyResult<Self> {
+        let inner = prospicio_prob::Exponential::new(mean).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// The scale ``theta``, the mean (the rate is ``1 / theta``).
+    #[getter]
+    fn scale(&self) -> f64 {
+        self.inner.mean_param()
+    }
+
+    fn __getnewargs__(&self) -> (f64,) {
+        (self.inner.mean_param(),)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Exponential(mean={:?})", self.inner.mean_param())
+    }
+});
+
 /// Loglogistic (Fisk) distribution with shape ``alpha`` and scale
 /// ``theta`` (the median): ``F(x) = (x/theta)**alpha / (1 + (x/theta)**alpha)``,
 /// as SciPy's ``fisk``. Its ``cdf`` is Clark's loglogistic growth curve.
@@ -2237,7 +2277,8 @@ impl PySeverityFit {
     }
 
     /// The parameters' covariance, one row per parameter in the family's
-    /// order (``meanlog, sdlog``; ``shape, scale``; ``alpha, gamma, scale``).
+    /// order (``meanlog, sdlog``; ``shape, scale``; ``alpha, gamma, scale``;
+    /// ``t, alpha``), NaN in the row and column of a pinned ``t``.
     #[getter]
     fn covariance(&self) -> Vec<Vec<f64>> {
         let n = self.inner.parameters().len();
@@ -2254,10 +2295,16 @@ impl PySeverityFit {
         self.inner.log_likelihood()
     }
 
-    /// Akaike's information criterion.
+    /// Akaike's information criterion, a pinned ``t`` not counted.
     #[getter]
     fn aic(&self) -> f64 {
         self.inner.aic()
+    }
+
+    /// The threshold ``t`` of a Pareto family, ``None`` for a body family.
+    #[getter]
+    fn threshold(&self) -> Option<f64> {
+        self.inner.threshold()
     }
 
     /// The Bayesian information criterion, with the losses' total weight.
@@ -2282,17 +2329,26 @@ impl PySeverityFit {
     }
 }
 
-/// Maximum likelihood fit of a lognormal, gamma, Weibull, Burr or Lomax
-/// severity to large losses, each conditioned on exceeding its reporting
-/// threshold (left truncation), with losses capped by a policy limit
-/// censored, and optionally truncated from above (each loss conditioned on
-/// not exceeding its bound). The Lomax, ``S(x) = (1 + x / scale) **
-/// -alpha`` (Bahnemann's Pareto), is fitted as a :class:`Burr` with
-/// ``gamma = 1``.
+/// Maximum likelihood fit of a severity to large losses, each conditioned
+/// on exceeding its reporting threshold (left truncation), with losses
+/// capped by a policy limit censored, and optionally truncated from above
+/// (each loss conditioned on not exceeding its bound). The Lomax,
+/// ``S(x) = (1 + x / scale) ** -alpha`` (Bahnemann's Pareto), is fitted as a
+/// :class:`Burr` with ``gamma = 1``, the loglogistic as the Burr with
+/// ``alpha = 1``.
+///
+/// ``"pareto"`` (``Pareto(t, alpha)``) and ``"gen_pareto"`` (Riegel's
+/// generalized Pareto, a :class:`GeneralizedPareto` at location ``t`` with
+/// ``xi = 1 / alpha_tail`` and ``beta = t / alpha_ini``) are fitted from
+/// the threshold ``t`` by their own estimators and scored on the same
+/// likelihood, ``t`` among the parameters but not counted in the AIC. They
+/// condition each loss on ``max(r, t)`` where the body families condition
+/// on ``r``: compare their AIC with a body family's only when every
+/// reporting threshold is at least ``t``.
 ///
 /// Parameters
 /// ----------
-/// family : {"lognormal", "gamma", "weibull", "burr", "lomax"}
+/// family : {"lognormal", "gamma", "weibull", "loglogistic", "exponential", "burr", "lomax", "pareto", "gen_pareto"}
 /// losses : list of float
 /// reporting_thresholds : list of float, optional
 ///     Per-loss thresholds below which a loss would not have been
@@ -2303,6 +2359,10 @@ impl PySeverityFit {
 /// truncated_above : list of float, optional
 ///     Per-loss bounds from above: a loss is conditioned on not exceeding
 ///     its bound (a study of claims up to 50,000). ``math.inf`` means none.
+///     The body families only.
+/// t : float, optional
+///     The threshold of ``"pareto"`` and ``"gen_pareto"``, required for
+///     them and refused for the others.
 ///
 /// Returns
 /// -------
@@ -2319,8 +2379,9 @@ impl PySeverityFit {
 #[pyfunction]
 #[pyo3(signature = (
     family, losses, reporting_thresholds = None, censored = None, weights = None,
-    truncated_above = None
+    truncated_above = None, t = None
 ))]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn fit_severity(
     py: Python<'_>,
     family: &str,
@@ -2329,14 +2390,17 @@ pub(crate) fn fit_severity(
     censored: Option<Vec<bool>>,
     weights: Option<Vec<f64>>,
     truncated_above: Option<Vec<f64>>,
+    t: Option<f64>,
 ) -> PyResult<PySeverityFit> {
-    use prospicio_prob::severity_fit::{Family, fit_severity};
+    use prospicio_prob::severity_fit::{Family, fit_severity_with_threshold};
     let family = Family::from_name(family).map_err(to_py)?;
     let data = bounded_above(
         large_losses(losses, reporting_thresholds, censored, weights)?,
         truncated_above,
     )?;
-    let inner = py.detach(|| fit_severity(family, &data)).map_err(to_py)?;
+    let inner = py
+        .detach(|| fit_severity_with_threshold(family, &data, t))
+        .map_err(to_py)?;
     Ok(PySeverityFit { inner })
 }
 

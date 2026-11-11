@@ -364,6 +364,7 @@ pub fn fit_grouped(
     data: &GroupedLosses,
     method: GroupedMethod,
 ) -> Result<GroupedFit> {
+    family.body_only("fit_grouped")?;
     let mut starts = vec![];
     if let Ok(f) = data.pseudo_losses().and_then(|p| fit_severity(family, &p)) {
         starts.push(f.parameters().to_vec());
@@ -524,6 +525,7 @@ pub fn fit_lev_distance(
     weights: Option<&[f64]>,
     start: Option<&[f64]>,
 ) -> Result<LevDistanceFit> {
+    family.body_only("fit_lev_distance")?;
     let n = sizes.len();
     if n < family.parameter_names().len() || empirical.len() != n {
         return Err(Error::Data(format!(

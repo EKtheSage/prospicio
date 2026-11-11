@@ -465,7 +465,7 @@ schedule_trend_rust <- function(years, trend_years, trend_rates, inception, basi
 
 settlement_rate_rust <- function(triangle, paid, closed_counts, ultimate, disposal_rates, interpolation) .Call(wrap__settlement_rate_rust, triangle, paid, closed_counts, ultimate, disposal_rates, interpolation)
 
-severity_fit_rust <- function(family, losses, reporting, censored, weights, upper) .Call(wrap__severity_fit_rust, family, losses, reporting, censored, weights, upper)
+severity_fit_rust <- function(family, losses, reporting, censored, weights, upper, t) .Call(wrap__severity_fit_rust, family, losses, reporting, censored, weights, upper, t)
 
 shapley_rust <- function(pd, cost) .Call(wrap__shapley_rust, pd, cost)
 
@@ -2200,6 +2200,40 @@ ExpectregModel$tau <- function() .Call(wrap__ExpectregModel__tau, self)
 
 #' @export
 `[[.ExpectregModel` <- `$.ExpectregModel`
+
+ExponentialDist <- new.env(parent = emptyenv())
+
+ExponentialDist$cdf <- function(x) .Call(wrap__ExponentialDist__cdf, self, x)
+
+ExponentialDist$layer <- function(limit, attachment) .Call(wrap__ExponentialDist__layer, self, limit, attachment)
+
+ExponentialDist$layer_second_moment <- function(limit, attachment) .Call(wrap__ExponentialDist__layer_second_moment, self, limit, attachment)
+
+ExponentialDist$layer_variance <- function(limit, attachment) .Call(wrap__ExponentialDist__layer_variance, self, limit, attachment)
+
+ExponentialDist$lev <- function(limit) .Call(wrap__ExponentialDist__lev, self, limit)
+
+ExponentialDist$mean <- function() .Call(wrap__ExponentialDist__mean, self)
+
+ExponentialDist$new <- function(mean) .Call(wrap__ExponentialDist__new, mean)
+
+ExponentialDist$quantile <- function(p) .Call(wrap__ExponentialDist__quantile, self, p)
+
+ExponentialDist$sample <- function(n, seed, stream) .Call(wrap__ExponentialDist__sample, self, n, seed, stream)
+
+ExponentialDist$scale <- function() .Call(wrap__ExponentialDist__scale, self)
+
+ExponentialDist$stop_loss <- function(retention) .Call(wrap__ExponentialDist__stop_loss, self, retention)
+
+ExponentialDist$survival <- function(x) .Call(wrap__ExponentialDist__survival, self, x)
+
+ExponentialDist$variance <- function() .Call(wrap__ExponentialDist__variance, self)
+
+#' @export
+`$.ExponentialDist` <- function (self, name) { func <- ExponentialDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.ExponentialDist` <- `$.ExponentialDist`
 
 GamModel <- new.env(parent = emptyenv())
 

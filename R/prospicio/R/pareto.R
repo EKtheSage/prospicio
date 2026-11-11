@@ -21,6 +21,7 @@ optional_arg <- function(x) if (is.null(x)) double() else as.double(x)
 #' Defined for [lognormal], the Pareto-family severities ([pareto], [piecewise_pareto],
 #' [log_affine_pareto], [generalized_pareto]) and for [gamma_distribution],
 #' [tweedie], [weibull_distribution], [loglogistic_distribution],
+#' [exponential_distribution],
 #' [inverse_gamma_distribution], [inverse_gaussian_distribution],
 #' [burr_distribution], [beta_distribution], [truncated_distribution],
 #' [affine_distribution], [size_of_loss],
@@ -574,6 +575,37 @@ loglogistic_distribution <- S7::new_class(
   }
 )
 
+#' Exponential distribution
+#'
+#' `S(x) = exp(-x / scale)`, as R's `dexp(rate = 1 / scale)` and SciPy's
+#' `expon`; `scale` is the mean. Memoryless, so every layer moment is in
+#' closed form. Property: `d@scale`.
+#'
+#' Supports the same operations as [pareto].
+#'
+#' @param mean Finite and positive: the mean, the distribution's scale.
+#' @param ptr Internal: an existing object to wrap.
+#' @returns An `exponential_distribution` object, which inherits from
+#'   [distribution].
+#' @export
+#' @examples
+#' d <- exponential_distribution(2)
+#' survival(d, 3)
+#' layer(d, 1, 3) # memoryless: survival(d, 3) * lev(d, 1)
+exponential_distribution <- S7::new_class(
+  "exponential_distribution",
+  parent = distribution,
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("ExponentialDist"),
+    scale = S7::new_property(S7::class_double, getter = function(self) self@ptr$scale())
+  ),
+  constructor = function(mean, ptr = NULL) {
+    if (is.null(ptr)) ptr <- rust_result(ExponentialDist$new(as.double(mean)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
 #' Inverse gamma distribution
 #'
 #' `X = scale / G` for `G` a unit-scale gamma with shape `shape`, as
@@ -1001,7 +1033,7 @@ S7::method(log_density, tweedie) <- function(dist, x, ...) dist@ptr$ln_pdf(as.do
 
 for (cls in list(pareto, piecewise_pareto, log_affine_pareto, generalized_pareto,
                  gamma_distribution, tweedie, weibull_distribution, loglogistic_distribution,
-                 inverse_gamma_distribution, inverse_gaussian_distribution, burr_distribution,
+                 exponential_distribution, inverse_gamma_distribution, inverse_gaussian_distribution, burr_distribution,
                  beta_distribution, truncated_distribution, affine_distribution,
                  size_of_loss, policy_limits_distribution,
                  mixture_distribution, custom_distribution)) {
@@ -1084,6 +1116,10 @@ S7::method(print, weibull_distribution) <- function(x, ...) {
 S7::method(print, loglogistic_distribution) <- function(x, ...) {
   cat(sprintf("<loglogistic_distribution> shape = %s, scale = %s\n",
               format(x@shape, digits = 15), format(x@scale, digits = 15)))
+  invisible(x)
+}
+S7::method(print, exponential_distribution) <- function(x, ...) {
+  cat(sprintf("<exponential_distribution> mean = %s\n", format(x@scale, digits = 15)))
   invisible(x)
 }
 S7::method(print, inverse_gamma_distribution) <- function(x, ...) {
@@ -1248,7 +1284,8 @@ wrap_dist <- function(family, ptr) {
     lognormal = lognormal, pareto = pareto, piecewise_pareto = piecewise_pareto,
     log_affine_pareto = log_affine_pareto, generalized_pareto = generalized_pareto,
     gamma = gamma_distribution, tweedie = tweedie, weibull = weibull_distribution,
-    loglogistic = loglogistic_distribution, inverse_gamma = inverse_gamma_distribution,
+    loglogistic = loglogistic_distribution, exponential = exponential_distribution,
+    inverse_gamma = inverse_gamma_distribution,
     inverse_gaussian = inverse_gaussian_distribution, burr = burr_distribution,
     beta = beta_distribution, truncated = truncated_distribution,
     affine = affine_distribution, size_of_loss = size_of_loss,
@@ -1259,22 +1296,34 @@ wrap_dist <- function(family, ptr) {
   cls(ptr = ptr)
 }
 
-#' Fit a body severity to large losses
+#' Fit a severity to large losses
 #'
-#' Maximum likelihood fit of a lognormal, gamma, Weibull, Burr or Lomax
-#' severity to large losses, each conditioned on exceeding its reporting threshold (left
-#' truncation), with losses capped by a policy limit censored: the same data
-#' as [pareto_fit()]. The standard errors and covariance come from the
-#' observed information. A Burr fit on little data can drift towards a
-#' boundary where it mimics a Weibull or a Pareto; check `converged` and the
-#' standard errors. The Lomax, `S(x) = (1 + x / scale)^(-alpha)` (Bahnemann's
-#' Pareto), is fitted as a Burr with `gamma = 1`. With `truncated_above`,
-#' each loss is also conditioned on not exceeding its bound.
+#' Maximum likelihood fit of a severity to large losses, each conditioned on
+#' exceeding its reporting threshold (left truncation), with losses capped
+#' by a policy limit censored: the same data as [pareto_fit()]. The standard
+#' errors and covariance come from the observed information. A Burr fit on
+#' little data can drift towards a boundary where it mimics a Weibull or a
+#' Pareto; check `converged` and the standard errors. The Lomax,
+#' `S(x) = (1 + x / scale)^(-alpha)` (Bahnemann's Pareto), is fitted as a
+#' Burr with `gamma = 1`, the loglogistic as the Burr with `alpha = 1`. With
+#' `truncated_above`, each loss is also conditioned on not exceeding its
+#' bound (the body families only).
 #'
-#' @param family `"lognormal"`, `"gamma"`, `"weibull"`, `"burr"` or `"lomax"`.
+#' `"pareto"` and `"gen_pareto"` (Riegel's generalized Pareto, a
+#' [generalized_pareto] at location `t` with `xi = 1 / alpha_tail` and
+#' `beta = t / alpha_ini`) are fitted from the threshold `t` by their own
+#' estimators and scored on the same likelihood, `t` among the parameters
+#' but not counted in the AIC. They condition each loss on `max(r, t)` where
+#' the body families condition on `r`: compare their AIC with a body
+#' family's only when every reporting threshold is at least `t`.
+#'
+#' @param family `"lognormal"`, `"gamma"`, `"weibull"`, `"loglogistic"`,
+#'   `"exponential"`, `"burr"`, `"lomax"`, `"pareto"` or `"gen_pareto"`.
 #' @param truncated_above Per-loss bounds from above, or `NULL`: a loss is
 #'   conditioned on not exceeding its bound (a study of claims up to 50,000);
 #'   `Inf` means none.
+#' @param t The threshold of `"pareto"` and `"gen_pareto"`, required for
+#'   them; `NULL` for the others.
 #' @inheritParams pareto_fit
 #' @returns A list: `distribution` (the fitted severity), `parameters` and
 #'   `standard_errors` (named), `covariance` (a matrix), `log_likelihood`,
@@ -1285,11 +1334,13 @@ wrap_dist <- function(family, ptr) {
 #' fit <- severity_fit("lognormal", y)
 #' fit$parameters
 #' severity_fit("weibull", y, reporting_thresholds = rep(100, 7))$aic
+#' severity_fit("pareto", y, reporting_thresholds = rep(100, 7), t = 100)$aic
 severity_fit <- function(family, losses, reporting_thresholds = NULL, censored = NULL,
-                         weights = NULL, truncated_above = NULL) {
+                         weights = NULL, truncated_above = NULL, t = NULL) {
   r <- rust_result(severity_fit_rust(
     as.character(family), as.double(losses), optional_arg(reporting_thresholds),
-    optional_arg(censored), optional_arg(weights), optional_arg(truncated_above)
+    optional_arg(censored), optional_arg(weights), optional_arg(truncated_above),
+    if (is.null(t)) NaN else as.double(t)
   ))
   k <- length(r$parameters)
   list(
@@ -1380,6 +1431,8 @@ goodness_of_fit <- function(severity, losses, reporting_thresholds = NULL, censo
 #' @param empirical The empirical limited expected value at each size.
 #' @param weights Optional non-negative weights, 1 by default.
 #' @param start Optional starting parameters in the family's order.
+#' @param family `"lognormal"`, `"gamma"`, `"weibull"`, `"loglogistic"`,
+#'   `"exponential"`, `"burr"` or `"lomax"`: the body families.
 #' @inheritParams severity_fit
 #' @inheritParams goodness_of_fit
 #' @returns `grouped_fit()`: a list with `distribution`, named `parameters`
