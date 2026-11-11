@@ -81,6 +81,8 @@ mod moment_match;
 mod new_year;
 mod odp;
 mod one_year;
+#[cfg(test)]
+mod pins;
 mod scalar;
 
 pub use crate::diagnostics::Diagnostics;

@@ -1408,6 +1408,7 @@ mod tests {
     use super::*;
     use crate::bayes::OneYearRefit;
     use crate::bayes::laplace::tests::assert_gradient;
+    use crate::bayes::pins::{self, bits_hash};
     use crate::triangle::tests::{GENINS, annual, raa};
     use crate::{OdpBootstrap, triangle::Long};
     use prospicio_bayes::nuts::LogDensity;
@@ -2403,11 +2404,30 @@ mod tests {
         }
     }
 
-    /// An FNV-1a hash of the bits of `values`, to pin a run exactly.
-    fn bits_hash(values: &[f64]) -> u64 {
-        values.iter().fold(0xcbf2_9ce4_8422_2325, |h, v| {
-            (h ^ v.to_bits()).wrapping_mul(0x0000_0100_0000_01b3)
-        })
+    /// Bit-exact on CI's Linux runner (#841; the doc of `bayes::pins` says
+    /// what to do when the hash moves): RAA, two chains of 100 warm-up and
+    /// 50 kept draws, 100 simulations.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_fit_is_pinned_on_linux() {
+        let model = BayesOdp {
+            sampler: Sampler {
+                chains: 2,
+                tune: 100,
+                draws: 50,
+                ..Sampler::default()
+            },
+            n_sims: 100,
+            seed: 841,
+            ..BayesOdp::default()
+        };
+        pins::check("BayesOdp", 0xcb99_f7d1_8967_223a, || {
+            let fit = model.fit(&raa(), "values").unwrap();
+            pins::fit_hash(&fit.posterior, &fit.reserves)
+        });
     }
 
     /// Seed-pinned one-year views, bit for bit: a change to the engine

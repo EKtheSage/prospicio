@@ -120,7 +120,16 @@ cargo test --release -p prospicio-reserving --features slow-tests --lib
 CI's `bayes` job runs this after the parity tests, and `slow-bayes` turns
 `prospicio-reserving/slow-tests` on, so one flag covers both. A seed-pinned
 test that is platform-specific stays plainly `#[ignore]`d and runs only by
-name with `--ignored`. Measured locally on 2026-10-15 (Windows, 16
+name with `--ignored`. Since #841 (branch claude/bayes-linux-pins) each of
+the six Bayesian models also has a `the_fit_is_pinned_on_linux` unit test
+under `slow-tests` (`bayes::pins`): a short seeded fit (two chains of 100
+warm-up and 50 kept draws, 100 simulations) whose posterior draws and
+reserve simulations are hashed with FNV-1a. The hash is asserted only on
+Linux x86_64 in release, CI's `bayes` job; elsewhere the test fits twice
+and checks the two runs agree. Each prints `PIN <model> actual 0x...`, the
+value to paste when a pin moves. On Windows (16 threads, release, two fits
+each) they took 0.01 s (`BayesOdp`, `BayesBf`) to 0.63 s
+(`Compartmental`), all six together 0.81 s. Measured locally on 2026-10-15 (Windows, 16
 threads): the debug unit tests of `prospicio-reserving --features bayes`
 fell from 61 s to 6.5 s wall, and from 233 s to 12 s single-threaded.
 
