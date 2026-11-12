@@ -18,9 +18,11 @@ close(std_dev(d), sqrt(variance(d)), 1e-15)
 # Layer second moments against validation/reference/layer_moments_mpmath.csv
 # (mpmath quadrature of 2 (x - a) S(x) at 30 digits).
 close(layer_second_moment(d, 500, 0), 245530.28579209919, 1e-10)
-close(layer_second_moment(d, 4000, 1000), 440441.74596208578, 1e-10)
+second <- function(limit, attachment) reference("layer_moments_mpmath.csv", distribution = "lognormal",
+  params = "meanlog=7.0;sdlog=0.5", quantity = "layer_second_moment", arg = limit, arg2 = attachment)
+close(layer_second_moment(d, 4000, 1000), second("4000", "1000"), 1e-10)
 close(layer_second_moment(d, 1e6, 2e5), 2.2259783137612088e-17, 1e-10)
-close(layer_second_moment(d, Inf, 3000), 21219.202048965620, 1e-10)
+close(layer_second_moment(d, Inf, 3000), second("inf", "3000"), 1e-10)
 close(layer_second_moment(lognormal(10, 2), 500, 0), 245447.70222260771, 1e-10)
 # E[min(X, u)^2] in closed form, and the variance identity.
 u <- 2000
@@ -123,7 +125,8 @@ stopifnot(pmf(zt, 0) == 0, abs(mean(zt) - 2 / (1 - exp(-2))) < 1e-12)
 zm <- zero_modified_count(negative_binomial_count(2, 1.5), 0.3)
 stopifnot(abs(pmf(zm, 0) - 0.3) < 1e-15)
 pig <- mixed_poisson_count(10, 0.5, mixing = "inverse_gaussian")
-stopifnot(abs(pmf(pig, 0) - 0.0030337404) < 1e-10, abs(variance(pig) - 35) < 1e-9)
+stopifnot(abs(pmf(pig, 0) - reference("counts_aggregate.csv", distribution = "mixed",
+  params = "lambda=10.0;mixing=ig;cv=0.5;shift=0.0", quantity = "pmf", arg = "0")) < 1e-10, abs(variance(pig) - 35) < 1e-9)
 ney <- compound_poisson_count(2, poisson_count(3))
 stopifnot(abs(mean(ney) - 6) < 1e-12)
 stopifnot(abs(pmf(logarithmic_count(0.5), 1) - 0.5 / log(2)) < 1e-15)
@@ -136,11 +139,14 @@ stopifnot(inherits(try(compound_distribution(pig, sev, 100, method = "panjer"), 
 # The beta and Sichel mixings (validation/scripts/aggregate_mixing.py): the
 # beta by quadrature, the Sichel against aggregate 2.1.0.
 bm <- mixed_poisson_count(10, 0.3, mixing = "beta", max = 30)
-stopifnot(abs(pmf(bm, 0) - 0.0011358609508610308) < 1e-14, is.null(gig_parameters(bm)))
+stopifnot(abs(pmf(bm, 0) - reference("mixing_aggregate.csv", distribution = "beta",
+  params = "lambda=10.0;cv=0.3;max=30.0", quantity = "pmf", arg = "0")) < 1e-14, is.null(gig_parameters(bm)))
 sm <- mixed_poisson_count(10, 0.4, mixing = "sichel", shape = 1.5)
-stopifnot(abs(pmf(sm, 0) - 0.0016178402835267376) < 1e-9, abs(variance(sm) - 26) < 1e-9)
+stopifnot(abs(pmf(sm, 0) - reference("mixing_aggregate.csv", distribution = "sichel",
+  params = "lambda=10.0;cv=0.4;shape=1.5", quantity = "pmf", arg = "0")) < 1e-9, abs(variance(sm) - 26) < 1e-9)
 sig <- gig_parameters(mixed_poisson_count(10, 0.5, mixing = "sichel_ig", f = 0.3))
-stopifnot(abs(sig[["shape"]] / -4.5422134725837395 - 1) < 1e-8)
+stopifnot(abs(sig[["shape"]] / reference("mixing_aggregate.csv", distribution = "sichel_ig",
+  params = "lambda=10.0;cv=0.5;f=0.3", quantity = "shape") - 1) < 1e-8)
 same <- gig_parameters(mixed_poisson_count(10, 0.5, mixing = "sichel", skewness = 1.5 / 0.7))
 stopifnot(abs(same[["shape"]] / sig[["shape"]] - 1) < 1e-12)
 stopifnot(inherits(try(mixed_poisson_count(10, 0.5, mixing = "sichel"), silent = TRUE), "try-error"))
@@ -165,10 +171,10 @@ stopifnot(t < 0.85, abs(TVaR(g, t) - quantile(g, 0.85)) < 1e-12)
 # the P&L design note's example 1, the margin 9 less the loss of two claims.
 m <- discrete_distribution(c(7, 6, 5, 4, 3, 1), c(0.25, 0.3, 0.09, 0.2, 0.12, 0.04))
 stopifnot(identical(m@values, c(1, 3, 4, 5, 6, 7)), abs(mean(m) - 5.2) < 1e-12)
-stopifnot(abs(sqrt(variance(m)) - 1.6062378404209) < 1e-12)
-stopifnot(abs(discrete_skewness(m) + 0.7181304929229927) < 1e-10)
+stopifnot(abs(sqrt(variance(m)) - reference("discrete_aggregate.csv", case = "ex1", quantity = "sd", arg = "0.0")) < 1e-12)
+stopifnot(abs(discrete_skewness(m) - reference("discrete_aggregate.csv", case = "ex1", quantity = "skew", arg = "0.0")) < 1e-10)
 stopifnot(identical(quantile(m, c(0.01, 0.05, 0.5, 0.99)), c(1, 3, 6, 7)))
-stopifnot(abs(TVaR(m, 0.01) - 5.242424242424243) < 1e-12, is.na(quantile_upper(m, 1)))
+stopifnot(abs(TVaR(m, 0.01) - reference("discrete_aggregate.csv", case = "ex1", quantity = "tvar", arg = "0.01")) < 1e-12, is.na(quantile_upper(m, 1)))
 stopifnot(abs(cdf(m, 4) - 0.36) < 1e-15, abs(pmf(m, 6) - 0.3) < 1e-15, abs(survival(m, 4) - 0.64) < 1e-15)
 rp <- return_periods(m)
 stopifnot(abs(rp$p[1] - 0.001) < 1e-15, rp$var[1] == 1, rp$period[1] == 1000)
