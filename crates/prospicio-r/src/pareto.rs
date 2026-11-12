@@ -1007,6 +1007,40 @@ fn goodness_of_fit_rust(
     ))
 }
 
+/// The parametric bootstrap of a fit's KS p-value: `list(max_distance,
+/// p_value, distances, failed)`. `t` NaN for none, `limits` empty for none.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn ks_bootstrap_rust(
+    family: &str,
+    losses: &[f64],
+    reporting: &[f64],
+    censored: &[f64],
+    weights: &[f64],
+    upper: &[f64],
+    t: f64,
+    limits: &[f64],
+    replicates: f64,
+    seed: f64,
+) -> Result<List> {
+    use prospicio_prob::severity_fit::{Family, fit_severity_with_threshold};
+    let family = Family::from_name(family).map_err(to_r)?;
+    let data = bounded_above(large_losses(losses, reporting, censored, weights)?, upper)?;
+    let t = (!t.is_nan()).then_some(t);
+    let replicates = crate::whole(replicates, "replicates")? as usize;
+    let seed = crate::whole(seed, "seed")?;
+    let fit = fit_severity_with_threshold(family, &data, t).map_err(to_r)?;
+    let limits = (!limits.is_empty()).then_some(limits);
+    let b = prospicio_prob::severity_fit::ks_bootstrap(&fit, &data, limits, replicates, seed)
+        .map_err(to_r)?;
+    Ok(list!(
+        max_distance = b.max_distance,
+        p_value = b.p_value,
+        distances = b.distances,
+        failed = b.failed as f64
+    ))
+}
+
 /// Every fitted family's survival at the losses beside their plotting
 /// positions: `list(loss, empirical, families, curves)`, `curves` a list
 /// of one vector per family in AIC order. `families` empty means all nine.
@@ -1181,6 +1215,7 @@ extendr_module! {
     fn product_limit_rust;
     fn goodness_of_fit_rust;
     fn fit_curves_rust;
+    fn ks_bootstrap_rust;
     fn grouped_fit_rust;
     fn grouped_goodness_of_fit_rust;
     fn lev_distance_fit_rust;
