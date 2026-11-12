@@ -2536,6 +2536,101 @@ pub(crate) fn goodness_of_fit<'py>(
     Ok(d)
 }
 
+/// The p-value of a severity fit's Kolmogorov–Smirnov distance by the
+/// parametric bootstrap.
+///
+/// ``goodness_of_fit``'s ``ks_p_value`` assumes a distribution fixed in
+/// advance, and a fitted one lies closer to its own data, so that p-value is
+/// too large. Here ``family`` is fitted to the losses, ``replicates``
+/// samples are drawn from the fit under the same reporting thresholds,
+/// bounds from above and policy limits, each is refitted with the same
+/// family (and ``t``), and the p-value is ``(1 + k) / (B + 1)``, ``k`` the
+/// replicates whose distance is at least the data's among the ``B`` that
+/// refitted. Its Monte Carlo error is about ``sqrt(p (1 - p) / B)``.
+///
+/// Parameters
+/// ----------
+/// family : str
+///     As in ``fit_severity``.
+/// losses : list of float
+/// reporting_thresholds : list of float, optional
+/// censored : list of bool, optional
+/// weights : list of float, optional
+///     Whole numbers of losses, each drawn on its own.
+/// truncated_above : list of float, optional
+/// t : float, optional
+///     The threshold of ``"pareto"`` and ``"gen_pareto"``.
+/// limits : list of float, optional
+///     Each loss's policy limit: a replicate loss above it is censored
+///     there. At least the loss, and equal to it where the loss is censored.
+///     Without it, a censored loss's limit is its own value and an
+///     uncensored loss has none; give it when uncensored losses had limits
+///     too, or the replicates show losses the data could not.
+/// replicates : int, default 999
+/// seed : int, default 0
+///     Replicate ``b`` draws from stream ``b`` of this seed, so the result
+///     does not depend on the number of threads.
+///
+/// Returns
+/// -------
+/// dict
+///     ``max_distance`` (the fit's), ``p_value``, ``distances`` (each
+///     refitted replicate's, in order) and ``failed`` (replicates whose refit
+///     failed, left out).
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import ks_bootstrap
+/// >>> y = [120.0, 300.0, 450.0, 800.0, 1500.0, 2600.0, 4000.0, 650.0, 90.0, 2100.0]
+/// >>> b = ks_bootstrap("exponential", y, replicates=199, seed=1)
+/// >>> len(b["distances"]) + b["failed"]
+/// 199
+#[pyfunction]
+#[pyo3(signature = (
+    family, losses, reporting_thresholds = None, censored = None, weights = None,
+    truncated_above = None, t = None, limits = None, replicates = 999, seed = 0
+))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn ks_bootstrap<'py>(
+    py: Python<'py>,
+    family: &str,
+    losses: Vec<f64>,
+    reporting_thresholds: Option<Vec<f64>>,
+    censored: Option<Vec<bool>>,
+    weights: Option<Vec<f64>>,
+    truncated_above: Option<Vec<f64>>,
+    t: Option<f64>,
+    limits: Option<Vec<f64>>,
+    replicates: usize,
+    seed: u64,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    use prospicio_prob::severity_fit::{Family, fit_severity_with_threshold};
+    use pyo3::types::PyDictMethods;
+    let family = Family::from_name(family).map_err(to_py)?;
+    let data = bounded_above(
+        large_losses(losses, reporting_thresholds, censored, weights)?,
+        truncated_above,
+    )?;
+    let b = py
+        .detach(|| {
+            let fit = fit_severity_with_threshold(family, &data, t)?;
+            prospicio_prob::severity_fit::ks_bootstrap(
+                &fit,
+                &data,
+                limits.as_deref(),
+                replicates,
+                seed,
+            )
+        })
+        .map_err(to_py)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("max_distance", b.max_distance)?;
+    d.set_item("p_value", b.p_value)?;
+    d.set_item("distances", b.distances)?;
+    d.set_item("failed", b.failed)?;
+    Ok(d)
+}
+
 /// Every fitted family's survival beside the data's plotting positions, the
 /// table behind a chart of the fits on a log axis.
 ///
