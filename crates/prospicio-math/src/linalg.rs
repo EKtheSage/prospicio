@@ -206,6 +206,60 @@ pub fn cholesky_log_det(l: &[f64], n: usize) -> f64 {
     2.0 * (0..n).map(|i| l[i * n + i].ln()).sum::<f64>()
 }
 
+/// The least-squares line through some points: [`line_fit`]'s result.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LineFit {
+    /// The fitted value at `x = 0`.
+    pub intercept: f64,
+    /// The change in `y` per unit of `x`.
+    pub slope: f64,
+    /// The coefficient of determination, `sxy² / (sxx syy)`; 1 when every
+    /// `y` is equal (or with two points).
+    pub r_squared: f64,
+    /// The number of points fitted.
+    pub n: usize,
+}
+
+/// The ordinary least-squares line `y = intercept + slope x` through
+/// `points` (`(x, y)` pairs), from the centred sums `sxx`, `sxy` and `syy`
+/// about the means. `None` with fewer than two points or when every `x`
+/// is equal. Non-finite values are not filtered: the caller decides which
+/// points to fit.
+///
+/// ```
+/// use prospicio_math::linalg::line_fit;
+///
+/// let fit = line_fit(&[(0.0, 1.0), (1.0, 3.0), (2.0, 5.0)]).unwrap();
+/// assert_eq!((fit.intercept, fit.slope, fit.r_squared, fit.n), (1.0, 2.0, 1.0, 3));
+/// assert!(line_fit(&[(1.0, 1.0), (1.0, 2.0)]).is_none());
+/// ```
+pub fn line_fit(points: &[(f64, f64)]) -> Option<LineFit> {
+    if points.len() < 2 {
+        return None;
+    }
+    let n = points.len() as f64;
+    let mean_x = points.iter().map(|p| p.0).sum::<f64>() / n;
+    let mean_y = points.iter().map(|p| p.1).sum::<f64>() / n;
+    let sxx: f64 = points.iter().map(|p| (p.0 - mean_x) * (p.0 - mean_x)).sum();
+    if sxx <= 0.0 {
+        return None;
+    }
+    let sxy: f64 = points.iter().map(|p| (p.0 - mean_x) * (p.1 - mean_y)).sum();
+    let syy: f64 = points.iter().map(|p| (p.1 - mean_y) * (p.1 - mean_y)).sum();
+    let slope = sxy / sxx;
+    let r_squared = if syy > 0.0 {
+        sxy * sxy / (sxx * syy)
+    } else {
+        1.0
+    };
+    Some(LineFit {
+        intercept: mean_y - slope * mean_x,
+        slope,
+        r_squared,
+        n: points.len(),
+    })
+}
+
 /// The eigenvalues of the symmetric `n × n` matrix `a` (row-major; only
 /// its lower triangle is read), in increasing order, by cyclic Jacobi
 /// rotations. Accurate to a few ulps of the largest eigenvalue, which
@@ -270,6 +324,19 @@ pub fn symmetric_eigenvalues(a: &[f64], n: usize) -> Vec<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn line_fit_on_noisy_points() {
+        let pts = [(1.0, 2.1), (2.0, 3.9), (3.0, 6.2), (4.0, 7.8)];
+        let f = line_fit(&pts).unwrap();
+        // numpy.polyfit(x, y, 1) and scipy.stats.linregress
+        assert!((f.slope - 1.94).abs() < 1e-12);
+        assert!((f.intercept - 0.15).abs() < 1e-12);
+        assert!((f.r_squared - 0.995_661_375_661_375_5).abs() < 1e-12);
+        assert!(line_fit(&pts[..1]).is_none());
+        let flat = line_fit(&[(0.0, 5.0), (1.0, 5.0)]).unwrap();
+        assert_eq!((flat.slope, flat.r_squared), (0.0, 1.0));
+    }
 
     #[test]
     fn mat_mul_matches_the_plain_triple_loop() {

@@ -2,6 +2,7 @@
 //! standard errors, estimated as the weighted regressions of Mack (1993,
 //! 1999) used by R ChainLadder and chainladder-python.
 
+use prospicio_math::linalg::line_fit;
 use std::fmt;
 
 use crate::error::{Error, Result};
@@ -511,17 +512,9 @@ pub(crate) fn interpolate_sigma(sigma: &[Option<f64>], method: SigmaInterpolatio
                 .enumerate()
                 .filter_map(|(k, s)| s.filter(|&s| s > 0.0).map(|s| (k as f64, s.ln())))
                 .collect();
-            let (intercept, slope) = if points.len() < 2 {
-                (f64::NAN, f64::NAN)
-            } else {
-                let n = points.len() as f64;
-                let mean_x = points.iter().map(|p| p.0).sum::<f64>() / n;
-                let mean_y = points.iter().map(|p| p.1).sum::<f64>() / n;
-                let sxy: f64 = points.iter().map(|p| (p.0 - mean_x) * (p.1 - mean_y)).sum();
-                let sxx: f64 = points.iter().map(|p| (p.0 - mean_x).powi(2)).sum();
-                let slope = sxy / sxx;
-                (mean_y - slope * mean_x, slope)
-            };
+            // The points' x are distinct ages, so two of them fit a line.
+            let (intercept, slope) =
+                line_fit(&points).map_or((f64::NAN, f64::NAN), |f| (f.intercept, f.slope));
             sigma
                 .iter()
                 .enumerate()
