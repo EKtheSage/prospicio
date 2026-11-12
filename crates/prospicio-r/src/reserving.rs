@@ -197,13 +197,13 @@ fn monthly_pattern_draws_of(
 }
 
 fn grain(name: &str, arg: &str) -> Result<Grain> {
-    match name {
-        "M" => Ok(Grain::Month),
-        "Q" => Ok(Grain::Quarter),
-        "S" => Ok(Grain::Semester),
-        "Y" => Ok(Grain::Year),
+    match name.trim().to_ascii_lowercase().as_str() {
+        "m" | "month" => Ok(Grain::Month),
+        "q" | "quarter" => Ok(Grain::Quarter),
+        "s" | "semiannual" | "semi-annual" => Ok(Grain::Semester),
+        "y" | "year" => Ok(Grain::Year),
         _ => Err(Error::Other(format!(
-            "{arg} must be \"M\", \"Q\", \"S\" or \"Y\", got \"{name}\""
+            "{arg} must be \"M\", \"Q\", \"S\" or \"Y\" (or \"month\", \"quarter\", \"semiannual\", \"year\"), got \"{name}\""
         ))),
     }
 }
@@ -227,7 +227,7 @@ fn development(
         }
     };
     let sigma_interpolation = match sigma_interpolation {
-        "log-linear" => SigmaInterpolation::LogLinear,
+        "log-linear" | "loglinear" | "log_linear" => SigmaInterpolation::LogLinear,
         "mack" => SigmaInterpolation::Mack,
         _ => {
             return Err(Error::Other(format!(
@@ -1380,7 +1380,7 @@ impl Triangle {
     ) -> Result<MunichFit> {
         let dev = |sigma: &str| -> Result<Development> {
             let sigma_interpolation = match sigma {
-                "log-linear" => SigmaInterpolation::LogLinear,
+                "log-linear" | "loglinear" | "log_linear" => SigmaInterpolation::LogLinear,
                 "mack" => SigmaInterpolation::Mack,
                 _ => {
                     return Err(Error::Other(format!(
@@ -2648,7 +2648,7 @@ impl Triangle {
             Nullable::Null => None,
         };
         let extrapolation = match extrapolation {
-            "loglinear" => VarianceExtrapolation::LogLinear,
+            "loglinear" | "log-linear" | "log_linear" => VarianceExtrapolation::LogLinear,
             "mack" => VarianceExtrapolation::Mack,
             other => {
                 return Err(Error::Other(format!(
@@ -5475,6 +5475,11 @@ pub(crate) struct HierarchicalBfFit {
 
 #[extendr]
 impl HierarchicalBfFit {
+    /// One row per program, the core's table (#838).
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
     /// Each program's segment label, joined by " / ", in the triangle's
     /// order.
     fn program_labels(&self) -> Vec<String> {
@@ -5595,6 +5600,16 @@ pub(crate) struct HierarchicalBfOneYearFit {
 
 #[extendr]
 impl HierarchicalBfOneYearFit {
+    /// One row per program and origin, the core's table (#838).
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    /// One row per program, the core's table (#838).
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
     /// The lifetime fit, as `bayes_hierarchical_bf` gives it.
     fn fit(&self) -> HierarchicalBfFit {
         HierarchicalBfFit {
@@ -7636,8 +7651,8 @@ fn benchmark_curve_rust(
     origin_width: Nullable<f64>,
 ) -> Result<BenchmarkCurveFit> {
     let kind = match kind {
-        "percent_developed" => PatternKind::PercentDeveloped,
-        "cdf" => PatternKind::AgeToUltimate,
+        "percent_developed" | "percent" | "percent developed" => PatternKind::PercentDeveloped,
+        "cdf" | "age-to-ultimate" => PatternKind::AgeToUltimate,
         _ => {
             return Err(Error::Other(format!(
                 "kind must be \"percent_developed\" or \"cdf\", got \"{kind}\""

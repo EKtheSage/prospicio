@@ -524,6 +524,23 @@ severity_class!(TweedieDist {
     }
 });
 
+/// Exponential distribution.
+#[extendr]
+pub(crate) struct ExponentialDist {
+    pub(crate) inner: prospicio_prob::Exponential,
+}
+
+severity_class!(ExponentialDist {
+    fn new(mean: f64) -> Result<Self> {
+        let inner = prospicio_prob::Exponential::new(mean).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn scale(&self) -> f64 {
+        self.inner.mean_param()
+    }
+});
+
 /// Loglogistic distribution.
 #[extendr]
 pub(crate) struct LoglogisticDist {
@@ -812,9 +829,9 @@ fn piecewise_pareto_fit_standard_errors_rust(
         .map_err(to_r)
 }
 
-/// A lognormal, gamma, Weibull or Burr fitted to large losses:
-/// `list(family, ptr, parameters, standard_errors, covariance,
-/// log_likelihood, aic, bic, converged)`, the parameters named.
+/// A severity fitted to large losses: `list(family, ptr, parameters,
+/// standard_errors, covariance, log_likelihood, aic, bic, converged)`, the
+/// parameters named. `t` is the Pareto families' threshold, NaN for none.
 #[extendr]
 fn severity_fit_rust(
     family: &str,
@@ -823,11 +840,13 @@ fn severity_fit_rust(
     censored: &[f64],
     weights: &[f64],
     upper: &[f64],
+    t: f64,
 ) -> Result<List> {
-    use prospicio_prob::severity_fit::{Family, fit_severity};
+    use prospicio_prob::severity_fit::{Family, fit_severity_with_threshold};
     let family = Family::from_name(family).map_err(to_r)?;
     let data = bounded_above(large_losses(losses, reporting, censored, weights)?, upper)?;
-    let fit = fit_severity(family, &data).map_err(to_r)?;
+    let t = (!t.is_nan()).then_some(t);
+    let fit = fit_severity_with_threshold(family, &data, t).map_err(to_r)?;
     let names = family.parameter_names();
     let named = |v: Vec<f64>| -> Result<Robj> {
         let mut r: Robj = v.into();
@@ -836,7 +855,8 @@ fn severity_fit_rust(
     };
     let ptr = crate::distributions::dist_to_robj(fit.dist().clone())?;
     Ok(list!(
-        // The distribution's own family: the Lomax is a Burr.
+        // The distribution's own family: the Lomax is a Burr, the
+        // generalized Pareto a "generalized_pareto".
         family = fit.dist().family(),
         ptr = ptr,
         parameters = named(fit.parameters().to_vec())?,
@@ -956,7 +976,8 @@ fn product_limit_rust(
 }
 
 /// A severity against the product-limit estimate: `list(x, at_risk,
-/// survival, model_survival, model_quantile, max_distance)`.
+/// survival, model_survival, model_quantile, max_distance, ks_p_value,
+/// tail_mean, tail_cv)`.
 #[extendr]
 fn goodness_of_fit_rust(
     severity: Robj,
@@ -969,13 +990,60 @@ fn goodness_of_fit_rust(
     let dist = crate::distributions::dist_from_robj(&severity)?;
     let data = bounded_above(large_losses(losses, reporting, censored, weights)?, upper)?;
     let g = prospicio_prob::severity_fit::goodness_of_fit(&dist, &data).map_err(to_r)?;
+    // The tail moments' threshold: the lowest reporting threshold.
+    let lowest = reporting.iter().copied().fold(f64::INFINITY, f64::min);
+    let lowest = if lowest.is_finite() { lowest } else { 0.0 };
+    let tail = prospicio_prob::severity_fit::tail_moments(&dist, lowest).map_err(to_r)?;
     Ok(list!(
         x = g.steps.iter().map(|p| p.x).collect::<Vec<_>>(),
         at_risk = g.steps.iter().map(|p| p.at_risk).collect::<Vec<_>>(),
         survival = g.steps.iter().map(|p| p.survival).collect::<Vec<_>>(),
         model_survival = g.model_survival,
         model_quantile = g.model_quantile,
-        max_distance = g.max_distance
+        max_distance = g.max_distance,
+        ks_p_value = g.ks_p_value,
+        tail_mean = tail.mean,
+        tail_cv = tail.cv
+    ))
+}
+
+/// Every fitted family's survival at the losses beside their plotting
+/// positions: `list(loss, empirical, families, curves)`, `curves` a list
+/// of one vector per family in AIC order. `families` empty means all nine.
+#[extendr]
+fn fit_curves_rust(
+    losses: &[f64],
+    threshold: f64,
+    families: Vec<String>,
+    points: f64,
+) -> Result<List> {
+    use prospicio_prob::severity_fit::Family;
+    if !(points >= 0.0 && points.fract() == 0.0) {
+        return Err(Error::Other(format!(
+            "points must be a whole number, got {points}"
+        )));
+    }
+    let families: Vec<Family> = if families.is_empty() {
+        Family::ALL.to_vec()
+    } else {
+        families
+            .iter()
+            .map(|n| Family::from_name(n))
+            .collect::<prospicio_core::Result<_>>()
+            .map_err(to_r)?
+    };
+    let kept: Vec<f64> = losses.iter().copied().filter(|&y| y >= threshold).collect();
+    let n = kept.len();
+    let data = large_losses(&kept, &vec![threshold; n], &[], &[])?;
+    let c = prospicio_prob::severity_fit::fit_curves(&data, threshold, &families, points as usize)
+        .map_err(to_r)?;
+    let names: Vec<&str> = c.curves.iter().map(|(f, _)| f.family().name()).collect();
+    let curves = List::from_values(c.curves.iter().map(|(_, s)| Robj::from(s.clone())));
+    Ok(list!(
+        loss = c.losses,
+        empirical = c.empirical,
+        families = names,
+        curves = curves
     ))
 }
 
@@ -1098,6 +1166,7 @@ extendr_module! {
     impl GammaDist;
     impl TweedieDist;
     impl WeibullDist;
+    impl ExponentialDist;
     impl LoglogisticDist;
     impl InverseGammaDist;
     impl InverseGaussianDist;
@@ -1111,6 +1180,7 @@ extendr_module! {
     fn severity_fit_rust;
     fn product_limit_rust;
     fn goodness_of_fit_rust;
+    fn fit_curves_rust;
     fn grouped_fit_rust;
     fn grouped_goodness_of_fit_rust;
     fn lev_distance_fit_rust;

@@ -8,8 +8,11 @@
 
 use prospicio_prob::evt::Gpd;
 use prospicio_prob::grouped_fit::{GroupedLosses, GroupedMethod, fit_grouped, fit_lev_distance};
-use prospicio_prob::severity_fit::{Family, SeverityFit, fit_severity, goodness_of_fit};
-use prospicio_prob::{Dist, LargeLosses, Pareto, PiecewisePareto, Truncation};
+use prospicio_prob::severity_fit::{
+    Family, SeverityFit, compare_fits, fit_curves, fit_severity, goodness_of_fit, rank_by_aic,
+    tail_moments,
+};
+use prospicio_prob::{Dist, FitStatistics, LargeLosses, Pareto, PiecewisePareto, Truncation};
 
 use crate::pricing::{numbers, piecewise_truncation, scalar};
 use crate::reserving::text_option;
@@ -17,31 +20,28 @@ use crate::sheet::{Grid, Value, position};
 
 type Result<T> = std::result::Result<T, String>;
 
-const FAMILIES: &str = "family must be \"lognormal\", \"gamma\", \"weibull\", \"burr\", \
-\"lomax\", \"pareto\", \"piecewise_pareto\" or \"gen_pareto\"";
+const FAMILIES: &str = "family must be \"lognormal\", \"gamma\", \"weibull\", \
+\"loglogistic\", \"exponential\", \"burr\", \"lomax\", \"pareto\", \"piecewise_pareto\" or \
+\"gen_pareto\"";
 
-const OUTPUTS: &str = "output must be \"params\", \"gof\" or \"compare\"";
+/// The families `"compare"` takes in `family`.
+const COMPARED: &str = "\"compare\" takes in family a range of the names \"lognormal\", \
+\"gamma\", \"weibull\", \"loglogistic\", \"exponential\", \"burr\", \"lomax\", \"pareto\" \
+and \"gen_pareto\", or blank for all of them";
 
-/// The body families `"compare"` fits, in its rows' order.
-const BODY: [Family; 5] = [
-    Family::Lognormal,
-    Family::Gamma,
-    Family::Weibull,
-    Family::Burr,
-    Family::Lomax,
-];
+const OUTPUTS: &str = "output must be \"params\", \"gof\", \"compare\" or \"curves\"";
 
 /// The losses and, per loss, the reporting threshold, censoring flag,
-/// weight and bound from above. A row whose loss cell is blank is skipped;
-/// the other columns are one value for every loss or a range of the
-/// losses' shape.
+/// weight and bound from above, with each loss's reporting threshold. A
+/// row whose loss cell is blank is skipped; the other columns are one value
+/// for every loss or a range of the losses' shape.
 fn large_losses(
     losses: &Grid,
     thresholds: &Grid,
     censored: &Grid,
     weights: &Grid,
     upper: &Grid,
-) -> Result<LargeLosses> {
+) -> Result<(LargeLosses, Vec<f64>)> {
     let shaped = |g: &Grid, name: &str| -> Result<()> {
         if g.cells.len() == 1 || (g.rows == losses.rows && g.columns == losses.columns) {
             Ok(())
@@ -105,24 +105,27 @@ fn large_losses(
         return Err("losses is required".into());
     }
     let e = |e: prospicio_core::Error| e.to_string();
-    LargeLosses::new(y)
+    let data = LargeLosses::new(y)
         .map_err(e)?
-        .reporting_thresholds(r)
+        .reporting_thresholds(r.clone())
         .map_err(e)?
         .censored(c)
         .map_err(e)?
         .weights(w)
         .map_err(e)?
         .truncated_above(u)
-        .map_err(e)
+        .map_err(e)?;
+    Ok((data, r))
 }
 
 /// A fit: its distribution, the named parameters with their standard
-/// errors (NaN where there is none), and the body fits' likelihood.
+/// errors (NaN where there is none), the body fits' likelihood, and the
+/// Pareto families' log-likelihood on the same terms.
 struct Fitted {
     dist: Dist,
     parameters: Vec<(String, f64, f64)>,
     body: Option<SeverityFit>,
+    statistics: Option<FitStatistics>,
 }
 
 fn fit(family: &str, data: &LargeLosses, t: &Grid, truncation: &Grid) -> Result<Fitted> {
@@ -136,7 +139,9 @@ fn fit(family: &str, data: &LargeLosses, t: &Grid, truncation: &Grid) -> Result<
             ))
         }
     };
-    if let Ok(body) = Family::from_name(family) {
+    if let Ok(body) = Family::from_name(family)
+        && !body.needs_threshold()
+    {
         none(t, "t")?;
         none(truncation, "truncation")?;
         let f = fit_severity(body, data).map_err(e)?;
@@ -152,6 +157,7 @@ fn fit(family: &str, data: &LargeLosses, t: &Grid, truncation: &Grid) -> Result<
             dist: f.dist().clone(),
             parameters,
             body: Some(f),
+            statistics: None,
         });
     }
     if data.is_truncated_above() {
@@ -175,10 +181,12 @@ fn fit(family: &str, data: &LargeLosses, t: &Grid, truncation: &Grid) -> Result<
             if let Some(tr) = tr {
                 parameters.push(("truncation".to_owned(), tr, nan));
             }
+            let statistics = Some(p.fit_statistics(data).map_err(e)?);
             Ok(Fitted {
                 dist: p.into(),
                 parameters,
                 body: None,
+                statistics,
             })
         }
         "piecewise_pareto" => {
@@ -203,10 +211,12 @@ fn fit(family: &str, data: &LargeLosses, t: &Grid, truncation: &Grid) -> Result<
                 .enumerate()
                 .map(|(k, (&a, s))| (format!("alpha above {}", t[k]), a, s))
                 .collect();
+            let statistics = Some(p.fit_statistics(data).map_err(e)?);
             Ok(Fitted {
                 dist: p.into(),
                 parameters,
                 body: None,
+                statistics,
             })
         }
         "gen_pareto" => {
@@ -219,10 +229,12 @@ fn fit(family: &str, data: &LargeLosses, t: &Grid, truncation: &Grid) -> Result<
                 ("alpha_ini".to_owned(), t / g.beta(), nan),
                 ("alpha_tail".to_owned(), 1.0 / g.xi(), nan),
             ];
+            let statistics = Some(g.fit_statistics(data).map_err(e)?);
             Ok(Fitted {
                 dist: g.into(),
                 parameters,
                 body: None,
+                statistics,
             })
         }
         _ => Err(FAMILIES.into()),
@@ -235,29 +247,42 @@ fn fit(family: &str, data: &LargeLosses, t: &Grid, truncation: &Grid) -> Result<
 /// its bound from above.
 /// `output` is `"params"` (default: each parameter with its standard
 /// error, then the fit's statistics), `"gof"` (the fit against the
-/// product-limit estimate at each loss) or `"compare"` (the five body
-/// families side by side).
+/// product-limit estimate at each loss) or `"compare"` (the families side
+/// by side: the seven body families in a fixed order with `t` blank; with a
+/// `t`, the Pareto families too, every row ranked by AIC). For
+/// `"compare"`, `family` may be a range of family names to fit only those.
 pub fn severity_fit(args: &[Grid]) -> Result<Grid> {
     let output = match args[2].as_scalar() {
         Some(v) if v.is_blank() => "params".to_owned(),
         Some(Value::Text(s)) => s.trim().to_ascii_lowercase(),
         _ => return Err(OUTPUTS.into()),
     };
-    let data = large_losses(&args[0], &args[5], &args[6], &args[7], &args[8])?;
-    if output == "compare" {
-        if !args[1].is_blank() || !args[3].is_blank() || !args[4].is_blank() {
-            return Err(
-                "\"compare\" fits every body family: leave family, t and truncation blank".into(),
-            );
+    let (data, thresholds) = large_losses(&args[0], &args[5], &args[6], &args[7], &args[8])?;
+    // The tail moments' threshold: the lowest reporting threshold.
+    let lowest = thresholds.iter().copied().fold(f64::INFINITY, f64::min);
+    if output == "compare" || output == "curves" {
+        if !args[4].is_blank() {
+            return Err(format!("{output:?} takes no truncation: leave it blank"));
         }
-        return Ok(compare(&data));
+        let t = if args[3].is_blank() {
+            None
+        } else {
+            Some(scalar(&args[3], "t")?)
+        };
+        let families = family_list(&args[1])?;
+        if output == "curves" {
+            return curves(&data, &thresholds, families, t, &args[9]);
+        }
+        return compare(&data, families, t, lowest);
+    } else if !args[9].is_blank() {
+        return Err("points is taken only by \"curves\"".into());
     }
     let family = match args[1].as_scalar() {
         Some(Value::Text(s)) => s.trim().to_ascii_lowercase().replace([' ', '-'], "_"),
         _ => return Err(FAMILIES.into()),
     };
     match output.as_str() {
-        "params" | "parameters" => params(&fit(&family, &data, &args[3], &args[4])?, &data),
+        "params" | "parameters" => params(&fit(&family, &data, &args[3], &args[4])?, &data, lowest),
         "gof" => gof(&fit(&family, &data, &args[3], &args[4])?, &data),
         _ => Err(OUTPUTS.into()),
     }
@@ -277,7 +302,10 @@ fn note(f: &SeverityFit) -> Option<String> {
             p[0] * p[1]
         ));
     }
-    if f.standard_errors().iter().any(|s| !s.is_finite()) {
+    // A Pareto family's threshold is given, not estimated: it has no
+    // standard error.
+    let given = usize::from(f.family().needs_threshold());
+    if f.standard_errors()[given..].iter().any(|s| !s.is_finite()) {
         return Some("no standard errors: the fit is at a boundary of the family, so its parameters are not identified".into());
     }
     if !f.converged() {
@@ -286,13 +314,31 @@ fn note(f: &SeverityFit) -> Option<String> {
     None
 }
 
-/// The largest distance between the fit's survival and the product-limit
-/// estimate, or NaN where the fit gives the data no probability.
-fn distance(dist: &Dist, data: &LargeLosses) -> f64 {
-    goodness_of_fit(dist, data).map_or(f64::NAN, |g| g.max_distance)
+/// The KS distance (the largest between the fit's survival and the
+/// product-limit estimate), its classical p-value, and the mean and CV of
+/// the fit above the lowest reporting threshold (decision 62): the cells
+/// after "KS distance". A moment that diverges is the text "inf"; a value
+/// that cannot be computed (no probability on the data) is blank.
+fn fit_cells(dist: &Dist, data: &LargeLosses, lowest: f64) -> [Value; 4] {
+    let (d, p) = goodness_of_fit(dist, data)
+        .map_or((f64::NAN, f64::NAN), |g| (g.max_distance, g.ks_p_value));
+    let (mean, cv) = tail_moments(dist, lowest).map_or((f64::NAN, f64::NAN), |m| (m.mean, m.cv));
+    [Value::number(d), Value::number(p), moment(mean), moment(cv)]
 }
 
-fn params(f: &Fitted, data: &LargeLosses) -> Result<Grid> {
+/// A moment's cell: "inf" where it diverges.
+fn moment(x: f64) -> Value {
+    if x == f64::INFINITY {
+        Value::from("inf")
+    } else {
+        Value::number(x)
+    }
+}
+
+/// The labels of [`fit_cells`].
+const FIT_CELLS: [&str; 4] = ["KS distance", "KS p", "Tail mean", "Tail CV"];
+
+fn params(f: &Fitted, data: &LargeLosses, lowest: f64) -> Result<Grid> {
     let row = |label: &str, x: Value| vec![Value::from(label), x, Value::Empty];
     let mut rows = vec![["Parameter", "Estimate", "SE"].map(Value::from).to_vec()];
     for (name, p, se) in &f.parameters {
@@ -303,12 +349,23 @@ fn params(f: &Fitted, data: &LargeLosses) -> Result<Grid> {
         ]);
     }
     let body = f.body.as_ref();
-    let stat = |g: fn(&SeverityFit) -> f64| Value::number(body.map_or(f64::NAN, g));
+    let stat = |g: fn(&SeverityFit) -> f64, h: fn(&FitStatistics) -> f64| {
+        Value::number(match (body, &f.statistics) {
+            (Some(b), _) => g(b),
+            (None, Some(s)) => h(s),
+            (None, None) => f64::NAN,
+        })
+    };
     rows.push(row("Losses", Value::number(data.len() as f64)));
-    rows.push(row("Log-likelihood", stat(SeverityFit::log_likelihood)));
-    rows.push(row("AIC", stat(SeverityFit::aic)));
-    rows.push(row("BIC", stat(SeverityFit::bic)));
-    rows.push(row("KS distance", Value::number(distance(&f.dist, data))));
+    rows.push(row(
+        "Log-likelihood",
+        stat(SeverityFit::log_likelihood, |s| s.log_likelihood),
+    ));
+    rows.push(row("AIC", stat(SeverityFit::aic, FitStatistics::aic)));
+    rows.push(row("BIC", stat(SeverityFit::bic, FitStatistics::bic)));
+    for (label, v) in FIT_CELLS.into_iter().zip(fit_cells(&f.dist, data, lowest)) {
+        rows.push(row(label, v));
+    }
     rows.push(row(
         "Converged",
         body.map_or(Value::Empty, |b| Value::Bool(b.converged())),
@@ -349,59 +406,138 @@ fn gof(f: &Fitted, data: &LargeLosses) -> Result<Grid> {
     Ok(Grid::from_rows(rows))
 }
 
-fn compare(data: &LargeLosses) -> Grid {
-    let mut rows = vec![
-        [
-            "Family",
-            "p1",
-            "p2",
-            "p3",
-            "Log-likelihood",
-            "AIC",
-            "BIC",
-            "KS distance",
-            "Converged",
-            "Note",
-        ]
-        .map(Value::from)
-        .to_vec(),
-    ];
-    for family in BODY {
+/// The families a `"compare"` range names, in `Family::ALL`'s order, or
+/// `None` for a blank `family`. Blank cells are skipped.
+fn family_list(grid: &Grid) -> Result<Option<Vec<Family>>> {
+    if grid.is_blank() {
+        return Ok(None);
+    }
+    let mut named = Vec::new();
+    for v in &grid.cells {
+        match v {
+            Value::Text(s) => {
+                let name = s.trim().to_ascii_lowercase().replace([' ', '-'], "_");
+                named.push(Family::from_name(&name).map_err(|_| COMPARED.to_owned())?);
+            }
+            v if v.is_blank() => {}
+            _ => return Err(COMPARED.into()),
+        }
+    }
+    Ok(Some(
+        Family::ALL
+            .into_iter()
+            .filter(|f| named.contains(f))
+            .collect(),
+    ))
+}
+
+/// The families side by side. With `t` blank, the body families (or those
+/// of them `families` names) in `Family::ALL`'s order; with a `t`, the
+/// Pareto families fitted from it too, and every row ranked by AIC, lowest
+/// first, a family that fails to fit last. A Pareto family conditions each
+/// loss on `max(r, t)`, so with one among the families every reporting
+/// threshold must be at least `t`: then every family's likelihood
+/// conditions each loss on the same threshold and the AICs compare.
+fn compare(
+    data: &LargeLosses,
+    families: Option<Vec<Family>>,
+    t: Option<f64>,
+    lowest: f64,
+) -> Result<Grid> {
+    let families = families.unwrap_or_else(|| default_families(t));
+    let mut fits = compare_fits(data, &families, t).map_err(|e| e.to_string())?;
+    if t.is_some() {
+        rank_by_aic(&mut fits);
+    }
+    let header = [
+        "Family",
+        "p1",
+        "p2",
+        "p3",
+        "Log-likelihood",
+        "AIC",
+        "BIC",
+        "KS distance",
+        "KS p",
+        "Tail mean",
+        "Tail CV",
+        "Converged",
+        "Note",
+    ]
+    .map(Value::from)
+    .to_vec();
+    let mut rows = vec![header];
+    for (family, fit) in fits {
         let mut row = vec![Value::from(family.name())];
-        match fit_severity(family, data) {
+        match fit {
             Ok(f) => {
                 let p = f.parameters();
                 row.extend((0..3).map(|i| p.get(i).map_or(Value::Empty, |&x| Value::number(x))));
-                row.extend(
-                    [
-                        f.log_likelihood(),
-                        f.aic(),
-                        f.bic(),
-                        distance(f.dist(), data),
-                    ]
-                    .map(Value::number),
-                );
+                row.extend([f.log_likelihood(), f.aic(), f.bic()].map(Value::number));
+                row.extend(fit_cells(f.dist(), data, lowest));
                 row.push(Value::Bool(f.converged()));
                 row.push(Value::Text(note(&f).unwrap_or_else(|| "none".into())));
             }
             Err(e) => {
                 row.push(Value::Text(format!("#PROSPICIO! {e}")));
-                row.extend(std::iter::repeat_n(Value::Empty, 8));
+                row.extend(std::iter::repeat_n(Value::Empty, 11));
             }
         }
         rows.push(row);
     }
-    Grid::from_rows(rows)
+    Ok(Grid::from_rows(rows))
+}
+
+/// The families `"compare"` and `"curves"` fit with `family` blank: every
+/// family with a `t`, the body families without.
+fn default_families(t: Option<f64>) -> Vec<Family> {
+    Family::ALL
+        .into_iter()
+        .filter(|f| t.is_some() || !f.needs_threshold())
+        .collect()
+}
+
+/// `"curves"`: the losses at or above `t` (the lowest reporting threshold
+/// if `t` is blank), ascending, their plotting positions `(n − i + 0.5) / n`
+/// and each family's survival conditional on `t`, the families in AIC
+/// order and one that fails to fit left out (`fit_curves`), thinned to at
+/// most `points` rows (200 if blank).
+fn curves(
+    data: &LargeLosses,
+    thresholds: &[f64],
+    families: Option<Vec<Family>>,
+    t: Option<f64>,
+    points: &Grid,
+) -> Result<Grid> {
+    let points = match points.as_scalar() {
+        Some(v) if v.is_blank() => 200,
+        Some(Value::Number(x)) if *x >= 2.0 && x.fract() == 0.0 => *x as usize,
+        _ => return Err("points must be a whole number, at least 2".into()),
+    };
+    let families = families.unwrap_or_else(|| default_families(t));
+    let at = t.unwrap_or_else(|| thresholds.iter().copied().fold(f64::INFINITY, f64::min));
+    let c = fit_curves(data, at, &families, points).map_err(|e| e.to_string())?;
+    let mut header = vec![Value::from("Loss"), Value::from("Empirical")];
+    header.extend(c.curves.iter().map(|(f, _)| Value::from(f.family().name())));
+    let mut rows = vec![header];
+    for (k, (&x, &e)) in c.losses.iter().zip(&c.empirical).enumerate() {
+        let mut row = vec![Value::number(x), Value::number(e)];
+        row.extend(c.curves.iter().map(|(_, s)| Value::number(s[k])));
+        rows.push(row);
+    }
+    Ok(Grid::from_rows(rows))
 }
 
 /// A body family by name, for the grouped and limited-mean fits.
 fn body_family(grid: &Grid) -> Result<Family> {
-    const BODY_FAMILIES: &str =
-        "family must be \"lognormal\", \"gamma\", \"weibull\", \"burr\" or \"lomax\"";
+    const BODY_FAMILIES: &str = "family must be \"lognormal\", \"gamma\", \"weibull\", \
+\"loglogistic\", \"exponential\", \"burr\" or \"lomax\"";
     match grid.as_scalar() {
         Some(Value::Text(s)) => {
-            Family::from_name(&s.trim().to_ascii_lowercase().replace([' ', '-'], "_"))
-                .map_err(|_| BODY_FAMILIES.into())
+            match Family::from_name(&s.trim().to_ascii_lowercase().replace([' ', '-'], "_")) {
+                Ok(f) if !f.needs_threshold() => Ok(f),
+                _ => Err(BODY_FAMILIES.into()),
+            }
         }
         _ => Err(BODY_FAMILIES.into()),
     }

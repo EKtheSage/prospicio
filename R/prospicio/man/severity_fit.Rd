@@ -2,7 +2,7 @@
 % Please edit documentation in R/pareto.R
 \name{severity_fit}
 \alias{severity_fit}
-\title{Fit a body severity to large losses}
+\title{Fit a severity to large losses}
 \usage{
 severity_fit(
   family,
@@ -10,11 +10,13 @@ severity_fit(
   reporting_thresholds = NULL,
   censored = NULL,
   weights = NULL,
-  truncated_above = NULL
+  truncated_above = NULL,
+  t = NULL
 )
 }
 \arguments{
-\item{family}{\code{"lognormal"}, \code{"gamma"}, \code{"weibull"}, \code{"burr"} or \code{"lomax"}.}
+\item{family}{\code{"lognormal"}, \code{"gamma"}, \code{"weibull"}, \code{"loglogistic"},
+\code{"exponential"}, \code{"burr"}, \code{"lomax"}, \code{"pareto"} or \code{"gen_pareto"}.}
 
 \item{losses}{Numeric vector of losses at or above \code{t} (\code{t[1]}).}
 
@@ -27,6 +29,9 @@ severity_fit(
 \item{truncated_above}{Per-loss bounds from above, or \code{NULL}: a loss is
 conditioned on not exceeding its bound (a study of claims up to 50,000);
 \code{Inf} means none.}
+
+\item{t}{The threshold of \code{"pareto"} and \code{"gen_pareto"}, required for
+them; \code{NULL} for the others.}
 }
 \value{
 A list: \code{distribution} (the fitted severity), \code{parameters} and
@@ -34,19 +39,30 @@ A list: \code{distribution} (the fitted severity), \code{parameters} and
 \code{aic}, \code{bic} and \code{converged}.
 }
 \description{
-Maximum likelihood fit of a lognormal, gamma, Weibull, Burr or Lomax
-severity to large losses, each conditioned on exceeding its reporting threshold (left
-truncation), with losses capped by a policy limit censored: the same data
-as \code{\link[=pareto_fit]{pareto_fit()}}. The standard errors and covariance come from the
-observed information. A Burr fit on little data can drift towards a
-boundary where it mimics a Weibull or a Pareto; check \code{converged} and the
-standard errors. The Lomax, \code{S(x) = (1 + x / scale)^(-alpha)} (Bahnemann's
-Pareto), is fitted as a Burr with \code{gamma = 1}. With \code{truncated_above},
-each loss is also conditioned on not exceeding its bound.
+Maximum likelihood fit of a severity to large losses, each conditioned on
+exceeding its reporting threshold (left truncation), with losses capped
+by a policy limit censored: the same data as \code{\link[=pareto_fit]{pareto_fit()}}. The standard
+errors and covariance come from the observed information. A Burr fit on
+little data can drift towards a boundary where it mimics a Weibull or a
+Pareto; check \code{converged} and the standard errors. The Lomax,
+\code{S(x) = (1 + x / scale)^(-alpha)} (Bahnemann's Pareto), is fitted as a
+Burr with \code{gamma = 1}, the loglogistic as the Burr with \code{alpha = 1}. With
+\code{truncated_above}, each loss is also conditioned on not exceeding its
+bound (the body families only).
+}
+\details{
+\code{"pareto"} and \code{"gen_pareto"} (Riegel's generalized Pareto, a
+\link{generalized_pareto} at location \code{t} with \code{xi = 1 / alpha_tail} and
+\code{beta = t / alpha_ini}) are fitted from the threshold \code{t} by their own
+estimators and scored on the same likelihood, \code{t} among the parameters
+but not counted in the AIC. They condition each loss on \code{max(r, t)} where
+the body families condition on \code{r}: compare their AIC with a body
+family's only when every reporting threshold is at least \code{t}.
 }
 \examples{
 y <- c(120, 300, 450, 800, 1500, 2600, 4000)
 fit <- severity_fit("lognormal", y)
 fit$parameters
 severity_fit("weibull", y, reporting_thresholds = rep(100, 7))$aic
+severity_fit("pareto", y, reporting_thresholds = rep(100, 7), t = 100)$aic
 }

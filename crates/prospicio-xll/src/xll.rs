@@ -587,7 +587,7 @@ mod exports {
     udf_async!(pro_res_bayes_odp, triangle, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins);
     udf_async!(pro_res_bayes_bf, triangle, exposure, apriori, cv, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins, common_cv, new_premium, pattern_mean, pattern_sd);
     udf!(pro_res_industry_prior, triangles, companies, premiums, min_developed, subtract_process, age, output);
-    udf!(pro_sev_fit, losses, family, output, t, truncation, thresholds, censored, weights, upper);
+    udf!(pro_sev_fit, losses, family, output, t, truncation, thresholds, censored, weights, upper, points);
     udf!(pro_sev_fit_grouped, bounds, counts, family, method, output);
     udf!(pro_sev_fit_lev, sizes, lev, family, weights, output);
     udf!(pro_evt_thresholds, data, thresholds);

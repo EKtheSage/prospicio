@@ -210,6 +210,72 @@ impl LargeLosses {
     }
 }
 
+/// A fitted severity's log-likelihood on large losses, with what AIC and
+/// BIC need: from [`Pareto::fit_statistics`],
+/// [`PiecewisePareto::fit_statistics`] and [`Gpd::fit_statistics`].
+///
+/// The likelihood is the one the body fits maximize
+/// ([`log_likelihood`](crate::severity_fit::log_likelihood)): each loss
+/// `w (ln f(y) − ln S(a))`, `ln S(y)` in place of `ln f(y)` when censored.
+/// The conditioning point `a` is the loss's reporting threshold raised to
+/// the distribution's lowest threshold `t`, `max(r, t)`, where a body fit
+/// conditions on `r` itself: the two compare (by AIC) only when every
+/// reporting threshold is at least `t`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FitStatistics {
+    /// The log-likelihood.
+    pub log_likelihood: f64,
+    /// The estimated parameters, `k`: the alphas, or the GPD's `ξ` and
+    /// `β`. The thresholds and a truncation point are given, not counted.
+    pub parameters: usize,
+    /// The losses' total weight, the `n` of BIC.
+    pub weight: f64,
+}
+
+impl FitStatistics {
+    /// Akaike's information criterion, `2 k − 2 ℓ`.
+    pub fn aic(&self) -> f64 {
+        2.0 * self.parameters as f64 - 2.0 * self.log_likelihood
+    }
+
+    /// The Bayesian information criterion, `k ln n − 2 ℓ`.
+    pub fn bic(&self) -> f64 {
+        self.parameters as f64 * self.weight.ln() - 2.0 * self.log_likelihood
+    }
+}
+
+/// `Σ w (ln f(y) − ln S(a))` (`ln S(y)` for a censored loss) from a
+/// function giving `(ln f(x), ln S(x))`.
+fn statistics(
+    losses: &[(f64, f64, bool, f64)],
+    parameters: usize,
+    ln_f_s: impl Fn(f64) -> (f64, f64),
+) -> FitStatistics {
+    let mut log_likelihood = 0.0;
+    let mut weight = 0.0;
+    for &(y, a, censored, w) in losses {
+        let (ln_f, ln_s) = ln_f_s(y);
+        let own = if censored { ln_s } else { ln_f };
+        let v = own - ln_f_s(a).1;
+        log_likelihood += w * if v.is_nan() { f64::NEG_INFINITY } else { v };
+        weight += w;
+    }
+    FitStatistics {
+        log_likelihood,
+        parameters,
+        weight,
+    }
+}
+
+/// `ln(e^x − e^y)` for `x > y`, as `x + ln(−expm1(y − x))`.
+fn ln_diff_exp(x: f64, y: f64) -> f64 {
+    if y == f64::NEG_INFINITY {
+        x
+    } else {
+        x + (-(y - x).exp_m1()).ln()
+    }
+}
+
 /// Bounds for alphas found numerically (truncated fits).
 const ALPHA_MIN: f64 = 1e-3;
 const ALPHA_MAX: f64 = 1e3;
@@ -272,6 +338,35 @@ impl Pareto {
             Some(tr) => truncated_standard_error(&losses, tr, alpha),
         };
         Ok((fit, se))
+    }
+    /// The log-likelihood of `data` at this Pareto, with AIC and BIC (one
+    /// parameter, the alpha): each loss conditioned on `max(r, t)`, the
+    /// truncated likelihood the body fits use (see [`FitStatistics`]).
+    /// Truncated at `T`, `S(·)` is `S(·) − S(T)` before normalizing, the
+    /// same ratio.
+    ///
+    /// ```
+    /// use prospicio_prob::{LargeLosses, Pareto};
+    ///
+    /// let data = LargeLosses::new(vec![1500.0, 2500.0, 4000.0]).unwrap();
+    /// let fit = Pareto::fit(1000.0, &data, None).unwrap();
+    /// let st = fit.fit_statistics(&data).unwrap();
+    /// let s: f64 = [1.5f64, 2.5, 4.0].iter().map(|v| v.ln()).sum();
+    /// let a = fit.alpha();
+    /// let want = 3.0 * a.ln() - (a + 1.0) * s - 3.0 * 1000f64.ln();
+    /// assert!((st.log_likelihood - want).abs() < 1e-10);
+    /// assert!((st.aic() - (2.0 - 2.0 * want)).abs() < 1e-9);
+    /// ```
+    pub fn fit_statistics(&self, data: &LargeLosses) -> Result<FitStatistics> {
+        let (t, alpha) = (self.t(), self.alpha());
+        let losses = data.above(t)?;
+        let ln_s_tr = self
+            .truncation()
+            .map_or(f64::NEG_INFINITY, |tr| -alpha * (tr / t).ln());
+        Ok(statistics(&losses, 1, |x| {
+            let ln_s0 = -alpha * (x / t).ln();
+            (alpha.ln() - x.ln() + ln_s0, ln_diff_exp(ln_s0, ln_s_tr))
+        }))
     }
 }
 
@@ -455,6 +550,71 @@ impl PiecewisePareto {
             .collect();
         Ok((fit, se))
     }
+    /// The log-likelihood of `data` at this piecewise Pareto, with AIC and
+    /// BIC (one parameter per alpha): each loss conditioned on
+    /// `max(r, t_0)`, the truncated likelihood the body fits use (see
+    /// [`FitStatistics`]). Truncated as a whole at `T`, `S(·)` is
+    /// `S(·) − S(T)`; with the last piece truncated, that piece's
+    /// `(x/t_n)^(−α_n)` is `(x/t_n)^(−α_n) − (T/t_n)^(−α_n)`, renormalized.
+    ///
+    /// ```
+    /// use prospicio_prob::{LargeLosses, Pareto, PiecewisePareto};
+    ///
+    /// let data = LargeLosses::new(vec![1200.0, 1500.0, 2500.0, 6000.0]).unwrap();
+    /// // One piece is the single Pareto.
+    /// let one = PiecewisePareto::fit(vec![1000.0], &data, None).unwrap();
+    /// let p = Pareto::fit(1000.0, &data, None).unwrap();
+    /// let (a, b) = (one.fit_statistics(&data).unwrap(), p.fit_statistics(&data).unwrap());
+    /// assert!((a.log_likelihood - b.log_likelihood).abs() < 1e-10);
+    /// ```
+    pub fn fit_statistics(&self, data: &LargeLosses) -> Result<FitStatistics> {
+        let (t, alphas) = (self.thresholds(), self.alphas());
+        let n = t.len();
+        let losses = data.above(t[0])?;
+        let piece = |x: f64| t.iter().rposition(|&tk| x >= tk).unwrap_or(0);
+        // ln S(x) of the untruncated distribution, x ≥ t_0.
+        let ln_s0 = |x: f64| -> f64 {
+            (0..n)
+                .map(|k| {
+                    let hi = t.get(k + 1).copied().unwrap_or(f64::INFINITY);
+                    let e = (x.min(hi) / t[k]).ln();
+                    if e > 0.0 { -alphas[k] * e } else { 0.0 }
+                })
+                .sum()
+        };
+        let ln_f0 = |x: f64, ln_s: f64| alphas[piece(x)].ln() - x.ln() + ln_s;
+        Ok(match self.truncation() {
+            None => statistics(&losses, n, |x| {
+                let s = ln_s0(x);
+                (ln_f0(x, s), s)
+            }),
+            Some((tr, Truncation::WholeDistribution)) => {
+                let s_tr = ln_s0(tr);
+                statistics(&losses, n, |x| {
+                    let s = ln_s0(x);
+                    (ln_f0(x, s), ln_diff_exp(s, s_tr))
+                })
+            }
+            Some((tr, Truncation::LastPiece)) => {
+                let (tn, an) = (t[n - 1], alphas[n - 1]);
+                let s_tn = ln_s0(tn);
+                // ln(1 − q(T)), q(x) = (x/t_n)^(−α_n).
+                let ln_norm = (-(-an * (tr / tn).ln()).exp()).ln_1p();
+                statistics(&losses, n, |x| {
+                    if x < tn {
+                        let s = ln_s0(x);
+                        return (ln_f0(x, s), s);
+                    }
+                    let ln_q = -an * (x / tn).ln();
+                    let ln_q_tr = -an * (tr / tn).ln();
+                    (
+                        s_tn + an.ln() - x.ln() + ln_q - ln_norm,
+                        s_tn + ln_diff_exp(ln_q, ln_q_tr) - ln_norm,
+                    )
+                })
+            }
+        })
+    }
 }
 
 impl Gpd {
@@ -556,6 +716,38 @@ impl Gpd {
         );
         let alpha_tail = count / exposure(k).0;
         Gpd::riegel(t, k * alpha_tail, alpha_tail)
+    }
+    /// The log-likelihood of `data` at this generalized Pareto, with AIC
+    /// and BIC (two parameters, `ξ` and `β`; the location is the given
+    /// threshold): each loss at least the location `μ` and conditioned on
+    /// `max(r, μ)`, the truncated likelihood the body fits use (see
+    /// [`FitStatistics`]). For a [`Gpd::fit_riegel`] fit, `μ` is its `t`.
+    ///
+    /// ```
+    /// use prospicio_prob::{LargeLosses, Pareto, evt::Gpd};
+    ///
+    /// let data = LargeLosses::new(vec![1200.0, 1500.0, 2500.0, 6000.0]).unwrap();
+    /// // Riegel's form with α_ini = α_tail is the single Pareto.
+    /// let a = Pareto::fit(1000.0, &data, None).unwrap().alpha();
+    /// let g = Gpd::riegel(1000.0, a, a).unwrap();
+    /// let p = Pareto::new(1000.0, a).unwrap();
+    /// let (x, y) = (g.fit_statistics(&data).unwrap(), p.fit_statistics(&data).unwrap());
+    /// assert!((x.log_likelihood - y.log_likelihood).abs() < 1e-10);
+    /// assert_eq!(x.parameters, 2);
+    /// ```
+    pub fn fit_statistics(&self, data: &LargeLosses) -> Result<FitStatistics> {
+        let (xi, beta, mu) = (self.xi(), self.beta(), self.location());
+        let losses = data.above(mu)?;
+        Ok(statistics(&losses, 2, |x| {
+            let z = (x - mu) / beta;
+            let ln_s = if xi == 0.0 {
+                -z
+            } else {
+                -(xi * z).ln_1p() / xi
+            };
+            // ln f = −ln β + (1 + ξ) ln S.
+            (-beta.ln() + (1.0 + xi) * ln_s, ln_s)
+        }))
     }
 }
 
@@ -1061,5 +1253,80 @@ mod tests {
         assert!(d.clone().weights(vec![1.0, 0.0]).is_err());
         // No loss reaches the top piece.
         assert!(PiecewisePareto::fit(vec![5.0, 50.0], &d, None).is_err());
+    }
+
+    #[test]
+    fn fit_statistics_condition_each_loss_on_its_threshold() {
+        use crate::Distribution;
+        let data = LargeLosses::new(vec![1200.0, 1500.0, 2500.0, 6000.0, 9000.0])
+            .unwrap()
+            .reporting_thresholds(vec![0.0, 1100.0, 1000.0, 3000.0, 1000.0])
+            .unwrap()
+            .censored(vec![false, false, false, false, true])
+            .unwrap();
+        let t = vec![1000.0, 2000.0];
+        // The likelihood by the distribution's own survival, with the
+        // density by central differences, for every truncation.
+        for tr in [
+            None,
+            Some((20_000.0, Truncation::WholeDistribution)),
+            Some((20_000.0, Truncation::LastPiece)),
+        ] {
+            let d = PiecewisePareto::new(t.clone(), vec![1.3, 1.9]).unwrap();
+            let d = match tr {
+                Some((x, k)) => d.truncated(x, k).unwrap(),
+                None => d,
+            };
+            let st = d.fit_statistics(&data).unwrap();
+            let mut want = 0.0;
+            for (y, r, censored, _) in data.rows() {
+                let a = r.max(1000.0);
+                let own = if censored {
+                    d.survival(y)
+                } else {
+                    let h = 1e-4 * y;
+                    (d.cdf(y + h) - d.cdf(y - h)) / (2.0 * h)
+                };
+                want += (own / d.survival(a)).ln();
+            }
+            assert!(
+                (st.log_likelihood - want).abs() < 1e-6,
+                "{tr:?}: {} {want}",
+                st.log_likelihood
+            );
+            assert_eq!(st.parameters, 2);
+            assert_eq!(st.weight, 5.0);
+        }
+        // A truncated Pareto the same way.
+        let p = Pareto::new(1000.0, 1.4)
+            .unwrap()
+            .truncated(20_000.0)
+            .unwrap();
+        let st = p.fit_statistics(&data).unwrap();
+        let mut want = 0.0;
+        for (y, r, censored, _) in data.rows() {
+            let own = if censored {
+                p.survival(y)
+            } else {
+                let h = 1e-4 * y;
+                (p.cdf(y + h) - p.cdf(y - h)) / (2.0 * h)
+            };
+            want += (own / p.survival(r.max(1000.0))).ln();
+        }
+        assert!((st.log_likelihood - want).abs() < 1e-6);
+        // The generalized Pareto, by its survival.
+        let g = Gpd::riegel(1000.0, 1.2, 2.5).unwrap();
+        let st = g.fit_statistics(&data).unwrap();
+        let mut want = 0.0;
+        for (y, r, censored, _) in data.rows() {
+            let own = if censored {
+                g.survival(y)
+            } else {
+                let h = 1e-4 * y;
+                (g.cdf(y + h) - g.cdf(y - h)) / (2.0 * h)
+            };
+            want += (own / g.survival(r.max(1000.0))).ln();
+        }
+        assert!((st.log_likelihood - want).abs() < 1e-6);
     }
 }

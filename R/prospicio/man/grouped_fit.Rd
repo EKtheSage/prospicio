@@ -13,7 +13,8 @@ grouped_goodness_of_fit(severity, bounds, counts)
 lev_distance_fit(family, sizes, empirical, weights = NULL, start = NULL)
 }
 \arguments{
-\item{family}{\code{"lognormal"}, \code{"gamma"}, \code{"weibull"}, \code{"burr"} or \code{"lomax"}.}
+\item{family}{\code{"lognormal"}, \code{"gamma"}, \code{"weibull"}, \code{"loglogistic"},
+\code{"exponential"}, \code{"burr"} or \code{"lomax"}: the body families.}
 
 \item{bounds}{The band bounds, one more than \code{counts}, non-negative and
 strictly increasing; only the last may be \code{Inf}.}

@@ -239,3 +239,50 @@ gy <- c(120, 300, 450, 800, 1500, 2600, 4000)
 gc <- c(rep(FALSE, 6), TRUE)
 g <- goodness_of_fit(severity_fit("weibull", gy, censored = gc)$distribution, gy, censored = gc)
 stopifnot(nrow(g$table) == 6, g$max_distance > 0, g$max_distance < 0.5)
+
+# Issue #800: the loglogistic, the exponential and the Pareto families from t.
+py <- c(1500, 2500, 4000, 10000, 1200, 3300)
+pr <- rep(1000, 6)
+fe <- severity_fit("exponential", py, reporting_thresholds = pr)
+stopifnot(abs(fe$parameters[["mean"]] - (mean(py) - 1000)) < 1e-9)
+stopifnot(inherits(fe$distribution, "prospicio::exponential_distribution"))
+stopifnot(abs(fe$distribution@scale - fe$parameters[["mean"]]) < 1e-12)
+fp <- severity_fit("pareto", py, reporting_thresholds = pr, t = 1000)
+s <- sum(log(py / 1000))
+a <- 6 / s
+near(fp$parameters[["alpha"]], a)
+near(fp$log_likelihood, 6 * log(a) - (a + 1) * s - 6 * log(1000))
+near(fp$aic, 2 - 2 * fp$log_likelihood)
+stopifnot(is.nan(fp$standard_errors[["t"]]))
+fg <- severity_fit("gen_pareto", py, reporting_thresholds = pr, t = 1000)
+flx <- severity_fit("lomax", py, reporting_thresholds = pr)
+stopifnot(abs(fg$log_likelihood - flx$log_likelihood) < 1e-5)
+fll <- severity_fit("loglogistic", py, reporting_thresholds = pr)
+stopifnot(inherits(fll$distribution, "prospicio::loglogistic_distribution"))
+stopifnot(inherits(try(severity_fit("gamma", py, t = 1000), silent = TRUE), "try-error"))
+ex <- exponential_distribution(2)
+near(layer(ex, 1, 3), survival(ex, 3) * lev(ex, 1))
+
+# Issue #804: every fit's survival beside the plotting positions.
+cy <- c(1500, 2500, 4000, 10000, 1200, 3100, 800)
+fc <- fit_curves(cy, 1000)
+stopifnot(
+  identical(names(fc)[1:2], c("loss", "empirical")),
+  ncol(fc) == 11,
+  identical(fc$loss, c(1200, 1500, 2500, 3100, 4000, 10000)),
+  abs(fc$empirical[1] - 5.5 / 6) < 1e-15
+)
+thin <- fit_curves(cy, 1000, "lognormal", points = 3)
+stopifnot(identical(thin$loss, c(1200, 2500, 10000)), identical(names(thin), c("loss", "empirical", "lognormal")))
+stopifnot(inherits(try(fit_curves(cy, 1000, points = 1), silent = TRUE), "try-error"))
+
+# Issue #805: the KS p-value and the tail moments on a goodness of fit.
+kx <- c(100, 300, 350, 700, 950)
+kg <- goodness_of_fit(exponential_distribution(500), kx)
+stopifnot(
+  abs(kg$max_distance - 0.2511883639059736) < 1e-12,
+  abs(kg$ks_p_value - 0.8409019263900253) < 1e-10,
+  abs(kg$tail_mean - 500) < 1e-9, abs(kg$tail_cv - 1) < 1e-9
+)
+kg <- goodness_of_fit(pareto(200, 1.5), kx[-1], reporting_thresholds = rep(200, 4))
+stopifnot(abs(kg$tail_mean - 600) < 1e-9, is.infinite(kg$tail_cv))

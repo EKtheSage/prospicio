@@ -39,8 +39,8 @@ conditioned on not exceeding its bound (a study of claims up to 50,000);
 \value{
 \code{product_limit()}: a data frame with \code{x}, \code{at_risk}, \code{events},
 \code{survival}. \code{goodness_of_fit()}: a list with a data frame \code{table} (\code{x},
-\code{at_risk}, \code{survival}, \code{model_survival}, \code{model_quantile}) and
-\code{max_distance}.
+\code{at_risk}, \code{survival}, \code{model_survival}, \code{model_quantile}),
+\code{max_distance}, \code{ks_p_value}, \code{tail_mean} and \code{tail_cv}.
 }
 \description{
 \code{product_limit()} is the Kaplan-Meier estimator for left-truncated,
@@ -57,6 +57,14 @@ model's conditional quantile at the middle of each step) and
 \code{max_distance}, the largest gap between the two survival functions. With
 a bound from above common to every loss (\code{truncated_above}), both sides
 are conditioned on it too; bounds that differ are refused.
+
+\code{ks_p_value} is the classical two-sided Kolmogorov-Smirnov p-value of
+\code{max_distance} among the losses (SciPy's \code{kstwo}; with one threshold and
+no censoring, \code{ks.test()}'s exact p-value). It is optimistic for a fitted
+severity: the parameters were chosen to bring the curve close to these
+losses, so the true p-value is smaller. \code{tail_mean} and \code{tail_cv} are the
+mean and coefficient of variation of \code{X | X > t}, \code{t} the lowest
+reporting threshold, \code{Inf} where the moment diverges.
 }
 \examples{
 product_limit(c(100, 200, 300, 400))

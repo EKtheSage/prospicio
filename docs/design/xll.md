@@ -1563,6 +1563,105 @@ real Excel.
       0.594705882353, 0.638120662040, ..., 0.637034303676), whose inputs
       are not in the repository.
 
+60. **`"compare"` ranks nine families by AIC from a `t`** (#802, the AP
+    pricing demo's Severity sheet; after #800). `PRO.SEV.FIT` takes
+    `"loglogistic"` and `"exponential"` as body families, and the severity
+    functions take `"exponential"` (`p1` the mean, `p2` and `p3` blank).
+    `"params"` fills Log-likelihood, AIC and BIC for `"pareto"`,
+    `"piecewise_pareto"` and `"gen_pareto"` from the Probability lane's
+    `fit_statistics`: the body fits' likelihood, the given `t` not counted
+    as a parameter. `"compare"` with `t` blank keeps decision 25's table
+    for the body families, now seven, in `Family::ALL`'s fixed order
+    (lognormal, gamma, weibull, loglogistic, exponential, burr, lomax).
+    With a `t` it adds `"pareto"` and `"gen_pareto"` fitted from it and
+    sorts every row by AIC, lowest first: a stable sort, so a tie (the
+    Lomax and Riegel's GPD reach the same likelihood when every threshold
+    is `t`) keeps the fixed order, and a family that fails to fit goes
+    last with its error in the p1 cell. The positional arguments are
+    unchanged, so no other call moves.
+    - **A Pareto family needs every reporting threshold at least `t`.**
+      Its survival is 1 below `t`, so it conditions each loss on
+      `max(r, t)` where a body family conditions on `r`; with a threshold
+      below `t` the two likelihoods are of different data and their AICs
+      do not compare. `"compare"` refuses that case, naming the first loss
+      whose threshold is below `t`, rather than ranking unlike numbers; a
+      user who wants a ranking sets `thresholds` to at least `t`, as the
+      demo does. It also refuses `upper` with a Pareto family, since
+      those are not truncated from above, and still refuses
+      `truncation`. With only body families named, a `t` still ranks the
+      rows and is otherwise unused.
+    - **`family` restricts `"compare"`.** A range of names (blank cells
+      skipped, the same spelling rules as one name) fits only those; the
+      rows are in the fixed order without `t` and ranked with it, so
+      reordering the names changes nothing. `"pareto"` or `"gen_pareto"`
+      without `t` is an error, and `"piecewise_pareto"` is not compared:
+      its thresholds are a row, not the one `t`.
+    - **Parity.** `tests/severity_fit.rs`: on `validation/data/
+      severity_fits.csv`'s 89 losses above 150,000 (#800's stand-in for
+      the requester's losses, which are not in this repository) every
+      row's log-likelihood is SciPy's to 1e-3 (the Burr, which SciPy's
+      script does not fit, excepted), the AIC column is non-decreasing,
+      the nine names are `Family::ALL`, Riegel's GPD and the Lomax agree,
+      and `"params"` for the Pareto families matches the comparison's row.
+      The test workbook's Severity fit sheet ranks R Pareto's example
+      losses from `t` = 1,000 and a three-name restriction.
+
+61. **`"curves"`: every fit beside the plotting positions** (#804, the AP
+    pricing demo's `AP.FIT_CURVES`; after #802). `PRO.SEV.FIT(losses,
+    [family], "curves", [t], , [thresholds], , , , [points])` spills Loss,
+    Empirical, then one column per family in AIC order: the Probability
+    lane's `fit_curves`, so the losses at or above `t` ascending, the
+    plotting positions `(n − i + 0.5) / n` and each family's survival
+    conditional on `t`, a family that fails to fit left out. `family` and
+    `t` work as in `"compare"` (decision 60): blank `family` is every
+    family `"compare"` fits, a range restricts it, and with `t` blank the
+    body families are conditioned on the lowest reporting threshold.
+    - **`points` is a tenth argument, not `"curves:200"`.** The requester
+      preferred it, and a trailing optional argument moves no other call;
+      blank is 200, and anything but `"curves"` refuses it. More losses
+      than `points` are thinned to numpy's rows (halves to even), the
+      smallest and largest always kept.
+    - **No censoring or weights.** The plotting positions count each loss
+      once, so `"curves"` refuses censored or weighted losses rather than
+      plot them as exact.
+    - **`"compare"` now calls `compare_fits`.** The checks of decision 60
+      (thresholds at least `t`, no `upper` with a Pareto family) moved to
+      the Probability lane, so both outputs share them; the messages now
+      read "fitted only from a threshold t" and "takes no truncation from
+      above".
+    - **Parity.** `tests/severity_fit.rs`: on #800's 89 losses the columns
+      come in `"compare"`'s order, rows 1, 2, 45 and 89 match SciPy's
+      curves to 1e-6 (the gamma at its boundary to 1e-4, the Burr not in
+      SciPy's script), and 10 points keep rows 1, 11, 21, 30, 40, 50, 60,
+      69, 79 and 89 with the plotting positions of all 89. The test
+      workbook's Severity fit sheet spills the nine curves of R Pareto's
+      example losses and the lognormal's thinned to 5 rows.
+
+62. **KS p, tail mean and tail CV beside the KS distance** (#805, the AP
+    pricing demo's severity ranking). `"compare"` gains the columns
+    "KS p", "Tail mean" and "Tail CV" after "KS distance" (13 columns
+    now), and `"params"` rows of the same names after it. "KS p" is the
+    Probability lane's classical Kolmogorov-Smirnov p-value
+    (`GoodnessOfFit::ks_p_value`, SciPy's `kstwo.sf`); the tail moments are
+    those of `X | X > r`, `r` the lowest reporting threshold
+    (`tail_moments`), the same threshold the goodness of fit conditions on.
+    - **An infinite moment is the text "inf", not a blank.** The requester
+      asked for it, and here the difference matters: a Pareto with alpha
+      at most 2 has a tail mean but no CV, and a blank would read as "not
+      computed". The rest of the add-in keeps decision 3's blank for a
+      non-finite number (`PRO.SEV.STATS` too); "inf" is used only in
+      these two columns, and a value that cannot be computed (no
+      probability on the data) stays blank.
+    - **The p-value is optimistic for a fit**, as the help text says: the
+      parameters were fitted to the same losses. A parametric bootstrap
+      p-value is left for a later option.
+    - **Parity.** `tests/severity_fit.rs`: on #800's 89 losses every
+      family's four cells match SciPy (`kstest` exact, and the moments
+      integrated on the survival scale) at the reference's tolerances, the
+      Pareto's CV is "inf", and `"params"` has the comparison's cells. The
+      test workbook's Severity fit sheet widens its comparison tables and
+      moves the grouped fits right to make room.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and

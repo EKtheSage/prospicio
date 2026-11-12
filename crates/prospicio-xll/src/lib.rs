@@ -382,15 +382,15 @@ const ATTACHMENT: Arg = Arg {
 };
 const FAMILY: Arg = Arg {
     name: "family",
-    help: "pareto, lognormal, lognormal_cv, gamma, gamma_cv, weibull, loglogistic, inverse_gamma, inverse_gaussian, burr, lomax, gpd, piecewise_pareto or gen_pareto (see the README for p1, p2, p3)",
+    help: "pareto, lognormal, lognormal_cv, gamma, gamma_cv, weibull, loglogistic, exponential, inverse_gamma, inverse_gaussian, burr, lomax, gpd, piecewise_pareto or gen_pareto (see the README for p1, p2, p3)",
 };
 const BODY_FAMILY: Arg = Arg {
     name: "family",
-    help: "lognormal, gamma, weibull, burr or lomax",
+    help: "lognormal, gamma, weibull, loglogistic, exponential, burr or lomax",
 };
 const P1: Arg = Arg {
     name: "p1",
-    help: "First parameter: Pareto t, lognormal meanlog, the mean (_cv families, inverse Gaussian), shape, Burr or Lomax alpha, GPD xi, piecewise thresholds (a range) or gen_pareto t",
+    help: "First parameter: Pareto t, lognormal meanlog, the mean (_cv families, inverse Gaussian, exponential), shape, Burr or Lomax alpha, GPD xi, piecewise thresholds (a range) or gen_pareto t",
 };
 const P2: Arg = Arg {
     name: "p2",
@@ -2848,7 +2848,7 @@ pub static FUNCTIONS: &[Function] = &[
     Function {
         symbol: "pro_sev_fit",
         name: "PRO.SEV.FIT",
-        help: "Maximum likelihood severity fit to large losses with reporting thresholds and censoring: parameters, fit against the data, or the body families compared.",
+        help: "Maximum likelihood severity fit to large losses with reporting thresholds and censoring: parameters, fit against the data, or the families compared and ranked by AIC.",
         args: &[
             Arg {
                 name: "losses",
@@ -2856,15 +2856,15 @@ pub static FUNCTIONS: &[Function] = &[
             },
             Arg {
                 name: "family",
-                help: "lognormal, gamma, weibull, burr, lomax, pareto, piecewise_pareto or gen_pareto (blank for \"compare\")",
+                help: "lognormal, gamma, weibull, loglogistic, exponential, burr, lomax, pareto, piecewise_pareto or gen_pareto; for \"compare\", blank or a range of names to fit only those",
             },
             Arg {
                 name: "output",
-                help: "\"params\" (default: parameters in PRO.SEV's order, SEs, AIC), \"gof\" (survival and Q-Q at each loss) or \"compare\"",
+                help: "\"params\" (default: parameters in PRO.SEV's order, SEs, AIC), \"gof\" (survival and Q-Q at each loss), \"compare\" (ranked by AIC when t is given) or \"curves\" (every fit's survival beside the plotting positions)",
             },
             Arg {
                 name: "t",
-                help: "Pareto families: the threshold (a row of thresholds for piecewise_pareto)",
+                help: "Pareto families: the threshold (a row of thresholds for piecewise_pareto); for \"compare\", adds pareto and gen_pareto from it",
             },
             Arg {
                 name: "truncation",
@@ -2885,6 +2885,10 @@ pub static FUNCTIONS: &[Function] = &[
             Arg {
                 name: "upper",
                 help: "Body families: truncation from above, the most a loss could be and still be kept; one value or one per loss (none if omitted)",
+            },
+            Arg {
+                name: "points",
+                help: "\"curves\": the most rows, the smallest and largest loss always kept (200 if omitted)",
             },
         ],
         run: fitting::severity_fit,

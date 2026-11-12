@@ -111,6 +111,64 @@ conversion reports the error it introduces.
   survival without truncation, a truncated risk set, and Weibull draws
   reported above 0, 200 or 500 and capped at 4,000 within 0.02 of the
   truth, with the Q-Q column within 10% where the risk set is large.
+- More families for one AIC ranking (decided 2026-11-11, #800):
+  `Family::Loglogistic` (the Burr with `α` pinned at 1, a `Dist::Loglogistic`),
+  `Family::Exponential` (a new `Exponential` distribution with closed-form
+  layer moments by memorylessness, in `Dist` and its JSON as
+  `{"family": "exponential", "mean": θ}`; its truncated, censored maximum is
+  `Σ w (y − r) / Σ_uncensored w`), and the Pareto families fitted from a
+  threshold `t`, `Family::Pareto` (`t`, `alpha`) and `Family::GenPareto`
+  (`t`, `alpha_ini`, `alpha_tail`, Riegel's form), through
+  `fit_severity_with_threshold(family, data, t)`. They come back as the
+  same `SeverityFit`, scored on the body likelihood, `t` pinned: its
+  standard error and covariance entries are NaN and it is not counted in
+  AIC or BIC (`Family::estimated_parameters`). Their survival is 1 below
+  `t`, so they condition each loss on `max(r, t)`: documented rather than
+  enforced, since a comparison is valid exactly when every reporting
+  threshold is at least `t`. `Family::ALL` lists the nine in a
+  comparison's order; the grouped and limited-mean fits refuse the two
+  Pareto families. `Pareto`, `PiecewisePareto` and `Gpd` gain
+  `fit_statistics(data)`, the same likelihood with AIC and BIC
+  (`FitStatistics`) for any fit, truncated ones included. Tested against
+  SciPy's own densities (`validation/scripts/scipy_severity_fits.py`).
+- Comparing the fits and the fit-curves table (decided 2026-11-11, #804):
+  `compare_fits(data, families, t)` fits each family (the Pareto families
+  from `t`) and keeps each fit or its error, and `rank_by_aic` sorts them,
+  stably, failures last. Where `fit_severity_with_threshold` only documents
+  the `max(r, t)` rule, `compare_fits` enforces it: with a Pareto family
+  named, every reporting threshold must be at least `t`, and the losses
+  must not be truncated from above. `fit_curves(data, t, families, points)`
+  is the table behind a chart of every fit on a log axis: the losses at or
+  above `t` ascending, the plotting positions `(n − i + 0.5) / n` (never 0
+  at the largest loss, as the product-limit estimate is, so a log axis
+  keeps it), and each family's survival conditional on `t`,
+  `(S(x) − S(U)) / (S(t) − S(U))` with `U` the losses' common bound from
+  above (`S(U) = 0` without one), the families in AIC order and a failed
+  fit left out. It refuses censored or weighted losses, since the plotting
+  positions count each loss once. Thinning to `points` rows takes
+  `thinned_rows(n, points)`, numpy's `unique(round(linspace(0, n − 1,
+  points)))` to the bit: `i · ((n − 1) / (points − 1))`, the last index
+  exactly `n − 1`, halves rounded to even (`f64::round_ties_even`); the
+  plotting positions are still counted among all `n`. Python
+  `prospicio.distributions.fit_curves(losses, threshold, families=None,
+  points=200)` (a dict of columns, ready for `pandas.DataFrame`) and R
+  `fit_curves()` (a data frame) take the losses above one threshold.
+  Tested against SciPy's fits (`validation/scripts/scipy_fit_curves.py`).
+- The KS p-value and the tail moments of a fit (decided 2026-11-11, #805):
+  `prospicio_math::kolmogorov::kolmogorov_sf(n, d)` is the two-sided
+  Kolmogorov-Smirnov tail `P(D_n > d)` by SciPy's `kstwo` methods (Simard
+  and L'Ecuyer): Ruben and Gambino's closed forms at the ends, twice
+  Smirnov's exact one-sided tail where it equals or is within double
+  precision of the two-sided one, Durbin's matrix (Marsaglia, Tsang and
+  Wang) in between, and Kolmogorov's limit `kolmogorov_limit_sf(√n d)`
+  where that matrix would pass 401 rows (SciPy uses Pelz and Good's series
+  there; the two agree to about 1e-3). `GoodnessOfFit::ks_p_value` applies it
+  to `max_distance` with `n` the total weight: with one threshold and no
+  censoring this is `scipy.stats.kstest`'s p-value, and it is documented
+  as optimistic for a fitted severity. `tail_moments(dist, t)` gives the
+  mean and CV of `X | X > t` from the exact layer moments, infinite where
+  the moment diverges. Python and R add `ks_p_value`, `tail_mean` and
+  `tail_cv` to `goodness_of_fit`, `t` the lowest reporting threshold.
 - `prospicio_prob::grouped_fit` (#328, third part) fits the same families
   to grouped losses, `GroupedLosses` of counts in size bands
   `(b_k, b_{k+1}]`, without individual amounts (Bahnemann, CAS Monograph

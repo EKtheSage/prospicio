@@ -45,6 +45,7 @@ reference:
       - tweedie
       - weibull_distribution
       - loglogistic_distribution
+      - exponential_distribution
       - inverse_gamma_distribution
       - inverse_gaussian_distribution
       - burr_distribution
@@ -66,6 +67,7 @@ reference:
       - generalized_pareto
       - pareto_fit
       - severity_fit
+      - fit_curves
       - grouped_fit
       - product_limit
       - local_pareto_to_piecewise
