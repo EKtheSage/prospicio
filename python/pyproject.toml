@@ -35,6 +35,8 @@ dev = [
     "nbstripout",
     "pandas",
     "pytest",
+    # Runs the binding tests on four workers in CI (#848).
+    "pytest-xdist",
     "scipy",
     # Engines behind prospicio.boosting; the CPU-only XGBoost wheel is
     # 6 MB where the full one bundles 200+ MB of GPU libraries.
