@@ -4,6 +4,8 @@ import pytest
 
 import prospicio as ar
 
+from helpers import reference
+
 D = ar.distributions
 P = ar.pricing
 
@@ -256,13 +258,16 @@ def test_natural_allocation_on_insco():
     assert port.kappa("C")[-1] == 64
     # aggregate 2.1.0: CCoC at 15% and assets 100.
     p = port.price(Distortion.ccoc(0.15), assets=100)
-    assert p.total.premium == pytest.approx(53.565217391304344, abs=1e-12)
+    ccoc = reference("distortion_aggregate.csv", distribution="insco_price", params="param=0.15", quantity="ccoc")
+    assert p.total.premium == pytest.approx(ccoc, abs=1e-12)
     assert [u.assets for u in p.allocated] == pytest.approx([16, 20, 64], abs=1e-12)
     # PH at aggregate's calibrated parameter, lifted, at assets 65.
     ph = port.calibrate("ph", assets=100, return_on_capital=0.15)
     lifted = port.price(ph, p=0.85, allocation="lifted")
+    case = "case=insco;family=ph;param=0.7204792831878889;assets=65;allocation=lifted"
     assert [u.capital for u in lifted.allocated] == pytest.approx(
-        [1.947189207380, -0.070344428313, 16.219694433834], abs=1e-6)
+        [reference("natural_aggregate.csv", distribution="price", params=case, quantity=f"X{i}.Q") for i in (1, 2, 3)],
+        abs=1e-6)
     d = lifted.to_dict()
     assert d["unit"] == ["A", "B", "C", "total"]
     assert sum(d["premium"][:3]) == pytest.approx(d["premium"][3])
@@ -378,9 +383,13 @@ def test_premium_bounds_and_classical():
     port = Portfolio(["A", "B", "C"], INSCO_ROWS)
     b = port.premium_bounds(53.565217391304344, assets=100)
     assert [round(u["lower"], 9) for u in b] == [13.097826087, 17.465726051, 19.254738016]
-    assert b[2]["upper"] == pytest.approx(22.098038028339595, abs=1e-9)
+    assert b[2]["upper"] == pytest.approx(reference(
+        "natural_aggregate.csv", distribution="bounds", params="case=insco;assets=100;premium=53.565217391304344",
+        quantity="X3.upper"), abs=1e-9)
     x = Sampled([22, 28, 36, 40, 40, 40, 40, 55, 65, 100])
-    assert calibrate_classical("esscher", x, 53.565217391304344) == pytest.approx(0.012851355964986997, rel=1e-8)
+    assert calibrate_classical("esscher", x, 53.565217391304344) == pytest.approx(reference(
+        "natural_aggregate.csv", distribution="classical", params="case=insco;assets=100;premium=53.565217391304344",
+        quantity="Esscher"), rel=1e-8)
     assert classical_premium("standard_deviation", Sampled([0.0, 10.0]), 0.2) == 6.0
     with pytest.raises(ValueError):
         classical_premium("nope", x, 0.1)
@@ -405,7 +414,8 @@ def test_pricing_bounds_and_envelope():
         pb.bounds(30.0)
     lower, upper = distortion_envelope(x, 53.565217391304344, [0.1, 0.5])
     # aggregate 2.1.0's PricingBounds against Bernoulli risks.
-    assert lower == pytest.approx([0.1372282608695652, 0.5652173913043478], abs=1e-12)
+    assert lower == pytest.approx([reference("bounds_aggregate.csv", distribution="envelope",
+        params="premium=53.565217391304344", quantity="lower", arg=s) for s in (0.1, 0.5)], abs=1e-12)
     assert upper[0] == pytest.approx(0.217391304347826, abs=1e-12)
 
 
@@ -417,7 +427,9 @@ def test_tvar_threshold_on_a_portfolio():
     rows = [[a, b] for a in x1 for b in x2]
     probs = [p * q for p in w for q in w]
     port = Portfolio(["X1", "X2"], rows, probs)
-    assert port.tvar_threshold(0.9) == pytest.approx(0.859375, abs=1e-11)
+    assert port.tvar_threshold(0.9) == pytest.approx(
+        reference("natural_aggregate.csv", distribution="tvar_threshold", params="case=discrete", quantity="t", arg=0.9),
+        abs=1e-11)
 
 
 def test_stand_alone_and_comonotonic_allocation():
@@ -430,15 +442,18 @@ def test_stand_alone_and_comonotonic_allocation():
     probs = [p * q for p in w for q in w]
     port = Portfolio(["X1", "X2"], rows, probs)
     s = port.price_stand_alone(Distortion.proportional_hazard(0.7), 0.9)
-    assert s.stand_alone[0].premium == pytest.approx(5.682435936634864, abs=1e-10)
-    assert s.total.premium == pytest.approx(39.27576430346102, abs=1e-10)
-    assert s.sum.premium == pytest.approx(40.02270174816368, abs=1e-10)
+    sa = dict(distribution="stand_alone", params="case=discrete;distortion=ph;shape=0.7;p=0.9")
+    assert s.stand_alone[0].premium == pytest.approx(reference("natural_aggregate.csv", **sa, quantity="X1.P"), abs=1e-10)
+    assert s.total.premium == pytest.approx(reference("natural_aggregate.csv", **sa, quantity="total.P"), abs=1e-10)
+    assert s.sum.premium == pytest.approx(reference("natural_aggregate.csv", **sa, quantity="sum.P"), abs=1e-10)
     assert s.to_dict()["unit"] == ["X1", "X2", "total", "sum"]
     with pytest.raises(ValueError):
         port.price_stand_alone(Distortion.proportional_hazard(0.7), 1.0)
     co = port.comonotonic_kappa()
     totals = port.totals
-    assert co["X1"][totals.index(8.0)] == pytest.approx(6.607142857142858, abs=1e-10)
+    assert co["X1"][totals.index(8.0)] == pytest.approx(
+        reference("natural_aggregate.csv", distribution="comonotonic", params="case=discrete", quantity="X1", arg="8.0"),
+        abs=1e-10)
     for k, x in enumerate(totals):
         assert co["X1"][k] + co["X2"][k] == pytest.approx(x, abs=1e-12)
 

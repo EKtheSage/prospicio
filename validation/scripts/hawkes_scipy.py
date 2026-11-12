@@ -1,3 +1,12 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "numpy",
+#     "scipy==1.14.1",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-30T00:00:00Z"
+# ///
 """Write validation/reference/hawkes_scipy.csv: Hawkes fits by SciPy.
 
 Independent of prospicio: paths simulated by Ogata's thinning with numpy,

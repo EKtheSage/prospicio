@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # An accident-period development pattern on an underwriting basis
 # (docs/design/reserving-v02.md, decision 21, issue #633):
@@ -7,25 +8,7 @@ suppressMessages(library(prospicio))
 # these tests reproduce its hand-computed parallelogram through the
 # binding, as the Python tests do.
 
-near <- function(a, b, rel = 1e-12) {
-  a <- unname(a)
-  b <- unname(b)
-  if (length(a) != length(b) || !all(a == b | abs(a - b) <= rel * abs(b))) {
-    stop(sprintf("got %s, want %s (rel %g)", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " "), rel), call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop(sprintf("expected an error mentioning %s", shQuote(pattern)), call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 # The parallelogram's share developed of a linear pattern t/60, by hand.
 parallelogram <- function(a) {

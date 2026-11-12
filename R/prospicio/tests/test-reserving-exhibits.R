@@ -4,24 +4,9 @@
 # Insurer), to the printed digits, and chainladder-python's
 # VotingChainladder on GenIns from validation/reference.
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
-near <- function(a, b, tol) {
-  if (!all(abs(a - b) <= tol)) {
-    stop(sprintf("got %s, want %s (tol %g)", paste(format(a, digits = 15), collapse = " "),
-                 paste(format(b, digits = 15), collapse = " "), tol), call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop("expected an error", call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 # Tests run from the repository root (CI and `cargo xtask r`).
 read_data <- function(name) {
@@ -48,26 +33,26 @@ stopifnot(
   is.na(ex@link_ratios["2007", "12-24"]),
   identical(dim(ex@values), c(10L, 10L))
 )
-near(round(ex@averages["medial latest 5x1", ], 3),
+near_abs(round(ex@averages["medial latest 5x1", ], 3),
      c(1.165, 1.057, 1.027, 1.010, 1.004, 1.003, 1.002, 1.001, 1.000), 1e-12)
-near(round(ex@averages["geometric latest 4", ], 3),
+near_abs(round(ex@averages["geometric latest 4", ], 3),
      c(1.164, 1.057, 1.027, 1.011, 1.004, 1.003, 1.002, 1.001, 1.000), 1e-12)
-near(unname(ex@selected), selected, 1e-12)
-near(round(unname(ex@cdf), 3), cdf$reported, 1e-12)
-near(round(ex@link_ratios["1998", "12-24"], 3), 1.166, 1e-12)
+near_abs(unname(ex@selected), selected, 1e-12)
+near_abs(round(unname(ex@cdf), 3), cdf$reported, 1e-12)
+near_abs(round(ex@link_ratios["1998", "12-24"], 3), 1.166, 1e-12)
 
 # The percents developed use the book's rounded factors to ultimate.
 ex <- development_exhibit(us, "paid", ldf = by_age(cdf$paid), ldf_kind = "cdf", averages = list())
-near(round(100 * unname(ex@percent_developed), 1),
+near_abs(round(100 * unname(ex@percent_developed), 1),
      c(41.8, 71.2, 84.5, 92.2, 96.2, 98.0, 98.9, 99.4, 99.6, 99.8), 1e-9)
-near(ex@tail, 1.002, 1e-12)
+near_abs(ex@tail, 1.002, 1e-12)
 stopifnot(nrow(ex@averages) == 0L)
 frame <- as.data.frame(development_exhibit(us, "paid"))
 stopifnot(identical(utils::tail(rownames(frame), 3), c("selected", "cdf", "percent_developed")),
           is.na(frame["simple latest 5", "120-ult"]))
 own <- development_exhibit(us, "paid", averages = list(
   all = list(average = "simple"), latest = list(average = "volume", n_periods = 3)))
-near(unname(own@averages["latest", ]),
+near_abs(unname(own@averages["latest", ]),
      unname(development_exhibit(us, "paid")@averages["volume latest 3", ]), 1e-12)
 expect_error_like(development_exhibit(us, "paid", averages = list(list(average = "simple"))),
                   "named list")
@@ -86,7 +71,7 @@ methods <- list(
 )
 ux <- ultimate_exhibit(us, reported = "reported", paid = "paid", methods = methods)
 stopifnot(identical(ux@ages, as.integer(rev(ages))), identical(ux@methods, names(methods)))
-near(sum(ux@reported - ux@paid), 45431219, 0.5)
+near_abs(sum(ux@reported - ux@paid), 45431219, 0.5)
 book <- list(
   "development reported" = c(569172456, 25690869, 71122088),
   "development paid" = c(572041099, 28559512, 73990731),
@@ -95,9 +80,9 @@ book <- list(
   "cape cod" = c(570800677, 27319090, 72750309)
 )
 for (m in names(book)) {
-  near(c(sum(ux@ultimate[[m]]), sum(ux@ibnr[[m]]), sum(ux@unpaid[[m]])), book[[m]], 0.5)
+  near_abs(c(sum(ux@ultimate[[m]]), sum(ux@ibnr[[m]]), sum(ux@unpaid[[m]])), book[[m]], 0.5)
 }
-near(round(ux@ibnr[["development paid"]][1:3]), c(-2829, 18769, 22495), 1e-9)
+near_abs(round(ux@ibnr[["development paid"]][1:3]), c(-2829, 18769, 22495), 1e-9)
 
 # Chapter 15, Exhibit I, sheets 2 and 6: XYZ Insurer's selection.
 xyz_methods <- list(
@@ -126,16 +111,16 @@ age_rows <- data.frame(age = c(12, 24, 36, 60),
                        check.names = FALSE)
 for (table in list(select_ultimates(xyz, by_origin), select_ultimates(xyz, by_age = age_rows))) {
   stopifnot(identical(table$origin[12], "total"), table[["weight_frequency-severity 2"]][11] == 0.5)
-  near(table$ultimate[1:11], book_selected, 0.5)
-  near(table$ultimate[12], 483781, 1)
-  near(table$ibnr[12], 34155, 1)
+  near_abs(table$ultimate[1:11], book_selected, 0.5)
+  near_abs(table$ultimate[12], 483781, 1)
+  near_abs(table$ibnr[12], 34155, 1)
 }
 expect_error_like(select_ultimates(xyz, list("development both" = 0.5, "bf reported" = 0.25)),
                   "sum to 0.75")
 expect_error_like(select_ultimates(xyz, "frequency-severity 2"), "no ultimate there")
 expect_error_like(select_ultimates(xyz, "chain ladder"), "no method")
 expect_error_like(select_ultimates(xyz, "bf paid", by_age = age_rows), "not both")
-near(select_ultimates(xyz, "bf paid", total = FALSE)$ultimate, xyz_methods[["bf paid"]], 0)
+near_abs(select_ultimates(xyz, "bf paid", total = FALSE)$ultimate, xyz_methods[["bf paid"]], 0)
 
 # chainladder-python's VotingChainladder on GenIns.
 genins <- triangle(read_data("genins_premium"), "origin", "development", c("paid", "premium"))
@@ -165,10 +150,10 @@ for (k in seq_len(nrow(ref))) {
     total_ultimate = t$ultimate[nrow(t)],
     total_reserve = t$unpaid[nrow(t)]
   )
-  near(got, r$expected, 1e-9 * abs(r$expected))
+  near_abs(got, r$expected, 1e-9 * abs(r$expected))
 }
 stopifnot(nrow(ref) == 156L)
-near(select_ultimates(fits, cases$blend, triangle = genins, paid = "paid", total = FALSE)$ultimate,
+near_abs(select_ultimates(fits, cases$blend, triangle = genins, paid = "paid", total = FALSE)$ultimate,
      tables$blend$ultimate[1:10], 0)
 
 # A fit of other origins is refused.

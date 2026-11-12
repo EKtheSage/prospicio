@@ -14,8 +14,11 @@ endings as LF.
 
 The check fails when a file has no entry, an entry has no file, a hash
 differs (a reference edited by hand, or regenerated without `--update`),
-or a generator does not exist. `--update` rewrites the hash and the
-environment of the files named (paths relative to `validation/reference/`)
+a generator does not exist, or a Python generator has no inline script
+metadata (PEP 723: its dependencies at the versions the file records, the
+rest resolved as of the day the file was committed by `exclude-newer`, so
+`uv run validation/scripts/<name>.py` rebuilds it). `--update` rewrites
+the hash and the environment of the files named (paths relative to `validation/reference/`)
 and keeps their generators. `--seed` rebuilds the manifest from the files,
 taking each one's generators from the scripts that name it; its result is
 reviewed by hand once, then `--update` keeps it current.
@@ -78,6 +81,12 @@ def generator_exists(name: str) -> bool:
     if name.startswith("validation/"):
         return (ROOT / name.split(" ", 1)[0]).exists()
     return (SCRIPTS / name).exists()
+
+
+def pinned(name: str) -> bool:
+    """Whether a Python generator carries PEP 723 metadata, so `uv run` rebuilds it."""
+    text = (SCRIPTS / name).read_text(encoding="utf-8")
+    return re.search(r"^# /// script$.*?^# dependencies = .*?^# ///$", text, re.S | re.M) is not None
 
 
 def quote(s: str) -> str:
@@ -173,6 +182,11 @@ def check() -> int:
         for g in e.get("generators", []):
             if not generator_exists(g):
                 problems.append(f"{p}: generator {g} does not exist")
+            elif g.endswith(".py") and "/" not in g and not pinned(g):
+                problems.append(
+                    f"{p}: generator {g} has no inline script metadata (a `# /// script` "
+                    "block with its dependencies, pinned as the file records them)"
+                )
     present = set(files())
     for p in sorted(present - listed.keys()):
         problems.append(f"{p}: no entry in MANIFEST.toml (add it with its generators)")

@@ -1,3 +1,12 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "aggregate==2.1.0",
+#     "eltq==2.15.0",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-11-10T00:00:00Z"
+# ///
 """Regenerate validation/reference/elt_units_aggregate.csv.
 
     uv run --python 3.13 --with aggregate==2.1.0 --with eltq==2.15.0 \

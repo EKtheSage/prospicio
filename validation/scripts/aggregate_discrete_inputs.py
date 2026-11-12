@@ -1,3 +1,11 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "aggregate==2.1.0",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-11-10T00:00:00Z"
+# ///
 """Regenerate validation/reference/discrete_inputs_aggregate.csv.
 
     uv run --python 3.13 --with aggregate==2.1.0 \

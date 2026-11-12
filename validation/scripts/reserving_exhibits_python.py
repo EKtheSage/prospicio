@@ -1,3 +1,13 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "chainladder==0.10.1",
+#     "numpy",
+#     "pandas",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-11-05T00:00:00Z"
+# ///
 """Regenerate validation/reference/reserving_exhibits_python.csv.
 
 Uses chainladder-python's VotingChainladder, which weights several methods'

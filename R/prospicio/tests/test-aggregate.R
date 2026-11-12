@@ -1,4 +1,9 @@
 library(prospicio)
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
+
+# pnl_program's design-note book, from aggregate's reference rows (#845).
+program_value <- function(quantity, row, col) reference("pnl_variable_aggregate.csv", case = "program",
+  quantity = quantity, row = row, col = col)
 
 close <- function(got, want, rel) {
   stopifnot(all(abs(got - want) <= rel * abs(want)))
@@ -436,7 +441,9 @@ stopifnot(inherits(try(tower_from_json("{}"), silent = TRUE), "try-error"))
 # "agg O 2 claims sev lognorm 100 cv 2 poisson".
 sev <- lognormal_from_mean_cv(100, 2)
 pml <- occurrence_pml(poisson_count(2), sev, c(0.1, 0.001))
-stopifnot(all(abs(pml$loss / c(348.934754485, 2906.643201) - 1) < 1e-9))
+oep_o <- function(quantity, arg) reference("oep_aggregate.csv", distribution = "O",
+  params = "lambda=2;severity=lognormal;mean=100;cv=2", quantity = quantity, arg = arg)
+stopifnot(all(abs(pml$loss / c(oep_o("loss", "0.1"), oep_o("loss", "0.001")) - 1) < 1e-9))
 stopifnot(all(abs(pml$annual_return_period - c(10, 1000)) < 1e-9))
 nb <- negative_binomial_count(1.5, 2)
 stopifnot(abs(occurrence_exceedance(nb, sev, occurrence_pml(nb, sev, 0.05)$loss) - 0.05) < 1e-10)
@@ -447,9 +454,11 @@ stopifnot(mean(annual_maxima(simulate_events(poisson_count(2), sev, 2000, seed =
 # "agg B 10 claims sev gamma 50 cv 0.7 poisson".
 g <- gamma_distribution(1 / 0.49, 50 * 0.49)
 m <- compound_moments(poisson_count(10), g)
-stopifnot(abs(m[["mean"]] / 500 - 1) < 1e-12, abs(m[["skew"]] / 0.5129464825493272 - 1) < 1e-12)
+moments_b <- function(quantity) reference("moments_aggregate.csv", distribution = "B",
+  params = "lambda=10;severity=gamma;mean=50;cv=0.7", quantity = quantity)
+stopifnot(abs(m[["mean"]] / 500 - 1) < 1e-12, abs(m[["skew"]] / moments_b("skew") - 1) < 1e-12)
 fit <- moment_approximation(poisson_count(10), g, "shifted_gamma")
-stopifnot(abs(fit$parameters[["shift"]] / -252.52525252525868 - 1) < 1e-10)
+stopifnot(abs(fit$parameters[["shift"]] / moments_b("sgamma_loc") - 1) < 1e-10)
 # The same fit from the compound_moments() result, by position or by name.
 stopifnot(identical(moment_approximation(m, "shifted_gamma"), fit),
           identical(moment_approximation(m, kind = "shifted_gamma"), fit),
@@ -477,8 +486,11 @@ stopifnot(abs(lt[1] / (48 * (1 - exp(-1.5) * (1 + 1.5 + 1.5^2 / 2))) - 1) < 1e-1
 # "agg C 2 claims 1000 xs 0 sev lognorm 100 cv 2 occurrence net of 500 xs 100 poisson".
 sev <- discretize(lognormal_from_mean_cv(100, 2), 1, 1001, "rounding")
 s <- occurrence_layer_statistics(poisson_count(2), sev, limit = 500, attachment = 100)
-stopifnot(abs(s$pr_attach / 0.261655626646 - 1) < 1e-10,
-          abs(s$loss_on_line / 0.151169062665 - 1) < 1e-9,
+book_c <- function(quantity) vapply(quantity, function(q) reference("reinsurance_aggregate.csv",
+  distribution = "C", params = "lambda=2;severity=lognormal;mean=100;cv=2;cap=1000;occ=1:500:100",
+  quantity = q), 0, USE.NAMES = FALSE)
+stopifnot(abs(s$pr_attach / book_c("layer.1:pr_attach") - 1) < 1e-10,
+          abs(s$loss_on_line / book_c("layer.1:lol") - 1) < 1e-9,
           abs(s$count[["mean"]] - 2 * s$pr_attach) < 1e-14)
 half <- occurrence_layer_statistics(poisson_count(2), sev, 500, 100, share = 0.5)
 stopifnot(abs(half$aggregate[["skew"]] / s$aggregate[["skew"]] - 1) < 1e-12)
@@ -486,13 +498,14 @@ r <- tower_on_grid(reinsurance_tower(list(xol_layer("occ", 500, 100))), poisson_
                    points = 2^14)
 p <- tower_price(r, distortion("proportional_hazard", 0.7))
 stopifnot(identical(p$view, c("gross", "occ", "net")),
-          abs(p$premium / c(297.443189953534, 139.358753189474, 164.315772212950) - 1) < 2e-8)
+          abs(p$premium / book_c(c("price:gross:P", "price:ceded_occ:P", "price:net:P")) - 1) < 2e-8)
 stopifnot(inherits(try(occurrence_layer_statistics(poisson_count(2), sev, 500, 100, share = 0),
                        silent = TRUE), "try-error"))
 # Eventual ruin: claims of 1, 2 or 3 at rho 0.1, against aggregate 2.1.0.
 sev3 <- grid_distribution(1, c(0, 0.5, 0.3, 0.2, numeric(1020)))
 ruin <- eventual_ruin(sev3, rho = 0.1, p = c(0.1, 1e-300))
-stopifnot(abs(ruin$psi$psi[ruin$psi$u == 10] - 0.15362022867039649) < 1e-12)
+stopifnot(abs(ruin$psi$psi[ruin$psi$u == 10] -
+  reference("ruin_aggregate.csv", distribution = "D", params = "rho=0.1", quantity = "psi", arg = "10.0")) < 1e-12)
 stopifnot(abs(ruin$severity_mean - 1.7) < 1e-12, ruin$lundberg_exponent > 0, ruin$aliasing_error < 1e-12)
 stopifnot(!is.na(ruin$capital[1]), is.na(ruin$capital[2]), ruin$capital_interpolated[1] <= ruin$capital[1])
 same <- eventual_ruin(sev3, loss_ratio = 1 / 1.1)
@@ -540,23 +553,27 @@ stopifnot(inherits(try(clash_aggregate(clash, poisson_count(2), ca, cb, 8), sile
 # Layer loss picks against aggregate 2.1.0's Aggregate.picks.
 gsev <- discretize(gamma_from_mean_cv(100, 1.5), step = 1, points = 2^14, method = "rounding")
 picked <- layer_loss_picks(gsev, c(100, 500, 1000), c(480, 420, 60), claims = 10)
-stopifnot(!picked$straight_bottom, abs(picked$severity@probs[201] - 0.0008386073686922624) < 1e-12)
+stopifnot(!picked$straight_bottom, abs(picked$severity@probs[201] -
+  reference("picks_aggregate.csv", distribution = "scaled", params = "picks=480:420:60", quantity = "p", arg = 200)) < 1e-12)
 stopifnot(max(abs(10 * picked$layers$target - c(480, 420, 60))) < 1e-12)
 stopifnot(layer_loss_picks(gsev, c(100, 500, 1000), c(700, 250, 50), claims = 10)$straight_bottom)
 stopifnot(inherits(try(layer_loss_picks(gsev, 100.5, 10), silent = TRUE), "try-error"))
 # Total cession of a stage and an aggregate cover, against aggregate 2.1.0
 # (book T of validation/scripts/aggregate_reinsurance.py).
 gt <- discretize(gamma_from_mean_cv(50, 1.5), step = 1, points = 1001, method = "rounding")
+book_t <- function(quantity) reference("reinsurance_aggregate.csv", distribution = "T",
+  params = "lambda=5;severity=gamma;mean=50;cv=1.5;cap=1000;occ=1:100:100+1:200:200;agg=300:200", quantity = quantity)
 ct <- occurrence_cession_statistics(poisson_count(5), gt, limits = c(100, 200), attachments = c(100, 200))
-stopifnot(abs(ct$aggregate[["mean"]] / 67.33279562141576 - 1) < 1e-9)
+stopifnot(abs(ct$aggregate[["mean"]] / book_t("Ceded:agg_mean") - 1) < 1e-9)
 two <- tower_on_grid(reinsurance_tower(list(xol_layer("a", 100, 100), xol_layer("b", 200, 200))),
                      poisson_count(5), gt, points = 2^14)
-stopifnot(identical(two$stage_sizes, 2), abs(mean(two$stage_ceded[[1]]) / 67.33279562141576 - 1) < 1e-9)
+stopifnot(identical(two$stage_sizes, 2), abs(mean(two$stage_ceded[[1]]) / book_t("Ceded:agg_mean") - 1) < 1e-9)
 tp <- tower_price(two, distortion("proportional_hazard", 0.7))
 stopifnot(identical(tp$view, c("gross", "a", "b", "stage_1", "net")))
-stopifnot(abs(tp$premium[tp$view == "stage_1"] / 111.0007062267948 - 1) < 2e-8)
+stopifnot(abs(tp$premium[tp$view == "stage_1"] / book_t("price:ceded_occ:P") - 1) < 2e-8)
 cover <- aggregate_layer_statistics(two$net, limit = 300, attachment = 200)
-stopifnot(abs(cover$pr_attach - 0.3912338371214888) < 1e-12, abs(cover$aggregate[["mean"]] / 38.7761195844111 - 1) < 1e-9)
+stopifnot(abs(cover$pr_attach - book_t("agglayer:pr_attach")) < 1e-12,
+          abs(cover$aggregate[["mean"]] / book_t("agglayer:agg_mean") - 1) < 1e-9)
 
 # A quota share on an annual loss-ratio grid (#206).
 probs <- numeric(81)
@@ -615,7 +632,8 @@ pnl <- pnl_ledger(list(c(0, 10, 20, 50), c(0.4, 0.3, 0.2, 0.1)), list(gross, xl)
                   result_name = "margin")
 s <- ledger_sheet(pnl)
 m <- s[s$row == "margin", ]
-stopifnot(abs(m$EX - 6.3) < 1e-12, abs(m$SD - 2.913760457) < 1e-9)
+stopifnot(abs(m$EX - 6.3) < 1e-12, abs(m$SD -
+  reference("pnl_ledger_aggregate.csv", case = "ex2", quantity = "sheet", row = "All|Margin|Net", col = "SD")) < 1e-9)
 stopifnot(max(abs(c(m$k01, m$k50, m$k99) - c(1.9, 7.4, 8.9))) < 1e-12)
 stopifnot(abs(s$k50[s$row == "Premium"] - 27) < 1e-12, s$label[nrow(s)] == "Impact")
 card <- ledger_card(pnl)
@@ -639,8 +657,9 @@ local({
          pnl_leg("XL commission", 0.4, kind = "commission")))
   r <- ledger_ratios(pnl_ledger(src, list(gross, xl), name = "Ex2", result_name = "margin"))
   stopifnot(identical(r$step, c("Gross", "XL", "All")))
-  stopifnot(abs(r$E_LR[1] - 0.46064814814814825) < 1e-12)
-  stopifnot(abs(r$M_share[3] - 0.984375) < 1e-12)
+  ratio <- function(row, col) reference("pnl_ratios_aggregate.csv", case = "ex2", quantity = "ratios", row = row, col = col)
+  stopifnot(abs(r$E_LR[1] - ratio("Gross", "E_LR")) < 1e-12)
+  stopifnot(abs(r$M_share[3] - ratio("All", "M_share")) < 1e-12)
   b <- pnl_ledger(src, list(pnl_group("Ex2b", "sell", list(pnl_leg("consideration", 20)),
     list(pnl_leg("Loss", function(x) 1.03 * x, step = 4)))))
   v <- ledger_validation(b)
@@ -712,8 +731,8 @@ local({
   stopifnot(abs(mean(ledger_result(book_ledger(book, gross, pc))) - 4.629) < 1e-12)
   retro <- pnl_book("V", 2, list(pnl_expense("premium", 0.1)), retro = c(2, 1.1, 3, 9))
   stopifnot(abs(mean(ledger_row(book_ledger(retro, gross), "Premium")) - 6.108) < 1e-12)
-  p <- pnl_program(405.97794085441933, 0.9, 0.25, data.frame(
-    ceded_loss = c(86.78504710067914, 8.144345556686755), share = 1, combined_ratio = c(0.6, 0.5)))
+  p <- pnl_program(program_value("input", "note", "net_loss"), 0.9, 0.25, data.frame(
+    ceded_loss = c(program_value("input", "note|0", "ceded_loss"), program_value("input", "note|1", "ceded_loss")), share = 1, combined_ratio = c(0.6, 0.5)))
   stopifnot(p$premium == 817, identical(p$deposits, c(145, 16.29)))
   stopifnot(identical(round_premium(c(146.5, 16.285)), c(146, 16.29)), size_premium(499.885, 0.7) == 714)
 })
@@ -725,16 +744,17 @@ local({
   joint <- occurrence_source(poisson_count(2), sev, occ, c(64, 32))
   book <- pnl_book("R", 20, list(pnl_expense("premium", 0.1)))
   s <- ledger_sheet(book_occurrence_ledger(book, joint, occ, face = "walk"))
-  stopifnot(abs(s$EX[s$row == "occ 2 xs 2 premium"] + 2.65936) < 1e-5)
-  stopifnot(abs(mean(ledger_result(book_occurrence_ledger(book, joint, occ))) - 12.323104) < 1e-6)
+  r1 <- function(row, col) reference("pnl_reinstatements_aggregate.csv", case = "r1", quantity = "sheet", row = row, col = col)
+  stopifnot(abs(s$EX[s$row == "occ 2 xs 2 premium"] - r1("occ 2 xs 2|Consideration|occ 2 xs 2 premium", "EX")) < 1e-5)
+  stopifnot(abs(mean(ledger_result(book_occurrence_ledger(book, joint, occ))) - r1("All|Margin|Net", "EX")) < 1e-6)
 })
 
 # pnl_program's rates and an engine's stated premium (aggregate 2.1.0).
 local({
-  p <- pnl_program(405.97794085441933, 0.9, 0.25, data.frame(
-    ceded_loss = c(86.78504710067914, 8.144345556686755), share = 1, combined_ratio = c(0.6, 0.5),
+  p <- pnl_program(program_value("input", "note", "net_loss"), 0.9, 0.25, data.frame(
+    ceded_loss = c(program_value("input", "note|0", "ceded_loss"), program_value("input", "note|1", "ceded_loss")), share = 1, combined_ratio = c(0.6, 0.5),
     aggregate = c(FALSE, TRUE)))
-  stopifnot(identical(p$rates, c(0.17747858, 0.024241071)))
+  stopifnot(identical(p$rates, c(program_value("rate", "note|0", "rate"), program_value("rate", "note|1", "rate"))))
   stopifnot(abs(pnl_program_stated(1000, 0.25)$premium - 1000 / 0.75) < 1e-9)
   k <- pnl_program(406, 0.9, 0.25, data.frame(share = 0.5, stated = 20))
   stopifnot(is.na(k$rates))
@@ -765,7 +785,8 @@ local({
   stopifnot(ledger_is_stitched(peel))
   s <- ledger_sheet(peel)
   stopifnot(!("k01" %in% names(s)))
-  stopifnot(abs(s$SD[s$row == "net through occ 1 xs 1"] - 1.897366596) < 1e-8)
+  stopifnot(abs(s$SD[s$row == "net through occ 1 xs 1"] -
+    reference("pnl_stitched_aggregate.csv", case = "td", quantity = "sheet", row = "occ 1 xs 1|Margin|Net", col = "SD")) < 1e-8)
   stopifnot(abs(s$SD[s$step == "All" & s$label == "Impact"] + 2.201414) < 1e-6)
 })
 
@@ -1122,8 +1143,10 @@ elt_u <- unit_event_loss_tables(c("1", "2", "4", "1", "3", "4"), rep(c("A", "B")
                                 exposure = c(2000, 500, 5000, 1000, 400, 2000))
 stopifnot(elt_u$shared_events == 2, identical(names(elt_u$units), c("A", "B")))
 stopifnot(abs(elt_u$rolled$rate / 0.082 - 1) < 1e-12)
-stopifnot(abs(elt_severity_moments(elt_u$rolled)[1] / 331.7073170731707 - 1) < 1e-10)
-stopifnot(abs(elt_severity_moments(elt_u$units$A)[2] / 234193.54838709682 - 1) < 1e-10)
+stopifnot(abs(elt_severity_moments(elt_u$rolled)[1] /
+  reference("elt_units_aggregate.csv", distribution = "elt", params = "table=two;unit=all", quantity = "ex1") - 1) < 1e-10)
+stopifnot(abs(elt_severity_moments(elt_u$units$A)[2] /
+  reference("elt_units_aggregate.csv", distribution = "elt", params = "table=two;unit=A", quantity = "ex2") - 1) < 1e-10)
 
 # The dyadic lattice rule against aggregate 2.1.0 (#776).
 stopifnot(identical(dyadic_lattice_step(c(3, 6, 9)), c(step = 3, residual = 0)))
@@ -1137,11 +1160,15 @@ stopifnot(lb$step == 2000, !lb$on_lattice, lb$log2_required == 9, grepl("log2 >=
 prog <- reinsurance_tower(list(xol_layer("A", 200, 100, share = 0.5), xol_layer("B", 500, 400)))
 sev_oep <- lognormal_from_mean_cv(100, 2)
 net_oep <- occurrence_pml(poisson_count(3), sev_oep, c(0.05, 0.01), tower = prog, view = "net")
-stopifnot(abs(net_oep$loss / c(300, 794.3949760012904) - 1) < 1e-9)
-stopifnot(abs(net_oep$severity_survival / c(0.008984021041399205, 0.003350111951167142) - 1) < 1e-9)
+program_oep <- function(view, quantity, arg) reference("program_oep_aggregate.csv", distribution = "program_oep",
+  params = sprintf("severity=lognormal;program=two;view=%s;lambda=3", view), quantity = quantity, arg = arg)
+stopifnot(abs(net_oep$loss / c(300, program_oep("net", "loss", "0.01")) - 1) < 1e-9)
+stopifnot(abs(net_oep$severity_survival /
+  c(program_oep("net", "S_sev", "0.05"), program_oep("net", "S_sev", "0.01")) - 1) < 1e-9)
 ced_oep <- occurrence_pml(poisson_count(3), sev_oep, 0.05, tower = prog)
-stopifnot(abs(ced_oep$loss / 356.6271501319309 - 1) < 1e-9)
-stopifnot(abs(occurrence_exceedance(poisson_count(3), sev_oep, 356.6271501319309, tower = prog) / 0.05 - 1) < 1e-9)
+ceded5 <- program_oep("ceded", "loss", "0.05")
+stopifnot(abs(ced_oep$loss / ceded5 - 1) < 1e-9)
+stopifnot(abs(occurrence_exceedance(poisson_count(3), sev_oep, ceded5, tower = prog) / 0.05 - 1) < 1e-9)
 
 # The disappearing deductible against aggregate 2.1.0 (#772,
 # validation/scripts/aggregate_disappearing.py).
@@ -1150,5 +1177,7 @@ stopifnot(dd@disappearing == 100, is.na(xol_layer("D", 300, 50)@disappearing))
 stopifnot(identical(ceded_by_event(dd, c(40, 75, 100, 250, 400)), c(0, 50, 100, 250, 300)))
 x_dd <- lognormal_from_mean_cv(100, 1)
 m_dd <- occurrence_moments(dd, x_dd) / survival(x_dd, 50)
-stopifnot(all(abs(m_dd / c(112.60796090891441, 19738.084272995242, 4255116.441430608) - 1) < 1e-9))
+stopifnot(all(abs(m_dd / vapply(c("ex1", "ex2", "ex3"), function(q) reference("disappearing_aggregate.csv",
+  distribution = "deductible", params = "form=disappearing;d1=50.0;d2=100.0;y=300.0;severity=lognormal",
+  quantity = q), 0) - 1) < 1e-9))
 stopifnot(inherits(try(with_disappearing(xol_layer("D", 300, 50), 50), silent = TRUE), "try-error"))

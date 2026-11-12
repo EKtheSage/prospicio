@@ -7,7 +7,14 @@ from prospicio.aggregate import fft, panjer, simulate_events
 from prospicio.reinsurance import Layer, Tower
 from prospicio.distributions import Grid, Lognormal, NegativeBinomial, Poisson
 
+from helpers import reference
+
 SEV = Grid(1.0, [0.1, 0.3, 0.25, 0.2, 0.1, 0.05])
+
+
+def program_input(row, col):
+    """An input of pnl_program's design-note book, from aggregate's reference rows."""
+    return reference("pnl_variable_aggregate.csv", case="program", quantity="input", row=row, col=col)
 
 
 def test_panjer_and_fft_agree_and_match_compound_moments():
@@ -532,7 +539,10 @@ def test_occurrence_pml():
 
     sev = Lognormal.from_mean_cv(100.0, 2.0)
     # aggregate 2.1.0's oep on "agg O 2 claims sev lognorm 100 cv 2 poisson".
-    for p, loss, rp in [(0.1, 348.934754485, 9.491222), (0.001, 2906.643201, 999.499917)]:
+    o = dict(distribution="O", params="lambda=2;severity=lognormal;mean=100;cv=2")
+    for p in (0.1, 0.001):
+        loss = reference("oep_aggregate.csv", **o, quantity="loss", arg=p)
+        rp = reference("oep_aggregate.csv", **o, quantity="occurrence_return_period", arg=p)
         pml = occurrence_pml(Poisson(2.0), sev, p)
         assert pml.loss == pytest.approx(loss, rel=1e-9)
         assert pml.occurrence_return_period == pytest.approx(rp, rel=1e-6)
@@ -542,7 +552,8 @@ def test_occurrence_pml():
     assert occurrence_exceedance(nb, sev, pml.loss) == pytest.approx(0.05, rel=1e-9)
     # The simulated OEP at the 10% PML, within four standard errors.
     maxima = [row[0] for row in simulate_events(Poisson(2.0), sev, 20_000, 7).maxima().draw_matrix()]
-    share = sum(m > 348.934754485 for m in maxima) / len(maxima)
+    pml10 = reference("oep_aggregate.csv", **o, quantity="loss", arg=0.1)
+    share = sum(m > pml10 for m in maxima) / len(maxima)
     assert abs(share - 0.1) < 4 * math.sqrt(0.1 * 0.9 / 20_000)
     with pytest.raises(ValueError):
         occurrence_pml(Poisson(0.1), sev, 0.2)
@@ -556,11 +567,12 @@ def test_compound_moments_and_approximations():
     # aggregate 2.1.0 on "agg B 10 claims sev gamma 50 cv 0.7 poisson".
     assert m.mean == pytest.approx(500.0, rel=1e-12)
     assert m.cv == pytest.approx(0.38600518131237566, rel=1e-12)
-    assert m.skew == pytest.approx(0.5129464825493272, rel=1e-12)
+    b = dict(distribution="B", params="lambda=10;severity=gamma;mean=50;cv=0.7")
+    assert m.skew == pytest.approx(reference("moments_aggregate.csv", **b, quantity="skew"), rel=1e-12)
     expected = {
         "gamma": {"shape": 6.7114093959731544, "scale": 74.5},
         "lognormal": {"sdlog": 0.3726821686995752},
-        "shifted_gamma": {"shape": 15.202530354045754, "shift": -252.52525252525868},
+        "shifted_gamma": {"shape": 15.202530354045754, "shift": reference("moments_aggregate.csv", **b, quantity="sgamma_loc")},
         "shifted_lognormal": {"sdlog": 0.16816686089041927, "shift": -639.5805099091635},
     }
     for kind, params in expected.items():
@@ -585,9 +597,10 @@ def test_layer_statistics_and_prices_by_view():
     n = Poisson(2.0)
     s = occurrence_layer_statistics(n, sev, 1.0, 500.0, 100.0)
     # aggregate 2.1.0, reins_stats_df (validation/scripts/aggregate_reinsurance.py)
-    assert s.pr_attach == pytest.approx(0.261655626646, rel=1e-10)
+    c = dict(distribution="C", params="lambda=2;severity=lognormal;mean=100;cv=2;cap=1000;occ=1:500:100")
+    assert s.pr_attach == pytest.approx(reference("reinsurance_aggregate.csv", **c, quantity="layer.1:pr_attach"), rel=1e-10)
     assert s.count.mean == pytest.approx(2.0 * s.pr_attach, rel=1e-14)
-    assert s.loss_on_line == pytest.approx(0.151169062665, rel=1e-9)
+    assert s.loss_on_line == pytest.approx(reference("reinsurance_aggregate.csv", **c, quantity="layer.1:lol"), rel=1e-9)
     assert s.aggregate.mean == pytest.approx(s.count.mean * s.severity.mean, rel=1e-12)
     half = occurrence_layer_statistics(n, sev, 0.5, 500.0, 100.0)
     assert half.aggregate.skew == pytest.approx(s.aggregate.skew, rel=1e-12)
@@ -596,7 +609,7 @@ def test_layer_statistics_and_prices_by_view():
 
     grids = Tower([Layer("occ", 500.0, 100.0)]).on_grid(n, sev, 1 << 14)
     p = grids.price(Distortion.proportional_hazard(0.7))
-    assert p.gross.premium == pytest.approx(297.443189953534, rel=2e-8)
+    assert p.gross.premium == pytest.approx(reference("reinsurance_aggregate.csv", **c, quantity="price:gross:P"), rel=2e-8)
     assert p.ceded[0].loss == pytest.approx(s.aggregate.mean, rel=1e-9)
     assert p.net.margin == pytest.approx(p.net.premium - p.net.loss)
     # Distortion prices are subadditive.
@@ -612,7 +625,8 @@ def test_eventual_ruin():
     sev = Grid(1.0, [0.0, 0.5, 0.3, 0.2] + [0.0] * 1020)
     ruin = eventual_ruin(sev, rho=0.1)
     assert ruin.u[:3] == [0.0, 1.0, 2.0]
-    assert ruin.psi_at(10.0) == pytest.approx(0.15362022867039649, abs=1e-12)
+    psi10 = reference("ruin_aggregate.csv", distribution="D", params="rho=0.1", quantity="psi", arg="10.0")
+    assert ruin.psi_at(10.0) == pytest.approx(psi10, abs=1e-12)
     assert ruin.severity_mean == pytest.approx(1.7)
     assert ruin.capital(0.01) is not None
     assert ruin.lundberg_exponent > 0
@@ -719,7 +733,9 @@ def test_layer_loss_picks():
     picked = layer_loss_picks(sev, [100, 500, 1000], [480, 420, 60], claims=10)
     assert not picked.straight_bottom
     # aggregate 2.1.0's Aggregate.picks at loss 200 (picks_aggregate.csv).
-    assert picked.severity.probs[200] == pytest.approx(0.0008386073686922624, abs=1e-12)
+    assert picked.severity.probs[200] == pytest.approx(
+        reference("picks_aggregate.csv", distribution="scaled", params="picks=480:420:60", quantity="p", arg=200),
+        abs=1e-12)
     layers = picked.to_dict()
     assert layers["top"] == [100.0, 500.0, 1000.0]
     assert layers["target"] == pytest.approx([48.0, 42.0, 6.0])
@@ -748,14 +764,15 @@ def test_stage_cession_and_aggregate_cover_statistics():
     occ = Tower([Layer("a", 100.0, 100.0), Layer("b", 200.0, 200.0)]).on_grid(n, sev, 1 << 14)
     total = occ.stage_ceded[0]
     # aggregate 2.1.0's reins_stats_df and reins_price_df.
-    assert c.aggregate.mean == pytest.approx(67.33279562141576, rel=1e-9)
+    t = dict(distribution="T", params="lambda=5;severity=gamma;mean=50;cv=1.5;cap=1000;occ=1:100:100+1:200:200;agg=300:200")
+    assert c.aggregate.mean == pytest.approx(reference("reinsurance_aggregate.csv", **t, quantity="Ceded:agg_mean"), rel=1e-9)
     price = occ.price(Distortion.proportional_hazard(0.7))
-    assert price.stages[0].premium == pytest.approx(111.0007062267948, rel=2e-8)
+    assert price.stages[0].premium == pytest.approx(reference("reinsurance_aggregate.csv", **t, quantity="price:ceded_occ:P"), rel=2e-8)
     assert price.stages[0].loss == pytest.approx(sum(v.loss for v in price.ceded), rel=1e-10)
     assert len(occ.stage_ceded) == 1
     s = aggregate_layer_statistics(occ.net, 1.0, 300.0, 200.0)
-    assert s.pr_attach == pytest.approx(0.3912338371214888, abs=1e-12)
-    assert s.aggregate.mean == pytest.approx(38.7761195844111, rel=1e-9)
+    assert s.pr_attach == pytest.approx(reference("reinsurance_aggregate.csv", **t, quantity="agglayer:pr_attach"), abs=1e-12)
+    assert s.aggregate.mean == pytest.approx(reference("reinsurance_aggregate.csv", **t, quantity="agglayer:agg_mean"), rel=1e-9)
     assert s.loss_on_line == pytest.approx(s.aggregate.mean / 300.0)
 
 
@@ -858,7 +875,8 @@ def test_ledger():
     s = pnl.sheet()
     i = s["row"].index("margin")
     assert s["EX"][i] == pytest.approx(6.3, abs=1e-12)
-    assert s["SD"][i] == pytest.approx(2.913760457, abs=1e-9)
+    assert s["SD"][i] == pytest.approx(
+        reference("pnl_ledger_aggregate.csv", case="ex2", quantity="sheet", row="All|Margin|Net", col="SD"), abs=1e-9)
     assert [s[k][i] for k in ("k01", "k50", "k99")] == pytest.approx([1.9, 7.4, 8.9], abs=1e-12)
     j = s["row"].index("Premium")
     assert s["k50"][j] == pytest.approx(27.0, abs=1e-12) and s["k75"][j] == pytest.approx(12.0)
@@ -902,9 +920,11 @@ def test_ledger_ratios_and_stack():
     r = Ledger((x, p), [gross, xl], name="Ex2", result_name="margin").ratios()
     assert r["step"] == ["Gross", "XL", "All"]
     assert [r[k][0] for k in ("P", "L", "E", "M")] == pytest.approx([19.0, 12.0, 0.6, 6.4])
-    assert r["E_LR"][0] == pytest.approx(0.46064814814814825, abs=1e-12)
+    assert r["E_LR"][0] == pytest.approx(
+        reference("pnl_ratios_aggregate.csv", case="ex2", quantity="ratios", row="Gross", col="E_LR"), abs=1e-12)
     assert r["E_ER"][2] == pytest.approx(-0.006449275362318844, abs=1e-12)
-    assert r["M_share"][2] == pytest.approx(0.984375, abs=1e-12)
+    assert r["M_share"][2] == pytest.approx(
+        reference("pnl_ratios_aggregate.csv", case="ex2", quantity="ratios", row="All", col="M_share"), abs=1e-12)
 
     b = Ledger((x, p), [Group("Ex2b", "sell", [Leg("consideration", 20.0)],
                               [Leg("Loss", lambda v: v * 1.03, step=4.0)])])
@@ -1024,9 +1044,9 @@ def test_book_variable_terms_and_program():
     with pytest.raises(ValueError):
         retro.ledger(gross, pc)
     # pnl_program's ladder, against aggregate's on the design note's book.
-    p = pnl_program(405.97794085441933, 0.9, 0.25, [
-        dict(ceded_loss=86.78504710067914, share=1.0, combined_ratio=0.6),
-        dict(ceded_loss=8.144345556686755, share=1.0, combined_ratio=0.5)])
+    p = pnl_program(program_input("note", "net_loss"), 0.9, 0.25, [
+        dict(ceded_loss=program_input("note|0", "ceded_loss"), share=1.0, combined_ratio=0.6),
+        dict(ceded_loss=program_input("note|1", "ceded_loss"), share=1.0, combined_ratio=0.5)])
     assert p["premium"] == 817.0 and p["deposits"] == [145.0, 16.29]
     kept = pnl_program(406.0, 0.9, 0.25, [dict(share=0.5, stated=50.0)])
     assert kept["deposits"] == [100.0] and kept["ceded_premium"] == 50.0
@@ -1048,10 +1068,13 @@ def test_book_reinstatements():
     book = Book("R", 20.0, [Expense("premium", 0.1)])
     s = book.occurrence_ledger(joint, occ, face="walk").sheet()
     prem = s["row"].index("occ 2 xs 2 premium")
-    assert s["EX"][prem] == pytest.approx(-2.65936, abs=1e-5)
+    assert s["EX"][prem] == pytest.approx(reference(
+        "pnl_reinstatements_aggregate.csv", case="r1", quantity="sheet",
+        row="occ 2 xs 2|Consideration|occ 2 xs 2 premium", col="EX"), abs=1e-5)
     assert s["SD"][prem] == pytest.approx(0.940194, abs=1e-6)
     net = book.occurrence_ledger(joint, occ)
-    assert net.result.mean() == pytest.approx(12.323104, abs=1e-6)
+    assert net.result.mean() == pytest.approx(reference(
+        "pnl_reinstatements_aggregate.csv", case="r1", quantity="sheet", row="All|Margin|Net", col="EX"), abs=1e-6)
     with pytest.raises(ValueError):
         book.ledger(([1.0, 5.0], [0.5, 0.5]), occ, "walk")
 
@@ -1060,10 +1083,13 @@ def test_pnl_program_rates_and_stated_premium():
     from prospicio.aggregate import pnl_program, pnl_program_stated
 
     # aggregate 2.1.0's premium_style='rate' on the design note's engine.
-    p = pnl_program(405.97794085441933, 0.9, 0.25, [
-        dict(ceded_loss=86.78504710067914, share=1.0, combined_ratio=0.6),
-        dict(ceded_loss=8.144345556686755, share=1.0, combined_ratio=0.5, aggregate=True)])
-    assert p["rates"] == [0.17747858, 0.024241071]
+    p = pnl_program(program_input("note", "net_loss"), 0.9, 0.25, [
+        dict(ceded_loss=program_input("note|0", "ceded_loss"), share=1.0, combined_ratio=0.6),
+        dict(ceded_loss=program_input("note|1", "ceded_loss"), share=1.0, combined_ratio=0.5, aggregate=True)])
+    assert p["rates"] == [
+        reference("pnl_variable_aggregate.csv", case="program", quantity="rate", row=f"note|{i}", col="rate")
+        for i in (0, 1)
+    ]
     # An engine stating 1000 of premium, with and without cover.
     s = pnl_program_stated(1000.0, 0.25, [
         dict(ceded_loss=112.82015639464626, share=1.0, combined_ratio=0.6),
@@ -1104,7 +1130,9 @@ def test_stitched_occurrence_peel():
     s = peel.sheet()
     assert "k01" not in s
     net = s["row"].index("net through occ 1 xs 1")
-    assert s["SD"][net] == pytest.approx(1.897366596, abs=1e-8)
+    assert s["SD"][net] == pytest.approx(
+        reference("pnl_stitched_aggregate.csv", case="td", quantity="sheet", row="occ 1 xs 1|Margin|Net", col="SD"),
+        abs=1e-8)
     assert s["EX"][net] == pytest.approx(13.8, abs=1e-9)
     with pytest.raises(ValueError):
         peel.row("total impact")
@@ -2005,8 +2033,10 @@ def test_unit_event_loss_tables_match_aggregate():
     assert t.units == ["A", "B"] and t.shared_events == 2 and t.events == ["1", "2", "4", "3"]
     rolled = t.rolled()
     assert rolled.rate == pytest.approx(0.082, rel=1e-12)
-    assert rolled.severity_moments()[0] == pytest.approx(331.7073170731707, rel=1e-10)
-    assert t.unit("A").severity_moments()[1] == pytest.approx(234193.54838709682, rel=1e-10)
+    assert rolled.severity_moments()[0] == pytest.approx(
+        reference("elt_units_aggregate.csv", distribution="elt", params="table=two;unit=all", quantity="ex1"), rel=1e-10)
+    assert t.unit("A").severity_moments()[1] == pytest.approx(
+        reference("elt_units_aggregate.csv", distribution="elt", params="table=two;unit=A", quantity="ex2"), rel=1e-10)
     with pytest.raises(ValueError, match="rate"):
         UnitEventLossTables(["1", "1"], ["A", "B"], [0.01, 0.02], [1.0, 1.0], [0.0, 0.0],
                             [0.0, 0.0], [2.0, 2.0])
@@ -2035,17 +2065,20 @@ def test_program_occurrence_pml_matches_aggregate():
     n = Poisson(3.0)
     tower = Tower([Layer("A", 200.0, 100.0, share=0.5), Layer("B", 500.0, 400.0)])
     net = occurrence_pml(n, sev, 0.01, tower=tower, view="net")
-    assert net.loss == pytest.approx(794.3949760012904, rel=1e-9)
-    assert net.severity_survival == pytest.approx(0.003350111951167142, rel=1e-9)
+    po = dict(distribution="program_oep", params="severity=lognormal;program=two;view=net;lambda=3")
+    pc = dict(po, params="severity=lognormal;program=two;view=ceded;lambda=3")
+    assert net.loss == pytest.approx(reference("program_oep_aggregate.csv", **po, quantity="loss", arg=0.01), rel=1e-9)
+    assert net.severity_survival == pytest.approx(reference("program_oep_aggregate.csv", **po, quantity="S_sev", arg=0.01), rel=1e-9)
     # A flat stretch of the net: 300 from a gross loss of 400 to 900.
     flat = occurrence_pml(n, sev, 0.05, tower=tower, view="net")
     assert flat.loss == pytest.approx(300.0, rel=1e-12)
-    assert flat.severity_survival == pytest.approx(0.008984021041399205, rel=1e-9)
+    assert flat.severity_survival == pytest.approx(reference("program_oep_aggregate.csv", **po, quantity="S_sev", arg=0.05), rel=1e-9)
     ceded = occurrence_pml(n, sev, 0.05, tower=tower, view="ceded")
-    assert ceded.loss == pytest.approx(356.6271501319309, rel=1e-9)
+    ceded5 = reference("program_oep_aggregate.csv", **pc, quantity="loss", arg=0.05)
+    assert ceded.loss == pytest.approx(ceded5, rel=1e-9)
     # Above the program's top the ceded loss is 600 and nothing exceeds it.
     assert occurrence_pml(n, sev, 0.01, tower=tower).loss == pytest.approx(600.0)
-    assert occurrence_exceedance(n, sev, 356.6271501319309, tower=tower) == pytest.approx(0.05, rel=1e-9)
+    assert occurrence_exceedance(n, sev, ceded5, tower=tower) == pytest.approx(0.05, rel=1e-9)
     gross = occurrence_pml(n, sev, 0.01)
     assert occurrence_pml(n, sev, 0.01, tower=tower, view="gross").loss == gross.loss
     with pytest.raises(ValueError, match="view"):
@@ -2062,7 +2095,9 @@ def test_disappearing_deductible_matches_aggregate():
     m = d.occurrence_moments(x)
     s = 1.0 - x.cdf(50.0)
     # aggregate's analytic moments of a claim that exceeds 50.
-    for got, want in zip(m, [112.60796090891441, 19738.084272995242, 4255116.441430608]):
+    dd = dict(distribution="deductible", params="form=disappearing;d1=50.0;d2=100.0;y=300.0;severity=lognormal")
+    for got, k in zip(m, ("ex1", "ex2", "ex3")):
+        want = reference("disappearing_aggregate.csv", **dd, quantity=k)
         assert got / s == pytest.approx(want, rel=1e-9)
     f = Layer("F", 30.0, 50.0).with_franchise().occurrence_moments(x)
     assert f[0] / s == pytest.approx(30.0, rel=1e-12)

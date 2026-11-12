@@ -1,3 +1,13 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "chainladder==0.10.1",
+#     "numpy",
+#     "pandas",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-24T00:00:00Z"
+# ///
 """Regenerate validation/reference/reserving_fit_apply_python.csv.
 
 A development fitted on one book and applied to another, or to a latest

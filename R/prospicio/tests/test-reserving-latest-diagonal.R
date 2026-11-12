@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # The latest diagonal on its own (a latest valuation) projected with a
 # pattern from elsewhere (docs/design/reserving-v02.md, decisions 16 to 19,
@@ -9,25 +10,7 @@ suppressMessages(library(prospicio))
 # reserving_diagonal_segments.rs; these tests reproduce their numbers
 # through the binding, as the Python tests do.
 
-near <- function(a, b, rel = 1e-12) {
-  a <- unname(a)
-  b <- unname(b)
-  if (length(a) != length(b) || !all(a == b | abs(a - b) <= rel * abs(b))) {
-    stop(sprintf("got %s, want %s (rel %g)", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " "), rel), call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop(sprintf("expected an error mentioning %s", shQuote(pattern)), call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 root <- if (dir.exists("validation")) "validation" else file.path("..", "..", "..", "validation")
 read_rows <- function(...) {
@@ -84,19 +67,19 @@ hand <- latest_valuation(data.frame(year = 2019:2024, age = hand_ages, paid = ha
 pattern <- cdf_of(hand_ages, hand_cdf)
 reported <- 1 / hand_cdf
 cl <- chain_ladder(hand, ldf = pattern, ldf_kind = "cdf")
-near(cl@ultimate, hand_latest * hand_cdf)
+near(cl@ultimate, hand_latest * hand_cdf, 1e-12)
 near(cl@ultimate[6], 257.142857142857, 1e-12)
 bf <- bornhuetter_ferguson(hand, apriori = 0.7, ldf = pattern, ldf_kind = "cdf")
-near(bf@ultimate, hand_latest + 0.7 * 200 * (1 - reported))
+near(bf@ultimate, hand_latest + 0.7 * 200 * (1 - reported), 1e-12)
 near(bf@ultimate[6], 208.333333333333, 1e-12)
 bk <- benktander(hand, apriori = 0.7, n_iters = 2, ldf = pattern, ldf_kind = "cdf")
-near(bk@ultimate, hand_latest + (hand_latest + 0.7 * 200 * (1 - reported)) * (1 - reported))
+near(bk@ultimate, hand_latest + (hand_latest + 0.7 * 200 * (1 - reported)) * (1 - reported), 1e-12)
 cc <- cape_cod(hand, ldf = pattern, ldf_kind = "cdf")
 cc_elr <- sum(hand_latest) / sum(200 * reported)
-near(cc@ultimate, hand_latest + cc_elr * 200 * (1 - reported))
-near(chain_ladder(hand, ldf = 1 / pattern, ldf_kind = "percent_developed")@ultimate, cl@ultimate)
+near(cc@ultimate, hand_latest + cc_elr * 200 * (1 - reported), 1e-12)
+near(chain_ladder(hand, ldf = 1 / pattern, ldf_kind = "percent_developed")@ultimate, cl@ultimate, 1e-12)
 near(expected_loss(hand, apriori = 0.7, ldf = 1 / pattern,
-                   ldf_kind = "percent_developed")@ultimate, rep(140, 6))
+                   ldf_kind = "percent_developed")@ultimate, rep(140, 6), 1e-12)
 
 # 3. Half-year origins with the annual pattern.
 half <- latest_valuation(data.frame(origin = as.Date(c("2023-01-01", "2023-07-01", "2024-01-01")),
@@ -107,12 +90,12 @@ stopifnot(identical(half@ages, c(24L, 18L, 12L)), half@origin_grain == "S")
 cdf18 <- sqrt(2 * 1.25)
 cl <- chain_ladder(half, ldf = annual, ldf_kind = "cdf")
 stopifnot(identical(cl@development, c(12L, 18L, 24L, 30L, 36L)))
-near(cl@ultimate, c(625, 300 * cdf18, 200))
+near(cl@ultimate, c(625, 300 * cdf18, 200), 1e-12)
 near(bornhuetter_ferguson(half, apriori = 0.5, ldf = annual, ldf_kind = "cdf")@ultimate,
-     c(500 + 400 * (1 - 1 / 1.25), 300 + 400 * (1 - 1 / cdf18), 100 + 400 * 0.5))
+     c(500 + 400 * (1 - 1 / 1.25), 300 + 400 * (1 - 1 / cdf18), 100 + 400 * 0.5), 1e-12)
 ldf <- c("12" = 1.6, "24" = 1.25)
-near(chain_ladder(half, ldf = ldf, ldf_kind = "ldf")@ultimate, cl@ultimate)
-near(chain_ladder(half, ldf = ldf, ldf_kind = "ldf", tail = 1.05)@ultimate, cl@ultimate * 1.05)
+near(chain_ladder(half, ldf = ldf, ldf_kind = "ldf")@ultimate, cl@ultimate, 1e-12)
+near(chain_ladder(half, ldf = ldf, ldf_kind = "ldf", tail = 1.05)@ultimate, cl@ultimate * 1.05, 1e-12)
 
 # 4. Past the pattern's end.
 past <- function(rule) {
@@ -124,7 +107,7 @@ expect_error_like(chain_ladder(past("reject"), ldf = short, ldf_kind = "ldf"),
                   "outside the pattern's ages from 12 to 36 months")
 stopifnot(chain_ladder(past("no_development"), ldf = short, ldf_kind = "ldf")@ultimate[1] == 100)
 near(chain_ladder(past("tail"), ldf = short, ldf_kind = "ldf", tail = 1.05)@ultimate[1:2],
-     c(102.53798721500054, 105))
+     c(102.53798721500054, 105), 1e-12)
 ten <- stats::setNames(rep(1.1, 9), seq(12, 108, by = 12))
 d <- latest_valuation(data.frame(year = 2000:2004, age = c(144, 132, 120, 108, 12), paid = 100),
                       "year", "paid", age = "age", past_pattern_end = "tail")
@@ -186,12 +169,12 @@ near_draws <- function(a, b) {
 bf_on <- function(x, ...) bornhuetter_ferguson(x, apriori = 0.8, ...)
 near(bf_on(four, column = "paid", exposure = "premium", ldf = monthly,
            ldf_kind = "percent_developed", ldf_origin = "M")@ultimate,
-     bf_on(four, column = "paid", exposure = "premium", ldf = direct, ldf_kind = "cdf")@ultimate)
+     bf_on(four, column = "paid", exposure = "premium", ldf = direct, ldf_kind = "cdf")@ultimate, 1e-12)
 young <- latest_valuation(data.frame(year = 2023:2024, age = c(24, 12), paid = c(330, 130),
                                      premium = c(540, 560)), "year", "paid", age = "age",
                           exposure = "premium")
 near(bf_on(young, ldf = monthly, ldf_kind = "percent_developed", ldf_origin = "M")@ultimate,
-     bf_on(young, ldf = direct, ldf_kind = "cdf")@ultimate)
+     bf_on(young, ldf = direct, ldf_kind = "cdf")@ultimate, 1e-12)
 near_draws(draw_matrix(odp_bootstrap(four, "paid", n_sims = 200, seed = 11, ldf = monthly,
                                      ldf_kind = "percent_developed",
                                      ldf_origin = "M")@reserves),
@@ -466,9 +449,9 @@ cdf <- stats::setNames(own@cdf, own@development)
 together <- cape_cod(d, trend = 0.05, ldf = cdf, ldf_kind = "cdf")
 alone <- cape_cod(segment(as_latest_valuation(both, "paid", exposure = "premium"), lob = "b"),
                   trend = 0.05, ldf = cdf, ldf_kind = "cdf")
-near(segment(together, lob = "b")@trended_apriori, alone@trended_apriori * 1.05)
-near(segment(together, lob = "b")@apriori, alone@apriori)
-near(segment(together, lob = "b")@ultimate, alone@ultimate)
+near(segment(together, lob = "b")@trended_apriori, alone@trended_apriori * 1.05, 1e-12)
+near(segment(together, lob = "b")@apriori, alone@apriori, 1e-12)
+near(segment(together, lob = "b")@ultimate, alone@ultimate, 1e-12)
 
 # 10. Constructors.
 d <- as_latest_valuation(keyed)

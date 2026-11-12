@@ -1,31 +1,26 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Reports the values on failure, so a CI log shows what diverged.
-near <- function(a, b, rel = 1e-12) {
-  if (!all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
-    stop(sprintf("got %s, want %s (rel %g)", format(a, digits = 17), format(b, digits = 17), rel),
-         call. = FALSE)
-  }
-}
 
 # Collective model.
 sev <- pareto(1e6, 2)
 m <- collective_model(claim_count(2, 1.5), sev)
-near(layer(m, 4e6, 1e6), 1.6e6)
-near(excess_frequency(m, 2e6), 0.5)
+near(layer(m, 4e6, 1e6), 1.6e6, 1e-12)
+near(excess_frequency(m, 2e6), 0.5, 1e-12)
 near(layer_variance(m, 4e6, 1e6), 2 * (layer_variance(sev, 4e6, 1e6) + layer(sev, 4e6, 1e6)^2) +
-       (3 - 2) * layer(sev, 4e6, 1e6)^2)
+       (3 - 2) * layer(sev, 4e6, 1e6)^2, 1e-12)
 stopifnot(is.infinite(variance(m)))
 stopifnot(collective_simulate(m, 50, seed = 3)@n_sims == 50)
 
 # Layer rating.
 p <- pareto(100, 2)
-near(ilf(p, 1000, 200), lev(p, 1000) / lev(p, 200))
-near(loss_elimination_ratio(p, 150), lev(p, 150) / mean(p))
+near(ilf(p, 1000, 200), lev(p, 1000) / lev(p, 200), 1e-12)
+near(loss_elimination_ratio(p, 150), lev(p, 150) / mean(p), 1e-12)
 r <- pareto_extrapolation(c(1000, 1000), c(3000, 2000), 1.7)
 near(alpha_between_layers(c(1000, 1000, 1), c(3000, 2000, r)), 1.7, 1e-11)
 near(alpha_between_frequency_and_layer(1e6, 2, 1e6, 1e6, 1e6), 2, 1e-11)
-near(alpha_between_frequencies(1e6, 4, 2e6, 1), 2)
+near(alpha_between_frequencies(1e6, 4, 2e6, 1), 2, 1e-12)
 stopifnot(inherits(try(alpha_between_layers(c(1000, 1000, 1), c(1000, 2000, 1)), silent = TRUE),
                    "try-error"))
 
@@ -42,7 +37,7 @@ near(layer(match_tower(a, e, rule = "midpoint"), 500, 1500), 90, 1e-10)
 
 # PML curve and references.
 pml <- fit_pml_curve(c(5, 20, 50), c(2e6, 5e6, 9e6), tail_alpha = 1.8)
-near(excess_frequency(pml, 5e6), 1 / 20)
+near(excess_frequency(pml, 5e6), 1 / 20, 1e-12)
 fr <- fit_references(
   layers = data.frame(limit = c(1000, 1500), attachment = c(1000, 1500), expected_loss = c(120, 110)),
   frequencies = data.frame(threshold = 2500, frequency = 0.05)
@@ -164,10 +159,13 @@ insco <- capital_portfolio(cbind(
 ))
 stopifnot(identical(insco@totals, c(22, 28, 36, 40, 55, 65, 100)))
 np <- natural_price(insco, distortion("ccoc", 0.15))
-stopifnot(abs(np$premium[4] - 53.565217391304344) < 1e-12, max(abs(np$assets[1:3] - c(16, 20, 64))) < 1e-12)
+stopifnot(abs(np$premium[4] - reference("distortion_aggregate.csv", distribution = "insco_price",
+                                        params = "param=0.15", quantity = "ccoc")) < 1e-12, max(abs(np$assets[1:3] - c(16, 20, 64))) < 1e-12)
 ph <- calibrate_portfolio(insco, "proportional_hazard", return_on_capital = 0.15)
 lifted <- natural_price(insco, ph, p = 0.85, allocation = "lifted")
-stopifnot(max(abs(lifted$capital[1:3] - c(1.947189207380, -0.070344428313, 16.219694433834))) < 1e-6)
+lifted_q <- vapply(1:3, function(i) reference("natural_aggregate.csv", distribution = "price",
+  params = "case=insco;family=ph;param=0.7204792831878889;assets=65;allocation=lifted", quantity = sprintf("X%d.Q", i)), 0)
+stopifnot(max(abs(lifted$capital[1:3] - lifted_q)) < 1e-6)
 stopifnot(abs(sum(lifted$premium[1:3]) - lifted$premium[4]) < 1e-10)
 stopifnot(abs(sum(bodoff_allocation(insco, assets = 100)) - 100) < 1e-10)
 # The book's conventions: Pricing Insurance Risk's Example 235 with the outcome
@@ -175,8 +173,8 @@ stopifnot(abs(sum(bodoff_allocation(insco, assets = 100)) - 100) < 1e-10)
 # bottom layer (Monograph 15's equation 8.5 as printed).
 e235 <- capital_portfolio(cbind(X1 = c(1, 2, 3, 4, 5, 6, 7, 8, 12, 10),
                                 X2 = c(1, 2, 3, 4, 5, 9, 8, 12, 13, 20)))
-near(natural_price(e235, distortion("tvar", 0.8), assets = 10, atom = "lumped")$premium[1:2], c(4.3, 5.7))
-near(natural_price(e235, distortion("tvar", 0.8), assets = 10)$premium[1], 4.16)
+near(natural_price(e235, distortion("tvar", 0.8), assets = 10, atom = "lumped")$premium[1:2], c(4.3, 5.7), 1e-12)
+near(natural_price(e235, distortion("tvar", 0.8), assets = 10)$premium[1], 4.16, 1e-12)
 # The natural allocation set (Exercise 260) and Bodoff's layers priced by the
 # CCoC (Table 15.24), as in Python.
 rows <- as.matrix(expand.grid(X2 = c(0, 1, 90), X1 = c(0, 9, 10))[, c("X1", "X2")])
@@ -192,14 +190,14 @@ stopifnot(max(abs(plc$premium[1:2] - c(24.8729, 5.8635))) < 5e-5,
 ccoc <- calibrate_portfolio(insco, "ccoc", return_on_capital = 0.15)
 none <- natural_price(insco, ccoc, assets = 100, allocation = "lifted", bottom_layer = "none")
 stopifnot(max(abs(none$capital[1:3] - c(5.419, 6.082, 34.934))) < 5e-4)
-near(none$premium, natural_price(insco, ccoc, assets = 100, allocation = "lifted")$premium)
+near(none$premium, natural_price(insco, ccoc, assets = 100, allocation = "lifted")$premium, 1e-12)
 # Kappa and assets at p, against Python's Portfolio.kappa(unit) and assets(p).
-near(sapply(c(0.8, 0.85, 0.9, 1), function(p) portfolio_assets(insco, p)), c(55, 65, 65, 100))
-near(portfolio_kappa(insco, "A"), c(15, 15, 5, 10, 26, 17, 16))
-near(portfolio_kappa(insco, "B"), c(7, 13, 20, 24, 19, 8, 20))
-near(portfolio_kappa(insco, "C"), c(0, 0, 11, 6, 10, 40, 64))
-near(portfolio_kappa(insco, 2), portfolio_kappa(insco, "B"))
-near(portfolio_kappa(insco, "A") + portfolio_kappa(insco, "B") + portfolio_kappa(insco, "C"), insco@totals)
+near(sapply(c(0.8, 0.85, 0.9, 1), function(p) portfolio_assets(insco, p)), c(55, 65, 65, 100), 1e-12)
+near(portfolio_kappa(insco, "A"), c(15, 15, 5, 10, 26, 17, 16), 1e-12)
+near(portfolio_kappa(insco, "B"), c(7, 13, 20, 24, 19, 8, 20), 1e-12)
+near(portfolio_kappa(insco, "C"), c(0, 0, 11, 6, 10, 40, 64), 1e-12)
+near(portfolio_kappa(insco, 2), portfolio_kappa(insco, "B"), 1e-12)
+near(portfolio_kappa(insco, "A") + portfolio_kappa(insco, "B") + portfolio_kappa(insco, "C"), insco@totals, 1e-12)
 stopifnot(inherits(try(portfolio_kappa(insco, "D"), silent = TRUE), "try-error"))
 stopifnot(inherits(try(portfolio_kappa(insco, 4), silent = TRUE), "try-error"))
 stopifnot(inherits(try(portfolio_assets(insco, 1.5), silent = TRUE), "try-error"))
@@ -226,10 +224,12 @@ stopifnot(inherits(try(priority_kappa(disc, "X3", assets = 90), silent = TRUE), 
 # Pricing bounds and classical principles on InsCo, against aggregate 2.1.0.
 pb <- premium_bounds(insco, 53.565217391304344, assets = 100)
 stopifnot(max(abs(pb$lower - c(13.09782608695652, 17.465726050623715, 19.25473801560758))) < 1e-9)
-stopifnot(max(abs(pb$upper - c(15.032744226390545, 20.411684782608695, 22.098038028339595))) < 1e-9)
+stopifnot(max(abs(pb$upper - c(15.032744226390545, 20.411684782608695, reference("natural_aggregate.csv",
+  distribution = "bounds", params = "case=insco;assets=100;premium=53.565217391304344", quantity = "X3.upper")))) < 1e-9)
 stopifnot(S7::S7_inherits(pb$lower_distortion[[1]], distortion))
 xs <- sampled(c(22, 28, 36, 40, 40, 40, 40, 55, 65, 100))
-stopifnot(abs(calibrate_classical(xs, "esscher", 53.565217391304344) - 0.012851355964986997) < 1e-9)
+stopifnot(abs(calibrate_classical(xs, "esscher", 53.565217391304344) - reference("natural_aggregate.csv", distribution = "classical",
+  params = "case=insco;assets=100;premium=53.565217391304344", quantity = "Esscher")) < 1e-9)
 stopifnot(abs(classical_premium(sampled(c(0, 10)), "standard_deviation", 0.2) - 6) < 1e-15)
 # Pricing bounds for another risk, against aggregate 2.1.0's PricingBounds.
 xb <- sampled(c(22, 28, 36, 40, 40, 40, 40, 55, 65, 100))
@@ -240,18 +240,22 @@ stopifnot(S7::S7_inherits(pr$lower_distortion[[1]], distortion))
 # At P = max X (capped at 65) TVaR_1 gives max Y; aggregate 1.0.1 said 52, 2.1.0 says 64.
 stopifnot(abs(pricing_bounds(xb, list(X3 = yb), 65, assets = 65)$upper - 64) < 1e-12)
 env <- distortion_envelope(xb, 53.565217391304344, c(0.1, 0.5))
-stopifnot(max(abs(env$lower - c(0.1372282608695652, 0.5652173913043478))) < 1e-12)
+stopifnot(max(abs(env$lower - vapply(c("0.1", "0.5"), function(s) reference("bounds_aggregate.csv",
+  distribution = "envelope", params = "premium=53.565217391304344", quantity = "lower", arg = s), 0))) < 1e-12)
 stopifnot(inherits(try(pricing_bounds(xb, list(yb), 50), silent = TRUE), "try-error"))
 
 # tvar_threshold on PIR's Discrete case, aggregate 2.1.0.
-stopifnot(abs(tvar_threshold(disc, 0.9) - 0.859375) < 1e-11)
+stopifnot(abs(tvar_threshold(disc, 0.9) - reference("natural_aggregate.csv", distribution = "tvar_threshold",
+                                                    params = "case=discrete", quantity = "t", arg = "0.9")) < 1e-11)
 # Stand-alone prices and the comonotonic allocation, aggregate 2.1.0.
 sa <- price_stand_alone(disc, distortion("proportional_hazard", 0.7), p = 0.9)
 stopifnot(identical(sa$unit, c("X1", "X2", "total", "sum")),
-          all(abs(sa$premium[c(1, 3, 4)] - c(5.682435936634864, 39.27576430346102,
-                                              40.02270174816368)) < 1e-10))
+          all(abs(sa$premium[c(1, 3, 4)] - vapply(c("X1.P", "total.P", "sum.P"), function(q)
+            reference("natural_aggregate.csv", distribution = "stand_alone",
+                      params = "case=discrete;distortion=ph;shape=0.7;p=0.9", quantity = q), 0)) < 1e-10))
 co <- comonotonic_allocation(disc)
-stopifnot(abs(co$X1[co$total == 8] - 6.607142857142858) < 1e-10,
+stopifnot(abs(co$X1[co$total == 8] -
+  reference("natural_aggregate.csv", distribution = "comonotonic", params = "case=discrete", quantity = "X1", arg = "8.0")) < 1e-10,
           max(abs(co$X1 + co$X2 - co$total)) < 1e-12)
 
 # A loss distribution on a grid prices as its equally likely draws (#204).
@@ -629,13 +633,13 @@ stopifnot(identical(book_names(book), c("a", "b")), book_n_sims(book) == 4,
           inherits(try(book_names(list()), silent = TRUE), "try-error"))
 amounts <- book_amounts(book)
 k <- amounts@keys
-near(draw_matrix(amounts)[, k$item == "loss" & k$deal == "total"], c(190, 410, 110, 370))
+near(draw_matrix(amounts)[, k$item == "loss" & k$deal == "total"], c(190, 410, 110, 370), 1e-12)
 s <- book_summary(book)
-near(s$ratio[s$deal == "total" & s$item == "loss"], 270 / 400)
-near(s$mean[s$deal == "a" & s$item == "nmbf"], 100 - 75 - 2.5)
+near(s$ratio[s$deal == "total" & s$item == "loss"], 270 / 400, 1e-12)
+near(s$mean[s$deal == "a" & s$item == "nmbf"], 100 - 75 - 2.5, 1e-12)
 d <- book_distribution(book, "loss", 90, tvar_levels = 50)
-near(rowSums(d$contribution), d$total[rownames(d$contribution)])
-near(d$total[["TVaR 50"]], (410 + 370) / 2)
+near(rowSums(d$contribution), d$total[rownames(d$contribution)], 1e-12)
+near(d$total[["TVaR 50"]], (410 + 370) / 2, 1e-12)
 stopifnot(identical(colnames(book_distribution(book, "margin", 10, tail = "lower")$marginal),
                     c("a", "b")))
 stopifnot(inherits(try(deal_book(list(a, a)), silent = TRUE), "try-error"),
@@ -645,32 +649,32 @@ stopifnot(inherits(try(deal_book(list(a, a)), silent = TRUE), "try-error"),
 # #588: the marginal price of each deal written last.
 tv <- distortion("tvar", 0.5)
 m <- book_marginal_price(book, tv, cost_of_capital = 0.1)
-near(m$assets, c(390 - 270, 390 - 120))
-near(m$premium, (m$expected_loss + 0.1 * m$assets) / 1.1)
+near(m$assets, c(390 - 270, 390 - 120), 1e-12)
+near(m$premium, (m$expected_loss + 0.1 * m$assets) / 1.1, 1e-12)
 pp <- price_portfolio(select_components(select_components(amounts, "item", "loss"), "deal",
                                         c("a", "b")), tv, cost_of_capital = 0.1)
 stopifnot(all(m$premium <= pp$by_component$premium + 1e-9))
 one <- book_marginal_price(book_select(book, "b"), tv, distortion = distortion("tvar", 0.25))
 near(one$premium, risk_loaded_price(sampled(c(150, 330, 90, 210)), tv,
-                                    distortion = distortion("tvar", 0.25))$premium)
+                                    distortion = distortion("tvar", 0.25))$premium, 1e-12)
 stopifnot(identical(book_marginal_price(book, tv, cost_of_capital = 0.1, deals = "b")$deal, "b"),
           inherits(try(book_marginal_price(book, tv, cost_of_capital = 0.1, deals = "z"),
                        silent = TRUE), "try-error"))
 # #589: price adequacy of a book's deals.
 ad <- book_adequacy(book, tv, cost_of_capital = 0.1)
 stopifnot(identical(ad$deal, c("a", "b", "total")))
-near(ad$target_return, rep(0.1, 3))
-near(ad$marginal_assets[1:2], m$assets)
-near(ad$technical_premium[1:2], pp$by_component$premium)
-near(ad$target_premium, ad$technical_premium)
-near(ad$return_on_allocated, ad$margin / ad$allocated_capital)
+near(ad$target_return, rep(0.1, 3), 1e-12)
+near(ad$marginal_assets[1:2], m$assets, 1e-12)
+near(ad$technical_premium[1:2], pp$by_component$premium, 1e-12)
+near(ad$target_premium, ad$technical_premium, 1e-12)
+near(ad$return_on_allocated, ad$margin / ad$allocated_capital, 1e-12)
 o1 <- book_adequacy(book_select(book, "b"), tv, cost_of_capital = 0.1)
-near(o1$allocated_assets[1], o1$marginal_assets[1])
+near(o1$allocated_assets[1], o1$marginal_assets[1], 1e-12)
 stopifnot(inherits(try(book_adequacy(book, tv), silent = TRUE), "try-error"))
 # #569: an efficient frontier of retentions and limits.
 fr <- reinsurance_frontier(grid_distribution(1, rep(0.25, 4)), c(1, 2), c(1, Inf),
                            loading = 0.5, risk = "var", level = 0.9)
-near(c(fr$expected_ceded[2], fr$premium[2], fr$net_risk[2]), c(0.75, 1.125, 1))
+near(c(fr$expected_ceded[2], fr$premium[2], fr$net_risk[2]), c(0.75, 1.125, 1), 1e-12)
 h <- 0.01
 pe <- exp(-(0:2999) * h) * (1 - exp(-h))
 pe[3000] <- pe[3000] + 1 - sum(pe)
@@ -679,13 +683,13 @@ fe <- reinsurance_frontier(grid_distribution(h, pe), rs, Inf, loading = 0.25, ri
 stopifnot(abs(rs[which.min(fe$net_risk + fe$premium)] - log(1.25)) <= 2 * h)
 stopifnot(inherits(try(reinsurance_frontier(c(1, 2, 3), 1, 1), silent = TRUE), "try-error"))
 fa <- reinsurance_frontier(c(0, 1, 2, 3), c(1, 2), c(1, Inf), loading = 0.5, risk = "var", level = 0.9)
-near(fa$premium, fr$premium)
+near(fa$premium, fr$premium, 1e-12)
 # A run from a tower takes each year's reinstatement premium (#595).
 tw <- reinsurance_tower(list(xol_layer("cat", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5))))
 res <- apply_tower(tw, event_set_from_long(c(1, 2, 3, 3, 4, 4, 4), c(5, 15, 22, 12, 40, 40, 40), 4))
 run <- deal_run_from_tower("cat", tw, res, "cat")
-near(run$ptr$premium(), c(2, 3, 4.2, 5))
-near(run$ptr$premium() - 2, draw_matrix(res)[, 4])
+near(run$ptr$premium(), c(2, 3, 4.2, 5), 1e-12)
+near(run$ptr$premium() - 2, draw_matrix(res)[, 4], 1e-12)
 deposit <- deal_run_from_tower("cat", tw, res, "cat", reinstatement_premium = FALSE)
 stopifnot(identical(deposit$ptr$premium(), rep(2, 4)),
           identical(deposit$ptr$loss(), run$ptr$loss()))
@@ -698,12 +702,12 @@ one <- book_cashflows(deal_book(list(a)))
 stopifnot(all(one$irr$found))
 near(one$irr$rate, rep(1.01^6 - 1, 4), rel = 1e-9)
 out <- book_cashflows(deal_book(list(a, b)), 0.05)
-near(out$flows[1, ], c(-10, -20, 10.1, 20.2))
-near(out$moic, rep(1 + 0.3 / 30, 4))
-near(out$mean_by_deal[, "b"], c(0, -20, 0, 20.2))
+near(out$flows[1, ], c(-10, -20, 10.1, 20.2), 1e-12)
+near(out$moic, rep(1 + 0.3 / 30, 4), 1e-12)
+near(out$mean_by_deal[, "b"], c(0, -20, 0, 20.2), 1e-12)
 b0 <- deal_run("b", rep(300, 4), c(150, 330, 90, 210), flows = 2 * flows_a, funded = rep(0, 4),
                opening = rep(20, 4))
-near(book_cashflows(book_shift(deal_book(list(a, b0)), "b", 1), 0.05)$npv, out$npv)
+near(book_cashflows(book_shift(deal_book(list(a, b0)), "b", 1), 0.05)$npv, out$npv, 1e-12)
 stopifnot(identical(names(out$irr_by_deal), c("a", "b")))
 terms <- cashflow_terms(100, 3, rep(1, 3), thirds, thirds, cashflow_requirement(c(reserve = 1)))
 run <- cashflow_run(terms, c(0.6, 1.5, 0.2, 0.9))
@@ -856,7 +860,7 @@ bond <- cat_bond("industry_index", 50, 150, weights = c(0.10, 0.05), principal =
 cb <- cat_bond_apply(bond, list(list(c(800, 400)), list()))
 stopifnot(identical(cb$annual, c(0.5, 0)), identical(cb$recoveries, c(50, 0)), cb$expected_loss == 0.25)
 pb <- cat_bond("parametric", 0, 30, weights = c(10, 20), payout = list(measure = c(30, 50, 70), share = c(0, 0.5, 1)))
-near(cat_bond_apply(pb, list(list(c(40, 80))))$recoveries, 22.5 / 30)
+near(cat_bond_apply(pb, list(list(c(40, 80))))$recoveries, 22.5 / 30, 1e-12)
 cyrs <- rep(list(c(30, 70), numeric(), 120, c(45, 50, 90)), 25)
 ind <- cat_bond("indemnity", 40, 100, principal = 60)
 cr <- cat_bond_apply(ind, lapply(cyrs, as.list))$recoveries
@@ -870,7 +874,7 @@ bin <- cat_bond_apply(cat_bond("modelled_loss", 100, 200),
 sp <- cat_bond_price(bin, distortion("wang", 0.45))$spread
 near(sp, pnorm(qnorm(0.02) + 0.45), 1e-10)
 stopifnot(abs(cat_bond_calibrate(bin, "wang", sp)@parameter - 0.45) < 1e-6)
-near(cat_bond_lane_spread(bin, 0.55, 0.5, 0.5), 0.55 * sqrt(0.02))
+near(cat_bond_lane_spread(bin, 0.55, 0.5, 0.5), 0.55 * sqrt(0.02), 1e-12)
 tb <- cat_bond_apply(cat_bond("indemnity", 0, 10, term_years = 3), list(list(4), list(8), list(), list(), list(), list()))
 stopifnot(identical(tb$term_losses, c(1, 0)))
 near(cat_bond_returns(tb, 0.1)[2], 0.1, 1e-9)

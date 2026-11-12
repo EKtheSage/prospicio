@@ -1,3 +1,13 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "chainladder==0.10.1",
+#     "numpy",
+#     "pandas",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-23T00:00:00Z"
+# ///
 """Regenerate validation/reference/reserving_patterns_python.csv.
 
 Selected development patterns (decision 12 of docs/design/reserving-v02.md)

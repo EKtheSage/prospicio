@@ -1,18 +1,10 @@
 library(prospicio)
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # One vocabulary for option names across Python, R and Excel (#834, step 1):
 # each spelling an option accepts in any front end is accepted here too and
 # gives the same result as the canonical name.
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = function(e) conditionMessage(e))
-  if (is.null(msg) || !grepl(pattern, msg)) {
-    stop(sprintf("expected an error matching %s, got %s", pattern, deparse(msg)), call. = FALSE)
-  }
-}
 
 rows <- list(c(110, 290, 370, 420, 440, 452), c(95, 300, 390, 425, 447),
              c(130, 320, 410, 470), c(105, 305, 395), c(120, 310), 125)

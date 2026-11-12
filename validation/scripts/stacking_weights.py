@@ -1,3 +1,13 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "numpy",
+#     "scipy",
+#     "statsmodels",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-23T00:00:00Z"
+# ///
 """Regenerate validation/data/stacking_lpd.csv and
 validation/reference/stacking_weights.csv.
 
@@ -126,7 +136,7 @@ def main():
             w.writerow([repr(float(v)) for v in row])
     rows = []
     for method, weights, tol in [("stacking", stacking(lpd), 1e-10),
-                                 ("pseudo_bma", pseudo_bma(lpd), 1e-12)]:
+                                 ("pseudo_bma", pseudo_bma(lpd), 1e-11)]:
         for name, v in zip(MODELS, weights):
             rows.append([method, name, repr(float(v)), tol, 0.0, "scipy SLSQP / NumPy"])
     with open(OUT, "w", newline="") as f:

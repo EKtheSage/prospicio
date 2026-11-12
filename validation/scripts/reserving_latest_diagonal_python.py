@@ -1,3 +1,13 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "chainladder==0.10.1",
+#     "numpy",
+#     "pandas",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-24T00:00:00Z"
+# ///
 """Regenerate validation/reference/reserving_latest_diagonal_python.csv.
 
 A latest-diagonal-only triangle (one observed cell per origin, each at its own

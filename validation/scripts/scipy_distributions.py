@@ -1,3 +1,12 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "mpmath==1.4.1",
+#     "scipy==1.18.1",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-23T00:00:00Z"
+# ///
 """Regenerate validation/reference/distributions_scipy.csv from SciPy.
 
 Run from the repository root:

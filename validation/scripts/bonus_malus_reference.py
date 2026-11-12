@@ -1,3 +1,12 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "numpy",
+#     "scipy",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-29T00:00:00Z"
+# ///
 """Regenerate validation/reference/bonus_malus_scipy.csv.
 
     python3 validation/scripts/bonus_malus_reference.py   # numpy and scipy

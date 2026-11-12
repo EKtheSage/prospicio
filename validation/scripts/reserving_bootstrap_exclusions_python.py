@@ -1,3 +1,13 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "chainladder==0.10.1",
+#     "numpy",
+#     "pandas",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-23T00:00:00Z"
+# ///
 """Regenerate validation/reference/reserving_bootstrap_exclusions_python.csv.
 
 The ODP bootstrap under link ratio exclusions (decision 14 of

@@ -1,3 +1,12 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "numpy",
+#     "scikit-learn==1.5.2",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-30T00:00:00Z"
+# ///
 """Reference values for isotonic regression and the calibration curve, from
 scikit-learn 1.5.2 (docs/design/models.md, auto-calibration; #545).
 

@@ -1,3 +1,14 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "arviz==0.23.4",
+#     "cmdstanpy==1.3.0",
+#     "numpy==2.5.4",
+#     "pandas==3.0.6",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-23T00:00:00Z"
+# ///
 """Regenerate validation/reference/reserving_meyers_cay_stan.csv.
 
 The reference for prospicio_reserving::bayes::Meyers with MeyersModel::Cay
