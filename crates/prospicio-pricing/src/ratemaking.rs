@@ -33,6 +33,7 @@
 //! test rounds between the steps it reproduces.
 
 use prospicio_core::{Error, Result};
+use prospicio_math::linalg::line_fit;
 
 /// The year fraction of a date on the book's half-month grid: the first of
 /// a month is its start, a day near the middle is half way, and the last
@@ -934,30 +935,15 @@ impl TrendFit {
                 reason: "must be finite",
             });
         }
-        let n = x.len() as f64;
-        let (mx, my) = (x.iter().sum::<f64>() / n, y.iter().sum::<f64>() / n);
-        let (mut sxx, mut sxy, mut syy) = (0.0, 0.0, 0.0);
-        for (&xi, &yi) in x.iter().zip(y) {
-            let (dx, dy) = (xi - mx, yi - my);
-            sxx += dx * dx;
-            sxy += dx * dy;
-            syy += dy * dy;
-        }
-        if sxx <= 0.0 {
-            return Err(Error::Data("the times must not all be equal".into()));
-        }
-        let slope = sxy / sxx;
-        let r_squared = if syy > 0.0 {
-            sxy * sxy / (sxx * syy)
-        } else {
-            1.0
-        };
+        let points: Vec<(f64, f64)> = x.iter().copied().zip(y.iter().copied()).collect();
+        let fit = line_fit(&points)
+            .ok_or_else(|| Error::Data("the times must not all be equal".into()))?;
         Ok(Self {
             kind,
-            intercept: my - slope * mx,
-            slope,
-            r_squared,
-            n: x.len(),
+            intercept: fit.intercept,
+            slope: fit.slope,
+            r_squared: fit.r_squared,
+            n: fit.n,
         })
     }
 

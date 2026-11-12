@@ -16,6 +16,7 @@ use crate::chain_ladder::{ChainLadder, ChainLadderFit};
 use crate::error::{Error, Result};
 use crate::triangle::Triangle;
 use prospicio_core::{Lag, Period};
+use prospicio_math::linalg::line_fit;
 
 /// Rows of a triangle column: one row per origin, one value per age.
 pub(crate) type Rows = Vec<Vec<Option<f64>>>;
@@ -197,29 +198,11 @@ pub fn exponential_trend(points: &[(f64, f64)]) -> Option<TrendFit> {
         .filter(|(x, y)| x.is_finite() && y.is_finite() && *y > 0.0)
         .map(|&(x, y)| (x, y.ln()))
         .collect();
-    let n = pts.len();
-    if n < 2 {
-        return None;
-    }
-    let nf = n as f64;
-    let mx = pts.iter().map(|p| p.0).sum::<f64>() / nf;
-    let my = pts.iter().map(|p| p.1).sum::<f64>() / nf;
-    let sxx: f64 = pts.iter().map(|p| (p.0 - mx).powi(2)).sum();
-    if sxx <= 0.0 {
-        return None;
-    }
-    let sxy: f64 = pts.iter().map(|p| (p.0 - mx) * (p.1 - my)).sum();
-    let syy: f64 = pts.iter().map(|p| (p.1 - my).powi(2)).sum();
-    let b = sxy / sxx;
-    let r_squared = if syy > 0.0 {
-        sxy * sxy / (sxx * syy)
-    } else {
-        1.0
-    };
+    let fit = line_fit(&pts)?;
     Some(TrendFit {
-        rate: b.exp() - 1.0,
-        r_squared,
-        n,
+        rate: fit.slope.exp() - 1.0,
+        r_squared: fit.r_squared,
+        n: fit.n,
     })
 }
 

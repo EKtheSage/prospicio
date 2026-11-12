@@ -38,7 +38,7 @@
 //! is not reflected in the reported uncertainty.
 
 use prospicio_core::Lag;
-use prospicio_math::linalg::solve;
+use prospicio_math::linalg::{line_fit, solve};
 use prospicio_math::optimize::{NelderMead, nelder_mead};
 
 use crate::clark::GrowthCurve;
@@ -375,19 +375,7 @@ impl ShapeFit {
 /// Intercept and slope of the least-squares line through `points`, or
 /// `None` with fewer than two distinct `x`.
 pub(crate) fn least_squares_line(points: &[(f64, f64)]) -> Option<(f64, f64)> {
-    if points.len() < 2 {
-        return None;
-    }
-    let n = points.len() as f64;
-    let mean_x = points.iter().map(|p| p.0).sum::<f64>() / n;
-    let mean_y = points.iter().map(|p| p.1).sum::<f64>() / n;
-    let sxx: f64 = points.iter().map(|p| (p.0 - mean_x).powi(2)).sum();
-    if sxx == 0.0 {
-        return None;
-    }
-    let sxy: f64 = points.iter().map(|p| (p.0 - mean_x) * (p.1 - mean_y)).sum();
-    let slope = sxy / sxx;
-    Some((mean_y - slope * mean_x, slope))
+    line_fit(points).map(|f| (f.intercept, f.slope))
 }
 
 /// The development age in months at position `p`, read on at the last
