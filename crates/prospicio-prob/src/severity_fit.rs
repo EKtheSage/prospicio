@@ -755,7 +755,7 @@ pub struct GoodnessOfFit {
     /// parameters estimated from the same losses the distance is smaller
     /// than under a hypothesis fixed in advance, so the true p-value is
     /// smaller; with censoring the null distribution is not this one
-    /// either.
+    /// either. [`ks_bootstrap`] gives the p-value that accounts for both.
     pub ks_p_value: f64,
 }
 
@@ -1120,6 +1120,187 @@ pub fn tail_moments(dist: &Dist, t: f64) -> Result<TailMoments> {
         mean,
         cv,
     })
+}
+
+/// The parametric bootstrap of a fit's Kolmogorov–Smirnov distance
+/// ([`ks_bootstrap`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct KsBootstrap {
+    /// The fit's own distance, [`GoodnessOfFit::max_distance`].
+    pub max_distance: f64,
+    /// `(1 + #{D*_b ≥ D}) / (B + 1)` over the `B` replicates that refitted
+    /// (Davison and Hinkley's (4.11)): never 0, and exact in level for any
+    /// `B` when the fitted model is the truth.
+    pub p_value: f64,
+    /// Each refitted replicate's distance `D*_b`, in replicate order.
+    pub distances: Vec<f64>,
+    /// The replicates whose refit failed, left out of `p_value`.
+    pub failed: usize,
+}
+
+/// The p-value of `fit`'s Kolmogorov–Smirnov distance by the parametric
+/// bootstrap, which [`GoodnessOfFit::ks_p_value`]'s classical one is not:
+/// the classical p-value assumes a distribution fixed in advance, and a
+/// fitted one lies closer to its own data, so the classical p-value is too
+/// large (Lilliefors' observation). Here each of `replicates` samples is
+/// drawn from the fitted distribution under the same observation scheme as
+/// `data`, refitted with the same family (and `t`), and its distance
+/// recomputed; the p-value is the share of replicate distances at least the
+/// observed one. Truncation, censoring and several reporting thresholds,
+/// whose null distribution has no table, are handled the same way.
+///
+/// Replicate `b` draws from `StreamRng::new(seed, b)`, so the result is the
+/// same however the replicates are spread over threads. Loss `i` of a
+/// replicate is drawn from the fitted distribution conditional on
+/// `r_i < X ≤ u_i`, its reporting threshold and bound from above, and is
+/// censored at its policy limit `limits[i]` when the draw exceeds it. The
+/// limits matter: a loss below its limit was still exposed to it, and
+/// leaving it out lets the replicates show larger losses than the data
+/// could. Without `limits`, a censored loss's limit is its own value and an
+/// uncensored loss has none. A weight must be a whole number of losses,
+/// each drawn on its own.
+/// The Monte Carlo error of `p_value` is about `√(p (1 − p) / B)`.
+///
+/// ```
+/// use prospicio_prob::LargeLosses;
+/// use prospicio_prob::severity_fit::{Family, fit_severity, goodness_of_fit, ks_bootstrap};
+///
+/// let y = vec![120.0, 300.0, 450.0, 800.0, 1500.0, 2600.0, 4000.0, 650.0, 90.0, 2100.0];
+/// let data = LargeLosses::new(y).unwrap();
+/// let fit = fit_severity(Family::Exponential, &data).unwrap();
+/// let boot = ks_bootstrap(&fit, &data, None, 199, 1).unwrap();
+/// let classical = goodness_of_fit(fit.dist(), &data).unwrap().ks_p_value;
+/// // The fitted mean pulls the distance down: the classical p-value is larger.
+/// assert!(boot.p_value < classical);
+/// assert_eq!(boot.distances.len() + boot.failed, 199);
+/// ```
+///
+/// # Errors
+///
+/// When `replicates` is 0, a weight is not a whole number, `limits` has
+/// the wrong length or a limit is below its loss (or differs from a
+/// censored loss's value), `fit`'s
+/// distance cannot be computed on `data` ([`goodness_of_fit`]), or no
+/// replicate refits.
+pub fn ks_bootstrap(
+    fit: &SeverityFit,
+    data: &LargeLosses,
+    limits: Option<&[f64]>,
+    replicates: usize,
+    seed: u64,
+) -> Result<KsBootstrap> {
+    use rayon::prelude::*;
+    if replicates == 0 {
+        return Err(Error::Data(
+            "ks_bootstrap needs at least one replicate".into(),
+        ));
+    }
+    if let Some((_, _, _, w)) = data.rows().find(|r| r.3.fract() != 0.0) {
+        return Err(Error::Data(format!(
+            "ks_bootstrap draws each weight as that many losses: weight {w} is not a whole number"
+        )));
+    }
+    let limits: Vec<f64> = match limits {
+        None => data
+            .rows()
+            .map(|(y, _, c, _)| if c { y } else { f64::INFINITY })
+            .collect(),
+        Some(l) => {
+            if l.len() != data.len() {
+                return Err(Error::Data(format!(
+                    "limits has {} values for {} losses",
+                    l.len(),
+                    data.len()
+                )));
+            }
+            for ((y, _, c, _), &m) in data.rows().zip(l) {
+                if m.is_nan() || m < y || (c && m != y) {
+                    return Err(Error::Data(format!(
+                        "the limit {m} of the loss {y} must be at least the loss, and equal it \
+                         where the loss is censored"
+                    )));
+                }
+            }
+            l.to_vec()
+        }
+    };
+    let observed = goodness_of_fit(fit.dist(), data)?.max_distance;
+    let replicate = |b: usize| -> Option<f64> {
+        let mut rng = prospicio_core::StreamRng::new(seed, b as u64);
+        let sample = replicate_losses(fit.dist(), data, &limits, &mut rng).ok()?;
+        let refit = fit_severity_with_threshold(fit.family(), &sample, fit.threshold()).ok()?;
+        goodness_of_fit(refit.dist(), &sample)
+            .ok()
+            .map(|g| g.max_distance)
+            .filter(|d| d.is_finite())
+    };
+    let draws: Vec<Option<f64>> = (0..replicates).into_par_iter().map(replicate).collect();
+    let distances: Vec<f64> = draws.iter().flatten().copied().collect();
+    if distances.is_empty() {
+        return Err(Error::Data(format!(
+            "none of the {replicates} bootstrap replicates could be refitted"
+        )));
+    }
+    let at_least = distances.iter().filter(|&&d| d >= observed).count();
+    Ok(KsBootstrap {
+        max_distance: observed,
+        p_value: (1 + at_least) as f64 / (distances.len() + 1) as f64,
+        failed: replicates - distances.len(),
+        distances,
+    })
+}
+
+/// One sample like `data` from `dist`: each loss (each unit of its weight)
+/// drawn conditional on its reporting threshold and bound from above, and
+/// censored at its limit.
+fn replicate_losses(
+    dist: &Dist,
+    data: &LargeLosses,
+    limits: &[f64],
+    rng: &mut prospicio_core::StreamRng,
+) -> Result<LargeLosses> {
+    use crate::Distribution as _;
+    let upper = data.upper_bounds();
+    let n: usize = data.rows().map(|r| r.3 as usize).sum();
+    let (mut x, mut r, mut c, mut u) = (
+        Vec::with_capacity(n),
+        Vec::with_capacity(n),
+        Vec::with_capacity(n),
+        Vec::with_capacity(n),
+    );
+    for (i, (_, lo, _, w)) in data.rows().enumerate() {
+        let limit = limits[i];
+        let hi = upper[i];
+        let s_lo = if lo > 0.0 { dist.survival(lo) } else { 1.0 };
+        let s_hi = if hi.is_finite() {
+            dist.survival(hi)
+        } else {
+            0.0
+        };
+        for _ in 0..w as usize {
+            // The survival of the draw is uniform on (S(u), S(r)).
+            let s = s_hi + rng.next_open01() * (s_lo - s_hi);
+            let mut v = dist.quantile(1.0 - s)?.clamp(lo, hi);
+            if !(v.is_finite() && v > 0.0) {
+                return Err(Error::Data(format!(
+                    "a replicate loss {v} is not positive and finite"
+                )));
+            }
+            let capped = v >= limit;
+            if capped {
+                v = limit;
+            }
+            x.push(v);
+            r.push(lo);
+            c.push(capped);
+            u.push(hi);
+        }
+    }
+    let mut sample = LargeLosses::new(x)?;
+    if data.is_truncated_above() {
+        sample = sample.truncated_above(u)?;
+    }
+    sample.reporting_thresholds(r)?.censored(c)
 }
 
 #[cfg(test)]
@@ -1591,5 +1772,68 @@ mod tests {
             "{}",
             g.ks_p_value
         );
+    }
+
+    #[test]
+    fn the_ks_bootstrap_is_reproducible_and_checks_its_inputs() {
+        let y = vec![
+            120.0, 300.0, 450.0, 800.0, 1500.0, 2600.0, 4000.0, 650.0, 90.0, 2100.0,
+        ];
+        let data = LargeLosses::new(y.clone()).unwrap();
+        let fit = fit_severity(Family::Lognormal, &data).unwrap();
+        let a = ks_bootstrap(&fit, &data, None, 60, 5).unwrap();
+        assert_eq!(a, ks_bootstrap(&fit, &data, None, 60, 5).unwrap());
+        assert_ne!(
+            a.distances,
+            ks_bootstrap(&fit, &data, None, 60, 6).unwrap().distances
+        );
+        let k = a.distances.iter().filter(|&&d| d >= a.max_distance).count();
+        assert_eq!(a.p_value, (1 + k) as f64 / 61.0);
+        assert!(ks_bootstrap(&fit, &data, None, 0, 5).is_err());
+        assert!(ks_bootstrap(&fit, &data, Some(&[1e4; 3]), 9, 5).is_err());
+        // A limit below a loss, and a censored loss whose limit differs.
+        assert!(ks_bootstrap(&fit, &data, Some(&[3000.0; 10]), 9, 5).is_err());
+        let capped = LargeLosses::new(y.clone())
+            .unwrap()
+            .censored((0..10).map(|i| i == 6).collect())
+            .unwrap();
+        let fit_capped = fit_severity(Family::Lognormal, &capped).unwrap();
+        assert!(ks_bootstrap(&fit_capped, &capped, Some(&[5000.0; 10]), 9, 5).is_err());
+        let mut at_own = vec![5000.0; 10];
+        at_own[6] = 4000.0;
+        assert!(ks_bootstrap(&fit_capped, &capped, Some(&at_own), 9, 5).is_ok());
+        let halves = data.clone().weights(vec![1.5; 10]).unwrap();
+        assert!(ks_bootstrap(&fit, &halves, None, 9, 5).is_err());
+    }
+
+    #[test]
+    fn a_replicate_keeps_the_observation_scheme() {
+        let y = vec![1200.0, 3000.0, 4500.0, 8000.0, 15_000.0, 20_000.0];
+        let data = LargeLosses::new(y)
+            .unwrap()
+            .reporting_thresholds(vec![1000.0, 1000.0, 2000.0, 2000.0, 2000.0, 2000.0])
+            .unwrap()
+            .censored(vec![false, false, false, false, false, true])
+            .unwrap()
+            .weights(vec![1.0, 2.0, 1.0, 1.0, 1.0, 1.0])
+            .unwrap();
+        let fit = fit_severity(Family::Lognormal, &data).unwrap();
+        let limits = [20_000.0; 6];
+        let mut rng = StreamRng::new(9, 0);
+        for _ in 0..200 {
+            let s = replicate_losses(fit.dist(), &data, &limits, &mut rng).unwrap();
+            // The weight of 2 becomes two losses, each above its threshold
+            // and capped at the limit, censored exactly there.
+            assert_eq!(s.len(), 7);
+            let r: Vec<_> = s.rows().collect();
+            assert!(r.iter().all(|&(x, lo, c, w)| x >= lo
+                && x <= 20_000.0
+                && c == (x == 20_000.0)
+                && w == 1.0));
+            assert_eq!(
+                r.iter().map(|q| q.1).collect::<Vec<_>>(),
+                [1000.0, 1000.0, 1000.0, 2000.0, 2000.0, 2000.0, 2000.0]
+            );
+        }
     }
 }

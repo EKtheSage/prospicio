@@ -366,3 +366,29 @@ def test_issue_805_ks_p_value_and_tail_moments():
     g = D.goodness_of_fit(D.Pareto(200.0, 1.5), y, [200.0] * 4)
     assert abs(g["tail_mean"] - 600.0) < 1e-9
     assert g["tail_cv"] == math.inf
+
+
+def test_ks_bootstrap_p_value():
+    # The parametric bootstrap of the KS p-value: reproducible by seed, the
+    # same distance as goodness_of_fit, and smaller than the classical
+    # p-value, which ignores the fit.
+    y = [120.0, 300.0, 450.0, 800.0, 1500.0, 2600.0, 4000.0, 650.0, 90.0, 2100.0]
+    b = D.ks_bootstrap("exponential", y, replicates=199, seed=3)
+    assert b == D.ks_bootstrap("exponential", y, replicates=199, seed=3)
+    assert len(b["distances"]) + b["failed"] == 199
+    k = sum(d >= b["max_distance"] for d in b["distances"])
+    assert b["p_value"] == pytest.approx((1 + k) / (len(b["distances"]) + 1))
+    fit = D.fit_severity("exponential", y)
+    g = D.goodness_of_fit(fit.distribution, y)
+    assert b["max_distance"] == pytest.approx(g["max_distance"], rel=1e-12)
+    assert b["p_value"] < g["ks_p_value"]
+    # Policy limits: one per loss, at least the loss.
+    capped = D.ks_bootstrap(
+        "lognormal", y, censored=[v == 4000.0 for v in y],
+        limits=[4000.0] * len(y), replicates=49, seed=1,
+    )
+    assert 0.0 < capped["p_value"] <= 1.0
+    with pytest.raises(ValueError):
+        D.ks_bootstrap("lognormal", y, limits=[1000.0] * len(y), replicates=9)
+    with pytest.raises(ValueError):
+        D.ks_bootstrap("lognormal", y, weights=[1.5] * len(y), replicates=9)
