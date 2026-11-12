@@ -1159,7 +1159,7 @@ def test_vuong_matches_pscl():
 def test_two_part_models_reject_what_they_cannot_fit():
     from prospicio.models import Design, Hurdle, ZeroInflated
 
-    with pytest.raises(ValueError, match="poisson or negative_binomial"):
+    with pytest.raises(ValueError, match='count must be "poisson", "negative_binomial" or "negbin", got "gamma"'):
         ZeroInflated("gamma")
     with pytest.raises(ValueError, match="logit, probit or cloglog"):
         Hurdle(zero_link="log")

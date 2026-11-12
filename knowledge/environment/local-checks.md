@@ -21,13 +21,14 @@ sources:
   docs render fails because Quarto is not installed (CI's `docs` job
   covers it).
 * `cargo xtask r`: roxygen, install, then every R test file through
-  `validation/scripts/run_r_tests.R` (#845), which runs each file in its
-  own process, keeps going after a failure and ends with the failures,
-  the skipped optional-package blocks and the slowest files; the pkgdown
-  step fails on the network (see
+  `validation/scripts/run_r_tests.py` (#845, #849), which runs each file
+  in its own process, one per core with the Bayesian and boosting files
+  alone at the end, keeps going after a failure and ends with each
+  failure's log, the skipped optional-package blocks and the slowest
+  files; the pkgdown step fails on the network (see
   [cloud network](/environment/cloud-network.md)). The "boom" errors in
   its output are expected test errors. Run some files with
-  `Rscript validation/scripts/run_r_tests.R <name fragment>`. Until #845
+  `python3 validation/scripts/run_r_tests.py <name fragment>`. Until #845
   the parity blocks guarded by actuar, glmnet, statmod, ChainLadder,
   dglm, posterior or loo never ran in CI, which installed none of them;
   the nightly run now installs them.

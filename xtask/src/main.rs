@@ -563,10 +563,13 @@ fn r(opts: Options) -> Result {
     rscript(&root, r#"roxygen2::roxygenise("R/prospicio")"#)?;
     r_install_with_wrappers(&root)?;
     if opts.tests {
+        // The runner CI's r job uses: every file, one per core with the
+        // Bayesian and boosting files alone at the end, each failure
+        // reported (#849, #845).
         step("r: test");
-        // Every file, a failure not stopping the others (#845).
-        run(Command::new("Rscript")
-            .arg("validation/scripts/run_r_tests.R")
+        let python = if cfg!(windows) { "python" } else { "python3" };
+        run(Command::new(python)
+            .arg("validation/scripts/run_r_tests.py")
             .current_dir(&root))?;
     }
     r_doc_check(&root)?;

@@ -6041,13 +6041,8 @@ pub(crate) fn conformal_plus<'py>(
 
 fn count_distribution(name: &str) -> PyResult<prospicio_glm::zero::CountDistribution> {
     use prospicio_glm::zero::CountDistribution;
-    match name {
-        "poisson" => Ok(CountDistribution::Poisson),
-        "negative_binomial" | "negbin" => Ok(CountDistribution::NegativeBinomial),
-        other => Err(PyValueError::new_err(format!(
-            "count must be poisson or negative_binomial (or negbin), got {other:?}"
-        ))),
-    }
+    CountDistribution::from_name(name)
+        .ok_or_else(|| crate::unknown_name("count", name, CountDistribution::NAMES))
 }
 
 fn zero_link(name: &str) -> PyResult<Link> {

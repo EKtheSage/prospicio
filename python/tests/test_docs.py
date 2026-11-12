@@ -20,7 +20,10 @@ def public_objects():
             obj = getattr(ns, name)
             yield f"{ns.__name__}.{name}", obj
             if inspect.isclass(obj):
-                for member in vars(obj):
+                # Sorted: a native class's attribute order differs between
+                # processes, and pytest-xdist's workers must collect the
+                # same tests in the same order (#848).
+                for member in sorted(vars(obj)):
                     if not member.startswith("_"):
                         # getattr, not the raw class dict: on Python 3.9 a
                         # staticmethod wrapper reports its own type's docstring.

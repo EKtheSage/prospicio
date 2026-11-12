@@ -5,6 +5,7 @@ description: By 2026-10-19 a pull request's CI took 27 to 32 minutes when it tou
 tags: [environment, ci, cargo, testing, cache]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-19T23:00:00Z }
+updated: { by: claude-code/cloud-session, at: 2026-11-11T00:00:00Z }
 stale_after: 2027-04-19T00:00:00Z
 sources:
   - id: runs
@@ -16,6 +17,9 @@ sources:
   - id: ci
     resource: ../.github/workflows/ci.yml
     title: CI workflow
+  - id: legs
+    resource: process:GitHub Actions runs 42951521128 (a pull request, the baseline) and 42992047374, 42994556570, 42998161759, 43000423587 (workflow_dispatch on claude/sharp-albattani-0mtilv), 2026-11-11
+    title: Timings of the python, r and rust jobs before and after the test legs (#848 to #851)
   - id: rust-cache
     resource: https://github.com/Swatinem/rust-cache/blob/v2/src/restore.ts
     title: Swatinem/rust-cache v2, restore and save
@@ -102,7 +106,47 @@ simulations; its bounds come from a 20-seed sweep at that size),
   90/45/51 by the three CI legs' module filters. The cost was linking, not
   code generation.[^local]
 
+# The binding tests in parallel, and on more runners (2026-11-11)
+
+Before (#848 to #851), a pull request's `python` job took 19.5 minutes, 14.7
+of them pytest (883 s, 3,756 tests, guides included), and its `r` job 13
+minutes, 9.4 of them the R files one after another (564 s; the guides 99 s,
+`test-reserving-compartmental.R` 221 s).[^legs]
+
+* Four processes on the runner's four cores do not help the Bayesian
+  files: their NUTS chains already run in parallel through rayon. With one
+  rayon thread per process the compartmental R file took 624 s and the
+  whole parallel R step 624 s; with the default thread count, 395 s and
+  406 s. pytest on four xdist workers took 854 s with one thread and 739 s
+  with the default, against 788 s serially without the guides: a
+  hierarchical BF test took 323 s beside the other workers and about 128 s
+  alone.[^legs]
+* LightGBM and XGBoost (OpenMP) slowed eightfold beside other processes:
+  `test-boosting.R` 96 s in the parallel batch, 12 s alone.[^legs]
+* The light files do parallelize: pytest's 3,600 or so tests outside the
+  NUTS-heavy files and the guides took 69 s on four workers with one rayon
+  thread, the R files outside them about 30 s.[^legs]
+* So the python and r jobs became matrices of legs on runners of their own,
+  each building the package itself (about 3.5 minutes; runner minutes are
+  free): `tests` (the light files in parallel, then a few NUTS-heavy files
+  and the boosting tests serially; Python 143 s, R 147 to 256 s), `slow-1`
+  and `slow-2` in Python (`test_reserving_compartmental.py`, 245 to 297 s;
+  the hierarchical BF and backtest files, 110 s) and `slow` in R
+  (`test-reserving-compartmental.R`, 222 to 245 s), and `guides` (Python 96
+  to 116 s, R 131 to 169 s). A job's wall time is now its longest leg:
+  about 9 minutes for Python (from 19.5) and 8.5 for R (from 13; about 10
+  when the install-from-tarball step runs). The same leg varied by a
+  quarter between runs, as runners do. xdist also needs every worker
+  to collect the same tests in the same order: `test_docs.py` listed native
+  classes' attributes in `vars()` order, which differs between processes,
+  and now sorts them.[^legs][^ci]
+* Line tables only in the `rust` job's test builds
+  (`CARGO_PROFILE_DEV_DEBUG=line-tables-only`, #851): `cargo test` took
+  303, 313 and 392 s on a warm cache against 483 s on the baseline pull
+  request, after #825 had already cut 105 test binaries to three.[^legs]
+
 [^runs]: CI run and job timings
 [^local]: Local timings of cargo test, cargo nextest and the Bayesian release tests
 [^ci]: CI workflow
 [^rust-cache]: Swatinem/rust-cache v2, restore and save
+[^legs]: Timings of the python, r and rust jobs before and after the test legs (#848 to #851)
