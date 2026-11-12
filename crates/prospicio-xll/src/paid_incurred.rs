@@ -83,13 +83,11 @@ fn at(v: &[f64], k: usize) -> Value {
 fn sigma_one(v: &Value) -> Result<SigmaInterpolation> {
     match v {
         v if v.is_blank() => Ok(SigmaInterpolation::LogLinear),
-        Value::Text(s) => match s.trim().to_ascii_lowercase().as_str() {
-            "log-linear" | "loglinear" | "log_linear" => Ok(SigmaInterpolation::LogLinear),
-            "mack" => Ok(SigmaInterpolation::Mack),
-            other => Err(format!(
-                "sigma must be \"log-linear\" or \"mack\", got {other:?}"
-            )),
-        },
+        Value::Text(s) => {
+            let name = s.trim().to_ascii_lowercase();
+            SigmaInterpolation::from_name(&name)
+                .ok_or_else(|| crate::unknown_name("sigma", &name, SigmaInterpolation::NAMES))
+        }
         _ => Err("sigma must be \"log-linear\" or \"mack\"".into()),
     }
 }
@@ -281,13 +279,10 @@ fn optional_numbers(grid: &Grid, name: &str) -> Result<Option<Vec<f64>>> {
 fn pic_fit(args: &[Grid]) -> Result<PicFit> {
     let tri = pair(&args[0], &args[1])?;
     let extrapolation = match text_option(&args[4], "extrapolation")?.as_deref() {
-        None | Some("log-linear" | "loglinear" | "log_linear") => VarianceExtrapolation::LogLinear,
-        Some("mack") => VarianceExtrapolation::Mack,
-        Some(other) => {
-            return Err(format!(
-                "extrapolation must be \"log-linear\" or \"mack\", got {other:?}"
-            ));
-        }
+        None => VarianceExtrapolation::LogLinear,
+        Some(name) => VarianceExtrapolation::from_name(name).ok_or_else(|| {
+            crate::unknown_name("extrapolation", name, VarianceExtrapolation::NAMES)
+        })?,
     };
     let convention = match text_option(&args[5], "convention")?.as_deref() {
         None | Some("model") => PicConvention::Model,
