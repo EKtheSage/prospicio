@@ -55,6 +55,40 @@ pub enum SigmaInterpolation {
     Mack,
 }
 
+impl SigmaInterpolation {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// rule, the canonical name of each first (#834).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("log-linear", Self::LogLinear),
+        ("loglinear", Self::LogLinear),
+        ("log_linear", Self::LogLinear),
+        ("mack", Self::Mack),
+    ];
+
+    /// The rule named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_reserving::SigmaInterpolation;
+    ///
+    /// assert_eq!(SigmaInterpolation::from_name("log_linear"), Some(SigmaInterpolation::LogLinear));
+    /// assert_eq!(SigmaInterpolation::from_name("linear"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, r)| r)
+    }
+
+    /// The canonical name, `"log-linear"` or `"mack"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::LogLinear => "log-linear",
+            Self::Mack => "mack",
+        }
+    }
+}
+
 /// Development-factor estimator.
 ///
 /// ```
@@ -530,6 +564,29 @@ pub fn cumulative_factors(ldf: &[f64], tail: f64) -> Vec<f64> {
 
 #[cfg(test)]
 mod tests {
+
+    /// Every accepted name maps to its rule and each rule's canonical name
+    /// is accepted (#834), here and for the paid-incurred chain's
+    /// variance extrapolation.
+    #[test]
+    fn sigma_and_extrapolation_names_round_trip() {
+        use crate::paid_incurred::VarianceExtrapolation;
+        for &(name, r) in SigmaInterpolation::NAMES {
+            assert_eq!(SigmaInterpolation::from_name(name), Some(r), "{name}");
+        }
+        for r in [SigmaInterpolation::LogLinear, SigmaInterpolation::Mack] {
+            assert_eq!(SigmaInterpolation::from_name(r.name()), Some(r));
+        }
+        for &(name, r) in VarianceExtrapolation::NAMES {
+            assert_eq!(VarianceExtrapolation::from_name(name), Some(r), "{name}");
+        }
+        for r in [
+            VarianceExtrapolation::LogLinear,
+            VarianceExtrapolation::Mack,
+        ] {
+            assert_eq!(VarianceExtrapolation::from_name(r.name()), Some(r));
+        }
+    }
     use super::*;
     use crate::triangle::tests::{annual, raa};
 

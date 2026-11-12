@@ -53,6 +53,33 @@ pub enum VarianceExtrapolation {
     Mack,
 }
 
+impl VarianceExtrapolation {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// rule, the canonical name of each first (#834).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("loglinear", Self::LogLinear),
+        ("log-linear", Self::LogLinear),
+        ("log_linear", Self::LogLinear),
+        ("mack", Self::Mack),
+    ];
+
+    /// The rule named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, r)| r)
+    }
+
+    /// The canonical name, `"loglinear"` or `"mack"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::LogLinear => "loglinear",
+            Self::Mack => "mack",
+        }
+    }
+}
+
 /// Normal priors on the paid and incurred log link parameters: `Phi_j ~
 /// N(phi_mean[j], phi_sd[j]^2)` for `j = 0, ..., J` and `Psi_j ~
 /// N(psi_mean[j], psi_sd[j]^2)` for `j = 0, ..., J - 1`, independent.

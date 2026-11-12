@@ -226,15 +226,14 @@ fn development(
             )));
         }
     };
-    let sigma_interpolation = match sigma_interpolation {
-        "log-linear" | "loglinear" | "log_linear" => SigmaInterpolation::LogLinear,
-        "mack" => SigmaInterpolation::Mack,
-        _ => {
-            return Err(Error::Other(format!(
-                "sigma_interpolation must be \"log-linear\" or \"mack\", got \"{sigma_interpolation}\""
-            )));
-        }
-    };
+    let sigma_interpolation =
+        SigmaInterpolation::from_name(sigma_interpolation).ok_or_else(|| {
+            crate::unknown_name(
+                "sigma_interpolation",
+                sigma_interpolation,
+                SigmaInterpolation::NAMES,
+            )
+        })?;
     let (n_periods, drop_high, drop_low) = exclusions(excl)?;
     Ok(Development {
         average,
@@ -1379,15 +1378,9 @@ impl Triangle {
         tail_incurred: Robj,
     ) -> Result<MunichFit> {
         let dev = |sigma: &str| -> Result<Development> {
-            let sigma_interpolation = match sigma {
-                "log-linear" | "loglinear" | "log_linear" => SigmaInterpolation::LogLinear,
-                "mack" => SigmaInterpolation::Mack,
-                _ => {
-                    return Err(Error::Other(format!(
-                        "sigma_interpolation must be \"log-linear\" or \"mack\", got \"{sigma}\""
-                    )));
-                }
-            };
+            let sigma_interpolation = SigmaInterpolation::from_name(sigma).ok_or_else(|| {
+                crate::unknown_name("sigma_interpolation", sigma, SigmaInterpolation::NAMES)
+            })?;
             Ok(Development {
                 sigma_interpolation,
                 ..Default::default()
@@ -2647,15 +2640,9 @@ impl Triangle {
             Nullable::NotNull(v) => Some(v),
             Nullable::Null => None,
         };
-        let extrapolation = match extrapolation {
-            "loglinear" | "log-linear" | "log_linear" => VarianceExtrapolation::LogLinear,
-            "mack" => VarianceExtrapolation::Mack,
-            other => {
-                return Err(Error::Other(format!(
-                    "extrapolation must be \"loglinear\" or \"mack\", got {other:?}"
-                )));
-            }
-        };
+        let extrapolation = VarianceExtrapolation::from_name(extrapolation).ok_or_else(|| {
+            crate::unknown_name("extrapolation", extrapolation, VarianceExtrapolation::NAMES)
+        })?;
         let convention = match convention {
             "model" => PicConvention::Model,
             "r_chainladder" => PicConvention::RChainLadder,
