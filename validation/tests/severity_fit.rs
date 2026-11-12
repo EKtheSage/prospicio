@@ -4,15 +4,18 @@
 //! (#800), and the table of every fit's survival against the plotting
 //! positions (`scipy_fit_curves.py`, #804), and each fit's KS p-value and
 //! tail moments with the Kolmogorov distribution itself
-//! (`scipy_fit_tails.py`, `scipy_kolmogorov.py`, #805).
+//! (`scipy_fit_tails.py`, `scipy_kolmogorov.py`, #805), and the parametric
+//! bootstrap of the KS p-value against SciPy's `goodness_of_fit`
+//! (`scipy_ks_bootstrap.py`), Stephens' tables and its calibration under
+//! truncation and censoring.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
 use prospicio_prob::LargeLosses;
 use prospicio_prob::severity_fit::{
-    Family, SeverityFit, fit_curves, fit_severity_with_threshold, goodness_of_fit,
-    tail_moments, thinned_rows,
+    Family, SeverityFit, fit_curves, fit_severity, fit_severity_with_threshold,
+    goodness_of_fit, ks_bootstrap, tail_moments, thinned_rows,
 };
 use prospicio_validation::{check, reference};
 
@@ -181,4 +184,121 @@ fn ks_p_values_and_tail_moments_match_scipy() {
             q => panic!("unknown quantity {q}"),
         })
     });
+}
+
+/// The 40 untruncated losses of `validation/data/ks_bootstrap.csv`.
+fn bootstrap_losses() -> LargeLosses {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("data/ks_bootstrap.csv");
+    let text = std::fs::read_to_string(path).unwrap();
+    let y = text.lines().skip(1).map(|l| l.parse().unwrap()).collect();
+    LargeLosses::new(y).unwrap()
+}
+
+#[test]
+fn ks_bootstrap_p_values_match_scipys_goodness_of_fit() {
+    // Both sides are Monte Carlo estimates with 9,999 replicates; the
+    // tolerance is four standard errors of their difference.
+    let data = bootstrap_losses();
+    let cases = reference("ks_bootstrap_scipy.csv");
+    check(&cases, |c| {
+        let fit = fit_severity(Family::from_name(c.get("family")).unwrap(), &data).unwrap();
+        Some(match c.get("quantity") {
+            "ks_distance" => goodness_of_fit(fit.dist(), &data).unwrap().max_distance,
+            "ks_bootstrap_p_value" => {
+                let b = ks_bootstrap(&fit, &data, None, 9_999, 7).unwrap();
+                assert_eq!(b.failed, 0);
+                b.p_value
+            }
+            q => panic!("unknown quantity {q}"),
+        })
+    });
+}
+
+/// The `q` quantile of `x` by the empirical distribution, `x` sorted.
+fn quantile(x: &[f64], q: f64) -> f64 {
+    x[((q * x.len() as f64).ceil() as usize).min(x.len()) - 1]
+}
+
+/// A family, Stephens' upper points at 10%, 5% and 1%, and his
+/// modification of `D`.
+type Table = (Family, [f64; 3], fn(f64) -> f64);
+
+#[test]
+fn the_bootstrap_null_distribution_is_stephens() {
+    // With the exponential's mean, or the lognormal's two parameters,
+    // estimated, the null distribution of D does not depend on the true
+    // parameters, and Stephens (1974, Table 1A; D'Agostino and Stephens
+    // 1986, Tables 4.7 and 4.9) tabulates its upper points after a
+    // modification that makes them nearly free of n: for the exponential
+    // (D − 0.2/n)(√n + 0.26 + 0.5/√n), for the normal (the lognormal's
+    // logarithms) D (√n − 0.01 + 0.85/√n).
+    let data = bootstrap_losses();
+    let n = data.len() as f64;
+    let rn = n.sqrt();
+    let tables: [Table; 2] = [
+        (Family::Exponential, [0.990, 1.094, 1.308], |d| {
+            (d - 0.2 / 40.0) * (40f64.sqrt() + 0.26 + 0.5 / 40f64.sqrt())
+        }),
+        (Family::Lognormal, [0.819, 0.895, 1.035], |d| {
+            d * (40f64.sqrt() - 0.01 + 0.85 / 40f64.sqrt())
+        }),
+    ];
+    assert_eq!((n, rn), (40.0, 40f64.sqrt()));
+    for (family, points, modified) in tables {
+        let fit = fit_severity(family, &data).unwrap();
+        let mut d = ks_bootstrap(&fit, &data, None, 9_999, 11).unwrap().distances;
+        d.sort_by(f64::total_cmp);
+        for (alpha, want) in [0.10, 0.05, 0.01].into_iter().zip(points) {
+            let got = modified(quantile(&d, 1.0 - alpha));
+            assert!(
+                (got / want - 1.0).abs() < 0.02,
+                "{family:?} at {alpha}: {got} against Stephens' {want}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_bootstrap_p_value_is_calibrated_under_truncation_and_censoring() {
+    // 200 samples of 40 lognormal losses, reported above 0, 5,000 or 20,000
+    // in turn and capped by a 100,000 limit, each fitted and tested with 99
+    // replicates: under the true model the bootstrap p-value is uniform, so
+    // about 10% fall at or below 0.10. The classical p-value, which ignores
+    // the fit, rejects far less often.
+    use prospicio_core::StreamRng;
+    use prospicio_math::special::norm_quantile;
+    let (limit, samples) = (100_000.0, 200);
+    let (mut boot_rejects, mut classical_rejects, mut mean_p) = (0, 0, 0.0);
+    for k in 0..samples {
+        let mut rng = StreamRng::new(2026, k);
+        let (mut y, mut r, mut c) = (vec![], vec![], vec![]);
+        while y.len() < 40 {
+            let lo = [0.0, 5_000.0, 20_000.0][y.len() % 3];
+            let x = (9.6 + 1.2 * norm_quantile(rng.next_open01())).exp();
+            if x <= lo {
+                continue;
+            }
+            y.push(x.min(limit));
+            r.push(lo);
+            c.push(x > limit);
+        }
+        let data = LargeLosses::new(y)
+            .unwrap()
+            .reporting_thresholds(r)
+            .unwrap()
+            .censored(c)
+            .unwrap();
+        let fit = fit_severity(Family::Lognormal, &data).unwrap();
+        let limits = vec![limit; 40];
+        let b = ks_bootstrap(&fit, &data, Some(&limits), 99, k).unwrap();
+        assert_eq!(b.failed, 0);
+        boot_rejects += usize::from(b.p_value <= 0.10);
+        mean_p += b.p_value / samples as f64;
+        let g = goodness_of_fit(fit.dist(), &data).unwrap();
+        classical_rejects += usize::from(g.ks_p_value <= 0.10);
+    }
+    // Binomial(200, 0.1): mean 20, standard deviation 4.2.
+    assert!((10..=31).contains(&boot_rejects), "{boot_rejects} of {samples}");
+    assert!((mean_p - 0.5).abs() < 0.06, "{mean_p}");
+    assert!(classical_rejects * 3 < boot_rejects.max(1), "{classical_rejects}");
 }

@@ -38611,6 +38611,59 @@ def kendall_tau(x: Sequence[float], y: Sequence[float]) -> float:
     0.666666666667
     """
 
+def ks_bootstrap(family: str, losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None, truncated_above: Sequence[float] |None = None, t: float |None = None, limits: Sequence[float] |None = None, replicates: int = 999, seed: int = 0) -> dict:
+    """
+    The p-value of a severity fit's Kolmogorov–Smirnov distance by the
+    parametric bootstrap.
+    
+    ``goodness_of_fit``'s ``ks_p_value`` assumes a distribution fixed in
+    advance, and a fitted one lies closer to its own data, so that p-value is
+    too large. Here ``family`` is fitted to the losses, ``replicates``
+    samples are drawn from the fit under the same reporting thresholds,
+    bounds from above and policy limits, each is refitted with the same
+    family (and ``t``), and the p-value is ``(1 + k) / (B + 1)``, ``k`` the
+    replicates whose distance is at least the data's among the ``B`` that
+    refitted. Its Monte Carlo error is about ``sqrt(p (1 - p) / B)``.
+    
+    Parameters
+    ----------
+    family : str
+        As in ``fit_severity``.
+    losses : list of float
+    reporting_thresholds : list of float, optional
+    censored : list of bool, optional
+    weights : list of float, optional
+        Whole numbers of losses, each drawn on its own.
+    truncated_above : list of float, optional
+    t : float, optional
+        The threshold of ``"pareto"`` and ``"gen_pareto"``.
+    limits : list of float, optional
+        Each loss's policy limit: a replicate loss above it is censored
+        there. At least the loss, and equal to it where the loss is censored.
+        Without it, a censored loss's limit is its own value and an
+        uncensored loss has none; give it when uncensored losses had limits
+        too, or the replicates show losses the data could not.
+    replicates : int, default 999
+    seed : int, default 0
+        Replicate ``b`` draws from stream ``b`` of this seed, so the result
+        does not depend on the number of threads.
+    
+    Returns
+    -------
+    dict
+        ``max_distance`` (the fit's), ``p_value``, ``distances`` (each
+        refitted replicate's, in order) and ``failed`` (replicates whose refit
+        failed, left out).
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import ks_bootstrap
+    >>> y = [120.0, 300.0, 450.0, 800.0, 1500.0, 2600.0, 4000.0, 650.0, 90.0, 2100.0]
+    >>> b = ks_bootstrap("exponential", y, replicates=199, seed=1)
+    >>> len(b["distances"]) + b["failed"]
+    199
+    """
+
 def ks_uniform(values: Sequence[float]) -> float:
     """
     Kolmogorov-Smirnov distance from the uniform on ``[0, 1]``; about

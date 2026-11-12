@@ -381,6 +381,11 @@ generators = ["scipy_kolmogorov.py"]
 sha256 = "45f331d896caac8a92d5fd0712e1005a14a301a3a4b5430f40c0df9f8cf295e0"
 
 [[file]]
+path = "ks_bootstrap_scipy.csv"
+generators = ["scipy_ks_bootstrap.py"]
+sha256 = "efc6db0faa91eb42729002a44c081aaae030454b0848840bf2137bc730b3c563"
+
+[[file]]
 path = "lattice_aggregate.csv"
 generators = ["aggregate_lattice.py"]
 sha256 = "74793c813df3b6c57426a76eef1dc028d533dd2cee392cf2dccf6aba346b708d"

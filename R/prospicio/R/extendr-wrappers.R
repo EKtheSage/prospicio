@@ -241,6 +241,8 @@ k_fold_rust <- function(n, k, seed) .Call(wrap__k_fold_rust, n, k, seed)
 
 kendall_tau_rust <- function(x, y) .Call(wrap__kendall_tau_rust, x, y)
 
+ks_bootstrap_rust <- function(family, losses, reporting, censored, weights, upper, t, limits, replicates, seed) .Call(wrap__ks_bootstrap_rust, family, losses, reporting, censored, weights, upper, t, limits, replicates, seed)
+
 ks_uniform_rust <- function(values) .Call(wrap__ks_uniform_rust, values)
 
 lattice_bucket_rust <- function(atoms, extent, log2) .Call(wrap__lattice_bucket_rust, atoms, extent, log2)

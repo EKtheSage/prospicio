@@ -169,6 +169,41 @@ conversion reports the error it introduces.
   mean and CV of `X | X > t` from the exact layer moments, infinite where
   the moment diverges. Python and R add `ks_p_value`, `tail_mean` and
   `tail_cv` to `goodness_of_fit`, `t` the lowest reporting threshold.
+- The KS p-value by the parametric bootstrap (decided 2026-11-12, the
+  follow-up #805 left): `severity_fit::ks_bootstrap(fit, data, limits,
+  replicates, seed)` draws `replicates` samples from the fit, each loss
+  conditional on its reporting threshold and bound from above and censored
+  at its policy limit, refits each with the fit's family and `t`, and
+  returns `(1 + #{D*_b ≥ D}) / (B + 1)` over the `B` replicates that refit
+  (Davison and Hinkley's (4.11), the formula of SciPy's `goodness_of_fit`).
+  - **Policy limits are an argument.** `LargeLosses` records a limit only
+    where it capped a loss. A loss under a limit it did not reach was
+    still exposed to it, and drawing that loss without a limit lets the
+    replicates show losses the data never could. So `limits` is optional:
+    without it a censored loss's limit is its own value and an uncensored
+    loss has none, and the docs say to give it when uncensored losses had
+    limits too.
+  - **Weights are whole numbers of losses**, each drawn on its own; a
+    fractional weight is an error, since a replicate needs a number of
+    losses.
+  - **One stream per replicate.** Replicate `b` draws from
+    `StreamRng::new(seed, b)` (`docs/design/rng.md`), so the result is the
+    same on any number of threads; the replicates run on rayon.
+  - **A failed refit is left out and counted** (`failed`) rather than
+    failing the call, which errs only when no replicate refits.
+  - **Parity.** `validation/tests/severity_fit.rs`: SciPy's
+    `goodness_of_fit(..., statistic="ks")` on 40 untruncated losses for the
+    five body families it can fit with `loc` fixed, within four standard
+    errors of the two Monte Carlo estimates; the bootstrap null
+    distribution's upper points against Stephens' tables for the
+    exponential and the normal (the lognormal's logarithms), within 2%;
+    and its calibration under truncation and censoring, where no table
+    exists: 200 lognormal samples with three reporting thresholds and a
+    limit reject at the 10% level 19 times (20 expected) and the classical
+    p-value 3 times. Python and R: `ks_bootstrap(family, losses, ...,
+    limits, replicates = 999, seed = 0)`. Not yet in Excel: `PRO.SEV.FIT`
+    recalculates often, and 999 refits per family on each recalculation
+    is the Excel lane's call.
 - `prospicio_prob::grouped_fit` (#328, third part) fits the same families
   to grouped losses, `GroupedLosses` of counts in size bands
   `(b_k, b_{k+1}]`, without individual amounts (Bahnemann, CAS Monograph

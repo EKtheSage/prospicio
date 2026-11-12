@@ -1413,6 +1413,47 @@ goodness_of_fit <- function(severity, losses, reporting_thresholds = NULL, censo
   )
 }
 
+#' The p-value of a severity fit's KS distance by the parametric bootstrap
+#'
+#' `goodness_of_fit()`'s `ks_p_value` assumes a distribution fixed in
+#' advance, and a fitted one lies closer to its own data, so that p-value is
+#' too large. `ks_bootstrap()` fits `family`, draws `replicates` samples from
+#' the fit under the same reporting thresholds, bounds from above and policy
+#' limits, refits each with the same family (and `t`), and returns
+#' `(1 + k) / (B + 1)`, `k` the replicates whose distance is at least the
+#' data's among the `B` that refitted. Its Monte Carlo error is about
+#' `sqrt(p (1 - p) / B)`.
+#'
+#' @inheritParams severity_fit
+#' @param weights Whole numbers of losses, each drawn on its own.
+#' @param limits Each loss's policy limit: a replicate loss above it is
+#'   censored there. At least the loss, and equal to it where the loss is
+#'   censored. `NULL`: a censored loss's limit is its own value and an
+#'   uncensored loss has none; give it when uncensored losses had limits
+#'   too.
+#' @param replicates The number of bootstrap samples.
+#' @param seed Generator seed: a non-negative whole number below 2^53.
+#'   Replicate `b` draws from stream `b`, so the result does not depend on
+#'   the number of threads.
+#' @returns A list: `max_distance` (the fit's), `p_value`, `distances` (each
+#'   refitted replicate's) and `failed` (replicates whose refit failed, left
+#'   out).
+#' @export
+#' @examples
+#' y <- c(120, 300, 450, 800, 1500, 2600, 4000, 650, 90, 2100)
+#' ks_bootstrap("exponential", y, replicates = 199, seed = 1)$p_value
+ks_bootstrap <- function(family, losses, reporting_thresholds = NULL, censored = NULL,
+                         weights = NULL, truncated_above = NULL, t = NULL, limits = NULL,
+                         replicates = 999, seed = 0) {
+  rust_result(ks_bootstrap_rust(
+    as.character(family), as.double(losses), optional_arg(reporting_thresholds),
+    optional_arg(censored), optional_arg(weights), optional_arg(truncated_above),
+    if (is.null(t)) NaN else as.double(t),
+    if (is.null(limits)) double() else as.double(limits),
+    as.double(replicates), as.double(seed)
+  ))
+}
+
 #' Every fitted family's survival against the data's plotting positions
 #'
 #' `fit_curves()` is the table behind a chart of every fit against the data
