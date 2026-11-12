@@ -1,10 +1,10 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # A development pattern per simulation (reserving-v02.md decision 28): row i
 # is simulation i of the fit, the pattern ends at 1, and the monthly form
 # feeds the cash-flow engine.
 
-validation <- function(...) file.path("validation", ...)
 raa_long <- utils::read.csv(validation("data", "raa.csv"), comment.char = "#")
 raa <- triangle(raa_long, "origin", "development", "value")
 cl <- chain_ladder(raa)

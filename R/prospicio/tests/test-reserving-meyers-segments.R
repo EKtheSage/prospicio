@@ -1,37 +1,14 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # meyers_segments(), Meyers' CRC, CSR and CAY over segments
 # (docs/design/reserving-bayes.md, decisions 11 and 13). The seed sweep and
 # the diagonal backtest are in validation/tests/reserving_meyers_segments.rs;
 # these tests check the binding.
 
-near <- function(a, b, tol) {
-  if (!all(abs(a - b) <= tol)) {
-    stop(sprintf("got %s, want %s (tol %g)", format(a, digits = 17), format(b, digits = 17), tol),
-         call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop("expected an error", call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 # The warnings `expr` raises, and its value.
-with_warnings <- function(expr) {
-  found <- character()
-  value <- withCallingHandlers(expr, warning = function(w) {
-    found <<- c(found, conditionMessage(w))
-    invokeRestart("muffleWarning")
-  })
-  list(value = value, warnings = found)
-}
 
 # Tests run from the repository root (CI and `cargo xtask r`). The lines of
 # clrd_lines.csv in `lines`, renamed by `names`, as the segments of `lob`,
@@ -93,16 +70,16 @@ stopifnot(identical(names(long), c("lob", "origin", "latest", "ultimate", "reser
           identical(long$ulr, long$ultimate / long$premium),
           identical(long$ulr_mean, long$ultimate_mean / long$premium),
           nrow(long) == 20)
-near(sum(long$mean), mean(r), 1e-9 * mean(r))
-near(sum(long$ultimate_mean), mean(u), 1e-9 * mean(u))
+near_abs(sum(long$mean), mean(r), 1e-9 * mean(r))
+near_abs(sum(long$ultimate_mean), mean(u), 1e-9 * mean(u))
 # Each simulation's ultimates less its reserves are the latest values.
 latest <- matrix(long$latest, nrow = n_sims, ncol = 20, byrow = TRUE)
-near(draw_matrix(u) - draw_matrix(r), latest, 1e-9 * max(latest))
+near_abs(draw_matrix(u) - draw_matrix(r), latest, 1e-9 * max(latest))
 totals <- totals_frame(fits)
 stopifnot(identical(totals$lob, c("comauto", "wkcomp")),
           all(c("premium", "ultimate_mean") %in% names(totals)),
           identical(totals$ulr_mean, totals$ultimate_mean / totals$premium))
-near(sum(totals$premium), sum(fits@premium), 1e-6)
+near_abs(sum(totals$premium), sum(fits@premium), 1e-6)
 stopifnot(nrow(development_frame(fits)) == 20)
 
 d <- fits@diagnostics
@@ -136,12 +113,12 @@ alone <- meyers(clrd("wkcomp"), "paid", "premium", n_sims = n_sims, seed = 5)
 stopifnot(identical(one@premium, alone@premium),
           identical(colnames(one@draws), colnames(alone@draws)),
           nrow(one@draws) == 8000, !identical(one@draws, alone@draws))
-near(one@summary$mean[1], alone@summary$mean[1], LOGELR_TOL)
-near(totals_frame(one)$mean / totals_frame(alone)$mean, 1, TOTAL_TOL)
+near_abs(one@summary$mean[1], alone@summary$mean[1], LOGELR_TOL)
+near_abs(totals_frame(one)$mean / totals_frame(alone)$mean, 1, TOTAL_TOL)
 stopifnot(identical(summary(one), one@summary))
 loo <- bayes_loo(one)
 stopifnot(length(loo$pointwise) == 55)
-near(loo$estimates[["elpd"]], bayes_loo(alone)$estimates[["elpd"]], LOO_TOL)
+near_abs(loo$estimates[["elpd"]], bayes_loo(alone)$estimates[["elpd"]], LOO_TOL)
 
 # Independent: the same line under two names. Shared random numbers would
 # make the totals almost perfectly rank correlated; 4.5 / sqrt(n_sims) is
@@ -151,7 +128,7 @@ twins <- meyers_segments(clrd(c("wkcomp", "wkcomp"), c("a", "b")), "paid", "prem
                          n_sims = n_sims, seed = 11)
 t <- line_totals(twins@reserves)
 stopifnot(abs(stats::cor(t[, 1], t[, 2], method = "spearman")) < 4.5 / sqrt(n_sims))
-near(mean(t[, 1]) / mean(t[, 2]), 1, TWIN_TOL)
+near_abs(mean(t[, 1]) / mean(t[, 2]), 1, TWIN_TOL)
 
 # Rank correlation: Iman-Conover reaches the target within 0.0081 at 10,000
 # simulations over 60 seeds (sd at most 0.0030); 0.03 allows for 4,000. The
@@ -160,9 +137,9 @@ ranked <- meyers_segments(two, "paid", "premium", model = "csr", n_sims = n_sims
                           dependence = "rank_correlation",
                           spearman = matrix(c(1, 0.5, 0.5, 1), 2))
 t <- line_totals(ranked@reserves)
-near(stats::cor(t[, 1], t[, 2], method = "spearman"), 0.5, 0.03)
+near_abs(stats::cor(t[, 1], t[, 2], method = "spearman"), 0.5, 0.03)
 tu <- line_totals(ranked@ultimates)
-near(diag(stats::cor(t, tu, method = "spearman")), c(1, 1), 1e-12)
+near_abs(diag(stats::cor(t, tu, method = "spearman")), c(1, 1), 1e-12)
 
 # CAY, and replay by seed.
 quick <- function(seed) {

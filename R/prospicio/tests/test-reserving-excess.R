@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Excess-layer development from a ground-up triangle
 # (docs/design/reserving-excess.md, PR 3). The Rust core is checked against
@@ -8,25 +9,7 @@ suppressMessages(library(prospicio))
 # the same numbers as python/tests/test_reserving_excess.py, and check the
 # binding's arguments and errors.
 
-near <- function(a, b, tol = 1e-11) {
-  a <- unname(a)
-  b <- unname(b)
-  if (length(a) != length(b) || !all(abs(a - b) <= tol)) {
-    stop(sprintf("got %s, want %s (tol %g)", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " "), tol), call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop(sprintf("expected an error mentioning %s", shQuote(pattern)), call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 # The ultimate claims 450, 1,687.5, 1,125 and 2,250 times the scale, each
 # with probability 1/4, as a grid of step 112.5 times the scale.
@@ -47,26 +30,26 @@ pattern <- function(scale, layer) {
 
 # Bloom and Patrik, Year One.
 p <- pattern(1, excess_layer(350))
-near(p@ages, c(12, 24, 36), 0)
-near(p@layer_ldf[1], 17.2)
-near(p@layer_ldf[2], 4112.5 / 3010)
-near(p@layer_cdf[1], 23.5)
-near(p@shifts, c(4.5, 1.25, 1), 1e-12)
-near(p@ground_up_ldf, c(3.6, 1.25), 1e-12)
-near(p@tail, 1, 0)
+near_abs(p@ages, c(12, 24, 36), 0)
+near_abs(p@layer_ldf[1], 17.2, 1e-11)
+near_abs(p@layer_ldf[2], 4112.5 / 3010, 1e-11)
+near_abs(p@layer_cdf[1], 23.5, 1e-11)
+near_abs(p@shifts, c(4.5, 1.25, 1), 1e-12)
+near_abs(p@ground_up_ldf, c(3.6, 1.25), 1e-12)
+near_abs(p@tail, 1, 0)
 stopifnot(identical(names(p@ldf), c("12", "24")))
 
 # Years Two and Three.
 two <- pattern(1.05, excess_layer(350))
-near(two@layer_ldf, c(14.768, 1.3583), 5e-4)
-near(two@layer_cdf[1], 20.06, 5e-3)
+near_abs(two@layer_ldf, c(14.768, 1.3583), 5e-4)
+near_abs(two@layer_cdf[1], 20.06, 5e-3)
 three <- pattern(1.1025, excess_layer(350))
-near(three@layer_ldf, c(13.0797, 1.3511), 5e-5)
-near(three@layer_cdf[1], 17.6719, 5e-5)
+near_abs(three@layer_ldf, c(13.0797, 1.3511), 5e-5)
+near_abs(three@layer_cdf[1], 17.6719, 5e-5)
 
 # The layer at each shift: 175, 3,010 and 4,112.5 for the four claims.
 for (i in 1:3) {
-  near(4 * layer_at_shift(ultimate(1), excess_layer(350), c(4.5, 1.25, 1)[i]),
+  near_abs(4 * layer_at_shift(ultimate(1), excess_layer(350), c(4.5, 1.25, 1)[i]),
        c(175, 3010, 4112.5)[i], 1e-9)
 }
 
@@ -79,8 +62,8 @@ expect_error_like(chain_ladder(sparse, "layer"), "")
 sel <- excess_selected(p)
 stopifnot(identical(sel$ldf_kind, "ldf"), sel$ldf_weight == 1)
 fit <- do.call(chain_ladder, c(list(sparse, "layer", tail = p@tail), sel))
-near(fit@ldf, c(17.2, 4112.5 / 3010))
-near(fit@ultimate[2], 3231 * 4112.5 / 3010, 1e-9)
+near_abs(fit@ldf, c(17.2, 4112.5 / 3010), 1e-11)
+near_abs(fit@ultimate[2], 3231 * 4112.5 / 3010, 1e-9)
 # Mack and the expected-loss methods take the same arguments.
 full <- triangle(
   data.frame(year = c(2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2022, 2023, 2023, 2024),
@@ -89,10 +72,10 @@ full <- triangle(
              premium = 10000),
   "year", "age", c("layer", "premium"))
 m <- do.call(mack, c(list(full, "layer", tail = p@tail), sel))
-near(m@ldf[1], 17.2)
+near_abs(m@ldf[1], 17.2, 1e-11)
 bf <- do.call(bornhuetter_ferguson,
               c(list(full, "layer", "premium", apriori = 0.2, tail = p@tail), sel))
-near(bf@ldf[1], 17.2)
+near_abs(bf@ldf[1], 17.2, 1e-11)
 
 # A weight blends with the triangle's own factors.
 stopifnot(excess_selected(p, 0.5)$ldf_weight == 0.5)
@@ -106,19 +89,19 @@ two_ages <- function(d) triangle(data.frame(year = 2020, age = c(12, 24), base =
                                  "year", "age", "base")
 shape <- pareto_shape(25000, c("12" = 1.75, "24" = 1.25), 1.25, base = excess_layer(25000))
 ps <- excess_pattern(two_ages(2.5), "base", excess_layer(100000), shape)
-near(ps@layer_ldf, 5, 1e-12)
-near(ps@tail, 1, 0)
+near_abs(ps@layer_ldf, 5, 1e-12)
+near_abs(ps@tail, 1, 0)
 stopifnot(length(ps@shifts) == 0)
 counts_shape <- pareto_shape(25000, c("12" = 1.75, "24" = 1.25), 1.25)
 pc <- excess_pattern(two_ages(2.5 * 0.25 / 0.75), "base", excess_layer(100000), counts_shape)
-near(pc@layer_ldf, 5, 1e-12)
+near_abs(pc@layer_ldf, 5, 1e-12)
 
 # Bear p. 138: 3.5 (2.0)^0.15 = 3.8835, printed 3.88.
 bear <- pareto_shape(1e5, c("12" = 1.25, "24" = 1.10), 1.10, base = excess_layer(1e5, 2e5))
 pb <- excess_pattern(two_ages(3.5), "base", excess_layer(2e5, 4e5), bear)
-near(pb@layer_ldf, 3.5 * 2^0.15, 1e-12)
-near(pb@layer_ldf, 3.8835, 5e-5)
-near(pb@layer_ldf, 3.88, 5e-3)
+near_abs(pb@layer_ldf, 3.5 * 2^0.15, 1e-12)
+near_abs(pb@layer_ldf, 3.8835, 5e-5)
+near_abs(pb@layer_ldf, 3.88, 5e-3)
 
 # Credibility weights: the layer triangle's ratios equal the pattern's
 # (172 to 235 is 4112.5 / 3010), so the cap is idle and the weights are
@@ -131,19 +114,19 @@ rows <- data.frame(
 ltri <- triangle(rows, "year", "age", c("layer", "count"))
 w <- excess_credibility_weights(p, ltri, "layer", k = 3, max_influence = 0.1)
 stopifnot(identical(names(w), c("12", "24")))
-near(w, c(0.5, 0.6))
+near_abs(w, c(0.5, 0.6), 1e-11)
 wc <- excess_credibility_weights(p, ltri, "layer", k = 3, max_influence = 0.1, counts = "count")
-near(wc, c(3 / 13, 3 / 8))
+near_abs(wc, c(3 / 13, 3 / 8), 1e-11)
 cl <- do.call(chain_ladder, c(list(ltri, "layer", tail = p@tail), excess_selected(p, w)))
-near(cl@ldf_weight, unname(w))
+near_abs(cl@ldf_weight, unname(w), 1e-11)
 expect_error_like(excess_credibility_weights(p, ltri, "layer", k = 0, max_influence = 0.1), "k")
 expect_error_like(excess_credibility_weights(p, ltri, "layer", k = 1, max_influence = 0), "max_influence")
 
 # Layer shares and exposure.
-near(layer_share(pareto(1, 2), excess_layer(4)), 0.125, 1e-12)
+near_abs(layer_share(pareto(1, 2), excess_layer(4)), 0.125, 1e-12)
 ln <- lognormal(8, 1)
 lay <- excess_layer(5000, 20000)
-near(layer_at_shift(ln, lay, 1) / mean(ln), layer_share(ln, lay), 1e-12)
+near_abs(layer_at_shift(ln, lay, 1) / mean(ln), layer_share(ln, lay), 1e-12)
 etri <- triangle(
   data.frame(year = c(2020, 2020, 2021), age = c(12, 24, 12), paid = c(10, 15, 11),
              premium = c(100, 100, 120)),
@@ -168,10 +151,10 @@ plain <- excess_pattern(ctri, "incurred", excess_layer(350), model)
 counted <- excess_pattern(ctri, "incurred", excess_layer(350), model, counts = "n")
 stopifnot(!isTRUE(all.equal(counted@layer_ldf, plain@layer_ldf)))
 tailed <- excess_pattern(ctri, "incurred", excess_layer(350), model, tail = 1.1)
-near(tailed@ground_up_tail, 1.1, 1e-12)
+near_abs(tailed@ground_up_tail, 1.1, 1e-12)
 stopifnot(tailed@tail != 1)
 via_object <- excess_pattern(ctri, "incurred", excess_layer(350), model, tail = tail_constant(1.1))
-near(via_object@layer_cdf, tailed@layer_cdf, 1e-12)
+near_abs(via_object@layer_cdf, tailed@layer_cdf, 1e-12)
 
 # Errors and objects.
 expect_error_like(excess_layer(-1), "attachment")

@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # A growth curve fitted to a benchmark pattern (`benchmark_curve()`,
 # docs/design/reserving-v02.md, decision 23). The Rust core is checked
@@ -6,25 +7,7 @@ suppressMessages(library(prospicio))
 # these tests check the binding's arguments, the same reference values and
 # the pattern in the chain ladder and the Bornhuetter-Ferguson method.
 
-near <- function(a, b, rel = 1e-12) {
-  a <- unname(a)
-  b <- unname(b)
-  if (length(a) != length(b) || !all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
-    stop(sprintf("got %s, want %s (rel %g)", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " "), rel), call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop(sprintf("expected an error mentioning %s", shQuote(pattern)), call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 ages <- seq(12, 120, by = 12)
 bench <- stats::setNames(c(0.18, 0.47, 0.66, 0.78, 0.855, 0.90, 0.93, 0.951, 0.965, 0.975), ages)
@@ -45,8 +28,8 @@ fit <- benchmark_curve(bench, weights = w, origin_width = 12)
 near(fit@omega, 1.6187953142168, 1e-7)
 near(fit@theta, 18.9910413059938, 1e-7)
 near(fit@sum_of_squares, 0.00480838215217264, 1e-9)
-near(fit@weights, w)
-near(fit@residuals, fit@observed - fit@fitted)
+near(fit@weights, w, 1e-12)
+near(fit@residuals, fit@observed - fit@fitted, 1e-12)
 stopifnot(identical(names(fit@residuals), as.character(ages)))
 
 # Factors to ultimate, and weights naming only some ages.
@@ -55,10 +38,10 @@ by_cdf <- benchmark_curve(1 / bench, kind = "cdf")
 near(by_cdf@omega, fit@omega, 1e-7)
 stopifnot(is.null(fit@origin_width), is.infinite(fit@max_age))
 partial <- benchmark_curve(bench, weights = c("24" = 2))
-near(partial@weights, c(1, 2, rep(1, 8)))
+near(partial@weights, c(1, 2, rep(1, 8)), 1e-12)
 
 # Values at any age, and the pattern in the chain ladder and the BF.
-near(benchmark_cdf(fit, c(12, 30)), 1 / benchmark_percent_developed(fit, c(12, 30)))
+near(benchmark_cdf(fit, c(12, 30)), 1 / benchmark_percent_developed(fit, c(12, 30)), 1e-12)
 rows <- list(c(110, 290, 370, 420, 440, 452), c(95, 300, 390, 425, 447), c(130, 320, 410, 470),
              c(105, 305, 395), c(120, 310), 125)
 long <- data.frame(year = rep(2020:2025, lengths(rows)),

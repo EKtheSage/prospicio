@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Selected development patterns (`ldf`, `ldf_kind`, `ldf_weight`) on the
 # chain ladder, the expected-loss methods, Mack and the bootstraps
@@ -6,25 +7,7 @@ suppressMessages(library(prospicio))
 # against chainladder-python and R in validation/tests/reserving_patterns.rs;
 # these tests check the binding's arguments, conversions and errors.
 
-near <- function(a, b, rel = 1e-12) {
-  a <- unname(a)
-  b <- unname(b)
-  if (length(a) != length(b) || !all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
-    stop(sprintf("got %s, want %s (rel %g)", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " "), rel), call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop(sprintf("expected an error mentioning %s", shQuote(pattern)), call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 long <- data.frame(
   year = rep(2019:2023, 5:1),
@@ -45,50 +28,50 @@ by_pct <- chain_ladder(tri, "paid", ldf = 1 / cdf, ldf_kind = "percent_developed
 by_frame <- chain_ladder(tri, "paid", ldf = data.frame(age = c(12, 24, 36, 48), value = unname(sel)),
                          ldf_kind = "ldf")
 for (fit in list(by_ldf, by_cdf, by_pct, by_frame)) {
-  near(fit@ldf, sel)
-  near(fit@selected_ldf, sel)
-  near(fit@ldf_weight, rep(1, 4))
+  near(fit@ldf, sel, 1e-12)
+  near(fit@selected_ldf, sel, 1e-12)
+  near(fit@ldf_weight, rep(1, 4), 1e-12)
   stopifnot(all(fit@std_err == 0), all(fit@estimated_std_err[1:3] > 0))
-  near(fit@estimated_ldf, base@ldf)
+  near(fit@estimated_ldf, base@ldf, 1e-12)
   stopifnot(identical(names(fit@selected_ldf), c("12-24", "24-36", "36-48", "48-60")))
 }
 stopifnot(is.null(by_ldf@pattern_rescale), is.null(base@pattern_rescale))
-near(by_cdf@pattern_rescale, 1)
-near(by_pct@pattern_rescale, 1)
+near(by_cdf@pattern_rescale, 1, 1e-12)
+near(by_pct@pattern_rescale, 1, 1e-12)
 
 # A partial pattern for the immature ages; the rest stays estimated.
 part <- chain_ladder(tri, "paid", ldf = c("12" = 0.5, "24" = 0.8), ldf_kind = "percent_developed")
 stopifnot(identical(unname(is.na(part@selected_ldf)), c(FALSE, TRUE, TRUE, TRUE)))
-near(part@ldf, c(1.6, base@ldf[-1]))
-near(part@ldf_weight, c(1, 0, 0, 0))
-near(part@pattern_rescale, 1 / (0.8 * base@cdf[2]))
-near(part@ultimate[5], 140 * 1.6 * base@cdf[2])
-near(part@std_err[-1], base@std_err[-1])
+near(part@ldf, c(1.6, base@ldf[-1]), 1e-12)
+near(part@ldf_weight, c(1, 0, 0, 0), 1e-12)
+near(part@pattern_rescale, 1 / (0.8 * base@cdf[2]), 1e-12)
+near(part@ultimate[5], 140 * 1.6 * base@cdf[2], 1e-12)
+near(part@std_err[-1], base@std_err[-1], 1e-12)
 
 # Blends: one weight, or by age.
 blend <- chain_ladder(tri, "paid", ldf = sel[1:2], ldf_kind = "ldf", ldf_weight = 0.4)
-near(blend@ldf[1:2], 0.4 * sel[1:2] + 0.6 * base@ldf[1:2])
-near(blend@blended_ldf, blend@ldf)
-near(blend@std_err[1:2], 0.6 * base@std_err[1:2])
+near(blend@ldf[1:2], 0.4 * sel[1:2] + 0.6 * base@ldf[1:2], 1e-12)
+near(blend@blended_ldf, blend@ldf, 1e-12)
+near(blend@std_err[1:2], 0.6 * base@std_err[1:2], 1e-12)
 by_age <- chain_ladder(tri, "paid", ldf = sel[1:2], ldf_kind = "ldf", ldf_weight = c("24" = 0))
-near(by_age@ldf, c(1.6, base@ldf[-1]))
+near(by_age@ldf, c(1.6, base@ldf[-1]), 1e-12)
 near(chain_ladder(tri, "paid", ldf = sel, ldf_kind = "ldf", ldf_weight = 0)@ultimate,
-     base@ultimate)
+     base@ultimate, 1e-12)
 
 # Tails: a cumulative pattern is rescaled so that, at the oldest age, its
 # percent developed times the tail is 100%; an age-to-age one stops at the
 # last age and the tail multiplies on top.
 pct <- c("12" = 0.5, "24" = 0.8, "36" = 0.9, "48" = 0.93, "60" = 0.95)
 tailed <- chain_ladder(tri, "paid", tail = 1.02, ldf = pct, ldf_kind = "percent_developed")
-near(tailed@pattern_rescale, 1 / (0.95 * 1.02))
-near(0.95 * tailed@pattern_rescale * tailed@tail, 1)
-near(tailed@cdf[1], 2 / tailed@pattern_rescale)
-near(totals_frame(tailed)$pattern_rescale, tailed@pattern_rescale)
+near(tailed@pattern_rescale, 1 / (0.95 * 1.02), 1e-12)
+near(0.95 * tailed@pattern_rescale * tailed@tail, 1, 1e-12)
+near(tailed@cdf[1], 2 / tailed@pattern_rescale, 1e-12)
+near(totals_frame(tailed)$pattern_rescale, tailed@pattern_rescale, 1e-12)
 stopifnot(is.null(chain_ladder(tri, "paid", tail = 1.02, ldf = sel, ldf_kind = "ldf")@pattern_rescale))
 # A cumulative pattern may end at a constant tail's attachment age.
 attached <- chain_ladder(tri, "paid", tail = tail_constant(1.1, attachment_age = 36),
                          ldf = c("12" = 2, "24" = 1.25, "36" = 1.1), ldf_kind = "cdf")
-near(attached@ldf[1:2], c(1.6, 1.25 / 1.1))
+near(attached@ldf[1:2], c(1.6, 1.25 / 1.1), 1e-12)
 
 # The expected-loss methods develop with the pattern.
 pct <- c("12" = 0.5, "24" = 0.8, "36" = 0.9, "48" = 0.95, "60" = 1)
@@ -96,14 +79,14 @@ latest <- c(172, 185, 192, 200, 140)
 exposure <- c(250, 260, 270, 280, 290)
 bf <- bornhuetter_ferguson(tri, "paid", "premium", apriori = 0.7, ldf = pct,
                            ldf_kind = "percent_developed")
-near(bf@cdf, 1 / pct)
-near(bf@ultimate, latest + (1 - rev(pct)) * 0.7 * exposure)
+near(bf@cdf, 1 / pct, 1e-12)
+near(bf@ultimate, latest + (1 - rev(pct)) * 0.7 * exposure, 1e-12)
 near(expected_loss(tri, "paid", "premium", apriori = 0.7, ldf = pct,
-                   ldf_kind = "percent_developed")@cdf, 1 / pct)
+                   ldf_kind = "percent_developed")@cdf, 1 / pct, 1e-12)
 near(benktander(tri, "paid", "premium", apriori = 0.7, ldf = pct,
-                ldf_kind = "percent_developed")@ultimate, bf@ultimate)
+                ldf_kind = "percent_developed")@ultimate, bf@ultimate, 1e-12)
 cc <- cape_cod(tri, "paid", "premium", ldf = pct, ldf_kind = "percent_developed")
-near(cc@apriori[1], sum(latest) / sum(exposure * rev(pct)))
+near(cc@apriori[1], sum(latest) / sum(exposure * rev(pct)), 1e-12)
 stopifnot(all(c("estimated_ldf", "selected_ldf", "ldf_weight", "blended_ldf",
                 "estimated_std_err") %in% names(development_frame(bf))))
 
@@ -112,13 +95,13 @@ stopifnot(all(c("estimated_ldf", "selected_ldf", "ldf_weight", "blended_ldf",
 m <- mack(tri, "paid")
 own <- stats::setNames(unname(m@ldf), m@development[-5])
 full <- mack(tri, "paid", ldf = own, ldf_kind = "ldf")
-near(full@ultimate, m@ultimate)
-near(full@process_risk, m@process_risk)
+near(full@ultimate, m@ultimate, 1e-12)
+near(full@process_risk, m@process_risk, 1e-12)
 stopifnot(all(full@parameter_risk == 0), full@total_parameter_risk == 0)
 blended <- mack(tri, "paid", ldf = own, ldf_kind = "ldf", ldf_weight = 0.4)
 near(blended@parameter_risk, 0.6 * m@parameter_risk, 1e-9)
 near(blended@total_parameter_risk, 0.6 * m@total_parameter_risk, 1e-9)
-near(blended@process_risk, m@process_risk)
+near(blended@process_risk, m@process_risk, 1e-12)
 stopifnot(claims_development_result(full)@total_one_year_standard_error <
             claims_development_result(m)@total_one_year_standard_error)
 
@@ -173,10 +156,10 @@ for (case in list(
 )) {
   sel_fit <- chain_ladder(tri, "paid", ldf = case[[1]], ldf_kind = case[[2]])
   stopifnot(is.finite(sel_fit@total_reserve))
-  near(sel_fit@ldf[1], case[[3]][1] / case[[3]][2])
-  near(sel_fit@ldf[-1], base@ldf[-1])
+  near(sel_fit@ldf[1], case[[3]][1] / case[[3]][2], 1e-12)
+  near(sel_fit@ldf[-1], base@ldf[-1], 1e-12)
   stopifnot(is.null(sel_fit@pattern_tail))
-  near(sel_fit@pattern_rescale, case[[3]][2] / sel_fit@cdf[2])
+  near(sel_fit@pattern_rescale, case[[3]][2] / sel_fit@cdf[2], 1e-12)
 }
 expect_error_like(chain_ladder(tri, "paid", ldf = c("12" = 1.5), ldf_kind = "cdf"),
                   "one value is the tail from its age")
@@ -199,7 +182,7 @@ stopifnot(identical(tail(names(development_frame(fits)), 5),
                     c("estimated_ldf", "selected_ldf", "ldf_weight", "blended_ldf",
                       "estimated_std_err")))
 near(totals_frame(fits)$pattern_rescale,
-     c(segment(fits, lob = "auto")@pattern_rescale, segment(fits, lob = "home")@pattern_rescale))
+     c(segment(fits, lob = "auto")@pattern_rescale, segment(fits, lob = "home")@pattern_rescale), 1e-12)
 stopifnot(!"selected_ldf" %in% names(development_frame(base)))
 
 cat("test-reserving-patterns.R: ok\n")
@@ -209,15 +192,15 @@ stopifnot(is.null(totals_frame(chain_ladder(tri, "paid"))$pattern_tail))
 # the tail; with a tail it is rescaled, and a partial one implies none.
 pct95 <- c("12" = 0.5, "24" = 0.8, "36" = 0.9, "48" = 0.93, "60" = 0.95)
 implied <- chain_ladder(tri, "paid", ldf = pct95, ldf_kind = "percent_developed")
-near(implied@pattern_tail, 1 / 0.95)
-near(implied@tail, 1 / 0.95)
-near(implied@pattern_rescale, 1)
+near(implied@pattern_tail, 1 / 0.95, 1e-12)
+near(implied@tail, 1 / 0.95, 1e-12)
+near(implied@pattern_rescale, 1, 1e-12)
 stopifnot(implied@tail_std_err == 0)
-near(implied@ultimate[5], 140 / 0.5)
+near(implied@ultimate[5], 140 / 0.5, 1e-12)
 stopifnot(is.null(chain_ladder(tri, "paid", tail = 1.02, ldf = pct95,
                                ldf_kind = "percent_developed")@pattern_tail))
 stopifnot(is.null(part@pattern_tail), is.null(by_ldf@pattern_tail))
-near(by_cdf@pattern_tail, 1)
+near(by_cdf@pattern_tail, 1, 1e-12)
 m95 <- mack(tri, "paid", tail_sigma = 1, ldf = pct95, ldf_kind = "percent_developed")
 stopifnot(m95@chain_ladder@tail_std_err == 0)
 one95 <- odp_one_year(tri, "paid", n_sims = 100, seed = 1, ldf = pct95,
@@ -236,7 +219,7 @@ stopifnot(is.finite(variance(mk95@cdr)))
 
 # A skipped age is interpolated: log cdf linear in age.
 gap <- chain_ladder(tri, "paid", ldf = c("12" = 0.5, "60" = 0.98), ldf_kind = "percent_developed")
-near(gap@selected_ldf, rep((0.98 / 0.5)^0.25, 4))
+near(gap@selected_ldf, rep((0.98 / 0.5)^0.25, 4), 1e-12)
 
 cat("test-reserving-patterns.R: ok\n")
 
@@ -246,35 +229,35 @@ cdf_632 <- c("12" = 3, "24" = 1.8, "36" = 1.35, "48" = 1.12, "60" = 1)
 five_methods_by_hand <- function(tri, ldf, paid, cdf) {
   reported <- 1 / cdf
   near(chain_ladder(tri, "paid", ldf = ldf, ldf_kind = "cdf", ldf_weight = 1)@ultimate,
-       paid * cdf)
+       paid * cdf, 1e-12)
   bf <- paid + 0.7 * 1500 * (1 - reported)
   near(bornhuetter_ferguson(tri, "paid", "premium", apriori = 0.7, ldf = ldf, ldf_kind = "cdf",
-                            ldf_weight = 1)@ultimate, bf)
+                            ldf_weight = 1)@ultimate, bf, 1e-12)
   near(expected_loss(tri, "paid", "premium", apriori = 0.7, ldf = ldf, ldf_kind = "cdf",
-                     ldf_weight = 1)@ultimate, rep(0.7 * 1500, length(paid)))
+                     ldf_weight = 1)@ultimate, rep(0.7 * 1500, length(paid)), 1e-12)
   near(benktander(tri, "paid", "premium", apriori = 0.7, n_iters = 2, ldf = ldf,
-                  ldf_kind = "cdf", ldf_weight = 1)@ultimate, paid + bf * (1 - reported))
+                  ldf_kind = "cdf", ldf_weight = 1)@ultimate, paid + bf * (1 - reported), 1e-12)
   elr <- sum(paid) / sum(1500 * reported)
   near(cape_cod(tri, "paid", "premium", ldf = ldf, ldf_kind = "cdf", ldf_weight = 1)@ultimate,
-       paid + elr * 1500 * (1 - reported))
+       paid + elr * 1500 * (1 - reported), 1e-12)
 }
 paid_632 <- c(1000, 800, 600, 400, 200)
 diag_632 <- triangle(data.frame(year = 2020:2024, age = c(60, 48, 36, 24, 12), paid = paid_632,
                                 premium = 1500), "year", "age", c("paid", "premium"))
 five_methods_by_hand(diag_632, cdf_632, paid_632, c(1, 1.12, 1.35, 1.8, 3))
 near(chain_ladder(diag_632, "paid", ldf = cdf_632, ldf_kind = "cdf", ldf_weight = 1)@ultimate,
-     c(1000, 896, 810, 720, 600))
+     c(1000, 896, 810, 720, 600), 1e-12)
 one_632 <- triangle(data.frame(year = 2024, age = 12, paid = 200, premium = 1500), "year", "age",
                     c("paid", "premium"))
 five_methods_by_hand(one_632, cdf_632, 200, 3)
 # One value to ultimate at the only age is the tail from it.
 five_methods_by_hand(one_632, c("12" = 3), 200, 3)
 one_fit <- chain_ladder(one_632, "paid", ldf = c("12" = 3), ldf_kind = "cdf", ldf_weight = 1)
-near(one_fit@ultimate, 600)
-near(one_fit@pattern_tail, 3)
-near(one_fit@pattern_rescale, 1)
+near(one_fit@ultimate, 600, 1e-12)
+near(one_fit@pattern_tail, 3, 1e-12)
+near(one_fit@pattern_rescale, 1, 1e-12)
 near(chain_ladder(one_632, "paid", ldf = c("12" = 1 / 3),
-                  ldf_kind = "percent_developed")@ultimate, 600)
+                  ldf_kind = "percent_developed")@ultimate, 600, 1e-12)
 older_632 <- triangle(data.frame(year = 2021, age = 48, paid = 800, premium = 1500), "year",
                       "age", c("paid", "premium"))
 five_methods_by_hand(older_632, cdf_632, 800, 1.12)
@@ -284,8 +267,8 @@ at_60 <- triangle(data.frame(year = 2020, age = 60, paid = 1000, premium = 1500)
 five_methods_by_hand(at_60, cdf_632, 1000, 1)
 five_methods_by_hand(older_632, cdf_632[1:4], 800, 1.12)
 to_48 <- chain_ladder(older_632, "paid", ldf = cdf_632[1:4], ldf_kind = "cdf")
-near(to_48@ultimate, 896)
-near(to_48@pattern_tail, 1.12)
+near(to_48@ultimate, 896, 1e-12)
+near(to_48@pattern_tail, 1.12, 1e-12)
 five_methods_by_hand(one_632, c("6" = 4, "12" = 3), 200, 3)
 # The method's one value and its own tail conflict, and the bootstrap
 # names that conflict.

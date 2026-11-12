@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Averages over the latest periods, excluding the highest and lowest link
 # ratios, and the geometric average (`n_periods`, `drop_high`, `drop_low`
@@ -7,28 +8,9 @@ suppressMessages(library(prospicio))
 # validation/tests/reserving_averages.rs; these tests check the binding's
 # arguments, results and errors against the same reference file.
 
-near <- function(a, b, rel = 1e-9) {
-  a <- unname(a)
-  b <- unname(b)
-  if (length(a) != length(b) || !all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
-    stop(sprintf("got %s, want %s (rel %g)", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " "), rel), call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop(sprintf("expected an error mentioning %s", shQuote(pattern)), call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 # Tests run from the repository root (CI and `cargo xtask r`).
-validation <- function(...) file.path("validation", ...)
 raa_long <- utils::read.csv(validation("data", "raa.csv"), comment.char = "#")
 raa <- triangle(raa_long, "origin", "development", "value")
 
@@ -44,18 +26,18 @@ want <- function(method, quantity) {
 # One case each against chainladder-python 0.10.1.
 volume3 <- chain_ladder(raa, average = "volume", n_periods = 3)
 stopifnot(volume3@excluded)
-near(volume3@ldf, want("average=volume;n_periods=3", "ldf"))
-near(volume3@n_links, want("average=volume;n_periods=3", "n_links"))
+near(volume3@ldf, want("average=volume;n_periods=3", "ldf"), 1e-9)
+near(volume3@n_links, want("average=volume;n_periods=3", "n_links"), 1e-9)
 stopifnot(is.integer(volume3@n_links),
           identical(names(volume3@n_links), names(volume3@ldf)))
 mack3 <- mack(raa, average = "volume", n_periods = 3)
-near(mack3@sigma, want("average=volume;n_periods=3", "sigma"))
+near(mack3@sigma, want("average=volume;n_periods=3", "sigma"), 1e-9)
 # The reference has no standard error for the oldest link, which has one ratio.
-near(utils::head(mack3@std_err, 8), want("average=volume;n_periods=3", "std_err"))
+near(utils::head(mack3@std_err, 8), want("average=volume;n_periods=3", "std_err"), 1e-9)
 
 medial <- chain_ladder(raa, average = "simple", drop_high = 1, drop_low = 1)
-near(medial@ldf, want("average=simple;drop_high=1;drop_low=1", "ldf"))
-near(medial@n_links, want("average=simple;drop_high=1;drop_low=1", "n_links"))
+near(medial@ldf, want("average=simple;drop_high=1;drop_low=1", "ldf"), 1e-9)
+near(medial@n_links, want("average=simple;drop_high=1;drop_low=1", "n_links"), 1e-9)
 stopifnot(medial@excluded)
 
 # No exclusions is the default fit, and reports every link.
@@ -86,8 +68,8 @@ geo_want <- vapply(1:9, function(k) {
   r <- wide[, k + 1] / wide[, k]
   exp(mean(log(r[is.finite(r)])))
 }, 0)
-near(geo@ldf, geo_want)
-near(geo@n_links, 9:1)
+near(geo@ldf, geo_want, 1e-9)
+near(geo@n_links, 9:1, 1e-9)
 stopifnot(is.nan(geo@alpha), !geo@excluded)
 stopifnot(chain_ladder(raa, average = "geometric", n_periods = 3)@excluded)
 
@@ -149,9 +131,9 @@ near(fit@ldf, cdf[-5] / cdf[-1], 1e-12)
 pct <- chain_ladder(tri, "paid", ldf = 1 / cdf, ldf_kind = "percent_developed")
 near(pct@ldf, cdf[-5] / cdf[-1], 1e-12)
 # The pattern reaches the oldest age, so its last value is the tail level.
-near(fit@pattern_tail, cdf[5])
-near(pct@pattern_tail, cdf[5])
-near(fit@tail, cdf[5])
+near(fit@pattern_tail, cdf[5], 1e-9)
+near(pct@pattern_tail, cdf[5], 1e-9)
+near(fit@tail, cdf[5], 1e-9)
 
 # n_links and excluded are per-segment properties: with several segments they
 # raise, as the other single-segment properties do.
