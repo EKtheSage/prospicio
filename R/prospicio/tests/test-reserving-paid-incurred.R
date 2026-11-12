@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Merz and Wuthrich's paid-incurred chain (docs/design/reserving-v02.md,
 # decision 32). The Rust core is checked against R ChainLadder's
@@ -6,28 +7,9 @@ suppressMessages(library(prospicio))
 # tests check the binding's arguments, results, frames, print and errors
 # against the same R ChainLadder reference file.
 
-near <- function(a, b, rel = 1e-9, abs = 1e-12) {
-  a <- unname(a)
-  b <- unname(b)
-  if (length(a) != length(b) || !all(abs(a - b) <= pmax(rel * abs(b), abs))) {
-    stop(sprintf("got %s, want %s", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " ")), call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop(sprintf("expected an error mentioning %s", shQuote(pattern)), call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 # Tests run from the repository root (CI and `cargo xtask r`).
-validation <- function(...) file.path("validation", ...)
 load_triangle <- function(name) {
   long <- utils::read.csv(validation("data", paste0(name, ".csv")), comment.char = "#")
   triangle(long, "origin", "development", c("paid", "incurred"))
@@ -51,21 +33,21 @@ for (name in c("usaa", "dahms")) {
   fit <- paid_incurred_chain(tri, "paid", "incurred", convention = "r_chainladder")
   stopifnot(S7::S7_inherits(fit, paid_incurred_fit))
   later <- fit@origins[-1]
-  near(fit@ultimate[-1], want(name, "ultimate", later))
-  near(fit@reserve[-1], want(name, "reserve", later))
-  near(fit@std_err[-1], want(name, "std_err", later))
-  near(fit@total_reserve, want(name, "total_reserve"))
-  near(fit@total_std_err, want(name, "total_std_err"))
-  near(fit@total_ultimate - fit@ultimate[1], want(name, "ultimate_after_first"))
+  near(fit@ultimate[-1], want(name, "ultimate", later), 1e-9, abs = 1e-12)
+  near(fit@reserve[-1], want(name, "reserve", later), 1e-9, abs = 1e-12)
+  near(fit@std_err[-1], want(name, "std_err", later), 1e-9, abs = 1e-12)
+  near(fit@total_reserve, want(name, "total_reserve"), 1e-9, abs = 1e-12)
+  near(fit@total_std_err, want(name, "total_std_err"), 1e-9, abs = 1e-12)
+  near(fit@total_ultimate - fit@ultimate[1], want(name, "ultimate_after_first"), 1e-9, abs = 1e-12)
   n <- length(fit@development)
-  near(fit@sigma, want(name, "sigma", as.character(0:(n - 1))))
-  near(fit@tau, want(name, "tau", as.character(0:(n - 2))))
-  near(fit@phi, want(name, "phi", as.character(0:(n - 1))))
-  near(fit@psi, want(name, "psi", as.character(0:(n - 2))))
-  near(fit@phi_sd, want(name, "phi_sd", as.character(0:(n - 1))))
-  near(fit@psi_sd, want(name, "psi_sd", as.character(0:(n - 2))))
+  near(fit@sigma, want(name, "sigma", as.character(0:(n - 1))), 1e-9, abs = 1e-12)
+  near(fit@tau, want(name, "tau", as.character(0:(n - 2))), 1e-9, abs = 1e-12)
+  near(fit@phi, want(name, "phi", as.character(0:(n - 1))), 1e-9, abs = 1e-12)
+  near(fit@psi, want(name, "psi", as.character(0:(n - 2))), 1e-9, abs = 1e-12)
+  near(fit@phi_sd, want(name, "phi_sd", as.character(0:(n - 1))), 1e-9, abs = 1e-12)
+  near(fit@psi_sd, want(name, "psi_sd", as.character(0:(n - 2))), 1e-9, abs = 1e-12)
   # R's beta_j weighs the origin whose latest age is j.
-  near(rev(fit@incurred_weight[-1]), want(name, "beta", as.character(0:(n - 2))))
+  near(rev(fit@incurred_weight[-1]), want(name, "beta", as.character(0:(n - 2))), 1e-9, abs = 1e-12)
 }
 
 # The default, the model's posterior: about 0.5% above R's on USAA.
@@ -79,7 +61,7 @@ stopifnot(abs(fit@total_reserve / r@total_reserve - 1 - 0.0050) < 1e-4,
           identical(names(fit@reserve), fit@origins),
           identical(names(fit@tau), as.character(fit@development[-10])),
           all(dim(fit@posterior_covariance) == c(19, 19)))
-near(sqrt(fit@posterior_covariance["phi_12", "phi_12"]), fit@phi_sd[["12"]])
+near(sqrt(fit@posterior_covariance["phi_12", "phi_12"]), fit@phi_sd[["12"]], 1e-9, abs = 1e-12)
 
 # Settings reach the fit.
 given <- paid_incurred_chain(tri, "paid", "incurred", sigma = fit@sigma, tau = fit@tau)
@@ -99,8 +81,8 @@ long <- as.data.frame(fit)
 stopifnot(identical(names(long), c("origin", "latest", "latest_incurred", "ultimate", "reserve",
                                    "incurred_weight", "std_err")),
           nrow(long) == 10)
-near(long$reserve, fit@reserve)
-near(totals_frame(fit)$std_err, fit@total_std_err)
+near(long$reserve, fit@reserve, 1e-9, abs = 1e-12)
+near(totals_frame(fit)$std_err, fit@total_std_err, 1e-9, abs = 1e-12)
 dev <- development_frame(fit)
 stopifnot(identical(dev$development, fit@development), is.na(dev$tau[10]))
 out <- utils::capture.output(print(fit))

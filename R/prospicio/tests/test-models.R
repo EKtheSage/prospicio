@@ -1,12 +1,6 @@
 library(prospicio)
 source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
-near <- function(a, b, rel = 1e-10) {
-  if (!all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
-    stop(sprintf("got %s, want %s", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " ")), call. = FALSE)
-  }
-}
 
 # GLMs agree with stats::glm on the same formula. R's covariance uses the
 # working weights of its last iteration, so it is refitted to a tight
@@ -157,10 +151,10 @@ gt <- gam_fit(y ~ x + z, tz, smooths = character(), family = "gaussian", smoothi
 stopifnot(length(gt@lambdas) == 2, max(abs(predict(gt, tz) - tz$y)) < 0.2)
 
 # Metrics, splits, MCMC.
-near(family_deviance("gaussian", c(1, 3), c(2, 2)), 2)
-near(gini_index(c(0, 1), c(0.1, 0.9)), 0.5)
+near(family_deviance("gaussian", c(1, 3), c(2, 2)), 2, 1e-10)
+near(gini_index(c(0, 1), c(0.1, 0.9)), 0.5, 1e-10)
 stopifnot(identical(round(lift_table(c(0, 1, 2, 3), c(0.1, 0.9, 2.1, 2.9), bands = 2)$actual), c(1, 5)))
-near(crps_draws(3, 1), 2)
+near(crps_draws(3, 1), 2, 1e-10)
 f <- k_fold(10, 5, seed = 1)
 stopifnot(identical(sort(unlist(lapply(f, `[[`, "test"))), as.double(1:10)))
 stopifnot(identical(time_ordered(c(0, 1, 2, 1, 2, 2), 1)[[1]]$test, c(3, 5, 6)))

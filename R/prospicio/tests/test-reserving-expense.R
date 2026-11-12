@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Recoveries, ALAE and ULAE (docs/design/reserving-v02.md, decision 37). The
 # Rust core is checked exhibit by exhibit in validation/tests/reserving_expense.rs;
@@ -7,25 +8,7 @@ suppressMessages(library(prospicio))
 # same numbers as python/tests/test_reserving_expense.py, and check the
 # binding's arguments and errors.
 
-near <- function(a, b, tol) {
-  a <- unname(a)
-  b <- unname(b)
-  if (length(a) != length(b) || !all(abs(a - b) <= tol)) {
-    stop(sprintf("got %s, want %s (tol %g)", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " "), tol), call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop(sprintf("expected an error mentioning %s", shQuote(pattern)), call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 # The data sit in the repository, next to the Rust validation.
 data_dir <- function() {
@@ -67,15 +50,15 @@ ss_cdf <- c(1.499, 1.009, rep(1, 9))
 ss <- ratio_development(physical, "received_ss", "paid", ss_claims, ldf = pattern(ss_cdf),
                         ldf_kind = "cdf", selected = c("2008" = 0.345))
 stopifnot(ss@selected_ratio[["2008"]] == 0.345, is.na(ss@ratios["2008", "24"]))
-near(ss@ultimate[["2007"]], 6036, 1)
-near(ss@total_ultimate, 44934, 2)
-near(ss@total_unpaid, 3054, 2)
-near(tail(ss@unpaid, 2), c(79, 2966), 1)
+near_abs(ss@ultimate[["2007"]], 6036, 1)
+near_abs(ss@total_ultimate, 44934, 2)
+near_abs(ss@total_unpaid, 3054, 2)
+near_abs(tail(ss@unpaid, 2), c(79, 2966), 1)
 
 medial <- ratio_development(physical, "received_ss", "paid", ss_claims, n_periods = 5,
                             drop_high = 1, drop_low = 1)
-near(medial@averages[1:2], c(1.486, 1.009), 0.0005)
-near(medial@cdf, ss_cdf, 0.0015)
+near_abs(medial@averages[1:2], c(1.486, 1.009), 0.0005)
+near_abs(medial@cdf, ss_cdf, 0.0015)
 
 # Chapter 16, Exhibit I.
 property <- book("friedland_auto_property_damage.csv")
@@ -85,21 +68,21 @@ alae_claims <- selected_claims(property,
 alae_cdf <- c(1.332, 1.201, 1.140, 1.086, 1.050, 1.021, 1.007, 1.003, 1.002, 1, 1)
 alae <- ratio_development(property, "paid_alae", "paid", alae_claims, ldf = pattern(alae_cdf),
                           ldf_kind = "cdf", selected = c("2007" = 0.0077, "2008" = 0.0077))
-near(alae@total_ultimate, 12485, 2)
-near(alae@unpaid[["2007"]], -94, 1)
-near(alae@ultimate[["2006"]], 1302, 1)
-near(alae@total_unpaid, 800, 2)
+near_abs(alae@total_ultimate, 12485, 2)
+near_abs(alae@unpaid[["2007"]], -94, 1)
+near_abs(alae@ultimate[["2006"]], 1302, 1)
+near_abs(alae@total_unpaid, 800, 2)
 
 additive <- ratio_development(property, "paid_alae", "paid", alae_claims, n_periods = 3,
                               additive = TRUE)
-near(additive@total_ultimate, 13215, 2)
-near(additive@total_unpaid, 1530, 2)
-near(round(additive@cdf[[1]], 4), 0.0019, 0)
+near_abs(additive@total_ultimate, 13215, 2)
+near_abs(additive@total_unpaid, 1530, 2)
+near_abs(round(additive@cdf[[1]], 4), 0.0019, 0)
 moved <- ratio_development(property, "paid_alae", "paid", alae_claims, n_periods = 3,
                            additive = TRUE, additive_selected = c("12" = 0.001),
                            additive_tail = 0.0001)
-near(moved@factors[1], 0.001, 0)
-near(moved@cdf[[11]], 0.0001, 0)
+near_abs(moved@factors[1], 0.001, 0)
+near_abs(moved@cdf[[11]], 0.0001, 0)
 
 expect_error_like(ratio_development(property, "paid_alae", "paid", alae_claims, additive_tail = 0.1),
                   "additive = TRUE")
@@ -113,20 +96,20 @@ xyz_paid <- c(333e6, 358e6, 334e6, 347e6, 391e6)
 xyz_incurred <- c(535.213e6, 492.265e6, 435.985e6, 432.966e6, 475.300e6)
 
 classical <- ulae_estimate(xyz_ulae, xyz_paid, 603e6, 316e6, ratio = 0.045)
-near(classical@total, 27787500, 1e-6)
-near(round(classical@total_ratio, 3), 0.046, 0)
+near_abs(classical@total, 27787500, 1e-6)
+near_abs(round(classical@total_ratio, 3), 0.046, 0)
 stopifnot(is.na(classical@expected_claims))
-near(ulae_estimate(xyz_ulae, xyz_paid, 603e6, 316e6, ratio = 0.045, pure_ibnr = 19e6)@total,
+near_abs(ulae_estimate(xyz_ulae, xyz_paid, 603e6, 316e6, ratio = 0.045, pure_ibnr = 19e6)@total,
      21105000, 1e-6)
-near(ulae_estimate(xyz_ulae, xyz_paid, 100, 10, ratio = 0.1, opening = 0.25)@total,
+near_abs(ulae_estimate(xyz_ulae, xyz_paid, 100, 10, ratio = 0.1, opening = 0.25)@total,
      0.1 * (0.75 * 100 + 10), 1e-9)
-near(ulae_estimate(xyz_ulae, xyz_paid, 603e6, 316e6)@ratio, sum(xyz_ulae) / sum(xyz_paid), 1e-15)
+near_abs(ulae_estimate(xyz_ulae, xyz_paid, 603e6, 316e6)@ratio, sum(xyz_ulae) / sum(xyz_paid), 1e-15)
 
 kittel <- ulae_estimate(xyz_ulae, xyz_paid, 603e6, 316e6, method = "kittel",
                         reported = xyz_incurred, ratio = 0.040)
-near(kittel@basis[1], 434106500, 1e-6)
-near(kittel@total, 24700000, 1e-6)
-near(ulae_estimate(xyz_ulae, xyz_paid, 603e6, 316e6, method = "kittel", reported = xyz_incurred,
+near_abs(kittel@basis[1], 434106500, 1e-6)
+near_abs(kittel@total, 24700000, 1e-6)
+near_abs(ulae_estimate(xyz_ulae, xyz_paid, 603e6, 316e6, method = "kittel", reported = xyz_incurred,
                    ratio = 0.040, pure_ibnr = 19e6)@total, 18760000, 1e-6)
 
 # Chapter 17, Exhibit IV.
@@ -140,21 +123,21 @@ generalized <- function(weights) {
                 ultimate = pqr_ultimate)
 }
 sixty <- generalized(c(0.6, 0.4))
-near(sixty@expected_claims, 15516, 0.5)
-near(sixty@bornhuetter_ferguson, 16767, 0.5)
-near(sixty@development, 17152, 0.5)
-near(sixty@total, 16767, 0.5)
+near_abs(sixty@expected_claims, 15516, 0.5)
+near_abs(sixty@bornhuetter_ferguson, 16767, 0.5)
+near_abs(sixty@development, 17152, 0.5)
+near_abs(sixty@total, 16767, 0.5)
 seventy <- generalized(c(0.7, 0.3, 0))
-near(seventy@bornhuetter_ferguson, 12795, 0.5)
-near(seventy@development, 12201, 0.5)
-near(ulae_estimate(pqr_ulae, pqr_paid, 292130, 113853, method = "conger_nolibos",
+near_abs(seventy@bornhuetter_ferguson, 12795, 0.5)
+near_abs(seventy@development, 12201, 0.5)
+near_abs(ulae_estimate(pqr_ulae, pqr_paid, 292130, 113853, method = "conger_nolibos",
                    reported = pqr_ultimate, ratio = 0.100, pure_ibnr = 0.04 * 177100,
                    weights = c(0.6, 0.4))@total, 16664, 0.5)
 
 closing <- ulae_estimate(10, 100, 30, 20, method = "conger_nolibos", reported = 200,
                          weights = c(0.5, 0.25, 0.25), pure_ibnr = 8, closed = 80, unclosed = 60)
-near(closing@basis, 0.5 * 200 + 0.25 * 100 + 0.25 * 80, 1e-12)
-near(closing@total, closing@ratio * (0.5 * 8 + 0.25 * 50 + 0.25 * 60), 1e-12)
+near_abs(closing@basis, 0.5 * 200 + 0.25 * 100 + 0.25 * 80, 1e-12)
+near_abs(closing@total, closing@ratio * (0.5 * 8 + 0.25 * 50 + 0.25 * 60), 1e-12)
 
 expect_error_like(ulae_estimate(1, 1, 1, 1, method = "conger_nolibos", reported = 1), "needs weights")
 expect_error_like(ulae_estimate(1, 1, 1, 1, weights = c(0.5, 0.5)), "conger_nolibos")

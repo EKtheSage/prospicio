@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # compartmental_one_year_segments(), the one-year view of Gesmann and Morris'
 # model 1 over segments (docs/design/reserving-compartmental.md, decision 8,
@@ -8,33 +9,9 @@ suppressMessages(library(prospicio))
 # binding on company 337 workers' compensation under two keys, with tiny
 # sampler budgets.
 
-near <- function(a, b, tol) {
-  if (!all(abs(a - b) <= tol)) {
-    stop(sprintf("got %s, want %s (tol %g)", format(a, digits = 17), format(b, digits = 17), tol),
-         call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop("expected an error", call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 # The warnings `expr` raises, and its value.
-with_warnings <- function(expr) {
-  found <- character()
-  value <- withCallingHandlers(expr, warning = function(w) {
-    found <<- c(found, conditionMessage(w))
-    invokeRestart("muffleWarning")
-  })
-  list(value = value, warnings = found)
-}
 
 # Tests run from the repository root (CI and `cargo xtask r`).
 all <- utils::read.csv(file.path("validation", "data", "clrd_wkcomp_337.csv"),
@@ -83,10 +60,10 @@ stopifnot(identical(names(long_frame),
                     c("lob", "origin", "premium", "latest_paid", "opening_ultimate",
                       "opening_reserve", "cdr_mean", "cdr_std_dev")),
           nrow(long_frame) == 20)
-near(sum(long_frame$cdr_mean), mean(cdr), 1e-9 * (1 + abs(mean(cdr))))
+near_abs(sum(long_frame$cdr_mean), mean(cdr), 1e-9 * (1 + abs(mean(cdr))))
 totals <- totals_frame(views)
 stopifnot(identical(totals$lob, c("a", "b")), "flagged_share" %in% names(totals))
-near(sum(totals$opening_reserve), sum(views@opening_reserve), 1e-6)
+near_abs(sum(totals$opening_reserve), sum(views@opening_reserve), 1e-6)
 expect_error_like(development_frame(views), "development table")
 d <- views@diagnostics
 stopifnot(identical(names(d), c("lob", "max_rhat", "min_ess_bulk", "min_ess_tail", "divergences",
@@ -111,8 +88,8 @@ stopifnot(
   one@flagged_share >= 0, one@flagged_share <= 1,
   nrow(one@draws) == 200, identical(summary(one), one@summary)
 )
-near(one@flagged_share, totals$flagged_share[2], 1e-12)
-near(totals_frame(one)$cdr_std_dev, totals$cdr_std_dev[2], 1e-9)
+near_abs(one@flagged_share, totals$flagged_share[2], 1e-12)
+near_abs(totals_frame(one)$cdr_std_dev, totals$cdr_std_dev[2], 1e-9)
 
 # Independent: the same triangle under two names. Shared random numbers
 # would make the totals almost perfectly rank correlated.
@@ -122,8 +99,8 @@ stopifnot(abs(stats::cor(t[, 1], t[, 2], method = "spearman")) < 4.5 / sqrt(n_si
 # Rank correlation reaches the target, and each segment keeps its simulations.
 ranked <- view(two, dependence = "rank_correlation", spearman = matrix(c(1, 0.5, 0.5, 1), 2))
 tr <- totals_by_segment(ranked@cdr)
-near(stats::cor(tr[, 1], tr[, 2], method = "spearman"), 0.5, 0.06)
-near(sort(tr[, 1]), sort(t[, 1]), 1e-9 * (1 + max(abs(t[, 1]))))
+near_abs(stats::cor(tr[, 1], tr[, 2], method = "spearman"), 0.5, 0.06)
+near_abs(sort(tr[, 1]), sort(t[, 1]), 1e-9 * (1 + max(abs(t[, 1]))))
 
 # Replay by seed, and a smaller one_year_sims is the first simulations.
 again <- view(two)

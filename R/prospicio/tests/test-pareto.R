@@ -1,22 +1,17 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Reports the values on failure, so a CI log shows what diverged.
-near <- function(a, b, rel = 1e-12) {
-  if (!all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
-    stop(sprintf("got %s, want %s (rel %g)", format(a, digits = 17), format(b, digits = 17), rel),
-         call. = FALSE)
-  }
-}
 
 # Pareto: closed forms and truncation.
 p <- pareto(500, 2)
-near(layer(p, 4000, 1000), 200)
-near(mean(p), 1000)
-near(survival(p, 1000), 0.25)
+near(layer(p, 4000, 1000), 200, 1e-12)
+near(mean(p), 1000, 1e-12)
+near(survival(p, 1000), 0.25, 1e-12)
 stopifnot(is.infinite(mean(pareto(1, 0.9))))
 tp <- pareto(500, 2, truncation = 8000)
-near(tp@truncation, 8000)
-near(quantile(tp, 1), 8000)
+near(tp@truncation, 8000, 1e-12)
+near(quantile(tp, 1), 8000, 1e-12)
 near(layer_variance(tp, 1e4, 0), variance(tp), 1e-10)
 # Layer second moments: mpmath parity (validation/reference/layer_moments_mpmath.csv)
 # and the variance identity on the other families.
@@ -31,14 +26,14 @@ stopifnot(inherits(try(pareto(1, 0), silent = TRUE), "try-error"))
 
 # Fits.
 f <- pareto_fit(c(1500, 2500, 4000, 10000), 1000, censored = c(FALSE, FALSE, FALSE, TRUE))
-near(f@alpha, 3 / log(150))
+near(f@alpha, 3 / log(150), 1e-12)
 pf <- piecewise_pareto_fit(c(1200, 1500, 2500, 6000), c(1000, 2000))
-near(pf@alpha[1], 2 / (log(1.2) + log(1.5) + 2 * log(2)))
+near(pf@alpha[1], 2 / (log(1.2) + log(1.5) + 2 * log(2)), 1e-12)
 
 # Piecewise Pareto.
 pp <- piecewise_pareto(c(1000, 2000), c(1, 2))
-near(survival(pp, 4000), 0.125)
-near(stop_loss(pp, 2000), 1000)
+near(survival(pp, 4000), 0.125, 1e-12)
+near(stop_loss(pp, 2000), 1000, 1e-12)
 lp <- piecewise_pareto(c(1000, 2000), c(1, 2), truncation = 5000)
 wd <- piecewise_pareto(c(1000, 2000), c(1, 2), truncation = 5000, truncation_type = "wd")
 stopifnot(lp@truncation_type == "lp", wd@truncation_type == "wd")
@@ -46,20 +41,20 @@ stopifnot(survival(lp, 1500) != survival(wd, 1500))
 
 # Log-affine and generalized Pareto.
 d <- log_affine_pareto(1e6, 1.5, delta = 0.5)
-near(local_alpha(d, 2e6), 2)
-near(layer(log_affine_pareto(1000, 2.5, gamma = 0), 4000, 1000), layer(pareto(1000, 2.5), 4000, 1000))
+near(local_alpha(d, 2e6), 2, 1e-12)
+near(layer(log_affine_pareto(1000, 2.5, gamma = 0), 4000, 1000), layer(pareto(1000, 2.5), 4000, 1000), 1e-12)
 stopifnot(inherits(try(log_affine_pareto(1, 1), silent = TRUE), "try-error"))
 g <- generalized_pareto_riegel(1000, 2, 1.5)
-near(survival(g, 2000), (7 / 3)^-1.5)
-near(lev(g, 5000) + stop_loss(g, 5000), mean(g))
+near(survival(g, 2000), (7 / 3)^-1.5, 1e-12)
+near(lev(g, 5000) + stop_loss(g, 5000), mean(g), 1e-12)
 
 # Claim counts by dispersion.
 stopifnot(S7::S7_inherits(claim_count(4, 1), poisson_count))
 stopifnot(S7::S7_inherits(claim_count(4, 2.5), negative_binomial_count))
 b <- claim_count(10, 0.3)
 stopifnot(S7::S7_inherits(b, binomial_count), b@n == 15)
-near(mean(b), 10)
-near(sum(pmf(binomial_count(10, 0.3), 0:10)), 1)
+near(mean(b), 10, 1e-12)
+near(sum(pmf(binomial_count(10, 0.3), 0:10)), 1, 1e-12)
 
 # The Pareto family feeds discretization and aggregation.
 sev <- piecewise_pareto(c(1000, 3000), c(1.2, 2), truncation = 50000)
@@ -186,18 +181,18 @@ cat("prospicio R pareto tests passed\n")
 x <- pareto(100, 2)
 pl <- policy_limits_distribution(x, c(1000, 5000, Inf), c(2, 1, 1))
 stopifnot(all(abs(pl@weights - c(0.5, 0.25, 0.25)) < 1e-15))
-near(mean(pl), 0.5 * 100 * 1.9 + 0.25 * 100 * 1.98 + 0.25 * 200)
-near(layer(pl, 500, 1500), 0.5 * layer(x, 500, 1500))
-near(mean(dist_from_json(dist_to_json(pl))), mean(pl))
+near(mean(pl), 0.5 * 100 * 1.9 + 0.25 * 100 * 1.98 + 0.25 * 200, 1e-12)
+near(layer(pl, 500, 1500), 0.5 * layer(x, 500, 1500), 1e-12)
+near(mean(dist_from_json(dist_to_json(pl))), mean(pl), 1e-12)
 gpl <- discretize(pl, 10, 2000)
 stopifnot(abs(mean(gpl) - lev(pl, 1999 * 10)) < 1e-9 * mean(pl))
 losses <- c(1500, 2500, 4000, 10000)
 fit <- pareto_fit(losses, 1000, censored = c(FALSE, FALSE, FALSE, TRUE))
 near(pareto_standard_error(losses, 1000, censored = c(FALSE, FALSE, FALSE, TRUE)),
-     fit@alpha / sqrt(3))
+     fit@alpha / sqrt(3), 1e-12)
 pw <- piecewise_pareto_fit(c(1200, 1500, 2500, 6000), c(1000, 2000))
 near(piecewise_pareto_standard_errors(c(1200, 1500, 2500, 6000), c(1000, 2000)),
-     pw@alpha / sqrt(2))
+     pw@alpha / sqrt(2), 1e-12)
 
 # Issue #194: body severities fitted with truncation and censoring.
 y <- c(120, 300, 450, 800, 1500, 2600, 4000, 650, 90, 2100)
@@ -250,9 +245,9 @@ stopifnot(abs(fe$distribution@scale - fe$parameters[["mean"]]) < 1e-12)
 fp <- severity_fit("pareto", py, reporting_thresholds = pr, t = 1000)
 s <- sum(log(py / 1000))
 a <- 6 / s
-near(fp$parameters[["alpha"]], a)
-near(fp$log_likelihood, 6 * log(a) - (a + 1) * s - 6 * log(1000))
-near(fp$aic, 2 - 2 * fp$log_likelihood)
+near(fp$parameters[["alpha"]], a, 1e-12)
+near(fp$log_likelihood, 6 * log(a) - (a + 1) * s - 6 * log(1000), 1e-12)
+near(fp$aic, 2 - 2 * fp$log_likelihood, 1e-12)
 stopifnot(is.nan(fp$standard_errors[["t"]]))
 fg <- severity_fit("gen_pareto", py, reporting_thresholds = pr, t = 1000)
 flx <- severity_fit("lomax", py, reporting_thresholds = pr)
@@ -261,7 +256,7 @@ fll <- severity_fit("loglogistic", py, reporting_thresholds = pr)
 stopifnot(inherits(fll$distribution, "prospicio::loglogistic_distribution"))
 stopifnot(inherits(try(severity_fit("gamma", py, t = 1000), silent = TRUE), "try-error"))
 ex <- exponential_distribution(2)
-near(layer(ex, 1, 3), survival(ex, 3) * lev(ex, 1))
+near(layer(ex, 1, 3), survival(ex, 3) * lev(ex, 1), 1e-12)
 
 # Issue #804: every fit's survival beside the plotting positions.
 cy <- c(1500, 2500, 4000, 10000, 1200, 3100, 800)
