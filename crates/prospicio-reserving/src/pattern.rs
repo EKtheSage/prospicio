@@ -54,6 +54,44 @@ pub enum PatternKind {
     PercentDeveloped,
 }
 
+impl PatternKind {
+    /// Every name the Python, R and Excel front ends accept, with its kind,
+    /// the canonical name of each first (#834).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("ldf", Self::AgeToAge),
+        ("age-to-age", Self::AgeToAge),
+        ("cdf", Self::AgeToUltimate),
+        ("age-to-ultimate", Self::AgeToUltimate),
+        ("percent_developed", Self::PercentDeveloped),
+        ("percent", Self::PercentDeveloped),
+        ("percent developed", Self::PercentDeveloped),
+    ];
+
+    /// The kind named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_reserving::PatternKind;
+    ///
+    /// assert_eq!(PatternKind::from_name("percent"), Some(PatternKind::PercentDeveloped));
+    /// assert_eq!(PatternKind::from_name("ratio"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, k)| k)
+    }
+
+    /// The canonical name: `"ldf"`, `"cdf"` or `"percent_developed"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::AgeToAge => "ldf",
+            Self::AgeToUltimate => "cdf",
+            Self::PercentDeveloped => "percent_developed",
+        }
+    }
+}
+
 /// The weight `w` on a selected factor in `w * selected + (1 - w) *
 /// estimated`, from 0 (the estimate) to 1 (the selection, the default).
 #[derive(Debug, Clone, PartialEq)]
@@ -1581,6 +1619,22 @@ pub fn underwriting_paid_by_month(
 
 #[cfg(test)]
 mod tests {
+
+    /// Every accepted name maps to its kind and each kind's canonical name
+    /// is accepted (#834).
+    #[test]
+    fn pattern_kind_names_round_trip() {
+        for &(name, k) in PatternKind::NAMES {
+            assert_eq!(PatternKind::from_name(name), Some(k), "{name}");
+        }
+        for k in [
+            PatternKind::AgeToAge,
+            PatternKind::AgeToUltimate,
+            PatternKind::PercentDeveloped,
+        ] {
+            assert_eq!(PatternKind::from_name(k.name()), Some(k));
+        }
+    }
     use super::*;
 
     const AGES: [Lag; 4] = [12, 24, 36, 48];

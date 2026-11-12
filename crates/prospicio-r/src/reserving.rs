@@ -313,16 +313,16 @@ fn selected_pattern(pattern: &Robj, target: Grain) -> Result<Option<SelectedPatt
             _ => {}
         }
     }
-    let kind = match kind.as_deref() {
-        Some("ldf") => PatternKind::AgeToAge,
-        Some("cdf") => PatternKind::AgeToUltimate,
-        Some("percent_developed") => PatternKind::PercentDeveloped,
-        _ => {
-            return Err(Error::Other(
-                "ldf_kind must be \"ldf\", \"cdf\" or \"percent_developed\"".into(),
-            ));
-        }
-    };
+    let kind = kind
+        .as_deref()
+        .and_then(PatternKind::from_name)
+        .ok_or_else(|| {
+            crate::unknown_name(
+                "ldf_kind",
+                kind.as_deref().unwrap_or(""),
+                PatternKind::NAMES,
+            )
+        })?;
     let pairs = |ages: &[f64], values: &[f64], what: &str| -> Result<Vec<(Lag, f64)>> {
         if ages.len() != values.len() {
             return Err(Error::Other(format!(
@@ -7637,14 +7637,11 @@ fn benchmark_curve_rust(
     max_age: f64,
     origin_width: Nullable<f64>,
 ) -> Result<BenchmarkCurveFit> {
-    let kind = match kind {
-        "percent_developed" | "percent" | "percent developed" => PatternKind::PercentDeveloped,
-        "cdf" | "age-to-ultimate" => PatternKind::AgeToUltimate,
-        _ => {
-            return Err(Error::Other(format!(
-                "kind must be \"percent_developed\" or \"cdf\", got \"{kind}\""
-            )));
+    let kind = match PatternKind::from_name(kind) {
+        Some(PatternKind::AgeToAge) | None => {
+            return Err(crate::unknown_name("kind", kind, &PatternKind::NAMES[2..]));
         }
+        Some(k) => k,
     };
     if ages.len() != values.len() {
         return Err(Error::Other("pattern needs one age for each value".into()));
