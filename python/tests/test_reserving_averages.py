@@ -23,13 +23,10 @@ from prospicio.reserving import (
     Triangle,
 )
 
+from helpers import read_csv
+
 VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 REFERENCE = VALIDATION / "reference" / "reserving_averages_python.csv"
-
-
-def read_csv(path):
-    with open(path, newline="") as f:
-        return list(csv.DictReader(line for line in f if not line.startswith("#")))
 
 
 @pytest.fixture(scope="module")

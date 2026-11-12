@@ -9,6 +9,7 @@
 # tests from the repository root; run from elsewhere (an installed package's
 # check) without the repository above, it skips.
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 find_guides <- function(start = getwd()) {
   dir <- normalizePath(start, winslash = "/", mustWork = FALSE)

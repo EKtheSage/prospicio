@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # bayes_odp_one_year() and bayes_odp_one_year_segments(), the one-year view
 # of the Bayesian ODP chain ladder by PSIS reweighting
@@ -7,33 +8,9 @@ suppressMessages(library(prospicio))
 # validation/tests/reserving_bayes_one_year.rs; these tests check the
 # binding.
 
-near <- function(a, b, tol) {
-  if (!all(abs(a - b) <= tol)) {
-    stop(sprintf("got %s, want %s (tol %g)", format(a, digits = 17), format(b, digits = 17), tol),
-         call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop("expected an error", call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 # The warnings `expr` raises, and its value.
-with_warnings <- function(expr) {
-  found <- character()
-  value <- withCallingHandlers(expr, warning = function(w) {
-    found <<- c(found, conditionMessage(w))
-    invokeRestart("muffleWarning")
-  })
-  list(value = value, warnings = found)
-}
 
 # Tests run from the repository root (CI and `cargo xtask r`).
 long <- utils::read.csv(file.path("validation", "data", "genins.csv"), comment.char = "#")
@@ -77,11 +54,11 @@ stopifnot(
   view@flagged_share > 0.1, view@flagged_share < 0.45,
   sqrt(variance(view@cdr)) < sqrt(variance(view@fit@reserves))
 )
-near(unname(view@opening_ultimate), unname(view@latest + view@opening_reserve),
+near_abs(unname(view@opening_ultimate), unname(view@latest + view@opening_reserve),
      1e-9 * max(view@opening_ultimate))
 # The mean is zero up to Monte Carlo error.
 stopifnot(abs(mean(total)) < 5 * sd(total) / sqrt(n_sims))
-near(sum(view@opening_reserve), mean(view@fit@reserves), 0.02 * mean(view@fit@reserves))
+near_abs(sum(view@opening_reserve), mean(view@fit@reserves), 0.02 * mean(view@fit@reserves))
 
 # The lifetime fit is bayes_odp()'s with the same settings.
 fit <- bayes_odp(genins, n_sims = n_sims, seed = 3)
@@ -90,7 +67,7 @@ stopifnot(identical(view@fit@draws, fit@draws),
 
 # Loosely the ODP bootstrap's one-year view (the validation test pins it).
 boot <- odp_one_year(genins, n_sims = n_sims, seed = 3)
-near(sd(total), sqrt(variance(boot@cdr)), 0.12 * sqrt(variance(boot@cdr)))
+near_abs(sd(total), sqrt(variance(boot@cdr)), 0.12 * sqrt(variance(boot@cdr)))
 
 # Frames.
 df <- as.data.frame(view)
@@ -102,7 +79,7 @@ stopifnot(
 tot <- totals_frame(view)
 stopifnot(nrow(tot) == 1, all(c("scale", "flagged_share", "cdr_std_dev") %in% names(tot)),
           isTRUE(all.equal(tot$flagged_share, view@flagged_share)))
-near(tot$cdr_std_dev, sqrt(variance(view@cdr)), 1e-9 * sd(total))
+near_abs(tot$cdr_std_dev, sqrt(variance(view@cdr)), 1e-9 * sd(total))
 stopifnot(nrow(development_frame(view)) == 10,
           S7::S7_inherits(segment(view), bayes_one_year_fit))
 out <- capture.output(print(view))
@@ -219,7 +196,7 @@ ranked <- suppressWarnings(bayes_odp_one_year_segments(
   two, tune = 300, draws = 300, n_sims = 2000, seed = 6, refit = "reweight_only",
   dependence = "rank_correlation", spearman = matrix(c(1, 0.8, 0.8, 1), 2)))
 lines <- draw_matrix(aggregate(ranked@cdr, keep = "lob"))
-near(stats::cor(lines[, 1], lines[, 2], method = "spearman"), 0.8, 0.05)
+near_abs(stats::cor(lines[, 1], lines[, 2], method = "spearman"), 0.8, 0.05)
 
 # Errors.
 expect_error_like(bayes_odp_one_year(genins, n_sims = 10, refit = "sometimes"), "should be one of")
@@ -290,7 +267,7 @@ stopifnot(
 # The opening reserve is the lifetime reserve's posterior mean, within Monte
 # Carlo error (the total is heavy-tailed on six origins).
 m_total <- rowSums(draw_matrix(m_fit@reserves))
-near(sum(m_view@opening_reserve), mean(m_total), 5 * sd(m_total) / sqrt(length(m_total)))
+near_abs(sum(m_view@opening_reserve), mean(m_total), 5 * sd(m_total) / sqrt(length(m_total)))
 
 m_two_long <- rbind(cbind(lob = "auto", m_long),
                     cbind(lob = "home", transform(m_long, paid = 2 * paid, premium = 2 * premium)))
