@@ -46,6 +46,30 @@ pub enum CountDistribution {
 }
 
 impl CountDistribution {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// distribution, the canonical name of each first (#834: one
+    /// vocabulary, one edit for a new variant).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("poisson", Self::Poisson),
+        ("negative_binomial", Self::NegativeBinomial),
+        ("negbin", Self::NegativeBinomial),
+    ];
+
+    /// The distribution named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_glm::zero::CountDistribution;
+    ///
+    /// assert_eq!(CountDistribution::from_name("negbin"), Some(CountDistribution::NegativeBinomial));
+    /// assert_eq!(CountDistribution::from_name("binomial"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, d)| d)
+    }
+
     /// `"poisson"` or `"negative_binomial"`.
     pub fn name(self) -> &'static str {
         match self {
@@ -1259,6 +1283,19 @@ pub fn vuong(a: &[f64], b: &[f64], k_a: usize, k_b: usize) -> Result<Vuong> {
 
 #[cfg(test)]
 mod tests {
+
+    /// Every accepted name maps to its distribution, and each
+    /// distribution's canonical name is accepted (#834).
+    #[test]
+    fn count_distribution_names_round_trip() {
+        for &(name, d) in CountDistribution::NAMES {
+            assert_eq!(CountDistribution::from_name(name), Some(d), "{name}");
+        }
+        for d in [CountDistribution::Poisson, CountDistribution::NegativeBinomial] {
+            assert_eq!(CountDistribution::from_name(d.name()), Some(d));
+        }
+        assert_eq!(CountDistribution::from_name("Poisson"), None);
+    }
     use super::*;
 
     /// A log-likelihood's pointwise values and gradient.

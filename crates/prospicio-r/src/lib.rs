@@ -49,6 +49,18 @@ pub(crate) fn to_r(e: prospicio_core::Error) -> Error {
     Error::Other(e.to_string())
 }
 
+/// The error for an option name not in a core enum's `NAMES` (#834): one
+/// message format, `arg must be "a", "b" or "c", got "x"`.
+pub(crate) fn unknown_name<T>(arg: &str, got: &str, names: &[(&str, T)]) -> Error {
+    let quoted: Vec<String> = names.iter().map(|(n, _)| format!("{n:?}")).collect();
+    let list = match quoted.split_last() {
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} or {last}", rest.join(", ")),
+        None => String::new(),
+    };
+    Error::Other(format!("{arg} must be {list}, got {got:?}"))
+}
+
 /// Converts an R double holding a non-negative whole number below 2^53.
 pub(crate) fn whole(x: f64, name: &str) -> Result<u64> {
     if x.is_finite() && x >= 0.0 && x.fract() == 0.0 && x < 9_007_199_254_740_992.0 {
