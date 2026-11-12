@@ -1008,6 +1008,8 @@ sf["E62"] = "Every fit's survival from t = 1,000 beside the plotting positions (
 sf["E63"] = ArrayFormula("E63:O77", '=PRO.SEV.FIT(A4:A17,,"curves",1000,,B4:B17)')
 sf["E79"] = "The lognormal's thinned to 5 rows (points, the tenth argument)"; sf["E79"].font = bold
 sf["E80"] = ArrayFormula("E80:G85", '=PRO.SEV.FIT(A4:A17,"lognormal","curves",1000,,B4:B17,,,,5)')
+sf["E87"] = "The KS p-value by the parametric bootstrap, 199 replicates each, the nine families from t = 1,000 in the comparison's order"; sf["E87"].font = bold
+sf["E88"] = ArrayFormula("E88:J97", '=PRO.SEV.FIT.KS(A4:A17,,1000,B4:B17,C4:C17,,,,199)')
 sf["S3"] = "Grouped losses (Bahnemann's six bands; the last bound blank: open)"; sf["S3"].font = bold
 sf["S4"] = "From"; sf["T4"] = "Count"
 for c in ("S4", "T4"):

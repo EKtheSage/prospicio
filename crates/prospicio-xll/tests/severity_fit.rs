@@ -661,3 +661,130 @@ fn blank_cells_are_skipped_and_bad_inputs_named() {
     let e = call("pro_sev_fit", vec![column(&LOSSES), t("normal")]);
     assert!(text(&e).contains("family must be"), "{}", text(&e));
 }
+
+/// The 40 untruncated losses of `validation/scripts/scipy_ks_bootstrap.py`.
+fn bootstrap_losses() -> Vec<f64> {
+    common::validation("data/ks_bootstrap.csv")
+        .lines()
+        .skip(1)
+        .map(|l| l.parse().unwrap())
+        .collect()
+}
+
+/// A row of family names, as `family` takes them.
+fn names(families: &[&str]) -> Grid {
+    Grid::from_rows(vec![families.iter().map(|&f| Value::from(f)).collect()])
+}
+
+#[test]
+fn ks_bootstrap_matches_scipy_and_the_core() {
+    // SciPy's goodness_of_fit(statistic="ks") on the same 40 losses: the
+    // bootstrap p-value within four standard errors of the two Monte Carlo
+    // estimates, and the core's cells at the same seed.
+    let y = bootstrap_losses();
+    // The core's own test checks all five families SciPy fits; here the two
+    // cheapest show the wiring, in Family::ALL's order.
+    let families = ["exponential", "lognormal"];
+    let out = call(
+        "pro_sev_fit_ks",
+        vec![
+            column(&y),
+            names(&families),
+            missing(),
+            missing(),
+            missing(),
+            missing(),
+            missing(),
+            missing(),
+            n(9_999.0),
+            n(7.0),
+        ],
+    );
+    let header: Vec<String> = (0..6).map(|c| text_cell(out.get(0, c))).collect();
+    assert_eq!(
+        header,
+        ["Family", "KS distance", "KS p", "Bootstrap p", "Replicates", "Failed"].map(String::from)
+    );
+    let data = LargeLosses::new(y).unwrap();
+    let scipy = reference("ks_bootstrap_scipy.csv");
+    let want = |family: &str, q: &str| -> (f64, f64) {
+        let r = scipy.iter().find(|r| r[0] == family && r[1] == q).unwrap();
+        (r[2].parse().unwrap(), r[3].parse().unwrap())
+    };
+    for (r, family) in ["lognormal", "exponential"]
+        .into_iter()
+        .enumerate()
+        .map(|(i, f)| (i + 1, f))
+    {
+        assert_eq!(text_cell(out.get(r, 0)), family);
+        let (d, d_tol) = want(family, "ks_distance");
+        assert!((num(out.get(r, 1)) - d).abs() <= d_tol, "{family} distance");
+        let (p, p_tol) = want(family, "ks_bootstrap_p_value");
+        assert!((num(out.get(r, 3)) - p).abs() <= p_tol, "{family} p {}", num(out.get(r, 3)));
+        assert_eq!(num(out.get(r, 4)) + num(out.get(r, 5)), 9_999.0);
+        // The core at the same seed.
+        let fit = fit_severity(Family::from_name(family).unwrap(), &data).unwrap();
+        let core = prospicio_prob::severity_fit::ks_bootstrap(&fit, &data, None, 9_999, 7).unwrap();
+        let classical = prospicio_prob::severity_fit::goodness_of_fit(fit.dist(), &data)
+            .unwrap()
+            .ks_p_value;
+        assert_eq!(num(out.get(r, 1)), core.max_distance);
+        assert_eq!(num(out.get(r, 2)), classical);
+        assert_eq!(num(out.get(r, 3)), core.p_value);
+        assert_eq!(num(out.get(r, 4)), core.distances.len() as f64);
+        assert_eq!(num(out.get(r, 5)), 0.0);
+    }
+}
+
+#[test]
+fn ks_bootstrap_with_t_follows_compare_and_takes_limits() {
+    let y = plain_losses();
+    let args = |family: Grid, limits: Grid, replicates: f64| {
+        vec![
+            column(&y),
+            family,
+            n(150_000.0),
+            n(150_000.0),
+            missing(),
+            missing(),
+            missing(),
+            limits,
+            n(replicates),
+            n(3.0),
+        ]
+    };
+    let out = call("pro_sev_fit_ks", args(missing(), missing(), 49.0));
+    let compare = call(
+        "pro_sev_fit",
+        vec![column(&y), missing(), t("compare"), n(150_000.0), missing(), n(150_000.0)],
+    );
+    // Nine families, in "compare"'s AIC order, each bootstrapped.
+    assert_eq!(out.rows, 10);
+    for r in 1..10 {
+        assert_eq!(text_cell(out.get(r, 0)), text_cell(compare.get(r, 0)));
+        assert_eq!(num(out.get(r, 1)), num(compare.get(r, 7)));
+        assert_eq!(num(out.get(r, 2)), num(compare.get(r, 8)));
+        let p = num(out.get(r, 3));
+        assert!(p > 0.0 && p <= 1.0);
+        assert_eq!(num(out.get(r, 4)) + num(out.get(r, 5)), 49.0);
+    }
+    // One limit for every loss: each replicate is censored there, as the
+    // core does with that limit per loss.
+    let data = LargeLosses::new(y.clone())
+        .unwrap()
+        .reporting_thresholds(vec![150_000.0; y.len()])
+        .unwrap();
+    let limited = call("pro_sev_fit_ks", args(t("lognormal"), n(2.0e6), 49.0));
+    let fit = fit_severity(Family::Lognormal, &data).unwrap();
+    let core =
+        prospicio_prob::severity_fit::ks_bootstrap(&fit, &data, Some(&vec![2.0e6; y.len()]), 49, 3)
+            .unwrap();
+    assert_eq!(num(limited.get(1, 3)), core.p_value);
+    // A limit below a loss is that family's error; a bad count is the call's.
+    let low = call("pro_sev_fit_ks", args(t("lognormal"), n(200_000.0), 49.0));
+    assert!(text_cell(low.get(1, 1)).contains("limit"), "{low:?}");
+    for bad in [0.0, 1.5, 1.0e6] {
+        let e = call("pro_sev_fit_ks", args(t("lognormal"), missing(), bad));
+        assert!(text(&e).contains("replicates"), "{e:?}");
+    }
+}

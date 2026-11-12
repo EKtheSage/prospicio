@@ -9,13 +9,13 @@
 use prospicio_prob::evt::Gpd;
 use prospicio_prob::grouped_fit::{GroupedLosses, GroupedMethod, fit_grouped, fit_lev_distance};
 use prospicio_prob::severity_fit::{
-    Family, SeverityFit, compare_fits, fit_curves, fit_severity, goodness_of_fit, rank_by_aic,
-    tail_moments,
+    Family, SeverityFit, compare_fits, fit_curves, fit_severity, goodness_of_fit, ks_bootstrap,
+    rank_by_aic, tail_moments,
 };
 use prospicio_prob::{Dist, FitStatistics, LargeLosses, Pareto, PiecewisePareto, Truncation};
 
 use crate::pricing::{numbers, piecewise_truncation, scalar};
-use crate::reserving::text_option;
+use crate::reserving::{count, seed, text_option};
 use crate::sheet::{Grid, Value, position};
 
 type Result<T> = std::result::Result<T, String>;
@@ -41,7 +41,7 @@ fn large_losses(
     censored: &Grid,
     weights: &Grid,
     upper: &Grid,
-) -> Result<(LargeLosses, Vec<f64>)> {
+) -> Result<(LargeLosses, Vec<f64>, Vec<bool>)> {
     let shaped = |g: &Grid, name: &str| -> Result<()> {
         if g.cells.len() == 1 || (g.rows == losses.rows && g.columns == losses.columns) {
             Ok(())
@@ -109,13 +109,13 @@ fn large_losses(
         .map_err(e)?
         .reporting_thresholds(r.clone())
         .map_err(e)?
-        .censored(c)
+        .censored(c.clone())
         .map_err(e)?
         .weights(w)
         .map_err(e)?
         .truncated_above(u)
         .map_err(e)?;
-    Ok((data, r))
+    Ok((data, r, c))
 }
 
 /// A fit: its distribution, the named parameters with their standard
@@ -257,7 +257,7 @@ pub fn severity_fit(args: &[Grid]) -> Result<Grid> {
         Some(Value::Text(s)) => s.trim().to_ascii_lowercase(),
         _ => return Err(OUTPUTS.into()),
     };
-    let (data, thresholds) = large_losses(&args[0], &args[5], &args[6], &args[7], &args[8])?;
+    let (data, thresholds, _) = large_losses(&args[0], &args[5], &args[6], &args[7], &args[8])?;
     // The tail moments' threshold: the lowest reporting threshold.
     let lowest = thresholds.iter().copied().fold(f64::INFINITY, f64::min);
     if output == "compare" || output == "curves" {
@@ -486,6 +486,119 @@ fn compare(
         rows.push(row);
     }
     Ok(Grid::from_rows(rows))
+}
+
+/// The most replicates `PRO.SEV.FIT.KS` draws per family.
+const MAX_REPLICATES: usize = 100_000;
+
+/// `PRO.SEV.FIT.KS(losses, [family], [t], [thresholds], [censored],
+/// [weights], [upper], [limits], [replicates], [seed])`: each family's KS
+/// distance with its classical p-value and the p-value by the parametric
+/// bootstrap (`severity_fit::ks_bootstrap`), which accounts for the fitted
+/// parameters and for truncation and censoring. `family` is one name, a
+/// range of names or blank, and the rows come in `"compare"`'s order: the
+/// body families without `t`, and with a `t` the Pareto families too,
+/// ranked by AIC. A blank cell of `limits` is a censored loss's own value
+/// and no limit for an uncensored loss.
+pub fn ks(args: &[Grid]) -> Result<Grid> {
+    let (data, _, censored) = large_losses(&args[0], &args[3], &args[4], &args[5], &args[6])?;
+    let t = if args[2].is_blank() {
+        None
+    } else {
+        Some(scalar(&args[2], "t")?)
+    };
+    let limits = limits(&args[0], &args[7], &data, &censored)?;
+    let replicates = count(&args[8], "replicates", 999, MAX_REPLICATES)?;
+    let seed = seed(&args[9])?;
+    let families = family_list(&args[1])?.unwrap_or_else(|| default_families(t));
+    let mut fits = compare_fits(&data, &families, t).map_err(|e| e.to_string())?;
+    if t.is_some() {
+        rank_by_aic(&mut fits);
+    }
+    let header = [
+        "Family",
+        "KS distance",
+        "KS p",
+        "Bootstrap p",
+        "Replicates",
+        "Failed",
+    ]
+    .map(Value::from)
+    .to_vec();
+    let mut rows = vec![header];
+    for (family, fit) in fits {
+        let mut row = vec![Value::from(family.name())];
+        let boot = fit.and_then(|f| {
+            let classical = goodness_of_fit(f.dist(), &data)?.ks_p_value;
+            Ok((
+                classical,
+                ks_bootstrap(&f, &data, limits.as_deref(), replicates, seed)?,
+            ))
+        });
+        match boot {
+            Ok((classical, b)) => {
+                row.extend(
+                    [
+                        b.max_distance,
+                        classical,
+                        b.p_value,
+                        b.distances.len() as f64,
+                        b.failed as f64,
+                    ]
+                    .map(Value::number),
+                );
+            }
+            Err(e) => {
+                row.push(Value::Text(format!("#PROSPICIO! {e}")));
+                row.extend(std::iter::repeat_n(Value::Empty, 4));
+            }
+        }
+        rows.push(row);
+    }
+    Ok(Grid::from_rows(rows))
+}
+
+/// The `limits` argument, one value or one per loss: `None` when blank;
+/// a blank cell is the loss's own value where it is censored, no limit
+/// where it is not.
+fn limits(
+    losses: &Grid,
+    limits: &Grid,
+    data: &LargeLosses,
+    censored: &[bool],
+) -> Result<Option<Vec<f64>>> {
+    if limits.is_blank() {
+        return Ok(None);
+    }
+    if limits.cells.len() != 1 && (limits.rows != losses.rows || limits.columns != losses.columns) {
+        return Err(format!(
+            "limits ({} x {}) must be one value or a range the size of losses ({} x {})",
+            limits.rows, limits.columns, losses.rows, losses.columns
+        ));
+    }
+    let y = data.values();
+    let mut out = Vec::with_capacity(y.len());
+    for i in 0..losses.cells.len() {
+        if losses.cells[i].is_blank() {
+            continue;
+        }
+        let k = out.len();
+        let cell = if limits.cells.len() == 1 {
+            &limits.cells[0]
+        } else {
+            &limits.cells[i]
+        };
+        out.push(match cell {
+            Value::Number(x) => *x,
+            v if v.is_blank() && censored[k] => y[k],
+            v if v.is_blank() => f64::INFINITY,
+            other => {
+                let at = position(i / losses.columns, i % losses.columns);
+                return Err(format!("limits {at} must be a number, got {other:?}"));
+            }
+        });
+    }
+    Ok(Some(out))
 }
 
 /// The families `"compare"` and `"curves"` fit with `family` blank: every
