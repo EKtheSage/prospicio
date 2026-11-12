@@ -75,6 +75,11 @@ jobs:
   # (DOCS_ONLY, except the Excel add-in and xtask, which are Rust; #827).
   rust:
     runs-on: ubuntu-latest
+    # Line tables only in the test binaries (#851): panics still name the
+    # file and line, and there is less debug information to write and link.
+    # Local builds keep full debug information (Cargo.toml's dev profile).
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@v4
         with:
@@ -153,12 +158,35 @@ jobs:
       - if: steps.changes.outputs.run == 'true'
         run: cargo check --workspace --exclude prospicio-r --all-targets --features prospicio-validation/slow-bayes,prospicio-reserving/io,prospicio-prob/arrow
 
+  # Four legs, each on a runner of its own (#848, #850). Most of the
+  # suite's time is a dozen Bayesian and compartmental tests whose NUTS
+  # chains already use every core through rayon: four xdist workers on one
+  # runner made them three to five times slower (with one rayon thread each,
+  # or with the default), so they run serially with every thread, on
+  # runners of their own (`slow-1` and `slow-2`: PY_SLOW_1, PY_SLOW_2) or at
+  # the end of `tests` (PY_ALONE), whose other files run first on four
+  # workers with one rayon thread each. `guides` runs the guides and
+  # notebooks one at a time, since each guide must finish within 30 s
+  # (test_guides.py). The lists balance the legs at about four minutes of
+  # tests each (2026-11-11). Each leg builds the package itself; on a push
+  # to main only the tests leg builds, to fill the cache the others read.
   python:
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
+        part: [tests, slow-1, slow-2, guides]
     runs-on: ${{ matrix.os }}
+    env:
+      PY_SLOW_1: tests/test_reserving_compartmental.py
+      PY_SLOW_2: >-
+        tests/test_reserving_hierarchical_bf.py
+        tests/test_reserving_compartmental_backtest.py
+      PY_ALONE: >-
+        tests/test_reserving_compartmental_segments.py
+        tests/test_reserving_compartmental_one_year_segments.py
+        tests/test_reserving_pattern_draws.py
+        tests/test_boosting.py
     defaults:
       run:
         shell: bash
@@ -192,26 +220,52 @@ jobs:
           run=${{ steps.changes.outputs.run }}
           push=${{ github.event_name == 'push' }}
           hit=${{ steps.cache.outputs.cache-hit == 'true' }}
-          echo "build=$([ "$run" = true ] && ! { [ "$push" = true ] && [ "$hit" = true ]; } && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          tests=${{ matrix.part == 'tests' }}
+          echo "build=$([ "$run" = true ] && ! { [ "$push" = true ] && { [ "$hit" = true ] || [ "$tests" = false ]; }; } && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "test=$([ "$run" = true ] && [ "$push" = false ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - if: steps.plan.outputs.build == 'true'
         uses: astral-sh/setup-uv@v6
-      - if: steps.plan.outputs.build == 'true'
+      - if: steps.plan.outputs.build == 'true' && matrix.part == 'tests'
         run: cargo clippy -p prospicio-python -- -D warnings
       - if: steps.plan.outputs.build == 'true'
         run: uv sync
         working-directory: python
-      # The slowest tests' times in the log, so a slowdown can be traced to
-      # them (#826).
+      # tests: four workers (pytest-xdist), each file on one worker so its
+      # module fixtures load once, one rayon thread per worker so four
+      # workers do not start sixteen threads on four cores (no result
+      # depends on the thread count: one RNG stream per simulation); then
+      # PY_ALONE serially, the NUTS fits and the boosting tests, whose
+      # LightGBM and XGBoost threads also slow down beside other processes.
+      # The slowest tests' times in the log (#826).
       - if: steps.plan.outputs.test == 'true'
-        run: uv run pytest tests --durations=25 --durations-min=5
+        name: Run the ${{ matrix.part }} leg
+        run: |
+          durations="--durations=25 --durations-min=5"
+          case "${{ matrix.part }}" in
+            tests)
+              ignore="--ignore=tests/test_guides.py --ignore=tests/test_examples.py"
+              for f in $PY_SLOW_1 $PY_SLOW_2 $PY_ALONE; do ignore="$ignore --ignore=$f"; done
+              RAYON_NUM_THREADS=1 uv run pytest tests -n 4 --dist loadfile $ignore $durations
+              uv run pytest $PY_ALONE $durations ;;
+            slow-1) uv run pytest $PY_SLOW_1 $durations ;;
+            slow-2) uv run pytest $PY_SLOW_2 $durations ;;
+            guides) uv run pytest tests/test_guides.py tests/test_examples.py $durations ;;
+          esac
         working-directory: python
 
+  # Three legs, each on a runner of its own (#849, #850): `slow`, the
+  # compartmental file (about 220 s, the longest), alone; `guides`,
+  # tests/test-guides.R; and `tests`, the rest through
+  # validation/scripts/run_r_tests.py: four files at a time with one rayon
+  # thread each, then the Bayesian files and the boosting tests one at a
+  # time with every thread, since four processes on four cores made them
+  # three to eight times slower.
   r:
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
+        part: [tests, slow, guides]
     runs-on: ${{ matrix.os }}
     # PowerShell (the Windows default) aliases `R` to Invoke-History.
     defaults:
@@ -248,14 +302,15 @@ jobs:
           run=${{ steps.changes.outputs.run }}
           push=${{ github.event_name == 'push' }}
           hit=${{ steps.cache.outputs.cache-hit == 'true' }}
-          echo "build=$([ "$run" = true ] && ! { [ "$push" = true ] && [ "$hit" = true ]; } && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          tests=${{ matrix.part == 'tests' }}
+          echo "build=$([ "$run" = true ] && ! { [ "$push" = true ] && { [ "$hit" = true ] || [ "$tests" = false ]; }; } && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "test=$([ "$run" = true ] && [ "$push" = false ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - if: steps.plan.outputs.build == 'true'
         uses: r-lib/actions/setup-r@v2  # installs Rtools on Windows
         with:
           # Binary packages: lightgbm and xgboost take minutes to compile.
           use-public-rspm: true
-      - if: steps.plan.outputs.build == 'true'
+      - if: steps.plan.outputs.build == 'true' && matrix.part == 'tests'
         run: cargo clippy -p prospicio-r -- -D warnings
       # lightgbm and xgboost are optional engines for booster_fit(). The
       # boosting tests skip a missing engine and install.packages() only
@@ -274,16 +329,27 @@ jobs:
       # requests, with a SKIP line each in the runner's summary, and run on
       # the nightly and manual runs. install.packages() only warns on
       # failure, so a package that does not build there is skipped too.
-      - if: steps.plan.outputs.test == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      - if: steps.plan.outputs.test == 'true' && matrix.part == 'tests' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         run: >-
           Rscript -e "r <- getOption('repos'); if (is.null(r) || r['CRAN'] %in% c('@CRAN@', NA)) { r['CRAN'] <- 'https://cloud.r-project.org'; options(repos = r) };
           install.packages(c('actuar', 'glmnet', 'statmod', 'ChainLadder', 'dglm', 'posterior', 'loo'))"
-      - name: Run the R tests
+      # validation/scripts/run_r_tests.py runs every file it is given,
+      # prints each one's time and result as it finishes (#826), and ends
+      # with the log of every failed file, the skipped optional-package
+      # blocks and the slowest files (#845).
+      - name: Run the R ${{ matrix.part }} leg
         if: steps.plan.outputs.test == 'true'
-        # Every file runs, a failure does not stop the others, and the
-        # summary lists the failures, the skipped blocks and the slowest
-        # files (#845, #826).
-        run: Rscript validation/scripts/run_r_tests.R
+        run: |
+          py=$([ "$RUNNER_OS" = Windows ] && echo python || echo python3)
+          case "${{ matrix.part }}" in
+            tests)
+              # The Bayesian and boosting files run alone after the rest
+              # (run_r_tests.py's ALONE).
+              $py validation/scripts/run_r_tests.py --jobs 4 \
+                --exclude test-guides.R --exclude test-reserving-compartmental.R ;;
+            slow) $py validation/scripts/run_r_tests.py test-reserving-compartmental.R ;;
+            guides) $py validation/scripts/run_r_tests.py test-guides.R ;;
+          esac
       # remotes::install_github(subdir = "R/prospicio") and r-universe build
       # a tarball of R/prospicio alone, which carries its Rust sources only
       # because pkgbuild runs bootstrap.R first. Install from such a tarball,
@@ -293,7 +359,7 @@ jobs:
       # package's build inputs change; the nightly run always does.
       - name: Check whether the R build inputs changed
         id: rbuild
-        if: steps.plan.outputs.test == 'true'
+        if: steps.plan.outputs.test == 'true' && matrix.part == 'tests'
         run: |
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
