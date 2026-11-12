@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Mack's calendar-year effect and development-factor correlation tests
 # (Mack 1994, appendices H and G; docs/design/reserving-v02.md, decision
@@ -7,28 +8,9 @@ suppressMessages(library(prospicio))
 # binding's arguments, results, print, summary and errors against the same
 # R ChainLadder reference file.
 
-near <- function(a, b, rel = 1e-12, abs = 1e-15) {
-  a <- unname(a)
-  b <- unname(b)
-  if (length(a) != length(b) || !all(abs(a - b) <= pmax(rel * abs(b), abs))) {
-    stop(sprintf("got %s, want %s", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " ")), call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop(sprintf("expected an error mentioning %s", shQuote(pattern)), call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 # Tests run from the repository root (CI and `cargo xtask r`).
-validation <- function(...) file.path("validation", ...)
 load_triangle <- function(name) {
   long <- utils::read.csv(validation("data", paste0(name, ".csv")), comment.char = "#")
   triangle(long, "origin", "development", "value")
@@ -54,10 +36,10 @@ for (name in c("raa", "genins", "abc")) {
     cy <- if (ci == 0.95) calendar_year_effect(tri) else calendar_year_effect(tri, ci = ci)
     test <- sprintf("calendar_year_effect;ci=%s", ci)
     stopifnot(S7::S7_inherits(cy, calendar_year_test), cy@ci == ci)
-    near(cy@z, want(name, test, "total_z"))
-    near(cy@expected, want(name, test, "total_expected"))
-    near(cy@variance, want(name, test, "total_variance"))
-    near(cy@range, c(want(name, test, "lower"), want(name, test, "upper")))
+    near(cy@z, want(name, test, "total_z"), 1e-12, abs = 1e-15)
+    near(cy@expected, want(name, test, "total_expected"), 1e-12, abs = 1e-15)
+    near(cy@variance, want(name, test, "total_variance"), 1e-12, abs = 1e-15)
+    near(cy@range, c(want(name, test, "lower"), want(name, test, "upper")), 1e-12, abs = 1e-15)
     stopifnot(cy@passes == as.logical(want(name, test, "passes")))
     tab <- cy@test_table
     stopifnot(nrow(tab) == want(name, test, "n_diagonals"))
@@ -65,22 +47,22 @@ for (name in c("raa", "genins", "abc")) {
       year <- substr(tab$valuation[r], 1, 4)
       columns <- c(S_j = "small", L_j = "large", Z_j = "z", n = "n", m = "m",
                    E_Zj = "expected", Var_Zj = "variance")
-      for (col in names(columns)) near(tab[[col]][r], want(name, test, columns[[col]], year))
+      for (col in names(columns)) near(tab[[col]][r], want(name, test, columns[[col]], year), 1e-12, abs = 1e-15)
     }
   }
   for (ci in c(0.5, 0.75)) {
     dc <- development_correlation(tri, ci = ci)
     test <- sprintf("development_correlation;ci=%s", ci)
     stopifnot(S7::S7_inherits(dc, development_correlation_test), dc@ci == ci)
-    near(dc@t, want(name, test, "t"))
-    near(dc@variance, want(name, test, "variance"))
-    near(dc@range, c(want(name, test, "lower"), want(name, test, "upper")))
+    near(dc@t, want(name, test, "t"), 1e-12, abs = 1e-15)
+    near(dc@variance, want(name, test, "variance"), 1e-12, abs = 1e-15)
+    near(dc@range, c(want(name, test, "lower"), want(name, test, "upper")), 1e-12, abs = 1e-15)
     stopifnot(dc@passes == as.logical(want(name, test, "passes")))
     pairs <- dc@pairs
     stopifnot(nrow(pairs) == want(name, test, "n_pairs"))
     for (i in seq_len(nrow(pairs))) {
-      near(pairs$T_k[i], want(name, test, "t_k", as.character(i - 1)))
-      near(pairs$weight[i], want(name, test, "weight", as.character(i - 1)))
+      near(pairs$T_k[i], want(name, test, "t_k", as.character(i - 1)), 1e-12, abs = 1e-15)
+      near(pairs$weight[i], want(name, test, "weight", as.character(i - 1)), 1e-12, abs = 1e-15)
     }
     stopifnot(all(pairs$n == pairs$weight + 1), all(pairs$age == 12 * seq_len(nrow(pairs))))
   }

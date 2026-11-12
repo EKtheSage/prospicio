@@ -1,37 +1,14 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # meyers(), Meyers' CRC, CSR and CAY models (docs/design/reserving-bayes.md,
 # decision 7). The parity with Meyers' own Stan code and his printed numbers
 # is validation/tests/reserving_meyers.rs and reserving_meyers_cay.rs; these
 # tests check the binding on his group 353 Commercial Auto data.
 
-near <- function(a, b, rel) {
-  if (!all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
-    stop(sprintf("got %s, want %s (rel %g)", format(a, digits = 17), format(b, digits = 17), rel),
-         call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop("expected an error", call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 # The warnings `expr` raises, and its value.
-with_warnings <- function(expr) {
-  found <- character()
-  value <- withCallingHandlers(expr, warning = function(w) {
-    found <<- c(found, conditionMessage(w))
-    invokeRestart("muffleWarning")
-  })
-  list(value = value, warnings = found)
-}
 
 # Tests run from the repository root (CI and `cargo xtask r`). Meyers fits
 # the upper triangle: 1988 + w at ages up to 120 - 12 w.

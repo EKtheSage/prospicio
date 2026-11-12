@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # compartmental_segments(), Gesmann and Morris' model 1 over segments
 # (docs/design/reserving-compartmental.md, decision 8). The seed sweeps, the
@@ -6,33 +7,9 @@ suppressMessages(library(prospicio))
 # validation/tests/reserving_compartmental_segments.rs; these tests check
 # the binding, on company 337 workers' compensation under two keys.
 
-near <- function(a, b, tol) {
-  if (!all(abs(a - b) <= tol)) {
-    stop(sprintf("got %s, want %s (tol %g)", format(a, digits = 17), format(b, digits = 17), tol),
-         call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop("expected an error", call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 # The warnings `expr` raises, and its value.
-with_warnings <- function(expr) {
-  found <- character()
-  value <- withCallingHandlers(expr, warning = function(w) {
-    found <<- c(found, conditionMessage(w))
-    invokeRestart("muffleWarning")
-  })
-  list(value = value, warnings = found)
-}
 
 # Tests run from the repository root (CI and `cargo xtask r`). The papers'
 # training triangle (cells at calendar years up to 1996, and accident year
@@ -78,10 +55,10 @@ long_frame <- as.data.frame(fits)
 stopifnot(identical(names(long_frame), c("lob", "origin", "premium", "latest_paid", "mean",
                                          "std_dev", "ultimate_loss_ratio")),
           nrow(long_frame) == 20)
-near(sum(long_frame$mean), mean(r), 1e-9 * mean(r))
+near_abs(sum(long_frame$mean), mean(r), 1e-9 * mean(r))
 totals <- totals_frame(fits)
 stopifnot(identical(totals$lob, c("a", "b")))
-near(sum(totals$mean), mean(r), 1e-9 * mean(r))
+near_abs(sum(totals$mean), mean(r), 1e-9 * mean(r))
 stopifnot(nrow(fits@paid_table) == 110, nrow(fits@outstanding_table) == 110,
           identical(sort(unique(fits@paid_table$lob)), c("a", "b")))
 expect_error_like(development_frame(fits), "no development table")
@@ -116,15 +93,15 @@ stopifnot(identical(one@premium, alone@premium),
           identical(colnames(one@draws), colnames(alone@draws)),
           nrow(one@draws) == 8000, !identical(one@draws, alone@draws),
           identical(summary(one), one@summary))
-near(one@summary$mean[1] / alone@summary$mean[1], 1, 0.05)
-near(totals_frame(one)$mean / totals_frame(alone)$mean, 1, 0.05)
+near_abs(one@summary$mean[1] / alone@summary$mean[1], 1, 0.05)
+near_abs(totals_frame(one)$mean / totals_frame(alone)$mean, 1, 0.05)
 stopifnot(length(bayes_loo(one)$pointwise) > 0)
 
 # Independent: the same triangle under two names. Shared random numbers
 # would make the totals almost perfectly rank correlated.
 t <- totals_by_segment(r)
 stopifnot(abs(stats::cor(t[, 1], t[, 2], method = "spearman")) < 4.5 / sqrt(n_sims))
-near(mean(t[, 1]) / mean(t[, 2]), 1, 0.02)
+near_abs(mean(t[, 1]) / mean(t[, 2]), 1, 0.02)
 
 # Rank correlation reaches the target, and a segment's future paid cells move
 # with its reserves: the paid at the oldest age ranks as the reserve.
@@ -132,12 +109,12 @@ ranked <- suppressWarnings(compartmental_segments(
   two, "paid", "premium", gm, incurred = "incurred", n_sims = n_sims, seed = 5,
   dependence = "rank_correlation", spearman = matrix(c(1, 0.5, 0.5, 1), 2)))
 t <- totals_by_segment(ranked@reserves)
-near(stats::cor(t[, 1], t[, 2], method = "spearman"), 0.5, 0.04)
+near_abs(stats::cor(t[, 1], t[, 2], method = "spearman"), 0.5, 0.04)
 paid <- ranked@paid
 last <- draw_matrix(paid)[, paid@keys$age == 120, drop = FALSE]
 for (k in 1:2) {
   cols <- paid@keys$lob[paid@keys$age == 120] == c("a", "b")[k]
-  near(stats::cor(rowSums(last[, cols, drop = FALSE]), t[, k], method = "spearman"), 1, 1e-9)
+  near_abs(stats::cor(rowSums(last[, cols, drop = FALSE]), t[, k], method = "spearman"), 1, 1e-9)
 }
 
 # Replay by seed.

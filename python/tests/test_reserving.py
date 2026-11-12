@@ -35,6 +35,8 @@ from prospicio.reserving import (
     Triangle,
 )
 
+from helpers import dataset, read_csv
+
 VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 
 # Reference method -> (average, sigma_interpolation), as in
@@ -47,20 +49,6 @@ METHODS = {
     "mack_alpha2": ("regression", "log-linear"),
     "mack_sigma_mack": ("volume", "mack"),
 }
-
-
-def read_csv(path):
-    with open(path, newline="") as f:
-        return list(csv.DictReader(line for line in f if not line.startswith("#")))
-
-
-def dataset(name):
-    rows = read_csv(VALIDATION / "data" / f"{name}.csv")
-    return Triangle.from_long(
-        origin=[int(r["origin"]) for r in rows],
-        development=[int(r["development"]) for r in rows],
-        values={"values": [float(r["value"]) for r in rows]},
-    )
 
 
 @pytest.fixture(scope="module")

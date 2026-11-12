@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # compartmental() and compartmental_model_2(), Gesmann and Morris'
 # compartmental models 1 and 2 (docs/design/reserving-compartmental.md). The
@@ -7,33 +8,9 @@ suppressMessages(library(prospicio))
 # reserving_compartmental_gm2.rs (model 2); these tests check the binding on
 # company 337 workers' compensation as the papers fit it.
 
-near <- function(a, b, rel) {
-  if (!all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
-    stop(sprintf("got %s, want %s (rel %g)", format(a, digits = 17), format(b, digits = 17), rel),
-         call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop("expected an error", call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 # The warnings `expr` raises, and its value.
-with_warnings <- function(expr) {
-  found <- character()
-  value <- withCallingHandlers(expr, warning = function(w) {
-    found <<- c(found, conditionMessage(w))
-    invokeRestart("muffleWarning")
-  })
-  list(value = value, warnings = found)
-}
 
 # Tests run from the repository root (CI and `cargo xtask r`). The papers'
 # training triangle: the cells at calendar years up to 1996, and accident

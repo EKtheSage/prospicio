@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Methods on claim counts (docs/design/reserving-v02.md, decisions 35 and 36):
 # frequency-severity, disposal rates, case outstanding development and the
@@ -8,25 +9,7 @@ suppressMessages(library(prospicio))
 # the same numbers as python/tests/test_reserving_counts.py, and check the
 # binding's arguments and errors.
 
-near <- function(a, b, tol = 1e-9) {
-  a <- unname(a)
-  b <- unname(b)
-  if (length(a) != length(b) || !all(abs(a - b) <= tol)) {
-    stop(sprintf("got %s, want %s (tol %g)", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " "), tol), call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop(sprintf("expected an error mentioning %s", shQuote(pattern)), call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 find_data <- function() {
   dir <- getwd()
@@ -64,21 +47,21 @@ d <- do.call(rbind, lapply(1:3, function(k) {
 tri <- triangle(d, origin = "origin", development = "age", columns = c("amounts", "counts"))
 fs <- frequency_severity(tri, "amounts", "counts")
 cl <- chain_ladder(tri, "amounts")
-near(fs@ultimate, cl@ultimate)
-near(fs@total_reserve, sum(fs@reserve))
+near_abs(fs@ultimate, cl@ultimate, 1e-9)
+near_abs(fs@total_reserve, sum(fs@reserve), 1e-9)
 
 # A trended frequency and severity.
 fit <- frequency_severity(small, "reported", "reported_counts",
                           ultimate_counts = trended(0.5, 2021, 0),
                           severity = trended(20, 2021, 0.1), exposure = "paid")
-near(fit@ultimate, c(50 * 20 / 1.1, 30 * 20))
+near_abs(fit@ultimate, c(50 * 20 / 1.1, 30 * 20), 1e-9)
 stopifnot(identical(fit@origins, c("2020", "2021")))
 
 # Friedland's XYZ Insurer, chapter 12: 513,944 and the 233 left out of 2000.
 fit <- case_outstanding(xyz(), "paid", "reported", 1.10, paid_on_case = 2, case_on_case = 2)
-near(fit@total_ultimate, 513944 + 0.501 * 465, 8)
-near(fit@ibnr, fit@ultimate - fit@latest_incurred)
-near(fit@reserve, fit@ultimate - fit@latest_paid)
+near_abs(fit@total_ultimate, 513944 + 0.501 * 465, 8)
+near_abs(fit@ibnr, fit@ultimate - fit@latest_incurred, 1e-9)
+near_abs(fit@reserve, fit@ultimate - fit@latest_paid, 1e-9)
 
 # Chapter 11, the disposal rate method.
 reported <- c(1455, 1554, 1629, 2258, 2390, 1657, 1264, 1036)
@@ -87,8 +70,8 @@ rates <- stats::setNames(c(0.244, 0.572, 0.704, 0.814, 0.910, 0.952, 0.982, 0.99
 fit <- disposal_method(xyz(2001, 2008, 96), "closed_counts", "paid", reported * cdf,
                        disposal_rates = rates, severities = 2, tail_severity_from = 84,
                        trend = 0.05, base = 2008, factors = c(rep(0.670, 5), 0.750, 1, 1))
-near(fit@total_ultimate, 385676, 6)
-near(fit@ages, 12 * 1:8)
+near_abs(fit@total_ultimate, 385676, 6)
+near_abs(fit@ages, 12 * 1:8, 1e-9)
 stopifnot(is.na(fit@disposal_rates[8, 2]), length(fit@selected_severities) == 9)
 
 # Chapter 13, the adjustments keep the latest diagonal.
@@ -101,9 +84,9 @@ stopifnot(identical(case@columns, t@columns))
 settled <- settlement_rate_adjust(t, "paid", "closed_counts", counts)
 both <- berquist_sherman_adjust(t, "reported", "paid", "reported_counts", "closed_counts", 0.05,
                                 counts, max_age = 84)
-near(chain_ladder(case, "reported")@latest, chain_ladder(t, "reported")@latest)
-near(chain_ladder(settled, "paid")@latest, chain_ladder(t, "paid")@latest)
-near(chain_ladder(both, "reported")@latest, chain_ladder(t, "reported")@latest)
+near_abs(chain_ladder(case, "reported")@latest, chain_ladder(t, "reported")@latest, 1e-9)
+near_abs(chain_ladder(settled, "paid")@latest, chain_ladder(t, "paid")@latest, 1e-9)
+near_abs(chain_ladder(both, "reported")@latest, chain_ladder(t, "reported")@latest, 1e-9)
 extra <- average_case(t, "reported", "paid", 0.05, reported = "reported_counts",
                       closed = "closed_counts")
 stopifnot(all(c("average_case", "adjusted_average_case") %in% extra@columns))
@@ -119,19 +102,19 @@ fitted <- case_adequacy_adjust(t, "reported", "paid", "average_case", reported =
                                closed = "closed_counts")
 given <- case_adequacy_adjust(t, "reported", "paid", rate, reported = "reported_counts",
                               closed = "closed_counts")
-near(chain_ladder(fitted, "reported")@ultimate, chain_ladder(given, "reported")@ultimate)
+near_abs(chain_ladder(fitted, "reported")@ultimate, chain_ladder(given, "reported")@ultimate, 1e-9)
 expect_error_like(case_adequacy_adjust(t, "reported", "paid", "average",
                                        reported = "reported_counts", closed = "closed_counts"),
                   "average_case")
 
 # Trends.
-near(exponential_trend(0:2, c(100, 110, 121))$rate, 0.1)
+near_abs(exponential_trend(0:2, c(100, 110, 121))$rate, 0.1, 1e-9)
 stopifnot(is.null(exponential_trend(0, 100)))
 avg <- ratio_column(t, "paid", "closed_counts", "average_paid")
 by_age <- trend_by_age(avg, "average_paid")
-near(round(by_age$rate[1] * 100, 1), 8.1)
+near_abs(round(by_age$rate[1] * 100, 1), 8.1, 1e-9)
 stopifnot(is.finite(pooled_trend(avg, "average_paid")$rate))
-near(case_development_factor(1.2, 2), 1.5)
+near_abs(case_development_factor(1.2, 2), 1.5, 1e-9)
 
 # Arguments.
 expect_error_like(disposal_method(small, "closed_counts", "paid", c(10, 12),

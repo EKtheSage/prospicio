@@ -19,12 +19,9 @@ from prospicio.reserving import (
     Triangle,
 )
 
+from helpers import read_csv
+
 VALIDATION = Path(__file__).resolve().parents[2] / "validation"
-
-
-def read_csv(path):
-    with open(path, newline="") as f:
-        return list(csv.DictReader(line for line in f if not line.startswith("#")))
 
 
 ROWS = read_csv(VALIDATION / "data" / "mcl.csv")

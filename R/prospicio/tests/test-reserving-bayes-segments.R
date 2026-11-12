@@ -1,37 +1,14 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # bayes_odp_segments(), the Bayesian ODP over segments
 # (docs/design/reserving-bayes.md, decision 11). The seed sweep and the
 # diagonal backtest are in validation/tests/reserving_bayes_segments.rs;
 # these tests check the binding.
 
-near <- function(a, b, tol) {
-  if (!all(abs(a - b) <= tol)) {
-    stop(sprintf("got %s, want %s (tol %g)", format(a, digits = 17), format(b, digits = 17), tol),
-         call. = FALSE)
-  }
-}
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop("expected an error", call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 # The warnings `expr` raises, and its value.
-with_warnings <- function(expr) {
-  found <- character()
-  value <- withCallingHandlers(expr, warning = function(w) {
-    found <<- c(found, conditionMessage(w))
-    invokeRestart("muffleWarning")
-  })
-  list(value = value, warnings = found)
-}
 
 # Tests run from the repository root (CI and `cargo xtask r`). The lines of
 # clrd_lines.csv in `lines`, renamed by `names`, as the segments of `lob`.
@@ -73,7 +50,7 @@ long <- as.data.frame(fits)
 stopifnot(identical(names(long), c("lob", "origin", "latest", "ultimate", "reserve", "mean",
                                    "std_dev")),
           nrow(long) == 20)
-near(sum(long$mean), mean(r), 1e-9 * mean(r))
+near_abs(sum(long$mean), mean(r), 1e-9 * mean(r))
 totals <- totals_frame(fits)
 stopifnot(identical(totals$lob, c("comauto", "wkcomp")), "scale" %in% names(totals))
 # Each line's posterior mean reserve sits near its chain ladder's.
@@ -106,14 +83,14 @@ stopifnot(
   identical(draw_matrix(one@reserves), unname(draw_matrix(r)[, 11:20]))
 )
 alone <- bayes_odp(clrd("wkcomp"), n_sims = n_sims, seed = 5)
-near(one@scale, alone@scale, 1e-12 * alone@scale)
+near_abs(one@scale, alone@scale, 1e-12 * alone@scale)
 stopifnot(identical(colnames(one@draws), colnames(alone@draws)),
           nrow(one@draws) == 4000, !identical(one@draws, alone@draws))
-near(one@summary$mean[1], alone@summary$mean[1], 0.02)
+near_abs(one@summary$mean[1], alone@summary$mean[1], 0.02)
 stopifnot(identical(summary(one), one@summary))
 loo <- bayes_loo(one)
 stopifnot(length(loo$pointwise) == 55)
-near(loo$estimates[["elpd"]], bayes_loo(alone)$estimates[["elpd"]], 1)
+near_abs(loo$estimates[["elpd"]], bayes_loo(alone)$estimates[["elpd"]], 1)
 
 # Independent: the same line under two names. Shared random numbers would
 # make the totals almost perfectly rank correlated; 4.5 / sqrt(n_sims) is
@@ -123,14 +100,14 @@ twins <- bayes_odp_segments(clrd(c("wkcomp", "wkcomp"), c("a", "b")), n_sims = n
                             seed = 11)
 t <- line_totals(twins)
 stopifnot(abs(stats::cor(t[, 1], t[, 2], method = "spearman")) < 4.5 / sqrt(n_sims))
-near(mean(t[, 1]) / mean(t[, 2]), 1, 0.01)
+near_abs(mean(t[, 1]) / mean(t[, 2]), 1, 0.01)
 
 # Rank correlation: Iman-Conover reaches the target within 0.009 at 10,000
 # simulations over 40 seeds (sd at most 0.0029); 0.03 allows for 4,000.
 ranked <- bayes_odp_segments(two, n_sims = n_sims, seed = 5, dependence = "rank_correlation",
                              spearman = matrix(c(1, 0.5, 0.5, 1), 2))
 t <- line_totals(ranked)
-near(stats::cor(t[, 1], t[, 2], method = "spearman"), 0.5, 0.03)
+near_abs(stats::cor(t[, 1], t[, 2], method = "spearman"), 0.5, 0.03)
 
 # Replay by seed.
 quick <- function(seed) {
