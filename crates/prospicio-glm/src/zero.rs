@@ -1291,7 +1291,10 @@ mod tests {
         for &(name, d) in CountDistribution::NAMES {
             assert_eq!(CountDistribution::from_name(name), Some(d), "{name}");
         }
-        for d in [CountDistribution::Poisson, CountDistribution::NegativeBinomial] {
+        for d in [
+            CountDistribution::Poisson,
+            CountDistribution::NegativeBinomial,
+        ] {
             assert_eq!(CountDistribution::from_name(d.name()), Some(d));
         }
         assert_eq!(CountDistribution::from_name("Poisson"), None);
