@@ -234,6 +234,18 @@ const SIMS: Arg = Arg {
     name: "sims",
     help: "Number of simulations, 10000 if omitted (at most 1000000)",
 };
+const NESTED_FAMILY: Arg = Arg {
+    name: "family",
+    help: "\"clayton\" (lower-tail dependence) or \"gumbel\" (upper-tail), the same at every node",
+};
+const NESTED_NODES: Arg = Arg {
+    name: "nodes",
+    help: "One row per node: its name, its parent's name (blank for the root) and theta; a child's theta at least its parent's",
+};
+const NESTED_MEMBERS: Arg = Arg {
+    name: "members",
+    help: "A row or column with the node each dimension joins, one cell a dimension",
+};
 const SEED: Arg = Arg {
     name: "seed",
     help: "Random seed, 0 if omitted; the same seed gives the same result",
@@ -3302,6 +3314,37 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: copulas::sim,
+    },
+    Function {
+        symbol: "pro_cap_nested_cdf",
+        name: "PRO.CAP.NESTED.CDF",
+        help: "A nested Archimedean copula's C(u) at each point, one point a row: groups of dimensions joined more strongly within than between (Clayton or Gumbel).",
+        args: &[
+            Arg {
+                name: "points",
+                help: "Points in [0, 1]^d, one a row, one column a dimension in members' order",
+            },
+            NESTED_FAMILY,
+            NESTED_NODES,
+            NESTED_MEMBERS,
+        ],
+        run: copulas::nested_cdf,
+    },
+    Function {
+        symbol: "pro_cap_nested_sim",
+        name: "PRO.CAP.NESTED.SIM",
+        help: "Uniforms simulated from a nested Archimedean copula, one row a simulation and one column a dimension in members' order; reproducible by seed.",
+        args: &[
+            NESTED_FAMILY,
+            NESTED_NODES,
+            NESTED_MEMBERS,
+            Arg {
+                name: "sims",
+                help: "Simulations (rows), 1 to 1,000,000 (10,000 if omitted)",
+            },
+            SEED,
+        ],
+        run: copulas::nested_sim,
     },
     Function {
         symbol: "pro_cap_iman_conover",

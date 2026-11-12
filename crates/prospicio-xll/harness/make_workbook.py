@@ -1145,7 +1145,29 @@ for r in range(4, 1004):
     cp[f"J{r}"] = f"=H{r}+I{r}"
 cp["L4"] = ArrayFormula("L4:M1003", "=PRO.CAP.IMAN.CONOVER(H4:I1003,B5,B4)")
 cp["A14"] = "Total's 99th percentile"; cp["B14"] = "=PERCENTILE(J4:J1003,0.99)"
-for col in "ABCDFGHIJLM":
+cp["A17"] = "Nested Gumbel: two property and two casualty lines, tighter within a class"; cp["A17"].font = bold
+cp["A18"] = "Node"; cp["B18"] = "Parent"; cp["C18"] = "Theta"
+for c in ("A18", "B18", "C18"):
+    cp[c].font = bold
+for i, (node, parent, theta) in enumerate([("all", None, 1.25), ("property", "all", 4), ("casualty", "all", 2)]):
+    cp[f"A{19 + i}"] = node; cp[f"C{19 + i}"] = theta
+    if parent:
+        cp[f"B{19 + i}"] = parent
+    for c in "ABC":
+        cp[f"{c}{19 + i}"].fill = inp
+cp["A23"] = "Members"; cp["A23"].font = bold
+for j, m in enumerate(["property", "property", "casualty", "casualty"]):
+    cell = cp.cell(row=24, column=1 + j, value=m)
+    cell.fill = inp
+cp["A26"] = "C(u) at"; cp["E26"] = "Nested"; cp["A26"].font = cp["E26"].font = bold
+for i, point in enumerate([(0.5, 0.5, 0.5, 0.5), (0.9, 0.95, 0.9, 0.8)]):
+    for j, x in enumerate(point):
+        cell = cp.cell(row=27 + i, column=1 + j, value=x)
+        cell.fill = inp
+cp["E27"] = ArrayFormula("E27:E28", '=PRO.CAP.NESTED.CDF(A27:D28,"gumbel",A19:C21,A24:D24)')
+cp["O3"] = "Nested draws"; cp["O3"].font = bold
+cp["O4"] = ArrayFormula("O4:R1003", '=PRO.CAP.NESTED.SIM("gumbel",A19:C21,A24:D24,1000,B4)')
+for col in "ABCDEFGHIJLMOPQR":
     cp.column_dimensions[col].width = 14
 
 # A three-year term: profit commission deficits and a sliding scale's deficits and credits carried forward.

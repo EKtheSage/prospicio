@@ -1155,8 +1155,9 @@ real Excel.
     on the async functions"). Every function with a `sims` or `replicates`
     argument and every MCMC fit (`jobs::ASYNC`: `PRO.RES.ODP`,
     `.ODP.SIMS`, `.ODP.CDR`, `.MACK.BOOT`, `.MACK.BOOT.SIMS`,
-    `.MACK.BOOT.CDR`, `.BAYES.ODP`, `.BAYES.BF`, `PRO.CAP.COPULA.SIM` and
-    `PRO.SEV.FIT.KS`) is an Excel 2010 asynchronous function: registered
+    `.MACK.BOOT.CDR`, `.BAYES.ODP`, `.BAYES.BF`, `PRO.CAP.COPULA.SIM`,
+    `PRO.CAP.NESTED.SIM` and `PRO.SEV.FIT.KS`) is an Excel 2010
+    asynchronous function: registered
     as `>` (no result) with its `Q` arguments and a last `X`, the handle Excel waits on, and not thread safe (`$`), since
     the call only starts the run. It returns at once; the cell shows
     `#GETTING_DATA` while the run goes on a thread of its own, and the
@@ -1705,6 +1706,49 @@ real Excel.
       test workbook's Severity fit sheet bootstraps its nine families with
       199 replicates.
 
+64. **Nested Archimedean copulas: the tree as a table of nodes** (the
+    nearest item "Open" listed, user 2026-11-12, "work towards the next
+    steps"; `prospicio_prob::copula::NestedArchimedeanCopula`).
+    `PRO.CAP.NESTED.CDF(points, family, nodes, members)` gives `C(u)` at
+    each row of `points`; `PRO.CAP.NESTED.SIM(family, nodes, members,
+    [sims], [seed])` spills `sims` rows of uniforms, one column a
+    dimension, to turn into losses with `PRO.SEV.QUANTILE` as after
+    `PRO.CAP.COPULA.SIM`.
+    - **A node table, not nested lists.** Python and R take the tree as
+      nested tuples or lists, `(1.5, [0, (3, [1, 2])])`; a sheet has no
+      such value. `nodes` has one row per node: its name (text or a
+      number), its parent's name (blank for the one root) and its theta;
+      `members` is a row or column naming the node each dimension joins,
+      in the order of the points' and draws' columns. A node's children
+      follow the table's order, so the draws are those of the tuple tree
+      written in that order. This is the form a reinsurer's correlation
+      tree already takes in a workbook (class under portfolio, line under
+      class), and it names every error by node: no root or two, an unknown
+      parent, a name twice, a loop below the root, a node that joins fewer
+      than two members.
+    - **Not new families on `PRO.CAP.COPULA.CDF`.** A nested copula's
+      parameter is a table and a mapping, not a theta or a correlation, so
+      its own pair of functions keeps the plain functions' arguments
+      plain. Clayton and Gumbel only, the same family at every node, and a
+      child's theta at least its parent's: the core's conditions (McNeil
+      2008), its messages passed through.
+    - **The draws are the core's.** Row `i` is drawn from stream `i` of
+      `seed`, as `PRO.CAP.COPULA.SIM`, `copula::simulate` and Python's
+      `NestedArchimedeanCopula.sample` draw it, so a sheet and Python
+      agree draw for draw. `PRO.CAP.NESTED.SIM` simulates, so it runs
+      asynchronously (decision 48).
+    - **Parity.** `tests/nested_copula.rs`: the cdf of three trees (a
+      Gumbel of five dimensions in two groups and a leaf, a Clayton of
+      three levels with numbers for names, a Clayton of two groups under
+      a root with no dimension) at four points each equals mpmath at 30
+      digits to 1e-14 (`validation/scripts/mpmath_nested_copula.py`; R's
+      `copula` does not install on the container's R 4.3); 500 draws
+      equal the core's at the same seed; on 4,000 draws of the three-level
+      Clayton each pair's Kendall's tau is within 0.03 of `theta /
+      (theta + 2)` at the node where the pair meets. The test workbook's
+      Copulas sheet holds a nested Gumbel of two property and two
+      casualty lines, its cdf at two points and 1,000 draws.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and
@@ -1783,9 +1827,9 @@ an XLL function (decision 4: no state) does not hold.
 ## Open (for the user)
 
 - **Next functions:** #742's batches (parity plan, group 10); further
-  functions as the user asks (nested
-  Archimedean copulas and vines, and the expected multi-year commission
-  on the grid, are the nearest left out).
+  functions as the user asks (vines, and the expected multi-year
+  commission on the grid, are the nearest left out; nested Archimedean
+  copulas are decision 64).
 - **A code-signing certificate**, if the add-in goes beyond a few
   testers (decision 16). A certificate from the organization's own CA,
   trusted on its machines by group policy, comes as a PKCS#12 file and

@@ -603,6 +603,8 @@ mod exports {
     udf!(pro_cap_distortion_calibrate, values, probs, premium, families, r0);
     udf!(pro_cap_copula_cdf, points, family, parameter, nu);
     udf_async!(pro_cap_copula_sim, family, parameter, sims, dim, seed, nu);
+    udf!(pro_cap_nested_cdf, points, family, nodes, members);
+    udf_async!(pro_cap_nested_sim, family, nodes, members, sims, seed);
     udf!(pro_cap_iman_conover, draws, correlation, seed, dof, shuffle);
     udf!(pro_prc_swing, loss, basic, lcm, minimum, maximum, share);
     udf!(pro_prc_profit_commission_term, losses, premium, share, allowance, carry_years);

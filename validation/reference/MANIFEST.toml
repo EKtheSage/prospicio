@@ -436,6 +436,11 @@ generators = ["aggregate_natural.py"]
 sha256 = "90ed95bf61334898312b690229ccfa9a8c4264eb8acc1216a2ac84e2d99d209a"
 
 [[file]]
+path = "nested_copula_mpmath.csv"
+generators = ["mpmath_nested_copula.py"]
+sha256 = "2a26e663de8dadb076aac704308bb23656bc23f40f9491d920fca6f811b3323d"
+
+[[file]]
 path = "oep_aggregate.csv"
 generators = ["aggregate_oep.py"]
 sha256 = "d090fe8c6b9472f61686c47f64a568c8745a85ac62df101f1509f49193067926"
