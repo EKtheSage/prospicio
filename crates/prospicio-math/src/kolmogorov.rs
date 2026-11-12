@@ -12,6 +12,7 @@
 //! between, and Kolmogorov's limit `2 Σ (−1)^(k−1) e^(−2k²z²)` at
 //! `z = √n d` when the matrix would be too large.
 
+use crate::linalg::mat_mul;
 use crate::special::ln_gamma;
 
 /// The largest Durbin matrix side `2k − 1`, `k = ⌈n d⌉`, computed exactly;
@@ -175,10 +176,10 @@ fn durbin_cdf(n: usize, d: f64) -> f64 {
     let mut nn = n;
     while nn > 0 {
         if nn % 2 == 1 {
-            power = matmul(&power, &hm, m);
+            power = mat_mul(&power, &hm, m);
             expnt += h_expnt;
         }
-        hm = matmul(&hm, &hm, m);
+        hm = mat_mul(&hm, &hm, m);
         h_expnt *= 2;
         if hm[(k - 1) * m + (k - 1)].abs() > big {
             for x in &mut hm {
@@ -205,22 +206,6 @@ fn identity(m: usize) -> Vec<f64> {
         a[i * m + i] = 1.0;
     }
     a
-}
-
-fn matmul(a: &[f64], b: &[f64], m: usize) -> Vec<f64> {
-    let mut c = vec![0.0; m * m];
-    for i in 0..m {
-        for l in 0..m {
-            let x = a[i * m + l];
-            if x == 0.0 {
-                continue;
-            }
-            for j in 0..m {
-                c[i * m + j] += x * b[l * m + j];
-            }
-        }
-    }
-    c
 }
 
 fn clip(p: f64) -> f64 {

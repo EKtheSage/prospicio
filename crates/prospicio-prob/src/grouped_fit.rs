@@ -11,7 +11,7 @@
 //! an open band to `+∞`.
 
 use prospicio_core::{Error, Result};
-use prospicio_math::linalg::solve;
+use prospicio_math::linalg::inverse;
 use prospicio_math::optimize::{NelderMead, nelder_mead};
 
 use crate::LargeLosses;
@@ -435,20 +435,10 @@ fn information_inverse(family: Family, p: &[f64], data: &GroupedLosses) -> Vec<f
                     .sum::<f64>();
         }
     }
-    let mut cov = nan.clone();
-    for c in 0..k {
-        let mut e = vec![0.0; k];
-        e[c] = 1.0;
-        match solve(info.clone(), e, k) {
-            Some(col) if col.iter().all(|v| v.is_finite()) => {
-                for r in 0..k {
-                    cov[r * k + c] = col[r];
-                }
-            }
-            _ => return nan,
-        }
+    match inverse(&info, k) {
+        Some(inv) if inv.iter().all(|v| v.is_finite()) => inv,
+        _ => nan,
     }
-    cov
 }
 
 /// A severity fitted by the minimum distance between its limited expected

@@ -6,7 +6,7 @@
 //! (`docs/roadmap.md`).
 
 use prospicio_core::{Error, Result};
-use prospicio_math::linalg::{cholesky, cholesky_inverse, cholesky_solve, solve};
+use prospicio_math::linalg::{cholesky, cholesky_inverse, cholesky_solve, mat_mul, solve};
 use prospicio_math::special::norm_quantile;
 
 /// Limited fluctuation (classical) credibility: the expected number of
@@ -565,19 +565,6 @@ fn wls(y: &[f64], w: &[f64], design: &[Vec<f64>], p: usize) -> Option<RiskFit> {
         w_inv: cholesky_inverse(&l, p),
         sigma2,
     })
-}
-
-/// `a b` for row-major `p × p` matrices.
-fn mat_mul(a: &[f64], b: &[f64], p: usize) -> Vec<f64> {
-    let mut c = vec![0.0; p * p];
-    for i in 0..p {
-        for k in 0..p {
-            for j in 0..p {
-                c[i * p + j] += a[i * p + k] * b[k * p + j];
-            }
-        }
-    }
-    c
 }
 
 /// `a v` for a row-major `p × p` matrix.

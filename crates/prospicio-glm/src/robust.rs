@@ -16,7 +16,7 @@
 //! uses the expected.
 
 use prospicio_core::{Error, Result};
-use prospicio_math::linalg::{cholesky, cholesky_inverse};
+use prospicio_math::linalg::{cholesky, cholesky_inverse, mat_mul};
 use prospicio_models::Design;
 
 use crate::GlmFit;
@@ -129,8 +129,8 @@ impl GlmFit {
                 (outer_sum(sums.chunks_exact(p as usize), p as usize), scale)
             }
         };
-        let bm = matmul(&bread, &meat, p);
-        Ok(matmul(&bm, &bread, p)
+        let bm = mat_mul(&bread, &meat, p);
+        Ok(mat_mul(&bm, &bread, p)
             .into_iter()
             .map(|c| c * scale)
             .collect())
@@ -156,20 +156,6 @@ fn outer_sum<'a>(rows: impl Iterator<Item = &'a [f64]>, p: usize) -> Vec<f64> {
         }
     }
     m
-}
-
-/// Row-major `p × p` product.
-fn matmul(a: &[f64], b: &[f64], p: usize) -> Vec<f64> {
-    let mut c = vec![0.0; p * p];
-    for i in 0..p {
-        for k in 0..p {
-            let aik = a[i * p + k];
-            for j in 0..p {
-                c[i * p + j] += aik * b[k * p + j];
-            }
-        }
-    }
-    c
 }
 
 #[cfg(test)]
@@ -234,7 +220,7 @@ mod tests {
                 }
             }
         }
-        let want = matmul(&matmul(&inv, &meat, 2), &inv, 2);
+        let want = mat_mul(&mat_mul(&inv, &meat, 2), &inv, 2);
         for k in 0..4 {
             assert!(
                 (v[k] - want[k]).abs() < 1e-10 * want[k].abs().max(1e-12),

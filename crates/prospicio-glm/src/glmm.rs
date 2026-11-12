@@ -79,7 +79,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 
 use prospicio_core::{Error, Result};
-use prospicio_math::linalg::{cholesky, cholesky_inverse, cholesky_solve};
+use prospicio_math::linalg::{cholesky, cholesky_inverse, cholesky_log_det, cholesky_solve};
 use prospicio_models::{Design, Family, Link, Model};
 
 use crate::{Dispersion, Glm};
@@ -1114,7 +1114,7 @@ impl Problem<'_> {
         let log_det = if diagonal {
             factor.iter().map(|h| h.ln()).sum::<f64>()
         } else {
-            2.0 * (0..q).map(|j| factor[j * q + j].ln()).sum::<f64>()
+            cholesky_log_det(&factor, q)
         };
         // b = Λ v, level by level.
         let mut b = vec![0.0; q];

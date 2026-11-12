@@ -34,7 +34,7 @@
 //! at those draws.
 
 use prospicio_bayes::nuts::PosteriorDraws;
-use prospicio_math::linalg::{cholesky, lower_solve};
+use prospicio_math::linalg::{cholesky, cholesky_log_det, lower_solve, mat_mul};
 use rayon::prelude::*;
 
 use super::one_year::YearModel;
@@ -285,7 +285,7 @@ fn split<M: YearModel>(
     let half = s / 2;
     let m = &opening.mean;
     let l = &total.mapping;
-    let log_det: f64 = (0..p).map(|i| l[i * p + i].ln()).sum();
+    let log_det = 0.5 * cholesky_log_det(l, p);
     // T(θ) and T⁻¹(θ).
     let forward = |theta: &[f64]| -> Vec<f64> {
         (0..p)
@@ -370,22 +370,6 @@ fn identity(p: usize) -> Vec<f64> {
         m[i * p + i] = 1.0;
     }
     m
-}
-
-/// `a b` for row-major `p × p` matrices.
-fn mat_mul(a: &[f64], b: &[f64], p: usize) -> Vec<f64> {
-    let mut c = vec![0.0; p * p];
-    for i in 0..p {
-        for k in 0..p {
-            let aik = a[i * p + k];
-            if aik != 0.0 {
-                for j in 0..p {
-                    c[i * p + j] += aik * b[k * p + j];
-                }
-            }
-        }
-    }
-    c
 }
 
 #[cfg(test)]

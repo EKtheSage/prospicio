@@ -26,7 +26,7 @@
 //! in all parameters, from analytic derivatives of the curve) times the
 //! scale, and a reserve's parameter risk is the delta method on it.
 
-use prospicio_math::linalg::solve;
+use prospicio_math::linalg;
 use prospicio_math::optimize::{NelderMead, nelder_mead};
 
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
@@ -604,15 +604,7 @@ impl Model {
 /// its reciprocal 1-norm condition number is below machine epsilon (R's
 /// `rcond(FI) < .Machine$double.eps`).
 fn inverse(a: &[f64], n: usize) -> Option<Vec<f64>> {
-    let mut inv = vec![0.0; n * n];
-    for j in 0..n {
-        let mut e = vec![0.0; n];
-        e[j] = 1.0;
-        let x = solve(a.to_vec(), e, n)?;
-        for i in 0..n {
-            inv[i * n + j] = x[i];
-        }
-    }
+    let inv = linalg::inverse(a, n)?;
     let norm1 = |m: &[f64]| {
         (0..n)
             .map(|j| (0..n).map(|i| m[i * n + j].abs()).sum::<f64>())
