@@ -331,14 +331,9 @@ fn selected(
 /// ("cdf") or percents developed ("percent").
 pub(crate) fn pattern_kind(kind: &Grid) -> Result<PatternKind> {
     match text_option(kind, "kind")?.as_deref() {
-        None | Some("ldf" | "age-to-age") => Ok(PatternKind::AgeToAge),
-        Some("cdf" | "age-to-ultimate") => Ok(PatternKind::AgeToUltimate),
-        Some("percent" | "percent developed" | "percent_developed") => {
-            Ok(PatternKind::PercentDeveloped)
-        }
-        Some(other) => Err(format!(
-            "kind must be \"ldf\", \"cdf\" or \"percent\", got {other:?}"
-        )),
+        None => Ok(PatternKind::AgeToAge),
+        Some(name) => PatternKind::from_name(name)
+            .ok_or_else(|| crate::unknown_name("kind", name, PatternKind::NAMES)),
     }
 }
 

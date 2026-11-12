@@ -1140,7 +1140,7 @@ fn input_errors_name_their_argument() {
     );
     assert_eq!(
         e(base().kind("factor").cl()),
-        "kind must be \"ldf\", \"cdf\" or \"percent\", got \"factor\""
+        "kind must be \"ldf\", \"age-to-age\", \"cdf\", \"age-to-ultimate\", \"percent_developed\", \"percent\" or \"percent developed\", got \"factor\""
     );
     assert_eq!(
         e(base().pattern_origin("day").cl()),

@@ -267,23 +267,12 @@ fn development(
 }
 
 fn pattern_kind(name: &str) -> PyResult<PatternKind> {
-    match name {
-        "ldf" | "age-to-age" => Ok(PatternKind::AgeToAge),
-        "cdf" | "age-to-ultimate" => Ok(PatternKind::AgeToUltimate),
-        "percent_developed" | "percent" | "percent developed" => Ok(PatternKind::PercentDeveloped),
-        _ => Err(PyValueError::new_err(format!(
-            "ldf_kind must be \"ldf\" (age-to-age factors), \"cdf\" (factors to ultimate) \
-             or \"percent_developed\", got {name:?}"
-        ))),
-    }
+    PatternKind::from_name(name)
+        .ok_or_else(|| crate::unknown_name("ldf_kind", name, PatternKind::NAMES))
 }
 
 fn pattern_kind_name(kind: PatternKind) -> &'static str {
-    match kind {
-        PatternKind::AgeToAge => "ldf",
-        PatternKind::AgeToUltimate => "cdf",
-        PatternKind::PercentDeveloped => "percent_developed",
-    }
+    kind.name()
 }
 
 pub(crate) fn py_repr(obj: &Bound<'_, PyAny>) -> String {
@@ -6845,20 +6834,15 @@ impl PyBenchmarkCurve {
         kind: &str,
         weights: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyBenchmarkCurveFit> {
-        let kind = match kind {
-            "percent_developed" | "percent" | "percent developed" => PatternKind::PercentDeveloped,
-            "cdf" | "age-to-ultimate" => PatternKind::AgeToUltimate,
-            "ldf" | "age-to-age" => {
+        let kind = match PatternKind::from_name(kind) {
+            Some(PatternKind::AgeToAge) => {
                 return Err(PyValueError::new_err(
                     "kind=\"ldf\": age-to-age factors give no level to fit; give percents \
                      developed or factors to ultimate",
                 ));
             }
-            other => {
-                return Err(PyValueError::new_err(format!(
-                    "kind must be \"percent_developed\" or \"cdf\", got {other:?}"
-                )));
-            }
+            Some(k) => k,
+            None => return Err(crate::unknown_name("kind", kind, PatternKind::NAMES)),
         };
         let values = real_age_values(pattern, "pattern")?;
         let weights = match weights.filter(|w| !w.is_none()) {
