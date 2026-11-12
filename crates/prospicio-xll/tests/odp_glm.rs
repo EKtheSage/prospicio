@@ -271,8 +271,8 @@ fn residuals_match_taylor_mcguire_chapter_6() {
 fn reserves_are_the_chain_ladders() {
     let s = call("pro_res_odp_glm", vec![raa()]);
     let cl = call("pro_res_cl_reserve", vec![raa()]);
-    for i in 0..10 {
-        assert!((num(s.get(i + 1, 3)) - num(&cl.cells[i])).abs() < 1e-6);
+    for (i, cell) in cl.cells.iter().enumerate().take(10) {
+        assert!((num(s.get(i + 1, 3)) - num(cell)).abs() < 1e-6);
     }
     let p = call("pro_res_odp_glm_params", vec![raa()]);
     assert_eq!((p.rows, p.columns), (21, 4));

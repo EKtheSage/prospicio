@@ -116,8 +116,8 @@ fn mack_matches_the_crate_and_r() {
         .unwrap();
     let table = call("pro_res_mack", args(raa(), 3));
     assert_eq!((table.rows, table.columns), (12, 8));
-    for i in 0..10 {
-        assert_eq!(num(table.get(i + 1, 6)), fit.standard_error[i]);
+    for (i, &se) in fit.standard_error.iter().enumerate().take(10) {
+        assert_eq!(num(table.get(i + 1, 6)), se);
     }
     assert_eq!(table.get(1, 7), &Value::Empty, "no reserve, no CV");
     // R ChainLadder: MackChainLadder(RAA, est.sigma = "log-linear")$Total.Mack.S.E
