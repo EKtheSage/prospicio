@@ -1,3 +1,12 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "numpy==2.5.4",
+#     "shap==0.54.1",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-11-04T00:00:00Z"
+# ///
 """Exact Kernel SHAP (#547): references for python/tests/test_models.py and
 R/prospicio/tests/test-models.R from shap 0.54.1's KernelExplainer.
 

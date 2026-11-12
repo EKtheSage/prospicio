@@ -1,3 +1,12 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "numpy==2.5.4",
+#     "scipy==1.18.1",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-11-12T00:00:00Z"
+# ///
 """Regenerate the fit-curves parity reference from SciPy (issue #804).
 
 Run from the repository root, after `scipy_severity_fits.py`:

@@ -1,3 +1,12 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "numpy",
+#     "scikit-learn==1.5.2",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-30T00:00:00Z"
+# ///
 """Reference index sets for time-ordered splits with a window, a horizon and
 a gap, from scikit-learn 1.5.2's TimeSeriesSplit (docs/design/models.md,
 resampling; #549).

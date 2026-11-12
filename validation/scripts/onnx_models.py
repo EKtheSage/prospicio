@@ -1,3 +1,13 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "numpy==2.5.4",
+#     "onnx==1.23.2",
+#     "onnxruntime==1.31.0",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-23T00:00:00Z"
+# ///
 """Regenerate validation/data/onnx/*.onnx and validation/reference/onnx_outputs.csv.
 
     uv run --no-project --with onnx==1.23.2 --with onnxruntime==1.31.0 --with numpy==2.5.4 \

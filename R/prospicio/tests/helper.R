@@ -66,3 +66,26 @@ with_warnings <- function(expr) {
 
 # A path under validation/, from the repository root.
 validation <- function(...) file.path("validation", ...)
+
+# The `expected` value of the one row of validation/reference/<file> whose
+# columns equal the named arguments, compared as text: a constant the Rust
+# parity tests also read, kept in one place rather than pasted (#845).
+reference <- local({
+  cache <- new.env()
+  function(file, ...) {
+    if (is.null(cache[[file]])) {
+      lines <- readLines(validation("reference", file), warn = FALSE)
+      cache[[file]] <- utils::read.csv(text = lines[!startsWith(lines, "#")],
+                                       colClasses = "character", check.names = FALSE)
+    }
+    rows <- cache[[file]]
+    key <- list(...)
+    keep <- rep(TRUE, nrow(rows))
+    for (k in names(key)) keep <- keep & rows[[k]] == as.character(key[[k]])
+    if (sum(keep) != 1L) {
+      stop(sprintf("%s: %d rows match %s", file, sum(keep),
+                   paste(names(key), key, sep = "=", collapse = ", ")), call. = FALSE)
+    }
+    as.numeric(rows$expected[keep])
+  }
+})

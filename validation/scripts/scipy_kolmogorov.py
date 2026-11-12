@@ -1,3 +1,12 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "numpy",
+#     "scipy==1.18.1",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-11-12T00:00:00Z"
+# ///
 """Regenerate the Kolmogorov-Smirnov p-value parity reference from SciPy (#805).
 
 Run from the repository root:

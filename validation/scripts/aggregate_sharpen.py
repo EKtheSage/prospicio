@@ -1,3 +1,12 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "aggregate==2.1.0",
+#     "pandas",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-11-10T00:00:00Z"
+# ///
 """Print aggregate 2.1.0's `sharpen` probes behind `grid_audit_matches_aggregate_sharpen`.
 
     python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0

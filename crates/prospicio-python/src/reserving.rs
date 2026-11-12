@@ -166,13 +166,8 @@ fn average_name(a: Average) -> &'static str {
 }
 
 fn sigma_interpolation(name: &str) -> PyResult<SigmaInterpolation> {
-    match name {
-        "log-linear" | "loglinear" | "log_linear" => Ok(SigmaInterpolation::LogLinear),
-        "mack" => Ok(SigmaInterpolation::Mack),
-        _ => Err(PyValueError::new_err(format!(
-            "sigma_interpolation must be \"log-linear\" or \"mack\", got {name:?}"
-        ))),
-    }
+    SigmaInterpolation::from_name(name)
+        .ok_or_else(|| crate::unknown_name("sigma_interpolation", name, SigmaInterpolation::NAMES))
 }
 
 fn process_distribution(name: &str) -> PyResult<ProcessDistribution> {
@@ -250,10 +245,7 @@ fn dependence_repr(d: &SegmentDependence) -> String {
 }
 
 fn sigma_interpolation_name(s: SigmaInterpolation) -> &'static str {
-    match s {
-        SigmaInterpolation::LogLinear => "log-linear",
-        SigmaInterpolation::Mack => "mack",
-    }
+    s.name()
 }
 
 fn development(
@@ -7956,10 +7948,7 @@ fn pic_prior(
 }
 
 fn pic_extrapolation_name(e: VarianceExtrapolation) -> &'static str {
-    match e {
-        VarianceExtrapolation::LogLinear => "loglinear",
-        VarianceExtrapolation::Mack => "mack",
-    }
+    e.name()
 }
 
 fn pic_convention_name(c: PicConvention) -> &'static str {
@@ -7993,15 +7982,9 @@ impl PyPaidIncurredChain {
         psi_mean: Option<Vec<f64>>,
         psi_sd: Option<Vec<f64>>,
     ) -> PyResult<Self> {
-        let extrapolation = match extrapolation {
-            "loglinear" | "log-linear" | "log_linear" => VarianceExtrapolation::LogLinear,
-            "mack" => VarianceExtrapolation::Mack,
-            other => {
-                return Err(PyValueError::new_err(format!(
-                    "extrapolation must be \"loglinear\" or \"mack\", got {other:?}"
-                )));
-            }
-        };
+        let extrapolation = VarianceExtrapolation::from_name(extrapolation).ok_or_else(|| {
+            crate::unknown_name("extrapolation", extrapolation, VarianceExtrapolation::NAMES)
+        })?;
         let convention = match convention {
             "model" => PicConvention::Model,
             "r_chainladder" => PicConvention::RChainLadder,

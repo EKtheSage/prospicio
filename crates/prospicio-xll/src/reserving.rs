@@ -253,11 +253,9 @@ pub(crate) fn link_labels(ages: usize) -> Vec<Value> {
 /// 1993).
 fn sigma(grid: &Grid) -> Result<SigmaInterpolation> {
     match text_option(grid, "sigma")?.as_deref() {
-        None | Some("log-linear" | "loglinear" | "log_linear") => Ok(SigmaInterpolation::LogLinear),
-        Some("mack") => Ok(SigmaInterpolation::Mack),
-        Some(other) => Err(format!(
-            "sigma must be \"log-linear\" or \"mack\", got {other:?}"
-        )),
+        None => Ok(SigmaInterpolation::LogLinear),
+        Some(name) => SigmaInterpolation::from_name(name)
+            .ok_or_else(|| crate::unknown_name("sigma", name, SigmaInterpolation::NAMES)),
     }
 }
 

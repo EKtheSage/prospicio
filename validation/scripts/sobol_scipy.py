@@ -1,3 +1,11 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "scipy==1.14.1",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-30T00:00:00Z"
+# ///
 """Write validation/reference/sobol_scipy.csv: unscrambled Sobol points from SciPy.
 
 Rows: SciPy 1.14.1 stats.qmc.Sobol(d, scramble=False, bits=32).random(256),

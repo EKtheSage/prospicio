@@ -1,3 +1,11 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "pyarrow",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-23T00:00:00Z"
+# ///
 """Check prospicio-prob's PredictiveDistribution Arrow IPC format (version 1)
 with an independent implementation (pyarrow, not the Rust arrow crates).
 

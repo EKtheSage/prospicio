@@ -1,3 +1,11 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "aggregate==2.1.0",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-11-10T00:00:00Z"
+# ///
 """Reference values for eventual ruin with renewal claims, from `aggregate` 2.1.0.
 
 `Aggregate.wiener_hopf(rho)`: the chance of eventual ruin when the waits

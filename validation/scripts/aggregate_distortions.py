@@ -1,3 +1,13 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "aggregate==2.1.0",
+#     "numpy",
+#     "pandas",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-11-10T00:00:00Z"
+# ///
 """Regenerate validation/reference/distortion_aggregate.csv.
 
     python3.13 -m venv agg && agg/bin/pip install aggregate==2.1.0
