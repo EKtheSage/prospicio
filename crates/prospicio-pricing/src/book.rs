@@ -1541,12 +1541,12 @@ mod tests {
         };
         assert!(same(&cf.irr, &own.irr(&options).unwrap()));
         assert_eq!(cf.npv, own.npv(0.05).unwrap());
-        for j in 0..6 {
+        for (j, &moic) in cf.moic.iter().enumerate().take(6) {
             let net: f64 = own.flows()[j * own.months()..(j + 1) * own.months()]
                 .iter()
                 .sum();
             let want = 1.0 + net / (own.funded()[j] + own.opening()[j]);
-            assert!(close(cf.moic[j], want, 1e-15));
+            assert!(close(moic, want, 1e-15));
         }
         let later = book
             .shifted("a", 7)

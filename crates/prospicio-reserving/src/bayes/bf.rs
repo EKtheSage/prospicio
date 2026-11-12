@@ -434,7 +434,7 @@ impl BayesBf {
         let prior_ultimate: Vec<f64> = exposure.iter().map(|e| self.apriori * e).collect();
         // The posterior of mu_w given the pattern is a gamma of shape
         // shape + S_w / phi: proper only when that is positive.
-        for w in 0..no {
+        for (w, origin) in segment.origins.iter().enumerate().take(no) {
             let sum: f64 = cells.iter().filter(|c| c.0 == w).map(|c| c.2).sum();
             if sum.is_nan() || shape + sum / phi <= 0.0 {
                 let bound = if shape == 0.0 {
@@ -447,7 +447,7 @@ impl BayesBf {
                 };
                 return Err(Error::Bayes(format!(
                     "origin {}: the observed increments sum to {sum}, {bound}",
-                    segment.origins[w]
+                    origin
                 )));
             }
         }

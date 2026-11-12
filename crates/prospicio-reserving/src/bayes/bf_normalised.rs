@@ -602,11 +602,11 @@ impl BayesBfNormalised {
         let prior_ultimate: Vec<f64> = exposure.iter().map(|e| self.apriori * e).collect();
         // The posterior of U_w given the pattern is a gamma of shape
         // shape + S_w / phi: proper only when that is positive.
-        for w in 0..no {
+        for (w, origin) in segment.origins.iter().enumerate().take(no) {
             let row = cells.iter().filter(|c| c.0 == w);
             let (n, sum) = row.fold((0, 0.0), |(n, s), c| (n + 1, s + c.2));
             if sum.is_nan() || shape + sum / phi <= 0.0 {
-                return Err(origin_error(&segment.origins[w], n, sum, shape, phi));
+                return Err(origin_error(origin, n, sum, shape, phi));
             }
         }
         let mut column_sum = vec![0.0; nd];

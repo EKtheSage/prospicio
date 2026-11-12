@@ -189,9 +189,8 @@ impl PanelTriangle {
         let mut origin = Vec::new();
         let mut age: Vec<Lag> = Vec::new();
         let (mut paid, mut incurred, mut premium) = (Vec::new(), Vec::new(), Vec::new());
-        for o in 0..ORIGINS {
-            for d in 0..ORIGINS - o {
-                let c = &self.cells[o][d];
+        for (o, row) in self.cells.iter().enumerate().take(ORIGINS) {
+            for (d, c) in row.iter().enumerate().take(ORIGINS - o) {
                 origin.push(Month::january(FIRST_ORIGIN + o as i32));
                 age.push(12 * (d as Lag + 1));
                 paid.push(c.paid);
