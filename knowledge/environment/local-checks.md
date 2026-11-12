@@ -5,7 +5,7 @@ description: What runs locally before a push, what cannot, how to install R and 
 tags: [environment, ci, bindings, r, python]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-06T18:30:00Z }
-updated: { by: claude-code/cloud-session, at: 2026-11-11T00:00:00Z }
+updated: { by: claude-code/cloud-session, at: 2026-11-12T00:00:00Z }
 stale_after: 2027-01-05T00:00:00Z
 sources:
   - id: agents
@@ -53,6 +53,12 @@ When R is installed but `install.packages()` stops with "lib is not
 writable" (2026-10-15), create the user library first:
 `mkdir -p ~/R/x86_64-pc-linux-gnu-library/4.3`. CRAN then installs
 reference packages such as `ismev`, `evir` and `scam` through the proxy.
+
+R's `copula` package does not install on that R (2026-11-12): its
+dependency `Matrix` now needs R 4.4 or later, and `gsl` needs the
+system GNU Scientific Library (`libgsl-dev`). A parity check that would
+use `copula` (nested Archimedean copulas, for one) uses mpmath at 30
+digits on the closed form instead, as `mpmath_nested_copula.py` does.
 
 That install (R 4.3.3, roxygen2 8.1.0) left none of the noise below:
 `cargo xtask r` changed only the files the code change called for.

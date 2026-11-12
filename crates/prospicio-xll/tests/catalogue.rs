@@ -135,6 +135,8 @@ const ADDED_AFTER_THE_RENAME: &[&str] = &[
     "PRO.RES.BENCHMARK.CURVE",
     "PRO.PRC.TREND.FACTORS",
     "PRO.PRC.LR.CUMULATIVE",
+    "PRO.CAP.NESTED.CDF",
+    "PRO.CAP.NESTED.SIM",
 ];
 
 /// The table of old and new names in `docs/design/xll.md` (decision 47),

@@ -38,8 +38,8 @@ Ctrl+Alt+F9 to recalculate.
   attachments down.
 - **Simulations** take `sims` (default 10,000, at most 1,000,000) and
   `seed` (default 0). The same seed gives the same table.
-- **Long runs don't block Excel:** the bootstraps, the Bayesian fits and
-  `PRO.CAP.COPULA.SIM` run in the background. Their cell shows
+- **Long runs don't block Excel:** the bootstraps, the Bayesian fits,
+  `PRO.CAP.COPULA.SIM` and `PRO.CAP.NESTED.SIM` run in the background. Their cell shows
   `#GETTING_DATA` until the result arrives, and you can keep working.
   Cells with the same inputs share one run, and a recalculation that
   changes none of a function's inputs answers at once from the result
@@ -432,6 +432,8 @@ labelled in `companies`, with their premiums; chain its summary into
 | `PRO.CAP.ALLOCATE.TOTAL(draws, total, [method], [measure], [level])` | A premium or capital allocated by the haircut or equal-risk rule |
 | `PRO.CAP.COPULA.SIM(family, parameter, [sims], [dim], [seed], [nu])` | Uniforms simulated from a copula, one row per simulation |
 | `PRO.CAP.COPULA.CDF(points, family, parameter, [nu])` | A copula's distribution function at each point |
+| `PRO.CAP.NESTED.CDF(points, family, nodes, members)` | A nested Archimedean copula's distribution function at each point |
+| `PRO.CAP.NESTED.SIM(family, nodes, members, [sims], [seed])` | Uniforms simulated from a nested Archimedean copula |
 | `PRO.CAP.IMAN.CONOVER(draws, correlation, [seed], [dof], [shuffle])` | Simulated columns reordered to a rank correlation |
 
 - Distortion families use `aggregate`'s names: `ccoc` (r), `ph` (rho),
@@ -456,6 +458,15 @@ labelled in `companies`, with their premiums; chain its summary into
 | `PRO.CAP.PNL(values, [probs], premium, [expenses], [covers], [face], [output], [levels], [expense_at_mean])` | A book's P&L ledger with the annual covers it buys |
 | `PRO.CAP.CASHFLOW(u, terms, patterns, requirement, [commission], [output], [rate], [commutation_requirement])` | A collateralised deal on each simulated loss ratio: IRR, MOIC, NPV and its monthly flows |
 
+- `PRO.CAP.NESTED.CDF` and `PRO.CAP.NESTED.SIM` take the tree as a table:
+  `nodes` has one row per node (its name, its parent's name, blank for
+  the root, and theta), and `members` names the node each dimension
+  joins, in the order of the points' or draws' columns. For example, with
+  `all` (blank, 1.25), `property` (`all`, 4) and `casualty` (`all`, 2), and
+  members `property, property, casualty, casualty`, the two property
+  lines have Kendall's tau 0.75 between them (Gumbel's `1 - 1/theta`) and
+  0.2 with a casualty line. Clayton or Gumbel only, the same family at
+  every node, and a child's theta at least its parent's.
 - `PRO.CAP.CASHFLOW` reads a deal from blocks of rows, a label and its values
   (`premium`, `commutation_month`, ...). `output` is `"simulations"`
   (default), `"flows"` or `"trace"`.

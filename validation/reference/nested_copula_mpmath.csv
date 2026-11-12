@@ -1,0 +1,13 @@
+tree,family,point,expected,abs_tol,rel_tol,source
+gumbel5,gumbel,0.5;0.5;0.5;0.5;0.5,0.16957522783785329,1e-14,0,mpmath 1.4.1 at 30 digits
+gumbel5,gumbel,0.1;0.9;0.3;0.7;0.5,0.044278126103111362,1e-14,0,mpmath 1.4.1 at 30 digits
+gumbel5,gumbel,0.95;0.99;0.97;0.9;0.92,0.84893231111155798,1e-14,0,mpmath 1.4.1 at 30 digits
+gumbel5,gumbel,0.02;0.05;0.1;0.03;0.2,0.00043141622797731746,1e-14,0,mpmath 1.4.1 at 30 digits
+clayton4,clayton,0.5;0.5;0.5;0.5,0.26262394912006694,1e-14,0,mpmath 1.4.1 at 30 digits
+clayton4,clayton,0.1;0.9;0.3;0.7,0.080814425740154853,1e-14,0,mpmath 1.4.1 at 30 digits
+clayton4,clayton,0.95;0.99;0.97;0.9,0.83680556130310284,1e-14,0,mpmath 1.4.1 at 30 digits
+clayton4,clayton,0.02;0.05;0.1;0.03,0.011650136113003041,1e-14,0,mpmath 1.4.1 at 30 digits
+clayton4b,clayton,0.5;0.5;0.5;0.5,0.20717727394954139,1e-14,0,mpmath 1.4.1 at 30 digits
+clayton4b,clayton,0.1;0.9;0.3;0.7,0.062335308075768992,1e-14,0,mpmath 1.4.1 at 30 digits
+clayton4b,clayton,0.95;0.99;0.97;0.9,0.83150064521921138,1e-14,0,mpmath 1.4.1 at 30 digits
+clayton4b,clayton,0.02;0.05;0.1;0.03,0.0067886594447391922,1e-14,0,mpmath 1.4.1 at 30 digits

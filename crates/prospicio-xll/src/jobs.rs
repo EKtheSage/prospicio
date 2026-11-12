@@ -37,6 +37,7 @@ pub const ASYNC: &[&str] = &[
     "pro_res_bayes_odp",
     "pro_res_bayes_bf",
     "pro_cap_copula_sim",
+    "pro_cap_nested_sim",
 ];
 
 /// How many results are kept, and how many cells they may hold together
