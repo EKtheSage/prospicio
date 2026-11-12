@@ -1,5 +1,5 @@
 # Helpers shared by the R test files (#845). Each test file sources this
-# file first; `validation/scripts/run_r_tests.R` runs the files.
+# file first; `validation/scripts/run_r_tests.py` runs the files.
 #
 # with_package(pkg): TRUE when an optional package is installed. When it
 # is not, it says so on a "SKIP" line and, under the runner, records the

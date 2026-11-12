@@ -2832,15 +2832,8 @@ fn zero_fit_design(
     zero_link: &str,
 ) -> Result<ZeroModel> {
     use prospicio_glm::zero::{CountDistribution, Hurdle, ZeroInflated};
-    let count = match dist {
-        "poisson" => CountDistribution::Poisson,
-        "negbin" | "negative_binomial" => CountDistribution::NegativeBinomial,
-        other => {
-            return Err(Error::Other(format!(
-                "dist must be poisson or negbin (or negative_binomial), got {other}"
-            )));
-        }
-    };
+    let count = CountDistribution::from_name(dist)
+        .ok_or_else(|| crate::unknown_name("dist", dist, CountDistribution::NAMES))?;
     let link = match zero_link {
         "logit" => Link::Logit,
         "probit" => Link::Probit,
