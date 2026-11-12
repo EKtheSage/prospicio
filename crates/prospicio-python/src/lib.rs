@@ -47,6 +47,24 @@ fn to_py(e: prospicio_core::Error) -> PyErr {
     PyValueError::new_err(e.to_string())
 }
 
+/// The error for an option name not in a core enum's `NAMES` (#834): one
+/// message format, `arg must be "a", "b" or "c", got "x"`.
+pub(crate) fn unknown_name<T>(arg: &str, got: &str, names: &[(&str, T)]) -> PyErr {
+    PyValueError::new_err(format!(
+        "{arg} must be {}, got {got:?}",
+        name_list(names.iter().map(|(n, _)| *n))
+    ))
+}
+
+fn name_list<'a>(names: impl Iterator<Item = &'a str>) -> String {
+    let quoted: Vec<String> = names.map(|n| format!("{n:?}")).collect();
+    match quoted.split_last() {
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} or {last}", rest.join(", ")),
+        None => String::new(),
+    }
+}
+
 #[pymodule]
 mod prospicio_native {
     #[pymodule_export]
@@ -142,7 +160,7 @@ mod prospicio_native {
         PyGeneralizedPareto, PyInverseGamma, PyInverseGaussian, PyLogAffinePareto, PyLoglogistic,
         PyMixture, PyPareto, PyPiecewisePareto, PyPolicyLimits, PySeverityFit, PySizeOfLoss,
         PyTruncated, PyTweedie, PyWeibull, claim_count, fit_curves, fit_severity, goodness_of_fit,
-        local_pareto_to_piecewise, product_limit,
+        ks_bootstrap, local_pareto_to_piecewise, product_limit,
     };
     #[pymodule_export]
     use super::payout::{

@@ -111,13 +111,9 @@ fn two_part_fit(args: &[Grid]) -> Result<(TwoPartModel, Table)> {
         }
     };
     let dist = match text_option(&args[4], "count")?.as_deref() {
-        None | Some("poisson") => CountDistribution::Poisson,
-        Some("negative_binomial" | "negbin") => CountDistribution::NegativeBinomial,
-        Some(other) => {
-            return Err(format!(
-                "count must be \"poisson\" or \"negative_binomial\", got {other:?}"
-            ));
-        }
+        None => CountDistribution::Poisson,
+        Some(name) => CountDistribution::from_name(name)
+            .ok_or_else(|| crate::unknown_name("count", name, CountDistribution::NAMES))?,
     };
     let link = match text_option(&args[6], "zero_link")?.as_deref() {
         None | Some("logit") => Link::Logit,

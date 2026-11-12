@@ -59,6 +59,18 @@ pub struct Arg {
     pub help: &'static str,
 }
 
+/// The error for an option name not in a core enum's `NAMES` (#834): one
+/// message format, `arg must be "a", "b" or "c", got "x"`.
+pub(crate) fn unknown_name<T>(arg: &str, got: &str, names: &[(&str, T)]) -> String {
+    let quoted: Vec<String> = names.iter().map(|(n, _)| format!("{n:?}")).collect();
+    let list = match quoted.split_last() {
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} or {last}", rest.join(", ")),
+        None => String::new(),
+    };
+    format!("{arg} must be {list}, got {got:?}")
+}
+
 /// One worksheet function: its exported symbol, its name in Excel, its
 /// help and arguments, and the call on worksheet values.
 #[derive(Debug)]
