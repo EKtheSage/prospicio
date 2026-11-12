@@ -517,7 +517,8 @@ labelled in `companies`, with their premiums; chain its summary into
   thresholds, censoring and `limits` (each loss's policy limit), refits
   them and reports the share whose distance is at least the data's. Same
   `family` and `t` as `"compare"`, rows in its order. It takes seconds per
-  family: lower `replicates` while exploring (the p-value's error is
+  family, so it runs asynchronously (the cell shows `#GETTING_DATA`
+  until it is done): lower `replicates` while exploring (the p-value's error is
   about `sqrt(p (1 - p) / replicates)`), and give the same `seed` for the
   same answer.
 - `PRO.SEV.FIT.GROUPED`: `bounds` has one more cell than `counts`. A

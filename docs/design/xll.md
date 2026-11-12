@@ -1152,12 +1152,12 @@ real Excel.
     | `PRO.PNL` | `PRO.CAP.PNL` | Capital |
     | `PRO.CASHFLOW` | `PRO.CAP.CASHFLOW` | Capital |
 48. **Simulations and MCMC run asynchronously** (user, 2026-11-05, "work
-    on the async functions"). Every function with a `sims` argument and
-    every MCMC fit (`jobs::ASYNC`: `PRO.RES.ODP`, `.ODP.SIMS`, `.ODP.CDR`,
-    `.MACK.BOOT`, `.MACK.BOOT.SIMS`, `.MACK.BOOT.CDR`, `.BAYES.ODP`,
-    `.BAYES.BF` and `PRO.CAP.COPULA.SIM`) is an Excel 2010 asynchronous
-    function: registered as `>` (no result) with its `Q` arguments and a
-    last `X`, the handle Excel waits on, and not thread safe (`$`), since
+    on the async functions"). Every function with a `sims` or `replicates`
+    argument and every MCMC fit (`jobs::ASYNC`: `PRO.RES.ODP`,
+    `.ODP.SIMS`, `.ODP.CDR`, `.MACK.BOOT`, `.MACK.BOOT.SIMS`,
+    `.MACK.BOOT.CDR`, `.BAYES.ODP`, `.BAYES.BF`, `PRO.CAP.COPULA.SIM` and
+    `PRO.SEV.FIT.KS`) is an Excel 2010 asynchronous function: registered
+    as `>` (no result) with its `Q` arguments and a last `X`, the handle Excel waits on, and not thread safe (`$`), since
     the call only starts the run. It returns at once; the cell shows
     `#GETTING_DATA` while the run goes on a thread of its own, and the
     result reaches Excel through `xlAsyncReturn`, the one callback Excel
@@ -1693,6 +1693,10 @@ real Excel.
       round no longer improves the likelihood (the gamma's own fit on those
       losses fell from 5.2 seconds to 83 milliseconds), and a replicate
       refits from the data's estimate without standard errors.
+    - **Asynchronous** (decision 48): seconds of refitting is a
+      simulation, so the function is in `jobs::ASYNC`; the cell shows
+      `#GETTING_DATA` while it runs and a recalculation with the same
+      inputs answers from the kept result.
     - **Parity.** `tests/severity_fit.rs`: on the 40 losses of
       `scipy_ks_bootstrap.py` the lognormal's and exponential's Bootstrap p
       agree with SciPy's `goodness_of_fit` within four standard errors and

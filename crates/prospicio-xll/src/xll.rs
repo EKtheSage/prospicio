@@ -590,7 +590,7 @@ mod exports {
     udf!(pro_sev_fit, losses, family, output, t, truncation, thresholds, censored, weights, upper, points);
     udf!(pro_sev_fit_grouped, bounds, counts, family, method, output);
     udf!(pro_sev_fit_lev, sizes, lev, family, weights, output);
-    udf!(pro_sev_fit_ks, losses, family, t, thresholds, censored, weights, upper, limits, replicates, seed);
+    udf_async!(pro_sev_fit_ks, losses, family, t, thresholds, censored, weights, upper, limits, replicates, seed);
     udf!(pro_evt_thresholds, data, thresholds);
     udf!(pro_evt_fit, data, threshold, probabilities);
     udf!(pro_evt_hill, data, k);
