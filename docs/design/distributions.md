@@ -189,6 +189,20 @@ conversion reports the error it introduces.
   - **One stream per replicate.** Replicate `b` draws from
     `StreamRng::new(seed, b)` (`docs/design/rng.md`), so the result is the
     same on any number of threads; the replicates run on rayon.
+  - **A replicate refits a body family from the data's estimate, without
+    standard errors** (decided 2026-11-12, for `PRO.SEV.FIT.KS`): its
+    maximum is near the data's, and the warm start keeps a fit at a
+    boundary of its family from walking there again each time. The Pareto
+    families refit by their own estimators.
+  - **The body fits' simplex runs in rounds** (decided 2026-11-12): 250
+    moves each, restarted from the best point, stopping when a round meets
+    the tolerance or no longer improves the likelihood by 1e-9 relative, at
+    most 40,000 moves as before. On losses reported above a high threshold
+    the gamma's likelihood rises toward its supremum only as the shape goes
+    to 0 (the truncated gamma has a proper limit there), and one simplex
+    stretched along that ridge never met its tolerance: all 40,000 moves,
+    5.2 seconds a fit. In rounds it stops in 83 milliseconds; fits that
+    converge in a round are unchanged.
   - **A failed refit is left out and counted** (`failed`) rather than
     failing the call, which errs only when no replicate refits.
   - **Parity.** `validation/tests/severity_fit.rs`: SciPy's

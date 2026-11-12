@@ -1152,12 +1152,12 @@ real Excel.
     | `PRO.PNL` | `PRO.CAP.PNL` | Capital |
     | `PRO.CASHFLOW` | `PRO.CAP.CASHFLOW` | Capital |
 48. **Simulations and MCMC run asynchronously** (user, 2026-11-05, "work
-    on the async functions"). Every function with a `sims` argument and
-    every MCMC fit (`jobs::ASYNC`: `PRO.RES.ODP`, `.ODP.SIMS`, `.ODP.CDR`,
-    `.MACK.BOOT`, `.MACK.BOOT.SIMS`, `.MACK.BOOT.CDR`, `.BAYES.ODP`,
-    `.BAYES.BF` and `PRO.CAP.COPULA.SIM`) is an Excel 2010 asynchronous
-    function: registered as `>` (no result) with its `Q` arguments and a
-    last `X`, the handle Excel waits on, and not thread safe (`$`), since
+    on the async functions"). Every function with a `sims` or `replicates`
+    argument and every MCMC fit (`jobs::ASYNC`: `PRO.RES.ODP`,
+    `.ODP.SIMS`, `.ODP.CDR`, `.MACK.BOOT`, `.MACK.BOOT.SIMS`,
+    `.MACK.BOOT.CDR`, `.BAYES.ODP`, `.BAYES.BF`, `PRO.CAP.COPULA.SIM` and
+    `PRO.SEV.FIT.KS`) is an Excel 2010 asynchronous function: registered
+    as `>` (no result) with its `Q` arguments and a last `X`, the handle Excel waits on, and not thread safe (`$`), since
     the call only starts the run. It returns at once; the cell shows
     `#GETTING_DATA` while the run goes on a thread of its own, and the
     result reaches Excel through `xlAsyncReturn`, the one callback Excel
@@ -1661,6 +1661,49 @@ real Excel.
       Pareto's CV is "inf", and `"params"` has the comparison's cells. The
       test workbook's Severity fit sheet widens its comparison tables and
       moves the grouped fits right to make room.
+
+63. **`PRO.SEV.FIT.KS`: the bootstrap p-value in a function of its own**
+    (the follow-up decision 62 left; `prospicio_prob::severity_fit::
+    ks_bootstrap`). Arguments: `losses, [family], [t], [thresholds],
+    [censored], [weights], [upper], [limits], [replicates], [seed]`. One
+    row per family (Family, KS distance, KS p, Bootstrap p, Replicates,
+    Failed), in `"compare"`'s order: the body families with `t` blank, and
+    with a `t` the Pareto families too, ranked by AIC, so the rows line up
+    with a `"compare"` table beside them.
+    - **A function, not a column of `"compare"`.** The bootstrap refits
+      each family `replicates` times (999 by default, as in Python and R),
+      seconds of work where `"compare"` takes milliseconds, and Excel
+      recalculates a function whenever an input changes. A separate
+      function keeps the cost where the user asked for it; `replicates`
+      trades its Monte Carlo error, about `sqrt(p (1 - p) / replicates)`,
+      for time.
+    - **`limits`**, one value or one per loss, is each loss's policy limit:
+      a replicate loss above it is censored there. A blank cell is a
+      censored loss's own value and no limit for an uncensored one, the
+      core's default; the help says to give the limits of uncensored
+      losses too, or the replicates show losses the data could not.
+    - **A family the core cannot bootstrap** (a failed fit, a limit below a
+      loss) is that row's `#PROSPICIO!` text, as in `"compare"`; a bad
+      `replicates` or `seed` is the call's error.
+    - **Speed.** On #800's 89 losses all nine families at 999 replicates take
+      about 18 seconds on four threads in a release build, 13 of them the
+      gamma, which runs to its boundary (shape near 0) there; every other
+      family is under 2 seconds. That needed two changes in the core, in the
+      same PR: the body fits' simplex now runs in rounds and stops when a
+      round no longer improves the likelihood (the gamma's own fit on those
+      losses fell from 5.2 seconds to 83 milliseconds), and a replicate
+      refits from the data's estimate without standard errors.
+    - **Asynchronous** (decision 48): seconds of refitting is a
+      simulation, so the function is in `jobs::ASYNC`; the cell shows
+      `#GETTING_DATA` while it runs and a recalculation with the same
+      inputs answers from the kept result.
+    - **Parity.** `tests/severity_fit.rs`: on the 40 losses of
+      `scipy_ks_bootstrap.py` the lognormal's and exponential's Bootstrap p
+      agree with SciPy's `goodness_of_fit` within four standard errors and
+      every cell equals the core's at the same seed; with `t`, the nine rows
+      follow `"compare"`'s order and repeat its KS distance and KS p. The
+      test workbook's Severity fit sheet bootstraps its nine families with
+      199 replicates.
 
 ## Parity plan
 
