@@ -881,6 +881,11 @@ pub enum TrendKind {
 /// let fit = TrendFit::exponential(&t, &y).unwrap();
 /// assert!((fit.annual_change() - 0.03).abs() < 1e-12);
 /// ```
+///
+/// Not the reserving trend of the same name,
+/// `prospicio_reserving::frequency_severity::TrendFit`, Friedland's
+/// exponential trend of a triangle's averages by origin year; the crate
+/// path tells them apart (the user's decision of 2026-11-12, #843).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TrendFit {
     pub kind: TrendKind,

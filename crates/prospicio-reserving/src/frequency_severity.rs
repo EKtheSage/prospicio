@@ -178,6 +178,11 @@ impl Selection {
 /// An exponential trend fitted by least squares on the logarithms of the
 /// values, as Friedland's "exponential regression analysis" (Excel's
 /// `LOGEST`).
+///
+/// Not the ratemaking trend of the same name,
+/// `prospicio_pricing::ratemaking::TrendFit`, which also fits a linear
+/// trend and keeps its intercept; the crate path tells them apart (the
+/// user's decision of 2026-11-12, #843).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TrendFit {
     /// The annual rate of change, `exp(slope) - 1`.

@@ -346,7 +346,6 @@ fn normal_scores(spearman: &[f64], s: usize) -> Result<Vec<f64>> {
             expected: "a segments × segments matrix",
         });
     }
-    let mut normal = vec![1.0; s * s];
     for i in 0..s {
         if spearman[i * s + i] != 1.0 {
             return Err(Error::InvalidSetting {
@@ -364,11 +363,9 @@ fn normal_scores(spearman: &[f64], s: usize) -> Result<Vec<f64>> {
                     expected: "a symmetric matrix with entries in [-1, 1]",
                 });
             }
-            let r = 2.0 * (std::f64::consts::PI * a / 6.0).sin();
-            normal[i * s + j] = r;
-            normal[j * s + i] = r;
         }
     }
+    let normal = CorrelationKind::Spearman.normal_scores(spearman);
     if cholesky(&normal, s).is_none() {
         return Err(Error::InvalidSetting {
             name: "spearman",
@@ -456,10 +453,7 @@ fn rank_correlate_indexed(
 /// joint law.
 fn shuffled_order(n_sims: usize, rng: &mut StreamRng) -> Vec<usize> {
     let mut order: Vec<usize> = (0..n_sims).collect();
-    for i in (1..n_sims).rev() {
-        let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
-        order.swap(i, j);
-    }
+    rng.shuffle(&mut order);
     order
 }
 
@@ -493,32 +487,18 @@ fn rank_correlate_rows(
         (0..s)
             .map(|g| vec![KeyValue::Int(g as i64), KeyValue::Int(0)])
             .collect(),
-        totals.clone(),
+        totals,
         prospicio_prob::Provenance::new("rank_correlation_rows"),
     )?;
     let mut rng = StreamRng::new(seed, n_sims as u64);
-    let reordered = grouped.reorder_groups("segment", &normal, rng.next_u64())?;
-    let moved = reordered.draw_matrix();
-    // Iman–Conover returns each segment's totals in a new order. The k-th
-    // smallest total of the output is the k-th smallest of the input, so
-    // matching them by rank (ties by position) finds the input row each
-    // output row came from.
-    let by_total = |values: &dyn Fn(usize) -> f64| {
-        let mut order: Vec<usize> = (0..n_sims).collect();
-        order.sort_by(|&a, &b| values(a).total_cmp(&values(b)).then(a.cmp(&b)));
-        order
-    };
-    let source: Vec<Vec<usize>> = (0..s)
-        .map(|g| {
-            let from = by_total(&|i| totals[i * s + g]);
-            let to = by_total(&|i| moved[i * s + g]);
-            let mut source = vec![0; n_sims];
-            for (&out, &input) in to.iter().zip(&from) {
-                source[out] = input;
-            }
-            source
-        })
-        .collect();
+    // Iman–Conover's index: `source[g][i]` is the input row whose segment
+    // `g` total is row `i` of the output.
+    let (_, source) = grouped.reorder_groups_indexed(
+        "segment",
+        &normal,
+        CorrelationKind::Pearson,
+        rng.next_u64(),
+    )?;
     let order = shuffled_order(n_sims, &mut rng);
     let index: Vec<Vec<usize>> = source
         .iter()
