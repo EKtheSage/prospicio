@@ -1,0 +1,11 @@
+family,quantity,expected,abs_tol,rel_tol,source
+lognormal,ks_distance,0.14728337707922767,1e-06,0.0,scipy 1.18.1
+lognormal,ks_bootstrap_p_value,0.0282,0.0094,0.0,scipy 1.18.1
+gamma,ks_distance,0.11925870342118472,1e-06,0.0,scipy 1.18.1
+gamma,ks_bootstrap_p_value,0.1812,0.0218,0.0,scipy 1.18.1
+weibull,ks_distance,0.11674502259249667,1e-06,0.0,scipy 1.18.1
+weibull,ks_bootstrap_p_value,0.1645,0.021,0.0,scipy 1.18.1
+loglogistic,ks_distance,0.13946581313344586,1e-06,0.0,scipy 1.18.1
+loglogistic,ks_bootstrap_p_value,0.01,0.0056,0.0,scipy 1.18.1
+exponential,ks_distance,0.11960701186190137,1e-06,0.0,scipy 1.18.1
+exponential,ks_bootstrap_p_value,0.3485,0.027,0.0,scipy 1.18.1

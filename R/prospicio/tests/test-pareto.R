@@ -286,3 +286,23 @@ stopifnot(
 )
 kg <- goodness_of_fit(pareto(200, 1.5), kx[-1], reporting_thresholds = rep(200, 4))
 stopifnot(abs(kg$tail_mean - 600) < 1e-9, is.infinite(kg$tail_cv))
+
+# The KS p-value by the parametric bootstrap: reproducible by seed, the same
+# distance as goodness_of_fit, smaller than the classical p-value.
+by <- c(120, 300, 450, 800, 1500, 2600, 4000, 650, 90, 2100)
+kb <- ks_bootstrap("exponential", by, replicates = 199, seed = 3)
+stopifnot(
+  identical(kb, ks_bootstrap("exponential", by, replicates = 199, seed = 3)),
+  length(kb$distances) + kb$failed == 199,
+  abs(kb$p_value - (1 + sum(kb$distances >= kb$max_distance)) / (length(kb$distances) + 1)) < 1e-15
+)
+kf <- severity_fit("exponential", by)
+kg <- goodness_of_fit(kf$distribution, by)
+stopifnot(abs(kb$max_distance - kg$max_distance) < 1e-12, kb$p_value < kg$ks_p_value)
+kc <- ks_bootstrap("lognormal", by, censored = by == 4000, limits = rep(4000, 10),
+                   replicates = 49, seed = 1)
+stopifnot(kc$p_value > 0, kc$p_value <= 1)
+stopifnot(inherits(try(ks_bootstrap("lognormal", by, limits = rep(1000, 10), replicates = 9),
+                       silent = TRUE), "try-error"))
+stopifnot(inherits(try(ks_bootstrap("lognormal", by, replicates = 1.5), silent = TRUE),
+                   "try-error"))
